@@ -18,7 +18,7 @@ import { AlienSkyMesh } from './sky/AlienSkyMesh'
 import { SKY_PRESET_NAMES, applySkyPreset } from './sky/presets'
 import {
   NIGHT_LEVEL, TWILIGHT_LEVEL, autoExposure, luminance, twilightAmount, twilightTint, betaM, betaR, horizonColors, moonAmount, nightAmount, nightTint, sanitizeRGB, sunDirection as sunDirectionAt,
-  sunE, sunlightColor, type RGB, type Vec3,
+  sunE, sunlightColor, lowSunGrade, glowTint, type RGB, type Vec3,
 } from './sky/skyMath'
 import * as P from './sky/skyParams'
 import { bindDayClock, currentHour, followHour } from './sky/dayCycle'
@@ -65,6 +65,14 @@ const SHADOW_FAR = 1000
 const MOON_TINT: RGB = [0.55, 0.65, 1.0]
 /** Fog colours are clamped so the Mie glow around a low sun does not flood the terrain. */
 const FOG_MAX = 8
+/** The sunward fog's cap with the sun on the horizon, and the glow's share of eye adaptation. */
+const FOG_LOW_SUN_MAX = 2.5, SUNWARD_ADAPT = 0.1
+/** Scale a colour down so its brightest channel is at most `max`, keeping its hue. */
+function capRGB(c: RGB, max: number): RGB {
+  const m = Math.max(c[0], c[1], c[2])
+  if (m > max) for (let i = 0; i < 3; i++) c[i] *= max / m
+  return c
+}
 
 export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   const scene = game.scene
@@ -224,6 +232,8 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     sky.betaM.value.set(rgb[0], rgb[1], rgb[2])
     sky.sunE.value = sunE(sun[1])
     sky.sunDirection.value.copy(sunDirection)
+    glowTint(sp, rgb)
+    sky.glowTint.value.set(rgb[0], rgb[1], rgb[2])
     const night = nightAmount(sun[1])
     nightTint(sp, tint)
     const nightLevel = night * Math.max(0, sp.nightBrightness) * NIGHT_LEVEL
@@ -273,15 +283,21 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     // Eye adaptation from the sky we just evaluated: no render target readback needed.
     // Uses the side horizon, not the mean, so the glow around a setting sun does not
     // darken the whole scene.
-    const sideRaw = hc.side
-    for (let i = 0; i < 3; i++) avgSky[i] = 0.5 * z[i] + 0.5 * sideRaw[i]
+    // At a low sun the (graded, bounded) glow toward it gets a small share too: adapting only
+    // to the dark sky overhead turned the sunward horizon into a white wall.
+    const sideRaw = hc.side, low = lowSunGrade(sun[1]), glowShare = low * SUNWARD_ADAPT
+    const towardRaw = sanitizeRGB(hc.toward, 50)
+    for (let i = 0; i < 3; i++) avgSky[i] = (1 - glowShare) * (0.5 * z[i] + 0.5 * sideRaw[i]) + glowShare * towardRaw[i]
     const target = Math.log(autoExposure(luminance(avgSky), P.skyAutoExposure.value))
     adapted = Number.isNaN(adapted) ? target : adapted + (target - adapted) * Math.min(1, dt * 2)
     game.renderer.toneMappingExposure = P.skyExposure.value * Math.exp(adapted)
 
-    const t = sanitizeRGB(hc.toward, FOG_MAX)
-    const a = sanitizeRGB(hc.away, FOG_MAX)
-    const s = sanitizeRGB(hc.side, FOG_MAX)
+    // Scaled, not clamped per channel: a clamp kept one bright channel at the cap and let the
+    // others through, so the fog took a different hue from the sky above it.
+    // Haze toward a low sun stays under the glow it sits in, so far land is not whiter than sky.
+    const t = capRGB(sanitizeRGB(hc.toward, 1e3), FOG_MAX + (FOG_LOW_SUN_MAX - FOG_MAX) * low)
+    const a = capRGB(sanitizeRGB(hc.away, 1e3), FOG_MAX)
+    const s = capRGB(sanitizeRGB(hc.side, 1e3), FOG_MAX)
     fogState.toward.set(t[0], t[1], t[2])
     fogState.away.set(a[0], a[1], a[2])
     fogState.side.set(s[0], s[1], s[2])

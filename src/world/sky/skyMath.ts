@@ -142,15 +142,96 @@ export function twilightShape(dir: Vec3, sun: Vec3): number {
   return c * c * c * Math.exp(-Math.max(dir[1], 0) * 6)
 }
 
-/** Twilight colour: the horizon below a just-risen sun, normalised so the brightest channel is 1. */
+/**
+ * Twilight colour, normalised so the brightest channel is 1. Mostly warm, then the colour the
+ * air scatters (violet under a violet sky), with a little of the horizon below a just-risen
+ * sun. That horizon alone takes the colour the air passes, not scatters: a green twilight
+ * ringing the whole horizon of a violet world.
+ */
 export function twilightTint(p: SkyParams, out: RGB = [0, 0, 0]): RGB {
   skyRadianceBase([0.9995, 0.03, 0], [0.99875, 0.05, 0], p, out)
+  const scatter = nightTint(p, _scatter)
+  const rawLum = Math.max(luminance(out), BETA_EPSILON), scatterLum = Math.max(luminance(scatter), BETA_EPSILON)
+  for (let i = 0; i < 3; i++) {
+    const raw = Number.isFinite(out[i]) ? out[i] / rawLum : 0
+    out[i] = TWILIGHT_MIX[0] * TWILIGHT_WARM[i] + TWILIGHT_MIX[1] * scatter[i] / scatterLum + TWILIGHT_MIX[2] * raw
+  }
   const m = Math.max(out[0], out[1], out[2], BETA_EPSILON)
-  for (let i = 0; i < 3; i++) out[i] = Number.isFinite(out[i]) ? out[i] / m : 0
+  for (let i = 0; i < 3; i++) out[i] /= m
   return out
 }
+/** Twilight's share of warm orange, the air's scattering colour and the raw horizon. */
+const TWILIGHT_WARM: RGB = [1.62, 0.89, 0.49]
+const TWILIGHT_MIX = [0.5, 0.3, 0.2]
+const _scatter: RGB = [0, 0, 0]
 
-/** Preetham single scattering only, no night or twilight. */
+// ---------------------------------------------------------------------------------------
+// Low sun grade
+// ---------------------------------------------------------------------------------------
+// Preetham's horizon toward a low sun is hundreds of times brighter than the sky overhead,
+// and on an alien atmosphere it takes the colour the air does not scatter: green under a
+// violet sky, blue under a butterscotch one. Eye adaptation follows the darker sky, so that
+// glow became a white wall with a single-hue band where the fog met it, and the sunlight it
+// passed coloured every surface the same hue. With days of a few minutes it is on screen
+// every few minutes. The grade gives it a shoulder and warms its brightest part, and leaves
+// direct sunlight its brightness but most of its colour warm. It fades out as the sun climbs,
+// so the day sky is unchanged. AlienSkyMesh applies the same grade, so sky and fog agree.
+
+/**
+ * Sky luminance (linear) above which the low-sun glow is compressed, and the power it is
+ * compressed by with the sun on the horizon. A power keeps the glow's falloff, so the sun is
+ * a bright core fading out over about fifteen degrees, the shape an Earth sky already has,
+ * rather than a flat plateau of white.
+ */
+export const GLOW_KNEE = 1.5, GLOW_POWER = 0.55
+/** Warm white, luminance 1: what the brightest glow and low sunlight lean toward. */
+export const GLOW_WARM: RGB = [1.229, 0.958, 0.737]
+/** How far the brightest glow leans to GLOW_WARM; dim sky keeps its own colour. */
+export const GLOW_DESAT = 0.8
+/** How far direct sunlight leans to GLOW_WARM at a low sun. */
+export const SUN_DESAT = 0.9
+/** 1 with the sun at or below the horizon, 0 from about 27 degrees up. */
+export function lowSunGrade(sunY: number): number {
+  return 1 - smoothstep(0.02, 0.45, sunY)
+}
+/** How far a strongly single-hue part of the low-sun sky leans to the glow tint. */
+export const SAT_LEAN = 0.85
+/**
+ * The colour a low sun's glow leans toward, luminance 1: mostly warm orange, then the colour
+ * the air scatters, so a violet world's sunrise is rose and a butterscotch one's amber.
+ */
+export function glowTint(p: SkyParams, out: RGB = [0, 0, 0]): RGB {
+  const scatter = nightTint(p, _scatter)
+  const sl = Math.max(luminance(scatter), BETA_EPSILON)
+  for (let i = 0; i < 3; i++) out[i] = 0.6 * TWILIGHT_WARM[i] + 0.4 * scatter[i] / sl
+  const l = Math.max(luminance(out), BETA_EPSILON)
+  for (let i = 0; i < 3; i++) out[i] /= l
+  return out
+}
+/**
+ * 0 for a warm colour (red its strongest channel), rising to 1 as green or blue outweighs red
+ * by a quarter. A low sun's own warm colours are left alone; only the cold transmitted hues
+ * (green under a violet sky, blue under a butterscotch one) are leaned.
+ */
+export function coolness(c: RGB): number {
+  const hi = Math.max(c[0], c[1], c[2])
+  return hi > 0 ? smoothstep(0, 0.25, (Math.max(c[1], c[2]) - c[0]) / hi) : 0
+}
+/** Apply the grade to a sky radiance in place. `w` from lowSunGrade; `tint` from glowTint. */
+export function gradeGlow(c: RGB, w: number, tint: RGB = GLOW_WARM): RGB {
+  if (!(w > 0)) return c
+  const L = luminance(c)
+  if (!(L > 1e-9) || !Number.isFinite(L)) return c
+  const above = Math.max(1, L / GLOW_KNEE)
+  const graded = GLOW_KNEE * Math.min(1, L / GLOW_KNEE) * Math.pow(above, 1 - w * (1 - GLOW_POWER))
+  const hi = Math.max(c[0], c[1], c[2]), lo = Math.min(c[0], c[1], c[2])
+  const sat = hi > 0 ? (hi - lo) / hi : 0
+  const lean = Math.min(1, 1.5 * w) * Math.max(GLOW_DESAT * smoothstep(GLOW_KNEE, 6 * GLOW_KNEE, L), SAT_LEAN * smoothstep(0.35, 0.85, sat) * coolness(c))
+  for (let i = 0; i < 3; i++) c[i] = ((c[i] / L) * (1 - lean) + tint[i] * lean) * graded
+  return c
+}
+
+/** Preetham single scattering only, no night or twilight, with the low sun grade. */
 export function skyRadianceBase(dir: Vec3, sun: Vec3, p: SkyParams, out: RGB = [0, 0, 0]): RGB {
   const bR = betaR(p, _bR)
   const bM = betaM(p, _bM)
@@ -173,7 +254,7 @@ export function skyRadianceBase(dir: Vec3, sun: Vec3, p: SkyParams, out: RGB = [
     const l0 = 0.1 * fex
     out[i] = (lin + l0) * SKY_SCALE + SKY_FLOOR[i]
   }
-  return out
+  return gradeGlow(out, lowSunGrade(sun[1]), glowTint(p, _glow))
 }
 
 /**
@@ -192,6 +273,7 @@ export function skyRadiance(dir: Vec3, sun: Vec3, p: SkyParams, out: RGB = [0, 0
   return out
 }
 const _twTint: RGB = [0, 0, 0]
+const _glow: RGB = [0, 0, 0]
 const _bR: RGB = [0, 0, 0]
 const _bM: RGB = [0, 0, 0]
 const _tint: RGB = [0, 0, 0]
@@ -209,6 +291,12 @@ export function sunlightColor(sun: Vec3, p: SkyParams, out: RGB = [0, 0, 0]): RG
   const sM = MIE_ZENITH_LENGTH * inv
   const fade = sunE(sun[1]) / SUN_E_NOON
   for (let i = 0; i < 3; i++) out[i] = Math.exp(-(bR[i] * sR + bM[i] * sM)) * fade
+  // Low sun: keep the light's brightness, give most of its colour to the planet's glow tint.
+  const w = lowSunGrade(sun[1]) * SUN_DESAT * coolness(out), L = luminance(out)
+  if (w > 0 && L > 1e-9) {
+    const tint = glowTint(p, _glow)
+    for (let i = 0; i < 3; i++) out[i] = out[i] * (1 - w) + tint[i] * L * w
+  }
   return out
 }
 

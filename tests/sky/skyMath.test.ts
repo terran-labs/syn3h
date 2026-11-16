@@ -106,12 +106,11 @@ describe('colour helpers', () => {
     expect(noon[0]).toBeGreaterThan(0.8)
   })
 
-  it('give a red scattering sky a blue sunset', () => {
+  // The sunset's own hue is graded at a low sun (skyMath gradeGlow), so only the day sky is pinned.
+  it('give a red scattering sky a red day sky', () => {
     const mars: SkyParams = { ...earth, rayleighColor: [30, 14, 5] }
     const zen = skyRadiance([0, 1, 0], sunDirection(12, 20), mars)
     expect(zen[0]).toBeGreaterThan(zen[2])
-    const sunset = horizonColors(sunDirection(17.9, 20), mars).toward
-    expect(sunset[2]).toBeGreaterThan(sunset[0])
   })
 
   it('darkens the sky at night and hands over to the moon', () => {
@@ -127,5 +126,27 @@ describe('colour helpers', () => {
 
   it('sanitizeRGB removes NaN and clamps', () => {
     expect(sanitizeRGB([Number.NaN, -1, 5], 2)).toEqual([0, 0, 2])
+  })
+})
+
+describe('sky colours across a whole day on every sky preset', () => {
+  // A NaN or negative colour reaches the GPU as black or garbage light, every few minutes now
+  // that days run. Every preset, every quarter hour, toward, across and away from the sun.
+  it('stays finite and non-negative, and sunlight never exceeds 1', () => {
+    for (const preset of Object.values(SKY_PRESETS)) {
+      const p: SkyParams = {
+        rayleighColor: [preset['sky.rayleighR'], preset['sky.rayleighG'], preset['sky.rayleighB']], rayleigh: preset['sky.rayleigh'],
+        turbidity: preset['sky.turbidity'], mieCoefficient: preset['sky.mieCoefficient'], mieDirectionalG: preset['sky.mieDirectionalG'], nightBrightness: preset['sky.nightBrightness'],
+      }
+      for (let hour = 0; hour < 24; hour += 0.25) {
+        const sun = sunDirection(hour, 30, 0)
+        const light = sunlightColor(sun, p)
+        for (const v of light) { expect(Number.isFinite(v)).toBe(true); expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1) }
+        for (const dir of [[sun[0], 0.03, sun[2]], [-sun[0], 0.03, -sun[2]], [0, 1, 0], [sun[2], 0.2, -sun[0]]] as Vec3[]) {
+          const n = Math.hypot(...dir); const c = skyRadiance([dir[0] / n, dir[1] / n, dir[2] / n], sun, p)
+          for (const v of c) { expect(Number.isFinite(v)).toBe(true); expect(v).toBeGreaterThanOrEqual(0) }
+        }
+      }
+    }
   })
 })
