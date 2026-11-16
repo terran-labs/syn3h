@@ -1,6 +1,11 @@
 // SOURCE ONLY, UNRUN. Capability gate; no projectile or About-modal acceptance.
 // Requires a separately reviewed dedicated supervisor and an explicit runtime slot.
-import { chromium } from 'playwright-core'
+// The supervisor sets this environment before Node starts, and owns stderr as a pipe.
+// Assert before importing Playwright; DEBUG_FILE would bypass that pipe.
+if (process.env.DEBUG !== 'pw:protocol' || process.env.DEBUG_FILE !== undefined ||
+    process.env.DEBUG_COLORS !== '0' || process.env.DEBUG_HIDE_DATE !== '1' ||
+    process.env.MAX_LOG_LENGTH !== '1048576') throw new Error('reviewed redacted protocol transport required')
+const { chromium } = await import('playwright-core')
 import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
@@ -20,16 +25,15 @@ async function bounded(promise, cap = 10000) {
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const world = 'alpine.1518~bots.count=0,bungee.length=300'
 const room = `ux-about-capability-${randomUUID()}`
-// Restore normal background behavior by REMOVING these installed Playwright defaults.
-// Do not add lifecycle, visibility, focus or throttling override arguments.
-const removedDefaults = ['--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding']
+// Chrome is freshly launched and owned by the external supervisor. No Playwright
+// launch, newContext or focus-disabling command is used in this fixture.
 const modulePaths = ['src/main.ts', 'src/core/Game.ts', 'src/core/Input.ts', 'src/core/ChaseCamera.ts',
   'src/ui/Shell.ts', 'src/weapons/Gear.ts', 'src/weapons/bungee/Bungee.ts', 'src/weapons/aim.ts', 'src/net/index.ts']
 const inventory = ['index.html', ...modulePaths, 'src/ui/shell.css', 'src/world/planets.ts',
   'src/weapons/bungee/params.ts', 'vite.config.ts', 'server/dev.ts', 'package.json', 'package-lock.json',
   'tests/ui/in-play-about-two-peer.mjs', 'tests/ui/in-play-about-two-peer-plan.md']
 const report = { source: expected, status: 'in_progress', scope: 'two-process native-control capability only',
-  arrangement: { channel: 'chrome', headless: true, processes: 2, contextsPerProcess: 1, pagesPerContext: 1, removedDefaults },
+  arrangement: { executable: 'supervisor-pinned Chrome', headless: true, processes: 2, defaultContextsPerProcess: 1, pagesPerContext: 1, noDefaults: true },
   room, world, peers: [], actions: [], errors: [], captureComplete: false,
   limits: ['Local browser clocks are independent; action IDs correlate ordered observations, not simultaneous snapshots.',
     'RAF reads ordinary game.tick advancement; it does not observe every fixed step or an event-turn first step.',
@@ -285,32 +289,45 @@ try {
   const launch = JSON.parse(await bounded(readFile(process.env.UX_LAUNCH_MANIFEST, 'utf8')))
   assert.equal(launch.head, expected); assert.equal(launch.origin, origin)
   assert.equal(launch.env.SYN3H_NO_ROOM_SERVER, '1'); assert.ok(launch.roomPort !== 8787 && launch.roomPid && launch.vitePid)
-  assert.equal(launch.capabilityArrangement, 'two-independent-chrome-processes')
+  assert.equal(launch.capabilityArrangement, 'two-fresh-chrome-default-contexts-noDefaults')
   report.launch = { launcherSha256: launch.launcherSha256, roomPid: launch.roomPid, vitePid: launch.vitePid }
   const before = await sourceProof('sourceBefore'); await persist()
-  // Each launchServer owns a separate browser child and temporary profile. Its local
-  // automation WebSocket is transport only, not another game page or room server.
+  assert.equal(launch.protocolRecorder?.transport, 'parent-stderr-pipe-before-import')
+  assert.equal(launch.protocolRecorder?.rawDiskOrUI, false)
+  assert.equal(launch.browsers?.length, 2)
+  assert.notEqual(launch.browsers[0].pid, launch.browsers[1].pid)
+  assert.notEqual(launch.browsers[0].port, launch.browsers[1].port)
+  assert.notEqual(launch.browsers[0].profile, launch.browsers[1].profile)
   for (const name of ['A', 'B']) {
-    const peer = { name, record: { name, responses: [], sockets: [] } }; peers.push(peer); report.peers.push(peer.record)
-    peer.server = await chromium.launchServer({ channel: 'chrome', headless: true, host: '127.0.0.1',
-      ignoreDefaultArgs: removedDefaults, timeout: budget(30000) })
-    const child = peer.server.process()
-    const automation = new URL(peer.server.wsEndpoint())
-    assert.equal(automation.hostname, '127.0.0.1')
-    peer.record.browserProcess = { pid: child.pid, spawnargs: child.spawnargs,
-      automationHost: automation.hostname, automationPort: Number(automation.port) }
-    assert.ok(child.pid > 0); assert.ok(!child.spawnargs.some(a => removedDefaults.includes(a)))
-    await persist() // Exposes both direct browser PID handles for supervisor correlation.
-    peer.browser = await chromium.connect(peer.server.wsEndpoint(), { timeout: budget(15000) })
-    peer.context = await bounded(peer.browser.newContext({ viewport: { width: 1280, height: 900 }, hasTouch: false, serviceWorkers: 'block' }))
+    const owned = launch.browsers.find(b => b.name === name)
+    assert.ok(owned?.pid > 0 && owned.start && owned.freshProfile === true && owned.noPriorPlaywright === true)
+    assert.equal(owned.endpoint, `http://127.0.0.1:${owned.port}`)
+    assert.ok(owned.port !== launch.roomPort && owned.port !== launch.vitePort && owned.port !== 8787)
+    const peer = { name, record: { name, responses: [], sockets: [],
+      browserProcess: { pid: owned.pid, start: owned.start, port: owned.port, profile: owned.profile } } }
+    peers.push(peer); report.peers.push(peer.record); await persist()
+    peer.browser = await chromium.connectOverCDP(owned.endpoint, { noDefaults: true, timeout: budget(15000) })
+    assert.equal(peer.browser.contexts().length, 1, 'one existing default context')
+    peer.context = peer.browser.contexts()[0]
+    assert.equal(peer.context.pages().length, 1, 'one pre-created blank page')
+    peer.page = peer.context.pages()[0]
+    assert.equal(peer.page.url(), 'about:blank', 'no prior game navigation')
+    peer.page.setDefaultTimeout(10000)
+    await bounded(peer.page.setViewportSize({ width: 1280, height: 900 }))
     await bounded(peer.context.addInitScript(installObservation))
-    peer.page = await bounded(peer.context.newPage()); peer.page.setDefaultTimeout(10000)
+    // Read-only target identity, used by the parent to match sanitized attachment
+    // events to BOTH peers. This session never sends a focus-emulation command.
+    peer.identitySession = await bounded(peer.context.newCDPSession(peer.page))
+    const info = await bounded(peer.identitySession.send('Target.getTargetInfo'))
+    assert.equal(info.targetInfo.type, 'page'); assert.equal(info.targetInfo.url, 'about:blank')
+    assert.match(info.targetInfo.targetId, /^[A-Za-z0-9_.:-]{1,160}$/)
+    peer.record.targetAlias = hash(info.targetInfo.targetId)
     const url = new URL(origin); url.searchParams.set('room', room); url.searchParams.set('world', world); peer.url = url.href
     assert.equal(peer.browser.contexts().length, 1)
     assert.equal(peer.context.pages().length, 1)
     watchResponses(peer)
   }
-  assert.notEqual(peers[0].record.browserProcess.pid, peers[1].record.browserProcess.pid)
+  assert.notEqual(peers[0].record.targetAlias, peers[1].record.targetAlias)
   // Observers exist on both contexts before either game entry.
   for (const peer of peers) {
     await peer.page.goto(peer.url, { timeout: budget(60000) })
@@ -384,19 +401,20 @@ finally {
   // Failure of any close is nonpass; the external identity supervisor remains required.
   for (const peer of [...peers].reverse()) {
     peer.record.closing = true
+    if (peer.identitySession) await attempt(`${peer.name} identity session detach`, () => bounded(peer.identitySession.detach(), 10000))
+    if (peer.page) await attempt(`${peer.name} page close`, () => bounded(peer.page.close(), 10000))
     if (peer.context) await attempt(`${peer.name} context close`, () => bounded(peer.context.close(), 10000))
     if (peer.browser) await attempt(`${peer.name} browser close`, () => bounded(peer.browser.close(), 10000))
-    if (peer.server) await attempt(`${peer.name} browser process close`, async () => {
-      await bounded(peer.server.close(), 10000)
-      const child = peer.server.process()
-      peer.record.browserExit = { pid: child.pid, exitCode: child.exitCode, signalCode: child.signalCode }
-      assert.ok(child.exitCode !== null || child.signalCode !== null, 'owned browser process exit observed')
-    })
+    if (peer.browser) peer.record.connectionClosed = !peer.browser.isConnected()
+    // CDP connection/context closure is not proof of Chrome exit. The supervisor
+    // owns both direct Popen handles, start identities and debugging listeners.
+    peer.record.processClosure = 'requires independent supervisor receipt'
+
   }
   await attempt('final response drain', drain)
   await attempt('final clean checkout', async () => cleanSource())
   report.captureComplete = !primary && report.errors.length === 0
-  if (report.captureComplete) report.status = 'capability_passed'
+  if (report.captureComplete) report.status = 'capability_checks_passed_pending_protocol_and_process_closure'
   else report.status = 'failed'
   await attempt('final receipt', persist)
 }
