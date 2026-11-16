@@ -2,16 +2,17 @@
 // Requires a separately reviewed dedicated supervisor and an explicit runtime slot.
 // The supervisor sets this environment before Node starts, and owns stderr as a pipe.
 // Assert before importing Playwright; DEBUG_FILE would bypass that pipe.
-if (process.env.DEBUG !== 'pw:protocol' || process.env.DEBUG_FILE !== undefined ||
-    process.env.DEBUG_COLORS !== '0' || process.env.DEBUG_HIDE_DATE !== '1' ||
-    process.env.MAX_LOG_LENGTH !== '1048576') throw new Error('reviewed redacted protocol transport required')
-const { chromium } = await import('playwright-core')
 import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
+async function main() {
+if (process.env.DEBUG !== 'pw:protocol' || process.env.DEBUG_FILE !== undefined ||
+    process.env.DEBUG_COLORS !== '0' || process.env.DEBUG_HIDE_DATE !== '1' ||
+    process.env.MAX_LOG_LENGTH !== '1048576') throw new Error('reviewed redacted protocol transport required')
+const { chromium } = await import('playwright-core')
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const origin = process.env.SYN3H_URL, expected = process.env.UX_SOURCE_SHA, out = process.env.UX_EVIDENCE_DIR
 assert.ok(origin && expected && out && process.env.UX_LAUNCH_MANIFEST)
@@ -32,7 +33,7 @@ const modulePaths = ['src/main.ts', 'src/core/Game.ts', 'src/core/Input.ts', 'sr
 const inventory = ['index.html', ...modulePaths, 'src/ui/shell.css', 'src/world/planets.ts',
   'src/weapons/bungee/params.ts', 'vite.config.ts', 'server/dev.ts', 'package.json', 'package-lock.json',
   'tests/ui/in-play-about-two-peer.mjs', 'tests/ui/in-play-about-two-peer-plan.md']
-const report = { source: expected, status: 'in_progress', scope: 'two-process native-control capability only',
+const report = { failureOrder: [], firstFailure: null, source: expected, status: 'in_progress', scope: 'two-process native-control capability only',
   arrangement: { executable: 'supervisor-pinned Chrome', headless: true, processes: 2, defaultContextsPerProcess: 1, pagesPerContext: 1, noDefaults: true },
   room, world, peers: [], actions: [], errors: [], captureComplete: false,
   limits: ['Local browser clocks are independent; action IDs correlate ordered observations, not simultaneous snapshots.',
@@ -44,9 +45,35 @@ const peers = [], pending = [], sources = new Map()
 let primary, sequence = 0, identity
 await bounded(mkdir(out, { recursive: true }))
 async function persist() { await bounded(writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)), 3000) }
-function errorText(error) { return error?.stack || String(error) }
+const failureIds = new WeakMap()
+let failureSequence = 0
+const knownPhases = new Set(['raw_source', 'action', 'response', 'page_error', 'socket_closed', 'hmr',
+  'main', 'partial raw-source receipt', 'partial action receipt', 'before-close partial receipt',
+  'final response drain', 'final clean checkout', 'final receipt'])
+for (const name of ['A', 'B']) for (const suffix of ['final observer', 'identity session detach',
+  'page close', 'context close', 'browser close']) knownPhases.add(`${name} ${suffix}`)
+for (const name of ['A', 'B']) knownPhases.add(`failure snapshot ${name}`)
+function failure(phase, error) {
+  const key = error && (typeof error === 'object' || typeof error === 'function') ? error : null
+  if (key && failureIds.has(key)) return failureIds.get(key)
+  // Never inspect error name/message/stack, assertion actual/expected or custom getters.
+  const entry = { id: ++failureSequence, phase: knownPhases.has(phase) ? phase : 'unknown_phase',
+    code: failureSequence <= 128 ? 'operation_failed' : 'failure_record_overflow' }
+  if (key) failureIds.set(key, entry)
+  report.firstFailure ??= entry
+  if (report.failureOrder.length < 129) report.failureOrder.push(entry)
+  return entry
+}
+function addError(phase, error) {
+  const entry = failure(phase, error)
+  if (report.errors.length < 129) report.errors.push(entry)
+  return entry
+}
+const observe = (phase, fn) => (...args) => {
+  try { return fn(...args) } catch (error) { addError(phase, error) }
+}
 async function attempt(label, fn) {
-  try { return await fn() } catch (error) { report.errors.push(`${label}: ${errorText(error)}`); return undefined }
+  try { return await fn() } catch (error) { addError(label, error); return undefined }
 }
 async function drain() {
   for (let cursor = 0; cursor < pending.length;) {
@@ -73,13 +100,13 @@ async function sourceProof(stage) {
       Object.assign(row, { url: url.href, status: response.status,
         headers: Object.fromEntries(['content-type', 'content-length', 'etag'].map(k => [k, response.headers.get(k)])) })
       const text = await bounded(response.text())
-      Object.assign(row, { bytes: Buffer.byteLength(text), sha256: hash(text), prefix: text.slice(0, 4096) })
+      Object.assign(row, { bytes: Buffer.byteLength(text), sha256: hash(text) })
       await persist()
       assert.equal(response.status, 200, path)
       const literal = text.match(/^export default ("(?:[^"\\]|\\.)*")/m)
       assert.ok(literal, `raw export ${path}`); assert.equal(JSON.parse(literal[1]), local.toString(), path)
     } catch (error) {
-      row.error = errorText(error)
+      row.error = failure('raw_source', error)
       await attempt('partial raw-source receipt', persist)
       throw error
     }
@@ -187,7 +214,7 @@ async function checkpoint(label, action = async () => {}) {
     await drain(); assert.deepEqual(report.errors, [])
     row.status = 'passed'; await persist()
   } catch (error) {
-    row.status = 'failed'; row.error = errorText(error)
+    row.status = 'failed'; row.error = failure('action', error)
     for (const peer of peers) await attempt(`failure snapshot ${peer.name}`, async () => { row[`${peer.name}Failure`] = await sample(peer, row.id) })
     await attempt('partial action receipt', persist)
     throw error
@@ -195,19 +222,19 @@ async function checkpoint(label, action = async () => {}) {
 }
 function watchResponses(peer) {
   const { page, record } = peer
-  page.on('pageerror', error => report.errors.push(`${peer.name} pageerror: ${error}`))
-  page.on('websocket', ws => { record.sockets.push(ws.url());
-    if (new URL(ws.url()).pathname === '/ws') ws.on('close', () => { if (!record.closing) report.errors.push(`${peer.name}: room socket closed during capability run`) })
+  page.on('pageerror', observe('page_error', error => addError('page_error', error)))
+  page.on('websocket', observe('response', ws => { record.sockets.push(ws.url());
+    if (new URL(ws.url()).pathname === '/ws') ws.on('close', () => { if (!record.closing) addError('socket_closed') })
     ws.on('framereceived', ({ payload }) => {
-    try { if (['update', 'full-reload', 'prune'].includes(JSON.parse(String(payload)).type)) report.errors.push(`${peer.name}: HMR changed source`) } catch {}
-  }) })
-  page.on('response', response => {
+    try { if (['update', 'full-reload', 'prune'].includes(JSON.parse(String(payload)).type)) addError('hmr') } catch {}
+  }) }))
+  page.on('response', observe('response', response => {
     const path = new URL(response.url()).pathname.slice(1), document = response.request().resourceType() === 'document'
     if (!document && !modulePaths.includes(path)) return
     const row = { url: response.url(), status: response.status(), path, document }; record.responses.push(row)
     pending.push((async () => {
       const bytes = await bounded(response.body())
-      Object.assign(row, { bytes: bytes.length, sha256: hash(bytes), prefix: bytes.toString().slice(0, 4096) })
+      Object.assign(row, { bytes: bytes.length, sha256: hash(bytes) })
       await persist()
       assert.equal(new URL(response.url()).origin, new URL(origin).origin)
       assert.equal(response.status(), 200); assert.equal(response.fromServiceWorker(), false)
@@ -223,8 +250,8 @@ function watchResponses(peer) {
         row.sourceSha256 = hash(sources.get(path))
       }
       row.verified = true
-    })().catch(error => { row.error = errorText(error); report.errors.push(`${peer.name}: ${row.error}`) }))
-  })
+    })().catch(error => { row.error = addError('response', error) }))
+  }))
 }
 async function lock(peer) {
   await bounded(peer.page.bringToFront())
@@ -386,7 +413,7 @@ try {
   report.sourceAfter = await sourceProof('rawSourceAfter')
   assert.deepEqual(report.sourceAfter, before)
   report.status = 'checks_passed_pending_closure'
-} catch (error) { primary = error; report.status = 'failed'; report.primaryError = errorText(error) }
+} catch (error) { primary = error; report.status = 'failed'; report.caughtFailure = failure('main', error); report.primaryError = report.firstFailure }
 finally {
   for (const peer of peers) {
     if (peer.page) await attempt(`${peer.name} final observer`, async () => {
@@ -418,6 +445,7 @@ finally {
   else report.status = 'failed'
   await attempt('final receipt', persist)
 }
-if (primary) throw primary
-assert.deepEqual(report.errors, [])
-assert.equal(report.captureComplete, true)
+if (primary || report.errors.length || !report.captureComplete) process.exitCode = 1
+}
+// Task-local boundary only. No unhandledRejection/uncaughtException interception.
+main().catch(() => { process.exitCode = 1 })
