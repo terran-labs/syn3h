@@ -890,3 +890,65 @@ under curve0/.71/1.8, translated rendered tiles, real view-offset projection, ne
 all-behind and camera-inside cases, backend clip ranges, leader/corner margin geometry, self/
 nearer depth and human priority. They are unrun. No tests, typecheck, imports, browser, server,
 probes or runtime execution was performed for this source candidate.
+
+### Detached polygon and draw-owned HUD observation candidate
+
+This uncommitted fixture-only change follows product commit
+5445e6213314acba334aa82111f3f7cb86338aca. Only `--observe-views` installs these
+wrappers. The two existing fixed views, all seven actors, coordinates, controls,
+arrival and six-comparison rules, 15-second waits and 100-ms polling are unchanged.
+No positive scene, runtime allocation or application acceptance is implied.
+
+The envelope wrapper forwards the original call once, then immediately copies only
+used polygon coordinates. The detached receipt preserves the actual output ID and
+depth plus integer count 0..48, boolean blocked and each integer size 1..9. Used
+coordinates must be finite. Empty and blocked are different states. No pooled array
+or proxy object survives by reference; the diagnostic circle is not polygon evidence.
+Partial metadata and copied coordinates remain attached when copying fails.
+
+Only the actual HUD instance's `read` method is wrapped. It forwards once with the
+same receiver, arguments, return value and thrown error. Exactly one successful call
+must belong to a completed owned draw with the same stamp and viewport. Returned
+rectangles are detached, finite and ordered left/right and top/bottom, with a cap of
+64. Overflow fails collection; it never produces a truncated successful list. Calls
+outside a draw cannot replace the receipt. Observation sampling no longer calls HUD
+read a second time. `exclusions` now references the detached draw-owned rectangles,
+not a new poll-time layout read. Historical receipts still have their older meaning.
+
+Copy and validation errors are sticky secondary observation failures. Original HUD,
+envelope or draw exceptions propagate unchanged. Each attempted draw replaces the
+latest record, including failed draws, so a prior successful record cannot satisfy
+current readiness. Raw poll rows and the final sample persist before completeness
+checks. Existing primary staging failure remains primary. Descriptor restoration
+continues independently for every wrapper and refuses to overwrite foreign changes.
+
+Storage bounds: at most seven envelopes per draw, 48 polygons per envelope and nine
+2D vertices per polygon. Only the latest draw is retained outside sampled history.
+Each observer allows at most 181 samples, including its final sample, for 362 across
+two cases. The logical history therefore holds at most 2,189,376 polygon scalars and
+92,672 HUD rectangle scalars. JSON repeats the detached HUD list through `exclusions`,
+so serialized HUD coordinates have a 185,344-scalar ceiling per full report.
+
+For simultaneous copies, budget five complete logical histories for browser storage,
+Node report, transport serialization, report serialization and temporary sampling,
+plus four draw-sized records for the two observers' active/latest state. This bounds
+retained polygon-coordinate copies at 10,971,072 scalars and HUD-coordinate copies,
+including duplicate serialized aliases, at 927,744 scalars. These are copy-count
+ceilings, not measured heap bytes or frame costs. Report rewrites replace one file;
+there is no append-only per-draw archive. Error arrays retain the existing eight-entry
+cap and dropped-error count; overflow and drops fail collection. The observation
+wrappers add copying work and cannot support a gameplay-cost claim.
+
+The original acceptance branch is untouched and is NOT ready to certify the clipped
+proxy. `twoBotSlots` and fixed-pose `discGap` still use circle arithmetic. Before a
+later acceptance allocation, their relevant polygon eligibility checks need a reviewed
+conversion using the actual detached polygon union, leader-inclusive bounds, the
+existing combined five-pixel margin, strict nearer depth and self exclusion. They must
+not fall back to circles when polygon data is missing. No allocator, projection or
+terrain replay is introduced here.
+
+Actual DOM visibility of both expected people and at least two full BOT labels remains
+an independent acceptance requirement. Grounded positive phone/follower recipes,
+actual hull and shield visual review, and uninstrumented 120-draw cost windows remain
+open. The historical empty-label observations and the focused unit pass do not satisfy
+those requirements. This candidate has not been imported, tested or executed.

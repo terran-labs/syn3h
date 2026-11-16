@@ -416,10 +416,30 @@ async function installViewObserver(page) {
   await page.evaluate(() => {
     const s = window.syn3h, tags = window.syn3hNet.tags, projection = tags.projection
     if (window.nameplateViewObserver) throw new Error('view observer already installed')
-    const state = { latest: null, errors: [], droppedErrors: 0, overflow: false, restored: false }
+    const state = { latest: null, errors: [], droppedErrors: 0, overflow: false, restored: false, samples: 0 }
+    const HUD_LIMIT = 64, SAMPLE_LIMIT = 181
     let active = null
     const installed = []
-    const fault = error => { if (state.errors.length < 8) state.errors.push(String(error)); else state.droppedErrors++ }
+    const fault = error => {
+      try { if (state.errors.length < 8) state.errors.push(String(error)); else state.droppedErrors++ }
+      catch { state.droppedErrors++ } // Diagnostics must never replace the original product exception.
+    }
+    const copyProxy = (source, receipt) => {
+      // Attach partial detached data first. Invalid metadata never authorizes an unbounded copy.
+      const proxy = receipt.proxy = { count: source?.count, blocked: source?.blocked, polygons: [], complete: false }
+      if (!Number.isInteger(proxy.count) || proxy.count < 0 || proxy.count > 48 || typeof proxy.blocked !== 'boolean') throw new Error('invalid proxy metadata')
+      for (let i = 0; i < proxy.count; i++) {
+        const size = source.sizes[i], polygon = { size, points: [] }
+        proxy.polygons.push(polygon)
+        if (!Number.isInteger(size) || size < 1 || size > 9) throw new Error('invalid proxy polygon size')
+        for (let j = 0; j < size * 2; j++) {
+          const value = source.points[i * 18 + j]
+          polygon.points.push(value)
+          if (!Number.isFinite(value)) throw new Error('nonfinite proxy coordinate')
+        }
+      }
+      proxy.complete = true
+    }
     const copyCamera = camera => {
       const target = s.game.renderer._canvasTarget, view = camera.view
       return { uuid: camera.uuid, active: camera === s.game.camera,
@@ -504,6 +524,7 @@ async function installViewObserver(page) {
       }
     }
     window.nameplateViewObserver = { state, restore, sample() {
+      if (++state.samples > SAMPLE_LIMIT) { state.overflow = true; fault('observation sample cap exceeded'); throw new Error('observation sample cap exceeded') }
       const camera = s.game.camera, net = window.syn3hNet
       const latest = state.latest ? structuredClone(state.latest) : null
       const currentCamera = copyCamera(camera)
@@ -521,7 +542,8 @@ async function installViewObserver(page) {
         quality: s.game.quality.getQualityState(), daydream: s.bots.daydream.active,
         pivot: s.camera.pivot.toArray(), desiredAfterLift: s.camera.desired.toArray(), final: camera.position.toArray(), arm: s.camera.arm, lift: s.camera.lift,
         latest, errors: [...state.errors], droppedErrors: state.droppedErrors, overflow: state.overflow,
-        exclusions: tags.hud.read(innerWidth, innerHeight).map(b => ({ ...b })), labels,
+        // Alias only the detached receipt; JSON duplicates this rectangle list, never live HUD state.
+        exclusions: latest?.hud?.rectangles ?? null, labels,
         actors: [{ id: String(net.id), vehicle: s.player }, ...tags.entries].map(t => ({ id: t.id, kind: t.vehicle.kind,
           body: { ...t.vehicle.body.translation() }, rendered: t.vehicle.object.position.toArray(),
           quaternion: t.vehicle.object.quaternion.toArray(), visible: t.vehicle.object.visible })),
@@ -530,10 +552,32 @@ async function installViewObserver(page) {
         budget: tags.terrainBudget, stats: { ...tags.stats } }
     } }
     try {
+      install(tags.hud, 'read', original => function(...args) {
+        const row = active
+        if (row) row.hudCalls++
+        let result
+        try { result = Reflect.apply(original, this, args) }
+        catch (error) { if (row) { row.hudThrew = true; fault(error) }; throw error }
+        if (row) {
+          try {
+            if (this !== tags.hud || row.hudCalls !== 1) throw new Error('HUD call ownership or count differs')
+            const receipt = row.hud = { stamp: tags.stamp, width: args[0], height: args[1], count: result?.length, rectangles: [], complete: false }
+            if (!Array.isArray(result) || result.length > HUD_LIMIT) { state.overflow = true; throw new Error('HUD receipt cap exceeded or invalid result') }
+            if (![receipt.stamp, receipt.width, receipt.height].every(Number.isFinite)) throw new Error('nonfinite HUD call identity')
+            for (const box of result) {
+              const detached = { left: box.left, top: box.top, right: box.right, bottom: box.bottom }
+              receipt.rectangles.push(detached)
+              if (!Object.values(detached).every(Number.isFinite) || detached.left > detached.right || detached.top > detached.bottom) throw new Error('invalid HUD rectangle')
+            }
+            receipt.complete = true
+          } catch (error) { row.copyFailed = true; fault(error) }
+        }
+        return result
+      })
       install(projection, 'envelope', original => function(...args) {
         let result
         try { result = Reflect.apply(original, this, args) }
-        catch (error) { if (active) active.envelopeThrew = true; throw error }
+        catch (error) { if (active) { active.envelopeThrew = true; fault(error) }; throw error }
         try {
           if (!active || this !== projection) throw new Error('envelope outside owned draw')
           if (active.envelopes.length >= 7) { state.overflow = true; throw new Error('envelope cap exceeded') }
@@ -541,27 +585,31 @@ async function installViewObserver(page) {
           const id = output === tags.localDisc ? '@local' : [...tags.plates].find(([, p]) => p.disc === output)?.[0]
           if (id === undefined) throw new Error('unknown envelope output identity')
           if (active.envelopes.some(e => e.id === id)) throw new Error('duplicate envelope identity')
-          active.envelopes.push({ id, outputIdentityMatched: true, stamp: tags.stamp,
-            center: center.toArray(), radius, bend: bend.toArray(), camera: copyCamera(camera), width, height, disc: { ...output } })
-        } catch (error) { fault(error) }
+          const receipt = { id, outputIdentityMatched: true, stamp: tags.stamp,
+            disc: { id: output.id, x: output.x, y: output.y, radius: output.radius, depth: output.depth } }
+          active.envelopes.push(receipt)
+          copyProxy(output.proxy, receipt.disc)
+          Object.assign(receipt, { center: center.toArray(), radius, bend: bend.toArray(), camera: copyCamera(camera), width, height })
+        } catch (error) { if (active) active.copyFailed = true; fault(error) }
         return result
       })
       install(tags, 'draw', original => function(...args) {
-        const parent = active, row = { stamp: null, completed: false, threw: false, envelopeThrew: false, local: 'unknown', envelopes: [] }
+        const parent = active, row = { stamp: null, completed: false, threw: false, envelopeThrew: false, hudThrew: false, hudCalls: 0, hud: null, copyFailed: false, local: 'unknown', envelopes: [] }
         if (parent) fault('reentrant draw')
         active = row
         try {
           const result = Reflect.apply(original, this, args)
           try {
-            row.stamp = tags.stamp; row.completed = this === tags && !row.envelopeThrew
+            row.stamp = tags.stamp; row.completed = this === tags && !row.envelopeThrew && !row.hudThrew && !row.copyFailed
             row.local = row.envelopes.some(e => e.id === '@local') ? 'participated' : 'skipped'
             row.camera = copyCamera(s.game.camera); row.bend = tags.bend.toArray()
             row.mode = s.params.get('camera.mode').value; row.distance = s.params.get('camera.distance').value
             row.cinematic = !!s.camera.cinematic; row.viewport = [innerWidth, innerHeight]
+            if (row.hudCalls !== 1 || !row.hud?.complete || row.hud.stamp !== row.stamp || row.hud.width !== row.viewport[0] || row.hud.height !== row.viewport[1]) { row.completed = false; fault('completed draw requires exactly one matching HUD receipt') }
             if (row.envelopes.some(e => e.stamp !== row.stamp)) { row.completed = false; fault('draw stamp mismatch') }
           } catch (error) { row.completed = false; fault(error) }
           return result
-        } catch (error) { row.threw = true; throw error }
+        } catch (error) { row.threw = true; fault(error); throw error }
         finally { state.latest = row; active = parent }
       })
       install(tags, 'dispose', original => function(...args) { restore(); return Reflect.apply(original, this, args) })
@@ -860,6 +908,7 @@ try {
             row.result = row.ordinaryResult; result = row.ordinaryResult
             row.observationChecks = { ready, controlsOK, matched: !!matched }
             if (o.errors.length || o.droppedErrors || o.overflow) throw new Error('passive observer sticky failure')
+            if (o.latest && (o.latest.hudCalls !== 1 || !o.latest.hud?.complete || o.latest.envelopes.some(e => !e.disc.proxy?.complete))) throw new Error('incomplete detached proxy or HUD receipt')
             if (!ready) throw new Error('ordinary camera observation controls or finite geometry differ')
             if (o.actors.length !== 7 || new Set(o.actors.map(t => t.id)).size !== 7 || o.actors.some(t => ![...Object.values(t.body), ...t.rendered, ...t.quaternion].every(Number.isFinite))) throw new Error('incomplete seven actor observation')
             if (o.envelopeCorrespondence.some(c => !c.valid || c.relation !== 'unchanged-view-exact-projection')) throw new Error('envelope/draw descriptor mismatch')
@@ -1048,9 +1097,18 @@ try {
         assert.ok(final.camera.matrix.every((v, i) => v === final.latest.camera.matrix[i]) && final.projectionCorrespondence.valid)
         assert.ok(Array.isArray(final.latest.envelopes) && final.latest.envelopes.length <= 7, 'bounded final envelopes required')
         assert.deepEqual(final.latest.viewport, [view.width, view.height])
+        assert.equal(final.latest.hudCalls, 1)
+        assert.ok(final.latest.hud?.complete && final.latest.hud.rectangles.length <= 64)
+        assert.equal(final.latest.hud.stamp, final.latest.stamp)
+        assert.deepEqual([final.latest.hud.width, final.latest.hud.height], [view.width, view.height])
+        assert.deepEqual(final.exclusions, final.latest.hud.rectangles)
         assert.equal(final.envelopeCorrespondence.length, final.latest.envelopes.length)
         assert.ok(final.envelopeCorrespondence.every(c => c.valid && c.relation === 'unchanged-view-exact-projection'))
         for (const e of final.latest.envelopes) {
+          assert.ok(e.disc.proxy?.complete, 'detached used proxy required')
+          assert.ok(Number.isInteger(e.disc.proxy.count) && e.disc.proxy.count >= 0 && e.disc.proxy.count <= 48 && typeof e.disc.proxy.blocked === 'boolean')
+          assert.equal(e.disc.proxy.polygons.length, e.disc.proxy.count)
+          assert.ok(e.disc.proxy.polygons.every(p => Number.isInteger(p.size) && p.size >= 1 && p.size <= 9 && p.points.length === p.size * 2 && p.points.every(Number.isFinite)))
           assert.equal(e.stamp, final.latest.stamp, 'envelope belongs to completed draw')
           assert.deepEqual(e.camera.matrix, final.latest.camera.matrix); assert.deepEqual(e.camera.projection, final.latest.camera.projection)
           assert.equal(e.width, view.width); assert.equal(e.height, view.height)
