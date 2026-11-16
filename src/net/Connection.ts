@@ -15,7 +15,8 @@ export class Connection {
   onOpen: () => void = () => {}
   onText: (text: string) => void = () => {}
   onBinary: (data: ArrayBuffer) => void = () => {}
-  onClose: () => void = () => {}
+  /** An open socket closed; the room's close code and reason, when it gave one. */
+  onClose: (code?: number, reason?: string) => void = () => {}
 
   private ws: WebSocket | null = null
   private backoff = 500
@@ -74,7 +75,7 @@ export class Connection {
       this.closes.push({ code: e.code, reason: e.reason, clean: e.wasClean, wasOpen, at: Math.round(performance.now()) })
       if (this.closes.length > 10) this.closes.shift()
       this.state = 'closed'
-      if (wasOpen) this.onClose()
+      if (wasOpen) this.onClose(e.code, e.reason)
       this.scheduleRetry()
     }
     // onclose always follows onerror, which is where we retry.

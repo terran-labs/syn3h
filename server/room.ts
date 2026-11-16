@@ -45,6 +45,7 @@ import {
   stampStateId,
   WRAP_SIZES,
   MAX_BOTS, type WireVehicleKind,
+  CLOSE_REPLACED,
 } from '../shared/protocol'
 // Imported for their side effect of defining world parameters, so the server knows their
 // ranges. Modules that define parameters next to Three.js code cannot be imported here; their
@@ -653,7 +654,7 @@ export class Room {
       this.rekey(key, peer, player)
       // The replaced connection, if it was still open, is closed. Its close arrives with a
       // peer that no longer has a place, so it does nothing: no hold, no leave, no new host.
-      if (!player.heldUntil) key.close(4003, 'replaced')
+      if (!player.heldUntil) key.close(CLOSE_REPLACED, 'replaced')
       player.heldUntil = 0
       player.lastHeardAt = this.now()
       player.joinedAt = this.now()
