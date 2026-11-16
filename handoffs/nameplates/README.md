@@ -292,3 +292,18 @@ the allocated-room WebSocket. It neither compares Shell's name to the query nor 
 storage, mutates private state or adds navigation. Worker proof and HUD assertions are unchanged.
 Run 004's first-client worker proof and zero-label failure remain preserved. This correction
 receives syntax and whitespace checks only; browser validation requires a separate allocation.
+
+
+## Complete synchronous capture snapshot
+
+Run 005 saved diagnostic data but omitted it from the returned capture. Capture now uses
+the existing geometry collector in capture mode: all imports complete first, then DOM labels,
+HUD exclusions, controls and complete geometry are read synchronously without an await.
+The same complete object is saved, asserted and returned. Observed draw stamps must agree;
+missing data has no fallback. Geometry-only staging keeps its original return shape.
+No rays, product draws or visibility queries are replayed. Screenshots occur later than the
+measurement and do not prove identical-frame pixels. Both HUD placement calls receive the
+complete snapshot; visibility, at least two full BOT labels and cost assertions are unchanged.
+Run 005's one full bot is not acceptance. No staging repair is included. Prior failed evidence
+is preserved; this correction receives syntax and whitespace checks only, pending review
+and a separately allocated browser run.

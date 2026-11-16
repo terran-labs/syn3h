@@ -340,15 +340,18 @@ async function open(name, viewport) {
   return page
 }
 // Snapshot existing draw decisions; do not replay queries or alter the query budget.
-async function geometryEvidence(page) {
-  return page.evaluate(async () => {
+async function geometryEvidence(page, captureLabel = null) {
+  return page.evaluate(async captureLabel => {
     const { copyCurveState, overHorizon } = await import('/src/world/curve.ts')
     const { renderedEnvelope } = await import('/src/ui/nameplates/anchors.ts')
     const { bendPoint, CurvedProjection } = await import('/src/ui/nameplates/curvature.ts')
+    const { HudExclusions } = await import('/src/ui/nameplates/HudExclusions.ts')
+    // All imports finish before this synchronous snapshot. Do not replay draw or rays.
     const s = window.syn3h, net = window.syn3hNet, tags = net.tags, camera = s.game.camera
+    const stamp = tags.stamp
     const v = () => s.player.object.position.clone(), bend = v(), eye = v(), projection = new CurvedProjection()
     copyCurveState(bend); camera.getWorldPosition(eye)
-    return { viewport: { width: innerWidth, height: innerHeight }, tick: s.game.tick, stamp: tags.stamp, terrainBudget: tags.terrainBudget, stats: { ...tags.stats },
+    const diagnostic = { viewport: { width: innerWidth, height: innerHeight }, tick: s.game.tick, stamp: tags.stamp, terrainBudget: tags.terrainBudget, stats: { ...tags.stats },
       seed: s.params.get('world.seed')?.value, terrainKind: s.params.get('terrain.kind')?.value,
       camera: { eye: eye.toArray(), quaternion: camera.quaternion.toArray(), fov: camera.fov, matrix: camera.matrixWorld.toArray(), projection: camera.projectionMatrix.toArray(), cinematic: s.camera.cinematic },
       bend: bend.toArray(), roster: [...net.players].map(([id, info]) => ({ id, name: info.name, bot: id >= 0xff00 })),
@@ -363,7 +366,20 @@ async function geometryEvidence(page) {
           distance: center.distanceTo(eye), radius, visible: t.vehicle.object.visible, horizon: overHorizon(center.x, center.z, radius, center.y + radius),
           plate: plate ? { stamp: plate.stamp, candidate: { ...plate.candidate }, disc: { ...plate.disc }, sightStamp: plate.sightStamp, sightBlocked: plate.sightBlocked, shown: plate.shown, hidden: plate.el.hidden } : null }
       }), terrain: window.nameplateTerrainEvidence ? { ...window.nameplateTerrainEvidence, rays: [...window.nameplateTerrainEvidence.rays] } : null }
-  })
+    if (captureLabel === null) return diagnostic
+    const shell = window.syn3h.shell, hud = new HudExclusions(shell.element), exclusions = hud.read(innerWidth, innerHeight)
+    hud.dispose()
+    const labels = [...document.querySelectorAll('.vehicle-nameplate')].filter(el => !el.hidden && getComputedStyle(el).display !== 'none' && !el.closest('[hidden]')).map(el => {
+      const b = el.getBoundingClientRect(), style = getComputedStyle(el)
+      return { id: el.dataset.vehicle, bot: el.classList.contains('is-bot'), tick: el.classList.contains('is-tick'), text: el.textContent, width: b.width, height: b.height, opacity: Number(style.opacity), left: b.left, right: b.right, top: b.top, bottom: b.bottom }
+    })
+    const controls = s.params.snapshot('all'), quality = s.game.quality.getQualityState()
+    if (controls['gfx.auto'] !== false || controls['gfx.quality'] !== 4 || quality.auto || quality.level !== 4 || controls['daydream.seconds'] !== 0 || controls['sun.dayLength'] !== 0 || s.bots.daydream.active) throw new Error('Fixture control drift')
+    const state = { label: captureLabel, stamp, labels, exclusions, controls, quality, nameplateCost: { ...window.syn3hNet.tags.stats }, curve: window.syn3h.params.get('world.curve').value, local: String(window.syn3hNet.id), presentation: shell.presentation, cameraMode: window.syn3h.params.get('camera.mode').value }
+    state.diagnostic = diagnostic
+    if (!Number.isFinite(stamp) || stamp !== diagnostic.stamp || stamp !== tags.stamp) throw new Error('Capture draw stamp changed during snapshot')
+    return state
+  }, captureLabel)
 }
 async function installTerrainEvidence(page) {
   await page.evaluate(() => {
@@ -389,29 +405,19 @@ async function capture(page, label) {
   remaining(1)
   await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
   await page.waitForTimeout(500)
-  const state = await page.evaluate(async () => {
-    const { HudExclusions } = await import('/src/ui/nameplates/HudExclusions.ts')
-    const shell = window.syn3h.shell, hud = new HudExclusions(shell.element), exclusions = hud.read(innerWidth, innerHeight)
-    hud.dispose()
-    const labels = [...document.querySelectorAll('.vehicle-nameplate')].filter(el => !el.hidden && getComputedStyle(el).display !== 'none' && !el.closest('[hidden]')).map(el => {
-      const b = el.getBoundingClientRect(), style = getComputedStyle(el)
-      return { id: el.dataset.vehicle, bot: el.classList.contains('is-bot'), tick: el.classList.contains('is-tick'), text: el.textContent, width: b.width, height: b.height, opacity: Number(style.opacity), left: b.left, right: b.right, top: b.top, bottom: b.bottom }
-    })
-    const s = window.syn3h, controls = s.params.snapshot('all'), quality = s.game.quality.getQualityState()
-    if (controls['gfx.auto'] !== false || controls['gfx.quality'] !== 4 || quality.auto || quality.level !== 4 || controls['daydream.seconds'] !== 0 || controls['sun.dayLength'] !== 0 || s.bots.daydream.active) throw new Error('Fixture control drift')
-    return { labels, exclusions, controls, quality, nameplateCost: { ...window.syn3hNet.tags.stats }, curve: window.syn3h.params.get('world.curve').value, local: String(window.syn3hNet.id), presentation: shell.presentation, cameraMode: window.syn3h.params.get('camera.mode').value }
-  })
-  const diagnostic = await geometryEvidence(page)
-  captures.push({ label, ...state, diagnostic })
+  const state = await geometryEvidence(page, label)
+  captures.push(state)
   await writeFile(`${out}/measurements.json`, JSON.stringify(captures, null, 2))
   await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
   const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  assert.equal(state.stamp, state.diagnostic.stamp, 'capture and diagnostic share a draw stamp')
   assert.ok(state.labels.every(l => l.id !== state.local), 'never label the local player')
   for (let i = 0; i < state.labels.length; i++) {
     const a = state.labels[i]
     assert.ok(state.labels.slice(i + 1).every(b => !overlap(a, b)), `${label}: labels overlap`)
     assert.ok(state.exclusions.every(b => !overlap(a, b)), `${label}: label covers HUD`)
   }
+  // Screenshot pixels are captured later than the synchronous measurement above.
   await page.screenshot({ path: `${out}/${label}.png` })
   await writeFile(`${out}/measurements.json`, JSON.stringify(captures, null, 2))
   return state
