@@ -33,14 +33,18 @@ function fixture(liquid: 'water' | 'lava', kind: VehicleKind, full: boolean) {
 
 type Fixture = ReturnType<typeof fixture>
 function snapshot(f: Fixture) {
-  const b = f.v.body, w = b.angvel(), velocity = b.linvel()
+  const b = f.v.body
+  const w = vector(b.angvel())
+  const velocity = vector(b.linvel())
   // Rapier 0.21 declares this tensor world-space and exposes named matrix entries.
   // Store the raw tensor too. I*w is diagnostic effective momentum, not a claim
   // that world-Y angular velocity or even |omega| must be conserved.
   const I = b.effectiveAngularInertia()
-  const L = { x: I.m11*w.x + I.m12*w.y + I.m13*w.z,
-    y: I.m21*w.x + I.m22*w.y + I.m23*w.z,
-    z: I.m31*w.x + I.m32*w.y + I.m33*w.z }
+  // Copy before any other Rapier getter can reuse the tensor's backing storage.
+  const tensor = [I.m11,I.m12,I.m13,I.m21,I.m22,I.m23,I.m31,I.m32,I.m33]
+  const L = { x: tensor[0]*w.x + tensor[1]*w.y + tensor[2]*w.z,
+    y: tensor[3]*w.x + tensor[4]*w.y + tensor[5]*w.z,
+    z: tensor[6]*w.x + tensor[7]*w.y + tensor[8]*w.z }
   const pairs = new Set<string>()
   for (let i = 0; i < b.numColliders(); i++) {
     const a = b.collider(i)
@@ -50,7 +54,7 @@ function snapshot(f: Fixture) {
   return { position: vector(b.translation()), rotation: { ...b.rotation() }, velocity: vector(velocity),
     omega: vector(w), omegaMagnitude: Math.hypot(w.x,w.y,w.z), effectiveMomentum: L,
     effectiveMomentumMagnitude: Math.hypot(L.x,L.y,L.z), rotationalEnergy: .5*(w.x*L.x+w.y*L.y+w.z*L.z),
-    inertiaWorld: [I.m11,I.m12,I.m13,I.m21,I.m22,I.m23,I.m31,I.m32,I.m33],
+    inertiaWorld: tensor,
     principalInertia: vector(b.principalInertia()), principalFrame: { ...b.principalInertiaLocalFrame() },
     localCom: vector(b.localCom()), worldCom: vector(b.worldCom()), mass: b.mass(),
     force: vector(b.userForce()), torque: vector(b.userTorque()),
@@ -118,6 +122,14 @@ it('records bounded paired spin and default full-update evidence without excusin
               omega:subtract(state.omega,previous.omega),effectiveMomentum:subtract(state.effectiveMomentum,previous.effectiveMomentum),
               tangentSpeed:state.tangentSpeed-previous.tangentSpeed,skips:state.skips-previous.skips } : null})
             if (state.skips > 0) r.firstSkip ??= {step,phase}
+            // Assert the actual persisted fields agree, after all snapshot getters.
+            const t = state.inertiaWorld, o = state.omega
+            expect(state.effectiveMomentum).toEqual({
+              x:t[0]*o.x+t[1]*o.y+t[2]*o.z,
+              y:t[3]*o.x+t[4]*o.y+t[5]*o.z,
+              z:t[6]*o.x+t[7]*o.y+t[8]*o.z,
+            })
+            expect(state.rotationalEnergy).toBe(.5*(o.x*state.effectiveMomentum.x+o.y*state.effectiveMomentum.y+o.z*state.effectiveMomentum.z))
           } catch(e) { r.observationErrors.push(message(e)) }
         }
         const original = f.v.zorb.float
