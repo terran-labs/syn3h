@@ -4,7 +4,7 @@
  * buffer freezes the canvas on its last good frame while the HUD carries on, so any such
  * message fails the check.
  *
- *   tools/heavy.sh node tools/webgpu-validation-check.mjs URL [--headless] [--levels 0,3,5]
+ *   tools/heavy.sh node tools/webgpu-validation-check.mjs URL [--headless] [--levels 0,3,5] [--world swamp]
  *
  * Each level is chosen before load, as a saved player choice (pinned, automation off), and
  * runs twice: tapping a planet in the lobby (the descent), and ?autoplay=1 (no descent).
@@ -52,6 +52,8 @@ const MIN_CHANGE = Number(opt('min-change') ?? 0.1)
 /** --frames DIR keeps each run's before and after pictures, to look at by eye. */
 const framesDir = opt('frames')
 const runs = Number(opt('runs') ?? 1)
+/** --world ID picks the planet the descent dives into (default badlands); swamp is the haziest. */
+const diveWorld = opt('world') ?? 'badlands'
 try {
   for (const level of levels) {
     for (const path of (opt('paths') ?? 'descent,autoplay').split(',')) for (let run = 0; run < runs; run++) {
@@ -68,14 +70,14 @@ try {
         await page.waitForFunction(() => window.syn3h?.shell && document.documentElement.dataset.boot !== 'loading' && window.syn3h.shell.galaxy?.live, null, { timeout: 180000, polling: 100 })
         await page.waitForTimeout(3000)
         phase = 'entry'
-        await page.evaluate(() => {
+        await page.evaluate(world => {
           const current = window.syn3h.planets.currentPlanet().id
           // Badlands, as autoplay uses: textured ground, so the picture-change test means
           // something (flat desert sand fills both frames and changed as little as 18%).
           const chips = [...document.querySelectorAll('.galaxy-label[data-world]')].filter(c => c.dataset.world !== current && !c.dataset.world.includes('~') && c.dataset.world !== 'custom')
-          const chip = chips.find(c => c.dataset.world === 'badlands') ?? chips[0]
+          const chip = chips.find(c => c.dataset.world === world) ?? chips[0]
           chip.click()
-        })
+        }, diveWorld)
       }
       await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3h.game.tick > 30, null, { timeout: 120000, polling: 100 })
       phase = 'play'
