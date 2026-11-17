@@ -72,6 +72,7 @@ const launch = () => chromium.launch({
 const SMOKE_QUALITY = { level: 1, auto: false, pinned: true, overrides: {} }
 const SMOKE_VIEWPORT = { width: 960, height: 540 }
 const errors = []
+const handlerErrors = []
 async function open(name, extra = '') {
   const browser = await launch()
   browsers.push(browser)
@@ -134,7 +135,7 @@ async function captureFailure() {
             network: { connected: n?.connected ?? null, welcomed: n?.welcomed ?? null,
               state: n?.conn?.state ?? null, socketState: n?.conn?.ws?.readyState ?? null,
               bufferedBytes: n?.conn?.ws?.bufferedAmount ?? null, retryAt: n?.conn?.retryAt ?? null,
-              reconnects: n?.conn?.reconnects ?? null, closes: n?.conn?.closes ?? null,
+              reconnects: n?.conn?.reconnects ?? null, closes: n?.conn?.closes ?? null, handlerErrors: n?.conn?.handlerErrors ?? null,
               clockSynced: n?.clock?.synced ?? null, rtt: n?.clock?.rtt ?? null, stats: n?.stats ?? null,
               remotes: n?.remotes ? [...n.remotes.entries()].map(([id, r]) => ({ id, responding: r.responding, paused: r.paused, mode: r.sample?.mode, newest: r.buffer?.newest?.t })) : [] },
             startup: window.syn3hStartup ?? null,
@@ -484,8 +485,11 @@ try {
   check('"it" scores for a laser tag', scoreAfter === scoreBefore + 1, { scoreBefore, scoreAfter, it: itNow })
 
   // 6. Sounds. A heard B arrive at the start; the ram and the shot are heard in this run.
-  const [soundSampleH, soundSampleV, soundSampleA] = [await audioCalls(H), await audioCalls(V), await audioCalls(a)]
   const calls = (x) => evidenceEnabled ? x.calls : x
+  // B's 'hit' frame can arrive a moment after A's page shows the score: wait up to 2 s for it
+  // rather than sampling once. The bug this still catches is the shooter never hearing its hit.
+  const heardHit = await settle(() => audioCalls(V), (x) => calls(x).slice(callsBase[1]).includes('laserHit'), 2000)
+  const [soundSampleH, soundSampleV, soundSampleA] = [await audioCalls(H), heardHit.value, await audioCalls(a)]
   const [soundsA, soundsB] = [calls(soundSampleH), calls(soundSampleV)]
   check('sounds: A heard B materialize and the ram', calls(soundSampleA).includes('materialize') && soundsA.slice(callsBase[0]).some((c) => c.startsWith('impact:')), { soundsA })
   check('sounds: B heard its shot and the hit', soundsB.slice(callsBase[1]).includes('laserShot') && soundsB.slice(callsBase[1]).includes('laserHit'), { soundsB })
@@ -729,10 +733,18 @@ try {
       }
       saveShotEvidence('finally-collectors')
     }
+    // The connection guards every message handler and counts what it catches
+    // (Connection.handlerErrors): a caught throw would otherwise look like a missing effect, so any
+    // count fails the run. Read while the pages are open; a page that cannot be read says so.
+    for (const { name, page } of clients) {
+      const counts = await page.evaluate(() => window.syn3hNet?.conn?.handlerErrors ?? {}).catch((e) => ({ unreadable: String(e).slice(0, 120) }))
+      if (counts && (counts.unreadable || Object.values(counts).some((n) => n > 0))) handlerErrors.push({ name, counts })
+    }
     if (errors.length || results.some(r => !r.ok)) await captureFailure().catch(e => console.error('Diagnostic capture failed', String(e)))
   } finally { await Promise.all(browsers.map((b) => b.close())) }
 }
 
+check('no message handler errors on any page', handlerErrors.length === 0, handlerErrors)
 check('no page errors', errors.length === 0, errors)
 const failed = results.filter((r) => !r.ok)
 const evidenceFailed = evidenceEnabled && !evidenceComplete()
