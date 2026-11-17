@@ -13,17 +13,26 @@ import { defineParam } from '../../../shared/params'
 /** The lobby's opening: 2, push in, for everyone. 0 (the old veil and fade) and 1 (pull back) are previews, by ?intro=. */
 export const introMode = defineParam({ id: 'lobby.intro', label: 'Lobby opening: 2 push in (the lobby); 0 off, 1 pull back', group: 'Graphics', scope: 'client', default: 2, min: 0, max: 2, step: 1 })
 
-/** The full opening, the first load of a browser session. Later loads play it SHORT_PACE times faster. */
-export const OPENING_SECONDS = 8.8
-export const SHORT_PACE = 3.1
+/**
+ * The opening, every load: a cartoon Big Bang (the owner's direction, 16 November 2026). It
+ * lasts as long as the name's fade; everything else has settled by SETTLED_SECONDS.
+ */
+export const OPENING_SECONDS = 4.2
+export const SETTLED_SECONDS = 2.9
 
 export type OpeningMode = 1 | 2
 /** 1: pull back from the sun; 2: push in through the rays. */
 export const OPENING_NAMES = ['Off', 'Pull back', 'Push in'] as const
 
 export interface OpeningState {
-  /** Before ignition, how far the point of light has gathered and swollen: 0 to 1. */
+  /** The point of light before the pop: above 0 swollen, below 0 squeezed (the anticipation). */
   swell: number
+  /** The soft round burst: its radius in the shader's sun-distance units, and its strength (0 none). */
+  burst: [number, number]
+  /** The stars streaming out from the centre: 0 all at the centre, 1 where they rest. */
+  spread: number
+  /** Each world's fling out along a spiral, 0 at the sun, 1 in place (may pass 1 a little, then settle), by lane. */
+  fling: number[]
   /** The sun: 0 a point, 1 itself; over 1 while it flares. */
   sun: number
   /** How far the shafts have unfurled from the sun, in the shader's sun-distance units. */
@@ -60,43 +69,48 @@ const inOut = (x: number) => x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2
 export const WORDMARK_FADE_SECONDS = 4.2
 export const wordmarkFade = (seconds: number) => smoother(span(seconds, 0, WORDMARK_FADE_SECONDS))
 
+const back = (x: number) => { const c = 1.7; return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2 }
+
 /**
- * The beats, in seconds of the full opening after loading ends:
- *   0.0 to 1.6  gather: the point swells and brightens slowly, then holds its breath;
- *   1.6 to 3.2  ignition: a flare blooms past full and settles; the rays unfurl over 1.7 s and
- *               the stars come up;
- *   1.6 to 6.4  the camera travels (push in, or pull back);
- *   3.2 to 7.1  the worlds, innermost first, 0.38 s apart: each one's orbit line draws ahead of
- *               it, then it resolves;
- *   6.5 to 6.9  their labels, once the camera has settled, the outermost last;
- *   7.0 to 8.4  the name: the light front crosses the letters along the orbit, each kindling as
- *               it is reached, then settling;
- *   8.2 to 8.7  the lobby's controls.
- * `pace` above 1 plays it that much faster (SHORT_PACE for later loads in a session).
+ * The Big Bang, in seconds after loading ends (first rough version, for the owner's preview):
+ *   0.00 to 0.30  anticipation: the point squeezes small and bright;
+ *   0.30 to 0.65  the pop: the sun swells past itself (1.35) and settles by 1.3 s; a soft round
+ *                 burst ring rolls out and fades by 1.15 s (no full-screen flash, no strobe);
+ *   0.35 to 1.60  the stars stream out from the centre to where they rest;
+ *   0.40 to 2.05  the rays unfurl, growing to their settled strength;
+ *   0.50 to 2.45  the worlds are flung out on spirals, innermost first, 0.11 s apart, each in
+ *                 0.95 s, passing their orbit a little and settling back; each orbit line draws
+ *                 just ahead of its world;
+ *   0.30 to 2.60  the view eases out a little, as the universe expands;
+ *   2.30 to 2.70  the labels, outermost last; 2.40 to 2.90 the lobby's controls;
+ *   0.00 to 4.20  the name fades in (wordmarkFade), the one beat that runs on past the bang.
  */
-export function openingState(time: number, mode: OpeningMode, lanes: number, pace = 1): OpeningState {
-  const t = time * pace
-  const swell = t <= 0 ? 0 : ease(span(t, 0, 1.25)) * (1 - 0.15 * ease(span(t, 1.25, 1.6)))
-  // Ignition: an accelerating bloom past full, then a slow settle.
-  const sun = t < 1.6 ? 0 : t < 2.15 ? 1.8 * inOut(span(t, 1.6, 2.15)) : 1 + 0.8 * (1 - smoother(span(t, 2.15, 3.2)))
-  const gap = 0.38, first = 3.2
-  const orbits = Array.from({ length: lanes }, (_, lane) => ease(span(t, first + gap * lane, first + gap * lane + 0.7)))
-  const arrive = Array.from({ length: lanes }, (_, lane) => { const start = first + gap * lane + 0.35; return out(span(t, start, start + 0.6)) })
-  const labels = Array.from({ length: lanes }, (_, lane) => t >= Math.max(6.5 + 0.4 * lane / Math.max(1, lanes), first + gap * lane + 0.95))
-  const travel = smoother(span(t, 1.6, 6.4)), from = mode === 2 ? 2.6 : 0.42
+export function openingState(time: number, _mode: OpeningMode, lanes: number): OpeningState {
+  const t = time
+  const swell = t <= 0 ? 0 : t < 0.3 ? -0.55 * ease(span(t, 0, 0.3)) : -0.55 * (1 - span(t, 0.3, 0.4))
+  const sun = t < 0.3 ? 0 : t < 0.65 ? 1.35 * out(span(t, 0.3, 0.65)) : 1 + 0.35 * (1 - smoother(span(t, 0.65, 1.3)))
+  const burstAt = span(t, 0.3, 1.15)
+  const gap = 0.11, first = 0.5
+  const fling = Array.from({ length: lanes }, (_, lane) => { const x = span(t, first + gap * lane, first + gap * lane + 0.95); return x <= 0 ? 0 : x >= 1 ? 1 : back(x) })
+  const orbits = Array.from({ length: lanes }, (_, lane) => ease(span(t, first + gap * lane - 0.1, first + gap * lane + 0.55)))
+  const arrive = Array.from({ length: lanes }, (_, lane) => out(span(t, first + gap * lane, first + gap * lane + 0.35)))
+  const labels = Array.from({ length: lanes }, (_, lane) => t >= 2.3 + 0.4 * lane / Math.max(1, lanes))
   return {
     swell,
+    burst: [1.8 * out(burstAt), burstAt > 0 && burstAt < 1 ? 0.35 * (1 - burstAt) ** 2 : 0],
+    spread: t <= 0.35 ? 0 : out(span(t, 0.35, 1.6)),
+    fling,
     sun,
-    front: 2.6 * inOut(span(t, 1.75, 3.45)),
-    stars: ease(span(t, 2.2, 3.6)),
+    front: 2.6 * inOut(span(t, 0.4, 2.05)),
+    stars: ease(span(t, 0.35, 0.9)),
     orbits,
     arrive,
     labels,
     // The name fades in from the first frame, its light front crossing the letters as it does.
     markFront: 0.15 + 1.6 * wordmarkFade(t),
     mark: wordmarkFade(t),
-    reach: from + (1 - from) * travel,
-    chrome: ease(span(t, 8.2, 8.7)),
+    reach: 0.8 + 0.2 * smoother(span(t, 0.3, 2.6)),
+    chrome: ease(span(t, 2.4, 2.9)),
     done: t >= OPENING_SECONDS,
   }
 }
@@ -110,12 +124,6 @@ export function returningMark(t: number): { markFront: number; mark: number } {
   return { markFront: 0.15 + 1.6 * wordmarkFade(t), mark: wordmarkFade(t) }
 }
 
-/** Whether this browser session has seen the full opening (and so gets the short one). */
-const SEEN_KEY = 'syn3h.openingSeen'
-export function openingPace(): number {
-  try { if (sessionStorage.getItem(SEEN_KEY)) return SHORT_PACE; sessionStorage.setItem(SEEN_KEY, '1') } catch { /* No storage: always the full one. */ }
-  return 1
-}
 
 /** Seconds the name takes to go when a world is chosen: well inside the flight to it. */
 export const LEAVING_SECONDS = 0.5

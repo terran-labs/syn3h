@@ -19,7 +19,7 @@ import { startupTiming } from '../../core/diagnostics'
 /** Why the lobby showed the flat wordmark instead of the name in the scene, once, for the diagnostics. */
 function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmarkFallback) { startupTiming.wordmarkFallback = reason; console.info(`Syn3h: flat lobby wordmark: ${reason}`) } }
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
-import { introMode, LEAVING_SECONDS, leavingMark, openingPace, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
+import { introMode, LEAVING_SECONDS, leavingMark, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
 import { WordmarkCrisp } from '../brand/wordmarkCrisp'
@@ -356,6 +356,8 @@ uniform float uAmbience;            // 1 keeps twinkle and drifting cloud, 0 she
 uniform float uDive;                // 0 in orbit, 1 through the atmosphere of the chosen world
 uniform float uDim;                 // 1 as the lobby itself; lower behind an open panel
 uniform float uRays;               // the sun's god rays: their strength in the settled lobby
+uniform vec2 uBurst;                // the Big Bang's soft burst ring: radius, strength (opening.ts)
+uniform float uSpread;              // the Big Bang: stars streaming out from the centre, 0 to 1
 uniform float uMarkCrisp;           // 1 when the wordmark's letters are drawn by its own full-resolution pass
 uniform vec4 uReveal;               // the opening (opening.ts): sun, shafts' front, stars, the point's swell
 uniform float uOrbit[${MAX}];       // the opening: how much of each world's orbit line is drawn
@@ -409,8 +411,10 @@ void main() {
   float markW = wordmarkFootprint(markAt.xy);
   vec3 c = SPACE;
   // Stars, fixed to the sky so they turn as the view does.
-  vec3 cell = floor(ray * 420.0);
-  float star = step(0.9965, hash(cell)), bright = step(0.99955, hash(floor(ray * 260.0) + 5.0));
+  // The Big Bang: the stars stream out from the centre, each ending exactly where it rests.
+  vec3 starRay = uSpread >= 1.0 ? ray : normalize(uForward + (q.x * uRight + q.y * uUp) * uTan / max(uSpread, 0.05));
+  vec3 cell = floor(starRay * 420.0);
+  float star = step(0.9965, hash(cell)), bright = step(0.99955, hash(floor(starRay * 260.0) + 5.0));
   float twinkle = mix(0.8, 0.55 + 0.45 * sin(uTime * 1.3 + hash(cell + 2.0) * 40.0), uAmbience);
   vec3 sky = vec3(0.97, 0.98, 0.99) * (star * 0.5 + bright * 1.2) * twinkle;
   // A faint band of cloud along the orbital plane's far side, for depth.
@@ -459,12 +463,15 @@ void main() {
   // The opening (opening.ts): the sun grows from a point, flaring a little past itself.
   // As a point it matches the loading veil's point of light (index.html), in pixels.
   // Before ignition it gathers: swelling to twice its size and brightening (uReveal.w).
-  float sunGrown = clamp(uReveal.x, 0.0, 1.0), sunSize = mix(uSunPoint * (1.0 + 1.1 * uReveal.w), 1.0, sunGrown), sunFlare = max(1.0, uReveal.x) * (1.0 + 0.7 * uReveal.w * (1.0 - sunGrown));
+  // Before the pop it squeezes (uReveal.w below 0): smaller and brighter, the anticipation.
+  float sunGrown = clamp(uReveal.x, 0.0, 1.0), sunSize = mix(uSunPoint * (1.0 + 1.1 * uReveal.w), 1.0, sunGrown), sunFlare = max(1.0, uReveal.x) * (1.0 + 0.7 * abs(uReveal.w) * (1.0 - sunGrown));
   vec3 sunLight = vec3(1.0, 0.98, 0.94) * exp(-sunDistance * 42.0 / sunSize) * 2.4 * sunFlare;
   sunLight += mix(WARM, vec3(1.0, 0.8, 0.55), 0.5) * exp(-sunDistance * 11.0 / sunSize) * 0.8 * sunGrown * sunFlare;
   // The wide haze and the shafts are kept apart from the sun itself: a world beyond the sun
   // still has the sun in front of it, but must not have the whole glow painted over it.
   vec3 sunHaze = mix(WARM, ACCENT_B, 0.35) * exp(-sunDistance * 2.8) * 0.22 * sunGrown;
+  // The pop's soft round burst: a warm ring rolling out from the sun and fading, never a flash.
+  if (uBurst.y > 0.0) sunHaze += mix(WARM, vec3(1.0, 0.9, 0.75), 0.5) * uBurst.y * exp(-pow((sunDistance - uBurst.x) / (0.06 + 0.1 * uBurst.x), 2.0));
   float shafts =
     pow(noise(vec3(sunDirection * 2.4, uTime * 0.09)), 2.0) * 0.9 +
     pow(noise(vec3(sunDirection * 6.5 + 3.0, uTime * 0.15)), 3.0) * 0.8 +
@@ -718,7 +725,7 @@ void main() {
   color = vec4(c / 12.0, 1.0);
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
-const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays'] as const
+const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays', 'uBurst', 'uSpread'] as const
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -1005,9 +1012,9 @@ export class Galaxy {
     // The opening: the first showing after the page loads, unless motion is reduced. Any tap,
     // click, wheel or key goes straight to the settled lobby.
     const intro = Math.round(introMode.value)
-    // The first load of a browser session plays it in full, later loads a short version
-    // (openingPace). Coming back from a world: only the name, kindled again (returningMark).
-    if (intro > 0 && !openingPlayed && !this.reduced.matches) { this.opening = { start: null, mode: intro as OpeningMode, pace: openingPace() }; openingPlayed = true }
+    // Every load plays the Big Bang in full. Coming back from a world is not a load: only the
+    // name fades in again (returningMark).
+    if (intro > 0 && !openingPlayed && !this.reduced.matches) { this.opening = { start: null, mode: intro as OpeningMode }; openingPlayed = true }
     else if (openingPlayed && !this.reduced.matches) this.returning = performance.now()
     for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, () => { if (this.opening) { this.opening = null; this.chrome(null); this.wake = 2 } }, { capture: true, passive: true, signal })
     canvas.addEventListener('webglcontextlost', event => {
@@ -1244,6 +1251,15 @@ export class Galaxy {
     }
     if (reveal.reach !== 1) view.eye = [this.target[0] + (view.eye[0] - this.target[0]) * reveal.reach, this.target[1] + (view.eye[1] - this.target[1]) * reveal.reach, this.target[2] + (view.eye[2] - this.target[2]) * reveal.reach]
     const arrival = places.map((_, i) => reveal.arrive[this.lanes(places)[i]] ?? 1)
+    // The Big Bang flings each world out from the sun on a spiral: turned back along its way by
+    // up to 2.4 radians and drawn in toward the sun, passing its place a little, then settling.
+    // Drawn, picked and labelled where it is shown, so a tap lands on what is seen.
+    if (this.opening) places.forEach((place, i) => {
+      const f = reveal.fling[this.lanes(places)[i]] ?? 1
+      if (f === 1) return
+      const turn = (1 - Math.min(1, f)) * 2.4, c = Math.cos(turn), sn = Math.sin(turn), [x, y, z] = place.position
+      place.position = [(x * c - z * sn) * f, y * f, (x * sn + z * c) * f]
+    })
     const mark = this.stepMark(elapsed, still)
     this.markView = view; this.markPlaced = mark.placement
     // Held still, draw only while something is moving; the last frame stays on the canvas.
@@ -1255,7 +1271,7 @@ export class Galaxy {
     gl.useProgram(this.program); this.upload(gl)
     // The frame's uniforms, for this pass and the wordmark's own full-resolution one.
     const setFrame = (gl: WebGL2RenderingContext, u: Record<string, WebGLUniformLocation | null>, width: number, height: number, bindField: () => void, crisp: number) => {
-      gl.uniform1i(u.uCloseIndex, this.closeIndex); gl.uniform1f(u.uRays, sunRays.value)
+      gl.uniform1i(u.uCloseIndex, this.closeIndex); gl.uniform1f(u.uRays, sunRays.value); gl.uniform2f(u.uBurst, ...reveal.burst); gl.uniform1f(u.uSpread, reveal === SETTLED ? 1 : reveal.spread)
       gl.uniform1i(u.uMarkMode, mark.placement ? mark.mode : 0); gl.uniform1f(u.uMarkCrisp, crisp)
       if (mark.placement) {
         const p = mark.placement
@@ -1350,11 +1366,11 @@ export class Galaxy {
   /** performance.now() when the lobby came back from a world, while the name kindles again. */
   private returning: number | null = null
   /** The continuous opening, while it plays: started when loading ends (null until then). */
-  private opening: { start: number | null; mode: OpeningMode; pace: number } | null = null
+  private opening: { start: number | null; mode: OpeningMode } | null = null
   /** For screenshots only: holds the opening at this many seconds in. */
   openingAt: number | null = null
   /** Plays the opening again now (for screenshots and checks). */
-  replayOpening(mode: number, pace = 1): void { if (mode > 0 && !this.reduced.matches) { this.opening = { start: performance.now(), mode: mode as OpeningMode, pace }; this.wake = 2 } }
+  replayOpening(mode: number): void { if (mode > 0 && !this.reduced.matches) { this.opening = { start: performance.now(), mode: mode as OpeningMode }; this.wake = 2 } }
   /**
    * Holds the lobby's own controls (the hint, the links, the preview menu) while the opening
    * plays and fades them in as it settles: index.html's html[data-opening] rules. A skip
@@ -1372,7 +1388,7 @@ export class Galaxy {
     if (!o) return SETTLED
     if (o.start === null && document.documentElement.dataset.boot !== 'loading') o.start = performance.now()
     const at = this.openingAt ?? (o.start === null ? -1 : (performance.now() - o.start) / 1000)
-    const state = openingState(at, o.mode, places.length, o.pace)
+    const state = openingState(at, o.mode, places.length)
     if (state.done) {
       this.opening = null
       // Let the controls' fade in finish, then drop the attribute.
