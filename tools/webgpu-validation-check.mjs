@@ -13,6 +13,10 @@
  * or stale terrain keeps its pixels while the vehicles move), and the terrain must report
  * drawn chunks. An error count alone cannot see a picture that stopped following the camera.
  *
+ * Every run is at midday with the day clock stopped (sun.dayLength 0, sun.timeOfDay 12), set
+ * as play begins, so the picture-change figures do not depend on when the check runs: a world
+ * at night changes far fewer pixels for the same move (Badlands at 21:41 gave 9 to 30%).
+ *
  * Uses the room server Vite starts. Exits 1 on any validation error or a frozen picture.
  */
 import { chromium } from 'playwright-core'
@@ -81,7 +85,10 @@ try {
       }
       await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3h.game.tick > 30, null, { timeout: 120000, polling: 100 })
       phase = 'play'
+      // Midday, clock stopped: see the header.
+      await page.evaluate(() => { const p = window.syn3h.params; p.set('sun.dayLength', 0); p.set('sun.timeOfDay', 12) })
       await page.waitForTimeout(PLAY_MS)
+      const hour = await page.evaluate(() => window.syn3h.params.get('sun.timeOfDay').value)
       const state = await page.evaluate(() => ({ name: window.syn3h.game.quality.getQualityState().name, bots: window.syn3h.bots.vehicles.length }))
       // The picture must follow the camera: 200 m sideways and 40 m up must change it.
       const canvas = page.locator('#game')
@@ -104,7 +111,7 @@ try {
       await context.close()
       total += errors.length
       const phases = ['load', 'entry', 'play', 'exit'].map(p => `${p} ${errors.filter(e => e.phase === p).length}`).join(', ')
-      console.log(`level ${level} ${state.name}, ${path}: ${errors.length} validation errors (${phases}), bots ${state.bots}, picture changed ${(change * 100).toFixed(0)}% after moving, terrain triangles drawn ${chunks}${still ? ' FROZEN' : ''}`)
+      console.log(`level ${level} ${state.name}, ${path}: ${errors.length} validation errors (${phases}), bots ${state.bots}, hour ${Number(hour).toFixed(1)}, picture changed ${(change * 100).toFixed(0)}% after moving, terrain triangles drawn ${chunks}${still ? ' FROZEN' : ''}`)
       for (const text of [...new Set(errors.map(e => `[${e.phase}] ${e.text}`))].slice(0, 3)) console.log(`  ${text}`)
     }
   }
