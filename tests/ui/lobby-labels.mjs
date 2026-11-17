@@ -94,7 +94,7 @@ try {
         const rest = chips.slice(2).map(c => ({ id: c.dataset.world, x: -500, y: -500, radius: 5, visible: false, depth: 50 }))
         layout([far, near, ...rest])
         document.querySelector('.galaxy-canvas').style.visibility = 'hidden'; document.body.style.background = '#000'
-        for (const el of document.querySelectorAll('.lobby-brand, .galaxy-hint, .galaxy-links, .lobby-gear-dock, .shell-version')) el.style.visibility = 'hidden'
+        for (const el of document.querySelectorAll('.lobby-brand, .galaxy-links, .lobby-gear-dock, .shell-version')) el.style.visibility = 'hidden'
         const r = document.querySelector(`.galaxy-label[data-world="${a}"]`).getBoundingClientRect()
         const za = Number(getComputedStyle(document.querySelector(`.galaxy-label[data-world="${a}"]`)).zIndex), zb = Number(getComputedStyle(document.querySelector(`.galaxy-label[data-world="${b}"]`)).zIndex)
         return { box: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, near, za, zb }

@@ -550,12 +550,10 @@
 }
 .syn3h-shell button.galaxy-label:not(#galaxy-caption):focus-visible { outline: 1px solid rgb(238 244 248 / .5); outline-offset: 3px; }
 .syn3h-shell button.galaxy-label:not(#galaxy-caption)[hidden] { display: none; }
-.syn3h-shell .galaxy-hint { margin: 0 0 6px; font-size: 15px; color: var(--s3-dim); text-shadow: 0 1px 6px #000; text-align: center; }
 .lobby-unsupported { max-width: 420px; margin: 0 auto; font-size: 17px; line-height: 1.4; text-align: center; color: var(--s3-ink); }
 /* The galaxy would not start: its labels become a row of buttons above the help line. */
 .galaxy-flat .galaxy-labels { position: static; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin-bottom: 14px; pointer-events: auto; overflow: visible; }
 .syn3h-shell.galaxy-flat .galaxy-label { position: static; translate: none; transform: none; }
-.galaxy-flat .galaxy-hint { display: none; }
 .galaxy-links { padding: 6px 18px; border-radius: 999px; background: rgb(10 12 18 / .5); }
 
 /* The descent: the lobby's words and glass fall away, the galaxy blurs as it dives, and the
@@ -612,9 +610,6 @@
   .syn3h-shell.exploration-ui.galaxy-open .galaxy-ui {
     justify-content: center; align-items: flex-end;
     padding: 0 max(12px, env(safe-area-inset-right)) 0 0;
-  }
-  .syn3h-shell.exploration-ui.galaxy-open .galaxy-hint {
-    max-width: 128px; margin: 0 0 8px; font-size: 11px; line-height: 1.35; text-align: right;
   }
   .syn3h-shell.exploration-ui.galaxy-open .galaxy-links {
     display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px 6px; border-radius: 22px;
