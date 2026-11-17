@@ -38,14 +38,16 @@ import { defineParam } from '../../shared/params'
  * draw a larger, flatter planet (0.5 is twice the radius), 0 is flat, and values above 1
  * draw a smaller, tighter ball than the world really is.
  *
- * The default is 0.71, the owner's choice: the planet is drawn about 1.4 times its true
- * radius, so the centre's mountain stands clear of the horizon from every spawn pad on
- * every size of world (tools/terrainlab/pad-view.ts has the geometry) and the world still
- * plainly curves away.
+ * The default is 0.75, the owner's choice on 16 November 2026 (it was 0.71): the planet is
+ * drawn about 1.33 times its true radius, so the world plainly curves away and the centre's
+ * summit still stands clear of the horizon from the spawn pads of every recipe at its own
+ * size except the Moon, whose low crater rim was already hidden at 0.71.
+ * tools/terrainlab/pad-view.ts has the geometry. Rooms bring their own value: one that
+ * stored 0.71 (a saved world, a link that names it) keeps 0.71.
  */
 export const curveParam = defineParam<number>({
   id: 'world.curve', label: 'Planet roundness (1 true, 0 flat)', group: 'World', scope: 'world',
-  default: 0.71, min: 0, max: 1.8, step: 0.01,
+  default: 0.75, min: 0, max: 1.8, step: 0.01,
 })
 
 /**

@@ -54,7 +54,7 @@
 .lobby-settings-close span[aria-hidden] { font-size: 18px; line-height: 1; }
 .lobby-settings-foot { flex: 0 0 auto; padding: 2px 8px 0; text-align: right; }
 .syn3h-shell.exploration-ui .lobby-settings-foot .build-line { font: 400 11px 'Barlow', sans-serif; letter-spacing: .1em; color: rgb(200 232 250 / .55); }
-.syn3h-shell.exploration-ui .world-inspector.lobby-settings .presentation-toggle { width: 100%; margin-top: 6px; }
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings .presentation-toggle { width: 100%; margin-top: 6px; padding: 0 6px 0 16px; }
 .world-inspector.lobby-settings .host-controls { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
 .world-inspector.lobby-settings .host-controls legend { display: none; }
 

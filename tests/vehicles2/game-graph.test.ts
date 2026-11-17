@@ -10,7 +10,7 @@ import {existsSync,readFileSync} from 'node:fs'
 import {dirname,relative,resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {describe,expect,it} from 'vitest'
-import {VEHICLE_KINDS} from '../../src/vehicles'
+import {TANK_AVAILABLE,VEHICLE_KINDS} from '../../src/vehicles'
 
 const root=fileURLToPath(new URL('../../',import.meta.url))
 const IMPORT=/(?:import|export)\s+(?:type\s+)?(?:[^'"()]*?\sfrom\s+)?['"](\.{1,2}\/[^'"]+)['"]|import\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g
@@ -41,7 +41,7 @@ describe('what the game loads',()=>{
   const studies=game.filter(f=>/^src\/vehicles\/(hovergen|tankDesigns)\/|^src\/vehicles\/jetgen\/designs\.ts$|^src\/dev\/|^labs\/|^tools\/|\/viewer\.ts$|^src\/vehicles\/ClassicBuggy/.test(f))
   expect(studies).toEqual([])
  })
- it('offers exactly four vehicles, one of each',()=>{
-  expect(VEHICLE_KINDS).toEqual([{kind:'buggy',name:'Buggy'},{kind:'jet',name:'Jet'},{kind:'hovercraft',name:'Hovercraft'},{kind:'tank',name:'Tank'}])
+ it('offers each available vehicle once',()=>{
+  expect(VEHICLE_KINDS).toEqual([{kind:'buggy',name:'Buggy'},{kind:'jet',name:'Jet'},{kind:'hovercraft',name:'Hovercraft'},...(TANK_AVAILABLE?[{kind:'tank',name:'Tank'}]:[])])
  })
 })
