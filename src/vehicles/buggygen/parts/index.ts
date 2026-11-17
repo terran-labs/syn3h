@@ -2,6 +2,7 @@ import type * as THREE from 'three'
 import { buildStrut, buildShock, SUSPENSION_NUMBERS } from './suspension'
 import { buildStator, STATOR_NUMBERS } from './stator'
 import { buildWings, WINGS_NUMBERS } from './wings'
+import { buildInterior, INTERIOR_NUMBERS } from './interior'
 
 /**
  * The buggy's parts other than the body shell, generated at run time: suspension arm, shock,
@@ -15,8 +16,8 @@ export interface PartsCandidate { id: string; build(detail: 0 | 1 | 2): PartPiec
 const candidate: PartsCandidate = {
   id: 'buggygen-parts',
   build(detail) {
-    return [...buildStrut(detail), ...buildShock(detail), ...buildStator(detail), ...buildWings(detail)]
+    return [...buildStrut(detail), ...buildShock(detail), ...buildStator(detail), ...buildWings(detail), ...buildInterior(detail)]
   },
-  numbers: SUSPENSION_NUMBERS + STATOR_NUMBERS + WINGS_NUMBERS,
+  numbers: SUSPENSION_NUMBERS + STATOR_NUMBERS + WINGS_NUMBERS + INTERIOR_NUMBERS,
 }
 export default candidate
