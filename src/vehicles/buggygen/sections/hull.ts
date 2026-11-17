@@ -24,7 +24,7 @@ export interface HullKeys { z: number[]; values: Record<HullParam, number[]> }
 /** Where the five segments sit in the outline parameter v (0 floor centre, 1 crown). */
 export const SEGMENTS = [0, .17, .37, .6, .78, 1]
 /** Columns per segment at each detail level. */
-export const COLUMNS: Record<0 | 1 | 2, number[]> = { 0: [4, 5, 6, 4, 4], 1: [2, 2, 3, 2, 2], 2: [1, 1, 2, 1, 1] }
+export const COLUMNS: Record<0 | 1 | 2, number[]> = { 0: [3, 4, 5, 3, 4], 1: [2, 2, 3, 2, 2], 2: [1, 1, 2, 1, 1] }
 /** Outline v of the creases: the floor edge and the shoulder. */
 export const CREASES = [SEGMENTS[1], SEGMENTS[3]]
 
