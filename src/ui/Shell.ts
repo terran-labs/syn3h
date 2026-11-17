@@ -74,6 +74,8 @@ import './theme-halo.css'
  * galaxy, so turning this on brings it back. Worlds are shaped in play, in the World card.
  */
 const OFFER_CUSTOM_PLANET: boolean = false
+/** How bright the galaxy stays behind a lobby sheet: faintly there, and held still. */
+const SHEET_BACKDROP = 0.6
 /** Point the licence disclosures in `root` at the captured entry version's copies. Only those links, never invite or networking links. */
 function pinLicenses(root: ParentNode): void {
   for (const anchor of root.querySelectorAll<HTMLAnchorElement>('a[href^="/brand/licenses/"]')) anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
@@ -293,9 +295,11 @@ export class Shell implements System {
     // About and Updates, each its own sheet from its icon above the gear. Their content is
     // built on first open, so nothing in them is requested before the player asks.
     const shape = sheetShape(location.search), edges = () => this.galaxy?.wordmarkEdges() ?? null
-    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'About Syn3h', shape, edges, cue: () => this.audio.cue('click'), fill: body => { body.insertAdjacentHTML('beforeend', aboutSheetHtml()); pinLicenses(body) } })
+    // Behind a sheet the galaxy dims a little and holds still, as behind a panel; it comes back once both are closed.
+    const closed = () => { if (this.galaxy && !this.aboutSheet.isOpen && !this.updatesSheet.isOpen && this.panels.active === 'index' && !this.playing) this.galaxy.backdrop = 1 }
+    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'About Syn3h', shape, edges, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { body.insertAdjacentHTML('beforeend', aboutSheetHtml()); pinLicenses(body) } })
     this.updatesSheet = new LobbySheet(this.element, {
-      name: 'updates', title: 'Updates', shape, edges, cue: () => this.audio.cue('click'),
+      name: 'updates', title: 'Updates', shape, edges, home: () => this.lobbySettings.updates, closed, cue: () => this.audio.cue('click'),
       fill: body => body.insertAdjacentHTML('beforeend', updatesSheetHtml()), opened: body => { void fillUpdates(body.querySelector<HTMLElement>('.about-updates')!) },
     })
     this.lobbySettings.about.addEventListener('click', () => this.openLobbySheet(this.aboutSheet), { signal })
@@ -508,6 +512,7 @@ export class Shell implements System {
     const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : sheet === this.aboutSheet ? this.lobbySettings.about : this.lobbySettings.updates
     this.lobbySettings.close()
     for (const other of [this.aboutSheet, this.updatesSheet]) if (other !== sheet) other.close()
+    if (this.galaxy) this.galaxy.backdrop = SHEET_BACKDROP
     sheet.open(opener)
   }
   openAbout(tab?: AboutTab): void {

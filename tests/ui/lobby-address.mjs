@@ -366,8 +366,8 @@ async function runCase(browser, mode, entry, missing = false) {
       assert.equal(invite.searchParams.get('v'), m.version); assert.equal(invite.searchParams.get('room'), room)
       assert.equal(invite.pathname, url.pathname); assert.ok(invite.searchParams.get('world'))
       await page.keyboard.press('Escape')
-      await page.locator('.galaxy-links [data-goto=about]').click()
-      const links = await page.locator('[data-panel=about] a[href]').evaluateAll(es => es.map(e => e.getAttribute('href')))
+      await page.locator('.lobby-about').click()
+      const links = await page.locator('.lobby-sheet-about a[href]').evaluateAll(es => es.map(e => e.getAttribute('href')))
       assert.deepEqual(links.filter(h => h.includes('/brand/licenses/')), licences.map(path => `/v/${m.version}${path}`))
       for (const path of licences) {
         const response = await context.request.get(new URL(`/v/${m.version}${path}`, origin).href, { timeout: 15000, maxRedirects: 0 })

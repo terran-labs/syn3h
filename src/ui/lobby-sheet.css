@@ -49,5 +49,5 @@
 }
 
 /* Text behind the sheet would read through it and tangle with the sheet's own: the hint and
-   the lobby's buttons step aside while one is open. The galaxy and its labels stay faintly. */
-.syn3h-shell.exploration-ui:has(dialog.lobby-sheet[open]) :is(.galaxy-hint, .lobby-links) { visibility: hidden; }
+   the lobby's buttons and the update banner step aside while one is open. The galaxy and its labels stay faintly. */
+.syn3h-shell.exploration-ui:has(dialog.lobby-sheet[open]) :is(.galaxy-hint, .lobby-links, .update-banner) { visibility: hidden; }

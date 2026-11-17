@@ -69,6 +69,6 @@ describe('frozen production resources', () => {
     const buggy = source('src/vehicles/skins/LoadedBuggySkin.ts')
     expect(buggy).toContain("loadModel(frozenResourceURL('/models/buggy.glb')")
     expect(buggy).toContain('loadModel(frozenResourceURL(BOX_ARM_BODY)')
-    expect(source('src/ui/Shell.ts')).toContain('[data-panel="about"] a[href^="/brand/licenses/"]')
+    expect(source('src/ui/Shell.ts')).toContain(`querySelectorAll<HTMLAnchorElement>('a[href^="/brand/licenses/"]')) anchor.setAttribute('href', frozenResourceURL(`)
   })
 })

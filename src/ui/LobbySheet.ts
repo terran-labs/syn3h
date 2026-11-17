@@ -74,7 +74,9 @@ export function bendPanel(frame: Box, edges: WordmarkEdges | null, parallel = fa
     // a fourteenth of its width, so a narrow phone panel is not bent into a lens.
     const limit = (p: Parabola) => { const sag = Math.abs(p.c) * half * half, most = Math.min(frame.height / 10, frame.width / 14); return sag > most ? { ...p, c: p.c * most / sag } : p }
     // Parallel: both edges take the wordmark's own underline arc, only moved down.
-    const along = (y: number): Parabola => parallel ? { ...shiftTo(B, x0), a: y } : arcThrough(T, B, x0, y)
+    // Only the bow is taken, centred on the panel: the arcs' slope belongs to where the
+    // wordmark happens to sit (a dragged galaxy moves it aside), and a sheet stays level.
+    const along = (y: number): Parabola => ({ ...(parallel ? { ...shiftTo(B, x0), a: y } : arcThrough(T, B, x0, y)), b: 0 })
     // A few passes: move each centre so the edge's extreme lands on the frame.
     let yTop = frame.top, yBottom = frame.top + frame.height
     for (let i = 0; i < 4; i++) {
@@ -126,8 +128,12 @@ export interface LobbySheetOptions {
   fill(body: HTMLElement): void
   /** Called on every open, after fill. */
   opened?(body: HTMLElement): void
+  /** Called once it has closed. */
+  closed?(): void
   /** The wordmark's lines on screen now, or null when it is not in space. */
   edges?(): WordmarkEdges | null
+  /** Where focus goes on close when the opener cannot take it: the sheet's icon. */
+  home?(): HTMLElement | undefined
   cue?(): void
   shape?: SheetShape
 }
@@ -244,7 +250,11 @@ export class LobbySheet {
     const done = () => {
       if (this.shown) return
       this.element.close()
-      if (opener?.isConnected && !opener.closest('[hidden], [inert]')) opener.focus({ preventScroll: true })
+      this.options.closed?.()
+      // Back to whatever opened it; if that cannot take focus now (a banner that stepped
+      // aside), to the sheet's own icon.
+      opener?.focus({ preventScroll: true })
+      if (document.activeElement !== opener) this.options.home?.()?.focus({ preventScroll: true })
     }
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { done(); return }
     this.fading = this.panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 150, easing: 'ease-in' })

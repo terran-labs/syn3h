@@ -51,7 +51,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await page.screenshot({ path: `${out}/${mode}-lobby.png` })
     for (const reducedMotion of ['no-preference', 'reduce']) {
       await page.emulateMedia({ reducedMotion })
-      for (const name of ['multiplayer', 'about', 'multiplayer']) {
+      for (const name of ['multiplayer']) {
         await nav.locator(`[data-goto=${name}]`).click()
         // The requested panel is the only visible section from the first paint onward.
         assert.deepEqual(await page.locator('.lobby-panels > section:visible').evaluateAll(es => es.map(el => el.dataset.panel)), [name])
@@ -67,7 +67,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
       }
       await page.keyboard.press('Escape')
       await page.locator('.lobby-panels').waitFor({ state: 'hidden' })
-      await nav.locator('[data-goto=about]').click()
+      await nav.locator('[data-goto=multiplayer]').click()
       await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.busy === 'false')
       await page.mouse.click(4, 4)
       await page.locator('.lobby-panels').waitFor({ state: 'hidden' })

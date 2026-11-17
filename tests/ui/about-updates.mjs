@@ -1,5 +1,5 @@
 /**
- * Updates in About and the update banner.
+ * The lobby's Updates sheet, the update banner and the mark on the Updates icon.
  *
  * Start the dev server as release 26.11.1601 so the page knows its own version, then
  * this check serves a /v/versions.json naming 26.11.1602 as live:
@@ -69,11 +69,13 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await page.waitForTimeout(3000)
     assert.equal(loads, 1, 'nothing reloads by itself')
 
-    // What's new opens About at Updates: newest first, the newest open with its notes.
+    // The Updates icon above the gear carries a quiet mark while a newer version is out.
+    assert.equal(await page.locator('.lobby-updates.has-update').count(), 1, `${mode}: the Updates icon is marked`)
+    // What's new opens the Updates sheet: newest first, the newest open with its notes, no tabs.
     await banner.getByRole('button', { name: 'What’s new' }).click()
-    const about = page.locator('[data-panel="about"]')
+    const about = page.locator('.lobby-sheet-updates')
     await about.locator('.update-release').first().waitFor({ state: 'visible', timeout: 15000 })
-    assert.equal(await about.getByRole('tab', { name: 'Updates' }).getAttribute('aria-selected'), 'true')
+    assert.equal(await about.getByRole('tab').count(), 0, 'the Updates sheet has no tabs')
     const first = about.locator('.update-release').first()
     assert.equal(await first.getAttribute('data-version'), NEWEST)
     assert.ok(await first.evaluate(d => d.open), 'the newest release starts open')
@@ -85,10 +87,10 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     for (const [target, rel, protocol] of links) { assert.equal(target, '_blank'); assert.match(rel, /noopener/); assert.match(protocol, /^https?:$/) }
     const mine = about.locator(`.update-release[data-version="${RUNNING}"]`)
     assert.match(await mine.locator('.update-badge').innerText(), /playing this/i)
-    await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.busy === 'false' && !document.querySelector('.lobby-panels').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
+    await page.waitForFunction(() => !document.querySelector('.lobby-sheet-updates').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
     if (mode === 'landscape') {
-      const sheet = await page.locator('.lobby-panels').boundingBox()
-      assert.ok(sheet.height >= page.viewportSize().height - 40, `landscape: About is a full-height sheet (${sheet.height}px)`)
+      const sheet = await about.locator('.lobby-sheet-panel').boundingBox()
+      assert.ok(sheet.height >= page.viewportSize().height - 40, `landscape: Updates is a full-height sheet (${sheet.height}px)`)
     }
     await page.screenshot({ path: `${out}/${mode}-updates.png` })
     if (!touch) {
@@ -100,9 +102,10 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     }
     assert.equal(loads, 1, 'still the first load')
 
-    assert.ok(await banner.isHidden(), 'an open lobby panel hides the banner')
-    // Back on the galaxy it returns; dismissed, it stays away for the session.
-    await about.locator('button.panel-back').click()
+    assert.ok(await banner.isHidden(), 'an open sheet hides the banner')
+    // Closed with its X, the galaxy and the banner return; dismissed, it stays away for the session.
+    await about.getByRole('button', { name: 'Close Updates' }).click()
+    await about.waitFor({ state: 'hidden' })
     await banner.waitFor({ state: 'visible' })
     await banner.getByRole('button', { name: 'Dismiss for now' }).click()
     assert.ok(await banner.isHidden())
@@ -142,7 +145,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await pinned.waitForTimeout(6000)
     assert.ok(await pinned.locator('.update-banner').isHidden(), 'no banner on a pinned page')
     await pinned.evaluate(() => syn3h.shell.showUpdates())
-    const note = pinned.locator('[data-panel="about"] .updates-pinned')
+    const note = pinned.locator('.lobby-sheet-updates .updates-pinned')
     await note.waitFor({ timeout: 15000 })
     assert.match(await note.innerText(), new RegExp(`pinned version v${RUNNING.replaceAll('.', '\\.')}`))
     assert.equal(await note.locator('a').getAttribute('href'), '/')

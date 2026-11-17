@@ -160,11 +160,10 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
       await page.waitForFunction(() => !document.querySelector('.world-inspector.lobby-settings'))
       assert.equal(await page.evaluate(() => document.querySelector('.shell-overlay .lobby-panels')?.hidden ?? true), true, 'desktop: outside click did not open a planet')
     }
-    // The version beside the gear opens What's new: About at Updates.
+    // The version beside the gear opens the Updates sheet.
     await tap(page.locator('[data-lobby-version]'))
-    const updatesTab = page.locator('[data-panel="about"]').getByRole('tab', { name: 'Updates' })
-    await updatesTab.waitFor({ state: 'visible', timeout: 10000 })
-    assert.equal(await updatesTab.getAttribute('aria-selected'), 'true', `${mode}: the version opens Updates`)
+    await page.locator('.lobby-sheet-updates .about-updates').waitFor({ state: 'visible', timeout: 10000 })
+    await page.keyboard.press('Escape'); await page.locator('.lobby-sheet-updates').waitFor({ state: 'hidden' })
     // Closed, the in-game rail is again the only .world-inspector.
     assert.equal(await page.locator('.world-inspector').count(), 1)
     assert.deepEqual(errors, [], `${mode}: no page errors`)
