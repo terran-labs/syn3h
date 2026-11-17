@@ -13,10 +13,10 @@ function view(yaw: number, pitch: number) {
 
 export const VIEWS = [view(Math.PI / 2, 0), view(0, 0), view(0, Math.PI / 2), view(Math.PI * .75, .45), view(-Math.PI * .25, .35)]
 
-function draw(m: TriMesh, rot: (p: number[]) => number[], img: Uint8Array, W: number, ox: number, oy: number, w: number, h: number, scale: number, wire: boolean, normals?: Float32Array) {
+function draw(m: TriMesh, rot: (p: number[]) => number[], img: Uint8Array, W: number, ox: number, oy: number, w: number, h: number, scale: number, wire: boolean, normals?: Float32Array, centre: number[] = [0, 0, 0]) {
   const zb = new Float32Array(w * h).fill(-Infinity)
   const P: number[][] = []
-  for (let i = 0; i < m.pos.length / 3; i++) { const q = rot([m.pos[i * 3], m.pos[i * 3 + 1], m.pos[i * 3 + 2]]); P.push([w / 2 + q[0] * scale, h / 2 - q[1] * scale, q[2]]) }
+  for (let i = 0; i < m.pos.length / 3; i++) { const q = rot([m.pos[i * 3] - centre[0], m.pos[i * 3 + 1] - centre[1], m.pos[i * 3 + 2] - centre[2]]); P.push([w / 2 + q[0] * scale, h / 2 - q[1] * scale, q[2]]) }
   const light = [.4, .7, .6]
   for (let t = 0; t < m.tri.length / 3; t++) {
     const [a, b, c] = [0, 1, 2].map(k => P[m.tri[t * 3 + k]])
@@ -67,9 +67,10 @@ function png(path: string, img: Uint8Array, W: number, H: number) {
 }
 
 /** One row per mesh, one column per view. `wire` marks meshes drawn with their edges. */
-export function sheet(path: string, rows: { mesh: TriMesh; wire?: boolean; normals?: Float32Array }[], views = VIEWS, cell = 360) {
+/** `zoom` magnifies about `centre` (metres, game frame) for close ups of one feature. */
+export function sheet(path: string, rows: { mesh: TriMesh; wire?: boolean; normals?: Float32Array }[], views = VIEWS, cell = 360, zoom = 1, centre: number[] = [0, 0, 0]) {
   const W = cell * views.length, H = Math.round(cell * .6) * rows.length, ch = Math.round(cell * .6)
   const img = new Uint8Array(W * H * 3).fill(235)
-  rows.forEach((r, j) => views.forEach((v, i) => draw(r.mesh, v, img, W, i * cell, j * ch, cell, ch, cell / 4.6, !!r.wire, r.normals)))
+  rows.forEach((r, j) => views.forEach((v, i) => draw(r.mesh, v, img, W, i * cell, j * ch, cell, ch, cell / 4.6 * zoom, !!r.wire, r.normals, centre)))
   png(path, img, W, H)
 }

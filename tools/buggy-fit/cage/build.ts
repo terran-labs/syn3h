@@ -62,14 +62,18 @@ function asMesh(d: CageData, levels: number): TriMesh {
   return {pos: s.positions, tri: s.faces, tag: s.tags}
 }
 
-const sizes = process.argv.slice(2).map(Number).filter(Boolean)
+// A size is a module name and, optionally, a different point budget: `250:290` writes
+// cage250.ts from a 290 point cage. The shipped body keeps the cage250 name.
+const sizes = process.argv.slice(2).filter(a => /^\d+(:\d+)?$/.test(a))
+const POINTS: Record<number, number> = {250: 290}
 const h = half(ref)
 console.log(`reference: ${ref.tri.length / 3} triangles, ${ref.pos.length / 3} vertices; half: ${h.pos.length / 3} vertices`)
 const rows: string[] = [], extra: string[] = []
 const code = ['generator.ts', 'subdivide.ts'].map(f => readFileSync(join(ROOT, 'src/vehicles/buggygen/cage', f), 'utf8')).join('\n')
-for (const size of sizes.length ? sizes : [60, 120, 250, 500]) {
+for (const spec of sizes.length ? sizes : ['60', '120', '250', '500']) {
+  const [size, points = POINTS[size] ?? size] = spec.split(':').map(Number)
   const env = (k: string, d: number) => process.env[k] ? Number(process.env[k]) : d
-  const raw = decimate(h, size, env('BORDER', 20), env('SHAPE', 0))
+  const raw = decimate(h, points, env('BORDER', 20), env('SHAPE', 0), size >= 200 && env('PROTECT', 1) ? [roles.indexOf('lamp:tail')] : [], size >= 200 ? env('CORNER', 0) : 0, process.env.CTAGS ? process.env.CTAGS.split(',').map(r => roles.indexOf(r)) : [])
   const dec = env('CLEAN', 6) ? clean(raw, grid, env('CLEAN', 6)) : raw
   console.error(`${size}: cage triangle quality before ${JSON.stringify(quality(raw))}, after ${JSON.stringify(quality(dec))}`)
   const fullTris = dec.tri.length / 3 * 2
@@ -105,6 +109,10 @@ for (const size of sizes.length ? sizes : [60, 120, 250, 500]) {
   const smooth = (m: TriMesh) => ({mesh: m, normals: cornerNormals(Float32Array.from(m.pos), Uint32Array.from(m.tri), Uint8Array.from(m.tag))})
   const closeup = [VIEWS[3], VIEWS[4]]
   sheet(`${OUT}/${id}-smooth.png`, [smooth(ref), smooth(mesh)], closeup, 900)
+  // Feature close ups: the tail lamps from behind, the cockpit rim from above and behind,
+  // the hood scoop from the front three quarter. Reference on the left, cage on the right.
+  for (const [name, view, centre, zoom] of [['tail', VIEWS[1], [.45, .5, 1.85], 4], ['rim', VIEWS[4], [0, .75, .6], 3], ['scoop', VIEWS[3], [.15, .5, -1.3], 3.5]] as const)
+    sheet(`${OUT}/${id}-${name}.png`, [smooth(ref), smooth(mesh)].map(r => ({...r, wire: false})), [view], 700, zoom, [...centre])
 }
 console.log('\n| id | stored points | numbers | gzip data B | gzip code+data B | tris detail 0 | build ms | mean / rms / p95 / max mm | role match | mean mm unfitted | mean mm cage only | mean mm at 2 / 5 mm grid | creases | fit time |')
 console.log('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
