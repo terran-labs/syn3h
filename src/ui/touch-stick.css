@@ -90,11 +90,7 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
     width: 96px; height: 96px;
   }
 }
-/* Landscape phones: the speed and height readouts rise out of the stick's reach. Centred,
-   they sat where a thumb lands to drive. */
-@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .syn3h-shell.has-touch .focus-hud :is(.fh-left, .fh-right) { top: 30%; }
-}
+/* The speed and altitude readouts' phone placement is in inspector/focus-readouts.css. */
 
 /* Phones: toasts in one line where they cover nothing the player reads or touches. Portrait:
    just under the speed and height readouts (centred at 30%), above the vehicle; under the

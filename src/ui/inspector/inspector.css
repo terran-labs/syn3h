@@ -114,8 +114,6 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .fh-read { position: absolute; display: grid; gap: 5px; }
 .fh-read b { font-weight: 600; font-size: 26px; letter-spacing: .04em; color: #fff; }
 .fh-read small { font-size: 11px; color: rgb(200 200 200 / .8); }
-.fh-left { right: calc(50% + 250px); top: 50%; translate: 0 -50%; text-align: right; }
-.fh-right { left: calc(50% + 250px); top: 50%; translate: 0 -50%; }
 .fh-top { left: 50%; top: 34px; translate: -50% 0; text-align: center; justify-items: center; }
 .fh-corner { padding: 14px 16px; gap: 7px; }
 .fh-corner::before { content: ""; position: absolute; width: 26px; height: 26px; border: 1.2px solid rgb(236 236 236 / .7); filter: var(--hud-line-under); }
@@ -123,7 +121,6 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .fh-tr { right: 28px; top: 28px; text-align: right; } .fh-tr::before { right: 0; top: 0; border-left: 0; border-bottom: 0; }
 .fh-bl { left: 28px; bottom: 28px; } .fh-bl::before { left: 0; bottom: 0; border-right: 0; border-top: 0; }
 .fh-br { right: 28px; bottom: 28px; text-align: right; } .fh-br::before { right: 0; bottom: 0; border-left: 0; border-top: 0; }
-@media (max-width: 900px) { .fh-left { right: calc(50% + 150px); } .fh-right { left: calc(50% + 150px); } }
 @media (prefers-reduced-motion: reduce) { .world-inspector, .focus-hud, .syn3h-shell .shell-hud, .syn3h-shell .hud-navigation, .syn3h-shell .shell-minimap { transition: none; } }
 
 /* Shell rules for paragraphs, fields and outputs are written for the lobby's large type;
