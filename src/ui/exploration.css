@@ -95,7 +95,8 @@
 /* Quieter while the panels are up, but not so faint that the dark falloff under the text fades with it. */
 .syn3h-shell.exploration-ui.is-playing .focus-hud { opacity: .85; }
 .syn3h-shell.exploration-ui.is-focus .focus-hud { opacity: 1; }
-.syn3h-shell.exploration-ui:not(.is-focus) .focus-hud [data-reticle] { display: none; }
+/* Touch draws the reticle only while TAG is held: see touch-stick.css. */
+.syn3h-shell.exploration-ui:not(.is-focus, .has-touch) .focus-hud [data-reticle] { display: none; }
 .syn3h-shell.exploration-ui.is-focus .shell-minimap { opacity: .92; }
 .syn3h-shell.exploration-ui .spawn-help { left: 240px; bottom: 20px; background: none; border: 0; font-size: 12px; text-shadow: 0 1px 5px #001019; }
 .syn3h-shell.exploration-ui :is(.shell-toast, .match-hud, .race-hud, .join-card) { border-radius: 3px; background: rgb(5 20 32 / .8); border: 1px solid var(--s3-line); box-shadow: 0 0 18px rgb(100 200 250 / .05); font-weight: 400; }

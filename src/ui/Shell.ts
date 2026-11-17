@@ -4,6 +4,7 @@ import { DEFAULT_ROOM, isDefaultRoom, roomFromQuery } from '../core/roomAddress'
 import { modeChoices, modeName } from './modeAvailability'
 import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
 import { GearSelector, type GearSource } from './gear/GearSelector'
+import { tagModeFor } from './tagStick'
 import { postTier } from '../fx/post/gate'
 import { PerformancePanel } from './PerformancePanel'
 import type { PauseControl } from './pauseControl'
@@ -234,6 +235,21 @@ export class Shell implements System {
     this.board = new Scoreboard(document.createElement('div'), text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
     this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {})
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
+    // TAG reads the gear in hand: Plasma Tag streams while held, other gear sends on the lift,
+    // and Cancel drops a charge or carry the way the in-play guide does (src/ui/tagStick.ts).
+    this.touch.tag = {
+      mode: () => {
+        const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+        if (!rack) return 'stream'
+        const controls = rack.controls()
+        return tagModeFor(controls.gear, controls.actions[0])
+      },
+      tap: () => {
+        const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+        if (rack) rack.tap(); else game.input.external.fire = true
+      },
+      cancel: () => { this.cancelActions?.(); game.input.external.fire = false },
+    }
     // The gear drum at the centre-left edge, in both cursor states: the gear in hand, its
     // neighbours, and the controls that apply right now. On touch it adds buttons for the
     // gear's extra actions (the Grapple's Let out and Let go).

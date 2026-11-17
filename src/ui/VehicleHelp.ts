@@ -16,11 +16,13 @@ export const gearHelp = [
   'Gamepad: D-pad left and right: switch gear · LB: let out · RB: let go',
 ]
 export const gearTouchHelp = [
-  'Tap a gear in the selector to switch. TAG uses the selected gear.',
+  'Tap a gear in the selector to switch. TAG uses the selected gear: hold it and drag to aim at the reticle.',
+  'Plasma Tag fires for as long as you hold TAG. Other gear goes when you let go; drag onto Cancel to hold it back.',
   'Grapple: tap TAG to launch, hold TAG to reel in, LET OUT to pay out, LET GO to drop it.',
-  'Yoink: aim at a vehicle and hold TAG to grab; release to fling. With no target, tap TAG for a gust.',
-  'Plasma Thunder: hold TAG until fully charged, then release. Letting go early fizzles.',
-  'Chaser: aim at a vehicle and tap TAG to send a Chaser after it.',
+  'Yoink: aim at a vehicle and hold TAG to grab; let go to fling. With no target, tap TAG for a gust.',
+  'Plasma Thunder: hold TAG until fully charged, then let go. Letting go early fizzles.',
+  'Chaser: hold TAG, drag to aim at a vehicle, and let go to send a Chaser after it.',
+  'Orbit camera: pinch with two fingers on the right to zoom.',
 ]
 export const cameraHelp = ['Click: capture the mouse, then move it to look round · Esc: release', 'C: chase, cockpit, orbit, stationary, roam · Right click: cockpit', 'Wheel or + / −: distance · Z: scope', 'I: interface full, driving or hidden · Esc: back to full']
 export function touchHelp(kind: VehicleKind): string {
