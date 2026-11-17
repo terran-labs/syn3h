@@ -142,4 +142,14 @@ describe('galaxy labels', () => {
     expect(flips[1].cover).toBeGreaterThan(0.55); expect(flips[1].cover).toBeLessThan(0.57)
     expect(flips[2].cover).toBeLessThan(0.45); expect(flips[2].cover).toBeGreaterThan(0.43)
   })
+  // Bug it catches: one crowded corner dropped every label to its name, on a window with room.
+  it('drops only a label with no room to its name; the others keep both lines', () => {
+    const tall = { width: 80, height: 34 }, short = { width: 80, height: 18 }
+    // Two worlds close together near the bottom edge: the second has room only for a short plate.
+    const places: LabelPlace[] = [{ id: 'a', x: 100, y: 200, radius: 10, visible: true }, { id: 'b', x: 300, y: 640, radius: 10, visible: true }, { id: 'c', x: 300, y: 300, radius: 10, visible: true }]
+    const spots = placeLabels(places, new Map(places.map(p => [p.id, tall])), { width: 400, height: 800, bottom: 690 }, { compactSizes: new Map(places.map(p => [p.id, short])), avoid: [{ x: 300, y: 610, radius: 12 }, { x: 300, y: 600, radius: 12 }, { x: 250, y: 640, radius: 12 }, { x: 350, y: 640, radius: 12 }] })
+    expect(spots.find(s => s.id === 'a')!.compact).toBeFalsy()
+    expect(spots.find(s => s.id === 'c')!.compact).toBeFalsy()
+    for (const s of spots) if (s.compact) expect(s.crowded).toBe(false)
+  })
 })

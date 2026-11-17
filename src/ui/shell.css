@@ -614,5 +614,5 @@
   .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate)::before { left: 4px; top: 5px; bottom: 5px; }
   .syn3h-shell button.galaxy-label::after { inset: -7px -4px; }
 }
-/* The fallback when labels do not all fit: names only (Shell adds .galaxy-names-only). */
-.galaxy-names-only .galaxy-label:not(#s3-plate) > small.galaxy-biome { display: none; }
+/* A label with room for its name only beside its world (per label: Shell adds .is-name-only). */
+.galaxy-label.is-name-only:not(#s3-plate) > small.galaxy-biome { display: none; }
