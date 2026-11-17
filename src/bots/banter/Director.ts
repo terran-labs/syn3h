@@ -777,6 +777,11 @@ export class BanterDirector {
   private readonly triedFor = new Set<number>()
 
   /** A rescue happened (src/bots/rescue): say so, in character. */
+  /** Forget a bot's lines that are queued but not yet said. */
+  private dropQueued(bot: number): void {
+    for (let i = this.queue.length - 1; i >= 0; i--) if (this.queue[i].bot === bot && !this.queue[i].then) this.queue.splice(i, 1)
+  }
+
   rescue(e: RescueEvent): void {
     const now = this.world.now()
     const bot = (id: number) => this.bots.get(id)
@@ -849,6 +854,8 @@ export class BanterDirector {
       case 'retry': { const b = bot(e.bot), s = bot(e.stuck); if (b && this.r() < 0.7) this.speak(b, 'rescue.retry', { subj: s?.short ?? 'you', you: s?.short ?? 'you' }); return }
       case 'freed': {
         const s = bot(e.stuck)
+        // Remarks about still being stuck that have not been said yet are out of date now.
+        if (s) this.dropQueued(s.id)
         const helper = e.by.map(bot).find((b): b is BotState => !!b)
         const person = e.players.map((id) => this.players.get(id)).find((p) => !!p)
         // Out on its own before anyone pulled: it says so, nobody takes the credit, and it is
@@ -873,6 +880,7 @@ export class BanterDirector {
       }
       case 'giveup': {
         const s = bot(e.stuck)
+        if (s) this.dropQueued(s.id)
         if (s) this.speak(s, this.triedFor.delete(s.id) ? 'rescue.giveup.tried' : 'rescue.giveup', {})
         return
       }
