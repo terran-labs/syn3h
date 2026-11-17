@@ -1,0 +1,195 @@
+/* The HUD's left column: one instrument, drawn by light. From the top: the gear selector, the
+   driven vehicle's accessories (AccessoryControls.ts), chat (chat/ChatPanel.ts) and the minimap.
+   All four share the minimap's box: one left edge and one width. Inside it they share one
+   content line, the minimap ring's left edge (24 px in), and one spine, the gear selector's
+   hairline (4 px in), which runs down through the accessories, where a node on it lights
+   for each switch that is on, and ends at chat, whose glyph is its last node.
+
+   No backgrounds: hairlines, tracked small capitals and the soft dark edge under HUD text
+   (--hud-under, exploration.css). On is bright, off is quiet. At rest the column is quiet
+   and wakes for a moment when something changes or is pointed at.
+
+   Desktop and tablet without touch controls only; touch keeps its thumb buttons (the WINGS
+   and ZORB buttons already show these states) and the minimap's own docking. */
+.syn3h-shell.exploration-ui {
+  --col-left: max(16px, env(safe-area-inset-left));
+  --col-bottom: max(16px, env(safe-area-inset-bottom));
+  --col-w: 210px;
+  --col-row: 30px;
+  --col-gap: 10px;
+  /* The content line and the spine, from the column's left edge. */
+  --col-inset: 24px;
+  --col-spine: 4px;
+  /* Bottom edges, stacked up from the minimap (210 px, plus 4 px so chat clears its box). */
+  --col-chat-bottom: calc(var(--col-bottom) + 214px);
+  --col-acc-bottom: calc(var(--col-chat-bottom) + var(--col-row) + var(--col-gap));
+  --col-gear-bottom: calc(var(--col-acc-bottom) + var(--acc-rows, 1) * var(--col-row) + var(--col-gap));
+  --col-rest: .72;
+  /* Light from the theme's own tokens: a lit state's glow, and the dark edge under a line. */
+  --col-glow: 0 0 6px color-mix(in srgb, var(--s3-accent-2) 45%, transparent);
+  --col-lit: 0 0 6px color-mix(in srgb, var(--s3-accent-2) 80%, transparent);
+  --col-shade: color-mix(in srgb, var(--s3-panel) 100%, transparent);
+}
+/* Neutral palette for the column until ux/hud-neutral sets these shared tokens for the whole
+   HUD (the owner's call: grey-white light, no blue cast). Delete this block when it lands;
+   everything below reads only these tokens. */
+.syn3h-shell.exploration-ui :is(.gear-selector, .hud-accessories, .chat-panel, .shell-minimap) {
+  --s3-ink: #f4f4f2; --s3-dim: #d6d6d3; --s3-soft: #a9a9a6; --s3-accent: #e6e6e3; --s3-accent-2: #ffffff;
+  --s3-line: rgb(236 236 232 / .5); --s3-line-quiet: rgb(236 236 232 / .2); --s3-panel: rgb(8 8 8 / .38);
+  --halo-glow: 0 0 6px rgb(255 255 255 / .14);
+  --hud-under: 0 0 1px rgb(0 0 0 / .95), 0 0 3px rgb(0 0 0 / .8), 0 0 6px rgb(0 0 0 / .6), 0 0 16px rgb(0 0 0 / .35);
+  --hud-line-under: drop-shadow(0 0 1px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .45));
+}
+.syn3h-shell.exploration-ui.is-focus { --col-rest: .84; }
+
+/* ---------- Gear selector: the top of the column ---------- */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector {
+  left: var(--col-left); top: auto; bottom: var(--col-gear-bottom); transform: none;
+  --gs-width: var(--col-w);
+}
+/* Its window (the selected gear's rim) spans the content line to the ring's right edge plus
+   the same margin, and its labels start on the content line. */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-spine { left: var(--col-spine); }
+:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-window { left: 12px; width: calc(var(--col-w) - 24px); }
+:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum { left: 8px; width: calc(var(--col-w) - 8px); }
+:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum button.gs-item { padding-left: calc(var(--col-inset) - 8px); }
+/* Its detail (what the gear does, what to press) sits beside the selected gear, but never
+   beside the speed readout: on screens where the window lands near mid-height, the detail
+   rises until its last line clears the readouts (centred at 50%, about 30 px either side). */
+@media (max-height: 1000px) {
+  :root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-detail {
+    top: auto; bottom: max(calc(50% - var(--gs-pitch) / 2 + 4px), calc(50dvh + 40px - var(--col-gear-bottom)));
+  }
+}
+
+/* ---------- Accessories ---------- */
+.hud-accessories {
+  position: fixed; z-index: var(--gear-z, 12); left: var(--col-left, 16px); bottom: var(--col-acc-bottom, 260px);
+  width: var(--col-w, 210px); display: grid; grid-auto-rows: var(--col-row, 30px);
+  opacity: var(--col-rest, .72); transition: opacity .45s ease; pointer-events: auto;
+}
+.hud-accessories.is-awake { opacity: 1; transition-duration: .2s; }
+.syn3h-shell.has-touch .hud-accessories { display: none; }
+.syn3h-shell.is-focus .hud-accessories { pointer-events: none; }
+/* The spine continues from the drum: a hairline down the rows' left side. */
+.hud-accessories::before {
+  content: ''; position: absolute; left: var(--col-spine, 4px); top: 0; bottom: calc(-1 * var(--col-gap, 10px)); width: 1px;
+  background: var(--s3-line-quiet); pointer-events: none;
+}
+:root .syn3h-shell .hud-accessories button.acc-row {
+  position: relative; display: flex; align-items: center; gap: 10px; width: 100%; height: 100%; min-height: 0; margin: 0;
+  padding: 0 var(--col-inset, 24px) 0 var(--col-inset, 24px); box-sizing: border-box;
+  background: none; border: 0; border-radius: 0; box-shadow: none; outline: none;
+  color: var(--s3-dim); font: 500 11px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .16em; text-transform: uppercase;
+  text-shadow: var(--hud-under); text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  -webkit-backdrop-filter: none; backdrop-filter: none; transition: color .2s ease;
+}
+:root .syn3h-shell .hud-accessories button.acc-row:hover { background: none; border: 0; box-shadow: none; color: var(--s3-ink); }
+:root .syn3h-shell .hud-accessories button.acc-row:focus-visible .acc-name { text-decoration: underline 1px var(--s3-accent-2); text-underline-offset: 5px; }
+.hud-accessories kbd {
+  display: inline-block; min-width: 22px; padding: 3px 7px 2px; box-sizing: border-box; text-align: center;
+  font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .12em; color: var(--s3-ink);
+  border: 1px solid var(--s3-line-quiet); border-radius: 999px; background: none; filter: var(--hud-line-under);
+}
+.hud-accessories .acc-name { flex: 1 1 auto; white-space: nowrap; }
+.hud-accessories .acc-value { flex: none; white-space: nowrap; color: var(--s3-dim); font-variant-numeric: tabular-nums; }
+/* The node on the spine: a hollow ring when off, lit when on, filling while it moves. */
+.hud-accessories .acc-pip {
+  position: absolute; left: calc(var(--col-spine, 4px) - 3px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
+  border-radius: 50%; border: 1px solid var(--s3-line); background: var(--col-shade); pointer-events: none;
+  transition: background-color .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.hud-accessories .is-on .acc-name { color: var(--s3-ink); }
+.hud-accessories .is-on .acc-value { color: var(--s3-accent-2); opacity: 1; text-shadow: var(--hud-under), var(--col-glow); }
+.hud-accessories .is-on kbd { border-color: var(--s3-line); }
+.hud-accessories .is-on .acc-pip { border-color: var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-lit); }
+/* Moving between states (wings unfolding): the node fills from its rim as they move. */
+.hud-accessories .is-moving .acc-pip { background: radial-gradient(closest-side, var(--s3-accent-2) calc(var(--acc-moving, 0) * 100%), transparent calc(var(--acc-moving, 0) * 100% + 1%)); animation: acc-breathe 1.2s ease-in-out infinite; }
+@keyframes acc-breathe { 50% { box-shadow: var(--col-lit); } }
+/* Not usable now: dimmed, with the reason as its state and in its tooltip. */
+:root .syn3h-shell .hud-accessories button.acc-row[aria-disabled=true] { cursor: default; opacity: .48; }
+@media (prefers-reduced-motion: reduce) {
+  .hud-accessories, .hud-accessories .acc-pip, :root .syn3h-shell .hud-accessories button.acc-row { transition: none; }
+  .hud-accessories .is-moving .acc-pip { animation: none; }
+}
+
+/* ---------- Chat: under the accessories, its log beside the minimap ---------- */
+/* The first-run control hints share the space beside the minimap; they step aside while the log is open. */
+.syn3h-shell.exploration-ui:not(.has-touch):has(.chat-panel.is-open) .spawn-help { visibility: hidden; }
+/* The control is one row of the column; the strip and the open log fly out to its right,
+   top-aligned with it, and grow down beside the minimap, clear of the readouts above. */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel {
+  left: var(--col-left); right: auto; bottom: auto; top: calc(100dvh - var(--col-chat-bottom) - var(--col-row));
+  width: auto; display: grid; grid-template-columns: var(--col-w) var(--chat-fly, min(340px, calc(50vw - 300px)));
+  column-gap: 12px; align-items: start;
+}
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle {
+  grid-column: 1; grid-row: 1; position: relative; width: var(--col-w); height: var(--col-row); min-height: 0; margin: 0;
+  display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 0 var(--col-inset) 0 var(--col-inset); box-sizing: border-box; text-align: left;
+  border: 0; border-radius: 0; background: none; box-shadow: none; opacity: var(--col-rest);
+  color: var(--s3-dim); font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; text-shadow: var(--hud-under);
+  transition: opacity .45s ease, color .2s ease;
+}
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle:hover,
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel.is-open .chat-toggle,
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel.has-unread .chat-toggle { opacity: 1; color: var(--s3-ink); }
+/* The glyph is the spine's last node. */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle svg {
+  position: absolute; left: calc(var(--col-spine) - 6px); top: 50%; width: 13px; height: 13px; margin-top: -6px; filter: var(--hud-line-under);
+}
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle kbd {
+  order: -1; min-width: 22px; padding: 3px 7px 2px; box-sizing: border-box; font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .12em;
+  border: 1px solid var(--s3-line-quiet); border-radius: 999px; opacity: 1; filter: var(--hud-line-under);
+}
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle-text { flex: 1 1 auto; }
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel.is-open .chat-toggle kbd { border-color: var(--s3-accent-2); }
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel.is-open .chat-toggle-text { color: var(--s3-accent-2); text-shadow: var(--hud-under), var(--col-glow); }
+/* Unread: a small bright tag at the row's end, on the ring's right edge. */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-unread {
+  position: static; order: 2; min-width: 18px; height: 16px; padding: 0 5px; border-radius: 999px;
+  background: var(--s3-accent-2); color: color-mix(in srgb, var(--s3-panel) 100%, black); font: 600 10.5px/1 'Barlow', sans-serif; letter-spacing: .02em;
+  box-shadow: var(--col-glow);
+}
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-unread.from-person { background: var(--chat-person, var(--s3-accent-2)); }
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-unread.from-person::after { box-shadow: none; }
+/* The strip: the newest lines as plain HUD text beside the column, no slab behind them. */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-strip { grid-column: 2; grid-row: 1; gap: 4px; padding-top: 6px; }
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-strip .chat-line { padding: 0; border-radius: 0; background: none; text-shadow: var(--hud-under); }
+/* The open log: the same place, a very light scrim behind the text and a hairline edge. */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-sheet {
+  grid-column: 2; grid-row: 1; max-height: calc(var(--col-chat-bottom) + var(--col-row) - var(--col-bottom));
+  border: 1px solid var(--s3-line-quiet); border-radius: 12px; background: color-mix(in srgb, var(--s3-panel) 70%, transparent);
+  -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: var(--hud-under); overflow: hidden;
+}
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-log { max-height: calc(var(--col-chat-bottom) + var(--col-row) - var(--col-bottom) - 96px); }
+@media (prefers-reduced-motion: reduce) {
+  :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle { transition: none; }
+}
+
+/* ---------- Minimap: the foot of the column ---------- */
+/* Its ring is the column's widest line: the same 1 px hairline as the crescents, a faint inner
+   glow, a tight outer halo over a barely-there dark edge (legible over bright sky and ice),
+   hairline ticks at east, south and west, and the N as a small crisp glyph on the ring. */
+.syn3h-shell.exploration-ui .shell-minimap::after {
+  border: 1px solid var(--s3-line);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--s3-panel) 45%, transparent), var(--halo-glow), inset 0 0 10px color-mix(in srgb, var(--s3-accent) 14%, transparent);
+  background:
+    linear-gradient(var(--s3-line), var(--s3-line)) right center / 5px 1px no-repeat,
+    linear-gradient(var(--s3-line), var(--s3-line)) center bottom / 1px 5px no-repeat,
+    linear-gradient(var(--s3-line), var(--s3-line)) left center / 5px 1px no-repeat;
+}
+/* One slow shimmer travels round the ring; none under reduced motion. Composited, no paint. */
+.syn3h-shell.exploration-ui .shell-minimap::before {
+  content: ''; position: absolute; inset: 11.5%; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(transparent 0 84%, color-mix(in srgb, var(--s3-accent-2) 50%, transparent) 92%, transparent 99%);
+  -webkit-mask-image: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1px), transparent 100%);
+  mask-image: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1px), transparent 100%);
+  animation: minimap-shimmer 18s linear infinite;
+}
+@keyframes minimap-shimmer { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .syn3h-shell.exploration-ui .shell-minimap::before { animation: none; display: none; } }
+.syn3h-shell.exploration-ui .shell-minimap span {
+  top: calc(11.5% - 6px); left: 50%; transform: translateX(-50%); padding-left: .14em; line-height: 12px;
+  font: 600 10px 'Barlow Condensed', sans-serif; letter-spacing: .14em; color: var(--s3-accent-2);
+  text-shadow: var(--hud-under);
+}

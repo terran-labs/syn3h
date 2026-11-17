@@ -165,34 +165,7 @@
 .syn3h-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card) { background: var(--halo-fill); font-weight: 400; }
 .syn3h-shell.exploration-ui .spawn-help { font-size: 12.5px; color: var(--s3-ink); text-shadow: var(--hud-under); }
 .syn3h-shell.exploration-ui .spawn-help strong { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
-/* The minimap ring matches the crescents: one hairline and a tight halo. */
-/* The minimap ring belongs to the crescents' instrument family: the same 1 px line at the
-   same weight, a faint inner glow, a tight outer halo over a barely-there dark under-halo
-   (legible over bright sky and ice), hairline ticks at east, south and west, and the N as a
-   small crisp glyph sitting on the ring at north. */
-.syn3h-shell.exploration-ui .shell-minimap::after {
-  border: 1px solid rgb(226 238 255 / .62);
-  box-shadow: 0 0 0 1px rgb(0 8 14 / .16), 0 0 6px rgb(143 227 255 / .16), inset 0 0 10px rgb(143 227 255 / .14);
-  background:
-    linear-gradient(rgb(226 238 255 / .62), rgb(226 238 255 / .62)) right center / 5px 1px no-repeat,
-    linear-gradient(rgb(226 238 255 / .62), rgb(226 238 255 / .62)) center bottom / 1px 5px no-repeat,
-    linear-gradient(rgb(226 238 255 / .62), rgb(226 238 255 / .62)) left center / 5px 1px no-repeat;
-}
-/* One slow shimmer travels round the ring; none under reduced motion. Composited, no paint. */
-.syn3h-shell.exploration-ui .shell-minimap::before {
-  content: ''; position: absolute; inset: 11.5%; border-radius: 50%; pointer-events: none;
-  background: conic-gradient(transparent 0 84%, rgb(198 241 255 / .5) 92%, transparent 99%);
-  -webkit-mask-image: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1px), transparent 100%);
-  mask-image: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1px), transparent 100%);
-  animation: minimap-shimmer 18s linear infinite;
-}
-@keyframes minimap-shimmer { to { transform: rotate(1turn); } }
-@media (prefers-reduced-motion: reduce) { .syn3h-shell.exploration-ui .shell-minimap::before { animation: none; display: none; } }
-.syn3h-shell.exploration-ui .shell-minimap span {
-  top: calc(11.5% - 6px); left: 50%; transform: translateX(-50%); padding-left: .14em; line-height: 12px;
-  font: 600 10px 'Barlow Condensed', sans-serif; letter-spacing: .14em; color: var(--s3-accent-2);
-  text-shadow: 0 0 1px rgb(0 8 14 / .95), 0 0 3px rgb(0 8 14 / .8), 0 0 5px rgb(143 227 255 / .35);
-}
+/* The minimap ring and its N: hud-column.css, with the rest of the left column. */
 /* The touch panels switch: a floating pill, clear of the screen edge. */
 .syn3h-shell.exploration-ui .hud-navigation { right: max(12px, env(safe-area-inset-right)); }
 .syn3h-shell.exploration-ui .hud-navigation .inspector-toggle { border: 1px solid var(--s3-line); border-radius: 999px; background: var(--halo-fill); box-shadow: var(--halo-glow), var(--halo-spread); font: 500 11px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }

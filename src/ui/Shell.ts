@@ -56,6 +56,8 @@ import { rollPlayerName } from './data/names'
 import { cleanPlayerName, loadPlayerName, savePlayerName, type NameSource } from './playerName'
 import { TintTransition, randomTintPair } from '../vehicles/tints'
 import { Minimap, type MapEntity } from './Minimap'
+import { AccessoryControls } from './AccessoryControls'
+import type { AccessoryVehicle } from '../vehicles/accessories'
 import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
@@ -65,6 +67,7 @@ import { isVehicleAvailable } from '../vehicles/available'
 import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
+import './hud-column.css'
 
 /**
  * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
@@ -238,13 +241,9 @@ export class Shell implements System {
     // neighbours, and the controls that apply right now. On touch it adds buttons for the
     // gear's extra actions (the Grapple's Let out and Let go).
     this.gearSelector = new GearSelector(this.element, () => this.gearSource(), { touch: this.touch.available, onSelect: () => this.audio.cue('click') })
-    // Zorb mode sits under the drum, with its key and its state, so it can be found.
-    this.zorbToggle.type = 'button'; this.zorbToggle.className = 'zorb-toggle'; this.zorbToggle.setAttribute('aria-pressed', 'false')
-    // The small track mirrors the standard switch, so Zorb's state reads the same way at a glance.
-    this.zorbToggle.innerHTML = '<kbd>X</kbd><span>Zorb</span><i class="zorb-switch" aria-hidden="true"></i><b>Off</b>'
-    this.zorbToggle.title = 'Zorb mode: ride inside a ball. Press X to switch.'
-    this.zorbToggle.addEventListener('click', () => { game.input.toggleZorb(); this.audio.cue('click'); this.zorbToggle.blur() }, { signal: this.abort.signal })
-    this.element.append(this.zorbToggle)
+    // Under the drum, the driven vehicle's accessories (Zorb, wings, jet mode...), each with its
+    // key and its state (src/vehicles/accessories.ts). Part of the left column, hud-column.css.
+    this.accessories = new AccessoryControls(this.element, game.input, () => this.audio.cue('click'), this.abort.signal)
     const signal = this.abort.signal
     this.followPointer(signal)
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
@@ -1514,8 +1513,9 @@ export class Shell implements System {
   /** Call after an actual spawn so query overrides and future respawns show the right controls. */
   private muteShown: boolean | undefined
   private readonly gearSelector: GearSelector
-  private readonly zorbToggle = document.createElement('button')
-  private zorbShown = false
+  private readonly accessories: AccessoryControls
+  /** The vehicle being driven, for the accessory controls; set every frame by the bridge. */
+  private drivenVehicle: AccessoryVehicle | null = null
   private gearRack?: GearRack
   private gearView?: GearSource
   /** The rack, wrapped once so the drum gets every gear's player-facing name. */
@@ -1555,6 +1555,8 @@ export class Shell implements System {
     this.inspector.setGIStatus(status, eligible)
   }
   private hasSeveralGear = false
+  /** The vehicle being driven, read by the accessory controls each frame. */
+  setDrivenVehicle(vehicle: AccessoryVehicle | null): void { this.drivenVehicle = vehicle }
   setVehicleKind(kind: VehicleKind): void { this.activeVehicleKind = kind; this.touch.setVehicleKind(kind); if (this.started) this.showHelp(false) }
   /**
    * The controls card, in the lower left so it never covers the vehicle. After Play it is the
@@ -1619,8 +1621,7 @@ export class Shell implements System {
     if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.switches.get('mute')!(this.muteShown) }
     this.updateGear()
     this.gearSelector.update(this.element.classList.contains('is-focus'))
-    const zorb = this.game.input.state.zorb
-    if (zorb !== this.zorbShown) { this.zorbShown = zorb; this.zorbToggle.setAttribute('aria-pressed', String(zorb)); this.zorbToggle.lastElementChild!.textContent = zorb ? 'On' : 'Off' }
+    this.accessories.update(this.drivenVehicle)
     if (this.inspector.open) this.updateGI()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
@@ -1709,6 +1710,7 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     const q = activePlayer.body.rotation()
     const heading = Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y))
     shell.setMapSelf({ x: p.x, z: p.z, heading, color: activePlayer.colors.body, self: true })
+    shell.setDrivenVehicle(activePlayer)
     // Shown as metres above ground: measured from the contact surfaces, 0 when resting.
     shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)), activePlayer.kind === 'jet' && !activePlayer.zorbed ? activePlayer.input.z : undefined)
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }

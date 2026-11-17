@@ -242,8 +242,8 @@ export class Minimap {
   /** Rim glyphs by bearing, reused each draw. */
   private readonly rim: number[] = []
   private self?: MapEntity
-  /** Your own mark: white, shaded in cool greys so its facets read. */
-  private readonly selfShades: readonly string[] = ['#8d9aa8', '#a6b3c0', '#bcc8d4', '#d3dde6', '#e6edf3', '#f4f8fb', '#ffffff']
+  /** Your own mark: white, shaded in neutral greys so its facets read. */
+  private readonly selfShades: readonly string[] = ['#8f8f8d', '#a8a8a6', '#bdbdbb', '#d4d4d2', '#e7e7e5', '#f5f5f4', '#ffffff']
   /** Marks grow on small maps so a phone's 96 px map stays legible. Updated on resize, not per draw. */
   private markScale = 1
   /** Units per device pixel on the marks canvas, so hairlines are one device pixel. */
