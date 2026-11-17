@@ -27,6 +27,10 @@ export const PACING = {
   windowMs: 1500,
   /** A window is over the target when its 90th percentile frame is this far over (the governor's slow factor). */
   slowFactor: 1.25,
+  /** A bot is only blamed for slow frames if it added at least this share of the frame budget... */
+  costShare: 0.1,
+  /** ...and at least this many milliseconds to the mean frame. */
+  minCostMs: 1.5,
   /** Frames longer than this are a pause or a hidden tab, not evidence. */
   interruptedMs: 1000,
 }
@@ -110,7 +114,11 @@ export class BotPacer {
       const meanMs = span / sorted.length
       if (Number.isFinite(m.before)) this.marginal.set(m.count, meanMs - m.before)
       this.measuring = null
-      if (p90 > state.targetMs * PACING.slowFactor) {
+      // Over the target is not enough: the bot must have made frames measurably worse. Frames
+      // that were already slow before it (a weak or busy device, a headless browser) are the
+      // quality level's to fix, not the bots'.
+      const worse = !Number.isFinite(m.before) || meanMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare)
+      if (p90 > state.targetMs * PACING.slowFactor && worse) {
         // That one was too many: carry one fewer at this level, and send it off.
         this.allowed = Math.max(0, m.count - 1)
         this.comfort.set(state.level, this.allowed)

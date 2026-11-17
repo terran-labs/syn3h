@@ -53,6 +53,14 @@ describe('bot pacing', () => {
     expect(actions.slice(removal + 1).filter(a => a.action === 'add')).toHaveLength(0)
   })
 
+  it('keeps a bot that did not make already slow frames worse', () => {
+    const pacer = new BotPacer(() => 1)
+    // 30 fps with or without bots, against a 60 fps target: the level is too rich, not the bots.
+    const { have, actions } = run(pacer, 30, { ...desktop, wanted: 3 }, () => 33)
+    expect(have).toBe(3)
+    expect(actions.filter(a => a.action === 'remove')).toHaveLength(0)
+  })
+
   it('never carries more than the host asked for', () => {
     const pacer = new BotPacer(() => 1)
     const { have } = run(pacer, 30, { ...desktop, wanted: 3 }, () => 1000 / 120)
