@@ -123,7 +123,7 @@ try {
   if (isBrowserCrash(String(e?.message ?? e))) crashed.push('a page')
   check('no exception', false, { message: String(e?.message ?? e) })
 }
-check('no page errors', errors.length === 0, errors)
+check('no page errors', errors.length === 0, { count: errors.length, first: errors.slice(0, 5).map((e) => e.slice(0, 300)) })
 await Promise.all(browsers.map((x) => x.close()))
 
 const crashedRun = crashed.length > 0
