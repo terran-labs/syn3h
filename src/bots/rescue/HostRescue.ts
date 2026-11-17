@@ -37,7 +37,7 @@ import type { Navigator } from '../pilot/types'
 import { VOICES, voiceFor } from '../banter/voices'
 import { bungeeAllowed } from '../../weapons/bungee/params'
 import { TowRescue, type StuckKind, type TowGear, type TowPhase } from './TowRescue'
-import { MAX_RESCUERS, MishapSchedule, botMishaps, chooseRescuers, pullDirection, rescuePatience, stuckKind, torn, type Candidate } from './rules'
+import { MAX_RESCUERS, MishapSchedule, botMishaps, chooseRescuers, pullDirection, rescueAfter, rescuePatience, stuckKind, torn, type Candidate } from './rules'
 
 const DECIDE = 0.5
 /** How far a stuck bot's recent track goes back, seconds. */
@@ -61,6 +61,8 @@ const ASK_PERSON_S = 300
  * time): it is left alone this long, or until it has, instead of being noticed again at once.
  */
 const SELF_RESCUE_S = 30
+/** A quiet episode (trouble not yet called a rescue) ends once the trouble has been gone this long. */
+const QUIET_CLEAR_S = 3
 
 export type RescueEvent =
   | { kind: 'stuck'; stuck: number; clumsy: boolean; count: number }
@@ -141,6 +143,11 @@ export class HostRescue {
   private readonly troubleOf = new Map<number, number>()
   /** When each person was last asked for a hand. */
   private readonly askedAt = new Map<number, number>()
+  /**
+   * Bots in trouble that are still trying to free themselves, unannounced: since when (counted
+   * from the start of the trouble), and since when the trouble has been gone (-1 while it lasts).
+   */
+  private readonly quiet = new Map<number, { since: number; clearSince: number }>()
   /** Bots freeing themselves after a rescue gave up: until when, and their recoveries then. */
   private readonly selfRescue = new Map<number, { until: number; recoveries: number }>()
   private time = 0
@@ -149,7 +156,7 @@ export class HostRescue {
   /** The session's accident-prone bot, by name (names survive a bot being respawned). */
   clumsyName: string | null = null
   /** Counts for the report and tests. */
-  readonly stats = { noticed: 0, freed: 0, gaveUp: 0, mishaps: 0, attempts: 0, calledOff: 0 }
+  readonly stats = { noticed: 0, freed: 0, gaveUp: 0, mishaps: 0, attempts: 0, calledOff: 0, quiet: 0 }
 
   constructor(
     private readonly terrain: BotTerrain,
@@ -237,7 +244,23 @@ export class HostRescue {
       if (self && this.time < self.until && brain.rescues === self.recoveries) continue
       this.selfRescue.delete(id)
       const kind = stuckKind(brain.trouble)
-      if (!kind) continue
+      // Trouble is noticed at once but called a rescue only after the bot has failed to free
+      // itself for bots.rescueAfter seconds, or at once when it plainly cannot. Meanwhile its
+      // own self-help runs and its hop home is held, so the clock is not cut short.
+      const q = this.quiet.get(id)
+      if (!kind) {
+        if (q) {
+          if (q.clearSince < 0) q.clearSince = this.time
+          else if (this.time - q.clearSince > QUIET_CLEAR_S) { this.quiet.delete(id); brain.holdRecovery = false; this.stats.quiet++ }
+        }
+        continue
+      }
+      const t = brain.trouble
+      if (!q) this.quiet.set(id, { since: this.time - Math.max(t.stuck, t.bog, t.flipped), clearSince: -1 })
+      else q.clearSince = -1
+      const since = this.quiet.get(id)!.since
+      if (!(kind === 'flipped' || this.sunk(v)) && this.time - since < rescueAfter.value) { brain.holdRecovery = true; continue }
+      this.quiet.delete(id)
       const name = this.net.displayName(id)
       const n = (this.count.get(id) ?? 0) + 1
       this.count.set(id, n)
@@ -249,6 +272,13 @@ export class HostRescue {
       // The stuck bot drives with the cord while being pulled.
       brain.directive = { kind: 'control', step: (dt: number, input: InputState) => this.assist(r, input) }
     }
+  }
+
+  /** Wheels on the bed under liquid: no amount of trying gets a buggy up from there. */
+  private sunk(v: Vehicle): boolean {
+    if (v.kind === 'hovercraft' || v.kind === 'jet') return false
+    const p = v.body.translation(), liquid = this.terrain.liquidHeightAt?.(p.x, p.z)
+    return liquid != null && Number.isFinite(liquid) && p.y < liquid - 1
   }
 
   private assist(r: Rescue, input: InputState): boolean {
@@ -511,6 +541,8 @@ export class HostRescue {
       if (brain) { brain.holdRecovery = false; if (brain.directive?.kind === 'control') brain.directive = null }
     }
     this.rescues.clear()
+    for (const id of this.quiet.keys()) { const brain = this.brain(id); if (brain && !this.rescues.has(id)) brain.holdRecovery = false }
+    this.quiet.clear()
   }
 
   /**
