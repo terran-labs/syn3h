@@ -42,6 +42,17 @@ export const terrainLandShare = defineParam({
   ...P, id: 'terrain.landShare', label: 'Land share (0 all sea, 1 all land)', default: 0.5, min: 0.3, max: 0.85, step: 0.01,
 })
 /**
+ * Landforms (landforms.ts): extra mountains on land, their kinds drawn from the seed with
+ * odds set by the biome, and extra islands in the sea. Both clear of the central mountain,
+ * the spawn pads and the roads in.
+ */
+export const terrainLandforms = defineParam({
+  ...P, id: 'terrain.landforms', label: 'Extra mountains', default: 4, min: 0, max: 12, step: 1,
+})
+export const terrainIsles = defineParam({
+  ...P, id: 'terrain.isles', label: 'Extra islands', default: 0, min: 0, max: 12, step: 1,
+})
+/**
  * The world's tile, stored as a power of two: 1024 × 2^value metres (shared/protocol.ts
  * tileSize), so the three old sizes 0, 1 and 2 are still exactly 1024, 2048 and 4096 m and
  * saved rooms and links keep their size. Shown and set in metres, in 256 m steps.
@@ -167,6 +178,10 @@ export interface TerrainSettings {
   craters: number
   /** 0..1 share of the tile that is land. */
   landShare: number
+  /** How many extra mountains stand on land (landforms.ts). */
+  landforms: number
+  /** How many extra islands stand in the sea (landforms.ts). */
+  isles: number
   /** The tile as a power of two: 1024 × 2^planetSize metres (0, 1, 2 are 1, 2, 4 km). */
   planetSize: number
   /** 0..1 share of the land in forest. */
@@ -192,6 +207,8 @@ export const TERRAIN_PARAMS: Record<keyof TerrainSettings, Param<number>> = {
   dry: terrainDry,
   craters: terrainCraters,
   landShare: terrainLandShare,
+  landforms: terrainLandforms,
+  isles: terrainIsles,
   planetSize: terrainPlanetSize,
   treeCover: terrainTreeCover,
   fords: terrainFords,
