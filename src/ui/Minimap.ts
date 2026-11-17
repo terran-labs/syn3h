@@ -51,8 +51,14 @@ export function heightPixels(terrain: MapTerrain, pixels: number): Uint8ClampedA
       // Fit the world's colour into MAP_LUMA first (scaling keeps hue; an even grey lifts
       // black rock, which has none), then shade, so relief survives on dark worlds. Shadows
       // may fall below the band; nothing lit rises above it.
-      const c = terrain.mapColourAt(wx, wz)
-      r = c >> 16 & 255; g = c >> 8 & 255; b = c & 255
+      // Average four samples a quarter pixel either side of the centre: the hook's grid is
+      // finer than the map but not aligned to it, so one sample stair-steps every shoreline.
+      const q = step / 4
+      r = g = b = 0
+      for (let k = 0; k < 4; k++) {
+        const c = terrain.mapColourAt(wx + (k & 1 ? q : -q), wz + (k & 2 ? q : -q))
+        r += (c >> 16 & 255) / 4; g += (c >> 8 & 255) / 4; b += (c & 255) / 4
+      }
       let luma = (.2126 * r + .7152 * g + .0722 * b) / 255
       // Headroom under the cap, so lit slopes still read brighter on pale worlds.
       const top = MAP_LUMA[1] / 1.2
