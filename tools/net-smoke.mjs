@@ -63,12 +63,14 @@ const launch = () => chromium.launch({
     '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
 })
 /**
- * The check proves networking and rules, not rendering: pages run small and at the Low level,
- * pinned before load so no automatic step moves it. Low is the lowest level whose budget still
- * allows the four default bots that "default bots join and replicate" asks for (Minimal allows 2).
+ * The check proves networking and rules, not rendering: pages run at the Low level, pinned
+ * before load so no automatic step moves it. Low is the lowest level whose budget still allows
+ * the four default bots that "default bots join and replicate" asks for (Minimal allows 2).
+ * The viewport stays 960x540: at 640x360 the HUD readouts cover the middle of the screen, and
+ * the labels keep clear of them by design, so "B shows a name tag for A" would see no tag.
  */
 const SMOKE_QUALITY = { level: 1, auto: false, pinned: true, overrides: {} }
-const SMOKE_VIEWPORT = { width: 640, height: 360 }
+const SMOKE_VIEWPORT = { width: 960, height: 540 }
 const errors = []
 async function open(name, extra = '') {
   const browser = await launch()
