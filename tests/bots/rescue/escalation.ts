@@ -172,6 +172,16 @@ export function escalationTrial(scenario: Hard, seed: number, limit = 600, log?:
     })
     if (check) sinceCheck = 0
   }
+  const trace = () => {
+    const p = stuck.body.translation()
+    const parts: string[] = []
+    for (const r of rescue.active()) r.rescuers.forEach((id, k) => {
+      const q = vehicleOf(id).body.translation(), c = gears.get(id)?.bungee.mine
+      const cord = !c ? '-' : c.hook ? 'hook' : c.to !== null ? 'on ' + c.pull.toFixed(0) : 'ground'
+      parts.push(`${id - BASE}:${r.phases[k]} at ${q.x.toFixed(0)},${q.y.toFixed(1)},${q.z.toFixed(0)} cord ${cord}`)
+    })
+    return `  ${game.time.toFixed(0)}s stuck ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)} ${parts.join(' | ')}`
+  }
   const step = () => {
     game.time += FIXED_DT
     vehicles.forEach((v, i) => {
@@ -189,6 +199,7 @@ export function escalationTrial(scenario: Hard, seed: number, limit = 600, log?:
     updateTrouble(FIXED_DT)
     rescue.update(FIXED_DT)
     for (const r of rescue.active()) for (const id of r.rescuers) worked.add(id)
+    if (log && Math.round(game.time / FIXED_DT) % 100 === 0) log(trace())
   }
   for (let i = 0; i < 1 / FIXED_DT; i++) step()
   let t = 0

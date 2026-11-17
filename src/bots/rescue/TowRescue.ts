@@ -54,6 +54,11 @@ export interface TowOptions {
   onPhase?(phase: TowPhase, attempt: number): void
   /** Route planner: the way to the anchor goes round trenches and cliffs, as the bots' own drives do. */
   navigator?: Navigator
+  /**
+   * True while a partner is on its way to pull too: the line stays on and taut (up to
+   * PULL_MAX_S) instead of timing out, so the two end up pulling together.
+   */
+  partnerComing?(): boolean
 }
 
 const BRACE_S = 0.6
@@ -68,6 +73,8 @@ const APPROACH_S = 30
 const EASE_S = 1
 /** Shortest cord the rescuer reels to: closer than this and it would be pulled into the hole. */
 const MIN_SPAN = 9
+/** Never stand closer than this to see over a lip: nearer, the pull drags the rescuer in too. */
+const SIGHT_MIN = 7
 /** The roof hitch a hook would grip, metres above the centre, for the righting effect. */
 const HITCH_UP = 0.9
 
@@ -108,6 +115,7 @@ export class TowRescue {
     this.maxAttempts = options.attempts ?? 3
     const p = stuck.body.translation()
     this.start.set(p.x, p.y, p.z)
+    this.anchorDistance = this.inSight(this.anchorDistance)
   }
 
   get finished(): boolean { return this.phase === 'done' || this.phase === 'failed' }
@@ -197,6 +205,7 @@ export class TowRescue {
           if (along - this.checkAlong > PROGRESS_M && this.inPhase < PULL_MAX_S) this.pullUntil = this.inPhase + PULL_S
           this.checkAt = this.inPhase; this.checkAlong = along
         }
+        if (this.options.partnerComing?.() && this.inPhase < PULL_MAX_S) this.pullUntil = Math.max(this.pullUntil, this.inPhase + 1)
         if (this.inPhase > Math.max(PULL_S, this.pullUntil)) return this.retry()
         return this.phase
       }
@@ -254,6 +263,27 @@ export class TowRescue {
     return true
   }
 
+  /**
+   * The farthest point on the pull line, no farther than `want` metres, from which the stuck
+   * vehicle's roof can be seen over the ground between: a hook fired from behind the lip of a
+   * deep trench only finds the lip. Liquid does not block sight. Once per attempt.
+   */
+  private inSight(want: number): number {
+    const s = this.stuck.body.translation()
+    const roof = s.y + HITCH_UP
+    for (let d = want; d >= SIGHT_MIN; d -= 1) {
+      const ax = s.x + this.pull.x * d, az = s.z + this.pull.z * d
+      const ay = this.terrain.heightAt(ax, az) + 1.6
+      let clear = true
+      for (let i = 1; i < 12 && clear; i++) {
+        const f = i / 12, x = ax + (s.x - ax) * f, z = az + (s.z - az) * f, y = ay + (roof - ay) * f
+        if (y < this.terrain.heightAt(x, z) + 0.15) clear = false
+      }
+      if (clear) return d
+    }
+    return want
+  }
+
   /** Give up cleanly from outside (rescue cancelled, setting turned off). */
   abort(): void {
     if (this.finished) return
@@ -284,11 +314,12 @@ export class TowRescue {
     this.route = null
     this.waypointTime = 0
     // A different idea each time: swing the pull line by 35 degrees, alternating sides, and
-    // stand farther out on a longer line, then closer in on a shorter one.
-    this.anchorDistance = this.baseDistance + (this.attempt % 2 ? -2 : 6)
+    // stand closer in for a steeper line over a lip, then farther out on a longer one.
+    this.anchorDistance = this.baseDistance + (this.attempt % 2 ? 6 : -3)
     const angle = (this.attempt % 2 ? -1 : 1) * 0.61
     const c = Math.cos(angle), s = Math.sin(angle)
     this.pull = { x: this.pull.x * c - this.pull.z * s, z: this.pull.x * s + this.pull.z * c }
+    this.anchorDistance = this.inSight(this.anchorDistance)
     return this.set('approach')
   }
 

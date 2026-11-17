@@ -408,6 +408,7 @@ export class HostRescue {
     const gear = this.gearFor(id, v)
     const tow = new TowRescue(v, stuckVehicle, this.terrain, gear, pilot, {
       kind: r.kind, pull, navigator: this.navigator ?? undefined,
+      partnerComing: () => { for (const o of r.rescuers.values()) if (o !== tow && !o.finished && o.phase !== 'tow') return true; return false },
       onPhase: (phase, attempt) => {
         if (phase === 'fire' && attempt === 1) this.onEvent({ kind: 'start', bot: id, stuck: r.stuck })
         if (phase === 'approach' && attempt > 1) { r.attempts++; this.stats.attempts++; this.onEvent({ kind: 'retry', bot: id, stuck: r.stuck }) }
