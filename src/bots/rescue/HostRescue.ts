@@ -56,6 +56,11 @@ const PERSON_WAIT_S = 45
 const ASK_RANGE = 70
 /** Ask any one person for a hand at most this often, seconds, so it is never a nag. */
 const ASK_PERSON_S = 300
+/**
+ * After a rescue gives up, the bot frees itself the old way (BotBrain, after its recovery
+ * time): it is left alone this long, or until it has, instead of being noticed again at once.
+ */
+const SELF_RESCUE_S = 30
 
 export type RescueEvent =
   | { kind: 'stuck'; stuck: number; clumsy: boolean; count: number }
@@ -119,6 +124,8 @@ interface Rescue {
   aloneSince: number
   /** A person was asked for a hand in this rescue. */
   asked: boolean
+  /** Seconds it has looked free (upright, dry, off the spot) with nobody's tow judging it. */
+  freeFor: number
 }
 
 export class HostRescue {
@@ -134,6 +141,8 @@ export class HostRescue {
   private readonly troubleOf = new Map<number, number>()
   /** When each person was last asked for a hand. */
   private readonly askedAt = new Map<number, number>()
+  /** Bots freeing themselves after a rescue gave up: until when, and their recoveries then. */
+  private readonly selfRescue = new Map<number, { until: number; recoveries: number }>()
   private time = 0
   private decideTime = 0
   private mishaps: MishapSchedule | null = null
@@ -201,7 +210,7 @@ export class HostRescue {
     return {
       stuck, kind, since: this.time, rescuers: new Map(), declined: new Map(), rested: new Map(), playersNear: new Set(), hooked: new Set(),
       pointedAt: this.time, person, attempts: 0, from: { x: p.x, z: p.z }, best: 0, progressAt: this.time,
-      recoveries: person ? 0 : this.brain(stuck)?.rescues ?? 0, aloneSince: -1, asked: false,
+      recoveries: person ? 0 : this.brain(stuck)?.rescues ?? 0, aloneSince: -1, asked: false, freeFor: 0,
     }
   }
 
@@ -223,6 +232,10 @@ export class HostRescue {
     for (let i = 0; i < this.bots.brainList.length; i++) {
       const brain = this.bots.brainList[i], id = BOT_ID_BASE + i, v = this.bots.vehicles[i]
       if (!v?.body.isValid() || this.rescues.has(id) || this.rescuing(id)) continue
+      // Left to free itself after a rescue gave up: until it has, or for a while.
+      const self = this.selfRescue.get(id)
+      if (self && this.time < self.until && brain.rescues === self.recoveries) continue
+      this.selfRescue.delete(id)
       const kind = stuckKind(brain.trouble)
       if (!kind) continue
       const name = this.net.displayName(id)
@@ -275,6 +288,15 @@ export class HostRescue {
     const s = stuckVehicle.body.translation()
     const moved = Math.hypot(s.x - r.from.x, s.z - r.from.z)
     if (moved > r.best + PROGRESS_M) { r.best = moved; r.progressAt = this.time }
+    // Out, judged here when no bot's tow is judging it (a person pulled it, or it crawled out
+    // while the rescuers were still on their way): upright, out of the liquid, off the spot.
+    if (!r.person && ![...r.rescuers.values()].some((t) => t.phase === 'tow' || t.phase === 'ease')) {
+      const q = stuckVehicle.body.rotation(), upY = 1 - 2 * (q.x * q.x + q.z * q.z)
+      const liquid = this.terrain.liquidHeightAt?.(s.x, s.z)
+      const wet = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(s.x, s.z) <= liquid + 0.3
+      r.freeFor = upY > 0.75 && !wet && (r.kind === 'flipped' || moved > 3.5) ? r.freeFor + DECIDE : 0
+      if (r.freeFor >= 1) { this.finish(r, true); return }
+    }
     // The backstop: minutes of real attempts and no progress at all.
     const patience = rescuePatience.value
     if (patience > 0 && this.time - r.progressAt > patience * 60 && r.attempts > 0) {
@@ -335,8 +357,12 @@ export class HostRescue {
     if (!r.person && !r.asked && (r.attempts > 0 || !r.rescuers.size) && elapsed > 6) this.askPerson(r, s)
     // Remarks from the stuck bot: pointed while nobody comes, patient and then less so while
     // the rescue grinds on without progress.
-    if (!r.person && this.time - r.pointedAt > (r.rescuers.size ? WAITING_S : 14)) {
-      if (!r.rescuers.size) { r.pointedAt = this.time; this.onEvent({ kind: 'pointed', stuck: r.stuck }) }
+    // A person still hooked on counts as someone working on it.
+    let personPulling = false
+    for (const pid of r.hooked) { const c = this.net.playerCord?.(pid); if (c && !c.flying && c.to === r.stuck) personPulling = true }
+    const working = r.rescuers.size > 0 || personPulling
+    if (!r.person && this.time - r.pointedAt > (working ? WAITING_S : 14)) {
+      if (!working) { r.pointedAt = this.time; this.onEvent({ kind: 'pointed', stuck: r.stuck }) }
       else if (this.time - r.progressAt > WAITING_S) { r.pointedAt = this.time; this.onEvent({ kind: 'waiting', stuck: r.stuck, minutes: elapsed / 60 }) }
     }
   }
@@ -388,7 +414,11 @@ export class HostRescue {
       if (!goes) r.declined.set(c.id, this.time + ASK_AGAIN_S)
     }
     // A later helper joining a rescue already under way says so.
-    if (r.attempts > 0) for (const id of sent) this.onEvent({ kind: 'join', bot: id, stuck: r.stuck, others: [...r.rescuers.keys()].filter((o) => o !== id) })
+    // (With nobody else on it, the newcomer simply starts; its 'start' line comes when it fires.)
+    if (r.attempts > 0) for (const id of sent) {
+      const others = [...r.rescuers.keys()].filter((o) => o !== id)
+      if (others.length) this.onEvent({ kind: 'join', bot: id, stuck: r.stuck, others })
+    }
   }
 
   private dispatch(r: Rescue, id: number, stuckVehicle: Vehicle): boolean {
@@ -466,7 +496,11 @@ export class HostRescue {
     } else {
       this.stats.gaveUp++
       // The old self-rescue now happens: its timers are long past their limits.
-      if (!r.person) this.onEvent({ kind: 'giveup', stuck: r.stuck })
+      if (!r.person) {
+        if (brain) this.selfRescue.set(r.stuck, { until: this.time + SELF_RESCUE_S, recoveries: brain.rescues })
+        this.onEvent({ kind: 'giveup', stuck: r.stuck })
+        brain?.recover()
+      }
     }
   }
 

@@ -225,7 +225,16 @@ export class BotBrain implements System {
     const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5 && !isRoadFord(this.terrain, here.x, here.z)
     // Being over liquid is trouble only for wheels: a hovercraft rides on it and a jet is above it.
     const wheeled = this.vehicle.kind !== 'jet' && this.vehicle.kind !== 'hovercraft'
-    this.liquidTime = afloat && wheeled ? this.liquidTime + dt : 0
+    // In liquid counts as trouble only while it is trying to drive and getting nowhere: a buggy
+    // paddling, or driving along the bed, is fine, and one that stops in water by choice (it
+    // sinks, since water-sinks) can drive out again whenever it likes.
+    // A buggy that stops in water by choice sinks to the bed and looks stuck: it heads for the
+    // nearest dry ground instead, and only then, if it cannot get there, is it in trouble.
+    if (afloat && wheeled && Math.abs(input.y) < 0.1 && !this.holdRecovery) {
+      const shore = this.shoreNear(here, here)
+      if (shore) this.mind!.hold({ x: shore.x, y: here.y, z: shore.z }, 3, 15)
+    }
+    this.liquidTime = afloat && wheeled && this.slow() && Math.abs(input.y) > 0.1 ? this.liquidTime + dt : 0
     this.flippedTime = status.flipped ? this.flippedTime + dt : 0
     // A rescue holds the bot's own recovery, but never for a bot that is lost.
     if (this.holdRecovery) { if (this.lost(here)) { this.rescue(); this.mind!.reset() } return }
@@ -267,10 +276,35 @@ export class BotBrain implements System {
       if (d < distance) { distance = d; this.target = candidate }
     }
   }
+  /** The nearest safe dry ground to `here`, preferring the side towards `towards`; at most 256 m. */
+  private shoreNear(here: { x: number; z: number }, towards: { x: number; z: number }): { x: number; z: number } | null {
+    let shore: { x: number; z: number } | null = null
+    for (const radius of [8, 16, 32, 64, 128, 256]) {
+      let best = Infinity
+      for (let i = 0; i < 16; i++) {
+        const angle = i * Math.PI / 8, x = here.x + Math.cos(angle) * radius, z = here.z + Math.sin(angle) * radius
+        if (!isSafeGround(this.terrain, x, z)) continue
+        const d = Math.hypot(x - towards.x, z - towards.z)
+        if (d < best) { best = d; shore = { x, z } }
+      }
+      if (shore) return shore
+    }
+    return shore
+  }
+  /** Moving slower over the ground than a buggy paddles or crawls along a bed. */
+  private slow(): boolean {
+    const v = this.vehicle.body.linvel()
+    return Math.hypot(v.x, v.z) < 1.5
+  }
   /** Somewhere no tow can reach: below the world, or not a number at all. Recovered at once. */
   private lost(here: { x: number; y: number; z: number }): boolean {
     return !Number.isFinite(here.x) || !Number.isFinite(here.y) || !Number.isFinite(here.z) || here.y < this.terrain.heightAt(here.x, here.z) - 10
   }
+  /**
+   * Hop back to a landing pad now: the old self-rescue, when a rescue has given up (its line
+   * says so). Waiting for the timers instead let the bot be noticed again first, and loop.
+   */
+  recover(): void { this.rescue(); this.mind?.reset() }
   private rescue() {
     if (this.requestRecovery) {
       if (this.requestRecovery()) {
@@ -413,20 +447,11 @@ export class BotBrain implements System {
     let aimX = duck ? duck.x : there.x + targetVelocity.x * lead, aimZ = duck ? duck.z : there.z + targetVelocity.z * lead
     const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
     const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5 && !isRoadFord(this.terrain, here.x, here.z)
-    this.liquidTime = afloat && p.canDrive.value ? this.liquidTime + dt : 0
+    // Chasing, a bot in liquid always heads for the shore (below): trouble only while slow.
+    this.liquidTime = afloat && p.canDrive.value && this.slow() ? this.liquidTime + dt : 0
     if (afloat) {
       // Bots try to crawl toward dry ground before requesting a return to their pad.
-      let shore: { x: number; z: number } | null = null
-      for (const radius of [8, 16, 32, 64, 128, 256]) {
-        let best = Infinity
-        for (let i = 0; i < 16; i++) {
-          const angle = i * Math.PI / 8, x = here.x + Math.cos(angle) * radius, z = here.z + Math.sin(angle) * radius
-          if (!isSafeGround(this.terrain, x, z)) continue
-          const d = Math.hypot(x - there.x, z - there.z)
-          if (d < best) { best = d; shore = { x, z } }
-        }
-        if (shore) break
-      }
+      const shore = this.shoreNear(here, there)
       if (shore) { aimX = shore.x; aimZ = shore.z }
     }
     this.routeTime -= dt

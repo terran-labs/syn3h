@@ -52,6 +52,7 @@ interface FakeBrain {
   raceGoal: null
   rescues: number
   clearTrouble(): void
+  recover(): void
 }
 
 const NAMES = ['Temolin Dust Clerk', 'Detodak Rust Auditor', 'Fanirek Cone Marshal', 'Lomavin Hull Intern', 'Begonek Spare Pilot']
@@ -125,7 +126,7 @@ export function escalationTrial(scenario: Hard, seed: number, limit = 600, log?:
     return g
   }
   const brains: FakeBrain[] = vehicles.map(() => {
-    const b: FakeBrain = { trouble: { stuck: 0, flipped: 0, bog: 0 }, holdRecovery: false, directive: null, mind: { reset() {} }, raceGoal: null, rescues: 0, clearTrouble() { b.trouble.stuck = b.trouble.flipped = b.trouble.bog = 0 } }
+    const b: FakeBrain = { trouble: { stuck: 0, flipped: 0, bog: 0 }, holdRecovery: false, directive: null, mind: { reset() {} }, raceGoal: null, rescues: 0, clearTrouble() { b.trouble.stuck = b.trouble.flipped = b.trouble.bog = 0 }, recover() { b.rescues++; b.clearTrouble() } }
     return b
   })
   const events: string[] = []
