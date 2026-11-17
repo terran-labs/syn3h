@@ -8,7 +8,8 @@ import { BanterDirector, type BanterBot, type BanterPlayer, type Directive } fro
 import { POOLS, POOL_FILES } from '../../src/bots/banter/data'
 import { FRAGMENTS } from '../../src/bots/banter/data/fragments'
 import { expand, type Context } from '../../src/bots/banter/grammar'
-import { VOICE_IDS } from '../../src/bots/banter/voices'
+import { ROLE_WORDS, VOICE_IDS, VOICES } from '../../src/bots/banter/voices'
+import { generateName } from '../../src/ui/data/names'
 import { botChatter, botChatterLevel, filterChat, MAX_CHAT_LENGTH } from '../../shared/chat'
 import { params } from '../../shared/params'
 import { seededRandom } from '../../src/bots/random'
@@ -159,7 +160,7 @@ describe('bot banter', () => {
 
   it('every template, for every voice, expands to a line that passes the filter and the limits', () => {
     const r = seededRandom(7)
-    const ctx: Context = { me: 'Temolin', you: 'Detodak', subj: 'Fanirek', player: 'Sam', critter: 'very small moose', feature: 'the lava vent', activity: 'cruising the road', count: 'third', sea: 'lava', planet: 'volcanic', kind: 'jet' }
+    const ctx: Context = { me: 'Temolin', role: 'Glacier Courier', you: 'Detodak', subj: 'Fanirek', player: 'Sam', critter: 'very small moose', feature: 'the lava vent', activity: 'cruising the road', count: 'third', sea: 'lava', planet: 'volcanic', kind: 'jet' }
     let checked = 0
     const bad: string[] = []
     for (const [key, pool] of Object.entries(POOLS)) {
@@ -176,6 +177,15 @@ describe('bot banter', () => {
     for (const [key, list] of Object.entries(FRAGMENTS)) for (const f of list) if (NEVER.test(f)) bad.push(`fragment ${key}: ${f}`)
     expect(checked).toBeGreaterThan(5000)
     expect(bad).toEqual([])
+  })
+
+  it('nearly every generated bot name gets its voice from its role, not by chance', () => {
+    let byRole = 0
+    for (let i = 0; i < 2000; i++) {
+      const name = generateName(`seed${i}`, 'bot')
+      if (name.split(' ').slice(1).some((w) => ROLE_WORDS.has(w.toLowerCase())) || VOICE_IDS.some((v) => name.endsWith(VOICES[v].job))) byRole++
+    }
+    expect(byRole / 2000).toBeGreaterThan(0.9)
   })
 
   it('every key the director uses exists, and no data file shadows another', () => {

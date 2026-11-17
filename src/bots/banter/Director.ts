@@ -245,7 +245,7 @@ export class BanterDirector {
     const own = pool[bot.voice] ?? []
     const any = pool.any ?? []
     if (!own.length && !any.length) return null
-    const full: Context = { me: bot.short, planet: this.world.planet(), sea: this.world.sea(), ...ctx }
+    const full: Context = { me: bot.short, role: bot.name.split(' ').slice(1).join(' ') || 'bot', planet: this.world.planet(), sea: this.world.sea(), ...ctx }
     // The voice's own lines weigh double, so voices stay distinct but never run dry. Each
     // list keeps its own record of what was said: the shared lines are used up once for
     // everyone, not once per voice.
