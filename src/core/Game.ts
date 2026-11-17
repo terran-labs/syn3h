@@ -73,7 +73,7 @@ export class Game {
   }
 
   async init(): Promise<void> {
-    setCompiler(object => this.compileAhead(object))
+    setCompiler(object => this.compileAhead(object), () => this.compilesAhead())
     // Physics starts first and is awaited only where the physics world is created, below: its
     // WebAssembly downloads and compiles while the adapter probe and the renderer start.
     const physics = timeStartup('physics init (Rapier WASM), beside the probe and renderer', () => initPhysics())
@@ -275,6 +275,7 @@ export class Game {
    * down, the ground behind the vehicle) is ready too. Resolves when every pipeline is built.
    */
   async precompile(): Promise<void> {
+    if (!this.compilesAhead()) return
     const start = performance.now()
     await this.compileAhead(this.scene)
     try { performance.measure('syn3h:precompile', { start, end: performance.now() }) } catch { /* Older engines. */ }
@@ -287,7 +288,21 @@ export class Game {
    * not be in the scene; it is lit as the scene would light it. Visibility counts at the moment
    * of the call; culling does not.
    */
+  /**
+   * Whether compiling ahead is safe with the post chain as it is. Not while a scene pass draws
+   * more than one output (the velocity target of temporal smoothing, the occlusion and indirect
+   * light source pass: Ultra and Cinematic). Compiling through those with three r187's
+   * compileAsync made pipelines their frames rejected ("Color target has no corresponding
+   * fragment stage output", an empty fragment output struct), which freezes the canvas.
+   * There, as before this existed, shaders compile on first sight.
+   */
+  compilesAhead(): boolean {
+    const passes = (this.postChain?.scenePasses?.() ?? []) as unknown as ScenePass[]
+    return passes.length <= 1 && passes.every(pass => pass._mrt === null || pass._mrt === undefined)
+  }
+
   async compileAhead(object: THREE.Object3D): Promise<void> {
+    if (!this.compilesAhead()) return
     const renderer = this.renderer as unknown as CompilingRenderer
     keepContextThroughPrecompile(this.renderer)
     const passes = (this.postChain?.scenePasses?.() ?? []) as unknown as ScenePass[]
@@ -298,6 +313,8 @@ export class Game {
       const culled: THREE.Object3D[] = []
       object.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
       const target = renderer.getRenderTarget(), outputs = renderer.getMRT(), context = renderer.contextNode
+      const opaque = renderer.opaque, transparent = renderer.transparent, lighting = renderer.lighting
+      const override = this.scene.overrideMaterial, layers = this.camera.layers.mask
       let run: Promise<void>
       try {
         if (pass) {
@@ -309,10 +326,20 @@ export class Game {
           renderer.setRenderTarget(this.standIn(pass, renderer))
           renderer.setMRT(pass._mrt)
           if (pass.contextNode !== null) renderer.contextNode = pass._getContextNode(renderer)
+          // Everything else PassNode.updateBefore sets for its draw: which objects it draws
+          // (the occlusion source pass draws no transparent ones), its lighting (that pass is
+          // unlit), its override material and its layers. A material compiled for a pass that
+          // never draws it can make a pipeline that pass's outputs reject.
+          renderer.opaque = pass.opaque; renderer.transparent = pass.transparent
+          if (pass.lighting !== null) renderer.lighting = pass.lighting
+          if (pass.overrideMaterial !== null) this.scene.overrideMaterial = pass.overrideMaterial as THREE.Material
+          if (pass._layers !== null) this.camera.layers.mask = pass._layers.mask
         }
         run = renderer.compileAsync(object, this.camera, this.scene)
       } finally {
         renderer.setRenderTarget(target); renderer.setMRT(outputs); renderer.contextNode = context
+        renderer.opaque = opaque; renderer.transparent = transparent; renderer.lighting = lighting
+        this.scene.overrideMaterial = override; this.camera.layers.mask = layers
         for (const o of culled) o.frustumCulled = true
       }
       await run
@@ -378,6 +405,9 @@ export class Game {
 interface CompilingRenderer {
   samples: number
   contextNode: unknown
+  opaque: boolean
+  transparent: boolean
+  lighting: unknown
   getRenderTarget(): unknown
   setRenderTarget(target: unknown): void
   getMRT(): unknown
@@ -387,6 +417,11 @@ interface CompilingRenderer {
 }
 interface ScenePass {
   renderTarget: object
+  opaque: boolean
+  transparent: boolean
+  lighting: unknown
+  overrideMaterial: unknown
+  _layers: { mask: number } | null
   options: { samples?: number }
   contextNode: unknown
   _mrt: unknown

@@ -267,6 +267,8 @@ export class BotManager implements System {
     } else {
       const governor = (this.game as { quality?: { governor?: { targetMs: number; level: number } } }).quality?.governor
       // A bot still compiling counts as here: it is judged from the moment it was asked for.
+      // Wall time: performance.now() and the frame's own duration. Right for players; under a
+      // capture tool's virtual clock frames look free or costly regardless of the real work.
       const action = this.pacer.step(performance.now(), dt * 1000, {
         have: this.bots.length + (this.arriving ? 1 : 0), wanted, targetMs: governor?.targetMs ?? 1000 / 60, level: governor?.level ?? 0, open: this.gate(),
       })

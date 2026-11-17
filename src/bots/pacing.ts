@@ -12,6 +12,8 @@
  * beside the post effects and the resolution (src/core/quality.ts).
  *
  * Pure logic, stepped with a clock and frame times, so it can be tested without a browser.
+ * In the game both are wall time (performance.now and the frame's duration), which is what a
+ * player feels; under a capture tool's virtual clock the measurement means nothing.
  */
 import { defineParam } from '../../shared/params'
 
