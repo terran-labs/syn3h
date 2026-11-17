@@ -263,7 +263,8 @@ export class TowRescue {
     this.q.copy(this.stuck.body.rotation())
     this.up.set(0, 1, 0).applyQuaternion(this.q)
     const liquid = this.terrain.liquidHeightAt?.(p.x, p.z)
-    const wet = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(p.x, p.z) <= liquid + 0.3
+    // Free of the water once it is shallower than 30 cm: a vehicle can drive out of that itself.
+    const wet = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(p.x, p.z) < liquid - 0.3
     const moved = Math.hypot(p.x - this.start.x, p.z - this.start.z)
     const ok = this.up.y > 0.75 && !wet && (this.options.kind === 'flipped' ? true : moved > 3.5)
     this.freedFor = ok ? this.freedFor + dt : 0
