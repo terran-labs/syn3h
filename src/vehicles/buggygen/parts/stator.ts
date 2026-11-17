@@ -2,72 +2,62 @@ import type * as THREE from 'three/webgpu'
 import { Mesh } from './kit'
 
 /**
- * The hub motor's stator: a short wing across the hub, its span along Z, the wheel axle along
- * X. In section (across the axle) it is a lens, thickest at the hub and thinning to almost
- * nothing at the two open faces of the wheel. Toward each tip the section turns into a bow tie:
- * thin in the middle, flaring at the faces into two horns, and the tip is cut by the rotor
- * ring's inner cylinder, so it nearly touches the ring all round its end. The last stretch of
- * each tip is chrome; that is where the motor glow and sparks sit (LoadedBuggySkin STATOR_TIP).
+ * The hub motor's stator, after the owner's RimSimple: an angular bow tie across the hub. Its
+ * span runs along Z, the wheel axle along X. At the hub the section is a flat topped lens,
+ * thick in the middle and pinched to a thin edge at the two open faces of the wheel. Out along
+ * the span the middle thins and the edges thicken, until at each tip the section is a bow tie:
+ * thin in the middle, flaring at the faces into two horns that reach out to the rotor ring.
+ * The tip is hollowed between the horns. The last stretch of each tip is chrome; that is where
+ * the motor glow and sparks sit (the skin's STATOR_TIP, 0.33).
  *
- * Frame: as LoadedBuggySkin uses the loaded `RimSimple`, recentred on its bounding box.
+ * Built from flat panels between straight edges, drawn with face normals, as the original is.
+ * Frame: as the skin uses the loaded `RimSimple`, recentred on its bounding box.
  */
-export const STATOR = {
-  /** Half the hub width along the axle, at the root and at the tip horns. */
-  rootHalfWidth: .2, tipHalfWidth: .236,
-  /** Half thickness at the hub centre and how far out it has thinned to nothing (span, m). */
-  rootThick: .096, taperSpan: .32,
-  /** Tip section: half thickness in the middle and at the horns. */
-  tipMid: .036, tipHorn: .145,
-  /** Span where the section starts turning into the tip's bow tie, and where it is complete. */
-  turnFrom: .08, turnTo: .33,
-  /** Rotor ring cylinder that trims the horns; chrome begins at this span. */
-  ring: .347, chromeFrom: .3,
-  /** The tip is hollowed between the horns: its middle stops at this span. */
-  tipCentre: .246, tipHollowFrom: .2,
-}
+/**
+ * Stations from the hub out (the other half mirrors). Each gives one quarter of the section as
+ * four points, from the hub's middle line out to the open face: centre (x 0), shoulder, horn,
+ * edge (x the half width). Columns: span at the centre, at the shoulder, at the horn and at the
+ * edge; half thickness at each of the four; then the shoulder's, horn's and edge's x.
+ */
+export const STATOR_STATIONS: number[][] = [
+  // z centre, shoulder, horn, edge | y centre, shoulder, horn, edge | x shoulder, horn, edge
+  [0, 0, 0, 0, .096, .096, .05, .011, .1, .17, .2],
+  [.078, .078, .078, .078, .091, .091, .045, .011, .1, .17, .2],
+  [.17, .175, .19, .19, .062, .062, .09, .03, .1, .178, .208],
+  [.236, .245, .27, .275, .039, .039, .113, .04, .1, .186, .222],
+  [.246, .256, .333, .347, .036, .036, .13, 0, .1, .194, .236],
+]
+/** Station from which the stator is chrome. */
+export const STATOR_CHROME_FROM = 3
 
-const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+/** One section ring: 14 points round, starting at the open face on +X. */
+function section(row: number[]): [number, number, number][] {
+  const [zc, zs, zh, ze, yc, ys, yh, ye, xs, xh, xe] = row
+  const q: [number, number, number][] = [[xe, ye, ze], [xh, yh, zh], [xs, ys, zs], [0, yc, zc]]
+  const top = [...q, ...q.slice(0, 3).reverse().map(([x, y, z]) => [-x, y, z] as [number, number, number])]
+  return [...top, ...top.map(([x, y, z]) => [x, -y, z] as [number, number, number]).reverse()]
+}
 
 export function buildStator(detail: 0 | 1 | 2): { part: 'stator'; role: string; geometry: THREE.BufferGeometry }[] {
-  const s = STATOR
-  const around = detail === 0 ? 20 : detail === 1 ? 12 : 8
-  const half = detail === 0 ? 9 : detail === 1 ? 5 : 3
+  // Further away the in-between stations go: hub, wing end and tip still make the bow tie.
+  const rows = detail === 2 ? [0, 3, 4] : detail === 1 ? [0, 1, 3, 4] : [0, 1, 2, 3, 4]
+  // Stations from one tip through the hub to the other, as [row, side].
+  const order = [...rows.slice(1).reverse().map(i => [i, -1]), ...rows.map(i => [i, 1])]
   const metal = new Mesh(), chrome = new Mesh()
-  /** Half thickness at axle position x and span z, before the section's rounding. */
-  const thick = (x: number, z: number, a: number) => {
-    const u = Math.min(1, Math.abs(x) / a)
-    const root = Math.max(.006, s.rootThick * (1 - (z / s.taperSpan) ** 2)) * (1 - .9 * u ** 4)
-    const tip = s.tipMid + (s.tipHorn - s.tipMid) * smooth(.35, .85, u)
-    return root + (tip - root) * smooth(s.turnFrom, s.turnTo, z)
+  const ring = (m: Mesh, [i, side]: number[]) => section(STATOR_STATIONS[i]).map(([x, y, z]) => m.vert(x, y, z * side))
+  for (let k = 0; k + 1 < order.length; k++) {
+    // Each ring is CCW seen from +Z, so skinning toward +Z faces outward.
+    const m = Math.min(order[k][0], order[k + 1][0]) >= STATOR_CHROME_FROM ? chrome : metal
+    m.skin(ring(m, order[k]), ring(m, order[k + 1]))
   }
-  // Span stations from tip to tip, denser toward the tips where the shape changes.
-  const spans = Array.from({ length: 2 * half + 1 }, (_, k) => s.ring * Math.sin(Math.PI / 2 * (k - half) / half))
-  const ringAt = (z: number, m: Mesh) => {
-    const az = Math.abs(z), a = s.rootHalfWidth + (s.tipHalfWidth - s.rootHalfWidth) * smooth(s.turnFrom, s.ring, az)
-    return Array.from({ length: around }, (_, k) => {
-      const t = 2 * Math.PI * k / around, x = a * Math.cos(t), y = Math.sign(Math.sin(t)) * thick(x, az, a) * Math.sqrt(Math.max(0, 1 - (x / a) ** 8))
-      // The tip is trimmed by the rotor ring: no point lies outside its cylinder.
-      // Between the horns the tip is hollowed, so the span is remapped toward a concave end.
-      const u = Math.abs(x) / a
-      const end = Math.min(Math.sqrt(Math.max(0, s.ring ** 2 - y * y)), s.tipCentre + (s.ring - s.tipCentre) * smooth(.4, 1, u))
-      const zz = az <= s.tipHollowFrom ? az : s.tipHollowFrom + (az - s.tipHollowFrom) / (s.ring - s.tipHollowFrom) * (end - s.tipHollowFrom)
-      return m.vert(x, y, Math.sign(z) * zz)
-    })
+  // Tip faces: the section is a concave bow tie, so fan it from its middle.
+  for (const end of [order[0], order[order.length - 1]]) {
+    const r = ring(chrome, end), c = chrome.vert(0, 0, STATOR_STATIONS[end[0]][0] * end[1])
+    for (let j = 0; j < r.length; j++) if (end[1] > 0) chrome.tri(r[j], r[(j + 1) % r.length], c); else chrome.tri(r[(j + 1) % r.length], r[j], c)
   }
-  let prev: number[] = [], prevChrome = false
-  spans.forEach((z, k) => {
-    const isChrome = Math.abs(z) > s.chromeFrom, m = isChrome ? chrome : metal
-    const ring = ringAt(z, m)
-    // A ring shared across a role change is repeated, so each role keeps its own edge.
-    if (k) m.skin(prevChrome === isChrome ? prev : ringAt(spans[k - 1], m), ring)
-    if (k === 0 || k === spans.length - 1) {
-      // Close the tip with a fan on the ring cylinder.
-      const c = chrome.vert(0, 0, Math.sign(z) * s.tipCentre)
-      for (let j = 0; j < around; j++) if (k) chrome.tri(ring[j], ring[(j + 1) % around], c); else chrome.tri(ring[(j + 1) % around], ring[j], c)
-    }
-    prev = ring; prevChrome = isChrome
-  })
-  return [{ part: 'stator', role: 'frame', geometry: metal.geometry() }, { part: 'stator', role: 'chrome', geometry: chrome.geometry() }]
+  // Flat panels: unshared corners, so each face keeps its own normal.
+  const flat = (m: Mesh) => { const g = m.geometry().toNonIndexed(); g.computeVertexNormals(); return g }
+  return [{ part: 'stator', role: 'frame', geometry: flat(metal) }, { part: 'stator', role: 'chrome', geometry: flat(chrome) }]
 }
 
-export const STATOR_NUMBERS = Object.keys(STATOR).length
+export const STATOR_NUMBERS = STATOR_STATIONS.length * 11 + 1

@@ -18,8 +18,12 @@ export const WINGS = {
   tipFrontX: 6.59, tipFrontZ: -1.27,
   /** Trailing edge: swept forward from the root to a kink, then straight out to the tip. */
   kinkX: 3.70, kinkZ: 3.64, tipBackX: 6.62, tipBackZ: 3.66,
-  /** Rounded tip: furthest reach, and the squareness of its curve (1 an ellipse, lower squarer). */
-  span: 7.97, tipSquare: .5,
+  /**
+   * Blunt tip: its furthest reach and where along the chord that is, then two shoulders either
+   * side of it, this far out and this far either side. The tip is not centred between the
+   * corners: it sits toward the trailing edge.
+   */
+  span: 7.97, tipZ: 1.418, shoulderX: 7.80, shoulderHalf: 1.36,
   /** Rim bevel: inset in plan and rise. */
   bevel: .13, rise: .073,
   /** Roof ridge: where it leaves the centre line, a middle point, its outer end, and its height. */
@@ -30,13 +34,8 @@ export const WINGS = {
 
 /** Half outline in plan, from the root's trailing end round the tip to the root's leading end. */
 function outline(w = WINGS): [number, number][] {
-  const cz = (w.tipBackZ + w.tipFrontZ) / 2, bz = (w.tipBackZ - w.tipFrontZ) / 2, cx = (w.tipBackX + w.tipFrontX) / 2, ax = w.span - cx
-  const tip = [60, 30, 0, -30, -60].map(d => {
-    const t = d * Math.PI / 180, c = Math.cos(t), s = Math.sin(t)
-    return [cx + ax * Math.abs(c) ** w.tipSquare, cz + bz * Math.sign(s) * Math.abs(s) ** w.tipSquare] as [number, number]
-  })
-  // Of the five tip points the end two are replaced by the tip's own corners.
-  return [[0, w.rootBack], [w.kinkX, w.kinkZ], [w.tipBackX, w.tipBackZ], ...tip.slice(1, 4), [w.tipFrontX, w.tipFrontZ], [w.tipFrontX / 2, w.rootFront + (w.tipFrontZ - w.rootFront) / 2], [0, w.rootFront]]
+  const tip: [number, number][] = [[w.shoulderX, w.tipZ + w.shoulderHalf], [w.span, w.tipZ], [w.shoulderX, w.tipZ - w.shoulderHalf]]
+  return [[0, w.rootBack], [w.kinkX, w.kinkZ], [w.tipBackX, w.tipBackZ], ...tip, [w.tipFrontX, w.tipFrontZ], [w.tipFrontX / 2, w.rootFront + (w.tipFrontZ - w.rootFront) / 2], [0, w.rootFront]]
 }
 
 export function buildWings(detail: 0 | 1 | 2): { part: 'wings'; role: string; geometry: THREE.BufferGeometry }[] {

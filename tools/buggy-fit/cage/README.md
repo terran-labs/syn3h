@@ -23,6 +23,21 @@ cage so its subdivided surface lands on the reference, `render.ts` draws PNG she
     npx tsx tools/buggy-fit/cage/build.ts            # writes the cages, images to /tmp/buggy-fit/cage
     npx tsx tools/buggy-fit/compare.ts src/vehicles/buggygen/cage/cage250.ts --part body --detail 0
 
+## Feature pass (night of 16 November 2026)
+
+`cage250.ts` keeps its name and id but now stores 320 points, spent on the features that
+gave it away beside the original in the game renderer:
+
+| feature | what changed | points |
+| --- | --- | --- |
+| tail lamps | every point of both lamp regions is locked in decimation (`protect`), so the two bars per side stay thin and apart | about 40 |
+| hood scoop | the chrome lip's points inside a box are locked (`boxes`), and cage edges lying within 8 mm of a reference fold over 35 degrees become creases (`referenceCreases`) | about 30 |
+| cockpit rim | none: the rim's rear inner wall and its V at the mirror plane are in the original body too; the loaded canopy reaches back far enough to hide them, the generated canopy stops short and shows them | 0 |
+| tail fins, flank ripple | reference creases sharpen them slightly; locking the flank's fold lines (`FOLDLOCK`) sharpened the character line but bent the spoiler fin tip, so it is off | 0 |
+
+Both lamp and scoop locks keep reference points only inside those small regions; the rest of
+the cage is decimated and fitted as before. Close ups: `/tmp/buggy-fit/cage2/`.
+
 ## Surface quality pass (later on 16 November 2026)
 
 The cages are now built with three extra steps, all on by default in `build.ts`:
