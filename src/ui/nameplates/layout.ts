@@ -19,8 +19,11 @@ export const GAP = 4
 export const NUDGE = 12
 /** A decision (shown or hidden, nudged or not, full or compact) holds this long before reversing. */
 export const HOLD_MS = 400
-/** Fade in and out. No other animation: labels never slide or wipe. */
-export const FADE_MS = 150
+/**
+ * Every change of a label's strength (appearing, leaving, dimming behind terrain and back) is
+ * one eased opacity per label: ease-out, about this long to settle. Labels never slide or wipe.
+ */
+export const FADE_MS = 200
 /** A label already placed keeps its place until another plate is this many pixels inside it. */
 export const HOLD_SLACK = 3
 
@@ -93,6 +96,17 @@ export function spring(s: Spring, target: number, dt: number, omega = 22): numbe
   s.v = (s.v - omega * t) * e
   if (Math.abs(s.x - target) < .05 && Math.abs(s.v) < .5) { s.x = target; s.v = 0 }
   return s.x
+}
+
+/**
+ * One step of a label's opacity towards `target`: exponential ease-out, frame-rate independent,
+ * 95% of the way in FADE_MS, never overshooting; instant under reduced motion. Because there is
+ * one value per label, two causes (fading in while dimming) cannot fight or add up.
+ */
+export function easeOpacity(alpha: number, target: number, dt: number, instant = false): number {
+  if (instant || !Number.isFinite(alpha)) return target
+  const next = target + (alpha - target) * Math.exp(-dt * 3000 / FADE_MS)
+  return Math.abs(next - target) < .004 ? target : next
 }
 
 /** A HUD area. Soft areas are passive readouts a label may cover when nothing else is free. */
