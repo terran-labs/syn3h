@@ -282,7 +282,7 @@ export const IDLE: Pools = {
       'Tag, {you}? Winner gets a snack. Loser also gets a snack.',
       'Would anyone like to play tag? I promise to be kind about it.',
     ],
-    marshal: ['Tag. {you}. Now.', 'Tag. Cone is base.'],
+    marshal: ['Tag. {you}. Now.', 'Tag, {you}. The cone is home base. Do not touch the cone.'],
     moon: [
       'Tag, {you}. Whoever is it has to look at the moon.',
       'Let us play tag. The moon thinks it is always it. Prove it wrong.',

@@ -764,6 +764,10 @@ export class BanterDirector {
   private conflictAt = -Infinity
   private conflicted: BotState | null = null
   private conflictedWent = false
+  /** Bots that really towed someone out this session: only they may say they did. */
+  private readonly towed = new Set<number>()
+  /** Stuck bots whose rescuers called it off after trying: they thank, not grumble. */
+  private readonly triedFor = new Set<number>()
 
   /** A rescue happened (src/bots/rescue): say so, in character. */
   rescue(e: RescueEvent): void {
@@ -792,7 +796,7 @@ export class BanterDirector {
         if (e.going) this.speak(b, v === 'clerk' ? 'conflict.form' : this.r() < 0.6 ? 'conflict.go' : 'conflict.guilt', ctx)
         // A bot that stays never reads from conflict.go or conflict.guilt.
         // Bargaining is with a bot still deciding, never with one already on its way.
-        else if (this.conflicted && this.conflicted !== b && !this.conflictedWent && now - this.conflictAt < 20) this.speak(b, 'conflict.bargain', { ...ctx, you: this.conflicted.short })
+        else if (this.conflicted && this.conflicted !== b && !this.conflictedWent && now - this.conflictAt < 20) this.speak(b, this.towed.has(b.id) ? 'conflict.bargain.earned' : 'conflict.bargain', { ...ctx, you: this.conflicted.short })
         else if (v === 'clerk') this.speak(b, 'conflict.form', ctx)
         else if (p && this.r() < 0.4) this.speak(b, 'conflict.ask.player', ctx)
         // Staying: only lines that stay. (The guilt lines often end in going, so they are for goers.)
@@ -808,11 +812,39 @@ export class BanterDirector {
         else this.speak(b, 'rescue.start', { subj: s?.short ?? 'you', you: s?.short ?? 'you' })
         return
       }
+      case 'join': {
+        const b = bot(e.bot), s = bot(e.stuck), other = e.others.map(bot).find((o): o is BotState => !!o)
+        if (b) this.speak(b, 'rescue.join', { subj: s?.short ?? 'them', you: other?.short ?? s?.short ?? 'everyone' })
+        return
+      }
+      case 'swap': { const b = bot(e.bot), s = bot(e.stuck); if (b) this.speak(b, 'rescue.swap', { subj: s?.short ?? 'you', you: s?.short ?? 'you' }); return }
+      case 'waiting': {
+        const s = bot(e.stuck)
+        if (s) this.speak(s, e.minutes < 1.5 ? 'stuck.waiting.1' : e.minutes < 3 ? 'stuck.waiting.2' : 'stuck.waiting.3', {})
+        return
+      }
+      case 'calloff': {
+        const b = bot(e.bot), s = bot(e.stuck)
+        if (b) this.speak(b, 'rescue.calloff', { subj: s?.short ?? 'you', you: s?.short ?? 'you' })
+        if (s) this.triedFor.add(s.id)
+        return
+      }
+      case 'player.ask': {
+        const s = bot(e.stuck), p = this.players.get(e.player)
+        if (s && p) this.speak(s, 'rescue.player.ask', { player: p.name, you: p.name }, t)
+        return
+      }
+      case 'player.hooked': {
+        const s = bot(e.stuck), p = this.players.get(e.player)
+        if (s && p) this.speak(s, 'rescue.player.hooked', { player: p.name, you: p.name }, t)
+        return
+      }
       case 'retry': { const b = bot(e.bot), s = bot(e.stuck); if (b && this.r() < 0.7) this.speak(b, 'rescue.retry', { subj: s?.short ?? 'you', you: s?.short ?? 'you' }); return }
       case 'freed': {
         const s = bot(e.stuck)
         const helper = e.by.map(bot).find((b): b is BotState => !!b)
         const person = e.players.map((id) => this.players.get(id)).find((p) => !!p)
+        for (const id of e.by) this.towed.add(id)
         const n = (this.rescued.get(e.stuck) ?? 0) + 1
         this.rescued.set(e.stuck, n)
         if (s) {
@@ -829,7 +861,11 @@ export class BanterDirector {
         } })
         return
       }
-      case 'giveup': { const s = bot(e.stuck); if (s) this.speak(s, 'rescue.giveup', {}); return }
+      case 'giveup': {
+        const s = bot(e.stuck)
+        if (s) this.speak(s, this.triedFor.delete(s.id) ? 'rescue.giveup.tried' : 'rescue.giveup', {})
+        return
+      }
       case 'player.came': {
         const p = this.players.get(e.player), s = bot(e.stuck)
         if (!p || !s) return

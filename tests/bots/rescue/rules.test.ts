@@ -1,5 +1,5 @@
 /**
- * Rescue decisions as invariants: a stuck bot is noticed in bounded time, at most two go,
+ * Rescue decisions as invariants: a stuck bot is noticed in bounded time, at most three go,
  * nobody goes with the setting off, a rescue attempt always ends, and the accident-prone bot's
  * mishap rate stays near its setting over a long session.
  */
@@ -26,7 +26,7 @@ describe('rescue rules', () => {
     expect(Math.max(...Object.values(STUCK_AFTER)) + 0.5).toBeLessThanOrEqual(6)
   })
 
-  it('never sends more than two rescuers, however many could go', () => {
+  it('never sends more than the most rescuers, however many could go', () => {
     for (let n = 0; n < 12; n++) {
       for (const stuckFor of [0, 10, 60]) {
         const going = chooseRescuers(crowd(n, { distance: 5 }), { stuckFor, helpers: 0, tag: false, enabled: true })

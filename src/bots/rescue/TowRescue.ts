@@ -79,7 +79,8 @@ export class TowRescue {
   private inPhase = 0
   private readonly start = new Vector3()
   private pull: { x: number; z: number }
-  private readonly anchorDistance: number
+  private anchorDistance: number
+  private readonly baseDistance: number
   private readonly maxAttempts: number
   private readonly goal: DriveGoal = { x: 0, z: 0, speed: 0 }
   private readonly q = new Quaternion()
@@ -101,7 +102,7 @@ export class TowRescue {
     private readonly options: TowOptions,
   ) {
     this.pull = { ...options.pull }
-    this.anchorDistance = options.anchor ?? (options.kind === 'wedged' ? 11 : 16)
+    this.anchorDistance = this.baseDistance = options.anchor ?? (options.kind === 'wedged' ? 11 : 16)
     this.maxAttempts = options.attempts ?? 3
     const p = stuck.body.translation()
     this.start.set(p.x, p.y, p.z)
@@ -279,7 +280,9 @@ export class TowRescue {
     this.inPhase = 0
     this.route = null
     this.waypointTime = 0
-    // Swing the pull line by 35 degrees, alternating sides.
+    // A different idea each time: swing the pull line by 35 degrees, alternating sides, and
+    // stand farther out on a longer line, then closer in on a shorter one.
+    this.anchorDistance = this.baseDistance + (this.attempt % 2 ? -2 : 6)
     const angle = (this.attempt % 2 ? -1 : 1) * 0.61
     const c = Math.cos(angle), s = Math.sin(angle)
     this.pull = { x: this.pull.x * c - this.pull.z * s, z: this.pull.x * s + this.pull.z * c }

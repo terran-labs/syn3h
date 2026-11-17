@@ -231,6 +231,12 @@ export class Bungee implements System {
     return this.cords.get(this.hooks.self())
   }
 
+  /** Anyone's cord as this client sees it: hook in the air, tied to vehicle `to`, or null. */
+  cordOf(owner: number): { flying: boolean; to: number | null } | null {
+    const c = this.cords.get(owner)
+    return c ? { flying: Boolean(c.hook), to: c.hook ? null : c.to } : null
+  }
+
   /** True while the local player's cord is attached. For the HUD. */
   get attached(): boolean {
     const c = this.mine

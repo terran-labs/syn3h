@@ -12,6 +12,13 @@ import { seededRandom, hashString } from '../random'
  */
 export const botMishaps = defineParam({ id: 'bots.mishapsPerHour', label: 'Accident-prone bot: mishaps per hour', group: 'Bots', scope: 'world', default: 3, min: 0, max: 12, step: 1 })
 
+/**
+ * How long rescuers keep at it with no progress at all before they call it off and the stuck
+ * bot hops home, in minutes. 0 means they never give up. Progress (the stuck one moved toward
+ * freedom) resets the count, so a slow, working rescue can run as long as it needs.
+ */
+export const rescuePatience = defineParam({ id: 'bots.rescuePatience', label: 'Rescuers give up after minutes without progress (0 never)', group: 'Bots', scope: 'world', default: 5, min: 0, max: 30, step: 1 })
+
 /** The signals the bots already keep (BotBrain.trouble), seconds. */
 export interface Trouble { stuck: number; flipped: number; bog: number }
 
@@ -59,16 +66,23 @@ export interface Situation {
   liquid?: boolean
 }
 
-export const MAX_RESCUERS = 2
-/** Farther than this, a bot does not notice. */
+/** At most this many bots work one rescue at once (two at first; a third joins a hard one). */
+export const MAX_RESCUERS = 3
+/** Farther than this, a bot does not notice at first; the reach grows while the bot stays stuck. */
 export const RESCUE_RANGE = 220
+/** Metres the reach grows per second stuck: after two minutes, most of the tile. */
+const RANGE_GROWTH = 2
+/** Guilt: +1 per this many seconds stuck, up to GUILT_MAX. */
+const GUILT_S = 40
+const GUILT_MAX = 2.5
 
 /**
  * Score staying against going, per bot. Higher goes. Legible on purpose:
  *   +1 to start, the urge to help
  *   - loyalty, if it is with a player (the loyal one stays)
  *   - distance / 150 (far is a long way)
- *   + stuck seconds / 30, up to 1 (guilt grows)
+ *   + stuck seconds / 40, up to 2.5 (guilt grows: over minutes, even a loyal or distant
+ *     bot goes)
  *   - 0.6 per rescuer already going
  *   - 0.4 in a game of Tag
  *   + 0.3 if eager
@@ -77,17 +91,24 @@ export const RESCUE_RANGE = 220
  *     every time, a buggy about two times in three)
  */
 export function rescueScore(c: Candidate, s: Situation): number {
-  return 1 - (c.withPlayer ? c.loyalty : 0) - c.distance / 150 + Math.min(1, s.stuckFor / 30) - 0.6 * s.helpers - (s.tag ? 0.4 : 0) + (c.eager ? 0.3 : 0) + (c.floats && s.liquid ? 0.8 : 0)
+  return 1 - (c.withPlayer ? c.loyalty : 0) - c.distance / 150 + Math.min(GUILT_MAX, s.stuckFor / GUILT_S) - 0.6 * s.helpers - (s.tag ? 0.4 : 0) + (c.eager ? 0.3 : 0) + (c.floats && s.liquid ? 0.8 : 0)
 }
 
-/** Who goes now: the best scores above the line, at most two in all, none with the setting off. */
-export function chooseRescuers(candidates: readonly Candidate[], s: Situation, threshold = 0.45): number[] {
+/** How far a bot notices a rescue after it has been stuck `stuckFor` seconds. */
+export function rescueRange(stuckFor: number): number { return RESCUE_RANGE + RANGE_GROWTH * Math.max(0, stuckFor) }
+
+/**
+ * Who goes now: the best scores above the line, at most `max` in all (MAX_RESCUERS at most),
+ * none with the setting off.
+ */
+export function chooseRescuers(candidates: readonly Candidate[], s: Situation, threshold = 0.45, max = MAX_RESCUERS): number[] {
   if (!s.enabled) return []
   const out: number[] = []
   let helpers = s.helpers
-  const ranked = candidates.filter((c) => c.able && c.distance < RESCUE_RANGE).map((c) => ({ c, score: rescueScore(c, s) })).sort((a, b) => b.score - a.score)
+  const cap = Math.min(MAX_RESCUERS, max), range = rescueRange(s.stuckFor)
+  const ranked = candidates.filter((c) => c.able && c.distance < range).map((c) => ({ c, score: rescueScore(c, s) })).sort((a, b) => b.score - a.score)
   for (const { c } of ranked) {
-    if (helpers >= MAX_RESCUERS) break
+    if (helpers >= cap) break
     // Re-score with the helpers already chosen: the second one has to want it more.
     if (rescueScore(c, { ...s, helpers }) < threshold) continue
     out.push(c.id); helpers++

@@ -195,4 +195,76 @@ describe('bot banter', () => {
       expect(POOLS[key], key).toBeDefined()
     }
   })
+
+  it('rescue lines name only the bots and people in that rescue, by the names on their labels', () => {
+    // The bug: "Hold on, Toratek" read as addressed to the stuck bot. Every name in a rescue line
+    // must be a label in the room, and one of the parties to that event.
+    const w = fakeWorld(4)
+    w.players.push({ id: 2, name: 'Toratek', x: 0, y: 10, z: 20, speed: 0, airFor: 0, idleFor: 0, kind: 'buggy', flippedFor: 0, stuckFor: 0 })
+    params.set(botChatterLevel.def.id, 2)
+    w.run(10)
+    const label = (id: number) => w.bots.find((b) => b.id === id)!.name.split(' ')[0]
+    const names = [...w.bots.map((b) => b.id).map(label), 'Sam', 'Toratek']
+    // A line is rescue speech when it fits a template from a rescue pool.
+    const templates = Object.entries(POOLS).filter(([k]) => /^(stuck|rescue|conflict)\./.test(k)).flatMap(([, pool]) => Object.values(pool).flat() as string[])
+    const pattern = (t: string) => new RegExp('^' + t.replace(/[.*+?^$()|\\]/g, '\\$&').replace(/\\\[|\[[^\]]*\]/g, '.+?').replace(/\{[^}]*\}/g, '.+?') + '$')
+    const patterns = templates.map(pattern)
+    const rescueLine = (text: string) => patterns.some((p) => p.test(text))
+    const [stuck, a, b] = [0xff00, 0xff01, 0xff02]
+    const events: { e: Parameters<typeof w.director.rescue>[0]; parties: string[] }[] = [
+      { e: { kind: 'stuck', stuck, clumsy: true, count: 1 }, parties: [label(stuck)] },
+      { e: { kind: 'conflict', bot: a, stuck, player: 1, going: true }, parties: [label(a), label(stuck), 'Sam'] },
+      { e: { kind: 'conflict', bot: b, stuck, player: 2, going: false }, parties: [label(b), label(stuck), label(a), 'Toratek'] },
+      { e: { kind: 'start', bot: a, stuck }, parties: [label(a), label(stuck)] },
+      { e: { kind: 'retry', bot: a, stuck }, parties: [label(a), label(stuck)] },
+      { e: { kind: 'join', bot: b, stuck, others: [a] }, parties: [label(a), label(b), label(stuck)] },
+      { e: { kind: 'waiting', stuck, minutes: 2 }, parties: [label(stuck)] },
+      { e: { kind: 'swap', bot: a, stuck }, parties: [label(a), label(stuck)] },
+      { e: { kind: 'player.ask', player: 1, stuck }, parties: [label(stuck), 'Sam'] },
+      { e: { kind: 'player.hooked', player: 1, stuck }, parties: [label(stuck), 'Sam'] },
+      { e: { kind: 'handoff', bot: b, stuck }, parties: [label(b), label(stuck)] },
+      { e: { kind: 'freed', stuck, by: [a], players: [1], count: 2 }, parties: [label(stuck), label(a), 'Sam'] },
+      { e: { kind: 'calloff', bot: a, stuck }, parties: [label(a), label(stuck)] },
+      { e: { kind: 'giveup', stuck }, parties: [label(stuck)] },
+    ]
+    let checked = 0
+    for (let round = 0; round < 6; round++) {
+      for (const { e, parties } of events) {
+        const before = w.said.length
+        w.director.rescue(e)
+        w.run(25)
+        for (const line of w.said.slice(before)) {
+          // Ordinary chatter in the gap may name anyone; only rescue speech is checked.
+          if (!rescueLine(line.text)) continue
+          checked++
+          for (const n of names) if (new RegExp(`\\b${n}\\b`).test(line.text)) expect(parties, `${e.kind}: ${line.text}`).toContain(n)
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(30)
+  })
+
+  it('a bot claims an earlier tow only when it really towed someone this session', () => {
+    const w = fakeWorld(4)
+    params.set(botChatterLevel.def.id, 2)
+    w.run(10)
+    const claims = /\b(I went last time|I did the last one|I did the last rescue|the last rescue)\b/
+    const [stuck, a, b] = [0xff00, 0xff01, 0xff02]
+    for (let i = 0; i < 40; i++) {
+      w.director.rescue({ kind: 'conflict', bot: a, stuck, player: 1, going: false })
+      w.director.rescue({ kind: 'conflict', bot: b, stuck, player: 1, going: false })
+      w.run(30)
+    }
+    expect(w.said.some((l) => claims.test(l.text))).toBe(false)
+    // Once b has really towed someone out, it may say so.
+    w.director.rescue({ kind: 'freed', stuck, by: [b], players: [], count: 1 })
+    let claimed = false
+    for (let i = 0; i < 60 && !claimed; i++) {
+      w.director.rescue({ kind: 'conflict', bot: a, stuck, player: 1, going: false })
+      w.director.rescue({ kind: 'conflict', bot: b, stuck, player: 1, going: false })
+      w.run(30)
+      claimed = w.said.some((l) => l.bot === b && claims.test(l.text))
+    }
+    expect(w.said.filter((l) => l.bot !== b && claims.test(l.text))).toEqual([])
+  })
 })

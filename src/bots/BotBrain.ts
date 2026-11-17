@@ -227,8 +227,9 @@ export class BotBrain implements System {
     const wheeled = this.vehicle.kind !== 'jet' && this.vehicle.kind !== 'hovercraft'
     this.liquidTime = afloat && wheeled ? this.liquidTime + dt : 0
     this.flippedTime = status.flipped ? this.flippedTime + dt : 0
-    if (this.holdRecovery) return
-    if (this.liquidTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2 || this.mind!.troubleFor >= p.recoveryTime.value || here.y < this.terrain.heightAt(here.x, here.z) - 10) {
+    // A rescue holds the bot's own recovery, but never for a bot that is lost.
+    if (this.holdRecovery) { if (this.lost(here)) { this.rescue(); this.mind!.reset() } return }
+    if (this.liquidTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2 || this.mind!.troubleFor >= p.recoveryTime.value || this.lost(here)) {
       this.rescue(); this.mind!.reset()
     }
   }
@@ -265,6 +266,10 @@ export class BotBrain implements System {
       const d = flat ** 2 + (q.y - here.y) ** 2
       if (d < distance) { distance = d; this.target = candidate }
     }
+  }
+  /** Somewhere no tow can reach: below the world, or not a number at all. Recovered at once. */
+  private lost(here: { x: number; y: number; z: number }): boolean {
+    return !Number.isFinite(here.x) || !Number.isFinite(here.y) || !Number.isFinite(here.z) || here.y < this.terrain.heightAt(here.x, here.z) - 10
   }
   private rescue() {
     if (this.requestRecovery) {
@@ -558,7 +563,7 @@ export class BotBrain implements System {
       // quick when crawling, slower at speed. The original snapped lock to lock every step.
       const rate = (speed < 20 ? 3.6 - speed * 0.09 : 1.8) * dt
       this.steer += Math.max(-rate, Math.min(rate, input.x - this.steer)); input.x = this.steer
-      if (!this.holdRecovery && (this.liquidTime >= p.recoveryTime.value || this.immobileTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2 || here.y < this.terrain.heightAt(here.x, here.z) - 10)) this.rescue()
+      if (this.lost(here) || (!this.holdRecovery && (this.liquidTime >= p.recoveryTime.value || this.immobileTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2))) this.rescue()
     } else {
       // VehicleBot.js:118-120 disables driving. Pausing must not trigger a rescue.
       input.brakes = true; this.strategyTime = this.immobileTime = this.liquidTime = this.flippedTime = 0; this.lastPosition.copy(here)
