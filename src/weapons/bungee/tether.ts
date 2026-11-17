@@ -4,7 +4,12 @@
  * - The cord is a thin bright filament inside a soft sheath. Beads of light run along it the
  *   way the pull goes, faster and brighter as tension rises, so a player can read the pull at
  *   a glance. A slack cord droops and shimmers. Each cord carries its own colour, cyan when
- *   slack running to warm gold under tension.
+ *   slack running to the owner's own paint under tension (warm gold for a grey paint).
+ * - A taut cord reads as a tow line from 60 m: its filament keeps a few pixels of width
+ *   however far away it is (up close it stays the same fine line), the sheath brightens, and
+ *   one slow pulse every PULSE_SPACING metres travels along it the way it pulls. All of it
+ *   scales with tension, so a slack cord looks exactly as it did. Reduced motion holds the
+ *   beads, pulse and shimmer still.
  * - A hook in flight is a small star with a short comet tail.
  * - A ground anchor is a ring that pulses once on attach, then settles into a slow glow. The
  *   far vehicle of a vehicle cord gets a small star at its hitch.
@@ -25,13 +30,14 @@
  * The pipelines compile while the world appears (../warm.ts).
  */
 import * as THREE from 'three/webgpu'
-import { attribute, float, max, mix, sin, smoothstep, uniform, uv } from 'three/tsl'
+import { attribute, cameraPosition, float, max, mix, positionWorld, sin, smoothstep, uniform, uv } from 'three/tsl'
 import type { Game } from '../../core/Game'
 import { graphicsLevel, levelNumber } from '../../core/quality'
 import { hotExposureNode } from '../../vehicles/skins/hotExposure'
 import { warmGear } from '../warm'
 import { CORD_CLEARANCE, drapeCord, type CordSurface } from './drape'
 import { MAX_BOTS } from '../../../shared/protocol'
+import { hexToOklab } from '../../vehicles/tints'
 
 // TSL nodes are dynamically typed; the effect sprites use the same alias.
 type N = any // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -56,6 +62,23 @@ const MIN_SCREEN = 0.03
 /** Metres between beads, and a bead's half length. */
 export const BEAD_SPACING = 2.6
 const BEAD_HALF = 0.32
+/**
+ * Metres between the slow pulses of a taut cord. The pulse runs at half the beads' speed,
+ * so the drawing phase wraps at twice this (a whole number of bead spacings).
+ */
+const PULSE_SPACING = BEAD_SPACING * 4
+export const PHASE_WRAP = PULSE_SPACING * 2
+/** A pulse's half length as a fraction of PULSE_SPACING. */
+const PULSE_HALF = 0.16
+/** At full tension the ribbon is this much wider up close, and this much more per metre away. */
+const TAUT_WIDEN = 0.3
+const TAUT_SCREEN = 0.03
+/**
+ * At full tension the filament's half width never falls below this many metres per metre
+ * away: about two and a half pixels of an 800 pixel tall view at 50 degrees, whatever the distance. Up
+ * close the fixed width is larger, so the line near the player stays as fine as it was.
+ */
+const TAUT_FILAMENT = 0.003
 /** Sheath and tint fade in over this many metres at each end, so the ribbon has no cut edge. */
 const END_FADE = 0.45
 /** Deeper shade of the cord's own colour that tints what is behind it. */
@@ -120,6 +143,8 @@ export class TetherLook {
   private readonly sheath: N = uniform(1)
   /** Core half width as a fraction of the ribbon's half width. */
   private readonly core: N = uniform(0.16)
+  /** The ribbon's width in metres at this level (the shader rebuilds each pixel's width). */
+  private readonly ribbon: N = uniform(WIDTH)
   private readonly pos: Float32Array
   private readonly along: Float32Array
   private readonly color: Float32Array
@@ -188,20 +213,28 @@ export class TetherLook {
     const along: N = attribute('gtAlong', 'vec4'), col: N = attribute('gtColor', 'vec4')
     const s = along.x, rest = along.y, across = along.z.abs(), tension = along.w
     const ends = smoothstep(0, END_FADE, s).mul(smoothstep(0, END_FADE, rest))
-    // The filament: a tight bright line.
-    const c = max(float(0), float(1).sub(across.div(this.core)))
-    const filament = c.mul(c)
-    // The sheath: a wide soft glow that shimmers while slack.
+    // This pixel's ribbon half width, as writeCord chose it for the vertex (without the taper
+    // at a grounded end, which only narrows the last segment).
+    const dist = positionWorld.distance(cameraPosition)
+    const half = max(this.ribbon.mul(tension.mul(TAUT_WIDEN).add(1)), dist.mul(this.ribbon).mul(tension.mul(TAUT_SCREEN).add(MIN_SCREEN))).mul(0.5)
+    // The filament: a tight bright line, kept a few pixels wide far off while taut.
+    const core = max(this.core, dist.mul(TAUT_FILAMENT).mul(tension).div(half))
+    const c = max(float(0), float(1).sub(across.div(core)))
+    const filament = c.mul(c).mul(mix(0.9, 1.5, tension))
+    // The pulse: a long soft swell that runs along a taut cord at half the beads' speed.
+    const pf = s.add(col.w.mul(0.5)).div(PULSE_SPACING).fract().sub(0.5).abs().div(PULSE_HALF)
+    const pulse = smoothstep(1, 0, pf).mul(tension).mul(ends)
+    // The sheath: a wide soft glow that shimmers while slack and brightens under tension.
     const soft = float(1).sub(across)
     const shimmer = sin(s.mul(1.9).sub(this.clock.mul(2.6))).mul(0.5).add(0.5).mul(float(1).sub(tension)).mul(0.6).add(0.7)
-    const sheath = soft.pow(3).mul(this.sheath).mul(ends).mul(shimmer).mul(0.32)
+    const sheath = soft.pow(3).mul(this.sheath).mul(ends).mul(shimmer).mul(tension.mul(0.9).add(pulse.mul(1.2)).add(1)).mul(0.32)
     // Beads: a short soft pulse every BEAD_SPACING metres, moving with the phase.
     const f = s.add(col.w).div(BEAD_SPACING).fract().sub(0.5).abs().mul(BEAD_SPACING).div(BEAD_HALF)
     const along1 = max(float(0), float(1).sub(f))
     const wide = max(float(0), float(1).sub(across.div(this.core.mul(2.6))))
     const bead = along1.mul(along1).mul(wide.mul(wide)).mul(mix(0.35, 2.4, tension)).mul(ends)
     const hot: N = hotExposureNode()
-    const light = col.xyz.mul(filament.mul(0.9).add(sheath).add(bead))
+    const light = col.xyz.mul(filament.mul(pulse.mul(0.8).add(0.9)).add(sheath).add(bead))
     const tintA = soft.pow(2).mul(0.42).mul(ends).clamp(0, 1)
     m.colorNode = light.add(col.xyz.mul(TINT).mul(tintA)).mul(hot)
     m.opacityNode = tintA
@@ -287,7 +320,8 @@ export class TetherLook {
       if (i > 0) s += p.distanceTo(points[i - 1])
       this.tan.subVectors(points[Math.min(n, i + 1)], points[Math.max(0, i - 1)])
       this.view.subVectors(this.camPos, p)
-      const w = Math.max(this.width, this.view.length() * this.width * MIN_SCREEN)
+      // Kept in step with the cord shader, which rebuilds this width per pixel.
+      const w = Math.max(this.width * (1 + TAUT_WIDEN * tension), this.view.length() * this.width * (MIN_SCREEN + TAUT_SCREEN * tension))
       this.side.crossVectors(this.tan, this.view)
       const len = this.side.length()
       if (len > 1e-8) this.side.multiplyScalar(w / 2 / len)
@@ -400,7 +434,9 @@ export class TetherLook {
   /** Before writing this frame: the camera, the clock and the graphics level. */
   begin(camera: THREE.Camera, time: number): THREE.Vector3 {
     if (this.level !== levelNumber(graphicsLevel.value)) this.retier()
-    this.clock.value = time
+    // Reduced motion: the slack shimmer holds still (the bead and pulse phase is held by the
+    // caller, see reducedMotion).
+    if (!reducedMotion()) this.clock.value = time
     camera.updateMatrixWorld()
     const e = camera.matrixWorld.elements
     this.camRight.set(e[0], e[1], e[2]).normalize()
@@ -445,6 +481,7 @@ export class TetherLook {
     this.width = low ? WIDTH_LOW : WIDTH
     this.tails = !low
     this.sheath.value = low ? 0 : 1
+    this.ribbon.value = this.width
     // The filament keeps about the same width in metres whatever the ribbon's width.
     this.core.value = Math.min(0.6, (0.05 / this.width) * 2)
     const index = this.cord.geometry.getIndex()!
@@ -463,9 +500,53 @@ export class TetherLook {
   }
 }
 
-/** Linear colour for a glow of 0 (slack) to 1 (taut), into `out`. */
-export function tetherColor(glow: number, out: number[]): number[] {
+/**
+ * Linear colour for a glow of 0 (slack) to 1 (taut), into `out`. `taut` is the colour at full
+ * tension: the owner's paint (paintGlow), or warm gold.
+ */
+export function tetherColor(glow: number, out: number[], taut: readonly number[] = TAUT_RGB): number[] {
   const g = Math.min(1, Math.max(0, glow))
-  for (let i = 0; i < 3; i++) out[i] = SLACK_RGB[i] + (TAUT_RGB[i] - SLACK_RGB[i]) * g
+  for (let i = 0; i < 3; i++) out[i] = SLACK_RGB[i] + (taut[i] - SLACK_RGB[i]) * g
   return out
+}
+
+/** Luminance of TAUT_RGB: a paint colour is scaled to glow as brightly as the gold did. */
+const TAUT_LUMA = 0.2126 * TAUT_RGB[0] + 0.7152 * TAUT_RGB[1] + 0.0722 * TAUT_RGB[2]
+
+/**
+ * A vehicle's paint as a taut cord's light, into `out` (linear, HDR): the more colourful of
+ * its body and accent, lifted to a light, saturated tone of the same hue and as bright as the
+ * gold it replaces, so a dark or muted paint still reads as light. A paint with no real hue
+ * (grey, white, black) keeps the gold. Call it when the paint changes, not every frame.
+ */
+export function paintGlow(body: string, accent: string, out: number[]): number[] {
+  const valid = (hex: string) => /^#[0-9a-f]{6}$/i.test(hex)
+  const a = valid(body) ? hexToOklab(body) : null, b = valid(accent) ? hexToOklab(accent) : null
+  const ca = a ? Math.hypot(a[1], a[2]) : 0, cb = b ? Math.hypot(b[1], b[2]) : 0
+  const lab = ca >= cb ? a : b, chroma = Math.max(ca, cb)
+  if (!lab || chroma < 0.04) { for (let i = 0; i < 3; i++) out[i] = TAUT_RGB[i]; return out }
+  // Same hue at a fixed light, colourful tone: OKLCH L 0.78, C 0.15, brought into gamut.
+  const h = Math.atan2(lab[2], lab[1])
+  let C = 0.15, r = 0, g = 0, bl = 0
+  for (let k = 0; k < 8; k++, C *= 0.8) {
+    const L = 0.78, A = C * Math.cos(h), B = C * Math.sin(h)
+    const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3
+    const m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3
+    const s = (L - 0.0894841775 * A - 1.2914855480 * B) ** 3
+    r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s
+    g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s
+    bl = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+    if (r >= 0 && g >= 0 && bl >= 0) break
+  }
+  r = Math.max(0, r); g = Math.max(0, g); bl = Math.max(0, bl)
+  const k = TAUT_LUMA / Math.max(1e-4, 0.2126 * r + 0.7152 * g + 0.0722 * bl)
+  out[0] = r * k; out[1] = g * k; out[2] = bl * k
+  return out
+}
+
+let motionQuery: MediaQueryList | null | undefined
+/** True when the player asked for reduced motion: cords hold their beads and pulse still. */
+export function reducedMotion(): boolean {
+  if (motionQuery === undefined) motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null
+  return motionQuery?.matches ?? false
 }

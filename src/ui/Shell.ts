@@ -983,6 +983,11 @@ export class Shell implements System {
     }
     const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|SUMMARY)$/.test(event.target.tagName))
     if (!editing && !event.repeat && event.code === 'KeyP') { event.preventDefault(); event.stopImmediatePropagation(); this.setPresentation(!this.presentation); return }
+    // The invite view holds only buttons, and its Back says "J": J closes it from any of them
+    // (Copy keeps focus after a click). Space and Enter still press the focused button, and J
+    // typed into a text field elsewhere is never taken.
+    const inField = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName))
+    if (this.inviteOpen && !inField && !event.repeat && event.code === 'KeyJ' && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); event.stopImmediatePropagation(); this.closeJoin(); return }
     if (!editing && !event.repeat && event.code === 'KeyJ') { event.preventDefault(); event.stopImmediatePropagation(); this.inviteOpen ? this.closeJoin() : this.openJoin(); return }
     if (this.exitAsking) {
       // The question owns the keyboard: Escape means stay, Tab moves between its two buttons,
@@ -1283,16 +1288,16 @@ export class Shell implements System {
           this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
           const nav = this.element.querySelector('.galaxy-links')?.getBoundingClientRect() ?? { top: 0, left: innerWidth }
           if (matchMedia(SHORT_LANDSCAPE).matches) {
-            // The buttons are a column on the right (shell.css): the galaxy and its labels get
-            // everything left of it and below the corner wordmark.
-            this.labelRight = nav.left - 8
+            // The buttons are a column on the right (shell.css) and the galaxy gets the height
+            // below the wordmark. The sun stays in the middle of the screen's width, as in
+            // portrait (the owner's call): the outer worlds may pass behind the button column.
             this.linksTop = innerHeight - 8
-            const top = this.brandBottom + 4, left = 8
+            const top = this.brandBottom + 4
             // The system is wider than tall, so it can grow past the free height a little;
             // the spread gives the inner worlds' labels room.
-            this.galaxyFrame = [(left + this.labelRight) / 2 / innerWidth, 1 - (top + this.linksTop) / 2 / innerHeight, 1.5 * (this.linksTop - top) / innerHeight]
+            this.galaxyFrame = [0.5, 1 - (top + this.linksTop) / 2 / innerHeight, 1.5 * (this.linksTop - top) / innerHeight]
           } else {
-            this.labelRight = innerWidth; this.galaxyFrame = undefined
+            this.galaxyFrame = undefined
             this.linksTop = nav.top > innerHeight / 2 ? nav.top - 24 : innerHeight - 152
           }
           this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
@@ -1345,8 +1350,7 @@ export class Shell implements System {
   private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
   /** The galaxy's world captions, by world id. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
-  /** Short landscape: the right edge left to the galaxy, and its framing (see SHORT_LANDSCAPE). */
-  private labelRight = innerWidth
+  /** Short landscape: the galaxy's framing (see SHORT_LANDSCAPE). */
   private galaxyFrame?: readonly [number, number, number]
   /** Where the wordmark ends, measured once per window size. */
   private brandBottom?: number

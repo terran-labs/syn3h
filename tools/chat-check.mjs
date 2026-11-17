@@ -128,7 +128,8 @@ try {
     // Enter on the now empty field closes chat; the lock stays.
     await A.page.keyboard.press('Enter'); await A.page.waitForTimeout(300)
     const closed = await st()
-    await A.page.keyboard.down('KeyW'); await A.page.waitForTimeout(300); const driving = await st(); await A.page.keyboard.up('KeyW')
+    // The axis follows the key at the next rendered frame, which can take a while under load.
+    await A.page.keyboard.down('KeyW'); await A.page.waitForFunction(() => window.syn3h.game.input.state.y === 1, null, { timeout: 2000 }).catch(() => {}); const driving = await st(); await A.page.keyboard.up('KeyW')
     await A.page.keyboard.press('KeyY'); await A.page.waitForTimeout(300)
     await A.page.keyboard.press('Escape'); await A.page.waitForTimeout(400)
     const esc = await st()
@@ -148,7 +149,7 @@ try {
     const after = await A.page.evaluate(() => ({ lock: !!document.pointerLockElement, open: window.syn3hChat.panel.isOpen, typing: window.syn3h.game.input.typing, suspended: window.syn3h.game.input.suspended, paused: document.querySelector('.syn3h-shell').classList.contains('is-paused'), field: document.activeElement?.classList.contains('chat-field') }))
     // The player can capture the cursor again with the usual click, and drives.
     await A.page.mouse.click(640, 400); await A.page.waitForTimeout(700)
-    await A.page.keyboard.down('KeyW'); await A.page.waitForTimeout(300)
+    await A.page.keyboard.down('KeyW'); await A.page.waitForFunction(() => window.syn3h.game.input.state.y === 1, null, { timeout: 2000 }).catch(() => {})
     const again = await A.page.evaluate(() => ({ lock: !!document.pointerLockElement, y: window.syn3h.game.input.state.y }))
     await A.page.keyboard.up('KeyW')
     check(before.lock && before.open && !after.lock && !after.open && !after.typing && !after.suspended && !after.paused && !after.field && again.lock && again.y === 1,
@@ -207,6 +208,28 @@ try {
     const touch = Boolean(opts.hasTouch)
     const P = await open(name.replace(/[^a-z]/g, '').slice(0, 10), opts)
     if (hand) await P.page.evaluate(() => window.syn3h.params.set('touch.leftHanded', true))
+    // "Show new messages over the game": on by default on desktop, off on touch-first devices.
+    // Off, an arriving line puts nothing over the view, the unread count rises and the log has it.
+    const quietDir = '/Users/vtn/dev/Syn3h-wt/_shots-20261116/chat-quiet'
+    mkdirSync(quietDir, { recursive: true })
+    const overlayDefault = await P.page.evaluate(() => window.syn3h.params.get('chat.overlay').value)
+    check(overlayDefault === !touch, `${name}: "Show new messages over the game" is ${touch ? 'off' : 'on'} by default (${overlayDefault})`)
+    const unreadNow = () => P.page.evaluate(() => { const b = document.querySelector('.chat-unread'); return b.hidden ? 0 : Number(b.textContent.replace('+', '')) })
+    const arrive = (text) => P.page.evaluate((text) => window.syn3hChat.net.chat.receive({ type: 'chat', from: 0xff00, text, t: 0 }), text)
+    await P.page.evaluate(() => window.syn3h.params.set('chat.overlay', false))
+    const unreadBefore = await unreadNow()
+    await arrive('Overlay check: this line stays in the log.')
+    await P.page.waitForTimeout(600)
+    const off = await P.page.evaluate(() => ({ strip: document.querySelectorAll('.chat-strip .chat-line').length, marks: document.querySelectorAll('.vehicle-nameplate.is-speaking').length, inLog: window.syn3hChat.net.chat.visible().some((l) => l.text.includes('stays in the log')) }))
+    const unreadAfter = await unreadNow()
+    await P.page.screenshot({ path: `${quietDir}/${name}-over-the-game-off.png` })
+    check(off.strip === 0 && off.marks === 0 && off.inLog && unreadAfter > unreadBefore, `${name}: with the switch off a line arrives, nothing shows over the view, the unread count rises (${unreadBefore} to ${unreadAfter}) and the log has it`)
+    await P.page.evaluate(() => window.syn3h.params.set('chat.overlay', true))
+    await arrive('Overlay check: this line shows over the game.')
+    await P.page.waitForTimeout(600)
+    const on = await P.page.evaluate(() => [...document.querySelectorAll('.chat-strip .chat-line')].some((l) => l.textContent.includes('shows over the game')))
+    await P.page.screenshot({ path: `${quietDir}/${name}-over-the-game-on.png` })
+    check(on, `${name}: with the switch on the line shows over the game, as before`)
     if (withBots) {
       await P.page.waitForFunction(() => document.querySelectorAll('.chat-strip .chat-line').length > 0, null, { timeout: 90000 }).catch(() => {})
       await P.page.waitForTimeout(1200)

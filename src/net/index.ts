@@ -1670,14 +1670,23 @@ export class NetClient implements System {
 
   private onDisconnect(retrying = true): void {
     // The room drops our cord and carry when it loses us; drop everything here too, since a
-    // reconnect may land in a world that has changed meanwhile.
-    this.resetGear()
+    // reconnect may land in a world that has changed meanwhile. The connection's own state
+    // goes first, and each cleanup step runs even if an earlier one throws (a renderer that
+    // had lost its GPU once threw from disposing a remote vehicle); the first error is thrown
+    // on afterwards, for the Connection to report. Reconnecting never waits on any of this.
     this.welcomed = false
-    this.raceBridge.disconnect()
     this.clock.reset()
     this.pingsSent = 0
-    for (const id of [...this.remotes.keys()]) this.removeRemote(id)
-    if (retrying) this.event('Disconnected, reconnecting')
+    let failed = false
+    let first: unknown
+    const step = (fn: () => void) => {
+      try { fn() } catch (error) { if (!failed) { failed = true; first = error } }
+    }
+    step(() => this.resetGear())
+    step(() => this.raceBridge.disconnect())
+    for (const id of [...this.remotes.keys()]) step(() => this.removeRemote(id))
+    if (retrying) step(() => this.event('Disconnected, reconnecting'))
+    if (failed) throw first
   }
 
   /**
@@ -1695,10 +1704,17 @@ export class NetClient implements System {
   /** Our place continued on another connection: stop here, as for a full room, and say so. */
   private onReplaced(): void {
     this.conn.close()
-    this.onDisconnect(false)
+    try { this.onDisconnect(false) } finally { this.stoppedHere('This game continued in another tab.') }
+  }
+
+  /**
+   * Stopped on purpose (replaced, or the room is full): local play with bots, and the reason
+   * shown. Runs even when the disconnect cleanup threw, so the player is always told.
+   */
+  private stoppedHere(status: string): void {
     this.players.clear()
     this.localAfterFull = true
-    this.joinStatus = 'This game continued in another tab.'
+    this.joinStatus = status
     this.updateBotRole()
     this.uiDirty = true
     this.ctx.onJoinStatus?.(this.joinStatus)
@@ -1707,13 +1723,7 @@ export class NetClient implements System {
   /** A full room is a refusal, not a transient transport failure. */
   private onRoomFull(): void {
     this.conn.close()
-    this.onDisconnect(false)
-    this.players.clear()
-    this.localAfterFull = true
-    this.joinStatus = 'No room available. Playing locally with bots.'
-    this.updateBotRole()
-    this.uiDirty = true
-    this.ctx.onJoinStatus?.(this.joinStatus)
+    try { this.onDisconnect(false) } finally { this.stoppedHere('No room available. Playing locally with bots.') }
   }
 
   private nameOf(id: number): string {

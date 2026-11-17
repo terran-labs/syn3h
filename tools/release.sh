@@ -6,6 +6,8 @@
 #                                           `wrangler dev --local` instead of deploying, and also
 #                                           smoke test it through a 150 ms latency proxy
 #   tools/release.sh <n> "note" --immediate reset every occupied room at once (see below)
+#   tools/release.sh <n> "note" --staging   freeze, deploy to the staging Worker and check it there;
+#                                           production is not touched and nothing is recorded
 #
 # Run from the integration checkout with a clean tree whose HEAD carries a tag. Steps:
 #  1. tools/promote-stable.sh freezes the build into ../Syn3h-stable/<id> (dist, server,
@@ -45,10 +47,11 @@ REPO="$(pwd)"
 N="${1:-}"
 NOTE="${2:-}"
 MODE="${3:-}"
-case "$N" in ''|*[!0-9]*) echo "usage: tools/release.sh <n> \"note\" [--dry-run | --immediate]" >&2; exit 2 ;; esac
+case "$N" in ''|*[!0-9]*) echo "usage: tools/release.sh <n> \"note\" [--dry-run | --immediate | --staging]" >&2; exit 2 ;; esac
 [ -n "$NOTE" ] || { echo "release.sh: give a note" >&2; exit 2; }
-[ -z "$MODE" ] || [ "$MODE" = "--dry-run" ] || [ "$MODE" = "--immediate" ] || { echo "release.sh: unknown option $MODE" >&2; exit 2; }
+[ -z "$MODE" ] || [ "$MODE" = "--dry-run" ] || [ "$MODE" = "--immediate" ] || [ "$MODE" = "--staging" ] || { echo "release.sh: unknown option $MODE" >&2; exit 2; }
 DRY=""; [ "$MODE" = "--dry-run" ] && DRY=1
+STAGE_ONLY=""; [ "$MODE" = "--staging" ] && STAGE_ONLY=1
 STUB="${SYN3H_RELEASE_STUB:-}"; [ -z "$DRY" ] || STUB=""
 # Extra deploy arguments: empty for a normal release.
 UPDATE_MODE=""; [ "$MODE" = "--immediate" ] && UPDATE_MODE="--durable-objects-code-update-mode immediate"
@@ -77,13 +80,28 @@ fi
 # Resolve the calendar label before building, so the UI and frozen metadata agree.
 CALVER="$(node tools/release-notes.mjs next)" || fail "could not compute the calendar version"
 export SYN3H_RELEASE_VERSION="$CALVER"
+# The notes are published after the release is live, so check now that the publish tool will
+# accept them: every required section, and the player digest beside them.
+NOTES="release-notes/releases/$CALVER.md"
+[ -f "$NOTES" ] || fail "no release notes at $NOTES; write and commit them before tagging"
+for _section in Features Fixes Handling Play Performance "Known issues"; do
+  grep -q "^### $_section\$" "$NOTES" || fail "$NOTES has no '### $_section' section"
+done
+[ -f "release-notes/player/$CALVER.md" ] || fail "no player digest at release-notes/player/$CALVER.md"
 # Attempt records include rolled-back deployments. Draft against the last accepted
 # production milestone, not the latest attempted release tag.
 PREV="$(awk -F '\t' '$5 == "production" { previous = $2 } END { print previous }' release-notes/history.tsv)"
 
 # The release live now, to return to if this one is not accepted, and the stable pointer's
 # target, to restore with it.
-PREV_LINE="$(tail -1 ../Syn3h-stable/releases.tsv 2>/dev/null || true)"
+# The release live now is the one www.syn3h.com serves, not necessarily the last row of
+# releases.tsv: a hand rollback (tools/rollback.sh) leaves production on an older release.
+LIVE_ID="$(curl -sf --max-time 15 https://www.syn3h.com/build.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).id||"")}catch{}})' 2>/dev/null || true)"
+PREV_LINE="$(awk -F '\t' -v id="$LIVE_ID" 'id != "" && $7 == id' ../Syn3h-stable/releases.tsv 2>/dev/null | tail -1)"
+if [ -z "$PREV_LINE" ]; then
+  PREV_LINE="$(tail -1 ../Syn3h-stable/releases.tsv 2>/dev/null || true)"
+  [ -n "$DRY" ] || echo "Warning: could not match the live build (${LIVE_ID:-unreadable}) in releases.tsv; a rollback would return to its last row."
+fi
 PREV_REL="$(printf '%s' "$PREV_LINE" | cut -f1)"
 PREV_ID="$(printf '%s' "$PREV_LINE" | cut -f7)"
 PREV_CURRENT="$(readlink ../Syn3h-stable/current 2>/dev/null || true)"
@@ -153,6 +171,8 @@ on_exit() {
   status=$?
   trap - EXIT
   cleanup
+  # The staging clone is only needed while staging is checked; its logs stay in /tmp.
+  [ -z "${STAGING_DEST:-}" ] || rm -rf "$STAGING_DEST"
   if [ -n "$DEPLOYED" ]; then roll_back || true; [ "$status" -ne 0 ] || status=1; fi
   exit "$status"
 }
@@ -183,6 +203,45 @@ if [ -n "$DRY" ]; then
   URL="http://127.0.0.1:$PORT/"
   echo "Serving the frozen copy at $URL"
 else
+  # --- Staging --------------------------------------------------------------------------------
+  # The same frozen build on the staging Worker first (wrangler.staging.toml: its own name, its
+  # own rooms, no routes), checked on Cloudflare's real network before production is touched.
+  # A failure here stops the release with production unchanged: nothing to roll back.
+  STAGING_DEST="$DEST.staging"
+  rm -rf "$STAGING_DEST"; cp -Rc "$DEST" "$STAGING_DEST" 2>/dev/null || cp -R "$DEST" "$STAGING_DEST"
+  printf 'User-agent: *\nDisallow: /\n' > "$STAGING_DEST/dist/robots.txt"
+  # Mark the page so a stray visitor cannot take staging for the real game. Only the staging
+  # clone's HTML changes; the production build and bundle are untouched.
+  sed -i '' 's#<title>#<title>[staging] #' "$STAGING_DEST/dist/index.html"
+  echo "Deploying to staging..."
+  if [ -n "$STUB" ]; then
+    echo "STUB: (cd $STAGING_DEST && wrangler deploy --config wrangler.staging.toml --message \"$MILESTONE $COMMIT: $NOTE\")"
+  else
+    (cd "$STAGING_DEST" && node "$WRANGLER" deploy --config wrangler.staging.toml --message "$MILESTONE $COMMIT: $NOTE" </dev/null) >"$LOG-staging-deploy.log" 2>&1 \
+      || { cat "$LOG-staging-deploy.log"; fail "staging deploy failed (production untouched)"; }
+    STAGING_URL="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' "$LOG-staging-deploy.log" | head -1)/"
+    [ "$STAGING_URL" != "/" ] || fail "no staging address in the deploy output (production untouched)"
+    echo "Staging address: $STAGING_URL"
+    settle "$STAGING_URL" "$STAGING_DEST" "$LOG-staging-assets.log" --feed || { tail -20 "$LOG-staging-assets.log"; fail "staging did not settle on the frozen build (production untouched)"; }
+    tail -1 "$LOG-staging-assets.log"
+    node tools/frozen-versions.mjs check "$STAGING_URL" "$STAGING_DEST" >"$LOG-staging-frozen.log" 2>&1 \
+      || { cat "$LOG-staging-frozen.log"; fail "frozen version links are broken on staging (production untouched)"; }
+    tail -1 "$LOG-staging-frozen.log"
+    SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-staging.XXXXXX)" || fail "could not reserve staging evidence directory"
+    echo "Smoke testing staging, with shot evidence in $SHOT_PARENT/evidence ..."
+    # Staging has its own crash budget, larger than production's: a crash is the machine, not
+    # the game, so it is a rerun, up to four; a game failure stops the release at once.
+    _prod_crashes="${SYN3H_CRASH_COUNT:-}"; SYN3H_CRASH_COUNT="$(mktemp /tmp/syn3h-crash-count-staging.XXXXXX)"; SYN3H_CRASH_CAP=4
+    _staging_ok=1; run_smoke "$STAGING_URL" "$LOG-staging-smoke.log" "$SHOT_PARENT/evidence" || _staging_ok=""
+    SYN3H_CRASH_CAP=2; if [ -n "$_prod_crashes" ]; then SYN3H_CRASH_COUNT="$_prod_crashes"; else unset SYN3H_CRASH_COUNT; fi
+    [ -n "$_staging_ok" ] || fail "net-smoke failed on staging (production untouched; see $LOG-staging-smoke.log)"
+  fi
+  if [ -n "$STAGE_ONLY" ]; then
+    echo
+    echo "STAGING OK: $MILESTONE ($COMMIT) frozen as $ID passed on the staging Worker. Production was not touched; nothing was recorded or tagged."
+    echo "Note: this repointed ../Syn3h-stable/current at $ID."
+    exit 0
+  fi
   # --- Deploy ---------------------------------------------------------------------------------
   echo "Deploying from the frozen copy..."
   # From here until the release is accepted, leaving the script rolls back (on_exit).
@@ -226,9 +285,16 @@ echo "Smoke testing $URL ..."
 SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.XXXXXX)" || fail "could not reserve smoke evidence directory"
 echo "Shot evidence: $SHOT_PARENT/evidence ($URL)"
 [ "${SYN3H_RELEASE_FORCE_FAIL:-}" != smoke ] || fail "net-smoke failed against $URL (forced by SYN3H_RELEASE_FORCE_FAIL=smoke)"
-run_smoke "$URL" "$LOG-smoke.log" "$SHOT_PARENT/evidence" || fail "net-smoke failed against $URL (see $LOG-smoke.log)"
-# Steps passed, connection drops ridden through and step retries, for the release ledger.
-SMOKE_SUMMARY="$(grep '^NET SMOKE SUMMARY ' "$LOG-smoke.log" | tail -1 | sed 's/^NET SMOKE SUMMARY //')"
+if [ -n "$DRY" ]; then
+  run_smoke "$URL" "$LOG-smoke.log" "$SHOT_PARENT/evidence" || fail "net-smoke failed against $URL (see $LOG-smoke.log)"
+  # Steps passed, connection drops ridden through and step retries, for the release ledger.
+  SMOKE_SUMMARY="$(grep '^NET SMOKE SUMMARY ' "$LOG-smoke.log" | tail -1 | sed 's/^NET SMOKE SUMMARY //')"
+else
+  # Production: only what a deploy can break. The gameplay rules were proven on the same frozen
+  # build by the full smoke on staging and in the dry run (tools/public-check.mjs).
+  run_public_check "$URL" "$LOG-smoke.log" || fail "public check failed against $URL (see $LOG-smoke.log)"
+  SMOKE_SUMMARY="$(grep '^PUBLIC CHECK ' "$LOG-smoke.log" | tail -1)"
+fi
 
 if [ -n "$DRY" ]; then
   npx tsx server/latency-proxy.ts --listen "$PROXY_PORT" --target "http://127.0.0.1:$PORT" --rtt 150 --jitter 30 >"$LOG-proxy.log" 2>&1 &
@@ -249,7 +315,7 @@ fi
 PRIMARY_URL="https://www.syn3h.com/"
 settle "$PRIMARY_URL" "$DEST" "$LOG-primary-assets.log" --feed || { tail -20 "$LOG-primary-assets.log"; fail "primary entry bundle did not settle on the frozen build within three minutes"; }
 tail -1 "$LOG-primary-assets.log"
-if ! tools/domain.sh check www.syn3h.com >"$LOG-primary.log" 2>&1; then
+if ! SYN3H_SHORT_CHECK=1 tools/domain.sh check www.syn3h.com >"$LOG-primary.log" 2>&1; then
   cat "$LOG-primary.log"
 node tools/frozen-versions.mjs check "$PRIMARY_URL" "$DEST" >"$LOG-primary-frozen.log" 2>&1 \
   || { cat "$LOG-primary-frozen.log"; fail "frozen version links are broken on the primary domain; roll back the deployment"; }
@@ -290,6 +356,29 @@ fi
 # The showcase is a separate step: a full-quality capture holds a heavy slot for about half an
 # hour, so it never runs inside a release. See docs/RELEASE-SHOWCASE.md.
 echo "Next, when no release is running: /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/showcase.mjs --version $CALVER --publish"
+
+# A second vantage point: the same short public check from a GitHub-hosted machine
+# (.github/workflows/public-check.yml). It reports only, for now: the release is already
+# accepted, and a failure there with a pass here is information about the route, not a
+# rollback. SYN3H_SKIP_VANTAGE=1 skips it.
+vantage() {
+  [ -z "${SYN3H_SKIP_VANTAGE:-}" ] || { echo "VANTAGE: skipped (SYN3H_SKIP_VANTAGE)"; return 0; }
+  command -v gh >/dev/null 2>&1 || { echo "VANTAGE: skipped (gh is not installed)"; return 0; }
+  _since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  gh workflow run public-check.yml -f version="$CALVER" -f url=https://www.syn3h.com/ >"$LOG-vantage.log" 2>&1 \
+    || { echo "VANTAGE: skipped (could not start the GitHub check; see $LOG-vantage.log)"; return 0; }
+  _run=""; _tries=0
+  while [ -z "$_run" ] && [ "$_tries" -lt 12 ]; do
+    sleep 5; _tries=$((_tries + 1))
+    _run="$(gh run list --workflow public-check.yml --event workflow_dispatch --limit 5 --json databaseId,createdAt \
+      -q "[.[] | select(.createdAt >= \"$_since\")][0].databaseId" 2>/dev/null || true)"
+  done
+  [ -n "$_run" ] || { echo "VANTAGE: skipped (the GitHub run did not appear within a minute)"; return 0; }
+  gh run watch "$_run" --interval 15 >>"$LOG-vantage.log" 2>&1 || true
+  _result="$(gh run view "$_run" --json conclusion,url -q '.conclusion + " " + .url' 2>/dev/null || echo "unknown")"
+  echo "VANTAGE: GitHub public check of $CALVER from a hosted machine: $_result"
+}
+vantage || true
 
 # Refresh aggregate dashboard tiles after the release record exists. The host supplies
 # SYN3H_SESSION_STATE; never store its value in the repository or published dashboard.

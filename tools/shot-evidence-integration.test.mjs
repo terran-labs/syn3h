@@ -25,6 +25,8 @@ async function fixtureChild(scenario) {
   // Keep imports, preflight, check(), evidence capture, catch/finally, marker and exit intact.
   const instrumented = source.slice(0, begin) + `try {
     clients.push(...globalThis.__fixtureClients)
+    // One browser per page, as open() launches them: the fixture's pages get one each.
+    for (const _ of globalThis.__fixtureClients) browsers.push(await launch())
     check('fixture original gameplay', ${scenario !== 'original-failure'})
   ` + source.slice(finish)
   const enabled = scenario !== 'default'
@@ -47,6 +49,8 @@ async function fixtureChild(scenario) {
     name,
     page: {
       async evaluate(fn) {
+        // The end-of-run read of the connection's handler-error counts: a clean page has none.
+        if (String(fn).includes('handlerErrors')) return {}
         evaluations++
         // Existing broad failure diagnostics are outside this focused acceptance test.
         if (String(fn).includes('const s = window.syn3h')) return { fixture: true }
@@ -113,30 +117,30 @@ if (childMode) {
     const r = run('default')
     assert.equal(r.exitCode, 0); assert.equal(hasOK(r), true)
     assert.equal(r.evaluations, 0); assert.equal(r.mkdirCalls, 0); assert.equal(r.writes.length, 0)
-    assert.equal(r.closes, 1); assert.equal(r.output.some(l => l.startsWith('SHOT EVIDENCE ACCEPTANCE')), false)
+    assert.equal(r.closes, r.launches); assert.ok(r.launches >= 1); assert.equal(r.output.some(l => l.startsWith('SHOT EVIDENCE ACCEPTANCE')), false)
   })
   test('opt-in complete evidence permits marker and zero exit', () => {
     const r = run('complete')
     assert.equal(r.exitCode, 0); assert.equal(hasOK(r), true)
-    assert.equal(acceptance(r).evidenceComplete, true); assert.equal(r.closes, 1)
+    assert.equal(acceptance(r).evidenceComplete, true); assert.equal(r.closes, r.launches); assert.ok(r.launches >= 1)
     assert.equal(r.evaluations, 2); assert.ok(r.writes.length >= 2)
   })
   for (const scenario of ['capture-error', 'missing-client', 'missing-phase', 'truncation', 'overflow', 'write-failure', 'timeout']) {
     test(`${scenario}: nonzero exit, no success marker, nested browser close`, () => {
       const r = run(scenario)
       assert.equal(r.exitCode, 1); assert.equal(hasOK(r), false)
-      assert.equal(acceptance(r).evidenceComplete, false); assert.equal(r.closes, 1)
+      assert.equal(acceptance(r).evidenceComplete, false); assert.equal(r.closes, r.launches); assert.ok(r.launches >= 1)
     })
   }
   test('browser close rejection exits nonzero without a success marker', () => {
     const r = run('close-rejection')
     assert.equal(r.exitCode, 1); assert.equal(hasOK(r), false)
-    assert.equal(r.closes, 1); assert.match(r.thrown, /fixture browser close rejected/)
+    assert.equal(r.closes, r.launches); assert.ok(r.launches >= 1); assert.match(r.thrown, /fixture browser close rejected/)
   })
   test('complete evidence never rescues an original gameplay failure', () => {
     const r = run('original-failure')
     assert.equal(acceptance(r).evidenceComplete, true)
-    assert.equal(r.exitCode, 1); assert.equal(hasOK(r), false); assert.equal(r.closes, 1)
+    assert.equal(r.exitCode, 1); assert.equal(hasOK(r), false); assert.equal(r.closes, r.launches); assert.ok(r.launches >= 1)
     assert.ok(r.output.some(l => l.startsWith('FAIL fixture original gameplay')))
   })
   for (const scenario of ['empty', 'relative', 'existing']) {

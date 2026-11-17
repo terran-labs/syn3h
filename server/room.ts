@@ -53,6 +53,7 @@ import {
 // ids pass through with a basic type check instead.
 import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { wrapDistance } from '../shared/wrap'
+import { logEvent, roomTag } from './log'
 import { TERRAIN_PARAM_IDS } from '../src/world/terrain/settings'
 import { sunDayLength } from '../src/world/sky/dayParams'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
@@ -101,6 +102,11 @@ export interface RoomSnapshot {
    * Explore, so a room that outlives the release does not start a game nobody asked for.
    */
   modes?: number
+  /**
+   * The room's log tag (server/log.ts roomTag), never its name. The Durable Object reads it
+   * after an eviction, when an alarm finds no sockets and no room in memory to ask.
+   */
+  tag?: string
   /**
    * 2 once a world's day length defaults to its orbit. A snapshot without it stored the old
    * default, a stopped clock (0), for every room whether or not anyone chose it: that 0 is
@@ -253,11 +259,22 @@ export const IDLE_RESET_MS = 5 * 60_000
 export const LEFT_RESET_MS = 15_000
 const ACTIVE_STATE_MS = 5000
 const JOIN_GRACE_MS = 10_000
+/** At most one malformed-message line per connection in this time, ms. */
+const MALFORMED_LOG_MS = 60_000
+/** At most one hill capture line per room in this time, ms; later ones are counted into it. */
+const CAPTURE_LOG_MS = 30_000
 /** How often, at most, a busy room persists "still active" for the Durable Object. */
 const ACTIVE_PERSIST_MS = 30_000
 
 export class Room {
   readonly name: string
+  /** The room in log lines: never its name, which a person may have typed. See server/log.ts. */
+  readonly tag: string
+  /** Server ms of the last malformed-message line, per connection. */
+  private readonly malformedAt = new WeakMap<Peer, number>()
+  /** Server ms of the last hill capture line, and captures since that were not logged. */
+  private captureLoggedAt = -Infinity
+  private capturesUnlogged = 0
   private readonly now: () => number
   private readonly maxPlayers: number
   private readonly onPersist?: (s: RoomSnapshot) => void
@@ -274,6 +291,8 @@ export class Room {
   private raceDeadline = 0
   private raceCooldownUntil = 0
   private lastRaceId = ''
+  /** The race whose end was last logged; see publishRace. */
+  private raceLogged: RaceState | null = null
   private locked = false
   private mode: number = MODE_EXPLORE
   private koth: KothState = emptyKoth()
@@ -294,6 +313,7 @@ export class Room {
 
   constructor(name: string, opts: RoomOptions = {}) {
     this.name = name
+    this.tag = roomTag(name)
     this.now = opts.now ?? Date.now
     this.maxPlayers = opts.maxPlayers ?? 16
     this.onPersist = opts.onPersist
@@ -366,11 +386,14 @@ export class Room {
     if (typeof data !== 'string') {
       const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
       const player = this.players.get(peer)
-      if (player) this.onState(player, bytes)
+      if (player && !this.onState(player, bytes)) this.malformed(peer, 'state', bytes.byteLength)
       return
     }
     const msg = parseJson<ClientMessage>(data)
-    if (!msg) return
+    if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') {
+      this.malformed(peer, 'json', data.length)
+      return
+    }
     const player = this.players.get(peer)
     if (!player) {
       if (msg.type === 'hello' && this.pending.has(peer)) this.onHello(peer, msg)
@@ -453,7 +476,21 @@ export class Room {
           this.onStuck(player)
         }
         break
+      default:
+        if ((msg as { type: string }).type !== 'hello') this.malformed(peer, 'type', data.length)
     }
+  }
+
+  /**
+   * A message the room cannot read. Logged without its content (it may hold typed text), at
+   * most once per connection per MALFORMED_LOG_MS, so a flood costs one line a minute.
+   */
+  private malformed(peer: Peer, kind: 'state' | 'json' | 'type', bytes: number): void {
+    const now = this.now()
+    const last = this.malformedAt.get(peer)
+    if (last !== undefined && now - last < MALFORMED_LOG_MS) return
+    this.malformedAt.set(peer, now)
+    console.error(JSON.stringify({ event: 'malformed', room: this.tag, player: this.players.get(peer)?.info.id ?? null, kind, bytes }))
   }
 
   disconnect(peer: Peer): void {
@@ -486,6 +523,7 @@ export class Room {
   private hold(peer: Peer, player: Player, until = this.now() + REJOIN_GRACE * 1000): void {
     const wasActive = this.isActive(player, this.now())
     player.heldUntil = until
+    logEvent('place_held', { room: this.tag, player: player.info.id, forMs: until - this.now() })
     player.raceDriving = false
     if (player.info.id === this.host) this.cancelRace('Host disconnected')
     else this.withdrawRace(player.info.id)
@@ -525,7 +563,10 @@ export class Room {
   private tickHeld(now: number): void {
     const on = this.rejoinOn()
     for (const [key, p] of [...this.players]) {
-      if (p.heldUntil && (!on || now >= p.heldUntil)) this.leave(key, p)
+      if (p.heldUntil && (!on || now >= p.heldUntil)) {
+        logEvent('place_expired', { room: this.tag, player: p.info.id, rejoinOn: on })
+        this.leave(key, p)
+      }
     }
   }
 
@@ -604,7 +645,7 @@ export class Room {
   snapshot(): RoomSnapshot {
     return {
       params: Object.fromEntries(this.values), it: this.it, scores: { ...this.scores }, nextId: this.nextId,
-      host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant, modes: 2, days: 2,
+      host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant, modes: 2, days: 2, tag: this.tag,
       ...(this.rejoinOn() ? { roster: this.roster() } : {}),
       race: { state: this.race, deadline: this.raceDeadline, cooldownUntil: this.raceCooldownUntil, lastId: this.lastRaceId },
     }
@@ -716,6 +757,7 @@ export class Room {
       // The replaced connection, if it was still open, is closed. Its close arrives with a
       // peer that no longer has a place, so it does nothing: no hold, no leave, no new host.
       if (!player.heldUntil) key.close(CLOSE_REPLACED, 'replaced')
+      logEvent('rejoin', { room: this.tag, player: player.info.id, from: player.heldUntil ? 'held' : 'quiet' })
       player.heldUntil = 0
       player.page = page
       player.lastHeardAt = this.now()
@@ -747,6 +789,7 @@ export class Room {
       if (mode !== this.mode) {
         this.mode = mode
         this.resetRound()
+        logEvent('mode', { room: this.tag, mode, by: 0, via: 'join' })
       }
       this.vacant = false
       if (this.players.size > 0) this.broadcast({ type: 'reset', reason: 'join', from: 0, params: Object.fromEntries(this.values), game: this.gameState() })
@@ -782,6 +825,7 @@ export class Room {
     for (const old in this.scores) if (!this.byId(Number(old))) delete this.scores[old]
 
     this.welcome(peer, player)
+    logEvent('hello', { room: this.tag, player: info.id, bot: false, players: this.players.size, host: this.host === info.id })
     this.broadcast({ type: 'join', player: info }, peer)
     // Being "it" by default is news only while a game of tag is on.
     this.broadcast({ type: 'game', game: this.gameState(), event: this.mode === MODE_TAG && this.it === info.id ? 'default' : undefined, actor: this.mode === MODE_TAG ? this.it : 0 })
@@ -808,15 +852,16 @@ export class Room {
     }
   }
 
-  private onState(player: Player, bytes: Uint8Array): void {
-    if (bytes.byteLength !== STATE_BYTES) return
+  /** False only for a state the room cannot read (wrong size, undecodable). */
+  private onState(player: Player, bytes: Uint8Array): boolean {
+    if (bytes.byteLength !== STATE_BYTES) return false
     const state = decodeState(bytes)
-    if (!state) return
+    if (!state) return false
     if (state.bot) {
       this.onBotState(player, state, bytes)
-      return
+      return true
     }
-    if (!this.budget(player, 'state')) return
+    if (!this.budget(player, 'state')) return true
     state.id = player.info.id
     player.lastState = state
     player.lastStateAt = this.now()
@@ -829,6 +874,7 @@ export class Room {
     const out = bytes.slice()
     stampStateId(out, player.info.id)
     for (const [peer, other] of this.players) if (other !== player) peer.send(out)
+    return true
   }
 
   /** Only the host simulates bots, so only the host may speak for them. */
@@ -1018,6 +1064,7 @@ export class Room {
     if (id === gameMode.def.id && value !== this.mode) {
       this.mode = value as number
       this.resetRound()
+      logEvent('mode', { room: this.tag, mode: this.mode, by: player.info.id, via: 'param' })
       this.broadcastGame('mode', player.info.id)
     }
   }
@@ -1076,6 +1123,7 @@ export class Room {
     if (this.koth.resetAt || (this.scores[id] ?? 0) < this.paramNumber(kothTargetScore.def)) return false
     this.koth.winner = id
     this.koth.resetAt = now / 1000 + WIN_PAUSE
+    logEvent('hill_win', { room: this.tag, player: id, score: this.scores[id] ?? 0 })
     this.koth.holder = 0
     this.koth.contested = false
     this.broadcastGame('win', id)
@@ -1111,6 +1159,7 @@ export class Room {
     const contested = inside.length >= 2
     let event: TagEvent | undefined
     if (holder !== k.holder) event = holder ? 'capture' : contested ? 'contest' : 'free'
+    if (event === 'capture') this.logCapture(holder, now)
     else if (contested !== k.contested) event = contested ? 'contest' : 'free'
     // Only time held at both ends of the step is credited: the step before a capture belonged
     // to somebody else, or to nobody.
@@ -1129,6 +1178,17 @@ export class Room {
       if (scored && this.checkWin(holder, now)) return
     }
     if (event || scored) this.broadcastGame(event, holder || undefined)
+  }
+
+  /** A hill capture, at most one line per CAPTURE_LOG_MS per room; see CAPTURE_LOG_MS. */
+  private logCapture(holder: number, now: number): void {
+    if (now - this.captureLoggedAt < CAPTURE_LOG_MS) {
+      this.capturesUnlogged++
+      return
+    }
+    logEvent('hill_capture', { room: this.tag, player: holder, unloggedBefore: this.capturesUnlogged })
+    this.captureLoggedAt = now
+    this.capturesUnlogged = 0
   }
 
   private onFire(peer: Peer, player: Player, shot: unknown): void {
@@ -1604,6 +1664,7 @@ export class Room {
    * the world asked for defaults. Everyone connected is told to reset their world sliders.
    */
   private resetWorld(reason: 'idle' | 'host', from: number): void {
+    logEvent('world_reset', { room: this.tag, reason, by: from })
     this.cancelRace('World reset')
     this.setDefaults()
     this.resetRound()
@@ -1625,6 +1686,13 @@ export class Room {
   }
 
   private publishRace(): void {
+    const r = this.race
+    // The end of a race, once: finished (with its winner) or cancelled. The cancel reason is
+    // not logged, since a host's client may supply it.
+    if (r && (r.phase === 'finished' || r.phase === 'cancelled') && this.raceLogged !== r) {
+      this.raceLogged = r
+      logEvent('race_end', { room: this.tag, phase: r.phase, winner: r.winnerId, racers: r.participants.length })
+    }
     this.broadcast({ type: 'race', race: this.raceView() })
     this.persist()
   }

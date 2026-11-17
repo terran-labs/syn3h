@@ -556,10 +556,22 @@ export class PostChain {
       const burst = sunburstPattern(around.div(max(length(around), 1e-5)), u.burstTime, u.burstPhase, tier === 'full' ? 3 : 2)
       const reach = smoothstep(BURST_CORE, BURST_CORE * 4, angle).mul(exp(angle.div(u.burstReach).negate()))
       const haze = u.shaftHaze.mul(mix(float(1), float(1).sub(exp(distance.div(-SHAFT_HAZE_DEPTH))), solid))
-      const open = raysTex.sample(at).r.mul(mix(haze, float(1), here.a))
-      // Never below -1: a dark streak can take away the whole glow, never more.
-      const swing = max(burst.sub(1).mul(u.burstContrast).mul(reach).mul(open).mul(u.shafts), -1)
-      hdr = hdr.add(here.rgb.mul(swing))
+      // The mask is coarser than the screen: at a ridge its openness bleeds onto the terrain
+      // pixels next to the sky. Solid pixels take only the haze share, never the mask's own.
+      const open = raysTex.sample(at).r.mul(mix(haze, float(1), here.a.mul(float(1).sub(solid))))
+      // Over terrain a streak may at most double or remove the pixel's own light.
+      const swing = clamp(burst.sub(1).mul(u.burstContrast).mul(reach).mul(open).mul(u.shafts), -1, mix(float(1e4), float(1), solid))
+      // Bright streaks in open sky add the glow, the approved look. Anywhere else (every dark
+      // streak, and bright ones over terrain) the streak scales the pixel by up to the glow's
+      // share of its light. That keeps the pixel's own hue: subtracting the sky's glow from
+      // terrain, which holds far less light, drove channels negative and the tone mapper
+      // turned them into cyan and red teeth along sunlit ridges (v26.11.1701).
+      const lumWeights = vec3(0.2126, 0.7152, 0.0722)
+      const share = min(dot(here.rgb, lumWeights).div(max(dot(hdr, lumWeights), 1e-6)), 1)
+      const additive = step(0, swing).mul(float(1).sub(solid))
+      const moved = mix(hdr.mul(swing.mul(share)), here.rgb.mul(swing), additive)
+      // No channel reaches the tone mapper below zero.
+      hdr = max(hdr.add(moved), vec3(0))
 
       if (flareOn) {
         const flare = Fn(() => {
