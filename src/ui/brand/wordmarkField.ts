@@ -141,7 +141,8 @@ export class WordmarkField {
   /**
    * Bakes the field if the mark is to be drawn at `pixelsPerUnit` screen pixels per wordmark
    * unit and the last bake is too coarse for that. Leaves the field bound on its unit, the
-   * viewport changed, and `framebuffer` bound: the caller restores its own state.
+   * viewport changed, blending and the scissor test off, and `framebuffer` bound: the caller
+   * restores its own state.
    * Returns true when it baked.
    */
   ensure(pixelsPerUnit: number, framebuffer: WebGLFramebuffer | null): boolean {
@@ -160,7 +161,10 @@ export class WordmarkField {
     // The segments on the same unit, sampled with texelFetch; the field is unbound while it is the target.
     gl.bindTexture(gl.TEXTURE_2D, this.segments)
     gl.viewport(0, 0, width, height)
-    gl.disable(gl.BLEND)
+    // The whole field, whatever the caller's last draw left on. WordmarkCrisp scissors to the
+    // letters' box on screen; a rebake under that scissor (the box grew: a rotation, a resize,
+    // the render scale recovering) baked nothing, and the zeroed field drew a pale box.
+    gl.disable(gl.BLEND); gl.disable(gl.SCISSOR_TEST); gl.colorMask(true, true, true, true)
     gl.useProgram(this.program)
     const u = this.locations, [scale, bias] = this.decode
     gl.uniform1i(u.uSegments, this.unit); gl.uniform1i(u.uCount, this.count)
