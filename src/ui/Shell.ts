@@ -1394,6 +1394,8 @@ export class Shell implements System {
         }
         if (chosen) for (const place of places) if (place.id !== chosen) chips.get(place.id)!.classList.add('is-crowded')
         for (const place of places) chips.get(place.id)!.hidden = !place.visible
+        // The opening brings each plate in once its world has settled (src/ui/galaxy/opening.ts): a fade, not a slide.
+        for (const place of places) chips.get(place.id)!.classList.toggle('is-unrevealed', place.labelled === false)
         const now = performance.now()
         for (const spot of spots) {
           const chip = chips.get(spot.id)!, place = places.find(p => p.id === spot.id)
