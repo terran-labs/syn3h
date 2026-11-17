@@ -107,6 +107,10 @@ async function main(): Promise<void> {
   // A vehicle arriving by a switch hangs in a small glowing cloud for a second, then drops.
   const materialize = game.add(new Materialize(game, terrain, { onCue: (cue, position, _hold, vehicle) => audio.materialize(cue, position, vehicle) }))
   void materialize.prewarm()
+  // Bots arrive one at a time once the player can drive (never while entering a world or in
+  // the menus), each in the arrival cloud near the player, and leave in it.
+  bots.setArrivalGate(() => shell.playing ? 'playing' : shell.transitioning ? 'closed' : 'idle')
+  bots.setArrivalEffect(materialize)
   const offZorbPulse = onZorbPulse((_ball, centre) => audio.zorbPulse(centre))
   game.add({ dispose: offZorbPulse })
   shell.configurePerformance({
@@ -115,6 +119,17 @@ async function main(): Promise<void> {
     setDiagnosticsVisible: visible => game.quality.setDiagnosticsVisible(visible),
     ignoreRecommendation: () => game.quality.ignoreRecommendation(),
     lowerRecommendedTier: () => game.quality.lowerRecommendedTier(),
+    fewerRecommendedBots: () => game.quality.fewerRecommendedBots(),
+  })
+  // The bots this client simulates are one of the quality system's steps (src/core/quality.ts
+  // BotRelief): fewer bots before a coarser picture, when they measurably cost frames. A
+  // guest simulates none: the host's device carries them.
+  game.quality.attachBots({
+    carried: () => bots.remote ? 0 : bots.vehicles.length,
+    requested: () => bots.remote ? 0 : bots.requested,
+    costly: targetMs => !bots.remote && bots.pacer.costly(bots.vehicles.length, targetMs),
+    shed: byPlayer => !bots.remote && bots.pacer.shed(bots.vehicles.length, byPlayer),
+    climb: () => !bots.remote && bots.pacer.climb(bots.vehicles.length, bots.requested),
   })
   // The descent from the galaxy poses this camera.
   shell.setCinematicCamera(camera)

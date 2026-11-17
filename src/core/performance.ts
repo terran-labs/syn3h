@@ -39,7 +39,16 @@ export interface PerformanceRecommendation {
   readonly level: GraphicsLevel
   readonly targetLevel: GraphicsLevel
   readonly observedFps: number
+  /**
+   * Bots simulated here when the offer was made, and whether fewer of them is offered: true
+   * when they measurably cost frame time. With it the offer reads "fewer bots, or a lower
+   * level with the current bots"; at the lowest level it is the only offer.
+   */
+  readonly bots?: number
+  readonly fewerBots?: boolean
 }
+/** Bots this device carries against what the host asked for, for the Performance card. */
+export interface PerformanceBots { readonly carried: number; readonly requested: number; readonly costly: boolean }
 export interface PerformanceSnapshot {
   readonly visible: boolean
   readonly quality: Readonly<EffectiveQuality>
@@ -50,6 +59,8 @@ export interface PerformanceSnapshot {
   /** null means unavailable on this renderer: show that, never zero. */
   readonly pipelines?: Readonly<PerformancePipelines> | null
   readonly longFrames?: Readonly<PerformanceLongFrames>
+  /** Absent where the game simulates no bots (a guest's bots are the host's). */
+  readonly bots?: Readonly<PerformanceBots> | null
 }
 /** Bind methods to their controller before passing this interface to presentation code. */
 export interface PerformanceSource {
@@ -58,4 +69,6 @@ export interface PerformanceSource {
   setDiagnosticsVisible(visible: boolean): void
   ignoreRecommendation(): void
   lowerRecommendedTier(): boolean
+  /** Accept the offer of fewer bots: one leaves now, and the governor does not bring it back on its own. */
+  fewerRecommendedBots?(): boolean
 }

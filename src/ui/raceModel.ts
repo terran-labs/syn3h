@@ -18,7 +18,18 @@ export function raceView(race: Readonly<RaceState>, role: Readonly<RaceRole>, ro
     : `Race cancelled${race.reason ? `: ${race.reason}` : ''}`
   return { status, active, leave: role.connected && active && participant?.status === 'racing',
     cancel: role.connected && active && role.host,
-    role: participant?.status === 'racing' ? 'Racing' : participant?.status === 'withdrawn' ? 'You left' : 'Watching' }
+    role: raceRole(participant?.status, active, race.winnerId === role.id) }
+}
+/**
+ * The player's own line under the race. Once it is over, nobody is still "Racing": an entrant
+ * who did not reach the finish before the winner did not finish.
+ */
+function raceRole(status: string | undefined, active: boolean, won: boolean): string {
+  if (!status) return 'Watching'
+  if (status === 'withdrawn') return 'You left'
+  if (active) return 'Racing'
+  if (won) return 'You won'
+  return status === 'finished' ? 'You finished' : 'Did not finish'
 }
 /** Nearest wrapped destination, relative to the same heading used by the minimap. */
 export function raceDirection(race: Readonly<RaceState>, self: RacePosition, size: number) {
