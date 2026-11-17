@@ -19,6 +19,14 @@ export const botMishaps = defineParam({ id: 'bots.mishapsPerHour', label: 'Accid
  */
 export const rescuePatience = defineParam({ id: 'bots.rescuePatience', label: 'Rescuers give up after minutes without progress (0 never)', group: 'Bots', scope: 'world', default: 5, min: 0, max: 30, step: 1 })
 
+/**
+ * Seconds a bot in trouble spends freeing itself quietly (reversing, rocking, re-pathing,
+ * heading for shore: what it already does) before the others are told and a rescue is called.
+ * A bot plainly beyond self-help (upside down past its own righting, sunk on the bed) is
+ * called at once. Most stuck moments end on their own within this; real rescues are unchanged.
+ */
+export const rescueAfter = defineParam({ id: 'bots.rescueAfter', label: 'Call a rescue after seconds of failed self-help', group: 'Bots', scope: 'world', default: 10, min: 3, max: 30, step: 1 })
+
 /** The signals the bots already keep (BotBrain.trouble), seconds. */
 export interface Trouble { stuck: number; flipped: number; bog: number }
 
