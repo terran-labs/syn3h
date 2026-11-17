@@ -44,8 +44,11 @@ try {
     assert.ok(samples.filter(s => s.at < 2900).every(s => !s.second), `${view.name}: and not before three seconds into the visit`)
     // The fun line comes with it, never before: nothing but the point of light for the first three seconds.
     assert.ok(samples.filter(s => s.at < 2900).every(s => !s.funShown), `${view.name}: no fun line before three seconds`)
-    for (const s of seconds) { assert.match(s.second, /^[A-Z][^\u00b7]* \u00b7 .+ \u00b7 \d+ s$/, `${view.name}: a plain step, a measure and the seconds (${s.second})`); assert.equal(s.secondHidden, 'true', 'the ticking line is never read aloud') }
-    const steps = [...new Set(seconds.map(s => s.second.split(' \u00b7 ')[0]))]
+    for (const s of seconds) { assert.match(s.second, /^\d+ s \u00b7 \d+\.\d MB$/, `${view.name}: the seconds and the megabytes, nothing else (${s.second})`); assert.equal(s.secondHidden, 'true', 'the ticking line is never read aloud') }
+    // The megabytes never go down.
+    const mbs = seconds.map(s => Number(s.second.split(' \u00b7 ')[1].replace(' MB', '')))
+    for (let i = 1; i < mbs.length; i++) assert.ok(mbs[i] >= mbs[i - 1], `${view.name}: the megabytes never go down`)
+    const steps = [...new Set(mbs)]
     // Something on it moves: the seconds tick (and the step, as phases pass).
     assert.ok(new Set(seconds.map(s => s.second)).size > 1, `${view.name}: the line moves`)
     assert.ok(!lines.some(line => /Loading the engine|Checking your device|Preparing/.test(line)), `${view.name}: no plain phase labels on the veil`)

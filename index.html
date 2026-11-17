@@ -201,17 +201,15 @@
       /* Hidden for eight seconds, then it fades in by itself: no script needed. */
       /* After ten seconds, a plain line under the fun one: seconds so far and what is really
          happening (the veil's script below, and src/ui/LoadingScreen.ts). No joke on it. */
-      /* The progress line: after three seconds still loading, the real step and a measure that
-         moves (index.html's script below). Its space is held from the start, so nothing above
-         it moves when it fades in; a step change cross-fades the words, the numbers just tick. */
+      /* The progress line: after three seconds still loading, the seconds and the megabytes
+         received (the script below), in tabular figures so it does not jitter. Its space is held
+         from the start, so nothing above it moves when it fades in. */
       .boot-still { grid-row: 5; margin-top: 8px; min-height: 1.4em; font-size: 14px; font-weight: 400; color: color-mix(in srgb, var(--theme-text-primary) 62%, transparent); opacity: 0; font-variant-numeric: tabular-nums; transition: opacity 0.4s ease; }
       /* Both lines, the fun one and the progress line, appear together, from one trigger: three
          seconds into a load still going (html[data-boot-late], set by the script below). A load
          that ends sooner shows only the point of light. Their space is held throughout. */
       html[data-boot-late] .boot-status, html[data-boot-late] .boot-still { opacity: 1; }
-      .boot-still .boot-step { transition: opacity 0.2s ease; }
-      .boot-still .boot-step[data-fade] { opacity: 0; }
-      @media (prefers-reduced-motion: reduce) { .boot-status, .boot-still, .boot-still .boot-step { transition: none; } }
+      @media (prefers-reduced-motion: reduce) { .boot-status, .boot-still { transition: none; } }
       html[data-boot="done"] .boot-status, html[data-boot="done"] .boot-still { transition: opacity 0.4s ease; opacity: 0; animation: none; }
       /* ---- The continuous opening (?intro=, src/ui/galaxy/opening.ts). The veil is black
          space and one point of light at the very centre, where the lobby's sun is drawn at
@@ -343,34 +341,35 @@
         // One fun line per load, chosen now and kept until loading ends; the markup above is the
         // no-script fallback. These lines are also in src/ui/data/loadingMessages.ts.
         // Still loading three seconds after the visit began, the fun line and under it a quiet
-        // progress line fade in together: the real step, which of the five steps it is, and the seconds since the visit
-        // began. The first step, the game's code, is one large file whose progress no browser
-        // reports while it arrives: there only the seconds move (a byte count would sit still
-        // and look stuck). A later step that has not moved for five seconds says what it is
-        // waiting on. LoadingScreen supplies the steps the game reports (window.__bootStep,
-        // __bootStepNumber, __bootWait).
+        // progress line fade in together. The progress line is two measured numbers and nothing
+        // else: the seconds since the visit began, and the megabytes the page has received. The
+        // startup code ships in several files (vite.config.ts), counted as each finishes, and
+        // the physics engine, the largest file, is counted as it streams in.
         (function(s, w, a) {
           a = ["Checking which way is down.", "Counting wheels. Recounting wheels.", "Asking gravity to hold this for a moment.", "Tightening the imaginary bolts.", "Packing a spare atmosphere.", "Confirming that the sky is attached.", "Giving the moon some personal space.", "Moving the mountain slightly to the left.", "Reminding every object that it has mass.", "Setting gravity to roughly one gravity."];
           if (!s || !w) return;
           s.textContent = a[Math.floor(Math.random() * a.length)];
           var root = document.documentElement;
-          w.innerHTML = '<span class="boot-step"></span><span class="boot-measure"></span>';
-          var stepEl = w.firstChild, measureEl = w.lastChild, lastStep = "", lastKey = "", movedAt = performance.now(), fade = 0;
+          // Bytes received: every finished file's body (the document included), and the physics
+          // engine's file as it streams in, counted on its way to the loader (tools/rapier-wasm.mjs)
+          // until it finishes and its own entry takes over. Bodies as delivered (decoded), the same
+          // measure for both, so the count only ever goes up.
+          var received = function() {
+            var bytes = 0, engine = window.__syn3hPhysicsUrl, engineDone = false;
+            try {
+              performance.getEntriesByType("navigation").concat(performance.getEntriesByType("resource")).forEach(function(e) {
+                bytes += e.decodedBodySize || e.encodedBodySize || e.transferSize || 0;
+                if (engine && e.name.indexOf(engine) >= 0) engineDone = true;
+              });
+            } catch (error) {}
+            if (!engineDone) bytes += window.__syn3hPhysicsBytes || 0;
+            return bytes;
+          };
           var draw = function() {
             if (root.dataset.boot === "done") { clearInterval(tick); return; }
             // Seconds since the visit began (performance.now counts from the navigation).
-            var now = performance.now(), seconds = Math.floor(now / 1000);
-            var step = window.__bootStep || "Downloading the game";
-            var measure = "step " + (window.__bootStep ? window.__bootStepNumber || 2 : 1) + " of 5";
-            if (step !== lastKey) { lastKey = step; movedAt = now; }
-            // A later step five seconds without moving: say what it is waiting on, plainly.
-            if (window.__bootStep && now - movedAt > 5000 && window.__bootWait) measure += " \u00b7 " + window.__bootWait;
-            measureEl.textContent = " \u00b7 " + measure + " \u00b7 " + seconds + " s";
-            if (step !== lastStep) {
-              var first = !lastStep; lastStep = step;
-              if (first || matchMedia("(prefers-reduced-motion: reduce)").matches) stepEl.textContent = step;
-              else { stepEl.dataset.fade = ""; clearTimeout(fade); fade = setTimeout(function() { stepEl.textContent = lastStep; delete stepEl.dataset.fade; }, 200); }
-            }
+            var now = performance.now();
+            w.textContent = Math.floor(now / 1000) + " s \u00b7 " + (received() / 1048576).toFixed(1) + " MB";
             // The one trigger for both lines (the CSS above): three seconds into the visit.
             if (now >= 3000) root.dataset.bootLate = "";
           };

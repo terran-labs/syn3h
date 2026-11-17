@@ -85,7 +85,7 @@ try {
     assert.equal(later.game, false, `${name}: still waiting for the bundle ${JSON.stringify(later)}`)
     assert.equal(later.status.text, first.status.text, `${name}: one line for the whole load`)
     assert.ok(later.status.inView && later.status.opacity > 0.9, `${name}: shown with the progress line after three seconds`)
-    assert.ok(later.still.opacity > 0.9 && later.still.inView && /^Downloading the game \u00b7 step 1 of 5 \u00b7 \d+ s$/.test(later.still.text), `${name}: after three seconds, the real step, a measure and the seconds (${later.still.text})`)
+    assert.ok(later.still.opacity > 0.9 && later.still.inView && /^\d+ s \u00b7 \d+\.\d MB$/.test(later.still.text), `${name}: after three seconds, the seconds and the megabytes (${later.still.text})`)
     assert.equal(Math.round(later.status.top), Math.round(first.status.top), `${name}: the line above does not move when it appears`)
     // The bundle arrives: the line stays, then the veil lifts.
     arrive()
