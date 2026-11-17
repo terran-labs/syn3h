@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import parts from './parts'
+import { buildParts } from './parts'
 import { buggyBody } from './body'
 
 /**
@@ -17,16 +17,8 @@ export interface Piece { part: string; role: string; geometry: THREE.BufferGeome
 /** A body candidate: only `body` pieces are used from it. */
 export interface BodyCandidate { id: string; build(detail: 0 | 1 | 2): Piece[] }
 
-/**
- * Shock anchors, formerly the Shock node's extras in buggy-boxarm.glb: the foot in the arm's
- * frame, and the top of each wheel's shock inside the body (front left, front right, rear left,
- * rear right).
- */
+/** Shock foot in the arm's frame, formerly the Shock node's extras in buggy-boxarm.glb. */
 export const SHOCK_FOOT: [number, number, number] = [0, .2, -.07]
-export const SHOCK_TOPS: number[] = [
-  -.7302074432373047, .49191752076148987, -1.2375385761260986, .7302074432373047, .49191752076148987, -1.2375385761260986,
-  -.7270978689193726, .48803403973579407, 1.2364318370819092, .7270978689193726, .48803403973579407, 1.2364318370819092,
-]
 
 /** Shading role to the material name the skin's name tests map back to that role. */
 const MATERIAL: Record<string, string> = { paint: 'Body', accent: 'Accent', glow: 'Glow', chrome: 'Chrome', frame: 'Dark', trim: 'Interior', canopy: 'Glass' }
@@ -78,12 +70,16 @@ function node(name: string, pieces: Piece[]): THREE.Group {
 
 /** The two stand-in scenes, built fresh (the skin disposes what it is given). */
 export function generatedScenes(body: BodyCandidate = buggyBody): { scene: THREE.Group; next: THREE.Group } {
-  const pieces = parts.build(0) as Piece[]
+  // The body is built once; the parts fit their swellings to it and find the shock tops on it.
+  const bodyPieces = body.build(0).filter(p => p.part === 'body')
+  const fitted = buildParts(0, bodyPieces.map(p => p.geometry))
+  const pieces = fitted.pieces as Piece[]
   const of = (part: string) => pieces.filter(p => p.part === part)
   const scene = new THREE.Group(), next = new THREE.Group()
   scene.add(node('RimSimple', of('stator')), node('Wings', of('wings')))
-  next.add(node('Body', body.build(0).filter(p => p.part === 'body')), node('Sockets', of('sockets')), node('Interior', of('interior')),
+  next.add(node('Body', bodyPieces), node('Sockets', of('sockets')), node('Interior', of('interior')),
     node('Canopy', of('canopy')), node('Strut', of('strut')), node('Shock', of('shock')))
-  next.getObjectByName('Shock')!.userData = { foot: SHOCK_FOOT, tops: SHOCK_TOPS }
+  // Front left, front right, rear left, rear right, flattened as the model's extras were.
+  next.getObjectByName('Shock')!.userData = { foot: SHOCK_FOOT, tops: fitted.shockTops.flat() }
   return { scene, next }
 }

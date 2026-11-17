@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu'
 import { afterEach, expect, it, vi } from 'vitest'
 import { GeneratedBuggySkin } from '../../src/vehicles/buggygen/GeneratedBuggySkin'
 import { buggyBody } from '../../src/vehicles/buggygen/body'
-import parts from '../../src/vehicles/buggygen/parts'
+import { buildParts } from '../../src/vehicles/buggygen/parts'
 import type { VehicleDetail } from '../../src/vehicles/skins/mergeStatic'
 
 afterEach(() => { vi.unstubAllGlobals() })
@@ -27,7 +27,7 @@ function triangles(root: THREE.Object3D): number {
 it('gives every generated piece a role the skin knows, at every detail level', () => {
   const known = ['paint', 'accent', 'glow', 'chrome', 'frame', 'trim', 'canopy', 'lamp']
   for (const detail of [0, 1, 2] as const) {
-    for (const p of [...parts.build(detail), ...buggyBody.build(detail)]) expect(known, `${p.part} ${p.role}`).toContain(p.role)
+    for (const p of [...buildParts(detail, buggyBody.build(detail).map(b => b.geometry)).pieces, ...buggyBody.build(detail)]) expect(known, `${p.part} ${p.role}`).toContain(p.role)
   }
 })
 
