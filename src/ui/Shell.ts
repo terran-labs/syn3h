@@ -468,18 +468,16 @@ export class Shell implements System {
   readonly updateNotice: UpdateNotice
   private bandTop = ''
   /**
-   * Place the update banner just under the wordmark and return the height the galaxy keeps
-   * clear for it, so no world or label sits under it. Measured against the wordmark rather
-   * than the lobby buttons, so a moved wordmark or button row carries it along. 0 when the
-   * banner is not on screen.
+   * Place the update banner at the top centre of the screen and return the height the galaxy
+   * keeps clear for it, so no world, label or the wordmark (which now stands in the scene,
+   * src/ui/brand/wordmarkScene.ts) sits under it. 0 when the banner is not on screen.
    */
   private updateBand(): number {
     const banner = this.updateNotice?.banner
     if (!banner || banner.hidden || !this.menuVisible && this.started || banner.offsetParent === null) return 0
-    const logo = this.element.querySelector('.shell-logo')!.getBoundingClientRect(), host = banner.offsetParent.getBoundingClientRect()
-    const top = `${Math.round(logo.bottom - host.top + 10)}px`
+    const top = 'max(12px, env(safe-area-inset-top))'
     if (top !== this.bandTop) { this.bandTop = top; banner.style.top = top }
-    return banner.offsetHeight + 20
+    return banner.offsetTop + banner.offsetHeight + 12
   }
   /** About at Updates: the in-play guide while playing, else the lobby About panel. */
   showUpdates(): void {

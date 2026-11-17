@@ -6,7 +6,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { loadingMessages, phaseMessages, pickLoadingLine, stillWorkingMessages } from '../../src/ui/data/loadingMessages'
+import { loadingMessages, phaseMessages, pickLoadingLine } from '../../src/ui/data/loadingMessages'
 
 /** A deterministic stand-in for Math.random. */
 const sequence = (seed: number) => () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646 }
@@ -43,7 +43,7 @@ describe('loading lines', () => {
     expect(pickLoadingLine({ general: custom, previous: 'Plain claim' })).toBe('<b>Bold claim</b>')
   })
   it('keeps every line short, unique and complete', () => {
-    const all = [...new Set([...loadingMessages, ...Object.values(phaseMessages).flat()]), ...stillWorkingMessages]
+    const all = [...new Set([...loadingMessages, ...Object.values(phaseMessages).flat()])]
     expect(new Set(loadingMessages).size).toBe(loadingMessages.length)
     expect(new Set(all).size).toBe(all.length)
     for (const line of all) { expect(line.length, line).toBeLessThanOrEqual(60); expect(line, line).toMatch(/^[A-Z].*\.$/) }
@@ -51,11 +51,17 @@ describe('loading lines', () => {
   })
   it("index.html's inline first lines come from the reviewed lists", () => {
     const html = readFileSync('index.html', 'utf8')
-    const lists = [...html.matchAll(/^\s*[ab] = (\[.*\]);$/gm)].map(match => JSON.parse(match[1]) as string[])
-    expect(lists).toHaveLength(2)
+    const lists = [...html.matchAll(/^\s*a = (\[.*\]);$/gm)].map(match => JSON.parse(match[1]) as string[])
+    expect(lists).toHaveLength(1)
     for (const line of lists[0]) expect(loadingMessages).toContain(line)
-    expect(lists[1]).toEqual([...stillWorkingMessages])
     expect(html).toContain(`<p class="boot-status" aria-hidden="true">${lists[0][0]}</p>`)
-    expect(html).toContain(`<p class="boot-still">${stillWorkingMessages[0]}</p>`)
+    // The ten-second line is written by the veil's script, and is never read aloud as it ticks.
+    expect(html).toContain('<p class="boot-still" aria-hidden="true"></p>')
+  })
+  it('names the real step for every phase the game reports', async () => {
+    const { phaseSteps } = await import('../../src/ui/LoadingScreen')
+    const reported = [...readFileSync('src/core/Game.ts', 'utf8').matchAll(/reportLoading\('(\w+)'/g), ...readFileSync('src/core/quality.ts', 'utf8').matchAll(/reportLoading\('(\w+)'/g)].map(m => m[1])
+    expect(reported.length).toBeGreaterThan(3)
+    for (const phase of reported) expect(phaseSteps[phase], phase).toBeTruthy()
   })
 })

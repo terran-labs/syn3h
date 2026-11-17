@@ -22,6 +22,11 @@ describe('lobby address presentation', () => {
     b.address.showPlay('party')
     expect(b.location.href).toBe('https://syn3h.com/game/?room=party&world=alpine.15&v=26.11.1519&debug=yes#hello')
   })
+  it('keeps nothing in the lobby address, the developer overrides included', () => {
+    const b = browser('https://syn3h.com/?room=party&wordmark=3&intro=1#x')
+    b.address.showLobby()
+    expect(b.location.href).toBe('https://syn3h.com/')
+  })
   it('retains entry intent across repeated lobby calls and repeated already-joined play', () => {
     const b = browser('https://syn3h.com/?room=saved&seed=8&autoplay=1#entry')
     b.address.showLobby(); b.address.showLobby(); b.address.showPlay('saved')

@@ -1,6 +1,17 @@
 import { loadingMessages, pickLoadingLine } from './data/loadingMessages'
 
-const phaseLabels: Record<string, string> = { device: 'Checking your device', physics: 'Preparing motion', renderer: 'Preparing the view', world: 'Building the world', ready: 'Ready to explore' }
+/**
+ * What each phase the game reports (core/quality.ts reportLoading, from Game.init and the
+ * first frame) is really doing, in plain words. Shown on the veil's second line after ten
+ * seconds and announced once per phase. Only what the code reports: nothing invented.
+ */
+export const phaseSteps: Record<string, string> = {
+  device: 'Checking your graphics hardware while the physics engine downloads',
+  physics: 'Starting the physics engine',
+  renderer: 'Starting the renderer, then waiting for the physics engine',
+  world: 'Building the world and compiling shaders for its first frame',
+  ready: 'Ready to explore',
+}
 export interface LoadingDetail { phase?: string; progress?: number; elapsedMs?: number }
 
 /** The progress meter the bootstrap script in index.html puts on `window`. */
@@ -8,10 +19,6 @@ interface BootMeter { set(value: number): void; value(): number; stop(): void }
 const meter = (): BootMeter | undefined => (window as unknown as { __boot?: BootMeter }).__boot
 /** However slow the device, the veil never stays longer than this. */
 const LIMIT_MS = 45000
-/** A fun line stays up for three to four seconds unless the phase changes first. */
-const ROTATE_MS = 3000, ROTATE_JITTER_MS = 1000
-/** Matches the .boot-status opacity transition in index.html. */
-const FADE_MS = 250
 
 /**
  * The loading veil's logic. The veil itself, its mark and the easing of its progress are in
@@ -21,11 +28,12 @@ const FADE_MS = 250
  * raises the mark's target as the game reports its phases, and when the world is ready it
  * lets the light finish its lap and lifts the veil.
  *
- * The veil's status line (.boot-status) shows a dry joke about what is loading. index.html
- * picks the first one before any module arrives; this module rotates them, from a pool for
- * each phase and then the general list, at each phase change and every three to four
- * seconds. That line is aria-hidden: screen readers hear the plain phase ("Building the
- * world") once per phase from this module's own polite live region, .syn3h-loading.
+ * The veil's status line (.boot-status) shows one dry joke about what is loading, picked by
+ * index.html at the first paint and kept until loading ends: no rotation. After ten seconds
+ * index.html's second line (.boot-still) counts the seconds and names the real step, which
+ * this module supplies per phase (window.__bootStep, phaseSteps). Both lines are aria-hidden:
+ * screen readers hear the plain step once per phase from this module's polite live region,
+ * .syn3h-loading, never the ticking count.
  */
 export class LoadingScreen {
   /** The visually hidden live region: the plain phase, once per phase. */
@@ -35,10 +43,7 @@ export class LoadingScreen {
   private custom = false
   private phase: string | undefined
   private label = ''
-  private readonly shown = new Set<string>()
   private done = false
-  private rotation: ReturnType<typeof setTimeout> | undefined
-  private fade: ReturnType<typeof setTimeout> | undefined
   private readonly limit: ReturnType<typeof setTimeout>
   private readonly abort = new AbortController()
   constructor() {
@@ -49,9 +54,6 @@ export class LoadingScreen {
     document.body.append(this.element)
     // The bundle has arrived and is running. index.html's own rotation hands over here.
     meter()?.set(0.45); this.announce('Loading Syn3h')
-    const inline = window as unknown as { __bootLines?: number }; clearInterval(inline.__bootLines); inline.__bootLines = 0
-    const first = this.status()?.textContent; if (first) this.shown.add(first)
-    this.schedule()
     window.addEventListener('syn3h:loading', event => this.update((event as CustomEvent<LoadingDetail>).detail), { signal: this.abort.signal })
     this.limit = setTimeout(() => this.finish(), LIMIT_MS)
     // A startup failure must be seen, never hidden behind the veil: lift at once on a script
@@ -65,19 +67,21 @@ export class LoadingScreen {
       this.abort.signal.addEventListener('abort', () => watch.disconnect())
     }
   }
-  /** Replaces the lines with a host's own. They are shown as text, never as markup. */
+  /** Replaces the line with one of a host's own. It is shown as text, never as markup. */
   setMessages(messages: readonly string[]): void {
     const usable = messages.filter(value => typeof value === 'string' && value.trim()).slice(0, 100)
     this.custom = usable.length > 0
     this.messages = this.custom ? usable : loadingMessages
-    this.shown.clear(); this.rotate()
+    const status = this.status()
+    if (!this.done && status) status.textContent = pickLoadingLine({ general: this.messages, previous: status.textContent ?? undefined })
   }
   update(detail?: LoadingDetail): void {
     if (!detail || typeof detail !== 'object') return
     if (typeof detail.phase === 'string' && detail.phase !== this.phase) {
       this.phase = detail.phase
-      this.announce(phaseLabels[detail.phase] ?? detail.phase)
-      this.rotate()
+      const step = phaseSteps[detail.phase] ?? detail.phase
+      ;(window as unknown as { __bootStep?: string }).__bootStep = step
+      this.announce(step)
     }
     // The game's own progress takes the light from where the bundle left it to nearly round.
     if (typeof detail.progress === 'number' && Number.isFinite(detail.progress)) meter()?.set(0.45 + 0.47 * Math.min(1, Math.max(0, detail.progress)))
@@ -88,26 +92,6 @@ export class LoadingScreen {
     if (text === this.label) return
     this.label = text
     this.element.querySelector('.loading-phase')!.textContent = text
-  }
-  /** Shows the next fun line now, then schedules the one after. */
-  private rotate(): void {
-    const status = this.status()
-    if (this.done || !status) return
-    const previous = this.fade === undefined ? status.textContent ?? undefined : status.dataset.next
-    const line = pickLoadingLine({ phase: this.custom ? undefined : this.phase, general: this.messages, previous, shown: this.shown })
-    this.shown.add(line)
-    clearTimeout(this.fade); this.fade = undefined
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { status.textContent = line; delete status.dataset.fade }
-    else {
-      // Fade out, change the words, fade back in. The line keeps its reserved height throughout.
-      status.dataset.fade = ''; status.dataset.next = line
-      this.fade = setTimeout(() => { this.fade = undefined; status.textContent = line; delete status.dataset.fade; delete status.dataset.next }, FADE_MS)
-    }
-    this.schedule()
-  }
-  private schedule(): void {
-    clearTimeout(this.rotation)
-    this.rotation = setTimeout(() => this.rotate(), ROTATE_MS + Math.random() * ROTATE_JITTER_MS)
   }
   /** Everything is here. Let the light finish its lap, then lift. */
   finish(): void {
@@ -125,7 +109,7 @@ export class LoadingScreen {
   /** Lift the veil. Safe to call more than once. */
   private lift(): void {
     this.done = true
-    clearTimeout(this.rotation); clearTimeout(this.limit); meter()?.stop()
+    clearTimeout(this.limit); meter()?.stop()
     const root = document.documentElement
     // A busy phone draws few frames while it loads, so the eased light may not have got
     // round in time. Complete the lap as the mark opens out: it never lifts unfinished.
