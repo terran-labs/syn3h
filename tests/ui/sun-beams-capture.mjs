@@ -67,7 +67,7 @@ async function run(device, quality, cases, tag) {
       return { x: p.x * 0.5 + 0.5, y: 0.5 - p.y * 0.5 }
     }, { planet, hour, quality, coverage, pitch })
     for (const [planet, hour] of cases) {
-      const sun = await aim(planet, hour, 0.5)
+      const sun = await aim(planet, hour, Number(process.env.COVER ?? 0.5))
       const name = `${planet}-${hour}-q${quality}${tag}`
       const off = await shot(name, 'off')
       const dark = phase === 'base' ? null : await shot(name, 'dark')

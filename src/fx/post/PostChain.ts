@@ -58,9 +58,9 @@ export const SHAFT_CLAMP = 1.5
 /**
  * Share of the low sun's forward glow the shafts take from the sky. The rest stays in the sky
  * whatever blocks the sun, so a sun wholly behind cloud or a ridge still lights the sky round
- * it, only less than one in the open.
+ * it, only less than one in the open. A tenth stays.
  */
-export const SHAFT_GLOW_SHARE = 0.75
+export const SHAFT_GLOW_SHARE = 0.9
 /** Cloud opacity at which a cloud starts to block the sun for the shafts, and blocks it fully. */
 export const CLOUD_THIN = 0.12, CLOUD_SOLID = 0.55
 /** Distance (m) over which the haze in front of terrain reaches the full post.shaftHaze. */
@@ -125,7 +125,7 @@ export class PostChain {
     shafts: uniform(0.7),
     shaftLength: uniform(0.75),
     shaftHaze: uniform(0.35),
-    shaftReach: uniform(0.1),
+    shaftReach: uniform(0.05),
     flare: uniform(0.5),
     gain: uniform(new THREE.Vector3(1, 1, 1)),
     lift: uniform(new THREE.Vector3(0, 0, 0)),
