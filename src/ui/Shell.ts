@@ -26,6 +26,7 @@ import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
 import { captionHidden, captionMask } from './galaxy/labels'
+import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
 import { LobbySettings } from './LobbySettings'
@@ -113,7 +114,7 @@ function readableHex([r, g, b]: [number, number, number]): string {
 export function captionAccent(world: { land: number; sea: number; glow?: boolean; forming?: boolean }): string {
   return readableHex(glowColour(world.land, world.sea, world))
 }
-/** Pixels from a planet's limb to the top of its caption. */
+/** Pixels from a planet's limb to the top of its caption, at the captions' smallest size (it grows with them). */
 const CAPTION_GAP = 5
 /** Must match the short landscape block in shell.css. */
 const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
@@ -1322,11 +1323,16 @@ export class Shell implements System {
         // fainter), and brighter while pointed at or focused, or for the world in play.
         for (const [id, chip] of chips) if (chip.classList.contains('is-chosen') !== (id === chosen)) chip.classList.toggle('is-chosen', id === chosen)
         const current = currentPlanet().id, near = Math.min(...places.filter(p => p.visible).map(p => p.depth)), far = Math.max(...places.filter(p => p.visible).map(p => p.depth))
+        // Nearer, larger planets get larger captions (captionScale.ts); the gap below the limb grows with them.
+        const short = Math.min(innerWidth, innerHeight)
         for (const place of places) {
           const chip = chips.get(place.id)!
           chip.hidden = !place.visible
           if (!place.visible) continue
-          this.placeChip(chip, place.x, place.y + place.radius + CAPTION_GAP)
+          const scale = captionScale(place.radius, short), gap = CAPTION_GAP * scale
+          const scaleText = scale.toFixed(2)
+          if (chip.style.getPropertyValue('--caption-scale') !== scaleText) chip.style.setProperty('--caption-scale', scaleText)
+          this.placeChip(chip, place.x, place.y + place.radius + gap)
           const away = (!!chosen && place.id !== chosen) || place.labelled === false || captionHidden(place, places, this.galaxy?.sunScreen)
           const depth = far > near ? (place.depth - near) / (far - near) : 0
           // Pointing and focus lift it in the stylesheet (.is-pointed, :focus), at once, even
@@ -1338,7 +1344,7 @@ export class Shell implements System {
           // its own planet's depth.
           const z = String(1000 - Math.round(place.depth * 10))
           if (chip.style.zIndex !== z) chip.style.zIndex = z
-          const mask = captionMask(place, places, this.galaxy?.sunScreen, place.y + place.radius + CAPTION_GAP)
+          const mask = captionMask(place, places, this.galaxy?.sunScreen, place.y + place.radius + gap, scale)
           if (this.chipMask.get(chip) !== mask) { this.chipMask.set(chip, mask); chip.style.setProperty('mask-image', mask); chip.style.setProperty('-webkit-mask-image', mask) }
         }
       },
