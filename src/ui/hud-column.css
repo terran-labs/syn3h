@@ -59,25 +59,38 @@
   left: var(--col-left); top: auto; bottom: var(--col-gear-bottom); transform: none;
   --gs-width: var(--col-w);
 }
-/* No dark falloff behind the drum: legibility comes from the text shadow alone. */
-:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector::before { display: none; }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-spine { left: var(--col-spine); }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum { left: 0; width: var(--col-w); }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum button.gs-item { padding-left: var(--col-inset); text-shadow: var(--col-text-under); }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-detail { text-shadow: var(--col-text-under); }
-/* The selected gear: no pill. A lit node on the spine, beside its larger, brighter name. */
-:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-window { left: 0; width: var(--col-w); border: 0; box-shadow: none; background: none; }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-window::before {
+/* The drum's look, on every device (touch keeps its own placement and sizes, gear.css):
+   no dark falloff behind it, legibility from the one text shadow alone; no pill around the
+   selected gear, which is marked by a lit node on the spine beside its larger, brighter name;
+   key caps in the column's one stroke. */
+:root .syn3h-shell.exploration-ui .gear-selector::before { display: none; }
+:root .syn3h-shell.exploration-ui .gear-selector .gs-spine { left: var(--col-spine); }
+:root .syn3h-shell.exploration-ui .gear-selector .gs-drum button.gs-item,
+:root .syn3h-shell.exploration-ui .gear-selector .gs-detail { text-shadow: var(--col-text-under); }
+:root .syn3h-shell.exploration-ui .gear-selector .gs-window { left: 0; width: var(--gs-width); border: 0; box-shadow: none; background: none; }
+:root .syn3h-shell.exploration-ui .gear-selector .gs-window::before {
   content: ''; position: absolute; left: calc(var(--col-spine) - 3.5px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
   border-radius: 50%; border: 1px solid var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-node-lit);
 }
-/* The alternative shown to the owner: a hollow node beside every other gear too. */
-:root .syn3h-shell.exploration-ui:not(.has-touch)[data-gear-nodes=hollow] .gear-selector .gs-drum button.gs-item::before {
-  content: ''; display: block; position: absolute; left: calc(var(--col-spine) - 3.5px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
+:root .syn3h-shell.exploration-ui .gear-selector kbd { border: var(--col-stroke); box-shadow: var(--col-stroke-glow); text-shadow: var(--col-text-under); }
+/* For the owner to compare on the preview, both off by default (set on .syn3h-shell):
+   data-gear-nodes=hollow  a hollow node beside every other gear;
+   data-gear-floor=75      the drum's fade ends at 75% instead of nothing, neighbours in ink
+                           (measured on snow and fog: next rows 2.0-2.3 to 2.2-2.7:1 against
+                           their shadow edge, outer rows 1.1-1.25 to 1.3-1.7:1). */
+:root .syn3h-shell.exploration-ui[data-gear-nodes=hollow] .gear-selector .gs-drum button.gs-item::before {
+  content: ''; display: block; position: absolute; left: calc(var(--col-spine) - 3.5px - var(--gs-drum-left, 0px)); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
   border-radius: 50%; border: var(--col-stroke); background: var(--col-node-off);
 }
-/* Key caps in the detail (CLICK, L, T): the column's one stroke. */
-:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector kbd { border: var(--col-stroke); box-shadow: var(--col-stroke-glow); text-shadow: var(--col-text-under); }
+:root .syn3h-shell.exploration-ui[data-gear-floor="75"] .gear-selector .gs-drum {
+  -webkit-mask-image: linear-gradient(rgb(0 0 0 / .75), #000 30%, #000 70%, rgb(0 0 0 / .75));
+  mask-image: linear-gradient(rgb(0 0 0 / .75), #000 30%, #000 70%, rgb(0 0 0 / .75));
+}
+:root .syn3h-shell.exploration-ui[data-gear-floor="75"] .gear-selector .gs-drum button.gs-item { color: var(--s3-ink); }
+/* The column's placement, desktop only: the drum spans the column from its left edge. */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum { left: 0; width: var(--col-w); }
+:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum button.gs-item { padding-left: var(--col-inset); }
+:root .syn3h-shell.exploration-ui.has-touch .gear-selector { --gs-drum-left: 8px; }
 /* Its detail (what the gear does, what to press) sits beside the selected gear, but never
    beside the speed readout: on screens where the window lands near mid-height, the detail
    rises until its last line clears the readouts (centred at 50%, about 30 px either side). */
