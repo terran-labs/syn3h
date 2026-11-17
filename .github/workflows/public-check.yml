@@ -45,4 +45,7 @@ jobs:
       - name: Run the public check
         env:
           URL: ${{ inputs.url }}
+          # No GPU on hosted runners: WebGPU loses its device there and logs it every frame.
+          # WebGL 2 runs the same join, state, hill clock, reconnect and leave steps.
+          SYN3H_CHECK_WEBGL: '1'
         run: node tools/public-check.mjs "$URL"
