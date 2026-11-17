@@ -234,3 +234,18 @@ arms, shocks, lamp lenses, canopy and driver's eye, which held them back:
 - **Wheelbase and track**: fixed, so the streamliner is long only in its overhangs and the
   wedge is wide only in its body.
 - **Shock tops**: the body may not narrow past them (width and front arch minimums).
+
+## Round 4: on the ship branch, lamps, crawler (17 November 2026)
+
+- Merged `veh/generated-vehicles`. The editor's whole-buggy mode now builds the game's
+  `Syn3hBuggySkin`, which already accepts a body source; no change to the skin was needed.
+- Lamps: around the fixed headlight lenses the fenders never fall below or inside the fitted
+  body, the nose section that carries the lens rims holds its deck, and the nose stretches
+  only ahead of the lenses. `editorCheck.ts` now also requires the duct rim to meet the nose
+  within the lens's travel and within 2.5 cm of a plane. Duct size is capped at +10%.
+- Crawler rebuilt round a raised floor, a high rear deck and a tall hoop wing over big arches
+  and pinched flanks, instead of raised sides.
+- Cold start (`coldLoad.mjs`): every loft-editor page, the presets, `full=1`, `buggy-shape`
+  and the Skins group load with no console or page errors on a freshly started dev server.
+- Not fixed: a few shard-like facets remain at the very nose tip where the columns converge,
+  and the referee's 14 inconsistently wound edges (thin tail bar tips, two snapped cells).
