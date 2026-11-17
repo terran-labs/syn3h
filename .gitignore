@@ -7,3 +7,6 @@ paseo.local.json
 labs/live-status.json
 .env
 .env.*
+
+# Showcase captures (tools/showcase.mjs)
+captures/
