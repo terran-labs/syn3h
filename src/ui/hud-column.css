@@ -154,7 +154,8 @@
 }
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle:hover,
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel.is-open .chat-toggle,
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel.has-unread .chat-toggle { opacity: 1; color: var(--s3-ink); }
+/* Unread wakes the row: read from the badge itself, so ChatPanel.ts needs no extra state. */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle:has(.chat-unread:not([hidden])) { opacity: 1; color: var(--s3-ink); }
 /* The glyph is the spine's last node. */
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle svg {
   position: absolute; left: calc(var(--col-spine) - 6px); top: 50%; width: 13px; height: 13px; margin-top: -6px; filter: var(--col-line-under);
