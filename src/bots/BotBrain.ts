@@ -333,6 +333,8 @@ export class BotBrain implements System {
     this.targetTime += dt; this.fireTime += dt
     // VehicleBot.js:11 refreshes enemies every two seconds; invalid targets refresh immediately.
     if (this.targetTime >= 2 || !this.target?.body.isValid()) { this.selectTarget(); this.targetTime = 0 }
+    // A rescue under way (a 'control' directive) outranks a race: a tow is not dropped mid-pull.
+    if (this.directive?.kind === 'control' && this.mind && p.canDrive.value && p.topThrottle.value > 0 && this.steerByDirective(dt, input)) return
     if (this.raceGoal && this.mind && p.canDrive.value && p.topThrottle.value > 0) {
       if (this.raceGoal.countdown) { input.brakes = true; return }
       if (!this.racing) { this.mind.hold(this.raceGoal.destination, Math.max(1, this.raceGoal.destination.radius / 2), 125); this.racing = true }

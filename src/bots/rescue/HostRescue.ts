@@ -106,7 +106,9 @@ export class HostRescue {
     if (!botRescue.value || this.rescues.has(player)) return this.rescues.has(player)
     const v = this.net.vehicleOf(player)
     if (!v) return false
-    const r: Rescue = { stuck: player, kind: 'wedged', since: this.time, rescuers: new Map(), declined: new Set(), playersNear: new Set(), pointedAt: this.time, person: true }
+    const at = v.body.translation(), liquid = this.terrain.liquidHeightAt?.(at.x, at.z)
+    const wet = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(at.x, at.z) < liquid + 0.3
+    const r: Rescue = { stuck: player, kind: wet ? 'bogged' : 'wedged', since: this.time, rescuers: new Map(), declined: new Set(), playersNear: new Set(), pointedAt: this.time, person: true }
     this.rescues.set(player, r)
     this.recruit(r, 1)
     if (!r.rescuers.size) { this.rescues.delete(player); return false }

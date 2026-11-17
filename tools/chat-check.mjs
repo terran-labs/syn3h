@@ -99,6 +99,17 @@ try {
   await B.page.click('.chat-people .chat-mute >> nth=0')
   await B.page.click('.chat-people-toggle')
 
+  // Chat off for the room: the host turns it off, a guest's line is refused and not relayed.
+  await A.page.evaluate(() => window.syn3h.params.set('chat.on', false))
+  await B.page.waitForTimeout(800)
+  const beforeOff = (await linesOn(A.page)).length
+  await B.page.evaluate(() => window.syn3hChat.net.chat.send('can anyone hear me'))
+  await B.page.waitForTimeout(1500)
+  const refusedNote = await B.page.evaluate(() => window.syn3hChat.net.chat.lines.some((l) => l.system && /turned chat off|host turned chat off/i.test(l.text)) || !window.syn3hChat.net.chat.canSend().ok)
+  check(refusedNote && (await linesOn(A.page)).length === beforeOff, 'chat off for the room: a guest\'s line is refused and not relayed')
+  await A.page.evaluate(() => window.syn3h.params.set('chat.on', true))
+  await B.page.waitForTimeout(800)
+
   // 5: bots.
   if (withBots) {
     const t0 = Date.now()
@@ -108,7 +119,14 @@ try {
       if (spoke) break
       await B.page.waitForTimeout(2000)
     }
-    check(spoke, `a bot spoke within two minutes at chatty (${Math.round((Date.now() - t0) / 1000)} s)`)
+    check(spoke, `a bot spoke within two minutes at chatty (${Math.round((Date.now() - t0) / 1000)} s), seen on the guest`)
+    // The muted player stays muted while bots talk on.
+    await B.page.click('.chat-people-toggle')
+    await B.page.click('.chat-people .chat-mute >> nth=0')
+    await A.page.evaluate(() => window.syn3hChat.net.chat.send('still muted?'))
+    await B.page.waitForTimeout(25000)
+    check(!(await linesOn(B.page)).some((t) => t.includes('still muted?')), 'a muted player stays muted')
+    await B.page.click('.chat-people .chat-mute >> nth=0')
     await B.page.waitForTimeout(20000)
     await shot(B.page, 'desktop-open-bots')
     const transcript = await B.page.evaluate(() => [...document.querySelectorAll('.chat-panel .chat-log .chat-line')].map((l) => l.textContent))
