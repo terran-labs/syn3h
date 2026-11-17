@@ -6,11 +6,11 @@
 .syn3h-shell.exploration-ui .about-pane[hidden] { display: none; }
 
 .syn3h-shell.exploration-ui .about-updates .updates-status { color: var(--s3-dim); }
-.syn3h-shell.exploration-ui .about-updates :is(.updates-retry, .updates-reload) { min-height: 44px; margin: 4px 0; padding: 8px 20px; border: 1px solid var(--s3-line); border-radius: 999px; background: rgb(143 227 255 / .06); color: var(--s3-accent-2); cursor: pointer; }
-.syn3h-shell.exploration-ui .about-updates .updates-pinned { padding: 12px 16px; border: 1px solid var(--s3-line); border-radius: 12px; background: rgb(143 227 255 / .05); }
+.syn3h-shell.exploration-ui .about-updates :is(.updates-retry, .updates-reload) { min-height: 44px; margin: 4px 0; padding: 8px 20px; border: 1px solid var(--s3-line); border-radius: 999px; background: rgb(205 205 205 / .06); color: var(--s3-accent-2); cursor: pointer; }
+.syn3h-shell.exploration-ui .about-updates .updates-pinned { padding: 12px 16px; border: 1px solid var(--s3-line); border-radius: 12px; background: rgb(205 205 205 / .05); }
 .syn3h-shell.exploration-ui .about-updates .updates-pinned a { color: var(--s3-accent-2); text-underline-offset: 4px; }
 .syn3h-shell.exploration-ui .updates-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.syn3h-shell.exploration-ui .update-release { border: 1px solid var(--s3-line); border-radius: 12px; background: rgb(143 227 255 / .03); }
+.syn3h-shell.exploration-ui .update-release { border: 1px solid var(--s3-line); border-radius: 12px; background: rgb(205 205 205 / .03); }
 .syn3h-shell.exploration-ui .update-release > summary { display: grid; gap: 6px; min-height: 44px; padding: 12px 16px; cursor: pointer; list-style: none; }
 .syn3h-shell.exploration-ui .update-release > summary::-webkit-details-marker { display: none; }
 .syn3h-shell.exploration-ui .update-release > summary:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 2px; border-radius: 12px; }
@@ -20,7 +20,7 @@
 .syn3h-shell.exploration-ui .update-release[open] .update-version::after { content: ' ⌄'; }
 .syn3h-shell.exploration-ui .update-date { color: var(--s3-dim); font-size: 13px; margin-left: auto; }
 .syn3h-shell.exploration-ui .update-badge { padding: 2px 8px; border-radius: 999px; font: 500 11px/1.4 'Barlow', sans-serif; letter-spacing: .12em; text-transform: uppercase; }
-.syn3h-shell.exploration-ui .update-badge.is-new { color: #04121c; background: var(--s3-accent-2); }
+.syn3h-shell.exploration-ui .update-badge.is-new { color: #0f0f0f; background: var(--s3-accent-2); }
 .syn3h-shell.exploration-ui .update-badge.is-running { color: var(--s3-accent-2); border: 1px solid var(--s3-line); }
 .syn3h-shell.exploration-ui .update-summary { color: var(--s3-ink); font-size: 15px; line-height: 1.5; }
 .syn3h-shell.exploration-ui .update-notes { padding: 0 16px 12px; border-top: 1px solid var(--s3-line); overflow-wrap: anywhere; }
@@ -29,7 +29,7 @@
 .syn3h-shell.exploration-ui .update-notes p { margin: 0 0 10px; }
 .syn3h-shell.exploration-ui .update-notes :is(ul, ol) { margin: 0 0 10px; padding-left: 22px; }
 .syn3h-shell.exploration-ui .update-notes a { color: var(--s3-accent-2); text-underline-offset: 3px; }
-.syn3h-shell.exploration-ui .update-notes code { padding: 1px 5px; border-radius: 4px; background: rgb(143 227 255 / .08); font: 13px ui-monospace, monospace; color: var(--s3-ink); }
+.syn3h-shell.exploration-ui .update-notes code { padding: 1px 5px; border-radius: 4px; background: rgb(205 205 205 / .08); font: 13px ui-monospace, monospace; color: var(--s3-ink); }
 .syn3h-shell.exploration-ui .update-notes strong { color: var(--s3-ink); font-weight: 500; }
 .syn3h-shell.exploration-ui .update-table { overflow-x: auto; margin: 0 0 10px; }
 .syn3h-shell.exploration-ui .update-table table { border-collapse: collapse; font-size: 14px; color: var(--s3-dim); }
@@ -44,14 +44,14 @@
 .syn3h-shell.exploration-ui:has(.lobby-panels:not([hidden])) .build-banner.update-banner { display: none; }
 .syn3h-shell.exploration-ui .update-banner-text { display: flex; align-items: baseline; gap: 12px; min-width: 0; flex: 1 1 auto; }
 .syn3h-shell.exploration-ui .update-banner-text strong { flex: 0 0 auto; font-weight: 500; letter-spacing: .04em; }
-.syn3h-shell.exploration-ui .update-banner-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: rgb(220 236 248 / .8); font-size: 13px; }
+.syn3h-shell.exploration-ui .update-banner-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: rgb(233 233 233 / .8); font-size: 13px; }
 .syn3h-shell.exploration-ui .update-banner-summary:empty { display: none; }
 .syn3h-shell.exploration-ui .update-banner-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
 .syn3h-shell.exploration-ui .update-banner-actions button { min-height: 44px; min-width: 44px; margin: 0; padding: 0 14px; border: 0; border-radius: 999px; background: none; box-shadow: none; color: #f3fbff; font: 500 13.5px/1.2 'Barlow', sans-serif; letter-spacing: .03em; white-space: nowrap; cursor: pointer; }
-.syn3h-shell.exploration-ui .update-banner-actions .update-reload { background: rgb(143 227 255 / .16); }
+.syn3h-shell.exploration-ui .update-banner-actions .update-reload { background: rgb(205 205 205 / .16); }
 .syn3h-shell.exploration-ui .update-banner-actions .update-whatsnew { color: var(--s3-accent-2); text-decoration: underline; text-underline-offset: 4px; }
-.syn3h-shell.exploration-ui .update-banner-actions .update-dismiss { padding: 0; font-size: 18px; color: rgb(220 236 248 / .75); }
-.syn3h-shell.exploration-ui .update-banner-actions button:hover { background: rgb(143 227 255 / .12); }
+.syn3h-shell.exploration-ui .update-banner-actions .update-dismiss { padding: 0; font-size: 18px; color: rgb(233 233 233 / .75); }
+.syn3h-shell.exploration-ui .update-banner-actions button:hover { background: rgb(205 205 205 / .12); }
 .syn3h-shell.exploration-ui .update-banner-actions button:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: -2px; }
 /* Narrow or short screens: version, Reload, What's new and close, no summary, one row. */
 @media (max-width: 900px), (max-height: 550px) {
@@ -69,7 +69,7 @@ body.has-game-shell:has(.syn3h-shell:not(.is-playing)) #syn3h-build-notice { dis
 }
 
 /* The in-play chip: a line in the sidebar header, never over the world. */
-.syn3h-shell.exploration-ui .rail-update { display: block; width: 100%; min-height: 44px; margin: 6px 0 0; padding: 6px 12px; border: 1px solid var(--s3-line); border-radius: 999px; background: rgb(143 227 255 / .08); color: var(--s3-accent-2); font: 500 12.5px/1.2 'Barlow', sans-serif; letter-spacing: .04em; cursor: pointer; }
+.syn3h-shell.exploration-ui .rail-update { display: block; width: 100%; min-height: 44px; margin: 6px 0 0; padding: 6px 12px; border: 1px solid var(--s3-line); border-radius: 999px; background: rgb(205 205 205 / .08); color: var(--s3-accent-2); font: 500 12.5px/1.2 'Barlow', sans-serif; letter-spacing: .04em; cursor: pointer; }
 .syn3h-shell.exploration-ui .rail-update[hidden] { display: none; }
 
 /* A phone in landscape: the lobby About is a full-height sheet, as the in-play guide is,

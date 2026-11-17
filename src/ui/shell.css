@@ -10,11 +10,11 @@
    The --theme-* names are that site's, kept so its button CSS below can be used verbatim.
    Tokens live on :root because the touch controls sit outside .syn3h-shell. */
 :root {
-  --s3-accent: #2997ff; --s3-accent-2: #64d2ff; --s3-accent-3: #9b78ff; --s3-glow: #0b6fd6;
+  --s3-accent: #828282; --s3-accent-2: #b6b6b6; --s3-accent-3: #929292; --s3-glow: #5d5d5d;
   --s3-ink: #f5f5f7; --s3-dim: #aeaeb2; --s3-soft: #8e8e93; --s3-space: #01020a;
   --s3-line: rgb(84 84 88 / .72); --s3-line-quiet: rgb(84 84 88 / .48); --s3-panel: rgb(22 23 28 / .58);
   --s3-card: rgb(28 28 30 / .78); --s3-radius: 18px; --s3-radius-small: 8px;
-  --theme-accent-primary-rgb: 41 151 255; --theme-heading-accent: #2997ff; --theme-focus-ring: #64d2ff;
+  --theme-accent-primary-rgb: 41 151 255; --theme-heading-accent: #828282; --theme-focus-ring: #b6b6b6;
 }
 /* The panel is frosted glass, which only reads over a busy galaxy if the frost is real. Safari
    (every phone and iPad) blurs what is behind it only weakly over the galaxy's canvas, so a
@@ -25,7 +25,7 @@
 .syn3h-shell { --accent: var(--s3-accent); --panel: var(--s3-card); color: var(--s3-ink); font: 400 17px/1.5 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; }
 /* The wordmark is one vector path: black letters over a blue light that shows round the
    edges and through the gaps, as in the 2017 build. Change --s3-glow to relight it. */
-.wordmark { display: block; height: auto; overflow: visible; fill: #02040a; filter: drop-shadow(0 0 2px #64d2ff) drop-shadow(0 0 9px var(--s3-accent)) drop-shadow(0 0 12px var(--s3-glow)) drop-shadow(0 0 42px color-mix(in srgb, var(--s3-glow) 75%, transparent)); }
+.wordmark { display: block; height: auto; overflow: visible; fill: #02040a; filter: drop-shadow(0 0 2px #b6b6b6) drop-shadow(0 0 9px var(--s3-accent)) drop-shadow(0 0 12px var(--s3-glow)) drop-shadow(0 0 42px color-mix(in srgb, var(--s3-glow) 75%, transparent)); }
 .syn3h-shell *, .touch-controls * { box-sizing: border-box; }
 .syn3h-shell [hidden], .touch-controls[hidden], .syn3h-advanced[hidden] { display: none !important; }
 .has-game-shell { overscroll-behavior: none; }
@@ -44,7 +44,7 @@
 @keyframes logo-enter { 0% { transform: translateZ(50px); opacity: .1; filter: drop-shadow(0 0 0 transparent); } 27.27% { opacity: .7; filter: drop-shadow(0 0 4px var(--s3-glow)); } 100% { transform: translateZ(0); opacity: 1; } }
 /* The panel is a sheet of frosted glass over the sky: Dark Star's card radius and hairline. */
 .lobby-panels { position: relative; perspective: 300px; width: min(1000px,100%); min-height: 0; flex: 1 1 600px; max-height: 760px; background: var(--s3-panel); border: 1px solid var(--s3-line-quiet); border-radius: var(--s3-radius); -webkit-backdrop-filter: blur(22px) saturate(150%); backdrop-filter: blur(22px) saturate(150%); box-shadow: 0 2px 4px rgb(0 0 0 / .2), 0 12px 32px rgb(0 0 0 / .16), 0 28px 58px rgb(0 0 0 / .1); }
-.lobby-panels > section { height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #2b3a52 transparent; padding: 34px 30px 22px; max-width: 700px; margin: auto; text-align: center; touch-action: pan-y; }
+.lobby-panels > section { height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #383838 transparent; padding: 34px 30px 22px; max-width: 700px; margin: auto; text-align: center; touch-action: pan-y; }
 .lobby-links { grid-area: links; }
 .syn3h-shell h1, .syn3h-shell h2 { font: 600 38px/1.05 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: -0.01em; color: #fff; margin: 0 0 22px; text-wrap: balance; }
 .syn3h-shell h1 { font-size: clamp(40px, 5.2vw, 64px); text-transform: uppercase; }
@@ -198,7 +198,7 @@
 .shell-message { overflow-wrap: anywhere; font-size: 13px; }
 .syn3h-shell label:not(.syn3h-advanced *) { display: block; text-align: left; margin: 14px 0 6px; font-size: 17px; }
 .syn3h-shell input:where(:not(.syn3h-advanced *):not([type=radio]):not([type=checkbox]):not([type=color]):not([type=range])) { display: block; width: 100%; background: rgb(255 255 255 / .06); color: var(--s3-ink); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); font: 400 19px 'Barlow',sans-serif; padding: 11px 13px; min-height: 46px; transition: border-color .18s, box-shadow .18s; }
-.syn3h-shell input:not(.syn3h-advanced *):focus { outline: none; border-color: var(--theme-focus-ring); box-shadow: 0 0 0 3px rgb(41 151 255 / .25); }
+.syn3h-shell input:not(.syn3h-advanced *):focus { outline: none; border-color: var(--theme-focus-ring); box-shadow: 0 0 0 3px rgb(130 130 130 / .25); }
 .syn3h-shell input:not(.syn3h-advanced *)[type=range] { display: block; width: 100%; accent-color: var(--s3-accent); min-height: 34px; margin: 5px 0 20px; }
 .syn3h-shell input:not(.syn3h-advanced *)[type=radio], .syn3h-shell input:not(.syn3h-advanced *)[type=checkbox] { accent-color: var(--s3-accent); width: 20px; height: 20px; margin: 0; vertical-align: middle; }
 .syn3h-shell select:not(.syn3h-advanced *) { width: 100%; }
@@ -208,7 +208,7 @@
 .input-action input { min-width: 0; }
 .input-action button { flex-shrink: 0; font-size: 16px; }
 .shell-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 22px 0; text-align: left; font-size: 14px; }
-.shell-controls b { color: #dce9fd; font-weight: 600; display: block; }
+.shell-controls b { color: #e7e7e7; font-weight: 600; display: block; }
 .shell-touch-hint { display: none; font-size: 15px; }
 .has-touch .shell-touch-hint { display: block; }
 .has-touch .shell-controls { display: none; }
@@ -225,7 +225,7 @@
 .syn3h-shell input:not(.syn3h-advanced *)[type=color] { width: 64px; height: 38px; background: rgb(255 255 255 / .06); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); padding: 3px; cursor: pointer; }
 .vehicle-note, .panel-note { font-size: 15px; color: var(--s3-dim); }
 .world-controls, .host-controls, .paint-controls { text-align: left; border: 1px solid var(--s3-line-quiet); border-radius: var(--s3-radius); padding: 12px 16px; margin: 14px 0; }
-.world-controls legend, .host-controls legend, .paint-controls legend { padding: 0 8px; font-family: 'Barlow Condensed','Arial Narrow',sans-serif; font-weight: 600; color: #e0e9f6; }
+.world-controls legend, .host-controls legend, .paint-controls legend { padding: 0 8px; font-family: 'Barlow Condensed','Arial Narrow',sans-serif; font-weight: 600; color: #e8e8e8; }
 .sky-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .sky-presets button { font-size: 16px; }
 .world-lock-note { color: #e4ba8f; font-size: 15px; }
@@ -247,15 +247,15 @@
 .hud-navigation { position: fixed; top: max(20px,env(safe-area-inset-top)); right: max(20px,env(safe-area-inset-right)); z-index: 15; display: flex; gap: 8px; }
 .syn3h-shell .hud-navigation button { font-size: 16px; min-height: 44px; }
 .shell-toast { position: fixed; z-index: 50; left: 50%; top: max(20px,env(safe-area-inset-top)); transform: translateX(-50%); max-width: min(90vw,500px); padding: 10px 18px; background: rgb(28 28 30 / .92); border: 1px solid rgb(84 84 88 / .72); color: white; font-size: 16px; pointer-events: none; text-align: center; }
-.syn3h-advanced { width: 100%; --tp-base-background-color: #182337; --tp-base-shadow-color: transparent; --tp-base-border-radius: 2px; --tp-container-background-color: #26354b; --tp-container-foreground-color: #d8e4f4; --tp-label-foreground-color: #cad7e7; --tp-input-background-color: #34465e; --tp-input-foreground-color: #e8f2ff; --tp-button-background-color: #506787; --tp-button-foreground-color: white; }
+.syn3h-advanced { width: 100%; --tp-base-background-color: #222222; --tp-base-shadow-color: transparent; --tp-base-border-radius: 2px; --tp-container-background-color: #333333; --tp-container-foreground-color: #e2e2e2; --tp-label-foreground-color: #d5d5d5; --tp-input-background-color: #434343; --tp-input-foreground-color: #f0f0f0; --tp-button-background-color: #646464; --tp-button-foreground-color: white; }
 .touch-controls { position: fixed; inset: 0; z-index: 20; pointer-events: none; user-select: none; -webkit-user-select: none; touch-action: none; }
 .touch-stick { position: absolute; left: max(24px,env(safe-area-inset-left)); bottom: max(28px,env(safe-area-inset-bottom)); width: 140px; height: 140px; border: 1px solid #9ebee37a; border-radius: 50%; background: #15203570; pointer-events: auto; touch-action: none; }
 .touch-knob { position: absolute; width: 52px; height: 52px; top: 43px; left: 43px; border-radius: 50%; background: #6799cf65; border: 1px solid #abcff7b0; }
-.touch-stick-label { position: absolute; bottom: 10px; width: 100%; text-align: center; font: 400 12px 'Barlow', sans-serif; letter-spacing: 2px; color: #d0e4fc; }
+.touch-stick-label { position: absolute; bottom: 10px; width: 100%; text-align: center; font: 400 12px 'Barlow', sans-serif; letter-spacing: 2px; color: #e1e1e1; }
 .touch-actions { position: absolute; right: max(24px,env(safe-area-inset-right)); bottom: max(30px,env(safe-area-inset-bottom)); display: grid; grid-template-columns: 62px 62px; gap: 12px; }
-.touch-actions button { border: 1px solid #9ebee37a; border-radius: 50%; height: 62px; color: #e5f0ff; background: #182c47bd; font: 400 15px 'Barlow', sans-serif; pointer-events: auto; touch-action: none; }
+.touch-actions button { border: 1px solid #9ebee37a; border-radius: 50%; height: 62px; color: #eeeeee; background: #182c47bd; font: 400 15px 'Barlow', sans-serif; pointer-events: auto; touch-action: none; }
 .touch-actions .touch-fire { grid-column: 2; background: #43668dc9; }
-.touch-actions button.held, .touch-actions button[aria-pressed=true] { background: #8bbff2dd; color: #10243b; }
+.touch-actions button.held, .touch-actions button[aria-pressed=true] { background: #8bbff2dd; color: #212121; }
 @media (max-width: 700px) { .shell-overlay { padding: max(8px,env(safe-area-inset-top)) 16px max(8px,env(safe-area-inset-bottom)); } .lobby-brand { flex-basis: 120px; } .shell-logo { width: 290px; } .lobby-panels { max-height: none; width: 100%; } .lobby-panels > section { padding: 8px 4px 16px; } .lobby-links { margin: 6px 0; justify-content: center; } .lobby-footer { font-size: 11px; flex-basis: 30px; } .shell-hud { left: 12px; top: 12px; width: 180px; padding: 8px; } .shell-speed strong { font-size: 34px; } .hud-scoreboard { max-height: 95px; } .hud-scoreboard .score-detail { display: none; } .hud-navigation { right: 12px; top: 12px; flex-direction: column; gap: 5px; } .hud-navigation button { padding: 8px 12px; font-size: 14px; } .touch-stick { width: 124px; height: 124px; left: 18px; } .touch-knob { left: 35px; top: 35px; } .touch-actions { right: 18px; } .shell-vehicle-preview { height: 170px; } .shell-colors { gap: 20px; } }
 @media (max-height: 550px) { .lobby-brand { flex-basis: 66px; } .shell-logo { width: 190px; } .lobby-panels > section { padding-top: 14px; } .lobby-footer { flex-basis: 22px; } }
 @media (prefers-reduced-motion: reduce) { .shell-logo { animation: none; } .lobby-stage { transform: none; transition: none; } }
@@ -334,7 +334,7 @@
 .invite-qr { width: min(240px,100%); margin: 12px auto; }
 .invite-qr svg { display: block; width: 100%; height: auto; }
 .invite-link, .join-room { overflow-wrap: anywhere; font-size: 14px; }
-.join-view { position: fixed; inset: 0; z-index: 80; background: radial-gradient(ellipse at 50% 120%, #06123a, var(--s3-space) 60%); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; overflow: auto; text-align: center; }
+.join-view { position: fixed; inset: 0; z-index: 80; background: radial-gradient(ellipse at 50% 120%, #131313, var(--s3-space) 60%); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; overflow: auto; text-align: center; }
 .join-view > .wordmark { width: 240px; flex: none; margin-bottom: 14px; }
 .syn3h-shell .join-view h1 { margin: 0; font-size: 42px; }
 .syn3h-shell .join-view p { margin: 5px 0; max-width: 90vw; }
@@ -486,10 +486,10 @@
 }
 /* A hint for a player who seems stuck: the controls card with a lit edge, and on touch the
    button it names pulses. */
-.spawn-help.is-hint { border-color: var(--s3-accent); color: white; font-size: clamp(15px,1vw,19px); box-shadow: 0 0 22px rgb(20 100 255 / .3); }
-.touch-actions button.is-hinted { animation: touch-hint 1s ease-in-out infinite; border-color: #cfe6ff; }
-@keyframes touch-hint { 50% { box-shadow: 0 0 0 9px rgb(120 190 255 / .28); background: #8bbff2c0; color: #10243b; } }
-@media (prefers-reduced-motion: reduce) { .touch-actions button.is-hinted { animation: none; box-shadow: 0 0 0 5px rgb(120 190 255 / .4); } }
+.spawn-help.is-hint { border-color: var(--s3-accent); color: white; font-size: clamp(15px,1vw,19px); box-shadow: 0 0 22px rgb(94 94 94 / .3); }
+.touch-actions button.is-hinted { animation: touch-hint 1s ease-in-out infinite; border-color: #e2e2e2; }
+@keyframes touch-hint { 50% { box-shadow: 0 0 0 9px rgb(176 176 176 / .28); background: #8bbff2c0; color: #212121; } }
+@media (prefers-reduced-motion: reduce) { .touch-actions button.is-hinted { animation: none; box-shadow: 0 0 0 5px rgb(176 176 176 / .4); } }
 /* Touch tablets (an iPad on its side is 1194 x 834): the screen is desktop sized but the
    thumb controls are on it, so the minimap goes to the top right, under the menu, where the
    action buttons are not, and announcements sit above the vehicle. Phones have their own
@@ -566,7 +566,7 @@
 .syn3h-shell .daydream-control { display: block; text-align: left; margin: 18px 0 4px; font-size: 17px; }
 .syn3h-shell .daydream-control output { float: right; color: var(--s3-accent-2); }
 /* Gear chip: which gear is in hand, under the speed. Tap or press T to switch. */
-.syn3h-shell .shell-hud .gear-chip { display: inline-flex; align-items: center; min-height: 30px; margin: 2px 0 6px; padding: 4px 12px; border-radius: 999px; border: 1px solid rgb(120 190 255 / .45); background: rgb(41 151 255 / .18); color: var(--s3-ink); font: 600 13px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .08em; text-transform: uppercase; pointer-events: auto; cursor: pointer; box-shadow: none; }
+.syn3h-shell .shell-hud .gear-chip { display: inline-flex; align-items: center; min-height: 30px; margin: 2px 0 6px; padding: 4px 12px; border-radius: 999px; border: 1px solid rgb(176 176 176 / .45); background: rgb(130 130 130 / .18); color: var(--s3-ink); font: 600 13px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .08em; text-transform: uppercase; pointer-events: auto; cursor: pointer; box-shadow: none; }
 .syn3h-shell .shell-hud .gear-chip[hidden] { display: none; }
 .syn3h-shell.has-touch .shell-hud .gear-chip { min-height: 40px; padding: 6px 16px; }
 
@@ -583,17 +583,17 @@
 }
 
 /* Automatic races remain a quiet status cue while the player drives. */
-.race-hud { position: fixed; z-index: 12; bottom: 24px; left: 50%; transform: translateX(-50%); width: min(320px, calc(100vw - 32px)); padding: 10px 14px; border: 1px solid rgb(190 225 255 / .3); border-radius: 14px; background: rgb(14 26 42 / .85); color: #edf6ff; box-shadow: 0 5px 24px rgb(0 0 0 / .15); text-align: center; pointer-events: auto; }
+.race-hud { position: fixed; z-index: 12; bottom: 24px; left: 50%; transform: translateX(-50%); width: min(320px, calc(100vw - 32px)); padding: 10px 14px; border: 1px solid rgb(218 218 218 / .3); border-radius: 14px; background: rgb(24 24 24 / .85); color: #f4f4f4; box-shadow: 0 5px 24px rgb(0 0 0 / .15); text-align: center; pointer-events: auto; }
 .race-hud[hidden], .race-hud [hidden] { display: none; }
 .race-status, .race-destination, .race-detail { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .race-status { font-size: 15px; }
 .race-destination { font-size: 14px; margin-top: 2px; }
-.race-detail { font-size: 12px; color: #c5d9e9; }
+.race-detail { font-size: 12px; color: #d5d5d5; }
 .race-arrow { display: inline-block; position: absolute; left: 10px; top: 12px; font-size: 22px; }
 .race-hud:has(.race-arrow:not([hidden])) { padding-inline: 34px; }
 .race-controls { display: flex; gap: 4px; justify-content: center; margin-top: 6px; }
 .syn3h-shell .race-controls button { font: inherit; font-size: 12px; min-height: 32px; padding: 4px 9px; border-radius: 8px; }
-.race-hud.is-captured { background: rgb(10 20 34 / .5); border-color: rgb(190 225 255 / .18); pointer-events: none; }
+.race-hud.is-captured { background: rgb(19 19 19 / .5); border-color: rgb(218 218 218 / .18); pointer-events: none; }
 .race-hud.is-captured .race-controls { display: none; }
 .race-hud.is-collapsed .race-destination, .race-hud.is-collapsed .race-detail, .race-hud.is-collapsed .race-arrow { display: none; }
 .has-touch .race-controls button { min-height: 44px; }
