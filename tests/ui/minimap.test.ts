@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ARROW, RIM, UNITS, heightPixels, mapPoint, markColor, markLook, placeMark, rimFade, type MarkPlace } from '../../src/ui/Minimap'
+import { ARROW, MAP_LUMA, RIM, UNITS, heightPixels, mapPoint, markColor, markLook, placeMark, rimFade, type MarkPlace } from '../../src/ui/Minimap'
 import { wrapDelta } from '../../shared/wrap'
 
 describe('minimap projection and terrain cache', () => {
@@ -80,5 +80,30 @@ describe('people and bots on the minimap', () => {
     }
     expect(markColor('#ffd400')).toBe('#ffd400')
     expect(markColor('#0d0d40')).not.toBe('#0d0d40')
+  })
+})
+
+describe("the map shows the world's own colours", () => {
+  const flat = (colour: number, liquid: 'lava' | 'water' | null = null) => heightPixels({ size: 600, heightAt: () => 0, mapColourAt: () => colour, liquidKindAt: () => liquid }, 4)
+  const rgb = (p: Uint8ClampedArray) => [p[0], p[1], p[2]]
+  const luma = ([r, g, b]: number[]) => (.2126 * r + .7152 * g + .0722 * b) / 255
+  const hueOf = ([r, g, b]: number[]) => hue('#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join(''))
+  it("keeps the hook's hue on ground and liquids", () => {
+    for (const [colour, liquid] of [[0x3366cc, null], [0x2f8a3a, null], [0x1d5f8a, 'water'], [0xff7a1a, 'lava']] as const) {
+      const c = rgb(flat(colour, liquid)), want = '#' + colour.toString(16).padStart(6, '0')
+      expect(Math.abs(hueOf(c) - hue(want))).toBeLessThan(4)
+    }
+  })
+  it('fits pale ice, bright lava and black rock into the luma band marks stand out from', () => {
+    for (const colour of [0xffffff, 0xe8f4ff, 0xff7a1a, 0xffd23a, 0x050505]) {
+      const l = luma(rgb(flat(colour)))
+      expect(l).toBeLessThanOrEqual(MAP_LUMA[1] + .01); expect(l).toBeGreaterThanOrEqual(MAP_LUMA[0] - .01)
+    }
+  })
+  it('draws the brown relief map, with its sea, when the terrain has no colours', () => {
+    const ground = rgb(heightPixels({ size: 600, heightAt: () => 0 }, 4))
+    expect(ground[0]).toBeGreaterThan(ground[2])
+    const sea = rgb(heightPixels({ size: 600, heightAt: () => 0, liquidKindAt: () => 'water' }, 4))
+    expect(sea[2]).toBeGreaterThan(sea[0])
   })
 })

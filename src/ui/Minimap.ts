@@ -18,8 +18,20 @@ export interface MapEntity {
 export function mapPoint(x: number, z: number, size: number, pixels: number): [number, number] {
   return [(x / size + .5) * pixels, (z / size + .5) * pixels]
 }
-/** Sample once per terrain revision. Rendering markers never resamples the world. */
-export function heightPixels(terrain: Pick<Terrain, 'size' | 'heightAt'>, pixels: number): Uint8ClampedArray {
+/**
+ * Luma (sRGB, 0 to 1) a world's map colours are fitted into, hue and saturation kept. Marks
+ * are at least luma .5 with dark outlines, so on pale ice and bright lava alike they stand
+ * out from a map no brighter than MAP_LUMA[1].
+ */
+export const MAP_LUMA = [.16, .55] as const
+type MapTerrain = Pick<Terrain, 'size' | 'heightAt' | 'mapColourAt' | 'liquidKindAt'>
+/**
+ * The map's picture, sampled once per world (and again when its sea changes); drawing marks
+ * never resamples. With Terrain.mapColourAt it is the world's own colours under a hillshade
+ * (flat liquids shaded gently), fitted into MAP_LUMA. Without it, the brown relief map,
+ * with water and lava where the terrain says they are.
+ */
+export function heightPixels(terrain: MapTerrain, pixels: number): Uint8ClampedArray {
   const heights = new Float32Array(pixels * pixels)
   let min = Infinity, max = -Infinity
   for (let z = 0; z < pixels; z++) for (let x = 0; x < pixels; x++) {
@@ -32,8 +44,31 @@ export function heightPixels(terrain: Pick<Terrain, 'size' | 'heightAt'>, pixels
     const i = z * pixels + x, height = (heights[i] - min) / span
     const dx = heights[z * pixels + Math.min(pixels - 1, x + 1)] - heights[z * pixels + Math.max(0, x - 1)]
     const dz = heights[Math.min(pixels - 1, z + 1) * pixels + x] - heights[Math.max(0, z - 1) * pixels + x]
-    const shade = Math.max(.4, Math.min(1.3, .85 + (dx + dz) / (step * 6)))
-    out[i * 4] = (65 + height * 125) * shade; out[i * 4 + 1] = (50 + height * 95) * shade; out[i * 4 + 2] = (44 + height * 75) * shade; out[i * 4 + 3] = 255
+    const relief = (dx + dz) / (step * 6), wx = ((x + .5) / pixels - .5) * terrain.size, wz = ((z + .5) / pixels - .5) * terrain.size
+    const liquid = terrain.liquidKindAt?.(wx, wz) ?? null
+    let r: number, g: number, b: number
+    if (terrain.mapColourAt) {
+      // Fit the world's colour into MAP_LUMA first (scaling keeps hue; an even grey lifts
+      // black rock, which has none), then shade, so relief survives on dark worlds. Shadows
+      // may fall below the band; nothing lit rises above it.
+      const c = terrain.mapColourAt(wx, wz)
+      r = c >> 16 & 255; g = c >> 8 & 255; b = c & 255
+      let luma = (.2126 * r + .7152 * g + .0722 * b) / 255
+      // Headroom under the cap, so lit slopes still read brighter on pale worlds.
+      const top = MAP_LUMA[1] / 1.2
+      if (luma > top) { const fit = top / luma; r *= fit; g *= fit; b *= fit }
+      else if (luma < MAP_LUMA[0]) { const lift = (MAP_LUMA[0] - luma) * 255; r += lift; g += lift; b += lift }
+      // Ground takes the full hillshade; a liquid surface is flat, so only a hint of the bed.
+      const shade = liquid ? Math.max(.9, Math.min(1.08, 1 + relief * .15)) : Math.max(.45, Math.min(1.3, 1 + relief))
+      r *= shade; g *= shade; b *= shade
+      luma = (.2126 * r + .7152 * g + .0722 * b) / 255
+      if (luma > MAP_LUMA[1]) { const fit = MAP_LUMA[1] / luma; r *= fit; g *= fit; b *= fit }
+    } else {
+      const shade = Math.max(.4, Math.min(1.3, .85 + relief))
+      if (liquid) { r = liquid === 'lava' ? 190 : 40; g = liquid === 'lava' ? 70 : 82; b = liquid === 'lava' ? 24 : 112 }
+      else { r = (65 + height * 125) * shade; g = (50 + height * 95) * shade; b = (44 + height * 75) * shade }
+    }
+    out[i * 4] = r; out[i * 4 + 1] = g; out[i * 4 + 2] = b; out[i * 4 + 3] = 255
   }
   return out
 }
@@ -159,6 +194,9 @@ export class Minimap {
   /** Marks grow on small maps so a phone's 96 px map stays legible. Updated on resize, not per draw. */
   private markScale = 1
   private lastDraw = 0
+  private keyChecked = 0
+  private baked = 0
+  private bakedKey?: string
   private northX = 0
   private northY = 0
   private northR = 0
@@ -184,6 +222,7 @@ export class Minimap {
     this.regenerate(); this.unsubscribe = terrain.onRegenerate?.(() => this.regenerate())
   }
   private regenerate(): void {
+    this.bakedKey = this.colourKey(); this.baked = performance.now()
     const ctx = this.base.getContext('2d')!, data = ctx.createImageData(this.pixels, this.pixels)
     data.data.set(heightPixels(this.terrain, this.pixels)); ctx.putImageData(data, 0, 0)
     this.element.dataset.revision = String(Number(this.element.dataset.revision || 0) + 1)
@@ -205,7 +244,19 @@ export class Minimap {
     this.count = n
   }
   setSelf(entity: MapEntity): void { this.self = entity }
-  update(): void { const now = performance.now(); if (now - this.lastDraw > 100) { this.lastDraw = now; this.draw() } }
+  update(): void {
+    const now = performance.now()
+    // The map's colours follow the sea: a gliding sea level or a freezing sea changes the
+    // hook's key. Checked twice a second, rebaked at most once a second while it moves.
+    if (now - this.keyChecked > 500) {
+      this.keyChecked = now
+      const key = this.colourKey()
+      if (key !== this.bakedKey && now - this.baked > 1000) this.regenerate()
+    }
+    if (now - this.lastDraw > 100) { this.lastDraw = now; this.draw() }
+  }
+  /** Changes whenever Terrain.mapColourAt would answer differently; cheap, never bakes. */
+  private colourKey(): string | undefined { return this.terrain.mapColourKey?.() }
   /**
    * The world wraps, so the map does too: the player is always at the centre, north is up,
    * and the terrain scrolls under them, repeating at the edges. Everything else is drawn at
