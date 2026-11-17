@@ -13,7 +13,7 @@
  * - DESIGN BUILD (`build`): loads a body, picks its strut, adds lamps, beams and the cockpit.
  *
  * Draw calls here are higher than the game's: the game instances stators and struts and merges
- * static parts (LoadedBuggySkin), while this gallery keeps every part a separate mesh so bodies
+ * static parts (Syn3hBuggySkin), while this gallery keeps every part a separate mesh so bodies
  * can be swapped freely. Triangle counts match what the parts would ship at.
  */
 import * as THREE from 'three/webgpu'
@@ -31,9 +31,9 @@ const LEGACY_PICK = 'v4-widebody'
 
 /** Wheel hubs at rest in the game frame (nose at -Z): Syn3hBuggy WHEEL_POS at ride height. */
 const HUBS = [[-1.1, -.19, -1.3], [1.1, -.19, -1.3], [-1.1, -.19, 1.3], [1.1, -.19, 1.3]].map(p => new THREE.Vector3(...p))
-/** Where each strut meets the body: the prefab's AxelPos, as LoadedBuggySkin's mounts. */
+/** Where each strut meets the body: the prefab's AxelPos, as Syn3hBuggySkin's mounts. */
 const MOUNTS = [[-.55, .15, -1.2], [.55, .15, -1.2], [-.55, .15, 1.2], [.55, .15, 1.2]].map(p => new THREE.Vector3(...p))
-/** Length of the strut mesh along its span (glb +Y, narrow root at the origin), as LoadedBuggySkin. */
+/** Length of the strut mesh along its span (glb +Y, narrow root at the origin), as Syn3hBuggySkin. */
 const STRUT_SPAN = .828
 const STRUT_REST = HUBS[3].distanceTo(MOUNTS[3])
 /** Tyre bottom: hub height less the original tyre's 0.52 m radius. */
@@ -148,7 +148,7 @@ class DesignMaterials {
 interface BakedPart { geometry: THREE.BufferGeometry; material: THREE.Material }
 
 let original: Promise<GLTF> | undefined
-const buggyGlb = () => original ??= loader.loadAsync('/models/buggy.glb')
+const buggyGlb = () => original ??= loader.loadAsync('/tools/models/buggy.glb')
 
 /**
  * Bakes every mesh under `root` into `root`'s own frame (or world, for buggy.glb parts whose
@@ -311,7 +311,7 @@ class WheelSet {
   }
 
   /**
-   * LoadedBuggySkin.strutMatrix: the span runs from the hub to the body mount, the thickness
+   * Syn3hBuggySkin.strutMatrix: the span runs from the hub to the body mount, the thickness
    * points as near straight down as it can, so the chord lies fore and aft. The strut stretches
    * along its span only when the wheel droops past rest, so no gap opens at the body.
    */

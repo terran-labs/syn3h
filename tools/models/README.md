@@ -1,5 +1,11 @@
 # Original vehicle models
 
+Source material, not game assets. Since 16 November 2026 every vehicle is generated in code
+and the game loads no model; these files moved here from `public/models` so the production
+build never copies them (Vite copies only `public/`). Developer tools read them: the buggy
+comparison harness (`tools/buggy-fit`) and two vehicle lab exhibits served by the dev server.
+`buggy-boxarm.glb` is the Box arm body built by `tools/buggy-bodies` from `buggy.glb`.
+
 Converted from the original Blender files with Blender 5.3 (`export_yup`, modifiers applied).
 The owner created these and has authorised their reuse.
 
@@ -30,7 +36,7 @@ The classic material references have no diffuse texture: the body was player-tin
 and the cockpit used a purple tint plus an environment cubemap. The skins use PBR
 materials for those colors, without the old cubemap shader.
 
-`src/vehicles/skins` loads both generations and bakes their transforms. Both headlight
+Historical: `src/vehicles/skins` once loaded both generations and baked their transforms. Both headlight
 meshes point along source +Z, so both bodies rotate 180 degrees about Y. Classic uses
 its prefab body scale of 2.15. Syn3h uses 0.5 to fit the shared classic suspension frame;
 its cockpit and wings need a 90 degree X correction, and their missing opposite halves
