@@ -47,12 +47,12 @@ export function groundOf(b: Basin): (z: number) => number {
 export function basinBed(b: Basin) {
   const h = harness(9.81, false)
   const g = groundOf(b)
-  // A heightfield, as the game's terrain is: rows along z every 0.25 m, four cells across x.
+  // A heightfield, as the game's terrain is: rows along z every 0.25 m, four cells across 1 km of x, room to drive off sideways.
   const z0 = -b.length - 120, z1 = 120, rows = Math.round((z1 - z0) / 0.25), cols = 4
   const heights = new Float32Array((rows + 1) * (cols + 1))
   for (let i = 0; i <= rows; i++) for (let j = 0; j <= cols; j++) heights[i + j * (rows + 1)] = g(z0 + ((z1 - z0) * i) / rows)
   h.world.createCollider(
-    RAPIER.ColliderDesc.heightfield(rows, cols, heights, { x: 160, y: 1, z: z1 - z0 })
+    RAPIER.ColliderDesc.heightfield(rows, cols, heights, { x: 1000, y: 1, z: z1 - z0 })
       .setTranslation(0, 0, (z0 + z1) / 2).setFriction(1).setCollisionGroups(groups(GROUP_TERRAIN, GROUP_ALL)),
   )
   h.world.step()
@@ -167,6 +167,12 @@ export function exitTime(run: Run): number | null {
   if (!last || last.z >= -run.basin.length - 4) return null
   const first = run.trace.find((s) => s.z < 0)
   return last.t - (first?.t ?? 0)
+}
+
+/** True when the run ended on dry land, 4 m beyond either shore. */
+export function ashore(run: Run): boolean {
+  const last = run.trace[run.trace.length - 1]
+  return !!last && (last.z < -run.basin.length - 4 || last.z > 4)
 }
 
 /** Peak to peak (5th to 95th percentile) and the mean period of crossings of the mean, in a window. */

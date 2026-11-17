@@ -217,9 +217,11 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
   // Keep the deepest wetted band while hot. A new cold entry starts a fresh band.
   if(state.heatHeight===-100||surface-p.y>state.heatHeight||wasCold){state.heatNormal.copy(wetNormal);state.heatHeight=surface-p.y}
  }
+ // Out of the liquid the hull is dry: nothing stale may drag the motor or soften the tyres.
+ if(buggy&&!(type&&(lava||waterSinking.value))){state.hullWet=0;state.hull.mean=0;state.hull.axle=0}
  if(buggy&&type&&(lava||waterSinking.value)){
   // The buggy's hull columns reach a metre above its centre, so it feels the liquid before its centre is in.
-  if(!Number.isFinite(surface)||p.y>surface+1.2+(wingsOpen?1:0)){state.hullWet=0;return}
+  if(!Number.isFinite(surface)||p.y>surface+1.2+(wingsOpen?1:0)){state.hullWet=0;state.hull.mean=0;state.hull.axle=0;return}
   state.stuck=lava&&state.lavaDepth>=.3&&Math.hypot(v.x,v.z)<1.5
   if(body.isKinematic())return
   // Forces only. Tyres on the bed bite less as the liquid carries the weight; with the wings
