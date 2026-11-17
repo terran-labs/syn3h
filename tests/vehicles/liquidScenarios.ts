@@ -242,3 +242,72 @@ export function wingAscent(liquid: Liquid, depth = 3, pitch = 0, roll = 0, speed
     settledY: last.y, settled, minUp, finalUp: last.up, drift: Math.hypot(last.x, last.z + 200),
   }
 }
+
+export interface Turn { yawRate: number; radius: number; speed: number; to90: number | null; to180: number | null; minUp: number; run: Run }
+
+/**
+ * Afloat in a deep (3 m), wide lava or water lake, settled (and, to coast, paddled up to speed
+ * first), then `throttle` and `steer` held for
+ * `seconds`. Mean yaw rate (deg/s) and speed over the steady part (after 2 s), the turn radius,
+ * seconds to turn 90 and 180 degrees, and the lowest the body's up axis got (flip check).
+ */
+export function turn(kind: Kind, liquid: Liquid, throttle: number, steer: number, seconds = 12): Turn {
+  const run = fromRest(kind, { liquid, length: 400, depth: 3, slope: 15 }, 0, 4)
+  // Coasting is from cruise: first paddle straight up to speed.
+  if (throttle === 0) { run.v.input.y = 1; advance(run, 4) }
+  run.trace.length = 0
+  run.v.input.y = throttle
+  run.v.input.x = steer
+  advance(run, seconds)
+  let unwrapped = 0, prev = run.trace[0].yaw, to90: number | null = null, to180: number | null = null
+  const t0 = run.trace[0].t
+  const yaws: number[] = []
+  for (const s of run.trace) {
+    let d = s.yaw - prev
+    if (d > 180) d -= 360
+    if (d < -180) d += 360
+    unwrapped += d
+    prev = s.yaw
+    yaws.push(unwrapped)
+    if (to90 === null && Math.abs(unwrapped) >= 90) to90 = s.t - t0
+    if (to180 === null && Math.abs(unwrapped) >= 180) to180 = s.t - t0
+  }
+  const steady = run.trace.findIndex((s) => s.t - t0 >= 2)
+  const span = run.trace[run.trace.length - 1].t - run.trace[steady].t
+  const yawRate = Math.abs(yaws[yaws.length - 1] - yaws[steady]) / span
+  const speed = run.trace.slice(steady).reduce((a, s, _, all) => a + s.speed / all.length, 0)
+  return { yawRate, radius: yawRate > 0.1 ? speed / (yawRate * Math.PI / 180) : Infinity, speed, to90, to180, minUp: Math.min(...run.trace.map((s) => s.up)), run }
+}
+
+/**
+ * Turning round to get out: in a 40 m long, 3 m deep pool of `liquid`, start 10 m from the
+ * near end facing away from it (the far end is 30 m ahead). Full throttle and full lock until it
+ * has turned 160 degrees, then straight, until it is ashore at either end. Seconds to turn 90
+ * degrees and to reach dry land.
+ */
+export function turnOut(liquid: Liquid, steer = 1, seconds = 40): { to90: number | null; out: number | null; backOut: boolean; finite: boolean; minUp: number; run: Run } {
+  const basin: Basin = { liquid, length: 40, depth: 3, slope: 15 }
+  const bed = basinBed(basin)
+  const v = makeVehicle('buggy', bed.h, new THREE.Vector3(0, -basin.depth + 1.2, -10), 0)
+  const run: Run = { clock: bed.clock, h: bed.h, v, basin, trace: [], ground: bed.g }
+  advance(run, 4)
+  run.trace.length = 0
+  v.input.y = 1
+  v.input.x = steer
+  const t0 = run.clock.t
+  let unwrapped = 0, prev: number | null = null, to90: number | null = null
+  advance(run, seconds, (s) => {
+    if (prev !== null) { let d = s.yaw - prev; if (d > 180) d -= 360; if (d < -180) d += 360; unwrapped += d }
+    prev = s.yaw
+    if (to90 === null && Math.abs(unwrapped) >= 90) to90 = s.t - t0
+    if (Math.abs(unwrapped) >= 160) v.input.x = 0
+    return s.z > 4 || s.z < -basin.length - 4
+  })
+  const last = run.trace[run.trace.length - 1]
+  const ashore = last.z > 4 || last.z < -basin.length - 4
+  return {
+    to90, out: ashore ? last.t - t0 : null, backOut: last.z > 4,
+    finite: run.trace.every((s) => [s.x, s.y, s.z, s.vy, s.speed].every(Number.isFinite)),
+    minUp: Math.min(...run.trace.map((s) => s.up)), run,
+  }
+}
