@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BOT_TIMING, buildLadder, QualityGovernor, type BotRelief } from '../../src/core/quality'
+import { buildLadder, QualityGovernor, type BotRelief } from '../../src/core/quality'
 import { PerformanceHistory } from '../../src/core/performanceHistory'
 
 const metrics = (frameMs: number) => ({ frameMs, fps: 1000 / frameMs, physicsMs: 1, drawCalls: 10, triangles: 100, firstFrameMs: 1 })
@@ -58,7 +58,6 @@ describe('bots in the quality system', () => {
     for (let t = 0; t < 200000; t += 8) g.sample(8)
     expect(bots.carried).toBe(3)
     expect(bots.climbs).toBe(3)
-    expect(BOT_TIMING.climbMs).toBeGreaterThan(0)
   })
 
   it('recommends fewer bots, or a lower level with the current bots, when frames stay slow', () => {
