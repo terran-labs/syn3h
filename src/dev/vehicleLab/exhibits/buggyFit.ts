@@ -22,6 +22,8 @@
  *   /vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=all        both, side by side
  *   /vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=generated  one of them (or loaded,
  *                                                                     or generated-loft)
+ *   ...&design=generated&shape=<code>   the generated skin with a body from the buggy-shape
+ *                                       exhibit's share code; wheels, parts and swellings follow
  */
 import * as THREE from 'three/webgpu'
 import { referenceParts, type Mesh, type PartName } from '../../../../tools/buggy-fit/glb'
@@ -32,6 +34,7 @@ import { applyShowroom, setRole, type SurfaceRole } from '../../../vehicles/skin
 import type { LabContext, LabDesignInfo, LabExhibit, LabModel } from '../types'
 import type { BuggySkin } from '../../../vehicles/skins/BuggySkin'
 import type { VehicleDetail } from '../../../vehicles/skins/mergeStatic'
+import type { BodyCandidate } from '../../../vehicles/buggygen/generatedParts'
 
 /** The candidate contract (tools/buggy-fit/README.md), declared structurally. */
 interface CandidatePart { part: PartName; role: string; geometry: THREE.BufferGeometry }
@@ -235,9 +238,17 @@ async function skinModel(id: 'loaded' | 'generated' | 'generated-loft', ctx: Lab
   // Module loading is not part of construction: import first, then time construction to ready.
   const Loaded = id === 'loaded' ? (await import('../../../vehicles/skins/LoadedBuggySkin')).LoadedBuggySkin : undefined
   const Generated = id === 'loaded' ? undefined : (await import('../../../vehicles/buggygen/GeneratedBuggySkin')).GeneratedBuggySkin
-  const loft = id === 'generated-loft' ? (await import('../../../vehicles/buggygen/sections/levelC')).default : undefined
+  // A shape code (from the buggy-shape exhibit) reshapes the generated body; parts follow it.
+  const code = id === 'generated' ? new URLSearchParams(location.search).get('shape') : null
+  const shaped = code ? await import('../../../vehicles/buggygen/shape') : undefined
+  let source: BodyCandidate | undefined
+  if (id === 'generated-loft') source = (await import('../../../vehicles/buggygen/sections/levelC')).default
+  else if (shaped && code) {
+    const shape = shaped.decodeShape(code)
+    source = { id: `shape-${code}`, build: detail => shaped.shapedBody(shape, detail) }
+  }
   const started = performance.now()
-  const skin: BuggySkin = Loaded ? new Loaded() : new Generated!(loft)
+  const skin: BuggySkin = Loaded ? new Loaded() : new Generated!(source)
   object.add(skin.object)
   await skin.ready
   timings[id] = performance.now() - started
