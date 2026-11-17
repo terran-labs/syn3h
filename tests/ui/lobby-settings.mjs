@@ -34,7 +34,9 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     const version = page.locator('[data-lobby-version]')
     assert.match(await version.textContent(), /\S/, `${mode}: version shown beside the gear`)
     const versionBox = await version.boundingBox()
-    const others = await page.evaluate(() => [...document.querySelectorAll('.galaxy-labels > *, .galaxy-links button')]
+    // Planet captions are not in this list: they are fixed to orbiting planets and may pass
+    // under anything, the gear included (the owner, 16 November 2026: captions may overlap).
+    const others = await page.evaluate(() => [...document.querySelectorAll('.galaxy-links button')]
       .map((e) => { const r = e.getBoundingClientRect(); return { what: e.textContent.trim().slice(0, 20), x: r.x, y: r.y, width: r.width, height: r.height } })
       .filter((r) => r.width && r.height))
     for (const other of others) for (const [box, name] of [[gearBox, 'gear'], [versionBox, 'version']]) assert.ok(!overlaps(box, other), `${mode}: ${name} clears ${other.what} ${JSON.stringify([box, other])}`)
