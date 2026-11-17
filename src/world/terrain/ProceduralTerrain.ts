@@ -286,6 +286,8 @@ export class ProceduralTerrain implements Terrain {
    * with (see surface.ts). Two grid reads, a height and a normal; no allocation.
    */
   surfaceAt(x: number, z: number): SurfaceKind {
+    // A frozen sea is ice underfoot: the tyre marks, sound and grip all read it as ice.
+    if (this.iceTop > -Infinity && this.sampler.heightAt(x, z) < this.iceTop) return 'ice'
     const look = this.data.settings.look
     const style = terrainRoadStyle.value as number
     return classifySurface({
