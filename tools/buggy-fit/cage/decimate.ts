@@ -31,7 +31,7 @@ class Heap {
   pop() { const a = this.a, top = a[0], last = a.pop()!; if (a.length) { a[0] = last; let i = 0; for (;;) { const l = i * 2 + 1, r = l + 1; let m = i; if (l < a.length && a[l][0] < a[m][0]) m = l; if (r < a.length && a[r][0] < a[m][0]) m = r; if (m === i) break; [a[m], a[i]] = [a[i], a[m]]; i = m } } return top }
 }
 
-export function decimate(src: TriMesh, targetVerts: number, borderWeight = 400): TriMesh {
+export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20): TriMesh {
   const pos = Array.from(src.pos), V = pos.length / 3
   const faces = Array.from(src.tri), tag = Array.from(src.tag), F = faces.length / 3
   const alive = new Uint8Array(F).fill(1), valive = new Uint8Array(V).fill(1), stamp = new Uint32Array(V)

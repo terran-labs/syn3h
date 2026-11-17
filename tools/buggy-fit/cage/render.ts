@@ -13,7 +13,7 @@ function view(yaw: number, pitch: number) {
 
 export const VIEWS = [view(Math.PI / 2, 0), view(0, 0), view(0, Math.PI / 2), view(Math.PI * .75, .45), view(-Math.PI * .25, .35)]
 
-function draw(m: TriMesh, rot: (p: number[]) => number[], img: Uint8Array, W: number, ox: number, oy: number, w: number, h: number, scale: number, wire: boolean) {
+function draw(m: TriMesh, rot: (p: number[]) => number[], img: Uint8Array, W: number, ox: number, oy: number, w: number, h: number, scale: number, wire: boolean, normals?: Float32Array) {
   const zb = new Float32Array(w * h).fill(-Infinity)
   const P: number[][] = []
   for (let i = 0; i < m.pos.length / 3; i++) { const q = rot([m.pos[i * 3], m.pos[i * 3 + 1], m.pos[i * 3 + 2]]); P.push([w / 2 + q[0] * scale, h / 2 - q[1] * scale, q[2]]) }
@@ -41,8 +41,16 @@ function draw(m: TriMesh, rot: (p: number[]) => number[], img: Uint8Array, W: nu
       if (z <= zb[y * w + x]) continue
       zb[y * w + x] = z
       const edge = wire && Math.min(w0, w1, w2) < .03
+      let c0 = col
+      if (normals) {
+        // Gouraud: interpolate the corner normals, rotated into view.
+        const nn = [0, 1, 2].map(k => rot([normals[t * 9 + k * 3], normals[t * 9 + k * 3 + 1], normals[t * 9 + k * 3 + 2]]))
+        const q = [0, 1, 2].map(a => w0 * nn[0][a] + w1 * nn[1][a] + w2 * nn[2][a]), ql = Math.hypot(...q) || 1
+        const lit = .2 + .65 * Math.max(0, (q[0] * light[0] + q[1] * light[1] + q[2] * light[2]) / ql / Math.hypot(...light)) + .15 * Math.pow(Math.max(0, q[2] / ql), 8)
+        c0 = (COLOURS[m.tag[t]] ?? [255, 0, 255]).map(x => Math.min(255, x * lit * 1.2))
+      }
       const o = ((oy + y) * W + ox + x) * 3
-      img[o] = edge ? 0 : col[0]; img[o + 1] = edge ? 0 : col[1]; img[o + 2] = edge ? 0 : col[2]
+      img[o] = edge ? 0 : c0[0]; img[o + 1] = edge ? 0 : c0[1]; img[o + 2] = edge ? 0 : c0[2]
     }
   }
 }
@@ -59,9 +67,9 @@ function png(path: string, img: Uint8Array, W: number, H: number) {
 }
 
 /** One row per mesh, one column per view. `wire` marks meshes drawn with their edges. */
-export function sheet(path: string, rows: { mesh: TriMesh; wire?: boolean }[], views = VIEWS, cell = 360) {
+export function sheet(path: string, rows: { mesh: TriMesh; wire?: boolean; normals?: Float32Array }[], views = VIEWS, cell = 360) {
   const W = cell * views.length, H = Math.round(cell * .6) * rows.length, ch = Math.round(cell * .6)
   const img = new Uint8Array(W * H * 3).fill(235)
-  rows.forEach((r, j) => views.forEach((v, i) => draw(r.mesh, v, img, W, i * cell, j * ch, cell, ch, cell / 4.6, !!r.wire)))
+  rows.forEach((r, j) => views.forEach((v, i) => draw(r.mesh, v, img, W, i * cell, j * ch, cell, ch, cell / 4.6, !!r.wire, r.normals)))
   png(path, img, W, H)
 }

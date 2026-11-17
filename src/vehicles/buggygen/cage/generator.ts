@@ -42,7 +42,7 @@ export function fullCage(d: CageData): Cage {
 }
 
 /** Corner normals: each corner averages the faces of its role around it that bend less than about 40 degrees. */
-function cornerNormals(positions: Float32Array, faces: Uint32Array, tags: Uint8Array): Float32Array {
+export function cornerNormals(positions: Float32Array, faces: Uint32Array, tags: Uint8Array): Float32Array {
   const faceCount = faces.length / 3, fn = new Float32Array(faceCount * 3)
   const vertexCount = positions.length / 3, count = new Uint32Array(vertexCount + 1)
   for (let f = 0; f < faceCount; f++) {
