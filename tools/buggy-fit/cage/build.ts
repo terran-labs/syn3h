@@ -68,12 +68,12 @@ const rows: string[] = [], extra: string[] = []
 const code = ['generator.ts', 'subdivide.ts'].map(f => readFileSync(join(ROOT, 'src/vehicles/buggygen/cage', f), 'utf8')).join('\n')
 for (const size of sizes.length ? sizes : [60, 120, 250, 500]) {
   const env = (k: string, d: number) => process.env[k] ? Number(process.env[k]) : d
-  const dec = decimate(h, size, env('BORDER', 20))
+  const dec = decimate(h, size, env('BORDER', 20), env('SHAPE', 0))
   const fullTris = dec.tri.length / 3 * 2
   const level0 = fullTris * 16 <= 9000 ? 2 : 1
   const base: CageData = {roles, v: Array.from(dec.pos, x => Math.round(x * 1000)), f: Array.from(dec.tri), t: Array.from(dec.tag), c: creases(dec, env('CREASE', 55)), levels: [level0, level0 - 1, 0]}
   const t0 = performance.now()
-  const fitted = fitCage(base, ref, grid, {levels: level0, rounds: env('ROUNDS', 10), reverse: env('REVERSE', 1), smooth: env('SMOOTH', 1e-3), log: false})
+  const fitted = fitCage(base, ref, grid, {levels: level0, rounds: env('ROUNDS', 20), reverse: env('REVERSE', size <= 60 ? 1 : 0), smooth: env('SMOOTH', 1e-3), fair: env('FAIR', 0), log: !!process.env.LOG})
   const fitMs = performance.now() - t0
   const id = `cage${size}`
   // Detail 2 must stay near 400 triangles: cages too big for that borrow the 60 point cage.

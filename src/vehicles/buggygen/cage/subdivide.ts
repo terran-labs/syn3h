@@ -112,7 +112,8 @@ export function applyStencil(s: Stencil, data: ArrayLike<number>): Float32Array 
 
 /** Subdivides a cage `levels` times. */
 export function subdivide(cage: Cage, levels: number): { positions: Float32Array; faces: Uint32Array; tags: Uint8Array } {
-  let positions = Float32Array.from(cage.positions), faces = Uint32Array.from(cage.faces), tags = Uint8Array.from(cage.tags), creases = Uint32Array.from(cage.creases)
+  let positions: Float32Array = Float32Array.from(cage.positions), faces: Uint32Array = Uint32Array.from(cage.faces)
+  let tags: Uint8Array = Uint8Array.from(cage.tags), creases: Uint32Array = Uint32Array.from(cage.creases)
   for (let l = 0; l < levels; l++) {
     const step = loopStep(positions.length / 3, faces, tags, creases)
     positions = applyStencil(step.stencil, positions); faces = step.faces; tags = step.tags; creases = step.creases

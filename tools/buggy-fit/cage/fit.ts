@@ -1,5 +1,9 @@
 // Fits half cage points so the subdivided surface lands on the reference. Not shipped.
 //
+// Measured on 16 November 2026: the reverse pairs (`reverse` > 0) make every round after the
+// first worse for cages of 120 points and up, so the build uses them only for the 60 point
+// cage, where they win by about 1 mm. The neighbour pull (`fair`) shrinks the body; leave it 0.
+//
 // Subdivision is linear, so the fine surface is S * cage. Each round pairs every fine vertex
 // with its nearest reference point of the same role, and every reference sample with its
 // nearest fine vertex, then solves the weighted least squares for the half cage (with a small
@@ -38,7 +42,7 @@ function apply(rows: [number, number, number][][], h: Float64Array): Float64Arra
   return out
 }
 
-export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels?: number; rounds?: number; reverse?: number; smooth?: number; log?: boolean } = {}): CageData {
+export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels?: number; rounds?: number; reverse?: number; smooth?: number; fair?: number; log?: boolean } = {}): CageData {
   const levels = opts.levels ?? 2, rounds = opts.rounds ?? 8, reverseW = opts.reverse ?? 1, lambda = opts.smooth ?? 1e-3
   const {rows, faces, tags} = halfStencil(d, levels)
   const vertexTag: number[] = new Array(rows.length).fill(-1)
@@ -85,7 +89,17 @@ export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels
     }
     for (let i = 0; i < F; i++) if (weight[i]) for (let k = 0; k < 3; k++) target[i * 3 + k] /= weight[i]
     // Normal equations per axis: (A^T W A + lambda I) h = A^T W t + lambda h0, solved by CG.
-    const h0 = Float64Array.from(h)
+    // The pull target blends each point's previous place with its neighbours' average
+    // (`fair`, 0 to 1), which irons out wrinkles the matching alone would leave.
+    const fair = opts.fair ?? 0, h0 = Float64Array.from(h)
+    if (fair > 0) {
+      const sum = new Float64Array(n * 3), cnt = new Float64Array(n)
+      for (let f = 0; f < d.f.length; f += 3) for (let k = 0; k < 3; k++) {
+        const a = d.f[f + k], b = d.f[f + (k + 1) % 3]
+        for (const [u, v] of [[a, b], [b, a]]) { for (let c = 0; c < 3; c++) sum[u * 3 + c] += h[v * 3 + c]; cnt[u]++ }
+      }
+      for (let j = 0; j < n; j++) if (cnt[j]) for (let c = 0; c < 3; c++) h0[j * 3 + c] = (1 - fair) * h[j * 3 + c] + fair * sum[j * 3 + c] / cnt[j]
+    }
     for (let axis = 0; axis < 3; axis++) {
       const mul = (x: Float64Array) => {
         const out = new Float64Array(n)

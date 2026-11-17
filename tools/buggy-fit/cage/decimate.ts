@@ -31,7 +31,7 @@ class Heap {
   pop() { const a = this.a, top = a[0], last = a.pop()!; if (a.length) { a[0] = last; let i = 0; for (;;) { const l = i * 2 + 1, r = l + 1; let m = i; if (l < a.length && a[l][0] < a[m][0]) m = l; if (r < a.length && a[r][0] < a[m][0]) m = r; if (m === i) break; [a[m], a[i]] = [a[i], a[m]]; i = m } } return top }
 }
 
-export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20): TriMesh {
+export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20, shape = 0): TriMesh {
   const pos = Array.from(src.pos), V = pos.length / 3
   const faces = Array.from(src.tri), tag = Array.from(src.tag), F = faces.length / 3
   const alive = new Uint8Array(F).fill(1), valive = new Uint8Array(V).fill(1), stamp = new Uint32Array(V)
@@ -85,7 +85,13 @@ export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20): 
     for (const o of options) { const c = evalQ(q, o[0], o[1], o[2]); if (!best || c < best[0]) best = [c, o] }
     return best
   }
-  const enqueue = (a: number, b: number) => { const p = place(a, b); if (p) heap.push([Math.max(p[0], 0), a, b, stamp[a] + stamp[b]]) }
+  // `shape` adds the squared edge length, scaled by the vertex area, so short edges go first and
+  // the cage keeps rounder triangles that subdivide without wrinkles.
+  const enqueue = (a: number, b: number) => {
+    const p = place(a, b); if (!p) return
+    const l2 = (pos[a * 3] - pos[b * 3]) ** 2 + (pos[a * 3 + 1] - pos[b * 3 + 1]) ** 2 + (pos[a * 3 + 2] - pos[b * 3 + 2]) ** 2
+    heap.push([Math.max(p[0], 0) + shape * l2 * (quad[a][0] + quad[a][4] + quad[a][7] + quad[b][0] + quad[b][4] + quad[b][7]), a, b, stamp[a] + stamp[b]])
+  }
   for (const key of edgeFaces.keys()) { const [a, b] = key.split(',').map(Number); enqueue(a, b) }
   let count = V
   while (count > targetVerts && heap.a.length) {
