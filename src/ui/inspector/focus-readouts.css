@@ -1,0 +1,50 @@
+/*
+ * The speed and altitude readouts beside the Arc display's two crescents (FocusHud.ts).
+ * Every placement rule for .fh-left and .fh-right lives here.
+ *
+ * The crescents are drawn in an SVG with viewBox -800 -450 1600 900 sliced to cover the screen,
+ * so one SVG unit is --fh-u CSS pixels: max(width / 1600, height / 900). Each crescent is a
+ * 60 degree arc of radius 210 about the centre, so its midpoint is 210 units from the centre
+ * and its tips are 182 units out and 105 units above and below. Positions here use the same
+ * numbers, so the readouts stay on their arcs at any size.
+ *
+ * Each readout is the number with its unit beside it (one instrument, "54 km/h") over a small
+ * caption naming it (SPEED, ALT). The pair mirror each other about the centre: each sits just
+ * outside its arc and grows away from it, so a longer number never creeps into the view. The
+ * number's middle, not the block's, sits on the anchor line, so the Jet's THRUST line hangs
+ * below without moving it. The unit letters take the captions' neutral grey (inspector.css).
+ *
+ *   Desktop and tablets   beside each arc's midpoint, level with the reticle.
+ *   Landscape phones      level with each arc's upper tip, at 30% of the height (centred, a
+ *                         thumb driving the stick lands on them), outside the centre third.
+ *                         Toasts sit above them (touch-stick.css).
+ *   Portrait phones       the arcs run off the sides, so the readouts sit at the screen edges,
+ *                         at 30% of the height: clear of the top bar and of the controls below.
+ */
+.focus-hud { container-type: size; }
+.focus-hud .fh-left, .focus-hud .fh-right {
+  --fh-u: max(100cqw / 1600, 100cqh / 900);
+  --fh-out: calc(210 * var(--fh-u) + 12px);
+  --fh-number: 26px;
+  top: calc(50% - var(--fh-number) / 2); translate: none; gap: 4px;
+}
+.focus-hud .fh-left { right: calc(50% + var(--fh-out)); left: auto; text-align: right; justify-items: end; }
+.focus-hud .fh-right { left: calc(50% + var(--fh-out)); right: auto; text-align: left; justify-items: start; }
+.focus-hud :is(.fh-left, .fh-right) b { display: flex; align-items: baseline; gap: 4px; font-size: var(--fh-number); line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.focus-hud :is(.fh-left, .fh-right) b i { font-style: normal; font-size: 12px; font-weight: 600; letter-spacing: .12em; color: rgb(224 224 224 / .95); }
+.focus-hud :is(.fh-left, .fh-right) small { white-space: nowrap; }
+
+/* Landscape phones: level with the arcs' upper tips, out of the driving thumb's reach. The
+   arcs sit inside the centre third of so wide a screen, so the readouts stand at its edge
+   (a sixth of the width out) and leave the middle to the vehicles ahead and their labels.
+   They never rise above 104 px: a toast sits from 72 px, about 27 px tall (touch-stick.css). */
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .syn3h-shell.has-touch .focus-hud :is(.fh-left, .fh-right) { --fh-out: max(182 * var(--fh-u) + 12px, 100cqw / 6); --fh-number: 24px; top: max(30% - var(--fh-number) / 2, 104px); }
+}
+/* Narrow portrait screens: the arcs leave the screen, so the readouts hold its edges. */
+@media (max-width: 700px) and (orientation: portrait) {
+  /* The block ends just above the phone toast (30% + 30 px), the Jet's THRUST line included. */
+  .syn3h-shell .focus-hud :is(.fh-left, .fh-right) { --fh-number: 24px; top: calc(30% - 26px); }
+  .syn3h-shell .focus-hud .fh-left { right: auto; left: max(18px, env(safe-area-inset-left)); text-align: left; justify-items: start; }
+  .syn3h-shell .focus-hud .fh-right { left: auto; right: max(18px, env(safe-area-inset-right)); text-align: right; justify-items: end; }
+}

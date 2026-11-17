@@ -8,11 +8,13 @@ import { postTier } from '../fx/post/gate'
 import { PerformancePanel } from './PerformancePanel'
 import type { PauseControl } from './pauseControl'
 import { HeightAboveGround } from './heightAboveGround'
+import { altitudeAboveSea } from './altitude'
+import { speedUnit, speedValue } from './units'
 import type { PerformanceSource } from '../core/performance'
 import { SavedWorldStore, SAVED_WORLDS_KEY, savedName, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
 import { SavedMoons } from './galaxy/SavedMoons'
 import type { Game, System } from '../core/Game'
-import type { Vehicle } from '../vehicles/Vehicle'
+import { vehicleDetail, type Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import { params, worldNameSeed, worldSeed } from '../../shared/params'
 import { GameAudio } from '../audio'
@@ -175,7 +177,7 @@ export class Shell implements System {
   private readonly raceHud: RaceHud
   onRaceLeave?: () => void
   onRaceCancel?: () => void
-  private telemetry: { speed: number; altitude: number; thrust?: number } = { speed: 0, altitude: 0 }
+  private telemetry: { speed: number; altitude: number; thrust?: number; seaAltitude: number } = { speed: 0, altitude: 0, seaAltitude: 0 }
   /** The 3D galaxy: the lobby. Absent only where WebGL 2 is, and then the game cannot draw either. */
   private galaxy?: Galaxy
   /** Arrived by an invite link that names a world: that world is the one to enter. */
@@ -617,8 +619,11 @@ export class Shell implements System {
   get attracting(): boolean { return false }
   setMapEntities(entities: readonly MapEntity[]): void { this.minimap?.setEntities(entities) }
   setMapSelf(entity: MapEntity): void { this.self = entity; this.minimap?.setSelf(entity) }
-  /** The player's speed (m/s) and height above the ground (m), for the focus display. */
-  setTelemetry(speed: number, altitude: number, thrust?: number): void { this.telemetry.speed = speed; this.telemetry.altitude = altitude; this.telemetry.thrust = thrust }
+  /**
+   * The player's speed (m/s), height above the ground (m, for the arrival camera) and height
+   * above sea level (m, which the focus display's ALT readout shows).
+   */
+  setTelemetry(speed: number, altitude: number, thrust?: number, seaAltitude = altitude): void { this.telemetry.speed = speed; this.telemetry.altitude = altitude; this.telemetry.thrust = thrust; this.telemetry.seaAltitude = seaAltitude }
   private inspectorSummary(id: string): string {
     if (id === 'world') {
       const hour = currentHour()
@@ -740,6 +745,8 @@ export class Shell implements System {
   }
   /** True from a drop's tap until the player is on the ground. */
   private dropping = false
+  /** True while a descent into a world or an ascent out of one is running. */
+  get transitioning(): boolean { return this.dropping || this.savedEntering }
   openMenu(panel = 'index'): void {
     if (!this.started) return
     this.closeAbout()
@@ -784,11 +791,42 @@ export class Shell implements System {
       // The main world listener has already moved the vehicle. Update in that same
       // turn, before the renderer can expose a frame over the previous spawn.
       stopFollowingWorld = this.ground?.onRegenerate?.(lift)
+      // The world is prepared behind the dive, not under its light: from the tap it is rebuilt
+      // in slices (heights from a worker), the room is joined, and every shader it needs is
+      // compiled a slice per frame, with nothing of it drawn meanwhile. Each piece stays a few
+      // milliseconds, so the dive itself never misses a frame. If preparation outlasts the
+      // dive, the dive holds in the air until it is done.
+      const ground = this.ground
+      if (ground) ground.staged = true
+      this.game.holdDraws = true
       let dived = false
       void this.galaxy!.descend(galaxyId, seen > 0).then(() => { dived = true })
-      await until(() => dived, 4000, true)
       underLight?.(); lift()
-      await until(() => Boolean((window as { syn3hNet?: { connected?: boolean } }).syn3hNet?.connected), 5000, true)
+      const prepareStart = performance.now()
+      let prepared = false
+      const preparation = (async () => {
+        const net = () => (window as { syn3hNet?: { connected?: boolean } }).syn3hNet
+        // The room's welcome can replace the world (its own seed and planet): wait for it.
+        const joinBy = performance.now() + 5000
+        while (net() && !net()!.connected && performance.now() < joinBy) await frame()
+        // A world the welcome set starts its rebuild on a microtask: let it begin.
+        await frame()
+        while (ground && ground.ready === false) await ground.whenReady?.()
+        // The warm-up frames may stall while shaders compile: draw them only once the dive is
+        // holding still in the world's air, where a stalled frame cannot be seen.
+        const diveBy = performance.now() + 4000
+        while (!dived && performance.now() < diveBy) await frame()
+        await this.game.precompile()
+      })().catch(error => console.warn('World preparation failed; entering anyway.', error)).finally(() => { prepared = true })
+      await until(() => dived, 4000, true)
+      // Never cut the preparation short, not even for a tap: what it has not built would be
+      // built in the first frames instead, which is the freeze this exists to prevent.
+      const holdUntil = performance.now() + 15000
+      while (!prepared && performance.now() < holdUntil) { lift(); await frame() }
+      void preparation
+      try { performance.measure('syn3h:descent preparation', { start: prepareStart, end: performance.now() }) } catch { /* Older engines. */ }
+      if (ground) ground.staged = false
+      this.game.holdDraws = false
       lift(); stopFollowingWorld?.(); stopFollowingWorld = undefined
       // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
       const length = skip ? 0 : seen > 0 ? 1700 : 2400
@@ -811,11 +849,99 @@ export class Shell implements System {
       // Whatever happened on the way (a world that failed to build, say), never leave the
       // lobby inert, blurred or half faded: put everything back and let the player in.
       stopFollowingWorld?.(); skipping.abort()
+      if (this.ground) this.ground.staged = false
+      this.game.holdDraws = false
       if (!landed) camera?.clearCinematicPose()
       this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
-      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
+      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.removeProperty('visibility') }
+      this.game.holdDraws = false
       this.dropping = false; this.enteringByGesture = false
       if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
+    }
+  }
+  /**
+   * Leaving a world: the drop played backwards, as one motion. The camera rises from its place
+   * behind the vehicle along the descent's own path, slowly at first, then fast into the air
+   * 520 m up, while the view blurs and brightens; the galaxy fades in over it at the world's
+   * air, with the dive's light full; then it climbs out of the air, back across the system,
+   * and settles on the whole view, where the lobby appears. The world and the room carry on
+   * behind, as they always have: nothing is torn down, so nothing has to be sliced.
+   */
+  private async ascent(): Promise<void> {
+    const galaxy = this.galaxy
+    if (!this.started || this.menuVisible) return
+    if (!galaxy || this.dropping || matchMedia('(prefers-reduced-motion: reduce)').matches) { this.openMenu(); return }
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    const game = document.getElementById('game'), root = this.element, camera = this.cinematic
+    this.dropping = true
+    let quick = false
+    try { quick = (Number(localStorage.getItem('syn3h.descents')) || 0) > 1 } catch { /* Storage is optional. */ }
+    const length = quick ? 1700 : 2400
+    try {
+      // Controls let go at once, as when the menu opens; the HUD fades with the lobby's rules.
+      this.closeAbout(); this.lobbyAddress?.showLobby()
+      this.releaseCursor()
+      this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
+      this.audio.enabled = false; this.audio.setLobbyVisible(true)
+      this.menuVisible = true
+      root.classList.add('is-descending'); root.classList.remove('is-playing')
+      // The galaxy wakes behind the game, transparent, in the world's air: its first frames
+      // are drawn before anyone can see them.
+      this.overlay.style.transition = 'none'; this.overlay.style.opacity = '0'
+      this.overlay.hidden = false; this.overlay.inert = true
+      galaxy.backdrop = 1
+      galaxy.enabled = true
+      // Every vehicle keeps its close look on the way up (see vehicleDetail).
+      vehicleDetail.holdNear = true
+      const flight = galaxy.ascend(currentPlanet().id, quick)
+      // Up through the air: the descent's path from its end back to its top.
+      const path = this.descentPose()
+      if (game) { game.style.transition = `filter ${(length * 0.7 / 1000).toFixed(2)}s cubic-bezier(.7,0,.9,.4) ${(length * 0.3 / 1000).toFixed(2)}s`; game.style.filter = 'blur(12px) brightness(1.3)' }
+      let faded = false
+      const started = performance.now()
+      await new Promise<void>((resolve, reject) => {
+        const step = () => {
+          try {
+            const raw = Math.min(1, (performance.now() - started) / length)
+            path(1 - raw)
+            // The galaxy comes in over the last stretch of the climb, as the lobby left on the way down.
+            if (!faded && raw >= 1 - 600 / length) { faded = true; this.overlay.style.transition = 'opacity .6s ease-in'; this.overlay.style.opacity = '1' }
+            if (raw < 1) requestAnimationFrame(step); else resolve()
+          } catch (error) { reject(error) }
+        }
+        step()
+      })
+      // Covered now: the game goes back to its few frames a second behind the galaxy.
+      await frame()
+      // The galaxy covers the game now: stop compositing it and stop drawing it. A full-screen
+      // WebGPU canvas under a blur filter, composited behind an opaque WebGL galaxy, stalled
+      // the GPU for 0.6 to 1.8 s at High once the galaxy's flight began; hidden but still drawn
+      // (the covered lobby's two frames a second, the first of them back at the vehicle after
+      // the climb), it still stalled 0.6 to 1.2 s. Both resume when the lobby takes over.
+      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.visibility = 'hidden' }
+      this.game.holdDraws = true
+      // From the world's air the galaxy eases home on its own (the lobby's drift), rather than
+      // flying its close-up of the world back out: that fly-out, the first close-up a freshly
+      // made galaxy context drew, stalled the GPU for up to 2 s in some exits at High. Without
+      // it no exit frame passed 100 ms, and leaving is shorter. The name kindles once, here.
+      galaxy.home()
+      root.classList.remove('is-descending')
+      camera?.clearCinematicPose()
+      await flight.done
+    } catch (error) {
+      console.warn('World ascent failed', error)
+    } finally {
+      this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity')
+      root.classList.remove('is-descending')
+      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.removeProperty('visibility') }
+      this.game.holdDraws = false
+      // However leaving ends, vehicles go back to choosing their look by distance: the lobby's
+      // Return to game, a world entered without a descent, or an ascent that failed.
+      vehicleDetail.holdNear = false
+      this.dropping = false
+      // The lobby as Leave world has always left it, from the view the flight settled on.
+      this.menuVisible = false
+      this.openMenu()
     }
   }
   /** The first and last points of the descent's camera path, for waiting on the camera. */
@@ -847,7 +973,11 @@ export class Shell implements System {
   private cinematic?: CinematicCamera
   private self?: MapEntity
   closeMenu(): void {
-    if (!this.started) return
+    // Not while a descent or an ascent is running: Escape mid-descent used to start play with
+    // the world's draws still held (driving a frozen picture for up to 15 s), and mid-ascent
+    // flipped to playing just before the ascent hid the game and reopened the lobby. Each
+    // transition ends by putting the menu where it belongs.
+    if (!this.started || this.dropping) return
     this.lobbyAddress?.showPlay(this.room)
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; if (this.galaxy) this.galaxy.enabled = false
     this.lobbySettings.close()
@@ -891,7 +1021,7 @@ export class Shell implements System {
     this.exitAsking = false
     this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true
     this.game.input.suspended = this.userPaused || this.menuVisible || this.inviteOpen
-    if (leave) this.openMenu()
+    if (leave) void this.ascent()
     else this.element.querySelector<HTMLButtonElement>('.exit-world')?.focus({ preventScroll: true })
   }
   /**
@@ -1589,7 +1719,10 @@ export class Shell implements System {
   setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {syn3hNet?:{players?:Map<number,{bot?:boolean}>}}).syn3hNet?.players; const count = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length
     // The status arrives every frame; the invite only depends on it through the player count.
     if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }
-  setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
+  setSpeed(metresPerSecond: number): void {
+    this.speed.textContent = String(Math.round(speedValue(metresPerSecond)))
+    const unit = this.speed.nextElementSibling!, text = speedUnit().toUpperCase(); if (unit.textContent !== text) unit.textContent = text
+  }
   update(dt = 0): void {
     if (this.tintTransition.update(dt)) this.onTint?.(this.tintTransition.current.body, this.tintTransition.current.accent, false)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
@@ -1610,7 +1743,7 @@ export class Shell implements System {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
       const world = `${currentWorldName()} · ${currentPlanet().label}`
-      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, thrust: this.telemetry.thrust, heading: this.self?.heading ?? 0, world, hour: currentHour() })
+      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.seaAltitude, thrust: this.telemetry.thrust, heading: this.self?.heading ?? 0, world, hour: currentHour() })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
     // The stylesheet drops frost at the lowest graphics level.
@@ -1686,8 +1819,9 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     const q = activePlayer.body.rotation()
     const heading = Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y))
     shell.setMapSelf({ x: p.x, z: p.z, heading, color: activePlayer.colors.body, self: true })
-    // Shown as metres above ground: measured from the contact surfaces, 0 when resting.
-    shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)), activePlayer.kind === 'jet' && !activePlayer.zorbed ? activePlayer.input.z : undefined)
+    // Height above ground (contact surfaces, 0 when resting) for the arrival camera; the ALT
+    // readout shows the contact surfaces' height above sea level instead.
+    shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)), activePlayer.kind === 'jet' && !activePlayer.zorbed ? activePlayer.input.z : undefined, altitudeAboveSea(activePlayer.contactHeight()))
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
     const input = activePlayer.input
     const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut })
