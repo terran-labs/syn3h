@@ -55,7 +55,7 @@ try {
   // Safari on a phone and a tablet over a slow link: the bundle is held back.
   // The veil must be unmistakably a loading screen the whole time, and never show the name
   // (the first Syn3h logo a player sees is in the solar system): a point of light where the
-  // sun will be, one line of status beneath it, and after ten seconds a plain line that
+  // sun will be, one line of status beneath it, and after three seconds a quiet line that
   // counts the seconds and names the real step.
   const safari = await webkit.launch()
   for (const name of ['iPhone 14', 'iPad Pro 11 landscape']) {
@@ -80,11 +80,12 @@ try {
     assert.ok(first.status.text.length > 10, `${name}: a line of status from the first paint`); assert.ok(first.status.inView && first.status.opacity > 0.9)
     assert.ok(first.point.bottom <= first.status.top, `${name}: the line sits beneath the point`)
     assert.ok(first.still.opacity < 0.1, `${name}: the second line waits`)
-    await page.waitForTimeout(10000)
+    await page.waitForTimeout(3000)
     const later = await seen()
     assert.equal(later.game, false, `${name}: still waiting for the bundle ${JSON.stringify(later)}`)
     assert.equal(later.status.text, first.status.text, `${name}: one line for the whole load`)
-    assert.ok(later.still.opacity > 0.9 && later.still.inView && /^\d+ s \u00b7 Downloading the game\u2019s code/.test(later.still.text), `${name}: after ten seconds, the seconds and the real step (${later.still.text})`)
+    assert.ok(later.still.opacity > 0.9 && later.still.inView && /^Downloading the game \u00b7 step 1 of 5 \u00b7 \d+ s$/.test(later.still.text), `${name}: after three seconds, the real step, a measure and the seconds (${later.still.text})`)
+    assert.equal(Math.round(later.status.top), Math.round(first.status.top), `${name}: the line above does not move when it appears`)
     // The bundle arrives: the line stays, then the veil lifts.
     arrive()
     await page.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 90000 })

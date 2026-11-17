@@ -2,15 +2,28 @@ import { loadingMessages, pickLoadingLine } from './data/loadingMessages'
 
 /**
  * What each phase the game reports (core/quality.ts reportLoading, from Game.init and the
- * first frame) is really doing, in plain words. Shown on the veil's second line after ten
- * seconds and announced once per phase. Only what the code reports: nothing invented.
+ * first frame) is really doing, in plain words. Shown on the veil's progress line (after three
+ * seconds, index.html) and announced once per phase. Only what the code reports.
  */
 export const phaseSteps: Record<string, string> = {
-  device: 'Checking your graphics hardware while the physics engine downloads',
+  device: 'Checking your graphics',
   physics: 'Starting the physics engine',
-  renderer: 'Starting the renderer, then waiting for the physics engine',
-  world: 'Building the world and compiling shaders for its first frame',
+  renderer: 'Starting the renderer',
+  world: 'Building your first world',
   ready: 'Ready to explore',
+}
+/** Each phase's place among the five steps of a load (the first, downloading the code, is the page's own). */
+export const phaseNumbers: Record<string, number> = { device: 2, physics: 3, renderer: 4, world: 5, ready: 5 }
+/**
+ * What a phase is waiting on when it has gone several seconds without moving, said plainly on
+ * the progress line: from what each phase really awaits in Game.init and the first frame.
+ */
+export const phaseWaits: Record<string, string> = {
+  device: 'waiting for the graphics hardware to answer',
+  physics: 'waiting for the physics engine to download',
+  renderer: 'waiting for the physics engine to finish',
+  world: 'compiling shaders, the slowest part of a first visit',
+  ready: 'drawing the first frame',
 }
 export interface LoadingDetail { phase?: string; progress?: number; elapsedMs?: number }
 
@@ -80,7 +93,8 @@ export class LoadingScreen {
     if (typeof detail.phase === 'string' && detail.phase !== this.phase) {
       this.phase = detail.phase
       const step = phaseSteps[detail.phase] ?? detail.phase
-      ;(window as unknown as { __bootStep?: string }).__bootStep = step
+      // For the veil's progress line (index.html): the step, its number, what it waits on.
+      Object.assign(window, { __bootStep: step, __bootStepNumber: phaseNumbers[detail.phase] ?? 0, __bootWait: phaseWaits[detail.phase] ?? '' })
       this.announce(step)
     }
     // The game's own progress takes the light from where the bundle left it to nearly round.
