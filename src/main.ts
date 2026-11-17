@@ -198,6 +198,7 @@ async function main(): Promise<void> {
       onRemoteVehicleChanged: vehicle => { void materialize.begin(vehicle, { hold: false }) },
       // A player or bot who leaves goes in the arrival cloud played in reverse.
       onRemoteVehicleLeaving: vehicle => materialize.depart(vehicle),
+      cancelRemoteDeparture: vehicle => materialize.cancel(vehicle),
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name: shell.playerName,

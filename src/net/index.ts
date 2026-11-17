@@ -132,6 +132,8 @@ export interface NetContext {
    * in the game, undriven, until the returned promise settles, then is removed. Cosmetic only.
    */
   onRemoteVehicleLeaving?(vehicle: Vehicle): Promise<void> | void
+  /** End a departure now (the same player or bot is back). Resolves its promise. */
+  cancelRemoteDeparture?(vehicle: Vehicle): void
   /** Bot manager; optional, may also be attached later with `net.attachBots`. */
   bots?: NetBots
   /** The match display (shell.setMatchState): called on every game state change; null clears. */
@@ -1149,9 +1151,16 @@ export class NetClient implements System {
   }
 
   private sendBots(): void {
-    for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
-      this.sendBot(id, bot)
+    const live = liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)
+    // A bot announced before and not simulated now has gone: tell the room at once, after its
+    // last state on the same ordered socket, so everyone drops it within a round trip rather
+    // than when the room's 5 s expiry notices (an older room ignores this and still does that).
+    for (const id of [...this.botKinds.keys()]) {
+      if (live.some(([live]) => live === id)) continue
+      this.botKinds.delete(id)
+      this.send({ type: 'bot-leave', bot: id })
     }
+    for (const [id, bot] of live) this.sendBot(id, bot)
   }
 
   private sendBot(id: number, bot: Vehicle): void {
@@ -1316,6 +1325,8 @@ export class NetClient implements System {
   }
 
   private spawnRemote(info: PlayerInfo, s: WireState): RemotePlayer {
+    const old = this.departing?.get(info.id)
+    if (old) { this.departing.delete(info.id); this.ctx.cancelRemoteDeparture?.(old) }
     // Bots too get a replica of our own, so the set follows the host's roster exactly and is
     // never touched by our bot manager or its local quality cap.
     const vehicle = createVehicle(this.ctx.game, this.ctx.terrain, info.kind as VehicleKind, new THREE.Vector3(...s.p), 0)
@@ -1344,14 +1355,23 @@ export class NetClient implements System {
     this.pesters.forget(id)
     r.disposeEffects()
     if (!r.owned) return
-    const gone = () => this.ctx.game.remove(r.vehicle)
     let leaving: Promise<void> | void = undefined
     if (depart) {
       try { leaving = this.ctx.onRemoteVehicleLeaving?.(r.vehicle) } catch (err) { console.warn('remote departure effect failed', err) }
     }
-    if (leaving) leaving.then(gone, gone)
-    else gone()
+    // Gone from the game and the physics world in this frame, whatever the effect does: no
+    // gameplay list waits on an animation. A departure plays on what is left, a picture.
+    this.ctx.game.remove(r.vehicle, !leaving)
+    if (!leaving) return
+    const vehicle = r.vehicle
+    vehicle.detach()
+    this.departing.set(id, vehicle)
+    const done = () => { if (this.departing.get(id) === vehicle) this.departing.delete(id); vehicle.dispose() }
+    leaving.then(done, done)
   }
+
+  /** Departures still playing, by id: dropped at once if the same id arrives again. */
+  private readonly departing = new Map<number, Vehicle>()
 
   /** Dust, tracks, lamps and trails for a remote vehicle. Returns its disposer. */
   private attachEffects(vehicle: Vehicle): () => void {
