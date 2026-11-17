@@ -209,6 +209,8 @@ export class ChaseCamera implements System {
     }) as EventListener)
     // Touch aiming (src/ui/TouchControls.ts): finger travel in CSS px, treated as mouse travel.
     listen(window, 'syn3h:look', ((event: CustomEvent<{ dx: number; dy: number }>) => this.look(event.detail.dx, event.detail.dy)) as EventListener)
+    // Touch pinch in the orbit camera (src/ui/tagStick.ts AimTouches): wheel pixels, positive out.
+    listen(window, 'syn3h:zoom', ((event: CustomEvent<{ deltaY: number }>) => { if (!this.game.input.suspended) this.zoom(event.detail.deltaY, 0) }) as EventListener)
     listen(game.canvas, 'wheel', ((event: WheelEvent) => {
       event.preventDefault()
       this.zoom(event.deltaY, event.deltaMode)

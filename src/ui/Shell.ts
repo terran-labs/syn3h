@@ -1,9 +1,10 @@
 import { frozenResourceURL } from '../core/frozenResources'
 import type { LobbyAddress } from './LobbyAddress'
-import { DEFAULT_ROOM, isDefaultRoom, roomFromQuery, roomLabel } from '../core/roomAddress'
+import { DEFAULT_ROOM, isDefaultRoom, roomFromQuery } from '../core/roomAddress'
 import { modeChoices, modeName } from './modeAvailability'
 import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
 import { GearSelector, type GearSource } from './gear/GearSelector'
+import { tagModeFor } from './tagStick'
 import { postTier } from '../fx/post/gate'
 import { PerformancePanel } from './PerformancePanel'
 import type { PauseControl } from './pauseControl'
@@ -25,7 +26,8 @@ import { SlidingPanels } from './SlidingPanels'
 import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
-import { placeLabels } from './galaxy/labels'
+import { captionHidden, captionMask } from './galaxy/labels'
+import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
 import { LobbySettings } from './LobbySettings'
 import { Inspector } from './inspector/Inspector'
@@ -45,7 +47,7 @@ import { arrivalPath } from '../core/arrival'
 import { applyPlanet, biomeLine, currentPlanet, currentWorldName, encodeWorld, planetById, randomSeed } from '../world/planets'
 import { nameSeedKeptAcross, randomNameSeed, worldName } from '../world/worldName'
 import { currentHour, formatDayLength, planetDayLength } from '../world/sky/dayCycle'
-import { InviteView, inviteUrl, renderQr } from './InviteView'
+import { InviteView, inviteUrl } from './InviteView'
 import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
@@ -83,10 +85,10 @@ function pinLicenses(root: ParentNode): void {
 /** Keys that mean "I want to drive": they resume a pause and capture the cursor. */
 const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 /**
- * The lobby's bottom buttons (the owner, 15 November 2026): Multiplayer, nothing else.
- * Settings is the gear in the lower right corner, with About and Updates as icons above it
- * (LobbySettings and LobbySheet, 16 November 2026). Join by QR lives inside Multiplayer ("Show on screen"), and shaping a world
- * returns with OFFER_CUSTOM_PLANET.
+ * The lobby's bottom buttons: none today. Multiplayer was removed (the invite lives in the
+ * sidebar and on J), and About and Updates are icons above the settings gear in the lower
+ * right corner (LobbySettings and LobbySheet). Worlds returns here with OFFER_CUSTOM_PLANET;
+ * while the row is empty it is hidden.
  */
 /**
  * The two lines of a planet label: the planet's name, then its biome in lower case ("Velmora"
@@ -104,22 +106,27 @@ export function planetLabelText(world: { id?: string; recipe?: string; label: st
  */
 export function plateTint(recipeId: string): string {
   const look = lobbyLook(recipeId)
-  let [r, g, b] = [16, 8, 0].map(k => ((look.night === 1 ? 0xff7a1a : look.land) >> k & 255) / 255)
-  // Relative luminance at least 0.42; then a little more saturation than the ground has.
+  return readableHex([16, 8, 0].map(k => ((look.night === 1 ? 0xff7a1a : look.land) >> k & 255) / 255) as [number, number, number])
+}
+/** A colour (0 to 1 channels) lifted toward white until its relative luminance is at least 0.42, so it reads over dark space. */
+function readableHex([r, g, b]: [number, number, number]): string {
   for (let i = 0; i < 12 && 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.42; i++) { r += (1 - r) * 0.15; g += (1 - g) * 0.15; b += (1 - b) * 0.15 }
   const hex = (v: number) => Math.round(Math.min(1, v) * 255).toString(16).padStart(2, '0')
   return `#${hex(r)}${hex(g)}${hex(b)}`
 }
 /**
- * A planet label's side change, in ms: how long its side must stay blocked before it moves (0:
- * a blocked side would overlap a neighbour, so it starts fading at once; the layout's preference
- * for the side a label already has is what keeps a turning view from making it hop), and the
- * cross-fade.
+ * A planet caption's colour while its planet is pointed at, focused or chosen: the planet's own
+ * corona, the colour of the glow the galaxy draws round it then (glowColour), lifted only as far
+ * as it needs to read (readableHex).
  */
-const LABEL_HOLD = 0, LABEL_FADE = 150
+export function captionAccent(world: { land: number; sea: number; glow?: boolean; forming?: boolean }): string {
+  return readableHex(glowColour(world.land, world.sea, world))
+}
+/** Pixels from a planet's limb to the top of its caption. */
+const CAPTION_GAP = 5
 /** Must match the short landscape block in shell.css. */
 const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
-const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button>`
+const LOBBY_LINKS = OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''
 const back = '<button type="button" class="panel-back link-button" data-goto="index"><span aria-hidden="true">←</span><span>Back</span></button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
 declare const __SYN3H_BUILD__: string | undefined
@@ -150,7 +157,8 @@ export class Shell implements System {
   private inviteOpen = false
   private inviteFromGame = false
   private playerCount = 0
-  private lastInviteUrl = ''
+  /** What had focus when the invite view opened, to return to when it closes. */
+  private joinOpener?: HTMLElement
   private readonly matchHud: MatchHud
   private minimap?: Minimap
   private readonly panels: SlidingPanels
@@ -212,12 +220,11 @@ export class Shell implements System {
           <fieldset class="world-controls"><legend>Sky</legend><div class="sky-presets">${SKY_PRESET_NAMES.map(name => `<button type="button" data-sky="${name}">${name}</button>`).join('')}</div><label for="sky-time">Time of day <output id="sky-time-value"></output></label><input id="sky-time" type="range" min="0" max="24" step="0.05"></fieldset>
           <p class="world-lock-note" hidden>Sliders locked by host.</p><button data-goto="explore">Explore this world ›</button>${back}
         </section>
-        <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode">${modeChoices.map(mode => `<option value="${mode.value}">${mode.label}</option>`).join('')}</select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
       </div>
       <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span></footer>
       </div>
-      <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby">${LOBBY_LINKS}</nav></div>
+      <div class="galaxy-ui" hidden><div class="galaxy-labels" role="group" aria-label="Worlds. Drag to look around; choose a world to go there."></div><nav class="lobby-links galaxy-links" aria-label="Lobby"${LOBBY_LINKS ? '' : ' hidden'}>${LOBBY_LINKS}</nav></div>
     </section>
     <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">About Syn3h</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
@@ -236,9 +243,26 @@ export class Shell implements System {
     this.nameInput = this.element.querySelector('#shell-name')!; this.roomInput = this.element.querySelector('#shell-room')!
     this.speed = this.element.querySelector('.shell-speed strong')!
     this.panels = new SlidingPanels(this.element.querySelector('.lobby-panels')!)
-    this.board = new Scoreboard(this.element.querySelector('.shell-scoreboard')!, text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
+    // The lobby's Multiplayer panel, which drew this board, is gone (the in-play board is the
+    // Players & session card's). The board stays, detached, for its join and leave messages.
+    this.board = new Scoreboard(document.createElement('div'), text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
     this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {})
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
+    // TAG reads the gear in hand: Plasma Tag streams while held, other gear sends on the lift,
+    // and Cancel drops a charge or carry the way the in-play guide does (src/ui/tagStick.ts).
+    this.touch.tag = {
+      mode: () => {
+        const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+        if (!rack) return 'stream'
+        const controls = rack.controls()
+        return tagModeFor(controls.gear, controls.actions[0])
+      },
+      tap: () => {
+        const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+        if (rack) rack.tap(); else game.input.external.fire = true
+      },
+      cancel: () => { this.cancelActions?.(); game.input.external.fire = false },
+    }
     // The gear drum at the centre-left edge, in both cursor states: the gear in hand, its
     // neighbours, and the controls that apply right now. On touch it adds buttons for the
     // gear's extra actions (the Grapple's Let out and Let go).
@@ -304,14 +328,14 @@ export class Shell implements System {
     })
     this.lobbySettings.about.addEventListener('click', () => this.openLobbySheet(this.aboutSheet), { signal })
     this.lobbySettings.updates.addEventListener('click', () => this.openLobbySheet(this.updatesSheet), { signal })
-    const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
+    // The foot is not a card of its own: one button under the stack, like the lobby's buttons.
+    const foot = document.createElement('div'); foot.className = 'rail-foot'
     // Header and footer stay outside the scrolling card stack.
     const command = document.createElement('div'); command.className = 'rail-command wi-glass'
     command.innerHTML = '<div class="rail-tools"><strong class="rail-world"></strong><button type="button" class="rail-pause">Pause</button></div>'
     command.querySelector('.rail-world')!.after(railTop.querySelector('.wi-search')!)
-    const actions = railTop.querySelector('.wi-actions')!
-    actions.insertAdjacentHTML('beforeend', '<button type="button" class="exit-world">Leave world</button>')
-    foot.append(actions)
+    // The foot holds one thing: the way out. The world's own actions are in the World card.
+    foot.innerHTML = `<button type="button" class="exit-world"><svg class="wi-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M9.5 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h5.5M7 8h7M11.5 5.5 14 8l-2.5 2.5"/></svg><span>Leave world</span></button>`
     railTop.remove()
     const cards = this.inspector.element.querySelector('.wi-cards')!
     cards.before(command); cards.after(foot)
@@ -382,7 +406,6 @@ export class Shell implements System {
       if (this.panels.active !== 'index' && !target.closest('.lobby-panels, .galaxy-links, .update-banner') && !this.inviteOpen) this.showPanel('index')
     }, { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-open]')) button.addEventListener('click', () => this.openMenu(button.dataset.open!), { signal })
-    for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
     this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play(true) }, { signal })
     for (const button of this.element.querySelectorAll('.shell-invite')) button.addEventListener('click', () => { void this.copyInvite() }, { signal })
     const presentationInput = this.presentationToggle.querySelector('input')!
@@ -403,7 +426,6 @@ export class Shell implements System {
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-sky]')) button.addEventListener('click', () => { if (canEditWorld()) applySkyPreset(button.dataset.sky as SkyPresetName) }, { signal })
     this.element.querySelector('#sky-time')!.addEventListener('input', event => { if (canEditWorld()) params.set('sun.timeOfDay', (event.target as HTMLInputElement).value) }, { signal })
     this.element.querySelector('#bots-count')!.addEventListener('input', event => { if (canEditWorld()) params.set('bots.count', (event.target as HTMLInputElement).value) }, { signal })
-    this.element.querySelector('#game-mode')!.addEventListener('change', event => { if (canEditWorld() && params.get('game.mode') && modeChoices.some(mode => mode.value === Number((event.target as HTMLSelectElement).value))) params.set('game.mode', Number((event.target as HTMLSelectElement).value)) }, { signal })
     // Two presses: the first asks, the second (within four seconds) does it. No modal dialog.
     const reset = this.hostControls.querySelector<HTMLButtonElement>('.world-reset')!
     let resetArmed: ReturnType<typeof setTimeout> | undefined
@@ -453,22 +475,17 @@ export class Shell implements System {
     void this.panels.show('index', true); this.update()
   }
   private updateRoomLabels(): void {
-    this.element.querySelector('.multiplayer-room')!.textContent = `Room: ${roomLabel(this.room)}`
     this.updateInvite()
   }
   private updateInvite(): void {
     const url = this.lobbyAddress?.inviteURL(this.room, encodeWorld()) ?? inviteUrl(location.origin, this.room, encodeWorld())
-    if (url !== this.lastInviteUrl) {
-      this.lastInviteUrl = url
-      for (const host of this.overlay.querySelectorAll('.invite-qr')) renderQr(host, url)
-      for (const text of this.overlay.querySelectorAll('.invite-link')) text.textContent = url
-    }
     this.invite.update(url, this.room, this.playerCount)
   }
   openJoin(): void {
     this.stopAttract()
     if (this.inviteOpen || this.aboutOpen) return
     this.inviteFromGame = this.started && !this.menuVisible
+    this.joinOpener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : undefined
     if (this.inviteFromGame) { this.releaseCursor(); this.game.input.suspended = true; this.game.input.mouseFire = false; this.touch.enabled = false }
     this.inviteOpen = true; this.overlay.inert = true; this.invite.show(); this.updateInvite()
   }
@@ -548,7 +565,14 @@ export class Shell implements System {
     if (!this.inviteOpen) return
     this.inviteOpen = false; this.invite.hide(); this.overlay.inert = false
     if (this.inviteFromGame) this.closeMenu()
-    else this.element.querySelector<HTMLButtonElement>('[data-join]')!.focus()
+    else {
+      // Back to what had focus; opened by J from nowhere in particular, focus goes nowhere, so J
+      // (ignored while a button has focus) toggles the view again.
+      const opener = this.joinOpener
+      if (opener?.isConnected && !opener.closest('[hidden], [inert]')) opener.focus({ preventScroll: true })
+      else (document.activeElement as HTMLElement | null)?.blur()
+    }
+    this.joinOpener = undefined
   }
   get vehicleKind(): VehicleChoice['vehicleKind'] { return this.choice.vehicleKind }
   get bodyColor(): string { return this.choice.bodyColor }
@@ -682,7 +706,7 @@ export class Shell implements System {
     void this.panels.show(id).then(() => {
       if (this.panels.active === id && id === 'index') {
         this.galaxyFor(id)
-        this.element.querySelector<HTMLElement>('.galaxy-links button')?.focus({ preventScroll: true })
+        ;(this.element.querySelector<HTMLElement>('.galaxy-links button') ?? this.lobbySettings.about).focus({ preventScroll: true })
       }
     })
   }
@@ -1016,6 +1040,11 @@ export class Shell implements System {
     }
     const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|SUMMARY)$/.test(event.target.tagName))
     if (!editing && !event.repeat && event.code === 'KeyP') { event.preventDefault(); event.stopImmediatePropagation(); this.setPresentation(!this.presentation); return }
+    // The invite view holds only buttons, and its Back says "J": J closes it from any of them
+    // (Copy keeps focus after a click). Space and Enter still press the focused button, and J
+    // typed into a text field elsewhere is never taken.
+    const inField = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName))
+    if (this.inviteOpen && !inField && !event.repeat && event.code === 'KeyJ' && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); event.stopImmediatePropagation(); this.closeJoin(); return }
     if (!editing && !event.repeat && event.code === 'KeyJ') { event.preventDefault(); event.stopImmediatePropagation(); this.inviteOpen ? this.closeJoin() : this.openJoin(); return }
     if (this.exitAsking) {
       // The question owns the keyboard: Escape means stay, Tab moves between its two buttons,
@@ -1050,10 +1079,11 @@ export class Shell implements System {
     if (!typing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code) && this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
-      setInterfaceMode(0)
-      // Escape in a text field only leaves the field; it takes another to pause.
+      // Escape in a text field only leaves the field (chat closes itself): it takes another to
+      // pause, and the interface mode stays as it was.
       const target = event.target
       if (this.started && !this.menuVisible && !this.userPaused && target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && !/^(range|checkbox|radio|button|color)$/.test(target.type)))) { target.blur(); return }
+      setInterfaceMode(0)
       event.preventDefault(); event.stopImmediatePropagation()
       // Escape with the cursor captured frees it, which shows the panels. Escape again pauses.
       // Escape while paused resumes. There is no panel-closing step in between.
@@ -1243,17 +1273,16 @@ export class Shell implements System {
     const chips = this.galaxyChips
     this.galaxyWorlds = worlds
     for (const world of worlds) {
-      const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label s3-plate'; chip.dataset.world = world.id
-      // The shared label plate (label-plate.css): the world's name, its biome in small lower
-      // case, then how many are online, and a leader to the planet's limb.
-      chip.innerHTML = '<strong></strong><small class="s3-plate-quiet galaxy-biome"></small>'
+      // A caption on the scene, not a plate (the owner, 16 November 2026: the lobby is a quiet
+      // picture): the world's name, its biome in small lower case under it, then how many are
+      // online. Set under its planet; the planet takes the taps, the caption takes focus.
+      const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
+      chip.innerHTML = '<strong></strong><small class="galaxy-biome"></small>'
       const text = planetLabelText(world)
       chip.querySelector('strong')!.textContent = text.name; chip.querySelector('small')!.textContent = text.biome
-      // Colour is identity: each planet's bar and leader in a colour of its own world.
-      if (!world.forming) {
-        const tint = plateTint(world.recipe ?? world.id.split('~')[0])
-        chip.style.setProperty('--plate-tint', tint)
-      }
+      // A whisper of the planet's own colour in the near-white type.
+      if (!world.forming) chip.style.setProperty('--caption-tint', plateTint(world.recipe ?? world.id.split('~')[0]))
+      chip.style.setProperty('--caption-accent', captionAccent(world))
       if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; chip.append(count) }
       if (!world.forming) chip.title = `A day lasts ${formatDayLength(planetDayLength(world.recipe ?? world.id))}.`
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
@@ -1272,7 +1301,7 @@ export class Shell implements System {
           const chip = chips.get(world.id)!, value = values.get(world.recipe ?? world.id) ?? null
           const text = value && value.players > 0 ? `${value.players} online` : ''
           const count = chip.querySelector('.galaxy-population')!
-          if (count.textContent !== text) { count.textContent = text; this.labelSizes.delete(world.id) }
+          if (count.textContent !== text) count.textContent = text
           // The day length goes in the tooltip, not the label: the label stays two short lines.
           chip.title = `${populationLabel(value)}. A day lasts ${formatDayLength(planetDayLength(world.recipe ?? world.id))}. Counts span separate rooms; choosing this planet uses your current room.`
           const plate = planetLabelText(world)
@@ -1285,7 +1314,13 @@ export class Shell implements System {
       onTap: chosen => this.tapWorld(chosen),
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),
       // A planet pointed at (hovered, or a finger on it) shows its label, faded or not.
-      onPoint: id => { this.pointedWorld = id; for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
+      onPoint: id => { for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
+      // The lobby at rest: a planet breathing its glow lifts its caption the same way a hover does,
+      // by the same amount at its peak share (shell.css --caption-pulse).
+      onRest: pulses => worlds.forEach((world, i) => {
+        const chip = chips.get(world.id), value = (Math.round((pulses[i] ?? 0) * 50) / 50).toFixed(2)
+        if (chip && chip.style.getPropertyValue('--caption-pulse') !== value) chip.style.setProperty('--caption-pulse', value)
+      }),
       onArrive: chosen => {
         const id = chosen.split('~')[0]
         if (id === 'custom') {
@@ -1305,99 +1340,55 @@ export class Shell implements System {
         // Nothing to lay out or measure until the lobby's own controls are on screen: the galaxy
         // draws from the loading veil on (the opening's point of light), and sizes and places
         // measured while they are hidden read every box as zero, and are kept.
-        if (!this.brandBottom && !this.element.querySelector('.galaxy-links')?.getBoundingClientRect().width) return
-        // Each label near its world, on the screen, clear of the links and of each other.
-        // Each label's size with both lines and with the name only, measured once per text and window.
-        for (const [id, chip] of chips) if (!this.labelSizes.has(id) && !chip.hidden) {
-          const was = chip.classList.contains('is-name-only')
-          chip.classList.remove('is-name-only'); this.labelSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
-          chip.classList.add('is-name-only'); this.compactSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
-          chip.classList.toggle('is-name-only', was)
-        }
+        if (!this.brandBottom && !this.element.querySelector('.galaxy-ui')?.getBoundingClientRect().width) return
         // Clear of the wordmark too. While flying to a world, only its label stays.
         if (!this.brandBottom) {
           this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
-          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect() ?? { top: 0, left: innerWidth, width: 0 }
+          const nav = this.element.querySelector('.galaxy-links')?.getBoundingClientRect() ?? { top: 0, left: innerWidth }
           if (matchMedia(SHORT_LANDSCAPE).matches) {
-            // The buttons and hint are a column on the right (shell.css): the galaxy and its
-            // labels get everything left of it and below the corner wordmark.
-            const links = this.element.querySelector('.galaxy-links')?.getBoundingClientRect().left ?? innerWidth
-            this.labelRight = Math.min(links, hint.width ? hint.left : links) - 8
+            // The buttons are a column on the right (shell.css) and the galaxy gets the height
+            // below the wordmark. The sun stays in the middle of the screen's width, as in
+            // portrait (the owner's call): the outer worlds may pass behind the button column.
             this.linksTop = innerHeight - 8
-            const top = this.brandBottom + 4, left = 8
+            const top = this.brandBottom + 4
             // The system is wider than tall, so it can grow past the free height a little;
             // the spread gives the inner worlds' labels room.
-            this.galaxyFrame = [(left + this.labelRight) / 2 / innerWidth, 1 - (top + this.linksTop) / 2 / innerHeight, 1.5 * (this.linksTop - top) / innerHeight]
+            this.galaxyFrame = [0.5, 1 - (top + this.linksTop) / 2 / innerHeight, 1.5 * (this.linksTop - top) / innerHeight]
           } else {
-            this.labelRight = innerWidth; this.galaxyFrame = undefined
-            this.linksTop = hint.top > innerHeight / 2 ? hint.top - 24 : innerHeight - 152
+            this.galaxyFrame = undefined
+            this.linksTop = nav.top > innerHeight / 2 ? nav.top - 24 : innerHeight - 152
           }
           this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
         }
-        // Plates the opening has not brought in yet are neither placed nor given a side to keep:
-        // while it plays the camera is still moving, and a side learned then would stick.
-        const shown = chosen ? places.filter(place => place.id === chosen) : places.filter(place => place.labelled !== false)
-        // A label that has dropped to its name stays that way until the window changes size, so
-        // a slowly turning system does not make its biome line blink in and out.
-        const sizes = new Map(this.labelSizes)
-        for (const id of this.compactIds) { const size = this.compactSizes.get(id); if (size) sizes.set(id, size) }
-        const spots = placeLabels(shown, sizes, { width: this.labelRight, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots, avoid: this.galaxy ? [this.galaxy.sunScreen] : [], compactSizes: this.compactSizes })
-        // The ladder, per label: both lines where the plate fits beside its world, the name only
-        // where only that fits, and faded (shown when pointed at or focused) where nothing does.
-        for (const spot of spots) if (spot.compact && !chosen) this.compactIds.add(spot.id)
-        for (const [id, chip] of chips) chip.classList.toggle('is-name-only', this.compactIds.has(id))
-        if (chosen) for (const place of places) if (place.id !== chosen) chips.get(place.id)!.classList.add('is-crowded')
-        for (const place of places) chips.get(place.id)!.hidden = !place.visible
-        // The opening brings each plate in once its world has settled (src/ui/galaxy/opening.ts): a fade, not a slide.
-        for (const place of places) chips.get(place.id)!.classList.toggle('is-unrevealed', place.labelled === false)
-        const now = performance.now()
-        for (const spot of spots) {
-          const chip = chips.get(spot.id)!, place = places.find(p => p.id === spot.id)
-          chip.classList.toggle('is-crowded', spot.crowded)
-          if (!place) continue
-          // A label keeps its side until that side has been blocked for a moment, then moves
-          // there by a short cross-fade: it never slides, and a turning view does not make it hop.
-          const side = this.labelSide.get(spot.id)
-          if (!side || spot.crowded || side.spot < 0 || side.spot === spot.spot) {
-            if (!side?.fading) this.labelSide.set(spot.id, { spot: spot.spot, dx: spot.x - place.x, dy: spot.y - place.y })
-            this.labelSpots.set(spot.id, spot.spot)
-            if (!side?.fading) { this.placeChip(chip, spot.x, spot.y); continue }
-          } else if (!side.fading) {
-            if (side.wants !== spot.spot) { side.wants = spot.spot; side.since = now }
-            if (now - (side.since ?? now) >= LABEL_HOLD) {
-              side.fading = true; chip.classList.add('is-swapping')
-              setTimeout(() => { this.labelSide.delete(spot.id); chip.classList.remove('is-swapping') }, LABEL_FADE)
-            }
-          }
-          // Held on its side (or fading out from it): it follows its world from there, and the
-          // layout tries that side first again next frame.
-          this.labelSpots.set(spot.id, side.spot)
-          this.placeChip(chip, place.x + side.dx, place.y + side.dy)
-        }
-        // A planet pointed at, touched or focused whose label had no room: show the label at its
-        // preferred side, under the planet, drawn over whatever is there, and dim the plates it
-        // covers while it shows, so it reads as raised, not as a layout fault.
-        const focused = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>('.galaxy-label')?.dataset.world : undefined
-        const raised = [this.pointedWorld, focused].find(id => id && spots.find(s => s.id === id)?.crowded)
-        let over: { left: number; top: number; right: number; bottom: number } | undefined
-        for (const [id, chip] of chips) chip.classList.toggle('is-raised', id === raised)
-        if (raised) {
-          const chip = chips.get(raised)!, place = places.find(p => p.id === raised), size = (this.compactIds.has(raised) ? this.compactSizes : this.labelSizes).get(raised)
-          if (place && size) {
-            const x = Math.min(this.labelRight - 8 - size.width / 2, Math.max(8 + size.width / 2, place.x))
-            const y = Math.min(this.linksTop - size.height, place.y + place.radius + 6)
-            this.labelSide.delete(raised); this.placeChip(chip, x, y)
-            over = { left: x - size.width / 2, top: y, right: x + size.width / 2, bottom: y + size.height }
-          }
-        }
-        for (const spot of spots) {
-          const size = (this.compactIds.has(spot.id) ? this.compactSizes : this.labelSizes).get(spot.id), side = this.labelSide.get(spot.id), place = places.find(p => p.id === spot.id)
-          const box = size && side && place ? { left: place.x + side.dx - size.width / 2, top: place.y + side.dy, right: place.x + side.dx + size.width / 2, bottom: place.y + side.dy + size.height } : undefined
-          chips.get(spot.id)!.classList.toggle('is-dimmed', !!over && spot.id !== raised && !!box && box.left < over.right && box.right > over.left && box.top < over.bottom && box.bottom > over.top)
+        // Each caption sits centred under its planet, a fixed gap below the limb: a pure function
+        // of where the planet is this frame, so it never moves against it. Captions may overlap
+        // each other and other planets; that is accepted. Only their strength changes: with the
+        // opening, with depth (behind the sun or a nearer planet they fade, a far one is a little
+        // fainter), and brighter while pointed at or focused, or for the world in play.
+        for (const [id, chip] of chips) if (chip.classList.contains('is-chosen') !== (id === chosen)) chip.classList.toggle('is-chosen', id === chosen)
+        const current = currentPlanet().id, near = Math.min(...places.filter(p => p.visible).map(p => p.depth)), far = Math.max(...places.filter(p => p.visible).map(p => p.depth))
+        for (const place of places) {
+          const chip = chips.get(place.id)!
+          chip.hidden = !place.visible
+          if (!place.visible) continue
+          this.placeChip(chip, place.x, place.y + place.radius + CAPTION_GAP)
+          const away = (!!chosen && place.id !== chosen) || place.labelled === false || captionHidden(place, places, this.galaxy?.sunScreen)
+          const depth = far > near ? (place.depth - near) / (far - near) : 0
+          // Pointing and focus lift it in the stylesheet (.is-pointed, :focus), at once, even
+          // while the galaxy is holding still and not drawing.
+          const strength = away ? '0' : (1 - 0.25 * depth + (place.id === current ? 0.2 : 0)).toFixed(2)
+          if (chip.style.getPropertyValue('--caption-strength') !== strength) chip.style.setProperty('--caption-strength', strength)
+          // In the scene's depth: nearer captions over farther ones, and every nearer body (a
+          // planet, the sun) cuts the text where its disc covers it, as if the caption stood at
+          // its own planet's depth.
+          const z = String(1000 - Math.round(place.depth * 10))
+          if (chip.style.zIndex !== z) chip.style.zIndex = z
+          const mask = captionMask(place, places, this.galaxy?.sunScreen, place.y + place.radius + CAPTION_GAP)
+          if (this.chipMask.get(chip) !== mask) { this.chipMask.set(chip, mask); chip.style.setProperty('mask-image', mask); chip.style.setProperty('-webkit-mask-image', mask) }
         }
       },
     })
-    addEventListener('resize', () => { this.brandBottom = undefined; this.labelSizes.clear(); this.compactSizes.clear(); this.compactIds.clear() }, { signal: this.abort.signal })
+    addEventListener('resize', () => { this.brandBottom = undefined }, { signal: this.abort.signal })
     this.element.classList.add('is-galaxy'); this.galaxy.enabled = true
     // WebGL 2 exists but the galaxy would not start (a shader the driver refuses): the world
     // names stay, as a row of buttons, so a visitor can still choose one and play.
@@ -1413,25 +1404,12 @@ export class Shell implements System {
     this.chipDrawn.set(chip, last)
     if (!(Math.abs(x - last.x) <= .5 && Math.abs(y - last.y) <= .5)) { last.x = x; last.y = y; chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` }
   }
-  /**
-   * Each planet label's side: the spot it shows at and its offset from its world. `wants` and
-   * `since` record a different side the layout has been asking for, and since when.
-   */
-  private readonly labelSide = new Map<string, { spot: number; dx: number; dy: number; wants?: number; since?: number; fading?: boolean }>()
+  /** Each caption's last mask, so it is written only when it changes. */
+  private readonly chipMask = new WeakMap<HTMLButtonElement, string>()
   private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
-  /** The world a pointer is on, or a finger holds, for its label (Galaxy onPoint). */
-  private pointedWorld: string | undefined
-  /** The galaxy's worlds by id, for their label text. */
-  /** The galaxy's world labels, by world id, with their measured sizes and last spots. */
+  /** The galaxy's world captions, by world id. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
-  private readonly labelSizes = new Map<string, { width: number; height: number }>()
-  /** Each label's size as its name only, for the ladder's compact rung. */
-  private readonly compactSizes = new Map<string, { width: number; height: number }>()
-  /** Labels showing their name only, until the window changes size. */
-  private readonly compactIds = new Set<string>()
-  private readonly labelSpots = new Map<string, number>()
-  /** Short landscape: the right edge left to the galaxy, and its framing (see SHORT_LANDSCAPE). */
-  private labelRight = innerWidth
+  /** Short landscape: the galaxy's framing (see SHORT_LANDSCAPE). */
   private galaxyFrame?: readonly [number, number, number]
   /** Where the wordmark ends, measured once per window size. */
   private brandBottom?: number
@@ -1457,7 +1435,7 @@ export class Shell implements System {
         if (world.seed !== worldSeed.value) this.galaxy?.setSeed(id, worldSeed.value)
       }
       const name = chip.querySelector('strong')!, text = world ? planetLabelText(world).name : name.textContent
-      if (name.textContent !== text) { name.textContent = text; this.labelSizes.delete(id); this.compactSizes.delete(id) }
+      if (name.textContent !== text) name.textContent = text
       chip.classList.toggle('is-current', id === current); chip.classList.toggle('is-selected', id === current)
       chip.classList.toggle('is-locked', !open && id !== current)
     }
@@ -1694,9 +1672,7 @@ export class Shell implements System {
     this.switches.get('host-lock')!(net?.locked ?? false)
     this.hostControls.querySelector<HTMLElement>('.host-lock')!.hidden = !net?.isHost
     this.hostControls.querySelector('.host-note')!.textContent = !net ? 'Join a room to manage shared settings.' : !editable ? 'Sliders locked by host.' : net.isHost ? 'You are the host.' : 'Shared sliders are open.'
-    const mode = params.get('game.mode'), modeSelect = this.element.querySelector<HTMLSelectElement>('#game-mode')!
-    this.element.querySelector<HTMLElement>('.mode-control')!.hidden = !mode
-    modeSelect.disabled = !editable; if (mode) modeSelect.value = String(mode.value)
+    const mode = params.get('game.mode')
     // Explore is the default and has no game: no scores, nobody "it". The player list stays.
     this.element.classList.toggle('is-explore', !mode || Number(mode.value) === 2)
     const bots = params.get('bots.count'), botsRow = this.element.querySelector<HTMLElement>('.bots-control')!

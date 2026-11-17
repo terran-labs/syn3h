@@ -53,10 +53,10 @@ describe('the retired classic buggy',()=>{
   for(const query of ['','vehicle=buggy-classic','vehicle=buggy','vehicle=buggy-syn3h'])expect(prepareResume(new URLSearchParams(query),storage)?.p,query).toEqual([10,12,20])
   expect(prepareResume(new URLSearchParams('vehicle=jet'),storage)).toBeNull()
  })
- it('ships no classic model, and nothing but models in the models folder',()=>{
-  expect(existsSync(new URL('public/models/buggy-classic.glb',root))).toBe(false)
-  expect(existsSync(new URL('public/models/buggy-classic-wheel.glb',root))).toBe(false)
-  // Everything under public/ is copied into the build as is: converters and notes live in tools/models.
-  expect(readdirSync(new URL('public/models',root)).sort()).toEqual(['buggy-boxarm.glb','buggy.glb','tank.glb','tanktread.glb'])
+ it('ships no model file at all: every vehicle is generated',()=>{
+  // Everything under public/ is copied into the build as is. The original models are source
+  // material in tools/models, which the build never copies and the game never requests.
+  const walk=(dir:URL):string[]=>existsSync(dir)?readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(new URL(`${e.name}/`,dir)):[new URL(e.name,dir).pathname]):[]
+  expect(walk(new URL('public/',root)).filter(f=>/\.(glb|gltf|fbx|obj|blend|bin)$/i.test(f))).toEqual([])
  })
 })

@@ -1,0 +1,33 @@
+# Staging only: a second Worker for proving a frozen build on Cloudflare before production.
+# Its own name, so its own workers.dev address and its own Durable Object namespace (rooms are
+# never shared with production). No routes and no custom domain: it cannot serve www.syn3h.com.
+name = "syn3h-staging"
+main = "server/worker.ts"
+compatibility_date = "2026-11-01"
+workers_dev = true
+preview_urls = false
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*"]
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDO"]
+
+# Workers Logs: only the room server's own JSON lines (server/log.ts) are kept. Invocation
+# logs are off: every Durable Object WebSocket message is an invocation, about 65,000 a
+# player-hour. Query strings (they carry room names, which people type) are redacted from
+# any request URL that does reach logs or traces.
+[observability]
+enabled = true
+head_sampling_rate = 1
+redact_query_string = true
+
+[observability.logs]
+invocation_logs = false

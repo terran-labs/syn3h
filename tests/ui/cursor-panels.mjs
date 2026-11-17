@@ -21,7 +21,7 @@ const locked = page => page.evaluate(() => document.pointerLockElement === syn3h
     await page.goto(`${base}?room=cursor-lock-${Date.now()}`)
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     // The lobby is cursor-free by nature and keeps its own panels.
-    assert.equal(await page.locator('.galaxy-links').isVisible(), true)
+    assert.equal(await page.locator('.lobby-gear-dock').isVisible(), true)
     // Entering a world from a real gesture captures the cursor: you arrive driving, display only.
     await page.locator('.galaxy-label.is-current').focus(); await page.keyboard.press('Enter')
     await page.waitForFunction(() => syn3h.shell.playing && !syn3h.shell.dropping, null, { timeout: 120000 })

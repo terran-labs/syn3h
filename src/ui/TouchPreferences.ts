@@ -43,3 +43,27 @@ export function touchRole(t: TouchDown): 'drive' | 'aim' | null {
   const fromDriveEdge = t.leftHanded ? t.width - t.x : t.x
   return fromDriveEdge < t.width * STICK_REGION ? 'drive' : 'aim'
 }
+
+/*
+ * The Tag aim stick (src/ui/tagStick.ts). Turn rate is set by how far the thumb is from where it
+ * pressed Tag, like a gamepad stick, and passes through the camera's look sensitivity
+ * (camera.sensitivity) as finger travel does, so the look setting still applies. Tuned by feel:
+ * no test pins these numbers.
+ */
+export const touchAimSpeed = defineParam({
+  id: 'touch.aimSpeed', label: 'Tag stick turn speed (px of look per second at full tilt)', group: 'Input', scope: 'client',
+  default: 450, min: 100, max: 1500, step: 10,
+})
+export const touchAimRadius = defineParam({
+  id: 'touch.aimRadius', label: 'Tag stick travel to full tilt (px)', group: 'Input', scope: 'client',
+  default: 56, min: 24, max: 140, step: 2,
+})
+export const touchAimCurve = defineParam({
+  id: 'touch.aimCurve', label: 'Tag stick response curve (1 linear, higher finer near centre)', group: 'Input', scope: 'client',
+  default: 1.8, min: 1, max: 3, step: 0.1,
+})
+/** Finger spread to zoom: wheel pixels per pixel of change in the distance between two fingers. */
+export const touchPinchSpeed = defineParam({
+  id: 'touch.pinchSpeed', label: 'Pinch zoom speed', group: 'Input', scope: 'client',
+  default: 3, min: 0.5, max: 10, step: 0.5,
+})

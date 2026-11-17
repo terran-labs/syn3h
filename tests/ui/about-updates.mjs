@@ -22,7 +22,7 @@ const overlaps = page => page.evaluate(() => {
   const banner = document.querySelector('.update-banner').getBoundingClientRect()
   const hit = r => r.width && r.height && r.left < banner.right && banner.left < r.right && r.top < banner.bottom && banner.top < r.bottom
   const shown = el => getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden'
-  const found = [...document.querySelectorAll('.galaxy-hint, .lobby-links button, .lobby-gear-dock, .galaxy-labels > *, #syn3h-build-notice')]
+  const found = [...document.querySelectorAll('.lobby-links button, .lobby-gear-dock, .galaxy-labels > *, #syn3h-build-notice')]
     .filter(el => shown(el) && hit(el.getBoundingClientRect())).map(el => el.textContent.trim() || el.className.baseVal || el.className)
   // The wordmark stands in the scene now (src/ui/brand/wordmarkScene.ts): its box on screen.
   const mark = syn3h.shell.galaxy?.wordmarkScreenBox?.(), shell = document.querySelector('.galaxy-ui').getBoundingClientRect()

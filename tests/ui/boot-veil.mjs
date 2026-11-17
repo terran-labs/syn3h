@@ -48,14 +48,14 @@ try {
     // The lobby underneath takes the taps, once the opening (src/ui/galaxy/opening.ts) has
     // brought its controls in.
     await page.waitForFunction(() => document.querySelector('.lobby-panels')?.dataset.busy === 'false' && !document.documentElement.dataset.opening, null, { timeout: 60000 })
-    assert.equal(await page.evaluate(() => { const b = document.querySelector('.galaxy-links button').getBoundingClientRect(); return document.elementFromPoint(b.left + 12, b.top + 12)?.closest('.galaxy-links') !== null }), true)
+    assert.equal(await page.evaluate(() => { const b = document.querySelector('.lobby-gear-dock .lobby-gear').getBoundingClientRect(); return document.elementFromPoint(b.left + 12, b.top + 12)?.closest('.lobby-gear-dock') !== null }), true)
     await page.screenshot({ path: `${out}/${view.name}-lobby.png` })
     await context.close()
   }
   // Safari on a phone and a tablet over a slow link: the bundle is held back.
   // The veil must be unmistakably a loading screen the whole time, and never show the name
   // (the first Syn3h logo a player sees is in the solar system): a point of light where the
-  // sun will be, one line of status beneath it, and after ten seconds a plain line that
+  // sun will be, one line of status beneath it, and after three seconds a quiet line that
   // counts the seconds and names the real step.
   const safari = await webkit.launch()
   for (const name of ['iPhone 14', 'iPad Pro 11 landscape']) {
@@ -77,14 +77,16 @@ try {
     assert.equal(first.wordmark, false, `${name}: no name on the loading view`)
     assert.ok(first.point.width > 0 && first.point.opacity > 0.2 && first.point.inView, `${name}: the point of light is there`)
     assert.ok(Math.abs(first.point.top + first.point.height / 2 - (await page.evaluate(() => innerHeight)) / 2) < 3, `${name}: at the centre, where the sun will be`)
-    assert.ok(first.status.text.length > 10, `${name}: a line of status from the first paint`); assert.ok(first.status.inView && first.status.opacity > 0.9)
+    assert.ok(first.status.text.length > 10, `${name}: a line of status is ready`); assert.ok(first.status.opacity < 0.1, `${name}: but waits to be shown`)
     assert.ok(first.point.bottom <= first.status.top, `${name}: the line sits beneath the point`)
     assert.ok(first.still.opacity < 0.1, `${name}: the second line waits`)
-    await page.waitForTimeout(10000)
+    await page.waitForTimeout(3000)
     const later = await seen()
     assert.equal(later.game, false, `${name}: still waiting for the bundle ${JSON.stringify(later)}`)
     assert.equal(later.status.text, first.status.text, `${name}: one line for the whole load`)
-    assert.ok(later.still.opacity > 0.9 && later.still.inView && /^\d+ s \u00b7 Downloading the game\u2019s code/.test(later.still.text), `${name}: after ten seconds, the seconds and the real step (${later.still.text})`)
+    assert.ok(later.status.inView && later.status.opacity > 0.9, `${name}: shown with the progress line after three seconds`)
+    assert.ok(later.still.opacity > 0.9 && later.still.inView && /^\d+ s \u00b7 \d+\.\d MB$/.test(later.still.text), `${name}: after three seconds, the seconds and the megabytes (${later.still.text})`)
+    assert.equal(Math.round(later.status.top), Math.round(first.status.top), `${name}: the line above does not move when it appears`)
     // The bundle arrives: the line stays, then the veil lifts.
     arrive()
     await page.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 90000 })

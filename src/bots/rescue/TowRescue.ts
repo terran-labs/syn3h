@@ -54,32 +54,50 @@ export interface TowOptions {
   onPhase?(phase: TowPhase, attempt: number): void
   /** Route planner: the way to the anchor goes round trenches and cliffs, as the bots' own drives do. */
   navigator?: Navigator
+  /**
+   * True while a partner is on its way to pull too: the line stays on and taut (up to
+   * PULL_MAX_S) instead of timing out, so the two end up pulling together.
+   */
+  partnerComing?(): boolean
 }
 
 const BRACE_S = 0.6
 const HOOK_WAIT_S = 2
 const PULL_S = 9
+/** Progress that extends a pull: this many metres along the pull line in PROGRESS_S seconds. */
+const PROGRESS_M = 0.6
+const PROGRESS_S = 3
+/** No single pull lasts longer than this, progress or not. */
+const PULL_MAX_S = 45
 const APPROACH_S = 30
 const EASE_S = 1
 /** Shortest cord the rescuer reels to: closer than this and it would be pulled into the hole. */
 const MIN_SPAN = 9
+/** Never stand closer than this to see over a lip: nearer, the pull drags the rescuer in too. */
+const SIGHT_MIN = 7
 /** The roof hitch a hook would grip, metres above the centre, for the righting effect. */
 const HITCH_UP = 0.9
 
 export class TowRescue {
   phase: TowPhase = 'approach'
   attempt = 1
+  /** It got a cord on and pulled at least once: it may take credit for the rescue. */
+  pulled = false
   /** Seconds since the rescue began, and in the current phase. */
   elapsed = 0
   private inPhase = 0
   private readonly start = new Vector3()
   private pull: { x: number; z: number }
-  private readonly anchorDistance: number
+  private anchorDistance: number
+  private readonly baseDistance: number
   private readonly maxAttempts: number
   private readonly goal: DriveGoal = { x: 0, z: 0, speed: 0 }
   private readonly q = new Quaternion()
   private readonly up = new Vector3()
   private freedFor = 0
+  private checkAt = 0
+  private checkAlong = 0
+  private pullUntil = 0
   private route: NavPoint[] | null = null
   private waypoint: NavPoint | null = null
   private waypointTime = 0
@@ -93,10 +111,11 @@ export class TowRescue {
     private readonly options: TowOptions,
   ) {
     this.pull = { ...options.pull }
-    this.anchorDistance = options.anchor ?? (options.kind === 'wedged' ? 11 : 16)
+    this.anchorDistance = this.baseDistance = options.anchor ?? (options.kind === 'wedged' ? 11 : 16)
     this.maxAttempts = options.attempts ?? 3
     const p = stuck.body.translation()
     this.start.set(p.x, p.y, p.z)
+    this.anchorDistance = this.inSight(this.anchorDistance)
   }
 
   get finished(): boolean { return this.phase === 'done' || this.phase === 'failed' }
@@ -153,7 +172,13 @@ export class TowRescue {
       case 'fire':
         this.brake(input)
         this.gear.reel(this.stuck)
-        if (this.gear.attachedTo(this.stuck)) { this.freedFor = 0; return this.set('tow') }
+        if (this.gear.attachedTo(this.stuck)) {
+          this.pulled = true
+          this.freedFor = 0; this.checkAt = 0; this.pullUntil = 0
+          const s0 = this.stuck.body.translation()
+          this.checkAlong = (s0.x - this.start.x) * this.pull.x + (s0.z - this.start.z) * this.pull.z
+          return this.set('tow')
+        }
         if (this.inPhase > HOOK_WAIT_S && !this.gear.flying()) return this.retry()
         return this.phase
       case 'tow': {
@@ -163,12 +188,25 @@ export class TowRescue {
         // and let driving away take up the strain.
         const s = this.stuck.body.translation()
         const span = Math.hypot(s.x - here.x, s.y - here.y, s.z - here.z)
-        if (span > MIN_SPAN) this.gear.reel(this.stuck); else this.gear.hold(this.stuck)
+        // Wheels near water: never reel. The grapple pulls the rescuer as hard as the stuck one,
+        // and a buggy dragged into the shallows helps nobody. Hold the line and drive instead.
+        const wheeled = this.rescuer.kind !== 'hovercraft' && this.rescuer.kind !== 'jet'
+        const toward = { x: (s.x - here.x) / (span || 1), z: (s.z - here.z) / (span || 1) }
+        const waterClose = wheeled && (this.wet(here.x, here.z) || this.wet(here.x + toward.x * 5, here.z + toward.z * 5))
+        if (span > MIN_SPAN && !waterClose) this.gear.reel(this.stuck); else this.gear.hold(this.stuck)
         const a = this.anchor()
         this.drive(input, dt, a.x + this.pull.x * 30, a.z + this.pull.z * 30, 6)
         if (this.options.kind === 'flipped') this.rightingTorque(dt)
         if (this.free(dt)) { this.gear.release(this.stuck); return this.set('ease') }
-        if (this.inPhase > PULL_S) return this.retry()
+        // Keep pulling while it is coming: every few seconds of real progress along the pull
+        // line buys another pull, up to a ceiling. A slow drag out of deep water is not a failure.
+        const along = (s.x - this.start.x) * this.pull.x + (s.z - this.start.z) * this.pull.z
+        if (this.inPhase - this.checkAt > PROGRESS_S) {
+          if (along - this.checkAlong > PROGRESS_M && this.inPhase < PULL_MAX_S) this.pullUntil = this.inPhase + PULL_S
+          this.checkAt = this.inPhase; this.checkAlong = along
+        }
+        if (this.options.partnerComing?.() && this.inPhase < PULL_MAX_S) this.pullUntil = Math.max(this.pullUntil, this.inPhase + 1)
+        if (this.inPhase > Math.max(PULL_S, this.pullUntil)) return this.retry()
         return this.phase
       }
       case 'ease':
@@ -198,6 +236,11 @@ export class TowRescue {
     return best ?? a
   }
 
+  private wet(x: number, z: number): boolean {
+    const liquid = this.terrain.liquidHeightAt?.(x, z)
+    return liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(x, z) < liquid + 0.3
+  }
+
   /** The straight drive from a to b crosses only level, dry ground. */
   private clear(a: { x: number; z: number }, b: { x: number; z: number }): boolean {
     const d = Math.hypot(b.x - a.x, b.z - a.z), n = Math.ceil(d / 1.5)
@@ -220,6 +263,27 @@ export class TowRescue {
     return true
   }
 
+  /**
+   * The farthest point on the pull line, no farther than `want` metres, from which the stuck
+   * vehicle's roof can be seen over the ground between: a hook fired from behind the lip of a
+   * deep trench only finds the lip. Liquid does not block sight. Once per attempt.
+   */
+  private inSight(want: number): number {
+    const s = this.stuck.body.translation()
+    const roof = s.y + HITCH_UP
+    for (let d = want; d >= SIGHT_MIN; d -= 1) {
+      const ax = s.x + this.pull.x * d, az = s.z + this.pull.z * d
+      const ay = this.terrain.heightAt(ax, az) + 1.6
+      let clear = true
+      for (let i = 1; i < 12 && clear; i++) {
+        const f = i / 12, x = ax + (s.x - ax) * f, z = az + (s.z - az) * f, y = ay + (roof - ay) * f
+        if (y < this.terrain.heightAt(x, z) + 0.15) clear = false
+      }
+      if (clear) return d
+    }
+    return want
+  }
+
   /** Give up cleanly from outside (rescue cancelled, setting turned off). */
   abort(): void {
     if (this.finished) return
@@ -233,7 +297,8 @@ export class TowRescue {
     this.q.copy(this.stuck.body.rotation())
     this.up.set(0, 1, 0).applyQuaternion(this.q)
     const liquid = this.terrain.liquidHeightAt?.(p.x, p.z)
-    const wet = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(p.x, p.z) <= liquid + 0.3
+    // Free of the water once it is shallower than 30 cm: a vehicle can drive out of that itself.
+    const wet = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(p.x, p.z) < liquid - 0.3
     const moved = Math.hypot(p.x - this.start.x, p.z - this.start.z)
     const ok = this.up.y > 0.75 && !wet && (this.options.kind === 'flipped' ? true : moved > 3.5)
     this.freedFor = ok ? this.freedFor + dt : 0
@@ -248,10 +313,13 @@ export class TowRescue {
     this.inPhase = 0
     this.route = null
     this.waypointTime = 0
-    // Swing the pull line by 35 degrees, alternating sides.
+    // A different idea each time: swing the pull line by 35 degrees, alternating sides, and
+    // stand closer in for a steeper line over a lip, then farther out on a longer one.
+    this.anchorDistance = this.baseDistance + (this.attempt % 2 ? 6 : -3)
     const angle = (this.attempt % 2 ? -1 : 1) * 0.61
     const c = Math.cos(angle), s = Math.sin(angle)
     this.pull = { x: this.pull.x * c - this.pull.z * s, z: this.pull.x * s + this.pull.z * c }
+    this.anchorDistance = this.inSight(this.anchorDistance)
     return this.set('approach')
   }
 

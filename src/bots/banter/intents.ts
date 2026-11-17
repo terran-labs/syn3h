@@ -24,7 +24,8 @@ export interface Intent {
   all: boolean
 }
 
-export interface NamedBot { id: number; name: string }
+/** `name` is the one name a bot is shown and called by; `role` its hidden job, "Dust Clerk". */
+export interface NamedBot { id: number; name: string; role?: string }
 
 /** Common misspellings and chat shorthand, to their plain word. */
 const TYPOS: Record<string, string> = {
@@ -92,7 +93,8 @@ function matchNames(norm: string, bots: readonly NamedBot[]): { ids: number[]; w
   const ids: number[] = []
   const used = new Set<string>()
   for (const bot of bots) {
-    const parts = bot.name.toLowerCase().split(/\s+/)
+    // "hey clerk" still reaches the clerk: the job words come from the hidden role.
+    const parts = `${bot.name} ${bot.role ?? ''}`.trim().toLowerCase().split(/\s+/)
     const first = parts[0]
     const jobWords = parts.slice(1).filter((w) => w.length > 3)
     let hit = false

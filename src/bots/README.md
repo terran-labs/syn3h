@@ -74,7 +74,7 @@ Spawns use deterministic index/tick offsets around the player, reject steep slop
 
 Run `tools/heavy.sh npx vitest run tests/bots --maxWorkers=2` for headless Rapier tests. With Vite on port 5186, `node src/bots/smoke.mjs` sets five bots through the public parameter API, waits for real contact, captures screenshots, then clears the population.
 
-Host bots attach shared vehicle effects with `local: false`; effects are disposed before the body. A monotonic lifetime ID and the world seed supply `generateName`, so removing and replacing an array slot does not reuse the old identity.
+Host bots attach shared vehicle effects with `local: false`; effects are disposed before the body. A monotonic lifetime ID and the world seed supply `uniqueBotName` (one given name, unique among the bots and the player; the role is hidden, from `botIdentity`), so removing and replacing an array slot does not reuse the old identity.
 
 ## Optional integration hooks
 

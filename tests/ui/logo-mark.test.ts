@@ -219,29 +219,31 @@ describe('two-stage fade in', () => {
   const box = { x: 100, y: 100, width: 426, height: 100 }
   // Draws are the glow field, the glow particles, then the wordmark: [glow, glow, mark].
   const frame = (renderer: LogoRenderer, fake: ReturnType<typeof fakeGl>, seconds: number) => { fake.calls.length = 0; renderer.draw(seconds, box); return drawOpacities(fake.calls) }
-  it('shows nothing at first, then the silhouette, then the glow more slowly', () => {
+  it('fades in from nothing, smoothly, never backwards, and is whole once the intro is over', () => {
     const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 50 })
-    expect(renderer.look.markFade).toBe(1.5); expect(renderer.look.glowFade).toBe(3)
     expect(frame(renderer, fake, 10)).toEqual([0, 0, 0])
-    const half = frame(renderer, fake, 10.75)
-    expect(half[2]).toBeCloseTo(0.5, 5); expect(half[0]).toBe(0); expect(half[1]).toBe(0)
-    expect(frame(renderer, fake, 11.5)).toEqual([0, 0, 1])
-    const glowing = frame(renderer, fake, 13)
-    expect(glowing[0]).toBeCloseTo(0.5, 5); expect(glowing[1]).toBeCloseTo(0.5, 5); expect(glowing[2]).toBe(1)
-    expect(frame(renderer, fake, 14.5)).toEqual([1, 1, 1])
+    let last = [0, 0, 0]
+    for (let t = 0.05; t <= INTRO_SECONDS; t += 0.05) {
+      const now = frame(renderer, fake, 10 + t)
+      for (let k = 0; k < 3; k++) expect(now[k]).toBeGreaterThanOrEqual(last[k] - 1e-9)
+      // No pop: no step of 50 ms moves any part by more than a tenth of its way.
+      for (let k = 0; k < 3; k++) expect(now[k] - last[k]).toBeLessThan(0.1)
+      last = now
+    }
+    expect(frame(renderer, fake, 10 + INTRO_SECONDS + 0.1)).toEqual([1, 1, 1])
     expect(renderer.introTime).toBeGreaterThanOrEqual(INTRO_SECONDS)
     // The gap holds the glow back after the silhouette has arrived.
     renderer.setLook({ glowGap: 1 }); renderer.replayIntro()
     frame(renderer, fake, 20)
-    expect(frame(renderer, fake, 22.4)).toEqual([0, 0, 1])
-    expect(frame(renderer, fake, 22.6)[0]).toBeGreaterThan(0)
+    expect(frame(renderer, fake, 20 + renderer.look.markFade + 0.9)).toEqual([0, 0, 1])
+    expect(frame(renderer, fake, 20 + renderer.look.markFade + 1.3)[0]).toBeGreaterThan(0)
   })
   it('replays when shown again after being hidden, unless skipped', () => {
     const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 50 })
     frame(renderer, fake, 0); expect(frame(renderer, fake, 10)).toEqual([1, 1, 1])
     renderer.setLook({ opacity: 0 }); expect(frame(renderer, fake, 11)).toEqual([0, 0, 0])
     renderer.setLook({ opacity: 1 }); expect(frame(renderer, fake, 12)).toEqual([0, 0, 0])
-    expect(frame(renderer, fake, 12.75)[2]).toBeCloseTo(0.5, 5)
+    expect(frame(renderer, fake, 12 + renderer.look.markFade / 2)[2]).toBeCloseTo(0.5, 5)
     // Skipped (reduced motion, a held lobby): the finished logo at once, also after hiding.
     renderer.skipIntro(); expect(frame(renderer, fake, 13)).toEqual([1, 1, 1])
     renderer.setLook({ opacity: 0 }); frame(renderer, fake, 14)

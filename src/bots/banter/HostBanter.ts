@@ -33,9 +33,13 @@ export interface BanterNet {
   readonly chat: ChatChannel
   readonly players: ReadonlyMap<number, { id: number; kind: string; bot?: boolean }>
   displayName(id: number): string
+  /** A bot's hidden role, for its voice. */
+  botRole?(id: number): string
   vehicleOf(id: number): Vehicle | undefined
   readonly botGearHooks: BotGearHooks
   botCord(id: number): { flying: boolean; to: number | null } | null
+  /** Every cord the host draws, players' included: a player hooking a stuck bot helps. */
+  readonly bungee?: { cordOf(id: number): { flying: boolean; to: number | null } | null }
 }
 
 export interface BanterBots {
@@ -97,8 +101,9 @@ export class HostBanter implements System {
     this.rescue ??= new HostRescue(this.terrain, {
       get isHost() { return net.isHost }, get connected() { return net.connected }, get mode() { return net.mode },
       vehicleOf: (id) => net.vehicleOf(id), get botGearHooks() { return net.botGearHooks }, botCord: (id) => net.botCord(id),
-      displayName: (id) => net.displayName(id), people: () => [...net.players.values()].filter((p) => !p.bot).map((p) => p.id),
-    }, this.bots, this.bots.navigator ?? null, (e) => this.director?.rescue(e), (bot) => this.withPlayer(bot))
+      displayName: (id) => net.displayName(id), botRole: (id) => net.botRole?.(id) ?? '', people: () => [...net.players.values()].filter((p) => !p.bot).map((p) => p.id),
+      playerCord: (id) => net.bungee?.cordOf(id) ?? null,
+    }, this.bots, this.bots.navigator ?? null, (e) => this.director?.rescue(e), (bot) => this.withPlayer(bot), (bot) => this.director?.playerOf(bot) ?? null)
     this.rescue.update(elapsed)
     this.sample(elapsed)
     if (this.thinkTime >= THINK) { this.thinkTime = 0; this.director.tick() }
@@ -133,7 +138,7 @@ export class HostBanter implements System {
       const sight = brain.mind?.sightKind ?? null
       const dest = brain.mind?.activity.destination
       views.push({
-        id, name: this.net.displayName(id), x: p.x, y: p.y, z: p.z, speed: Math.hypot(vel.x, vel.z),
+        id, name: this.net.displayName(id), role: this.net.botRole?.(id), x: p.x, y: p.y, z: p.z, speed: Math.hypot(vel.x, vel.z),
         activity: brain.mind?.activity.kind ?? brain.mood, caption: brain.mind?.caption ?? 'driving about',
         stuckFor: trouble.stuck, flippedFor: Math.max(trouble.flipped, track.flipped), bogFor: trouble.bog, airFor: track.air, resets: brain.rescues,
         nearLava: lavaSea && p.y - lava < 2.5 && p.y - lava > -1,

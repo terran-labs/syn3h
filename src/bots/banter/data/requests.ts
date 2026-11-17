@@ -693,35 +693,35 @@ export const REQUESTS: Pools = {
       "Hello {player}, I am {me}. Pleased to be driven near you.",
     ],
     inspector: [
-      "{me}, Bolt Inspector. I count bolts. You have lots. Good. Keep them.",
+      "{me}, {role}. I count bolts. You have lots. Good. Keep them.",
       "I am {me}. I inspect. Everything is a hazard until proven otherwise, including me.",
     ],
     clerk: [
-      "{me}, Dust Clerk. I file the dust. Somebody has to, and it has to be in order.",
-      "I am {me}, Dust Clerk, and I will need you to confirm that you are {player}. On paper.",
+      "{me}, {role}. I file the dust. Somebody has to, and it has to be in order.",
+      "I am {me}, {role}, and I will need you to confirm that you are {player}. On paper.",
     ],
     pilot: [
-      "{me}, Spare Pilot. Ace of the Academy. The spare ace. The ace they keep in reserve.",
+      "{me}, {role}. Ace of the Academy. The spare ace. The ace they keep in reserve.",
       "I am {me}. Pilot. Spare, technically. Very available. Too available.",
     ],
     probe: [
-      "I am {me}, Snack Probe! I find out what places taste like. Spiritually. Hello, {player}!",
+      "I am {me}, {role}! I find out what places taste like. Spiritually. Hello, {player}!",
       "{me}! I probe snacks. Well, I look for them. I have found several rocks I liked anyway.",
     ],
     marshal: [
-      "{me}. Cone Marshal.",
+      "{me}. {role}.",
       "{me}. I direct traffic. There is no traffic. I direct it anyway.",
     ],
     moon: [
-      "{me}, Junior Moon. In training. Unlike some moons, I have nothing to hide.",
+      "{me}, {role}. In training. Unlike some moons, I have nothing to hide.",
       "I am {me}. A moon. A junior one. Not like that one up there. Do not look at it.",
     ],
     auditor: [
-      "{me}, Rust Auditor. I audit rust, and rocks, and rust on rocks, which is my favourite.",
+      "{me}, {role}. I audit rust, and rocks, and rust on rocks, which is my favourite.",
       "I am {me}. I grade minerals. You are not a mineral, {player}, but you would grade well.",
     ],
     intern: [
-      "I am {me}, Hull Intern! It is my first week! It has been my first week for a while!",
+      "I am {me}, {role}! It is my first week! It has been my first week for a while!",
       "Hi {player}! {me}! Intern! Any feedback on my introduction? Was it too much? It was too much.",
     ],
   },

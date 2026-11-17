@@ -13,7 +13,8 @@
  *   - silent while people are chatting, apart from answers to them
  *   - no template repeats in a session until its pool is used up
  */
-import { botChatter, botChatterLevel, botRescue } from '../../../shared/chat'
+import { botChatter, botChatterAmount, botChatterLevel, botRescue, botRescueNewsRange } from '../../../shared/chat'
+import { ChatterBudget, exempt } from './budget'
 import { hashString, seededRandom } from '../random'
 import { POOLS } from './data'
 import type { Pool } from './data/types'
@@ -22,10 +23,17 @@ import { type Intent, type IntentKind, type NamedBot, parseIntent } from './inte
 import { VOICES, type VoiceId, shortName, voiceFor } from './voices'
 import { FRAGMENTS } from './data/fragments'
 import type { RescueEvent } from '../rescue/HostRescue'
+import { RESCUE_COLOUR_S, RESCUE_ESSENTIAL } from './rescueLines'
+
+/** The name and role together, "Temolin Dust Clerk", as the voice table reads it. */
+export const identityOf = (b: { name: string; role?: string }) => b.role ? `${b.name} ${b.role}` : b.name
 
 export interface BanterBot {
   id: number
+  /** The one name it is shown and called by, "Temolin". */
   name: string
+  /** Its hidden job, "Dust Clerk": decides its voice; never part of its name. */
+  role?: string
   x: number; y: number; z: number
   speed: number
   /** The mind's activity ('road', 'visit', 'follow'...) or 'chase' while duck-following. */
@@ -96,6 +104,8 @@ export interface BanterHooks {
 }
 
 /** Timings per chatter level: quiet, normal, chatty. Seconds. */
+/** Seconds a call for help waits for a rescuer's start line to overtake it. */
+const CALL_WAIT_S = 5
 const IDLE_GAP: [number, number][] = [[80, 150], [28, 50], [10, 20]]
 const MIN_GAP = [16, 9, 3]
 const EVENT_CHANCE = [0.3, 0.55, 1]
@@ -112,6 +122,7 @@ interface Memory { stuck: number; flips: number; resets: number; edges: number; 
 interface BotState {
   id: number
   name: string
+  role?: string
   short: string
   voice: VoiceId
   mem: Memory
@@ -123,6 +134,8 @@ interface BotState {
   driftBack: { player: number; at: number } | null
   lastSpoke: number
   near: Set<number>
+  /** Until when it is off on a mishap's bold line: it turns invitations down meanwhile. */
+  bold?: number
 }
 
 interface PlayerState {
@@ -136,7 +149,7 @@ interface PlayerState {
 }
 
 /** A line waiting its turn. */
-interface Queued { at: number; bot: number; text: string; then?: () => void }
+interface Queued { at: number; bot: number; text: string; key: string; then?: () => void }
 
 export interface DirectorOptions {
   seed?: string
@@ -164,6 +177,8 @@ export class BanterDirector {
   private readonly session = { critters: [] as { critter: string; by: string }[], resets: 0 }
   /** Count of lines said, for the cost report and tests. */
   said = 0
+  /** Lines said, by line pool, for measuring how much the bots talk (tools/banter-rate.mjs). */
+  readonly counts: Record<string, number> = {}
 
   constructor(private readonly world: BanterWorld, private readonly hooks: BanterHooks, private readonly options: DirectorOptions = {}) {
     this.r = seededRandom(hashString(`banter:${options.seed ?? 'session'}`))
@@ -203,7 +218,7 @@ export class BanterDirector {
   hear(from: number, text: string): void {
     const now = this.world.now()
     this.humanAt = now
-    const named: NamedBot[] = [...this.bots.values()].map((b) => ({ id: b.id, name: b.name }))
+    const named: NamedBot[] = [...this.bots.values()].map((b) => ({ id: b.id, name: b.name, role: b.role }))
     if (!this.players.has(from)) this.syncRoster(now)
     const intent = parseIntent(text, named)
     const player = this.players.get(from)
@@ -235,7 +250,9 @@ export class BanterDirector {
     const [lo, hi] = IDLE_GAP[this.level]
     // Fewer bots, longer pauses; many bots, not much shorter.
     const crowd = Math.min(1.6, Math.max(0.8, 4 / Math.max(1, this.bots.size)))
-    this.nextIdleAt = now + (lo + this.r() * (hi - lo)) * crowd * scale
+    // A smaller chatter amount stretches the quiet between remarks (budget.ts caps busy rooms).
+    const amount = Math.max(0.01, botChatterAmount.value)
+    this.nextIdleAt = now + (lo + this.r() * (hi - lo)) * crowd * scale / amount
   }
 
   /** Expand a line from `key` for this bot's voice. */
@@ -245,7 +262,7 @@ export class BanterDirector {
     const own = pool[bot.voice] ?? []
     const any = pool.any ?? []
     if (!own.length && !any.length) return null
-    const full: Context = { me: bot.short, planet: this.world.planet(), sea: this.world.sea(), ...ctx }
+    const full: Context = { me: bot.short, role: bot.name.split(' ').slice(1).join(' ') || 'bot', planet: this.world.planet(), sea: this.world.sea(), ...ctx }
     // The voice's own lines weigh double, so voices stay distinct but never run dry. Each
     // list keeps its own record of what was said: the shared lines are used up once for
     // everyone, not once per voice.
@@ -260,7 +277,10 @@ export class BanterDirector {
   }
 
   /** Queue a line from `key` at time `at` (or after the queue). Returns the time it will be said. */
-  private speak(bot: BotState, key: string, ctx: Context, at?: number, then?: () => void): number {
+  private speak(bot: BotState, key: string, ctx: Context, at?: number, then?: () => void, news = false): number {
+    // The room-wide allowance for unprompted talk (budget.ts): a dropped line still lets its
+    // action happen. `news`: a rescue line a player needs, decided by rescueLine().
+    if (!news && !this.allowed(key)) { if (then) this.timers.push({ at: at ?? this.world.now(), run: then }); return at ?? this.world.now() }
     // Chatter off, or asked to be quiet: the bots still do what they agreed to, silently.
     if (!this.chatterOn || (this.world.now() < this.quietUntil && key !== 'req.talk')) {
       if (then) this.timers.push({ at: at ?? this.world.now(), run: then })
@@ -270,9 +290,15 @@ export class BanterDirector {
     const last = this.queue.length ? this.queue[this.queue.length - 1].at : this.world.now()
     const when = at ?? last + this.readingPause(this.queue.length ? this.queue[this.queue.length - 1].text : '')
     if (!text) { then?.(); return when }
-    this.queue.push({ at: Math.max(when, last + (this.queue.length ? 1.2 : 0)), bot: bot.id, text, then })
+    this.queue.push({ at: Math.max(when, last + (this.queue.length ? 1.2 : 0)), bot: bot.id, text, key, then })
     this.queue.sort((a, b) => a.at - b.at)
     return when
+  }
+
+  private readonly budget = new ChatterBudget()
+  private allowed(key: string): boolean {
+    if (exempt(key) || !this.chatterOn) return true
+    return this.budget.take(this.world.now(), this.queue.length === 0, botChatterAmount.value, this.level)
   }
 
   /** Seconds to read a line before the next one: about a third of a second per word, plus a beat. */
@@ -290,6 +316,7 @@ export class BanterDirector {
         this.hooks.say(q.bot, q.text)
         this.options.onLine?.(q.bot, bot.name, q.text)
         this.said++
+        this.counts[q.key] = (this.counts[q.key] ?? 0) + 1
         bot.lastSpoke = now
         this.lastLineAt = now
       }
@@ -307,9 +334,9 @@ export class BanterDirector {
     for (const b of this.world.bots()) {
       seen.add(b.id)
       let s = this.bots.get(b.id)
-      if (!s || s.name !== b.name) {
+      if (!s || s.name !== b.name || s.role !== b.role) {
         s = {
-          id: b.id, name: b.name, short: shortName(b.name), voice: voiceFor(b.name),
+          id: b.id, name: b.name, role: b.role, short: shortName(b.name), voice: voiceFor(identityOf(b)),
           mem: { stuck: 0, flips: 0, resets: 0, edges: 0, critters: [] },
           was: { stuck: false, flipped: false, bog: false, air: false, lava: false, sight: null, resets: b.resets },
           request: null, driftBack: null, lastSpoke: -Infinity, near: new Set(),
@@ -518,10 +545,12 @@ export class BanterDirector {
   /** "Tag?" "I'm in the middle of something." "You're in the middle of a puddle." */
   private proposal(a: BotState, b: BotState, t: number): void {
     const kind = pickOne(['tag', 'tag', 'race', 'explore', 'summit', 'convoy'] as const, this.r)
-    const busy = this.view(b)?.caption ?? 'something'
+    const bold = (b.bold ?? 0) > this.world.now()
+    const busy = bold ? 'taking a shortcut' : this.view(b)?.caption ?? 'something'
     this.speak(a, `propose.${kind}`, { you: b.short }, t)
     const v = VOICES[b.voice]
-    const roll = this.r()
+    // A bot heading off on a mishap is busy, whatever its temper.
+    const roll = bold ? 0 : this.r()
     const act = () => {
       // Sometimes they actually do it: the one who agreed tails the one who asked.
       // A player's request comes first: a bot already with someone does not wander off.
@@ -759,70 +788,201 @@ export class BanterDirector {
   private readonly rescued = new Map<number, number>()
   private conflictAt = -Infinity
   private conflicted: BotState | null = null
+  private conflictedWent = false
+  /** Bots that really towed someone out this session: only they may say they did. */
+  private readonly towed = new Set<number>()
+  /** Stuck bots whose rescuers called it off after trying: they thank, not grumble. */
+  private readonly triedFor = new Set<number>()
 
   /** A rescue happened (src/bots/rescue): say so, in character. */
+  /**
+   * May this rescue line be said? Essential ones always; colour at most once per rescue every
+   * RESCUE_COLOUR_S seconds, and a bot weighs going out loud once per rescue.
+   */
+  private rescueLine(subject: number, speaker: number, key: string): 'news' | 'colour' | null {
+    // Someone is coming, and a rescuer got stuck too, are news once; repeats are colour.
+    // News is news only near a person: within botRescueNewsRange of the stuck one or the bot
+    // speaking. A bot asking a person for help is always news.
+    const near = key === 'rescue.player.ask' || this.personNear([subject, speaker])
+    if (key === 'rescue.start' || key === 'rescue.handoff') { const k = `${key}:${subject}`; if (!this.rescueStarted.has(k)) { this.rescueStarted.add(k); if (key === 'rescue.start') this.startedAt.set(subject, this.world.now()); if (near) return 'news' } }
+    else if (RESCUE_ESSENTIAL.has(key) && near) return 'news'
+    const now = this.world.now()
+    if (key.startsWith('conflict.')) {
+      const k = `${subject}:${speaker}`
+      if (this.rescueVoiced.has(k)) return null
+      this.rescueVoiced.add(k)
+    }
+    if (now - (this.rescueColourAt.get(subject) ?? -Infinity) < RESCUE_COLOUR_S) return null
+    this.rescueColourAt.set(subject, now)
+    return 'colour'
+  }
+  /** A person is within botRescueNewsRange of any of these (bots or people; a person counts as near itself). */
+  private personNear(ids: number[]): boolean {
+    const people = this.world.players()
+    if (ids.some((id) => people.some((p) => p.id === id))) return true
+    const range = botRescueNewsRange.value
+    const bots = this.world.bots()
+    for (const id of ids) {
+      const v = bots.find((b) => b.id === id)
+      if (v && people.some((p) => Math.hypot(p.x - v.x, p.z - v.z) <= range)) return true
+    }
+    return false
+  }
+  /** When each rescue's first rescuer was sent: a call for help it overtakes is dropped. */
+  private readonly dispatchedAt = new Map<number, number>()
+  /** When each rescue's first start line was said. */
+  private readonly startedAt = new Map<number, number>()
+  private readonly rescueColourAt = new Map<number, number>()
+  private readonly rescueStarted = new Set<string>()
+  private endRescueLines(subject: number): void {
+    this.rescueColourAt.delete(subject); this.rescueStarted.delete(`rescue.start:${subject}`); this.rescueStarted.delete(`rescue.handoff:${subject}`)
+    for (const k of this.rescueVoiced) if (k.startsWith(`${subject}:`)) this.rescueVoiced.delete(k)
+  }
+  private readonly rescueVoiced = new Set<string>()
+
+  /** Forget a bot's lines that are queued but not yet said. */
+  private dropQueued(bot: number): void {
+    for (let i = this.queue.length - 1; i >= 0; i--) if (this.queue[i].bot === bot && !this.queue[i].then) this.queue.splice(i, 1)
+  }
+
   rescue(e: RescueEvent): void {
+    // Rescue colour is rationed per rescue (rescueLines.ts); the essential lines always go.
+    const subject = 'stuck' in e ? e.stuck : e.bot
+    // News goes past the chatter budget; colour (and repeats of news) draws from it.
+    const say = (b: BotState, key: string, ctx: Context, at?: number) => { const kind = this.rescueLine(subject, b.id, key); if (kind) this.speak(b, key, ctx, at, undefined, kind === 'news') }
     const now = this.world.now()
     const bot = (id: number) => this.bots.get(id)
     const others = (not: BotState) => [...this.bots.values()].filter((b) => b !== not)
     const t = now + 0.6
     switch (e.kind) {
+      case 'dispatch':
+        if (!this.dispatchedAt.has(e.stuck) || (this.dispatchedAt.get(e.stuck) ?? 0) < now - 60) this.dispatchedAt.set(e.stuck, now)
+        return
       case 'stuck': {
         const s = bot(e.stuck)
         if (!s) return
-        this.speak(s, 'stuck.call', {}, t)
+        s.bold = 0
+        // The call for help waits five seconds: if a rescuer is sent in that time, its start
+        // line carries the news and the call is not said.
+        const calledAt = now
+        this.timers.push({ at: now + CALL_WAIT_S, run: () => { if (this.bots.has(s.id) && !((this.dispatchedAt.get(e.stuck) ?? -Infinity) >= calledAt)) say(s, 'stuck.call', {}) } })
         const o = others(s)
-        if (o.length && (e.clumsy || e.count >= 2) && this.r() < 0.75) this.speak(pickOne(o, this.r), 'stuck.reputation', { subj: s.short, you: s.short, count: ordinal(e.count) })
+        // The clumsy one's first time today has a reputation but no count yet.
+        if (o.length && (e.clumsy || e.count >= 2) && this.r() < 0.75) say(pickOne(o, this.r), e.count >= 2 ? 'stuck.reputation' : 'stuck.clumsy', { subj: s.short, you: s.short, count: ordinal(e.count) })
         return
       }
-      case 'pointed': { const s = bot(e.stuck); if (s) this.speak(s, 'stuck.pointed', {}); return }
+      case 'pointed': { const s = bot(e.stuck); if (s) say(s, 'stuck.pointed', {}); return }
       case 'conflict': {
         const b = bot(e.bot), s = bot(e.stuck)
         if (!b || !s) return
         const p = e.player !== null ? this.players.get(e.player) : undefined
         const ctx = { subj: s.short, player: p?.name ?? 'everyone', you: p?.name ?? s.short }
         const v = b.voice
-        if (e.going) this.speak(b, v === 'clerk' ? 'conflict.form' : this.r() < 0.6 ? 'conflict.go' : 'conflict.guilt', ctx)
+        if (e.going) say(b, v === 'clerk' ? 'conflict.form' : this.r() < 0.6 ? 'conflict.go' : 'conflict.guilt', ctx)
         // A bot that stays never reads from conflict.go or conflict.guilt.
-        else if (this.conflicted && this.conflicted !== b && now - this.conflictAt < 20) this.speak(b, 'conflict.bargain', { ...ctx, you: this.conflicted.short })
-        else if (v === 'clerk') this.speak(b, 'conflict.form', ctx)
-        else if (p && this.r() < 0.4) this.speak(b, 'conflict.ask.player', ctx)
+        // Bargaining is with a bot still deciding, never with one already on its way.
+        else if (this.conflicted && this.conflicted !== b && !this.conflictedWent && now - this.conflictAt < 20) say(b, this.towed.has(b.id) ? 'conflict.bargain.earned' : 'conflict.bargain', { ...ctx, you: this.conflicted.short })
+        else if (v === 'clerk') say(b, 'conflict.form', ctx)
+        else if (p && this.r() < 0.4) say(b, 'conflict.ask.player', ctx)
         // Staying: only lines that stay. (The guilt lines often end in going, so they are for goers.)
-        else this.speak(b, 'conflict.stay', ctx)
-        this.conflicted = b; this.conflictAt = now
+        else say(b, 'conflict.stay', ctx)
+        this.conflicted = b; this.conflictedWent = e.going; this.conflictAt = now
         return
       }
-      case 'start': { const b = bot(e.bot), s = bot(e.stuck); if (b) this.speak(b, 'rescue.start', { subj: s?.short ?? 'you', you: s?.short ?? 'you' }); return }
-      case 'retry': { const b = bot(e.bot), s = bot(e.stuck); if (b && this.r() < 0.7) this.speak(b, 'rescue.retry', { subj: s?.short ?? 'you', you: s?.short ?? 'you' }); return }
-      case 'freed': {
+      case 'start': {
+        const b = bot(e.bot), s = bot(e.stuck), person = this.players.get(e.stuck)
+        if (!b) return
+        // A person gets told what to do: drive with the cord.
+        if (person) say(b, 'rescue.player.drive', { player: person.name, you: person.name })
+        else say(b, 'rescue.start', { subj: s?.short ?? 'you', you: s?.short ?? 'you' })
+        return
+      }
+      case 'join': {
+        const b = bot(e.bot), s = bot(e.stuck), other = e.others.map(bot).find((o): o is BotState => !!o)
+        if (b) say(b, 'rescue.join', { subj: s?.short ?? 'them', you: other?.short ?? s?.short ?? 'everyone' })
+        return
+      }
+      case 'swap': { const b = bot(e.bot), s = bot(e.stuck); if (b) say(b, 'rescue.swap', { subj: s?.short ?? 'you', you: s?.short ?? 'you' }); return }
+      case 'waiting': {
         const s = bot(e.stuck)
+        if (s) say(s, e.minutes < 1.5 ? 'stuck.waiting.1' : e.minutes < 3 ? 'stuck.waiting.2' : 'stuck.waiting.3', {})
+        return
+      }
+      case 'calloff': {
+        const b = bot(e.bot), s = bot(e.stuck)
+        if (b) say(b, 'rescue.calloff', { subj: s?.short ?? 'you', you: s?.short ?? 'you' })
+        if (s) this.triedFor.add(s.id)
+        return
+      }
+      case 'player.ask': {
+        const s = bot(e.stuck), p = this.players.get(e.player)
+        if (s && p) say(s, 'rescue.player.ask', { player: p.name, you: p.name }, t)
+        return
+      }
+      case 'player.hooked': {
+        const s = bot(e.stuck), p = this.players.get(e.player)
+        if (s && p) say(s, 'rescue.player.hooked', { player: p.name, you: p.name }, t)
+        return
+      }
+      case 'retry': { const b = bot(e.bot), s = bot(e.stuck); if (b && this.r() < 0.7) say(b, 'rescue.retry', { subj: s?.short ?? 'you', you: s?.short ?? 'you' }); return }
+      case 'freed': {
+        this.endRescueLines(e.stuck)
+        const s = bot(e.stuck)
+        // Remarks about still being stuck that have not been said yet are out of date now.
+        if (s) this.dropQueued(s.id)
         const helper = e.by.map(bot).find((b): b is BotState => !!b)
         const person = e.players.map((id) => this.players.get(id)).find((p) => !!p)
+        // Out on its own before anyone pulled: it says so, nobody takes the credit, and it is
+        // not counted as a rescue.
+        if (!helper && !person) { if (s) say(s, 'rescue.selffree', {}, t); return }
+        for (const id of e.by) this.towed.add(id)
         const n = (this.rescued.get(e.stuck) ?? 0) + 1
         this.rescued.set(e.stuck, n)
         if (s) {
           const thanksTo = person?.name ?? helper?.short ?? 'everyone'
           // The braggart and the moon are the ungrateful ones, mostly.
           const ingrate = (s.voice === 'pilot' || s.voice === 'moon') ? this.r() < 0.7 : this.r() < 0.2
-          this.speak(s, ingrate ? 'rescue.success.ingrate' : 'rescue.success.thanks', { you: thanksTo, player: thanksTo }, t)
+          say(s, ingrate ? 'rescue.success.ingrate' : 'rescue.success.thanks', { you: thanksTo, player: thanksTo }, t)
         }
-        if (helper && this.r() < 0.7) this.speak(helper, 'rescue.helper.modest', { subj: s?.short ?? 'them', you: s?.short ?? 'them' })
-        if (person && helper) this.speak(helper, 'rescue.player.thanks', { player: person.name, you: person.name })
+        // One outcome line per rescue: the freed bot's own, to whoever freed it (a person
+        // first). No modest reply from the helper, no second thanks.
+        if (!s && person && helper) say(helper, 'rescue.player.thanks', { player: person.name, you: person.name })
         if (s && n >= 2) this.timers.push({ at: now + 90 + this.r() * 120, run: () => {
           const o = [...this.bots.values()].filter((b) => b !== s)
-          if (o.length && this.bots.has(s.id)) this.speak(pickOne(o, this.r), 'rescue.callback', { subj: s.short, you: s.short, count: ordinal(n) })
+          if (o.length && this.bots.has(s.id)) say(pickOne(o, this.r), 'rescue.callback', { subj: s.short, you: s.short, count: ordinal(n) })
         } })
         return
       }
-      case 'giveup': { const s = bot(e.stuck); if (s) this.speak(s, 'rescue.giveup', {}); return }
+      case 'giveup': {
+        this.endRescueLines(e.stuck)
+        const s = bot(e.stuck)
+        if (s) this.dropQueued(s.id)
+        if (s) say(s, this.triedFor.delete(s.id) ? 'rescue.giveup.tried' : 'rescue.giveup', {})
+        return
+      }
       case 'player.came': {
         const p = this.players.get(e.player), s = bot(e.stuck)
         if (!p || !s) return
         const speaker = this.r() < 0.5 ? s : pickOne(others(s).length ? others(s) : [s], this.r)
-        this.speak(speaker, 'rescue.player.came', { player: p.name, you: p.name, subj: s.short })
+        say(speaker, 'rescue.player.came', { player: p.name, you: p.name, subj: s.short })
         return
       }
-      case 'mishap': return
+      case 'mishap': {
+        // The setup for the stuck call to come: the bot says something bold as it commits,
+        // and sometimes a friend sees it coming.
+        const s = bot(e.bot)
+        if (!s) return
+        s.bold = now + 40
+        say(s, 'mishap.bold', {}, t)
+        const o = others(s)
+        if (o.length && this.r() < 0.45) say(pickOne(o, this.r), 'mishap.watch', { subj: s.short, you: s.short })
+        return
+      }
+      case 'handoff': {
+        const b = bot(e.bot), s = bot(e.stuck), person = this.players.get(e.stuck)
+        if (b) say(b, 'rescue.handoff', { subj: s?.short ?? person?.name ?? 'you', you: s?.short ?? person?.name ?? 'you' })
+        return
+      }
     }
   }
 

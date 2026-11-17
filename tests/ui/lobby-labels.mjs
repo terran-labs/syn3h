@@ -1,9 +1,9 @@
-// The lobby's planet labels never pile up, and nothing joins them to their planets but nearness:
-// in the settled lobby, at phone landscape (844x390,
-// 667x375), phone portrait (390x844) and desktop (1440x900), no two visible labels intersect, no
-// label covers a planet other than its own, and none covers the hint, the buttons or the
-// settings gear. Planets that do not fit are left unnamed (they fade and show while focused),
-// so how many are named is reported, not asserted.
+// The lobby's planet captions sit under their planets and nowhere else: at phone landscape
+// (844x390, 667x375), phone portrait (390x844) and desktop (1440x900, 1280x800), settled and
+// while the view is dragged, every caption's centre is level with its planet's centre and its
+// top sits CAPTION_GAP below the planet's limb, within a pixel. No plate or leader exists.
+// Pointing at a planet brings its caption to full opacity, never changing its place or size. Captions
+// may overlap each other; that is the design (the owner, 16 November 2026).
 //   SYN3H_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/lobby-labels.mjs
 // Screenshots go to tests/ui/artifacts/lobby-labels/.
 import { chromium } from 'playwright-core'
@@ -12,9 +12,11 @@ import { mkdir } from 'node:fs/promises'
 
 const url = process.env.SYN3H_URL
 assert.ok(url, 'SYN3H_URL is required')
+/** Must match CAPTION_GAP in src/ui/Shell.ts. */
+const GAP = 5
 const out = 'tests/ui/artifacts/lobby-labels'
 await mkdir(out, { recursive: true })
-const views = { landscape: [844, 390, true], 'landscape-small': [667, 375, true], portrait: [390, 844, true], desktop: [1440, 900, false], 'desktop-1280': [1280, 800, false], 'desktop-1024': [1024, 768, false] }
+const views = { landscape: [844, 390, true], 'landscape-small': [667, 375, true], portrait: [390, 844, true], desktop: [1440, 900, false], 'desktop-1280': [1280, 800, false] }
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 try {
   for (const [name, [width, height, phone]] of Object.entries(views)) {
@@ -24,70 +26,103 @@ try {
     await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
     // Hold the graphics level, as galaxy.mjs does: a slow headless browser would retire the galaxy.
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
-    // The lobby's opening (src/ui/galaxy/opening.ts) runs about nine seconds; a key skips to the
-    // settled lobby, as for a player, and these checks are of that lobby.
-    await page.keyboard.press('Shift')
-    await page.waitForTimeout(3500)
-    const named = []
-    for (let sample = 0; sample < 3; sample++) {
-      const s = await page.evaluate(() => {
-        const box = el => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }
-        const planets = window.syn3h.shell.galaxy.screen.filter(p => p.visible && p.x >= 0 && p.x <= innerWidth && p.y >= 0 && p.y <= innerHeight)
-        // A label fading out from a side it is leaving (.is-swapping) is not counted: it is going.
-        const labels = [...document.querySelectorAll('.galaxy-label')].filter(c => !c.hidden && !c.classList.contains('is-swapping') && Number(getComputedStyle(c).opacity) > .05).map(c => ({ id: c.dataset.world, biome: getComputedStyle(c.querySelector('.galaxy-biome')).display !== 'none', ...box(c) }))
-        if (document.querySelector('.galaxy-labels .s3-leader')) throw new Error('a planet label has a leader line')
-        const fixed = [['hint', document.querySelector('.galaxy-hint')], ['settings gear', document.querySelector('.lobby-gear-dock')], ...[...document.querySelectorAll('.galaxy-links button')].map(b => [b.textContent, b])]
-        return { planets, labels, fixed: fixed.filter(([, el]) => el && el.getBoundingClientRect().width).map(([what, el]) => ({ what, ...box(el) })) }
+    // Past the opening: the captions fade in once their worlds have arrived.
+    await page.waitForTimeout(9000)
+    // Each caption against its planet, read in one frame: horizontal offset of the centres, and
+    // the gap from the limb to the caption's top, minus GAP.
+    const measure = () => page.evaluate(() => {
+      const screen = window.syn3h.shell.galaxy.screen
+      return [...document.querySelectorAll('.galaxy-label')].filter(c => !c.hidden).map(c => {
+        const r = c.getBoundingClientRect(), p = screen.find(s => s.id === c.dataset.world)
+        return { id: c.dataset.world, dx: r.left + r.width / 2 - p.x, dy: r.top - (p.y + p.radius), width: r.width, height: r.height, opacity: Number(getComputedStyle(c).opacity) }
       })
-      const hit = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
-      const onDisc = (r, p) => Math.hypot(Math.min(r.right, Math.max(r.left, p.x)) - p.x, Math.min(r.bottom, Math.max(r.top, p.y)) - p.y) < p.radius
-      for (const label of s.labels) {
-        for (const other of s.labels) if (other !== label) assert.ok(!hit(label, other), `${name}: the ${label.id} and ${other.id} labels overlap`)
-        for (const p of s.planets) if (p.id !== label.id) assert.ok(!onDisc(label, p), `${name}: the ${label.id} label covers the ${p.id} planet`)
-        for (const f of s.fixed) assert.ok(!hit(label, f), `${name}: the ${label.id} label covers the ${f.what}`)
-        // Beside its own world, at touching distance: with nothing drawn between, nearness alone
-        // says whose label it is.
-        const own = s.planets.find(p => p.id === label.id)
-        if (own) assert.ok(Math.hypot(Math.min(label.right, Math.max(label.left, own.x)) - own.x, Math.min(label.bottom, Math.max(label.top, own.y)) - own.y) - own.radius <= 16, `${name}: the ${label.id} label sits away from its planet`)
-      }
-      named.push(`${s.labels.length}/${s.planets.length} (${s.labels.filter(l => l.biome).length} with biome)`)
-      if (sample === 0) await page.screenshot({ path: `${out}/check-${name}.png` })
-      await page.waitForTimeout(1000)
-    }
-    // Pointing at a planet shows its label even where the layout faded it: hover with a mouse,
-    // or a finger held on it. Focus does the same from the keyboard.
-    const faded = await page.evaluate(() => {
-      const chip = [...document.querySelectorAll('.galaxy-label.is-crowded')].find(c => !c.hidden)
-      const p = chip && window.syn3h.shell.galaxy.screen.find(s => s.id === chip.dataset.world)
-      return p ? { id: p.id, x: p.x, y: p.y } : null
     })
-    const target = faded ?? await page.evaluate(() => { const p = window.syn3h.shell.galaxy.screen.find(s => s.visible && s.x > 0 && s.x < innerWidth && s.y > 0 && s.y < innerHeight); return { id: p.id, x: p.x, y: p.y } })
+    const check = (captions, when) => {
+      assert.ok(captions.length > 0, `${name}: captions are shown ${when}`)
+      for (const c of captions) {
+        assert.ok(Math.abs(c.dx) <= 1, `${name}: the ${c.id} caption is centred under its planet ${when} (${c.dx.toFixed(2)} px off)`)
+        assert.ok(Math.abs(c.dy - GAP) <= 1, `${name}: the ${c.id} caption sits ${GAP} px below its planet ${when} (${c.dy.toFixed(2)} px)`)
+      }
+    }
+    assert.equal(await page.evaluate(() => document.querySelectorAll('.galaxy-labels .s3-plate, .galaxy-labels .s3-leader').length), 0, `${name}: no plates or leaders`)
+    for (let sample = 0; sample < 3; sample++) { check(await measure(), 'settled'); await page.waitForTimeout(400) }
+    await page.screenshot({ path: `${out}/check-${name}.png` })
+    // While the view is dragged, several frames: the captions stay with their planets.
+    const from = { x: width * 0.5, y: height * 0.22 }
     const cdp = phone ? await context.newCDPSession(page) : null
+    if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [from] })
+    else { await page.mouse.move(from.x, from.y); await page.mouse.down() }
+    for (let step = 1; step <= 6; step++) {
+      const at = { x: from.x + step * 18, y: from.y + step * 4 }
+      if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [at] })
+      else await page.mouse.move(at.x, at.y)
+      await page.waitForTimeout(60)
+      check(await measure(), `while dragged (step ${step})`)
+    }
+    if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    else await page.mouse.up()
+    await page.waitForTimeout(1500)
+    // Pointing at a planet raises its caption to full strength: same place, same size. The
+    // target is a planet whose caption is below full at rest (not the world in play, which
+    // rests at full), so the lift is measured, not assumed.
+    const resting = await measure()
+    const target = await page.evaluate(ids => { const p = window.syn3h.shell.galaxy.screen.find(s => ids.includes(s.id) && s.visible && s.x > 0 && s.x < innerWidth && s.y > 0 && s.y < innerHeight && s.radius > 4); return p && { id: p.id, x: p.x, y: p.y } }, resting.filter(c => c.opacity > 0.3 && c.opacity < 0.95).map(c => c.id))
+    assert.ok(target, `${name}: some planet on screen has a caption below full strength at rest`)
     if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: target.x, y: target.y }] })
     else await page.mouse.move(target.x, target.y)
-    await page.waitForTimeout(400)
-    // A small world moves while it is touched and may slip behind its planet: whichever world
-    // the finger is on, its label shows.
-    const pointed = await page.evaluate(() => { const id = window.syn3h.shell.galaxy.pointed; return id && { id, shown: Number(getComputedStyle(document.querySelector(`.galaxy-label[data-world="${id}"]`)).opacity) } })
-    assert.ok(pointed, `${name}: pointing near ${target.id} points at a world`)
-    assert.ok(pointed.shown > 0.5, `${name}: pointing at ${pointed.id} shows its label`)
-    // Shown over others, it sits by its own planet and every plate it covers steps back.
-    const raised = await page.evaluate(id => {
-      const r = el => el.getBoundingClientRect(), me = r(document.querySelector(`.galaxy-label[data-world="${id}"]`)), p = window.syn3h.shell.galaxy.screen.find(s => s.id === id)
-      const gap = Math.hypot(Math.min(me.right, Math.max(me.left, p.x)) - p.x, Math.min(me.bottom, Math.max(me.top, p.y)) - p.y) - p.radius
-      const covered = [...document.querySelectorAll('.galaxy-label')].filter(c => c.dataset.world !== id && !c.hidden).filter(c => { const o = r(c); return o.left < me.right && o.right > me.left && o.top < me.bottom && o.bottom > me.top })
-      return { gap, undimmed: covered.filter(c => Number(getComputedStyle(c).opacity) > 0.5).map(c => c.dataset.world) }
-    }, pointed.id)
-    assert.ok(raised.gap <= 16, `${name}: the pointed ${pointed.id} label sits by its planet`)
-    assert.deepEqual(raised.undimmed, [], `${name}: plates under the pointed ${pointed.id} label step back`)
+    await page.waitForTimeout(500)
+    const pointed = await page.evaluate(() => document.querySelector('.galaxy-label.is-pointed')?.dataset.world)
+    const after = (await measure()).find(c => c.id === pointed)
+    assert.ok(after, `${name}: pointing near ${target.id} points at a world with a caption`)
+    const was = resting.find(c => c.id === pointed) ?? after
+    assert.ok(after.opacity > was.opacity + 0.02, `${name}: pointing lifts the ${pointed} caption (${was.opacity.toFixed(2)} to ${after.opacity.toFixed(2)})`)
+    assert.ok(after.opacity > 0.97, `${name}: pointing brings the ${pointed} caption to full strength (${after.opacity.toFixed(2)})`)
+    assert.ok(Math.abs(after.width - was.width) < 0.5 && Math.abs(after.height - was.height) < 0.5, `${name}: pointing does not resize the ${pointed} caption`)
+    check([after], 'while pointed at')
     await page.screenshot({ path: `${out}/point-${name}.png` })
     if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
     else await page.mouse.move(2, 2)
     await page.evaluate(id => document.querySelector(`.galaxy-label[data-world="${id}"]`).focus(), target.id)
-    await page.waitForTimeout(300)
+    await page.waitForTimeout(400)
     await page.screenshot({ path: `${out}/focus-${name}.png` })
+    if (!phone) {
+      // Occlusion, constructed: the galaxy's layout is held, two planets are placed so the
+      // nearer one's disc covers half of the farther one's caption, and the canvas is hidden
+      // so only caption pixels show. Inside the nearer disc no caption pixel may show; outside
+      // it the caption must; and the nearer caption is stacked above the farther one.
+      const geometry = await page.evaluate(() => {
+        const g = window.syn3h.shell.galaxy, layout = g.options.onLayout
+        g.options.onLayout = () => {}
+        const chips = [...document.querySelectorAll('.galaxy-label')], [a, b] = chips.map(c => c.dataset.world)
+        const far = { id: a, x: 400, y: 300, radius: 24, visible: true, depth: 20 }, near = { id: b, x: 400 - 60, y: 345, radius: 30, visible: true, depth: 10 }
+        const rest = chips.slice(2).map(c => ({ id: c.dataset.world, x: -500, y: -500, radius: 5, visible: false, depth: 50 }))
+        layout([far, near, ...rest])
+        document.querySelector('.galaxy-canvas').style.visibility = 'hidden'; document.body.style.background = '#000'
+        for (const el of document.querySelectorAll('.lobby-brand, .galaxy-links, .lobby-gear-dock, .shell-version')) el.style.visibility = 'hidden'
+        const r = document.querySelector(`.galaxy-label[data-world="${a}"]`).getBoundingClientRect()
+        const za = Number(getComputedStyle(document.querySelector(`.galaxy-label[data-world="${a}"]`)).zIndex), zb = Number(getComputedStyle(document.querySelector(`.galaxy-label[data-world="${b}"]`)).zIndex)
+        return { box: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, near, za, zb }
+      })
+      assert.ok(geometry.zb > geometry.za, `${name}: the nearer planet's caption is stacked above the farther one's`)
+      await page.waitForTimeout(500)
+      const shot = await page.screenshot({ clip: { x: geometry.box.left, y: geometry.box.top, width: geometry.box.right - geometry.box.left, height: geometry.box.bottom - geometry.box.top }, scale: 'css' })
+      await page.screenshot({ path: `${out}/occlusion-${name}.png`, clip: { x: geometry.box.left - 40, y: geometry.box.top - 60, width: geometry.box.right - geometry.box.left + 80, height: 120 } })
+      const { inside, outside } = await page.evaluate(async ({ data, box, near }) => {
+        const img = new Image(); img.src = `data:image/png;base64,${data}`; await img.decode()
+        const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0)
+        const px = ctx.getImageData(0, 0, c.width, c.height).data, sx = img.width / (box.right - box.left)
+        let inside = 0, outside = 0
+        for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
+          const v = px[(y * img.width + x) * 4], cx = box.left + x / sx, cy = box.top + y / sx, d = Math.hypot(cx - near.x, cy - near.y) - near.radius
+          if (d < -1.5) inside = Math.max(inside, v); else if (d > 1.5) outside = Math.max(outside, v)
+        }
+        return { inside, outside }
+      }, { data: shot.toString('base64'), box: geometry.box, near: geometry.near })
+      assert.ok(inside < 24, `${name}: no caption pixel shows inside the nearer planet's disc (brightest ${inside})`)
+      assert.ok(outside > 80, `${name}: the uncovered part of the caption still shows (brightest ${outside})`)
+    }
     assert.deepEqual(errors, [])
-    console.log(`${name}: no overlaps; named ${named.join(', ')}; pointing at ${pointed.id}${faded ? ` (aimed at faded ${target.id})` : ''} shows it PASS`)
+    console.log(`${name}: captions under their planets, settled and dragged; pointing at ${pointed} lifts ${was.opacity.toFixed(2)} to ${after.opacity.toFixed(2)} PASS`)
     await context.close()
   }
 } finally { await browser.close() }

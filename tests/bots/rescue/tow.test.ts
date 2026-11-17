@@ -15,7 +15,8 @@ beforeAll(async () => {
 })
 
 describe('grapple rescue', () => {
-  for (const scenario of ['notch', 'shore'] as const) {
+  // deep-pond: a sunk buggy towed along the bed of deep water must come out (see liquids.test.ts).
+  for (const scenario of ['notch', 'shore', 'deep-pond'] as const) {
     it(`frees a buggy stuck in a ${scenario} within a minute`, () => {
       for (const seed of [1, 2]) {
         const r = trial(scenario, seed)
@@ -25,4 +26,12 @@ describe('grapple rescue', () => {
       }
     }, 120_000)
   }
+
+  it('frees a passive player bogged 2.6 m deep with a hovercraft rescuer within 75 s', () => {
+    for (const seed of [1, 2]) {
+      const r = trial('pond', seed, 75, 4, undefined, { depth: 2.6, assist: false, rescuer: 'hovercraft' })
+      expect(r.stuckAlone).toBe(true)
+      expect(r.freed, `pond ${seed}: ${r.phases.join(' > ')}`).toBe(true)
+    }
+  }, 120_000)
 })

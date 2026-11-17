@@ -1,22 +1,14 @@
-import { readFile } from 'node:fs/promises'
 import * as T from 'three/webgpu'
-import { setModelTransport } from '../../src/vehicles/skins/modelLoader'
 import { expect, it, vi } from 'vitest'
 import { RAPIER } from '../../src/core/physics'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
-import { LoadedBuggySkin } from '../../src/vehicles/skins/LoadedBuggySkin'
+import { Syn3hBuggySkin } from '../../src/vehicles/skins/Syn3hBuggySkin'
 import { mergedSurfaces } from '../../src/vehicles/skins/mergeStatic'
 import { WingTipAnchors } from '../../src/vehicles/skins/wingTips'
 import { makeBed } from '../vehicles/harness'
 
-/** Serve the model downloads from the repository's public folder. */
-function modelsFromDisk() {
-  setModelTransport({ fetch: async url => new Response(Uint8Array.from(await readFile(`public${url}`)), { status: 200 }) })
-  return { mockRestore: () => setModelTransport() }
-}
-
 /** Independently inspect the rendered field, excluding hull vertices in merged distant draws. */
-function renderedWingVertices(skin: LoadedBuggySkin, vehicle: Syn3hBuggy): T.Vector3[] {
+function renderedWingVertices(skin: Syn3hBuggySkin, vehicle: Syn3hBuggy): T.Vector3[] {
   vehicle.object.updateWorldMatrix(true, true)
   const inverse = vehicle.object.matrixWorld.clone().invert(), points: T.Vector3[] = []
   skin.object.traverseVisible(object => {
@@ -36,8 +28,7 @@ function renderedWingVertices(skin: LoadedBuggySkin, vehicle: Syn3hBuggy): T.Vec
 }
 
 it.each(['local', 'remote', 'bot'] as const)('%s buggy effects stay on drawn tips through deployment, flex and detail changes', async role => {
-  const loader = modelsFromDisk()
-  const bed = await makeBed(), skin = new LoadedBuggySkin()
+  const bed = await makeBed(), skin = new Syn3hBuggySkin()
   const buggy = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new T.Vector3(13, 30, -17), .7, 'buggy', () => skin))
   buggy.isLocal = role === 'local'
   if (role === 'remote') buggy.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true)
@@ -65,7 +56,7 @@ it.each(['local', 'remote', 'bot'] as const)('%s buggy effects stay on drawn tip
         }
       }
     }
-  } finally { buggy.dispose(); bed.game.world.free(); loader.mockRestore() }
+  } finally { buggy.dispose(); bed.game.world.free() }
 })
 
 it('tip anchors follow resized geometry and transformed surfaces, without stale points when hidden', () => {
@@ -87,8 +78,7 @@ it('writes ribbon endpoints at the real tips and resets history across unavailab
   const { params } = await import('../../shared/params')
   const previousLevel = graphicsLevel.value
   params.set(graphicsLevel.def.id, 2)
-  const loader = modelsFromDisk()
-  const bed = await makeBed(), skin = new LoadedBuggySkin()
+  const bed = await makeBed(), skin = new Syn3hBuggySkin()
   const buggy = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new T.Vector3(0, 30, 0), .7, 'buggy', () => skin))
   type EffectSystem = { update(dt: number): void; dispose(): void }
   let effects!: EffectSystem
@@ -130,7 +120,7 @@ it('writes ribbon endpoints at the real tips and resets history across unavailab
     buggy.wingsOpen = true; buggy.wingState = 1; tick()
     expect(count()).toBe(24) // Closing also discards the old endpoint.
   } finally {
-    detach(); buggy.dispose(); bed.game.world.free(); loader.mockRestore()
+    detach(); buggy.dispose(); bed.game.world.free()
     params.set(graphicsLevel.def.id, previousLevel)
   }
 })

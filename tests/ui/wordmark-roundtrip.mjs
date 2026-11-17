@@ -9,7 +9,7 @@ const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5241/'
 const out = 'tests/ui/artifacts/wordmark'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
-const state = page => page.evaluate(() => { const g = syn3h.shell.galaxy, root = document.documentElement; return { opening: !!g.opening, leaving: g.leaving !== null, returning: g.returning !== null, flight: !!g.flight, reverse: !!g.flight?.reverse, chosen: g.chosen, held: root.dataset.opening ?? null, playing: document.querySelector('.syn3h-shell').classList.contains('is-playing'), menu: syn3h.shell.menuVisible, hint: getComputedStyle(document.querySelector('.galaxy-hint')).visibility } })
+const state = page => page.evaluate(() => { const g = syn3h.shell.galaxy, root = document.documentElement; return { opening: !!g.opening, leaving: g.leaving !== null, returning: g.returning !== null, flight: !!g.flight, reverse: !!g.flight?.reverse, chosen: g.chosen, held: root.dataset.opening ?? null, playing: document.querySelector('.syn3h-shell').classList.contains('is-playing'), menu: syn3h.shell.menuVisible, links: getComputedStyle(document.querySelector('.lobby-gear-dock')).visibility} })
 const report = {}
 try {
   for (const reduced of [false, true]) {
@@ -47,7 +47,7 @@ try {
       await page.waitForTimeout(100)
     }
     const end = await state(page)
-    assert.equal(end.held, null, `${name}: the controls are not left held back`); assert.equal(end.hint, 'visible', `${name}: the hint is shown`)
+    assert.equal(end.held, null, `${name}: the controls are not left held back`); assert.equal(end.links, 'visible', `${name}: the lobby's corner controls are shown`)
     assert.equal(end.leaving, false, `${name}: the name is not left hidden`)
     // The name is kindled once: the replay starts only after the reverse flight has landed.
     const replays = samples.filter((s, i) => s.returning && !(samples[i - 1]?.returning)).length
