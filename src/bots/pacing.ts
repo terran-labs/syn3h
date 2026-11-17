@@ -29,8 +29,14 @@ export const PACING = {
   slowFactor: 1.25,
   /** A bot is only blamed for slow frames if it added at least this share of the frame budget... */
   costShare: 0.1,
-  /** ...and at least this many milliseconds to the median frame. */
+  /** ...and at least this many milliseconds to the median frame... */
   minCostMs: 1.5,
+  /**
+   * ...and at least this share of the frames it is judged against. On a slow or busy device
+   * (60 ms frames under load) the median of a short window moves by several milliseconds on
+   * its own; an absolute margin there sent bots away for noise.
+   */
+  baselineShare: 0.12,
   /** Frames longer than this are a pause or a hidden tab, not evidence. */
   interruptedMs: 1000,
 }
@@ -123,7 +129,7 @@ export class BotPacer {
       // Over the target is not enough: the bot must have made frames measurably worse. Frames
       // that were already slow before it (a weak or busy device, a headless browser) are the
       // quality level's to fix, not the bots'.
-      const worse = medianMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare)
+      const worse = medianMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare, m.before * PACING.baselineShare)
       if (p90 > state.targetMs * PACING.slowFactor && worse) {
         // That one was too many: carry one fewer at this level, and send it off.
         this.allowed = Math.max(0, m.count - 1)

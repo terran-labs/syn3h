@@ -61,6 +61,19 @@ describe('bot pacing', () => {
     expect(actions.filter(a => a.action === 'remove')).toHaveLength(0)
   })
 
+  it('keeps bots on a slow, jittery device whose frames they do not change', () => {
+    // A loaded machine at about 16 fps against a 30 fps target: frames wander by +-10 ms
+    // whatever the bots do. Noise is not a bot's cost (the two-player smoke at load 35).
+    for (const seed of [1, 2, 3, 4, 5]) {
+      let x = seed * 7919
+      const jitter = () => { x = (x * 16807) % 2147483647; return (x / 2147483647 - 0.5) * 20 }
+      const pacer = new BotPacer(() => 1.5)
+      const { have, actions } = run(pacer, 120, { wanted: 4, targetMs: 1000 / 30, level: 1, open: true }, () => 62 + jitter())
+      expect(actions.filter(a => a.action === 'remove')).toHaveLength(0)
+      expect(have).toBe(4)
+    }
+  })
+
   it('never carries more than the host asked for', () => {
     const pacer = new BotPacer(() => 1)
     const { have } = run(pacer, 30, { ...desktop, wanted: 3 }, () => 1000 / 120)

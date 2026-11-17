@@ -7,8 +7,8 @@
  * and only then revealed. Network state is still received and applied from the first message:
  * only the showing waits, so a vehicle appears where it is now, never where it was.
  *
- * While compiling ahead is off, a vehicle is ready at once and compiles in the frame it is shown;
- * bots still come one per interval, so their compiles are spread over separate frames.
+ * While compiling ahead is off, people are shown at once and bots compile in the frame they are
+ * shown, still one per interval, so their compiles are spread over separate frames.
  *
  * People are never queued behind bots: a person is shown as soon as their vehicle is compiled.
  * Bots follow, one per interval (`bots.arrivalInterval`, as on the host). A remote that leaves
@@ -38,11 +38,11 @@ export class RemoteArrivals {
     private readonly interval: () => number = () => arrivalInterval.value,
     /**
      * Compile a vehicle in every look it may wear first; null with no running game. While
-     * compiling ahead is off (Game.compilesAhead) it is ready at once and compiles on first
-     * sight, but bots are still shown one per interval, so their compiles fall in separate
-     * frames instead of all in the frame a guest meets the room.
+     * compiling ahead is off (Game.compilesAhead) a person is shown at once, as before, and a
+     * bot is ready at once and compiles on first sight, but bots are still shown one per
+     * interval, so their compiles fall in separate frames instead of all in one.
      */
-    private readonly compile: (vehicle: ParkableVehicle) => Promise<void> | null = vehicle => canCompileAhead() ? compileVehicleAhead(vehicle, graphicsLevel.value) : hasGame() ? Promise.resolve() : null,
+    private readonly compile: (vehicle: ParkableVehicle, person: boolean) => Promise<void> | null = (vehicle, person) => canCompileAhead() ? compileVehicleAhead(vehicle, graphicsLevel.value) : hasGame() && !person ? Promise.resolve() : null,
   ) {}
 
   /** Remotes still waiting to be shown. */
@@ -51,7 +51,7 @@ export class RemoteArrivals {
 
   /** A new remote: park its vehicle and compile it; it is shown by `update` when its turn comes. */
   admit(id: number, vehicle: ParkableVehicle, person: boolean): void {
-    const ahead = (() => { try { return this.compile(vehicle) } catch { return null } })()
+    const ahead = (() => { try { return this.compile(vehicle, person) } catch { return null } })()
     // No running game to compile in (tests, a lost renderer): show it at once, as before.
     if (!ahead) return
     vehicle.setParked(true)
