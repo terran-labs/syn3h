@@ -18,13 +18,23 @@ import { crRows, type Sections } from './loft'
 export const HULL_PARAMS = ['floorY', 'floorW', 'width', 'widestY', 'shoulderX', 'shoulderY', 'valleyX', 'valleyY', 'crownY'] as const
 export type HullParam = typeof HULL_PARAMS[number]
 
+/**
+ * Wheel arches and the flank: smooth bulges added to the section where the wheels are, so
+ * each is one handle instead of a ripple in the keys. Amounts in metres outward; positions
+ * and half lengths along Z. The arches swell the widest point and shoulder together (the
+ * fender over the wheel); the flank swells only the widest point (the side between the arch
+ * and the scoop).
+ */
+export interface Arches { front: number; rear: number; flank: number; frontZ: number; rearZ: number; flankZ: number; length: number; flankLength: number }
 /** Keys along Z: `z` positions shared by every parameter, then one row of values per parameter. */
-export interface HullKeys { z: number[]; values: Record<HullParam, number[]> }
+export interface HullKeys { z: number[]; values: Record<HullParam, number[]>; arches?: Arches }
+
+const bump = (z: number, c: number, r: number) => { const t = Math.min(1, Math.abs(z - c) / r); return (1 - t * t) ** 2 }
 
 /** Where the five segments sit in the outline parameter v (0 floor centre, 1 crown). */
 export const SEGMENTS = [0, .17, .37, .6, .78, 1]
 /** Columns per segment at each detail level. */
-export const COLUMNS: Record<0 | 1 | 2, number[]> = { 0: [3, 4, 5, 3, 4], 1: [2, 2, 3, 2, 2], 2: [1, 1, 2, 1, 1] }
+export const COLUMNS: Record<0 | 1 | 2, number[]> = { 0: [3, 3, 4, 3, 3], 1: [2, 2, 3, 2, 2], 2: [1, 1, 2, 1, 1] }
 /** Outline v of the creases: the floor edge and the shoulder. */
 export const CREASES = [SEGMENTS[1], SEGMENTS[3]]
 
@@ -42,7 +52,12 @@ export function paramsAt(k: HullKeys, z: number): number[] {
   const f = Math.min(1, Math.max(0, (z - zs[i]) / (zs[i + 1] - zs[i]))), u = (i + f) / (n - 1)
   let rows = ROWS.get(k)
   if (!rows) { rows = zs.map((_, r) => HULL_PARAMS.map(p => k.values[p][r])); ROWS.set(k, rows) }
-  return crRows(rows, u)
+  const q = crRows(rows, u), a = k.arches
+  if (a) {
+    const arch = a.front * bump(z, a.frontZ, a.length) + a.rear * bump(z, a.rearZ, a.length), flank = a.flank * bump(z, a.flankZ, a.flankLength)
+    q[2] += arch + flank; q[4] += arch
+  }
+  return q
 }
 const ROWS = new WeakMap<HullKeys, number[][]>()
 
@@ -83,8 +98,22 @@ export function rings(count: number): number[] {
 /** Surface queries for placing features on the hull. */
 export class HullQuery {
   constructor(private readonly k: HullKeys) {}
-  /** Outline points at z, finely sampled, right half from floor centre to crown. */
-  private poly(z: number): V2[] { const f = outline(paramsAt(this.k, z)); return Array.from({ length: 121 }, (_, i) => f(i / 120)) }
+  private readonly cache = new Map<number, V2[]>()
+  /** Outline points at z (to the nearest 0.1 mm, cached), right half from floor centre to crown. */
+  private poly(z: number): V2[] {
+    const key = Math.round(z * 1e4); let p = this.cache.get(key)
+    if (!p) { const f = outline(paramsAt(this.k, key / 1e4)); p = Array.from({ length: 81 }, (_, i) => f(i / 80)); this.cache.set(key, p) }
+    return p
+  }
+  /** Where the line from p along d (unit) leaves the hull, searching t in [-reach, reach]; undefined if it never crosses. */
+  surface(p: [number, number, number], d: [number, number, number], reach = .3): [number, number, number] | undefined {
+    const at = (t: number): [number, number, number] => [p[0] + d[0] * t, p[1] + d[1] * t, p[2] + d[2] * t]
+    const inside = (t: number) => { const [x, y, z] = at(t); return this.contains(x, y, z) }
+    let lo = -reach, hi = reach
+    if (!inside(lo) || inside(hi)) return undefined
+    for (let i = 0; i < 22; i++) { const m = (lo + hi) / 2; if (inside(m)) lo = m; else hi = m }
+    return at((lo + hi) / 2)
+  }
   /** Height of the upper surface at (x, z): the highest outline point at that x. */
   top(x: number, z: number): number {
     const p = this.poly(z); let y = -Infinity
@@ -99,6 +128,7 @@ export class HullQuery {
   }
   /** True when (x, y) lies inside the section at z. */
   contains(x: number, y: number, z: number): boolean {
+    if (z < this.k.z[0] || z > this.k.z[this.k.z.length - 1]) return false
     const p = this.poly(z), all = [...p, ...p.slice().reverse().map(([a, b]) => [-a, b] as V2)]
     let inside = false
     for (let i = 0, j = all.length - 1; i < all.length; j = i++) { const [xi, yi] = all[i], [xj, yj] = all[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside }

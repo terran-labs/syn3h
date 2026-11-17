@@ -12,7 +12,7 @@
  */
 import { readMesh, triangles, REF } from './glb'
 import { sliceZ } from './slice'
-import { HULL_PARAMS, outline } from '../../../src/vehicles/buggygen/sections/hull'
+import { HULL_PARAMS, outline, paramsAt, type Arches } from '../../../src/vehicles/buggygen/sections/hull'
 import { crRows } from '../../../src/vehicles/buggygen/sections/loft'
 import { writeFileSync } from 'node:fs'
 
@@ -39,15 +39,20 @@ function samples(z: number): number[][] {
       const t = (ax * ey - ay * ex) / den, s = (ax * dy - ay * dx) / den
       if (t > 0 && s >= 0 && s <= 1 && !(t <= best)) best = t
     }
-    if (Number.isFinite(best)) out.push([best * dx, yc + best * dy])
+    if (Number.isFinite(best)) out.push([best * dx, yc + best * dy, 1])
   }
+  // Weight the outer upper corner: the fender peaks and haunch fins are thin, so an even
+  // weighting lets the fit round them off, and they carry much of the body's character.
+  let xmax = 0; for (const [x] of out) xmax = Math.max(xmax, x)
+  for (const p of out) if (p[1] > yc) p[2] = 1 + CORNER * Math.max(0, (p[0] - .75 * xmax) / (.25 * xmax)) ** 2
   return out
 }
+const CORNER = Number(process.argv[4] ?? 6)
 
 function cost(q: number[], pts: number[][]): number {
   const [floorY, floorW, width, widestY, shoulderX, shoulderY, valleyX, valleyY, crownY] = q
   // Keep the points in order and apart, so no segment collapses into a sliver.
-  if (floorW < .05 || width < floorW + .03 || shoulderX > width - .02 || shoulderX < .1 || valleyX > shoulderX - .05 || valleyX < .04 || widestY < floorY + .03 || shoulderY < widestY + .04 || floorY > widestY) return 1e9
+  if (floorW < .05 || width < floorW + .03 || shoulderX > width - .006 || shoulderX < .1 || valleyX > shoulderX - .05 || valleyX < .04 || widestY < floorY + .03 || shoulderY < widestY + .02 || floorY > widestY) return 1e9
   if (q.some(v => v < -.3 || v > 1.2)) return 1e9
   const f = outline(q), poly = Array.from({ length: 61 }, (_, i) => f(i / 60))
   // Both ways: reference points to the model outline, and model points to the reference
@@ -60,11 +65,11 @@ function cost(q: number[], pts: number[][]): number {
     }
     return best
   }
-  let sum = 0
-  for (const [px, py] of pts) sum += d2(poly, px, py)
+  let sum = 0, wsum = 0
+  for (const [px, py, w] of pts) { sum += w * d2(poly, px, py); wsum += w }
   let back = 0
   for (const [px, py] of poly) back += Math.min(d2(pts, px, py), .02)
-  sum = sum / Math.max(pts.length, 1) + back / poly.length
+  sum = sum / Math.max(wsum, 1) + back / poly.length
   // Weak priors: a deck with no data (the cockpit) stays level between valley and crown.
   return sum + 2e-4 * ((crownY - valleyY) ** 2 + (valleyX - shoulderX * .5) ** 2)
 }
@@ -95,7 +100,10 @@ const slices: { z: number; u: number; pts: number[][] }[] = []
 const uOf = (z: number) => { let i = 0; while (i < KEYS.length - 2 && z > KEYS[i + 1]) i++; return (i + Math.min(1, Math.max(0, (z - KEYS[i]) / (KEYS[i + 1] - KEYS[i])))) / (KEYS.length - 1) }
 for (let z = -1.93; z <= 1.955; z += .04) { const pts = samples(z); if (pts.length >= 10) slices.push({ z, u: uOf(z), pts }) }
 const keys = START.map(r => [...r]), n = KEYS.length
-const sliceCost = (s: typeof slices[number]) => cost(crRows(keys, s.u), s.pts)
+// Wheel arches and flank: amounts fitted with the keys; positions and lengths are design choices.
+const arches: Arches = { front: 0, rear: 0, flank: 0, frontZ: -1.24, rearZ: 1.24, flankZ: .15, length: .5, flankLength: .45 }
+const design = () => ({ z: KEYS, values: Object.fromEntries(HULL_PARAMS.map((p, i) => [p, keys.map(r => r[i])])) as Record<typeof HULL_PARAMS[number], number[]>, arches })
+const sliceCost = (s: typeof slices[number]) => cost(paramsAt(design(), s.z), s.pts)
 const costs = slices.map(sliceCost)
 /** Bending of one parameter's track: squared second differences of its keys. */
 const bending = (p: number) => { let b = 0; for (let k = 1; k < n - 1; k++) b += (keys[k - 1][p] - 2 * keys[k][p] + keys[k + 1][p]) ** 2; let a = 0; for (let k = 0; k < n; k++) a += (keys[k][p] - START[k][p]) ** 2; return bend * b + prior * a }
@@ -110,17 +118,14 @@ for (const step of [.03, .015, .007, .003]) for (let sweep = 0; sweep < 3; sweep
     keys[k][p] = v0
   }
 }
+// The three bulge amounts, against every slice.
+for (const step of [.02, .01, .005, .002]) for (let sweep = 0; sweep < 2; sweep++) for (const a of ['front', 'rear', 'flank'] as const) {
+  const all = () => slices.reduce((t, s) => t + sliceCost(s), 0)
+  let best = all(); const v0 = arches[a]
+  for (const d of [step, -step]) { arches[a] = v0 + d; const c = all(); if (c < best) { best = c; break } arches[a] = v0 }
+}
 const total = slices.reduce((t, s) => t + sliceCost(s), 0) / slices.length
 console.log(`mean slice cost ${total.toExponential(2)} (start ${(costs.reduce((a, b) => a + b, 0) / slices.length).toExponential(2)}), rms about ${(Math.sqrt(total / 2) * 1000).toFixed(0)} mm`)
-// Design overrides: the front fenders flare out over the wheels at their top corners. The
-// fit rounds these corners off (they are thin features and cost little to miss), but they
-// are much of the buggy's character, so they are set by hand: [parameter, key index, value].
-const OVERRIDES: [typeof HULL_PARAMS[number], number, number][] = [
-  ['width', 3, .85], ['width', 4, .86], ['shoulderX', 3, .83], ['shoulderX', 4, .84],
-  ['widestY', 3, .55], ['widestY', 4, .58], ['shoulderY', 3, .61], ['shoulderY', 4, .65],
-  ['width', 2, .74], ['shoulderX', 2, .71], ['widestY', 2, .5],
-]
-for (const [name, k, v] of OVERRIDES) keys[k][HULL_PARAMS.indexOf(name)] = v
 const values: Record<string, number[]> = {}
 HULL_PARAMS.forEach((name, p) => { values[name] = keys.map(r => Math.round(r[p] * 1000) / 1000) })
 
@@ -129,13 +134,16 @@ writeFileSync(file, `import type { HullKeys } from './hull'
 
 /**
  * The hull's keys, fitted by tools/buggy-fit/sections/fitHull.ts (bend ${bend}, prior ${prior}) and then free to
- * edit by hand (the front fender keys are hand set; see OVERRIDES there): ${HULL_PARAMS.length} section numbers at ${KEYS.length} stations along Z, metres.
+ * edit by hand: ${HULL_PARAMS.length} section numbers at ${KEYS.length} stations along Z, metres, plus the
+ * wheel arch and flank bulges. Corner peaks weighted ${CORNER}.
  */
 export const HULL: HullKeys = {
   z: ${JSON.stringify(KEYS)},
   values: {
 ${HULL_PARAMS.map(p => `    ${p}: ${JSON.stringify(values[p])},`).join('\n')}
   },
+  arches: ${JSON.stringify(Object.fromEntries(Object.entries(arches).map(([k, v]) => [k, Math.round(v * 1000) / 1000])))},
 }
 `)
+console.log('arches', JSON.stringify(arches))
 for (const p of HULL_PARAMS) console.log(p.padEnd(10), values[p].join(' '))

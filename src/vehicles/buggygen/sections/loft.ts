@@ -72,7 +72,7 @@ export type Tagger = (x: number, y: number, z: number, n: [number, number, numbe
  * capped at both ends. `us` optionally places the rings (u values, ascending). Normals come
  * from the grid's own tangents, so cells of different roles still shade as one surface.
  */
-export function skin(sections: Sections, along: number, half: number, tag: Tagger = () => 'paint', o: { us?: number[]; caps?: boolean; vs?: number[]; warp?: (p: THREE.Vector3) => void; creases?: number[] } = {}): BodyPiece[] {
+export function skin(sections: Sections, along: number, half: number, tag: Tagger = () => 'paint', o: { us?: number[]; caps?: boolean | [boolean, boolean]; vs?: number[]; warp?: (p: THREE.Vector3) => void; creases?: number[]; creaseRing?: (j: number, u: number) => boolean } = {}): BodyPiece[] {
   const us = o.us ?? Array.from({ length: along }, (_, j) => j / (along - 1))
   const vs = o.vs ?? Array.from({ length: half + 1 }, (_, i) => i / half)
   const H = vs.length - 1, N = 2 * H, m = us.length
@@ -86,63 +86,80 @@ export function skin(sections: Sections, along: number, half: number, tag: Tagge
     }
   })
   if (o.warp) { const v = new THREE.Vector3(); for (let k = 0; k < P.length; k += 3) { v.set(P[k], P[k + 1], P[k + 2]); o.warp(v); P[k] = v.x; P[k + 1] = v.y; P[k + 2] = v.z } }
-  const p = (j: number, i: number) => { const k = (Math.min(Math.max(j, 0), m - 1) * N + ((i % N) + N) % N) * 3; return new THREE.Vector3(P[k], P[k + 1], P[k + 2]) }
+  /** Index of grid point (j, i), rings clamped, columns wrapped. */
+  const at = (j: number, i: number) => (Math.min(Math.max(j, 0), m - 1) * N + ((i % N) + N) % N) * 3
+  /** Cross product of (a1 - a0) and (b1 - b0), normalised, written to out at k. */
+  const crossInto = (out: Float32Array, k: number, a0: number, a1: number, b0: number, b1: number) => {
+    const ax = P[a1] - P[a0], ay = P[a1 + 1] - P[a0 + 1], az = P[a1 + 2] - P[a0 + 2]
+    let bx = P[b1] - P[b0], by = P[b1 + 1] - P[b0 + 1], bz = P[b1 + 2] - P[b0 + 2]
+    if (bx * bx + by * by + bz * bz < 1e-12) { bx = 0; by = 0; bz = 1 }
+    const x = ay * bz - az * by, y = az * bx - ax * bz, z = ax * by - ay * bx, l = Math.hypot(x, y, z) || 1
+    out[k] = x / l; out[k + 1] = y / l; out[k + 2] = z / l
+  }
   // Vertex normals: around-tangent cross along-tangent points out for this ring order.
   const Nn = new Float32Array(P.length)
-  for (let j = 0; j < m; j++) for (let i = 0; i < N; i++) {
-    const ti = p(j, i + 1).sub(p(j, i - 1)), tj = p(j + 1, i).sub(p(j - 1, i))
-    if (tj.lengthSq() < 1e-12) tj.set(0, 0, 1)
-    const n = ti.cross(tj).normalize(), k = (j * N + i) * 3
-    Nn[k] = n.x; Nn[k + 1] = n.y; Nn[k + 2] = n.z
-  }
-  const pieces = new Map<Role, { pos: number[]; nor: number[] }>()
-  // Crease columns: vertices on them take a normal from the cell's own side, so the
-  // surface folds crisply along that grid line and stays smooth everywhere else.
+  for (let j = 0; j < m; j++) for (let i = 0; i < N; i++) crossInto(Nn, (j * N + i) * 3, at(j, i - 1), at(j, i + 1), at(j - 1, i), at(j + 1, i))
+  // Crease columns: vertices on them take a normal from the cell's own side, so the surface
+  // folds crisply along that grid line and stays smooth everywhere else. `creaseRing` can turn
+  // the fold off near the ends, where the columns converge and a fold would only show shards.
   const creaseCol = new Uint8Array(N)
   for (let i = 0; i < N; i++) { const v = i <= H ? vs[i] : vs[N - i]; if (o.creases?.some(c => Math.abs(c - v) < 1e-6)) creaseCol[i] = 1 }
-  const put = (role: Role, verts: [number, number][], cell?: number) => {
-    let g = pieces.get(role); if (!g) pieces.set(role, g = { pos: [], nor: [] })
-    for (const [j, i] of verts) {
-      const ii = i % N, k = (j * N + ii) * 3
-      g.pos.push(P[k], P[k + 1], P[k + 2])
-      if (cell !== undefined && creaseCol[ii]) {
-        const n = p(j, cell + 1).sub(p(j, cell)).cross(p(j + 1, ii).sub(p(j - 1, ii))).normalize()
-        g.nor.push(n.x, n.y, n.z)
-      } else g.nor.push(Nn[k], Nn[k + 1], Nn[k + 2])
-    }
+  const creaseRow = Uint8Array.from(us, (u, j) => o.creaseRing ? +o.creaseRing(j, u) : 1)
+  /** Per role: positions, normals, indices, and the index already given to each grid vertex variant. */
+  const pieces = new Map<Role, { pos: number[]; nor: number[]; idx: number[]; seen: Int32Array }>()
+  const side = new Float32Array(3)
+  const vertex = (g: { pos: number[]; nor: number[]; seen: Int32Array }, j: number, ii: number, cell: number) => {
+    const k = (j * N + ii) * 3, crease = creaseCol[ii] && creaseRow[j], variant = crease ? (cell === ii ? 1 : 2) : 0, key = k + variant
+    let id = g.seen[key]
+    if (id >= 0) return id
+    id = g.seen[key] = g.pos.length / 3
+    g.pos.push(P[k], P[k + 1], P[k + 2])
+    if (crease) { crossInto(side, 0, at(j, cell), at(j, cell + 1), at(j - 1, ii), at(j + 1, ii)); g.nor.push(side[0], side[1], side[2]) }
+    else g.nor.push(Nn[k], Nn[k + 1], Nn[k + 2])
+    return id
   }
+  const group = (role: Role) => { let g = pieces.get(role); if (!g) pieces.set(role, g = { pos: [], nor: [], idx: [], seen: new Int32Array(m * N * 3).fill(-1) }); return g }
   for (let j = 0; j < m - 1; j++) for (let i = 0; i < N; i++) {
-    const c = p(j, i).add(p(j + 1, i)).add(p(j, i + 1)).add(p(j + 1, i + 1)).multiplyScalar(.25)
-    const k0 = (j * N + i) * 3, k1 = ((j + 1) * N + (i + 1) % N) * 3
-    const role = tag(c.x, c.y, c.z, [(Nn[k0] + Nn[k1]) / 2, (Nn[k0 + 1] + Nn[k1 + 1]) / 2, (Nn[k0 + 2] + Nn[k1 + 2]) / 2])
+    const a = at(j, i), b = at(j + 1, i), c = at(j, i + 1), d = at(j + 1, i + 1)
+    const role = tag((P[a] + P[b] + P[c] + P[d]) / 4, (P[a + 1] + P[b + 1] + P[c + 1] + P[d + 1]) / 4, (P[a + 2] + P[b + 2] + P[c + 2] + P[d + 2]) / 4,
+      [(Nn[a] + Nn[d]) / 2, (Nn[a + 1] + Nn[d + 1]) / 2, (Nn[a + 2] + Nn[d + 2]) / 2])
     if (!role) continue
-    put(role, [[j, i], [j, i + 1], [j + 1, i], [j, i + 1], [j + 1, i + 1], [j + 1, i]], i)
+    const g = group(role), i1 = (i + 1) % N
+    const v00 = vertex(g, j, i, i), v01 = vertex(g, j, i1, i), v10 = vertex(g, j + 1, i, i), v11 = vertex(g, j + 1, i1, i)
+    g.idx.push(v00, v01, v10, v01, v11, v10)
   }
   // End caps: a fan from the ring's centre, each triangle tagged like a cell facing along Z.
-  if (o.caps !== false) for (const [j, s] of [[0, -1], [m - 1, 1]]) {
-    const c = new THREE.Vector3(); for (let i = 0; i < N; i++) c.add(p(j, i)); c.divideScalar(N)
+  const caps = Array.isArray(o.caps) ? o.caps : [o.caps !== false, o.caps !== false]
+  for (const [j, s, on] of [[0, -1, caps[0]], [m - 1, 1, caps[1]]] as const) {
+    if (!on) continue
+    let cx = 0, cy = 0, cz = 0; for (let i = 0; i < N; i++) { const k = at(j, i); cx += P[k]; cy += P[k + 1]; cz += P[k + 2] } cx /= N; cy /= N; cz /= N
     for (let i = 0; i < N; i++) {
-      const a = p(j, i), b = p(j, i + 1), tri = s > 0 ? [c, a, b] : [c, b, a], m3 = c.clone().add(a).add(b).divideScalar(3)
-      const role = tag(m3.x, m3.y, m3.z, [0, 0, s]); if (!role) continue
-      let g = pieces.get(role); if (!g) pieces.set(role, g = { pos: [], nor: [] })
-      for (const q of tri) { g.pos.push(q.x, q.y, q.z); g.nor.push(0, 0, s) }
+      const a = at(j, i), b = at(j, i + 1)
+      const role = tag((cx + P[a] + P[b]) / 3, (cy + P[a + 1] + P[b + 1]) / 3, (cz + P[a + 2] + P[b + 2]) / 3, [0, 0, s]); if (!role) continue
+      const g = group(role), base = g.pos.length / 3
+      g.pos.push(cx, cy, cz, P[a], P[a + 1], P[a + 2], P[b], P[b + 1], P[b + 2]); g.nor.push(0, 0, s, 0, 0, s, 0, 0, s)
+      if (s > 0) g.idx.push(base, base + 1, base + 2); else g.idx.push(base, base + 2, base + 1)
     }
   }
   return [...pieces].map(([role, g]) => {
     const geometry = new THREE.BufferGeometry()
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3))
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(g.nor, 3))
-    return { part: 'body' as const, role, geometry: weld(geometry) }
+    geometry.setIndex(g.idx)
+    return { part: 'body' as const, role, geometry }
   })
 }
 
 /** Share vertices with equal position and normal, so pieces are indexed like a hand mesh. */
 export function weld(g: THREE.BufferGeometry): THREE.BufferGeometry {
-  const p = g.getAttribute('position'), n = g.getAttribute('normal'), map = new Map<string, number>(), pos: number[] = [], nor: number[] = [], idx: number[] = []
+  const p = g.getAttribute('position'), n = g.getAttribute('normal'), pos: number[] = [], nor: number[] = [], idx: number[] = []
+  const buckets = new Map<number, number[]>(), q = (v: number) => Math.round(v * 1e5)
   for (let i = 0; i < p.count; i++) {
-    const key = `${p.getX(i).toFixed(5)},${p.getY(i).toFixed(5)},${p.getZ(i).toFixed(5)},${n.getX(i).toFixed(3)},${n.getY(i).toFixed(3)},${n.getZ(i).toFixed(3)}`
-    let k = map.get(key)
-    if (k === undefined) { k = pos.length / 3; map.set(key, k); pos.push(p.getX(i), p.getY(i), p.getZ(i)); nor.push(n.getX(i), n.getY(i), n.getZ(i)) }
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), nx = n.getX(i), ny = n.getY(i), nz = n.getZ(i)
+    const h = (q(x) * 73856093) ^ (q(y) * 19349663) ^ (q(z) * 83492791)
+    let list = buckets.get(h), k = -1
+    if (list) for (const c of list) if (q(pos[c * 3]) === q(x) && q(pos[c * 3 + 1]) === q(y) && q(pos[c * 3 + 2]) === q(z) && Math.abs(nor[c * 3] - nx) + Math.abs(nor[c * 3 + 1] - ny) + Math.abs(nor[c * 3 + 2] - nz) < 2e-3) { k = c; break }
+    if (k < 0) { k = pos.length / 3; pos.push(x, y, z); nor.push(nx, ny, nz); if (list) list.push(k); else buckets.set(h, [k]) }
     idx.push(k)
   }
   const out = new THREE.BufferGeometry()
