@@ -9,7 +9,7 @@ import { params } from '../../shared/params'
 import { applyHull, applyWings, createHullState } from '../../src/vehicles/liquidHull'
 import { fieldOffset, liquidWavesAt, type LiquidBody } from '../../src/world/water/liquidWaves'
 import { setWeatherClock } from '../../src/world/weather/wind'
-import { type Run, type Sample, advance, ashore, dispose, entry, exitTime, fromRest, turnOut, wingAscent } from './liquidScenarios'
+import { type Run, type Sample, advance, ashore, coast, dispose, entry, exitTime, fromRest, turnOut, wingAscent } from './liquidScenarios'
 
 beforeAll(initPhysics)
 afterEach(() => { for (const p of params.all()) params.set(p.def.id, p.def.default) })
@@ -86,6 +86,35 @@ describe.each(['lava', 'water'] as const)('steering afloat in %s', (liquid) => {
       expect(o.backOut).toBe(true)
       expect(o.minUp).toBeGreaterThan(0)
     } finally { dispose(o.run) }
+  })
+})
+
+describe('water holds a buggy up only while it works to stay up', () => {
+  it.each([10, 40])('entering deep water at %s m/s with no throttle, it comes to rest and goes under', (speed) => {
+    const c = coast('water', speed, 12)
+    try {
+      expect(finite(c.run)).toBe(true)
+      expect(c.rest).not.toBeNull()
+      expect(c.under).not.toBeNull()
+      expect(c.rest!).toBeLessThan(8)
+      expect(c.under!).toBeLessThan(8)
+      expect(Math.min(...c.run.trace.map((s) => s.up))).toBeGreaterThan(0)
+    } finally { dispose(c.run) }
+  })
+
+  it.each([1, 3])('with throttle held it stays at the surface and moves, on size %s tyres', (size) => {
+    params.set('buggy.tyreSize', size)
+    const c = coast('water', 0, 1 / 60)
+    try {
+      c.run.v.input.y = 1
+      const t0 = c.run.clock.t
+      advance(c.run, 10)
+      const tail = c.run.trace.filter((s) => s.t > t0 + 4)
+      expect(finite(c.run)).toBe(true)
+      expect(Math.max(...tail.map((s) => s.depth))).toBeLessThan(0.6)
+      expect(Math.min(...tail.map((s) => s.speed))).toBeGreaterThan(1)
+      expect(Math.min(...c.run.trace.map((s) => s.up))).toBeGreaterThan(0)
+    } finally { dispose(c.run) }
   })
 })
 

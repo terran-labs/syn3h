@@ -22,8 +22,6 @@ export interface ChatPanelOptions {
   canOpen(): boolean
   /** Everyone in the room except this player, for the mute list. */
   roster(): { id: number; name: string; color: string; bot: boolean }[]
-  /** Release the pointer lock so the cursor can reach the panel. */
-  releaseCursor?(): void
 }
 
 /** Newest lines shown in the collapsed strip. */
@@ -65,6 +63,8 @@ export class ChatPanel {
   private readonly live: HTMLElement
   private readonly menu: HTMLElement
   private open = false
+  /** The cursor was captured when chat opened: it stays captured while typing. */
+  private lockedAtOpen = false
   private unread = 0
   private unreadPerson: ChatLine | null = null
   private readonly unsubscribe: (() => void)[] = []
@@ -106,8 +106,14 @@ export class ChatPanel {
     this.field.addEventListener('keydown', (e) => {
       // Keys typed here are the message's, not the game's.
       e.stopPropagation()
-      if (e.key === 'Escape') { e.preventDefault(); this.field.blur(); this.setOpen(false) }
+      // In the field every key is the message's, Y included: Enter on an empty field, Escape
+      // or Close leave it. Y closes chat only while the field does not have focus (onKey).
+      if (e.key === 'Escape') { e.preventDefault(); this.setOpen(false) }
     }, { signal })
+    // Chat keeps a captured cursor captured (typing needs no pointer). If the browser takes the
+    // lock away while chat is open (it does on Escape), chat closes too, so the player is back
+    // to the ordinary uncaptured state rather than in a chat field they did not ask for.
+    document.addEventListener('pointerlockchange', () => { if (this.open && this.lockedAtOpen && !document.pointerLockElement) this.setOpen(false) }, { signal })
     this.log.addEventListener('scroll', () => { if (this.atBottom()) this.clearUnread() }, { signal, passive: true })
     this.log.addEventListener('click', (e) => this.onLogClick(e), { signal })
     window.addEventListener('keydown', (e) => this.onKey(e), { signal, capture: true })
@@ -141,7 +147,7 @@ export class ChatPanel {
     this.renderStrip()
     this.followKeyboard(open)
     if (open) {
-      this.options.releaseCursor?.()
+      this.lockedAtOpen = Boolean(document.pointerLockElement)
       this.renderLog()
       this.log.scrollTop = this.log.scrollHeight
       this.clearUnread()
@@ -198,7 +204,11 @@ export class ChatPanel {
     if (e.code !== CHAT_KEY || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
     const t = e.target
     if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
-    if (this.open || !chatShow.value || !this.options.canOpen()) return
+    if (!chatShow.value) return
+    // Open with the field not focused (typing goes to the field, so this is not a letter):
+    // Y closes it again.
+    if (this.open) { e.preventDefault(); e.stopImmediatePropagation(); this.setOpen(false); return }
+    if (!this.options.canOpen()) return
     e.preventDefault(); e.stopImmediatePropagation()
     this.setOpen(true)
   }

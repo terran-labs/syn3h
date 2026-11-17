@@ -273,6 +273,37 @@ describe('arrival level',()=>{
   })
 })
 
+describe('the scene\'s lights',()=>{
+  it('an arrival and a departure never change the set of lights the scene is drawn with',async()=>{
+    // three keys every lit material's shader on the set of visible lights (LightsNode hashes
+    // their ids). An effect that adds, removes or hides a light during play rebuilds every
+    // lit material in the scene: 251 builds and a 234 ms frame at High on 16 November 2026,
+    // on each vehicle swap and remote departure, and on every bot arrival once bots arrived
+    // in the cloud. The arrival light may only change its intensity, colour and place.
+    const {params}=await import('../../shared/params')
+    const before=params.get('gfx.level')!.value
+    try{
+      params.set('gfx.level',2)
+      const {h,v,m,step}=bed('buggy')
+      const lights=()=>{const ids:number[]=[];h.game.scene.traverseVisible(o=>{if((o as T.Light).isLight)ids.push(o.id)});return ids.sort().join()}
+      const frame=()=>{step();m.update(FIXED_DT)}
+      frame()
+      const idle=lights()
+      expect(idle).not.toBe('')
+      let arrived=false
+      void m.begin(v,{holdSeconds:HOLD}).then(()=>{arrived=true})
+      for(let i=0;i<HOLD_STEPS*4&&!arrived;i++){frame();expect(lights()).toBe(idle);await Promise.resolve()}
+      for(let i=0;i<120;i++){frame();expect(lights()).toBe(idle)}
+      let gone=false
+      void m.depart(v).then(()=>{gone=true})
+      for(let i=0;i<HOLD_STEPS*4&&!gone;i++){frame();expect(lights()).toBe(idle);await Promise.resolve()}
+      for(let i=0;i<120;i++){frame();expect(lights()).toBe(idle)}
+      expect(arrived&&gone).toBe(true)
+      m.dispose();v.dispose();h.world.free()
+    }finally{params.set('gfx.level',before)}
+  })
+})
+
 describe('wall-clock bounds',()=>{
   it('lets go of an arriving vehicle within its hold plus WALL_SLACK of real time at 5 fps',async()=>{
     const {WALL_SLACK}=await import('../../src/vehicles/effects/Materialize')

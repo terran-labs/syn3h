@@ -85,8 +85,8 @@ export interface RescueNet {
   /** A person's cord, as the host sees it (null when they have none or it is not known). */
   playerCord?(id: number): { flying: boolean; to: number | null } | null
   displayName(id: number): string
-  /** A bot's hidden role ("Dust Clerk"), when names are first names only (ux/bot-first-names). */
-  botRole?(id: number): string | undefined
+  /** A bot's hidden role, for its voice. */
+  botRole?(id: number): string
   /** People in the room (not bots), by id. */
   people(): number[]
 }
@@ -122,6 +122,11 @@ interface Rescue {
 }
 
 export class HostRescue {
+  /** A bot's name and hidden role, "Temolin Dust Clerk", as the voice table reads it. */
+  private identity(id: number): string {
+    const name = this.net.displayName(id), role = this.net.botRole?.(id)
+    return role ? `${name} ${role}` : name
+  }
   private readonly rescues = new Map<number, Rescue>()
   private readonly tracks = new Map<number, { t: number; x: number; z: number }[]>()
   private readonly count = new Map<number, number>()
@@ -189,8 +194,6 @@ export class HostRescue {
   // -------------------------------------------------------------------------------------
 
   private brain(id: number): BotBrain | undefined { return this.bots.brainList[id - BOT_ID_BASE] }
-  /** "Name Role", the string voiceFor reads, whether or not the role is in the display name. */
-  private identity(id: number): string { const role = this.net.botRole?.(id); return role ? `${this.net.displayName(id)} ${role}` : this.net.displayName(id) }
   private vehicle(id: number): Vehicle | undefined { return this.net.vehicleOf(id) }
 
   private newRescue(stuck: number, kind: StuckKind, person: boolean, v: Vehicle): Rescue {

@@ -38,7 +38,7 @@ describe('public recipe populations', () => {
     expect(changed.mock.lastCall![0].get('alpine')).toEqual({ players: 3, rooms: 2 })
     feed.dispose()
   })
-  it('polls only when active, with one request in flight and abort on hide', async () => {
+  it('polls only when active, with one request in flight, and drops an answer that lands after hide', async () => {
     vi.useFakeTimers(); vi.setSystemTime(now)
     let resolve!: (response: Response) => void
     const fetcher = vi.fn((_url: unknown, _init: unknown) => new Promise<Response>(done => { resolve = done }))
@@ -50,12 +50,26 @@ describe('public recipe populations', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
     const signal = (fetcher.mock.calls[0][1] as RequestInit).signal!
     feed.setActive(false)
-    expect(signal.aborted).toBe(true)
+    // Not aborted (the browser would log a failed request): its answer is simply dropped.
+    expect(signal.aborted).toBe(false)
     resolve(response(payload([row('alpine')], Date.now())))
     await vi.advanceTimersByTimeAsync(60_000)
     expect(fetcher).toHaveBeenCalledTimes(1)
-    expect(changed).toHaveBeenCalledTimes(1) // Initial unknown only; aborted response cannot revive counts.
+    expect(changed).toHaveBeenCalledTimes(1) // Initial unknown only; a late answer cannot revive counts.
     feed.dispose()
+  })
+  it('shown again while an old answer is in flight, waits for it, then polls afresh: never two at once', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(now)
+    const pending: ((r: Response) => void)[] = []
+    const fetcher = vi.fn((_url: unknown, _init: unknown) => new Promise<Response>(done => { pending.push(done) }))
+    const changed = vi.fn(), feed = new PresenceFeed(['alpine'], changed, fetcher as typeof fetch)
+    feed.setActive(true); await vi.advanceTimersByTimeAsync(10)
+    feed.setActive(false); feed.setActive(true); await vi.advanceTimersByTimeAsync(10)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    pending[0](response(payload([row('alpine')], Date.now()))); await vi.advanceTimersByTimeAsync(10)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    feed.dispose()
+    expect((fetcher.mock.calls[1][1] as RequestInit).signal!.aborted).toBe(true)
   })
   it('expires a report before the next poll and publishes unknown on failure', async () => {
     vi.useFakeTimers(); vi.setSystemTime(now)

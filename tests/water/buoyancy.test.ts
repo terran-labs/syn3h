@@ -15,14 +15,15 @@ function setup(){
  const h=harness();h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=> 'water'
  return h
 }
-it('syn3h floats upright at the surface and paddles forward',()=>{
- const h=setup(),v=new Syn3hBuggy(h.game,h.terrain,new THREE.Vector3(0,9,0));v.isLocal=false
+it('syn3h stays up while it paddles and sinks to the bed when it stops',()=>{
+ const h=setup(),v=new Syn3hBuggy(h.game,h.terrain,new THREE.Vector3(0,10.2,0));v.isLocal=false
  try{
-  h.step(v,600)
+  v.input.y=1;const z=v.body.translation().z;h.step(v,300)
   expect(Math.abs(v.body.translation().y-10)).toBeLessThan(1)
   expect(new THREE.Vector3(0,1,0).applyQuaternion(v.object.quaternion).y).toBeGreaterThan(.9)
-  const z=v.body.translation().z;v.input.y=1;h.step(v,300)
   expect(v.body.translation().z).toBeLessThan(z-2)
+  v.input.y=0;h.step(v,600)
+  expect(v.body.translation().y).toBeLessThan(9)
  }finally{v.dispose();h.world.free()}
 })
 it('switch off retains the legacy float',()=>{

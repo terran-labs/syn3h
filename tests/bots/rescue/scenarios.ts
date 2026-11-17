@@ -59,7 +59,8 @@ export function terrainOf(world: RAPIER.World, height: Height, liquid?: Height, 
     dispose() {},
     roads: [], roadNetwork: undefined,
   } as unknown as BotTerrain
-  if (liquid) terrain.liquidHeightAt = liquid
+  // Water, not lava: a liquid with no kind is lava to the vehicles' physics.
+  if (liquid) { terrain.liquidHeightAt = liquid; (terrain as { liquidKindAt?: (x: number, z: number) => string | null }).liquidKindAt = (x, z) => (liquid(x, z) > heightAt(x, z) ? 'water' : null) }
   world.step()
   return terrain
 }
