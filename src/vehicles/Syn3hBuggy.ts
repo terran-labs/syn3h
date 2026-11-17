@@ -13,6 +13,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { seaLevel } from '../world/seaLevel'
+import { atmosphereValue } from '../world/weather/params'
 import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
@@ -1043,6 +1044,10 @@ export class Syn3hBuggy extends Vehicle {
     )
     const mis = this.motorInputSmoothed
     const stallSpeed = 16
+    // The wings fly on air. The planet's own (world.atmosphere, 0 vacuum to 1 Earthlike) scales
+    // every aerodynamic effect below; on an airless world the buggy follows a ballistic arc
+    // with its wings out. At 1 nothing changes.
+    const air = THREE.MathUtils.clamp(atmosphereValue(), 0, 1)
     const vel = ub.velocity
     const locVel = ub.inverseTransformDirectionUnity(vel, this.v1)
     const e = unityEulerAngles(q, this.euler)
@@ -1050,14 +1055,14 @@ export class Syn3hBuggy extends Vehicle {
     const pitch = signedAngle(e.x)
     const agility = buggyFlightAgility.value
     if (locVel.lengthSq() > stallSpeed) {
-      ub.drag = (myVelocity / buggyFlightDrag.value) * 0.3
+      ub.drag = (myVelocity / buggyFlightDrag.value) * 0.3 * air
 
       if (this.brakes) {
         // Airbrakes, VB 402-408.
         if (this.brakePower < 1) this.brakePower += dt * 0.15
-        const m = -this.brakePower * 2
+        const m = -this.brakePower * 2 * air
         ub.addRelativeForce(locVel.x * m * 5, locVel.y * m * 100, locVel.z * 150 * m)
-        ub.addRelativeTorque((pitch + smoothed.y * -100) * -2, smoothed.x * 280, roll * -1)
+        ub.addRelativeTorque((pitch + smoothed.y * -100) * -2 * air, smoothed.x * 280 * air, roll * -1 * air)
       } else {
         // Standard flight, VB 411-434: velocity follows the nose.
         this.brakePower = 0
@@ -1094,28 +1099,30 @@ export class Syn3hBuggy extends Vehicle {
             ub.setVelocity(dir.multiplyScalar(model === 2 ? Math.max(0, speed - GLIDE_GRAVITY * 9.81 * dir.y * dt) : speed))
           }
         }
-        ub.addRelativeTorqueAcceleration(mis * 10 * agility, 0, smoothed.x * -13 * agility, dt)
+        // Thinner air: the wings turn the motion only part of the way toward the nose.
+        if (air < 1) ub.setVelocity(this.v2.copy(ub.velocity).lerp(vel, 1 - air))
+        ub.addRelativeTorqueAcceleration(mis * 10 * agility * air, 0, smoothed.x * -13 * agility * air, dt)
       }
 
       // Dihedral, VB 436-451.
       if (Math.abs(smoothed.x) < 0.01 && (e.z < 90 || e.z > 270)) {
-        ub.addRelativeTorque(0, roll * -0.6, e.z < 20 || e.z > 340 ? roll * -0.5 : 0)
+        ub.addRelativeTorque(0, roll * -0.6 * air, e.z < 20 || e.z > 340 ? roll * -0.5 * air : 0)
       } else if (Math.abs(smoothed.x) < 0.01) {
-        ub.addRelativeTorque(0, (e.z - 180) * 0.4, 0)
+        ub.addRelativeTorque(0, (e.z - 180) * 0.4 * air, 0)
       }
 
       // Lava thermals, VB 459-466: lift within 10 m above lava or sea.
       const liquid = this.liquidAt(ub.pos.x, ub.pos.z)
       const d = ub.pos.y - liquid
       if (ub.pos.y < seaLevel() + 10 && d >= 0 && d <= 10) {
-        ub.addForce(this.v2.set(0, (10 - d) * 40, 0))
+        ub.addForce(this.v2.set(0, (10 - d) * 40 * air, 0))
       }
       ub.angularDrag = 5
     } else {
       // Stalling, VB 474-479. `y + 0.5 * 100` is the source's precedence: y + 50.
       ub.angularDrag = 1
-      ub.drag = (myVelocity / buggyFlightDrag.value) * 9
-      ub.addRelativeTorque(smoothed.y + 0.5 * 100, 0, smoothed.x * -30)
+      ub.drag = (myVelocity / buggyFlightDrag.value) * 9 * air
+      ub.addRelativeTorque((smoothed.y + 0.5 * 100) * air, 0, smoothed.x * -30 * air)
     }
   }
 

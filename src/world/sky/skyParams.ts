@@ -34,8 +34,8 @@ export const sunTimeOfDay = defineParam({ id: 'sun.timeOfDay', label: 'Time of d
 /** Real seconds per full day. 0 pauses the clock. */
 export const sunDayLength = defineParam({ id: 'sun.dayLength', label: 'Day length (s)', group: 'Sun', scope: w, default: 0, min: 0, max: 3600, step: 1 })
 /** Latitude style tilt: the noon sun stands at 90 minus this many degrees. */
-export const sunTilt = defineParam({ id: 'sun.tilt', label: 'Tilt (latitude)', group: 'Sun', scope: w, default: 30, min: 0, max: 80, step: 0.5 })
-export const sunAzimuth = defineParam({ id: 'sun.azimuth', label: 'Azimuth', group: 'Sun', scope: w, default: 335, min: 0, max: 360, step: 1 })
+export const sunTilt = defineParam({ id: 'sun.tilt', label: 'Tilt (latitude, °)', group: 'Sun', scope: w, default: 30, min: 0, max: 80, step: 0.5 })
+export const sunAzimuth = defineParam({ id: 'sun.azimuth', label: 'Azimuth (°)', group: 'Sun', scope: w, default: 335, min: 0, max: 360, step: 1 })
 export const sunIntensity = defineParam({ id: 'sun.intensity', label: 'Sunlight', group: 'Sun', scope: w, default: 12, min: 0, max: 20, step: 0.05 })
 export const sunAmbient = defineParam({ id: 'sun.ambient', label: 'Sky ambient', group: 'Sun', scope: w, default: 0.6, min: 0, max: 4, step: 0.01 })
 export const sunMoonIntensity = defineParam({ id: 'sun.moonIntensity', label: 'Moonlight', group: 'Sun', scope: w, default: 0.6, min: 0, max: 3, step: 0.01 })

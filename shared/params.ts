@@ -30,8 +30,10 @@ export interface ParamDef<T extends ParamValue = ParamValue> {
   /**
    * Numbers only: how the settings UI shows and takes the value, without changing what is
    * stored or sent. Shown = (value - offset) * scale; a negative scale reverses the slider.
+   * With `power`, shown = scale * power^(value - offset) instead (planet size in metres from
+   * a stored power of two), and `step` gives the slider's step in shown units.
    */
-  display?: { offset: number; scale: number }
+  display?: { offset: number; scale: number; power?: number; step?: number }
 }
 
 export interface Param<T extends ParamValue> {
@@ -109,13 +111,13 @@ export const params = {
 
 /** Positive number, metres per second squared, pulling down. Original range 0.81 to 18.81. */
 export const worldGravity = defineParam({
-  id: 'world.gravity', label: 'Gravity', group: 'World', scope: 'world',
+  id: 'world.gravity', label: 'Gravity (m/s²)', group: 'World', scope: 'world',
   default: 9.81, min: 0.81, max: 18.81, step: 0.01,
 })
 
 /** Altitude of the lava or sea surface in metres. */
 export const worldLavaAltitude = defineParam({
-  id: 'world.lavaAltitude', label: 'Sea level', group: 'World', scope: 'world',
+  id: 'world.lavaAltitude', label: 'Sea level (m)', group: 'World', scope: 'world',
   default: 0, min: -80, max: 60, step: 0.5,
 })
 

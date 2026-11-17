@@ -44,7 +44,7 @@ import {
   isVec3,
   parseJson,
   stampStateId,
-  WRAP_SIZES,
+  tileSize,
   MAX_BOTS, type WireVehicleKind,
   CLOSE_REPLACED,
 } from '../shared/protocol'
@@ -1356,8 +1356,7 @@ export class Room {
    * The room does not register the terrain's parameters; it reads the stored values.
    */
   private wrapSize(): number {
-    const tier = Number(this.values.get('terrain.planetSize') ?? 1)
-    return WRAP_SIZES[tier <= 0 ? 0 : tier >= 2 ? 2 : 1]
+    return tileSize(this.values.get('terrain.planetSize') ?? 1)
   }
 
   /** Distance between two positions, the short way round on a wrapping world. */
