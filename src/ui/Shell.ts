@@ -816,7 +816,7 @@ export class Shell implements System {
       this.game.holdDraws = false
       if (!landed) camera?.clearCinematicPose()
       this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
-      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
+      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.removeProperty('visibility') }
       this.dropping = false; this.enteringByGesture = false
       if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
     }
@@ -873,17 +873,20 @@ export class Shell implements System {
       })
       // Covered now: the game goes back to its few frames a second behind the galaxy.
       await frame()
+      // The galaxy covers the game now: stop compositing it. A full-screen WebGPU canvas under
+      // a blur filter, composited behind an opaque WebGL galaxy, stalled the GPU for 0.6 to
+      // 1.8 s at High once the galaxy's flight began. Shown again when the lobby takes over.
+      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.visibility = 'hidden' }
       flight.launch()
       root.classList.remove('is-descending')
       camera?.clearCinematicPose()
-      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
       await flight.done
     } catch (error) {
       console.warn('World ascent failed', error)
     } finally {
       this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity')
       root.classList.remove('is-descending')
-      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
+      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.removeProperty('visibility') }
       this.dropping = false
       // The lobby as Leave world has always left it, from the view the flight settled on.
       this.menuVisible = false
