@@ -23,7 +23,7 @@ import { introMode, LEAVING_SECONDS, leavingMark, openingPace, openingState, RET
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
 import { WordmarkCrisp } from '../brand/wordmarkCrisp'
-import type { ParamValue } from '../../../shared/params'
+import { defineParam, type ParamValue } from '../../../shared/params'
 import { ORDINARY_BODY, planetById, type PlanetBody } from '../../world/planets'
 import { lobbyLook, type LobbyLook } from '../../world/lobbyLook'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
@@ -100,6 +100,12 @@ const PITCH_LOW = -0.2, PITCH_HIGH = 1.25
 const PLANET = 0.5, INNER = 1.4, CLEAR = 0.08, RATE = 0.07
 /** The view's half angle on the short side of the screen, as a tangent. */
 const VIEW_TAN = 0.62
+/**
+ * The strength of the sun's god rays in the lobby. 0.95 until the owner asked for them at about
+ * half (16 November 2026). The opening grows them to this; the in-scene name keeps the light it
+ * had from them at 0.95.
+ */
+export const sunRays = defineParam({ id: 'lobby.sunRays', label: 'Lobby sun: god ray strength', group: 'Graphics', scope: 'client', default: 0.475, min: 0, max: 1.5, step: 0.025 })
 /**
  * A world's radius in the lobby from its size. Slightly compressed, so the ratios read true
  * (a moon is plainly a moon) while the smallest world is still something to tap on a phone.
@@ -349,6 +355,7 @@ uniform vec2 uShed;                 // quality ladder: x sheds post effects, y s
 uniform float uAmbience;            // 1 keeps twinkle and drifting cloud, 0 sheds them
 uniform float uDive;                // 0 in orbit, 1 through the atmosphere of the chosen world
 uniform float uDim;                 // 1 as the lobby itself; lower behind an open panel
+uniform float uRays;               // the sun's god rays: their strength in the settled lobby
 uniform float uMarkCrisp;           // 1 when the wordmark's letters are drawn by its own full-resolution pass
 uniform vec4 uReveal;               // the opening (opening.ts): sun, shafts' front, stars, the point's swell
 uniform float uOrbit[${MAX}];       // the opening: how much of each world's orbit line is drawn
@@ -497,7 +504,8 @@ void main() {
     // An arriving world's shadow comes in with it.
     shade *= 1.0 - cut * 0.85 * (1.0 - uShed.x) * smoothstep(0.3, 1.0, uArrive[i]);
   }
-  vec3 sunShafts = mix(vec3(1.0, 0.86, 0.66), WARM, 0.3) * shafts * reach * 0.95 * shade;
+  // uRays: the shafts' strength (lobby.sunRays). The name catching them keeps its own light, below.
+  vec3 sunShafts = mix(vec3(1.0, 0.86, 0.66), WARM, 0.3) * shafts * reach * uRays * shade;
   // Lens: a horizontal streak and three ghosts toward the centre. Post effects, shed first.
   vec3 flare = vec3(0.55, 0.75, 1.0) * exp(-abs(toSun.y) * 120.0) * exp(-abs(toSun.x) * 2.6) * 0.5;
   vec2 view = q * 0.5, sunView = sunP.xy * 0.5;
@@ -614,7 +622,7 @@ void main() {
         }
         // A dark face with a warm sheen, so the pale edge line carries the name. Lit by the
         // rays (3), the letters are a veil that catches the shafts and haze passing in front.
-        if (uMarkMode >= 3) { mark += rimColour * 0.02 + sunShafts * 1.5 + sunHaze * 0.9 + rimColour * 0.12 * lit * shadow; lineStrength = 0.75; }
+        if (uMarkMode >= 3) { mark += rimColour * 0.02 + sunShafts * 1.5 * (0.95 / max(uRays, 0.05)) + sunHaze * 0.9 + rimColour * 0.12 * lit * shadow; lineStrength = 0.75; }
         else mark += rimColour * (0.025 + 0.22 * lit * shadow);
       } else {
         // In front of the sun: backlit, dark, with a rim of light on the edges facing it.
@@ -710,7 +718,7 @@ void main() {
   color = vec4(c / 12.0, 1.0);
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
-const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP'] as const
+const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays'] as const
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -1247,7 +1255,7 @@ export class Galaxy {
     gl.useProgram(this.program); this.upload(gl)
     // The frame's uniforms, for this pass and the wordmark's own full-resolution one.
     const setFrame = (gl: WebGL2RenderingContext, u: Record<string, WebGLUniformLocation | null>, width: number, height: number, bindField: () => void, crisp: number) => {
-      gl.uniform1i(u.uCloseIndex, this.closeIndex)
+      gl.uniform1i(u.uCloseIndex, this.closeIndex); gl.uniform1f(u.uRays, sunRays.value)
       gl.uniform1i(u.uMarkMode, mark.placement ? mark.mode : 0); gl.uniform1f(u.uMarkCrisp, crisp)
       if (mark.placement) {
         const p = mark.placement
