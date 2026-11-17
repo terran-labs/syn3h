@@ -23,13 +23,15 @@
  */
 import { audioContext, audioContextAge } from '../audio/unlock'
 import { pickTapMessage } from './data/tapMessages'
-import { introMode, POP_SECONDS } from './galaxy/opening'
+import { introMode, openingCue, POP_SECONDS } from './galaxy/opening'
 import type { VeilHold } from './LoadingScreen'
 
 /** The parts of GameAudio the gate uses. */
 export interface BeginAudio {
   begin(popSeconds: number): Promise<void>
   cancelBegin(): void
+  /** Set by begin: when the sound will be heard, on the page's clock. */
+  readonly bangAt?: { page: number }
 }
 
 /** Query keys that mean the visitor came to enter somewhere: no extra tap on the way. */
@@ -119,7 +121,8 @@ async function hold(audio: BeginAudio, lift: () => void): Promise<void> {
   // Armed now, before any gesture: the clock may start inside the gesture's first event
   // (pointerdown on desktop, touchend on a phone), before the button hears its click. Whenever
   // it runs, the score's swell is scheduled and the veil lifts with it.
-  audio.begin(opening ? POP_SECONDS : 0.05).then(end, end)
+  // The opening starts where the sound is heard (openingCue), whichever frame draws it first.
+  audio.begin(opening ? POP_SECONDS : 0.05).then(() => { if (audio.bangAt) openingCue.at = audio.bangAt.page; end() }, end)
   // A gesture the browser did not accept as starting sound still begins, without it, so no
   // one has to tap twice. Sound then joins on the next gesture, fading in as usual.
   const tapped = () => {

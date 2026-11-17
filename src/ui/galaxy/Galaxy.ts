@@ -21,7 +21,7 @@ function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmar
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
 import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
 import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime } from './cameraRest'
-import { introMode, LEAVING_SECONDS, leavingMark, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
+import { introMode, LEAVING_SECONDS, openingCue, leavingMark, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
 /** The loading veil is still up: loading, or waiting for the tap that begins (src/ui/TapToBegin.ts). */
@@ -1466,7 +1466,7 @@ export class Galaxy {
     const o = this.opening
     if (!o) return SETTLED
     // Held while the veil is up: loading, then waiting for the tap that begins it (TapToBegin.ts).
-    if (o.start === null && !veiled()) o.start = performance.now()
+    if (o.start === null && !veiled()) { o.start = openingCue.at ?? performance.now(); openingCue.at = null }
     const at = this.openingAt ?? (o.start === null ? -1 : (performance.now() - o.start) / 1000)
     const state = openingState(at, o.mode, places.length)
     if (state.done) {
