@@ -153,7 +153,11 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
 
     // ---- Cards ease their heights together. ----
     // The Gravity tooltip from the steps above can sit over the World header on a phone, so
-    // the motion is checked on the Game card.
+    // the motion is checked on the Game card. On the phone layout Playwright drives an
+    // emulated mouse: its pointer, left where the number was clicked, would hover a Game row
+    // as the card opens under it and raise that row's tooltip, which a finger never does.
+    // Move it off the rail and tap from here on.
+    if (touch) await page.mouse.move(1, 1)
     await page.evaluate(() => syn3h.shell.inspector.hideTooltip())
     const heights = () => page.evaluate(() => [...document.querySelectorAll('.wi-card')].map(c => c.getBoundingClientRect().height))
     await page.evaluate(() => { for (const card of document.querySelectorAll('.wi-card.is-open')) card.querySelector('.wi-head').click() })
@@ -179,11 +183,11 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     const animated = await heights()
     assert.equal(await page.locator('.wi-card[data-section=game] .wi-body').evaluate(el => !el.hidden && !el.inert), true)
     // Closing hides the body once the card has shrunk.
-    await page.locator('.wi-card[data-section=game] .wi-head').click(); await settled(page)
+    await press(page.locator('.wi-card[data-section=game] .wi-head')); await settled(page)
     assert.deepEqual((await heights()).map(Math.round), closed.map(Math.round), 'closing returns to the closed layout')
     assert.equal(await page.locator('.wi-card[data-section=game] .wi-body').evaluate(el => el.hidden && el.inert), true, 'closed body leaves the tab order')
     // A screenshot half way through opening.
-    await page.locator('.wi-card[data-section=game] .wi-head').click()
+    await press(page.locator('.wi-card[data-section=game] .wi-head'))
     await page.waitForTimeout(90)
     await page.evaluate(() => { for (const a of document.querySelector('.wi-cards').getAnimations({ subtree: true })) a.pause() })
     await page.screenshot({ path: `${shots}/${mode}-card-opening.png` })
@@ -191,7 +195,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await settled(page)
 
     // ---- Reduced motion: no animation, and the same final layout. ----
-    await page.locator('.wi-card[data-section=game] .wi-head').click(); await settled(page)
+    await press(page.locator('.wi-card[data-section=game] .wi-head')); await settled(page)
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const still = await page.evaluate(() => {
       const card = document.querySelector('.wi-card[data-section=game]')

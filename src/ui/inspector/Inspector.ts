@@ -612,6 +612,9 @@ export class Inspector {
     if (open && at < 0) this.openOrder.push(id)
     if (!open && at >= 0) this.openOrder.splice(at, 1)
     if (!open) card.style.removeProperty('min-height')
+    // A tooltip never outlives its row: closing the card that holds it (by hand or to make
+    // room for another) takes the tooltip with it.
+    if (!open && this.selected && card.querySelector(`.wi-row[data-id="${CSS.escape(this.selected)}"]`)) this.hideTooltip()
     const body = card.querySelector<HTMLElement>('.wi-body')!
     card.classList.toggle('is-open', open); body.hidden = !open; body.inert = !open; card.querySelector('.wi-head')!.setAttribute('aria-expanded', String(open))
   }
