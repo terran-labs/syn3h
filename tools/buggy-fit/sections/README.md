@@ -116,8 +116,14 @@ limit; the curve is flat well before it.
   lamp position and size; scoop position and size; wing span, chord, height and thickness;
   plate spacing. Positions were read by hand from the reference's material bounds.
 
-## Not done
+## Under the shared referee
 
-The harness's compare.ts and renderer had not landed when this ran (only reference.ts and
-the README), so these numbers come from `measure.ts`, which samples the same way the brief
-describes. They should be re-run under the shared referee.
+`tools/buggy-fit/compare.ts --part body --detail 0` (merged from rd/buggygen-harness):
+
+| level | numbers | gzip B | mean mm | p95 mm | max mm | normal deg | IoU mean / min (8 views) | closed |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A | 63 | 1,932 | 44.3 | 218.2 | 416.4 | 23.8 | 0.874 / 0.834 | yes |
+| B | 272 | 2,383 | 25.0 | 157.6 | 403.6 | 20.7 | 0.927 / 0.884 | yes |
+| C | 375 | 3,299 | 12.2 | 43.5 | 133.5 | 20.5 | 0.950 / 0.925 | no: 52 open edges, the cockpit cut |
+
+Model files for comparison: buggy-boxarm.glb is 148,408 bytes gzip.
