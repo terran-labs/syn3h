@@ -372,7 +372,9 @@ export class Materialize implements System {
     }
     const light=this.light
     if(!light)return
-    light.visible=best!==null
+    // Dark, never hidden: three gathers only visible lights, so toggling visibility changed every
+    // lit material's light set and rebuilt their shaders on each arrival and departure (500 to
+    // 975 ms frames at High under load, once per bot when bots arrive one at a time).
     if(!best){light.intensity=0;return}
     light.position.copy(best.centre).y+=.6*size
     light.color.copy(best.accent)
