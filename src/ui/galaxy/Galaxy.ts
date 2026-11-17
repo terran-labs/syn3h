@@ -1432,16 +1432,27 @@ export class Galaxy {
   private markPlaced: ReturnType<typeof placeWordmark> | null = null
   /** Where the in-space wordmark is on screen now, in CSS pixels of the host (its bounding box), or null. */
   wordmarkScreenBox(): { x: number; y: number; width: number; height: number } | null {
+    const edges = this.wordmarkEdges(8)
+    if (!edges) return null
+    const all = [...edges.top, ...edges.middle, ...edges.bottom], xs = all.map(p => p[0]), ys = all.map(p => p[1])
+    const x0 = Math.min(...xs), y0 = Math.min(...ys)
+    return { x: x0, y: y0, width: Math.max(...xs) - x0, height: Math.max(...ys) - y0 }
+  }
+  /**
+   * The in-space wordmark's top, middle and bottom lines on screen, left to right, `steps` + 1
+   * points each, in CSS pixels of the host. The wordmark stands on a cylinder round the sun, so
+   * these are arcs: the lobby's panels bend on the same cylinder (LobbySheet.ts). Null when
+   * the name is not in space.
+   */
+  wordmarkEdges(steps = 8): { top: [number, number][]; middle: [number, number][]; bottom: [number, number][] } | null {
     const p = this.markPlaced, v = this.markView
     if (!p || !v) return null
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
-    for (let i = 0; i <= 8; i++) for (let j = 0; j <= 2; j++) {
-      const w = surfacePoint(p, (i / 8 - 0.5) * ASPECT, j / 2 - 0.5), d = sub(w, v.eye), z = Math.max(0.001, dot(d, v.forward))
-      const x = width * this.framing[0] + dot(d, v.right) / (z * v.tan) * short / 2, y = height * (1 - this.framing[1]) - dot(d, v.up) / (z * v.tan) * short / 2
-      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y)
-    }
-    return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+    const line = (along: number) => Array.from({ length: steps + 1 }, (_, i): [number, number] => {
+      const w = surfacePoint(p, (i / steps - 0.5) * ASPECT, along), d = sub(w, v.eye), z = Math.max(0.001, dot(d, v.forward))
+      return [width * this.framing[0] + dot(d, v.right) / (z * v.tan) * short / 2, height * (1 - this.framing[1]) - dot(d, v.up) / (z * v.tan) * short / 2]
+    })
+    return { top: line(0.5), middle: line(0), bottom: line(-0.5) }
   }
   wordmarkStats() { const f = this.logo?.distanceField; return { mode: this.markMode, fieldDensity: f?.density ?? 0, fieldBakes: f?.bakes ?? 0, fieldBakeMs: f?.lastBakeMs ?? 0, rig: this.markRig.pose } }
   /** Fly to a world, as a tap on it does. */

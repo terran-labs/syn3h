@@ -50,7 +50,8 @@ import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
-import { aboutHtml, showAboutTab, wireAbout, type AboutTab } from './updates/about'
+import { aboutHtml, aboutSheetHtml, fillUpdates, showAboutTab, updatesSheetHtml, wireAbout, type AboutTab } from './updates/about'
+import { LobbySheet, sheetShape } from './LobbySheet'
 import { UpdateNotice } from './updates/UpdateNotice'
 import { rollPlayerName } from './data/names'
 import { cleanPlayerName, loadPlayerName, savePlayerName, type NameSource } from './playerName'
@@ -73,11 +74,16 @@ import './theme-halo.css'
  * galaxy, so turning this on brings it back. Worlds are shaped in play, in the World card.
  */
 const OFFER_CUSTOM_PLANET: boolean = false
+/** Point the licence disclosures in `root` at the captured entry version's copies. Only those links, never invite or networking links. */
+function pinLicenses(root: ParentNode): void {
+  for (const anchor of root.querySelectorAll<HTMLAnchorElement>('a[href^="/brand/licenses/"]')) anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
+}
 /** Keys that mean "I want to drive": they resume a pause and capture the cursor. */
 const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 /**
- * The lobby's bottom buttons (the owner, 15 November 2026): Multiplayer and About, nothing
- * else; Settings is the gear in the lower right corner (LobbySettings, 16 November 2026). Join by QR lives inside Multiplayer ("Show on screen"), and shaping a world
+ * The lobby's bottom buttons (the owner, 15 November 2026): Multiplayer, nothing else.
+ * Settings is the gear in the lower right corner, with About and Updates as icons above it
+ * (LobbySettings and LobbySheet, 16 November 2026). Join by QR lives inside Multiplayer ("Show on screen"), and shaping a world
  * returns with OFFER_CUSTOM_PLANET.
  */
 /**
@@ -111,7 +117,7 @@ export function plateTint(recipeId: string): string {
 const LABEL_HOLD = 0, LABEL_FADE = 150
 /** Must match the short landscape block in shell.css. */
 const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
-const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="about">About</button>`
+const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button>`
 const back = '<button type="button" class="panel-back link-button" data-goto="index"><span aria-hidden="true">←</span><span>Back</span></button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
 declare const __SYN3H_BUILD__: string | undefined
@@ -206,7 +212,6 @@ export class Shell implements System {
         </section>
         <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode">${modeChoices.map(mode => `<option value="${mode.value}">${mode.label}</option>`).join('')}</select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
-        <section data-panel="about">${heading('About Syn3h')}${aboutHtml()}${back}</section>
       </div>
       <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span></footer>
       </div>
@@ -221,9 +226,7 @@ export class Shell implements System {
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
     // Rewrite only the two guide disclosures, never invite or networking links.
-    for (const anchor of this.element.querySelectorAll<HTMLAnchorElement>('[data-panel="about"] a[href^="/brand/licenses/"], .in-play-about a[href^="/brand/licenses/"]')) {
-      anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
-    }
+    pinLicenses(this.element.querySelector('.in-play-about')!)
     document.body.append(this.element); document.body.classList.add('has-game-shell')
     this.invite = new InviteView(this.element, () => this.closeJoin(), () => { void this.copyInvite() })
     this.matchHud = new MatchHud(this.element, () => audio.cue('tick'))
@@ -287,6 +290,16 @@ export class Shell implements System {
     this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock)
     // The version beside the lobby's settings gear opens What's new.
     this.lobbySettings.version.addEventListener('click', () => { this.audio.cue('click'); this.showUpdates() }, { signal })
+    // About and Updates, each its own sheet from its icon above the gear. Their content is
+    // built on first open, so nothing in them is requested before the player asks.
+    const shape = sheetShape(location.search), edges = () => this.galaxy?.wordmarkEdges() ?? null
+    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'About Syn3h', shape, edges, cue: () => this.audio.cue('click'), fill: body => { body.insertAdjacentHTML('beforeend', aboutSheetHtml()); pinLicenses(body) } })
+    this.updatesSheet = new LobbySheet(this.element, {
+      name: 'updates', title: 'Updates', shape, edges, cue: () => this.audio.cue('click'),
+      fill: body => body.insertAdjacentHTML('beforeend', updatesSheetHtml()), opened: body => { void fillUpdates(body.querySelector<HTMLElement>('.about-updates')!) },
+    })
+    this.lobbySettings.about.addEventListener('click', () => this.openLobbySheet(this.aboutSheet), { signal })
+    this.lobbySettings.updates.addEventListener('click', () => this.openLobbySheet(this.updatesSheet), { signal })
     const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
     // Header and footer stay outside the scrolling card stack.
     const command = document.createElement('div'); command.className = 'rail-command wi-glass'
@@ -307,11 +320,11 @@ export class Shell implements System {
     exitConfirm.querySelector('.exit-leave')!.addEventListener('click', () => this.answerExit(true), { signal })
     players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
     players.querySelector('.rail-about')!.addEventListener('click', () => this.openAbout(), { signal })
-    // About and Updates, the same content in the lobby panel and the in-play guide.
-    for (const about of this.element.querySelectorAll<HTMLElement>('[data-panel="about"], .in-play-about')) wireAbout(about, signal)
+    // About and Updates as two tabs in the in-play guide; the lobby gives each its own sheet.
+    wireAbout(this.element.querySelector<HTMLElement>('.in-play-about')!, signal)
     // A newer live version: a banner in the lobby, a chip in the sidebar in play. What's new
-    // opens About at Updates wherever the player is.
-    this.updateNotice = new UpdateNotice(() => this.showUpdates(), signal, () => { this.updateBand() })
+    // opens Updates wherever the player is, and the lobby's Updates icon carries a quiet mark.
+    this.updateNotice = new UpdateNotice(() => this.showUpdates(), signal, () => { this.updateBand(); this.lobbySettings.markUpdate(this.updateNotice.version) })
     // With the galaxy, so it goes when a panel opens, play starts or the descent begins. It
     // sits just under the wordmark, and the galaxy leaves it that band (updateBand).
     this.element.querySelector('.galaxy-ui')!.prepend(this.updateNotice.banner)
@@ -480,11 +493,22 @@ export class Shell implements System {
     if (top !== this.bandTop) { this.bandTop = top; banner.style.top = top }
     return banner.offsetTop + banner.offsetHeight + 12
   }
-  /** About at Updates: the in-play guide while playing, else the lobby About panel. */
+  /** Updates: the in-play guide at its Updates tab while playing, else the lobby's Updates sheet. */
   showUpdates(): void {
     if (this.playing) { this.openAbout('updates'); return }
-    this.showPanel('about')
-    showAboutTab(this.element.querySelector<HTMLElement>('[data-panel="about"]')!, 'updates')
+    this.openLobbySheet(this.updatesSheet)
+  }
+  /** The lobby's About sheet, as its icon opens it. */
+  showLobbyAbout(): void { this.openLobbySheet(this.aboutSheet) }
+  private readonly aboutSheet: LobbySheet
+  private readonly updatesSheet: LobbySheet
+  /** One lobby sheet at a time, over the galaxy; settings close first. */
+  private openLobbySheet(sheet: LobbySheet): void {
+    if (this.playing) return
+    const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : sheet === this.aboutSheet ? this.lobbySettings.about : this.lobbySettings.updates
+    this.lobbySettings.close()
+    for (const other of [this.aboutSheet, this.updatesSheet]) if (other !== sheet) other.close()
+    sheet.open(opener)
   }
   openAbout(tab?: AboutTab): void {
     if (!this.playing || this.aboutOpen || this.inviteOpen || this.exitAsking || this.dropping) return
@@ -823,7 +847,7 @@ export class Shell implements System {
     if (!this.started) return
     this.lobbyAddress?.showPlay(this.room)
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; if (this.galaxy) this.galaxy.enabled = false
-    this.lobbySettings.close()
+    this.lobbySettings.close(); this.aboutSheet.close(); this.updatesSheet.close()
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true; this.audio.setLobbyVisible(false); this.paramPanel?.hide()
     this.element.classList.add('is-playing')
     this.element.querySelector<HTMLElement>('.shell-hud')!.hidden = false
@@ -1675,7 +1699,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }

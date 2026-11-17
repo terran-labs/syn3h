@@ -72,14 +72,8 @@ body.has-game-shell:has(.syn3h-shell:not(.is-playing)) #syn3h-build-notice { dis
 .syn3h-shell.exploration-ui .rail-update { display: block; width: 100%; min-height: 44px; margin: 6px 0 0; padding: 6px 12px; border: 1px solid var(--s3-line); border-radius: 999px; background: rgb(143 227 255 / .08); color: var(--s3-accent-2); font: 500 12.5px/1.2 'Barlow', sans-serif; letter-spacing: .04em; cursor: pointer; }
 .syn3h-shell.exploration-ui .rail-update[hidden] { display: none; }
 
-/* A phone in landscape: the lobby About is a full-height sheet, as the in-play guide is,
- * rather than a strip between the wordmark and the buttons. */
+/* A phone in landscape: the in-play guide's tabs sit closer to its header. */
 @media (max-height: 550px) {
-  html body .syn3h-shell.exploration-ui .lobby-panels:has(> [data-panel="about"]:not([hidden])) { position: fixed; inset: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); z-index: 40; width: auto; max-width: none; height: auto; max-height: none; margin: 0; transform: none; overflow: auto; overscroll-behavior: contain; }
-  html body .syn3h-shell.exploration-ui:is([data-glass], *) .lobby-panels:has(> [data-panel="about"]:not([hidden])) { background: rgb(3 7 12); }
-  /* The sheet covers the lobby: its links, build line and wordmark step aside meanwhile. */
-  html body .syn3h-shell.exploration-ui:has(.lobby-panels > [data-panel="about"]:not([hidden])) :is(.lobby-brand, .lobby-links, .build-line, .galaxy-ui) { visibility: hidden; }
-  html body .syn3h-shell.exploration-ui .lobby-panels > [data-panel="about"] { max-height: none; padding-top: 14px; }
-  html body .syn3h-shell.exploration-ui .lobby-panels > [data-panel="about"] h2 { margin-bottom: 6px; }
   html body .syn3h-shell.exploration-ui .about-tabs { margin-bottom: 10px; }
+}
 }
