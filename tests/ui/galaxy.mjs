@@ -47,13 +47,14 @@ try {
     assert.ok(swung.labels.some(l => { const before = first.labels.find(b => b.id === l.id); return before && Math.hypot(l.x - before.x, l.y - before.y) > 25 }), `${view.name}: the view swung`)
     await page.screenshot({ path: `${out}/${view.name}-swung.png` })
     // Behind a panel the galaxy dims and stops drawing; back at the index it is bright again.
+    // Settings moved to the gear's sheet; About is a full lobby panel, as Settings was.
     await page.evaluate(() => window.syn3h.shell.showPanel('about')); await settle(page, 'about')
     await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 0.35, null, { timeout: 15000 })
     // A map arriving, or the camera still easing home, draws a frame; then it rests.
     let rests = false
     for (let i = 0; i < 20 && !rests; i++) { const f = (await state()).frames; await page.waitForTimeout(1200); rests = (await state()).frames === f }
     assert.ok(rests, `${view.name}: the galaxy keeps drawing behind a panel`)
-    await page.screenshot({ path: `${out}/${view.name}-settings.png` })
+    await page.screenshot({ path: `${out}/${view.name}-panel.png` })
     await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle(page, 'index')
     await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 1, null, { timeout: 15000 })
     // Tapping a world drops straight into it: no form, no panel, one motion to the ground.

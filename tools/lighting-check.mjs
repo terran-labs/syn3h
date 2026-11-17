@@ -32,7 +32,7 @@ try {
     const receivers = []
     g.scene.traverse(o => { if (o.receiveShadow) receivers.push(o) })
     window.lightingCheck = { env, materials, receivers }
-    for (const id of ['post.bloom', 'post.shafts', 'post.flare', 'post.motionBlur', 'post.heat', 'post.plunge', 'post.look', 'post.vignette', 'post.grain', 'post.contact']) s.params.set(id, 0)
+    for (const id of ['post.bloom', 'post.shafts', 'post.flare', 'post.motionBlur', 'post.heat', 'post.look', 'post.vignette', 'post.grain', 'post.contact']) s.params.set(id, 0)
   })
   const cases = [
     { name: 'low-original', hour: 17.6 },

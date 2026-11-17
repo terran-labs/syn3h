@@ -6,7 +6,7 @@ refreshes the thread column on each sweep.
 
 | Lane | Branch | Thread at 7:00pm | Owns |
 |---|---|---|---|
-| Orchestrator | `build/weekend` | Running; release 1 candidate m13.1 frozen, waiting on the Cloudflare token | Merges, full test suite, previews, dashboard, `main.ts` wiring, `ops/STATE.md`, `vite.config.ts`, `paseo.json`, `package.json`, `tools/smoke.mjs`, production releases |
+| Orchestrator | `main` | Running; release 1 candidate m13.1 frozen, waiting on the Cloudflare token | Merges, full test suite, previews, dashboard, `main.ts` wiring, `ops/STATE.md`, `vite.config.ts`, `paseo.json`, `package.json`, `tools/smoke.mjs`, production releases |
 | Foreman | `ops/foreman` | Running | `ops/**` except `ops/STATE.md` |
 | Terrain Lab | `feat/terrain-lab` | Running, with the owner; preview on 32783 is back | Island generator, planet recipes, lava, fog defaults, `src/world/terrain/volcanics.ts`, `tools/terrainlab` |
 | Vehicles (Codex 1) | `feat/vehicles2` | Running again on a Claude account, with two helpers: Zorb mode, and a stepped frame governor | Shared vehicle code: `Vehicle.ts`, `unityBody.ts`, `lava.ts`, `index.ts`, shared skins, `src/vehicles/effects/` |

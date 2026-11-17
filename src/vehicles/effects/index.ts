@@ -7,7 +7,9 @@ import type {TileShiftEvent,Vehicle,VehicleObjectEvents} from '../Vehicle'
 import {ParticleBatch} from './ParticleBatch'
 import {RibbonBatch} from './RibbonBatch'
 import {dustSprite,glowSprite,plasmaSprite,tyreMarkAlpha} from './sprites'
-import {DEFAULT_TREAD,TREADS} from './treads'
+import {DEFAULT_TREAD,DUSTS,TREADS} from './treads'
+import {surfaceTone} from './groundTone'
+import {MARK_END_FADE,tyreMarkLife,tyreMarkSoftness,tyreMarkStrength} from './markParams'
 import type {SurfaceKind} from '../../world/terrain/surface'
 import {windDrift} from '../../world/weather'
 
@@ -15,13 +17,20 @@ const greenPlasma=plasmaSprite(false),redPlasma=plasmaSprite(true)
 /** Shares of the wind velocity given to a new dust particle and to exhaust and energy trails. */
 export const DUST_WIND=.6,EXHAUST_WIND=.3
 
-export interface WheelEffectContact {readonly grounded:boolean;readonly point:T.Vector3;readonly normal:T.Vector3;readonly slip:number}
+/** `width`: tyre width as a multiple of the standard tyre's (the buggy's tyre size); absent means 1. */
+export interface WheelEffectContact {readonly grounded:boolean;readonly point:T.Vector3;readonly normal:T.Vector3;readonly slip:number;readonly width?:number}
 type EffectsVehicle=Vehicle & {getWheelEffects?():readonly WheelEffectContact[];hoverMode?:boolean}
 const worlds=new WeakMap<Game,EffectWorld>()
 const clamp=T.MathUtils.clamp
 /** Integer hashing keeps cosmetic emission reproducible without touching simulation randomness. */
 export function effectNoise(i:number){let n=Math.imul(i+1,0x45d9f3b);n=Math.imul(n^(n>>>16),0x45d9f3b);return ((n^(n>>>16))>>>0)/4294967296}
-const dustColor=new T.Color(.48,.27,.12),markColor=new T.Color()
+const dustColor=new T.Color(.48,.27,.12),markColor=new T.Color(),groundDust=new T.Color()
+/** Spray, not dust, off wet ground by the water: pale, and very little of it. */
+const SPRAY=new T.Color(.72,.78,.84),WET_DUST=.08
+/** The tank's two tracks: half the distance between them, metres, and their mark's width. */
+const TANK_TRACK_X=1.05,TANK_MARK_WIDTH=.8
+/** Quads kept per wheel for fading a mark's end: enough to cover the end fade. */
+const RECENT=Math.ceil(MARK_END_FADE/.75)+1
 const temp=new T.Vector3(),normal=new T.Vector3(),side=new T.Vector3(),velocity=new T.Vector3()
 // Scratch for the per frame path, so a frame with nine vehicles allocates nothing here. Each is
 // written and read within one statement or one loop pass; nothing keeps a reference to them.
@@ -45,7 +54,7 @@ class EffectWorld implements System {
   readonly stats={vehicles:0,particles:0,marks:0,emitted:0,updateMs:0,peakUpdateMs:0,batches:7}
   constructor(readonly game:Game){
     // Every sprite and the tyre mark are generated in the shader (sprites.ts); nothing is loaded.
-    this.marks=new RibbonBatch(1024,tyreMarkAlpha);this.trails=new RibbonBatch(256,undefined,true)
+    this.marks=new RibbonBatch(1024,tyreMarkAlpha,false,MARK_END_FADE);this.trails=new RibbonBatch(256,undefined,true)
     this.lamps.frustumCulled=false;this.lamps.count=0
     this.lamps.onBeforeRender=()=>{this.lamps.material.color.setScalar(hotExposureDim(game.renderer.toneMappingExposure));let index=0;for(const e of this.vehicles.values())index=e.writeLamps(this.lamps,index);hideUnusedLamps(this.lamps,index);this.lamps.instanceMatrix.needsUpdate=true;if(this.lamps.instanceColor)this.lamps.instanceColor.needsUpdate=true}
     game.scene.add(this.lamps,this.marks.mesh,this.trails.mesh);this.rebudget();game.scene.userData.vehicleEffects=this.stats
@@ -67,7 +76,7 @@ class EffectWorld implements System {
     this.stats.particles=this.dust.capacity+this.energy.capacity+this.sparks.capacity+this.redSparks.capacity
   }
   noise(){return effectNoise(this.serial++)}
-  puff(p:T.Vector3,strength=1,color=dustColor){
+  puff(p:T.Vector3,strength=1,color:T.Color=dustColor){
     const n=Math.round((Number(graphicsLevel.value)===0?3:8)*strength)
     for(let i=0;i<n;i++){const a=this.noise()*Math.PI*2;velocity.set(Math.cos(a)*strength,1+this.noise(),Math.sin(a)*strength);this.dust.emit(p,velocity,1,.4+this.noise()*.4,2,color)}
   }
@@ -84,6 +93,8 @@ class EffectWorld implements System {
     const start=performance.now();dt=Math.min(.1,dt);this.clock+=dt
     if(this.level!==graphicsLevel.value)this.rebudget()
     const clock=this.clock;this.dust.clock.value=clock;this.energy.clock.value=clock;this.sparks.clock.value=clock;this.redSparks.clock.value=clock;this.marks.clock.value=clock;this.trails.clock.value=clock
+    this.marks.strength.value=tyreMarkStrength.value;this.marks.softness.value=tyreMarkSoftness.value
+    this.marks.expire();this.trails.expire()
     for(const e of this.vehicles.values())e.update(dt)
     this.stats.vehicles=this.vehicles.size;this.stats.marks=this.marks.used
     this.stats.emitted=this.dust.emitted+this.energy.emitted+this.sparks.emitted+this.redSparks.emitted
@@ -104,6 +115,16 @@ class VehicleEffects {
   // Last tyre mark and wing tip positions, kept in place; the flags say which are live.
   private readonly previousMarks=[new T.Vector3(),new T.Vector3(),new T.Vector3(),new T.Vector3()]
   private readonly hasMark=[false,false,false,false]
+  // Per wheel: metres since its mark began, the alpha and tint where it last left off, how much
+  // it is sliding (smoothed, so a mark strengthens gradually), and its last few quads, so the
+  // mark's end can be faded where the wheel lifts or stops.
+  private readonly runLength=[0,0,0,0]
+  private readonly lastAlpha=[0,0,0,0]
+  private readonly lastTint=[new T.Color(),new T.Color(),new T.Color(),new T.Color()]
+  private readonly slide=[0,0,0,0]
+  private readonly recentId=new Float64Array(4*RECENT)
+  private readonly recentStart=new Float32Array(4*RECENT*2)
+  private readonly recentCount=[0,0,0,0]
   private readonly previousTips=[new T.Vector3(),new T.Vector3()]
   private readonly hasTip=[false,false]
   private readonly lastPosition=new T.Vector3()
@@ -167,7 +188,27 @@ class VehicleEffects {
     return writeVehicleLamps(batch,index,this.vehicle.object,this.lampPoints,this.headMaterial.color,this.tailMaterial.color,this.lampMatrix)
   }
   captureLanding(){if(this.vehicle.landedThisStep)this.pendingLanding=Math.max(this.pendingLanding,this.vehicle.landingImpact)}
-  private reset(){this.pendingLanding=0;this.hasMark.fill(false);this.hasTip.fill(false);this.wasGrounded=false}
+  private reset(){this.pendingLanding=0;for(let i=0;i<4;i++)this.endMark(i);this.hasTip.fill(false);this.wasGrounded=false}
+  /** Wheel `i`'s mark ends here: its last metre fades out instead of stopping square. */
+  private endMark(i:number){
+    if(!this.hasMark[i])return
+    this.hasMark[i]=false
+    const end=this.runLength[i]
+    for(let k=0;k<this.recentCount[i];k++){
+      const r=i*RECENT+k
+      this.world.marks.endAt(this.recentId[r],end-this.recentStart[r*2],end-this.recentStart[r*2+1])
+    }
+    this.recentCount[i]=0
+  }
+  /** Ground within a little of the water's surface: wet. Lava shores are scorched rock instead. */
+  private wet(p:T.Vector3,ground:number,kind:SurfaceKind){return kind!=='rock'&&(this.terrain.liquidHeightAt?.(p.x,p.z)??-Infinity)>ground-.6}
+  /** The dust colour of the ground at `p`, into `out`. */
+  private dustAt(p:T.Vector3,out:T.Color):number {
+    const kind=(this.terrain.surfaceAt?.(p.x,p.z)??'dust') as SurfaceKind,style=DUSTS[kind]
+    if(this.wet(p,this.terrain.heightAt(p.x,p.z),kind)){out.copy(SPRAY);return WET_DUST}
+    const c=surfaceTone(this.terrain.lookIndex?.()??0,kind,style,1);out.setRGB(c[0],c[1],c[2])
+    return style.amount
+  }
   private dry(p:T.Vector3){return (this.terrain.liquidHeightAt?.(p.x,p.z)??-Infinity)<this.terrain.heightAt(p.x,p.z)-.01}
   private point(x:number,y:number,z:number,out:T.Vector3){return out.set(x,y,z).applyQuaternion(this.vehicle.object.quaternion).add(this.vehicle.object.position)}
   update(dt:number){
@@ -195,45 +236,78 @@ class VehicleEffects {
     const ground=this.terrain.heightAt(p.x,p.z),height=p.y-ground
     const grounded=v.wheelsGrounded>0
     const impact=this.pendingLanding||(!this.buggy&&grounded&&!this.wasGrounded?-this.lastVertical:0)
-    if(impact>2&&this.dry(p))w.puff(new T.Vector3(p.x,ground+.15,p.z),Math.min(2,impact/8))
+    if(impact>2&&this.dry(p)){const at=new T.Vector3(p.x,ground+.15,p.z),amount=this.dustAt(at,groundDust);w.puff(at,Math.min(2,impact/8)*Math.min(1,.4+amount*.6),groundDust)}
     this.pendingLanding=0
     const liquid=this.terrain.liquidHeightAt?.(p.x,p.z)??-Infinity,inside=p.y<liquid+.15
     if(inside&&!this.inLiquid){const kind=(this.terrain as Terrain & {liquidKindAt?(x:number,z:number):string|null}).liquidKindAt?.(p.x,p.z)
       w.puff(new T.Vector3(p.x,liquid+.2,p.z),1.5,new T.Color(kind==='water'?.5:.65,kind==='water'?.7:.6,kind==='water'?.8:.55))}
     this.inLiquid=inside
     this.wasGrounded=grounded;this.lastVertical=raw.y
-    if(this.buggy){
-      const contacts=v.getWheelEffects?.()
-      for(let i=0;i<4;i++){
+    const tank=v.kind==='tank'
+    if(this.buggy||tank){
+      const contacts=this.buggy?v.getWheelEffects?.():undefined
+      const wheels=tank?2:4,strength=tyreMarkStrength.value,lifeScale=tyreMarkLife.value
+      const look=this.terrain.lookIndex?.()??0,dustDue=this.dustTimer>=1/(25*rateScale)&&speed>2
+      for(let i=0;i<wheels;i++){
         const contact=contacts?.[i]
-        if(contact)wp.copy(contact.point);else this.point((i%2?1:-1)*1.1,0,(i<2?-1:1)*1.3,wp)
+        if(contact)wp.copy(contact.point)
+        else if(tank)this.point(i?TANK_TRACK_X:-TANK_TRACK_X,0,0,wp)
+        else this.point((i%2?1:-1)*1.1,0,(i<2?-1:1)*1.3,wp)
         const y=this.terrain.heightAt(wp.x,wp.z)
         const touching=contact?.grounded??(grounded&&wp.y-y<1.4&&wp.y-y>-.3)
-        if(!touching||!this.dry(wp)||speed<.5){this.hasMark[i]=false;continue}
+        if(!touching||!this.dry(wp)||speed<.5){this.endMark(i);continue}
         normal.copy(contact?.normal??this.terrain.normalAt(wp.x,wp.z,temp));if(!contact)wp.y=y
         wp.addScaledVector(normal,.04)
+        // One lookup per wheel per frame decides the mark and the dust (treads.ts, groundTone.ts).
+        const kind=(this.terrain.surfaceAt?.(wp.x,wp.z)??'dust') as SurfaceKind,wet=this.wet(wp,y,kind)
         const slip=Math.abs(contact?.slip??this.localVelocity.x)
-        const prev=this.previousMarks[i]
-        if(!this.hasMark[i]){prev.copy(wp);this.hasMark[i]=true}
-        else if(prev.distanceToSquared(wp)>=.75*.75){
-          // The ground decides the mark: its colour, how deep the print and how long it lasts
-          // (treads.ts). A rolling wheel leaves the light mark; one sliding sideways under
-          // throttle or brakes leaves up to the heavy one.
-          const style=TREADS[this.terrain.surfaceAt?.(wp.x,wp.z)as SurfaceKind]??DEFAULT_TREAD
-          const sliding=slip>Math.abs(this.localVelocity.z)*.3?clamp(Math.max(Math.abs(v.input.y),v.input.brakes?1:0),0,1):0
-          side.copy(wp).sub(prev).cross(normal).normalize()
-          w.marks.add(prev,wp,side,.5*style.width,style.life,T.MathUtils.lerp(style.roll,style.slip,sliding),markColor.setRGB(style.tint[0],style.tint[1],style.tint[2]),style.tread);prev.copy(wp)
-        }
-        if(this.dustTimer>=1/(25*rateScale)&&speed>2){
-          velocity.set(raw.x*-.08+(w.noise()-.5)*slip*.3,.6+w.noise(),raw.z*-.08)
-          w.dust.emit(wp,velocity,1,.25+Math.min(1,slip*.08+speed*.008),2,dustColor)
+        // Faint rolling, stronger sliding sideways under throttle, or braking; eased, so the
+        // mark darkens and fades along its length rather than in steps.
+        const sliding=slip>Math.abs(this.localVelocity.z)*.3?clamp(Math.max(Math.abs(v.input.y),v.input.brakes?1:0),0,1):0
+        const target=Math.max(sliding,v.input.brakes&&speed>3?.8:0)
+        this.slide[i]+=(target-this.slide[i])*Math.min(1,dt*5)
+        if(strength>0){
+          const style=this.terrain.surfaceAt?TREADS[kind]:DEFAULT_TREAD
+          // Wet ground by the water takes a darker, firmer print.
+          const alpha=T.MathUtils.lerp(style.roll,style.slip,this.slide[i])*(wet?1.3:1)
+          const c=surfaceTone(look,kind,style,0),dim=wet?.75:1
+          markColor.setRGB(c[0]*dim,c[1]*dim,c[2]*dim)
+          const prev=this.previousMarks[i]
+          if(!this.hasMark[i]){
+            prev.copy(wp);this.hasMark[i]=true;this.runLength[i]=0;this.recentCount[i]=0
+            this.lastAlpha[i]=alpha;this.lastTint[i].copy(markColor)
+          }else{
+            const step=prev.distanceTo(wp)
+            if(step>=.75){
+              side.copy(wp).sub(prev).cross(normal).normalize()
+              const start=this.runLength[i],end=start+step
+              const id=w.marks.mark(prev,wp,side,.5*style.width*(tank?TANK_MARK_WIDTH/.5:contact?.width??1),style.life*lifeScale,this.lastAlpha[i],alpha,this.lastTint[i],markColor,style.tread,start,end)
+              // Keep the last few quads, newest last, for fading the end.
+              let n=this.recentCount[i]
+              if(n===RECENT){for(let k=1;k<RECENT;k++){const a=i*RECENT+k;this.recentId[a-1]=this.recentId[a];this.recentStart[(a-1)*2]=this.recentStart[a*2];this.recentStart[(a-1)*2+1]=this.recentStart[a*2+1]}n--}
+              const r=i*RECENT+n;this.recentId[r]=id;this.recentStart[r*2]=start;this.recentStart[r*2+1]=end;this.recentCount[i]=n+1
+              this.runLength[i]=end;this.lastAlpha[i]=alpha;this.lastTint[i].copy(markColor);prev.copy(wp)
+            }
+          }
+        }else this.endMark(i)
+        if(dustDue){
+          // Colour, amount, size and how long it hangs come from the ground, set once per particle.
+          const ds=DUSTS[kind],amount=wet?WET_DUST:ds.amount
+          if(wet)groundDust.copy(SPRAY);else{const c=surfaceTone(look,kind,ds,1);groundDust.setRGB(c[0],c[1],c[2])}
+          const n=Math.floor(amount)+(w.noise()<amount%1?1:0),scale=ds.size/.3
+          for(let k=0;k<n;k++){
+            velocity.set(raw.x*-.08+(w.noise()-.5)*slip*.3,ds.rise+w.noise()*ds.rise*1.6,raw.z*-.08)
+            w.dust.emit(wp,velocity,ds.life,(.25+Math.min(1,slip*.08+speed*.008))*scale,2*scale,groundDust)
+          }
         }
       }
       if(this.dustTimer>=1/(25*rateScale))this.dustTimer=0
     }else if((v.kind==='hovercraft'||v.kind==='jet'&&!v.input.special)&&height<20&&height>0&&this.dry(p)&&this.dustTimer>=1/(50*rateScale)){
       this.dustTimer=0;const strength=clamp(1-height/20,0,1)*(v.kind==='jet'?this.throttle:1)
       if(strength>.02){const a=w.noise()*Math.PI*2,r=(v.kind==='hovercraft'?1.8:2)*w.noise();const at=new T.Vector3(p.x+Math.cos(a)*r,ground+.15,p.z+Math.sin(a)*r)
-        velocity.set(Math.cos(a)*strength*3,.5,Math.sin(a)*strength*3);w.dust.emit(at,velocity,1,.3+strength,2,dustColor)}
+        // The ground under the craft colours the dust and says how much of it there is.
+        const amount=this.dustAt(at,groundDust)
+        if(w.noise()<Math.min(1,amount)){velocity.set(Math.cos(a)*strength*3,.5,Math.sin(a)*strength*3);w.dust.emit(at,velocity,1,.3+strength,2,groundDust)}}
     }
     if(v.kind==='jet'||v.kind==='hovercraft'){
       const jet=v.kind==='jet',hover=jet&&!v.input.special,rate=100*rateScale

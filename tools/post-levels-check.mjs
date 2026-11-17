@@ -58,7 +58,7 @@ try {
     return {
       level: g.quality.getQualityState().level, allowed: g.quality.postTier, tier: c.tier, builds: c.builds, keyTier: tier ?? null,
       built: { motion: on(motion), compose: on(compose), glow: on(glow), shafts: on(shafts), flare: on(flare), ao: on(ao), gi: on(gi), clouds: on(clouds), temporal: on(temporal), contact: !!b?.sssNode },
-      wanted: { motion: v('post.motionBlur') > 0, compose: v('post.motionBlur') > 0 || v('post.heat') > 0 || v('post.plunge') > 0, glow: v('post.bloom') > 0, shafts: v('post.shafts') > 0 || v('post.flare') > 0,
+      wanted: { motion: v('post.motionBlur') > 0, compose: v('post.motionBlur') > 0 || v('post.heat') > 0, glow: v('post.bloom') > 0, shafts: v('post.shafts') > 0 || v('post.flare') > 0,
         flare: v('post.flare') > 0, ao: v('post.ao') > 0, gi: v('post.gi') > 0, temporal: !!v('post.temporal'), contact: v('post.contact') > 0, cloudsStrength: v('post.clouds') > 0 },
       on: v('post.on'),
     }

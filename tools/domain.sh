@@ -15,6 +15,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 . tools/cloudflare-token.sh
+. tools/smoke-run.sh
 REPO="$(pwd)"
 ZONE_NAME=syn3h.com
 STORE="$(cd .. && pwd)/Syn3h-stable"
@@ -117,8 +118,7 @@ check)
   ' "$H" "$REPO"
   SHOT_PARENT="$(mktemp -d "/tmp/syn3h-shot-domain-$H.XXXXXX")" || die "could not reserve domain evidence directory"
   echo "Shot evidence: $SHOT_PARENT/evidence (https://$H/)"
-  SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "https://$H/" 2>&1 | grep -E "^(FAIL|NET SMOKE)" | tee /tmp/syn3h-domain-check.log
-  grep -q "^NET SMOKE OK" /tmp/syn3h-domain-check.log || die "net-smoke failed on $H"
+  run_smoke "https://$H/" /tmp/syn3h-domain-check.log "$SHOT_PARENT/evidence" || die "net-smoke failed on $H"
   ;;
 
 rollback)

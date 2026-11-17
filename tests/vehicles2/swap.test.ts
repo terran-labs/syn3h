@@ -4,9 +4,10 @@ import {initPhysics,FIXED_DT,createWorld,GROUP_ALL,GROUP_TERRAIN,groups,RAPIER} 
 import {emptyInput} from '../../src/core/Input'
 import type {Game,System} from '../../src/core/Game'
 import type {Terrain} from '../../src/world/Terrain'
-import {createVehicle,type VehicleKind} from '../../src/vehicles'
+import {createVehicle,isVehicleAvailable,type VehicleKind} from '../../src/vehicles'
 import {PlayerSlot} from '../../src/vehicles/PlayerSlot'
-import {SWAP_LIFT,createVehicleSwapper} from '../../src/vehicles/swap'
+import {SWAP_CLEARANCE,createVehicleSwapper} from '../../src/vehicles/swap'
+import {REST_HEIGHT} from '../../src/vehicles/Vehicle'
 import type {Vehicle} from '../../src/vehicles/Vehicle'
 import {Materialize} from '../../src/vehicles/effects/Materialize'
 beforeAll(initPhysics)
@@ -35,10 +36,11 @@ function player(w:ReturnType<typeof world>,kind:VehicleKind='buggy'){
  const slot=new PlayerSlot(v),swapper=createVehicleSwapper(w.game,w.terrain,slot)
  return {slot,swapper}
 }
-const KINDS:VehicleKind[]=['jet','hovercraft','tank','buggy']
+// Every kind on offer (a hidden tank is built as the buggy, src/vehicles/available.ts).
+const KINDS:VehicleKind[]=(['jet','hovercraft','tank','buggy'] as VehicleKind[]).filter(isVehicleAvailable)
 
 describe('swapping the player vehicle in place',()=>{
- it('keeps the spot, heading, identity and controls, and sets the new vehicle level',()=>{
+ it('keeps the spot, heading, velocity, identity and controls, and sets the new vehicle level',()=>{
   const w=world(),{slot,swapper}=player(w);w.step(60)
   const old=slot.current,p=old.body.translation()
   old.body.setLinvel({x:3,y:0,z:-9},true);old.input.y=1;old.input.zorb=false;old.wind.set(1,0,2)
@@ -46,8 +48,8 @@ describe('swapping the player vehicle in place',()=>{
   old.body.setRotation(new T.Quaternion().setFromEuler(new T.Euler(0,.8,2.4,'YXZ')),true)
   const next=swapper.swap('jet'),n=next.body.translation(),v=next.body.linvel(),r=next.body.rotation(),w3=next.body.angvel()
   expect(next).not.toBe(old);expect(slot.current).toBe(next);expect(next.kind).toBe('jet')
-  expect(n.x).toBeCloseTo(p.x,5);expect(n.z).toBeCloseTo(p.z,5);expect(n.y).toBeCloseTo(Math.max(p.y,0)+SWAP_LIFT,5)
-  expect([v.x,v.y,v.z]).toEqual([0,0,0]);expect(Math.hypot(w3.x,w3.y,w3.z)).toBe(0)
+  expect(n.x).toBeCloseTo(p.x,5);expect(n.z).toBeCloseTo(p.z,5);expect(n.y).toBeCloseTo(Math.max(p.y,REST_HEIGHT.jet+SWAP_CLEARANCE),5)
+  expect(v.x).toBeCloseTo(3,4);expect(v.z).toBeCloseTo(-9,4);expect(v.y).toBeGreaterThanOrEqual(0);expect(Math.hypot(w3.x,w3.z)).toBe(0)
   const up=new T.Vector3(0,1,0).applyQuaternion(new T.Quaternion(r.x,r.y,r.z,r.w)),nose=new T.Vector3(0,0,-1).applyQuaternion(new T.Quaternion(r.x,r.y,r.z,r.w))
   expect(up.y).toBeCloseTo(1,5);expect(Math.atan2(-nose.x,-nose.z)).toBeCloseTo(.8,5)
   expect({id:next.id,name:next.name,slot:next.spawnSlot,colors:next.colors,throttle:next.input.y}).toEqual({id:'7',name:'Ada',slot:3,colors:{body:'#ff8800',accent:'#00ffaa'},throttle:1})
@@ -63,9 +65,9 @@ describe('swapping the player vehicle in place',()=>{
  it('never starts the new vehicle under the ground or the liquid surface',()=>{
   const w=world(),{slot,swapper}=player(w)
   slot.current.body.setTranslation({x:5,y:-4,z:5},true)
-  expect(swapper.swap('tank').body.translation().y).toBeCloseTo(SWAP_LIFT,5)
+  expect(swapper.swap('jet').body.translation().y).toBeCloseTo(REST_HEIGHT.jet+SWAP_CLEARANCE,5)
   ;(w.terrain as {liquidHeightAt?:(x:number,z:number)=>number}).liquidHeightAt=()=>6
-  expect(swapper.swap('hovercraft').body.translation().y).toBeCloseTo(6+SWAP_LIFT,5)
+  expect(swapper.swap('hovercraft').body.translation().y).toBeCloseTo(6+REST_HEIGHT.hovercraft+SWAP_CLEARANCE,5)
   w.physics.free()
  })
  it('leaves no orphaned body, collider, object, system, effect or listener after twelve swaps',()=>{
@@ -84,7 +86,7 @@ describe('swapping the player vehicle in place',()=>{
    expect(listeners(next),`${kind}: same listeners as the first time`).toBe(hooks.get(kind))
    seen.add(next)
   }
-  expect(seen.size).toBe(4)
+  expect(seen.size).toBe(KINDS.length)
   const p=slot.current.body.translation();expect(Number.isFinite(p.y)).toBe(true);expect(p.y).toBeGreaterThan(-.3)
   const cached=[...seen].filter(v=>v!==slot.current)
   swapper.dispose()
@@ -132,6 +134,19 @@ describe('swapping the player vehicle in place',()=>{
   expect(tank.body.isEnabled()).toBe(false);expect(tank.object.userData.materializing).toBeUndefined()
   expect(jet.body.isEnabled()).toBe(true);expect(jet.body.isKinematic()).toBe(false)
   expect(materialize.isHeld(jet)).toBe(false)
+  materialize.dispose();swapper.dispose();w.physics.free()
+ })
+ it('holds a vehicle switched in mid-air where it was, then lets it go with its speed',()=>{
+  const w=world(),{slot,swapper}=player(w),materialize=w.game.add(new Materialize(w.game,w.terrain))
+  slot.current.body.setTranslation({x:0,y:40,z:0},true);slot.current.body.setLinvel({x:20,y:-2,z:0},true)
+  const next=swapper.swap('tank'),v=next.body.linvel()
+  void materialize.begin(next,{carry:{linvel:{...v},angvel:{...next.body.angvel()}},holdSeconds:.5})
+  w.step(10)
+  expect(next.body.translation().y).toBeCloseTo(40,3);expect(materialize.isHeld(next)).toBe(true)
+  w.step(20)
+  expect(materialize.isHeld(next)).toBe(false)
+  const after=next.body.linvel()
+  expect(after.x).toBeGreaterThan(15);expect(after.y).toBeLessThan(0)
   materialize.dispose();swapper.dispose();w.physics.free()
  })
  it('still removes the old vehicle when a slot listener throws',()=>{

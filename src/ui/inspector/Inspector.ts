@@ -9,24 +9,40 @@ import { modeChoices } from '../modeAvailability'
  * anywhere and it appears. The data side is model.ts, which has no DOM and is tested alone.
  */
 import { params, type ParamValue } from '../../../shared/params'
+import { applyPreset, matchPreset, presetsFor } from '../../../shared/presets'
 import { canEditWorld, resetWorld } from '../worldPermissions'
-import { buildTree, describe, exportSection, exportWorld, fraction, limits, parseWorld, pasteSummary, show, type PropertyDef, type SectionNode } from './model'
+import { buildTree, describe, shownDef, shownValue, storedValue, exportSection, exportWorld, fraction, limits, parseWorld, pasteSummary, show, type PropertyDef, type SectionNode } from './model'
 import './params'
 import './inspector.css'
 import './motion.css'
+import { bindSwitch } from './switch'
+import { cardsToClose, comfortable, type FitCard } from './cardFit'
+import './me-card.css'
+
+/** A die showing five, drawn as one path: the Randomize and roll-a-name buttons. */
+const DICE_GLYPH = '<svg class="wi-dice" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.4"/><path fill="currentColor" d="M5 4a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm6 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2ZM8 7a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm-3 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm6 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg>'
 
 export interface InspectorOptions {
   /** One line for a closed card, for example "Alpine · Harimos". Empty hides it. */
   summary(sectionId: string): string
-  /** The vehicles on offer and which is in use, for the switcher in the Me card. */
-  vehicles(): { options: readonly { id: string; label: string }[]; current: string }
+  /**
+   * The vehicles on offer and which is in use, for the picker in the Me card. `pending` is a
+   * vehicle being switched to; `note` says why a choice is not available right now.
+   */
+  vehicles(): { options: readonly { id: string; label: string; glyph?: string }[]; current: string; pending?: string; note?: string }
   onVehicle(id: string): void
-  /** Current session identity; renaming remains owned by the session. */
+  /** The player's name, shown in the Me card. */
   playerName?(): string
-  /** The player's vehicle colours as #rrggbb. With onColor, two swatches sit beside the vehicle selector. */
+  /** With this the name can be edited in place; it receives the trimmed new name. */
+  onRename?(name: string): void
+  /** A freshly generated name, for the dice beside the name. */
+  rollName?(): string
+  /** The player's vehicle colours as #rrggbb, as showing now (they ease when changed). */
   colors?(): { body: string; accent: string }
   /** Called on every movement in the colour picker, so the vehicle can repaint as it is dragged. */
   onColor?(key: 'body' | 'accent', value: string): void
+  /** Pick a new pleasing pair of colours, for the Randomize button. */
+  onRandomizeColors?(): void
   /** Capture a local bookmark. The caller owns storage and success or failure feedback. */
   onSaveWorld?(): void
   /**
@@ -110,6 +126,14 @@ export class Inspector {
   private beforeSearch?: { cards: boolean[]; folds: boolean[] }
   /** The number being typed into, if any, and how to finish it. */
   private editing: { field: HTMLInputElement; finish(commit: boolean, refocus: boolean): void } | null = null
+  /**
+   * Open cards by section id, opened longest ago first. Survives the rail closing and
+   * reopening and registry rebuilds, so the oldest card is still known.
+   */
+  private readonly openOrder: string[] = []
+  /** A pointer is held down in this card (a slider being dragged). */
+  private pressed: HTMLElement | null = null
+  private fitQueued = false
   /** Card height animations in flight. A new toggle starts from wherever these have got to. */
   private readonly moving = new Map<HTMLElement, Animation>()
 
@@ -133,9 +157,20 @@ export class Inspector {
     window.addEventListener('resize', () => this.hideTooltip(), { signal })
     document.addEventListener('pointerdown', event => { if (!(event.target as Element).closest('.wi-row, .wi-tooltip')) this.hideTooltip() }, { signal })
     this.vehicleControl = this.vehicleSwitch()
-    this.vehicleControl.dataset.search = "vehicle colour color body accent buggy jet hovercraft tank"
+    this.vehicleControl.dataset.search = `vehicle colour color body accent randomize ${this.options.vehicles().options.map(o => o.label.toLowerCase()).join(' ')}`
+    this.nameControl = this.nameEditor()
+    // Escape in the name field cancels the edit. This runs before the shell's own Escape,
+    // which only blurs a text field (and the blur would otherwise save).
+    window.addEventListener('keydown', event => { if (event.code === 'Escape' && event.target === this.nameInput) this.nameInput.value = this.options.playerName?.() ?? '' }, { capture: true, signal: this.abort.signal })
     this.build()
-    this.unsubscribe = params.onChange((id, value) => this.rows.get(id)?.sync(value))
+    this.unsubscribe = params.onChange((id, value) => { this.rows.get(id)?.sync(value); for (const sync of this.presetSyncs) sync() })
+    // Space changes (a resize, a phone turning, a fold opening inside a card): refit once,
+    // on the next frame, not every frame.
+    window.addEventListener('resize', () => this.queueFit(null), { signal })
+    this.element.addEventListener('toggle', event => { const card = (event.target as Element).closest<HTMLElement>('.wi-card'); this.queueFit(card) }, { capture: true, signal })
+    if (typeof ResizeObserver !== 'undefined') { const watch = new ResizeObserver(() => this.queueFit(null)); watch.observe(this.element.querySelector('.wi-cards')!); signal.addEventListener('abort', () => watch.disconnect()) }
+    this.element.addEventListener('pointerdown', event => { this.pressed = (event.target as Element).closest<HTMLElement>('.wi-card') }, { signal })
+    window.addEventListener('pointerup', () => { this.pressed = null }, { signal }); window.addEventListener('pointercancel', () => { this.pressed = null }, { signal })
     this.element.addEventListener('click', event => this.click(event))
     this.element.querySelector<HTMLInputElement>('.wi-search')!.addEventListener('input', event => this.search((event.target as HTMLInputElement).value))
     // Typing here must not drive the vehicle.
@@ -189,18 +224,15 @@ export class Inspector {
   update(): void {
     if (params.all().length !== this.known) this.build()
     const editable = canEditWorld()
-    if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; this.element.classList.toggle('is-locked', !editable) }
+    if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; for (const select of this.element.querySelectorAll<HTMLSelectElement>('.wi-preset select')) select.disabled = !editable; this.markLocks(); this.element.classList.toggle('is-locked', !editable) }
     for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) {
       const id = card.dataset.section!, extra = this.extras.get(id), sum = card.querySelector('.wi-sum')!
       const text = extra ? extra.summary() : this.options.summary(id) || `${this.tree.find(s => s.id === id)?.count ?? 0} properties`
       if (sum.textContent !== text) sum.textContent = text
     }
-    const vehicles = this.options.vehicles()
-    // Only the Me card carries the vehicle selector.
-    const select = this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')
-    if (select && document.activeElement !== select) select.value = vehicles.current
-    const name = this.element.querySelector('.wi-person-name output')
-    if (name && name.textContent !== this.options.playerName?.()) name.textContent = this.options.playerName?.() ?? ''
+    this.syncVehicles()
+    const name = this.options.playerName?.() ?? ''
+    if (this.nameInput && document.activeElement !== this.nameInput && this.nameInput.value !== name) this.nameInput.value = name
     const colors = this.options.colors?.()
     if (colors) for (const dot of this.element.querySelectorAll<HTMLElement>('[data-colour]')) dot.style.backgroundColor = colors[dot.dataset.colour as 'body' | 'accent']
     if (colors) for (const input of this.tintInputs) { const value = colors[input.dataset.tint as 'body' | 'accent']; if (input.value !== value && document.activeElement !== input) input.value = value }
@@ -211,7 +243,7 @@ export class Inspector {
     const owned = new Set([...this.extras.values()].flatMap(extra => extra.owns?.() ?? []))
     const shown = this.options.sections
     this.tree = buildTree(all.map(p => p.def as PropertyDef).filter(def => !owned.has(def.id))).filter(section => !shown || shown.includes(section.id))
-    this.rows.clear(); this.editing = null; this.settle()
+    this.rows.clear(); this.presetSyncs.length = 0; this.editing = null; this.settle()
     const cards = this.element.querySelector('.wi-cards')!; cards.replaceChildren()
     for (const section of this.tree) {
       const card = document.createElement('section'); card.className = 'wi-card wi-glass'; card.dataset.section = section.id
@@ -219,10 +251,7 @@ export class Inspector {
       head.innerHTML = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span>'; head.querySelector('h3')!.textContent = section.title
       const body = document.createElement('div'); body.className = 'wi-body'; body.hidden = true
       if (section.id === 'you') {
-        body.append(this.vehicleControl)
-        const identity = document.createElement('p'); identity.className = 'wi-person-name'; identity.dataset.search = 'player name identity'
-        const caption = document.createElement('span'); caption.textContent = 'Player name'
-        const name = document.createElement('output'); identity.append(caption, name); body.append(identity)
+        body.append(this.vehicleControl, this.nameControl)
         const dots = document.createElement('span'); dots.className = 'wi-colour-dots'; dots.setAttribute('aria-label', 'Vehicle colours')
         dots.innerHTML = '<i data-colour="body"></i><i data-colour="accent"></i>'; head.querySelector('.wi-sum')!.after(dots)
       }
@@ -232,7 +261,9 @@ export class Inspector {
         const fold = document.createElement('details'); fold.className = 'wi-group'; fold.dataset.group = group.name; fold.open = index === 0 && !['Tag', 'Tag beams', 'Zorb', 'Sun', 'Sky', 'Weather'].includes(group.name)
         const summary = document.createElement('summary'); summary.innerHTML = '<span></span><small></small>'
         summary.querySelector('span')!.textContent = group.name; summary.querySelector('small')!.textContent = String(group.properties.length)
-        fold.append(summary); for (const def of group.properties) fold.append(this.row(def)); body.append(fold)
+        fold.append(summary)
+        const handling = this.presetRow(group.name); if (handling) fold.append(handling)
+        for (const def of group.properties) fold.append(this.row(def)); body.append(fold)
       })
       const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot'
       foot.innerHTML = '<button type="button" data-wi="copy-section">Copy JSON</button><button type="button" data-wi="paste-section">Paste</button>'
@@ -250,6 +281,9 @@ export class Inspector {
     // Extra cards are the same elements across rebuilds, so they keep their open state.
     for (const extra of this.extras.values()) { this.place(extra); extra.fill?.() }
     this.placeSessionCard()
+    // Cards that did not come back are no longer open.
+    const present = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section!))
+    for (let i = this.openOrder.length - 1; i >= 0; i--) if (!present.has(this.openOrder[i])) this.openOrder.splice(i, 1)
     this.editable = !canEditWorld(); this.update()
   }
   private place(extra: ExtraCard): void {
@@ -283,27 +317,102 @@ export class Inspector {
   /** Open one card (leaving the others as they are), easing as a header click does. */
   revealCard(id: string): void {
     const card = this.element.querySelector<HTMLElement>(`.wi-card[data-section="${id}"]`)
-    if (card && !card.classList.contains('is-open')) this.reflow(() => this.toggle(card, true))
+    if (card && !card.classList.contains('is-open')) this.reflow(() => { this.toggle(card, true); this.fit(card, true) })
   }
+  /**
+   * The Me card's vehicle picker: a segmented control, one segment per vehicle with a drawn
+   * glyph and its name, the chosen one filled. A radiogroup: arrow keys move and choose, Home
+   * and End jump. Below it the two colours, labelled, and Randomize.
+   */
   private vehicleSwitch(): HTMLElement {
-    const label = document.createElement('label'); label.textContent = 'Vehicle'
-    const select = document.createElement('select'); select.className = 'wi-vehicle-select'; select.setAttribute('aria-label', 'Vehicle')
-    for (const option of this.options.vehicles().options) { const item = document.createElement('option'); item.value = option.id; item.textContent = option.label; select.append(item) }
-    select.addEventListener('change', () => this.options.onVehicle(select.value), { signal: this.abort.signal })
-    label.append(select)
-    if (!this.options.colors || !this.options.onColor) return label
-    // Vehicle colours live beside the vehicle choice. Each swatch opens the platform's own
-    // colour picker; the vehicle repaints while it is dragged, with no reload.
     const wrap = document.createElement('div'); wrap.className = 'wi-vehicle'
-    const tint = document.createElement('span'); tint.className = 'wi-tint'; tint.setAttribute('role', 'group'); tint.setAttribute('aria-label', 'Vehicle colours')
-    for (const [key, name] of [['body', 'Body colour'], ['accent', 'Accent colour']] as const) {
-      const swatch = document.createElement('label'); swatch.className = 'wi-swatch'; swatch.title = name
-      const input = document.createElement('input'); input.type = 'color'; input.dataset.tint = key; input.setAttribute('aria-label', name)
-      input.addEventListener('input', () => this.options.onColor!(key, input.value), { signal: this.abort.signal })
-      swatch.append(input); tint.append(swatch); this.tintInputs.push(input)
+    const group = document.createElement('div'); group.className = 'wi-vehicle-picker'; group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', 'Vehicle')
+    for (const option of this.options.vehicles().options) {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'wi-vehicle-option'; button.setAttribute('role', 'radio')
+      button.dataset.segVehicle = option.id; button.setAttribute('aria-checked', 'false'); button.tabIndex = -1
+      button.innerHTML = `${option.glyph ? `<svg viewBox="0 0 24 14" aria-hidden="true" focusable="false"><path d="${option.glyph}"/></svg>` : ''}<span></span>`
+      button.querySelector('span')!.textContent = option.label
+      group.append(button)
     }
-    wrap.append(label, tint); return wrap
+    const choose = (button: HTMLElement | null) => { if (button?.dataset.segVehicle && !button.matches('[aria-disabled=true]')) this.options.onVehicle(button.dataset.segVehicle) }
+    group.addEventListener('click', event => choose((event.target as Element).closest<HTMLElement>('.wi-vehicle-option')), { signal: this.abort.signal })
+    group.addEventListener('keydown', event => {
+      const buttons = [...group.querySelectorAll<HTMLElement>('.wi-vehicle-option')], at = buttons.indexOf(document.activeElement as HTMLElement)
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
+      const to = step ? (at + step + buttons.length) % buttons.length : event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : -1
+      if (to < 0 || at < 0) return
+      // The keys belong to the picker here, not to driving.
+      event.preventDefault(); event.stopPropagation()
+      buttons[to].focus(); choose(buttons[to])
+    }, { signal: this.abort.signal })
+    const note = document.createElement('p'); note.className = 'wi-vehicle-note'; note.setAttribute('aria-live', 'polite')
+    wrap.append(group, note)
+    if (!this.options.colors || !this.options.onColor) return wrap
+    // Each swatch opens the platform's own colour picker; the vehicle repaints while it is dragged.
+    const tint = document.createElement('div'); tint.className = 'wi-tint'; tint.setAttribute('role', 'group'); tint.setAttribute('aria-label', 'Vehicle colours')
+    for (const [key, name] of [['body', 'Body'], ['accent', 'Accent']] as const) {
+      const swatch = document.createElement('label'); swatch.className = 'wi-swatch'; swatch.title = `${name} colour`
+      const input = document.createElement('input'); input.type = 'color'; input.dataset.tint = key; input.setAttribute('aria-label', `${name} colour`)
+      input.addEventListener('input', () => this.options.onColor!(key, input.value), { signal: this.abort.signal })
+      const caption = document.createElement('span'); caption.textContent = name
+      swatch.append(input, caption); tint.append(swatch); this.tintInputs.push(input)
+    }
+    if (this.options.onRandomizeColors) {
+      const dice = document.createElement('button'); dice.type = 'button'; dice.className = 'wi-randomize'
+      dice.innerHTML = `${DICE_GLYPH}<span>Randomize</span>`; dice.title = 'Pick a new pair of colours'
+      dice.addEventListener('click', () => this.options.onRandomizeColors!(), { signal: this.abort.signal })
+      tint.append(dice)
+    }
+    wrap.append(tint); return wrap
   }
+  /** Keep the picker's checked, pending and unavailable states in step with the game. */
+  private syncVehicles(): void {
+    const vehicles = this.options.vehicles()
+    for (const button of this.vehicleControl.querySelectorAll<HTMLElement>('.wi-vehicle-option')) {
+      const id = button.dataset.segVehicle!, checked = id === vehicles.current, pending = id === vehicles.pending
+      if (button.getAttribute('aria-checked') !== String(checked)) button.setAttribute('aria-checked', String(checked))
+      // Roving focus: the checked segment is the one Tab reaches.
+      const tab = checked ? 0 : -1
+      if (button.tabIndex !== tab) button.tabIndex = tab
+      button.classList.toggle('is-pending', pending)
+      if (pending) button.setAttribute('aria-busy', 'true'); else button.removeAttribute('aria-busy')
+      const blocked = Boolean(vehicles.note) && !checked
+      if (button.matches('[aria-disabled=true]') !== blocked) { if (blocked) button.setAttribute('aria-disabled', 'true'); else button.removeAttribute('aria-disabled') }
+    }
+    const note = this.vehicleControl.querySelector('.wi-vehicle-note')!, text = vehicles.pending ? 'Switching…' : vehicles.note ?? ''
+    if (note.textContent !== text) note.textContent = text
+  }
+  /**
+   * The player's name, edited in place: tap or click to edit, Enter or leaving the field
+   * saves, Escape cancels. The dice beside it rolls a new generated name.
+   */
+  private nameEditor(): HTMLElement {
+    const row = document.createElement('div'); row.className = 'wi-person-name'; row.dataset.search = 'player name identity rename'
+    const label = document.createElement('label'); label.className = 'wi-name-label'; label.textContent = 'Player name'
+    const input = document.createElement('input'); input.className = 'wi-name-input'; input.type = 'text'; input.maxLength = 24; input.spellcheck = false
+    input.setAttribute('autocomplete', 'nickname'); input.enterKeyHint = 'done'; input.id = 'wi-player-name'; label.htmlFor = input.id
+    input.value = this.options.playerName?.() ?? ''
+    this.nameInput = input
+    if (!this.options.onRename) input.readOnly = true
+    const save = () => {
+      const next = input.value.trim(), current = this.options.playerName?.() ?? ''
+      if (next && next !== current) this.options.onRename?.(next)
+      input.value = this.options.playerName?.() ?? next
+    }
+    input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); input.blur() } }, { signal: this.abort.signal })
+    input.addEventListener('blur', save, { signal: this.abort.signal })
+    input.addEventListener('focus', () => input.select(), { signal: this.abort.signal })
+    row.append(label, input)
+    if (this.options.rollName && this.options.onRename) {
+      const dice = document.createElement('button'); dice.type = 'button'; dice.className = 'wi-name-roll'; dice.innerHTML = DICE_GLYPH
+      dice.setAttribute('aria-label', 'Roll a new name'); dice.title = 'Roll a new name'
+      dice.addEventListener('click', () => { const name = this.options.rollName!(); this.options.onRename!(name); input.value = this.options.playerName?.() ?? name }, { signal: this.abort.signal })
+      row.append(dice)
+    }
+    return row
+  }
+  private nameControl!: HTMLElement
+  private nameInput!: HTMLInputElement
   private vehicleControl!: HTMLElement
   private readonly tintInputs: HTMLInputElement[] = []
   /** Opens the existing registered GI slider, rather than creating a second control. */
@@ -329,6 +438,44 @@ export class Inspector {
     input.disabled = !eligible; input.setAttribute('aria-describedby', 'gi-status')
     const number = row.querySelector<HTMLButtonElement>('.wi-num'); if (number) number.disabled = !eligible
   }
+  /** Keep each Handling dropdown showing the preset the current values match. */
+  private readonly presetSyncs: (() => void)[] = []
+  /**
+   * The Handling dropdown at the top of a vehicle's settings group (shared/presets.ts): choosing
+   * a preset sets its settings as the sliders would; the current preset is found by comparing
+   * values, and any other mix shows as Custom. Room settings, so the world lock applies.
+   */
+  private presetRow(group: string): HTMLElement | null {
+    const presets = presetsFor(group)
+    if (!presets.length) return null
+    const row = document.createElement('div'); row.className = 'wi-preset'; row.dataset.group = group
+    const label = document.createElement('label'); label.className = 'wi-preset-pick'
+    const caption = document.createElement('span'); caption.className = 'wi-label'; caption.textContent = 'Handling'
+    const select = document.createElement('select'); select.setAttribute('aria-label', `${group} handling preset`)
+    for (const [i, preset] of presets.entries()) { const option = document.createElement('option'); option.value = String(i); option.textContent = preset.name; select.append(option) }
+    const custom = document.createElement('option'); custom.value = 'custom'; custom.textContent = 'Custom'; custom.disabled = true; select.append(custom)
+    label.append(caption, select)
+    const about = document.createElement('p'); about.className = 'wi-blurb wi-preset-about'
+    row.append(label, about)
+    select.addEventListener('change', () => { const preset = presets[Number(select.value)]; if (preset && canEditWorld()) applyPreset(preset); sync() }, { signal: this.abort.signal })
+    const sync = () => {
+      const match = matchPreset(presets, id => params.get(id)?.value)
+      const value = match ? String(presets.indexOf(match)) : 'custom'
+      if (select.value !== value) select.value = value
+      const text = match?.description ?? 'Your own mix: the settings below differ from every preset.'
+      if (about.textContent !== text) about.textContent = text
+    }
+    sync(); this.presetSyncs.push(sync)
+    return row
+  }
+  /** A shared switch a guest cannot change shows a lock and "host" beside its true state. */
+  private markLocks(): void {
+    for (const { row, def } of this.rows.values()) {
+      const lock = row.querySelector<HTMLElement>('.wi-lock'); if (!lock) continue
+      const locked = def.scope === 'world' && !this.editable
+      lock.hidden = !locked; row.classList.toggle('is-locked-row', locked)
+    }
+  }
   /** One property row: slider, toggle, choice or number, kept in sync with the registry. */
   row(def: PropertyDef): HTMLElement {
     if (def.id === 'post.gi') def = { ...def, label: 'Global illumination (GI)' }
@@ -343,33 +490,43 @@ export class Inspector {
       const seg = document.createElement('div'); seg.className = 'wi-seg'; seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', choices.name)
       for (const option of choices.options) { const button = document.createElement('button'); button.type = 'button'; button.dataset.value = String(option.value); button.textContent = option.label; button.addEventListener('click', () => params.set(def.id, option.value, 'local')); seg.append(button) }
       row.classList.add('is-choice'); row.append(label, seg)
-      sync = value => { for (const button of seg.querySelectorAll<HTMLElement>('button')) button.classList.toggle('is-on', Number(button.dataset.value) === Math.round(Number(value))) }
+      sync = value => { for (const button of seg.querySelectorAll<HTMLElement>('button')) { const on = Number(button.dataset.value) === Math.round(Number(value)); button.classList.toggle('is-on', on); button.setAttribute('aria-pressed', String(on)) } }
     } else if (typeof def.default === 'boolean') {
       label.textContent = def.label
-      const box = document.createElement('input'); box.type = 'checkbox'; box.setAttribute('aria-label', def.label)
+      // The standard switch (switch.ts): role switch, aria-checked, Space and Enter toggle.
+      const box = document.createElement('input'); box.setAttribute('aria-label', def.label)
+      const set = bindSwitch(box, { signal: this.abort.signal })
       box.addEventListener('change', () => params.set(def.id, box.checked, 'local'))
-      // The box stays small; the label around it is the 44 px target a thumb can hit.
+      // The track stays small; the label around it is the 44 px target a thumb can hit, and
+      // the row's own label text toggles it too.
       const hit = document.createElement('label'); hit.className = 'wi-hit'; hit.append(box)
-      row.append(label, hit, output)
-      sync = value => { box.checked = Boolean(value); output.textContent = show(Boolean(value)) }
+      label.addEventListener('click', () => { if (!box.disabled) box.click() })
+      // Shown only while a guest is held by the host's lock, so a locked switch never reads as off.
+      const lock = document.createElement('span'); lock.className = 'wi-lock'; lock.textContent = 'host'; lock.hidden = true
+      const word = document.createElement('span'); output.append(word, lock)
+      row.classList.add('is-switch'); row.append(label, hit, output)
+      sync = value => { set(Boolean(value)); word.textContent = show(Boolean(value)); row.classList.toggle('is-checked', Boolean(value)) }
     } else {
       label.textContent = def.label
-      const ranged = def.min !== undefined && def.max !== undefined
+      // A display mapping (ParamDef.display) puts the slider, number and typing in display
+      // units; what is stored and sent is converted back.
+      const view = shownDef(def), toShown = (value: ParamValue) => shownValue(def, Number(value))
+      const ranged = view.min !== undefined && view.max !== undefined
       const input = document.createElement('input'); input.type = ranged ? 'range' : 'number'; input.setAttribute('aria-label', def.label)
-      if (ranged) { input.min = String(Math.min(def.min!, def.max!)); input.max = String(Math.max(def.min!, def.max!)) }
-      input.step = String(def.step ?? 'any')
+      if (ranged) { input.min = String(Math.min(view.min!, view.max!)); input.max = String(Math.max(view.min!, view.max!)) }
+      input.step = String(view.step ?? 'any')
       // The number beside the slider is a button: press it and it becomes a field to type into.
       const number = document.createElement('button'); number.type = 'button'; number.className = 'wi-num'
       const display = (text: string) => { number.textContent = text; number.setAttribute('aria-label', `${def.label}: ${text}, edit`) }
       const percent = this.options.percent?.(def) ?? false
-      const shown = (value: ParamValue) => percent ? `${Math.round(Number(value) * 100)}%` : show(value, def)
+      const shown = (value: ParamValue) => percent ? `${Math.round(Number(value) * 100)}%` : show(toShown(value), view)
       number.addEventListener('click', () => this.edit(def, number))
       number.addEventListener('keydown', event => { if (event.key === 'F2') { event.preventDefault(); this.edit(def, number) } })
       // A property marked deferred (the terrain rebuilds) applies when the slider is let go.
-      input.addEventListener(def.deferred ? 'change' : 'input', () => params.set(def.id, Number(input.value), 'local'))
-      if (def.deferred) input.addEventListener('input', () => display(shown(Number(input.value))))
+      input.addEventListener(def.deferred ? 'change' : 'input', () => params.set(def.id, storedValue(def, Number(input.value)), 'local'))
+      if (def.deferred) input.addEventListener('input', () => display(shown(storedValue(def, Number(input.value)))))
       row.append(label, input, number)
-      sync = value => { if (document.activeElement !== input) input.value = String(value); display(shown(value)) }
+      sync = value => { if (document.activeElement !== input) input.value = String(toShown(value)); display(shown(value)) }
       if (percent) number.dataset.percent = ''
     }
     sync(param.value)
@@ -399,7 +556,7 @@ export class Inspector {
       if (commit) {
         // A percentage field holds the number without its sign; parseEdit reads "60%" as 0.6.
         const typed = percent && !/%\s*$/.test(field.value) ? `${field.value.trim()}%` : field.value
-        const value = parseEdit(typed, def)
+        const typedValue = parseEdit(typed, shownDef(def)), value = typedValue === null ? null : storedValue(def, typedValue)
         // Nothing readable: put the old number back. Pressing Enter keeps the field open to try again.
         if (value === null && refocus) { field.value = before; field.select(); mark(field); return }
         if (value === null) mark(number)
@@ -451,6 +608,10 @@ export class Inspector {
     pane.style.top = `${Math.max(12, Math.min(innerHeight - height - 12, fitsLeft ? row.top : row.top - height - 12))}px`
   }
   private toggle(card: HTMLElement, open = !card.classList.contains('is-open')): void {
+    const id = card.dataset.section!, at = this.openOrder.indexOf(id)
+    if (open && at < 0) this.openOrder.push(id)
+    if (!open && at >= 0) this.openOrder.splice(at, 1)
+    if (!open) card.style.removeProperty('min-height')
     const body = card.querySelector<HTMLElement>('.wi-body')!
     card.classList.toggle('is-open', open); body.hidden = !open; body.inert = !open; card.querySelector('.wi-head')!.setAttribute('aria-expanded', String(open))
   }
@@ -476,6 +637,76 @@ export class Inspector {
       const motion = card.animate([frame(from[i]), frame(to[i])], CARD_MOTION)
       motion.onfinish = () => { if (this.moving.get(card) === motion) this.land(card) }
       this.moving.set(card, motion)
+    })
+  }
+  private queueFit(keep: HTMLElement | null): void {
+    if (this.fitQueued) return
+    this.fitQueued = true
+    requestAnimationFrame(() => { this.fitQueued = false; if (this.moving.size) { this.queueFit(keep); return } this.reflow(() => this.fit(keep)) })
+  }
+  /** A card the player is using: focus inside it, a pointer held in it, or a number being typed. */
+  private busy(card: HTMLElement): boolean {
+    return card === this.pressed || card.contains(document.activeElement) && document.activeElement !== card.querySelector('.wi-head') || !!this.editing && card.contains(this.editing.field)
+  }
+  /**
+   * Close the cards open longest until every open card has a comfortable height (cardFit.ts),
+   * and hold each open card at that height so the stack never squeezes one into a sliver.
+   * `keep` is the card just opened, or the one whose content grew; `reveal` scrolls it into
+   * view when the motion lands. Not while searching, which
+   * opens every card with a match, nor while hidden, when nothing can be measured.
+   */
+  private fit(keep: HTMLElement | null, reveal = false): void {
+    const stack = this.element.querySelector<HTMLElement>('.wi-cards')!
+    if (!this.shown || this.element.classList.contains('is-searching') || !stack.clientHeight) return
+    const cards = [...stack.children].filter((el): el is HTMLElement => el instanceof HTMLElement && !el.hidden && el.getClientRects().length > 0)
+    const measured = new Map<HTMLElement, FitCard>()
+    for (const card of cards) {
+      const height = card.getBoundingClientRect().height
+      if (!card.classList.contains('wi-card')) { measured.set(card, { id: card.dataset.section ?? '', open: false, closed: height, natural: height, closable: false }); continue }
+      const head = card.querySelector<HTMLElement>(':scope > .wi-head'), body = card.querySelector<HTMLElement>(':scope > .wi-body')!
+      const frame = card.offsetHeight - card.clientHeight, closed = (head?.offsetHeight ?? 44) + frame
+      const open = card.classList.contains('is-open')
+      const natural = open ? height - body.clientHeight + body.scrollHeight : closed
+      measured.set(card, { id: card.dataset.section!, open, closed, natural, closable: !this.busy(card) })
+    }
+    const gap = parseFloat(getComputedStyle(stack).rowGap) || 0
+    const order = this.openOrder.filter(id => cards.some(card => card.dataset.section === id))
+    const close = new Set(cardsToClose([...measured.values()], order, stack.clientHeight, gap, keep?.dataset.section ?? null))
+    for (const [card, fit] of measured) {
+      if (!card.classList.contains('wi-card')) continue
+      if (close.has(fit.id)) this.toggle(card, false)
+      else if (fit.open) card.style.minHeight = `${Math.round(comfortable(fit))}px`
+    }
+    // Only a card the player has just opened is scrolled to; a fold opening inside a card
+    // leaves the stack where the player put it.
+    if (reveal && keep?.classList.contains('is-open') && keep.isConnected) this.revealAfterMotion(keep)
+  }
+  /**
+   * Once the cards have landed, bring the opened card into view: all of it when it fits,
+   * otherwise its header at the top of the stack.
+   */
+  private revealAfterMotion(card: HTMLElement): void {
+    const stack = this.element.querySelector<HTMLElement>('.wi-cards')!
+    // The player scrolling or touching the stack meanwhile wins: no yank back afterwards.
+    let moved = false
+    const stop = new AbortController(), mark = () => { moved = true }
+    for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const) stack.addEventListener(type, mark, { signal: stop.signal, passive: true })
+    let before = stack.scrollTop
+    requestAnimationFrame(() => {
+      before = stack.scrollTop
+      void Promise.all([...this.moving.values()].map(motion => motion.finished.catch(() => undefined))).then(() => {
+        stop.abort()
+        // Any other scroll is the player's, except the browser clamping it as cards above close.
+        const delta = stack.scrollTop - before, clamped = delta < 0 && stack.scrollTop >= stack.scrollHeight - stack.clientHeight - 1
+        if (moved || Math.abs(delta) > 2 && !clamped) return
+        if (!card.isConnected || !card.classList.contains('is-open')) return
+        const fits = card.getBoundingClientRect().height <= stack.clientHeight
+        const target = fits ? card : card.querySelector<HTMLElement>(':scope > .wi-head') ?? card
+        const box = target.getBoundingClientRect(), view = stack.getBoundingClientRect()
+        if (box.top < view.top) stack.scrollTop -= view.top - box.top
+        else if (fits && box.bottom > view.bottom) stack.scrollTop += box.bottom - view.bottom
+        else if (!fits && box.top > view.top) stack.scrollTop += box.top - view.top
+      })
     })
   }
   /** Stop every card animation now and leave each card in its resting state. */
@@ -529,7 +760,7 @@ export class Inspector {
     const card = button.closest<HTMLElement>('.wi-card'), section = card ? this.tree.find(s => s.id === card.dataset.section) : undefined
     const valueOf = (id: string) => params.get(id)?.value
     switch (button.dataset.wi) {
-      case 'toggle': if (card) this.reflow(() => this.toggle(card)); break
+      case 'toggle': if (card) this.reflow(() => { this.toggle(card); if (card.classList.contains('is-open')) this.fit(card, true) }); break
       case 'show-gi': this.showGI(); break
       case 'save-world': this.options.onSaveWorld?.(); break
       case 'copy-world': await this.copy(JSON.stringify(exportWorld(params.all().map(p => p.def as PropertyDef), valueOf), null, 2), 'This world'); break

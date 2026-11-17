@@ -3,7 +3,8 @@
  * mesh, and in-place regeneration when the seed or a terrain parameter changes.
  */
 import * as THREE from 'three/webgpu'
-import { params, worldLavaAltitude, worldSeed } from '../../../shared/params'
+import { params, worldSeed } from '../../../shared/params'
+import { seaLevel, snapSeaLevel } from '../seaLevel'
 import { nearestImage, wrapCoord } from '../../../shared/wrap'
 import type { Game, System } from '../../core/Game'
 import type { RAPIER } from '../../core/physics'
@@ -114,7 +115,7 @@ export class ProceduralTerrain implements Terrain {
         updateCurve(game.camera.position, this.size)
         // After the curve: level of detail also hides chunks that are over the horizon.
         this.meshes.updateLod(game.camera.position)
-        this.look.setSea(worldLavaAltitude.value)
+        this.look.setSea(seaLevel())
         const round = curveParam.value > 0
         if (round || this.wasRound) {
           game.scene.traverse((o) => {
@@ -260,6 +261,11 @@ export class ProceduralTerrain implements Terrain {
     return line >= 2 ? 1e6 : this.data.layout.summitHeight * line
   }
 
+  /** Index of this world's look into the ground palettes (palettes.ts). */
+  lookIndex(): number {
+    return this.data.settings.look
+  }
+
   /**
    * What the ground is made of at (x, z): the CPU's reading of the rules the material draws
    * with (see surface.ts). Two grid reads, a height and a normal; no allocation.
@@ -271,7 +277,7 @@ export class ProceduralTerrain implements Terrain {
       look,
       slope: 1 - this.sampler.normalAt(x, z, this.surfaceNormal).y,
       height: this.sampler.heightAt(x, z),
-      sea: worldLavaAltitude.value,
+      sea: seaLevel(),
       lavaSea: worldSeaKind.value === 0,
       snowHeight: this.snowHeight(),
       volcanic: sampleGrid(this.data, this.data.volcanic, x, z),
@@ -370,6 +376,8 @@ export class ProceduralTerrain implements Terrain {
       if (superseded()) return
       mark = performance.now()
     }
+    // New ground under the sea: no glide across it, the sea simply stands at the setting.
+    snapSeaLevel()
     const old = this.data
     const ready = this.prepared.get(key)
     if (ready) {
@@ -458,7 +466,7 @@ export class ProceduralTerrain implements Terrain {
    * as the sea material draws them.
    */
   liquidHeightAt(x: number, z: number): number {
-    const sea = worldLavaAltitude.value
+    const sea = seaLevel()
     x = wrapCoord(x, this.data.size)
     z = wrapCoord(z, this.data.size)
     const surface = lavaSurfaceAt(this.data.lava, x, z, sea)
@@ -468,7 +476,7 @@ export class ProceduralTerrain implements Terrain {
 
   /** The liquid surface at rest: liquidHeightAt without the sea's waves. */
   liquidLevelAt(x: number, z: number): number {
-    return lavaSurfaceAt(this.data.lava, wrapCoord(x, this.data.size), wrapCoord(z, this.data.size), worldLavaAltitude.value)
+    return lavaSurfaceAt(this.data.lava, wrapCoord(x, this.data.size), wrapCoord(z, this.data.size), seaLevel())
   }
 
   /** Velocity of the water or lava at (x, z), m/s: rivers flow, the sea, lake and pools do not. */
@@ -481,7 +489,7 @@ export class ProceduralTerrain implements Terrain {
    * that flows from the volcano are lava on this world.
    */
   liquidKindAt(x: number, z: number): 'lava' | 'water' | null {
-    const sea = worldLavaAltitude.value
+    const sea = seaLevel()
     x = wrapCoord(x, this.data.size)
     z = wrapCoord(z, this.data.size)
     const surface = lavaSurfaceAt(this.data.lava, x, z, sea)

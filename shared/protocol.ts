@@ -345,8 +345,13 @@ export type ClientMessage =
    * reconnecting, and takes its place back at once; a duplicated tab has the secret, not the page.
    */
   | { type: 'hello'; v: number; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string }
-  /** Change vehicle kind or colours after joining. */
-  | { type: 'profile'; kind?: string; colors?: [string, string] }
+  /**
+   * Change vehicle kind, colours or name after joining. `name` is optional and newer: an older
+   * room ignores it, and the name then changes at the next join. The room cleans and
+   * de-duplicates a name exactly as at hello, and takes at most one rename per
+   * RENAME_INTERVAL_MS; an ignored rename is answered with the player's current profile.
+   */
+  | { type: 'profile'; kind?: string; colors?: [string, string]; name?: string }
   | { type: 'ping'; t: number }
   | { type: 'param'; id: string; value: ParamWireValue }
   /** Optional bot actor: only the current host may act for a live bot it simulates. */
@@ -428,6 +433,8 @@ export type ServerMessage =
 
 export const MAX_JSON_BYTES = 8192
 export const MAX_NAME_LENGTH = 24
+/** The least time between two renames by one player, so a name cannot flood a room. */
+export const RENAME_INTERVAL_MS = 2000
 
 /** Parse a control message without throwing. Returns null on anything malformed. */
 export function parseJson<T>(text: string): T | null {

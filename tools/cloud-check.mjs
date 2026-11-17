@@ -18,7 +18,7 @@ try {
   const T=await import(moduleUrl),env=g.systems.find(s=>s.clouds&&s.sunColor)
   const sky=g.scene.children.find(o=>'cloudLayerVisible' in o)
   if(!env||!sky)throw new Error('Cloud inputs unavailable')
-  for(const id of ['post.gi','post.bloom','post.shafts','post.flare','post.ao','post.contact','post.motionBlur','post.heat','post.plunge','post.look','post.vignette','post.grain'])p.set(id,0)
+  for(const id of ['post.gi','post.bloom','post.shafts','post.flare','post.ao','post.contact','post.motionBlur','post.heat','post.look','post.vignette','post.grain'])p.set(id,0)
   p.set('post.on',true);p.set('sun.dayLength',0);p.set('weather.cloudSpeed',0)
   window.cloudCheck={T,env,sky,initialCurve:p.get('world.curve').value}
  })

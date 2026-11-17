@@ -13,6 +13,7 @@ import { Game } from './core/Game'
 import { startNetworking } from './net'
 import { ParamPanel } from './ui/ParamPanel'
 import { LobbyAddress } from './ui/LobbyAddress'
+import { roomFromQuery } from './core/roomAddress'
 import { generateName } from './ui/data/names'
 import { initGameShell } from './ui/Shell'
 import { readVehicleChoice, saveVehicleChoice } from './ui/VehicleChoice'
@@ -44,12 +45,6 @@ async function main(): Promise<void> {
   else if (query.has('seed')) params.set(worldSeed.def.id, query.get('seed'), 'preset')
 
   const saved = prepareResume(query)
-  if (saved && !query.has('room')) {
-    query.set('room', saved.room)
-    const url = new URL(location.href)
-    url.searchParams.set('room', saved.room)
-    history.replaceState(history.state, '', url)
-  }
   // Keep the original entry/resume URL until all startup consumers have read it.
   const lobbyAddress = new LobbyAddress(location, history)
   const game = new Game(canvas)
@@ -60,7 +55,7 @@ async function main(): Promise<void> {
   game.quality.attachTerrain(terrain)
   const environment = game.add(createEnvironment(game, terrain))
   // Post effects follow the player's settings and the current rendering budget.
-  game.setPostChain(createPostChain(game, environment, () => slot.current))
+  game.setPostChain(createPostChain(game, environment))
 
   const spawn = terrain.spawnPoint(0)
   // The vehicle comes from ?vehicle=..., else the choice saved by the lobby, else the Syn3h buggy.
@@ -167,12 +162,15 @@ async function main(): Promise<void> {
     const previous = slot.current
     try {
       const next = swapper.swap(kind)
-      // The new one holds its heading only: the hold zeroes its speed, then it drops and drives.
+      // The new one arrives where the old one was, moving as it moved (swapPlacement in
+      // vehicles/swap.ts). The arrival holds it there in its cloud, then lets it go with that
+      // same velocity: a switch at speed carries on, one in mid-air falls from where it was.
       if (next !== previous) {
         // Restore the parked body's dynamic type before it is reused. Selecting the same
         // kind leaves its existing hold alone.
         materialize.cancel(previous)
-        void materialize.begin(next)
+        const linvel = next.body.linvel(), angvel = next.body.angvel()
+        void materialize.begin(next, { carry: { linvel: { ...linvel }, angvel: { ...angvel } } })
       }
       return next
     } catch (error) {
@@ -183,13 +181,14 @@ async function main(): Promise<void> {
   }
   const join = () => {
     // Also restore after returning from an already joined galaxy menu.
-    lobbyAddress.showPlay(shell.room || query.get('room') || 'lobby')
+    lobbyAddress.showPlay(shell.room || roomFromQuery(query))
     if (joined) return
     const player = slot.current
     // The lobby may have changed the vehicle after this one spawned. Rebuilding every system
     // that holds the player is riskier than a reload this close to the demo, so reload.
     if (!query.has('vehicle') && shell.vehicleKind !== player.kind && !(shell.vehicleKind === 'buggy-syn3h' && player.kind === 'buggy')) {
-      const url = new URL(location.href)
+      // The entry intent, not the cleaned bar: it may hold the world the player was invited to.
+      const url = lobbyAddress.playURL()
       url.searchParams.set('autoplay', '1')
       // An explicit lobby vehicle change starts a new session.
       try { sessionStorage.removeItem(RESUME_KEY) } catch {}
@@ -208,12 +207,17 @@ async function main(): Promise<void> {
     player.setColors?.(shell.bodyColor, shell.accentColor)
     const connection = startNetworking({
       game, terrain, player, audio, bots,
+      nameplates: {
+        shell: shell.element,
+        visible: () => shell.vehicleLabelsVisible,
+        presentation: () => shell.presentation,
+      },
       // The sender owns the hold; snapshots carry its motion. This is cosmetic only.
       onRemoteVehicleChanged: vehicle => { void materialize.begin(vehicle, { hold: false }) },
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name: shell.playerName,
-      room: shell.room || query.get('room') || 'lobby',
+      room: shell.room || roomFromQuery(query),
       setStatus: (lines) => { netStatus = lines; shell.setStatus(lines) },
       setMapEntities: (e) => shell.setMapEntities(e),
       setMatchState: (m) => shell.setMatchState(m),
@@ -243,7 +247,7 @@ async function main(): Promise<void> {
     connection.setPaused(pause.paused)
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
-    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || query.get('room') || 'lobby', saved, network: connection, entrySearch: lobbyAddress.playURL().search }))
+    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || roomFromQuery(query), saved, network: connection, entrySearch: lobbyAddress.playURL().search }))
   }
   shell.onPlay = join
   // The in-play vehicle selector calls this; the shell takes it if it has the hook.

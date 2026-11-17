@@ -7,10 +7,12 @@ import type * as THREE from 'three/webgpu'
  * Returns null when no game has registered one: the caller then warms by drawing, as before.
  */
 let compiler: ((object: THREE.Object3D) => Promise<void>) | null = null
-export function setCompiler(next: ((object: THREE.Object3D) => Promise<void>) | null): void { compiler = next }
-export function compileAhead(object: THREE.Object3D): Promise<void> | null { return compiler ? compiler(object) : null }
-/** True in a running game, where compileAhead does something. */
-export function canCompileAhead(): boolean { return compiler !== null }
+let available: () => boolean = () => true
+/** `can` says whether compiling ahead is safe right now (see Game.compilesAhead). */
+export function setCompiler(next: ((object: THREE.Object3D) => Promise<void>) | null, can: () => boolean = () => true): void { compiler = next; available = can }
+export function compileAhead(object: THREE.Object3D): Promise<void> | null { return compiler && available() ? compiler(object) : null }
+/** True in a running game where compileAhead does something now. */
+export function canCompileAhead(): boolean { return compiler !== null && available() }
 
 /**
  * Compile a vehicle that is about to appear, in every look it may wear in its first moments:
@@ -22,7 +24,7 @@ export function canCompileAhead(): boolean { return compiler !== null }
  * public "prepare your looks" on Vehicle would be the cleaner seam (vehicle lane's call).
  */
 export async function compileVehicleAhead(vehicle: { object: THREE.Object3D; isLocal?: boolean; update?(dt: number, alpha: number): void }, level: number): Promise<void> {
-  if (!compiler) return
+  if (!canCompileAhead()) return
   const details = (vehicle as unknown as { visualDetails?: Set<(distance: number, remote: boolean, level: number) => void> }).visualDetails
   if (details?.size) for (const distance of [0, 1e4]) {
     for (const detail of details) detail(distance, !vehicle.isLocal, level)
