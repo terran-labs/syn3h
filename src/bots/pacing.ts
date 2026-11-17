@@ -112,12 +112,12 @@ export class BotPacer {
       if (span < PACING.windowMs) return null
       const sorted = [...m.frames].sort((a, b) => a - b), p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))]
       const meanMs = span / sorted.length
-      if (Number.isFinite(m.before)) this.marginal.set(m.count, meanMs - m.before)
+      this.marginal.set(m.count, meanMs - m.before)
       this.measuring = null
       // Over the target is not enough: the bot must have made frames measurably worse. Frames
       // that were already slow before it (a weak or busy device, a headless browser) are the
       // quality level's to fix, not the bots'.
-      const worse = !Number.isFinite(m.before) || meanMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare)
+      const worse = meanMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare)
       if (p90 > state.targetMs * PACING.slowFactor && worse) {
         // That one was too many: carry one fewer at this level, and send it off.
         this.allowed = Math.max(0, m.count - 1)
@@ -130,8 +130,12 @@ export class BotPacer {
       return null
     }
     if (!state.open || state.have >= goal || !due) return null
+    // Judged against the frames just before it: with no baseline yet (the first moments of
+    // play) wait, rather than blame the bot for whatever the frames were already doing.
+    const before = this.recentMean(now)
+    if (!Number.isFinite(before)) return null
     this.last = now
-    this.measuring = { since: now, frames: [], before: this.recentMean(now), count: state.have + 1 }
+    this.measuring = { since: now, frames: [], before, count: state.have + 1 }
     this.log.push({ at: now, have: state.have, action: 'add', targetMs: state.targetMs })
     return 'add'
   }
