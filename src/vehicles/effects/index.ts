@@ -17,7 +17,8 @@ const greenPlasma=plasmaSprite(false),redPlasma=plasmaSprite(true)
 /** Shares of the wind velocity given to a new dust particle and to exhaust and energy trails. */
 export const DUST_WIND=.6,EXHAUST_WIND=.3
 
-export interface WheelEffectContact {readonly grounded:boolean;readonly point:T.Vector3;readonly normal:T.Vector3;readonly slip:number}
+/** `width`: tyre width as a multiple of the standard tyre's (the buggy's tyre size); absent means 1. */
+export interface WheelEffectContact {readonly grounded:boolean;readonly point:T.Vector3;readonly normal:T.Vector3;readonly slip:number;readonly width?:number}
 type EffectsVehicle=Vehicle & {getWheelEffects?():readonly WheelEffectContact[];hoverMode?:boolean}
 const worlds=new WeakMap<Game,EffectWorld>()
 const clamp=T.MathUtils.clamp
@@ -280,7 +281,7 @@ class VehicleEffects {
             if(step>=.75){
               side.copy(wp).sub(prev).cross(normal).normalize()
               const start=this.runLength[i],end=start+step
-              const id=w.marks.mark(prev,wp,side,.5*style.width*(tank?TANK_MARK_WIDTH/.5:1),style.life*lifeScale,this.lastAlpha[i],alpha,this.lastTint[i],markColor,style.tread,start,end)
+              const id=w.marks.mark(prev,wp,side,.5*style.width*(tank?TANK_MARK_WIDTH/.5:contact?.width??1),style.life*lifeScale,this.lastAlpha[i],alpha,this.lastTint[i],markColor,style.tread,start,end)
               // Keep the last few quads, newest last, for fading the end.
               let n=this.recentCount[i]
               if(n===RECENT){for(let k=1;k<RECENT;k++){const a=i*RECENT+k;this.recentId[a-1]=this.recentId[a];this.recentStart[(a-1)*2]=this.recentStart[a*2];this.recentStart[(a-1)*2+1]=this.recentStart[a*2+1]}n--}

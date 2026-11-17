@@ -50,6 +50,8 @@ export interface WheelEffect {
   readonly normal: THREE.Vector3
   /** Sideways speed of the wheel over the ground in m/s, absolute. 0 while not grounded. */
   slip: number
+  /** Tyre width as a multiple of the standard tyre's, for the tyre marks. Absent means 1. */
+  width?: number
 }
 
 export function createWheelEffects(count = 4): WheelEffect[] {
@@ -460,12 +462,17 @@ export abstract class Vehicle implements System {
    * physics step. It works from the origin and the vehicle's measured resting height, so on a
    * steep slope, or for a jet with its gear up, it is a few tenths of a metre generous.
    */
+  /** Height the origin rests at above the surface; a vehicle whose stance changes overrides it. */
+  restHeight(): number {
+    return REST_HEIGHT[this.kind] ?? 0
+  }
+
   heightAboveSurface(): number {
     const p = this.currPos
     let surface = this.terrain.heightAt(p.x, p.z)
     // The hovercraft's cushion and a zorb ball ride on liquid; everything else sinks to the bed.
     if (this.kind === 'hovercraft' || this.zorb.active) surface = Math.max(surface, this.terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity)
-    let rest = REST_HEIGHT[this.kind] ?? 0
+    let rest = this.restHeight()
     if (this.kind === 'hovercraft') {
       if (hoverClearance === undefined) hoverClearance = params.get('hover.clearance') ?? null
       const slider = Number(hoverClearance?.value)

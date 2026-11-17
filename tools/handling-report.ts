@@ -5,6 +5,7 @@
  *
  *   npx tsx tools/handling-report.ts          Markdown to stdout
  *   npx tsx tools/handling-report.ts --json   JSON to stdout
+ *   npx tsx tools/handling-report.ts --tyres  only the buggy tyre size table
  *
  * Each vehicle is measured once per handling preset (shared/presets.ts), the default first, so
  * the tables have a column per preset. Every figure uses that preset over the parameter defaults
@@ -175,6 +176,36 @@ async function syn3hBuggy(): Promise<VehicleReport> {
   }
 }
 
+/**
+ * The buggy at tyre sizes 1, 2 and 3 (buggy.tyreSize), default preset. Turn radius at 15 m/s is
+ * from rest with light throttle, as the summary's; at 45 m/s it is full lock from a cruise.
+ * "Least upright at full lock" is the roll-over tendency: 1 level, 0 on its side, below 0 over.
+ */
+const TYRE_SIZES = [1, 2, 3]
+async function buggyTyreSizes(): Promise<Record<string, Figure[]>> {
+  const out: Record<string, Figure[]> = {}
+  for (const k of TYRE_SIZES) {
+    const size = () => params.set('buggy.tyreSize', k)
+    const top = await at(buggyTopSpeed, size)
+    const turn = await at(() => buggyTurn(15), size)
+    const lock15 = await at(() => buggy.fullLock(15), size)
+    const lock45 = await at(() => buggy.fullLock(45), size)
+    const lock30 = await at(() => buggy.fullLock(30), size)
+    const bump = await at(() => buggy.bump(), size)
+    out[k] = [
+      fig('Top speed', 'm/s', top.top),
+      fig('Turn radius at 15 m/s, full lock', 'm', turn.radius),
+      fig('Turn radius at 45 m/s, full lock after 2 s', 'm', lock45.radius),
+      fig('Hop off a 0.4 m bump at 42 m/s', 'm', bump.hop),
+      fig('Upright 6 s after the 0.4 m bump', '', bump.upright),
+      fig('Least upright at full lock, 15 m/s', '', lock15.upright),
+      fig('Least upright at full lock, 30 m/s', '', lock30.upright),
+      fig('Least upright at full lock, 45 m/s', '', lock45.upright),
+    ]
+  }
+  return out
+}
+
 // ---- Jet -------------------------------------------------------------------------------
 
 async function jetReport(): Promise<VehicleReport> {
@@ -217,14 +248,17 @@ const num = (x: number | null, digits = 1) => (x === null ? 'never' : x.toFixed(
 await initPhysics()
 /** Per vehicle, per preset name. */
 const results: Record<string, Record<string, VehicleReport>> = {}
+const tyresOnly = process.argv.includes('--tyres')
 for (const [name, v] of Object.entries(vehicles)) {
+  if (tyresOnly) break
   results[name] = {}
   for (const p of v.presets) { preset = p; results[name][p.name] = await v.run() }
   preset = undefined
 }
+const tyres = await buggyTyreSizes()
 
 if (process.argv.includes('--json')) {
-  console.log(JSON.stringify(results, null, 2))
+  console.log(JSON.stringify({ ...results, buggyTyreSizes: tyres }, null, 2))
 } else {
   const out = [
     '# Handling report',
@@ -240,5 +274,9 @@ if (process.argv.includes('--json')) {
     out.push('', `## ${name}`, '', vehicles[name].how, '', `| Figure | Unit | ${names.join(' | ')} |`, `| --- | --- | ${names.map(() => '---:').join(' | ')} |`)
     first.detail.forEach((f, i) => out.push(`| ${f.label} | ${f.unit} | ${names.map((p) => num(byPreset[p].detail[i].value, 2)).join(' | ')} |`))
   }
+  const sizes = Object.keys(tyres), rows = tyres[sizes[0]]
+  out.push('', '## buggy, tyre size', '', 'Default preset at each tyre size (buggy.tyreSize). Least upright: 1 level, 0 on its side, below 0 rolled over.', '',
+    `| Figure | Unit | ${sizes.map((k) => `Size ${k}`).join(' | ')} |`, `| --- | --- | ${sizes.map(() => '---:').join(' | ')} |`)
+  rows.forEach((f, i) => out.push(`| ${f.label} | ${f.unit} | ${sizes.map((k) => num(tyres[k][i].value, 2)).join(' | ')} |`))
   console.log(out.join('\n'))
 }
