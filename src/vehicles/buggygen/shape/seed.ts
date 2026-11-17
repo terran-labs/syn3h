@@ -1,4 +1,4 @@
-import { HANDLES, clampShape, type Shape } from './handles'
+import { HANDLES, clampShape, type Handle, type Shape } from './handles'
 
 /** mulberry32, as in LoadedBuggySkin.ts: a small deterministic generator. */
 export function mulberry32(seed: number): () => number {
@@ -12,11 +12,14 @@ export function mulberry32(seed: number): () => number {
 
 /**
  * One integer to an in-range shape. Each handle is drawn from a curve that favours the middle
- * of its range (the mean of two draws), so random buggies are varied without every one being
- * an extreme on all fifteen axes at once.
+ * of its safe range (the mean of two draws), so random buggies are varied without every one being
+ * an extreme on every axis at once.
  */
 export function seedShape(seed: number): Shape {
   const r = mulberry32(seed >>> 0), s: Partial<Shape> = {}
-  for (const h of HANDLES) { const t = (r() + r()) / 2; s[h.id] = h.min + (h.max - h.min) * t }
+  for (const h of HANDLES as readonly Handle[]) {
+    const [lo, hi] = h.safe ?? [h.min, h.max], t = (r() + r()) / 2
+    s[h.id as keyof Shape] = lo + (hi - lo) * t
+  }
   return clampShape(s)
 }

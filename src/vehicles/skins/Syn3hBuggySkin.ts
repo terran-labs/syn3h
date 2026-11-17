@@ -109,8 +109,15 @@ const SURFACE_COLOUR: Record<string, [number, number, number]> = {
 /** Shock foot on the arm, in the arm's frame (from the original Shock node's extras). */
 const SHOCK_FOOT: [number, number, number] = [0, .2, -.07]
 
-/** A body source: anything that builds role-tagged `body` pieces (src/vehicles/buggygen/body.ts). */
-export interface BuggyBodySource { build(detail: 0 | 1 | 2): { part: string; role: string; geometry: THREE.BufferGeometry }[] }
+/**
+ * A body source: anything that builds role-tagged `body` pieces (src/vehicles/buggygen/body.ts).
+ * `parts`, if given, replaces buildParts for a body whose fittings must follow it (the shape
+ * editor's rig, src/vehicles/buggygen/shape/parts.ts).
+ */
+export interface BuggyBodySource {
+  build(detail: 0 | 1 | 2): { part: string; role: string; geometry: THREE.BufferGeometry }[]
+  parts?(detail: 0 | 1 | 2, body: THREE.BufferGeometry[]): ReturnType<typeof buildParts>
+}
 
 function release(root: THREE.Object3D): void {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>()
@@ -240,7 +247,7 @@ export class Syn3hBuggySkin implements BuggySkin {
     // The body once, then the parts fitted to it: swellings conform to it and the shock tops are
     // found on it.
     const bodyPieces = this.bodySource.build(0).filter(p => p.part === 'body')
-    const fitted = buildParts(0, bodyPieces.map(p => p.geometry))
+    const fitted = this.bodySource.parts?.(0, bodyPieces.map(p => p.geometry)) ?? buildParts(0, bodyPieces.map(p => p.geometry))
     const pieces: { part: string; role: string; geometry: THREE.BufferGeometry }[] = [...bodyPieces, ...fitted.pieces]
     const of = (part: string) => pieces.filter(p => p.part === part)
     // Body, fittings (skid plate, swellings, headlight lenses) and the cockpit tub: one material
