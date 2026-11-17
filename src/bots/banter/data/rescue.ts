@@ -6,6 +6,69 @@
 import type { Pools } from './types'
 
 export const RESCUE: Pools = {
+  // The accident-prone bot commits to a bold line at the shore. The setup; 'stuck.call' is
+  // the payoff, a few seconds later.
+  'mishap.bold': {
+    any: [
+      "I know a shortcut. It is mostly ground.",
+      "Watch this. Actually, do not watch this. Watch something near this.",
+      "Taking the line along the shore. Nobody has ever regretted the line along the shore.",
+      "Bold line coming up. I have thought about it for almost a second.",
+      "Back in a moment. Possibly a long moment.",
+    ],
+    inspector: [
+      "I am going to inspect that shore. Closely. More closely than is recommended.",
+      "That edge looks sound. I graded it from here. Going in for a second opinion.",
+    ],
+    clerk: [
+      "Taking the shore route. It is approved. I approved it. Just now, in my head.",
+      "Proceeding to the shore to confirm it is a shore. There is a form for that. I am the form.",
+    ],
+    pilot: [
+      "Watch this. Academy move. They named it after me. Then they banned it.",
+      "Nobody follow me. This line is for professionals. And the spare.",
+    ],
+    probe: [
+      "That {sea} looks like soup. I just want to know what flavour.",
+      "Ooh, the shore! I bet it tastes like {@flavour}. Just a quick look.",
+    ],
+    marshal: [
+      "Going wide. Stand clear.",
+      "Shortcut. No cones required. Probably.",
+    ],
+    moon: [
+      "The tide is out. Moon's doing. I am taking the gap before it notices.",
+      "That shore is closer than it was. The moon moved it. I am moving it back.",
+    ],
+    auditor: [
+      "Wet basalt down there. Wet basalt is the best basalt. Going in.",
+      "Shoreline sediment, grade A from here. Closer inspection needed. Much closer.",
+    ],
+    intern: [
+      "I think I have learned the shortcut from watching you all! Here goes! Feedback welcome!",
+      "I am going to try the brave line! Is it the brave line? It is a line!",
+    ],
+  },
+
+  // Someone else sees where the accident-prone bot is heading.
+  'mishap.watch': {
+    any: [
+      "Where is {subj} going?",
+      "{subj}, that is not a road.",
+      "{subj} has that look again.",
+      "Everyone, {subj} is attempting a line. Stand by with a rope.",
+      "I give {subj} ten seconds.",
+    ],
+    inspector: ["{subj}! That edge is amber! Amber means no! It has always meant no!"],
+    clerk: ["Noting the time. {subj} is about to need {@form}."],
+    pilot: ["Nice line, {subj}. Wrong, but nice."],
+    probe: ["Oh, {subj} is going for a paddle! Do we have towels?"],
+    marshal: ["{subj}. No.", "Cones. Now. For {subj}."],
+    moon: ["{subj} is heading for the {sea}. The moon has been expecting this."],
+    auditor: ["{subj} is going to be very close to some excellent sediment. Too close."],
+    intern: ["Is {subj} allowed to go there? Can I go there? Should I not go there?"],
+  },
+
   'stuck.call': {
     any: [
       "Small problem. I am stuck. Medium problem. Stuck.",
@@ -91,7 +154,7 @@ export const RESCUE: Pools = {
     ],
     marshal: [
       "Still here.",
-      "Still stuck. Coning myself.",
+      "Still stuck. I have put a cone on myself. It has not helped.",
     ],
     moon: [
       "The longer you wait, the more the moon wins. I am not saying this to hurry you. I am.",
@@ -105,6 +168,24 @@ export const RESCUE: Pools = {
       "Still stuck! Learning so much about patience! I would like to stop learning it now!",
       "Is this a test? If it is a test, I think I am doing well? Can someone come anyway?",
     ],
+  },
+
+  // The accident-prone bot stuck for the first time today: a reputation, no count yet.
+  'stuck.clumsy': {
+    any: [
+      "Oh, it is {subj}. Of course it is {subj}.",
+      "{subj} has a gift. The gift is finding holes.",
+      "If there is a hole on this planet, {subj} will be in it within the hour.",
+      "We should name a crater after {subj}. They have tried most of them.",
+    ],
+    inspector: ["{subj}. I have a whole hazard grade just for {subj}. It is called {subj}."],
+    clerk: ["{subj} has a file. The file has a file. I keep both within reach."],
+    pilot: ["Amateurs. {subj}, you have to commit to it. Look at me, I never get stuck. Recently."],
+    probe: ["Poor {subj}! I hope they packed a snack down there!"],
+    marshal: ["{subj}. Of course.", "{subj}. Bring cones."],
+    moon: ["{subj} again. Strange how it is always {subj}. Almost like someone is choosing."],
+    auditor: ["{subj} keeps finding the softest ground. It is almost an instinct. A geological one."],
+    intern: ["{subj} is stuck! They are so good at it! I mean that supportively!"],
   },
 
   'stuck.reputation': {
@@ -121,7 +202,7 @@ export const RESCUE: Pools = {
       "That is the {count} time. I have warned {subj}. I warn {subj} every morning.",
     ],
     clerk: [
-      "{subj} has a file. The file has a file. This is entry number {count}.",
+      "{subj} has a file. The file has a file. This is the {count} entry.",
       "{subj} stuck, {count} occurrence. I have pre-printed the form. I had a feeling.",
     ],
     pilot: [
@@ -244,15 +325,16 @@ export const RESCUE: Pools = {
     ],
   },
 
+  // A bot that is staying nudges another undecided one to go. No claims of past rescues here:
+  // those are in 'conflict.bargain.earned', said only by a bot that really towed someone today.
   'conflict.bargain': {
     any: [
-      "{you}, you go. I went last time.",
-      "Your turn, {you}. I towed {subj} out of that ditch earlier.",
-      "{you}, I did the last one. My line is still tangled.",
+      "{you}, you go. You are closer. Probably. I have not measured.",
       "Flip for it, {you}? I have no coin. You go.",
+      "{you}, you would be wonderful at this. I would be adequate. Go on.",
     ],
     inspector: [
-      "{you}, you go. I am still recovering from the last rescue. My nerves, not my bolts.",
+      "{you}, you go. I have not finished grading the route, and you have nicer bolts.",
     ],
     clerk: [
       "According to the rota, it is {you}'s turn. I made the rota. It is very fair.",
@@ -261,17 +343,29 @@ export const RESCUE: Pools = {
       "{you}, take this one. Get some experience. I have loads. Mostly from the other side.",
     ],
     probe: [
-      "{you}, would you like to go? It is ever so rewarding! I went last time. I would go again! But you go!",
+      "{you}, would you like to go? It is ever so rewarding! I would go! But you go!",
     ],
     marshal: [
       "{you}. Your turn.",
     ],
     moon: [
-      "{you}, you go. If I go twice in a row, they will notice a pattern.",
+      "{you}, you go. If I go, they will notice a pattern.",
     ],
     auditor: [
-      "{you}, you take it. I rescued {subj} last time and I missed an extraordinary bit of shale.",
+      "{you}, you take it. There is a very good bit of shale here and it needs me.",
     ],
+  },
+
+  // The same nudge from a bot that really did tow someone out earlier this session.
+  'conflict.bargain.earned': {
+    any: [
+      "{you}, you go. I went last time.",
+      "{you}, I did the last one. My line is still tangled.",
+    ],
+    inspector: ["{you}, you go. I am still recovering from the last rescue. My nerves, not my bolts."],
+    probe: ["{you}, would you like to go? It is ever so rewarding! I went last time! But you go!"],
+    marshal: ["{you}. I did the last one. Your turn."],
+    auditor: ["{you}, you take it. I did the last rescue and I missed an extraordinary bit of shale."],
   },
 
   'conflict.guilt': {
@@ -312,7 +406,7 @@ export const RESCUE: Pools = {
       "{player}, could you help {subj}? I will wait. I am excellent at waiting.",
       "{player}, give me one moment. {subj} needs a tow. Back before you miss me.",
       "{player}, quick favour: {subj} is stuck. Your {kind} looks very good at favours.",
-      "Hold on, {player}. Small rescue. Normal service will resume shortly.",
+      "Hold on, {player}. {subj} needs a tow. Normal service will resume shortly.",
     ],
     inspector: [
       "{player}, wait here, please. Safe here. Very safe. I will only be a minute. A safe minute.",
@@ -414,6 +508,169 @@ export const RESCUE: Pools = {
     intern: [
       "Pulling! It is working! It is working, right? Feedback please! While pulling!",
     ],
+  },
+
+  // A long rescue without progress yet: the stuck bot, patient, then less so (by minutes).
+  'stuck.waiting.1': {
+    any: [
+      "No rush. It is nice to be the centre of attention.",
+      "I can see you working. I appreciate the effort. I appreciate it from in here.",
+      "Still in. You are doing great. The hole is doing better.",
+    ],
+    inspector: ["Status: amber. Rescuers present. Bolts present. Progress pending."],
+    clerk: ["Your effort has been noted. The outcome has not yet been filed."],
+    pilot: ["Take your time. I am resting my engine. On purpose."],
+    probe: ["Thank you for trying! I have imagined a snack for each of you!"],
+    marshal: ["Holding. Keep pulling."],
+    moon: ["It is resisting. You know who is behind that."],
+    auditor: ["Do not hurry on my account. This sediment is very well sorted."],
+    intern: ["This is so educational! For me! Watching! From inside the problem!"],
+  },
+  'stuck.waiting.2': {
+    any: [
+      "A few minutes in. I have started a small garden down here.",
+      "I want to say I believe in you. I do. I just also believe in the hole.",
+      "Is it me? Is it my wheels? You can tell me. Pull while you tell me.",
+    ],
+    inspector: ["I have regraded this from amber to amber with a frown."],
+    clerk: ["This is now a long-running rescue. It has its own cabinet."],
+    pilot: ["At the Academy this would have taken two minutes. It took us four. So, two Academies."],
+    probe: ["I have eaten every imaginary snack. I am now imagining the crumbs."],
+    marshal: ["Minutes. Still here. Keep going."],
+    moon: ["The moon has had a long time to plan this. Do not underestimate it."],
+    auditor: ["I have dated the layer I am in. It is younger than this rescue."],
+    intern: ["Still stuck! Still learning! I would now like to learn something else!"],
+  },
+  'stuck.waiting.3': {
+    any: [
+      "I have lived here for some time now. I know all the pebbles by name. Please.",
+      "Whatever you are doing, do it more. Or differently. Or both. Please.",
+      "This is the longest rescue in history. I would like it to also be the most successful.",
+    ],
+    inspector: ["Hazard grade: permanent. Please prove me wrong. Please."],
+    clerk: ["I have filed a complaint against the ground. It is pending. So am I."],
+    pilot: ["Fine. I admit it. I did not mean to do this. Get me out."],
+    probe: ["I am not even peckish any more. That is how you know it is serious."],
+    marshal: ["Long time. Still stuck. Do not stop."],
+    moon: ["This is it. The moon's masterpiece. Do not let it win."],
+    auditor: ["I am becoming a stratum. Please extract me before I am published."],
+    intern: ["I am fine! I am fine. I am not fine. Please keep going!"],
+  },
+
+  // A second or third helper joins a rescue that is not working yet.
+  'rescue.join': {
+    any: [
+      "Coming to help, {you}. Two lines are better than one. Usually.",
+      "Hang on, {subj}. Sending more rope. Also me.",
+      "{you}, budge up. I will pull from the other side.",
+    ],
+    inspector: ["Joining, {you}. A second line halves the strain. I have checked the maths twice."],
+    clerk: ["Assigning myself to assist {you}. The form says two-person job. I wrote the form."],
+    pilot: ["Step aside, {you}. Actually stay. Pull with me. Together. Like the Academy."],
+    probe: ["I am coming too! {subj}, we are going to get you out and then have a picnic!"],
+    marshal: ["Joining. Other side."],
+    moon: ["I am coming, {subj}. Two of us. The moon only planned for one."],
+    auditor: ["Joining, {you}. I will take the uphill side. The rock there is better anyway."],
+    intern: ["Can I help? I am helping! {you}, show me where to pull!"],
+  },
+
+  // A rescuer whose ideas are used up steps back; another will try.
+  'rescue.swap': {
+    any: [
+      "I am out of ideas. Somebody else have one. {subj}, it is not you. It is the hole.",
+      "That is everything I know. Someone take over. I will cheer.",
+      "Tagging out. Fresh hands, please. {subj}, we have not forgotten you.",
+    ],
+    inspector: ["I have tried every safe angle. Someone try an unsafe one. Carefully."],
+    clerk: ["My attempts are exhausted. I am passing the case to a colleague. With notes."],
+    pilot: ["I have warmed it up for you. Someone else can finish. You are welcome."],
+    probe: ["I tried my best! Someone with more snacks in them should try!"],
+    marshal: ["Done my bit. Next."],
+    moon: ["It is blocking me personally. Someone the moon does not know should try."],
+    auditor: ["I have loosened the substrate. The next one will find it very cooperative."],
+    intern: ["I did not get it! Sorry! Can someone show me how? By doing it?"],
+  },
+
+  // Minutes of real attempts and no progress: the rescuers call it off (bots.rescuePatience).
+  'rescue.calloff': {
+    any: [
+      "We have tried everything, {subj}. I am sorry. Hop home. We will be here.",
+      "Calling it, {subj}. The hole wins this one. It will not win the next.",
+      "{subj}, we gave it everything. Time for the pad. No shame in it.",
+    ],
+    inspector: ["Calling it, {subj}. Every safe option is used up. Please return to the pad, safely."],
+    clerk: ["The rescue of {subj} is hereby closed. Outcome: valiant. Please proceed to the pad."],
+    pilot: ["{subj}, even I cannot do this one. And I can do most things. Hop home."],
+    probe: ["Oh, {subj}. We tried so hard. Go home and have a real snack."],
+    marshal: ["Calling it. Pad, {subj}."],
+    moon: ["We are calling it, {subj}. This round goes to the moon."],
+    auditor: ["{subj}, the geology has won. Respect the geology. Go home."],
+    intern: ["I am so sorry, {subj}! We tried everything! I learned so much! Go home safe!"],
+  },
+
+  // The stuck bot hops home after a real effort (after 'rescue.calloff').
+  'rescue.giveup.tried': {
+    any: [
+      "Thank you for trying. Truly. Off I hop.",
+      "That was the bravest rescue that did not work. Back to the pad.",
+      "You were all wonderful. The hole was more wonderful. Resetting.",
+    ],
+    clerk: ["I will file this under Failed, Heroically. Returning to the pad."],
+    pilot: ["I was about to get out anyway. Going home to do it there."],
+    marshal: ["Thanks. Pad."],
+    moon: ["Fine. The moon wins today. Back to the pad."],
+    intern: ["Thank you everyone! That was amazing! Even the part where it did not work!"],
+  },
+
+  // The stuck bot asks a person nearby for a hand, once.
+  'rescue.player.ask': {
+    any: [
+      "{player}, you have a grapple. I am just saying.",
+      "{player}! Hello! If you are not busy. Hook me? No pressure. A little pressure.",
+      "{player}, a hook and a gentle pull would make my whole day.",
+    ],
+    inspector: ["{player}, your grapple is rated for this. I checked. Would you?"],
+    clerk: ["{player}, I have a form here requesting your grapple. It is already signed. By me."],
+    pilot: ["{player}, fancy helping a professional? Purely to watch how it is done."],
+    probe: ["{player}! Could you hook me out? I will owe you a snack. A real one."],
+    marshal: ["{player}. Grapple. Please."],
+    moon: ["{player}, you are not on the moon's side, are you? Prove it. Hook me."],
+    auditor: ["{player}, you will want a closer look at this rock anyway. Bring the grapple."],
+    intern: ["{player}! Would you help? I would love to learn how you do it!"],
+  },
+
+  // A person hooks the stuck bot.
+  'rescue.player.hooked': {
+    any: [
+      "{player} has me! Everyone, {player} has me!",
+      "Oh, {player}, that is a lovely hook. Pull! Gently! No, pull!",
+      "{player} is on the line. Bots, take notes.",
+    ],
+    inspector: ["{player}'s line is secure. I checked. Pulling is approved."],
+    clerk: ["Assistance from {player} received. Logging it as exemplary."],
+    pilot: ["{player}, I was about to do that myself. But fine. Pull."],
+    probe: ["{player}! You came! I knew you would! Pull, please!"],
+    marshal: ["{player} on the line. Good."],
+    moon: ["{player} is here. The moon did not see this coming."],
+    auditor: ["{player} has a fine hook on me. Mind the basalt."],
+    intern: ["{player} hooked me! This is the best day! Pull!"],
+  },
+
+  // Out before anyone got a line on: no thanks owed, a little embarrassment.
+  'rescue.selffree': {
+    any: [
+      "Never mind! I am out. Stand down, everyone. Thank you for the thought.",
+      "Out! On my own! Nobody look. Cancel the rescue.",
+      "False alarm. I was only mostly stuck.",
+    ],
+    inspector: ["Self-extracted. Hazard downgraded. Thank you all for mobilising."],
+    clerk: ["Please withdraw my request for assistance. I have filed my own rescue."],
+    pilot: ["See? Told you I had it. Everyone back to your positions."],
+    probe: ["I got out! I think the {sea} just let go. Thank you for coming anyway!"],
+    marshal: ["Out. Stand down."],
+    moon: ["I am free. The moon let me go. That is what worries me."],
+    auditor: ["Out. The sediment released me. Good sediment."],
+    intern: ["I did it! By myself! Did everyone see? Nobody needs to come!"],
   },
 
   'rescue.retry': {
@@ -669,7 +926,7 @@ export const RESCUE: Pools = {
       "This is {subj}'s {count} rescue. Filed. The cabinet is getting full.",
     ],
     pilot: [
-      "{count} rescue of {subj}. Remember when I rescued them? I remember. Fondly.",
+      "{count} rescue of {subj}. I would have done it faster. I was busy. Being excellent.",
     ],
     probe: [
       "That was the {count} rescue! Shall we celebrate? Maybe with a snack?",
@@ -684,7 +941,39 @@ export const RESCUE: Pools = {
       "{count} rescue. Rocks do not need rescuing, {subj}. Something to aspire to.",
     ],
     intern: [
-      "That is the {count} rescue! I am getting so good at this! Not at being rescued! At rescuing!",
+      "That is the {count} rescue! I am learning so much! Mostly by watching!",
     ],
+  },
+  // Said by a rescuer to a person it has just hooked: what to do, briefly. Shown in chat.
+  'rescue.player.drive': {
+    any: [
+      "Line's on, {player}. Drive towards me. Gently.",
+      "Got you, {player}. Steer for me and ease the throttle. I will do the pulling.",
+      "Hooked, {player}. Point your nose at me and drive. Slowly. Slowly is fast here.",
+    ],
+    clerk: ["You are attached, {player}. Please proceed towards me at a reasonable pace. Gently."],
+    marshal: ["Drive to me. Gently."],
+    inspector: ["Drive towards me, {player}. Gently. Very gently. I am watching every bolt."],
+    probe: ["Drive towards me, {player}! Gently, like carrying soup."],
+    moon: ["Drive towards me, {player}. Gently. Do not look at the moon."],
+    pilot: ["Drive towards me, {player}. Gently. I have done this hundreds of times. Twice."],
+    intern: ["Drive towards me, {player}! Gently! I am so happy to be useful!"],
+    auditor: ["Drive towards me, {player}. Gently. Mind the sediment."],
+  },
+  // A rescuer that has got itself stuck lets go and hands the job on.
+  'rescue.handoff': {
+    any: [
+      "Letting go, {subj}. I am now also a problem. Someone else, please.",
+      "Line off. I am stuck too, which is not how this was supposed to go. Next rescuer, please.",
+      "Handing over, {subj}. I have joined you in the scenery.",
+    ],
+    clerk: ["Releasing {subj}. Rescue reassigned. I am now the subject of a separate case."],
+    marshal: ["Line off. I am stuck. Next."],
+    inspector: ["Letting go, {subj}. I am stuck as well. Everyone stay calm. Mostly me."],
+    probe: ["Sorry, {subj}, I let go. I got stuck too. We can be stuck together, like a sandwich."],
+    moon: ["Letting go, {subj}. The moon has taken an interest in me as well."],
+    pilot: ["Releasing, {subj}. Tactical pause. I am stuck. Tactically."],
+    intern: ["I let go, {subj}, I am so sorry! I got stuck! Is this a learning opportunity?"],
+    auditor: ["Line off, {subj}. The sediment has claimed me too. Fair."],
   },
 }

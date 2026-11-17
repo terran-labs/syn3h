@@ -38,6 +38,8 @@ export interface BanterNet {
   vehicleOf(id: number): Vehicle | undefined
   readonly botGearHooks: BotGearHooks
   botCord(id: number): { flying: boolean; to: number | null } | null
+  /** Every cord the host draws, players' included: a player hooking a stuck bot helps. */
+  readonly bungee?: { cordOf(id: number): { flying: boolean; to: number | null } | null }
 }
 
 export interface BanterBots {
@@ -100,7 +102,8 @@ export class HostBanter implements System {
       get isHost() { return net.isHost }, get connected() { return net.connected }, get mode() { return net.mode },
       vehicleOf: (id) => net.vehicleOf(id), get botGearHooks() { return net.botGearHooks }, botCord: (id) => net.botCord(id),
       displayName: (id) => net.displayName(id), botRole: (id) => net.botRole?.(id) ?? '', people: () => [...net.players.values()].filter((p) => !p.bot).map((p) => p.id),
-    }, this.bots, this.bots.navigator ?? null, (e) => this.director?.rescue(e), (bot) => this.withPlayer(bot))
+      playerCord: (id) => net.bungee?.cordOf(id) ?? null,
+    }, this.bots, this.bots.navigator ?? null, (e) => this.director?.rescue(e), (bot) => this.withPlayer(bot), (bot) => this.director?.playerOf(bot) ?? null)
     this.rescue.update(elapsed)
     this.sample(elapsed)
     if (this.thinkTime >= THINK) { this.thinkTime = 0; this.director.tick() }

@@ -10,7 +10,9 @@
  * and the gamepad (src/core/Input.ts). It is cleared on blur, however focus leaves.
  */
 import { CHAT_SPEAK_EVENT, type ChatChannel, type ChatLine } from '../../net/chat'
-import { chatHideBots, chatOn, chatShow, MAX_CHAT_LENGTH } from '../../../shared/chat'
+import { chatHideBots, chatOn, chatOverlay, chatShow, MAX_CHAT_LENGTH } from '../../../shared/chat'
+import { createSwitch } from '../inspector/switch'
+import { restoreChatOverlay } from './overlayPreference'
 import { params } from '../../../shared/params'
 import { touchLeftHanded as leftHanded } from '../TouchPreferences'
 import './chat.css'
@@ -86,6 +88,7 @@ export class ChatPanel {
           <input class="chat-field" type="text" enterkeyhint="send" autocomplete="off" autocorrect="on" spellcheck="true" aria-label="Message" placeholder="Say something nice" maxlength="${MAX_CHAT_LENGTH}">
           <button type="submit" class="chat-send">Send</button>
         </form>
+        <div class="chat-foot"></div>
       </div>
       <button type="button" class="chat-toggle" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v10H10l-4.5 3.5V15.5H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span class="chat-toggle-text">Chat</span><kbd>Y</kbd><span class="chat-unread" hidden></span></button>
       <div class="chat-menu" role="menu" hidden></div>
@@ -124,6 +127,16 @@ export class ChatPanel {
     const { channel } = options
     this.unsubscribe.push(channel.onShow((line) => this.onLine(line)))
     this.unsubscribe.push(channel.onChange(() => this.redraw()))
+    // "Show new messages over the game": one setting (shared/chat.ts), shown here and in the
+    // Me card's Chat group. Off, lines go only into this log and the unread count.
+    this.unsubscribe.push(restoreChatOverlay())
+    const overlay = createSwitch(chatOverlay.def.label, { checked: Boolean(chatOverlay.value), className: 'chat-overlay-switch', signal: this.abort.signal, onChange: (on) => params.set(chatOverlay.def.id, on) })
+    q('.chat-foot').append(overlay.element)
+    this.unsubscribe.push(params.onChange((id) => {
+      if (id !== chatOverlay.def.id) return
+      overlay.set(Boolean(chatOverlay.value))
+      this.renderStrip()
+    }))
     this.unsubscribe.push(params.onChange((id) => {
       if (id === chatShow.def.id || id === chatHideBots.def.id || id === chatOn.def.id) this.redraw()
       if (id === leftHanded.def.id) this.syncHand()
@@ -193,6 +206,7 @@ export class ChatPanel {
 
   private readonly speaking = new Map<number, ReturnType<typeof setTimeout>>()
   private markSpeaker(id: number): void {
+    if (!chatOverlay.value) return
     const plate = document.querySelector<HTMLElement>(`.vehicle-nameplate[data-vehicle="${id}"]`)
     clearTimeout(this.speaking.get(id))
     if (!plate) return
@@ -294,7 +308,7 @@ export class ChatPanel {
   }
 
   private renderStrip(): void {
-    if (this.open) { this.strip.replaceChildren(); return }
+    if (this.open || !chatOverlay.value) { this.strip.replaceChildren(); return }
     const now = performance.now()
     const recent = this.options.channel.visible().filter((l) => now - l.at < STRIP_MS).slice(-STRIP_LINES)
     const keep = new Set(recent.map((l) => String(l.seq)))

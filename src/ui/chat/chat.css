@@ -133,3 +133,6 @@ body.is-bare-interface .syn3h-shell .chat-panel.is-open,
 body.is-bare-interface .syn3h-shell .chat-panel.is-open * { visibility: visible !important; }
 body.is-bare-interface .syn3h-shell .chat-panel.is-open .chat-toggle,
 body.is-bare-interface .syn3h-shell .chat-panel.is-open .chat-strip { visibility: hidden !important; }
+
+/* The panel's foot: "Show new messages over the game" (overlayPreference.ts). */
+.chat-foot { padding: 4px 12px 8px; border-top: 1px solid var(--s3-line-quiet, rgb(173 224 247 / .15)); font-size: 12px; color: var(--s3-dim, #a5c1d1); }
