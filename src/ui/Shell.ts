@@ -287,14 +287,14 @@ export class Shell implements System {
     this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock)
     // The version beside the lobby's settings gear opens What's new.
     this.lobbySettings.version.addEventListener('click', () => { this.audio.cue('click'); this.showUpdates() }, { signal })
-    const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
+    // The foot is not a card of its own: one button under the stack, like the lobby's buttons.
+    const foot = document.createElement('div'); foot.className = 'rail-foot'
     // Header and footer stay outside the scrolling card stack.
     const command = document.createElement('div'); command.className = 'rail-command wi-glass'
     command.innerHTML = '<div class="rail-tools"><strong class="rail-world"></strong><button type="button" class="rail-pause">Pause</button></div>'
     command.querySelector('.rail-world')!.after(railTop.querySelector('.wi-search')!)
-    const actions = railTop.querySelector('.wi-actions')!
-    actions.insertAdjacentHTML('beforeend', '<button type="button" class="exit-world">Leave world</button>')
-    foot.append(actions)
+    // The foot holds one thing: the way out. The world's own actions are in the World card.
+    foot.innerHTML = `<button type="button" class="exit-world"><svg class="wi-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M9.5 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h5.5M7 8h7M11.5 5.5 14 8l-2.5 2.5"/></svg><span>Leave world</span></button>`
     railTop.remove()
     const cards = this.inspector.element.querySelector('.wi-cards')!
     cards.before(command); cards.after(foot)
