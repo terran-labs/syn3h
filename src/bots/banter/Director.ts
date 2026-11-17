@@ -95,9 +95,9 @@ export interface BanterHooks {
 }
 
 /** Timings per chatter level: quiet, normal, chatty. Seconds. */
-const IDLE_GAP: [number, number][] = [[70, 130], [20, 40], [8, 16]]
-const MIN_GAP = [14, 6, 3]
-const EVENT_CHANCE = [0.35, 0.7, 1]
+const IDLE_GAP: [number, number][] = [[80, 150], [28, 50], [10, 20]]
+const MIN_GAP = [16, 9, 3]
+const EVENT_CHANCE = [0.3, 0.55, 1]
 /** People chatted this recently: the bots keep out of it, apart from answering. */
 const HUMAN_HUSH = 15
 /** Requests a player may make: burst, then one per this many seconds. */
@@ -158,6 +158,7 @@ export class BanterDirector {
   private started = false
   private lastPuzzled = -Infinity
   private lastLeave = -Infinity
+  private goneAt = -Infinity
   private readonly session = { critters: [] as { critter: string; by: string }[], resets: 0 }
   /** Count of lines said, for the cost report and tests. */
   said = 0
@@ -338,7 +339,8 @@ export class BanterDirector {
     }
     if (this.chatterOn) {
       for (const s of arrivals) this.pendingEvents.push({ key: 'bot.arrive', bot: s.id, weight: 1 })
-      for (const s of gone) this.pendingEvents.push({ key: 'bot.gone', subjName: s.short, weight: 0.7 })
+      // Bots come and go with the quality governor: remark on it now and then, not every time.
+      for (const s of gone) if (now - this.goneAt > 300) { this.goneAt = now; this.pendingEvents.push({ key: 'bot.gone', subjName: s.short, weight: 0.5 }) }
     }
   }
 
@@ -369,7 +371,7 @@ export class BanterDirector {
       for (const o of views.values()) {
         if (o.id <= b.id) continue
         const close = Math.hypot(o.x - b.x, o.z - b.z) < 14
-        if (close && !s.near.has(o.id)) { s.near.add(o.id); found.push({ key: 'meet', bot: b.id, player: o.id, weight: 0.35 }) }
+        if (close && !s.near.has(o.id)) { s.near.add(o.id); found.push({ key: 'meet', bot: b.id, player: o.id, weight: 0.25 }) }
         else if (!close && Math.hypot(o.x - b.x, o.z - b.z) > 40) s.near.delete(o.id)
       }
     }
@@ -520,6 +522,8 @@ export class BanterDirector {
     const roll = this.r()
     const act = () => {
       // Sometimes they actually do it: the one who agreed tails the one who asked.
+      // A player's request comes first: a bot already with someone does not wander off.
+      if (b.request || a.request) return
       if (kind === 'tag' || kind === 'race' || kind === 'convoy') this.hooks.direct(b.id, { kind: 'pursueBot', bot: a.id, seconds: 25 + this.r() * 20 })
     }
     if (roll < 0.25) {
@@ -644,14 +648,17 @@ export class BanterDirector {
     }
     if (r > v.agreeable + 0.25) return say('req.refuse', {}, t)
     const seconds = this.lifetime(b, kind)
+    // The bot is told the longest it could last (three times the start, see tickRequests);
+    // the director ends it sooner, with a word, when boredom wins.
+    const hold = seconds * 3 + 10
     const directive: Directive | null =
-      kind === 'follow' ? { kind: 'follow', player: player.id, seconds } :
-      kind === 'come' || kind === 'look' ? { kind: 'goto', player: player.id, seconds } :
-      kind === 'stop' ? { kind: 'stay', seconds } :
-      kind === 'scatter' ? { kind: 'avoid', player: player.id, seconds } :
-      kind === 'chase' ? { kind: 'chase', player: player.id, seconds } :
-      kind === 'flee' ? { kind: 'avoid', player: player.id, seconds } :
-      kind === 'race' ? { kind: 'chase', player: player.id, seconds } : null
+      kind === 'follow' ? { kind: 'follow', player: player.id, seconds: hold } :
+      kind === 'come' || kind === 'look' ? { kind: 'goto', player: player.id, seconds: hold } :
+      kind === 'stop' ? { kind: 'stay', seconds: hold } :
+      kind === 'scatter' ? { kind: 'avoid', player: player.id, seconds: hold } :
+      kind === 'chase' ? { kind: 'chase', player: player.id, seconds: hold } :
+      kind === 'flee' ? { kind: 'avoid', player: player.id, seconds: hold } :
+      kind === 'race' ? { kind: 'chase', player: player.id, seconds: hold } : null
     if (!directive) return t
     const act = () => {
       if (!this.hooks.direct(b.id, directive)) return

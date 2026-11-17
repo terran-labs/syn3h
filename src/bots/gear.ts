@@ -14,6 +14,10 @@ export interface BotGearAction {
   gear: BotGearOption['id']
   target: Vehicle
   phase: 'press' | 'hold' | 'release' | 'cancel'
+  /** Aim this many metres above the target's centre: its roof, when the centre is out of sight. */
+  aimUp?: number
+  /** Bungee 'hold' only: false keeps the cord attached without reeling in (a towed vehicle). */
+  reel?: boolean
 }
 export interface BotGearHooks {
   available(vehicle: Vehicle): readonly BotGearOption[]

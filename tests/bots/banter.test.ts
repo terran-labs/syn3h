@@ -91,9 +91,9 @@ describe('bot banter', () => {
     expect(quiet.lines).toBeLessThan(normal.lines)
     expect(normal.lines).toBeLessThan(chatty.lines)
     expect(quiet.starts).toBeLessThan(normal.starts)
-    // Normal: one conversation every 20 to 40 s is 90 to 180 an hour; leave room for exchanges.
-    expect(normal.starts).toBeGreaterThanOrEqual(70)
-    expect(normal.starts).toBeLessThanOrEqual(190)
+    // Normal, nothing happening: a remark or exchange every 28 to 50 s, so about 70 to 130 an hour.
+    expect(normal.starts).toBeGreaterThanOrEqual(55)
+    expect(normal.starts).toBeLessThanOrEqual(150)
   })
 
   it('says nothing at all with bot chatter off, and still acts on requests', () => {

@@ -40,6 +40,8 @@ export class BotGear {
   private target: Vehicle | null = null
   private readonly control: GearControl = { fire: false, direction: [0, 0, -1] }
   private nextPester = 0
+  /** Metres above the target's centre to aim at (see BotGearAction.aimUp). */
+  private aimUp = 0
 
   constructor(private readonly game: Game, readonly id: number, readonly vehicle: Vehicle, private readonly hooks: BotGearHooks) {
     const common = {
@@ -68,8 +70,9 @@ export class BotGear {
     if (this.selected !== action.gear) this.cancel()
     this.selected = action.gear
     this.target = action.target
+    this.aimUp = action.aimUp ?? 0
     this.aim()
-    this.control.fire = action.phase === 'press' || action.phase === 'hold'
+    this.control.fire = action.phase === 'press' || (action.phase === 'hold' && action.reel !== false)
     if (action.gear === 'bungee' && action.phase === 'release') this.bungee.letGo()
     if (action.gear === 'pester' && action.phase === 'press' && this.game.time >= this.nextPester) {
       if (this.hooks.launchPester(this.id, action.target, this.control.direction)) this.nextPester = this.game.time + pesterCooldown.value
@@ -89,7 +92,7 @@ export class BotGear {
       .applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w)).add(position)
     const size = this.hooks.wrapSize()
     const delta = (n: number) => size > 0 ? n - Math.round(n / size) * size : n
-    const d = new THREE.Vector3(delta(to.x - from.x), to.y - from.y, delta(to.z - from.z)).normalize()
+    const d = new THREE.Vector3(delta(to.x - from.x), to.y + this.aimUp - from.y, delta(to.z - from.z)).normalize()
     this.control.direction = [d.x, d.y, d.z]
   }
 
