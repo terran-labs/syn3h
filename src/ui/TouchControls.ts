@@ -2,7 +2,9 @@ import type { VehicleKind } from '../vehicles'
 import type { Input } from '../core/Input'
 import { params } from '../../shared/params'
 import './touch-stick.css'
-import { persistHandedness, touchLeftHanded, touchRole } from './TouchPreferences'
+import { persistHandedness, touchAimCurve, touchAimRadius, touchAimSpeed, touchLeftHanded, touchPinchSpeed, touchRole } from './TouchPreferences'
+import { AimTouches, TagStick, type TagMode, type Zone } from './tagStick'
+import { setTouchAiming } from '../core/touchAim'
 
 /*
  * The floating thumb stick: pure maths, exported for tests/ui/touch-stick.test.ts.
@@ -43,6 +45,19 @@ function writeDriven(): void { try { localStorage.setItem(DRIVEN_KEY, '1') } cat
 
 /** Each control owns its pointer so driving and tagging can happen simultaneously. */
 export interface TouchGear { attached(): boolean; letGo(): void }
+/** How the Tag button reaches the gear in hand (bound by the Shell; see src/ui/tagStick.ts). */
+export interface TouchTag {
+  /** What a press does with the gear in hand now. */
+  mode(): TagMode
+  /** Press the tag control for exactly one physics step. */
+  tap(): void
+  /** Drop a held charge or carry without sending it. */
+  cancel(): void
+}
+/** How long the reticle and the camera aim outlast the lift, ms: a release shot still goes where it pointed. */
+export const TAG_FADE_MS = 150
+/** The orbit camera (camera.mode 2), the one mode where a pinch zooms. */
+const orbitCamera = (): boolean => Math.round(Number(params.get('camera.mode')?.value ?? 0)) === 2
 export class TouchControls {
   readonly element = document.createElement('div')
   private readonly abort = new AbortController()
@@ -55,24 +70,39 @@ export class TouchControls {
   private kind: VehicleKind = 'buggy'
   /** Camera look in CSS px of finger travel, from the aiming hand. ChaseCamera listens for syn3h:look. */
   onLook = (dx: number, dy: number): void => { window.dispatchEvent(new CustomEvent('syn3h:look', { detail: { dx, dy } })) }
+  /** Camera zoom in wheel pixels, positive out. ChaseCamera listens for syn3h:zoom. */
+  onZoom = (deltaY: number): void => { window.dispatchEvent(new CustomEvent('syn3h:zoom', { detail: { deltaY } })) }
+  /** The gear behind the Tag button. Unbound, Tag holds the tag control as it always did. */
+  tag?: TouchTag
+  private readonly tagStick = new TagStick({
+    fire: (on) => { this.input.external.fire = on },
+    tap: () => { if (this.tag) this.tag.tap(); else this.input.external.fire = true },
+    cancel: () => { this.tag?.cancel(); this.input.external.fire = false },
+    look: (dx, dy) => this.onLook(dx, dy),
+  }, () => ({ speed: touchAimSpeed.value, radius: touchAimRadius.value, curve: touchAimCurve.value }))
+  private lastFrame = 0
+  private fadeTimer = 0
+  private cancelRing?: HTMLElement
 
   constructor(private readonly input: Input, parent: HTMLElement = document.body) {
     this.element.className = 'touch-controls'
     this.element.setAttribute('aria-label', 'Touch driving controls')
     this.element.hidden = true
     if (!this.available) return
-    this.element.innerHTML = `<div class="touch-stick touch-float" aria-hidden="true"><span class="touch-knob"></span></div><div class="touch-stick-hint" hidden><span class="touch-stick-ghost"><span></span></span><span class="touch-stick-label">Drag on the left to drive</span></div><div class="touch-actions"><button type="button" data-action="throttleUp" hidden>THR +</button><button type="button" data-action="throttleDown" hidden>THR −</button><button type="button" data-action="special" aria-pressed="false">WINGS</button><button type="button" data-action="brakes">BRAKE</button><button type="button" data-action="zorb" aria-pressed="false">ZORB</button><button type="button" data-action="letOut" hidden>LET OUT</button><button type="button" data-action="letGo" hidden>LET GO</button><button type="button" class="touch-fire" data-action="fire">TAG</button></div>`
+    this.element.innerHTML = `<div class="touch-stick touch-float" aria-hidden="true"><span class="touch-knob"></span></div><div class="touch-stick-hint" hidden><span class="touch-stick-ghost"><span></span></span><span class="touch-stick-label">Drag on the left to drive</span></div><div class="touch-actions"><button type="button" data-action="throttleUp" hidden>THR +</button><button type="button" data-action="throttleDown" hidden>THR −</button><button type="button" data-action="special" aria-pressed="false">WINGS</button><button type="button" data-action="brakes">BRAKE</button><button type="button" data-action="zorb" aria-pressed="false">ZORB</button><button type="button" data-action="letOut" hidden>LET OUT</button><button type="button" data-action="letGo" hidden>LET GO</button><button type="button" class="touch-fire" data-action="fire">TAG</button></div><div class="touch-cancel" aria-hidden="true"><span>Cancel</span></div>`
     parent.append(this.element)
     const signal = this.abort.signal
     this.hint = this.element.querySelector<HTMLElement>('.touch-stick-hint')!
+    this.cancelRing = this.element.querySelector<HTMLElement>('.touch-cancel')!
     signal.addEventListener('abort', persistHandedness())
     const unwatch = params.onChange((id) => { if (id === touchLeftHanded.def.id) { this.reset(); this.syncHandedness() } })
     signal.addEventListener('abort', unwatch)
     this.syncHandedness()
     this.stick(signal)
     this.aim(signal)
-    for (const button of this.element.querySelectorAll<HTMLButtonElement>('button')) {
-      const action = button.dataset.action as 'brakes' | 'special' | 'fire' | 'throttleUp' | 'throttleDown' | 'zorb' | 'letOut' | 'letGo'
+    this.tagButton(signal)
+    for (const button of this.element.querySelectorAll<HTMLButtonElement>('button:not([data-action="fire"])')) {
+      const action = button.dataset.action as 'brakes' | 'special' | 'throttleUp' | 'throttleDown' | 'zorb' | 'letOut' | 'letGo'
       const pointers = new Set<number>()
       const throttle = action === 'throttleUp' || action === 'throttleDown'
       const release = () => { pointers.clear(); if (throttle) { this.thrust.delete(action); this.syncThrust() } else if (action === 'letOut') this.key('keyup'); else if (action !== 'special' && action !== 'zorb' && action !== 'letGo') input.external[action] = false; button.classList.remove('held') }
@@ -184,36 +214,89 @@ export class TouchControls {
   }
 
   /**
-   * Drag to aim, on the free game view opposite the stick. Like the stick, a touch is only a
-   * candidate until it moves 8 px, so a tap still reaches whatever is under it. Then it owns
-   * its pointer until it lifts and turns the camera (and the gear, which aims along it) by the
-   * finger's travel, at the mouse look sensitivity (camera.sensitivity). One aiming finger at a time.
+   * The free game view opposite the stick (see `touchRole`). Like the stick, a touch is only a
+   * candidate until it moves 8 px, so a tap still reaches whatever is under it. One finger
+   * dragging turns the camera by the finger's travel, at the mouse look sensitivity
+   * (camera.sensitivity). In the orbit camera a second finger there makes a pinch that zooms
+   * as the wheel does; see AimTouches in src/ui/tagStick.ts.
    */
   private aim(signal: AbortSignal): void {
-    let pending: number | null = null, pointer: number | null = null, x = 0, y = 0
-    const release = () => { pending = null; pointer = null }
-    this.resetters.push(release)
+    const touches = new AimTouches({ look: (dx, dy) => this.onLook(dx, dy), zoom: (deltaY) => this.onZoom(deltaY) }, () => touchPinchSpeed.value)
+    this.resetters.push(() => touches.reset())
     addEventListener('pointerdown', (event) => {
-      if (!this.active || this.input.suspended || pending !== null || pointer !== null) return
-      if (this.role(event) !== 'aim') return
-      pending = event.pointerId; x = event.clientX; y = event.clientY
+      if (!this.active || this.input.suspended || this.role(event) !== 'aim') return
+      if (touches.down(event.pointerId, event.clientX, event.clientY, orbitCamera()) === 'pinch') event.preventDefault()
     }, { capture: true, signal })
     addEventListener('pointermove', (event) => {
-      const id = event.pointerId
-      if (id === pending) {
-        if (!isDrag(x, y, event.clientX, event.clientY)) return
-        pending = null; pointer = id
-        try { (event.target as Element).setPointerCapture?.(id) } catch { /* The window listeners still follow it. */ }
-      }
-      if (id !== pointer) return
+      if (this.input.suspended) { touches.reset(); return }
+      const wasLooking = touches.looking
+      if (!touches.move(event.pointerId, event.clientX, event.clientY)) return
       event.preventDefault()
-      if (this.input.suspended) { release(); return }
-      this.onLook(event.clientX - x, event.clientY - y)
-      x = event.clientX; y = event.clientY
+      if (!wasLooking && touches.looking) try { (event.target as Element).setPointerCapture?.(event.pointerId) } catch { /* The window listeners still follow it. */ }
     }, { capture: true, signal })
-    for (const name of ['pointerup', 'pointercancel'] as const) {
-      addEventListener(name, (event) => { if (event.pointerId === pending || event.pointerId === pointer) release() }, { capture: true, signal })
+    for (const name of ['pointerup', 'pointercancel'] as const) addEventListener(name, (event) => touches.up(event.pointerId), { capture: true, signal })
+  }
+
+  /**
+   * TAG: press and drag to aim, lift to send. See TagStick in src/ui/tagStick.ts for the rule.
+   * The button captures its pointer, so the thumb may wander anywhere and the drive stick and
+   * the other buttons keep their own fingers. While Tag is down the gear aims through the
+   * centre reticle (src/core/touchAim.ts) and the Shell draws it; both outlast the lift by
+   * TAG_FADE_MS.
+   */
+  private tagButton(signal: AbortSignal): void {
+    const button = this.element.querySelector<HTMLButtonElement>('[data-action="fire"]')!
+    const stick = this.tagStick
+    const ring = this.cancelRing!
+    const sync = () => {
+      button.classList.toggle('held', stick.held)
+      ring.classList.toggle('is-shown', stick.cancellable)
+      ring.classList.toggle('is-armed', stick.overCancel)
     }
+    const end = () => {
+      sync()
+      clearTimeout(this.fadeTimer)
+      document.documentElement.dataset.touchAim = 'out'
+      this.fadeTimer = window.setTimeout(() => { if (!stick.held) { delete document.documentElement.dataset.touchAim; setTouchAiming(false) } }, TAG_FADE_MS)
+    }
+    this.resetters.push(() => { if (stick.held) { stick.reset(); end() } })
+    button.addEventListener('pointerdown', (event) => {
+      if (!this.active || this.input.suspended || stick.held) return
+      event.preventDefault()
+      try { button.setPointerCapture(event.pointerId) } catch { /* The button's listeners still see it while it is over the button. */ }
+      const mode = this.tag?.mode() ?? 'stream'
+      clearTimeout(this.fadeTimer)
+      setTouchAiming(true); document.documentElement.dataset.touchAim = 'on'
+      stick.down(event.pointerId, event.clientX, event.clientY, mode, this.cancelZone(button, ring))
+      this.lastFrame = performance.now()
+      sync(); this.update()
+    }, { signal })
+    button.addEventListener('pointermove', (event) => {
+      if (event.pointerId !== stick.pointer) return
+      event.preventDefault()
+      stick.move(event.pointerId, event.clientX, event.clientY); sync()
+    }, { signal })
+    const lift = (how: 'up' | 'cancel') => (event: PointerEvent) => { if (stick.up(event.pointerId, how)) end() }
+    button.addEventListener('pointerup', lift('up'), { signal })
+    button.addEventListener('pointercancel', lift('cancel'), { signal })
+    // Capture lost without a pointerup (the element was hidden, say): nothing is sent.
+    button.addEventListener('lostpointercapture', lift('cancel'), { signal })
+  }
+
+  /**
+   * Place the Cancel ring diagonally above the cluster, one slot up and one slot in from Tag
+   * toward the middle of the screen (outward it would cover the chat button on phones), and
+   * return its catch circle.
+   */
+  private cancelZone(button: HTMLElement, ring: HTMLElement): Zone | null {
+    const r = button.getBoundingClientRect()
+    if (!(r.width > 0)) return null
+    const gap = parseFloat(getComputedStyle(button.parentElement!).columnGap) || 0
+    const inward = touchLeftHanded.value ? 1 : -1
+    const x = r.left + r.width / 2 + inward * (r.width + gap), y = r.top - gap - r.height / 2
+    ring.style.width = ring.style.height = `${r.width}px`
+    ring.style.transform = `translate3d(${x - r.width / 2}px,${y - r.height / 2}px,0)`
+    return { x, y, r: r.width * 0.6 }
   }
 
   /** Mirror the stick, hint and buttons for the driving hand. */
@@ -231,6 +314,10 @@ export class TouchControls {
   private syncThrust(): void { this.input.external.z = Number(this.thrust.has('throttleUp')) - Number(this.thrust.has('throttleDown')) }
   setVehicleKind(kind: VehicleKind): void {
     this.reset(); this.kind = kind; this.syncHandedness()
+    // The thumb grid's shape (touch-stick.css), and how many columns it has, so the gear's own
+    // buttons (src/ui/gear/gear.css) line up as the next column out.
+    this.element.dataset.vehicle = kind
+    document.documentElement.style.setProperty('--thumb-columns', kind === 'jet' ? '3' : '2')
     for (const button of this.element.querySelectorAll<HTMLElement>('[data-action^="throttle"]')) button.hidden = kind !== 'jet'
     const special = this.element.querySelector<HTMLButtonElement>('[data-action="special"]')
     if (special) { special.textContent = kind === 'jet' ? 'MODE' : 'WINGS'; special.hidden = kind === 'hovercraft' }
@@ -246,6 +333,11 @@ export class TouchControls {
   /** The Bungee reads V from the keyboard; holding LET OUT is holding V. */
   private key(type: 'keydown' | 'keyup'): void { window.dispatchEvent(new KeyboardEvent(type, { code: 'KeyV', key: 'v' })) }
   update(): void {
+    if (this.tagStick.held) {
+      const now = performance.now()
+      this.tagStick.frame((now - this.lastFrame) / 1000)
+      this.lastFrame = now
+    }
     const cord = Boolean(this.gear?.attached())
     for (const action of ['letOut', 'letGo']) { const button = this.element.querySelector<HTMLElement>(`[data-action="${action}"]`); if (button && button.hidden === cord) button.hidden = !cord }
     this.element.querySelector('[data-action="special"]')?.setAttribute('aria-pressed', String(this.input.state.special))

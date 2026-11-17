@@ -114,19 +114,23 @@
   .gear-selector { --gs-slots: 3; top: var(--gear-top, 40%); }
 }
 
-/* Extra gear actions on touch, left of the shell's own touch buttons. */
+/* Extra gear actions on touch: the next column out from the shell's own thumb buttons, the
+   same size and on the same two rows (the --thumb-* grid in src/ui/touch-stick.css). The first
+   action stands in the bottom row, the second above it. */
 .gear-actions {
+  --gear-thumb-offset: calc(var(--thumb-columns, 2) * (var(--thumb-size, 62px) + var(--thumb-gap, 12px)));
   position: fixed; z-index: var(--gear-actions-z, 12);
-  right: var(--gear-actions-right, calc(max(24px, env(safe-area-inset-right)) + 148px));
-  bottom: var(--gear-actions-bottom, max(30px, env(safe-area-inset-bottom)));
-  display: flex; flex-direction: column-reverse; gap: 10px; pointer-events: none;
+  right: var(--gear-actions-right, calc(max(var(--thumb-margin, 24px), env(safe-area-inset-right)) + var(--gear-thumb-offset)));
+  bottom: var(--gear-actions-bottom, max(var(--thumb-bottom, 30px), env(safe-area-inset-bottom)));
+  display: flex; flex-direction: column-reverse; gap: var(--thumb-gap, 12px); pointer-events: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
+html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actions-left, calc(max(var(--thumb-margin, 24px), env(safe-area-inset-left)) + var(--gear-thumb-offset))); }
 :root .gear-actions button.gs-action {
-  width: var(--gear-action-size, 60px); height: var(--gear-action-size, 60px); min-height: 0; padding: 0; margin: 0;
+  width: var(--thumb-size, 62px); height: var(--thumb-size, 62px); min-height: 0; padding: 0 4px; margin: 0;
   border-radius: 50%; border: 1px solid var(--s3-line); box-shadow: var(--halo-glow, 0 0 6px color-mix(in srgb, var(--s3-accent) 12%, transparent));
   background: radial-gradient(closest-side, color-mix(in srgb, var(--s3-panel) 90%, transparent), color-mix(in srgb, var(--s3-panel) 45%, transparent)); color: var(--s3-ink);
-  font: 500 11px/1.15 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase;
+  font: 500 11px/1.1 'Barlow', sans-serif; letter-spacing: .1em; text-transform: uppercase; white-space: normal; overflow-wrap: anywhere;
   text-shadow: var(--halo-under, 0 0 2px var(--s3-panel), 0 1px 7px var(--s3-panel)); -webkit-backdrop-filter: none; backdrop-filter: none;
   pointer-events: auto; touch-action: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
@@ -134,9 +138,6 @@
 :root .gear-actions button.gs-action.held {
   background: color-mix(in srgb, var(--s3-accent) 10%, transparent); border-color: var(--s3-accent-2);
   box-shadow: inset 0 0 8px color-mix(in srgb, var(--s3-accent) 20%, transparent), 0 0 6px color-mix(in srgb, var(--s3-accent) 20%, transparent);
-}
-@media (max-width: 700px), (max-height: 500px) {
-  .gear-actions { --gear-action-size: 56px; right: var(--gear-actions-right, calc(max(18px, env(safe-area-inset-right)) + 150px)); bottom: var(--gear-actions-bottom, max(18px, env(safe-area-inset-bottom))); gap: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
