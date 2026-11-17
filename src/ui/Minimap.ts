@@ -88,6 +88,8 @@ export const UNITS = 320
 const RIM_UNITS = RIM * UNITS / 2
 /** Width of the cross-fade either side of the rim, in units. */
 const HANDOVER = 10
+/** More rim glyphs than this within a quarter of the ring are laid out as an ordered crowd. */
+const CROWD = 6
 
 /** CIE L* (0..100) to relative luminance (0..1). */
 function luminance(lightness: number): number {
@@ -176,8 +178,12 @@ interface Slot {
   x: number; z: number; heading: number; kind: MapKind; it: boolean; self: boolean
   color: string; shades: readonly string[]; accent: string
   place: MarkPlace; look: MarkLook; priority: number; shown: boolean
+  /** Distance fade beyond the rim, 1 at the rim, 0 at the far side. */
+  fade: number
+  /** True when the glyph is part of a crowd on the rim, laid out as an ordered sector. */
+  crowd: boolean
 }
-const newSlot = (): Slot => ({ x: 0, z: 0, heading: 0, kind: 'person', it: false, self: false, color: '', shades: [], accent: '', place: { x: 0, y: 0, distance: 0, bearing: 0, blend: 0 }, look: { radius: 0, alpha: 0 }, priority: 0, shown: false })
+const newSlot = (): Slot => ({ x: 0, z: 0, heading: 0, kind: 'person', it: false, self: false, color: '', shades: [], accent: '', place: { x: 0, y: 0, distance: 0, bearing: 0, blend: 0 }, look: { radius: 0, alpha: 0 }, priority: 0, shown: false, fade: 1, crowd: false })
 
 const IT = '#9dff8a', HAIRLINE = 'rgba(4, 10, 18, .55)'
 /** Mix steps from the paint toward black (negative) or white (positive): the facet shades. */
@@ -233,6 +239,8 @@ export class Minimap {
   private slots: Slot[] = []
   private count = 0
   private readonly order: number[] = []
+  /** Rim glyphs by bearing, reused each draw. */
+  private readonly rim: number[] = []
   private self?: MapEntity
   /** Your own mark: white, shaded in cool greys so its facets read. */
   private readonly selfShades: readonly string[] = ['#8d9aa8', '#a6b3c0', '#bcc8d4', '#d3dde6', '#e6edf3', '#f4f8fb', '#ffffff']
@@ -349,17 +357,19 @@ export class Minimap {
     for (let i = 0; i < this.count; i++) {
       const s = this.slots[i]
       placeMark(wrapDelta(cx, s.x, size), wrapDelta(cz, s.z, size), unitsPerMetre, 0, s.place)
-      markLook(s.kind, s.kind === 'zone' ? 1 : rimFade(s.place.distance, rimDistance, farthest), s.look)
+      s.fade = s.kind === 'zone' ? 1 : rimFade(s.place.distance, rimDistance, farthest); s.crowd = false
+      markLook(s.kind, s.fade, s.look)
       s.look.radius *= m; s.shown = s.look.alpha * s.place.blend > .01 || s.place.blend < 1
       let j = order.length; order.push(i)
       while (j > 0 && this.before(s, this.slots[order[j - 1]])) { order[j] = order[j - 1]; j-- }
       order[j] = i
     }
+    this.orderCrowds()
     // Glyphs that would touch slide along the rim, alternating sides, a few widths at most;
     // past that they stack, the higher priority drawn on top.
     for (let a = 0; a < order.length; a++) {
       const s = this.slots[order[a]]
-      if (s.place.blend <= 0 || !s.shown || !this.collides(a, s)) continue
+      if (s.place.blend <= 0 || !s.shown || s.crowd || !this.collides(a, s)) continue
       const x0 = s.place.x, y0 = s.place.y, radius = Math.hypot(x0, y0), turn = (2 * s.look.radius + 1.5) / Math.max(1, radius)
       let free = false
       for (let step = 1; step <= 8 && !free; step++) {
@@ -374,6 +384,56 @@ export class Minimap {
     if (me && Number.isFinite(me.x) && Number.isFinite(me.z) && Number.isFinite(me.heading)) {
       this.solid(ctx, FORMS[Minimap.markStyle], 0, 0, me.heading, ARROW.self * m, this.selfShades, '#ffffff', 1, 1)
       if (me.it) this.itMark(ctx, 0, 0, (ARROW.self + 5) * m, 1)
+    }
+  }
+  /**
+   * A crowd on the rim reads as a count, not noise: where more than CROWD glyphs fall in a run
+   * spanning at most a quarter of the ring, they are spaced evenly through that sector in their
+   * bearing order (wider if they need it), and the bots' ticks shorten so people stand out.
+   * Single glyphs and small groups are left to the ordinary spreading.
+   */
+  private orderCrowds(): void {
+    const rim = this.rim; rim.length = 0
+    for (let i = 0; i < this.count; i++) {
+      const s = this.slots[i]
+      if (s.kind === 'zone' || !s.shown || s.place.blend < .5) continue
+      let j = rim.length; rim.push(i)
+      while (j > 0 && this.slots[rim[j - 1]].place.bearing > s.place.bearing) { rim[j] = rim[j - 1]; j-- }
+      rim[j] = i
+    }
+    const n = rim.length
+    if (n <= CROWD) return
+    // Start after the widest gap, so a run that crosses the west seam (bearing ±π) stays whole.
+    let start = 0, widest = -1
+    for (let a = 0; a < n; a++) {
+      const gap = (this.slots[rim[(a + 1) % n]].place.bearing - this.slots[rim[a]].place.bearing + Math.PI * 2) % (Math.PI * 2)
+      if (gap > widest) { widest = gap; start = (a + 1) % n }
+    }
+    // Runs: neighbours closer than a sixteenth of the ring belong together.
+    let first = 0
+    while (first < n) {
+      let last = first
+      while (last + 1 < n && this.gapAt(start, last) < Math.PI / 8) last++
+      const count = last - first + 1, span = this.spanOf(start, first, last)
+      if (count > CROWD && span <= Math.PI / 2) this.layCrowd(start, first, last, span)
+      first = last + 1
+    }
+  }
+  private at(start: number, k: number): Slot { return this.slots[this.rim[(start + k) % this.rim.length]] }
+  private gapAt(start: number, k: number): number {
+    return (this.at(start, k + 1).place.bearing - this.at(start, k).place.bearing + Math.PI * 2) % (Math.PI * 2)
+  }
+  private spanOf(start: number, first: number, last: number): number {
+    return (this.at(start, last).place.bearing - this.at(start, first).place.bearing + Math.PI * 2) % (Math.PI * 2)
+  }
+  private layCrowd(start: number, first: number, last: number, span: number): void {
+    const count = last - first + 1, from = this.at(start, first).place.bearing
+    let widest = 0
+    for (let k = first; k <= last; k++) widest = Math.max(widest, this.at(start, k).look.radius)
+    const step = Math.max(span / (count - 1), (2 * widest + 1.5) / RIM_UNITS), centre = from + span / 2
+    for (let k = first; k <= last; k++) {
+      const s = this.at(start, k), angle = centre + (k - first - (count - 1) / 2) * step, radius = Math.hypot(s.place.x, s.place.y)
+      s.place.x = Math.cos(angle) * radius; s.place.y = Math.sin(angle) * radius; s.crowd = true
     }
   }
   private before(a: Slot, b: Slot): boolean {
@@ -501,7 +561,7 @@ export class Minimap {
     const person = s.kind === 'person', fade = Math.min(1, s.look.alpha * 1.6)
     const angle = Math.atan2(s.place.y, s.place.x), dx = Math.cos(angle), dy = Math.sin(angle)
     const base = Math.hypot(s.place.x, s.place.y), width = s.look.radius * .8
-    const length = (person ? 15 : 11) * m * (.5 + .5 * fade), tipX = dx * (base + length), tipY = dy * (base + length)
+    const length = (person ? 15 : s.crowd ? 7 : 11) * m * (.5 + .5 * fade), tipX = dx * (base + length), tipY = dy * (base + length)
     const midX = dx * (base + length * .5), midY = dy * (base + length * .5)
     // Aura (under-halo and glow in one sprite), then the arc, then the tick.
     const aura = this.aura(s.color), ah = length * (person ? 1.3 : 1)
@@ -516,7 +576,9 @@ export class Minimap {
     // planet). A person's is brighter and longer than a bot's.
     {
       ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = alpha * (person ? 1 : .9); ctx.lineWidth = (person ? 1.3 : 1.1) * this.px
-      ctx.beginPath(); ctx.moveTo(dx * (base + length * .12), dy * (base + length * .12)); ctx.lineTo(dx * (base + length * .82), dy * (base + length * .82)); ctx.stroke()
+      // A bot in the nearest third of the fade gets a longer core: one more step of contrast where it matters.
+      const reach = person ? .82 : .82 + .14 * Math.min(1, Math.max(0, (s.fade - 2 / 3) * 3))
+      ctx.beginPath(); ctx.moveTo(dx * (base + length * .12), dy * (base + length * .12)); ctx.lineTo(dx * (base + length * reach), dy * (base + length * reach)); ctx.stroke()
     }
     ctx.globalAlpha = 1
     if (s.it) this.itMark(ctx, midX, midY, length * .75 + 2 * m, alpha)
