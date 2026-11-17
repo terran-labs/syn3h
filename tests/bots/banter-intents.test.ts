@@ -56,6 +56,13 @@ describe('player intents', () => {
     })
   }
 
+  it('recognises nearly every phrasing overall', () => {
+    const all = Object.entries(PHRASINGS).flatMap(([k, lines]) => lines.map((l) => [k, l] as const))
+    const missed = all.filter(([k, l]) => parseIntent(l, BOTS)?.kind !== k)
+    console.log(`recognised ${all.length - missed.length}/${all.length}; missed: ${missed.map(([k, l]) => `${l} (${k} -> ${parseIntent(l, BOTS)?.kind ?? 'nothing'})`).join('; ')}`)
+    expect(missed.length / all.length).toBeLessThan(0.05)
+  })
+
   it('rarely reads ordinary chat as a request', () => {
     const misread = ORDINARY.filter((l) => parseIntent(l, BOTS) !== null)
     const rate = misread.length / ORDINARY.length
