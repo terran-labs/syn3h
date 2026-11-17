@@ -61,7 +61,7 @@ import { AccessoryControls } from './AccessoryControls'
 import { ChatRow } from './ChatRow'
 import type { AccessoryVehicle } from '../vehicles/accessories'
 import { bootLoading } from './LoadingScreen'
-import { renderHelp, touchHelp } from './VehicleHelp'
+import { fillHelpLine, renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
 import './label-plate.css'
@@ -1661,7 +1661,7 @@ export class Shell implements System {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!, touch = this.touch.available
     renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full, this.hasSeveralGear)
     hint.classList.toggle('is-full', full); hint.classList.remove('is-hint'); this.touch.highlight(null)
-    hint.querySelector('small')!.textContent = touch ? '' : full ? 'H or ? to hide' : 'H: all controls'
+    fillHelpLine(hint.querySelector('small')!, touch ? '' : full ? 'H or ?: hide' : 'H: all controls')
     hint.hidden = false; clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
     const hide = () => this.hideHelp()
     this.helpTimer = setTimeout(hide, full ? 8500 : 5000)

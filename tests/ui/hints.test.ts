@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PlayHints, liftOffHint, wingsHint, type HintState } from '../../src/ui/PlayHints'
-import { quickHelp, touchHelp, vehicleHelp } from '../../src/ui/VehicleHelp'
+import { helpParts, quickHelp, touchHelp, vehicleHelp } from '../../src/ui/VehicleHelp'
 
 const parked: HintState = { kind: 'jet', touch: false, altitude: 0.8, speed: 0, steer: 0, pitch: 1, throttle: 0, hoverMode: true, canLiftOut: false }
 const run = (hints: PlayHints, seconds: number, state: HintState) => { const out = []; for (let t = 0; t < seconds; t += 0.1) { const h = hints.update(0.1, state); if (h) out.push(h.text) } return out }
@@ -51,3 +51,12 @@ describe('wings out of lava or water', () => {
   })
 })
 
+
+describe('help lines mark what to press', () => {
+  it('keys become key glyphs; gear and mode names stay text', () => {
+    expect(helpParts('L or click: Plasma Tag')).toEqual([{ keys: 'L or click', text: 'Plasma Tag' }])
+    expect(helpParts('W / S: pitch · A / D: bank')).toEqual([{ keys: 'W / S', text: 'pitch' }, { keys: 'A / D', text: 'bank' }])
+    expect(helpParts('Grapple: click to launch')).toEqual([{ text: 'Grapple: click to launch' }])
+    expect(helpParts('Hold E to lift off · Q: come down')).toEqual([{ text: 'Hold E to lift off' }, { keys: 'Q', text: 'come down' }])
+  })
+})

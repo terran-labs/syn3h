@@ -8,7 +8,7 @@ export function vehicleHelp(kind: VehicleKind): string[] {
 }
 /** Shown only while the host allows more than one kind of gear. Wording agreed with the Weapons lane. */
 export const gearHelp = [
-  '1 to 9: choose a gear · L or left mouse: use gear',
+  'Number keys 1 to 9: choose a gear · L or left mouse: use gear',
   'Grapple: click to launch · hold to reel in · V or wheel: let out · G: let go',
   'Yoink: aim at a vehicle and hold to grab; release to fling. With no target, press for a gust.',
   'Plasma Thunder: hold until fully charged, then release. Letting go early fizzles.',
@@ -24,6 +24,8 @@ export const gearTouchHelp = [
   'Chaser: hold TAG, drag to aim at a vehicle, and let go to send a Chaser after it.',
   'Orbit camera: pinch with two fingers on the right to zoom.',
 ]
+/** Chat, on a keyboard: the left column's Chat row opens the same. */
+export const chatHelp = 'Y: Chat · Enter: send · Esc: close'
 export const cameraHelp = ['Click: capture the mouse, then move it to look round · Esc: release', 'C: chase, cockpit, orbit, stationary, roam · Right click: cockpit', 'Wheel or + / −: distance · Z: scope', 'I: interface full, driving or hidden · Esc: back to full']
 export function touchHelp(kind: VehicleKind): string {
   return kind === 'jet' ? 'Hold THR + to lift off, THR − to come down. Left thumb: pitch and bank. MODE: hover or flight. BRAKE: slow down. ZORB: ride in a ball.' : kind === 'hovercraft' ? 'Left thumb: thrust, turn and pitch. BRAKE: slow down. ZORB: ride in a ball.' : 'Left thumb: drive and steer. WINGS: deploy wings. BRAKE: slow down. TAG: use your gear (Plasma Tag to start). ZORB: ride in a ball.'
@@ -35,14 +37,48 @@ export function touchHelp(kind: VehicleKind): string {
  */
 /** On a desktop the first click captures the cursor; after that the mouse looks round. */
 const MOUSE_LOOK = 'Click, then move the mouse to look round · Esc: release'
-export function quickHelp(kind: VehicleKind, touch = false): string[] {
+/** The last line on a keyboard: the number keys pick gear (when there is a choice) and Y opens Chat. */
+const KEYS_LINE = (gear: boolean) => gear ? 'Number keys: choose gear · Y: Chat' : 'Y: Chat'
+export function quickHelp(kind: VehicleKind, touch = false, gear = false): string[] {
   if (touch) return [kind === 'jet' ? 'Hold THR + to lift off' : kind === 'hovercraft' ? 'Left thumb: thrust and turn' : 'Left thumb: drive and steer']
-  if (kind === 'jet') return ['Hold E to lift off · Q: come down', 'W / S: pitch · A / D: bank · Space: flight mode', MOUSE_LOOK]
-  if (kind === 'hovercraft') return ['W: thrust · A / D: turn · Shift: brake', MOUSE_LOOK]
-  return ['WASD or arrows: drive · Shift: brake', 'Space: wings · L or click: Plasma Tag', MOUSE_LOOK]
+  if (kind === 'jet') return ['Hold E to lift off · Q: come down', 'W / S: pitch · A / D: bank · Space: flight mode', MOUSE_LOOK, KEYS_LINE(gear)]
+  if (kind === 'hovercraft') return ['W: thrust · A / D: turn · Shift: brake', MOUSE_LOOK, KEYS_LINE(gear)]
+  return ['WASD or arrows: drive · Shift: brake', 'Space: wings · L or click: Plasma Tag', MOUSE_LOOK, KEYS_LINE(gear)]
+}
+/** Words a key name is made of: single keys, named keys and the joins between them. */
+const KEY_WORDS = new Set(['or', 'and', 'to', 'WASD', 'arrows', 'Space', 'Shift', 'Esc', 'Enter', 'Number', 'keys', 'click', 'Click', 'Right', 'right', 'left', 'mouse', 'Wheel', 'wheel'])
+/** True when the text before a colon names keys ("L or click", "W / S"), not a gear or a mode ("Grapple"). */
+export function namesKeys(text: string): boolean {
+  return text.split(' ').every((w) => /^[A-Z0-9?+\-−/]$/.test(w) || KEY_WORDS.has(w))
+}
+/**
+ * One line of help, split into what to press and what it does. Each " · " part that reads
+ * "keys: action" gives its keys as a key glyph (a bright <kbd>, the same form as the left
+ * column's, hud-column.css) followed by the action; anything else stays plain text.
+ */
+export function helpParts(line: string): Array<{ keys?: string; text: string }> {
+  return line.split(' · ').map((part) => {
+    const at = part.indexOf(': ')
+    return at > 0 && namesKeys(part.slice(0, at)) ? { keys: part.slice(0, at), text: part.slice(at + 2) } : { text: part }
+  })
 }
 export function renderHelp(element: HTMLElement, kind: VehicleKind, touch = false, quick = false, gear = false): void {
   element.replaceChildren()
-  const lines = quick ? quickHelp(kind, touch) : touch ? [touchHelp(kind), ...(gear ? gearTouchHelp : [])] : [...vehicleHelp(kind), ...(gear ? gearHelp : []), ...cameraHelp]
-  for (const text of lines) { const line = document.createElement('div'); line.textContent = text; element.append(line) }
+  const lines = quick ? quickHelp(kind, touch, gear) : touch ? [touchHelp(kind), ...(gear ? gearTouchHelp : [])] : [...vehicleHelp(kind), ...(gear ? gearHelp : []), chatHelp, ...cameraHelp]
+  for (const text of lines) {
+    const line = document.createElement('div')
+    // Touch has no keys: its lines stay plain text.
+    if (touch) line.textContent = text
+    else fillHelpLine(line, text)
+    element.append(line)
+  }
+}
+/** Fill an element with one help line, its keys as key glyphs. */
+export function fillHelpLine(element: HTMLElement, text: string): void {
+  element.replaceChildren()
+  helpParts(text).forEach((part, i) => {
+    if (i) element.append(' · ')
+    if (part.keys) { const key = document.createElement('kbd'); key.textContent = part.keys; element.append(key, ' ') }
+    element.append(part.text)
+  })
 }

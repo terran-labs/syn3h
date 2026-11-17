@@ -284,8 +284,13 @@ export class GearSelector {
       return { id, button, label, offset: 99 }
     })
     this.drum.replaceChildren(...this.items.map(i => i.button))
-    this.keyHintEl.textContent = keyHint(list.length)
-    this.keyHintEl.hidden = !this.keyHintEl.textContent
+    // The number range, its numbers drawn as key glyphs like every other key in the column.
+    const range = keyHint(list.length)
+    this.keyHintEl.replaceChildren(...range.split(/(\d+)/).filter(Boolean).map((s) => {
+      if (!/^\d+$/.test(s)) return document.createTextNode(s)
+      const key = document.createElement('kbd'); key.textContent = s; return key
+    }))
+    this.keyHintEl.hidden = !range
     this.current = ''
     this.moveTo(source, source.current, true)
     this.fit()

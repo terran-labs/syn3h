@@ -94,7 +94,7 @@
 :root .syn3h-shell.exploration-ui .gear-selector .gs-text { letter-spacing: var(--col-track); }
 :root .syn3h-shell.exploration-ui .gear-selector .gs-keyhint,
 :root .syn3h-shell.exploration-ui .gear-selector .gs-status { font: var(--col-type); letter-spacing: var(--col-track); }
-:root .syn3h-shell.exploration-ui .gear-selector .gs-act { font: var(--col-type); letter-spacing: var(--col-track); text-transform: uppercase; color: var(--s3-ink); }
+:root .syn3h-shell.exploration-ui .gear-selector .gs-act { font: var(--col-type); letter-spacing: var(--col-track); text-transform: uppercase; color: var(--s3-dim); }
 /* For the owner to compare on the preview, off by default (set on .syn3h-shell):
    data-gear-floor=75      the drum's fade ends at 75% instead of nothing, neighbours in ink
                            (measured on snow and fog: next rows 2.0-2.3 to 2.2-2.7:1 against
@@ -150,11 +150,21 @@
 :root .syn3h-shell :is(.hud-accessories, .hud-chat) button.acc-row:hover { background: none; border: 0; box-shadow: none; color: var(--s3-ink); }
 :root .syn3h-shell :is(.hud-accessories, .hud-chat) button.acc-row:focus-visible .acc-name { text-decoration: underline 1px var(--s3-accent-2); text-underline-offset: 5px; }
 /* One key cap, everywhere in the column: accessories, Chat, the gear's numbers and its hints.
-   Touch has no keys and shows none (gear.css). */
+   A plain bright glyph with no outline (the owner: "eliminate the pill button shape"), so the
+   only outlined thing in the column is the minimap's ring; the key reads brighter and bolder
+   than the dim name or action beside it. Touch has no keys and shows none (gear.css). */
 :root .syn3h-shell.exploration-ui:not(.has-touch) :is(.gear-selector, .hud-accessories, .hud-chat) kbd {
-  display: inline-block; flex: none; min-width: 22px; padding: 3px 7px 2px; box-sizing: border-box; text-align: center; white-space: nowrap;
-  font: var(--col-cap-type); letter-spacing: .12em; text-transform: uppercase; color: var(--s3-ink); text-shadow: var(--col-text-under);
-  border: var(--col-stroke); border-radius: 999px; background: none; box-shadow: var(--col-stroke-glow); opacity: 1;
+  display: inline-block; flex: none; min-width: 0; padding: 0; box-sizing: border-box; text-align: left; white-space: nowrap;
+  font: var(--col-cap-type); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--s3-accent-2); text-shadow: var(--col-text-under);
+  border: 0; border-radius: 0; background: none; box-shadow: none; opacity: 1;
+}
+/* Keys sit in a fixed column, so the names beside them line up (SPACE is the widest). */
+:root .syn3h-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat) kbd { min-width: 46px; }
+/* The same key form everywhere else the HUD names a key: the controls card (first run and H)
+   and the lobby's controls list. A bright, bolder glyph in the line's own size; no outline. */
+:root .syn3h-shell :is(.spawn-help, .shell-controls) kbd {
+  display: inline; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+  font: inherit; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--s3-accent-2);
 }
 /* Captured for driving: names and state only. Every key cap and hint steps out. Touch has no
    keys, so the gear's number caps never show there. */
