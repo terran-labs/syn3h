@@ -177,6 +177,25 @@ const MAX_JSON_PER_SECOND = 40
 /** A player whose state is older than this cannot ram or be rammed (the original's isResponding). */
 const RESPONDING_MS = 1500
 /**
+ * How often a transport ticks the room on its own clock while a time based rule is in play
+ * (see Room.needsClock), ms. Without it the room only notices time when a message arrives,
+ * so a holder whose page stalled (just after a teleport, a phone under load) scored nothing
+ * while every screen still showed them holding the hill.
+ */
+export const CLOCK_MS = 1000
+/**
+ * A connected person still holds or contests the hill this long after their last state, ms.
+ * Longer than RESPONDING_MS so a short stall does not flap the hill between holder and
+ * nobody once the room ticks on its own clock; short enough that a page which has truly
+ * stopped lets go within a few seconds. A paused player or a held place never counts.
+ */
+const HILL_FRESH_MS = 3000
+/**
+ * The most hill time credited between two ticks, ms. Above CLOCK_MS so timer jitter loses
+ * nothing; bounded so a long silence is never paid out in one go.
+ */
+const HILL_STEP_MS = 3 * CLOCK_MS
+/**
  * A bot holds or contests the hill only while moving faster than this (m/s): a parked or
  * stuck bot must not block the hill forever. People count whether moving or not.
  */
@@ -298,6 +317,20 @@ export class Room {
     this.tickTag(this.now())
     this.tickKoth(this.now())
     this.tickRace()
+  }
+
+  /**
+   * True while a time based rule is in play (King of the Hill with a zone or a win pause, a
+   * race) and someone connected is playing: the transport then calls tick() every CLOCK_MS
+   * on its own clock, whatever the clients send. Otherwise it schedules nothing, so an idle
+   * or Explore room, one where everyone is paused or hidden, or one with only held places
+   * can hibernate.
+   */
+  get needsClock(): boolean {
+    const timed = (this.mode === MODE_KOTH && (this.koth.zone !== null || this.koth.resetAt > 0)) || this.race !== null
+    if (!timed) return false
+    for (const p of this.players.values()) if (!p.heldUntil && p.lastState && !p.lastState.paused) return true
+    return false
   }
 
   /** Authoritative current world, not the first hello or the mutable global registry. */
@@ -1050,7 +1083,10 @@ export class Room {
   }
 
   private tickKoth(now: number): void {
-    const dt = Math.min(1, Math.max(0, (now - (this.lastTick || now)) / 1000))
+    // Room time since the last tick, whatever caused it (a message or the clock): ticks
+    // partition the room's timeline, so interleaved messages and clock ticks never count
+    // the same time twice.
+    const dt = Math.min(HILL_STEP_MS, Math.max(0, now - (this.lastTick || now))) / 1000
     this.lastTick = now
     if (this.mode !== MODE_KOTH) return
     const k = this.koth
@@ -1067,19 +1103,22 @@ export class Room {
     const inside: Player[] = []
     for (const p of [...this.players.values(), ...this.bots.values()]) {
       const st = p.lastState
-      const fresh = now - p.lastStateAt <= (p.info.bot ? BOT_EXPIRY_MS : RESPONDING_MS)
+      const fresh = now - p.lastStateAt <= (p.info.bot ? BOT_EXPIRY_MS : HILL_FRESH_MS)
       const counts = !p.info.bot || (st !== null && Math.hypot(...st.v) > BOT_CONTEST_SPEED)
-      if (st && fresh && !st.paused && !k.out[p.info.id] && inZone(zone, st.p, this.wrapSize()) && counts) inside.push(p)
+      if (!p.heldUntil && st && fresh && !st.paused && !k.out[p.info.id] && inZone(zone, st.p, this.wrapSize()) && counts) inside.push(p)
     }
     const holder = inside.length === 1 && !inside[0].info.bot ? inside[0].info.id : 0
     const contested = inside.length >= 2
     let event: TagEvent | undefined
     if (holder !== k.holder) event = holder ? 'capture' : contested ? 'contest' : 'free'
     else if (contested !== k.contested) event = contested ? 'contest' : 'free'
+    // Only time held at both ends of the step is credited: the step before a capture belonged
+    // to somebody else, or to nobody.
+    const kept = holder !== 0 && holder === k.holder
     k.holder = holder
     k.contested = contested
     let scored = false
-    if (holder) {
+    if (kept) {
       let frac = (this.holdFrac.get(holder) ?? 0) + dt
       while (frac >= 1) {
         frac -= 1
