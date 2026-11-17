@@ -19,6 +19,9 @@
 
 /* Rows, fold summaries and controls. Visuals stay slim; the hit areas grow. */
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row { min-height: var(--wi-row); padding-block: 0; grid-template-columns: minmax(0,1fr) 100px var(--wi-num); }
+/* A setting's name is never cut short (the owner): a long one wraps onto a second line, the
+   row grows past its 44 px, and the control stays centred beside it. */
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-label { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; line-height: 1.25; padding-block: 5px; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-choice { grid-template-columns: minmax(0,82px) 1fr; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-group > summary { min-height: var(--wi-hit); padding-block: 0; }
 /* A range input takes clicks across its whole box; the 1 px track and thin thumb are drawn
@@ -75,7 +78,7 @@
   .syn3h-shell.exploration-ui .world-inspector:not(.lobby-settings) .wi-cards > .wi-card.is-open > .wi-body { flex: none; overflow: visible; }
   .syn3h-shell.exploration-ui .world-inspector:not(.lobby-settings) .wi-cards > .wi-card.is-open > .wi-head {
     position: sticky; top: 0; z-index: 2; border-radius: var(--halo-r, 16px) var(--halo-r, 16px) 0 0;
-    background: rgb(12 12 13 / .55); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    background: rgb(12 12 13 / .94); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   }
 }
 
