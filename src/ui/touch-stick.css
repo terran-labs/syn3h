@@ -72,8 +72,8 @@ body:has(.syn3h-shell.is-playing .spawn-help:not([hidden])) .touch-controls .tou
 .touch-controls[data-hand="left"] .touch-stick-ghost > span { animation-name: touch-stick-ghost-left; }
 @keyframes touch-stick-ghost-left { 0%, 15%, 100% { transform: none; } 45%, 65% { transform: translate(-14px, -16px); } }
 /* The minimap goes with the stick, to the lower right corner, so it is not under the action
-   buttons; clear of the Panels tab, which stays on the right edge (about 36 px wide). */
-html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minimap { left: auto; right: calc(max(16px, env(safe-area-inset-right)) + 44px); }
+   buttons. The Panels tab on the right edge sits higher, clear of it. */
+html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minimap { left: auto; right: max(16px, env(safe-area-inset-right)); }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .touch-controls[data-hand="left"] .touch-stick-hint { right: max(18px, env(safe-area-inset-right)); }
 }

@@ -122,7 +122,9 @@
    action stands in the bottom row, the second above it. */
 .gear-actions {
   --gear-thumb-offset: calc(var(--thumb-columns, 2) * (var(--thumb-size, 62px) + var(--thumb-gap, 12px)));
-  position: fixed; z-index: var(--gear-actions-z, 12);
+  /* Above the minimap (z 12, later in the page): on a narrow phone the Grapple's column can
+     reach the map in the lower left, and a button must never be drawn under it. */
+  position: fixed; z-index: var(--gear-actions-z, 13);
   right: var(--gear-actions-right, calc(max(var(--thumb-margin, 24px), env(safe-area-inset-right)) + var(--gear-thumb-offset)));
   bottom: var(--gear-actions-bottom, max(var(--thumb-bottom, 30px), env(safe-area-inset-bottom)));
   display: flex; flex-direction: column-reverse; gap: var(--thumb-gap, 12px); pointer-events: none;
