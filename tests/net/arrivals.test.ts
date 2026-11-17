@@ -49,4 +49,26 @@ describe('remote arrivals', () => {
     expect(bot.parked).toBe(false)
     expect(arrivals.pending).toBe(0)
   })
+
+  it('a bot rebuilt while it waits is shown as its new vehicle, never its disposed one', async () => {
+    // A change of kind disposes the waiting bot's vehicle (net/index.ts applyProfile). Touching
+    // a disposed vehicle's body would panic the physics engine for the session.
+    const c = compiler(), shown: unknown[] = []
+    const arrivals = new RemoteArrivals(v => shown.push(v), () => 1, c.compile)
+    const old = { ...vehicle(), disposed: false }
+    old.setParked = (p: boolean) => { if (old.disposed) throw new Error('touched a disposed vehicle'); old.parked = p }
+    const other = vehicle()
+    arrivals.admit(1000, other, false)
+    arrivals.admit(1001, old, false)
+    old.disposed = true
+    const next = vehicle()
+    expect(arrivals.replace(1001, next)).toBe(true)
+    expect(next.parked).toBe(true)
+    expect(arrivals.replace(42, vehicle())).toBe(false)
+    await c.finish()
+    arrivals.update(0); arrivals.update(1000)
+    expect(shown).toEqual([other, next])
+    expect(next.parked).toBe(false)
+    expect(arrivals.pending).toBe(0)
+  })
 })

@@ -878,7 +878,7 @@ export class NetClient implements System {
       if (state) notes.push(state)
       tag.note = notes.join(' · ')
     }
-    for (const [id, r] of this.remotes) add(id, r.vehicle, r.paused ? 'PAUSED' : !r.responding ? 'NOT RESPONDING' : '')
+    for (const [id, r] of this.remotes) if (this.shown(id)) add(id, r.vehicle, r.paused ? 'PAUSED' : !r.responding ? 'NOT RESPONDING' : '')
     if (this.bots && !this.bots.remote) for (const [id, vehicle] of liveBots(this.bots.vehicles, this.ctx.game.world)) {
       if (!this.remotes.has(id)) add(id, vehicle)
     }
@@ -897,7 +897,7 @@ export class NetClient implements System {
       const fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
       list.push({ x: p.x, z: p.z, heading: Math.atan2(-fx, -fz), color: vehicle.colors.body, accent: vehicle.colors.accent, kind: isBotId(id) ? 'bot' : 'person', it: Boolean(it) && id === it })
     }
-    for (const [id, r] of this.remotes) add(id, r.vehicle)
+    for (const [id, r] of this.remotes) if (this.shown(id)) add(id, r.vehicle)
     // The bots this client simulates (the host's, or everyone's offline) are not remotes.
     if (this.bots && !this.bots.remote) {
       for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (!this.remotes.has(id)) add(id, bot)
@@ -1044,15 +1044,21 @@ export class NetClient implements System {
    */
   audibleVehicles(): readonly Vehicle[] {
     const own = this.bots && !this.bots.remote ? this.bots.vehicles : []
-    const remotes = [...this.remotes].map(([id, r]): [number, Vehicle] => [id, r.vehicle])
+    const remotes = [...this.remotes].filter(([id]) => this.shown(id)).map(([id, r]): [number, Vehicle] => [id, r.vehicle])
     return audibleVehicles(remotes, own, this.ctx.game.world, this.audible)
   }
+
+  /**
+   * False while a remote waits its turn to be shown (RemoteArrivals): parked, with no body in
+   * the world, it must not be labelled, mapped, heard or targeted until it appears.
+   */
+  private shown(id: number): boolean { return !this.arrivals?.isWaiting(id) }
 
   /** The vehicle that stands for an id on this client, if any. */
   vehicleOf(id: number): Vehicle | undefined {
     if (id === this.id) return this.ctx.player
     const r = this.remotes.get(id)
-    if (r) return r.vehicle
+    if (r) return this.shown(id) ? r.vehicle : undefined
     if (isBotId(id) && this.isHost) {
       const bot = this.bots?.vehicles[id - BOT_ID_BASE]
       return bot && bodyAlive(this.ctx.game.world, bot) ? bot : undefined
@@ -1067,7 +1073,7 @@ export class NetClient implements System {
 
   /** Ids of every vehicle here: ours, remote players and bots, and the bots we simulate. */
   private vehicleIds(): number[] {
-    const ids = [this.id, ...this.remotes.keys()]
+    const ids = [this.id, ...[...this.remotes.keys()].filter(id => this.shown(id))]
     if (this.bots && !this.bots.remote) for (const [id] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (!ids.includes(id)) ids.push(id)
     return ids
   }
@@ -1436,6 +1442,8 @@ export class NetClient implements System {
       this.remotes.set(info.id, next)
       const [body, accent] = isBotId(info.id) ? botColors(info.id - BOT_ID_BASE) : info.colors
       ;(v as VehicleExtras).setColors?.(body, accent)
+      // Still waiting its turn to be shown: the new vehicle waits in its place, unseen.
+      if (this.arrivals?.replace(info.id, v)) return
       try {
         this.ctx.onRemoteVehicleChanged?.(v)
       } catch (err) {

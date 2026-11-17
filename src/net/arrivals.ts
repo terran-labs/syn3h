@@ -55,9 +55,22 @@ export class RemoteArrivals {
     // A person, or no running game: show it at once.
     if (!ahead) return
     vehicle.setParked(true)
-    const entry: Waiting = { id, vehicle, person, ready: !ahead }
+    const entry: Waiting = { id, vehicle, person, ready: false }
     this.waiting.push(entry)
-    ahead?.then(() => { entry.ready = true }, () => { entry.ready = true })
+    ahead.then(() => { entry.ready = true }, () => { entry.ready = true })
+  }
+
+  /**
+   * A waiting remote's vehicle was rebuilt (a change of kind): park the new one in the old
+   * one's place in the queue. The old one has been disposed and must never be touched again.
+   * True when the remote was waiting (the caller then shows nothing itself).
+   */
+  replace(id: number, vehicle: ParkableVehicle): boolean {
+    const w = this.waiting.find(e => e.id === id)
+    if (!w) return false
+    w.vehicle = vehicle
+    vehicle.setParked(true)
+    return true
   }
 
   /** The remote left. If it was still waiting it is forgotten; the caller disposes its vehicle. */
@@ -80,7 +93,7 @@ export class RemoteArrivals {
   }
 
   private show(w: Waiting): void {
-    w.vehicle.setParked(false)
+    try { w.vehicle.setParked(false) } catch (error) { console.warn('Remote vehicle could not be shown', error); return }
     try { this.reveal(w.vehicle) } catch (error) { console.warn('Remote arrival effect failed', error) }
   }
 
