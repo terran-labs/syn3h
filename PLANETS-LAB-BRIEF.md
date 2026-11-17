@@ -63,7 +63,7 @@ roads or the river planner. Do not touch `groundcover.ts` (Vegetation Lab) or
   `cragDensity`, `spireHeight`, `duneHeight`, `roughness`, `terrain.groundCover`,
   `terrain.fords`, `world.curve` (roundness, default 0.71), `world.gravity` (9.81 default,
   0.81 to 18.81, live), and the sky and weather sliders with four presets in
-  `src/world/sky/presets.ts` ('Mars day', 'Earthlike', 'Methane green', 'Violet dusk').
+  `src/world/sky/presets.ts` ('Mars day', 'Earthlike', 'Mire green', 'Violet dusk').
 
 ## Recommended design (Terrain Lab's, untested)
 
@@ -95,7 +95,7 @@ roads or the river planner. Do not touch `groundcover.ts` (Vegetation Lab) or
 | Obsidian | Black glass ground with tall needle spires everywhere, faint magenta seams, a lava sea glowing between them. Centre: a ring of giant shards round a lava pit. | shape cone (lava lake, vents); obsidian palette; spireHeight and cragDensity high; lava sea; 'Violet dusk' or 'Mars day' sky |
 | Badlands | Almost all land: a maze of terraced red buttes and canyons, with rivers at the bottom instead of a sea. Centre: the tallest butte, with a spiral road. | shape mesa; landShare 0.85; mesaHeight and cragDensity high; red palette; water, sea level low; fords on would suit it |
 | Moon | Grey dust and craters under a black sky with no haze, in low gravity. Centre: a giant impact crater with a central peak. | shape cone, low and wide with the largest crater; dry 1; sea level -80; grey palette; `world.gravity` 1.62 (real Moon) or about 2.9; sky with rayleigh 0, mie 0, clouds 0, fog 0, stars up; ground cover 0. Real crater fields are a new generator feature (about 1.5 hours): ask the Terrain Lab or build it in the shape pass with periodic noise (`pperlin`, `phash2` in noise.ts; every pattern must repeat at the tile's width). |
-| Methane swamp | Green haze, a teal sea, low mesas in mist. Centre: a gas vent plateau. | shape mesa, low; olive and ochre palette; 'Methane green' sky; heavier fog; water sea for now, and ask the Water Lab for a third sea colour (teal green) |
+| Mire (was Methane swamp) | Warm green haze, murky green-brown water, reeds, low mesas in mist. Centre: a reed plateau. | shape mesa, low; olive and ochre palette; 'Mire green' sky; heavier fog; water sea for now, and ask the Water Lab for a third sea colour (teal green) |
 
 Low gravity will stress things other lanes own (suspension and jumps, the jet's hover, the
 hovercraft cushion, wing lift out of liquid, the upright rescue, bots). Report what you

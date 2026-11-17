@@ -92,6 +92,17 @@ export interface Terrain {
    * planning, which caches it per cell, and cheaper than liquidHeightAt.
    */
   liquidLevelAt?(x: number, z: number): number
+  /**
+   * The world's colour seen from straight above at (x, z), as 0xRRGGBB, for maps: its own
+   * ground palette by height and slope, snow above its snow line, its sea, lake and rivers as
+   * water or lava, and ice where the sea is frozen. O(1) per call after a one-off bake.
+   */
+  mapColourAt?(x: number, z: number): number
+  /**
+   * What mapColourAt's picture depends on, as a string: it changes exactly when that picture
+   * would (a new world or seed, the sea level, the sea's kind, a freeze). Cheap, never bakes.
+   */
+  mapColourKey?(): string
   /** Horizontal water velocity in metres per second; writes into out. */
   liquidFlowAt?(x: number, z: number, out: { x: number; z: number }): { x: number; z: number }
   /**

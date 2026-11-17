@@ -9,6 +9,7 @@ import { nameplateMode, restoreNameplatePreference } from './preferences'
 import { HudExclusions } from './HudExclusions'
 import { renderedEnvelope, type Envelope } from './anchors'
 import { afterCameraFrame } from './renderHook'
+import '../label-plate.css'
 import './nameplates.css'
 
 /** Metres between the top of a vehicle's body and the end of its leader. */
@@ -22,9 +23,9 @@ const LOCAL_MARGIN = .05
 const MIN_PIXELS = 6
 /** Plate size limits in pixels. Past the widest, the name is cut with an ellipsis. */
 const PLATE_MIN = 72, PLATE_MAX = 220
-/** Plate heights for a person and a bot. Must match nameplates.css. */
+/** Plate heights for a person and a bot. Must match label-plate.css. */
 const PERSON_HEIGHT = 42, BOT_HEIGHT = 38
-/** Must match nameplates.css: name and tag fonts, letter spacing in em, and padding plus border. */
+/** Must match label-plate.css: name and tag fonts, letter spacing in em, and padding plus border. */
 const PERSON_NAME = '600 14px Barlow', BOT_NAME = '500 12px Barlow', NAME_SPACING = .08, PERSON_TAG = '500 10px Barlow', BOT_TAG = '500 9px Barlow', TAG_SPACING = .16
 const PLATE_INSET = 30 // padding, border and 4 px for kerning
 
@@ -143,7 +144,7 @@ export class VehicleNameplates {
     let p = this.free.pop()
     if (!p) {
       const el = document.createElement('div'), name = document.createElement('strong'), note = document.createElement('small'), leader = document.createElement('div')
-      el.className = 'vehicle-nameplate'; leader.className = 'vehicle-nameplate-leader'
+      el.className = 'vehicle-nameplate s3-plate'; leader.className = 'vehicle-nameplate-leader s3-leader'
       el.append(name, note); this.root.append(leader, el)
       p = { el, name, note, leader, bentCenter: new THREE.Vector3(), sightStamp: 0, sightBlocked: false, candidate: { id, bot: false, x: 0, y: 0, depth: 0, width: 0, height: 0, opacity: 0, tick: false }, disc: { id, x: 0, y: 0, radius: 0, depth: 0 }, stamp: 0, scanUntil: 0, shown: false, materializing: false, lastX: NaN, lastY: NaN, color: '', scale: 1, width: 0, height: 0, tx: NaN, ty: NaN, lx: NaN, ly: NaN, ex: NaN, ey: NaN, opacity: -1 }
     }
@@ -241,8 +242,8 @@ export class VehicleNameplates {
       candidates.push(p.candidate)
       if (p.name.textContent !== name) p.name.textContent = name
       if (p.note.textContent !== note) p.note.textContent = note
-      p.el.classList.toggle('is-bot', t.bot); p.leader.classList.toggle('is-bot', t.bot); p.el.classList.toggle('is-tick', style.tick)
-      if (t.color !== p.color) { p.color = t.color; const tint = liftTint(t.color); p.el.style.setProperty('--vehicle-tint', tint); p.leader.style.setProperty('--vehicle-tint', tint) }
+      p.el.classList.toggle('is-bot', t.bot); p.el.classList.toggle('is-person', !t.bot); p.el.classList.toggle('is-tick', style.tick)
+      if (t.color !== p.color) { p.color = t.color; const tint = liftTint(t.color); p.el.style.setProperty('--plate-tint', tint); p.leader.style.setProperty('--plate-tint', tint) }
       const cssWidth = style.tick ? 8 : plateWidth, cssHeight = style.tick ? 5 : plateHeight
       if (cssWidth !== p.width) { p.width = cssWidth; p.el.style.width = `${cssWidth}px` }
       if (cssHeight !== p.height) { p.height = cssHeight; p.el.style.height = `${cssHeight}px` }

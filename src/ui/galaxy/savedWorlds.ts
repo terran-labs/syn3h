@@ -1,6 +1,7 @@
 import { sanitize, type ParamDef, type ParamValue } from '../../../shared/params'
 import { RECIPE_IDS, recipeIdForLook, type RecipeId } from '../../../shared/recipes'
 import { exportWorld, parseWorld, type WorldJson } from '../inspector/model'
+import { worldName } from '../../world/worldName'
 
 export const SAVED_WORLDS_KEY = 'syn3h.savedWorlds.v1'
 export const SAVED_WORLDS_MAX = 12
@@ -9,6 +10,11 @@ export interface SavedWorld { id: string; savedAt: number; recipeId: RecipeId; s
 export interface SavedLibrary { entries: SavedWorld[]; notice?: string }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const bytes = (value: string) => new TextEncoder().encode(value).length
+/** A saved world's name: its own name setting, or for one saved before names had one, its seed's. */
+export const savedName = (entry: SavedWorld): string => {
+  const nameSeed = entry.world.values['world.nameSeed']
+  return worldName(typeof nameSeed === 'number' ? nameSeed : 0, entry.seed)
+}
 export const worldIdentity = (values: Record<string, ParamValue>): string => JSON.stringify(Object.entries(values).sort(([a], [b]) => a.localeCompare(b)))
 
 /** Clipboard parsing is permissive. Saved records must pass strict validation first. */

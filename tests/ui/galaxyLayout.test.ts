@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { bodyOf, fitDistance, GALAXY_MAX, openingDistance, orbitLayout, worldRadius } from '../../src/ui/galaxy/Galaxy'
-import { ORDINARY_BODY, PLANETS, type PlanetBody } from '../../src/world/planets'
+import { bodyOf, fitDistance, GALAXY_MAX, openingDistance, orbitLayout, orbitShape, worldRadius, type OrbitBody } from '../../src/ui/galaxy/Galaxy'
+import { ORDINARY_BODY, PLANETS } from '../../src/world/planets'
 
-const recipeBodies = PLANETS.map(recipe => recipe.body ?? ORDINARY_BODY)
+const recipeBodies: OrbitBody[] = PLANETS.map(recipe => ({ ...(recipe.body ?? ORDINARY_BODY), id: recipe.id }))
+type PlanetBody = OrbitBody
+/** The angle between two directions from the sun. */
+const between = (a: number[], b: number[]) => Math.acos(Math.min(1, (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) / Math.hypot(...a) / Math.hypot(...b)))
 /** Systems to try: the real recipes, then mixes of sizes and heats, for every count. */
 function systems(): PlanetBody[][] {
   const all: PlanetBody[][] = [recipeBodies, [...recipeBodies, { size: 1, heat: 0.95 }]]
@@ -31,22 +34,33 @@ describe('galaxy layout', () => {
   it('never lets two worlds touch, with clear space between them, for every count and mix of sizes', () => {
     for (const bodies of systems()) if (bodies.length > 1) expect(smallestGap(bodies)).toBeGreaterThanOrEqual(0.079)
   })
-  it('gives every world an orbit of its own, each beyond the last by both radii and the clear space', () => {
+  it('gives every planet a lane of its own, and keeps each moon by its planet', () => {
     for (const bodies of systems()) {
-      const lanes = orbitLayout(bodies, 0).sort((a, b) => a.orbit - b.orbit)
-      for (let i = 1; i < lanes.length; i++) expect(lanes[i].orbit - lanes[i - 1].orbit).toBeGreaterThanOrEqual(lanes[i].radius + lanes[i - 1].radius + 0.079)
+      const places = orbitLayout(bodies, 3.3), planets = places.filter(p => p.parent === undefined)
+      expect(new Set(planets.map(p => p.orbit)).size).toBe(planets.length)
+      for (const moon of places.filter(p => p.parent !== undefined)) {
+        const planet = places[moon.parent!]
+        expect(moon.orbit).toBe(planet.orbit)
+        expect(Math.hypot(...moon.position.map((v, k) => v - planet.position[k]))).toBeLessThan(planet.radius * 3 + moon.radius + 0.6)
+      }
     }
   })
-  it('orders the orbits by heat: molten worlds nearest the sun, frozen ones farthest', () => {
+  it('orders the system as its worlds are: molten inside, dry, then wet and living, then frozen; the Moon circles Alpine', () => {
     const places = orbitLayout(recipeBodies, 0)
-    const byOrbit = PLANETS.map((recipe, i) => ({ id: recipe.id, heat: recipeBodies[i].heat, orbit: places[i].orbit })).sort((a, b) => a.orbit - b.orbit)
-    for (let i = 1; i < byOrbit.length; i++) expect(byOrbit[i].heat).toBeLessThanOrEqual(byOrbit[i - 1].heat)
-    expect(byOrbit[0].id).toBe('volcanic')
-    expect(byOrbit.at(-1)!.id).toBe('ice')
-    // A recipe with no body of its own is an ordinary temperate planet, in the middle.
-    const added = orbitLayout([...recipeBodies, ORDINARY_BODY], 0), newcomer = added.at(-1)!
-    expect(newcomer.orbit).toBeGreaterThan(Math.min(...added.map(p => p.orbit)))
-    expect(newcomer.orbit).toBeLessThan(Math.max(...added.map(p => p.orbit)))
+    const lanes = PLANETS.map((recipe, i) => ({ id: recipe.id, place: places[i] })).filter(l => l.place.parent === undefined).sort((a, b) => a.place.orbit - b.place.orbit).map(l => l.id)
+    expect(lanes).toEqual(['volcanic', 'obsidian', 'desert', 'badlands', 'swamp', 'archipelago', 'alpine', 'ice'])
+    expect(places[PLANETS.findIndex(r => r.id === 'moon')].parent).toBe(PLANETS.findIndex(r => r.id === 'alpine'))
+  })
+  it('tilts and stretches each orbit a little, differently and the same every time', () => {
+    const shapes = Array.from({ length: GALAXY_MAX }, (_, lane) => orbitShape(lane))
+    for (const shape of shapes) {
+      expect(shape.inclination * 180 / Math.PI).toBeGreaterThanOrEqual(1.5); expect(shape.inclination * 180 / Math.PI).toBeLessThanOrEqual(4)
+      expect(shape.eccentricity).toBeGreaterThanOrEqual(0.02); expect(shape.eccentricity).toBeLessThanOrEqual(0.05)
+    }
+    expect(new Set(shapes.map(s => s.node.toFixed(3))).size).toBe(shapes.length)
+    expect(orbitShape(3)).toEqual(orbitShape(3))
+    // Every world leaves the flat plane, and keeps close to it.
+    for (const place of orbitLayout(recipeBodies, 0)) if (place.path) expect(Math.abs(place.path.normal[1])).toBeGreaterThan(Math.cos(4.01 * Math.PI / 180))
   })
   it('sizes worlds by their bodies, with moons much smaller than planets', () => {
     const radius = (id: string) => worldRadius(PLANETS.find(recipe => recipe.id === id)!.body!.size)
@@ -57,17 +71,17 @@ describe('galaxy layout', () => {
     for (const recipe of PLANETS) expect(recipe.body, recipe.id).toBeDefined()
     // A world still forming is molten: among the hot worlds.
     expect(bodyOf({ id: 'custom', label: 'Custom', land: 0, sea: 0, glow: false, seed: 1, forming: true }).heat).toBeGreaterThan(0.9)
-    expect(bodyOf({ id: 'ice~1', label: 'Ice moon 2', land: 0, sea: 0, glow: false, seed: 1, recipe: 'ice' })).toEqual(PLANETS.find(r => r.id === 'ice')!.body)
+    expect(bodyOf({ id: 'ice~1', label: 'Ice moon 2', land: 0, sea: 0, glow: false, seed: 1, recipe: 'ice' })).toMatchObject(PLANETS.find(r => r.id === 'ice')!.body!)
   })
   it('turns the inner worlds faster than the outer ones, as Kepler has it', () => {
-    const turned = (index: number) => { const a = orbitLayout(recipeBodies, 0)[index], b = orbitLayout(recipeBodies, 10)[index]; return { orbit: a.orbit, angle: Math.abs(Math.atan2(b.position[2], b.position[0]) - Math.atan2(a.position[2], a.position[0])) } }
-    const worlds = PLANETS.map((_, i) => turned(i)).sort((a, b) => a.orbit - b.orbit)
+    const turned = (index: number) => { const a = orbitLayout(recipeBodies, 0)[index], b = orbitLayout(recipeBodies, 10)[index]; return { orbit: a.orbit, moon: a.parent !== undefined, angle: between(a.position, b.position) } }
+    const worlds = PLANETS.map((_, i) => turned(i)).filter(w => !w.moon).sort((a, b) => a.orbit - b.orbit)
     for (let i = 1; i < worlds.length; i++) expect(worlds[i].angle).toBeLessThan(worlds[i - 1].angle)
     // Period squared over orbit cubed is the same for all: angle times orbit to the 3/2 is constant.
     for (const world of worlds) expect(world.angle * Math.pow(world.orbit, 1.5)).toBeCloseTo(worlds[0].angle * Math.pow(worlds[0].orbit, 1.5), 6)
   })
   it('does not line the worlds up at the start', () => {
-    const angles = orbitLayout(recipeBodies, 0).map(place => (Math.atan2(place.position[2], place.position[0]) + Math.PI * 2) % (Math.PI * 2)).sort((a, b) => a - b)
+    const angles = orbitLayout(recipeBodies, 0).filter(place => place.parent === undefined).map(place => (Math.atan2(place.position[2], place.position[0]) + Math.PI * 2) % (Math.PI * 2)).sort((a, b) => a - b)
     // No half of the sky is empty, and no two worlds start within five degrees of each other.
     const gaps = angles.map((angle, i) => (angles[(i + 1) % angles.length] - angle + Math.PI * 2) % (Math.PI * 2))
     expect(Math.max(...gaps)).toBeLessThan(Math.PI)
@@ -93,7 +107,7 @@ describe('galaxy layout', () => {
   it('frames the whole system at the first view, with a tenth world too', () => {
     for (const bodies of [recipeBodies, [...recipeBodies, { size: 1, heat: 0.95 }]]) {
       const reach = fitDistance(bodies) * 0.62
-      for (const place of orbitLayout(bodies, 7)) expect(place.orbit + place.radius).toBeLessThan(reach)
+      for (const place of orbitLayout(bodies, 7)) expect(Math.hypot(...place.position) + place.radius).toBeLessThan(reach)
     }
   })
 })
