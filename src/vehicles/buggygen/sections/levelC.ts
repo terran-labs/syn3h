@@ -1,35 +1,17 @@
-import { polarSections, superSections, skin, byRole, featureTagger, featureWarp, DETAIL, type Candidate, type Tagger, type BodyPiece } from './loft'
-import { B_ROWS } from './dataB'
-import { FEATURES, WING, PLATE, PLATE_X } from './dataC'
+import { skin, byRole, type Candidate, type Tagger } from './loft'
+import { hullSections, columns, rings, CREASES } from './hull'
+import { HULL } from './dataHull'
 
 /**
- * Level C: the Level B hull plus features. Each feature is an ellipse drawn on the loft grid
- * (dataC.ts): it tags cells with a role or skips them to cut the cockpit, and pulls nearby
- * grid vertices onto its edge so the edge is smooth. The rear wing and its end plates are
- * small superellipse lofts of their own.
+ * Level C: the designed hull (hull.ts) with its features. The lab's Skins group loads this
+ * module as the loft body (design=generated-loft).
  */
-const rows = B_ROWS.map(r => r.map(v => v / 1000))
 const plain: Tagger = (_x, _y, _z, n) => n[1] < -.7 ? 'chrome' : 'paint'
-const hullTag = featureTagger(FEATURES, plain)
-const wingTag = featureTagger(FEATURES.filter(f => f.role === 'accent'), plain)
-
-/** A small superellipse loft, shifted sideways. */
-function part(r: number[][], along: number, half: number, x: number, tag: Tagger): BodyPiece[] {
-  const pieces = skin(superSections(r), along, half, (px, py, pz, n) => tag(px + x, py, pz, n))
-  if (x) for (const p of pieces) p.geometry.translate(x, 0, 0)
-  return pieces
-}
+const ALONG: Record<0 | 1 | 2, number> = { 0: 66, 1: 26, 2: 12 }
 
 const levelC: Candidate = {
   id: 'sections-C',
-  numbers: rows.length * rows[0].length + FEATURES.length * 9 + WING.flat().length + PLATE.flat().length + 1,
-  build: detail => {
-    const [along, half] = DETAIL[detail], small = Math.max(2, Math.round(half / 3))
-    // The distant build is silhouette only: no cuts or painted features, which its cells are too coarse to draw.
-    const pieces = detail < 2 ? skin(polarSections(rows), along, half, hullTag, { warp: featureWarp(FEATURES) }) : skin(polarSections(rows), along, half, plain)
-    pieces.push(...part(WING, Math.max(3, Math.round(along / 12)), small * 2, 0, wingTag))
-    for (const s of [1, -1]) pieces.push(...part(PLATE, Math.max(3, Math.round(along / 10)), small, s * PLATE_X, () => 'paint'))
-    return byRole(pieces)
-  },
+  numbers: HULL.z.length * 10,
+  build: detail => byRole(skin(hullSections(HULL), 0, 0, plain, { us: rings(ALONG[detail]), vs: columns(detail), creases: CREASES })),
 }
 export default levelC

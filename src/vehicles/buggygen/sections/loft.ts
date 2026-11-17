@@ -10,8 +10,7 @@ import * as THREE from 'three/webgpu'
  * (Level B, fitted automatically). The skin is one grid; a role function tags each cell
  * (paint, accent, chrome, lamp, frame) or skips it to cut an opening.
  *
- * Frame: the game's, +X right, +Y up, -Z forward, metres. Imports `three`, not
- * `three/webgpu`, so the offline harness can run it in Node; the classes are the same.
+ * Frame: the game's, +X right, +Y up, -Z forward, metres.
  */
 
 export type Role = 'paint' | 'accent' | 'chrome' | 'lamp' | 'frame' | 'trim'
@@ -73,7 +72,7 @@ export type Tagger = (x: number, y: number, z: number, n: [number, number, numbe
  * capped at both ends. `us` optionally places the rings (u values, ascending). Normals come
  * from the grid's own tangents, so cells of different roles still shade as one surface.
  */
-export function skin(sections: Sections, along: number, half: number, tag: Tagger = () => 'paint', o: { us?: number[]; caps?: boolean; vs?: number[]; warp?: (p: THREE.Vector3) => void } = {}): BodyPiece[] {
+export function skin(sections: Sections, along: number, half: number, tag: Tagger = () => 'paint', o: { us?: number[]; caps?: boolean; vs?: number[]; warp?: (p: THREE.Vector3) => void; creases?: number[] } = {}): BodyPiece[] {
   const us = o.us ?? Array.from({ length: along }, (_, j) => j / (along - 1))
   const vs = o.vs ?? Array.from({ length: half + 1 }, (_, i) => i / half)
   const H = vs.length - 1, N = 2 * H, m = us.length
@@ -97,16 +96,27 @@ export function skin(sections: Sections, along: number, half: number, tag: Tagge
     Nn[k] = n.x; Nn[k + 1] = n.y; Nn[k + 2] = n.z
   }
   const pieces = new Map<Role, { pos: number[]; nor: number[] }>()
-  const put = (role: Role, verts: [number, number][]) => {
+  // Crease columns: vertices on them take a normal from the cell's own side, so the
+  // surface folds crisply along that grid line and stays smooth everywhere else.
+  const creaseCol = new Uint8Array(N)
+  for (let i = 0; i < N; i++) { const v = i <= H ? vs[i] : vs[N - i]; if (o.creases?.some(c => Math.abs(c - v) < 1e-6)) creaseCol[i] = 1 }
+  const put = (role: Role, verts: [number, number][], cell?: number) => {
     let g = pieces.get(role); if (!g) pieces.set(role, g = { pos: [], nor: [] })
-    for (const [j, i] of verts) { const k = (j * N + (i % N)) * 3; g.pos.push(P[k], P[k + 1], P[k + 2]); g.nor.push(Nn[k], Nn[k + 1], Nn[k + 2]) }
+    for (const [j, i] of verts) {
+      const ii = i % N, k = (j * N + ii) * 3
+      g.pos.push(P[k], P[k + 1], P[k + 2])
+      if (cell !== undefined && creaseCol[ii]) {
+        const n = p(j, cell + 1).sub(p(j, cell)).cross(p(j + 1, ii).sub(p(j - 1, ii))).normalize()
+        g.nor.push(n.x, n.y, n.z)
+      } else g.nor.push(Nn[k], Nn[k + 1], Nn[k + 2])
+    }
   }
   for (let j = 0; j < m - 1; j++) for (let i = 0; i < N; i++) {
     const c = p(j, i).add(p(j + 1, i)).add(p(j, i + 1)).add(p(j + 1, i + 1)).multiplyScalar(.25)
     const k0 = (j * N + i) * 3, k1 = ((j + 1) * N + (i + 1) % N) * 3
     const role = tag(c.x, c.y, c.z, [(Nn[k0] + Nn[k1]) / 2, (Nn[k0 + 1] + Nn[k1 + 1]) / 2, (Nn[k0 + 2] + Nn[k1 + 2]) / 2])
     if (!role) continue
-    put(role, [[j, i], [j, i + 1], [j + 1, i], [j, i + 1], [j + 1, i + 1], [j + 1, i]])
+    put(role, [[j, i], [j, i + 1], [j + 1, i], [j, i + 1], [j + 1, i + 1], [j + 1, i]], i)
   }
   // End caps: a fan from the ring's centre, each triangle tagged like a cell facing along Z.
   if (o.caps !== false) for (const [j, s] of [[0, -1], [m - 1, 1]]) {
