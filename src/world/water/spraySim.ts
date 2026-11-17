@@ -303,18 +303,20 @@ export class SpraySim {
     const budget = Math.floor(this.cap.droplets * .5)
     const want = Math.max(1, k.crown + k.column + k.sheet * 80 + k.mist)
     const share = Math.min(this.throttle * scale, budget / want)
+    // Splash drops are drawn far larger than spray: each stands for a clot of aerated water,
+    // which is what reads as white mass from twenty metres away.
     // Crown: up and out round the hole.
     const crown = Math.round(k.crown * share)
     for (let i = 0; i < crown; i++) {
       const a = i / crown * Math.PI * 2 + this.random() * .3, r = 1 + this.random() * .5, out = (.6 + this.random() * .8) * k.crownOut
-      this.drop(x + Math.cos(a) * r, y + .05, z + Math.sin(a) * r, Math.cos(a) * out, (.6 + this.random() * .6) * k.crownUp, Math.sin(a) * out, .015 + this.random() * .03, y, 0, scale)
+      this.drop(x + Math.cos(a) * r, y + .05, z + Math.sin(a) * r, Math.cos(a) * out, (.6 + this.random() * .6) * k.crownUp, Math.sin(a) * out, .05 + this.random() * .07, y, 0, scale)
     }
     // Column: big drops fired straight up from the middle; speed for its height, so it rises
     // and falls back with a believable second or so of hang.
     const column = Math.round(k.column * share), jet = Math.sqrt(2 * GRAVITY * k.columnHeight)
     for (let i = 0; i < column; i++) {
       const a = this.random() * Math.PI * 2, r = this.random() * .35, lift = jet * (.55 + this.random() * .45)
-      this.drop(x + Math.cos(a) * r, y + .1, z + Math.sin(a) * r, Math.cos(a) * .5, lift, Math.sin(a) * .5, .025 + this.random() * .04, y, 0, scale)
+      this.drop(x + Math.cos(a) * r, y + .1, z + Math.sin(a) * r, Math.cos(a) * .5, lift, Math.sin(a) * .5, .1 + this.random() * .2, y, 0, scale)
     }
     // Sheets thrown forward in a fan along the direction of travel.
     const h = Math.hypot(vx, vz)
@@ -323,14 +325,14 @@ export class SpraySim {
       for (let i = 0; i < sheet; i++) {
         const spread = (this.random() - .5) * 1.2, c = Math.cos(spread), sn = Math.sin(spread)
         const dx = fx * c - fz * sn, dz = fz * c + fx * sn, out = h * (.35 + this.random() * .35)
-        this.drop(x + dx * 1.2, y + .05, z + dz * 1.2, dx * out, (.3 + this.random() * .5) * k.crownUp, dz * out, .012 + this.random() * .02, y, 0, scale)
+        this.drop(x + dx * 1.2, y + .05, z + dz * 1.2, dx * out, (.3 + this.random() * .5) * k.crownUp, dz * out, .04 + this.random() * .06, y, 0, scale)
       }
     }
     // Mist that hangs for a moment round the impact.
     const mist = Math.round(k.mist * share)
     for (let i = 0; i < mist; i++) {
       const a = this.random() * Math.PI * 2, r = 1 + this.random() * k.ringSize * .5
-      this.drop(x + Math.cos(a) * r, y + .4 + this.random() * k.columnHeight * .3, z + Math.sin(a) * r, Math.cos(a) * 1.2 + vx * .1, .4 + this.random() * .8, Math.sin(a) * 1.2 + vz * .1, .7 + this.random() * .6, y, 1, scale)
+      this.drop(x + Math.cos(a) * r, y + .4 + this.random() * k.columnHeight * .3, z + Math.sin(a) * r, Math.cos(a) * 1.2 + vx * .1, .4 + this.random() * .8, Math.sin(a) * 1.2 + vz * .1, .9 + this.random() * .9, y, 1, scale)
     }
     const i = this.ringCount < this.cap.rings ? this.ringCount++ : 0, o = i * R, r = this.rings
     r[o + RX] = x; r[o + RY] = y + WAKE_LIFT; r[o + RZ] = z; r[o + RAGE] = 0; r[o + RLIFE] = k.ringLife

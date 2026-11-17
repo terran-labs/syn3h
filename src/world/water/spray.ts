@@ -83,6 +83,9 @@ function dropletMaterial(light: N, tint: N, lava = false) {
   // A bead: bright rim catching the light and a slightly clearer middle reads as water, not chalk.
   // A drop is mostly transparent water tinted like the sea, with a bright rim and a small
   // highlight. The tinted body reads against a pale sky, the bright rim against dark water.
+  // Big clots (splash crowns and columns) are churned full of air: white, lit by the sun.
+  // Fine spray keeps the sea's tint.
+  const aerated = smoothstep(.03, .12, size)
   const body = float(1).sub(smoothstep(.6, 1, r))
   const rim = smoothstep(.55, .85, r).mul(float(1).sub(smoothstep(.85, 1, r)))
   const glint = float(1).sub(smoothstep(0, .3, q.sub(vec2(-.25, .35)).length()))
@@ -92,9 +95,9 @@ function dropletMaterial(light: N, tint: N, lava = false) {
   // Drops passing right by the lens would fill the screen with blobs: fade them out up close.
   const near = smoothstep(1.5, 6, distance)
   const alpha = select(mist, b.w.sub(2), b.w).mul(near)
-  m.opacityNode = select(mist, puff.mul(alpha).mul(.7), bead.mul(alpha).mul(cover.mul(.75).add(.25)).mul(.55))
+  m.opacityNode = select(mist, puff.mul(alpha).mul(.7), bead.mul(alpha).mul(cover.mul(.75).add(.25)).mul(mix(float(.55), float(.85), aerated)))
   const water = mix(tint, vec3(1, 1, 1), .35)
-  const drop = mix(water, vec3(1.15, 1.18, 1.2), rim.max(glint).mul(.85))
+  const drop = mix(mix(water, vec3(1.15, 1.18, 1.2), rim.max(glint).mul(.85)), vec3(1.2, 1.22, 1.24), aerated.mul(.75))
   m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .6), drop).mul(light).mul(1.2)
   if (lava) {
     // Molten drops glow on their own and cool as they fade: yellow-orange to a dark clot.

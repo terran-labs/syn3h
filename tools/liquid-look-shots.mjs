@@ -86,8 +86,10 @@ const SCENARIOS = {
   'lava-churn': { planet: 'volcanic', vehicle: 'buggy', hour: 18.5, kind: 'lava', min: 1, max: 3, mode: 'drive', shots: [['lava-churn-0', 1200], ['lava-churn-1', 500], ['lava-churn-2', 500]] },
   'lava-under': { planet: 'volcanic', vehicle: 'buggy', hour: 12, kind: 'lava', min: 6, max: 40, mode: 'under', look: 'level', shots: [['lava-under', 3000]] },
   'lava-cockpit': { planet: 'volcanic', vehicle: 'buggy', hour: 20, kind: 'lava', min: 6, max: 40, mode: 'cockpit', shots: [['lava-cockpit-0', 600], ['lava-cockpit-1', 1500]] },
-  'water-entry': { planet: 'archipelago', vehicle: 'buggy', hour: 16, kind: 'water', min: 6, max: 40, mode: 'dive', shots: [['entry-0', 250], ['entry-1', 200], ['entry-2', 200], ['entry-3', 250], ['entry-4', 300], ['entry-5', 400]] },
-  'water-wake': { planet: 'archipelago', vehicle: 'buggy', hour: 15, kind: 'water', min: 1, max: 4, mode: 'drive', shots: [['wake-0', 1500], ['wake-1', 600]] },
+  'water-entry': { planet: 'archipelago', vehicle: 'buggy', hour: 16, kind: 'water', min: 8, max: 40, mode: 'dive', shots: [['entry-0', 900], ['entry-1', 180], ['entry-2', 180], ['entry-3', 220], ['entry-4', 300], ['entry-5', 450]] },
+  'water-splash': { planet: 'archipelago', vehicle: 'buggy', hour: 16, kind: 'water', min: 8, max: 40, mode: 'splash', impact: [24, -18], shots: [['splash-0', 60], ['splash-1', 220], ['splash-2', 260], ['splash-3', 320], ['splash-4', 420], ['splash-5', 600]] },
+  'water-splash-slow': { planet: 'archipelago', vehicle: 'buggy', hour: 16, kind: 'water', min: 8, max: 40, mode: 'splash', impact: [2, -3], shots: [['splash-slow-0', 60], ['splash-slow-1', 300], ['splash-slow-2', 600]] },
+  'water-wake': { planet: 'archipelago', vehicle: 'buggy', hour: 15, kind: 'water', min: 3, max: 30, mode: 'skim', shots: [['wake-0', 250], ['wake-1', 350]] },
   'waterline': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 8, max: 30, mode: 'cross', shots: [['waterline-0', 2500], ['waterline-1', 250], ['waterline-2', 150], ['waterline-3', 150], ['waterline-4', 150], ['waterline-5', 250]] },
 }
 
@@ -121,15 +123,30 @@ try {
       spot.land = land
       const input = s.game.input.external
       const cam = s.camera
-      const V = s.player.body.translation().constructor
+      const V = s.game.camera.position.constructor
       if (sc.mode === 'float' || sc.mode === 'drive') {
         // Face along the shore so the liquid fills the view.
         s.player.teleport({ x: spot.x, y: spot.surface + 1.5, z: spot.z }, land + Math.PI / 2)
         if (sc.mode === 'drive') { input.y = 1; input.x = 0.15 }
       } else if (sc.mode === 'dive') {
-        const back = 60, h = land + Math.PI
-        s.player.teleport({ x: spot.x - Math.cos(h) * back, y: spot.surface + 18, z: spot.z - Math.sin(h) * back }, h)
-        s.player.body.setLinvel({ x: Math.cos(h) * 38, y: -4, z: Math.sin(h) * 38 }, true)
+        // Launched from 50 m out and 14 m up so it hits the water at about 30 m/s near the
+        // spot; the camera holds still 25 m to the side, 5 m up, watching the impact.
+        const h = land + Math.PI, back = 50
+        s.player.teleport({ x: spot.x - Math.cos(h) * back, y: spot.surface + 14, z: spot.z - Math.sin(h) * back }, h)
+        s.player.body.setLinvel({ x: Math.cos(h) * 30, y: -6, z: Math.sin(h) * 30 }, true)
+        const side = h + Math.PI / 2
+        s.camera.setCinematicPose(new V(spot.x + Math.cos(side) * 25, spot.surface + 5, spot.z + Math.sin(side) * 25), new V(spot.x, spot.surface + 2, spot.z))
+      } else if (sc.mode === 'splash') {
+        // Park the player far away; the splash is driven straight through the water effects.
+        const h = land + Math.PI, side = h + Math.PI / 2
+        window.splashAt = { x: spot.x, y: spot.surface, z: spot.z, h }
+        s.camera.setCinematicPose(new V(spot.x + Math.cos(side) * 22, spot.surface + 4, spot.z + Math.sin(side) * 22), new V(spot.x, spot.surface + 2.5, spot.z))
+      } else if (sc.mode === 'skim') {
+        // Thrown flat along the water, away from land, at speed: bow spray, rooster tail, wake.
+        const h = land + Math.PI
+        s.player.teleport({ x: spot.x, y: spot.surface + 0.6, z: spot.z }, h)
+        s.player.body.setLinvel({ x: Math.cos(h) * 30, y: 0, z: Math.sin(h) * 30 }, true)
+        input.y = 1
       } else if (sc.mode === 'shore') {
         // On the land, looking out over the liquid.
         const d = 14
@@ -177,6 +194,17 @@ try {
         s.camera.setCinematicPose(pos, tgt)
         window.crossPose = { pos, tgt, spot }
       }, { sc, spot })
+    }
+    if (sc.mode === 'splash') {
+      await wait(page, 2500)
+      await page.evaluate(([h, v]) => {
+        const s = window.syn3h, a = window.splashAt
+        const fx = s.game.systems.find(x => x.spray && x.underwater)
+        const P = s.game.camera.position.constructor
+        const at = new P(a.x, a.y, a.z), vel = new P(Math.cos(a.h) * h, v, Math.sin(a.h) * h)
+        fx.spray.vehicle('splash-demo', at, vel, 0, 1 / 60)
+        fx.spray.vehicle('splash-demo', at, vel, 1, 1 / 60)
+      }, sc.impact)
     }
     const shots = []
     for (const [shot, delay] of sc.shots) {
