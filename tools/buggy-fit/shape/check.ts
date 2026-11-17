@@ -108,3 +108,14 @@ for (const h of HANDLES) for (const v of [h.min, h.max]) {
 let fails = 0; for (let seed = 1; seed <= 60; seed++) { const b = bad(judge(seedShape(seed))); if (b.length) { fails++; if (fails <= 5) console.log(`seed ${seed}: ${b.join(', ')}`) } }
 const corners = [0, 1].map(k => { const s = defaultShape(); for (const h of HANDLES) s[h.id] = k ? h.max : h.min; return bad(judge(s)) })
 console.log(`random seeds 1 to 60: ${60 - fails} pass; all handles at min: ${corners[0].join(', ') || 'ok'}; all at max: ${corners[1].join(', ') || 'ok'}`)
+
+// 6. Headroom: how far past each end of its range a handle goes before the first check fails.
+for (const h of HANDLES) {
+  const span = h.max - h.min, found: string[] = []
+  for (const [end, dir] of [[h.min, -1], [h.max, 1]] as const) {
+    let v = end, why = ''
+    for (let k = 1; k <= 12 && !why; k++) { v = end + dir * span * .25 * k; const s = defaultShape(); s[h.id] = v; why = bad(judge(s)).join(', ') }
+    found.push(why ? `${+v.toFixed(3)} (${why})` : `beyond ${+v.toFixed(3)}`)
+  }
+  console.log(`headroom ${h.id.padEnd(14)} low end breaks at ${found[0]}; high end breaks at ${found[1]}`)
+}
