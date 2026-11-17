@@ -728,7 +728,7 @@ try {
       saveShotEvidence('finally-collectors')
     }
     if (errors.length || results.some(r => !r.ok)) await captureFailure().catch(e => console.error('Diagnostic capture failed', String(e)))
-  } finally { await Promise.all(browsers.map((b) => b.close().catch(() => {}))) }
+  } finally { await Promise.all(browsers.map((b) => b.close())) }
 }
 
 check('no page errors', errors.length === 0, errors)
