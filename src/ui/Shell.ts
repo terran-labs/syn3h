@@ -12,7 +12,7 @@ import type { PerformanceSource } from '../core/performance'
 import { SavedWorldStore, SAVED_WORLDS_KEY, savedName, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
 import { SavedMoons } from './galaxy/SavedMoons'
 import type { Game, System } from '../core/Game'
-import type { Vehicle } from '../vehicles/Vehicle'
+import { vehicleDetail, type Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import { params, worldNameSeed, worldSeed } from '../../shared/params'
 import { GameAudio } from '../audio'
@@ -818,6 +818,7 @@ export class Shell implements System {
       this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.removeProperty('visibility') }
       this.game.holdDraws = false
+      vehicleDetail.holdNear = false
       this.dropping = false; this.enteringByGesture = false
       if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
     }
@@ -854,6 +855,8 @@ export class Shell implements System {
       this.overlay.hidden = false; this.overlay.inert = true
       galaxy.backdrop = 1
       galaxy.enabled = true
+      // Every vehicle keeps its close look on the way up (see vehicleDetail).
+      vehicleDetail.holdNear = true
       const flight = galaxy.ascend(currentPlanet().id, quick)
       // Up through the air: the descent's path from its end back to its top.
       const path = this.descentPose()
