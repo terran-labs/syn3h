@@ -56,6 +56,17 @@ describe('remote vehicle arrival callback', () => {
     expect(vi.mocked(createVehicle).mock.calls.map(c => c[2])).toEqual(['buggy', 'jet'])
     expect(f.net.remotes.get(2).vehicle).toBe(f.replacement)
   })
+  it('keeps a leaving copy until its departure has played, then removes it', async () => {
+    const f = fixture()
+    let finish!: () => void
+    f.net.ctx.onRemoteVehicleLeaving = vi.fn(() => new Promise<void>(r => { finish = r }))
+    Object.assign(f.net, { bungee: { forget: vi.fn() }, yoink: { forget: vi.fn() }, pesters: { forget: vi.fn() } })
+    f.net.removeRemote(2, true)
+    expect(f.net.remotes.has(2)).toBe(false)
+    expect(f.net.ctx.game.remove).not.toHaveBeenCalled()
+    finish(); await Promise.resolve(); await Promise.resolve()
+    expect(f.net.ctx.game.remove).toHaveBeenCalledWith(f.previous.vehicle)
+  })
   it('keeps the replacement when a cosmetic callback throws', () => {
     const f = fixture()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
