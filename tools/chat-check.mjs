@@ -126,7 +126,8 @@ try {
     // Enter on the now empty field closes chat; the lock stays.
     await A.page.keyboard.press('Enter'); await A.page.waitForTimeout(300)
     const closed = await st()
-    await A.page.keyboard.down('KeyW'); await A.page.waitForTimeout(300); const driving = await st(); await A.page.keyboard.up('KeyW')
+    // The axis follows the key at the next rendered frame, which can take a while under load.
+    await A.page.keyboard.down('KeyW'); await A.page.waitForFunction(() => window.syn3h.game.input.state.y === 1, null, { timeout: 2000 }).catch(() => {}); const driving = await st(); await A.page.keyboard.up('KeyW')
     await A.page.keyboard.press('KeyY'); await A.page.waitForTimeout(300)
     await A.page.keyboard.press('Escape'); await A.page.waitForTimeout(400)
     const esc = await st()
@@ -146,7 +147,7 @@ try {
     const after = await A.page.evaluate(() => ({ lock: !!document.pointerLockElement, open: window.syn3hChat.panel.isOpen, typing: window.syn3h.game.input.typing, suspended: window.syn3h.game.input.suspended, paused: document.querySelector('.syn3h-shell').classList.contains('is-paused'), field: document.activeElement?.classList.contains('chat-field') }))
     // The player can capture the cursor again with the usual click, and drives.
     await A.page.mouse.click(640, 400); await A.page.waitForTimeout(700)
-    await A.page.keyboard.down('KeyW'); await A.page.waitForTimeout(300)
+    await A.page.keyboard.down('KeyW'); await A.page.waitForFunction(() => window.syn3h.game.input.state.y === 1, null, { timeout: 2000 }).catch(() => {})
     const again = await A.page.evaluate(() => ({ lock: !!document.pointerLockElement, y: window.syn3h.game.input.state.y }))
     await A.page.keyboard.up('KeyW')
     check(before.lock && before.open && !after.lock && !after.open && !after.typing && !after.suspended && !after.paused && !after.field && again.lock && again.y === 1,
