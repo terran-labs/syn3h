@@ -38,15 +38,15 @@ async function open(name, opts, extra = '') {
 const desk = { viewport: { width: 1280, height: 800 } }
 const shot = (page, name) => page.screenshot({ path: `${out}/${name}.png` })
 /** Click the chat pill; if something else is on top of it, say what, then click it directly. */
-async function clickPill(page, label) {
-  const blocked = await page.evaluate(() => {
-    const b = document.querySelector('.chat-toggle').getBoundingClientRect()
+async function clickPill(page, label, selector = '.chat-toggle') {
+  const blocked = await page.evaluate((selector) => {
+    const b = document.querySelector(selector).getBoundingClientRect()
     const top = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)
-    if (top?.closest('.chat-toggle')) return null
+    if (top?.closest(selector)) return null
     return { top: `${top?.tagName}#${top?.id}.${top?.className}`, shell: document.querySelector('.syn3h-shell').className, body: document.body.className, pe: getComputedStyle(document.querySelector('.chat-toggle')).pointerEvents, vis: getComputedStyle(document.querySelector('.chat-toggle')).visibility }
-  })
-  if (blocked) { console.log(`PILL BLOCKED (${label})`, JSON.stringify(blocked)); failures.push(`chat pill not clickable: ${label}`) }
-  await page.evaluate(() => document.querySelector('.chat-toggle').click())
+  }, selector)
+  if (blocked) { console.log(`BLOCKED ${selector} (${label})`, JSON.stringify(blocked)); failures.push(`${selector} not clickable: ${label}`) }
+  await page.evaluate((selector) => document.querySelector(selector).click(), selector)
 }
 const linesOn = (page) => page.evaluate(() => [...document.querySelectorAll('.chat-panel .chat-line:not(.is-system)')].map((l) => l.textContent))
 
@@ -97,8 +97,8 @@ try {
   check(await A.page.evaluate(() => !document.activeElement?.classList.contains('chat-field')), 'Escape leaves the field')
 
   // 4: B mutes A from the People list.
-  await B.page.click('.chat-people-toggle')
-  await B.page.click('.chat-people .chat-mute >> nth=0')
+  await clickPill(B.page, 'guest people', '.chat-people-toggle')
+  await clickPill(B.page, 'guest mute', '.chat-people .chat-mute')
   await A.page.keyboard.press('KeyY')
   await A.page.keyboard.type('you cannot see this')
   await A.page.keyboard.press('Enter')
@@ -107,8 +107,34 @@ try {
   check(!afterMute.some((t) => t.includes('you cannot see this')), 'a muted player\'s line is not shown')
   const onA = await linesOn(A.page)
   check(onA.some((t) => t.includes('you cannot see this')), 'the line still reached the room (A sees its echo)')
-  await B.page.click('.chat-people .chat-mute >> nth=0')
-  await B.page.click('.chat-people-toggle')
+  await clickPill(B.page, 'guest mute', '.chat-people .chat-mute')
+  await clickPill(B.page, 'guest people', '.chat-people-toggle')
+
+  // With the cursor captured (headless Chrome grants a real lock), in Full and Driving modes:
+  // Y opens with the caret in the field and the lock kept, typing does not drive, Enter sends,
+  // Y on the empty field closes, the lock is still there and W drives again.
+  for (const mode of [0, 1]) {
+    await A.page.evaluate((m) => { window.syn3hChat.panel.setOpen(false); window.syn3h.params.set('hud.mode', m) }, mode)
+    await A.page.mouse.click(640, 400); await A.page.waitForTimeout(700)
+    const st = () => A.page.evaluate(() => ({ lock: !!document.pointerLockElement, field: document.activeElement?.classList.contains('chat-field'), open: window.syn3hChat.panel.isOpen, y: window.syn3h.game.input.state.y, mode: window.syn3h.params.get('hud.mode')?.value }))
+    const locked = (await st()).lock
+    await A.page.keyboard.press('KeyY'); await A.page.waitForTimeout(300)
+    const opened = await st()
+    await A.page.keyboard.down('KeyW'); await A.page.keyboard.type(`locked line ${mode}`); await A.page.waitForTimeout(300)
+    const typing = await st(); await A.page.keyboard.up('KeyW')
+    await A.page.keyboard.press('Enter'); await A.page.waitForTimeout(800)
+    // Enter on the now empty field closes chat; the lock stays.
+    await A.page.keyboard.press('Enter'); await A.page.waitForTimeout(300)
+    const closed = await st()
+    await A.page.keyboard.down('KeyW'); await A.page.waitForTimeout(300); const driving = await st(); await A.page.keyboard.up('KeyW')
+    await A.page.keyboard.press('KeyY'); await A.page.waitForTimeout(300)
+    await A.page.keyboard.press('Escape'); await A.page.waitForTimeout(400)
+    const esc = await st()
+    const sent = (await linesOn(B.page)).some((t) => t.includes(`locked line ${mode}`))
+    check(locked && opened.open && opened.field && opened.lock && typing.y === 0 && sent && !closed.open && closed.lock && driving.y === 1 && !esc.open && esc.mode === mode,
+      `cursor captured, interface mode ${mode}: Y opens with the caret and the lock kept, typing does not drive, the line arrives, Y closes, W drives, Escape closes chat only (${JSON.stringify({ locked, opened, typing, sent, closed, driving, esc })})`)
+  }
+  await A.page.evaluate(() => window.syn3h.params.set('hud.mode', 0))
 
   // Chat off for the room: the host turns it off, a guest's line is refused and not relayed.
   await A.page.evaluate(() => window.syn3h.params.set('chat.on', false))
@@ -134,12 +160,12 @@ try {
     }
     check(spoke, `a bot spoke within two minutes at chatty (${Math.round((Date.now() - t0) / 1000)} s), seen on the guest`)
     // The muted player stays muted while bots talk on.
-    await B.page.click('.chat-people-toggle')
-    await B.page.click('.chat-people .chat-mute >> nth=0')
+    await clickPill(B.page, 'guest people', '.chat-people-toggle')
+    await clickPill(B.page, 'guest mute', '.chat-people .chat-mute')
     await A.page.evaluate(() => window.syn3hChat.net.chat.send('still muted?'))
     await B.page.waitForTimeout(25000)
     check(!(await linesOn(B.page)).some((t) => t.includes('still muted?')), 'a muted player stays muted')
-    await B.page.click('.chat-people .chat-mute >> nth=0')
+    await clickPill(B.page, 'guest mute', '.chat-people .chat-mute')
     await B.page.waitForTimeout(20000)
     await shot(B.page, 'desktop-open-bots')
     const transcript = await B.page.evaluate(() => [...document.querySelectorAll('.chat-panel .chat-log .chat-line')].map((l) => l.textContent))
@@ -196,7 +222,7 @@ try {
     else check(!sheetBox.overButtons && sheetBox.right - sheetBox.left <= sheetBox.w * 0.5 + 1 && sheetBox.fieldVisible, `${name}: the open sheet is half width, clear of the action buttons, field on screen`)
     // Closing returns the layout exactly.
     const before = collapsed
-    if (touch) await P.page.tap('.chat-close'); else await P.page.click('.chat-close')
+    if (touch) await P.page.tap('.chat-close'); else await clickPill(P.page, name, '.chat-close')
     const after = await P.page.evaluate(() => ({ kb: document.querySelector('.chat-panel').style.getPropertyValue('--chat-kb'), open: document.querySelector('.chat-sheet').hidden, typing: window.syn3h.game.input.typing }))
     check(after.kb === '' && after.open && after.typing === false, `${name}: closing restores the layout and driving (${JSON.stringify(after)})`)
     void before

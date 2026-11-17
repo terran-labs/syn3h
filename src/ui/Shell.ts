@@ -1021,10 +1021,11 @@ export class Shell implements System {
     if (!typing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code) && this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
-      setInterfaceMode(0)
-      // Escape in a text field only leaves the field; it takes another to pause.
+      // Escape in a text field only leaves the field (chat closes itself): it takes another to
+      // pause, and the interface mode stays as it was.
       const target = event.target
       if (this.started && !this.menuVisible && !this.userPaused && target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && !/^(range|checkbox|radio|button|color)$/.test(target.type)))) { target.blur(); return }
+      setInterfaceMode(0)
       event.preventDefault(); event.stopImmediatePropagation()
       // Escape with the cursor captured frees it, which shows the panels. Escape again pauses.
       // Escape while paused resumes. There is no panel-closing step in between.
