@@ -118,3 +118,10 @@
   .syn3h-shell.has-touch .chat-panel.is-left-hand .chat-sheet { left: calc(max(12px, env(safe-area-inset-left)) + 0px); right: 50%; }
 }
 }
+
+/* A vehicle's label (src/ui/nameplates) while its driver speaks: the rim takes the vehicle's
+   tint and a small speech mark appears at the corner, for a few seconds. */
+.vehicle-nameplate.is-speaking { border-color: var(--vehicle-tint); box-shadow: 0 0 0 1px var(--vehicle-tint), 0 0 12px color-mix(in srgb, var(--vehicle-tint) 55%, transparent); }
+.vehicle-nameplate.is-speaking::after { content: ''; position: absolute; right: -5px; top: -7px; width: 12px; height: 9px; border-radius: 6px 6px 6px 1px; background: var(--vehicle-tint); box-shadow: 0 0 0 1px rgb(3 11 19 / .7); animation: chat-speak-in .25s ease-out; }
+@keyframes chat-speak-in { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .vehicle-nameplate.is-speaking::after { animation: none; } }

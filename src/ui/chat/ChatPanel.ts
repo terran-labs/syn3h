@@ -9,7 +9,7 @@
  * While the field has focus `input.typing` is set, which stops every driving key, the stick
  * and the gamepad (src/core/Input.ts). It is cleared on blur, however focus leaves.
  */
-import type { ChatChannel, ChatLine } from '../../net/chat'
+import { CHAT_SPEAK_EVENT, type ChatChannel, type ChatLine } from '../../net/chat'
 import { chatHideBots, chatOn, chatShow, MAX_CHAT_LENGTH } from '../../../shared/chat'
 import { params } from '../../../shared/params'
 import { touchLeftHanded as leftHanded } from '../TouchPreferences'
@@ -30,6 +30,8 @@ export interface ChatPanelOptions {
 const STRIP_LINES = 3
 /** A line stays in the strip this long, ms, then fades. */
 const STRIP_MS = 8000
+/** A speaker's vehicle label stays lit this long, ms. */
+const SPEAKING_MS = 3500
 /** Key that opens chat. T cycles gear and Enter fires, so Y, the usual "say" key. */
 export const CHAT_KEY = 'KeyY'
 
@@ -109,6 +111,8 @@ export class ChatPanel {
     this.log.addEventListener('scroll', () => { if (this.atBottom()) this.clearUnread() }, { signal, passive: true })
     this.log.addEventListener('click', (e) => this.onLogClick(e), { signal })
     window.addEventListener('keydown', (e) => this.onKey(e), { signal, capture: true })
+    // The speaker's vehicle label (src/ui/nameplates) lights up for a moment with a speech mark.
+    window.addEventListener(CHAT_SPEAK_EVENT, (e) => this.markSpeaker((e as CustomEvent<{ id: number }>).detail.id), { signal })
     window.addEventListener('pointerdown', (e) => { if (!this.menu.hidden && !this.menu.contains(e.target as Node)) this.menu.hidden = true }, { signal })
 
     const { channel } = options
@@ -172,12 +176,22 @@ export class ChatPanel {
   private keyboardOff?: () => void
 
   dispose(): void {
+    for (const t of this.speaking.values()) clearTimeout(t)
     this.keyboardOff?.()
     this.abort.abort()
     for (const u of this.unsubscribe) u()
     clearInterval(this.stripTimer)
     this.options.input.typing = false
     this.element.remove()
+  }
+
+  private readonly speaking = new Map<number, ReturnType<typeof setTimeout>>()
+  private markSpeaker(id: number): void {
+    const plate = document.querySelector<HTMLElement>(`.vehicle-nameplate[data-vehicle="${id}"]`)
+    clearTimeout(this.speaking.get(id))
+    if (!plate) return
+    plate.classList.remove('is-speaking'); void plate.offsetWidth; plate.classList.add('is-speaking')
+    this.speaking.set(id, setTimeout(() => { plate.classList.remove('is-speaking'); this.speaking.delete(id) }, SPEAKING_MS))
   }
 
   private onKey(e: KeyboardEvent): void {

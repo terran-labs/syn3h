@@ -65,6 +65,10 @@ for (const line of said) {
   run.push(line)
 }
 if (run.length > 1) exchanges.push(run)
+// How often a line repeats one said in the previous ten minutes.
+let repeats = 0
+for (let i = 0; i < said.length; i++) if (said.slice(0, i).some((e) => e.text === said[i].text && said[i].t - e.t <= 600)) repeats++
+console.log(`repeats within ten minutes: ${repeats} of ${said.length} lines (${((repeats / Math.max(1, said.length)) * 100).toFixed(2)}%)`)
 const short = (n: string) => n.split(' ')[0] + ' (' + n.split(' ').slice(1).join(' ') + ')'
 console.log(`seed ${seed}: ${said.length} lines in ${minutes} simulated minutes, ${exchanges.length} exchanges; bots ${names.join(', ')}\n`)
 console.log('FORTY RANDOM LINES')
