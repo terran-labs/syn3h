@@ -181,6 +181,8 @@ export class LoadedBuggySkin implements BuggySkin {
   private readonly glowMaterials: THREE.MeshStandardMaterial[] = []
   private readonly energyColor = uniform(this.accentColor)
   private readonly wheels = Array.from({length: 4}, () => new THREE.Group())
+  /** Wheel scale from setTyreScale: width along the axle (x), radius in y and z. */
+  private readonly tyreScale = new THREE.Vector3(1, 1, 1)
   private wings: { mesh: THREE.Mesh; base: Float32Array }[] = []
   private wingInput = [0, 0, 0]
   private readonly wingTips: WingTipAnchors[] = []
@@ -399,10 +401,20 @@ export class LoadedBuggySkin implements BuggySkin {
     this.object.visible = true
   }
 
+  /**
+   * Tyre size: scales each wheel's root, so the tyre, rotor ring, stator, glow and sparks all
+   * grow together about the hub. The arm and shock run hub to body and only follow the hub.
+   */
+  setTyreScale(radius: number, width: number): void {
+    this.tyreScale.set(width, radius, radius)
+    this.wheels.forEach((w, i) => this.setWheel(i, w.position, w.rotation.y, this.rollers[i].rotation.x))
+  }
+
   setWheel(index: number, localPosition: THREE.Vector3, steerAngle: number, spinAngle: number): void {
     const wheel = this.wheels[index]
     if (!wheel) throw new RangeError('Wheel index must be 0 to 3')
     wheel.position.copy(localPosition)
+    wheel.scale.copy(this.tyreScale)
     // Same transform as the former single 'YXZ' Euler (steer, then spin), split so the Syn3h
     // stator can steer and travel with the wheel without spinning: Unity's prefab spins only
     // the `Roll` child (tyre and rotor ring), while `Rim` (the stator) sits on the steered root.

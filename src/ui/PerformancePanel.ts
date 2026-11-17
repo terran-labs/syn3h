@@ -3,6 +3,7 @@ import { QUALITY, type QualitySource, type QualityState } from '../core/quality'
 import type { PerformanceSnapshot, PerformanceSource } from '../core/performance'
 import type { Inspector } from './inspector/Inspector'
 import type { PropertyDef } from './inspector/model'
+import { createSwitch, type Switch } from './inspector/switch'
 
 const number = (value: number | undefined, digits = 1) => value !== undefined && Number.isFinite(value) ? value.toFixed(digits) : 'Unavailable'
 
@@ -10,6 +11,28 @@ const number = (value: number | undefined, digits = 1) => value !== undefined &&
 const LEVEL_IDS = ['gfx.quality', 'gfx.auto', 'gfx.level']
 /** Two chevrons, drawn as one stroked path: pointing down for a lower level, up for a higher one. */
 const CHEVRONS = (up: boolean) => `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="${up ? 'M3 8l5-4 5 4M3 13l5-4 5 4' : 'M3 3l5 4 5-4M3 8l5 4 5-4'}"/></svg>`
+
+/** The drawing buffer for a window of CSS size width by height at a pixel ratio, as the renderer sizes it. */
+export function renderSize(width: number, height: number, pixelRatio: number): [number, number] {
+  return [Math.floor(width * pixelRatio), Math.floor(height * pixelRatio)]
+}
+
+/**
+ * The Performance card's status, as two lines: what a player needs (level, whether Auto quality
+ * is on, the frame rate it aims for, and anything it is cutting right now), then the technical
+ * figures (pixel ratio, post budget, whether the level is pinned).
+ */
+export function statusLines(s: { name: string; auto?: boolean; pinned?: boolean; easing?: string | null; pixelRatio?: number; post?: number; targetFps?: number }): [string, string] {
+  const easing = s.easing === 'post' ? 'Post effects reduced automatically' : s.easing === 'resolution' ? 'Resolution reduced automatically' : ''
+  const main = [s.name, s.auto === undefined ? '' : `Auto quality ${s.auto ? 'on' : 'off'}`, s.targetFps ? `aiming for ${s.targetFps} fps` : '', easing].filter(Boolean).join(' · ')
+  const detail = [
+    s.pixelRatio !== undefined ? `Pixel ratio ${number(s.pixelRatio, 2)}` : '',
+    s.post !== undefined ? `Post budget ${number(s.post * 100, 0)}%` : '',
+    s.pinned === undefined ? '' : s.pinned ? 'Level pinned: Auto keeps it' : 'Level not pinned',
+    s.easing ? '' : 'Full resolution and post budget',
+  ].filter(Boolean).join(' · ')
+  return [main, detail]
+}
 
 /**
  * The Performance card: the quality level with steps either side, Auto, every preference the
@@ -42,6 +65,9 @@ export class PerformancePanel {
   private readonly foldOpen = new Map<string, boolean>()
   private readonly select: HTMLSelectElement
   private readonly diagnostics: HTMLDetailsElement
+  private get resolutionRange(): HTMLInputElement { return this.element.querySelector<HTMLInputElement>('.wi-resolution input')! }
+  /** Auto quality: the standard switch, apart from the level stepper. */
+  private readonly auto: Switch
 
   constructor(private readonly parent: HTMLElement, private readonly openRail: () => void, quality?: QualitySource, private readonly inspector?: Inspector) {
     const signal = this.abort.signal
@@ -50,8 +76,14 @@ export class PerformancePanel {
         <button type="button" class="wi-step" data-quality="down" aria-label="Lower quality level">${CHEVRONS(false)}</button>
         <div class="wi-level-pick"><select class="wi-level-select" aria-label="Quality level" disabled></select><small class="wi-level-of"></small></div>
         <button type="button" class="wi-step" data-quality="up" aria-label="Raise quality level">${CHEVRONS(true)}</button></div>
-      <div class="wi-level-tools"><label class="wi-auto"><input type="checkbox" disabled> Auto</label><button type="button" data-quality="reset-all" disabled>Reset all to this level</button></div>
-      <p class="performance-quality wi-blurb" aria-live="polite"></p>
+      <div class="wi-level-tools"><button type="button" data-quality="reset-all" disabled>Reset all to this level</button></div>
+      <div class="wi-resolution" role="group" aria-label="Render resolution">
+        <span class="wi-label">Render resolution</span>
+        <input type="range" min="50" max="100" step="5" aria-label="Render resolution, percent of native" disabled>
+        <output class="wi-res-value"></output>
+        <button type="button" class="wi-res-auto" aria-pressed="true" disabled>Auto</button>
+        <small class="wi-res-size"></small></div>
+      <p class="performance-quality wi-blurb" aria-live="polite"></p><p class="performance-quality-detail"></p>
       <div class="wi-fine"></div>
       <details class="wi-group performance-diagnostics"><summary><span>Diagnostics</span><small></small></summary>
       <div class="performance-body">
@@ -65,7 +97,14 @@ export class PerformancePanel {
     this.recommendation.innerHTML = '<p></p><button type="button" data-performance="ignore">Ignore</button><button type="button" data-performance="lower">Lower level</button><small class="performance-unlock" hidden>Esc for options</small>'
     parent.append(this.recommendation)
     this.select.addEventListener('change', () => this.quality?.setLevel(Number(this.select.value)), { signal })
-    this.element.querySelector('.wi-auto input')!.addEventListener('change', event => this.quality?.setAuto((event.target as HTMLInputElement).checked), { signal })
+    this.auto = createSwitch('Auto quality', { className: 'wi-auto', signal, onChange: on => this.quality?.setAuto(on) })
+    this.auto.input.disabled = true
+    this.element.querySelector('.wi-level-tools')!.prepend(this.auto.element)
+    // Render resolution: dragging previews the number; the renderer resizes once, on release.
+    const range = this.resolutionRange
+    range.addEventListener('input', () => this.renderResolution(Number(range.value) / 100), { signal })
+    range.addEventListener('change', () => this.quality?.setResolution?.(Number(range.value) / 100), { signal })
+    this.element.querySelector('.wi-res-auto')!.addEventListener('click', () => this.quality?.setResolution?.(null), { signal })
     this.element.querySelector('[data-quality=down]')!.addEventListener('click', () => this.quality?.stepDown(), { signal })
     this.element.querySelector('[data-quality=up]')!.addEventListener('click', () => this.quality?.stepUp(), { signal })
     this.element.querySelector('[data-quality=reset-all]')!.addEventListener('click', () => this.quality?.clearOverrides(), { signal })
@@ -83,7 +122,10 @@ export class PerformancePanel {
   configureQuality(quality: QualitySource): void {
     this.qualityUnsubscribe?.(); this.quality = quality
     this.select.replaceChildren(...quality.qualityLevels.map(level => { const option = document.createElement('option'); option.value = String(level.index); option.textContent = level.name; return option }))
-    this.select.disabled = false; this.element.querySelector<HTMLInputElement>('.wi-auto input')!.disabled = false
+    this.select.disabled = false; this.auto.input.disabled = false
+    const settable = !!quality.setResolution
+    this.resolutionRange.disabled = !settable; this.element.querySelector<HTMLButtonElement>('.wi-res-auto')!.disabled = !settable
+    this.element.querySelector<HTMLElement>('.wi-resolution')!.hidden = !settable
     this.qualityUnsubscribe = quality.subscribeQuality(state => this.renderQuality(state))
     this.regroup()
   }
@@ -145,7 +187,8 @@ export class PerformancePanel {
     this.element.querySelector('.wi-level-of')!.textContent = `Level ${levels.findIndex(level => level.index === state.level) + 1} of ${levels.length}`
     this.element.querySelector<HTMLButtonElement>('[data-quality=down]')!.disabled = state.level <= first
     this.element.querySelector<HTMLButtonElement>('[data-quality=up]')!.disabled = state.level >= last
-    this.element.querySelector<HTMLInputElement>('.wi-auto input')!.checked = state.auto
+    this.auto.set(state.auto)
+    this.renderResolution()
     const resetAll = this.element.querySelector<HTMLButtonElement>('[data-quality=reset-all]')!
     resetAll.textContent = `Reset all to ${state.name}`; resetAll.disabled = Object.keys(state.overrides).length === 0
     // A newly registered property joins the level: rebuild so it gets a row here. Compared by
@@ -154,6 +197,30 @@ export class PerformancePanel {
     if (this.shown !== undefined && shown !== this.shown) { this.shown = shown; this.regroup() }
     else { this.shown = shown; this.renderMarks(state) }
     this.renderStatus()
+  }
+
+  /**
+   * The resolution row: the player's percentage (or Auto, with what Auto draws now), and the
+   * render size in pixels. `preview` is a value being dragged, not yet applied.
+   */
+  private renderResolution(preview?: number): void {
+    const state = this.state
+    if (!state || state.devicePixelRatio === undefined) return
+    const dpr = state.devicePixelRatio || 1
+    const chosen = preview ?? state.resolution
+    const ratio = preview !== undefined ? Math.round(dpr * preview * 100) / 100 : state.pixelRatio
+    const share = chosen ?? ratio / dpr
+    const range = this.resolutionRange
+    // A slider in the player's hand keeps its own position.
+    if (preview === undefined && document.activeElement !== range) range.value = String(Math.round(Math.min(1, Math.max(0.5, share)) * 20) * 5)
+    const row = this.element.querySelector<HTMLElement>('.wi-resolution')!
+    row.classList.toggle('is-auto', chosen === null)
+    // At Auto the number is what Auto draws now; the filled Auto button says who chose it.
+    this.element.querySelector('.wi-res-value')!.textContent = `${Math.round(share * 100)}%`
+    const button = this.element.querySelector<HTMLButtonElement>('.wi-res-auto')!
+    button.setAttribute('aria-pressed', String(chosen === null)); button.classList.toggle('is-on', chosen === null)
+    const [width, height] = renderSize(innerWidth, innerHeight, ratio)
+    this.element.querySelector('.wi-res-size')!.textContent = `${width} × ${height} px${chosen === null ? ' · set by Auto' : ''}`
   }
 
   private renderMarks(state: QualityState): void {
@@ -175,8 +242,10 @@ export class PerformancePanel {
     const auto = state?.auto ?? snapshot?.quality.auto
     const pinned = state?.pinned ?? snapshot?.levelPinned
     const easing = state?.easing ?? (snapshot && snapshot.quality.rung > 0 ? snapshot.quality.kind : null)
-    const reduction = easing === 'post' ? 'Post effects reduced automatically' : easing === 'resolution' ? 'Resolution reduced automatically' : 'Full resolution and post budget'
-    this.element.querySelector('.performance-quality')!.textContent = [name, auto === undefined ? '' : `Auto ${auto ? 'on' : 'off'}`, pinned === undefined ? '' : pinned ? 'Pinned' : 'Not pinned', reduction, snapshot ? `Pixel ratio ${number(snapshot.quality.pixelRatio, 2)} · Post budget ${number(snapshot.quality.post * 100, 0)}% · ${snapshot.quality.targetFps} fps target` : ''].filter(Boolean).join(' · ')
+    // The plain facts first; the technical ones on a quieter second line. Nothing is dropped.
+    const [main, detail] = statusLines({ name, auto, pinned, easing, pixelRatio: snapshot?.quality.pixelRatio, post: snapshot?.quality.post, targetFps: snapshot?.quality.targetFps })
+    this.element.querySelector('.performance-quality')!.textContent = main
+    this.element.querySelector('.performance-quality-detail')!.textContent = detail
 
   }
 

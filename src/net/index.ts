@@ -15,6 +15,7 @@ import {
   BOT_ID_BASE,
   type ClientMessage,
   DEFAULT_COLORS,
+  MAX_NAME_LENGTH,
   type GameState,
   type HillZone,
   MAX_BOTS,
@@ -74,6 +75,7 @@ import { ShoveQueue, cleanShove, shoveFor } from './shove'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
 import { setWaterClock, waterTime } from '../world/water/seaWaves'
 import { RaceBridge, type RaceBots, type RacePresentation } from './races'
+import { TintTransition, type TintPair } from '../vehicles/tints'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -637,6 +639,40 @@ export class NetClient implements System {
     if (this.connected) this.send({ type: 'profile', kind: this.kind, colors: this.colors })
   }
 
+  /**
+   * Take a new name in the room now and at every later hello. The room cleans it, may add a
+   * number to tell two players apart, and takes one rename every RENAME_INTERVAL_MS; an older
+   * room ignores the field and the name changes at the next join instead.
+   */
+  setName(name: string): void {
+    chosenName = name.trim().slice(0, MAX_NAME_LENGTH)
+    if (chosenName && this.connected) this.send({ type: 'profile', name: chosenName })
+  }
+
+  /** Remote colours ease to a newly announced tint (src/vehicles/tints.ts), by player id. */
+  private remoteTints?: Map<number, TintTransition>
+  private tintRemote(id: number, vehicle: VehicleExtras, colors: readonly [string, string]): void {
+    const target = { body: colors[0], accent: colors[1] }
+    const tints = this.remoteTints ??= new Map()
+    let tint = tints.get(id)
+    if (!tint) {
+      const shown = (vehicle as { colors?: TintPair }).colors
+      // Nothing to ease from: paint at once.
+      if (!shown) { vehicle.setColors?.(target.body, target.accent); return }
+      tint = new TintTransition(shown); tints.set(id, tint)
+    }
+    tint.set(target)
+  }
+  private updateRemoteTints(dt: number): void {
+    if (!this.remoteTints) return
+    for (const [id, tint] of this.remoteTints) {
+      const r = this.remotes.get(id)
+      if (!r) { this.remoteTints.delete(id); continue }
+      if (tint.update(dt)) (r.vehicle as VehicleExtras).setColors?.(tint.current.body, tint.current.accent)
+      if (!tint.active) this.remoteTints.delete(id)
+    }
+  }
+
   /** The shell supplies actual play state; connected lobby spectators cannot be drafted. */
   configureRaces(presentation: RacePresentation): void { this.raceBridge.configure(presentation) }
   get race() { return this.raceBridge.snapshot as Readonly<import('../../shared/protocol').RaceState> | null }
@@ -760,6 +796,7 @@ export class NetClient implements System {
     if (this.wasDriving && !driving) this.resetGear()
     this.wasDriving = driving
     for (const controller of this.botGear.values()) controller.update(dt)
+    this.updateRemoteTints(dt)
     const frameAt = performance.now()
     // After a long task the browser often renders before it delivers the queued messages, so
     // the gap check in onState alone misses them: also distrust the next moment after a gap.
@@ -1363,7 +1400,8 @@ export class NetClient implements System {
       }
       return
     }
-    if (!isBotId(info.id)) extras.setColors?.(info.colors[0], info.colors[1])
+    // One profile per change; each client eases to it on its own, so a Randomize costs the room one message.
+    if (!isBotId(info.id)) this.tintRemote(info.id, extras, info.colors)
   }
 
   private onTerrainRegenerated(): void {
@@ -1477,10 +1515,14 @@ export class NetClient implements System {
         this.players.set(msg.player.id, msg.player)
         if (!msg.player.bot) this.event(`${msg.player.name} joined`)
         break
-      case 'profile':
+      case 'profile': {
+        const before = this.players.get(msg.player.id)?.name
         this.players.set(msg.player.id, msg.player)
         this.applyProfile(msg.player)
+        // Name tags, the Players list and later messages read the roster, so they follow at once.
+        if (before && before !== msg.player.name && msg.player.id !== this.id && !msg.player.bot) this.event(`${before} is now ${msg.player.name}`)
         break
+      }
       case 'leave':
         if (!isBotId(msg.id)) this.event(`${this.nameOf(msg.id)} left`)
         this.players.delete(msg.id)
@@ -1807,6 +1849,8 @@ function normalizeGame(g: Partial<GameState>): GameState {
 
 /** Name chosen on the start screen, when there is one. */
 let preferredName = ''
+/** Name chosen in play (the Me card); wins over the start screen and ?name=. */
+let chosenName = ''
 
 /**
  * This tab's secret for one room: in a room with `game.rejoin` on, saying hello again with it
@@ -1834,6 +1878,7 @@ function rejoinSecret(room: string): string | undefined {
 
 function playerName(): string {
   // An explicit ?name= wins, so links and automated checks can name players.
+  if (chosenName) return chosenName
   const q = new URLSearchParams(location.search).get('name')
   if (q) return q.slice(0, 24)
   if (preferredName) return preferredName.slice(0, 24)

@@ -9,6 +9,8 @@ import type { Terrain } from '../world/Terrain'
 import { Hovercraft } from './Hovercraft'
 import { Jet } from './Jet'
 import { Tank } from './Tank'
+import { isVehicleAvailable } from './available'
+export { TANK_AVAILABLE, isVehicleAvailable } from './available'
 import { Syn3hBuggySkin } from './skins'
 import { Syn3hBuggy } from './Syn3hBuggy'
 import type { Vehicle } from './Vehicle'
@@ -22,14 +24,14 @@ export type VehicleKind = 'buggy' | 'buggy-classic' | 'buggy-syn3h' | 'jet' | 'h
 /**
  * Every vehicle `createVehicle` builds, with a display name, for tools that list them (the
  * vehicle lab shows each one automatically). 'buggy-syn3h' is an alias of 'buggy' and is left
- * out. Add a new kind here and to the switch below.
+ * out, and so is a hidden kind (./available.ts). Add a new kind here and to the switch below.
  */
 export const VEHICLE_KINDS: readonly { kind: VehicleKind; name: string }[] = [
   { kind: 'buggy', name: 'Buggy' },
   { kind: 'jet', name: 'Jet' },
   { kind: 'hovercraft', name: 'Hovercraft' },
   { kind: 'tank', name: 'Tank' },
-]
+].filter(vehicle => isVehicleAvailable(vehicle.kind)) as readonly { kind: VehicleKind; name: string }[]
 
 /** Models load over HTTP, so only in a browser. Headless tests keep the primitive visuals. */
 const hasDom = typeof document !== 'undefined'
@@ -42,7 +44,8 @@ const hasDom = typeof document !== 'undefined'
  * so a newer client's vehicle is never drawn as nothing.
  */
 export function canonicalVehicleKind(kind: string | null | undefined): VehicleKind {
-  return kind === 'jet' || kind === 'hovercraft' || kind === 'tank' ? kind : 'buggy'
+  // A hidden kind (src/vehicles/available.ts) is drawn as the buggy.
+  return kind === 'jet' || kind === 'hovercraft' || (kind === 'tank' && isVehicleAvailable(kind)) ? kind : 'buggy'
 }
 
 export function createVehicle(
@@ -55,9 +58,11 @@ export function createVehicle(
   switch (kind) {
     case 'jet':
       return new Jet(game, terrain, position, heading)
-    // The Mars Explorer tank. Syn3h had none, so it is reachable by ?vehicle=tank only.
+    // The Mars Explorer tank, while it is offered (src/vehicles/available.ts); a hidden tank
+    // is built as the buggy below, whoever asked for it.
     case 'tank':
-      return new Tank(game, terrain, position, heading)
+      if (isVehicleAvailable(kind)) return new Tank(game, terrain, position, heading)
+      return new Syn3hBuggy(game, terrain, position, heading, 'buggy', hasDom ? () => new Syn3hBuggySkin() : undefined)
     case 'hovercraft':
       return new Hovercraft(game, terrain, position, heading)
     // 'buggy-classic' and anything unknown land here too: see `canonicalVehicleKind`.
