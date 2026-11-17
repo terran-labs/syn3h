@@ -12,6 +12,8 @@
  *   --profile        record a CPU profile and print the stacks of the slowest frames
  *   --planet ID      the world to drop into (default: the first one that is not current)
  *   --runs N         repeat the whole entry and exit (default 1)
+ *   --level N        quality level 0 to 5 as a saved player choice (pinned, automation off);
+ *                    default: whatever the game picks for this browser
  *
  * Uses the room server Vite starts. Prints one table per run; nothing is written to disk.
  * Long frames are attributed from Long Animation Frame entries (scripts that ran in them),
@@ -23,7 +25,7 @@ import { loadavg } from 'node:os'
 const args = process.argv.slice(2)
 const flag = name => args.includes(`--${name}`)
 const opt = (name, fallback) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : fallback }
-const url = args.find((a, i) => !a.startsWith('--') && !['--cpu', '--planet', '--runs'].includes(args[i - 1])) ?? 'http://127.0.0.1:5291/'
+const url = args.find((a, i) => !a.startsWith('--') && !['--cpu', '--planet', '--runs', '--level'].includes(args[i - 1])) ?? 'http://127.0.0.1:5291/'
 const phone = flag('phone'), cpu = Number(opt('cpu', phone ? 4 : 1)), runs = Number(opt('runs', 1)), profile = flag('profile')
 const AFTER_DRIVE_MS = 10000, AFTER_EXIT_MS = 8000
 
@@ -112,6 +114,8 @@ async function run(index) {
   const context = await browser.newContext(phone
     ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true }
     : { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 })
+  const level = opt('level', null)
+  if (level !== null) await context.addInitScript(q => { try { localStorage.setItem('syn3h.quality.v2', JSON.stringify({ level: q, auto: false, pinned: true, overrides: {} })) } catch {} }, Number(level))
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', e => errors.push(String(e)))
@@ -189,7 +193,12 @@ async function run(index) {
   if (flag('landing')) for (const f of rec.frames.filter(f => f.at > rec.drivable - 150 && f.at < rec.drivable + 250)) console.log(`  drivable${f.at >= rec.drivable ? '+' : ''}${(f.at - rec.drivable).toFixed(0)} ${f.ms.toFixed(0)} ms draws ${f.draws} tris ${f.tris} ${f.size} pr ${f.pr} pipelines ${f.live}/${f.fresh}`)
   if (flag('builds')) for (const b of rec.builds.filter(x => x.at >= clicked && x.at < left)) console.log(`  build at click+${(b.at - clicked).toFixed(0)} ${b.ms.toFixed(1)} ms: ${b.what}`)
   console.log(`shader builds: entry ${sum(clicked, rec.drivable + AFTER_DRIVE_MS).toFixed(0)} ms in ${rec.builds.filter(x => x.at >= clicked && x.at < left).length} materials; exit ${sum(left, left + AFTER_EXIT_MS).toFixed(0)} ms`)
-  for (const l of rec.pacing ?? []) console.log(`  bot ${l.action} at drivable+${(l.at - rec.drivable).toFixed(0)} with ${l.have}${l.p90 ? `: p90 ${l.p90.toFixed(1)} ms, mean ${l.meanMs.toFixed(1)} ms, target ${l.targetMs.toFixed(1)} ms` : ''}`)
+  for (const l of rec.pacing ?? []) {
+    // An arrival's own frames: the worst in the 1.5 s after it was asked for (build, first draw, cloud).
+    const after = l.action === 'add' ? rec.frames.filter(f => f.at >= l.at && f.at < l.at + 1500) : []
+    const worst = after.length ? Math.max(...after.map(f => f.ms)) : null
+    console.log(`  bot ${l.action} at drivable+${(l.at - rec.drivable).toFixed(0)} with ${l.have}${l.p90 ? `: p90 ${l.p90.toFixed(1)} ms, mean ${l.meanMs.toFixed(1)} ms, target ${l.targetMs.toFixed(1)} ms` : ''}${worst !== null ? `; worst frame in the next 1.5 s ${worst.toFixed(0)} ms, ${after.filter(f => f.ms > 33).length} over 33` : ''}`)
+  }
   const long = [...entry.set.map(f => ({ ...f, span: 'entry' })), ...exit.set.map(f => ({ ...f, span: 'exit' }))].map(f => ({ ...f, busy: busyOf(f) })).filter(f => f.ms > 50 || (index2 && f.busy > 25)).sort((a, b) => index2 ? b.busy - a.busy : b.ms - a.ms)
   for (const f of long) {
     const from = f.at, to = f.at + f.ms
