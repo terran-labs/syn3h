@@ -26,3 +26,19 @@ run_smoke() {
     cp "$_log" "$_log.crashed"
   done
 }
+
+# run_public_check <url> <log>: the short public check (tools/public-check.mjs), for a public
+# address after a production deploy. A browser crash is a fresh rerun, at most twice; any other
+# failure fails at once.
+run_public_check() {
+  _url=$1 _log=$2 _attempt=0
+  while :; do
+    _attempt=$((_attempt + 1))
+    _rc=0; node tools/public-check.mjs "$_url" >"$_log" 2>&1 || _rc=$?
+    grep -E "^(FAIL|PUBLIC CHECK)" "$_log" || true
+    [ "$_rc" -eq 0 ] && return 0
+    [ "$_rc" -eq 3 ] && [ "$_attempt" -lt 3 ] || return 1
+    echo "Browser crashed (not a deploy failure); running the public check again, fresh."
+    cp "$_log" "$_log.crashed-$_attempt"
+  done
+}

@@ -285,9 +285,16 @@ echo "Smoke testing $URL ..."
 SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.XXXXXX)" || fail "could not reserve smoke evidence directory"
 echo "Shot evidence: $SHOT_PARENT/evidence ($URL)"
 [ "${SYN3H_RELEASE_FORCE_FAIL:-}" != smoke ] || fail "net-smoke failed against $URL (forced by SYN3H_RELEASE_FORCE_FAIL=smoke)"
-run_smoke "$URL" "$LOG-smoke.log" "$SHOT_PARENT/evidence" || fail "net-smoke failed against $URL (see $LOG-smoke.log)"
-# Steps passed, connection drops ridden through and step retries, for the release ledger.
-SMOKE_SUMMARY="$(grep '^NET SMOKE SUMMARY ' "$LOG-smoke.log" | tail -1 | sed 's/^NET SMOKE SUMMARY //')"
+if [ -n "$DRY" ]; then
+  run_smoke "$URL" "$LOG-smoke.log" "$SHOT_PARENT/evidence" || fail "net-smoke failed against $URL (see $LOG-smoke.log)"
+  # Steps passed, connection drops ridden through and step retries, for the release ledger.
+  SMOKE_SUMMARY="$(grep '^NET SMOKE SUMMARY ' "$LOG-smoke.log" | tail -1 | sed 's/^NET SMOKE SUMMARY //')"
+else
+  # Production: only what a deploy can break. The gameplay rules were proven on the same frozen
+  # build by the full smoke on staging and in the dry run (tools/public-check.mjs).
+  run_public_check "$URL" "$LOG-smoke.log" || fail "public check failed against $URL (see $LOG-smoke.log)"
+  SMOKE_SUMMARY="$(grep '^PUBLIC CHECK ' "$LOG-smoke.log" | tail -1)"
+fi
 
 if [ -n "$DRY" ]; then
   npx tsx server/latency-proxy.ts --listen "$PROXY_PORT" --target "http://127.0.0.1:$PORT" --rtt 150 --jitter 30 >"$LOG-proxy.log" 2>&1 &
@@ -308,7 +315,7 @@ fi
 PRIMARY_URL="https://www.syn3h.com/"
 settle "$PRIMARY_URL" "$DEST" "$LOG-primary-assets.log" --feed || { tail -20 "$LOG-primary-assets.log"; fail "primary entry bundle did not settle on the frozen build within three minutes"; }
 tail -1 "$LOG-primary-assets.log"
-if ! tools/domain.sh check www.syn3h.com >"$LOG-primary.log" 2>&1; then
+if ! SYN3H_SHORT_CHECK=1 tools/domain.sh check www.syn3h.com >"$LOG-primary.log" 2>&1; then
   cat "$LOG-primary.log"
 node tools/frozen-versions.mjs check "$PRIMARY_URL" "$DEST" >"$LOG-primary-frozen.log" 2>&1 \
   || { cat "$LOG-primary-frozen.log"; fail "frozen version links are broken on the primary domain; roll back the deployment"; }
