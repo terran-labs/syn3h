@@ -70,7 +70,10 @@ try {
         phase = 'entry'
         await page.evaluate(() => {
           const current = window.syn3h.planets.currentPlanet().id
-          const chip = [...document.querySelectorAll('.galaxy-label[data-world]')].find(c => c.dataset.world !== current && !c.dataset.world.includes('~') && c.dataset.world !== 'custom')
+          // Badlands, as autoplay uses: textured ground, so the picture-change test means
+          // something (flat desert sand fills both frames and changed as little as 18%).
+          const chips = [...document.querySelectorAll('.galaxy-label[data-world]')].filter(c => c.dataset.world !== current && !c.dataset.world.includes('~') && c.dataset.world !== 'custom')
+          const chip = chips.find(c => c.dataset.world === 'badlands') ?? chips[0]
           chip.click()
         })
       }
