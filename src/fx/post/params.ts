@@ -20,7 +20,15 @@ export const postBloomRadius = defineParam({ id: 'post.bloomRadius', label: 'Glo
 
 export const postShafts = defineParam({ id: 'post.shafts', label: 'Sun shafts', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
 export const postShaftLength = defineParam({ id: 'post.shaftLength', label: 'Sun shaft length', group: g, scope: c, default: 0.9, min: 0.2, max: 1, step: 0.05 })
-export const postShaftReach = defineParam({ id: 'post.shaftReach', label: 'Sun shaft source size', group: g, scope: c, default: 0.12, min: 0.03, max: 0.5, step: 0.01 })
+/**
+ * Share of the low sun's glow the shafts add in front of what blocks it (cloud, and terrain
+ * by its distance), as lit haze. 0 leaves occluders dark; open sky always gets it all back.
+ */
+export const postShaftHaze = defineParam({ id: 'post.shaftHaze', label: 'Sun shaft haze', group: g, scope: c, default: 0.35, min: 0, max: 1, step: 0.05 })
+/** How strongly the sunburst's bright and dark streaks differ: 0 is the plain glow. */
+export const postShaftContrast = defineParam({ id: 'post.shaftContrast', label: 'Sun ray contrast', group: g, scope: c, default: 1.5, min: 0, max: 2, step: 0.05 })
+/** How far from the sun (screen heights) the gaps and clouds that shape the beams are weighed. */
+export const postShaftReach = defineParam({ id: 'post.shaftReach', label: 'Sun shaft source size', group: g, scope: c, default: 0.05, min: 0.02, max: 0.5, step: 0.01 })
 export const postLowSun = defineParam({ id: 'post.lowSun', label: 'Extra shafts at low sun', group: g, scope: c, default: 0.6, min: 0, max: 3, step: 0.05 })
 export const postFlare = defineParam({ id: 'post.flare', label: 'Lens streak and ghosts', group: g, scope: c, default: 0.5, min: 0, max: 2, step: 0.05 })
 
@@ -36,7 +44,7 @@ export const postCloudDepth = defineParam({ id: 'post.cloudDepth', label: 'Cloud
 export const postAORadius = defineParam({ id: 'post.aoRadius', label: 'Ambient occlusion radius (m)', group: g, scope: c, default: 1.5, min: 0.2, max: 6, step: 0.1 })
 export const postContact = defineParam({ id: 'post.contact', label: 'Contact shadows', group: g, scope: c, default: 1, min: 0, max: 1, step: 0.05 })
 
-export const postDebug = defineParam({ id: 'post.debug', label: 'Debug view: 0 off, 1 occlusion, 2 contact shadows', group: g, scope: c, default: 0, min: 0, max: 2, step: 1 })
+export const postDebug = defineParam({ id: 'post.debug', label: 'Debug view: 0 off, 1 occlusion, 2 contact shadows, 3 sun shaft openness', group: g, scope: c, default: 0, min: 0, max: 3, step: 1 })
 export const postToneMap = defineParam({ id: 'post.toneMap', label: 'Tone mapping: 0 ACES, 1 AgX, 2 Neutral', group: g, scope: c, default: 0, min: 0, max: 2, step: 1 })
 
 

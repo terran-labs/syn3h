@@ -104,12 +104,6 @@ export const phaseMessages: Readonly<Record<string, readonly string[]>> = {
   ],
 }
 
-/** The "still working" line, shown after eight seconds. Honest: first visits are slowest. Copied inline in index.html. */
-export const stillWorkingMessages = [
-  'Still working. First visits unpack the whole planet.',
-  'Still going. The first trip always packs the most.',
-  'Still here. Next time the planet is already unpacked.',
-] as const
 
 /**
  * Chooses the next line. Never the line already showing (when there is any other choice).

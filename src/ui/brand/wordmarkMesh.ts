@@ -1,16 +1,14 @@
 /**
  * The Syn3h wordmark path turned into geometry the GPU can draw: closed contours sorted into
- * filled shapes and holes by the even-odd rule, a triangulated flat face with a thin edge
- * band, a wide band outward from the outline for the plasma's glow, plus points spread
- * along the outline by arc length for the plasma's particles. Pure functions with no DOM, so the tests run
+ * filled shapes and holes by the even-odd rule, a wide band outward from the outline for the
+ * plasma's glow, plus points spread along the outline by arc length for the plasma's
+ * particles. The face itself is drawn from a distance field (wordmarkField.ts). Pure functions with no DOM, so the tests run
  * them directly.
  *
  * Units: one unit is the height of the wordmark box (226 path units), x to the right, y up,
  * the origin at the centre of the 962 by 226 box. The face covers exactly the box the SVG
  * wordmark covers.
  */
-// Earcut alone, from three's sources: importing it from 'three' would pull in most of three.
-import { Earcut } from 'three/src/extras/Earcut.js'
 import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './wordmarkPath'
 
 export type Point = [number, number]
@@ -94,86 +92,6 @@ function edgeNormals(contour: Contour): Point[] {
     const q = contour.points[(i + 1) % contour.points.length], dx = q[0] - p[0], dy = q[1] - p[1], length = Math.hypot(dx, dy) || 1
     return [sign * dy / length, -sign * dx / length]
   })
-}
-
-export interface FaceTriangles {
-  /** x, y pairs, one per contour point, in contour order. */
-  positions: Float32Array
-  indices: Uint32Array
-  /** Index of each contour's first point in `positions`. */
-  offsets: number[]
-}
-/** Triangulates the filled region: each filled contour with the holes directly inside it. */
-export function triangulateFace(contours: Contour[]): FaceTriangles {
-  const offsets: number[] = [], flat: number[] = []
-  for (const contour of contours) { offsets.push(flat.length / 2); for (const p of contour.points) flat.push(p[0], p[1]) }
-  const indices: number[] = []
-  for (const [i, outer] of contours.entries()) {
-    if (outer.depth % 2 !== 0) continue
-    const holes = contours.map((c, j) => j).filter(j => contours[j].parent === i && contours[j].depth === outer.depth + 1)
-    const order = [i, ...holes]
-    // Earcut takes the outline then each hole as one flat list, and orients them itself.
-    const data: number[] = [], holeStarts: number[] = [], map: number[] = []
-    for (const k of order) {
-      if (k !== i) holeStarts.push(data.length / 2)
-      for (const [n, p] of contours[k].points.entries()) { data.push(p[0], p[1]); map.push(offsets[k] + n) }
-    }
-    for (const index of Earcut.triangulate(data, holeStarts, 2)) indices.push(map[index])
-  }
-  return { positions: new Float32Array(flat), indices: new Uint32Array(indices), offsets }
-}
-
-export function triangleArea(positions: ArrayLike<number>, indices: ArrayLike<number>, stride = 2): number {
-  let sum = 0
-  for (let i = 0; i < indices.length; i += 3) {
-    const a = indices[i] * stride, b = indices[i + 1] * stride, c = indices[i + 2] * stride
-    sum += Math.abs((positions[b] - positions[a]) * (positions[c + 1] - positions[a + 1]) - (positions[c] - positions[a]) * (positions[b + 1] - positions[a + 1])) / 2
-  }
-  return sum
-}
-
-export interface WordmarkMesh {
-  /**
-   * Interleaved per vertex: x, y, then an inward offset x, y and the part (0 face, 1 edge).
-   * The edge's inner ring sits at the outline plus offset times the edge width, which the
-   * shader picks so the line stays at least a pixel wide on small screens.
-   */
-  vertices: Float32Array
-  /** Vertex counts of the two parts, drawn in this order: face, edge. */
-  faceVertices: number
-  edgeVertices: number
-  triangles: number
-}
-export const FLOATS_PER_VERTEX = 5
-
-/**
- * The flat wordmark: the triangulated outline as one face, and a thin band just
- * inside the outline for its edge line, drawn over the face. No depth, no lighting.
- */
-export function buildWordmarkMesh(options: { contours?: Contour[] } = {}): WordmarkMesh {
-  const contours = options.contours ?? wordmarkContours()
-  const face = triangulateFace(contours)
-  const front: number[] = [], edge: number[] = []
-  for (const index of face.indices) front.push(face.positions[index * 2], face.positions[index * 2 + 1], 0, 0, 0)
-  for (const contour of contours) {
-    const normals = edgeNormals(contour), points = contour.points, count = points.length
-    // Mitre at each point: the mean of its two edge normals, lengthened to keep the line
-    // even, and capped so very sharp corners do not throw a spike. Pointing inward.
-    const mitres = points.map((_, i): Point => {
-      const a = normals[(i - 1 + count) % count], b = normals[i]
-      let mx = a[0] + b[0], my = a[1] + b[1]
-      const ml = Math.hypot(mx, my) || 1; mx /= ml; my /= ml
-      const scale = Math.min(2, 1 / Math.max(0.2, mx * b[0] + my * b[1]))
-      return [-mx * scale, -my * scale]
-    })
-    for (let i = 0; i < count; i++) {
-      const j = (i + 1) % count, p = points[i], q = points[j], mp = mitres[i], mq = mitres[j]
-      for (const [v, m] of [[p, mp], [q, mq], [q, null], [p, mp], [q, null], [p, null]] as const) edge.push(v[0], v[1], m?.[0] ?? 0, m?.[1] ?? 0, 1)
-    }
-  }
-  const vertices = new Float32Array([...front, ...edge])
-  const faceVertices = front.length / FLOATS_PER_VERTEX, edgeVertices = edge.length / FLOATS_PER_VERTEX
-  return { vertices, faceVertices, edgeVertices, triangles: (faceVertices + edgeVertices) / 3 }
 }
 
 export interface GlowBand {

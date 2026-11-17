@@ -14,7 +14,7 @@ const url = process.env.SYN3H_URL
 assert.ok(url, 'SYN3H_URL is required')
 const out = 'tests/ui/artifacts/lobby-labels'
 await mkdir(out, { recursive: true })
-const views = { landscape: [844, 390, true], 'landscape-small': [667, 375, true], portrait: [390, 844, true], desktop: [1440, 900, false] }
+const views = { landscape: [844, 390, true], 'landscape-small': [667, 375, true], portrait: [390, 844, true], desktop: [1440, 900, false], 'desktop-1280': [1280, 800, false], 'desktop-1024': [1024, 768, false] }
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 try {
   for (const [name, [width, height, phone]] of Object.entries(views)) {
@@ -24,13 +24,17 @@ try {
     await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
     // Hold the graphics level, as galaxy.mjs does: a slow headless browser would retire the galaxy.
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
+    // The lobby's opening (src/ui/galaxy/opening.ts) runs about nine seconds; a key skips to the
+    // settled lobby, as for a player, and these checks are of that lobby.
+    await page.keyboard.press('Shift')
     await page.waitForTimeout(3500)
     const named = []
     for (let sample = 0; sample < 3; sample++) {
       const s = await page.evaluate(() => {
         const box = el => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }
         const planets = window.syn3h.shell.galaxy.screen.filter(p => p.visible && p.x >= 0 && p.x <= innerWidth && p.y >= 0 && p.y <= innerHeight)
-        const labels = [...document.querySelectorAll('.galaxy-label')].filter(c => !c.hidden && Number(getComputedStyle(c).opacity) > .05).map(c => ({ id: c.dataset.world, ...box(c) }))
+        // A label fading out from a side it is leaving (.is-swapping) is not counted: it is going.
+        const labels = [...document.querySelectorAll('.galaxy-label')].filter(c => !c.hidden && !c.classList.contains('is-swapping') && Number(getComputedStyle(c).opacity) > .05).map(c => ({ id: c.dataset.world, biome: getComputedStyle(c.querySelector('.galaxy-biome')).display !== 'none', ...box(c) }))
         if (document.querySelector('.galaxy-labels .s3-leader')) throw new Error('a planet label has a leader line')
         const fixed = [['hint', document.querySelector('.galaxy-hint')], ['settings gear', document.querySelector('.lobby-gear-dock')], ...[...document.querySelectorAll('.galaxy-links button')].map(b => [b.textContent, b])]
         return { planets, labels, fixed: fixed.filter(([, el]) => el && el.getBoundingClientRect().width).map(([what, el]) => ({ what, ...box(el) })) }
@@ -46,7 +50,7 @@ try {
         const own = s.planets.find(p => p.id === label.id)
         if (own) assert.ok(Math.hypot(Math.min(label.right, Math.max(label.left, own.x)) - own.x, Math.min(label.bottom, Math.max(label.top, own.y)) - own.y) - own.radius <= 16, `${name}: the ${label.id} label sits away from its planet`)
       }
-      named.push(`${s.labels.length}/${s.planets.length}`)
+      named.push(`${s.labels.length}/${s.planets.length} (${s.labels.filter(l => l.biome).length} with biome)`)
       if (sample === 0) await page.screenshot({ path: `${out}/check-${name}.png` })
       await page.waitForTimeout(1000)
     }

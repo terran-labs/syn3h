@@ -14,6 +14,8 @@
  */
 import { params } from '../shared/params'
 import type { HandlingPreset } from '../shared/presets'
+// Registers world.atmosphere, which the jet and the buggy's wings read.
+import '../src/world/terrain/settings'
 import { FIXED_DT, initPhysics } from '../src/core/physics'
 import { BUGGY_PRESETS } from '../src/vehicles/buggyParams'
 import { JET_PRESETS } from '../src/vehicles/Jet'
@@ -40,6 +42,7 @@ const settle = (trace: number[], dt: number) => {
 /** The preset being measured; its values are applied over the defaults before every scenario. */
 let preset: HandlingPreset | undefined
 /** Run a scenario with every parameter at its default plus the preset, after `setup` changes some. */
+const atWorld = <T>(scenario: () => T | Promise<T>, setup?: () => void) => at(scenario, setup)
 async function at<T>(scenario: () => T | Promise<T>, setup?: () => void): Promise<T> {
   buggy.resetParams()
   for (const [id, value] of Object.entries(preset?.values ?? {})) params.set(id, value)
@@ -217,7 +220,12 @@ async function buggyTyreSizes(): Promise<Record<string, Figure[]>> {
 
 // ---- Jet -------------------------------------------------------------------------------
 
-async function jetReport(): Promise<VehicleReport> {
+/** The Moon's sky and pull: no air, 1.62 m/s². */
+const moon = () => { params.set('world.atmosphere', 0); params.set('world.gravity', 1.62) }
+
+/** `world` sets the planet (air, gravity) before each scenario; left out, an Earthlike world. */
+async function jetReport(world?: () => void): Promise<VehicleReport> {
+  const at = <T>(scenario: () => T | Promise<T>, setup?: () => void) => atWorld(scenario, () => { world?.(); setup?.() })
   const top = settle(await at(() => jet.flightSpeedTrace()), FIXED_DT)
   const vector = Number(preset?.values['jet.vectorResponse'] ?? params.get('jet.vectorResponse')!.def.default)
   const hover = await at(jet.hoverClimb)
@@ -267,6 +275,16 @@ async function liquids(kind: liquid.Kind): Promise<Figure[]> {
     fig('lava, deep, full throttle: roll swing (waddle), peak to peak', 'deg', wallow.roll.amplitude),
     fig('lava, deep, full throttle: roll rhythm', 's', wallow.roll.period ?? Infinity),
   )
+  for (const l of ['lava', 'water'] as const) {
+    const r = await at(() => { const x = liquid.turn('buggy', l, 1, 1); liquid.dispose(x.run); return x })
+    out.push(
+      fig(`${l}, deep, full throttle and lock: yaw rate`, 'deg/s', r.yawRate),
+      fig(`${l}, deep, full throttle and lock: turn radius`, 'm', r.radius),
+      fig(`${l}, deep, full throttle and lock from rest: time to turn 180`, 's', r.to180 ?? Infinity),
+    )
+    const o = await at(() => { const x = liquid.turnOut(l); liquid.dispose(x.run); return x })
+    out.push(fig(`${l}: facing away from a shore 10 m behind, time to turn round and get out`, 's', o.out ?? Infinity))
+  }
   out.push(fig('water: speed 20 m past the shore after entering at 40 m/s', 'm/s', await wet(() => liquid.entry('buggy', { liquid: 'water', length: 400, depth: 3, slope: 10 }, 40, 8), (r) => r.trace.find((s) => s.z < -20)?.speed ?? NaN)))
   for (const [l, w] of [['water', 'sea'], ['water', 'inland'], ['lava', 'sea']] as const) {
     const bob = await wet(() => liquid.afloat('buggy', l, w, 20), (r) => {
@@ -315,8 +333,12 @@ const vehicles: Record<string, { run: () => Promise<VehicleReport>; presets: rea
     how: 'It rides above lava and water on its cushion.',
   },
   jet: {
-    run: jetReport, presets: JET_PRESETS,
+    run: () => jetReport(), presets: JET_PRESETS,
     how: 'Liquids: none, it hovers over lava and water. Top speed: full flight thrust, level. Braking: brakes from 60 m/s in level flight to 1 m/s (60 s cap). Turn radius: full pitch-up at 60 m/s.',
+  },
+  'jet on the Moon': {
+    run: () => jetReport(moon), presets: JET_PRESETS,
+    how: 'As the jet, with no air (world.atmosphere 0) and the Moon\'s 1.62 m/s² gravity: no lift or drag, so it flies on thrust alone.',
   },
 }
 

@@ -66,7 +66,7 @@ export const SHOTS = Object.freeze([
   },
   {
     id: 'swamp-river', kind: 'still', hud: 'driving', planet: 'swamp', seed: 7, vehicle: 'buggy-syn3h', reference: 2,
-    title: 'Tracks and a river on the green slopes of the Methane Swamp',
+    title: 'Tracks and a river on the green slopes of the Mire',
     params: { 'sun.timeOfDay': 13.5 },
     staging: 'Player placed above a river bank and driven a short way under normal input.',
     requires: ['param:hud.mode', 'planet:swamp'],

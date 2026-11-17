@@ -369,6 +369,34 @@ describe('Room bots', () => {
     expect(b.peer.last('game')!.game.it).toBe(host.id)
   })
 
+  it('drops a bot the host says it removed at once, for everyone, without waiting for the expiry', () => {
+    const host = join('Host')
+    const b = join('B')
+    room.receive(host.peer, botState(0, [0, 0, 0]))
+    send(host.peer, { type: 'bot-leave', bot: BOT_ID_BASE })
+    expect(b.peer.last('leave')).toEqual({ type: 'leave', id: BOT_ID_BASE })
+    expect(join('Late').peer.last('welcome')!.players.some((p) => p.bot)).toBe(false)
+  })
+
+  it('does not let anyone but the host remove a bot', () => {
+    const host = join('Host')
+    const b = join('B')
+    room.receive(host.peer, botState(0, [0, 0, 0]))
+    send(b.peer, { type: 'bot-leave', bot: BOT_ID_BASE })
+    send(b.peer, { type: 'bot-leave', bot: b.id })
+    expect(b.peer.last('leave')).toBeUndefined()
+    expect(host.peer.last('leave')).toBeUndefined()
+  })
+
+  it('treats a bot that comes back with the same id as a new one', () => {
+    const host = join('Host')
+    const b = join('B')
+    room.receive(host.peer, botState(0, [0, 0, 0]))
+    send(host.peer, { type: 'bot-leave', bot: BOT_ID_BASE })
+    room.receive(host.peer, botState(0, [4, 0, 0]))
+    expect(b.peer.all('join').filter((m) => m.player.id === BOT_ID_BASE)).toHaveLength(2)
+  })
+
   it('lets the new host take over bots', () => {
     const host = join('Host')
     const b = join('B')

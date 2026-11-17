@@ -17,13 +17,13 @@ export const terrainCalderaSize = defineParam({
   ...P, id: 'terrain.calderaSize', label: 'Caldera size', default: 62, min: 30, max: 120, step: 1,
 })
 export const terrainDuneHeight = defineParam({
-  ...P, id: 'terrain.duneHeight', label: 'Dune height', default: 4, min: 0, max: 20, step: 0.5,
+  ...P, id: 'terrain.duneHeight', label: 'Dune height (m)', default: 4, min: 0, max: 20, step: 0.5,
 })
 export const terrainRoughness = defineParam({
   ...P, id: 'terrain.roughness', label: 'Roughness', default: 0.5, min: 0, max: 1, step: 0.01,
 })
 export const terrainMesaHeight = defineParam({
-  ...P, id: 'terrain.mesaHeight', label: 'Mountain height', default: 120, min: 0, max: 360, step: 2,
+  ...P, id: 'terrain.mesaHeight', label: 'Mountain height (m)', default: 120, min: 0, max: 360, step: 2,
 })
 export const terrainIslandRadius = defineParam({
   ...P, id: 'terrain.islandRadius', label: 'Island size (radius)', default: 800, min: 480, max: 824, step: 4,
@@ -35,14 +35,31 @@ export const terrainCragDensity = defineParam({
   ...P, id: 'terrain.cragDensity', label: 'Mountain cover', default: 0.34, min: 0, max: 0.7, step: 0.01,
 })
 export const terrainSpireHeight = defineParam({
-  ...P, id: 'terrain.spireHeight', label: 'Spire height', default: 190, min: 0, max: 300, step: 5,
+  ...P, id: 'terrain.spireHeight', label: 'Spire height (m)', default: 190, min: 0, max: 300, step: 5,
 })
 
 export const terrainLandShare = defineParam({
   ...P, id: 'terrain.landShare', label: 'Land share (0 all sea, 1 all land)', default: 0.5, min: 0.3, max: 0.85, step: 0.01,
 })
+/**
+ * Landforms (landforms.ts): extra mountains on land, their kinds drawn from the seed with
+ * odds set by the biome, and extra islands in the sea. Both clear of the central mountain,
+ * the spawn pads and the roads in.
+ */
+export const terrainLandforms = defineParam({
+  ...P, id: 'terrain.landforms', label: 'Extra mountains', default: 4, min: 0, max: 12, step: 1,
+})
+export const terrainIsles = defineParam({
+  ...P, id: 'terrain.isles', label: 'Extra islands', default: 0, min: 0, max: 12, step: 1,
+})
+/**
+ * The world's tile, stored as a power of two: 1024 × 2^value metres (shared/protocol.ts
+ * tileSize), so the three old sizes 0, 1 and 2 are still exactly 1024, 2048 and 4096 m and
+ * saved rooms and links keep their size. Shown and set in metres, in 256 m steps.
+ */
 export const terrainPlanetSize = defineParam({
-  ...P, id: 'terrain.planetSize', label: 'Planet size: 0 small, 1 medium, 2 large', default: 1, min: 0, max: 2, step: 1,
+  ...P, id: 'terrain.planetSize', label: 'Planet size (m)', default: 1, min: 0, max: 2, step: 0.0001,
+  display: { offset: 0, scale: 1024, power: 2, step: 256 },
 })
 /**
  * Fords: on water worlds, rivers carry on across the roads as shallow fords and run down to
@@ -161,7 +178,11 @@ export interface TerrainSettings {
   craters: number
   /** 0..1 share of the tile that is land. */
   landShare: number
-  /** 0 small (1 km tile), 1 medium (2 km), 2 large (4 km). */
+  /** How many extra mountains stand on land (landforms.ts). */
+  landforms: number
+  /** How many extra islands stand in the sea (landforms.ts). */
+  isles: number
+  /** The tile as a power of two: 1024 × 2^planetSize metres (0, 1, 2 are 1, 2, 4 km). */
   planetSize: number
   /** 0..1 share of the land in forest. */
   treeCover: number
@@ -186,6 +207,8 @@ export const TERRAIN_PARAMS: Record<keyof TerrainSettings, Param<number>> = {
   dry: terrainDry,
   craters: terrainCraters,
   landShare: terrainLandShare,
+  landforms: terrainLandforms,
+  isles: terrainIsles,
   planetSize: terrainPlanetSize,
   treeCover: terrainTreeCover,
   fords: terrainFords,

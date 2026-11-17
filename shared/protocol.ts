@@ -217,6 +217,24 @@ export interface HillZone {
  */
 export const WRAP_SIZES = [1024, 2048, 4096] as const
 
+/** Smallest and largest tile, and the step every tile is a whole number of (64 cells of 4 m). */
+export const TILE_MIN = 1024
+export const TILE_MAX = 4096
+export const TILE_STEP = 256
+
+/**
+ * Side of the world's tile in metres for a stored `terrain.planetSize`: 1024 × 2^stored,
+ * rounded to whole TILE_STEPs. So 0, 1 and 2, the three old sizes, stay exactly 1024, 2048
+ * and 4096 m, and every value between is a size between. Anything else that could be stored
+ * (out of range, not a number) is clamped, so this is always a whole tile, never 0 or NaN.
+ * The room server and the terrain generator both use it.
+ */
+export function tileSize(stored: unknown): number {
+  const v = typeof stored === 'number' ? stored : Number(stored)
+  const exponent = Number.isFinite(v) ? Math.min(2, Math.max(0, v)) : 1
+  return Math.min(TILE_MAX, Math.max(TILE_MIN, Math.round((TILE_MIN * 2 ** exponent) / TILE_STEP) * TILE_STEP))
+}
+
 /** Sanity limits for a zone sent by a client. Returns a clean copy, or null. */
 export function cleanZone(raw: unknown): HillZone | null {
   if (!raw || typeof raw !== 'object') return null
@@ -379,6 +397,12 @@ export type ClientMessage =
   | { type: 'reset' }
   /** Host only: which vehicle bot `id` is, so guests build the same kind (mixed bot fleets). */
   | { type: 'bot'; id: number; kind: string }
+  /**
+   * The host stopped simulating this bot (fewer bots asked for, quality shedding, a new world):
+   * the room drops it now and tells everyone with the usual leave, instead of after
+   * BOT_EXPIRY_MS without its states. Older rooms ignore it and still expire the bot.
+   */
+  | { type: 'bot-leave'; bot: number }
   /** My Bungee cord changed. */
   | { type: 'cord'; cord: CordWire; bot?: number }
   /** I grabbed, flung or dropped a vehicle with Yoink. */

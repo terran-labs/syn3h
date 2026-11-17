@@ -18,7 +18,11 @@ export interface LabelPlace { id: string; x: number; y: number; radius: number; 
  * nearer worlds, since a focused one is shown; blocked means no such position exists and the
  * caller must keep it out of sight even when focused.
  */
-export interface LabelSpot { id: string; x: number; y: number; spot: number; crowded: boolean; blocked?: boolean }
+export interface LabelSpot {
+  id: string; x: number; y: number; spot: number; crowded: boolean; blocked?: boolean
+  /** Placed as its compact plate (the name only): its full plate fitted nowhere beside its world. */
+  compact?: boolean
+}
 export type Box = { left: number; top: number; right: number; bottom: number }
 /** The plate itself, without the spacing pad: the sun's core is kept off the plate, not off its pad. */
 const unpad = (b: Box): Box => ({ left: b.left + 4, top: b.top + 4, right: b.right - 4, bottom: b.bottom - 4 })
@@ -38,7 +42,11 @@ const touches = (box: Box, disc: LabelPlace) => {
   return Math.hypot(nx - disc.x, ny - disc.y) < disc.radius
 }
 /** x is the label's centre, y its top edge: the way the stylesheet anchors `.galaxy-label`. */
-type Options = { first?: string; previous?: ReadonlyMap<string, number>; avoid?: readonly { x: number; y: number; radius: number }[] }
+type Options = {
+  first?: string; previous?: ReadonlyMap<string, number>; avoid?: readonly { x: number; y: number; radius: number }[]
+  /** Each label's compact plate (the name only), for a label whose full plate does not fit. */
+  compactSizes?: ReadonlyMap<string, { width: number; height: number }>
+}
 /**
  * Every world should be named; the labels are the lobby's navigation. Nearer worlds are placed
  * first, which can leave a farther one boxed in. Then place again with the unnamed ones first
@@ -57,6 +65,18 @@ export function placeLabels(
     promoted = new Set([...unnamed, ...promoted])
     const next = placeOnce(places, sizes, bounds, options, promoted)
     if (next.filter(spot => spot.crowded).length < best.filter(spot => spot.crowded).length) best = next
+  }
+  // Per label, not for all: a label whose two-line plate fits nowhere beside its world drops
+  // to its compact plate, the name only, and goes first; every other label keeps both lines.
+  const unnamed = best.filter(spot => spot.crowded).map(spot => spot.id).filter(id => options.compactSizes?.has(id))
+  if (unnamed.length) {
+    const mixed = new Map(sizes)
+    for (const id of unnamed) mixed.set(id, options.compactSizes!.get(id)!)
+    const next = placeOnce(places, mixed, bounds, options, new Set(unnamed))
+    if (next.filter(spot => spot.crowded).length < best.filter(spot => spot.crowded).length) {
+      for (const spot of next) if (unnamed.includes(spot.id)) spot.compact = true
+      best = next
+    }
   }
   return best
 }

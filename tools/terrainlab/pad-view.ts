@@ -16,7 +16,9 @@ import { currentTerrainSettings } from '../../src/world/terrain/settings'
 const EYE = 3.5 // chase camera above the pad
 const sees = (d: number, R: number, e: number, h: number) => d / R < Math.acos(R / (R + e)) + Math.acos(R / (R + h))
 for (const p of PLANETS) {
-  for (const planetSize of [0, 1, 2]) {
+  // Every planet size the slider offers, 1024 to 4096 m in 256 m steps (stored as a power of two).
+  for (let metres = 1024; metres <= 4096; metres += 256) {
+    const planetSize = Math.log2(metres / 1024)
     applyPlanet(p.id, 7)
     const d = generateTerrain(7, { ...currentTerrainSettings(), planetSize })
     const s = new HeightSampler(d)

@@ -100,6 +100,8 @@ interface Hold {
   look:ArrivalLook|null
   /** A departure (`depart`): the arrival in reverse, look only, ending with the vehicle gone. */
   departing:boolean
+  /** performance.now() at `begin`: every hold ends by wall-clock time too (see WALL_SLACK). */
+  wallStart:number
   done:(()=>void)[]
 }
 
@@ -116,6 +118,15 @@ const CLOUD_LIFE=.6,BURST_LIFE=.9
 const FADE_IN=.2
 /** Luminous white with a light blue tint, linear: the hot part of the cloud. */
 const CLOUD_TINT=new T.Color(.82,.92,1),ARC_TINT=new T.Color(.7,.85,1)
+/**
+ * Seconds of wall-clock time a hold may outlast its own length. A hold counts physics steps,
+ * and a slow device runs fewer of them a second than real time (at most five a frame), so at
+ * 5 fps a 1 s hold lasted 2 s; under load longer. Every arrival now lets go within its hold plus
+ * this, and every departure ends as surely: a 1 s hold releases control within 1.5 s, at any
+ * frame rate.
+ */
+export const WALL_SLACK=.5
+const now=()=>typeof performance!=='undefined'?performance.now():Date.now()
 /** Seconds a departure takes by default. */
 export const DEPART_SECONDS=1
 /** Arrivals that get the full look at once; more at the same moment get only particles. */
@@ -178,6 +189,7 @@ export class Materialize implements System {
   /** Clock time after which no cloud particle is alive. */
   private aliveUntil=0
   private serial=0
+  private lastWall=now()
   /** Pooled arrival looks for the current graphics level. */
   private looks:ArrivalLook[]=[]
   /** One light shared by every arrival, given to the brightest; null below level 2. */
@@ -244,10 +256,10 @@ export class Materialize implements System {
     let hold=this.find(vehicle)
     if(hold)this.cue('materializeCancel',hold)
     if(!hold){
-      hold={vehicle,type:body.bodyType(),holds:options.hold??true,point:new T.Vector3(),rotation:new T.Quaternion(),elapsed:0,seconds,done:[],owed:0,shown:0,linvel:new T.Vector3(),angvel:new T.Vector3(),look:null,departing:false}
+      hold={vehicle,type:body.bodyType(),holds:options.hold??true,point:new T.Vector3(),rotation:new T.Quaternion(),elapsed:0,seconds,done:[],owed:0,shown:0,linvel:new T.Vector3(),angvel:new T.Vector3(),look:null,departing:false,wallStart:0}
       this.holds.push(hold)
     }
-    hold.elapsed=0;hold.seconds=seconds
+    hold.elapsed=0;hold.seconds=seconds;hold.wallStart=now()
     const t=body.translation(),at=options.at??t
     const surface=Math.max(this.terrain.heightAt(at.x,at.z),this.terrain.liquidHeightAt?.(at.x,at.z)??-Infinity)
     hold.point.set(at.x,surface+restHeight(vehicle)+hover,at.z)
@@ -314,6 +326,13 @@ export class Materialize implements System {
   /** Feed the cloud round every vehicle materializing. Allocates nothing. */
   update(dt:number):void {
     if(arrivalLevel()!==this.level)this.build()
+    // Wall-clock bounds: a hold that physics has not finished in its time plus WALL_SLACK ends
+    // now, and the look runs on real time, so a slow frame rate cannot stretch either.
+    const t=now(),wallDt=Math.min(.5,Math.max(0,(t-this.lastWall)/1000));this.lastWall=t
+    for(let i=this.holds.length-1;i>=0;i--){
+      const hold=this.holds[i]
+      if((t-hold.wallStart)/1000>=hold.seconds+WALL_SLACK)this.release(hold,!hold.departing)
+    }
     this.clock+=Math.min(.1,Math.max(0,dt))
     const cloud=this.cloud
     cloud.clock.value=this.clock
@@ -332,7 +351,7 @@ export class Materialize implements System {
       if(hold.look){hold.look.centre.copy(centre);this.progress.set(hold.look,hold.seconds>0?Math.min(1,hold.elapsed/hold.seconds):1)}
     }
     cloud.mesh.visible=this.clock<this.aliveUntil
-    this.updateLooks(dt)
+    this.updateLooks(wallDt)
   }
 
   /** Hold progress per look, written in update and read by updateLooks. */
@@ -427,6 +446,8 @@ export class Materialize implements System {
 
   /** The vehicle's body is still in the world (it may have been removed while held). */
   private alive(hold:Hold):boolean {
+    // A detached vehicle (a departure's picture) has no body, and needs none: it is a look only.
+    if(hold.vehicle.detached)return !hold.holds
     const body=hold.vehicle.body
     return this.game.world.getRigidBody(body.handle)===body
   }
@@ -473,7 +494,7 @@ export class Materialize implements System {
 
   private cue(kind:MaterializeCue,hold:Hold):void {
     if(!this.onCue)return
-    const t=this.alive(hold)?hold.vehicle.body.translation():hold.point
+    const t=!hold.vehicle.detached&&this.alive(hold)?hold.vehicle.body.translation():hold.point
     this.onCue(kind,cuePoint.set(t.x,t.y,t.z),hold.seconds,hold.vehicle)
   }
 }

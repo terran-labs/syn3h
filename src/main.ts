@@ -3,7 +3,9 @@
  * Keep this file small: features belong behind the seams, not here.
  */
 import { initializeFrozenResources } from './core/frozenResources'
-import { prepareResume, ResumeSession, RESUME_KEY } from './core/resume'
+import { ResumeSession, RESUME_KEY } from './core/resume'
+import { applyStartWorld } from './core/startWorld'
+import { randomSeed } from './world/planets'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
 import { params, worldSeed } from '../shared/params'
@@ -30,23 +32,20 @@ import { createEnvironment } from './world/Environment'
 import { createPostChain } from './fx/post/PostChain'
 import { createTerrain } from './world'
 import * as planets from './world/planets'
-import { applyPlanet, decodeWorld } from './world/planets'
 import { WaterEffects } from './world/water/WaterEffects'
 import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weather'
+import { applyWordmarkQuery } from './ui/brand/wordmarkFlags'
+import { setDayClock } from './world/sky/dayCycle'
 
 async function main(): Promise<void> {
   initializeFrozenResources(location.href)
   const canvas = document.getElementById('game') as HTMLCanvasElement
   const hud = document.getElementById('hud') as HTMLDivElement
   const query = new URLSearchParams(location.search)
-  // ?world=... opens a shared world exactly; ?planet=alpine picks a kind (with ?seed= or a
-  // fresh seed). Both go through the parameter registry, so the room shares them.
-  const shared = query.get('world')
-  if (shared && decodeWorld(shared)) { /* applied */ }
-  else if (query.has('planet')) applyPlanet(query.get('planet')!, query.has('seed') ? Number(query.get('seed')) : undefined, { source: 'preset' })
-  else if (query.has('seed')) params.set(worldSeed.def.id, query.get('seed'), 'preset')
-
-  const saved = prepareResume(query)
+  // A link's world, else this tab's resumed session, else a fresh random planet. Automated
+  // browsers (navigator.webdriver: the smoke tests, frame profiles and shot tools) keep the
+  // old fixed seed 1, so their measurements compare from run to run.
+  const { saved } = applyStartWorld(query, sessionStorage, navigator.webdriver ? () => 1 : randomSeed)
   // Keep the original entry/resume URL until all startup consumers have read it.
   const lobbyAddress = new LobbyAddress(location, history)
   const game = new Game(canvas)
@@ -94,6 +93,8 @@ async function main(): Promise<void> {
   // copies, whose owners apply it themselves. `?weather=0.5` sets the storminess for a look.
   game.add(new WeatherSystem(() => terrain, () => [slot.current, ...bots.vehicles]))
   applyWeatherQuery(location.search)
+  // ?wordmark= and ?intro=: silent developer overrides for the lobby's name and opening.
+  applyWordmarkQuery(location.search)
   // The round planet is drawn relative to the camera: place it after the camera has moved.
   game.add({ update: () => (terrain as { afterCamera?: () => void }).afterCamera?.() })
 
@@ -201,6 +202,7 @@ async function main(): Promise<void> {
       onRemoteVehicleChanged: vehicle => { void materialize.begin(vehicle, { hold: false }) },
       // A player or bot who leaves goes in the arrival cloud played in reverse.
       onRemoteVehicleLeaving: vehicle => materialize.depart(vehicle),
+      cancelRemoteDeparture: vehicle => materialize.cancel(vehicle),
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name: shell.playerName,
@@ -227,7 +229,7 @@ async function main(): Promise<void> {
     shell.onRaceCancel = () => connection.cancelRace()
     // Every client reads the wind from the room's clock, so gusts agree between players.
     // Handed over by networking once that clock has synced (the sea gets it the same way).
-    connection.onRoomClock((now) => setWeatherClock(now))
+    connection.onRoomClock((now) => { setWeatherClock(now); setDayClock(now) })
     // The room hears about a pause for either reason: the paused heartbeat (one message a
     // second) is the one thing that keeps running, so others see "paused", not a dropout.
     pause.subscribe((paused) => connection.setPaused(paused))

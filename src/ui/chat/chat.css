@@ -117,7 +117,6 @@
   }
   .syn3h-shell.has-touch .chat-panel.is-left-hand .chat-sheet { left: calc(max(12px, env(safe-area-inset-left)) + 0px); right: 50%; }
 }
-}
 
 /* A vehicle's label (src/ui/nameplates) while its driver speaks: the rim takes the vehicle's
    tint and a small speech mark appears at the corner, for a few seconds. */

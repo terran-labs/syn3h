@@ -44,7 +44,7 @@ import {
   isVec3,
   parseJson,
   stampStateId,
-  WRAP_SIZES,
+  tileSize,
   MAX_BOTS, type WireVehicleKind,
   CLOSE_REPLACED,
 } from '../shared/protocol'
@@ -54,6 +54,7 @@ import {
 import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { wrapDistance } from '../shared/wrap'
 import { TERRAIN_PARAM_IDS } from '../src/world/terrain/settings'
+import { sunDayLength } from '../src/world/sky/dayParams'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
 import { bigRedAllowed, bigRedCooldown } from '../src/weapons/bigRedParams'
@@ -100,6 +101,12 @@ export interface RoomSnapshot {
    * Explore, so a room that outlives the release does not start a game nobody asked for.
    */
   modes?: number
+  /**
+   * 2 once a world's day length defaults to its orbit. A snapshot without it stored the old
+   * default, a stopped clock (0), for every room whether or not anyone chose it: that 0 is
+   * dropped, so the room takes its planet's orbit day like a room that stored nothing.
+   */
+  days?: number
   /**
    * With `game.rejoin` on: who was in the room, by their rejoin secret, so that a room
    * rebuilt from storage (a release reset it, everyone dropped at once) can hold their
@@ -387,6 +394,9 @@ export class Room {
       case 'bot':
         this.onBotKind(player, msg.id, msg.kind)
         break
+      case 'bot-leave':
+        this.onBotLeave(player, msg.bot)
+        break
       case 'cord': {
         const actor = this.gearActor(player, msg.bot)
         if (actor) this.onCord(peer, actor, msg.cord)
@@ -561,7 +571,7 @@ export class Room {
   snapshot(): RoomSnapshot {
     return {
       params: Object.fromEntries(this.values), it: this.it, scores: { ...this.scores }, nextId: this.nextId,
-      host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant, modes: 2,
+      host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant, modes: 2, days: 2,
       ...(this.rejoinOn() ? { roster: this.roster() } : {}),
       race: { state: this.race, deadline: this.raceDeadline, cooldownUntil: this.raceCooldownUntil, lastId: this.lastRaceId },
     }
@@ -579,6 +589,8 @@ export class Room {
     }
     // See RoomSnapshot.modes: an old room's Tag was the default, not a choice.
     if (s.modes !== 2 && this.values.get(gameMode.def.id) === MODE_TAG) this.values.set(gameMode.def.id, MODE_EXPLORE)
+    // See RoomSnapshot.days: an old room's stopped clock was the default, not a choice.
+    if (s.days !== 2 && this.values.get(sunDayLength.def.id) === 0) this.values.delete(sunDayLength.def.id)
     this.it = s.it
     this.scores = { ...s.scores }
     this.nextId = Math.max(this.nextId, s.nextId)
@@ -821,6 +833,19 @@ export class Room {
     if (!bot || bot.info.kind === clean) return
     bot.info.kind = clean
     this.broadcast({ type: 'profile', player: bot.info })
+  }
+
+  /**
+   * The host says it stopped simulating a bot: drop it now. Only the host, which alone
+   * simulates bots, may; a bot that comes back with the same id is a new one (its next state
+   * makes it again, with a join). BOT_EXPIRY_MS stays the fallback for a host that vanishes.
+   */
+  private onBotLeave(sender: Player, id: unknown): void {
+    if (sender.info.id !== this.host || typeof id !== 'number' || !isBotId(id)) return
+    const bot = this.bots.get(id)
+    if (!bot) return
+    this.removeBot(id, bot)
+    this.botKinds.delete(id)
   }
 
   private expireBots(): void {
@@ -1356,8 +1381,7 @@ export class Room {
    * The room does not register the terrain's parameters; it reads the stored values.
    */
   private wrapSize(): number {
-    const tier = Number(this.values.get('terrain.planetSize') ?? 1)
-    return WRAP_SIZES[tier <= 0 ? 0 : tier >= 2 ? 2 : 1]
+    return tileSize(this.values.get('terrain.planetSize') ?? 1)
   }
 
   /** Distance between two positions, the short way round on a wrapping world. */

@@ -123,12 +123,13 @@ export const lavaBuoyancy=defineParam({...L,id:'lava.buoyancy',label:'Buggy: buo
 export const lavaPaddle=defineParam({...L,id:'lava.paddle',label:'Buggy: paddle thrust (m/s²)',default:9,min:0,max:30,step:.5})
 export const lavaPorpoise=defineParam({...L,id:'lava.porpoise',label:'Buggy: porpoise (0 to 1)',default:.6,min:0,max:1,step:.05})
 export const lavaGrip=defineParam({...L,id:'lava.grip',label:'Buggy: wheel grip on the bed (0 to 1)',default:.3,min:0,max:1,step:.05})
+export const lavaSteer=defineParam({...L,id:'lava.steer',label:'Buggy: steering (0 to 2)',default:1,min:0,max:2,step:.05})
 export const lavaWaddle=defineParam({...L,id:'lava.waddle',label:'Buggy: waddle (0 to 1)',default:.65,min:0,max:1,step:.05})
 export const GAIT={lava:.9}
-const lavaHull:HullProfile={buoyancy:2,thickness:1,linear:2,quadratic:.3,heave:6,paddle:9,paddleSpeed:12,porpoise:.6,waddle:.5,gait:GAIT.lava,planing:6,skim:.6,planeLift:0,deep:10}
+const lavaHull:HullProfile={buoyancy:2,thickness:1,linear:2,quadratic:.3,heave:6,paddle:9,paddleSpeed:12,porpoise:.6,waddle:.5,gait:GAIT.lava,planing:6,skim:.6,planeLift:0,deep:10,steer:1}
 function lavaProfile():HullProfile{
  lavaHull.buoyancy=lavaBuoyancy.value;lavaHull.thickness=lavaThickness.value;lavaHull.paddle=lavaPaddle.value
- lavaHull.porpoise=lavaPorpoise.value;lavaHull.waddle=lavaWaddle.value;lavaHull.gait=GAIT.lava
+ lavaHull.porpoise=lavaPorpoise.value;lavaHull.waddle=lavaWaddle.value;lavaHull.gait=GAIT.lava;lavaHull.steer=lavaSteer.value
  return lavaHull
 }
 // The buggy's water: light and quick. It floats half in, paddles and steers, and at speed it
@@ -137,14 +138,15 @@ const W={group:'Water',scope:'world' as const}
 export const waterThickness=defineParam({...W,id:'water.thickness',label:'Buggy: thickness (drag)',default:1,min:0,max:4,step:.05})
 export const waterPaddle=defineParam({...W,id:'water.paddle',label:'Buggy: paddle thrust (m/s²)',default:6,min:0,max:30,step:.5})
 export const waterPorpoise=defineParam({...W,id:'water.porpoise',label:'Buggy: porpoise (0 to 1)',default:.3,min:0,max:1,step:.05})
+export const waterSteer=defineParam({...W,id:'water.steer',label:'Buggy: steering (0 to 2)',default:.55,min:0,max:2,step:.05})
 export const waterWaddle=defineParam({...W,id:'water.waddle',label:'Buggy: waddle (0 to 1)',default:.2,min:0,max:1,step:.05})
 export const waterSkim=defineParam({...W,id:'water.skim',label:'Buggy: planing lift / weight',default:.9,min:0,max:2,step:.05})
 export const waterGrip=defineParam({...W,id:'water.grip',label:'Buggy: wheel grip on the bed (0 to 1)',default:.6,min:0,max:1,step:.05})
-const waterHull:HullProfile={buoyancy:1.6,thickness:1,linear:.5,quadratic:.04,heave:3,paddle:6,paddleSpeed:8,porpoise:.3,waddle:.2,gait:1.6,planing:10,skim:.3,planeLift:.9,deep:0}
+const waterHull:HullProfile={buoyancy:1.6,thickness:1,linear:.5,quadratic:.04,heave:3,paddle:6,paddleSpeed:8,porpoise:.3,waddle:.2,gait:1.6,planing:10,skim:.3,planeLift:.9,deep:0,steer:.55}
 function waterProfile():HullProfile{
  const w=waterProfiles.buggy
  waterHull.buoyancy=w.buoyancy.value;waterHull.planing=w.planing.value;waterHull.thickness=waterThickness.value;waterHull.paddle=waterPaddle.value
- waterHull.porpoise=waterPorpoise.value;waterHull.waddle=waterWaddle.value;waterHull.planeLift=waterSkim.value
+ waterHull.porpoise=waterPorpoise.value;waterHull.waddle=waterWaddle.value;waterHull.planeLift=waterSkim.value;waterHull.steer=waterSteer.value
  return waterHull
 }
 export const lavaCoolingTime=defineParam({id:'lava.coolingTime',label:'Cooling time (s)',group:'Lava',scope:'world',default:20,min:1,max:120,step:1})
@@ -230,7 +232,7 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
   // Forces only. Tyres on the bed bite less as the liquid carries the weight; with the wings
   // open the air flight model fades out as the hull goes under and the wings work as hydrofoils.
   softenController(body,state,wingsOpen?1-Math.min(1,state.hull.mean*2):1-(1-(lava?lavaGrip:waterGrip).value)*Math.min(1,state.hullWet*2))
-  hullInput.throttle=input.y;hullInput.wheelSpeed=state.wheelSpeed;hullInput.wheel=state.wheel
+  hullInput.throttle=input.y;hullInput.steer=input.x;hullInput.wheelSpeed=state.wheelSpeed;hullInput.wheel=state.wheel
   state.hullWet=applyHull(body,world,terrain,type,lava?lavaProfile():waterProfile(),state.hull,hullInput,dt)
   if(wingsOpen){
    wingProfile.buoyancy=liquidWingBuoyancy.value;wingProfile.authority=liquidWingAuthority.value;wingProfile.density=lava?LAVA_DENSITY.value:1
