@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { params } from '../../../shared/params'
 import type { Vehicle } from '../../vehicles/Vehicle'
-import { appearance, insideDisc, placeNameplates, slotAt, type Candidate, type Disc, type Rect, type Slot } from './layout'
+import { compactAt, distanceOpacity, DISTANCE, FADE_MS, GAP, hold, namePx, NUDGE, overlaps, placeLabels, plateLeft, plateRect, snapPx, spring, type Candidate, type Hold, type Spring } from './layout'
 import type { Point } from './occlusion'
 import { copyCurveState, overHorizon } from '../../world/curve'
 import { bendPoint, CurvedProjection, curvedTerrainOccluded } from './curvature'
@@ -12,22 +12,32 @@ import { afterCameraFrame } from './renderHook'
 import '../label-plate.css'
 import './nameplates.css'
 
-/** Metres between the top of a vehicle's body and the end of its leader. */
-const ANCHOR_GAP = .2
-/** Milliseconds between full label allocations (occlusion, terrain, text, slots). Between them,
- *  shown labels only follow their vehicles. */
+/** Metres above the top of a vehicle's body where its label's anchor sits. */
+const ANCHOR_RISE = .15
+/** Milliseconds between allocations (terrain sight lines, collisions, HUD). Every frame, each
+ *  shown label is drawn at its vehicle's position from that frame's camera. */
 const ALLOCATE_MS = 100
-/** Slack in metres round the player's own car when it hides labels behind it. */
-const LOCAL_MARGIN = .05
-/** A vehicle drawn smaller than this many pixels across is too small to label. */
-const MIN_PIXELS = 6
-/** Plate size limits in pixels. Past the widest, the name is cut with an ellipsis. */
-const PLATE_MIN = 72, PLATE_MAX = 220
-/** Plate heights for a person and a bot. Must match label-plate.css. */
-const PERSON_HEIGHT = 42, BOT_HEIGHT = 38
+/** A bot drawn smaller than this many pixels across is not labelled. People always are. */
+const BOT_MIN_PIXELS = 3
+/** A person whose vehicle is behind terrain keeps a dimmed label. */
+const BEHIND_OPACITY = .5
+/** Plate size limits in pixels at full size. Past the widest, the name is cut with an ellipsis. */
+const PLATE_MIN = 56, PLATE_MAX = 220
+/** Plate heights at full size, two lines and one, for a person and a bot. Must match label-plate.css. */
+const HEIGHT = { person: [42, 29], bot: [38, 25] } as const
 /** Must match label-plate.css: name and tag fonts, letter spacing in em, and padding plus border. */
 const PERSON_NAME = '600 14px Barlow', BOT_NAME = '500 12px Barlow', NAME_SPACING = .08, PERSON_TAG = '500 10px Barlow', BOT_TAG = '500 9px Barlow', TAG_SPACING = .16
 const PLATE_INSET = 30 // padding, border and 4 px for kerning
+/**
+ * Size follows how large a vehicle looks, not raw metres: plates are in CSS pixels, so on a
+ * smaller screen the same car at the same distance is drawn smaller while its plate is not.
+ * The distance used for size and form is divided by the screen's size relative to a
+ * 1440 x 900 desktop (no less than SMALLEST_SCREEN), so a phone gets its compact labels
+ * sooner. Range and fading still use real distance.
+ */
+const REFERENCE_SCREEN = [1440, 900] as const, SMALLEST_SCREEN = .4
+/** A label fades out once the point over its vehicle's roof is this many pixels off screen. */
+const OFF_SCREEN = 24
 
 /**
  * A vehicle's tint as a label accent: its own hue, lifted to at least 58% lightness so a dark
@@ -74,17 +84,32 @@ export interface NameplateOptions {
   terrainHit(from: Point, to: Point): boolean
   shell: HTMLElement
   scene: THREE.Scene
+  /**
+   * The player's own vehicle. Not used for hiding: a label is a HUD overlay, so neither your
+   * own body nor its wings, ball, or skirt ever hides one (owner direction, 16 November 2026).
+   */
   localVehicle(): Vehicle
 }
 interface Plate {
-  el: HTMLDivElement; name: HTMLElement; note: HTMLElement; leader: HTMLDivElement
-  candidate: Candidate; disc: Disc
-  bentCenter: THREE.Vector3; sightStamp: number; sightBlocked: boolean
-  vehicle?: Vehicle; stamp: number; scanUntil: number; shown: boolean; materializing: boolean; lastX: number; lastY: number
+  el: HTMLDivElement; name: HTMLElement; note: HTMLElement
+  candidate: Candidate
+  vehicle?: Vehicle; stamp: number
+  /** Placed by the last allocation, held against flicker. */
+  shown: Hold
+  /** Behind terrain, held against flicker. */
+  behind: Hold
+  /** Stepped up by NUDGE, held against flicker; the spring eases the step. */
+  lifted: Hold
+  /** Offered to the last allocation. */
+  offered: boolean
+  nudge: Spring
+  compact: boolean; px: number; scale: number
+  /** Current faded opacity, and its target. */
+  alpha: number; target: number
   /** Last written values, so unchanged frames write nothing. */
-  color: string; scale: number; width: number; height: number; tx: number; ty: number; lx: number; ly: number; ex: number; ey: number; opacity: number
+  color: string; text: string; tag: string; transform: string; width: number; height: number; opacity: number; displayed: boolean
 }
-/** One pooled overlay, updated by the caller once after vehicle interpolation and camera update. */
+/** One pooled overlay, drawn once per frame after the camera has moved (see renderHook.ts). */
 export class VehicleNameplates {
   private readonly root = document.createElement('div')
   private readonly plates = new Map<string, Plate>()
@@ -93,25 +118,24 @@ export class VehicleNameplates {
   private readonly unsubscribe: () => void
   private readonly modeUnsubscribe: () => void
   private readonly visibilityObserver: MutationObserver
+  private readonly reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')
   private readonly eye = new THREE.Vector3()
   private readonly center = new THREE.Vector3() // Flat, already-reimaged vehicle coordinates.
   private readonly bend = new THREE.Vector3()
+  private readonly bent = new THREE.Vector3()
   private readonly screenCenter = new THREE.Vector3()
   private readonly projection = new CurvedProjection()
-  private readonly localDisc: Disc = { id: '@local', x: 0, y: 0, radius: 0, depth: 0, plateOnly: true }
   private readonly body: Envelope = { radius: 0, rise: 0, reach: 0, top: 0 }
   private readonly anchor = new THREE.Vector3()
   private readonly projected = new THREE.Vector3()
-  private readonly view = new THREE.Vector3()
-  private readonly target = new THREE.Vector3()
   private readonly rotation = new THREE.Quaternion()
   private readonly renderHook: { queue(): void; dispose(): void }
   private entries: readonly NameplateInfo[] = []
-  /** Diagnostics for the allocated browser gate, not a gameplay or network setting. */
+  /** Diagnostics for the browser check, not a gameplay or network setting. */
   readonly stats = { terrainQueries: 0, visible: 0, drawMs: 0 }
   private terrainBudget = 0
   private readonly hitTerrain = (from: Point, to: Point): boolean => {
-    // A crowded distant view must hide unresolved labels instead of monopolizing a frame.
+    // A crowded distant view must not monopolise a frame: an unresolved sight line counts as blocked.
     if (this.terrainBudget-- <= 0) return true
     this.stats.terrainQueries++
     return this.options.terrainHit(from, to)
@@ -119,10 +143,7 @@ export class VehicleNameplates {
   private stamp = 0
   private last = 0
   private nextAllocation = 0
-  private readonly slot: Slot = { x: 0, y: 0, leadX: 0, leadY: 0 }
   private readonly candidates: Candidate[] = []
-  private readonly discs: Disc[] = []
-  private readonly placed = new Set<string>()
 
   constructor(private readonly currentCamera: () => THREE.PerspectiveCamera, private readonly options: NameplateOptions) {
     this.root.className = 'vehicle-nameplates syn3h-nametags'
@@ -143,15 +164,23 @@ export class VehicleNameplates {
   private acquire(id: string): Plate {
     let p = this.free.pop()
     if (!p) {
-      const el = document.createElement('div'), name = document.createElement('strong'), note = document.createElement('small'), leader = document.createElement('div')
-      el.className = 'vehicle-nameplate s3-plate'; leader.className = 'vehicle-nameplate-leader s3-leader'
-      el.append(name, note); this.root.append(leader, el)
-      p = { el, name, note, leader, bentCenter: new THREE.Vector3(), sightStamp: 0, sightBlocked: false, candidate: { id, bot: false, x: 0, y: 0, depth: 0, width: 0, height: 0, opacity: 0, tick: false }, disc: { id, x: 0, y: 0, radius: 0, depth: 0 }, stamp: 0, scanUntil: 0, shown: false, materializing: false, lastX: NaN, lastY: NaN, color: '', scale: 1, width: 0, height: 0, tx: NaN, ty: NaN, lx: NaN, ly: NaN, ex: NaN, ey: NaN, opacity: -1 }
+      const el = document.createElement('div'), name = document.createElement('strong'), note = document.createElement('small')
+      el.className = 'vehicle-nameplate s3-plate'; el.hidden = true
+      el.append(name, note); this.root.append(el)
+      p = { el, name, note, candidate: { id, bot: false, x: 0, y: 0, distance: 0, width: 0, height: 0, compact: false, held: false, nudged: false },
+        stamp: 0, shown: { value: false, since: -Infinity }, behind: { value: false, since: -Infinity }, lifted: { value: false, since: -Infinity }, offered: false, nudge: { x: 0, v: 0 }, compact: false, px: NaN, scale: 1,
+        alpha: 0, target: 0, color: '', text: '', tag: '', transform: '', width: 0, height: 0, opacity: -1, displayed: false }
     }
-    p.candidate.id = p.disc.id = id; p.candidate.previous = undefined; p.shown = false; p.materializing = false; p.lastX = p.lastY = NaN
-    p.el.dataset.vehicle = id
+    this.reset(p)
+    p.candidate.id = id; p.el.dataset.vehicle = id
     this.plates.set(id, p)
     return p
+  }
+  /** Forget a plate's history: a new vehicle in it starts hidden, unheld, at no nudge. */
+  private reset(p: Plate): void {
+    p.shown.value = false; p.shown.since = -Infinity; p.behind.value = false; p.behind.since = -Infinity; p.lifted.value = false; p.lifted.since = -Infinity; p.offered = false
+    p.nudge.x = p.nudge.v = 0; p.candidate.held = p.candidate.nudged = false; p.compact = false; p.px = NaN
+    p.alpha = p.target = 0; this.paint(p)
   }
   update(list: readonly NameplateInfo[]): void {
     this.entries = list
@@ -162,179 +191,125 @@ export class VehicleNameplates {
   private draw(list: readonly NameplateInfo[], now = performance.now()): void {
     this.stamp++
     const drawStarted = performance.now()
-    this.stats.terrainQueries = this.stats.visible = this.stats.drawMs = 0
-    this.terrainBudget = 512
+    this.stats.terrainQueries = this.stats.visible = 0
     const dt = this.last ? Math.min(.1, Math.max(0, (now - this.last) / 1000)) : 1 / 60
     this.last = now
     const mode = nameplateMode.value, visible = this.options.visible() && mode !== 2
     this.root.hidden = !visible
-    if (!visible) { for (const p of this.plates.values()) { p.shown = false; p.lastX = p.lastY = NaN }; return }
+    if (!visible) { for (const p of this.plates.values()) this.reset(p); this.stats.drawMs = performance.now() - drawStarted; return }
     const w = innerWidth, h = innerHeight, presentation = this.options.presentation(), size = this.options.wrapSize()
+    const dpr = globalThis.devicePixelRatio || 1
+    const screenSize = Math.max(SMALLEST_SCREEN, Math.min(1, w / REFERENCE_SCREEN[0], h / REFERENCE_SCREEN[1]))
+    // The camera this frame, after every system has moved it: labels cannot lag their vehicles.
     this.camera.updateMatrixWorld()
     this.camera.getWorldPosition(this.eye)
     copyCurveState(this.bend) // Snapshot the same state uploaded to applyCurve this render.
     const focal = h / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2))
-    if (now < this.nextAllocation) { this.follow(list, dt, w, h, focal, presentation, mode); this.stats.drawMs = performance.now() - drawStarted; return }
-    this.nextAllocation = now + ALLOCATE_MS
-    // HUD rectangles are a cached read (HudExclusions); no layout is forced here.
-    const exclusions = this.hud.read(w, h)
-    const candidates = this.candidates, discs = this.discs
-    candidates.length = discs.length = 0
-    // The local vehicle gets no nameplate, but its hull still occludes labels behind it.
-    const local = this.options.localVehicle()
-    // Bodies are boxes fitted to each kind's meshes. A cube as tall as the car is long covered
-    // most of a phone screen above the player's roof and rejected every label behind it.
-    // The player's own car hides a label only where the other vehicle is behind its body: no
-    // slack margin. From the chase camera the usual 0.3 m margin is a band of empty sky over the
-    // roof, and a car 14 m ahead whose roof shows above yours lost its label to it.
-    const body = renderedEnvelope(local, this.center, this.rotation, this.anchor, this.body, LOCAL_MARGIN)
-    this.projection.envelope(this.center, body.radius, this.bend, this.camera, w, h, this.localDisc, body.rise, body.reach)
-    discs.push(this.localDisc)
+    const allocate = now >= this.nextAllocation
+    if (allocate) { this.nextAllocation = now + ALLOCATE_MS; this.terrainBudget = 512; this.candidates.length = 0 }
+    const fade = this.reducedMotion?.matches ? Infinity : dt * 1000 / FADE_MS
+    const body = this.body
+    let shownCount = 0
     for (const t of list) {
       const p = this.plates.get(t.id) ?? this.acquire(t.id)
       p.stamp = this.stamp
-      if (p.vehicle !== t.vehicle) { p.vehicle = t.vehicle; p.shown = false; p.lastX = p.lastY = NaN }
+      if (p.vehicle !== t.vehicle) { p.vehicle = t.vehicle; this.reset(p) }
       const object = t.vehicle.object
-      renderedEnvelope(t.vehicle, this.center, this.rotation, this.anchor, body)
       // Network/vehicle interpolation already chose the rendered tile relative to the player.
-      // Rewrapping relative to a free camera would detach the label by a whole world.
-      this.projection.project(this.center, this.bend, this.camera, w, h, this.screenCenter)
-      const depth = this.screenCenter.z, distance = this.center.distanceTo(this.eye)
-      const horizonHidden = overHorizon(this.center.x, this.center.z, Math.max(body.radius, body.reach), this.center.y + body.rise)
-      if (object.visible && !horizonHidden) {
-        this.projection.envelope(this.center, body.radius, this.bend, this.camera, w, h, p.disc, body.rise, body.reach)
-        discs.push(p.disc)
-      }
-      const style = appearance(distance, t.bot, presentation)
-      const materializing = object.userData.materializing === true
-      if (materializing && !p.materializing || !p.shown) p.scanUntil = now + 220
-      p.el.classList.toggle('is-scanning', now < p.scanUntil)
-      p.materializing = materializing
-      // Never label what cannot be seen: off screen, too small, hidden or filtered out.
-      const sx = this.screenCenter.x, sy = this.screenCenter.y
-      const offScreen = !(sx >= 0 && sx <= w && sy >= 0 && sy <= h), tiny = 2 * Math.max(body.radius, body.reach) * focal < MIN_PIXELS * depth
-      if (!Number.isFinite(distance + depth) || depth <= this.camera.near || offScreen || tiny || horizonHidden || !object.visible || !style.visible || mode === 1 && t.bot) { this.hide(p); continue }
-      // The leader ends just above the roof, so it touches the vehicle it names.
-      this.anchor.set(this.center.x, body.top + ANCHOR_GAP, this.center.z)
-      // Curved visual sight maps to a path in flat physics space, not one straight flat ray.
-      bendPoint(this.center, this.bend, p.bentCenter)
+      renderedEnvelope(t.vehicle, this.center, this.rotation, this.anchor, body)
+      const distance = this.center.distanceTo(this.eye)
+      this.anchor.set(this.center.x, body.top + ANCHOR_RISE, this.center.z)
       this.projection.project(this.anchor, this.bend, this.camera, w, h, this.projected)
-      if (this.projected.z < this.camera.near || this.projected.z > this.camera.far) { this.hide(p); continue }
-      // Behind the player's own car only if even the point just above its roof (the anchor) is
-      // inside that car's outline: a car ahead level with your roof is named, one wholly hidden
-      // by your car is not.
-      if (this.localDisc.depth < this.projected.z && insideDisc(this.projected.x, this.projected.y, this.localDisc)) { this.hide(p); continue }
-      const x = this.projected.x, y = this.projected.y
-      // Light screen filtering removes subpixel shimmer. Large camera/wrap moves snap rather
-      // than dragging a stale label across the HUD; collision tests use the filtered anchor.
-      const snap = !Number.isFinite(p.lastX) || Math.hypot(x - p.lastX, y - p.lastY) > 60
-      const blend = 1 - Math.exp(-dt * 28)
-      p.lastX = snap ? x : p.lastX + (x - p.lastX) * blend
-      p.lastY = snap ? y : p.lastY + (y - p.lastY) * blend
-      // Text is untrusted replicated data: use textContent and a bounded display length.
-      const name = t.name.slice(0, 48), far = !t.bot && distance > 140 ? `${Math.round(distance / 10) * 10} m` : ''
-      const note = [t.bot ? 'Bot' : 'Player', t.note, far].filter(Boolean).join(' · ')
-      // Sized to the name (or a longer tag) up to PLATE_MAX, where the name is cut short.
-      const plateWidth = Math.round(Math.min(PLATE_MAX, Math.max(PLATE_MIN, PLATE_INSET + Math.max(
-        textWidth(name, t.bot ? BOT_NAME : PERSON_NAME, NAME_SPACING, t.bot ? 12 : 14), textWidth(note, t.bot ? BOT_TAG : PERSON_TAG, TAG_SPACING, t.bot ? 9 : 10)))))
-      const plateHeight = t.bot ? BOT_HEIGHT : PERSON_HEIGHT
-      Object.assign(p.candidate, { held: p.shown, bot: t.bot, x: p.lastX, y: p.lastY, depth: this.projected.z, width: style.tick ? 8 : plateWidth * style.scale, height: style.tick ? 5 : plateHeight * style.scale, opacity: style.opacity, tick: style.tick })
-      candidates.push(p.candidate)
-      if (p.name.textContent !== name) p.name.textContent = name
-      if (p.note.textContent !== note) p.note.textContent = note
-      p.el.classList.toggle('is-bot', t.bot); p.el.classList.toggle('is-person', !t.bot); p.el.classList.toggle('is-tick', style.tick)
-      if (t.color !== p.color) { p.color = t.color; const tint = liftTint(t.color); p.el.style.setProperty('--plate-tint', tint); p.leader.style.setProperty('--plate-tint', tint) }
-      const cssWidth = style.tick ? 8 : plateWidth, cssHeight = style.tick ? 5 : plateHeight
-      if (cssWidth !== p.width) { p.width = cssWidth; p.el.style.width = `${cssWidth}px` }
-      if (cssHeight !== p.height) { p.height = cssHeight; p.el.style.height = `${cssHeight}px` }
-      p.scale = style.tick ? 1 : style.scale
-    }
-    const placements = placeNameplates(candidates, discs, exclusions, w, h, (box, depth, candidate) => {
-      const p = this.plates.get(candidate.id)!
-      // Visibility work follows the allocator's people-first order, including its ray budget.
-      if (p.sightStamp !== this.stamp) {
-        p.sightStamp = this.stamp
-        p.sightBlocked = curvedTerrainOccluded(this.eye, p.bentCenter, this.bend, size, this.hitTerrain)
+      const x = this.projected.x, y = this.projected.y, depth = this.projected.z
+      // Hard limits, decided every frame without hold: these are facts, not judgements.
+      const usable = Number.isFinite(x + y + depth + distance) && depth > this.camera.near && depth < this.camera.far &&
+        x > -OFF_SCREEN && x < w + OFF_SCREEN && y > -OFF_SCREEN && y < h + OFF_SCREEN &&
+        // Never a name in empty sky: nothing beyond the far plane, hidden, or over the planet's curve.
+        object.visible && !overHorizon(this.center.x, this.center.z, Math.max(body.radius, body.reach), this.center.y + body.rise) && !(mode === 1 && t.bot) && distance < (t.bot ? DISTANCE.bot.range : DISTANCE.person.range) &&
+        !(t.bot && 2 * Math.max(body.radius, body.reach) * focal < BOT_MIN_PIXELS * depth)
+      // The hold restarts from nothing, so the label returns at once when the vehicle does.
+      if (!usable) {
+        p.shown.value = false; p.shown.since = -Infinity; p.candidate.held = p.offered = false; p.target = 0
+        // While it fades, a label still follows its vehicle when there is a place to follow.
+        if (p.displayed && Number.isFinite(x + y) && depth > 0) this.place(p, x, y, dpr, dt, p.candidate.width, p.candidate.height, p.scale)
+        this.step(p, fade); continue
       }
-      return !p.sightBlocked && this.clearBox(box, depth, size, w, h)
-    })
-    const placed = this.placed
-    placed.clear()
-    for (const at of placements) {
-      const p = this.plates.get(at.id)!
-      placed.add(at.id); p.candidate.previous = at.spot
-      p.el.classList.toggle('is-over-hud', at.overSoft)
-      this.write(p, at, at.opacity)
+      // Size: snapped whole-pixel name size; one line past the compact distance.
+      const apparent = distance / screenSize
+      p.compact = compactAt(apparent, t.bot, p.compact)
+      p.px = snapPx(namePx(apparent, t.bot), p.px)
+      const base = t.bot ? DISTANCE.bot.namePx : DISTANCE.person.namePx
+      const scale = Math.round(p.px * (presentation ? 1.25 : 1)) / base
+      // Text is untrusted replicated data: use textContent and a bounded display length.
+      const name = t.name.slice(0, 48), tag = p.compact ? '' : [t.bot ? 'Bot' : 'Player', t.note].filter(Boolean).join(' · ')
+      const width = Math.round(Math.min(PLATE_MAX, Math.max(PLATE_MIN, PLATE_INSET + Math.max(
+        textWidth(name, t.bot ? BOT_NAME : PERSON_NAME, NAME_SPACING, base), tag ? textWidth(tag, t.bot ? BOT_TAG : PERSON_TAG, TAG_SPACING, t.bot ? 9 : 10) : 0))))
+      const height = HEIGHT[t.bot ? 'bot' : 'person'][p.compact ? 1 : 0]
+      const c = p.candidate
+      // The layout tests the plate where it is drawn: its centre, after keeping it on screen.
+      c.bot = t.bot; c.x = plateLeft(x, width * scale, w) + width * scale / 2; c.y = y; c.distance = distance; c.width = width * scale; c.height = height * scale; c.compact = p.compact
+      if (allocate) {
+        // Sight: terrain between the eye and the point just above the roof (a line to the body's
+        // middle grazed the slope a car was parked on). Held, so a vehicle running along a ridge
+        // line does not blink. Your own vehicle never counts.
+        bendPoint(this.anchor, this.bend, this.bent)
+        hold(p.behind, curvedTerrainOccluded(this.eye, this.bent, this.bend, size, this.hitTerrain), now)
+        // A bot behind terrain is not named; a person is, dimmed, so they can be found.
+        p.offered = !(t.bot && p.behind.value)
+        if (p.offered) this.candidates.push(c)
+      }
+      // Words and styles: written only when they change.
+      if (p.text !== name) { p.text = name; p.name.textContent = name }
+      if (p.tag !== tag) { p.tag = tag; p.note.textContent = tag }
+      p.el.classList.toggle('is-bot', t.bot); p.el.classList.toggle('is-person', !t.bot); p.el.classList.toggle('is-compact', p.compact)
+      // --vehicle-tint is the same colour under the name chat's speaker mark reads (src/ui/chat).
+      if (t.color !== p.color) { p.color = t.color; const tint = liftTint(t.color); p.el.style.setProperty('--plate-tint', tint); p.el.style.setProperty('--vehicle-tint', tint) }
+      if (width !== p.width) { p.width = width; p.el.style.width = `${width}px` }
+      if (height !== p.height) { p.height = height; p.el.style.height = `${height}px` }
+      p.scale = scale
+      this.place(p, x, y, dpr, dt, c.width, c.height, scale)
+      p.target = p.shown.value ? distanceOpacity(distance, t.bot) * (p.behind.value ? BEHIND_OPACITY : 1) * (t.bot ? .92 : 1) : 0
+      this.step(p, fade)
+      if (p.alpha > 0) shownCount++
     }
-    this.stats.visible = placements.length
-    for (const [id, p] of this.plates) {
-      if (!placed.has(id)) this.hide(p)
-      if (p.stamp !== this.stamp) { this.plates.delete(id); this.free.push(p) }
+    if (allocate) {
+      const hud = this.hud.read(w, h)
+      const placed = placeLabels(this.candidates, hud, w, h)
+      const ids = new Map(placed.map(at => [at.id, at]))
+      for (const c of this.candidates) {
+        const p = this.plates.get(c.id)!, at = ids.get(c.id)
+        // A label may hold its place against a neighbour, never over a HUD control: it leaves at once.
+        if (!at && p.shown.value && hud.some(b => !b.soft && overlaps(plateRect(c, c.nudged), b))) { p.shown.value = false; p.shown.since = now }
+        c.held = hold(p.shown, Boolean(at), now)
+        // A label that just appeared takes its place at once; a shown one keeps its step until held.
+        if (at) { if (!p.displayed) { p.lifted.value = at.nudged; p.lifted.since = now; p.nudge.x = at.nudged ? NUDGE : 0 } else hold(p.lifted, at.nudged, now) }
+        c.nudged = p.lifted.value
+        if (at) p.el.classList.toggle('is-over-hud', at.overSoft)
+      }
+      // Labels not offered this time (a bot gone behind terrain): hide, through the hold.
+      for (const p of this.plates.values()) if (p.stamp === this.stamp && !p.offered) p.candidate.held = hold(p.shown, false, now)
     }
+    for (const [id, p] of this.plates) if (p.stamp !== this.stamp) { this.reset(p); this.plates.delete(id); this.free.push(p) }
+    this.stats.visible = shownCount
     this.stats.drawMs = performance.now() - drawStarted
   }
-  /**
-   * Between allocations: each shown label follows its vehicle in the slot it was given, and is
-   * hidden at once if the vehicle leaves the screen or view. Occlusion waits for the next allocation.
-   */
-  private follow(list: readonly NameplateInfo[], dt: number, w: number, h: number, focal: number, presentation: boolean, mode: number): void {
-    const body = this.body
-    let visible = 0
-    for (const t of list) {
-      const p = this.plates.get(t.id)
-      if (!p || !p.shown) continue
-      if (p.vehicle !== t.vehicle) { this.hide(p); continue }
-      const object = t.vehicle.object, c = p.candidate
-      renderedEnvelope(t.vehicle, this.center, this.rotation, this.anchor, body)
-      this.projection.project(this.center, this.bend, this.camera, w, h, this.screenCenter)
-      const depth = this.screenCenter.z, distance = this.center.distanceTo(this.eye), sx = this.screenCenter.x, sy = this.screenCenter.y
-      const style = appearance(distance, t.bot, presentation)
-      if (!Number.isFinite(distance + depth) || depth <= this.camera.near || !(sx >= 0 && sx <= w && sy >= 0 && sy <= h) ||
-        2 * Math.max(body.radius, body.reach) * focal < MIN_PIXELS * depth || !object.visible || !style.visible || mode === 1 && t.bot ||
-        overHorizon(this.center.x, this.center.z, Math.max(body.radius, body.reach), this.center.y + body.rise)) { this.hide(p); continue }
-      this.anchor.set(this.center.x, body.top + ANCHOR_GAP, this.center.z)
-      this.projection.project(this.anchor, this.bend, this.camera, w, h, this.projected)
-      if (this.projected.z < this.camera.near || this.projected.z > this.camera.far) { this.hide(p); continue }
-      const x = this.projected.x, y = this.projected.y
-      const snap = Math.hypot(x - p.lastX, y - p.lastY) > 60, blend = 1 - Math.exp(-dt * 28)
-      p.lastX = snap ? x : p.lastX + (x - p.lastX) * blend
-      p.lastY = snap ? y : p.lastY + (y - p.lastY) * blend
-      c.x = p.lastX; c.y = p.lastY; c.depth = this.projected.z
-      this.write(p, slotAt(c, c.previous ?? 0, this.slot), c.opacity)
-      visible++
-    }
-    this.stats.visible = visible
+  /** Put a plate over its anchor this frame, exactly; only the nudge eases. Whole device pixels. */
+  private place(p: Plate, x: number, y: number, dpr: number, dt: number, width: number, height: number, scale: number): void {
+    const lift = spring(p.nudge, p.candidate.nudged ? NUDGE : 0, dt)
+    const tx = Math.round(plateLeft(x, width, innerWidth) * dpr) / dpr, ty = Math.round((y - GAP - height - lift) * dpr) / dpr
+    const transform = `translate(${tx}px,${ty}px) scale(${scale})`
+    if (transform !== p.transform) { p.transform = transform; p.el.style.transform = transform }
   }
-  /** Show a plate in a slot. Writes only what changed by more than half a pixel. */
-  private write(p: Plate, at: Slot, opacity: number): void {
-    const c = p.candidate
-    if (!p.shown) { p.el.hidden = p.leader.hidden = false; p.el.style.display = p.leader.style.display = 'block'; p.shown = true; p.tx = p.lx = NaN }
-    if (Math.abs(opacity - p.opacity) > .01) { p.opacity = opacity; p.el.style.opacity = String(opacity); p.leader.style.opacity = String(opacity * .65) }
-    const tx = at.x - c.width / 2, ty = at.y
-    if (!(Math.abs(tx - p.tx) <= .5 && Math.abs(ty - p.ty) <= .5)) {
-      p.tx = tx; p.ty = ty
-      p.el.style.transform = `translate(${tx}px,${ty}px) scale(${p.scale})`
-    }
-    if (!(Math.abs(at.leadX - p.lx) <= .5 && Math.abs(at.leadY - p.ly) <= .5 && Math.abs(c.x - p.ex) <= .5 && Math.abs(c.y - p.ey) <= .5)) {
-      p.lx = at.leadX; p.ly = at.leadY; p.ex = c.x; p.ey = c.y
-      const dx = c.x - at.leadX, dy = c.y - at.leadY
-      p.leader.style.width = `${Math.hypot(dx, dy)}px`
-      p.leader.style.transform = `translate(${at.leadX}px,${at.leadY}px) rotate(${Math.atan2(dy, dx)}rad)`
-    }
+  /** Move a plate's opacity towards its target: a fade, never a slide. */
+  private step(p: Plate, fade: number): void {
+    p.alpha = p.target > p.alpha ? Math.min(p.target, p.alpha + fade) : Math.max(p.target, p.alpha - fade)
+    this.paint(p)
   }
-  private hide(p: Plate): void {
-    if (!p.shown && p.el.hidden) return
-    p.el.hidden = p.leader.hidden = true; p.el.style.display = p.leader.style.display = 'none'; p.shown = false
-  }
-  /** Sample plate screen rays against curved terrain. This is not a per-pixel depth mask. */
-  private clearBox(box: Rect, depth: number, size: number, w: number, h: number): boolean {
-    for (const x of [box.left, (box.left + box.right) / 2, box.right]) for (const y of [box.top, box.bottom]) {
-      this.target.set(x / w * 2 - 1, 1 - y / h * 2, .5).unproject(this.camera).sub(this.eye)
-      this.view.copy(this.target).transformDirection(this.camera.matrixWorldInverse)
-      this.target.normalize().multiplyScalar(depth / Math.max(.01, -this.view.z)).add(this.eye)
-      if (curvedTerrainOccluded(this.eye, this.target, this.bend, size, this.hitTerrain)) return false
-    }
-    return true
+  private paint(p: Plate): void {
+    const on = p.alpha > .005
+    if (on !== p.displayed) { p.displayed = on; p.el.hidden = !on; p.el.style.display = on ? 'block' : 'none' }
+    if (on && Math.abs(p.alpha - p.opacity) > .004) { p.opacity = p.alpha; p.el.style.opacity = p.alpha.toFixed(3) }
+    if (!on) p.opacity = -1
   }
   dispose(): void { this.visibilityObserver.disconnect(); this.modeUnsubscribe(); this.renderHook.dispose(); this.unsubscribe(); this.hud.dispose(); this.root.remove(); this.plates.clear(); this.free.length = 0 }
 }

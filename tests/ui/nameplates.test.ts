@@ -1,121 +1,128 @@
 import { describe, expect, it, vi } from 'vitest'
-import { appearance, overlaps, placeNameplates, LEADER_MAX, touchesDisc, createScreenProxy, type Disc, type Candidate, type Rect } from '../../src/ui/nameplates/layout'
+import { compactAt, distanceOpacity, DISTANCE, EDGE, FAR_BOTS, GAP, hold, plateLeft, HOLD_MS, HOLD_SLACK, MIN_TEXT_PX, namePx, NUDGE, overlaps, placeLabels, plateRect, snapPx, spring, type Candidate, type Rect } from '../../src/ui/nameplates/layout'
 import { wrappedOccluded } from '../../src/ui/nameplates/occlusion'
 import { nameplateMode, PREFERENCE_KEY, restoreNameplatePreference, validMode } from '../../src/ui/nameplates/preferences'
 import { params } from '../../shared/params'
 import type { NameplateOptions } from '../../src/ui/nameplates/VehicleNameplates'
 
-const candidate = (id: string, bot = false, x = 300, y = 300): Candidate => ({ id, bot, x, y, depth: 100, width: 130, height: 38, opacity: 1, tick: false })
-describe('vehicle label priority and protection', () => {
-  it('allocates people before nearer bots and keeps every plate and leader separate', () => {
-    const bot = { ...candidate('bot', true), depth: 10 }, person = candidate('person')
-    const result = placeNameplates([bot, person], [], [], 600, 600)
-    expect(result[0].id).toBe('person')
-    for (const a of result) for (const b of result) if (a !== b) expect(overlaps(a, b)).toBe(false)
+const candidate = (id: string, bot = false, x = 300, y = 300, distance = 50): Candidate =>
+  ({ id, bot, x, y, distance, width: 130, height: 38, compact: false, held: false, nudged: false })
+const rectOf = (c: Candidate, nudged: boolean) => plateRect(c, nudged)
+describe('vehicle label placement', () => {
+  it('places people before nearer bots and never lets two plates overlap', () => {
+    const cs = [candidate('bot', true, 300, 300, 10), candidate('person', false, 310, 305), candidate('bot2', true, 290, 296, 20)]
+    const placed = placeLabels(cs, [], 600, 600)
+    expect(placed[0].id).toBe('person')
+    const rects = placed.map(p => rectOf(cs.find(c => c.id === p.id)!, p.nudged))
+    for (const a of rects) for (const b of rects) if (a !== b) expect(overlaps(a, b)).toBe(false)
   })
-  it('never allows a bot to displace a person when only one spot fits', () => {
-    const person = { ...candidate('person', false, 80, 100), width: 130 }, bot = { ...person, id: 'bot', bot: true }
-    const result = placeNameplates([bot, person], [], [], 160, 160)
-    expect(result.map(p => p.id)).toEqual(['person'])
+  it('never lets a bot displace a person', () => {
+    const person = candidate('person', false, 300, 300, 400), bot = candidate('bot', true, 300, 300, 5)
+    expect(placeLabels([bot, person], [], 600, 600).map(p => p.id)).toEqual(['person'])
   })
-  it('rejects behind-camera and nonfinite anchors', () => {
-    expect(placeNameplates([{ ...candidate('behind'), depth: -1 }, { ...candidate('bad'), x: NaN }], [], [], 600, 600)).toEqual([])
-  })
-  it('keeps labels and leaders out of the HUD and nearer vehicles', () => {
-    const hud: Rect = { left: 0, top: 0, right: 600, bottom: 600 }
-    expect(placeNameplates([candidate('a')], [], [hud], 600, 600)).toEqual([])
-    const disc = { id: 'front', x: 300, y: 280, radius: 200, depth: 10 }
-    expect(placeNameplates([candidate('a')], [disc], [], 600, 600)).toEqual([])
-    expect(placeNameplates([candidate('a')], [{ ...disc, depth: 200 }], [], 600, 600)).toHaveLength(1)
-  })
-  it('hides a label when its box would cover foreground terrain', () => {
-    expect(placeNameplates([candidate('a')], [], [], 600, 600, () => false)).toEqual([])
-  })
-  it('retains a valid prior spot rather than changing sides each frame', () => {
-    const result = placeNameplates([{ ...candidate('a'), previous: 2 }], [], [], 600, 600)
-    expect(result[0].spot).toBe(2)
-  })
-})
-describe('HUD hardness, leader length and hold', () => {
-  // Bug it catches: vehicles in the middle band lost labels to passive speed readouts.
-  it('covers a soft readout only when nothing else is free, and never a hard control', () => {
-    const everywhere: Rect = { left: 0, top: 0, right: 600, bottom: 600 }
-    expect(placeNameplates([candidate('a')], [], [{ ...everywhere, soft: true }], 600, 600)).toHaveLength(1)
-    expect(placeNameplates([candidate('a')], [], [everywhere], 600, 600)).toEqual([])
-    const above: Rect & { soft: boolean } = { left: 295, top: 200, right: 305, bottom: 262, soft: true } // over both slots above only
-    const [p] = placeNameplates([candidate('a')], [], [above], 600, 600)
-    expect([2, 3]).toContain(p.spot) // a clear side slot beats covering the readout
-  })
-  it('never draws a leader longer than LEADER_MAX', () => {
-    for (const [x, y] of [[300, 300], [40, 300], [560, 300], [300, 60]]) {
-      for (const p of placeNameplates([{ ...candidate('a', false, x, y), width: 220 }], [], [], 600, 600)) {
-        expect(Math.hypot(p.leadX - x, p.leadY - y)).toBeLessThanOrEqual(LEADER_MAX)
-      }
+  // Bug it catches: labels jumping to a side or far away on a leader line.
+  it('keeps every label directly above its anchor, at most one small step up', () => {
+    const cs = Array.from({ length: 12 }, (_, i) => candidate(`v${i}`, i % 2 === 1, 200 + (i % 4) * 20, 300 + (i % 3) * 8, 10 + i))
+    for (const p of placeLabels(cs, [], 600, 600)) {
+      const c = cs.find(c => c.id === p.id)!, r = rectOf(c, p.nudged)
+      expect((r.left + r.right) / 2).toBe(c.x)
+      expect(c.y - r.bottom).toBeLessThanOrEqual(GAP + NUDGE)
+      expect(c.y - r.bottom).toBeGreaterThanOrEqual(GAP)
     }
   })
-  // Bug it catches: a label beside the player's car blinked on and off as it jittered by a pixel.
-  it('keeps a held slot until a blocker is clearly inside it', () => {
-    const [first] = placeNameplates([candidate('a')], [], [], 600, 600)
-    const edge: Rect = { left: first.right - 2, top: 0, right: 600, bottom: 600 } // 2 px into the plate's 3 px padding
-    const held = { ...candidate('a'), previous: first.spot, held: true }
-    expect(placeNameplates([held], [], [edge], 600, 600)[0]?.spot).toBe(first.spot)
-    expect(placeNameplates([{ ...held, held: false }], [], [edge], 600, 600)[0]?.spot).not.toBe(first.spot)
+  it('rejects nonfinite anchors', () => {
+    expect(placeLabels([{ ...candidate('bad'), x: NaN }], [], 600, 600)).toEqual([])
+  })
+  it('never covers a hard HUD control, and covers a soft readout only when a step up will not clear it', () => {
+    const everywhere: Rect = { left: 0, top: 0, right: 600, bottom: 600 }
+    expect(placeLabels([candidate('a')], [everywhere], 600, 600)).toEqual([])
+    expect(placeLabels([candidate('a')], [{ ...everywhere, soft: true }], 600, 600)[0]?.overSoft).toBe(true)
+    const low = rectOf(candidate('a'), false)
+    const justBelow = { left: 0, right: 600, top: low.bottom - 4, bottom: 600, soft: true }
+    const [p] = placeLabels([candidate('a')], [justBelow], 600, 600)
+    expect(p).toMatchObject({ nudged: true, overSoft: false })
+  })
+  // Bug it catches: a label blinking on and off as a neighbour jitters by a pixel.
+  it('keeps a held place until another plate is clearly inside it', () => {
+    const front = candidate('front', false, 300, 300, 10)
+    const r = rectOf(front, false)
+    // The back plate's lower edge 2 px inside the front plate: inside the slack.
+    const back = candidate('back', false, 300, r.top + 2 + GAP, 20)
+    expect(HOLD_SLACK).toBeGreaterThan(2)
+    expect(placeLabels([front, { ...back, held: true }], [], 600, 600).find(p => p.id === 'back')?.nudged).toBe(false)
+    expect(placeLabels([front, back], [], 600, 600).find(p => p.id === 'back')?.nudged).toBe(true)
+  })
+  it(`shows at most ${FAR_BOTS} far bot labels, the nearest`, () => {
+    const cs = Array.from({ length: FAR_BOTS + 4 }, (_, i) => ({ ...candidate(`b${i}`, true, 40 + i * 150 % 900, 100 + i * 37, 100 + i), compact: true }))
+    const placed = placeLabels(cs, [], 1000, 1000)
+    expect(placed.length).toBeLessThanOrEqual(FAR_BOTS)
+    expect(placed.every(p => Number(p.id.slice(1)) < FAR_BOTS)).toBe(true)
   })
 })
-describe('distinct prior-spot terrain checks', () => {
-  // Fixed fixture plate corners identify callback slots independently of attempt ordering.
-  const corners = [[235, 250], [235, 230], [158, 250], [312, 250]]
-  const slotOf = (box: Rect) => corners.findIndex(([left, top]) => box.left === left && box.top === top)
-
-  it.each([
-    [0, [0, 2, 3, 1]], [1, [1, 0, 2, 3]],
-    [2, [2, 0, 3, 1]], [3, [3, 0, 2, 1]],
-  ] as const)('checks previous slot %i once, then the rest above, beside, higher', (previous, expected) => {
-    const calls: number[] = []
-    const placed = placeNameplates([{ ...candidate('a'), previous }], [], [], 600, 600, box => {
-      calls.push(slotOf(box)); return false
-    })
-    expect(placed).toEqual([])
-    expect(calls).toEqual(expected)
-    expect(calls).toHaveLength(4)
-    expect(new Set(calls).size).toBe(4)
+describe('screen edges', () => {
+  // Bugs it catches: a name half off the screen, and a plate jumping as its car reaches an edge.
+  it('keeps a plate on screen while its anchor is, over its anchor always, and never jumps', () => {
+    const width = 160, screen = 390
+    let last = plateLeft(-200, width, screen)
+    for (let x = -200; x <= screen + 200; x += .5) {
+      const left = plateLeft(x, width, screen)
+      expect(Math.abs(left - last)).toBeLessThanOrEqual(.5 + 1e-9)
+      expect(x).toBeGreaterThanOrEqual(left); expect(x).toBeLessThanOrEqual(left + width)
+      if (x >= EDGE * 4 && x <= screen - EDGE * 4) { expect(left).toBeGreaterThanOrEqual(EDGE - 1e-9); expect(left + width).toBeLessThanOrEqual(screen - EDGE + 1e-9) }
+      last = left
+    }
   })
-
-  it.each([undefined, -1, 4, 99, .5, 2.5, NaN, Infinity, -Infinity])('falls back safely for previous=%s', previous => {
-    const calls: number[] = []
-    expect(placeNameplates([{ ...candidate('a'), previous }], [], [], 600, 600, box => {
-      calls.push(slotOf(box)); return false
-    })).toEqual([])
-    expect(calls).toEqual([0, 2, 3, 1])
+})
+describe('stability', () => {
+  it('takes a first decision at once and never reverses one inside HOLD_MS', () => {
+    const state = { value: false, since: -Infinity }
+    expect(hold(state, true, 1000)).toBe(true)
+    for (let t = 1000; t < 1000 + HOLD_MS; t += 16) expect(hold(state, t % 32 === 0, t)).toBe(true)
+    expect(hold(state, false, 1000 + HOLD_MS)).toBe(false)
   })
-
-  it('stops at the first successful fallback and retains that placement next frame', () => {
-    const calls: number[] = []
-    const first = placeNameplates([{ ...candidate('a'), previous: 2 }], [], [], 600, 600, box => {
-      const slot = slotOf(box); calls.push(slot); return slot === 1
-    })
-    expect(calls).toEqual([2, 0, 3, 1])
-    expect(first).toHaveLength(1)
-    expect(first[0].spot).toBe(1)
-    calls.length = 0
-    const next = placeNameplates([{ ...candidate('a'), previous: first[0].spot }], [], [], 600, 600, box => {
-      calls.push(slotOf(box)); return true
-    })
-    expect(calls).toEqual([1])
-    expect(next).toEqual(first)
+  it('eases a step without overshoot at any frame rate, and settles', () => {
+    for (const dt of [1 / 240, 1 / 60, 1 / 20, .1]) {
+      const s = { x: 0, v: 0 }
+      for (let i = 0; i < 400; i++) { const x = spring(s, NUDGE, dt); expect(x).toBeLessThanOrEqual(NUDGE + 1e-9); expect(x).toBeGreaterThanOrEqual(0) }
+      expect(s.x).toBe(NUDGE)
+    }
   })
-
-  it('keeps all human attempts ahead of nearer bot attempts', () => {
-    const calls: string[] = []
-    placeNameplates([{ ...candidate('bot', true), depth: 10, previous: 3 }, { ...candidate('person'), previous: 2 }], [], [], 600, 600, (box, _depth, c) => {
-      calls.push(`${c.id}:${slotOf(box)}`); return false
-    })
-    expect(calls).toEqual(['person:2', 'person:0', 'person:3', 'person:1', 'bot:3', 'bot:0', 'bot:2', 'bot:1'])
+})
+describe('size and distance', () => {
+  // Invariants only; the distances and sizes themselves are tuned by eye (layout.ts DISTANCE).
+  it('never draws text below the minimum, and snaps to whole pixels', () => {
+    for (const bot of [false, true]) for (let d = 0; d <= 3000; d += 7) {
+      const px = snapPx(namePx(d, bot), NaN)
+      expect(px).toBeGreaterThanOrEqual(MIN_TEXT_PX); expect(Number.isInteger(px)).toBe(true)
+    }
+  })
+  it('shrinks with distance and never draws a bot larger, longer or farther than a person', () => {
+    let last = Infinity
+    for (let d = 0; d <= 3000; d += 5) {
+      expect(namePx(d, false)).toBeLessThanOrEqual(last); last = namePx(d, false)
+      expect(namePx(d, true)).toBeLessThanOrEqual(namePx(d, false))
+      expect(distanceOpacity(d, true)).toBeLessThanOrEqual(distanceOpacity(d, false))
+    }
+    expect(DISTANCE.bot.range).toBeLessThan(DISTANCE.person.range)
+    expect(distanceOpacity(-1, false)).toBe(0)
+  })
+  // Bug it catches: a vehicle hovering at a threshold flipping between sizes every frame.
+  it('does not toggle size or form at a threshold', () => {
+    for (const bot of [false, true]) {
+      const at = bot ? DISTANCE.bot.compactAt : DISTANCE.person.compactAt
+      let compact = false, px = NaN
+      const seen = new Set<string>()
+      for (let i = 0; i < 100; i++) {
+        const d = at + (i % 2 ? .4 : -.4)
+        compact = compactAt(d, bot, compact); px = snapPx(namePx(d, bot), px); seen.add(`${compact}${px}`)
+      }
+      expect(seen.size).toBeLessThanOrEqual(2) // one change at most, then steady
+    }
   })
 })
 describe('terrain budget fails hidden', () => {
   // Exercise the actual instance query guard without a browser or a product test seam.
-  async function withBudget(run: (query: () => boolean, calls: () => number) => void) {
+  it('allows exactly 512 physics queries per allocation and treats all later queries as blocked', async () => {
     const { Scene, PerspectiveCamera } = await import('three/webgpu')
     const { VehicleNameplates } = await import('../../src/ui/nameplates/VehicleNameplates')
     const root = { className: '', hidden: false, setAttribute() {}, remove() {} }
@@ -130,55 +137,13 @@ describe('terrain budget fails hidden', () => {
         terrainHit: () => { calls++; return false },
       } as unknown as NameplateOptions)
       const internal = labels as unknown as { terrainBudget: number; hitTerrain(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): boolean }
-      internal.terrainBudget = 512 // draw() supplies this unchanged frame allowance.
-      run(() => internal.hitTerrain({ x: 0, y: 10, z: 0 }, { x: 1, y: 10, z: 0 }), () => calls)
-      expect(labels.stats.terrainQueries).toBe(calls)
-    } finally { labels?.dispose(); vi.unstubAllGlobals() }
-  }
-  it('allows exactly 512 physics queries and treats all later queries as blocked', async () => {
-    await withBudget((query, calls) => {
+      internal.terrainBudget = 512 // draw() sets this at each allocation.
+      const query = () => internal.hitTerrain({ x: 0, y: 10, z: 0 }, { x: 1, y: 10, z: 0 })
       for (let i = 0; i < 512; i++) expect(query()).toBe(false)
       for (let i = 0; i < 8; i++) expect(query()).toBe(true)
-      expect(calls()).toBe(512)
-    })
-  })
-  it('hides every placement whose clearance cannot finish before exhaustion', async () => {
-    await withBudget((query, calls) => {
-      for (let i = 0; i < 511; i++) query()
-      const placed = placeNameplates([candidate('unresolved')], [], [], 600, 600, () => !query() && !query())
-      expect(placed).toEqual([])
-      expect(calls()).toBe(512)
-    })
-  })
-  it('spends the remaining budget on a human before a nearer bot', async () => {
-    await withBudget((query, calls) => {
-      for (let i = 0; i < 510; i++) query()
-      const attempts: string[] = []
-      const placed = placeNameplates([
-        { ...candidate('bot', true, 450), depth: 10 }, candidate('person', false, 150),
-      ], [], [], 600, 600, (_box, _depth, c) => {
-        attempts.push(c.id); return !query() && !query()
-      })
-      expect(placed.map(p => p.id)).toEqual(['person'])
-      expect(attempts[0]).toBe('person')
-      expect(attempts.slice(1)).toContain('bot')
-      expect(calls()).toBe(512)
-    })
-  })
-})
-describe('size and distance', () => {
-  // Invariants only; the distances and sizes themselves are tuned by eye.
-  it('never draws a bot more prominently than a person, and drops bots first', () => {
-    for (let d = 0; d <= 1000; d += 5) {
-      const person = appearance(d, false, false), bot = appearance(d, true, false)
-      expect(bot.opacity).toBeLessThanOrEqual(person.opacity)
-      expect(bot.scale).toBeLessThanOrEqual(person.scale)
-      if (bot.visible) expect(person.visible).toBe(true)
-    }
-    expect(appearance(-1, false, false).visible).toBe(false)
-  })
-  it('never shrinks labels in presentation', () => {
-    expect(appearance(30, false, true).scale).toBeGreaterThanOrEqual(appearance(30, false, false).scale)
+      expect(calls).toBe(512)
+      expect(labels.stats.terrainQueries).toBe(calls)
+    } finally { labels?.dispose(); vi.unstubAllGlobals() }
   })
 })
 describe('wrapped terrain rays', () => {
@@ -288,7 +253,7 @@ describe('ball and materialize anchors', () => {
     expect(center.x).toBeCloseTo(8); expect(center.y).toBeCloseTo(50); expect(center.z).toBe(20)
     expect(body.radius).toBeGreaterThanOrEqual(8); expect(body.top).toBeCloseTo(58) // the ball's top
   })
-  // Bug it catches: leaders ended in the air metres above the car, pointing at nothing.
+  // Bug it catches: labels floating metres above the car they name.
   it('puts the top of a body at its roof, wherever the vehicle points', async () => {
     const { Object3D, Quaternion, Vector3 } = await import('three/webgpu')
     const { renderedEnvelope } = await import('../../src/ui/nameplates/anchors')
@@ -303,7 +268,7 @@ describe('ball and materialize anchors', () => {
 })
 
 describe('curved render projection and visibility', () => {
-  it('matches the render bend for center, raised anchor and disc at curve 0, .71 and 1.8', async () => {
+  it('matches the render bend for center and raised anchor at curve 0, .71 and 1.8', async () => {
     const { Vector3, PerspectiveCamera } = await import('three/webgpu')
     const { curveRadius, curveOffsetAt } = await import('../../src/world/curve')
     const { bendPoint, CurvedProjection, unbendPoint } = await import('../../src/ui/nameplates/curvature')
@@ -321,10 +286,6 @@ describe('curved render projection and visibility', () => {
         projection.project(point, bend, camera, 1280, 800, screen)
         expect(screen.x).toBeCloseTo((expectedScreen.x + 1) * 640, 8)
         expect(screen.y).toBeCloseTo((1 - expectedScreen.y) * 400, 8)
-        const disc = { id: 'remote', x: 0, y: 0, radius: 0, depth: 0 }
-        projection.envelope(point, 6, bend, camera, 1280, 800, disc)
-        expect(disc.x).toBeCloseTo(screen.x); expect(disc.y).toBeCloseTo(screen.y)
-        expect(disc.radius).toBeGreaterThan(0)
         if (curve && point.z > 400) expect(bent.y).toBeLessThan(point.y - 50)
       }
     }
@@ -381,117 +342,6 @@ describe('curved render projection and visibility', () => {
 })
 
 
-describe('clipped triangulated vehicle proxy', () => {
-  const box = (left: number, top: number, right: number, bottom: number): Rect => ({ left, top, right, bottom })
-  const disc = (): Disc => ({ id: 'hull', x: 0, y: 0, radius: 0, depth: 0 })
-
-  it('keeps the visible portion of an offscreen-center hull without covering the opposite side', async () => {
-    const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
-    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
-    const camera = new PerspectiveCamera(90, 1, 1, 100); camera.updateMatrixWorld()
-    const out = disc(); new CurvedProjection().envelope(new Vector3(6, 0, -5), 2, new Vector3(), camera, 100, 100, out)
-    expect(out.x).toBeCloseTo(110) // center outside, left face still visible
-    expect(out.proxy?.blocked).toBe(false)
-    expect(touchesDisc(box(86, 45, 94, 55), out)).toBe(true)
-    expect(touchesDisc(box(50, 45, 60, 55), out)).toBe(false) // old circumcircle covered this clear region
-  })
-
-  // Bug it catches: the player's own car, seen from the chase camera, hid every label behind it
-  // on a phone because its envelope reached as high as it was long.
-  it('a lower rise keeps the hull below the space above the roof', async () => {
-    const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
-    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
-    // Phone portrait chase view: camera 9 m behind and 3 m above a 3.5 m-reach car.
-    const camera = new PerspectiveCamera(80, 390 / 664, .1, 100); camera.position.set(0, 3, 9); camera.updateMatrixWorld()
-    const hull = (rise: number) => { const d = disc(); new CurvedProjection().envelope(new Vector3(), 3.5, new Vector3(), camera, 390, 664, d, rise); return d }
-    const label = { left: 150, top: 310, right: 240, bottom: 370 } // above the car's roof on screen
-    expect(touchesDisc(label, hull(3.5))).toBe(true)
-    expect(touchesDisc(label, hull(1.6))).toBe(false)
-    expect(touchesDisc({ ...label, top: 440, bottom: 480 }, hull(1.6))).toBe(true) // the car itself stays protected
-  })
-
-  it('clips near-plane crossings, keeps all-behind hulls empty, and blocks an enclosed camera', async () => {
-    const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
-    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
-    const camera = new PerspectiveCamera(90, 1, 1, 100); camera.updateMatrixWorld()
-    const projection = new CurvedProjection(), out = disc(), bend = new Vector3()
-    projection.envelope(new Vector3(2, 0, -1), 1, bend, camera, 100, 100, out)
-    expect(out.proxy?.blocked).toBe(false)
-    expect(touchesDisc(box(85, 48, 90, 52), out)).toBe(true)
-    expect(touchesDisc(box(10, 48, 20, 52), out)).toBe(false)
-    projection.envelope(new Vector3(0, 0, 3), 1, bend, camera, 100, 100, out)
-    expect(out.proxy?.count).toBe(0); expect(out.proxy?.blocked).toBe(false)
-    expect(touchesDisc(box(0, 0, 100, 100), out)).toBe(false)
-    projection.envelope(new Vector3(), 2, bend, camera, 100, 100, out)
-    expect(out.proxy?.blocked).toBe(true)
-    expect(touchesDisc(box(8, 8, 12, 12), out)).toBe(true)
-    projection.envelope(new Vector3(NaN, 0, -5), 1, bend, camera, 100, 100, out)
-    expect(out.proxy?.blocked).toBe(true)
-  })
-
-  it('uses the actual jittered projection without modifying the camera or substituting a stable projection', async () => {
-    const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
-    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
-    const camera = new PerspectiveCamera(90, 1, 1, 100)
-    camera.setViewOffset(100, 100, 10, 0, 100, 100); camera.updateMatrixWorld()
-    const before = camera.projectionMatrix.elements.slice(), out = disc()
-    new CurvedProjection().envelope(new Vector3(0, 0, -10), 1, new Vector3(), camera, 100, 100, out)
-    expect(out.x).toBeCloseTo(40)
-    expect(touchesDisc(box(35, 48, 40, 52), out)).toBe(true)
-    expect(touchesDisc(box(56, 48, 60, 52), out)).toBe(false)
-    expect(camera.projectionMatrix.elements).toEqual(before)
-  })
-
-  it.each([0, .71, 1.8])('covers a known front face at curve %s and retains rendered-tile translation', async curve => {
-    const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
-    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
-    const { curveRadius } = await import('../../src/world/curve')
-    const R = curveRadius(2048, curve), k = Number.isFinite(R) ? 1 / R : 0
-    const camera = new PerspectiveCamera(90, 1, 1, 100); camera.updateMatrixWorld()
-    const projection = new CurvedProjection(), out = disc()
-    projection.envelope(new Vector3(0, 0, -20), 2, new Vector3(0, 0, k), camera, 200, 200, out)
-    // Analytic front-face center: cube boundary vertex (0,0,-18), spherical curve about origin.
-    const depth = k ? R * Math.sin(18 / R) : 18, y = k ? R * Math.cos(18 / R) - R : 0
-    const sy = 100 - y / depth * 100
-    expect(out.proxy?.blocked).toBe(false)
-    expect(touchesDisc(box(99, sy - 1, 101, sy + 1), out)).toBe(true)
-    expect(touchesDisc(box(8, 8, 12, 12), out)).toBe(false)
-    camera.position.x = 2048; camera.updateMatrixWorld()
-    projection.envelope(new Vector3(2048, 0, -20), 2, new Vector3(2048, 0, k), camera, 200, 200, out)
-    expect(touchesDisc(box(99, sy - 1, 101, sy + 1), out)).toBe(true)
-    expect(touchesDisc(box(8, 8, 12, 12), out)).toBe(false)
-  })
-
-  it('honors WebGPU and reversed-depth frustum ranges as well as WebGL', async () => {
-    const { PerspectiveCamera, Vector3, WebGPUCoordinateSystem, WebGLCoordinateSystem } = await import('three/webgpu')
-    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
-    for (const coordinateSystem of [WebGLCoordinateSystem, WebGPUCoordinateSystem]) for (const reversedDepth of [false, true]) {
-      const camera = new PerspectiveCamera(90, 1, 1, 100)
-      camera.coordinateSystem = coordinateSystem
-      Object.defineProperty(camera, 'reversedDepth', { value: reversedDepth }) // Camera exposes a getter; renderer normally owns its backing state.
-      camera.updateProjectionMatrix(); camera.updateMatrixWorld()
-      const out = disc(), projection = new CurvedProjection()
-      projection.envelope(new Vector3(0, 0, -10), 1, new Vector3(), camera, 100, 100, out)
-      expect(touchesDisc(box(48, 48, 52, 52), out)).toBe(true)
-      projection.envelope(new Vector3(0, 0, -200), 1, new Vector3(), camera, 100, 100, out)
-      expect(out.proxy?.count).toBe(0)
-    }
-  })
-
-  it('tests leader bounds and preserves2px+3px margin, self exclusion, depth and people priority', () => {
-    const proxy = createScreenProxy(); proxy.count = 1; proxy.sizes[0] = 4
-    proxy.points.set([78, 95, 82, 95, 82, 101, 78, 101])
-    const hull: Disc = { id: 'front', x: 0, y: 0, radius: 0, depth: 10, proxy }
-    expect(touchesDisc(box(70, 80, 75, 90), hull)).toBe(false) // corner distance sqrt(34)>5
-    expect(touchesDisc(box(70, 80, 76, 91), hull)).toBe(true) // corner distance sqrt(20)<5
-    const human = { ...candidate('human', false, 80, 100), width: 130 }, bot = { ...human, id: 'bot', bot: true }
-    // Every plate is above95; its leader ends at100 and must still be excluded.
-    expect(placeNameplates([human], [hull], [], 160, 160)).toEqual([])
-    expect(placeNameplates([human], [{ ...hull, id: 'human' }], [], 160, 160)).toHaveLength(1)
-    expect(placeNameplates([human], [{ ...hull, depth: 200 }], [], 160, 160)).toHaveLength(1)
-    expect(placeNameplates([bot, human], [{ ...hull, depth: 200 }], [], 160, 160).map(p => p.id)).toEqual(['human'])
-  })
-})
 describe('HUD exclusions', () => {
   // Bug it catches: on a phone the gear selector's reserved box (drum plus an empty detail
   // pane) spans the screen's middle, so excluding the box itself rejected every label slot.
