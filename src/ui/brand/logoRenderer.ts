@@ -72,7 +72,7 @@ export interface LogoLook {
 export const DEFAULT_LOGO_LOOK: LogoLook = {
   // Galaxy sunShafts: mix([1,.86,.66], WARM [1,.77,.5], .3).
   seed: 1, glow: [1, 0.833, 0.612], glowEdge: [1, 0.77, 0.5], glowWidth: 0.26, face: [0.008, 0.016, 0.039],
-  particles: 160, plasmaSize: 0.3, flowSpeed: 1, glowStrength: 1, space: false, opacity: 1, markFade: 1.5, glowGap: 0, glowFade: 3, sway: 0, drawMark: true,
+  particles: 160, plasmaSize: 0.3, flowSpeed: 1, glowStrength: 1, space: false, opacity: 1, markFade: 4.2, glowGap: 0, glowFade: 4.2, sway: 0, drawMark: true,
 }
 /** A box in pixels, measured from the top left of the viewport. */
 export interface PixelRect { x: number; y: number; width: number; height: number }
@@ -509,5 +509,6 @@ export class LogoRenderer {
 /** 0 before `from`, 1 after `to`, eased at both ends between; a zero-length span is a step. */
 function smooth(from: number, to: number, x: number): number {
   if (to <= from) return x >= to ? 1 : 0
-  const t = Math.min(1, Math.max(0, (x - from) / (to - from))); return t * t * (3 - 2 * t)
+  // Smootherstep, as the name in the scene (galaxy/opening.ts wordmarkFade): no pop at either end.
+  const t = Math.min(1, Math.max(0, (x - from) / (to - from))); return t * t * t * (t * (t * 6 - 15) + 10)
 }

@@ -42,9 +42,10 @@ Tracked here at the owner's request. Each item is decided, not proposed, unless 
    release. Also move the engine's remaining JavaScript glue (about 230 KB) out of the main
    script. Check: lobby interactive with the engine's file blocked; drop into a world
    waits on the loading light; time to interactive lobby reported before and after.
-2. **Generated vehicles replace the remaining models.** Buggy, tank and treads, hovercraft
-   (809 KB loaded at run time) are a dated exception to the rule that the running game
-   loads no binary assets. Check: the run-time asset check's model list is empty.
+2. **Generated vehicles replace the remaining models.** Done by veh/generated-vehicles
+   (37264e71): the buggy is generated in code, the tank's legacy model path is gone, the
+   model files moved to tools/models as source material, and tools/runtime-assets-check.mjs
+   now fails on any model request.
 3. **Reload-free vehicle switching.** The in-play selector is the only way to change
    vehicle now that the lobby offers planets only, and it reloads the page. Check: switch
    vehicle in a world with no reload, with the materialization effect.

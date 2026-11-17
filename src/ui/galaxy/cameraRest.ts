@@ -20,5 +20,13 @@ export const returnDelay = defineParam({ ...P, id: 'lobby.returnDelay', label: '
 /** Seconds the return takes to settle (within 1%). */
 export const returnTime = defineParam({ ...P, id: 'lobby.returnTime', label: 'Lobby view: seconds to return to rest', default: 25, min: 1, max: 90, step: 1 })
 
+/**
+ * How much light the planets' night sides catch (the owner, 17 November 2026: the camera looks
+ * toward the sun, so the dark side faces the viewer and its detail should read up close). A
+ * soft cool fill from the camera's side, as starlight and light reflected off the system would
+ * give, plus a slightly wider terminator; the day side is unchanged. 0 is the earlier shading.
+ */
+export const nightSide = defineParam({ ...P, id: 'lobby.nightSide', label: 'Lobby planets: night side light (0 as before)', default: 1, min: 0, max: 3, step: 0.05 })
+
 /** The spring's rate for a settle time: critically damped, 1% left after about 6.6 / omega. */
 export const returnOmega = (seconds: number) => 6.64 / Math.max(0.1, seconds)

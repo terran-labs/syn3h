@@ -1,6 +1,6 @@
 /**
  * The loading veil over a slow link: one fun line from the first paint, kept until loading
- * ends; after ten seconds a second line counting the seconds and naming the real step, never
+ * ends; after three seconds a quiet progress line naming the real step with a measure that moves, never
  * read aloud as it ticks; the plain step in the live region; a host's markup shown as text;
  * and the longest line on a 320 px phone in two lines at most. Screenshots go to the
  * artifacts folder; look at them.
@@ -15,7 +15,7 @@ const out = 'tests/ui/artifacts/loading-lines'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const errors = [], report = {}
-const read = page => page.evaluate(() => { const still = document.querySelector('.boot-still'); return { boot: document.documentElement.dataset.boot, line: document.querySelector('.boot-status').textContent, height: document.querySelector('.boot-status').getBoundingClientRect().height, still: still.getBoundingClientRect().top, second: still.hasAttribute('data-shown') ? still.textContent : '', secondHidden: still.getAttribute('aria-hidden'), phase: document.querySelector('.syn3h-loading .loading-phase')?.textContent ?? null, at: performance.now() } })
+const read = page => page.evaluate(() => { const still = document.querySelector('.boot-still'); return { boot: document.documentElement.dataset.boot, line: document.querySelector('.boot-status').textContent, height: document.querySelector('.boot-status').getBoundingClientRect().height, still: still.getBoundingClientRect().top, second: document.documentElement.hasAttribute('data-boot-late') ? still.textContent : '', funShown: +getComputedStyle(document.querySelector('.boot-status')).opacity > 0.05, secondHidden: still.getAttribute('aria-hidden'), phase: document.querySelector('.syn3h-loading .loading-phase')?.textContent ?? null, at: performance.now() } })
 try {
   for (const view of [{ name: 'desktop', options: { viewport: { width: 1280, height: 720 } } }, { name: 'iphone14', options: { ...devices['iPhone 14'], defaultBrowserType: undefined } }]) {
     const context = await browser.newContext(view.options), page = await context.newPage(), cdp = await context.newCDPSession(page)
@@ -23,7 +23,7 @@ try {
     await cdp.send('Network.enable')
     await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 40, downloadThroughput: 8_000_000 / 8, uploadThroughput: 500_000 })
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
-    // Physics arrives late, as on a slow phone, so loading passes ten seconds.
+    // Physics arrives late, as on a slow phone, so loading passes several seconds.
     await page.route(/\.wasm(\?|$)/, async route => { await new Promise(r => setTimeout(r, 14000)); await route.continue() })
     await page.goto(`${base}?room=lines-${view.name}-${Date.now()}`, { waitUntil: 'commit' })
     await page.waitForFunction(() => document.querySelector('.boot-status'))
@@ -40,10 +40,17 @@ try {
     const lines = [...new Set(samples.map(s => s.line))], phases = [...new Set(samples.map(s => s.phase).filter(Boolean))]
     assert.equal(lines.length, 1, `${view.name}: one line for the whole load (${lines})`)
     const seconds = samples.filter(s => s.second)
-    assert.ok(seconds.length > 0, `${view.name}: the second line appears on a load past ten seconds`)
-    assert.ok(samples.filter(s => s.at < 9500).every(s => !s.second), `${view.name}: and not before ten seconds`)
-    for (const s of seconds) { assert.match(s.second, /^\d+ s \u00b7 [A-Z]/, `${view.name}: seconds and a plain step (${s.second})`); assert.equal(s.secondHidden, 'true', 'the ticking line is never read aloud') }
-    const steps = [...new Set(seconds.map(s => s.second.replace(/^\d+ s \u00b7 /, '').replace(/ \(.*\)$/, '')))]
+    assert.ok(seconds.length > 0, `${view.name}: the progress line appears on a load past three seconds`)
+    assert.ok(samples.filter(s => s.at < 2900).every(s => !s.second), `${view.name}: and not before three seconds into the visit`)
+    // The fun line comes with it, never before: nothing but the point of light for the first three seconds.
+    assert.ok(samples.filter(s => s.at < 2900).every(s => !s.funShown), `${view.name}: no fun line before three seconds`)
+    for (const s of seconds) { assert.match(s.second, /^\d+ s \u00b7 \d+\.\d MB$/, `${view.name}: the seconds and the megabytes, nothing else (${s.second})`); assert.equal(s.secondHidden, 'true', 'the ticking line is never read aloud') }
+    // The megabytes never go down.
+    const mbs = seconds.map(s => Number(s.second.split(' \u00b7 ')[1].replace(' MB', '')))
+    for (let i = 1; i < mbs.length; i++) assert.ok(mbs[i] >= mbs[i - 1], `${view.name}: the megabytes never go down`)
+    const steps = [...new Set(mbs)]
+    // Something on it moves: the seconds tick (and the step, as phases pass).
+    assert.ok(new Set(seconds.map(s => s.second)).size > 1, `${view.name}: the line moves`)
     assert.ok(!lines.some(line => /Loading the engine|Checking your device|Preparing/.test(line)), `${view.name}: no plain phase labels on the veil`)
     assert.equal(layout.size, 1, `${view.name}: the status line never moves the veil (${[...layout]})`)
     report[view.name] = { seconds: (Date.now() - started) / 1000, lines, steps, phases, screenshots: shot }
@@ -76,6 +83,23 @@ try {
     if (markup) { assert.equal(markup.instances, undefined); assert.equal(markup.children, 0); assert.equal(markup.owned, false); assert.match(markup.text, /^<b>Bold<\/b>/) }
     report.markup = markup ?? 'veil lifted before the check could run'
     await page.close()
+  }
+  // The fast path: a warm cache. A load that ends before three seconds never shows the line.
+  {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+    for (let load = 0; load < 2; load++) {
+      const page = await context.newPage()
+      await page.addInitScript(() => { window.__shownAt = null; const watch = () => { const w = document.querySelector('.boot-still'); if (document.documentElement.hasAttribute('data-boot-late') && window.__shownAt === null) window.__shownAt = performance.now(); if (document.documentElement?.dataset.boot !== 'done') requestAnimationFrame(watch); else window.__doneAt = performance.now() }; requestAnimationFrame(watch) })
+      await page.goto(`${base}?room=lines-warm-${Date.now()}`)
+      await page.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+      const r = await page.evaluate(() => ({ shownAt: window.__shownAt, doneAt: Math.round(window.__doneAt) }))
+      if (load === 1) {
+        report.warm = r
+        if (r.doneAt < 3000) assert.equal(r.shownAt, null, 'a warm load under three seconds never shows the progress line')
+      }
+      await page.close()
+    }
+    await context.close()
   }
   // The longest line on a 320 px phone: two lines at most, and the veil does not move.
   {
