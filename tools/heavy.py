@@ -14,7 +14,30 @@ slots = int(os.environ.get('SYN3H_HEAVY_SLOTS', '3'))
 if slots < 1 or not sys.argv[1:]:
     sys.exit('heavy: a positive slot count and a command are required')
 
+hold = root / 'hold'
+
+
+def held():
+    """A release waiting at the load gate or running holds new jobs back (see release.sh).
+
+    The hold file names the release's PID. It holds only while that process lives, so a
+    crashed release cannot block anyone. The release's own jobs set SYN3H_HEAVY_RELEASE."""
+    if os.environ.get('SYN3H_HEAVY_RELEASE'):
+        return False
+    try:
+        pid = int(hold.read_text().split()[0])
+        os.kill(pid, 0)
+    except (FileNotFoundError, ValueError, IndexError, ProcessLookupError):
+        return False
+    except PermissionError:
+        pass
+    return True
+
+
 while True:
+    if held():
+        time.sleep(2)
+        continue
     for i in range(1, slots + 1):
         lock = open(root / f'slot-{i}.lock', 'a+')
         try:
