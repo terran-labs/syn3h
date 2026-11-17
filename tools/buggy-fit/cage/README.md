@@ -32,7 +32,7 @@ gave it away beside the original in the game renderer:
 | --- | --- | --- |
 | tail lamps | every point of both lamp regions is locked in decimation (`protect`), so the two bars per side stay thin and apart | about 40 |
 | hood scoop | the chrome lip's points inside a box are locked (`boxes`), and cage edges lying within 8 mm of a reference fold over 35 degrees become creases (`referenceCreases`) | about 30 |
-| cockpit rim | none: the body's rim is smooth at the rear in both the reference and the cage; the notch seen in the assembled skin comes from elsewhere | 0 |
+| cockpit rim | none: the rim's rear inner wall and its V at the mirror plane are in the original body too; the loaded canopy reaches back far enough to hide them, the generated canopy stops short and shows them | 0 |
 | tail fins, flank ripple | reference creases sharpen them slightly; locking the flank's fold lines (`FOLDLOCK`) sharpened the character line but bent the spoiler fin tip, so it is off | 0 |
 
 Both lamp and scoop locks keep reference points only inside those small regions; the rest of
