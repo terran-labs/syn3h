@@ -10,7 +10,8 @@
  *   "views": [{ "name": "front", "orbit": [az, el, dist] } | { "name": "lamp", "look": [[x,y,z],[x,y,z]] }],
  *   "states": [{ "name": "default", "shape": { "noseLength": 0.25 } } | { "name": "seed 7", "seed": 7 }],
  *   "columns": 6, "size": [480, 300] }
- * A state's shape lists only the handles it changes; every other handle is reset first.
+ * A state's shape lists only the handles it changes; every other handle is reset first. A state's
+ * optional "look": { "<view name>": [[camera], [target]] } aims that view for that state alone.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -40,14 +41,16 @@ try {
       return [...document.querySelectorAll('div')].find(d => / regenerated in /.test(d.textContent ?? '') && d.children.length === 0)?.textContent ?? ''
     }, state)
     console.log(state.name, '|', readout)
-    for (const view of spec.views) {
+    for (const named of spec.views) {
+      // A state may aim a view itself (close shots follow a feature that moved).
+      const view = state.look?.[named.name] ? { ...named, look: state.look[named.name] } : named
       await page.evaluate(async view => {
         const lab = window.vehicleLab
         if (view.look) lab.look(view.look[0], view.look[1]); else lab.orbit(...view.orbit)
         await lab.frames(12)
       }, view)
       const buf = await page.screenshot({ type: 'jpeg', quality: 85 })
-      ;(shots[view.name] ??= []).push({ name: state.name, src: `data:image/jpeg;base64,${buf.toString('base64')}` })
+      ;(shots[named.name] ??= []).push({ name: state.name, src: `data:image/jpeg;base64,${buf.toString('base64')}` })
     }
   }
   // One sheet per view: a labelled grid at half resolution.

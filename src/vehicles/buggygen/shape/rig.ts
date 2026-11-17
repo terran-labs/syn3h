@@ -78,6 +78,15 @@ function bestRotation(a: number[], b: number[], centred: boolean): number[] {
   ]
 }
 
+/** The rigid motion (no scale) that best takes points `a` onto points `b` (flat xyz arrays). */
+export function fitMotion(a: ArrayLike<number>, b: ArrayLike<number>): Motion {
+  const n = a.length / 3, from: V3 = [0, 0, 0], to: V3 = [0, 0, 0]
+  for (let i = 0; i < a.length; i++) { from[i % 3] += a[i] / n; to[i % 3] += b[i] / n }
+  const ca: number[] = [], cb: number[] = []
+  for (let i = 0; i < a.length; i++) { ca.push(a[i] - from[i % 3]); cb.push(b[i] - to[i % 3]) }
+  return { from, to, R: bestRotation(ca, cb, false), scale: 1 }
+}
+
 /** What the rig needs of a cage, worked out once: features, their centres and the blend weights. */
 interface Prepared {
   base: Float64Array

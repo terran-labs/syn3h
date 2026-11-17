@@ -3,7 +3,8 @@ import { buildParts, type PartPiece } from '../parts'
 import { buggyBody } from '../body'
 import { isDefaultShape, type Shape } from './handles'
 import { shapedBody } from './body'
-import { applyMotion, rig as makeRig, type Motion, type Rig } from './rig'
+import { applyMotion, fitMotion, rig as makeRig, type Motion, type Rig } from './rig'
+import { Surface } from '../parts/surface'
 
 /**
  * The buggy's other parts following a shaped body. They are built once against the shipped
@@ -12,7 +13,10 @@ import { applyMotion, rig as makeRig, type Motion, type Rig } from './rig'
  * - canopy and cockpit tub with the cockpit rim's rigid motion (so they stay on the rim and
  *   inside the body, and scale with it);
  * - headlight lenses and bezels with the headlight duct's rigid motion (they stay seated);
- * - skid plate and the swellings over the arm roots and shock tops by the rig's field;
+ * - the other small fittings (the side lamp and its bezel, the swellings over the arm roots
+ *   and shock tops) rigidly, by the motion that best follows the rig's field over them, then
+ *   along the body's normal so they stand as deep in the shaped body as in the shipped one;
+ * - the skid plate, which runs the body's length, by the rig's field point by point;
  * - suspension, hub stators and wings not at all: the wheels, axle mounts and shock tops are
  *   the physics' and do not move.
  *
@@ -20,18 +24,14 @@ import { applyMotion, rig as makeRig, type Motion, type Rig } from './rig'
  */
 type Built = ReturnType<typeof buildParts>
 
-const shipped = new Map<number, Built>()
-function shippedParts(detail: 0 | 1 | 2): Built {
+const shipped = new Map<number, { parts: Built; surface: Surface }>()
+function shippedParts(detail: 0 | 1 | 2): { parts: Built; surface: Surface } {
   let b = shipped.get(detail)
-  if (!b) shipped.set(detail, b = buildParts(detail, buggyBody.build(detail).filter(p => p.part === 'body').map(p => p.geometry)))
+  if (!b) {
+    const body = buggyBody.build(detail).filter(p => p.part === 'body').map(p => p.geometry)
+    shipped.set(detail, b = { parts: buildParts(detail, body), surface: Surface.from(body) })
+  }
   return b
-}
-
-/** A motion for a point on either half: the rig's motions are for the right half (x >= 0). */
-function moveMirrored(m: Motion, p: number[], out: number[]): void {
-  const sx = p[0] < 0 ? -1 : 1
-  applyMotion(m, [p[0] * sx, p[1], p[2]], out)
-  out[0] *= sx
 }
 
 /** Connected pieces of an indexed geometry: a label per vertex. */
@@ -60,25 +60,69 @@ function moved(g: THREE.BufferGeometry, f: (p: number[], vertex: number, out: nu
 
 /** How close (m) a fitting's centre must be to the duct's centre to ride with it. */
 const DUCT_REACH = .24
+/** Islands whose centres lie this close together are one fitting (a lens, its bezel and halo). */
+const SAME_FITTING = .08
+/** A fitting larger than this (m from its centre) is not small: it follows the field point by point. */
+const SMALL = .3
+
+/** Signed height of `p` over a surface along the nearest point's normal, and that normal. */
+function standoff(surface: Surface, p: number[]): { h: number; n: number[] } | undefined {
+  const hit = surface.near(p as [number, number, number], .5).nearest(p as [number, number, number])
+  if (!hit) return undefined
+  return { h: (p[0] - hit.point[0]) * hit.normal[0] + (p[1] - hit.point[1]) * hit.normal[1] + (p[2] - hit.point[2]) * hit.normal[2], n: hit.normal }
+}
 
 /** Every part at one detail level, following the shaped body. */
 export function shapedParts(s: Shape, detail: 0 | 1 | 2, body: THREE.BufferGeometry[], r?: Rig): Built {
   if (isDefaultShape(s)) return buildParts(detail, body)
-  const R = r ?? makeRig(s), base = shippedParts(detail), cockpit = R.motion.cockpit, duct = R.motion.headlight
+  const R = r ?? makeRig(s), { parts: base, surface: before } = shippedParts(detail), cockpit = R.motion.cockpit, duct = R.motion.headlight
+  let after: Surface | undefined
+  const sockets = base.pieces.filter(p => p.part === 'sockets')
+  // Sockets: group every piece's islands into fittings by their centres (both halves apart).
+  const fittings: { centre: number[]; count: number; radius: number; members: [number, number][]; motion?: Motion }[] = []
+  const labels = sockets.map(p => islands(p.geometry))
+  sockets.forEach((piece, k) => {
+    const pos = piece.geometry.attributes.position, sums = new Map<number, number[]>()
+    for (let i = 0; i < pos.count; i++) { const c = sums.get(labels[k][i]) ?? [0, 0, 0, 0]; c[0] += pos.getX(i); c[1] += pos.getY(i); c[2] += pos.getZ(i); c[3]++; sums.set(labels[k][i], c) }
+    for (const [label, c] of sums) {
+      const centre = [c[0] / c[3], c[1] / c[3], c[2] / c[3]]
+      let f = fittings.find(x => Math.hypot(x.centre[0] - centre[0], x.centre[1] - centre[1], x.centre[2] - centre[2]) < SAME_FITTING)
+      if (!f) fittings.push(f = { centre, count: 0, radius: 0, members: [] })
+      f.members.push([k, label])
+    }
+  })
+  const fittingOf = new Map<string, (typeof fittings)[number]>()
+  for (const f of fittings) for (const [k, label] of f.members) fittingOf.set(`${k}:${label}`, f)
+  for (const f of fittings) {
+    // Radius and the field's pull over the fitting's own vertices.
+    const a: number[] = [], b: number[] = [], q = [0, 0, 0]
+    for (const [k, label] of f.members) {
+      const pos = sockets[k].geometry.attributes.position
+      for (let i = 0; i < pos.count; i++) if (labels[k][i] === label) {
+        const p = [pos.getX(i), pos.getY(i), pos.getZ(i)]
+        f.radius = Math.max(f.radius, Math.hypot(p[0] - f.centre[0], p[1] - f.centre[1], p[2] - f.centre[2]))
+        R.map(p, q); a.push(...p); b.push(...q)
+      }
+    }
+    const mirrored = [Math.abs(f.centre[0]), f.centre[1], f.centre[2]]
+    if (Math.hypot(mirrored[0] - duct.from[0], mirrored[1] - duct.from[1], mirrored[2] - duct.from[2]) < DUCT_REACH) {
+      // In the duct: the duct's own motion (for the left duct, its mirror image).
+      const sx = f.centre[0] < 0 ? -1 : 1
+      f.motion = sx > 0 ? duct : { from: [-duct.from[0], duct.from[1], duct.from[2]], to: [-duct.to[0], duct.to[1], duct.to[2]], R: [duct.R[0], -duct.R[1], -duct.R[2], -duct.R[3], duct.R[4], duct.R[5], -duct.R[6], duct.R[7], duct.R[8]], scale: duct.scale }
+    } else if (f.radius < SMALL) {
+      const m = fitMotion(a, b), d0 = standoff(before, f.centre)
+      after ??= Surface.from(body)
+      const there = applyMotion(m, f.centre) as number[], d1 = d0 && standoff(after, there)
+      if (d0 && d1) for (let j = 0; j < 3; j++) m.to[j] += (d0.h - d1.h) * d1.n[j]
+      f.motion = m
+    }
+  }
   const pieces: PartPiece[] = base.pieces.map(piece => {
     const g = piece.geometry
     if (piece.part === 'canopy' || piece.part === 'interior') return { ...piece, geometry: moved(g, (p, _, o) => applyMotion(cockpit, p, o)) }
     if (piece.part !== 'sockets') return { ...piece, geometry: g.clone() }
-    // Sockets: lenses and bezels ride with the duct they sit in, the rest with the field.
-    const label = islands(g), pos = g.attributes.position, centre = new Map<number, number[]>()
-    for (let i = 0; i < pos.count; i++) {
-      const c = centre.get(label[i]) ?? [0, 0, 0, 0]
-      c[0] += Math.abs(pos.getX(i)); c[1] += pos.getY(i); c[2] += pos.getZ(i); c[3]++
-      centre.set(label[i], c)
-    }
-    const inDuct = new Set<number>()
-    for (const [k, c] of centre) if (Math.hypot(c[0] / c[3] - duct.from[0], c[1] / c[3] - duct.from[1], c[2] / c[3] - duct.from[2]) < DUCT_REACH) inDuct.add(k)
-    return { ...piece, geometry: moved(g, (p, i, o) => { if (inDuct.has(label[i])) moveMirrored(duct, p, o); else R.map(p, o) }) }
+    const k = sockets.indexOf(piece)
+    return { ...piece, geometry: moved(g, (p, i, o) => { const m = fittingOf.get(`${k}:${labels[k][i]}`)?.motion; if (m) applyMotion(m, p, o); else R.map(p, o) }) }
   })
   return { pieces, shockTops: base.shockTops }
 }

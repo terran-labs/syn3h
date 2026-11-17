@@ -1,68 +1,59 @@
-# Buggy shape handles (R&D)
+# Buggy shape rig (R&D)
 
-Named, live-editable shape parameters for the cage buggy body (rd/buggygen-cage's cage250):
-the proof of concept for an in-game vehicle editor. Run-time code is in
-`src/vehicles/buggygen/shape/`; the lab exhibit is `src/dev/vehicleLab/exhibits/buggyShape.ts`.
+Named, live-editable shape parameters for the cage buggy body (cage250), with the sculpted
+features kept rigid: the rig behind a future in-game vehicle editor. Run-time code is in
+`src/vehicles/buggygen/shape/`; the lab exhibit is `src/dev/vehicleLab/exhibits/buggyShape.ts`
+(`vehicle-lab.html?vehicle=buggy-shape`, whole buggy; `&body=1` for the body alone).
 
 ```sh
-npx tsx tools/buggy-fit/shape/check.ts          # default equals cage250, codes, seeds, timings, extremes, headroom
-npx tsx tools/buggy-fit/shape/presets.ts        # lab-shot arguments for the screenshot set
-node tools/buggy-fit/shape/browser-time.mjs http://127.0.0.1:5297/   # through tools/heavy.sh
+npx tsx tools/buggy-fit/shape/check.ts          # default equals the shipped body, rigidity, codes, seeds, timings, bytes, extremes
+npx tsx tools/buggy-fit/shape/presets.ts        # share code and lab query per preset
+npx tsx tools/buggy-fit/shape/spec.ts final /tmp/spec.json      # sheet spec (or baseline)
+node tools/buggy-fit/shape/lab-sheet.mjs http://127.0.0.1:5297/ /tmp/out /tmp/spec.json   # through tools/heavy.sh
+node tools/buggy-fit/shape/browser-time.mjs http://127.0.0.1:5297/                       # through tools/heavy.sh
 ```
+
+The blocking invariants are in `tests/vehicles2/buggyShape.test.ts`.
 
 ## How it works
 
-`deform()` moves the half cage's control points before the cage lane's Loop subdivision. Each
-handle is a smooth displacement field: a smoothstep or bump falloff along Z, height or
-distance from the centre line, so the cage moves in broad regions and the subdivided surface
-stays fair. Creases are part of the cage's topology, so they stay crisp. Points on the mirror
-plane stay on it. All handles at 0 reproduce cage250 exactly (checked: 0 mm difference).
+1. **Field** (`handles.ts`): each handle is a smooth displacement field (smoothstep or bump
+   falloffs along z, height or distance from the centre line) over the half cage's control
+   points, before the cage lane's subdivision. Creases are topology, so they stay crisp.
+   Points on the mirror plane stay on it.
+2. **Rigid features** (`features.ts`, `rig.ts`): the headlight ducts, side scoops, hood scoop,
+   tail lamp bars and cockpit rim are found in the cage by face role and position. Each takes
+   the rotation and translation that best follow the field over its own points (Horn's
+   quaternion fit), plus one uniform scale where a handle sizes it (`lampSize`, `scoopSize`,
+   `cockpitSize`). Features on the mirror plane (hood scoop, cockpit) may only pitch, rise
+   and slide. The paint around each feature blends from its rigid motion into the field over
+   10 to 20 cm, so all the strain goes into plain paint.
+3. **Parts** (`parts.ts`): built once against the shipped body, then moved. Canopy and tub
+   ride with the cockpit rim; the duct lenses with the duct; the side lamp and the swellings
+   rigidly by the best fit to the field, then along the body normal to their shipped depth;
+   the skid plate by the field point by point. Wheels, arms, shocks, shock tops and wings do
+   not move. `Syn3hBuggySkin` takes them through an optional `parts` hook on its body source.
+
+The default shape returns the shipped cage and calls `buildParts` unchanged, so it builds the
+shipped buggy bit for bit.
 
 ## Handles
 
-| id | label | range | unit |
-| --- | --- | --- | --- |
-| noseLength | Nose length | -0.15 to 0.25 | m, stretch ahead of the front axle |
-| noseDroop | Nose droop | -0.08 to 0.14 | m, top of the nose down |
-| tailLength | Tail length | -0.12 to 0.2 | m, stretch behind the rear axle |
-| tailHeight | Tail height | -0.08 to 0.14 | m, deck rising toward the tail |
-| width | Width | 0 to 0.1 | fraction |
-| height | Height | -0.1 to 0.12 | fraction of deck height; the sides stay |
-| cockpitLength | Cockpit length | -0.12 to 0.18 | fraction |
-| cockpitWidth | Cockpit width | -0.1 to 0.12 | fraction |
-| frontFlare | Front fender flare | -0.02 to 0.12 | m outward |
-| rearFlare | Rear fender flare | -0.02 to 0.12 | m outward |
-| haunchHeight | Haunch height | -0.05 to 0.14 | m |
-| spoilerHeight | Spoiler height | -0.07 to 0.25 | m |
-| spoilerRake | Spoiler rake | -8 to 14 | degrees, trailing edge up |
-| scoopSize | Scoop size | -0.2 to 0.2 | fraction |
-| belly | Belly clearance | -0.03 to 0.05 | m, floor between the axles |
+Each has a full range (reachable by hand, to show where the rig stops) and, for some, a
+narrower `safe` range that random seeds draw from. See `HANDLES` for the numbers.
 
-## Constraints
+## Where it breaks (check.ts and the lab, 17 November 2026)
 
-Nothing mechanical moves. Nose and tail length stretch only beyond the axle lines, so the
-wheelbase, axle mounts (LoadedBuggySkin axleMounts(.55, .15, 1.2)) and shock tops (the glb
-Shock node's extras) stay valid. `check.ts` tests, for every handle at each end, all handles
-at their minimum, all at their maximum, and 60 random seeds:
+- **Lowering the deck** (`height` below about -0.21, the streamliner): the rear shock tops come
+  through the deck. The suspension towers set a floor for the deck.
+- **Raising the body** (`rideHeight` above about 0.06): the shock tops drop out of the body.
+- **Narrowing** (`width` below 0, `noseWidth`/`tailWidth` below about -0.15, negative flares):
+  the arm roots and swellings show. Narrowing needs the track to narrow too.
+- **Widening past about 0.15** with flares: the body enters the tyre envelope.
+- **Spoiler height above about 0.3**, **deck crown above about 0.12**: the cage folds.
+- **Looks**: the hood scoop is rigid, so a strong deck crown leaves a dent around it; a short
+  nose with a tall deck (crawler) makes a slab face; tall spoilers turn the plates into fins
+  that dominate the silhouette. The mid and far detail bodies (`distantBuggyBody`) do not
+  follow the shape at all.
 
-- no subdivided face turns over against the fitted body (a fold);
-- all four shock tops stay inside the body;
-- the body covers the sockets at least as well as the fitted body (5% slack, since the
-  sockets poke through by design where the arms attach);
-- the driver's eye (0, 0.8, 0) keeps 0.25 m clearance (PATTERN.md rule 3);
-- no body point enters a tyre envelope (radius 0.45 m about each rest hub, x 0.88 to 1.32).
-
-Ranges were cut where these failed: width cannot go negative (narrowing exposes the sockets),
-height only lifts the deck (lifting the sides exposed the shock tops), scoop size is held to
-plus or minus 0.2 (beyond it the scoop rim folds), belly to 0.05 m.
-
-Handles that would need the mechanical layout to move with them: overall length and
-wheelbase (not offered; nose and tail length are the stand-ins), track width (width stops at
-0.1, and narrowing at all needs the axle mounts and shock tops to come inward), ride height
-(height leaves the sides alone for this reason), and fender flares past about 0.12 m look
-right only if the track widens with them.
-
-## Not a guarantee of looks
-
-The checks find folds and collisions, not ugliness. See the screenshots before trusting a
-range.
+The checks find folds and collisions, not ugliness. Look at the sheets before trusting a range.

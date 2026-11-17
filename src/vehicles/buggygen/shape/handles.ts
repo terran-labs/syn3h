@@ -51,7 +51,7 @@ export const HANDLES = [
   { id: 'frontFlare', label: 'Front fender flare', help: 'Swells the shoulders over the front wheels (m).', min: -.04, max: .2, step: .005, safe: [0, .2] },
   { id: 'rearFlare', label: 'Rear fender flare', help: 'Swells the haunches over the rear wheels (m).', min: -.04, max: .2, step: .005, safe: [0, .2] },
   { id: 'haunchHeight', label: 'Haunch height', help: 'Raises the rear haunches and their fins (m).', min: -.08, max: .24, step: .01, safe: [-.08, .14] },
-  { id: 'spoilerHeight', label: 'Spoiler height', help: 'Raises the rear wing on its plates (m).', min: -.1, max: .4, step: .01, safe: [-.1, .25] },
+  { id: 'spoilerHeight', label: 'Spoiler height', help: 'Raises the rear wing on its plates (m).', min: -.1, max: .4, step: .01, safe: [-.1, .18] },
   { id: 'spoilerRake', label: 'Spoiler rake', help: 'Tilts the rear wing, trailing edge up (degrees).', min: -12, max: 20, step: 1 },
   { id: 'scoopSize', label: 'Scoop size', help: 'Scales the side scoops uniformly (fraction).', min: -.3, max: .3, step: .02 },
   { id: 'lampSize', label: 'Headlight size', help: 'Scales the headlight ducts and lenses uniformly (fraction).', min: -.25, max: .25, step: .01 },
