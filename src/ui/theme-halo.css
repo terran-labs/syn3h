@@ -34,7 +34,7 @@
 /* ---------- Panels ---------- */
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass,
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.rail-players, .performance-panel),
-.syn3h-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card),
+.syn3h-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card, .chat-panel .chat-sheet),
 .syn3h-shell.exploration-ui:is([data-glass], *) .performance-recommendation {
   border: 1px solid var(--s3-line); border-radius: var(--halo-r);
   background: var(--halo-fill); background-image: none;
@@ -58,8 +58,8 @@
 /* Scoped to the in-game panels, so the lobby keeps its own buttons. Card headers and the
    editable numbers have their own rules below. :where keeps this just above exploration.css's
    all-buttons rule and below every specific rule here, such as .is-on. */
-.syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num)) { background: none; border: 1px solid var(--s3-line-quiet); border-radius: 999px; box-shadow: none; text-shadow: var(--halo-under); font-weight: 400; letter-spacing: .04em; -webkit-backdrop-filter: none; backdrop-filter: none; }
-.syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num)):hover { background: rgb(143 227 255 / .07); border-color: var(--s3-line); box-shadow: var(--halo-glow); }
+.syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation, .chat-sheet) button:where(:not(.wi-head, .wi-num)) { background: none; border: 1px solid var(--s3-line-quiet); border-radius: 999px; box-shadow: none; text-shadow: var(--halo-under); font-weight: 400; letter-spacing: .04em; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation, .chat-sheet) button:where(:not(.wi-head, .wi-num)):hover { background: rgb(143 227 255 / .07); border-color: var(--s3-line); box-shadow: var(--halo-glow); }
 .syn3h-shell.exploration-ui button:focus-visible, .syn3h-shell.exploration-ui input:focus-visible, .syn3h-shell.exploration-ui select:focus-visible { outline: 1px solid var(--s3-accent-2); outline-offset: 3px; }
 .syn3h-shell.exploration-ui .world-inspector :is(input:not([type=range]):not([type=checkbox]):not([type=color]), select, textarea) { color: var(--s3-ink); background: none; border: 0; border-bottom: 1px solid var(--s3-line-quiet); border-radius: 0; box-shadow: none; }
 .syn3h-shell.exploration-ui select option { background: #06121c; color: #e8f6fd; }
@@ -87,7 +87,7 @@
 .syn3h-shell.exploration-ui .wi-gi-status { color: var(--s3-dim); }
 
 /* ---------- Cards ---------- */
-.syn3h-shell.exploration-ui .world-inspector .wi-head h3 { font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); text-shadow: var(--halo-under); }
+.syn3h-shell.exploration-ui :is(.world-inspector .wi-head h3, .chat-sheet .chat-head h2) { font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .world-inspector .wi-card.is-open > .wi-head h3 { color: #fff; text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .world-inspector .wi-sum { font-size: 13px; color: rgb(234 245 251 / .9); letter-spacing: 0; }
 .syn3h-shell.exploration-ui .world-inspector .wi-chev { width: 6px; height: 6px; border-right: 1px solid var(--s3-soft); border-bottom: 1px solid var(--s3-soft); }
