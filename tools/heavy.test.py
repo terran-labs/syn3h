@@ -30,6 +30,36 @@ class HeavyTests(unittest.TestCase):
         self.assertEqual(count, 0)
         self.assertLessEqual(maximum, 2)
         self.assertEqual(self.run_job('raise SystemExit(7)').wait(timeout=5), 7)
+    def test_hold_waits_for_a_live_release_and_ignores_a_dead_one(self):
+        slots = self.root / 'slots'; slots.mkdir(parents=True, exist_ok=True)
+        holder = subprocess.Popen(['sleep', '30'])
+        try:
+            (slots / 'hold').write_text(f'{holder.pid}\n')
+            job = self.run_job('pass')
+            time.sleep(1.5)
+            self.assertIsNone(job.poll(), 'a job started while a live release held the machine')
+            released = subprocess.Popen(['sh', str(SCRIPT), 'python3', '-c', 'pass'], env={**self.env, 'SYN3H_HEAVY_RELEASE': '1'})
+            self.assertEqual(released.wait(timeout=5), 0)
+            holder.kill(); holder.wait()
+            self.assertEqual(job.wait(timeout=8), 0)
+        finally:
+            if holder.poll() is None: holder.kill()
+        # A hold naming a process that no longer exists holds nothing.
+        self.assertEqual(self.run_job('pass').wait(timeout=5), 0)
+
+    def test_stale_hold_is_ignored_and_a_release_lifts_its_own(self):
+        slots = self.root / 'slots'; slots.mkdir(parents=True, exist_ok=True)
+        hold = slots / 'hold'
+        # Names a live process (this test) but is over three hours old: a recycled PID.
+        hold.write_text(f'{os.getpid()}\n')
+        old = time.time() - 4 * 3600
+        os.utime(hold, (old, old))
+        self.assertEqual(self.run_job('pass').wait(timeout=5), 0)
+        # A wrapper whose own PID is in the hold removes it when its command ends.
+        code = f"import os; from pathlib import Path; Path({str(hold)!r}).write_text(str(os.getppid()) + '\\n')"
+        self.assertEqual(self.run_job(code).wait(timeout=5), 0)
+        self.assertFalse(hold.exists())
+
     def test_child_keeps_lock_after_wrapper_is_killed(self):
         self.env['SYN3H_HEAVY_SLOTS'] = '1'
         started = self.root / 'started'
