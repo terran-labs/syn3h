@@ -163,7 +163,7 @@
 
 /* ---------- HUD pieces ---------- */
 .syn3h-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card) { background: var(--halo-fill); font-weight: 400; }
-.syn3h-shell.exploration-ui .spawn-help { font-size: 12.5px; color: var(--s3-ink); text-shadow: var(--halo-under); }
+.syn3h-shell.exploration-ui .spawn-help { font-size: 12.5px; color: var(--s3-ink); text-shadow: var(--hud-under); }
 .syn3h-shell.exploration-ui .spawn-help strong { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
 /* The minimap ring matches the crescents: one hairline and a tight halo. */
 .syn3h-shell.exploration-ui .shell-minimap::after { border: 1px solid rgb(226 238 255 / .45); box-shadow: var(--halo-glow); }
