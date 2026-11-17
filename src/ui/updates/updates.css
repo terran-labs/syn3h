@@ -76,4 +76,3 @@ body.has-game-shell:has(.syn3h-shell:not(.is-playing)) #syn3h-build-notice { dis
 @media (max-height: 550px) {
   html body .syn3h-shell.exploration-ui .about-tabs { margin-bottom: 10px; }
 }
-}
