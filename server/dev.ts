@@ -8,6 +8,7 @@ import { createServer } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { CLOCK_MS, type Peer, Room } from './room'
 import { roomName } from './util'
+import { logError, logEvent } from './log'
 import { RoomRegistry } from './registry'
 import { PresenceReporter } from './presenceReporter'
 
@@ -30,6 +31,8 @@ function report(room: Room): void {
  * CLOCK_MS while the room needs one, and nothing otherwise.
  */
 const clocks = new Map<Room, ReturnType<typeof setTimeout>>()
+/** Rooms whose clock is running, for the clock_start and clock_stop lines. */
+const clockOn = new Set<Room>()
 function keepClock(room: Room): void {
   if (clocks.has(room) || !room.needsClock) return
   clocks.set(room, setTimeout(() => {
@@ -38,7 +41,17 @@ function keepClock(room: Room): void {
     room.tick()
     report(room)
     keepClock(room)
+    if (!clocks.has(room)) stopClock(room, 'not_needed')
   }, CLOCK_MS))
+  if (!clockOn.has(room)) {
+    clockOn.add(room)
+    logEvent('clock_start', { room: room.tag })
+  }
+}
+function stopClock(room: Room, reason: string): void {
+  clearTimeout(clocks.get(room))
+  clocks.delete(room)
+  if (clockOn.delete(room)) logEvent('clock_stop', { room: room.tag, reason })
 }
 
 const http = createServer((req, res) => {
@@ -90,26 +103,38 @@ function attach(ws: WebSocket, name: string): void {
     },
   }
   r.connect(peer)
+  const openedAt = Date.now()
+  logEvent('socket_open', { room: r.tag, sockets: wss.clients.size })
   ws.on('message', (data, isBinary) => {
-    if (isBinary) {
-      const buf = Array.isArray(data) ? Buffer.concat(data) : Buffer.isBuffer(data) ? data : Buffer.from(data)
-      r.receive(peer, new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength))
-    } else {
-      r.receive(peer, data.toString())
+    try {
+      if (isBinary) {
+        const buf = Array.isArray(data) ? Buffer.concat(data) : Buffer.isBuffer(data) ? data : Buffer.from(data)
+        r.receive(peer, new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength))
+      } else {
+        r.receive(peer, data.toString())
+      }
+      report(r)
+      keepClock(r)
+    } catch (error) {
+      logError('error', error, { where: 'message', room: r.tag })
+      throw error
     }
-    report(r)
-    keepClock(r)
   })
-  ws.on('close', () => {
+  ws.on('close', (code) => {
+    // ws reports an abnormal closure (no close frame) as 1006: the Worker's wasClean false.
+    logEvent('socket_close', { room: r.tag, player: r.info(peer)?.id ?? null, code, clean: code !== 1006, openMs: Date.now() - openedAt })
     r.disconnect(peer)
     report(r)
     if (r.connectionCount === 0 && rooms.get(name) === r) {
       rooms.delete(name)
-      clearTimeout(clocks.get(r))
-      clocks.delete(r)
-    }
+      stopClock(r, 'empty')
+      logEvent('room_cleanup', { room: r.tag, reason: 'empty' })
+    } else if (r.heldCount === r.connectionCount) stopClock(r, 'only_held')
   })
-  ws.on('error', () => ws.close())
+  ws.on('error', (error) => {
+    logError('socket_error', error, { room: r.tag, player: r.info(peer)?.id ?? null })
+    ws.close()
+  })
 }
 
 http.listen(port, () => console.log(`Syn3h room server on ws://localhost:${port}/ws?room=<name>`))
