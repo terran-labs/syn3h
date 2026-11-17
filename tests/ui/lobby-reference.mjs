@@ -9,7 +9,7 @@
 import { chromium } from 'playwright-core'
 import { mkdir } from 'node:fs/promises'
 const label = process.argv[2] ?? 'run'
-const panels = (process.argv[3] ?? 'index,explore,vehicle,worlds,settings,multiplayer,about').split(',')
+const panels = (process.argv[3] ?? 'index,explore,worlds,advanced,about').split(',')
 const out = 'tests/ui/artifacts/lobby-reference'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })

@@ -30,6 +30,18 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
     assert.ok(await footer.evaluate(el => el.previousElementSibling.classList.contains('wi-cards')))
     assert.ok(await header.locator('.rail-world').innerText(), 'header names the current world')
     assert.equal(await footer.getByRole('button', { name: 'Leave world', exact: true }).count(), 1)
+    // The foot holds only the way out; the world's own actions are in the World card. Bugs
+    // caught: Copy, Paste or Reset going missing, and one stray tap on Reset wiping the world.
+    // (A slow-frames recommendation may dock here too, with its own buttons.)
+    assert.equal(await footer.locator(':scope > button').count(), 1, 'the foot holds one control')
+    assert.ok((await footer.locator('.exit-world').boundingBox()).height >= 44 - .5, 'Leave world is a full touch target')
+    const worldActions = rail.locator('.wi-card[data-section=world] .wi-world-actions button')
+    assert.deepEqual(await worldActions.evaluateAll(es => es.map(el => el.getAttribute('aria-label'))), ['Copy world', 'Paste world', 'Reset world to defaults'])
+    const seedBefore = await page.evaluate(() => syn3h.params.get('world.seed').value)
+    await page.evaluate(() => { syn3h.params.set('world.seed', 4242, 'local'); document.querySelector('.wi-card[data-section=world] [data-wi=reset]').click() })
+    assert.equal(await page.evaluate(() => syn3h.params.get('world.seed').value), 4242, 'one press on Reset only asks')
+    assert.equal(await worldActions.nth(2).evaluate(el => el.classList.contains('is-warning')), true, 'Reset waits for a second press')
+    await page.evaluate(seed => syn3h.params.set('world.seed', seed, 'local'), seedBefore)
     const headerBounds = await header.boundingBox()
     assert.ok(headerBounds.y >= 0 && headerBounds.y + headerBounds.height <= page.viewportSize().height, 'header stays in viewport')
     const bounds = await footer.boundingBox()
