@@ -24,7 +24,7 @@ const OUT = '/tmp/buggy-fit/cage'
 mkdirSync(OUT, {recursive: true})
 const ROLE_OF: Record<string, string> = {'Body.002': 'paint', 'Accent.002': 'accent', 'Chrome.001': 'chrome', 'Headlights.001': 'lamp:head', TailLights: 'lamp:tail', Dark: 'frame'}
 
-const raw = readNode(join(ROOT, 'public/models/buggy-boxarm.glb'), 'Body.001')
+const raw = readNode(join(ROOT, 'tools/models/buggy-boxarm.glb'), 'Body.001')
 const roles = raw.materials.map(m => ROLE_OF[m] ?? 'paint')
 const ref = weld(raw.pos, raw.index, raw.group)
 const grid = new TriGrid(ref)

@@ -39,4 +39,4 @@ export function triangles(prims: Prim[]): { tri: Float32Array; mat: Uint8Array; 
   return { tri, mat, names: prims.map(p => p.material) }
 }
 
-export const REF = new URL('../../../public/models/buggy-boxarm.glb', import.meta.url).pathname
+export const REF = new URL('../../../tools/models/buggy-boxarm.glb', import.meta.url).pathname
