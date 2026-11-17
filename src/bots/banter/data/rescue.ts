@@ -687,4 +687,36 @@ export const RESCUE: Pools = {
       "That is the {count} rescue! I am getting so good at this! Not at being rescued! At rescuing!",
     ],
   },
+  // Said by a rescuer to a person it has just hooked: what to do, briefly. Shown in chat.
+  'rescue.player.drive': {
+    any: [
+      "Line's on, {player}. Drive towards me. Gently.",
+      "Got you, {player}. Steer for me and ease the throttle. I will do the pulling.",
+      "Hooked, {player}. Point your nose at me and drive. Slowly. Slowly is fast here.",
+    ],
+    clerk: ["You are attached, {player}. Please proceed towards me at a reasonable pace. Gently."],
+    marshal: ["Drive to me. Gently."],
+    inspector: ["Drive towards me, {player}. Gently. Very gently. I am watching every bolt."],
+    probe: ["Drive towards me, {player}! Gently, like carrying soup."],
+    moon: ["Drive towards me, {player}. Gently. Do not look at the moon."],
+    pilot: ["Drive towards me, {player}. Gently. I have done this hundreds of times. Twice."],
+    intern: ["Drive towards me, {player}! Gently! I am so happy to be useful!"],
+    auditor: ["Drive towards me, {player}. Gently. Mind the sediment."],
+  },
+  // A rescuer that has got itself stuck lets go and hands the job on.
+  'rescue.handoff': {
+    any: [
+      "Letting go, {subj}. I am now also a problem. Someone else, please.",
+      "Line off. I am stuck too, which is not how this was supposed to go. Next rescuer, please.",
+      "Handing over, {subj}. I have joined you in the scenery.",
+    ],
+    clerk: ["Releasing {subj}. Rescue reassigned. I am now the subject of a separate case."],
+    marshal: ["Line off. I am stuck. Next."],
+    inspector: ["Letting go, {subj}. I am stuck as well. Everyone stay calm. Mostly me."],
+    probe: ["Sorry, {subj}, I let go. I got stuck too. We can be stuck together, like a sandwich."],
+    moon: ["Letting go, {subj}. The moon has taken an interest in me as well."],
+    pilot: ["Releasing, {subj}. Tactical pause. I am stuck. Tactically."],
+    intern: ["I let go, {subj}, I am so sorry! I got stuck! Is this a learning opportunity?"],
+    auditor: ["Line off, {subj}. The sediment has claimed me too. Fair."],
+  },
 }

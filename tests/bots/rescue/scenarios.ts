@@ -15,6 +15,8 @@ import { emptyInput } from '../../../src/core/Input'
 import { createWorld, FIXED_DT, GROUP_ALL, GROUP_TERRAIN, groups, RAPIER } from '../../../src/core/physics'
 import type { Vehicle } from '../../../src/vehicles/Vehicle'
 import { Syn3hBuggy } from '../../../src/vehicles/Syn3hBuggy'
+import { Hovercraft } from '../../../src/vehicles/Hovercraft'
+import { Jet } from '../../../src/vehicles/Jet'
 import { BotGear } from '../../../src/weapons/BotGear'
 import { createPilot } from '../../../src/bots/pilot'
 import { createNavigator } from '../../../src/bots/nav'
@@ -22,7 +24,7 @@ import type { BotTerrain } from '../../../src/bots/BotBrain'
 import { TowRescue, type StuckKind, type TowGear, type TowPhase } from '../../../src/bots/rescue/TowRescue'
 import { seededRandom } from '../../../src/bots/random'
 
-export type Scenario = 'notch' | 'flipped' | 'shore'
+export type Scenario = 'notch' | 'flipped' | 'shore' | 'pond'
 
 /** Aim at the roof, as the rescue does in the game (src/bots/rescue/RescueCoordinator.ts). */
 const AIM_UP = 0.9
@@ -78,7 +80,10 @@ export interface TrialResult {
  * (full throttle, the way a stuck bot's pilot would); then the rescuer, parked `away` metres
  * off at a seeded angle, does the rescue. Up to `limit` seconds.
  */
-export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4, log?: (line: string) => void): TrialResult {
+/** For the 'pond' scenario: a player-like vehicle, deeper, not necessarily driving with the cord. */
+export interface TrialOptions { depth?: number; assist?: boolean; rescuer?: 'buggy' | 'hovercraft' | 'jet' }
+
+export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4, log?: (line: string) => void, opts: TrialOptions = {}): TrialResult {
   const r = seededRandom(seed * 7919 + scenario.length)
   const world = createWorld(9.81)
   let height: Height, liquid: Height | undefined
@@ -93,6 +98,13 @@ export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4,
     height = (x) => 0.25 * x
     stuckAt = new Vector3(0, 1.6, 0); stuckHeading = r() * Math.PI * 2; kind = 'flipped'; flip = true
     pull = { x: 0.6, z: 0.8 }
+  } else if (scenario === 'pond') {
+    // A player bogged in a pond `depth` deep, 10 m out from a sloping shore towards +x.
+    const depth = opts.depth ?? 1.4
+    height = (x) => (x < -4 ? -depth : x > 8 ? 0.6 : -depth + (x + 4) * (depth + 0.6) / 12)
+    liquid = () => 0
+    stuckAt = new Vector3(-10, 0.2, 0); stuckHeading = Math.PI / 2 + (r() - 0.5) * 2; kind = 'bogged'
+    pull = { x: 1, z: 0 }
   } else {
     // A pond 1.4 m deep with a sloping shore towards +x; the liquid surface is at 0.
     height = (x) => (x < -2 ? -1.4 : x > 6 ? 0.6 : -1.4 + (x + 2) * 0.25)
@@ -114,9 +126,12 @@ export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4,
   // The rescuer starts 30 to 45 m away at a seeded angle, on dry ground.
   const angle = r() * Math.PI * 2, away = 30 + r() * 15
   const start = new Vector3(stuckAt.x + Math.cos(angle) * away, 0, stuckAt.z + Math.sin(angle) * away)
-  if (scenario === 'shore' && start.x < 8) start.x = 8 + r() * 20
+  if ((scenario === 'shore' || scenario === 'pond') && start.x < 10) start.x = 10 + r() * 20
   if (scenario === 'notch' && Math.abs(start.z) < 6) start.z = 10 * Math.sign(start.z || 1)
-  const rescuer = new Syn3hBuggy(game, terrain, place(start, 0), Math.atan2(stuckAt.x - start.x, stuckAt.z - start.z)); rescuer.isLocal = false
+  const kindOf = opts.rescuer ?? 'buggy'
+  const facing = Math.atan2(stuckAt.x - start.x, stuckAt.z - start.z)
+  const rescuer: Vehicle = kindOf === 'hovercraft' ? new Hovercraft(game, terrain, place(start, 0), facing) : kindOf === 'jet' ? new Jet(game, terrain, place(start, 0), facing) : new Syn3hBuggy(game, terrain, place(start, 0), facing)
+  rescuer.isLocal = false
 
   const ids = new Map<number, Vehicle>([[0xff00, rescuer], [0xff01, stuck]])
   const gear = new BotGear(game, 0xff00, rescuer, {
@@ -138,7 +153,7 @@ export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4,
   const up = new Vector3(), q = new Quaternion()
   const step = (rescuing: boolean) => {
     game.time += FIXED_DT
-    if (rescuing) { rescue.step(FIXED_DT, rescuer.input); rescue.assist(stuck.input) }
+    if (rescuing) { rescue.step(FIXED_DT, rescuer.input); if (opts.assist !== false) rescue.assist(stuck.input); else Object.assign(stuck.input, emptyInput()) }
     else Object.assign(rescuer.input, emptyInput(), { brakes: true })
     gear.fixedUpdate(FIXED_DT)
     rescuer.fixedUpdate(FIXED_DT); stuck.fixedUpdate(FIXED_DT)
@@ -158,7 +173,7 @@ export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4,
   const after = stuck.body.translation()
   up.set(0, 1, 0).applyQuaternion(q.copy(stuck.body.rotation()))
   const wet = liquid ? terrain.heightAt(after.x, after.z) < liquid(after.x, after.z) + 0.3 : false
-  const stuckAlone = scenario === 'flipped' ? up.y < 0.5 : scenario === 'shore' ? wet : Math.hypot(after.x - from.x, after.z - from.z) < 3.5
+  const stuckAlone = scenario === 'flipped' ? up.y < 0.5 : scenario === 'shore' || scenario === 'pond' ? wet : Math.hypot(after.x - from.x, after.z - from.z) < 3.5
   // The rescue.
   let t = 0
   while (!rescue.finished && t < limit) {

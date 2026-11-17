@@ -42,6 +42,8 @@ export interface Candidate {
   able: boolean
   /** Eager characters peel off at once (the intern). */
   eager?: boolean
+  /** A hovercraft or jet: it can pull from over the water, where a buggy is dragged in. */
+  floats?: boolean
 }
 
 export interface Situation {
@@ -53,6 +55,8 @@ export interface Situation {
   tag: boolean
   /** The room's "Bots rescue each other". */
   enabled: boolean
+  /** The stuck vehicle is in liquid. */
+  liquid?: boolean
 }
 
 export const MAX_RESCUERS = 2
@@ -68,9 +72,12 @@ export const RESCUE_RANGE = 220
  *   - 0.6 per rescuer already going
  *   - 0.4 in a game of Tag
  *   + 0.3 if eager
+ *   + 0.8 for a hovercraft or jet when the stuck one is in liquid (a buggy on the shore is
+ *     dragged into the water by the cord; in trials a hovercraft frees a vehicle 2.6 m deep
+ *     every time, a buggy about two times in three)
  */
 export function rescueScore(c: Candidate, s: Situation): number {
-  return 1 - (c.withPlayer ? c.loyalty : 0) - c.distance / 150 + Math.min(1, s.stuckFor / 30) - 0.6 * s.helpers - (s.tag ? 0.4 : 0) + (c.eager ? 0.3 : 0)
+  return 1 - (c.withPlayer ? c.loyalty : 0) - c.distance / 150 + Math.min(1, s.stuckFor / 30) - 0.6 * s.helpers - (s.tag ? 0.4 : 0) + (c.eager ? 0.3 : 0) + (c.floats && s.liquid ? 0.8 : 0)
 }
 
 /** Who goes now: the best scores above the line, at most two in all, none with the setting off. */

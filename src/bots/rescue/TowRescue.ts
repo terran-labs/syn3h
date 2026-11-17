@@ -59,6 +59,11 @@ export interface TowOptions {
 const BRACE_S = 0.6
 const HOOK_WAIT_S = 2
 const PULL_S = 9
+/** Progress that extends a pull: this many metres along the pull line in PROGRESS_S seconds. */
+const PROGRESS_M = 0.6
+const PROGRESS_S = 3
+/** No single pull lasts longer than this, progress or not. */
+const PULL_MAX_S = 45
 const APPROACH_S = 30
 const EASE_S = 1
 /** Shortest cord the rescuer reels to: closer than this and it would be pulled into the hole. */
@@ -80,6 +85,9 @@ export class TowRescue {
   private readonly q = new Quaternion()
   private readonly up = new Vector3()
   private freedFor = 0
+  private checkAt = 0
+  private checkAlong = 0
+  private pullUntil = 0
   private route: NavPoint[] | null = null
   private waypoint: NavPoint | null = null
   private waypointTime = 0
@@ -153,7 +161,12 @@ export class TowRescue {
       case 'fire':
         this.brake(input)
         this.gear.reel(this.stuck)
-        if (this.gear.attachedTo(this.stuck)) { this.freedFor = 0; return this.set('tow') }
+        if (this.gear.attachedTo(this.stuck)) {
+          this.freedFor = 0; this.checkAt = 0; this.pullUntil = 0
+          const s0 = this.stuck.body.translation()
+          this.checkAlong = (s0.x - this.start.x) * this.pull.x + (s0.z - this.start.z) * this.pull.z
+          return this.set('tow')
+        }
         if (this.inPhase > HOOK_WAIT_S && !this.gear.flying()) return this.retry()
         return this.phase
       case 'tow': {
@@ -163,12 +176,24 @@ export class TowRescue {
         // and let driving away take up the strain.
         const s = this.stuck.body.translation()
         const span = Math.hypot(s.x - here.x, s.y - here.y, s.z - here.z)
-        if (span > MIN_SPAN) this.gear.reel(this.stuck); else this.gear.hold(this.stuck)
+        // Wheels near water: never reel. The grapple pulls the rescuer as hard as the stuck one,
+        // and a buggy dragged into the shallows helps nobody. Hold the line and drive instead.
+        const wheeled = this.rescuer.kind !== 'hovercraft' && this.rescuer.kind !== 'jet'
+        const toward = { x: (s.x - here.x) / (span || 1), z: (s.z - here.z) / (span || 1) }
+        const waterClose = wheeled && (this.wet(here.x, here.z) || this.wet(here.x + toward.x * 5, here.z + toward.z * 5))
+        if (span > MIN_SPAN && !waterClose) this.gear.reel(this.stuck); else this.gear.hold(this.stuck)
         const a = this.anchor()
         this.drive(input, dt, a.x + this.pull.x * 30, a.z + this.pull.z * 30, 6)
         if (this.options.kind === 'flipped') this.rightingTorque(dt)
         if (this.free(dt)) { this.gear.release(this.stuck); return this.set('ease') }
-        if (this.inPhase > PULL_S) return this.retry()
+        // Keep pulling while it is coming: every few seconds of real progress along the pull
+        // line buys another pull, up to a ceiling. A slow drag out of deep water is not a failure.
+        const along = (s.x - this.start.x) * this.pull.x + (s.z - this.start.z) * this.pull.z
+        if (this.inPhase - this.checkAt > PROGRESS_S) {
+          if (along - this.checkAlong > PROGRESS_M && this.inPhase < PULL_MAX_S) this.pullUntil = this.inPhase + PULL_S
+          this.checkAt = this.inPhase; this.checkAlong = along
+        }
+        if (this.inPhase > Math.max(PULL_S, this.pullUntil)) return this.retry()
         return this.phase
       }
       case 'ease':
@@ -196,6 +221,11 @@ export class TowRescue {
       if (c < cost && this.level(w.x, w.z) && this.clear(here, w) && this.clear(w, a)) { cost = c; best = w }
     }
     return best ?? a
+  }
+
+  private wet(x: number, z: number): boolean {
+    const liquid = this.terrain.liquidHeightAt?.(x, z)
+    return liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(x, z) < liquid + 0.3
   }
 
   /** The straight drive from a to b crosses only level, dry ground. */

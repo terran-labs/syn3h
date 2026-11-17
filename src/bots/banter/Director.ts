@@ -792,7 +792,14 @@ export class BanterDirector {
         this.conflicted = b; this.conflictAt = now
         return
       }
-      case 'start': { const b = bot(e.bot), s = bot(e.stuck); if (b) this.speak(b, 'rescue.start', { subj: s?.short ?? 'you', you: s?.short ?? 'you' }); return }
+      case 'start': {
+        const b = bot(e.bot), s = bot(e.stuck), person = this.players.get(e.stuck)
+        if (!b) return
+        // A person gets told what to do: drive with the cord.
+        if (person) this.speak(b, 'rescue.player.drive', { player: person.name, you: person.name })
+        else this.speak(b, 'rescue.start', { subj: s?.short ?? 'you', you: s?.short ?? 'you' })
+        return
+      }
       case 'retry': { const b = bot(e.bot), s = bot(e.stuck); if (b && this.r() < 0.7) this.speak(b, 'rescue.retry', { subj: s?.short ?? 'you', you: s?.short ?? 'you' }); return }
       case 'freed': {
         const s = bot(e.stuck)
@@ -823,6 +830,11 @@ export class BanterDirector {
         return
       }
       case 'mishap': return
+      case 'handoff': {
+        const b = bot(e.bot), s = bot(e.stuck), person = this.players.get(e.stuck)
+        if (b) this.speak(b, 'rescue.handoff', { subj: s?.short ?? person?.name ?? 'you', you: s?.short ?? person?.name ?? 'you' })
+        return
+      }
     }
   }
 

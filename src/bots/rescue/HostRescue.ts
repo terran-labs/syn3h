@@ -40,6 +40,7 @@ export type RescueEvent =
   | { kind: 'giveup'; stuck: number }
   | { kind: 'player.came'; player: number; stuck: number }
   | { kind: 'mishap'; bot: number }
+  | { kind: 'handoff'; bot: number; stuck: number }
 
 export interface RescueNet {
   readonly isHost: boolean
@@ -70,6 +71,8 @@ export class HostRescue {
   private readonly rescues = new Map<number, Rescue>()
   private readonly tracks = new Map<number, { t: number; x: number; z: number }[]>()
   private readonly count = new Map<number, number>()
+  /** Seconds each rescuer has itself been bogged or upside down. */
+  private readonly troubleOf = new Map<number, number>()
   private time = 0
   private decideTime = 0
   private mishaps: MishapSchedule | null = null
@@ -110,7 +113,7 @@ export class HostRescue {
     const wet = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(at.x, at.z) < liquid + 0.3
     const r: Rescue = { stuck: player, kind: wet ? 'bogged' : 'wedged', since: this.time, rescuers: new Map(), declined: new Set(), playersNear: new Set(), pointedAt: this.time, person: true }
     this.rescues.set(player, r)
-    this.recruit(r, 1)
+    this.recruit(r, 2)
     if (!r.rescuers.size) { this.rescues.delete(player); return false }
     return true
   }
@@ -181,7 +184,7 @@ export class HostRescue {
     if (!r.person && !r.rescuers.size && !stuckKind(this.brain(r.stuck)?.trouble ?? { stuck: 0, flipped: 0, bog: 0 })) { this.finish(r, true); return }
     if (elapsed > RESCUE_LIMIT) { this.finish(r, false); return }
     // Recruit up to two, re-weighed every decision while nobody has gone yet.
-    if (r.rescuers.size < 2 && elapsed > 2) this.recruit(r, r.person ? 1 : 2)
+    if (r.rescuers.size < 2 && elapsed > 2) this.recruit(r, 2)
     // Rescuers that finished: success ends the rescue, failure frees the slot.
     for (const [id, tow] of r.rescuers) {
       if (tow.phase === 'done') { this.finish(r, true); return }
@@ -189,7 +192,23 @@ export class HostRescue {
     }
     if (!r.rescuers.size && elapsed > 40) { this.finish(r, false); return }
     // Increasingly pointed remarks while nobody comes.
-    if (!r.rescuers.size && this.time - r.pointedAt > 14) { r.pointedAt = this.time; this.onEvent({ kind: 'pointed', stuck: r.stuck }) }
+    if (!r.person && !r.rescuers.size && !this.rescuing(r.stuck) && this.time - r.pointedAt > 14) { r.pointedAt = this.time; this.onEvent({ kind: 'pointed', stuck: r.stuck }) }
+    // A rescuer that is itself in trouble (bogged or upside down) lets go cleanly and says so;
+    // the next decision recruits someone else.
+    for (const [id, tow] of r.rescuers) {
+      const v = this.vehicle(id)
+      if (!v || tow.finished) continue
+      const p = v.body.translation(), q = v.body.rotation()
+      const upY = 1 - 2 * (q.x * q.x + q.z * q.z)
+      const liquid = this.terrain.liquidHeightAt?.(p.x, p.z)
+      const wheeled = v.kind !== 'hovercraft' && v.kind !== 'jet'
+      const bogged = wheeled && liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(p.x, p.z) < liquid - 0.5
+      const trouble = bogged || upY < 0.3 ? (this.troubleOf.get(id) ?? 0) + DECIDE : 0
+      this.troubleOf.set(id, trouble)
+      if (trouble < 3) continue
+      tow.abort(); r.rescuers.delete(id); this.release(id); r.declined.add(id); this.troubleOf.delete(id)
+      this.onEvent({ kind: 'handoff', bot: id, stuck: r.stuck })
+    }
     // A person comes to help: within ten metres of the stuck bot.
     const s = stuckVehicle.body.translation()
     for (const pid of this.net.people()) {
@@ -212,13 +231,15 @@ export class HostRescue {
       const voice = VOICES[voiceFor(this.net.displayName(id))]
       const p = v.body.translation()
       const free = brain.mind && !this.rescues.has(id) && !this.rescuing(id) && brain.directive?.kind !== 'control' && !brain.raceGoal
-      candidates.push({ id, distance: Math.hypot(p.x - s.x, p.z - s.z), loyalty: voice.loyalty, withPlayer: this.withPlayer(id) !== null, able: Boolean(free), eager: voice.id === 'intern' })
+      candidates.push({ id, distance: Math.hypot(p.x - s.x, p.z - s.z), loyalty: voice.loyalty, withPlayer: this.withPlayer(id) !== null, able: Boolean(free), eager: voice.id === 'intern', floats: v.kind === 'hovercraft' || v.kind === 'jet' })
     }
-    const situation = { stuckFor: this.time - r.since, helpers: r.rescuers.size, tag: this.net.mode === MODE_TAG, enabled: Boolean(botRescue.value) }
+    const situation = { stuckFor: this.time - r.since, helpers: r.rescuers.size, tag: this.net.mode === MODE_TAG, enabled: Boolean(botRescue.value), liquid: r.kind === 'bogged' }
     const going = chooseRescuers(candidates, situation).slice(0, max - r.rescuers.size)
     // Those torn between their player and the stuck bot say so, going or staying.
     for (const c of candidates) {
-      if (!torn(c, situation) || r.declined.has(c.id)) continue
+      // Only a bot that could actually go weighs it out loud: one busy rescuing someone else
+      // does not answer for this rescue.
+      if (!c.able || !torn(c, situation) || r.declined.has(c.id)) continue
       const goes = going.includes(c.id)
       this.onEvent({ kind: 'conflict', bot: c.id, stuck: r.stuck, player: this.withPlayer(c.id), going: goes })
       if (!goes) r.declined.add(c.id)
