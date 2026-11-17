@@ -84,8 +84,8 @@ export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4,
   let height: Height, liquid: Height | undefined
   let stuckAt: Vector3, stuckHeading: number, kind: StuckKind, pull: { x: number; z: number }, flip = false
   if (scenario === 'notch') {
-    // A trench 2.4 m deep and 3 m wide across the z axis, steep walls.
-    height = (x, z) => -2.4 * Math.max(0, 1 - Math.abs(z) / 1.5) ** 0.6 * Math.min(1, Math.max(0, (14 - Math.abs(x)) / 3))
+    // A trench 3.2 m deep and 3.2 m wide across the z axis, steep walls.
+    height = (x, z) => -3.2 * Math.max(0, 1 - Math.abs(z) / 1.6) ** 0.6 * Math.min(1, Math.max(0, (14 - Math.abs(x)) / 3))
     stuckAt = new Vector3(0, 0.5, -0.4); stuckHeading = 0; kind = 'wedged'
     pull = { x: 0, z: 1 } // back out the way it came in (it drove in from +z, heading -z)
   } else if (scenario === 'flipped') {

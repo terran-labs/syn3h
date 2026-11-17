@@ -21,6 +21,7 @@ import { type Context, Picker, ordinal, pickOne, type Rand, expand } from './gra
 import { type Intent, type IntentKind, type NamedBot, parseIntent } from './intents'
 import { VOICES, type VoiceId, shortName, voiceFor } from './voices'
 import { FRAGMENTS } from './data/fragments'
+import type { RescueEvent } from '../rescue/HostRescue'
 
 export interface BanterBot {
   id: number
@@ -737,6 +738,79 @@ export class BanterDirector {
           if (this.chatterOn && now >= this.quietUntil) this.speak(b, 'bored.back', { player: ps.name, you: ps.name })
         }
       }
+    }
+  }
+
+  /** The player a bot is with on request, or null. The rescue weighs leaving them. */
+  playerOf(bot: number): number | null {
+    return this.bots.get(bot)?.request?.player ?? null
+  }
+
+  private readonly rescued = new Map<number, number>()
+  private conflictAt = -Infinity
+  private conflicted: BotState | null = null
+
+  /** A rescue happened (src/bots/rescue): say so, in character. */
+  rescue(e: RescueEvent): void {
+    const now = this.world.now()
+    const bot = (id: number) => this.bots.get(id)
+    const others = (not: BotState) => [...this.bots.values()].filter((b) => b !== not)
+    const t = now + 0.6
+    switch (e.kind) {
+      case 'stuck': {
+        const s = bot(e.stuck)
+        if (!s) return
+        this.speak(s, 'stuck.call', {}, t)
+        const o = others(s)
+        if (o.length && (e.clumsy || e.count >= 2) && this.r() < 0.75) this.speak(pickOne(o, this.r), 'stuck.reputation', { subj: s.short, you: s.short, count: ordinal(e.count) })
+        return
+      }
+      case 'pointed': { const s = bot(e.stuck); if (s) this.speak(s, 'stuck.pointed', {}); return }
+      case 'conflict': {
+        const b = bot(e.bot), s = bot(e.stuck)
+        if (!b || !s) return
+        const p = e.player !== null ? this.players.get(e.player) : undefined
+        const ctx = { subj: s.short, player: p?.name ?? 'everyone', you: p?.name ?? s.short }
+        const v = b.voice
+        if (e.going) this.speak(b, v === 'clerk' ? 'conflict.form' : this.r() < 0.6 ? 'conflict.go' : 'conflict.guilt', ctx)
+        else if (this.conflicted && this.conflicted !== b && now - this.conflictAt < 20) this.speak(b, 'conflict.bargain', { ...ctx, you: this.conflicted.short })
+        else if (v === 'clerk') this.speak(b, 'conflict.form', ctx)
+        else if (p && this.r() < 0.4) this.speak(b, 'conflict.ask.player', ctx)
+        else this.speak(b, VOICES[v].loyalty >= 0.6 ? 'conflict.stay' : 'conflict.guilt', ctx)
+        this.conflicted = b; this.conflictAt = now
+        return
+      }
+      case 'start': { const b = bot(e.bot), s = bot(e.stuck); if (b) this.speak(b, 'rescue.start', { subj: s?.short ?? 'you', you: s?.short ?? 'you' }); return }
+      case 'retry': { const b = bot(e.bot), s = bot(e.stuck); if (b && this.r() < 0.7) this.speak(b, 'rescue.retry', { subj: s?.short ?? 'you', you: s?.short ?? 'you' }); return }
+      case 'freed': {
+        const s = bot(e.stuck)
+        const helper = e.by.map(bot).find((b): b is BotState => !!b)
+        const person = e.players.map((id) => this.players.get(id)).find((p) => !!p)
+        const n = (this.rescued.get(e.stuck) ?? 0) + 1
+        this.rescued.set(e.stuck, n)
+        if (s) {
+          const thanksTo = person?.name ?? helper?.short ?? 'everyone'
+          // The braggart and the moon are the ungrateful ones, mostly.
+          const ingrate = (s.voice === 'pilot' || s.voice === 'moon') ? this.r() < 0.7 : this.r() < 0.2
+          this.speak(s, ingrate ? 'rescue.success.ingrate' : 'rescue.success.thanks', { you: thanksTo, player: thanksTo }, t)
+        }
+        if (helper && this.r() < 0.7) this.speak(helper, 'rescue.helper.modest', { subj: s?.short ?? 'them', you: s?.short ?? 'them' })
+        if (person && helper) this.speak(helper, 'rescue.player.thanks', { player: person.name, you: person.name })
+        if (s && n >= 2) this.timers.push({ at: now + 90 + this.r() * 120, run: () => {
+          const o = [...this.bots.values()].filter((b) => b !== s)
+          if (o.length && this.bots.has(s.id)) this.speak(pickOne(o, this.r), 'rescue.callback', { subj: s.short, you: s.short, count: ordinal(n) })
+        } })
+        return
+      }
+      case 'giveup': { const s = bot(e.stuck); if (s) this.speak(s, 'rescue.giveup', {}); return }
+      case 'player.came': {
+        const p = this.players.get(e.player), s = bot(e.stuck)
+        if (!p || !s) return
+        const speaker = this.r() < 0.5 ? s : pickOne(others(s).length ? others(s) : [s], this.r)
+        this.speak(speaker, 'rescue.player.came', { player: p.name, you: p.name, subj: s.short })
+        return
+      }
+      case 'mishap': return
     }
   }
 

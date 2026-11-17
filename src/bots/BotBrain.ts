@@ -62,6 +62,12 @@ export class BotBrain implements System {
   /** While true the old self-rescue (a teleport to a pad) waits: someone is coming to help. */
   holdRecovery = false
   private applied: BrainDirective | null = null
+  /** Freed by someone else (src/bots/rescue): start the trouble clocks again. */
+  clearTrouble(): void {
+    this.immobileTime = this.liquidTime = this.flippedTime = 0
+    this.lastPosition.copy(this.vehicle.body.translation())
+    this.mind?.reset()
+  }
   /** Seconds going nowhere, upside down, or with wheels in liquid: for the bots' chatter. */
   get trouble(): { stuck: number; flipped: number; bog: number } {
     return { stuck: Math.max(this.mind?.troubleFor ?? 0, this.immobileTime), flipped: this.flippedTime, bog: this.liquidTime }

@@ -930,6 +930,15 @@ export class NetClient implements System {
     },
   }
 
+  /** Bot rescues (src/bots/rescue) fire the grapple through the same hooks as bot decisions. */
+  get botGearHooks(): BotDecisionHooks { return this.botDecisionHooks }
+
+  /** Bot `id`'s grapple cord on the host: hook in the air, tied to vehicle `to`, or null for none. */
+  botCord(id: number): { flying: boolean; to: number | null } | null {
+    const c = this.botGear.get(id)?.bungee.mine
+    return c ? { flying: Boolean(c.hook), to: c.hook ? null : c.to } : null
+  }
+
   private makeBotGear(id: number, vehicle: Vehicle): BotGear {
     return new BotGear(this.ctx.game, id, vehicle, {
       surface: this.grappleSurface,

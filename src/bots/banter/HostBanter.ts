@@ -19,6 +19,9 @@ import { pointsOfInterest, type PointOfInterest } from '../nav'
 import { BanterDirector, type BanterBot, type BanterPlayer, type Directive } from './Director'
 import { cloudCoverage } from '../../world/sky/skyParams'
 import { terrainLook } from '../../world/terrain/settings'
+import { HostRescue } from '../rescue/HostRescue'
+import type { BotGearHooks } from '../gear'
+import type { Navigator } from '../pilot/types'
 import { params } from '../../../shared/params'
 
 /** What the bridge needs from networking. NetClient satisfies it. */
@@ -31,11 +34,14 @@ export interface BanterNet {
   readonly players: ReadonlyMap<number, { id: number; kind: string; bot?: boolean }>
   displayName(id: number): string
   vehicleOf(id: number): Vehicle | undefined
+  readonly botGearHooks: BotGearHooks
+  botCord(id: number): { flying: boolean; to: number | null } | null
 }
 
 export interface BanterBots {
   readonly vehicles: readonly Vehicle[]
   readonly brainList: readonly BotBrain[]
+  readonly navigator?: Navigator
 }
 
 const LOOKS = ['volcanic', 'desert', 'alpine', 'island', 'icy', 'obsidian', 'badlands', 'lunar', 'swampy']
@@ -51,6 +57,8 @@ interface Track { air: number; idle: number; flipped: number }
 
 export class HostBanter implements System {
   director: BanterDirector | null = null
+  /** Bots rescuing each other (src/bots/rescue); runs with chatter on or off. */
+  rescue: HostRescue | null = null
   private sampleTime = 0
   private thinkTime = 0
   private readonly tracks = new Map<number, Track>()
@@ -83,14 +91,32 @@ export class HostBanter implements System {
     if (this.sampleTime < SAMPLE) return
     const elapsed = this.sampleTime
     this.sampleTime = 0
-    if (!this.net.connected || !this.net.isHost) { this.director = null; this.tracks.clear(); return }
+    const net = this.net
+    if (!this.net.connected || !this.net.isHost) { this.director = null; this.rescue?.dispose(); this.rescue = null; this.tracks.clear(); return }
     this.director ??= new BanterDirector(this.world(), this.hooks(), { seed: `${this.net.id}:${Date.now()}`, onLine: this.onLine })
+    this.rescue ??= new HostRescue(this.terrain, {
+      get isHost() { return net.isHost }, get connected() { return net.connected }, get mode() { return net.mode },
+      vehicleOf: (id) => net.vehicleOf(id), get botGearHooks() { return net.botGearHooks }, botCord: (id) => net.botCord(id),
+      displayName: (id) => net.displayName(id), people: () => [...net.players.values()].filter((p) => !p.bot).map((p) => p.id),
+    }, this.bots, this.bots.navigator ?? null, (e) => this.director?.rescue(e), (bot) => this.withPlayer(bot))
+    this.rescue.update(elapsed)
     this.sample(elapsed)
     if (this.thinkTime >= THINK) { this.thinkTime = 0; this.director.tick() }
     this.cost.calls++; this.cost.ms += performance.now() - t0
   }
 
-  dispose(): void { this.unsubscribe() }
+  dispose(): void { this.unsubscribe(); this.rescue?.dispose() }
+
+  /** The player a bot is with: one who asked it, or the host it trails by default when close. */
+  private withPlayer(bot: number): number | null {
+    const asked = this.director?.playerOf(bot) ?? null
+    if (asked !== null) return asked
+    const brain = this.bots.brainList[bot - BOT_ID_BASE]
+    const host = this.net.vehicleOf(this.net.id)
+    if (!brain || !host || brain.mood !== 'chase') return null
+    const a = brain.vehicle.body.translation(), b = host.body.translation()
+    return Math.hypot(a.x - b.x, a.z - b.z) < 50 ? this.net.id : null
+  }
 
   private sample(dt: number): void {
     this.hour = this.environment?.hour ?? this.hour
@@ -181,6 +207,7 @@ export class HostBanter implements System {
       allows: (what: 'follow' | 'drive') => canDrive.value && topThrottle.value > 0 && (what === 'drive' || followYou.value > 0),
       tagOn: () => this.net.mode === MODE_TAG,
       direct: (bot: number, d: Directive | null) => this.direct(bot, d),
+      helpPlayer: (player: number) => this.rescue?.helpPlayer(player) ?? false,
     }
   }
 
