@@ -14,6 +14,7 @@ import { LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import type { ParamValue } from '../../../shared/params'
 import { ORDINARY_BODY, planetById, type PlanetBody } from '../../world/planets'
+import { lobbyLook, type LobbyLook } from '../../world/lobbyLook'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
 
 export interface GalaxyWorld {
@@ -25,6 +26,8 @@ export interface GalaxyWorld {
   /** A lava sea glows on the night side. */
   glow: boolean
   seed: number
+  /** Its name setting (world.nameSeed): what its label calls it, and what picking it keeps. */
+  nameSeed?: number
   /** A world still forming: molten, its crust shifting. It has no map. The custom planet. */
   forming?: boolean
   /** The planet recipe its map is painted from, when that is not its id. */
@@ -47,6 +50,14 @@ export interface GalaxyOptions {
    * level, so weak devices keep the galaxy at almost no cost. Reduced motion does the same.
    */
   still?(): boolean
+  /** Where to centre the system and how large, as [x from left, y from bottom, scale], in
+   *  fractions of the host. Asked each frame; undefined keeps the default framing. */
+  frame?(): readonly [number, number, number] | undefined
+  /**
+   * The world under a hovering pointer or a finger held down, or undefined when there is none:
+   * its label shows while it is pointed at, even where the layout had to fade it.
+   */
+  onPoint?(id: string | undefined): void
   /** Focus the label selected with a controller, so its normal activation stays accessible. */
   onFocus?(id: string): void
   /** Logo box in CSS pixels relative to this host, plus the existing graphics tier. */
@@ -83,45 +94,117 @@ const VIEW_TAN = 0.62
  * (a moon is plainly a moon) while the smallest world is still something to tap on a phone.
  */
 export const worldRadius = (size: number) => PLANET * Math.pow(Math.min(1.6, Math.max(0.3, size)), 0.85)
-export interface OrbitPlace { position: [number, number, number]; radius: number; orbit: number }
+export interface OrbitPlace {
+  position: [number, number, number]; radius: number
+  /** Distance from the sun along the orbit's long axis (its semi-major axis); a moon's is its planet's. */
+  orbit: number
+  /** The farthest the world goes from the sun, its moon's swing included. */
+  reach: number
+  /** A moon's planet, as an index into the bodies; absent for a planet. */
+  parent?: number
+  /**
+   * The orbit's path, for drawing it: the normal of its plane, the direction of its nearest
+   * point to the sun (in that plane) and its eccentricity. Absent for a moon.
+   */
+  path?: { normal: [number, number, number]; nearest: [number, number, number]; eccentricity: number }
+}
+/** A body to lay out: a recipe's, with its id so a moon can find its planet. */
+export type OrbitBody = PlanetBody & { id?: string }
 /**
- * Where the worlds are at a time. Every world has an orbit of its own, a circle round the sun
- * in one plane. The orbits are ordered by heat, the hottest world nearest the sun and the
- * frozen ones farthest out, and each lies beyond the last by both worlds' radii plus a clear
- * space. Two worlds' centres are never nearer than the difference of their orbits, so no two
- * can touch wherever they are in their years: it holds by construction, not by timing.
+ * Each lane's tilt and shape, the same every time: inclinations of 1.5 to 4 degrees with the
+ * line where the orbit crosses the system's plane turned a golden angle on per lane, and
+ * eccentricities of 0.02 to 0.05. Small, so the system still reads as one disc from the
+ * resting view, the labels and the camera behave, and nothing hides below the plane.
+ */
+export function orbitShape(lane: number): { inclination: number; node: number; eccentricity: number; perihelion: number } {
+  const frac = (v: number) => v - Math.floor(v)
+  return {
+    inclination: (1.5 + 2.5 * frac(lane * 0.618034 + 0.31)) * Math.PI / 180,
+    node: frac(lane * 0.381966 + 0.13) * Math.PI * 2,
+    eccentricity: 0.02 + 0.03 * frac(lane * 0.7548777 + 0.57),
+    perihelion: frac(lane * 0.5698403 + 0.21) * Math.PI * 2,
+  }
+}
+/** v turned by angle a about the unit axis k (Rodrigues). */
+function turnAbout(v: Vec, k: Vec, a: number): Vec {
+  const c = Math.cos(a), s = Math.sin(a), d = (1 - c) * dot(k, v), x = cross(k, v)
+  return [v[0] * c + x[0] * s + k[0] * d, v[1] * c + x[1] * s + k[1] * d, v[2] * c + x[2] * s + k[2] * d]
+}
+/** How far a moon circles from its planet's centre: both radii and a gap that reads at a glance. */
+const moonDistance = (planet: number, moon: number) => planet + moon + Math.max(0.16, planet * 0.4)
+/**
+ * Where the worlds are at a time. Every planet has an orbit of its own round the sun, ordered
+ * by heat, the hottest world nearest the sun and the frozen ones farthest out. A moon (a body
+ * with a parent among the bodies) circles its planet instead, faster, on a tilted path of its
+ * own, and its planet's lane is widened to hold it.
+ *
+ * Orbits are slightly tilted and slightly oval (see orbitShape). Each lane's nearest point to
+ * the sun lies beyond the last lane's farthest by both worlds' reaches and a clear space. No
+ * world is ever nearer the sun than its own lane's nearest point or farther than its farthest,
+ * so two worlds on different lanes can never touch, whatever their tilts and wherever they
+ * are in their years: it holds by construction, not by timing.
  *
  * The years are Kepler's: a world's turn per second falls as its orbit to the power 3/2, so
  * the inner worlds visibly overtake the outer ones. Each starts a golden angle on from the
  * last, which never lines the system up. Places are returned in the order the bodies came.
  */
-export function orbitLayout(bodies: readonly PlanetBody[], time: number): OrbitPlace[] {
+export function orbitLayout(bodies: readonly OrbitBody[], time: number): OrbitPlace[] {
   const count = Math.min(MAX, bodies.length), places: OrbitPlace[] = new Array(count)
-  const order = Array.from({ length: count }, (_, i) => i).sort((a, b) => bodies[b].heat - bodies[a].heat || a - b)
-  let orbit = INNER, last = 0
+  const parentOf = (i: number) => {
+    const id = bodies[i].parent
+    const p = id === undefined ? -1 : bodies.findIndex((b, j) => j < count && j !== i && b.id === id && b.parent === undefined)
+    return p < 0 ? undefined : p
+  }
+  const moons = new Map<number, number[]>()
+  for (let i = 0; i < count; i++) { const p = parentOf(i); if (p !== undefined) moons.set(p, [...(moons.get(p) ?? []), i]) }
+  const isMoon = (i: number) => parentOf(i) !== undefined
+  const order = Array.from({ length: count }, (_, i) => i).filter(i => !isMoon(i)).sort((a, b) => bodies[b].heat - bodies[a].heat || a - b)
+  // A planet's reach: its own radius, or its farthest moon's swing round it.
+  const span = (i: number) => {
+    const radius = worldRadius(bodies[i].size)
+    return Math.max(radius, ...(moons.get(i) ?? []).map((m, k) => moonDistance(radius, worldRadius(bodies[m].size)) + k * 0.6 + worldRadius(bodies[m].size)))
+  }
+  let far = 0, lastSpan = 0
   order.forEach((index, lane) => {
-    const radius = worldRadius(bodies[index].size)
-    if (lane > 0) orbit += last + radius + CLEAR
-    last = radius
-    const angle = 0.9 + lane * 2.399963 + time * RATE * Math.pow(INNER / orbit, 1.5)
-    places[index] = { position: [Math.cos(angle) * orbit, 0, Math.sin(angle) * orbit], radius, orbit }
+    const radius = worldRadius(bodies[index].size), reach = span(index), shape = orbitShape(lane), e = shape.eccentricity
+    // The innermost lane's nearest point is INNER; each next one starts beyond the last one's farthest.
+    const orbit = lane === 0 ? INNER / (1 - e) : (far + lastSpan + reach + CLEAR) / (1 - e)
+    far = orbit * (1 + e); lastSpan = reach
+    // The orbit's plane: the flat plane turned about the line of nodes by the inclination.
+    const node: Vec = [Math.cos(shape.node), 0, Math.sin(shape.node)]
+    const mean = 0.9 + lane * 2.399963 + time * RATE * Math.pow(INNER / orbit, 1.5)
+    // The angle from the nearest point, and the distance there: an ellipse with the sun at a focus.
+    const along = mean - shape.perihelion, r = orbit * (1 - e * e) / (1 + e * Math.cos(along))
+    const flat: Vec = [Math.cos(mean) * r, 0, Math.sin(mean) * r]
+    const position = turnAbout(flat, node, shape.inclination)
+    const nearest = turnAbout([Math.cos(shape.perihelion), 0, Math.sin(shape.perihelion)], node, shape.inclination)
+    places[index] = { position, radius, orbit, reach: far + reach, path: { normal: turnAbout([0, 1, 0], node, shape.inclination), nearest, eccentricity: e } }
+    for (const [k, moon] of (moons.get(index) ?? []).entries()) {
+      const mr = worldRadius(bodies[moon].size), d = moonDistance(radius, mr) + k * 0.6
+      // A moon's month: quick enough to watch it go round, slow enough to stay calm.
+      const turn = 0.6 + k * 1.9 + time * RATE * 4.5, tilt = (8 + k * 5) * Math.PI / 180
+      const offset = turnAbout([Math.cos(turn) * d, 0, Math.sin(turn) * d], [Math.cos(shape.node + 1), 0, Math.sin(shape.node + 1)], tilt)
+      places[moon] = { position: [position[0] + offset[0], position[1] + offset[1], position[2] + offset[2]], radius: mr, orbit, reach: far + reach, parent: index }
+    }
   })
   return places
 }
 /** The camera distance at which the whole system fits the short side of the screen, with a margin. */
-export function fitDistance(bodies: readonly PlanetBody[]): number {
-  return Math.max(...orbitLayout(bodies, 0).map(place => place.orbit + place.radius), INNER) * 1.08 / VIEW_TAN
+export function fitDistance(bodies: readonly OrbitBody[]): number {
+  return Math.max(...orbitLayout(bodies, 0).map(place => place.reach), INNER) * 1.08 / VIEW_TAN
 }
 /** Portrait phones start closer so the planets read; a pinch can reveal the outer orbits. */
-export function openingDistance(bodies: readonly PlanetBody[], width: number, height: number): number {
+export function openingDistance(bodies: readonly OrbitBody[], width: number, height: number): number {
   const portraitPhone = width > 0 && width <= 600 && height > width * 1.2
   return fitDistance(bodies) * (portraitPhone ? 0.8 : 1)
 }
 /** The body a galaxy world is laid out as: its recipe's, or an ordinary planet's. */
-export function bodyOf(world: GalaxyWorld): PlanetBody {
+export function bodyOf(world: GalaxyWorld): OrbitBody {
   // A world still forming is molten: it belongs close in, among the hot worlds.
   if (world.forming) return { size: 1, heat: 0.95 }
-  return planetById(world.recipe ?? world.id.split('~')[0])?.body ?? ORDINARY_BODY
+  const recipe = world.recipe ?? world.id.split('~')[0]
+  // A rehearsal copy ("alpine~1") is its own body: its moon stays with the real planet.
+  return { ...(planetById(recipe)?.body ?? ORDINARY_BODY), id: world.id }
 }
 /**
  * The world a tap at (x, y) means. On a disc, the nearest disc there: the one that is seen,
@@ -259,6 +342,11 @@ uniform float uPopulation[${MAX}];
 uniform vec4 uWorld[${MAX}];        // xyz position, w radius
 uniform vec3 uLand[${MAX}], uSea[${MAX}];
 uniform vec4 uKind[${MAX}];         // x glow, y has map, z spin, w seed
+uniform vec4 uAir[${MAX}];          // the limb's colour, and how deep the air is (0 none)
+uniform vec4 uLook[${MAX}];         // x cloud cover, y ground gloss, z night glow (1 lava, 2 glowcaps), w land share
+uniform vec3 uCloud[${MAX}];        // each world's cloud colour
+uniform vec4 uPathN[${MAX}];        // each orbit's plane normal, and its long half axis (0: a moon, no line)
+uniform vec4 uPathP[${MAX}];        // the direction of its nearest point to the sun, and its eccentricity
 uniform highp sampler2DArray uMaps; uniform sampler2D uClose; uniform int uCloseIndex;
 out vec4 color;
 float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -304,16 +392,16 @@ void main() {
     if (i >= uCount) break;
     if (uOnly >= 0 && i != uOnly) continue;
     vec3 oc = uEye - uWorld[i].xyz; float r = uWorld[i].w;
-    trace += 1.0 - smoothstep(0.0, planeW * 1.5 + 1e-5, abs(planeR - length(uWorld[i].xz)));
+    if (uPathN[i].w > 0.0) { float pt = -dot(uEye, uPathN[i].xyz) / dot(ray, uPathN[i].xyz); vec3 pp = uEye + ray * pt; float pr = length(pp), e = uPathP[i].w; trace += step(0.0, pt) * (1.0 - smoothstep(0.0, fwidth(pr) * 1.5 + 1e-5, abs(pr - uPathN[i].w * (1.0 - e * e) / (1.0 + e * dot(pp / max(pr, 1e-5), uPathP[i].xyz))))); }   // this orbit's own tilted, oval path
     float b = dot(oc, ray), cc = dot(oc, oc) - r * r, disc = b * b - cc;
     if (disc > 0.0) { float t = -b - sqrt(disc); if (t > 0.0 && t < nearest) { nearest = t; found = i; normal = normalize(oc + ray * t); } }
     else if (b < 0.0) {
       // Just outside the limb: a thin shell of air, brighter toward the sun.
       float miss = sqrt(max(0.0, cc + r * r - b * b)) - r;          // how far the ray passes outside the limb
-      vec3 air = mix(uSea[i], vec3(0.35, 0.6, 1.0), 0.45);
+      vec3 air = uAir[i].rgb;
       float toward = 0.3 + 0.7 * clamp(dot(normalize(-uWorld[i].xyz), normalize(oc + ray * (-b))) * 0.5 + 0.5, 0.0, 1.0);
       // Tint and strength add up, so where two halos overlap the colour blends, not switches.
-      float h = pow(clamp(1.0 - miss / (r * 0.14), 0.0, 1.0), 2.5) * toward * 0.6; halo += h; haloTint += air * h;
+      float h = pow(clamp(1.0 - miss / (r * 0.14 * sqrt(uAir[i].w) + 1e-5), 0.0, 1.0), 2.5) * toward * 0.6 * min(uAir[i].w, 1.2); halo += h; haloTint += air * h;
       // The nearest halo on this ray is kept apart: it also shows over a world farther off.
       if (h > 0.0 && -b < haloNear) { haloNear = -b; haloFront = air * h; }
     }
@@ -380,35 +468,50 @@ void main() {
     // Turn the world on its tilted axis.
     float tilt = ${TILT}, ct = cos(tilt), st = sin(tilt); vec3 g = vec3(normal.x, ct * normal.y - st * normal.z, st * normal.y + ct * normal.z);
     float spin = uKind[found].z; g = vec3(cos(spin) * g.x + sin(spin) * g.z, g.y, -sin(spin) * g.x + cos(spin) * g.z);
-    vec3 surface; float land; float molten = 0.0; float dry = 1.0;   // dry: ground a settlement could stand on
+    vec3 surface; float wet = 0.0; float molten = 0.0; vec4 look = uLook[found], airOf = uAir[found];
     if (uKind[found].x > 1.5) {
       // A world still forming: plates of dark crust drifting on magma, never the same twice.
       float plates = fbm(g * 2.4 + vec3(0.0, uTime * 0.05, uKind[found].w)), cracks = fbm(g * 6.0 + vec3(uTime * 0.11, 0.0, 3.0));
       molten = smoothstep(0.42, 0.6, plates * 0.65 + cracks * 0.5 + 0.08 * sin(uTime * 0.7 + plates * 9.0));
-      surface = mix(vec3(0.07, 0.05, 0.06), vec3(1.0, 0.42, 0.08), molten) + vec3(1.0, 0.85, 0.5) * pow(molten, 6.0) * 0.6; land = 1.0;
+      surface = mix(vec3(0.07, 0.05, 0.06), vec3(1.0, 0.42, 0.08), molten) + vec3(1.0, 0.85, 0.5) * pow(molten, 6.0) * 0.6;
     } else if (uKind[found].y > 0.5) {
+      // The painted map: colour, and in alpha how dry the ground is (0 sea, lake or river).
       vec4 m = mapAt(found, vec2(atan(g.x, g.z) / 6.2831853 + 0.5, 0.5 - asin(clamp(g.y, -1.0, 1.0)) / 3.1415927));
-      surface = m.rgb; land = 1.0 - clamp((m.r - m.b * 1.6 - 0.25) * 2.2, 0.0, 1.0);
-      // The painted map is opaque: open water is where blue leads the other two.
-      dry = 1.0 - smoothstep(0.02, 0.14, m.b - max(m.r, m.g));
+      surface = m.rgb; wet = 1.0 - m.a;
+      // Close up, ground finer than the map: seeded grain that fades out before it can alias.
+      float footprint = length(fwidth(g));
+      if (footprint < 0.006) surface *= 1.0 + (fbm(g * 220.0 + uKind[found].w) - 0.5) * 0.22 * (1.0 - smoothstep(0.002, 0.006, footprint)) * (1.0 - wet);
     } else {
+      // Until the map is painted: the biome's own palette as a soft ball, its land share true.
       float h = fbm(g * 2.1 + uKind[found].w), detail = fbm(g * 7.0);
-      land = smoothstep(0.5, 0.54, h + (detail - 0.5) * 0.12);
-      surface = mix(uSea[found] * (0.8 + 0.4 * detail), uLand[found] * (0.62 + 0.75 * detail), land); dry = land;
+      float land = smoothstep(-0.02, 0.02, h + (detail - 0.5) * 0.12 - (0.5 + (0.5 - look.w) * 0.42));
+      surface = mix(uSea[found] * (0.85 + 0.3 * detail), uLand[found] * (0.75 + 0.5 * detail), land); wet = 1.0 - land;
     }
-    float cloud = uAmbience > 0.0 && uKind[found].x < 0.5 ? 0.5 * uAmbience * smoothstep(0.5, 0.72, fbm(g * 3.2 + vec3(uTime * 0.02, 0.0, uTime * 0.013) + 9.0)) : 0.0;
-    surface = mix(surface, vec3(0.93, 0.96, 1.0), cloud);
+    // Weather: cloud only where the world has it, as much as it has, drifting slowly.
+    float cover = look.x, cloud = 0.0;
+    if (cover > 0.0 && uKind[found].x < 1.5) {
+      float f = fbm(g * 3.2 + vec3(uTime * 0.02, 0.0, uTime * 0.013) + 9.0 + uKind[found].w);
+      // Thin cloud on a clear world, a mottled, still translucent deck on a murky one.
+      cloud = smoothstep(0.66 - cover * 0.32, 0.8 - cover * 0.3, f) * min(0.8, 0.35 + cover * 0.7) * mix(1.0, uAmbience, 0.5);
+    }
+    // Light. With air the terminator is a soft band; on an airless world it is a hard edge.
+    float facing = dot(normal, light), soft = 0.06 * min(airOf.w, 1.5);
+    float day = clamp((facing + soft) / (1.0 + soft), 0.0, 1.0);
+    day = airOf.w > 0.0 ? pow(day, 0.85) : smoothstep(-0.01, 0.03, facing) * max(facing, 0.0);
+    // Glints: water always, glassy or icy ground by its gloss. Lava is too rough to mirror the sun.
+    vec3 halfway = normalize(light - ray);
+    float shine = wet * (uKind[found].x > 0.5 ? 0.0 : 0.55) + look.y * (1.0 - wet) * 0.8;
+    float glint = pow(max(dot(normal, halfway), 0.0), mix(40.0, 140.0, look.y)) * shine * step(0.0, facing);
     // A little fill, so a world seen from its night side is still a world and not a hole.
-    vec3 world = surface * (0.11 + 1.1 * pow(lit, 0.85));
-    world += mix(uSea[found], surface, uKind[found].y) * step(0.5, uKind[found].x) * step(uKind[found].x, 1.5) * (1.0 - land) * 0.6;   // lava glows in the dark
+    vec3 ground = surface * (0.06 + 1.06 * day) + vec3(1.0, 0.96, 0.88) * glint * (1.0 - cloud);
+    vec3 world = mix(ground, uCloud[found] * (0.04 + 1.0 * day), cloud);
+    // Night side: lava glows through its crust; a wetland's glowcaps make a faint green shimmer.
+    float dark = 1.0 - smoothstep(-0.05, 0.25, facing);
+    if (look.z > 0.5 && look.z < 1.5) world += surface * wet * (0.35 + 0.55 * dark) * (1.0 - cloud * 0.6);
+    if (look.z > 1.5 && uShed.y < 1.0) world += vec3(0.25, 0.9, 0.55) * pow(noise(g * 140.0), 6.0) * (1.0 - wet) * dark * 0.35 * (1.0 - cloud) * (1.0 - uShed.y);
     world += surface * molten * 0.9;                                              // and magma lights itself
-    // Night side of a watered world: the lights of settlements on the land.
-    if (uKind[found].x < 0.5 && uShed.y < 1.0) {
-      vec3 lampCell = floor(g * 46.0); float lamp = step(0.93, hash(lampCell)) * smoothstep(0.35, 0.0, lit) * dry;
-      world += vec3(1.0, 0.75, 0.42) * lamp * 0.55 * (1.0 - uShed.y);
-    }
-    vec3 air = mix(uSea[found], vec3(0.35, 0.6, 1.0), 0.45);
-    world += air * pow(1.0 - clamp(dot(normal, -ray), 0.0, 1.0), 3.0) * (0.15 + 0.7 * lit);
+    // The air at the limb, its depth and colour the world's own: none at all on an airless one.
+    world += airOf.rgb * pow(1.0 - clamp(dot(normal, -ray), 0.0, 1.0), 3.0) * (0.1 + 0.75 * day) * min(airOf.w, 1.3);
     c = world;
     // The air of a nearer world, where its limb crosses this one: not cut off at this disc.
     if (haloNear < nearest) c += haloFront;
@@ -642,6 +745,16 @@ export class Galaxy {
       if (this.options.worlds[this.chosen] === world) this.request(world, CLOSE, true)
     }
   }
+  /**
+   * A world's seed changed (the host rolled it, or a guest's room did): repaint its sphere so
+   * it is the world it now leads to. The old map stays until the new one arrives.
+   */
+  setSeed(id: string, seed: number): void {
+    const index = this.options.worlds.findIndex(world => world.id === id), world = this.options.worlds[index]
+    if (!world || world.forming || world.seed === seed || this.savedTarget) return
+    world.seed = seed; this.wake = 2
+    if (this.active) { this.request(world, SMALL, true); if (this.chosen === index) this.request(world, CLOSE, true) }
+  }
   private savedTarget = false
   /** Borrow a recipe's existing slot for one saved-world flight. Custom is never touched. */
   savedWorldTarget(recipe: string, seed: number, values: Record<string, ParamValue>, identity: string): () => void {
@@ -706,7 +819,7 @@ export class Galaxy {
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.warn('Syn3h galaxy shader failed.', gl.getProgramInfoLog(program)); return }
     gl.useProgram(program); gl.bindVertexArray(gl.createVertexArray())
-    for (const name of ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex']) this.uniforms[name] = gl.getUniformLocation(program, name)
+    for (const name of ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uMaps', 'uClose', 'uCloseIndex']) this.uniforms[name] = gl.getUniformLocation(program, name)
     // One array of small maps on unit 0, the close map on unit 1.
     const linear = (target: number) => { gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE) }
     gl.activeTexture(gl.TEXTURE0); this.array = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.array)
@@ -746,7 +859,8 @@ export class Galaxy {
       if (selected) this.choose(selected)
     }, options)
     canvas.addEventListener('pointerdown', event => this.down(event), options)
-    canvas.addEventListener('pointermove', event => this.move(event), options)
+    canvas.addEventListener('pointermove', event => { this.move(event); this.point(event) }, options)
+    canvas.addEventListener('pointerleave', () => this.pointAt(undefined), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
     canvas.addEventListener('wheel', event => { event.preventDefault(); this.handled = performance.now(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(this.farthest, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
     // Held upright, a phone has height to spare and no width: look down more steeply so the
@@ -826,13 +940,25 @@ export class Galaxy {
     this.canvas.width = Math.max(1, Math.round(this.host.clientWidth * scale)); this.canvas.height = Math.max(1, Math.round(this.host.clientHeight * scale))
     if (this.target2) { const gl = this.gl; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null) }
   }
+  /** How each world looks from space besides its map, by recipe, seed and snapshot. */
+  private readonly looks = new Map<string, LobbyLook>()
+  private lookOf(world: GalaxyWorld): LobbyLook {
+    const key = this.mapKey(world, SMALL)
+    let look = this.looks.get(key)
+    if (!look) {
+      // A world still forming has no recipe yet: molten, airless and cloudless.
+      look = world.forming ? { land: world.land, sea: world.sea, landShare: 1, air: [1, 0.5, 0.2], airDepth: 0.3, cloud: 0, cloudTint: [1, 1, 1], gloss: 0, night: 0 } : lobbyLook(world.recipe ?? world.id.split('~')[0], world.overrides)
+      this.looks.set(key, look)
+    }
+    return look
+  }
   /** Where the worlds are now: see orbitLayout. */
-  private places(time: number): { position: Vec; radius: number }[] {
+  private places(time: number): OrbitPlace[] {
     return orbitLayout(this.options.worlds.map(bodyOf), time)
   }
   /** The farthest the view may pull back: far enough to see the whole system with room round it. */
   private get farthest(): number { return Math.max(26, fitDistance(this.options.worlds.map(bodyOf)) * 1.5) }
-  private camera(places: { position: Vec; radius: number }[]) {
+  private camera(places: OrbitPlace[]) {
     // Ease toward the chosen world; arriving is the camera settling close above it.
     const goal: Vec = this.chosen >= 0 ? places[this.chosen].position : [0, 0, 0]
     const ease = perFrame(this.chosen >= 0 ? 0.08 : 0.06, this.step)
@@ -920,7 +1046,8 @@ export class Galaxy {
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
     this.swing(elapsed, !this.drag && this.chosen < 0 && !still, wallElapsed)
     const inset = Math.min(0.3, Math.max(0, this.options.topInset?.() ?? 0) / Math.max(1, this.host.clientHeight))
-    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5 - inset / 2, 1 - inset]
+    // The short landscape layout (Shell, SHORT_LANDSCAPE) supplies its own frame.
+    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, 0.5 - inset / 2, 1 - inset]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
@@ -938,8 +1065,12 @@ export class Galaxy {
     gl.uniform1fv(u.uPopulation, worlds.slice(0, MAX).map(w => w.id === 'custom' || w.mapVariant?.startsWith('saved:') ? -1 : this.population.get(w.recipe ?? w.id)?.players ?? -1))
     gl.uniform1i(u.uCount, Math.min(MAX, worlds.length))
     gl.uniform4fv(u.uWorld, places.flatMap(p => [...p.position, p.radius]))
-    gl.uniform3fv(u.uLand, worlds.slice(0, MAX).flatMap(w => rgb(w.land))); gl.uniform3fv(u.uSea, worlds.slice(0, MAX).flatMap(w => rgb(w.sea)))
-    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] === this.mapKey(w, SMALL) || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
+    const looks = worlds.slice(0, MAX).map(w => this.lookOf(w))
+    gl.uniform3fv(u.uLand, looks.flatMap(l => rgb(l.land))); gl.uniform3fv(u.uSea, looks.flatMap(l => rgb(l.sea)))
+    gl.uniform4fv(u.uAir, looks.flatMap(l => [...l.air, l.airDepth])); gl.uniform3fv(u.uCloud, looks.flatMap(l => l.cloudTint))
+    gl.uniform4fv(u.uLook, looks.flatMap(l => [l.cloud, l.gloss, l.night, l.landShare]))
+    gl.uniform4fv(u.uPathN, places.flatMap(p => p.path ? [...p.path.normal, p.orbit] : [0, 1, 0, 0])); gl.uniform4fv(u.uPathP, places.flatMap(p => p.path ? [...p.path.nearest, p.path.eccentricity] : [1, 0, 0, 0]))
+    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
     const smear = this.flight && this.blurProgram && this.blur > 0.003 && qualityShed(2) < 1
     if (smear) gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
@@ -967,11 +1098,16 @@ export class Galaxy {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
       return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0, depth: z }
     })
+    // The sun's bright core, which labels keep clear of.
+    const toSun = sub([0, 0, 0], view.eye), sunZ = Math.max(dot(toSun, view.forward), 0.001)
+    this.sunScreen = { x: width * this.framing[0] + (dot(toSun, view.right) / (sunZ * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(toSun, view.up) / (sunZ * view.tan)) * short / 2, radius: Math.max(6, short * 0.02) }
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
     // Arrival: a second and a half after choosing, whatever the frame rate.
     if (this.chosen >= 0 && !this.arrived && (this.arriving += this.step) > 1.5) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[] = []
+  /** Where the sun's core is on screen, as of the last frame drawn. */
+  sunScreen = { x: -1e4, y: -1e4, radius: 0 }
   /** Fly to a world, as a tap on it does. */
   choose(id: string): void { this.handled = performance.now();
     this.wake = 2; const index = this.options.worlds.findIndex(world => world.id === id)
@@ -1076,7 +1212,17 @@ export class Galaxy {
     }
     this.padButtons = buttons
   }
-  private down(event: PointerEvent): void { this.handled = performance.now();
+  /** Which world a pointer is over (on its disc, or just off it as a tap would pick), told to the labels when it changes. */
+  private pointed: string | undefined
+  private pointAt(id: string | undefined): void { if (id !== this.pointed) { this.pointed = id; this.options.onPoint?.(id) } }
+  private point(event: PointerEvent): void {
+    // A mouse hovers; a finger only points while it is down. A drag is not pointing.
+    if (event.pointerType !== 'mouse' && event.type !== 'pointerdown' && !this.pointers.has(event.pointerId)) return
+    if (this.drag?.moved) { this.pointAt(undefined); return }
+    const box = this.canvas.getBoundingClientRect()
+    this.pointAt(pickWorld(this.screen, event.clientX - box.left, event.clientY - box.top, event.pointerType === 'mouse' ? 6 : 16))
+  }
+  private down(event: PointerEvent): void { this.handled = performance.now(); this.point(event);
     this.canvas.setPointerCapture(event.pointerId); this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (this.pointers.size === 1) {
       // A finger stops a coast where it is, and picks up a stretched tilt where it shows.
@@ -1110,7 +1256,7 @@ export class Galaxy {
     if (this.reduced.matches) this.pull.pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.pull.pitch))
     pitch.aim = softLimit(this.pull.pitch, PITCH_LOW, PITCH_HIGH)
   }
-  private up(event: PointerEvent, tap: boolean): void { this.handled = performance.now();
+  private up(event: PointerEvent, tap: boolean): void { this.handled = performance.now(); if (event.pointerType !== 'mouse') this.pointAt(undefined);
     this.pointers.delete(event.pointerId)
     const drag = this.drag; if (!drag || drag.id !== event.pointerId) return
     this.drag = null

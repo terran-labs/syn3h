@@ -31,8 +31,8 @@ export const SKY_PRESETS = {
     'sky.nightBrightness': 1, 'weather.cloudCoverage': 0.4, 'weather.fogDensity': 0.0002,
     'sun.timeOfDay': 11,
   },
-  /** Green scattering haze with a magenta sunset. */
-  'Methane green': {
+  /** Green scattering haze with a magenta sunset: the Mire's warm, wet sky. */
+  'Mire green': {
     'sky.rayleighR': 8, 'sky.rayleighG': 30, 'sky.rayleighB': 11, 'sky.rayleigh': 1.2,
     'sky.turbidity': 4, 'sky.mieCoefficient': 0.006, 'sky.mieDirectionalG': 0.8,
     'sky.nightBrightness': 1.5, 'weather.cloudCoverage': 0.55, 'weather.fogDensity': 0.0003,
