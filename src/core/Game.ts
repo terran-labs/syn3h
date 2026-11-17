@@ -11,6 +11,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { installRenderDiagnostics, recordStartupPhase, showRendererLost, startupTiming, timeStartup } from './diagnostics'
+import { guardDevice, type GuardedRenderer } from './deviceLoss'
 import { drawFrame, gpuDeadlineMs, startRenderer, viewState, type PostChain } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
@@ -96,9 +97,14 @@ export class Game {
     if (started.fallbackReason) { startupTiming.fallbackReason = started.fallbackReason; console.warn(`Syn3h: ${started.fallbackReason}`) }
     this.backend = (this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl'
     startupTiming.backend = this.backend
-    // Device or context loss leaves a frozen canvas; tell the player and offer a reload.
+    // Device or context loss leaves a frozen canvas; tell the player and offer a reload. Once:
+    // three's device.lost and the guard below can both report the same loss.
     const lost = this.renderer.onDeviceLost
-    this.renderer.onDeviceLost = info => { lost.call(this.renderer, info); showRendererLost(info) }
+    let reported = false
+    this.renderer.onDeviceLost = info => { if (reported) return; reported = true; lost.call(this.renderer, info); showRendererLost(info) }
+    // A dropped WebGPU instance or a device destroyed underneath us counts as that loss too, and
+    // three's error scopes stop rejecting into the page (deviceLoss.ts).
+    guardDevice(this.renderer as unknown as GuardedRenderer)
     this.quality.attachRenderer(this.renderer)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.shadowMap.enabled = true

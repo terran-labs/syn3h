@@ -62,16 +62,20 @@ try {
     if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
     else await page.mouse.up()
     await page.waitForTimeout(1500)
-    // Pointing at a planet raises only its caption's opacity: same place, same size.
-    const target = await page.evaluate(() => { const p = window.syn3h.shell.galaxy.screen.find(s => s.visible && s.x > 0 && s.x < innerWidth && s.y > 0 && s.y < innerHeight && s.radius > 4); return { id: p.id, x: p.x, y: p.y } })
-    const before = (await measure()).find(c => c.id === target.id)
+    // Pointing at a planet raises its caption to full strength: same place, same size. The
+    // target is a planet whose caption is below full at rest (not the world in play, which
+    // rests at full), so the lift is measured, not assumed.
+    const resting = await measure()
+    const target = await page.evaluate(ids => { const p = window.syn3h.shell.galaxy.screen.find(s => ids.includes(s.id) && s.visible && s.x > 0 && s.x < innerWidth && s.y > 0 && s.y < innerHeight && s.radius > 4); return p && { id: p.id, x: p.x, y: p.y } }, resting.filter(c => c.opacity > 0.3 && c.opacity < 0.95).map(c => c.id))
+    assert.ok(target, `${name}: some planet on screen has a caption below full strength at rest`)
     if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: target.x, y: target.y }] })
     else await page.mouse.move(target.x, target.y)
     await page.waitForTimeout(500)
     const pointed = await page.evaluate(() => document.querySelector('.galaxy-label.is-pointed')?.dataset.world)
     const after = (await measure()).find(c => c.id === pointed)
     assert.ok(after, `${name}: pointing near ${target.id} points at a world with a caption`)
-    const was = pointed === target.id ? before : after
+    const was = resting.find(c => c.id === pointed) ?? after
+    assert.ok(after.opacity > was.opacity + 0.02, `${name}: pointing lifts the ${pointed} caption (${was.opacity.toFixed(2)} to ${after.opacity.toFixed(2)})`)
     assert.ok(after.opacity > 0.97, `${name}: pointing brings the ${pointed} caption to full strength (${after.opacity.toFixed(2)})`)
     assert.ok(Math.abs(after.width - was.width) < 0.5 && Math.abs(after.height - was.height) < 0.5, `${name}: pointing does not resize the ${pointed} caption`)
     check([after], 'while pointed at')
