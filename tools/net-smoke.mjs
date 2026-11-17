@@ -311,9 +311,34 @@ try {
   const before = await remoteOfA()
   const realBefore = await realA()
   const startA = realBefore
+  // What the vehicle is doing as the drive starts and each second of it, so a failure says
+  // whether it was held in its arrival, airborne, in liquid, braking or not getting throttle.
+  const driveState = () => a.evaluate(() => {
+    const s = window.syn3h, v = s.player, p = v.body.translation(), l = v.body.linvel()
+    return {
+      held: s.materialize?.isHeld?.(v) ?? null, arriving: s.materialize?.isMaterializing?.(v) ?? null,
+      wheels: v.wheelsGrounded, speed: +Math.hypot(l.x, l.z).toFixed(1), vy: +l.y.toFixed(1),
+      throttle: v.input.y, brakes: v.input.brakes, special: v.input.special,
+      surface: s.terrain.surfaceAt?.(p.x, p.z) ?? null,
+      inLiquid: (s.terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity) > p.y - 0.3,
+      aboveGround: +(p.y - s.terrain.heightAt(p.x, p.z)).toFixed(2),
+    }
+  })
+  // A vehicle can move under input from the moment the game says it is drivable: its arrival
+  // finished and its wheels down. Wait for that state (up to 20 s, timed), then time the drive.
+  const drivableT0 = Date.now()
+  const drivable = await a.waitForFunction(() => { const v = window.syn3h.player; return !window.syn3h.materialize?.isMaterializing?.(v) && v.wheelsGrounded > 0 }, null, { timeout: 20000 }).then(() => true, () => false)
+  const driveStart = { drivable, waitedForDrivableMs: Date.now() - drivableT0, ...(await driveState()), world: await a.evaluate(() => ({ planet: syn3h.planets.currentPlanet().id, seed: syn3h.params.get('world.seed').value, spawn: syn3h.player.spawnSlot })) }
+  const drivePerSecond = []
   await a.bringToFront()
   await a.keyboard.down('KeyW')
-  await a.waitForFunction(([x, z]) => { const t = window.syn3h.player.body.translation(); return Math.hypot(t.x - x, t.z - z) > 12 }, [startA[0], startA[2]], { timeout: 10000 }).catch(() => {})
+  const driveT0 = Date.now()
+  while (Date.now() - driveT0 < 10000) {
+    await wait(1000)
+    const now = await driveState(), t = await realA()
+    drivePerSecond.push({ s: Math.round((Date.now() - driveT0) / 1000), moved: +d2(startA, t).toFixed(1), ...now })
+    if (d2(startA, t) > 12) break
+  }
   await a.keyboard.up('KeyW')
   // The buggy coasts; compare once it has stopped and B's playback has caught up.
   await a.keyboard.down('ShiftLeft')
@@ -324,7 +349,7 @@ try {
   // while A is driven, and under load its playback lags, so wait for the copy to move instead
   // of sleeping a fixed time: up to 10 s for the 3 m that 3 s of throttle exceeds tenfold.
   const truth = await realA()
-  check('A itself drives', d2(realBefore, truth) > 10, { before: realBefore, after: truth, moved: +d2(realBefore, truth).toFixed(2) })
+  check('A itself drives', d2(realBefore, truth) > 10, { before: realBefore, after: truth, moved: +d2(realBefore, truth).toFixed(2), start: driveStart, perSecond: drivePerSecond })
   let after = await remoteOfA()
   for (let i = 0; i < 50 && !(d2(before, after) > 3 && d2(after, truth) < 2); i++) { await wait(200); after = await remoteOfA() }
   check('A moves on B', d2(before, after) > 3, { before, after, moved: +d2(before, after).toFixed(2) })
