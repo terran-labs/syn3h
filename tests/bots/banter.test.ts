@@ -9,7 +9,7 @@ import { POOLS, POOL_FILES } from '../../src/bots/banter/data'
 import { FRAGMENTS } from '../../src/bots/banter/data/fragments'
 import { expand, type Context } from '../../src/bots/banter/grammar'
 import { ROLE_WORDS, VOICE_IDS, VOICES } from '../../src/bots/banter/voices'
-import { generateName } from '../../src/ui/data/names'
+import { botIdentity } from '../../src/ui/data/names'
 import { botChatter, botChatterLevel, filterChat, MAX_CHAT_LENGTH } from '../../shared/chat'
 import { params } from '../../shared/params'
 import { seededRandom } from '../../src/bots/random'
@@ -182,8 +182,9 @@ describe('bot banter', () => {
   it('nearly every generated bot name gets its voice from its role, not by chance', () => {
     let byRole = 0
     for (let i = 0; i < 2000; i++) {
-      const name = generateName(`seed${i}`, 'bot')
-      if (name.split(' ').slice(1).some((w) => ROLE_WORDS.has(w.toLowerCase())) || VOICE_IDS.some((v) => name.endsWith(VOICES[v].job))) byRole++
+      // The display name is a first name; the hidden role carries the job words.
+      const { role } = botIdentity(`seed${i}`)
+      if (role.split(' ').some((w) => ROLE_WORDS.has(w.toLowerCase())) || VOICE_IDS.some((v) => role.endsWith(VOICES[v].job))) byRole++
     }
     expect(byRole / 2000).toBeGreaterThan(0.9)
   })
