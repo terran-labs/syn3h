@@ -34,6 +34,7 @@ import type { LabContext, LabDesignInfo, LabExhibit, LabModel } from '../types'
 import type { BuggySkin } from '../../../vehicles/skins/BuggySkin'
 import type { VehicleDetail } from '../../../vehicles/skins/mergeStatic'
 import type { BuggyBodySource } from '../../../vehicles/skins/Syn3hBuggySkin'
+import { motorSparkLoad, sparkLevel } from '../../../vehicles/skins/motorDrive'
 
 /** The candidate contract (tools/buggy-fit/README.md), declared structurally. */
 interface CandidatePart { part: PartName; role: string; geometry: THREE.BufferGeometry }
@@ -268,7 +269,7 @@ async function skinModel(id: 'generated' | 'generated-loft', ctx: LabContext): P
     update(dt, state) {
       const steer = -state.steer * .45
       spin += state.throttle * dt * 6
-      for (let i = 0; i < 4; i++) { wheel(i, steer); skin.setDrive?.(i, Math.abs(state.throttle), state.throttle < 0) }
+      for (let i = 0; i < 4; i++) { wheel(i, steer); skin.setDrive?.(i, Math.abs(state.throttle), state.throttle < 0, state.throttle > 0 ? sparkLevel(state.throttle, motorSparkLoad.value) : 0) }
       skin.setLights?.(state.braking)
       // Half a second to open or fold, as the game's wing state. The skin rewrites every wing
       // vertex, so only while open or moving.

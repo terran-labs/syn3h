@@ -25,7 +25,7 @@ import {
 import { applyLava, floatPoints, lavaThickness } from './lava'
 import { gripAt } from './surfaceGrip'
 import type { BuggySkin } from './skins/BuggySkin'
-import { type MotorDriveInput, motorDrive, smoothEffort } from './skins/motorDrive'
+import { type MotorDriveInput, type MotorLoadInput, motorDrive, motorLoad, motorSparkLoad, smoothEffort, smoothSparks, sparkLevel } from './skins/motorDrive'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
 import { Vehicle, type WheelEffect, createWheelEffects } from './Vehicle'
 
@@ -1252,6 +1252,9 @@ export class Syn3hBuggy extends Vehicle {
   private readonly lastWings = [0, 0, 0]
   /** Smoothed hub motor effort per wheel, for the skin's glow and sparks (visual only). */
   readonly motorEffort = [0, 0, 0, 0]
+  /** Eased motor spark level per wheel, 0..1 (see motorLoad and sparkLevel; visual only). */
+  readonly motorSparks = [0, 0, 0, 0]
+  private readonly loadIn: MotorLoadInput = { throttle: 0, forwardSpeed: 0, topSpeed: 1, brakes: false, wingsOpen: false, grounded: false, afloat: false }
   private readonly driveIn: MotorDriveInput = {
     throttle: 0, forwardSpeed: 0, motorSpeed: 0, topSpeed: 1, brakes: false, wingsOpen: false, grounded: false, sliding: false,
   }
@@ -1309,7 +1312,13 @@ export class Syn3hBuggy extends Vehicle {
       if (this.skin?.setDrive) {
         const drive = motorDrive(this.motorDriveInput(i), this.driveOut)
         this.motorEffort[i] = smoothEffort(this.motorEffort[i], drive.effort, dt)
-        this.skin.setDrive(i, this.motorEffort[i], drive.regen)
+        // Sparks only at the motor's hardest work, from the same body speed and throttle, the
+        // threshold a share of the effort at buggy.speed (motorLoad), eased so they build and die.
+        const l = this.loadIn, d = this.driveIn
+        l.throttle = this.input.y; l.forwardSpeed = d.forwardSpeed; l.topSpeed = buggySpeed.value
+        l.brakes = d.brakes; l.wingsOpen = d.wingsOpen; l.grounded = d.grounded; l.afloat = this.inLiquid
+        this.motorSparks[i] = smoothSparks(this.motorSparks[i], sparkLevel(motorLoad(l), motorSparkLoad.value), dt)
+        this.skin.setDrive(i, this.motorEffort[i], drive.regen, this.motorSparks[i])
       }
       const g = this.fbWheels[i]
       g.position.copy(this.wheelPos)
