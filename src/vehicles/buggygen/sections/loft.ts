@@ -178,12 +178,16 @@ export const DETAIL: Record<0 | 1 | 2, [number, number]> = { 0: [64, 22], 1: [26
  * vertices within `snap` metres of the edge move onto it, so the edge follows the ellipse
  * instead of the grid's staircase. A radius over 10 m makes a straight stripe.
  */
-export interface Ellipse { role: Role | null; plane: 'xz' | 'zy' | 'xy'; c: [number, number]; r: [number, number]; band: [number, number]; facing: number; snap?: number }
+export interface Ellipse { role: Role | null; plane: 'xz' | 'zy' | 'xy'; c: [number, number]; r: [number, number]; band: [number, number]; facing: number; snap?: number; /** Turns the ellipse in its plane, radians. */ tilt?: number }
 
 const coords = (e: Ellipse, x: number, y: number, z: number): [number, number, number] => e.plane === 'xz' ? [Math.abs(x), z, y] : e.plane === 'zy' ? [z, y, Math.abs(x)] : [Math.abs(x), y, z]
 const facingOf = (e: Ellipse, n: [number, number, number], x: number) => e.plane === 'xz' ? n[1] : e.plane === 'zy' ? n[0] * (Math.sign(x) || 1) : n[2]
 /** Ellipse measure: below 1 is inside. A centre at 0 across X makes one ellipse over both halves. */
-const measureE = (e: Ellipse, a: number, b: number) => Math.hypot((a - e.c[0]) / e.r[0], e.r[1] > 10 ? 0 : (b - e.c[1]) / e.r[1])
+const local = (e: Ellipse, a: number, b: number): [number, number] => {
+  const da = a - e.c[0], db = b - e.c[1], t = e.tilt ?? 0, cs = Math.cos(t), sn = Math.sin(t)
+  return [da * cs + db * sn, -da * sn + db * cs]
+}
+const measureE = (e: Ellipse, a: number, b: number) => { const [u, w] = local(e, a, b); return Math.hypot(u / e.r[0], e.r[1] > 10 ? 0 : w / e.r[1]) }
 
 /** Tag cells by the first feature that contains them, else by `rest`. */
 export function featureTagger(list: Ellipse[], rest: Tagger): Tagger {
@@ -204,6 +208,7 @@ export function featureWarp(list: Ellipse[]): (p: THREE.Vector3) => void {
       const [a, b, w] = coords(e, p.x, p.y, p.z)
       if (!e.snap || w < e.band[0] || w > e.band[1]) continue
       const m = measureE(e, a, b); if (m < 1e-6) continue
+      // Scaling about the centre onto m = 1 is the same in the turned frame, so no turn is needed here.
       const na = e.c[0] + (a - e.c[0]) / m, nb = e.r[1] > 10 ? b : e.c[1] + (b - e.c[1]) / m
       if (Math.hypot(na - a, nb - b) > e.snap) continue
       const sx = Math.sign(p.x) || 1

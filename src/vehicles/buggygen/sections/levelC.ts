@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { skin, byRole, superSections, featureTagger, featureWarp, weld, type BodyPiece, type Candidate, type Ellipse, type Role, type Tagger } from './loft'
-import { hullSections, columns, rings, CREASES, HullQuery, sweep } from './hull'
+import { hullSections, columns, rings, CREASES, HullQuery, sweep, paramsAt } from './hull'
 import { HULL } from './dataHull'
 import { FEATURES as F, FEATURE_NUMBERS } from './dataFeatures'
 
@@ -21,9 +21,9 @@ const c = F.cockpit, s = F.scoop, h = F.head
 /** Cuts and paint drawn on the hull grid. Cuts sit under their lips; the grid snaps to them. */
 const CUTS: Ellipse[] = [
   { role: null, plane: 'xz', c: [0, c.z], r: [c.halfWidth, c.halfLength], band: [.35, 2], facing: .1, snap: .035 },
-  { role: null, plane: 'zy', c: [s.z, s.y], r: [s.halfLength, s.halfHeight], band: [.45, 1.2], facing: .35, snap: .05 },
+  { role: null, plane: 'zy', c: [s.z, s.y], r: [s.halfLength, s.halfHeight], band: [.45, 1.2], facing: .35, snap: .06, tilt: s.tilt },
   { role: null, plane: 'xy', c: [h.x, h.y], r: [h.r, h.r], band: [-2.2, -1.2], facing: -.25, snap: .04 },
-  { role: 'accent', plane: 'xz', c: [0, 0], r: [F.stripe, 99], band: [.2, 2], facing: .2, snap: .05 },
+  { role: 'accent', plane: 'xz', c: [0, 0], r: [F.stripe, 99], band: [.2, 2], facing: .2, snap: .08 },
 ]
 const plain: Tagger = (_x, _y, _z, n) => n[1] < -.7 ? 'chrome' : 'paint'
 const hullTag = featureTagger(CUTS, plain)
@@ -76,7 +76,8 @@ function orient(g: THREE.BufferGeometry, look: (p: THREE.Vector3) => THREE.Vecto
 /** A side scoop on the right flank (mirrored by the caller): lip, recessed walls and a dark floor. */
 function scoop(n: number): BodyPiece[] {
   const at = (a: number, scale: number, inset: number) => {
-    const z = s.z + s.halfLength * scale * Math.cos(a), y = s.y + s.halfHeight * scale * Math.sin(a)
+    const u = s.halfLength * scale * Math.cos(a), w = s.halfHeight * scale * Math.sin(a), ct = Math.cos(s.tilt), st = Math.sin(s.tilt)
+    const z = s.z + u * ct - w * st, y = s.y + u * st + w * ct
     return new THREE.Vector3(q.side(y, z) - inset, y, z)
   }
   const rim = Array.from({ length: n }, (_, i) => at(i / n * Math.PI * 2, 1, 0))
@@ -143,7 +144,13 @@ const levelC: Candidate = {
     }
     const small = detail === 2 ? 2 : detail ? 3 : 6
     pieces.push(...smallLoft(F.wing, detail === 2 ? 3 : 5, small * 2, 0, wingTag))
-    for (const x of [F.plateX, -F.plateX]) pieces.push(...smallLoft(F.plate, detail === 2 ? 3 : 6, small, x, () => 'paint'))
+    // End plates ride the fin line: each vertex moves out to the hull's shoulder at its z.
+    for (const side of [1, -1]) for (const p of smallLoft(F.plate, detail === 2 ? 3 : 6, small, 0, () => 'paint')) {
+      const pos = p.geometry.getAttribute('position')
+      for (let i = 0; i < pos.count; i++) pos.setX(i, side * (pos.getX(i) + paramsAt(HULL, pos.getZ(i))[4] - F.plateInset))
+      if (side < 0) { const idx = p.geometry.getIndex()!; for (let i = 0; i < idx.count; i += 3) { const t = idx.getX(i + 1); idx.setX(i + 1, idx.getX(i + 2)); idx.setX(i + 2, t) } }
+      p.geometry.computeVertexNormals(); pieces.push(p)
+    }
     return byRole(pieces)
   },
 }
