@@ -22,7 +22,7 @@ export const gearTouchHelp = [
   'Plasma Thunder: hold TAG until fully charged, then release. Letting go early fizzles.',
   'Chaser: aim at a vehicle and tap TAG to send a Chaser after it.',
 ]
-export const cameraHelp = ['Click: capture the mouse, then move it to look round · Esc: release', 'C: chase, cockpit, orbit, stationary, roam · Right click: cockpit', 'Wheel or + / −: distance · Z: scope']
+export const cameraHelp = ['Click: capture the mouse, then move it to look round · Esc: release', 'C: chase, cockpit, orbit, stationary, roam · Right click: cockpit', 'Wheel or + / −: distance · Z: scope', 'I: interface full, driving or hidden · Esc: back to full']
 export function touchHelp(kind: VehicleKind): string {
   return kind === 'jet' ? 'Hold THR + to lift off, THR − to come down. Left thumb: pitch and bank. MODE: hover or flight. BRAKE: slow down. ZORB: ride in a ball.' : kind === 'hovercraft' ? 'Left thumb: thrust, turn and pitch. BRAKE: slow down. ZORB: ride in a ball.' : 'Left thumb: drive and steer. WINGS: deploy wings. BRAKE: slow down. TAG: use your gear (Plasma Tag to start). ZORB: ride in a ball.'
 }

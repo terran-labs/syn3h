@@ -32,7 +32,8 @@ import { FocusHud } from './inspector/FocusHud'
 import { bindSwitch, switchWord } from './inspector/switch'
 import { RaceHud, type RaceRole } from './RaceHud'
 import type { RaceState } from '../../shared/protocol'
-import { glassStyle, diagnostics } from './inspector/params'
+import { glassStyle, diagnostics, interfaceMode } from './inspector/params'
+import { InterfaceVeil, INTERFACE_KEY, nextInterfaceMode, setInterfaceMode } from './interfaceMode'
 import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
@@ -304,8 +305,11 @@ export class Shell implements System {
     this.element.querySelector('.pause-veil')!.addEventListener('click', () => this.requestResume(), { signal })
     // Follow the lock itself, not what was asked for: the browser can drop it on its own
     // (Escape, a switch of window, a system dialog) and can refuse a request.
-    document.addEventListener('pointerlockchange', () => this.syncPanels(), { signal })
+    // Losing the lock (Escape) also returns the interface to Full, so nobody is left without panels.
+    document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) setInterfaceMode(0); this.syncPanels() }, { signal })
     document.addEventListener('pointerlockerror', () => this.syncPanels(), { signal })
+    const unsubscribeInterface = params.onChange(id => { if (id === interfaceMode.def.id) this.syncPanels() })
+    signal.addEventListener('abort', () => { unsubscribeInterface(); this.interfaceVeil.dispose() })
     this.glass(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
@@ -863,10 +867,19 @@ export class Shell implements System {
   }
   /** Touch only: the panels are showing rather than the driving view. Never stored. */
   private touchPanels = false
-  /** Panels are wanted exactly when the cursor is free (or, on touch, when the menu state is on). */
+  /**
+   * The driving view: the cursor is captured, or a desktop player chose the Driving or Hidden
+   * interface (hud.mode). The one decision behind the panels and the focus display, so the
+   * chosen view is exactly the captured one.
+   */
+  private get drivingView(): boolean {
+    return document.pointerLockElement === this.game.canvas || (this.capturesCursor && interfaceMode.value >= 1)
+  }
+  private readonly interfaceVeil = new InterfaceVeil()
+  /** Panels are wanted exactly when not in the driving view (or, on touch, when the menu state is on). */
   private get panelsWanted(): boolean {
     if (!this.started || this.menuVisible) return false
-    return this.capturesCursor ? document.pointerLockElement !== this.game.canvas : this.touchPanels
+    return this.capturesCursor ? !this.drivingView : this.touchPanels
   }
   private syncPanels(): void {
     const wanted = this.panelsWanted
@@ -874,7 +887,8 @@ export class Shell implements System {
       this.inspector.hideTooltip(); this.inspector.open = wanted
       this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(wanted))
     }
-    const locked = this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas
+    const locked = this.started && !this.menuVisible && !this.game.input.suspended && this.drivingView
+    this.interfaceVeil.update(this.started && !this.menuVisible && !this.game.input.suspended)
     if (this.element.classList.contains('is-focus') !== locked) {
       this.element.classList.toggle('is-focus', locked)
       // A gear picked with the cursor leaves focus on the drum, where the arrow keys step
@@ -957,6 +971,7 @@ export class Shell implements System {
       return
     }
     if (!editing && this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.toggleHelp(); return }
+    if (!editing && this.started && !this.menuVisible && !this.userPaused && !event.repeat && event.code === INTERFACE_KEY && this.capturesCursor) { event.preventDefault(); setInterfaceMode(nextInterfaceMode(interfaceMode.value)); return }
     // A drive key outside any field means the player wants to drive: resume if paused, and
     // capture the cursor (a key press is a gesture). This is also the keyboard-only way back.
     // While paused, focus rests on the pause message, which is a button, so a drive key
@@ -971,6 +986,7 @@ export class Shell implements System {
     if (!typing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code) && this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
+      setInterfaceMode(0)
       // Escape in a text field only leaves the field; it takes another to pause.
       const target = event.target
       if (this.started && !this.menuVisible && !this.userPaused && target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && !/^(range|checkbox|radio|button|color)$/.test(target.type)))) { target.blur(); return }
