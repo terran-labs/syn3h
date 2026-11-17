@@ -65,15 +65,15 @@ export function polarSections(rows: number[][]): Sections {
   }
 }
 
-/** What a cell of the skin is, from its centre and the Y part of its normal; null leaves the cell out (an opening). */
-export type Tagger = (x: number, y: number, z: number, ny: number, v: number) => Role | null
+/** What a cell of the skin is, from its centre and its normal; null leaves the cell out (an opening). */
+export type Tagger = (x: number, y: number, z: number, n: [number, number, number]) => Role | null
 
 /**
  * Skin `sections` as one grid of `along` rings by `half * 2` columns, closed around and
  * capped at both ends. `us` optionally places the rings (u values, ascending). Normals come
  * from the grid's own tangents, so cells of different roles still shade as one surface.
  */
-export function skin(sections: Sections, along: number, half: number, tag: Tagger = () => 'paint', o: { us?: number[]; capRole?: Role | null; vs?: number[] } = {}): BodyPiece[] {
+export function skin(sections: Sections, along: number, half: number, tag: Tagger = () => 'paint', o: { us?: number[]; caps?: boolean; vs?: number[]; warp?: (p: THREE.Vector3) => void } = {}): BodyPiece[] {
   const us = o.us ?? Array.from({ length: along }, (_, j) => j / (along - 1))
   const vs = o.vs ?? Array.from({ length: half + 1 }, (_, i) => i / half)
   const H = vs.length - 1, N = 2 * H, m = us.length
@@ -86,6 +86,7 @@ export function skin(sections: Sections, along: number, half: number, tag: Tagge
       if (i === 0 || i === H) P[k] = 0
     }
   })
+  if (o.warp) { const v = new THREE.Vector3(); for (let k = 0; k < P.length; k += 3) { v.set(P[k], P[k + 1], P[k + 2]); o.warp(v); P[k] = v.x; P[k + 1] = v.y; P[k + 2] = v.z } }
   const p = (j: number, i: number) => { const k = (Math.min(Math.max(j, 0), m - 1) * N + ((i % N) + N) % N) * 3; return new THREE.Vector3(P[k], P[k + 1], P[k + 2]) }
   // Vertex normals: around-tangent cross along-tangent points out for this ring order.
   const Nn = new Float32Array(P.length)
@@ -102,17 +103,18 @@ export function skin(sections: Sections, along: number, half: number, tag: Tagge
   }
   for (let j = 0; j < m - 1; j++) for (let i = 0; i < N; i++) {
     const c = p(j, i).add(p(j + 1, i)).add(p(j, i + 1)).add(p(j + 1, i + 1)).multiplyScalar(.25)
-    const k0 = (j * N + i) * 3, k1 = ((j + 1) * N + (i + 1) % N) * 3, ny = (Nn[k0 + 1] + Nn[k1 + 1]) / 2
-    const role = tag(c.x, c.y, c.z, ny, i < H ? (vs[i] + vs[i + 1]) / 2 : (vs[N - i] + vs[N - i - 1]) / 2)
+    const k0 = (j * N + i) * 3, k1 = ((j + 1) * N + (i + 1) % N) * 3
+    const role = tag(c.x, c.y, c.z, [(Nn[k0] + Nn[k1]) / 2, (Nn[k0 + 1] + Nn[k1 + 1]) / 2, (Nn[k0 + 2] + Nn[k1 + 2]) / 2])
     if (!role) continue
     put(role, [[j, i], [j, i + 1], [j + 1, i], [j, i + 1], [j + 1, i + 1], [j + 1, i]])
   }
-  const capRole = o.capRole === undefined ? 'paint' : o.capRole
-  if (capRole) for (const [j, s] of [[0, -1], [m - 1, 1]]) {
+  // End caps: a fan from the ring's centre, each triangle tagged like a cell facing along Z.
+  if (o.caps !== false) for (const [j, s] of [[0, -1], [m - 1, 1]]) {
     const c = new THREE.Vector3(); for (let i = 0; i < N; i++) c.add(p(j, i)); c.divideScalar(N)
-    let g = pieces.get(capRole); if (!g) pieces.set(capRole, g = { pos: [], nor: [] })
     for (let i = 0; i < N; i++) {
-      const a = p(j, i), b = p(j, i + 1), tri = s > 0 ? [c, a, b] : [c, b, a]
+      const a = p(j, i), b = p(j, i + 1), tri = s > 0 ? [c, a, b] : [c, b, a], m3 = c.clone().add(a).add(b).divideScalar(3)
+      const role = tag(m3.x, m3.y, m3.z, [0, 0, s]); if (!role) continue
+      let g = pieces.get(role); if (!g) pieces.set(role, g = { pos: [], nor: [] })
       for (const q of tri) { g.pos.push(q.x, q.y, q.z); g.nor.push(0, 0, s) }
     }
   }
@@ -157,3 +159,48 @@ export function byRole(pieces: BodyPiece[]): BodyPiece[] {
 
 /** Ring counts per detail level: [along, half columns]. */
 export const DETAIL: Record<0 | 1 | 2, [number, number]> = { 0: [64, 22], 1: [26, 10], 2: [11, 5] }
+
+/**
+ * A feature drawn on the skin: an ellipse in one of the three planes, mirrored in X, whose
+ * cells take `role` (null cuts an opening). It applies only within `band` along the plane's
+ * missing axis (y for 'xz', |x| for 'zy', z for 'xy') and to cells whose normal points the
+ * way `facing` says along that axis, so a side scoop does not also print on the floor. Grid
+ * vertices within `snap` metres of the edge move onto it, so the edge follows the ellipse
+ * instead of the grid's staircase. A radius over 10 m makes a straight stripe.
+ */
+export interface Ellipse { role: Role | null; plane: 'xz' | 'zy' | 'xy'; c: [number, number]; r: [number, number]; band: [number, number]; facing: number; snap?: number }
+
+const coords = (e: Ellipse, x: number, y: number, z: number): [number, number, number] => e.plane === 'xz' ? [Math.abs(x), z, y] : e.plane === 'zy' ? [z, y, Math.abs(x)] : [Math.abs(x), y, z]
+const facingOf = (e: Ellipse, n: [number, number, number], x: number) => e.plane === 'xz' ? n[1] : e.plane === 'zy' ? n[0] * (Math.sign(x) || 1) : n[2]
+/** Ellipse measure: below 1 is inside. A centre at 0 across X makes one ellipse over both halves. */
+const measureE = (e: Ellipse, a: number, b: number) => Math.hypot((a - e.c[0]) / e.r[0], e.r[1] > 10 ? 0 : (b - e.c[1]) / e.r[1])
+
+/** Tag cells by the first feature that contains them, else by `rest`. */
+export function featureTagger(list: Ellipse[], rest: Tagger): Tagger {
+  return (x, y, z, n) => {
+    for (const e of list) {
+      const [a, b, w] = coords(e, x, y, z)
+      if (w < e.band[0] || w > e.band[1] || facingOf(e, n, x) * Math.sign(e.facing) < Math.abs(e.facing)) continue
+      if (measureE(e, a, b) < 1) return e.role
+    }
+    return rest(x, y, z, n)
+  }
+}
+
+/** Move grid vertices close to a feature's edge onto it, scaling about the centre. */
+export function featureWarp(list: Ellipse[]): (p: THREE.Vector3) => void {
+  return p => {
+    for (const e of list) {
+      const [a, b, w] = coords(e, p.x, p.y, p.z)
+      if (!e.snap || w < e.band[0] || w > e.band[1]) continue
+      const m = measureE(e, a, b); if (m < 1e-6) continue
+      const na = e.c[0] + (a - e.c[0]) / m, nb = e.r[1] > 10 ? b : e.c[1] + (b - e.c[1]) / m
+      if (Math.hypot(na - a, nb - b) > e.snap) continue
+      const sx = Math.sign(p.x) || 1
+      if (e.plane === 'xz') { if (p.x !== 0) p.x = sx * Math.max(na, 0); p.z = nb }
+      else if (e.plane === 'zy') { p.z = na; p.y = nb }
+      else { if (p.x !== 0) p.x = sx * Math.max(na, 0); p.y = nb }
+      return
+    }
+  }
+}

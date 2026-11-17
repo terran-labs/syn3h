@@ -6,7 +6,7 @@ import { A_ROWS } from './dataA'
  * sliders (length, width, deck and floor heights, squareness). No wing, scoops or openings.
  */
 const rows = A_ROWS.map(r => r.map(v => v / 1000))
-const tag: Tagger = (_x, _y, _z, ny) => ny < -.7 ? 'chrome' : 'paint'
+const tag: Tagger = (_x, _y, _z, n) => n[1] < -.7 ? 'chrome' : 'paint'
 const levelA: Candidate = {
   id: 'sections-A',
   numbers: rows.length * rows[0].length,

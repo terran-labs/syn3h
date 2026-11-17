@@ -14,6 +14,7 @@ import { sliceZ } from './slice'
 import { score, line } from './measure'
 import { crRows, polarSections, superSections, skin, DETAIL, byRole, type Tagger } from '../../../src/vehicles/buggygen/sections/loft'
 import { writeFileSync } from 'node:fs'
+import { gzipSync } from 'node:zlib'
 
 const ref = triangles(readMesh(REF, 'Body'))
 /** The rear wing is its own piece; leave it out of the hull's slices. */
@@ -149,13 +150,16 @@ function nelderMead(f: (x: number[]) => number, x0: number[], iters = 600): numb
 }
 
 /** Underside chrome, everything else paint: the plain tagging levels A and B share. */
-export const plain: Tagger = (_x, _y, _z, ny) => ny < -.7 ? 'chrome' : 'paint'
+export const plain: Tagger = (_x, _y, _z, n) => n[1] < -.7 ? 'chrome' : 'paint'
 
 const q = (rows: number[][]) => rows.map(r => r.map(v => Math.round(v * 1000)))
 const mode = process.argv[2]
 if (mode === 'sweep') {
-  for (const S of [8, 12, 16, 24, 32]) for (const K of [7, 11, 15, 21]) {
-    const rows = q(fitB(S, K)).map(r => r.map(v => v / 1000))
+  const lambda = +(process.argv[3] ?? 3e-3), Ss = process.argv[4] ? process.argv[4].split(',').map(Number) : [8, 12, 16, 24, 32], Ks = process.argv[5] ? process.argv[5].split(',').map(Number) : [7, 11, 15, 21]
+  for (const S of Ss) for (const K of Ks) {
+    const data = q(fitB(S, K, lambda)), rows = data.map(r => r.map(v => v / 1000))
+    // Generator bytes are fixed (the Level B bundle less its data); data bytes are measured.
+    process.stdout.write(`data gzip ${gzipSync(JSON.stringify(data), { level: 9 }).length} B  lambda ${lambda}  `)
     const cand = { id: `B S${S} K${K}`, numbers: S * (K + 2), build: (d: 0 | 1 | 2) => byRole(skin(polarSections(rows), DETAIL[d][0], DETAIL[d][1], plain)) }
     console.log(line(score(cand, `sweepB-${S}-${K}`, '')))
   }

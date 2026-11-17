@@ -112,8 +112,7 @@ export function score(mod: { id: string; numbers?: number; build(d: 0 | 1 | 2): 
     iou[v.name] = I / U
   }
   // gzip of generator plus data: bundle the module with three left out, minified.
-  const js = execFileSync(resolve('node_modules/.bin/esbuild'), [file, '--bundle', '--minify', '--format=esm', '--external:three', '--log-level=error'])
-  const gzip = gzipSync(js, { level: 9 }).length
+  const gzip = file ? gzipSync(execFileSync(resolve('node_modules/.bin/esbuild'), [file, '--bundle', '--minify', '--format=esm', '--external:three', '--log-level=error']), { level: 9 }).length : -1
   const rgb = (roles: string[]) => (t: number) => MAT_RGB[roles[t]] ?? [255, 0, 255]
   sheet(`/tmp/buggy-fit/sections/${tag}.png`, [{ tri: ref.tri, rgb: rgb(refRoles) }, { tri: cand.tri, rgb: rgb(cand.role) }])
   return { id: mod.id, numbers: mod.numbers, tris, buildMs, gzip, refToCand: stats(a.d), candToRef: stats(b.d), iou, roleMatch: match / a.t.length }
