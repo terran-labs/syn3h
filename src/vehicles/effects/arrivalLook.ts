@@ -33,6 +33,8 @@ type N = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /** Seconds the release (shock ring, flung shell, silhouette fade) takes. */
 export const RELEASE_SECONDS = .9
+/** Share of a departure spent undoing the release before it undoes the gather. */
+const DEPART_RELEASE = .3
 /** Seconds a cancelled arrival takes to fade. */
 const CANCEL_SECONDS = .25
 /** Beyond about 1 / FAR_SCALE metres (at size 1) the cloud and beam grow with distance. */
@@ -158,6 +160,13 @@ export class ArrivalLook {
   private intensity = 1
   /** True between start() and the end of the release or cancel fade. */
   active = false
+  /**
+   * A departure: the arrival played backwards. Its `progress` (0 to 1 over the whole departure)
+   * runs the release in reverse first (the ring and the flung shell close in on the vehicle),
+   * then the gather in reverse (the vehicle turns to light from the top down while the cloud
+   * thins outward). The caller removes the vehicle at the end, inside the cloud.
+   */
+  departing = false
 
   constructor(level: number) {
     this.u = {
@@ -182,9 +191,10 @@ export class ArrivalLook {
   /** Everything this look draws, for shader compilation ahead of the first arrival. */
   get meshes(): T.Mesh[] { return [this.volume, this.ground, this.beam] }
 
-  start(vehicle: {object: T.Object3D; colors: {body: T.ColorRepresentation; accent: T.ColorRepresentation}}, reducedMotion: boolean): void {
+  start(vehicle: {object: T.Object3D; colors: {body: T.ColorRepresentation; accent: T.ColorRepresentation}}, reducedMotion: boolean, departing = false): void {
     this.detachGhosts()
     this.active = true
+    this.departing = departing
     this.releaseAge = this.cancelAge = -1
     this.u.release.value = 0
     this.u.progress.value = 0
@@ -209,6 +219,11 @@ export class ArrivalLook {
       this.releaseAge += dt
       this.u.release.value = Math.min(1, this.releaseAge / RELEASE_SECONDS)
       if (this.releaseAge >= RELEASE_SECONDS) { this.end(); return }
+    } else if (this.departing) {
+      // The first part undoes the release, the rest undoes the gather.
+      const split = DEPART_RELEASE
+      this.u.release.value = progress < split ? 1 - progress / split : 0
+      this.u.progress.value = progress < split ? 1 : 1 - (progress - split) / (1 - split)
     } else {
       this.u.progress.value = progress
     }

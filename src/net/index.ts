@@ -125,6 +125,11 @@ export interface NetContext {
   audio?: NetAudio
   /** Cosmetic arrival effect after a remote kind change; never holds replica physics. */
   onRemoteVehicleChanged?(vehicle: Vehicle): void
+  /**
+   * A remote player or bot left: the departure effect (the arrival in reverse). The copy stays
+   * in the game, undriven, until the returned promise settles, then is removed. Cosmetic only.
+   */
+  onRemoteVehicleLeaving?(vehicle: Vehicle): Promise<void> | void
   /** Bot manager; optional, may also be attached later with `net.attachBots`. */
   bots?: NetBots
   /** The match display (shell.setMatchState): called on every game state change; null clears. */
@@ -1291,7 +1296,8 @@ export class NetClient implements System {
     return r
   }
 
-  private removeRemote(id: number): void {
+  /** `depart`: leave in the departure effect rather than vanish (one player or bot leaving). */
+  private removeRemote(id: number, depart = false): void {
     const r = this.remotes.get(id)
     if (!r) return
     this.remotes.delete(id)
@@ -1300,7 +1306,14 @@ export class NetClient implements System {
     this.yoink.forget(id)
     this.pesters.forget(id)
     r.disposeEffects()
-    if (r.owned) this.ctx.game.remove(r.vehicle)
+    if (!r.owned) return
+    const gone = () => this.ctx.game.remove(r.vehicle)
+    let leaving: Promise<void> | void = undefined
+    if (depart) {
+      try { leaving = this.ctx.onRemoteVehicleLeaving?.(r.vehicle) } catch (err) { console.warn('remote departure effect failed', err) }
+    }
+    if (leaving) leaving.then(gone, gone)
+    else gone()
   }
 
   /** Dust, tracks, lamps and trails for a remote vehicle. Returns its disposer. */
@@ -1465,7 +1478,7 @@ export class NetClient implements System {
       case 'leave':
         if (!isBotId(msg.id)) this.event(`${this.nameOf(msg.id)} left`)
         this.players.delete(msg.id)
-        this.removeRemote(msg.id)
+        this.removeRemote(msg.id, true)
         break
       case 'param':
         params.set(msg.id, msg.value, 'remote')
