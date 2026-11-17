@@ -8,6 +8,8 @@ import { postTier } from '../fx/post/gate'
 import { PerformancePanel } from './PerformancePanel'
 import type { PauseControl } from './pauseControl'
 import { HeightAboveGround } from './heightAboveGround'
+import { altitudeAboveSea } from './altitude'
+import { speedUnit, speedValue } from './units'
 import type { PerformanceSource } from '../core/performance'
 import { SavedWorldStore, SAVED_WORLDS_KEY, savedName, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
 import { SavedMoons } from './galaxy/SavedMoons'
@@ -154,7 +156,7 @@ export class Shell implements System {
   private readonly raceHud: RaceHud
   onRaceLeave?: () => void
   onRaceCancel?: () => void
-  private telemetry: { speed: number; altitude: number; thrust?: number } = { speed: 0, altitude: 0 }
+  private telemetry: { speed: number; altitude: number; thrust?: number; seaAltitude: number } = { speed: 0, altitude: 0, seaAltitude: 0 }
   /** The 3D galaxy: the lobby. Absent only where WebGL 2 is, and then the game cannot draw either. */
   private galaxy?: Galaxy
   /** Arrived by an invite link that names a world: that world is the one to enter. */
@@ -587,8 +589,11 @@ export class Shell implements System {
   get attracting(): boolean { return false }
   setMapEntities(entities: readonly MapEntity[]): void { this.minimap?.setEntities(entities) }
   setMapSelf(entity: MapEntity): void { this.self = entity; this.minimap?.setSelf(entity) }
-  /** The player's speed (m/s) and height above the ground (m), for the focus display. */
-  setTelemetry(speed: number, altitude: number, thrust?: number): void { this.telemetry.speed = speed; this.telemetry.altitude = altitude; this.telemetry.thrust = thrust }
+  /**
+   * The player's speed (m/s), height above the ground (m, for the arrival camera) and height
+   * above sea level (m, which the focus display's ALT readout shows).
+   */
+  setTelemetry(speed: number, altitude: number, thrust?: number, seaAltitude = altitude): void { this.telemetry.speed = speed; this.telemetry.altitude = altitude; this.telemetry.thrust = thrust; this.telemetry.seaAltitude = seaAltitude }
   private inspectorSummary(id: string): string {
     if (id === 'world') {
       const hour = currentHour()
@@ -1554,7 +1559,10 @@ export class Shell implements System {
   setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {syn3hNet?:{players?:Map<number,{bot?:boolean}>}}).syn3hNet?.players; const count = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length
     // The status arrives every frame; the invite only depends on it through the player count.
     if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }
-  setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
+  setSpeed(metresPerSecond: number): void {
+    this.speed.textContent = String(Math.round(speedValue(metresPerSecond)))
+    const unit = this.speed.nextElementSibling!, text = speedUnit().toUpperCase(); if (unit.textContent !== text) unit.textContent = text
+  }
   update(dt = 0): void {
     if (this.tintTransition.update(dt)) this.onTint?.(this.tintTransition.current.body, this.tintTransition.current.accent, false)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
@@ -1580,7 +1588,7 @@ export class Shell implements System {
         const label = this.element.querySelector<HTMLElement>('.rail-world')!
         label.textContent = world; label.title = world
       }
-      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, thrust: this.telemetry.thrust, heading: this.self?.heading ?? 0, world, hour: currentHour() })
+      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.seaAltitude, thrust: this.telemetry.thrust, heading: this.self?.heading ?? 0, world, hour: currentHour() })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
     // The stylesheet drops frost at the lowest graphics level.
@@ -1656,8 +1664,9 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     const q = activePlayer.body.rotation()
     const heading = Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y))
     shell.setMapSelf({ x: p.x, z: p.z, heading, color: activePlayer.colors.body, self: true })
-    // Shown as metres above ground: measured from the contact surfaces, 0 when resting.
-    shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)), activePlayer.kind === 'jet' && !activePlayer.zorbed ? activePlayer.input.z : undefined)
+    // Height above ground (contact surfaces, 0 when resting) for the arrival camera; the ALT
+    // readout shows the contact surfaces' height above sea level instead.
+    shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)), activePlayer.kind === 'jet' && !activePlayer.zorbed ? activePlayer.input.z : undefined, altitudeAboveSea(activePlayer.contactHeight()))
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
     const input = activePlayer.input
     const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut })

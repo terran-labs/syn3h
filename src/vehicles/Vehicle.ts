@@ -494,14 +494,23 @@ export abstract class Vehicle implements System {
     let surface = this.terrain.heightAt(p.x, p.z)
     // The hovercraft's cushion and a zorb ball ride on liquid; everything else sinks to the bed.
     if (this.kind === 'hovercraft' || this.zorb.active) surface = Math.max(surface, this.terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity)
+    return Math.max(0, this.contactHeight() - surface)
+  }
+
+  /**
+   * World height of the vehicle's lowest contact surface (tyres, tracks, gear, cushion, or the
+   * zorb ball's underside), from the last physics step. Resting on level ground it equals the
+   * ground's height. The ALT readout measures this against sea level. Allocates nothing.
+   */
+  contactHeight(): number {
+    if (this.zorb.active) return this.zorb.centre(this.zorbCentre).y - this.zorb.radius
     let rest = this.restHeight()
     if (this.kind === 'hovercraft') {
       if (hoverClearance === undefined) hoverClearance = params.get('hover.clearance') ?? null
       const slider = Number(hoverClearance?.value)
       if (Number.isFinite(slider)) rest = slider
     }
-    const lowest = this.zorb.active ? this.zorb.centre(this.zorbCentre).y - this.zorb.radius : p.y - rest
-    return Math.max(0, lowest - surface)
+    return this.currPos.y - rest
   }
 
   /** Teleport, clearing motion and interpolation history. */
