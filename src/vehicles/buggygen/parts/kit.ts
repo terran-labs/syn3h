@@ -1,4 +1,4 @@
-import * as THREE from 'three'
+import * as THREE from 'three/webgpu'
 
 /**
  * A small mesh kit for the buggy's mechanical parts: lens sections lofted along a span, round

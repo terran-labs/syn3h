@@ -1,4 +1,4 @@
-import type * as THREE from 'three'
+import type * as THREE from 'three/webgpu'
 
 /**
  * A body's surface as a flat list of triangles, for fittings that must sit on it: rays and

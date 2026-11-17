@@ -1,4 +1,4 @@
-import * as THREE from 'three'
+import * as THREE from 'three/webgpu'
 
 /**
  * Section lofts for the generated buggy body (R&D, rd/buggygen-sections).

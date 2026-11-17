@@ -4,7 +4,7 @@
 // are shared by both halves. Coordinates are integers in millimetres. Every face carries a
 // role tag; edges between roles are crisp automatically, and `c` lists any further crisp edges.
 // Detail 0, 1 and 2 subdivide `levels[detail]` times.
-import * as THREE from 'three'
+import * as THREE from 'three/webgpu'
 import {subdivide, type Cage} from './subdivide'
 
 export interface CageData {

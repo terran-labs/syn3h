@@ -3,7 +3,7 @@
  * the harness and the vehicle lab exhibit have something to show before real candidates land.
  * Bounds copied from `npx tsx tools/buggy-fit/reference.ts` (min x, y, z, max x, y, z).
  */
-import * as THREE from 'three'
+import * as THREE from 'three/webgpu'
 
 const BOUNDS = {
   body: [-.945, -.078, -1.956, .945, 1.012, 2.053],

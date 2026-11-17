@@ -1,4 +1,4 @@
-import type * as THREE from 'three'
+import type * as THREE from 'three/webgpu'
 import { buildStrut, buildShock, SUSPENSION_NUMBERS } from './suspension'
 import { buildStator, STATOR_NUMBERS } from './stator'
 import { buildWings, WINGS_NUMBERS } from './wings'

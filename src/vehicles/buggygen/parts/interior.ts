@@ -1,4 +1,4 @@
-import type * as THREE from 'three'
+import type * as THREE from 'three/webgpu'
 import { Mesh, toGame, type V3 } from './kit'
 
 /**

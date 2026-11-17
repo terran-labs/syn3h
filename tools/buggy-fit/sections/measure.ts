@@ -11,7 +11,7 @@ import { sheet, MAT_RGB, VIEWS, mask } from './render'
 import { execFileSync } from 'node:child_process'
 import { gzipSync } from 'node:zlib'
 import { resolve } from 'node:path'
-import type * as THREE from 'three'
+import type * as THREE from 'three/webgpu'
 
 type Piece = { part: string; role: string; geometry: THREE.BufferGeometry }
 export const refRole = (n: string) => /Body/.test(n) ? 'paint' : /Accent/.test(n) ? 'accent' : /Chrome/.test(n) ? 'chrome' : /Head/.test(n) ? 'lamp' : /Tail/.test(n) ? 'lamp' : 'frame'
