@@ -31,12 +31,27 @@ export const SKID = {
 export const LAMP = {
   /** Right lamp centre on its seat, and the axis it faces along; the left one is the mirror image. */
   centre: [.6317, .3285, -1.2813] as V3, axis: [.9732, -.1217, -.1952] as V3,
+  /** With a body: where to look for the duct (x, height), and how far the lens stands off its seat. */
+  seat: [.62, .33] as [number, number], lift: .012,
   /** Half sizes of the lens: across and up. */
   rx: .15, rz: .125,
   /** Rings as [size as a multiple of the lens, height along the axis]: bezel foot, bezel lip, lens edge, shoulder, crown. */
   rings: [[1.22, -.03], [1.2, .012], [1, .018], [.72, .045], [.36, .06]] as [number, number][],
   /** Halo ring standing on the lens: outer foot, crest, inner foot. */
   halo: [[.62, .05], [.56, .062], [.5, .054]] as [number, number][],
+}
+
+/**
+ * The main headlamp in each nose duct, inboard of the small lens above. On the shipped model it
+ * was a disc of the body's own faces; a body built from a coarse cage cannot hold that circle,
+ * so it is a fitting here. Fitted to the shipped body's Headlights faces (right side; the left
+ * mirrors): centre, the direction it faces, the ellipse's long axis and half sizes, dome height.
+ */
+export const DUCT_LAMP = {
+  centre: [.5986, .3626, -1.6462] as V3, axis: [.7439, .0838, -.663] as V3, major: [.631, .24, .738] as V3,
+  a: .1, b: .088, dome: .022,
+  /** With a body: the lens base stands this far in front of the body inside its outline. */
+  clear: .006,
 }
 
 /** Suspension geometry the swellings are placed from (front right corner; the others mirror). */
@@ -83,7 +98,8 @@ export function buildSockets(detail: 0 | 1 | 2, body?: THREE.BufferGeometry[]): 
   const surface = body?.length ? Surface.from(body) : undefined
   const paint = new Mesh(), chrome = new Mesh(), lens = new Mesh()
   skidPlate(chrome, detail)
-  for (const side of [1, -1]) lamp(chrome, lens, side, detail)
+  for (const side of [1, -1]) lamp(chrome, lens, side, detail, surface)
+  for (const side of [1, -1]) ductLamp(lens, side, detail, surface)
   const shockTops: V3[] = []
   const seg = detail === 0 ? 12 : detail === 1 ? 8 : 6, rings = detail === 0 ? 4 : detail === 1 ? 3 : 2
   for (const c of corners()) {
@@ -134,8 +150,35 @@ function swell(m: Mesh, body: Surface | undefined, centre: V3, out: V3, along: V
   m.orientAway(add(centre, out, -1))
 }
 
-function lamp(chrome: Mesh, lens: Mesh, side: number, detail: 0 | 1 | 2): void {
-  const L = LAMP, n: V3 = unit([L.axis[0] * side, L.axis[1], L.axis[2]]), c: V3 = [L.centre[0] * side, L.centre[1], L.centre[2]]
+/**
+ * Where the lamp sits on a body, as build.py found it: rays from ahead of the car onto the
+ * bezel line meet the duct's rim, a plane through those hits is the lens seat, and the lens
+ * stands just off it. Returns undefined if the body has no duct there (fewer than six hits).
+ */
+export function seatLamp(body: Surface, side: number): { centre: V3; axis: V3 } | undefined {
+  const L = LAMP, cx = L.seat[0] * side, cy = L.seat[1]
+  const hits: V3[] = []
+  for (let k = 0; k < 12; k++) {
+    const a = 2 * Math.PI * k / 12
+    const h = body.ray([cx + L.rx * 1.15 * Math.cos(a), cy + L.rz * 1.15 * Math.sin(a), -4], [0, 0, 1], 8)
+    if (h) hits.push(h.point)
+  }
+  if (hits.length < 6) return undefined
+  // Least squares plane z = a x + b y + c through the hits (normal equations, Cramer's rule).
+  let sxx = 0, sxy = 0, sx = 0, syy = 0, sy = 0, sxz = 0, syz = 0, sz = 0
+  for (const [x, y, z] of hits) { sxx += x * x; sxy += x * y; sx += x; syy += y * y; sy += y; sxz += x * z; syz += y * z; sz += z }
+  const n = hits.length, M = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, n]], r = [sxz, syz, sz]
+  const det = (m: number[][]) => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+  const D = det(M)
+  if (Math.abs(D) < 1e-12) return undefined
+  const [a, b, c] = [0, 1, 2].map(k => det(M.map((row, i) => row.map((v, j) => j === k ? r[i] : v))) / D)
+  const axis = unit([a, b, -1])
+  return { centre: add([cx, cy, a * cx + b * cy + c], axis, L.lift), axis }
+}
+
+function lamp(chrome: Mesh, lens: Mesh, side: number, detail: 0 | 1 | 2, body?: Surface): void {
+  const L = LAMP, seat = body && seatLamp(body, side)
+  const n: V3 = seat?.axis ?? unit([L.axis[0] * side, L.axis[1], L.axis[2]]), c: V3 = seat?.centre ?? [L.centre[0] * side, L.centre[1], L.centre[2]]
   const right = unit(cross(n, [0, 1, 0])), up = cross(right, n), count = detail === 0 ? 14 : detail === 1 ? 10 : 8
   const ring = (m: Mesh, [r, h]: [number, number]) => Array.from({ length: count }, (_, k) => {
     const t = 2 * Math.PI * k / count
@@ -153,6 +196,38 @@ function lamp(chrome: Mesh, lens: Mesh, side: number, detail: 0 | 1 | 2): void {
   lens.orientAway(back)
 }
 
+/**
+ * The duct lamp: a domed elliptical lens. With a body it is moved along its axis until its base
+ * clears whatever the body has inside its outline (rays cast back from in front), so a coarser
+ * body's own lamp faces never show through it.
+ */
+function ductLamp(lens: Mesh, side: number, detail: 0 | 1 | 2, body?: Surface): void {
+  const L = DUCT_LAMP, n = unit([L.axis[0] * side, L.axis[1], L.axis[2]]), maj = unit([L.major[0] * side, L.major[1], L.major[2]])
+  const u = unit(add(maj, n, -dot(maj, n))), w = cross(n, u), count = detail === 0 ? 16 : detail === 1 ? 10 : 8
+  let c: V3 = [L.centre[0] * side, L.centre[1], L.centre[2]]
+  if (body) {
+    let lift = -Infinity
+    for (let k = 0; k <= 12; k++) {
+      const r = k ? .9 : 0, t = 2 * Math.PI * k / 12
+      const p = add(add(c, u, L.a * r * Math.cos(t)), w, L.b * r * Math.sin(t))
+      const h = body.ray(add(p, n, .2), [-n[0], -n[1], -n[2]], .3)
+      if (h) lift = Math.max(lift, dot(sub(h.point, c), n))
+    }
+    if (lift > -Infinity) c = add(c, n, lift + L.clear)
+  }
+  const ring = (r: number, h: number) => Array.from({ length: count }, (_, k) => {
+    const t = 2 * Math.PI * k / count
+    return lens.vec(add(add(add(c, u, L.a * r * Math.cos(t)), w, L.b * r * Math.sin(t)), n, h))
+  })
+  lens.begin()
+  const rings = (detail === 2 ? [[1, 0], [.5, L.dome * .8]] : [[1, 0], [.75, L.dome * .55], [.4, L.dome * .9]]).map(([r, h]) => ring(r, h))
+  for (let k = 0; k + 1 < rings.length; k++) lens.skin(rings[k], rings[k + 1])
+  const top = lens.vec(add(c, n, L.dome))
+  const last = rings[rings.length - 1]
+  for (let k = 0; k < count; k++) lens.tri(last[k], last[(k + 1) % count], top)
+  lens.orientAway(add(c, n, -.3))
+}
+
 function skidPlate(plate: Mesh, detail: 0 | 1 | 2): void {
   const s = SKID, m = detail === 0 ? 8 : detail === 1 ? 4 : 2
   plate.begin()
@@ -166,4 +241,4 @@ function skidPlate(plate: Mesh, detail: 0 | 1 | 2): void {
   plate.orientAway([0, 1, 0])
 }
 
-export const SOCKETS_NUMBERS = 2 + SKID.stations.length * 2 + 4 + 6 + 2 + 5 * 2 + 3 * 2 + 3 * 4 + 7 + 18
+export const SOCKETS_NUMBERS = 13 + 2 + SKID.stations.length * 2 + 4 + 6 + 2 + 5 * 2 + 3 * 2 + 3 * 4 + 7 + 18
