@@ -138,10 +138,10 @@ export class TouchControls {
    * - A touch becomes a stick candidate when it goes down in the driving hand's 55% of the
    *   screen (the left for a right-handed player, the right for a left-handed one) on the
    *   game view itself (the game canvas or the bare page), not on a button, the gear selector,
-   *   any panel or HUD element (those are other elements, so they are never the target), and
-   *   not inside the minimap's rectangle (the minimap lets touches through to the canvas, so
-   *   it is tested by position). Nothing is prevented or captured at that point, so a tap
-   *   reaches whatever is under it exactly as before.
+   *   any panel or HUD element (those are other elements, so they are never the target). The
+   *   minimap sits in the stick's corner and lets touches through to the canvas, so a touch on
+   *   it drives too (the owner, 17 November 2026); it never aims. Nothing is prevented or
+   *   captured at that point, so a tap reaches whatever is under it exactly as before.
    * - A candidate that moves 8 px becomes the stick: its base appears centred where the touch
    *   went down, the pointer is captured, and from then on the knob follows the finger. Past
    *   the radius the knob and output saturate; the base stays at touch-down. Lifting fades it out in 150 ms.

@@ -155,7 +155,7 @@ html[data-touch-aim="on"] .syn3h-shell.has-touch .focus-hud svg [data-reticle] {
 
 /* Landscape phones: the Panels tab (.hud-navigation), centred on the right edge, would end
    exactly where the thumb grid's top row starts. Stand it on the grid instead, one gap clear,
-   so the two never touch for any vehicle or hand. Its top then stays below the minimap. */
+   so the two never touch for any vehicle or hand. */
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .syn3h-shell.exploration-ui.has-touch .hud-navigation {
     top: auto; transform: none;
