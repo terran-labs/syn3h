@@ -63,6 +63,9 @@ import {
   KNOCK_WINDOW, WIN_PAUSE, raceAuto, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
   REJOIN_GRACE, gameRejoin,
 } from '../src/modes/params'
+import {
+  BOT_CHAT_BURST, BOT_CHAT_REFILL_S, CHAT_BURST, CHAT_REFILL_S, ChatBucket, HOST_ONLY_PARAMS, botChatter, chatOn, cleanChatText, filterChat,
+} from '../shared/chat'
 
 /** One connection, as the room sees it. */
 export interface Peer {
@@ -156,6 +159,8 @@ interface Player {
   jsonCount: number
   /** Server ms of joining; 0 for a player adopted after hibernation (not newly arrived). */
   joinedAt: number
+  /** This player's chat allowance, made on its first line. */
+  chat: ChatBucket | null
 }
 
 const ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/
@@ -392,6 +397,9 @@ export class Room {
         if (actor) this.onYoink(peer, actor, msg.y)
         break
       }
+      case 'chat':
+        this.onChat(peer, player, msg.text, msg.bot)
+        break
       case 'stuck':
       case 'died': // the name older bundles send
         if (typeof msg.bot === 'number') {
@@ -843,6 +851,51 @@ export class Room {
     }
   }
 
+  // -------------------------------------------------------------------------------------
+  // Chat (shared/chat.ts)
+  // -------------------------------------------------------------------------------------
+  //
+  // The room cleans, filters and rate limits every line and names the speaker itself. Lines
+  // are relayed and forgotten: no history for newcomers, nothing stored, only a count kept.
+
+  /** Lines relayed since this room was made. A count, never the text. */
+  chatLines = 0
+  /** The bot simulator's allowance, shared by every bot it speaks for. */
+  private botChat: ChatBucket | null = null
+
+  private onChat(peer: Peer, player: Player, raw: unknown, botId: unknown): void {
+    const now = this.now()
+    let speaker = player
+    if (botId !== undefined) {
+      // Only the host simulates bots, so only the host may speak for one, and only while
+      // it is here and the room has bot chatter on. Refusals are silent: the host paces itself.
+      if (player.info.id !== this.host || player.heldUntil || typeof botId !== 'number' || !isBotId(botId)) return
+      const bot = this.bots.get(botId)
+      if (!bot || !this.paramBool(botChatter.def)) return
+      const text = cleanChatText(raw)
+      if (!text) return
+      this.botChat ??= new ChatBucket(BOT_CHAT_BURST, BOT_CHAT_REFILL_S, now)
+      if (!this.botChat.take(now)) return
+      speaker = bot
+      this.relayChat(speaker, text, now)
+      return
+    }
+    if (!this.paramBool(chatOn.def)) { this.sendTo(peer, { type: 'chat-refused', reason: 'off' }); return }
+    const text = cleanChatText(raw)
+    if (!text) return
+    player.chat ??= new ChatBucket(CHAT_BURST, CHAT_REFILL_S, now)
+    if (!player.chat.take(now)) {
+      this.sendTo(peer, { type: 'chat-refused', reason: 'rate', wait: Math.round(player.chat.wait(now) * 10) / 10 })
+      return
+    }
+    this.relayChat(speaker, text, now)
+  }
+
+  private relayChat(speaker: Player, text: string, now: number): void {
+    this.chatLines++
+    this.broadcast({ type: 'chat', from: speaker.info.id, text: filterChat(text), t: now / 1000 })
+  }
+
   /** Keep the connection's budget, but use the actor's own positions and gear limits. */
   private gearActor(sender: Player, botId: unknown): Player | undefined {
     if (botId === undefined) return sender
@@ -888,9 +941,9 @@ export class Room {
 
   private onParam(player: Player, id: unknown, raw: unknown): void {
     if (typeof id !== 'string') return
-    if (this.locked && player.info.id !== this.host) {
+    if ((this.locked || HOST_ONLY_PARAMS.has(id)) && player.info.id !== this.host) {
       // Snap the sender's slider back to the room's value.
-      const current = this.values.get(id)
+      const current = this.values.get(id) ?? (HOST_ONLY_PARAMS.has(id) ? registry.get(id)?.def.default : undefined)
       const peer = this.peerOf(player)
       if (current !== undefined && peer) this.sendTo(peer, { type: 'param', id, value: current, from: 0 })
       return
@@ -1398,7 +1451,7 @@ export class Room {
     const now = this.now()
     return {
       info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, cordTo: null, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, page: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), lastTag: now,
-      windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now, raceDriving: false,
+      windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now, raceDriving: false, chat: null,
     }
   }
 

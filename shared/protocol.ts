@@ -388,6 +388,11 @@ export type ClientMessage =
   | { type: 'race'; race: RaceUpdate }
   /** A participant withdraws themselves, never another vehicle. */
   | { type: 'race-leave'; id: string }
+  /**
+   * A line of chat (shared/chat.ts). `bot`: the host speaks for bot `bot` it simulates.
+   * Optional for older peers: an older room ignores the type, an older client never sends it.
+   */
+  | { type: 'chat'; text: string; bot?: number }
 
 export type TagEvent =
   | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'
@@ -430,6 +435,13 @@ export type ServerMessage =
    */
   | { type: 'reset'; reason: 'idle' | 'host' | 'join'; from: number; params: Record<string, ParamWireValue>; game: GameState }
   | { type: 'error'; message: string }
+  /**
+   * A line of chat from player or bot `from`, cleaned and filtered by the room, at server
+   * time `t`. Sent to everyone in the room, the speaker included. Older clients ignore it.
+   */
+  | { type: 'chat'; from: number; text: string; t: number }
+  /** Your line was not relayed: `rate` (try again in `wait` seconds) or `off` (the host turned chat off). */
+  | { type: 'chat-refused'; reason: 'rate' | 'off'; wait?: number }
 
 export const MAX_JSON_BYTES = 8192
 export const MAX_NAME_LENGTH = 24
