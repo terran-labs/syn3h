@@ -123,4 +123,4 @@ export function markRatio(look: number, kind: SurfaceKind, t: Tone): Readonly<RG
 /** Share of a mark's darkening kept on near-black ground. */
 export const DARK_KEEP = 0.55
 /** The most a mark can lighten the ground, as a multiple. */
-export const MAX_RATIO = 2
+export const MAX_RATIO = 1.5
