@@ -17,10 +17,12 @@ export const captionCeiling = defineParam({
 /**
  * A planet's apparent radius as a share of the screen's short side: at or under SMALL its
  * caption keeps the original size, at or over LARGE it reaches the ceiling. Measured in the
- * lobby at rest: the outer and far worlds sit near 0.02 on a phone and a desktop, the nearest
- * near 0.06 to 0.08.
+ * lobby at rest (17 November 2026): the moon and the ice world sit at 0.010 to 0.013 at
+ * 402x874, 844x390 and 1440x900; the nearest world at 0.034 in portrait, 0.048 on a desktop
+ * and 0.056 in landscape, so at rest it reaches about 1.67 times in portrait and the ceiling
+ * elsewhere, and any planet reaches the ceiling as the view zooms in to it.
  */
-export const CAPTION_SMALL = 0.02, CAPTION_LARGE = 0.07
+export const CAPTION_SMALL = 0.013, CAPTION_LARGE = 0.045
 /** The step --caption-scale moves in, so a caption's style is written only now and then. */
 export const CAPTION_STEP = 0.02
 
