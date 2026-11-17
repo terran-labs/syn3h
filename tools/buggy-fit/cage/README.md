@@ -23,6 +23,36 @@ cage so its subdivided surface lands on the reference, `render.ts` draws PNG she
     npx tsx tools/buggy-fit/cage/build.ts            # writes the cages, images to /tmp/buggy-fit/cage
     npx tsx tools/buggy-fit/compare.ts src/vehicles/buggygen/cage/cage250.ts --part body --detail 0
 
+## Character lines (late on 16 November 2026)
+
+The rear half's character lines are drawn into the shipped cage instead of decimated around:
+
+1. `lines.ts` finds them in the reference: chains of edges where one role folds by more than
+   40 degrees, at least 0.3 m long, behind z = -0.1. Ten paint and frame chains survive: the
+   shoulder line from the cockpit to the spoiler, the spoiler's leading and trailing edges and
+   plates, the haunch, the fin edges. Shorter chains are the reference's facet noise.
+2. `linesnap.ts` resamples each line every 0.12 m, snaps the nearest cage point of the same
+   role onto it, splits the nearest same-role edge where no point is within 7 cm (34 new
+   points), and flips edges so consecutive points are joined (35 of 39 segments).
+3. The joined edges become semi-sharp creases (sharpness 2; `subdivide.ts` now supports
+   semi-sharp creases, and existing data subdivides bit-identically).
+4. The rear is refitted with the bending term; every point ahead of z = 0 is frozen, so the
+   front half, the headlight ducts and the front shock tops do not move at all.
+
+| | points | mean / p95 / max mm | normal deviation | roughness | triangles d0 / d1 / d2 | gzip |
+| --- | --- | --- | --- | --- | --- | --- |
+| shipped | 320 | 4.47 / 13.1 / 32.8 | 9.61 | 6.88 | 4,792 / 1,198 / 206 | 8,075 |
+| lines | 354 | 4.39 / 13.1 / 32.6 | 9.19 | 6.73 | 5,336 / 1,334 / 206 | 8,989 |
+
+Points per line, longest first (snapped plus inserted): 10, 5, 4, 5, 5, 4, 5, 4, 3, 4.
+
+Rebuilding the whole cage with line-aware decimation (`LINES=1`) reaches 300 points at 4.9 mm
+but moves the front by 2 to 3 mm and the headlight ducts by up to 24 mm, so it is off.
+Trimming the rear back to 320 points after drawing the lines (`TRIM=320`) crumples the
+surface around the lines. Pinning every fold in the flank (`FOLDLOCK`, an earlier try) bent
+the spoiler fin tip because, at a fixed budget, the locked flank points were paid for by the
+points around the fin; the fin now has its own lines and keeps its points.
+
 ## Feature pass (night of 16 November 2026)
 
 `cage250.ts` keeps its name and id but now stores 320 points, spent on the features that
