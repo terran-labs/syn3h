@@ -3,12 +3,13 @@
  * exponents p and q of y = base + h (1 - |x / w|^p)^q that best fit the slice, with the
  * station's own width, base and crown. p sets how flat the crown is, q how straight the sides.
  *
- *     npx tsx tools/buggy-fit/parts/fit-canopy.ts
+ *     npx tsx tools/buggy-fit/parts/fit-canopy.ts [z ...]
  */
 import { loadReference } from '../reference'
 import { CANOPY_STATIONS } from '../../../src/vehicles/buggygen/parts/canopy'
 const r = loadReference().canopy, P = r.positions
-for (const [z] of CANOPY_STATIONS.slice(1, -1)) {
+const extra = process.argv.slice(2).map(Number)
+for (const z of extra.length ? extra : CANOPY_STATIONS.slice(1, -1).map(r => r[0])) {
   const pts: [number, number][] = []
   for (let t = 0; t < r.indices.length / 3; t++) for (let a = 0; a < 3; a++) {
     const i = r.indices[t * 3 + a] * 3, j = r.indices[t * 3 + (a + 1) % 3] * 3
