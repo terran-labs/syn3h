@@ -239,7 +239,6 @@ async function main(): Promise<void> {
       channel: connection.chat,
       input: game.input,
       canOpen: () => shell.playing && !game.input.suspended,
-      releaseCursor: () => { if (document.pointerLockElement) document.exitPointerLock() },
       roster: () => [...connection.players.values()].filter((p) => p.id !== connection.id).map((p) => ({
         id: p.id, name: connection.displayName(p.id), bot: Boolean(p.bot),
         color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0],
