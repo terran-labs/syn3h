@@ -67,10 +67,16 @@ export class BotPacer {
 
   constructor(private readonly interval: () => number = () => arrivalInterval.value) {}
 
-  /** Mean frame time over the last window, or NaN with too little evidence. */
-  private recentMean(now: number): number {
+  /**
+   * Median frame time over the last window, or NaN with too little evidence. Medians, before
+   * and after a bot, so the one-off frames of its arrival (its shaders compile on first sight)
+   * are not mistaken for what it costs to keep.
+   */
+  private recentMedian(now: number): number {
     while (this.recent.length && this.recent[0].at < now - PACING.windowMs) this.recent.shift()
-    return this.recent.length < 5 ? NaN : this.recent.reduce((s, f) => s + f.ms, 0) / this.recent.length
+    if (this.recent.length < 5) return NaN
+    const sorted = this.recent.map(f => f.ms).sort((a, b) => a - b)
+    return sorted[Math.floor(sorted.length / 2)]
   }
 
   /** The number of bots to aim for now: what is wanted, within what the device carries. */
@@ -111,13 +117,13 @@ export class BotPacer {
       const span = m.frames.reduce((s, f) => s + f, 0)
       if (span < PACING.windowMs) return null
       const sorted = [...m.frames].sort((a, b) => a - b), p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))]
-      const meanMs = span / sorted.length
-      this.marginal.set(m.count, meanMs - m.before)
+      const meanMs = span / sorted.length, medianMs = sorted[Math.floor(sorted.length / 2)]
+      this.marginal.set(m.count, medianMs - m.before)
       this.measuring = null
       // Over the target is not enough: the bot must have made frames measurably worse. Frames
       // that were already slow before it (a weak or busy device, a headless browser) are the
       // quality level's to fix, not the bots'.
-      const worse = meanMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare)
+      const worse = medianMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare)
       if (p90 > state.targetMs * PACING.slowFactor && worse) {
         // That one was too many: carry one fewer at this level, and send it off.
         this.allowed = Math.max(0, m.count - 1)
@@ -132,7 +138,7 @@ export class BotPacer {
     if (!state.open || state.have >= goal || !due) return null
     // Judged against the frames just before it: with no baseline yet (the first moments of
     // play) wait, rather than blame the bot for whatever the frames were already doing.
-    const before = this.recentMean(now)
+    const before = this.recentMedian(now)
     if (!Number.isFinite(before)) return null
     this.last = now
     this.measuring = { since: now, frames: [], before, count: state.have + 1 }
