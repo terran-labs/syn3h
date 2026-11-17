@@ -230,7 +230,6 @@
 .sky-presets button { font-size: 16px; }
 .world-lock-note { color: #e4ba8f; font-size: 15px; }
 .settings-links { display: grid; gap: 12px; }
-.shell-scoreboard { margin-top: 20px; }
 .score-row { display: grid; grid-template-columns: minmax(0,1fr) auto 35px; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border-bottom: 1px solid rgb(84 84 88 / .4); font-size: 17px; }
 .score-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .score-row small { color: var(--s3-dim); font-size: 10px; }

@@ -1,6 +1,6 @@
 import { frozenResourceURL } from '../core/frozenResources'
 import type { LobbyAddress } from './LobbyAddress'
-import { DEFAULT_ROOM, isDefaultRoom, roomFromQuery, roomLabel } from '../core/roomAddress'
+import { DEFAULT_ROOM, isDefaultRoom, roomFromQuery } from '../core/roomAddress'
 import { modeChoices, modeName } from './modeAvailability'
 import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
 import { GearSelector, type GearSource } from './gear/GearSelector'
@@ -45,7 +45,7 @@ import { arrivalPath } from '../core/arrival'
 import { applyPlanet, biomeLine, currentPlanet, currentWorldName, encodeWorld, planetById, randomSeed } from '../world/planets'
 import { nameSeedKeptAcross, randomNameSeed, worldName } from '../world/worldName'
 import { currentHour, formatDayLength, planetDayLength } from '../world/sky/dayCycle'
-import { InviteView, inviteUrl, renderQr } from './InviteView'
+import { InviteView, inviteUrl } from './InviteView'
 import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
@@ -111,7 +111,7 @@ export function plateTint(recipeId: string): string {
 const LABEL_HOLD = 0, LABEL_FADE = 150
 /** Must match the short landscape block in shell.css. */
 const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
-const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="about">About</button>`
+const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="about">About</button>`
 const back = '<button type="button" class="panel-back link-button" data-goto="index"><span aria-hidden="true">←</span><span>Back</span></button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
 declare const __SYN3H_BUILD__: string | undefined
@@ -142,7 +142,8 @@ export class Shell implements System {
   private inviteOpen = false
   private inviteFromGame = false
   private playerCount = 0
-  private lastInviteUrl = ''
+  /** What had focus when the invite view opened, to return to when it closes. */
+  private joinOpener?: HTMLElement
   private readonly matchHud: MatchHud
   private minimap?: Minimap
   private readonly panels: SlidingPanels
@@ -204,7 +205,6 @@ export class Shell implements System {
           <fieldset class="world-controls"><legend>Sky</legend><div class="sky-presets">${SKY_PRESET_NAMES.map(name => `<button type="button" data-sky="${name}">${name}</button>`).join('')}</div><label for="sky-time">Time of day <output id="sky-time-value"></output></label><input id="sky-time" type="range" min="0" max="24" step="0.05"></fieldset>
           <p class="world-lock-note" hidden>Sliders locked by host.</p><button data-goto="explore">Explore this world ›</button>${back}
         </section>
-        <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode">${modeChoices.map(mode => `<option value="${mode.value}">${mode.label}</option>`).join('')}</select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
         <section data-panel="about">${heading('About Syn3h')}${aboutHtml()}${back}</section>
       </div>
@@ -231,7 +231,9 @@ export class Shell implements System {
     this.nameInput = this.element.querySelector('#shell-name')!; this.roomInput = this.element.querySelector('#shell-room')!
     this.speed = this.element.querySelector('.shell-speed strong')!
     this.panels = new SlidingPanels(this.element.querySelector('.lobby-panels')!)
-    this.board = new Scoreboard(this.element.querySelector('.shell-scoreboard')!, text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
+    // The lobby's Multiplayer panel, which drew this board, is gone (the in-play board is the
+    // Players & session card's). The board stays, detached, for its join and leave messages.
+    this.board = new Scoreboard(document.createElement('div'), text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
     this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {})
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
     // The gear drum at the centre-left edge, in both cursor states: the gear in hand, its
@@ -365,7 +367,6 @@ export class Shell implements System {
       if (this.panels.active !== 'index' && !target.closest('.lobby-panels, .galaxy-links, .update-banner') && !this.inviteOpen) this.showPanel('index')
     }, { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-open]')) button.addEventListener('click', () => this.openMenu(button.dataset.open!), { signal })
-    for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
     this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play(true) }, { signal })
     for (const button of this.element.querySelectorAll('.shell-invite')) button.addEventListener('click', () => { void this.copyInvite() }, { signal })
     const presentationInput = this.presentationToggle.querySelector('input')!
@@ -386,7 +387,6 @@ export class Shell implements System {
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-sky]')) button.addEventListener('click', () => { if (canEditWorld()) applySkyPreset(button.dataset.sky as SkyPresetName) }, { signal })
     this.element.querySelector('#sky-time')!.addEventListener('input', event => { if (canEditWorld()) params.set('sun.timeOfDay', (event.target as HTMLInputElement).value) }, { signal })
     this.element.querySelector('#bots-count')!.addEventListener('input', event => { if (canEditWorld()) params.set('bots.count', (event.target as HTMLInputElement).value) }, { signal })
-    this.element.querySelector('#game-mode')!.addEventListener('change', event => { if (canEditWorld() && params.get('game.mode') && modeChoices.some(mode => mode.value === Number((event.target as HTMLSelectElement).value))) params.set('game.mode', Number((event.target as HTMLSelectElement).value)) }, { signal })
     // Two presses: the first asks, the second (within four seconds) does it. No modal dialog.
     const reset = this.hostControls.querySelector<HTMLButtonElement>('.world-reset')!
     let resetArmed: ReturnType<typeof setTimeout> | undefined
@@ -436,22 +436,17 @@ export class Shell implements System {
     void this.panels.show('index', true); this.update()
   }
   private updateRoomLabels(): void {
-    this.element.querySelector('.multiplayer-room')!.textContent = `Room: ${roomLabel(this.room)}`
     this.updateInvite()
   }
   private updateInvite(): void {
     const url = this.lobbyAddress?.inviteURL(this.room, encodeWorld()) ?? inviteUrl(location.origin, this.room, encodeWorld())
-    if (url !== this.lastInviteUrl) {
-      this.lastInviteUrl = url
-      for (const host of this.overlay.querySelectorAll('.invite-qr')) renderQr(host, url)
-      for (const text of this.overlay.querySelectorAll('.invite-link')) text.textContent = url
-    }
     this.invite.update(url, this.room, this.playerCount)
   }
   openJoin(): void {
     this.stopAttract()
     if (this.inviteOpen || this.aboutOpen) return
     this.inviteFromGame = this.started && !this.menuVisible
+    this.joinOpener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : undefined
     if (this.inviteFromGame) { this.releaseCursor(); this.game.input.suspended = true; this.game.input.mouseFire = false; this.touch.enabled = false }
     this.inviteOpen = true; this.overlay.inert = true; this.invite.show(); this.updateInvite()
   }
@@ -519,7 +514,14 @@ export class Shell implements System {
     if (!this.inviteOpen) return
     this.inviteOpen = false; this.invite.hide(); this.overlay.inert = false
     if (this.inviteFromGame) this.closeMenu()
-    else this.element.querySelector<HTMLButtonElement>('[data-join]')!.focus()
+    else {
+      // Back to what had focus; opened by J from nowhere in particular, focus goes nowhere, so J
+      // (ignored while a button has focus) toggles the view again.
+      const opener = this.joinOpener
+      if (opener?.isConnected && !opener.closest('[hidden], [inert]')) opener.focus({ preventScroll: true })
+      else (document.activeElement as HTMLElement | null)?.blur()
+    }
+    this.joinOpener = undefined
   }
   get vehicleKind(): VehicleChoice['vehicleKind'] { return this.choice.vehicleKind }
   get bodyColor(): string { return this.choice.bodyColor }
@@ -1665,9 +1667,7 @@ export class Shell implements System {
     this.switches.get('host-lock')!(net?.locked ?? false)
     this.hostControls.querySelector<HTMLElement>('.host-lock')!.hidden = !net?.isHost
     this.hostControls.querySelector('.host-note')!.textContent = !net ? 'Join a room to manage shared settings.' : !editable ? 'Sliders locked by host.' : net.isHost ? 'You are the host.' : 'Shared sliders are open.'
-    const mode = params.get('game.mode'), modeSelect = this.element.querySelector<HTMLSelectElement>('#game-mode')!
-    this.element.querySelector<HTMLElement>('.mode-control')!.hidden = !mode
-    modeSelect.disabled = !editable; if (mode) modeSelect.value = String(mode.value)
+    const mode = params.get('game.mode')
     // Explore is the default and has no game: no scores, nobody "it". The player list stays.
     this.element.classList.toggle('is-explore', !mode || Number(mode.value) === 2)
     const bots = params.get('bots.count'), botsRow = this.element.querySelector<HTMLElement>('.bots-control')!

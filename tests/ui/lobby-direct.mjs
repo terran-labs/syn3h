@@ -10,10 +10,12 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     await page.goto(`${process.env.SYN3H_URL}?room=lobby-direct-${Date.now()}`)
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
+    // The lobby's opening (about nine seconds) hides its controls; a key skips to the settled lobby.
+    await page.keyboard.press('Shift'); await page.waitForTimeout(700)
     const nav = page.locator('.galaxy-links')
     await nav.waitFor({ state: 'visible' })
     if (process.env.UX_BEFORE === '1') {
-      await nav.locator('[data-goto=multiplayer]').click()
+      await nav.locator('[data-goto=about]').click()
       await page.waitForTimeout(200)
       await page.screenshot({ path: `${out}/${mode}-before.png` })
       continue
@@ -51,7 +53,8 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await page.screenshot({ path: `${out}/${mode}-lobby.png` })
     for (const reducedMotion of ['no-preference', 'reduce']) {
       await page.emulateMedia({ reducedMotion })
-      for (const name of ['multiplayer', 'about', 'multiplayer']) {
+      // About is the lobby's one panel button now; it opens straight to its panel.
+      for (const name of ['about']) {
         await nav.locator(`[data-goto=${name}]`).click()
         // The requested panel is the only visible section from the first paint onward.
         assert.deepEqual(await page.locator('.lobby-panels > section:visible').evaluateAll(es => es.map(el => el.dataset.panel)), [name])

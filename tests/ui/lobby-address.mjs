@@ -361,8 +361,11 @@ async function runCase(browser, mode, entry, missing = false) {
       assert.equal(result.saved.wasHost, true); assert.equal(result.saved.world['world.seed'], 42)
       assert.equal(result.saved.entrySeed, 1); assert.equal(result.saved.seed, 42); assert.equal(result.saved.kind, 'jet')
       await persist('Jet resume snapshot verified; before invite/About navigation')
-      await page.locator('.galaxy-links [data-goto=multiplayer]').click()
-      const invite = new URL(await page.locator('[data-panel=multiplayer] .invite-link').innerText())
+      // The invite view (J) carries the link now that the Multiplayer panel is gone.
+      await page.evaluate(() => document.activeElement?.blur()); await page.keyboard.press('j')
+      await page.locator('.join-view').waitFor({ state: 'visible' })
+      const invite = new URL(await page.locator('.join-view .invite-link').innerText())
+      await page.locator('.join-close').click(); await page.locator('.join-view').waitFor({ state: 'hidden' })
       assert.equal(invite.searchParams.get('v'), m.version); assert.equal(invite.searchParams.get('room'), room)
       assert.equal(invite.pathname, url.pathname); assert.ok(invite.searchParams.get('world'))
       await page.keyboard.press('Escape')

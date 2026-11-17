@@ -8,7 +8,7 @@ try {
  for(const phone of [false,true]) {
   const device=phone?'narrow':'projector', context=await browser.newContext({viewport:phone?{width:320,height:844}:{width:1600,height:1000},hasTouch:phone,isMobile:phone,permissions:['clipboard-read','clipboard-write']})
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())})
-  await page.goto(`http://127.0.0.1:5187/?room=jam-${device}&attract=1`)
+  await page.goto(`${process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'}?room=jam-${device}&attract=1`)
   await page.waitForFunction(()=>window.syn3h?.shell.attracting,null,{timeout:60000})
   await page.waitForTimeout(1000)
   await page.screenshot({path:`tests/ui/artifacts/${device}-attract-volcano.png`})
@@ -36,10 +36,9 @@ try {
   await page.locator('.join-view .invite-qr').screenshot({path:`tests/ui/artifacts/${device}-qr.png`})
   await page.locator('.join-copy').click();assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),url)
   await page.keyboard.press('j');assert.equal(await page.locator('.join-view').isVisible(),false)
-  await panel('multiplayer');await page.screenshot({path:`tests/ui/artifacts/${device}-multiplayer-qr.png`})
-  assert.equal(await page.locator('.shell-scoreboard .score-row').count(),16)
-  await page.locator('.shell-scoreboard .score-row').last().scrollIntoViewIfNeeded();await page.screenshot({path:`tests/ui/artifacts/${device}-scores-16.png`})
-  for(const id of ['index','vehicle','worlds','settings']) {await panel(id);await page.screenshot({path:`tests/ui/artifacts/${device}-${id}.png`})}
+  // Sixteen players with long names fill the in-play board (the lobby's copy went with the Multiplayer panel).
+  assert.equal(await page.locator('.hud-scoreboard .score-row').count(),16)
+  for(const id of ['index','worlds']) {await panel(id);await page.screenshot({path:`tests/ui/artifacts/${device}-${id}.png`})}
   if(!phone){await page.waitForFunction(()=>syn3h.shell.attracting,null,{timeout:25000});await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>syn3h.shell.attracting),false)}
   // Isolate the presentation fixture from live network status replacement.
   await page.evaluate(()=>{syn3h.shell.onPlay=()=>{};syn3h.shell.play()})

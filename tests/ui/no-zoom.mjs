@@ -29,7 +29,7 @@ try {
     assert.deepEqual(refused, { gesturestart: true, gesturechange: true, twoFingerMove: true, oneFingerMove: false, doubleTap: true }, name)
     // No field anywhere is under 16px, the size below which Safari zooms in on focus.
     const testedPanels = []
-    for (const panel of ['explore', 'worlds', 'music', 'advanced', 'multiplayer', 'about']) {
+    for (const panel of ['explore', 'worlds', 'advanced', 'about']) {
       assert.equal(await page.locator(`[data-panel="${panel}"]`).count(),1)
       testedPanels.push(panel)
       await page.evaluate(id => window.syn3h.shell.showPanel(id), panel)
@@ -37,7 +37,7 @@ try {
       const small = await page.evaluate(() => [...document.querySelectorAll('input, select, textarea')].filter(el => el.offsetParent !== null && !['range', 'checkbox', 'radio', 'color'].includes(el.type) && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => `${el.className || el.id || el.tagName} ${getComputedStyle(el).fontSize}`))
       assert.deepEqual(small, [], `${name}: fields under 16px in ${panel}`)
     }
-    assert.equal(testedPanels.length,6)
+    assert.equal(testedPanels.length,4)
     console.log(JSON.stringify({name,testedPanels,count:testedPanels.length}))
     // Settings: the Daydream slider is there, fits the screen, and using it does not scale the page.
     await page.evaluate(() => window.syn3h.shell.showPanel('settings'))
