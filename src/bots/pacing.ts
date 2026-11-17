@@ -124,7 +124,6 @@ export class BotPacer {
       if (span < PACING.windowMs) return null
       const sorted = [...m.frames].sort((a, b) => a - b), p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))]
       const meanMs = span / sorted.length, medianMs = sorted[Math.floor(sorted.length / 2)]
-      this.marginal.set(m.count, medianMs - m.before)
       this.measuring = null
       // Over the target is not enough: the bot must have made frames measurably worse, from
       // frames that met the target before it. Frames already slow before it (a weak or busy
@@ -132,6 +131,9 @@ export class BotPacer {
       // short window's median swings by a third on its own, so no comparison can single out a
       // bot. The governor's bot step (costly, shed) still offers relief with automatic quality.
       const keptUp = m.before <= state.targetMs * PACING.slowFactor
+      // What a bot costs is recorded only from frames that kept up: on frames already slow the
+      // difference is load noise, and the governor would shed bots for it (see costly).
+      if (keptUp) this.marginal.set(m.count, medianMs - m.before)
       const worse = keptUp && medianMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare, m.before * PACING.baselineShare)
       if (p90 > state.targetMs * PACING.slowFactor && worse) {
         // That one was too many: carry one fewer at this level, and send it off.
@@ -178,13 +180,15 @@ export class BotPacer {
 
   /**
    * True when the bots now carried measurably cost frame time: together at least a tenth of
-   * the frame budget. Unmeasured bots count as costly, since they cost CPU on every device.
+   * the frame budget, by what the pacer measured. An unmeasured bot is not counted: counting
+   * it made the governor shed a bot within two seconds of its arrival on a device that was
+   * slow before it, and the level then remembered carrying none for the session.
    */
   costly(have: number, targetMs: number): boolean {
     if (have <= 0) return false
-    let known = 0, total = 0
-    for (let i = 1; i <= have; i++) { const ms = this.marginal.get(i); if (ms !== undefined) { known++; total += ms } }
-    return known < have || total >= targetMs * 0.1
+    let total = 0
+    for (let i = 1; i <= have; i++) total += this.marginal.get(i) ?? 0
+    return total >= targetMs * 0.1
   }
 
   /** Forget the pace (a new world): the next bot may come at once, and is judged afresh. */

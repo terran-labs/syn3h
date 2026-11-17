@@ -111,6 +111,8 @@ async function captureFailure() {
             at: Date.now(), url: location.href, readyState: document.readyState, hidden: document.hidden,
             requestedBots: param('bots.count'), effectiveBots: s?.bots?.vehicles?.length ?? null,
             botRosterCount: roster.filter(p => p.bot).length,
+            // Why the host's bots changed: the pacer's decisions and the quality governor's bot steps.
+            botPacing: s?.bots?.pacer ? { log: s.bots.pacer.log.slice(-12).map(l => `${(l.at / 1000).toFixed(1)}s ${l.action} at ${l.have} target ${l.targetMs.toFixed(0)}`), comfort: [...s.bots.pacer.comfort], allowed: s.bots.pacer.allowed, governorBotChanges: s.game?.quality?.governor?.botChanges ?? null, level: s.game?.quality?.governor?.level ?? null } : null,
             id: n?.id ?? null, isHost: n?.isHost ?? null, host: n?.game?.host ?? null, roster,
             playing: s?.shell?.playing ?? null, suspended: s?.game?.input?.suspended ?? null,
             tick: s?.game?.tick ?? null, gameTime: s?.game?.time ?? null, fps: s?.game?.fps ?? null,

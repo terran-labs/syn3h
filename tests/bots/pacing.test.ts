@@ -74,6 +74,18 @@ describe('bot pacing', () => {
     }
   })
 
+  it('does not call bots costly for the governor until they were measured to cost frames', () => {
+    // The governor sheds bots only when they cost frame time. Unmeasured, or on frames that
+    // were already slow (where a difference is load noise), they cost nothing it can shed.
+    const pacer = new BotPacer(() => 1)
+    expect(pacer.costly(1, 1000 / 60)).toBe(false)
+    run(pacer, 30, { ...desktop, wanted: 3 }, () => 40 + Math.random() * 40)
+    expect(pacer.costly(3, 1000 / 60)).toBe(false)
+    const measured = new BotPacer(() => 1)
+    run(measured, 60, desktop, n => 6 + n * 3)
+    expect(measured.costly(3, 1000 / 60)).toBe(true)
+  })
+
   it('never carries more than the host asked for', () => {
     const pacer = new BotPacer(() => 1)
     const { have } = run(pacer, 30, { ...desktop, wanted: 3 }, () => 1000 / 120)
