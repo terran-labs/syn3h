@@ -1,13 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const release = readFileSync(new URL('./release.sh', import.meta.url), 'utf8')
 const hook = release.slice(release.indexOf('# These artifacts describe'))
-for (const failure of ['draft', 'capture', 'tag']) {
+for (const failure of ['draft', 'tag']) {
   test(`a failed ${failure} preserves successful deployment status`, () => {
     const dir = mkdtempSync(join(tmpdir(), 'syn3h-release-hook-'))
     try {
@@ -18,8 +18,11 @@ for (const failure of ['draft', 'capture', 'tag']) {
       const result = spawnSync('/bin/sh', ['-eu', '-c', hook], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, FAILURE: failure, CALLS: calls, CALVER: 'v26.11.1500', MILESTONE: 'test', COMMIT: '1234567', WHEN: 'test time', N: '3', PREV: 'release-2', DEST: dir, LOG: join(dir, 'log') } })
       assert.equal(result.status, 0, result.stderr)
       assert.match(result.stdout, /Warning: release is live/)
-      assert.match(readFileSync(calls, 'utf8'), /showcase.mjs/)
-      assert.doesNotMatch(readFileSync(calls, 'utf8'), /publish/)
+      // The showcase is its own step after the release: printed, never run or published here.
+      assert.match(result.stdout, /Next, when no release is running: .*showcase\.mjs --version v26\.11\.1500 --publish/)
+      const ran = existsSync(calls) ? readFileSync(calls, 'utf8') : ''
+      assert.doesNotMatch(ran, /showcase\.mjs/)
+      assert.doesNotMatch(ran, /publish/)
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 }
