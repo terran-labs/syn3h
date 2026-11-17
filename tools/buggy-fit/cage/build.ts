@@ -19,6 +19,7 @@ import {buildBody, fullCage, cornerNormals, type CageData, type Candidate} from 
 import {subdivide} from '../../../src/vehicles/buggygen/cage/subdivide'
 import {sheet, VIEWS} from './render'
 
+const env0 = (k: string, d: number) => process.env[k] ? Number(process.env[k]) : d
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 const OUT = '/tmp/buggy-fit/cage'
 mkdirSync(OUT, {recursive: true})
@@ -42,6 +43,45 @@ function half(m: TriMesh): TriMesh {
 }
 
 /** Same-role cage edges folded more than `degrees` become creases. */
+/** Sharp edges of the reference inside one role, as segments: folds of more than `degrees`. */
+function sharpEdges(m: TriMesh, degrees: number): number[][] {
+  const out: number[][] = [], edges = new Map<string, number[]>(), p = m.pos
+  for (let f = 0; f < m.tri.length / 3; f++) for (let k = 0; k < 3; k++) { const a = m.tri[f * 3 + k], b = m.tri[f * 3 + (k + 1) % 3]; const key = a < b ? `${a},${b}` : `${b},${a}`; (edges.get(key) ?? edges.set(key, []).get(key)!).push(f) }
+  const n = (f: number) => { const [a, b, c] = [0, 1, 2].map(k => m.tri[f * 3 + k] * 3); const u = [p[b] - p[a], p[b + 1] - p[a + 1], p[b + 2] - p[a + 2]], v = [p[c] - p[a], p[c + 1] - p[a + 1], p[c + 2] - p[a + 2]]; const x = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], l = Math.hypot(...x) || 1; return x.map(q => q / l) }
+  const cos = Math.cos(degrees * Math.PI / 180)
+  for (const [key, fs] of edges) {
+    if (fs.length !== 2 || m.tag[fs[0]] !== m.tag[fs[1]]) continue
+    const a = n(fs[0]), b = n(fs[1])
+    if (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] >= cos) continue
+    const [i, j] = key.split(',').map(Number)
+    out.push([p[i * 3], p[i * 3 + 1], p[i * 3 + 2], p[j * 3], p[j * 3 + 1], p[j * 3 + 2]])
+  }
+  return out
+}
+
+/** Distance from point q to segment s (six numbers). */
+function toSegment(q: number[], s: number[]): number {
+  const d = [s[3] - s[0], s[4] - s[1], s[5] - s[2]], w = [q[0] - s[0], q[1] - s[1], q[2] - s[2]]
+  const t = Math.max(0, Math.min(1, (w[0] * d[0] + w[1] * d[1] + w[2] * d[2]) / ((d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) || 1)))
+  return Math.hypot(w[0] - t * d[0], w[1] - t * d[1], w[2] - t * d[2])
+}
+
+/**
+ * Cage edges that lie along a sharp edge of the reference (each quarter point within `tol`
+ * metres of one) become creases, so folds such as the hood scoop's inner wall stay crisp.
+ */
+function referenceCreases(m: TriMesh, sharp: number[][], tol: number): number[] {
+  const out: number[] = [], seen = new Set<string>(), p = m.pos
+  for (let f = 0; f < m.tri.length / 3; f++) for (let k = 0; k < 3; k++) {
+    const a = m.tri[f * 3 + k], b = m.tri[f * 3 + (k + 1) % 3], key = a < b ? `${a},${b}` : `${b},${a}`
+    if (seen.has(key)) continue; seen.add(key)
+    if (p[a * 3] === 0 && p[b * 3] === 0) continue
+    const ok = [.1, .35, .65, .9].every(t => { const q = [0, 1, 2].map(i => p[a * 3 + i] + t * (p[b * 3 + i] - p[a * 3 + i])); return sharp.some(s => toSegment(q, s) < tol) })
+    if (ok) out.push(a, b)
+  }
+  return out
+}
+
 function creases(m: TriMesh, degrees: number): number[] {
   const edges = new Map<string, number[]>()
   for (let f = 0; f < m.tri.length / 3; f++) for (let k = 0; k < 3; k++) { const a = m.tri[f * 3 + k], b = m.tri[f * 3 + (k + 1) % 3]; const key = a < b ? `${a},${b}` : `${b},${a}`; (edges.get(key) ?? edges.set(key, []).get(key)!).push(f) }
@@ -64,8 +104,19 @@ function asMesh(d: CageData, levels: number): TriMesh {
 
 // A size is a module name and, optionally, a different point budget: `250:290` writes
 // cage250.ts from a 290 point cage. The shipped body keeps the cage250 name.
+const SHARP = sharpEdges(ref, env0('REFDEG', 35))
+function mergeCreases(a: number[], b: number[]): number[] {
+  const out = [...a], have = new Set<string>()
+  for (let i = 0; i < a.length; i += 2) have.add(Math.min(a[i], a[i + 1]) + ',' + Math.max(a[i], a[i + 1]))
+  for (let i = 0; i < b.length; i += 2) { const k = Math.min(b[i], b[i + 1]) + ',' + Math.max(b[i], b[i + 1]); if (!have.has(k)) { have.add(k); out.push(b[i], b[i + 1]) } }
+  return out
+}
 const sizes = process.argv.slice(2).filter(a => /^\d+(:\d+)?$/.test(a))
-const POINTS: Record<number, number> = {250: 290}
+const POINTS: Record<number, number> = {250: 320}
+/** The rear flank, whose character lines keep their points with FOLDLOCK. */
+const FLANK = {tag: roles.indexOf('paint'), min: [.45, .15, .3], max: [1, .75, 1.75]}
+/** The hood scoop's chrome lip, half body, metres. */
+const SCOOP = {tag: roles.indexOf('chrome'), min: [-.01, .4, -1.55], max: [.4, .62, -1]}
 const h = half(ref)
 console.log(`reference: ${ref.tri.length / 3} triangles, ${ref.pos.length / 3} vertices; half: ${h.pos.length / 3} vertices`)
 const rows: string[] = [], extra: string[] = []
@@ -73,16 +124,16 @@ const code = ['generator.ts', 'subdivide.ts'].map(f => readFileSync(join(ROOT, '
 for (const spec of sizes.length ? sizes : ['60', '120', '250', '500']) {
   const [size, points = POINTS[size] ?? size] = spec.split(':').map(Number)
   const env = (k: string, d: number) => process.env[k] ? Number(process.env[k]) : d
-  const raw = decimate(h, points, env('BORDER', 20), env('SHAPE', 0), size >= 200 && env('PROTECT', 1) ? [roles.indexOf('lamp:tail')] : [], size >= 200 ? env('CORNER', 0) : 0, process.env.CTAGS ? process.env.CTAGS.split(',').map(r => roles.indexOf(r)) : [])
+  const raw = decimate(h, points, env('BORDER', 20), env('SHAPE', 0), size >= 200 && env('PROTECT', 1) ? [roles.indexOf('lamp:tail')] : [], size >= 200 ? env('CORNER', 0) : 0, process.env.CTAGS ? process.env.CTAGS.split(',').map(r => roles.indexOf(r)) : [], size >= 200 && env('SCOOP', 1) ? [SCOOP, ...(env('SCOOP', 1) > 1 ? [{...SCOOP, tag: roles.indexOf('paint')}, {...SCOOP, tag: roles.indexOf('accent')}] : [])] : [], size >= 200 ? env('FOLDLOCK', 0) : 0, FLANK)
   const dec = env('CLEAN', 6) ? clean(raw, grid, env('CLEAN', 6)) : raw
   console.error(`${size}: cage triangle quality before ${JSON.stringify(quality(raw))}, after ${JSON.stringify(quality(dec))}`)
   const fullTris = dec.tri.length / 3 * 2
   const level0 = fullTris * 16 <= 9000 ? 2 : 1
-  const base: CageData = {roles, v: Array.from(dec.pos, x => Math.round(x * 1000)), f: Array.from(dec.tri), t: Array.from(dec.tag), c: creases(dec, env('CREASE', 55)), levels: [level0, level0 - 1, 0], limit: !!env('LIMIT', 1)}
+  const base: CageData = {roles, v: Array.from(dec.pos, x => Math.round(x * 1000)), f: Array.from(dec.tri), t: Array.from(dec.tag), c: mergeCreases(creases(dec, env('CREASE', 55)), env('REFCREASE', 1) ? referenceCreases(dec, SHARP, env('REFTOL', .008)) : []), levels: [level0, level0 - 1, 0], limit: !!env('LIMIT', 1)}
   const t0 = performance.now()
   const fitted = fitCage(base, ref, grid, {levels: level0, rounds: env('ROUNDS', 20), reverse: env('REVERSE', size <= 60 ? 1 : 0), smooth: env('SMOOTH', 1e-3), fair: env('FAIR', 0), bend: env('BEND', 0.3), log: !!process.env.LOG})
   const fitMs = performance.now() - t0
-  const id = `cage${size}`
+  const id = `cage${size}${process.env.SUFFIX ?? ""}`
   // Detail 2 must stay near 400 triangles: cages too big for that borrow the 60 point cage.
   const far = fullTris > 500 && size !== 60
   if (process.env.DRY) { const fm = asMesh(fitted, level0), dd = distance(ref, fm, grid); console.log(id, JSON.stringify(dd), 'roughness', roughness(fm), 'reference', roughness(ref)); continue }

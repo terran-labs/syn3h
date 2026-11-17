@@ -35,7 +35,9 @@ class Heap {
  * `protect` lists role tags whose vertices never collapse, so a small region such as a tail
  * lamp keeps every point of its outline and stays thin after subdivision.
  */
-export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20, shape = 0, protect: number[] = [], cornerDegrees = 0, cornerTags: number[] = []): TriMesh {
+export interface LockBox { tag: number; min: number[]; max: number[] }
+
+export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20, shape = 0, protect: number[] = [], cornerDegrees = 0, cornerTags: number[] = [], boxes: LockBox[] = [], foldLock = 0, foldBox?: LockBox): TriMesh {
   const pos = Array.from(src.pos), V = pos.length / 3
   const faces = Array.from(src.tri), tag = Array.from(src.tag), F = faces.length / 3
   const alive = new Uint8Array(F).fill(1), valive = new Uint8Array(V).fill(1), stamp = new Uint32Array(V)
@@ -43,6 +45,12 @@ export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20, s
   for (let f = 0; f < F; f++) for (let k = 0; k < 3; k++) vf[faces[f * 3 + k]].add(f)
   const locked = new Uint8Array(V)
   for (let f = 0; f < F; f++) if (protect.includes(tag[f])) for (let k = 0; k < 3; k++) locked[faces[f * 3 + k]] = 1
+  // Boxes lock one role's points inside them: a feature such as the hood scoop lip, without
+  // locking the rest of that role.
+  for (let f = 0; f < F; f++) for (const b of boxes) if (tag[f] === b.tag) for (let k = 0; k < 3; k++) {
+    const v = faces[f * 3 + k], p = [src.pos[v * 3], src.pos[v * 3 + 1], src.pos[v * 3 + 2]]
+    if (p.every((x, i) => x >= b.min[i] && x <= b.max[i])) locked[v] = 1
+  }
   const seam = new Uint8Array(V); for (let v = 0; v < V; v++) if (Math.abs(pos[v * 3]) < 1e-4) { seam[v] = 1; pos[v * 3] = 0 }
   const P = (v: number) => [pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]]
   const normal = (a: number[], b: number[], c: number[]) => {
@@ -95,6 +103,18 @@ export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20, s
       const p = P(v), u = P(e[0]).map((x, i) => x - p[i]), w = p.map((x, i) => x - P(e[1])[i])
       const c = (u[0] * w[0] + u[1] * w[1] + u[2] * w[2]) / ((Math.hypot(...u) * Math.hypot(...w)) || 1)
       if (c < cos) locked[v] = 1
+    }
+  }
+  // Fold lines: with `foldLock` degrees, points on an edge where one role folds by more than
+  // that never collapse, so character lines (the rear flank's) keep cage edges along them.
+  if (foldLock > 0) {
+    const cos = Math.cos(foldLock * Math.PI / 180)
+    for (const [key, fs] of edgeFaces) {
+      if (fs.length !== 2 || tag[fs[0]] !== tag[fs[1]]) continue
+      if (foldBox && (tag[fs[0]] !== foldBox.tag || !key.split(',').map(Number).every(v => P(v).every((x, i) => x >= foldBox.min[i] && x <= foldBox.max[i])))) continue
+      const n0 = normal(P(faces[fs[0] * 3]), P(faces[fs[0] * 3 + 1]), P(faces[fs[0] * 3 + 2])), n1 = normal(P(faces[fs[1] * 3]), P(faces[fs[1] * 3 + 1]), P(faces[fs[1] * 3 + 2]))
+      const c = (n0[0] * n1[0] + n0[1] * n1[1] + n0[2] * n1[2]) / ((Math.hypot(...n0) * Math.hypot(...n1)) || 1)
+      if (c < cos) for (const v of key.split(',').map(Number)) locked[v] = 1
     }
   }
   console.error(`decimate: ${locked.reduce((s, x) => s + x, 0)} points locked`)
