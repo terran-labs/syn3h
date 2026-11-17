@@ -8,7 +8,7 @@
 import * as THREE from 'three/webgpu'
 import { previewMaterials, updateLamps } from '../materials'
 import type { LabControl, LabExhibit } from '../types'
-import { HANDLES, defaultShape, shapedBody, seedShape, encodeShape, decodeShape, type Shape } from '../../../vehicles/buggygen/shape'
+import { HANDLES, clampShape, defaultShape, shapedBody, seedShape, encodeShape, decodeShape, type Shape } from '../../../vehicles/buggygen/shape'
 
 const BODY = 0xb3140f, ACCENT = 0xf0c020
 
@@ -60,9 +60,18 @@ export const buggyShape: LabExhibit = {
     }
 
     const controls: LabControl[] = [
-      ...HANDLES.map((h): LabControl => ({ kind: 'slider', id: `shape.${h.id}`, label: h.label, group: 'Shape', min: h.min, max: h.max, step: h.step, value: shape[h.id], onChange: v => { shape = { ...shape, [h.id]: v }; regenerate() } })),
+      ...HANDLES.map((h): LabControl => ({ kind: 'slider', id: `shape.${h.id}`, label: h.label, group: 'Shape', min: h.min, max: h.max, step: h.step, value: shape[h.id], onChange: v => { shape = clampShape({ ...shape, [h.id]: v }); regenerate() } })),
       { kind: 'slider', id: 'shape.seed', label: 'Random buggy (seed)', group: 'Shape tools', min: 0, max: 999, step: 1, value: 0, onChange: v => { shape = v ? seedShape(v) : defaultShape(); regenerate(); syncSliders() } },
-      { kind: 'toggle', id: 'shape.reset', label: 'Fitted buggy (reset)', group: 'Shape tools', value: false, onChange: () => { shape = defaultShape(); regenerate(); syncSliders() } },
+      // The lab has no button control, so the reset is a switch that acts when turned on and
+      // then turns itself off, ready for the next reset.
+      { kind: 'toggle', id: 'shape.reset', label: 'Fitted buggy (reset)', group: 'Shape tools', value: false, onChange: on => {
+        if (!on) return
+        shape = defaultShape(); regenerate(); syncSliders()
+        const reset = controls.find(x => x.id === 'shape.reset'); if (reset?.kind === 'toggle') reset.value = false
+        for (const label of document.querySelectorAll('label.toggle')) if (label.querySelector('.label')?.textContent === 'Fitted buggy (reset)') {
+          const input = label.querySelector('input'); if (input) input.checked = false
+        }
+      } },
     ]
 
     return {
