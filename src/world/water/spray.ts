@@ -3,8 +3,6 @@ import { attribute, cameraPosition, cross, dot, float, mix, mx_fractal_noise_flo
 import { defineParam, params } from '../../../shared/params'
 import { paletteFor } from '../terrain/palettes'
 import { graphicsLevel } from '../../core/quality'
-import { hotExposureDim } from '../../vehicles/skins/hotExposure'
-import { vehicleNightAmount } from '../../vehicles/skins/nightReadability'
 import { applyCurve } from '../curve'
 import type { Ripples } from './ripples'
 import { SpraySim, sprayCapacity, type SprayWater } from './spraySim'
@@ -15,24 +13,39 @@ export const waterSprayScale=defineParam({id:'water.sprayScale',label:'Spray siz
 type N = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /**
- * How much light falls on white water: the sun's hue, dimmed by the shared night ramp. Spray
- * is unlit geometry, so without this it would glow at night. One render-group uniform.
+ * The light white water sends back: what a white diffuse surface would, lit by the scene's own
+ * sun (or moon) and sky. Spray is unlit geometry, so it is given the scene's actual radiance
+ * rather than a fixed white: in daylight it is as bright as sunlit sand, the brightest thing
+ * about, never a grey smudge against a pale sky; at night it takes the moon and sky as the
+ * ground does. Light colours carry their intensity (Environment.ts sets intensity 1, and the
+ * hemisphere colour already includes pi), so a Lambert surface at about 40 degrees to the sun
+ * returns sun * 0.75 / pi plus most of the sky and a little of the ground. One render-group
+ * uniform.
  */
 function sprayLight(): N {
-  let sun: T.DirectionalLight | null = null, search = 0
+  let sun: T.DirectionalLight | null = null, hemi: T.HemisphereLight | null = null, search = 0
   const colour = new T.Color()
   return uniform(new T.Color(1, 1, 1)).setGroup(renderGroup).onRenderUpdate(frame => {
     const scene = frame.scene as T.Scene
-    if ((!sun || sun.parent === null) && search-- <= 0) { sun = null; search = 120; scene.traverse(o => { if (!sun && (o as T.DirectionalLight).isDirectionalLight) sun = o as T.DirectionalLight }) }
-    // The night sky raises exposure; undo that like the lava does, or white foam glows.
-    const night = vehicleNightAmount(scene), hasSky = scene.children.some(o => 'sunDirection' in o)
-    const level = (1 - .72 * night) * (hasSky ? hotExposureDim(frame.renderer?.toneMappingExposure ?? 1) : 1)
-    colour.setRGB(1, 1, 1)
-    if (sun) {
-      const c = (sun as T.DirectionalLight).color, peak = Math.max(c.r, c.g, c.b, 1e-3)
-      colour.setRGB(.5 + .5 * c.r / peak, .5 + .5 * c.g / peak, .5 + .5 * c.b / peak)
+    if ((!sun || sun.parent === null || !hemi || hemi.parent === null) && search-- <= 0) {
+      sun = null; hemi = null; search = 120
+      scene.traverse(o => {
+        if (!sun && (o as T.DirectionalLight).isDirectionalLight) sun = o as T.DirectionalLight
+        if (!hemi && (o as T.HemisphereLight).isHemisphereLight) hemi = o as T.HemisphereLight
+      })
     }
-    return colour.multiplyScalar(level)
+    // Without the scene's lights (a lab, a test), plain white.
+    if (!sun && !hemi) return colour.setRGB(1, 1, 1)
+    colour.setRGB(0, 0, 0)
+    const s = sun as T.DirectionalLight | null, h = hemi as T.HemisphereLight | null
+    if (s) colour.r += s.color.r * s.intensity * .75 / Math.PI, colour.g += s.color.g * s.intensity * .75 / Math.PI, colour.b += s.color.b * s.intensity * .75 / Math.PI
+    if (h) {
+      const k = h.intensity / Math.PI
+      colour.r += (h.color.r * .8 + h.groundColor.r * .2) * k
+      colour.g += (h.color.g * .8 + h.groundColor.g * .2) * k
+      colour.b += (h.color.b * .8 + h.groundColor.b * .2) * k
+    }
+    return colour
   })
 }
 
@@ -98,7 +111,7 @@ function dropletMaterial(light: N, tint: N, lava = false) {
   m.opacityNode = select(mist, puff.mul(alpha).mul(.7), bead.mul(alpha).mul(cover.mul(.75).add(.25)).mul(mix(float(.55), float(.85), aerated)))
   const water = mix(tint, vec3(1, 1, 1), .35)
   const drop = mix(mix(water, vec3(1.15, 1.18, 1.2), rim.max(glint).mul(.85)), vec3(1.2, 1.22, 1.24), aerated.mul(.75))
-  m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .6), drop).mul(light).mul(1.2)
+  m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .7), drop).mul(light)
   if (lava) {
     // Molten drops glow on their own and cool as they fade: yellow-orange to a dark clot.
     // Lava "mist" is a hot, dark smoke.
