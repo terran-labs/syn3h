@@ -358,6 +358,7 @@ uniform float uDim;                 // 1 as the lobby itself; lower behind an op
 uniform float uRays;               // the sun's god rays: their strength in the settled lobby
 uniform vec2 uBurst;                // the Big Bang's soft burst ring: radius, strength (opening.ts)
 uniform float uSpread;              // the Big Bang: stars streaming out from the centre, 0 to 1
+uniform vec4 uTrail[${MAX}];        // the Big Bang: where each flung world was a moment ago, and how bright its trail is
 uniform float uMarkCrisp;           // 1 when the wordmark's letters are drawn by its own full-resolution pass
 uniform vec4 uReveal;               // the opening (opening.ts): sun, shafts' front, stars, the point's swell
 uniform float uOrbit[${MAX}];       // the opening: how much of each world's orbit line is drawn
@@ -471,7 +472,7 @@ void main() {
   // still has the sun in front of it, but must not have the whole glow painted over it.
   vec3 sunHaze = mix(WARM, ACCENT_B, 0.35) * exp(-sunDistance * 2.8) * 0.22 * sunGrown;
   // The pop's soft round burst: a warm ring rolling out from the sun and fading, never a flash.
-  if (uBurst.y > 0.0) sunHaze += mix(WARM, vec3(1.0, 0.9, 0.75), 0.5) * uBurst.y * exp(-pow((sunDistance - uBurst.x) / (0.06 + 0.1 * uBurst.x), 2.0));
+  if (uBurst.y > 0.0) sunHaze += mix(WARM, vec3(1.0, 0.9, 0.75), 0.5) * uBurst.y * exp(-pow((sunDistance - uBurst.x) / (0.05 + 0.08 * uBurst.x), 2.0));
   float shafts =
     pow(noise(vec3(sunDirection * 2.4, uTime * 0.09)), 2.0) * 0.9 +
     pow(noise(vec3(sunDirection * 6.5 + 3.0, uTime * 0.15)), 3.0) * 0.8 +
@@ -675,6 +676,19 @@ void main() {
     c += vec3(0.8, 0.92, 1.0) * rush * uDive * 1.3;
   }
   // The glow round the world under the pointer, in focus or pressed: over the shafts, under the grade.
+  // The Big Bang: each flung world's trail, a soft streak on screen from where it was to where
+  // it is, brightest at the world, fading back along its way.
+  for (int i = 0; i < ${MAX}; i++) {
+    if (i >= uCount) break;
+    if (uTrail[i].w <= 0.01) continue;
+    vec3 a = toScreen(uTrail[i].xyz), b = toScreen(uWorld[i].xyz);
+    if (a.z <= 0.0 || b.z <= 0.0) continue;
+    vec2 ab = b.xy - a.xy, aq = q - a.xy;
+    float along = clamp(dot(aq, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
+    float width = max(uWorld[i].w / (b.z * uTan) * 0.7, 0.004), d = length(aq - ab * along);
+    float streak = exp(-d * d / (width * width)) * along * along * uTrail[i].w;
+    c += mix(vec3(1.0, 0.9, 0.72), uSea[i] * 1.6 + 0.3, 0.35) * streak * 0.9;
+  }
   vec4 glow = planetGlow(ray, nearest, found) * (1.0 - uDive);
   c = mix(c, glow.rgb * 1.25, clamp(glow.a * 0.7, 0.0, 0.85)) + glow.rgb * glow.a * 0.6;
   // Connected humans by recipe: at most twelve lights; the label carries the exact total.
@@ -725,7 +739,7 @@ void main() {
   color = vec4(c / 12.0, 1.0);
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
-const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays', 'uBurst', 'uSpread'] as const
+const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays', 'uBurst', 'uSpread', 'uTrail'] as const
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -1254,11 +1268,19 @@ export class Galaxy {
     // The Big Bang flings each world out from the sun on a spiral: turned back along its way by
     // up to 2.4 radians and drawn in toward the sun, passing its place a little, then settling.
     // Drawn, picked and labelled where it is shown, so a tap lands on what is seen.
-    if (this.opening) places.forEach((place, i) => {
-      const f = reveal.fling[this.lanes(places)[i]] ?? 1
-      if (f === 1) return
-      const turn = (1 - Math.min(1, f)) * 2.4, c = Math.cos(turn), sn = Math.sin(turn), [x, y, z] = place.position
-      place.position = [(x * c - z * sn) * f, y * f, (x * sn + z * c) * f]
+    // Each also leaves a short fading trail, from where it was TRAIL_SECONDS ago (uTrail).
+    const spiral = (p: readonly number[], f: number): [number, number, number] => {
+      const turn = (1 - Math.min(1, f)) * 2.4, c = Math.cos(turn), sn = Math.sin(turn)
+      return [(p[0] * c - p[2] * sn) * f, p[1] * f, (p[0] * sn + p[2] * c) * f]
+    }
+    const trails: number[] = []
+    places.forEach((place, i) => {
+      const lane = this.lanes(places)[i], f = this.opening ? reveal.fling[lane] ?? 1 : 1, behind = this.opening ? reveal.flingBehind[lane] ?? 1 : 1
+      const from = spiral(place.position, behind)
+      if (f !== 1) place.position = spiral(place.position, f)
+      // Bright while it travels, gone as it lands: by how far it moved in the trail's span.
+      const moved = Math.hypot(place.position[0] - from[0], place.position[1] - from[1], place.position[2] - from[2])
+      trails.push(...from, Math.min(1, moved / Math.max(0.05, place.radius * 1.5)))
     })
     const mark = this.stepMark(elapsed, still)
     this.markView = view; this.markPlaced = mark.placement
@@ -1271,7 +1293,7 @@ export class Galaxy {
     gl.useProgram(this.program); this.upload(gl)
     // The frame's uniforms, for this pass and the wordmark's own full-resolution one.
     const setFrame = (gl: WebGL2RenderingContext, u: Record<string, WebGLUniformLocation | null>, width: number, height: number, bindField: () => void, crisp: number) => {
-      gl.uniform1i(u.uCloseIndex, this.closeIndex); gl.uniform1f(u.uRays, sunRays.value); gl.uniform2f(u.uBurst, ...reveal.burst); gl.uniform1f(u.uSpread, reveal === SETTLED ? 1 : reveal.spread)
+      gl.uniform1i(u.uCloseIndex, this.closeIndex); gl.uniform1f(u.uRays, sunRays.value); gl.uniform2f(u.uBurst, ...reveal.burst); gl.uniform4fv(u.uTrail, trails.length ? trails : [0, 0, 0, 0]); gl.uniform1f(u.uSpread, reveal === SETTLED ? 1 : reveal.spread)
       gl.uniform1i(u.uMarkMode, mark.placement ? mark.mode : 0); gl.uniform1f(u.uMarkCrisp, crisp)
       if (mark.placement) {
         const p = mark.placement
@@ -1341,7 +1363,7 @@ export class Galaxy {
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
     this.screen = places.map((place, i) => {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
-      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 && arrival[i] >= 0.6, labelled: reveal.labels[this.lanes(places)[i]] ?? true, depth: z }
+      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 && arrival[i] >= 0.3, labelled: reveal.labels[this.lanes(places)[i]] ?? true, depth: z }
     })
     // The sun's bright core, which labels keep clear of.
     const toSun = sub([0, 0, 0], view.eye), sunZ = Math.max(dot(toSun, view.forward), 0.001)
