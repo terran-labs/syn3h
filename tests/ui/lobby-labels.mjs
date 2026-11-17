@@ -81,6 +81,42 @@ try {
     await page.evaluate(id => document.querySelector(`.galaxy-label[data-world="${id}"]`).focus(), target.id)
     await page.waitForTimeout(400)
     await page.screenshot({ path: `${out}/focus-${name}.png` })
+    if (!phone) {
+      // Occlusion, constructed: the galaxy's layout is held, two planets are placed so the
+      // nearer one's disc covers half of the farther one's caption, and the canvas is hidden
+      // so only caption pixels show. Inside the nearer disc no caption pixel may show; outside
+      // it the caption must; and the nearer caption is stacked above the farther one.
+      const geometry = await page.evaluate(() => {
+        const g = window.syn3h.shell.galaxy, layout = g.options.onLayout
+        g.options.onLayout = () => {}
+        const chips = [...document.querySelectorAll('.galaxy-label')], [a, b] = chips.map(c => c.dataset.world)
+        const far = { id: a, x: 400, y: 300, radius: 24, visible: true, depth: 20 }, near = { id: b, x: 400 - 60, y: 345, radius: 30, visible: true, depth: 10 }
+        const rest = chips.slice(2).map(c => ({ id: c.dataset.world, x: -500, y: -500, radius: 5, visible: false, depth: 50 }))
+        layout([far, near, ...rest])
+        document.querySelector('.galaxy-canvas').style.visibility = 'hidden'; document.body.style.background = '#000'
+        for (const el of document.querySelectorAll('.lobby-brand, .galaxy-hint, .galaxy-links, .lobby-gear-dock, .shell-version')) el.style.visibility = 'hidden'
+        const r = document.querySelector(`.galaxy-label[data-world="${a}"]`).getBoundingClientRect()
+        const za = Number(getComputedStyle(document.querySelector(`.galaxy-label[data-world="${a}"]`)).zIndex), zb = Number(getComputedStyle(document.querySelector(`.galaxy-label[data-world="${b}"]`)).zIndex)
+        return { box: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, near, za, zb }
+      })
+      assert.ok(geometry.zb > geometry.za, `${name}: the nearer planet's caption is stacked above the farther one's`)
+      await page.waitForTimeout(500)
+      const shot = await page.screenshot({ clip: { x: geometry.box.left, y: geometry.box.top, width: geometry.box.right - geometry.box.left, height: geometry.box.bottom - geometry.box.top }, scale: 'css' })
+      await page.screenshot({ path: `${out}/occlusion-${name}.png`, clip: { x: geometry.box.left - 40, y: geometry.box.top - 60, width: geometry.box.right - geometry.box.left + 80, height: 120 } })
+      const { inside, outside } = await page.evaluate(async ({ data, box, near }) => {
+        const img = new Image(); img.src = `data:image/png;base64,${data}`; await img.decode()
+        const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0)
+        const px = ctx.getImageData(0, 0, c.width, c.height).data, sx = img.width / (box.right - box.left)
+        let inside = 0, outside = 0
+        for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
+          const v = px[(y * img.width + x) * 4], cx = box.left + x / sx, cy = box.top + y / sx, d = Math.hypot(cx - near.x, cy - near.y) - near.radius
+          if (d < -1.5) inside = Math.max(inside, v); else if (d > 1.5) outside = Math.max(outside, v)
+        }
+        return { inside, outside }
+      }, { data: shot.toString('base64'), box: geometry.box, near: geometry.near })
+      assert.ok(inside < 24, `${name}: no caption pixel shows inside the nearer planet's disc (brightest ${inside})`)
+      assert.ok(outside > 80, `${name}: the uncovered part of the caption still shows (brightest ${outside})`)
+    }
     assert.deepEqual(errors, [])
     console.log(`${name}: captions under their planets, settled and dragged; pointing at ${pointed} lifts ${was.opacity.toFixed(2)} to ${after.opacity.toFixed(2)} PASS`)
     await context.close()
