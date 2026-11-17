@@ -16,7 +16,15 @@
 #  4. tools/net-smoke.mjs runs against the public address; any failure exits non zero.
 #  5. The release is recorded in ../Syn3h-stable/releases.tsv, the line for ops/RELEASES.md is
 #     printed, and the local git tag release-<n> is created (not pushed).
-# Roll back with tools/rollback.sh.
+# Once the deploy has started, any failure before the release is accepted (a failed check on
+# either address, an error that stops the script, Ctrl-C or a kill) rolls back to the release
+# that was live before, verifies both public addresses serve it, and says so. To roll back by
+# hand later, use tools/rollback.sh.
+#
+# SYN3H_RELEASE_STUB=1 proves that path without touching Cloudflare: the deploy and the
+# rollback are printed instead of run, the frozen copy is served locally as in a dry run, and
+# the run fails before the record step. SYN3H_RELEASE_FORCE_FAIL=smoke fails the smoke step
+# without running it. The rollback's verification of the live addresses is real (read only).
 #
 # --immediate. By default Cloudflare defers the new room code for a room with players in it:
 # the room runs the old code for up to five minutes, then is reset and everyone in it
@@ -41,6 +49,7 @@ case "$N" in ''|*[!0-9]*) echo "usage: tools/release.sh <n> \"note\" [--dry-run 
 [ -n "$NOTE" ] || { echo "release.sh: give a note" >&2; exit 2; }
 [ -z "$MODE" ] || [ "$MODE" = "--dry-run" ] || [ "$MODE" = "--immediate" ] || { echo "release.sh: unknown option $MODE" >&2; exit 2; }
 DRY=""; [ "$MODE" = "--dry-run" ] && DRY=1
+STUB="${SYN3H_RELEASE_STUB:-}"; [ -z "$DRY" ] || STUB=""
 # Extra deploy arguments: empty for a normal release.
 UPDATE_MODE=""; [ "$MODE" = "--immediate" ] && UPDATE_MODE="--durable-objects-code-update-mode immediate"
 
@@ -72,6 +81,14 @@ export SYN3H_RELEASE_VERSION="$CALVER"
 # production milestone, not the latest attempted release tag.
 PREV="$(awk -F '\t' '$5 == "production" { previous = $2 } END { print previous }' release-notes/history.tsv)"
 
+# The release live now, to return to if this one is not accepted, and the stable pointer's
+# target, to restore with it.
+PREV_LINE="$(tail -1 ../Syn3h-stable/releases.tsv 2>/dev/null || true)"
+PREV_REL="$(printf '%s' "$PREV_LINE" | cut -f1)"
+PREV_ID="$(printf '%s' "$PREV_LINE" | cut -f7)"
+PREV_CURRENT="$(readlink ../Syn3h-stable/current 2>/dev/null || true)"
+[ -n "$DRY" ] || [ -n "$PREV_REL" ] || fail "no earlier release in ../Syn3h-stable/releases.tsv to roll back to"
+
 # --- Freeze ---------------------------------------------------------------------------------
 echo "Freezing $MILESTONE ($COMMIT)..."
 ID="$(tools/promote-stable.sh "release-$N: $NOTE" | tail -1)"
@@ -90,7 +107,40 @@ killtree() {
 }
 PIDS=""
 cleanup() { for p in $PIDS; do killtree "$p"; done; }
-trap cleanup EXIT INT TERM
+
+# Set from the moment the deploy starts until the release is accepted. Leaving the script
+# while it is set, for any reason, rolls back.
+DEPLOYED=""
+roll_back() {
+  printf '\nROLLING BACK: release-%s was not accepted; returning production to %s (frozen copy %s)...\n' "$N" "$PREV_REL" "$PREV_ID" >&2
+  if [ -n "$STUB" ]; then
+    echo "STUB: tools/rollback.sh $PREV_REL" >&2
+  else
+    tools/rollback.sh "$PREV_REL" >&2 || { printf '\nROLLBACK FAILED: production may still serve release-%s. Run tools/rollback.sh %s now.\n' "$N" "$PREV_REL" >&2; return 1; }
+  fi
+  # Verify the owner-facing domain too: rollback.sh checks the workers.dev address.
+  for url in https://syn3h.af-4e7.workers.dev/ https://www.syn3h.com/; do
+    tries=0
+    until node tools/check-public-build.mjs "$url" "../Syn3h-stable/$PREV_ID" >/tmp/syn3h-release-$N-rollback-check.log 2>&1; do
+      tries=$((tries + 1))
+      [ "$tries" -lt 30 ] || { cat /tmp/syn3h-release-$N-rollback-check.log >&2; printf '\nROLLBACK FAILED: %s does not serve %s. Run tools/rollback.sh %s now.\n' "$url" "$PREV_REL" "$PREV_REL" >&2; return 1; }
+      sleep 2
+    done
+    printf 'Verified %s: %s\n' "$url" "$(tail -1 /tmp/syn3h-release-$N-rollback-check.log)" >&2
+  done
+  [ -z "$PREV_CURRENT" ] || ln -sfn "$PREV_CURRENT" ../Syn3h-stable/current
+  printf '\nROLLED BACK: production serves %s again, verified on workers.dev and www.syn3h.com. release-%s was not recorded or tagged.\n' "$PREV_REL" "$N" >&2
+}
+on_exit() {
+  status=$?
+  trap - EXIT
+  cleanup
+  if [ -n "$DEPLOYED" ]; then roll_back || true; [ "$status" -ne 0 ] || status=1; fi
+  exit "$status"
+}
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Wait for an HTTP server to answer, up to $2 seconds.
 wait_http() {
@@ -117,9 +167,19 @@ if [ -n "$DRY" ]; then
 else
   # --- Deploy ---------------------------------------------------------------------------------
   echo "Deploying from the frozen copy..."
+  # From here until the release is accepted, leaving the script rolls back (on_exit).
+  DEPLOYED=1
+  if [ -n "$STUB" ]; then
+    # Prove the failure path without Cloudflare: print the deploy, serve the frozen copy here.
+    echo "STUB: (cd $DEST && wrangler deploy $UPDATE_MODE --tag release-$N --message \"$MILESTONE $COMMIT: $NOTE\")"
+    PORT="${RELEASE_DRY_PORT:-8795}"
+    (cd "$DEST" && exec node "$WRANGLER" dev --local --port "$PORT" --ip 127.0.0.1) >"$LOG-dev.log" 2>&1 &
+    PIDS="$PIDS $!"
+    printf 'https://stub.invalid.workers.dev\nCurrent Version ID: stub\n' >"$LOG-deploy.log"
+  fi
   # Not interactive: if the account has no workers.dev subdomain yet, wrangler stops here with
   # a link to register one in the dashboard rather than choosing a public name for us.
-  if ! (cd "$DEST" && node "$WRANGLER" deploy $UPDATE_MODE --tag "release-$N" --message "$MILESTONE $COMMIT: $NOTE" </dev/null) >"$LOG-deploy.log" 2>&1; then
+  if [ -z "$STUB" ] && ! (cd "$DEST" && node "$WRANGLER" deploy $UPDATE_MODE --tag "release-$N" --message "$MILESTONE $COMMIT: $NOTE" </dev/null) >"$LOG-deploy.log" 2>&1; then
     cat "$LOG-deploy.log"; fail "wrangler deploy (see $LOG-deploy.log)"
   fi
   cat "$LOG-deploy.log"
@@ -127,6 +187,7 @@ else
   URL="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' "$LOG-deploy.log" | head -1)/"
   VERSION="$(grep -oE 'Current Version ID: [0-9a-f-]+' "$LOG-deploy.log" | awk '{print $4}')"
   [ "$URL" != "/" ] || fail "no workers.dev address in the deploy output (see $LOG-deploy.log)"
+  [ -z "$STUB" ] || URL="http://127.0.0.1:$PORT/"
   echo "Public address: $URL (version $VERSION)"
   # A new workers.dev name can take a moment to resolve.
   wait_http "$URL" 120 || fail "$URL did not answer within two minutes"
@@ -151,6 +212,7 @@ tail -1 "$LOG-frozen.log"
 echo "Smoke testing $URL ..."
 SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.XXXXXX)" || fail "could not reserve smoke evidence directory"
 echo "Shot evidence: $SHOT_PARENT/evidence ($URL)"
+[ "${SYN3H_RELEASE_FORCE_FAIL:-}" != smoke ] || fail "net-smoke failed against $URL (forced by SYN3H_RELEASE_FORCE_FAIL=smoke)"
 run_smoke "$URL" "$LOG-smoke.log" "$SHOT_PARENT/evidence" || fail "net-smoke failed against $URL (see $LOG-smoke.log)"
 # Steps passed, connection drops ridden through and step retries, for the release ledger.
 SMOKE_SUMMARY="$(grep '^NET SMOKE SUMMARY ' "$LOG-smoke.log" | tail -1 | sed 's/^NET SMOKE SUMMARY //')"
@@ -190,6 +252,10 @@ cat "$LOG-primary.log"
 node tools/frozen-versions.mjs check "$PRIMARY_URL" "$DEST" >"$LOG-primary-frozen.log" 2>&1 \
   || { cat "$LOG-primary-frozen.log"; fail "frozen version links are broken on the primary domain; roll back the deployment"; }
 tail -1 "$LOG-primary-frozen.log"
+
+[ -z "$STUB" ] || fail "stub run reached the record step; a stub records nothing"
+# Accepted: from here on a failure does not roll back.
+DEPLOYED=""
 
 # --- Record ---------------------------------------------------------------------------------
 WHEN="$(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')"
