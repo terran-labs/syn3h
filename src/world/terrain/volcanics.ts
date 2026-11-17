@@ -14,7 +14,8 @@
  */
 import * as THREE from 'three/webgpu'
 import { attribute, cameraPosition, cameraViewMatrix, normalize, color, float, mix, mx_noise_float, positionWorld, positionGeometry, smoothstep, time, uniform, vec3 } from 'three/tsl'
-import { worldGravity, worldLavaAltitude } from '../../../shared/params'
+import { worldGravity } from '../../../shared/params'
+import { seaLevel, seaSettled } from '../seaLevel'
 import { nearestImage } from '../../../shared/wrap'
 import { overHorizon } from '../curve'
 import type { System } from '../../core/Game'
@@ -195,6 +196,8 @@ export class Volcanics implements System {
   private builtNew = false
   private builtGravity = worldGravity.value
   private builtRiverSpeed = waterRiverMaxSpeed.value
+  /** The sea level the bed texture and river mouths were built for. */
+  private builtSea = 0
   private readonly mist = new WaterfallMist(this.group)
   private readonly fallMaterial = createFallMaterial()
   /** Sea grid chunks and the apron round them, all sharing the sea material. */
@@ -244,7 +247,8 @@ export class Volcanics implements System {
     const palette = paletteFor(data.settings.look)
     this.fallMaterial.color.set(palette.seaShallow)
     this.bed?.texture.dispose()
-    this.bed = buildBedTexture(data, worldLavaAltitude.value)
+    this.builtSea = seaLevel()
+    this.bed = buildBedTexture(data, this.builtSea)
     for (const w of [this.newSea, this.newStill, this.newRiver]) { w.setColours(palette.seaShallow, palette.seaDeep); w.setBed(this.bed) }
     const seaMaterial = this.seaMaterial()
     // A dry world (the Moon) drains its sea below every valley: draw none of it.
@@ -277,7 +281,7 @@ export class Volcanics implements System {
       if (lava.lake) add(buildStillSurface(ground, lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius), still, true)
       for (const p of lava.pools) add(buildStillSurface(ground, p.x, p.surface, p.z, p.radius), still, true)
       // Receiving water for a river's mouth: the lake, a pool or the sea, never a river.
-      const seaLevel = data.settings.dry ? -Infinity : worldLavaAltitude.value
+      const seaLevel = data.settings.dry ? -Infinity : this.builtSea
       const waterAt = (x: number, z: number) => {
         let y = seaLevel
         for (const b of lava.lake ? [lava.lake, ...lava.pools] : lava.pools) {
@@ -381,10 +385,14 @@ export class Volcanics implements System {
   }
 
   update(dt: number): void {
-    const level = worldLavaAltitude.value
+    // The sea glides to a new level (world/seaLevel.ts); the surfaces below follow it every
+    // frame. The bed texture and the river mouths bake the level in, so they rebuild once,
+    // when it has settled.
+    const level = seaLevel()
     // The new water rebuilds the rivers and pools, so switching it rebuilds everything.
     if (waterWaves.value !== this.builtNew || (this.builtNew &&
-      (worldGravity.value !== this.builtGravity || waterRiverMaxSpeed.value !== this.builtRiverSpeed))) this.rebuild()
+      (worldGravity.value !== this.builtGravity || waterRiverMaxSpeed.value !== this.builtRiverSpeed ||
+        (level !== this.builtSea && seaSettled())))) this.rebuild()
     this.place()
     // The sea kind is a live slider: swap the look the moment it changes.
     const want = this.seaMaterial()

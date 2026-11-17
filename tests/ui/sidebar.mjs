@@ -1,6 +1,7 @@
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { openInTurn } from './lib/card-stack.mjs'
 const out = 'tests/ui/artifacts/sidebar'
 await mkdir(out, { recursive: true })
 for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
@@ -64,6 +65,22 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
     await vehicle.scrollIntoViewIfNeeded()
     assert.ok(await vehicle.isVisible())
     await page.screenshot({ path: `${out}/${mode}-vehicle.png` })
+    // Opening cards one after another: the card open longest closes to make room, and no
+    // open card is squeezed. Desktop is also checked at a short laptop height.
+    const stackIds = ['you', 'game', 'vehicles', 'world', 'performance', 'you']
+    const sizes = mode === 'desktop' ? [[1440, 1000], [1440, 700]] : [null]
+    for (const size of sizes) {
+      if (size) await page.setViewportSize({ width: size[0], height: size[1] })
+      const tag = size ? `${mode}-${size[1]}` : mode
+      const history = await openInTurn(page, rail, stackIds, { tap: touch, prefix: `${out}/${tag}-stack`, label: tag })
+      console.log(`${tag}: open after each step ${JSON.stringify(history)}`)
+      // The order survives the rail closing and reopening.
+      const before = await page.evaluate(() => [...document.querySelectorAll('.world-inspector .wi-card.is-open')].map(c => c.dataset.section))
+      await page.evaluate(() => { const i = syn3h.shell.inspector; i.open = false; i.open = true })
+      await page.waitForFunction(() => !document.querySelector('.world-inspector').getAnimations().some(a => a.playState === 'running'))
+      assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.world-inspector .wi-card.is-open')].map(c => c.dataset.section)), before, `${tag}: open cards survive closing the rail`)
+    }
+    if (mode === 'desktop') await page.setViewportSize({ width: 1440, height: 1000 })
     const pinnedBefore = await header.boundingBox()
     await rail.locator('.wi-cards').evaluate(el => { el.scrollTop = el.scrollHeight })
     assert.deepEqual(await header.boundingBox(), pinnedBefore, 'scrolling cards does not move the header')
