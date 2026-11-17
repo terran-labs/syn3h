@@ -26,6 +26,7 @@ import { buildRibbonGeometry } from '../../fx/LavaFlow'
 import { createLavaMaterial } from '../../fx/material'
 import type { TerrainData } from './generate'
 import { CHUNK_CELLS } from './mesh'
+import { createSeaIceMaterial, seaFrozen } from './seaIce'
 import type { HeightSampler } from './sampler'
 import { KIND_VOLCANIC, worldSeaKind } from './settings'
 import { type RiverDrop, riverSpeed } from './lava'
@@ -220,6 +221,9 @@ export class Volcanics implements System {
   private clip: Clipmap | null = null
   private clipLevel = -1
   private apron: THREE.Mesh | null = null
+  private readonly seaIce = createSeaIceMaterial()
+  /** The same ice on the clipmap's rings. */
+  private readonly seaIceClip = createSeaIceMaterial({ clipmap: true })
   /** Lake, pools and rivers, with their canonical centres and whether their uvs are world metres. */
   private readonly meshes: { mesh: THREE.Mesh; x: number; z: number; worldUv: boolean }[] = []
   private readonly emitters: Emitters
@@ -284,7 +288,7 @@ export class Volcanics implements System {
     if (useClip) {
       this.clipLevel = Math.round(qualityLevel.value)
       const layout = CLIPMAP_LAYOUTS[Math.max(0, Math.min(5, this.clipLevel))]
-      this.clip = new Clipmap(layout, seaMaterial)
+      this.clip = new Clipmap(layout, seaMaterial === this.seaIce ? this.seaIceClip : seaMaterial)
       this.group.add(this.clip.group)
       this.apron = new THREE.Mesh(apronGeometry(ground, clipmapReach(layout)), seaMaterial)
       this.apron.frustumCulled = false
@@ -432,6 +436,8 @@ export class Volcanics implements System {
   /** The sea's material for the current sliders. */
   private seaMaterial(): THREE.Material {
     if (this.seaIsLava) return this.lavaSea.material
+    // A frozen sea is a sheet of ice on the same meshes (seaIce.ts).
+    if (seaFrozen()) return this.seaIce
     return waterWaves.value ? this.newSea.material : this.waterSea.material
   }
 
@@ -454,7 +460,7 @@ export class Volcanics implements System {
       if (s.mesh.material !== want) s.mesh.material = want
     }
     if (this.clip) {
-      this.clip.material = want
+      this.clip.material = want === this.seaIce ? this.seaIceClip : want
       this.clip.renderOrder = this.seaIsLava ? this.lavaSea.renderOrder : WATER_RENDER_ORDER
     }
     if (this.apron) {
@@ -515,5 +521,7 @@ export class Volcanics implements System {
     this.ambient.dispose()
     this.scene.remove(this.group)
     for (const l of [this.lavaSea, this.waterSea, this.lavaStill, this.lavaRiver, this.waterStill, this.newSea, this.newStill, this.newRiver]) l.material.dispose()
+    this.seaIce.dispose()
+    this.seaIceClip.dispose()
   }
 }

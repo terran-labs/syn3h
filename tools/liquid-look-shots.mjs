@@ -32,12 +32,23 @@ const helpers = () => {
     }
     return null
   }
+  /** A point of frozen sea: ground exactly at the sea level for 40 m round. */
+  window.findIce = (x0, z0) => {
+    const t = s.terrain, sea = Number(s.params.get('world.lavaAltitude')?.value ?? 0)
+    const flat = (x, z) => Math.abs(t.heightAt(x, z) - sea) < 0.05
+    for (let r = 60; r < 1600; r += 10) for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2, x = x0 + Math.cos(a) * r, z = z0 + Math.sin(a) * r
+      if ([[0, 0], [40, 0], [-40, 0], [0, 40], [0, -40]].every(([dx, dz]) => flat(x + dx, z + dz))) return { x, z, surface: sea, ground: sea - 10, depth: 10 }
+    }
+    return null
+  }
   /** Direction from a liquid point toward the nearest dry land, radians. */
   window.towardLand = (x, z) => {
     const t = s.terrain
     for (let r = 4; r < 400; r += 4) for (let i = 0; i < 24; i++) {
       const a = (i / 24) * Math.PI * 2
-      if (!t.liquidKindAt?.(x + Math.cos(a) * r, z + Math.sin(a) * r)) return a
+      const lx = x + Math.cos(a) * r, lz = z + Math.sin(a) * r
+      if (!t.liquidKindAt?.(lx, lz) && t.heightAt(lx, lz) > Number(s.params.get('world.lavaAltitude')?.value ?? 0) + 0.3) return a
     }
     return 0
   }
@@ -78,6 +89,10 @@ const SCENARIOS = {
   'sea-30m-calm-dusk': { planet: 'archipelago', vehicle: 'buggy', hour: 18.6, kind: 'water', min: 15, max: 80, mode: 'float', cam: [40, 30], params: { 'weather.storminess': 0 }, shots: [['sea-30m-calm-dusk', 3000]] },
   'dawn-ice': { planet: 'ice', vehicle: 'buggy', hour: 6.5, kind: 'water', min: 10, max: 200, mode: 'horizon', shots: [['dawn-ice', 3000]] },
   'dawn-archipelago': { planet: 'archipelago', vehicle: 'buggy', hour: 6.5, kind: 'water', min: 10, max: 200, mode: 'horizon', shots: [['dawn-archipelago', 3000]] },
+  'ice-ground': { planet: 'ice', vehicle: 'buggy', hour: 12, kind: 'water', min: 10, max: 200, mode: 'float', cam: [10, 2], frozen: true, shots: [['ice-ground', 3500]] },
+  'ice-air': { planet: 'ice', vehicle: 'buggy', hour: 12, kind: 'water', min: 10, max: 200, mode: 'float', cam: [200, 150], frozen: true, shots: [['ice-air', 3500]] },
+  'archipelago-ground': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 10, max: 200, mode: 'float', cam: [10, 2], shots: [['archipelago-ground', 3500]] },
+  'archipelago-air': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 10, max: 200, mode: 'float', cam: [200, 150], shots: [['archipelago-air', 3500]] },
   'lagoon': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 0.8, max: 3, mode: 'float', cam: [14, 5], shots: [['lagoon', 3000]] },
   'water-under-night': { planet: 'archipelago', vehicle: 'buggy', hour: 22, kind: 'water', min: 6, max: 20, mode: 'under', look: 'bed', shots: [['water-under-night', 3000]] },
   'water-under-deep': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 25, max: 80, mode: 'under', look: 'bed', shots: [['water-under-deep', 3000]] },
@@ -120,7 +135,8 @@ try {
       // Provisional shared wave numbers from the liquid-feel builder (not the shipped defaults).
       s.params.set('water.waveHeight', 2.4); s.params.set('water.waveLength', 36)
       for (const [k, v] of Object.entries(sc.params ?? {})) s.params.set(k, v)
-      const spot = window.findLiquid(sc.kind, sc.min, sc.max, s.player.body.translation().x, s.player.body.translation().z)
+      // A frozen sea is ground to every query: find it as ground lying flat at the sea level.
+      const spot = sc.frozen ? window.findIce(s.player.body.translation().x, s.player.body.translation().z) : window.findLiquid(sc.kind, sc.min, sc.max, s.player.body.translation().x, s.player.body.translation().z)
       if (!spot) return null
       const land = window.towardLand(spot.x, spot.z)
       spot.land = land

@@ -1,5 +1,5 @@
-import { planetById, planetName } from '../../world/planets'
-import type { SavedWorld } from './savedWorlds'
+import { planetById } from '../../world/planets'
+import { savedName, type SavedWorld } from './savedWorlds'
 interface Place { id: string; x: number; y: number; radius: number; visible: boolean }
 /** Small procedural buttons follow the recipe orbits; the Worlds list remains fully accessible. */
 export class SavedMoons {
@@ -15,7 +15,7 @@ export class SavedMoons {
     this.entries = entries; this.element.replaceChildren()
     this.buttons = entries.map(entry => {
       const button = document.createElement('button'), recipe = planetById(entry.recipeId)!
-      const title = `${planetName(entry.seed)} · ${recipe.label} · Saved on this device`
+      const title = `${savedName(entry)} · ${recipe.label} · Saved on this device`
       button.type = 'button'; button.className = 'saved-world-moon'; button.dataset.savedWorld = entry.id
       button.title = title; button.setAttribute('aria-label', `Enter ${title}`)
       button.style.cssText = 'position:absolute;width:44px;height:44px;padding:10px;box-sizing:border-box;border:0;border-radius:50%;background:transparent;pointer-events:auto;cursor:pointer'

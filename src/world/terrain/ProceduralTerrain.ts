@@ -12,6 +12,7 @@ import { applyCurve, curveParam, updateCurve } from '../curve'
 import { AlienSkyMesh } from '../sky/AlienSkyMesh'
 import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, TerrainSummit, TerrainVent } from '../Terrain'
 import { createTerrainCollider } from './collider'
+import { createSeaIceCollider, seaFrozen } from './seaIce'
 import { lavaSurfaceAt, liquidFlowAt } from './lava'
 import { seaWaves, setWaterClock } from '../water/seaWaves'
 import { configureLiquidWaves, liquidWaveOffset, liquidWaveSpeed, type LiquidBody } from '../water/liquidWaves'
@@ -23,6 +24,7 @@ import { rimRoadRadius } from './roads'
 import { HeightSampler, sealSeam } from './sampler'
 import { KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, terrainRoadStyle, worldSeaKind } from './settings'
 import { paletteFor } from './palettes'
+import { bakeMapColours, MAP_GRID } from './mapColours'
 import { type SurfaceKind, classifySurface, sampleGrid } from './surface'
 import { spawnPointAt } from './spawn'
 import { GroundCover } from './groundcover'
@@ -97,11 +99,12 @@ export class ProceduralTerrain implements Terrain {
     this.meshes = createTerrainMeshes(this.data, this.look.material)
     game.scene.add(this.meshes.group)
     this.collider = createTerrainCollider(game.world, this.data)
+    this.syncIce()
     // Level of detail follows the camera once per frame, after the camera has moved.
     this.lodSystem = game.add({
       // Before each physics step, and before the vehicles' own steps: carry things across
       // the seam and keep the ground under them.
-      fixedUpdate: () => this.keepSeam(),
+      fixedUpdate: () => { this.keepSeam(); this.syncIce() },
       // Until something calls afterCamera() itself, do the camera-dependent work here.
       update: () => { if (!this.cameraLed) this.followCamera() },
     })
@@ -234,6 +237,22 @@ export class ProceduralTerrain implements Terrain {
     if (Math.abs(px - this.colliderX) > 96 || Math.abs(pz - this.colliderZ) > 96) this.moveCollider(px, pz)
   }
 
+  /** The frozen sea's slab, when the sea is frozen; see seaIce.ts. */
+  private ice: RAPIER.Collider | null = null
+  private iceKey = ''
+  /** The ice sheet's top, or -Infinity when the sea is open. */
+  private iceTop = -Infinity
+  /** Keep the ice slab with the heightfield's window and the sea level, or remove it. */
+  private syncIce(): void {
+    const frozen = seaFrozen() && this.data.settings.dry <= 0 && (worldSeaKind.value as number) === 1
+    const key = frozen ? `${this.colliderX},${this.colliderZ},${seaLevel()}` : ''
+    if (key === this.iceKey) return
+    if (this.ice) { this.game.world.removeCollider(this.ice, true); this.ice = null }
+    if (frozen) this.ice = createSeaIceCollider(this.game.world, this.data, this.colliderX, this.colliderZ, seaLevel())
+    this.iceTop = frozen ? seaLevel() : -Infinity
+    this.iceKey = key
+  }
+
   private moveCollider(x: number, z: number): void {
     const cell = this.data.cell
     this.colliderX = Math.round(x / cell) * cell
@@ -270,6 +289,8 @@ export class ProceduralTerrain implements Terrain {
    * with (see surface.ts). Two grid reads, a height and a normal; no allocation.
    */
   surfaceAt(x: number, z: number): SurfaceKind {
+    // A frozen sea is ice underfoot: the tyre marks, sound and grip all read it as ice.
+    if (this.iceTop > -Infinity && this.sampler.heightAt(x, z) < this.iceTop) return 'ice'
     const look = this.data.settings.look
     const style = terrainRoadStyle.value as number
     return classifySurface({
@@ -309,6 +330,7 @@ export class ProceduralTerrain implements Terrain {
     this.colliderX = 0
     this.colliderZ = 0
     this.collider = createTerrainCollider(this.game.world, this.data)
+    this.iceKey = 'rebuilt'; this.syncIce()
     this.volcanics.rebuild()
     this.trees.rebuild()
     this.cover.rebuild()
@@ -332,8 +354,9 @@ export class ProceduralTerrain implements Terrain {
     return out
   }
 
+  /** The ground: on a frozen sea, the ice is the ground (the HUD, bots and everything that stands on it). */
   heightAt(x: number, z: number): number {
-    return this.sampler.heightAt(x, z)
+    return Math.max(this.sampler.heightAt(x, z), this.iceTop)
   }
 
   renderHeightAt(x: number, z: number): number {
@@ -343,6 +366,7 @@ export class ProceduralTerrain implements Terrain {
   get renderCellSize(): number { return this.data.cell }
 
   normalAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3 {
+    if (this.iceTop > -Infinity && this.sampler.heightAt(x, z) < this.iceTop) return out.set(0, 1, 0)
     return this.sampler.normalAt(x, z, out)
   }
 
@@ -394,6 +418,31 @@ export class ProceduralTerrain implements Terrain {
     return b
   }
 
+  /**
+   * The world from straight above, for maps: see Terrain.mapColourAt. Returns 0xRRGGBB.
+   *
+   * Cost: the first call after the world or its sea changes bakes a 256 x 256 grid (65,536
+   * height, slope and liquid reads, about 15 to 40 ms on a desktop); every call after that
+   * is one array read, so a 160 x 160 minimap redraw costs well under a millisecond. The
+   * bake is keyed on the terrain's version, sea level, sea kind and frozen flag, so a new
+   * seed or a frozen sea is picked up on the next call.
+   */
+  mapColourAt(x: number, z: number): number {
+    const key = this.mapColourKey()
+    if (key !== this.mapKey) {
+      const sea = seaLevel(), lava = (worldSeaKind.value as number) === 0
+      this.mapGrid = bakeMapColours(this.data, this.sampler, { sea, lava, frozen: this.iceTop > -Infinity, snow: this.snowHeight() }); this.mapKey = key
+    }
+    const n = MAP_GRID, size = this.data.size
+    const ix = Math.min(n - 1, Math.floor((wrapCoord(x, size) / size + 0.5) * n)), iz = Math.min(n - 1, Math.floor((wrapCoord(z, size) / size + 0.5) * n))
+    return this.mapGrid![iz * n + ix]
+  }
+  /** See Terrain.mapColourKey: the inputs of mapColourAt's bake, read without baking. */
+  mapColourKey(): string {
+    return `${this.version}:${seaLevel()}:${worldSeaKind.value}:${this.iceTop}`
+  }
+  private mapGrid: Uint32Array | null = null
+  private mapKey = ''
   /** Velocity of the water or lava at (x, z), m/s: rivers flow, the sea, lake and pools do not. */
   liquidFlowAt(x: number, z: number, out: { x: number; z: number }): { x: number; z: number } {
     return liquidFlowAt(this.data.lava, wrapCoord(x, this.data.size), wrapCoord(z, this.data.size), waterRiverMaxSpeed.value, out)
@@ -488,5 +537,6 @@ export class ProceduralTerrain implements Terrain {
     this.meshes.dispose()
     this.look.material.dispose()
     this.game.world.removeCollider(this.collider, false)
+    if (this.ice) { this.game.world.removeCollider(this.ice, false); this.ice = null }
   }
 }

@@ -252,7 +252,8 @@ export class Underwater {
       this.extinction.value = look.extinction + wash * 0.3
     }
     // Caustics under the camera's water, or on the bed of a water sea seen from above it.
-    const seaIsWater = Number(params.get('world.seaKind')?.value ?? 0) === 1
+    // A frozen sea is ice, not water: no caustics on what lies under it.
+    const seaIsWater = Number(params.get('world.seaKind')?.value ?? 0) === 1 && params.get('world.seaFrozen')?.value !== true
     this.causticLevel.value = wet && kind === 'water' ? surface : seaIsWater ? seaLevel() : -1e9
     this.causticGain.value = waterCaustics.value * (1 - night)
     const [r, g, b] = this.settings.shallow, peak = Math.max(r, g, b, 1e-4)
