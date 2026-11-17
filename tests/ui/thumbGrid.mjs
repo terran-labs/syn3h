@@ -1,7 +1,8 @@
 /**
  * The thumb grid rule, run in the page (page.evaluate(thumbGrid)): every visible thumb button,
- * the shell's and the gear's, is one size, their centres lie on at most two rows, and the
- * columns are evenly spaced. Returns what is wrong, or an empty list. See src/ui/touch-stick.css.
+ * the shell's and the gear's, is one size, their centres lie on at most two rows, the
+ * columns are evenly spaced, and none comes within 2 px of the Panels tab, the chat button or
+ * the minimap. Returns what is wrong, or an empty list. See src/ui/touch-stick.css.
  */
 export function thumbGrid() {
   const buttons = [...document.querySelectorAll('.touch-controls:not([hidden]) .touch-actions button, .gear-actions:not([hidden]) button')]
@@ -20,5 +21,13 @@ export function thumbGrid() {
   const pitch = Math.min(...steps)
   for (const step of steps) { const k = Math.round(step / pitch); if (Math.abs(step - k * pitch) > 1.5) problems.push(`columns unevenly spaced: ${steps.map(Math.round).join(', ')}`) }
   for (const { name, r } of rects) if (r.left < -1 || r.top < -1 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1) problems.push(`${name} off screen`)
+  // Clear of the other things a thumb reaches for on that side of the screen, by at least 2 px.
+  for (const selector of ['.hud-navigation', '.chat-toggle', '.shell-minimap']) {
+    for (const el of document.querySelectorAll(selector)) {
+      const o = el.getBoundingClientRect(), st = getComputedStyle(el)
+      if (!o.width || !o.height || st.display === 'none' || st.visibility === 'hidden') continue
+      for (const { name, r } of rects) if (r.left < o.right + 2 && r.right > o.left - 2 && r.top < o.bottom + 2 && r.bottom > o.top - 2) problems.push(`${name} within 2 px of ${selector}`)
+    }
+  }
   return [...new Set(problems)]
 }

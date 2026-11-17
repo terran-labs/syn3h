@@ -160,3 +160,13 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
    classes as desktop, so it follows the shared HUD tokens and the Reticle setting. */
 .syn3h-shell.has-touch .focus-hud svg [data-reticle] { opacity: 0; transition: opacity .15s ease-out; }
 html[data-touch-aim="on"] .syn3h-shell.has-touch .focus-hud svg [data-reticle] { opacity: 1; transition-duration: .05s; }
+
+/* Landscape phones: the Panels tab (.hud-navigation), centred on the right edge, would end
+   exactly where the thumb grid's top row starts. Stand it on the grid instead, one gap clear,
+   so the two never touch for any vehicle or hand. Its top then stays below the minimap. */
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .syn3h-shell.exploration-ui.has-touch .hud-navigation {
+    top: auto; transform: none;
+    bottom: calc(max(var(--thumb-bottom), env(safe-area-inset-bottom)) + 2 * var(--thumb-size) + var(--thumb-gap) + 12px);
+  }
+}

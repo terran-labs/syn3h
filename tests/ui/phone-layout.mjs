@@ -46,7 +46,7 @@ const measure = page => page.evaluate(() => {
     }
   }
   add('.touch-stick', 'stick'); add('.touch-stick-hint', 'stick'); add('.touch-actions button', 'actions'); add('.gear-actions button', 'actions'); add('.shell-minimap'); add('.shell-hud'); add('.match-hud')
-  add('.hud-navigation'); add('.spawn-help'); add('.shell-toast'); add('.match-announcement')
+  add('.hud-navigation'); add('.chat-toggle'); add('.spawn-help'); add('.shell-toast'); add('.match-announcement')
   const overlaps = []
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
     const a = boxes[i], b = boxes[j]
