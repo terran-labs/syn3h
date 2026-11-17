@@ -276,18 +276,29 @@ const STAGES = {
   },
 
   'wings-glide': {
-    frames: 150,
+    frames: 80,
     // Clips start recording after this many staged frames: the camera has eased onto the car.
     preroll: 30,
     page() {
       const s = window.syn3h, h = window.showcase, t = s.terrain
       // A crest with a long drop ahead: the glide has room to show.
+      const sun = h.sunHeading()
       const best = h.search((x, z, heading) => {
         if (h.wet(x, z)) return -Infinity
         const f = h.forward(heading), y = t.heightAt(x, z)
         const drop = y - Math.min(t.heightAt(x + f.x * 40, z + f.z * 40), t.heightAt(x + f.x * 80, z + f.z * 80))
         const behind = y - t.heightAt(x - f.x * 20, z - f.z * 20)
-        return drop > 18 && drop < 80 && behind > -4 ? -Math.abs(drop - 40) - Math.abs(behind) : -Infinity
+        if (!(drop > 18 && drop < 80 && behind > -4)) return -Infinity
+        // Depth beyond the glide: water (a coast) 100 to 220 m ahead counts for a lot.
+        // A coastline that runs along the glide: water on one side ahead, land on the other.
+        let coast = 0
+        for (let d = 80; d <= 200; d += 40) {
+          const l = h.wet(x + f.x * d + f.z * 50, z + f.z * d - f.x * 50), r = h.wet(x + f.x * d - f.z * 50, z + f.z * d + f.x * 50)
+          if (l !== r) coast++
+        }
+        // Keep the sun to the side: facing into it washes the haze out.
+        const off = Math.abs(Math.atan2(Math.sin(heading - sun), Math.cos(heading - sun)))
+        return -Math.abs(drop - 40) - Math.abs(behind) + coast * 12 - (off < 1 ? 40 : 0)
       }, { step: 32 })
       if (!best) throw new Error('no ridge found')
       const f = h.forward(best.heading)
@@ -296,7 +307,7 @@ const STAGES = {
       // Wings at 0.8 s: off the crest first, then open, so a clip shows both.
       h.onFrame = (i) => { if (i === 48) h.key('Space', true); if (i === 54) h.key('Space', false) }
       // Behind and above, looking down the glide, as in the owner's canyon reference.
-      h.follow((p, f) => ({ from: { x: p.x - f.x * 11 + f.z * 3, y: p.y + 5, z: p.z - f.z * 11 - f.x * 3 }, to: { x: p.x + f.x * 14, y: p.y - 4, z: p.z + f.z * 14 } }), 58)
+      h.follow((p, f) => ({ from: { x: p.x - f.x * 10 + f.z * 6, y: p.y + 5, z: p.z - f.z * 10 - f.x * 6 }, to: { x: p.x + f.x * 16 - f.z * 3, y: p.y - 5, z: p.z + f.z * 16 + f.x * 3 } }), 60)
       return { note: `ridge ${best.x.toFixed(0)},${best.z.toFixed(0)}` }
     },
     check() { const s = window.syn3h, h = window.showcase, p = h.pos(); const up = p.y - h.ground(p.x, p.z); return { ok: s.player.wingsOpen && up > 3, note: `wings ${s.player.wingsOpen ? 'open' : 'closed'}, ${up.toFixed(1)} m up` } },
@@ -343,31 +354,30 @@ const STAGES = {
   },
 
   'swamp-river': {
-    frames: 160,
+    frames: 140,
     page() {
       const s = window.syn3h, h = window.showcase, t = s.terrain
-      // Dry ground a little above water that lies ahead and to one side.
+      // A bank a few metres above a river: dry for 25 m ahead, water across the middle of the
+      // view, a far shore beyond it, so the river reads as a river and leads the eye.
       const best = h.search((x, z, heading) => {
-        if (h.wet(x, z)) return -Infinity
-        const f = h.forward(heading), y = t.heightAt(x, z)
+        const f = h.forward(heading), at = (d, side = 0) => ({ x: x + f.x * d - f.z * side, z: z + f.z * d + f.x * side })
+        for (const d of [0, 10, 20, 25]) { const q = at(d); if (h.wet(q.x, q.z)) return -Infinity }
         let water = 0, level = null
-        for (let d = 30; d <= 90; d += 10) for (const side of [-30, -12, 12, 30]) {
-          const wx = x + f.x * d - f.z * side, wz = z + f.z * d + f.x * side
-          if (h.wet(wx, wz)) { water++; level = t.liquidHeightAt(wx, wz) }
-        }
+        for (const d of [35, 45, 55]) for (const side of [-12, 0, 12]) { const q = at(d, side); if (h.wet(q.x, q.z)) { water++; level = t.liquidHeightAt(q.x, q.z) } }
+        let far = 0
+        for (const d of [90, 120, 150]) { const q = at(d); if (!h.wet(q.x, q.z)) far++ }
+        const y = t.heightAt(x, z), above = level === null ? -1 : y - level
         let rough = 0
-        for (const [a, b] of [[8, 0], [-8, 0], [0, 8], [0, -8], [20, 0], [-20, 0]]) rough = Math.max(rough, Math.abs(t.heightAt(x + f.x * a - f.z * b, z + f.z * a + f.x * b) - y))
-        const above = level === null ? -1 : y - level
-        return water >= 4 && water <= 16 && above > 2 && above < 15 && rough < 2.5 ? water - rough * 2 : -Infinity
-      }, { step: 30 })
+        for (const [a, b] of [[8, 0], [-8, 0], [0, 8], [0, -8]]) { const q = at(a, b); rough = Math.max(rough, Math.abs(t.heightAt(q.x, q.z) - y)) }
+        return water >= 6 && far >= 1 && above > 1 && above < 10 && rough < 2 ? water + far * 2 - rough * 2 : -Infinity
+      }, { step: 24 })
       if (!best) throw new Error('no river bank found')
       h.place(s.player, best.x, best.z, best.heading)
-      const back = h.offset(best, best.heading, -30, 0)
-      h.place(s.player, back.x, back.z, best.heading)
-      h.companions(best, best.heading, [{ ahead: 14, side: -12, speed: 6 }, { ahead: 20, side: 14, speed: 6 }, { ahead: 30, side: -20, speed: 5 }, { ahead: 25, side: 8, air: 14, speed: 10 }])
-      h.onFrame = (i) => h.key('KeyW', i < 90)
-      // Higher than the chase view, so the water beyond the crest shows.
-      h.follow((p, f) => ({ from: { x: p.x - f.x * 9 + f.z * 3, y: p.y + 7, z: p.z - f.z * 9 - f.x * 3 }, to: { x: p.x + f.x * 30, y: p.y - 7, z: p.z + f.z * 30 } }), 62)
+      // Companions on the near bank to either side, so the water in the middle stays clear.
+      h.companions(best, best.heading, [{ ahead: 16, side: -17 }, { ahead: 22, side: 18 }, { ahead: 10, side: -28 }, { ahead: 34, side: 9, air: 12 }])
+      h.onFrame = (i) => h.key('KeyW', i < 18)
+      h.follow((p, f) => ({ from: { x: p.x - f.x * 10 + f.z * 2, y: p.y + 6, z: p.z - f.z * 10 - f.x * 2 }, to: { x: p.x + f.x * 40, y: p.y - 5, z: p.z + f.z * 40 } }), 64)
+      return { note: `bank ${best.x.toFixed(0)},${best.z.toFixed(0)}` }
     },
   },
 
@@ -392,6 +402,18 @@ const STAGES = {
       // Face along the shore, the lava on the left, so the drive follows the beach.
       const along = best.heading + Math.PI / 2
       h.place(s.player, best.x, best.z, along)
+      if (!window.__showcaseShot.drive) {
+        // Two buggies parked on the beach ahead, 15 to 30 m off, with the game's own switch
+        // that stops bots driving (bots.canDrive); the hovercraft and jet wait out of shot.
+        s.params.set('bots.canDrive', false)
+        // The beach side is the side with less lava across 5 to 40 m.
+        const lava = (sign) => [5, 10, 20, 30, 40].reduce((n, d) => n + [10, 20, 30].filter((a) => { const q = h.offset(best, along, a, d * sign); return h.wet(q.x, q.z) }).length, 0)
+        const land = lava(1) <= lava(-1) ? 1 : -1
+        const buggies = s.bots.vehicles.filter((b) => b.kind.startsWith('buggy')), others = s.bots.vehicles.filter((b) => !b.kind.startsWith('buggy'))
+        const spots = [{ ahead: 18, side: 12 * land, turn: -0.7 * land }, { ahead: 30, side: 6 * land, turn: 0.4 * land }]
+        buggies.slice(0, 2).forEach((b, i) => { const q = h.offset(best, along, spots[i].ahead, spots[i].side); h.place(b, q.x, q.z, along + spots[i].turn) })
+        others.concat(buggies.slice(2)).forEach((b, i) => { const q = h.offset(best, along, -90 - i * 15, 20 * land); h.place(b, q.x, q.z, along) })
+      }
       if (window.__showcaseShot.drive) h.onFrame = (i) => { h.key('KeyW', true); const f = h.forward(h.heading()), p = h.pos(); const left = h.wet(p.x + f.z * 9, p.z - f.x * 9); h.key('KeyA', !left); h.key('KeyD', h.wet(p.x + f.z * 4, p.z - f.x * 4)) }
     },
     check() { return { ok: window.showcase.upright() > 0.85, note: `upright ${window.showcase.upright().toFixed(2)}` } },

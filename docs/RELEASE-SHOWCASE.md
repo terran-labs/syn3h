@@ -81,7 +81,7 @@ never commit or publish them).
 | `lobby` | The galaxy lobby and wordmark | |
 | `canyon-convoy` | Buggy in the Badlands at golden hour, convoy and jet beyond | 3 |
 | `volcano-fleet` | Mixed fleet under the volcano at dusk (not in the README yet: the fleet sits too far off) | 1 |
-| `wings-glide` | Force-field wings open off a Badlands ridge | 4 |
+| `wings-glide` | Force-field wings open off a Badlands ridge in the late sun | 4 |
 | `jet-tiny-world` | Jet banking high over the curve of a tiny world | 6 |
 | `headlights-night` | Headlights on rough ground at night with company | 5 |
 | `swamp-river` | Tracks on the green slopes of the Methane Swamp | 2 |

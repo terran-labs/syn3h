@@ -45,8 +45,8 @@ export const SHOTS = Object.freeze([
   },
   {
     id: 'wings-glide', kind: 'still', hud: 'driving', planet: 'badlands', seed: 11, vehicle: 'buggy-syn3h', reference: 4,
-    title: 'Force-field wings open over the Badlands',
-    params: { 'sun.timeOfDay': 15.2 },
+    title: 'Force-field wings open off a Badlands ridge in the late sun',
+    params: { 'sun.timeOfDay': 16.8 },
     staging: 'The buggy is placed above a ridge with forward speed; the wings open with the normal control and physics flies it.',
     requires: ['param:hud.mode'],
   },
@@ -75,7 +75,7 @@ export const SHOTS = Object.freeze([
     id: 'lava-night', kind: 'still', hud: 'driving', planet: 'volcanic', seed: 7, vehicle: 'buggy-syn3h', reference: 5,
     title: 'The lava sea at night under the buggy\'s headlights',
     params: { 'sun.timeOfDay': 22.5 },
-    staging: 'Player placed on a gentle lava beach, facing the lava.',
+    staging: 'Player placed on a gentle lava beach; two bots parked on the beach ahead with the game\'s bot-driving switch off.',
     requires: ['param:hud.mode'],
   },
   {
