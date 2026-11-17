@@ -8,6 +8,7 @@ import { params } from '../../shared/params'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import { FIXED_DT, GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../src/core/physics'
 import { type Bed, makeBed } from './harness'
+import type { SurfaceKind } from '../../src/world/terrain/surface'
 
 export const G = 9.81
 
@@ -30,8 +31,12 @@ export const pos = (b: Syn3hBuggy) => {
   return new THREE.Vector3(t.x, t.y, t.z)
 }
 
+/** What the test bed's ground is made of (terrain.surfaceAt), or undefined for none. */
+export const ground: { surface?: SurfaceKind } = {}
+
 export async function spawn(heading = 0, y = 1.5): Promise<{ bed: Bed; b: Syn3hBuggy }> {
   const bed = await makeBed()
+  if (ground.surface) { const kind = ground.surface; bed.terrain.surfaceAt = () => kind }
   const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, y, 0), heading))
   b.isLocal = false
   return { bed, b }

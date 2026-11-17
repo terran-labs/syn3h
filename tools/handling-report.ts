@@ -159,6 +159,15 @@ async function syn3hBuggy(): Promise<VehicleReport> {
   )
   for (const [v, a] of [[30, 40], [45, 40], [60, 5], [45, 90]]) detail.push(fig(`Slide ${a} deg at ${v} m/s, counter-steer: recovered`, 's', (await at(() => buggy.kick(v, a, true))).recovered))
   for (const [v, a] of [[30, 40], [45, 90], [60, 70]]) detail.push(fig(`Slide ${a} deg at ${v} m/s, let go: recovered`, 's', (await at(() => buggy.kick(v, a, false))).recovered))
+  // Ice (surface.grip.ice): a frozen lake.
+  const onIce = async <T>(scenario: () => Promise<T>) => { buggy.ground.surface = 'ice'; try { return await at(scenario) } finally { buggy.ground.surface = undefined } }
+  const iceBrake = await onIce(() => buggyBrake()), iceTurn = await onIce(() => buggyTurn())
+  detail.push(
+    fig('On ice: braking from 25 m/s', 'm', iceBrake.distance),
+    fig('On ice: full lock at 15 m/s, lateral', 'g', iceTurn.lateralG),
+    fig('On ice: full lock at 15 m/s, sideslip', 'deg', iceTurn.slip),
+    fig('On ice: course change in 1 s at full lock, 25 m/s', 'deg', (await onIce(() => buggy.courseChange(25))).after1),
+  )
   const glide = await at(buggyGlideSink)
   detail.push(fig('Wings open at 35 m/s: height lost in 3 s', 'm', glide.sink), fig('Wings open at 35 m/s: speed after 3 s', 'm/s', glide.speed))
   for (const [model, name] of [[0, 'Classic'], [1, 'Catch'], [2, 'Glide']] as const) {

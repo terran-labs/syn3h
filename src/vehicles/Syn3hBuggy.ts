@@ -22,6 +22,7 @@ import {
   buggyTraction,
 } from './buggyParams'
 import { applyLava, floatPoints, lavaThickness } from './lava'
+import { gripAt } from './surfaceGrip'
 import type { BuggySkin } from './skins/BuggySkin'
 import { retryDelay } from './skins/modelLoader'
 import { type MotorDriveInput, motorDrive, smoothEffort } from './skins/motorDrive'
@@ -649,7 +650,8 @@ export class Syn3hBuggy extends Vehicle {
         continue
       }
       const friction =
-        buggyTraction.value * 13 * lerp(0.5, 1, this.hitCompress[i]) * Math.max(1, (20 - hitVel.length()) / 4)
+        buggyTraction.value * 13 * lerp(0.5, 1, this.hitCompress[i]) * Math.max(1, (20 - hitVel.length()) / 4) *
+        gripAt(this.terrain, this.hitPoint.x, this.hitPoint.z)
       // Vector3.Min against (1000, 1000, 1000): an upper clamp only, as in the source.
       const fx = Math.min(-hitVel.x * friction, 1000) // Sideslip
       const fz = Math.min(-(hitVel.z - this.motorSpeed) * friction, 1000) // Motor
@@ -830,7 +832,8 @@ export class Syn3hBuggy extends Vehicle {
       const floor = lerp(Math.max(buggySideGrip.value, buggySideHold.value * mu), buggySideGrip.value, landing)
       mu = Math.min(mu, lerp(mu, floor, broadside))
     }
-    const cap = mu * traction * load
+    // What the wheel is on: ice slides, wet shallows a little (surfaceGrip.ts).
+    const cap = mu * traction * load * gripAt(this.terrain, this.hitPoint.x, this.hitPoint.z)
     const n = Math.hypot(fx, fz)
     this.sliding[i] = n > cap
     // Regen is torque limited: past its force the wheel turns with the ground, not the motor.
