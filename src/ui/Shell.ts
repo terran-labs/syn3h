@@ -984,6 +984,11 @@ export class Shell implements System {
     }
     const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|SUMMARY)$/.test(event.target.tagName))
     if (!editing && !event.repeat && event.code === 'KeyP') { event.preventDefault(); event.stopImmediatePropagation(); this.setPresentation(!this.presentation); return }
+    // The invite view holds only buttons, and its Back says "J": J closes it from any of them
+    // (Copy keeps focus after a click). Space and Enter still press the focused button, and J
+    // typed into a text field elsewhere is never taken.
+    const inField = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName))
+    if (this.inviteOpen && !inField && !event.repeat && event.code === 'KeyJ' && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); event.stopImmediatePropagation(); this.closeJoin(); return }
     if (!editing && !event.repeat && event.code === 'KeyJ') { event.preventDefault(); event.stopImmediatePropagation(); this.inviteOpen ? this.closeJoin() : this.openJoin(); return }
     if (this.exitAsking) {
       // The question owns the keyboard: Escape means stay, Tab moves between its two buttons,
