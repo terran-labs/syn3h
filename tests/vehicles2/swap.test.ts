@@ -4,7 +4,7 @@ import {initPhysics,FIXED_DT,createWorld,GROUP_ALL,GROUP_TERRAIN,groups,RAPIER} 
 import {emptyInput} from '../../src/core/Input'
 import type {Game,System} from '../../src/core/Game'
 import type {Terrain} from '../../src/world/Terrain'
-import {createVehicle,type VehicleKind} from '../../src/vehicles'
+import {createVehicle,isVehicleAvailable,type VehicleKind} from '../../src/vehicles'
 import {PlayerSlot} from '../../src/vehicles/PlayerSlot'
 import {SWAP_CLEARANCE,createVehicleSwapper} from '../../src/vehicles/swap'
 import {REST_HEIGHT} from '../../src/vehicles/Vehicle'
@@ -36,7 +36,8 @@ function player(w:ReturnType<typeof world>,kind:VehicleKind='buggy'){
  const slot=new PlayerSlot(v),swapper=createVehicleSwapper(w.game,w.terrain,slot)
  return {slot,swapper}
 }
-const KINDS:VehicleKind[]=['jet','hovercraft','tank','buggy']
+// Every kind on offer (a hidden tank is built as the buggy, src/vehicles/available.ts).
+const KINDS:VehicleKind[]=(['jet','hovercraft','tank','buggy'] as VehicleKind[]).filter(isVehicleAvailable)
 
 describe('swapping the player vehicle in place',()=>{
  it('keeps the spot, heading, velocity, identity and controls, and sets the new vehicle level',()=>{
@@ -64,7 +65,7 @@ describe('swapping the player vehicle in place',()=>{
  it('never starts the new vehicle under the ground or the liquid surface',()=>{
   const w=world(),{slot,swapper}=player(w)
   slot.current.body.setTranslation({x:5,y:-4,z:5},true)
-  expect(swapper.swap('tank').body.translation().y).toBeCloseTo(REST_HEIGHT.tank+SWAP_CLEARANCE,5)
+  expect(swapper.swap('jet').body.translation().y).toBeCloseTo(REST_HEIGHT.jet+SWAP_CLEARANCE,5)
   ;(w.terrain as {liquidHeightAt?:(x:number,z:number)=>number}).liquidHeightAt=()=>6
   expect(swapper.swap('hovercraft').body.translation().y).toBeCloseTo(6+REST_HEIGHT.hovercraft+SWAP_CLEARANCE,5)
   w.physics.free()
@@ -85,7 +86,7 @@ describe('swapping the player vehicle in place',()=>{
    expect(listeners(next),`${kind}: same listeners as the first time`).toBe(hooks.get(kind))
    seen.add(next)
   }
-  expect(seen.size).toBe(4)
+  expect(seen.size).toBe(KINDS.length)
   const p=slot.current.body.translation();expect(Number.isFinite(p.y)).toBe(true);expect(p.y).toBeGreaterThan(-.3)
   const cached=[...seen].filter(v=>v!==slot.current)
   swapper.dispose()

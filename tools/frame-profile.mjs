@@ -59,8 +59,8 @@ try {
     if(variant==='night'||variant==='nightHeadlightOff')s.params.set('sun.timeOfDay',0)
     if(variant==='nightHeadlightOff')g.scene.traverse(o=>{if(o.isSpotLight)o.visible=false})
     if(variant==='bots4'||variant==='bots8')s.params.set('bots.count',Number(variant.slice(4)))
-    // Round planet against the same world drawn flat: world.curve 0.71 is the default, 0 is flat.
-    if(variant.startsWith('round')||variant.startsWith('flat')){s.params.set('world.curve',variant.startsWith('flat')?0:0.71);if(variant.endsWith('Bots8')){s.params.set('bots.freeSpirit',0);s.params.set('bots.count',8)}}
+    // Round planet against the same world drawn flat: the default world.curve against 0, flat.
+    if(variant.startsWith('round')||variant.startsWith('flat')){s.params.set('world.curve',variant.startsWith('flat')?0:s.params.get('world.curve').def.default);if(variant.endsWith('Bots8')){s.params.set('bots.freeSpirit',0);s.params.set('bots.count',8)}}
     if(variant.startsWith('koth')){
       s.params.set('game.mode',1)
       const summit=s.terrain.summit(),x=summit.x+summit.rimRadius,z=summit.z

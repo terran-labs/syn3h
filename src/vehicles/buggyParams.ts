@@ -89,6 +89,20 @@ export const buggyIdleHold = defineParam({
   default: true,
 })
 
+/**
+ * Tyre size, as a multiple of the 0.5 m wheel radius (owner's request, 16 November 2026). It is
+ * physical: the wheel rays, the ride height and the rolling speed all follow it, and the body
+ * rises with the tyres. Width grows at half the rate of the radius, and the wheels move out just
+ * far enough that the tyres clear the body and each other. Ground speed and drive force do not
+ * change: the hub motors are geared to the tread, so this changes ride and handling, not top
+ * speed. It applies live, easing at TYRE_GROW_RATE (Syn3hBuggy.ts) and lifting the body from the
+ * ground contact so a change at speed does not launch it.
+ */
+export const buggyTyreSize = defineParam({
+  id: 'buggy.tyreSize', label: 'Tyre size', group: 'Buggy', scope: 'world',
+  default: 1, min: 0.6, max: 3, step: 0.05,
+})
+
 // ---- Next-gen tyre model (Syn3h buggy only; new, not from either original) ----------------
 
 /**
