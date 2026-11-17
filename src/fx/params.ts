@@ -13,7 +13,7 @@ export const windX = number('windX', 'Wind east', 0.8, -10, 10)
 export const windZ = number('windZ', 'Wind south', 0.3, -10, 10)
 export const particleBudget = defineParam({ id: 'lava.particleBudget', label: 'Particle budget', group: 'Lava', scope: 'client', default: 2400, min: 0, max: 4800, step: 48, deferred: true })
 /** Flames licking up from open lava in drifting patches: how many and how tall. 0 turns them off. */
-export const lavaFire = defineParam({ id: 'lava.fire', label: 'Fire on lava', group: 'Lava', scope: 'world', default: 1, min: 0, max: 2, step: 0.05 })
+export const lavaFire = defineParam({ id: 'lava.fire', label: 'Flames on lava', group: 'Lava', scope: 'world', default: 1, min: 0, max: 2, step: 0.05 })
 /** Embers and sparks rising from lava and its shore. 0 turns them off. */
 export const lavaEmbers = defineParam({ id: 'lava.embers', label: 'Embers and sparks', group: 'Lava', scope: 'world', default: 1, min: 0, max: 2, step: 0.05 })
 
