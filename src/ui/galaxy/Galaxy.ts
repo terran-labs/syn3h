@@ -20,7 +20,7 @@ import { startupTiming } from '../../core/diagnostics'
 function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmarkFallback) { startupTiming.wordmarkFallback = reason; console.info(`Syn3h: flat lobby wordmark: ${reason}`) } }
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
 import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
-import { lobbyZoom, lobbyZoomPortrait, returnDelay, returnOmega, returnTime } from './cameraRest'
+import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime } from './cameraRest'
 import { introMode, LEAVING_SECONDS, leavingMark, openingPace, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
@@ -372,6 +372,7 @@ uniform float uPopulation[${MAX}];
 uniform vec4 uWorld[${MAX}];        // xyz position, w radius
 uniform vec3 uLand[${MAX}], uSea[${MAX}];
 uniform vec4 uKind[${MAX}];         // x glow, y has map, z spin, w seed
+uniform float uNight;               // the night side's fill (lobby.nightSide; 0 as before)
 uniform vec4 uAir[${MAX}];          // the limb's colour, and how deep the air is (0 none)
 uniform vec4 uLook[${MAX}];         // x cloud cover, y ground gloss, z night glow (1 lava, 2 glowcaps), w land share
 uniform vec3 uCloud[${MAX}];        // each world's cloud colour
@@ -562,6 +563,13 @@ void main() {
     float facing = dot(normal, light), soft = 0.06 * min(airOf.w, 1.5);
     float day = clamp((facing + soft) / (1.0 + soft), 0.0, 1.0);
     day = airOf.w > 0.0 ? pow(day, 0.85) : smoothstep(-0.01, 0.03, facing) * max(facing, 0.0);
+    // The night side (lobby.nightSide): a soft cool fill from the camera's side, strongest where
+    // the surface faces the viewer, as starlight and light off the rest of the system would give,
+    // and a terminator a little wider, fading into the dark. Only where the sun does not reach,
+    // so the day side is as it was.
+    float night = 1.0 - smoothstep(-0.02, 0.12, facing);
+    float tail = uNight * 0.05 * smoothstep(-0.28, 0.0, facing) * (1.0 - smoothstep(0.0, 0.12, facing));
+    vec3 fill = vec3(0.72, 0.82, 1.0) * uNight * 0.075 * (0.3 + 0.7 * clamp(dot(normal, -ray), 0.0, 1.0)) * night;
     // Glints: water always, glassy or icy ground by its gloss. Lava is too rough to mirror the sun.
     vec3 halfway = normalize(light - ray);
     float shine = wet * (uKind[found].x > 0.5 ? 0.0 : 0.55) + look.y * (1.0 - wet) * 0.8;
@@ -569,6 +577,7 @@ void main() {
     // A little fill, so a world seen from its night side is still a world and not a hole.
     vec3 ground = surface * (0.06 + 1.06 * day) + vec3(1.0, 0.96, 0.88) * glint * (1.0 - cloud);
     vec3 world = mix(ground, uCloud[found] * (0.04 + 1.0 * day), cloud);
+    world += mix(surface, uCloud[found], cloud) * (fill + vec3(tail));
     // Night side: lava glows through its crust; a wetland's glowcaps make a faint green shimmer.
     float dark = 1.0 - smoothstep(-0.05, 0.25, facing);
     if (look.z > 0.5 && look.z < 1.5) world += surface * wet * (0.35 + 0.55 * dark) * (1.0 - cloud * 0.6);
@@ -730,7 +739,7 @@ void main() {
   color = vec4(c / 12.0, 1.0);
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
-const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uPulse', 'uPulseColour', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP'] as const
+const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uPulse', 'uPulseColour', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uNight', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP'] as const
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -1306,6 +1315,7 @@ export class Galaxy {
       gl.uniform4f(u.uGlow, this.glow.strength, hoverGlowSpeed.value, this.reduced.matches ? 1 : this.glow.chosen ? 0.55 : 0, hoverGlowIntensity.value * (this.glow.chosen ? 1.25 : 1))
       if (glowWorld) gl.uniform3f(u.uGlowColour, ...glowColour(glowWorld.land, glowWorld.sea, glowWorld))
       gl.uniform1fv(u.uPulse, this.pulses.slice(0, MAX))
+      gl.uniform1f(u.uNight, nightSide.value)
       if (this.pulses.some(v => v > 0)) gl.uniform3fv(u.uPulseColour, Array.from({ length: MAX }, (_, i) => worlds[i] ? glowColour(worlds[i].land, worlds[i].sea, worlds[i]) : [0, 0, 0]).flat())
       // The veil's point at full progress is about 6.6 CSS pixels in radius; the sun's core is
       // half its peak at 0.0374 of its size in units of the short side.
