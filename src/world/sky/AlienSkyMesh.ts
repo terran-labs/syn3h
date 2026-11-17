@@ -22,6 +22,59 @@ import { BETA_EPSILON, MIE_ZENITH_LENGTH, RAYLEIGH_ZENITH_LENGTH, SKY_FLOOR, SKY
 
 type N = any // TSL node; the published types are too strict for shader code written like this
 
+// Gradient noise with a sinless hash, as in SkyMesh. Plain functions inline the code.
+const gradient = (i: N): N => {
+  const p = fract(i.xyx.mul(vec3(0.1031, 0.103, 0.0973))).toVar() as N
+  p.addAssign(dot(p, p.yzx.add(33.33)))
+  return fract(p.xx.add(p.yz).mul(p.zy)).mul(2.0).sub(1.0)
+}
+const noise = (p: N): N => {
+  const i = floor(p) as N
+  const f = fract(p) as N
+  const u = f.mul(f).mul(f).mul(f.mul(f.mul(6.0).sub(15.0)).add(10.0)) as N
+  const a = dot(gradient(i), f)
+  const b = dot(gradient(i.add(vec2(1.0, 0.0))), f.sub(vec2(1.0, 0.0)))
+  const cc = dot(gradient(i.add(vec2(0.0, 1.0))), f.sub(vec2(0.0, 1.0)))
+  const d = dot(gradient(i.add(vec2(1.0, 1.0))), f.sub(vec2(1.0, 1.0)))
+  return mix(mix(a, b, u.x), mix(cc, d, u.x), u.y).mul(1.6)
+}
+// Per octave drift makes clouds billow instead of scrolling as a rigid stamp.
+const fbm = (position: N, drift: N): N => {
+  const p = vec2(position).toVar() as N
+  const result = float(0.0).toVar() as N
+  let amplitude = 1.0
+  for (let o = 0; o < 4; o++) {
+    result.addAssign(noise(p).mul(amplitude))
+    amplitude *= 0.5
+    p.assign(p.mul(2.0).add(drift))
+  }
+  return result
+}
+
+
+/** The sky's cloud layer settings, as nodes. AlienSkyMesh passes its uniforms. */
+export interface SkyCloudInputs { coverage: N; density: N; scale: N; elevation: N; speed: N; offset: N }
+/**
+ * The sky's cloud layer toward a unit world direction: its noise, the coverage threshold,
+ * the soft mask and its opacity. One definition for the sky shader that draws the clouds and
+ * the sun shaft mask that lets them block the sun (src/fx/post/PostChain.ts), so beams fall
+ * through the gaps the player sees. Opacity is 0 below the horizon and with no cover.
+ */
+export function skyCloudField(direction: N, c: SkyCloudInputs): { noise: N; threshold: N; mask: N; fade: N; opacity: N } {
+  const elevation = mix(1.0, 0.1, c.elevation)
+  const cloudUV = direction.xz.div(max(direction.y, 1e-4).mul(elevation)).mul(c.scale).add(c.offset).toVar() as N
+  const evolve = time.mul(c.speed).mul(300.0)
+  const cloudNoise = fbm(cloudUV.mul(1000.0), evolve).mul(0.7).add(0.5).clamp(0.0, 1.0).toVar() as N
+  const region = noise(cloudUV.mul(300.0)).mul(0.37).add(0.5)
+  const cov = clamp(c.coverage.add(region.sub(0.5).mul(0.6)), 0.0, 1.0)
+  const threshold = sub(1.0, cov).toVar() as N
+  const fade = smoothstep(0.0, add(0.03, mul(0.06, c.elevation)), direction.y)
+  const mask = smoothstep(threshold, threshold.add(0.3), cloudNoise).mul(fade).toVar() as N
+  const depth = max(0.0, cloudNoise.sub(threshold))
+  const opacity = sub(1.0, exp(depth.mul(c.density).mul(-12.0))).mul(fade).mul(c.coverage.greaterThan(0.0).select(1.0, 0.0)).toVar() as N
+  return { noise: cloudNoise, threshold, mask, fade, opacity }
+}
+
 export class AlienSkyMesh extends Mesh {
   /** Unit vector toward the sun. */
   readonly sunDirection = uniform(new Vector3(0, 1, 0))
@@ -138,53 +191,11 @@ export class AlienSkyMesh extends Mesh {
         texColor.addAssign(vec3(0.75, 0.8, 0.9).mul(moon).mul(stars).mul(0.5).mul(Fex))
       })
 
-      // Gradient noise with a sinless hash, as in SkyMesh. Plain functions inline the code.
-      const gradient = (i: N): N => {
-        const p = fract(i.xyx.mul(vec3(0.1031, 0.103, 0.0973))).toVar() as N
-        p.addAssign(dot(p, p.yzx.add(33.33)))
-        return fract(p.xx.add(p.yz).mul(p.zy)).mul(2.0).sub(1.0)
-      }
-      const noise = (p: N): N => {
-        const i = floor(p) as N
-        const f = fract(p) as N
-        const u = f.mul(f).mul(f).mul(f.mul(f.mul(6.0).sub(15.0)).add(10.0)) as N
-        const a = dot(gradient(i), f)
-        const b = dot(gradient(i.add(vec2(1.0, 0.0))), f.sub(vec2(1.0, 0.0)))
-        const cc = dot(gradient(i.add(vec2(0.0, 1.0))), f.sub(vec2(0.0, 1.0)))
-        const d = dot(gradient(i.add(vec2(1.0, 1.0))), f.sub(vec2(1.0, 1.0)))
-        return mix(mix(a, b, u.x), mix(cc, d, u.x), u.y).mul(1.6)
-      }
-      // Per octave drift makes clouds billow instead of scrolling as a rigid stamp.
-      const fbm = (position: N, drift: N): N => {
-        const p = vec2(position).toVar() as N
-        const result = float(0.0).toVar() as N
-        let amplitude = 1.0
-        for (let o = 0; o < 4; o++) {
-          result.addAssign(noise(p).mul(amplitude))
-          amplitude *= 0.5
-          p.assign(p.mul(2.0).add(drift))
-        }
-        return result
-      }
-
       const coverage = this.cloudCoverage as N
       const elevationU = this.cloudElevation as N
       If(direction.y.greaterThan(0.0).and(coverage.greaterThan(0.0)).and(this.cloudVisibility.greaterThan(0)), () => {
-        const elevation = mix(1.0, 0.1, elevationU)
-        const cloudUV = direction.xz.div(direction.y.mul(elevation)).toVar() as N
-        cloudUV.mulAssign(this.cloudScale)
-        cloudUV.addAssign(this.cloudOffset)
-
-        const evolve = time.mul(this.cloudSpeed).mul(300.0)
-        const cloudNoise = fbm(cloudUV.mul(1000.0), evolve).mul(0.7).add(0.5).clamp(0.0, 1.0).toVar() as N
-
-        const region = noise(cloudUV.mul(300.0)).mul(0.37).add(0.5)
-        const cov = clamp(coverage.add(region.sub(0.5).mul(0.6)), 0.0, 1.0)
-        const threshold = sub(1.0, cov).toVar() as N
-        const cloudMask = smoothstep(threshold, threshold.add(0.3), cloudNoise).toVar() as N
-
-        const horizonFade = smoothstep(0.0, add(0.03, mul(0.06, elevationU)), direction.y)
-        cloudMask.mulAssign(horizonFade)
+        const field = skyCloudField(direction, { coverage, density: this.cloudDensity, scale: this.cloudScale, elevation: elevationU, speed: this.cloudSpeed, offset: this.cloudOffset })
+        const cloudNoise = field.noise, threshold = field.threshold, cloudMask = field.mask
 
         // Clouds are lit by the same scattering, so they turn the sky's colours at dusk.
         const dayFactor = smoothstep(-0.08, 0.3, sunDir.y)
@@ -202,7 +213,7 @@ export class AlienSkyMesh extends Mesh {
         cloudColor.addAssign(sunColor.mul(silver).mul(edge).mul(0.6))
         cloudColor.mulAssign(max(dayFactor, 0.03))
 
-        const alpha = sub(1.0, exp(depth.mul(this.cloudDensity).mul(-12.0))).mul(horizonFade).toVar() as N
+        const alpha = field.opacity
         texColor.subAssign(L0.mul(0.04).add(sundiscColor).mul(alpha))
         const cloudAerial = mix(texColor, cloudColor, Fex)
         texColor.assign(mix(texColor, cloudAerial, alpha))

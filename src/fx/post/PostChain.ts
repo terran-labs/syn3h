@@ -27,7 +27,7 @@
 import * as THREE from 'three/webgpu'
 import {
   Fn, If, Loop, abs, screenSize, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
-  builtinAOContext, builtinGIContext, builtinShadowContext, context, mrt, nodeObject, normalView, output, screenUV, renderOutput, renderGroup, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
+  builtinAOContext, builtinGIContext, getViewPosition, builtinShadowContext, context, mrt, nodeObject, normalView, output, screenUV, renderOutput, renderGroup, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ao } from 'three/addons/tsl/display/GTAONode.js'
@@ -37,6 +37,7 @@ import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { traa } from 'three/addons/tsl/display/TRAANode.js'
 import { CurvedVelocity } from './CurvedVelocity'
 import { cloudVolume, compositeClouds } from './clouds'
+import { skyCloudField } from '../../world/sky/AlienSkyMesh'
 import { underwaterAmountForCamera } from '../../world/water/underwater'
 import type { CloudInputs } from '../../world/Environment'
 import { motionBlurred } from './motion'
@@ -111,6 +112,7 @@ export class PostChain {
     shafts: uniform(0.7),
     shaftLength: uniform(0.75),
     shaftReach: uniform(0.12),
+    shaftFloor: uniform(0.9),
     flare: uniform(0.5),
     gain: uniform(new THREE.Vector3(1, 1, 1)),
     lift: uniform(new THREE.Vector3(0, 0, 0)),
@@ -189,6 +191,7 @@ export class PostChain {
     u.shafts.value = P.postShafts.value * fade
     u.shaftLength.value = P.postShaftLength.value
     u.shaftReach.value = P.postShaftReach.value
+    u.shaftFloor.value = Math.min(P.postShaftFloor.value, SHAFT_CLAMP * 0.95)
     // Ghosts and streak belong to a low sun; overhead they read as smudges on the ground.
     u.flare.value = P.postFlare.value * fade * (0.25 + 0.75 * lowSunAmount(this.sun.sunDirection.y))
     const g = gradeFor(lookForKind(params.get('terrain.kind')?.value), P.postLook.value, { contrast: P.postContrast.value, saturation: P.postSaturation.value, warmth: P.postWarmth.value }, this.grade)
@@ -293,6 +296,8 @@ export class PostChain {
     const disposables: Built['disposables'] = []
     let maskRef: N = null
     let raysRef: N = null
+    // The volumetric cloud layer when it runs (its alpha is cover), for the shaft mask.
+    let cloudCover: N = null
     const scenePass = pass(scene, camera, temporalOn ? { samples: 0 } : {})
     const velocity = temporalOn ? new CurvedVelocity() : null
     if (velocity) scenePass.setMRT(mrt({ output, velocity: nodeObject(velocity) }))
@@ -385,6 +390,7 @@ export class PostChain {
 
     if (cloudsOn) {
       const volume: N = cloudVolume(depth, u, this.sun as SunSource & { clouds: CloudInputs })
+      cloudCover = volume
       // Capture the scene camera, not the fullscreen pass camera used by the composite.
       // Surface crossings update only this uniform and preserve the pipeline graph.
       const visibility = uniform(1).setGroup(renderGroup).onRenderUpdate(() => 1 - underwaterAmountForCamera(camera))
@@ -427,18 +433,39 @@ export class PostChain {
     }
 
     if (shaftsOn) {
-      // Mask: open sky near the sun, in its exposed colour; alpha is "open sky" alone.
+      // Mask: open sky near the sun, in its exposed colour; alpha is "open sky" alone. Clouds
+      // block it as terrain does, so the radial blur below casts beams through their gaps:
+      // the volumetric layer's cover when it runs, otherwise the sky shader's own cloud field.
+      const skyClouds = (this.sun as SunSource).clouds
+      const cloudNode = <T,>(initial: T, read: () => T) => (uniform(initial as never) as N).setGroup(renderGroup).onRenderUpdate(read)
+      const skyCloud = skyClouds ? {
+        coverage: cloudNode(0, () => cloudCover ? 0 : skyClouds.coverage), density: cloudNode(0, () => skyClouds.density),
+        scale: cloudNode(0, () => skyClouds.scale), elevation: cloudNode(0, () => skyClouds.elevation), speed: cloudNode(0, () => skyClouds.speed),
+        offset: uniform(new THREE.Vector2()).setGroup(renderGroup).onRenderUpdate((_f, self) => { self.value.set(skyClouds.offset.x, skyClouds.offset.y) }),
+      } : null
+      const volumeCover = cloudCover
       const mask = Fn(() => {
         const p = uv()
-        const sky = smoothstep(0.99995, 1.0, depth.sample(p).r)
+        const open = smoothstep(0.99995, 1.0, depth.sample(p).r).toVar()
+        if (volumeCover) open.mulAssign(float(1).sub(volumeCover.sample(p).a))
+        else if (skyCloud) {
+          const view = getViewPosition(p, float(1), u.projInv)
+          const direction = u.camWorld.mul(vec4(view.normalize(), 0)).xyz.normalize()
+          open.mulAssign(float(1).sub(skyCloudField(direction, skyCloud).opacity))
+        }
+        const sky = open
         // On-screen brightness, capped a little past white: the shafts carry the sun's
-        // colour and shape, not its full intensity.
-        const c = min(color.sample(p).rgb.mul(u.exposure), vec3(SHAFT_CLAMP))
+        // colour and shape, not its full intensity. Only the core above a floor feeds them,
+        // hue kept and rescaled, so the dim glow around the sun does not wash the beams out.
+        const raw = min(color.sample(p).rgb.mul(u.exposure), vec3(SHAFT_CLAMP))
+        const lum = max(dot(raw, vec3(0.2126, 0.7152, 0.0722)), 1e-4)
+        const c = raw.mul(max(lum.sub(u.shaftFloor), 0.0).div(lum)).mul(float(SHAFT_CLAMP).div(float(SHAFT_CLAMP).sub(u.shaftFloor)))
         const d = length(p.sub(u.sunUv).mul(vec2(u.aspect, 1)))
         const near = exp(d.mul(d).div(u.shaftReach.mul(u.shaftReach)).negate().mul(3))
         return vec4(c.mul(sky).mul(near), sky)
       })
-      const maskTex: N = rtt(mask(), null, null, { resolutionScale: 0.25 })
+      // Half resolution on the full tier keeps narrow beams; a quarter elsewhere.
+      const maskTex: N = rtt(mask(), null, null, { resolutionScale: tier === 'full' ? 0.5 : 0.25 })
       disposables.push(maskTex)
       maskRef = maskTex
       const taps = shaftTaps(tier)
@@ -458,7 +485,7 @@ export class PostChain {
         // The average light along the path to the sun, weighted to the near end.
         return vec4(sum.div(total), 1)
       })
-      const raysTex: N = rtt(rays(), null, null, { resolutionScale: 0.25 })
+      const raysTex: N = rtt(rays(), null, null, { resolutionScale: tier === 'full' ? 0.5 : 0.25 })
       disposables.push(raysTex)
       raysRef = raysTex
       // Strongest near the sun, fading across the screen, as light scattered forward does.
