@@ -44,7 +44,7 @@ export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrai
   const fraction=radius?THREE.MathUtils.clamp((depth+radius)/(2*ZORB_SUPPORT_DEPTH),0,1):THREE.MathUtils.clamp(depth+.5,0,1)
   if(fraction<=0)continue
   flow.x=0;flow.z=0;terrain.liquidFlowAt?.(point.x,point.z,flow)
-  // The surface's own rise and fall: every liquid body has waves (liquidWaves.ts).
+  // The surface's own rise and fall: its waves, and the sea gliding to a new level (terrain).
   const surfaceSpeed=terrain.liquidVerticalSpeedAt?.(point.x,point.z)??0
   // Sample the actual surface, including shoaling and geometric waves only.
   const hx=terrain.liquidHeightAt?.(point.x+.25,point.z)??surface

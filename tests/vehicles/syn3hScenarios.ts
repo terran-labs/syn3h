@@ -293,3 +293,41 @@ export const airStraighten = async (yaw = 30) => {
   bed.run(1)
   return before - off()
 }
+
+/**
+ * Arrival at the current tyre size, the four ways a buggy arrives in the game: `spawn` (built at a
+ * spawn point 2 m up), `respawn` (teleported there after settling), `switch` (the arrival cloud
+ * holds it and lets go, as switching vehicle in place does) and `remote` (another player's buggy
+ * built at its owner's resting position, the cloud shown without a hold). `hop` is the rebound:
+ * after the lowest point of the landing (in the first 1.5 s from the first wheel contact once
+ * free), the highest it rises above where it comes to rest. Also the readout and wheels at the end.
+ */
+export const arrive = async (how: 'spawn' | 'respawn' | 'switch' | 'remote') => {
+  const { Materialize } = await import('../../src/vehicles/effects/Materialize')
+  const bed = await makeBed()
+  const at = new THREE.Vector3(0, 2, 0)
+  if (how === 'remote') at.y = 0
+  const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, at, 0))
+  b.isLocal = false
+  if (how === 'remote') b.teleport(at.setY(b.restHeight()), 0)
+  const m = new Materialize(bed.game, bed.terrain)
+  if (how === 'respawn' || how === 'switch') bed.run(3)
+  if (how === 'respawn') b.teleport(new THREE.Vector3(0, 2, 0), 0)
+  if (how === 'switch') void m.begin(b, { carry: { linvel: { x: 0, y: 0, z: 0 }, angvel: { x: 0, y: 0, z: 0 } } })
+  if (how === 'remote') void m.begin(b, { hold: false })
+  const ys: number[] = []
+  let touched = false
+  bed.run(8, () => {
+    m.fixedUpdate?.(FIXED_DT)
+    m.postPhysics()
+    if (m.isHeld(b)) return
+    if (!touched && b.wheelsGrounded > 0) touched = true
+    if (!touched) return
+    ys.push(pos(b).y)
+  })
+  const rest = ys[ys.length - 1]
+  const window = ys.slice(0, Math.round(1.5 / FIXED_DT))
+  const low = window.indexOf(Math.min(...window))
+  m.dispose()
+  return { hop: Math.max(...ys.slice(low)) - rest, readout: b.heightAboveSurface(), wheels: b.wheelsGrounded, rest }
+}
