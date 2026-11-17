@@ -464,8 +464,10 @@ export class BotBrain implements System {
             // Wait a few metres back from the edge, not on it: a holding bot drifts.
             const ax = shore.x - there.x, az = shore.z - there.z, l = Math.hypot(ax, az) || 1
             const bx = shore.x + ax / l * 6, bz = shore.z + az / l * 6
-            const back = this.standable(bx, bz)
-            this.mind.hold({ x: back ? bx : shore.x, y: here.y, z: back ? bz : shore.z }, 4, 2)
+            const back = this.standable(bx, bz), wx = back ? bx : shore.x, wz = back ? bz : shore.z
+            // Re-planned only when the waiting place moves: a fresh hold drops the route.
+            const d = this.mind.activity.kind === 'hold' ? this.mind.activity.destination : null
+            if (!d || Math.hypot(d.x - wx, d.z - wz) > 3) this.mind.hold({ x: wx, y: here.y, z: wz }, 4, 30)
           }
         }
       }
