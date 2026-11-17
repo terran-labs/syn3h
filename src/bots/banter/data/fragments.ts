@@ -82,7 +82,7 @@ export const FRAGMENTS: Record<string, readonly string[]> = {
     'mica, catching the light',
     'a pebble of jasper',
     'haematite, rusting beautifully',
-    'something that might be [chert|flint], I need a minute',
+    'something that is either [chert|flint] or a very confident pebble',
   ],
   form: [
     'Form [7|12|31|88|104]-[Gamma|Delta|Theta|Omega]',

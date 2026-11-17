@@ -160,6 +160,7 @@ export class BanterDirector {
   private lastPuzzled = -Infinity
   private lastLeave = -Infinity
   private goneAt = -Infinity
+  private readonly awayAt = new Map<number, number>()
   private readonly session = { critters: [] as { critter: string; by: string }[], resets: 0 }
   /** Count of lines said, for the cost report and tests. */
   said = 0
@@ -606,17 +607,25 @@ export class BanterDirector {
       case 'thanks': case 'hello': case 'bye': case 'insult':
         this.speak(pickOne(talkers, this.r), `req.${intent.kind}`, ctx, t)
         return
+      case 'away': {
+        // Once, lightly: not every "brb" in a long evening.
+        const last = this.awayAt.get(player.id) ?? -Infinity
+        if (now - last < 600) return
+        this.awayAt.set(player.id, now)
+        this.speak(pickOne(talkers, this.r), 'req.away', ctx, t)
+        return
+      }
     }
     // Requests with behaviour behind them.
     let spoken = 0
     for (const b of bots) {
-      t = this.consider(b, intent.kind, player, t, spoken < 2) + (spoken < 2 ? 2 : 0)
+      t = this.consider(b, intent.kind, player, t, spoken < 2, intent.to.includes(b.id)) + (spoken < 2 ? 2 : 0)
       spoken++
     }
   }
 
   /** One bot weighs a request, answers in character and acts (or pointedly does not). */
-  private consider(b: BotState, kind: IntentKind, player: PlayerState, t: number, talk: boolean): number {
+  private consider(b: BotState, kind: IntentKind, player: PlayerState, t: number, talk: boolean, named = false): number {
     const v = VOICES[b.voice]
     const ctx = { player: player.name, you: player.name }
     const say = (key: string, extra: Context = {}, at?: number, then?: () => void): number => {
@@ -628,12 +637,13 @@ export class BanterDirector {
     if ((kind === 'follow' && !this.hooks.allows('follow')) || (moving && !this.hooks.allows('drive'))) return say('req.refuse.settings', {}, t)
     if (kind === 'help') {
       if (this.hooks.helpPlayer?.(player.id)) return say('req.help.player', {}, t)
-      return this.consider(b, 'come', player, t, talk)
+      return this.consider(b, 'come', player, t, talk, named)
     }
-    // Already with someone else: switch, or say so.
+    // Already with someone else. The rule: a bot leaves the player it is with only when the
+    // new player asks it by name; asked as one of a group, or not named, it stays and says so.
     const prior = b.request && b.request.player !== player.id ? this.players.get(b.request.player) : undefined
     if (prior) {
-      if (this.r() < 0.5) return say('req.refuse.busy', { you: prior.name }, t)
+      if (!named) return say('req.refuse.busy', { you: prior.name }, t)
       t = say('req.switch', { you: prior.name }, t)
     }
     const r = this.r()
@@ -773,10 +783,12 @@ export class BanterDirector {
         const ctx = { subj: s.short, player: p?.name ?? 'everyone', you: p?.name ?? s.short }
         const v = b.voice
         if (e.going) this.speak(b, v === 'clerk' ? 'conflict.form' : this.r() < 0.6 ? 'conflict.go' : 'conflict.guilt', ctx)
+        // A bot that stays never reads from conflict.go or conflict.guilt.
         else if (this.conflicted && this.conflicted !== b && now - this.conflictAt < 20) this.speak(b, 'conflict.bargain', { ...ctx, you: this.conflicted.short })
         else if (v === 'clerk') this.speak(b, 'conflict.form', ctx)
         else if (p && this.r() < 0.4) this.speak(b, 'conflict.ask.player', ctx)
-        else this.speak(b, VOICES[v].loyalty >= 0.6 ? 'conflict.stay' : 'conflict.guilt', ctx)
+        // Staying: only lines that stay. (The guilt lines often end in going, so they are for goers.)
+        else this.speak(b, 'conflict.stay', ctx)
         this.conflicted = b; this.conflictAt = now
         return
       }

@@ -14,7 +14,7 @@
 
 export type IntentKind =
   | 'follow' | 'come' | 'stop' | 'scatter' | 'chase' | 'flee' | 'race' | 'look' | 'help'
-  | 'quiet' | 'talk' | 'who' | 'what' | 'thanks' | 'hello' | 'bye' | 'insult'
+  | 'quiet' | 'talk' | 'who' | 'what' | 'thanks' | 'hello' | 'bye' | 'insult' | 'away'
 
 export interface Intent {
   kind: IntentKind
@@ -38,7 +38,7 @@ const TYPOS: Record<string, string> = {
   thx: 'thanks', ty: 'thanks', tnx: 'thanks', thanx: 'thanks', thnks: 'thanks', tysm: 'thanks', thank: 'thanks',
   stuk: 'stuck', stcuk: 'stuck',
   wyd: 'what are you doing', wru: 'where are you', hru: 'how are you', sup: 'whats up', wassup: 'whats up', whatsup: 'whats up',
-  cya: 'bye', bai: 'bye', byee: 'bye', gtg: 'got to go', g2g: 'got to go', brb: 'be right back', ttyl: 'bye',
+  cya: 'bye', bai: 'bye', byee: 'bye', gtg: 'got to go', g2g: 'got to go', ttyl: 'bye',
   hii: 'hi', hiii: 'hi', helo: 'hello', hallo: 'hello', heya: 'hey', hiya: 'hi', howdy: 'hello', yo: 'hey', oi: 'hey',
   raec: 'race', rcae: 'race', chse: 'chase', chace: 'chase',
   shh: 'shush', shhh: 'shush', shush: 'shush', stfu: 'shut up',
@@ -60,11 +60,13 @@ const GROUP = /\b(you guys|you all|guys|everyone|everybody|all of you|bots|robot
 // Each pattern runs on " <normalised line> " so \b works at both ends. Order matters: the
 // first match wins, so specific phrases come before the words they contain.
 const PATTERNS: [IntentKind, RegExp, RegExp?][] = [
+  // Stepping away for a moment is not goodbye: the bots acknowledge it once, lightly.
+  ['away', /\b(brb|be right back|afk|away from keyboard|back in a (sec|second|minute|min|bit|moment)|one (sec|second|minute|moment)|gotta grab|going to grab|bio break|hold on a sec)\b/],
   ['quiet', /\b(shut up|be quiet|quiet down|keep it down|pipe down|zip it|shush|hush|stop talking|stop chatting|less talking|enough talking|silence|stop spamming|too chatty|go quiet|no more chat)\b/],
   ['talk', /\b(talk to me|say something|you can talk|start talking|keep talking|chat with me|speak up|talk again|unmute|i miss your|tell me (a joke|something))\b/],
   ['scatter', /\b(go away|leave me alone|scatter|shoo|get lost|back off|buzz off|give me (some )?space|stop following|quit following|leave me be|go home|disperse|bug off|get away from me|move along)\b/, /\b(do not leave|dont leave|leave it|leave them|leaving soon|i leave|i will leave|i am leaving|left)\b/],
   ['flee', /\b(you are it|tag you are it|your it|tag your it|run away from me|run from me|i am coming for you|i am going to get you|i will catch you|i am it|im it|catch you)\b/],
-  ['chase', /\b(chase me|catch me|play tag|tag me|lets play tag|let us play tag|wanna play tag|want to play tag|tag anyone|tag game|come get me|try (and|to) catch me|cant catch me|can not catch me|get me if you can|tag$)\b|^ ?tag\b/],
+  ['chase', /\b(chase me|catch me|play tag|tag me|lets play tag|let us play tag|wanna play tag|want to play tag|tag anyone|tag game|come get me|try (and|to) catch me|cant catch me|can not catch me|get me if you can|tag$)\b|^ ?tag\b/, /\btag along\b/],
   ['race', /\b(race me|lets race|let us race|race you|wanna race|want to race|first one to|first to the|race to|i will race|beat me to|race$)\b|^ ?race\b/],
   ['look', /\b(look at this|look at that|look here|check (this|it|that) out|come (and |to )?(look|see)|come see|see this|you (have|got) to see|look what i found|over here look|i found something|found something|look over here|look$)\b/],
   ['help', /\b(help|i am stuck|stuck|unstick me|rescue me|save me|i am flipped|flipped over|upside down|i fell|get me out|pull me out|i can not move|tow me)\b/, /\b(no help|helpful|helps|helped|helping you|need no)\b/],
@@ -75,7 +77,7 @@ const PATTERNS: [IntentKind, RegExp, RegExp?][] = [
   ['who', /\b(who are you|who is this|what is your name|whats your name|who r you|introduce yourself|who are these|who are the bots|what are you\s*$|who is that|your name)\b/],
   ['thanks', /\b(thanks|thank you|cheers|much obliged|appreciate it|nice one|good job|well done|good bots?|great job)\b/],
   ['insult', /\b(you suck|suck|stupid|dumb|idiot|useless|trash|garbage|bad bots?|noob|lame|worst|annoying|you are bad|boring|hate you|go away losers?|loser)\b/],
-  ['bye', /\b(bye|goodbye|good bye|see you|got to go|be right back|good night|goodnight|farewell|later guys|i am off|i am out|peace out|logging off)\b/],
+  ['bye', /\b(bye|goodbye|good bye|see you|got to go|good night|goodnight|farewell|later guys|i am off|i am out|peace out|logging off)\b/],
   ['hello', /^ ?(hi|hello|hey|greetings|good (morning|afternoon|evening)|whats up|heyo|hey there|hi there|morning|evening|salutations)\b|\b(hello|hi|hey) (bots|guys|everyone|all|there)\b/],
 ]
 
@@ -141,4 +143,4 @@ export function parseIntent(text: string, bots: readonly NamedBot[]): Intent | n
   return null
 }
 
-const LOOSE = new Set<IntentKind>(['race', 'chase', 'stop', 'help', 'insult', 'thanks', 'bye', 'hello', 'what', 'look', 'come', 'follow'])
+const LOOSE = new Set<IntentKind>(['away', 'race', 'chase', 'stop', 'help', 'insult', 'thanks', 'bye', 'hello', 'what', 'look', 'come', 'follow'])

@@ -27,7 +27,8 @@ export const PHRASINGS: Record<IntentKind, string[]> = {
   what: ['what are you doing', 'wyd', 'what r u doing', 'whatcha doing', 'where are you going', 'what are you up to', 'sup', "what's up", 'how are you', 'temolin what are you doing', 'where are you', 'what are you all doing'],
   thanks: ['thanks', 'thank you', 'thx', 'ty', 'cheers', 'thanks guys', 'nice one', 'good job', 'well done', 'good bot', 'thank u temolin', 'appreciate it'],
   hello: ['hi', 'hello', 'hey', 'yo', 'hiya', 'howdy', 'hello bots', 'hi everyone', 'good morning', 'hey there', 'greetings', 'hi temolin'],
-  bye: ['bye', 'goodbye', 'cya', 'see you', 'gtg', 'got to go', 'brb', 'good night', 'later guys', 'bye bots', 'peace out', 'farewell'],
+  bye: ['bye', 'goodbye', 'cya', 'see you', 'gtg', 'got to go', 'ttyl', 'good night', 'later guys', 'bye bots', 'peace out', 'farewell'],
+  away: ['brb', 'brb dinner', 'afk', 'be right back', 'afk a sec', 'back in a minute', 'one sec guys', 'brb gotta grab a drink', 'bio break', 'back in a bit', 'hold on a sec', 'brb 5'],
   insult: ['you suck', 'stupid bots', 'dumb bot', 'useless', 'bad bot', 'you guys are trash', 'noob', 'lame', 'idiot', 'annoying', 'boring', 'worst bots ever'],
 }
 
@@ -35,13 +36,13 @@ export const PHRASINGS: Record<IntentKind, string[]> = {
 export const ORDINARY = [
   "I'll follow up later", 'did you follow the news', 'I hope it helps my score', 'what a stop sign', 'that was a great race yesterday',
   'my sister used to have a buggy like this', 'the lava looks amazing tonight', 'anyone know how to fly the jet', 'I got the hovercraft working',
-  'this planet is so pretty', 'lol', 'haha nice', 'ok', 'brb dinner', 'I keep falling off the cliff on the left side of the volcano',
+  'this planet is so pretty', 'lol', 'haha nice', 'ok', 'I keep falling off the cliff on the left side of the volcano',
   'do you play this on a phone', 'what server is this', 'how do I change my colour', 'the minimap is cool', 'nice jump',
   'I think the jet is the best vehicle honestly', 'can not believe how big the volcano is', 'my keyboard is sticky', 'is it night already',
   'I was looking at the sunset', 'who made this game', 'the race to the summit took forever last time I tried it with my cousin',
   'we should follow the road to the other side of the island later today', 'the clouds look like cotton', 'my internet is slow',
   'I left my coffee somewhere', 'tag mode is fun with more people around', 'the bots are funny', 'I think I found a bug in the map',
-  'just got here', 'how long have you been playing', 'my buggy flipped twice', 'need to stop for dinner soon though ok', 'this is so relaxing',
+  'just got here', 'I hate when the afk timer kicks in on other games', 'how long have you been playing', 'my buggy flipped twice', 'need to stop for dinner soon though ok', 'this is so relaxing',
   'I like the green colour', 'what time is it there', 'it took me ages to get up that hill', 'the shore is nice', 'the water here is really blue',
   'I love the sound of the engine', 'where did everyone go earlier today when I logged in', 'ha the bot fell in', 'my brother says hi', 'gg',
 ]

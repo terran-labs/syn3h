@@ -97,7 +97,6 @@ export const REQUESTS: Pools = {
 
   'req.accept.stop': {
     any: [
-      "Stopping.",
       "Holding here. I will just stand very still and look purposeful.",
       "Waiting, {player}. I am excellent at this. It is most of what I do.",
       "Parked. Take your time. I have nowhere to be, which is a bit sad when I say it out loud.",
@@ -829,6 +828,21 @@ export const REQUESTS: Pools = {
     ],
   },
 
+  'req.away': {
+    any: [
+      "Take your time, {player}. We will keep the planet warm.",
+      "Understood. We will be here, behaving. Mostly.",
+      "Go on, {player}. Nobody touch anything.",
+    ],
+    clerk: ["Absence noted, {player}. No form required for under ten minutes."],
+    marshal: ["Holding your spot."],
+    inspector: ["I will watch your vehicle. Closely. Nervously."],
+    probe: ["Is it a snack? Bring me back a crumb, {player}."],
+    moon: ["Go. If the moon asks, you were never here."],
+    pilot: ["No problem. I will do a few laps to keep it warm. Your vehicle, I mean."],
+    intern: ["Okay! I will practise waiting! I am good at it, I think!"],
+    auditor: ["I will audit the area while you are gone. Lightly."],
+  },
   'req.bye': {
     any: [
       "Bye, {player}. Come back soon. Or late. Just come back.",
@@ -904,7 +918,6 @@ export const REQUESTS: Pools = {
 
   'req.unknown': {
     any: [
-      "Hm.",
       "Bold. Possibly.",
       "I am going to nod and hope.",
       "Sorry, {player}, that went straight over my roof.",

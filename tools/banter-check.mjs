@@ -63,6 +63,59 @@ try {
         await ctx.close()
       }
     }
+  } else if (mode === 'rescue' || mode === 'rescue-player') {
+    // A water world; one bot (or the player) is put a few metres into the sea off a shore.
+    const { ctx, page } = await host('Sam', 3)
+    await page.evaluate(() => { window.syn3h.params.set('world.seaKind', 1); window.syn3h.params.set('bots.chatterLevel', 1) })
+    await page.waitForTimeout(8000)
+    const placed = await page.evaluate((who) => {
+      const { terrain, bots, player } = window.syn3h
+      const v = who === 'player' ? player : bots.vehicles[0]
+      // Search from the first bot, which spawns near the shore more often than the pad does.
+      const p = bots.vehicles[0].body.translation()
+      const wet = (x, z) => { const l = terrain.liquidHeightAt?.(x, z); return l != null && Number.isFinite(l) && terrain.heightAt(x, z) < l - 0.6 }
+      for (const r of [20, 40, 80, 140, 220, 320, 450, 600, 800]) for (let k = 0; k < 36; k++) {
+        const a = (k / 36) * Math.PI * 2, x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r
+        if (!wet(x, z) || wet(x - Math.cos(a) * 11, z - Math.sin(a) * 11) || !wet(x - Math.cos(a) * 6, z - Math.sin(a) * 6)) continue
+        const ground = terrain.heightAt(x, z)
+        v.teleport(v.object.position.clone().set(x, Math.max(ground, terrain.liquidHeightAt(x, z) - 0.6) + 0.8, z), a)
+        // The player parks on the shore behind, facing the scene.
+        // Side-on to the pull line, on the shore: the whole tow is in view.
+        const bx = x - Math.cos(a) * 16, bz = z - Math.sin(a) * 16
+        const px = bx - Math.sin(a) * 26, pz = bz + Math.cos(a) * 26
+        if (who !== 'player') player.teleport(player.object.position.clone().set(px, Math.max(terrain.heightAt(px, pz), terrain.liquidHeightAt(px, pz) ?? -1e9) + 1.5, pz), Math.atan2(-(bx - px), -(bz - pz)))
+        return { x: Math.round(x), z: Math.round(z) }
+      }
+      return null
+    }, mode === 'rescue-player' ? 'player' : 'bot')
+    console.log('placed in the sea at', JSON.stringify(placed))
+    if (!placed) throw new Error('no shore found near the bot')
+    const start = await page.evaluate(() => performance.now())
+    if (mode === 'rescue-player') { await page.waitForTimeout(4000); await page.evaluate(() => window.syn3hChat.net.chat.send('help, I am stuck')) }
+    const t0 = Date.now(), log = []
+    let shot = 0, done = false
+    for (let i = 0; i < 70 && !done; i++) {
+      await page.waitForTimeout(2000)
+      const s = await page.evaluate(() => {
+        const r = window.syn3hChat.banter.rescue
+        return { active: r?.active() ?? [], stats: r?.stats ?? null, cords: window.syn3hChat.net.bungee ? 0 : 0 }
+      })
+      log.push(`[${Math.round((Date.now() - t0) / 1000).toString().padStart(3)} s] ${JSON.stringify(s.active)} ${JSON.stringify(s.stats)}`)
+      // Frames while the hook flies and the cord pulls: one every 0.6 s, up to eight.
+      while (shot < 8 && (await page.evaluate(() => (window.syn3hChat.banter.rescue?.active() ?? []).some((a) => a.phases.some((p) => p === 'fire' || p === 'tow' || p === 'ease'))))) {
+        await page.screenshot({ path: `${out}/${mode}-frame-${shot++}.png` })
+        await page.waitForTimeout(600)
+      }
+      done = Boolean(s.stats && (s.stats.freed + s.stats.gaveUp) > 0 && !s.active.length)
+    }
+    await page.waitForTimeout(10000)
+    const said = await lines(page, start)
+    const s0 = said[0]?.t ?? 0
+    const transcript = said.map((l) => `[${(l.t - s0).toFixed(0).padStart(3)} s] ${l.who}: ${l.text}`).join('\n')
+    console.log(`=== ${mode} ===\n${transcript}\n\n=== rescue state ===\n${log.join('\n')}`)
+    writeFileSync(`${out}/${mode}.txt`, `${transcript}\n\n${log.join('\n')}\n`)
+    await page.screenshot({ path: `${out}/${mode}-end.png` })
+    await ctx.close()
   } else {
     const { ctx, page } = await host('Sam', null)
     const start = await page.evaluate(() => performance.now())

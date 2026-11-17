@@ -216,7 +216,8 @@ export const IDLE: Pools = {
 
   'idle.reply': {
     any: [
-      'Fair, {you}.',
+      'I will be thinking about that for the rest of the drive, {you}. Possibly longer.',
+      '{you}, that is either very deep or a pothole.',
       'You say that every time, {you}, and every time it lands.',
       'Strong opinion, {you}. I am going to sit with it.',
       '{you}, that is either very wise or you have been in the sun.',
@@ -529,8 +530,9 @@ export const IDLE: Pools = {
 
   'reply.haggle': {
     any: [
+      'Yes, but I choose the music. There is no music. I choose the silence.',
+      'Deal, {you}, if we stop at the first interesting rock. And the second.',
       'Yes, {you}, if I get to choose the music.',
-      'Fine, but you owe me one.',
       'Only if we take the scenic route.',
       'Deal, if you go first, {you}.',
       'Yes, on the condition that nobody brings up last time.',
@@ -664,8 +666,10 @@ export const IDLE: Pools = {
 
   'payoff.refused': {
     any: [
+      'Your loss, {you}. I will describe it to you later in unnecessary detail.',
+      'Understood. I will have a wonderful time, slightly to your left.',
+      'Fine. I am taking the fun with me. All of it. It fits in the boot.',
       'Fair enough. More fun for nobody.',
-      'Suit yourself, {you}.',
       'Your loss, {you}. A small loss. Medium.',
       'Fine. I will do it alone and describe it at length.',
       'All right. The offer stands. Over there. Alone.',

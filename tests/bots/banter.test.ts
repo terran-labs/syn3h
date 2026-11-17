@@ -129,6 +129,20 @@ describe('bot banter', () => {
     expect(new Set(leaves).size).toBe(leaves.length)
   })
 
+  it('a second player pulls a bot away only by naming it', () => {
+    const w = fakeWorld(4)
+    w.players.push({ id: 2, name: 'Ana', x: 200, y: 10, z: 0, speed: 6, airFor: 0, idleFor: 0, kind: 'jet', flippedFor: 0, stuckFor: 0 })
+    w.run(2)
+    w.director.hear(1, 'everyone follow me')
+    w.run(20)
+    const withSam = w.director.requests().filter((r) => r.player === 1).map((r) => r.bot)
+    expect(withSam.length).toBeGreaterThan(0)
+    w.director.hear(2, 'everyone follow me')
+    w.run(20)
+    // Asked as a group, nobody already with Sam leaves him.
+    for (const r of w.director.requests()) if (withSam.includes(r.bot)) expect(r.player).toBe(1)
+  })
+
   it('requests respect the host\'s settings and each player\'s rate limit', () => {
     const w = fakeWorld(4)
     w.allow.follow = false
