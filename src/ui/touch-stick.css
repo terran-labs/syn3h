@@ -170,3 +170,8 @@ html[data-touch-aim="on"] .syn3h-shell.has-touch .focus-hud svg [data-reticle] {
     bottom: calc(max(var(--thumb-bottom), env(safe-area-inset-bottom)) + 2 * var(--thumb-size) + var(--thumb-gap) + 12px);
   }
 }
+/* A match announcement (a hill taken, a round won) is the text that matters while it shows:
+   the Panels tab steps out of its way and comes back when it goes. */
+.syn3h-shell.has-touch:has(.match-announcement:not([hidden])) .hud-navigation {
+  opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s ease-out, visibility 0s linear .2s;
+}
