@@ -20,6 +20,11 @@ export const postBloomRadius = defineParam({ id: 'post.bloomRadius', label: 'Glo
 
 export const postShafts = defineParam({ id: 'post.shafts', label: 'Sun shafts', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
 export const postShaftLength = defineParam({ id: 'post.shaftLength', label: 'Sun shaft length', group: g, scope: c, default: 0.9, min: 0.2, max: 1, step: 0.05 })
+/**
+ * Exposed brightness below which open sky feeds no shafts. Only the bright core near the sun
+ * does, so a ridge or a cloud in front of it casts distinct beams instead of a soft halo.
+ */
+export const postShaftFloor = defineParam({ id: 'post.shaftFloor', label: 'Sun shaft floor', group: g, scope: c, default: 0.8, min: 0, max: 1.4, step: 0.05 })
 export const postShaftReach = defineParam({ id: 'post.shaftReach', label: 'Sun shaft source size', group: g, scope: c, default: 0.12, min: 0.03, max: 0.5, step: 0.01 })
 export const postLowSun = defineParam({ id: 'post.lowSun', label: 'Extra shafts at low sun', group: g, scope: c, default: 0.6, min: 0, max: 3, step: 0.05 })
 export const postFlare = defineParam({ id: 'post.flare', label: 'Lens streak and ghosts', group: g, scope: c, default: 0.5, min: 0, max: 2, step: 0.05 })

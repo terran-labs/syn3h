@@ -111,6 +111,7 @@ export class PostChain {
     shafts: uniform(0.7),
     shaftLength: uniform(0.75),
     shaftReach: uniform(0.12),
+    shaftFloor: uniform(0.8),
     flare: uniform(0.5),
     gain: uniform(new THREE.Vector3(1, 1, 1)),
     lift: uniform(new THREE.Vector3(0, 0, 0)),
@@ -189,6 +190,7 @@ export class PostChain {
     u.shafts.value = P.postShafts.value * fade
     u.shaftLength.value = P.postShaftLength.value
     u.shaftReach.value = P.postShaftReach.value
+    u.shaftFloor.value = Math.min(P.postShaftFloor.value, SHAFT_CLAMP * 0.95)
     // Ghosts and streak belong to a low sun; overhead they read as smudges on the ground.
     u.flare.value = P.postFlare.value * fade * (0.25 + 0.75 * lowSunAmount(this.sun.sunDirection.y))
     const g = gradeFor(lookForKind(params.get('terrain.kind')?.value), P.postLook.value, { contrast: P.postContrast.value, saturation: P.postSaturation.value, warmth: P.postWarmth.value }, this.grade)
@@ -433,7 +435,12 @@ export class PostChain {
         const sky = smoothstep(0.99995, 1.0, depth.sample(p).r)
         // On-screen brightness, capped a little past white: the shafts carry the sun's
         // colour and shape, not its full intensity.
-        const c = min(color.sample(p).rgb.mul(u.exposure), vec3(SHAFT_CLAMP))
+        const raw = min(color.sample(p).rgb.mul(u.exposure), vec3(SHAFT_CLAMP))
+        // Only the bright core feeds the rays: brightness above a floor, the hue kept, rescaled
+        // so the core is as strong as before. Sky dimmer than the floor (the glow's fringe, the
+        // shade of a cloud) feeds nothing, so the edges of what blocks the sun cast beams.
+        const lum = max(dot(raw, vec3(0.2126, 0.7152, 0.0722)), 1e-4)
+        const c = raw.mul(max(lum.sub(u.shaftFloor), 0.0).div(lum)).mul(float(SHAFT_CLAMP).div(float(SHAFT_CLAMP).sub(u.shaftFloor)))
         const d = length(p.sub(u.sunUv).mul(vec2(u.aspect, 1)))
         const near = exp(d.mul(d).div(u.shaftReach.mul(u.shaftReach)).negate().mul(3))
         return vec4(c.mul(sky).mul(near), sky)
