@@ -12,6 +12,13 @@ export const dirtVolume = mix('dirt', 'Ground rumble', 0.22)
 export const slipVolume = mix('slip', 'Tyre slip volume', 0.3)
 export const windVolume = mix('wind', 'Wind volume', 0.4)
 export const muted = defineParam({ id: 'audio.muted', label: 'Mute audio', group: 'Audio', scope: 'client', default: false })
+/**
+ * iPhone and iPad: a page's Web Audio is "ambient" by default and goes silent when the ring/silent
+ * switch is on, with no sign of why. On, the game declares itself as playback (unlock.ts), so it
+ * is heard on silent, and other apps' music pauses while it plays. Off, it mixes with the
+ * player's own music and obeys the switch. Added 17 November 2026; the owner decides the default.
+ */
+export const playOnSilent = defineParam({ id: 'audio.playOnSilent', label: 'Play when the phone is on silent', group: 'Audio', scope: 'client', default: true })
 export const crossfade = defineParam({ id: 'audio.crossfade', label: 'Music fade in (s)', group: 'Audio', scope: 'client', default: 2, min: 0.1, max: 8, step: 0.1 })
 export const engineIdle = defineParam({ id: 'audio.engineIdle', label: 'Engine idle (Hz)', group: 'Audio', scope: 'client', default: 36, min: 20, max: 70, step: 1 })
 export const engineRange = defineParam({ id: 'audio.engineRange', label: 'Engine pitch range', group: 'Audio', scope: 'client', default: 95, min: 20, max: 180, step: 1 })
