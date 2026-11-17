@@ -197,7 +197,7 @@
          lines of height are reserved so a long one never moves the rest of the veil, and the
          cross-fade is on opacity only. Screen readers hear the plain phase from LoadingScreen's
          own live region instead, so this line is aria-hidden. */
-      .boot-status { grid-row: 4; margin-top: 20px; letter-spacing: 0.02em; min-height: 2.8em; max-width: 26em; text-wrap: balance; }
+      .boot-status { grid-row: 4; margin-top: 20px; letter-spacing: 0.02em; min-height: 2.8em; max-width: 26em; text-wrap: balance; opacity: 0; transition: opacity 0.4s ease; }
       /* Hidden for eight seconds, then it fades in by itself: no script needed. */
       /* After ten seconds, a plain line under the fun one: seconds so far and what is really
          happening (the veil's script below, and src/ui/LoadingScreen.ts). No joke on it. */
@@ -205,10 +205,13 @@
          moves (index.html's script below). Its space is held from the start, so nothing above
          it moves when it fades in; a step change cross-fades the words, the numbers just tick. */
       .boot-still { grid-row: 5; margin-top: 8px; min-height: 1.4em; font-size: 14px; font-weight: 400; color: color-mix(in srgb, var(--theme-text-primary) 62%, transparent); opacity: 0; font-variant-numeric: tabular-nums; transition: opacity 0.4s ease; }
-      .boot-still[data-shown] { opacity: 1; }
+      /* Both lines, the fun one and the progress line, appear together, from one trigger: three
+         seconds into a load still going (html[data-boot-late], set by the script below). A load
+         that ends sooner shows only the point of light. Their space is held throughout. */
+      html[data-boot-late] .boot-status, html[data-boot-late] .boot-still { opacity: 1; }
       .boot-still .boot-step { transition: opacity 0.2s ease; }
       .boot-still .boot-step[data-fade] { opacity: 0; }
-      @media (prefers-reduced-motion: reduce) { .boot-still, .boot-still .boot-step { transition: none; } }
+      @media (prefers-reduced-motion: reduce) { .boot-status, .boot-still, .boot-still .boot-step { transition: none; } }
       html[data-boot="done"] .boot-status, html[data-boot="done"] .boot-still { transition: opacity 0.4s ease; opacity: 0; animation: none; }
       /* ---- The continuous opening (?intro=, src/ui/galaxy/opening.ts). The veil is black
          space and one point of light at the very centre, where the lobby's sun is drawn at
@@ -339,8 +342,8 @@
       <script>
         // One fun line per load, chosen now and kept until loading ends; the markup above is the
         // no-script fallback. These lines are also in src/ui/data/loadingMessages.ts.
-        // Still loading three seconds after the visit began, a quiet progress line fades in under
-        // it: the real step, which of the five steps it is, and the seconds since the visit
+        // Still loading three seconds after the visit began, the fun line and under it a quiet
+        // progress line fade in together: the real step, which of the five steps it is, and the seconds since the visit
         // began. The first step, the game's code, is one large file whose progress no browser
         // reports while it arrives: there only the seconds move (a byte count would sit still
         // and look stuck). A later step that has not moved for five seconds says what it is
@@ -368,7 +371,8 @@
               if (first || matchMedia("(prefers-reduced-motion: reduce)").matches) stepEl.textContent = step;
               else { stepEl.dataset.fade = ""; clearTimeout(fade); fade = setTimeout(function() { stepEl.textContent = lastStep; delete stepEl.dataset.fade; }, 200); }
             }
-            if (now >= 3000) w.dataset.shown = "";
+            // The one trigger for both lines (the CSS above): three seconds into the visit.
+            if (now >= 3000) root.dataset.bootLate = "";
           };
           var tick = setInterval(draw, 250);
         })(document.querySelector(".boot-status"), document.querySelector(".boot-still"));

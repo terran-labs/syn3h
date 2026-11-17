@@ -15,7 +15,7 @@ const out = 'tests/ui/artifacts/loading-lines'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const errors = [], report = {}
-const read = page => page.evaluate(() => { const still = document.querySelector('.boot-still'); return { boot: document.documentElement.dataset.boot, line: document.querySelector('.boot-status').textContent, height: document.querySelector('.boot-status').getBoundingClientRect().height, still: still.getBoundingClientRect().top, second: still.hasAttribute('data-shown') ? still.textContent : '', secondHidden: still.getAttribute('aria-hidden'), phase: document.querySelector('.syn3h-loading .loading-phase')?.textContent ?? null, at: performance.now() } })
+const read = page => page.evaluate(() => { const still = document.querySelector('.boot-still'); return { boot: document.documentElement.dataset.boot, line: document.querySelector('.boot-status').textContent, height: document.querySelector('.boot-status').getBoundingClientRect().height, still: still.getBoundingClientRect().top, second: document.documentElement.hasAttribute('data-boot-late') ? still.textContent : '', funShown: +getComputedStyle(document.querySelector('.boot-status')).opacity > 0.05, secondHidden: still.getAttribute('aria-hidden'), phase: document.querySelector('.syn3h-loading .loading-phase')?.textContent ?? null, at: performance.now() } })
 try {
   for (const view of [{ name: 'desktop', options: { viewport: { width: 1280, height: 720 } } }, { name: 'iphone14', options: { ...devices['iPhone 14'], defaultBrowserType: undefined } }]) {
     const context = await browser.newContext(view.options), page = await context.newPage(), cdp = await context.newCDPSession(page)
@@ -42,6 +42,8 @@ try {
     const seconds = samples.filter(s => s.second)
     assert.ok(seconds.length > 0, `${view.name}: the progress line appears on a load past three seconds`)
     assert.ok(samples.filter(s => s.at < 2900).every(s => !s.second), `${view.name}: and not before three seconds into the visit`)
+    // The fun line comes with it, never before: nothing but the point of light for the first three seconds.
+    assert.ok(samples.filter(s => s.at < 2900).every(s => !s.funShown), `${view.name}: no fun line before three seconds`)
     for (const s of seconds) { assert.match(s.second, /^[A-Z][^\u00b7]* \u00b7 .+ \u00b7 \d+ s$/, `${view.name}: a plain step, a measure and the seconds (${s.second})`); assert.equal(s.secondHidden, 'true', 'the ticking line is never read aloud') }
     const steps = [...new Set(seconds.map(s => s.second.split(' \u00b7 ')[0]))]
     // Something on it moves: the seconds tick (and the step, as phases pass).
@@ -84,7 +86,7 @@ try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
     for (let load = 0; load < 2; load++) {
       const page = await context.newPage()
-      await page.addInitScript(() => { window.__shownAt = null; const watch = () => { const w = document.querySelector('.boot-still'); if (w?.hasAttribute('data-shown') && window.__shownAt === null) window.__shownAt = performance.now(); if (document.documentElement?.dataset.boot !== 'done') requestAnimationFrame(watch); else window.__doneAt = performance.now() }; requestAnimationFrame(watch) })
+      await page.addInitScript(() => { window.__shownAt = null; const watch = () => { const w = document.querySelector('.boot-still'); if (document.documentElement.hasAttribute('data-boot-late') && window.__shownAt === null) window.__shownAt = performance.now(); if (document.documentElement?.dataset.boot !== 'done') requestAnimationFrame(watch); else window.__doneAt = performance.now() }; requestAnimationFrame(watch) })
       await page.goto(`${base}?room=lines-warm-${Date.now()}`)
       await page.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
       const r = await page.evaluate(() => ({ shownAt: window.__shownAt, doneAt: Math.round(window.__doneAt) }))

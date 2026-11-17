@@ -11,7 +11,7 @@ await mkdir(out, { recursive: true })
 const links = { 'slow-4g': { latency: 562.5, downloadThroughput: 1.6e6 / 8, uploadThroughput: 0.75e6 / 8 }, 'fast-3g': { latency: 562.5, downloadThroughput: 1.44e6 / 8, uploadThroughput: 0.675e6 / 8 } }
 const views = { desktop: { viewport: { width: 1280, height: 800 } }, phone: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true } }
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist'] })
-const read = page => page.evaluate(() => { const w = document.querySelector('.boot-still'), s = document.querySelector('.boot-status'); return { boot: document.documentElement.dataset.boot, shown: w?.hasAttribute('data-shown') ?? false, opacity: w ? +getComputedStyle(w).opacity : 0, line: w?.textContent ?? '', statusTop: Math.round(s?.getBoundingClientRect().top ?? 0), live: document.querySelector('.syn3h-loading .loading-phase')?.textContent ?? null } })
+const read = page => page.evaluate(() => { const w = document.querySelector('.boot-still'), s = document.querySelector('.boot-status'); return { boot: document.documentElement.dataset.boot, shown: document.documentElement.hasAttribute('data-boot-late'), opacity: w ? +getComputedStyle(w).opacity : 0, funOpacity: s ? +getComputedStyle(s).opacity : 0, fun: s?.textContent ?? '', line: w?.textContent ?? '', statusTop: Math.round(s?.getBoundingClientRect().top ?? 0), live: document.querySelector('.syn3h-loading .loading-phase')?.textContent ?? null } })
 try {
   for (const [link, conditions] of Object.entries(links)) for (const [name, view] of Object.entries(views)) {
     const context = await browser.newContext(view), page = await context.newPage(), cdp = await context.newCDPSession(page)
@@ -32,7 +32,7 @@ try {
   const context = await browser.newContext(views.desktop)
   for (let i = 0; i < 2; i++) {
     const page = await context.newPage()
-    await page.addInitScript(() => { window.__shown = false; const w = () => { if (document.querySelector('.boot-still[data-shown]')) window.__shown = true; if (document.documentElement?.dataset.boot !== 'done') requestAnimationFrame(w); else window.__done = performance.now() }; requestAnimationFrame(w) })
+    await page.addInitScript(() => { window.__shown = false; const w = () => { if (document.documentElement.hasAttribute('data-boot-late')) window.__shown = true; if (document.documentElement?.dataset.boot !== 'done') requestAnimationFrame(w); else window.__done = performance.now() }; requestAnimationFrame(w) })
     await page.goto(`${base}?room=lp-warm-${Date.now()}`); await page.waitForFunction(() => window.__done, null, { timeout: 120000 })
     if (i === 1) console.log('warm', JSON.stringify(await page.evaluate(() => ({ doneMs: Math.round(window.__done), shown: window.__shown }))))
     await page.close()
