@@ -171,6 +171,8 @@ on_exit() {
   status=$?
   trap - EXIT
   cleanup
+  # The staging clone is only needed while staging is checked; its logs stay in /tmp.
+  [ -z "${STAGING_DEST:-}" ] || rm -rf "$STAGING_DEST"
   if [ -n "$DEPLOYED" ]; then roll_back || true; [ "$status" -ne 0 ] || status=1; fi
   exit "$status"
 }
@@ -208,6 +210,9 @@ else
   STAGING_DEST="$DEST.staging"
   rm -rf "$STAGING_DEST"; cp -Rc "$DEST" "$STAGING_DEST" 2>/dev/null || cp -R "$DEST" "$STAGING_DEST"
   printf 'User-agent: *\nDisallow: /\n' > "$STAGING_DEST/dist/robots.txt"
+  # Mark the page so a stray visitor cannot take staging for the real game. Only the staging
+  # clone's HTML changes; the production build and bundle are untouched.
+  sed -i '' 's#<title>#<title>[staging] #' "$STAGING_DEST/dist/index.html"
   echo "Deploying to staging..."
   if [ -n "$STUB" ]; then
     echo "STUB: (cd $STAGING_DEST && wrangler deploy --config wrangler.staging.toml --message \"$MILESTONE $COMMIT: $NOTE\")"
