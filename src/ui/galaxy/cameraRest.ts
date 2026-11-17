@@ -12,9 +12,9 @@ import { defineParam } from '../../../shared/params'
 
 const P = { group: 'Graphics', scope: 'client' } as const
 /** The default view's distance as a share of the fitted one: below 1 is closer. Desktop and landscape. */
-export const lobbyZoom = defineParam({ ...P, id: 'lobby.zoom', label: 'Lobby default zoom (share of the whole-system distance)', default: 0.8, min: 0.4, max: 1.5, step: 0.01 })
+export const lobbyZoom = defineParam({ ...P, id: 'lobby.zoom', label: 'Lobby default zoom (share of the whole-system distance)', default: 0.6, min: 0.4, max: 1.5, step: 0.01 })
 /** The same on a phone held upright, where the wordmark and the inner planets must stay on screen. */
-export const lobbyZoomPortrait = defineParam({ ...P, id: 'lobby.zoomPortrait', label: 'Lobby default zoom on a portrait phone', default: 0.8, min: 0.4, max: 1.5, step: 0.01 })
+export const lobbyZoomPortrait = defineParam({ ...P, id: 'lobby.zoomPortrait', label: 'Lobby default zoom on a portrait phone', default: 0.68, min: 0.4, max: 1.5, step: 0.01 })
 /** Seconds without input before the view starts back to its default. */
 export const returnDelay = defineParam({ ...P, id: 'lobby.returnDelay', label: 'Lobby view: seconds before it returns to rest', default: 4, min: 0, max: 60, step: 0.5 })
 /** Seconds the return takes to settle (within 1%). */
