@@ -67,7 +67,7 @@ try {
     await context.close()
   }
   // The loading view on a slow link: at 2 seconds, and at 12 with the second line.
-  for (const view of [views[0], views[1]]) {
+  for (const view of [views[0], views[2]]) {
     const context = await browser.newContext(view), page = await context.newPage()
     const cdp = await context.newCDPSession(page)
     await cdp.send('Network.enable'); await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 150, downloadThroughput: 250 * 1024, uploadThroughput: 64 * 1024 })

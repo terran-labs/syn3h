@@ -97,8 +97,9 @@ export class WordmarkField {
    * back), shader compile included. Measured on Apple GPUs only so far: unmeasured on phones.
    */
   lastBakeMs = 0
-  /** A bake took longer than SLOW_BAKE_MS: callers with a cheaper way to draw should use it. */
+  /** Two bakes took longer than SLOW_BAKE_MS: callers with a cheaper way to draw should use it. */
   slow = false
+  private retried = false
   bakes = 0
   private texture: WebGLTexture | null = null
   private segments: WebGLTexture | null = null
@@ -166,7 +167,10 @@ export class WordmarkField {
     gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4))
     this.density = want; this.bakes++
     this.lastBakeMs = performance.now() - started
-    if (this.lastBakeMs > SLOW_BAKE_MS) this.slow = true
+    // One slow bake can be a busy moment (a page still loading queues its own GPU work ahead
+    // of this one, and the read back waits for all of it): bake once more on a later frame,
+    // and give up on the field only if that is slow too.
+    if (this.lastBakeMs > SLOW_BAKE_MS) { if (this.retried) this.slow = true; else { this.retried = true; this.density = 0 } }
     return true
   }
 
