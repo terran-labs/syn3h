@@ -25,7 +25,7 @@ import { SlidingPanels } from './SlidingPanels'
 import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
-import { LONG_LEADER, placeLabels } from './galaxy/labels'
+import { placeLabels } from './galaxy/labels'
 import { lobbyLook } from '../world/lobbyLook'
 import { LobbySettings } from './LobbySettings'
 import { Inspector } from './inspector/Inspector'
@@ -96,6 +96,8 @@ export function plateTint(recipeId: string): string {
   const hex = (v: number) => Math.round(Math.min(1, v) * 255).toString(16).padStart(2, '0')
   return `#${hex(r)}${hex(g)}${hex(b)}`
 }
+/** How long a planet label's side must stay blocked before it moves, and its cross-fade, in ms. */
+const LABEL_HOLD = 300, LABEL_FADE = 150
 /** Must match the short landscape block in shell.css. */
 const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
 const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="about">About</button>`
@@ -1139,14 +1141,13 @@ export class Shell implements System {
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label s3-plate'; chip.dataset.world = world.id
       // The shared label plate (label-plate.css): the world's name, its biome in small lower
       // case, then how many are online, and a leader to the planet's limb.
-      chip.innerHTML = '<span class="s3-leader" aria-hidden="true" hidden></span><strong></strong><small class="s3-plate-quiet galaxy-biome"></small>'
+      chip.innerHTML = '<strong></strong><small class="s3-plate-quiet galaxy-biome"></small>'
       const text = planetLabelText(world)
       chip.querySelector('strong')!.textContent = text.name; chip.querySelector('small')!.textContent = text.biome
       // Colour is identity: each planet's bar and leader in a colour of its own world.
       if (!world.forming) {
         const tint = plateTint(world.recipe ?? world.id.split('~')[0])
-        // The leader sets its own default tint (label-plate.css), so it is given this one too.
-        chip.style.setProperty('--plate-tint', tint); (chip.firstElementChild as HTMLElement).style.setProperty('--plate-tint', tint)
+        chip.style.setProperty('--plate-tint', tint)
       }
       if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; chip.append(count) }
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
@@ -1225,11 +1226,29 @@ export class Shell implements System {
         }
         if (chosen) for (const place of places) if (place.id !== chosen) chips.get(place.id)!.classList.add('is-crowded')
         for (const place of places) chips.get(place.id)!.hidden = !place.visible
+        const now = performance.now()
         for (const spot of spots) {
-          const chip = chips.get(spot.id)!; this.labelSpots.set(spot.id, spot.spot)
+          const chip = chips.get(spot.id)!, place = places.find(p => p.id === spot.id)
           chip.classList.toggle('is-crowded', spot.crowded)
-          const place = places.find(p => p.id === spot.id), size = this.labelSizes.get(spot.id)
-          if (place && size) this.placeChip(chip, spot.x, spot.y, size, place)
+          if (!place) continue
+          // A label keeps its side until that side has been blocked for a moment, then moves
+          // there by a short cross-fade: it never slides, and a turning view does not make it hop.
+          const side = this.labelSide.get(spot.id)
+          if (!side || spot.crowded || side.spot < 0 || side.spot === spot.spot) {
+            if (!side?.fading) this.labelSide.set(spot.id, { spot: spot.spot, dx: spot.x - place.x, dy: spot.y - place.y })
+            this.labelSpots.set(spot.id, spot.spot)
+            if (!side?.fading) { this.placeChip(chip, spot.x, spot.y); continue }
+          } else if (!side.fading) {
+            if (side.wants !== spot.spot) { side.wants = spot.spot; side.since = now }
+            if (now - (side.since ?? now) >= LABEL_HOLD) {
+              side.fading = true; chip.classList.add('is-swapping')
+              setTimeout(() => { this.labelSide.delete(spot.id); chip.classList.remove('is-swapping') }, LABEL_FADE)
+            }
+          }
+          // Held on its side (or fading out from it): it follows its world from there, and the
+          // layout tries that side first again next frame.
+          this.labelSpots.set(spot.id, side.spot)
+          this.placeChip(chip, place.x + side.dx, place.y + side.dy)
         }
       },
     })
@@ -1241,27 +1260,20 @@ export class Shell implements System {
     this.galaxyFor(this.panels.active || 'index')
   }
   /**
-   * Move a planet label and its leader. Called every frame, so it writes only what moved by
+   * Move a planet label. Called every frame, so it writes only what moved by
    * more than half a pixel and reads nothing from the page. x is the label's centre, y its top.
    */
-  private placeChip(chip: HTMLButtonElement, x: number, y: number, size: { width: number; height: number }, planet: { x: number; y: number; radius: number }): void {
-    const last = this.chipDrawn.get(chip) ?? { x: NaN, y: NaN, sx: NaN, sy: NaN, length: -1, angle: 0 }
+  private placeChip(chip: HTMLButtonElement, x: number, y: number): void {
+    const last = this.chipDrawn.get(chip) ?? { x: NaN, y: NaN }
     this.chipDrawn.set(chip, last)
     if (!(Math.abs(x - last.x) <= .5 && Math.abs(y - last.y) <= .5)) { last.x = x; last.y = y; chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` }
-    // The leader runs from the point of the plate nearest the planet to the planet's limb.
-    const left = x - size.width / 2, nx = Math.min(left + size.width, Math.max(left, planet.x)), ny = Math.min(y + size.height, Math.max(y, planet.y))
-    const dx = nx - planet.x, dy = ny - planet.y, reach = Math.hypot(dx, dy), length = reach - planet.radius
-    const leader = chip.firstElementChild as HTMLElement
-    // The layout keeps leaders to 40 px, or LONG_LEADER on its last rung (labels.ts); none when the plate touches the planet.
-    if (!(length > 1.5 && length <= LONG_LEADER + 4)) { if (!leader.hidden) leader.hidden = true; last.length = -1; return }
-    const sx = nx - left, sy = ny - y, angle = Math.atan2(-dy, -dx)
-    if (leader.hidden) leader.hidden = false
-    if (Math.abs(sx - last.sx) <= .5 && Math.abs(sy - last.sy) <= .5 && Math.abs(length - last.length) <= .5 && Math.abs(angle - last.angle) <= .01) return
-    last.sx = sx; last.sy = sy; last.length = length; last.angle = angle
-    leader.style.width = `${length.toFixed(1)}px`
-    leader.style.transform = `translate(${sx.toFixed(1)}px,${sy.toFixed(1)}px) rotate(${angle.toFixed(3)}rad)`
   }
-  private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number; sx: number; sy: number; length: number; angle: number }>()
+  /**
+   * Each planet label's side: the spot it shows at and its offset from its world. `wants` and
+   * `since` record a different side the layout has been asking for, and since when.
+   */
+  private readonly labelSide = new Map<string, { spot: number; dx: number; dy: number; wants?: number; since?: number; fading?: boolean }>()
+  private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
   /** The labels have fallen back to names only (no biome line) for this window size. */
   private namesOnly = false
   /** The galaxy's worlds by id, for their label text. */

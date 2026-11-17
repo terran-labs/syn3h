@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { placeLabels, type LabelPlace } from '../../src/ui/galaxy/labels'
+import { placeLabels, type LabelPlace, ADJACENT } from '../../src/ui/galaxy/labels'
 
 const size = { width: 80, height: 20 }
 const sizes = (ids: string[]) => new Map(ids.map(id => [id, size]))
@@ -36,15 +36,15 @@ describe('galaxy labels', () => {
     expect(spot.spot).toBe(2)
   })
   // Bug it catches: on a phone, a label clamped to the screen edge covered its own world, or
-  // sat far from it with no leader.
-  it('keeps every label beside its own world: off every disc, leader at most 40 px', () => {
+  // drifted away from it; with nothing drawn between them, only nearness says whose it is.
+  it('keeps every label at touching distance from its own world, off every disc', () => {
     const places: LabelPlace[] = [{ id: 'a', x: 20, y: 300, radius: 18, visible: true }, { id: 'b', x: 200, y: 670, radius: 12, visible: true }, { id: 'c', x: 300, y: 300, radius: 14, visible: true }]
     const sun: LabelPlace = { id: 'sun', x: 300, y: 340, radius: 20, visible: true }
     for (const spot of placeLabels(places, sizes(['a', 'b', 'c']), bounds, { avoid: [sun] }).filter(s => !s.crowded)) {
       const p = places.find(q => q.id === spot.id)!, box = { left: spot.x - size.width / 2, top: spot.y, right: spot.x + size.width / 2, bottom: spot.y + size.height }
       for (const disc of [...places, sun]) expect(over(spot, disc)).toBe(false)
       const nx = Math.min(box.right, Math.max(box.left, p.x)), ny = Math.min(box.bottom, Math.max(box.top, p.y))
-      expect(Math.hypot(nx - p.x, ny - p.y) - p.radius).toBeLessThanOrEqual(40)
+      expect(Math.hypot(nx - p.x, ny - p.y) - p.radius).toBeLessThanOrEqual(ADJACENT)
     }
   })
   it('skips worlds that are not visible', () => {
