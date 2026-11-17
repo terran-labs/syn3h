@@ -75,7 +75,7 @@ try {
     await page.goto(`${base}?room=rel-slow-${Date.now()}`, { waitUntil: 'commit' })
     for (const at of [2, 12]) {
       await page.waitForTimeout(Math.max(0, at * 1000 - (Date.now() - started)))
-      const state = await page.evaluate(() => ({ boot: document.documentElement.dataset.boot, line: document.querySelector('.boot-status')?.textContent, second: document.querySelector('.boot-still')?.textContent, shown: document.querySelector('.boot-still')?.hasAttribute('data-shown'), live: document.querySelector('.syn3h-loading .loading-phase')?.textContent ?? null, wordmark: !!document.querySelector('.boot-veil svg.boot-wordmark') }))
+      const state = await page.evaluate(() => ({ boot: document.documentElement.dataset.boot, line: document.querySelector('.boot-status')?.textContent, second: document.querySelector('.boot-still')?.textContent, shown: document.documentElement.hasAttribute('data-boot-late'), live: document.querySelector('.syn3h-loading .loading-phase')?.textContent ?? null, wordmark: !!document.querySelector('.boot-veil svg.boot-wordmark') }))
       console.log(view.name, `loading at ${at}s`, JSON.stringify(state))
       await shot(page, `${view.name}-loading-${at}s`)
     }
