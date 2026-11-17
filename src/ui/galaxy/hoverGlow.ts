@@ -76,18 +76,19 @@ export function glowColour(land: number, sea: number, kind: { forming?: boolean;
  */
 export const GLOW_GLSL = `
 uniform int uGlowIndex; uniform vec4 uGlow; uniform vec3 uGlowColour; uniform float uGlowTime;
-vec4 planetGlow(vec3 ray, float nearest, int found) {
-  if (uGlowIndex < 0 || uGlow.x <= 0.001) return vec4(0.0);
-  vec4 w = uWorld[uGlowIndex];
+// The aura round world \`index\` at this pixel, before its colour and strength. Shared by the
+// hover glow and the lobby's resting pulses (idlePulse.ts), so the two are one effect.
+float glowAura(int index, vec3 ray, float nearest, int found, float steady, float speed) {
+  vec4 w = uWorld[index];
   vec3 oc = uEye - w.xyz; float along = -dot(oc, ray);
-  if (along <= 0.0 || (found >= 0 && found != uGlowIndex && nearest < along)) return vec4(0.0);
+  if (along <= 0.0 || (found >= 0 && found != index && nearest < along)) return 0.0;
   vec3 off = oc + ray * along;                                   // from the centre to the ray's closest pass
   float miss = length(off) - w.w;
-  if (miss <= 0.0 || miss > w.w * 1.1) return vec4(0.0);
+  if (miss <= 0.0 || miss > w.w * 1.1) return 0.0;
   // Round the limb, in screen terms, so the tongues stay put as the world turns.
-  float angle = atan(dot(off, uUp), dot(off, uRight)), steady = uGlow.z;
+  float angle = atan(dot(off, uUp), dot(off, uRight));
   // Its own clock, so it dances even while the orbits are held still.
-  float t = uGlowTime * uGlow.y * (1.0 - steady);
+  float t = uGlowTime * speed * (1.0 - steady);
   vec2 round = vec2(cos(angle), sin(angle));
   // Tongues of light: two layers of noise flowing round the limb at different speeds.
   float tongues = noise(vec3(round * 2.3, t * 0.9)) * 0.62 + noise(vec3(round * 5.5 + 7.0, t * 1.8)) * 0.38;
@@ -95,6 +96,9 @@ vec4 planetGlow(vec3 ray, float nearest, int found) {
   float reach = w.w * (0.14 + 0.4 * tongues);
   float flicker = 1.0 + 0.18 * sin(t * 6.0 + angle * 5.0) * (1.0 - steady);
   // Gone well before the edge of the search, so that edge never shows as a ring.
-  float aura = exp(-miss / reach) * smoothstep(0.0, w.w * 0.02, miss) * (1.0 - smoothstep(w.w * 0.55, w.w * 1.05, miss)) * (0.5 + tongues) * flicker;
-  return vec4(uGlowColour, aura * uGlow.x * uGlow.w);
+  return exp(-miss / reach) * smoothstep(0.0, w.w * 0.02, miss) * (1.0 - smoothstep(w.w * 0.55, w.w * 1.05, miss)) * (0.5 + tongues) * flicker;
+}
+vec4 planetGlow(vec3 ray, float nearest, int found) {
+  if (uGlowIndex < 0 || uGlow.x <= 0.001) return vec4(0.0);
+  return vec4(uGlowColour, glowAura(uGlowIndex, ray, nearest, found, uGlow.z, uGlow.y) * uGlow.x * uGlow.w);
 }`

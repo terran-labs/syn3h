@@ -1250,6 +1250,12 @@ export class Shell implements System {
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),
       // A planet pointed at (hovered, or a finger on it) shows its label, faded or not.
       onPoint: id => { for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
+      // The lobby at rest: a planet breathing its glow lifts its caption the same way a hover does,
+      // by the same amount at its peak share (shell.css --caption-pulse).
+      onRest: pulses => worlds.forEach((world, i) => {
+        const chip = chips.get(world.id), value = (Math.round((pulses[i] ?? 0) * 50) / 50).toFixed(2)
+        if (chip && chip.style.getPropertyValue('--caption-pulse') !== value) chip.style.setProperty('--caption-pulse', value)
+      }),
       onArrive: chosen => {
         const id = chosen.split('~')[0]
         if (id === 'custom') {
