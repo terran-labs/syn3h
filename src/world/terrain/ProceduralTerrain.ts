@@ -20,6 +20,7 @@ import { waterRiverMaxSpeed, waterSeaFrozen } from '../water/params'
 import { type TerrainData, generateTerrain } from './generate'
 import { type SliceStep, drain, runSliced } from '../../core/sliced'
 import type { TerrainSettings } from './settings'
+import { requestTerrain } from './terrainWorkerClient'
 import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
 import { rimRoadRadius } from './roads'
@@ -345,22 +346,18 @@ export class ProceduralTerrain implements Terrain {
     }
     const worker = this.worker
     if (!worker) return Promise.resolve()
-    const job = new Promise<void>(resolve => {
-      const done = (event: MessageEvent<{ key: string; data?: TerrainData; seam?: number; ms?: number; error?: string }>) => {
-        if (event.data.key !== key) return
-        worker.removeEventListener('message', done); worker.removeEventListener('error', failed)
-        this.preparing.delete(key)
-        if (event.data.data) {
-          // Two worlds at most: the one being entered and perhaps the room's own.
-          if (this.prepared.size >= 2) this.prepared.delete(this.prepared.keys().next().value!)
-          this.prepared.set(key, { data: event.data.data, seam: event.data.seam ?? 0, ms: event.data.ms ?? 0 })
-        } else console.warn('Terrain worker failed; generating on the main thread.', event.data.error)
-        resolve()
-      }
-      // A worker that cannot start is not used again: every rebuild then generates here.
-      const failed = () => { worker.removeEventListener('message', done); worker.removeEventListener('error', failed); this.preparing.delete(key); this.worker = null; resolve() }
-      worker.addEventListener('message', done); worker.addEventListener('error', failed)
-      worker.postMessage({ key, seed: seed | 0, settings })
+    // Any failure leaves the world to be generated on the main thread (rebuildSteps); a worker
+    // that could not run or went silent is not used again.
+    const job = requestTerrain(worker, key, seed, settings).then(result => {
+      this.preparing.delete(key)
+      if ('data' in result) {
+        // Two worlds at most: the one being entered and perhaps the room's own.
+        if (this.prepared.size >= 2) this.prepared.delete(this.prepared.keys().next().value!)
+        this.prepared.set(key, result)
+      } else if ('broken' in result) {
+        console.warn('Terrain worker unavailable; generating on the main thread.', result.broken)
+        if (this.worker === worker) { worker.terminate(); this.worker = null }
+      } else console.warn('Terrain worker failed; generating on the main thread.', result.failed)
     })
     this.preparing.set(key, job)
     return job
