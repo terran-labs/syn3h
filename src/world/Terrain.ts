@@ -87,6 +87,8 @@ export interface Terrain {
    * none. Vehicles use it for buoyancy.
    */
   liquidHeightAt?(x: number, z: number): number
+  /** Vertical speed of the liquid surface (its waves) at (x, z), m/s; 0 where it is still. */
+  liquidVerticalSpeedAt?(x: number, z: number): number
   /** Horizontal water velocity in metres per second; writes into out. */
   liquidFlowAt?(x: number, z: number, out: { x: number; z: number }): { x: number; z: number }
   /**

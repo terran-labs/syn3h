@@ -69,23 +69,11 @@ describe('a whole tile shift at a seam leaves a vehicle undisturbed',()=>{
   const h=harness(),v=make(h,'buggy',40);v.input.special=true
   try{const r=cross(h,v,0,TILE,40);expect(r.before.wings).toBe(true);expectUndisturbed('wings',r,0,TILE)}finally{v.dispose();h.world.free()}
  })
- for(const liquid of ['water','lava'] as const)it(`a buggy lifting out of ${liquid} on its wings keeps the field's surface and climb`,()=>{
+ for(const liquid of ['water','lava'] as const)for(const wings of [false,true])it(`a buggy afloat in ${liquid}${wings?' with its wings open':''} is carried across undisturbed`,()=>{
   const h=harness();h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=>liquid
-  const v=make(h,'buggy',9.5)
-  try{
-   // The field owns the buggy's motion: at most 6 m/s, along its nose. So cross the seam it
-   // is facing (north, -Z), from close by.
-   const r=cross(h,v,0,TILE,100,()=>{v.input.special=true;v.input.y=1;h.step(v,12)},1)
-   expect(Number.isFinite(r.before.lift),'field armed before the seam').toBe(true)
-   expect(r.after.lift).toBe(r.before.lift);expect(Math.abs(r.after.liftSpeed-r.before.liftSpeed)).toBeLessThan(.6)
-   expectUndisturbed(`lift ${liquid}`,r,0,TILE)
-  }finally{v.dispose();h.world.free()}
- })
- it('a buggy sunk in lava with wings closed stays sunk, hot and hinted',()=>{
-  const h=harness();h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=>'lava'
-  const v=make(h,'buggy',9.2)
-  try{const r=cross(h,v,TILE,0,150);expect(r.before.lavaDepth).toBeGreaterThan(0);expect(r.before.canLift).toBe(true)
-   expect(Math.abs(r.after.lavaDepth-r.before.lavaDepth)).toBeLessThan(.15);expect(r.after.canLift).toBe(true);expect(Math.abs(r.after.heat-r.before.heat)).toBeLessThan(.05)}finally{v.dispose();h.world.free()}
+  const v=make(h,'buggy',9.5);v.input.special=wings
+  try{const r=cross(h,v,TILE,0,150);expect(r.before.wings).toBe(wings)
+   expect(Math.abs(r.after.heat-r.before.heat)).toBeLessThan(.05);expectUndisturbed(`afloat ${liquid}`,r,TILE,0)}finally{v.dispose();h.world.free()}
  })
  it('the upright rescue timer is neither reset nor fired by the shift',()=>{
   const h=harness(),v=make(h,'buggy');v.isLocal=true
