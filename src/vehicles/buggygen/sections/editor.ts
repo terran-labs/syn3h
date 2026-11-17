@@ -57,6 +57,8 @@ export function clampHandles(s: Partial<Handles>): Handles {
 }
 
 const AXLE = 1.24
+/** Highest the deck may stand ahead of the cockpit: the driver's eye (0.8 m) less a margin for the view. */
+const SIGHT = .725
 const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
 
 /** The design these handles describe. */
@@ -86,12 +88,19 @@ export function applyHandles(h: Handles, base: { hull: HullKeys; features: Featu
   per('valleyX', x => x * w)
   per('valleyY', (x, k, z) => up(x, k, lift(z) + h.fender * .3))
   per('crownY', (x, k, z) => up(x, k, lift(z) + h.crown))
+  // The driver's sightline (PATTERN.md rule 3): the deck ahead of the cockpit stays below
+  // SIGHT whatever the height handles say, so a tall body grows at the sides and rear only.
+  zs.forEach((z, k) => {
+    if (z < -1.5 || z > -.2) return
+    values.crownY[k] = Math.min(values.crownY[k], SIGHT); values.valleyY[k] = Math.min(values.valleyY[k], SIGHT)
+    values.widestY[k] = Math.min(values.widestY[k], SIGHT - .06)
+  })
   // Keep the named points in order up the side, whatever the handles did.
   zs.forEach((_, k) => {
-    values.widestY[k] = Math.max(values.widestY[k], values.floorY[k] + .03)
-    values.shoulderY[k] = Math.max(values.shoulderY[k], values.widestY[k] + .02)
-    values.valleyY[k] = Math.max(values.valleyY[k], values.widestY[k] + .01)
-    values.crownY[k] = Math.max(values.crownY[k], values.widestY[k] + .01)
+    values.widestY[k] = Math.max(values.widestY[k], values.floorY[k] + .01)
+    values.shoulderY[k] = Math.max(values.shoulderY[k], values.widestY[k] + .01)
+    values.valleyY[k] = Math.max(values.valleyY[k], values.floorY[k] + .02)
+    values.crownY[k] = Math.max(values.crownY[k], values.floorY[k] + .02)
   })
   const a0 = base.hull.arches ?? { front: 0, rear: 0, flank: 0, frontZ: -AXLE, rearZ: AXLE, flankZ: .15, length: .5, flankLength: .45 }
   const arches: Arches = { ...a0, front: a0.front + h.archFront, rear: a0.rear + h.archRear, flank: a0.flank + h.flank }

@@ -32,6 +32,11 @@ export function problems(h: Handles): string[] {
   if (eye < .25) out.push(`eye ${eye.toFixed(3)} m`)
   if (tyre) out.push(`${tyre} points in a tyre`)
   for (const [x, y, z] of TOPS) if (!q.contains(x, y, z)) out.push(`shock top ${z > 0 ? 'rear' : 'front'} outside`)
+  // The driver sees out ahead (PATTERN.md rule 3): the deck in front of the cockpit, within the
+  // view's width, stays at least 6.5 cm below the eye. The fitted buggy clears it by about 7.5 cm.
+  let deckAhead = -Infinity
+  for (let z = d.features.cockpit.z - d.features.cockpit.halfLength - .05; z > -1.3; z -= .05) for (const x of [0, .15, .3]) deckAhead = Math.max(deckAhead, q.top(x, z))
+  if (deckAhead > EYE[1] - .065) out.push(`deck ahead ${deckAhead.toFixed(2)} m blocks the view`)
   // The parts' duct lens must find the nose surface along its axis.
   const L = DUCT_LAMP; if (!q.surface(L.centre, L.axis, .3)) out.push('duct lens off the nose')
   // Every section outline is simple (no fold).

@@ -139,7 +139,15 @@ export function buildLoft(d: LoftDesign, detail: 0 | 1 | 2): BodyPiece[] {
       const t = i / m * Math.PI * 2, p: V3 = [D.c[0] + (D.u[0] * ductA * Math.cos(t) + D.w[0] * ductB * Math.sin(t)) * scale, D.c[1] + (D.u[1] * ductA * Math.cos(t) + D.w[1] * ductB * Math.sin(t)) * scale, D.c[2] + (D.u[2] * ductA * Math.cos(t) + D.w[2] * ductB * Math.sin(t)) * scale]
       return p
     })
-    const lip = ring(1).map(p => new THREE.Vector3(...(q.surface(p, D.n, .3) ?? p)))
+    // The bezel is planar: fit a plane (offset along the axis, tilting across it) through
+    // where the rim meets the nose, as the parts seat their lamps, so a nose that has moved
+    // under the fixed lens gives a tilted clean ring rather than a ragged one.
+    const rimPts = ring(1), offs = rimPts.map(p => { const hit = q.surface(p, D.n, .3); return hit ? dot([hit[0] - p[0], hit[1] - p[1], hit[2] - p[2]], D.n) : NaN })
+    const ok = offs.map((o, i) => [o, Math.cos(i / m * Math.PI * 2), Math.sin(i / m * Math.PI * 2)]).filter(([o]) => Number.isFinite(o))
+    const mean = ok.reduce((t, [o]) => t + o, 0) / Math.max(ok.length, 1)
+    const tc = ok.reduce((t, [o, cs]) => t + (o - mean) * cs, 0) / Math.max(ok.reduce((t, [, cs]) => t + cs * cs, 0), 1e-6)
+    const ts = ok.reduce((t, [o, , sn]) => t + (o - mean) * sn, 0) / Math.max(ok.reduce((t, [, , sn]) => t + sn * sn, 0), 1e-6)
+    const lip = rimPts.map((p, i) => { const t = i / m * Math.PI * 2, o = mean + tc * Math.cos(t) + ts * Math.sin(t); return new THREE.Vector3(p[0] + D.n[0] * o, p[1] + D.n[1] * o, p[2] + D.n[2] * o) })
     const floor = ring(.9).map(p => new THREE.Vector3(p[0] - D.n[0] * F.head.depth, p[1] - D.n[1] * F.head.depth, p[2] - D.n[2] * F.head.depth))
     const axis = new THREE.Vector3(...D.n)
     right.push(piece('chrome', sweep(lip, () => axis, F.head.bezel, F.head.bezel * .8, 5, true)))
