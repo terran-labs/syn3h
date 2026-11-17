@@ -1,9 +1,7 @@
-// The gear drum and the Zorb toggle, wired into the real shell (the drum in isolation is
-// tests/ui/gear-selector.mjs). Checks: hidden in the lobby; in play the drum lists the rack
-// with player-facing names; a click picks gear; the hints follow the gear in hand; the Zorb
-// pill shows its key and state and follows both a click and the X key; with the cursor
-// captured the arrow keys drive and never step through gear; on touch the Grapple's extra
-// actions get buttons from the rack and the old duplicates stay hidden.
+// The gear drum and the Zorb row, wired into the real shell. Bugs it catches: gear missing
+// from the drum, a click not picking gear, hints not following the gear in hand, the arrow
+// keys stepping through gear while driving, the Zorb row not following X or a click, and on
+// touch the Grapple's extra actions missing their buttons. Hidden in the lobby.
 //
 //   node tests/ui/gear-wired.mjs      (game on SYN3H_URL)
 import { chromium, webkit, devices } from 'playwright-core'
@@ -13,7 +11,8 @@ const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5198/'
 const out = 'tests/ui/artifacts/gear-wired'
 await mkdir(out, { recursive: true })
 const watch = (page) => { const errors = []; page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) }); return errors }
-const box = (page, selector) => page.evaluate((s) => { const e = document.querySelector(s); if (!e || !e.getClientRects().length) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, r: r.right, b: r.bottom } }, selector)
+// Only what is drawn: the floating drive stick is hidden at the corner until a thumb lands.
+const box = (page, selector) => page.evaluate((s) => { const e = document.querySelector(s); if (!e || !e.getClientRects().length || !e.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, r: r.right, b: r.bottom } }, selector)
 const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.b <= a.y
 
 {
@@ -25,14 +24,19 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     assert.equal(await page.locator('.gear-selector').isVisible(), false, 'no drum in the lobby')
     assert.equal(await page.locator('.hud-accessories [data-id=zorb]').isVisible(), false, 'no Zorb control in the lobby')
-    await page.locator('.galaxy-label.is-current').focus(); await page.keyboard.press('Enter')
-    await page.waitForFunction(() => syn3h.shell.playing && !syn3h.shell.dropping && window.syn3hNet?.gear, null, { timeout: 120000 })
+    // Into play the way the other checks go, then capture the cursor with a click on the view.
+    await page.goto(`${base}?room=gear-wired-${Date.now()}&autoplay=1`)
+    await page.waitForFunction(() => window.syn3h?.shell.playing && !syn3h.shell.dropping && window.syn3hNet?.gear, null, { timeout: 120000 })
+    await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
+    if (await page.locator('.world-inspector').isVisible() && await page.locator('.inspector-toggle').isVisible()) await page.locator('.inspector-toggle').click()
+    await page.mouse.click(720, 300)
     await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas, null, { timeout: 10000 })
     await page.waitForFunction(() => !document.querySelector('.gear-selector').hidden && document.querySelector('.gear-selector').dataset.mode === 'locked')
     // Driving: the drum is display only, the pill is a reminder.
     assert.equal(await page.locator('.gear-selector').getAttribute('data-mode'), 'locked')
     assert.equal(await page.locator('.hud-accessories [data-id=zorb]').isVisible(), true, 'Zorb control shows while driving')
-    assert.match(await page.locator('.hud-accessories [data-id=zorb]').innerText(), /X\s*ZORB\s*OFF/i)
+    assert.match(await page.locator('.hud-accessories [data-id=zorb]').innerText(), /X\s*ZORB/i)
+    assert.equal(await page.locator('.hud-accessories [data-id=zorb]').getAttribute('aria-pressed'), 'false')
     await page.screenshot({ path: `${out}/desktop-driving.png` })
     // The arrow keys drive, never step through gear, and X switches Zorb.
     const before = await page.evaluate(() => syn3hNet.gear.current)
@@ -40,7 +44,6 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     assert.equal(await page.evaluate(() => syn3hNet.gear.current), before, 'arrow keys leave the gear alone while driving')
     await page.keyboard.press('KeyX')
     await page.waitForFunction(() => document.querySelector('.hud-accessories [data-id=zorb]').getAttribute('aria-pressed') === 'true')
-    assert.match(await page.locator('.hud-accessories [data-id=zorb]').innerText(), /ON/i)
     await page.keyboard.press('KeyX')
     await page.waitForFunction(() => document.querySelector('.hud-accessories [data-id=zorb]').getAttribute('aria-pressed') === 'false')
     // Cursor free: names, a click picks, hints follow.
@@ -69,7 +72,7 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     // Nothing the drum or the pill covers: the minimap and the speed readout.
     for (const other of ['.shell-minimap', '.fh-left']) {
       assert.ok(apart(await box(page, '.gs-drum'), await box(page, other)), `the drum clears ${other}`)
-      assert.ok(apart(await box(page, '.zorb-toggle'), await box(page, other)), `the Zorb pill clears ${other}`)
+      assert.ok(apart(await box(page, '.hud-accessories'), await box(page, other)), `the accessories clear ${other}`)
     }
     // A gear picked with the cursor leaves focus on the drum. Driving again: arrows drive.
     await page.keyboard.press('KeyW')
@@ -77,7 +80,7 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     await page.keyboard.press('ArrowDown')
     assert.equal(await page.evaluate(() => syn3hNet.gear.current), 'bungee', 'arrows drive after picking gear')
     assert.deepEqual(errors, [], `page errors: ${errors.join(' | ')}`)
-    console.log('desktop: gear drum and Zorb toggle passed')
+    console.log('desktop: gear drum and Zorb row passed')
   } finally { await browser.close() }
 }
 

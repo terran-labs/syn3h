@@ -528,7 +528,9 @@ the gear lines. On touch, LET OUT (holds V) and LET GO show only while a cord is
 Cues `bungeeLaunch`, `bungeeAttach` and `bungeeRelease` exist in `src/audio/Cues.ts`; the
 Bungee's `cue` hook in `src/net/index.ts` calls `audio.cue(name, at)`.
 
-Check: `node tests/ui/gear.mjs` (Chrome desktop and WebKit iPhone landscape).
+The chip has since given way to the gear drum in the HUD's left column. Check:
+`SYN3H_URL=<game> node tests/ui/gear-wired.mjs` (the drum and the Zorb row, desktop and both
+phone orientations) and `node tests/ui/hud-column.mjs` (the column's layout and accessories).
 
 ## November 15 UX follow-up
 
