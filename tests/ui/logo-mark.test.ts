@@ -157,15 +157,17 @@ describe('LogoMark lifecycle', () => {
     const throwing = { ...fakeCanvas(null), getContext: () => { throw new Error('blocked') } }
     expect(() => new LogoMark(throwing as unknown as HTMLCanvasElement).dispose()).not.toThrow()
   })
-  it('marks the field slow after two bakes over 50 ms, so the lobby keeps the flat vector mark', () => {
+  it('keeps the field after a slow bake: time is measured, never a reason to fall back', () => {
     let now = 0
-    vi.spyOn(performance, 'now').mockImplementation(() => (now += 60))
+    vi.spyOn(performance, 'now').mockImplementation(() => (now += 400))
     const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 50 })
     renderer.draw(5, { x: 100, y: 100, width: 426, height: 100 })
-    // One slow bake may be a busy moment: it bakes again before giving up.
-    expect(renderer.distanceField!.slow).toBe(false)
+    const field = renderer.distanceField!
+    expect(field.lastBakeMs).toBeGreaterThan(50)
+    expect(field.ok).toBe(true); expect(field.density).toBeGreaterThan(0); expect(field.bakes).toBe(1)
+    // No second bake for the same size: one slow bake is the whole cost.
     renderer.draw(6, { x: 100, y: 100, width: 426, height: 100 })
-    expect(renderer.distanceField!.slow).toBe(true)
+    expect(field.bakes).toBe(1)
     vi.restoreAllMocks()
   })
   it('hosted in another context, puts back the state it found', () => {

@@ -15,6 +15,9 @@ import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import { placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement } from '../brand/wordmarkScene'
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
+import { startupTiming } from '../../core/diagnostics'
+/** Why the lobby showed the flat wordmark instead of the name in the scene, once, for the diagnostics. */
+function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmarkFallback) { startupTiming.wordmarkFallback = reason; console.info(`Syn3h: flat lobby wordmark: ${reason}`) } }
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
 import { introMode, LEAVING_SECONDS, leavingMark, openingPace, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
@@ -1002,11 +1005,14 @@ export class Galaxy {
     canvas.addEventListener('webglcontextlost', event => {
       if (this.canvas !== canvas || this.gl !== gl) return
       event.preventDefault(); cancelAnimationFrame(this.frame); this.options.onLogo?.(false); this.markOverlay?.hide()
+      // Until the context comes back (then the name in the scene returns with it), the page's own SVG mark shows.
+      startupTiming.wordmarkFallback = 'the lobby WebGL2 context was lost'
     }, options)
     canvas.addEventListener('webglcontextrestored', () => {
       if (!this.active || this.canvas !== canvas || this.gl !== gl) return
       const selected = this.options.worlds[this.chosen]?.id
       this.release(); this.acquire()
+      if (startupTiming.wordmarkFallback === 'the lobby WebGL2 context was lost') startupTiming.wordmarkFallback = undefined
       if (selected) this.choose(selected)
     }, options)
     canvas.addEventListener('pointerdown', event => this.down(event), options)
@@ -1394,10 +1400,13 @@ export class Galaxy {
     const mode = placementOf(wordmarkPlacement.value), layout = this.options.logo?.()
     const none = { mode: 0, placement: null, pixelsPerUnit: 0, opacity: 0, moving: false }
     if (mode !== this.markMode) { this.markMode = mode; this.markStart = null; this.markRig.pose = null; this.wake = 2 }
-    // In space needs exact distances and a bake this device can afford; otherwise the flat
-    // mark, which is the vector overlay and never needs the field, stands in.
+    // The name in space needs only the field's shader to have built. Without it (the device's
+    // WebGL2 cannot compile or link it) the flat vector mark stands in, and the reason is kept
+    // in the startup diagnostics. Neither time nor precision decides this: an 8-bit field
+    // draws the name as well (wordmarkField.ts), and a slow bake is a one-off cost.
     const field = this.logo?.distanceField
-    if (mode <= 0 || !field?.ok || !field.precise || field.slow || !layout || !this.canvas) return none
+    if (mode > 0 && this.canvas && !field?.ok) noteWordmarkFallback(!this.logo ? 'the lobby logo could not start (WebGL2 shader failed)' : 'the wordmark field shader failed to build')
+    if (mode <= 0 || !field?.ok || !layout || !this.canvas) return none
     const goal = { yaw: this.yaw, pitch: this.pitch, reach: this.reach, target: [...this.target] as [number, number, number] }
     const held = still || this.reduced.matches
     const rigMoving = this.markRig.step(goal, elapsed, held)
