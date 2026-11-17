@@ -1270,7 +1270,9 @@ export class Galaxy {
     // Drawn, picked and labelled where it is shown, so a tap lands on what is seen.
     // Each also leaves a short fading trail, from where it was TRAIL_SECONDS ago (uTrail).
     const spiral = (p: readonly number[], f: number): [number, number, number] => {
-      const turn = (1 - Math.min(1, f)) * 2.4, c = Math.cos(turn), sn = Math.sin(turn)
+      // Turned back against the orbits' own way, so the fling winds out the same way they run:
+      // clockwise on screen from above (as the orbits, measured), carrying straight on into the drift.
+      const turn = -(1 - Math.min(1, f)) * 2.4, c = Math.cos(turn), sn = Math.sin(turn)
       return [(p[0] * c - p[2] * sn) * f, p[1] * f, (p[0] * sn + p[2] * c) * f]
     }
     const trails: number[] = []

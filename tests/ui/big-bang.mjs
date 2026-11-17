@@ -30,7 +30,7 @@ try {
     await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
     await page.evaluate(() => { window.__pin = setInterval(() => syn3h.params.set('gfx.level', 2), 400) })
     await page.waitForTimeout(5000)
-    const times = [0.15, 0.4, 0.55, 0.75, 1.0, 1.2, 1.4, 1.6, 1.9, 2.3, 3.0, 4.2]
+    const times = [0.15, 0.4, 0.6, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.6, 5.2]
     for (const [i, t] of times.entries()) {
       await page.evaluate(t => { const g = syn3h.shell.galaxy; g.replayOpening(syn3h.params.get('lobby.intro').value); g.openingAt = t; g.wake = 2 }, t)
       await page.waitForTimeout(350); await stamp(page, `bang t = ${t.toFixed(2)} s`)
@@ -43,7 +43,7 @@ try {
       const g = syn3h.shell.galaxy, gl = g.gl, w = g.canvas.width, h = g.canvas.height, px = new Uint8Array(w * h * 4)
       let last = null, worst = 0, at = 0, peak = 0
       g.replayOpening(syn3h.params.get('lobby.intro').value)
-      for (let t = 0; t <= 3.0; t += 1 / 30) {
+      for (let t = 0; t <= 4.6; t += 1 / 30) {
         g.openingAt = t; g.wake = 2; g.last = 0; g.loop(performance.now())
         gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px)
         let sum = 0; for (let i = 0; i < px.length; i += 64) sum += (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255
@@ -62,7 +62,7 @@ try {
         // The galaxy's own frame, waited for to the GPU's finish: median of 40.
         const timed = setup => { const out = []; for (let i = 0; i < 40; i++) { setup(i); g.wake = 2; g.last = 0; gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const t = performance.now(); g.loop(performance.now()); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); out.push(performance.now() - t) } out.sort((a, b) => a - b); return +out[20].toFixed(2) }
         const settledMs = timed(() => { g.opening = null; g.openingAt = null })
-        const bangMs = timed(i => { g.replayOpening(syn3h.params.get('lobby.intro').value); g.openingAt = 0.3 + 2.4 * i / 40 })
+        const bangMs = timed(i => { g.replayOpening(syn3h.params.get("lobby.intro").value); g.openingAt = 0.3 + 4.1 * i / 40 })
         g.opening = null; g.openingAt = null
         // And requestAnimationFrame intervals over 4.2 s of each, in real time.
         const intervals = () => new Promise(done => { const gaps = []; let last = performance.now(); const start = last; const f = now => { gaps.push(now - last); last = now; if (now - start < 4200) requestAnimationFrame(f); else { gaps.sort((a, b) => a - b); done({ median: +gaps[gaps.length >> 1].toFixed(1), p95: +gaps[Math.floor(gaps.length * 0.95)].toFixed(1) }) } }; requestAnimationFrame(f) })
