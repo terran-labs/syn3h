@@ -134,6 +134,24 @@ try {
     check(locked && opened.open && opened.field && opened.lock && typing.y === 0 && sent && !closed.open && closed.lock && driving.y === 1 && !esc.open && esc.mode === mode,
       `cursor captured, interface mode ${mode}: Y opens with the caret and the lock kept, typing does not drive, the line arrives, Y closes, W drives, Escape closes chat only (${JSON.stringify({ locked, opened, typing, sent, closed, driving, esc })})`)
   }
+  // The browser dropping the lock while chat is open (a real Escape does this; headless Chrome
+  // does not on a synthetic key, so drop it the way the browser does): chat closes with it,
+  // driving input is released, the game is not paused.
+  for (const mode of [0, 1]) {
+    await A.page.evaluate((m) => { window.syn3hChat.panel.setOpen(false); window.syn3h.params.set('hud.mode', m) }, mode)
+    await A.page.mouse.click(640, 400); await A.page.waitForTimeout(700)
+    await A.page.keyboard.press('KeyY'); await A.page.waitForTimeout(300)
+    const before = await A.page.evaluate(() => ({ lock: !!document.pointerLockElement, open: window.syn3hChat.panel.isOpen }))
+    await A.page.evaluate(() => document.exitPointerLock()); await A.page.waitForTimeout(500)
+    const after = await A.page.evaluate(() => ({ lock: !!document.pointerLockElement, open: window.syn3hChat.panel.isOpen, typing: window.syn3h.game.input.typing, suspended: window.syn3h.game.input.suspended, paused: document.querySelector('.syn3h-shell').classList.contains('is-paused'), field: document.activeElement?.classList.contains('chat-field') }))
+    // The player can capture the cursor again with the usual click, and drives.
+    await A.page.mouse.click(640, 400); await A.page.waitForTimeout(700)
+    await A.page.keyboard.down('KeyW'); await A.page.waitForTimeout(300)
+    const again = await A.page.evaluate(() => ({ lock: !!document.pointerLockElement, y: window.syn3h.game.input.state.y }))
+    await A.page.keyboard.up('KeyW')
+    check(before.lock && before.open && !after.lock && !after.open && !after.typing && !after.suspended && !after.paused && !after.field && again.lock && again.y === 1,
+      `interface mode ${mode}: the browser dropping the lock closes chat cleanly, not paused, and a click captures again and drives (${JSON.stringify({ before, after, again })})`)
+  }
   await A.page.evaluate(() => window.syn3h.params.set('hud.mode', 0))
 
   // Chat off for the room: the host turns it off, a guest's line is refused and not relayed.
