@@ -743,6 +743,10 @@ export class Shell implements System {
         // A world the welcome set starts its rebuild on a microtask: let it begin.
         await frame()
         while (ground && ground.ready === false) await ground.whenReady?.()
+        // The warm-up frames may stall while shaders compile: draw them only once the dive is
+        // holding still in the world's air, where a stalled frame cannot be seen.
+        const diveBy = performance.now() + 4000
+        while (!dived && performance.now() < diveBy) await frame()
         await this.game.precompile()
       })().catch(error => console.warn('World preparation failed; entering anyway.', error)).finally(() => { prepared = true })
       await until(() => dived, 4000, true)
