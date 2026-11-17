@@ -172,3 +172,65 @@ sizes and positions). None is a fit coefficient without a meaning.
 Build time is dominated by placing the headlight ducts and scoops on the hull
 (`HullQuery.front` and `side` re-sample the outline on every call); caching the outline per
 z would bring it near the cage's.
+
+## Round 3: volume, speed, the editor and new vehicles (16 to 17 November 2026, night)
+
+### Body
+
+- **Wheel arches and flank** (`hull.ts` `Arches`): smooth bulges over each axle (fender
+  and widest point together) and along the flank between the arches. Three amounts, fitted
+  with the keys; positions and lengths are design handles.
+- **Front fenders fitted, no longer hand set** (`fitHull.ts`): reference samples at each
+  slice's outer upper corner are weighted up to 7 times, and the shoulder may sit within a few
+  millimetres of the widest point, so the flared fender tips come out of the fit.
+- **Rear panel** (`design.ts` `rearPanel`): the hull is left open at the tail and closed by a
+  flat rim, a recess under the deck lip and its floor, with the tail lamp bars on the floor.
+- **Headlight ducts on the parts' lens** (`DUCT_LAMP` from `parts/sockets.ts`): the duct is cut
+  along the lens's own axis, under a planar chrome bezel fitted through where the rim meets
+  the nose, and the parts seat their lens inside it.
+- **Creases** fold only away from the nose and tail tips, where columns converge.
+- **Speed**: the skin now writes indexed geometry directly (no weld pass), and outline
+  queries are cached per station.
+
+| version | numbers | gzip B | triangles d0/d1/d2 | build ms | mean / p95 / max mm | IoU mean / min |
+| --- | --- | --- | --- | --- | --- | --- |
+| round 2 | 193 | 5,880 | 7,056 / 1,368 / 384 | 52 | 22.9 / 70.9 / 134.8 | 0.938 / 0.915 |
+| round 3 | 202 | 7,522 | 4,880 / 1,456 / 384 | 7.5 | 20.8 / 60.1 / 134.6 | 0.938 / 0.922 |
+
+The gzip figure now includes the parts' sockets module, imported for the lens frame; the game
+ships that module anyway. The whole buggy on this body is 11,034 triangles in 6 draws at
+near detail. The referee reports 14 inconsistently wound edges (the thin tail bar tips and two
+snapped cells at the nose and tail), out of about 7,000.
+
+### Editor (`editor.ts`, exhibit `src/dev/vehicleLab/exhibits/loftEditor.ts`)
+
+23 handles in six groups: Stance (nose length, tail length, width, floor height), Hull lines
+(deck, fender, crown, belt, tumblehome, nose drop, tail kick, front and rear arches, flanks),
+Cockpit (opening length and width), Scoops (size, lean, position), Lamps (duct size, tail
+lamp length), Wing (height, span, chord). All at 0 builds Level C exactly (checked: 0 mm).
+Share code: 25 characters (a version character and one per handle).
+
+`editorCheck.ts` checks every range end, all at minimum, all at maximum, the presets and 100
+random seeds for: finite geometry; no outline fold; shock tops inside the hull; no body point
+inside a tyre; the eye 0.25 m from the body; the deck ahead of the cockpit at least 6.5 cm
+below the eye; the parts' duct lens finding the nose. Result: 53 of 53 and 100 of 100.
+
+Two couplings make every setting valid rather than shrinking every range: height changes
+scale each section toward its floor when lowering (so the small nose sections cannot fold),
+and the deck ahead of the cockpit is capped at the driver's sightline (0.725 m).
+
+Regeneration per edit: Node 4.4 ms median; desktop Chrome (headless) 4.7 ms median for the
+body, 38 ms median for the whole generated buggy. No phone was measured.
+
+### Presets, and what held them back
+
+Streamliner, rock crawler and wedge are handle values only. They keep the buggy's wheels,
+arms, shocks, lamp lenses, canopy and driver's eye, which held them back:
+
+- **Driver's sightline**: the crawler cannot raise its deck ahead of the cockpit, so it grows
+  tall walls round a low cockpit and reads as a tub.
+- **Lamp lenses**: the parts place the headlight lens (and a small side lamp) at fixed
+  points. A dropped or stretched nose leaves them proud of the body (streamliner, wedge).
+- **Wheelbase and track**: fixed, so the streamliner is long only in its overhangs and the
+  wedge is wide only in its body.
+- **Shock tops**: the body may not narrow past them (width and front arch minimums).
