@@ -15,7 +15,8 @@ for (const engine of [chromium, webkit]) {
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
     assert.equal(await page.evaluate(() => { const g = window.syn3h.shell.galaxy; return g.logo.gl === g.gl && document.querySelectorAll('.galaxy-canvas').length === 1 }), true, 'logo shares the galaxy context')
     const before = await page.evaluate(() => window.syn3h.shell.galaxy.logo.introTime)
-    await page.waitForTimeout(700)
+    // A drawing lobby advances the logo's clock on its next frames; a stopped one never does.
+    await page.waitForFunction(before => window.syn3h.shell.galaxy.logo.introTime > before, before, { timeout: 10000 }).catch(() => {})
     assert.ok(await page.evaluate(() => window.syn3h.shell.galaxy.logo.introTime) > before, 'ordinary lobby animates')
     assert.equal(await page.locator('.shell-logo').evaluate(el => getComputedStyle(el).opacity), '0', 'SVG does not draw over the animation')
     await page.screenshot({ path: `tests/ui/artifacts/logo/${engine.name()}.png` })

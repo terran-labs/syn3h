@@ -34,7 +34,9 @@ try {
       await page.goto(`${base}?room=crowd-${view.name}-${count}-${Date.now()}${count === 'default' ? '' : `&worlds=${count}`}`, { waitUntil: 'load' }); await ready(page)
       await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
       await page.waitForFunction(() => window.syn3h.shell.graphics.planetMaps >= window.syn3h.planets.PLANETS.length, null, { timeout: 60000 })
-      await page.waitForTimeout(1500)
+      // Measured in the settled lobby: the opening over and a few frames drawn since.
+      const drawn = await page.evaluate(() => window.syn3h.shell.galaxy.frames)
+      await page.waitForFunction(drawn => !window.syn3h.shell.galaxy.opening && window.syn3h.shell.galaxy.frames > drawn + 3, drawn, { timeout: 30000 }).catch(() => {})
       const state = await page.evaluate(() => {
         const labels = [...document.querySelectorAll('.galaxy-label')].map(l => { const r = l.getBoundingClientRect(); return { id: l.dataset.world, hidden: l.hidden, crowded: l.classList.contains('is-crowded'), left: r.left, top: r.top, right: r.right, bottom: r.bottom } })
         return { labels, screen: window.syn3h.shell.galaxy.screen.map(s => ({ id: s.id, x: s.x, y: s.y, r: s.radius, visible: s.visible })) }

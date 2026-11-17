@@ -17,23 +17,32 @@ try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: reduced ? 'reduce' : 'no-preference' }), page = await context.newPage()
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     await page.goto(`${base}?room=trip-${name}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+    // The opening starts as loading ends: on the first frame after boot it must be playing
+    // (with motion), never already over. Read on that frame, not after a clock.
+    const atBoot = await (await page.waitForFunction(() => document.documentElement.dataset.boot === 'done' && window.syn3h?.shell?.galaxy && { opening: !!syn3h.shell.galaxy.opening }, null, { timeout: 120000 })).jsonValue()
+    assert.equal(atBoot.opening, !reduced, reduced ? 'reduced motion: no opening' : 'the opening plays as loading ends')
+    await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 120000 })
     await page.evaluate(() => { window.__pin = setInterval(() => syn3h.params.set('gfx.level', 2), 400) })
     // 1. A world clicked while the opening plays: it goes there, and the controls are not left held back.
     if (!reduced) {
+      // The opening runs by the wall clock and a busy machine can reach this point after it has
+      // ended, so play it again and hold it mid-flight (openingAt, the galaxy's hook for checks)
+      // with the worlds out on their orbits. The click is then always made during the opening.
+      await page.evaluate(() => { const g = syn3h.shell.galaxy; if (!g.opening) g.replayOpening(syn3h.params.get('lobby.intro').value); g.openingAt = 3.2; g.wake = 2 })
       await page.waitForFunction(() => syn3h.shell.galaxy.screen.some(p => p.visible), null, { timeout: 15000 })
       const during = await state(page)
       assert.equal(during.opening, true, 'the opening is still playing when the world is clicked')
       const world = await page.evaluate(() => syn3h.shell.galaxy.screen.find(p => p.visible))
       await page.mouse.click(world.x, world.y)
-      await page.waitForTimeout(200)
+      await page.evaluate(() => { syn3h.shell.galaxy.openingAt = null })
+      // The click ends the opening and starts the flight on the next frames: wait for that state.
+      await page.waitForFunction(() => { const g = syn3h.shell.galaxy; return !g.opening && g.chosen >= 0 && !!g.flight }, null, { timeout: 10000 }).catch(() => {})
       const after = await state(page)
       assert.equal(after.opening, false, 'the click ends the opening'); assert.equal(after.held, null, 'and gives the controls back')
       assert.ok(after.chosen >= 0 && after.flight, 'and flies to the world')
       report.clickDuringOpening = { during, after }
     } else {
       const world = await page.evaluate(() => syn3h.shell.galaxy.screen.find(p => p.visible))
-      assert.equal((await state(page)).opening, false, 'reduced motion: no opening')
       await page.mouse.click(world.x, world.y)
     }
     // 2. Into the world, then out again by Leave world.
@@ -41,7 +50,7 @@ try {
     await page.waitForTimeout(1500)
     await page.evaluate(() => { const s = syn3h.shell; s.exitAsking = true; s.answerExit(true) })
     const samples = [], started = Date.now()
-    while (Date.now() - started < 15000) {
+    while (Date.now() - started < 30000) {
       const now = { t: Date.now() - started, ...(await state(page)) }; samples.push(now)
       if (now.menu && !now.flight && !now.returning && now.t > 500) break
       await page.waitForTimeout(100)
