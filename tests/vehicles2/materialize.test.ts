@@ -206,3 +206,40 @@ describe('materialize cloud',()=>{
     m.dispose();v.dispose();h.world.free()
   })
 })
+
+describe('departure',()=>{
+  it('plays round the vehicle without touching its body, then resolves so it can be removed',async()=>{
+    const {h,v,m,cues,step}=bed('buggy')
+    step(30)
+    const before=snapshot(v),at=v.body.translation()
+    let done=false
+    const leaving=m.depart(v,{holdSeconds:.5}).then(()=>{done=true})
+    for(let i=0;i<10;i++){step(1);m.update(FIXED_DT)}
+    expect(m.isMaterializing(v)).toBe(true)
+    expect(v.body.translation().x).toBeCloseTo(at.x,1)
+    for(let i=0;i<30;i++){step(1);m.update(FIXED_DT)}
+    await leaving
+    expect(done).toBe(true)
+    expect(snapshot(v).type).toBe(before.type)
+    expect(v.object.userData.materializing).toBeUndefined()
+    // It ends in the vehicle's light, not with the arrival's release.
+    expect(cues.map(c=>c.cue)).not.toContain('materializeRelease')
+    m.dispose();v.dispose();h.world.free()
+  })
+})
+
+describe('preparing every look ahead',()=>{
+  it('shows hidden parts and both detail levels to the compiler, then restores them',async()=>{
+    const {h,v}=bed('buggy')
+    const hidden=new T.Mesh(new T.BoxGeometry(),new T.MeshBasicMaterial());hidden.visible=false
+    v.object.add(hidden)
+    const distances:number[]=[]
+    ;(v.object.userData.registerVehicleDetail as (fn:(d:number)=>void)=>void)(d=>distances.push(d))
+    const seen:boolean[]=[]
+    await v.prepareLooks(async object=>{seen.push(hidden.visible&&object===v.object)})
+    expect(seen).toEqual([true,true])
+    expect(distances.slice(0,2)).toEqual([0,1e4])
+    expect(hidden.visible).toBe(false)
+    v.dispose();h.world.free()
+  })
+})

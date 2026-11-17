@@ -211,6 +211,8 @@ async function main(): Promise<void> {
       },
       // The sender owns the hold; snapshots carry its motion. This is cosmetic only.
       onRemoteVehicleChanged: vehicle => { void materialize.begin(vehicle, { hold: false }) },
+      // A player or bot who leaves goes in the arrival cloud played in reverse.
+      onRemoteVehicleLeaving: vehicle => materialize.depart(vehicle),
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name: shell.playerName,

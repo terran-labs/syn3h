@@ -98,6 +98,8 @@ interface Hold {
   angvel:T.Vector3
   /** Its volume, ground light, beam and silhouette, while one is free (see LOOKS). */
   look:ArrivalLook|null
+  /** A departure (`depart`): the arrival in reverse, look only, ending with the vehicle gone. */
+  departing:boolean
   done:(()=>void)[]
 }
 
@@ -114,6 +116,8 @@ const CLOUD_LIFE=.6,BURST_LIFE=.9
 const FADE_IN=.2
 /** Luminous white with a light blue tint, linear: the hot part of the cloud. */
 const CLOUD_TINT=new T.Color(.82,.92,1),ARC_TINT=new T.Color(.7,.85,1)
+/** Seconds a departure takes by default. */
+export const DEPART_SECONDS=1
 /** Arrivals that get the full look at once; more at the same moment get only particles. */
 const LOOKS=4
 /**
@@ -230,7 +234,7 @@ export class Materialize implements System {
     let hold=this.find(vehicle)
     if(hold)this.cue('materializeCancel',hold)
     if(!hold){
-      hold={vehicle,type:body.bodyType(),holds:options.hold??true,point:new T.Vector3(),rotation:new T.Quaternion(),elapsed:0,seconds,done:[],owed:0,shown:0,linvel:new T.Vector3(),angvel:new T.Vector3(),look:null}
+      hold={vehicle,type:body.bodyType(),holds:options.hold??true,point:new T.Vector3(),rotation:new T.Quaternion(),elapsed:0,seconds,done:[],owed:0,shown:0,linvel:new T.Vector3(),angvel:new T.Vector3(),look:null,departing:false}
       this.holds.push(hold)
     }
     hold.elapsed=0;hold.seconds=seconds
@@ -251,10 +255,27 @@ export class Materialize implements System {
       vehicle.object.userData.materializing=true
     }
     this.calm=reducedMotion()
+    hold.departing=false
     hold.look??=this.looks.find(l=>!l.active)??null
-    if(hold.look){hold.look.centre.copy(hold.holds?hold.point:vehicle.object.position);hold.look.start(vehicle,reducedMotion())}
+    if(hold.look){hold.look.centre.copy(hold.holds?hold.point:vehicle.object.position);hold.look.start(vehicle,this.calm)}
     const promise=new Promise<void>(resolve=>hold.done.push(resolve))
     this.cue('materializeStart',hold)
+    return promise
+  }
+
+  /**
+   * Play the arrival in reverse round `vehicle` where it is: the ring and shell close in, then
+   * the vehicle turns to light from the top down inside a thinning cloud. Look only: the body is
+   * left alone. Resolves when it is over; remove the vehicle then, inside the cloud's last light
+   * (the look fades on by itself). For a bot sent away and a player who leaves.
+   */
+  depart(vehicle:Vehicle,options:{holdSeconds?:number}={}):Promise<void> {
+    const promise=this.begin(vehicle,{hold:false,holdSeconds:options.holdSeconds??DEPART_SECONDS})
+    const hold=this.find(vehicle)
+    if(hold){
+      hold.departing=true
+      hold.look?.start(vehicle,this.calm,true)
+    }
     return promise
   }
 
@@ -270,7 +291,8 @@ export class Materialize implements System {
       if(!this.alive(hold)){this.finish(hold);continue}
       hold.elapsed+=dt
       // Half a step of tolerance, so a 1 s hold is exactly 50 held steps despite rounding.
-      if(hold.elapsed>=hold.seconds-dt*.5)this.release(hold,true)
+      // A departure ends without the release burst: the caller removes the vehicle in its light.
+      if(hold.elapsed>=hold.seconds-dt*.5)this.release(hold,!hold.departing)
       else if(hold.holds)this.pin(hold)
     }
   }
@@ -293,7 +315,9 @@ export class Materialize implements System {
       hold.owed+=rate*dt*Math.min(1,hold.shown/FADE_IN)
       const centre=hold.holds?hold.point:hold.vehicle.object.position
       this.colorsOf(hold.vehicle)
-      while(hold.owed>=1){hold.owed--;this.puff(centre,false)}
+      // Arriving, the cloud is drawn in; departing, it drifts out, at half the rate.
+      if(hold.departing)hold.owed-=rate*dt*.5*Math.min(1,hold.shown/FADE_IN)
+      while(hold.owed>=1){hold.owed--;this.puff(centre,hold.departing)}
       if(arcs>0&&this.noise()<arcs*dt*30)this.arc(centre)
       if(hold.look){hold.look.centre.copy(centre);this.progress.set(hold.look,hold.seconds>0?Math.min(1,hold.elapsed/hold.seconds):1)}
     }
