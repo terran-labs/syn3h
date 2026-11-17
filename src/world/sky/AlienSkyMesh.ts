@@ -84,10 +84,10 @@ export interface SkyScatterInputs { sunDirection: N; betaR: N; betaM: N; sunE: N
  * GLOW_CAP_DEG of a low sun, the light a cloud or ridge between the eye and the sun would
  * cut. It is the graded sky minus the same sky with the Mie phase held at its value at the
  * cap angle, so it is 0 beyond the cap and fades to 0 as the sun climbs (lowSunGrade).
- * skyMath.forwardGlow is the CPU copy. One definition for the sky shader, which leaves the
- * glow out for the camera the post chain serves, and for the shafts that put it back.
+ * skyMath.forwardGlow is the CPU copy. One definition for the sky shader and for the sun
+ * shafts (src/fx/post/PostChain.ts), which draw their streaks as a share of that glow.
  */
-export function skyScatter(direction: N, s: SkyScatterInputs): { graded: N; glow: N; Fex: N; L0: N; cosTheta: N; grade: N; c: N } {
+export function skyScatter(direction: N, s: SkyScatterInputs, withGlow = true): { graded: N; glow: N; Fex: N; L0: N; cosTheta: N; grade: N; c: N } {
   const pi = float(Math.PI)
   const THREE_OVER_SIXTEENPI = float(0.05968310365946075)
   const ONE_OVER_FOURPI = float(0.07957747154594767)
@@ -128,7 +128,7 @@ export function skyScatter(direction: N, s: SkyScatterInputs): { graded: N; glow
   const graded = sky(mie(cosTheta)).toVar() as N
   // Only at a low sun and only near it: elsewhere the capped sky is the sky.
   const glow = vec3(0.0).toVar() as N
-  If(cosTheta.greaterThan(GLOW_CAP_COS).and(grade.greaterThan(0.0)), () => {
+  if (withGlow) If(cosTheta.greaterThan(GLOW_CAP_COS).and(grade.greaterThan(0.0)), () => {
     glow.assign(max(graded.sub(sky(mie(float(GLOW_CAP_COS)))), vec3(0.0)).mul(lowSunGlow(sunDir.y)))
   })
   return { graded, glow, Fex, L0, cosTheta, grade, c }
@@ -167,17 +167,6 @@ export class AlienSkyMesh extends Mesh {
   cloudLayerVisible = true
   private readonly cloudVisibility = uniform(1).setGroup(renderGroup).onRenderUpdate(() => this.cloudLayerVisible ? 1 : 0)
 
-  /**
-   * Share of the low sun's forward glow (skyScatter's `glow`) that the post chain's sun shafts
-   * draw for `glowCamera` instead of the sky: they add it back through the gaps between
-   * clouds, ridges and vehicles, so those paths stay darker and read as beams. Other cameras
-   * (reflections, the environment capture) always get the whole glow. Set each frame by the
-   * post chain; 0 leaves the sky as it was.
-   */
-  glowShare = 0
-  glowCamera: Camera | null = null
-  private readonly glowHandOff = uniform(0).setGroup(renderGroup).onRenderUpdate(frame =>
-    frame.camera === this.glowCamera ? this.glowShare : 0)
 
   /** Camera-only water attenuation. The shared PMREM proxy uses other cameras. */
   underwaterCamera: Camera | null = null
@@ -204,7 +193,7 @@ export class AlienSkyMesh extends Mesh {
       const sunAngularDiameterCos = float(0.9999566769464484)
 
       const direction = normalize((positionWorld as N).sub(cameraPosition)) as N
-      const scatter = skyScatter(direction, this)
+      const scatter = skyScatter(direction, this, false)
       const { Fex, L0, cosTheta, grade, c } = scatter
 
       const sundisc = clamp(cosTheta.sub(sunAngularDiameterCos).mul(50000.0), 0.0, 1.0).mul(this.showSunDisc)
@@ -215,8 +204,7 @@ export class AlienSkyMesh extends Mesh {
       const night = (this.nightColor as N).mul(nightShape)
         .add((this.twilightColor as N).mul(pow(c, 3.0).mul(exp(max(direction.y, 0.0).mul(-6.0)))))
 
-      // The forward glow the post chain's sun shafts draw instead, for the camera they serve.
-      const graded = scatter.graded.sub(scatter.glow.mul(this.glowHandOff)) as N
+      const graded = scatter.graded as N
       const texColor = graded.add(sundiscColor).add(night).toVar() as N
 
       // Stars: one candidate per cell of a 3D grid over the view direction. Sinless hash so

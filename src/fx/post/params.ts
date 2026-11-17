@@ -25,6 +25,8 @@ export const postShaftLength = defineParam({ id: 'post.shaftLength', label: 'Sun
  * by its distance), as lit haze. 0 leaves occluders dark; open sky always gets it all back.
  */
 export const postShaftHaze = defineParam({ id: 'post.shaftHaze', label: 'Sun shaft haze', group: g, scope: c, default: 0.35, min: 0, max: 1, step: 0.05 })
+/** How strongly the sunburst's bright and dark streaks differ: 0 is the plain glow. */
+export const postShaftContrast = defineParam({ id: 'post.shaftContrast', label: 'Sun ray contrast', group: g, scope: c, default: 1.5, min: 0, max: 2, step: 0.05 })
 /** How far from the sun (screen heights) the gaps and clouds that shape the beams are weighed. */
 export const postShaftReach = defineParam({ id: 'post.shaftReach', label: 'Sun shaft source size', group: g, scope: c, default: 0.05, min: 0.02, max: 0.5, step: 0.01 })
 export const postLowSun = defineParam({ id: 'post.lowSun', label: 'Extra shafts at low sun', group: g, scope: c, default: 0.6, min: 0, max: 3, step: 0.05 })

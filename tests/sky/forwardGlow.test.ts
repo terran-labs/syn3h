@@ -1,6 +1,6 @@
-// The sun shafts draw the low sun's forward glow in place of the sky (AlienSkyMesh.glowShare).
-// Bug this catches: a sky that goes negative, NaN or infinite where it hands that glow off, which
-// shows as a black or flashing hole round the sun at some hour on some planet.
+// The sunburst's dark streaks take away up to the whole of the low sun's forward glow
+// (src/fx/post/PostChain.ts). Bug this catches: a glow that is negative, NaN, infinite or larger
+// than the sky, which shows as a black or flashing hole round the sun at some hour on some planet.
 import { describe, expect, it } from 'vitest'
 import { forwardGlow, skyRadianceBase, sunDirection, type RGB, type SkyParams, type Vec3 } from '../../src/world/sky/skyMath'
 import { SKY_PRESETS } from '../../src/world/sky/presets'
@@ -36,7 +36,7 @@ describe('forward glow hand-off', () => {
             const where = `${name} at ${q / 4}h, channel ${i}`
             expect(Number.isFinite(glow[i]), where).toBe(true)
             expect(glow[i], where).toBeGreaterThanOrEqual(0)
-            // What the sky draws when the shafts take the whole glow.
+            // What is left where a dark streak takes the whole glow.
             expect(sky[i] - glow[i], where).toBeGreaterThanOrEqual(-1e-9)
           }
         }
