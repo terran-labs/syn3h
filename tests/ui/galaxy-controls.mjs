@@ -1,5 +1,6 @@
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
+import { waitForState } from './stateWait.mjs'
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist'] })
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
@@ -24,12 +25,12 @@ try {
     window.__pad.axes = [0.8, -0.8, 0, -0.8]
   })
   // Held until the galaxy has polled the pad and moved (it reads it once a drawn frame), then let go.
-  await page.waitForFunction(after => { const g = window.syn3h.shell.galaxy; return g.yaw > after[0] && g.pitch > after[1] && g.distance < after[2] }, after, { timeout: 10000 }).catch(() => {})
+  await waitForState(page, 'the gamepad stick to turn and zoom the view', after => { const g = window.syn3h.shell.galaxy; return g.yaw > after[0] && g.pitch > after[1] && g.distance < after[2] }, after, 30)
   await page.evaluate(() => { window.__pad.axes = [0, 0, 0, 0] })
   const stick = await view()
   assert.ok(stick[0] > after[0] && stick[1] > after[1] && stick[2] < after[2], 'sticks orbit and zoom')
   await page.evaluate(() => { window.__pad.buttons[15].pressed = true })
-  await page.waitForFunction(() => document.activeElement.classList.contains('galaxy-label'), null, { timeout: 10000 }).catch(() => {})
+  await waitForState(page, 'the D-pad to focus a world', () => document.activeElement.classList.contains('galaxy-label'), undefined, 30)
   assert.equal(await page.evaluate(() => document.activeElement.classList.contains('galaxy-label')), true, 'D-pad focuses a world')
   await page.evaluate(() => { window.__pad.buttons[15].pressed = false; window.syn3h.shell.showPanel('settings') })
   await page.waitForTimeout(600)
