@@ -13,11 +13,14 @@ default, with no score to chase.
 
 **Play it now at [www.syn3h.com](https://www.syn3h.com/).**
 
-![Scenes from the latest Syn3h release: the galaxy lobby, the buggy and volcano, wings in a glide, the jet above the island, and lava at night](https://github.com/terran-labs/syn3h/releases/latest/download/syn3h-showcase.gif)
+<!-- showcase:start (written by tools/showcase.mjs; edit the tool, not this block) -->
 
-The animation shows v26.11.1508 and predates recent vehicle and interface updates. Notes
-and screenshots for each release are on the
+![Scenes from Syn3h v26.11.1608: the galaxy lobby, the buggy and volcano, wings in a glide, the jet above the island, and lava at night](https://github.com/terran-labs/syn3h/releases/download/v26.11.1608/syn3h-showcase.gif)
+
+The animation shows v26.11.1608. Notes and screenshots for each release are on the
 [releases page](https://github.com/terran-labs/syn3h/releases).
+
+<!-- showcase:end -->
 
 ## Find your own expedition
 
