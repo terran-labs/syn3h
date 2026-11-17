@@ -155,7 +155,7 @@ export function fromRest(kind: Kind, basin: Basin, seconds = 40, settle = 3): Ru
 
 /** At rest afloat in deep water (or lava) with waves for `seconds`, after settling. */
 export function afloat(kind: Kind, liquid: Liquid, waves: 'sea' | 'inland' | undefined, seconds = 20): Run {
-  const run = fromRest(kind, { liquid, length: 400, depth: 6, slope: 15, waves }, 0, 4)
+  const run = fromRest(kind, { liquid, length: 400, depth: 6, slope: 15, waves }, 0, 12)
   run.v.input.y = 0
   advance(run, seconds)
   return run

@@ -122,9 +122,9 @@ export const lavaBuoyancy=defineParam({...L,id:'lava.buoyancy',label:'Buggy: buo
 export const lavaPaddle=defineParam({...L,id:'lava.paddle',label:'Buggy: paddle thrust (m/s²)',default:9,min:0,max:30,step:.5})
 export const lavaPorpoise=defineParam({...L,id:'lava.porpoise',label:'Buggy: porpoise (0 to 1)',default:.6,min:0,max:1,step:.05})
 export const lavaGrip=defineParam({...L,id:'lava.grip',label:'Buggy: wheel grip on the bed (0 to 1)',default:.3,min:0,max:1,step:.05})
-export const lavaWaddle=defineParam({...L,id:'lava.waddle',label:'Buggy: waddle (0 to 1)',default:.5,min:0,max:1,step:.05})
+export const lavaWaddle=defineParam({...L,id:'lava.waddle',label:'Buggy: waddle (0 to 1)',default:.65,min:0,max:1,step:.05})
 export const GAIT={lava:.9}
-const lavaHull:HullProfile={buoyancy:2,thickness:1,linear:2,quadratic:.3,heave:6,paddle:9,paddleSpeed:7,porpoise:.6,waddle:.5,gait:GAIT.lava,planing:6,skim:.6,planeLift:0,deep:10}
+const lavaHull:HullProfile={buoyancy:2,thickness:1,linear:2,quadratic:.3,heave:6,paddle:9,paddleSpeed:12,porpoise:.6,waddle:.5,gait:GAIT.lava,planing:6,skim:.6,planeLift:0,deep:10}
 function lavaProfile():HullProfile{
  lavaHull.buoyancy=lavaBuoyancy.value;lavaHull.thickness=lavaThickness.value;lavaHull.paddle=lavaPaddle.value
  lavaHull.porpoise=lavaPorpoise.value;lavaHull.waddle=lavaWaddle.value;lavaHull.gait=GAIT.lava

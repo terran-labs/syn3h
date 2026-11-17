@@ -141,7 +141,7 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
     const vx = v.x - flow.x, vz = v.z - flow.z, vh = Math.hypot(vx, vz)
     const skim = 1 - (1 - p.skim) * Math.min(1, Math.abs(plane))
     const drag = Math.min(0.9 / dt, p.thickness * (p.linear + p.quadratic * vh) * sub * skim)
-    const heave = Math.min(0.9 / dt, p.heave * sub + p.deep * Math.max(0, sub - 0.7) / 0.3)
+    const heave = Math.min(0.9 / dt, p.heave * sub + p.deep * Math.max(0, sub - 0.9) / 0.1)
     f.x = -vx * drag * share
     f.z = -vz * drag * share
     const rise = terrain.liquidVerticalSpeedAt?.(cx, cz) ?? 0
