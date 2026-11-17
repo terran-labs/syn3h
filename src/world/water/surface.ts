@@ -2,7 +2,7 @@
  * One water surface for the sea, the lake, the pools, the rivers and their waterfalls.
  *
  * The same node graph in three modes:
- *  - 'sea'   the shared swells from `seaWaves` move the vertices (the same sum of sines the
+ *  - 'sea'   the shared field's swells (liquidWaves.ts) move the vertices (the same sum of sines the
  *            physics floats on), shrunk in the shallows; rolling foam lines run in to the
  *            coast; whitecaps on the crests when the sea is high.
  *  - 'still' lake and pools: no swell, light wind ripples.
@@ -22,7 +22,7 @@ import {
   abs, attribute, cameraPosition, cameraViewMatrix, color, cos, faceDirection, float, max, mix, modelWorldMatrix,
   mx_noise_float, normalize, positionGeometry, positionLocal, positionWorld, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4, renderGroup,
 } from 'three/tsl'
-import { SEA_COMPONENTS as WAVE_COUNT, seaWaves, waveScale } from './seaWaves'
+import { SEA_COMPONENTS as WAVE_COUNT } from './seaWaves'
 import { rippleField } from './ripples'
 import { waterChop, waterClarity, waterReflection, waterWaveVisual } from './params'
 import { clipmapNodes } from './clipmap'
@@ -48,14 +48,14 @@ export interface WaterSurface {
   /** The sky reflection capture. Mirrored at full strength, not at the scene's subdued fill. */
   setEnvironment(texture: THREE.Texture | null): void
   /**
-   * The waves this surface shows: the shared field for its body (liquidWaves(body) once the
-   * liquid-feel field lands). The sea starts on `seaWaveSource`; lakes, pools and rivers flat.
+   * The waves this surface shows: the shared field for its body, `() => liquidWaves(body)`
+   * (liquidWaves.ts), so what floats and what is drawn are the same surface. Flat until set.
    */
   setWaveSource(source: WaveSource | null): void
 }
 
 /**
- * One body's waves now, in the shape of the liquid-feel field (liquidWaves.ts LiquidWaveField):
+ * One body's waves now, in the shape of liquidWaves.ts LiquidWaveField (which it accepts as is):
  * sines with their current phase (radians) and amplitude (metres, every scaling folded in), and
  * the shoaling numbers. `active` false marks a component the physics does not lift on: it only
  * tilts the light. Called once a frame; the result may be reused by the caller.
@@ -79,24 +79,6 @@ export function shoal(depth: number, f: Pick<WaveField, 'shoalDepth' | 'shoalFlo
   return s(0, lip, depth) * (floor + (1 - floor) * s(0, Math.max(1e-3, f.shoalDepth), depth))
 }
 
-/**
- * The sea as a WaveField from `seaWaves`, for until the liquid-feel field lands: the components
- * the physics lifts on today (lightOnly ones only shade), no floor, no lip.
- */
-const seaField: WaveField & { components: { kx: number; kz: number; amplitude: number; phase: number; active: boolean }[] } = { components: [], shoalDepth: 6 }
-export const seaWaveSource: WaveSource = () => {
-  const set = seaWaves.waves
-  const ph = seaWaves.phasesNow()
-  const on = seaWaves.enabled ? waveScale() : 0
-  for (let i = 0; i < set.components.length; i++) {
-    const c = set.components[i]
-    const o = (seaField.components[i] ??= { kx: 0, kz: 0, amplitude: 0, phase: 0, active: true })
-    o.kx = c.kx; o.kz = c.kz; o.amplitude = c.amplitude * on; o.phase = ph[i] ?? 0; o.active = !c.lightOnly
-  }
-  seaField.components.length = set.components.length
-  seaField.shoalDepth = Math.max(0.5, set.dominantLength * 0.1)
-  return seaField
-}
 
 /**
  * Wind chop: short waves the sea mesh cannot carry as geometry, so they only tilt the light.
@@ -166,7 +148,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   const shoalLip = uniform(1e-3)
   /** The shader's twin of `shoal()`. */
   const shoalNode = (d: THREE.Node<'float'>) => smoothstep(0, shoalLip, d).mul(shoalFloor.add(float(1).sub(shoalFloor).mul(smoothstep(0, shoalDepth, d))))
-  let source: WaveSource | null = mode === 'sea' ? seaWaveSource : null
+  let source: WaveSource | null = null
   /** Total geometric amplitude, for normalising crest height. */
   const ampTotal = uniform(0)
 

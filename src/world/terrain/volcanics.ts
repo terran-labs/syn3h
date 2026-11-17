@@ -29,11 +29,11 @@ import { CHUNK_CELLS } from './mesh'
 import type { HeightSampler } from './sampler'
 import { KIND_VOLCANIC, worldSeaKind } from './settings'
 import { type RiverDrop, riverSpeed } from './lava'
-import { waterRiverMaxSpeed, waterWaves } from '../water/params'
+import { waterRiverMaxSpeed, waterSeaFrozen, waterWaves } from '../water/params'
 import { SEA_GRID } from '../water/seaWaves'
 import { CLIPMAP_LAYOUTS, Clipmap, clipmapReach } from '../water/clipmap'
 import { qualityLevel } from '../../core/quality'
-import { configureLavaWaves, lavaWaveSource } from '../water/lavaWaves'
+import { liquidWaves, type LiquidBody } from '../water/liquidWaves'
 import { buildBedTexture, buildRiverSurface, buildStillSurface, createWaterSurface, configureWaterBlending, waterOpacityNode, type WaterBed } from '../water/surface'
 import { WaterfallMist, fallsFromRivers } from '../water/mist'
 import { createFallMaterial, riverPieces } from '../water/falls'
@@ -84,6 +84,11 @@ function createWaterMaterial(shore: boolean): Liquid {
  * up; lava, which writes depth, goes before that (fx/material.ts).
  */
 export const WATER_RENDER_ORDER = -2
+
+/** The bodies each surface draws the waves of (liquidWaves.ts). */
+const SEA_BODY: LiquidBody = { kind: 'sea', liquid: 'water', frozen: false }
+const INLAND_BODY: LiquidBody = { kind: 'inland', liquid: 'water', frozen: false }
+const LAVA_BODY: LiquidBody = { kind: 'sea', liquid: 'lava', frozen: false }
 
 /** How far past the simulated square the sea is drawn. Beyond the fog in every direction. */
 const SEA_REACH = 24000
@@ -266,9 +271,12 @@ export class Volcanics implements System {
     this.builtSea = seaLevel()
     this.bed = buildBedTexture(data, this.builtSea)
     for (const w of [this.newSea, this.newStill, this.newRiver]) { w.setColours(palette.seaShallow, palette.seaDeep); w.setBed(this.bed) }
-    configureLavaWaves(data.size)
     this.ambient.setBed(this.bed)
-    for (const l of [this.lavaSea, this.lavaStill, this.lavaRiver]) { l.setBed(this.bed); l.setWaveSource(lavaWaveSource) }
+    // Every surface shows the shared field for its body (liquidWaves.ts): what floats and what is
+    // drawn are the same surface. Lava has one field everywhere.
+    for (const l of [this.lavaSea, this.lavaStill, this.lavaRiver]) { l.setBed(this.bed); l.setWaveSource(() => liquidWaves(LAVA_BODY)) }
+    this.newSea.setWaveSource(() => { SEA_BODY.frozen = waterSeaFrozen.value; return liquidWaves(SEA_BODY) })
+    for (const w of [this.newStill, this.newRiver]) w.setWaveSource(() => liquidWaves(INLAND_BODY))
     const seaMaterial = this.seaMaterial()
     // A dry world (the Moon) drains its sea below every valley: draw none of it.
     const useClip = !data.settings.dry && (this.seaIsLava || this.builtNew)
@@ -474,7 +482,7 @@ export class Volcanics implements System {
     this.ambient.on = this.seaIsLava && !this.sampler.data.settings.dry
     const cam = this.camera?.position
     if (cam) windDrift(cam.x, cam.y, cam.z, this.wind)
-    this.ambient.update(dt, level, dim, this.wind, lavaWaveSource())
+    this.ambient.update(dt, level, dim, this.wind, liquidWaves(LAVA_BODY))
   }
 
   private clear(): void {
