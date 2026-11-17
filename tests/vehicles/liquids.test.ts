@@ -7,6 +7,7 @@ import * as THREE from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
 import { params } from '../../shared/params'
 import { applyHull, applyWings, createHullState } from '../../src/vehicles/liquidHull'
+import { waterCoast } from '../../src/vehicles/lava'
 import { fieldOffset, liquidWavesAt, type LiquidBody } from '../../src/world/water/liquidWaves'
 import { setWeatherClock } from '../../src/world/weather/wind'
 import { type Run, type Sample, advance, ashore, coast, dispose, entry, exitTime, fromRest, turnOut, wingAscent } from './liquidScenarios'
@@ -99,6 +100,21 @@ describe('water holds a buggy up only while it works to stay up', () => {
       expect(c.rest!).toBeLessThan(8)
       expect(c.under!).toBeLessThan(8)
       expect(Math.min(...c.run.trace.map((s) => s.up))).toBeGreaterThan(0)
+    } finally { dispose(c.run) }
+  })
+
+  it('entering deep water fast with no throttle, it slows quickly, even once it has gone under', () => {
+    // Coasting drag alone would take ln(20 / 3) / water.coast seconds to slow 20 m/s to 3; allow
+    // 60 per cent more. A coasting buggy that has sunk must keep that drag (the 3.1 s regression
+    // turned it off under water); a sunk buggy on the bed must not (tests/bots/rescue/tow.test.ts).
+    const bound = (1.6 * Math.log(20 / 3)) / waterCoast.value
+    const c = coast('water', 20, 8)
+    try {
+      const t0 = c.run.trace[0].t
+      const slow = c.run.trace.find((s) => s.speed < 3)
+      expect(finite(c.run)).toBe(true)
+      expect(slow).toBeDefined()
+      expect(slow!.t - t0).toBeLessThan(bound)
     } finally { dispose(c.run) }
   })
 
