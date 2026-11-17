@@ -35,11 +35,13 @@ export interface TouchDown {
 /**
  * Which job a new touch gets. The driving hand's side (the left 55% for a right-handed player,
  * the right 55% for a left-handed one) steers; the rest of the game view aims the camera.
- * A touch that starts on a button, a panel, the minimap or between the action buttons does
- * neither, so a finger that starts on a button never aims.
+ * A touch that starts on a button, a panel or between the action buttons does neither, so a
+ * finger that starts on a button never aims. The minimap sits in the driving corner and the
+ * stick may land on it (the owner, 17 November 2026): a touch there drives, but never aims.
  */
 export function touchRole(t: TouchDown): 'drive' | 'aim' | null {
-  if (!t.onGameView || t.onMinimap || t.onActions) return null
+  if (!t.onGameView || t.onActions) return null
   const fromDriveEdge = t.leftHanded ? t.width - t.x : t.x
-  return fromDriveEdge < t.width * STICK_REGION ? 'drive' : 'aim'
+  const role = fromDriveEdge < t.width * STICK_REGION ? 'drive' : 'aim'
+  return t.onMinimap && role === 'aim' ? null : role
 }

@@ -150,7 +150,7 @@
 }
 /* Captured for driving: names and state only. Every key cap and hint steps out. Touch has no
    keys, so the gear's number caps never show there. */
-.syn3h-shell.exploration-ui.is-focus :is(.hud-accessories, .chat-panel .chat-toggle) kbd { display: none; }
+:root .syn3h-shell.exploration-ui.is-focus:not(.has-touch) :is(.hud-accessories, .chat-panel .chat-toggle) kbd { display: none; }
 :root .syn3h-shell.exploration-ui .gear-selector:is([data-mode=locked], [data-touch]) .gs-index { display: none; }
 .hud-accessories .acc-name { flex: 1 1 auto; white-space: nowrap; }
 /* The node on the spine: a hollow ring when off, lit when on, filling while it moves. */

@@ -146,7 +146,7 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
    Sized for the screen, never moved or shrunk for the stick. --map-top (its top edge from the
    bottom) places the first-run stick hint just above it (touch-stick.css). */
 body { --map-top: calc(max(16px, env(safe-area-inset-bottom)) + 160px); }
-.syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 160px; height: 160px; top: auto; bottom: max(16px, env(safe-area-inset-bottom)); }
+.syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 160px; height: 160px; top: auto; right: auto; left: max(16px, env(safe-area-inset-left)); bottom: max(16px, env(safe-area-inset-bottom)); }
 @media (max-width: 700px) {
   body { --map-top: calc(max(16px, env(safe-area-inset-bottom)) + 120px); }
   .syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 120px; height: 120px; }
@@ -154,6 +154,14 @@ body { --map-top: calc(max(16px, env(safe-area-inset-bottom)) + 160px); }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   body { --map-top: calc(max(16px, env(safe-area-inset-bottom)) + 96px); }
   .syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 96px; height: 96px; }
+}
+/* The first-run controls card sits beside the minimap, not over it, where the screen is wide
+   enough (landscape phones and tablets); portrait phones stack it above the stick instead. */
+@media (min-width: 701px) and (min-height: 501px) {
+  .syn3h-shell.exploration-ui.has-touch .spawn-help { transform: none; left: calc(max(16px, env(safe-area-inset-left)) + 160px + 14px); }
+}
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .syn3h-shell.exploration-ui.has-touch .spawn-help { transform: none; left: calc(max(16px, env(safe-area-inset-left)) + 96px + 14px); }
 }
 
 /* Diagnostics consume rail space; only their body scrolls. SVG reuses core history. */
