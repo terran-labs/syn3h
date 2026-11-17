@@ -222,10 +222,40 @@
       html[data-intro] .boot-point {
         display: block; position: fixed; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%;
         /* Gathering: from a faint speck to a bright point with a warm glow, plainly growing. */
-        background: #fffaf0; opacity: calc(0.3 + var(--boot-progress, 0) * 0.7);
-        transform: scale(calc(0.35 + var(--boot-progress, 0) * 1.55));
+        background: #fffaf0; opacity: calc(0.65 + var(--boot-progress, 0) * 0.35);
+        transform: scale(calc(0.8 + var(--boot-progress, 0) * 1.1));
         box-shadow: 0 0 calc(2px + var(--boot-progress, 0) * 9px) calc(var(--boot-progress, 0) * 2.5px) rgb(255 236 205 / calc(0.4 + var(--boot-progress, 0) * 0.5)), 0 0 calc(6px + var(--boot-progress, 0) * 34px) rgb(255 196 128 / calc(0.05 + var(--boot-progress, 0) * 0.4));
       }
+      /* Waiting for the Big Bang: the point breathes, eager to pop. A squash-and-stretch with a
+         little wobble and a faint ring puffing off each beat, every 1.8 s, from the first paint.
+         The breath is on the separate scale and rotate properties, so it multiplies the progress
+         size above (transform): the point still grows as loading goes on. */
+      html[data-intro] .boot-point { animation: boot-breath 1.8s cubic-bezier(.45,0,.55,1) infinite; }
+      html[data-intro] .boot-point::after {
+        content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid rgb(255 214 160 / .7);
+        opacity: 0; animation: boot-puff 1.8s cubic-bezier(.2,.6,.3,1) infinite;
+      }
+      @keyframes boot-breath {
+        0%, 100% { scale: 1 1; rotate: 0deg; filter: brightness(1); }
+        38% { scale: 1.45 1.45; rotate: 0deg; filter: brightness(1.6); }
+        48% { scale: 1.6 1.2; rotate: -7deg; filter: brightness(1.7); }
+        58% { scale: 1.2 1.6; rotate: 6deg; }
+        70% { scale: 1.1 1.0; rotate: -2deg; filter: brightness(1.2); }
+      }
+      @keyframes boot-puff {
+        0%, 40% { transform: scale(1); opacity: 0; }
+        45% { opacity: .75; }
+        100% { transform: scale(7); opacity: 0; }
+      }
+      /* Reduced motion still shows it is working: a breath of brightness and glow only. */
+      @media (prefers-reduced-motion: reduce) {
+        html[data-intro] .boot-point { animation: boot-glow 1.8s ease-in-out infinite; }
+        html[data-intro] .boot-point::after { animation: none; }
+      }
+      @keyframes boot-glow { 0%, 100% { filter: brightness(0.7) drop-shadow(0 0 2px rgb(255 214 160 / .3)); } 50% { filter: brightness(1.7) drop-shadow(0 0 10px rgb(255 214 160 / .9)); } }
+      /* Loading done: the breath stops at rest, so the galaxy's point beneath takes over without a jump. */
+      html[data-intro][data-boot="done"] .boot-point { animation: none; scale: 1; rotate: 0deg; filter: none; }
+      html[data-intro][data-boot="done"] .boot-point::after { animation: none; opacity: 0; }
       html[data-intro] .boot-status { position: fixed; left: 0; right: 0; top: calc(50% + 34px); margin: 0 auto; padding: 0 24px; }
       html[data-intro] .boot-still { position: fixed; left: 0; right: 0; top: calc(50% + 34px + 3.3em); }
       html[data-intro][data-boot="done"] .boot-veil { transition: opacity 0.3s ease, visibility 0s linear 0.3s; }
