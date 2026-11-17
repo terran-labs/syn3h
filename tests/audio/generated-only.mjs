@@ -35,7 +35,8 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'p
     })
     await page.goto(`${base}?room=ux-audio-${mode}-${Date.now()}`)
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
-    assert.equal(await page.evaluate(() => syn3h.audio.state), 'locked', 'no audio before a gesture')
+    // Locked until a gesture, or already running where the browser allows sound without one.
+    assert.ok(['locked', 'running'].includes(await page.evaluate(() => syn3h.audio.state)), 'audio waits for a gesture unless the browser allows it')
     await page.waitForTimeout(1500) // idle time: the mix is built ahead of the gesture
     assert.equal(await page.evaluate(() => localStorage.getItem('syn3h.musicTrack')), null, 'the retired track choice is cleared')
     assert.equal(await page.locator('#shell-track, .rail-music select').count(), 0, 'no track selector remains')

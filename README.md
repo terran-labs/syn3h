@@ -198,7 +198,8 @@ the address, for example
 [releases page](https://github.com/terran-labs/syn3h/releases) lists them, each with its
 playable link.
 
-**Can I use the code?** Yes, for anything noncommercial. See [Licence](#licence).
+**Can I use the code?** Yes, for anything noncommercial. The code and the creative work have
+separate licences; see [Licence](#licence).
 
 ## Where Syn3h comes from
 
@@ -309,7 +310,14 @@ The main tools are Three.js for rendering, Rapier for physics, TypeScript and Vi
 
 ## Licence
 
-Syn3h is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md):
-you are welcome to play with it, change it, extend it and share what you make, for any
-noncommercial purpose. Commercial use needs a licence from Terran Labs; see
-[NOTICE.md](NOTICE.md). Third-party components keep their own licences.
+Syn3h is source-available. The code is under the
+[PolyForm Noncommercial License 1.0.0](LICENSE.md), and the creative work (writing, vehicle
+meshes, logo images, screenshots and videos) is under
+[Creative Commons Attribution-NonCommercial-ShareAlike 4.0](LICENSE-CC-BY-NC-SA.md),
+credited as "Syn3h by Terran Labs, https://www.syn3h.com".
+
+In practice, you may fork the game, change it and share what you make, for any
+noncommercial purpose; share screenshots and videos with that credit; and remix the
+creative work, provided the remix carries the same Creative Commons licence. Commercial use
+of either part needs a licence from Terran Labs. The Syn3h name and logo are not licensed.
+[NOTICE.md](NOTICE.md) has the details. Third-party components keep their own licences.

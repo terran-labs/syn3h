@@ -16,6 +16,28 @@ export interface PropertyDef {
   default: number | boolean; min?: number; max?: number; step?: number; deferred?: boolean
   /** Optional, written by the lane that owns the property. */
   description?: string
+  /** Shown = (value - offset) * scale; see ParamDef.display. Stored and sent values never change. */
+  display?: { offset: number; scale: number }
+}
+/** A stored value as the settings UI shows it. */
+export function shownValue(def: Pick<PropertyDef, 'display'>, value: number): number {
+  return def.display ? (value - def.display.offset) * def.display.scale : value
+}
+/** The value to store for one typed or slid in display units. */
+export function storedValue(def: Pick<PropertyDef, 'display'>, shown: number): number {
+  // Rounded off at the tenth place so -0.3 shown is -0.7 stored, not -0.7000000000000001.
+  return def.display ? Number((shown / def.display.scale + def.display.offset).toFixed(10)) : shown
+}
+/**
+ * The definition as the settings UI sees it: limits and default in display units, low to
+ * high. For properties without a display mapping it is the definition itself.
+ */
+export function shownDef<T extends PropertyDef>(def: T): T {
+  if (!def.display || typeof def.default !== 'number') return def
+  const ends = [def.min, def.max].map(v => v === undefined ? undefined : shownValue(def, v))
+  const lo = ends.every(v => v !== undefined) ? Math.min(ends[0]!, ends[1]!) : ends[0], hi = ends.every(v => v !== undefined) ? Math.max(ends[0]!, ends[1]!) : ends[1]
+  const step = def.step === undefined ? undefined : Math.abs(def.step * def.display.scale)
+  return { ...def, default: shownValue(def, def.default), min: lo, max: hi, step, display: undefined }
 }
 export interface SectionSpec { id: string; title: string; blurb: string; groups: readonly string[]; scope: 'world' | 'client' }
 /** Logical sections, in the order they are shown. Personal settings first; stable ids preserve saved section copies. */
@@ -56,6 +78,7 @@ export function show(value: number | boolean, def?: Pick<PropertyDef, 'step'>): 
 export function describe(def: PropertyDef): string { return def.description ?? DESCRIPTIONS[def.id] ?? '' }
 /** The guardrails in plain words: range, default, and who it affects. */
 export function limits(def: PropertyDef): string {
+  if (def.display) def = shownDef(def)
   const parts: string[] = []
   if (typeof def.default === 'number' && def.min !== undefined && def.max !== undefined) parts.push(`${show(Math.min(def.min, def.max), def)} to ${show(Math.max(def.min, def.max), def)}`)
   else if (typeof def.default === 'boolean') parts.push('on or off')
@@ -66,6 +89,7 @@ export function limits(def: PropertyDef): string {
 }
 /** Where a value sits between its limits, 0 to 1, for the guard bar. Null without limits. */
 export function fraction(def: PropertyDef, value: number | boolean): number | null {
+  if (def.display && typeof value === 'number') return fraction(shownDef(def), shownValue(def, value))
   if (typeof value !== 'number' || def.min === undefined || def.max === undefined || def.max === def.min) return null
   const lo = Math.min(def.min, def.max), hi = Math.max(def.min, def.max)
   return Math.min(1, Math.max(0, (value - lo) / (hi - lo)))

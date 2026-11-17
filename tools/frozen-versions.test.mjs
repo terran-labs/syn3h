@@ -19,6 +19,7 @@ function build(root, name, mark) {
   writeFileSync(join(copy, 'dist', 'assets', `app-${mark}.js.map`), 'map')
   writeFileSync(join(copy, 'dist', 'brand', 'share.png'), 'png')
   writeFileSync(join(copy, 'dist', '.assetsignore'), '*.map\n')
+  writeFileSync(join(copy, 'dist', 'releases.json'), JSON.stringify({ releases: [{ version: mark }] }))
   return copy
 }
 
@@ -30,6 +31,7 @@ test('each release carries itself and every archived release, and only acceptanc
     assert.deepEqual(carry(first, 'v26.11.1503', store), ['26.11.1503'])
     assert.equal(readFileSync(join(first, 'dist/v/26.11.1503/index.html'), 'utf8'), '<title>one</title>')
     assert.ok(!existsSync(join(first, 'dist/v/26.11.1503/assets/app-one.js.map')), 'source maps are not carried')
+    assert.ok(!existsSync(join(first, 'dist/v/26.11.1503/releases.json')), 'the Updates feed is the live site\'s, never carried')
     assert.ok(!existsSync(join(first, 'dist/v/26.11.1503/v')), 'a frozen version never nests the others')
     assert.deepEqual(archivedVersions(store), [], 'carrying alone archives nothing: a dry run or rollback leaves no trace')
     archive(first, 'v26.11.1503', store)

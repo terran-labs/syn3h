@@ -26,3 +26,21 @@ for (const failure of [null, 'identity', 'html', 'missing', 'asset']) {
     } finally { await rm(dir, { recursive: true, force: true }) }
   })
 }
+
+for (const failure of [null, 'older-first', 'no-summary']) {
+  test(`public Updates feed: ${failure ?? 'lists the deployed version first'}`, async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'syn3h-public-feed-'))
+    try {
+      await mkdir(join(dir, 'dist/assets'), { recursive: true })
+      const feed = { releases: [{ version: failure === 'older-first' ? '26.11.1606' : '26.11.1607', summary: failure === 'no-summary' ? ' ' : 'Boxes become buggies again' }] }
+      const files = { '/build.json': JSON.stringify({ id: 'frozen', commit: 'abc', version: 'v26.11.1607' }), '/': '<script type="module" src="/assets/main-123.js"></script>', '/assets/main-123.js': 'x', '/releases.json': JSON.stringify(feed) }
+      for (const [path, value] of Object.entries(files)) if (path !== '/releases.json') await writeFile(join(dir, 'dist', path === '/' ? 'index.html' : path), value)
+      const fetcher = async (url) => new Response(files[url.pathname])
+      const run = checkPublicBuild('https://example.test/', dir, fetcher, { feed: true })
+      if (failure) await assert.rejects(run, failure === 'older-first' ? /lists v26\.11\.1606 first/ : /no summary/)
+      else assert.equal((await run).id, 'frozen')
+      // Without the flag (a rollback), the feed is not consulted.
+      assert.equal((await checkPublicBuild('https://example.test/', dir, fetcher)).id, 'frozen')
+    } finally { await rm(dir, { recursive: true, force: true }) }
+  })
+}
