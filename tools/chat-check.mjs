@@ -204,6 +204,28 @@ try {
     const touch = Boolean(opts.hasTouch)
     const P = await open(name.replace(/[^a-z]/g, '').slice(0, 10), opts)
     if (hand) await P.page.evaluate(() => window.syn3h.params.set('touch.leftHanded', true))
+    // "Show new messages over the game": on by default on desktop, off on touch-first devices.
+    // Off, an arriving line puts nothing over the view, the unread count rises and the log has it.
+    const quietDir = '/Users/vtn/dev/Syn3h-wt/_shots-20261116/chat-quiet'
+    mkdirSync(quietDir, { recursive: true })
+    const overlayDefault = await P.page.evaluate(() => window.syn3h.params.get('chat.overlay').value)
+    check(overlayDefault === !touch, `${name}: "Show new messages over the game" is ${touch ? 'off' : 'on'} by default (${overlayDefault})`)
+    const unreadNow = () => P.page.evaluate(() => { const b = document.querySelector('.chat-unread'); return b.hidden ? 0 : Number(b.textContent.replace('+', '')) })
+    const arrive = (text) => P.page.evaluate((text) => window.syn3hChat.net.chat.receive({ type: 'chat', from: 0xff00, text, t: 0 }), text)
+    await P.page.evaluate(() => window.syn3h.params.set('chat.overlay', false))
+    const unreadBefore = await unreadNow()
+    await arrive('Overlay check: this line stays in the log.')
+    await P.page.waitForTimeout(600)
+    const off = await P.page.evaluate(() => ({ strip: document.querySelectorAll('.chat-strip .chat-line').length, marks: document.querySelectorAll('.vehicle-nameplate.is-speaking').length, inLog: window.syn3hChat.net.chat.visible().some((l) => l.text.includes('stays in the log')) }))
+    const unreadAfter = await unreadNow()
+    await P.page.screenshot({ path: `${quietDir}/${name}-over-the-game-off.png` })
+    check(off.strip === 0 && off.marks === 0 && off.inLog && unreadAfter > unreadBefore, `${name}: with the switch off a line arrives, nothing shows over the view, the unread count rises (${unreadBefore} to ${unreadAfter}) and the log has it`)
+    await P.page.evaluate(() => window.syn3h.params.set('chat.overlay', true))
+    await arrive('Overlay check: this line shows over the game.')
+    await P.page.waitForTimeout(600)
+    const on = await P.page.evaluate(() => [...document.querySelectorAll('.chat-strip .chat-line')].some((l) => l.textContent.includes('shows over the game')))
+    await P.page.screenshot({ path: `${quietDir}/${name}-over-the-game-on.png` })
+    check(on, `${name}: with the switch on the line shows over the game, as before`)
     if (withBots) {
       await P.page.waitForFunction(() => document.querySelectorAll('.chat-strip .chat-line').length > 0, null, { timeout: 90000 }).catch(() => {})
       await P.page.waitForTimeout(1200)

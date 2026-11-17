@@ -3,7 +3,7 @@
  * never repeats, respects the chatter setting, says only lines that pass the filter, and
  * requests from players end on their own and respect the room's settings.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { BanterDirector, type BanterBot, type BanterPlayer, type Directive } from '../../src/bots/banter/Director'
 import { POOLS, POOL_FILES } from '../../src/bots/banter/data'
 import { FRAGMENTS } from '../../src/bots/banter/data/fragments'
@@ -11,7 +11,8 @@ import { expand, type Context } from '../../src/bots/banter/grammar'
 import { ROLE_WORDS, VOICE_IDS, VOICES } from '../../src/bots/banter/voices'
 import { botIdentity } from '../../src/ui/data/names'
 import { RESCUE_COLOUR_S } from '../../src/bots/banter/rescueLines'
-import { botChatter, botChatterLevel, filterChat, MAX_CHAT_LENGTH } from '../../shared/chat'
+import { botChatter, botChatterAmount, botChatterLevel, filterChat, MAX_CHAT_LENGTH } from '../../shared/chat'
+import { EXCHANGE_MAX, exempt } from '../../src/bots/banter/budget'
 import { params } from '../../shared/params'
 import { seededRandom } from '../../src/bots/random'
 
@@ -44,9 +45,60 @@ function fakeWorld(count = 4) {
   return { director, bots, players, said, directed, allow, run, get now() { return now } }
 }
 
+// The scheduler's own tests run at the old amount (1); the budget has its own tests below.
+beforeEach(() => { params.set(botChatterAmount.def.id, 1) })
 afterEach(() => {
   params.set(botChatter.def.id, true)
   params.set(botChatterLevel.def.id, 1)
+  params.set(botChatterAmount.def.id, botChatterAmount.def.default)
+})
+
+describe('room-wide chatter budget', () => {
+  const unprompted = (w: ReturnType<typeof fakeWorld>, amount: number, seconds: number) => {
+    params.set(botChatterAmount.def.id, amount)
+    w.run(seconds)
+    return w.said.length
+  }
+
+  it('a quarter of the amount is about a quarter of the talk, as longer quiet stretches', () => {
+    const full = unprompted(fakeWorld(4), 1, 3600)
+    const quarter = unprompted(fakeWorld(4), 0.25, 3600)
+    console.log(`unprompted lines an hour, four bots: amount 1 ${full}, amount 0.25 ${quarter}`)
+    expect(quarter).toBeGreaterThan(full * 0.12)
+    expect(quarter).toBeLessThan(full * 0.38)
+  })
+
+  it('adding bots does not add noise', () => {
+    const four = unprompted(fakeWorld(4), 0.25, 3600)
+    const eight = unprompted(fakeWorld(8), 0.25, 3600)
+    expect(eight).toBeLessThanOrEqual(Math.ceil(four * 1.3) + 3)
+  })
+
+  it('an exchange runs to at most three lines, then the room is quiet', () => {
+    params.set(botChatterAmount.def.id, 0.25)
+    const w = fakeWorld(4)
+    w.run(3600)
+    let run = 1
+    for (let i = 1; i < w.said.length; i++) {
+      run = w.said[i].t - w.said[i - 1].t < 10 ? run + 1 : 1
+      expect(run).toBeLessThanOrEqual(EXCHANGE_MAX)
+    }
+  })
+
+  it('a bot still answers a person who addresses it, however quiet the room', () => {
+    params.set(botChatterAmount.def.id, 0.05)
+    const w = fakeWorld(4)
+    w.run(60)
+    const before = w.said.length
+    w.director.hear(1, 'Temolin, who are you')
+    w.run(10)
+    expect(w.said.length).toBeGreaterThan(before)
+    expect(exempt('req.who') && exempt('stuck.call') && exempt('rescue.start') && !exempt('idle.musing') && !exempt('conflict.bargain')).toBe(true)
+  })
+
+  it('amount 0 stops unprompted talk entirely', () => {
+    expect(unprompted(fakeWorld(4), 0, 3600)).toBe(0)
+  })
 })
 
 describe('bot banter', () => {
