@@ -207,6 +207,17 @@ export class BotBrain implements System {
   }
 
   /** True when a vehicle can drive straight from a to b with two metres to spare each side. */
+  /** Liquid on the straight line from a to b, sampled every two metres (short lines only). */
+  private liquidBetween(a: { x: number; z: number }, b: { x: number; z: number }): boolean {
+    const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz)
+    for (let t = 2; t < d; t += 2) if (!isSafeGround(this.terrain, a.x + dx / d * t, a.z + dz / d * t)) return true
+    return false
+  }
+  private afloatAt(p: { x: number; z: number }): boolean {
+    const liquid = this.terrain.liquidHeightAt?.(p.x, p.z)
+    return liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(p.x, p.z) <= liquid + 0.5 && !isRoadFord(this.terrain, p.x, p.z)
+  }
+  private targetAshore = true
   private clearLine(a: { x: number; z: number }, b: { x: number; z: number }): boolean {
     const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz)
     if (d < 1) return true
@@ -284,13 +295,17 @@ export class BotBrain implements System {
       for (let i = 0; i < 16; i++) {
         const angle = i * Math.PI / 8, x = here.x + Math.cos(angle) * radius, z = here.z + Math.sin(angle) * radius
         if (!isSafeGround(this.terrain, x, z)) continue
-        const d = Math.hypot(x - towards.x, z - towards.z)
+        // A bank too steep to climb out on only drops the bot back in: gentle ground counts as
+        // twice as close.
+        const steep = this.terrain.normalAt(x, z, this.shoreNormal).y < 0.85
+        const d = Math.hypot(x - towards.x, z - towards.z) * (steep ? 2 : 1) + (steep ? radius : 0)
         if (d < best) { best = d; shore = { x, z } }
       }
       if (shore) return shore
     }
     return shore
   }
+  private readonly shoreNormal = new Vector3()
   /** Moving slower over the ground than a buggy paddles or crawls along a bed. */
   private slow(): boolean {
     const v = this.vehicle.body.linvel()
@@ -436,7 +451,25 @@ export class BotBrain implements System {
     // with the same pilot that tours the island, then hands back once the way is clear.
     if (this.mind && this.navigator && p.canDrive.value && p.topThrottle.value > 0) {
       this.lineTime -= dt
-      if (this.lineTime <= 0) { this.lineClear = distance < 18 || this.clearLine(here, there); this.lineTime = 0.5 }
+      if (this.lineTime <= 0) {
+        // A target where wheels cannot go (in lava or water, on a cliff) is not followed in: the
+        // bot waits on the shore nearest it, and the chase picks up once it is back on land.
+        // Close in, the straight line is still checked for liquid (a bank, a lava tongue).
+        this.targetAshore = this.standable(there.x, there.z)
+        this.lineClear = this.targetAshore && (distance < 18 ? !this.liquidBetween(here, there) : this.clearLine(here, there))
+        this.lineTime = 0.5
+        if (!this.targetAshore && !this.afloatAt(here)) {
+          const shore = this.shoreNear(there, here)
+          if (shore) {
+            // Wait a few metres back from the edge, not on it: a holding bot drifts.
+            const ax = shore.x - there.x, az = shore.z - there.z, l = Math.hypot(ax, az) || 1
+            const bx = shore.x + ax / l * 6, bz = shore.z + az / l * 6
+            const back = this.standable(bx, bz)
+            this.mind.hold({ x: back ? bx : shore.x, y: here.y, z: back ? bz : shore.z }, 4, 2)
+          }
+        }
+      }
+      if (!this.targetAshore) { this.roam(dt, input, here); return }
       if (!this.lineClear && !this.waypoint) {
         if (this.mind.activity.leader !== this.target || this.mind.activity.kind !== 'follow') this.mind.pursue(this.target, 30)
         this.roam(dt, input, here); return

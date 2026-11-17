@@ -276,11 +276,14 @@ export class HostRescue {
     }
   }
 
-  /** Wheels on the bed under liquid: no amount of trying gets a buggy up from there. */
+  /**
+   * Wheels on the bed under water: no amount of trying gets a buggy up from there. Not lava: a
+   * buggy skims and steers on lava and usually drives itself out, so it gets the quiet window.
+   */
   private sunk(v: Vehicle): boolean {
     if (v.kind === 'hovercraft' || v.kind === 'jet') return false
     const p = v.body.translation(), liquid = this.terrain.liquidHeightAt?.(p.x, p.z)
-    return liquid != null && Number.isFinite(liquid) && p.y < liquid - 1
+    return liquid != null && Number.isFinite(liquid) && p.y < liquid - 1 && this.terrain.liquidKindAt?.(p.x, p.z) !== 'lava'
   }
 
   private assist(r: Rescue, input: InputState): boolean {
