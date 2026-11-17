@@ -13,7 +13,8 @@
  *   - silent while people are chatting, apart from answers to them
  *   - no template repeats in a session until its pool is used up
  */
-import { botChatter, botChatterLevel, botRescue } from '../../../shared/chat'
+import { botChatter, botChatterAmount, botChatterLevel, botRescue } from '../../../shared/chat'
+import { ChatterBudget, exempt } from './budget'
 import { hashString, seededRandom } from '../random'
 import { POOLS } from './data'
 import type { Pool } from './data/types'
@@ -143,7 +144,7 @@ interface PlayerState {
 }
 
 /** A line waiting its turn. */
-interface Queued { at: number; bot: number; text: string; then?: () => void }
+interface Queued { at: number; bot: number; text: string; key: string; then?: () => void }
 
 export interface DirectorOptions {
   seed?: string
@@ -171,6 +172,8 @@ export class BanterDirector {
   private readonly session = { critters: [] as { critter: string; by: string }[], resets: 0 }
   /** Count of lines said, for the cost report and tests. */
   said = 0
+  /** Lines said, by line pool, for measuring how much the bots talk (tools/banter-rate.mjs). */
+  readonly counts: Record<string, number> = {}
 
   constructor(private readonly world: BanterWorld, private readonly hooks: BanterHooks, private readonly options: DirectorOptions = {}) {
     this.r = seededRandom(hashString(`banter:${options.seed ?? 'session'}`))
@@ -242,7 +245,9 @@ export class BanterDirector {
     const [lo, hi] = IDLE_GAP[this.level]
     // Fewer bots, longer pauses; many bots, not much shorter.
     const crowd = Math.min(1.6, Math.max(0.8, 4 / Math.max(1, this.bots.size)))
-    this.nextIdleAt = now + (lo + this.r() * (hi - lo)) * crowd * scale
+    // A smaller chatter amount stretches the quiet between remarks (budget.ts caps busy rooms).
+    const amount = Math.max(0.01, botChatterAmount.value)
+    this.nextIdleAt = now + (lo + this.r() * (hi - lo)) * crowd * scale / amount
   }
 
   /** Expand a line from `key` for this bot's voice. */
@@ -268,6 +273,9 @@ export class BanterDirector {
 
   /** Queue a line from `key` at time `at` (or after the queue). Returns the time it will be said. */
   private speak(bot: BotState, key: string, ctx: Context, at?: number, then?: () => void): number {
+    // The room-wide allowance for unprompted talk (budget.ts): a dropped line still lets its
+    // action happen.
+    if (!this.allowed(key)) { if (then) this.timers.push({ at: at ?? this.world.now(), run: then }); return at ?? this.world.now() }
     // Chatter off, or asked to be quiet: the bots still do what they agreed to, silently.
     if (!this.chatterOn || (this.world.now() < this.quietUntil && key !== 'req.talk')) {
       if (then) this.timers.push({ at: at ?? this.world.now(), run: then })
@@ -277,9 +285,15 @@ export class BanterDirector {
     const last = this.queue.length ? this.queue[this.queue.length - 1].at : this.world.now()
     const when = at ?? last + this.readingPause(this.queue.length ? this.queue[this.queue.length - 1].text : '')
     if (!text) { then?.(); return when }
-    this.queue.push({ at: Math.max(when, last + (this.queue.length ? 1.2 : 0)), bot: bot.id, text, then })
+    this.queue.push({ at: Math.max(when, last + (this.queue.length ? 1.2 : 0)), bot: bot.id, text, key, then })
     this.queue.sort((a, b) => a.at - b.at)
     return when
+  }
+
+  private readonly budget = new ChatterBudget()
+  private allowed(key: string): boolean {
+    if (exempt(key) || !this.chatterOn) return true
+    return this.budget.take(this.world.now(), this.queue.length === 0, botChatterAmount.value, this.level)
   }
 
   /** Seconds to read a line before the next one: about a third of a second per word, plus a beat. */
@@ -297,6 +311,7 @@ export class BanterDirector {
         this.hooks.say(q.bot, q.text)
         this.options.onLine?.(q.bot, bot.name, q.text)
         this.said++
+        this.counts[q.key] = (this.counts[q.key] ?? 0) + 1
         bot.lastSpoke = now
         this.lastLineAt = now
       }

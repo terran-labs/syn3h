@@ -26,11 +26,17 @@ export const chatOn = defineParam({ id: 'chat.on', label: 'Room chat (host only)
 export const botChatter = defineParam({ id: 'bots.chatter', label: 'Bot chatter (host only)', group: 'Bots', scope: 'world', default: true })
 /** How often bots talk: 0 quiet, 1 normal, 2 chatty. */
 export const botChatterLevel = defineParam({ id: 'bots.chatterLevel', label: 'Bot chatter: 0 quiet, 1 normal, 2 chatty (host only)', group: 'Bots', scope: 'world', default: 1, min: 0, max: 2, step: 1 })
+/**
+ * Unprompted bot talk as a share of what it was before (1). 0.25: a quarter, as longer quiet
+ * stretches. Answers to people and the rescue lines a player needs are not counted
+ * (src/bots/banter/budget.ts).
+ */
+export const botChatterAmount = defineParam({ id: 'bots.chatterAmount', label: 'Bot chatter amount (1 = as before) (host only)', group: 'Bots', scope: 'world', default: 0.25, min: 0, max: 1, step: 0.05 })
 /** Bots go and free a stuck bot with the grapple (src/bots/rescue). Works with chatter off. */
 export const botRescue = defineParam({ id: 'bots.rescue', label: 'Bots rescue each other (host only)', group: 'Bots', scope: 'world', default: true })
 
 /** Parameters only the host may change. */
-export const HOST_ONLY_PARAMS: ReadonlySet<string> = new Set([chatOn.def.id, botChatter.def.id, botChatterLevel.def.id, botRescue.def.id])
+export const HOST_ONLY_PARAMS: ReadonlySet<string> = new Set([chatOn.def.id, botChatter.def.id, botChatterLevel.def.id, botChatterAmount.def.id, botRescue.def.id])
 
 // Personal settings, never sent.
 
