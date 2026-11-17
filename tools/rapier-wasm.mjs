@@ -48,7 +48,12 @@ export function physicsEarlyFetchTag(fileNames, base = '/') {
   const wasm = fileNames.filter(name => /(^|\/)rapier_wasm3d_bg-[\w-]+\.wasm$/.test(name))
   if (wasm.length !== 1) throw new Error(`Expected exactly 1 Rapier .wasm in the build, found ${wasm.length}: ${wasm.join(', ')}`)
   const url = JSON.stringify(base + wasm[0])
-  return { tag: 'script', children: `window.__syn3hPhysicsWasm={url:${url},response:fetch(${url}).catch(function(e){return e})}`, injectTo: 'head-prepend' }
+  // The body is passed through a counter on its way to the loader, so the loading view can
+  // show the bytes as they arrive (window.__syn3hPhysicsBytes, read by index.html's veil
+  // script): the engine is the largest file of a first visit. The loader takes the response
+  // unchanged otherwise (same status and headers, so compileStreaming still streams it).
+  const count = `function(r){if(!r||!r.body||typeof TransformStream!=='function')return r;window.__syn3hPhysicsBytes=0;return new Response(r.body.pipeThrough(new TransformStream({transform:function(c,k){window.__syn3hPhysicsBytes+=c.byteLength;k.enqueue(c)}})),{status:r.status,statusText:r.statusText,headers:r.headers})}`
+  return { tag: 'script', children: `window.__syn3hPhysicsUrl=${url};window.__syn3hPhysicsWasm={url:${url},response:fetch(${url}).then(${count}).catch(function(e){return e})}`, injectTo: 'head-prepend' }
 }
 
 export function rapierWasmAsset() {

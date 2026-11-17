@@ -2,14 +2,14 @@ import { loadingMessages, pickLoadingLine } from './data/loadingMessages'
 
 /**
  * What each phase the game reports (core/quality.ts reportLoading, from Game.init and the
- * first frame) is really doing, in plain words. Shown on the veil's second line after ten
- * seconds and announced once per phase. Only what the code reports: nothing invented.
+ * first frame) is really doing, in plain words, for screen readers: announced once per phase
+ * by the polite live region. The veil's visible progress line is numbers only (index.html).
  */
 export const phaseSteps: Record<string, string> = {
-  device: 'Checking your graphics hardware while the physics engine downloads',
+  device: 'Checking your graphics',
   physics: 'Starting the physics engine',
-  renderer: 'Starting the renderer, then waiting for the physics engine',
-  world: 'Building the world and compiling shaders for its first frame',
+  renderer: 'Starting the renderer',
+  world: 'Building your first world',
   ready: 'Ready to explore',
 }
 export interface LoadingDetail { phase?: string; progress?: number; elapsedMs?: number }
@@ -29,11 +29,11 @@ const LIMIT_MS = 45000
  * lets the light finish its lap and lifts the veil.
  *
  * The veil's status line (.boot-status) shows one dry joke about what is loading, picked by
- * index.html at the first paint and kept until loading ends: no rotation. After ten seconds
- * index.html's second line (.boot-still) counts the seconds and names the real step, which
- * this module supplies per phase (window.__bootStep, phaseSteps). Both lines are aria-hidden:
- * screen readers hear the plain step once per phase from this module's polite live region,
- * .syn3h-loading, never the ticking count.
+ * index.html and kept until loading ends: no rotation. Three seconds into a load still going,
+ * it fades in with index.html's second line (.boot-still), which is numbers only: the
+ * seconds and the megabytes received. Both lines are aria-hidden: screen readers hear the
+ * plain step once per phase (phaseSteps) from this module's polite live region,
+ * .syn3h-loading, never the ticking numbers.
  */
 export class LoadingScreen {
   /** The visually hidden live region: the plain phase, once per phase. */
@@ -80,7 +80,6 @@ export class LoadingScreen {
     if (typeof detail.phase === 'string' && detail.phase !== this.phase) {
       this.phase = detail.phase
       const step = phaseSteps[detail.phase] ?? detail.phase
-      ;(window as unknown as { __bootStep?: string }).__bootStep = step
       this.announce(step)
     }
     // The game's own progress takes the light from where the bundle left it to nearly round.
