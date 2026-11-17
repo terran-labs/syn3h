@@ -108,25 +108,43 @@ killtree() {
 PIDS=""
 cleanup() { for p in $PIDS; do killtree "$p"; done; }
 
+# Wait until an address serves a frozen build everywhere we can see: Cloudflare's edges switch
+# versions over minutes, and a page can get one build's HTML and the other's missing files.
+# settle <url> <frozen dir> <log> [--feed]: five passes in a row about 6 s apart (any failure
+# starts the count again), giving up after three minutes.
+settle() {
+  _ok=0; _start=$(date +%s)
+  while [ "$_ok" -lt 5 ]; do
+    if node tools/check-public-build.mjs "$1" "$2" ${4:-} >>"$3" 2>&1; then _ok=$((_ok + 1)); else _ok=0; fi
+    [ $(( $(date +%s) - _start )) -lt 180 ] || return 1
+    [ "$_ok" -ge 5 ] || sleep 6
+  done
+}
+
 # Set from the moment the deploy starts until the release is accepted. Leaving the script
 # while it is set, for any reason, rolls back.
 DEPLOYED=""
 roll_back() {
+  trap '' INT TERM
   printf '\nROLLING BACK: release-%s was not accepted; returning production to %s (frozen copy %s)...\n' "$N" "$PREV_REL" "$PREV_ID" >&2
+  _rlog="/tmp/syn3h-release-$N-rollback-check.log"; : >"$_rlog"
   if [ -n "$STUB" ]; then
     echo "STUB: tools/rollback.sh $PREV_REL" >&2
-  else
-    tools/rollback.sh "$PREV_REL" >&2 || { printf '\nROLLBACK FAILED: production may still serve release-%s. Run tools/rollback.sh %s now.\n' "$N" "$PREV_REL" >&2; return 1; }
+  elif ! tools/rollback.sh "$PREV_REL" >&2; then
+    # rollback.sh fails on its own smoke too, and a smoke right after the switch can load a
+    # page from an edge still serving the other build. Settle, then smoke once more.
+    echo "rollback.sh did not verify; waiting for the edges to settle and smoking once more..." >&2
+    if ! settle https://syn3h.af-4e7.workers.dev/ "../Syn3h-stable/$PREV_ID" "$_rlog" \
+      || ! node tools/net-smoke.mjs https://syn3h.af-4e7.workers.dev/ >"$_rlog-smoke" 2>&1; then
+      tail -5 "$_rlog" "$_rlog-smoke" >&2 2>/dev/null
+      printf '\nROLLBACK FAILED: production may still serve release-%s. Run tools/rollback.sh %s now.\n' "$N" "$PREV_REL" >&2; return 1
+    fi
+    grep '^NET SMOKE SUMMARY' "$_rlog-smoke" >&2 || true
   fi
-  # Verify the owner-facing domain too: rollback.sh checks the workers.dev address.
+  # Verify both addresses, the owner-facing domain included: rollback.sh checks workers.dev only.
   for url in https://syn3h.af-4e7.workers.dev/ https://www.syn3h.com/; do
-    tries=0
-    until node tools/check-public-build.mjs "$url" "../Syn3h-stable/$PREV_ID" >/tmp/syn3h-release-$N-rollback-check.log 2>&1; do
-      tries=$((tries + 1))
-      [ "$tries" -lt 30 ] || { cat /tmp/syn3h-release-$N-rollback-check.log >&2; printf '\nROLLBACK FAILED: %s does not serve %s. Run tools/rollback.sh %s now.\n' "$url" "$PREV_REL" "$PREV_REL" >&2; return 1; }
-      sleep 2
-    done
-    printf 'Verified %s: %s\n' "$url" "$(tail -1 /tmp/syn3h-release-$N-rollback-check.log)" >&2
+    settle "$url" "../Syn3h-stable/$PREV_ID" "$_rlog" || { tail -5 "$_rlog" >&2; printf '\nROLLBACK FAILED: %s does not serve %s. Run tools/rollback.sh %s now.\n' "$url" "$PREV_REL" "$PREV_REL" >&2; return 1; }
+    printf 'Verified %s (5 passes in a row): %s\n' "$url" "$(tail -1 "$_rlog")" >&2
   done
   [ -z "$PREV_CURRENT" ] || ln -sfn "$PREV_CURRENT" ../Syn3h-stable/current
   printf '\nROLLED BACK: production serves %s again, verified on workers.dev and www.syn3h.com. release-%s was not recorded or tagged.\n' "$PREV_REL" "$N" >&2
@@ -191,14 +209,9 @@ else
   echo "Public address: $URL (version $VERSION)"
   # A new workers.dev name can take a moment to resolve.
   wait_http "$URL" 120 || fail "$URL did not answer within two minutes"
-  # An HTTP 200 can still be an older edge deployment. Wait for this exact entry bundle
-  # before gameplay acceptance, retaining every mismatch for rollout diagnostics.
-  tries=0
-  until node tools/check-public-build.mjs "$URL" "$DEST" --feed >>"$LOG-assets.log" 2>&1; do
-    tries=$((tries + 1))
-    [ "$tries" -lt 30 ] || { cat "$LOG-assets.log"; fail "public entry bundle did not match frozen build"; }
-    sleep 2
-  done
+  # An HTTP 200 can still be an older edge deployment. Wait until this exact entry bundle is
+  # served five times in a row before gameplay acceptance, retaining every mismatch.
+  settle "$URL" "$DEST" "$LOG-assets.log" --feed || { tail -20 "$LOG-assets.log"; fail "public entry bundle did not settle on the frozen build within three minutes"; }
   tail -1 "$LOG-assets.log"
 fi
 
@@ -234,12 +247,7 @@ fi
 # --- Primary public acceptance ---------------------------------------------------------------
 # A workers.dev pass does not establish that the owner-facing domain serves the same assets.
 PRIMARY_URL="https://www.syn3h.com/"
-tries=0
-until node tools/check-public-build.mjs "$PRIMARY_URL" "$DEST" --feed >>"$LOG-primary-assets.log" 2>&1; do
-  tries=$((tries + 1))
-  [ "$tries" -lt 30 ] || { cat "$LOG-primary-assets.log"; fail "primary entry bundle did not match frozen build"; }
-  sleep 2
-done
+settle "$PRIMARY_URL" "$DEST" "$LOG-primary-assets.log" --feed || { tail -20 "$LOG-primary-assets.log"; fail "primary entry bundle did not settle on the frozen build within three minutes"; }
 tail -1 "$LOG-primary-assets.log"
 if ! tools/domain.sh check www.syn3h.com >"$LOG-primary.log" 2>&1; then
   cat "$LOG-primary.log"

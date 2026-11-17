@@ -21,10 +21,17 @@ export async function serveStable({ dir, port }) {
   const { tsImport } = require('tsx/esm/api');
   const options = { parentURL: pathToFileURL(join(snapshot, 'package.json')).href, tsconfig: join(snapshot, 'tsconfig.json') };
   // Never import from the live checkout: a protocol mismatch can corrupt a room.
-  const { Room } = await tsImport(pathToFileURL(join(snapshot, 'server/room.ts')).href, options);
+  const { Room, CLOCK_MS = 1000 } = await tsImport(pathToFileURL(join(snapshot, 'server/room.ts')).href, options);
   const { roomName } = await tsImport(pathToFileURL(join(snapshot, 'server/util.ts')).href, options);
   const { WebSocketServer, WebSocket } = require('ws');
   const rooms = new Map();
+  // The room's own clock, as server/dev.ts and the Worker run it. A snapshot frozen before
+  // Room.needsClock existed reads undefined here and keeps its message driven ticks.
+  const clocks = new Map();
+  const keepClock = room => {
+    if (clocks.has(room) || !room.needsClock) return;
+    clocks.set(room, setTimeout(() => { clocks.delete(room); if (rooms.get(room.name) !== room) return; room.tick(); keepClock(room); }, CLOCK_MS));
+  };
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
   const server = createServer(async (req, res) => {
     try {
@@ -60,13 +67,14 @@ export async function serveStable({ dir, port }) {
       ws.on('message', (data, binary) => {
         const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.isBuffer(data) ? data : Buffer.from(data);
         room.receive(peer, binary ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) : bytes.toString());
+        keepClock(room);
       });
-      ws.on('close', () => { room.disconnect(peer); if (room.connectionCount === 0 && rooms.get(name) === room) rooms.delete(name); });
+      ws.on('close', () => { room.disconnect(peer); if (room.connectionCount === 0 && rooms.get(name) === room) { rooms.delete(name); clearTimeout(clocks.get(room)); clocks.delete(room); } });
       ws.on('error', () => ws.close());
     });
   });
   await new Promise((done, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', done); });
-  return { server, snapshot, close: async () => { for (const ws of sockets.clients) ws.terminate(); sockets.close(); await new Promise(done => server.close(done)); } };
+  return { server, snapshot, close: async () => { for (const t of clocks.values()) clearTimeout(t); clocks.clear(); for (const ws of sockets.clients) ws.terminate(); sockets.close(); await new Promise(done => server.close(done)); } };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
