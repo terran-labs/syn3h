@@ -48,12 +48,15 @@ import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
 import { aboutHtml, showAboutTab, wireAbout, type AboutTab } from './updates/about'
 import { UpdateNotice } from './updates/UpdateNotice'
-import { generateName } from './data/names'
+import { rollPlayerName } from './data/names'
+import { cleanPlayerName, loadPlayerName, savePlayerName, type NameSource } from './playerName'
+import { TintTransition, randomTintPair } from '../vehicles/tints'
 import { Minimap, type MapEntity } from './Minimap'
 import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
+import { isVehicleAvailable } from '../vehicles/available'
 import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
@@ -213,12 +216,15 @@ export class Shell implements System {
     // The world inspector and the display for when the cursor is captured (inspector/).
     this.inspector = new Inspector(this.element, {
       summary: id => this.inspectorSummary(id),
-      // Vehicles are chosen in play only (the lobby offers planets). Four, one design each.
-      vehicles: () => ({ options: PLAY_VEHICLES, current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
+      // Vehicles are chosen in play only (the lobby offers planets). One design each.
+      vehicles: () => ({ options: PLAY_VEHICLES, current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind, pending: this.pendingVehicle }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
       playerName: () => this.playerName,
-      colors: () => this.tintView,
+      onRename: name => this.setPlayerName(name),
+      rollName: () => rollPlayerName().name,
+      colors: () => this.tintTransition.current,
       onColor: (key, value) => this.setTint(key, value),
+      onRandomizeColors: () => this.randomizeTint(),
       onSaveWorld: () => this.saveWorld(),
     })
     // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
@@ -307,13 +313,9 @@ export class Shell implements System {
     window.addEventListener('storage', event => { if (event.key === SAVED_WORLDS_KEY || event.key === null) this.refreshSavedWorlds() }, { signal })
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') { this.worldDirty = true; this.refreshCustomPlanet() } })
     signal.addEventListener('abort', unsubscribeWorld)
-    try { this.nameInput.value = localStorage.getItem('syn3h.playerName') || '' } catch { /* Storage is optional. */ }
-    if (!this.nameInput.value.trim()) {
-      let seed = ''
-      try { seed = localStorage.getItem('syn3h.nameSeed') || '' } catch { /* Storage is optional. */ }
-      if (!seed) { seed = String(crypto.getRandomValues(new Uint32Array(1))[0]); try { localStorage.setItem('syn3h.nameSeed', seed) } catch { /* Storage is optional. */ } }
-      this.nameInput.value = generateName(seed, 'player')
-    }
+    // Kept in the browser (src/ui/playerName.ts): a first visit is given a generated name at once.
+    const saved = loadPlayerName(); this.nameInput.value = saved.name; this.nameSource = saved.source
+    this.nameInput.addEventListener('input', () => { this.nameSource = 'typed' }, { signal })
     // The public room is an empty field (placeholder "Public room"), never its internal name.
     const entryRoom = roomFromQuery(new URL(location.href).searchParams)
     this.roomInput.value = isDefaultRoom(entryRoom) ? '' : entryRoom
@@ -483,7 +485,19 @@ export class Shell implements System {
   get vehicleKind(): VehicleChoice['vehicleKind'] { return this.choice.vehicleKind }
   get bodyColor(): string { return this.choice.bodyColor }
   get accentColor(): string { return this.choice.accentColor }
-  get playerName(): string { return this.nameInput.value.trim().slice(0, 24) || 'Explorer' }
+  get playerName(): string { return cleanPlayerName(this.nameInput.value) || 'Explorer' }
+  /** Where the name came from: a typed name is never replaced by a generated one. */
+  private nameSource: NameSource = 'generated'
+  /** Set by initGameShell: the name changed in play, so the vehicle and the room follow. */
+  onRename?: (name: string) => void
+  /** The player renamed themselves in the Me card: saved at once, and the room told. */
+  private setPlayerName(raw: string): void {
+    const name = cleanPlayerName(raw)
+    if (!name || name === this.playerName) return
+    this.nameInput.value = name; this.nameSource = 'typed'
+    savePlayerName(name, 'typed')
+    this.onRename?.(name)
+  }
   get room(): string { return this.roomInput.value.trim().slice(0, 64) || DEFAULT_ROOM }
   get playing(): boolean { return this.started && !this.menuVisible }
   /** Keep world labels beside the inspector, but never over a modal or paused game. */
@@ -562,7 +576,7 @@ export class Shell implements System {
     // cannot follow yet). On null, or if it throws, fall through to the reload below, which
     // always works. main.ts re-points hints, audio and the readouts through setPlayer.
     // Every buggy name is the buggy (the rule of canonicalVehicleKind in src/vehicles).
-    const family = (name: string) => name === 'jet' || name === 'hovercraft' || name === 'tank' ? name : 'buggy'
+    const family = (name: string): string => name === 'jet' || name === 'hovercraft' || (name === 'tank' && isVehicleAvailable(name)) ? name : 'buggy'
     if (this.vehicleSwap) {
       try {
         const next = this.vehicleSwap(kind)
@@ -577,8 +591,12 @@ export class Shell implements System {
     const forget = () => { try { sessionStorage.removeItem(RESUME_KEY) } catch { /* Storage is optional. */ } }
     window.addEventListener('pagehide', forget); document.addEventListener('visibilitychange', forget)
     const url = this.lobbyAddress?.playURL() ?? new URL(location.href); url.searchParams.delete('vehicle'); url.searchParams.set('autoplay', '1')
+    // The picker shows the choice as under way until the page goes.
+    this.pendingVehicle = kind
     location.replace(url)
   }
+  /** A vehicle being switched to by a reload, shown as pending in the picker. */
+  private pendingVehicle?: VehicleKind
   private vehicleSwap?: (kind: VehicleKind) => Vehicle | null
   /** main.ts hands over the in-place vehicle swap. Without it the selector reloads the page. */
   setVehicleSwap(swap: (kind: VehicleKind) => Vehicle | null): void { this.vehicleSwap = swap }
@@ -625,7 +643,7 @@ export class Shell implements System {
     // Play has begun: from here the cursor request made at the entering gesture (if any) is
     // judged like any other.
     this.enteringByGesture = false
-    try { localStorage.setItem('syn3h.playerName', this.playerName) } catch { /* Playing does not require storage. */ }
+    savePlayerName(this.playerName, this.nameSource)
     this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
   }
@@ -817,15 +835,31 @@ export class Shell implements System {
    * Set by initGameShell: `commit` is true for that settled call.
    */
   onTint?: (body: string, accent: string, commit: boolean) => void
-  private readonly tintView = { body: this.choice.bodyColor, accent: this.choice.accentColor }
+  /** The colours showing now, easing towards the chosen ones (src/vehicles/tints.ts). */
+  private readonly tintTransition = new TintTransition({ body: this.choice.bodyColor, accent: this.choice.accentColor })
   private tintTimer?: ReturnType<typeof setTimeout>
   private setTint(key: 'body' | 'accent', value: string): void {
     if (!/^#[0-9a-f]{6}$/i.test(value)) return
     if (key === 'body') this.choice.bodyColor = value; else this.choice.accentColor = value
-    this.tintView.body = this.choice.bodyColor; this.tintView.accent = this.choice.accentColor
+    // A dragged picker paints at once; only Randomize eases.
+    this.tintTransition.jump({ body: this.choice.bodyColor, accent: this.choice.accentColor })
     this.onTint?.(this.choice.bodyColor, this.choice.accentColor, false)
     clearTimeout(this.tintTimer)
     this.tintTimer = setTimeout(() => { saveVehicleChoice(this.choice); this.onTint?.(this.choice.bodyColor, this.choice.accentColor, true) }, 200)
+  }
+  /**
+   * A new pleasing pair (src/vehicles/tints.ts). The vehicle, swatches and header dots ease to
+   * it over about a second; a press mid-change turns from the colours showing now. The room
+   * is told the target once, at once, and every client eases to it on its own.
+   */
+  private randomizeTint(): void {
+    const pair = randomTintPair(crypto.getRandomValues(new Uint32Array(1))[0])
+    this.choice.bodyColor = pair.body; this.choice.accentColor = pair.accent
+    this.tintTransition.set({ body: pair.body, accent: pair.accent })
+    clearTimeout(this.tintTimer)
+    saveVehicleChoice(this.choice)
+    this.onTint?.(pair.body, pair.accent, true)
+    this.audio.cue('click')
   }
   /** Touch only: the panels are showing rather than the driving view. Never stored. */
   private touchPanels = false
@@ -932,7 +966,8 @@ export class Shell implements System {
     // moving a slider or select. A focused button or summary does not count: it only owns
     // Space and Enter, and focus rests on one after any click on the panels.
     const field = (element: unknown) => element instanceof HTMLElement && (element.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName) || element.closest('[role=listbox]') !== null)
-    const typing = field(event.target) || field(document.activeElement)
+    // The vehicle picker owns the arrow keys while it has focus (a radiogroup), as a list does.
+    const typing = field(event.target) || field(document.activeElement) || (event.target instanceof Element && event.target.closest('[role=radiogroup]') !== null)
     if (!typing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code) && this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
@@ -1389,6 +1424,7 @@ export class Shell implements System {
     if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }
   setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
   update(dt = 0): void {
+    if (this.tintTransition.update(dt)) this.onTint?.(this.tintTransition.current.body, this.tintTransition.current.accent, false)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
     // A captured cursor alone is insufficient while a menu or another flow suspends input.
     this.syncPanels()
@@ -1475,8 +1511,14 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
   const hints = new PlayHints(); let height = new HeightAboveGround()
   // A colour picked in play repaints the local vehicle at once and, once settled, tells the room.
   shell.onTint = (body, accent, commit) => {
-    activePlayer.setColors(body, accent)
+    // A commit only announces: the vehicle already shows these colours, or is easing to them.
+    if (!commit) activePlayer.setColors(body, accent)
     if (commit) (window as unknown as { syn3hNet?: { setProfile?(profile: { colors: { body: string; accent: string } }): void } }).syn3hNet?.setProfile?.({ colors: { body, accent } })
+  }
+  // A rename in the Me card: this vehicle's own label and the room follow at once.
+  shell.onRename = name => {
+    activePlayer.name = name
+    ;(window as unknown as { syn3hNet?: { setName?(name: string): void } }).syn3hNet?.setName?.(name)
   }
   const bridge = game.add({ update(dt = 0) {
     const v = activePlayer.body.linvel(), p = activePlayer.body.translation(), speed = Math.hypot(v.x, v.y, v.z)

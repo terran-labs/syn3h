@@ -3,7 +3,7 @@ import * as THREE from 'three/webgpu'
 import type { Game } from '../core/Game'
 import type { Terrain } from '../world/Terrain'
 import { attachVehicleEffects } from './effects'
-import { canonicalVehicleKind, createVehicle, type VehicleKind } from './index'
+import { canonicalVehicleKind, createVehicle, isVehicleAvailable, type VehicleKind } from './index'
 import type { PlayerSlot } from './PlayerSlot'
 import { REST_HEIGHT, type Vehicle } from './Vehicle'
 import { PlayerVehicleWarm } from './PlayerVehicleWarm'
@@ -102,7 +102,7 @@ export function createVehicleSwapper(
   let detach = attachEffects(slot.current)
   let disposed = false
   const warmer = new PlayerVehicleWarm(game)
-  const queue: VehicleKind[] = ['jet', 'hovercraft', 'tank', 'buggy']
+  const queue = (['jet', 'hovercraft', 'tank', 'buggy'] as VehicleKind[]).filter(isVehicleAvailable)
   const warmStats = { pending: true, current: null as string | null }
   game.scene.userData.playerVehicleCache = warmStats
   let idleSeconds = 0
