@@ -1,0 +1,48 @@
+# A second vantage point for a release: the short public check (tools/public-check.mjs), run
+# from a GitHub-hosted machine against the public site, so a failure on the release machine's
+# own route to Cloudflare can be told apart from a failure of the site.
+#
+# Started by tools/release.sh after a release is accepted (gh workflow run), or by hand from the
+# Actions tab. It only loads the public site: no secrets, no write access, no push or pull
+# request triggers.
+name: Public check
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version being checked, for the record (for example v26.11.1705)
+        required: true
+        type: string
+      url:
+        description: Public address to check
+        required: false
+        default: https://www.syn3h.com/
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Public check ${{ inputs.version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # Only the check's own dependency, not the game's whole toolchain.
+      - name: Install Playwright and Chrome
+        run: |
+          npm install --no-save --ignore-scripts playwright-core@1 playwright@1
+          npx playwright install --with-deps chrome
+      - name: Run the public check
+        env:
+          URL: ${{ inputs.url }}
+        run: node tools/public-check.mjs "$URL"

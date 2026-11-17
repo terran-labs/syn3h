@@ -357,6 +357,29 @@ fi
 # hour, so it never runs inside a release. See docs/RELEASE-SHOWCASE.md.
 echo "Next, when no release is running: /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/showcase.mjs --version $CALVER --publish"
 
+# A second vantage point: the same short public check from a GitHub-hosted machine
+# (.github/workflows/public-check.yml). It reports only, for now: the release is already
+# accepted, and a failure there with a pass here is information about the route, not a
+# rollback. SYN3H_SKIP_VANTAGE=1 skips it.
+vantage() {
+  [ -z "${SYN3H_SKIP_VANTAGE:-}" ] || { echo "VANTAGE: skipped (SYN3H_SKIP_VANTAGE)"; return 0; }
+  command -v gh >/dev/null 2>&1 || { echo "VANTAGE: skipped (gh is not installed)"; return 0; }
+  _since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  gh workflow run public-check.yml -f version="$CALVER" -f url=https://www.syn3h.com/ >"$LOG-vantage.log" 2>&1 \
+    || { echo "VANTAGE: skipped (could not start the GitHub check; see $LOG-vantage.log)"; return 0; }
+  _run=""; _tries=0
+  while [ -z "$_run" ] && [ "$_tries" -lt 12 ]; do
+    sleep 5; _tries=$((_tries + 1))
+    _run="$(gh run list --workflow public-check.yml --event workflow_dispatch --limit 5 --json databaseId,createdAt \
+      -q "[.[] | select(.createdAt >= \"$_since\")][0].databaseId" 2>/dev/null || true)"
+  done
+  [ -n "$_run" ] || { echo "VANTAGE: skipped (the GitHub run did not appear within a minute)"; return 0; }
+  gh run watch "$_run" --interval 15 >>"$LOG-vantage.log" 2>&1 || true
+  _result="$(gh run view "$_run" --json conclusion,url -q '.conclusion + " " + .url' 2>/dev/null || echo "unknown")"
+  echo "VANTAGE: GitHub public check of $CALVER from a hosted machine: $_result"
+}
+vantage || true
+
 # Refresh aggregate dashboard tiles after the release record exists. The host supplies
 # SYN3H_SESSION_STATE; never store its value in the repository or published dashboard.
 if [ -f tools/dashboard-stats.mjs ]; then
