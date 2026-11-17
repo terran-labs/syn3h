@@ -9,8 +9,9 @@
  *  1. both join and see each other;
  *  2. state crosses the room: A moves and B sees A there;
  *  3. a shared setting set by A reaches B;
- *  4. A's socket is closed under it and A rejoins as the same player, still seen by B;
- *  5. A leaves and the room tells B (after the rejoin grace).
+ *  4. King of the Hill: A alone in the zone gets 2 points within 10 s from the room's own clock;
+ *  5. A's socket is closed under it and A rejoins as the same player, still seen by B;
+ *  6. A leaves and the room tells B (after the rejoin grace).
  * Prints PUBLIC CHECK OK and exits 0, or PUBLIC CHECK FAILED and exits 1. A crashed browser
  * page is the machine, not the deploy: PUBLIC CHECK BROWSER CRASHED, exit 3.
  */
@@ -47,6 +48,9 @@ try {
   const sees = (page, ids) => until(page, (ids) => ids.every((id) => window.syn3hNet.players.has(id)), ids, 15000)
   check('both join and see each other', idA !== idB && await sees(a, [idA, idB]) && await sees(b, [idA, idB]), { idA, idB })
 
+  // No bots: a moving bot in the zone would contest the hill in step 4 (as in the full smoke).
+  await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
+
   // 2. A moves 30 m along the ground; B's copy of A follows.
   const target = await a.evaluate(() => {
     const s = window.syn3h.terrain.spawnPoint(0), x = s.position.x + 30, z = s.position.z
@@ -60,14 +64,36 @@ try {
   await a.evaluate(() => window.syn3h.params.set('laser.speed', 250))
   check('a shared setting reaches B', await until(b, () => window.syn3h.params.get('laser.speed').value === 250, null, 15000))
 
-  // 4. Close A's socket under it, as a network drop would; A must come back as the same player.
+  // 4. The room's own clock, on this Worker: King of the Hill, A alone in the zone, B out, and
+  // the room must credit A at least 2 points within 10 s (scoring runs on the room's alarm, not
+  // on players' messages). Production failed this twice when staging did not, so it runs here.
+  await a.evaluate(() => window.syn3h.params.set('game.mode', 1))
+  const zoned = await until(a, () => window.syn3hNet.game.mode === 1 && !!window.syn3hNet.game.koth.zone, null, 15000)
+  let hill = { zoned }
+  if (zoned) {
+    await a.evaluate(() => {
+      const zone = window.syn3hNet.game.koth.zone, r = (zone.inner + zone.outer) / 2
+      const x = zone.x + Math.cos(0.3) * r, z = zone.z + Math.sin(0.3) * r
+      const v = window.syn3h.player.object.position.clone(); v.set(x, window.syn3h.terrain.heightAt(x, z) + 1.2, z)
+      window.syn3h.player.teleport(v, 0)
+    })
+    await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, 0) })
+    const started = Date.now()
+    const scored = await until(a, (id) => window.syn3hNet.game.koth.holder === id && (window.syn3hNet.game.scores[id] ?? 0) >= 2, idA, 10000)
+    hill = { zoned, holder: await a.evaluate(() => window.syn3hNet.game.koth.holder), score: await a.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, idA), ms: Date.now() - started }
+    check('the room scores the hill on its own clock: A alone gets 2 points within 10 s', scored, hill)
+  } else check('the room scores the hill on its own clock: A alone gets 2 points within 10 s', false, hill)
+  await a.evaluate(() => window.syn3h.params.set('game.mode', 2))
+  await until(b, () => window.syn3hNet.game.mode === 2, null, 15000)
+
+  // 5. Close A's socket under it, as a network drop would; A must come back as the same player.
   const before = await a.evaluate(() => window.syn3hNet.conn.reconnects)
   await a.evaluate(() => window.syn3hNet.conn.ws?.close(4000, 'public check'))
   const back = await until(a, (n) => window.syn3hNet.conn.reconnects > n && window.syn3hNet.conn.state === 'open' && window.syn3hNet.id > 0, before, 30000)
   const idAfter = await a.evaluate(() => window.syn3hNet.id)
   check('a forced reconnect rejoins as the same player', back && idAfter === idA && await sees(b, [idA]), { idA, idAfter })
 
-  // 5. A leaves; the room holds its place for the rejoin grace (30 s), then tells B.
+  // 6. A leaves; the room holds its place for the rejoin grace (30 s), then tells B.
   await a.context().close()
   check('a leaving player is gone for B after the rejoin grace', await until(b, (id) => !window.syn3hNet.players.has(id), idA, 60000), { idA })
 } catch (e) {
