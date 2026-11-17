@@ -17,8 +17,8 @@ async function measure(offFile, onFile, sun) {
   const rings = []
   for (const r of [0.1, 0.18, 0.26]) {
     const vals = []
-    for (let k = 0; k < 360; k++) { const t = k / 360 * Math.PI * 2, x = sun.x * a.w + Math.cos(t) * r * a.h, y = sun.y * a.h + Math.sin(t) * r * a.h; if (x < 0 || y < 0 || x >= a.w || y >= a.h) continue; vals.push(Math.max(0, lum(b, x, y) - lum(a, x, y))) }
-    if (vals.length < 60) continue
+    for (let k = 0; k < 360; k++) { const t = Math.PI + k / 360 * Math.PI, x = sun.x * a.w + Math.cos(t) * r * a.h, y = sun.y * a.h + Math.sin(t) * r * a.h; if (x < 0 || y < 0 || x >= a.w || y >= a.h) continue; vals.push(Math.max(0, lum(b, x, y) - lum(a, x, y))) }
+    if (vals.length < 40) continue
     const m = vals.reduce((s, v) => s + v, 0) / vals.length, sd = Math.sqrt(vals.reduce((s, v) => s + (v - m) ** 2, 0) / vals.length)
     rings.push({ r, mean: +m.toFixed(1), cv: m > 0.5 ? +(sd / m).toFixed(2) : 0 })
   }
@@ -37,10 +37,11 @@ async function run(device, quality, cases, tag) {
         const s = window.syn3h, { applyPlanet } = await import('/src/world/planets.ts'), { sunDirection } = await import('/src/world/sky/skyMath.ts')
         applyPlanet(planet, 12345); s.params.set('bots.count', 0); s.params.set('gfx.auto', false); s.params.set('gfx.quality', quality)
         s.params.set('weather.cloudCoverage', 0.5); s.params.set('weather.cloudSpeed', 0); s.params.set('sun.dayLength', 0); s.params.set('sun.timeOfDay', hour)
+        await new Promise(r => setTimeout(r, 5000))
         const cam = s.game.camera, f = cam.getWorldDirection(new cam.position.constructor()); let best = 0, score = -Infinity
         for (let a = 0; a < 360; a++) { const d = sunDirection(hour, s.params.get('sun.tilt').value, a); const dot = (d[0] * f.x + d[2] * f.z) / Math.hypot(d[0], d[2]); if (dot > score) { score = dot; best = a } }
         s.params.set('sun.azimuth', best)
-        await new Promise(r => setTimeout(r, 6000))
+        await new Promise(r => setTimeout(r, 3000))
         const d = sunDirection(hour, s.params.get('sun.tilt').value, best), p = cam.position.clone().add(new cam.position.constructor(d[0], d[1], d[2]).multiplyScalar(1000)).project(cam)
         return { x: p.x * 0.5 + 0.5, y: 0.5 - p.y * 0.5 }
       }, { planet, hour, quality })
