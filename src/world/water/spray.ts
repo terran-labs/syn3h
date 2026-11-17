@@ -108,10 +108,13 @@ function dropletMaterial(light: N, tint: N, lava = false) {
   // Drops passing right by the lens would fill the screen with blobs: fade them out up close.
   const near = smoothstep(1.5, 6, distance)
   const alpha = select(mist, b.w.sub(2), b.w).mul(near)
-  m.opacityNode = select(mist, puff.mul(alpha).mul(.7), bead.mul(alpha).mul(cover.mul(.75).add(.25)).mul(mix(float(.55), float(.85), aerated)))
+  // A clot is a soft, nearly opaque white disc, not a clear bead.
+  const clot = float(1).sub(smoothstep(.35, 1, r)).mul(.95)
+  m.opacityNode = select(mist, puff.mul(alpha).mul(.7), mix(bead.mul(.55), clot, aerated).mul(alpha).mul(cover.mul(.75).add(.25)))
   const water = mix(tint, vec3(1, 1, 1), .35)
   const drop = mix(mix(water, vec3(1.15, 1.18, 1.2), rim.max(glint).mul(.85)), vec3(1.2, 1.22, 1.24), aerated.mul(.75))
-  m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .7), drop).mul(light)
+  // Spray thrown into the sun scatters it forward: clots and mist read brighter than lit sand.
+  m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .7).mul(1.4), drop.mul(mix(float(1), float(1.8), aerated))).mul(light)
   if (lava) {
     // Molten drops glow on their own and cool as they fade: yellow-orange to a dark clot.
     // Lava "mist" is a hot, dark smoke.

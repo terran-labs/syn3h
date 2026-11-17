@@ -20,7 +20,7 @@
 import * as THREE from 'three/webgpu'
 import {
   abs, attribute, cameraPosition, cameraViewMatrix, color, cos, faceDirection, float, max, mix, modelWorldMatrix,
-  mx_noise_float, normalize, positionGeometry, positionLocal, positionWorld, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4, renderGroup,
+  mx_noise_float, normalize, positionGeometry, positionView, positionLocal, positionWorld, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4, renderGroup,
 } from 'three/tsl'
 import { SEA_COMPONENTS as WAVE_COUNT } from './seaWaves'
 import { rippleField } from './ripples'
@@ -128,6 +128,34 @@ export function waterOpacityNode(depth: THREE.Node<'float'>, foam: THREE.Node<'f
   // From underwater, a clear Snell window and nearly opaque reflection outside its cone.
   const window = smoothstep(SNELL_COS - .14, SNELL_COS + .06, view.y.negate())
   return view.y.greaterThanEqual(0).select(above, mix(float(.98), float(.12), window))
+}
+
+/** Share of the scene's aerial haze the water takes at the camera, and the distances it eases over. */
+export const WATER_HAZE = { near: 0.15, from: 300, to: 1600 }
+
+/**
+ * Haze over water on its own curve. The weather's sea-level haze is right for land but washes
+ * a sea seen from a few tens of metres up into milk, hiding its colour and its swell. The
+ * scene's air fog mixes a pixel toward the haze colour by a factor f; mixing that result back
+ * toward the unfogged colour by `keep` is the same as applying the haze at f * (1 - keep). So
+ * near the camera the water takes only WATER_HAZE.near of it, easing to all of it by
+ * WATER_HAZE.to metres and at the horizon, where it meets the land's haze exactly. No change
+ * while the camera is in the water (the medium there is the fog). With no scene fog (a lab,
+ * a test, a world built before Environment) this is exactly the default. It wraps whatever
+ * fog node the material is compiled against, so a rebuilt Environment is picked up when its
+ * new fog node recompiles the material.
+ */
+export function hazeCurve(material: THREE.NodeMaterial): void {
+  type FogSetup = (this: unknown, builder: { fogNode: unknown }, output: THREE.Node) => THREE.Node
+  const m = material as unknown as { setupFog: FogSetup }
+  const base = Object.getPrototypeOf(material).setupFog as FogSetup
+  m.setupFog = function waterFog(builder, output) {
+    const fogged = base.call(this, builder, output)
+    if (!builder.fogNode) return fogged
+    const share = mix(float(WATER_HAZE.near), float(1), smoothstep(WATER_HAZE.from, WATER_HAZE.to, positionView.length()))
+    const keep = float(1).sub(share).mul(float(1).sub(cameraInWaterNode))
+    return mix(fogged as THREE.Node<'vec4'>, output as THREE.Node<'vec4'>, keep)
+  }
 }
 
 export function configureWaterBlending(material: THREE.MeshStandardNodeMaterial): void {
@@ -377,6 +405,8 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   // water the surface outside Snell's window reflects the dark water below, so occlude nearly
   // all ambient and reflected light there and leave the top exactly as it is.
   material.aoNode = mix(float(0.1), float(1), faceDirection.mul(0.5).add(0.5))
+
+  hazeCurve(material)
 
   return {
     material,

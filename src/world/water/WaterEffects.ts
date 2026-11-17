@@ -72,6 +72,11 @@ export class WaterEffects implements System {
         // buggy's thin skid plate can already be dry while those columns still lift it.
         // Include that same envelope so a supported skimming hull still makes spray.
         bottom=Math.min(bottom,p.y-.5);top=Math.max(top,p.y+.5)
+        // A Zorb's ball is what meets the water: each skip of the ball splashes, sized by its speed.
+        const ball=v.zorbed?v.zorb.collider:null
+        // Measured over the ball's bottom metre: a floating ball dips only its base, a few per cent
+        // of its height, and a skip must still read as an entry.
+        if(ball&&v.zorb.radius>0){bottom=ball.translation().y-v.zorb.radius;top=bottom+1}
         const fraction=submergedFraction(bottom,top,surface)
         let id=this.ids.get(v);if(!id){id=`water-${++this.serial}`;this.ids.set(v,id)}
         const velocity=v.body.linvel();this.point.set(x,surface,z);this.velocity.set(velocity.x,velocity.y,velocity.z)

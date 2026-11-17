@@ -72,6 +72,9 @@ const SCENARIOS = {
   'sea-30m-noref': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 15, max: 80, mode: 'float', cam: [40, 30], params: { 'weather.storminess': 1, 'water.reflection': 0 }, shots: [['sea-30m-noref', 3000]] },
   'sea-30m-novis': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 15, max: 80, mode: 'float', cam: [40, 30], params: { 'weather.storminess': 1, 'water.waveVisual': 0 }, shots: [['sea-30m-novis', 3000]] },
   'sea-30m-nohaze': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 15, max: 80, mode: 'float', cam: [40, 30], params: { 'weather.storminess': 1, 'weather.hazeDensity': 0, 'weather.aerial': 0 }, shots: [['sea-30m-nohaze', 3000]] },
+  'sea-150m-rough': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 15, max: 80, mode: 'float', cam: [220, 150], params: { 'weather.storminess': 1 }, shots: [['sea-150m-rough', 3000]] },
+  'zorb-skip': { planet: 'archipelago', vehicle: 'buggy', hour: 15, kind: 'water', min: 8, max: 60, mode: 'zorb', shots: [['zorb-0', 300], ['zorb-1', 250], ['zorb-2', 250], ['zorb-3', 300], ['zorb-4', 350], ['zorb-5', 400]] },
+  'lava-splash': { planet: 'volcanic', vehicle: 'buggy', hour: 20, kind: 'lava', min: 6, max: 40, mode: 'splash', impact: [18, -14], liquid: 'lava', shots: [['lava-splash-0', 80], ['lava-splash-1', 250], ['lava-splash-2', 350], ['lava-splash-3', 600]] },
   'sea-30m-calm-dusk': { planet: 'archipelago', vehicle: 'buggy', hour: 18.6, kind: 'water', min: 15, max: 80, mode: 'float', cam: [40, 30], params: { 'weather.storminess': 0 }, shots: [['sea-30m-calm-dusk', 3000]] },
   'dawn-ice': { planet: 'ice', vehicle: 'buggy', hour: 6.5, kind: 'water', min: 10, max: 200, mode: 'horizon', shots: [['dawn-ice', 3000]] },
   'dawn-archipelago': { planet: 'archipelago', vehicle: 'buggy', hour: 6.5, kind: 'water', min: 10, max: 200, mode: 'horizon', shots: [['dawn-archipelago', 3000]] },
@@ -140,7 +143,14 @@ try {
         // Park the player far away; the splash is driven straight through the water effects.
         const h = land + Math.PI, side = h + Math.PI / 2
         window.splashAt = { x: spot.x, y: spot.surface, z: spot.z, h }
+        window.splashLiquid = sc.liquid ?? 'water'
         s.camera.setCinematicPose(new V(spot.x + Math.cos(side) * 22, spot.surface + 4, spot.z + Math.sin(side) * 22), new V(spot.x, spot.surface + 2.5, spot.z))
+      } else if (sc.mode === 'zorb') {
+        // A Zorb thrown down at the water at speed, skipping along it; camera held to the side.
+        const h = land + Math.PI, side = h + Math.PI / 2, back = 30
+        window.zorbSpot = { x: spot.x, y: spot.surface, z: spot.z, h }
+        s.player.teleport({ x: spot.x - Math.cos(h) * back, y: spot.surface + 8, z: spot.z - Math.sin(h) * back }, h)
+        s.camera.setCinematicPose(new V(spot.x + Math.cos(side) * 30, spot.surface + 6, spot.z + Math.sin(side) * 30), new V(spot.x, spot.surface + 2, spot.z))
       } else if (sc.mode === 'skim') {
         // Thrown flat along the water, away from land, at speed: bow spray, rooster tail, wake.
         const h = land + Math.PI
@@ -195,15 +205,26 @@ try {
         window.crossPose = { pos, tgt, spot }
       }, { sc, spot })
     }
+    if (sc.mode === 'zorb') {
+      // Ball on (the Zorb key), then launch it at the water.
+      await page.keyboard.press('KeyX')
+      await wait(page, 1800)
+      await page.evaluate(() => {
+        const s = window.syn3h, a = window.zorbSpot, back = 30
+        s.player.teleport({ x: a.x - Math.cos(a.h) * back, y: a.y + 8, z: a.z - Math.sin(a.h) * back }, a.h)
+        s.player.body.setLinvel({ x: Math.cos(a.h) * 26, y: -9, z: Math.sin(a.h) * 26 }, true)
+      })
+    }
     if (sc.mode === 'splash') {
       await wait(page, 2500)
       await page.evaluate(([h, v]) => {
         const s = window.syn3h, a = window.splashAt
         const fx = s.game.systems.find(x => x.spray && x.underwater)
+        const spray = window.splashLiquid === 'lava' ? fx.lavaSpray : fx.spray
         const P = s.game.camera.position.constructor
         const at = new P(a.x, a.y, a.z), vel = new P(Math.cos(a.h) * h, v, Math.sin(a.h) * h)
-        fx.spray.vehicle('splash-demo', at, vel, 0, 1 / 60)
-        fx.spray.vehicle('splash-demo', at, vel, 1, 1 / 60)
+        spray.vehicle('splash-demo', at, vel, 0, 1 / 60)
+        spray.vehicle('splash-demo', at, vel, 1, 1 / 60)
       }, sc.impact)
     }
     const shots = []
