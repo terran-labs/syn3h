@@ -13,6 +13,8 @@ const f = (n: number) => (Number.isFinite(n) ? n.toFixed(2) : 'n/a')
 const rows: string[][] = [['case', 'result']]
 const row = (name: string, value: string) => rows.push([name, value])
 const show = (p: number[], h: number) => p.slice(0, 4).map((x) => f(x / h)).join(', ')
+// BOUNCE=1.75 npx tsx tools/zorb-bounce-report.ts: the same table at another bounciness.
+if (process.env.BOUNCE) params.set('zorb.bounce', Number(process.env.BOUNCE))
 
 console.log(`zorb.bounce ${params.get('zorb.bounce')!.value}, zorb.hopHeight ${params.get('zorb.hopHeight')!.value}`)
 for (const h of [5, 20]) {
@@ -37,7 +39,7 @@ for (const speed of [0, 15, 30]) {
   const r = ride('flat')
   if (speed) { r.v.body.setLinvel({ x: speed, y: 0, z: 0 }, true); r.step(5) }
   const h = hop(r)
-  row(`hop at ${speed} m/s: apex (m); then bounces (m)`, `${f(h.apex)}; ${h.peaks.slice(1, 3).map(f).join(', ')}`)
+  row(`hop at ${speed} m/s: vehicle rise; ball apex; then bounces (m)`, `${f(h.vehicle)}; ${f(h.apex)}; ${h.peaks.slice(1, 3).map(f).join(', ')}`)
   r.done()
 }
 {
@@ -49,7 +51,7 @@ for (const speed of [0, 15, 30]) {
 {
   const r = ride('flat', 'buggy', new THREE.Vector3(0, 2, 0), 1.62)
   const h = hop(r, 12)
-  row('hop on the Moon (1.62 m/s²): apex (m)', f(h.apex))
+  row('hop on the Moon (1.62 m/s²): vehicle rise; ball apex (m)', `${f(h.vehicle)}; ${f(h.apex)}`)
   r.done()
 }
 {
@@ -92,6 +94,15 @@ for (const liquid of ['water', 'lava'] as const) {
     a.v.input.zorb = true
   }
   a.done()
+}
+for (const h of [10]) {
+  // Brake held through the landing, then released for the next one.
+  const r = ride('flat'); r.v.input.brakes = true; r.step(20); place(r, h)
+  const held = bounces(r, 6).peaks[0] ?? 0
+  r.v.input.brakes = false; r.step(30); place(r, h)
+  const free = bounces(r, 6).peaks[0] ?? 0
+  row(`drop ${h} m with brake held / released: first rebound (fraction)`, `${f(held / h)} / ${f(free / h)}`)
+  r.done()
 }
 const width = Math.max(...rows.map((r) => r[0].length))
 for (const [a, b] of rows) console.log(`${a.padEnd(width)}  ${b}`)

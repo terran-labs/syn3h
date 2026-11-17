@@ -48,10 +48,12 @@ describe('zorb bounce', () => {
     r.done()
   })
 
-  it('comes to rest at the default bounciness', () => {
+  it('comes to rest at the default bounciness, from a big drop, within a reasonable time', () => {
     const r = ride('flat'); place(r, 20)
     const b = bounces(r, 60)
     expect(b.settled).toBeGreaterThan(0)
+    // The tail of ever smaller bounces ends: a ball still hopping after 20 s is a bug.
+    expect(b.settled).toBeLessThan(20)
     r.done()
   })
 
@@ -66,13 +68,60 @@ describe('zorb bounce', () => {
   })
 })
 
+describe('zorb brake', () => {
+  const firstRebound = (brake: boolean | 'toggle', h = 10) => {
+    const r = ride('flat')
+    r.v.input.brakes = brake === true; r.step(20); place(r, h)
+    const peaks: number[] = []
+    let rising = false, top = 0, touched = false, start = energy(r), gained = 0
+    for (let i = 0; i < 400; i++) {
+      if (brake === 'toggle' && i % 15 === 0) r.v.input.brakes = !r.v.input.brakes
+      r.step()
+      gained = Math.max(gained, energy(r) - start)
+      const y = r.height(), vy = r.v.body.linvel().y
+      if (y < .05) touched = true
+      if (!touched) continue
+      if (vy > .05) { rising = true; top = Math.max(top, y) } else if (rising) { rising = false; peaks.push(top); top = 0 }
+    }
+    r.done()
+    return { first: (peaks[0] ?? 0) / h, gained }
+  }
+
+  it('holding brake through a landing sticks it: under a tenth of the drop', () => {
+    expect(firstRebound(true).first).toBeLessThan(0.1)
+  })
+
+  it('released, the bounce is what it is without ever braking', () => {
+    const r = ride('flat'); r.v.input.brakes = true; r.step(30); r.v.input.brakes = false; r.step(30); place(r, 10)
+    const after = bounces(r, 6).peaks[0] / 10; r.done()
+    const never = firstRebound(false).first
+    expect(Math.abs(after - never)).toBeLessThan(0.03)
+  })
+
+  it('toggling brake mid-bounce never adds energy', () => {
+    expect(firstRebound('toggle').gained).toBeLessThan(0.5)
+  })
+
+  it('a remote copy given the same brake input damps the same', () => {
+    const owner = ride('flat'), copy = ride('flat')
+    owner.v.input.brakes = true
+    for (let i = 0; i < 20; i++) { owner.step(); Object.assign(copy.v.input, owner.v.getState().input); copy.step() }
+    expect(copy.v.zorb.damp).toBeCloseTo(owner.v.zorb.damp, 5)
+    expect(owner.v.zorb.damp).toBeGreaterThan(0.9)
+    owner.done(); copy.done()
+  })
+})
+
 describe('zorb hop', () => {
   it('hops to the same height under any gravity: the Moon changes the hang time, not the height', () => {
-    const earth = ride('flat'); const a = hop(earth).apex; earth.done()
-    const moon = ride('flat', 'buggy', new THREE.Vector3(0, 2, 0), 1.62); const b = hop(moon, 12).apex; moon.done()
-    expect(a).toBeGreaterThan(0.5)
-    expect(b / a).toBeGreaterThan(0.8)
-    expect(b / a).toBeLessThan(1.25)
+    const earth = ride('flat'); const a = hop(earth).vehicle; earth.done()
+    const moon = ride('flat', 'buggy', new THREE.Vector3(0, 2, 0), 1.62); const b = hop(moon, 12).vehicle; moon.done()
+    const rolling = ride('flat'); rolling.v.body.setLinvel({ x: 15, y: 0, z: 0 }, true); rolling.step(5); const c = hop(rolling).vehicle; rolling.done()
+    expect(c / Number(params.get('zorb.hopHeight')!.value)).toBeGreaterThan(0.9); expect(c / Number(params.get('zorb.hopHeight')!.value)).toBeLessThan(1.1)
+    // The slider means what it says: the vehicle rises its height, at any gravity.
+    const height = Number(params.get('zorb.hopHeight')!.value)
+    expect(a / height).toBeGreaterThan(0.9); expect(a / height).toBeLessThan(1.1)
+    expect(b / height).toBeGreaterThan(0.9); expect(b / height).toBeLessThan(1.1)
   })
 
   it('hop, land, hop at the cooldown cannot climb without bound', () => {
@@ -82,6 +131,24 @@ describe('zorb hop', () => {
     const first = apexes[0]
     for (const a of apexes) expect(a).toBeLessThanOrEqual(first * 1.5 + .2)
     expect(Number.isFinite(r.v.body.translation().y)).toBe(true)
+    r.done()
+  })
+
+  it('remembers a press made just before touching down and hops on contact', () => {
+    const r = ride('flat'); place(r, .9); r.step(2)
+    expect(r.v.zorb.contact).toBe(0)
+    // About 0.2 s from the ground: too early to hop, soon enough to be remembered.
+    r.v.input.special = !r.v.input.special
+    for (let i = 0; i < 25 && r.v.zorb.hops === 0; i++) r.step()
+    expect(r.v.zorb.hops).toBe(1)
+    r.done()
+  })
+
+  it('forgets a press made high in the air, and never hops in mid-air unless mid-air hops are on', () => {
+    const r = ride('flat'); place(r, 12); r.step(2)
+    r.v.input.special = !r.v.input.special
+    for (let i = 0; i < 150; i++) r.step()
+    expect(r.v.zorb.hops).toBe(0)
     r.done()
   })
 

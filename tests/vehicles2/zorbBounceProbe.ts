@@ -90,9 +90,14 @@ export function bounces(r: Ride, seconds = 20, minimum = .1): { peaks: number[];
 }
 
 /** Press Space once (a hop) and return the apex of the ball's base above where it started. */
-export function hop(r: Ride, seconds = 4): { apex: number; peaks: number[] } {
-  const start = r.height()
+export function hop(r: Ride, seconds = 4): { apex: number; vehicle: number; peaks: number[] } {
+  const start = r.height(), com = r.v.body.translation().y
   r.v.input.special = !r.v.input.special
+  // The vehicle's own rise (its centre of mass), sampled alongside the ball's.
+  let top = com
+  const step = r.step
+  r.step = (n = 1) => { for (let i = 0; i < n; i++) { step(); top = Math.max(top, r.v.body.translation().y) } }
   const b = bounces(r, seconds, .05)
-  return { apex: b.maxHeight - start, peaks: b.peaks }
+  r.step = step
+  return { apex: b.maxHeight - start, vehicle: top - com, peaks: b.peaks }
 }
