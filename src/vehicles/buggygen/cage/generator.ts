@@ -98,6 +98,13 @@ export function buildBody(d: CageData, levels: number): BodyPart[] {
   return parts
 }
 
-export function candidate(id: string, d: CageData): Candidate {
-  return {id, build: detail => buildBody(d, d.levels[detail]), numbers: d.v.length + d.f.length + d.t.length + d.c.length}
+const count = (d: CageData) => d.v.length + d.f.length + d.t.length + d.c.length
+
+/** A candidate for the buggy-fit harness. `far`, if given, is a smaller cage drawn unsubdivided at detail 2. */
+export function candidate(id: string, d: CageData, far?: CageData): Candidate {
+  return {
+    id,
+    build: detail => detail === 2 && far ? buildBody(far, 0) : buildBody(d, d.levels[detail]),
+    numbers: count(d) + (far ? count(far) : 0),
+  }
 }
