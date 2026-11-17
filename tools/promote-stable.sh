@@ -14,7 +14,7 @@ DEST="../Syn3h-stable/$ID"
 npm run build >/tmp/syn3h-stable-build.log 2>&1 || { tail -20 /tmp/syn3h-stable-build.log; exit 1; }
 mkdir -p "$(dirname "$DEST")"
 mkdir "$DEST"
-cp -R dist wrangler.toml server shared src package.json tsconfig.json "$DEST/"
+cp -R dist wrangler.toml wrangler.staging.toml server shared src package.json tsconfig.json "$DEST/"
 ln -sfn "$(pwd)/node_modules" "$DEST/node_modules"
 node -e 'const fs = require("node:fs"); const [dest,id,commit,note] = process.argv.slice(1); fs.writeFileSync(dest + "/dist/build.json", JSON.stringify({id,commit,built:new Date().toISOString(),note,...(process.env.SYN3H_RELEASE_VERSION ? {version:process.env.SYN3H_RELEASE_VERSION} : {})}) + "\n")' "$DEST" "$ID" "$(git rev-parse HEAD)" "$NOTE"
 ln -sfn "$ID" ../Syn3h-stable/current
