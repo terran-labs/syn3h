@@ -25,6 +25,16 @@ import './me-card.css'
 /** A die showing five, drawn as one path: the Randomize and roll-a-name buttons. */
 const DICE_GLYPH = '<svg class="wi-dice" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.4"/><path fill="currentColor" d="M5 4a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm6 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2ZM8 7a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm-3 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm6 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg>'
 
+/**
+ * Small line glyphs for the World card's actions, 16 px, drawn in the text colour: copy (two
+ * sheets), paste (a sheet with an arrow in), reset (an arrow turning back). One stroked path each.
+ */
+const GLYPH = (d: string) => `<svg class="wi-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`
+const WORLD_ACTIONS = `<div class="wi-world-actions" role="group" aria-label="World actions">`
+  + `<button type="button" data-wi="copy-world" aria-label="Copy world">${GLYPH('M5.5 5.5V3a1 1 0 0 1 1-1H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-2.5M3 5.5h6.5a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z')}<span>Copy</span></button>`
+  + `<button type="button" data-wi="paste-world" aria-label="Paste world">${GLYPH('M5.5 3H4a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1h-1.5M6 2h4v2H6ZM8 6.5v5M5.8 9.4 8 11.6l2.2-2.2')}<span>Paste</span></button>`
+  + `<button type="button" data-wi="reset" class="wi-reset" aria-label="Reset world to defaults">${GLYPH('M3 8a5 5 0 1 0 1.5-3.6M3 2.5V5h2.5')}<span>Reset</span></button></div>`
+
 export interface InspectorOptions {
   /** One line for a closed card, for example "Alpine · Harimos". Empty hides it. */
   summary(sectionId: string): string
@@ -143,7 +153,7 @@ export class Inspector {
   constructor(parent: HTMLElement, private readonly options: InspectorOptions) {
     this.element.className = 'world-inspector'; this.element.setAttribute('aria-label', 'World inspector')
     this.element.innerHTML = `<div class="wi-top wi-glass"><input class="wi-search" type="search" placeholder="Search" aria-label="Find a setting" autocomplete="off" spellcheck="false">
-      <div class="wi-actions"><button type="button" data-wi="copy-world">Copy world</button><button type="button" data-wi="paste-world">Paste world</button><button type="button" data-wi="reset">Reset</button></div></div>
+      </div>
       <div class="wi-cards"></div>
       <div class="wi-detail wi-glass" hidden></div>
       <div class="wi-sheet wi-glass" hidden><strong></strong><textarea spellcheck="false" aria-label="World as JSON"></textarea><div class="wi-actions"><button type="button" data-wi="apply">Paste it in</button><button type="button" data-wi="close">Close</button></div></div>
@@ -267,6 +277,9 @@ export class Inspector {
         dots.innerHTML = '<i data-colour="body"></i><i data-colour="accent"></i>'; head.querySelector('.wi-sum')!.after(dots)
       }
       const blurb = document.createElement('p'); blurb.className = 'wi-blurb'; blurb.textContent = section.blurb; body.append(blurb)
+      // The whole world's actions live in its own card, at the top: copy, paste, and (set
+      // apart, and asked twice) reset.
+      if (section.id === 'world') body.insertAdjacentHTML('beforeend', WORLD_ACTIONS)
 
       section.tree.forEach((group, index) => {
         const fold = document.createElement('details'); fold.className = 'wi-group'; fold.dataset.group = group.name; fold.open = index === 0 && !['Tag', 'Tag beams', 'Zorb', 'Sun', 'Sky', 'Weather'].includes(group.name)
@@ -277,7 +290,9 @@ export class Inspector {
         for (const def of group.properties) fold.append(this.row(def)); body.append(fold)
       })
       const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot'
-      foot.innerHTML = '<button type="button" data-wi="copy-section">Copy JSON</button><button type="button" data-wi="paste-section">Paste</button>'
+      // The World card copies and pastes the whole world from its action row above; a second,
+      // section-only pair here would only be the same thing smaller.
+      if (section.id !== 'world') foot.innerHTML = '<button type="button" data-wi="copy-section">Copy JSON</button><button type="button" data-wi="paste-section">Paste</button>'
       if (section.id === 'world' && this.options.onSaveWorld) {
         const save = document.createElement('button'); save.type = 'button'; save.dataset.wi = 'save-world'; save.textContent = 'Save current world'
         // Saving a local copy does not edit the shared world, even for a locked guest.
@@ -787,8 +802,10 @@ export class Inspector {
       case 'reset': {
         // Two presses: the first asks, the second (within four seconds) does it.
         if (!canEditWorld()) { this.say('The host has locked this world.'); break }
-        if (!this.armed) { button.textContent = 'Press again to reset'; button.classList.add('is-warning'); this.armed = setTimeout(() => { this.armed = undefined; button.textContent = 'Reset'; button.classList.remove('is-warning') }, 4000); break }
-        clearTimeout(this.armed); this.armed = undefined; button.textContent = 'Reset'; button.classList.remove('is-warning')
+        // The label is the button's text span when it has a glyph beside it.
+        const label = button.querySelector('span') ?? button
+        if (!this.armed) { label.textContent = 'Confirm'; button.classList.add('is-warning'); this.armed = setTimeout(() => { this.armed = undefined; label.textContent = 'Reset'; button.classList.remove('is-warning') }, 4000); break }
+        clearTimeout(this.armed); this.armed = undefined; label.textContent = 'Reset'; button.classList.remove('is-warning')
         this.say(resetWorld() ? 'World reset to its defaults.' : 'The host has locked this world.'); break
       }
     }

@@ -87,7 +87,7 @@ for(const mode of ['desktop','phone','short-phone']){
   await page.screenshot({path:`${out}/${mode}-about-credits-bottom.png`})
   assert.ok(await about.locator('.panel-back').isVisible())
   const backPaths=[]
-  for(const id of ['about','explore','worlds','multiplayer','advanced']){
+  for(const id of ['about','explore','worlds','advanced']){
    await page.evaluate(id=>syn3h.shell.showPanel(id),id)
    await page.waitForFunction(()=>document.querySelector('.lobby-panels').dataset.busy==='false')
    const back=page.locator(`[data-panel=${id}] .panel-back`);await back.scrollIntoViewIfNeeded();await back.focus()
@@ -107,7 +107,8 @@ for(const mode of ['desktop','phone','short-phone']){
    assert.equal(await nav.locator('button').first().evaluate(el=>el===document.activeElement),true)
    backPaths.push({id,width:r.width,height:r.height})
   }
-  await nav.locator('[data-goto=multiplayer]').click();await page.locator('[data-panel=multiplayer] [data-join]').click()
+  // The invite view opens with J in the lobby (the Multiplayer panel that also opened it is gone).
+  await page.evaluate(()=>document.activeElement?.blur());await page.keyboard.press('j')
   const invite=page.locator('.join-view'), back=invite.locator('.join-close');await invite.waitFor({state:'visible'})
   assert.equal(await back.evaluate(el=>el===document.activeElement),true)
   const r=await measureBack(back,mode,'invite');assert.ok(r.height>=44,'invite: projected height >=44');if(mode==='desktop')assert.ok(r.width>=160,'invite: projected width >=160')

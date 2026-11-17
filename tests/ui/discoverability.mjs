@@ -11,10 +11,12 @@ for(const mode of ['desktop','phone']){
   const room=`ux-discover-${mode}-${Date.now()}`
   await page.goto(`${base}?room=${room}`)
   await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
+  // The lobby's opening (about nine seconds) hides its controls; a key skips to the settled lobby.
+  await page.keyboard.press('Shift');await page.waitForTimeout(700)
   // The lobby offers planets, not vehicles: no vehicle control, panel or preview anywhere in it.
   assert.equal(await page.locator('[data-goto=vehicle], [data-panel=vehicle], [name=vehicle], .shell-vehicle, .shell-vehicle-preview, canvas[aria-label="Selected vehicle preview"]').count(),0,'the lobby shows no vehicle control')
   // Two buttons at the bottom and no more; Settings is the gear in the corner (LobbySettings).
-  assert.deepEqual(await page.locator('.galaxy-links button').allInnerTexts().then(all=>all.map(text=>text.trim().toLowerCase())),['multiplayer','about'],'the lobby has exactly two buttons')
+  assert.deepEqual(await page.locator('.galaxy-links button').allInnerTexts().then(all=>all.map(text=>text.trim().toLowerCase())),['about'],'the lobby has exactly two buttons')
   assert.equal(await page.getByRole('button',{name:'Settings',exact:true}).count(),1,'the settings gear is there')
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-lobby.png`})
   // The lobby lists the planet recipes and nothing else: "Shape your own" is hidden for now.
