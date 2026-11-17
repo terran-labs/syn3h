@@ -21,8 +21,9 @@ function halfStencil(d: CageData, levels: number) {
   for (let i = 0; i < n; i++) if (d.v[i * 3] !== 0) { owner.push(i); sign.push(-1) }
   let rows: Map<number, number>[] = owner.map((_, j) => new Map([[j, 1]]))
   let faces = Uint32Array.from(full.faces), tags = Uint8Array.from(full.tags), creases = Uint32Array.from(full.creases), count = owner.length
-  for (let l = 0; l < levels; l++) {
-    const step = loopStep(count, faces, tags, creases), s: Stencil = step.stencil
+  const passes = levels + (d.limit && levels > 0 ? 1 : 0)
+  for (let l = 0; l < passes; l++) {
+    const step = loopStep(count, faces, tags, creases, l === levels), s: Stencil = step.stencil
     const next: Map<number, number>[] = []
     for (let i = 0; i < s.rows; i++) {
       const m = new Map<number, number>()
@@ -33,7 +34,25 @@ function halfStencil(d: CageData, levels: number) {
   }
   // Fold full cage columns onto half unknowns.
   const out = rows.map(m => [...m].map(([j, w]) => [owner[j], w, sign[j]] as [number, number, number]))
-  return {rows: out, faces, tags}
+  // Bending rows: fine vertex minus the mean of its neighbours, for vertices whose faces share
+  // one role and that sit on no crease, so folds and borders stay free to be sharp.
+  const nb: Set<number>[] = Array.from({length: count}, () => new Set()), vtag = new Int16Array(count).fill(-1), sharp = new Uint8Array(count)
+  for (let f = 0; f < faces.length / 3; f++) for (let k = 0; k < 3; k++) {
+    const a = faces[f * 3 + k], b = faces[f * 3 + (k + 1) % 3]
+    nb[a].add(b); nb[b].add(a)
+    if (vtag[a] >= 0 && vtag[a] !== tags[f]) sharp[a] = 1
+    vtag[a] = tags[f]
+  }
+  for (const v of creases) sharp[v] = 1
+  const bend: [number, number, number][][] = []
+  for (let i = 0; i < count; i++) {
+    if (sharp[i] || nb[i].size < 3) continue
+    const m = new Map<string, [number, number, number]>()
+    const add = (r: Map<number, number>, scale: number) => { for (const [j, w] of r) { const key = `${owner[j]},${sign[j]}`, e = m.get(key) ?? [owner[j], 0, sign[j]]; e[1] += w * scale; m.set(key, e) } }
+    add(rows[i], 1); for (const j of nb[i]) add(rows[j], -1 / nb[i].size)
+    bend.push([...m.values()].filter(e => Math.abs(e[1]) > 1e-9))
+  }
+  return {rows: out, faces, tags, bend}
 }
 
 function apply(rows: [number, number, number][][], h: Float64Array): Float64Array {
@@ -42,9 +61,9 @@ function apply(rows: [number, number, number][][], h: Float64Array): Float64Arra
   return out
 }
 
-export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels?: number; rounds?: number; reverse?: number; smooth?: number; fair?: number; log?: boolean } = {}): CageData {
+export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels?: number; rounds?: number; reverse?: number; smooth?: number; fair?: number; bend?: number; log?: boolean } = {}): CageData {
   const levels = opts.levels ?? 2, rounds = opts.rounds ?? 8, reverseW = opts.reverse ?? 1, lambda = opts.smooth ?? 1e-3
-  const {rows, faces, tags} = halfStencil(d, levels)
+  const {rows, faces, tags, bend} = halfStencil(d, levels), mu = opts.bend ?? 0
   const vertexTag: number[] = new Array(rows.length).fill(-1)
   for (let f = 0; f < tags.length; f++) for (let k = 0; k < 3; k++) if (vertexTag[faces[f * 3 + k]] < 0) vertexTag[faces[f * 3 + k]] = tags[f]
   const n = d.v.length / 3, h = Float64Array.from(d.v, x => x / 1000)
@@ -108,6 +127,11 @@ export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels
           let v = 0; for (const [j, w, s] of rows[i]) v += w * (axis === 0 ? s : 1) * x[j]
           v *= weight[i]
           for (const [j, w, s] of rows[i]) out[j] += w * (axis === 0 ? s : 1) * v
+        }
+        if (mu) for (const r of bend) {
+          let v = 0; for (const [j, w, s] of r) v += w * (axis === 0 ? s : 1) * x[j]
+          v *= mu
+          for (const [j, w, s] of r) out[j] += w * (axis === 0 ? s : 1) * v
         }
         for (let j = 0; j < n; j++) { out[j] += lambda * x[j]; if (axis === 0 && seam[j * 3]) out[j] = x[j] }
         return out

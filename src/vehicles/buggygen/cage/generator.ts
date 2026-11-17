@@ -20,6 +20,8 @@ export interface CageData {
   c: number[]
   /** Subdivision levels for detail 0, 1 and 2. */
   levels: [number, number, number]
+  /** Move subdivided vertices onto the limit surface (smoother shading at the same count). */
+  limit?: boolean
 }
 
 export interface BodyPart { part: 'body'; role: string; geometry: THREE.BufferGeometry }
@@ -41,7 +43,11 @@ export function fullCage(d: CageData): Cage {
   return {positions, faces, tags, creases}
 }
 
-/** Corner normals: each corner averages the faces of its role around it that bend less than about 40 degrees. */
+/**
+ * Corner normals: each corner averages, weighted by the angle each face makes at that vertex,
+ * the faces of its role around it that bend less than about 40 degrees. Angle weights keep
+ * long thin triangles from tilting the normal, so flat areas do not show the cage.
+ */
 export function cornerNormals(positions: Float32Array, faces: Uint32Array, tags: Uint8Array): Float32Array {
   const faceCount = faces.length / 3, fn = new Float32Array(faceCount * 3)
   const vertexCount = positions.length / 3, count = new Uint32Array(vertexCount + 1)
@@ -55,6 +61,14 @@ export function cornerNormals(positions: Float32Array, faces: Uint32Array, tags:
   for (let v = 0; v < vertexCount; v++) count[v + 1] += count[v]
   const incident = new Uint32Array(count[vertexCount]), fill = count.slice(0, vertexCount)
   for (let f = 0; f < faceCount; f++) for (let k = 0; k < 3; k++) incident[fill[faces[f * 3 + k]]++] = f
+  // Interior angle of face f at its corner k.
+  const angle = new Float32Array(faceCount * 3)
+  for (let f = 0; f < faceCount; f++) for (let k = 0; k < 3; k++) {
+    const a = faces[f * 3 + k] * 3, b = faces[f * 3 + (k + 1) % 3] * 3, c = faces[f * 3 + (k + 2) % 3] * 3
+    const ux = positions[b] - positions[a], uy = positions[b + 1] - positions[a + 1], uz = positions[b + 2] - positions[a + 2]
+    const vx = positions[c] - positions[a], vy = positions[c + 1] - positions[a + 1], vz = positions[c + 2] - positions[a + 2]
+    angle[f * 3 + k] = Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy + uz * vz) / ((Math.hypot(ux, uy, uz) * Math.hypot(vx, vy, vz)) || 1))))
+  }
   const out = new Float32Array(faceCount * 9), cos = Math.cos(40 * Math.PI / 180)
   for (let f = 0; f < faceCount; f++) {
     const nx = fn[f * 3], ny = fn[f * 3 + 1], nz = fn[f * 3 + 2], nl = Math.hypot(nx, ny, nz) || 1
@@ -64,9 +78,10 @@ export function cornerNormals(positions: Float32Array, faces: Uint32Array, tags:
       for (let i = count[v]; i < count[v + 1]; i++) {
         const g = incident[i]
         if (tags[g] !== tags[f]) continue
-        const gx = fn[g * 3], gy = fn[g * 3 + 1], gz = fn[g * 3 + 2]
-        if ((gx * nx + gy * ny + gz * nz) / ((Math.hypot(gx, gy, gz) || 1) * nl) < cos) continue
-        x += gx; y += gy; z += gz
+        const gx = fn[g * 3], gy = fn[g * 3 + 1], gz = fn[g * 3 + 2], gl = Math.hypot(gx, gy, gz) || 1
+        if ((gx * nx + gy * ny + gz * nz) / (gl * nl) < cos) continue
+        const corner = faces[g * 3] === v ? 0 : faces[g * 3 + 1] === v ? 1 : 2, w = angle[g * 3 + corner] / gl
+        x += gx * w; y += gy * w; z += gz * w
       }
       const l = Math.hypot(x, y, z) || 1
       out[f * 9 + k * 3] = x / l; out[f * 9 + k * 3 + 1] = y / l; out[f * 9 + k * 3 + 2] = z / l
@@ -77,7 +92,7 @@ export function cornerNormals(positions: Float32Array, faces: Uint32Array, tags:
 
 /** One geometry per role, unindexed so creases keep their split normals. */
 export function buildBody(d: CageData, levels: number): BodyPart[] {
-  const s = subdivide(fullCage(d), levels)
+  const s = subdivide(fullCage(d), levels, !!d.limit)
   const normals = cornerNormals(s.positions, s.faces, s.tags)
   const parts: BodyPart[] = []
   d.roles.forEach((role, r) => {

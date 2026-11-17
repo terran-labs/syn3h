@@ -23,7 +23,36 @@ cage so its subdivided surface lands on the reference, `render.ts` draws PNG she
     npx tsx tools/buggy-fit/cage/build.ts            # writes the cages, images to /tmp/buggy-fit/cage
     npx tsx tools/buggy-fit/compare.ts src/vehicles/buggygen/cage/cage250.ts --part body --detail 0
 
-## Results (harness `compare.ts`, detail 0)
+## Surface quality pass (later on 16 November 2026)
+
+The cages are now built with three extra steps, all on by default in `build.ts`:
+
+- `limit`: after subdividing, every vertex moves onto the Loop limit surface (one extra
+  stencil, no extra triangles), at every detail level; normals are angle weighted.
+- `clean.ts`: Delaunay edge flips and tangential relaxation of the decimated cage, projected
+  back onto the reference, with borders, folds and the mirror plane held. Cage triangles with
+  a smallest angle under 20 degrees fall from 39% to 26% for the 250 point cage.
+- `bend` in `fit.ts`: a penalty on the Laplacian of the subdivided surface away from creases
+  and role borders, so the fit stops copying the reference's facets as bumps.
+
+cage250, detail 0, harness and `roughness` (mean fold across smooth same-role edges, lower is
+smoother; the reference is 7.53 degrees at 5,805 triangles):
+
+| | mean / p95 / max mm | normal deviation deg | IoU | roughness deg | gzip B |
+| --- | --- | --- | --- | --- | --- |
+| before | 3.41 / 9.95 / 31.2 | 8.63 | 0.985 | 8.00 | 6,734 |
+| after | 4.45 / 12.9 / 31.2 | 9.67 | 0.984 | 7.44 | 6,978 |
+
+Detail 1 moved from 4.5 to 6.8 mm and detail 2 from 16.7 to 18.8 mm. The harness normal
+deviation compares against the reference's own faceted faces, so it rises as the surface gets
+smoother; roughness is the measure that tracks the wrinkles. The gain by eye is modest:
+calmer flanks behind the cockpit, slightly softer tail fins.
+
+Sweep caution: parameter sweeps written as `env $cfg` in zsh pass several variables as one
+word. Results from such sweeps before this pass (NOSNAP, FAIR with SMOOTH) were invalid; use
+`${=cfg}`.
+
+## Results before the surface pass (harness `compare.ts`, detail 0)
 
 | cage | stored points | numbers | gzip bundle B | triangles d0 / d1 / d2 | build ms | mean / p95 / max mm | silhouette IoU | editable? |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
