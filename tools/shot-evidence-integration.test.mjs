@@ -49,6 +49,8 @@ async function fixtureChild(scenario) {
     name,
     page: {
       async evaluate(fn) {
+        // The end-of-run read of the connection's handler-error counts: a clean page has none.
+        if (String(fn).includes('handlerErrors')) return {}
         evaluations++
         // Existing broad failure diagnostics are outside this focused acceptance test.
         if (String(fn).includes('const s = window.syn3h')) return { fixture: true }
