@@ -9,7 +9,8 @@
   border: 0; background: none; box-shadow: none; overflow: hidden; color: var(--s3-ink);
 }
 .syn3h-shell.exploration-ui dialog.lobby-sheet::backdrop { background: none; }
-.lobby-sheet-panel { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; --sheet-fill: rgb(0 0 0 / .8); }
+/* Near-solid black (the owner asked for black panels): nothing behind competes with the text. */
+.lobby-sheet-panel { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; --sheet-fill: rgb(6 6 7 / .96); }
 .lobby-sheet-slab { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .lobby-sheet-slab path { fill: var(--sheet-fill); }
 .lobby-sheet[data-shape="round"] .lobby-sheet-panel { background: var(--sheet-fill); border-radius: var(--sheet-radius, 24px); overflow: hidden; }
@@ -48,6 +49,7 @@
   .syn3h-shell.exploration-ui .lobby-sheet .about-columns { grid-template-columns: 1fr; gap: 16px; }
 }
 
-/* Text behind the sheet would read through it and tangle with the sheet's own: the hint and
-   the lobby's buttons and the update banner step aside while one is open. The galaxy and its labels stay faintly. */
-.syn3h-shell.exploration-ui:has(dialog.lobby-sheet[open]) :is(.galaxy-hint, .lobby-links, .update-banner) { visibility: hidden; }
+/* Text behind the sheet would read through it and tangle with the sheet's own: the planet
+   captions, the corner icons, the hint, the lobby's buttons and the update banner step aside
+   while one is open. Only the galaxy itself stays, faintly, behind the black. */
+.syn3h-shell.exploration-ui:has(dialog.lobby-sheet[open]) :is(.galaxy-labels, .lobby-gear-dock, .galaxy-hint, .lobby-links, .update-banner) { visibility: hidden; }

@@ -1318,7 +1318,15 @@ export class Shell implements System {
         if (id !== currentPlanet().id) this.applyGalaxyWorld(chosen)
         if (this.started) this.closeMenu(); else this.play()
       },
-      frame: () => this.galaxyFrame,
+      // Short landscape supplies its own frame; while the update banner shows, it makes room for
+      // the banner's band the way the galaxy's own framing does elsewhere (Galaxy, topInset):
+      // down by half the band and smaller by its share of the height, so the name clears it.
+      frame: () => {
+        const frame = this.galaxyFrame
+        if (!frame) return undefined
+        const inset = Math.min(0.3, this.updateBand() / Math.max(1, innerHeight))
+        return inset > 0 ? [frame[0], frame[1] - inset / 2, frame[2] * (1 - inset)] as const : frame
+      },
       onLayout: (places, chosen) => {
         this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
         // Nothing to lay out or measure until the lobby's own controls are on screen: the galaxy
