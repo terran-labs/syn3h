@@ -531,6 +531,8 @@
   --caption-lift: 0;
   opacity: calc(var(--caption-base) * var(--caption-strength) * (1 + var(--caption-lift)));
   transition: opacity .35s ease-out;
+  /* Several discs cut one caption: each mask layer keeps what lies outside its disc, so they intersect. */
+  mask-composite: intersect; -webkit-mask-composite: source-in; mask-repeat: no-repeat; -webkit-mask-repeat: no-repeat;
 }
 /* Two strengths were tried: .62 and .78 for the name. The quieter one still reads at a glance. */
 .syn3h-shell { --caption-base: .62; }

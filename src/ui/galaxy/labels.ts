@@ -27,3 +27,23 @@ export function captionHidden(place: LabelPlace, places: readonly LabelPlace[], 
   if (places.some(other => other.id !== place.id && other.visible && other.depth < place.depth && covered(place, other) > 0.5)) return true
   return !!sun && sun.depth !== undefined && sun.depth < place.depth && covered(place, sun) > 0.5
 }
+
+/**
+ * The mask that cuts a caption where nearer bodies cover it: one transparent disc per planet
+ * nearer the eye than the caption's own (and the sun, when nearer), in the caption's own box.
+ * Positions are given from the box's top centre (`calc(50% + dx)`), since the caption is
+ * centred on its planet, so nothing has to be measured. The disc edge is a one pixel ramp
+ * at the planet's limb, crisp and antialiased. 'none' when nothing nearer touches it.
+ */
+export function captionMask(place: LabelPlace, places: readonly LabelPlace[], sun: { x: number; y: number; radius: number; depth?: number } | undefined, top: number): string {
+  const nearer = places.filter(other => other.id !== place.id && other.visible && other.depth < place.depth)
+  const bodies: { x: number; y: number; radius: number }[] = [...nearer]
+  if (sun && sun.depth !== undefined && sun.depth < place.depth) bodies.push(sun)
+  // Only bodies that can reach the caption: within a generous box under the planet.
+  const reach = bodies.filter(b => Math.abs(b.x - place.x) < b.radius + 160 && b.y + b.radius > top - 2 && b.y - b.radius < top + 40)
+  if (!reach.length) return 'none'
+  return reach.map(b => {
+    const dx = (b.x - place.x).toFixed(1), dy = (b.y - top).toFixed(1), r = b.radius
+    return `radial-gradient(circle at calc(50% + ${dx}px) ${dy}px, transparent ${Math.max(0, r - 0.5).toFixed(1)}px, #000 ${(r + 0.5).toFixed(1)}px)`
+  }).join(', ')
+}

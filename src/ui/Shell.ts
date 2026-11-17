@@ -25,7 +25,7 @@ import { SlidingPanels } from './SlidingPanels'
 import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
-import { captionHidden } from './galaxy/labels'
+import { captionHidden, captionMask } from './galaxy/labels'
 import { lobbyLook } from '../world/lobbyLook'
 import { LobbySettings } from './LobbySettings'
 import { Inspector } from './inspector/Inspector'
@@ -1307,6 +1307,13 @@ export class Shell implements System {
           // while the galaxy is holding still and not drawing.
           const strength = away ? '0' : (1 - 0.25 * depth + (place.id === current ? 0.2 : 0)).toFixed(2)
           if (chip.style.getPropertyValue('--caption-strength') !== strength) chip.style.setProperty('--caption-strength', strength)
+          // In the scene's depth: nearer captions over farther ones, and every nearer body (a
+          // planet, the sun) cuts the text where its disc covers it, as if the caption stood at
+          // its own planet's depth.
+          const z = String(1000 - Math.round(place.depth * 10))
+          if (chip.style.zIndex !== z) chip.style.zIndex = z
+          const mask = captionMask(place, places, this.galaxy?.sunScreen, place.y + place.radius + CAPTION_GAP)
+          if (this.chipMask.get(chip) !== mask) { this.chipMask.set(chip, mask); chip.style.setProperty('mask-image', mask); chip.style.setProperty('-webkit-mask-image', mask) }
         }
       },
     })
@@ -1326,6 +1333,8 @@ export class Shell implements System {
     this.chipDrawn.set(chip, last)
     if (!(Math.abs(x - last.x) <= .5 && Math.abs(y - last.y) <= .5)) { last.x = x; last.y = y; chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` }
   }
+  /** Each caption's last mask, so it is written only when it changes. */
+  private readonly chipMask = new WeakMap<HTMLButtonElement, string>()
   private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
   /** The galaxy's world captions, by world id. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()

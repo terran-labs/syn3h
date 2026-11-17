@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { captionHidden, covered, type LabelPlace } from '../../src/ui/galaxy/labels'
+import { captionHidden, captionMask, covered, type LabelPlace } from '../../src/ui/galaxy/labels'
 
 const place = (id: string, x: number, y: number, radius: number, depth: number): LabelPlace => ({ id, x, y, radius, visible: true, depth })
 
@@ -19,5 +19,18 @@ describe('planet captions: depth', () => {
   it('measures cover as a share of the disc', () => {
     expect(covered({ x: 0, y: 0, radius: 10 }, { x: 0, y: 0, radius: 20 })).toBe(1)
     expect(covered({ x: 0, y: 0, radius: 10 }, { x: 40, y: 0, radius: 10 })).toBe(0)
+  })
+})
+
+describe('planet captions: occlusion', () => {
+  it('cuts a caption only by nearer bodies that reach it, from its own top centre', () => {
+    const far = place('far', 300, 300, 20, 20), near = place('near', 310, 335, 18, 10), farther = place('farther', 310, 335, 18, 30)
+    expect(captionMask(far, [far, farther], undefined, 325)).toBe('none')
+    const mask = captionMask(far, [far, near], undefined, 325)
+    expect(mask).toContain('calc(50% + 10.0px) 10.0px')
+    expect(mask).toContain('transparent 17.5px, #000 18.5px')
+    expect(captionMask(near, [far, near], undefined, 358)).toBe('none')
+    // The sun cuts what is behind it.
+    expect(captionMask(far, [far], { x: 300, y: 330, radius: 12, depth: 5 }, 325)).not.toBe('none')
   })
 })
