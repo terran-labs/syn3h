@@ -6,7 +6,7 @@
 // pull toward the previous cage) by conjugate gradients. Mirror plane vertices keep x = 0.
 import {loopStep, type Stencil} from '../../../src/vehicles/buggygen/cage/subdivide'
 import {fullCage, type CageData} from '../../../src/vehicles/buggygen/cage/generator'
-import {TriGrid, sample, type TriMesh} from './geom'
+import {TriGrid, sample, distance, type TriMesh} from './geom'
 
 /** Rows of S in terms of the half cage unknowns: [half index, weight, sign of x]. */
 function halfStencil(d: CageData, levels: number) {
@@ -46,15 +46,26 @@ export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels
   const n = d.v.length / 3, h = Float64Array.from(d.v, x => x / 1000)
   const seam = d.v.map((x, i) => i % 3 === 0 && x === 0)
   const refSamples = sample(ref, 30000, 3)
+  const score = (hh: Float64Array) => distance(ref, {pos: apply(rows, hh), tri: faces, tag: tags}, grid, 6000).meanMm
+  let best = Float64Array.from(h), bestScore = score(h)
   for (let round = 0; round < rounds; round++) {
     const fine = apply(rows, h), F = rows.length
+    // Fine vertex normals, area weighted, to keep matches on the facing side of thin parts.
+    const vn = new Float64Array(F * 3)
+    for (let f = 0; f < faces.length / 3; f++) {
+      const [a, b, c] = [0, 1, 2].map(k => faces[f * 3 + k] * 3)
+      const u = [fine[b] - fine[a], fine[b + 1] - fine[a + 1], fine[b + 2] - fine[a + 2]], v = [fine[c] - fine[a], fine[c + 1] - fine[a + 1], fine[c + 2] - fine[a + 2]]
+      const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+      for (const o of [a, b, c]) { vn[o] += n[0]; vn[o + 1] += n[1]; vn[o + 2] += n[2] }
+    }
+    const nrm = (i: number) => { const l = Math.hypot(vn[i * 3], vn[i * 3 + 1], vn[i * 3 + 2]) || 1; return [vn[i * 3] / l, vn[i * 3 + 1] / l, vn[i * 3 + 2] / l] }
     // Equations: fine vertex i should sit at target, with weight.
     const target = new Float64Array(F * 3), weight = new Float64Array(F)
     for (let i = 0; i < F; i++) {
       // Only the x >= 0 half carries independent information.
       if (fine[i * 3] < -1e-6) continue
       // Tag of the fine vertex: any face using it would do; use the first.
-      const r = grid.nearest([fine[i * 3], fine[i * 3 + 1], fine[i * 3 + 2]], vertexTag[i])
+      const r = grid.nearest([fine[i * 3], fine[i * 3 + 1], fine[i * 3 + 2]], vertexTag[i], 40, nrm(i))
       target[i * 3] += r.point[0]; target[i * 3 + 1] += r.point[1]; target[i * 3 + 2] += r.point[2]; weight[i] += 1
     }
     // Reverse pairs: reference samples pull their nearest fine vertex.
@@ -65,6 +76,8 @@ export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels
       const c = p.map(x => Math.floor(x / hc)); let best = -1, bd = Infinity
       for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) for (const i of cell.get(`${c[0] + dx},${c[1] + dy},${c[2] + dz}`) ?? []) {
         if (vertexTag[i] !== ref.tag[refSamples.tri[s]]) continue
+        const q = nrm(i), t = refSamples.tri[s]
+        if (q[0] * grid.normals[t * 3] + q[1] * grid.normals[t * 3 + 1] + q[2] * grid.normals[t * 3 + 2] < .2) continue
         const dd = Math.hypot(fine[i * 3] - p[0], fine[i * 3 + 1] - p[1], fine[i * 3 + 2] - p[2]); if (dd < bd) { bd = dd; best = i }
       }
       if (best < 0) continue
@@ -100,6 +113,8 @@ export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels
       }
       for (let j = 0; j < n; j++) h[j * 3 + axis] = x[j]
     }
+    const sc = score(h)
+    if (sc < bestScore) { bestScore = sc; best = Float64Array.from(h) }
     if (opts.log) {
       let s = 0, c = 0
       const f2 = apply(rows, h)
@@ -107,5 +122,6 @@ export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels
       console.log(`  round ${round}: mean fine to reference ${(s / c * 1000).toFixed(2)} mm`)
     }
   }
+  h.set(best)
   return {...d, v: Array.from(h, (x, i) => i % 3 === 0 && seam[i] ? 0 : Math.round(x * 1000))}
 }

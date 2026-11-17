@@ -42,8 +42,17 @@ export function closestOnTri(p: number[], a: number[], b: number[], c: number[],
 export class TriGrid {
   private cells = new Map<number, number[]>()
   private min: number[]
+  /** Unit face normals. */
+  readonly normals: Float64Array
   constructor(private m: TriMesh, private h = .04) {
     const p = m.pos
+    this.normals = new Float64Array(m.tri.length)
+    for (let t = 0; t < m.tri.length / 3; t++) {
+      const [a, b, c] = [0, 1, 2].map(k => m.tri[t * 3 + k] * 3)
+      const u = [p[b] - p[a], p[b + 1] - p[a + 1], p[b + 2] - p[a + 2]], v = [p[c] - p[a], p[c + 1] - p[a + 1], p[c + 2] - p[a + 2]]
+      const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], l = Math.hypot(...n) || 1
+      this.normals.set(n.map(x => x / l), t * 3)
+    }
     this.min = [Infinity, Infinity, Infinity]
     for (let i = 0; i < p.length; i++) this.min[i % 3] = Math.min(this.min[i % 3], p[i])
     this.min = this.min.map(v => v - 1)
@@ -60,7 +69,7 @@ export class TriGrid {
   private key(x: number, y: number, z: number) { return (x * 1024 + y) * 1024 + z }
   private vert(i: number) { const p = this.m.pos; return [p[i * 3], p[i * 3 + 1], p[i * 3 + 2]] }
   /** Nearest point and its triangle; with `tag`, only triangles of that tag (falls back to all). */
-  nearest(p: number[], tag = -1, maxRing = 40): { point: number[]; dist: number; tri: number } {
+  nearest(p: number[], tag = -1, maxRing = 40, normal?: number[]): { point: number[]; dist: number; tri: number } {
     const [cx, cy, cz] = this.cell(p), q = [0, 0, 0]
     let best = Infinity, bestP = [0, 0, 0], bestT = -1
     const seen = new Set<number>()
@@ -72,12 +81,14 @@ export class TriGrid {
         for (const t of list) {
           if (seen.has(t)) continue; seen.add(t)
           if (tag >= 0 && this.m.tag[t] !== tag) continue
+          if (normal && normal[0] * this.normals[t * 3] + normal[1] * this.normals[t * 3 + 1] + normal[2] * this.normals[t * 3 + 2] < .2) continue
           closestOnTri(p, this.vert(this.m.tri[t * 3]), this.vert(this.m.tri[t * 3 + 1]), this.vert(this.m.tri[t * 3 + 2]), q)
           const d = Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2])
           if (d < best) { best = d; bestP = [...q]; bestT = t }
         }
       }
     }
+    if (bestT < 0 && normal) return this.nearest(p, tag, maxRing)
     if (bestT < 0 && tag >= 0) return this.nearest(p, -1, maxRing)
     return {point: bestP, dist: best, tri: bestT}
   }
