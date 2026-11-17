@@ -37,7 +37,9 @@ for (const status of [0, 1]) {
   }))
 }
 
-const primaryCheck = release.slice(release.indexOf('# --- Primary public acceptance'), release.indexOf('# --- Record'))
+// The section calls settle(), defined earlier in release.sh: run the real function with it.
+const settleFn = release.slice(release.indexOf('settle() {'), release.indexOf('\n}\n', release.indexOf('settle() {')) + 3)
+const primaryCheck = settleFn + release.slice(release.indexOf('# --- Primary public acceptance'), release.indexOf('# --- Record'))
 for (const failure of ['none', 'assets', 'gameplay']) {
   test(`primary acceptance ${failure} failure cannot record a release`, () => {
     const dir = mkdtempSync(join(tmpdir(), 'syn3h-primary-check-'))
@@ -45,8 +47,10 @@ for (const failure of ['none', 'assets', 'gameplay']) {
       mkdirSync(join(dir, 'bin')); mkdirSync(join(dir, 'tools'))
       writeFileSync(join(dir, 'bin/node'), '#!/bin/sh\n[ "$FAILURE" != assets ]\n', { mode: 0o755 })
       writeFileSync(join(dir, 'bin/sleep'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+      // A clock that jumps 10 s a call, so a build that never matches gives up at once.
+      writeFileSync(join(dir, 'bin/date'), '#!/bin/sh\nn=$(cat "$CLOCK" 2>/dev/null || echo 0); echo $((n + 10)) > "$CLOCK"; echo $n\n', { mode: 0o755 })
       writeFileSync(join(dir, 'tools/domain.sh'), '#!/bin/sh\n[ "$FAILURE" != gameplay ]\n', { mode: 0o755 })
-      const result = spawnSync('/bin/sh', ['-eu', '-c', 'fail() { echo "$*" >&2; exit 1; };\n' + primaryCheck + '\necho RECORDED'], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, FAILURE: failure, DEST: dir, LOG: join(dir, 'log') } })
+      const result = spawnSync('/bin/sh', ['-eu', '-c', 'fail() { echo "$*" >&2; exit 1; };\n' + primaryCheck + '\necho RECORDED'], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, FAILURE: failure, DEST: dir, LOG: join(dir, 'log'), CLOCK: join(dir, 'clock'), STUB: '' } })
       assert.equal(result.status, failure === 'none' ? 0 : 1, result.stderr)
       assert.equal(result.stdout.includes('RECORDED'), failure === 'none')
     } finally { rmSync(dir, { recursive: true, force: true }) }
