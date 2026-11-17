@@ -12,8 +12,8 @@ import { Score, scoreSeed, type MatchMood } from './score/Score'
 import { applySubmerge } from './score/ScoreSynth'
 import { WeatherWind } from './weatherWind'
 import { senseConvoy, senseRelief, type ConvoyVoice } from './scoreSenses'
-import { audioContext, hadGesture, markSoundStarted, onGesture } from './unlock'
-import { cuesVolume, worldVolume, remoteVolume, crossfade, effectsVolume, masterVolume, musicVolume, muted } from './params'
+import { audioContext, declareAudioSession, hadGesture, markSoundStarted, onGesture } from './unlock'
+import { cuesVolume, worldVolume, remoteVolume, crossfade, effectsVolume, masterVolume, musicVolume, muted, playOnSilent } from './params'
 
 export type Sound = 'laserShot' | 'laserHit' | 'materialize'
 export interface Position { x: number; y: number; z: number }
@@ -101,8 +101,9 @@ export class GameAudio implements System {
     // capture phase) resumes the context there and then, as Safari requires. A touch going down
     // is refused and the touch lifting is accepted, so each gesture must try again, not only the first.
     this.stopGestures = onGesture(this.onGesture)
+    this.declareSession()
     this.unsubscribe = params.onChange((id) => {
-      if (id.startsWith('audio.')) this.syncMix()
+      if (id.startsWith('audio.')) { this.syncMix(); this.declareSession() }
       if (id === worldSeed.def.id || id === scoreSeed.def.id) this.score?.setSeed(scoreSeed.value || worldSeed.value)
     })
     // A hidden tab stops rendering frames, so nothing would schedule notes while the pads held
@@ -141,6 +142,8 @@ export class GameAudio implements System {
     for (const sample of this.meterData) sum += sample * sample
     return 10 * Math.log10(sum / this.meterData.length)
   }
+  /** On iPhone, play through the ring/silent switch only while the game has sound to play (unlock.ts). */
+  private declareSession(): void { declareAudioSession(playOnSilent.value && !muted.value && masterVolume.value > 0) }
   get isMuted(): boolean { return muted.value }
   setMuted(value: boolean): void { params.set(muted.def.id, value) }
 
@@ -277,12 +280,19 @@ export class GameAudio implements System {
     this.paused = false; clearTimeout(this.pauseTimer)
     const context = this.context
     if (!context || !this.master) return
-    void context.resume().then(() => {
+    const rise = () => {
       if (this.paused || this.disposed || !this.master) return
       const now = context.currentTime
       this.master.gain.cancelScheduledValues(now); this.master.gain.setValueAtTime(0, now)
       this.master.gain.linearRampToValueAtTime(muted.value ? 0 : masterVolume.value, now + seconds)
-    })
+    }
+    if (context.state === 'running') { rise(); return }
+    // Back from the background, iOS may refuse to restart the clock without a tap. The next tap
+    // restarts it (onGesture), and the mix must rise then: it used to stay at the pause's silence
+    // with the clock running, so the game was mute until the page was reloaded.
+    const ran = () => { if (context.state !== 'running') return; context.removeEventListener('statechange', ran); rise() }
+    context.addEventListener('statechange', ran)
+    void context.resume().catch(() => {})
   }
   /** Whether the last mix was set for play or for the lobby. */
   private mixedFor = false
