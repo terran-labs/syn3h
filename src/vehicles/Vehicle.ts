@@ -538,13 +538,31 @@ export abstract class Vehicle implements System {
     }
   }
 
+  /** True once `detach` took the vehicle out of the physics world: what is left is a picture. */
+  detached = false
+
+  /**
+   * Take the vehicle out of the physics world now (body, colliders, zorb ball and shield) and
+   * leave its object in the scene as a picture, for an effect to play on (a departure). Remove
+   * it from the game first; `dispose` it when the effect is over.
+   */
+  detach(): void {
+    if (this.detached) return
+    this.zorbShield?.dispose()
+    this.zorbShield = null
+    this.zorb.remove()
+    this.game.world.removeRigidBody(this.body)
+    this.detached = true
+  }
+
   dispose(): void {
     this.zorbShield?.dispose()
     this.zorbShield = null
     this.zorb.remove()
     this.visualDetails.clear()
     this.game.scene.remove(this.object)
-    this.game.world.removeRigidBody(this.body)
+    if (!this.detached) this.game.world.removeRigidBody(this.body)
+    this.detached = true
   }
 }
 

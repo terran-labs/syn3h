@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { compactAt, distanceOpacity, DISTANCE, EDGE, FAR_BOTS, GAP, hold, plateLeft, HOLD_MS, HOLD_SLACK, MIN_TEXT_PX, namePx, NUDGE, overlaps, placeLabels, plateRect, snapPx, spring, type Candidate, type Rect } from '../../src/ui/nameplates/layout'
+import { compactAt, distanceOpacity, DISTANCE, easeOpacity, EDGE, FADE_MS, FAR_BOTS, GAP, hold, plateLeft, HOLD_MS, HOLD_SLACK, MIN_TEXT_PX, namePx, NUDGE, overlaps, placeLabels, plateRect, snapPx, spring, type Candidate, type Rect } from '../../src/ui/nameplates/layout'
 import { wrappedOccluded } from '../../src/ui/nameplates/occlusion'
 import { nameplateMode, PREFERENCE_KEY, restoreNameplatePreference, validMode } from '../../src/ui/nameplates/preferences'
 import { params } from '../../shared/params'
@@ -52,6 +52,15 @@ describe('vehicle label placement', () => {
     expect(placeLabels([front, { ...back, held: true }], [], 600, 600).find(p => p.id === 'back')?.nudged).toBe(false)
     expect(placeLabels([front, back], [], 600, 600).find(p => p.id === 'back')?.nudged).toBe(true)
   })
+  // Bug it catches: vehicles lined up on screen silently losing their labels with no hint.
+  it('says which plate a stacked label is hidden behind, and does not count HUD-blocked ones', () => {
+    const front = candidate('front', false, 300, 300, 10), back = candidate('back', true, 302, 298, 30)
+    const under = candidate('under', true, 100, 300, 40), behind = new Map<string, string>()
+    const hud = [{ left: 0, top: 0, right: 200, bottom: 600 }]
+    const placed = placeLabels([back, front, under], hud, 600, 600, behind)
+    expect(placed.map(p => p.id)).toEqual(['front'])
+    expect([...behind]).toEqual([['back', 'front']])
+  })
   it(`shows at most ${FAR_BOTS} far bot labels, the nearest`, () => {
     const cs = Array.from({ length: FAR_BOTS + 4 }, (_, i) => ({ ...candidate(`b${i}`, true, 40 + i * 150 % 900, 100 + i * 37, 100 + i), compact: true }))
     const placed = placeLabels(cs, [], 1000, 1000)
@@ -79,6 +88,22 @@ describe('stability', () => {
     expect(hold(state, true, 1000)).toBe(true)
     for (let t = 1000; t < 1000 + HOLD_MS; t += 16) expect(hold(state, t % 32 === 0, t)).toBe(true)
     expect(hold(state, false, 1000 + HOLD_MS)).toBe(false)
+  })
+  // Bug it catches: a label snapping between strengths (behind a hill and back), or two causes
+  // of dimming fighting each other.
+  it('eases opacity monotonically, never overshooting, settling in about FADE_MS at any frame rate', () => {
+    for (const dt of [1 / 240, 1 / 60, 1 / 20]) for (const [from, to] of [[0, 1], [1, .5], [.5, 1], [1, 0]]) {
+      let a = from, t = 0
+      while (a !== to && t < 2) {
+        const next = easeOpacity(a, to, dt)
+        expect(Math.abs(to - next)).toBeLessThanOrEqual(Math.abs(to - a))
+        expect((next - a) * (to - from)).toBeGreaterThanOrEqual(0)
+        a = next; t += dt
+      }
+      expect(a).toBe(to)
+      expect(t).toBeGreaterThan(FADE_MS / 1000 * .5); expect(t).toBeLessThan(FADE_MS / 1000 * 2.5)
+    }
+    expect(easeOpacity(1, .5, 1 / 60, true)).toBe(.5) // reduced motion
   })
   it('eases a step without overshoot at any frame rate, and settles', () => {
     for (const dt of [1 / 240, 1 / 60, 1 / 20, .1]) {

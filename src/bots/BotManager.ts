@@ -66,6 +66,8 @@ export class BotManager implements System {
   get vehicles(): readonly Vehicle[] { return this.bots }
   /** What the host asked for, within the quality level's budget: never exceeded. */
   get requested(): number { return Math.max(0, Math.min(qualityBudget().bots, Math.floor(botCount.value))) }
+  /** The brains, index for index with `vehicles` (chatter and rescues read and steer them). */
+  get brainList(): readonly BotBrain[] { return this.brains }
   /** The player's own vehicle driving itself after a spell of no input. See Daydream.ts. */
   readonly daydream: Daydream
   readonly races: BotRaces

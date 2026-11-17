@@ -2,7 +2,7 @@
  * Materialization hold and release (src/vehicles/effects/Materialize.ts), on every vehicle kind,
  * in a headless physics world stepped the way Game.frame steps it.
  */
-import {beforeAll,describe,expect,it} from 'vitest'
+import {beforeAll,describe,expect,it,vi} from 'vitest'
 import * as T from 'three/webgpu'
 import {FIXED_DT,RAPIER,initPhysics} from '../../src/core/physics'
 import {VEHICLE_KINDS,createVehicle} from '../../src/vehicles'
@@ -270,5 +270,28 @@ describe('arrival level',()=>{
       params.set('gfx.level',0)
       expect(arrivalLevel(true)).toBe(0)
     }finally{params.set('gfx.level',before)}
+  })
+})
+
+describe('wall-clock bounds',()=>{
+  it('lets go of an arriving vehicle within its hold plus WALL_SLACK of real time at 5 fps',async()=>{
+    const {WALL_SLACK}=await import('../../src/vehicles/effects/Materialize')
+    const {h,v,m,step}=bed('buggy')
+    step(5)
+    let wall=1000
+    const clock=vi.spyOn(performance,'now').mockImplementation(()=>wall)
+    try{
+      m.begin(v,{holdSeconds:HOLD})
+      // 5 fps: 200 ms of real time a frame, but at most five 20 ms physics steps (Game.frame).
+      let released=-1
+      for(let frame=0;frame<20&&released<0;frame++){
+        wall+=200;step(5);m.update(.2)
+        if(!m.isHeld(v))released=(wall-1000)/1000
+      }
+      expect(released).toBeGreaterThan(0)
+      expect(released).toBeLessThanOrEqual(HOLD+WALL_SLACK+.2)
+      expect(v.object.userData.materializing).toBeUndefined()
+    }finally{clock.mockRestore()}
+    m.dispose();v.dispose();h.world.free()
   })
 })

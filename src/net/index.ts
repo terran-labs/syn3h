@@ -8,6 +8,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { joinedText } from '../ui/toastText'
+import { ChatChannel } from './chat'
 import { roomLabel } from '../core/roomAddress'
 import { type ParamValue, params, worldSeed } from '../../shared/params'
 import {
@@ -133,6 +134,8 @@ export interface NetContext {
    * in the game, undriven, until the returned promise settles, then is removed. Cosmetic only.
    */
   onRemoteVehicleLeaving?(vehicle: Vehicle): Promise<void> | void
+  /** End a departure now (the same player or bot is back). Resolves its promise. */
+  cancelRemoteDeparture?(vehicle: Vehicle): void
   /** Bot manager; optional, may also be attached later with `net.attachBots`. */
   bots?: NetBots
   /** The match display (shell.setMatchState): called on every game state change; null clears. */
@@ -230,6 +233,8 @@ export class NetClient implements System {
   readonly arrivals = new RemoteArrivals(vehicle => this.ctx.onRemoteVehicleChanged?.(vehicle as Vehicle))
   readonly players = new Map<number, PlayerInfo>()
   readonly events: NetEvent[] = []
+  /** Chat lines, mutes and display rules (src/net/chat.ts). */
+  readonly chat: ChatChannel
   id = 0
   slot = 0
   game: GameState = {
@@ -302,6 +307,13 @@ export class NetClient implements System {
     this.bots = ctx.bots ?? null
     if (this.bots) this.bots.remote = true
     this.conn = new Connection(serverUrl(ctx.room))
+    this.chat = new ChatChannel({
+      selfId: () => this.id,
+      nameOf: (id) => this.displayName(id),
+      colorOf: (id) => isBotId(id) ? botColors(id - BOT_ID_BASE)[0] : this.players.get(id)?.colors[0] ?? DEFAULT_COLORS[0],
+      connected: () => this.connected,
+      send: (msg) => this.send(msg),
+    })
     this.raceBridge = new RaceBridge({
       now: this.roomNow,
       role: () => ({ id: this.id, host: this.isHost, connected: this.connected }),
@@ -966,6 +978,15 @@ export class NetClient implements System {
     },
   }
 
+  /** Bot rescues (src/bots/rescue) fire the grapple through the same hooks as bot decisions. */
+  get botGearHooks(): BotDecisionHooks { return this.botDecisionHooks }
+
+  /** Bot `id`'s grapple cord on the host: hook in the air, tied to vehicle `to`, or null for none. */
+  botCord(id: number): { flying: boolean; to: number | null } | null {
+    const c = this.botGear.get(id)?.bungee.mine
+    return c ? { flying: Boolean(c.hook), to: c.hook ? null : c.to } : null
+  }
+
   private makeBotGear(id: number, vehicle: Vehicle): BotGear {
     return new BotGear(this.ctx.game, id, vehicle, {
       surface: this.grappleSurface,
@@ -1153,9 +1174,16 @@ export class NetClient implements System {
   }
 
   private sendBots(): void {
-    for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
-      this.sendBot(id, bot)
+    const live = liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)
+    // A bot announced before and not simulated now has gone: tell the room at once, after its
+    // last state on the same ordered socket, so everyone drops it within a round trip rather
+    // than when the room's 5 s expiry notices (an older room ignores this and still does that).
+    for (const id of [...this.botKinds.keys()]) {
+      if (live.some(([live]) => live === id)) continue
+      this.botKinds.delete(id)
+      this.send({ type: 'bot-leave', bot: id })
     }
+    for (const [id, bot] of live) this.sendBot(id, bot)
   }
 
   private sendBot(id: number, bot: Vehicle): void {
@@ -1320,6 +1348,8 @@ export class NetClient implements System {
   }
 
   private spawnRemote(info: PlayerInfo, s: WireState): RemotePlayer {
+    const old = this.departing?.get(info.id)
+    if (old) { this.departing.delete(info.id); this.ctx.cancelRemoteDeparture?.(old) }
     // Bots too get a replica of our own, so the set follows the host's roster exactly and is
     // never touched by our bot manager or its local quality cap.
     const vehicle = createVehicle(this.ctx.game, this.ctx.terrain, info.kind as VehicleKind, new THREE.Vector3(...s.p), 0)
@@ -1353,14 +1383,23 @@ export class NetClient implements System {
     this.pesters.forget(id)
     r.disposeEffects()
     if (!r.owned) return
-    const gone = () => this.ctx.game.remove(r.vehicle)
     let leaving: Promise<void> | void = undefined
     if (depart) {
       try { leaving = this.ctx.onRemoteVehicleLeaving?.(r.vehicle) } catch (err) { console.warn('remote departure effect failed', err) }
     }
-    if (leaving) leaving.then(gone, gone)
-    else gone()
+    // Gone from the game and the physics world in this frame, whatever the effect does: no
+    // gameplay list waits on an animation. A departure plays on what is left, a picture.
+    this.ctx.game.remove(r.vehicle, !leaving)
+    if (!leaving) return
+    const vehicle = r.vehicle
+    vehicle.detach()
+    this.departing.set(id, vehicle)
+    const done = () => { if (this.departing.get(id) === vehicle) this.departing.delete(id); vehicle.dispose() }
+    leaving.then(done, done)
   }
+
+  /** Departures still playing, by id: dropped at once if the same id arrives again. */
+  private readonly departing = new Map<number, Vehicle>()
 
   /** Dust, tracks, lamps and trails for a remote vehicle. Returns its disposer. */
   private attachEffects(vehicle: Vehicle): () => void {
@@ -1580,6 +1619,10 @@ export class NetClient implements System {
           : msg.reason === 'join' ? 'A new player brought their world' : 'The room was idle: world reset to defaults')
         break
       }
+      case 'chat':
+      case 'chat-refused':
+        this.chat.receive(msg)
+        break
       case 'error':
         if (msg.message === 'room is full') { this.onRoomFull(); break }
         this.event(`Server: ${msg.message}`)
@@ -1818,7 +1861,7 @@ export class NetClient implements System {
 }
 
 /** The bot manager's colours (BotManager.spawn), so a replica looks like the host's bot. */
-function botColors(index: number): [string, string] {
+export function botColors(index: number): [string, string] {
   return [`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff']
 }
 

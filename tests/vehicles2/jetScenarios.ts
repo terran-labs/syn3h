@@ -6,12 +6,13 @@ import * as THREE from 'three/webgpu'
 import { FIXED_DT } from '../../src/core/physics'
 import { Jet, jetVectorResponse } from '../../src/vehicles/Jet'
 import { harness } from './harness'
+import { worldGravity } from '../../shared/params'
 
 type Jetbed = ReturnType<typeof harness>
 
-/** A remote-free jet in a bed with no floor, at `altitude`, ready for `fn`. Freed afterwards. */
+/** A remote-free jet in a bed with no floor, under the world's gravity, at `altitude`, ready for `fn`. Freed afterwards. */
 export function withJet<T>(altitude: number, fn: (v: Jet, h: Jetbed) => T, floor = false): T {
-  const h = harness(9.81, floor)
+  const h = harness(worldGravity.value, floor)
   const v = new Jet(h.game, h.terrain, new THREE.Vector3(0, altitude, 0))
   v.isLocal = false
   try { return fn(v, h) } finally { v.dispose(); h.world.free() }

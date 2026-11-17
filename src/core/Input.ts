@@ -34,10 +34,16 @@ export class Input {
   private readonly keys = new Set<string>()
   /** Set true by UI code (chat, text fields) to stop driving while typing. */
   suspended = false
+  /**
+   * Set by the chat field while it has focus (src/ui/chat). Separate from `suspended`, which
+   * the shell recomputes from its own state at pause, menu and invite changes: typing must
+   * hold however those change, and nothing but the chat field clears it.
+   */
+  typing = false
 
   constructor(target: Window = window) {
     target.addEventListener('keydown', (e) => {
-      if (this.suspended || e.repeat) return
+      if (this.suspended || this.typing || e.repeat) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       this.keys.add(e.code)
       if (e.code === 'Space') {
@@ -55,7 +61,7 @@ export class Input {
    * key its own meaning, where the shared axes cannot say which key produced a value. False
    * while input is suspended or another mode has taken the key (roam camera).
    */
-  held(code: string): boolean { return !this.suspended && this.keys.has(code) }
+  held(code: string): boolean { return !this.suspended && !this.typing && this.keys.has(code) }
 
   private axis(neg: string[], pos: string[]): number {
     let v = 0
@@ -67,7 +73,7 @@ export class Input {
   /** Call once per rendered frame, before the fixed steps. */
   poll(): InputState {
     const s = this.state
-    if (this.suspended) {
+    if (this.suspended || this.typing) {
       this.keys.clear()
       Object.assign(s, emptyInput(), { special: s.special, zorb: s.zorb })
       return s

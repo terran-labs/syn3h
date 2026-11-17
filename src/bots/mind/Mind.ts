@@ -128,6 +128,11 @@ export class Mind {
     return name ? `following ${name}` : CAPTIONS[this.activity.kind]
   }
 
+  /** The kind of place it is visiting ('vent', 'peak', 'shore'...), or null. */
+  get sightKind(): string | null {
+    return this.activity.kind === 'visit' ? this.sight?.kind ?? null : null
+  }
+
   /** Share of the map's coarse cells this mind has driven through, 0..1. */
   get explored(): number {
     const side = Math.ceil(this.terrain.size / VISIT_CELL)

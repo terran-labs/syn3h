@@ -1,8 +1,9 @@
 /**
- * The loading veil's fun lines, seen over a slow link: a line from the first paint, new lines
- * as the phases pass, the plain phase in the live region, a host's markup shown as text, and
- * the longest line on a 320 px phone in two lines at most. Screenshots go to the artifacts
- * folder; look at them.
+ * The loading veil over a slow link: one fun line from the first paint, kept until loading
+ * ends; after ten seconds a second line counting the seconds and naming the real step, never
+ * read aloud as it ticks; the plain step in the live region; a host's markup shown as text;
+ * and the longest line on a 320 px phone in two lines at most. Screenshots go to the
+ * artifacts folder; look at them.
  *
  *   tools/heavy.sh node tests/ui/loading-lines.mjs http://127.0.0.1:5291/
  */
@@ -14,7 +15,7 @@ const out = 'tests/ui/artifacts/loading-lines'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const errors = [], report = {}
-const read = page => page.evaluate(() => ({ boot: document.documentElement.dataset.boot, line: document.querySelector('.boot-status').textContent, height: document.querySelector('.boot-status').getBoundingClientRect().height, still: document.querySelector('.boot-still').getBoundingClientRect().top, phase: document.querySelector('.syn3h-loading .loading-phase')?.textContent ?? null }))
+const read = page => page.evaluate(() => { const still = document.querySelector('.boot-still'); return { boot: document.documentElement.dataset.boot, line: document.querySelector('.boot-status').textContent, height: document.querySelector('.boot-status').getBoundingClientRect().height, still: still.getBoundingClientRect().top, second: still.hasAttribute('data-shown') ? still.textContent : '', secondHidden: still.getAttribute('aria-hidden'), phase: document.querySelector('.syn3h-loading .loading-phase')?.textContent ?? null, at: performance.now() } })
 try {
   for (const view of [{ name: 'desktop', options: { viewport: { width: 1280, height: 720 } } }, { name: 'iphone14', options: { ...devices['iPhone 14'], defaultBrowserType: undefined } }]) {
     const context = await browser.newContext(view.options), page = await context.newPage(), cdp = await context.newCDPSession(page)
@@ -22,8 +23,8 @@ try {
     await cdp.send('Network.enable')
     await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 40, downloadThroughput: 8_000_000 / 8, uploadThroughput: 500_000 })
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
-    // Physics arrives late, as on a slow phone, so the veil waits in a phase long enough to read.
-    await page.route(/\.wasm(\?|$)/, async route => { await new Promise(r => setTimeout(r, 7000)); await route.continue() })
+    // Physics arrives late, as on a slow phone, so loading passes ten seconds.
+    await page.route(/\.wasm(\?|$)/, async route => { await new Promise(r => setTimeout(r, 14000)); await route.continue() })
     await page.goto(`${base}?room=lines-${view.name}-${Date.now()}`, { waitUntil: 'commit' })
     await page.waitForFunction(() => document.querySelector('.boot-status'))
     const samples = []; let shot = 0, last = '', layout = new Set()
@@ -32,24 +33,30 @@ try {
       const now = await read(page)
       if (now.boot === 'done') break
       samples.push(now); layout.add(`${Math.round(now.height)}:${Math.round(now.still)}`)
-      if (now.line !== last && shot < 5 && !(await page.evaluate(() => 'fade' in document.querySelector('.boot-status').dataset))) {
-        await page.screenshot({ path: `${out}/${view.name}-${shot++}.png` }); last = now.line
-      }
+      if (now.second !== last && shot < 5) { await page.screenshot({ path: `${out}/${view.name}-${shot++}.png` }); last = now.second }
       await page.waitForTimeout(250)
     }
     // Custom lines from a host are text, never markup (only while the veil is still up).
     const lines = [...new Set(samples.map(s => s.line))], phases = [...new Set(samples.map(s => s.phase).filter(Boolean))]
-    for (let i = 1; i < samples.length; i++) if (samples[i].line !== samples[i - 1].line) assert.notEqual(samples[i].line, samples[i - 1].line)
-    assert.ok(lines.length >= 3, `${view.name}: lines rotate (${lines.length})`)
+    assert.equal(lines.length, 1, `${view.name}: one line for the whole load (${lines})`)
+    const seconds = samples.filter(s => s.second)
+    assert.ok(seconds.length > 0, `${view.name}: the second line appears on a load past ten seconds`)
+    assert.ok(samples.filter(s => s.at < 9500).every(s => !s.second), `${view.name}: and not before ten seconds`)
+    for (const s of seconds) { assert.match(s.second, /^\d+ s \u00b7 [A-Z]/, `${view.name}: seconds and a plain step (${s.second})`); assert.equal(s.secondHidden, 'true', 'the ticking line is never read aloud') }
+    const steps = [...new Set(seconds.map(s => s.second.replace(/^\d+ s \u00b7 /, '').replace(/ \(.*\)$/, '')))]
     assert.ok(!lines.some(line => /Loading the engine|Checking your device|Preparing/.test(line)), `${view.name}: no plain phase labels on the veil`)
     assert.equal(layout.size, 1, `${view.name}: the status line never moves the veil (${[...layout]})`)
-    report[view.name] = { seconds: (Date.now() - started) / 1000, lines, phases, screenshots: shot }
+    report[view.name] = { seconds: (Date.now() - started) / 1000, lines, steps, phases, screenshots: shot }
     await context.close()
   }
   // A host's markup is shown as text. Hold the game in its world phase so the veil stays up.
   {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
-    await page.route(/\/src\/world\//, async route => { await new Promise(r => setTimeout(r, 6000)); await route.continue() })
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } }), cdp = await page.context().newCDPSession(page)
+    // Throttled as the views above are, so the veil is certainly still up when the check runs.
+    await cdp.send('Network.enable')
+    await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 40, downloadThroughput: 8_000_000 / 8, uploadThroughput: 500_000 })
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
+    await page.route(/\.wasm(\?|$)/, async route => { await new Promise(r => setTimeout(r, 14000)); await route.continue() })
     await page.goto(`${base}?room=lines-markup-${Date.now()}`, { waitUntil: 'commit' })
     await page.waitForFunction(() => document.querySelector('.syn3h-loading'), null, { timeout: 60000 })
     const markup = await page.evaluate(async () => {
@@ -58,8 +65,9 @@ try {
       const { bootLoading } = await import(url)
       if (document.querySelectorAll('.syn3h-loading').length !== 1) return { instances: document.querySelectorAll('.syn3h-loading').length }
       if (document.documentElement.dataset.boot !== 'loading') return null
+      if (bootLoading.done) return null
+      // The line changes at once (no fade, no rotation), so it is read in the same task.
       bootLoading.setMessages(['<b>Bold</b> & <img src=x onerror="window.__owned=1">'])
-      await new Promise(r => setTimeout(r, 400))
       const status = document.querySelector('.boot-status')
       const result = { text: status.textContent, children: status.children.length, owned: Boolean(window.__owned) }
       bootLoading.setMessages([])
