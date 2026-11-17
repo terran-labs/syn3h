@@ -1,7 +1,7 @@
 # Buggy body from section lofts (R&D)
 
 Lane rd/buggygen-sections. How close a section-loft generator gets to the `Body` node of
-`public/models/buggy-boxarm.glb` (5,805 triangles), and what each step costs. The run-time
+`tools/models/buggy-boxarm.glb` (5,805 triangles), and what each step costs. The run-time
 generator and its data are in `src/vehicles/buggygen/sections/`; everything here is offline.
 
 ```sh
