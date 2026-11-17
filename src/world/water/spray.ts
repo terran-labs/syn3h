@@ -3,8 +3,6 @@ import { attribute, cameraPosition, cross, dot, float, mix, mx_fractal_noise_flo
 import { defineParam, params } from '../../../shared/params'
 import { paletteFor } from '../terrain/palettes'
 import { graphicsLevel } from '../../core/quality'
-import { hotExposureDim } from '../../vehicles/skins/hotExposure'
-import { vehicleNightAmount } from '../../vehicles/skins/nightReadability'
 import { applyCurve } from '../curve'
 import type { Ripples } from './ripples'
 import { SpraySim, sprayCapacity, type SprayWater } from './spraySim'
@@ -15,24 +13,39 @@ export const waterSprayScale=defineParam({id:'water.sprayScale',label:'Spray siz
 type N = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /**
- * How much light falls on white water: the sun's hue, dimmed by the shared night ramp. Spray
- * is unlit geometry, so without this it would glow at night. One render-group uniform.
+ * The light white water sends back: what a white diffuse surface would, lit by the scene's own
+ * sun (or moon) and sky. Spray is unlit geometry, so it is given the scene's actual radiance
+ * rather than a fixed white: in daylight it is as bright as sunlit sand, the brightest thing
+ * about, never a grey smudge against a pale sky; at night it takes the moon and sky as the
+ * ground does. Light colours carry their intensity (Environment.ts sets intensity 1, and the
+ * hemisphere colour already includes pi), so a Lambert surface at about 40 degrees to the sun
+ * returns sun * 0.75 / pi plus most of the sky and a little of the ground. One render-group
+ * uniform.
  */
 function sprayLight(): N {
-  let sun: T.DirectionalLight | null = null, search = 0
+  let sun: T.DirectionalLight | null = null, hemi: T.HemisphereLight | null = null, search = 0
   const colour = new T.Color()
   return uniform(new T.Color(1, 1, 1)).setGroup(renderGroup).onRenderUpdate(frame => {
     const scene = frame.scene as T.Scene
-    if ((!sun || sun.parent === null) && search-- <= 0) { sun = null; search = 120; scene.traverse(o => { if (!sun && (o as T.DirectionalLight).isDirectionalLight) sun = o as T.DirectionalLight }) }
-    // The night sky raises exposure; undo that like the lava does, or white foam glows.
-    const night = vehicleNightAmount(scene), hasSky = scene.children.some(o => 'sunDirection' in o)
-    const level = (1 - .72 * night) * (hasSky ? hotExposureDim(frame.renderer?.toneMappingExposure ?? 1) : 1)
-    colour.setRGB(1, 1, 1)
-    if (sun) {
-      const c = (sun as T.DirectionalLight).color, peak = Math.max(c.r, c.g, c.b, 1e-3)
-      colour.setRGB(.5 + .5 * c.r / peak, .5 + .5 * c.g / peak, .5 + .5 * c.b / peak)
+    if ((!sun || sun.parent === null || !hemi || hemi.parent === null) && search-- <= 0) {
+      sun = null; hemi = null; search = 120
+      scene.traverse(o => {
+        if (!sun && (o as T.DirectionalLight).isDirectionalLight) sun = o as T.DirectionalLight
+        if (!hemi && (o as T.HemisphereLight).isHemisphereLight) hemi = o as T.HemisphereLight
+      })
     }
-    return colour.multiplyScalar(level)
+    // Without the scene's lights (a lab, a test), plain white.
+    if (!sun && !hemi) return colour.setRGB(1, 1, 1)
+    colour.setRGB(0, 0, 0)
+    const s = sun as T.DirectionalLight | null, h = hemi as T.HemisphereLight | null
+    if (s) colour.r += s.color.r * s.intensity * .75 / Math.PI, colour.g += s.color.g * s.intensity * .75 / Math.PI, colour.b += s.color.b * s.intensity * .75 / Math.PI
+    if (h) {
+      const k = h.intensity / Math.PI
+      colour.r += (h.color.r * .8 + h.groundColor.r * .2) * k
+      colour.g += (h.color.g * .8 + h.groundColor.g * .2) * k
+      colour.b += (h.color.b * .8 + h.groundColor.b * .2) * k
+    }
+    return colour
   })
 }
 
@@ -63,7 +76,7 @@ function batch(capacity: number, names: string[]) {
  * as seen from the camera (so a fast drop reads as a short streak) and its short axis facing
  * the camera. Mist uses the same quad unstretched, larger and much softer.
  */
-function dropletMaterial(light: N, tint: N) {
+function dropletMaterial(light: N, tint: N, lava = false) {
   const a = attribute('sprayA', 'vec4'), b = attribute('sprayB', 'vec4')
   const centre = a.xyz, size = a.w, velocity = b.xyz, mist = b.w.greaterThan(1.5)
   const toCamera = cameraPosition.sub(centre), distance = toCamera.length(), view = toCamera.div(distance.max(1e-4))
@@ -83,6 +96,9 @@ function dropletMaterial(light: N, tint: N) {
   // A bead: bright rim catching the light and a slightly clearer middle reads as water, not chalk.
   // A drop is mostly transparent water tinted like the sea, with a bright rim and a small
   // highlight. The tinted body reads against a pale sky, the bright rim against dark water.
+  // Big clots (splash crowns and columns) are churned full of air: white, lit by the sun.
+  // Fine spray keeps the sea's tint.
+  const aerated = smoothstep(.03, .12, size)
   const body = float(1).sub(smoothstep(.6, 1, r))
   const rim = smoothstep(.55, .85, r).mul(float(1).sub(smoothstep(.85, 1, r)))
   const glint = float(1).sub(smoothstep(0, .3, q.sub(vec2(-.25, .35)).length()))
@@ -92,10 +108,21 @@ function dropletMaterial(light: N, tint: N) {
   // Drops passing right by the lens would fill the screen with blobs: fade them out up close.
   const near = smoothstep(1.5, 6, distance)
   const alpha = select(mist, b.w.sub(2), b.w).mul(near)
-  m.opacityNode = select(mist, puff.mul(alpha).mul(.7), bead.mul(alpha).mul(cover.mul(.75).add(.25)).mul(.55))
+  // A clot is a soft, nearly opaque white disc, not a clear bead.
+  const clot = float(1).sub(smoothstep(.35, 1, r)).mul(.95)
+  m.opacityNode = select(mist, puff.mul(alpha).mul(.7), mix(bead.mul(.55), clot, aerated).mul(alpha).mul(cover.mul(.75).add(.25)))
   const water = mix(tint, vec3(1, 1, 1), .35)
-  const drop = mix(water, vec3(1.15, 1.18, 1.2), rim.max(glint).mul(.85))
-  m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .6), drop).mul(light).mul(1.2)
+  const drop = mix(mix(water, vec3(1.15, 1.18, 1.2), rim.max(glint).mul(.85)), vec3(1.2, 1.22, 1.24), aerated.mul(.75))
+  // Spray thrown into the sun scatters it forward: clots and mist read brighter than lit sand.
+  m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .7).mul(1.4), drop.mul(mix(float(1), float(1.8), aerated))).mul(light)
+  if (lava) {
+    // Molten drops glow on their own and cool as they fade: yellow-orange to a dark clot.
+    // Lava "mist" is a hot, dark smoke.
+    const heat = select(mist, b.w.sub(2), b.w).clamp(0, 1)
+    const molten = mix(vec3(.12, .04, .02), mix(vec3(2.2, .45, .05), vec3(3.4, 1.5, .3), heat), smoothstep(.15, .6, heat))
+    m.colorNode = select(mist, mix(vec3(.25, .2, .2), vec3(.9, .3, .06), heat.mul(.6)), molten.mul(body.mul(.6).add(.4)))
+    m.opacityNode = select(mist, puff.mul(alpha).mul(.45), body.mul(alpha).mul(cover.mul(.75).add(.25)).mul(.95))
+  }
   return m
 }
 
@@ -105,7 +132,7 @@ function dropletMaterial(light: N, tint: N) {
  * quads share their edges exactly. A ring has zero side vectors and draws an annulus.
  * Foam texture is world-anchored noise that breaks into lace as the foam ages.
  */
-function foamMaterial(light: N) {
+function foamMaterial(light: N, lava = false) {
   const A = attribute('foamA', 'vec4'), B = attribute('foamB', 'vec4'), S = attribute('foamSide', 'vec4'), L = attribute('foamLook', 'vec4')
   // Side vectors: zero for a ring, length two for the centre wash, unit for an arm crest.
   const ring = S.xy.length().lessThan(.5), wash = S.xy.length().greaterThan(1.5)
@@ -130,6 +157,11 @@ function foamMaterial(light: N) {
   const foam = smoothstep(threshold, threshold.add(.22), texture.mul(shape.mul(.5).add(.6)))
   m.opacityNode = foam.mul(shape).mul(fade).mul(.8)
   m.colorNode = vec3(.86, .93, .98).mul(light).mul(fine.mul(.2).add(1.05).add(lead.mul(.2)))
+  if (lava) {
+    // Churned lava: bright where the crust was broken, crusting over dark as the trail ages.
+    m.colorNode = mix(vec3(3.2, 1.25, .2).mul(fine.mul(.4).add(.8)), vec3(.07, .035, .025), smoothstep(.15, .85, age)).add(vec3(2.5, .9, .1).mul(lead))
+    m.opacityNode = foam.mul(shape).mul(fade).mul(.95)
+  }
   return m
 }
 
@@ -140,8 +172,13 @@ export class Spray {
   private foam: { mesh: T.Mesh<T.InstancedBufferGeometry, T.MeshBasicNodeMaterial>; arrays: Float32Array[]; attributes: T.InstancedBufferAttribute[] } | null = null
   private tier = -1
   private packed = -1
-  /** `water` gives the true moving surface (Terrain.liquidHeightAt) for wakes and landings. */
-  constructor(private scene: T.Scene, private ripples: Ripples, private water: SprayWater | null = null) {}
+  /**
+   * `water` gives the true moving surface (Terrain.liquidHeightAt) for wakes and landings.
+   * `liquid` 'lava' draws molten spray and a glowing wake that crusts over, thrown lower and
+   * slower (lava is three times as dense and far more viscous), and leaves the water's ripple
+   * field alone.
+   */
+  constructor(private scene: T.Scene, private ripples: Ripples, private water: SprayWater | null = null, private readonly liquid: 'water' | 'lava' = 'water') {}
   setWater(water: SprayWater | null) { this.water = water; this.sim?.setWater(water) }
   /** Live simulation, for tests and evidence tools. */
   get state() { return this.sim }
@@ -151,11 +188,12 @@ export class Spray {
     this.sim = new SpraySim(cap, this.water); this.tier = tier; this.packed = -1
     const light = sprayLight()
     const d = batch(cap.droplets, ['sprayA', 'sprayB'])
-    const dropMesh = new T.Mesh(d.g, dropletMaterial(light, waterTint()))
+    const lava = this.liquid === 'lava'
+    const dropMesh = new T.Mesh(d.g, dropletMaterial(light, waterTint(), lava))
     const segments = cap.vehicles * 3 * cap.points + cap.rings
     const f = batch(segments, ['foamA', 'foamB', 'foamSide', 'foamLook'])
-    const foamMesh = new T.Mesh(f.g, foamMaterial(light))
-    dropMesh.name = 'water-spray'; foamMesh.name = 'water-foam'
+    const foamMesh = new T.Mesh(f.g, foamMaterial(light, lava))
+    dropMesh.name = `${this.liquid}-spray`; foamMesh.name = `${this.liquid}-foam`
     // After the water (transparent, no depth write) so foam lies on it; droplets after foam.
     foamMesh.renderOrder = 2; dropMesh.renderOrder = 3
     for (const mesh of [dropMesh, foamMesh]) {
@@ -189,10 +227,13 @@ export class Spray {
   vehicle(id: string, position: T.Vector3, velocity: T.Vector3, submergedFraction: number, dt: number) {
     if (!waterSpray.value) return
     if (!this.sim) this.allocate(Math.max(0, Math.min(2, Math.round(graphicsLevel.value))))
-    const entering = this.sim!.vehicle(id, position.x, position.y, position.z, velocity.x, velocity.y, velocity.z, submergedFraction, dt, waterSprayScale.value)
+    const entering = this.sim!.vehicle(id, position.x, position.y, position.z, velocity.x, velocity.y, velocity.z, submergedFraction, dt, waterSprayScale.value * (this.liquid === 'lava' ? .7 : 1))
+    if (this.liquid === 'lava') return entering
     const sub = Math.max(0, Math.min(1, submergedFraction)), speed = Math.hypot(velocity.x, velocity.z)
     if (sub > 0 && speed > 1) this.ripples.disturb(position.x, position.z, 1.5, Math.min(.15, speed * .004) * Math.min(.1, Math.max(0, dt)) * 60)
-    if (entering) this.ripples.disturb(position.x, position.z, 2, Math.min(.5, Math.abs(velocity.y) * .05 + .1))
+    // Rings of ripples spreading from the hole, wider and stronger for a harder hit.
+    if (entering) { const impact = this.sim!.lastSplash; this.ripples.disturb(position.x, position.z, 2 + Math.min(4, impact * .12), Math.min(.6, impact * .04 + .1)) }
+    return entering
   }
   /** The world moved by a whole tile under the player: move what spray has left behind with it. */
   shift(dx: number, dz: number) { this.sim?.shift(dx, dz) }

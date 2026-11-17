@@ -11,7 +11,10 @@ const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const unit = (a: V3) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l] }
 const angleAt = (p: V3, a: V3, b: V3) => Math.acos(Math.max(-1, Math.min(1, dot(unit(sub(a, p)), unit(sub(b, p))))))
 
-export function clean(m: TriMesh, grid: TriGrid, rounds = 6, foldDegrees = 35): TriMesh {
+/** `keep` lists vertex pairs (character line edges) that are never flipped; their points never move. */
+export function clean(m: TriMesh, grid: TriGrid, rounds = 6, foldDegrees = 35, keep: number[] = []): TriMesh {
+  const kept = new Set<string>(), pinned = new Set<number>()
+  for (let i = 0; i < keep.length; i += 2) { const a = keep[i], b = keep[i + 1]; kept.add(a < b ? `${a},${b}` : `${b},${a}`); pinned.add(a); pinned.add(b) }
   const pos = Array.from(m.pos), tri = Array.from(m.tri), tag = Array.from(m.tag), V = pos.length / 3, F = tri.length / 3
   const P = (v: number) => [pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]]
   const fnorm = (f: number) => unit(cross(sub(P(tri[f * 3 + 1]), P(tri[f * 3])), sub(P(tri[f * 3 + 2]), P(tri[f * 3]))))
@@ -32,7 +35,7 @@ export function clean(m: TriMesh, grid: TriGrid, rounds = 6, foldDegrees = 35): 
         if (fs.length !== 2 || tag[fs[0]] !== tag[fs[1]]) continue
         const [a, b] = key.split(',').map(Number)
         const n0 = fnorm(fs[0]), n1 = fnorm(fs[1])
-        if (dot(n0, n1) < foldCos) continue
+        if (dot(n0, n1) < foldCos || kept.has(key)) continue
         const opp = fs.map(f => [0, 1, 2].map(k => tri[f * 3 + k]).find(v => v !== a && v !== b)!)
         const [c, d] = opp
         if (c === d || edges.has(c < d ? `${c},${d}` : `${d},${c}`)) continue
@@ -65,7 +68,7 @@ export function clean(m: TriMesh, grid: TriGrid, rounds = 6, foldDegrees = 35): 
     for (let f = 0; f < F; f++) { const n = cross(sub(P(tri[f * 3 + 1]), P(tri[f * 3])), sub(P(tri[f * 3 + 2]), P(tri[f * 3]))); for (let k = 0; k < 3; k++) { const o = vn[tri[f * 3 + k]]; o[0] += n[0]; o[1] += n[1]; o[2] += n[2] } }
     const next = pos.slice()
     for (let v = 0; v < V; v++) {
-      if (fixed[v] || seam(v) || !nb[v].size) continue
+      if (fixed[v] || seam(v) || pinned.has(v) || !nb[v].size) continue
       const c = [0, 0, 0]; for (const u of nb[v]) { const q = P(u); c[0] += q[0]; c[1] += q[1]; c[2] += q[2] }
       const p = P(v), n = unit(vn[v]), d = sub(c.map(x => x / nb[v].size), p), t = sub(d, n.map(x => x * dot(d, n)))
       const moved = [p[0] + .5 * t[0], p[1] + .5 * t[1], p[2] + .5 * t[2]]

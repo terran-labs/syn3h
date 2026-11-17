@@ -1,12 +1,12 @@
 # buggy-fit
 
-Measures how close a code-generated buggy gets to the loaded one. Developer tooling: nothing
+Measures how close a code-generated buggy gets to the original model. Developer tooling: nothing
 here ships in the game.
 
 ## Reference parts
 
-`reference.ts` reads `public/models/buggy-boxarm.glb` and `public/models/buggy.glb` with no
-dependencies and returns each part the game uses, in the frame `LoadedBuggySkin` uses it:
+`reference.ts` reads `tools/models/buggy-boxarm.glb` and `tools/models/buggy.glb` with no
+dependencies and returns each part the game uses, in the frame the game's skin (`Syn3hBuggySkin`) uses it:
 
 | part | source node | frame |
 | --- | --- | --- |
@@ -94,7 +94,7 @@ against one grown 10 mm per face (mean 10 mm, volume up 6.12%).
 the same way at rest (hubs, struts and shocks at the four corners, generated tyres for
 context), with the shared vehicle shading. Run the dev server and open:
 
-- `/vehicle-lab.html?vehicle=buggy-fit`: the reference parts (the loaded model).
+- `/vehicle-lab.html?vehicle=buggy-fit`: the reference parts (the original model).
 - `/vehicle-lab.html?vehicle=buggy-fit&design=<module>`: a candidate, named by its file in
   `src/vehicles/buggygen/` without `.ts`. Any module there whose default export has `build`
   is listed.
@@ -113,23 +113,22 @@ tools/heavy.sh node tools/lab-shot.mjs http://127.0.0.1:5297/ /tmp/buggy-fit/lab
   'overlay=vehicle=buggy-fit&design=placeholder@35,22,8~fit.show:2'
 ```
 
-## Generated skin
+## The game's buggy skin
 
-`src/vehicles/buggygen/GeneratedBuggySkin.ts` is the Syn3h buggy skin with every model-file
-part generated: `generatedParts.ts` builds stand-ins for the two model files from the parts
-lane and the body, and the skin runs LoadedBuggySkin's assembly on them. It makes no network
-request. The body is chosen in one line in `src/vehicles/buggygen/body.ts` (now the 250 point
-control cage). The body is built once and passed to `buildParts`, so the swellings fit it and
-the shock tops come from it; only the shock foot in the arm's frame is a stored number.
+`src/vehicles/skins/Syn3hBuggySkin.ts` is the game's buggy, every part generated: the body from
+`src/vehicles/buggygen/body.ts` (the 250 point control cage), then the parts fitted to it by
+`buildParts`, so the swellings fit it and the shock tops come from it. Only the shock foot in the
+arm's frame is a stored number. It makes no network request. The skin accepts another body
+source, which is how the lab shows a shaped or loft body.
 
-The Skins group of the exhibit runs the real skin classes as the game drives them (wheels,
-steering, wings, motor glow with Motion, brake lamps, paint, Near, Mid and Far detail):
+The Skins group of the exhibit runs that class as the game drives it (wheels, steering, wings,
+motor glow with Motion, brake lamps, paint, Near, Mid and Far detail):
 
-- `/vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=all`: loaded and generated side by side.
-- `/vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=loaded` or `&design=generated`: one of them.
-- `&design=generated-loft`: the generated skin with the section loft body, for comparison.
+- `/vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=generated`: the game skin.
+- `&design=generated&shape=<code>`: with a body from the buggy-shape exhibit's share code.
+- `&design=generated-loft`: with the section loft body, for comparison.
 - **Wings (open)** opens the wings; Level switches detail as the game does at 0, 60 and 300 m.
-- The parts comparison is now `&group=Parts`, with candidates named by their path under
+- The parts comparison is `&group=Parts`, with candidates named by their path under
   `src/vehicles/buggygen/` without `.ts` (for example `design=parts/index`).
 
 Measure (dev server running):
@@ -139,7 +138,7 @@ tools/heavy.sh node tools/buggy-fit/browser-measure.mjs http://127.0.0.1:5297/  
 npx tsx tools/buggy-fit/skin-cost.ts                                            # Node build time, gzip bytes of each skin
 ```
 
-Paired screenshots, same camera for both (swap `design=`):
+Screenshots (swap `design=` or add `&shape=` to compare):
 
 ```sh
 tools/heavy.sh node tools/lab-shot.mjs http://127.0.0.1:5297/ /tmp/buggy-fit/integration \

@@ -48,9 +48,8 @@ export const ALLOWLIST = [
   // ever sees used weights). Licence: public/fonts/OFL-Barlow.txt.
   { kind: 'font', pattern: /^\/fonts\/barlow-(400|500|600)-latin\.woff2$/, why: 'Barlow UI text faces, owner accepted', term: 'permanent' },
   { kind: 'font', pattern: /^\/fonts\/barlow-condensed-(500|600)-latin\.woff2$/, why: 'Barlow Condensed headings, owner accepted', term: 'permanent' },
-  // Dated. The vehicle models still loaded at run time, accepted for the next release only.
-  // Remove each entry as its vehicle becomes generated geometry.
-  { kind: 'model', pattern: /^\/models\/[a-z0-9-]+\.glb$/, why: 'vehicle models still loaded, owner exception', term: 'dated: the next release only' },
+  // No model of any kind: every vehicle is generated in code (16 November 2026), so a model
+  // request in ordinary play is a failure.
   // Permanent. Desktop Chrome itself fetches the apple-touch-icon named by the <link> tag in
   // index.html (resource type "other": the browser, not game code). The owner's brief accepts
   // icon link tags. It still costs that visitor 42 KB, so it stays visible in the report.

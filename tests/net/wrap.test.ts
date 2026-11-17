@@ -254,4 +254,18 @@ describe('Room on a wrapping world', () => {
     expect(b.peer.last('game')).toMatchObject({ event: 'ram', game: { it: b.id } })
     expect(b.peer.all('shove').length).toBe(1)
   })
+  // Bug caught: a size between the old three, or junk in the room's stored value, giving the
+  // server a tile of 0 or NaN, so no ram or hill could ever be measured.
+  it('measures across the seam of an in-between planet, and of a junk planet size', () => {
+    for (const [stored, size] of [[Math.log2(3072 / 1024), 3072], ['junk', 2048], [1e9, 4096], [-7, 1024], [null, 2048]] as const) {
+      room = new Room('wrap', { now: () => clock })
+      const a = join('A', { 'terrain.planetSize': stored as never, 'game.mode': 0 })
+      const b = join('B')
+      clock += 3100
+      room.receive(a.peer, state([size / 2 - 3, 0, 0], [20, 0, 0]))
+      room.receive(b.peer, state([-size / 2 + 3, 0, 0]))
+      send(a.peer, { type: 'ram', other: b.id, push: [13, 0, 0] })
+      expect(b.peer.all('shove').length, `stored ${stored}`).toBe(1)
+    }
+  })
 })

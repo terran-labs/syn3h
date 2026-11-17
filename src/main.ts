@@ -3,14 +3,19 @@
  * Keep this file small: features belong behind the seams, not here.
  */
 import { initializeFrozenResources } from './core/frozenResources'
-import { prepareResume, ResumeSession, RESUME_KEY } from './core/resume'
+import { ResumeSession, RESUME_KEY } from './core/resume'
+import { applyStartWorld } from './core/startWorld'
+import { randomSeed } from './world/planets'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
 import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { ChaseCamera } from './core/ChaseCamera'
 import { Game } from './core/Game'
-import { startNetworking } from './net'
+import { botColors, startNetworking } from './net'
+import { ChatPanel } from './ui/chat/ChatPanel'
+import { HostBanter } from './bots/banter/HostBanter'
+import { BOT_ID_BASE } from '../shared/protocol'
 import { ParamPanel } from './ui/ParamPanel'
 import { LobbyAddress } from './ui/LobbyAddress'
 import { roomFromQuery } from './core/roomAddress'
@@ -27,23 +32,20 @@ import { createEnvironment } from './world/Environment'
 import { createPostChain } from './fx/post/PostChain'
 import { createTerrain } from './world'
 import * as planets from './world/planets'
-import { applyPlanet, decodeWorld } from './world/planets'
 import { WaterEffects } from './world/water/WaterEffects'
 import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weather'
+import { applyWordmarkQuery } from './ui/brand/wordmarkFlags'
+import { setDayClock } from './world/sky/dayCycle'
 
 async function main(): Promise<void> {
   initializeFrozenResources(location.href)
   const canvas = document.getElementById('game') as HTMLCanvasElement
   const hud = document.getElementById('hud') as HTMLDivElement
   const query = new URLSearchParams(location.search)
-  // ?world=... opens a shared world exactly; ?planet=alpine picks a kind (with ?seed= or a
-  // fresh seed). Both go through the parameter registry, so the room shares them.
-  const shared = query.get('world')
-  if (shared && decodeWorld(shared)) { /* applied */ }
-  else if (query.has('planet')) applyPlanet(query.get('planet')!, query.has('seed') ? Number(query.get('seed')) : undefined, { source: 'preset' })
-  else if (query.has('seed')) params.set(worldSeed.def.id, query.get('seed'), 'preset')
-
-  const saved = prepareResume(query)
+  // A link's world, else this tab's resumed session, else a fresh random planet. Automated
+  // browsers (navigator.webdriver: the smoke tests, frame profiles and shot tools) keep the
+  // old fixed seed 1, so their measurements compare from run to run.
+  const { saved } = applyStartWorld(query, sessionStorage, navigator.webdriver ? () => 1 : randomSeed)
   // Keep the original entry/resume URL until all startup consumers have read it.
   const lobbyAddress = new LobbyAddress(location, history)
   const game = new Game(canvas)
@@ -91,6 +93,8 @@ async function main(): Promise<void> {
   // copies, whose owners apply it themselves. `?weather=0.5` sets the storminess for a look.
   game.add(new WeatherSystem(() => terrain, () => [slot.current, ...bots.vehicles]))
   applyWeatherQuery(location.search)
+  // ?wordmark= and ?intro=: silent developer overrides for the lobby's name and opening.
+  applyWordmarkQuery(location.search)
   // The round planet is drawn relative to the camera: place it after the camera has moved.
   game.add({ update: () => (terrain as { afterCamera?: () => void }).afterCamera?.() })
 
@@ -189,8 +193,16 @@ async function main(): Promise<void> {
     player.setColors?.(shell.bodyColor, shell.accentColor)
     const connection = startNetworking({
       game, terrain, player, audio, bots,
+      nameplates: {
+        shell: shell.element,
+        visible: () => shell.vehicleLabelsVisible,
+        presentation: () => shell.presentation,
+      },
       // The sender owns the hold; snapshots carry its motion. This is cosmetic only.
       onRemoteVehicleChanged: vehicle => { void materialize.begin(vehicle, { hold: false }) },
+      // A player or bot who leaves goes in the arrival cloud played in reverse.
+      onRemoteVehicleLeaving: vehicle => materialize.depart(vehicle),
+      cancelRemoteDeparture: vehicle => materialize.cancel(vehicle),
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name: shell.playerName,
@@ -217,11 +229,26 @@ async function main(): Promise<void> {
     shell.onRaceCancel = () => connection.cancelRace()
     // Every client reads the wind from the room's clock, so gusts agree between players.
     // Handed over by networking once that clock has synced (the sea gets it the same way).
-    connection.onRoomClock((now) => setWeatherClock(now))
+    connection.onRoomClock((now) => { setWeatherClock(now); setDayClock(now) })
     // The room hears about a pause for either reason: the paused heartbeat (one message a
     // second) is the one thing that keeps running, so others see "paused", not a dropout.
     pause.subscribe((paused) => connection.setPaused(paused))
     connection.setPaused(pause.paused)
+    // Chat (src/ui/chat): the pill, strip and log, inside the shell so it shows only in play.
+    const chat = new ChatPanel(shell.element, {
+      channel: connection.chat,
+      input: game.input,
+      canOpen: () => shell.playing && !game.input.suspended,
+      releaseCursor: () => { if (document.pointerLockElement) document.exitPointerLock() },
+      roster: () => [...connection.players.values()].filter((p) => p.id !== connection.id).map((p) => ({
+        id: p.id, name: connection.displayName(p.id), bot: Boolean(p.bot),
+        color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0],
+      })),
+    })
+    // Bot banter (src/bots/banter): the host's bots talk, and answer people's requests.
+    const banter = game.add(new HostBanter(game, terrain, connection, bots, environment))
+    // For automated checks (tools/chat-check.mjs). Join can run before window.syn3h exists.
+    Object.assign(window, { syn3hChat: { net: connection, panel: chat, banter } })
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
     game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || roomFromQuery(query), saved, network: connection, entrySearch: lobbyAddress.playURL().search }))
@@ -247,7 +274,7 @@ async function main(): Promise<void> {
   // Handles for debugging and automated checks.
   // The game does not run in a background tab: one controller, obeyed by the loop here. Audio
   // and the lobby follow the same controller from their own modules.
-  Object.assign(window, { syn3h: { planets, game, terrain, get player() { return slot.current }, slot, swapVehicle, params, panel, shell, audio, bots, camera, lifecycle, pause } })
+  Object.assign(window, { syn3h: { planets, game, terrain, get player() { return slot.current }, slot, swapVehicle, materialize, params, panel, shell, audio, bots, camera, lifecycle, pause } })
   // Shell has captured invite/room state; quality, weather, resume and all other
   // startup URL readers have finished. Clean only the visible lobby, not a room
   // whose name happens to be "lobby". Autoplay is already in its intentional URL.

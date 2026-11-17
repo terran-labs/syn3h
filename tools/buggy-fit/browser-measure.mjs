@@ -1,5 +1,5 @@
 /**
- * Loaded against generated buggy skin in a real browser: time from construction to ready,
+ * The game's buggy skin in a real browser: time from construction to ready,
  * triangles and draws at each detail level (the lab's own counts), and every model file
  * requested while the design loads.
  *
@@ -14,7 +14,7 @@ if (!base) { console.error('usage: browser-measure.mjs <base url>'); process.exi
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const results = {}
 try {
-  for (const id of ['loaded', 'generated']) {
+  for (const id of ['generated']) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
     const models = []
     page.on('request', r => { if (/\.(glb|gltf|bin)(\?|$)/.test(r.url())) models.push(new URL(r.url()).pathname) })

@@ -4,6 +4,7 @@ import type { Terrain } from '../world/Terrain'
 import { RAPIER, unityTorque } from '../core/physics'
 import { defineParam } from '../../shared/params'
 import { defaultPreset, definePresets } from '../../shared/presets'
+import { atmosphereValue } from '../world/weather/params'
 import { Vehicle } from './Vehicle'
 import { GameJet } from './jetgen/GameJet'
 
@@ -11,6 +12,12 @@ export const jetHoverDrag = defineParam({id:'jet.hoverDrag',label:'Hover drag',g
 export const jetDrag = defineParam({id:'jet.drag',label:'Flight drag',group:'Jet',scope:'world',default:.0001,min:.00005,max:.00015,step:.00001})
 export const jetSteer = defineParam({id:'jet.steer',label:'Steering',group:'Jet',scope:'world',default:20,min:5,max:35,step:1})
 export const jetLift = defineParam({id:'jet.lift',label:'Lift',group:'Jet',scope:'world',default:.5,min:.1,max:.9,step:.01})
+/**
+ * Pitch and roll authority of the reaction thrusters in a vacuum, in the units of the control
+ * surfaces' authority (which reach about 0.86 at the stall speed at sea level). Scaled by the
+ * share of air missing, so they do nothing on an Earthlike world.
+ */
+const JET_THRUSTER_AUTHORITY=.85
 export const jetStall = defineParam({id:'jet.stall',label:'Stall speed',group:'Jet',scope:'world',default:20,min:1,max:39,step:1})
 // Digital keys otherwise demand a near-loop from a half-second tap in the full-size port.
 export const jetControlResponse = defineParam({id:'jet.controlResponse',label:'Control response',group:'Jet',scope:'world',default:.3,min:.1,max:1,step:.05})
@@ -203,7 +210,10 @@ export class Jet extends Vehicle {
       angularDrag=this.input.brakes?10:2
     }else{
       // VhiclJet.cs 151-159 preserves the original clamped two-piece atmosphere and stall curves.
-      this.atmosDensity=position.y<15240?lerp(1.225,.18756,position.y/15240):lerp(.18756,.017102,position.y/30480)
+      // That curve is Earth's; the planet's own air (world.atmosphere, 0 vacuum to 1 Earthlike)
+      // scales it, so lift, drag and control surfaces all fade out on an airless world.
+      const air=clamp(atmosphereValue(),0,1)
+      this.atmosDensity=(position.y<15240?lerp(1.225,.18756,position.y/15240):lerp(.18756,.017102,position.y/30480))*air
       const aoa=speed>1e-8?local.y/speed:0
       this.stallFactor=speed<jetStall.value?lerp(1,0,((speed-jetStall.value*.8)/jetStall.value)*10):clamp(Math.abs(aoa)-.65,0,.1)*10
       const thrustPitch=-vector.y*lerp(20,5,speed/(jetStall.value*5))*Math.PI/180
@@ -215,7 +225,9 @@ export class Jet extends Vehicle {
       this.vectorPitch = thrustPitch; this.vectorYaw = -thrustYaw
       const nozzle=nozzlePosition.clone().applyQuaternion(q).add(position)
       this.body.addForceAtPoint(thrust,nozzle,true)
-      const authority=lerp(0,1,speed/jetStall.value*.7)*this.atmosDensity*(local.z<0?1:-1)
+      // Control surfaces need air; reaction thrusters take over as it thins, so the jet still
+      // pitches and rolls in a vacuum. They are off at full atmosphere: Earthlike flight is unchanged.
+      const authority=lerp(0,1,speed/jetStall.value*.7)*this.atmosDensity*(local.z<0?1:-1)+(1-air)*JET_THRUSTER_AUTHORITY
       torque(input.y*mass*jetSteer.value*.2*authority,0,-input.x*mass*jetSteer.value*.75*authority)
       if(this.stallFactor<1){
         // VhiclJet.cs 180 has an asymmetric negative-AoA clamp; preserve it for the port.

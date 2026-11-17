@@ -31,7 +31,8 @@
  */
 import * as THREE from 'three/webgpu'
 import { Fn, abs, atan, cameraPosition, dot, exp, float, length, max, mix, normalize, output, positionWorld, renderGroup, select, sqrt, uniform, vec2, vec3, vec4 } from 'three/tsl'
-import { defineParam, params, worldLavaAltitude } from '../../../shared/params'
+import { defineParam, params } from '../../../shared/params'
+import { seaLevel } from '../seaLevel'
 import { curveFactor } from '../curve'
 import { atmosphereValue, storminess } from './params'
 
@@ -91,7 +92,7 @@ export function hazeNow(out = { density: 0, height: 70, sea: 0 }): { density: nu
   const s = storminess.value
   out.density = air > 0 ? hazeDensity.value * air * (1 + STORM_THICKEN * s) : 0
   out.height = hazeHeight.value * (1 + STORM_LIFT * s)
-  out.sea = worldLavaAltitude.value
+  out.sea = seaLevel()
   return out
 }
 

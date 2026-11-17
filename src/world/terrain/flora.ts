@@ -942,7 +942,7 @@ function swampLayers(): LayerSpec[] {
       },
     },
     {
-      // Glowcaps in the damp hollows: teal like the sea, now and then a sickly green.
+      // Glowcaps in the damp hollows: teal, now and then a sickly green.
       n: 80, spacing: 1.6, geometry: glowcaps(),
       grow(c, h, out) {
         if (unit(h, 22) > 0.05 + 0.5 * smooth(0.5, 0.25, c.patch) * (0.5 + 0.5 * c.flow)) return

@@ -1,5 +1,10 @@
 /* Shared exploration instruments: a restrained light field, fine rules and no raised chrome. */
-:root { --s3-ink: #e3f2fc; --s3-dim: #a5c1d1; --s3-soft: #829eaf; --s3-accent: #83d9f5; --s3-accent-2: #b1eaff; --s3-line: rgb(173 224 247 / .28); --s3-line-quiet: rgb(173 224 247 / .15); --s3-panel: rgb(5 18 29 / .83); --s3-radius: 5px; --s3-radius-small: 3px; }
+:root { --s3-ink: #e3f2fc; --s3-dim: #a5c1d1; --s3-soft: #829eaf; --s3-accent: #83d9f5; --s3-accent-2: #b1eaff; --s3-line: rgb(173 224 247 / .28); --s3-line-quiet: rgb(173 224 247 / .15); --s3-panel: rgb(5 18 29 / .83); --s3-radius: 5px; --s3-radius-small: 3px;
+  /* HUD over the world: a crisp dark edge and a soft dark falloff under text and lines. Over a
+     dark scene it is dark on dark and all but disappears; over a pale sky, ice or lava it is
+     what keeps light type readable. Not an outline and not a box. */
+  --hud-under: 0 0 1px rgb(0 8 14 / .95), 0 0 3px rgb(0 8 14 / .8), 0 0 6px rgb(0 8 14 / .6), 0 0 6px rgb(0 8 14 / .45), 0 0 16px rgb(0 8 14 / .35);
+  --hud-line-under: drop-shadow(0 0 1px rgb(0 8 14 / .85)) drop-shadow(0 0 4px rgb(0 8 14 / .45)); }
 .syn3h-shell.exploration-ui :is(button, .liquid-glass), .touch-controls button {
   color: var(--s3-ink); background: rgb(8 29 42 / .36); background-image: none;
   border: 1px solid rgb(175 226 247 / .3); border-radius: 3px;
@@ -65,7 +70,6 @@
 .syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 12px; padding: 5px 0; background: none; border-bottom: 1px solid var(--s3-line-quiet); }
 .syn3h-shell.exploration-ui .rail-player-body button { min-height: 30px; padding: 5px 8px; font-size: 11px; margin: 5px 5px 5px 0; }
 .syn3h-shell.exploration-ui .rail-diagnostics, .syn3h-shell.exploration-ui .rail-music { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; }
-.syn3h-shell.exploration-ui .rail-diagnostics input { width: 14px; height: 14px; }
 /* Tooltips sit outside the rail so internal scroll containers cannot clip them. */
 .syn3h-shell.exploration-ui .wi-tooltip { position: fixed; z-index: 60; max-height: calc(100dvh - 24px); overflow: auto; padding: 12px; font: 12px/1.5 'Barlow',sans-serif; border-left: 1px solid #b1eaff; }
 .syn3h-shell.exploration-ui .wi-tooltip[hidden] { display: none; }
@@ -88,7 +92,8 @@
 .syn3h-shell.exploration-ui .shell-minimap canvas.shell-minimap-marks { opacity: 1; -webkit-mask-image: none; mask-image: none; }
 .syn3h-shell.exploration-ui .shell-minimap::after { content: ''; position: absolute; inset: 11.5%; border: 1px solid rgb(175 225 250 / .2); border-radius: 50%; box-shadow: 0 0 14px rgb(100 200 250 / .06); }
 .syn3h-shell.exploration-ui .shell-minimap span { top: 13px; left: 50%; right: auto; color: #b1eaff; font: 10px 'Barlow',sans-serif; letter-spacing: .15em; text-shadow: 0 0 8px #6bc5f1; }
-.syn3h-shell.exploration-ui.is-playing .focus-hud { opacity: .7; }
+/* Quieter while the panels are up, but not so faint that the dark falloff under the text fades with it. */
+.syn3h-shell.exploration-ui.is-playing .focus-hud { opacity: .85; }
 .syn3h-shell.exploration-ui.is-focus .focus-hud { opacity: 1; }
 .syn3h-shell.exploration-ui:not(.is-focus) .focus-hud [data-reticle] { display: none; }
 .syn3h-shell.exploration-ui.is-focus .shell-minimap { opacity: .92; }
@@ -97,14 +102,11 @@
 .touch-controls .touch-stick { background: radial-gradient(circle,transparent 58%,rgb(145 220 250 / .09) 69%,transparent 71%); border: 1px solid rgb(175 225 250 / .25); box-shadow: none; }
 .touch-controls .touch-knob { background: rgb(130 215 250 / .08); border: 1px solid rgb(175 225 250 / .42); box-shadow: 0 0 14px rgb(130 215 250 / .06); }
 .touch-controls button { border-radius: 50%; font-size: 12px; }
-@media (max-width: 700px) { .syn3h-shell.exploration-ui .world-inspector { top: 10px; bottom: 10px; height: calc(100dvh - 20px); right: 10px; width: min(340px,calc(100vw - 20px)); } .syn3h-shell.exploration-ui .shell-minimap { width: 120px; height: 120px; bottom: 206px; left: 12px; } .syn3h-shell.exploration-ui .spawn-help { left: 12px; bottom: 184px; } .syn3h-shell.exploration-ui:not(.is-focus) .focus-hud { opacity: .45; } .syn3h-shell.exploration-ui .fh-left { right: auto; left: 18px; top: 30%; text-align: left; } .syn3h-shell.exploration-ui .fh-right { left: auto; right: 18px; top: 30%; } }
+@media (max-width: 700px) { .syn3h-shell.exploration-ui .world-inspector { top: 10px; bottom: 10px; height: calc(100dvh - 20px); right: 10px; width: min(340px,calc(100vw - 20px)); } .syn3h-shell.exploration-ui .shell-minimap { width: 120px; height: 120px; bottom: 206px; left: 12px; } .syn3h-shell.exploration-ui .spawn-help { left: 12px; bottom: 184px; } .syn3h-shell.exploration-ui:not(.is-focus) .focus-hud { opacity: .65; } .syn3h-shell.exploration-ui .fh-left { right: auto; left: 18px; top: 30%; text-align: left; } .syn3h-shell.exploration-ui .fh-right { left: auto; right: 18px; top: 30%; } }
 @media (max-height: 500px) { .syn3h-shell.exploration-ui .world-inspector { top: 8px; bottom: 8px; height: calc(100dvh - 16px); gap: 3px; } .syn3h-shell.exploration-ui .wi-cards { gap: 3px; } .syn3h-shell.exploration-ui .wi-top { padding-block: 3px; gap: 2px; } .syn3h-shell.exploration-ui .wi-card { flex-basis: 28px; min-height: 28px; } .syn3h-shell.exploration-ui .world-inspector .wi-head { flex-basis: 27px; min-height: 27px; padding-block: 5px; } .syn3h-shell.exploration-ui .shell-minimap { width: 96px; height: 96px; bottom: 156px; } .syn3h-shell.exploration-ui .spawn-help { left: 180px; bottom: 12px; } }
 @media (prefers-reduced-motion: reduce) { .syn3h-shell.exploration-ui *, .touch-controls * { transition-duration: 0s !important; } }
 .syn3h-shell.exploration-ui .wi-top #syn3h-build-notice { position: static !important; inset: auto !important; width: 100% !important; padding: 4px 6px !important; min-height: 24px; font: 11px/1.3 'Barlow',sans-serif !important; border: 1px solid var(--s3-line-quiet) !important; border-radius: 2px !important; background: rgb(20 70 90 / .2) !important; box-shadow: none !important; }
 
-.syn3h-shell.exploration-ui .galaxy-label { background: rgb(5 20 32 / .35); border: 0; border-bottom: 1px solid rgb(175 225 250 / .32); border-radius: 0; box-shadow: none; padding: 8px 12px; }
-.syn3h-shell.exploration-ui .galaxy-label strong { font: 400 13px/1.4 'Barlow',sans-serif; letter-spacing: .12em; }
-.syn3h-shell.exploration-ui .galaxy-label small { font-size: 10px; letter-spacing: .08em; }
 .syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search { font: 400 12px/1.2 'Barlow',sans-serif; height: 28px; min-height: 28px; padding: 3px 0; background: none; border: 0; border-bottom: 1px solid var(--s3-line); border-radius: 0; }
 .syn3h-shell.exploration-ui .world-inspector input[type=range] { appearance: none; -webkit-appearance: none; height: 24px; background: transparent; }
 .syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-runnable-track { height: 1px; background: rgb(175 225 250 / .45); }
@@ -238,6 +240,12 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 :root .syn3h-shell .zorb-toggle b { font-weight: 500; opacity: .62; }
 :root .syn3h-shell .zorb-toggle[aria-pressed=true] { border-color: var(--s3-accent-2, #9fe0ff); }
 :root .syn3h-shell .zorb-toggle[aria-pressed=true] b { opacity: 1; color: var(--s3-accent-2, #9fe0ff); }
+/* A small copy of the standard switch: knob left on a dim track when off, right on cyan when on. */
+:root .syn3h-shell .zorb-toggle .zorb-switch { position: relative; width: 26px; height: 14px; flex: none; border-radius: 999px; border: 1px solid rgb(173 224 247 / .4); background: rgb(2 10 18 / .6); transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease; }
+:root .syn3h-shell .zorb-toggle .zorb-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; border-radius: 50%; background: rgb(150 176 192); transition: translate .16s ease, background-color .16s ease; }
+:root .syn3h-shell .zorb-toggle[aria-pressed=true] .zorb-switch { border-color: rgb(214 246 255 / .95); background: var(--s3-accent, #83d9f5); box-shadow: 0 0 8px rgb(131 217 245 / .55); }
+:root .syn3h-shell .zorb-toggle[aria-pressed=true] .zorb-switch::after { translate: 12px 0; background: #fff; }
+@media (prefers-reduced-motion: reduce) { :root .syn3h-shell .zorb-toggle .zorb-switch, :root .syn3h-shell .zorb-toggle .zorb-switch::after { transition: none; } }
 /* Driving with the cursor captured: the drum is shorter, and the pill is a reminder, not a target. */
 :root .syn3h-shell.is-focus .zorb-toggle { top: calc(var(--gear-top, 50%) + 92px); opacity: .84; pointer-events: none; }
 /* Touch has its own ZORB button beside the other drive buttons. */
@@ -302,11 +310,6 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 }
 
 /* Vehicle choice and colours are the first controls inside their dedicated card. */
-.syn3h-shell.exploration-ui .world-inspector .wi-vehicle { display: flex; align-items: end; gap: 8px; padding: 8px 2px 12px; }
-.syn3h-shell.exploration-ui .world-inspector .wi-vehicle > label { flex: 1; min-width: 0; font-size: 12px; color: var(--s3-soft); }
-.syn3h-shell.exploration-ui .world-inspector .wi-vehicle-select { display: block; width: 100%; height: 44px; min-height: 44px; font-size: 16px; margin-top: 4px; }
-.syn3h-shell.exploration-ui .world-inspector .wi-tint { display: flex; flex: 0 0 auto; }
-.syn3h-shell.exploration-ui .world-inspector label.wi-swatch { display: grid; place-items: center; width: 44px; height: 44px; margin: 0; cursor: pointer; }
 /* A slow-rendering notice has its own space, away from the mode cards at the top. */
 .syn3h-shell.exploration-ui .performance-recommendation { top: auto; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; width: min(360px, calc(100vw - 32px)); max-width: none; transform: translateX(-50%); box-sizing: border-box; }
 .syn3h-shell.exploration-ui .performance-recommendation button { min-height: 44px; padding: 5px 8px; font-size: 12px; }

@@ -1,9 +1,8 @@
 /** Shared water forces. Native controllers and Rapier seabed contacts retain ownership of drive. */
 import * as THREE from 'three/webgpu'
-import { defineParam, worldLavaAltitude } from '../../shared/params'
+import { defineParam } from '../../shared/params'
 import type { RAPIER } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
-import { seaWaves } from '../world/water/seaWaves'
 
 export const waterSinking = defineParam<boolean>({ id:'water.sinking', label:'Sinking physics', group:'Water', scope:'world', default:true })
 export const waterLinearDrag=defineParam({id:'water.linearDrag',label:'Linear drag (1/s)',group:'Water',scope:'world',default:.35,min:0,max:3,step:.05})
@@ -15,7 +14,7 @@ function tuning(kind:string, buoyancy:number, planing:number) {
  }
 }
 // Sealed craft displace more than their weight; dense tracked armour has no reserve lift.
-export const waterProfiles = { buggy:tuning('buggy',.85,8), tank:tuning('tank',0,100), hovercraft:tuning('hovercraft',1.1,16), jet:tuning('jet',.65,24), zorb:tuning('zorb',2,100) }
+export const waterProfiles = { buggy:tuning('buggy',1.6,10), tank:tuning('tank',0,100), hovercraft:tuning('hovercraft',1.1,16), jet:tuning('jet',.65,24), zorb:tuning('zorb',2,100) }
 const point=new THREE.Vector3(),q=new THREE.Quaternion(),flow={x:0,z:0},slope={x:0,z:0}
 /** Match the four hull columns used by the force pass, including pitched contact. */
 export function hasWaterContact(body:RAPIER.RigidBody,terrain:Terrain):boolean {
@@ -45,11 +44,8 @@ export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrai
   const fraction=radius?THREE.MathUtils.clamp((depth+radius)/(2*ZORB_SUPPORT_DEPTH),0,1):THREE.MathUtils.clamp(depth+.5,0,1)
   if(fraction<=0)continue
   flow.x=0;flow.z=0;terrain.liquidFlowAt?.(point.x,point.z,flow)
-  const ground=terrain.heightAt(point.x,point.z)
-  const level=worldLavaAltitude.value
-  // Inland water has its own height and current, not the global ocean's vertical motion.
-  const seaSurface=level+seaWaves.offsetAt(point.x,point.z,ground,level)
-  const surfaceSpeed=Math.abs(surface-seaSurface)<.01?seaWaves.verticalSpeedAt(point.x,point.z,ground,level):0
+  // The surface's own rise and fall: its waves, and the sea gliding to a new level (terrain).
+  const surfaceSpeed=terrain.liquidVerticalSpeedAt?.(point.x,point.z)??0
   // Sample the actual surface, including shoaling and geometric waves only.
   const hx=terrain.liquidHeightAt?.(point.x+.25,point.z)??surface
   const hz=terrain.liquidHeightAt?.(point.x,point.z+.25)??surface

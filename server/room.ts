@@ -29,6 +29,7 @@ import {
   MODE_KOTH,
   MODE_TAG,
   MAX_NAME_LENGTH,
+  RENAME_INTERVAL_MS,
   MAX_PLAYER_ID,
   PROTOCOL_VERSION,
   STATE_BYTES,
@@ -43,7 +44,7 @@ import {
   isVec3,
   parseJson,
   stampStateId,
-  WRAP_SIZES,
+  tileSize,
   MAX_BOTS, type WireVehicleKind,
   CLOSE_REPLACED,
 } from '../shared/protocol'
@@ -53,6 +54,7 @@ import {
 import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { wrapDistance } from '../shared/wrap'
 import { TERRAIN_PARAM_IDS } from '../src/world/terrain/settings'
+import { sunDayLength } from '../src/world/sky/dayParams'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
 import { bigRedAllowed, bigRedCooldown } from '../src/weapons/bigRedParams'
@@ -62,6 +64,9 @@ import {
   KNOCK_WINDOW, WIN_PAUSE, raceAuto, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
   REJOIN_GRACE, gameRejoin,
 } from '../src/modes/params'
+import {
+  BOT_CHAT_BURST, BOT_CHAT_REFILL_S, CHAT_BURST, CHAT_REFILL_S, ChatBucket, HOST_ONLY_PARAMS, botChatter, chatOn, cleanChatText, filterChat,
+} from '../shared/chat'
 
 /** One connection, as the room sees it. */
 export interface Peer {
@@ -97,6 +102,12 @@ export interface RoomSnapshot {
    */
   modes?: number
   /**
+   * 2 once a world's day length defaults to its orbit. A snapshot without it stored the old
+   * default, a stopped clock (0), for every room whether or not anyone chose it: that 0 is
+   * dropped, so the room takes its planet's orbit day like a room that stored nothing.
+   */
+  days?: number
+  /**
    * With `game.rejoin` on: who was in the room, by their rejoin secret, so that a room
    * rebuilt from storage (a release reset it, everyone dropped at once) can hold their
    * places. `at` is server ms when the entry was written.
@@ -124,6 +135,8 @@ interface Player {
   cordOn: boolean
   /** The vehicle that cord is tied to, or null for a ground anchor, so it can be let go when that vehicle goes. */
   cordTo: number | null
+  /** Server ms of this player's last accepted rename (profile `name`); see RENAME_INTERVAL_MS. */
+  renamedAt?: number
   /** The vehicle this player is carrying with Yoink, and since when (server ms). */
   carry: { to: number; at: number } | null
   /** Server ms of this player's last relayed grab or fling, and of its last gust per target. */
@@ -153,6 +166,8 @@ interface Player {
   jsonCount: number
   /** Server ms of joining; 0 for a player adopted after hibernation (not newly arrived). */
   joinedAt: number
+  /** This player's chat allowance, made on its first line. */
+  chat: ChatBucket | null
 }
 
 const ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/
@@ -361,7 +376,7 @@ export class Room {
         this.onHit(player, msg.shooter, msg.shot, msg.victim)
         break
       case 'profile':
-        this.onProfile(player, msg.kind, msg.colors)
+        this.onProfile(player, msg.kind, msg.colors, msg.name)
         break
       case 'ram':
         this.onRam(player, msg.other, msg.push)
@@ -379,6 +394,9 @@ export class Room {
       case 'bot':
         this.onBotKind(player, msg.id, msg.kind)
         break
+      case 'bot-leave':
+        this.onBotLeave(player, msg.bot)
+        break
       case 'cord': {
         const actor = this.gearActor(player, msg.bot)
         if (actor) this.onCord(peer, actor, msg.cord)
@@ -389,6 +407,9 @@ export class Room {
         if (actor) this.onYoink(peer, actor, msg.y)
         break
       }
+      case 'chat':
+        this.onChat(peer, player, msg.text, msg.bot)
+        break
       case 'stuck':
       case 'died': // the name older bundles send
         if (typeof msg.bot === 'number') {
@@ -550,7 +571,7 @@ export class Room {
   snapshot(): RoomSnapshot {
     return {
       params: Object.fromEntries(this.values), it: this.it, scores: { ...this.scores }, nextId: this.nextId,
-      host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant, modes: 2,
+      host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant, modes: 2, days: 2,
       ...(this.rejoinOn() ? { roster: this.roster() } : {}),
       race: { state: this.race, deadline: this.raceDeadline, cooldownUntil: this.raceCooldownUntil, lastId: this.lastRaceId },
     }
@@ -568,6 +589,8 @@ export class Room {
     }
     // See RoomSnapshot.modes: an old room's Tag was the default, not a choice.
     if (s.modes !== 2 && this.values.get(gameMode.def.id) === MODE_TAG) this.values.set(gameMode.def.id, MODE_EXPLORE)
+    // See RoomSnapshot.days: an old room's stopped clock was the default, not a choice.
+    if (s.days !== 2 && this.values.get(sunDayLength.def.id) === 0) this.values.delete(sunDayLength.def.id)
     this.it = s.it
     this.scores = { ...s.scores }
     this.nextId = Math.max(this.nextId, s.nextId)
@@ -812,6 +835,19 @@ export class Room {
     this.broadcast({ type: 'profile', player: bot.info })
   }
 
+  /**
+   * The host says it stopped simulating a bot: drop it now. Only the host, which alone
+   * simulates bots, may; a bot that comes back with the same id is a new one (its next state
+   * makes it again, with a join). BOT_EXPIRY_MS stays the fallback for a host that vanishes.
+   */
+  private onBotLeave(sender: Player, id: unknown): void {
+    if (sender.info.id !== this.host || typeof id !== 'number' || !isBotId(id)) return
+    const bot = this.bots.get(id)
+    if (!bot) return
+    this.removeBot(id, bot)
+    this.botKinds.delete(id)
+  }
+
   private expireBots(): void {
     const now = this.now()
     for (const [id, bot] of this.bots) {
@@ -840,6 +876,51 @@ export class Room {
     }
   }
 
+  // -------------------------------------------------------------------------------------
+  // Chat (shared/chat.ts)
+  // -------------------------------------------------------------------------------------
+  //
+  // The room cleans, filters and rate limits every line and names the speaker itself. Lines
+  // are relayed and forgotten: no history for newcomers, nothing stored, only a count kept.
+
+  /** Lines relayed since this room was made. A count, never the text. */
+  chatLines = 0
+  /** The bot simulator's allowance, shared by every bot it speaks for. */
+  private botChat: ChatBucket | null = null
+
+  private onChat(peer: Peer, player: Player, raw: unknown, botId: unknown): void {
+    const now = this.now()
+    let speaker = player
+    if (botId !== undefined) {
+      // Only the host simulates bots, so only the host may speak for one, and only while
+      // it is here and the room has bot chatter on. Refusals are silent: the host paces itself.
+      if (player.info.id !== this.host || player.heldUntil || typeof botId !== 'number' || !isBotId(botId)) return
+      const bot = this.bots.get(botId)
+      if (!bot || !this.paramBool(botChatter.def)) return
+      const text = cleanChatText(raw)
+      if (!text) return
+      this.botChat ??= new ChatBucket(BOT_CHAT_BURST, BOT_CHAT_REFILL_S, now)
+      if (!this.botChat.take(now)) return
+      speaker = bot
+      this.relayChat(speaker, text, now)
+      return
+    }
+    if (!this.paramBool(chatOn.def)) { this.sendTo(peer, { type: 'chat-refused', reason: 'off' }); return }
+    const text = cleanChatText(raw)
+    if (!text) return
+    player.chat ??= new ChatBucket(CHAT_BURST, CHAT_REFILL_S, now)
+    if (!player.chat.take(now)) {
+      this.sendTo(peer, { type: 'chat-refused', reason: 'rate', wait: Math.round(player.chat.wait(now) * 10) / 10 })
+      return
+    }
+    this.relayChat(speaker, text, now)
+  }
+
+  private relayChat(speaker: Player, text: string, now: number): void {
+    this.chatLines++
+    this.broadcast({ type: 'chat', from: speaker.info.id, text: filterChat(text), t: now / 1000 })
+  }
+
   /** Keep the connection's budget, but use the actor's own positions and gear limits. */
   private gearActor(sender: Player, botId: unknown): Player | undefined {
     if (botId === undefined) return sender
@@ -849,21 +930,45 @@ export class Room {
     return bot
   }
 
-  private onProfile(player: Player, kind: unknown, colors: unknown): void {
+  private onProfile(player: Player, kind: unknown, colors: unknown, name: unknown): void {
     const k = kind === undefined ? player.info.kind : cleanKind(kind)
     const c = colors === undefined ? player.info.colors : cleanColors(colors)
     if (!k || !c) return
-    if (k === player.info.kind && c[0] === player.info.colors[0] && c[1] === player.info.colors[1]) return
+    const n = name === undefined ? player.info.name : this.rename(player, name)
+    if (k === player.info.kind && c[0] === player.info.colors[0] && c[1] === player.info.colors[1] && n === player.info.name) return
     player.info.kind = k
     player.info.colors = c
+    player.info.name = n
     this.broadcast({ type: 'profile', player: player.info })
+  }
+
+  /**
+   * The name a rename asks for, cleaned and de-duplicated as at hello, or the current name
+   * when it is too soon after the last rename. A rename touches nothing but the name: id,
+   * host role, score and rejoin secret stay as they are.
+   */
+  private rename(player: Player, raw: unknown): string {
+    const cleaned = cleanName(raw, player.info.id)
+    if (cleaned === player.info.name) return cleaned
+    const now = this.now()
+    if (player.renamedAt !== undefined && now - player.renamedAt < RENAME_INTERVAL_MS) {
+      // Ignored: tell the sender the name it still has, so its own view does not drift.
+      const peer = this.peerOf(player)
+      if (peer) this.sendTo(peer, { type: 'profile', player: player.info })
+      return player.info.name
+    }
+    player.renamedAt = now
+    const name = this.uniqueName(cleaned, player)
+    // A race in progress shows the new name too.
+    for (const p of this.race?.participants ?? []) if (p.id === player.info.id) p.name = name
+    return name
   }
 
   private onParam(player: Player, id: unknown, raw: unknown): void {
     if (typeof id !== 'string') return
-    if (this.locked && player.info.id !== this.host) {
+    if ((this.locked || HOST_ONLY_PARAMS.has(id)) && player.info.id !== this.host) {
       // Snap the sender's slider back to the room's value.
-      const current = this.values.get(id)
+      const current = this.values.get(id) ?? (HOST_ONLY_PARAMS.has(id) ? registry.get(id)?.def.default : undefined)
       const peer = this.peerOf(player)
       if (current !== undefined && peer) this.sendTo(peer, { type: 'param', id, value: current, from: 0 })
       return
@@ -1276,8 +1381,7 @@ export class Room {
    * The room does not register the terrain's parameters; it reads the stored values.
    */
   private wrapSize(): number {
-    const tier = Number(this.values.get('terrain.planetSize') ?? 1)
-    return WRAP_SIZES[tier <= 0 ? 0 : tier >= 2 ? 2 : 1]
+    return tileSize(this.values.get('terrain.planetSize') ?? 1)
   }
 
   /** Distance between two positions, the short way round on a wrapping world. */
@@ -1371,7 +1475,7 @@ export class Room {
     const now = this.now()
     return {
       info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, cordTo: null, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, page: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), lastTag: now,
-      windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now, raceDriving: false,
+      windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now, raceDriving: false, chat: null,
     }
   }
 
@@ -1391,8 +1495,8 @@ export class Room {
 
   /** Two players may pick the same name; the later one gets a number so lists and events can
    * tell them apart: "Sam", "Sam 2", "Sam 3". */
-  private uniqueName(name: string): string {
-    const taken = new Set([...this.players.values()].map((p) => p.info.name.toLowerCase()))
+  private uniqueName(name: string, self?: Player): string {
+    const taken = new Set([...this.players.values()].filter((p) => p !== self).map((p) => p.info.name.toLowerCase()))
     if (!taken.has(name.toLowerCase())) return name
     for (let n = 2; ; n++) {
       const suffix = ` ${n}`

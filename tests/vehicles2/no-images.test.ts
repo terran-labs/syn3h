@@ -1,7 +1,6 @@
 // Vehicles and their effects load no image file (AGENTS.md: generate it, do not ship it). This
-// fails if vehicle or effect code names an image file or uses an image loader again, if an image
-// returns to the vehicle model folders, or if a generated map stops matching what its material
-// expects.
+// fails if vehicle or effect code names an image file or uses an image loader again, or if a
+// generated map stops matching what its material expects. No model ships at all (retired-kinds).
 //
 // No vehicle bitmap exceptions remain. Browser request checks live in nobitmaps-capture.mjs.
 import {readdirSync,readFileSync,statSync} from 'node:fs'
@@ -29,22 +28,6 @@ describe('vehicles load no images',()=>{
    }).map(({i,line})=>`${rel}:${i+1}: ${line.trim().slice(0,120)}`)})
   expect(offenders).toEqual([])
  })
- it('ships no image under the vehicle model folders',()=>{
-  const images=files(join(root,'public/models')).filter(f=>IMAGE.test(f)).map(f=>f.slice(root.length))
-  expect(images.sort()).toEqual([])
- })
-})
-
-// GLTFLoader can fetch image URIs hidden inside a GLB even when TypeScript names none.
-it('ships no embedded or external textures inside vehicle GLBs',()=>{
- for(const file of files(join(root,'public/models')).filter(f=>f.endsWith('.glb'))){
-  const bytes=readFileSync(file)
-  expect(bytes.readUInt32LE(0)).toBe(0x46546c67)
-  expect(bytes.readUInt32LE(16)).toBe(0x4e4f534a)
-  const model=JSON.parse(bytes.subarray(20,20+bytes.readUInt32LE(12)).toString())
-  expect(model.images??[],file).toEqual([])
-  expect(model.textures??[],file).toEqual([])
- }
 })
 
 describe('generated vehicle maps',()=>{

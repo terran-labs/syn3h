@@ -27,6 +27,9 @@ try {
     // Headless Chrome draws slowly, and the game would step its graphics level down to the
     // lowest, which retires the galaxy. Hold the level so this checks the galaxy itself.
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
+    // The opening (src/ui/galaxy/opening.ts) runs about nine seconds; a key skips straight to the
+    // settled lobby, as for a player, and the checks below are of that lobby.
+    await page.keyboard.press('Shift')
     await page.waitForTimeout(4000)
     const state = () => page.evaluate(() => { const g = window.syn3h.shell.galaxy; return { open: document.querySelector('.syn3h-shell').classList.contains('galaxy-open'), live: g.live, frames: g.frames, labels: [...document.querySelectorAll('.galaxy-label:not([hidden])')].map(l => { const r = l.getBoundingClientRect(); return { id: l.dataset.world, x: r.left + r.width / 2, y: r.top } }) } })
     const first = await state()
@@ -44,13 +47,14 @@ try {
     assert.ok(swung.labels.some(l => { const before = first.labels.find(b => b.id === l.id); return before && Math.hypot(l.x - before.x, l.y - before.y) > 25 }), `${view.name}: the view swung`)
     await page.screenshot({ path: `${out}/${view.name}-swung.png` })
     // Behind a panel the galaxy dims and stops drawing; back at the index it is bright again.
-    await page.evaluate(() => window.syn3h.shell.showPanel('settings')); await settle(page, 'settings')
+    // Settings moved to the gear's sheet; About is a full lobby panel, as Settings was.
+    await page.evaluate(() => window.syn3h.shell.showPanel('about')); await settle(page, 'about')
     await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 0.35, null, { timeout: 15000 })
     // A map arriving, or the camera still easing home, draws a frame; then it rests.
     let rests = false
     for (let i = 0; i < 20 && !rests; i++) { const f = (await state()).frames; await page.waitForTimeout(1200); rests = (await state()).frames === f }
     assert.ok(rests, `${view.name}: the galaxy keeps drawing behind a panel`)
-    await page.screenshot({ path: `${out}/${view.name}-settings.png` })
+    await page.screenshot({ path: `${out}/${view.name}-panel.png` })
     await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle(page, 'index')
     await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 1, null, { timeout: 15000 })
     // Tapping a world drops straight into it: no form, no panel, one motion to the ground.

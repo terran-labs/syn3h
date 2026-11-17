@@ -21,16 +21,17 @@ function halfStencil(d: CageData, levels: number) {
   for (let i = 0; i < n; i++) if (d.v[i * 3] !== 0) { owner.push(i); sign.push(-1) }
   let rows: Map<number, number>[] = owner.map((_, j) => new Map([[j, 1]]))
   let faces = Uint32Array.from(full.faces), tags = Uint8Array.from(full.tags), creases = Uint32Array.from(full.creases), count = owner.length
+  let sharpness: Float32Array | undefined = full.sharpness ? Float32Array.from(full.sharpness) : undefined
   const passes = levels + (d.limit && levels > 0 ? 1 : 0)
   for (let l = 0; l < passes; l++) {
-    const step = loopStep(count, faces, tags, creases, l === levels), s: Stencil = step.stencil
+    const step = loopStep(count, faces, tags, creases, l === levels, sharpness), s: Stencil = step.stencil
     const next: Map<number, number>[] = []
     for (let i = 0; i < s.rows; i++) {
       const m = new Map<number, number>()
       for (let k = s.start[i]; k < s.start[i + 1]; k++) for (const [j, w] of rows[s.index[k]]) m.set(j, (m.get(j) ?? 0) + w * s.weight[k])
       next.push(m)
     }
-    rows = next; faces = step.faces; tags = step.tags; creases = step.creases; count = s.rows
+    rows = next; faces = step.faces; tags = step.tags; creases = step.creases; sharpness = step.sharpness; count = s.rows
   }
   // Fold full cage columns onto half unknowns.
   const out = rows.map(m => [...m].map(([j, w]) => [owner[j], w, sign[j]] as [number, number, number]))
@@ -61,12 +62,14 @@ function apply(rows: [number, number, number][][], h: Float64Array): Float64Arra
   return out
 }
 
-export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels?: number; rounds?: number; reverse?: number; smooth?: number; fair?: number; bend?: number; log?: boolean } = {}): CageData {
+export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels?: number; rounds?: number; reverse?: number; smooth?: number; fair?: number; bend?: number; frozen?: (i: number) => boolean; log?: boolean } = {}): CageData {
   const levels = opts.levels ?? 2, rounds = opts.rounds ?? 8, reverseW = opts.reverse ?? 1, lambda = opts.smooth ?? 1e-3
   const {rows, faces, tags, bend} = halfStencil(d, levels), mu = opts.bend ?? 0
   const vertexTag: number[] = new Array(rows.length).fill(-1)
   for (let f = 0; f < tags.length; f++) for (let k = 0; k < 3; k++) if (vertexTag[faces[f * 3 + k]] < 0) vertexTag[faces[f * 3 + k]] = tags[f]
   const n = d.v.length / 3, h = Float64Array.from(d.v, x => x / 1000)
+  // Frozen points keep their place (the refit after drawing lines leaves the front alone).
+  const frozen = Uint8Array.from({length: n}, (_, j) => opts.frozen?.(j) ? 1 : 0)
   const seam = d.v.map((x, i) => i % 3 === 0 && x === 0)
   const refSamples = sample(ref, 30000, 3)
   const score = (hh: Float64Array) => distance(ref, {pos: apply(rows, hh), tri: faces, tag: tags}, grid, 6000).meanMm
@@ -133,12 +136,12 @@ export function fitCage(d: CageData, ref: TriMesh, grid: TriGrid, opts: { levels
           v *= mu
           for (const [j, w, s] of r) out[j] += w * (axis === 0 ? s : 1) * v
         }
-        for (let j = 0; j < n; j++) { out[j] += lambda * x[j]; if (axis === 0 && seam[j * 3]) out[j] = x[j] }
+        for (let j = 0; j < n; j++) { out[j] += lambda * x[j]; if (axis === 0 && seam[j * 3] || frozen[j]) out[j] = x[j] }
         return out
       }
       const b = new Float64Array(n)
       for (let i = 0; i < F; i++) if (weight[i]) for (const [j, w, s] of rows[i]) b[j] += w * (axis === 0 ? s : 1) * weight[i] * target[i * 3 + axis]
-      for (let j = 0; j < n; j++) { b[j] += lambda * h0[j * 3 + axis]; if (axis === 0 && seam[j * 3]) b[j] = 0 }
+      for (let j = 0; j < n; j++) { b[j] += lambda * h0[j * 3 + axis]; if (axis === 0 && seam[j * 3]) b[j] = 0; else if (frozen[j]) b[j] = h[j * 3 + axis] }
       const x = Float64Array.from({length: n}, (_, j) => h[j * 3 + axis])
       const Ax = mul(x), r = b.map((v, j) => v - Ax[j]), p = Float64Array.from(r)
       let rr = r.reduce((s, v) => s + v * v, 0)

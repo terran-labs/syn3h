@@ -53,6 +53,7 @@ import {effectNoise} from './index'
 import {ParticleBatch} from './ParticleBatch'
 import type {Sprite} from './sprites'
 import {materializeArcs,materializeBrightness,materializeCloudSize,materializeHold,materializeHover} from './materializeParams'
+import {ArrivalLook} from './arrivalLook'
 
 export type MaterializeCue='materializeStart'|'materializeRelease'|'materializeCancel'
 export type MaterializeCueHandler=(cue:MaterializeCue,position:T.Vector3,holdSeconds:number,vehicle:Vehicle)=>void
@@ -95,6 +96,12 @@ interface Hold {
   /** Velocity and spin restored on release (zero for an ordinary arrival). */
   linvel:T.Vector3
   angvel:T.Vector3
+  /** Its volume, ground light, beam and silhouette, while one is free (see LOOKS). */
+  look:ArrivalLook|null
+  /** A departure (`depart`): the arrival in reverse, look only, ending with the vehicle gone. */
+  departing:boolean
+  /** performance.now() at `begin`: every hold ends by wall-clock time too (see WALL_SLACK). */
+  wallStart:number
   done:(()=>void)[]
 }
 
@@ -109,8 +116,38 @@ export const CLOUD_SLOTS=[32,96,160] as const
 const CLOUD_LIFE=.6,BURST_LIFE=.9
 /** Seconds over which the cloud gathers. */
 const FADE_IN=.2
-/** Luminous white with a light blue tint, linear. */
+/** Luminous white with a light blue tint, linear: the hot part of the cloud. */
 const CLOUD_TINT=new T.Color(.82,.92,1),ARC_TINT=new T.Color(.7,.85,1)
+/**
+ * Seconds of wall-clock time a hold may outlast its own length. A hold counts physics steps,
+ * and a slow device runs fewer of them a second than real time (at most five a frame), so at
+ * 5 fps a 1 s hold lasted 2 s; under load longer. Every arrival now lets go within its hold plus
+ * this, and every departure ends as surely: a 1 s hold releases control within 1.5 s, at any
+ * frame rate.
+ */
+export const WALL_SLACK=.5
+const now=()=>typeof performance!=='undefined'?performance.now():Date.now()
+/** Seconds a departure takes by default. */
+export const DEPART_SECONDS=1
+/** Arrivals that get the full look at once; more at the same moment get only particles. */
+const LOOKS=4
+/**
+ * The arrival's point light (graphics level 2 only): peak intensity at intensity 1, and reach in
+ * metres at cloud size 1. It lights the ground and any vehicle beside the cloud.
+ */
+const LIGHT_INTENSITY=60,LIGHT_REACH=16
+/**
+ * The arrival's own level: the three-step graphics level, but at most the middle one on a touch
+ * device (no point light, the lighter volume). A phone at High measured 2.2 ms a frame more with
+ * the full arrival under 4x CPU throttling; the owner's budget is about half a millisecond.
+ */
+const touchDevice=typeof navigator!=='undefined'&&(navigator.maxTouchPoints>0||(typeof matchMedia==='function'&&matchMedia('(pointer: coarse)').matches))
+export function arrivalLevel(touch=touchDevice):number {
+  const level=Math.min(2,levelNumber(Number(graphicsLevel.value)))
+  return touch?Math.min(1,level):level
+}
+const reducedMotion=()=>{try{return typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches}catch{return false}}
+const bodyTint=new T.Color(),accentTint=new T.Color()
 
 // TSL nodes are dynamically typed; sprites.ts uses the same alias.
 type N = any // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -131,7 +168,7 @@ export function restHeight(vehicle:Vehicle):number {
     const slider=Number(hoverClearance?.value)
     if(Number.isFinite(slider))return slider
   }
-  return REST_HEIGHT[vehicle.kind]??.7
+  return vehicle.kind in REST_HEIGHT?vehicle.restHeight():.7
 }
 
 /** Heading of a body's nose projected on the ground, in the convention `teleport` takes. */
@@ -152,6 +189,11 @@ export class Materialize implements System {
   /** Clock time after which no cloud particle is alive. */
   private aliveUntil=0
   private serial=0
+  private lastWall=now()
+  /** Pooled arrival looks for the current graphics level. */
+  private looks:ArrivalLook[]=[]
+  /** One light shared by every arrival, given to the brightest; null below level 2. */
+  private light:T.PointLight|null=null
 
   constructor(readonly game:Game,readonly terrain:Terrain,options:{onCue?:MaterializeCueHandler}={}){
     this.onCue=options.onCue
@@ -160,7 +202,7 @@ export class Materialize implements System {
 
   /** Make the cloud's batch for the current graphics level. */
   private build():void {
-    const level=Math.min(2,levelNumber(Number(graphicsLevel.value)))
+    const level=arrivalLevel()
     if(level===this.level)return
     this.cloud?.dispose()
     this.level=level
@@ -168,6 +210,20 @@ export class Materialize implements System {
     this.cloud.clock.value=this.clock
     this.cloud.mesh.visible=this.clock<this.aliveUntil
     this.game.scene.add(this.cloud.mesh)
+    for(const look of this.looks)look.dispose()
+    this.looks=Array.from({length:LOOKS},()=>new ArrivalLook(level))
+    for(const look of this.looks)this.game.scene.add(look.object)
+    // Automatic quality can change the level mid-arrival: running arrivals carry on in a new look.
+    for(const hold of this.holds){
+      hold.look=this.looks.find(l=>!l.active)??null
+      if(hold.look){hold.look.centre.copy(hold.holds?hold.point:hold.vehicle.object.position);hold.look.start(hold.vehicle,this.calm)}
+    }
+    // Only the desktop level pays for a real light: a light in the scene costs every lit pixel.
+    if(level===2&&!this.light){
+      this.light=new T.PointLight(0xffffff,0,LIGHT_REACH,2)
+      this.light.castShadow=false
+      this.game.scene.add(this.light)
+    }else if(level<2&&this.light){this.light.removeFromParent();this.light.dispose();this.light=null}
   }
 
   /**
@@ -177,9 +233,11 @@ export class Materialize implements System {
   async prewarm():Promise<void> {
     const renderer=this.game.renderer as T.WebGPURenderer|undefined
     if(!renderer||!this.game.camera)return
-    const mesh=this.cloud.mesh
-    mesh.visible=true
-    try{await renderer.compileAsync(mesh,this.game.camera,this.game.scene)}finally{mesh.visible=this.clock<this.aliveUntil}
+    const look=this.looks.find(l=>!l.active),meshes=[this.cloud.mesh,...(look?[look.object]:[])]
+    const shown=meshes.map(m=>m.visible)
+    for(const m of meshes)m.visible=true
+    try{for(const m of meshes)await renderer.compileAsync(m,this.game.camera,this.game.scene)}
+    finally{meshes.forEach((m,i)=>{m.visible=shown[i]});this.cloud.mesh.visible=this.clock<this.aliveUntil}
   }
 
   /** True while `vehicle` is held by a materialization. Weapons and tagging should ignore it. */
@@ -198,10 +256,10 @@ export class Materialize implements System {
     let hold=this.find(vehicle)
     if(hold)this.cue('materializeCancel',hold)
     if(!hold){
-      hold={vehicle,type:body.bodyType(),holds:options.hold??true,point:new T.Vector3(),rotation:new T.Quaternion(),elapsed:0,seconds,done:[],owed:0,shown:0,linvel:new T.Vector3(),angvel:new T.Vector3()}
+      hold={vehicle,type:body.bodyType(),holds:options.hold??true,point:new T.Vector3(),rotation:new T.Quaternion(),elapsed:0,seconds,done:[],owed:0,shown:0,linvel:new T.Vector3(),angvel:new T.Vector3(),look:null,departing:false,wallStart:0}
       this.holds.push(hold)
     }
-    hold.elapsed=0;hold.seconds=seconds
+    hold.elapsed=0;hold.seconds=seconds;hold.wallStart=now()
     const t=body.translation(),at=options.at??t
     const surface=Math.max(this.terrain.heightAt(at.x,at.z),this.terrain.liquidHeightAt?.(at.x,at.z)??-Infinity)
     hold.point.set(at.x,surface+restHeight(vehicle)+hover,at.z)
@@ -218,8 +276,28 @@ export class Materialize implements System {
       this.pin(hold)
       vehicle.object.userData.materializing=true
     }
+    this.calm=reducedMotion()
+    hold.departing=false
+    hold.look??=this.looks.find(l=>!l.active)??null
+    if(hold.look){hold.look.centre.copy(hold.holds?hold.point:vehicle.object.position);hold.look.start(vehicle,this.calm)}
     const promise=new Promise<void>(resolve=>hold.done.push(resolve))
     this.cue('materializeStart',hold)
+    return promise
+  }
+
+  /**
+   * Play the arrival in reverse round `vehicle` where it is: the ring and shell close in, then
+   * the vehicle turns to light from the top down inside a thinning cloud. Look only: the body is
+   * left alone. Resolves when it is over; remove the vehicle then, inside the cloud's last light
+   * (the look fades on by itself). For a bot sent away and a player who leaves.
+   */
+  depart(vehicle:Vehicle,options:{holdSeconds?:number}={}):Promise<void> {
+    const promise=this.begin(vehicle,{hold:false,holdSeconds:options.holdSeconds??DEPART_SECONDS})
+    const hold=this.find(vehicle)
+    if(hold){
+      hold.departing=true
+      hold.look?.start(vehicle,this.calm,true)
+    }
     return promise
   }
 
@@ -235,7 +313,8 @@ export class Materialize implements System {
       if(!this.alive(hold)){this.finish(hold);continue}
       hold.elapsed+=dt
       // Half a step of tolerance, so a 1 s hold is exactly 50 held steps despite rounding.
-      if(hold.elapsed>=hold.seconds-dt*.5)this.release(hold,true)
+      // A departure ends without the release burst: the caller removes the vehicle in its light.
+      if(hold.elapsed>=hold.seconds-dt*.5)this.release(hold,!hold.departing)
       else if(hold.holds)this.pin(hold)
     }
   }
@@ -246,7 +325,14 @@ export class Materialize implements System {
 
   /** Feed the cloud round every vehicle materializing. Allocates nothing. */
   update(dt:number):void {
-    if(Math.min(2,levelNumber(Number(graphicsLevel.value)))!==this.level)this.build()
+    if(arrivalLevel()!==this.level)this.build()
+    // Wall-clock bounds: a hold that physics has not finished in its time plus WALL_SLACK ends
+    // now, and the look runs on real time, so a slow frame rate cannot stretch either.
+    const t=now(),wallDt=Math.min(.5,Math.max(0,(t-this.lastWall)/1000));this.lastWall=t
+    for(let i=this.holds.length-1;i>=0;i--){
+      const hold=this.holds[i]
+      if((t-hold.wallStart)/1000>=hold.seconds+WALL_SLACK)this.release(hold,!hold.departing)
+    }
     this.clock+=Math.min(.1,Math.max(0,dt))
     const cloud=this.cloud
     cloud.clock.value=this.clock
@@ -257,15 +343,56 @@ export class Materialize implements System {
       hold.shown+=dt
       hold.owed+=rate*dt*Math.min(1,hold.shown/FADE_IN)
       const centre=hold.holds?hold.point:hold.vehicle.object.position
-      while(hold.owed>=1){hold.owed--;this.puff(centre,false)}
+      this.colorsOf(hold.vehicle)
+      // Arriving, the cloud is drawn in; departing, it drifts out, at half the rate.
+      if(hold.departing)hold.owed-=rate*dt*.5*Math.min(1,hold.shown/FADE_IN)
+      while(hold.owed>=1){hold.owed--;this.puff(centre,hold.departing)}
       if(arcs>0&&this.noise()<arcs*dt*30)this.arc(centre)
+      if(hold.look){hold.look.centre.copy(centre);this.progress.set(hold.look,hold.seconds>0?Math.min(1,hold.elapsed/hold.seconds):1)}
     }
     cloud.mesh.visible=this.clock<this.aliveUntil
+    this.updateLooks(wallDt)
+  }
+
+  /** Hold progress per look, written in update and read by updateLooks. */
+  private readonly progress=new Map<ArrivalLook,number>()
+
+  /** Advance every arrival look, holding or releasing, and give the light to the brightest. */
+  private updateLooks(dt:number):void {
+    const size=Number(materializeCloudSize.value),intensity=Number(materializeBrightness.value)
+    let best:ArrivalLook|null=null,bestLight=0
+    for(const look of this.looks){
+      if(!look.active)continue
+      const c=look.centre
+      const surface=Math.max(this.terrain.heightAt(c.x,c.z),this.terrain.liquidHeightAt?.(c.x,c.z)??-Infinity)
+      const distance=this.game.camera?this.game.camera.position.distanceTo(c):0
+      look.update(Math.max(0,dt),this.progress.get(look)??1,surface,size,intensity,distance)
+      const light=look.light()
+      if(light>bestLight){bestLight=light;best=look}
+    }
+    const light=this.light
+    if(!light)return
+    // Dark, never hidden: three gathers only visible lights, so toggling visibility changed every
+    // lit material's light set and rebuilt their shaders on each arrival and departure (500 to
+    // 975 ms frames at High under load, once per bot when bots arrive one at a time).
+    if(!best){light.intensity=0;return}
+    light.position.copy(best.centre).y+=.6*size
+    light.color.copy(best.accent)
+    light.intensity=bestLight*LIGHT_INTENSITY
+    light.distance=LIGHT_REACH*size
+  }
+
+  /** The vehicle's body and accent colours, linear, into the scratch colours. */
+  private colorsOf(vehicle:Vehicle):void {
+    bodyTint.set(vehicle.colors.body);accentTint.set(vehicle.colors.accent)
   }
 
   dispose():void {
     for(let i=this.holds.length-1;i>=0;i--)this.release(this.holds[i],false)
     this.cloud.dispose()
+    for(const look of this.looks)look.dispose()
+    this.looks=[]
+    if(this.light){this.light.removeFromParent();this.light.dispose();this.light=null}
   }
 
   private noise():number {return effectNoise(this.serial++)}
@@ -275,18 +402,35 @@ export class Materialize implements System {
    * drifting slowly; on release, thrown outward and upward to thin away.
    */
   private puff(centre:T.Vector3,burst:boolean):void {
-    const size=Number(materializeCloudSize.value),angle=this.noise()*Math.PI*2,reach=Math.sqrt(this.noise())
-    const radius=(burst?1.4:1.9)*size*reach
-    at.set(centre.x+Math.cos(angle)*radius,centre.y+(this.noise()-.45)*1.3*size,centre.z+Math.sin(angle)*radius)
-    if(burst){const out=1.5+this.noise()*2;velocity.set(Math.cos(angle)*out,1.2+this.noise()*1.8,Math.sin(angle)*out)}
-    else velocity.set(-Math.sin(angle)*.6*reach,.15+this.noise()*.3,Math.cos(angle)*.6*reach)
+    const size=Number(materializeCloudSize.value),angle=this.noise()*Math.PI*2
+    const motion=this.calm?.3:1
     const life=burst?BURST_LIFE*(.7+this.noise()*.6):CLOUD_LIFE*(.8+this.noise()*.4)
+    if(burst){
+      const radius=1.4*size*Math.sqrt(this.noise())
+      at.set(centre.x+Math.cos(angle)*radius,centre.y+(this.noise()-.45)*1.3*size,centre.z+Math.sin(angle)*radius)
+      const out=(2.5+this.noise()*3)*motion
+      velocity.set(Math.cos(angle)*out,(1.2+this.noise()*1.8)*motion,Math.sin(angle)*out)
+    }else{
+      // Born on a wide shell and drawn in, swirling, to the centre: the cloud gathers.
+      const lift=(this.noise()-.5)*1.2,radius=(2.2+this.noise()*.8)*size
+      const cx=Math.cos(angle),cz=Math.sin(angle)
+      at.set(centre.x+cx*radius,centre.y+lift*radius*.6,centre.z+cz*radius)
+      const pull=radius*.8/life*motion,swirl=1.4*size*motion
+      velocity.set(-cx*pull-cz*swirl,-lift*radius*.6*.8/life*motion,-cz*pull+cx*swirl)
+    }
     // Fewer, larger puffs at the safe level keep the same coverage.
     const scale=this.level===0?1.6:this.level===1?1.2:1
-    const grow=burst?1.6:.5
-    this.cloud.emit(at,velocity,life,(1+this.noise()*.8)*size*scale,grow,tint.copy(CLOUD_TINT).multiplyScalar(Number(materializeBrightness.value)))
+    const grow=burst?1.6:-.6*size
+    // The player's colours: accent glow, body colour depth, and a share of hot white.
+    const pick=this.noise(),brightness=Number(materializeBrightness.value)
+    tint.copy(pick<.45?accentTint:pick<.7?bodyTint:CLOUD_TINT)
+    if(pick<.7)tint.lerp(CLOUD_TINT,.25).multiplyScalar(1.6)
+    this.cloud.emit(at,velocity,life,(.8+this.noise()*.7)*size*scale,grow,tint.multiplyScalar(brightness))
     this.aliveUntil=Math.max(this.aliveUntil,this.clock+life)
   }
+
+  /** Reduced motion, read once per arrival. */
+  private calm=false
 
   /** A tiny fast spark for the optional sizzle. */
   private arc(centre:T.Vector3):void {
@@ -304,6 +448,8 @@ export class Materialize implements System {
 
   /** The vehicle's body is still in the world (it may have been removed while held). */
   private alive(hold:Hold):boolean {
+    // A detached vehicle (a departure's picture) has no body, and needs none: it is a look only.
+    if(hold.vehicle.detached)return !hold.holds
     const body=hold.vehicle.body
     return this.game.world.getRigidBody(body.handle)===body
   }
@@ -323,10 +469,13 @@ export class Materialize implements System {
       if(b.bodyType()!==hold.type)b.setBodyType(hold.type,true)
       b.setLinvel(hold.linvel,true);b.setAngvel(hold.angvel,true)
     }
+    hold.look?.[cue?'release':'cancel']()
+    hold.look=null
     if(cue){
       // The cloud lets go with the vehicle: a last puff thrown outward and upward.
       const n=Math.ceil(this.cloud.capacity*.35/Math.max(1,this.holds.length))
       const centre=hold.holds?hold.point:hold.vehicle.object.position
+      this.colorsOf(hold.vehicle)
       for(let i=0;i<n;i++)this.puff(centre,true)
       this.cloud.mesh.visible=true
       this.cue('materializeRelease',hold)
@@ -337,6 +486,7 @@ export class Materialize implements System {
   private finish(hold:Hold,released=false):void {
     // Every interrupted hold must stop its looping sound, including removed bodies.
     if(!released)this.cue('materializeCancel',hold)
+    hold.look?.cancel();hold.look=null
     const i=this.holds.indexOf(hold)
     if(i>=0)this.holds.splice(i,1)
     if(hold.holds)delete hold.vehicle.object.userData.materializing
@@ -346,7 +496,7 @@ export class Materialize implements System {
 
   private cue(kind:MaterializeCue,hold:Hold):void {
     if(!this.onCue)return
-    const t=this.alive(hold)?hold.vehicle.body.translation():hold.point
+    const t=!hold.vehicle.detached&&this.alive(hold)?hold.vehicle.body.translation():hold.point
     this.onCue(kind,cuePoint.set(t.x,t.y,t.z),hold.seconds,hold.vehicle)
   }
 }

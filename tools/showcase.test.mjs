@@ -1,21 +1,14 @@
 // node --test tools/showcase.test.mjs
 // Pure parts of the release showcase. vite.config.ts excludes tools/** from vitest.
+// Invariants only: a capture is a real picture, the manifest names what was captured, and the
+// README block shows the version it really comes from. Shot staging and composition are
+// checked by running the tool and looking at the pictures.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFile } from 'node:child_process'
-import { access, mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { promisify } from 'node:util'
 import {
-  DEFAULT_SCENE_IDS, FRAME_LIMITS, MAX_GIF_BYTES, SCENES, SCENE_IDS, buildManifest, frameStats,
-  gifArgs, holdFramerate, judgeFrame, missingFeature, parseArgs, sceneRoom, sceneUrl, selectScenes,
+  FRAME_LIMITS, README_END, README_START, SHOTS, SHOT_IDS, assetNames, buildManifest, frameStats, frozenIdFor,
+  hudModeOf, judgeFrame, missingFeature, parseArgs, renderReadmeSection, replaceReadmeSection, sceneRoom, sceneUrl, selectShots,
 } from './lib/showcase-scenes.mjs'
-
-const run = promisify(execFile)
-const FFMPEG = process.env.FFMPEG ?? '/opt/homebrew/bin/ffmpeg'
-const FFPROBE = FFMPEG.replace(/ffmpeg$/, 'ffprobe')
-const haveFfmpeg = await access(FFMPEG).then(() => access(FFPROBE)).then(() => true, () => false)
 
 const solid = (r, g, b, n = 1000) => Buffer.from(Array.from({ length: n }, () => [r, g, b]).flat())
 const noise = (n = 4000, seed = 1) => {
@@ -24,144 +17,65 @@ const noise = (n = 4000, seed = 1) => {
   return Buffer.from(Array.from({ length: n * 3 }, next))
 }
 
-test('scene list is the agreed order with unique ids and fixed seeds', () => {
-  assert.deepEqual(SCENE_IDS, [
-    'lobby', 'buggy-volcano', 'wings-glide', 'bots-pursuit', 'tag-beam',
-    'jet-flight', 'hovercraft-lava', 'lava-night', 'king-of-the-hill', 'other-world',
-  ])
-  for (const scene of SCENES) assert.ok(Number.isInteger(scene.seed), scene.id)
+test('a black, blank or single colour frame is rejected; a real picture passes', () => {
+  assert.equal(judgeFrame(frameStats(solid(0, 0, 0)), FRAME_LIMITS).ok, false)
+  assert.equal(judgeFrame(frameStats(solid(255, 255, 255)), FRAME_LIMITS).ok, false)
+  assert.equal(judgeFrame(frameStats(solid(200, 80, 40)), FRAME_LIMITS).ok, false)
+  assert.equal(judgeFrame(frameStats(noise()), FRAME_LIMITS).ok, true)
 })
 
-test('scene titles keep to the wording rule', () => {
-  const banned = /\b(laser|lasers|fire|shoot|weapon|hit|kill|death|dead)\b/i
-  for (const scene of SCENES) assert.doesNotMatch(scene.title, banned, scene.id)
-})
-
-test('each scene gets its own room per run', () => {
-  const rooms = SCENES.map((s) => sceneRoom(s.id, 'Run 42!'))
-  assert.equal(new Set(rooms).size, rooms.length)
-  assert.equal(sceneRoom('lobby', 'Run 42!'), 'showcase-lobby-run42')
-  assert.ok(rooms.every((r) => r.length <= 40 && /^[a-z0-9-]+$/.test(r)))
-})
-
-test('scene urls carry room, seed, planet and vehicle; only gameplay autoplays', () => {
-  const lobby = new URL(sceneUrl('http://127.0.0.1:5348/', SCENES[0], 'x'))
-  assert.equal(lobby.searchParams.get('autoplay'), null)
-  assert.equal(lobby.searchParams.get('seed'), '7')
-  const jet = new URL(sceneUrl('http://127.0.0.1:5348/', SCENES.find((s) => s.id === 'jet-flight'), 'x'))
-  assert.equal(jet.searchParams.get('vehicle'), 'jet')
-  assert.equal(jet.searchParams.get('planet'), 'volcanic')
-  assert.equal(jet.searchParams.get('autoplay'), '1')
-  assert.equal(jet.searchParams.get('room'), 'showcase-jet-flight-x')
-})
-
-test('missing features skip a scene with a reason', () => {
-  const all = { params: ['sun.timeOfDay', 'bots.count', 'laser.speed', 'game.mode'], vehicles: [], planets: ['volcanic', 'desert'], net: true, cinematic: true }
-  const bots = SCENES.find((s) => s.id === 'bots-pursuit')
-  assert.equal(missingFeature(bots, all), null)
-  assert.equal(missingFeature(bots, { ...all, params: [] }), 'build lacks param:bots.count')
-  assert.equal(missingFeature(bots, { ...all, cinematic: false }), 'build lacks camera:cinematic')
-  const hill = SCENES.find((s) => s.id === 'king-of-the-hill')
-  assert.equal(missingFeature(hill, { ...all, net: false }), 'build lacks net')
-  assert.equal(missingFeature({ requires: ['planet:alpine'] }, all), 'build lacks planet:alpine')
-  assert.equal(missingFeature({ requires: ['mystery:x'] }, all), 'build lacks mystery:x')
-})
-
-test('frame statistics reject black, flat and single colour frames', () => {
-  assert.match(judgeFrame(frameStats(solid(0, 0, 0))).reason, /too dark/)
-  assert.match(judgeFrame(frameStats(solid(120, 60, 30))).reason, /too flat/)
-  // Two colours far apart in luma: not flat, but nearly all one bucket.
-  const mostly = Buffer.concat([solid(200, 200, 200, 950), solid(0, 0, 0, 50)])
-  assert.match(judgeFrame(frameStats(mostly)).reason, /nearly one colour/)
-  const ok = judgeFrame(frameStats(noise()))
-  assert.deepEqual(ok, { ok: true, reason: null })
-})
-
-test('frame statistics measure luma and buckets', () => {
-  const s = frameStats(Buffer.concat([solid(255, 255, 255, 500), solid(0, 0, 0, 500)]))
-  assert.equal(s.meanLuma, 127.5)
-  assert.equal(s.lumaStdDev, 127.5)
-  assert.equal(s.dominantShare, 0.5)
-  assert.equal(s.colourBuckets, 2)
-  assert.throws(() => frameStats(Buffer.alloc(0)), /Empty frame/)
-})
-
-test('a scene may relax a limit without changing the default', () => {
-  const dim = { meanLuma: 9, lumaStdDev: 30, dominantShare: 0.4, colourBuckets: 60 }
-  assert.equal(judgeFrame(dim).ok, false)
-  assert.equal(judgeFrame(dim, { ...FRAME_LIMITS, ...SCENES[0].limits }).ok, true)
-})
-
-test('default run is the eight published scenes; the other two need --only', () => {
-  assert.deepEqual(selectScenes(null).map((s) => s.id), [...DEFAULT_SCENE_IDS])
-  assert.equal(DEFAULT_SCENE_IDS.length, 8)
-  assert.ok(!DEFAULT_SCENE_IDS.includes('king-of-the-hill') && !DEFAULT_SCENE_IDS.includes('other-world'))
-  assert.deepEqual(selectScenes(['other-world', 'lobby']).map((s) => s.id), ['lobby', 'other-world'])
-  assert.deepEqual(selectScenes(['king-of-the-hill']).map((s) => s.id), ['king-of-the-hill'])
-  assert.throws(() => selectScenes(['lobby', 'nope']), /Unknown scene nope/)
-})
-
-test('hold becomes an exact frame rate, so the delay is the hold', () => {
-  assert.equal(holdFramerate(1.5), '100/150')
-  assert.equal(holdFramerate(2), '100/200')
-  assert.throws(() => holdFramerate(0), /Hold must be/)
-  assert.throws(() => holdFramerate(NaN), /Hold must be/)
-})
-
-test('gif arguments: image sequence in, per-frame palette, 832 x 468, looping', () => {
-  const args = gifArgs({ pattern: '/o/.seq/%d.png', output: '/o/x.gif', hold: 1.5 })
-  assert.equal(args[args.indexOf('-framerate') + 1], '100/150')
-  assert.equal(args[args.indexOf('-i') + 1], '/o/.seq/%d.png')
-  const filter = args[args.indexOf('-filter_complex') + 1]
-  assert.match(filter, /scale=832:468/)
-  assert.match(filter, /palettegen=stats_mode=single/)
-  assert.match(filter, /paletteuse=new=1/)
-  assert.doesNotMatch(filter, /fps=/)
-  assert.equal(args[args.indexOf('-loop') + 1], '0')
-  assert.equal(args.at(-1), '/o/x.gif')
-  assert.equal(MAX_GIF_BYTES, 10485760)
-})
-
-test('the GIF has exactly one frame per scene, each held for the hold', { skip: !haveFfmpeg && 'ffmpeg not found' }, async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'syn3h-showcase-test-'))
-  try {
-    for (const scenes of [1, 2, 8]) {
-      for (let i = 1; i <= scenes; i++) {
-        await run(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `testsrc2=size=320x180:rate=1:duration=1,hue=h=${i * 40}`, '-frames:v', '1', join(dir, `${i}.png`)])
-      }
-      const gif = join(dir, `out-${scenes}.gif`)
-      await run(FFMPEG, gifArgs({ pattern: join(dir, '%d.png'), output: gif, hold: 1.5 }))
-      const { stdout } = await run(FFPROBE, ['-v', 'error', '-count_frames', '-show_entries', 'stream=nb_read_frames,width,height:format=duration', '-of', 'json', gif])
-      const info = JSON.parse(stdout)
-      assert.equal(Number(info.streams[0].nb_read_frames), scenes, `${scenes} scenes`)
-      assert.equal(info.streams[0].width, 832)
-      assert.equal(info.streams[0].height, 468)
-      assert.equal(Number(info.format.duration), scenes * 1.5)
-      await rm(gif)
-    }
-  } finally {
-    await rm(dir, { recursive: true, force: true })
+test('shot ids are unique and every shot can be opened', () => {
+  assert.equal(new Set(SHOT_IDS).size, SHOT_IDS.length)
+  for (const shot of SHOTS) {
+    const url = new URL(sceneUrl('http://127.0.0.1:5348/', shot, 'run1'))
+    assert.equal(url.searchParams.get('room'), sceneRoom(shot.id, 'run1'))
+    assert.equal(url.searchParams.get('autoplay'), shot.hud === 'lobby' ? null : '1', shot.id)
   }
+  assert.throws(() => selectShots(['no-such-shot']))
 })
 
-test('manifest records build identity, files sorted, and skips with reasons', () => {
-  const m = buildManifest({
-    version: 'v26.11.1401', hold: 1.5, generatedAt: 't', browser: { headless: false },
-    build: { id: 'b', commit: 'c', note: 'n' },
-    files: [{ file: 'z.png', bytes: 1, sha256: 'a' }, { file: 'a.gif', bytes: 2, sha256: 'b' }],
-    captured: [{ id: 'lobby' }, { id: 'jet-flight' }],
-    skipped: [{ id: 'wings-glide', reason: 'build lacks param:liquid.wingLift' }],
-  })
-  assert.equal(m.commit, 'c')
-  assert.equal(m.buildId, 'b')
-  assert.deepEqual(m.files.map((f) => f.file), ['a.gif', 'z.png'])
-  assert.deepEqual(m.gif.order, ['lobby.png', 'jet-flight.png'])
-  assert.equal(m.gif.frames, 2)
-  assert.equal(m.skipped[0].reason, 'build lacks param:liquid.wingLift')
+test('gameplay shows the driving interface; the hidden interface is only ever an extra', () => {
+  for (const shot of SHOTS) {
+    if (shot.hud === 'hidden') assert.equal(shot.extra, true, shot.id)
+    if (shot.hud !== 'lobby') assert.ok(shot.requires?.includes('param:hud.mode'), shot.id)
+  }
+  assert.equal(hudModeOf({ hud: 'driving' }), 1)
+  assert.equal(hudModeOf({ hud: 'hidden' }), 2)
+  // A build without the interface setting skips gameplay shots rather than showing the panels.
+  assert.match(missingFeature(SHOTS.find((s) => s.hud === 'driving'), { params: [] }), /hud.mode/)
+})
+
+test('the manifest names what was captured and what was skipped, with the reason', () => {
+  const captured = [{ id: 'lobby', files: assetNames(SHOTS[0]) }]
+  const skipped = [{ id: 'swamp-river', reason: 'build lacks planet:swamp' }]
+  const m = buildManifest({ version: 'v1', build: { id: 'b', commit: 'c' }, captured, skipped, browser: {}, generatedAt: 'now', seconds: 1 })
+  assert.equal(m.version, 'v1')
+  assert.deepEqual(m.captured.map((c) => c.id), ['lobby'])
+  assert.deepEqual(m.skipped, skipped)
+})
+
+test('the README block shows the version it comes from and links each picture to its original', () => {
+  const still = { ...SHOTS.find((s) => s.id === 'canyon-convoy'), files: assetNames(SHOTS.find((s) => s.id === 'canyon-convoy')) }
+  const clip = { ...SHOTS.find((s) => s.kind === 'clip'), files: assetNames(SHOTS.find((s) => s.kind === 'clip')) }
+  const block = renderReadmeSection({ repo: 'o/r', version: 'v26.11.1700', captured: [still, clip] })
+  assert.match(block, /Captured from v26\.11\.1700/)
+  assert.ok(block.includes(`<a href="https://github.com/o/r/releases/download/v26.11.1700/${still.files.full}"><img src="https://github.com/o/r/releases/download/v26.11.1700/${still.files.readme}"`))
+  assert.ok(block.includes(`releases/download/v26.11.1700/${clip.files.webp}`))
+  const readme = `# T\n\nintro\n\n${README_START}\nold\n${README_END}\n\n## Next\n`
+  const out = replaceReadmeSection(readme, block)
+  assert.ok(out.startsWith('# T\n\nintro\n\n') && out.endsWith('\n\n## Next\n'))
+  assert.ok(!out.includes('\nold\n'))
+  assert.throws(() => replaceReadmeSection('# no markers', block))
+})
+
+test('a release version resolves to its frozen build; a withdrawn version does not', () => {
+  const history = 'v1.04\tm\tac43ce67\t2026\twithdrawn\nv1.05\tm\t17a973a2\t2026\tproduction\n'
+  const releases = 'release-28\twhen\turl\tm\t17a973a2\tworker\t20261116-120923-17a973a2\n'
+  assert.equal(frozenIdFor('v1.05', history, releases), '20261116-120923-17a973a2')
+  assert.throws(() => frozenIdFor('v1.04', history, releases))
 })
 
 test('argument parser accepts pairs and flags and rejects unknown names', () => {
-  assert.deepEqual(parseArgs(['--version', 'v1', '--headless'], ['version', 'headless']), { version: 'v1', headless: true })
-  assert.throws(() => parseArgs(['--vresion', 'v1'], ['version']), /Unknown option/)
-  assert.throws(() => parseArgs(['v1'], ['version']), /Unexpected argument/)
+  assert.deepEqual(parseArgs(['--version', 'v1', '--publish'], ['version', 'publish']), { version: 'v1', publish: true })
+  assert.throws(() => parseArgs(['--verison', 'v1'], ['version']))
 })

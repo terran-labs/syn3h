@@ -37,11 +37,11 @@ describe('allowlist', () => {
       expect(entry.pattern).toBeInstanceOf(RegExp)
     }
   })
-  it('accepts the Barlow weights and the dated vehicle models only', () => {
+  it('accepts the Barlow weights, and no model of any kind', () => {
     expect(allowed({ kind: 'font', path: '/fonts/barlow-400-latin.woff2' })).toBeTruthy()
     expect(allowed({ kind: 'font', path: '/fonts/barlow-condensed-600-latin.woff2' })).toBeTruthy()
     expect(allowed({ kind: 'font', path: '/fonts/lato-thin.woff2' })).toBeNull()
-    expect(allowed({ kind: 'model', path: '/models/jet.glb' })?.term).toMatch(/^dated/)
+    expect(allowed({ kind: 'model', path: '/models/jet.glb' })).toBeNull()
     expect(allowed({ kind: 'model', path: '/models/textures/jet.bin' })).toBeNull()
   })
   it('lets the browser fetch an icon from the link tag, but not game code', () => {
@@ -52,7 +52,7 @@ describe('allowlist', () => {
 })
 
 describe('violations', () => {
-  it('fails audio, images, video, unlisted models and fonts, and inlined bitmaps', () => {
+  it('fails audio, images, video, any model, unlisted fonts, and inlined bitmaps', () => {
     const records = [
       { kind: 'audio', path: '/audio/SpaceStation.mp3' },
       { kind: 'image', path: '', url: 'data:image/png;base64,iVBOR' },
@@ -65,7 +65,7 @@ describe('violations', () => {
       { kind: 'vector', path: '/brand/favicon.svg' },
       { kind: 'image', path: '', generated: true },
     ]
-    expect(violations(records).map((r: { kind: string }) => r.kind)).toEqual(['audio', 'image', 'video', 'font'])
+    expect(violations(records).map((r: { kind: string }) => r.kind)).toEqual(['audio', 'image', 'video', 'font', 'model'])
   })
   it('accepts WebAssembly only as the physics engine fetched from its own file', () => {
     const fine = [

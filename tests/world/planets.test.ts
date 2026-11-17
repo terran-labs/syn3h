@@ -57,6 +57,17 @@ describe('planet recipes', () => {
     applyPlanet('volcanic', 1)
   }, 60000)
 
+  it('the Desert is a dry world: at least four fifths land on every seed, with somewhere to drive to', () => {
+    const desert = PLANETS.find(p => p.id === 'desert')!
+    applyPlanet('desert', 1)
+    for (const seed of [1, 7, 4242, 90210]) {
+      const data = generateTerrain(seed, currentTerrainSettings(), { resolution: 129 })
+      const land = data.heights.filter(h => h > 0).length / data.heights.length
+      expect(land, `seed ${seed}`).toBeGreaterThanOrEqual(0.8)
+      expect(data.roads.length, `seed ${seed}: roads`).toBeGreaterThan(0)
+    }
+    expect(desert.values['terrain.landShare']).toBeGreaterThanOrEqual(0.8)
+  })
   it('a world left at its defaults is the volcanic recipe and encodes as just its id and seed', () => {
     // Registered defaults must agree with the volcanic recipe, or every invite link for a
     // fresh world would carry needless overrides.
@@ -76,12 +87,12 @@ describe('planet recipes', () => {
     expect(params.get('terrain.dry')!.value).toBe(1)
     expect(params.get('world.lavaAltitude')!.value).toBe(-80)
     applyPlanet('archipelago', 5)
-    expect(params.get('terrain.planetSize')!.value).toBe(0)
+    expect(params.get('terrain.isles')!.value).toBeGreaterThan(0)
     applyPlanet('alpine', 5)
     expect(params.get('world.gravity')!.value).toBe(9.81)
     expect(params.get('terrain.dry')!.value).toBe(0)
     expect(params.get('terrain.craters')!.value).toBe(0)
-    expect(params.get('terrain.planetSize')!.value).toBe(1)
+    expect(params.get('terrain.isles')!.value).toBe(params.get('terrain.isles')!.def.default)
     expect(params.get('terrain.snowLine')!.value).toBe(0.36)
     expect(params.get('world.lavaAltitude')!.value).toBe(0)
     applyPlanet('volcanic', 1)
@@ -119,5 +130,16 @@ describe('planet recipes', () => {
     expect(decodeWorld('not a world')).toBe(false)
     applyPlanet('volcanic', 1)
     for (const id of ['world.lavaAltitude', 'terrain.islandRadius']) params.set(id, params.get(id)!.def.default)
+  })
+})
+
+describe('biome names', () => {
+  it('are one vocabulary: every recipe is labelled by its look in BIOME_NAMES', async () => {
+    const { BIOME_NAMES, recipeIdForLook } = await import('../../shared/recipes')
+    for (const recipe of PLANETS) {
+      const look = recipe.values['terrain.look'] as number
+      expect(recipe.label).toBe(BIOME_NAMES[look])
+      expect(recipeIdForLook(look)).toBe(recipe.id)
+    }
   })
 })

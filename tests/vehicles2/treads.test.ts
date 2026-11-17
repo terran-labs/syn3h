@@ -49,6 +49,15 @@ describe('tyre marks and dust by surface',()=>{
    expect(TREADS[kind].tread,kind).toBe(0)
   }
  })
+ it('leaves a visible mark when a wheel simply rolls on soft ground',()=>{
+  // The owner (16 November 2026): plain driving on soil, sand and grass left no track at all.
+  const strength=tyreMarkStrength.def.default as number
+  for(let look=0;look<LOOK_COUNT;look++)for(const kind of ['dust','sand','grass','mud','regolith','snow'] as const){
+   const s=TREADS[kind],alpha=markOpacity(E,s.roll,strength)*markEnvelope(E,.5,5,OPEN_END,0,.3,1.2)
+   expect(alpha,`${look} ${kind}`).toBeGreaterThan(0)
+   expect(Math.abs(luminance(surfaceTone(look,kind,s,0))-luminance(groundColour(look,kind))),`${look} ${kind}`).toBeGreaterThan(0)
+  }
+ })
  it('keeps the heavy mark for mud alone',()=>{
   const weight=(look:number,kind:typeof SURFACE_KINDS[number])=>TREADS[kind].slip*(1-luminance(surfaceTone(look,kind,TREADS[kind],0))/luminance(groundColour(look,kind)))
   for(let look=0;look<LOOK_COUNT;look++)for(const kind of SURFACE_KINDS)if(kind!=='mud')expect(weight(look,kind),`${look} ${kind}`).toBeLessThan(weight(look,'mud'))

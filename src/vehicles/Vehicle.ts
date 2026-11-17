@@ -50,6 +50,8 @@ export interface WheelEffect {
   readonly normal: THREE.Vector3
   /** Sideways speed of the wheel over the ground in m/s, absolute. 0 while not grounded. */
   slip: number
+  /** Tyre width as a multiple of the standard tyre's, for the tyre marks. Absent means 1. */
+  width?: number
 }
 
 export function createWheelEffects(count = 4): WheelEffect[] {
@@ -235,6 +237,8 @@ export abstract class Vehicle implements System {
     this.zorb.sync(this.input.zorb && zorbSpeed.value > 0, dt)
     const entryVelocity=this.body.linvel()
     this.liquidState.entrySpeed=Math.hypot(entryVelocity.x,entryVelocity.z)
+    // The buggy's liquid hull softens what the controller did this step, measured from here.
+    {const w=this.body.angvel();this.liquidState.preV.set(entryVelocity.x,entryVelocity.y,entryVelocity.z);this.liquidState.preW.set(w.x,w.y,w.z)}
     // Forward means launch thrust while the escape field owns motion. Feeding it
     // into the flight pitch filter would leave a nose-down command at handover.
     const escapeThrottle=this.input.y
@@ -431,6 +435,26 @@ export abstract class Vehicle implements System {
     return out.lerpVectors(this.prevPos, this.currPos, alpha)
   }
 
+  /**
+   * Compile every look this vehicle can show before it is first drawn: the close-up and the
+   * distant detail levels, and the close-up parts that are hidden until used (folded wings,
+   * stowed gear, lamps and LOD meshes). The renderer skips invisible objects when it compiles,
+   * so each pass shows them all for the duration of `compile` and then puts every visibility
+   * back. Ends at the vehicle's own detail for where it is. For compile-ahead (core/compileAhead.ts):
+   *
+   *   await vehicle.prepareLooks(object => compileAhead(object) ?? Promise.resolve())
+   */
+  async prepareLooks(compile: (object: THREE.Object3D) => Promise<void>, level: number = graphicsLevel.value): Promise<void> {
+    const hidden: THREE.Object3D[] = []
+    // Near first, then far: each detail level may swap meshes and materials.
+    for (const distance of [0, 1e4]) {
+      for (const detail of this.visualDetails) detail(distance, !this.isLocal, level)
+      this.object.traverse(o => { if (!o.visible && o !== this.object) { hidden.push(o); o.visible = true } })
+      try { await compile(this.object) } finally { for (const o of hidden) o.visible = false; hidden.length = 0 }
+    }
+    this.update(0, 1)
+  }
+
   update(dt: number, alpha: number): void {
     this.object.position.lerpVectors(this.prevPos, this.currPos, alpha)
     this.object.quaternion.slerpQuaternions(this.prevQuat, this.currQuat, alpha)
@@ -460,12 +484,17 @@ export abstract class Vehicle implements System {
    * physics step. It works from the origin and the vehicle's measured resting height, so on a
    * steep slope, or for a jet with its gear up, it is a few tenths of a metre generous.
    */
+  /** Height the origin rests at above the surface; a vehicle whose stance changes overrides it. */
+  restHeight(): number {
+    return REST_HEIGHT[this.kind] ?? 0
+  }
+
   heightAboveSurface(): number {
     const p = this.currPos
     let surface = this.terrain.heightAt(p.x, p.z)
     // The hovercraft's cushion and a zorb ball ride on liquid; everything else sinks to the bed.
     if (this.kind === 'hovercraft' || this.zorb.active) surface = Math.max(surface, this.terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity)
-    let rest = REST_HEIGHT[this.kind] ?? 0
+    let rest = this.restHeight()
     if (this.kind === 'hovercraft') {
       if (hoverClearance === undefined) hoverClearance = params.get('hover.clearance') ?? null
       const slider = Number(hoverClearance?.value)
@@ -509,13 +538,31 @@ export abstract class Vehicle implements System {
     }
   }
 
+  /** True once `detach` took the vehicle out of the physics world: what is left is a picture. */
+  detached = false
+
+  /**
+   * Take the vehicle out of the physics world now (body, colliders, zorb ball and shield) and
+   * leave its object in the scene as a picture, for an effect to play on (a departure). Remove
+   * it from the game first; `dispose` it when the effect is over.
+   */
+  detach(): void {
+    if (this.detached) return
+    this.zorbShield?.dispose()
+    this.zorbShield = null
+    this.zorb.remove()
+    this.game.world.removeRigidBody(this.body)
+    this.detached = true
+  }
+
   dispose(): void {
     this.zorbShield?.dispose()
     this.zorbShield = null
     this.zorb.remove()
     this.visualDetails.clear()
     this.game.scene.remove(this.object)
-    this.game.world.removeRigidBody(this.body)
+    if (!this.detached) this.game.world.removeRigidBody(this.body)
+    this.detached = true
   }
 }
 

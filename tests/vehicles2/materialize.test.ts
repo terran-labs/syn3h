@@ -2,7 +2,7 @@
  * Materialization hold and release (src/vehicles/effects/Materialize.ts), on every vehicle kind,
  * in a headless physics world stepped the way Game.frame steps it.
  */
-import {beforeAll,describe,expect,it} from 'vitest'
+import {beforeAll,describe,expect,it,vi} from 'vitest'
 import * as T from 'three/webgpu'
 import {FIXED_DT,RAPIER,initPhysics} from '../../src/core/physics'
 import {VEHICLE_KINDS,createVehicle} from '../../src/vehicles'
@@ -203,6 +203,126 @@ describe('materialize cloud',()=>{
     m.begin(v)
     for(let i=0;i<70;i++){step(1);m.update(FIXED_DT)}
     expect(m.cloud).toBe(cloud)
+    m.dispose();v.dispose();h.world.free()
+  })
+})
+
+describe('departure',()=>{
+  it('plays round the vehicle without touching its body, then resolves so it can be removed',async()=>{
+    const {h,v,m,cues,step}=bed('buggy')
+    step(30)
+    const before=snapshot(v),at=v.body.translation()
+    let done=false
+    const leaving=m.depart(v,{holdSeconds:.5}).then(()=>{done=true})
+    for(let i=0;i<10;i++){step(1);m.update(FIXED_DT)}
+    expect(m.isMaterializing(v)).toBe(true)
+    expect(v.body.translation().x).toBeCloseTo(at.x,1)
+    for(let i=0;i<30;i++){step(1);m.update(FIXED_DT)}
+    await leaving
+    expect(done).toBe(true)
+    expect(snapshot(v).type).toBe(before.type)
+    expect(v.object.userData.materializing).toBeUndefined()
+    // It ends in the vehicle's light, not with the arrival's release.
+    expect(cues.map(c=>c.cue)).not.toContain('materializeRelease')
+    m.dispose();v.dispose();h.world.free()
+  })
+})
+
+describe('departure interrupted',()=>{
+  it('lets the same vehicle arrive again during its departure, without error, and ends as an arrival',async()=>{
+    const {h,v,m,step}=bed('buggy')
+    step(30)
+    const leaving=m.depart(v,{holdSeconds:1})
+    for(let i=0;i<10;i++){step(1);m.update(FIXED_DT)}
+    const arriving=m.begin(v,{hold:false,holdSeconds:.4})
+    for(let i=0;i<40;i++){step(1);m.update(FIXED_DT)}
+    await Promise.all([leaving,arriving])
+    expect(m.isMaterializing(v)).toBe(false)
+    expect(Number.isFinite(v.body.translation().y)).toBe(true)
+    m.dispose();v.dispose();h.world.free()
+  })
+})
+
+describe('preparing every look ahead',()=>{
+  it('shows hidden parts and both detail levels to the compiler, then restores them',async()=>{
+    const {h,v}=bed('buggy')
+    const hidden=new T.Mesh(new T.BoxGeometry(),new T.MeshBasicMaterial());hidden.visible=false
+    v.object.add(hidden)
+    const distances:number[]=[]
+    ;(v.object.userData.registerVehicleDetail as (fn:(d:number)=>void)=>void)(d=>distances.push(d))
+    const seen:boolean[]=[]
+    await v.prepareLooks(async object=>{seen.push(hidden.visible&&object===v.object)})
+    expect(seen).toEqual([true,true])
+    expect(distances.slice(0,2)).toEqual([0,1e4])
+    expect(hidden.visible).toBe(false)
+    v.dispose();h.world.free()
+  })
+})
+
+describe('arrival level',()=>{
+  it('never builds the full arrival on a touch device',async()=>{
+    const {arrivalLevel}=await import('../../src/vehicles/effects/Materialize')
+    const {params}=await import('../../shared/params')
+    const before=params.get('gfx.level')!.value
+    try{
+      params.set('gfx.level',2)
+      expect(arrivalLevel(true)).toBe(1);expect(arrivalLevel(false)).toBe(2)
+      params.set('gfx.level',0)
+      expect(arrivalLevel(true)).toBe(0)
+    }finally{params.set('gfx.level',before)}
+  })
+})
+
+describe('the scene\'s lights',()=>{
+  it('an arrival and a departure never change the set of lights the scene is drawn with',async()=>{
+    // three keys every lit material's shader on the set of visible lights (LightsNode hashes
+    // their ids). An effect that adds, removes or hides a light during play rebuilds every
+    // lit material in the scene: 251 builds and a 234 ms frame at High on 16 November 2026,
+    // on each vehicle swap and remote departure, and on every bot arrival once bots arrived
+    // in the cloud. The arrival light may only change its intensity, colour and place.
+    const {params}=await import('../../shared/params')
+    const before=params.get('gfx.level')!.value
+    try{
+      params.set('gfx.level',2)
+      const {h,v,m,step}=bed('buggy')
+      const lights=()=>{const ids:number[]=[];h.game.scene.traverseVisible(o=>{if((o as T.Light).isLight)ids.push(o.id)});return ids.sort().join()}
+      const frame=()=>{step();m.update(FIXED_DT)}
+      frame()
+      const idle=lights()
+      expect(idle).not.toBe('')
+      let arrived=false
+      void m.begin(v,{holdSeconds:HOLD}).then(()=>{arrived=true})
+      for(let i=0;i<HOLD_STEPS*4&&!arrived;i++){frame();expect(lights()).toBe(idle);await Promise.resolve()}
+      for(let i=0;i<120;i++){frame();expect(lights()).toBe(idle)}
+      let gone=false
+      void m.depart(v).then(()=>{gone=true})
+      for(let i=0;i<HOLD_STEPS*4&&!gone;i++){frame();expect(lights()).toBe(idle);await Promise.resolve()}
+      for(let i=0;i<120;i++){frame();expect(lights()).toBe(idle)}
+      expect(arrived&&gone).toBe(true)
+      m.dispose();v.dispose();h.world.free()
+    }finally{params.set('gfx.level',before)}
+  })
+})
+
+describe('wall-clock bounds',()=>{
+  it('lets go of an arriving vehicle within its hold plus WALL_SLACK of real time at 5 fps',async()=>{
+    const {WALL_SLACK}=await import('../../src/vehicles/effects/Materialize')
+    const {h,v,m,step}=bed('buggy')
+    step(5)
+    let wall=1000
+    const clock=vi.spyOn(performance,'now').mockImplementation(()=>wall)
+    try{
+      m.begin(v,{holdSeconds:HOLD})
+      // 5 fps: 200 ms of real time a frame, but at most five 20 ms physics steps (Game.frame).
+      let released=-1
+      for(let frame=0;frame<20&&released<0;frame++){
+        wall+=200;step(5);m.update(.2)
+        if(!m.isHeld(v))released=(wall-1000)/1000
+      }
+      expect(released).toBeGreaterThan(0)
+      expect(released).toBeLessThanOrEqual(HOLD+WALL_SLACK+.2)
+      expect(v.object.userData.materializing).toBeUndefined()
+    }finally{clock.mockRestore()}
     m.dispose();v.dispose();h.world.free()
   })
 })

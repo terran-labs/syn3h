@@ -118,7 +118,7 @@ export const nodeOps: EnvelopeOps<N> = {
 }
 
 /** The most any one mark can cover the ground, whatever the strength setting. */
-export const MAX_MARK_ALPHA = .5
+export const MAX_MARK_ALPHA = .85
 
 /**
  * The soft outline of a tyre mark, 0 to 1. `u` 0 to 1 across the mark; `start` and `end` are
@@ -129,7 +129,7 @@ export const MAX_MARK_ALPHA = .5
 export function markEnvelope<X>(o: EnvelopeOps<X>, u: X, start: X, end: X, age: X, soft: number | X, fade: number): X {
   const across = o.mul(o.smoothstep(0, soft, u), o.smoothstep(0, soft, o.oneMinus(u)))
   const along = o.mul(o.smoothstep(0, fade, start), o.smoothstep(0, fade, end))
-  return o.mul(o.mul(across, along), o.oneMinus(o.smoothstep(.1, 1, age)))
+  return o.mul(o.mul(across, along), o.oneMinus(o.smoothstep(.3, 1, age)))
 }
 
 /** A mark's alpha before its envelope: its own alpha times the strength setting, bounded. */

@@ -5,6 +5,7 @@
  *
  *   npx tsx tools/handling-report.ts          Markdown to stdout
  *   npx tsx tools/handling-report.ts --json   JSON to stdout
+ *   npx tsx tools/handling-report.ts --tyres  only the buggy tyre size table
  *
  * Each vehicle is measured once per handling preset (shared/presets.ts), the default first, so
  * the tables have a column per preset. Every figure uses that preset over the parameter defaults
@@ -13,11 +14,14 @@
  */
 import { params } from '../shared/params'
 import type { HandlingPreset } from '../shared/presets'
+// Registers world.atmosphere, which the jet and the buggy's wings read.
+import '../src/world/terrain/settings'
 import { FIXED_DT, initPhysics } from '../src/core/physics'
 import { BUGGY_PRESETS } from '../src/vehicles/buggyParams'
 import { JET_PRESETS } from '../src/vehicles/Jet'
 import * as buggy from '../tests/vehicles/syn3hScenarios'
 import * as jet from '../tests/vehicles2/jetScenarios'
+import * as liquid from '../tests/vehicles/liquidScenarios'
 
 /** One measured figure. `null` means the event never happened in the scenario's window. */
 interface Figure { label: string; unit: string; value: number | null }
@@ -38,6 +42,7 @@ const settle = (trace: number[], dt: number) => {
 /** The preset being measured; its values are applied over the defaults before every scenario. */
 let preset: HandlingPreset | undefined
 /** Run a scenario with every parameter at its default plus the preset, after `setup` changes some. */
+const atWorld = <T>(scenario: () => T | Promise<T>, setup?: () => void) => at(scenario, setup)
 async function at<T>(scenario: () => T | Promise<T>, setup?: () => void): Promise<T> {
   buggy.resetParams()
   for (const [id, value] of Object.entries(preset?.values ?? {})) params.set(id, value)
@@ -158,7 +163,15 @@ async function syn3hBuggy(): Promise<VehicleReport> {
   )
   for (const [v, a] of [[30, 40], [45, 40], [60, 5], [45, 90]]) detail.push(fig(`Slide ${a} deg at ${v} m/s, counter-steer: recovered`, 's', (await at(() => buggy.kick(v, a, true))).recovered))
   for (const [v, a] of [[30, 40], [45, 90], [60, 70]]) detail.push(fig(`Slide ${a} deg at ${v} m/s, let go: recovered`, 's', (await at(() => buggy.kick(v, a, false))).recovered))
-  detail.push(fig('Lava 0.6 m deep: time to drive out', 's', (await at(() => buggy.lavaEscape(0.6))).seconds))
+  // Ice (surface.grip.ice): a frozen lake.
+  const onIce = async <T>(scenario: () => Promise<T>) => { buggy.ground.surface = 'ice'; try { return await at(scenario) } finally { buggy.ground.surface = undefined } }
+  const iceBrake = await onIce(() => buggyBrake()), iceTurn = await onIce(() => buggyTurn())
+  detail.push(
+    fig('On ice: braking from 25 m/s', 'm', iceBrake.distance),
+    fig('On ice: full lock at 15 m/s, lateral', 'g', iceTurn.lateralG),
+    fig('On ice: full lock at 15 m/s, sideslip', 'deg', iceTurn.slip),
+    fig('On ice: course change in 1 s at full lock, 25 m/s', 'deg', (await onIce(() => buggy.courseChange(25))).after1),
+  )
   const glide = await at(buggyGlideSink)
   detail.push(fig('Wings open at 35 m/s: height lost in 3 s', 'm', glide.sink), fig('Wings open at 35 m/s: speed after 3 s', 'm/s', glide.speed))
   for (const [model, name] of [[0, 'Classic'], [1, 'Catch'], [2, 'Glide']] as const) {
@@ -175,9 +188,44 @@ async function syn3hBuggy(): Promise<VehicleReport> {
   }
 }
 
+/**
+ * The buggy at tyre sizes 1, 2 and 3 (buggy.tyreSize), default preset. Turn radius at 15 m/s is
+ * from rest with light throttle, as the summary's; at 45 m/s it is full lock from a cruise.
+ * "Least upright at full lock" is the roll-over tendency: 1 level, 0 on its side, below 0 over.
+ */
+const TYRE_SIZES = [1, 2, 3]
+async function buggyTyreSizes(): Promise<Record<string, Figure[]>> {
+  const out: Record<string, Figure[]> = {}
+  for (const k of TYRE_SIZES) {
+    const size = () => params.set('buggy.tyreSize', k)
+    const top = await at(buggyTopSpeed, size)
+    const turn = await at(() => buggyTurn(15), size)
+    const lock15 = await at(() => buggy.fullLock(15), size)
+    const lock45 = await at(() => buggy.fullLock(45), size)
+    const lock30 = await at(() => buggy.fullLock(30), size)
+    const bump = await at(() => buggy.bump(), size)
+    out[k] = [
+      fig('Top speed', 'm/s', top.top),
+      fig('Turn radius at 15 m/s, full lock', 'm', turn.radius),
+      fig('Turn radius at 45 m/s, full lock after 2 s', 'm', lock45.radius),
+      fig('Hop off a 0.4 m bump at 42 m/s', 'm', bump.hop),
+      fig('Upright 6 s after the 0.4 m bump', '', bump.upright),
+      fig('Least upright at full lock, 15 m/s', '', lock15.upright),
+      fig('Least upright at full lock, 30 m/s', '', lock30.upright),
+      fig('Least upright at full lock, 45 m/s', '', lock45.upright),
+    ]
+  }
+  return out
+}
+
 // ---- Jet -------------------------------------------------------------------------------
 
-async function jetReport(): Promise<VehicleReport> {
+/** The Moon's sky and pull: no air, 1.62 m/s². */
+const moon = () => { params.set('world.atmosphere', 0); params.set('world.gravity', 1.62) }
+
+/** `world` sets the planet (air, gravity) before each scenario; left out, an Earthlike world. */
+async function jetReport(world?: () => void): Promise<VehicleReport> {
+  const at = <T>(scenario: () => T | Promise<T>, setup?: () => void) => atWorld(scenario, () => { world?.(); setup?.() })
   const top = settle(await at(() => jet.flightSpeedTrace()), FIXED_DT)
   const vector = Number(preset?.values['jet.vectorResponse'] ?? params.get('jet.vectorResponse')!.def.default)
   const hover = await at(jet.hoverClimb)
@@ -198,6 +246,76 @@ async function jetReport(): Promise<VehicleReport> {
   }
 }
 
+// ---- Liquids ---------------------------------------------------------------------------
+
+/** Run a liquid scenario at defaults, freeing its world afterwards. */
+const wet = async <T>(make: () => liquid.Run, read: (r: liquid.Run) => T): Promise<T> =>
+  at(() => { const r = make(); try { return read(r) } finally { liquid.dispose(r) } })
+const pool = (l: liquid.Liquid, depth = 1.5): liquid.Basin => ({ liquid: l, length: 30, depth, slope: 10 })
+
+/** Lava and water for one vehicle kind. The buggy gets the full set; others the crossings. */
+async function liquids(kind: liquid.Kind): Promise<Figure[]> {
+  const out: Figure[] = []
+  for (const l of ['lava', 'water'] as const) {
+    out.push(fig(`${l}: cross a 30 m pool, full throttle from 10 m/s`, 's', (await wet(() => liquid.entry(kind, pool(l), 10), liquid.exitTime)) ?? Infinity))
+    for (const [name, d] of [['wheel', 0.7], ['body', 1.3]] as const) {
+      out.push(fig(`${l}: drive out from ${name}-deep (${d} m), 20 m to shore`, 's', (await wet(() => liquid.fromRest(kind, { liquid: l, length: 40, depth: d, slope: 15 }), liquid.exitTime)) ?? Infinity))
+    }
+  }
+  if (kind !== 'buggy') return out
+  const wallow = await wet(() => liquid.fromRest('buggy', { liquid: 'lava', length: 400, depth: 3, slope: 15 }, 12), (r) => {
+    const t0 = r.trace[0].t
+    const speed = r.trace.filter((s) => s.t > t0 + 4).reduce((a, s, _, all) => a + s.speed / all.length, 0)
+    return { speed, pitch: liquid.rhythm(r.trace, 'pitch', t0 + 4, t0 + 12), roll: liquid.rhythm(r.trace, 'roll', t0 + 4, t0 + 12) }
+  })
+  out.push(
+    fig('lava, deep, full throttle: speed', 'm/s', wallow.speed),
+    fig('lava, deep, full throttle: pitch swing (porpoise), peak to peak', 'deg', wallow.pitch.amplitude),
+    fig('lava, deep, full throttle: pitch rhythm', 's', wallow.pitch.period ?? Infinity),
+    fig('lava, deep, full throttle: roll swing (waddle), peak to peak', 'deg', wallow.roll.amplitude),
+    fig('lava, deep, full throttle: roll rhythm', 's', wallow.roll.period ?? Infinity),
+  )
+  for (const l of ['lava', 'water'] as const) {
+    const r = await at(() => { const x = liquid.turn('buggy', l, 1, 1); liquid.dispose(x.run); return x })
+    out.push(
+      fig(`${l}, deep, full throttle and lock: yaw rate`, 'deg/s', r.yawRate),
+      fig(`${l}, deep, full throttle and lock: turn radius`, 'm', r.radius),
+      fig(`${l}, deep, full throttle and lock from rest: time to turn 180`, 's', r.to180 ?? Infinity),
+    )
+    const o = await at(() => { const x = liquid.turnOut(l); liquid.dispose(x.run); return x })
+    out.push(fig(`${l}: facing away from a shore 10 m behind, time to turn round and get out`, 's', o.out ?? Infinity))
+  }
+  out.push(fig('water: speed 20 m past the shore after entering at 40 m/s', 'm/s', await wet(() => liquid.entry('buggy', { liquid: 'water', length: 400, depth: 3, slope: 10 }, 40, 8), (r) => r.trace.find((s) => s.z < -20)?.speed ?? NaN)))
+  for (const [l, w] of [['water', 'sea'], ['water', 'inland'], ['lava', 'sea']] as const) {
+    const bob = await wet(() => liquid.afloat('buggy', l, w, 20), (r) => {
+      const t0 = r.trace[0].t
+      return { heave: liquid.rhythm(r.trace, 'y', t0, t0 + 20), pitch: liquid.rhythm(r.trace, 'pitch', t0, t0 + 20), roll: liquid.rhythm(r.trace, 'roll', t0, t0 + 20) }
+    })
+    const where = w === 'sea' ? (l === 'lava' ? 'lava' : 'sea') : 'lake'
+    out.push(
+      fig(`afloat at rest on ${where} waves: bob, peak to peak`, 'm', bob.heave.amplitude),
+      fig(`afloat at rest on ${where} waves: pitch, peak to peak`, 'deg', bob.pitch.amplitude),
+      fig(`afloat at rest on ${where} waves: roll, peak to peak`, 'deg', bob.roll.amplitude),
+    )
+  }
+  for (const l of ['water', 'lava'] as const) {
+    const a = await at(() => { const r = liquid.wingAscent(l, 3); liquid.dispose(r.run); return r })
+    out.push(
+      fig(`${l}: wings opened at the bottom of a 3 m pool: time to surface`, 's', a.surfaced === null ? Infinity : a.surfaced - a.run.trace[0].t),
+      fig(`${l}: wings, rise: peak pitch rate`, 'deg/s', a.peakPitchRate),
+      fig(`${l}: wings, rise: peak roll rate`, 'deg/s', a.peakRollRate),
+      fig(`${l}: wings, highest point of the body above the surface`, 'm', a.breach),
+      fig(`${l}: wings, settled afloat at the surface after 20 s (1 yes)`, '', a.settled ? 1 : 0),
+    )
+    const tumble = await at(() => { const r = liquid.wingAscent(l, 3, -45, 0, 5); liquid.dispose(r.run); return r })
+    out.push(
+      fig(`${l}: wings, nose-first plunge at 5 m/s: time to surface`, 's', tumble.surfaced === null ? Infinity : tumble.surfaced - tumble.run.trace[0].t),
+      fig(`${l}: wings, nose-first plunge: peak pitch rate`, 'deg/s', tumble.peakPitchRate),
+    )
+  }
+  return out
+}
+
 // ---- Report ----------------------------------------------------------------------------
 
 /** Each vehicle, its presets (the default first), and how its summary columns were measured. */
@@ -206,25 +324,41 @@ const vehicles: Record<string, { run: () => Promise<VehicleReport>; presets: rea
     run: syn3hBuggy, presets: BUGGY_PRESETS,
     how: 'Top speed: full throttle on the flat. Braking: from 25 m/s. Turn radius: full lock at 15 m/s.',
   },
+  'buggy liquids': {
+    run: async () => ({ summary: NO_SUMMARY, detail: await liquids('buggy') }), presets: [BUGGY_PRESETS[0]],
+    how: 'Lava and water (tests/vehicles/liquidScenarios.ts), default preset only. Lava and water have their own settings, not the handling presets.',
+  },
+  'hovercraft liquids': {
+    run: async () => ({ summary: NO_SUMMARY, detail: await liquids('hovercraft') }), presets: [{ name: 'default', description: '', values: {} }],
+    how: 'It rides above lava and water on its cushion.',
+  },
   jet: {
-    run: jetReport, presets: JET_PRESETS,
-    how: 'Top speed: full flight thrust, level. Braking: brakes from 60 m/s in level flight to 1 m/s (60 s cap). Turn radius: full pitch-up at 60 m/s.',
+    run: () => jetReport(), presets: JET_PRESETS,
+    how: 'Liquids: none, it hovers over lava and water. Top speed: full flight thrust, level. Braking: brakes from 60 m/s in level flight to 1 m/s (60 s cap). Turn radius: full pitch-up at 60 m/s.',
+  },
+  'jet on the Moon': {
+    run: () => jetReport(moon), presets: JET_PRESETS,
+    how: 'As the jet, with no air (world.atmosphere 0) and the Moon\'s 1.62 m/s² gravity: no lift or drag, so it flies on thrust alone.',
   },
 }
 
+const NO_SUMMARY: Summary = { topSpeed: null, toTop: null, brakeDistance: null, turnRadius: null }
 const num = (x: number | null, digits = 1) => (x === null ? 'never' : x.toFixed(digits))
 
 await initPhysics()
 /** Per vehicle, per preset name. */
 const results: Record<string, Record<string, VehicleReport>> = {}
+const tyresOnly = process.argv.includes('--tyres')
 for (const [name, v] of Object.entries(vehicles)) {
+  if (tyresOnly) break
   results[name] = {}
   for (const p of v.presets) { preset = p; results[name][p.name] = await v.run() }
   preset = undefined
 }
+const tyres = await buggyTyreSizes()
 
 if (process.argv.includes('--json')) {
-  console.log(JSON.stringify(results, null, 2))
+  console.log(JSON.stringify({ ...results, buggyTyreSizes: tyres }, null, 2))
 } else {
   const out = [
     '# Handling report',
@@ -240,5 +374,9 @@ if (process.argv.includes('--json')) {
     out.push('', `## ${name}`, '', vehicles[name].how, '', `| Figure | Unit | ${names.join(' | ')} |`, `| --- | --- | ${names.map(() => '---:').join(' | ')} |`)
     first.detail.forEach((f, i) => out.push(`| ${f.label} | ${f.unit} | ${names.map((p) => num(byPreset[p].detail[i].value, 2)).join(' | ')} |`))
   }
+  const sizes = Object.keys(tyres), rows = tyres[sizes[0]]
+  out.push('', '## buggy, tyre size', '', 'Default preset at each tyre size (buggy.tyreSize). Least upright: 1 level, 0 on its side, below 0 rolled over.', '',
+    `| Figure | Unit | ${sizes.map((k) => `Size ${k}`).join(' | ')} |`, `| --- | --- | ${sizes.map(() => '---:').join(' | ')} |`)
+  rows.forEach((f, i) => out.push(`| ${f.label} | ${f.unit} | ${sizes.map((k) => num(tyres[k][i].value, 2)).join(' | ')} |`))
   console.log(out.join('\n'))
 }

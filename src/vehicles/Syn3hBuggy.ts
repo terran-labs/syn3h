@@ -12,18 +12,19 @@
  * Unity semantics (forces, drag, ForceMode, euler angles, handedness) live in unityBody.ts.
  */
 import * as THREE from 'three/webgpu'
-import { worldLavaAltitude } from '../../shared/params'
+import { seaLevel } from '../world/seaLevel'
+import { atmosphereValue } from '../world/weather/params'
 import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import {
   buggyBumpStop, buggyCG, buggyCoastDrag, buggyDownforce, buggyFin, buggyFinAir, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightModel, buggyFlightSlip, buggyGrip,
   buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyRearSteerFast, buggyShocks, buggySideGrip, buggySideHold, buggySlide, buggySpeed, buggyStability, buggySteerFollow, buggySteerLimit,
-  buggyTraction,
+  buggyTraction, buggyTyreSize,
 } from './buggyParams'
-import { applyLava, floatPoints, lavaViscosity } from './lava'
+import { applyLava, floatPoints, lavaThickness } from './lava'
+import { gripAt } from './surfaceGrip'
 import type { BuggySkin } from './skins/BuggySkin'
-import { retryDelay } from './skins/modelLoader'
 import { type MotorDriveInput, motorDrive, smoothEffort } from './skins/motorDrive'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
 import { Vehicle, type WheelEffect, createWheelEffects } from './Vehicle'
@@ -42,8 +43,39 @@ const MAX_ACCELERATION = 60
 /** Prefab WheelPos and AxelPos (Unity local). VB 73 moves the ray origin 0.22 further out. */
 const WHEEL_POS = { x: 1.1, y: 0.1, z: 1.3 }
 const RAY_OUTSET = 0.22
-/** Front to rear axle distance from WheelPos, for the next-gen steering limit. */
-const WHEELBASE = WHEEL_POS.z * 2
+/**
+ * Tyre size (buggy.tyreSize). The visible tyre (smoothBuggyWheel) is 0.52 m in radius and 0.49 m
+ * wide; its inner face is TYRE_INNER from the centre line. Width grows at TYRE_WIDTH_RATE of the
+ * radius's rate, so big tyres stay tyres and not discs. The hub moves out by the extra width, so
+ * the inner face stays where it is and the tyre grows outward, clear of the fenders; and back
+ * from the centre once front and rear tyres would come closer than TYRE_GAP, so they never
+ * overlap. Both move the ray origins: a big tyred buggy has a wider track and, past about 2.4,
+ * a longer wheelbase, as a monster truck does.
+ */
+const TYRE_VISUAL_RADIUS = 0.52
+const TYRE_HALF_WIDTH = 0.245
+const TYRE_WIDTH_RATE = 0.5
+const TYRE_GAP = 0.15
+/**
+ * Share of the extra radius by which the centre of mass sits lower than the body's lift. Big
+ * tyres and the hubs and axles that carry them are heavy and low, so the buggy's weight does
+ * not rise as far as its body does. Measured 16 November 2026: with none, size 2 rolled over
+ * at full lock at any speed; with all of it, size 3 was launched 47 m by a 0.4 m bump.
+ */
+const TYRE_COM_DROP = 0.5
+/** Fastest the tyres grow or shrink, in tyre size units per second; see updateTyres(). */
+const TYRE_GROW_RATE = 1.5
+
+/** Wheel geometry at tyre size `k` (see buggy.tyreSize), in metres in the buggy's frame. */
+export function tyreGeometry(k: number): { radius: number; widthScale: number; x: number; z: number } {
+  const widthScale = 1 + (k - 1) * TYRE_WIDTH_RATE
+  return {
+    radius: WHEEL_RADIUS * k,
+    widthScale,
+    x: WHEEL_POS.x + (widthScale - 1) * TYRE_HALF_WIDTH,
+    z: Math.max(WHEEL_POS.z, TYRE_VISUAL_RADIUS * k + TYRE_GAP / 2),
+  }
+}
 export const AXEL_POS = { x: 0.55, y: 0.15, z: 1.2 }
 /**
  * The driver's eye above the origin. The Unity prefab's RideCam sat at 0.95, a hand's width
@@ -60,8 +92,8 @@ const AUTO_BRAKE_V2 = 1
 
 /**
  * Convex hull of the "Collider" mesh of Syn3h Buggy.blend (the prefab's convex MeshCollider,
- * scale 1), read from public/models/buggy.glb whose frame matches Unity's (its wheel nodes sit
- * at WheelPos). Turned 180 degrees about Y into our frame: nose at -Z.
+ * scale 1), read once from the original buggy.glb (now source material in tools/models) whose
+ * frame matches Unity's (its wheel nodes sit at WheelPos). Turned 180 degrees about Y into our frame: nose at -Z.
  */
 // prettier-ignore
 const HULL = [
@@ -150,6 +182,8 @@ const REGEN_TORQUE_MARGIN = 1.25
 const CONTACT_TOUCH = 0.01
 /** How fast (1/s) water drags the wheels toward the body's speed while floating. */
 const WATER_MOTOR_DRAG = 6
+/** The same for thick lava, at lava.thickness 1. */
+const LAVA_MOTOR_DRAG = 6
 /** Fastest a kinematic copy is carried (m/s); see carriedVelocity(). */
 const CARRIED_MAX = 200
 /**
@@ -171,14 +205,23 @@ const FLOAT_POINTS = floatPoints(1.37, 2.1, 0, 0.5)
 /** Wheel rays hit TerrainMask 257 only (Vhicl 21: layers Default and 8): never vehicles. */
 const RAY_GROUPS = groups(GROUP_ALL, GROUP_TERRAIN)
 
-/** VB 71-73: i%2 is right, i<2 is front; z flipped to our -Z forward. */
-function rayOrigin(i: number): THREE.Vector3 {
+/**
+ * VB 71-73: i%2 is right, i<2 is front; z flipped to our -Z forward. Hub at (x, z) from
+ * tyreGeometry; the outset grows with the tyre's width, so the contact stays at the same place
+ * on the tread.
+ */
+function rayOrigin(i: number, out: THREE.Vector3, x = WHEEL_POS.x, z = WHEEL_POS.z, widthScale = 1): THREE.Vector3 {
   const sx = i % 2 ? 1 : -1
-  return new THREE.Vector3(sx * (WHEEL_POS.x + RAY_OUTSET), WHEEL_POS.y, -WHEEL_POS.z * (i < 2 ? 1 : -1))
+  return out.set(sx * (x + RAY_OUTSET * widthScale), WHEEL_POS.y, -z * (i < 2 ? 1 : -1))
 }
 
-/** Fresh skins tried when building one fails outright (a download failure retries inside). */
+/** Fresh skins tried when building one fails outright. */
 const SKIN_ATTEMPTS = 6
+
+/** Delay before retry `attempt` (1 based): 0.5 s, 1, 2, 4, 8, then 15 s. */
+function retryDelay(attempt: number): number {
+  return Math.min(15000, 500 * 2 ** (attempt - 1))
+}
 
 export interface SkinFactory {
   (): BuggySkin
@@ -239,7 +282,16 @@ export class Syn3hBuggy extends Vehicle {
     return this.wheelEffects
   }
 
-  private readonly origins = [0, 1, 2, 3].map(rayOrigin)
+  private readonly origins = [0, 1, 2, 3].map((i) => rayOrigin(i, new THREE.Vector3()))
+  /**
+   * Tyre size in effect (buggy.tyreSize, eased toward it; see updateTyres()), its wheel radius,
+   * the radius beyond the standard 0.5 m, and the hub positions (half track, half wheelbase).
+   */
+  tyreSize = 1
+  wheelRadius = WHEEL_RADIUS
+  private tyreExtra = 0
+  private hubX = WHEEL_POS.x
+  private hubZ = WHEEL_POS.z
   private readonly inertia: RAPIER.Vector
   private readonly inertiaFrame: RAPIER.Rotation
   private readonly comLocal = new THREE.Vector3(0, 0, -0.2)
@@ -316,6 +368,8 @@ export class Syn3hBuggy extends Vehicle {
     this.buildFallback()
     this.object.add(this.fallback)
     if (skinFactory) this.attachSkin(skinFactory)
+    // Start on tyres of the size set: teleport takes it at once and stands the body higher.
+    if (buggyTyreSize.value !== this.tyreSize) this.teleport(position, heading)
   }
 
   /**
@@ -327,10 +381,10 @@ export class Syn3hBuggy extends Vehicle {
   }
 
   /**
-   * Build the skin and show it when its models arrive. The skin's own loader retries a failed
-   * download until it succeeds (modelLoader.ts), so a rejection here means building the skin
-   * itself failed: try a fresh skin after a growing delay, a few times, rather than keeping
-   * the stand in for the rest of the session (which the player could only fix by reloading).
+   * Build the skin and show it once it is ready. The skin is generated in code, so a rejection
+   * here means building it failed: try a fresh skin after a growing delay, a few times, rather
+   * than keeping the stand in for the rest of the session (which the player could only fix by
+   * reloading).
    */
   private attachSkin(factory: SkinFactory): void {
     if (this.disposed) return
@@ -345,6 +399,7 @@ export class Syn3hBuggy extends Vehicle {
     }
     this.skin = skin
     this.object.add(skin.object)
+    skin.setTyreScale?.(this.tyreSize, tyreGeometry(this.tyreSize).widthScale)
     skin.setColors(this.colors.body, this.colors.accent)
     skin.ready.then(
       () => {
@@ -356,7 +411,7 @@ export class Syn3hBuggy extends Vehicle {
       },
       (err) => {
         if (this.skin !== skin) return
-        console.warn('Buggy model failed to load', err)
+        console.warn('Buggy skin failed to build', err)
         skin.object.removeFromParent()
         skin.dispose()
         this.skin = null
@@ -386,7 +441,7 @@ export class Syn3hBuggy extends Vehicle {
 
   /** VB 178-179. Only touches Rapier when the centre of mass moved. */
   private updateMassProperties(): void {
-    const y = buggyCG.value * this.suspensionRange * 0.5
+    const y = buggyCG.value * this.suspensionRange * 0.5 - TYRE_COM_DROP * this.tyreExtra
     if (Math.abs(y - this.comY) < 1e-5) return
     this.comY = y
     // Unity (x, y, 0.2): z forward, ours -0.2.
@@ -406,7 +461,7 @@ export class Syn3hBuggy extends Vehicle {
 
   /** Surface height of the lava or water at a point (Unity layer 4 raycasts). */
   private liquidAt(x: number, z: number): number {
-    return this.terrain.liquidHeightAt?.(x, z) ?? worldLavaAltitude.value
+    return this.terrain.liquidHeightAt?.(x, z) ?? seaLevel()
   }
 
   // ---- input: Vhicl.FixedUpdate smoothing and VhiclMe mapping ----------------------------
@@ -449,6 +504,7 @@ export class Syn3hBuggy extends Vehicle {
   protected applyForces(dt: number): void {
     const ub = this.ub
     const b = this.body
+    this.updateTyres(dt, b.isKinematic())
     ub.begin()
     const q = ub.q
     const pos = ub.pos
@@ -481,7 +537,10 @@ export class Syn3hBuggy extends Vehicle {
     }
     this.suspensionRange = lerp(this.suspensionRange, desired, dt * 1)
     this.updateMassProperties()
-    const rayLength = this.suspensionRange + WHEEL_RADIUS
+    // The rays reach the bottom of the tyre; the spring is measured as for the standard wheel,
+    // over its travel above the hub (see springLength), so its rate per metre is unchanged.
+    const rayLength = this.suspensionRange + this.wheelRadius
+    const springLength = this.suspensionRange + WHEEL_RADIUS
 
     // Wing state, VB 199-213.
     if (this.shouldWingsBeOpen && this.wingState > 0.95) this.wingState = 1
@@ -514,7 +573,7 @@ export class Syn3hBuggy extends Vehicle {
       const grip = lerp(buggyGrip.value, buggySlide.value, Math.min(1, fast))
       const loose = THREE.MathUtils.clamp(fast * 2 - 1, 0, 1)
       const limit = lerp(Math.min(STEER_LIMIT_SLOW, buggySteerLimit.value), buggySteerLimit.value, loose)
-      const cap = (WHEELBASE * grip * buggyTraction.value * 9.81 * limit) / v2
+      const cap = (this.hubZ * 2 * grip * buggyTraction.value * 9.81 * limit) / v2
       // Front minus rear: they add when opposed and cancel when the rear steers with the front.
       const sum = Math.abs(Math.tan(this.steer[0]) - Math.tan(this.steer[2]))
       if (sum > cap) {
@@ -529,7 +588,7 @@ export class Syn3hBuggy extends Vehicle {
       // front tyres either side of rolling free.
       const follow = buggySteerFollow.value * THREE.MathUtils.smoothstep(myVelocity, ASSIST_SPEED_MIN, ASSIST_SPEED_FULL)
       if (follow > 0 && vl.z > ASSIST_SPEED_MIN * 0.5) {
-        const travel = Math.atan2(-(vl.x - WHEEL_POS.z * yawRate), vl.z) * DEG
+        const travel = Math.atan2(-(vl.x - this.hubZ * yawRate), vl.z) * DEG
         const past = Math.min(FOLLOW_MAX, Math.max(0, Math.abs(travel) - FOLLOW_DEAD)) * Math.sign(travel)
         this.steer[0] = this.steer[1] = this.steer[0] + (follow * past) / DEG
       }
@@ -556,7 +615,7 @@ export class Syn3hBuggy extends Vehicle {
         }
         this.mountVelocity(i, q, lv)
         this.hitDistance[i] = hit.timeOfImpact
-        this.hitCompress[i] = -(hit.timeOfImpact / rayLength) + 1
+        this.hitCompress[i] = 1 - (hit.timeOfImpact - this.tyreExtra) / springLength
         eff.point.copy(this.down).multiplyScalar(hit.timeOfImpact).add(this.origin)
         eff.normal.set(hit.normal.x, hit.normal.y, hit.normal.z)
         eff.slip = Math.abs(this.hitVelocity[i].x)
@@ -586,20 +645,24 @@ export class Syn3hBuggy extends Vehicle {
       this.motorSpeed += (smoothed.y * this.motorAccel) / MOTOR_MASS * dt
       this.motorSpeed += (-this.motorSpeed * (this.brakes ? 50 : MOTOR_DRAG)) / this.motorTorque * dt
     }
-    // Sticky lava (see applyVehicleLiquid in lava.ts) takes over the body while it is immersed
-    // and moves it at the lava crawl power, so no wheel force reaches it. The wheels churn in
-    // the same goo: drag the motor toward the body's speed so it cannot spin up unloaded and
-    // lurch when the tyres bite again at the shore.
+    // Lava (liquidHull.ts) paddles the buggy along with its wheels, but they churn in thick goo:
+    // drag the motor toward the body's speed so it cannot spin up unloaded and lurch when the
+    // tyres bite again at the shore.
     // Water does the same more gently, so the wheels are not at full speed when they touch
     // the beach. inLiquid is last step's value here.
-    if (this.lavaDepth > 0 || this.inLiquid) {
+    const hull = this.liquidState.hull
+    if (this.lavaDepth > 0 || this.inLiquid || hull.mean > 0) {
       const vf = ub.inverseTransformDirectionUnity(ub.velocity, this.v1).z
-      const drag = this.lavaDepth > 0 ? lavaViscosity.value : WATER_MOTOR_DRAG
+      const drag = this.lavaDepth > 0 || (hull.mean > 0 && hull.liquid === 'lava') ? LAVA_MOTOR_DRAG * Math.max(0.5, lavaThickness.value) : WATER_MOTOR_DRAG
       this.motorSpeed = vf + (this.motorSpeed - vf) * Math.exp(-drag * dt)
     }
     // Next-gen updates the motor from all four wheels at once (Jacobi). Updating it wheel by
     // wheel, as VB 323 does, favours the left wheels and pulls the buggy right.
     this.motorStep = this.motorSpeed
+    this.liquidState.wheelSpeed = this.motorSpeed
+    this.liquidState.wheel.x = this.hubX
+    this.liquidState.wheel.z = this.hubZ
+    this.liquidState.wheel.radius = this.wheelRadius
 
     // Wheels, VB 288-332.
     const wasAirborne = this.wheelsGrounded === 0
@@ -620,7 +683,7 @@ export class Syn3hBuggy extends Vehicle {
       wheelsAreTouchingGround = true
       grounded++
       this.hitDistance[i] = hit.timeOfImpact
-      this.hitCompress[i] = -(hit.timeOfImpact / rayLength) + 1
+      this.hitCompress[i] = 1 - (hit.timeOfImpact - this.tyreExtra) / springLength
       this.totalSuspensionCompression += this.hitCompress[i]
       this.hitPoint.copy(this.down).multiplyScalar(hit.timeOfImpact).add(this.origin)
 
@@ -646,7 +709,8 @@ export class Syn3hBuggy extends Vehicle {
         continue
       }
       const friction =
-        buggyTraction.value * 13 * lerp(0.5, 1, this.hitCompress[i]) * Math.max(1, (20 - hitVel.length()) / 4)
+        buggyTraction.value * 13 * lerp(0.5, 1, this.hitCompress[i]) * Math.max(1, (20 - hitVel.length()) / 4) *
+        gripAt(this.terrain, this.hitPoint.x, this.hitPoint.z)
       // Vector3.Min against (1000, 1000, 1000): an upper clamp only, as in the source.
       const fx = Math.min(-hitVel.x * friction, 1000) // Sideslip
       const fz = Math.min(-(hitVel.z - this.motorSpeed) * friction, 1000) // Motor
@@ -701,6 +765,36 @@ export class Syn3hBuggy extends Vehicle {
     })
 
     ub.flush(dt)
+  }
+
+  /**
+   * Ease the tyre size toward buggy.tyreSize at TYRE_GROW_RATE and move the hubs and rays with
+   * it. A tyre grows from where it touches the ground: with any wheel down, the body is lifted
+   * by the change in radius (along its own up axis, without touching its velocity), so the
+   * springs see the same compression and nothing is thrown upward. A kinematic copy takes its
+   * height from its owner's snapshots, which already include the lift.
+   */
+  private updateTyres(dt: number, kinematic: boolean, snap = false): void {
+    const target = buggyTyreSize.value
+    if (this.tyreSize === target) return
+    const next = snap ? target : moveToward(this.tyreSize, target, TYRE_GROW_RATE * dt)
+    const g = tyreGeometry(next)
+    const lift = g.radius - this.wheelRadius
+    this.tyreSize = next
+    this.wheelRadius = g.radius
+    this.tyreExtra = g.radius - WHEEL_RADIUS
+    this.hubX = g.x
+    this.hubZ = g.z
+    this.updateMassProperties()
+    for (let i = 0; i < 4; i++) rayOrigin(i, this.origins[i], g.x, g.z, g.widthScale)
+    this.skin?.setTyreScale?.(next, g.widthScale)
+    for (const eff of this.wheelEffects) eff.width = g.widthScale
+    for (const w of this.fbWheels) w.scale.set(g.widthScale, next, next)
+    if (!snap && !kinematic && this.wheelsGrounded > 0) {
+      const t = this.body.translation(), r = this.body.rotation()
+      const up = this.v3.copy(UP).applyQuaternion(this.qDrive.set(r.x, r.y, r.z, r.w)).multiplyScalar(lift)
+      this.body.setTranslation({ x: t.x + up.x, y: t.y + up.y, z: t.z + up.z }, true)
+    }
   }
 
   private readonly blowLast = new THREE.Vector3()
@@ -775,7 +869,7 @@ export class Syn3hBuggy extends Vehicle {
       // Rebound: the wheel is extending. Damping it harder keeps a compressed spring from
       // flinging the body up and pitching it as it leaves a crest.
       if (damper < 0) damper *= buggyRebound.value
-      const x = Math.max(0, (BUMP_START - this.hitDistance[i]) / (BUMP_START - BUMP_END))
+      const x = Math.max(0, (BUMP_START - (this.hitDistance[i] - this.tyreExtra)) / (BUMP_START - BUMP_END))
       spring += buggyBumpStop.value * 20 * mass * (x < 1 ? x * x : 2 * x - 1)
       if (buggyBumpStop.value > 0) damper *= 1 + BUMP_DAMP * Math.min(1, x)
     }
@@ -827,7 +921,8 @@ export class Syn3hBuggy extends Vehicle {
       const floor = lerp(Math.max(buggySideGrip.value, buggySideHold.value * mu), buggySideGrip.value, landing)
       mu = Math.min(mu, lerp(mu, floor, broadside))
     }
-    const cap = mu * traction * load
+    // What the wheel is on: ice slides, wet shallows a little (surfaceGrip.ts).
+    const cap = mu * traction * load * gripAt(this.terrain, this.hitPoint.x, this.hitPoint.z)
     const n = Math.hypot(fx, fz)
     this.sliding[i] = n > cap
     // Regen is torque limited: past its force the wheel turns with the ground, not the motor.
@@ -953,6 +1048,10 @@ export class Syn3hBuggy extends Vehicle {
     )
     const mis = this.motorInputSmoothed
     const stallSpeed = 16
+    // The wings fly on air. The planet's own (world.atmosphere, 0 vacuum to 1 Earthlike) scales
+    // every aerodynamic effect below; on an airless world the buggy follows a ballistic arc
+    // with its wings out. At 1 nothing changes.
+    const air = THREE.MathUtils.clamp(atmosphereValue(), 0, 1)
     const vel = ub.velocity
     const locVel = ub.inverseTransformDirectionUnity(vel, this.v1)
     const e = unityEulerAngles(q, this.euler)
@@ -960,14 +1059,14 @@ export class Syn3hBuggy extends Vehicle {
     const pitch = signedAngle(e.x)
     const agility = buggyFlightAgility.value
     if (locVel.lengthSq() > stallSpeed) {
-      ub.drag = (myVelocity / buggyFlightDrag.value) * 0.3
+      ub.drag = (myVelocity / buggyFlightDrag.value) * 0.3 * air
 
       if (this.brakes) {
         // Airbrakes, VB 402-408.
         if (this.brakePower < 1) this.brakePower += dt * 0.15
-        const m = -this.brakePower * 2
+        const m = -this.brakePower * 2 * air
         ub.addRelativeForce(locVel.x * m * 5, locVel.y * m * 100, locVel.z * 150 * m)
-        ub.addRelativeTorque((pitch + smoothed.y * -100) * -2, smoothed.x * 280, roll * -1)
+        ub.addRelativeTorque((pitch + smoothed.y * -100) * -2 * air, smoothed.x * 280 * air, roll * -1 * air)
       } else {
         // Standard flight, VB 411-434: velocity follows the nose.
         this.brakePower = 0
@@ -1004,28 +1103,30 @@ export class Syn3hBuggy extends Vehicle {
             ub.setVelocity(dir.multiplyScalar(model === 2 ? Math.max(0, speed - GLIDE_GRAVITY * 9.81 * dir.y * dt) : speed))
           }
         }
-        ub.addRelativeTorqueAcceleration(mis * 10 * agility, 0, smoothed.x * -13 * agility, dt)
+        // Thinner air: the wings turn the motion only part of the way toward the nose.
+        if (air < 1) ub.setVelocity(this.v2.copy(ub.velocity).lerp(vel, 1 - air))
+        ub.addRelativeTorqueAcceleration(mis * 10 * agility * air, 0, smoothed.x * -13 * agility * air, dt)
       }
 
       // Dihedral, VB 436-451.
       if (Math.abs(smoothed.x) < 0.01 && (e.z < 90 || e.z > 270)) {
-        ub.addRelativeTorque(0, roll * -0.6, e.z < 20 || e.z > 340 ? roll * -0.5 : 0)
+        ub.addRelativeTorque(0, roll * -0.6 * air, e.z < 20 || e.z > 340 ? roll * -0.5 * air : 0)
       } else if (Math.abs(smoothed.x) < 0.01) {
-        ub.addRelativeTorque(0, (e.z - 180) * 0.4, 0)
+        ub.addRelativeTorque(0, (e.z - 180) * 0.4 * air, 0)
       }
 
       // Lava thermals, VB 459-466: lift within 10 m above lava or sea.
       const liquid = this.liquidAt(ub.pos.x, ub.pos.z)
       const d = ub.pos.y - liquid
-      if (ub.pos.y < worldLavaAltitude.value + 10 && d >= 0 && d <= 10) {
-        ub.addForce(this.v2.set(0, (10 - d) * 40, 0))
+      if (ub.pos.y < seaLevel() + 10 && d >= 0 && d <= 10) {
+        ub.addForce(this.v2.set(0, (10 - d) * 40 * air, 0))
       }
       ub.angularDrag = 5
     } else {
       // Stalling, VB 474-479. `y + 0.5 * 100` is the source's precedence: y + 50.
       ub.angularDrag = 1
-      ub.drag = (myVelocity / buggyFlightDrag.value) * 9
-      ub.addRelativeTorque(smoothed.y + 0.5 * 100, 0, smoothed.x * -30)
+      ub.drag = (myVelocity / buggyFlightDrag.value) * 9 * air
+      ub.addRelativeTorque((smoothed.y + 0.5 * 100) * air, 0, smoothed.x * -30 * air)
     }
   }
 
@@ -1068,13 +1169,24 @@ export class Syn3hBuggy extends Vehicle {
     }
   }
 
+  /** The standard stance plus the extra tyre radius, so arrival and the height readout follow the tyres. */
+  override restHeight(): number {
+    return super.restHeight() + this.tyreExtra
+  }
+
   /**
    * A teleport is a fresh start: besides the pose and velocities the base clears, drop every
    * piece of drivetrain, suspension and tyre state, so nothing from before (a spinning motor,
    * the inverted flag, wound up tyres, open wings) acts on the buggy where it lands.
    */
   override teleport(position: THREE.Vector3, heading = 0): void {
-    super.teleport(position, heading)
+    // Take the new tyre size at once. With non-standard tyres, never place the body lower than
+    // it rests on them (restHeight), so it cannot start with its tyres in the ground and be
+    // thrown up by its springs. Spawn points are already higher than that; a resumed or held
+    // position is about at it.
+    this.updateTyres(0, false, true)
+    const floor = this.tyreExtra === 0 ? -Infinity : this.terrain.heightAt(position.x, position.z) + this.restHeight()
+    super.teleport(this.v4.copy(position).setY(Math.max(position.y, floor)), heading)
     this.isInverted = false
     this.stuckSteps = 0
     this.motorSpeed = this.motorStep = 0
@@ -1182,13 +1294,16 @@ export class Syn3hBuggy extends Vehicle {
       for (const m of this.fbMaterials) { m.opacity = 0.35 + 0.3 * pulse; m.emissiveIntensity = 0.4 + 0.8 * pulse }
     }
     // VB 135-149: wheels hang at full travel in the air; graphics spin at half the motor rate.
-    this.spin -= (this.motorSpeed / WHEEL_RADIUS) * dt * 0.5
+    // A grounded wheel is drawn with its tread on the contact (TYRE_VISUAL_RADIUS), 2 cm above
+    // the 0.5 m physics radius at size 1, which used to leave the tyre sunk into the ground.
+    // The motor is geared to the tread (m/s), so bigger tyres turn slower at the same speed.
+    this.spin -= (this.motorSpeed / this.wheelRadius) * dt * 0.5
     for (let i = 0; i < 4; i++) {
       const d = this.hitDistance[i]
       this.wheelPos.set(
-        WHEEL_POS.x * (i % 2 ? 1 : -1),
-        WHEEL_POS.y - (d === -1 ? this.suspensionRange : d - WHEEL_RADIUS),
-        -WHEEL_POS.z * (i < 2 ? 1 : -1),
+        this.hubX * (i % 2 ? 1 : -1),
+        WHEEL_POS.y - (d === -1 ? this.suspensionRange : d - TYRE_VISUAL_RADIUS * this.tyreSize),
+        -this.hubZ * (i < 2 ? 1 : -1),
       )
       this.skin?.setWheel(i, this.wheelPos, this.steer[i], this.spin)
       if (this.skin?.setDrive) {

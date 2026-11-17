@@ -8,12 +8,14 @@
  */
 import * as THREE from 'three/webgpu'
 import { joinedText } from '../ui/toastText'
+import { ChatChannel } from './chat'
 import { roomLabel } from '../core/roomAddress'
 import { type ParamValue, params, worldSeed } from '../../shared/params'
 import {
   BOT_ID_BASE,
   type ClientMessage,
   DEFAULT_COLORS,
+  MAX_NAME_LENGTH,
   type GameState,
   type HillZone,
   MAX_BOTS,
@@ -60,7 +62,8 @@ import { LocalRescue, StuckTimer, inStickyLiquid } from '../modes/Koth'
 import { attachVehicleEffects } from '../vehicles/effects'
 import { ServerClock } from './Clock'
 import { Connection, serverUrl } from './Connection'
-import { NameTags, type TagInfo } from './NameTags'
+import { VehicleNameplates as NameTags, type NameplateInfo as TagInfo } from '../ui/nameplates/VehicleNameplates'
+import { terrainOcclusion } from '../ui/nameplates/terrain'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
 import { pressHoldsFire } from './pointerFire'
@@ -72,6 +75,7 @@ import { ShoveQueue, cleanShove, shoveFor } from './shove'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
 import { setWaterClock, waterTime } from '../world/water/seaWaves'
 import { RaceBridge, type RaceBots, type RacePresentation } from './races'
+import { TintTransition, type TintPair } from '../vehicles/tints'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -104,6 +108,8 @@ export interface PlayerColors {
 }
 
 export interface NetContext {
+  /** Client-only view state, supplied by main; no roster protocol changes. */
+  nameplates?: { shell: HTMLElement; visible(): boolean; presentation(): boolean }
   game: Game
   terrain: Terrain
   /** The local player's vehicle. */
@@ -122,6 +128,13 @@ export interface NetContext {
   audio?: NetAudio
   /** Cosmetic arrival effect after a remote kind change; never holds replica physics. */
   onRemoteVehicleChanged?(vehicle: Vehicle): void
+  /**
+   * A remote player or bot left: the departure effect (the arrival in reverse). The copy stays
+   * in the game, undriven, until the returned promise settles, then is removed. Cosmetic only.
+   */
+  onRemoteVehicleLeaving?(vehicle: Vehicle): Promise<void> | void
+  /** End a departure now (the same player or bot is back). Resolves its promise. */
+  cancelRemoteDeparture?(vehicle: Vehicle): void
   /** Bot manager; optional, may also be attached later with `net.attachBots`. */
   bots?: NetBots
   /** The match display (shell.setMatchState): called on every game state change; null clears. */
@@ -217,6 +230,8 @@ export class NetClient implements System {
   readonly remotes = new Map<number, RemotePlayer>()
   readonly players = new Map<number, PlayerInfo>()
   readonly events: NetEvent[] = []
+  /** Chat lines, mutes and display rules (src/net/chat.ts). */
+  readonly chat: ChatChannel
   id = 0
   slot = 0
   game: GameState = {
@@ -289,6 +304,13 @@ export class NetClient implements System {
     this.bots = ctx.bots ?? null
     if (this.bots) this.bots.remote = true
     this.conn = new Connection(serverUrl(ctx.room))
+    this.chat = new ChatChannel({
+      selfId: () => this.id,
+      nameOf: (id) => this.displayName(id),
+      colorOf: (id) => isBotId(id) ? botColors(id - BOT_ID_BASE)[0] : this.players.get(id)?.colors[0] ?? DEFAULT_COLORS[0],
+      connected: () => this.connected,
+      send: (msg) => this.send(msg),
+    })
     this.raceBridge = new RaceBridge({
       now: this.roomNow,
       role: () => ({ id: this.id, host: this.isHost, connected: this.connected }),
@@ -415,7 +437,10 @@ export class NetClient implements System {
     this.bots?.setGear?.(this.botDecisionHooks)
     this.marker = new TagMarker(game)
     this.marker.local = player
-    this.tags = new NameTags(game.camera)
+    this.tags = new NameTags(() => game.camera, {
+      ...(ctx.nameplates ?? { shell: document.body, visible: () => false, presentation: () => false }),
+      scene: game.scene, wrapSize: () => this.wrapSize, terrainHit: terrainOcclusion(game.world),
+    })
     this.hill = new HillMarker(game, ctx.terrain)
     this.seat = new LocalSeat(player, {
       makeBounds: (vehicle) => {
@@ -621,6 +646,40 @@ export class NetClient implements System {
     if (this.connected) this.send({ type: 'profile', kind: this.kind, colors: this.colors })
   }
 
+  /**
+   * Take a new name in the room now and at every later hello. The room cleans it, may add a
+   * number to tell two players apart, and takes one rename every RENAME_INTERVAL_MS; an older
+   * room ignores the field and the name changes at the next join instead.
+   */
+  setName(name: string): void {
+    chosenName = name.trim().slice(0, MAX_NAME_LENGTH)
+    if (chosenName && this.connected) this.send({ type: 'profile', name: chosenName })
+  }
+
+  /** Remote colours ease to a newly announced tint (src/vehicles/tints.ts), by player id. */
+  private remoteTints?: Map<number, TintTransition>
+  private tintRemote(id: number, vehicle: VehicleExtras, colors: readonly [string, string]): void {
+    const target = { body: colors[0], accent: colors[1] }
+    const tints = this.remoteTints ??= new Map()
+    let tint = tints.get(id)
+    if (!tint) {
+      const shown = (vehicle as { colors?: TintPair }).colors
+      // Nothing to ease from: paint at once.
+      if (!shown) { vehicle.setColors?.(target.body, target.accent); return }
+      tint = new TintTransition(shown); tints.set(id, tint)
+    }
+    tint.set(target)
+  }
+  private updateRemoteTints(dt: number): void {
+    if (!this.remoteTints) return
+    for (const [id, tint] of this.remoteTints) {
+      const r = this.remotes.get(id)
+      if (!r) { this.remoteTints.delete(id); continue }
+      if (tint.update(dt)) (r.vehicle as VehicleExtras).setColors?.(tint.current.body, tint.current.accent)
+      if (!tint.active) this.remoteTints.delete(id)
+    }
+  }
+
   /** The shell supplies actual play state; connected lobby spectators cannot be drafted. */
   configureRaces(presentation: RacePresentation): void { this.raceBridge.configure(presentation) }
   get race() { return this.raceBridge.snapshot as Readonly<import('../../shared/protocol').RaceState> | null }
@@ -744,6 +803,7 @@ export class NetClient implements System {
     if (this.wasDriving && !driving) this.resetGear()
     this.wasDriving = driving
     for (const controller of this.botGear.values()) controller.update(dt)
+    this.updateRemoteTints(dt)
     const frameAt = performance.now()
     // After a long task the browser often renders before it delivers the queued messages, so
     // the gap check in onState alone misses them: also distrust the next moment after a gap.
@@ -798,18 +858,23 @@ export class NetClient implements System {
   private refreshTags(it: number, holder: number, stuck: Record<number, unknown>): void {
     const list = this.tagList
     let n = 0
-    for (const [id, r] of this.remotes) {
-      const tag = list[n] ?? (list[n] = { vehicle: r.vehicle, name: '', note: '', it: false })
+    const add = (id: number, vehicle: Vehicle, state = '') => {
+      if (id === this.id) return
+      const tag = list[n] ?? (list[n] = { id: '', vehicle, name: '', note: '', bot: false, color: '' })
       n++
-      tag.vehicle = r.vehicle
-      tag.name = this.displayName(id)
-      tag.it = id === it || id === holder
-      let note = id === it ? 'IT' : ''
-      if (id === holder) note += note ? ' KING' : 'KING'
-      if (stuck[id]) note += note ? ' stuck' : 'stuck'
-      const state = r.paused ? 'paused' : !r.responding ? 'not responding' : ''
-      if (state) note += note ? ` ${state}` : state
-      tag.note = note
+      tag.id = String(id); tag.vehicle = vehicle; tag.name = this.displayName(id); tag.bot = isBotId(id)
+      tag.color = vehicle.colors.body
+      const notes: string[] = []
+      if (id === it) notes.push('IT')
+      if (id === holder) notes.push('HILL')
+      if (id === this.game.host) notes.push('HOST')
+      if (stuck[id]) notes.push('STUCK')
+      if (state) notes.push(state)
+      tag.note = notes.join(' · ')
+    }
+    for (const [id, r] of this.remotes) add(id, r.vehicle, r.paused ? 'PAUSED' : !r.responding ? 'NOT RESPONDING' : '')
+    if (this.bots && !this.bots.remote) for (const [id, vehicle] of liveBots(this.bots.vehicles, this.ctx.game.world)) {
+      if (!this.remotes.has(id)) add(id, vehicle)
     }
     list.length = n
   }
@@ -907,6 +972,15 @@ export class NetClient implements System {
       }
       controller.act(action)
     },
+  }
+
+  /** Bot rescues (src/bots/rescue) fire the grapple through the same hooks as bot decisions. */
+  get botGearHooks(): BotDecisionHooks { return this.botDecisionHooks }
+
+  /** Bot `id`'s grapple cord on the host: hook in the air, tied to vehicle `to`, or null for none. */
+  botCord(id: number): { flying: boolean; to: number | null } | null {
+    const c = this.botGear.get(id)?.bungee.mine
+    return c ? { flying: Boolean(c.hook), to: c.hook ? null : c.to } : null
   }
 
   private makeBotGear(id: number, vehicle: Vehicle): BotGear {
@@ -1096,9 +1170,16 @@ export class NetClient implements System {
   }
 
   private sendBots(): void {
-    for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
-      this.sendBot(id, bot)
+    const live = liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)
+    // A bot announced before and not simulated now has gone: tell the room at once, after its
+    // last state on the same ordered socket, so everyone drops it within a round trip rather
+    // than when the room's 5 s expiry notices (an older room ignores this and still does that).
+    for (const id of [...this.botKinds.keys()]) {
+      if (live.some(([live]) => live === id)) continue
+      this.botKinds.delete(id)
+      this.send({ type: 'bot-leave', bot: id })
     }
+    for (const [id, bot] of live) this.sendBot(id, bot)
   }
 
   private sendBot(id: number, bot: Vehicle): void {
@@ -1263,6 +1344,8 @@ export class NetClient implements System {
   }
 
   private spawnRemote(info: PlayerInfo, s: WireState): RemotePlayer {
+    const old = this.departing?.get(info.id)
+    if (old) { this.departing.delete(info.id); this.ctx.cancelRemoteDeparture?.(old) }
     // Bots too get a replica of our own, so the set follows the host's roster exactly and is
     // never touched by our bot manager or its local quality cap.
     const vehicle = createVehicle(this.ctx.game, this.ctx.terrain, info.kind as VehicleKind, new THREE.Vector3(...s.p), 0)
@@ -1280,7 +1363,8 @@ export class NetClient implements System {
     return r
   }
 
-  private removeRemote(id: number): void {
+  /** `depart`: leave in the departure effect rather than vanish (one player or bot leaving). */
+  private removeRemote(id: number, depart = false): void {
     const r = this.remotes.get(id)
     if (!r) return
     this.remotes.delete(id)
@@ -1289,8 +1373,24 @@ export class NetClient implements System {
     this.yoink.forget(id)
     this.pesters.forget(id)
     r.disposeEffects()
-    if (r.owned) this.ctx.game.remove(r.vehicle)
+    if (!r.owned) return
+    let leaving: Promise<void> | void = undefined
+    if (depart) {
+      try { leaving = this.ctx.onRemoteVehicleLeaving?.(r.vehicle) } catch (err) { console.warn('remote departure effect failed', err) }
+    }
+    // Gone from the game and the physics world in this frame, whatever the effect does: no
+    // gameplay list waits on an animation. A departure plays on what is left, a picture.
+    this.ctx.game.remove(r.vehicle, !leaving)
+    if (!leaving) return
+    const vehicle = r.vehicle
+    vehicle.detach()
+    this.departing.set(id, vehicle)
+    const done = () => { if (this.departing.get(id) === vehicle) this.departing.delete(id); vehicle.dispose() }
+    leaving.then(done, done)
   }
+
+  /** Departures still playing, by id: dropped at once if the same id arrives again. */
+  private readonly departing = new Map<number, Vehicle>()
 
   /** Dust, tracks, lamps and trails for a remote vehicle. Returns its disposer. */
   private attachEffects(vehicle: Vehicle): () => void {
@@ -1333,7 +1433,8 @@ export class NetClient implements System {
       }
       return
     }
-    if (!isBotId(info.id)) extras.setColors?.(info.colors[0], info.colors[1])
+    // One profile per change; each client eases to it on its own, so a Randomize costs the room one message.
+    if (!isBotId(info.id)) this.tintRemote(info.id, extras, info.colors)
   }
 
   private onTerrainRegenerated(): void {
@@ -1447,14 +1548,18 @@ export class NetClient implements System {
         this.players.set(msg.player.id, msg.player)
         if (!msg.player.bot) this.event(`${msg.player.name} joined`)
         break
-      case 'profile':
+      case 'profile': {
+        const before = this.players.get(msg.player.id)?.name
         this.players.set(msg.player.id, msg.player)
         this.applyProfile(msg.player)
+        // Name tags, the Players list and later messages read the roster, so they follow at once.
+        if (before && before !== msg.player.name && msg.player.id !== this.id && !msg.player.bot) this.event(`${before} is now ${msg.player.name}`)
         break
+      }
       case 'leave':
         if (!isBotId(msg.id)) this.event(`${this.nameOf(msg.id)} left`)
         this.players.delete(msg.id)
-        this.removeRemote(msg.id)
+        this.removeRemote(msg.id, true)
         break
       case 'param':
         params.set(msg.id, msg.value, 'remote')
@@ -1505,6 +1610,10 @@ export class NetClient implements System {
           : msg.reason === 'join' ? 'A new player brought their world' : 'The room was idle: world reset to defaults')
         break
       }
+      case 'chat':
+      case 'chat-refused':
+        this.chat.receive(msg)
+        break
       case 'error':
         if (msg.message === 'room is full') { this.onRoomFull(); break }
         this.event(`Server: ${msg.message}`)
@@ -1743,7 +1852,7 @@ export class NetClient implements System {
 }
 
 /** The bot manager's colours (BotManager.spawn), so a replica looks like the host's bot. */
-function botColors(index: number): [string, string] {
+export function botColors(index: number): [string, string] {
   return [`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff']
 }
 
@@ -1773,6 +1882,8 @@ function normalizeGame(g: Partial<GameState>): GameState {
 
 /** Name chosen on the start screen, when there is one. */
 let preferredName = ''
+/** Name chosen in play (the Me card); wins over the start screen and ?name=. */
+let chosenName = ''
 
 /**
  * This tab's secret for one room: in a room with `game.rejoin` on, saying hello again with it
@@ -1800,6 +1911,7 @@ function rejoinSecret(room: string): string | undefined {
 
 function playerName(): string {
   // An explicit ?name= wins, so links and automated checks can name players.
+  if (chosenName) return chosenName
   const q = new URLSearchParams(location.search).get('name')
   if (q) return q.slice(0, 24)
   if (preferredName) return preferredName.slice(0, 24)

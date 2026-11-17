@@ -27,11 +27,15 @@ export interface ParamDef<T extends ParamValue = ParamValue> {
   step?: number
   /** Apply when the slider is released, not while dragging (e.g. terrain regeneration). */
   deferred?: boolean
+  /** Synced and saved like any other, but no settings panel shows it: bookkeeping, not a knob. */
+  hidden?: boolean
   /**
    * Numbers only: how the settings UI shows and takes the value, without changing what is
    * stored or sent. Shown = (value - offset) * scale; a negative scale reverses the slider.
+   * With `power`, shown = scale * power^(value - offset) instead (planet size in metres from
+   * a stored power of two), and `step` gives the slider's step in shown units.
    */
-  display?: { offset: number; scale: number }
+  display?: { offset: number; scale: number; power?: number; step?: number }
 }
 
 export interface Param<T extends ParamValue> {
@@ -109,13 +113,13 @@ export const params = {
 
 /** Positive number, metres per second squared, pulling down. Original range 0.81 to 18.81. */
 export const worldGravity = defineParam({
-  id: 'world.gravity', label: 'Gravity', group: 'World', scope: 'world',
+  id: 'world.gravity', label: 'Gravity (m/s²)', group: 'World', scope: 'world',
   default: 9.81, min: 0.81, max: 18.81, step: 0.01,
 })
 
 /** Altitude of the lava or sea surface in metres. */
 export const worldLavaAltitude = defineParam({
-  id: 'world.lavaAltitude', label: 'Sea level', group: 'World', scope: 'world',
+  id: 'world.lavaAltitude', label: 'Sea level (m)', group: 'World', scope: 'world',
   default: 0, min: -80, max: 60, step: 0.5,
 })
 
@@ -123,4 +127,17 @@ export const worldLavaAltitude = defineParam({
 export const worldSeed = defineParam({
   id: 'world.seed', label: 'Seed', group: 'World', scope: 'world',
   default: 1, min: 1, max: 999999, step: 1, deferred: true,
+})
+
+/**
+ * The world's name, kept apart from its seed so a new seed does not rename the planet, and
+ * synced and saved like any world setting. It is a number until names can be typed:
+ *  - above 0, the seed of a generated name (src/world/worldName.ts);
+ *  - 0, the name the world's seed gave before names had their own setting, so worlds
+ *    saved and links shared before this keep the names they were shown with;
+ *  - below 0, that older name of the seed -n, pinned when a seed is changed under it.
+ */
+export const worldNameSeed = defineParam({
+  id: 'world.nameSeed', label: 'Name', group: 'World', scope: 'world',
+  default: 0, min: -999999, max: 999999999, step: 1,
 })

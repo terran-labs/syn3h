@@ -27,7 +27,7 @@ let cache: Record<PartName | 'statorNear', ReferencePart> | undefined
 
 /** Every reference part, keyed by part name (plus `statorNear`, the unused Rim). */
 export function loadReference(root = ROOT): Record<PartName | 'statorNear', ReferencePart> {
-  cache ??= referenceParts(readFileSync(resolve(root, 'public/models/buggy-boxarm.glb')), readFileSync(resolve(root, 'public/models/buggy.glb')))
+  cache ??= referenceParts(readFileSync(resolve(root, 'tools/models/buggy-boxarm.glb')), readFileSync(resolve(root, 'tools/models/buggy.glb')))
   return cache
 }
 

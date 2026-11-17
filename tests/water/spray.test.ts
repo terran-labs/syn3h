@@ -27,11 +27,12 @@ describe('spray simulation', () => {
     expect(sim.wakePoints).toBeGreaterThan(ARMS * 10)
     const n = cap.vehicles * ARMS * cap.points + cap.rings, A = new Float32Array(n * 4), B = new Float32Array(n * 4), S = new Float32Array(n * 4), L = new Float32Array(n * 4)
     const segments = sim.packSurface(A, B, S, L)
-    expect(segments).toBe(sim.wakePoints)
+    // A fast first touchdown also splashes: its foam ring is drawn after the wake.
+    expect(segments).toBe(sim.wakePoints + sim.ringCount)
     // Consecutive segments of one arm share their joint exactly: no gaps, no overlapping slats.
     expect(A[4]).toBe(B[0]); expect(A[6]).toBe(B[2]); expect(S[4 + 0]).toBe(S[2]); expect(S[4 + 1]).toBe(S[3])
     // Foam rides the true moving surface, a little above it.
-    for (let i = 0; i < segments; i++) expect(A[i * 4 + 1]).toBeCloseTo(sea.liquidHeightAt(A[i * 4]) + WAKE_LIFT, 4)
+    for (let i = 0; i < segments - sim.ringCount; i++) expect(A[i * 4 + 1]).toBeCloseTo(sea.liquidHeightAt(A[i * 4]) + WAKE_LIFT, 4)
   })
 
   it('grows the wake with speed', () => {
@@ -133,7 +134,7 @@ describe('spray simulation', () => {
       const n = cap.vehicles * ARMS * cap.points + cap.rings, A = new Float32Array(n * 4), B = new Float32Array(n * 4), S = new Float32Array(n * 4), L = new Float32Array(n * 4)
       const m = sim.packSurface(A, B, S, L)
       let wash = 0, arms = 0, washWidth = 0, armWidth = 0
-      for (let i = 0; i < m; i++) { const w = Math.hypot(S[i * 4], S[i * 4 + 1]) > 1.5; if (w) { wash = Math.max(wash, L[i * 4]); washWidth = Math.max(washWidth, A[i * 4 + 3]) } else { arms = Math.max(arms, L[i * 4]); armWidth = Math.max(armWidth, A[i * 4 + 3]) } }
+      for (let i = 0; i < m; i++) { if (Math.hypot(S[i * 4], S[i * 4 + 1], S[i * 4 + 2], S[i * 4 + 3]) < .5) continue; const w = Math.hypot(S[i * 4], S[i * 4 + 1]) > 1.5; if (w) { wash = Math.max(wash, L[i * 4]); washWidth = Math.max(washWidth, A[i * 4 + 3]) } else { arms = Math.max(arms, L[i * 4]); armWidth = Math.max(armWidth, A[i * 4 + 3]) } }
       return { wash, arms, washWidth, armWidth }
     }
     const fast = strengths(22), slow = strengths(2.5)

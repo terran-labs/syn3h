@@ -7,7 +7,7 @@ export interface MapEntity {
   x: number; z: number; heading: number
   /** The vehicle's own tint, '#rrggbb'. Colour on the map means identity, never kind. */
   color: string
-  /** The vehicle's secondary paint, drawn as an inner accent on people's marks. */
+  /** The vehicle's secondary paint: the ridge of a person's mark, to tell similar paints apart. */
   accent?: string
   /** Absent means a person: the safe default is the more prominent mark. */
   kind?: MapKind
@@ -18,8 +18,20 @@ export interface MapEntity {
 export function mapPoint(x: number, z: number, size: number, pixels: number): [number, number] {
   return [(x / size + .5) * pixels, (z / size + .5) * pixels]
 }
-/** Sample once per terrain revision. Rendering markers never resamples the world. */
-export function heightPixels(terrain: Pick<Terrain, 'size' | 'heightAt'>, pixels: number): Uint8ClampedArray {
+/**
+ * Luma (sRGB, 0 to 1) a world's map colours are fitted into, hue and saturation kept. Marks
+ * are at least luma .5 with dark outlines, so on pale ice and bright lava alike they stand
+ * out from a map no brighter than MAP_LUMA[1].
+ */
+export const MAP_LUMA = [.16, .55] as const
+type MapTerrain = Pick<Terrain, 'size' | 'heightAt' | 'mapColourAt' | 'liquidKindAt'>
+/**
+ * The map's picture, sampled once per world (and again when its sea changes); drawing marks
+ * never resamples. With Terrain.mapColourAt it is the world's own colours under a hillshade
+ * (flat liquids shaded gently), fitted into MAP_LUMA. Without it, the brown relief map,
+ * with water and lava where the terrain says they are.
+ */
+export function heightPixels(terrain: MapTerrain, pixels: number): Uint8ClampedArray {
   const heights = new Float32Array(pixels * pixels)
   let min = Infinity, max = -Infinity
   for (let z = 0; z < pixels; z++) for (let x = 0; x < pixels; x++) {
@@ -32,8 +44,37 @@ export function heightPixels(terrain: Pick<Terrain, 'size' | 'heightAt'>, pixels
     const i = z * pixels + x, height = (heights[i] - min) / span
     const dx = heights[z * pixels + Math.min(pixels - 1, x + 1)] - heights[z * pixels + Math.max(0, x - 1)]
     const dz = heights[Math.min(pixels - 1, z + 1) * pixels + x] - heights[Math.max(0, z - 1) * pixels + x]
-    const shade = Math.max(.4, Math.min(1.3, .85 + (dx + dz) / (step * 6)))
-    out[i * 4] = (65 + height * 125) * shade; out[i * 4 + 1] = (50 + height * 95) * shade; out[i * 4 + 2] = (44 + height * 75) * shade; out[i * 4 + 3] = 255
+    const relief = (dx + dz) / (step * 6), wx = ((x + .5) / pixels - .5) * terrain.size, wz = ((z + .5) / pixels - .5) * terrain.size
+    const liquid = terrain.liquidKindAt?.(wx, wz) ?? null
+    let r: number, g: number, b: number
+    if (terrain.mapColourAt) {
+      // Fit the world's colour into MAP_LUMA first (scaling keeps hue; an even grey lifts
+      // black rock, which has none), then shade, so relief survives on dark worlds. Shadows
+      // may fall below the band; nothing lit rises above it.
+      // Average four samples a quarter pixel either side of the centre: the hook's grid is
+      // finer than the map but not aligned to it, so one sample stair-steps every shoreline.
+      const q = step / 4
+      r = g = b = 0
+      for (let k = 0; k < 4; k++) {
+        const c = terrain.mapColourAt(wx + (k & 1 ? q : -q), wz + (k & 2 ? q : -q))
+        r += (c >> 16 & 255) / 4; g += (c >> 8 & 255) / 4; b += (c & 255) / 4
+      }
+      let luma = (.2126 * r + .7152 * g + .0722 * b) / 255
+      // Headroom under the cap, so lit slopes still read brighter on pale worlds.
+      const top = MAP_LUMA[1] / 1.2
+      if (luma > top) { const fit = top / luma; r *= fit; g *= fit; b *= fit }
+      else if (luma < MAP_LUMA[0]) { const lift = (MAP_LUMA[0] - luma) * 255; r += lift; g += lift; b += lift }
+      // Ground takes the full hillshade; a liquid surface is flat, so only a hint of the bed.
+      const shade = liquid ? Math.max(.9, Math.min(1.08, 1 + relief * .15)) : Math.max(.45, Math.min(1.3, 1 + relief))
+      r *= shade; g *= shade; b *= shade
+      luma = (.2126 * r + .7152 * g + .0722 * b) / 255
+      if (luma > MAP_LUMA[1]) { const fit = MAP_LUMA[1] / luma; r *= fit; g *= fit; b *= fit }
+    } else {
+      const shade = Math.max(.4, Math.min(1.3, .85 + relief))
+      if (liquid) { r = liquid === 'lava' ? 190 : 40; g = liquid === 'lava' ? 70 : 82; b = liquid === 'lava' ? 24 : 112 }
+      else { r = (65 + height * 125) * shade; g = (50 + height * 95) * shade; b = (44 + height * 75) * shade }
+    }
+    out[i * 4] = r; out[i * 4 + 1] = g; out[i * 4 + 2] = b; out[i * 4 + 3] = 255
   }
   return out
 }
@@ -45,11 +86,10 @@ export function heightPixels(terrain: Pick<Terrain, 'size' | 'heightAt'>, pixels
 export const RIM = .77
 export const UNITS = 320
 const RIM_UNITS = RIM * UNITS / 2
-const BAND_UNITS = UNITS / 2 - RIM_UNITS
 /** Width of the cross-fade either side of the rim, in units. */
 const HANDOVER = 10
-/** Distance from the rim to the centre of the first and second ring of dots, before mark scale. */
-const LANE = 11, LANE_STEP = 13
+/** More rim glyphs than this within a quarter of the ring are laid out as an ordered crowd. */
+const CROWD = 6
 
 /** CIE L* (0..100) to relative luminance (0..1). */
 function luminance(lightness: number): number {
@@ -72,13 +112,13 @@ export interface MarkLook { radius: number; alpha: number }
  */
 export function markLook(kind: MapKind, fade: number, out: MarkLook = { radius: 0, alpha: 0 }): MarkLook {
   // A bot's lightness bends up (fade^.7) so the nearest third of the fade stays clearly visible.
-  if (kind === 'bot') { out.alpha = luminance(96 * fade ** .7); out.radius = 3 + 1.6 * fade }
-  else if (kind === 'zone') { out.alpha = 1; out.radius = 5 }
-  else { out.alpha = luminance(38 + 62 * fade); out.radius = 5.5 + 2.6 * fade }
+  if (kind === 'bot') { out.alpha = luminance(96 * fade ** .7); out.radius = 2.2 + .9 * fade }
+  else if (kind === 'zone') { out.alpha = 1; out.radius = 4 }
+  else { out.alpha = luminance(38 + 62 * fade); out.radius = 3.4 + 1.6 * fade }
   return out
 }
 /** Arrow sizes inside the map (units from the centre to the tip). */
-export const ARROW = { self: 12, person: 10, bot: 6 } as const
+export const ARROW = { self: 13.5, person: 11.5, bot: 7 } as const
 
 export interface MarkPlace { x: number; y: number; distance: number; bearing: number; blend: number }
 /**
@@ -136,14 +176,59 @@ export function markColor(hex: string | undefined): string {
 /** Pooled per-entity state; filled at the network rate, read at the draw rate. */
 interface Slot {
   x: number; z: number; heading: number; kind: MapKind; it: boolean; self: boolean
-  color: string; accent: string
-  place: MarkPlace; look: MarkLook; priority: number; lane: number; shown: boolean
+  color: string; shades: readonly string[]; accent: string
+  place: MarkPlace; look: MarkLook; priority: number; shown: boolean
+  /** Distance fade beyond the rim, 1 at the rim, 0 at the far side. */
+  fade: number
+  /** True when the glyph is part of a crowd on the rim, laid out as an ordered sector. */
+  crowd: boolean
 }
-const newSlot = (): Slot => ({ x: 0, z: 0, heading: 0, kind: 'person', it: false, self: false, color: '', accent: '', place: { x: 0, y: 0, distance: 0, bearing: 0, blend: 0 }, look: { radius: 0, alpha: 0 }, priority: 0, lane: 0, shown: false })
+const newSlot = (): Slot => ({ x: 0, z: 0, heading: 0, kind: 'person', it: false, self: false, color: '', shades: [], accent: '', place: { x: 0, y: 0, distance: 0, bearing: 0, blend: 0 }, look: { radius: 0, alpha: 0 }, priority: 0, shown: false, fade: 1, crowd: false })
 
-const OUTLINE = '#07101b', IT = '#9dff8a'
+const IT = '#9dff8a', HAIRLINE = 'rgba(4, 10, 18, .55)'
+/** Mix steps from the paint toward black (negative) or white (positive): the facet shades. */
+const SHADE_STEPS = [-.42, -.28, -.14, 0, .14, .28, .42]
+const shadeCache = new Map<string, readonly string[]>()
+/** Seven shades of a '#rrggbb' paint, darkest first; cached so drawing never builds a string. */
+export function markShades(hex: string): readonly string[] {
+  let out = shadeCache.get(hex)
+  if (out) return out
+  const v = parseInt(hex.slice(1), 16), c = [v >> 16 & 255, v >> 8 & 255, v & 255]
+  out = SHADE_STEPS.map(t => '#' + c.map(ch => Math.round(t < 0 ? ch * (1 + t) : ch + (255 - ch) * t).toString(16).padStart(2, '0')).join(''))
+  if (shadeCache.size > 256) shadeCache.clear()
+  shadeCache.set(hex, out)
+  return out
+}
+
+/**
+ * A mark's form: an outline and the facets that shade it, in units of its length (tip at
+ * y = -1), each facet with the direction its face looks, for the light.
+ */
+interface Form { outline: readonly number[]; facets: readonly { points: readonly number[]; nx: number; ny: number }[]; ridge?: readonly number[] }
+/** Light from the upper left of the screen, as the HUD's own shading reads. */
+const LIGHT_X = -.6, LIGHT_Y = -.8
+/** The two directions on the comparison sheet: a folded paper dart, and a cut four-facet kite. */
+export const FORMS: Record<'dart' | 'kite' | 'bot', Form> = {
+  dart: {
+    outline: [0, -1, .6, .72, 0, .38, -.6, .72],
+    facets: [{ points: [0, -1, 0, .38, -.6, .72], nx: -1, ny: -.25 }, { points: [0, -1, .6, .72, 0, .38], nx: 1, ny: -.25 }],
+    ridge: [0, -1, 0, .38],
+  },
+  kite: {
+    outline: [0, -1, .46, .12, 0, .78, -.46, .12],
+    facets: [
+      { points: [0, -1, 0, .12, -.46, .12], nx: -.7, ny: -.7 }, { points: [0, -1, .46, .12, 0, .12], nx: .7, ny: -.7 },
+      { points: [-.46, .12, 0, .12, 0, .78], nx: -.7, ny: .7 }, { points: [0, .12, .46, .12, 0, .78], nx: .7, ny: .7 },
+    ],
+    ridge: [0, -1, 0, .78],
+  },
+  // Bots: one flat plate of the same family, smaller and plainer than any person's mark.
+  bot: { outline: [0, -1, .62, .7, -.62, .7], facets: [{ points: [0, -1, .62, .7, -.62, .7], nx: 0, ny: 0 }] },
+}
 
 export class Minimap {
+  /** Which form people and you are drawn in. 'dart' ships; 'kite' is the alternative shown to the owner. */
+  static markStyle: 'dart' | 'kite' = 'dart'
   readonly element = document.createElement('aside')
   private readonly canvas = document.createElement('canvas')
   private readonly marks = document.createElement('canvas')
@@ -154,36 +239,62 @@ export class Minimap {
   private slots: Slot[] = []
   private count = 0
   private readonly order: number[] = []
+  /** Rim glyphs by bearing, reused each draw. */
+  private readonly rim: number[] = []
   private self?: MapEntity
-  private selfSlot = newSlot()
+  /** Your own mark: white, shaded in cool greys so its facets read. */
+  private readonly selfShades: readonly string[] = ['#8d9aa8', '#a6b3c0', '#bcc8d4', '#d3dde6', '#e6edf3', '#f4f8fb', '#ffffff']
   /** Marks grow on small maps so a phone's 96 px map stays legible. Updated on resize, not per draw. */
   private markScale = 1
+  /** Units per device pixel on the marks canvas, so hairlines are one device pixel. */
+  private px = .5
+  /** Cached sprites, cleared on resize: soft shadows by form and size, glows and rim auras by colour. Keys need no string building per draw. */
+  private readonly shadows = new Map<number, HTMLCanvasElement>()
+  private readonly glows = new Map<string, HTMLCanvasElement>()
+  private readonly auras = new Map<string, HTMLCanvasElement>()
   private lastDraw = 0
+  private keyChecked = 0
+  private baked = 0
+  private bakedKey?: string
   private northX = 0
   private northY = 0
   private northR = 0
+  private unwatchRatio?: () => void
   constructor(private readonly terrain: Terrain, parent: HTMLElement) {
     this.element.className = 'shell-minimap'; this.canvas.width = this.canvas.height = this.base.width = this.base.height = this.pixels
     this.marks.className = 'shell-minimap-marks'; this.marks.width = this.marks.height = 2 * UNITS
-    this.canvas.setAttribute('role', 'img'); this.canvas.setAttribute('aria-label', 'Terrain map, centred on your vehicle. White arrow is you; people are large ringed arrows, bots small chevrons, each in its own colour. Dots outside the ring point to vehicles beyond it, fainter the farther away. North is up.')
+    this.canvas.setAttribute('role', 'img'); this.canvas.setAttribute('aria-label', 'Terrain map, centred on your vehicle. White dart is you; people are larger folded darts, bots small flat plates, each in its own colour. Glowing ticks on the ring point to vehicles beyond it, fainter and shorter the farther away. North is up.')
     this.marks.setAttribute('aria-hidden', 'true')
     const north = document.createElement('span'); north.textContent = 'N'; this.element.append(this.canvas, this.marks, north); parent.append(this.element)
-    if (typeof ResizeObserver !== 'undefined') {
-      this.resize = new ResizeObserver(entries => {
-        const width = entries[0]?.contentRect.width ?? 0
-        if (width <= 0) return
-        this.markScale = Math.min(1.6, Math.max(1, 160 / width))
-        // Where the N label sits, in mark units, read on resize only, so dots can keep off it.
-        const box = this.element.getBoundingClientRect(), label = north.getBoundingClientRect(), k = UNITS / box.width
-        this.northX = (label.left + label.width / 2 - box.left - box.width / 2) * k
-        this.northY = (label.top + label.height / 2 - box.top - box.height / 2) * k
-        this.northR = label.width > 0 ? Math.max(label.width, label.height) / 2 * k : 0
-      })
-      this.resize.observe(this.element)
+    // Layout is read only here: on resize, and when the screen's pixel ratio changes (a window
+    // moved to another monitor, or zoom), never per draw.
+    const fit = (): void => {
+      const box = this.element.getBoundingClientRect(), width = box.width
+      if (width <= 0) return
+      this.markScale = Math.min(1.6, Math.max(1, 160 / width))
+      // Draw at the device's own resolution so edges are crisp at 1x, 2x and 3x.
+      const device = Math.max(64, Math.round(width * (window.devicePixelRatio || 1)))
+      if (this.marks.width !== device) { this.marks.width = this.marks.height = device; this.shadows.clear(); this.glows.clear(); this.auras.clear() }
+      this.px = UNITS / device
+      // Where the N label sits, in mark units, so glyphs can keep off it.
+      const label = north.getBoundingClientRect(), k = UNITS / width
+      this.northX = (label.left + label.width / 2 - box.left - width / 2) * k
+      this.northY = (label.top + label.height / 2 - box.top - box.height / 2) * k
+      this.northR = label.width > 0 ? Math.max(label.width, label.height) / 2 * k : 0
+      this.draw()
     }
+    if (typeof ResizeObserver !== 'undefined') { this.resize = new ResizeObserver(fit); this.resize.observe(this.element) }
+    const watchRatio = (): void => {
+      if (typeof matchMedia === 'undefined') return
+      const query = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`)
+      const changed = (): void => { query.removeEventListener('change', changed); fit(); watchRatio() }
+      query.addEventListener('change', changed); this.unwatchRatio = () => query.removeEventListener('change', changed)
+    }
+    watchRatio()
     this.regenerate(); this.unsubscribe = terrain.onRegenerate?.(() => this.regenerate())
   }
   private regenerate(): void {
+    this.bakedKey = this.colourKey(); this.baked = performance.now()
     const ctx = this.base.getContext('2d')!, data = ctx.createImageData(this.pixels, this.pixels)
     data.data.set(heightPixels(this.terrain, this.pixels)); ctx.putImageData(data, 0, 0)
     this.element.dataset.revision = String(Number(this.element.dataset.revision || 0) + 1)
@@ -199,18 +310,30 @@ export class Minimap {
       slot.x = entity.x; slot.z = entity.z; slot.heading = entity.heading
       slot.kind = entity.kind ?? 'person'; slot.it = Boolean(entity.it); slot.self = false
       slot.color = slot.kind === 'zone' ? (/^#[0-9a-f]{6}$/i.test(entity.color) ? entity.color : '#ffb814') : markColor(entity.color)
-      slot.accent = entity.accent ? markColor(entity.accent) : ''
+      slot.shades = markShades(slot.color); slot.accent = entity.accent ? markColor(entity.accent) : slot.shades[6]
       slot.priority = slot.kind === 'person' ? 0 : slot.kind === 'zone' ? 1 : 2
     }
     this.count = n
   }
   setSelf(entity: MapEntity): void { this.self = entity }
-  update(): void { const now = performance.now(); if (now - this.lastDraw > 100) { this.lastDraw = now; this.draw() } }
+  update(): void {
+    const now = performance.now()
+    // The map's colours follow the sea: a gliding sea level or a freezing sea changes the
+    // hook's key. Checked twice a second, rebaked at most once a second while it moves.
+    if (now - this.keyChecked > 500) {
+      this.keyChecked = now
+      const key = this.colourKey()
+      if (key !== this.bakedKey && now - this.baked > 1000) this.regenerate()
+    }
+    if (now - this.lastDraw > 100) { this.lastDraw = now; this.draw() }
+  }
+  /** Changes whenever Terrain.mapColourAt would answer differently; cheap, never bakes. */
+  private colourKey(): string | undefined { return this.terrain.mapColourKey?.() }
   /**
    * The world wraps, so the map does too: the player is always at the centre, north is up,
    * and the terrain scrolls under them, repeating at the edges. Everything else is drawn at
    * its nearest image, so a friend just across the seam shows beside you, not a world away.
-   * Vehicles past the rim become dots just outside it, on the bearing toward them.
+   * Vehicles past the rim become glyphs on it, on the bearing toward them.
    */
   private draw(): void {
     const ctx = this.canvas.getContext('2d')!, n = this.pixels, size = this.terrain.size
@@ -227,53 +350,96 @@ export class Minimap {
     const ctx = this.marks.getContext('2d')!, k = this.marks.width / UNITS, m = this.markScale
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, this.marks.width, this.marks.height)
     ctx.setTransform(k, 0, 0, k, UNITS / 2 * k, UNITS / 2 * k)
+    ctx.lineJoin = 'miter'; ctx.lineCap = 'butt'
     const unitsPerMetre = UNITS / size, rimDistance = RIM_UNITS / unitsPerMetre, farthest = size * Math.SQRT1_2
     // Lay out, then order by priority (people, the hill, bots; nearer first) without allocating.
     const order = this.order; order.length = 0
     for (let i = 0; i < this.count; i++) {
       const s = this.slots[i]
-      placeMark(wrapDelta(cx, s.x, size), wrapDelta(cz, s.z, size), unitsPerMetre, LANE * m, s.place)
-      markLook(s.kind, s.kind === 'zone' ? 1 : rimFade(s.place.distance, rimDistance, farthest), s.look)
-      s.look.radius *= m; s.lane = 0; s.shown = s.look.alpha * s.place.blend > .01 || s.place.blend < 1
+      placeMark(wrapDelta(cx, s.x, size), wrapDelta(cz, s.z, size), unitsPerMetre, 0, s.place)
+      s.fade = s.kind === 'zone' ? 1 : rimFade(s.place.distance, rimDistance, farthest); s.crowd = false
+      markLook(s.kind, s.fade, s.look)
+      s.look.radius *= m; s.shown = s.look.alpha * s.place.blend > .01 || s.place.blend < 1
       let j = order.length; order.push(i)
       while (j > 0 && this.before(s, this.slots[order[j - 1]])) { order[j] = order[j - 1]; j-- }
       order[j] = i
     }
-    // Dots that would touch move out to the second ring where the band has room for it, else
-    // slide along the rim, alternating sides, up to three dot widths (a phone's band holds one
-    // ring). Past that they stack, the higher priority drawn on top.
+    this.orderCrowds()
+    // Glyphs that would touch slide along the rim, alternating sides, a few widths at most;
+    // past that they stack, the higher priority drawn on top.
     for (let a = 0; a < order.length; a++) {
       const s = this.slots[order[a]]
-      if (s.place.blend <= 0 || !s.shown || !this.collides(a, s)) continue
-      const x0 = s.place.x, y0 = s.place.y, step = LANE_STEP * m * s.place.blend
-      if (LANE * m + step + s.look.radius <= BAND_UNITS) {
-        const scale = (RIM_UNITS + LANE * m + step) / (RIM_UNITS + LANE * m)
-        s.place.x = x0 * scale; s.place.y = y0 * scale; s.lane = 1
-        if (!this.collides(a, s)) continue
-        s.place.x = x0; s.place.y = y0; s.lane = 0
-      }
-      const radius = Math.hypot(x0, y0), turn = (2 * s.look.radius + 2) / Math.max(1, radius)
+      if (s.place.blend <= 0 || !s.shown || s.crowd || !this.collides(a, s)) continue
+      const x0 = s.place.x, y0 = s.place.y, radius = Math.hypot(x0, y0), turn = (2 * s.look.radius + 1.5) / Math.max(1, radius)
       let free = false
-      for (let k = 1; k <= 6 && !free; k++) {
-        const angle = s.place.bearing + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * turn
+      for (let step = 1; step <= 8 && !free; step++) {
+        const angle = s.place.bearing + (step % 2 ? 1 : -1) * Math.ceil(step / 2) * turn
         s.place.x = Math.cos(angle) * radius; s.place.y = Math.sin(angle) * radius
         free = !this.collides(a, s)
       }
       if (!free) { s.place.x = x0; s.place.y = y0 }
     }
     for (let a = order.length - 1; a >= 0; a--) { const s = this.slots[order[a]]; if (s.shown) this.drawMark(ctx, s, m) }
-    if (this.self && Number.isFinite(this.self.x) && Number.isFinite(this.self.z) && Number.isFinite(this.self.heading)) {
-      const s = this.selfSlot
-      s.heading = this.self.heading; s.it = Boolean(this.self.it); s.place.x = s.place.y = 0
-      ctx.save(); ctx.rotate(-s.heading); this.arrowPath(ctx, ARROW.self * m)
-      ctx.fillStyle = '#ffffff'; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2.5 * m; ctx.fill(); ctx.stroke(); ctx.restore()
-      if (s.it) this.itRing(ctx, 0, 0, (ARROW.self + 6) * m, 1)
+    const me = this.self
+    if (me && Number.isFinite(me.x) && Number.isFinite(me.z) && Number.isFinite(me.heading)) {
+      this.solid(ctx, FORMS[Minimap.markStyle], 0, 0, me.heading, ARROW.self * m, this.selfShades, '#ffffff', 1, 1)
+      if (me.it) this.itMark(ctx, 0, 0, (ARROW.self + 5) * m, 1)
+    }
+  }
+  /**
+   * A crowd on the rim reads as a count, not noise: where more than CROWD glyphs fall in a run
+   * spanning at most a quarter of the ring, they are spaced evenly through that sector in their
+   * bearing order (wider if they need it), and the bots' ticks shorten so people stand out.
+   * Single glyphs and small groups are left to the ordinary spreading.
+   */
+  private orderCrowds(): void {
+    const rim = this.rim; rim.length = 0
+    for (let i = 0; i < this.count; i++) {
+      const s = this.slots[i]
+      if (s.kind === 'zone' || !s.shown || s.place.blend < .5) continue
+      let j = rim.length; rim.push(i)
+      while (j > 0 && this.slots[rim[j - 1]].place.bearing > s.place.bearing) { rim[j] = rim[j - 1]; j-- }
+      rim[j] = i
+    }
+    const n = rim.length
+    if (n <= CROWD) return
+    // Start after the widest gap, so a run that crosses the west seam (bearing ±π) stays whole.
+    let start = 0, widest = -1
+    for (let a = 0; a < n; a++) {
+      const gap = (this.slots[rim[(a + 1) % n]].place.bearing - this.slots[rim[a]].place.bearing + Math.PI * 2) % (Math.PI * 2)
+      if (gap > widest) { widest = gap; start = (a + 1) % n }
+    }
+    // Runs: neighbours closer than a sixteenth of the ring belong together.
+    let first = 0
+    while (first < n) {
+      let last = first
+      while (last + 1 < n && this.gapAt(start, last) < Math.PI / 8) last++
+      const count = last - first + 1, span = this.spanOf(start, first, last)
+      if (count > CROWD && span <= Math.PI / 2) this.layCrowd(start, first, last, span)
+      first = last + 1
+    }
+  }
+  private at(start: number, k: number): Slot { return this.slots[this.rim[(start + k) % this.rim.length]] }
+  private gapAt(start: number, k: number): number {
+    return (this.at(start, k + 1).place.bearing - this.at(start, k).place.bearing + Math.PI * 2) % (Math.PI * 2)
+  }
+  private spanOf(start: number, first: number, last: number): number {
+    return (this.at(start, last).place.bearing - this.at(start, first).place.bearing + Math.PI * 2) % (Math.PI * 2)
+  }
+  private layCrowd(start: number, first: number, last: number, span: number): void {
+    const count = last - first + 1, from = this.at(start, first).place.bearing
+    let widest = 0
+    for (let k = first; k <= last; k++) widest = Math.max(widest, this.at(start, k).look.radius)
+    const step = Math.max(span / (count - 1), (2 * widest + 1.5) / RIM_UNITS), centre = from + span / 2
+    for (let k = first; k <= last; k++) {
+      const s = this.at(start, k), angle = centre + (k - first - (count - 1) / 2) * step, radius = Math.hypot(s.place.x, s.place.y)
+      s.place.x = Math.cos(angle) * radius; s.place.y = Math.sin(angle) * radius; s.crowd = true
     }
   }
   private before(a: Slot, b: Slot): boolean {
     return a.priority !== b.priority ? a.priority < b.priority : a.place.distance < b.place.distance
   }
-  /** True if the dot touches a higher-priority dot or the N label. */
+  /** True if the glyph touches a higher-priority glyph or the N label. */
   private collides(index: number, s: Slot): boolean {
     if (this.northR > 0) {
       const gap = s.look.radius + this.northR, dx = s.place.x - this.northX, dy = s.place.y - this.northY
@@ -282,66 +448,160 @@ export class Minimap {
     for (let b = 0; b < index; b++) {
       const o = this.slots[this.order[b]]
       if (!o.shown || o.place.blend <= 0) continue
-      const gap = s.look.radius + o.look.radius + 2
+      const gap = s.look.radius + o.look.radius + 1
       const dx = s.place.x - o.place.x, dy = s.place.y - o.place.y
       if (dx * dx + dy * dy < gap * gap) return true
     }
     return false
   }
-  private arrowPath(ctx: CanvasRenderingContext2D, length: number): void {
-    const w = length * .66
-    ctx.beginPath(); ctx.moveTo(0, -length); ctx.lineTo(w, length * .83); ctx.lineTo(0, length * .5); ctx.lineTo(-w, length * .83); ctx.closePath()
+  private path(ctx: CanvasRenderingContext2D, points: readonly number[], length: number): void {
+    ctx.beginPath(); ctx.moveTo(points[0] * length, points[1] * length)
+    for (let i = 2; i < points.length; i += 2) ctx.lineTo(points[i] * length, points[i + 1] * length)
+    ctx.closePath()
   }
-  private itRing(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, alpha: number): void {
-    ctx.globalAlpha = alpha; ctx.strokeStyle = IT; ctx.lineWidth = 2; ctx.setLineDash([3, 2.5])
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1
+  /** A canvas of `size` device pixels with `paint` drawing into it, centred. Built once per cache entry. */
+  private sprite(size: number, paint: (c: CanvasRenderingContext2D, half: number) => void): HTMLCanvasElement {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = Math.max(2, Math.ceil(size))
+    paint(canvas.getContext('2d')!, canvas.width / 2)
+    return canvas
+  }
+  /** A soft, tight shadow of a form: the silhouette spread three times at falling opacity. */
+  private shadow(form: 0 | 1 | 2, length: number): HTMLCanvasElement {
+    const devicePx = length / this.px, key = form * 100000 + Math.round(devicePx * 4)
+    let canvas = this.shadows.get(key)
+    if (!canvas) {
+      const outline = [FORMS.dart, FORMS.kite, FORMS.bot][form].outline
+      canvas = this.sprite(devicePx * 2.6 + 6, (c, half) => {
+        c.translate(half, half); c.fillStyle = '#02070d'
+        for (const [grow, alpha] of [[1.28, .1], [1.14, .2], [1, .38]]) {
+          c.globalAlpha = alpha; c.beginPath()
+          c.moveTo(outline[0] * devicePx * grow, outline[1] * devicePx * grow)
+          for (let i = 2; i < outline.length; i += 2) c.lineTo(outline[i] * devicePx * grow, outline[i + 1] * devicePx * grow)
+          c.closePath(); c.fill()
+        }
+      })
+      this.shadows.set(key, canvas)
+    }
+    return canvas
+  }
+  /** A soft radial glow in a colour, 64 device pixels across, scaled where drawn. */
+  private glow(colour: string): HTMLCanvasElement {
+    let canvas = this.glows.get(colour)
+    if (!canvas) {
+      canvas = this.sprite(64, (c, half) => {
+        const g = c.createRadialGradient(half, half, 0, half, half, half)
+        g.addColorStop(0, colour); g.addColorStop(.35, colour + '66'); g.addColorStop(1, colour + '00')
+        c.fillStyle = g; c.fillRect(0, 0, half * 2, half * 2)
+      })
+      this.glows.set(colour, canvas)
+    }
+    return canvas
+  }
+  /**
+   * A rim glyph's aura in one sprite: a faint dark under-halo (legibility over bright sky and
+   * ice) with the colour's glow on it, so a glyph costs one image draw for both.
+   */
+  private aura(colour: string): HTMLCanvasElement {
+    let canvas = this.auras.get(colour)
+    if (!canvas) {
+      canvas = this.sprite(64, (c, half) => {
+        const dark = c.createRadialGradient(half, half, 0, half, half, half)
+        dark.addColorStop(0, 'rgba(2, 7, 13, .72)'); dark.addColorStop(.55, 'rgba(2, 7, 13, .3)'); dark.addColorStop(1, 'rgba(2, 7, 13, 0)')
+        c.fillStyle = dark; c.fillRect(0, 0, half * 2, half * 2)
+        const g = c.createRadialGradient(half, half, 0, half, half, half * .75)
+        g.addColorStop(0, colour + 'b3'); g.addColorStop(.4, colour + '4d'); g.addColorStop(1, colour + '00')
+        c.fillStyle = g; c.fillRect(0, 0, half * 2, half * 2)
+      })
+      this.auras.set(colour, canvas)
+    }
+    return canvas
+  }
+  /**
+   * A solid, shaded mark: soft shadow below, facets shaded by how they face the light (so
+   * the shape keeps its form as it turns), a lighter ridge and a one-device-pixel edge.
+   */
+  private solid(ctx: CanvasRenderingContext2D, form: Form, x: number, y: number, heading: number, length: number, shades: readonly string[], ridge: string, alpha: number, depth: number): void {
+    const shadow = this.shadow(form === FORMS.bot ? 2 : form === FORMS.kite ? 1 : 0, length), half = shadow.width / 2 * this.px, rot = -heading
+    const cos = Math.cos(rot), sin = Math.sin(rot), k = this.marks.width / UNITS, c = UNITS / 2
+    ctx.globalAlpha = alpha
+    // Rotate about the mark directly (no save and restore): the shadow a touch below, then the mark.
+    ctx.setTransform(k * cos, k * sin, -k * sin, k * cos, k * (c + x + .4 * this.px * depth), k * (c + y + 1.3 * this.px * depth))
+    ctx.drawImage(shadow, -half, -half, half * 2, half * 2)
+    ctx.setTransform(k * cos, k * sin, -k * sin, k * cos, k * (c + x), k * (c + y))
+    for (const facet of form.facets) {
+      // The facet's face direction on screen, against the light: 0 darkest, 6 lightest.
+      const nx = facet.nx * cos - facet.ny * sin, ny = facet.nx * sin + facet.ny * cos
+      const lit = form === FORMS.bot ? .55 : (1 + nx * LIGHT_X + ny * LIGHT_Y) / 2
+      ctx.fillStyle = shades[Math.round(1 + lit * 4.6)]; this.path(ctx, facet.points, length); ctx.fill()
+    }
+    if (form.ridge) {
+      ctx.strokeStyle = ridge; ctx.globalAlpha = alpha * .9; ctx.lineWidth = 1.2 * this.px
+      ctx.beginPath(); ctx.moveTo(form.ridge[0] * length, form.ridge[1] * length); ctx.lineTo(form.ridge[2] * length, form.ridge[3] * length); ctx.stroke()
+      ctx.globalAlpha = alpha
+    }
+    ctx.strokeStyle = HAIRLINE; ctx.lineWidth = this.px; this.path(ctx, form.outline, length); ctx.stroke()
+    ctx.setTransform(k, 0, 0, k, k * c, k * c); ctx.globalAlpha = 1
+  }
+  /** Tag's "it": a thin bright ring with a small glow, lighter than a border, unmistakable in green. */
+  private itMark(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, alpha: number): void {
+    const glow = this.glow(IT)
+    ctx.globalAlpha = alpha * .35; ctx.drawImage(glow, x - r * 1.5, y - r * 1.5, r * 3, r * 3)
+    ctx.globalAlpha = alpha; ctx.strokeStyle = IT; ctx.lineWidth = 1.4 * this.px
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke()
+    // A small tick above, in screen space, so "it" reads even where the ring crosses another mark.
+    ctx.beginPath(); ctx.moveTo(x - r * .28, y - r - r * .34); ctx.lineTo(x, y - r - r * .08); ctx.lineTo(x + r * .28, y - r - r * .34); ctx.stroke()
+    ctx.globalAlpha = 1
+  }
+  /**
+   * A vehicle beyond the rim: a luminous tick on the ring pointing out toward it, with a
+   * bright core, a soft glow and a trailing arc along the ring whose length and brightness
+   * say how near it is. A faint dark under-halo keeps it legible over bright sky and ice.
+   */
+  private rimGlyph(ctx: CanvasRenderingContext2D, s: Slot, alpha: number, m: number): void {
+    const person = s.kind === 'person', fade = Math.min(1, s.look.alpha * 1.6)
+    const angle = Math.atan2(s.place.y, s.place.x), dx = Math.cos(angle), dy = Math.sin(angle)
+    const base = Math.hypot(s.place.x, s.place.y), width = s.look.radius * .8
+    const length = (person ? 15 : s.crowd ? 7 : 11) * m * (.5 + .5 * fade), tipX = dx * (base + length), tipY = dy * (base + length)
+    const midX = dx * (base + length * .5), midY = dy * (base + length * .5)
+    // Aura (under-halo and glow in one sprite), then the arc, then the tick.
+    const aura = this.aura(s.color), ah = length * (person ? 1.3 : 1)
+    ctx.globalAlpha = alpha; ctx.drawImage(aura, midX - ah, midY - ah, ah * 2, ah * 2)
+    const span = (person ? .04 + .12 * fade : .02 + .06 * fade)
+    ctx.globalAlpha = alpha * (person ? .85 : .6); ctx.strokeStyle = s.shades[5]; ctx.lineWidth = (person ? 2 : 1.3) * this.px
+    // Just outside the ring's own line, so the paint is not lost under it.
+    ctx.beginPath(); ctx.arc(0, 0, RIM_UNITS + 2.5 * this.px, angle - span, angle + span); ctx.stroke()
+    ctx.globalAlpha = alpha; ctx.fillStyle = s.shades[person ? 5 : 4]
+    ctx.beginPath(); ctx.moveTo(dx * base - dy * width, dy * base + dx * width); ctx.lineTo(tipX, tipY); ctx.lineTo(dx * base + dy * width, dy * base - dx * width); ctx.closePath(); ctx.fill()
+    // A bright core: the contrast floor where the paint matches the sky (a red bot on the red
+    // planet). A person's is brighter and longer than a bot's.
+    {
+      ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = alpha * (person ? 1 : .9); ctx.lineWidth = (person ? 1.3 : 1.1) * this.px
+      // A bot in the nearest third of the fade gets a longer core: one more step of contrast where it matters.
+      const reach = person ? .82 : .82 + .14 * Math.min(1, Math.max(0, (s.fade - 2 / 3) * 3))
+      ctx.beginPath(); ctx.moveTo(dx * (base + length * .12), dy * (base + length * .12)); ctx.lineTo(dx * (base + length * reach), dy * (base + length * reach)); ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+    if (s.it) this.itMark(ctx, midX, midY, length * .75 + 2 * m, alpha)
   }
   private drawMark(ctx: CanvasRenderingContext2D, s: Slot, m: number): void {
-    const { x, y, blend } = s.place, arrow = 1 - blend, dot = blend * s.look.alpha
+    const { x, y, blend } = s.place, inside = 1 - blend, outside = blend * s.look.alpha
     if (s.kind === 'zone') {
-      ctx.globalAlpha = 1; ctx.fillStyle = s.color; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2
-      ctx.beginPath(); ctx.arc(x, y, (7 - 2 * blend) * m, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); return
+      // The hill: a place, not a vehicle. A faint disc with a fine ring in its state's colour.
+      const r = (7 - 2 * blend) * m
+      ctx.globalAlpha = .28; ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill()
+      ctx.globalAlpha = 1; ctx.strokeStyle = s.color; ctx.lineWidth = 1.5 * this.px; ctx.stroke(); return
     }
     const person = s.kind === 'person'
-    if (arrow > .01) {
-      ctx.save(); ctx.translate(x, y); ctx.globalAlpha = arrow
+    if (inside > .01) {
       if (person) {
-        // A ring in the vehicle's tint, with a wide faint stroke under it for the glow.
-        const ring = (ARROW.person + 3) * m
-        ctx.strokeStyle = s.color; ctx.globalAlpha = arrow * .22; ctx.lineWidth = 6 * m
-        ctx.beginPath(); ctx.arc(0, 0, ring, 0, Math.PI * 2); ctx.stroke()
-        ctx.globalAlpha = arrow * .9; ctx.lineWidth = 1.6 * m; ctx.stroke()
-        ctx.globalAlpha = arrow; ctx.rotate(-s.heading); this.arrowPath(ctx, ARROW.person * m)
-        ctx.fillStyle = s.color; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2 * m; ctx.fill(); ctx.stroke()
-        if (s.accent) { ctx.fillStyle = s.accent; ctx.beginPath(); ctx.arc(0, ARROW.person * .18 * m, 2 * m, 0, Math.PI * 2); ctx.fill() }
-      } else {
-        // A small open chevron, no ring, no fill: plainer and dimmer than a person at any colour.
-        const l = ARROW.bot * m
-        ctx.rotate(-s.heading); ctx.beginPath(); ctx.moveTo(-l * .75, l * .7); ctx.lineTo(0, -l); ctx.lineTo(l * .75, l * .7)
-        ctx.lineJoin = 'round'; ctx.lineCap = 'round'
-        ctx.strokeStyle = OUTLINE; ctx.globalAlpha = arrow * .7; ctx.lineWidth = 4 * m; ctx.stroke()
-        ctx.strokeStyle = s.color; ctx.globalAlpha = arrow * .72; ctx.lineWidth = 2 * m; ctx.stroke()
+        // A subtle halo in the vehicle's own paint, where the ring used to be.
+        const glow = this.glow(s.color), r = ARROW.person * 1.7 * m
+        ctx.globalAlpha = inside * .45; ctx.drawImage(glow, x - r, y - r, r * 2, r * 2)
       }
-      ctx.restore(); ctx.globalAlpha = 1
+      this.solid(ctx, person ? FORMS[Minimap.markStyle] : FORMS.bot, x, y, s.heading, (person ? ARROW.person : ARROW.bot) * m, s.shades, s.accent, inside * (person ? 1 : .85), person ? 1 : .7)
+      if (s.it) this.itMark(ctx, x, y, (person ? ARROW.person + 5 : ARROW.bot + 5) * m, inside)
     }
-    if (dot > .01) {
-      const r = s.look.radius
-      // Dots sit over the live scene, not the map, so every dot carries both a dark outline
-      // and a light inner edge: one of the two contrasts with any sky, red dusk or white ice.
-      ctx.globalAlpha = Math.min(1, dot * 1.4); ctx.fillStyle = OUTLINE
-      ctx.beginPath(); ctx.arc(x, y, r + 1.6 * m, 0, Math.PI * 2); ctx.fill()
-      ctx.globalAlpha = dot; ctx.fillStyle = s.color
-      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill()
-      ctx.globalAlpha = dot * .85; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = .9 * m
-      ctx.beginPath(); ctx.arc(x, y, r - .45 * m, 0, Math.PI * 2); ctx.stroke()
-      ctx.globalAlpha = dot
-      if (person) {
-        ctx.strokeStyle = s.color; ctx.lineWidth = 1.4 * m; ctx.beginPath(); ctx.arc(x, y, r + 2.6 * m, 0, Math.PI * 2); ctx.stroke()
-        if (s.accent && r > 4) { ctx.fillStyle = s.accent; ctx.beginPath(); ctx.arc(x, y, r * .38, 0, Math.PI * 2); ctx.fill() }
-      }
-      ctx.globalAlpha = 1
-    }
-    if (s.it) this.itRing(ctx, x, y, (person ? ARROW.person + 7 : ARROW.bot + 6) * m * arrow + (s.look.radius + 5 * m) * blend, Math.max(arrow, Math.sqrt(dot)))
+    if (outside > .01) this.rimGlyph(ctx, s, outside, m)
   }
-  dispose(): void { this.unsubscribe?.(); this.resize?.disconnect(); this.element.remove() }
+  dispose(): void { this.unsubscribe?.(); this.resize?.disconnect(); this.unwatchRatio?.(); this.element.remove() }
 }

@@ -37,7 +37,42 @@ export interface BotMatch {
   /** King of the Hill: the zone to hold. */
   zone?: { x: number; z: number; radius: number } | null
 }
+/**
+ * A request from outside the bot's own head, for a while: a player's chat request
+ * (src/bots/banter) or a rescue (src/bots/rescue). While set it wins over moods and games;
+ * a race still comes first. `until` is in brain seconds (see `clock`).
+ *   follow   trail this vehicle like a duckling, as the bots trail the host by default
+ *   chase    tail it closely through the mind's pursuit
+ *   goto     drive to a point and stay there
+ *   stay     brake where it is
+ *   avoid    keep away from this vehicle
+ *   control  the caller writes the controls each step; returns false when finished
+ */
+export type BrainDirective =
+  | { kind: 'follow' | 'chase'; leader: Vehicle; until: number }
+  | { kind: 'goto'; x: number; y: number; z: number; radius: number; until: number }
+  | { kind: 'stay'; until: number }
+  | { kind: 'avoid'; threat: Vehicle; until: number }
+  | { kind: 'control'; step(dt: number, input: InputState): boolean }
+
 export class BotBrain implements System {
+  directive: BrainDirective | null = null
+  /** Seconds this brain has run: the clock directives count against. */
+  clock = 0
+  /** While true the old self-rescue (a teleport to a pad) waits: someone is coming to help. */
+  holdRecovery = false
+  private applied: BrainDirective | null = null
+  /** Freed by someone else (src/bots/rescue): start the trouble clocks again. */
+  clearTrouble(): void {
+    this.immobileTime = this.liquidTime = this.flippedTime = 0
+    this.lastPosition.copy(this.vehicle.body.translation())
+    this.mind?.reset()
+  }
+  /** Seconds going nowhere, upside down, or with wheels in liquid: for the bots' chatter. */
+  get trouble(): { stuck: number; flipped: number; bog: number } {
+    return { stuck: Math.max(this.mind?.troubleFor ?? 0, this.immobileTime), flipped: this.flippedTime, bog: this.liquidTime }
+  }
+
   remote = false
   private gear: BotGearController | null = null
   setGear(hooks: BotGearHooks | null) {
@@ -192,6 +227,7 @@ export class BotBrain implements System {
     const wheeled = this.vehicle.kind !== 'jet' && this.vehicle.kind !== 'hovercraft'
     this.liquidTime = afloat && wheeled ? this.liquidTime + dt : 0
     this.flippedTime = status.flipped ? this.flippedTime + dt : 0
+    if (this.holdRecovery) return
     if (this.liquidTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2 || this.mind!.troubleFor >= p.recoveryTime.value || here.y < this.terrain.heightAt(here.x, here.z) - 10) {
       this.rescue(); this.mind!.reset()
     }
@@ -251,20 +287,61 @@ export class BotBrain implements System {
     this.drive(dt)
     this.gear?.step(dt, this.target, this.vehicle.input, p.canFire.value, p.canDrive.value)
   }
+  /** Act on the directive. True when it has driven this step; false to carry on as usual. */
+  private steerByDirective(dt: number, input: InputState): boolean {
+    const d = this.directive!, mind = this.mind!
+    const gone = (v: Vehicle) => !v.body.isValid() || v === this.vehicle
+    if (('until' in d && this.clock >= d.until) || ((d.kind === 'follow' || d.kind === 'chase') && gone(d.leader)) || (d.kind === 'avoid' && gone(d.threat))) {
+      this.directive = this.applied = null; mind.reset(); this.moodTime = 0
+      return false
+    }
+    const fresh = this.applied !== d
+    this.applied = d
+    const left = 'until' in d ? d.until - this.clock : 0
+    const here = this.vehicle.body.translation()
+    switch (d.kind) {
+      case 'control':
+        if (!d.step(dt, input)) { this.directive = this.applied = null; mind.reset(); this.moodTime = 0 }
+        return true
+      case 'stay':
+        input.brakes = true
+        return true
+      case 'goto':
+        if (fresh || mind.activity.kind !== 'hold') mind.hold({ x: d.x, y: d.y, z: d.z }, d.radius, left)
+        this.mood = 'roam'; this.roam(dt, input, here)
+        return true
+      case 'avoid':
+        if (fresh || mind.activity.kind !== 'flee') mind.flee(d.threat, left)
+        this.mood = 'roam'; this.roam(dt, input, here)
+        return true
+      case 'chase':
+        if (fresh || mind.activity.kind !== 'follow' || mind.activity.leader !== d.leader) mind.pursue(d.leader, left)
+        this.mood = 'roam'; this.roam(dt, input, here)
+        return true
+      case 'follow':
+        // The ordinary duckling follow, pointed at this leader rather than the host.
+        this.target = d.leader; this.mood = 'chase'; this.moodTime = Math.max(this.moodTime, 1)
+        return false
+    }
+  }
   private drive(dt: number) {
     // Do not even clear input: network playback owns this state.
     if (this.remote) return
     const input = this.vehicle.input
     Object.assign(input, emptyInput())
+    this.clock += dt
     this.targetTime += dt; this.fireTime += dt
     // VehicleBot.js:11 refreshes enemies every two seconds; invalid targets refresh immediately.
     if (this.targetTime >= 2 || !this.target?.body.isValid()) { this.selectTarget(); this.targetTime = 0 }
+    // A rescue under way (a 'control' directive) outranks a race: a tow is not dropped mid-pull.
+    if (this.directive?.kind === 'control' && this.mind && p.canDrive.value && p.topThrottle.value > 0 && this.steerByDirective(dt, input)) return
     if (this.raceGoal && this.mind && p.canDrive.value && p.topThrottle.value > 0) {
       if (this.raceGoal.countdown) { input.brakes = true; return }
       if (!this.racing) { this.mind.hold(this.raceGoal.destination, Math.max(1, this.raceGoal.destination.radius / 2), 125); this.racing = true }
       this.roam(dt, input, this.vehicle.body.translation()); return
     }
     if (this.racing) { this.mind?.reset(); this.racing = false; this.moodTime = 0 }
+    if (this.directive && this.mind && p.canDrive.value && p.topThrottle.value > 0 && this.steerByDirective(dt, input)) return
     if (this.mind && p.canDrive.value && p.topThrottle.value > 0) {
       const here = this.vehicle.body.translation(), there = this.target ? this.imageOf(this.target.body.translation(), here) : undefined
       const match = this.match
@@ -481,7 +558,7 @@ export class BotBrain implements System {
       // quick when crawling, slower at speed. The original snapped lock to lock every step.
       const rate = (speed < 20 ? 3.6 - speed * 0.09 : 1.8) * dt
       this.steer += Math.max(-rate, Math.min(rate, input.x - this.steer)); input.x = this.steer
-      if (this.liquidTime >= p.recoveryTime.value || this.immobileTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2 || here.y < this.terrain.heightAt(here.x, here.z) - 10) this.rescue()
+      if (!this.holdRecovery && (this.liquidTime >= p.recoveryTime.value || this.immobileTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2 || here.y < this.terrain.heightAt(here.x, here.z) - 10)) this.rescue()
     } else {
       // VehicleBot.js:118-120 disables driving. Pausing must not trigger a rescue.
       input.brakes = true; this.strategyTime = this.immobileTime = this.liquidTime = this.flippedTime = 0; this.lastPosition.copy(here)

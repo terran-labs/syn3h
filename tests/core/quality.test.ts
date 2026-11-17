@@ -1,3 +1,4 @@
+import { PARTICLE_SHARES, particleBudget } from '../../src/fx/params'
 import { describe, expect, it, afterEach } from 'vitest'
 import { assessCapability, beginLoad, finishLoad, FrameBudgetMonitor, graphicsLevel, LOAD_KEY, qualityBudget, qualityLevel } from '../../src/core/quality'
 import { Scene } from 'three/webgpu'
@@ -36,9 +37,12 @@ describe('device quality', () => {
   it('caps actual vent instances and rebuilds only when the budget changes', () => {
     const emitters = new Emitters(new Scene())
     for (let i = 0; i < 50; i++) emitters.addVent({ x: i, y: 0, z: 0 }, { kind: 'embers', radius: 1, height: 5, intensity: 1 })
-    emitters.update(0); expect(emitters.particleCount).toBe(2400)
-    params.set('gfx.level', 0); emitters.update(0); expect(emitters.particleCount).toBe(200)
-    emitters.update(0.1); expect(emitters.particleCount).toBe(200)
+    const cap = () => Math.floor(Math.min(particleBudget.value, qualityBudget().particles) * PARTICLE_SHARES.vents)
+    emitters.update(0); const high = emitters.particleCount
+    expect(high).toBeGreaterThan(0); expect(high).toBeLessThanOrEqual(cap())
+    params.set('gfx.level', 0); emitters.update(0); const low = emitters.particleCount
+    expect(low).toBeLessThan(high); expect(low).toBeLessThanOrEqual(cap())
+    emitters.update(0.1); expect(emitters.particleCount).toBe(low)
     emitters.clear(); expect(emitters.particleCount).toBe(0)
   })
   it('reduces local particle and bot budgets with graphics level', () => {

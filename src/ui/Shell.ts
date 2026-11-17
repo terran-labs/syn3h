@@ -9,12 +9,12 @@ import { PerformancePanel } from './PerformancePanel'
 import type { PauseControl } from './pauseControl'
 import { HeightAboveGround } from './heightAboveGround'
 import type { PerformanceSource } from '../core/performance'
-import { SavedWorldStore, SAVED_WORLDS_KEY, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
+import { SavedWorldStore, SAVED_WORLDS_KEY, savedName, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
 import { SavedMoons } from './galaxy/SavedMoons'
 import type { Game, System } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
-import { params, worldSeed } from '../../shared/params'
+import { params, worldNameSeed, worldSeed } from '../../shared/params'
 import { GameAudio } from '../audio'
 // Registers the audio settings the lobby's Sound card shows.
 import '../audio/params'
@@ -25,13 +25,16 @@ import { SlidingPanels } from './SlidingPanels'
 import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
-import { placeLabels } from './galaxy/labels'
+import { captionHidden, captionMask } from './galaxy/labels'
+import { lobbyLook } from '../world/lobbyLook'
 import { LobbySettings } from './LobbySettings'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
+import { bindSwitch, switchWord } from './inspector/switch'
 import { RaceHud, type RaceRole } from './RaceHud'
 import type { RaceState } from '../../shared/protocol'
-import { glassStyle, diagnostics } from './inspector/params'
+import { glassStyle, diagnostics, interfaceMode } from './inspector/params'
+import { InterfaceVeil, INTERFACE_KEY, nextInterfaceMode, setInterfaceMode } from './interfaceMode'
 import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
@@ -39,7 +42,9 @@ import { PLANETS } from '../world/planets'
 import { graphicsLevel, levelNumber, qualityBudget } from '../core/quality'
 import { camDistance, camFov, camHeight, camOffset } from '../core/ChaseCamera'
 import { arrivalPath } from '../core/arrival'
-import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
+import { applyPlanet, biomeLine, currentPlanet, currentWorldName, encodeWorld, planetById, randomSeed } from '../world/planets'
+import { nameSeedKeptAcross, randomNameSeed, worldName } from '../world/worldName'
+import { currentHour, formatDayLength, planetDayLength } from '../world/sky/dayCycle'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
 import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
@@ -47,12 +52,16 @@ import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
 import { aboutHtml, showAboutTab, wireAbout, type AboutTab } from './updates/about'
 import { UpdateNotice } from './updates/UpdateNotice'
-import { generateName } from './data/names'
+import { rollPlayerName } from './data/names'
+import { cleanPlayerName, loadPlayerName, savePlayerName, type NameSource } from './playerName'
+import { TintTransition, randomTintPair } from '../vehicles/tints'
 import { Minimap, type MapEntity } from './Minimap'
 import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
+import './label-plate.css'
+import { isVehicleAvailable } from '../vehicles/available'
 import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
@@ -71,14 +80,42 @@ const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDow
  * else; Settings is the gear in the lower right corner (LobbySettings, 16 November 2026). Join by QR lives inside Multiplayer ("Show on screen"), and shaping a world
  * returns with OFFER_CUSTOM_PLANET.
  */
+/**
+ * The two lines of a planet label: the planet's name, then its biome in lower case ("Velmora"
+ * over "alpine"). The name is the world's own setting (world.nameSeed, see worldName.ts), and
+ * the biome is its recipe's label, so a renamed biome changes here with it.
+ */
+export function planetLabelText(world: { id?: string; recipe?: string; label: string; seed: number; nameSeed?: number; forming?: boolean }): { name: string; biome: string } {
+  if (world.forming) return { name: world.label, biome: 'shape your own' }
+  const recipe = planetById(world.recipe ?? world.id?.split('~')[0])
+  return { name: worldName(world.nameSeed ?? 0, world.seed), biome: recipe ? biomeLine(recipe) : world.label.toLowerCase() }
+}
+/**
+ * A planet label's tint: the colour its world shows from space, lava's glow for a lava world,
+ * lifted toward white until it reads on the dark plate. CSS colour string.
+ */
+export function plateTint(recipeId: string): string {
+  const look = lobbyLook(recipeId)
+  let [r, g, b] = [16, 8, 0].map(k => ((look.night === 1 ? 0xff7a1a : look.land) >> k & 255) / 255)
+  // Relative luminance at least 0.42; then a little more saturation than the ground has.
+  for (let i = 0; i < 12 && 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.42; i++) { r += (1 - r) * 0.15; g += (1 - g) * 0.15; b += (1 - b) * 0.15 }
+  const hex = (v: number) => Math.round(Math.min(1, v) * 255).toString(16).padStart(2, '0')
+  return `#${hex(r)}${hex(g)}${hex(b)}`
+}
+/** Pixels from a planet's limb to the top of its caption. */
+const CAPTION_GAP = 5
+/** Must match the short landscape block in shell.css. */
+const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
 const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="about">About</button>`
 const back = '<button type="button" class="panel-back link-button" data-goto="index"><span aria-hidden="true">←</span><span>Back</span></button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
 declare const __SYN3H_BUILD__: string | undefined
 const build = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? __SYN3H_BUILD__ : undefined
 /** Controls the shell wires, shown in the lobby settings panel (LobbySettings). */
-const presentationHtml = '<button type="button" class="presentation-toggle" aria-pressed="false">Presentation mode · P</button>'
-const hostHtml = '<fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>'
+// On/off settings are the standard switch (inspector/switch.ts); bindSwitch gives them role and state.
+const switchHtml = (className: string, text: string, inputAttributes = '') => `<label class="s3-switch-field ${className}"><span class="s3-switch-text">${text}</span><input type="checkbox"${inputAttributes}><span class="s3-switch-word" aria-hidden="true">off</span></label>`
+const presentationHtml = switchHtml('presentation-toggle', 'Presentation mode · P')
+const hostHtml = `<fieldset class="host-controls"><legend>Host</legend>${switchHtml('host-lock', 'Lock shared sliders', ' id="host-lock"')}<p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>`
 const heading = (text: string) => `<h2 tabindex="-1">${text}</h2>`
 
 /** A camera that can be posed from outside, used by the descent from the galaxy. */
@@ -138,7 +175,9 @@ export class Shell implements System {
   private toastTimer?: ReturnType<typeof setTimeout>
   readonly touch: TouchControls
   private readonly lobbySettings: LobbySettings
-  private readonly presentationToggle: HTMLButtonElement
+  /** The presentation-mode switch field; its input is the switch. */
+  private readonly presentationToggle: HTMLLabelElement
+  private readonly switches = new Map<string, (on: boolean) => void>()
   private readonly hostControls: HTMLFieldSetElement
 
   constructor(private readonly game: Game, readonly audio: GameAudio) {
@@ -196,7 +235,8 @@ export class Shell implements System {
     this.gearSelector = new GearSelector(this.element, () => this.gearSource(), { touch: this.touch.available, onSelect: () => this.audio.cue('click') })
     // Zorb mode sits under the drum, with its key and its state, so it can be found.
     this.zorbToggle.type = 'button'; this.zorbToggle.className = 'zorb-toggle'; this.zorbToggle.setAttribute('aria-pressed', 'false')
-    this.zorbToggle.innerHTML = '<kbd>X</kbd><span>Zorb</span><b>Off</b>'
+    // The small track mirrors the standard switch, so Zorb's state reads the same way at a glance.
+    this.zorbToggle.innerHTML = '<kbd>X</kbd><span>Zorb</span><i class="zorb-switch" aria-hidden="true"></i><b>Off</b>'
     this.zorbToggle.title = 'Zorb mode: ride inside a ball. Press X to switch.'
     this.zorbToggle.addEventListener('click', () => { game.input.toggleZorb(); this.audio.cue('click'); this.zorbToggle.blur() }, { signal: this.abort.signal })
     this.element.append(this.zorbToggle)
@@ -207,12 +247,15 @@ export class Shell implements System {
     // The world inspector and the display for when the cursor is captured (inspector/).
     this.inspector = new Inspector(this.element, {
       summary: id => this.inspectorSummary(id),
-      // Vehicles are chosen in play only (the lobby offers planets). Four, one design each.
-      vehicles: () => ({ options: PLAY_VEHICLES, current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
+      // Vehicles are chosen in play only (the lobby offers planets). One design each.
+      vehicles: () => ({ options: PLAY_VEHICLES, current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind, pending: this.pendingVehicle }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
       playerName: () => this.playerName,
-      colors: () => this.tintView,
+      onRename: name => this.setPlayerName(name),
+      rollName: () => rollPlayerName().name,
+      colors: () => this.tintTransition.current,
       onColor: (key, value) => this.setTint(key, value),
+      onRandomizeColors: () => this.randomizeTint(),
       onSaveWorld: () => this.saveWorld(),
     })
     // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
@@ -222,7 +265,7 @@ export class Shell implements System {
     this.inspector.open = false
     const railTop = this.inspector.element.querySelector('.wi-top')!
     const players = document.createElement('details'); players.className = 'rail-players'
-    players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><button type="button" class="rail-about" aria-haspopup="dialog">About &amp; how to play</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
+    players.innerHTML = `<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><button type="button" class="rail-about" aria-haspopup="dialog">About &amp; how to play</button>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     this.inspector.setSessionCard(players)
     // Performance follows World; its controls remain part of the searchable card stack.
@@ -274,11 +317,15 @@ export class Shell implements System {
     // The dialog's own Escape (cancel) and any other close route through closeAbout.
     guide.addEventListener('cancel', event => { event.preventDefault(); this.closeAbout() }, { signal })
     guide.addEventListener('close', () => this.closeAbout(), { signal })
-    players.querySelector('input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
+    this.switches.set('diagnostics', this.bindField(players.querySelector('.rail-diagnostics')!, signal))
+    players.querySelector('.rail-diagnostics input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
+    // Mute is a state, not an action: a switch that says whether sound is muted, not a button
+    // whose label names the opposite of the current state.
     const music = document.createElement('div'); music.className = 'rail-music'
-    music.innerHTML = `<span>Sound</span><button type="button" class="rail-mute">Mute</button>`
+    music.innerHTML = switchHtml('rail-mute', 'Mute audio')
     players.querySelector('.rail-player-body')!.append(music)
-    music.querySelector('button')!.addEventListener('click', () => this.audio.setMuted(!this.audio.isMuted), { signal })
+    this.switches.set('mute', this.bindField(music.querySelector('.rail-mute')!, signal))
+    music.querySelector('input')!.addEventListener('change', event => this.audio.setMuted((event.target as HTMLInputElement).checked), { signal })
     this.focusHud = new FocusHud(this.element)
     this.raceHud = new RaceHud(this.element, { leave: () => this.onRaceLeave?.(), cancel: () => this.onRaceCancel?.() })
     // Touch has no cursor to capture, so one control switches between driving and the panels.
@@ -288,8 +335,11 @@ export class Shell implements System {
     this.element.querySelector('.pause-veil')!.addEventListener('click', () => this.requestResume(), { signal })
     // Follow the lock itself, not what was asked for: the browser can drop it on its own
     // (Escape, a switch of window, a system dialog) and can refuse a request.
-    document.addEventListener('pointerlockchange', () => this.syncPanels(), { signal })
+    // Losing the lock (Escape) also returns the interface to Full, so nobody is left without panels.
+    document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) setInterfaceMode(0); this.syncPanels() }, { signal })
     document.addEventListener('pointerlockerror', () => this.syncPanels(), { signal })
+    const unsubscribeInterface = params.onChange(id => { if (id === interfaceMode.def.id) this.syncPanels() })
+    signal.addEventListener('abort', () => { unsubscribeInterface(); this.interfaceVeil.dispose() })
     this.glass(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
@@ -297,13 +347,9 @@ export class Shell implements System {
     window.addEventListener('storage', event => { if (event.key === SAVED_WORLDS_KEY || event.key === null) this.refreshSavedWorlds() }, { signal })
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') { this.worldDirty = true; this.refreshCustomPlanet() } })
     signal.addEventListener('abort', unsubscribeWorld)
-    try { this.nameInput.value = localStorage.getItem('syn3h.playerName') || '' } catch { /* Storage is optional. */ }
-    if (!this.nameInput.value.trim()) {
-      let seed = ''
-      try { seed = localStorage.getItem('syn3h.nameSeed') || '' } catch { /* Storage is optional. */ }
-      if (!seed) { seed = String(crypto.getRandomValues(new Uint32Array(1))[0]); try { localStorage.setItem('syn3h.nameSeed', seed) } catch { /* Storage is optional. */ } }
-      this.nameInput.value = generateName(seed, 'player')
-    }
+    // Kept in the browser (src/ui/playerName.ts): a first visit is given a generated name at once.
+    const saved = loadPlayerName(); this.nameInput.value = saved.name; this.nameSource = saved.source
+    this.nameInput.addEventListener('input', () => { this.nameSource = 'typed' }, { signal })
     // The public room is an empty field (placeholder "Public room"), never its internal name.
     const entryRoom = roomFromQuery(new URL(location.href).searchParams)
     this.roomInput.value = isDefaultRoom(entryRoom) ? '' : entryRoom
@@ -317,7 +363,9 @@ export class Shell implements System {
     for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
     this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play(true) }, { signal })
     for (const button of this.element.querySelectorAll('.shell-invite')) button.addEventListener('click', () => { void this.copyInvite() }, { signal })
-    this.presentationToggle.addEventListener('click', () => this.setPresentation(!this.presentation), { signal })
+    const presentationInput = this.presentationToggle.querySelector('input')!
+    this.switches.set('presentation', this.bindField(this.presentationToggle, signal))
+    presentationInput.addEventListener('change', () => this.setPresentation(presentationInput.checked), { signal })
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) if (document.activeElement !== slider) slider.value = String(params.get(slider.dataset.param!)?.value ?? 0)
     this.element.querySelector('#world-seed')!.setAttribute('value', String(worldSeed.value))
     this.element.querySelector('#world-seed')!.addEventListener('input', event => { (event.target as HTMLInputElement).dataset.dirty = 'true' }, { signal })
@@ -326,6 +374,8 @@ export class Shell implements System {
       const input = this.element.querySelector<HTMLInputElement>('#world-seed')!
       const seed = Number(input.value)
       if (!Number.isInteger(seed) || seed < 1 || seed > 999999) { this.toast('Choose a seed from 1 to 999999.'); return }
+      // A new seed reshapes the world; its name stays (see world.nameSeed).
+      params.set(worldNameSeed.def.id, nameSeedKeptAcross(worldNameSeed.value, worldSeed.value))
       params.set(worldSeed.def.id, seed); delete input.dataset.dirty
     }, { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-sky]')) button.addEventListener('click', () => { if (canEditWorld()) applySkyPreset(button.dataset.sky as SkyPresetName) }, { signal })
@@ -345,6 +395,7 @@ export class Shell implements System {
       disarm(); this.toast(resetWorld() ? 'World reset to defaults.' : 'Sliders locked by host.')
     }, { signal })
     signal.addEventListener('abort', () => clearTimeout(resetArmed))
+    this.switches.set('host-lock', this.bindField(this.hostControls.querySelector('.host-lock')!, signal))
     this.hostControls.querySelector('#host-lock')!.addEventListener('change', event => { const net = hostControls(); if (net?.isHost) net.setLocked((event.target as HTMLInputElement).checked) }, { signal })
     const activity = (event: Event) => {
       this.lastActivity = performance.now()
@@ -413,18 +464,16 @@ export class Shell implements System {
   readonly updateNotice: UpdateNotice
   private bandTop = ''
   /**
-   * Place the update banner just under the wordmark and return the height the galaxy keeps
-   * clear for it, so no world or label sits under it. Measured against the wordmark rather
-   * than the lobby buttons, so a moved wordmark or button row carries it along. 0 when the
-   * banner is not on screen.
+   * Place the update banner at the top centre of the screen and return the height the galaxy
+   * keeps clear for it, so no world, label or the wordmark (which now stands in the scene,
+   * src/ui/brand/wordmarkScene.ts) sits under it. 0 when the banner is not on screen.
    */
   private updateBand(): number {
     const banner = this.updateNotice?.banner
     if (!banner || banner.hidden || !this.menuVisible && this.started || banner.offsetParent === null) return 0
-    const logo = this.element.querySelector('.shell-logo')!.getBoundingClientRect(), host = banner.offsetParent.getBoundingClientRect()
-    const top = `${Math.round(logo.bottom - host.top + 10)}px`
+    const top = 'max(12px, env(safe-area-inset-top))'
     if (top !== this.bandTop) { this.bandTop = top; banner.style.top = top }
-    return banner.offsetHeight + 20
+    return banner.offsetTop + banner.offsetHeight + 12
   }
   /** About at Updates: the in-play guide while playing, else the lobby About panel. */
   showUpdates(): void {
@@ -470,9 +519,23 @@ export class Shell implements System {
   get vehicleKind(): VehicleChoice['vehicleKind'] { return this.choice.vehicleKind }
   get bodyColor(): string { return this.choice.bodyColor }
   get accentColor(): string { return this.choice.accentColor }
-  get playerName(): string { return this.nameInput.value.trim().slice(0, 24) || 'Explorer' }
+  get playerName(): string { return cleanPlayerName(this.nameInput.value) || 'Explorer' }
+  /** Where the name came from: a typed name is never replaced by a generated one. */
+  private nameSource: NameSource = 'generated'
+  /** Set by initGameShell: the name changed in play, so the vehicle and the room follow. */
+  onRename?: (name: string) => void
+  /** The player renamed themselves in the Me card: saved at once, and the room told. */
+  private setPlayerName(raw: string): void {
+    const name = cleanPlayerName(raw)
+    if (!name || name === this.playerName) return
+    this.nameInput.value = name; this.nameSource = 'typed'
+    savePlayerName(name, 'typed')
+    this.onRename?.(name)
+  }
   get room(): string { return this.roomInput.value.trim().slice(0, 64) || DEFAULT_ROOM }
   get playing(): boolean { return this.started && !this.menuVisible }
+  /** Keep world labels beside the inspector, but never over a modal or paused game. */
+  get vehicleLabelsVisible(): boolean { return this.playing && !this.userPaused && !this.inviteOpen && !this.exitAsking }
   get menuOpen(): boolean { return this.menuVisible }
   /** Idle driving must not take control while the player uses panels or enters text. */
   get daydreamBlocked(): boolean {
@@ -482,7 +545,15 @@ export class Shell implements System {
   }
   get activePanel(): string { return this.panels.active }
   get presentation(): boolean { return this.element.classList.contains('is-presentation') }
-  setPresentation(enabled: boolean): void { this.element.classList.toggle('is-presentation', enabled); this.presentationToggle.setAttribute('aria-pressed', String(enabled)) }
+  setPresentation(enabled: boolean): void { this.element.classList.toggle('is-presentation', enabled); this.switches.get('presentation')?.(enabled) }
+  /** Make a switchHtml field live: the switch role and state, and the on/off word beside it. */
+  private bindField(field: HTMLElement, signal: AbortSignal): (on: boolean) => void {
+    const input = field.querySelector('input')!, word = field.querySelector('.s3-switch-word')!
+    const set = bindSwitch(input, { signal })
+    const show = () => { word.textContent = switchWord(input.checked); field.classList.toggle('is-checked', input.checked) }
+    input.addEventListener('change', show, { signal })
+    return on => { if (input.checked === on && word.textContent === switchWord(on)) return; set(on); show() }
+  }
   setPlayerCount(count: number): void { this.playerCount = Math.max(0, Math.floor(count)); this.updateInvite() }
   private lastMatch: MatchState | null = null
   setRace(snapshot: Readonly<RaceState> | null, roomNow: () => number, role: Readonly<RaceRole>): void {
@@ -518,9 +589,9 @@ export class Shell implements System {
   setTelemetry(speed: number, altitude: number, thrust?: number): void { this.telemetry.speed = speed; this.telemetry.altitude = altitude; this.telemetry.thrust = thrust }
   private inspectorSummary(id: string): string {
     if (id === 'world') {
-      const hour = Number(params.get('sun.timeOfDay')?.value ?? 0)
+      const hour = currentHour()
       const time = `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}`
-      return `${currentPlanet().label} · ${planetName(worldSeed.value)} · ${time}`
+      return `${currentWorldName()} · ${currentPlanet().label} · ${time}`
     }
     if (id === 'game') { const bots = Number(params.get('bots.count')?.value ?? 0); const playing = Number(params.get('game.mode')?.value ?? 2); return `${modeName(playing)}${bots ? ` · ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''}` }
     if (id === 'you') { const current = this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind; return `${this.playerName} · ${PLAY_VEHICLES.find(vehicle => vehicle.id === current)?.label ?? ''}` }
@@ -539,7 +610,7 @@ export class Shell implements System {
     // cannot follow yet). On null, or if it throws, fall through to the reload below, which
     // always works. main.ts re-points hints, audio and the readouts through setPlayer.
     // Every buggy name is the buggy (the rule of canonicalVehicleKind in src/vehicles).
-    const family = (name: string) => name === 'jet' || name === 'hovercraft' || name === 'tank' ? name : 'buggy'
+    const family = (name: string): string => name === 'jet' || name === 'hovercraft' || (name === 'tank' && isVehicleAvailable(name)) ? name : 'buggy'
     if (this.vehicleSwap) {
       try {
         const next = this.vehicleSwap(kind)
@@ -554,8 +625,12 @@ export class Shell implements System {
     const forget = () => { try { sessionStorage.removeItem(RESUME_KEY) } catch { /* Storage is optional. */ } }
     window.addEventListener('pagehide', forget); document.addEventListener('visibilitychange', forget)
     const url = this.lobbyAddress?.playURL() ?? new URL(location.href); url.searchParams.delete('vehicle'); url.searchParams.set('autoplay', '1')
+    // The picker shows the choice as under way until the page goes.
+    this.pendingVehicle = kind
     location.replace(url)
   }
+  /** A vehicle being switched to by a reload, shown as pending in the picker. */
+  private pendingVehicle?: VehicleKind
   private vehicleSwap?: (kind: VehicleKind) => Vehicle | null
   /** main.ts hands over the in-place vehicle swap. Without it the selector reloads the page. */
   setVehicleSwap(swap: (kind: VehicleKind) => Vehicle | null): void { this.vehicleSwap = swap }
@@ -602,7 +677,7 @@ export class Shell implements System {
     // Play has begun: from here the cursor request made at the entering gesture (if any) is
     // judged like any other.
     this.enteringByGesture = false
-    try { localStorage.setItem('syn3h.playerName', this.playerName) } catch { /* Playing does not require storage. */ }
+    savePlayerName(this.playerName, this.nameSource)
     this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
   }
@@ -619,14 +694,14 @@ export class Shell implements System {
     this.stopAttract()
     // No galaxy to fly through (or no motion wanted): straight in.
     if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      if (id !== current) applyPlanet(id)
+      if (id !== current) this.applyGalaxyWorld(galaxyId)
       if (this.started) this.closeMenu(); else this.play()
       return true
     }
     if (!this.started) { this.requestEntryCursor(); this.unlockAudio() }
     void this.descent(galaxyId, () => {
       // Under the light, where a hitch cannot be seen: the world is built and the room joined.
-      if (id !== currentPlanet().id) applyPlanet(id)
+      if (id !== currentPlanet().id) this.applyGalaxyWorld(galaxyId)
       if (!this.started) { this.begin(); this.onPlay?.() }
     })
     return true
@@ -794,22 +869,47 @@ export class Shell implements System {
    * Set by initGameShell: `commit` is true for that settled call.
    */
   onTint?: (body: string, accent: string, commit: boolean) => void
-  private readonly tintView = { body: this.choice.bodyColor, accent: this.choice.accentColor }
+  /** The colours showing now, easing towards the chosen ones (src/vehicles/tints.ts). */
+  private readonly tintTransition = new TintTransition({ body: this.choice.bodyColor, accent: this.choice.accentColor })
   private tintTimer?: ReturnType<typeof setTimeout>
   private setTint(key: 'body' | 'accent', value: string): void {
     if (!/^#[0-9a-f]{6}$/i.test(value)) return
     if (key === 'body') this.choice.bodyColor = value; else this.choice.accentColor = value
-    this.tintView.body = this.choice.bodyColor; this.tintView.accent = this.choice.accentColor
+    // A dragged picker paints at once; only Randomize eases.
+    this.tintTransition.jump({ body: this.choice.bodyColor, accent: this.choice.accentColor })
     this.onTint?.(this.choice.bodyColor, this.choice.accentColor, false)
     clearTimeout(this.tintTimer)
     this.tintTimer = setTimeout(() => { saveVehicleChoice(this.choice); this.onTint?.(this.choice.bodyColor, this.choice.accentColor, true) }, 200)
   }
+  /**
+   * A new pleasing pair (src/vehicles/tints.ts). The vehicle, swatches and header dots ease to
+   * it over about a second; a press mid-change turns from the colours showing now. The room
+   * is told the target once, at once, and every client eases to it on its own.
+   */
+  private randomizeTint(): void {
+    const pair = randomTintPair(crypto.getRandomValues(new Uint32Array(1))[0])
+    this.choice.bodyColor = pair.body; this.choice.accentColor = pair.accent
+    this.tintTransition.set({ body: pair.body, accent: pair.accent })
+    clearTimeout(this.tintTimer)
+    saveVehicleChoice(this.choice)
+    this.onTint?.(pair.body, pair.accent, true)
+    this.audio.cue('click')
+  }
   /** Touch only: the panels are showing rather than the driving view. Never stored. */
   private touchPanels = false
-  /** Panels are wanted exactly when the cursor is free (or, on touch, when the menu state is on). */
+  /**
+   * The driving view: the cursor is captured, or a desktop player chose the Driving or Hidden
+   * interface (hud.mode). The one decision behind the panels and the focus display, so the
+   * chosen view is exactly the captured one.
+   */
+  private get drivingView(): boolean {
+    return document.pointerLockElement === this.game.canvas || (this.capturesCursor && interfaceMode.value >= 1)
+  }
+  private readonly interfaceVeil = new InterfaceVeil()
+  /** Panels are wanted exactly when not in the driving view (or, on touch, when the menu state is on). */
   private get panelsWanted(): boolean {
     if (!this.started || this.menuVisible) return false
-    return this.capturesCursor ? document.pointerLockElement !== this.game.canvas : this.touchPanels
+    return this.capturesCursor ? !this.drivingView : this.touchPanels
   }
   private syncPanels(): void {
     const wanted = this.panelsWanted
@@ -817,7 +917,8 @@ export class Shell implements System {
       this.inspector.hideTooltip(); this.inspector.open = wanted
       this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(wanted))
     }
-    const locked = this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas
+    const locked = this.started && !this.menuVisible && !this.game.input.suspended && this.drivingView
+    this.interfaceVeil.update(this.started && !this.menuVisible && !this.game.input.suspended)
     if (this.element.classList.contains('is-focus') !== locked) {
       this.element.classList.toggle('is-focus', locked)
       // A gear picked with the cursor leaves focus on the drum, where the arrow keys step
@@ -900,6 +1001,7 @@ export class Shell implements System {
       return
     }
     if (!editing && this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.toggleHelp(); return }
+    if (!editing && this.started && !this.menuVisible && !this.userPaused && !event.repeat && event.code === INTERFACE_KEY && this.capturesCursor) { event.preventDefault(); setInterfaceMode(nextInterfaceMode(interfaceMode.value)); return }
     // A drive key outside any field means the player wants to drive: resume if paused, and
     // capture the cursor (a key press is a gesture). This is also the keyboard-only way back.
     // While paused, focus rests on the pause message, which is a button, so a drive key
@@ -909,10 +1011,12 @@ export class Shell implements System {
     // moving a slider or select. A focused button or summary does not count: it only owns
     // Space and Enter, and focus rests on one after any click on the panels.
     const field = (element: unknown) => element instanceof HTMLElement && (element.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName) || element.closest('[role=listbox]') !== null)
-    const typing = field(event.target) || field(document.activeElement)
+    // The vehicle picker owns the arrow keys while it has focus (a radiogroup), as a list does.
+    const typing = field(event.target) || field(document.activeElement) || (event.target instanceof Element && event.target.closest('[role=radiogroup]') !== null)
     if (!typing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code) && this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
+      setInterfaceMode(0)
       // Escape in a text field only leaves the field; it takes another to pause.
       const target = event.target
       if (this.started && !this.menuVisible && !this.userPaused && target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && !/^(range|checkbox|radio|button|color)$/.test(target.type)))) { target.blur(); return }
@@ -1024,10 +1128,10 @@ export class Shell implements System {
       for (const entry of library.entries) {
         const row = document.createElement('div'); row.className = 'input-action'
         const enter = document.createElement('button'); enter.type = 'button'; enter.dataset.savedWorld = entry.id
-        enter.textContent = `${planetName(entry.seed)} · ${entry.recipeId}`
+        enter.textContent = `${savedName(entry)} · ${planetById(entry.recipeId)?.label ?? entry.recipeId}`
         enter.addEventListener('click', () => { void this.enterSavedWorld(entry) })
         const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Delete'
-        remove.setAttribute('aria-label', `Delete saved ${planetName(entry.seed)}`)
+        remove.setAttribute('aria-label', `Delete saved ${savedName(entry)}`)
         remove.addEventListener('click', () => {
           try { this.savedWorlds.remove(entry.id); this.refreshSavedWorlds(); this.say('Saved world deleted from this device.') }
           catch { this.say('The saved world could not be deleted. Storage is unavailable.') }
@@ -1098,16 +1202,24 @@ export class Shell implements System {
     // ?worlds=N repeats the recipes to rehearse a crowded system before new ones land.
     const rehearse = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('worlds')) || 0 : 0
     const recipes = Array.from({ length: Math.max(PLANETS.length, rehearse - 1) }, (_, i) => ({ recipe: PLANETS[i % PLANETS.length], copy: Math.floor(i / PLANETS.length) })).slice(0, GALAXY_MAX - 1)
-    const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current && !copy ? worldSeed.value : i + 1 }))
+    const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current && !copy ? worldSeed.value : randomSeed(), nameSeed: recipe.id === current && !copy ? worldNameSeed.value : randomNameSeed() }))
     // The custom planet is a world still forming: tap it to shape it with the sliders.
     // Hidden for now (see OFFER_CUSTOM_PLANET): the lobby offers planets only.
     if (OFFER_CUSTOM_PLANET) worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
     const chips = this.galaxyChips
+    this.galaxyWorlds = worlds
     for (const world of worlds) {
+      // A caption on the scene, not a plate (the owner, 16 November 2026: the lobby is a quiet
+      // picture): the world's name, its biome in small lower case under it, then how many are
+      // online. Set under its planet; the planet takes the taps, the caption takes focus.
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
-      chip.innerHTML = '<strong></strong><small></small>'; chip.querySelector('strong')!.textContent = world.label
-      chip.querySelector('small')!.textContent = world.forming ? 'Shape your own' : world.id === current ? planetName(world.seed) : ''
+      chip.innerHTML = '<strong></strong><small class="galaxy-biome"></small>'
+      const text = planetLabelText(world)
+      chip.querySelector('strong')!.textContent = text.name; chip.querySelector('small')!.textContent = text.biome
+      // A whisper of the planet's own colour in the near-white type.
+      if (!world.forming) chip.style.setProperty('--caption-tint', plateTint(world.recipe ?? world.id.split('~')[0]))
       if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; chip.append(count) }
+      if (!world.forming) chip.title = `A day lasts ${formatDayLength(planetDayLength(world.recipe ?? world.id))}.`
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
       labels.append(chip); chips.set(world.id, chip)
     }
@@ -1124,9 +1236,11 @@ export class Shell implements System {
           const chip = chips.get(world.id)!, value = values.get(world.recipe ?? world.id) ?? null
           const text = value && value.players > 0 ? `${value.players} online` : ''
           const count = chip.querySelector('.galaxy-population')!
-          if (count.textContent !== text) { count.textContent = text; this.labelSizes.delete(world.id) }
-          chip.title = `${populationLabel(value)}. Counts span separate rooms; choosing this planet uses your current room.`
-          chip.setAttribute('aria-label', `${world.label}: ${chip.title}`)
+          if (count.textContent !== text) count.textContent = text
+          // The day length goes in the tooltip, not the label: the label stays two short lines.
+          chip.title = `${populationLabel(value)}. A day lasts ${formatDayLength(planetDayLength(world.recipe ?? world.id))}. Counts span separate rooms; choosing this planet uses your current room.`
+          const plate = planetLabelText(world)
+          chip.setAttribute('aria-label', `${plate.name}, ${plate.biome}: ${chip.title}`)
         }
       },
       onLogo: drawn => this.element.classList.toggle('has-animated-logo', drawn),
@@ -1134,6 +1248,8 @@ export class Shell implements System {
       still: () => levelNumber(graphicsLevel.value) === 0,
       onTap: chosen => this.tapWorld(chosen),
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),
+      // A planet pointed at (hovered, or a finger on it) shows its label, faded or not.
+      onPoint: id => { for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
       onArrive: chosen => {
         const id = chosen.split('~')[0]
         if (id === 'custom') {
@@ -1144,27 +1260,60 @@ export class Shell implements System {
         if (!canEditWorld() && id !== currentPlanet().id) { this.say('The host has locked this world.'); this.galaxy?.home(); return }
         // Arriving at a world never opens a form (the owner, 15 November 2026): it goes
         // straight in. Taps are already drops (tapWorld); this covers the paths that are not.
-        if (id !== currentPlanet().id) applyPlanet(id)
+        if (id !== currentPlanet().id) this.applyGalaxyWorld(chosen)
         if (this.started) this.closeMenu(); else this.play()
       },
+      frame: () => this.galaxyFrame,
       onLayout: (places, chosen) => {
         this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
-        // Each label near its world, on the screen, clear of the links and of each other.
-        for (const [id, chip] of chips) if (!this.labelSizes.has(id) && !chip.hidden) this.labelSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
+        // Nothing to lay out or measure until the lobby's own controls are on screen: the galaxy
+        // draws from the loading veil on (the opening's point of light), and sizes and places
+        // measured while they are hidden read every box as zero, and are kept.
+        if (!this.brandBottom && !this.element.querySelector('.galaxy-links')?.getBoundingClientRect().width) return
         // Clear of the wordmark too. While flying to a world, only its label stays.
         if (!this.brandBottom) {
           this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
-          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect().top ?? 0
-          this.linksTop = hint > innerHeight / 2 ? hint - 24 : innerHeight - 152
+          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect() ?? { top: 0, left: innerWidth, width: 0 }
+          if (matchMedia(SHORT_LANDSCAPE).matches) {
+            // The buttons and hint are a column on the right (shell.css): the galaxy and its
+            // labels get everything left of it and below the corner wordmark.
+            const links = this.element.querySelector('.galaxy-links')?.getBoundingClientRect().left ?? innerWidth
+            this.labelRight = Math.min(links, hint.width ? hint.left : links) - 8
+            this.linksTop = innerHeight - 8
+            const top = this.brandBottom + 4, left = 8
+            // The system is wider than tall, so it can grow past the free height a little;
+            // the spread gives the inner worlds' labels room.
+            this.galaxyFrame = [(left + this.labelRight) / 2 / innerWidth, 1 - (top + this.linksTop) / 2 / innerHeight, 1.5 * (this.linksTop - top) / innerHeight]
+          } else {
+            this.labelRight = innerWidth; this.galaxyFrame = undefined
+            this.linksTop = hint.top > innerHeight / 2 ? hint.top - 24 : innerHeight - 152
+          }
           this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
         }
-        const shown = chosen ? places.filter(place => place.id === chosen) : places
-        const spots = placeLabels(shown, this.labelSizes, { width: innerWidth, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots })
-        if (chosen) for (const place of places) if (place.id !== chosen) chips.get(place.id)!.classList.add('is-crowded')
-        for (const place of places) chips.get(place.id)!.hidden = !place.visible
-        for (const spot of spots) {
-          const chip = chips.get(spot.id)!; this.labelSpots.set(spot.id, spot.spot)
-          chip.style.translate = `${spot.x.toFixed(1)}px ${spot.y.toFixed(1)}px`; chip.classList.toggle('is-crowded', spot.crowded)
+        // Each caption sits centred under its planet, a fixed gap below the limb: a pure function
+        // of where the planet is this frame, so it never moves against it. Captions may overlap
+        // each other and other planets; that is accepted. Only their strength changes: with the
+        // opening, with depth (behind the sun or a nearer planet they fade, a far one is a little
+        // fainter), and brighter while pointed at or focused, or for the world in play.
+        const current = currentPlanet().id, near = Math.min(...places.filter(p => p.visible).map(p => p.depth)), far = Math.max(...places.filter(p => p.visible).map(p => p.depth))
+        for (const place of places) {
+          const chip = chips.get(place.id)!
+          chip.hidden = !place.visible
+          if (!place.visible) continue
+          this.placeChip(chip, place.x, place.y + place.radius + CAPTION_GAP)
+          const away = (!!chosen && place.id !== chosen) || place.labelled === false || captionHidden(place, places, this.galaxy?.sunScreen)
+          const depth = far > near ? (place.depth - near) / (far - near) : 0
+          // Pointing and focus lift it in the stylesheet (.is-pointed, :focus), at once, even
+          // while the galaxy is holding still and not drawing.
+          const strength = away ? '0' : (1 - 0.25 * depth + (place.id === current ? 0.2 : 0)).toFixed(2)
+          if (chip.style.getPropertyValue('--caption-strength') !== strength) chip.style.setProperty('--caption-strength', strength)
+          // In the scene's depth: nearer captions over farther ones, and every nearer body (a
+          // planet, the sun) cuts the text where its disc covers it, as if the caption stood at
+          // its own planet's depth.
+          const z = String(1000 - Math.round(place.depth * 10))
+          if (chip.style.zIndex !== z) chip.style.zIndex = z
+          const mask = captionMask(place, places, this.galaxy?.sunScreen, place.y + place.radius + CAPTION_GAP)
+          if (this.chipMask.get(chip) !== mask) { this.chipMask.set(chip, mask); chip.style.setProperty('mask-image', mask); chip.style.setProperty('-webkit-mask-image', mask) }
         }
       },
     })
@@ -1175,20 +1324,49 @@ export class Shell implements System {
     this.element.classList.toggle('galaxy-flat', !this.galaxy.live)
     this.galaxyFor(this.panels.active || 'index')
   }
-  /** The galaxy's world labels, by world id, with their measured sizes and last spots. */
+  /**
+   * Move a planet label. Called every frame, so it writes only what moved by
+   * more than half a pixel and reads nothing from the page. x is the label's centre, y its top.
+   */
+  private placeChip(chip: HTMLButtonElement, x: number, y: number): void {
+    const last = this.chipDrawn.get(chip) ?? { x: NaN, y: NaN }
+    this.chipDrawn.set(chip, last)
+    if (!(Math.abs(x - last.x) <= .5 && Math.abs(y - last.y) <= .5)) { last.x = x; last.y = y; chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` }
+  }
+  /** Each caption's last mask, so it is written only when it changes. */
+  private readonly chipMask = new WeakMap<HTMLButtonElement, string>()
+  private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
+  /** The galaxy's world captions, by world id. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
-  private readonly labelSizes = new Map<string, { width: number; height: number }>()
-  private readonly labelSpots = new Map<string, number>()
+  /** Short landscape: the right edge left to the galaxy, and its framing (see SHORT_LANDSCAPE). */
+  private labelRight = innerWidth
+  private galaxyFrame?: readonly [number, number, number]
   /** Where the wordmark ends, measured once per window size. */
   private brandBottom?: number
   private linksTop = 0
-  /** Labels follow the world in play: its generated name, and which worlds can be chosen now. */
+  /** The worlds the galaxy shows, each with the seed and name picking it leads to. */
+  private galaxyWorlds: GalaxyWorld[] = []
+  /**
+   * Make a galaxy world the world: its recipe, and the seed and name its sphere and label
+   * showed, so what the player saw is where they land.
+   */
+  private applyGalaxyWorld(galaxyId: string): void {
+    const world = this.galaxyWorlds.find(w => w.id === galaxyId)
+    applyPlanet(galaxyId.split('~')[0], world?.seed, world?.nameSeed !== undefined ? { nameSeed: world.nameSeed } : {})
+  }
+  /** Labels follow the world in play: its name and seed, and which worlds can be chosen now. */
   private refreshGalaxyLabels(open: boolean): void {
     const current = currentPlanet().id
     for (const [id, chip] of this.galaxyChips) {
-      const small = chip.querySelector('small')!, text = id === 'custom' ? small.textContent : id === current ? planetName(worldSeed.value) : ''
-      if (small.textContent !== text) { small.textContent = text; this.labelSizes.delete(id) }
-      chip.classList.toggle('is-current', id === current)
+      // The world in play is whatever the room says it is: its sphere and label follow.
+      const world = this.galaxyWorlds.find(w => w.id === id)
+      if (world && id === current && !world.forming) {
+        world.nameSeed = worldNameSeed.value
+        if (world.seed !== worldSeed.value) this.galaxy?.setSeed(id, worldSeed.value)
+      }
+      const name = chip.querySelector('strong')!, text = world ? planetLabelText(world).name : name.textContent
+      if (name.textContent !== text) name.textContent = text
+      chip.classList.toggle('is-current', id === current); chip.classList.toggle('is-selected', id === current)
       chip.classList.toggle('is-locked', !open && id !== current)
     }
   }
@@ -1366,15 +1544,16 @@ export class Shell implements System {
     if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }
   setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
   update(dt = 0): void {
+    if (this.tintTransition.update(dt)) this.onTint?.(this.tintTransition.current.body, this.tintTransition.current.accent, false)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
     // A captured cursor alone is insufficient while a menu or another flow suspends input.
     this.syncPanels()
     this.performancePanel.setContext(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'))
     this.raceHud.update(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'), this.self, this.ground?.size)
     this.element.classList.toggle('show-diagnostics', diagnostics.value)
-    this.element.querySelector<HTMLInputElement>('.rail-diagnostics input')!.checked = diagnostics.value
+    this.switches.get('diagnostics')!(diagnostics.value)
     // Per-frame: touch the DOM only when the label changes.
-    if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.element.querySelector('.rail-mute')!.textContent = this.muteShown ? 'Unmute' : 'Mute' }
+    if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.switches.get('mute')!(this.muteShown) }
     this.updateGear()
     this.gearSelector.update(this.element.classList.contains('is-focus'))
     const zorb = this.game.input.state.zorb
@@ -1383,13 +1562,13 @@ export class Shell implements System {
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
-      const world = `${currentPlanet().label} · ${planetName(worldSeed.value)}`
+      const world = `${currentWorldName()} · ${currentPlanet().label}`
       if (world !== this.worldShown) {
         this.worldShown = world
         const label = this.element.querySelector<HTMLElement>('.rail-world')!
         label.textContent = world; label.title = world
       }
-      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, thrust: this.telemetry.thrust, heading: this.self?.heading ?? 0, world, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
+      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, thrust: this.telemetry.thrust, heading: this.self?.heading ?? 0, world, hour: currentHour() })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
     // The stylesheet drops frost at the lowest graphics level.
@@ -1402,7 +1581,7 @@ export class Shell implements System {
     this.lobbySettings.update()
     const seed = this.element.querySelector<HTMLInputElement>('#world-seed')!
     if (document.activeElement !== seed && seed.dataset.dirty !== 'true') seed.value = String(worldSeed.value)
-    const time = Number(params.get('sun.timeOfDay')?.value ?? 16.5)
+    const time = currentHour()
     this.element.querySelector<HTMLInputElement>('#sky-time')!.value = String(time)
     this.element.querySelector('#sky-time-value')!.textContent = `${String(Math.floor(time) % 24).padStart(2, '0')}:${String(Math.floor((time % 1) * 60)).padStart(2, '0')}`
     const editable = canEditWorld(), net = hostControls()
@@ -1412,7 +1591,7 @@ export class Shell implements System {
     const invitedOnly = this.invited && !this.started
     if (this.worldDirty) {
       this.worldDirty = false
-      this.element.querySelector('.planet-current')!.textContent = `${planet.label} world ${planetName(worldSeed.value)}. ${planet.centre}.${invitedOnly ? ' You were invited to this world.' : ''}`
+      this.element.querySelector('.planet-current')!.textContent = `${currentWorldName()}, ${/^[aeiou]/i.test(planet.label) ? 'an' : 'a'} ${planet.label.toLowerCase()} world. ${planet.centre}.${invitedOnly ? ' You were invited to this world.' : ''}`
       this.updateInvite()
     }
     this.refreshGalaxyLabels(editable && !invitedOnly)
@@ -1420,7 +1599,7 @@ export class Shell implements System {
     for (const note of this.element.querySelectorAll<HTMLElement>('.world-lock-note')) note.hidden = editable
     this.paramPanel?.setWorldEditable(editable)
     this.hostControls.querySelector<HTMLButtonElement>('.world-reset')!.disabled = !editable
-    const lock = this.hostControls.querySelector<HTMLInputElement>('#host-lock')!; lock.checked = net?.locked ?? false
+    this.switches.get('host-lock')!(net?.locked ?? false)
     this.hostControls.querySelector<HTMLElement>('.host-lock')!.hidden = !net?.isHost
     this.hostControls.querySelector('.host-note')!.textContent = !net ? 'Join a room to manage shared settings.' : !editable ? 'Sliders locked by host.' : net.isHost ? 'You are the host.' : 'Shared sliders are open.'
     const mode = params.get('game.mode'), modeSelect = this.element.querySelector<HTMLSelectElement>('#game-mode')!
@@ -1452,8 +1631,14 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
   const hints = new PlayHints(); let height = new HeightAboveGround()
   // A colour picked in play repaints the local vehicle at once and, once settled, tells the room.
   shell.onTint = (body, accent, commit) => {
-    activePlayer.setColors(body, accent)
+    // A commit only announces: the vehicle already shows these colours, or is easing to them.
+    if (!commit) activePlayer.setColors(body, accent)
     if (commit) (window as unknown as { syn3hNet?: { setProfile?(profile: { colors: { body: string; accent: string } }): void } }).syn3hNet?.setProfile?.({ colors: { body, accent } })
+  }
+  // A rename in the Me card: this vehicle's own label and the room follow at once.
+  shell.onRename = name => {
+    activePlayer.name = name
+    ;(window as unknown as { syn3hNet?: { setName?(name: string): void } }).syn3hNet?.setName?.(name)
   }
   const bridge = game.add({ update(dt = 0) {
     const v = activePlayer.body.linvel(), p = activePlayer.body.translation(), speed = Math.hypot(v.x, v.y, v.z)

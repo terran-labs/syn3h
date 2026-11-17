@@ -31,10 +31,11 @@ export const FAN_SECONDS = 20
 /** Components the sea material evaluates: both fans. */
 export const SEA_COMPONENTS = WAVE_COUNT * 2
 /**
- * Swell remains without local wind (it comes from distant storms), so calm air keeps 35 per
- * cent of the slider's height; a full gale gives all of it.
+ * Swell remains without local wind (it comes from distant storms), so calm air keeps 60 per
+ * cent of the slider's height; a full gale gives all of it. At 35 per cent a calm sea was too
+ * flat to see or feel.
  */
-const CALM_SWELL = 0.35
+const CALM_SWELL = 0.6
 
 /**
  * Seconds on the clock every client shares. Defaults to the game's simulated time, which is
@@ -102,8 +103,9 @@ class SeaWaves {
         direction: prevailingWindHeading(k * FAN_SECONDS) + waterWaveTurn.value,
         gravity: worldGravity.value,
         seed: this.seed,
-        // Four sea grid spacings: the shortest wave the mesh can draw without aliasing.
-        minGeometricLength: (4 * this.tileSize) / SEA_GRID,
+        // Every component lifts on every planet: the sea is drawn with a camera-following
+        // mesh fine enough for each of them (see liquidWaves.ts, isActiveWaveComponent).
+        minGeometricLength: 0,
       })
       this.fans.set(k, set)
       // Keep only the fans in use and the next one.

@@ -7,7 +7,7 @@ import {existsSync,readFileSync,readdirSync} from 'node:fs'
 import {beforeAll,describe,expect,it} from 'vitest'
 import * as T from 'three/webgpu'
 import {initPhysics} from '../../src/core/physics'
-import {VEHICLE_KINDS,canonicalVehicleKind,createVehicle,type VehicleKind} from '../../src/vehicles'
+import {TANK_AVAILABLE,VEHICLE_KINDS,canonicalVehicleKind,createVehicle,type VehicleKind} from '../../src/vehicles'
 import {Syn3hBuggy} from '../../src/vehicles/Syn3hBuggy'
 import {sanitizeVehicleChoice} from '../../src/ui/VehicleChoice'
 import {parseResume,prepareResume,type ResumeSnapshot} from '../../src/core/resume'
@@ -18,7 +18,7 @@ const root=new URL('../../',import.meta.url)
 
 describe('the retired classic buggy',()=>{
  it('is not offered: not in the registry, not in the lobby, not in the bots pool',()=>{
-  expect(VEHICLE_KINDS.map(v=>v.kind)).toEqual(['buggy','jet','hovercraft','tank'])
+  expect(VEHICLE_KINDS.map(v=>v.kind)).toEqual(['buggy','jet','hovercraft',...(TANK_AVAILABLE?['tank']:[])])
   expect(readFileSync(new URL('src/ui/Shell.ts',root),'utf8')).not.toContain('value="buggy-classic"')
   // Bots are built by createVehicle, which cannot build one (next test); the pool does not name it either.
   expect(readFileSync(new URL('src/bots/BotManager.ts',root),'utf8')).not.toContain('classic')
@@ -38,7 +38,7 @@ describe('the retired classic buggy',()=>{
  it('names the kind that will really be built',()=>{
   expect(canonicalVehicleKind('buggy-classic')).toBe('buggy');expect(canonicalVehicleKind('buggy-syn3h')).toBe('buggy')
   expect(canonicalVehicleKind(null)).toBe('buggy');expect(canonicalVehicleKind('nonsense')).toBe('buggy')
-  for(const kind of ['jet','hovercraft','tank'] as const)expect(canonicalVehicleKind(kind)).toBe(kind)
+  for(const kind of VEHICLE_KINDS.map(v=>v.kind))expect(canonicalVehicleKind(kind)).toBe(kind)
  })
  it('is still a legal kind on the wire, so a release 5 client in the room is not rejected',()=>{
   expect(WIRE_KINDS).toContain('buggy-classic')
@@ -53,10 +53,10 @@ describe('the retired classic buggy',()=>{
   for(const query of ['','vehicle=buggy-classic','vehicle=buggy','vehicle=buggy-syn3h'])expect(prepareResume(new URLSearchParams(query),storage)?.p,query).toEqual([10,12,20])
   expect(prepareResume(new URLSearchParams('vehicle=jet'),storage)).toBeNull()
  })
- it('ships no classic model, and nothing but models in the models folder',()=>{
-  expect(existsSync(new URL('public/models/buggy-classic.glb',root))).toBe(false)
-  expect(existsSync(new URL('public/models/buggy-classic-wheel.glb',root))).toBe(false)
-  // Everything under public/ is copied into the build as is: converters and notes live in tools/models.
-  expect(readdirSync(new URL('public/models',root)).sort()).toEqual(['buggy-boxarm.glb','buggy.glb','tank.glb','tanktread.glb'])
+ it('ships no model file at all: every vehicle is generated',()=>{
+  // Everything under public/ is copied into the build as is. The original models are source
+  // material in tools/models, which the build never copies and the game never requests.
+  const walk=(dir:URL):string[]=>existsSync(dir)?readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(new URL(`${e.name}/`,dir)):[new URL(e.name,dir).pathname]):[]
+  expect(walk(new URL('public/',root)).filter(f=>/\.(glb|gltf|fbx|obj|blend|bin)$/i.test(f))).toEqual([])
  })
 })

@@ -9,24 +9,33 @@
  * table in descriptions.ts, and always end with the limits, which are worked out here.
  */
 import { DESCRIPTIONS } from './descriptions'
+import { isVehicleAvailable } from '../../vehicles/available'
 
 /** The part of a parameter definition the inspector reads. Matches shared/params.ts. */
 export interface PropertyDef {
   id: string; label: string; group: string; scope: 'world' | 'client'
   default: number | boolean; min?: number; max?: number; step?: number; deferred?: boolean
+  /** Synced and saved, but no panel shows it (shared/params.ts). */
+  hidden?: boolean
+  /** The range in words, for a control whose stored numbers are not what it shows. */
+  limitsText?: string
   /** Optional, written by the lane that owns the property. */
   description?: string
-  /** Shown = (value - offset) * scale; see ParamDef.display. Stored and sent values never change. */
-  display?: { offset: number; scale: number }
+  /** Shown = (value - offset) * scale, or scale * power^(value - offset); see ParamDef.display. Stored and sent values never change. */
+  display?: { offset: number; scale: number; power?: number; step?: number }
 }
 /** A stored value as the settings UI shows it. */
 export function shownValue(def: Pick<PropertyDef, 'display'>, value: number): number {
-  return def.display ? (value - def.display.offset) * def.display.scale : value
+  const d = def.display
+  if (!d) return value
+  return d.power ? d.scale * d.power ** (value - d.offset) : (value - d.offset) * d.scale
 }
 /** The value to store for one typed or slid in display units. */
 export function storedValue(def: Pick<PropertyDef, 'display'>, shown: number): number {
   // Rounded off at the tenth place so -0.3 shown is -0.7 stored, not -0.7000000000000001.
-  return def.display ? Number((shown / def.display.scale + def.display.offset).toFixed(10)) : shown
+  const d = def.display
+  if (!d) return shown
+  return Number((d.power ? Math.log(shown / d.scale) / Math.log(d.power) + d.offset : shown / d.scale + d.offset).toFixed(10))
 }
 /**
  * The definition as the settings UI sees it: limits and default in display units, low to
@@ -36,7 +45,7 @@ export function shownDef<T extends PropertyDef>(def: T): T {
   if (!def.display || typeof def.default !== 'number') return def
   const ends = [def.min, def.max].map(v => v === undefined ? undefined : shownValue(def, v))
   const lo = ends.every(v => v !== undefined) ? Math.min(ends[0]!, ends[1]!) : ends[0], hi = ends.every(v => v !== undefined) ? Math.max(ends[0]!, ends[1]!) : ends[1]
-  const step = def.step === undefined ? undefined : Math.abs(def.step * def.display.scale)
+  const step = def.display.step ?? (def.step === undefined ? undefined : Math.abs(def.step * def.display.scale))
   return { ...def, default: shownValue(def, def.default), min: lo, max: hi, step, display: undefined }
 }
 export interface SectionSpec { id: string; title: string; blurb: string; groups: readonly string[]; scope: 'world' | 'client' }
@@ -55,6 +64,8 @@ export function buildTree(defs: readonly PropertyDef[]): SectionNode[] {
   const sections = SECTIONS.map(spec => ({ ...spec, tree: [] as GroupNode[], count: 0 }))
   const home = (def: PropertyDef) => sections.find(s => s.groups.includes(def.group)) ?? sections.find(s => s.scope === def.scope && (s.id === 'world' || s.id === 'you'))!
   for (const def of defs) {
+    // A hidden vehicle's handling is hidden with it (src/vehicles/available.ts).
+    if (def.group === 'Tank' && !isVehicleAvailable('tank')) continue
     const section = home(def)
     let group = section.tree.find(g => g.name === def.group)
     if (!group) { group = { name: def.group, properties: [] }; section.tree.push(group) }
@@ -80,9 +91,10 @@ export function describe(def: PropertyDef): string { return def.description ?? D
 export function limits(def: PropertyDef): string {
   if (def.display) def = shownDef(def)
   const parts: string[] = []
-  if (typeof def.default === 'number' && def.min !== undefined && def.max !== undefined) parts.push(`${show(Math.min(def.min, def.max), def)} to ${show(Math.max(def.min, def.max), def)}`)
+  if (def.limitsText) parts.push(def.limitsText)
+  else if (typeof def.default === 'number' && def.min !== undefined && def.max !== undefined) parts.push(`${show(Math.min(def.min, def.max), def)} to ${show(Math.max(def.min, def.max), def)}`)
   else if (typeof def.default === 'boolean') parts.push('on or off')
-  parts.push(`default ${show(def.default, def)}`)
+  if (!def.limitsText) parts.push(`default ${show(def.default, def)}`)
   parts.push(def.scope === 'world' ? 'shared with everyone in the room' : 'yours only')
   if (def.deferred) parts.push('applies when you let go')
   return parts.join(' · ')
