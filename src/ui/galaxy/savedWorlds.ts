@@ -9,7 +9,8 @@ export interface SavedWorld { id: string; savedAt: number; recipeId: RecipeId; s
 export interface SavedLibrary { entries: SavedWorld[]; notice?: string }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const bytes = (value: string) => new TextEncoder().encode(value).length
-export const worldIdentity = (values: Record<string, ParamValue>): string => JSON.stringify(Object.entries(values).sort(([a], [b]) => a.localeCompare(b)))
+/** The same world, whenever it was captured: the day clock's anchor (sun.dayEpoch) is when, not what. */
+export const worldIdentity = (values: Record<string, ParamValue>): string => JSON.stringify(Object.entries(values).filter(([id]) => id !== 'sun.dayEpoch').sort(([a], [b]) => a.localeCompare(b)))
 
 /** Clipboard parsing is permissive. Saved records must pass strict validation first. */
 export function readSavedWorlds(raw: string | null, defs: readonly ParamDef[]): SavedLibrary {

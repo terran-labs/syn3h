@@ -18,7 +18,7 @@ import {
   Fn, If, acos, add, cameraPosition, clamp, cos, dot, exp, float, floor, fract, length, max, min, mix,
   modelViewProjection, mul, normalize, positionWorld, pow, renderGroup, smoothstep, sub, time, uniform, vec2, vec3, vec4,
 } from 'three/tsl'
-import { BETA_EPSILON, MIE_ZENITH_LENGTH, RAYLEIGH_ZENITH_LENGTH, SKY_FLOOR, SKY_SCALE } from './skyMath'
+import { BETA_EPSILON, GLOW_DESAT, GLOW_KNEE, GLOW_POWER, MIE_ZENITH_LENGTH, SAT_LEAN, SUN_DESAT, RAYLEIGH_ZENITH_LENGTH, SKY_FLOOR, SKY_SCALE } from './skyMath'
 
 type N = any // TSL node; the published types are too strict for shader code written like this
 
@@ -85,6 +85,8 @@ export class AlienSkyMesh extends Mesh {
   /** Preetham sun intensity, from skyMath.sunE. */
   readonly sunE = uniform(0)
   readonly mieDirectionalG = uniform(0.8)
+  /** What the low sun's glow leans toward, luminance 1 (skyMath.glowTint). */
+  readonly glowTint = uniform(new Vector3(1.229, 0.958, 0.737))
   readonly showSunDisc = uniform(1)
   /** Night sky radiance (already scaled by night amount). */
   readonly nightColor = uniform(new Vector3(0, 0, 0))
@@ -165,7 +167,19 @@ export class AlienSkyMesh extends Mesh {
       const night = (this.nightColor as N).mul(nightShape)
         .add((this.twilightColor as N).mul(pow(c, 3.0).mul(exp(max(direction.y, 0.0).mul(-6.0)))))
 
-      const texColor = add(Lin, L0).mul(SKY_SCALE).add(sundiscColor).add(vec3(...SKY_FLOOR)).add(night).toVar() as N
+      // The low sun grade, as skyMath.gradeGlow: a shoulder on the glow and a warm lean.
+      const base = add(Lin, L0).mul(SKY_SCALE).add(vec3(...SKY_FLOOR)) as N
+      const grade = float(1.0).sub(smoothstep(0.02, 0.45, sunDir.y))
+      const lum = max(dot(base, vec3(0.2126, 0.7152, 0.0722)), 1e-9) as N
+      const above = max(lum.div(GLOW_KNEE), 1.0)
+      const gradedLum = float(GLOW_KNEE).mul(min(lum.div(GLOW_KNEE), 1.0)).mul(pow(above, float(1.0).sub(grade.mul(1.0 - GLOW_POWER))))
+      const hi = max(base.x, max(base.y, base.z)), lo = min(base.x, min(base.y, base.z))
+      const sat = hi.sub(lo).div(max(hi, 1e-9))
+      // skyMath.coolness: only cold hues (green or blue over red) take the saturation lean.
+      const cool = smoothstep(0.0, 0.25, max(base.y, base.z).sub(base.x).div(max(hi, 1e-9)))
+      const lean = min(grade.mul(1.5), 1.0).mul(max(float(GLOW_DESAT).mul(smoothstep(GLOW_KNEE, 6 * GLOW_KNEE, lum)), smoothstep(0.15, 0.6, sat).mul(SAT_LEAN).mul(cool)))
+      const graded = mix(base.div(lum), this.glowTint as N, lean).mul(gradedLum)
+      const texColor = graded.add(sundiscColor).add(night).toVar() as N
 
       // Stars: one candidate per cell of a 3D grid over the view direction. Sinless hash so
       // every GPU agrees; the cell jitter hides the grid. Extinction dims them at the horizon.
@@ -199,8 +213,13 @@ export class AlienSkyMesh extends Mesh {
 
         // Clouds are lit by the same scattering, so they turn the sky's colours at dusk.
         const dayFactor = smoothstep(-0.08, 0.3, sunDir.y)
-        const sunColor = vSunE.mul(Fex).mul(0.22).mul(0.04).toVar() as N
-        const skyAmbient = Lin.mul(0.04).add(vec3(...SKY_FLOOR)).add(night)
+        // Sunlit cloud takes the graded sun and sky too (skyMath.sunlightColor, gradeGlow).
+        const rawSun = vSunE.mul(Fex).mul(0.22).mul(0.04) as N
+        const sunLum = dot(rawSun, vec3(0.2126, 0.7152, 0.0722))
+        const sunHi = max(rawSun.x, max(rawSun.y, rawSun.z))
+        const sunCool = smoothstep(0.0, 0.25, max(rawSun.y, rawSun.z).sub(rawSun.x).div(max(sunHi, 1e-9)))
+        const sunColor = mix(rawSun, (this.glowTint as N).mul(sunLum), grade.mul(SUN_DESAT).mul(sunCool)).toVar() as N
+        const skyAmbient = graded.add(night)
 
         const depth = max(0.0, cloudNoise.sub(threshold)).toVar() as N
         const beer = exp(depth.mul(-4.0)).toVar() as N

@@ -42,6 +42,7 @@ import { graphicsLevel, levelNumber, qualityBudget } from '../core/quality'
 import { camDistance, camFov, camHeight, camOffset } from '../core/ChaseCamera'
 import { arrivalPath } from '../core/arrival'
 import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
+import { currentHour, formatDayLength, planetDayLength } from '../world/sky/dayCycle'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
 import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
@@ -559,7 +560,7 @@ export class Shell implements System {
   setTelemetry(speed: number, altitude: number, thrust?: number): void { this.telemetry.speed = speed; this.telemetry.altitude = altitude; this.telemetry.thrust = thrust }
   private inspectorSummary(id: string): string {
     if (id === 'world') {
-      const hour = Number(params.get('sun.timeOfDay')?.value ?? 0)
+      const hour = currentHour()
       const time = `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}`
       return `${currentPlanet().label} · ${planetName(worldSeed.value)} · ${time}`
     }
@@ -1182,6 +1183,7 @@ export class Shell implements System {
       chip.innerHTML = '<strong></strong><small></small>'; chip.querySelector('strong')!.textContent = world.label
       chip.querySelector('small')!.textContent = world.forming ? 'Shape your own' : world.id === current ? planetName(world.seed) : ''
       if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; chip.append(count) }
+      if (!world.forming) chip.title = `A day lasts ${formatDayLength(planetDayLength(world.recipe ?? world.id))}.`
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
       labels.append(chip); chips.set(world.id, chip)
     }
@@ -1199,7 +1201,8 @@ export class Shell implements System {
           const text = value && value.players > 0 ? `${value.players} online` : ''
           const count = chip.querySelector('.galaxy-population')!
           if (count.textContent !== text) { count.textContent = text; this.labelSizes.delete(world.id) }
-          chip.title = `${populationLabel(value)}. Counts span separate rooms; choosing this planet uses your current room.`
+          // The day length goes in the tooltip, not the label: the label stays two short lines.
+          chip.title = `${populationLabel(value)}. A day lasts ${formatDayLength(planetDayLength(world.recipe ?? world.id))}. Counts span separate rooms; choosing this planet uses your current room.`
           chip.setAttribute('aria-label', `${world.label}: ${chip.title}`)
         }
       },
@@ -1464,7 +1467,7 @@ export class Shell implements System {
         const label = this.element.querySelector<HTMLElement>('.rail-world')!
         label.textContent = world; label.title = world
       }
-      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, thrust: this.telemetry.thrust, heading: this.self?.heading ?? 0, world, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
+      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, thrust: this.telemetry.thrust, heading: this.self?.heading ?? 0, world, hour: currentHour() })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
     // The stylesheet drops frost at the lowest graphics level.
@@ -1477,7 +1480,7 @@ export class Shell implements System {
     this.lobbySettings.update()
     const seed = this.element.querySelector<HTMLInputElement>('#world-seed')!
     if (document.activeElement !== seed && seed.dataset.dirty !== 'true') seed.value = String(worldSeed.value)
-    const time = Number(params.get('sun.timeOfDay')?.value ?? 16.5)
+    const time = currentHour()
     this.element.querySelector<HTMLInputElement>('#sky-time')!.value = String(time)
     this.element.querySelector('#sky-time-value')!.textContent = `${String(Math.floor(time) % 24).padStart(2, '0')}:${String(Math.floor((time % 1) * 60)).padStart(2, '0')}`
     const editable = canEditWorld(), net = hostControls()

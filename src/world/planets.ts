@@ -271,7 +271,8 @@ export function encodeWorld(): string {
   const world = params.snapshot('world')
   const changed: string[] = []
   for (const id of Object.keys(world).sort()) {
-    if (id === worldSeed.def.id) continue
+    // The seed is a field of its own; the day clock's anchor is a moment, not part of the world.
+    if (id === worldSeed.def.id || id === 'sun.dayEpoch') continue
     const def = params.get(id)!.def
     const base = id in recipe.values ? recipe.values[id] : def.default
     if (world[id] !== base) changed.push(`${id}=${world[id]}`)
