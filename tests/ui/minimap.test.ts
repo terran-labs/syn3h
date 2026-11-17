@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ARROW, MAP_LUMA, RIM, UNITS, heightPixels, mapPoint, markColor, markLook, placeMark, rimFade, type MarkPlace } from '../../src/ui/Minimap'
+import { ARROW, FORMS, MAP_LUMA, RIM, UNITS, heightPixels, mapPoint, markColor, markShades, markLook, placeMark, rimFade, type MarkPlace } from '../../src/ui/Minimap'
 import { wrapDelta } from '../../shared/wrap'
 
 describe('minimap projection and terrain cache', () => {
@@ -73,6 +73,17 @@ describe('people and bots on the minimap', () => {
     expect(dx).toBe(30)
     const p = placeMark(dx, dz, perMetre, 10, place())
     expect(p.distance).toBe(30); expect(p.bearing).toBeCloseTo(0)
+  })
+  it("shades a mark's facets in its own paint, darkest to lightest, hue kept", () => {
+    for (const tint of ['#e0457b', '#2a7de1', '#46c46b']) {
+      const shades = markShades(tint), luma = (hex: string) => { const v = parseInt(hex.slice(1), 16); return .2126 * (v >> 16 & 255) + .7152 * (v >> 8 & 255) + .0722 * (v & 255) }
+      for (let i = 1; i < shades.length; i++) expect(luma(shades[i])).toBeGreaterThan(luma(shades[i - 1]))
+      for (const shade of shades.slice(0, 5)) expect(Math.abs(hue(shade) - hue(tint))).toBeLessThan(4)
+    }
+  })
+  it('gives people a different, larger form than bots', () => {
+    expect(FORMS.dart.facets.length).toBeGreaterThan(FORMS.bot.facets.length)
+    expect(FORMS.kite.facets.length).toBeGreaterThan(FORMS.bot.facets.length)
   })
   it("keeps the hue of the vehicle's own tint, lifting only dark tints", () => {
     for (const tint of ['#ff2a2a', '#22aa44', '#1030a0', '#6a1b9a', '#ffd400', '#0d0d40']) {
