@@ -247,7 +247,7 @@ export class Game {
     // to keep it warm for the descent, instead of every frame under a full-screen shader.
     // The first frames always draw: loading ends, and shaders compile, on a real frame.
     const view = this.view()
-    const draw = view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500
+    const draw = !this.holdDraws && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
     if (draw) { drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs); this.lastDraw = now }
     if (this.startupFrames < 3) this.recordStartupFrame(updateStart, renderStart)
     const metrics = this.performance
@@ -262,6 +262,35 @@ export class Game {
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
     this.quality.frame(metrics, view === 'playing')
+  }
+
+  /**
+   * While true the world is not drawn at all. The shell sets it while the galaxy covers the
+   * world and the world is being prepared: a frame drawn then would compile, on the spot,
+   * whatever shader it met first, which is the stall precompile() exists to avoid.
+   */
+  holdDraws = false
+
+  /**
+   * Build the shaders and pipelines for everything in the scene before play shows it, by
+   * drawing two real frames through the post chain with culling off, so what the camera cannot
+   * see yet (the far side, the view on the way down, the ground behind the vehicle) is built
+   * too. three's compileAsync is not used: in r187 it built shared uniform bind groups for its
+   * own render context, and materials it built read camera uniforms that never updated.
+   */
+  async precompile(): Promise<void> {
+    const start = performance.now()
+    // Drawn for real, through the frames' own passes, so every shader and pipeline is built
+    // exactly as play will use it, with culling off so what the camera cannot see yet is in
+    // too. Each such frame may stall while it compiles: call this only while the world is
+    // covered and the cover is still (the galaxy holding in the world's air).
+    for (let i = 0; i < 2; i++) {
+      const culled: THREE.Object3D[] = []
+      this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
+      try { drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16) } finally { for (const o of culled) o.frustumCulled = true }
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    }
+    try { performance.measure('syn3h:precompile', { start, end: performance.now() }) } catch { /* Older engines. */ }
   }
 
   private postChain: PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> | null = null

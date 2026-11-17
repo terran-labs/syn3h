@@ -161,8 +161,11 @@ export function createNavigator(terrain: Terrain, options: NavigatorOptions = {}
   }
   allocate()
 
+  // The water at rest, where the terrain offers it: a route is cached per cell for minutes,
+  // so the waves of the moment do not belong in it, and reading them (two clocks per call)
+  // made a bot's first routes cost over 100 ms in one frame.
   const liquidAt = (x: number, z: number): number => {
-    const l = terrain.liquidHeightAt?.(x, z)
+    const l = terrain.liquidLevelAt ? terrain.liquidLevelAt(x, z) : terrain.liquidHeightAt?.(x, z)
     return l == null || Number.isNaN(l) ? -Infinity : l
   }
 
