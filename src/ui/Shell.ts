@@ -817,6 +817,7 @@ export class Shell implements System {
       if (!landed) camera?.clearCinematicPose()
       this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.removeProperty('visibility') }
+      this.game.holdDraws = false
       this.dropping = false; this.enteringByGesture = false
       if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
     }
@@ -873,11 +874,18 @@ export class Shell implements System {
       })
       // Covered now: the game goes back to its few frames a second behind the galaxy.
       await frame()
-      // The galaxy covers the game now: stop compositing it. A full-screen WebGPU canvas under
-      // a blur filter, composited behind an opaque WebGL galaxy, stalled the GPU for 0.6 to
-      // 1.8 s at High once the galaxy's flight began. Shown again when the lobby takes over.
+      // The galaxy covers the game now: stop compositing it and stop drawing it. A full-screen
+      // WebGPU canvas under a blur filter, composited behind an opaque WebGL galaxy, stalled
+      // the GPU for 0.6 to 1.8 s at High once the galaxy's flight began; hidden but still drawn
+      // (the covered lobby's two frames a second, the first of them back at the vehicle after
+      // the climb), it still stalled 0.6 to 1.2 s. Both resume when the lobby takes over.
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.visibility = 'hidden' }
-      flight.launch()
+      this.game.holdDraws = true
+      // From the world's air the galaxy eases home on its own (the lobby's drift), rather than
+      // flying its close-up of the world back out: that fly-out, the first close-up a freshly
+      // made galaxy context drew, stalled the GPU for up to 2 s in some exits at High. Without
+      // it no exit frame passed 100 ms, and leaving is shorter. The name kindles once, here.
+      galaxy.home()
       root.classList.remove('is-descending')
       camera?.clearCinematicPose()
       await flight.done
@@ -887,6 +895,7 @@ export class Shell implements System {
       this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity')
       root.classList.remove('is-descending')
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.removeProperty('visibility') }
+      this.game.holdDraws = false
       this.dropping = false
       // The lobby as Leave world has always left it, from the view the flight settled on.
       this.menuVisible = false
