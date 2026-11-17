@@ -12,7 +12,7 @@
  * caption naming it (SPEED, ALT). The pair mirror each other about the centre: each sits just
  * outside its arc and grows away from it, so a longer number never creeps into the view. The
  * number's middle, not the block's, sits on the anchor line, so the Jet's THRUST line hangs
- * below without moving it.
+ * below without moving it. The unit letters take the captions' neutral grey (inspector.css).
  *
  *   Desktop and tablets   beside each arc's midpoint, level with the reticle.
  *   Landscape phones      level with each arc's upper tip, at 30% of the height (centred, a
@@ -31,7 +31,7 @@
 .focus-hud .fh-left { right: calc(50% + var(--fh-out)); left: auto; text-align: right; justify-items: end; }
 .focus-hud .fh-right { left: calc(50% + var(--fh-out)); right: auto; text-align: left; justify-items: start; }
 .focus-hud :is(.fh-left, .fh-right) b { display: flex; align-items: baseline; gap: 4px; font-size: var(--fh-number); line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.focus-hud :is(.fh-left, .fh-right) b i { font-style: normal; font-size: 12px; font-weight: 600; letter-spacing: .12em; color: rgb(205 228 255 / .95); }
+.focus-hud :is(.fh-left, .fh-right) b i { font-style: normal; font-size: 12px; font-weight: 600; letter-spacing: .12em; color: rgb(224 224 224 / .95); }
 .focus-hud :is(.fh-left, .fh-right) small { white-space: nowrap; }
 
 /* Landscape phones: level with the arcs' upper tips, out of the driving thumb's reach. The
