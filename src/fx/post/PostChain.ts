@@ -10,10 +10,13 @@
  *
  *   scene pass      colour (half float, the canvas's MSAA) and depth.
  *   glow            three's BloomNode on the exposed colour, clamped, as tuned on feat/fx-bloom.
- *   sun shafts      quarter resolution, two passes. The mask keeps open sky (depth at the far
- *                   plane) near the sun, in the sky's own colour, so terrain, vehicles and
- *                   smoke dark against the sky all cut the light. A radial march toward the
- *                   sun then smears it into rays. 1/16 of the pixels, so 32 taps are cheap.
+ *   sun shafts      at a low sun the sky shader leaves its near-sun forward glow out for this
+ *                   camera (AlienSkyMesh.glowShare) and the shafts draw it instead. A mask at
+ *                   half (full tier) or quarter resolution holds that glow and how open each
+ *                   pixel is (open sky less cloud; terrain, vehicles and smoke are closed). A
+ *                   radial march toward the sun averages the openness, and the glow comes back
+ *                   in proportion: all of it in open sky, none behind a ridge or cloud, so the
+ *                   lit paths are beams against the shadowed ones.
  *   lens flare      an anamorphic streak and three ghosts, from the sun's screen position,
  *                   dimmed by the same mask read at the sun: the volcano eclipses it.
  *   tone map        the renderer's own ACES and exposure, as renderer.render would.
@@ -37,7 +40,7 @@ import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { traa } from 'three/addons/tsl/display/TRAANode.js'
 import { CurvedVelocity } from './CurvedVelocity'
 import { cloudVolume, compositeClouds } from './clouds'
-import { skyCloudField } from '../../world/sky/AlienSkyMesh'
+import { AlienSkyMesh, skyCloudField, skyScatter } from '../../world/sky/AlienSkyMesh'
 import { underwaterAmountForCamera } from '../../world/water/underwater'
 import type { CloudInputs } from '../../world/Environment'
 import { motionBlurred } from './motion'
@@ -111,8 +114,7 @@ export class PostChain {
     bloomRadius: uniform(0.4),
     shafts: uniform(0.7),
     shaftLength: uniform(0.75),
-    shaftReach: uniform(0.12),
-    shaftFloor: uniform(0.9),
+    shaftGround: uniform(0.5),
     flare: uniform(0.5),
     gain: uniform(new THREE.Vector3(1, 1, 1)),
     lift: uniform(new THREE.Vector3(0, 0, 0)),
@@ -144,6 +146,11 @@ export class PostChain {
   private readonly grade: Grade = { gain: [1, 1, 1], lift: [0, 0, 0], contrast: 0, saturation: 1 }
   private readonly tmp = new THREE.Vector3()
   private readonly forward = new THREE.Vector3()
+  /** The sky, whose near-sun glow the shafts draw (AlienSkyMesh.glowShare). */
+  private sky: AlienSkyMesh | null = null
+  private screenFade = 0
+  /** For captures (tests/ui/sun-beams-capture.mjs): the sky still hands off its glow, the shafts add none back. */
+  shaftLightOff = false
 
   constructor(private readonly host: PostChainHost, private readonly sun: SunSource) {}
 
@@ -157,6 +164,7 @@ export class PostChain {
     this.tier = tier
     // Anything the governor could shed: everything but the colour look itself.
     this.reportActive(tier !== 'off' && (P.postTemporal.value || [P.postBloom, P.postShafts, P.postFlare, P.postAO, P.postContact, P.postMotionBlur, P.postGI, P.postClouds].some(p => p.value > 0)))
+    this.sky ??= findSky(scene)
     if (tier === 'off') {
       this.release()
       renderer.render(scene, camera)
@@ -188,10 +196,12 @@ export class PostChain {
     u.bloom.value = P.postBloom.value * fade
     u.bloomThreshold.value = P.postBloomThreshold.value
     u.bloomRadius.value = P.postBloomRadius.value
-    u.shafts.value = P.postShafts.value * fade
+    // The sky hands its near-sun glow to the shafts while they can draw it (sun on screen);
+    // past 1 the shafts add more than the sky gave up.
+    const shaftAmount = shaftsOn ? P.postShafts.value * fade * this.screenFade : 0
+    u.shafts.value = this.shaftLightOff ? 0 : shaftAmount
     u.shaftLength.value = P.postShaftLength.value
-    u.shaftReach.value = P.postShaftReach.value
-    u.shaftFloor.value = Math.min(P.postShaftFloor.value, SHAFT_CLAMP * 0.95)
+    u.shaftGround.value = P.postShaftGround.value
     // Ghosts and streak belong to a low sun; overhead they read as smudges on the ground.
     u.flare.value = P.postFlare.value * fade * (0.25 + 0.75 * lowSunAmount(this.sun.sunDirection.y))
     const g = gradeFor(lookForKind(params.get('terrain.kind')?.value), P.postLook.value, { contrast: P.postContrast.value, saturation: P.postSaturation.value, warmth: P.postWarmth.value }, this.grade)
@@ -218,7 +228,8 @@ export class PostChain {
     const built = this.built!
     const sunLit = sunVis > 0.001
     if (built.maskTex) built.maskTex.autoUpdate = sunLit
-    if (built.raysTex) built.raysTex.autoUpdate = sunLit && P.postShafts.value > 0
+    if (built.raysTex) built.raysTex.autoUpdate = sunLit && shaftAmount > 0
+    if (this.sky) { this.sky.glowCamera = camera; this.sky.glowShare = built.raysTex && sunLit ? Math.min(1, shaftAmount) : 0 }
     this.sun.setVolumetricCloudsActive?.(built.clouds)
     try {
       built.pipeline.render()
@@ -231,6 +242,7 @@ export class PostChain {
   /** Free the pipeline and every target it made. Safe to repeat. */
   release(): void {
     this.sun.setVolumetricCloudsActive?.(false)
+    if (this.sky) this.sky.glowShare = 0
     if (!this.built) return
     this.built.pipeline.dispose()
     for (const d of this.built.disposables) { d.dispose?.(); d.renderTarget?.dispose() }
@@ -287,7 +299,8 @@ export class PostChain {
     const su = this.tmp.x * 0.5 + 0.5
     const sv = 0.5 - this.tmp.y * 0.5
     ;(this.u.sunUv.value as THREE.Vector2).set(su, sv)
-    return sunScreenFade(su, sv, inFront) * sunHeightFactor(sun.y, P.postLowSun.value)
+    this.screenFade = sunScreenFade(su, sv, inFront)
+    return this.screenFade * sunHeightFactor(sun.y, P.postLowSun.value)
   }
 
   private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping, debug = 0, giOn = false, cloudsOn = false, temporalOn = false, motionOn = false, composeOn = false): void {
@@ -444,64 +457,63 @@ export class PostChain {
         offset: uniform(new THREE.Vector2()).setGroup(renderGroup).onRenderUpdate((_f, self) => { self.value.set(skyClouds.offset.x, skyClouds.offset.y) }),
       } : null
       const volumeCover = cloudCover
+      const sky = this.sky
+      // Mask: rgb is the low sun's forward glow toward this pixel (the light the sky shader
+      // left out, see AlienSkyMesh.glowShare), alpha how open the path is here: open sky,
+      // less any cloud. Terrain, vehicles and smoke are 0.
       const mask = Fn(() => {
         const p = uv()
         const open = smoothstep(0.99995, 1.0, depth.sample(p).r).toVar()
+        const view = getViewPosition(p, float(1), u.projInv)
+        const direction = u.camWorld.mul(vec4(view.normalize(), 0)).xyz.normalize()
         if (volumeCover) open.mulAssign(float(1).sub(volumeCover.sample(p).a))
-        else if (skyCloud) {
-          const view = getViewPosition(p, float(1), u.projInv)
-          const direction = u.camWorld.mul(vec4(view.normalize(), 0)).xyz.normalize()
-          open.mulAssign(float(1).sub(skyCloudField(direction, skyCloud).opacity))
-        }
-        const sky = open
-        // On-screen brightness, capped a little past white: the shafts carry the sun's
-        // colour and shape, not its full intensity. Only the core above a floor feeds them,
-        // hue kept and rescaled, so the dim glow around the sun does not wash the beams out.
-        const raw = min(color.sample(p).rgb.mul(u.exposure), vec3(SHAFT_CLAMP))
-        const lum = max(dot(raw, vec3(0.2126, 0.7152, 0.0722)), 1e-4)
-        const c = raw.mul(max(lum.sub(u.shaftFloor), 0.0).div(lum)).mul(float(SHAFT_CLAMP).div(float(SHAFT_CLAMP).sub(u.shaftFloor)))
-        const d = length(p.sub(u.sunUv).mul(vec2(u.aspect, 1)))
-        const near = exp(d.mul(d).div(u.shaftReach.mul(u.shaftReach)).negate().mul(3))
-        return vec4(c.mul(sky).mul(near), sky)
+        else if (skyCloud) open.mulAssign(float(1).sub(skyCloudField(direction, skyCloud).opacity))
+        const glow = sky ? skyScatter(direction, sky).glow : vec3(0)
+        return vec4(glow, open)
       })
       // Half resolution on the full tier keeps narrow beams; a quarter elsewhere.
-      const maskTex: N = rtt(mask(), null, null, { resolutionScale: tier === 'full' ? 0.5 : 0.25 })
+      const maskTex: N = rtt(mask(), null, null, { resolutionScale: tier === 'full' ? 0.5 : 0.25, type: THREE.HalfFloatType })
       disposables.push(maskTex)
       maskRef = maskTex
       const taps = shaftTaps(tier)
+      // How much of the way toward the sun is open: the march averages the mask's alpha.
       const rays = Fn(() => {
         const p = uv().toVar()
         const step = u.sunUv.sub(p).mul(u.shaftLength).div(taps)
         p.addAssign(step.mul(interleavedGradientNoise(screenCoordinate)))
-        const sum = vec3(0).toVar()
+        const sum = float(0).toVar()
         const w = float(1).toVar()
         const total = float(0).toVar()
         Loop(taps, () => {
-          sum.addAssign(maskTex.sample(p).rgb.mul(w))
+          sum.addAssign(maskTex.sample(p).a.mul(w))
           total.addAssign(w)
-          w.mulAssign(0.96)
+          w.mulAssign(0.97)
           p.addAssign(step)
         })
-        // The average light along the path to the sun, weighted to the near end.
-        return vec4(sum.div(total), 1)
+        return vec4(vec3(sum.div(total)), 1)
       })
       const raysTex: N = rtt(rays(), null, null, { resolutionScale: tier === 'full' ? 0.5 : 0.25 })
       disposables.push(raysTex)
       raysRef = raysTex
-      // Strongest near the sun, fading across the screen, as light scattered forward does.
-      const fromSun = length(uv().sub(u.sunUv).mul(vec2(u.aspect, 1)))
-      const fall = exp(fromSun.mul(-1.8))
-      hdr = hdr.add(raysTex.sample(uv()).rgb.mul(u.shafts).mul(u.sunVis).mul(fall).mul(0.3).div(u.exposure))
+      // The glow comes back where the way to the sun is open. In open sky that restores what
+      // the sky left out (energy balances); behind cloud and ridges it stays dark, so the lit
+      // paths read as beams. Over solid ground a share of it is haze lit in front of the
+      // surface.
+      const solid = float(1).sub(step(0.99995, depth.r))
+      const open = raysTex.sample(uv()).r
+      const glow = maskTex.sample(uv()).rgb
+      hdr = hdr.add(glow.mul(open).mul(u.shafts).mul(mix(float(1), u.shaftGround, solid)))
 
       if (flareOn) {
         const flare = Fn(() => {
           const p = uv()
           const o = vec2(0.004, 0.006)
           // The sun's own light through the mask: the volcano or a vehicle in front eclipses it.
-          const sunLight = maskTex.sample(u.sunUv).rgb
-            .add(maskTex.sample(u.sunUv.add(o)).rgb).add(maskTex.sample(u.sunUv.sub(o)).rgb)
-            .add(maskTex.sample(u.sunUv.add(vec2(o.y, o.x.negate()))).rgb).add(maskTex.sample(u.sunUv.sub(vec2(o.y, o.x.negate()))).rgb)
+          const seen = maskTex.sample(u.sunUv).a
+            .add(maskTex.sample(u.sunUv.add(o)).a).add(maskTex.sample(u.sunUv.sub(o)).a)
+            .add(maskTex.sample(u.sunUv.add(vec2(o.y, o.x.negate()))).a).add(maskTex.sample(u.sunUv.sub(vec2(o.y, o.x.negate()))).a)
             .mul(0.2)
+          const sunLight = min(color.sample(u.sunUv).rgb.mul(u.exposure), vec3(SHAFT_CLAMP)).mul(seen)
           const toSun = p.sub(u.sunUv).mul(vec2(u.aspect, 1))
           // Anamorphic streak: thin and long, a little blue, as a coated lens gives.
           const streak = exp(abs(toSun.y).mul(-140)).mul(exp(abs(toSun.x).mul(-2.4)))
@@ -553,6 +565,11 @@ export class PostChain {
 function smooth01(e0: number, e1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)))
   return t * t * (3 - 2 * t)
+}
+
+function findSky(scene: THREE.Scene): AlienSkyMesh | null {
+  for (const child of scene.children) if (child instanceof AlienSkyMesh) return child
+  return null
 }
 
 /** The shadow-casting directional light (sun by day, moon by night), if any. */

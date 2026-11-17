@@ -233,6 +233,43 @@ export function gradeGlow(c: RGB, w: number, tint: RGB = GLOW_WARM): RGB {
 
 /** Preetham single scattering only, no night or twilight, with the low sun grade. */
 export function skyRadianceBase(dir: Vec3, sun: Vec3, p: SkyParams, out: RGB = [0, 0, 0]): RGB {
+  return scatterGraded(dir, sun, p, 1, out)
+}
+
+/**
+ * The low sun's forward glow is the sky's Mie lobe above its value this many degrees from
+ * the sun. Most of a lobe with g near 0.8 lies inside it.
+ */
+export const GLOW_CAP_DEG = 25
+export const GLOW_CAP_COS = Math.cos(GLOW_CAP_DEG * DEG)
+/** Sun heights (sine of elevation) over which the forward glow fades out as the sun climbs. */
+export const GLOW_SHARE_FROM = 0.1, GLOW_SHARE_TO = 0.45
+/** 1 for a sun on the horizon, 0 once it is up about 27 degrees or set. */
+export function lowSunGlowShare(sunY: number): number {
+  return (1 - smoothstep(GLOW_SHARE_FROM, GLOW_SHARE_TO, sunY)) * smoothstep(-0.03, 0.02, sunY)
+}
+
+/**
+ * The part of the graded sky toward `dir` that the Mie forward lobe adds near a low sun:
+ * the sky minus the same sky with the Mie phase held at its GLOW_CAP_DEG value. The sun
+ * shafts draw this light through the gaps between occluders instead of the sky shader
+ * drawing it everywhere (AlienSkyMesh.skyScatter is the shader copy). Non-negative; 0 beyond
+ * the cap angle and for a high or set sun.
+ */
+export function forwardGlow(dir: Vec3, sun: Vec3, p: SkyParams, out: RGB = [0, 0, 0]): RGB {
+  const cosTheta = dir[0] * sun[0] + dir[1] * sun[1] + dir[2] * sun[2]
+  const share = lowSunGlowShare(sun[1])
+  out[0] = out[1] = out[2] = 0
+  if (!(cosTheta > GLOW_CAP_COS) || !(share > 0) || !(lowSunGrade(sun[1]) > 0)) return out
+  scatterGraded(dir, sun, p, 1, out)
+  const capped = scatterGraded(dir, sun, p, GLOW_CAP_COS, _capped)
+  for (let i = 0; i < 3; i++) out[i] = Math.max(0, out[i] - capped[i]) * share
+  return out
+}
+const _capped: RGB = [0, 0, 0]
+
+/** Preetham with the low sun grade; the Mie phase is read at min(cos theta, mieCapCos). */
+function scatterGraded(dir: Vec3, sun: Vec3, p: SkyParams, mieCapCos: number, out: RGB): RGB {
   const bR = betaR(p, _bR)
   const bM = betaM(p, _bM)
   const E = sunE(sun[1])
@@ -244,7 +281,7 @@ export function skyRadianceBase(dir: Vec3, sun: Vec3, p: SkyParams, out: RGB = [
   const rPhase = THREE_OVER_SIXTEENPI * (1 + c * c)
   const g = clamp(p.mieDirectionalG, 0, 0.9999)
   const g2 = g * g
-  const mPhase = ONE_OVER_FOURPI * (1 - g2) / Math.pow(Math.max(1e-6, 1 - 2 * g * cosTheta + g2), 1.5)
+  const mPhase = ONE_OVER_FOURPI * (1 - g2) / Math.pow(Math.max(1e-6, 1 - 2 * g * Math.min(cosTheta, mieCapCos) + g2), 1.5)
   const horizonBlend = clamp(Math.pow(Math.max(0, 1 - sun[1]), 5), 0, 1)
   for (let i = 0; i < 3; i++) {
     const fex = Math.exp(-(bR[i] * sR + bM[i] * sM))
