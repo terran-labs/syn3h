@@ -4,6 +4,7 @@ import { buildStator, STATOR_NUMBERS } from './stator'
 import { buildWings, WINGS_NUMBERS } from './wings'
 import { buildInterior, INTERIOR_NUMBERS } from './interior'
 import { buildCanopy, CANOPY_NUMBERS } from './canopy'
+import { buildSockets, SOCKETS_NUMBERS } from './sockets'
 
 /**
  * The buggy's parts other than the body shell, generated at run time: suspension arm, shock,
@@ -17,8 +18,8 @@ export interface PartsCandidate { id: string; build(detail: 0 | 1 | 2): PartPiec
 const candidate: PartsCandidate = {
   id: 'buggygen-parts',
   build(detail) {
-    return [...buildStrut(detail), ...buildShock(detail), ...buildStator(detail), ...buildWings(detail), ...buildInterior(detail), ...buildCanopy(detail)]
+    return [...buildStrut(detail), ...buildShock(detail), ...buildStator(detail), ...buildWings(detail), ...buildInterior(detail), ...buildCanopy(detail), ...buildSockets(detail)]
   },
-  numbers: SUSPENSION_NUMBERS + STATOR_NUMBERS + WINGS_NUMBERS + INTERIOR_NUMBERS + CANOPY_NUMBERS,
+  numbers: SUSPENSION_NUMBERS + STATOR_NUMBERS + WINGS_NUMBERS + INTERIOR_NUMBERS + CANOPY_NUMBERS + SOCKETS_NUMBERS,
 }
 export default candidate
