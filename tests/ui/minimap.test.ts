@@ -27,7 +27,7 @@ const hue = (hex: string): number => {
 describe('people and bots on the minimap', () => {
   it('draws a person larger and brighter than a bot at the same distance, on the map and off it', () => {
     expect(ARROW.person).toBeGreaterThan(ARROW.bot)
-    for (const d of [rim * 1.01, (rim + far) / 2, far * .99]) {
+    for (let d = rim; d <= far; d += 4) {
       const f = rimFade(d, rim, far), person = markLook('person', f), bot = markLook('bot', f)
       expect(person.radius).toBeGreaterThan(bot.radius)
       expect(person.alpha).toBeGreaterThan(bot.alpha)
@@ -63,6 +63,9 @@ describe('people and bots on the minimap', () => {
     expect(markLook('bot', rimFade(far, rim, far)).alpha).toBeLessThan(.01)
     const person = markLook('person', rimFade(far, rim, far)).alpha
     expect(person).toBeGreaterThan(0); expect(person).toBeLessThan(.15)
+  })
+  it('keeps a bot dot clearly visible through the nearest third of the fade', () => {
+    expect(markLook('bot', rimFade(rim + (far - rim) / 3, rim, far)).alpha).toBeGreaterThan(.35)
   })
   it('takes the bearing the shortest way round the planet', () => {
     // Just across the west seam from someone at the east edge: east of them, not a world away.

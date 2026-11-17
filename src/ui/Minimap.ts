@@ -68,10 +68,11 @@ export interface MarkLook { radius: number; alpha: number }
 /**
  * Size (units) and opacity of a vehicle's mark. Inside the map (`fade` 1) that is its arrow;
  * beyond the rim, its dot at `fade` from `rimFade`. People run from L* 100 down to 38 (still
- * faintly findable at the far side), bots from L* 88 down to 0 (they vanish there).
+ * faintly findable at the far side), bots from L* 96 down to 0 (they vanish there).
  */
 export function markLook(kind: MapKind, fade: number, out: MarkLook = { radius: 0, alpha: 0 }): MarkLook {
-  if (kind === 'bot') { out.alpha = luminance(88 * fade); out.radius = 3 + 1.6 * fade }
+  // A bot's lightness bends up (fade^.7) so the nearest third of the fade stays clearly visible.
+  if (kind === 'bot') { out.alpha = luminance(96 * fade ** .7); out.radius = 3 + 1.6 * fade }
   else if (kind === 'zone') { out.alpha = 1; out.radius = 5 }
   else { out.alpha = luminance(38 + 62 * fade); out.radius = 5.5 + 2.6 * fade }
   return out
@@ -158,6 +159,9 @@ export class Minimap {
   /** Marks grow on small maps so a phone's 96 px map stays legible. Updated on resize, not per draw. */
   private markScale = 1
   private lastDraw = 0
+  private northX = 0
+  private northY = 0
+  private northR = 0
   constructor(private readonly terrain: Terrain, parent: HTMLElement) {
     this.element.className = 'shell-minimap'; this.canvas.width = this.canvas.height = this.base.width = this.base.height = this.pixels
     this.marks.className = 'shell-minimap-marks'; this.marks.width = this.marks.height = 2 * UNITS
@@ -167,7 +171,13 @@ export class Minimap {
     if (typeof ResizeObserver !== 'undefined') {
       this.resize = new ResizeObserver(entries => {
         const width = entries[0]?.contentRect.width ?? 0
-        if (width > 0) this.markScale = Math.min(1.6, Math.max(1, 160 / width))
+        if (width <= 0) return
+        this.markScale = Math.min(1.6, Math.max(1, 160 / width))
+        // Where the N label sits, in mark units, read on resize only, so dots can keep off it.
+        const box = this.element.getBoundingClientRect(), label = north.getBoundingClientRect(), k = UNITS / box.width
+        this.northX = (label.left + label.width / 2 - box.left - box.width / 2) * k
+        this.northY = (label.top + label.height / 2 - box.top - box.height / 2) * k
+        this.northR = label.width > 0 ? Math.max(label.width, label.height) / 2 * k : 0
       })
       this.resize.observe(this.element)
     }
@@ -263,7 +273,12 @@ export class Minimap {
   private before(a: Slot, b: Slot): boolean {
     return a.priority !== b.priority ? a.priority < b.priority : a.place.distance < b.place.distance
   }
+  /** True if the dot touches a higher-priority dot or the N label. */
   private collides(index: number, s: Slot): boolean {
+    if (this.northR > 0) {
+      const gap = s.look.radius + this.northR, dx = s.place.x - this.northX, dy = s.place.y - this.northY
+      if (dx * dx + dy * dy < gap * gap) return true
+    }
     for (let b = 0; b < index; b++) {
       const o = this.slots[this.order[b]]
       if (!o.shown || o.place.blend <= 0) continue
@@ -311,13 +326,16 @@ export class Minimap {
     }
     if (dot > .01) {
       const r = s.look.radius
-      // Dots sit over the live scene, not the map: a dark backing keeps a red dot readable on a red sky.
-      ctx.globalAlpha = dot * .6; ctx.fillStyle = OUTLINE
-      ctx.beginPath(); ctx.arc(x, y, r + 1.8 * m, 0, Math.PI * 2); ctx.fill()
+      // Dots sit over the live scene, not the map, so every dot carries both a dark outline
+      // and a light inner edge: one of the two contrasts with any sky, red dusk or white ice.
+      ctx.globalAlpha = Math.min(1, dot * 1.4); ctx.fillStyle = OUTLINE
+      ctx.beginPath(); ctx.arc(x, y, r + 1.6 * m, 0, Math.PI * 2); ctx.fill()
       ctx.globalAlpha = dot; ctx.fillStyle = s.color
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill()
+      ctx.globalAlpha = dot * .85; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = .9 * m
+      ctx.beginPath(); ctx.arc(x, y, r - .45 * m, 0, Math.PI * 2); ctx.stroke()
+      ctx.globalAlpha = dot
       if (person) {
-        ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5; ctx.stroke()
         ctx.strokeStyle = s.color; ctx.lineWidth = 1.4 * m; ctx.beginPath(); ctx.arc(x, y, r + 2.6 * m, 0, Math.PI * 2); ctx.stroke()
         if (s.accent && r > 4) { ctx.fillStyle = s.accent; ctx.beginPath(); ctx.arc(x, y, r * .38, 0, Math.PI * 2); ctx.fill() }
       }

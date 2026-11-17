@@ -124,6 +124,9 @@ const PRESET_TABLE: Readonly<Record<string, PresetRow>> = {
   'cover.flowers': [0, 0.5, 1, 1, 1, 1],
   'cover.bend': [false, false, true, true, true, true],
   'cover.nightLife': [0, 0, 0.5, 0.75, 1, 1],
+  // Tyre marks: none at Minimal, shorter lived at Low (src/vehicles/effects/markParams.ts).
+  'gfx.tyreMarks.strength': [0, D, D, D, D, D],
+  'gfx.tyreMarks.life': [0.4, 0.6, D, D, D, D],
 }
 export const PRESET_IDS: readonly string[] = Object.freeze(Object.keys(PRESET_TABLE))
 /**

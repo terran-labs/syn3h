@@ -208,7 +208,8 @@ echo "- release-$N, $WHEN: $URL from $MILESTONE ($COMMIT), Worker version $VERSI
 if ! (
   printf '%s\t%s\t%s\t%s\tproduction\n' "$CALVER" "$MILESTONE" "$COMMIT" "$WHEN" >> release-notes/history.tsv || exit 1
   git tag -a "$CALVER" -m "Syn3h $CALVER ($MILESTONE, release-$N)" || exit 1
-  node tools/release-notes.mjs draft "$CALVER" "${PREV:-m00-proposal}" "release-$N"
+  # Notes are written and committed before the tag now; draft only when there are none.
+  [ -f "release-notes/releases/$CALVER.md" ] || node tools/release-notes.mjs draft "$CALVER" "${PREV:-m00-proposal}" "release-$N"
 ); then
   echo "Warning: release is live; calendar tag or notes need repair. Inspect history before retrying."
 fi
