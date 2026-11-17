@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-17 06:30 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-17 07:00 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -52,16 +52,16 @@ On a train worktree (/Users/vtn/dev/Syn3h-wt/train-*), merge accepted tips, then
 4. notes in release-notes/releases/<version>.md with every section (Features, Fixes,
    Handling, Play, Performance, Known issues) and the player digest; release.sh does not
    check the sections yet, the publish tool does;
-5. staging: freeze, carry frozen versions, deploy with --config wrangler.staging.toml,
-   settle (check-public-build five passes in a row), frozen-versions check, three full smokes
-   with shot evidence (a Chrome crash is a rerun);
-6. fast-forward main, tag m-<name>-<version>, tools/release.sh <n> "note" --dry-run, restore
-   ../Syn3h-stable/current, the load gate, tools/release.sh <n> "note";
-7. after RELEASE OK: correct the release time in the notes, check-public-build --feed on both
+5. fast-forward main, tag m-<name>-<version>, tools/release.sh <n> "note" --dry-run, restore
+   ../Syn3h-stable/current, the load gate, tools/release.sh <n> "note". Since ab0bf329
+   release.sh itself checks the notes' sections before freezing and deploys to the staging
+   Worker first (settle, frozen versions, full smoke; a crash is a rerun, up to four), then
+   production. tools/release.sh <n> "note" --staging stops after staging;
+6. after RELEASE OK: correct the release time in the notes, check-public-build --feed on both
    addresses, commit history and stats, push main and the three tags, then
    `node tools/release-notes.mjs publish <version> --latest --dry-run` and `--yes-publish`.
 
-The script used tonight for steps 5 and 6 is /tmp/orch-ship-1704.sh (copy and adapt).
+Before ab0bf329 staging ran outside release.sh (/tmp/orch-ship-1704.sh); it is no longer needed.
 
 release.sh now: settle() before each smoke; DEPLOYED set at the deploy and cleared at
 acceptance; any exit while set (failure, error, INT, TERM) rolls back to the last release in
@@ -73,7 +73,6 @@ The room ticks hill and race time on its own Durable Object alarm (fix/koth-serv
 
 | Branch | Tip | Owner (agent) | Waits on |
 |---|---|---|---|
-| reliability/staging | in progress | Orchestrator | item 2 below; Foreman reviews the diff before use |
 | ux/touch-aim | 6ab92907 | touch builder c66af21c | the owner trying it on a phone; it also fixes the two phone-layout overlaps |
 | ux/hud-column | after a25c7ec5 | HUD builder 4308ed12 | the owner's review; carries a chat-check wait fix |
 | veh/tank, veh/loft-editor | | | do not merge (Foreman) |
@@ -87,13 +86,12 @@ ships; keep it out of blocking steps.
 ## Reliability list (Foreman's order)
 
 1. Done, merged d96e10f5: smoke pages get one browser each and the Low level; viewport stays
-   960x540 (labels keep clear of the HUD at 640x360). A contention run (8 against 8 with
-   galaxy.mjs looping) is pending a report.
-2. In progress on reliability/staging: staging folded into release.sh (deploy, settle, frozen
-   versions, smoke with crash-is-a-rerun and a cap, then production), wrangler.staging.toml
-   committed, the notes-sections check before tagging, and rollback.sh recording what it did so
-   the automatic rollback target is right after a hand rollback. Prove with the stub and one
-   dry run; send the Foreman the diff before a real release uses it.
+   960x540 (labels keep clear of the HUD at 640x360). Contention run: old 1 crash in 8, new 0
+   in 8, inconclusive. If crashes return, read Chrome's crash reason instead of counting.
+2. Done, merged ab0bf329: staging inside release.sh, wrangler.staging.toml committed, the
+   staging page titled "[staging]" and its clone removed after the run, the notes-sections
+   check, the rollback target read from www's build.json, rollback.sh logging to
+   ../Syn3h-stable/rollbacks.tsv. First real use: the next release.
 3. The short public check (proposal section 1).
 4. Workers Logs on, with head sampling (section 5).
 5. A GitHub Actions second vantage point (section 4): workflow_dispatch only, no secrets.
