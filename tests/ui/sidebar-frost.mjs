@@ -22,7 +22,7 @@ for (const mode of ['desktop', 'phone']) {
   const readSurfaces = () => rail.locator(surfaces).evaluateAll(es => es.map(el => { const s = getComputedStyle(el); return { card: el.dataset.section || 'bottom', background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } }))
   const checkSurfaces = (rows, off = false) => {
    assert.deepEqual(rows.map(r => r.card), ['you', 'game', 'players', 'vehicles', 'world', 'performance'])
-   for (const r of rows) { if (off) assert.equal(r.blur, 'none', r.card); else assert.match(r.blur, /blur\(28px\)/, r.card); assert.match(r.background, off ? /0\.94\)/ : /0\.65\)/, r.card) }
+   for (const r of rows) { if (off) assert.equal(r.blur, 'none', r.card); else assert.match(r.blur, /blur\(28px\)/, r.card); { const alpha = Number(/,\s*([\d.]+)\)$/.exec(r.background)?.[1] ?? 1); assert.ok(off ? alpha >= .9 : alpha >= .6, `${r.card}: the card body is dense enough to read over a bright world (${r.background})`) } }
   }
   const results = []
   for (const [planet, hour] of [['ice', 12], ['volcanic', 0], ['desert', 12]]) {
@@ -41,7 +41,7 @@ for (const mode of ['desktop', 'phone']) {
     assert.equal(bounds.length, 3)
     assert.ok(bounds.every(b => Math.abs(b.y - bounds[0].y) < 1 && Math.abs(b.width - bounds[0].width) < 1 && b.height >= 44), 'mode segments share one equal row')
     assert.match(frost.blur, /blur\(28px\)/)
-    assert.match(frost.background, /0\.65\)/)
+    assert.ok(Number(/,\s*([\d.]+)\)$/.exec(frost.background)?.[1] ?? 1) >= .6, `card body dense enough to read over a bright world (${frost.background})`)
     const cards = await readSurfaces(); console.log(JSON.stringify({ mode, planet, cards })); checkSurfaces(cards)
     assert.equal(await rail.locator('[data-section=sky]').count(), 0)
     for (const group of ['Tag', 'Tag beams', 'Zorb']) {

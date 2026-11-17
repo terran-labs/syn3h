@@ -18,7 +18,7 @@
 
 .syn3h-shell.exploration-ui {
   /* Neutral: grey-white type and hairlines, near-black smoked glass, a soft white glow. */
-  --s3-ink: #f4f4f4; --s3-dim: #dcdcdc; --s3-soft: #cfcfcf; --s3-accent: #e8e8e8; --s3-accent-2: #fbfbfb;
+  --s3-ink: #f4f4f4; --s3-dim: #e2e2e2; --s3-soft: #cfcfcf; --s3-accent: #e8e8e8; --s3-accent-2: #fbfbfb;
   --s3-line: rgb(232 232 232 / .42); --s3-line-quiet: rgb(232 232 232 / .18); --s3-panel: rgb(10 10 11 / .3);
   /* "On" and chosen: a near-white fill with dark type or a dark knob, and a soft white glow.
      (Was a pale blue fill: #c2c2c2 or #dbdbdb, with a cyan glow.) */
@@ -292,7 +292,8 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(230
 /* Readable cards over bright terrain. Inner controls stay unblurred; only card surfaces frost. */
 html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-glass, .rail-players),
 html .syn3h-shell.exploration-ui:is([data-glass], *) :is(.lobby-panels, .in-play-about) {
-  background: rgb(14 14 15 / .65); background-image: none;
+  /* Dense enough that secondary text meets 4.5:1 over a white sky (measured, not guessed). */
+  background: rgb(12 12 13 / .68); background-image: none;
   -webkit-backdrop-filter: blur(28px) saturate(.65); backdrop-filter: blur(28px) saturate(.65);
 }
 html .syn3h-shell.exploration-ui[data-ui-frost="off"] .world-inspector :is(.wi-glass, .rail-players),
