@@ -11,6 +11,7 @@
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { waitForState } from './stateWait.mjs'
 const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
 const out = 'tests/ui/artifacts/galaxy'
 await mkdir(out, { recursive: true })
@@ -31,7 +32,7 @@ try {
     // settled lobby, as for a player, and the checks below are of that lobby.
     await page.keyboard.press('Shift')
     // The settled lobby: the opening gone and every planet's label shown.
-    await page.waitForFunction(() => !window.syn3h.shell.galaxy.opening && document.querySelectorAll('.galaxy-label:not([hidden])').length >= window.syn3h.planets.PLANETS.length, null, { timeout: 20000 }).catch(() => {})
+    await waitForState(page, 'the settled lobby (opening over, every planet labelled)', () => !window.syn3h.shell.galaxy.opening && document.querySelectorAll('.galaxy-label:not([hidden])').length >= window.syn3h.planets.PLANETS.length, undefined, 60)
     const state = () => page.evaluate(() => { const g = window.syn3h.shell.galaxy; return { open: document.querySelector('.syn3h-shell').classList.contains('galaxy-open'), live: g.live, frames: g.frames, labels: [...document.querySelectorAll('.galaxy-label:not([hidden])')].map(l => { const r = l.getBoundingClientRect(); return { id: l.dataset.world, x: r.left + r.width / 2, y: r.top } }) } })
     const first = await state()
     assert.equal(first.open, true); assert.equal(first.live, true)
@@ -43,7 +44,7 @@ try {
     const from = { x: view.viewport.width * 0.5, y: view.viewport.height * 0.16 }
     await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(from.x + 160, from.y + 30, { steps: 8 }); await page.mouse.up()
     // The swing plays out over drawn frames: wait until a label has moved, as the assertion needs.
-    await page.waitForFunction(first => [...document.querySelectorAll('.galaxy-label:not([hidden])')].some(l => { const r = l.getBoundingClientRect(), b = first.labels.find(x => x.id === l.dataset.world); return b && Math.hypot(r.left + r.width / 2 - b.x, r.top - b.y) > 25 }) && window.syn3h.shell.galaxy.frames > first.frames, first, { timeout: 10000 }).catch(() => {})
+    await waitForState(page, 'a label moved by the swing, with frames drawn', first => [...document.querySelectorAll('.galaxy-label:not([hidden])')].some(l => { const r = l.getBoundingClientRect(), b = first.labels.find(x => x.id === l.dataset.world); return b && Math.hypot(r.left + r.width / 2 - b.x, r.top - b.y) > 25 }) && window.syn3h.shell.galaxy.frames > first.frames, first, 30)
     const swung = await state()
     assert.ok(swung.frames > first.frames, 'it keeps drawing')
     assert.ok(swung.labels.some(l => { const before = first.labels.find(b => b.id === l.id); return before && Math.hypot(l.x - before.x, l.y - before.y) > 25 }), `${view.name}: the view swung`)

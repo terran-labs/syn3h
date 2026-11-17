@@ -12,6 +12,7 @@
 import { chromium, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { waitForState } from './stateWait.mjs'
 const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
 const out = 'tests/ui/artifacts/galaxy-crowd'
 await mkdir(out, { recursive: true })
@@ -36,7 +37,7 @@ try {
       await page.waitForFunction(() => window.syn3h.shell.graphics.planetMaps >= window.syn3h.planets.PLANETS.length, null, { timeout: 60000 })
       // Measured in the settled lobby: the opening over and a few frames drawn since.
       const drawn = await page.evaluate(() => window.syn3h.shell.galaxy.frames)
-      await page.waitForFunction(drawn => !window.syn3h.shell.galaxy.opening && window.syn3h.shell.galaxy.frames > drawn + 3, drawn, { timeout: 30000 }).catch(() => {})
+      await waitForState(page, 'the settled lobby (opening over, frames drawn)', drawn => !window.syn3h.shell.galaxy.opening && window.syn3h.shell.galaxy.frames > drawn + 3, drawn, 60)
       const state = await page.evaluate(() => {
         const labels = [...document.querySelectorAll('.galaxy-label')].map(l => { const r = l.getBoundingClientRect(); return { id: l.dataset.world, hidden: l.hidden, crowded: l.classList.contains('is-crowded'), left: r.left, top: r.top, right: r.right, bottom: r.bottom } })
         return { labels, screen: window.syn3h.shell.galaxy.screen.map(s => ({ id: s.id, x: s.x, y: s.y, r: s.radius, visible: s.visible })) }

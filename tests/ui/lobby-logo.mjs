@@ -1,6 +1,7 @@
 import { chromium, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { waitForState } from './stateWait.mjs'
 await mkdir('tests/ui/artifacts/logo', { recursive: true })
 for (const engine of [chromium, webkit]) {
   const browser = await engine.launch(engine === chromium ? { channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist'] } : {})
@@ -16,14 +17,14 @@ for (const engine of [chromium, webkit]) {
     assert.equal(await page.evaluate(() => { const g = window.syn3h.shell.galaxy; return g.logo.gl === g.gl && document.querySelectorAll('.galaxy-canvas').length === 1 }), true, 'logo shares the galaxy context')
     const before = await page.evaluate(() => window.syn3h.shell.galaxy.logo.introTime)
     // A drawing lobby advances the logo's clock on its next frames; a stopped one never does.
-    await page.waitForFunction(before => window.syn3h.shell.galaxy.logo.introTime > before, before, { timeout: 10000 }).catch(() => {})
+    await waitForState(page, 'the lobby to draw (the logo clock to advance)', before => window.syn3h.shell.galaxy.logo.introTime > before, before, 30)
     assert.ok(await page.evaluate(() => window.syn3h.shell.galaxy.logo.introTime) > before, 'ordinary lobby animates')
     assert.equal(await page.locator('.shell-logo').evaluate(el => getComputedStyle(el).opacity), '0', 'SVG does not draw over the animation')
     await page.screenshot({ path: `tests/ui/artifacts/logo/${engine.name()}.png` })
     await page.evaluate(() => window.syn3h.shell.showLobbyAbout())
     // Behind a sheet the galaxy dims and then holds the logo still (its sway, inert now, is
     // how the galaxy says so). Wait for that, not for a clock.
-    await page.waitForFunction(() => window.syn3h.shell.galaxy.logo.introTime > 1 && window.syn3h.shell.galaxy.logo.look.sway === 0, null, { timeout: 10000 })
+    await waitForState(page, 'the logo to hold still behind the About sheet', () => window.syn3h.shell.galaxy.logo.introTime > 1 && window.syn3h.shell.galaxy.logo.look.sway === 0, undefined, 30)
     await page.keyboard.press('Escape')
     await page.waitForTimeout(500)
     await page.screenshot({ path: `tests/ui/artifacts/logo/${engine.name()}-settled.png` })
@@ -31,11 +32,11 @@ for (const engine of [chromium, webkit]) {
     await page.evaluate(() => { window.syn3h.shell.galaxy.wake = 2 })
     // Reduced motion holds the logo still and skips its fade on the next drawn frame: wait for
     // that frame, not for a clock (a loaded machine may not draw one in a fixed 300 ms).
-    await page.waitForFunction(() => window.syn3h.shell.galaxy.logo.look.sway === 0 && window.syn3h.shell.galaxy.logo.introTime > 1e5, null, { timeout: 10000 })
+    await waitForState(page, 'reduced motion to hold the logo still and skip its fade', () => window.syn3h.shell.galaxy.logo.look.sway === 0 && window.syn3h.shell.galaxy.logo.introTime > 1e5, undefined, 30)
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(() => { clearInterval(window.__pin); window.syn3h.params.set('gfx.level', 0); window.syn3h.shell.galaxy.wake = 2 })
     // The lowest level's budget and stillness land on the next drawn frame: wait for it.
-    await page.waitForFunction(() => window.syn3h.shell.galaxy.logo.look.particles <= 220 && window.syn3h.shell.galaxy.logo.look.sway === 0, null, { timeout: 10000 })
+    await waitForState(page, 'the lowest graphics level to cut particles and sway', () => window.syn3h.shell.galaxy.logo.look.particles <= 220 && window.syn3h.shell.galaxy.logo.look.sway === 0, undefined, 30)
     // Restore the context through the browser's own extension; the SVG bridges the loss.
     await page.evaluate(() => { const g = window.syn3h.shell.galaxy; window.__oldLogo = g.logo; window.__loss = g.gl.getExtension('WEBGL_lose_context'); window.__loss.loseContext() })
     await page.waitForFunction(() => !document.querySelector('.syn3h-shell').classList.contains('has-animated-logo'))

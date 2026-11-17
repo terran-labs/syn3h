@@ -5,6 +5,7 @@
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { waitForState } from './stateWait.mjs'
 const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5241/'
 const out = 'tests/ui/artifacts/wordmark'
 await mkdir(out, { recursive: true })
@@ -19,9 +20,9 @@ try {
     await page.goto(`${base}?room=trip-${name}-${Date.now()}`)
     // The opening starts as loading ends: on the first frame after boot it must be playing
     // (with motion), never already over. Read on that frame, not after a clock.
-    const atBoot = await (await page.waitForFunction(() => document.documentElement.dataset.boot === 'done' && window.syn3h?.shell?.galaxy && { opening: !!syn3h.shell.galaxy.opening }, null, { timeout: 120000 })).jsonValue()
+    const atBoot = await (await waitForState(page, 'the first frame after loading', () => document.documentElement.dataset.boot === 'done' && window.syn3h?.shell?.galaxy && { opening: !!syn3h.shell.galaxy.opening }, undefined, 120)).jsonValue()
     assert.equal(atBoot.opening, !reduced, reduced ? 'reduced motion: no opening' : 'the opening plays as loading ends')
-    await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 120000 })
+    await waitForState(page, 'the game to run', () => window.syn3h?.game?.tick > 25, undefined, 120)
     await page.evaluate(() => { window.__pin = setInterval(() => syn3h.params.set('gfx.level', 2), 400) })
     // 1. A world clicked while the opening plays: it goes there, and the controls are not left held back.
     if (!reduced) {
@@ -36,7 +37,7 @@ try {
       await page.mouse.click(world.x, world.y)
       await page.evaluate(() => { syn3h.shell.galaxy.openingAt = null })
       // The click ends the opening and starts the flight on the next frames: wait for that state.
-      await page.waitForFunction(() => { const g = syn3h.shell.galaxy; return !g.opening && g.chosen >= 0 && !!g.flight }, null, { timeout: 10000 }).catch(() => {})
+      await waitForState(page, 'the click to end the opening and start the flight', () => { const g = syn3h.shell.galaxy; return !g.opening && g.chosen >= 0 && !!g.flight }, undefined, 30)
       const after = await state(page)
       assert.equal(after.opening, false, 'the click ends the opening'); assert.equal(after.held, null, 'and gives the controls back')
       assert.ok(after.chosen >= 0 && after.flight, 'and flies to the world')
