@@ -820,7 +820,6 @@ export class Shell implements System {
       this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.removeProperty('visibility') }
       this.game.holdDraws = false
-      vehicleDetail.holdNear = false
       this.dropping = false; this.enteringByGesture = false
       if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
     }
@@ -901,6 +900,9 @@ export class Shell implements System {
       root.classList.remove('is-descending')
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.removeProperty('visibility') }
       this.game.holdDraws = false
+      // However leaving ends, vehicles go back to choosing their look by distance: the lobby's
+      // Return to game, a world entered without a descent, or an ascent that failed.
+      vehicleDetail.holdNear = false
       this.dropping = false
       // The lobby as Leave world has always left it, from the view the flight settled on.
       this.menuVisible = false
@@ -936,7 +938,11 @@ export class Shell implements System {
   private cinematic?: CinematicCamera
   private self?: MapEntity
   closeMenu(): void {
-    if (!this.started) return
+    // Not while a descent or an ascent is running: Escape mid-descent used to start play with
+    // the world's draws still held (driving a frozen picture for up to 15 s), and mid-ascent
+    // flipped to playing just before the ascent hid the game and reopened the lobby. Each
+    // transition ends by putting the menu where it belongs.
+    if (!this.started || this.dropping) return
     this.lobbyAddress?.showPlay(this.room)
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; if (this.galaxy) this.galaxy.enabled = false
     this.lobbySettings.close()
