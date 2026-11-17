@@ -31,7 +31,7 @@ const AIM_UP = 0.9
 
 type Height = (x: number, z: number) => number
 
-function terrainOf(world: RAPIER.World, height: Height, liquid?: Height, size = 160, cell = 1): BotTerrain {
+export function terrainOf(world: RAPIER.World, height: Height, liquid?: Height, size = 160, cell = 1): BotTerrain {
   const n = Math.round(size / cell), half = size / 2, row = n + 1
   const grid = new Float32Array(row * row)
   for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) grid[j * row + i] = height(-half + i * cell, -half + j * cell)

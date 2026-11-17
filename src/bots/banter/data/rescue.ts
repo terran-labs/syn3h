@@ -656,6 +656,23 @@ export const RESCUE: Pools = {
     intern: ["{player} hooked me! This is the best day! Pull!"],
   },
 
+  // Out before anyone got a line on: no thanks owed, a little embarrassment.
+  'rescue.selffree': {
+    any: [
+      "Never mind! I am out. Stand down, everyone. Thank you for the thought.",
+      "Out! On my own! Nobody look. Cancel the rescue.",
+      "False alarm. I was only mostly stuck.",
+    ],
+    inspector: ["Self-extracted. Hazard downgraded. Thank you all for mobilising."],
+    clerk: ["Please withdraw my request for assistance. I have filed my own rescue."],
+    pilot: ["See? Told you I had it. Everyone back to your positions."],
+    probe: ["I got out! I think the {sea} just let go. Thank you for coming anyway!"],
+    marshal: ["Out. Stand down."],
+    moon: ["I am free. The moon let me go. That is what worries me."],
+    auditor: ["Out. The sediment released me. Good sediment."],
+    intern: ["I did it! By myself! Did everyone see? Nobody needs to come!"],
+  },
+
   'rescue.retry': {
     any: [
       "That did not do it. Moving round. New angle.",

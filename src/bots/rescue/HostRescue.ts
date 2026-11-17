@@ -456,7 +456,9 @@ export class HostRescue {
     }
     if (freed) {
       this.stats.freed++
-      this.onEvent({ kind: 'freed', stuck: r.stuck, by: [...r.rescuers.keys()], players: [...r.playersNear], count: this.count.get(r.stuck) ?? 1 })
+      // Credit only those who pulled: one still on its way did not rescue anybody.
+      const by = [...r.rescuers].filter(([, tow]) => tow.pulled).map(([id]) => id)
+      this.onEvent({ kind: 'freed', stuck: r.stuck, by, players: [...new Set([...r.hooked, ...(by.length ? r.playersNear : [])])], count: this.count.get(r.stuck) ?? 1 })
     } else {
       this.stats.gaveUp++
       // The old self-rescue now happens: its timers are long past their limits.

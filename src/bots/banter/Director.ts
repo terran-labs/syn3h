@@ -844,6 +844,9 @@ export class BanterDirector {
         const s = bot(e.stuck)
         const helper = e.by.map(bot).find((b): b is BotState => !!b)
         const person = e.players.map((id) => this.players.get(id)).find((p) => !!p)
+        // Out on its own before anyone pulled: it says so, nobody takes the credit, and it is
+        // not counted as a rescue.
+        if (!helper && !person) { if (s) this.speak(s, 'rescue.selffree', {}, t); return }
         for (const id of e.by) this.towed.add(id)
         const n = (this.rescued.get(e.stuck) ?? 0) + 1
         this.rescued.set(e.stuck, n)

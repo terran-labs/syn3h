@@ -74,6 +74,8 @@ const HITCH_UP = 0.9
 export class TowRescue {
   phase: TowPhase = 'approach'
   attempt = 1
+  /** It got a cord on and pulled at least once: it may take credit for the rescue. */
+  pulled = false
   /** Seconds since the rescue began, and in the current phase. */
   elapsed = 0
   private inPhase = 0
@@ -163,6 +165,7 @@ export class TowRescue {
         this.brake(input)
         this.gear.reel(this.stuck)
         if (this.gear.attachedTo(this.stuck)) {
+          this.pulled = true
           this.freedFor = 0; this.checkAt = 0; this.pullUntil = 0
           const s0 = this.stuck.body.translation()
           this.checkAlong = (s0.x - this.start.x) * this.pull.x + (s0.z - this.start.z) * this.pull.z
