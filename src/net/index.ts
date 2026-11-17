@@ -1343,6 +1343,8 @@ export class NetClient implements System {
   private removeRemote(id: number, depart = false): void {
     const r = this.remotes.get(id)
     if (!r) return
+    // One never shown (still compiling) just goes.
+    if (this.arrivals?.isWaiting(id)) depart = false
     this.remotes.delete(id)
     this.arrivals?.drop(id)
     this.uiDirty = true

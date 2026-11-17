@@ -24,6 +24,8 @@ import { BotPacer } from './pacing'
 export interface BotArrivalEffect {
   begin(vehicle: Vehicle, options?: { at?: Vector3; heading?: number; hold?: boolean; holdSeconds?: number }): Promise<void>
   cancel(vehicle: Vehicle): void
+  /** The arrival in reverse; resolves when the vehicle can be removed inside it. */
+  depart?(vehicle: Vehicle): Promise<void>
 }
 /** Slot by slot: half buggies, a quarter hovercraft, a quarter jets. */
 const MIXED_FLEET = ['buggy', 'hovercraft', 'buggy', 'jet'] as const
@@ -142,7 +144,7 @@ export class BotManager implements System {
       this.effects.get(bot)?.(); this.effects.delete(bot)
       this.game.remove(brain); this.game.remove(bot)
     }
-    this.effect.begin(bot, { hold: false, holdSeconds: 0.7 }).then(gone, gone)
+    ;(this.effect.depart?.(bot) ?? this.effect.begin(bot, { hold: false, holdSeconds: 0.7 })).then(gone, gone)
   }
   private clearBots() {
     while (this.bots.length) this.removeLast()
