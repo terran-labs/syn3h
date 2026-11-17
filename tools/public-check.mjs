@@ -21,7 +21,7 @@ import { isBrowserCrash, isTransportConsoleError } from './lib/smoke-retry.mjs'
 const base = process.argv[2]
 if (!base) { console.error('usage: node tools/public-check.mjs <public url>'); process.exit(2) }
 const room = `check${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
-const results = [], errors = [], crashed = [], browsers = []
+const results = [], errors = [], crashed = [], browsers = [], consoleLines = []
 const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail === undefined ? '' : ' ' + JSON.stringify(detail)}`) }
 const until = async (page, fn, arg, ms) => page.waitForFunction(fn, arg, { timeout: ms }).then(() => true, () => false)
 
@@ -34,7 +34,15 @@ async function open(name) {
   const page = await ctx.newPage()
   page.on('crash', () => crashed.push(name))
   page.on('pageerror', (e) => errors.push(`${name} pageerror: ${e.message}`))
-  page.on('console', (m) => { if (m.type() === 'error' && !isTransportConsoleError(m.text(), base)) errors.push(`${name} console: ${m.text()}`) })
+  page.on('console', (m) => {
+    consoleLines.push({ name, at: Date.now(), type: m.type(), text: m.text().slice(0, 300) })
+    if (m.type() === 'error' && !isTransportConsoleError(m.text(), base)) errors.push(`${name} console: ${m.text()}`)
+  })
+  page.on('websocket', (ws) => {
+    consoleLines.push({ name, at: Date.now(), type: 'websocket-open', text: ws.url().replace(/room=[^&]+/, 'room=<check>') })
+    ws.on('close', () => consoleLines.push({ name, at: Date.now(), type: 'websocket-close', text: '' }))
+    ws.on('socketerror', (e) => consoleLines.push({ name, at: Date.now(), type: 'websocket-error', text: String(e) }))
+  })
   await page.goto(`${base}?room=${room}&name=${name}&autoplay=1`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.syn3hNet?.id > 0 && window.syn3h?.player, null, { timeout: 60000 })
   await page.evaluate(() => { window.syn3h.shell.play(); document.activeElement?.blur?.() })
@@ -89,9 +97,24 @@ try {
   // 5. Close A's socket under it, as a network drop would; A must come back as the same player.
   const before = await a.evaluate(() => window.syn3hNet.conn.reconnects)
   await a.evaluate(() => window.syn3hNet.conn.ws?.close(4000, 'public check'))
-  const back = await until(a, (n) => window.syn3hNet.conn.reconnects > n && window.syn3hNet.conn.state === 'open' && window.syn3hNet.id > 0, before, 30000)
+  // Sample A's connection each second while waiting, so a failure carries its own evidence.
+  const closedAt = Date.now(), samples = []
+  const sample = () => a.evaluate(() => { const c = window.syn3hNet.conn; return { state: c.state, reconnects: c.reconnects, backoff: c.backoff, retryPending: !!c.timer, readyState: c.ws?.readyState ?? null, id: window.syn3hNet.id } }).catch((e) => ({ error: String(e) }))
+  let back = false
+  for (let t = 0; t < 30 && !back; t++) {
+    const s = await sample(); samples.push({ s: t, ...s })
+    back = s.reconnects > before && s.state === 'open' && s.id > 0
+    if (!back) await new Promise((r) => setTimeout(r, 1000))
+  }
   const idAfter = await a.evaluate(() => window.syn3hNet.id)
-  check('a forced reconnect rejoins as the same player', back && idAfter === idA && await sees(b, [idA]), { idA, idAfter })
+  const rejoined = back && idAfter === idA && await sees(b, [idA])
+  const evidence = rejoined ? { idA, idAfter } : {
+    idA, idAfter, before,
+    closes: await a.evaluate(() => window.syn3hNet.conn.closes).catch(() => null),
+    samples,
+    aSaw: consoleLines.filter((l) => l.name === 'Alice' && l.at >= closedAt - 1000).map((l) => ({ ms: l.at - closedAt, type: l.type, text: l.text })).slice(0, 60),
+  }
+  check('a forced reconnect rejoins as the same player', rejoined, evidence)
 
   // 6. A leaves; the room holds its place for the rejoin grace (30 s), then tells B.
   await a.context().close()
