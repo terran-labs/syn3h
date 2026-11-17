@@ -1,0 +1,72 @@
+import * as THREE from 'three/webgpu'
+import parts from './parts'
+import { buggyBody } from './body'
+
+/**
+ * Generated stand-ins for the two model files LoadedBuggySkin reads, as plain scene graphs with
+ * the node and material names its post-load code looks for, so GeneratedBuggySkin can run that
+ * code nearly unchanged. `scene` stands for buggy.glb (RimSimple, Wings), `next` for
+ * buggy-boxarm.glb (Body, Sockets, Interior, Canopy, Strut, Shock).
+ *
+ * Every piece is already in the frame the skin uses it in, except that the wings are both
+ * halves in the game frame, so the skin skips the model's quarter turn and mirror for them.
+ */
+
+/** A generated piece: a part name, a shading role and its geometry. */
+export interface Piece { part: string; role: string; geometry: THREE.BufferGeometry }
+/** A body candidate: only `body` pieces are used from it. */
+export interface BodyCandidate { id: string; build(detail: 0 | 1 | 2): Piece[] }
+
+/**
+ * Shock anchors, formerly the Shock node's extras in buggy-boxarm.glb: the foot in the arm's
+ * frame, and the top of each wheel's shock inside the body (front left, front right, rear left,
+ * rear right).
+ */
+export const SHOCK_FOOT: [number, number, number] = [0, .2, -.07]
+export const SHOCK_TOPS: number[] = [
+  -.7302074432373047, .49191752076148987, -1.2375385761260986, .7302074432373047, .49191752076148987, -1.2375385761260986,
+  -.7270978689193726, .48803403973579407, 1.2364318370819092, .7270978689193726, .48803403973579407, 1.2364318370819092,
+]
+
+/** Shading role to the material name the skin's name tests map back to that role. */
+const MATERIAL: Record<string, string> = { paint: 'Body', accent: 'Accent', glow: 'Glow', chrome: 'Chrome', frame: 'Dark', trim: 'Interior', canopy: 'Glass' }
+
+/** Split lamp faces into headlights (ahead of the centre, -Z) and tail lamps. */
+function splitLamps(geometry: THREE.BufferGeometry): [THREE.BufferGeometry, THREE.BufferGeometry] {
+  const g = geometry.index ? geometry.toNonIndexed() : geometry
+  const pos = g.attributes.position, head: number[] = [], tail: number[] = []
+  for (let t = 0; t < pos.count; t += 3) {
+    const z = (pos.getZ(t) + pos.getZ(t + 1) + pos.getZ(t + 2)) / 3
+    const out = z < 0 ? head : tail
+    for (let k = 0; k < 3; k++) out.push(pos.getX(t + k), pos.getY(t + k), pos.getZ(t + k))
+  }
+  const make = (p: number[]) => { const b = new THREE.BufferGeometry(); b.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); return b }
+  return [make(head), make(tail)]
+}
+
+function node(name: string, pieces: Piece[]): THREE.Group {
+  const group = new THREE.Group()
+  group.name = name
+  for (const p of pieces) {
+    const named = p.role === 'lamp' ? splitLamps(p.geometry).map((g, i) => [g, i ? 'TailLights' : 'Headlights'] as const) : [[p.geometry, MATERIAL[p.role] ?? 'Interior'] as const]
+    for (const [geometry, name] of named) {
+      if (!geometry.attributes.position.count) continue
+      const material = new THREE.MeshStandardMaterial()
+      material.name = name
+      group.add(new THREE.Mesh(geometry, material))
+    }
+  }
+  return group
+}
+
+/** The two stand-in scenes, built fresh (the skin disposes what it is given). */
+export function generatedScenes(body: BodyCandidate = buggyBody): { scene: THREE.Group; next: THREE.Group } {
+  const pieces = parts.build(0) as Piece[]
+  const of = (part: string) => pieces.filter(p => p.part === part)
+  const scene = new THREE.Group(), next = new THREE.Group()
+  scene.add(node('RimSimple', of('stator')), node('Wings', of('wings')))
+  next.add(node('Body', body.build(0).filter(p => p.part === 'body')), node('Sockets', of('sockets')), node('Interior', of('interior')),
+    node('Canopy', of('canopy')), node('Strut', of('strut')), node('Shock', of('shock')))
+  next.getObjectByName('Shock')!.userData = { foot: SHOCK_FOOT, tops: SHOCK_TOPS }
+  return { scene, next }
+}

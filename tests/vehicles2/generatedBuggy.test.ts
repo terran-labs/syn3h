@@ -1,0 +1,60 @@
+import * as THREE from 'three/webgpu'
+import { afterEach, expect, it, vi } from 'vitest'
+import { GeneratedBuggySkin } from '../../src/vehicles/buggygen/GeneratedBuggySkin'
+import { buggyBody } from '../../src/vehicles/buggygen/body'
+import parts from '../../src/vehicles/buggygen/parts'
+import type { VehicleDetail } from '../../src/vehicles/skins/mergeStatic'
+
+afterEach(() => { vi.unstubAllGlobals() })
+
+function finite(root: THREE.Object3D): boolean {
+  let ok = true
+  root.traverse(o => {
+    if (!(o instanceof THREE.Mesh)) return
+    const a = o.geometry.attributes.position.array
+    for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) ok = false
+  })
+  return ok
+}
+
+// A role the skin cannot map would be drawn as plain trim: the wrong colour in the game.
+it('gives every generated piece a role the skin knows, at every detail level', () => {
+  const known = ['paint', 'accent', 'glow', 'chrome', 'frame', 'trim', 'canopy', 'lamp']
+  for (const detail of [0, 1, 2] as const) {
+    for (const p of [...parts.build(detail), ...buggyBody.build(detail)]) expect(known, `${p.part} ${p.role}`).toContain(p.role)
+  }
+})
+
+// The generated skin must never fall back to a model request, and must come up whole.
+it('builds without any network request, with finite geometry, and moves its parts', async () => {
+  const fetch = vi.fn(() => Promise.reject(new Error('no network in this test')))
+  vi.stubGlobal('fetch', fetch)
+  const root = new THREE.Group()
+  const callbacks = new Set<VehicleDetail>()
+  const detail: VehicleDetail = (distance, remote, level) => callbacks.forEach(fn => fn(distance, remote, level))
+  root.userData.registerVehicleDetail = (fn: VehicleDetail) => { callbacks.add(fn); return () => callbacks.delete(fn) }
+  const skin = new GeneratedBuggySkin(); root.add(skin.object)
+  try {
+    await skin.ready
+    expect(fetch).not.toHaveBeenCalled()
+    expect(skin.object.visible).toBe(true)
+    for (const level of [0, 60, 300]) { detail(level, true, 2); expect(finite(root)).toBe(true) }
+    detail(0, false, 2)
+    // Suspension and wheels follow setWheel.
+    skin.setWheel(0, new THREE.Vector3(-1.1, -.35, -1.3), .4, 1.2)
+    const tyres = skin.object.getObjectByName('Smooth tyres and chrome rings') as THREE.InstancedMesh
+    const m = new THREE.Matrix4(); tyres.getMatrixAt(0, m)
+    expect(new THREE.Vector3().setFromMatrixPosition(m).y).toBeCloseTo(-.35)
+    // Wings open, flex and report tips on both sides, staying finite.
+    skin.setWings(1, .5, -.5)
+    expect(finite(root)).toBe(true)
+    const tip = new THREE.Vector3()
+    expect(skin.getWingTip(1, tip)).toBe(true)
+    expect(tip.x).toBeGreaterThan(0)
+    expect(skin.getWingTip(-1, tip)).toBe(true)
+    expect(tip.x).toBeLessThan(0)
+    skin.setDrive(0, 1); skin.setLights(true); skin.setColors(0xff0000, 0x00ff00)
+  } finally {
+    skin.dispose()
+  }
+})
