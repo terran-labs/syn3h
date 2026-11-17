@@ -27,8 +27,12 @@ export interface Step { stencil: Stencil; faces: Uint32Array; tags: Uint8Array; 
 
 const edgeKey = (a: number, b: number, n: number) => (a < b ? a * n + b : b * n + a)
 
-/** The topology of one Loop step and the stencil that places its vertices. */
-export function loopStep(vertexCount: number, faces: ArrayLike<number>, tags: ArrayLike<number>, creases: ArrayLike<number>): Step {
+/**
+ * The topology of one Loop step and the stencil that places its vertices. With `limit`, the
+ * stencil instead moves each vertex to its place on the limit surface (no new vertices), which
+ * is what the surface converges to after infinitely many steps: smoother at the same count.
+ */
+export function loopStep(vertexCount: number, faces: ArrayLike<number>, tags: ArrayLike<number>, creases: ArrayLike<number>, limit = false): Step {
   const n = vertexCount, faceCount = faces.length / 3
   // Edges: id per unordered pair, with their (up to two) opposite vertices and crease flag.
   const edgeId = new Map<number, number>()
@@ -64,6 +68,22 @@ export function loopStep(vertexCount: number, faces: ArrayLike<number>, tags: Ar
   // Stencil rows: old vertices first, then one new vertex per edge.
   const start: number[] = [0], index: number[] = [], weight: number[] = []
   const push = (i: number, w: number) => { index.push(i); weight.push(w) }
+  if (limit) {
+    for (let v = 0; v < n; v++) {
+      const k = ringCount[v], s = sharpCount[v]
+      if (k === 0 || s > 2) push(v, 1)
+      else if (s === 2) {
+        push(v, 2 / 3)
+        for (let r = ringStart[v]; r < ringStart[v + 1]; r++) if (ringSharp[r]) push(ring[r], 1 / 6)
+      } else {
+        const beta = k === 3 ? 3 / 16 : 3 / (8 * k), chi = 1 / (3 / (8 * beta) + k)
+        push(v, 1 - k * chi)
+        for (let r = ringStart[v]; r < ringStart[v + 1]; r++) push(ring[r], chi)
+      }
+      start.push(index.length)
+    }
+    return {stencil: {start: Uint32Array.from(start), index: Uint32Array.from(index), weight: Float32Array.from(weight), rows: n, cols: n}, faces: Uint32Array.from(faces), tags: Uint8Array.from(tags), creases: Uint32Array.from(creases)}
+  }
   for (let v = 0; v < n; v++) {
     const k = ringCount[v], s = sharpCount[v]
     if (k === 0 || s > 2) push(v, 1)
@@ -110,13 +130,14 @@ export function applyStencil(s: Stencil, data: ArrayLike<number>): Float32Array 
   return out
 }
 
-/** Subdivides a cage `levels` times. */
-export function subdivide(cage: Cage, levels: number): { positions: Float32Array; faces: Uint32Array; tags: Uint8Array } {
+/** Subdivides a cage `levels` times; with `limit`, then moves every vertex onto the limit surface. */
+export function subdivide(cage: Cage, levels: number, limit = false): { positions: Float32Array; faces: Uint32Array; tags: Uint8Array } {
   let positions: Float32Array = Float32Array.from(cage.positions), faces: Uint32Array = Uint32Array.from(cage.faces)
   let tags: Uint8Array = Uint8Array.from(cage.tags), creases: Uint32Array = Uint32Array.from(cage.creases)
   for (let l = 0; l < levels; l++) {
     const step = loopStep(positions.length / 3, faces, tags, creases)
     positions = applyStencil(step.stencil, positions); faces = step.faces; tags = step.tags; creases = step.creases
   }
+  if (limit) positions = applyStencil(loopStep(positions.length / 3, faces, tags, creases, true).stencil, positions)
   return {positions, faces, tags}
 }

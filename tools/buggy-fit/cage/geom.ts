@@ -133,3 +133,21 @@ export function distance(ref: TriMesh, cand: TriMesh, refGrid: TriGrid, n = 2000
     p95Mm: mm(d[Math.floor(d.length * .95)]), maxMm: mm(d[d.length - 1]), roleMatch: Math.round(match / n * 1000) / 1000,
   }
 }
+
+/**
+ * Shading roughness: mean fold angle in degrees across edges shared by two faces of one role
+ * that bend less than 40 degrees (creases excluded). Lower is smoother. Compare meshes of
+ * similar triangle counts; finer meshes fold less per edge.
+ */
+export function roughness(m: TriMesh): number {
+  const edges = new Map<string, number[]>(), p = m.pos
+  const n = (f: number) => { const [a, b, c] = [0, 1, 2].map(k => m.tri[f * 3 + k] * 3); const u = [p[b] - p[a], p[b + 1] - p[a + 1], p[b + 2] - p[a + 2]], v = [p[c] - p[a], p[c + 1] - p[a + 1], p[c + 2] - p[a + 2]]; const x = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], l = Math.hypot(x[0], x[1], x[2]) || 1; return x.map(q => q / l) }
+  for (let f = 0; f < m.tri.length / 3; f++) for (let k = 0; k < 3; k++) { const a = m.tri[f * 3 + k], b = m.tri[f * 3 + (k + 1) % 3]; const key = a < b ? `${a},${b}` : `${b},${a}`; (edges.get(key) ?? edges.set(key, []).get(key)!).push(f) }
+  let s = 0, c = 0
+  for (const fs of edges.values()) {
+    if (fs.length !== 2 || m.tag[fs[0]] !== m.tag[fs[1]]) continue
+    const a = n(fs[0]), b = n(fs[1]), ang = Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]))) * 180 / Math.PI
+    if (ang < 40) { s += ang; c++ }
+  }
+  return Math.round(s / c * 100) / 100
+}
