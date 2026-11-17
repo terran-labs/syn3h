@@ -59,7 +59,9 @@ describe('adaptive score composer', () => {
     const { steps } = run(11, cruise, STEPS_PER_SECTION * 6), home = steps[0].chord!.tonic
     const section = (n: number) => steps.slice(n * STEPS_PER_SECTION, (n + 1) * STEPS_PER_SECTION)
     const [theme, still, build, climb, release, afterglow] = [0, 1, 2, 3, 4, 5].map(section)
-    expect(count(theme, 'lead')).toBeGreaterThan(8)
+    // The theme states phrases one and three and rests through two and four.
+    expect(count(theme, 'lead')).toBeGreaterThan(3)
+    expect(count(theme.slice(32, 64), 'lead') + count(theme.slice(96), 'lead')).toBe(0)
     expect(count(still, 'lead')).toBe(0)
     expect(count(theme, 'strings')).toBe(0)
     // Build and climb: one held bass note, strings on the beat and then twice as fast.
@@ -90,9 +92,11 @@ describe('adaptive score composer', () => {
     const { c, steps } = run(11, cruise, STEPS_PER_SECTION * 11)
     expect(c.theme).toHaveLength(4)
     const shape = (n: number) => steps.slice(n * STEPS_PER_SECTION, (n + 1) * STEPS_PER_SECTION).map((s, at) => s.lead ? `${at}:${s.lead.steps}` : '').filter(Boolean)
-    expect(shape(4)).toEqual(shape(0))
+    // The release states all four phrases; the theme states the first and third of the same.
+    const odd = (at: string) => Math.floor(Number(at.split(':')[0]) / STEPS_PER_CHORD) % 2 === 0
+    expect(shape(4).filter(odd)).toEqual(shape(0))
     expect(shape(6)).toEqual(shape(0))
-    expect(shape(10)).toEqual(shape(0))
+    expect(shape(10).filter(odd)).toEqual(shape(0))
     const lowest = (n: number) => Math.min(...steps.slice(n * STEPS_PER_SECTION, (n + 1) * STEPS_PER_SECTION).filter(s => s.lead).map(s => s.lead!.midi))
     expect(lowest(4)).toBeGreaterThanOrEqual(65 + 12)
     expect(lowest(0)).toBeLessThan(65 + 12)

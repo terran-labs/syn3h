@@ -189,6 +189,11 @@ async function main(): Promise<void> {
     player.setColors?.(shell.bodyColor, shell.accentColor)
     const connection = startNetworking({
       game, terrain, player, audio, bots,
+      nameplates: {
+        shell: shell.element,
+        visible: () => shell.vehicleLabelsVisible,
+        presentation: () => shell.presentation,
+      },
       // The sender owns the hold; snapshots carry its motion. This is cosmetic only.
       onRemoteVehicleChanged: vehicle => { void materialize.begin(vehicle, { hold: false }) },
       kind: player.kind,

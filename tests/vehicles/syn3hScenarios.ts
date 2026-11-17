@@ -6,7 +6,7 @@
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
-import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../src/core/physics'
+import { FIXED_DT, GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../src/core/physics'
 import { type Bed, makeBed } from './harness'
 
 export const G = 9.81
@@ -102,10 +102,10 @@ export const planted = () => {
 }
 
 /** A `height` m ridge (full width, or only the left half when `oneSided`) at 42 m/s. */
-export const bump = async (oneSided = false, height = 0.4) => {
+export const bump = async (oneSided = false, height = 0.4, seconds = 6) => {
   const { bed, b } = await cruise(42)
   ridge(bed, b, -50, oneSided ? 0 : 50, height, 6)
-  return { ...ride(bed, b, 6), wheels: b.wheelsGrounded }
+  return { ...ride(bed, b, seconds), wheels: b.wheelsGrounded }
 }
 
 /** Dropped 4 m while cruising at 30 m/s. */
@@ -233,4 +233,58 @@ export const lavaEscape = async (depth: number) => {
     t += 0.5
   }
   return { seconds: pos(b).z <= -31 ? t : Infinity, bed, b }
+}
+
+/**
+ * Full lock at cruise speed `v` (throttle held) for `seconds`: the course change after one
+ * second, and at the end the speed, the turn radius (speed over yaw rate), the lateral g; and
+ * over the run the worst upright and the largest slide angle (nose to travel).
+ */
+export const fullLock = async (v: number, seconds = 2) => {
+  const { bed, b } = await cruise(v)
+  const course = () => Math.atan2(b.body.linvel().x, -b.body.linvel().z)
+  const c0 = course()
+  b.input.x = 1
+  let t = 0, after1 = 0, upright = 1, worstSlip = 0
+  bed.run(seconds, () => {
+    t += FIXED_DT
+    if (after1 === 0 && t >= 1 - 1e-6) after1 = Math.abs(course() - c0) * THREE.MathUtils.RAD2DEG
+    upright = Math.min(upright, axis(b, 0, 1, 0).y)
+    worstSlip = Math.max(worstSlip, Math.abs(slip(b)))
+  })
+  const l = b.body.linvel(), sp = Math.hypot(l.x, l.z), yaw = Math.abs(b.body.angvel().y)
+  return { after1, speed: sp, radius: yaw > 1e-6 ? sp / yaw : Infinity, lateralG: (sp * yaw) / G, upright, worstSlip }
+}
+
+/**
+ * A quick flick at cruise speed `v`: full left for half a second, full right for half a
+ * second, then let go for two. The largest slide angle and the worst upright over the run, and
+ * the slide angle at the end (near 0: it settled on a line).
+ */
+export const flick = async (v = 45) => {
+  const { bed, b } = await cruise(v)
+  let t = 0, upright = 1, worstSlip = 0
+  bed.run(3, () => {
+    t += FIXED_DT
+    b.input.x = t < 0.5 ? -1 : t < 1 ? 1 : 0
+    upright = Math.min(upright, axis(b, 0, 1, 0).y)
+    worstSlip = Math.max(worstSlip, Math.abs(slip(b)))
+  })
+  return { worstSlip, upright, endSlip: Math.abs(slip(b)) }
+}
+
+/**
+ * Off the ground at 30 m/s with the nose yawed `yaw` degrees from its travel (as after a crash),
+ * wings shut and hands off: how many degrees the nose turns toward its travel in one second.
+ * Only the tail fin acting in the air turns it.
+ */
+export const airStraighten = async (yaw = 30) => {
+  const { bed, b } = await spawn(0, 120)
+  b.body.setLinvel({ x: 0, y: 0, z: -30 }, true)
+  b.body.setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw * THREE.MathUtils.DEG2RAD), true)
+  b.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
+  const off = () => { const f = axis(b, 0, 0, -1), v = b.body.linvel(); return Math.abs(Math.atan2(f.x * v.z - f.z * v.x, f.x * v.x + f.z * v.z)) * THREE.MathUtils.RAD2DEG }
+  const before = off()
+  bed.run(1)
+  return before - off()
 }

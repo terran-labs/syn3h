@@ -17,7 +17,7 @@ import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import {
-  buggyBumpStop, buggyCG, buggyCoastDrag, buggyDownforce, buggyFin, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightModel, buggyFlightSlip, buggyGrip,
+  buggyBumpStop, buggyCG, buggyCoastDrag, buggyDownforce, buggyFin, buggyFinAir, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightModel, buggyFlightSlip, buggyGrip,
   buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyRearSteerFast, buggyShocks, buggySideGrip, buggySideHold, buggySlide, buggySpeed, buggyStability, buggySteerFollow, buggySteerLimit,
   buggyTraction,
 } from './buggyParams'
@@ -856,7 +856,8 @@ export class Syn3hBuggy extends Vehicle {
    * - downforce (buggy.downforce) along the body's down axis, only in proportion to the wheels
    *   on the ground, so it adds grip at speed without shortening a jump;
    * - a tail fin (buggy.fin): a side force at the tail against its sideways motion, which
-   *   turns the buggy to point where it is going, on the ground and in the air;
+   *   turns the buggy to point where it is going, on the ground, and in the air only with
+   *   buggy.finAir;
    * - the stability assist (buggy.stability): a damper on the turn rate while the steering is
    *   let go, at speed, with at least two wheels down.
    * `side` is the body's rightward speed and `yawRate` its turn rate, left positive.
@@ -869,7 +870,7 @@ export class Syn3hBuggy extends Vehicle {
       ub.addForce(this.v2.copy(this.down).multiplyScalar(down * 9.81 * mass * k * k * (grounded / 4)))
     }
     const fin = buggyFin.value
-    if (fin > 0 && speed > 1) {
+    if (fin > 0 && speed > 1 && (grounded > 0 || buggyFinAir.value)) {
       // The tail (our +Z) moves right when the body does, and left of that as it yaws left.
       const tailSide = side + FIN_Z * yawRate
       const right = this.v2.set(1, 0, 0).applyQuaternion(q).multiplyScalar(-fin * FIN * mass * tailSide * Math.min(speed, AERO_SPEED_MAX))

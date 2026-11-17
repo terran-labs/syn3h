@@ -374,7 +374,10 @@ export class ZorbBall {
    */
   observe(velocity: THREE.Vector3, centre: THREE.Vector3, gravity: { x: number; y: number; z: number }, dt: number, terrain: ZorbTerrain): void {
     if (!this.collider) { this.hasVelocity = false; this.contact = 0; return }
-    if (this.hasVelocity) {
+    // Closing: the shrinking ball lowering the car, and the car settling onto its wheels or a
+    // slope, are not blows. Flaring for them lit the fading shield up again (the owner's
+    // "flash where it turns green and gets larger and then smaller" when closing).
+    if (this.hasVelocity && this.on) {
       tmpN.copy(velocity).sub(this.lastVelocity)
       tmpN.x -= gravity.x * dt; tmpN.y -= gravity.y * dt; tmpN.z -= gravity.z * dt
       const i = tmpN.length() / (1 + this.restitution * 0.5)
@@ -543,15 +546,22 @@ export class ZorbShield implements ShieldData {
    */
   update(dt: number, ball: ZorbBall, vehicle: THREE.Object3D, accent: THREE.ColorRepresentation, cheap: boolean): boolean {
     const on = ball.on
+    // Read both either way, so nothing left over flares a later shield. Once switched off the
+    // shield only fades and shrinks: no flare, no swell.
     const impact = ball.takeImpact()
-    if (impact > 3) this.alpha = Math.max(this.alpha, ZORB_REST_ALPHA + impact * 0.1)
+    const pulse = ball.takePulse()
+    if (!on) this.swell = 0
+    if (on && impact > 3) this.alpha = Math.max(this.alpha, ZORB_REST_ALPHA + impact * 0.1)
     // A hop's pulse: the same flare as an impact, set by `zorb.pulseBrightness`, and a swell.
     // Both ease back on the shield's own rates, so it needs no new uniform or material.
-    const pulse = ball.takePulse()
-    if (pulse > 0) { this.alpha = Math.max(this.alpha, ZORB_REST_ALPHA + zorbPulseBrightness.value * pulse); this.swell = PULSE_SWELL * pulse }
+    if (on && pulse > 0) { this.alpha = Math.max(this.alpha, ZORB_REST_ALPHA + zorbPulseBrightness.value * pulse); this.swell = PULSE_SWELL * pulse }
     this.swell *= Math.exp(-PULSE_EASE * dt)
     this.alpha = THREE.MathUtils.lerp(this.alpha, on ? ZORB_REST_ALPHA : 0, Math.min(1, dt * 3))
-    if (ball.active) this.mesh.scale.setScalar(Math.max(MIN_RADIUS, ball.radius) * (1 + this.swell))
+    const size = Math.max(MIN_RADIUS, ball.radius) * (1 + this.swell)
+    if (on) this.mesh.scale.setScalar(size)
+    // Closing, the shield never grows. Once the collider is gone it keeps shrinking at the
+    // closing speed while it fades, instead of hanging round the car at its last size.
+    else this.mesh.scale.setScalar(Math.max(MIN_RADIUS, Math.min(this.mesh.scale.x, ball.active ? size : this.mesh.scale.x - ZORB_SHRINK_SPEED * dt)))
     this.mesh.position.copy(ball.offset).applyQuaternion(vehicle.quaternion).add(vehicle.position)
     this.mesh.quaternion.copy(tmpQ.identity())
     this.contact = THREE.MathUtils.lerp(this.contact, ball.active ? ball.contact : 0, Math.min(1, dt * 8))
