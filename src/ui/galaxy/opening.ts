@@ -53,6 +53,14 @@ const out = (x: number) => 1 - (1 - x) ** 3
 const inOut = (x: number) => x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2
 
 /**
+ * The wordmark's fade in, the same everywhere it arrives (the opening, a return from a world,
+ * the flat logo): it starts the moment the lobby is first drawn and takes this long, on a
+ * smootherstep (no slope, and no change of slope, at either end, so neither end pops).
+ */
+export const WORDMARK_FADE_SECONDS = 4.2
+export const wordmarkFade = (seconds: number) => smoother(span(seconds, 0, WORDMARK_FADE_SECONDS))
+
+/**
  * The beats, in seconds of the full opening after loading ends:
  *   0.0 to 1.6  gather: the point swells and brightens slowly, then holds its breath;
  *   1.6 to 3.2  ignition: a flare blooms past full and settles; the rays unfurl over 1.7 s and
@@ -84,8 +92,9 @@ export function openingState(time: number, mode: OpeningMode, lanes: number, pac
     orbits,
     arrive,
     labels,
-    markFront: 0.15 + 1.6 * inOut(span(t, 7.0, 8.4)),
-    mark: ease(span(t, 7.0, 7.15)),
+    // The name fades in from the first frame, its light front crossing the letters as it does.
+    markFront: 0.15 + 1.6 * wordmarkFade(t),
+    mark: wordmarkFade(t),
     reach: from + (1 - from) * travel,
     chrome: ease(span(t, 8.2, 8.7)),
     done: t >= OPENING_SECONDS,
@@ -93,13 +102,12 @@ export function openingState(time: number, mode: OpeningMode, lanes: number, pac
 }
 
 /**
- * Coming back from a world: a brief version, the name alone. The world fades back in as the
- * lobby returns, then the light front kindles the letters again, as it does at the end of the
- * opening, in about a second.
+ * Coming back from a world: the name alone fades in again, on the same curve as at the
+ * opening, from the moment the lobby is back.
  */
-export const RETURN_SECONDS = 1.2
+export const RETURN_SECONDS = WORDMARK_FADE_SECONDS
 export function returningMark(t: number): { markFront: number; mark: number } {
-  return { markFront: 0.15 + 1.6 * inOut(span(t, 0.1, 1.2)), mark: ease(span(t, 0.1, 0.25)) }
+  return { markFront: 0.15 + 1.6 * wordmarkFade(t), mark: wordmarkFade(t) }
 }
 
 /** Whether this browser session has seen the full opening (and so gets the short one). */
