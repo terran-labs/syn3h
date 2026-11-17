@@ -674,12 +674,13 @@ export class ScoreSynth {
    * hit, with the pads, drone and bass held back until that moment and blooming with it.
    */
   bang(start: number, pop: number): void {
-    this.setLevel(1, 0.05)
+    // Full level from the swell's first instant: setLevel's ease would choke its first frame.
+    this.setLevel(1, 0.05); this.out.gain.cancelScheduledValues(start); this.out.gain.setValueAtTime(1, start)
     this.pump.gain.cancelScheduledValues(start); this.pump.gain.setValueAtTime(0, start)
     this.riser(start, Math.max(0.05, pop - start))
     // The riser climbs from silence and is not heard for its first 0.1 s. Here its onset is the
-    // tap's answer, so it starts soft but audible (about -30 dB under its peak), on the first frame.
-    this.riserVca.gain.cancelScheduledValues(start); this.riserVca.gain.setValueAtTime(0.008, start)
+    // tap's answer, so it starts soft but audible (about 10 dB under its peak), on the first frame.
+    this.riserVca.gain.cancelScheduledValues(start); this.riserVca.gain.setValueAtTime(0.06, start)
     this.riserVca.gain.exponentialRampToValueAtTime(0.22, start + Math.max(0.05, pop - start)); this.riserVca.gain.setTargetAtTime(0, start + Math.max(0.05, pop - start), 0.02)
     this.impact(pop); this.braam(pop, 0.7)
   }
