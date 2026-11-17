@@ -522,6 +522,10 @@
    answers a tap. A label changing sides fades out and back in (Shell.ts); it never slides. */
 .syn3h-shell button.galaxy-label { transition: opacity .15s, border-color .18s, box-shadow .18s, background-color .18s, scale .18s; }
 .syn3h-shell .galaxy-label.is-crowded:not(:focus):not(.is-pointed), .syn3h-shell .galaxy-label.is-swapping { opacity: 0; pointer-events: none; }
+/* A pointed or focused label shown where there was no room: drawn on top at its preferred side,
+   and the plates under it step back while it shows. */
+.syn3h-shell .galaxy-label.is-raised { z-index: 2; }
+.syn3h-shell .galaxy-label.is-dimmed:not(.is-raised) { opacity: .35; }
 .syn3h-shell .galaxy-hint { margin: 0 0 6px; font-size: 15px; color: var(--s3-dim); text-shadow: 0 1px 6px #000; text-align: center; }
 .lobby-unsupported { max-width: 420px; margin: 0 auto; font-size: 17px; line-height: 1.4; text-align: center; color: var(--s3-ink); }
 /* The galaxy would not start: its labels become a row of buttons above the help line. */

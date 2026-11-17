@@ -67,6 +67,15 @@ try {
     const pointed = await page.evaluate(() => { const id = window.syn3h.shell.galaxy.pointed; return id && { id, shown: Number(getComputedStyle(document.querySelector(`.galaxy-label[data-world="${id}"]`)).opacity) } })
     assert.ok(pointed, `${name}: pointing near ${target.id} points at a world`)
     assert.ok(pointed.shown > 0.5, `${name}: pointing at ${pointed.id} shows its label`)
+    // Shown over others, it sits by its own planet and every plate it covers steps back.
+    const raised = await page.evaluate(id => {
+      const r = el => el.getBoundingClientRect(), me = r(document.querySelector(`.galaxy-label[data-world="${id}"]`)), p = window.syn3h.shell.galaxy.screen.find(s => s.id === id)
+      const gap = Math.hypot(Math.min(me.right, Math.max(me.left, p.x)) - p.x, Math.min(me.bottom, Math.max(me.top, p.y)) - p.y) - p.radius
+      const covered = [...document.querySelectorAll('.galaxy-label')].filter(c => c.dataset.world !== id && !c.hidden).filter(c => { const o = r(c); return o.left < me.right && o.right > me.left && o.top < me.bottom && o.bottom > me.top })
+      return { gap, undimmed: covered.filter(c => Number(getComputedStyle(c).opacity) > 0.5).map(c => c.dataset.world) }
+    }, pointed.id)
+    assert.ok(raised.gap <= 16, `${name}: the pointed ${pointed.id} label sits by its planet`)
+    assert.deepEqual(raised.undimmed, [], `${name}: plates under the pointed ${pointed.id} label step back`)
     await page.screenshot({ path: `${out}/point-${name}.png` })
     if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
     else await page.mouse.move(2, 2)

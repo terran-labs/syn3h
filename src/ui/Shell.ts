@@ -1250,7 +1250,7 @@ export class Shell implements System {
       onTap: chosen => this.tapWorld(chosen),
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),
       // A planet pointed at (hovered, or a finger on it) shows its label, faded or not.
-      onPoint: id => { for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
+      onPoint: id => { this.pointedWorld = id; for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
       onArrive: chosen => {
         const id = chosen.split('~')[0]
         if (id === 'custom') {
@@ -1322,6 +1322,27 @@ export class Shell implements System {
           this.labelSpots.set(spot.id, side.spot)
           this.placeChip(chip, place.x + side.dx, place.y + side.dy)
         }
+        // A planet pointed at, touched or focused whose label had no room: show the label at its
+        // preferred side, under the planet, drawn over whatever is there, and dim the plates it
+        // covers while it shows, so it reads as raised, not as a layout fault.
+        const focused = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>('.galaxy-label')?.dataset.world : undefined
+        const raised = [this.pointedWorld, focused].find(id => id && spots.find(s => s.id === id)?.crowded)
+        let over: { left: number; top: number; right: number; bottom: number } | undefined
+        for (const [id, chip] of chips) chip.classList.toggle('is-raised', id === raised)
+        if (raised) {
+          const place = places.find(p => p.id === raised), size = this.labelSizes.get(raised), chip = chips.get(raised)!
+          if (place && size) {
+            const x = Math.min(this.labelRight - 8 - size.width / 2, Math.max(8 + size.width / 2, place.x))
+            const y = Math.min(this.linksTop - size.height, place.y + place.radius + 6)
+            this.labelSide.delete(raised); this.placeChip(chip, x, y)
+            over = { left: x - size.width / 2, top: y, right: x + size.width / 2, bottom: y + size.height }
+          }
+        }
+        for (const spot of spots) {
+          const size = this.labelSizes.get(spot.id), side = this.labelSide.get(spot.id), place = places.find(p => p.id === spot.id)
+          const box = size && side && place ? { left: place.x + side.dx - size.width / 2, top: place.y + side.dy, right: place.x + side.dx + size.width / 2, bottom: place.y + side.dy + size.height } : undefined
+          chips.get(spot.id)!.classList.toggle('is-dimmed', !!over && spot.id !== raised && !!box && box.left < over.right && box.right > over.left && box.top < over.bottom && box.bottom > over.top)
+        }
       },
     })
     addEventListener('resize', () => { this.brandBottom = undefined; this.namesOnly = false; labels.classList.remove('galaxy-names-only'); this.labelSizes.clear() }, { signal: this.abort.signal })
@@ -1346,6 +1367,8 @@ export class Shell implements System {
    */
   private readonly labelSide = new Map<string, { spot: number; dx: number; dy: number; wants?: number; since?: number; fading?: boolean }>()
   private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
+  /** The world a pointer is on, or a finger holds, for its label (Galaxy onPoint). */
+  private pointedWorld: string | undefined
   /** The labels have fallen back to names only (no biome line) for this window size. */
   private namesOnly = false
   /** The galaxy's worlds by id, for their label text. */

@@ -132,3 +132,14 @@ describe('planet recipes', () => {
     for (const id of ['world.lavaAltitude', 'terrain.islandRadius']) params.set(id, params.get(id)!.def.default)
   })
 })
+
+describe('biome names', () => {
+  it('are one vocabulary: every recipe is labelled by its look in BIOME_NAMES', async () => {
+    const { BIOME_NAMES, recipeIdForLook } = await import('../../shared/recipes')
+    for (const recipe of PLANETS) {
+      const look = recipe.values['terrain.look'] as number
+      expect(recipe.label).toBe(BIOME_NAMES[look])
+      expect(recipeIdForLook(look)).toBe(recipe.id)
+    }
+  })
+})

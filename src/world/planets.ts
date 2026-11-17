@@ -53,11 +53,9 @@ export interface PlanetRecipe {
 export const ISLAND_SIZES = { small: 520, medium: 680, large: 824 } as const
 export type IslandSize = keyof typeof ISLAND_SIZES
 
-/**
- * The warm wetland's name (recipe id 'swamp', look 8), chosen by the owner on 16 November
- * 2026; it was "Methane swamp". Players see only this; ids and stored values are unchanged.
- */
-export const MIRE_LABEL = BIOME_NAMES[8]
+// Biome names players see come from one list, BIOME_NAMES in shared/recipes.ts, by look. The
+// warm wetland (recipe id 'swamp', look 8) is the Mire, the owner's name of 16 November 2026;
+// it was "Methane swamp". Ids and stored values never change with a name.
 
 const MARS: Record<string, ParamValue> = {
   ...SKY_PRESETS['Mars day'],
@@ -71,12 +69,12 @@ const MARS: Record<string, ParamValue> = {
 
 export const PLANETS: readonly PlanetRecipe[] = [
   {
-    id: 'volcanic', label: 'Volcanic', centre: 'A volcano with a lava lake in its crater',
+    id: 'volcanic', label: BIOME_NAMES[0], centre: 'A volcano with a lava lake in its crater',
     blurb: 'Rust plains and black spires round a live volcano, in a sea of glowing lava.',
     swatch: [0xc24a22, 0xff7a1a], body: { size: 0.9, heat: 1.0 }, values: MARS,
   },
   {
-    id: 'desert', label: 'Desert', centre: 'A great mesa with an oasis on top',
+    id: 'desert', label: BIOME_NAMES[1], centre: 'A great mesa with an oasis on top',
     blurb: 'Gold dunes and sandstone buttes round a towering mesa, with one last warm, shallow sea.',
     swatch: [0xe6b866, 0x2fb7b0], body: { size: 1.0, heat: 0.75 },
     values: {
@@ -93,7 +91,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     },
   },
   {
-    id: 'alpine', label: 'Alpine', centre: 'A snow peak with a tarn at its summit',
+    id: 'alpine', label: BIOME_NAMES[2], centre: 'A snow peak with a tarn at its summit',
     blurb: 'Pine forest and granite ranges under a snow peak, in a cold blue sea.',
     swatch: [0x5f8a3a, 0x1c5f9a], body: { size: 1.0, heat: 0.4 },
     values: {
@@ -107,7 +105,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     },
   },
   {
-    id: 'archipelago', label: 'Archipelago', centre: 'A low green mesa over a turquoise lagoon',
+    id: 'archipelago', label: BIOME_NAMES[3], centre: 'A low green mesa over a turquoise lagoon',
     blurb: 'A small world of sandy islands in turquoise shallows. Bring a hovercraft or a jet.',
     swatch: [0xa6c95e, 0x58ecd8], body: { size: 0.9, heat: 0.5 },
     values: {
@@ -122,7 +120,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     },
   },
   {
-    id: 'ice', label: 'Ice moon', centre: 'A frozen horn with a tarn at its summit',
+    id: 'ice', label: BIOME_NAMES[4], centre: 'A frozen horn with a tarn at its summit',
     blurb: 'White ice plains and pale cliffs round a frozen sea you can drive on, under a violet dusk.',
     swatch: [0xd6e8f4, 0x1f5f8a], body: { size: 0.5, heat: 0.05 },
     values: {
@@ -141,7 +139,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     },
   },
   {
-    id: 'obsidian', label: 'Obsidian', centre: 'A glass volcano ringed by giant shards',
+    id: 'obsidian', label: BIOME_NAMES[5], centre: 'A glass volcano ringed by giant shards',
     blurb: 'Black glass and needle spires veined with magenta, standing in a sea of lava.',
     swatch: [0x262130, 0xff5a1a], body: { size: 0.8, heat: 0.9 },
     values: {
@@ -155,7 +153,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     },
   },
   {
-    id: 'badlands', label: 'Badlands', centre: 'The tallest butte, with a road spiralling up it',
+    id: 'badlands', label: BIOME_NAMES[6], centre: 'The tallest butte, with a road spiralling up it',
     blurb: 'Almost all land: a maze of banded red buttes and canyons, with rivers at the bottom.',
     swatch: [0xd27a4a, 0x3fb0a0], body: { size: 1.05, heat: 0.65 },
     values: {
@@ -170,7 +168,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     },
   },
   {
-    id: 'moon', label: 'Moon', centre: 'A giant impact crater with a central peak',
+    id: 'moon', label: BIOME_NAMES[7], centre: 'A giant impact crater with a central peak',
     blurb: 'Grey dust and craters under a black sky, in one sixth of the gravity. Jump.',
     swatch: [0xa6a6a8, 0x3a3a3e], body: { size: 0.42, heat: 0.32, parent: 'alpine' },
     values: {
@@ -193,7 +191,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     },
   },
   {
-    id: 'swamp', label: MIRE_LABEL, centre: 'A low reed plateau in the mist',
+    id: 'swamp', label: BIOME_NAMES[8], centre: 'A low reed plateau in the mist',
     blurb: 'Olive mud flats, reed beds and low mesas in warm green haze, round murky water.',
     // Warm and wet: the inner edge of the temperate band, between the dry worlds and the sea.
     swatch: [0x8c8a3a, 0x4a5228], body: { size: 1.25, heat: 0.58 },
