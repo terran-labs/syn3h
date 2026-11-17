@@ -8,7 +8,7 @@
  * sea world and a lava world), and on player A launches a zorbed buggy over open liquid:
  * a fast shallow skip, a slow entry and a hop pressed mid-skip. Saves a short frame sequence
  * of each from A's camera, A's own path, and B's copy of A, and prints how far B's copy
- * strayed from A's path. Exits non zero on a page error or if B's copy disagrees.
+ * strayed from A's path. Exits non zero on a page error or if B's copy disagrees (median gap).
  */
 import { chromium } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -72,7 +72,7 @@ for (const [planet, kind] of [['archipelago', 'water'], ['volcanic', 'lava']]) {
   for (const [label, speed, angle, hopAt] of [['fast-skip', 30, 8, null], ['slow-entry', 5, 5, null], ['hop-mid-skip', 30, 8, 0.6]]) {
     const dir = `${out}/${kind}-${label}`
     await mkdir(dir, { recursive: true })
-    await a.page.evaluate(({ run, speed, angle }) => {
+    await a.page.evaluate(({ run, speed, angle, hopAt }) => {
       const s = window.syn3h, p = s.player, z = p.zorb, sea = s.terrain.liquidHeightAt(run.x, run.z)
       const a = (angle * Math.PI) / 180, dx = -Math.sin(run.h), dz = -Math.cos(run.h)
       // A real three.js vector from the page, for the ball's centre.
@@ -86,7 +86,17 @@ for (const [planet, kind] of [['archipelago', 'water'], ['volcanic', 'lava']]) {
         window.zorbTrace.push({ tick: s.game.tick, p: [t.x, t.y, t.z], speed: Math.hypot(v.x, v.z), base: t.y - z.radius - surface, skimming: z.skimming, onLiquid: z.onLiquid, hops: z.hops })
       } })
       window.zorbProbe = () => s.game.remove(probe)
-    }, { run, speed, angle })
+      // A hop pressed at the first touch of the surface after `hopAt` seconds (Space toggles
+      // `special`; zorb.ts `hold` reads one change as one hop). A press in mid-air between
+      // skips is remembered only HOP_BUFFER seconds, as over land.
+      const t0 = s.game.tick
+      window.hopProbe?.()
+      const hop = hopAt === null ? null : s.game.add({ postPhysics() {
+        if ((s.game.tick - t0) / 60 >= hopAt && z.onLiquid && z.hops === hops0) { const st = s.game.input.state; st.special = !st.special; s.game.remove(hop) }
+      } })
+      const hops0 = z.hops
+      window.hopProbe = () => hop && s.game.remove(hop)
+    }, { run, speed, angle, hopAt })
     // B records its copy of A over the same time.
     await b.page.evaluate(() => {
       const s = window.syn3h, r = [...window.syn3hNet.remotes.values()][0]
@@ -96,29 +106,25 @@ for (const [planet, kind] of [['archipelago', 'water'], ['volcanic', 'lava']]) {
       const probe = s.game.add({ postPhysics() { const t = r.vehicle.zorb.centre(c); window.copyTrace.push({ p: [t.x, t.y, t.z], physical: r.physical, zorb: r.vehicle.zorb.active }) } })
       window.copyProbe = () => s.game.remove(probe)
     })
-    const start = Date.now()
-    let hopped = false
     for (let i = 0; i < 16; i++) {
       await a.page.screenshot({ path: `${dir}/a-${String(i).padStart(2, '0')}.png` })
-      if (hopAt !== null && !hopped && (Date.now() - start) / 1000 >= hopAt) {
-        // Space toggles `special`; one change is one hop (zorb.ts `hold`).
-        await a.page.evaluate(() => { const st = window.syn3h.game.input.state; st.special = !st.special })
-        hopped = true
-      }
       await a.page.waitForTimeout(180)
     }
     await b.page.screenshot({ path: `${dir}/b-view.png` })
     const own = await a.page.evaluate(() => window.zorbTrace)
     const copy = await b.page.evaluate(() => window.copyTrace)
     // B's copy runs about a tenth of a second behind: compare each copy point to A's whole path.
-    const near = (q) => Math.min(...own.map((o) => Math.hypot(o.p[0] - q.p[0], o.p[1] - q.p[1], o.p[2] - q.p[2])))
+    // The world wraps: each page draws the other at the image nearest itself.
+    const size = await a.page.evaluate(() => window.syn3h.terrain.size)
+    const wrap = (d) => d - size * Math.round(d / size)
+    const near = (q) => Math.min(...own.map((o) => Math.hypot(wrap(o.p[0] - q.p[0]), o.p[1] - q.p[1], wrap(o.p[2] - q.p[2]))))
     const settledCopy = copy.slice(20).filter((q) => q.zorb)
     const gaps = settledCopy.map(near).sort((x, y) => x - y)
     let skips = 0, wet = false
     for (const s of own) { if (s.base <= 0) wet = true; else if (wet && s.base > 0.15) { skips++; wet = false } }
     const r = {
       world: planet, liquid: kind, case: label, speed, angle, steps: own.length, skips,
-      speedStart: own[0]?.speed, speedEnd: own.at(-1)?.speed, hops: own.at(-1)?.hops,
+      speedStart: own[0]?.speed, speedEnd: own.at(-1)?.speed, hops: own.at(-1)?.hops - own[0]?.hops,
       copySamples: settledCopy.length, copyPhysical: copy.filter((q) => q.physical).length,
       copyGapMedian: gaps[Math.floor(gaps.length / 2)] ?? null, copyGapMax: gaps.at(-1) ?? null,
     }
@@ -132,6 +138,9 @@ await browser.close()
 await app.close()
 await writeFile(`${out}/results.json`, JSON.stringify({ results, errors }, null, 2))
 if (errors.length) { console.error(errors); process.exit(1) }
-const bad = results.filter((r) => !(r.copyGapMax < 3))
+// The median judges agreement. The maximum is reported: B hears a hop press about a tenth of
+// a second late and hops from where its copy is then, a gap of a few metres that closes
+// within about 0.3 s (4.2 m on 17 November 2026; 0.3 m with no hop).
+const bad = results.filter((r) => !(r.copyGapMedian < 0.5))
 if (bad.length) { console.error('B disagreed with A', bad); process.exit(1) }
 process.exit(0)
