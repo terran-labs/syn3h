@@ -14,7 +14,8 @@
  */
 import * as THREE from 'three/webgpu'
 import { attribute, cameraPosition, cameraViewMatrix, normalize, color, float, mix, mx_noise_float, positionWorld, positionGeometry, smoothstep, time, uniform, vec3 } from 'three/tsl'
-import { worldGravity, worldLavaAltitude } from '../../../shared/params'
+import { worldGravity } from '../../../shared/params'
+import { seaLevel, seaSettled } from '../seaLevel'
 import { nearestImage } from '../../../shared/wrap'
 import { overHorizon } from '../curve'
 import type { System } from '../../core/Game'
@@ -204,6 +205,8 @@ export class Volcanics implements System {
   /** Quality level the clipmap and the lake, pool and river meshes were built for. */
   private bodyLevel = -1
   private builtRiverSpeed = waterRiverMaxSpeed.value
+  /** The sea level the bed texture and river mouths were built for. */
+  private builtSea = 0
   private readonly mist = new WaterfallMist(this.group)
   private readonly fallMaterial = createFallMaterial()
   /** Sea grid chunks and the apron round them, all sharing the sea material. Only the old water look uses chunks. */
@@ -260,7 +263,8 @@ export class Volcanics implements System {
     const palette = paletteFor(data.settings.look)
     this.fallMaterial.color.set(palette.seaShallow)
     this.bed?.texture.dispose()
-    this.bed = buildBedTexture(data, worldLavaAltitude.value)
+    this.builtSea = seaLevel()
+    this.bed = buildBedTexture(data, this.builtSea)
     for (const w of [this.newSea, this.newStill, this.newRiver]) { w.setColours(palette.seaShallow, palette.seaDeep); w.setBed(this.bed) }
     configureLavaWaves(data.size)
     this.ambient.setBed(this.bed)
@@ -316,7 +320,7 @@ export class Volcanics implements System {
       if (lava.lake) add(buildStillSurface(ground, lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius, stillSpacing), still, true)
       for (const p of lava.pools) add(buildStillSurface(ground, p.x, p.surface, p.z, p.radius, stillSpacing), still, true)
       // Receiving water for a river's mouth: the lake, a pool or the sea, never a river.
-      const seaLevel = data.settings.dry ? -Infinity : worldLavaAltitude.value
+      const seaLevel = data.settings.dry ? -Infinity : this.builtSea
       const waterAt = (x: number, z: number) => {
         let y = seaLevel
         for (const b of lava.lake ? [lava.lake, ...lava.pools] : lava.pools) {
@@ -376,8 +380,8 @@ export class Volcanics implements System {
       lowZ = Math.min(lowZ, z0 + oz)
     }
     if (this.clip) {
-      const outer = this.clip.update(camX, camZ, worldLavaAltitude.value)
-      this.apron!.position.set(outer.x, worldLavaAltitude.value, outer.z)
+      const outer = this.clip.update(camX, camZ, seaLevel())
+      this.apron!.position.set(outer.x, seaLevel(), outer.z)
     } else if (this.apron) {
       shiftTo(this.apron, lowX + half, lowZ + half, true)
       // The apron starts half a world away: the far side of a round planet.
@@ -424,10 +428,14 @@ export class Volcanics implements System {
   }
 
   update(dt: number): void {
-    const level = worldLavaAltitude.value
+    // The sea glides to a new level (world/seaLevel.ts); the surfaces below follow it every
+    // frame. The bed texture and the river mouths bake the level in, so they rebuild once,
+    // when it has settled.
+    const level = seaLevel()
     // The new water rebuilds the rivers and pools, so switching it rebuilds everything.
     if (waterWaves.value !== this.builtNew || (this.builtNew &&
-      (worldGravity.value !== this.builtGravity || waterRiverMaxSpeed.value !== this.builtRiverSpeed)) ||
+      (worldGravity.value !== this.builtGravity || waterRiverMaxSpeed.value !== this.builtRiverSpeed ||
+        (level !== this.builtSea && seaSettled()))) ||
       // The clipmap's layout follows the quality level; the old water uses chunks, lava does not.
       (Math.round(qualityLevel.value) !== this.bodyLevel) || (!this.builtNew && this.seaIsLava !== this.builtLavaSea)) this.rebuild()
     this.place()

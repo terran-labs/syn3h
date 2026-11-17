@@ -29,6 +29,7 @@ import {
   MODE_KOTH,
   MODE_TAG,
   MAX_NAME_LENGTH,
+  RENAME_INTERVAL_MS,
   MAX_PLAYER_ID,
   PROTOCOL_VERSION,
   STATE_BYTES,
@@ -124,6 +125,8 @@ interface Player {
   cordOn: boolean
   /** The vehicle that cord is tied to, or null for a ground anchor, so it can be let go when that vehicle goes. */
   cordTo: number | null
+  /** Server ms of this player's last accepted rename (profile `name`); see RENAME_INTERVAL_MS. */
+  renamedAt?: number
   /** The vehicle this player is carrying with Yoink, and since when (server ms). */
   carry: { to: number; at: number } | null
   /** Server ms of this player's last relayed grab or fling, and of its last gust per target. */
@@ -361,7 +364,7 @@ export class Room {
         this.onHit(player, msg.shooter, msg.shot, msg.victim)
         break
       case 'profile':
-        this.onProfile(player, msg.kind, msg.colors)
+        this.onProfile(player, msg.kind, msg.colors, msg.name)
         break
       case 'ram':
         this.onRam(player, msg.other, msg.push)
@@ -849,14 +852,38 @@ export class Room {
     return bot
   }
 
-  private onProfile(player: Player, kind: unknown, colors: unknown): void {
+  private onProfile(player: Player, kind: unknown, colors: unknown, name: unknown): void {
     const k = kind === undefined ? player.info.kind : cleanKind(kind)
     const c = colors === undefined ? player.info.colors : cleanColors(colors)
     if (!k || !c) return
-    if (k === player.info.kind && c[0] === player.info.colors[0] && c[1] === player.info.colors[1]) return
+    const n = name === undefined ? player.info.name : this.rename(player, name)
+    if (k === player.info.kind && c[0] === player.info.colors[0] && c[1] === player.info.colors[1] && n === player.info.name) return
     player.info.kind = k
     player.info.colors = c
+    player.info.name = n
     this.broadcast({ type: 'profile', player: player.info })
+  }
+
+  /**
+   * The name a rename asks for, cleaned and de-duplicated as at hello, or the current name
+   * when it is too soon after the last rename. A rename touches nothing but the name: id,
+   * host role, score and rejoin secret stay as they are.
+   */
+  private rename(player: Player, raw: unknown): string {
+    const cleaned = cleanName(raw, player.info.id)
+    if (cleaned === player.info.name) return cleaned
+    const now = this.now()
+    if (player.renamedAt !== undefined && now - player.renamedAt < RENAME_INTERVAL_MS) {
+      // Ignored: tell the sender the name it still has, so its own view does not drift.
+      const peer = this.peerOf(player)
+      if (peer) this.sendTo(peer, { type: 'profile', player: player.info })
+      return player.info.name
+    }
+    player.renamedAt = now
+    const name = this.uniqueName(cleaned, player)
+    // A race in progress shows the new name too.
+    for (const p of this.race?.participants ?? []) if (p.id === player.info.id) p.name = name
+    return name
   }
 
   private onParam(player: Player, id: unknown, raw: unknown): void {
@@ -1391,8 +1418,8 @@ export class Room {
 
   /** Two players may pick the same name; the later one gets a number so lists and events can
    * tell them apart: "Sam", "Sam 2", "Sam 3". */
-  private uniqueName(name: string): string {
-    const taken = new Set([...this.players.values()].map((p) => p.info.name.toLowerCase()))
+  private uniqueName(name: string, self?: Player): string {
+    const taken = new Set([...this.players.values()].filter((p) => p !== self).map((p) => p.info.name.toLowerCase()))
     if (!taken.has(name.toLowerCase())) return name
     for (let n = 2; ; n++) {
       const suffix = ` ${n}`

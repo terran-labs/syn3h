@@ -260,6 +260,21 @@ export type RungKind = 'post' | 'resolution'
 export interface RungSettings { kind: RungKind | 'base'; pixelRatio: number; vehicleShading: number; particles: number; shadows: number; post: number }
 /** Resolution rungs, as a fraction of the level's pixel ratio: 28 and then 51 percent fewer pixels. */
 export const RESOLUTION_STEPS = [0.85, 0.7] as const
+/**
+ * The player's render resolution, as a fraction of the display's native resolution: 1 is one
+ * rendered pixel per physical pixel. null is Auto, the level's budget. A chosen value replaces
+ * the level's pixel ratio budget as the ladder's top rung; the governor's resolution rungs may
+ * still go below it, never above.
+ */
+export const RENDER_RESOLUTION = { min: 0.5, max: 1, step: 0.05 } as const
+export const RESOLUTION_KEY = 'syn3h.graphics.resolution'
+/** A stored or chosen fraction, snapped to the steps and kept between 50% and 100%; anything else is Auto. */
+export function renderResolution(value: unknown): number | null {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value
+  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return null
+  const { min, max, step } = RENDER_RESOLUTION
+  return Math.round(Math.round(Math.min(max, Math.max(min, n)) / step) * step * 100) / 100
+}
 
 /**
  * Evidence needed to shed a rung (consecutive slow time) and to climb back (consecutive
@@ -315,9 +330,11 @@ function notAbove(a: RungSettings, b: RungSettings) { return a.pixelRatio <= b.p
  * post rung exists only while a chain is drawing effects, and steps that change nothing are
  * dropped, so every rung costs a real change.
  */
-export function buildLadder(level: QualityLevel, devicePixelRatio = 1, postActive = false): RungSettings[] {
+export function buildLadder(level: QualityLevel, devicePixelRatio = 1, postActive = false, resolution: number | null = null): RungSettings[] {
   const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1
-  const budget = LEVELS[level], ratio = Math.min(dpr, budget.pixelRatio)
+  // The display caps the level's budget; a resolution the player chose replaces that budget.
+  const chosen = renderResolution(resolution)
+  const budget = LEVELS[level], ratio = chosen === null ? Math.min(dpr, budget.pixelRatio) : Math.round(dpr * chosen * 100) / 100
   let current: RungSettings = { kind: 'base', pixelRatio: ratio, vehicleShading: budget.shading, particles: budget.particles, shadows: budget.shadows, post: postActive ? 1 : 0 }
   const ladder = [current]
   const push = (next: RungSettings) => { if (!sameSettings(next, current)) { ladder.push(next); current = next } }
@@ -337,6 +354,8 @@ export interface GovernorOptions {
   auto?: boolean
   /** The player chose the level by hand: shed rungs inside it but never change the level. */
   levelPinned?: boolean
+  /** The player's render resolution (see RENDER_RESOLUTION); null or absent is Auto. */
+  resolution?: number | null
 }
 
 /**
@@ -375,6 +394,8 @@ export class QualityGovernor {
   auto: boolean
   levelPinned: boolean
   devicePixelRatio: number
+  /** The player's render resolution, or null for Auto. */
+  resolution: number | null
   /** Changes made by the governor itself, for diagnostics and oscillation tests. */
   changes = 0
   displayMs: number | null = null
@@ -402,6 +423,7 @@ export class QualityGovernor {
     this.auto = options.auto ?? true
     this.levelPinned = options.levelPinned ?? false
     this.devicePixelRatio = options.devicePixelRatio ?? 1
+    this.resolution = renderResolution(options.resolution)
     this.ladder = this.ladderFor(this.level)
   }
   get settings(): RungSettings { return this.ladder[this.rung] }
@@ -434,7 +456,7 @@ export class QualityGovernor {
     const wait = up.timing.climbMs * (this.backoff.get(`${up.level}:${up.rung}`) ?? 1) * (this.calibrating ? GOVERNOR.calibrationFactor : 1)
     return Math.min(GOVERNOR.maxClimbWaitMs, wait)
   }
-  private ladderFor(level: QualityLevel) { return buildLadder(level, this.devicePixelRatio, this.postActive) }
+  private ladderFor(level: QualityLevel) { return buildLadder(level, this.devicePixelRatio, this.postActive, this.resolution) }
   /**
    * A post chain started or stopped drawing effects. While one is active every ladder gains
    * a first rung that fades them out; otherwise the ladder is resolution only.
@@ -481,6 +503,18 @@ export class QualityGovernor {
     // Start the new display at its richest resolution; slow frames shed it again within seconds.
     this.rung = this.mapRung({ ...from, pixelRatio: Infinity })
     return this.change('display')
+  }
+  /**
+   * The player chose a render resolution, or Auto (null). The ladder restarts at its new top,
+   * keeping the post budget; slow frames may shed resolution again below the choice.
+   */
+  setResolution(resolution: number | null): GovernorChange | null {
+    const next = renderResolution(resolution)
+    if (next === this.resolution) return null
+    const from = this.settings
+    this.resolution = next; this.ladder = this.ladderFor(this.level)
+    this.rung = this.mapRung({ ...from, pixelRatio: Infinity })
+    return this.change('manual', GOVERNOR.manualSettleMs)
   }
   /** Turning automation off returns to the level's full budget. Turning it on releases a hand-set level. */
   setAuto(on: boolean) {
@@ -581,6 +615,11 @@ export interface QualityState {
   readonly easing: RungKind | null
   readonly ceiling: QualityLevel
   readonly postTier: PostTier
+  /** The player's render resolution as a fraction of native, or null for Auto. */
+  readonly resolution: number | null
+  /** The pixel ratio drawn now, and the display's own. */
+  readonly pixelRatio: number
+  readonly devicePixelRatio: number
   /** Every parameter the level owns, in display order. */
   readonly presetIds: readonly string[]
   /** The level's own value for each owned parameter registered so far. */
@@ -598,6 +637,8 @@ export interface QualitySource {
   stepUp(): boolean
   stepDown(): boolean
   setAuto(on: boolean): void
+  /** Set the render resolution (a fraction of native) or Auto (null). */
+  setResolution?(resolution: number | null): void
   clearOverride(id: string): void
   clearOverrides(): void
   subscribeQuality(listener: (state: QualityState) => void): () => void
@@ -704,6 +745,7 @@ export class QualityController implements QualitySource {
       const g = this.governor
       this.state = Object.freeze({ level: g.level, name: LEVELS[g.level].name, auto: g.auto, pinned: g.levelPinned, rung: g.rung, rungs: g.ladder.length,
         easing: g.rung > 0 ? g.settings.kind as RungKind : null, ceiling: Math.min(this.capability.ceiling, this.crashCap) as QualityLevel, postTier: LEVELS[g.level].postTier,
+        resolution: g.resolution, pixelRatio: g.settings.pixelRatio, devicePixelRatio: g.devicePixelRatio,
         presetIds: PRESET_IDS, preset: Object.freeze(presetFor(g.level)), overrides: Object.freeze({ ...this.overrides }) })
     }
     return this.state
@@ -734,6 +776,13 @@ export class QualityController implements QualitySource {
     if (this.disposed) return
     this.write(autoQuality.def.id, on)
     this.lastReason = this.governor.setAuto(on).reason; this.apply()
+  }
+  /** The player's render resolution, remembered on this device. Auto (null) is the level's budget. */
+  setResolution(resolution: number | null) {
+    if (this.disposed) return
+    const change = this.governor.setResolution(resolution)
+    storageWrite(this.store, RESOLUTION_KEY, this.governor.resolution === null ? null : String(this.governor.resolution))
+    if (change) { this.lastReason = change.reason; this.apply() }
   }
   /** Hand one parameter back to the level. */
   clearOverride(id: string) {
@@ -772,6 +821,7 @@ export class QualityController implements QualitySource {
     this.governor = new QualityGovernor({
       level, ceiling: Math.min(this.capability.ceiling, this.crashCap) as QualityLevel, devicePixelRatio: window.devicePixelRatio || 1,
       auto: autoQuality.value, levelPinned: override !== undefined || saved?.pinned === true,
+      resolution: renderResolution(storageRead(this.store, RESOLUTION_KEY)),
     })
     reportLoading('device', 0.05)
     this.probeDisplay()

@@ -22,7 +22,8 @@ import {
   Fn, If, cameraPosition, exp, float, mix, mx_noise_float, normalize, output, positionView, positionWorld,
   renderGroup, sin, smoothstep, time, uniform, vec2, vec3, vec4,
 } from 'three/tsl'
-import { defineParam, params, worldLavaAltitude } from '../../../shared/params'
+import { defineParam, params } from '../../../shared/params'
+import { seaLevel } from '../seaLevel'
 import type { Game } from '../../core/Game'
 import type { Terrain } from '../Terrain'
 import { paletteFor } from '../terrain/palettes'
@@ -252,7 +253,7 @@ export class Underwater {
     }
     // Caustics under the camera's water, or on the bed of a water sea seen from above it.
     const seaIsWater = Number(params.get('world.seaKind')?.value ?? 0) === 1
-    this.causticLevel.value = wet && kind === 'water' ? surface : seaIsWater ? worldLavaAltitude.value : -1e9
+    this.causticLevel.value = wet && kind === 'water' ? surface : seaIsWater ? seaLevel() : -1e9
     this.causticGain.value = waterCaustics.value * (1 - night)
     const [r, g, b] = this.settings.shallow, peak = Math.max(r, g, b, 1e-4)
     this.seaHue.value.set(r / peak, g / peak, b / peak)

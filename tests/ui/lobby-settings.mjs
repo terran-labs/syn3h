@@ -6,6 +6,7 @@
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { openInTurn } from './lib/card-stack.mjs'
 
 const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5173/'
 const out = 'tests/ui/artifacts/lobby-settings'
@@ -70,7 +71,9 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     // Every volume reads as a percentage, like the card's summary.
     for (const id of ['audio.music', 'audio.master', 'audio.effects']) assert.match(await sound.locator(`.wi-row[data-id="${id}"] .wi-num`).textContent(), /^\d+%$/, `${mode}: ${id} as a percentage`)
     assert.equal(await sound.locator('.wi-row[data-id="audio.music"] .wi-num').textContent(), `${Math.round(target * 100)}%`)
-    // Show the two volumes at the top of the card, with Advanced open beneath them.
+    // Show the two volumes at the top of the card, with Advanced open beneath them. Wait for
+    // the cards to land first: a card mid-motion is pinned at its old height and cannot scroll.
+    await page.waitForFunction(() => !document.querySelector('.world-inspector.lobby-settings').getAnimations({ subtree: true }).some((a) => a.playState === 'running' && a.effect?.target?.classList?.contains('wi-card')))
     await sound.locator('.wi-row[data-id="audio.music"]').evaluate((row) => row.scrollIntoView({ block: 'start' }))
     await page.waitForTimeout(400)
     // At least six rows show at once, whole, in the sheet (the owner's measure at 844 by 390).
@@ -80,6 +83,18 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     })
     assert.ok(whole >= 6, `${mode}: ${whole} whole rows in view`)
     await page.screenshot({ path: `${out}/${mode}-sound.png` })
+    // Mute is the standard switch: role and aria-checked agree with the setting, Space and
+    // Enter toggle it, and its label text toggles it too.
+    const mute = sound.getByRole('switch', { name: 'Mute audio' })
+    const muted = () => page.evaluate(() => window.syn3h.params.get('audio.muted').value)
+    const wasMuted = await muted()
+    assert.equal(await mute.getAttribute('aria-checked'), String(wasMuted), `${mode}: mute aria-checked`)
+    await mute.focus(); await page.keyboard.press('Space')
+    assert.equal(await muted(), !wasMuted, `${mode}: Space toggles`); assert.equal(await mute.getAttribute('aria-checked'), String(!wasMuted))
+    await page.keyboard.press('Enter')
+    assert.equal(await muted(), wasMuted, `${mode}: Enter toggles`); assert.equal(await mute.getAttribute('aria-checked'), String(wasMuted))
+    if (!touch) { await sound.locator('.wi-row[data-id="audio.muted"] .wi-label').click(); assert.equal(await muted(), !wasMuted, `${mode}: the label toggles`); await page.evaluate((v) => window.syn3h.params.set('audio.muted', v), wasMuted) }
+    assert.ok((await sound.locator('.wi-row[data-id="audio.muted"] .wi-hit').boundingBox()).height >= 44 - .5, `${mode}: the switch is a 44 px target`)
     await page.evaluate((value) => window.syn3h.params.set('audio.music', value), before)
 
     // Graphics: the in-game quality stepper steps down and back up.
@@ -98,10 +113,38 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     const cut = await graphics.locator('.wi-label').evaluateAll((labels) => labels.filter((l) => l.scrollWidth > l.clientWidth + 1).map((l) => l.textContent))
     assert.deepEqual(cut, [], `${mode}: labels cut off`)
     await page.screenshot({ path: `${out}/${mode}-graphics.png` })
+    // Auto quality is a switch of its own, apart from the stepper, saying on or off beside it.
+    const auto = graphics.getByRole('switch', { name: 'Auto quality' })
+    const autoOn = () => page.evaluate(() => window.syn3h.game.quality.getQualityState().auto)
+    const autoBefore = await autoOn()
+    assert.equal(await auto.getAttribute('aria-checked'), String(autoBefore), `${mode}: Auto aria-checked`)
+    assert.equal((await graphics.locator('.wi-auto .s3-switch-word').textContent()).trim(), autoBefore ? 'on' : 'off')
+    await tap(graphics.locator('.wi-auto .s3-switch-text'))
+    assert.equal(await autoOn(), !autoBefore, `${mode}: the Auto quality label toggles it`)
+    await page.waitForTimeout(250)
+    await page.screenshot({ path: `${out}/${mode}-graphics-auto-${autoBefore ? 'off' : 'on'}.png` })
+    await tap(graphics.locator('.wi-auto .s3-switch-text'))
+    assert.equal(await autoOn(), autoBefore)
 
     // Controls holds the personal control settings.
     await tap(panel.locator('.wi-card[data-section=controls] .wi-head'))
     for (const id of ['touch.leftHanded', 'camera.sensitivity', 'daydream.seconds']) await panel.locator(`.wi-row[data-id="${id}"]`).waitFor({ state: 'visible' })
+    assert.equal(await panel.getByRole('switch', { name: 'Presentation mode · P' }).count(), 1, `${mode}: presentation mode is a switch`)
+    await panel.locator('.wi-card[data-section=controls]').evaluate((c) => c.scrollIntoView({ block: 'start' }))
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: `${out}/${mode}-controls.png` })
+
+    // Opening the cards in turn, with Sound's Advanced fold open so it is tall: the card open
+    // longest closes when the next does not fit, and no open card is squeezed. Desktop is also
+    // checked at a short laptop height.
+    await panel.locator('.lobby-advanced').evaluate((fold) => { fold.open = true })
+    for (const height of mode === 'desktop' ? [900, 700] : [null]) {
+      if (height) await page.setViewportSize({ width: 1440, height })
+      const tag = height ? `${mode}-${height}` : mode
+      const history = await openInTurn(page, panel, ['sound', 'performance', 'controls', 'sound'], { tap: touch, prefix: `${out}/${tag}-stack`, label: tag })
+      console.log(`${tag}: open after each step ${JSON.stringify(history)}`)
+    }
+    if (mode === 'desktop') await page.setViewportSize({ width: 1440, height: 900 })
 
     // Escape closes and focus returns to the gear (the close control does the same on phones).
     if (touch) await tap(panel.locator('.lobby-settings-close'))

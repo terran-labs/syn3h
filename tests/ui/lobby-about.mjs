@@ -87,7 +87,7 @@ for(const mode of ['desktop','phone','short-phone']){
   await page.screenshot({path:`${out}/${mode}-about-credits-bottom.png`})
   assert.ok(await about.locator('.panel-back').isVisible())
   const backPaths=[]
-  for(const id of ['about','explore','worlds','settings','music','multiplayer','advanced']){
+  for(const id of ['about','explore','worlds','multiplayer','advanced']){
    await page.evaluate(id=>syn3h.shell.showPanel(id),id)
    await page.waitForFunction(()=>document.querySelector('.lobby-panels').dataset.busy==='false')
    const back=page.locator(`[data-panel=${id}] .panel-back`);await back.scrollIntoViewIfNeeded();await back.focus()

@@ -29,6 +29,7 @@ import type { NavPoint, NavProfile, Navigator, Route } from '../pilot/types'
 import type { Terrain } from '../../world/Terrain'
 import { NodeHeap } from './heap'
 import { isRoadFord } from './fords'
+import { onSeaSettled } from '../../world/seaLevel'
 
 /** Coarse cell size in metres. Twice the terrain sample spacing; see the report in tests/bots/nav. */
 export const CELL = 8
@@ -565,12 +566,14 @@ export function createNavigator(terrain: Terrain, options: NavigatorOptions = {}
   }
 
   const unsubscribe = terrain.onRegenerate?.(() => allocate())
+  // The wet cells are cached; a sea that has glided to a new level makes them stale.
+  const unsubscribeSea = onSeaSettled(() => allocate())
 
   return {
     route,
     passable,
     invalidate: allocate,
-    dispose() { unsubscribe?.() },
+    dispose() { unsubscribe?.(); unsubscribeSea() },
     lastQuery,
     get memoryBytes() {
       return edgeCaches.reduce((a, e) => a + e.cost.byteLength, 0) + ground.byteLength + liquid.byteLength + road.byteLength + g.byteLength + parent.byteLength + seen.byteLength + closed.byteLength
