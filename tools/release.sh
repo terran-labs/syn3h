@@ -213,11 +213,9 @@ if ! (
 ); then
   echo "Warning: release is live; calendar tag or notes need repair. Inspect history before retrying."
 fi
-if ! node tools/showcase.mjs --dir "$DEST" --version "$CALVER" --headless >"$LOG-showcase.log" 2>&1; then
-  echo "Warning: release is live; showcase capture failed. See $LOG-showcase.log."
-else
-  echo "Showcase ready at /tmp/syn3h-showcase/$CALVER. Review notes and images before publication."
-fi
+# The showcase is a separate step: a full-quality capture holds a heavy slot for about half an
+# hour, so it never runs inside a release. See docs/RELEASE-SHOWCASE.md.
+echo "Next, when no release is running: /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/showcase.mjs --version $CALVER --publish"
 
 # Refresh aggregate dashboard tiles after the release record exists. The host supplies
 # SYN3H_SESSION_STATE; never store its value in the repository or published dashboard.

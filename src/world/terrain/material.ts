@@ -13,7 +13,7 @@
 import * as THREE from 'three/webgpu'
 import {
   Fn, If, attribute, cameraPosition, color, float, max, mix, mx_noise_float, normalGeometry, normalView,
-  positionView, positionWorld, sin, smoothstep, uniform, vec2, vec3, vec4,
+  positionView, positionWorld, sin, smoothstep, time, uniform, vec2, vec3, vec4,
 } from 'three/tsl'
 import { ROAD_WIDTH } from './roads'
 import { applyCurve } from '../curve'
@@ -290,7 +290,12 @@ export function createTerrainMaterial(): TerrainMaterial {
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 })
   material.colorNode = buildColour()
   // Heat from the sea lights the waterline, so the coast reads at night and from the air.
-  const shoreGlow = smoothstep(1.4, -1.5, aboveSea).mul(0.7)
+  // Scorched and still glowing just above the shore: a broad warm wash out to about 3 m and,
+  // nearer the lava, cracks of heat in the ground that brighten and fade.
+  const scorchCracks = smoothstep(0.62, 0.85, mx_noise_float(vec3(p.x.mul(0.55), p.z.mul(0.55), time.mul(0.15))).mul(0.5).add(0.5))
+  const shoreGlow = smoothstep(3, -1.5, aboveSea).pow(2).mul(0.55)
+    .add(smoothstep(1.2, -0.2, aboveSea).mul(scorchCracks).mul(1.4))
+    .mul(sin(time.mul(0.9).add(p.x.mul(0.13)).add(p.z.mul(0.11))).mul(0.12).add(0.95))
   // Light from the lava lake on the crater walls and the rock crown round it. Not a real
   // light: a radial term that is strongest on faces turned toward the lake, falls off with
   // distance from it and with height above it. At night the summit glows from within.

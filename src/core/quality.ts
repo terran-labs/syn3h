@@ -99,6 +99,7 @@ const PRESET_TABLE: Readonly<Record<string, PresetRow>> = {
   'water.ripples': [false, true, true, true, true, true],
   'water.rippleSize': [64, 64, 96, 128, 128, 256],
   'water.spray': [false, true, true, true, true, true],
+  'water.caustics': [0, D, D, D, D, D],
   'terrain.detailNormal': [0, D, D, D, D, D],
   'terrain.surfaceResponse': [0, D, D, D, D, D],
   'terrain.macroColour': [0, D, D, D, D, D],

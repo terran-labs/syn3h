@@ -9,12 +9,12 @@ import { PerformancePanel } from './PerformancePanel'
 import type { PauseControl } from './pauseControl'
 import { HeightAboveGround } from './heightAboveGround'
 import type { PerformanceSource } from '../core/performance'
-import { SavedWorldStore, SAVED_WORLDS_KEY, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
+import { SavedWorldStore, SAVED_WORLDS_KEY, savedName, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
 import { SavedMoons } from './galaxy/SavedMoons'
 import type { Game, System } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
-import { params, worldSeed } from '../../shared/params'
+import { params, worldNameSeed, worldSeed } from '../../shared/params'
 import { GameAudio } from '../audio'
 // Registers the audio settings the lobby's Sound card shows.
 import '../audio/params'
@@ -26,6 +26,7 @@ import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
 import { placeLabels } from './galaxy/labels'
+import { lobbyLook } from '../world/lobbyLook'
 import { LobbySettings } from './LobbySettings'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
@@ -41,7 +42,8 @@ import { PLANETS } from '../world/planets'
 import { graphicsLevel, levelNumber, qualityBudget } from '../core/quality'
 import { camDistance, camFov, camHeight, camOffset } from '../core/ChaseCamera'
 import { arrivalPath } from '../core/arrival'
-import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
+import { applyPlanet, biomeLine, currentPlanet, currentWorldName, encodeWorld, planetById, randomSeed } from '../world/planets'
+import { nameSeedKeptAcross, randomNameSeed, worldName } from '../world/worldName'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
 import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
@@ -57,6 +59,7 @@ import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
+import './label-plate.css'
 import { isVehicleAvailable } from '../vehicles/available'
 import './shell.css'
 import './exploration.css'
@@ -76,6 +79,37 @@ const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDow
  * else; Settings is the gear in the lower right corner (LobbySettings, 16 November 2026). Join by QR lives inside Multiplayer ("Show on screen"), and shaping a world
  * returns with OFFER_CUSTOM_PLANET.
  */
+/**
+ * The two lines of a planet label: the planet's name, then its biome in lower case ("Velmora"
+ * over "alpine"). The name is the world's own setting (world.nameSeed, see worldName.ts), and
+ * the biome is its recipe's label, so a renamed biome changes here with it.
+ */
+export function planetLabelText(world: { id?: string; recipe?: string; label: string; seed: number; nameSeed?: number; forming?: boolean }): { name: string; biome: string } {
+  if (world.forming) return { name: world.label, biome: 'shape your own' }
+  const recipe = planetById(world.recipe ?? world.id?.split('~')[0])
+  return { name: worldName(world.nameSeed ?? 0, world.seed), biome: recipe ? biomeLine(recipe) : world.label.toLowerCase() }
+}
+/**
+ * A planet label's tint: the colour its world shows from space, lava's glow for a lava world,
+ * lifted toward white until it reads on the dark plate. CSS colour string.
+ */
+export function plateTint(recipeId: string): string {
+  const look = lobbyLook(recipeId)
+  let [r, g, b] = [16, 8, 0].map(k => ((look.night === 1 ? 0xff7a1a : look.land) >> k & 255) / 255)
+  // Relative luminance at least 0.42; then a little more saturation than the ground has.
+  for (let i = 0; i < 12 && 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.42; i++) { r += (1 - r) * 0.15; g += (1 - g) * 0.15; b += (1 - b) * 0.15 }
+  const hex = (v: number) => Math.round(Math.min(1, v) * 255).toString(16).padStart(2, '0')
+  return `#${hex(r)}${hex(g)}${hex(b)}`
+}
+/**
+ * A planet label's side change, in ms: how long its side must stay blocked before it moves (0:
+ * a blocked side would overlap a neighbour, so it starts fading at once; the layout's preference
+ * for the side a label already has is what keeps a turning view from making it hop), and the
+ * cross-fade.
+ */
+const LABEL_HOLD = 0, LABEL_FADE = 150
+/** Must match the short landscape block in shell.css. */
+const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
 const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="about">About</button>`
 const back = '<button type="button" class="panel-back link-button" data-goto="index"><span aria-hidden="true">←</span><span>Back</span></button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
@@ -344,6 +378,8 @@ export class Shell implements System {
       const input = this.element.querySelector<HTMLInputElement>('#world-seed')!
       const seed = Number(input.value)
       if (!Number.isInteger(seed) || seed < 1 || seed > 999999) { this.toast('Choose a seed from 1 to 999999.'); return }
+      // A new seed reshapes the world; its name stays (see world.nameSeed).
+      params.set(worldNameSeed.def.id, nameSeedKeptAcross(worldNameSeed.value, worldSeed.value))
       params.set(worldSeed.def.id, seed); delete input.dataset.dirty
     }, { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-sky]')) button.addEventListener('click', () => { if (canEditWorld()) applySkyPreset(button.dataset.sky as SkyPresetName) }, { signal })
@@ -561,7 +597,7 @@ export class Shell implements System {
     if (id === 'world') {
       const hour = Number(params.get('sun.timeOfDay')?.value ?? 0)
       const time = `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}`
-      return `${currentPlanet().label} · ${planetName(worldSeed.value)} · ${time}`
+      return `${currentWorldName()} · ${currentPlanet().label} · ${time}`
     }
     if (id === 'game') { const bots = Number(params.get('bots.count')?.value ?? 0); const playing = Number(params.get('game.mode')?.value ?? 2); return `${modeName(playing)}${bots ? ` · ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''}` }
     if (id === 'you') { const current = this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind; return `${this.playerName} · ${PLAY_VEHICLES.find(vehicle => vehicle.id === current)?.label ?? ''}` }
@@ -664,14 +700,14 @@ export class Shell implements System {
     this.stopAttract()
     // No galaxy to fly through (or no motion wanted): straight in.
     if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      if (id !== current) applyPlanet(id)
+      if (id !== current) this.applyGalaxyWorld(galaxyId)
       if (this.started) this.closeMenu(); else this.play()
       return true
     }
     if (!this.started) { this.requestEntryCursor(); this.unlockAudio() }
     void this.descent(galaxyId, () => {
       // Under the light, where a hitch cannot be seen: the world is built and the room joined.
-      if (id !== currentPlanet().id) applyPlanet(id)
+      if (id !== currentPlanet().id) this.applyGalaxyWorld(galaxyId)
       if (!this.started) { this.begin(); this.onPlay?.() }
     })
     return true
@@ -1200,10 +1236,10 @@ export class Shell implements System {
       for (const entry of library.entries) {
         const row = document.createElement('div'); row.className = 'input-action'
         const enter = document.createElement('button'); enter.type = 'button'; enter.dataset.savedWorld = entry.id
-        enter.textContent = `${planetName(entry.seed)} · ${entry.recipeId}`
+        enter.textContent = `${savedName(entry)} · ${planetById(entry.recipeId)?.label ?? entry.recipeId}`
         enter.addEventListener('click', () => { void this.enterSavedWorld(entry) })
         const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Delete'
-        remove.setAttribute('aria-label', `Delete saved ${planetName(entry.seed)}`)
+        remove.setAttribute('aria-label', `Delete saved ${savedName(entry)}`)
         remove.addEventListener('click', () => {
           try { this.savedWorlds.remove(entry.id); this.refreshSavedWorlds(); this.say('Saved world deleted from this device.') }
           catch { this.say('The saved world could not be deleted. Storage is unavailable.') }
@@ -1274,15 +1310,24 @@ export class Shell implements System {
     // ?worlds=N repeats the recipes to rehearse a crowded system before new ones land.
     const rehearse = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('worlds')) || 0 : 0
     const recipes = Array.from({ length: Math.max(PLANETS.length, rehearse - 1) }, (_, i) => ({ recipe: PLANETS[i % PLANETS.length], copy: Math.floor(i / PLANETS.length) })).slice(0, GALAXY_MAX - 1)
-    const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current && !copy ? worldSeed.value : i + 1 }))
+    const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current && !copy ? worldSeed.value : randomSeed(), nameSeed: recipe.id === current && !copy ? worldNameSeed.value : randomNameSeed() }))
     // The custom planet is a world still forming: tap it to shape it with the sliders.
     // Hidden for now (see OFFER_CUSTOM_PLANET): the lobby offers planets only.
     if (OFFER_CUSTOM_PLANET) worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
     const chips = this.galaxyChips
+    this.galaxyWorlds = worlds
     for (const world of worlds) {
-      const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
-      chip.innerHTML = '<strong></strong><small></small>'; chip.querySelector('strong')!.textContent = world.label
-      chip.querySelector('small')!.textContent = world.forming ? 'Shape your own' : world.id === current ? planetName(world.seed) : ''
+      const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label s3-plate'; chip.dataset.world = world.id
+      // The shared label plate (label-plate.css): the world's name, its biome in small lower
+      // case, then how many are online, and a leader to the planet's limb.
+      chip.innerHTML = '<strong></strong><small class="s3-plate-quiet galaxy-biome"></small>'
+      const text = planetLabelText(world)
+      chip.querySelector('strong')!.textContent = text.name; chip.querySelector('small')!.textContent = text.biome
+      // Colour is identity: each planet's bar and leader in a colour of its own world.
+      if (!world.forming) {
+        const tint = plateTint(world.recipe ?? world.id.split('~')[0])
+        chip.style.setProperty('--plate-tint', tint)
+      }
       if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; chip.append(count) }
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
       labels.append(chip); chips.set(world.id, chip)
@@ -1302,7 +1347,8 @@ export class Shell implements System {
           const count = chip.querySelector('.galaxy-population')!
           if (count.textContent !== text) { count.textContent = text; this.labelSizes.delete(world.id) }
           chip.title = `${populationLabel(value)}. Counts span separate rooms; choosing this planet uses your current room.`
-          chip.setAttribute('aria-label', `${world.label}: ${chip.title}`)
+          const plate = planetLabelText(world)
+          chip.setAttribute('aria-label', `${plate.name}, ${plate.biome}: ${chip.title}`)
         }
       },
       onLogo: drawn => this.element.classList.toggle('has-animated-logo', drawn),
@@ -1310,6 +1356,8 @@ export class Shell implements System {
       still: () => levelNumber(graphicsLevel.value) === 0,
       onTap: chosen => this.tapWorld(chosen),
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),
+      // A planet pointed at (hovered, or a finger on it) shows its label, faded or not.
+      onPoint: id => { this.pointedWorld = id; for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
       onArrive: chosen => {
         const id = chosen.split('~')[0]
         if (id === 'custom') {
@@ -1320,51 +1368,161 @@ export class Shell implements System {
         if (!canEditWorld() && id !== currentPlanet().id) { this.say('The host has locked this world.'); this.galaxy?.home(); return }
         // Arriving at a world never opens a form (the owner, 15 November 2026): it goes
         // straight in. Taps are already drops (tapWorld); this covers the paths that are not.
-        if (id !== currentPlanet().id) applyPlanet(id)
+        if (id !== currentPlanet().id) this.applyGalaxyWorld(chosen)
         if (this.started) this.closeMenu(); else this.play()
       },
+      frame: () => this.galaxyFrame,
       onLayout: (places, chosen) => {
         this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
         // Each label near its world, on the screen, clear of the links and of each other.
-        for (const [id, chip] of chips) if (!this.labelSizes.has(id) && !chip.hidden) this.labelSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
+        // Each label's size with both lines and with the name only, measured once per text and window.
+        for (const [id, chip] of chips) if (!this.labelSizes.has(id) && !chip.hidden) {
+          const was = chip.classList.contains('is-name-only')
+          chip.classList.remove('is-name-only'); this.labelSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
+          chip.classList.add('is-name-only'); this.compactSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
+          chip.classList.toggle('is-name-only', was)
+        }
         // Clear of the wordmark too. While flying to a world, only its label stays.
         if (!this.brandBottom) {
           this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
-          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect().top ?? 0
-          this.linksTop = hint > innerHeight / 2 ? hint - 24 : innerHeight - 152
+          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect() ?? { top: 0, left: innerWidth, width: 0 }
+          if (matchMedia(SHORT_LANDSCAPE).matches) {
+            // The buttons and hint are a column on the right (shell.css): the galaxy and its
+            // labels get everything left of it and below the corner wordmark.
+            const links = this.element.querySelector('.galaxy-links')?.getBoundingClientRect().left ?? innerWidth
+            this.labelRight = Math.min(links, hint.width ? hint.left : links) - 8
+            this.linksTop = innerHeight - 8
+            const top = this.brandBottom + 4, left = 8
+            // The system is wider than tall, so it can grow past the free height a little;
+            // the spread gives the inner worlds' labels room.
+            this.galaxyFrame = [(left + this.labelRight) / 2 / innerWidth, 1 - (top + this.linksTop) / 2 / innerHeight, 1.5 * (this.linksTop - top) / innerHeight]
+          } else {
+            this.labelRight = innerWidth; this.galaxyFrame = undefined
+            this.linksTop = hint.top > innerHeight / 2 ? hint.top - 24 : innerHeight - 152
+          }
           this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
         }
         const shown = chosen ? places.filter(place => place.id === chosen) : places
-        const spots = placeLabels(shown, this.labelSizes, { width: innerWidth, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots })
+        // A label that has dropped to its name stays that way until the window changes size, so
+        // a slowly turning system does not make its biome line blink in and out.
+        const sizes = new Map(this.labelSizes)
+        for (const id of this.compactIds) { const size = this.compactSizes.get(id); if (size) sizes.set(id, size) }
+        const spots = placeLabels(shown, sizes, { width: this.labelRight, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots, avoid: this.galaxy ? [this.galaxy.sunScreen] : [], compactSizes: this.compactSizes })
+        // The ladder, per label: both lines where the plate fits beside its world, the name only
+        // where only that fits, and faded (shown when pointed at or focused) where nothing does.
+        for (const spot of spots) if (spot.compact && !chosen) this.compactIds.add(spot.id)
+        for (const [id, chip] of chips) chip.classList.toggle('is-name-only', this.compactIds.has(id))
         if (chosen) for (const place of places) if (place.id !== chosen) chips.get(place.id)!.classList.add('is-crowded')
         for (const place of places) chips.get(place.id)!.hidden = !place.visible
+        const now = performance.now()
         for (const spot of spots) {
-          const chip = chips.get(spot.id)!; this.labelSpots.set(spot.id, spot.spot)
-          chip.style.translate = `${spot.x.toFixed(1)}px ${spot.y.toFixed(1)}px`; chip.classList.toggle('is-crowded', spot.crowded)
+          const chip = chips.get(spot.id)!, place = places.find(p => p.id === spot.id)
+          chip.classList.toggle('is-crowded', spot.crowded)
+          if (!place) continue
+          // A label keeps its side until that side has been blocked for a moment, then moves
+          // there by a short cross-fade: it never slides, and a turning view does not make it hop.
+          const side = this.labelSide.get(spot.id)
+          if (!side || spot.crowded || side.spot < 0 || side.spot === spot.spot) {
+            if (!side?.fading) this.labelSide.set(spot.id, { spot: spot.spot, dx: spot.x - place.x, dy: spot.y - place.y })
+            this.labelSpots.set(spot.id, spot.spot)
+            if (!side?.fading) { this.placeChip(chip, spot.x, spot.y); continue }
+          } else if (!side.fading) {
+            if (side.wants !== spot.spot) { side.wants = spot.spot; side.since = now }
+            if (now - (side.since ?? now) >= LABEL_HOLD) {
+              side.fading = true; chip.classList.add('is-swapping')
+              setTimeout(() => { this.labelSide.delete(spot.id); chip.classList.remove('is-swapping') }, LABEL_FADE)
+            }
+          }
+          // Held on its side (or fading out from it): it follows its world from there, and the
+          // layout tries that side first again next frame.
+          this.labelSpots.set(spot.id, side.spot)
+          this.placeChip(chip, place.x + side.dx, place.y + side.dy)
+        }
+        // A planet pointed at, touched or focused whose label had no room: show the label at its
+        // preferred side, under the planet, drawn over whatever is there, and dim the plates it
+        // covers while it shows, so it reads as raised, not as a layout fault.
+        const focused = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>('.galaxy-label')?.dataset.world : undefined
+        const raised = [this.pointedWorld, focused].find(id => id && spots.find(s => s.id === id)?.crowded)
+        let over: { left: number; top: number; right: number; bottom: number } | undefined
+        for (const [id, chip] of chips) chip.classList.toggle('is-raised', id === raised)
+        if (raised) {
+          const chip = chips.get(raised)!, place = places.find(p => p.id === raised), size = (this.compactIds.has(raised) ? this.compactSizes : this.labelSizes).get(raised)
+          if (place && size) {
+            const x = Math.min(this.labelRight - 8 - size.width / 2, Math.max(8 + size.width / 2, place.x))
+            const y = Math.min(this.linksTop - size.height, place.y + place.radius + 6)
+            this.labelSide.delete(raised); this.placeChip(chip, x, y)
+            over = { left: x - size.width / 2, top: y, right: x + size.width / 2, bottom: y + size.height }
+          }
+        }
+        for (const spot of spots) {
+          const size = (this.compactIds.has(spot.id) ? this.compactSizes : this.labelSizes).get(spot.id), side = this.labelSide.get(spot.id), place = places.find(p => p.id === spot.id)
+          const box = size && side && place ? { left: place.x + side.dx - size.width / 2, top: place.y + side.dy, right: place.x + side.dx + size.width / 2, bottom: place.y + side.dy + size.height } : undefined
+          chips.get(spot.id)!.classList.toggle('is-dimmed', !!over && spot.id !== raised && !!box && box.left < over.right && box.right > over.left && box.top < over.bottom && box.bottom > over.top)
         }
       },
     })
-    addEventListener('resize', () => { this.brandBottom = undefined }, { signal: this.abort.signal })
+    addEventListener('resize', () => { this.brandBottom = undefined; this.labelSizes.clear(); this.compactSizes.clear(); this.compactIds.clear() }, { signal: this.abort.signal })
     this.element.classList.add('is-galaxy'); this.galaxy.enabled = true
     // WebGL 2 exists but the galaxy would not start (a shader the driver refuses): the world
     // names stay, as a row of buttons, so a visitor can still choose one and play.
     this.element.classList.toggle('galaxy-flat', !this.galaxy.live)
     this.galaxyFor(this.panels.active || 'index')
   }
+  /**
+   * Move a planet label. Called every frame, so it writes only what moved by
+   * more than half a pixel and reads nothing from the page. x is the label's centre, y its top.
+   */
+  private placeChip(chip: HTMLButtonElement, x: number, y: number): void {
+    const last = this.chipDrawn.get(chip) ?? { x: NaN, y: NaN }
+    this.chipDrawn.set(chip, last)
+    if (!(Math.abs(x - last.x) <= .5 && Math.abs(y - last.y) <= .5)) { last.x = x; last.y = y; chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` }
+  }
+  /**
+   * Each planet label's side: the spot it shows at and its offset from its world. `wants` and
+   * `since` record a different side the layout has been asking for, and since when.
+   */
+  private readonly labelSide = new Map<string, { spot: number; dx: number; dy: number; wants?: number; since?: number; fading?: boolean }>()
+  private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
+  /** The world a pointer is on, or a finger holds, for its label (Galaxy onPoint). */
+  private pointedWorld: string | undefined
+  /** The galaxy's worlds by id, for their label text. */
   /** The galaxy's world labels, by world id, with their measured sizes and last spots. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
   private readonly labelSizes = new Map<string, { width: number; height: number }>()
+  /** Each label's size as its name only, for the ladder's compact rung. */
+  private readonly compactSizes = new Map<string, { width: number; height: number }>()
+  /** Labels showing their name only, until the window changes size. */
+  private readonly compactIds = new Set<string>()
   private readonly labelSpots = new Map<string, number>()
+  /** Short landscape: the right edge left to the galaxy, and its framing (see SHORT_LANDSCAPE). */
+  private labelRight = innerWidth
+  private galaxyFrame?: readonly [number, number, number]
   /** Where the wordmark ends, measured once per window size. */
   private brandBottom?: number
   private linksTop = 0
-  /** Labels follow the world in play: its generated name, and which worlds can be chosen now. */
+  /** The worlds the galaxy shows, each with the seed and name picking it leads to. */
+  private galaxyWorlds: GalaxyWorld[] = []
+  /**
+   * Make a galaxy world the world: its recipe, and the seed and name its sphere and label
+   * showed, so what the player saw is where they land.
+   */
+  private applyGalaxyWorld(galaxyId: string): void {
+    const world = this.galaxyWorlds.find(w => w.id === galaxyId)
+    applyPlanet(galaxyId.split('~')[0], world?.seed, world?.nameSeed !== undefined ? { nameSeed: world.nameSeed } : {})
+  }
+  /** Labels follow the world in play: its name and seed, and which worlds can be chosen now. */
   private refreshGalaxyLabels(open: boolean): void {
     const current = currentPlanet().id
     for (const [id, chip] of this.galaxyChips) {
-      const small = chip.querySelector('small')!, text = id === 'custom' ? small.textContent : id === current ? planetName(worldSeed.value) : ''
-      if (small.textContent !== text) { small.textContent = text; this.labelSizes.delete(id) }
-      chip.classList.toggle('is-current', id === current)
+      // The world in play is whatever the room says it is: its sphere and label follow.
+      const world = this.galaxyWorlds.find(w => w.id === id)
+      if (world && id === current && !world.forming) {
+        world.nameSeed = worldNameSeed.value
+        if (world.seed !== worldSeed.value) this.galaxy?.setSeed(id, worldSeed.value)
+      }
+      const name = chip.querySelector('strong')!, text = world ? planetLabelText(world).name : name.textContent
+      if (name.textContent !== text) { name.textContent = text; this.labelSizes.delete(id); this.compactSizes.delete(id) }
+      chip.classList.toggle('is-current', id === current); chip.classList.toggle('is-selected', id === current)
       chip.classList.toggle('is-locked', !open && id !== current)
     }
   }
@@ -1560,7 +1718,7 @@ export class Shell implements System {
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
-      const world = `${currentPlanet().label} · ${planetName(worldSeed.value)}`
+      const world = `${currentWorldName()} · ${currentPlanet().label}`
       if (world !== this.worldShown) {
         this.worldShown = world
         const label = this.element.querySelector<HTMLElement>('.rail-world')!
@@ -1589,7 +1747,7 @@ export class Shell implements System {
     const invitedOnly = this.invited && !this.started
     if (this.worldDirty) {
       this.worldDirty = false
-      this.element.querySelector('.planet-current')!.textContent = `${planet.label} world ${planetName(worldSeed.value)}. ${planet.centre}.${invitedOnly ? ' You were invited to this world.' : ''}`
+      this.element.querySelector('.planet-current')!.textContent = `${currentWorldName()}, ${/^[aeiou]/i.test(planet.label) ? 'an' : 'a'} ${planet.label.toLowerCase()} world. ${planet.centre}.${invitedOnly ? ' You were invited to this world.' : ''}`
       this.updateInvite()
     }
     this.refreshGalaxyLabels(editable && !invitedOnly)

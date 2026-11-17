@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { placeLabels, type LabelPlace } from '../../src/ui/galaxy/labels'
+import { placeLabels, type LabelPlace, ADJACENT } from '../../src/ui/galaxy/labels'
 
 const size = { width: 80, height: 20 }
 const sizes = (ids: string[]) => new Map(ids.map(id => [id, size]))
@@ -35,6 +35,18 @@ describe('galaxy labels', () => {
     const [spot] = placeLabels(places, sizes(['a']), bounds, { previous: new Map([['a', 2]]) })
     expect(spot.spot).toBe(2)
   })
+  // Bug it catches: on a phone, a label clamped to the screen edge covered its own world, or
+  // drifted away from it; with nothing drawn between them, only nearness says whose it is.
+  it('keeps every label at touching distance from its own world, off every disc', () => {
+    const places: LabelPlace[] = [{ id: 'a', x: 20, y: 300, radius: 18, visible: true }, { id: 'b', x: 200, y: 670, radius: 12, visible: true }, { id: 'c', x: 300, y: 300, radius: 14, visible: true }]
+    const sun: LabelPlace = { id: 'sun', x: 300, y: 340, radius: 20, visible: true }
+    for (const spot of placeLabels(places, sizes(['a', 'b', 'c']), bounds, { avoid: [sun] }).filter(s => !s.crowded)) {
+      const p = places.find(q => q.id === spot.id)!, box = { left: spot.x - size.width / 2, top: spot.y, right: spot.x + size.width / 2, bottom: spot.y + size.height }
+      for (const disc of [...places, sun]) expect(over(spot, disc)).toBe(false)
+      const nx = Math.min(box.right, Math.max(box.left, p.x)), ny = Math.min(box.bottom, Math.max(box.top, p.y))
+      expect(Math.hypot(nx - p.x, ny - p.y) - p.radius).toBeLessThanOrEqual(ADJACENT)
+    }
+  })
   it('skips worlds that are not visible', () => {
     expect(placeLabels([{ id: 'a', x: 0, y: 0, radius: 1, visible: false }], sizes(['a']), bounds)).toEqual([])
   })
@@ -69,12 +81,12 @@ describe('galaxy labels', () => {
     const ring = Array.from({ length: 8 }, (_, i): LabelPlace => ({ id: `r${i}`, x: 200 + Math.cos(i * Math.PI / 4) * 40, y: 300 + Math.sin(i * Math.PI / 4) * 40, radius: 26, visible: true, depth: 30 }))
     const named = placeLabels([play, ...ring], sizes(['play', ...ring.map(r => r.id)]), bounds, { first: 'play' })
     expect(named.find(s => s.id === 'play')!.crowded).toBe(false)
-    // The same ring nearer the eye than the world in play: faded rather than drawn over it.
+    // The same ring nearer the eye than the world in play: named further out if there is room,
+    // never drawn over it.
     const nearRing = ring.map(r => ({ ...r, depth: 2 }))
     const faded = placeLabels([play, ...nearRing], sizes(['play', ...ring.map(r => r.id)]), bounds, { first: 'play' })
     const spot = faded.find(s => s.id === 'play')!
     if (!spot.crowded) for (const disc of nearRing) expect(over(spot, disc)).toBe(false)
-    expect(spot.crowded).toBe(true)
   })
   it('lets the world in play fall back to any spot clear of nearer worlds', () => {
     const play: LabelPlace = { id: 'play', x: 200, y: 300, radius: 10, visible: true, depth: 20 }
@@ -129,5 +141,15 @@ describe('galaxy labels', () => {
     expect(flips.map(f => f.hidden)).toEqual([false, true, false])
     expect(flips[1].cover).toBeGreaterThan(0.55); expect(flips[1].cover).toBeLessThan(0.57)
     expect(flips[2].cover).toBeLessThan(0.45); expect(flips[2].cover).toBeGreaterThan(0.43)
+  })
+  // Bug it catches: one crowded corner dropped every label to its name, on a window with room.
+  it('drops only a label with no room to its name; the others keep both lines', () => {
+    const tall = { width: 80, height: 34 }, short = { width: 80, height: 18 }
+    // Two worlds close together near the bottom edge: the second has room only for a short plate.
+    const places: LabelPlace[] = [{ id: 'a', x: 100, y: 200, radius: 10, visible: true }, { id: 'b', x: 300, y: 640, radius: 10, visible: true }, { id: 'c', x: 300, y: 300, radius: 10, visible: true }]
+    const spots = placeLabels(places, new Map(places.map(p => [p.id, tall])), { width: 400, height: 800, bottom: 690 }, { compactSizes: new Map(places.map(p => [p.id, short])), avoid: [{ x: 300, y: 610, radius: 12 }, { x: 300, y: 600, radius: 12 }, { x: 250, y: 640, radius: 12 }, { x: 350, y: 640, radius: 12 }] })
+    expect(spots.find(s => s.id === 'a')!.compact).toBeFalsy()
+    expect(spots.find(s => s.id === 'c')!.compact).toBeFalsy()
+    for (const s of spots) if (s.compact) expect(s.crowded).toBe(false)
   })
 })

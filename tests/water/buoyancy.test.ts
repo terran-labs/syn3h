@@ -15,21 +15,15 @@ function setup(){
  const h=harness();h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=> 'water'
  return h
 }
-it.each([['syn3h',Syn3hBuggy]] as const)('%s sinks upright to the bed and drives on contacts',(_name,Kind)=>{
- const h=setup(),v=new Kind(h.game,h.terrain,new THREE.Vector3(0,9,0));v.isLocal=false
+it('syn3h floats upright at the surface and paddles forward',()=>{
+ const h=setup(),v=new Syn3hBuggy(h.game,h.terrain,new THREE.Vector3(0,9,0));v.isLocal=false
  try{
-  h.step(v,1800)
-  expect(v.body.translation().y).toBeLessThan(2)
+  h.step(v,600)
+  expect(Math.abs(v.body.translation().y-10)).toBeLessThan(1)
   expect(new THREE.Vector3(0,1,0).applyQuaternion(v.object.quaternion).y).toBeGreaterThan(.9)
-  const z=v.body.translation().z;v.input.y=1
-  let contacts=0;for(let i=0;i<300;i++){h.step(v);contacts=Math.max(contacts,v.wheelsGrounded)}
-  expect(contacts).toBeGreaterThanOrEqual(2)
+  const z=v.body.translation().z;v.input.y=1;h.step(v,300)
   expect(v.body.translation().z).toBeLessThan(z-2)
  }finally{v.dispose();h.world.free()}
-})
-it('open wings lift a buggy from the seabed',()=>{
- const h=setup(),v=new Syn3hBuggy(h.game,h.terrain,new THREE.Vector3(0,1,0));v.isLocal=false
- try{h.step(v,60);v.input.special=true;h.step(v,300);expect(v.body.translation().y).toBeGreaterThan(10)}finally{v.dispose();h.world.free()}
 })
 it('switch off retains the legacy float',()=>{
  const h=setup();waterSinking.value=false

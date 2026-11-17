@@ -23,6 +23,8 @@ import { BotPacer } from './pacing'
 /** The arrival effect (src/vehicles/effects/Materialize.ts), as far as bots use it. */
 export interface BotArrivalEffect {
   begin(vehicle: Vehicle, options?: { at?: Vector3; heading?: number; hold?: boolean; holdSeconds?: number }): Promise<void>
+  /** The arrival in reverse, look only; resolves when the vehicle can be removed inside the cloud. */
+  depart?(vehicle: Vehicle, options?: { holdSeconds?: number }): Promise<void>
   cancel(vehicle: Vehicle): void
 }
 /** Slot by slot: half buggies, a quarter hovercraft, a quarter jets. */
@@ -127,7 +129,7 @@ export class BotManager implements System {
     this.game.remove(this.brains.pop()!); this.game.remove(bot)
     for (const controller of this.brains) controller.setPeers(this.bots)
   }
-  /** Send the newest bot away: it vanishes in the arrival cloud where it is, then goes. */
+  /** Send the newest bot away: it leaves in the departure cloud where it is, then goes. */
   private depart() {
     const bot = this.bots[this.bots.length - 1]
     if (!bot) return
@@ -142,7 +144,7 @@ export class BotManager implements System {
       this.effects.get(bot)?.(); this.effects.delete(bot)
       this.game.remove(brain); this.game.remove(bot)
     }
-    this.effect.begin(bot, { hold: false, holdSeconds: 0.7 }).then(gone, gone)
+    ;(this.effect.depart?.(bot) ?? this.effect.begin(bot, { hold: false, holdSeconds: 0.7 })).then(gone, gone)
   }
   private clearBots() {
     while (this.bots.length) this.removeLast()

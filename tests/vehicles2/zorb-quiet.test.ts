@@ -46,22 +46,23 @@ function hop(h: ReturnType<typeof harness>, v: Vehicle) {
   press(v); h.step(v)
   const launch = v.body.linvel().y
   let peak = start
-  for (let i = 0; i < 150; i++) { h.step(v); peak = Math.max(peak, centreY(v)); if (v.body.linvel().y < 0) break }
+  for (let i = 0; i < 300; i++) { h.step(v); peak = Math.max(peak, centreY(v)); if (v.body.linvel().y < 0) break }
   return { launch, rise: peak - start }
 }
 
 describe('zorb mode stows the vehicle mechanisms', () => {
   it('Space inside the ball hops every vehicle about the same height and deploys nothing', () => {
-    // sqrt(2 g h) at the default 1.5 m is 5.42 m/s. The jet's hover drag and the ball's
-    // contact take a little off.
+    // A velocity change of sqrt(2 g h) for the hop height slider, whatever it is tuned to. The
+    // jet's hover drag, a buggy's idle hold and the ball's contact take some off.
+    const height = Number(params.get('zorb.hopHeight')!.value), speed = Math.sqrt(2 * 9.81 * height)
     for (const kind of KINDS) {
       const { h, v, done } = zorbed(kind)
       const { launch, rise } = hop(h, v)
       expect(v.zorb.hops, kind).toBe(1)
-      expect(launch, kind).toBeGreaterThan(4.8)
-      expect(launch, kind).toBeLessThan(6)
-      expect(rise, kind).toBeGreaterThan(1.1)
-      expect(rise, kind).toBeLessThan(1.8)
+      expect(launch, kind).toBeGreaterThan(speed * .8)
+      expect(launch, kind).toBeLessThan(speed * 1.1)
+      expect(rise, kind).toBeGreaterThan(height * .6)
+      expect(rise, kind).toBeLessThan(height * 1.2)
       // The press is a raw toggle the controller never saw.
       expect(v.input.special, kind).toBe(true)
       expect(v.wingsOpen, kind).toBe(false)
@@ -196,7 +197,11 @@ describe('zorb hop pulse', () => {
     step(50)
     state.special = true; step(10)
     state.zorb = true; step(450)
-    for (let i = 0; i < 3; i++) { state.special = !state.special; step(80) }
+    // A hop only leaves the ground: press each time the bouncing ball is back down.
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 1500 && owner.v.zorb.contact <= 0; j++) step()
+      state.special = !state.special; step(80)
+    }
     expect(owner.v.zorb.hops).toBe(3)
     expect(remote.v.zorb.hops).toBe(3)
     state.zorb = false; step(1)

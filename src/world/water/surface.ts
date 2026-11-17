@@ -2,7 +2,7 @@
  * One water surface for the sea, the lake, the pools, the rivers and their waterfalls.
  *
  * The same node graph in three modes:
- *  - 'sea'   the shared swells from `seaWaves` move the vertices (the same sum of sines the
+ *  - 'sea'   the shared field's swells (liquidWaves.ts) move the vertices (the same sum of sines the
  *            physics floats on), shrunk in the shallows; rolling foam lines run in to the
  *            coast; whitecaps on the crests when the sea is high.
  *  - 'still' lake and pools: no swell, light wind ripples.
@@ -20,11 +20,15 @@
 import * as THREE from 'three/webgpu'
 import {
   abs, attribute, cameraPosition, cameraViewMatrix, color, cos, faceDirection, float, max, mix, modelWorldMatrix,
-  mx_noise_float, normalize, positionGeometry, positionLocal, positionWorld, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4, renderGroup,
+  mx_noise_float, normalize, positionGeometry, positionView, positionLocal, positionWorld, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4, renderGroup,
 } from 'three/tsl'
-import { SEA_COMPONENTS as WAVE_COUNT, seaWaves, waveScale } from './seaWaves'
+import { SEA_COMPONENTS as WAVE_COUNT } from './seaWaves'
 import { rippleField } from './ripples'
-import { waterChop, waterClarity, waterReflection } from './params'
+import { waterChop, waterClarity, waterReflection, waterWaveVisual } from './params'
+import { clipmapNodes } from './clipmap'
+import { NO_BED, type WaterBed } from './bed'
+import { cameraInWaterNode, liquidDaylightNode } from './daylight'
+export { buildBedTexture, type WaterBed } from './bed'
 import { prevailingWindStrength } from '../weather'
 
 /** A float node that sums are folded into. TSL's operator typings do not narrow through a loop. */
@@ -43,7 +47,38 @@ export interface WaterSurface {
   setBed(bed: WaterBed): void
   /** The sky reflection capture. Mirrored at full strength, not at the scene's subdued fill. */
   setEnvironment(texture: THREE.Texture | null): void
+  /**
+   * The waves this surface shows: the shared field for its body, `() => liquidWaves(body)`
+   * (liquidWaves.ts), so what floats and what is drawn are the same surface. Flat until set.
+   */
+  setWaveSource(source: WaveSource | null): void
 }
+
+/**
+ * One body's waves now, in the shape of liquidWaves.ts LiquidWaveField (which it accepts as is):
+ * sines with their current phase (radians) and amplitude (metres, every scaling folded in), and
+ * the shoaling numbers. `active` false marks a component the physics does not lift on: it only
+ * tilts the light. Called once a frame; the result may be reused by the caller.
+ */
+export interface WaveField {
+  components: readonly { kx: number; kz: number; amplitude: number; phase: number; active?: boolean }[]
+  /** Depth (m) at which the waves are whole. */
+  shoalDepth: number
+  /** Share left in very shallow water (0 when absent). */
+  shoalFloor?: number
+  /** Depth (m) over which they fade to nothing at the waterline (none when absent). */
+  shoalLip?: number
+}
+export type WaveSource = () => WaveField | null
+
+/** Share of the waves at water `depth`, as liquidShoal in the physics: CPU twin of the shader's. */
+export function shoal(depth: number, f: Pick<WaveField, 'shoalDepth' | 'shoalFloor' | 'shoalLip'>): number {
+  if (!(depth > 0)) return 0
+  const s = (a: number, b: number, x: number) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u) }
+  const lip = Math.max(1e-3, f.shoalLip ?? 1e-3), floor = f.shoalFloor ?? 0
+  return s(0, lip, depth) * (floor + (1 - floor) * s(0, Math.max(1e-3, f.shoalDepth), depth))
+}
+
 
 /**
  * Wind chop: short waves the sea mesh cannot carry as geometry, so they only tilt the light.
@@ -55,39 +90,6 @@ const CHOP: readonly [number, number, number][] = [
   [7.3, 0.35, 0.050], [4.1, -0.9, 0.055], [2.6, 1.7, 0.060],
   [1.7, -2.3, 0.060], [1.1, 2.9, 0.055], [0.7, -0.2, 0.045],
 ]
-
-/** The terrain's height field as a texture, for depth under any pixel of any water surface. */
-export interface WaterBed { texture: THREE.DataTexture; size: number; reference: number }
-
-/**
- * The height field the terrain is drawn and driven on, as one wrapping half-float texture.
- *
- * The sea mesh has a vertex every ten metres or so. Depth interpolated across triangles that
- * size gives foam and shallows straight polygon edges. The height field has a sample every
- * four metres and the GPU interpolates it per pixel, so the shore follows the land. Heights
- * are stored relative to `reference` (the sea level), where half floats are finest.
- */
-export function buildBedTexture(data: { heights: Float32Array; resolution: number; size: number }, reference: number): WaterBed {
-  // The last row and column repeat the first on a wrapping tile.
-  const n = data.resolution - 1
-  const out = new Uint16Array(n * n)
-  for (let iz = 0; iz < n; iz++) {
-    for (let ix = 0; ix < n; ix++) out[iz * n + ix] = THREE.DataUtils.toHalfFloat(Math.max(-60000, Math.min(60000, data.heights[iz * data.resolution + ix] - reference)))
-  }
-  const map = new THREE.DataTexture(out, n, n, THREE.RedFormat, THREE.HalfFloatType)
-  map.wrapS = map.wrapT = THREE.RepeatWrapping
-  map.magFilter = map.minFilter = THREE.LinearFilter
-  map.generateMipmaps = false
-  map.needsUpdate = true
-  return { texture: map, size: data.size, reference }
-}
-
-/** Until a world is built: one texel far below any surface, so everything reads as deep. */
-const NO_BED = (() => {
-  const map = new THREE.DataTexture(new Uint16Array([THREE.DataUtils.toHalfFloat(-1000)]), 1, 1, THREE.RedFormat, THREE.HalfFloatType)
-  map.needsUpdate = true
-  return map
-})()
 
 /** Cosine of the critical angle of water: the edge of Snell's window seen from below. */
 const SNELL_COS = Math.cos(Math.asin(1 / 1.333))
@@ -128,6 +130,34 @@ export function waterOpacityNode(depth: THREE.Node<'float'>, foam: THREE.Node<'f
   return view.y.greaterThanEqual(0).select(above, mix(float(.98), float(.12), window))
 }
 
+/** Share of the scene's aerial haze the water takes at the camera, and the distances it eases over. */
+export const WATER_HAZE = { near: 0.15, from: 300, to: 1600 }
+
+/**
+ * Haze over water on its own curve. The weather's sea-level haze is right for land but washes
+ * a sea seen from a few tens of metres up into milk, hiding its colour and its swell. The
+ * scene's air fog mixes a pixel toward the haze colour by a factor f; mixing that result back
+ * toward the unfogged colour by `keep` is the same as applying the haze at f * (1 - keep). So
+ * near the camera the water takes only WATER_HAZE.near of it, easing to all of it by
+ * WATER_HAZE.to metres and at the horizon, where it meets the land's haze exactly. No change
+ * while the camera is in the water (the medium there is the fog). With no scene fog (a lab,
+ * a test, a world built before Environment) this is exactly the default. It wraps whatever
+ * fog node the material is compiled against, so a rebuilt Environment is picked up when its
+ * new fog node recompiles the material.
+ */
+export function hazeCurve(material: THREE.NodeMaterial): void {
+  type FogSetup = (this: unknown, builder: { fogNode: unknown }, output: THREE.Node) => THREE.Node
+  const m = material as unknown as { setupFog: FogSetup }
+  const base = Object.getPrototypeOf(material).setupFog as FogSetup
+  m.setupFog = function waterFog(builder, output) {
+    const fogged = base.call(this, builder, output)
+    if (!builder.fogNode) return fogged
+    const share = mix(float(WATER_HAZE.near), float(1), smoothstep(WATER_HAZE.from, WATER_HAZE.to, positionView.length()))
+    const keep = float(1).sub(share).mul(float(1).sub(cameraInWaterNode))
+    return mix(fogged as THREE.Node<'vec4'>, output as THREE.Node<'vec4'>, keep)
+  }
+}
+
 export function configureWaterBlending(material: THREE.MeshStandardNodeMaterial): void {
   material.transparent = true
   material.depthWrite = false
@@ -142,6 +172,11 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   const shadeAmp = Array.from({ length: WAVE_COUNT }, () => uniform(0))
   /** Depth over which waves grow from nothing to full: a tenth of the dominant wavelength. */
   const shoalDepth = uniform(6)
+  const shoalFloor = uniform(0)
+  const shoalLip = uniform(1e-3)
+  /** The shader's twin of `shoal()`. */
+  const shoalNode = (d: THREE.Node<'float'>) => smoothstep(0, shoalLip, d).mul(shoalFloor.add(float(1).sub(shoalFloor).mul(smoothstep(0, shoalDepth, d))))
+  let source: WaveSource | null = null
   /** Total geometric amplitude, for normalising crest height. */
   const ampTotal = uniform(0)
 
@@ -156,21 +191,63 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   /** (1 / tile size, half a texel, height the texture is relative to). */
   const bedFrame = uniform(new THREE.Vector3(1 / 2048, 0, 0))
 
-  // Water depth at rest, two ways. Vertices carry the bed under them (`groundHeight`), which
-  // is all the swell needs to shrink in the shallows. Pixels read the height field itself.
+  // Water depth at rest, per pixel, from the height field itself.
   const surfaceY = mode === 'sea' ? level : positionGeometry.y
-  const vertexDepth = surfaceY.sub(attribute<'float'>('groundHeight', 'float'))
   const bedUv = vec2(p.x, p.z).mul(bedFrame.x).add(bedFrame.y.add(0.5))
   const depth = surfaceY.sub(bedMap.sample(bedUv).r.add(bedFrame.z))
-  const shoal = mode === 'sea' ? smoothstep(0, shoalDepth, depth) : float(0)
+  const shoalHere = shoalNode(depth)
 
-  // Vertex: swell. World xz before the bend; the wave vectors fit the tile, so every image of
-  // a chunk carries the same waves and the sea has no seam.
+  /**
+   * Visual-only detail near the camera: the chop below as real ripples, at most 0.15 m in all
+   * (CHOP amplitudes are steepness / k: 6, 4, 2.5, 1.6, 1 and 0.5 cm). Too small to matter to
+   * anything afloat, so the physics never sees it. Phase-warped by the same noise as the chop's
+   * normals, so the shapes you see are the ones the light picks out.
+   */
+  const detailHeight = (w: THREE.Node<'vec2'>, cell: THREE.Node<'float'>) => {
+    const near = smoothstep(80, 20, w.sub(cameraPosition.xz).length()).mul(chop).mul(visual)
+    const q = vec3(w.x.mul(0.3), w.y.mul(0.3), time.mul(0.6))
+    const wx = mx_noise_float(q)
+    const wz = mx_noise_float(q.add(vec3(17.3, 5.1, 0)))
+    let d: Sum = float(0)
+    for (const [length, heading, steepness] of CHOP) {
+      const k = (Math.PI * 2) / length
+      const arg = w.x.mul(k * Math.cos(heading)).add(w.y.mul(k * Math.sin(heading))).add(time.mul(Math.sqrt(9.81 * k))).add(wx.mul(2.4)).add(wz.mul(1.3))
+      d = d.add(sin(arg).mul(steepness / k).mul(smoothstep(cell.mul(3), cell.mul(5), float(length))))
+    }
+    return d.mul(near)
+  }
+  /** water.waveVisual: scales the visual-only detail and how strongly crests are picked out. */
+  const visual = uniform(waterWaveVisual.value).setGroup(renderGroup).onRenderUpdate(() => waterWaveVisual.value)
+
+  // Vertex: swell, on the clipmap (clipmap.ts). Every component the shared field holds,
+  // evaluated at the morphed world xz; components too short for the level's cells fade out
+  // there and live on in the normals below. Depth for shoaling is the bed texture's, read in
+  // the vertex stage at mip 0, so the waves die on the same shore the foam draws.
   if (mode === 'sea') {
-    const w = modelWorldMatrix.mul(vec4(positionGeometry, 1)).xz
+    const grid = clipmapNodes()
+    const w = grid.world
+    const bedHere = bedMap.sample(w.mul(bedFrame.x).add(bedFrame.y.add(0.5))).level(float(0)).r.add(bedFrame.z)
     let h: Sum = float(0)
-    for (const u of wave) h = h.add(u.w.mul(sin(u.x.mul(w.x).add(u.y.mul(w.y)).add(u.z))))
-    material.positionNode = positionLocal.add(vec3(0, h.mul(smoothstep(0, shoalDepth, vertexDepth)), 0))
+    for (const u of wave) {
+      const length = float(Math.PI * 2).div(vec2(u.x, u.y).length().max(1e-4))
+      const fade = smoothstep(grid.fadeCell.mul(3), grid.fadeCell.mul(5), length)
+      h = h.add(u.w.mul(fade).mul(sin(u.x.mul(w.x).add(u.y.mul(w.y)).add(u.z))))
+    }
+    material.positionNode = vec3(grid.local.x, h.mul(shoalNode(level.sub(bedHere))).add(detailHeight(w, grid.fadeCell)), grid.local.y)
+  } else {
+    // Lakes, pools and rivers: their own meshes, at their own surface heights, displaced by
+    // whatever wave source they are given (`setWaveSource`; flat until one is). The mesh
+    // spacing (userData.spacing, metres) decides which components it can carry.
+    const spacing = uniform(3).onObjectUpdate(({ object }) => (object?.userData as { spacing?: number } | undefined)?.spacing ?? 3)
+    const w = modelWorldMatrix.mul(vec4(positionGeometry, 1)).xz
+    const bedHere = bedMap.sample(w.mul(bedFrame.x).add(bedFrame.y.add(0.5))).level(float(0)).r.add(bedFrame.z)
+    let h: Sum = float(0)
+    for (const u of wave) {
+      const length = float(Math.PI * 2).div(vec2(u.x, u.y).length().max(1e-4))
+      h = h.add(u.w.mul(smoothstep(spacing.mul(3), spacing.mul(5), length)).mul(sin(u.x.mul(w.x).add(u.y.mul(w.y)).add(u.z))))
+    }
+    const lift = h.mul(shoalNode(positionGeometry.y.sub(bedHere))).add(detailHeight(w, spacing).mul(mode === 'still' ? 0.7 : 0.4))
+    material.positionNode = positionLocal.add(vec3(0, lift, 0))
   }
 
   // Fragment: slope of the swell, every component; the ones too short for the mesh fade with
@@ -180,7 +257,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   let sx: Sum = float(0)
   let sz: Sum = float(0)
   let crest: Sum = float(0)
-  if (mode === 'sea') {
+  {
     for (let i = 0; i < WAVE_COUNT; i++) {
       const u = wave[i]
       const arg = u.x.mul(p.x).add(u.y.mul(p.z)).add(u.z)
@@ -191,8 +268,12 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
       sz = sz.add(c.mul(u.y))
       crest = crest.add(sin(arg).mul(u.w))
     }
-    sx = sx.mul(shoal)
-    sz = sz.mul(shoal)
+    // Beyond the near field the swell's slope is too gentle to see in the light, so the far
+    // sea reads as flat haze. Steepen the light (normals only; nothing afloat feels this) with
+    // distance, so distant swells show as light and dark bands. water.waveVisual scales it.
+    const farBands = float(1).add(visual.mul(1.6).mul(smoothstep(60, 350, dist)))
+    sx = sx.mul(shoalHere).mul(farBands)
+    sz = sz.mul(shoalHere).mul(farBands)
   }
 
   // Detail: small wind ripples near the camera, and on a river they run downstream.
@@ -250,7 +331,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   material.normalNode = normalize(cameraViewMatrix.transformDirection(worldNormal))
 
   // Colour from above: shallows to deep by depth, lifted a little on the crests.
-  const crestN = mode === 'sea' ? crest.div(max(ampTotal, 0.001)).mul(shoal) : float(0)
+  const crestN = crest.div(max(ampTotal, 0.001)).mul(shoalHere)
   // What the water itself sends back: the shallow tint where little of it lies along the
   // sight line, the deep colour once the line has crossed about a clarity's worth.
   const body = mix(shallowColour, deepColour, smoothstep(0.3, 16, waterPath(depth)))
@@ -276,9 +357,13 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
     const warp = mx_noise_float(vec3(p.x.mul(0.045), p.z.mul(0.045), drift.mul(0.2))).mul(0.9)
     const lines = smoothstep(0.88, 0.99, sin(depth.add(warp).mul(1.7).add(time.mul(1.1))).mul(0.5).add(0.5))
     foam = max(foam, lines.mul(smoothstep(2.6, 0.5, depth)).mul(smoothstep(0.35, 0.75, breakup)).mul(0.7))
-    // Whitecaps on the highest crests when the sea is rough.
-    const rough = smoothstep(0.6, 2.2, ampTotal.mul(2))
-    foam = max(foam, smoothstep(0.72, 0.95, crestN).mul(rough).mul(smoothstep(0.35, 0.8, breakup)))
+    // Whitecaps on the highest crests when the sea is rough, and on any crest steep enough to
+    // break, broken up by noise so they read as caps, not stripes.
+    const rough = smoothstep(0.3, 1.4, ampTotal.mul(2))
+    const steepness = sx.mul(sx).add(sz.mul(sz)).sqrt()
+    foam = max(foam, smoothstep(0.62, 0.92, crestN).mul(max(rough, smoothstep(0.08, 0.16, steepness))).mul(smoothstep(0.4, 0.8, breakup)).mul(visual.min(1.2)))
+    // Waves shoaling over the last few metres crest and spill white before the shore.
+    foam = max(foam, smoothstep(0.35, 0.75, crestN).mul(smoothstep(3.5, 1.2, depth)).mul(smoothstep(0.3, 0.9, depth)).mul(smoothstep(0.3, 0.7, breakup)).mul(0.8))
   }
   if (mode === 'river') {
     // White water where the bed is steep: a cascade over a third of the run (the waterfall
@@ -290,11 +375,26 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   material.opacityNode = waterOpacityNode(depth, foam)
   const above = mix(lifted, color(FOAM), foam.mul(0.9))
 
-  // From below: Snell's window. Looking up at the surface, `up` is the cosine between the
-  // view ray and straight up.
-  const up = normalize(p.sub(cameraPosition)).y
-  const below = mix(deepColour.mul(0.55), color(0xbfe8f0), smoothstep(SNELL_COS - 0.14, SNELL_COS + 0.06, up))
-  material.colorNode = mix(below, above, faceDirection.mul(0.5).add(0.5))
+  // From below: Snell's window. The sky shows through a cone round the surface normal (so it
+  // wobbles with every wave, which is how waves read from underneath); outside it the surface
+  // mirrors the lit water below. Self-lit, scaled by daylight, since the lights come from above
+  // and would leave the underside black.
+  const lookUp = normalize(p.sub(cameraPosition))
+  const waveNormal = normalize(vec3(sx.negate(), 1, sz.negate()))
+  const cosUp = lookUp.dot(waveNormal)
+  const window = smoothstep(SNELL_COS - 0.05, SNELL_COS + 0.05, cosUp)
+  const edgeGlow = smoothstep(SNELL_COS - 0.12, SNELL_COS, cosUp).mul(float(1).sub(window))
+  const skyBelow = mix(color(0x9fdcf2), color(0xffffff), smoothstep(0.75, 1, cosUp)).mul(1.7)
+  const mirror = mix(shallowColour.mul(0.55), deepColour.mul(0.9), smoothstep(-0.2, 0.6, lookUp.y.negate()))
+  const below = mix(mirror.add(shallowColour.mul(edgeGlow.mul(0.8))), skyBelow, window).mul(liquidDaylightNode)
+  const fromAbove = faceDirection.mul(0.5).add(0.5)
+  material.colorNode = mix(vec3(0), above, fromAbove)
+  material.emissiveNode = below.mul(float(1).sub(fromAbove))
+  // Inside the window the bright sky is the surface's own colour: mostly opaque so it reads
+  // as a window of light rather than the fogged sky dome behind it.
+  // The underside only exists for a camera in the water; from above it would be the far sea
+  // turning away past the horizon, drawn as a flat slab in front of the sky.
+  material.opacityNode = mix(mix(float(0.92), float(0.85), window).mul(cameraInWaterNode), material.opacityNode as THREE.Node<'float'>, fromAbove)
   // Glassy close up; rougher with distance, where many unresolved facets share a pixel and
   // a mirror would sparkle and alias.
   // Seen from below the surface is not a sky mirror (Snell's window above is the sky): fully
@@ -305,6 +405,8 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   // water the surface outside Snell's window reflects the dark water below, so occlude nearly
   // all ambient and reflected light there and leave the top exactly as it is.
   material.aoNode = mix(float(0.1), float(1), faceDirection.mul(0.5).add(0.5))
+
+  hazeCurve(material)
 
   return {
     material,
@@ -323,28 +425,29 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
       material.envMap = texture
       material.needsUpdate = true
     },
+    setWaveSource(next: WaveSource | null) { source = next },
     update(l: number) {
       level.value = l
       chop.value = waterChop.value * (0.55 + 0.9 * prevailingWindStrength())
-      if (mode !== 'sea') return
-      const set = seaWaves.waves
-      const ph = seaWaves.phasesNow()
+      // Whatever field this body was given (the sea's by default), or flat.
+      const field = source?.() ?? null
       let total = 0
       for (let i = 0; i < WAVE_COUNT; i++) {
-        const c = set.components[i]
-        const on = seaWaves.enabled && c ? waveScale() : 0
-        const geo = c && !c.lightOnly ? c.amplitude * on : 0
-        wave[i].value.set(c ? c.kx : 0, c ? c.kz : 0, ph[i] ?? 0, geo)
-        shadeAmp[i].value = c ? c.amplitude * on : 0
+        const c = field?.components[i]
+        const geo = c && c.active !== false ? c.amplitude : 0
+        wave[i].value.set(c ? c.kx : 0, c ? c.kz : 0, c ? c.phase : 0, geo)
+        shadeAmp[i].value = c ? c.amplitude : 0
         total += geo
       }
       ampTotal.value = total
-      shoalDepth.value = Math.max(0.5, set.dominantLength * 0.1)
+      shoalDepth.value = Math.max(1e-3, field?.shoalDepth ?? 1)
+      shoalFloor.value = field?.shoalFloor ?? 0
+      shoalLip.value = Math.max(1e-3, field?.shoalLip ?? 1e-3)
     },
   }
 }
 
-/** Sample count per metre of river when rebuilding a ribbon: fine enough for falls. */
+/** Metres between cross sections of a river ribbon by default: fine enough for falls. */
 const RIVER_STEP = 3
 /** Highest a ribbon edge may stand above the bank under it, metres. */
 const RIVER_EDGE_CLEARANCE = 0.25
@@ -360,7 +463,11 @@ export function buildRiverSurface(
   points: readonly { x: number; y: number; z: number }[],
   width: number,
   speedAt: (slope: number) => number,
+  /** Metres between cross sections; the columns across are about as far apart. */
+  step = RIVER_STEP,
 ): THREE.BufferGeometry {
+  // An odd count, so one column runs down the centre line.
+  const cols = Math.max(3, 2 * Math.round(width / step / 2) + 1)
   // Resample along the path.
   const path: { x: number; y: number; z: number; slope: number }[] = []
   for (let i = 0; i < points.length - 1; i++) {
@@ -368,7 +475,7 @@ export function buildRiverSurface(
     const b = points[i + 1]
     const run = Math.hypot(b.x - a.x, b.z - a.z)
     const slope = run > 0 ? Math.max(0, a.y - b.y) / run : 0
-    const n = Math.max(1, Math.ceil(run / RIVER_STEP))
+    const n = Math.max(1, Math.ceil(run / step))
     for (let k = 0; k < n; k++) {
       const t = k / n
       path.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t, slope })
@@ -395,21 +502,22 @@ export function buildRiverSurface(
     // Smooth the slope over neighbours so white water does not flicker segment to segment.
     const slope = (prev.slope + p.slope * 2 + next.slope) / 4
     // A centre sample keeps bank heights from making the entire channel look like foam.
-    for (const side of [-1, 0, 1]) {
+    for (let column = 0; column < cols; column++) {
+      const side = -1 + (2 * column) / (cols - 1)
       const x = p.x - (dz / len) * (width / 2) * side
       const z = p.z + (dx / len) * (width / 2) * side
       const g = ground.heightAt(x, z)
       // A bank lower than the water would leave the edge hanging in the air: lay it on the
       // bank instead, so the surface spills over rather than floating past it.
-      positions.push(x, side ? Math.min(p.y, g + RIVER_EDGE_CLEARANCE) : p.y, z)
+      positions.push(x, side !== 0 ? Math.min(p.y, g + RIVER_EDGE_CLEARANCE) : p.y, z)
       uvs.push((side * width) / 2, distance)
       bed.push(g)
       speed.push(speedAt(slope))
       slopes.push(slope)
     }
     if (i) {
-      const a = (i - 1) * 3
-      for (let j = 0; j < 2; j++) index.push(a + j, a + j + 1, a + j + 3, a + j + 1, a + j + 4, a + j + 3)
+      const a = (i - 1) * cols
+      for (let j = 0; j < cols - 1; j++) index.push(a + j, a + j + 1, a + j + cols, a + j + 1, a + j + cols + 1, a + j + cols)
     }
   }
   const geometry = new THREE.BufferGeometry()
@@ -423,18 +531,52 @@ export function buildRiverSurface(
   return geometry
 }
 
-/** A flat disc of still water at `y` with the ground height under each vertex. */
-export function buildStillSurface(ground: { heightAt(x: number, z: number): number }, x: number, y: number, z: number, radius: number): THREE.BufferGeometry {
-  const geometry = new THREE.CircleGeometry(radius, 48, 0, Math.PI * 2)
-  geometry.rotateX(-Math.PI / 2)
-  geometry.translate(x, y, z)
-  const pos = geometry.attributes.position
-  const uvAttr = geometry.attributes.uv
-  const bed: number[] = []
-  for (let i = 0; i < pos.count; i++) {
-    uvAttr.setXY(i, pos.getX(i), pos.getZ(i))
-    bed.push(ground.heightAt(pos.getX(i), pos.getZ(i)))
+/**
+ * A disc of still water at `y` with the ground height under each vertex: rings about
+ * `spacing` metres apart, each with as many vertices as keeps its arcs that long too, so waves
+ * down to about four spacings can move it. Capped at MAX_STILL_VERTICES by widening the
+ * spacing on a very large lake.
+ */
+export function buildStillSurface(ground: { heightAt(x: number, z: number): number }, x: number, y: number, z: number, radius: number, spacing = 3): THREE.BufferGeometry {
+  // Vertex count is about pi r^2 / s^2.
+  const s = Math.max(spacing, Math.sqrt((Math.PI * radius * radius) / MAX_STILL_VERTICES))
+  const rings = Math.max(2, Math.ceil(radius / s))
+  const positions: number[] = [x, y, z]
+  const uvs: number[] = [x, z]
+  const bed: number[] = [ground.heightAt(x, z)]
+  const index: number[] = []
+  let previous = [0]
+  for (let r = 1; r <= rings; r++) {
+    const rr = (radius * r) / rings
+    const n = Math.max(8, Math.ceil((Math.PI * 2 * rr) / s))
+    const ring: number[] = []
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2
+      const px = x + Math.cos(a) * rr, pz = z + Math.sin(a) * rr
+      ring.push(positions.length / 3)
+      positions.push(px, y, pz)
+      uvs.push(px, pz)
+      bed.push(ground.heightAt(px, pz))
+    }
+    // Stitch to the ring inside by walking both round together.
+    let i = 0, j = 0
+    const m = previous.length
+    while (i < n || j < m) {
+      const ai = (i / n), aj = (j / m)
+      const ri = ring[i % n], pj = previous[j % m]
+      if (j >= m || (i < n && ai + 0.5 / n <= aj + 0.5 / m)) { index.push(pj, ring[(i + 1) % n], ri); i++ }
+      else { index.push(pj, previous[(j + 1) % m], ri); j++ }
+    }
+    previous = ring
   }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
   geometry.setAttribute('groundHeight', new THREE.Float32BufferAttribute(bed, 1))
+  geometry.setIndex(index)
+  geometry.computeBoundingSphere()
   return geometry
 }
+
+/** Most vertices one lake or pool may have. */
+export const MAX_STILL_VERTICES = 40000

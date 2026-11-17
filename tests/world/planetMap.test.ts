@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { paintPlanetMap, planetCard, settingsForRecipe } from '../../src/world/planetMap'
 import { PLANETS, planetName } from '../../src/world/planets'
-import { paletteFor } from '../../src/world/terrain/palettes'
+import { SEA_ICE, paletteFor } from '../../src/world/terrain/palettes'
+import { generateTerrain } from '../../src/world/terrain/generate'
 
 const W = 256, H = 128
 
@@ -27,34 +28,46 @@ describe('planet maps', () => {
   })
 
   for (const recipe of PLANETS) {
-    it(`${recipe.id}: land at the centre, sea of the right colour at the antipode`, () => {
+    it(`${recipe.id}: the globe is its own world, in its own palette and true land share`, () => {
       const map = paintPlanetMap(recipe.id, 90210, W, H)
+      const settings = settingsForRecipe(recipe)
       const lava = recipe.values['world.seaKind'] === 0
-      const dry = recipe.values['terrain.dry'] === 1
-      // Classify a pixel by the nearest colour it could have been painted from: the look's
-      // ground colours (lit and in shade) against its sea's colours.
-      const pal = paletteFor(settingsForRecipe(recipe).look)
-      const rgb = (hex: number, k = 1) => [((hex >> 16) & 255) * k, ((hex >> 8) & 255) * k, (hex & 255) * k]
-      const grounds = [pal.groundDark, pal.groundLight, pal.rockDark, pal.rockLight, pal.darkRockA, pal.darkRockB, pal.shore, pal.snow]
-        .flatMap((hex) => [rgb(hex, 0.6), rgb(hex), rgb(hex, 1.25)])
-      const seas = (lava ? [0x2a0703, 0xff7a1a, 0xffd27a, 0x953f0e] : [pal.seaDeep, pal.seaShallow]).map((hex) => rgb(hex))
-      const near = (c: number[], set: number[][]) => Math.min(...set.map((k) => Math.hypot(c[0] - k[0], c[1] - k[1], c[2] - k[2])))
-      const isLand = (c: number[]) => dry || near(c, grounds) < near(c, seas)
-      const isSea = (c: number[]) => !isLand(c)
-      // The very centre is the crater lake, so look at a ring about 400 m out (15 degrees),
-      // between the volcano and the coast: it must be land on every recipe.
-      let land = 0
-      const ringPx = (15 / 360) * W
+      const dry = settings.dry > 0
+      // A frozen sea is ice, painted dry like land (planetMap.ts), in the sea ice colours.
+      const frozen = !lava && recipe.values['world.seaFrozen'] === true
+      // The island sits at longitude 0, latitude 0, where the dive lands: a ring round its
+      // centre (past any crater lake) is dry ground on every recipe.
+      let ring = 0
       for (let k = 0; k < 16; k++) {
-        const a = (k / 16) * Math.PI * 2
-        if (isLand(pixel(map, Math.round(W / 2 + Math.cos(a) * ringPx), Math.round(H / 2 + Math.sin(a) * ringPx)))) land++
+        const a = (k / 16) * Math.PI * 2, x = Math.round(W / 2 + Math.cos(a) * W * 0.03), y = Math.round(H / 2 + Math.sin(a) * W * 0.03)
+        if (map.data[(y * W + x) * 4 + 3] > 128) ring++
       }
-      expect(land).toBeGreaterThanOrEqual(12)
-      // The antipode (longitude 180, latitude 0) is at the image edge; sample a small ring
-      // and require most of it to be sea of the right colour.
-      let sea = 0
-      for (const x of [0, 1, 2, W - 3, W - 2, W - 1]) for (const y of [H / 2 - 1, H / 2]) { const c = pixel(map, x, y); if (isSea(c) || dry) sea++ }
-      expect(sea).toBeGreaterThanOrEqual(10)
+      expect(ring).toBeGreaterThanOrEqual(12)
+      // Sea where the world has sea, as much as it has: away from the poles, the share of dry
+      // pixels is the generated tile's land share. A dry world has none at all.
+      const terrain = generateTerrain(90210, settings, { resolution: 129 })
+      const sea = Number(recipe.values['world.lavaAltitude'] ?? 0)
+      // The band sampled, latitudes within 36 degrees, is the tile's rows within a fifth of its side of the island.
+      const n = terrain.resolution, rows = Array.from({ length: n }, (_, iz) => iz).filter(iz => Math.abs(iz / (n - 1) - 0.5) < 0.2)
+      const band = rows.flatMap(iz => Array.from(terrain.heights.subarray(iz * n, iz * n + n - 1)))
+      const share = dry || frozen ? 1 : band.filter(h => h > sea).length / band.length
+      let dryPixels = 0, counted = 0
+      for (let y = Math.round(H * 0.3); y < Math.round(H * 0.7); y++) for (let x = 0; x < W; x++) { counted++; if (map.data[(y * W + x) * 4 + 3] > 128) dryPixels++ }
+      if (dry) expect(dryPixels).toBe(counted)
+      else if (frozen) expect(dryPixels / counted).toBeGreaterThan(0.92)
+      else expect(Math.abs(dryPixels / counted - share)).toBeLessThan(0.08)
+      // Every pixel comes from the biome's palette: its ground, rock, snow and shore (lit or
+      // shaded), its own sea or lava. Nothing borrowed, no default blue.
+      const pal = paletteFor(settings.look)
+      const rgb = (hex: number, k = 1) => [((hex >> 16) & 255) * k, ((hex >> 8) & 255) * k, (hex & 255) * k]
+      const own = [pal.groundDark, pal.groundLight, pal.rockDark, pal.rockLight, pal.darkRockA, pal.darkRockB, pal.shore, pal.snow, pal.roadLine,
+        ...(dry ? [] : lava ? [0x2a0703, 0xff7a1a, 0xffd27a] : [pal.seaDeep, pal.seaShallow, 0xf2fbff]),
+        ...(frozen ? [SEA_ICE.floe, SEA_ICE.old, SEA_ICE.scour, SEA_ICE.crack] : [])]
+        .flatMap(hex => [rgb(hex, 0.6), rgb(hex, 0.85), rgb(hex), rgb(hex, 1.2)])
+      const near = (c: number[]) => Math.min(...own.map(k => Math.hypot(c[0] - k[0], c[1] - k[1], c[2] - k[2])))
+      let inPalette = 0, sampled = 0
+      for (let y = 2; y < H; y += 5) for (let x = 1; x < W; x += 5) { sampled++; if (near(pixel(map, x, y)) < 60) inPalette++ }
+      expect(inPalette / sampled).toBeGreaterThan(0.9)
     })
   }
 

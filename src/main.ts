@@ -211,6 +211,8 @@ async function main(): Promise<void> {
       },
       // The sender owns the hold; snapshots carry its motion. This is cosmetic only.
       onRemoteVehicleChanged: vehicle => { void materialize.begin(vehicle, { hold: false }) },
+      // A player or bot who leaves goes in the arrival cloud played in reverse.
+      onRemoteVehicleLeaving: vehicle => materialize.depart(vehicle),
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name: shell.playerName,
@@ -267,7 +269,7 @@ async function main(): Promise<void> {
   // Handles for debugging and automated checks.
   // The game does not run in a background tab: one controller, obeyed by the loop here. Audio
   // and the lobby follow the same controller from their own modules.
-  Object.assign(window, { syn3h: { planets, game, terrain, get player() { return slot.current }, slot, swapVehicle, params, panel, shell, audio, bots, camera, lifecycle, pause } })
+  Object.assign(window, { syn3h: { planets, game, terrain, get player() { return slot.current }, slot, swapVehicle, materialize, params, panel, shell, audio, bots, camera, lifecycle, pause } })
   // Shell has captured invite/room state; quality, weather, resume and all other
   // startup URL readers have finished. Clean only the visible lobby, not a room
   // whose name happens to be "lobby". Autoplay is already in its intentional URL.

@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest'
-import {submergedFraction,waterTransmission,underwaterLook,verticalHalfExtent} from '../../src/world/water/waterEffectsMath'
+import {submergedFraction,waterTransmission,underwaterLook,verticalHalfExtent,UNDERWATER_DEFAULTS,UNDERWATER_LIGHT_FLOOR,luminance} from '../../src/world/water/waterEffectsMath'
 describe('vehicle submergence',()=>{
  it('clamps dry, half submerged and fully submerged bodies',()=>{expect(submergedFraction(1,3,0)).toBe(0);expect(submergedFraction(1,3,2)).toBe(.5);expect(submergedFraction(1,3,5)).toBe(1)})
  it('rejects absent surfaces and degenerate bounds',()=>{expect(submergedFraction(0,1,-Infinity)).toBe(0);expect(submergedFraction(1,1,2)).toBe(0)})
@@ -8,7 +8,22 @@ describe('vehicle submergence',()=>{
 describe('underwater attenuation',()=>{
  it('obeys Beer-Lambert and composes over distances',()=>{expect(waterTransmission(0)).toBe(1);expect(waterTransmission(10)).toBeCloseTo(Math.exp(-.85));expect(waterTransmission(10)*waterTransmission(20)).toBeCloseTo(waterTransmission(30))})
  it('clamps negative depth at the surface',()=>{expect(waterTransmission(-5)).toBe(1)})
- it('darkens with depth and raises fog extinction',()=>{const a=underwaterLook(1),b=underwaterLook(30);expect(b.transmission).toBeLessThan(a.transmission);expect(b.blue).toBeLessThan(a.blue);expect(b.extinction).toBeGreaterThan(a.extinction);expect(b.green).toBeGreaterThan(b.red)})
+ // The owner's rule: under water is a place, not an abyss. Light may fall with depth but never
+ // below the floor at any depth a vehicle can reach, at any brightness setting.
+ it('never falls below the light floor within reachable depth',()=>{
+  for(const brightness of [.3,1,2])for(const visibility of [8,38,120]){
+   const settings={...UNDERWATER_DEFAULTS,brightness,visibility},top=underwaterLook(0,settings),l0=luminance(top.red,top.green,top.blue)
+   let previous=Infinity
+   for(let depth=0;depth<=400;depth+=5){
+    const look=underwaterLook(depth,settings),l=luminance(look.red,look.green,look.blue)
+    for(const v of [look.transmission,look.extinction,look.red,look.green,look.blue])expect(Number.isFinite(v)).toBe(true)
+    expect(look.transmission).toBeGreaterThanOrEqual(UNDERWATER_LIGHT_FLOOR)
+    expect(look.transmission).toBeLessThanOrEqual(1)
+    expect(l).toBeGreaterThanOrEqual(l0*UNDERWATER_LIGHT_FLOOR*.5)
+    expect(look.transmission).toBeLessThanOrEqual(previous);previous=look.transmission
+   }
+  }
+ })
 })
 
 import { Scene, PerspectiveCamera, DirectionalLight, HemisphereLight, Vector3 } from 'three/webgpu'
@@ -41,7 +56,7 @@ describe('underwater restoration',()=>{
  })
  it('does not compound attenuation and respects Environment writes',()=>{
   const s=setup();waterUnderwater.value=true
-  try{for(let i=0;i<5;i++)s.effect.update(.1);const first=s.sun.intensity;s.effect.update(.1);expect(s.sun.intensity).toBe(first);s.sun.intensity=4;s.effect.update(.1);expect(s.sun.intensity).toBeCloseTo(4*waterTransmission(3));waterUnderwater.value=false;s.effect.update(.1);expect(s.sun.intensity).toBe(4)}finally{s.effect.dispose();waterUnderwater.value=false}
+  try{for(let i=0;i<5;i++)s.effect.update(.1);const first=s.sun.intensity;s.effect.update(.1);expect(s.sun.intensity).toBe(first);s.sun.intensity=4;s.effect.update(.1);expect(s.sun.intensity).toBeCloseTo(4*underwaterLook(3).transmission);waterUnderwater.value=false;s.effect.update(.1);expect(s.sun.intensity).toBe(4)}finally{s.effect.dispose();waterUnderwater.value=false}
  })
 })
 

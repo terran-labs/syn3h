@@ -237,6 +237,8 @@ export abstract class Vehicle implements System {
     this.zorb.sync(this.input.zorb && zorbSpeed.value > 0, dt)
     const entryVelocity=this.body.linvel()
     this.liquidState.entrySpeed=Math.hypot(entryVelocity.x,entryVelocity.z)
+    // The buggy's liquid hull softens what the controller did this step, measured from here.
+    {const w=this.body.angvel();this.liquidState.preV.set(entryVelocity.x,entryVelocity.y,entryVelocity.z);this.liquidState.preW.set(w.x,w.y,w.z)}
     // Forward means launch thrust while the escape field owns motion. Feeding it
     // into the flight pitch filter would leave a nose-down command at handover.
     const escapeThrottle=this.input.y
@@ -431,6 +433,26 @@ export abstract class Vehicle implements System {
    */
   drawnCentre(alpha: number, out: THREE.Vector3): THREE.Vector3 {
     return out.lerpVectors(this.prevPos, this.currPos, alpha)
+  }
+
+  /**
+   * Compile every look this vehicle can show before it is first drawn: the close-up and the
+   * distant detail levels, and the close-up parts that are hidden until used (folded wings,
+   * stowed gear, lamps and LOD meshes). The renderer skips invisible objects when it compiles,
+   * so each pass shows them all for the duration of `compile` and then puts every visibility
+   * back. Ends at the vehicle's own detail for where it is. For compile-ahead (core/compileAhead.ts):
+   *
+   *   await vehicle.prepareLooks(object => compileAhead(object) ?? Promise.resolve())
+   */
+  async prepareLooks(compile: (object: THREE.Object3D) => Promise<void>, level: number = graphicsLevel.value): Promise<void> {
+    const hidden: THREE.Object3D[] = []
+    // Near first, then far: each detail level may swap meshes and materials.
+    for (const distance of [0, 1e4]) {
+      for (const detail of this.visualDetails) detail(distance, !this.isLocal, level)
+      this.object.traverse(o => { if (!o.visible && o !== this.object) { hidden.push(o); o.visible = true } })
+      try { await compile(this.object) } finally { for (const o of hidden) o.visible = false; hidden.length = 0 }
+    }
+    this.update(0, 1)
   }
 
   update(dt: number, alpha: number): void {
