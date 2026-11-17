@@ -78,7 +78,7 @@ export function buildLoft(d: LoftDesign, detail: 0 | 1 | 2): BodyPiece[] {
 
   const CUTS: Ellipse[] = [
     { role: null, plane: 'xz', c: [0, c.z], r: [c.halfWidth, c.halfLength], band: [.35, 2], facing: .1, snap: .035 },
-    { role: null, plane: 'zy', c: [s.z, s.y], r: [s.halfLength, s.halfHeight], band: [.45, 1.2], facing: .35, snap: .06, tilt: s.tilt },
+    { role: null, plane: 'zy', c: [s.z, s.y], r: [s.halfLength, s.halfHeight], band: [.45, 1.2], facing: .35, snap: .045, tilt: s.tilt },
     { role: 'accent', plane: 'xz', c: [0, 0], r: [F.stripe, 99], band: [.2, 2], facing: .2, snap: .08 },
   ]
   /** The duct cut: cells near the lens axis inside its outline; the mid level paints them dark instead. */
@@ -89,7 +89,9 @@ export function buildLoft(d: LoftDesign, detail: 0 | 1 | 2): BodyPiece[] {
   const stripeEnds = (tag: Tagger): Tagger => (x, y, z, n) => { const r = tag(x, y, z, n); return r === 'accent' && z < F.stripeStart ? 'paint' : r }
   const mid: Ellipse[] = [CUTS[0], { ...CUTS[1], role: 'frame' }, CUTS[2]]
   const tag = detail === 0 ? duct(stripeEnds(featureTagger(CUTS, plain)), null) : detail === 1 ? duct(stripeEnds(featureTagger(mid, plain)), 'frame') : plain
-  const ellipseWarp = featureWarp([CUTS[2], CUTS[0], CUTS[1]])
+  const stripeWarp = featureWarp([CUTS[2]]), cutWarp = featureWarp([CUTS[0], CUTS[1]])
+  /** The stripe snaps only where it is drawn: ahead of its start the columns converge and a snap would fold cells. */
+  const ellipseWarp = (p: THREE.Vector3) => { const x = p.x; if (p.z > F.stripeStart - .03) stripeWarp(p); if (p.x === x) cutWarp(p) }
   /** Grid vertices near the duct rim move onto it, keeping their place along the axis. */
   const warp = (p: THREE.Vector3) => {
     if (p.z < -1.2 && p.x !== 0) {
@@ -183,7 +185,8 @@ export function buildLoft(d: LoftDesign, detail: 0 | 1 | 2): BodyPiece[] {
     // Tail lamp bars on the recess floor.
     const row = (z: number, k: number) => [z, t.depth * k, t.halfHeight * k, t.halfHeight * k, y0 + (y1 - y0) * t.y, 4]
     const bar = skin(superSections([row(-t.halfLength, .6), row(-t.halfLength + .01, 1), row(t.halfLength - .01, 1), row(t.halfLength, .6)]), det ? 4 : 6, det ? 3 : 4, () => 'lamp')[0]
-    bar.geometry.rotateY(Math.PI / 2).translate(t.x * kx, 0, zEnd - R.depth)
+    // A bar this thin has near-degenerate tips; face normals averaged per vertex keep them consistent.
+    bar.geometry.rotateY(Math.PI / 2).translate(t.x * kx, 0, zEnd - R.depth); bar.geometry.computeVertexNormals()
     out.push(bar, mirrored(bar))
     return out
   }
