@@ -75,6 +75,15 @@ function createWaterMaterial(shore: boolean): Liquid {
   return { material, update(_dt, l = 0) { level.value = l } }
 }
 
+/**
+ * Draw order for water surfaces among transparent things. Water writes no depth, so whatever
+ * transparent thing is drawn before it and lies in front of it (a buggy's wings, spray, smoke)
+ * would be painted over. Distance sorting cannot settle it: the clipmap's rings all centre on
+ * the camera. So water goes first, before the wings' tint layer (-1) and everything at 0 and
+ * up; lava, which writes depth, goes before that (fx/material.ts).
+ */
+export const WATER_RENDER_ORDER = -2
+
 /** How far past the simulated square the sea is drawn. Beyond the fog in every direction. */
 const SEA_REACH = 24000
 /** Sea grid resolution over the island: fine enough for the glowing shoreline to follow the coast. */
@@ -273,6 +282,7 @@ export class Volcanics implements System {
     for (let cz = 0; cz < chunks; cz++) {
       for (let cx = 0; cx < chunks; cx++) {
         const mesh = new THREE.Mesh(seaChunkGeometry(ground, cx, cz, chunks), seaMaterial)
+        mesh.renderOrder = WATER_RENDER_ORDER
         this.sea.push({ mesh, cx, cz })
         this.group.add(mesh)
       }
@@ -294,7 +304,7 @@ export class Volcanics implements System {
     const add = (geometry: THREE.BufferGeometry, material: THREE.Material, worldUv: boolean, spacing = stillSpacing) => {
       const mesh = new THREE.Mesh(geometry, material)
       mesh.userData.spacing = spacing
-      if (hot) mesh.renderOrder = this.lavaStill.renderOrder
+      mesh.renderOrder = hot ? this.lavaStill.renderOrder : WATER_RENDER_ORDER
       geometry.computeBoundingSphere()
       const c = geometry.boundingSphere!.center
       this.meshes.push({ mesh, x: c.x, z: c.z, worldUv })
@@ -429,10 +439,11 @@ export class Volcanics implements System {
     }
     if (this.clip) {
       this.clip.material = want
-      this.clip.renderOrder = this.seaIsLava ? this.lavaSea.renderOrder : 0
+      this.clip.renderOrder = this.seaIsLava ? this.lavaSea.renderOrder : WATER_RENDER_ORDER
     }
     if (this.apron) {
       this.apron.position.y = level
+      this.apron.renderOrder = this.seaIsLava ? this.lavaSea.renderOrder : WATER_RENDER_ORDER
       if (this.apron.material !== want) this.apron.material = want
     }
     // Hold lava at roughly its daytime brightness on screen, letting a little of the extra
