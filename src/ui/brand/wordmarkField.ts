@@ -15,19 +15,23 @@
  * never wider than about three quarters of a screen pixel.
  */
 import { ASPECT, wordmarkContours, type Contour } from './wordmarkMesh'
+import { recordStartupPhase } from '../../core/diagnostics'
 
 /** Room round the box the field covers, in wordmark units: for antialiasing, rims and the in-space halo. */
 export const FIELD_PAD = 0.3
 /** The field's rectangle in wordmark units: min x, min y, width, height. */
 export const FIELD_BOUNDS = [-ASPECT / 2 - FIELD_PAD, -0.5 - FIELD_PAD, ASPECT + FIELD_PAD * 2, 1 + FIELD_PAD * 2] as const
-/** Distances an 8-bit field (the fallback without float render targets) can store, either side of the outline. */
-const BYTE_RANGE = 0.1
+/**
+ * Distances an 8-bit field (on a device without half-float render targets) stores, either side
+ * of the outline: as far as the in-scene halo reaches. Stored on a square-root curve, so the
+ * steps are finest at the outline (about a tenth of a screen pixel there) and coarse only far
+ * out, where the halo fades: the 8-bit field draws the in-scene name as well as the float one.
+ */
+const BYTE_RANGE = 0.32
 /** Texels per wordmark unit, the least and the most baked. */
 const MIN_DENSITY = 192, MAX_DENSITY = 640
 /** Texels per screen pixel the field is baked at, at least. */
 const OVERSAMPLE = 1.33
-/** A bake slower than this marks the device as one that should not draw the mark from the field. */
-export const SLOW_BAKE_MS = 50
 
 /** Every straight segment of the path, as x0, y0, x1, y1 in wordmark units. */
 export function wordmarkSegments(contours: Contour[] = wordmarkContours()): Float32Array {
@@ -53,7 +57,7 @@ const BAKE_VERTEX = `#version 300 es
 void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`
 const BAKE_FRAGMENT = `#version 300 es
 precision highp float;
-uniform highp sampler2D uSegments; uniform int uCount; uniform vec4 uBounds; uniform vec2 uSize; uniform vec2 uEncode;
+uniform highp sampler2D uSegments; uniform int uCount; uniform vec4 uBounds; uniform vec2 uSize; uniform vec2 uEncode;   // range, 1 for bytes
 out vec4 color;
 void main() {
   vec2 p = uBounds.xy + gl_FragCoord.xy / uSize * uBounds.zw;
@@ -66,8 +70,9 @@ void main() {
     if ((s.y > p.y) != (s.w > p.y) && p.x < e.x * (p.y - s.y) / e.y + s.x) inside = !inside;
   }
   float d = inside ? -sqrt(best) : sqrt(best);
-  // Float targets keep the distance as it is; bytes keep it scaled into 0 to 1 (see FieldCode).
-  color = vec4(d * uEncode.x + uEncode.y, 0.0, 0.0, 1.0);
+  // Float targets keep the distance as it is; bytes keep it on a square-root curve in 0 to 1,
+  // finest at the outline (wordmarkDistance decodes it).
+  color = vec4(uEncode.y > 0.5 ? 0.5 + 0.5 * sign(d) * sqrt(min(abs(d) / uEncode.x, 1.0)) : d, 0.0, 0.0, 1.0);
 }`
 
 /**
@@ -76,13 +81,15 @@ void main() {
  * the share of a pixel of footprint w (wordmark units) covered by the letters.
  */
 export const FIELD_GLSL = `
-uniform highp sampler2D uField; uniform vec4 uFieldBounds; uniform vec2 uFieldDecode;
+uniform highp sampler2D uField; uniform vec4 uFieldBounds; uniform vec2 uFieldDecode;   // range, 1 for an 8-bit field
 float wordmarkDistance(vec2 p) {
   vec2 uv = (p - uFieldBounds.xy) / uFieldBounds.zw;
   // Outside the baked rectangle the field only knows it is far: never inside a letter.
   if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
   // No mipmaps, so level 0 explicitly: this may run in branches where derivatives are undefined.
-  return textureLod(uField, uv, 0.0).r * uFieldDecode.x + uFieldDecode.y;
+  float v = textureLod(uField, uv, 0.0).r;
+  if (uFieldDecode.y < 0.5) return v;
+  float x = 2.0 * v - 1.0; return sign(x) * x * x * uFieldDecode.x;
 }
 // A box filter one pixel wide across the edge: exact for straight edges, a hair soft at corners.
 float wordmarkCoverage(float d, float w) { return clamp(0.5 - d / max(w, 1e-6), 0.0, 1.0); }
@@ -94,12 +101,10 @@ export class WordmarkField {
   density = 0
   /**
    * Milliseconds the last bake took, waited for to the end of the GPU work (one pixel read
-   * back), shader compile included. Measured on Apple GPUs only so far: unmeasured on phones.
+   * back), shader compile included. For diagnostics (startup phases); it decides nothing.
    */
   lastBakeMs = 0
-  /** Two bakes took longer than SLOW_BAKE_MS: callers with a cheaper way to draw should use it. */
-  slow = false
-  private retried = false
+
   bakes = 0
   private texture: WebGLTexture | null = null
   private segments: WebGLTexture | null = null
@@ -114,7 +119,8 @@ export class WordmarkField {
   constructor(private readonly gl: WebGL2RenderingContext, private readonly compile: (vertex: string, fragment: string) => WebGLProgram | null, private readonly unit: number) {
     const data = wordmarkSegments()
     this.count = data.length / 4
-    this.float = Boolean(gl.getExtension('EXT_color_buffer_float'))
+    // Half floats keep distances exactly; either extension makes R16F a render target.
+    this.float = Boolean(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'))
     this.maxSize = Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) || 4096
     this.program = compile(BAKE_VERTEX, BAKE_FRAGMENT)
     if (!this.program) return
@@ -127,10 +133,10 @@ export class WordmarkField {
   }
 
   get ok(): boolean { return Boolean(this.program && this.texture) }
-  /** Distances are kept exactly (a half-float target); without it only the flat mark's range is kept. */
+  /** Distances in a half-float target (exact), or in bytes on a square-root curve (see BYTE_RANGE). */
   get precise(): boolean { return this.float }
-  /** Multiply-add that turns a texel back into a distance. */
-  get decode(): [number, number] { return this.float ? [1, 0] : [2 * BYTE_RANGE, -BYTE_RANGE] }
+  /** How a texel turns back into a distance: the byte curve's range, and 1 for bytes. */
+  get decode(): [number, number] { return this.float ? [1, 0] : [BYTE_RANGE, 1] }
 
   /**
    * Bakes the field if the mark is to be drawn at `pixelsPerUnit` screen pixels per wordmark
@@ -159,7 +165,7 @@ export class WordmarkField {
     const u = this.locations, [scale, bias] = this.decode
     gl.uniform1i(u.uSegments, this.unit); gl.uniform1i(u.uCount, this.count)
     gl.uniform4f(u.uBounds, FIELD_BOUNDS[0], FIELD_BOUNDS[1], FIELD_BOUNDS[2], FIELD_BOUNDS[3]); gl.uniform2f(u.uSize, width, height)
-    gl.uniform2f(u.uEncode, 1 / scale, -bias / scale)
+    gl.uniform2f(u.uEncode, scale, bias)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
@@ -167,10 +173,9 @@ export class WordmarkField {
     gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4))
     this.density = want; this.bakes++
     this.lastBakeMs = performance.now() - started
-    // One slow bake can be a busy moment (a page still loading queues its own GPU work ahead
-    // of this one, and the read back waits for all of it): bake once more on a later frame,
-    // and give up on the field only if that is slow too.
-    if (this.lastBakeMs > SLOW_BAKE_MS) { if (this.retried) this.slow = true; else { this.retried = true; this.density = 0 } }
+    // Measured for the diagnostics only: a slow bake is a one-off cost under the opening, never
+    // a reason to draw something else.
+    recordStartupPhase('lobby wordmark field bake', started, `${width}x${height} ${this.float ? 'half float' : '8-bit'}`)
     return true
   }
 

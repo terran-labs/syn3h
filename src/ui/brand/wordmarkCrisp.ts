@@ -35,7 +35,7 @@ export class WordmarkCrisp {
     }
     this.program = compile(vertex, fragment.replace('#version 300 es\n', '#version 300 es\n#define MARK_ONLY\n'))
     this.field = new WordmarkField(gl, compile, FIELD_UNIT)
-    if (!this.program || !this.field.ok || !this.field.precise) { this.ok = false; return }
+    if (!this.program || !this.field.ok) { this.ok = false; return }
     gl.useProgram(this.program)
     for (const name of names) this.locations[name] = gl.getUniformLocation(this.program, name)
     // Samplers the pass never reads, kept off the field's unit and off each other's.
