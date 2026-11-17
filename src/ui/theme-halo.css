@@ -17,17 +17,21 @@
  */
 
 .syn3h-shell.exploration-ui {
-  --s3-ink: #f3fbff; --s3-dim: #d8eaf3; --s3-soft: #cfe3ec; --s3-accent: #8fe3ff; --s3-accent-2: #c6f1ff;
-  --s3-line: rgb(205 240 255 / .5); --s3-line-quiet: rgb(205 240 255 / .2); --s3-panel: rgb(3 11 18 / .3);
+  /* Neutral: grey-white type and hairlines, near-black smoked glass, a soft white glow. */
+  --s3-ink: #f4f4f4; --s3-dim: #dcdcdc; --s3-soft: #cfcfcf; --s3-accent: #e8e8e8; --s3-accent-2: #fbfbfb;
+  --s3-line: rgb(232 232 232 / .42); --s3-line-quiet: rgb(232 232 232 / .18); --s3-panel: rgb(10 10 11 / .3);
+  /* "On" and chosen: a near-white fill with dark type or a dark knob, and a soft white glow.
+     (Was a pale blue fill: #c2c2c2 or #dbdbdb, with a cyan glow.) */
+  --s3-on-fill: #ececec; --s3-on-ink: #141416; --s3-on-glow: 0 0 10px rgb(255 255 255 / .22);
   --s3-radius: 16px; --s3-radius-small: 10px; --s3-warn: #ffb08a;
   --halo-r: 16px;
   /* A tight halo on strokes; a dark under-shadow on text. */
-  --halo-glow: 0 0 6px rgb(143 227 255 / .14);
-  --halo-under: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55);
+  --halo-glow: 0 0 6px rgb(255 255 255 / .07);
+  --halo-under: 0 0 1px rgb(0 0 0 / .9), 0 1px 2px rgb(0 0 0 / .55);
   /* One even smoked tint across the whole panel, up to the rim and clipped by its radius.
      Invisible at night (dark on dark); clean smoked glass by day, with the same contrast for
      every label. A radial falloff read as brown smears with bright edges over the sky. */
-  --halo-fill: rgb(3 11 19 / .34);
+  --halo-fill: rgb(12 12 13 / .4);
   --halo-spread: 0 0 0 transparent;
 }
 
@@ -59,10 +63,10 @@
    editable numbers have their own rules below. :where keeps this just above exploration.css's
    all-buttons rule and below every specific rule here, such as .is-on. */
 .syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num)) { background: none; border: 1px solid var(--s3-line-quiet); border-radius: 999px; box-shadow: none; text-shadow: var(--halo-under); font-weight: 400; letter-spacing: .04em; -webkit-backdrop-filter: none; backdrop-filter: none; }
-.syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num)):hover { background: rgb(143 227 255 / .07); border-color: var(--s3-line); box-shadow: var(--halo-glow); }
+.syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num)):hover { background: rgb(205 205 205 / .07); border-color: var(--s3-line); box-shadow: var(--halo-glow); }
 .syn3h-shell.exploration-ui button:focus-visible, .syn3h-shell.exploration-ui input:focus-visible, .syn3h-shell.exploration-ui select:focus-visible { outline: 1px solid var(--s3-accent-2); outline-offset: 3px; }
 .syn3h-shell.exploration-ui .world-inspector :is(input:not([type=range]):not([type=checkbox]):not([type=color]), select, textarea) { color: var(--s3-ink); background: none; border: 0; border-bottom: 1px solid var(--s3-line-quiet); border-radius: 0; box-shadow: none; }
-.syn3h-shell.exploration-ui select option { background: #06121c; color: #e8f6fd; }
+.syn3h-shell.exploration-ui select option { background: #101010; color: #f3f3f3; }
 
 /* ---------- Top block: navigation, search, actions ---------- */
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-top { border-bottom: 1px solid var(--s3-line); }
@@ -71,12 +75,12 @@
 .syn3h-shell.exploration-ui .rail-navigation .rail-close { font: 300 22px/1 'Barlow', sans-serif; letter-spacing: 0; color: var(--s3-dim); }
 .syn3h-shell.exploration-ui .rail-navigation button:hover { border-color: var(--s3-line-quiet); }
 .syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search { font: 400 13px/1.2 'Barlow', sans-serif; letter-spacing: .04em; color: var(--s3-ink); border-bottom: 1px solid var(--s3-line-quiet); background: none; }
-.syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search:focus { border-bottom-color: var(--s3-accent-2); box-shadow: 0 1px 0 rgb(143 227 255 / .35); }
+.syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search:focus { border-bottom-color: var(--s3-accent-2); box-shadow: 0 1px 0 rgb(205 205 205 / .35); }
 .syn3h-shell.exploration-ui .world-inspector .wi-search::placeholder { color: var(--s3-soft); }
 .syn3h-shell.exploration-ui .world-inspector .wi-actions button, .syn3h-shell.exploration-ui .world-inspector .wi-switch button { border: 1px solid var(--s3-line-quiet); border-radius: 999px; background: none; color: var(--s3-dim); font: 400 12px/1.3 'Barlow', sans-serif; letter-spacing: .03em; text-shadow: var(--halo-under); }
-.syn3h-shell.exploration-ui .world-inspector .wi-actions button:hover, .syn3h-shell.exploration-ui .world-inspector .wi-switch button:hover { border-color: var(--s3-line); color: var(--s3-ink); background: rgb(143 227 255 / .06); }
+.syn3h-shell.exploration-ui .world-inspector .wi-actions button:hover, .syn3h-shell.exploration-ui .world-inspector .wi-switch button:hover { border-color: var(--s3-line); color: var(--s3-ink); background: rgb(205 205 205 / .06); }
 /* Selected is light, not a filled blob: a bright rim, a faint inner glow, white text. */
-.syn3h-shell.exploration-ui .world-inspector .is-on, .syn3h-shell.exploration-ui .world-inspector .wi-actions [data-wi=copy-world] { color: #fff; background: rgb(143 227 255 / .08); border-color: rgb(198 241 255 / .85); box-shadow: inset 0 0 8px rgb(143 227 255 / .18), var(--halo-glow); }
+.syn3h-shell.exploration-ui .world-inspector .is-on, .syn3h-shell.exploration-ui .world-inspector .wi-actions [data-wi=copy-world] { color: #fff; background: rgb(205 205 205 / .08); border-color: rgb(230 230 230 / .85); box-shadow: inset 0 0 8px rgb(205 205 205 / .18), var(--halo-glow); }
 .syn3h-shell.exploration-ui .world-inspector .wi-actions [data-wi=copy-world]:not(.is-on) { color: var(--s3-dim); background: none; border-color: var(--s3-line-quiet); box-shadow: none; }
 .syn3h-shell.exploration-ui .world-inspector .is-warning { color: var(--s3-warn); background: none; border-color: rgb(255 176 138 / .6); }
 .syn3h-shell.exploration-ui .wi-top #syn3h-build-notice { border: 1px solid var(--s3-line) !important; border-radius: 999px !important; background: none !important; box-shadow: var(--halo-glow) !important; color: var(--s3-ink); text-shadow: var(--halo-under); }
@@ -89,15 +93,15 @@
 /* ---------- Cards ---------- */
 .syn3h-shell.exploration-ui .world-inspector .wi-head h3 { font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .world-inspector .wi-card.is-open > .wi-head h3 { color: #fff; text-shadow: var(--halo-under); }
-.syn3h-shell.exploration-ui .world-inspector .wi-sum { font-size: 13px; color: rgb(234 245 251 / .9); letter-spacing: 0; }
+.syn3h-shell.exploration-ui .world-inspector .wi-sum { font-size: 13px; color: rgb(242 242 242 / .9); letter-spacing: 0; }
 .syn3h-shell.exploration-ui .world-inspector .wi-chev { width: 6px; height: 6px; border-right: 1px solid var(--s3-soft); border-bottom: 1px solid var(--s3-soft); }
 .syn3h-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover { background: none; box-shadow: none; }
 .syn3h-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover h3 { color: #fff; }
 /* A divider that fades at both ends instead of a full-width rule. */
-.syn3h-shell.exploration-ui .world-inspector .wi-body { border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, var(--s3-line-quiet) 20%, var(--s3-line-quiet) 80%, transparent) 1; scrollbar-color: rgb(205 240 255 / .25) transparent; }
+.syn3h-shell.exploration-ui .world-inspector .wi-body { border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, var(--s3-line-quiet) 20%, var(--s3-line-quiet) 80%, transparent) 1; scrollbar-color: rgb(231 231 231 / .25) transparent; }
 .syn3h-shell.exploration-ui .world-inspector .wi-blurb { font-size: 13px; color: var(--s3-dim); }
 .syn3h-shell.exploration-ui .world-inspector .wi-group { border-top: 0; }
-.syn3h-shell.exploration-ui .world-inspector .wi-group + .wi-group { border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, rgb(205 240 255 / .12) 25%, rgb(205 240 255 / .12) 75%, transparent) 1; }
+.syn3h-shell.exploration-ui .world-inspector .wi-group + .wi-group { border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, rgb(231 231 231 / .12) 25%, rgb(231 231 231 / .12) 75%, transparent) 1; }
 .syn3h-shell.exploration-ui .world-inspector .wi-group summary { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--s3-dim); }
 .syn3h-shell.exploration-ui .world-inspector .wi-group[open] summary { color: var(--s3-ink); }
 .syn3h-shell.exploration-ui .world-inspector .wi-group summary::before { border-left-color: var(--s3-soft); }
@@ -106,16 +110,16 @@
 .syn3h-shell.exploration-ui .world-inspector .wi-row { border-radius: var(--s3-radius-small); }
 /* The row being described (its tooltip showing) is not boxed: a tint that fades out at both
    ends and a brighter label. Keyboard focus keeps its ring, on the control itself. */
-.syn3h-shell.exploration-ui .world-inspector .wi-row.is-selected { background: linear-gradient(90deg, transparent, rgb(143 227 255 / .07) 22%, rgb(143 227 255 / .07) 78%, transparent); box-shadow: none; }
+.syn3h-shell.exploration-ui .world-inspector .wi-row.is-selected { background: linear-gradient(90deg, transparent, rgb(205 205 205 / .07) 22%, rgb(205 205 205 / .07) 78%, transparent); box-shadow: none; }
 .syn3h-shell.exploration-ui .world-inspector .wi-row.is-selected .wi-label { color: #fff; }
 .syn3h-shell.exploration-ui .world-inspector .wi-row output { color: var(--s3-accent-2); }
 
 /* Sliders: a 2 px track and a small bright thumb, drawn in the middle of the 44 px input. */
-.syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: rgb(205 240 255 / .32); }
-.syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -5px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgb(0 8 14 / .35), 0 0 5px rgb(143 227 255 / .6); }
-.syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-track { height: 2px; border-radius: 1px; background: rgb(205 240 255 / .32); }
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: rgb(231 231 231 / .32); }
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -5px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgb(0 8 14 / .35), 0 0 5px rgb(205 205 205 / .6); }
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-track { height: 2px; border-radius: 1px; background: rgb(231 231 231 / .32); }
 .syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-progress { height: 2px; border-radius: 1px; background: var(--s3-accent-2); }
-.syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgb(0 8 14 / .35), 0 0 5px rgb(143 227 255 / .6); }
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgb(0 8 14 / .35), 0 0 5px rgb(205 205 205 / .6); }
 
 /* On/off settings use the standard switch (inspector/switch.css). */
 
@@ -124,15 +128,15 @@
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg { gap: 0; padding: 2px; border: 1px solid var(--s3-line); border-radius: 999px; background: rgb(2 10 18 / .4); justify-self: end; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg button { border: 1px solid transparent; border-radius: 999px; background: none; color: var(--s3-dim); font: 400 12.5px/1.3 'Barlow', sans-serif; letter-spacing: .02em; box-shadow: none; text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg button:hover { border-color: var(--s3-line-quiet); color: var(--s3-ink); background: none; }
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg button.is-on { color: #021018; font-weight: 600; text-shadow: none; border-color: transparent; background: var(--s3-accent-2); box-shadow: 0 0 8px rgb(131 217 245 / .45); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg button.is-on { color: var(--s3-on-ink); font-weight: 600; text-shadow: none; border-color: transparent; background: var(--s3-on-fill); box-shadow: var(--s3-on-glow); }
 
 /* Editable numbers: a faint dotted underline always says "you can type here". */
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { color: var(--s3-accent-2); font: 500 13.5px 'Barlow', sans-serif; font-variant-numeric: tabular-nums; text-decoration-color: rgb(198 241 255 / .4); text-shadow: var(--halo-under); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { color: var(--s3-accent-2); font: 500 13.5px 'Barlow', sans-serif; font-variant-numeric: tabular-nums; text-decoration-color: rgb(230 230 230 / .4); text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:is(:hover, :focus-visible) { text-decoration-color: var(--s3-accent-2); }
 /* The focus ring follows a rounded edge rather than drawing a square box. */
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { border-radius: 8px; }
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:focus-visible { outline: 1px solid rgb(198 241 255 / .7); outline-offset: -4px; }
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit { border: 1px solid rgb(198 241 255 / .9); border-radius: 8px; background: rgb(2 9 15 / .55); color: #fff; box-shadow: 0 0 0 3px rgb(143 227 255 / .14), var(--halo-glow); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:focus-visible { outline: 1px solid rgb(230 230 230 / .7); outline-offset: -4px; }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit { border: 1px solid rgb(230 230 230 / .9); border-radius: 8px; background: rgb(2 9 15 / .55); color: #fff; box-shadow: 0 0 0 3px rgb(205 205 205 / .14), var(--halo-glow); }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit:focus { outline: none; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit.is-invalid { border-color: var(--s3-warn); box-shadow: 0 0 0 3px rgb(255 176 138 / .16); }
 
@@ -143,8 +147,8 @@
 .syn3h-shell.exploration-ui .world-inspector .wi-detail small { color: var(--s3-soft); }
 .syn3h-shell.exploration-ui .world-inspector .wi-chip { border: 1px solid var(--s3-line-quiet); color: var(--s3-dim); }
 .syn3h-shell.exploration-ui .world-inspector .wi-chip.is-shared { border-color: var(--s3-line); color: var(--s3-accent-2); }
-.syn3h-shell.exploration-ui .world-inspector .wi-guard { height: 2px; border-radius: 1px; background: rgb(205 240 255 / .2); }
-.syn3h-shell.exploration-ui .world-inspector .wi-guard i { border-radius: 1px; background: linear-gradient(90deg, rgb(143 227 255 / .3), var(--s3-accent-2)); }
+.syn3h-shell.exploration-ui .world-inspector .wi-guard { height: 2px; border-radius: 1px; background: rgb(231 231 231 / .2); }
+.syn3h-shell.exploration-ui .world-inspector .wi-guard i { border-radius: 1px; background: linear-gradient(90deg, rgb(205 205 205 / .3), var(--s3-accent-2)); }
 .syn3h-shell.exploration-ui .world-inspector .wi-guard b { top: -3px; height: 8px; width: 2px; border-radius: 1px; background: #fff; }
 .syn3h-shell.exploration-ui .world-inspector .wi-sheet textarea { border: 1px solid var(--s3-line-quiet); border-radius: var(--s3-radius-small); background: rgb(2 9 15 / .5); color: var(--s3-ink); }
 .syn3h-shell.exploration-ui .world-inspector .wi-status { color: var(--s3-accent-2); text-shadow: var(--halo-under); }
@@ -160,8 +164,8 @@
 .syn3h-shell.exploration-ui .performance-panel header button { border-color: transparent; }
 .syn3h-shell.exploration-ui .performance-body { font-size: 12.5px; color: var(--s3-ink); }
 .syn3h-shell.exploration-ui .performance-body dt, .syn3h-shell.exploration-ui .performance-history { color: var(--s3-soft); }
-.syn3h-shell.exploration-ui .performance-chart path { stroke: rgb(226 240 255 / .3); stroke-dasharray: 2 4; }
-.syn3h-shell.exploration-ui .performance-chart polyline { stroke: var(--s3-accent-2); stroke-width: 1.25; filter: drop-shadow(0 0 3px rgb(143 227 255 / .35)); }
+.syn3h-shell.exploration-ui .performance-chart path { stroke: rgb(238 238 238 / .3); stroke-dasharray: 2 4; }
+.syn3h-shell.exploration-ui .performance-chart polyline { stroke: var(--s3-accent-2); stroke-width: 1.25; filter: drop-shadow(0 0 3px rgb(205 205 205 / .35)); }
 .syn3h-shell.exploration-ui:is([data-glass], *) .performance-recommendation { border-radius: var(--halo-r); background: var(--halo-fill); font-size: 13px; }
 
 /* ---------- HUD pieces ---------- */
@@ -174,17 +178,17 @@
    (legible over bright sky and ice), hairline ticks at east, south and west, and the N as a
    small crisp glyph sitting on the ring at north. */
 .syn3h-shell.exploration-ui .shell-minimap::after {
-  border: 1px solid rgb(226 238 255 / .62);
-  box-shadow: 0 0 0 1px rgb(0 8 14 / .16), 0 0 6px rgb(143 227 255 / .16), inset 0 0 10px rgb(143 227 255 / .14);
+  border: 1px solid rgb(236 236 236 / .62);
+  box-shadow: 0 0 0 1px rgb(0 8 14 / .16), 0 0 6px rgb(205 205 205 / .16), inset 0 0 10px rgb(205 205 205 / .14);
   background:
-    linear-gradient(rgb(226 238 255 / .62), rgb(226 238 255 / .62)) right center / 5px 1px no-repeat,
-    linear-gradient(rgb(226 238 255 / .62), rgb(226 238 255 / .62)) center bottom / 1px 5px no-repeat,
-    linear-gradient(rgb(226 238 255 / .62), rgb(226 238 255 / .62)) left center / 5px 1px no-repeat;
+    linear-gradient(rgb(236 236 236 / .62), rgb(236 236 236 / .62)) right center / 5px 1px no-repeat,
+    linear-gradient(rgb(236 236 236 / .62), rgb(236 236 236 / .62)) center bottom / 1px 5px no-repeat,
+    linear-gradient(rgb(236 236 236 / .62), rgb(236 236 236 / .62)) left center / 5px 1px no-repeat;
 }
 /* One slow shimmer travels round the ring; none under reduced motion. Composited, no paint. */
 .syn3h-shell.exploration-ui .shell-minimap::before {
   content: ''; position: absolute; inset: 11.5%; border-radius: 50%; pointer-events: none;
-  background: conic-gradient(transparent 0 84%, rgb(198 241 255 / .5) 92%, transparent 99%);
+  background: conic-gradient(transparent 0 84%, rgb(230 230 230 / .5) 92%, transparent 99%);
   -webkit-mask-image: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1px), transparent 100%);
   mask-image: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1px), transparent 100%);
   animation: minimap-shimmer 18s linear infinite;
@@ -194,17 +198,17 @@
 .syn3h-shell.exploration-ui .shell-minimap span {
   top: calc(11.5% - 6px); left: 50%; transform: translateX(-50%); padding-left: .14em; line-height: 12px;
   font: 600 10px 'Barlow Condensed', sans-serif; letter-spacing: .14em; color: var(--s3-accent-2);
-  text-shadow: 0 0 1px rgb(0 8 14 / .95), 0 0 3px rgb(0 8 14 / .8), 0 0 5px rgb(143 227 255 / .35);
+  text-shadow: 0 0 1px rgb(0 8 14 / .95), 0 0 3px rgb(0 8 14 / .8), 0 0 5px rgb(205 205 205 / .35);
 }
 /* The touch panels switch: a floating pill, clear of the screen edge. */
 .syn3h-shell.exploration-ui .hud-navigation { right: max(12px, env(safe-area-inset-right)); }
 .syn3h-shell.exploration-ui .hud-navigation .inspector-toggle { border: 1px solid var(--s3-line); border-radius: 999px; background: var(--halo-fill); box-shadow: var(--halo-glow), var(--halo-spread); font: 500 11px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
 
 /* Touch controls: hairline rings, no fills to speak of, small letter-spaced captions. */
-.syn3h-shell.exploration-ui .touch-controls button, .touch-controls button { border: 1px solid var(--s3-line, rgb(205 240 255 / .5)); border-radius: 50%; background: radial-gradient(closest-side, rgb(2 9 15 / .34), rgb(2 9 15 / .16)); box-shadow: 0 0 6px rgb(143 227 255 / .12); color: #f3fbff; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
-.touch-controls button:active { background: rgb(143 227 255 / .1); border-color: rgb(198 241 255 / .9); box-shadow: inset 0 0 8px rgb(143 227 255 / .2), 0 0 6px rgb(143 227 255 / .2); }
-.touch-controls .touch-stick { border: 1px solid rgb(226 238 255 / .4); background: radial-gradient(circle, transparent 66%, rgb(143 227 255 / .06)); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
-.touch-controls .touch-knob { border: 1px solid rgb(255 255 255 / .85); background: radial-gradient(closest-side, rgb(255 255 255 / .14), rgb(255 255 255 / .03)); box-shadow: 0 0 6px rgb(143 227 255 / .25); }
+.syn3h-shell.exploration-ui .touch-controls button, .touch-controls button { border: 1px solid var(--s3-line, rgb(231 231 231 / .5)); border-radius: 50%; background: radial-gradient(closest-side, rgb(2 9 15 / .34), rgb(2 9 15 / .16)); box-shadow: 0 0 6px rgb(205 205 205 / .12); color: #f3fbff; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.touch-controls button:active { background: rgb(205 205 205 / .1); border-color: rgb(230 230 230 / .9); box-shadow: inset 0 0 8px rgb(205 205 205 / .2), 0 0 6px rgb(205 205 205 / .2); }
+.touch-controls .touch-stick { border: 1px solid rgb(236 236 236 / .4); background: radial-gradient(circle, transparent 66%, rgb(205 205 205 / .06)); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.touch-controls .touch-knob { border: 1px solid rgb(255 255 255 / .85); background: radial-gradient(closest-side, rgb(255 255 255 / .14), rgb(255 255 255 / .03)); box-shadow: 0 0 6px rgb(205 205 205 / .25); }
 
 /* ---------- Pause ---------- */
 .syn3h-shell.exploration-ui .pause-veil { background: rgb(2 8 14 / .5); -webkit-backdrop-filter: none; backdrop-filter: none; border: 0; border-radius: 0; text-shadow: var(--halo-under); }
@@ -214,8 +218,8 @@
 .syn3h-shell.exploration-ui .pause-veil small { font-size: 13px; color: var(--s3-dim); }
 
 /* ---------- The reload notice: a slim capsule at the bottom centre ---------- */
-body #syn3h-build-notice, body .build-banner { border: 1px solid rgb(205 240 255 / .55); border-radius: 999px; background: rgb(3 11 19 / .34); box-shadow: 0 0 6px rgb(143 227 255 / .14), 0 0 34px rgb(0 6 12 / .22); color: #f3fbff; font: 400 13.5px/1.2 'Barlow', system-ui, sans-serif; letter-spacing: .03em; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
-body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198 241 255 / .9); }
+body #syn3h-build-notice, body .build-banner { border: 1px solid rgb(231 231 231 / .55); border-radius: 999px; background: rgb(3 11 19 / .34); box-shadow: 0 0 6px rgb(205 205 205 / .14), 0 0 34px rgb(0 6 12 / .22); color: #f3fbff; font: 400 13.5px/1.2 'Barlow', system-ui, sans-serif; letter-spacing: .03em; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
+body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(230 230 230 / .9); }
 
 
 @media (prefers-reduced-motion: reduce) {
@@ -229,17 +233,17 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
 .syn3h-shell.exploration-ui .lobby-links.lobby-links { gap: 12px 14px; padding: 0; background: none; border-radius: 0; }
 .syn3h-shell.exploration-ui .lobby-links.lobby-links button {
   min-height: 46px; min-width: 132px; padding: 0 26px; border: 1px solid var(--s3-line); border-radius: 999px;
-  background: var(--halo-fill); box-shadow: var(--halo-glow), inset 0 0 12px rgb(143 227 255 / .05);
+  background: var(--halo-fill); box-shadow: var(--halo-glow), inset 0 0 12px rgb(205 205 205 / .05);
   font: 500 12px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .22em; text-indent: .22em; text-transform: uppercase;
   color: var(--s3-ink); text-shadow: var(--halo-under); -webkit-backdrop-filter: none; backdrop-filter: none;
   transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease;
 }
 .syn3h-shell.exploration-ui .lobby-links.lobby-links button::before { content: none; }
 .syn3h-shell.exploration-ui .lobby-links.lobby-links button:is(:hover, :focus-visible) {
-  color: #fff; border-color: var(--s3-accent-2); background: rgb(143 227 255 / .07);
-  box-shadow: 0 0 10px rgb(143 227 255 / .22), inset 0 0 14px rgb(143 227 255 / .1); outline: none;
+  color: #fff; border-color: var(--s3-accent-2); background: rgb(205 205 205 / .07);
+  box-shadow: 0 0 10px rgb(205 205 205 / .22), inset 0 0 14px rgb(205 205 205 / .1); outline: none;
 }
-.syn3h-shell.exploration-ui .lobby-links.lobby-links button:active { background: rgb(143 227 255 / .13); }
+.syn3h-shell.exploration-ui .lobby-links.lobby-links button:active { background: rgb(205 205 205 / .13); }
 @media (max-width: 700px), (max-height: 550px) {
   .syn3h-shell.exploration-ui .lobby-links.lobby-links { gap: 8px; }
   .syn3h-shell.exploration-ui .lobby-links.lobby-links button { min-height: 44px; min-width: 0; padding: 0 16px; font-size: 11px; letter-spacing: .16em; text-indent: .16em; }
@@ -249,7 +253,7 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
 .syn3h-shell.exploration-ui:is([data-glass], *) :is(.lobby-panels, .in-play-about) {
   border: 1px solid var(--s3-line); border-radius: var(--halo-r, 16px);
   background: linear-gradient(180deg, rgb(4 8 13 / .86), rgb(1 3 6 / .9));
-  box-shadow: var(--halo-glow), 0 18px 60px rgb(0 0 0 / .45), inset 0 1px 0 rgb(190 235 255 / .06);
+  box-shadow: var(--halo-glow), 0 18px 60px rgb(0 0 0 / .45), inset 0 1px 0 rgb(224 224 224 / .06);
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
 .syn3h-shell.exploration-ui .lobby-panels > section { max-width: 520px; }
@@ -288,16 +292,16 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
 /* Readable cards over bright terrain. Inner controls stay unblurred; only card surfaces frost. */
 html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-glass, .rail-players),
 html .syn3h-shell.exploration-ui:is([data-glass], *) :is(.lobby-panels, .in-play-about) {
-  background: rgb(3 11 19 / .65); background-image: none;
+  background: rgb(14 14 15 / .65); background-image: none;
   -webkit-backdrop-filter: blur(28px) saturate(.65); backdrop-filter: blur(28px) saturate(.65);
 }
 html .syn3h-shell.exploration-ui[data-ui-frost="off"] .world-inspector :is(.wi-glass, .rail-players),
 html .syn3h-shell.exploration-ui[data-ui-frost="off"] :is(.lobby-panels, .in-play-about) {
-  background: rgb(3 11 19 / .94); -webkit-backdrop-filter: none; backdrop-filter: none;
+  background: rgb(14 14 15 / .94); -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-glass, .rail-players),
-  html .syn3h-shell.exploration-ui:is([data-glass], *) :is(.lobby-panels, .in-play-about) { background: rgb(3 11 19 / .94); }
+  html .syn3h-shell.exploration-ui:is([data-glass], *) :is(.lobby-panels, .in-play-about) { background: rgb(14 14 15 / .94); }
 }
 .syn3h-shell.exploration-ui .world-inspector .wi-row[data-id="game.mode"] { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .syn3h-shell.exploration-ui .world-inspector .wi-row[data-id="game.mode"] .wi-label { width: auto; }
@@ -308,7 +312,7 @@ html .syn3h-shell.exploration-ui[data-ui-frost="off"] :is(.lobby-panels, .in-pla
 /* Personal identity stays compact beside its two vehicle colour samples. */
 .syn3h-shell .wi-card[data-section="you"] .wi-head { grid-template-columns: auto minmax(0, 1fr) auto auto; }
 .syn3h-shell .wi-colour-dots { display: inline-flex; gap: 5px; align-items: center; }
-.syn3h-shell .wi-colour-dots i { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgb(225 248 255 / .65); }
+.syn3h-shell .wi-colour-dots i { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgb(242 242 242 / .65); }
 
 .syn3h-shell .world-inspector [data-search][hidden] { display: none; }
 /* The galaxy reaches every edge. The footer keeps its spacing, without masking stars. */
@@ -327,7 +331,7 @@ html .syn3h-shell.exploration-ui[data-ui-frost="off"] :is(.lobby-panels, .in-pla
 .syn3h-shell.exploration-ui :is([data-panel="about"], .in-play-about) .shell-credits { margin: 16px 0 24px; text-align: left; }
 .syn3h-shell.exploration-ui :is([data-panel="about"], .in-play-about) .shell-credits summary { min-height: 44px; align-content: center; color: var(--s3-accent-2); cursor: pointer; }
 .syn3h-shell.exploration-ui :is([data-panel="about"], .in-play-about) .shell-credits li { margin: 8px 0; line-height: 1.5; }
-.syn3h-shell.exploration-ui button.panel-back { display: inline-flex; justify-content: center; align-items: center; gap: 16px; box-sizing: border-box; min-width: 164px; min-height: 48px; max-width: 100%; padding: 10px 24px; border: 1px solid var(--s3-line); border-radius: 999px; color: var(--s3-accent-2); background: rgb(143 227 255 / .06); }
+.syn3h-shell.exploration-ui button.panel-back { display: inline-flex; justify-content: center; align-items: center; gap: 16px; box-sizing: border-box; min-width: 164px; min-height: 48px; max-width: 100%; padding: 10px 24px; border: 1px solid var(--s3-line); border-radius: 999px; color: var(--s3-accent-2); background: rgb(205 205 205 / .06); }
 .syn3h-shell.exploration-ui button.panel-back::before { content: none; }
 /* The in-play guide: the lobby About (same glass, content and rules above) as a modal over
  * the world. Only its frame is its own: a sticky header with Back, and a scrolling body. */
@@ -378,7 +382,7 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .in-play-about { background
 :root .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world {
   display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 44px; margin: 0; padding: 0 18px;
   border: 1px solid var(--s3-line); border-radius: 999px; background: var(--halo-fill, rgb(3 11 19 / .55));
-  box-shadow: var(--halo-glow), inset 0 0 12px rgb(143 227 255 / .05);
+  box-shadow: var(--halo-glow), inset 0 0 12px rgb(205 205 205 / .05);
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   font: 500 11.5px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .22em; text-transform: uppercase;
   color: var(--s3-ink); text-shadow: var(--halo-under); white-space: nowrap;
@@ -387,10 +391,10 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .in-play-about { background
 /* Tracking leaves a space after the last letter; take it back so the label sits centred. */
 :root .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world span { margin-right: -.22em; }
 :root .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world:is(:hover, :focus-visible) {
-  color: #fff; border-color: var(--s3-accent-2); background: rgb(143 227 255 / .07);
-  box-shadow: 0 0 10px rgb(143 227 255 / .22), inset 0 0 14px rgb(143 227 255 / .1);
+  color: #fff; border-color: var(--s3-accent-2); background: rgb(205 205 205 / .07);
+  box-shadow: 0 0 10px rgb(205 205 205 / .22), inset 0 0 14px rgb(205 205 205 / .1);
 }
-:root .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world:active { background: rgb(143 227 255 / .13); }
+:root .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world:active { background: rgb(205 205 205 / .13); }
 .syn3h-shell .world-inspector .wi-glyph { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- The World card's actions ----------
@@ -413,7 +417,7 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .in-play-about { background
 :root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button span { margin-right: -.14em; }
 :root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button .wi-glyph { width: 14px; height: 14px; }
 :root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button:is(:hover, :focus-visible) {
-  color: #fff; border-color: var(--s3-accent-2); background: rgb(143 227 255 / .07); box-shadow: 0 0 8px rgb(143 227 255 / .18);
+  color: #fff; border-color: var(--s3-accent-2); background: rgb(205 205 205 / .07); box-shadow: 0 0 8px rgb(205 205 205 / .18);
 }
 :root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button.wi-reset:not(.is-warning):not(:hover):not(:focus-visible) { color: var(--s3-dim); }
 :root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button.wi-reset.is-warning { color: #ffd9b0; border-color: rgb(255 170 90 / .6); background: rgb(255 170 90 / .1); box-shadow: none; }
