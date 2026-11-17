@@ -19,7 +19,7 @@ import { BOT_ID_BASE } from '../shared/protocol'
 import { ParamPanel } from './ui/ParamPanel'
 import { LobbyAddress } from './ui/LobbyAddress'
 import { roomFromQuery } from './core/roomAddress'
-import { generateName } from './ui/data/names'
+import { botIdentity, generateName, uniqueBotName } from './ui/data/names'
 import { initGameShell } from './ui/Shell'
 import { readVehicleChoice, saveVehicleChoice } from './ui/VehicleChoice'
 import { type VehicleKind, createVehicle } from './vehicles'
@@ -211,6 +211,8 @@ async function main(): Promise<void> {
       setMapEntities: (e) => shell.setMapEntities(e),
       setMatchState: (m) => shell.setMatchState(m),
       names: (seed, kind) => generateName(seed, kind),
+      botName: (seed, taken) => uniqueBotName(seed, taken),
+      botRole: seed => botIdentity(seed).role,
     })
     // Opening the in-play guide drops gear in hand without firing it: a Big Red charge is
     // discarded, a Yoink carry is set down (no fling), a reel stops and the tag control lets
