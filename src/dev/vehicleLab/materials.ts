@@ -81,7 +81,7 @@ export function previewMaterials(body: THREE.ColorRepresentation, accent: THREE.
 export type PreviewMaterials = ReturnType<typeof previewMaterials>
 
 /**
- * Lamp intensities. Tail and brake follow the game skin (LoadedBuggySkin TAIL_LAMP and
+ * Lamp intensities. Tail and brake follow the game skin (Syn3hBuggySkin TAIL_LAMP and
  * BRAKE_LAMP): under ACES tone mapping pure red saturates near 1, so 0.6 reads deep red and 1.5
  * a hotter red. Headlights match the Syn3h prefab's emission of about 3.
  */
