@@ -311,3 +311,38 @@ export function turnOut(liquid: Liquid, steer = 1, seconds = 40): { to90: number
     minUp: Math.min(...run.trace.map((s) => s.up)), run,
   }
 }
+
+export interface Coast { run: Run; rest: number | null; distance: number; under: number | null; samples: Sample[] }
+
+/**
+ * Coasting in deep (4 m) `liquid`: either arriving over a steep shore at `speed` m/s (held on the
+ * run-up) or, with `speed` 0, paddling in at full throttle and on for 6 s. Then the
+ * throttle is released (and `brakes` applied if asked). Seconds and metres until it is at rest
+ * (under 0.3 m/s), seconds until its top is under the surface, and samples every half second.
+ */
+export function coast(liquid: Liquid, speed: number, seconds = 12, brakes = false): Coast {
+  const basin: Basin = { liquid, length: 600, depth: 4, slope: 30 }
+  const { h, g, clock } = basinBed(basin)
+  const v = makeVehicle('buggy', h, new THREE.Vector3(0, 2, 30))
+  const run: Run = { clock, h, v, basin, trace: [], ground: g }
+  advance(run, 0.5)
+  v.input.y = 1
+  // Hold the speed on the run-up (6 m/s to paddle in), then let go at the waterline, or paddle on.
+  const hold = speed || 6
+  if (v instanceof Syn3hBuggy) v.motorSpeed = hold
+  advance(run, 10, (s) => { const l = v.body.linvel(); v.body.setLinvel({ x: 0, y: l.y, z: -hold }, true); return s.z < 0 })
+  if (!speed) advance(run, 6)
+  v.input.y = 0
+  v.input.brakes = brakes
+  run.trace.length = 0
+  const t0 = run.clock.t, z0 = v.body.translation().z
+  advance(run, seconds)
+  const rest = run.trace.find((s) => s.speed < 0.3)
+  // The body's top (about 0.5 m above its centre) is under once the centre is 0.5 m down.
+  // Under for good: from the first moment after which it stays under.
+  let lastAbove = -1
+  run.trace.forEach((s, i) => { if (s.depth <= 0.5) lastAbove = i })
+  const under = lastAbove < run.trace.length - 1 ? run.trace[lastAbove + 1] : undefined
+  const samples = run.trace.filter((s) => Math.round((s.t - t0) * 60) % 30 === 0)
+  return { run, rest: rest ? rest.t - t0 : null, distance: Math.abs((rest ?? run.trace[run.trace.length - 1]).z - z0), under: under ? under.t - t0 : null, samples }
+}

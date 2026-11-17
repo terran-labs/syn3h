@@ -55,6 +55,15 @@ export interface HullProfile {
   deep: number
   /** Steering: how far the front paddles turn with the wheels (1 about 30 degrees at full lock). */
   steer: number
+  /**
+   * Lift from effort (water): when set, the hull only floats while it works to. Buoyancy over
+   * weight falls from `buoyancy` to `sink` as the buggy stops and the throttle is released.
+   */
+  sink?: number
+  /** Speed (m/s) below which lift from motion is lost. */
+  liftSpeed?: number
+  /** Extra drag (1/s, growing with speed) when not paddling: water wins once you stop trying. */
+  coast?: number
 }
 
 export interface HullState {
@@ -70,9 +79,11 @@ export interface HullState {
   shed: Float32Array
   /** Mean wetness of all four columns after the last step. */
   mean: number
+  /** Lift from effort and motion, 0..1, lagged: what keeps a water hull up. */
+  lift: number
 }
 
-export const createHullState = (): HullState => ({ wet: new Float32Array(4), phase: 0, liquid: '', axle: 0, shed: Float32Array.of(0, 2.1), mean: 0 })
+export const createHullState = (): HullState => ({ wet: new Float32Array(4), phase: 0, liquid: '', axle: 0, shed: Float32Array.of(0, 2.1), mean: 0, lift: 1 })
 
 /** Corner columns in the body frame: x half width, z half length, bottom and height. */
 /**
@@ -82,7 +93,7 @@ export const createHullState = (): HullState => ({ wet: new Float32Array(4), pha
 export const STEER = { angle: 0.5, differential: 0.35, rudder: 1 }
 
 /** Shape constants of the model, shared by both liquids. Settings scale these. */
-export const HULL_TUNING = { lagBase: 0.02, lagScale: 0.12, bowLift: 0.5, waddleLift: 0.6, pitchLift: 0.8 }
+export const HULL_TUNING = { lagBase: 0.02, lagScale: 0.12, bowLift: 0.5, waddleLift: 0.6, pitchLift: 0.8, plough: 0.35 }
 
 export const HULL = { x: 1.0, z: 1.5, bottom: -0.35, height: 0.85 }
 
@@ -99,6 +110,8 @@ export interface HullInput {
   wheel?: { x: number; z: number; radius: number }
   /** Steering input, -1 full left to 1 full right. */
   steer?: number
+  /** Brakes held: the coasting drag bites harder. */
+  brakes?: boolean
 }
 /** The standard tyre the HULL columns were drawn around. */
 const STANDARD_WHEEL = { x: 1.1, z: 1.3, radius: 0.5 }
@@ -133,6 +146,20 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
   const slip = THREE.MathUtils.clamp(throttle - forward / Math.max(1, p.paddleSpeed), -1, 1)
   // Bow dynamic lift: planing in water, the nose riding up on thick lava.
   const plane = THREE.MathUtils.clamp((forward / p.planing) ** 2, 0, 1) * Math.sign(forward)
+  // Lift from effort: paddling, or still moving fast, holds the hull up; stopped, it sinks.
+  // Only at the surface: once wholly under, paddles and speed no longer lift it, so it drives
+  // along the bed (open wings float it up).
+  let buoyancy = p.buoyancy, coasting = 0, lifted = 1
+  if (p.sink !== undefined) {
+    const ls = Math.max(0.5, p.liftSpeed ?? 3)
+    const moving = THREE.MathUtils.smoothstep(Math.hypot(lin.x, lin.z), 0.4 * ls, ls)
+    const atSurface = 1 - THREE.MathUtils.smoothstep(s.mean, 0.92, 1)
+    // Part throttle holds most of the lift: easing off settles lower; letting go sinks.
+    s.lift += (Math.max(Math.sqrt(effort), moving) * atSurface - s.lift) * (1 - Math.exp(-dt / 0.3))
+    lifted = s.lift
+    buoyancy = p.sink + (p.buoyancy - p.sink) * lifted
+    coasting = (p.coast ?? 0) * (1 - effort) * (input.brakes ? 2.5 : 1)
+  }
   // Big tyres are big floats and big paddles: the columns spread with the hubs and reach down
   // with the tyres, and the paddles push in proportion to the tyre's reach.
   const wheel = input.wheel ?? STANDARD_WHEEL
@@ -163,13 +190,16 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
     flow.x = 0; flow.z = 0
     terrain.liquidFlowAt?.(cx, cz, flow)
     const vx = v.x - flow.x, vz = v.z - flow.z, vh = Math.hypot(vx, vz)
-    const skim = 1 - (1 - p.skim) * Math.min(1, Math.abs(plane))
+    // Planing wets less hull, but only under power: coasting, the bow ploughs in.
+    const skim = 1 - (1 - p.skim) * Math.min(1, Math.abs(plane)) * (p.sink !== undefined ? Math.max(effort, 0.7) : 1)
     const drag = Math.min(0.9 / dt, p.thickness * (p.linear + p.quadratic * vh) * sub * skim)
+    // Coasting drag acts low on the hull, so letting go pitches the nose down into it.
+    const plough = Math.min(0.9 / dt - drag, coasting * (1 + vh / 16) * Math.min(1, sub * 2))
     const heave = Math.min(0.9 / dt, p.heave * sub + p.deep * Math.max(0, sub - 0.9) / 0.1)
     f.x = -vx * drag * share
     f.z = -vz * drag * share
     const rise = terrain.liquidVerticalSpeedAt?.(cx, cz) ?? 0
-    f.y = p.buoyancy * g * share * s.wet[i] - (v.y - (Number.isFinite(rise) ? rise : 0)) * heave * share
+    f.y = buoyancy * g * share * s.wet[i] - (v.y - (Number.isFinite(rise) ? rise : 0)) * heave * share
     // Turned wheels moving through the liquid act as a rudder too, a little, even coasting.
     if (front && steerSin !== 0) {
       const rudder = STEER.rudder * p.steer * share * forward * Math.min(1, sub * 1.5) * steerSin
@@ -177,9 +207,9 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
       f.z += side.z * rudder
     }
     // Bow dynamic lift on the front columns only, carried by their lagged wetness.
-    if (front && forward > 0) f.y += p.porpoise * HULL_TUNING.bowLift * g * share * plane * Math.min(1, s.wet[i] * 2)
+    if (front && forward > 0) f.y += p.porpoise * HULL_TUNING.bowLift * g * share * plane * Math.min(1, s.wet[i] * 2) * lifted
     // Planing: the whole hull rides up on its speed, wetting less and so lifting less: a skip.
-    if (forward > 0) f.y += p.planeLift * g * share * plane * Math.min(1, sub * 3)
+    if (forward > 0) f.y += p.planeLift * g * share * plane * Math.min(1, sub * 3) * lifted
     // Paddle: rear and front wheels alike, alternating left and right bite.
     if (effort > 0) {
       // In a turn the outside wheels dig in harder and the inside ones ease off.
@@ -198,6 +228,11 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
     // slows the hull without tipping it end over end.
     body.addForceAtPoint({ x: 0, y: f.y, z: 0 }, { x: cx, y: cy, z: cz }, true)
     body.addForceAtPoint({ x: f.x, y: 0, z: f.z }, { x: cx, y: pos.y, z: cz }, true)
+    if (plough > 0) {
+      // Water piles over the bow as it digs in: the nose goes down, and the hull ploughs.
+      const dig = front ? -HULL_TUNING.plough * plough * Math.min(vh, 8) * share : 0
+      body.addForceAtPoint({ x: -vx * plough * share, y: dig, z: -vz * plough * share }, { x: cx, y: cy, z: cz }, true)
+    }
   }
   s.mean = total / 4
   if (total <= 0) { s.axle = 0; return 0 }
