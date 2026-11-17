@@ -15,7 +15,9 @@ for (const failure of ['draft', 'tag']) {
       writeFileSync(join(dir, 'bin/node'), '#!/bin/sh\necho "$*" >> "$CALLS"\ncase "$*" in *" draft "*) [ "$FAILURE" != draft ];; *showcase*) [ "$FAILURE" != capture ];; esac\n', { mode: 0o755 })
       writeFileSync(join(dir, 'bin/git'), '#!/bin/sh\n[ "$FAILURE" != tag ]\n', { mode: 0o755 })
       const calls = join(dir, 'calls')
-      const result = spawnSync('/bin/sh', ['-eu', '-c', hook], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, FAILURE: failure, CALLS: calls, CALVER: 'v26.11.1500', MILESTONE: 'test', COMMIT: '1234567', WHEN: 'test time', N: '3', PREV: 'release-2', DEST: dir, LOG: join(dir, 'log') } })
+      const result = spawnSync('/bin/sh', ['-eu', '-c', hook], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, FAILURE: failure, CALLS: calls, CALVER: 'v26.11.1500', MILESTONE: 'test', COMMIT: '1234567', WHEN: 'test time', N: '3', PREV: 'release-2', DEST: dir, LOG: join(dir, 'log'),
+        // Never start the real GitHub check from a test.
+        SYN3H_SKIP_VANTAGE: '1' } })
       assert.equal(result.status, 0, result.stderr)
       assert.match(result.stdout, /Warning: release is live/)
       // The showcase is its own step after the release: printed, never run or published here.
@@ -23,6 +25,7 @@ for (const failure of ['draft', 'tag']) {
       const ran = existsSync(calls) ? readFileSync(calls, 'utf8') : ''
       assert.doesNotMatch(ran, /showcase\.mjs/)
       assert.doesNotMatch(ran, /publish/)
+      assert.match(result.stdout, /VANTAGE: skipped \(SYN3H_SKIP_VANTAGE\)/)
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 }
