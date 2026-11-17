@@ -655,6 +655,9 @@ export class Syn3hBuggy extends Vehicle {
     // wheel, as VB 323 does, favours the left wheels and pulls the buggy right.
     this.motorStep = this.motorSpeed
     this.liquidState.wheelSpeed = this.motorSpeed
+    this.liquidState.wheel.x = this.hubX
+    this.liquidState.wheel.z = this.hubZ
+    this.liquidState.wheel.radius = this.wheelRadius
 
     // Wheels, VB 288-332.
     const wasAirborne = this.wheelsGrounded === 0

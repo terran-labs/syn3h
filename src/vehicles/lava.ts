@@ -5,7 +5,7 @@ import { defineParam } from '../../shared/params'
 import type { RAPIER } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import { type UnityBody, signedAngle, unityEulerAngles } from './unityBody'
-import { applyHull, applyWings, createHullState, type HullProfile, type HullState, type WingProfile } from './liquidHull'
+import { applyHull, applyWings, createHullState, type HullInput, type HullProfile, type HullState, type WingProfile } from './liquidHull'
 
 export const buggyLavaFloat = defineParam({
   id: 'buggy.lavaFloat', label: 'Float on water', group: 'Buggy', scope: 'world',
@@ -110,6 +110,7 @@ export const liquidWingBuoyancy=defineParam({id:'liquid.wingBuoyancy',label:'Win
 export const liquidWingAuthority=defineParam({id:'liquid.wingAuthority',label:'Wings: underwater authority',group:'Liquid',scope:'world',default:1,min:0,max:3,step:.05})
 /** Lava pushes this much harder on a wing than water: a slower, heavier, lazier rise. */
 export const LAVA_DENSITY={value:2.5}
+const hullInput:HullInput={throttle:0,wheelSpeed:0}
 const wingProfile:WingProfile={buoyancy:.9,authority:1,density:1}
 
 export const lavaViscosity=defineParam({id:'lava.viscosity',label:'Viscosity',group:'Lava',scope:'world',default:6,min:0,max:20,step:.1})
@@ -172,13 +173,15 @@ export interface LiquidState {
  hull:HullState
  /** Wheel surface speed along the nose, m/s, set by a wheeled controller each step. */
  wheelSpeed:number
+ /** Live wheel geometry, set by a wheeled controller: hub half track, half wheelbase, tyre radius. */
+ wheel:{x:number;z:number;radius:number}
  /** Velocity and spin before this step's controller ran. */
  preV:THREE.Vector3
  preW:THREE.Vector3
  /** Mean wetness of the hull last step, 0..1. */
  hullWet:number
 }
-export function createLiquidState():LiquidState {return {entrySpeed:0,wasImmersed:false,wingWasOpen:false,fastWingContact:false,wingLaunchSpeed:0,wingLiftSpeed:0,wingLiftAvailable:false,wingLiftSurface:-Infinity,lavaDepth:0,stuck:false,heat:0,heatNormal:new THREE.Vector3(0,1,0),heatHeight:-100,hull:createHullState(),wheelSpeed:0,preV:new THREE.Vector3(),preW:new THREE.Vector3(),hullWet:0}}
+export function createLiquidState():LiquidState {return {entrySpeed:0,wasImmersed:false,wingWasOpen:false,fastWingContact:false,wingLaunchSpeed:0,wingLiftSpeed:0,wingLiftAvailable:false,wingLiftSurface:-Infinity,lavaDepth:0,stuck:false,heat:0,heatNormal:new THREE.Vector3(0,1,0),heatHeight:-100,hull:createHullState(),wheelSpeed:0,wheel:{x:1.1,z:1.3,radius:.5},preV:new THREE.Vector3(),preW:new THREE.Vector3(),hullWet:0}}
 const liquidQ=new THREE.Quaternion(),inverseQ=new THREE.Quaternion(),forward=new THREE.Vector3(),angular=new THREE.Vector3(),upAxis=new THREE.Vector3(),wetNormal=new THREE.Vector3(),globalUp=new THREE.Vector3(0,1,0)
 
 /**
@@ -227,7 +230,8 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
   // Forces only. Tyres on the bed bite less as the liquid carries the weight; with the wings
   // open the air flight model fades out as the hull goes under and the wings work as hydrofoils.
   softenController(body,state,wingsOpen?1-Math.min(1,state.hull.mean*2):1-(1-(lava?lavaGrip:waterGrip).value)*Math.min(1,state.hullWet*2))
-  state.hullWet=applyHull(body,world,terrain,type,lava?lavaProfile():waterProfile(),state.hull,{throttle:input.y,wheelSpeed:state.wheelSpeed},dt)
+  hullInput.throttle=input.y;hullInput.wheelSpeed=state.wheelSpeed;hullInput.wheel=state.wheel
+  state.hullWet=applyHull(body,world,terrain,type,lava?lavaProfile():waterProfile(),state.hull,hullInput,dt)
   if(wingsOpen){
    wingProfile.buoyancy=liquidWingBuoyancy.value;wingProfile.authority=liquidWingAuthority.value;wingProfile.density=lava?LAVA_DENSITY.value:1
    applyWings(body,world,terrain,type,wingProfile,state.hull,input,dt)

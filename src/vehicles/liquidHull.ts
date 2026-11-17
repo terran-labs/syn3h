@@ -87,7 +87,11 @@ export interface HullInput {
   throttle: number
   /** Wheel surface speed along the nose, m/s (the motor speed). */
   wheelSpeed: number
+  /** Live wheel geometry (buggy.tyreSize): hub half track and half wheelbase, and tyre radius, m. */
+  wheel?: { x: number; z: number; radius: number }
 }
+/** The standard tyre the HULL columns were drawn around. */
+const STANDARD_WHEEL = { x: 1.1, z: 1.3, radius: 0.5 }
 
 /**
  * Apply the liquid's forces to a buggy body. Returns the wetness of its drier axle (0 when
@@ -119,15 +123,22 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
   const slip = THREE.MathUtils.clamp(throttle - forward / Math.max(1, p.paddleSpeed), -1, 1)
   // Bow dynamic lift: planing in water, the nose riding up on thick lava.
   const plane = THREE.MathUtils.clamp((forward / p.planing) ** 2, 0, 1) * Math.sign(forward)
+  // Big tyres are big floats and big paddles: the columns spread with the hubs and reach down
+  // with the tyres, and the paddles push in proportion to the tyre's reach.
+  const wheel = input.wheel ?? STANDARD_WHEEL
+  const hx = HULL.x + Math.max(0, wheel.x - STANDARD_WHEEL.x), hz = HULL.z + Math.max(0, wheel.z - STANDARD_WHEEL.z)
+  const extra = Math.max(0, wheel.radius - STANDARD_WHEEL.radius)
+  const colBottom = HULL.bottom - 1.2 * extra, colHeight = HULL.height + 1.2 * extra
+  const reach = Math.sqrt(Math.max(0.5, wheel.radius / STANDARD_WHEEL.radius))
   let total = 0
   for (let i = 0; i < 4; i++) {
     const sx = i & 1 ? 1 : -1, front = i < 2
-    corner.set(com.x + sx * HULL.x, HULL.bottom, com.z + (front ? -HULL.z : HULL.z)).applyQuaternion(q)
+    corner.set(com.x + sx * hx, colBottom, com.z + (front ? -hz : hz)).applyQuaternion(q)
     const bx = pos.x + corner.x, bz = pos.z + corner.z, bottom = pos.y + corner.y
     const surface = terrain.liquidHeightAt?.(bx, bz) ?? -Infinity
     const kind = terrain.liquidKindAt ? terrain.liquidKindAt(bx, bz) : 'lava'
     // Column extent: bottom corner to the body's top along the current up.
-    const top = bottom + up.y * HULL.height
+    const top = bottom + up.y * colHeight
     const lo = Math.min(bottom, top), hi = Math.max(bottom, top)
     const sub = kind === liquid && Number.isFinite(surface) ? THREE.MathUtils.clamp((surface - lo) / Math.max(0.2, hi - lo), 0, 1) : 0
     s.wet[i] += (sub - s.wet[i]) * lag
@@ -153,7 +164,7 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
     // Paddle: rear and front wheels alike, alternating left and right bite.
     if (effort > 0) {
       const bite = 1 + p.waddle * sway * sx
-      const push = p.paddle * share * slip * Math.min(1, sub * 1.5) * bite
+      const push = p.paddle * share * slip * Math.min(1, sub * 1.5) * bite * reach
       f.x += fwd.x * push
       f.z += fwd.z * push
       // The wheel throws liquid back and down: a little lift on the side that bites.

@@ -61,6 +61,18 @@ describe.each(['lava', 'water'] as const)('buggy in %s', (liquid) => {
   })
 })
 
+describe.each(['lava', 'water'] as const)('a buggy on size 3 tyres in %s', (liquid) => {
+  it.each([1.3, 3])('floats upright and drives out from %s m deep', (depth) => {
+    params.set('buggy.tyreSize', 3)
+    const r = fromRest('buggy', { liquid, length: 40, depth, slope: 15 }, OUT + 5)
+    try {
+      expect(finite(r)).toBe(true)
+      expect(exitTime(r)).not.toBeNull()
+      expect(Math.min(...r.trace.map((s) => s.up))).toBeGreaterThan(0)
+    } finally { dispose(r) }
+  })
+})
+
 describe('liquid forces', () => {
   it('are zero when no part of the hull or wings is in the liquid', async () => {
     const { harness } = await import('../vehicles2/harness')
