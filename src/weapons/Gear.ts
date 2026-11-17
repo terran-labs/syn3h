@@ -191,6 +191,12 @@ export class GearRack implements System {
     return () => this.listeners.delete(listener)
   }
 
+  /** Press the tag control for exactly one physics step: the touch Tag stick's shot on release. */
+  tap(): void {
+    this.game.input.external.fire = true
+    this.pulse = true
+  }
+
   fixedUpdate(): void {
     // A one press action holds the tag control for exactly the step that sees it.
     if (this.pulse && this.game.input.state.fire) {
