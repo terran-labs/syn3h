@@ -103,6 +103,11 @@ export interface RoomSnapshot {
    */
   modes?: number
   /**
+   * The room's log tag (server/log.ts roomTag), never its name. The Durable Object reads it
+   * after an eviction, when an alarm finds no sockets and no room in memory to ask.
+   */
+  tag?: string
+  /**
    * 2 once a world's day length defaults to its orbit. A snapshot without it stored the old
    * default, a stopped clock (0), for every room whether or not anyone chose it: that 0 is
    * dropped, so the room takes its planet's orbit day like a room that stored nothing.
@@ -640,7 +645,7 @@ export class Room {
   snapshot(): RoomSnapshot {
     return {
       params: Object.fromEntries(this.values), it: this.it, scores: { ...this.scores }, nextId: this.nextId,
-      host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant, modes: 2, days: 2,
+      host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant, modes: 2, days: 2, tag: this.tag,
       ...(this.rejoinOn() ? { roster: this.roster() } : {}),
       race: { state: this.race, deadline: this.raceDeadline, cooldownUntil: this.raceCooldownUntil, lastId: this.lastRaceId },
     }
