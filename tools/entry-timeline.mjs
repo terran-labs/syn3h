@@ -54,7 +54,14 @@ function install() {
     nodes[name] = (renderObject, ...rest) => {
       const fresh = !nodes.get(renderObject).nodeBuilderState
       const t = performance.now(), out = original(renderObject, ...rest), ms = performance.now() - t
-      if (fresh && ms > 1) { const o = renderObject.object, m = renderObject.material; let p = o, path = []; while (p && path.length < 4) { if (p.name) path.push(p.name); p = p.parent } rec.builds.push({ at: t, ms, what: `${m.type}${m.name ? ` "${m.name}"` : ''} on ${o.type}${path.length ? ` ${path.join('<')}` : ''}` }) }
+      if (fresh && ms > 1) {
+        const o = renderObject.object, m = renderObject.material; let p = o, path = []; while (p && path.length < 4) { if (p.name) path.push(p.name); p = p.parent }
+        // A bot's own build (its vehicle, or one leaving): arrivals are judged on these, not on
+        // world content first drawn in the same seconds.
+        const bots = window.syn3h.bots, own = new Set([...(bots?.vehicles ?? []), ...(bots?.leaving?.keys?.() ?? [])].map(v => v.object))
+        let q = o, bot = false; while (q) { if (own.has(q)) { bot = true; break } q = q.parent }
+        rec.builds.push({ at: t, ms, bot, what: `${m.type}${m.name ? ` "${m.name}"` : ''} on ${o.type}${path.length ? ` ${path.join('<')}` : ''}` })
+      }
       return out
     }
   }
@@ -197,7 +204,9 @@ async function run(index) {
     // An arrival's own frames: the worst in the 1.5 s after it was asked for (build, first draw, cloud).
     const after = l.action === 'add' ? rec.frames.filter(f => f.at >= l.at && f.at < l.at + 1500) : []
     const worst = after.length ? Math.max(...after.map(f => f.ms)) : null
-    console.log(`  bot ${l.action} at drivable+${(l.at - rec.drivable).toFixed(0)} with ${l.have}${l.p90 ? `: p90 ${l.p90.toFixed(1)} ms, mean ${l.meanMs.toFixed(1)} ms, target ${l.targetMs.toFixed(1)} ms` : ''}${worst !== null ? `; worst frame in the next 1.5 s ${worst.toFixed(0)} ms, ${after.filter(f => f.ms > 33).length} over 33` : ''}`)
+    const builds = l.action === 'add' ? rec.builds.filter(b => b.at >= l.at && b.at < l.at + 1500) : []
+    const ms = list => list.reduce((t, b) => t + b.ms, 0).toFixed(0)
+    console.log(`  bot ${l.action} at drivable+${(l.at - rec.drivable).toFixed(0)} with ${l.have}${l.p90 ? `: p90 ${l.p90.toFixed(1)} ms, mean ${l.meanMs.toFixed(1)} ms, target ${l.targetMs.toFixed(1)} ms` : ''}${worst !== null ? `; worst frame in the next 1.5 s ${worst.toFixed(0)} ms, ${after.filter(f => f.ms > 33).length} over 33; builds then: the bot's ${ms(builds.filter(b => b.bot))} ms, other ${ms(builds.filter(b => !b.bot))} ms` : ''}`)
   }
   const long = [...entry.set.map(f => ({ ...f, span: 'entry' })), ...exit.set.map(f => ({ ...f, span: 'exit' }))].map(f => ({ ...f, busy: busyOf(f) })).filter(f => f.ms > 50 || (index2 && f.busy > 25)).sort((a, b) => index2 ? b.busy - a.busy : b.ms - a.ms)
   for (const f of long) {
