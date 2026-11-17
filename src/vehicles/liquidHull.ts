@@ -158,7 +158,13 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
     s.lift += (Math.max(Math.sqrt(effort), moving) * atSurface - s.lift) * (1 - Math.exp(-dt / 0.3))
     lifted = s.lift
     buoyancy = p.sink + (p.buoyancy - p.sink) * lifted
-    coasting = (p.coast ?? 0) * (1 - effort) * (input.brakes ? 2.5 : 1)
+    // Coasting drag stops a hull moving through the water, sinking or not, but not one resting
+    // on the bed: a sunk buggy dragged along by a tow feels the bed and the water, not a plough.
+    // (Gating it on the surface instead let a coasting buggy that had just gone under glide on.)
+    const reachDown = HULL.bottom - 1.2 * Math.max(0, (input.wheel?.radius ?? 0.5) - 0.5)
+    const clearance = pos.y + reachDown - terrain.heightAt(pos.x, pos.z)
+    const onBed = 1 - THREE.MathUtils.smoothstep(clearance, 0.6, 1.2)
+    coasting = (p.coast ?? 0) * (1 - effort) * (input.brakes ? 2.5 : 1) * (1 - onBed)
   }
   // Big tyres are big floats and big paddles: the columns spread with the hubs and reach down
   // with the tyres, and the paddles push in proportion to the tyre's reach.
