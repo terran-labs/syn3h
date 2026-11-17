@@ -259,6 +259,29 @@
       html[data-intro] .boot-status { position: fixed; left: 0; right: 0; top: calc(50% + 34px); margin: 0 auto; padding: 0 24px; }
       html[data-intro] .boot-still { position: fixed; left: 0; right: 0; top: calc(50% + 34px + 3.3em); }
       html[data-intro][data-boot="done"] .boot-veil { transition: opacity 0.3s ease, visibility 0s linear 0.3s; }
+      /* ---- Tap to begin (src/ui/TapToBegin.ts). Where sound is blocked, the veil stays up
+         after loading (data-boot="ready"): the point keeps breathing, the loading lines go,
+         and one line saying a tap begins takes their place. The whole screen is the button. */
+      html[data-boot="ready"] .boot-status, html[data-boot="ready"] .boot-still { transition: opacity 0.3s ease; opacity: 0; }
+      .tap-gate {
+        position: fixed; inset: 0; z-index: 1001; display: block; width: 100%; height: 100%; margin: 0; padding: 0;
+        border: 0; border-radius: 0; background: transparent; color: var(--theme-text-primary);
+        font: 500 17px/1.4 Barlow, "Avenir Next", "Segoe UI", system-ui, sans-serif; letter-spacing: 0.02em;
+        cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; outline: none;
+      }
+      .tap-gate-line {
+        position: absolute; left: 0; right: 0; top: calc(50% + 34px); margin: 0 auto; padding: 4px 12px;
+        width: fit-content; max-width: min(26em, calc(100% - 48px)); text-wrap: balance; text-align: center;
+        border-radius: 8px; opacity: 0; transition: opacity 0.6s ease;
+      }
+      /* Calm at rest: it fades in, then breathes slowly, two of the point's breaths to one of its. */
+      .tap-gate.is-shown .tap-gate-line { opacity: 1; animation: tap-gate-pulse 3.6s ease-in-out 0.6s infinite; }
+      .tap-gate.is-leaving .tap-gate-line { opacity: 0; animation: none; transition: opacity 0.25s ease; }
+      /* Focus is put on it for the keyboard, but the ring shows only once Tab is used: WebKit counts
+         that first, programmatic focus as visible and drew a ring round the line at rest. */
+      .tap-gate.is-keyed:focus-visible .tap-gate-line { outline: 2px solid #b6b6b6; outline-offset: 4px; }
+      @keyframes tap-gate-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+      @media (prefers-reduced-motion: reduce) { .tap-gate.is-shown .tap-gate-line { animation: none; } }
       /* While the opening plays, the lobby's own controls (hint, links, settings gear and
          version, update banner) wait; they fade in as it settles.
          The galaxy sets data-opening (src/ui/galaxy/Galaxy.ts); a skip clears it at once. */
