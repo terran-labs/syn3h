@@ -8,6 +8,7 @@
  *
  * Template syntax (src/bots/banter/grammar.ts):
  *   {me}       the speaker's short name ("Temolin")
+ *   {role}     the speaker's role, the rest of its name ("Glacier Courier")
  *   {you}      the bot or player being answered
  *   {subj}     the bot the line is about (the stuck one, the one who spotted something)
  *   {player}   the player concerned (who asked, who jumped, who arrived)
