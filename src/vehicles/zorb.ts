@@ -58,10 +58,24 @@ export const zorbSize = defineParam({ id: 'zorb.size', label: 'Ball size', group
 /** 0 disables zorbing, as the "XORBs Available" toggle did (Messaging.js 67). */
 export const zorbSpeed = defineParam({ id: 'zorb.speed', label: 'Roll speed (m/s²)', group: 'Zorb', scope: 'world', default: 7, min: 0, max: 14, step: 0.1 })
 export const zorbAgility = defineParam({ id: 'zorb.agility', label: 'Sideways agility (m/s²)', group: 'Zorb', scope: 'world', default: 0, min: -7, max: 7, step: 0.1 })
-export const zorbBounce = defineParam({ id: 'zorb.bounce', label: 'Bounciness', group: 'Zorb', scope: 'world', default: 0.5, min: 0, max: 1, step: 0.01 })
+/**
+ * Bounciness, 0 to 2: half of it is the ball's restitution, combined with what it hits by the
+ * larger of the two (Max). Against the ground (restitution 0) that is exactly what the old 0 to 1
+ * slider gave by averaging (b + 0) / 2, so a value saved in a world link behaves as before, and
+ * 2 is a perfect bounce. Rebound height goes as the square: the default 1.75 (restitution .875)
+ * rebounds to about three quarters of the drop; the old default .5 rebounded to 6 percent.
+ * The owner, 16 November 2026: "The zorb should also be substantially bouncier by default."
+ */
+export const zorbBounce = defineParam({ id: 'zorb.bounce', label: 'Bounciness (2 is a perfect bounce)', group: 'Zorb', scope: 'world', default: 1.75, min: 0, max: 2, step: 0.01 })
+/** The ball's restitution for a bounciness slider value (see zorbBounce). */
+export const zorbRestitution = (bounce: number): number => Math.min(1, Math.max(0, bounce / 2))
 // Not in the original. Space inside the ball: a hop and a pulse of the shield (see `hold`).
-/** Height a hop lifts the ball under normal gravity. A velocity change, so every vehicle mass hops the same. */
-export const zorbHopHeight = defineParam({ id: 'zorb.hopHeight', label: 'Hop height (m)', group: 'Zorb', scope: 'world', default: 1.5, min: 0, max: 6, step: 0.1 })
+/**
+ * Height a hop lifts the ball, under any gravity: a velocity change of sqrt(2 g h), so every
+ * vehicle mass hops the same and a low-gravity world changes the hang time, not the height.
+ * The owner, 16 November 2026: "it needs to actually lift the vehicle more, pop it around."
+ */
+export const zorbHopHeight = defineParam({ id: 'zorb.hopHeight', label: 'Hop height (m)', group: 'Zorb', scope: 'world', default: 4.5, min: 0, max: 12, step: 0.1 })
 export const zorbHopCooldown = defineParam({ id: 'zorb.hopCooldown', label: 'Time between hops (s)', group: 'Zorb', scope: 'world', default: 0.5, min: 0, max: 3, step: 0.05 })
 export const zorbAirHops = defineParam({ id: 'zorb.airHops', label: 'Hop in mid-air', group: 'Zorb', scope: 'world', default: false })
 /** Extra shield brightness at the peak of a hop's pulse; it eases back like an impact flare. */
@@ -87,6 +101,8 @@ export const ZORB_RELEASE_RADIUS = 1
 const MIN_RADIUS = 0.05
 /** A hop counts the ball as on a liquid while its base is within this many metres of the surface. */
 const HOP_LIQUID_REACH = 0.5
+/** Spin (rad/s) a full hop gives the ball, so the vehicle tumbles inside it. */
+const HOP_TUMBLE = 3
 /** How far the shield swells at the peak of a hop's pulse, as a fraction of the radius. */
 const PULSE_SWELL = 0.12
 /** Rate per second the swell eases back. */
@@ -165,6 +181,8 @@ export class ZorbBall {
   private armed = false
   private hopCooldown = 0
   private hopPending = false
+  /** Spin to add on the step after a hop (see applyHop). */
+  private readonly tumble = new THREE.Vector3()
 
   constructor(
     private readonly world: RAPIER.World,
@@ -210,7 +228,8 @@ export class ZorbBall {
           .setTranslation(this.offset.x, this.offset.y, this.offset.z)
           .setDensity(0)
           .setFriction(ZORB_FRICTION)
-          .setRestitution(zorbBounce.value)
+          .setRestitution(zorbRestitution(zorbBounce.value))
+          .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Max)
           .setCollisionGroups(groups(GROUP_VEHICLE, GROUP_ALL)),
         this.body,
       )
@@ -226,7 +245,7 @@ export class ZorbBall {
     // Settings.js 1691: zorbPhysics.bounciness = zorbBounce, live.
     if (this.restitution !== zorbBounce.value) {
       this.restitution = zorbBounce.value
-      this.collider.setRestitution(this.restitution)
+      this.collider.setRestitution(zorbRestitution(this.restitution))
     }
   }
 
@@ -283,19 +302,45 @@ export class ZorbBall {
 
   /**
    * The hop's lift, after the controller (so a controller that integrates its own velocity
-   * does not overwrite it). A velocity change of sqrt(2 g h) on top of any upward motion, so
-   * every vehicle mass rises about `zorb.hopHeight`. Only bodies simulated here.
+   * does not overwrite it). Only bodies simulated here.
+   *
+   * A pop: a velocity change along the surface normal blended with world up (on a slope it
+   * kicks the ball off the slope, not straight up), sized so the ball rises `zorb.hopHeight` at
+   * any gravity and mass. It brings the upward speed to sqrt(2 g h) and never adds to upward
+   * motion beyond that, so a hop timed on a bounce cannot climb higher and higher. Rolling
+   * momentum carries on, and a tumble set spinning about the travel direction's side axis makes
+   * the vehicle visibly turn over inside the shield through the hop.
    */
   private applyHop(): void {
+    // The tumble goes on a step after the lift, once the ball is off the ground: spun while
+    // still pressed into it, friction turned some of the lift into rolling.
+    if (this.tumble.lengthSq() > 0) {
+      if (this.collider && !this.body.isKinematic()) { const w = this.body.angvel(); this.body.setAngvel({ x: w.x + this.tumble.x, y: w.y, z: w.z + this.tumble.z }, true) }
+      this.tumble.set(0, 0, 0)
+    }
     if (!this.hopPending) return
     this.hopPending = false
     if (!this.collider || this.body.isKinematic()) return
     const g = Math.max(0.1, -this.world.gravity.y)
     const v = this.body.linvel()
-    const up = Math.max(0, v.y) + Math.sqrt(2 * g * zorbHopHeight.value) - v.y
-    this.body.applyImpulse({ x: 0, y: up * this.body.mass(), z: 0 }, true)
-    // Not a collision: keep the hop out of the impact flare (`observe`).
-    this.lastVelocity.y += up
+    const launch = Math.sqrt(2 * g * zorbHopHeight.value)
+    // contactDir points from the centre to the ground: its reverse is the surface normal.
+    const kick = tmpV.set(0, 1, 0)
+    if (this.contact > 0) kick.addScaledVector(this.contactDir, -1)
+    kick.normalize()
+    if (kick.y < 0.5) kick.set(0, 1, 0)
+    const s = Math.max(0, launch - v.y) / kick.y
+    if (s > 0) {
+      this.body.applyImpulse({ x: kick.x * s * this.body.mass(), y: kick.y * s * this.body.mass(), z: kick.z * s * this.body.mass() }, true)
+      // Not a collision: keep the hop out of the impact flare (`observe`).
+      this.lastVelocity.addScaledVector(kick, s)
+      // Tumble: a forward roll about the side axis of travel (of the body's own side at rest).
+      const travel = tmpN.set(v.x, 0, v.z)
+      if (travel.lengthSq() < 1) { const r = this.body.rotation(); travel.set(0, 0, -1).applyQuaternion(tmpQ.set(r.x, r.y, r.z, r.w)).setY(0) }
+      if (travel.lengthSq() > 1e-6) {
+        this.tumble.copy(travel.normalize().cross(tmpC.set(0, 1, 0))).multiplyScalar(-HOP_TUMBLE * Math.min(1, s / launch))
+      }
+    }
   }
 
   /**
@@ -424,6 +469,7 @@ export class ZorbBall {
     this.masked = false
     this.armed = false
     this.hopPending = false
+    this.tumble.set(0, 0, 0)
     this.onLiquid = false
   }
 }
