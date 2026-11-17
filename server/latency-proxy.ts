@@ -18,6 +18,7 @@
  */
 import { createServer, request } from 'node:http'
 import { WebSocket, WebSocketServer, type RawData } from 'ws'
+import { delayedSender } from './latencyDelay'
 
 function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(`--${name}`)
@@ -48,22 +49,6 @@ function afterStall(t: number): number {
   return t - started >= stallEvery && into < stall ? t - into + stall : t
 }
 
-/** Delivers messages after the configured delay without ever reordering them. */
-function delayedSender(send: (data: RawData, binary: boolean) => void) {
-  let last = 0
-  return (data: RawData, binary: boolean) => {
-    let hold = 0
-    if (loss > 0 && Math.random() < loss) {
-      hold = rto
-      for (let n = 0; n < 3 && Math.random() < loss; n++) hold *= 2
-    }
-    // `last` keeps the order: whatever is behind a held message waits for it.
-    const due = afterStall(Math.max(last, Date.now() + rtt / 2 + Math.random() * jitter + hold))
-    last = due
-    setTimeout(() => send(data, binary), due - Date.now())
-  }
-}
-
 const http = createServer((req, res) => {
   const up = request(
     { host: target.hostname, port: target.port, path: req.url, method: req.method, headers: { ...req.headers, host: target.host } },
@@ -85,8 +70,10 @@ http.on('upgrade', (req, socket, head) => {
     const proto = target.protocol === 'https:' ? 'wss:' : 'ws:'
     const upstream = new WebSocket(`${proto}//${target.host}${req.url ?? '/'}`)
     const pending: [RawData, boolean][] = []
-    const toUp = delayedSender((d, b) => upstream.readyState === WebSocket.OPEN && upstream.send(d, { binary: b }))
-    const toClient = delayedSender((d, b) => client.readyState === WebSocket.OPEN && client.send(d, { binary: b }))
+    // In order, always: see server/latencyDelay.ts.
+    const delay = { rtt, jitter, loss, rto, afterStall }
+    const toUp = delayedSender((d: RawData, b: boolean) => { if (upstream.readyState === WebSocket.OPEN) upstream.send(d, { binary: b }) }, delay)
+    const toClient = delayedSender((d: RawData, b: boolean) => { if (client.readyState === WebSocket.OPEN) client.send(d, { binary: b }) }, delay)
     client.on('message', (d, b) => (upstream.readyState === WebSocket.OPEN ? toUp(d, b) : pending.push([d, b])))
     upstream.on('open', () => { for (const [d, b] of pending.splice(0)) toUp(d, b) })
     upstream.on('message', (d, b) => toClient(d, b))
