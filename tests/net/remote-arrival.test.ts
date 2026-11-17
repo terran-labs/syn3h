@@ -46,6 +46,16 @@ describe('remote vehicle arrival callback', () => {
     f.net.spawnRemote(f.info, { p: [1, 2, 3], q: [0, 0, 0, 1] })
     expect(f.callback).not.toHaveBeenCalled()
   })
+  it('gives a copy whose kind arrives after it spawned the announced body', () => {
+    const f = fixture()
+    f.net.remotes.clear()
+    f.net.groundAt = undefined
+    vi.mocked(createVehicle).mockReturnValueOnce(vehicle('buggy') as any)
+    f.net.spawnRemote({ ...f.info, kind: 'buggy' }, { p: [1, 2, 3], q: [0, 0, 0, 1] })
+    f.net.applyProfile(f.info)
+    expect(vi.mocked(createVehicle).mock.calls.map(c => c[2])).toEqual(['buggy', 'jet'])
+    expect(f.net.remotes.get(2).vehicle).toBe(f.replacement)
+  })
   it('keeps the replacement when a cosmetic callback throws', () => {
     const f = fixture()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})

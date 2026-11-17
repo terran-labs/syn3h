@@ -190,6 +190,11 @@ export class Composer {
   private degree = 0
   private accents: readonly number[] = BASS_ACCENTS[0]
   private risen = false
+  /**
+   * Which sections may begin when the arc moves on. The conductor narrows this while the piece
+   * builds (arc.ts): early on only `still` is open, so the music stays bare. A cue still jumps.
+   */
+  allow: (role: Role) => boolean = () => true
 
   constructor(seed: number) {
     this.random = seeded(seed)
@@ -280,6 +285,12 @@ export class Composer {
     this.accents = this.pick(BASS_ACCENTS)
   }
 
+  /** The next section in the arc that is open; `still` if none is. */
+  private nextOpen(): Role {
+    for (let k = 1; k <= ROLES.length; k++) { const role = ROLES[(((this.cycle + k) % ROLES.length) + ROLES.length) % ROLES.length]; if (this.allow(role)) return role }
+    return 'still'
+  }
+
   /** What plays on the next sixteenth. */
   step(mood: Mood): Step {
     const i = unit(mood.intensity), level = levels(mood)
@@ -292,7 +303,7 @@ export class Composer {
       this.position = this.jump.at; this.jump = null
     } else if (this.position % STEPS_PER_CHORD === 0) {
       const target = modeFor(mood.darkness, Math.max(0, this.modeIndex))
-      if (this.position >= STEPS_PER_SECTION) this.newSection(target)
+      if (this.position >= STEPS_PER_SECTION) this.newSection(target, this.nextOpen())
       else if (target !== this.modeIndex) {
         // The mood changed mid-section: turn the harmony now, but stay where we are in the arc.
         turnedDarker = this.modeIndex >= 0 && target > this.modeIndex
@@ -357,11 +368,12 @@ export class Composer {
       }
     }
 
-    // Who sings the theme, and how much of it.
-    //   theme: all four phrases.   climb: the rising third phrase over every chord.
+    // Who sings the theme, and how much of it. The lead leaves long rests: a phrase, then two
+    // bars of nothing, so it is heard as a voice in the distance rather than a constant wail.
+    //   theme: phrases one and three.   climb: the rising third phrase over every other chord.
     //   release: all four, an octave up, with brass.   afterglow: only the closing phrase.
-    const phrase = role === 'theme' || role === 'release' ? this.theme[chordIndex]
-      : role === 'climb' ? this.theme[2]
+    const phrase = role === 'release' || (role === 'theme' && chordIndex % 2 === 0) ? this.theme[chordIndex]
+      : role === 'climb' ? (chordIndex % 2 === 0 ? this.theme[2] : null)
       : role === 'afterglow' && chordIndex % 2 === 1 ? this.theme[3]
       : null
     const sings = role === 'release' ? 1 : role === 'climb' ? 0.6 : role === 'afterglow' ? 0.5 : Math.max(0.5, level.lead)

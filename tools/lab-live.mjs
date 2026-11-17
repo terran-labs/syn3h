@@ -5,7 +5,7 @@
  *   node tools/lab-live.mjs --port 5555
  *
  * It keeps a checkout (a sibling worktree, `lab-live`, on the local branch `lab/live`) that is
- * rebuilt whenever a branch tip moves: reset to trunk (`build/weekend`), then merge each
+ * rebuilt whenever a branch tip moves: reset to trunk (`main`), then merge each
  * `veh/*` branch in turn. A branch that conflicts is skipped and named in
  * labs/live-status.json, which the lab's sidebar shows. Vite serves that checkout and reloads
  * the page when it changes. Nothing here is pushed, tested or shipped: the lab is a developer
@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url'
 const here = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
 const port = args[args.indexOf('--port') + 1] ?? process.env.PASEO_PORT ?? '5555'
-const TRUNK = process.env.LAB_TRUNK ?? 'build/weekend'
+const TRUNK = process.env.LAB_TRUNK ?? 'main'
 const BRANCHES = /^veh\//
 /** Branches that are scratch space for one task, not a lane's line of work. */
 const SKIP = new Set(['veh/vehicle-lab', 'veh/buggy-wheels'])

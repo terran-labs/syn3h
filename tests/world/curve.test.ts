@@ -18,8 +18,10 @@ describe('planet radius', () => {
     expect(curveRadius(SIZE, NaN)).toBe(Infinity)
     expect(curveRadius(SIZE, 0.5)).toBeCloseTo(2 * R, 9)
     expect(2 * Math.PI * curveRadius(SIZE, Math.sqrt(Math.PI))).toBeCloseTo(SIZE, 6)
-    // Drawn larger than true by default, so the centre's mountain shows from the spawn pads.
-    expect(curveParam.def.default).toBe(0.71)
+    // Drawn round but larger than true by default, so the centre's mountain shows from the
+    // spawn pads. The exact value is the owner's to tune (tools/terrainlab/pad-view.ts).
+    expect(curveParam.def.default).toBeGreaterThan(0)
+    expect(curveParam.def.default).toBeLessThan(1)
   })
 })
 

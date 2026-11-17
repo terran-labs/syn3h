@@ -27,6 +27,11 @@ export interface ParamDef<T extends ParamValue = ParamValue> {
   step?: number
   /** Apply when the slider is released, not while dragging (e.g. terrain regeneration). */
   deferred?: boolean
+  /**
+   * Numbers only: how the settings UI shows and takes the value, without changing what is
+   * stored or sent. Shown = (value - offset) * scale; a negative scale reverses the slider.
+   */
+  display?: { offset: number; scale: number }
 }
 
 export interface Param<T extends ParamValue> {

@@ -15,7 +15,7 @@ try{
   const s=window.syn3h,g=s.game,p=s.params;g.renderer.setAnimationLoop(null)
   const T=await import(performance.getEntriesByType('resource').find(r=>r.name.includes('/three_webgpu.js')).name)
   const env=g.systems.find(x=>x.clouds&&x.sunColor),sky=g.scene.children.find(o=>'cloudLayerVisible' in o)
-  for(const id of ['post.gi','post.bloom','post.shafts','post.flare','post.ao','post.contact','post.motionBlur','post.heat','post.plunge','post.look','post.vignette','post.grain'])p.set(id,0)
+  for(const id of ['post.gi','post.bloom','post.shafts','post.flare','post.ao','post.contact','post.motionBlur','post.heat','post.look','post.vignette','post.grain'])p.set(id,0)
   for(const [id,value] of Object.entries({'gfx.level':2,'post.on':true,'post.clouds':1,'world.atmosphere':1,'weather.cloudCoverage':.5,'weather.cloudDensity':.7,'weather.cloudSpeed':0,'sun.dayLength':0,'sun.timeOfDay':12}))p.set(id,value)
   g.camera.position.y=50;g.camera.lookAt(g.camera.position.x,300,g.camera.position.z+600);g.camera.updateMatrixWorld()
   window.__syn3hCurve.updateCurve(g.camera.position,s.terrain.size);env.update(0)

@@ -2,7 +2,9 @@ import * as THREE from 'three/webgpu'
 import type { Game } from '../core/Game'
 import type { Terrain } from '../world/Terrain'
 import { RAPIER, unityTorque } from '../core/physics'
-import { defineParam, worldLavaAltitude } from '../../shared/params'
+import { defineParam } from '../../shared/params'
+import { defaultPreset, definePresets } from '../../shared/presets'
+import { seaLevel } from '../world/seaLevel'
 import { Vehicle } from './Vehicle'
 import { UnityBody } from './unityBody'
 import { GameHover } from './hover/GameHover'
@@ -33,6 +35,13 @@ export const hoverGrip = defineParam({id:'hover.grip',label:'Glide sideways grip
 export const hoverDrag = defineParam({id:'hover.drag',label:'Glide air drag',group:'Hovercraft',scope:'world',default:.2,min:.02,max:.6,step:.01})
 /** Lean into a turn at full steering, in degrees. */
 export const hoverBank = defineParam({id:'hover.bank',label:'Glide bank angle (deg)',group:'Hovercraft',scope:'world',default:12,min:0,max:35,step:1})
+/** Handling presets for the Hovercraft's Handling dropdown. Default is the settings above. */
+const HOVER_HANDLING = ['hover.assist', 'hover.turnRate', 'hover.grip', 'hover.drag', 'hover.thrust', 'hover.brakeTime']
+export const HOVER_PRESETS = definePresets('Hovercraft', [
+  defaultPreset(HOVER_HANDLING, 'Default', 'The glide the owner chose on 14 November: lively turns and quick to top speed.'),
+  { name: 'Gentle', description: 'The glide as it first shipped: slower turns, more slide, gentler thrust and brakes.', values: { 'hover.assist': 1, 'hover.turnRate': 46, 'hover.grip': 0.8, 'hover.drag': 0.12, 'hover.thrust': 220, 'hover.brakeTime': 1 } },
+  { name: 'Raw', description: 'No glide assistance: the original hovercraft controller, floating and drifting on its own.', values: { 'hover.assist': 0, 'hover.turnRate': 70, 'hover.grip': 1.5, 'hover.drag': 0.2, 'hover.thrust': 320, 'hover.brakeTime': 1.5 } },
+])
 
 /**
  * The hovercraft's body: one generated design (src/vehicles/hover/lowwing.ts), with its
@@ -109,7 +118,7 @@ export class Hovercraft extends Vehicle {
     let distance = hit?.timeOfImpact ?? Infinity
     let normal = hit ? new THREE.Vector3().copy(hit.normal) : new THREE.Vector3(0,1,0)
     // Hovercraft.js 34-38 treats the nearest liquid plane as supporting terrain.
-    const liquidDistance = Math.max(0,position.y-(this.terrain.liquidHeightAt?.(position.x,position.z)??worldLavaAltitude.value))
+    const liquidDistance = Math.max(0,position.y-(this.terrain.liquidHeightAt?.(position.x,position.z)??seaLevel()))
     if (liquidDistance < 30 && liquidDistance < distance) {distance = liquidDistance; normal.set(0,1,0)}
     if (distance <= 30) {
       // Hovercraft.js 40-43: duck toward five metres under an overhang.

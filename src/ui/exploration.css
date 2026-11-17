@@ -65,7 +65,6 @@
 .syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 12px; padding: 5px 0; background: none; border-bottom: 1px solid var(--s3-line-quiet); }
 .syn3h-shell.exploration-ui .rail-player-body button { min-height: 30px; padding: 5px 8px; font-size: 11px; margin: 5px 5px 5px 0; }
 .syn3h-shell.exploration-ui .rail-diagnostics, .syn3h-shell.exploration-ui .rail-music { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; }
-.syn3h-shell.exploration-ui .rail-diagnostics input { width: 14px; height: 14px; }
 /* Tooltips sit outside the rail so internal scroll containers cannot clip them. */
 .syn3h-shell.exploration-ui .wi-tooltip { position: fixed; z-index: 60; max-height: calc(100dvh - 24px); overflow: auto; padding: 12px; font: 12px/1.5 'Barlow',sans-serif; border-left: 1px solid #b1eaff; }
 .syn3h-shell.exploration-ui .wi-tooltip[hidden] { display: none; }
@@ -81,8 +80,12 @@
 /* The owner wants the map at least 80% opaque in the centre. Opacity, this feathering mask
    and the focus fade below multiply, so the product is what counts: .94 here, .94 x .92 = .86
    with the cursor captured. tests/ui/minimap-opacity.mjs measures it from pixels. */
-.syn3h-shell.exploration-ui .shell-minimap canvas { width: 100%; height: 100%; opacity: .94; -webkit-mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 70%,transparent 100%); mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 70%,transparent 100%); }
-.syn3h-shell.exploration-ui .shell-minimap::after { content: ''; position: absolute; inset: 24px; border: 1px solid rgb(175 225 250 / .2); border-radius: 50%; box-shadow: 0 0 14px rgb(100 200 250 / .06); }
+/* The terrain ends at the rim ring; the band outside it holds the dots for vehicles beyond
+   the map, unmasked (.shell-minimap-marks). The ring's inset is a share of the size, so the band is
+   the same proportion at every size: Minimap.ts RIM = 1 - 2 * 11.5%. */
+.syn3h-shell.exploration-ui .shell-minimap canvas { width: 100%; height: 100%; opacity: .94; -webkit-mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 68%,transparent 78%); mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 68%,transparent 78%); }
+.syn3h-shell.exploration-ui .shell-minimap canvas.shell-minimap-marks { opacity: 1; -webkit-mask-image: none; mask-image: none; }
+.syn3h-shell.exploration-ui .shell-minimap::after { content: ''; position: absolute; inset: 11.5%; border: 1px solid rgb(175 225 250 / .2); border-radius: 50%; box-shadow: 0 0 14px rgb(100 200 250 / .06); }
 .syn3h-shell.exploration-ui .shell-minimap span { top: 13px; left: 50%; right: auto; color: #b1eaff; font: 10px 'Barlow',sans-serif; letter-spacing: .15em; text-shadow: 0 0 8px #6bc5f1; }
 .syn3h-shell.exploration-ui.is-playing .focus-hud { opacity: .7; }
 .syn3h-shell.exploration-ui.is-focus .focus-hud { opacity: 1; }
@@ -234,6 +237,12 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 :root .syn3h-shell .zorb-toggle b { font-weight: 500; opacity: .62; }
 :root .syn3h-shell .zorb-toggle[aria-pressed=true] { border-color: var(--s3-accent-2, #9fe0ff); }
 :root .syn3h-shell .zorb-toggle[aria-pressed=true] b { opacity: 1; color: var(--s3-accent-2, #9fe0ff); }
+/* A small copy of the standard switch: knob left on a dim track when off, right on cyan when on. */
+:root .syn3h-shell .zorb-toggle .zorb-switch { position: relative; width: 26px; height: 14px; flex: none; border-radius: 999px; border: 1px solid rgb(173 224 247 / .4); background: rgb(2 10 18 / .6); transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease; }
+:root .syn3h-shell .zorb-toggle .zorb-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; border-radius: 50%; background: rgb(150 176 192); transition: translate .16s ease, background-color .16s ease; }
+:root .syn3h-shell .zorb-toggle[aria-pressed=true] .zorb-switch { border-color: rgb(214 246 255 / .95); background: var(--s3-accent, #83d9f5); box-shadow: 0 0 8px rgb(131 217 245 / .55); }
+:root .syn3h-shell .zorb-toggle[aria-pressed=true] .zorb-switch::after { translate: 12px 0; background: #fff; }
+@media (prefers-reduced-motion: reduce) { :root .syn3h-shell .zorb-toggle .zorb-switch, :root .syn3h-shell .zorb-toggle .zorb-switch::after { transition: none; } }
 /* Driving with the cursor captured: the drum is shorter, and the pill is a reminder, not a target. */
 :root .syn3h-shell.is-focus .zorb-toggle { top: calc(var(--gear-top, 50%) + 92px); opacity: .84; pointer-events: none; }
 /* Touch has its own ZORB button beside the other drive buttons. */
@@ -298,11 +307,6 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 }
 
 /* Vehicle choice and colours are the first controls inside their dedicated card. */
-.syn3h-shell.exploration-ui .world-inspector .wi-vehicle { display: flex; align-items: end; gap: 8px; padding: 8px 2px 12px; }
-.syn3h-shell.exploration-ui .world-inspector .wi-vehicle > label { flex: 1; min-width: 0; font-size: 12px; color: var(--s3-soft); }
-.syn3h-shell.exploration-ui .world-inspector .wi-vehicle-select { display: block; width: 100%; height: 44px; min-height: 44px; font-size: 16px; margin-top: 4px; }
-.syn3h-shell.exploration-ui .world-inspector .wi-tint { display: flex; flex: 0 0 auto; }
-.syn3h-shell.exploration-ui .world-inspector label.wi-swatch { display: grid; place-items: center; width: 44px; height: 44px; margin: 0; cursor: pointer; }
 /* A slow-rendering notice has its own space, away from the mode cards at the top. */
 .syn3h-shell.exploration-ui .performance-recommendation { top: auto; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; width: min(360px, calc(100vw - 32px)); max-width: none; transform: translateX(-50%); box-sizing: border-box; }
 .syn3h-shell.exploration-ui .performance-recommendation button { min-height: 44px; padding: 5px 8px; font-size: 12px; }

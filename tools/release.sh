@@ -28,6 +28,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 . tools/cloudflare-token.sh
+. tools/smoke-run.sh
 # A release builds, runs wrangler and two Chromes: hold one machine-wide heavy slot throughout.
 if [ -z "${SYN3H_RELEASE_SLOT:-}" ] && [ -x tools/heavy.sh ]; then
   SYN3H_RELEASE_SLOT=1 exec tools/heavy.sh env SYN3H_RELEASE_SLOT=1 "$(pwd)/tools/release.sh" "$@"
@@ -132,7 +133,7 @@ else
   # An HTTP 200 can still be an older edge deployment. Wait for this exact entry bundle
   # before gameplay acceptance, retaining every mismatch for rollout diagnostics.
   tries=0
-  until node tools/check-public-build.mjs "$URL" "$DEST" >>"$LOG-assets.log" 2>&1; do
+  until node tools/check-public-build.mjs "$URL" "$DEST" --feed >>"$LOG-assets.log" 2>&1; do
     tries=$((tries + 1))
     [ "$tries" -lt 30 ] || { cat "$LOG-assets.log"; fail "public entry bundle did not match frozen build"; }
     sleep 2
@@ -150,8 +151,7 @@ tail -1 "$LOG-frozen.log"
 echo "Smoke testing $URL ..."
 SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.XXXXXX)" || fail "could not reserve smoke evidence directory"
 echo "Shot evidence: $SHOT_PARENT/evidence ($URL)"
-SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "$URL" 2>&1 | tee "$LOG-smoke.log" | grep -E "^(FAIL|RETRY|NET SMOKE)" || true
-grep -q "^NET SMOKE OK" "$LOG-smoke.log" || fail "net-smoke failed against $URL (see $LOG-smoke.log)"
+run_smoke "$URL" "$LOG-smoke.log" "$SHOT_PARENT/evidence" || fail "net-smoke failed against $URL (see $LOG-smoke.log)"
 # Steps passed, connection drops ridden through and step retries, for the release ledger.
 SMOKE_SUMMARY="$(grep '^NET SMOKE SUMMARY ' "$LOG-smoke.log" | tail -1 | sed 's/^NET SMOKE SUMMARY //')"
 
@@ -162,8 +162,7 @@ if [ -n "$DRY" ]; then
   echo "Smoke testing through 150 ms round trip with 0 to 30 ms jitter each way..."
   SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-latency.XXXXXX)" || fail "could not reserve latency evidence directory"
   echo "Shot evidence: $SHOT_PARENT/evidence (latency)"
-  SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "http://127.0.0.1:$PROXY_PORT/" 2>&1 | tee "$LOG-smoke-latency.log" | grep -E "^(FAIL|NET SMOKE)" || true
-  grep -q "^NET SMOKE OK" "$LOG-smoke-latency.log" || fail "net-smoke failed with latency (see $LOG-smoke-latency.log)"
+  run_smoke "http://127.0.0.1:$PROXY_PORT/" "$LOG-smoke-latency.log" "$SHOT_PARENT/evidence" || fail "net-smoke failed with latency (see $LOG-smoke-latency.log)"
   echo
   echo "DRY RUN OK: $MILESTONE ($COMMIT) frozen as $ID is deployable. Nothing was deployed or tagged."
   echo "Note: this repointed ../Syn3h-stable/current at $ID."
@@ -174,7 +173,7 @@ fi
 # A workers.dev pass does not establish that the owner-facing domain serves the same assets.
 PRIMARY_URL="https://www.syn3h.com/"
 tries=0
-until node tools/check-public-build.mjs "$PRIMARY_URL" "$DEST" >>"$LOG-primary-assets.log" 2>&1; do
+until node tools/check-public-build.mjs "$PRIMARY_URL" "$DEST" --feed >>"$LOG-primary-assets.log" 2>&1; do
   tries=$((tries + 1))
   [ "$tries" -lt 30 ] || { cat "$LOG-primary-assets.log"; fail "primary entry bundle did not match frozen build"; }
   sleep 2
@@ -209,7 +208,8 @@ echo "- release-$N, $WHEN: $URL from $MILESTONE ($COMMIT), Worker version $VERSI
 if ! (
   printf '%s\t%s\t%s\t%s\tproduction\n' "$CALVER" "$MILESTONE" "$COMMIT" "$WHEN" >> release-notes/history.tsv || exit 1
   git tag -a "$CALVER" -m "Syn3h $CALVER ($MILESTONE, release-$N)" || exit 1
-  node tools/release-notes.mjs draft "$CALVER" "${PREV:-m00-proposal}" "release-$N"
+  # Notes are written and committed before the tag now; draft only when there are none.
+  [ -f "release-notes/releases/$CALVER.md" ] || node tools/release-notes.mjs draft "$CALVER" "${PREV:-m00-proposal}" "release-$N"
 ); then
   echo "Warning: release is live; calendar tag or notes need repair. Inspect history before retrying."
 fi

@@ -6,7 +6,7 @@ Later explicit owner decisions take precedence over historical notes.
 
 ## 1. One trunk, one merger
 
-`build/weekend` is the only integration branch and the Orchestrator is the only thread that
+`main` is the only integration branch and the Orchestrator is the only thread that
 merges into it. Everyone else commits to their own branch in their own worktree and hands
 off by message. Nobody but the Orchestrator edits the integration checkout.
 
@@ -20,7 +20,7 @@ to every lane that consumes it.
 
 ## 3. One gate, the same for everyone
 
-A handoff is ready when, on the lane branch with `build/weekend` merged in first:
+A handoff is ready when, on the lane branch with `main` merged in first:
 
 1. `npm run typecheck` passes.
 2. The lane's own test folder passes (`npx vitest run tests/<lane>`).
@@ -100,7 +100,7 @@ relay of the above.
 ## 8. State lives in files, not in a context window
 
 The Orchestrator's thread was 71 percent through its context when this was written. It
-keeps `ops/STATE.md` on `build/weekend` current at every milestone: lanes and their agent
+keeps `ops/STATE.md` on `main` current at every milestone: lanes and their agent
 ids, what each is doing, preview commands, known breakage, and what is owed. A compacted or
 replacement Orchestrator must be able to resume from that file and `ops/BACKLOG.md` alone.
 

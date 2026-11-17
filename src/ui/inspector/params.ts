@@ -8,4 +8,13 @@ export const focusStyle = defineParam<number>({ id: 'hud.focusStyle', label: 'Fo
 export const reticleStyle = defineParam<number>({ id: 'hud.reticle', label: 'Reticle: 0 Dot, 1 Ring, 2 Bracket', group: 'Interface', scope: 'client', default: 1, min: 0, max: 2, step: 1 })
 export const glassStyle = defineParam<number>({ id: 'hud.glass', label: 'Glass: 0 Clear, 1 Frosted, 2 Deep', group: 'Interface', scope: 'client', default: 1, min: 0, max: 2, step: 1 })
 
+/**
+ * How much interface shows over the world while playing on a desktop. Full is the normal
+ * free-cursor view with the panels. Driving is exactly the view shown while the cursor is
+ * captured, with no panels. Hidden shows nothing but the world, for pictures. The key in
+ * src/ui/interfaceMode.ts cycles them and Escape always returns to Full. Touch devices keep
+ * their own tap toggle between the panels and the driving view, so this has no effect there.
+ */
+export const interfaceMode = defineParam<number>({ id: 'hud.mode', label: 'Interface: 0 Full, 1 Driving, 2 Hidden', group: 'Interface', scope: 'client', default: 0, min: 0, max: 2, step: 1 })
+
 export const diagnostics = defineParam({ id: 'hud.diagnostics', label: 'Connection diagnostics', group: 'Interface', scope: 'client', default: false })

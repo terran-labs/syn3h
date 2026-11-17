@@ -8,14 +8,13 @@ import {applyShowroom,setRole} from './showroom'
 import { forceField, type ForceField } from './forceField'
 import { graphicsLevel, levelNumber } from '../../core/quality'
 import * as THREE from 'three/webgpu'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { ModelLoadCancelled, loadModel } from './modelLoader'
 import { abs, attribute, clamp, dot, float, instancedBufferAttribute, length, min, normalView, positionGeometry, positionViewDirection, sin, smoothstep, time, uniform, vec2 } from 'three/tsl'
 import {mergeStatic,registerVehicleDetail,detailLevel} from './mergeStatic'
 import type { BuggySkin } from './BuggySkin'
 import { MotorSparks } from './motorSparks'
 import type Node from 'three/src/nodes/core/Node.js'
 
-const loader = new GLTFLoader()
 const up = new THREE.Vector3(0, 1, 0)
 /** Axle mounts: Unity `axelPos`/`AxelPos` mirrored per wheel, z flipped to our -Z forward. */
 const axleMounts = (x: number, y: number, z: number) =>
@@ -182,6 +181,8 @@ export class LoadedBuggySkin implements BuggySkin {
   private readonly glowMaterials: THREE.MeshStandardMaterial[] = []
   private readonly energyColor = uniform(this.accentColor)
   private readonly wheels = Array.from({length: 4}, () => new THREE.Group())
+  /** Wheel scale from setTyreScale: width along the axle (x), radius in y and z. */
+  private readonly tyreScale = new THREE.Vector3(1, 1, 1)
   private wings: { mesh: THREE.Mesh; base: Float32Array }[] = []
   private wingInput = [0, 0, 0]
   private readonly wingTips: WingTipAnchors[] = []
@@ -210,7 +211,16 @@ export class LoadedBuggySkin implements BuggySkin {
     // Wheel stators and flight wings from the original model; the body, canopy, interior,
     // fittings, suspension arm and shock from the Box arm body (tools/buggy-bodies, variant
     // c2-box), which is the owner's original body reshaped and is already in the game frame.
-    const loaded = await Promise.all([loader.loadAsync(frozenResourceURL('/models/buggy.glb')), loader.loadAsync(frozenResourceURL(BOX_ARM_BODY))])
+    // Retried until both arrive (see modelLoader.ts): a failed request must not leave this
+    // buggy drawn as its primitive box for the rest of the session.
+    const cancelled = () => this.disposed
+    let loaded
+    try {
+      loaded = await Promise.all([loadModel(frozenResourceURL('/models/buggy.glb'), {cancelled}), loadModel(frozenResourceURL(BOX_ARM_BODY), {cancelled})])
+    } catch (error) {
+      if (error instanceof ModelLoadCancelled) return
+      throw error
+    }
     if (this.disposed) { loaded.forEach(g => release(g.scene)); return }
     const scene = loaded[0].scene, next = loaded[1].scene
     // The original model puts its headlight meshes on +Z; our nose points toward -Z.
@@ -391,10 +401,20 @@ export class LoadedBuggySkin implements BuggySkin {
     this.object.visible = true
   }
 
+  /**
+   * Tyre size: scales each wheel's root, so the tyre, rotor ring, stator, glow and sparks all
+   * grow together about the hub. The arm and shock run hub to body and only follow the hub.
+   */
+  setTyreScale(radius: number, width: number): void {
+    this.tyreScale.set(width, radius, radius)
+    this.wheels.forEach((w, i) => this.setWheel(i, w.position, w.rotation.y, this.rollers[i].rotation.x))
+  }
+
   setWheel(index: number, localPosition: THREE.Vector3, steerAngle: number, spinAngle: number): void {
     const wheel = this.wheels[index]
     if (!wheel) throw new RangeError('Wheel index must be 0 to 3')
     wheel.position.copy(localPosition)
+    wheel.scale.copy(this.tyreScale)
     // Same transform as the former single 'YXZ' Euler (steer, then spin), split so the Syn3h
     // stator can steer and travel with the wheel without spinning: Unity's prefab spins only
     // the `Roll` child (tyre and rotor ring), while `Rim` (the stator) sits on the steered root.

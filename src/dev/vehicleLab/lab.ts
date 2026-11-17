@@ -155,7 +155,7 @@ async function main(): Promise<void> {
   let session: Session | null = null
   // Motor sound: the game's own engine voice (src/audio/Engine.ts) for the vehicle on show, so
   // each vehicle's motor can be judged here without driving it. `revs` is 0 at idle, 1 flat out.
-  // It plays the motor alone, as if the wheels were off the ground: no ground rumble, no tyre squeal.
+  // It plays the motor alone, as if the wheels were off the ground: no ground rumble, no tyre scrub.
   let sound: { context: AudioContext; out: GainNode } | null = null
   let motor: { engine: Engine } | null = null
   let revs = .5, force = .6, bumps = 0

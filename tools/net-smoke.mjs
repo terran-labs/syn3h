@@ -28,7 +28,7 @@
 import { randomBytes } from 'node:crypto'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
-import { MAX_STEP_RETRIES, retryDecision, uncleanSince } from './lib/smoke-retry.mjs'
+import { MAX_STEP_RETRIES, isBrowserCrash, isTransportConsoleError, retryDecision, uncleanSince } from './lib/smoke-retry.mjs'
 import { chromium } from 'playwright-core'
 import { createShotEvidence, createShotDecision } from './shot-evidence.mjs'
 
@@ -46,6 +46,10 @@ if (room.length > 32 || !/^[a-z0-9_-]+$/.test(room)) throw new Error('Invalid sm
 console.log('NET SMOKE RUN', JSON.stringify({ base, room }))
 const diagnosticPath = `/tmp/syn3h-net-smoke-${room}.json`
 const clients = []
+/** Pages whose browser process crashed: the machine failed, not the game (see isBrowserCrash). */
+const crashedPages = []
+/** Console errors that are failed WebSocket connections to the room: counted beside the drops. */
+const transportErrors = []
 const shot = '/tmp/syn3h-net-smoke.png'
 
 const browser = await chromium.launch({
@@ -60,8 +64,15 @@ async function open(name, extra = '') {
   const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
   const page = await ctx.newPage()
   clients.push({ name, page })
+  page.on('crash', () => crashedPages.push(name))
   page.on('pageerror', (e) => errors.push(`${name} pageerror: ${e.message}`))
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`${name} console: ${m.text()} at ${m.location().url}`) })
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return
+    const line = `${name} console: ${m.text()} at ${m.location().url}`
+    // The browser's own report of a failed handshake to the room is the network, not the page.
+    if (isTransportConsoleError(m.text(), base)) transportErrors.push(line)
+    else errors.push(line)
+  })
   page.on('response', (r) => { if (r.status() >= 400) console.log(`HTTP ${r.status()} ${r.url()}`) })
   page.on('requestfailed', (r) => console.log(`REQUEST FAILED ${r.url()} ${r.failure()?.errorText}`))
   // A transport error, or a 5xx or 429 for the page itself, is retried twice (after 1 s, then
@@ -194,6 +205,17 @@ function commit(r) {
   console.log(`${r.ok ? 'PASS' : 'FAIL'} ${r.name} ${JSON.stringify(r.detail)}`)
 }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+/**
+ * Read state until `done(value)` holds or `ms` pass, and say how long it took. A check waits for
+ * the state it asserts (a returning tab resumes) instead of sleeping a fixed time and reading
+ * once: on a slow public route or a loaded machine the fixed time was the only thing that failed.
+ */
+async function settle(read, done, ms = 10000) {
+  const start = Date.now()
+  let value = await read()
+  while (!done(value) && Date.now() - start < ms) { await wait(200); value = await read() }
+  return { value, waitedMs: Date.now() - start }
+}
 
 // ---- Steps, and telling the network from the game -------------------------------------------
 // The public address can drop a socket (1006) on a bad route. A step that fails may run once more
@@ -385,11 +407,11 @@ try {
   await H.keyboard.down('KeyW')
   await H.waitForFunction((base) => window.syn3hNet.stats.rams > base, ramsBase[H === a ? 0 : 1], { timeout: 8000 }).catch(() => {})
   await H.keyboard.up('KeyW')
-  await wait(800)
-  const [ramsA, ramsB] = await both(() => window.syn3hNet.stats.rams)
-  const [itA, itB] = await both(() => window.syn3hNet.game.it)
-  check('ram detected', ramsA - ramsBase[0] + ramsB - ramsBase[1] > 0, { ramsA, ramsB, ramsBase })
-  check('ramming passes "it" from A to B', (retried || itBefore === idA) && itA === idV && itB === idV, { itBefore, itA, itB, hunter: idH })
+  const rammed = await settle(async () => [...await both(() => window.syn3hNet.stats.rams), ...await both(() => window.syn3hNet.game.it)],
+    ([rA, rB, iA, iB]) => rA - ramsBase[0] + rB - ramsBase[1] > 0 && iA === idV && iB === idV)
+  const [ramsA, ramsB, itA, itB] = rammed.value
+  check('ram detected', ramsA - ramsBase[0] + ramsB - ramsBase[1] > 0, { ramsA, ramsB, ramsBase, waitedMs: rammed.waitedMs })
+  check('ramming passes "it" from A to B', (retried || itBefore === idA) && itA === idV && itB === idV, { itBefore, itA, itB, hunter: idH, waitedMs: rammed.waitedMs })
 
   // 5. Laser tag. Separate the two so no further contact passes "it" back, wait out the tag
   // cooldown, then the new "it" shoots at where it sees the hunter.
@@ -413,11 +435,11 @@ try {
     if (hit) break
     await wait(400)
   }
-  await wait(600)
-  const hitsA = await H.evaluate(() => window.syn3hNet.stats.hitsTaken)
+  const scored = await settle(() => H.evaluate((id) => [window.syn3hNet.stats.hitsTaken, window.syn3hNet.game.scores[id] ?? 0], idV), ([h, sc]) => h > hitsBase && sc === scoreBefore + 1)
+  const hitsA = scored.value[0]
   const scoreSample = evidenceEnabled ? await H.evaluate((id) => ({value:window.syn3hNet.game.scores[id] ?? 0, at:performance.now(), evidence:window.__shotEvidence.snapshot('human')}), idV) : null
   const scoreAfter = evidenceEnabled ? scoreSample.value : await H.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, idV)
-  check('victim detects the laser hit', hitsA > hitsBase, { hitsA, hitsBase })
+  check('victim detects the laser hit', hitsA > hitsBase, { hitsA, hitsBase, waitedMs: scored.waitedMs })
   const itNow = await H.evaluate(() => window.syn3hNet.game.it)
   check('"it" scores for a laser tag', scoreAfter === scoreBefore + 1, { scoreBefore, scoreAfter, it: itNow })
 
@@ -450,9 +472,10 @@ try {
     s.position.y = window.syn3h.terrain.heightAt(s.position.x, s.position.z) + 1.5
     window.syn3h.player.teleport(s.position, 0)
   })
-  await wait(1500)
-  const tag = await b.evaluate(() => [...document.querySelectorAll('.syn3h-nametags div')].map((d) => ({ text: d.textContent, display: d.style.display, opacity: d.style.opacity })))
-  check('B shows a name tag for A', tag.some((t) => t.text.startsWith('Alice') && t.display === 'block' && Number(t.opacity) > 0.5), tag)
+  const tagged = await settle(() => b.evaluate(() => [...document.querySelectorAll('.syn3h-nametags div')].map((d) => ({ text: d.textContent, display: d.style.display, opacity: d.style.opacity }))),
+    (tags) => tags.some((t) => t.text.startsWith('Alice') && t.display === 'block' && Number(t.opacity) > 0.5))
+  const tag = tagged.value
+  check('B shows a name tag for A', tag.some((t) => t.text.startsWith('Alice') && t.display === 'block' && Number(t.opacity) > 0.5), { tag, waitedMs: tagged.waitedMs })
   await b.screenshot({ path: shot })
   })
 
@@ -463,18 +486,19 @@ try {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
     document.dispatchEvent(new Event('visibilitychange'))
   })
-  await wait(3500)
-  const hiddenView = await a.evaluate((id) => { const r = window.syn3hNet.remotes.get(id); return { paused: r.paused, responding: r.responding } }, idB)
-  const beats = await b.evaluate(() => window.syn3hNet.stats.heartbeats)
-  const hudPaused = await a.evaluate(() => document.getElementById('hud').textContent)
-  check('hidden tab shows as paused, not lost', hiddenView.paused && hiddenView.responding && beats - beatsBase >= 2 && hudPaused.includes('(paused)'), { ...hiddenView, beats, beatsBase })
+  const hid = await settle(async () => ({
+    ...await a.evaluate((id) => { const r = window.syn3hNet.remotes.get(id); return { paused: r.paused, responding: r.responding } }, idB),
+    beats: await b.evaluate(() => window.syn3hNet.stats.heartbeats),
+    hud: await a.evaluate(() => document.getElementById('hud').textContent),
+  }), (v) => v.paused && v.responding && v.beats - beatsBase >= 2 && v.hud.includes('(paused)'))
+  const { hud: hudPaused, ...hiddenView } = hid.value
+  check('hidden tab shows as paused, not lost', hiddenView.paused && hiddenView.responding && hiddenView.beats - beatsBase >= 2 && hudPaused.includes('(paused)'), { ...hiddenView, beatsBase, waitedMs: hid.waitedMs })
   await b.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
     document.dispatchEvent(new Event('visibilitychange'))
   })
-  await wait(1000)
-  const back = await a.evaluate((id) => window.syn3hNet.remotes.get(id).paused, idB)
-  check('returning tab resumes', back === false, { paused: back })
+  const resumed = await settle(() => a.evaluate((id) => window.syn3hNet.remotes.get(id).paused, idB), (paused) => paused === false)
+  check('returning tab resumes', resumed.value === false, { paused: resumed.value, waitedMs: resumed.waitedMs })
 
   })
 
@@ -496,10 +520,12 @@ try {
   if (botMade === true) {
     const BOT = 0xff00
     await b.waitForFunction((id) => window.syn3hNet.remotes.has(id), BOT, { timeout: 8000 }).catch(() => {})
-    await wait(1500)
-    const botView = await b.evaluate((id) => { const r = window.syn3hNet.remotes.get(id); if (!r) return null; const t = r.vehicle.body.translation(); return [t.x, t.y, t.z] }, BOT)
-    const botReal = await a.evaluate(() => { const t = window.__bots.vehicles[0].body.translation(); return [t.x, t.y, t.z] })
-    check('B sees the host\'s bot where it is', botView && d2(botView, botReal) < 2, { botView, botReal })
+    const seen = await settle(async () => [
+      await b.evaluate((id) => { const r = window.syn3hNet.remotes.get(id); if (!r) return null; const t = r.vehicle.body.translation(); return [t.x, t.y, t.z] }, BOT),
+      await a.evaluate(() => { const t = window.__bots.vehicles[0].body.translation(); return [t.x, t.y, t.z] }),
+    ], ([view, real]) => view && d2(view, real) < 2)
+    const [botView, botReal] = seen.value
+    check('B sees the host\'s bot where it is', botView && d2(botView, botReal) < 2, { botView, botReal, waitedMs: seen.waitedMs })
     // Audio hears the other player and the bot on both sides (replica on B, own bot on A).
     const audible = await both(() => window.syn3hNet.audibleVehicles().length)
     check('audio gets the other player and the bot', audible[0] === 2 && audible[1] === 2, { audible })
@@ -515,7 +541,8 @@ try {
       if (ok) break
       await wait(400)
     }
-    await wait(500)
+    await settle(async () => [await a.evaluate(() => window.syn3hNet.stats.hitsJudged), await b.evaluate(() => window.__audioCalls.filter((c) => c === 'laserHit').length)],
+      ([judgedNow, hitsHeard]) => judgedNow > judgedBefore && hitsHeard >= 2)
     const judgedSample = evidenceEnabled ? await a.evaluate(() => ({value:window.syn3hNet.stats.hitsJudged,at:performance.now(),evidence:window.__shotEvidence.snapshot('bot')})) : null
     const judged = evidenceEnabled ? judgedSample.value : await a.evaluate(() => window.syn3hNet.stats.hitsJudged)
     const botSoundSample = evidenceEnabled ? await b.evaluate(() => ({value:window.__audioCalls.filter((c) => c === 'laserHit').length,at:performance.now(),evidence:window.__shotEvidence.snapshot('bot')})) : null
@@ -531,18 +558,17 @@ try {
   // be repeated, so this step never runs twice.
   await step('seed and a late joiner', async () => {
   await a.evaluate(() => window.syn3h.params.set('world.seed', 4242))
-  await wait(2500)
   const onGround = (page) => page.evaluate(() => {
     const p = window.syn3h.player.body.translation()
     return { seed: window.syn3h.params.get('world.seed').value, y: +p.y.toFixed(2), ground: +window.syn3h.terrain.heightAt(p.x, p.z).toFixed(2) }
   })
-  const seedB = await onGround(b)
+  const landed = (v) => v.seed === 4242 && v.y > v.ground - 1 && v.y < v.ground + 6
+  const seedB = (await settle(() => onGround(b), landed)).value
   check('seed reaches B and B stays on the new ground', seedB.seed === 4242 && seedB.y > seedB.ground - 1 && seedB.y < seedB.ground + 6, seedB)
   const c = await open('Carol', '&seed=777')
   await c.waitForFunction(() => window.syn3hNet?.connected, null, { timeout: 30000 })
   ids.set('Carol', await c.evaluate(() => window.syn3hNet.id))
-  await wait(2500)
-  const seedC = await onGround(c)
+  const seedC = (await settle(() => onGround(c), landed)).value
   check('late joiner gets the room seed and lands on that ground', seedC.seed === 4242 && seedC.y > seedC.ground - 1 && seedC.y < seedC.ground + 6, seedC)
 
   }, { retryable: false })
@@ -594,8 +620,9 @@ try {
     await b.screenshot({ path: '/tmp/syn3h-koth-far.png' })
 
     await park(b, 0.3 + 0.15)
-    await wait(1500)
+    await settle(() => b.evaluate(() => window.syn3hNet.game.koth.contested), (c) => c === true)
     const s1 = await score(idA)
+    // A measured window, not a wait for readiness: nobody may score while the hill is contested.
     await wait(2500)
     const s2 = await score(idA)
     const contested = await b.evaluate(() => window.syn3hNet.game.koth.contested)
@@ -613,17 +640,21 @@ try {
         v.set(zone.x, lavaAt - 0.5, zone.z)
         window.syn3h.player.teleport(v, 0)
       }, { zone, lavaAt })
-      await wait(800)
-      const outB = await a.evaluate((id) => window.syn3hNet.game.koth.out[id] ?? 0, idB)
-      const stuck = await b.evaluate(() => ({ count: window.syn3hNet.stats.stuck, visible: window.syn3h.player.object.visible, hud: document.getElementById('hud').textContent.match(/stuck in the lava[^\n]*/)?.[0] ?? null }))
-      const visibleOnA = await a.evaluate((id) => window.syn3hNet.remotes.get(id)?.vehicle.object.visible === true, idB)
-      check('lava sticks B: it sits out of the hill count but stays in the world', stuck.count === stuckBase + 1 && stuck.visible && stuck.hud && outB > 0 && visibleOnA, { stuck, outB, visibleOnA })
-      await wait(3500)
-      const back = await b.evaluate(() => {
+      const sunk = await settle(async () => ({
+        outB: await a.evaluate((id) => window.syn3hNet.game.koth.out[id] ?? 0, idB),
+        stuck: await b.evaluate(() => ({ count: window.syn3hNet.stats.stuck, visible: window.syn3h.player.object.visible, hud: document.getElementById('hud').textContent.match(/stuck in the lava[^\n]*/)?.[0] ?? null })),
+        visibleOnA: await a.evaluate((id) => window.syn3hNet.remotes.get(id)?.vehicle.object.visible === true, idB),
+      }), (v) => v.stuck.count === stuckBase + 1 && v.stuck.visible && v.stuck.hud && v.outB > 0 && v.visibleOnA)
+      const { outB, stuck, visibleOnA } = sunk.value
+      check('lava sticks B: it sits out of the hill count but stays in the world', stuck.count === stuckBase + 1 && stuck.visible && stuck.hud && outB > 0 && visibleOnA, { stuck, outB, visibleOnA, waitedMs: sunk.waitedMs })
+      // The rule's own delay first ("back to your pad in 3 s"): shallow lava can already read as on the ground.
+      await wait(3000)
+      const lifted = await settle(() => b.evaluate(() => {
         const p = window.syn3h.player.body.translation()
         return { visible: window.syn3h.player.object.visible, y: +p.y.toFixed(1), ground: +window.syn3h.terrain.heightAt(p.x, p.z).toFixed(1) }
-      })
-      check('B is lifted back to its pad after the delay', back.visible && back.y > back.ground - 1 && back.y < back.ground + 6, back)
+      }), (v) => v.visible && v.y > v.ground - 1 && v.y < v.ground + 6)
+      const back = lifted.value
+      check('B is lifted back to its pad after the delay', back.visible && back.y > back.ground - 1 && back.y < back.ground + 6, { ...back, waitedMs: lifted.waitedMs })
     } else {
       console.log('SKIP lava: no lava under the zone centre on this terrain')
     }
@@ -666,7 +697,13 @@ check('no page errors', errors.length === 0, errors)
 const failed = results.filter((r) => !r.ok)
 const evidenceFailed = evidenceEnabled && !evidenceComplete()
 // release.sh checks the marker, not Node's exit code. Never print OK for incomplete evidence.
-console.log(`NET SMOKE SUMMARY steps passed ${tally.passed}/${tally.steps}; drops ridden through ${tally.drops.length}${tally.drops.length ? ` (${tally.drops.join(', ')})` : ''}; step retries ${tally.retries}/${MAX_STEP_RETRIES}${tally.legacy ? '; this build records no socket closes, so a dropped connection cannot be told from a game failure and no step was retried' : ''}`)
+console.log(`NET SMOKE SUMMARY steps passed ${tally.passed}/${tally.steps}; drops ridden through ${tally.drops.length}${tally.drops.length ? ` (${tally.drops.join(', ')})` : ''}; connection errors ${transportErrors.length}${transportErrors.length ? ` (${transportErrors.map((t) => t.slice(0, 160)).join(' | ')})` : ''}; step retries ${tally.retries}/${MAX_STEP_RETRIES}${tally.legacy ? '; this build records no socket closes, so a dropped connection cannot be told from a game failure and no step was retried' : ''}`)
+const crashed = crashedPages.length > 0 || failed.some((r) => isBrowserCrash(JSON.stringify(r.detail)))
+// A crash is reported as what it is, never as a gameplay failure; tools/smoke-run.sh may restart once.
+if (crashed) {
+  console.log(`NET SMOKE BROWSER CRASHED (${crashedPages.join(', ') || 'a page'}): the browser running the check crashed; this is not a game or network failure`)
+  process.exit(3)
+}
 console.log(failed.length ? `NET SMOKE FAILED (${failed.length})` : evidenceFailed ? 'NET SMOKE FAILED (incomplete shot evidence)' : `NET SMOKE OK, screenshot ${shot}`)
 if (evidenceEnabled) console.log('SHOT EVIDENCE ACCEPTANCE',JSON.stringify({evidenceComplete:evidenceComplete(),evidenceCaptureState,evidenceCaptureFailures,evidenceWriteFailures}))
 process.exit(failed.length || evidenceFailed ? 1 : 0)

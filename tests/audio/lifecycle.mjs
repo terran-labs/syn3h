@@ -8,7 +8,7 @@ try{
  const audioRequests=[];page.on('request',r=>{if(r.url().includes('/audio/'))audioRequests.push(r.url())})
  page.on('pageerror',e=>errors.push(e.message));const cdp=await page.context().newCDPSession(page),nodes=new Map();cdp.on('WebAudio.audioNodeCreated',({node})=>nodes.set(node.nodeId,node.nodeType));cdp.on('WebAudio.audioNodeWillBeDestroyed',({nodeId})=>nodes.delete(nodeId));await cdp.send('WebAudio.enable')
  await page.goto(process.env.SYN3H_URL??'http://127.0.0.1:5187/');await page.waitForFunction(()=>window.syn3h?.audio,null,{timeout:60000})
- assert.equal(await page.evaluate(()=>syn3h.audio.state),'locked') // the mix may already be built, suspended, ahead of the gesture
+ assert.ok(['locked','running'].includes(await page.evaluate(()=>syn3h.audio.state))) // locked until a gesture, or running where the browser allows sound without one (headless Chrome does)
  await page.touchscreen.tap(30,200);await page.waitForFunction(()=>syn3h.audio.state==='running')
  assert.deepEqual(audioRequests.filter(url=>!url.includes('/src/audio/')),[],'no audio file loads')
  assert.equal(await page.evaluate(()=>!!syn3h.audio.weatherWind),true,'generated wind remains connected')

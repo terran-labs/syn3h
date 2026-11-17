@@ -3,6 +3,7 @@ import * as THREE from 'three/webgpu'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { expect, it, vi } from 'vitest'
 import { LoadedBuggySkin } from '../../src/vehicles/skins/LoadedBuggySkin'
+import { setModelTransport } from '../../src/vehicles/skins/modelLoader'
 import type { VehicleDetail } from '../../src/vehicles/skins/mergeStatic'
 
 function counts(root: THREE.Object3D) {
@@ -16,9 +17,10 @@ function counts(root: THREE.Object3D) {
 }
 
 it.each([false, true])('loads real assets within each budget with foreign loader constructors=%s', async (foreignConstructors) => {
-  const loader = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockImplementation(async function(url) {
-    const bytes = await readFile(`public${url}`)
-    const gltf = await new GLTFLoader().parseAsync(Uint8Array.from(bytes).buffer, '')
+  setModelTransport({ fetch: async url => new Response(Uint8Array.from(await readFile(`public${url}`)), { status: 200 }) })
+  const parse = GLTFLoader.prototype.parseAsync
+  const loader = vi.spyOn(GLTFLoader.prototype, 'parseAsync').mockImplementation(async function(this: GLTFLoader, data, path) {
+    const gltf = await parse.call(this, data, path)
     if (foreignConstructors) {
       // Match a loader from another Three module: same mesh API, different prototype identity.
       const prototype = Object.create(THREE.Object3D.prototype, Object.getOwnPropertyDescriptors(THREE.Mesh.prototype))
@@ -91,5 +93,5 @@ it.each([false, true])('loads real assets within each budget with foreign loader
     expect(counts(root).triangles).toBeLessThanOrEqual(12000)
     // Deployed force-field wings add two passes; powered motor glow can add one more.
     expect(counts(root).draws).toBeLessThanOrEqual(8)
-  } finally { skin.dispose(); loader.mockRestore() }
+  } finally { skin.dispose(); loader.mockRestore(); setModelTransport() }
 })

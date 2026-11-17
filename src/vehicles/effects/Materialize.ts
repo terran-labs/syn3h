@@ -19,7 +19,9 @@
  * so gravity and drive forces cannot act on it. A kinematic body is not
  * shoved by anything. Each step it is put back at the hold point with no velocity, so neither
  * order of this system against the vehicle in `game.add` matters. On release the body type it
- * had is restored with zero velocity, and it drops under ordinary physics.
+ * had is restored with zero velocity, and it drops under ordinary physics. A vehicle switched
+ * in while moving passes `carry`: it is held at its own height if that is higher (a switch in
+ * mid-air stays there) and released with the velocity and yaw rate it arrived with.
  *
  * Input and tagging. Vehicle.fixedUpdate ignores new controls while the
  * `vehicle.object.userData.materializing` flag is true. Networking uses the same flag to
@@ -69,6 +71,12 @@ export interface MaterializeOptions {
    * client does not own (a remote copy placed by the network).
    */
   hold?:boolean
+  /**
+   * Motion to hand back on release, for a vehicle switched in while moving: it is held where
+   * it is (never pulled down to the hover height, so a switch in mid-air stays there), then
+   * let go with this velocity and yaw rate instead of from rest.
+   */
+  carry?:{linvel:{x:number;y:number;z:number};angvel:{x:number;y:number;z:number}}
 }
 
 interface Hold {
@@ -84,6 +92,9 @@ interface Hold {
   owed:number
   /** Seconds the cloud has been gathering, for the fade in. */
   shown:number
+  /** Velocity and spin restored on release (zero for an ordinary arrival). */
+  linvel:T.Vector3
+  angvel:T.Vector3
   done:(()=>void)[]
 }
 
@@ -120,7 +131,7 @@ export function restHeight(vehicle:Vehicle):number {
     const slider=Number(hoverClearance?.value)
     if(Number.isFinite(slider))return slider
   }
-  return REST_HEIGHT[vehicle.kind]??.7
+  return vehicle.kind in REST_HEIGHT?vehicle.restHeight():.7
 }
 
 /** Heading of a body's nose projected on the ground, in the convention `teleport` takes. */
@@ -187,13 +198,18 @@ export class Materialize implements System {
     let hold=this.find(vehicle)
     if(hold)this.cue('materializeCancel',hold)
     if(!hold){
-      hold={vehicle,type:body.bodyType(),holds:options.hold??true,point:new T.Vector3(),rotation:new T.Quaternion(),elapsed:0,seconds,done:[],owed:0,shown:0}
+      hold={vehicle,type:body.bodyType(),holds:options.hold??true,point:new T.Vector3(),rotation:new T.Quaternion(),elapsed:0,seconds,done:[],owed:0,shown:0,linvel:new T.Vector3(),angvel:new T.Vector3()}
       this.holds.push(hold)
     }
     hold.elapsed=0;hold.seconds=seconds
     const t=body.translation(),at=options.at??t
     const surface=Math.max(this.terrain.heightAt(at.x,at.z),this.terrain.liquidHeightAt?.(at.x,at.z)??-Infinity)
     hold.point.set(at.x,surface+restHeight(vehicle)+hover,at.z)
+    const carry=options.carry
+    if(carry){
+      if(Number.isFinite(at.y))hold.point.y=Math.max(hold.point.y,at.y)
+      hold.linvel.copy(carry.linvel);hold.angvel.copy(carry.angvel)
+    }else{hold.linvel.set(0,0,0);hold.angvel.set(0,0,0)}
     const heading=options.heading??headingOf(body.rotation())
     hold.rotation.setFromAxisAngle(UP,heading)
     if(hold.holds){
@@ -305,7 +321,7 @@ export class Materialize implements System {
       const b=hold.vehicle.body
       this.pin(hold)
       if(b.bodyType()!==hold.type)b.setBodyType(hold.type,true)
-      b.setLinvel({x:0,y:0,z:0},true);b.setAngvel({x:0,y:0,z:0},true)
+      b.setLinvel(hold.linvel,true);b.setAngvel(hold.angvel,true)
     }
     if(cue){
       // The cloud lets go with the vehicle: a last puff thrown outward and upward.

@@ -107,6 +107,11 @@ export interface Terrain {
    */
   surfaceAt?(x: number, z: number): SurfaceKind
   /**
+   * Index of this world's look into the ground palettes (terrain/palettes.ts), so wheel
+   * effects can colour marks and dust like the ground. A stand-in terrain may leave it out.
+   */
+  lookIndex?(): number
+  /**
    * Called after the terrain regenerated in place (seed or a terrain parameter changed),
    * once the new heights and collider exist. Use it to re-seat vehicles. Returns unsubscribe.
    * During a staged rebuild the drawn meshes, sea and plants follow over the next frames.

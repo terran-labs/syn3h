@@ -7,7 +7,7 @@ const browser=await chromium.launch({channel:'chrome',headless:true,args:['--ena
 try{
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message))
  await page.goto('http://127.0.0.1:5187/');await page.waitForFunction(()=>window.syn3h?.audio)
- assert.equal(await page.evaluate(()=>syn3h.audio.state),'locked')
+ assert.ok(['locked','running'].includes(await page.evaluate(()=>syn3h.audio.state))) // running where the browser allows sound without a gesture
  await page.keyboard.press('h');await page.evaluate(()=>syn3h.audio.ready())
  const results=[]
  for(const kind of ['buggy-syn3h','buggy-classic','jet','hovercraft','tank']){
