@@ -1,4 +1,4 @@
-// The lobby's planet labels never pile up: in the settled lobby, at phone landscape (844x390,
+// The lobby's planet labels never pile up: in the settled lobby (leaders included), at phone landscape (844x390,
 // 667x375), phone portrait (390x844) and desktop (1440x900), no two visible labels intersect, no
 // label covers a planet other than its own, and none covers the hint, the buttons or the
 // settings gear. Planets that do not fit are left unnamed (they fade and show while focused),
@@ -34,11 +34,22 @@ try {
         return { planets, labels, fixed: fixed.filter(([, el]) => el && el.getBoundingClientRect().width).map(([what, el]) => ({ what, ...box(el) })) }
       })
       const hit = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+      // The leader as the shell draws it (Shell.placeChip, labels.ts leaderSegment).
+      const leader = (r, p) => { const nx = Math.min(r.right, Math.max(r.left, p.x)), ny = Math.min(r.bottom, Math.max(r.top, p.y)), d = Math.hypot(nx - p.x, ny - p.y); return d - p.radius <= 1.5 ? null : { ax: nx, ay: ny, bx: p.x + (nx - p.x) / d * p.radius, by: p.y + (ny - p.y) / d * p.radius } }
+      const crosses = (l, b) => { let t0 = 0, t1 = 1; const dx = l.bx - l.ax, dy = l.by - l.ay; for (const [q, r] of [[-dx, l.ax - b.left], [dx, b.right - l.ax], [-dy, l.ay - b.top], [dy, b.bottom - l.ay]]) { if (q === 0) { if (r < 0) return false; continue } const t = r / q; if (q < 0) { if (t > t1) return false; if (t > t0) t0 = t } else { if (t < t0) return false; if (t < t1) t1 = t } } return true }
+      const grazes = (l, p) => { const dx = l.bx - l.ax, dy = l.by - l.ay, t = Math.max(0, Math.min(1, ((p.x - l.ax) * dx + (p.y - l.ay) * dy) / (dx * dx + dy * dy || 1))); return Math.hypot(l.ax + dx * t - p.x, l.ay + dy * t - p.y) < p.radius }
       const onDisc = (r, p) => Math.hypot(Math.min(r.right, Math.max(r.left, p.x)) - p.x, Math.min(r.bottom, Math.max(r.top, p.y)) - p.y) < p.radius
       for (const label of s.labels) {
         for (const other of s.labels) if (other !== label) assert.ok(!hit(label, other), `${name}: the ${label.id} and ${other.id} labels overlap`)
         for (const p of s.planets) if (p.id !== label.id) assert.ok(!onDisc(label, p), `${name}: the ${label.id} label covers the ${p.id} planet`)
         for (const f of s.fixed) assert.ok(!hit(label, f), `${name}: the ${label.id} label covers the ${f.what}`)
+        // Its leader, plate edge to limb, crosses no other plate and no other planet.
+        const own = s.planets.find(p => p.id === label.id)
+        const line = own && leader(label, own)
+        if (line) {
+          for (const other of s.labels) if (other !== label) assert.ok(!crosses(line, other), `${name}: the ${label.id} leader crosses the ${other.id} label`)
+          for (const p of s.planets) if (p.id !== label.id) assert.ok(!grazes(line, p), `${name}: the ${label.id} leader crosses the ${p.id} planet`)
+        }
       }
       named.push(`${s.labels.length}/${s.planets.length}`)
       if (sample === 0) await page.screenshot({ path: `${out}/check-${name}.png` })

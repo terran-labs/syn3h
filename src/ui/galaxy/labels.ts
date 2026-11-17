@@ -19,11 +19,11 @@ export interface LabelPlace { id: string; x: number; y: number; radius: number; 
  * caller must keep it out of sight even when focused.
  */
 export interface LabelSpot { id: string; x: number; y: number; spot: number; crowded: boolean; blocked?: boolean }
-type Box = { left: number; top: number; right: number; bottom: number }
+export type Box = { left: number; top: number; right: number; bottom: number }
 /** The plate itself, without the spacing pad: the sun's core is kept off the plate, not off its pad. */
 const unpad = (b: Box): Box => ({ left: b.left + 4, top: b.top + 4, right: b.right - 4, bottom: b.bottom - 4 })
 const overlapping = (a: Box, b: Box) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
-type Segment = { ax: number; ay: number; bx: number; by: number }
+export type Segment = { ax: number; ay: number; bx: number; by: number }
 /** Whether a line segment passes through a box (Liang-Barsky clipping). */
 function crosses(s: Segment, b: Box): boolean {
   let t0 = 0, t1 = 1
@@ -135,6 +135,12 @@ function placeOnce(
       const [x, y] = spots[i], nx = Math.min(x + w / 2, Math.max(x - w / 2, place.x)), ny = Math.min(y + h, Math.max(y, place.y))
       return Math.hypot(nx - place.x, ny - place.y) - place.radius
     }
+    // A long leader crosses no other plate and no other world; a short one is not checked here.
+    const longClear = (i: number, ignore?: Box) => {
+      if (leader(i) <= LEADER_MAX) return true
+      const l = segment(i)
+      return !taken.some(t => t !== ignore && crosses(l, t)) && !discs.some(d => d.id !== place.id && grazes(l, d)) && !avoid.some(d => grazes(l, d))
+    }
     // `ignore` is a label about to move away and `extra` one about to arrive (see below).
     // The leader as a segment, plate edge to the planet's limb.
     const segment = (i: number): Segment => {
@@ -146,11 +152,7 @@ function placeOnce(
       const box = boxAt(i)
       if (leader(i) > maxLeader) return null
       if (lines.some(l => crosses(l, box))) return null
-      // A long leader crosses no other plate and no other world.
-      if (leader(i) > LEADER_MAX) {
-        const l = segment(i)
-        if (taken.some(t => t !== ignore && crosses(l, t)) || discs.some(d => d.id !== place.id && grazes(l, d)) || avoid.some(d => grazes(l, d))) return null
-      }
+      if (!longClear(i, ignore)) return null
       if (taken.some(t => t !== ignore && overlapping(box, t)) || (extra && overlapping(box, extra))) return null
       // Clear of every world's disc, its own included, nearer or farther, and of the sun.
       for (const disc of discs) if (touches(box, disc)) return null
@@ -180,7 +182,7 @@ function placeOnce(
         for (const j of tries) {
           if (j === entry.spot.spot) continue
           const moved = boxAt(j)
-          if (leader(j) > maxLeader || !clearOfAll(moved) || arriving.some(a => overlapping(moved, a))) continue
+          if (leader(j) > maxLeader || !clearOfAll(moved) || arriving.some(a => overlapping(moved, a)) || lines.some(l => crosses(l, moved)) || !longClear(j, entry.box)) continue
           const blockers = placedLabels.filter(other => other !== entry && overlapping(moved, other.box))
           if (blockers.length > 1 || blockers.length === 1 && (depth <= 0 || blockers[0].id === options.first || !blockers[0].retry([...arriving, moved], depth - 1))) continue
           taken[taken.indexOf(entry.box)] = moved; entry.box = moved
@@ -198,10 +200,10 @@ function placeOnce(
       let moved = false
       for (const i of tries) {
         const b = boxAt(i)
-        if (leader(i) > maxLeader || discs.some(disc => touches(b, disc)) || avoid.some(disc => touches(unpad(b), disc))) continue
+        if (leader(i) > maxLeader || discs.some(disc => touches(b, disc)) || avoid.some(disc => touches(unpad(b), disc)) || lines.some(l => crosses(l, b))) continue
         const blockers = placedLabels.filter(other => overlapping(b, other.box))
-        if (blockers.length !== 1 || blockers[0].id === options.first || !blockers[0].retry([b], 1)) continue
-        settle(i, b); moved = true; break
+        if (blockers.length !== 1 || blockers[0].id === options.first || !blockers[0].retry([b], 1) || !longClear(i)) continue
+        settle(i, b); if (leader(i) > LEADER_MAX) lines.push(segment(i)); moved = true; break
       }
       if (moved) continue
     }
@@ -220,5 +222,29 @@ function placeOnce(
     const [x, y] = rest ?? spots[0]
     result.push({ id: place.id, x, y, spot: -1, crowded: true, ...(rest ? {} : { blocked: true }) })
   }
+  // Final say, after every move: a leader crosses no other plate and no other world. Plates
+  // can move after their neighbours' leaders were drawn (the relocation above), so this is
+  // checked on the finished layout; a label that fails it fades and still shows when pointed at.
+  const plate = (spot: LabelSpot): Box => { const size = sizes.get(spot.id) ?? { width: 90, height: 24 }; return { left: spot.x - size.width / 2, top: spot.y, right: spot.x + size.width / 2, bottom: spot.y + size.height } }
+  // The world in play is exempt: it is always named, by the rules above.
+  for (const spot of result) {
+    if (spot.crowded || spot.id === options.first) continue
+    const place = discs.find(d => d.id === spot.id)
+    if (!place) continue
+    const l = leaderSegment(plate(spot), place)
+    if (!l) continue
+    if (result.some(o => o !== spot && !o.crowded && crosses(l, plate(o))) || discs.some(d => d.id !== spot.id && grazes(l, d))) { spot.crowded = true; spot.spot = -1 }
+  }
   return result
 }
+/**
+ * A label's leader as the stylesheet draws it: from the plate's nearest point to the planet's
+ * limb, or null when the plate touches the planet. Shared with the checks.
+ */
+export function leaderSegment(plate: Box, planet: { x: number; y: number; radius: number }): Segment | null {
+  const nx = Math.min(plate.right, Math.max(plate.left, planet.x)), ny = Math.min(plate.bottom, Math.max(plate.top, planet.y))
+  const d = Math.hypot(nx - planet.x, ny - planet.y)
+  if (d - planet.radius <= 1.5) return null
+  return { ax: nx, ay: ny, bx: planet.x + (nx - planet.x) / d * planet.radius, by: planet.y + (ny - planet.y) / d * planet.radius }
+}
+export { crosses as segmentCrossesBox, grazes as segmentGrazesDisc }
