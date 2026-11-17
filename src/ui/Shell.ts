@@ -1270,6 +1270,10 @@ export class Shell implements System {
       frame: () => this.galaxyFrame,
       onLayout: (places, chosen) => {
         this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
+        // Nothing to lay out or measure until the lobby's own controls are on screen: the galaxy
+        // draws from the loading veil on (the opening's point of light), and sizes and places
+        // measured while they are hidden read every box as zero, and are kept.
+        if (!this.brandBottom && !this.element.querySelector('.galaxy-links')?.getBoundingClientRect().width) return
         // Each label near its world, on the screen, clear of the links and of each other.
         // Each label's size with both lines and with the name only, measured once per text and window.
         for (const [id, chip] of chips) if (!this.labelSizes.has(id) && !chip.hidden) {
@@ -1298,7 +1302,9 @@ export class Shell implements System {
           }
           this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
         }
-        const shown = chosen ? places.filter(place => place.id === chosen) : places
+        // Plates the opening has not brought in yet are neither placed nor given a side to keep:
+        // while it plays the camera is still moving, and a side learned then would stick.
+        const shown = chosen ? places.filter(place => place.id === chosen) : places.filter(place => place.labelled !== false)
         // A label that has dropped to its name stays that way until the window changes size, so
         // a slowly turning system does not make its biome line blink in and out.
         const sizes = new Map(this.labelSizes)

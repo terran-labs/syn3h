@@ -201,14 +201,12 @@ export function orbitLayout(bodies: readonly OrbitBody[], time: number): OrbitPl
 export function fitDistance(bodies: readonly OrbitBody[]): number {
   return Math.max(...orbitLayout(bodies, 0).map(place => place.reach), INNER) * 1.08 / VIEW_TAN
 }
-/** Portrait phones start closer so the planets read, and short landscape screens closer still to fill their width; a pinch can reveal the outer orbits. */
+/** Portrait phones start closer so the planets read; a pinch can reveal the outer orbits. */
 export function openingDistance(bodies: readonly OrbitBody[], width: number, height: number): number {
   const portraitPhone = width > 0 && width <= 600 && height > width * 1.2
-  // A short landscape screen (a phone on its side): the fit is to its height, which leaves half
-  // its width empty and the worlds in a heap in the middle. Come in, by the aspect, so the
-  // system spans most of the width; at the resting tilt it still fits the height.
-  const shortLandscape = width > height && height > 0 && height <= 450
-  return fitDistance(bodies) * (portraitPhone ? 0.8 : shortLandscape ? Math.max(0.68, Math.min(1, height / width * 1.45)) : 1)
+  // Short landscape screens are framed by the Shell (galaxyFrame: the space left of the button
+  // column), so they keep the fitted distance here.
+  return fitDistance(bodies) * (portraitPhone ? 0.8 : 1)
 }
 /** The body a galaxy world is laid out as: its recipe's, or an ordinary planet's. */
 export function bodyOf(world: GalaxyWorld): OrbitBody {
