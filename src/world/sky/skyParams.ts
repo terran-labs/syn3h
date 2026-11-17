@@ -7,7 +7,8 @@
  * right and slightly behind the camera. That lights the near flank from the side, throws
  * long shadows across the road and keeps the sun's glare out of frame. With the azimuth at
  * 20 the same hour put the sun behind the volcano and the face toward the pad went dark.
- * The clock is paused by default so a demo looks the same every time it loads.
+ * The day runs by default, at a pace set by the planet's orbit (dayCycle.ts); a recipe's hour
+ * is where each visit to that planet starts.
  */
 import { defineParam } from '../../../shared/params'
 import type { SkyParams } from './skyMath'
@@ -30,9 +31,13 @@ export const skyNightBrightness = defineParam({ id: 'sky.nightBrightness', label
 export const skyStars = defineParam({ id: 'sky.stars', label: 'Stars', group: 'Sky', scope: w, default: 1, min: 0, max: 3, step: 0.01 })
 
 // Sun ----------------------------------------------------------------------------------
+/**
+ * The hour at the room clock time `sun.dayEpoch`. The hour now runs on from it at the day's
+ * pace, the same on every client: read it with `currentHour()` (dayCycle.ts), not from here.
+ */
 export const sunTimeOfDay = defineParam({ id: 'sun.timeOfDay', label: 'Time of day (h)', group: 'Sun', scope: w, default: 16.5, min: 0, max: 24, step: 0.01 })
-/** Real seconds per full day. 0 pauses the clock. */
-export const sunDayLength = defineParam({ id: 'sun.dayLength', label: 'Day length (s)', group: 'Sun', scope: w, default: 0, min: 0, max: 3600, step: 1 })
+// Day length and the day clock's anchor live in dayParams.ts, which the room server imports.
+export { sunDayEpoch, sunDayLength } from './dayParams'
 /** Latitude style tilt: the noon sun stands at 90 minus this many degrees. */
 export const sunTilt = defineParam({ id: 'sun.tilt', label: 'Tilt (latitude, °)', group: 'Sun', scope: w, default: 30, min: 0, max: 80, step: 0.5 })
 export const sunAzimuth = defineParam({ id: 'sun.azimuth', label: 'Azimuth (°)', group: 'Sun', scope: w, default: 335, min: 0, max: 360, step: 1 })
