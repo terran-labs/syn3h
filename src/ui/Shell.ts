@@ -26,6 +26,7 @@ import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
 import { captionHidden, captionMask } from './galaxy/labels'
+import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
 import { LobbySettings } from './LobbySettings'
 import { Inspector } from './inspector/Inspector'
@@ -96,11 +97,21 @@ export function planetLabelText(world: { id?: string; recipe?: string; label: st
  */
 export function plateTint(recipeId: string): string {
   const look = lobbyLook(recipeId)
-  let [r, g, b] = [16, 8, 0].map(k => ((look.night === 1 ? 0xff7a1a : look.land) >> k & 255) / 255)
-  // Relative luminance at least 0.42; then a little more saturation than the ground has.
+  return readableHex([16, 8, 0].map(k => ((look.night === 1 ? 0xff7a1a : look.land) >> k & 255) / 255) as [number, number, number])
+}
+/** A colour (0 to 1 channels) lifted toward white until its relative luminance is at least 0.42, so it reads over dark space. */
+function readableHex([r, g, b]: [number, number, number]): string {
   for (let i = 0; i < 12 && 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.42; i++) { r += (1 - r) * 0.15; g += (1 - g) * 0.15; b += (1 - b) * 0.15 }
   const hex = (v: number) => Math.round(Math.min(1, v) * 255).toString(16).padStart(2, '0')
   return `#${hex(r)}${hex(g)}${hex(b)}`
+}
+/**
+ * A planet caption's colour while its planet is pointed at, focused or chosen: the planet's own
+ * corona, the colour of the glow the galaxy draws round it then (glowColour), lifted only as far
+ * as it needs to read (readableHex).
+ */
+export function captionAccent(world: { land: number; sea: number; glow?: boolean; forming?: boolean }): string {
+  return readableHex(glowColour(world.land, world.sea, world))
 }
 /** Pixels from a planet's limb to the top of its caption. */
 const CAPTION_GAP = 5
@@ -1226,6 +1237,7 @@ export class Shell implements System {
       chip.querySelector('strong')!.textContent = text.name; chip.querySelector('small')!.textContent = text.biome
       // A whisper of the planet's own colour in the near-white type.
       if (!world.forming) chip.style.setProperty('--caption-tint', plateTint(world.recipe ?? world.id.split('~')[0]))
+      chip.style.setProperty('--caption-accent', captionAccent(world))
       if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; chip.append(count) }
       if (!world.forming) chip.title = `A day lasts ${formatDayLength(planetDayLength(world.recipe ?? world.id))}.`
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
@@ -1308,6 +1320,7 @@ export class Shell implements System {
         // each other and other planets; that is accepted. Only their strength changes: with the
         // opening, with depth (behind the sun or a nearer planet they fade, a far one is a little
         // fainter), and brighter while pointed at or focused, or for the world in play.
+        for (const [id, chip] of chips) if (chip.classList.contains('is-chosen') !== (id === chosen)) chip.classList.toggle('is-chosen', id === chosen)
         const current = currentPlanet().id, near = Math.min(...places.filter(p => p.visible).map(p => p.depth)), far = Math.max(...places.filter(p => p.visible).map(p => p.depth))
         for (const place of places) {
           const chip = chips.get(place.id)!
