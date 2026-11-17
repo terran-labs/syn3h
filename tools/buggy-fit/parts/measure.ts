@@ -147,7 +147,7 @@ async function main(): Promise<void> {
   }
   const ref = loadReference()
   mkdirSync(OUT, { recursive: true })
-  const parts = [...new Set(pieces.map(p => p.part))].filter(p => !want.length || want.includes(p))
+  const parts = want.length ? want : [...new Set(pieces.map(p => p.part))]
   for (const part of parts) {
     const own = pieces.filter(p => p.part === part)
     const pos: number[] = [], idx: number[] = [], roles: string[] = []
@@ -160,7 +160,8 @@ async function main(): Promise<void> {
     }
     const gen: Mesh = { positions: new Float32Array(pos), indices: new Uint32Array(idx), materials: roles }
     const r = ref[part as keyof typeof ref]
-    const ab = stats(distances(samples(gen, 2500), r)), ba = stats(distances(samples(r, 2500), gen))
+    const none = { mean: NaN, p95: NaN, max: NaN }
+    const ab = gen.indices.length ? stats(distances(samples(gen, 2500), r)) : none, ba = gen.indices.length ? stats(distances(samples(r, 2500), gen)) : none
     const rb = bounds(r.positions), gb = bounds(gen.positions)
     const centre: V = [0, 1, 2].map(k => (rb.min[k] + rb.max[k]) / 2) as V
     const scale = S * .9 / Math.max(...[0, 1, 2].map(k => rb.max[k] - rb.min[k]))
