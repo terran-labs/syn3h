@@ -118,13 +118,16 @@ tools/heavy.sh node tools/lab-shot.mjs http://127.0.0.1:5297/ /tmp/buggy-fit/lab
 `src/vehicles/buggygen/GeneratedBuggySkin.ts` is the Syn3h buggy skin with every model-file
 part generated: `generatedParts.ts` builds stand-ins for the two model files from the parts
 lane and the body, and the skin runs LoadedBuggySkin's assembly on them. It makes no network
-request. The body is chosen in one line in `src/vehicles/buggygen/body.ts`.
+request. The body is chosen in one line in `src/vehicles/buggygen/body.ts` (now the 250 point
+control cage). The body is built once and passed to `buildParts`, so the swellings fit it and
+the shock tops come from it; only the shock foot in the arm's frame is a stored number.
 
 The Skins group of the exhibit runs the real skin classes as the game drives them (wheels,
 steering, wings, motor glow with Motion, brake lamps, paint, Near, Mid and Far detail):
 
 - `/vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=all`: loaded and generated side by side.
 - `/vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=loaded` or `&design=generated`: one of them.
+- `&design=generated-loft`: the generated skin with the section loft body, for comparison.
 - **Wings (open)** opens the wings; Level switches detail as the game does at 0, 60 and 300 m.
 - The parts comparison is now `&group=Parts`, with candidates named by their path under
   `src/vehicles/buggygen/` without `.ts` (for example `design=parts/index`).
