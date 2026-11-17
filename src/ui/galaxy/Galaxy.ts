@@ -19,7 +19,7 @@ import { startupTiming } from '../../core/diagnostics'
 /** Why the lobby showed the flat wordmark instead of the name in the scene, once, for the diagnostics. */
 function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmarkFallback) { startupTiming.wordmarkFallback = reason; console.info(`Syn3h: flat lobby wordmark: ${reason}`) } }
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
-import { introMode, LEAVING_SECONDS, leavingMark, openingPace, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState } from './opening'
+import { introMode, LEAVING_SECONDS, leavingMark, openingPace, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
 import { WordmarkCrisp } from '../brand/wordmarkCrisp'
@@ -1424,7 +1424,9 @@ export class Galaxy {
     }
     const now = performance.now()
     if (this.markStart === null) this.markStart = held ? now - 1e6 : now
-    const t = Math.min(1, (now - this.markStart) / 1500), opacity = t * t * (3 - 2 * t)
+    // The opening and a return carry their own fade (opening.ts); otherwise (a placement
+    // changed, the context restored) the same curve runs from the first frame here.
+    const opacity = this.opening || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
     return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 }
   }
   /** For tests and screenshots: the in-space wordmark's state. */
