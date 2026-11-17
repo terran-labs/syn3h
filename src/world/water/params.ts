@@ -21,6 +21,14 @@ export const waterChop = defineParam({
 export const waterReflection = defineParam({
   ...P, id: 'water.reflection', label: 'Sky reflection', default: 1, min: 0, max: 2, step: 0.05,
 })
+/**
+ * How much the eye is helped to read the swell: scales the visual-only ripples near the camera
+ * (never above 0.15 m at 1) and the light and foam that pick out crests. The physical wave
+ * height is water.waveHeight; this never moves anything afloat.
+ */
+export const waterWaveVisual = defineParam({
+  ...P, id: 'water.waveVisual', label: 'Wave visibility', default: 1, min: 0, max: 2, step: 0.05,
+})
 /** Crest to trough height of the biggest possible swell, metres. */
 export const waterWaveHeight = defineParam({
   ...P, id: 'water.waveHeight', label: 'Wave height (m)', default: 2.4, min: 0, max: WAVE_MAX_HEIGHT, step: 0.05,

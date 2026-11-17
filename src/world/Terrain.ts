@@ -87,6 +87,8 @@ export interface Terrain {
    * none. Vehicles use it for buoyancy.
    */
   liquidHeightAt?(x: number, z: number): number
+  /** Vertical speed of the liquid surface (its waves) at (x, z), m/s; 0 where it is still. */
+  liquidVerticalSpeedAt?(x: number, z: number): number
   /**
    * The world's colour seen from straight above at (x, z), as 0xRRGGBB, for maps: its own
    * ground palette by height and slope, snow above its snow line, its sea, lake and rivers as
@@ -98,8 +100,6 @@ export interface Terrain {
    * would (a new world or seed, the sea level, the sea's kind, a freeze). Cheap, never bakes.
    */
   mapColourKey?(): string
-  /** Vertical speed of the liquid surface (its waves) at (x, z), m/s; 0 where it is still. */
-  liquidVerticalSpeedAt?(x: number, z: number): number
   /** Horizontal water velocity in metres per second; writes into out. */
   liquidFlowAt?(x: number, z: number, out: { x: number; z: number }): { x: number; z: number }
   /**

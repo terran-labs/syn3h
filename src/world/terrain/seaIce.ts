@@ -15,6 +15,7 @@ import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../core/physics'
 import { COLLIDER_MARGIN } from './collider'
 import type { TerrainData } from './generate'
 import { SEA_ICE } from './palettes'
+import { clipmapNodes } from '../water/clipmap'
 
 /** Grip of a tyre or a body on the ice sheet: the heightfield's is 1. */
 export const SEA_ICE_FRICTION = 0.06
@@ -53,8 +54,14 @@ export function createSeaIceCollider(world: RAPIER.World, data: TerrainData, cen
  * Flat and opaque. Drawn on the sea's own meshes, so it follows the window, the apron to the
  * horizon and the planet's curve exactly as the sea does.
  */
-export function createSeaIceMaterial(): THREE.MeshStandardNodeMaterial {
+export function createSeaIceMaterial(options: { clipmap?: boolean } = {}): THREE.MeshStandardNodeMaterial {
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.4, metalness: 0 })
+  // On the liquid clipmap (src/world/water/clipmap.ts) the vertices are cell indices: place
+  // them, flat at the sea level. Ice has no waves.
+  if (options.clipmap) {
+    const grid = clipmapNodes()
+    material.positionNode = vec3(grid.local.x, 0, grid.local.y)
+  }
   const p = positionWorld.xz
   const at = (scale: number, salt: number) => mx_noise_float(vec3(p.x.mul(scale), float(salt), p.y.mul(scale)))
   // How far away: fine detail fades out by 160 m, before it is smaller than a pixel.
