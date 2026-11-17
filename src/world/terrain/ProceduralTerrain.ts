@@ -390,7 +390,11 @@ export class ProceduralTerrain implements Terrain {
   regenerateStaged(): Promise<void> {
     const token = ++this.serial
     this.building = token
-    this.built = runSliced(this.rebuildSteps(token), 5).then(() => { if (this.building === token) this.building = 0 })
+    // A rebuild that throws must still end: otherwise the ground never reports ready and every
+    // later descent's whenReady() would wait on, and reject from, the failed one.
+    this.built = runSliced(this.rebuildSteps(token), 5)
+      .catch(error => { console.warn('Terrain rebuild failed', error) })
+      .finally(() => { if (this.building === token) this.building = 0 })
     return this.built
   }
   private serial = 0
