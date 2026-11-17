@@ -207,7 +207,10 @@ export class GeneratedBuggySkin implements BuggySkin {
       this.setWheel(i, new THREE.Vector3(i % 2 ? r.x : -r.x, r.y, i < 2 ? -r.z : r.z), 0, 0)
     })
     this.object.visible = false
-    this.ready = this.load()
+    // Built after a microtask, not in the constructor: the skin registers for detail switching
+    // through its parent (registerVehicleDetail), which only exists once the vehicle has added
+    // this.object, as it does straight after construction.
+    this.ready = Promise.resolve().then(() => this.load())
   }
 
   private async load(): Promise<void> {

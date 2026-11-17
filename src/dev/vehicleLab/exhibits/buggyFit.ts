@@ -4,8 +4,8 @@
  * orbited side by side or overlaid. Developer only, like the rest of the lab.
  *
  *   /vehicle-lab.html?vehicle=buggy-fit                          the reference parts
- *   /vehicle-lab.html?vehicle=buggy-fit&design=<module>          a candidate, by file name in
- *                                                                src/vehicles/buggygen/ (without .ts)
+ *   /vehicle-lab.html?vehicle=buggy-fit&group=Parts&design=<module>  a candidate, by its path
+ *                                                                under src/vehicles/buggygen/ without .ts
  *   /vehicle-lab.html?vehicle=buggy-fit&design=placeholder       tools/buggy-fit/placeholder.ts
  *   /vehicle-lab.html?vehicle=buggy-fit&design=all               reference and every candidate
  *
@@ -14,6 +14,13 @@
  * The reference comes from tools/buggy-fit/glb.ts, the same extraction the comparison harness
  * measures, so what is seen here is what is measured. This page fetches the two model files; it
  * is a measuring tool and does not ship.
+ *
+ * The Skins group runs the real skin classes, as the game drives them: LoadedBuggySkin (two
+ * model files) and GeneratedBuggySkin (no files), with wheels, steering, wings, motor glow,
+ * brake lamps, paint and the game's three detail levels.
+ *
+ *   /vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=all        both, side by side
+ *   /vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=generated  one of them (or loaded)
  */
 import * as THREE from 'three/webgpu'
 import { referenceParts, type Mesh, type PartName } from '../../../../tools/buggy-fit/glb'
@@ -21,7 +28,9 @@ import { smoothBuggyWheel } from '../../../vehicles/skins/buggyGeometry'
 import { addLavaGlow } from '../../../vehicles/skins/lavaGlow'
 import { addNightReadability } from '../../../vehicles/skins/nightReadability'
 import { applyShowroom, setRole, type SurfaceRole } from '../../../vehicles/skins/showroom'
-import type { LabDesignInfo, LabExhibit } from '../types'
+import type { LabContext, LabDesignInfo, LabExhibit, LabModel } from '../types'
+import type { BuggySkin } from '../../../vehicles/skins/BuggySkin'
+import type { VehicleDetail } from '../../../vehicles/skins/mergeStatic'
 
 /** The candidate contract (tools/buggy-fit/README.md), declared structurally. */
 interface CandidatePart { part: PartName; role: string; geometry: THREE.BufferGeometry }
@@ -37,9 +46,12 @@ const SHOCK_TOPS = [[-.7302, .4919, -1.2375], [.7302, .4919, -1.2375], [-.7271, 
 const GROUND_Y = -.72
 const PAINT = 0x1768b4, ACCENT = 0x49e6ff
 
-const candidates = import.meta.glob('../../../vehicles/buggygen/*.ts')
+// Candidate modules; the generated skin's own files are not candidates.
+const candidates = Object.fromEntries(Object.entries(import.meta.glob('../../../vehicles/buggygen/**/*.ts'))
+  .filter(([path]) => !/\/(GeneratedBuggySkin|generatedParts|body)\.ts$/.test(path)))
 const placeholder = () => import('../../../../tools/buggy-fit/placeholder')
-const moduleName = (path: string) => path.split('/').pop()!.replace(/\.ts$/, '')
+/** Design id: the path under src/vehicles/buggygen without .ts, for example `parts/index`. */
+const moduleName = (path: string) => path.split('/buggygen/').pop()!.replace(/\.ts$/, '')
 
 /** LoadedBuggySkin.strutMatrix at rest: span from hub to mount, thickness toward body up. */
 function strutMatrix(hub: THREE.Vector3, mount: THREE.Vector3): THREE.Matrix4 {
@@ -136,15 +148,21 @@ export const buggyFit: LabExhibit = {
   title: 'Generated buggy fit',
   paramGroups: [],
   async designs() {
-    const found: LabDesignInfo[] = [{ id: 'reference', name: 'Loaded model', notes: ['The parts the game loads from buggy-boxarm.glb and buggy.glb, as the harness measures them.'] }]
+    const found: LabDesignInfo[] = [{ id: 'reference', name: 'Loaded model', group: 'Parts', notes: ['The parts the game loads from buggy-boxarm.glb and buggy.glb, as the harness measures them.'] }]
     for (const [path, load] of Object.entries(candidates)) {
       const mod = await load().catch(() => undefined) as { default?: Partial<Candidate> } | undefined
-      if (typeof mod?.default?.build === 'function') found.push({ id: moduleName(path), name: mod.default.id ?? moduleName(path), notes: [`src/vehicles/buggygen/${moduleName(path)}.ts`, `${mod.default.numbers ?? '?'} numbers in the design data.`] })
+      if (typeof mod?.default?.build === 'function') found.push({ id: moduleName(path), name: mod.default.id ?? moduleName(path), group: 'Parts', notes: [`src/vehicles/buggygen/${moduleName(path)}.ts`, `${mod.default.numbers ?? '?'} numbers in the design data.`] })
     }
-    found.push({ id: 'placeholder', name: 'Placeholder boxes', notes: ['tools/buggy-fit/placeholder.ts: one box per part at the reference bounds.'] })
+    found.push({ id: 'placeholder', name: 'Placeholder boxes', group: 'Parts', notes: ['tools/buggy-fit/placeholder.ts: one box per part at the reference bounds.'] })
+    found.push(
+      { id: 'loaded', name: 'Loaded skin', group: 'Skins', notes: ['LoadedBuggySkin: the game today, two model files.'] },
+      { id: 'generated', name: 'Generated skin', group: 'Skins', notes: ['GeneratedBuggySkin: every part generated in code, no model file.', 'Body from src/vehicles/buggygen/body.ts.'] },
+    )
     return found
   },
+  heading: group => group === 'Skins' ? 'Syn3h buggy: loaded and generated skins' : 'Generated buggy fit: parts',
   async build(info, ctx) {
+    if (info.id === 'loaded' || info.id === 'generated') return skinModel(info.id, ctx)
     ctx.status('Reading the reference model')
     const object = new THREE.Group(), paints: THREE.MeshStandardMaterial[] = []
     const entries = await referenceEntries()
@@ -200,4 +218,55 @@ export const buggyFit: LabExhibit = {
       dispose() { detachShowroom(); wire.dispose() },
     }
   },
+}
+
+/** Wheel rest position as LoadedBuggySkin's LAYOUT; driver's eye as Syn3hBuggy's RIDE_HEIGHT. */
+const REST = new THREE.Vector3(1.1, -.2, 1.3), RIDE_HEIGHT = .8
+/** Time from construction to ready, per skin, for scripts (tools/buggy-fit/browser-measure.mjs). */
+const timings: Record<string, number> = ((globalThis as { buggySkinReadyMs?: Record<string, number> }).buggySkinReadyMs ??= {})
+
+/** A real skin class in the lab, driven as Syn3hBuggy drives it. */
+async function skinModel(id: 'loaded' | 'generated', ctx: LabContext): Promise<LabModel> {
+  ctx.status(id === 'loaded' ? 'Loading the buggy models' : 'Generating the buggy')
+  const object = new THREE.Group(), callbacks = new Set<VehicleDetail>()
+  object.userData.registerVehicleDetail = (fn: VehicleDetail) => { callbacks.add(fn); return () => callbacks.delete(fn) }
+  // Module loading is not part of construction: import first, then time construction to ready.
+  const Skin = id === 'loaded'
+    ? (await import('../../../vehicles/skins/LoadedBuggySkin')).LoadedBuggySkin
+    : (await import('../../../vehicles/buggygen/GeneratedBuggySkin')).GeneratedBuggySkin
+  const started = performance.now()
+  const skin: BuggySkin = new Skin()
+  object.add(skin.object)
+  await skin.ready
+  timings[id] = performance.now() - started
+  const body = 0x1768b4, accent = 0x49e6ff
+  let lod = 0, wingsOn = false, wings = 0, spin = 0
+  const distances = [0, 60, 300]
+  const applyLod = () => callbacks.forEach(fn => fn(distances[lod], true, 2))
+  const position = new THREE.Vector3()
+  const wheel = (i: number, steer: number) => skin.setWheel(i, position.set(i % 2 ? REST.x : -REST.x, REST.y, i < 2 ? -REST.z : REST.z), i < 2 ? steer : 0, spin)
+  for (let i = 0; i < 4; i++) wheel(i, 0)
+  applyLod()
+  return {
+    object, groundY: -.72,
+    lods: ['Near', 'Mid', 'Far'], lodDistances: [30, 120],
+    setLod(i) { lod = i; applyLod() },
+    setColors(b, a) { skin.setColors(b, a) },
+    resetColors() { skin.setColors(body, accent) },
+    cockpit: { eye: new THREE.Vector3(0, RIDE_HEIGHT, 0) },
+    controls: [{ kind: 'toggle', id: 'fit.wings', label: 'Wings (open)', value: false, onChange: on => { wingsOn = on } }],
+    update(dt, state) {
+      const steer = -state.steer * .45
+      spin += state.throttle * dt * 6
+      for (let i = 0; i < 4; i++) { wheel(i, steer); skin.setDrive?.(i, Math.abs(state.throttle), state.throttle < 0) }
+      skin.setLights?.(state.braking)
+      // Half a second to open or fold, as the game's wing state. The skin rewrites every wing
+      // vertex, so only while open or moving.
+      // With time stopped (still=1 captures) they snap to the switch.
+      const next = dt > 0 ? THREE.MathUtils.clamp(wings + (wingsOn ? 2 : -2) * dt, 0, 1) : wingsOn ? 1 : 0
+      if (next > 0 || wings > 0) skin.setWings(next, state.steer, state.throttle)
+      wings = next
+    },
+    dispose() { skin.dispose() },
+  }
 }

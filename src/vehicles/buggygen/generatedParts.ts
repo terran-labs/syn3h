@@ -30,6 +30,14 @@ export const SHOCK_TOPS: number[] = [
 
 /** Shading role to the material name the skin's name tests map back to that role. */
 const MATERIAL: Record<string, string> = { paint: 'Body', accent: 'Accent', glow: 'Glow', chrome: 'Chrome', frame: 'Dark', trim: 'Interior', canopy: 'Glass' }
+/**
+ * Base colours (linear) the skin keeps from the source material, as buggy-boxarm.glb set them.
+ * Only `trim` is drawn in its own colour (PATTERN.md rule 1); paint and accent are repainted.
+ */
+const COLOUR: Record<string, [number, number, number]> = {
+  Body: [.03, .07, .55], Accent: [1, .35, .02], Glow: [1, .35, .02], Chrome: [.9, .92, .95], Dark: [.012, .014, .018],
+  Interior: [.035, .038, .045], Glass: [.01, .012, .02], Headlights: [1, .96, .75], TailLights: [.9, .02, .02],
+}
 
 /** Split lamp faces into headlights (ahead of the centre, -Z) and tail lamps. */
 function splitLamps(geometry: THREE.BufferGeometry): [THREE.BufferGeometry, THREE.BufferGeometry] {
@@ -53,6 +61,7 @@ function node(name: string, pieces: Piece[]): THREE.Group {
       if (!geometry.attributes.position.count) continue
       const material = new THREE.MeshStandardMaterial()
       material.name = name
+      material.color.setRGB(...COLOUR[name])
       group.add(new THREE.Mesh(geometry, material))
     }
   }

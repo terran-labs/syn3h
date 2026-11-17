@@ -112,3 +112,35 @@ Scripted shot (dev server on port 5297):
 tools/heavy.sh node tools/lab-shot.mjs http://127.0.0.1:5297/ /tmp/buggy-fit/lab \
   'overlay=vehicle=buggy-fit&design=placeholder@35,22,8~fit.show:2'
 ```
+
+## Generated skin
+
+`src/vehicles/buggygen/GeneratedBuggySkin.ts` is the Syn3h buggy skin with every model-file
+part generated: `generatedParts.ts` builds stand-ins for the two model files from the parts
+lane and the body, and the skin runs LoadedBuggySkin's assembly on them. It makes no network
+request. The body is chosen in one line in `src/vehicles/buggygen/body.ts`.
+
+The Skins group of the exhibit runs the real skin classes as the game drives them (wheels,
+steering, wings, motor glow with Motion, brake lamps, paint, Near, Mid and Far detail):
+
+- `/vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=all`: loaded and generated side by side.
+- `/vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=loaded` or `&design=generated`: one of them.
+- **Wings (open)** opens the wings; Level switches detail as the game does at 0, 60 and 300 m.
+- The parts comparison is now `&group=Parts`, with candidates named by their path under
+  `src/vehicles/buggygen/` without `.ts` (for example `design=parts/index`).
+
+Measure (dev server running):
+
+```sh
+tools/heavy.sh node tools/buggy-fit/browser-measure.mjs http://127.0.0.1:5297/   # ready time, counts per level, model requests
+npx tsx tools/buggy-fit/skin-cost.ts                                            # Node build time, gzip bytes of each skin
+```
+
+Paired screenshots, same camera for both (swap `design=`):
+
+```sh
+tools/heavy.sh node tools/lab-shot.mjs http://127.0.0.1:5297/ /tmp/buggy-fit/integration \
+  'generated-front34=vehicle=buggy-fit&group=Skins&design=generated@35,18,7.5' \
+  'generated-wings=vehicle=buggy-fit&group=Skins&design=generated@30,30,22~fit.wings:true~wait:1' \
+  'generated-cockpit=vehicle=buggy-fit&group=Skins&design=generated&cockpit=1~wait:2'
+```

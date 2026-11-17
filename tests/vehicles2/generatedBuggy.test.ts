@@ -17,6 +17,12 @@ function finite(root: THREE.Object3D): boolean {
   return ok
 }
 
+function triangles(root: THREE.Object3D): number {
+  let n = 0
+  root.traverseVisible(o => { if (o instanceof THREE.Mesh) n += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3 * (o instanceof THREE.InstancedMesh ? o.count : 1) })
+  return n
+}
+
 // A role the skin cannot map would be drawn as plain trim: the wrong colour in the game.
 it('gives every generated piece a role the skin knows, at every detail level', () => {
   const known = ['paint', 'accent', 'glow', 'chrome', 'frame', 'trim', 'canopy', 'lamp']
@@ -39,6 +45,12 @@ it('builds without any network request, with finite geometry, and moves its part
     expect(fetch).not.toHaveBeenCalled()
     expect(skin.object.visible).toBe(true)
     for (const level of [0, 60, 300]) { detail(level, true, 2); expect(finite(root)).toBe(true) }
+    // A distant buggy draws less than a near one; otherwise every remote buggy costs full detail.
+    detail(0, true, 2); const near = triangles(root)
+    detail(60, true, 2); const mid = triangles(root)
+    detail(300, true, 2); const far = triangles(root)
+    expect(mid).toBeLessThan(near)
+    expect(far).toBeLessThanOrEqual(mid)
     detail(0, false, 2)
     // Suspension and wheels follow setWheel.
     skin.setWheel(0, new THREE.Vector3(-1.1, -.35, -1.3), .4, 1.2)
