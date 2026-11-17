@@ -26,7 +26,8 @@ try {
     await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
     // Hold the graphics level, as galaxy.mjs does: a slow headless browser would retire the galaxy.
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
-    await page.waitForTimeout(3500)
+    // Past the opening: the captions fade in once their worlds have arrived.
+    await page.waitForTimeout(9000)
     // Each caption against its planet, read in one frame: horizontal offset of the centres, and
     // the gap from the limb to the caption's top, minus GAP.
     const measure = () => page.evaluate(() => {

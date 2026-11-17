@@ -518,11 +518,13 @@
    centred under each planet, like a star chart's. No plate, no rim, no bar. Shell.ts places
    each from its planet alone and sets only --caption-strength (depth, pointing, focus). The
    planet takes taps; the caption is a focusable button for the keyboard and screen readers. */
-.syn3h-shell button.galaxy-label {
+/* `:not(#galaxy-caption)` lifts these over the shell's and themes' generic button rules (a
+   caption is a button), which would otherwise give it a rim and a fill; no element has that id. */
+.syn3h-shell button.galaxy-label:not(#galaxy-caption) {
   --caption-strength: 1; --caption-tint: #eef4f8;
   position: absolute; left: 0; top: 0; translate: -200px -200px; transform: translateX(-50%);
   display: grid; justify-items: center; min-width: 0; min-height: 0; margin: 0; padding: 0;
-  border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+  border: 0; border-radius: 0; outline: 0; background: none; background-image: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
   pointer-events: none; cursor: default; white-space: nowrap; text-align: center;
   color: color-mix(in srgb, #eef4f8 88%, var(--caption-tint));
   text-shadow: 0 0 3px rgb(0 6 12 / .7), 0 1px 6px rgb(0 6 12 / .45);
@@ -535,9 +537,9 @@
 .syn3h-shell button.galaxy-label > strong { font: 500 10.5px/14px 'Barlow', sans-serif; letter-spacing: .24em; text-transform: uppercase; margin-right: -.24em; }
 .syn3h-shell button.galaxy-label > small { font: 400 9.5px/12px 'Barlow', sans-serif; letter-spacing: .08em; text-transform: none; opacity: .7; }
 .syn3h-shell button.galaxy-label > small:empty { display: none; }
-.syn3h-shell button.galaxy-label:is(.is-pointed, :focus) { --caption-lift: .55; }
-.syn3h-shell button.galaxy-label:focus-visible { outline: 1px solid rgb(238 244 248 / .5); outline-offset: 3px; }
-.syn3h-shell button.galaxy-label[hidden] { display: none; }
+.syn3h-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, :focus) { --caption-lift: .55; }
+.syn3h-shell button.galaxy-label:not(#galaxy-caption):focus-visible { outline: 1px solid rgb(238 244 248 / .5); outline-offset: 3px; }
+.syn3h-shell button.galaxy-label:not(#galaxy-caption)[hidden] { display: none; }
 .syn3h-shell .galaxy-hint { margin: 0 0 6px; font-size: 15px; color: var(--s3-dim); text-shadow: 0 1px 6px #000; text-align: center; }
 .lobby-unsupported { max-width: 420px; margin: 0 auto; font-size: 17px; line-height: 1.4; text-align: center; color: var(--s3-ink); }
 /* The galaxy would not start: its labels become a row of buttons above the help line. */
