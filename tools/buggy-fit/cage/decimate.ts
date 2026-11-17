@@ -37,7 +37,7 @@ class Heap {
  */
 export interface LockBox { tag: number; min: number[]; max: number[] }
 
-export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20, shape = 0, protect: number[] = [], cornerDegrees = 0, cornerTags: number[] = [], boxes: LockBox[] = [], foldLock = 0, foldBox?: LockBox): TriMesh {
+export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20, shape = 0, protect: number[] = [], cornerDegrees = 0, cornerTags: number[] = [], boxes: LockBox[] = [], foldLock = 0, foldBox?: LockBox, lines: number[][] = [], lockMask?: ArrayLike<number>): TriMesh & { lineEdges: number[]; remap: Int32Array } {
   const pos = Array.from(src.pos), V = pos.length / 3
   const faces = Array.from(src.tri), tag = Array.from(src.tag), F = faces.length / 3
   const alive = new Uint8Array(F).fill(1), valive = new Uint8Array(V).fill(1), stamp = new Uint32Array(V)
@@ -51,6 +51,7 @@ export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20, s
     const v = faces[f * 3 + k], p = [src.pos[v * 3], src.pos[v * 3 + 1], src.pos[v * 3 + 2]]
     if (p.every((x, i) => x >= b.min[i] && x <= b.max[i])) locked[v] = 1
   }
+  if (lockMask) for (let v = 0; v < V; v++) if (lockMask[v]) locked[v] = 1
   const seam = new Uint8Array(V); for (let v = 0; v < V; v++) if (Math.abs(pos[v * 3]) < 1e-4) { seam[v] = 1; pos[v * 3] = 0 }
   const P = (v: number) => [pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]]
   const normal = (a: number[], b: number[], c: number[]) => {
@@ -117,6 +118,26 @@ export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20, s
       if (c < cos) for (const v of key.split(',').map(Number)) locked[v] = 1
     }
   }
+  // Character lines (chains of source vertices): a line point merges only with its neighbour
+  // along the line and stays on the line; other points collapse onto it. Chain ends are
+  // locked, and line edges get stiff planes like region borders.
+  const onLine = new Uint8Array(V), lineEdge = new Set<string>(), ek2 = (a: number, b: number) => a < b ? `${a},${b}` : `${b},${a}`
+  for (const chain of lines) {
+    locked[chain[0]] = locked[chain[chain.length - 1]] = 1
+    for (let i = 0; i < chain.length; i++) onLine[chain[i]] = 1
+    for (let i = 1; i < chain.length; i++) {
+      const a = chain[i - 1], b = chain[i]
+      lineEdge.add(ek2(a, b))
+      for (const f of edgeFaces.get(ek2(a, b)) ?? []) {
+        const n = normal(P(faces[f * 3]), P(faces[f * 3 + 1]), P(faces[f * 3 + 2]))
+        const e = [pos[b * 3] - pos[a * 3], pos[b * 3 + 1] - pos[a * 3 + 1], pos[b * 3 + 2] - pos[a * 3 + 2]]
+        const el = Math.hypot(...e), q = [e[1] * n[2] - e[2] * n[1], e[2] * n[0] - e[0] * n[2], e[0] * n[1] - e[1] * n[0]], ql = Math.hypot(...q)
+        if (ql < 1e-14) continue
+        const u = q.map(x => x / ql), d = -(u[0] * pos[a * 3] + u[1] * pos[a * 3 + 1] + u[2] * pos[a * 3 + 2])
+        for (const v of [a, b]) planeQ(u, d, borderWeight * el * el, quad[v])
+      }
+    }
+  }
   console.error(`decimate: ${locked.reduce((s, x) => s + x, 0)} points locked`)
   const neighbours = (v: number) => { const s = new Set<number>(); for (const f of vf[v]) for (let k = 0; k < 3; k++) s.add(faces[f * 3 + k]); s.delete(v); return s }
   const isOpen = (a: number, b: number) => { let n = 0; for (const f of vf[a]) if (vf[b].has(f)) n++; return n === 1 }
@@ -125,7 +146,10 @@ export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20, s
     if (seam[a] && seam[b] && !isOpen(a, b)) return null
     const q = quad[a].map((x, i) => x + quad[b][i]) as Q
     let options: number[][]
+    if (onLine[a] && onLine[b] && !lineEdge.has(ek2(a, b))) return null
     if (seam[a] !== seam[b]) options = [P(seam[a] ? a : b)]
+    else if (onLine[a] !== onLine[b]) options = [P(onLine[a] ? a : b)]
+    else if (onLine[a] && onLine[b]) options = [P(a), P(b)]
     else if (border[a] !== border[b]) options = [P(border[a] ? a : b)]
     else {
       options = [P(a), P(b), P(a).map((x, i) => (x + P(b)[i]) / 2)]
@@ -165,6 +189,9 @@ export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20, s
       if (al < 1e-12 || (before[0] * after[0] + before[1] * after[1] + before[2] * after[2]) / (bl * al) < .3) { ok = false; break }
     }
     if (!ok) { continue }
+    if (seam[a] !== seam[b] && (onLine[a] || onLine[b]) && !(seam[a] ? onLine[a] : onLine[b])) continue // would drag a line onto the mirror plane
+    for (const u of neighbours(b)) if (lineEdge.delete(ek2(b, u)) && u !== a) lineEdge.add(ek2(a, u))
+    onLine[a] = onLine[a] | onLine[b]
     for (const f of shared) { alive[f] = 0; for (let k = 0; k < 3; k++) vf[faces[f * 3 + k]].delete(f) }
     for (const f of vf[b]) { for (let k = 0; k < 3; k++) if (faces[f * 3 + k] === b) faces[f * 3 + k] = a; vf[a].add(f) }
     vf[b].clear(); valive[b] = 0; count--
@@ -177,5 +204,7 @@ export function decimate(src: TriMesh, targetVerts: number, borderWeight = 20, s
   for (let v = 0; v < V; v++) if (valive[v] && vf[v].size) { remap[v] = out.length / 3; out.push(...P(v)) }
   const tri: number[] = [], tags: number[] = []
   for (let f = 0; f < F; f++) if (alive[f]) { tri.push(...[0, 1, 2].map(k => remap[faces[f * 3 + k]])); tags.push(tag[f]) }
-  return {pos: Float64Array.from(out), tri: Uint32Array.from(tri), tag: Uint8Array.from(tags)}
+  const lineEdges: number[] = []
+  for (const k of lineEdge) { const [a, b] = k.split(',').map(Number); if (remap[a] >= 0 && remap[b] >= 0) lineEdges.push(remap[a], remap[b]) }
+  return {pos: Float64Array.from(out), tri: Uint32Array.from(tri), tag: Uint8Array.from(tags), lineEdges, remap}
 }
