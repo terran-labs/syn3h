@@ -1,9 +1,10 @@
 /**
  * The galaxy with many worlds: the lobby as it ships, and the most the galaxy holds
  * (`?worlds=12`, development builds only, repeats the recipes). At desktop, phone portrait
- * and phone landscape it checks that every world is on screen at the first view, that the
- * labels shown do not overlap each other or leave the screen, and that a tap on the smallest
- * world's disc begins a drop. It times the trace on this Mac's GPU for both systems.
+ * and phone landscape it checks that every world is on screen at the first view, that each
+ * caption shown is anchored on screen with its planet, and that a tap on the smallest world's
+ * disc begins a drop. Captions may overlap each other and clip at the screen's edge (the owner,
+ * 16 November 2026), so neither is checked. It times the trace on this Mac's GPU for both systems.
  *
  *   SYN3H_URL=http://127.0.0.1:5193/ tools/heavy.sh node tests/ui/galaxy-crowd.mjs
  *
@@ -48,8 +49,9 @@ try {
       const off = state.screen.filter(s => !s.visible || s.x < 0 || s.x > view.viewport.width || s.y < 0 || s.y > view.viewport.height).map(s => s.id)
       assert.deepEqual(off, [], `${view.name} ${count}: worlds off the screen`)
       const shown = state.labels.filter(l => !l.hidden && !l.crowded)
-      for (const a of shown) for (const b of shown) if (a.id < b.id) assert.ok(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top, `${view.name} ${count}: labels ${a.id} and ${b.id} overlap`)
-      for (const l of shown) assert.ok(l.left >= 0 && l.right <= view.viewport.width && l.top >= 0 && l.bottom <= view.viewport.height, `${view.name} ${count}: label ${l.id} off the screen`)
+      // Every world is on screen (above), so each caption's anchor, the top centre under its
+      // planet, must be too: a caption detached from its planet fails here, one clipped at the edge does not.
+      for (const l of shown) { const x = (l.left + l.right) / 2; assert.ok(x >= 0 && x <= view.viewport.width && l.top >= 0 && l.top <= view.viewport.height, `${view.name} ${count}: the ${l.id} caption is anchored off the screen`) }
       await page.screenshot({ path: `${out}/${view.name}-${count}.png` })
       row[`labels${count}`] = `${shown.length} of ${state.screen.length}`
       row[`smallest${count}`] = Math.round(Math.min(...state.screen.map(s => s.r)))
