@@ -24,14 +24,14 @@ const kindOf = (key) => KINDS.find(([, re]) => re.test(key))[0]
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'] })
 const rows = []
 try {
-  const PLANETS = { volcanic: { 'terrain.look': 0 }, icy: { 'terrain.look': 4 }, archipelago: { 'terrain.kind': 1, 'terrain.look': 3, 'world.seaKind': 1, 'world.lavaAltitude': 0 } }
+  const PLANETS = { volcanic: { 'terrain.look': 0 }, icy: { 'terrain.look': 4 }, archipelago: { 'terrain.kind': 1, 'terrain.look': 3, 'world.seaKind': 1, 'world.lavaAltitude': 0 }, 'archipelago-preset': { preset: 'archipelago' } }
   const chosen = (process.env.PLANETS ?? 'volcanic,icy').split(',')
   for (const planet of chosen) {
     const look = PLANETS[planet]
     const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage()
     await page.goto(`${base}?room=rate${Date.now().toString(36)}&name=Sam&autoplay=1`)
     await page.waitForFunction(() => window.syn3hChat?.net?.isHost && window.syn3hChat.banter?.director, null, { timeout: 90000 })
-    await page.evaluate((look) => { const p = window.syn3h.params; p.set('daydream.seconds', 0); p.set('gfx.auto', false); p.set('gfx.quality', 1); p.set('bots.count', 4); for (const [id, v] of Object.entries(look)) p.set(id, v) }, look)
+    await page.evaluate((look) => { const p = window.syn3h.params; p.set('daydream.seconds', 0); p.set('gfx.auto', false); p.set('gfx.quality', 1); p.set('bots.count', 4); if (look.preset) window.syn3h.planets.applyPlanet(look.preset); else for (const [id, v] of Object.entries(look)) p.set(id, v) }, look)
     await page.waitForTimeout(5000)
     const start = await page.evaluate(() => ({ ...window.syn3hChat.banter.director.counts }))
     const end = Date.now() + minutes * 60_000
