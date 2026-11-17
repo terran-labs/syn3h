@@ -53,8 +53,18 @@ type N = any // TSL node
 
 /** Brightest exposed value a pixel may feed into glow or shafts, as a multiple of the glow threshold. */
 export const HOT_CLAMP = 2
-/** Brightest exposed value the sun shaft mask keeps. */
+/** Brightest exposed value the lens flare takes from the sun. */
 export const SHAFT_CLAMP = 1.5
+/**
+ * Share of the low sun's forward glow the shafts take from the sky. The rest stays in the sky
+ * whatever blocks the sun, so a sun wholly behind cloud or a ridge still lights the sky round
+ * it, only less than one in the open.
+ */
+export const SHAFT_GLOW_SHARE = 0.75
+/** Cloud opacity at which a cloud starts to block the sun for the shafts, and blocks it fully. */
+export const CLOUD_THIN = 0.12, CLOUD_SOLID = 0.55
+/** Distance (m) over which the haze in front of terrain reaches the full post.shaftHaze. */
+export const SHAFT_HAZE_DEPTH = 700
 
 export interface PostChainHost {
   /**
@@ -114,7 +124,8 @@ export class PostChain {
     bloomRadius: uniform(0.4),
     shafts: uniform(0.7),
     shaftLength: uniform(0.75),
-    shaftGround: uniform(0.5),
+    shaftHaze: uniform(0.35),
+    shaftReach: uniform(0.1),
     flare: uniform(0.5),
     gain: uniform(new THREE.Vector3(1, 1, 1)),
     lift: uniform(new THREE.Vector3(0, 0, 0)),
@@ -198,10 +209,11 @@ export class PostChain {
     u.bloomRadius.value = P.postBloomRadius.value
     // The sky hands its near-sun glow to the shafts while they can draw it (sun on screen);
     // past 1 the shafts add more than the sky gave up.
-    const shaftAmount = shaftsOn ? P.postShafts.value * fade * this.screenFade : 0
+    const shaftAmount = shaftsOn ? P.postShafts.value * fade * this.screenFade * SHAFT_GLOW_SHARE : 0
     u.shafts.value = this.shaftLightOff ? 0 : shaftAmount
     u.shaftLength.value = P.postShaftLength.value
-    u.shaftGround.value = P.postShaftGround.value
+    u.shaftHaze.value = P.postShaftHaze.value
+    u.shaftReach.value = P.postShaftReach.value
     // Ghosts and streak belong to a low sun; overhead they read as smudges on the ground.
     u.flare.value = P.postFlare.value * fade * (0.25 + 0.75 * lowSunAmount(this.sun.sunDirection.y))
     const g = gradeFor(lookForKind(params.get('terrain.kind')?.value), P.postLook.value, { contrast: P.postContrast.value, saturation: P.postSaturation.value, warmth: P.postWarmth.value }, this.grade)
@@ -229,7 +241,7 @@ export class PostChain {
     const sunLit = sunVis > 0.001
     if (built.maskTex) built.maskTex.autoUpdate = sunLit
     if (built.raysTex) built.raysTex.autoUpdate = sunLit && shaftAmount > 0
-    if (this.sky) { this.sky.glowCamera = camera; this.sky.glowShare = built.raysTex && sunLit ? Math.min(1, shaftAmount) : 0 }
+    if (this.sky) { this.sky.glowCamera = camera; this.sky.glowShare = built.raysTex && sunLit ? Math.min(SHAFT_GLOW_SHARE, shaftAmount) : 0 }
     this.sun.setVolumetricCloudsActive?.(built.clouds)
     try {
       built.pipeline.render()
@@ -466,8 +478,9 @@ export class PostChain {
         const open = smoothstep(0.99995, 1.0, depth.sample(p).r).toVar()
         const view = getViewPosition(p, float(1), u.projInv)
         const direction = u.camWorld.mul(vec4(view.normalize(), 0)).xyz.normalize()
-        if (volumeCover) open.mulAssign(float(1).sub(volumeCover.sample(p).a))
-        else if (skyCloud) open.mulAssign(float(1).sub(skyCloudField(direction, skyCloud).opacity))
+        // Cloud that looks solid blocks the sun outright; only thin edges let some through.
+        const cloud = volumeCover ? volumeCover.sample(p).a : skyCloud ? skyCloudField(direction, skyCloud).opacity : float(0)
+        open.mulAssign(float(1).sub(smoothstep(CLOUD_THIN, CLOUD_SOLID, cloud)))
         const glow = sky ? skyScatter(direction, sky).glow : vec3(0)
         return vec4(glow, open)
       })
@@ -476,33 +489,42 @@ export class PostChain {
       disposables.push(maskTex)
       maskRef = maskTex
       const taps = shaftTaps(tier)
-      // How much of the way toward the sun is open: the march averages the mask's alpha.
+      // How open the way to the sun is, judged near the sun: the march averages the mask's
+      // alpha weighted toward the sun's end, where the light comes from, so every pixel on a
+      // line out from the sun shares the gap or cloud it passed through. That is a beam.
       const rays = Fn(() => {
         const p = uv().toVar()
         const step = u.sunUv.sub(p).mul(u.shaftLength).div(taps)
         p.addAssign(step.mul(interleavedGradientNoise(screenCoordinate)))
         const sum = float(0).toVar()
-        const w = float(1).toVar()
-        const total = float(0).toVar()
+        const total = float(1e-4).toVar()
         Loop(taps, () => {
+          const fromSun = length(p.sub(u.sunUv).mul(vec2(u.aspect, 1)))
+          const w = exp(fromSun.div(u.shaftReach).negate())
           sum.addAssign(maskTex.sample(p).a.mul(w))
           total.addAssign(w)
-          w.mulAssign(0.97)
           p.addAssign(step)
         })
-        return vec4(vec3(sum.div(total)), 1)
+        // Squared: a path half blocked passes a quarter, so beams keep their edges; a clear
+        // path is still 1, so open sky still balances.
+        const open = sum.div(total)
+        return vec4(vec3(open.mul(open)), 1)
       })
       const raysTex: N = rtt(rays(), null, null, { resolutionScale: tier === 'full' ? 0.5 : 0.25 })
       disposables.push(raysTex)
       raysRef = raysTex
       // The glow comes back where the way to the sun is open. In open sky that restores what
       // the sky left out (energy balances); behind cloud and ridges it stays dark, so the lit
-      // paths read as beams. Over solid ground a share of it is haze lit in front of the
-      // surface.
-      const solid = float(1).sub(step(0.99995, depth.r))
-      const open = raysTex.sample(uv()).r
-      const glow = maskTex.sample(uv()).rgb
-      hdr = hdr.add(glow.mul(open).mul(u.shafts).mul(mix(float(1), u.shaftGround, solid)))
+      // paths read as beams. In front of a cloud or distant terrain a share of it (the haze
+      // lit between them and the eye) still shows; near things such as the vehicle get none.
+      const at = uv()
+      const here = maskTex.sample(at)
+      const d = depth.r
+      const solid = float(1).sub(step(0.99995, d))
+      const distance = getViewPosition(at, d, u.projInv).length()
+      const haze = u.shaftHaze.mul(mix(float(1), float(1).sub(exp(distance.div(-SHAFT_HAZE_DEPTH))), solid))
+      const open = raysTex.sample(at).r.mul(mix(haze, float(1), here.a))
+      hdr = hdr.add(here.rgb.mul(open).mul(u.shafts))
 
       if (flareOn) {
         const flare = Fn(() => {
@@ -555,6 +577,7 @@ export class PostChain {
     // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
     if (debug === 1 && aoNode) out = vec4(vec3(aoNode.getTextureNode().sample(uv()).r), 1)
     if (debug === 2 && contactTex) out = vec4(vec3(contactTex), 1)
+    if (debug === 3 && raysRef) out = vec4(raysRef.sample(uv()).r, maskRef.sample(uv()).a, 0, 1)
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
     pipeline.outputColorTransform = false
     this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }

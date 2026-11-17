@@ -40,7 +40,7 @@ async function run(device, quality, cases, tag) {
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     await page.goto(`${process.env.SYN3H_URL}?autoplay=1&room=beams-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 180000 })
-    await page.evaluate(() => { const st = document.createElement('style'); st.textContent = '.world-inspector,.shell-hud,.hud-navigation,[class*=focus],[class*=gear],[class*=hint],[class*=toast],[class*=minimap],[class*=touch],[class*=zorb],[class*=nameplate]{visibility:hidden!important}'; document.head.append(st); window.syn3h.game.input.external.brakes = true })
+    await page.evaluate(() => { const st = document.createElement('style'); st.textContent = '.world-inspector,.shell-hud,.hud-navigation,[class*=focus],[class*=gear],[class*=hint],[class*=toast],[class*=minimap],[class*=touch],[class*=zorb],[class*=nameplate],[class*=reload],[class*=build-notice],[class*=update]{visibility:hidden!important}[class*=update-banner]{display:none!important}'; document.head.append(st); window.syn3h.game.input.external.brakes = true })
     const frames = async () => page.evaluate(() => new Promise(res => { const t = []; let last = performance.now(); const step = now => { t.push(now - last); last = now; if (t.length < 90) requestAnimationFrame(step); else res(t.sort((a, b) => a - b)[45]) }; requestAnimationFrame(step) }))
     const set = (id, v) => page.evaluate(([id, v]) => window.syn3h.params.set(id, v), [id, v])
     const lightOff = on => page.evaluate(on => { const c = window.syn3h.game.postChain; if (c && 'shaftLightOff' in c) c.shaftLightOff = on }, on)

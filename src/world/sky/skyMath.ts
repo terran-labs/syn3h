@@ -240,7 +240,7 @@ export function skyRadianceBase(dir: Vec3, sun: Vec3, p: SkyParams, out: RGB = [
  * The low sun's forward glow is the sky's Mie lobe above its value this many degrees from
  * the sun. Most of a lobe with g near 0.8 lies inside it.
  */
-export const GLOW_CAP_DEG = 25
+export const GLOW_CAP_DEG = 45
 export const GLOW_CAP_COS = Math.cos(GLOW_CAP_DEG * DEG)
 /** Sun heights (sine of elevation) over which the forward glow fades out as the sun climbs. */
 export const GLOW_SHARE_FROM = 0.1, GLOW_SHARE_TO = 0.45
