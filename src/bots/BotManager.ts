@@ -1,5 +1,5 @@
 import { worldSeed } from '../../shared/params'
-import { generateName } from '../ui/data/names'
+import { uniqueBotName } from '../ui/data/names'
 import { attachVehicleEffects } from '../vehicles/effects'
 import { Vector3 } from 'three/webgpu'
 import type { Game, System } from '../core/Game'
@@ -111,7 +111,7 @@ export class BotManager implements System {
       if (this.bots.some(bot => { const p = bot.body.translation(); return Math.hypot(p.x - x, p.z - z) < 5 })) continue
       const heading = Math.atan2(x - center.x, z - center.z)
       const bot = createVehicle(this.game, this.terrain, Math.round(fleet.value) === 1 ? MIXED_FLEET[index % MIXED_FLEET.length] : 'buggy', new Vector3(x, this.terrain.heightAt(x, z) + 2, z), heading)
-      bot.isLocal = false; bot.id = `bot-${this.nextBotId++}`; bot.name = generateName(`${worldSeed.value}:${bot.id}`, 'bot')
+      bot.isLocal = false; bot.id = `bot-${this.nextBotId++}`; bot.name = uniqueBotName(`${worldSeed.value}:${bot.id}`, new Set([this.player.name, ...this.bots.map(other => other.name)].filter(Boolean).map(n => n.toLowerCase())))
       bot.setColors(`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff')
       const brain = new BotBrain(this.game, this.terrain, bot, this.player, index)
       brain.requestRecovery = () => {

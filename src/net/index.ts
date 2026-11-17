@@ -141,6 +141,8 @@ export interface NetContext {
   setMatchState?(state: MatchState | null): void
   /** Seeded name generator (src/ui/data/names.ts), injected so networking imports no UI. */
   names?(seed: string, kind: 'bot' | 'player' | 'world'): string
+  /** A bot's hidden role, "Dust Clerk", for its voice; never shown as part of its name. */
+  botRole?(seed: string): string
   /** Minimap markers for remote players, bots and the hill, a few times a second. */
   setMapEntities?(entities: MapMarker[]): void
   /** Text lines for the HUD (player list, scores, connection state). */
@@ -1718,31 +1720,60 @@ export class NetClient implements System {
     return id === this.id ? 'You' : this.displayName(id)
   }
 
-  /** A player's chosen name; bots get a seeded name every client agrees on. */
+  /**
+   * A player's chosen name; a bot's is one given name from (world seed, bot id), the same on
+   * every client, whether or not the bot is in the roster right now (a toast or chat line about
+   * a bot that has just left still names it). "Player N" is only for a person with no name.
+   */
   displayName(id: number): string {
     if (isBotId(id) && this.ctx.names) {
-      // Seeded, so it only changes with the world's seed: generate each once.
-      // The cache is only as good as what made it: a new seed or a replaced namer starts over.
-      if (this.botNamesSeed !== worldSeed.value || this.botNamer !== this.ctx.names) {
-        this.botNamesSeed = worldSeed.value
-        this.botNamer = this.ctx.names
-        this.botNames.clear()
-      }
-      const known = this.botNames.get(id)
-      if (known !== undefined) return known
-      try {
-        const name = this.ctx.names(`${worldSeed.value}:${id}`, 'bot')
-        this.botNames.set(id, name)
-        return name
-      } catch {
-        // Fall back to the server's name.
-      }
+      try { return this.botNamesNow().get(id) ?? this.botName(id, this.botNamesTaken) } catch { /* Fall back to the server's name. */ }
     }
     return this.players.get(id)?.name ?? `Player ${id}`
   }
 
+  /** A bot's hidden role ("Dust Clerk"), the character its banter speaks in; '' when unknown. */
+  botRole(id: number): string {
+    try { return isBotId(id) ? this.ctx.botRole?.(`${worldSeed.value}:${id}`) ?? '' : '' } catch { return '' }
+  }
+
+  /**
+   * One bot's name through the one injected namer (ctx.names): its own given name, or, if that
+   * is in `taken` (lower case), deterministic rerolls from the same seed. The same rule as
+   * uniqueBotName in src/ui/data/names.ts, which the host's offline bots use.
+   */
+  private botName(id: number, taken: ReadonlySet<string>): string {
+    const seed = `${worldSeed.value}:${id}`
+    let name = this.ctx.names!(seed, 'bot')
+    for (let k = 1; taken.has(name.toLowerCase()) && k < 64; k++) name = this.ctx.names!(`${seed}~${k}`, 'player')
+    return name
+  }
+
+  /**
+   * The names of the bots present, resolved together: lowest id first, each avoiding the
+   * people and the bots before it, so a room never shows two of one name. Rebuilt only when
+   * the seed, the namer or the roster's names change.
+   */
+  private botNamesNow(): ReadonlyMap<number, string> {
+    const ids: number[] = [], people: string[] = []
+    for (const p of this.players.values()) if (isBotId(p.id)) ids.push(p.id); else people.push(p.name.toLowerCase())
+    // Bots this client simulates may not be in the roster yet.
+    for (let i = 0; i < (this.bots?.vehicles.length ?? 0); i++) if (!ids.includes(BOT_ID_BASE + i)) ids.push(BOT_ID_BASE + i)
+    ids.sort((a, b) => a - b)
+    const key = `${worldSeed.value}|${people.sort().join('\u0000')}|${ids.join(',')}`
+    if (key === this.botNamesKey && this.botNamer === this.ctx.names) return this.botNames
+    this.botNamesKey = key; this.botNamer = this.ctx.names
+    this.botNames.clear()
+    const taken = new Set(people)
+    for (const id of ids) { const name = this.botName(id, taken); this.botNames.set(id, name); taken.add(name.toLowerCase()) }
+    this.botNamesTaken = taken
+    return this.botNames
+  }
+
+  /** Every name in the room now, lower case: a bot not present avoids these. */
+  private botNamesTaken: ReadonlySet<string> = new Set()
   private readonly botNames = new Map<number, string>()
-  private botNamesSeed: unknown = undefined
+  private botNamesKey = ''
   private botNamer: unknown = undefined
 
   private lastMatchKey = ''
