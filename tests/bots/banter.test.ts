@@ -10,6 +10,7 @@ import { FRAGMENTS } from '../../src/bots/banter/data/fragments'
 import { expand, type Context } from '../../src/bots/banter/grammar'
 import { ROLE_WORDS, VOICE_IDS, VOICES } from '../../src/bots/banter/voices'
 import { botIdentity } from '../../src/ui/data/names'
+import { RESCUE_COLOUR_S } from '../../src/bots/banter/rescueLines'
 import { botChatter, botChatterLevel, filterChat, MAX_CHAT_LENGTH } from '../../shared/chat'
 import { params } from '../../shared/params'
 import { seededRandom } from '../../src/bots/random'
@@ -267,5 +268,31 @@ describe('bot banter', () => {
       claimed = w.said.some((l) => l.bot === b && claims.test(l.text))
     }
     expect(w.said.filter((l) => l.bot !== b && claims.test(l.text))).toEqual([])
+  })
+
+  it('a five-minute rescue does not fill the log: colour at most once per RESCUE_COLOUR_S, news once', () => {
+    const w = fakeWorld(4)
+    w.run(10)
+    const templates = Object.entries(POOLS).filter(([k]) => /^(stuck|rescue|conflict)\./.test(k)).flatMap(([, pool]) => Object.values(pool).flat() as string[])
+    const pattern = (t: string) => new RegExp('^' + t.replace(/[.*+?^$()|\\]/g, '\\$&').replace(/\\\[|\[[^\]]*\]/g, '.+?').replace(/\{[^}]*\}/g, '.+?') + '$')
+    const patterns = templates.map(pattern)
+    const [stuck, a, b, c] = [0xff00, 0xff01, 0xff02, 0xff03]
+    const before = w.said.length
+    w.director.rescue({ kind: 'stuck', stuck, clumsy: true, count: 2 })
+    // A hard rescue: every few seconds something happens, for five minutes.
+    const busy: Parameters<typeof w.director.rescue>[0][] = [
+      { kind: 'conflict', bot: c, stuck, player: 1, going: false }, { kind: 'start', bot: a, stuck }, { kind: 'retry', bot: a, stuck },
+      { kind: 'join', bot: b, stuck, others: [a] }, { kind: 'start', bot: b, stuck }, { kind: 'handoff', bot: b, stuck }, { kind: 'swap', bot: a, stuck },
+      { kind: 'waiting', stuck, minutes: 2 }, { kind: 'pointed', stuck }, { kind: 'retry', bot: c, stuck },
+    ]
+    for (let i = 0; i < 100; i++) { w.director.rescue(busy[i % busy.length]); w.run(3) }
+    w.director.rescue({ kind: 'calloff', bot: a, stuck })
+    w.director.rescue({ kind: 'giveup', stuck })
+    w.run(20)
+    const lines = w.said.slice(before).filter((l) => patterns.some((p) => p.test(l.text)))
+    // News: stuck, someone is coming, a rescuer is stuck too, called off, gone home; a reply to
+    // the stuck call may ride along. Colour: one per RESCUE_COLOUR_S.
+    expect(lines.length).toBeLessThanOrEqual(6 + Math.ceil(320 / RESCUE_COLOUR_S) + 1)
+    expect(lines.length).toBeGreaterThan(5)
   })
 })
