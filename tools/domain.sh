@@ -116,9 +116,14 @@ check)
     ws.on("open", () => { clearTimeout(t); console.log("WSS ok: upgrade to /ws"); ws.close(); process.exit(0) })
     ws.on("error", (e) => { console.error("WSS failed: " + e.message); process.exit(1) })
   ' "$H" "$REPO"
-  SHOT_PARENT="$(mktemp -d "/tmp/syn3h-shot-domain-$H.XXXXXX")" || die "could not reserve domain evidence directory"
-  echo "Shot evidence: $SHOT_PARENT/evidence (https://$H/)"
-  run_smoke "https://$H/" /tmp/syn3h-domain-check.log "$SHOT_PARENT/evidence" || die "net-smoke failed on $H"
+  if [ -n "${SYN3H_SHORT_CHECK:-}" ]; then
+    # After a release's production deploy: the short public check (tools/public-check.mjs).
+    run_public_check "https://$H/" /tmp/syn3h-domain-check.log || die "public check failed on $H"
+  else
+    SHOT_PARENT="$(mktemp -d "/tmp/syn3h-shot-domain-$H.XXXXXX")" || die "could not reserve domain evidence directory"
+    echo "Shot evidence: $SHOT_PARENT/evidence (https://$H/)"
+    run_smoke "https://$H/" /tmp/syn3h-domain-check.log "$SHOT_PARENT/evidence" || die "net-smoke failed on $H"
+  fi
   ;;
 
 rollback)

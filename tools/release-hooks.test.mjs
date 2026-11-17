@@ -82,7 +82,7 @@ function section(source, start, end) {
 const smokeSections = {
   normal: section(release, 'SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.', '\n\nif [ -n "$DRY" ]'),
   latency: section(release, '  SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-latency.', '\n  echo\n'),
-  domain: section(domain, '  SHOT_PARENT="$(mktemp -d "/tmp/syn3h-shot-domain-', '\n  ;;'),
+  domain: section(domain, '  if [ -n "${SYN3H_SHORT_CHECK:-}" ]; then', '\n  ;;'),
   rollback: section(rollback, '# Preserve the check'),
 }
 function callerFixture(fn) {
@@ -124,7 +124,9 @@ exit 94
         cwd: dir, encoding: 'utf8', timeout: 3000, maxBuffer: 1024 * 1024,
         env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH,
           FIXTURE: dir, CALLS: calls, CASE: scenario, H: host, URL: 'https://example.test/',
-          LOG: join(dir, 'same-log'), PROXY_PORT: '12345', SYN3H_SHOT_EVIDENCE_DIR: '/must-not-reuse/evidence' },
+          LOG: join(dir, 'same-log'), PROXY_PORT: '12345', SYN3H_SHOT_EVIDENCE_DIR: '/must-not-reuse/evidence',
+          // The evidence-carrying smoke in the release section is the dry run's path now.
+          DRY: '1' },
       })
       assert.equal(result.error, undefined, String(result.error))
       return result
@@ -164,3 +166,18 @@ for (const kind of ['normal', 'latency', 'domain']) {
     assert.equal(invoke(kind, 'zero-no-marker').status, 1)
   }))
 }
+
+// The short public check after a production deploy: a crash is a fresh rerun, at most twice.
+for (const [name, codes, status] of [['passes', [0], 0], ['fails at once', [1, 0], 1], ['reruns after a crash', [3, 0], 0], ['gives up after three crashes', [3, 3, 3, 0], 1]]) {
+  test(`run_public_check ${name}`, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'syn3h-public-check-'))
+    try {
+      mkdirSync(join(dir, 'bin'))
+      writeFileSync(join(dir, 'codes'), codes.join('\n') + '\n')
+      writeFileSync(join(dir, 'bin/node'), '#!/bin/sh\nc=$(head -1 "$CODES"); tail -n +2 "$CODES" > "$CODES.next"; mv "$CODES.next" "$CODES"\n[ "$c" = 0 ] && echo "PUBLIC CHECK OK" || echo "PUBLIC CHECK FAILED"\nexit "$c"\n', { mode: 0o755 })
+      const result = spawnSync('/bin/sh', ['-eu', '-c', readFileSync(new URL('./smoke-run.sh', import.meta.url), 'utf8') + '\nrun_public_check https://example.test/ "$LOG"'], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, CODES: join(dir, 'codes'), LOG: join(dir, 'log') } })
+      assert.equal(result.status, status, result.stdout + result.stderr)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+}
+
