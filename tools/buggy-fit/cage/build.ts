@@ -14,6 +14,8 @@ import {readNode} from './glb'
 import {weld, TriGrid, distance, roughness, type TriMesh} from './geom'
 import {decimate} from './decimate'
 import {clean, quality} from './clean'
+import {characterLines} from './lines'
+import {snapLines} from './linesnap'
 import {fitCage} from './fit'
 import {buildBody, fullCage, cornerNormals, type CageData, type Candidate} from '../../../src/vehicles/buggygen/cage/generator'
 import {subdivide} from '../../../src/vehicles/buggygen/cage/subdivide'
@@ -105,6 +107,16 @@ function asMesh(d: CageData, levels: number): TriMesh {
 // A size is a module name and, optionally, a different point budget: `250:290` writes
 // cage250.ts from a 290 point cage. The shipped body keeps the cage250 name.
 const SHARP = sharpEdges(ref, env0('REFDEG', 35))
+/** Hard creases plus line edges with their semi-sharpness; hard ones are stored as 99. */
+function lineCreases(hard: number[], line: number[], sharpness: number): { c: number[]; s?: number[] } {
+  if (!line.length) return {c: hard}
+  const k = (a: number, b: number) => Math.min(a, b) + ',' + Math.max(a, b), onLine = new Set<string>()
+  for (let i = 0; i < line.length; i += 2) onLine.add(k(line[i], line[i + 1]))
+  const c: number[] = [], s: number[] = []
+  for (let i = 0; i < hard.length; i += 2) if (!onLine.has(k(hard[i], hard[i + 1]))) { c.push(hard[i], hard[i + 1]); s.push(99) }
+  for (let i = 0; i < line.length; i += 2) { c.push(line[i], line[i + 1]); s.push(sharpness) }
+  return {c, s}
+}
 function mergeCreases(a: number[], b: number[]): number[] {
   const out = [...a], have = new Set<string>()
   for (let i = 0; i < a.length; i += 2) have.add(Math.min(a[i], a[i + 1]) + ',' + Math.max(a[i], a[i + 1]))
@@ -124,14 +136,46 @@ const code = ['generator.ts', 'subdivide.ts'].map(f => readFileSync(join(ROOT, '
 for (const spec of sizes.length ? sizes : ['60', '120', '250', '500']) {
   const [size, points = POINTS[size] ?? size] = spec.split(':').map(Number)
   const env = (k: string, d: number) => process.env[k] ? Number(process.env[k]) : d
-  const raw = decimate(h, points, env('BORDER', 20), env('SHAPE', 0), size >= 200 && env('PROTECT', 1) ? [roles.indexOf('lamp:tail')] : [], size >= 200 ? env('CORNER', 0) : 0, process.env.CTAGS ? process.env.CTAGS.split(',').map(r => roles.indexOf(r)) : [], size >= 200 && env('SCOOP', 1) ? [SCOOP, ...(env('SCOOP', 1) > 1 ? [{...SCOOP, tag: roles.indexOf('paint')}, {...SCOOP, tag: roles.indexOf('accent')}] : [])] : [], size >= 200 ? env('FOLDLOCK', 0) : 0, FLANK)
-  const dec = env('CLEAN', 6) ? clean(raw, grid, env('CLEAN', 6)) : raw
+  // Character lines of the rear half, drawn as chains of cage edges (see lines.ts).
+  const lines = size >= 200 && env('LINES', 0) ? characterLines(h, {degrees: env('LINEDEG', 40), minLength: env('LINEMIN', .3), min: [0, -1, -.1], max: [2, 2, 3], turn: 50}).map(l => l.verts) : []
+  const raw = decimate(h, points, env('BORDER', 20), env('SHAPE', 0), size >= 200 && env('PROTECT', 1) ? [roles.indexOf('lamp:tail')] : [], size >= 200 ? env('CORNER', 0) : 0, process.env.CTAGS ? process.env.CTAGS.split(',').map(r => roles.indexOf(r)) : [], size >= 200 && env('SCOOP', 1) ? [SCOOP, ...(env('SCOOP', 1) > 1 ? [{...SCOOP, tag: roles.indexOf('paint')}, {...SCOOP, tag: roles.indexOf('accent')}] : [])] : [], size >= 200 ? env('FOLDLOCK', 0) : 0, FLANK, lines)
+  const dec = env('CLEAN', 6) ? clean(raw, grid, env('CLEAN', 6), 35, raw.lineEdges) : raw
   console.error(`${size}: cage triangle quality before ${JSON.stringify(quality(raw))}, after ${JSON.stringify(quality(dec))}`)
   const fullTris = dec.tri.length / 3 * 2
   const level0 = fullTris * 16 <= 9000 ? 2 : 1
-  const base: CageData = {roles, v: Array.from(dec.pos, x => Math.round(x * 1000)), f: Array.from(dec.tri), t: Array.from(dec.tag), c: mergeCreases(creases(dec, env('CREASE', 55)), env('REFCREASE', 1) ? referenceCreases(dec, SHARP, env('REFTOL', .008)) : []), levels: [level0, level0 - 1, 0], limit: !!env('LIMIT', 1)}
+  const base: CageData = {roles, v: Array.from(dec.pos, x => Math.round(x * 1000)), f: Array.from(dec.tri), t: Array.from(dec.tag), ...lineCreases(mergeCreases(creases(dec, env('CREASE', 55)), env('REFCREASE', 1) ? referenceCreases(dec, SHARP, env('REFTOL', .008)) : []), raw.lineEdges, env('LINESHARP', 1.5)), levels: [level0, level0 - 1, 0], limit: !!env('LIMIT', 1)}
   const t0 = performance.now()
   const fitted = fitCage(base, ref, grid, {levels: level0, rounds: env('ROUNDS', 20), reverse: env('REVERSE', size <= 60 ? 1 : 0), smooth: env('SMOOTH', 1e-3), fair: env('FAIR', 0), bend: env('BEND', 0.3), log: !!process.env.LOG})
+  // Character lines drawn into the fitted cage (rear half only), then the rear refitted
+  // with every point ahead of the lines frozen. See linesnap.ts.
+  if (size >= 200 && env('SNAP', 1)) {
+    const found = characterLines(h, {degrees: env('LINEDEG', 40), minLength: env('LINEMIN', .3), min: [0, -1, -.1], max: [2, 2, 3], turn: 50})
+      .filter(l => ['paint', 'accent', 'frame'].includes(roles[l.tag]))
+    const chains = found.map(l => l.verts.map(v => [h.pos[v * 3], h.pos[v * 3 + 1], h.pos[v * 3 + 2]]))
+    const minZ = env('SNAPZ', 0)
+    const snapped = snapLines(fitted, chains, {spacing: env('SPACING', .12), reach: env('REACH', .07), sharpness: env('LINESHARP', 2), minZ, insert: !!env('INSERT', 1)}, found.map(l => l.tag))
+    console.error(`snap: ${snapped.added} added, ${snapped.moved.size} points onto ${chains.length} lines; ` + snapped.report.map(r => `${r.points}p/${r.joined}j`).join(' '))
+    const z = (j: number) => snapped.cage.v[j * 3 + 2] / 1000
+    const refit = fitCage(snapped.cage, ref, grid, {levels: level0, rounds: env('ROUNDS', 20), reverse: 0, smooth: env('SMOOTH', 1e-3), bend: env('BEND', 0.3), frozen: j => z(j) < minZ - .05})
+    Object.assign(fitted, refit)
+    // Pay for the lines: collapse plain rear points of the cage itself down to TRIM points,
+    // with the front, the lines, the tail lamps and the scoop lip locked, then refit the rear.
+    const trim = env('TRIM', 0)
+    if (trim && fitted.v.length / 3 > trim) {
+      const cm: TriMesh = {pos: Float64Array.from(fitted.v, x => x / 1000), tri: Uint32Array.from(fitted.f), tag: Uint8Array.from(fitted.t)}
+      const lineChains: number[][] = [], hard: number[] = []
+      for (let i = 0; i < fitted.c.length; i += 2) (fitted.s?.[i / 2] ?? 99) < 99 ? lineChains.push([fitted.c[i], fitted.c[i + 1]]) : hard.push(fitted.c[i], fitted.c[i + 1])
+      const lock = Uint8Array.from({length: cm.pos.length / 3}, (_, j) => cm.pos[j * 3 + 2] < minZ + env('TRIMGAP', .1) ? 1 : 0)
+      const t = decimate(cm, trim, env('BORDER', 20), 0, [roles.indexOf('lamp:tail')], 0, [], [SCOOP], 0, undefined, lineChains, lock)
+      const keepHard: number[] = []
+      for (let i = 0; i < hard.length; i += 2) { const a = t.remap[hard[i]], b = t.remap[hard[i + 1]]; if (a >= 0 && b >= 0 && a !== b) keepHard.push(a, b) }
+      const lc = lineCreases(mergeCreases(keepHard, referenceCreases(t, SHARP, env('REFTOL', .008))), t.lineEdges, env('LINESHARP', 2))
+      const trimmed: CageData = {...fitted, v: Array.from(t.pos, (x, i) => i % 3 === 0 && Math.abs(x) < 1e-6 ? 0 : Math.round(x * 1000)), f: Array.from(t.tri), t: Array.from(t.tag), ...lc}
+      const tz = (j: number) => trimmed.v[j * 3 + 2] / 1000
+      Object.assign(fitted, fitCage(trimmed, ref, grid, {levels: level0, rounds: env('ROUNDS', 20), reverse: 0, smooth: env('SMOOTH', 1e-3), bend: env('BEND', 0.3), frozen: j => tz(j) < minZ - .05}))
+      console.error(`trim: ${cm.pos.length / 3} to ${trimmed.v.length / 3} points`)
+    }
+  }
   const fitMs = performance.now() - t0
   const id = `cage${size}${process.env.SUFFIX ?? ""}`
   // Detail 2 must stay near 400 triangles: cages too big for that borrow the 60 point cage.
@@ -141,7 +185,7 @@ for (const spec of sizes.length ? sizes : ['60', '120', '250', '500']) {
     `import {candidate, type CageData} from './generator'\n` + (far ? `import {data as far} from './cage60'\n` : '') +
     `\nexport const data: CageData = ${JSON.stringify(fitted)}\n\nexport default candidate('${id}', data${far ? ', far' : ''})\n`
   writeFileSync(join(ROOT, 'src/vehicles/buggygen/cage', `${id}.ts`), file)
-  const numbers = fitted.v.length + fitted.f.length + fitted.t.length + fitted.c.length // this cage alone; the far cage adds its own
+  const numbers = fitted.v.length + fitted.f.length + fitted.t.length + fitted.c.length + (fitted.s?.length ?? 0) // this cage alone; the far cage adds its own
   const gz = gzipSync(code + file, {level: 9}).length, gzData = gzipSync(file, {level: 9}).length
   const times: number[] = []
   for (let i = 0; i < 25; i++) { const s = performance.now(); buildBody(fitted, level0); if (i >= 5) times.push(performance.now() - s) }

@@ -18,6 +18,8 @@ export interface CageData {
   t: number[]
   /** Crease edges of the half cage as vertex pairs. */
   c: number[]
+  /** Optional semi-sharpness per crease pair (subdivision steps it stays sharp); absent means fully sharp. */
+  s?: number[]
   /** Subdivision levels for detail 0, 1 and 2. */
   levels: [number, number, number]
   /** Move subdivided vertices onto the limit surface (smoother shading at the same count). */
@@ -40,7 +42,7 @@ export function fullCage(d: CageData): Cage {
   for (let i = 0; i < d.f.length; i += 3) faces.push(mirror[d.f[i]], mirror[d.f[i + 2]], mirror[d.f[i + 1]])
   tags.push(...d.t)
   for (const v of d.c) creases.push(mirror[v])
-  return {positions, faces, tags, creases}
+  return {positions, faces, tags, creases, sharpness: d.s ? [...d.s, ...d.s] : undefined}
 }
 
 /**
@@ -113,7 +115,7 @@ export function buildBody(d: CageData, levels: number): BodyPart[] {
   return parts
 }
 
-const count = (d: CageData) => d.v.length + d.f.length + d.t.length + d.c.length
+const count = (d: CageData) => d.v.length + d.f.length + d.t.length + d.c.length + (d.s?.length ?? 0)
 
 /** A candidate for the buggy-fit harness. `far`, if given, is a smaller cage drawn unsubdivided at detail 2. */
 export function candidate(id: string, d: CageData, far?: CageData): Candidate {
