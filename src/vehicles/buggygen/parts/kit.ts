@@ -43,6 +43,18 @@ export class Mesh {
     }
     if (vol < 0) this.flip(this.start)
   }
+  /** For an open shell: turn faces over so that, on balance, they face away from `c`. */
+  orientAway(c: V3, from = this.start): void {
+    let s = 0
+    const p = this.p
+    for (let t = from; t < this.i.length; t += 3) {
+      const a = this.i[t] * 3, b = this.i[t + 1] * 3, d = this.i[t + 2] * 3
+      const u = [p[b] - p[a], p[b + 1] - p[a + 1], p[b + 2] - p[a + 2]], v = [p[d] - p[a], p[d + 1] - p[a + 1], p[d + 2] - p[a + 2]]
+      const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+      s += n[0] * (p[a] - c[0]) + n[1] * (p[a + 1] - c[1]) + n[2] * (p[a + 2] - c[2])
+    }
+    if (s < 0) this.flip(from)
+  }
   flip(from = 0, to = this.i.length): void {
     for (let t = from; t < to; t += 3) { const s = this.i[t + 1]; this.i[t + 1] = this.i[t + 2]; this.i[t + 2] = s }
   }
