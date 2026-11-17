@@ -289,6 +289,7 @@ export class Game {
    */
   async compileAhead(object: THREE.Object3D): Promise<void> {
     const renderer = this.renderer as unknown as CompilingRenderer
+    keepContextThroughPrecompile(this.renderer)
     const passes = (this.postChain?.scenePasses?.() ?? []) as unknown as ScenePass[]
     const targets: (ScenePass | null)[] = passes.length ? passes : [null]
     for (const pass of targets) {
@@ -300,11 +301,12 @@ export class Game {
       let run: Promise<void>
       try {
         if (pass) {
-          // As PassNode.compileAsync configures its target, so the pipelines match its frames.
-          pass.renderTarget.samples = pass.options.samples === undefined ? renderer.samples : pass.options.samples
-          renderer.getDrawingBufferSize(this.bufferSize)
-          pass.setSize(this.bufferSize.width, this.bufferSize.height)
-          renderer.setRenderTarget(pass.renderTarget)
+          // A stand-in for the pass's target, not the target itself: the same formats, samples
+          // and outputs, so the shader builds and pipelines made here are the ones the pass's
+          // frames use, but none of the render objects or bind groups. Compiling against the
+          // real target left bind groups that sample its own "output" while drawing into it,
+          // which the GPU rejects every frame.
+          renderer.setRenderTarget(this.standIn(pass, renderer))
           renderer.setMRT(pass._mrt)
           if (pass.contextNode !== null) renderer.contextNode = pass._getContextNode(renderer)
         }
@@ -316,7 +318,23 @@ export class Game {
       await run
     }
   }
-  private readonly bufferSize = new THREE.Vector2()
+  /** One 1x1 stand-in target per scene pass, made to match it (see compileAhead). */
+  private readonly standIns = new WeakMap<object, { target: THREE.RenderTarget; source: object }>()
+  private standIn(pass: ScenePass, renderer: CompilingRenderer): THREE.RenderTarget {
+    const real = pass.renderTarget as unknown as THREE.RenderTarget
+    const samples = pass.options.samples === undefined ? renderer.samples : pass.options.samples
+    let entry = this.standIns.get(pass)
+    // Rebuilt if the pass replaced its target or its configuration changed.
+    if (!entry || entry.source !== real || entry.target.samples !== samples || entry.target.textures.length !== real.textures.length || entry.target.texture.type !== real.texture.type) {
+      entry?.target.dispose()
+      const target = real.clone()
+      target.samples = samples
+      target.setSize(1, 1)
+      entry = { target, source: real }
+      this.standIns.set(pass, entry)
+    }
+    return entry.target
+  }
 
   private postChain: PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> | null = null
   /**
@@ -368,13 +386,42 @@ interface CompilingRenderer {
   compileAsync(object: THREE.Object3D, camera: THREE.Camera, scene: THREE.Scene): Promise<void>
 }
 interface ScenePass {
-  renderTarget: { samples: number }
+  renderTarget: object
   options: { samples?: number }
   contextNode: unknown
   _mrt: unknown
   setSize(width: number, height: number): void
   _getContextNode(renderer: unknown): unknown
 }
+
+/**
+ * three r187's compileAsync yields between frames and re-applies its render target and outputs
+ * each time it resumes, but not `renderer.contextNode`, through which a scene pass gives its
+ * materials their screen-space lighting (or, for the AO and GI source pass, none). A build that
+ * resumed after a yield took whatever context was current, so it did not match the pass's own
+ * frames and was built again there, in one frame. Carry the context in three's precompile
+ * state: taken when compiling starts, put back on every resume, restored on every pause.
+ * Applied once per renderer.
+ */
+function keepContextThroughPrecompile(renderer: unknown): void {
+  const r = renderer as { contextNode: unknown; _precompilationState: PrecompileState | null; _beginPreCompile?(state: PrecompileState): void; _finishPreCompile?(): void; syn3hKeepsContext?: boolean }
+  if (r.syn3hKeepsContext || typeof r._beginPreCompile !== 'function' || typeof r._finishPreCompile !== 'function') return
+  const begin = r._beginPreCompile.bind(r), finish = r._finishPreCompile.bind(r)
+  r._beginPreCompile = state => {
+    // Work items copy the state they were queued under, this field with it.
+    if (!('syn3hContext' in state)) state.syn3hContext = r.contextNode
+    state.syn3hPreviousContext = r.contextNode
+    r.contextNode = state.syn3hContext
+    begin(state)
+  }
+  r._finishPreCompile = () => {
+    const state = r._precompilationState
+    finish()
+    if (state && 'syn3hPreviousContext' in state) r.contextNode = state.syn3hPreviousContext
+  }
+  r.syn3hKeepsContext = true
+}
+interface PrecompileState { syn3hContext?: unknown; syn3hPreviousContext?: unknown }
 
 /** A readable name for a system in the startup table. Minified builds may shorten it. */
 function systemName(system: System): string {

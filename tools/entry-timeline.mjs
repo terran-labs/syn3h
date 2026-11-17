@@ -115,6 +115,11 @@ async function run(index) {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', e => errors.push(String(e)))
+  // Console errors and warnings, by phase: WebGPU validation errors arrive here (three logs the
+  // device's uncaptured errors, Chrome logs its own "WebGPU" warnings).
+  let phase = 'lobby'
+  const consoleErrors = []
+  page.on('console', m => { if (m.type() === 'error' || (m.type() === 'warning' && /webgpu|validation|invalid/i.test(m.text()))) consoleErrors.push({ phase, type: m.type(), text: m.text() }) })
   const cdp = await context.newCDPSession(page)
   const room = `entry-${Date.now()}-${index}`
   await page.goto(`${url}${url.includes('?') ? '&' : '?'}room=${room}`, { waitUntil: 'load', timeout: 180000 })
@@ -137,8 +142,11 @@ async function run(index) {
   const anchorAt = await page.evaluate(anchor)
   await page.waitForTimeout(500)
   const clicked = await page.evaluate(id => { const r = window.__timeline; r.clicked = performance.now(); document.querySelector(`.galaxy-label[data-world="${id}"]`).click(); return r.clicked }, target)
+  phase = 'entry'
   await page.waitForFunction(() => window.__timeline.drivable > 0, null, { timeout: 60000, polling: 50 })
+  phase = 'driving (bot arrivals)'
   await page.waitForTimeout(AFTER_DRIVE_MS)
+  phase = 'exit'
   // Leaving: "Leave world", confirmed.
   const left = await page.evaluate(() => { const r = window.__timeline, shell = window.syn3h.shell; r.left = performance.now(); shell.askExit(); shell.answerExit(true); return r.left })
   const settled = await page.waitForFunction(() => !window.syn3h.shell.dropping && !window.syn3h.shell.playing, null, { timeout: 30000, polling: 50 }).then(() => page.evaluate(() => performance.now())).catch(() => NaN)
@@ -160,6 +168,10 @@ async function run(index) {
   }
   await context.close()
 
+  const byPhase = new Map()
+  for (const e of consoleErrors) { const k = `${e.phase}\u0001${e.type}\u0001${e.text.slice(0, 1500)}`; byPhase.set(k, (byPhase.get(k) ?? 0) + 1) }
+  console.log(`console errors: ${consoleErrors.length} (${['lobby', 'entry', 'driving (bot arrivals)', 'exit'].map(p => `${p} ${consoleErrors.filter(e => e.phase === p).length}`).join(', ')})`)
+  for (const [k, n] of byPhase) { const [ph, type, text] = k.split('\u0001'); console.log(`  x${n} [${ph}] ${type}: ${text.replace(/\s+/g, ' ')}`) }
   const entry = summarise(rec.frames, clicked, rec.drivable + AFTER_DRIVE_MS)
   const transition = summarise(rec.frames, clicked, rec.drivable)
   const exit = summarise(rec.frames, left, left + AFTER_EXIT_MS)
