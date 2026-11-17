@@ -123,6 +123,8 @@ interface BotState {
   driftBack: { player: number; at: number } | null
   lastSpoke: number
   near: Set<number>
+  /** Until when it is off on a mishap's bold line: it turns invitations down meanwhile. */
+  bold?: number
 }
 
 interface PlayerState {
@@ -518,10 +520,12 @@ export class BanterDirector {
   /** "Tag?" "I'm in the middle of something." "You're in the middle of a puddle." */
   private proposal(a: BotState, b: BotState, t: number): void {
     const kind = pickOne(['tag', 'tag', 'race', 'explore', 'summit', 'convoy'] as const, this.r)
-    const busy = this.view(b)?.caption ?? 'something'
+    const bold = (b.bold ?? 0) > this.world.now()
+    const busy = bold ? 'taking a shortcut' : this.view(b)?.caption ?? 'something'
     this.speak(a, `propose.${kind}`, { you: b.short }, t)
     const v = VOICES[b.voice]
-    const roll = this.r()
+    // A bot heading off on a mishap is busy, whatever its temper.
+    const roll = bold ? 0 : this.r()
     const act = () => {
       // Sometimes they actually do it: the one who agreed tails the one who asked.
       // A player's request comes first: a bot already with someone does not wander off.
@@ -759,6 +763,7 @@ export class BanterDirector {
   private readonly rescued = new Map<number, number>()
   private conflictAt = -Infinity
   private conflicted: BotState | null = null
+  private conflictedWent = false
 
   /** A rescue happened (src/bots/rescue): say so, in character. */
   rescue(e: RescueEvent): void {
@@ -770,9 +775,11 @@ export class BanterDirector {
       case 'stuck': {
         const s = bot(e.stuck)
         if (!s) return
+        s.bold = 0
         this.speak(s, 'stuck.call', {}, t)
         const o = others(s)
-        if (o.length && (e.clumsy || e.count >= 2) && this.r() < 0.75) this.speak(pickOne(o, this.r), 'stuck.reputation', { subj: s.short, you: s.short, count: ordinal(e.count) })
+        // The clumsy one's first time today has a reputation but no count yet.
+        if (o.length && (e.clumsy || e.count >= 2) && this.r() < 0.75) this.speak(pickOne(o, this.r), e.count >= 2 ? 'stuck.reputation' : 'stuck.clumsy', { subj: s.short, you: s.short, count: ordinal(e.count) })
         return
       }
       case 'pointed': { const s = bot(e.stuck); if (s) this.speak(s, 'stuck.pointed', {}); return }
@@ -784,12 +791,13 @@ export class BanterDirector {
         const v = b.voice
         if (e.going) this.speak(b, v === 'clerk' ? 'conflict.form' : this.r() < 0.6 ? 'conflict.go' : 'conflict.guilt', ctx)
         // A bot that stays never reads from conflict.go or conflict.guilt.
-        else if (this.conflicted && this.conflicted !== b && now - this.conflictAt < 20) this.speak(b, 'conflict.bargain', { ...ctx, you: this.conflicted.short })
+        // Bargaining is with a bot still deciding, never with one already on its way.
+        else if (this.conflicted && this.conflicted !== b && !this.conflictedWent && now - this.conflictAt < 20) this.speak(b, 'conflict.bargain', { ...ctx, you: this.conflicted.short })
         else if (v === 'clerk') this.speak(b, 'conflict.form', ctx)
         else if (p && this.r() < 0.4) this.speak(b, 'conflict.ask.player', ctx)
         // Staying: only lines that stay. (The guilt lines often end in going, so they are for goers.)
         else this.speak(b, 'conflict.stay', ctx)
-        this.conflicted = b; this.conflictAt = now
+        this.conflicted = b; this.conflictedWent = e.going; this.conflictAt = now
         return
       }
       case 'start': {
@@ -829,7 +837,17 @@ export class BanterDirector {
         this.speak(speaker, 'rescue.player.came', { player: p.name, you: p.name, subj: s.short })
         return
       }
-      case 'mishap': return
+      case 'mishap': {
+        // The setup for the stuck call to come: the bot says something bold as it commits,
+        // and sometimes a friend sees it coming.
+        const s = bot(e.bot)
+        if (!s) return
+        s.bold = now + 40
+        this.speak(s, 'mishap.bold', {}, t)
+        const o = others(s)
+        if (o.length && this.r() < 0.45) this.speak(pickOne(o, this.r), 'mishap.watch', { subj: s.short, you: s.short })
+        return
+      }
       case 'handoff': {
         const b = bot(e.bot), s = bot(e.stuck), person = this.players.get(e.stuck)
         if (b) this.speak(b, 'rescue.handoff', { subj: s?.short ?? person?.name ?? 'you', you: s?.short ?? person?.name ?? 'you' })

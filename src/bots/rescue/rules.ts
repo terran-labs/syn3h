@@ -136,21 +136,42 @@ export function pullDirection(
  * When the accident-prone bot next goes looking for trouble: a seeded schedule at `perHour`
  * mishaps an hour, never closer together than four minutes, so it is a running joke and not
  * a constant one.
+ *
+ * `due` only asks; `happened` uses the turn up. A moment when the bot is busy is tried again
+ * at the next decision rather than thrown away (which, when a bot was nearly always with a
+ * player, meant a whole gap of four minutes or more lost each time, and no mishap at all).
  */
 export class MishapSchedule {
   private next: number
+  /** The last mishap, or when the schedule began: the four-minute floor counts from here. */
+  private last: number
+  private rate: number
   private readonly random: () => number
   constructor(seed: string, now: number, private readonly perHour: () => number) {
     this.random = seededRandom(hashString(`mishaps:${seed}`))
+    this.last = now
+    this.rate = perHour()
     this.next = now + this.gap()
   }
 
-  /** True when it is time for the next mishap; schedules the one after. */
+  /** True when a mishap may happen now. Nothing is used up until `happened`. */
   due(now: number): boolean {
-    if (this.perHour() <= 0) { this.next = now + 60; return false }
-    if (now < this.next) return false
+    const rate = this.perHour()
+    if (rate <= 0) { this.rate = 0; return false }
+    // A new rate takes effect at once, still at least four minutes after the last mishap.
+    if (rate !== this.rate) { this.rate = rate; this.next = this.last + this.gap() }
+    return now >= this.next
+  }
+
+  /** A mishap began now: the next is a fresh gap away. */
+  happened(now: number): void {
+    this.last = now
     this.next = now + this.gap()
-    return true
+  }
+
+  /** Not possible just now (no shore near): ask again in `seconds`. */
+  later(now: number, seconds: number): void {
+    this.next = Math.max(this.next, now + seconds)
   }
 
   private gap(): number {

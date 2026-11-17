@@ -98,7 +98,7 @@ export class HostBanter implements System {
       get isHost() { return net.isHost }, get connected() { return net.connected }, get mode() { return net.mode },
       vehicleOf: (id) => net.vehicleOf(id), get botGearHooks() { return net.botGearHooks }, botCord: (id) => net.botCord(id),
       displayName: (id) => net.displayName(id), people: () => [...net.players.values()].filter((p) => !p.bot).map((p) => p.id),
-    }, this.bots, this.bots.navigator ?? null, (e) => this.director?.rescue(e), (bot) => this.withPlayer(bot))
+    }, this.bots, this.bots.navigator ?? null, (e) => this.director?.rescue(e), (bot) => this.withPlayer(bot), (bot) => this.director?.playerOf(bot) ?? null)
     this.rescue.update(elapsed)
     this.sample(elapsed)
     if (this.thinkTime >= THINK) { this.thinkTime = 0; this.director.tick() }

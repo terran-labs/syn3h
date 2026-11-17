@@ -70,7 +70,7 @@ describe('rescue rules', () => {
       const hours = 200
       const schedule = new MishapSchedule(`seed${perHour}`, 0, () => perHour)
       let count = 0, last = -Infinity, closest = Infinity
-      for (let t = 0; t < hours * 3600; t += 0.5) if (schedule.due(t)) { count++; closest = Math.min(closest, t - last); last = t }
+      for (let t = 0; t < hours * 3600; t += 0.5) if (schedule.due(t)) { schedule.happened(t); count++; closest = Math.min(closest, t - last); last = t }
       const rate = count / hours
       expect(rate, `${perHour}/h`).toBeGreaterThan(perHour * 0.85)
       expect(rate, `${perHour}/h`).toBeLessThan(perHour * 1.15)
@@ -80,5 +80,25 @@ describe('rescue rules', () => {
     let any = false
     for (let t = 0; t < 36000; t += 0.5) any ||= off.due(t)
     expect(any).toBe(false)
+  })
+
+  it('a mishap that comes due while the bot is busy waits for it, and a new rate applies at once', () => {
+    // The bug: a turn that came due while the bot was busy was used up, so a bot that was
+    // nearly always busy never had a mishap at all.
+    let perHour = 3
+    const schedule = new MishapSchedule('busy', 0, () => perHour)
+    let t = 0
+    while (!schedule.due(t)) t += 0.5
+    // Busy for ten minutes: still due all along, until it happens.
+    for (let k = 0; k < 1200; k++) { t += 0.5; expect(schedule.due(t)).toBe(true) }
+    schedule.happened(t)
+    expect(schedule.due(t + 239)).toBe(false)
+    // Turned up to the most: the next comes within about four minutes plus a short wait, not
+    // after the long gap the old rate drew.
+    perHour = 12
+    let u = t
+    while (!schedule.due(u)) u += 0.5
+    expect(u - t).toBeGreaterThanOrEqual(240)
+    expect(u - t).toBeLessThan(240 + 60 * 8)
   })
 })

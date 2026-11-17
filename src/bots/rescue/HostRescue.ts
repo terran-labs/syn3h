@@ -88,6 +88,11 @@ export class HostRescue {
     private readonly navigator: Navigator | null,
     private readonly onEvent: (e: RescueEvent) => void,
     private readonly withPlayer: (bot: number) => number | null,
+    /**
+     * The player a bot has been asked to stay with, if any. A mishap waits while there is one;
+     * merely trailing the host does not count, since that is where a person sees the mishap.
+     */
+    private readonly escorting: (bot: number) => number | null = withPlayer,
   ) {}
 
   /** Call every frame; it works on its own slow timer. */
@@ -324,7 +329,8 @@ export class HostRescue {
   /**
    * The accident-prone bot, now and then, takes a bolder line: it heads for the nearest shore
    * and keeps going a few metres too far. Within reason: `bots.mishapsPerHour`, never closer
-   * than four minutes apart, and never while it is busy with a player or a race.
+   * than four minutes apart, and never while a player has asked it along, or it is racing or
+   * on another errand. A turn that comes due while it is busy waits for it.
    */
   private misbehave(): void {
     const names = this.bots.vehicles.map((_, i) => this.net.displayName(BOT_ID_BASE + i))
@@ -338,10 +344,11 @@ export class HostRescue {
     if (!this.mishaps?.due(this.time)) return
     const i = names.indexOf(this.clumsyName!)
     const id = BOT_ID_BASE + i, brain = this.bots.brainList[i], v = this.bots.vehicles[i]
-    if (!brain?.mind || brain.directive || brain.raceGoal || this.rescues.has(id) || this.rescuing(id) || this.withPlayer(id) !== null) return
+    if (!brain?.mind || brain.directive || brain.raceGoal || this.rescues.has(id) || this.rescuing(id) || this.escorting(id) !== null) return
     const p = v.body.translation()
     const spot = this.troubleNear(p.x, p.z)
-    if (!spot) return
+    if (!spot) { this.mishaps.later(this.time, 20); return }
+    this.mishaps.happened(this.time)
     this.stats.mishaps++
     brain.directive = { kind: 'goto', x: spot.x, y: 0, z: spot.z, radius: 2, until: brain.clock + 40 }
     this.onEvent({ kind: 'mishap', bot: id })

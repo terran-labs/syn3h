@@ -6,6 +6,69 @@
 import type { Pools } from './types'
 
 export const RESCUE: Pools = {
+  // The accident-prone bot commits to a bold line at the shore. The setup; 'stuck.call' is
+  // the payoff, a few seconds later.
+  'mishap.bold': {
+    any: [
+      "I know a shortcut. It is mostly ground.",
+      "Watch this. Actually, do not watch this. Watch something near this.",
+      "Taking the line along the shore. Nobody has ever regretted the line along the shore.",
+      "Bold line coming up. I have thought about it for almost a second.",
+      "Back in a moment. Possibly a long moment.",
+    ],
+    inspector: [
+      "I am going to inspect that shore. Closely. More closely than is recommended.",
+      "That edge looks sound. I graded it from here. Going in for a second opinion.",
+    ],
+    clerk: [
+      "Taking the shore route. It is approved. I approved it. Just now, in my head.",
+      "Proceeding to the shore to confirm it is a shore. There is a form for that. I am the form.",
+    ],
+    pilot: [
+      "Watch this. Academy move. They named it after me. Then they banned it.",
+      "Nobody follow me. This line is for professionals. And the spare.",
+    ],
+    probe: [
+      "That {sea} looks like soup. I just want to know what flavour.",
+      "Ooh, the shore! I bet it tastes like {@flavour}. Just a quick look.",
+    ],
+    marshal: [
+      "Going wide. Stand clear.",
+      "Shortcut. No cones required. Probably.",
+    ],
+    moon: [
+      "The tide is out. Moon's doing. I am taking the gap before it notices.",
+      "That shore is closer than it was. The moon moved it. I am moving it back.",
+    ],
+    auditor: [
+      "Wet basalt down there. Wet basalt is the best basalt. Going in.",
+      "Shoreline sediment, grade A from here. Closer inspection needed. Much closer.",
+    ],
+    intern: [
+      "I think I have learned the shortcut from watching you all! Here goes! Feedback welcome!",
+      "I am going to try the brave line! Is it the brave line? It is a line!",
+    ],
+  },
+
+  // Someone else sees where the accident-prone bot is heading.
+  'mishap.watch': {
+    any: [
+      "Where is {subj} going?",
+      "{subj}, that is not a road.",
+      "{subj} has that look again.",
+      "Everyone, {subj} is attempting a line. Stand by with a rope.",
+      "I give {subj} ten seconds.",
+    ],
+    inspector: ["{subj}! That edge is amber! Amber means no! It has always meant no!"],
+    clerk: ["Noting the time. {subj} is about to need {@form}."],
+    pilot: ["Nice line, {subj}. Wrong, but nice."],
+    probe: ["Oh, {subj} is going for a paddle! Do we have towels?"],
+    marshal: ["{subj}. No.", "Cones. Now. For {subj}."],
+    moon: ["{subj} is heading for the {sea}. The moon has been expecting this."],
+    auditor: ["{subj} is going to be very close to some excellent sediment. Too close."],
+    intern: ["Is {subj} allowed to go there? Can I go there? Should I not go there?"],
+  },
+
   'stuck.call': {
     any: [
       "Small problem. I am stuck. Medium problem. Stuck.",
@@ -107,6 +170,24 @@ export const RESCUE: Pools = {
     ],
   },
 
+  // The accident-prone bot stuck for the first time today: a reputation, no count yet.
+  'stuck.clumsy': {
+    any: [
+      "Oh, it is {subj}. Of course it is {subj}.",
+      "{subj} has a gift. The gift is finding holes.",
+      "If there is a hole on this planet, {subj} will be in it within the hour.",
+      "We should name a crater after {subj}. They have tried most of them.",
+    ],
+    inspector: ["{subj}. I have a whole hazard grade just for {subj}. It is called {subj}."],
+    clerk: ["{subj} has a file. The file has a file. I keep both within reach."],
+    pilot: ["Amateurs. {subj}, you have to commit to it. Look at me, I never get stuck. Recently."],
+    probe: ["Poor {subj}! I hope they packed a snack down there!"],
+    marshal: ["{subj}. Of course.", "{subj}. Bring cones."],
+    moon: ["{subj} again. Strange how it is always {subj}. Almost like someone is choosing."],
+    auditor: ["{subj} keeps finding the softest ground. It is almost an instinct. A geological one."],
+    intern: ["{subj} is stuck! They are so good at it! I mean that supportively!"],
+  },
+
   'stuck.reputation': {
     any: [
       "{subj} is stuck again. I am shocked. I am not shocked.",
@@ -121,7 +202,7 @@ export const RESCUE: Pools = {
       "That is the {count} time. I have warned {subj}. I warn {subj} every morning.",
     ],
     clerk: [
-      "{subj} has a file. The file has a file. This is entry number {count}.",
+      "{subj} has a file. The file has a file. This is the {count} entry.",
       "{subj} stuck, {count} occurrence. I have pre-printed the form. I had a feeling.",
     ],
     pilot: [
