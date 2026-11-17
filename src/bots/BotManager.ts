@@ -35,8 +35,12 @@ export class BotManager implements System {
   /** Networking owns inputs and rescue decisions on non-host clients. */
   get remote() { return this.isRemote }
   set remote(value: boolean) {
+    const was = this.isRemote
     this.isRemote = value
     if (value) { this.races.setHooks(null); this.clearBots() }
+    // Becoming the host: the race hooks handed over while these bots were still remote (the
+    // race bridge installs in the same frame, before networking flips this) take effect now.
+    else if (was) this.races.setHooks(this.raceHooks)
   }
   get vehicles(): readonly Vehicle[] { return this.bots }
   /** The brains, index for index with `vehicles` (chatter and rescues read and steer them). */
@@ -44,7 +48,9 @@ export class BotManager implements System {
   /** The player's own vehicle driving itself after a spell of no input. See Daydream.ts. */
   readonly daydream: Daydream
   readonly races: BotRaces
-  setRaces(hooks: BotRaceHooks | null) { this.races.setHooks(this.remote ? null : hooks) }
+  /** The race hooks last given, kept while the bots are remote so they apply on becoming host. */
+  private raceHooks: BotRaceHooks | null = null
+  setRaces(hooks: BotRaceHooks | null) { this.raceHooks = hooks; this.races.setHooks(this.remote ? null : hooks) }
   applyRace(state: RaceState | null) { this.races.apply(state) }
   readonly navigator: Navigator & { dispose?(): void }
   /** Places worth driving to, found once per world and shared by every mind. */

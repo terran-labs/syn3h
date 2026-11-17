@@ -8,6 +8,7 @@ import { PlaceholderVehicle } from '../../src/vehicles/Vehicle'
 import type { Terrain } from '../../src/world/Terrain'
 import { BotBrain } from '../../src/bots/BotBrain'
 import { BotManager } from '../../src/bots/BotManager'
+import { RaceBridge } from '../../src/net/races'
 import { params } from '../../shared/params'
 import '../../src/bots/params'
 import { generateName } from '../../src/ui/data/names'
@@ -241,5 +242,41 @@ describe('wrapping world', () => {
     const flatBrain = new BotBrain(game, { ...terrain, size: 400 }, flatBot, near)
     flatBrain.setTargets([near, far]); flatBrain.fixedUpdate(0.02)
     expect(flatBrain.target).toBe(far)
+  })
+})
+
+describe('the race director behind the race bridge', () => {
+  /**
+   * NetClient builds its bot manager remote and, every frame, runs the race bridge before the
+   * update that makes the host's bots local. Before the fix the bridge installed its hooks in
+   * that frame, while the bots were still remote, so the director got none and no race with
+   * bots ever started for a host (v26.11.1500 to v26.11.1706).
+   */
+  function room(host: boolean) {
+    const { game } = harness(), player = stationaryTarget(game)
+    const manager = new BotManager(game, terrain, player)
+    manager.remote = true
+    const role = { id: 1, host, connected: true }
+    const bridge = new RaceBridge({ now: () => 100, role: () => role, synced: () => true, bots: () => manager, candidates: () => [], send: () => {} })
+    bridge.configure({ isDriving: () => true })
+    /** One NetClient frame: the bridge first, then the bot role. */
+    const frame = () => { bridge.update(); manager.remote = !role.host }
+    const directed = () => (manager.races as unknown as { hooks: unknown }).hooks !== null
+    return { manager, role, frame, directed }
+  }
+
+  it('directs races for a lone host from the frame it becomes host', () => {
+    const r = room(true)
+    r.frame()
+    expect(r.manager.remote).toBe(false)
+    expect(r.directed()).toBe(true)
+  })
+
+  it('follows the host role from guest to host, host to guest and back', () => {
+    const r = room(false)
+    r.frame(); expect(r.directed()).toBe(false)
+    r.role.host = true; r.frame(); expect(r.directed()).toBe(true)
+    r.role.host = false; r.frame(); expect(r.directed()).toBe(false)
+    r.role.host = true; r.frame(); expect(r.directed()).toBe(true)
   })
 })

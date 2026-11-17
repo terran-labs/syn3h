@@ -8,7 +8,9 @@ function fixture() {
   const role = { id: 1, host: true, connected: true }
   const messages: ClientMessage[] = []
   let driving = false, synced = true
-  const bots = { setRaces: vi.fn(), applyRace: vi.fn() }
+  // The director's side as the bridge must leave it: what it ends up holding is checked, not
+  // only that it was called, so a bots object that dropped the hooks could not pass.
+  const bots = { hooks: null as unknown, setRaces: vi.fn((h: unknown) => { bots.hooks = h }), applyRace: vi.fn() }
   const display = vi.fn(), now = () => 10
   const bridge = new RaceBridge({ now, role: () => role, synced: () => synced, bots: () => bots, candidates: () => [], send: m => messages.push(m) })
   bridge.configure({ isDriving: () => driving, setRace: display })
@@ -24,6 +26,7 @@ describe('Race client lifecycle', () => {
     f.bridge.receive(snapshot())
     expect(f.display).toHaveBeenLastCalledWith(snapshot(), f.now, f.role)
     expect(f.bots.setRaces).toHaveBeenCalledTimes(1)
+    expect(f.bots.hooks).not.toBeNull()
   })
   it('forwards canonical corrections including lower revisions and null to the director', () => {
     const f = fixture()
@@ -36,11 +39,14 @@ describe('Race client lifecycle', () => {
     f.drive(true); f.bridge.update(); f.bridge.receive(snapshot())
     f.role.host = false; f.bridge.update()
     expect(f.bots.setRaces).toHaveBeenLastCalledWith(null)
+    expect(f.bots.hooks).toBeNull()
     f.role.connected = false; f.bridge.disconnect()
     expect(f.bridge.snapshot).toBeNull()
     f.role.connected = true; f.bridge.update()
     expect(f.messages.at(-1)).toEqual({ type: 'race-ready', driving: true })
     expect(f.bots.setRaces).toHaveBeenCalledTimes(2)
+    // Rejoined as a guest: the director holds nothing.
+    expect(f.bots.hooks).toBeNull()
   })
   it('does not install simulation before clock sync, and restricts cancel to host', () => {
     const f = fixture()
