@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error A plain Node script, shared with the release gate.
-import { ALLOWLIST, allowed, classify, violations } from '../../tools/runtime-assets-check.mjs'
+import { ALLOWLIST, allowed, attributeStreams, classify, violations } from '../../tools/runtime-assets-check.mjs'
 
 type Entry = { kind: string; type?: string; pattern: RegExp; why: string; term: string }
 
@@ -81,5 +81,17 @@ describe('violations', () => {
       { kind: 'wasm', path: '/rapier_wasm3d_bg.wasm', source: 'stream' },
     ]
     expect(violations(bad)).toEqual(bad)
+  })
+})
+
+describe('counted WebAssembly streams', () => {
+  const engine = { kind: 'wasm', path: '/assets/rapier_wasm3d_bg-C6GCbKVJ.wasm', bytes: 3082103 }
+  it('judges a pathless stream by the allowed fetch whose bytes it carries', () => {
+    const decodes = attributeStreams([{ kind: 'wasm', source: 'stream', path: '', bytes: 3082103 }], [engine])
+    expect(violations(decodes)).toEqual([])
+  })
+  it('still fails a pathless stream that matches no allowed fetch', () => {
+    const decodes = attributeStreams([{ kind: 'wasm', source: 'stream', path: '', bytes: 1234 }], [engine])
+    expect(violations(decodes)).toHaveLength(1)
   })
 })

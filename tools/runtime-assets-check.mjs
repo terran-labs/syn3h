@@ -95,6 +95,21 @@ export function violations(records) {
  * the second half of that load and carries no bytes. Bytes compiled from a buffer were held in
  * the page, which is how a binary inlined in a script shows up.
  */
+/**
+ * A stream compiled from a Response the page built itself has no URL: the loading view's byte
+ * counter (tools/rapier-wasm.mjs) re-wraps the engine's fetch to count it. Give such a decode
+ * the path of the allowed WebAssembly fetch whose bytes it carries, so it is judged by where
+ * those bytes came from. Bytes that match no allowed fetch stay pathless and still fail.
+ */
+export function attributeStreams(decodes, network) {
+  for (const d of decodes) {
+    if (d.kind !== 'wasm' || d.source !== 'stream' || d.path) continue
+    const from = network.find((r) => r.kind === 'wasm' && r.bytes === d.bytes && allowed(r))
+    if (from) { d.path = from.path; d.attributedBy = 'bytes of the allowed fetch' }
+  }
+  return decodes
+}
+
 export function wasmViolation(record) {
   if (record.kind !== 'wasm' || record.source === 'module') return false
   return record.source === 'buffer' || !allowed(record)
@@ -393,6 +408,7 @@ async function main() {
   // ---------------------------------------------------------------------------------------------
   // Report.
 
+  attributeStreams(decodes, network)
   for (const r of [...network, ...decodes]) { const a = allowed(r); if (a) r.allowedBy = `${a.why} (${a.term})` }
   const bad = [...violations(network).map((r) => ({ from: 'network', ...r })), ...violations(decodes).map((r) => ({ from: 'decode', ...r }))]
   const quiet = new Set(['script', 'style', 'document'])
