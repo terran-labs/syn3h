@@ -130,4 +130,5 @@ const crashedRun = crashed.length > 0
 if (crashedRun) { console.log(`PUBLIC CHECK BROWSER CRASHED (${crashed.join(', ') || 'a page'}): the browser running the check crashed; this is not a deploy failure`); exitCode = 3 }
 else if (results.every((r) => r.ok)) console.log(`PUBLIC CHECK OK ${results.length} checks at ${base}`)
 else { console.log(`PUBLIC CHECK FAILED at ${base}: ${results.filter((r) => !r.ok).map((r) => r.name).join('; ')}`); exitCode = 1 }
-process.exit(exitCode)
+// Let stdout drain: process.exit() can cut off buffered output when stdout is a pipe (CI).
+process.exitCode = exitCode
