@@ -87,3 +87,28 @@ npx tsx tools/buggy-fit/selftest.ts
 A tool check, not a blocking test: each reference part against itself (zero distance, IoU 1),
 against a copy moved 10 mm (centre moves 10 mm, no distance above 10 mm), and a unit cube
 against one grown 10 mm per face (mean 10 mm, volume up 6.12%).
+
+## Vehicle lab exhibit
+
+`src/dev/vehicleLab/exhibits/buggyFit.ts` shows the reference parts and a candidate assembled
+the same way at rest (hubs, struts and shocks at the four corners, generated tyres for
+context), with the shared vehicle shading. Run the dev server and open:
+
+- `/vehicle-lab.html?vehicle=buggy-fit`: the reference parts (the loaded model).
+- `/vehicle-lab.html?vehicle=buggy-fit&design=<module>`: a candidate, named by its file in
+  `src/vehicles/buggygen/` without `.ts`. Any module there whose default export has `build`
+  is listed.
+- `/vehicle-lab.html?vehicle=buggy-fit&design=placeholder`: `tools/buggy-fit/placeholder.ts`.
+- `&design=all`: reference and every candidate side by side.
+
+A candidate's Options have **Show** (Candidate, Reference, Overlay: the reference as a cyan
+wireframe drawn over the candidate) and **Wings (open)**. Detail Level passes to `build()`.
+The page fetches the two model files to build the reference with `glb.ts`, the same code the
+harness measures with; it is a developer page and does not ship.
+
+Scripted shot (dev server on port 5297):
+
+```sh
+tools/heavy.sh node tools/lab-shot.mjs http://127.0.0.1:5297/ /tmp/buggy-fit/lab \
+  'overlay=vehicle=buggy-fit&design=placeholder@35,22,8~fit.show:2'
+```
