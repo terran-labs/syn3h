@@ -126,10 +126,13 @@ export class BotPacer {
       const meanMs = span / sorted.length, medianMs = sorted[Math.floor(sorted.length / 2)]
       this.marginal.set(m.count, medianMs - m.before)
       this.measuring = null
-      // Over the target is not enough: the bot must have made frames measurably worse. Frames
-      // that were already slow before it (a weak or busy device, a headless browser) are the
-      // quality level's to fix, not the bots'.
-      const worse = medianMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare, m.before * PACING.baselineShare)
+      // Over the target is not enough: the bot must have made frames measurably worse, from
+      // frames that met the target before it. Frames already slow before it (a weak or busy
+      // device, a headless browser) are the quality level's to fix, not the bots': there a
+      // short window's median swings by a third on its own, so no comparison can single out a
+      // bot. The governor's bot step (costly, shed) still offers relief with automatic quality.
+      const keptUp = m.before <= state.targetMs * PACING.slowFactor
+      const worse = keptUp && medianMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare, m.before * PACING.baselineShare)
       if (p90 > state.targetMs * PACING.slowFactor && worse) {
         // That one was too many: carry one fewer at this level, and send it off.
         this.allowed = Math.max(0, m.count - 1)
