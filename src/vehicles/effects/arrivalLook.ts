@@ -64,6 +64,8 @@ interface Uniforms {
   motion: N
   /** Silhouette scan line height (world y). */
   front: N
+  /** 0 close up to 1 from about 60 m: how much the beam uses its long-range daytime look. */
+  far: N
 }
 
 function volumeMaterial(u: Uniforms, octaves: number): T.MeshBasicNodeMaterial {
@@ -75,7 +77,8 @@ function volumeMaterial(u: Uniforms, octaves: number): T.MeshBasicNodeMaterial {
   // A lumpy outline: the sphere's surface heaves with slow noise, so its edge is never a circle.
   m.positionNode = positionLocal.mul(mx_fractal_noise_float(dir.mul(1.6).add(vec3(0, t.mul(.35), 0)), 1, 2, .5).mul(.28).add(1))
   const inflow = mx_fractal_noise_float(positionLocal.mul(.95).add(dir.mul(t.mul(.7))), octaves, 2, .5)
-  const churn = mx_fractal_noise_float(positionLocal.mul(1.9).add(vec3(t.mul(.3), t.mul(-.9), t.mul(.5))), 1, 2, .5)
+  // The second layer only at the full level: per-pixel noise is most of the cloud's cost on a phone.
+  const churn: N = octaves > 1 ? mx_fractal_noise_float(positionLocal.mul(1.9).add(vec3(t.mul(.3), t.mul(-.9), t.mul(.5))), 1, 2, .5) : inflow.mul(.6)
   // Facing the viewer straight on, the sight line crosses the whole sphere: thick. At the rim, thin.
   const facing: N = abs(dot(normalView, positionViewDirection))
   const live = float(1).sub(u.release)
@@ -116,12 +119,17 @@ function beamMaterial(u: Uniforms): T.MeshBasicNodeMaterial {
   const facing: N = abs(dot(normalView, positionViewDirection))
   const flash = u.release.greaterThan(0).select(float(1).sub(u.release).pow(2).mul(1.6), 0)
   const level = u.progress.mul(.6).add(.15).add(flash)
-  // By day a deeper accent, drawn more opaque and wider in the core, so it reads against the sky.
-  const day = daylight()
-  const core = mix(facing.pow(2), facing.pow(.8), day)
-  const lit = core.mul(float(1).sub(v).pow(1.6)).mul(level)
-  m.colorNode = mix(u.accent, vec3(1, 1, 1), facing.pow(6).mul(mix(.5, .15, day))).mul(lit.mul(mix(2.5, 1.1, day))).mul(u.strength).mul(hotExposureNode())
-  m.opacityNode = clamp(lit.mul(mix(.8, 1.8, day)), 0, 1).mul(clamp(u.strength, 0, 1))
+  // Against a pale daytime sky a glow has nothing to show against, so by day and from afar the
+  // beam is a dark accent core edged with a bright rim: contrast either way. Close up, and at
+  // night, it glows (a dark pillar through the vehicle would hide the arrival).
+  const day = daylight().mul(u.far)
+  const fade = float(1).sub(v).pow(1.2)
+  const lit = mix(facing.pow(2), facing.pow(.6), day).mul(fade).mul(level)
+  const rim = smoothstep(.15, .45, facing).mul(float(1).sub(smoothstep(.45, .8, facing)))
+  const night = mix(u.accent, vec3(1, 1, 1), facing.pow(6).mul(.5)).mul(lit.mul(2.5))
+  const daytime = u.accent.mul(.22).mul(smoothstep(.5, .9, facing)).add(mix(u.accent, vec3(1, 1, 1), .4).mul(rim.mul(2.2)))
+  m.colorNode = mix(night, daytime.mul(fade).mul(level), day).mul(u.strength).mul(hotExposureNode())
+  m.opacityNode = clamp(mix(lit.mul(.8), fade.mul(level).mul(smoothstep(.1, .35, facing)).mul(1.6), day), 0, 1).mul(clamp(u.strength, 0, 1))
   return m
 }
 
@@ -170,10 +178,11 @@ export class ArrivalLook {
 
   constructor(level: number) {
     this.u = {
-      progress: uniform(0), release: uniform(0), strength: uniform(1), motion: uniform(1), front: uniform(0),
+      progress: uniform(0), release: uniform(0), strength: uniform(1), motion: uniform(1), front: uniform(0), far: uniform(0),
       accent: uniform(new T.Color(.5, .85, 1)), body: uniform(new T.Color(.2, .4, .8)),
     }
-    const octaves = level === 0 ? 1 : 2
+    // One octave and one noise layer below the full level (Medium and below, and every touch device).
+    const octaves = level < 2 ? 1 : 2
     this.volume = new T.Mesh(new T.IcosahedronGeometry(1, level === 0 ? 2 : 4), volumeMaterial(this.u, octaves))
     this.volume.renderOrder = 5
     const quad = new T.PlaneGeometry(2, 2).rotateX(-Math.PI / 2)
@@ -233,6 +242,7 @@ export class ArrivalLook {
     // Seen from far off (another player's arrival), the cloud and beam keep a minimum apparent
     // size, so an arrival 100 m away still reads as one.
     const far = Math.max(1, distance * FAR_SCALE / size)
+    this.u.far.value = Math.min(1, Math.max(0, (distance / size - 35) / 25))
     const radius = size * (r > 0 ? 1.4 + 3.2 * ease(r) : 2.8 - 1.4 * ease(p)) * Math.sqrt(far)
     this.volume.position.copy(this.centre)
     this.volume.scale.set(radius, radius * .8, radius)
@@ -240,7 +250,8 @@ export class ArrivalLook {
     this.ground.position.set(this.centre.x, surface + .12, this.centre.z)
     this.ground.scale.set(reach, 1, reach)
     this.beam.position.set(this.centre.x, surface, this.centre.z)
-    this.beam.scale.set(.45 * size * far, 40 * size * Math.sqrt(far), .45 * size * far)
+    const distant = this.u.far.value as number
+    this.beam.scale.set((.45 + .15 * distant) * size * far, (40 + 20 * distant) * size * Math.sqrt(far), (.45 + .15 * distant) * size * far)
     // The scan line climbs from just under the vehicle to just over it during the hold.
     const bottom = this.centre.y + this.low - .2
     this.u.front.value = bottom + (this.high - this.low + .4) * ease(p)

@@ -228,6 +228,21 @@ describe('departure',()=>{
   })
 })
 
+describe('departure interrupted',()=>{
+  it('lets the same vehicle arrive again during its departure, without error, and ends as an arrival',async()=>{
+    const {h,v,m,step}=bed('buggy')
+    step(30)
+    const leaving=m.depart(v,{holdSeconds:1})
+    for(let i=0;i<10;i++){step(1);m.update(FIXED_DT)}
+    const arriving=m.begin(v,{hold:false,holdSeconds:.4})
+    for(let i=0;i<40;i++){step(1);m.update(FIXED_DT)}
+    await Promise.all([leaving,arriving])
+    expect(m.isMaterializing(v)).toBe(false)
+    expect(Number.isFinite(v.body.translation().y)).toBe(true)
+    m.dispose();v.dispose();h.world.free()
+  })
+})
+
 describe('preparing every look ahead',()=>{
   it('shows hidden parts and both detail levels to the compiler, then restores them',async()=>{
     const {h,v}=bed('buggy')
@@ -241,5 +256,19 @@ describe('preparing every look ahead',()=>{
     expect(distances.slice(0,2)).toEqual([0,1e4])
     expect(hidden.visible).toBe(false)
     v.dispose();h.world.free()
+  })
+})
+
+describe('arrival level',()=>{
+  it('never builds the full arrival on a touch device',async()=>{
+    const {arrivalLevel}=await import('../../src/vehicles/effects/Materialize')
+    const {params}=await import('../../shared/params')
+    const before=params.get('gfx.level')!.value
+    try{
+      params.set('gfx.level',2)
+      expect(arrivalLevel(true)).toBe(1);expect(arrivalLevel(false)).toBe(2)
+      params.set('gfx.level',0)
+      expect(arrivalLevel(true)).toBe(0)
+    }finally{params.set('gfx.level',before)}
   })
 })

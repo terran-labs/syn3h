@@ -125,6 +125,16 @@ const LOOKS=4
  * metres at cloud size 1. It lights the ground and any vehicle beside the cloud.
  */
 const LIGHT_INTENSITY=60,LIGHT_REACH=16
+/**
+ * The arrival's own level: the three-step graphics level, but at most the middle one on a touch
+ * device (no point light, the lighter volume). A phone at High measured 2.2 ms a frame more with
+ * the full arrival under 4x CPU throttling; the owner's budget is about half a millisecond.
+ */
+const touchDevice=typeof navigator!=='undefined'&&(navigator.maxTouchPoints>0||(typeof matchMedia==='function'&&matchMedia('(pointer: coarse)').matches))
+export function arrivalLevel(touch=touchDevice):number {
+  const level=Math.min(2,levelNumber(Number(graphicsLevel.value)))
+  return touch?Math.min(1,level):level
+}
 const reducedMotion=()=>{try{return typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches}catch{return false}}
 const bodyTint=new T.Color(),accentTint=new T.Color()
 
@@ -180,7 +190,7 @@ export class Materialize implements System {
 
   /** Make the cloud's batch for the current graphics level. */
   private build():void {
-    const level=Math.min(2,levelNumber(Number(graphicsLevel.value)))
+    const level=arrivalLevel()
     if(level===this.level)return
     this.cloud?.dispose()
     this.level=level
@@ -303,7 +313,7 @@ export class Materialize implements System {
 
   /** Feed the cloud round every vehicle materializing. Allocates nothing. */
   update(dt:number):void {
-    if(Math.min(2,levelNumber(Number(graphicsLevel.value)))!==this.level)this.build()
+    if(arrivalLevel()!==this.level)this.build()
     this.clock+=Math.min(.1,Math.max(0,dt))
     const cloud=this.cloud
     cloud.clock.value=this.clock

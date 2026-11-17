@@ -45,6 +45,14 @@ try {
       s.player.teleport(new s.player.object.position.constructor(px, s.terrain.heightAt(px, pz) + 1.5, pz), Math.atan2(-(x - px), -(z - pz)) + .3)
     }, target)
     await wait(1500)
+    // The arriving player must be on the watcher's screen, or the frames show nothing.
+    const onScreen = await b.evaluate(() => {
+      const s = window.syn3h, r = [...window.syn3hNet.remotes.values()].find((r) => r.info.name === 'Arrive')
+      if (!r) return null
+      const p = r.vehicle.object.position.clone().project(s.game.camera)
+      return { x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(3), distance: +s.game.camera.position.distanceTo(r.vehicle.object.position).toFixed(1) }
+    })
+    console.log('arriving player on the watcher screen (x, y in -1..1):', JSON.stringify(onScreen))
     // Start when the watcher's copy begins its arrival, then a frame every 300 ms.
     await b.evaluate(() => { const s = window.syn3h, m = s.materialize, begin = m.begin.bind(m); window.__arrived = null; m.begin = (...args) => { window.__arrived = s.game.time; return begin(...args) } })
     await a.evaluate(() => window.syn3h.swapVehicle('jet'))
@@ -53,6 +61,12 @@ try {
       await b.waitForFunction((at) => window.syn3h.game.time - window.__arrived >= at, at, { timeout: 30000 })
       await b.evaluate(() => window.syn3h.game.pause()); await wait(150)
       await b.screenshot({ path: `${out}/far-${light}-${device}-${i + 1}.png` })
+      if (i === 1) console.log('watcher look:', JSON.stringify(await b.evaluate(() => {
+        const s = window.syn3h, m = s.materialize, l = m.looks.find((l) => l.active)
+        if (!l) return { active: false, holds: m.holds.length }
+        const p = l.beam.position.clone(), top = p.clone().setY(p.y + l.beam.scale.y)
+        return { far: l.u.far.value, progress: l.u.progress.value, strength: l.u.strength.value, beamScale: l.beam.scale.toArray().map((n) => +n.toFixed(2)), visible: l.object.visible && l.beam.visible, inScene: l.object.parent === s.game.scene, base: p.project(s.game.camera).toArray().map((n) => +n.toFixed(2)), top: top.project(s.game.camera).toArray().map((n) => +n.toFixed(2)) }
+      })))
       await b.evaluate(() => window.syn3h.game.resume())
     }
   } else {
