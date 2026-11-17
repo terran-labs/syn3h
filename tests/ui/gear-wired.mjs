@@ -35,7 +35,10 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     // Driving: the drum is display only, the pill is a reminder.
     assert.equal(await page.locator('.gear-selector').getAttribute('data-mode'), 'locked')
     assert.equal(await page.locator('.hud-accessories [data-id=zorb]').isVisible(), true, 'Zorb control shows while driving')
-    assert.match(await page.locator('.hud-accessories [data-id=zorb]').innerText(), /X\s*ZORB/i)
+    // Driving: names and state only, no key caps or hints (the owner, 17 November 2026).
+    assert.match(await page.locator('.hud-accessories [data-id=zorb]').innerText(), /^\s*ZORB\s*$/i)
+    assert.equal(await page.locator('.gear-selector .gs-keyhint').isVisible(), false, 'no number-key hint while driving')
+    assert.equal(await page.locator('.gear-selector .gs-hints').isVisible(), false, 'no gear hints while driving')
     assert.equal(await page.locator('.hud-accessories [data-id=zorb]').getAttribute('aria-pressed'), 'false')
     await page.screenshot({ path: `${out}/desktop-driving.png` })
     // The arrow keys drive, never step through gear, and X switches Zorb.
@@ -51,6 +54,7 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     await page.waitForFunction(() => document.pointerLockElement === null)
     await page.waitForFunction(() => document.querySelector('.gear-selector').dataset.mode === 'free')
     const names = await page.locator('.gear-selector .gs-item').allInnerTexts()
+    assert.match(await page.locator('.hud-accessories [data-id=zorb]').innerText(), /X\s*ZORB/i, 'the key cap is back with the cursor free')
     const rack = await page.evaluate(() => syn3hNet.gear.list())
     assert.equal(names.length, rack.length, `one slot per gear (${names.join(', ')})`)
     for (const name of ['Plasma Tag', 'Grapple']) assert.ok(names.some(n => n.toLowerCase().includes(name.toLowerCase())), `${name} is on the drum: ${names.join(', ').replace(/\n/g, ' ')}`)

@@ -52,7 +52,7 @@ try {
     }
     assert.deepEqual(seen, expected)
   }
-  await A.keyboard.press('KeyT')
+  await A.keyboard.press('Digit2')
   assert.equal(await A.evaluate(() => window.syn3hNet.gear.current), 'red')
   await A.keyboard.press('Digit1')
   assert.equal(await A.evaluate(() => window.syn3hNet.gear.current), 'beam')

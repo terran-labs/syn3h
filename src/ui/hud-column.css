@@ -12,8 +12,17 @@
    never by words or by a different border. At rest the column is quiet and wakes for a
    moment when something changes or is pointed at.
 
+   One row form for every control (the owner, 17 November 2026: "standardize all of these"):
+   its node on the spine, then its key cap, then its name. No pill or outline around a row or
+   around the selected gear. Key caps, the gear's description and every other hint show only
+   while the cursor is free (paused, a panel open, not captured); driving with the cursor
+   captured, the column shows names and state alone. One type scale: --col-type for names
+   and hints, --col-cap-type for key caps; the one larger size is the selected gear's name
+   (gear.css, .gs-text), which is also brighter.
+
    Desktop and tablet without touch controls only; touch keeps its thumb buttons (the WINGS
-   and ZORB buttons already show these states) and the minimap's own docking. */
+   and ZORB buttons already show these states). The minimap keeps the lower left corner on
+   every screen (exploration.css). */
 .syn3h-shell.exploration-ui {
   --col-left: max(16px, env(safe-area-inset-left));
   --col-bottom: max(16px, env(safe-area-inset-bottom));
@@ -28,6 +37,10 @@
   --col-acc-bottom: calc(var(--col-chat-bottom) + var(--col-row) + var(--col-gap));
   --col-gear-bottom: calc(var(--col-acc-bottom) + var(--acc-rows, 1) * var(--col-row) + var(--col-gap));
   --col-rest: .72;
+  /* One type scale. */
+  --col-type: 500 11px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif;
+  --col-track: .16em;
+  --col-cap-type: 500 10.5px/1.2 'Barlow', sans-serif;
 }
 /* Neutral palette for the column until ux/hud-neutral sets these shared tokens for the whole
    HUD (the owner's call: grey-white light, no blue cast). Delete this block when it lands;
@@ -72,16 +85,20 @@
   content: ''; position: absolute; left: calc(var(--col-spine) - 3.5px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
   border-radius: 50%; border: 1px solid var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-node-lit);
 }
-:root .syn3h-shell.exploration-ui .gear-selector kbd { border: var(--col-stroke); box-shadow: var(--col-stroke-glow); text-shadow: var(--col-text-under); }
-/* For the owner to compare on the preview, both off by default (set on .syn3h-shell):
-   data-gear-nodes=hollow  a hollow node beside every other gear;
-   data-gear-floor=75      the drum's fade ends at 75% instead of nothing, neighbours in ink
-                           (measured on snow and fog: next rows 2.0-2.3 to 2.2-2.7:1 against
-                           their shadow edge, outer rows 1.1-1.25 to 1.3-1.7:1). */
-:root .syn3h-shell.exploration-ui[data-gear-nodes=hollow] .gear-selector .gs-drum button.gs-item::before {
+/* Every other gear has the hollow node an accessory has when off: one way of showing on and off. */
+:root .syn3h-shell.exploration-ui .gear-selector .gs-drum button.gs-item:not(.is-active)::before {
   content: ''; display: block; position: absolute; left: calc(var(--col-spine) - 3.5px - var(--gs-drum-left, 0px)); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
   border-radius: 50%; border: var(--col-stroke); background: var(--col-node-off);
 }
+/* The gear's name in the column's type; its number is its key cap. */
+:root .syn3h-shell.exploration-ui .gear-selector .gs-text { letter-spacing: var(--col-track); }
+:root .syn3h-shell.exploration-ui .gear-selector .gs-keyhint,
+:root .syn3h-shell.exploration-ui .gear-selector .gs-status { font: var(--col-type); letter-spacing: var(--col-track); }
+:root .syn3h-shell.exploration-ui .gear-selector .gs-act { font: var(--col-type); letter-spacing: var(--col-track); text-transform: uppercase; color: var(--s3-ink); }
+/* For the owner to compare on the preview, off by default (set on .syn3h-shell):
+   data-gear-floor=75      the drum's fade ends at 75% instead of nothing, neighbours in ink
+                           (measured on snow and fog: next rows 2.0-2.3 to 2.2-2.7:1 against
+                           their shadow edge, outer rows 1.1-1.25 to 1.3-1.7:1). */
 :root .syn3h-shell.exploration-ui[data-gear-floor="75"] .gear-selector .gs-drum {
   -webkit-mask-image: linear-gradient(rgb(0 0 0 / .75), #000 30%, #000 70%, rgb(0 0 0 / .75));
   mask-image: linear-gradient(rgb(0 0 0 / .75), #000 30%, #000 70%, rgb(0 0 0 / .75));
@@ -118,21 +135,27 @@
   position: relative; display: flex; align-items: center; gap: 10px; width: 100%; height: 100%; min-height: 0; margin: 0;
   padding: 0 var(--col-inset, 24px) 0 var(--col-inset, 24px); box-sizing: border-box;
   background: none; border: 0; border-radius: 0; box-shadow: none; outline: none;
-  color: var(--s3-dim); font: 500 11px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--s3-dim); font: var(--col-type); letter-spacing: var(--col-track); text-transform: uppercase;
   text-shadow: var(--col-text-under); text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
   -webkit-backdrop-filter: none; backdrop-filter: none; transition: color .2s ease;
 }
 :root .syn3h-shell .hud-accessories button.acc-row:hover { background: none; border: 0; box-shadow: none; color: var(--s3-ink); }
 :root .syn3h-shell .hud-accessories button.acc-row:focus-visible .acc-name { text-decoration: underline 1px var(--s3-accent-2); text-underline-offset: 5px; }
-.hud-accessories kbd {
-  display: inline-block; min-width: 22px; padding: 3px 7px 2px; box-sizing: border-box; text-align: center;
-  font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .12em; color: var(--s3-ink); text-shadow: var(--col-text-under);
-  border: var(--col-stroke); border-radius: 999px; background: none; box-shadow: var(--col-stroke-glow);
+/* One key cap, everywhere in the column: accessories, chat, the gear's numbers and its hints.
+   Touch has no keys and shows none (gear.css, chat.css). */
+:root .syn3h-shell.exploration-ui:not(.has-touch) :is(.gear-selector, .hud-accessories, .chat-panel .chat-toggle) kbd {
+  display: inline-block; flex: none; min-width: 22px; padding: 3px 7px 2px; box-sizing: border-box; text-align: center; white-space: nowrap;
+  font: var(--col-cap-type); letter-spacing: .12em; text-transform: uppercase; color: var(--s3-ink); text-shadow: var(--col-text-under);
+  border: var(--col-stroke); border-radius: 999px; background: none; box-shadow: var(--col-stroke-glow); opacity: 1;
 }
+/* Captured for driving: names and state only. Every key cap and hint steps out. Touch has no
+   keys, so the gear's number caps never show there. */
+.syn3h-shell.exploration-ui.is-focus :is(.hud-accessories, .chat-panel .chat-toggle) kbd { display: none; }
+:root .syn3h-shell.exploration-ui .gear-selector:is([data-mode=locked], [data-touch]) .gs-index { display: none; }
 .hud-accessories .acc-name { flex: 1 1 auto; white-space: nowrap; }
 /* The node on the spine: a hollow ring when off, lit when on, filling while it moves. */
 .hud-accessories .acc-pip {
-  position: absolute; left: calc(var(--col-spine, 4px) - 3px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
+  position: absolute; left: calc(var(--col-spine, 4px) - 3.5px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
   border-radius: 50%; border: var(--col-stroke); background: var(--col-node-off); pointer-events: none;
   transition: background-color .2s ease, box-shadow .2s ease, border-color .2s ease;
 }
@@ -162,31 +185,33 @@
   grid-column: 1; grid-row: 1; position: relative; width: var(--col-w); height: var(--col-row); min-height: 0; margin: 0;
   display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 0 var(--col-inset) 0 var(--col-inset); box-sizing: border-box; text-align: left;
   border: 0; border-radius: 0; background: none; box-shadow: none; opacity: var(--col-rest);
-  color: var(--s3-dim); font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; text-shadow: var(--col-text-under);
+  color: var(--s3-dim); font: var(--col-type); letter-spacing: var(--col-track); text-transform: uppercase; text-shadow: var(--col-text-under);
   transition: opacity .45s ease, color .2s ease;
 }
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle:hover,
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel.is-open .chat-toggle,
 /* Unread wakes the row: read from the badge itself, so ChatPanel.ts needs no extra state. */
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle:has(.chat-unread:not([hidden])) { opacity: 1; color: var(--s3-ink); }
-/* The glyph is the spine's last node. */
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle svg {
-  position: absolute; left: calc(var(--col-spine) - 6px); top: 50%; width: 13px; height: 13px; margin-top: -6px; filter: var(--col-line-under);
+/* Its node is the spine's last, like every other row's: hollow while closed, lit while open. */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle svg { display: none; }
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle::before {
+  content: ''; display: block; position: absolute; left: calc(var(--col-spine) - 3.5px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
+  border-radius: 50%; border: var(--col-stroke); background: var(--col-node-off); pointer-events: none;
+  transition: background-color .2s ease, box-shadow .2s ease, border-color .2s ease;
 }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle kbd {
-  order: -1; min-width: 22px; padding: 3px 7px 2px; box-sizing: border-box; font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .12em;
-  border: var(--col-stroke); border-radius: 999px; opacity: 1; box-shadow: var(--col-stroke-glow); text-shadow: var(--col-text-under);
-}
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel.is-open .chat-toggle::before { border-color: var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-node-lit); }
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle kbd { order: -1; }
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle-text { flex: 1 1 auto; }
 /* Open: the row is at full brightness (above); its key cap keeps the one stroke. */
-/* Unread: a small bright tag at the row's end, on the ring's right edge. */
+/* Unread: the count in bright type at the row's end (in the writer's colour when a person
+   wrote), no tag or pill around it. */
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-unread {
-  position: relative; top: auto; right: auto; order: 2; min-width: 18px; height: 16px; padding: 0 5px; border-radius: 999px;
-  background: var(--s3-accent-2); color: color-mix(in srgb, var(--s3-panel) 100%, black); font: 600 10.5px/1 'Barlow', sans-serif; letter-spacing: .02em;
+  position: relative; top: auto; right: auto; order: 2; min-width: 0; height: auto; padding: 0; border: 0; border-radius: 0;
+  background: none; color: var(--s3-accent-2); font: var(--col-type); letter-spacing: var(--col-track); text-shadow: var(--col-text-under);
   box-shadow: none;
 }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-unread.from-person { background: var(--chat-person, var(--s3-accent-2)); }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-unread.from-person::after { left: -2px; bottom: -2px; width: 5px; height: 5px; box-shadow: none; }
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-unread.from-person { background: none; color: var(--chat-person, var(--s3-accent-2)); }
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-unread.from-person::after { display: none; }
 /* The strip: the newest lines as plain HUD text beside the column, no slab behind them
    (on phones too, where the strip sits under the speed readout). */
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-strip { grid-column: 2; grid-row: 1; gap: 4px; padding-top: 6px; }

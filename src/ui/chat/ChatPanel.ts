@@ -1,6 +1,6 @@
 /**
  * The chat panel: a pill with an unread count, a strip of the newest lines that fades, and
- * a log with a text field that opens on Y (T is gear, Enter fires) or a tap.
+ * a log with a text field that opens on Y (Enter fires) or a tap.
  *
  * Everything a player wrote is drawn with textContent, never as markup, and links are left
  * as plain text. Colour means identity in this game, so each name is drawn in its vehicle's
@@ -32,7 +32,7 @@ const STRIP_LINES = 3
 const STRIP_MS = 8000
 /** A speaker's vehicle label stays lit this long, ms. */
 const SPEAKING_MS = 3500
-/** Key that opens chat. T cycles gear and Enter fires, so Y, the usual "say" key. */
+/** Key that opens chat: Y, the usual "say" key (Enter fires). */
 export const CHAT_KEY = 'KeyY'
 
 /** Make a tint readable on dark glass: keep its hue, raise its lightness if needed. */

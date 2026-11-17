@@ -48,6 +48,9 @@ const measure = page => page.evaluate(() => {
   const overlaps = []
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
     const a = boxes[i], b = boxes[j]
+    // The owner's call (17 November 2026): the minimap stays in the lower left as on desktop and
+    // the floating stick may land on top of it for a moment. The map takes no touches.
+    if ([a.name, b.name].includes('.touch-stick') && [a.name, b.name].includes('.shell-minimap')) continue
     if (a.group !== b.group && a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1) overlaps.push(`${a.name} × ${b.name}`)
   }
   const offscreen = boxes.filter(b => b.group !== 'vehicle' && (b.left < -1 || b.top < -1 || b.right > innerWidth + 1 || b.bottom > innerHeight + 1)).map(b => b.name)

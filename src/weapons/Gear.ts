@@ -2,7 +2,8 @@
  * The gear rack: which piece of gear the player has in hand. Players read "gear"; files keep
  * the folder name src/weapons.
  *
- * Keys 1 to 9 pick directly and T cycles; a gamepad's D-pad left and right cycle. Only gear
+ * Keys 1 to 9 pick directly (no key cycles: the owner's call, 17 November 2026); a gamepad's
+ * D-pad left and right step back and forward. Only gear
  * the host allows is on the rack, so with the Grapple off the rack holds just Plasma Tag and
  * nothing changes for anyone. The HUD chip and touch button belong to the UX lane: they read
  * `current`, `label` and `list()` and call `select` or `next`.
@@ -110,7 +111,6 @@ export class GearRack implements System {
     target.addEventListener('keydown', (e) => {
       if (e.repeat || game.input.suspended) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return
-      if (e.code === 'KeyT') this.next()
       const m = /^Digit([1-9])$/.exec(e.code)
       if (m) {
         const g = this.list()[Number(m[1]) - 1]

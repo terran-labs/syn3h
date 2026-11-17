@@ -139,14 +139,21 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
 .syn3h-shell.exploration-ui .rail-players > summary { position: sticky; top: 0; z-index: 1; background: rgb(5 20 32 / .94); }
 @media (pointer: coarse) { .syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search { font-size: 16px; } }
 
-/* Touch availability, not viewport width, reserves the joystick's lower-left area.
-   Wide tablets can show the same controls as phones. Include safe-area offsets. */
-.syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 160px; height: 160px; bottom: calc(max(28px,env(safe-area-inset-bottom)) + 140px + 16px); }
+/* Touch screens keep the minimap where the desktop has it, in the lower left corner (the
+   owner, 17 November 2026; this undoes v26.11.1605's top-right phone dock and the earlier lift
+   above the stick). The floating stick may land on top of it for a moment: the map takes no
+   touches (pointer-events: none above), so a drag that starts on it still starts the stick.
+   Sized for the screen, never moved or shrunk for the stick. --map-top (its top edge from the
+   bottom) places the first-run stick hint just above it (touch-stick.css). */
+body { --map-top: calc(max(16px, env(safe-area-inset-bottom)) + 160px); }
+.syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 160px; height: 160px; top: auto; bottom: max(16px, env(safe-area-inset-bottom)); }
 @media (max-width: 700px) {
-  .syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 120px; height: 120px; bottom: max(206px,calc(max(28px,env(safe-area-inset-bottom)) + 124px + 16px)); }
+  body { --map-top: calc(max(16px, env(safe-area-inset-bottom)) + 120px); }
+  .syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 120px; height: 120px; }
 }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 96px; height: 96px; bottom: calc(max(18px,env(safe-area-inset-bottom)) + 124px + 16px); }
+  body { --map-top: calc(max(16px, env(safe-area-inset-bottom)) + 96px); }
+  .syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 96px; height: 96px; }
 }
 
 /* Diagnostics consume rail space; only their body scrolls. SVG reuses core history. */

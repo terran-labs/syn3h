@@ -8,7 +8,7 @@ export function vehicleHelp(kind: VehicleKind): string[] {
 }
 /** Shown only while the host allows more than one kind of gear. Wording agreed with the Weapons lane. */
 export const gearHelp = [
-  'T: switch gear · L or left mouse: use gear',
+  '1 to 9: choose a gear · L or left mouse: use gear',
   'Grapple: click to launch · hold to reel in · V or wheel: let out · G: let go',
   'Yoink: aim at a vehicle and hold to grab; release to fling. With no target, press for a gust.',
   'Plasma Thunder: hold until fully charged, then release. Letting go early fizzles.',

@@ -26,10 +26,11 @@
   will-change: transform;
 }
 
-/* First run: a faint ghost of the stick and one line, in the lower left below the minimap,
-   until this device has driven once. */
+/* First run: a faint ghost of the stick and one line, in the lower left just above the
+   minimap (which holds the corner), until this device has driven once. --map-top is the
+   minimap's top edge from the bottom of the screen (exploration.css). */
 .touch-controls .touch-stick-hint {
-  position: absolute; left: max(24px, env(safe-area-inset-left)); bottom: max(28px, env(safe-area-inset-bottom));
+  position: absolute; left: max(24px, env(safe-area-inset-left)); bottom: calc(var(--map-top, 192px) + 12px);
   display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none;
   transition: opacity .3s ease-out, visibility 0s;
 }
@@ -57,7 +58,7 @@ body:has(.syn3h-shell.is-playing .spawn-help:not([hidden])) .touch-controls .tou
   color: color-mix(in srgb, var(--s3-ink) 78%, transparent); text-shadow: 0 1px 3px rgb(0 0 0 / .6);
 }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .touch-controls .touch-stick-hint { left: max(18px, env(safe-area-inset-left)); bottom: max(18px, env(safe-area-inset-bottom)); }
+  .touch-controls .touch-stick-hint { left: max(18px, env(safe-area-inset-left)); }
   .touch-controls .touch-stick-ghost { width: 72px; height: 72px; }
 }
 @media (prefers-reduced-motion: reduce) { .touch-controls .touch-stick-ghost > span { animation: none; transform: translate(10px, -12px); } }
@@ -70,7 +71,8 @@ body:has(.syn3h-shell.is-playing .spawn-help:not([hidden])) .touch-controls .tou
 .touch-controls[data-hand="left"] .touch-stick-hint { left: auto; right: max(24px, env(safe-area-inset-right)); align-items: flex-end; }
 .touch-controls[data-hand="left"] .touch-stick-ghost > span { animation-name: touch-stick-ghost-left; }
 @keyframes touch-stick-ghost-left { 0%, 15%, 100% { transform: none; } 45%, 65% { transform: translate(-14px, -16px); } }
-/* Clear of the Panels tab, which stays on the right edge (about 36 px wide). */
+/* The minimap goes with the stick, to the lower right corner, so it is not under the action
+   buttons; clear of the Panels tab, which stays on the right edge (about 36 px wide). */
 html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minimap { left: auto; right: calc(max(16px, env(safe-area-inset-right)) + 44px); }
 @media (max-width: 700px) {
   .touch-controls[data-hand="left"] .touch-actions { left: 12px; }
@@ -80,16 +82,6 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
   .touch-controls[data-hand="left"] .touch-stick-hint { right: max(18px, env(safe-area-inset-right)); }
 }
 
-/* Phones: the minimap docks in the top right corner, in either hand. Lower down it sat over
-   the player's own vehicle; top left holds the gear selector, which does not mirror; the
-   heading line is centred and the Panels tab and readouts sit lower. The html[data-touch-hand]
-   prefix outranks the left-handed rule above, which still applies on tablets. */
-@media (max-width: 700px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  html[data-touch-hand] .syn3h-shell.exploration-ui.has-touch .shell-minimap {
-    top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); bottom: auto; left: auto;
-    width: 96px; height: 96px;
-  }
-}
 /* Landscape phones: the speed and height readouts rise out of the stick's reach. Centred,
    they sat where a thumb lands to drive. */
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
