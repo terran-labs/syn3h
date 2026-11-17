@@ -427,7 +427,7 @@ export class NetClient implements System {
     this.marker.local = player
     this.tags = new NameTags(() => game.camera, {
       ...(ctx.nameplates ?? { shell: document.body, visible: () => false, presentation: () => false }),
-      scene: game.scene, wrapSize: () => this.wrapSize, terrainHit: terrainOcclusion(game.world), localVehicle: () => this.ctx.player,
+      scene: game.scene, wrapSize: () => this.wrapSize, terrainHit: terrainOcclusion(game.world),
     })
     this.hill = new HillMarker(game, ctx.terrain)
     this.seat = new LocalSeat(player, {

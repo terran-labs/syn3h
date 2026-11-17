@@ -84,11 +84,6 @@ export interface NameplateOptions {
   terrainHit(from: Point, to: Point): boolean
   shell: HTMLElement
   scene: THREE.Scene
-  /**
-   * The player's own vehicle. Not used for hiding: a label is a HUD overlay, so neither your
-   * own body nor its wings, ball, or skirt ever hides one (owner direction, 16 November 2026).
-   */
-  localVehicle(): Vehicle
 }
 interface Plate {
   el: HTMLDivElement; name: HTMLElement; note: HTMLElement
