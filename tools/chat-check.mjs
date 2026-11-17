@@ -79,7 +79,9 @@ try {
   const draft = await A.page.inputValue('.chat-field')
   check(draft.includes('w') || true, 'typing reaches the field')
   await A.page.keyboard.press('Enter')
-  await B.page.waitForTimeout(1500)
+  // Wait for the line to arrive, not a fixed time: under load the relay takes longer than 1.5 s.
+  await B.page.waitForFunction(() => window.syn3hChat.net.chat.lines.some((l) => l.text?.includes('hello')) && !document.querySelector('.chat-unread')?.hidden, null, { timeout: 20000 }).catch(() => {})
+  await B.page.waitForTimeout(300)
   await shot(B.page, 'desktop-collapsed-unread')
   const badge = await B.page.textContent('.chat-unread')
   const person = await B.page.evaluate(() => document.querySelector('.chat-unread')?.classList.contains('from-person'))
@@ -156,7 +158,8 @@ try {
 
   // Chat off for the room: the host turns it off, a guest's line is refused and not relayed.
   await A.page.evaluate(() => window.syn3h.params.set('chat.on', false))
-  await B.page.waitForTimeout(800)
+  // The setting reaches the guest through the room: wait for it rather than a fixed time.
+  await B.page.waitForFunction(() => !window.syn3hChat.net.chat.canSend().ok, null, { timeout: 20000 }).catch(() => {})
   // The guest's screen stops offering chat, and the room refuses even a line sent past that gate.
   const gated = await B.page.evaluate(() => !window.syn3hChat.net.chat.canSend().ok)
   await B.page.evaluate(() => window.syn3hChat.net.send({ type: 'chat', text: 'can anyone hear me' }))
