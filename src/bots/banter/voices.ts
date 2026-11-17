@@ -1,5 +1,5 @@
 /**
- * The bots' characters. A bot's name ends in its job ("Temolin Dust Clerk"), drawn from the
+ * The bots' characters. A bot is shown as "Temolin"; its hidden role is its job ("Dust Clerk"), drawn from the
  * world seed, so every client agrees who is who. Each job is a voice: its own vocabulary,
  * running jokes and way of taking a request. The lines themselves are in data/.
  */

@@ -6,7 +6,7 @@
  */
 import { createServer } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
-import { type Peer, Room } from './room'
+import { CLOCK_MS, type Peer, Room } from './room'
 import { roomName } from './util'
 import { RoomRegistry } from './registry'
 import { PresenceReporter } from './presenceReporter'
@@ -23,6 +23,22 @@ function report(room: Room): void {
   }
   const { seed, ...presence } = room.presence()
   void reporter.report({ room: room.name, ...presence }, seed)
+}
+
+/**
+ * The room's own clock, as the Worker runs it with an alarm (RoomDO.keepClock): a tick every
+ * CLOCK_MS while the room needs one, and nothing otherwise.
+ */
+const clocks = new Map<Room, ReturnType<typeof setTimeout>>()
+function keepClock(room: Room): void {
+  if (clocks.has(room) || !room.needsClock) return
+  clocks.set(room, setTimeout(() => {
+    clocks.delete(room)
+    if (rooms.get(room.name) !== room) return
+    room.tick()
+    report(room)
+    keepClock(room)
+  }, CLOCK_MS))
 }
 
 const http = createServer((req, res) => {
@@ -82,11 +98,16 @@ function attach(ws: WebSocket, name: string): void {
       r.receive(peer, data.toString())
     }
     report(r)
+    keepClock(r)
   })
   ws.on('close', () => {
     r.disconnect(peer)
     report(r)
-    if (r.connectionCount === 0 && rooms.get(name) === r) rooms.delete(name)
+    if (r.connectionCount === 0 && rooms.get(name) === r) {
+      rooms.delete(name)
+      clearTimeout(clocks.get(r))
+      clocks.delete(r)
+    }
   })
   ws.on('error', () => ws.close())
 }

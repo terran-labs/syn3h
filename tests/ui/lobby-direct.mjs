@@ -42,12 +42,12 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     }
     await page.waitForTimeout(600)
     const spacing = await page.evaluate(() => {
-      const hint = document.querySelector('.galaxy-hint').getBoundingClientRect(), nav = document.querySelector('.galaxy-links').getBoundingClientRect()
-      const labels = [...document.querySelectorAll('.galaxy-label')].filter(el => !el.hidden && !el.classList.contains('is-crowded')).map(el => el.getBoundingClientRect().bottom)
-      return { gap: nav.top - hint.bottom, above: hint.top - Math.max(0, ...labels), bottom: innerHeight - nav.bottom }
+      // The hint above the buttons is gone (the owner, 16 November 2026); the buttons keep their margin.
+      const nav = document.querySelector('.galaxy-links').getBoundingClientRect()
+      return { bottom: innerHeight - nav.bottom }
     })
     console.log(`${mode} spacing ${JSON.stringify(spacing)}`)
-    assert.ok(spacing.gap >= 24 && spacing.gap <= 28 && spacing.above >= 23 && spacing.bottom >= 16)
+    assert.ok(spacing.bottom >= 16)
     await page.screenshot({ path: `${out}/${mode}-lobby.png` })
     for (const reducedMotion of ['no-preference', 'reduce']) {
       await page.emulateMedia({ reducedMotion })

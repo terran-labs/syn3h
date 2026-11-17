@@ -6,6 +6,7 @@
  *   notch    a buggy nose-down in a narrow trench it cannot climb out of
  *   flipped  a buggy upside down on a slope
  *   shore    a buggy bogged in a pond, wheels under the surface
+ *   deep-pond  a buggy sunk on the bed of a 2.6 m deep pond, towed out along the bed
  */
 import * as THREE from 'three/webgpu'
 import { Quaternion, Vector3 } from 'three/webgpu'
@@ -22,7 +23,7 @@ import type { BotTerrain } from '../../../src/bots/BotBrain'
 import { TowRescue, type StuckKind, type TowGear, type TowPhase } from '../../../src/bots/rescue/TowRescue'
 import { seededRandom } from '../../../src/bots/random'
 
-export type Scenario = 'notch' | 'flipped' | 'shore'
+export type Scenario = 'notch' | 'flipped' | 'shore' | 'deep-pond'
 
 /** Aim at the roof, as the rescue does in the game (src/bots/rescue/RescueCoordinator.ts). */
 const AIM_UP = 0.9
@@ -57,7 +58,8 @@ function terrainOf(world: RAPIER.World, height: Height, liquid?: Height, size = 
     dispose() {},
     roads: [], roadNetwork: undefined,
   } as unknown as BotTerrain
-  if (liquid) terrain.liquidHeightAt = liquid
+  // Water: with no kind given, a liquid is lava.
+  if (liquid) { terrain.liquidHeightAt = liquid; terrain.liquidKindAt = (x: number, z: number) => (liquid(x, z) > heightAt(x, z) ? 'water' : null) }
   world.step()
   return terrain
 }
@@ -93,8 +95,16 @@ export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4,
     height = (x) => 0.25 * x
     stuckAt = new Vector3(0, 1.6, 0); stuckHeading = r() * Math.PI * 2; kind = 'flipped'; flip = true
     pull = { x: 0.6, z: 0.8 }
+  } else if (scenario === 'deep-pond') {
+    // A buggy sunk in a water pond 2.6 m deep, 10 m out from a sloping shore towards +x (the
+    // geometry of the rescue lane's pond trials). Stopped, it lies on the bed.
+    const depth = 2.6
+    height = (x) => (x < -4 ? -depth : x > 8 ? 0.6 : -depth + (x + 4) * (depth + 0.6) / 12)
+    liquid = () => 0
+    stuckAt = new Vector3(-10, 0.2, 0); stuckHeading = Math.PI / 2 + (r() - 0.5) * 2; kind = 'bogged'
+    pull = { x: 1, z: 0 }
   } else {
-    // A pond 1.4 m deep with a sloping shore towards +x; the liquid surface is at 0.
+    // A water pond 1.4 m deep with a sloping shore towards +x; the liquid surface is at 0.
     height = (x) => (x < -2 ? -1.4 : x > 6 ? 0.6 : -1.4 + (x + 2) * 0.25)
     liquid = () => 0
     stuckAt = new Vector3(-6, 0.2, 0); stuckHeading = Math.PI / 2 + (r() - 0.5); kind = 'bogged'
@@ -115,6 +125,8 @@ export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4,
   const angle = r() * Math.PI * 2, away = 30 + r() * 15
   const start = new Vector3(stuckAt.x + Math.cos(angle) * away, 0, stuckAt.z + Math.sin(angle) * away)
   if (scenario === 'shore' && start.x < 8) start.x = 8 + r() * 20
+  // The deep pond's shore reaches dry ground further out.
+  if (scenario === 'deep-pond' && start.x < 10) start.x = 10 + r() * 20
   if (scenario === 'notch' && Math.abs(start.z) < 6) start.z = 10 * Math.sign(start.z || 1)
   const rescuer = new Syn3hBuggy(game, terrain, place(start, 0), Math.atan2(stuckAt.x - start.x, stuckAt.z - start.z)); rescuer.isLocal = false
 
@@ -158,7 +170,7 @@ export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4,
   const after = stuck.body.translation()
   up.set(0, 1, 0).applyQuaternion(q.copy(stuck.body.rotation()))
   const wet = liquid ? terrain.heightAt(after.x, after.z) < liquid(after.x, after.z) + 0.3 : false
-  const stuckAlone = scenario === 'flipped' ? up.y < 0.5 : scenario === 'shore' ? wet : Math.hypot(after.x - from.x, after.z - from.z) < 3.5
+  const stuckAlone = scenario === 'flipped' ? up.y < 0.5 : scenario === 'shore' || scenario === 'deep-pond' ? wet : Math.hypot(after.x - from.x, after.z - from.z) < 3.5
   // The rescue.
   let t = 0
   while (!rescue.finished && t < limit) {

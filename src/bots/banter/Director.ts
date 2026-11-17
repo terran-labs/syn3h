@@ -23,9 +23,15 @@ import { VOICES, type VoiceId, shortName, voiceFor } from './voices'
 import { FRAGMENTS } from './data/fragments'
 import type { RescueEvent } from '../rescue/HostRescue'
 
+/** The name and role together, "Temolin Dust Clerk", as the voice table reads it. */
+export const identityOf = (b: { name: string; role?: string }) => b.role ? `${b.name} ${b.role}` : b.name
+
 export interface BanterBot {
   id: number
+  /** The one name it is shown and called by, "Temolin". */
   name: string
+  /** Its hidden job, "Dust Clerk": decides its voice; never part of its name. */
+  role?: string
   x: number; y: number; z: number
   speed: number
   /** The mind's activity ('road', 'visit', 'follow'...) or 'chase' while duck-following. */
@@ -112,6 +118,7 @@ interface Memory { stuck: number; flips: number; resets: number; edges: number; 
 interface BotState {
   id: number
   name: string
+  role?: string
   short: string
   voice: VoiceId
   mem: Memory
@@ -203,7 +210,7 @@ export class BanterDirector {
   hear(from: number, text: string): void {
     const now = this.world.now()
     this.humanAt = now
-    const named: NamedBot[] = [...this.bots.values()].map((b) => ({ id: b.id, name: b.name }))
+    const named: NamedBot[] = [...this.bots.values()].map((b) => ({ id: b.id, name: b.name, role: b.role }))
     if (!this.players.has(from)) this.syncRoster(now)
     const intent = parseIntent(text, named)
     const player = this.players.get(from)
@@ -307,9 +314,9 @@ export class BanterDirector {
     for (const b of this.world.bots()) {
       seen.add(b.id)
       let s = this.bots.get(b.id)
-      if (!s || s.name !== b.name) {
+      if (!s || s.name !== b.name || s.role !== b.role) {
         s = {
-          id: b.id, name: b.name, short: shortName(b.name), voice: voiceFor(b.name),
+          id: b.id, name: b.name, role: b.role, short: shortName(b.name), voice: voiceFor(identityOf(b)),
           mem: { stuck: 0, flips: 0, resets: 0, edges: 0, critters: [] },
           was: { stuck: false, flipped: false, bog: false, air: false, lava: false, sight: null, resets: b.resets },
           request: null, driftBack: null, lastSpoke: -Infinity, near: new Set(),

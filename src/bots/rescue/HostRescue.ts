@@ -49,6 +49,8 @@ export interface RescueNet {
   readonly botGearHooks: BotGearHooks
   botCord(id: number): { flying: boolean; to: number | null } | null
   displayName(id: number): string
+  /** A bot's hidden role, for its voice. */
+  botRole?(id: number): string
   /** People in the room (not bots), by id. */
   people(): number[]
 }
@@ -67,6 +69,11 @@ interface Rescue {
 }
 
 export class HostRescue {
+  /** A bot's name and hidden role, "Temolin Dust Clerk", as the voice table reads it. */
+  private identity(id: number): string {
+    const name = this.net.displayName(id), role = this.net.botRole?.(id)
+    return role ? `${name} ${role}` : name
+  }
   private readonly rescues = new Map<number, Rescue>()
   private readonly tracks = new Map<number, { t: number; x: number; z: number }[]>()
   private readonly count = new Map<number, number>()
@@ -209,7 +216,7 @@ export class HostRescue {
     for (let i = 0; i < this.bots.brainList.length; i++) {
       const id = BOT_ID_BASE + i, brain = this.bots.brainList[i], v = this.bots.vehicles[i]
       if (id === r.stuck || r.rescuers.has(id) || r.declined.has(id) || !v?.body.isValid()) continue
-      const voice = VOICES[voiceFor(this.net.displayName(id))]
+      const voice = VOICES[voiceFor(this.identity(id))]
       const p = v.body.translation()
       const free = brain.mind && !this.rescues.has(id) && !this.rescuing(id) && brain.directive?.kind !== 'control' && !brain.raceGoal
       candidates.push({ id, distance: Math.hypot(p.x - s.x, p.z - s.z), loyalty: voice.loyalty, withPlayer: this.withPlayer(id) !== null, able: Boolean(free), eager: voice.id === 'intern' })
@@ -307,11 +314,12 @@ export class HostRescue {
    */
   private misbehave(): void {
     const names = this.bots.vehicles.map((_, i) => this.net.displayName(BOT_ID_BASE + i))
+    const identities = new Map(this.bots.vehicles.map((_, i) => [this.net.displayName(BOT_ID_BASE + i), this.identity(BOT_ID_BASE + i)]))
     if (!names.length) return
     if (!this.clumsyName || !names.includes(this.clumsyName)) {
       // The clumsiest voice present; ties go to the first.
       let best = -1
-      for (const n of names) { const c = VOICES[voiceFor(n)].clumsy; if (c > best) { best = c; this.clumsyName = n } }
+      for (const n of names) { const c = VOICES[voiceFor(identities.get(n) ?? n)].clumsy; if (c > best) { best = c; this.clumsyName = n } }
       this.mishaps = new MishapSchedule(this.clumsyName ?? 'clumsy', this.time, () => botMishaps.value)
     }
     if (!this.mishaps?.due(this.time)) return

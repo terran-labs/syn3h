@@ -208,7 +208,7 @@ export class Shell implements System {
       </div>
       <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span></footer>
       </div>
-      <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby">${LOBBY_LINKS}</nav></div>
+      <div class="galaxy-ui" hidden><div class="galaxy-labels" role="group" aria-label="Worlds. Drag to look around; choose a world to go there."></div><nav class="lobby-links galaxy-links" aria-label="Lobby">${LOBBY_LINKS}</nav></div>
     </section>
     <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">About Syn3h</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
@@ -1015,10 +1015,11 @@ export class Shell implements System {
     if (!typing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code) && this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
-      setInterfaceMode(0)
-      // Escape in a text field only leaves the field; it takes another to pause.
+      // Escape in a text field only leaves the field (chat closes itself): it takes another to
+      // pause, and the interface mode stays as it was.
       const target = event.target
       if (this.started && !this.menuVisible && !this.userPaused && target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && !/^(range|checkbox|radio|button|color)$/.test(target.type)))) { target.blur(); return }
+      setInterfaceMode(0)
       event.preventDefault(); event.stopImmediatePropagation()
       // Escape with the cursor captured frees it, which shows the panels. Escape again pauses.
       // Escape while paused resumes. There is no panel-closing step in between.
@@ -1249,6 +1250,12 @@ export class Shell implements System {
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),
       // A planet pointed at (hovered, or a finger on it) shows its label, faded or not.
       onPoint: id => { for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
+      // The lobby at rest: a planet breathing its glow lifts its caption the same way a hover does,
+      // by the same amount at its peak share (shell.css --caption-pulse).
+      onRest: pulses => worlds.forEach((world, i) => {
+        const chip = chips.get(world.id), value = (Math.round((pulses[i] ?? 0) * 50) / 50).toFixed(2)
+        if (chip && chip.style.getPropertyValue('--caption-pulse') !== value) chip.style.setProperty('--caption-pulse', value)
+      }),
       onArrive: chosen => {
         const id = chosen.split('~')[0]
         if (id === 'custom') {
@@ -1272,12 +1279,11 @@ export class Shell implements System {
         // Clear of the wordmark too. While flying to a world, only its label stays.
         if (!this.brandBottom) {
           this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
-          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect() ?? { top: 0, left: innerWidth, width: 0 }
+          const nav = this.element.querySelector('.galaxy-links')?.getBoundingClientRect() ?? { top: 0, left: innerWidth }
           if (matchMedia(SHORT_LANDSCAPE).matches) {
-            // The buttons and hint are a column on the right (shell.css): the galaxy and its
-            // labels get everything left of it and below the corner wordmark.
-            const links = this.element.querySelector('.galaxy-links')?.getBoundingClientRect().left ?? innerWidth
-            this.labelRight = Math.min(links, hint.width ? hint.left : links) - 8
+            // The buttons are a column on the right (shell.css): the galaxy and its labels get
+            // everything left of it and below the corner wordmark.
+            this.labelRight = nav.left - 8
             this.linksTop = innerHeight - 8
             const top = this.brandBottom + 4, left = 8
             // The system is wider than tall, so it can grow past the free height a little;
@@ -1285,7 +1291,7 @@ export class Shell implements System {
             this.galaxyFrame = [(left + this.labelRight) / 2 / innerWidth, 1 - (top + this.linksTop) / 2 / innerHeight, 1.5 * (this.linksTop - top) / innerHeight]
           } else {
             this.labelRight = innerWidth; this.galaxyFrame = undefined
-            this.linksTop = hint.top > innerHeight / 2 ? hint.top - 24 : innerHeight - 152
+            this.linksTop = nav.top > innerHeight / 2 ? nav.top - 24 : innerHeight - 152
           }
           this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
         }

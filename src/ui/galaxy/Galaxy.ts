@@ -19,6 +19,8 @@ import { startupTiming } from '../../core/diagnostics'
 /** Why the lobby showed the flat wordmark instead of the name in the scene, once, for the diagnostics. */
 function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmarkFallback) { startupTiming.wordmarkFallback = reason; console.info(`Syn3h: flat lobby wordmark: ${reason}`) } }
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
+import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
+import { lobbyZoom, lobbyZoomPortrait, returnDelay, returnOmega, returnTime } from './cameraRest'
 import { introMode, LEAVING_SECONDS, leavingMark, openingPace, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
@@ -69,6 +71,8 @@ export interface GalaxyOptions {
    * its label shows while it is pointed at, even where the layout had to fade it.
    */
   onPoint?(id: string | undefined): void
+  /** Each frame drawn: every world's resting pulse, 0 to idlePeak, in the order the worlds came (idlePulse.ts). */
+  onRest?(pulses: readonly number[]): void
   /** Focus the label selected with a controller, so its normal activation stays accessible. */
   onFocus?(id: string): void
   /** Logo box in CSS pixels relative to this host, plus the existing graphics tier. */
@@ -88,6 +92,10 @@ export interface GalaxyOptions {
  * against a sphere, a shadow cut through the shafts); the limit is the screen and the maps.
  */
 export const GALAXY_MAX = 12
+/** The rest pulses' seed: the same breathing every visit, so checks can reproduce it. */
+const REST_SEED = 20261116
+/** Where the sun sits in the default view, up from the bottom: a little below the middle (53% down). */
+const FRAME_Y = 0.47
 const MAX = GALAXY_MAX
 /** Each world's axis leans this far. */
 const TILT = 0.38
@@ -204,12 +212,15 @@ export function orbitLayout(bodies: readonly OrbitBody[], time: number): OrbitPl
 export function fitDistance(bodies: readonly OrbitBody[]): number {
   return Math.max(...orbitLayout(bodies, 0).map(place => place.reach), INNER) * 1.08 / VIEW_TAN
 }
-/** Portrait phones start closer so the planets read; a pinch can reveal the outer orbits. */
+/**
+ * The default view's distance: closer than the whole system (lobby.zoom, the owner's framing of
+ * 16 November 2026, with the outer orbit running off the screen), and on a phone held upright its
+ * own share (lobby.zoomPortrait) that keeps the wordmark and the inner planets on screen. A pinch
+ * or wheel can still reveal the outer orbits; the view returns here when left alone.
+ */
 export function openingDistance(bodies: readonly OrbitBody[], width: number, height: number): number {
   const portraitPhone = width > 0 && width <= 600 && height > width * 1.2
-  // Short landscape screens are framed by the Shell (galaxyFrame: the space left of the button
-  // column), so they keep the fitted distance here.
-  return fitDistance(bodies) * (portraitPhone ? 0.8 : 1)
+  return fitDistance(bodies) * (portraitPhone ? lobbyZoomPortrait.value : lobbyZoom.value)
 }
 /** The body a galaxy world is laid out as: its recipe's, or an ordinary planet's. */
 export function bodyOf(world: GalaxyWorld): OrbitBody {
@@ -393,6 +404,8 @@ vec3 toScreen(vec3 p) { vec3 d = p - uEye; float z = dot(d, uForward); return ve
 ${WORDMARK_SCENE_GLSL}
 // The glow round the world under the pointer (hoverGlow.ts).
 ${GLOW_GLSL}
+uniform float uPulse[${MAX}];      // the lobby at rest: each world's breath of its own glow (idlePulse.ts)
+uniform vec3 uPulseColour[${MAX}];
 void main() {
   float minSide = min(uSize.x, uSize.y);
   vec2 q = (gl_FragCoord.xy - uFrame.xy * uSize) / (minSide * uFrame.z) * 2.0;           // -1..1 on the short side
@@ -662,6 +675,13 @@ void main() {
   // The glow round the world under the pointer, in focus or pressed: over the shafts, under the grade.
   vec4 glow = planetGlow(ray, nearest, found) * (1.0 - uDive);
   c = mix(c, glow.rgb * 1.25, clamp(glow.a * 0.7, 0.0, 0.85)) + glow.rgb * glow.a * 0.6;
+  // The lobby at rest: worlds breathing their own glow, the same effect laid on the same way.
+  for (int i = 0; i < ${MAX}; i++) {
+    if (i >= uCount) break;
+    if (uPulse[i] <= 0.001) continue;
+    float a = glowAura(i, ray, nearest, found, 0.0, uGlow.y) * uPulse[i] * uGlow.w * (1.0 - uDive);
+    c = mix(c, uPulseColour[i] * 1.25, clamp(a * 0.7, 0.0, 0.85)) + uPulseColour[i] * a * 0.6;
+  }
   // Connected humans by recipe: at most twelve lights; the label carries the exact total.
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount) break;
@@ -710,7 +730,7 @@ void main() {
   color = vec4(c / 12.0, 1.0);
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
-const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP'] as const
+const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uPulse', 'uPulseColour', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP'] as const
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -822,6 +842,8 @@ export class Galaxy {
   private framing: Vec = [0.5, 0.5, 1]
   private dim = 1
   private distance = 13
+  /** The slow return's own velocities (tilt per second, log distance per second): it starts from rest. */
+  private restSpeed = { pitch: 0, zoom: 0 }
   private target: Vec = [0, 0, 0]
   /** The view's turn and tilt under the finger: see SWING. this.yaw and this.pitch are what is shown. */
   private swingYaw: SwingAxis = { aim: 0.6, aimSpeed: 0, view: 0.6, viewSpeed: 0 }
@@ -853,6 +875,9 @@ export class Galaxy {
     this.presence = new PresenceFeed(recipes, values => { this.population = values; this.wake = 2; options.onPresence?.(values) })
     this.reduced.addEventListener('change', () => { this.wake = 2 }, { signal: this.abort.signal })
     addEventListener('keydown', event => this.key(event), { signal: this.abort.signal })
+    // Any input ends the lobby's rest at once (idlePulse.ts).
+    const input = () => { this.lastInput = performance.now() }
+    for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart'] as const) addEventListener(type, input, { signal: this.abort.signal, passive: true, capture: true })
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(host)
     document.addEventListener('visibilitychange', () => { this.syncPresence(); cancelAnimationFrame(this.frame); if (this.active && !document.hidden) this.loop(0) }, { signal: this.abort.signal })
   }
@@ -1216,7 +1241,7 @@ export class Galaxy {
     this.swing(elapsed, !this.drag && this.chosen < 0 && !still && !this.clockHold, wallElapsed)
     const inset = Math.min(0.3, Math.max(0, this.options.topInset?.() ?? 0) / Math.max(1, this.host.clientHeight))
     // The short landscape layout (Shell, SHORT_LANDSCAPE) supplies its own frame.
-    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, 0.5 - inset / 2, 1 - inset]
+    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, FRAME_Y - inset / 2, 1 - inset]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
@@ -1227,6 +1252,14 @@ export class Galaxy {
     const lobby = this.opening === null && this.backdrop >= 1 && hoverGlowIntensity.value > 0
     const glowChanging = this.glow.step(lobby ? glowTarget({ hovered: this.pointed ?? this.hoverId, focused: this.focusId, chosen: this.chosen >= 0 ? worlds[this.chosen]?.id : null }) : null, elapsed)
     const glowMoving = glowChanging || (this.glow.strength > 0 && !this.reduced.matches && hoverGlowSpeed.value > 0 && !this.glow.chosen)
+    // The lobby at rest (idlePulse.ts): after a while with no input, each world breathes its own
+    // glow. Not behind a panel, while flying, in a hidden tab (no frames), held still or under
+    // reduced motion; any input fades it out and starts the wait again.
+    const resting = lobby && !still && !this.reduced.matches && this.chosen < 0 && !this.flight && idleAfter.value > 0 && (performance.now() - this.lastInput) / 1000 >= idleAfter.value
+    this.rest.fade(resting, elapsed)
+    if (this.rest.envelope > 0) this.restClock += elapsed
+    const glowing = this.glow.strength > 0 ? this.glow.id : null
+    this.pulses = this.rest.envelope > 0 ? this.rest.at(this.restClock).map((v, i) => worlds[i]?.id === glowing ? 0 : v * this.rest.envelope * idlePeak.value) : this.pulses.fill(0)
     let reveal = this.stepOpening(places)
     // Reduced motion: the name goes at once rather than being swept away.
     if (this.leaving !== null) reveal = { ...reveal, ...leavingMark(this.reduced.matches ? 1e3 : (performance.now() - this.leaving) / 1000) }
@@ -1272,6 +1305,8 @@ export class Galaxy {
       gl.uniform1i(u.uGlowIndex, glowAt < MAX ? glowAt : -1); gl.uniform1f(u.uGlowTime, (performance.now() / 1000) % 1000)
       gl.uniform4f(u.uGlow, this.glow.strength, hoverGlowSpeed.value, this.reduced.matches ? 1 : this.glow.chosen ? 0.55 : 0, hoverGlowIntensity.value * (this.glow.chosen ? 1.25 : 1))
       if (glowWorld) gl.uniform3f(u.uGlowColour, ...glowColour(glowWorld.land, glowWorld.sea, glowWorld))
+      gl.uniform1fv(u.uPulse, this.pulses.slice(0, MAX))
+      if (this.pulses.some(v => v > 0)) gl.uniform3fv(u.uPulseColour, Array.from({ length: MAX }, (_, i) => worlds[i] ? glowColour(worlds[i].land, worlds[i].sea, worlds[i]) : [0, 0, 0]).flat())
       // The veil's point at full progress is about 6.6 CSS pixels in radius; the sun's core is
       // half its peak at 0.0374 of its size in units of the short side.
       gl.uniform1f(u.uSunPoint, Math.min(1, Math.max(0.02, 6.6 * (width / Math.max(1, this.host.clientWidth)) / (Math.min(width, height) * this.framing[2] * 0.0374))))
@@ -1323,6 +1358,7 @@ export class Galaxy {
     const toSun = sub([0, 0, 0], view.eye), sunZ = Math.max(dot(toSun, view.forward), 0.001)
     this.sunScreen = { x: width * this.framing[0] + (dot(toSun, view.right) / (sunZ * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(toSun, view.up) / (sunZ * view.tan)) * short / 2, radius: Math.max(6, short * 0.02), depth: sunZ }
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
+    this.options.onRest?.(this.pulses)
     // Arrival: a second and a half after choosing, whatever the frame rate.
     if (this.chosen >= 0 && !this.arrived && (this.arriving += this.step) > 1.5) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
@@ -1332,6 +1368,12 @@ export class Galaxy {
   private readonly markRig = new WordmarkRig()
   /** The planet glow (hoverGlow.ts), and what asks for it: the pointer, keyboard focus, a finger. */
   private readonly glow = new GlowState()
+  /** The lobby at rest: each world's pulse this frame, 0 to idlePeak, and their clock and generator. */
+  pulses: number[] = new Array(MAX).fill(0)
+  private readonly rest = new IdlePulse(REST_SEED, MAX)
+  private restClock = 0
+  /** When the lobby last had any input: a pointer moving or pressed, a key, a wheel. */
+  lastInput = performance.now()
   /** For screenshots only: holds the orbits where they are and the view's slow drift. */
   clockHold = false
   private hoverId: string | null = null
@@ -1499,10 +1541,28 @@ export class Galaxy {
     // together, as the drift moves them, so the spring stays at rest and nothing fights.
     // Never under reduced motion, never round a chosen world, never while anything else moves.
     this.resting = false
+    const idle = (performance.now() - this.handled) / 1000
     if (!this.reduced.matches && this.chosen < 0 && !this.flight && !held && this.pointers.size === 0 && this.backdrop === 1 && this.swingResting) {
-      const tilt = restStep(this.swingPitch.view, (performance.now() - this.handled) / 1000, restElapsed, this.options.still?.() ? REST_LOW : REST)
-      if (tilt !== this.swingPitch.view) { this.swingPitch.aim = this.swingPitch.view = tilt; this.resting = true }
-    }
+      const home = openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
+      if (this.options.still?.()) {
+        // Low-end devices: the quick exponential settle, snapping the last step, so they can idle.
+        const tilt = restStep(this.swingPitch.view, idle, restElapsed, REST_LOW)
+        if (tilt !== this.swingPitch.view) { this.swingPitch.aim = this.swingPitch.view = tilt; this.resting = true }
+        const far = restStep(Math.log(this.distance), idle, restElapsed, { ...REST_LOW, pitch: Math.log(home), snap: 1e-3 })
+        if (far !== Math.log(this.distance)) { this.distance = Math.exp(far); this.resting = true }
+      } else if (idle >= returnDelay.value) {
+        // The slow return (cameraRest.ts): tilt and zoom on one critically damped spring rate,
+        // from rest, no overshoot; the heading is left where the player put it.
+        const omega = returnOmega(returnTime.value), dt = Math.min(0.25, restElapsed)
+        const [pitch, pitchSpeed] = springStep(this.swingPitch.view, this.restSpeed.pitch, REST.pitch, omega, dt)
+        const [far, farSpeed] = springStep(Math.log(this.distance), this.restSpeed.zoom, Math.log(home), omega, dt)
+        const done = Math.abs(pitch - REST.pitch) < 2e-4 && Math.abs(pitchSpeed) < 1e-4 && Math.abs(far - Math.log(home)) < 5e-4 && Math.abs(farSpeed) < 1e-4
+        this.swingPitch.aim = this.swingPitch.view = done ? REST.pitch : pitch
+        this.distance = done ? home : Math.exp(far)
+        this.restSpeed = done ? { pitch: 0, zoom: 0 } : { pitch: pitchSpeed, zoom: farSpeed }
+        this.resting = !done
+      } else this.restSpeed = { pitch: 0, zoom: 0 }
+    } else this.restSpeed = { pitch: 0, zoom: 0 }
     if (this.reduced.matches) {
       // No spring, coast or stretch: the view is where the finger or key put it, within limits.
       const pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.swingPitch.aim))
