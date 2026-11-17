@@ -15,7 +15,8 @@ describe('generated names', () => {
       expect(person.length).toBeLessThanOrEqual(MAX_GIVEN_NAME); expect(person.length).toBeGreaterThanOrEqual(3)
       expect(person).toMatch(/^[A-Z][a-z]+$/)
       expect(bot.length).toBeLessThanOrEqual(MAX_NAME); expect(world.length).toBeLessThanOrEqual(MAX_NAME)
-      expect(bot).toMatch(/^[A-Z][a-z]+ [A-Za-z -]+$/)
+      // A bot is shown by one given name; its role is hidden (botIdentity).
+      expect(bot).toMatch(/^[A-Z][a-z]+$/); expect(bot.length).toBeLessThanOrEqual(MAX_GIVEN_NAME)
     }
   })
   // An unkind accidental word on a stranger's name plate is a bug a player would report.
@@ -35,6 +36,6 @@ describe('generated names', () => {
     const people = new Set<string>(), bots = new Set<string>()
     for (let i = 0; i < 50000; i++) { people.add(generateName(`d:${i}`, 'player')); bots.add(generateName(`d:${i}`, 'bot')) }
     expect(people.size).toBeGreaterThan(25000)
-    expect(bots.size).toBeGreaterThan(49000)
+    expect(bots.size).toBeGreaterThan(25000)
   })
 })
