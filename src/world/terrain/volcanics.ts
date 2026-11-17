@@ -455,7 +455,7 @@ export class Volcanics implements System {
     this.ambient.on = this.seaIsLava && !this.sampler.data.settings.dry
     const cam = this.camera?.position
     if (cam) windDrift(cam.x, cam.y, cam.z, this.wind)
-    this.ambient.update(dt, level, dim, this.wind)
+    this.ambient.update(dt, level, dim, this.wind, lavaWaveSource())
   }
 
   private clear(): void {

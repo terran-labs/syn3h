@@ -1,13 +1,14 @@
 import type { Node, Texture } from 'three/webgpu'
 import { Color, FrontSide, MeshBasicNodeMaterial, Vector2, Vector3, Vector4 } from 'three/webgpu'
 import {
-  cameraPosition, float, floor, fract, length, max, mix, modelWorldMatrix, positionGeometry, positionLocal, positionWorld, sin,
+  Fn, If, cameraPosition, float, floor, fract, length, max, mix, modelWorldMatrix, positionGeometry, positionLocal, positionWorld, sin,
   smoothstep, texture, uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { NO_BED } from '../world/water/bed'
 import { clipmapNodes } from '../world/water/clipmap'
 import type { WaveSource } from '../world/water/surface'
 import * as p from './params'
+import { qualityLevel } from '../core/quality'
 
 /** Smooth value noise keeps both backends on ordinary arithmetic and interpolation. */
 const hash = (v: Node<'vec2'>) => fract(sin(v.dot(vec2(127.1, 311.7))).mul(43758.5453))
@@ -61,6 +62,8 @@ export function createLavaMaterial(options: LavaOptions | boolean = {}, legacySh
   // 0..1: turns the glow down when the camera's exposure is turned up at night, so lava stays
   // orange instead of burning out to white.
   const dim = uniform(1)
+  /** 1 at Medium quality and up: the domain warp and the bubbles. */
+  const detail = uniform(1)
   const direction = uniform(new Vector2()), molten = uniform(new Color()), altitude = uniform(0)
   const bedMap = texture(NO_BED)
   /** (1 / tile size, half a texel, height the texture is relative to). */
@@ -101,8 +104,15 @@ export function createLavaMaterial(options: LavaOptions | boolean = {}, legacySh
   const metres = river ? uv() : positionWorld.xz
   const coordinates = metres.mul(scale)
   const offset = direction.mul(clock).mul(speed)
-  // Domain warp: the flow bends round slow eddies.
-  const warp = vec2(noise(coordinates.mul(0.35).add(clock.mul(0.02))), noise(coordinates.mul(0.35).add(vec2(5.2, 1.3)).sub(clock.mul(0.02)))).sub(0.5)
+  // Domain warp: the flow bends round slow eddies. Medium and up only: at Low and below the
+  // branch is skipped (a uniform branch costs nothing) so lava costs on a phone what it did.
+  const warp = Fn(() => {
+    const w = vec2(0, 0).toVar()
+    If(detail.greaterThan(0.5), () => {
+      w.assign(vec2(noise(coordinates.mul(0.35).add(clock.mul(0.02))), noise(coordinates.mul(0.35).add(vec2(5.2, 1.3)).sub(clock.mul(0.02)))).sub(0.5))
+    })
+    return w
+  })()
   const q = coordinates.add(warp.mul(1.6)).sub(offset)
   const a = noise(q), b = noise(q.mul(2.17).add(offset.mul(0.43)))
   // A third, finer layer so the crust still has detail when a vehicle is sitting in it.
@@ -117,23 +127,32 @@ export function createLavaMaterial(options: LavaOptions | boolean = {}, legacySh
   // Cooling crust glows faintly from below in patches.
   const ember = noise(q.mul(3.1)).pow(4).mul(0.18)
 
-  // Bubbles, in world metres: one possible bubble per 6 m cell, about a third of cells active.
+  // Bubbles (Medium and up), in world metres: one possible bubble per 6 m cell, about a third of cells active.
   const cellSize = 6
-  const g = positionWorld.xz.div(cellSize)
-  const id = floor(g), f = fract(g)
-  const h1 = hash(id), h2 = hash(id.add(17.1))
-  const period = h1.mul(6).add(4)
-  const phase = fract(clock.div(period).add(h1.mul(3.7)))
-  const centre = vec2(hash(id.add(3.3)).mul(0.5).add(0.25), hash(id.add(9.1)).mul(0.5).add(0.25))
-  const r = length(f.sub(centre)).mul(cellSize).mul(noise(f.mul(5).add(id)).mul(0.35).add(0.83))
-  const radius = smoothstep(0, 0.85, phase).mul(1.25).add(0.2)
-  const swelling = float(1).sub(smoothstep(0.86, 0.88, phase))
-  const dome = float(1).sub(smoothstep(radius.mul(0.65), radius, r)).mul(swelling)
-  const rimDark = smoothstep(radius.mul(0.7), radius, r).mul(float(1).sub(smoothstep(radius, radius.mul(1.25), r))).mul(swelling)
-  const burstT = smoothstep(0.88, 1, phase)
-  const ring = float(1).sub(smoothstep(0, 0.35, r.sub(radius.add(burstT.mul(2.5))).abs())).mul(float(1).sub(burstT)).mul(float(1).sub(swelling))
-  const active = smoothstep(0.62, 0.66, h2)
-  const bubble = active.mul(max(dome.mul(0.85), ring.mul(1.4)))
+  const bubbles = Fn(() => {
+    const out = vec2(0, 0).toVar()
+    If(detail.greaterThan(0.5), () => {
+      const g = positionWorld.xz.div(cellSize)
+      const id = floor(g), f = fract(g)
+      const h1 = hash(id), h2 = hash(id.add(17.1))
+      const period = h1.mul(6).add(4)
+      const phase = fract(clock.div(period).add(h1.mul(3.7)))
+      const centre = vec2(hash(id.add(3.3)).mul(0.5).add(0.25), hash(id.add(9.1)).mul(0.5).add(0.25))
+      const r = length(f.sub(centre)).mul(cellSize).mul(noise(f.mul(5).add(id)).mul(0.35).add(0.83))
+      const radius = smoothstep(0, 0.85, phase).mul(1.25).add(0.2)
+      const swelling = float(1).sub(smoothstep(0.86, 0.88, phase))
+      const dome = float(1).sub(smoothstep(radius.mul(0.65), radius, r)).mul(swelling)
+      const rimDark = smoothstep(radius.mul(0.7), radius, r).mul(float(1).sub(smoothstep(radius, radius.mul(1.25), r))).mul(swelling)
+      const burstT = smoothstep(0.88, 1, phase)
+      const ring = float(1).sub(smoothstep(0, 0.35, r.sub(radius.add(burstT.mul(2.5))).abs())).mul(float(1).sub(burstT)).mul(float(1).sub(swelling))
+      const active = smoothstep(0.62, 0.66, h2)
+      const bubbleNow = active.mul(max(dome.mul(0.85), ring.mul(1.4)))
+      out.assign(vec2(bubbleNow, rimDark.mul(active)))
+    })
+    return out
+  })()
+  const bubble = bubbles.x
+  const rimDarkNow = bubbles.y
 
   // The shore.
   let rim: Node<'float'> = float(0)
@@ -158,7 +177,7 @@ export function createLavaMaterial(options: LavaOptions | boolean = {}, legacySh
   const crustColour = vec3(0.09, 0.05, 0.045).mul(dim).add(hot.mul(ember.mul(float(1).sub(farFade))))
   const lit = mix(hot, white, max(core.mul(cracks), rim.mul(0.6)).mul(float(1).sub(farFade)))
   // Unlit HDR colour is emissive without adding any real lights or requiring sunlight.
-  material.colorNode = mix(crustColour, lit, heat).mul(float(1).sub(rimDark.mul(active).mul(0.5)))
+  material.colorNode = mix(crustColour, lit, heat).mul(float(1).sub(rimDarkNow.mul(0.5)))
   // Round a sinking vehicle the top layer is thin enough to see it glow through.
   const nearSunk = smoothstep(sunk.w, sunk.w.mul(0.55), positionWorld.sub(sunk.xyz).length()).mul(sunk.w.greaterThan(0).select(1, 0))
   material.transparent = true
@@ -167,6 +186,7 @@ export function createLavaMaterial(options: LavaOptions | boolean = {}, legacySh
 
   const update = (dt: number, level = 0, exposureDim = 1) => {
     dim.value = exposureDim
+    detail.value = Math.round(qualityLevel.value) >= 2 ? 1 : 0
     clock.value += dt; speed.value = p.flowSpeed.value; scale.value = p.noiseScale.value
     crust.value = p.crustAmount.value; glow.value = p.glowIntensity.value; altitude.value = level
     direction.value.set(river ? 0 : Math.cos(p.flowDirection.value), river ? 1 : Math.sin(p.flowDirection.value))

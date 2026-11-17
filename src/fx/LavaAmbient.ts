@@ -23,6 +23,7 @@ import type { System } from '../core/Game'
 import { qualityBudget } from '../core/quality'
 import { NO_BED, type WaterBed } from '../world/water/bed'
 import { applyCurve } from '../world/curve'
+import type { WaveField } from '../world/water/surface'
 import { PARTICLE_SHARES, lavaEmbers, lavaFire, particleBudget, windX, windZ } from './params'
 
 /** Edge of the square of particles round the camera, metres. */
@@ -51,6 +52,10 @@ export class LavaAmbient implements System {
   private readonly embers = uniform(1)
   private readonly wind = uniform(new T.Vector2())
   private readonly dim = uniform(1)
+  /** Lava swell components (kx, kz, phase, amplitude), so flames ride the surface. */
+  private readonly swell = Array.from({ length: 4 }, () => uniform(new T.Vector4()))
+  /** Flames: their own batch, normally blended, so a dark root shows against bright lava. */
+  readonly flames: T.Mesh<T.InstancedBufferGeometry, T.SpriteNodeMaterial>
   private readonly bedMap = texture(NO_BED)
   private readonly bedFrame = uniform(new T.Vector3(1 / 2048, 0, 0))
   on = false
@@ -66,7 +71,8 @@ export class LavaAmbient implements System {
     g.setAttribute('lavaSeed', new T.InstancedBufferAttribute(seeds, 4))
     g.instanceCount = 0
     const smokeGeometry = g.clone()
-    for (const u of [this.level, this.fire, this.embers, this.wind, this.dim]) (u as unknown as { setGroup(g: unknown): { onRenderUpdate(f: () => unknown): void } }).setGroup(renderGroup).onRenderUpdate(() => u.value)
+    const flameGeometry = g.clone()
+    for (const u of [this.level, this.fire, this.embers, this.wind, this.dim, ...this.swell]) (u as unknown as { setGroup(g: unknown): { onRenderUpdate(f: () => unknown): void } }).setGroup(renderGroup).onRenderUpdate(() => u.value)
 
     const seed = attribute('lavaSeed', 'vec4')
     // Home in the square round the camera. Flames are packed into a smaller square so the
@@ -95,7 +101,9 @@ export class LavaAmbient implements System {
     const sparkY = age.mul(life).mul(hop).sub(age.mul(life).pow(2).mul(4.9)).max(0)
     const rise = select(isFlame, age.mul(flameH), select(isEmber, age.mul(emberH), select(isSpark, sparkY, age.mul(3.5))))
     const sideways = select(isEmber, curl.add(drift), select(isSpark, vec2(seed.x.sub(0.5), seed.y.sub(0.5)).mul(age.mul(2.2)), drift))
-    const position = vec3(home.x.add(sideways.x), this.level.add(0.15).add(rise), home.y.add(sideways.y))
+    let lift: T.Node<'float'> = float(0)
+    for (const u of this.swell) lift = lift.add(u.w.mul(sin(u.x.mul(home.x).add(u.y.mul(home.y)).add(u.z))))
+    const position = vec3(home.x.add(sideways.x), this.level.add(0.15).add(lift).add(rise), home.y.add(sideways.y))
     // Fade out toward the edge of the square, where a particle wraps to the other side.
     const offCentre = home.sub(cameraPosition.xz).abs()
     const inBox = smoothstep(box.mul(0.5), box.mul(0.36), offCentre.x.max(offCentre.y))
@@ -115,15 +123,27 @@ export class LavaAmbient implements System {
     glow.fog = false
     glow.positionNode = position
     // Flames are tall licks; embers and sparks small points.
-    glow.scaleNode = vec2(size, size.mul(select(isFlame, float(2.1), float(1)))).mul(kind.lessThan(0.92).select(1, 0))
+    glow.scaleNode = vec2(size, size).mul(kind.greaterThanEqual(0.45).and(kind.lessThan(0.92)).select(1, 0))
     // Yellow at the root, red at the tip and as it dies; flickering.
     const flicker = sin(time.mul(17).add(seed.y.mul(60))).mul(0.15).add(sin(time.mul(7.3).add(seed.x.mul(20))).mul(0.15)).add(0.85)
-    const flameColour = mix(mix(vec3(2.4, 0.95, 0.16), vec3(1.4, 0.22, 0.03), fy), vec3(0.9, 0.08, 0.01), age).mul(flicker)
+    // Dark red root, orange body, a brighter yellow lick near the top, reddening as it dies.
+    const body = mix(vec3(0.32, 0.04, 0.01), vec3(2.2, 0.7, 0.1), smoothstep(0.05, 0.4, fy))
+    const flameColour = mix(mix(body, vec3(2.6, 1.2, 0.25), smoothstep(0.45, 0.8, fy)), vec3(0.6, 0.06, 0.01), age).mul(flicker)
     const emberColour = mix(vec3(5, 2.6, 0.6), vec3(1.4, 0.15, 0.01), age)
-    glow.colorNode = select(isFlame, flameColour, emberColour).mul(this.dim)
+    glow.colorNode = emberColour.mul(this.dim)
     // Smoke wisps are drawn by the other batch.
-    glow.opacityNode = select(isFlame, lick.mul(lick), disc.mul(disc)).mul(fade).mul(where).mul(select(isFlame, float(0.8), float(1))).mul(kind.lessThan(0.92).select(1, 0))
+    glow.opacityNode = disc.mul(disc).mul(fade).mul(where)
     this.glow = new T.Mesh(g, glow)
+
+    // Flames are normally blended: a dark red root and orange body read against glowing lava by
+    // day, where an additive flame would vanish into it; the tip thins and fades.
+    const flame = new T.SpriteNodeMaterial({ transparent: true, depthWrite: false })
+    flame.fog = false
+    flame.positionNode = position
+    flame.scaleNode = vec2(size, size.mul(2.1)).mul(isFlame.select(1, 0))
+    flame.colorNode = flameColour.mul(this.dim)
+    flame.opacityNode = lick.mul(fade).mul(where).mul(float(0.85).sub(fy.mul(0.4)))
+    this.flames = new T.Mesh(flameGeometry, flame)
 
     const smoke = new T.SpriteNodeMaterial({ transparent: true, depthWrite: false })
     smoke.positionNode = position
@@ -133,7 +153,7 @@ export class LavaAmbient implements System {
     smoke.opacityNode = disc.mul(fade).mul(shore).mul(inBox).mul(this.embers.min(1)).mul(0.22).mul(kind.greaterThanEqual(0.92).select(1, 0))
     this.smoke = new T.Mesh(smokeGeometry, smoke)
 
-    for (const [mesh, name, order] of [[this.glow, 'lava-ambient', 1], [this.smoke, 'lava-ambient-smoke', 2]] as const) {
+    for (const [mesh, name, order] of [[this.flames, 'lava-flames', 1], [this.glow, 'lava-ambient', 2], [this.smoke, 'lava-ambient-smoke', 3]] as const) {
       mesh.name = name
       mesh.frustumCulled = false
       mesh.renderOrder = order
@@ -149,12 +169,14 @@ export class LavaAmbient implements System {
   }
 
   /** Per frame. `on` when the sea is lava; `dim` holds lava brightness as night exposure rises. */
-  update(_dt: number, level = 0, dim = 1, wind?: { x: number; z: number }): void {
+  update(_dt: number, level = 0, dim = 1, wind?: { x: number; z: number }, swell?: WaveField | null): void {
+    for (let i = 0; i < this.swell.length; i++) {
+      const c = swell?.components[i]
+      this.swell[i].value.set(c?.kx ?? 0, c?.kz ?? 0, c?.phase ?? 0, c && c.active !== false ? c.amplitude : 0)
+    }
     const budget = Math.min(particleBudget.value, qualityBudget().particles)
     const count = this.on ? ambientCount(budget, lavaFire.value, lavaEmbers.value) : 0
-    this.glow.geometry.instanceCount = count
-    this.smoke.geometry.instanceCount = count
-    this.glow.visible = this.smoke.visible = count > 0
+    for (const mesh of [this.flames, this.glow, this.smoke]) { mesh.geometry.instanceCount = count; mesh.visible = count > 0 }
     this.level.value = level
     this.fire.value = lavaFire.value
     this.embers.value = lavaEmbers.value
@@ -165,6 +187,6 @@ export class LavaAmbient implements System {
   get count(): number { return this.glow.geometry.instanceCount }
 
   dispose(): void {
-    for (const mesh of [this.glow, this.smoke]) { this.scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose() }
+    for (const mesh of [this.flames, this.glow, this.smoke]) { this.scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose() }
   }
 }
