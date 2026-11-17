@@ -1,7 +1,7 @@
 /* Vehicle labels. Their look is the shared label plate (src/ui/label-plate.css): each bar in
    the vehicle's own tint, people and bots told apart by form (.is-person, .is-bot). This file
-   only places them, and adds the one-line far form and the near-opaque plate for a label that
-   must sit over a passive readout. No transitions or animations: labels appear and leave by an
+   only places them, and adds the one-line far form, the stacked count, and a stronger halo for
+   a label that must sit over a passive readout. No transitions or animations: labels appear and leave by an
    opacity fade driven per frame in VehicleNameplates.ts, which respects reduced motion.
    z-index 4 keeps every label beneath the HUD (12 and up), touch controls, panels and toasts. */
 .vehicle-nameplates { position: fixed; inset: 0; z-index: 4; overflow: hidden; pointer-events: none; }
@@ -9,4 +9,11 @@
 .vehicle-nameplate.s3-plate:not(#s3-plate) { transition: none; }
 /* Far away: the name alone, beside the paint-coloured bar. */
 .vehicle-nameplate.is-compact:not(#s3-plate) > small { display: none; }
-.vehicle-nameplate.is-over-hud:not(#s3-plate) { background: rgb(3 11 19 / .92); }
+/* "+2": how many labels are stacked behind this one, unshown. Quiet, on the name line, in the
+   room the plate's right padding makes for it (VehicleNameplates.ts MORE_FONT). */
+.vehicle-nameplate-more { position: absolute; top: 5px; right: 10px; font: 500 10px/17px 'Barlow', sans-serif; letter-spacing: .08em; color: var(--s3-soft, #cfe3ec); }
+.vehicle-nameplate.is-bot .vehicle-nameplate-more { top: 4px; right: 9px; line-height: 15px; }
+.vehicle-nameplate-more:empty { display: none; }
+/* Over a passive readout (a last resort): the same light glass, with a stronger halo on the
+   type so the name stays clear of the digits behind it. */
+.vehicle-nameplate.is-over-hud:not(#s3-plate) { text-shadow: var(--halo-under, 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55)), 0 0 4px rgb(0 8 14 / .75), 0 0 9px rgb(0 8 14 / .55); }

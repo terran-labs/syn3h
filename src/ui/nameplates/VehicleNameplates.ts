@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { params } from '../../../shared/params'
 import type { Vehicle } from '../../vehicles/Vehicle'
-import { compactAt, distanceOpacity, DISTANCE, FADE_MS, GAP, hold, namePx, NUDGE, overlaps, placeLabels, plateLeft, plateRect, snapPx, spring, type Candidate, type Hold, type Spring } from './layout'
+import { compactAt, distanceOpacity, DISTANCE, FADE_MS, GAP, hold, HOLD_MS, namePx, NUDGE, overlaps, placeLabels, plateLeft, plateRect, snapPx, spring, type Candidate, type Hold, type Spring } from './layout'
 import type { Point } from './occlusion'
 import { copyCurveState, overHorizon } from '../../world/curve'
 import { bendPoint, CurvedProjection, curvedTerrainOccluded } from './curvature'
@@ -28,6 +28,8 @@ const HEIGHT = { person: [42, 29], bot: [38, 25] } as const
 /** Must match label-plate.css: name and tag fonts, letter spacing in em, and padding plus border. */
 const PERSON_NAME = '600 14px Barlow', BOT_NAME = '500 12px Barlow', NAME_SPACING = .08, PERSON_TAG = '500 10px Barlow', BOT_TAG = '500 9px Barlow', TAG_SPACING = .16
 const PLATE_INSET = 30 // padding, border and 4 px for kerning
+/** The stacked count ("+2"): its font (must match nameplates.css) and its gap from the name. */
+const MORE_FONT = '500 10px Barlow', MORE_GAP = 6
 /**
  * Size follows how large a vehicle looks, not raw metres: plates are in CSS pixels, so on a
  * smaller screen the same car at the same distance is drawn smaller while its plate is not.
@@ -92,6 +94,8 @@ export interface NameplateOptions {
 }
 interface Plate {
   el: HTMLDivElement; name: HTMLElement; note: HTMLElement
+  /** "+2": how many labels are stacked behind this one, unshown (see placeLabels). */
+  more: HTMLElement; moreCount: number; moreWant: number; moreSince: number
   candidate: Candidate
   vehicle?: Vehicle; stamp: number
   /** Placed by the last allocation, held against flicker. */
@@ -144,6 +148,8 @@ export class VehicleNameplates {
   private last = 0
   private nextAllocation = 0
   private readonly candidates: Candidate[] = []
+  private readonly stackedBehind = new Map<string, string>()
+  private readonly stacked = new Map<string, number>()
 
   constructor(private readonly currentCamera: () => THREE.PerspectiveCamera, private readonly options: NameplateOptions) {
     this.root.className = 'vehicle-nameplates syn3h-nametags'
@@ -164,10 +170,10 @@ export class VehicleNameplates {
   private acquire(id: string): Plate {
     let p = this.free.pop()
     if (!p) {
-      const el = document.createElement('div'), name = document.createElement('strong'), note = document.createElement('small')
-      el.className = 'vehicle-nameplate s3-plate'; el.hidden = true
-      el.append(name, note); this.root.append(el)
-      p = { el, name, note, candidate: { id, bot: false, x: 0, y: 0, distance: 0, width: 0, height: 0, compact: false, held: false, nudged: false },
+      const el = document.createElement('div'), name = document.createElement('strong'), note = document.createElement('small'), more = document.createElement('span')
+      el.className = 'vehicle-nameplate s3-plate'; el.hidden = true; more.className = 'vehicle-nameplate-more'
+      el.append(name, note, more); this.root.append(el)
+      p = { el, name, note, more, moreCount: 0, moreWant: 0, moreSince: -Infinity, candidate: { id, bot: false, x: 0, y: 0, distance: 0, width: 0, height: 0, compact: false, held: false, nudged: false },
         stamp: 0, shown: { value: false, since: -Infinity }, behind: { value: false, since: -Infinity }, lifted: { value: false, since: -Infinity }, offered: false, nudge: { x: 0, v: 0 }, compact: false, px: NaN, scale: 1,
         alpha: 0, target: 0, color: '', text: '', tag: '', transform: '', width: 0, height: 0, opacity: -1, displayed: false }
     }
@@ -181,6 +187,12 @@ export class VehicleNameplates {
     p.shown.value = false; p.shown.since = -Infinity; p.behind.value = false; p.behind.since = -Infinity; p.lifted.value = false; p.lifted.since = -Infinity; p.offered = false
     p.nudge.x = p.nudge.v = 0; p.candidate.held = p.candidate.nudged = false; p.compact = false; p.px = NaN
     p.alpha = p.target = 0; this.paint(p)
+    p.moreWant = 0; p.moreSince = -Infinity; this.showMore(p, 0)
+  }
+  /** Write the stacked count, and the padding that keeps the name clear of it. */
+  private showMore(p: Plate, count: number): void {
+    if (count === p.moreCount && (count || !p.more.textContent)) return
+    p.moreCount = count; p.more.textContent = count ? `+${count}` : ''
   }
   update(list: readonly NameplateInfo[]): void {
     this.entries = list
@@ -242,8 +254,12 @@ export class VehicleNameplates {
       const scale = Math.round(p.px * (presentation ? 1.25 : 1)) / base
       // Text is untrusted replicated data: use textContent and a bounded display length.
       const name = t.name.slice(0, 48), tag = p.compact ? '' : [t.bot ? 'Bot' : 'Player', t.note].filter(Boolean).join(' · ')
-      const width = Math.round(Math.min(PLATE_MAX, Math.max(PLATE_MIN, PLATE_INSET + Math.max(
+      // Room on the name line for the stacked count, if any: the plate grows by it.
+      const moreWidth = p.moreCount ? Math.ceil(textWidth(`+${p.moreCount}`, MORE_FONT, NAME_SPACING, 10)) + MORE_GAP : 0
+      const width = Math.round(Math.min(PLATE_MAX, Math.max(PLATE_MIN, PLATE_INSET + moreWidth + Math.max(
         textWidth(name, t.bot ? BOT_NAME : PERSON_NAME, NAME_SPACING, base), tag ? textWidth(tag, t.bot ? BOT_TAG : PERSON_TAG, TAG_SPACING, t.bot ? 9 : 10) : 0))))
+      const padding = moreWidth ? `${(t.bot ? 9 : 10) + moreWidth}px` : ''
+      if (p.el.style.paddingRight !== padding) p.el.style.paddingRight = padding
       const height = HEIGHT[t.bot ? 'bot' : 'person'][p.compact ? 1 : 0]
       const c = p.candidate
       // The layout tests the plate where it is drawn: its centre, after keeping it on screen.
@@ -274,7 +290,7 @@ export class VehicleNameplates {
     }
     if (allocate) {
       const hud = this.hud.read(w, h)
-      const placed = placeLabels(this.candidates, hud, w, h)
+      const placed = placeLabels(this.candidates, hud, w, h, this.stackedBehind)
       const ids = new Map(placed.map(at => [at.id, at]))
       for (const c of this.candidates) {
         const p = this.plates.get(c.id)!, at = ids.get(c.id)
@@ -285,6 +301,15 @@ export class VehicleNameplates {
         if (at) { if (!p.displayed) { p.lifted.value = at.nudged; p.lifted.since = now; p.nudge.x = at.nudged ? NUDGE : 0 } else hold(p.lifted, at.nudged, now) }
         c.nudged = p.lifted.value
         if (at) p.el.classList.toggle('is-over-hud', at.overSoft)
+      }
+      // "+N": labels left out because this plate holds their spot, and not showing. The count
+      // changes only after the new value has held for HOLD_MS, so a passing overlap never flashes.
+      this.stacked.clear()
+      for (const [id, front] of this.stackedBehind) if (!this.plates.get(id)?.shown.value) this.stacked.set(front, (this.stacked.get(front) ?? 0) + 1)
+      for (const at of placed) {
+        const p = this.plates.get(at.id)!, want = this.stacked.get(at.id) ?? 0
+        if (want !== p.moreWant) { p.moreWant = want; p.moreSince = now }
+        if (want !== p.moreCount && now - p.moreSince >= HOLD_MS) this.showMore(p, want)
       }
       // Labels not offered this time (a bot gone behind terrain): hide, through the hold.
       for (const p of this.plates.values()) if (p.stamp === this.stamp && !p.offered) p.candidate.held = hold(p.shown, false, now)

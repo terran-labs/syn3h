@@ -140,26 +140,34 @@ export const priority = (a: Candidate, b: Candidate) => Number(a.bot) - Number(b
  * hard HUD area, and covers a soft one only when both nudges are otherwise blocked by soft
  * areas alone. Beyond FAR_BOTS compact bot labels, the farther ones are left out. Returns the
  * placed labels in priority order; the caller fades out the rest.
+ *
+ * `stackedBehind`, when given, receives for each label left out because another plate already
+ * holds its spot the id of that plate (the first, highest-priority one it ran into), so that
+ * plate can say how many others are stacked behind it. Labels left out by the HUD or the far
+ * cap are not counted.
  */
-export function placeLabels(candidates: readonly Candidate[], exclusions: readonly Exclusion[], width: number, height: number): Placement[] {
-  const result: Placement[] = [], taken: Rect[] = []
+export function placeLabels(candidates: readonly Candidate[], exclusions: readonly Exclusion[], width: number, height: number,
+  stackedBehind?: Map<string, string>): Placement[] {
+  const result: Placement[] = [], taken: { id: string; rect: Rect }[] = []
   let farBots = 0
+  stackedBehind?.clear()
   for (const c of [...candidates].sort(priority)) {
     if (!Number.isFinite(c.x + c.y + c.width + c.height)) continue
     if (c.bot && c.compact && ++farBots > FAR_BOTS) continue
-    let placed: Placement | undefined, soft: Placement | undefined
+    let placed: Placement | undefined, soft: Placement | undefined, behind: string | undefined
     for (const nudged of c.held ? [c.nudged, !c.nudged] : [false, true]) {
       const rect = plateRect(c, nudged)
       if (rect.right < 0 || rect.left > width || rect.bottom < 0 || rect.top > height) continue
       const test = c.held && nudged === c.nudged ? inset(rect, HOLD_SLACK) : rect
-      if (taken.some(t => overlaps(test, t))) continue
+      const blocker = taken.find(t => overlaps(test, t.rect))
+      if (blocker) { behind ??= blocker.id; continue }
       if (exclusions.some(b => !b.soft && overlaps(test, b))) continue
       if (exclusions.some(b => b.soft && overlaps(test, b))) { soft ??= { id: c.id, nudged, overSoft: true }; continue }
       placed = { id: c.id, nudged, overSoft: false }; break
     }
     placed ??= soft
-    if (!placed) continue
-    taken.push(plateRect(c, placed.nudged))
+    if (!placed) { if (behind !== undefined) stackedBehind?.set(c.id, behind); continue }
+    taken.push({ id: c.id, rect: plateRect(c, placed.nudged) })
     result.push(placed)
   }
   return result

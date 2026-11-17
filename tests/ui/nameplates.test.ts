@@ -52,6 +52,15 @@ describe('vehicle label placement', () => {
     expect(placeLabels([front, { ...back, held: true }], [], 600, 600).find(p => p.id === 'back')?.nudged).toBe(false)
     expect(placeLabels([front, back], [], 600, 600).find(p => p.id === 'back')?.nudged).toBe(true)
   })
+  // Bug it catches: vehicles lined up on screen silently losing their labels with no hint.
+  it('says which plate a stacked label is hidden behind, and does not count HUD-blocked ones', () => {
+    const front = candidate('front', false, 300, 300, 10), back = candidate('back', true, 302, 298, 30)
+    const under = candidate('under', true, 100, 300, 40), behind = new Map<string, string>()
+    const hud = [{ left: 0, top: 0, right: 200, bottom: 600 }]
+    const placed = placeLabels([back, front, under], hud, 600, 600, behind)
+    expect(placed.map(p => p.id)).toEqual(['front'])
+    expect([...behind]).toEqual([['back', 'front']])
+  })
   it(`shows at most ${FAR_BOTS} far bot labels, the nearest`, () => {
     const cs = Array.from({ length: FAR_BOTS + 4 }, (_, i) => ({ ...candidate(`b${i}`, true, 40 + i * 150 % 900, 100 + i * 37, 100 + i), compact: true }))
     const placed = placeLabels(cs, [], 1000, 1000)

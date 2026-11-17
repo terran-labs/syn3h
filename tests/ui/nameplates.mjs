@@ -125,6 +125,23 @@ for (const view of ['desktop', 'portrait', 'landscape']) {
     }
     await page.screenshot({ path: `${out}/far.png` })
     assert.ok(far, 'far: no label for a bot 220 m ahead')
+    // Stacked: three bots in a line ahead. Only the front one may keep its label, and it says
+    // how many are behind it ("+2"), so the player knows they are there.
+    let more = ''
+    for (let i = 0; i < 6 && !/^\+[1-9]$/.test(more); i++) {
+      await page.evaluate(() => {
+        const net = window.syn3hNet, cam = window.syn3h.game.camera, p = window.syn3h.player.body.translation(), terrain = window.syn3h.terrain
+        const f = cam.getWorldDirection(cam.position.clone()); f.y = 0; f.normalize()
+        net.tagList.filter(t => t.bot).slice(0, 3).forEach((b, i) => {
+          const d = 22 + i * 3, x = p.x + f.x * d + f.z * 4, z = p.z + f.z * d - f.x * 4
+          b.vehicle.teleport(cam.position.clone().set(x, terrain.heightAt(x, z) + 1, z), Math.atan2(f.x, f.z))
+        })
+      })
+      await page.waitForTimeout(1500)
+      more = await page.evaluate(() => [...document.querySelectorAll('.vehicle-nameplate:not([hidden]) .vehicle-nameplate-more')].map(e => e.textContent).find(Boolean) ?? '')
+    }
+    await page.screenshot({ path: `${out}/stacked.png` })
+    assert.match(more, /^\+[1-9]$/, 'stacked: no count on the front label of bots in a line')
     // Then up in the air with wings open.
     await page.evaluate(() => { const player = window.syn3h.player, p = player.body.translation(); player.teleport(player.object.position.clone().set(p.x, window.syn3h.terrain.heightAt(p.x, p.z) + 80, p.z), 0) })
     await page.keyboard.press('Space') // wings open
@@ -147,7 +164,7 @@ for (const view of ['desktop', 'portrait', 'landscape']) {
     assert.ok(seen >= tries - 1, `wings: a bot seen through your own wing lost its label (${seen}/${tries})`)
     await atRest('wings', page)
     assert.deepEqual(errors, [])
-    console.log(`wings: ${seen}/${tries} through the wing, far bot named PASS`)
+    console.log(`wings: ${seen}/${tries} through the wing, far bot named, stacked count ${more} PASS`)
   } finally { await browser.close() }
 }
 
