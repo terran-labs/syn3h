@@ -155,7 +155,8 @@ async function play(page, orient) {
   // Plasma Tag streams from the first touch, without dragging, and stops on the lift.
   await page.evaluate(() => window.syn3hNet.gear.select('beam'))
   await page.waitForTimeout(100); await fires()
-  await touch('pointerdown', 9, tag.x, tag.y); await page.waitForTimeout(500)
+  // Discard the frame polled before the synthetic press arrived, then sample while it is held.
+  await touch('pointerdown', 9, tag.x, tag.y); await page.waitForTimeout(100); await fires(); await page.waitForTimeout(400)
   await page.screenshot({ path: `${out}/${label}-${orient}-reticle-beam.png` })
   const held = await fires()
   check(held.length > 5 && held.every((f) => f), `${orient}: Plasma Tag fires every frame Tag is held (${held.join('')})`)
