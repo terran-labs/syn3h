@@ -7,12 +7,15 @@
  * and only then revealed. Network state is still received and applied from the first message:
  * only the showing waits, so a vehicle appears where it is now, never where it was.
  *
+ * While compiling ahead is off, a vehicle is ready at once and compiles in the frame it is shown;
+ * bots still come one per interval, so their compiles are spread over separate frames.
+ *
  * People are never queued behind bots: a person is shown as soon as their vehicle is compiled.
  * Bots follow, one per interval (`bots.arrivalInterval`, as on the host). A remote that leaves
  * while waiting is simply dropped. Presentation only: nothing here touches the protocol.
  */
 import type { Object3D } from 'three/webgpu'
-import { canCompileAhead, compileVehicleAhead } from '../core/compileAhead'
+import { canCompileAhead, compileVehicleAhead, hasGame } from '../core/compileAhead'
 import { graphicsLevel } from '../core/quality'
 import { arrivalInterval } from '../bots/pacing'
 
@@ -33,8 +36,13 @@ export class RemoteArrivals {
     /** Shown: the arrival cloud's look, for a vehicle placed by the network. */
     private readonly reveal: (vehicle: ParkableVehicle) => void = () => {},
     private readonly interval: () => number = () => arrivalInterval.value,
-    /** Compile a vehicle in every look it may wear first; null where nothing can compile ahead. */
-    private readonly compile: (vehicle: ParkableVehicle) => Promise<void> | null = vehicle => canCompileAhead() ? compileVehicleAhead(vehicle, graphicsLevel.value) : null,
+    /**
+     * Compile a vehicle in every look it may wear first; null with no running game. While
+     * compiling ahead is off (Game.compilesAhead) it is ready at once and compiles on first
+     * sight, but bots are still shown one per interval, so their compiles fall in separate
+     * frames instead of all in the frame a guest meets the room.
+     */
+    private readonly compile: (vehicle: ParkableVehicle) => Promise<void> | null = vehicle => canCompileAhead() ? compileVehicleAhead(vehicle, graphicsLevel.value) : hasGame() ? Promise.resolve() : null,
   ) {}
 
   /** Remotes still waiting to be shown. */

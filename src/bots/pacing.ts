@@ -29,7 +29,7 @@ export const PACING = {
   slowFactor: 1.25,
   /** A bot is only blamed for slow frames if it added at least this share of the frame budget... */
   costShare: 0.1,
-  /** ...and at least this many milliseconds to the mean frame. */
+  /** ...and at least this many milliseconds to the median frame. */
   minCostMs: 1.5,
   /** Frames longer than this are a pause or a hidden tab, not evidence. */
   interruptedMs: 1000,

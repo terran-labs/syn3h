@@ -11,6 +11,8 @@ let available: () => boolean = () => true
 /** `can` says whether compiling ahead is safe right now (see Game.compilesAhead). */
 export function setCompiler(next: ((object: THREE.Object3D) => Promise<void>) | null, can: () => boolean = () => true): void { compiler = next; available = can }
 export function compileAhead(object: THREE.Object3D): Promise<void> | null { return compiler && available() ? compiler(object) : null }
+/** True in a running game, whether or not compiling ahead is on (see Game.compilesAhead). */
+export function hasGame(): boolean { return compiler !== null }
 /** True in a running game where compileAhead does something now. */
 export function canCompileAhead(): boolean { return compiler !== null && available() }
 
