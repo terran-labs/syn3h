@@ -46,6 +46,17 @@ export interface SeamFollowers {
   others(): readonly SeamVehicle[]
 }
 
+/**
+ * Size the sea's and the inland and lava waves to a world's tile, so they wrap at its seam.
+ * Both ways a world is built (generated here, or adopted from the terrain worker) call this:
+ * the worker path once set only the sea, leaving lava and lakes tiled to the previous world,
+ * so liquid heights, and buoyancy with them, differed between players and broke at the seam.
+ */
+export function configureWorldWater(size: number, seed: number): void {
+  seaWaves.configure(size, seed)
+  configureLiquidWaves(size)
+}
+
 export class ProceduralTerrain implements Terrain {
   /** Side of the current tile in metres. Changes with the planet size setting. */
   get size(): number {
@@ -178,8 +189,7 @@ export class ProceduralTerrain implements Terrain {
   private generate(): TerrainData {
     const t = performance.now()
     const data = generateTerrain(this.seed, currentTerrainSettings())
-    seaWaves.configure(data.size, this.seed)
-    configureLiquidWaves(data.size)
+    configureWorldWater(data.size, this.seed)
     // The far row and column are the image of the first: make them identical so the
     // height field, mesh and collider are exactly periodic.
     this.lastSeamCorrection = sealSeam(data)
@@ -403,7 +413,7 @@ export class ProceduralTerrain implements Terrain {
     if (ready) {
       this.prepared.delete(key)
       this.data = ready.data
-      seaWaves.configure(ready.data.size, this.seed)
+      configureWorldWater(ready.data.size, this.seed)
       this.lastSeamCorrection = ready.seam
       this.lastGenerateMs = ready.ms
     } else this.data = this.generate()
