@@ -101,8 +101,13 @@ export function plateTint(recipeId: string): string {
   const hex = (v: number) => Math.round(Math.min(1, v) * 255).toString(16).padStart(2, '0')
   return `#${hex(r)}${hex(g)}${hex(b)}`
 }
-/** How long a planet label's side must stay blocked before it moves, and its cross-fade, in ms. */
-const LABEL_HOLD = 300, LABEL_FADE = 150
+/**
+ * A planet label's side change, in ms: how long its side must stay blocked before it moves (0:
+ * a blocked side would overlap a neighbour, so it starts fading at once; the layout's preference
+ * for the side a label already has is what keeps a turning view from making it hop), and the
+ * cross-fade.
+ */
+const LABEL_HOLD = 0, LABEL_FADE = 150
 /** Must match the short landscape block in shell.css. */
 const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
 const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="about">About</button>`
@@ -1268,7 +1273,13 @@ export class Shell implements System {
       onLayout: (places, chosen) => {
         this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
         // Each label near its world, on the screen, clear of the links and of each other.
-        for (const [id, chip] of chips) if (!this.labelSizes.has(id) && !chip.hidden) this.labelSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
+        // Each label's size with both lines and with the name only, measured once per text and window.
+        for (const [id, chip] of chips) if (!this.labelSizes.has(id) && !chip.hidden) {
+          const was = chip.classList.contains('is-name-only')
+          chip.classList.remove('is-name-only'); this.labelSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
+          chip.classList.add('is-name-only'); this.compactSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
+          chip.classList.toggle('is-name-only', was)
+        }
         // Clear of the wordmark too. While flying to a world, only its label stays.
         if (!this.brandBottom) {
           this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
@@ -1290,12 +1301,15 @@ export class Shell implements System {
           this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
         }
         const shown = chosen ? places.filter(place => place.id === chosen) : places
-        const spots = placeLabels(shown, this.labelSizes, { width: this.labelRight, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots, avoid: this.galaxy ? [this.galaxy.sunScreen] : [] })
-        // Fallback ladder: if two-line plates leave a world unnamed, drop to names only (until the
-        // window size changes); worlds still unnamed fade, show while focused, and take a tap.
-        if (!chosen && !this.namesOnly && spots.some(spot => spot.crowded)) {
-          this.namesOnly = true; labels.classList.add('galaxy-names-only'); this.labelSizes.clear()
-        }
+        // A label that has dropped to its name stays that way until the window changes size, so
+        // a slowly turning system does not make its biome line blink in and out.
+        const sizes = new Map(this.labelSizes)
+        for (const id of this.compactIds) { const size = this.compactSizes.get(id); if (size) sizes.set(id, size) }
+        const spots = placeLabels(shown, sizes, { width: this.labelRight, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots, avoid: this.galaxy ? [this.galaxy.sunScreen] : [], compactSizes: this.compactSizes })
+        // The ladder, per label: both lines where the plate fits beside its world, the name only
+        // where only that fits, and faded (shown when pointed at or focused) where nothing does.
+        for (const spot of spots) if (spot.compact && !chosen) this.compactIds.add(spot.id)
+        for (const [id, chip] of chips) chip.classList.toggle('is-name-only', this.compactIds.has(id))
         if (chosen) for (const place of places) if (place.id !== chosen) chips.get(place.id)!.classList.add('is-crowded')
         for (const place of places) chips.get(place.id)!.hidden = !place.visible
         const now = performance.now()
@@ -1330,7 +1344,7 @@ export class Shell implements System {
         let over: { left: number; top: number; right: number; bottom: number } | undefined
         for (const [id, chip] of chips) chip.classList.toggle('is-raised', id === raised)
         if (raised) {
-          const place = places.find(p => p.id === raised), size = this.labelSizes.get(raised), chip = chips.get(raised)!
+          const chip = chips.get(raised)!, place = places.find(p => p.id === raised), size = (this.compactIds.has(raised) ? this.compactSizes : this.labelSizes).get(raised)
           if (place && size) {
             const x = Math.min(this.labelRight - 8 - size.width / 2, Math.max(8 + size.width / 2, place.x))
             const y = Math.min(this.linksTop - size.height, place.y + place.radius + 6)
@@ -1339,13 +1353,13 @@ export class Shell implements System {
           }
         }
         for (const spot of spots) {
-          const size = this.labelSizes.get(spot.id), side = this.labelSide.get(spot.id), place = places.find(p => p.id === spot.id)
+          const size = (this.compactIds.has(spot.id) ? this.compactSizes : this.labelSizes).get(spot.id), side = this.labelSide.get(spot.id), place = places.find(p => p.id === spot.id)
           const box = size && side && place ? { left: place.x + side.dx - size.width / 2, top: place.y + side.dy, right: place.x + side.dx + size.width / 2, bottom: place.y + side.dy + size.height } : undefined
           chips.get(spot.id)!.classList.toggle('is-dimmed', !!over && spot.id !== raised && !!box && box.left < over.right && box.right > over.left && box.top < over.bottom && box.bottom > over.top)
         }
       },
     })
-    addEventListener('resize', () => { this.brandBottom = undefined; this.namesOnly = false; labels.classList.remove('galaxy-names-only'); this.labelSizes.clear() }, { signal: this.abort.signal })
+    addEventListener('resize', () => { this.brandBottom = undefined; this.labelSizes.clear(); this.compactSizes.clear(); this.compactIds.clear() }, { signal: this.abort.signal })
     this.element.classList.add('is-galaxy'); this.galaxy.enabled = true
     // WebGL 2 exists but the galaxy would not start (a shader the driver refuses): the world
     // names stay, as a row of buttons, so a visitor can still choose one and play.
@@ -1369,12 +1383,14 @@ export class Shell implements System {
   private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
   /** The world a pointer is on, or a finger holds, for its label (Galaxy onPoint). */
   private pointedWorld: string | undefined
-  /** The labels have fallen back to names only (no biome line) for this window size. */
-  private namesOnly = false
   /** The galaxy's worlds by id, for their label text. */
   /** The galaxy's world labels, by world id, with their measured sizes and last spots. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
   private readonly labelSizes = new Map<string, { width: number; height: number }>()
+  /** Each label's size as its name only, for the ladder's compact rung. */
+  private readonly compactSizes = new Map<string, { width: number; height: number }>()
+  /** Labels showing their name only, until the window changes size. */
+  private readonly compactIds = new Set<string>()
   private readonly labelSpots = new Map<string, number>()
   /** Short landscape: the right edge left to the galaxy, and its framing (see SHORT_LANDSCAPE). */
   private labelRight = innerWidth
@@ -1403,7 +1419,7 @@ export class Shell implements System {
         if (world.seed !== worldSeed.value) this.galaxy?.setSeed(id, worldSeed.value)
       }
       const name = chip.querySelector('strong')!, text = world ? planetLabelText(world).name : name.textContent
-      if (name.textContent !== text) { name.textContent = text; this.labelSizes.delete(id) }
+      if (name.textContent !== text) { name.textContent = text; this.labelSizes.delete(id); this.compactSizes.delete(id) }
       chip.classList.toggle('is-current', id === current); chip.classList.toggle('is-selected', id === current)
       chip.classList.toggle('is-locked', !open && id !== current)
     }
