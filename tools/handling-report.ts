@@ -6,14 +6,16 @@
  *   npx tsx tools/handling-report.ts          Markdown to stdout
  *   npx tsx tools/handling-report.ts --json   JSON to stdout
  *
- * Every figure uses current parameter defaults (shared/params.ts) unless its label says otherwise.
- * To add a vehicle (tank, hovercraft), write its scenarios next to its tests and add an entry to
- * `vehicles` below.
+ * Each vehicle is measured once per handling preset (shared/presets.ts), the default first, so
+ * the tables have a column per preset. Every figure uses that preset over the parameter defaults
+ * unless its label says otherwise. To add a vehicle (the hovercraft), write its scenarios next to
+ * its tests and add an entry to `vehicles` below. The tank is hidden from the game and left out.
  */
 import { params } from '../shared/params'
+import type { HandlingPreset } from '../shared/presets'
 import { FIXED_DT, initPhysics } from '../src/core/physics'
-import { buggyNextGen } from '../src/vehicles/buggyParams'
-import { jetFlightThrust } from '../src/vehicles/Jet'
+import { BUGGY_PRESETS } from '../src/vehicles/buggyParams'
+import { JET_PRESETS } from '../src/vehicles/Jet'
 import * as buggy from '../tests/vehicles/syn3hScenarios'
 import * as jet from '../tests/vehicles2/jetScenarios'
 import * as liquid from '../tests/vehicles/liquidScenarios'
@@ -34,16 +36,14 @@ const settle = (trace: number[], dt: number) => {
   return { top, toTop: steady && i >= 0 ? (i + 1) * dt : Infinity }
 }
 
-/** Run a scenario with every parameter at its default, after `setup` changes some. */
+/** The preset being measured; its values are applied over the defaults before every scenario. */
+let preset: HandlingPreset | undefined
+/** Run a scenario with every parameter at its default plus the preset, after `setup` changes some. */
 async function at<T>(scenario: () => T | Promise<T>, setup?: () => void): Promise<T> {
   buggy.resetParams()
+  for (const [id, value] of Object.entries(preset?.values ?? {})) params.set(id, value)
   setup?.()
   try { return await scenario() } finally { buggy.resetParams() }
-}
-const classic = () => params.set(buggyNextGen.def.id, false)
-const tyresOnly = (sideGrip?: number) => () => {
-  for (const id of ['buggy.fin', 'buggy.steerFollow', 'buggy.sideHold']) params.set(id, 0)
-  if (sideGrip !== undefined) params.set('buggy.sideGrip', sideGrip)
 }
 
 // ---- Syn3h buggy -----------------------------------------------------------------------
@@ -123,44 +123,42 @@ const buggyGlideSink = async () => {
 async function syn3hBuggy(): Promise<VehicleReport> {
   const top = await at(buggyTopSpeed)
   const brake = await at(() => buggyBrake())
-  const classicBrake = await at(() => buggyBrake(), classic)
   const turn = await at(() => buggyTurn())
   const detail: Figure[] = [
     fig('Braking from 25 m/s, time', 's', brake.seconds),
     fig('Braking from 25 m/s, average', 'g', brake.g),
-    fig('Braking from 25 m/s, classic', 'm', classicBrake.distance),
     fig('Full lock at 15 m/s, lateral', 'g', turn.lateralG),
     fig('Full lock at 15 m/s, sideslip', 'deg', turn.slip),
     fig('Coast off throttle from 25 m/s', 'g', await at(buggyCoast)),
     fig(`Regen on reverse key (setting ${params.get('buggy.regen')!.def.default} g)`, 'g', await at(buggyRegen)),
   ]
-  for (const v of [25, 35, 45]) {
-    detail.push(fig(`Course change in 1 s at full lock, ${v} m/s`, 'deg', (await at(() => buggy.courseChange(v))).after1))
-    detail.push(fig(`Course change in 1 s at full lock, ${v} m/s, classic`, 'deg', (await at(() => buggy.courseChange(v), classic)).after1))
-  }
+  // Turn-in at speed: full lock held for two seconds from a steady cruise.
+  const locks = new Map<number, Awaited<ReturnType<typeof buggy.fullLock>>>()
+  for (const v of [25, 35, 45, 60]) locks.set(v, await at(() => buggy.fullLock(v)))
+  for (const v of locks.keys()) detail.push(fig(`Full lock at ${v} m/s: course change in 1 s`, 'deg', locks.get(v)!.after1))
+  for (const v of locks.keys()) detail.push(fig(`Full lock at ${v} m/s: turn radius after 2 s`, 'm', locks.get(v)!.radius))
+  for (const v of locks.keys()) detail.push(fig(`Full lock at ${v} m/s: lateral after 2 s`, 'g', locks.get(v)!.lateralG))
+  for (const v of [45, 60]) detail.push(fig(`Full lock at ${v} m/s for 2 s: largest slide angle`, 'deg', locks.get(v)!.worstSlip), fig(`Full lock at ${v} m/s for 2 s: least upright (1 level)`, '', locks.get(v)!.upright))
+  const flick = await at(() => buggy.flick(45))
+  detail.push(fig('Flick left-right at 45 m/s: largest slide angle', 'deg', flick.worstSlip), fig('Flick left-right at 45 m/s: slide angle 2 s after letting go', 'deg', flick.endSlip))
+  detail.push(fig('In the air yawed 30 deg at 30 m/s: nose turned toward travel in 1 s', 'deg', await at(() => buggy.airStraighten())))
   for (const deg of [30, 40]) detail.push(fig(`Climbed in 4 s from rest, ${deg} degree slope`, 'm', (await at(() => buggy.climb(deg))).climbed))
   detail.push(
     fig('Hop off a 0.4 m bump at 42 m/s', 'm', (await at(() => buggy.bump())).hop),
-    fig('Hop off a 0.4 m bump at 42 m/s, planted', 'm', (await at(() => buggy.bump(), buggy.planted)).hop),
+    fig('Upright 6 s after the 0.4 m bump (1 level, below 0 on its roof)', '', (await at(() => buggy.bump())).upright),
+    fig('Hop off a 0.4 m bump at 42 m/s, planted suspension', 'm', (await at(() => buggy.bump(), buggy.planted)).hop),
     fig('Roll off a one sided 0.4 m bump at 42 m/s', 'deg', (await at(() => buggy.bump(true))).roll),
     fig('Body strikes landing a 4 m drop at 30 m/s', '', (await at(buggy.drop)).strikes),
-    fig('Body strikes landing a 4 m drop at 30 m/s, planted', '', (await at(buggy.drop, buggy.planted)).strikes),
+    fig('Body strikes landing a 4 m drop at 30 m/s, planted suspension', '', (await at(buggy.drop, buggy.planted)).strikes),
   )
   const broadside = await at(buggy.sideways)
-  const slides = await at(buggy.sideways, tyresOnly())
-  const bites = await at(buggy.sideways, tyresOnly(4))
   detail.push(
     fig('Broadside at 20 m/s: distance in 6 s', 'm', broadside.distance),
     fig('Broadside at 20 m/s: time to face travel', 's', broadside.faced),
     fig('Broadside at 20 m/s: time to stop', 's', broadside.stopped),
-    fig('Broadside, tyres only: time to stop', 's', slides.stopped),
-    fig('Broadside, tyres only, side grip 4: time to stop', 's', bites.stopped),
   )
   for (const [v, a] of [[30, 40], [45, 40], [60, 5], [45, 90]]) detail.push(fig(`Slide ${a} deg at ${v} m/s, counter-steer: recovered`, 's', (await at(() => buggy.kick(v, a, true))).recovered))
   for (const [v, a] of [[30, 40], [45, 90], [60, 70]]) detail.push(fig(`Slide ${a} deg at ${v} m/s, let go: recovered`, 's', (await at(() => buggy.kick(v, a, false))).recovered))
-  detail.push(fig('Slide 40 deg at 30 m/s, counter-steer, no fin or assists: recovered', 's', (await at(() => buggy.kick(30, 40, true), () => {
-    tyresOnly()(); params.set('buggy.rearSteerFast', 1)
-  })).recovered))
   const glide = await at(buggyGlideSink)
   detail.push(fig('Wings open at 35 m/s: height lost in 3 s', 'm', glide.sink), fig('Wings open at 35 m/s: speed after 3 s', 'm/s', glide.speed))
   for (const [model, name] of [[0, 'Classic'], [1, 'Catch'], [2, 'Glide']] as const) {
@@ -171,7 +169,6 @@ async function syn3hBuggy(): Promise<VehicleReport> {
     const up = await at(() => buggy.pitchedGlide(model, 0.5)), down = await at(() => buggy.pitchedGlide(model, -0.5))
     detail.push(fig(`${name}: speed after 0.5 s, dive minus climb at 29 deg`, 'm/s', down.speed - up.speed))
   }
-  detail.push(...await liquids('buggy'))
   return {
     summary: { topSpeed: finite(top.top), toTop: finite(top.toTop), brakeDistance: finite(brake.distance), turnRadius: finite(turn.radius) },
     detail,
@@ -182,18 +179,15 @@ async function syn3hBuggy(): Promise<VehicleReport> {
 
 async function jetReport(): Promise<VehicleReport> {
   const top = settle(await at(() => jet.flightSpeedTrace()), FIXED_DT)
-  const thrust = jetFlightThrust.def.default as number
+  const vector = Number(preset?.values['jet.vectorResponse'] ?? params.get('jet.vectorResponse')!.def.default)
   const hover = await at(jet.hoverClimb)
   const detail: Figure[] = [
     fig('Hover, full lift: climb after 1 s', 'm/s', hover.up),
     fig('Hover, full descend: sink after 1 s', 'm/s', -hover.down),
-    fig(`Flight speed after ${(100 * FIXED_DT).toFixed(2)} s from rest, thrust ${thrust}`, 'm/s', await at(() => jet.flightSpeedAfter(100))),
-    fig(`Flight speed after ${(100 * FIXED_DT).toFixed(2)} s from rest, thrust ${thrust / 2}`, 'm/s', await at(() => jet.flightSpeedAfter(100), () => { jetFlightThrust.value = thrust / 2 })),
+    fig(`Flight speed after ${(100 * FIXED_DT).toFixed(2)} s from rest, full thrust`, 'm/s', await at(() => jet.flightSpeedAfter(100))),
   ]
-  for (const vector of [0.3, 1]) {
-    detail.push(fig(`Vectoring at 12 m/s, slider ${vector}: pitch rate`, 'deg/s', await at(() => jet.vectorRate('y', vector))))
-    detail.push(fig(`Vectoring at 12 m/s, slider ${vector}: yaw rate`, 'deg/s', await at(() => jet.vectorRate('w', vector))))
-  }
+  detail.push(fig('Vectoring at 12 m/s: pitch rate', 'deg/s', await at(() => jet.vectorRate('y', vector))))
+  detail.push(fig('Vectoring at 12 m/s: yaw rate', 'deg/s', await at(() => jet.vectorRate('w', vector))))
   return {
     summary: {
       topSpeed: finite(top.top), toTop: finite(top.toTop),
@@ -266,27 +260,37 @@ async function liquids(kind: liquid.Kind): Promise<Figure[]> {
 
 // ---- Report ----------------------------------------------------------------------------
 
-/** Each vehicle, and how its summary columns were measured. */
-const vehicles: Record<string, { run: () => Promise<VehicleReport>; how: string }> = {
+/** Each vehicle, its presets (the default first), and how its summary columns were measured. */
+const vehicles: Record<string, { run: () => Promise<VehicleReport>; presets: readonly HandlingPreset[]; how: string }> = {
   buggy: {
-    run: syn3hBuggy,
+    run: syn3hBuggy, presets: BUGGY_PRESETS,
     how: 'Top speed: full throttle on the flat. Braking: from 25 m/s. Turn radius: full lock at 15 m/s.',
   },
-  hovercraft: {
-    run: async () => ({ summary: { topSpeed: null, toTop: null, brakeDistance: null, turnRadius: null }, detail: await liquids('hovercraft') }),
-    how: 'Liquids only so far: it rides above lava and water on its cushion.',
+  'buggy liquids': {
+    run: async () => ({ summary: NO_SUMMARY, detail: await liquids('buggy') }), presets: [BUGGY_PRESETS[0]],
+    how: 'Lava and water (tests/vehicles/liquidScenarios.ts), default preset only. Lava and water have their own settings, not the handling presets.',
+  },
+  'hovercraft liquids': {
+    run: async () => ({ summary: NO_SUMMARY, detail: await liquids('hovercraft') }), presets: [{ name: 'default', description: '', values: {} }],
+    how: 'It rides above lava and water on its cushion.',
   },
   jet: {
-    run: jetReport,
+    run: jetReport, presets: JET_PRESETS,
     how: 'Liquids: none, it hovers over lava and water. Top speed: full flight thrust, level. Braking: brakes from 60 m/s in level flight to 1 m/s (60 s cap). Turn radius: full pitch-up at 60 m/s.',
   },
 }
 
+const NO_SUMMARY: Summary = { topSpeed: null, toTop: null, brakeDistance: null, turnRadius: null }
 const num = (x: number | null, digits = 1) => (x === null ? 'never' : x.toFixed(digits))
 
 await initPhysics()
-const results: Record<string, VehicleReport> = {}
-for (const [name, v] of Object.entries(vehicles)) results[name] = await v.run()
+/** Per vehicle, per preset name. */
+const results: Record<string, Record<string, VehicleReport>> = {}
+for (const [name, v] of Object.entries(vehicles)) {
+  results[name] = {}
+  for (const p of v.presets) { preset = p; results[name][p.name] = await v.run() }
+  preset = undefined
+}
 
 if (process.argv.includes('--json')) {
   console.log(JSON.stringify(results, null, 2))
@@ -294,14 +298,16 @@ if (process.argv.includes('--json')) {
   const out = [
     '# Handling report',
     '',
-    '| Vehicle | Top speed (m/s) | To 95% of top (s) | Braking distance (m) | Turn radius (m) |',
-    '| --- | ---: | ---: | ---: | ---: |',
-    ...Object.entries(results).map(([name, r]) =>
-      `| ${name} | ${num(r.summary.topSpeed)} | ${num(r.summary.toTop)} | ${num(r.summary.brakeDistance)} | ${num(r.summary.turnRadius)} |`),
+    '| Vehicle | Preset | Top speed (m/s) | To 95% of top (s) | Braking distance (m) | Turn radius (m) |',
+    '| --- | --- | ---: | ---: | ---: | ---: |',
   ]
-  for (const [name, r] of Object.entries(results)) {
-    out.push('', `## ${name}`, '', vehicles[name].how, '', '| Figure | Value | Unit |', '| --- | ---: | --- |')
-    for (const f of r.detail) out.push(`| ${f.label} | ${num(f.value, 2)} | ${f.unit} |`)
+  for (const [name, byPreset] of Object.entries(results)) for (const [p, r] of Object.entries(byPreset)) {
+    out.push(`| ${name} | ${p} | ${num(r.summary.topSpeed)} | ${num(r.summary.toTop)} | ${num(r.summary.brakeDistance)} | ${num(r.summary.turnRadius)} |`)
+  }
+  for (const [name, byPreset] of Object.entries(results)) {
+    const names = Object.keys(byPreset), first = byPreset[names[0]]
+    out.push('', `## ${name}`, '', vehicles[name].how, '', `| Figure | Unit | ${names.join(' | ')} |`, `| --- | --- | ${names.map(() => '---:').join(' | ')} |`)
+    first.detail.forEach((f, i) => out.push(`| ${f.label} | ${f.unit} | ${names.map((p) => num(byPreset[p].detail[i].value, 2)).join(' | ')} |`))
   }
   console.log(out.join('\n'))
 }

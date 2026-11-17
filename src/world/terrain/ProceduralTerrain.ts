@@ -259,6 +259,11 @@ export class ProceduralTerrain implements Terrain {
     return line >= 2 ? 1e6 : this.data.layout.summitHeight * line
   }
 
+  /** Index of this world's look into the ground palettes (palettes.ts). */
+  lookIndex(): number {
+    return this.data.settings.look
+  }
+
   /**
    * What the ground is made of at (x, z): the CPU's reading of the rules the material draws
    * with (see surface.ts). Two grid reads, a height and a normal; no allocation.

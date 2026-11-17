@@ -3,6 +3,7 @@ import type { Game } from '../core/Game'
 import type { Terrain } from '../world/Terrain'
 import { RAPIER, unityTorque } from '../core/physics'
 import { defineParam } from '../../shared/params'
+import { defaultPreset, definePresets } from '../../shared/presets'
 import { Vehicle } from './Vehicle'
 import { GameJet } from './jetgen/GameJet'
 
@@ -25,6 +26,13 @@ export const jetNeutralThrottle = defineParam<number>({id:'jet.neutralThrottle',
 // is what steers the jet there. It is separate from jet.controlResponse, which only scales the
 // aerodynamic control torques.
 export const jetVectorResponse = defineParam<number>({id:'jet.vectorResponse',label:'Thrust vectoring',group:'Jet',scope:'world',default:.3,min:.1,max:1,step:.05})
+/** Handling presets for the Jet's Handling dropdown. Default is the settings above. */
+const JET_HANDLING = ['jet.steer', 'jet.controlResponse', 'jet.vectorResponse', 'jet.stall', 'jet.lift', 'jet.flightThrust']
+export const JET_PRESETS = definePresets('Jet', [
+  defaultPreset(JET_HANDLING, 'Default', 'The standard jet.'),
+  { name: 'Gentle', description: 'Softer controls and a lower stall speed: easier to fly slowly and to keep level, and slower in a straight line.', values: { 'jet.steer': 14, 'jet.controlResponse': 0.2, 'jet.vectorResponse': 0.2, 'jet.stall': 14, 'jet.lift': 0.6, 'jet.flightThrust': 1.5 } },
+  { name: 'Sharp', description: 'Quick controls, strong thrust vectoring and more thrust: it snaps round and climbs hard, and stalls a little sooner.', values: { 'jet.steer': 28, 'jet.controlResponse': 0.5, 'jet.vectorResponse': 0.6, 'jet.stall': 22, 'jet.lift': 0.5, 'jet.flightThrust': 2.5 } },
+])
 /**
  * Q and E work the jet's lift and thrust axis: lift and lower in hover mode, more and less
  * forward thrust in flight mode, the same axis R and F drive. 1 is E up and Q down, matching the

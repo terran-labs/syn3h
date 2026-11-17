@@ -80,4 +80,24 @@ describe('the release feed', () => {
     writeFileSync(join(repo, 'release-notes', 'player', 'v26.11.1699.md'), 'Short\n\n- One.\n- Two.\n')
     expect(() => requireDigest('v26.11.1699', repo)).not.toThrow()
   })
+  it('lists the version being released first, before history has its row', () => {
+    // release.sh writes the history row after the deploy: the build's own feed must not wait for it.
+    const repo = mkdtempSync(join(tmpdir(), 'syn3h-feed-'))
+    mkdirSync(join(repo, 'release-notes', 'player'), { recursive: true })
+    mkdirSync(join(repo, 'release-notes', 'releases'), { recursive: true })
+    writeFileSync(join(repo, 'release-notes', 'history.tsv'), 'v26.11.1605\tm-a\tabc1234\t2026-11-16 12:23 PST\tproduction\n')
+    writeFileSync(join(repo, 'release-notes', 'releases', 'v26.11.1605.md'), '## Syn3h v26.11.1605\n\nOlder.\n')
+    writeFileSync(join(repo, 'release-notes', 'player', 'v26.11.1605.md'), 'Older\n\n- One.\n- Two.\n')
+    writeFileSync(join(repo, 'release-notes', 'player', 'v26.11.1607.md'), 'Boxes become buggies again\n\n- One.\n- Two.\n')
+    const { releases } = buildFeed(repo, 12, 'v26.11.1607', new Date('2026-11-16T22:30:00Z'))
+    expect(releases.map(r => r.version)).toEqual(['26.11.1607', '26.11.1605'])
+    expect(releases[0]).toMatchObject({ summary: 'Boxes become buggies again', date: '2026-11-16 14:30 PST' })
+    expect(releases[0].digest).toMatch(/^- One\./)
+    // Once history has the row, its own date is used and the version is listed once.
+    writeFileSync(join(repo, 'release-notes', 'history.tsv'), 'v26.11.1605\tm-a\tabc1234\t2026-11-16 12:23 PST\tproduction\nv26.11.1607\tm-b\tdef5678\t2026-11-16 14:41 PST\tproduction\n')
+    writeFileSync(join(repo, 'release-notes', 'releases', 'v26.11.1607.md'), '## Syn3h v26.11.1607\n\nNewer.\n')
+    const again = buildFeed(repo, 12, 'v26.11.1607', new Date('2026-11-16T23:59:00Z')).releases
+    expect(again.map(r => r.version)).toEqual(['26.11.1607', '26.11.1605'])
+    expect(again[0].date).toBe('2026-11-16 14:41 PST')
+  })
 })

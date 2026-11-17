@@ -137,7 +137,9 @@ export function entry(kind: Kind, basin: Basin, speed: number, seconds = 40): Ru
   v.body.setLinvel({ x: 0, y: 0, z: -speed }, true)
   if (v instanceof Syn3hBuggy) v.motorSpeed = speed
   throttle(v, kind)
-  advance(run, seconds, (s) => s.z < -basin.length - 4)
+  // Stop on dry land beyond either shore: a hard bank can turn it round.
+  let wet = false
+  advance(run, seconds, (s) => (wet ||= s.z < 0) && (s.z < -basin.length - 4 || s.z > 4))
   return run
 }
 

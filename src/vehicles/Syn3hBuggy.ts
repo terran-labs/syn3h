@@ -17,12 +17,13 @@ import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import {
-  buggyBumpStop, buggyCG, buggyCoastDrag, buggyDownforce, buggyFin, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightModel, buggyFlightSlip, buggyGrip,
+  buggyBumpStop, buggyCG, buggyCoastDrag, buggyDownforce, buggyFin, buggyFinAir, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightModel, buggyFlightSlip, buggyGrip,
   buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyRearSteerFast, buggyShocks, buggySideGrip, buggySideHold, buggySlide, buggySpeed, buggyStability, buggySteerFollow, buggySteerLimit,
   buggyTraction,
 } from './buggyParams'
 import { applyLava, floatPoints, lavaThickness } from './lava'
 import type { BuggySkin } from './skins/BuggySkin'
+import { retryDelay } from './skins/modelLoader'
 import { type MotorDriveInput, motorDrive, smoothEffort } from './skins/motorDrive'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
 import { Vehicle, type WheelEffect, createWheelEffects } from './Vehicle'
@@ -178,6 +179,9 @@ function rayOrigin(i: number): THREE.Vector3 {
   return new THREE.Vector3(sx * (WHEEL_POS.x + RAY_OUTSET), WHEEL_POS.y, -WHEEL_POS.z * (i < 2 ? 1 : -1))
 }
 
+/** Fresh skins tried when building one fails outright (a download failure retries inside). */
+const SKIN_ATTEMPTS = 6
+
 export interface SkinFactory {
   (): BuggySkin
 }
@@ -249,7 +253,13 @@ export class Syn3hBuggy extends Vehicle {
   private readonly fbWheels: THREE.Group[] = []
   private readonly fbSpinners: THREE.Object3D[] = []
   private readonly fbBody: THREE.MeshStandardMaterial
+  private readonly fbMaterials: THREE.MeshStandardMaterial[] = []
   private spin = 0
+  private skinReady = false
+  private skinAttempts = 0
+  private skinRetry: ReturnType<typeof setTimeout> | undefined
+  private disposed = false
+  private ghostClock = 0
 
   constructor(
     game: Game,
@@ -310,12 +320,29 @@ export class Syn3hBuggy extends Vehicle {
     if (skinFactory) this.attachSkin(skinFactory)
   }
 
+  /**
+   * True once the real body is showing. Until then the vehicle draws its primitive stand in,
+   * as a translucent pulsing ghost so it never passes for the final look.
+   */
+  get bodyReady(): boolean {
+    return this.skinReady
+  }
+
+  /**
+   * Build the skin and show it when its models arrive. The skin's own loader retries a failed
+   * download until it succeeds (modelLoader.ts), so a rejection here means building the skin
+   * itself failed: try a fresh skin after a growing delay, a few times, rather than keeping
+   * the stand in for the rest of the session (which the player could only fix by reloading).
+   */
   private attachSkin(factory: SkinFactory): void {
+    if (this.disposed) return
+    this.skinAttempts++
     let skin: BuggySkin
     try {
       skin = factory()
     } catch (err) {
-      console.warn('Buggy skin failed, keeping the primitive model', err)
+      console.warn('Buggy skin failed to build', err)
+      this.retrySkin(factory)
       return
     }
     this.skin = skin
@@ -323,20 +350,39 @@ export class Syn3hBuggy extends Vehicle {
     skin.setColors(this.colors.body, this.colors.accent)
     skin.ready.then(
       () => {
-        if (this.skin !== skin) return
-        this.fallback.visible = false
+        if (this.skin !== skin || this.disposed) return
+        this.skinReady = true
+        this.showBody()
         // Contract with the effects lane: the vehicle object says its skin draws its own lamps.
         if (skin.ownLamps) this.object.userData.ownLamps = true
       },
       (err) => {
-        console.warn('Buggy model failed to load, keeping the primitive model', err)
-        if (this.skin === skin) { skin.dispose(); this.skin = null }
+        if (this.skin !== skin) return
+        console.warn('Buggy model failed to load', err)
+        skin.object.removeFromParent()
+        skin.dispose()
+        this.skin = null
+        this.retrySkin(factory)
       },
     )
   }
 
+  private retrySkin(factory: SkinFactory): void {
+    if (this.disposed || this.skinAttempts >= SKIN_ATTEMPTS) return
+    this.skinRetry = setTimeout(() => this.attachSkin(factory), retryDelay(this.skinAttempts))
+  }
+
+  /**
+   * Hide the stand in once the body has loaded. Applied again every frame, so anything that
+   * saved and restored visibility around the load cannot bring the box back over the body.
+   */
+  private showBody(): void {
+    this.fallback.visible = !this.skinReady
+  }
+
   protected override applyColors(): void {
     this.fbBody.color.set(this.colors.body)
+    for (const m of this.fbMaterials) m.emissive.set(this.colors.accent)
     this.skin?.setColors(this.colors.body, this.colors.accent)
   }
 
@@ -813,7 +859,8 @@ export class Syn3hBuggy extends Vehicle {
    * - downforce (buggy.downforce) along the body's down axis, only in proportion to the wheels
    *   on the ground, so it adds grip at speed without shortening a jump;
    * - a tail fin (buggy.fin): a side force at the tail against its sideways motion, which
-   *   turns the buggy to point where it is going, on the ground and in the air;
+   *   turns the buggy to point where it is going, on the ground, and in the air only with
+   *   buggy.finAir;
    * - the stability assist (buggy.stability): a damper on the turn rate while the steering is
    *   let go, at speed, with at least two wheels down.
    * `side` is the body's rightward speed and `yawRate` its turn rate, left positive.
@@ -826,7 +873,7 @@ export class Syn3hBuggy extends Vehicle {
       ub.addForce(this.v2.copy(this.down).multiplyScalar(down * 9.81 * mass * k * k * (grounded / 4)))
     }
     const fin = buggyFin.value
-    if (fin > 0 && speed > 1) {
+    if (fin > 0 && speed > 1 && (grounded > 0 || buggyFinAir.value)) {
       // The tail (our +Z) moves right when the body does, and left of that as it yaws left.
       const tailSide = side + FIN_Z * yawRate
       const right = this.v2.set(1, 0, 0).applyQuaternion(q).multiplyScalar(-fin * FIN * mass * tailSide * Math.min(speed, AERO_SPEED_MAX))
@@ -1062,8 +1109,6 @@ export class Syn3hBuggy extends Vehicle {
 
   private buildFallback(): void {
     const dark = new THREE.MeshStandardMaterial({ color: 0x171b20, roughness: 0.9 })
-    const pts: THREE.Vector3[] = []
-    for (let i = 0; i < HULL.length; i += 3) pts.push(new THREE.Vector3(HULL[i], HULL[i + 1] - 0.2, HULL[i + 2]))
     const body = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.7, 4), this.fbBody)
     body.position.set(0, 0.45, 0)
     body.castShadow = true
@@ -1072,6 +1117,15 @@ export class Syn3hBuggy extends Vehicle {
     tyre.rotateZ(Math.PI / 2)
     const spoke = new THREE.BoxGeometry(0.5, WHEEL_RADIUS * 1.4, 0.08)
     const rim = new THREE.MeshStandardMaterial({ color: 0x89949f, roughness: 0.5, metalness: 0.5 })
+    // The stand in is shown only while the real body loads: a translucent ghost glowing in the
+    // accent colour (pulsed in update), so it reads as arriving, never as the vehicle itself.
+    for (const m of [this.fbBody, dark, rim]) {
+      m.transparent = true
+      m.depthWrite = false
+      m.opacity = 0.55
+      m.emissive.set(this.colors.accent)
+      this.fbMaterials.push(m)
+    }
     for (let i = 0; i < 4; i++) {
       const g = new THREE.Group()
       const spinner = new THREE.Group()
@@ -1124,6 +1178,12 @@ export class Syn3hBuggy extends Vehicle {
 
   override update(dt: number, alpha: number): void {
     super.update(dt, alpha)
+    this.showBody()
+    if (!this.skinReady) {
+      this.ghostClock += dt
+      const pulse = 0.5 + 0.5 * Math.sin(this.ghostClock * 6)
+      for (const m of this.fbMaterials) { m.opacity = 0.35 + 0.3 * pulse; m.emissiveIntensity = 0.4 + 0.8 * pulse }
+    }
     // VB 135-149: wheels hang at full travel in the air; graphics spin at half the motor rate.
     this.spin -= (this.motorSpeed / WHEEL_RADIUS) * dt * 0.5
     for (let i = 0; i < 4; i++) {
@@ -1156,6 +1216,8 @@ export class Syn3hBuggy extends Vehicle {
   }
 
   override dispose(): void {
+    this.disposed = true
+    clearTimeout(this.skinRetry)
     this.skin?.dispose()
     super.dispose()
   }

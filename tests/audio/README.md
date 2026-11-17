@@ -71,8 +71,10 @@ The engine graphs are synthesised; `provenance.md` records where the audio comes
 from. The tag beam, tagged, materialize and wind
 sounds are synthesised too; no recording and no package audio ships.
 
-- Syn3h buggy: a rising electric turbine tone over tyre roar, with a restrained
-  high squeal as grounded wheels slip.
+- Syn3h buggy: a rising electric turbine tone over tyre roar. Since 16 November 2026 a
+  slide is a low, gritty tyre scrub (filtered noise coloured by the ground) on its own
+  Tyre slip volume, heard only when the body slides sideways; the pitched squeal is gone.
+  `slip-runs.ts` and `vehicle-voices.mjs` measure it.
 - Classic buggy: a lower, rougher harmonic motor with uneven rolling noise.
 - Jet: a steady hover hum blends into filtered rushing air under flight throttle.
 - Hovercraft: a pulsing fan drone gains a broad whoosh close to the ground.

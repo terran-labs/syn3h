@@ -18,7 +18,7 @@ export const postBloom = defineParam({ id: 'post.bloom', label: 'Glow strength',
 export const postBloomThreshold = defineParam({ id: 'post.bloomThreshold', label: 'Glow threshold (on-screen brightness)', group: g, scope: c, default: 3, min: 0.5, max: 6, step: 0.05 })
 export const postBloomRadius = defineParam({ id: 'post.bloomRadius', label: 'Glow radius', group: g, scope: c, default: 0.4, min: 0, max: 1, step: 0.05 })
 
-export const postShafts = defineParam({ id: 'post.shafts', label: 'Sun shafts', group: g, scope: c, default: 0.7, min: 0, max: 2, step: 0.05 })
+export const postShafts = defineParam({ id: 'post.shafts', label: 'Sun shafts', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
 export const postShaftLength = defineParam({ id: 'post.shaftLength', label: 'Sun shaft length', group: g, scope: c, default: 0.9, min: 0.2, max: 1, step: 0.05 })
 export const postShaftReach = defineParam({ id: 'post.shaftReach', label: 'Sun shaft source size', group: g, scope: c, default: 0.12, min: 0.03, max: 0.5, step: 0.01 })
 export const postLowSun = defineParam({ id: 'post.lowSun', label: 'Extra shafts at low sun', group: g, scope: c, default: 0.6, min: 0, max: 3, step: 0.05 })
@@ -39,7 +39,6 @@ export const postContact = defineParam({ id: 'post.contact', label: 'Contact sha
 export const postDebug = defineParam({ id: 'post.debug', label: 'Debug view: 0 off, 1 occlusion, 2 contact shadows', group: g, scope: c, default: 0, min: 0, max: 2, step: 1 })
 export const postToneMap = defineParam({ id: 'post.toneMap', label: 'Tone mapping: 0 ACES, 1 AgX, 2 Neutral', group: g, scope: c, default: 0, min: 0, max: 2, step: 1 })
 
-export const postPlunge = defineParam({ id: 'post.plunge', label: 'Splash blur when a vehicle goes under', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
 
 export const postHeat = defineParam({ id: 'post.heat', label: 'Heat shimmer over lava', group: g, scope: c, default: 0.6, min: 0, max: 2, step: 0.05 })
 
