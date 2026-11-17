@@ -8,7 +8,12 @@
  *
  * Each level is chosen before load, as a saved player choice (pinned, automation off), and
  * runs twice: tapping a planet in the lobby (the descent), and ?autoplay=1 (no descent).
- * Uses the room server Vite starts. Exits 1 on any validation error.
+ * After the 25 seconds it also checks that the world is really being drawn: it moves the
+ * player 200 m sideways and 40 m up, and the lower half of the picture must change (a frozen
+ * or stale terrain keeps its pixels while the vehicles move), and the terrain must report
+ * drawn chunks. An error count alone cannot see a picture that stopped following the camera.
+ *
+ * Uses the room server Vite starts. Exits 1 on any validation error or a frozen picture.
  */
 import { chromium } from 'playwright-core'
 
@@ -20,7 +25,23 @@ const PLAY_MS = 25000
 const VALIDATION = /GPUValidationError|pipeline creation failed|Invalid (CommandBuffer|RenderPipeline|BindGroup|Texture)|WebGPU:/i
 
 const browser = await chromium.launch({ channel: 'chrome', headless: args.includes('--headless'), args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
-let total = 0
+let total = 0, frozen = 0
+/** Share of pixels in the lower half that changed by more than 24 of 255 between two screenshots. */
+async function changed(page, a, b) {
+  return page.evaluate(async ([a, b]) => {
+    const read = async base64 => {
+      const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob())
+      const canvas = new OffscreenCanvas(160, 90), ctx = canvas.getContext('2d')
+      ctx.drawImage(bitmap, 0, 0, 160, 90)
+      return ctx.getImageData(0, 45, 160, 45).data
+    }
+    const [x, y] = [await read(a), await read(b)]
+    let moved = 0
+    for (let i = 0; i < x.length; i += 4) if (Math.max(Math.abs(x[i] - y[i]), Math.abs(x[i + 1] - y[i + 1]), Math.abs(x[i + 2] - y[i + 2])) > 24) moved++
+    return moved / (x.length / 4)
+  }, [a.toString('base64'), b.toString('base64')])
+}
+const MIN_CHANGE = Number(opt('min-change') ?? 0.3)
 try {
   for (const level of levels) {
     for (const path of ['descent', 'autoplay']) {
@@ -47,16 +68,30 @@ try {
       phase = 'play'
       await page.waitForTimeout(PLAY_MS)
       const state = await page.evaluate(() => ({ name: window.syn3h.game.quality.getQualityState().name, bots: window.syn3h.bots.vehicles.length }))
+      // The picture must follow the camera: 200 m sideways and 40 m up must change it.
+      const canvas = page.locator('#game')
+      const before = await canvas.screenshot()
+      await page.evaluate(() => {
+        const { player, terrain } = window.syn3h, p = player.body.translation(), V = player.object.position.constructor
+        const x = p.x + 200, z = p.z
+        player.teleport(new V(x, terrain.heightAt(x, z) + 40, z), 0)
+      })
+      await page.waitForTimeout(2500)
+      const after = await canvas.screenshot()
+      const change = await changed(page, before, after)
+      const chunks = await page.evaluate(() => window.syn3h.terrain.triangleStats?.().drawn ?? -1)
+      const still = change < MIN_CHANGE || chunks === 0
+      if (still) frozen++
       phase = 'exit'
       await page.evaluate(() => { const shell = window.syn3h.shell; shell.askExit(); shell.answerExit(true) })
       await page.waitForTimeout(6000)
       await context.close()
       total += errors.length
       const phases = ['load', 'entry', 'play', 'exit'].map(p => `${p} ${errors.filter(e => e.phase === p).length}`).join(', ')
-      console.log(`level ${level} ${state.name}, ${path}: ${errors.length} validation errors (${phases}), bots ${state.bots}`)
+      console.log(`level ${level} ${state.name}, ${path}: ${errors.length} validation errors (${phases}), bots ${state.bots}, picture changed ${(change * 100).toFixed(0)}% after moving, terrain triangles drawn ${chunks}${still ? ' FROZEN' : ''}`)
       for (const text of [...new Set(errors.map(e => `[${e.phase}] ${e.text}`))].slice(0, 3)) console.log(`  ${text}`)
     }
   }
 } finally { await browser.close() }
-console.log(total ? `FAIL: ${total} WebGPU validation errors` : 'PASS: no WebGPU validation errors')
-process.exit(total ? 1 : 0)
+console.log(total || frozen ? `FAIL: ${total} WebGPU validation errors, ${frozen} frozen pictures` : 'PASS: no WebGPU validation errors, the picture follows the camera')
+process.exit(total || frozen ? 1 : 0)

@@ -275,9 +275,17 @@ export class Game {
    * down, the ground behind the vehicle) is ready too. Resolves when every pipeline is built.
    */
   async precompile(): Promise<void> {
-    if (!this.compilesAhead()) return
     const start = performance.now()
-    await this.compileAhead(this.scene)
+    // Drawn for real, through the frames' own passes, so every shader and pipeline is built
+    // exactly as play will use it, with culling off so what the camera cannot see yet is in
+    // too. Each such frame may stall while it compiles: call this only while the world is
+    // covered and the cover is still (the galaxy holding in the world's air).
+    for (let i = 0; i < 2; i++) {
+      const culled: THREE.Object3D[] = []
+      this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
+      try { drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16) } finally { for (const o of culled) o.frustumCulled = true }
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    }
     try { performance.measure('syn3h:precompile', { start, end: performance.now() }) } catch { /* Older engines. */ }
   }
 
@@ -297,8 +305,12 @@ export class Game {
    * There, as before this existed, shaders compile on first sight.
    */
   compilesAhead(): boolean {
-    const passes = (this.postChain?.scenePasses?.() ?? []) as unknown as ScenePass[]
-    return passes.length <= 1 && passes.every(pass => pass._mrt === null || pass._mrt === undefined)
+    // Off. three r187's compileAsync builds shared uniform bind groups from its own render
+    // context, never the one a scene pass's frames use, so materials it built read camera and
+    // object uniforms that never update: the terrain froze on screen at High (and against the
+    // pass's own target the frames were rejected outright). Until three settles that, shaders
+    // compile on first sight, and entering a world warms them by drawing (see precompile).
+    return false
   }
 
   async compileAhead(object: THREE.Object3D): Promise<void> {
