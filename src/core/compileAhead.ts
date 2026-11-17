@@ -18,13 +18,17 @@ export function canCompileAhead(): boolean { return compiler !== null && availab
  * Compile a vehicle that is about to appear, in every look it may wear in its first moments:
  * the close-up skin and the plain distant one (a remote vehicle switches at 25 to 30 m, see
  * vehicles/skins/showroom.ts), then its own. A bot appearing 20 m away and driving off would
- * otherwise compile the other look in the frame it crossed. Resolves at once with no game.
+ * otherwise compile the other look in the frame it crossed. Resolves at once with no game, or
+ * where compiling ahead is off (see Game.compilesAhead).
  *
- * The looks are chosen through the vehicle's own detail hooks. They are private to Vehicle; a
- * public "prepare your looks" on Vehicle would be the cleaner seam (vehicle lane's call).
+ * Vehicle.prepareLooks (the vehicle lane's seam) runs the looks itself and makes hidden parts
+ * (folded wings, stowed gear, distance models) visible for the compile; it never compiles on
+ * its own, so this module's rules still govern. Vehicles without it fall back to their detail
+ * hooks, which are private to Vehicle and miss hidden parts.
  */
-export async function compileVehicleAhead(vehicle: { object: THREE.Object3D; isLocal?: boolean; update?(dt: number, alpha: number): void }, level: number): Promise<void> {
+export async function compileVehicleAhead(vehicle: { object: THREE.Object3D; isLocal?: boolean; update?(dt: number, alpha: number): void; prepareLooks?(compile: (object: THREE.Object3D) => Promise<void>, level?: number): Promise<void> }, level: number): Promise<void> {
   if (!canCompileAhead()) return
+  if (vehicle.prepareLooks) { await vehicle.prepareLooks(object => compileAhead(object) ?? Promise.resolve(), level); return }
   const details = (vehicle as unknown as { visualDetails?: Set<(distance: number, remote: boolean, level: number) => void> }).visualDetails
   if (details?.size) for (const distance of [0, 1e4]) {
     for (const detail of details) detail(distance, !vehicle.isLocal, level)
