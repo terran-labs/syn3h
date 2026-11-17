@@ -9,7 +9,7 @@
  *
  * No renderer imports: the lobby, the server and tests can all use this file.
  */
-import { recipeIdForLook } from '../../shared/recipes'
+import { BIOME_NAMES, recipeIdForLook } from '../../shared/recipes'
 import { params, type ParamSource, type ParamValue, worldNameSeed, worldSeed } from '../../shared/params'
 import { randomNameSeed, seedName, worldName } from './worldName'
 import { SKY_PRESETS } from './sky/presets'
@@ -57,7 +57,7 @@ export type IslandSize = keyof typeof ISLAND_SIZES
  * The warm wetland's name (recipe id 'swamp', look 8), chosen by the owner on 16 November
  * 2026; it was "Methane swamp". Players see only this; ids and stored values are unchanged.
  */
-export const MIRE_LABEL = 'Mire'
+export const MIRE_LABEL = BIOME_NAMES[8]
 
 const MARS: Record<string, ParamValue> = {
   ...SKY_PRESETS['Mars day'],

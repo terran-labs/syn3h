@@ -243,11 +243,11 @@ export class ProceduralTerrain implements Terrain {
   /** Keep the ice slab with the heightfield's window and the sea level, or remove it. */
   private syncIce(): void {
     const frozen = seaFrozen() && this.data.settings.dry <= 0 && (worldSeaKind.value as number) === 1
-    const key = frozen ? `${this.colliderX},${this.colliderZ},${worldLavaAltitude.value}` : ''
+    const key = frozen ? `${this.colliderX},${this.colliderZ},${seaLevel()}` : ''
     if (key === this.iceKey) return
     if (this.ice) { this.game.world.removeCollider(this.ice, true); this.ice = null }
-    if (frozen) this.ice = createSeaIceCollider(this.game.world, this.data, this.colliderX, this.colliderZ, worldLavaAltitude.value)
-    this.iceTop = frozen ? worldLavaAltitude.value : -Infinity
+    if (frozen) this.ice = createSeaIceCollider(this.game.world, this.data, this.colliderX, this.colliderZ, seaLevel())
+    this.iceTop = frozen ? seaLevel() : -Infinity
     this.iceKey = key
   }
 
@@ -394,7 +394,7 @@ export class ProceduralTerrain implements Terrain {
   mapColourAt(x: number, z: number): number {
     const key = this.mapColourKey()
     if (key !== this.mapKey) {
-      const sea = worldLavaAltitude.value, lava = (worldSeaKind.value as number) === 0
+      const sea = seaLevel(), lava = (worldSeaKind.value as number) === 0
       this.mapGrid = bakeMapColours(this.data, this.sampler, { sea, lava, frozen: this.iceTop > -Infinity, snow: this.snowHeight() }); this.mapKey = key
     }
     const n = MAP_GRID, size = this.data.size
@@ -403,7 +403,7 @@ export class ProceduralTerrain implements Terrain {
   }
   /** See Terrain.mapColourKey: the inputs of mapColourAt's bake, read without baking. */
   mapColourKey(): string {
-    return `${this.version}:${worldLavaAltitude.value}:${worldSeaKind.value}:${this.iceTop}`
+    return `${this.version}:${seaLevel()}:${worldSeaKind.value}:${this.iceTop}`
   }
   private mapGrid: Uint32Array | null = null
   private mapKey = ''
