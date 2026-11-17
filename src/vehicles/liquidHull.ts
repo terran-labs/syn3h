@@ -158,7 +158,8 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
     s.lift += (Math.max(Math.sqrt(effort), moving) * atSurface - s.lift) * (1 - Math.exp(-dt / 0.3))
     lifted = s.lift
     buoyancy = p.sink + (p.buoyancy - p.sink) * lifted
-    coasting = (p.coast ?? 0) * (1 - effort) * (input.brakes ? 2.5 : 1)
+    // Ploughing is a surface effect: a sunk hull dragged along the bed (a tow) feels only water.
+    coasting = (p.coast ?? 0) * (1 - effort) * (input.brakes ? 2.5 : 1) * atSurface
   }
   // Big tyres are big floats and big paddles: the columns spread with the hubs and reach down
   // with the tyres, and the paddles push in proportion to the tyre's reach.
