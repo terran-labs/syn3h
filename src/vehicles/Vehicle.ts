@@ -423,6 +423,26 @@ export abstract class Vehicle implements System {
     if (this.zorbShield) this.zorbShield.mesh.visible = !parked
   }
 
+  /**
+   * Compile every look this vehicle can show before it is first drawn: the close-up and the
+   * distant detail levels, and the close-up parts that are hidden until used (folded wings,
+   * stowed gear, lamps and LOD meshes). The renderer skips invisible objects when it compiles,
+   * so each pass shows them all for the duration of `compile` and then puts every visibility
+   * back. Ends at the vehicle's own detail for where it is. For compile-ahead (core/compileAhead.ts):
+   *
+   *   await vehicle.prepareLooks(object => compileAhead(object) ?? Promise.resolve())
+   */
+  async prepareLooks(compile: (object: THREE.Object3D) => Promise<void>, level: number = graphicsLevel.value): Promise<void> {
+    const hidden: THREE.Object3D[] = []
+    // Near first, then far: each detail level may swap meshes and materials.
+    for (const distance of [0, 1e4]) {
+      for (const detail of this.visualDetails) detail(distance, !this.isLocal, level)
+      this.object.traverse(o => { if (!o.visible && o !== this.object) { hidden.push(o); o.visible = true } })
+      try { await compile(this.object) } finally { for (const o of hidden) o.visible = false; hidden.length = 0 }
+    }
+    this.update(0, 1)
+  }
+
   update(dt: number, alpha: number): void {
     this.object.position.lerpVectors(this.prevPos, this.currPos, alpha)
     this.object.quaternion.slerpQuaternions(this.prevQuat, this.currQuat, alpha)
