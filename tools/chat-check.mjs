@@ -37,6 +37,17 @@ async function open(name, opts, extra = '') {
 }
 const desk = { viewport: { width: 1280, height: 800 } }
 const shot = (page, name) => page.screenshot({ path: `${out}/${name}.png` })
+/** Click the chat pill; if something else is on top of it, say what, then click it directly. */
+async function clickPill(page, label) {
+  const blocked = await page.evaluate(() => {
+    const b = document.querySelector('.chat-toggle').getBoundingClientRect()
+    const top = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)
+    if (top?.closest('.chat-toggle')) return null
+    return { top: `${top?.tagName}#${top?.id}.${top?.className}`, shell: document.querySelector('.syn3h-shell').className, body: document.body.className, pe: getComputedStyle(document.querySelector('.chat-toggle')).pointerEvents, vis: getComputedStyle(document.querySelector('.chat-toggle')).visibility }
+  })
+  if (blocked) { console.log(`PILL BLOCKED (${label})`, JSON.stringify(blocked)); failures.push(`chat pill not clickable: ${label}`) }
+  await page.evaluate(() => document.querySelector('.chat-toggle').click())
+}
 const linesOn = (page) => page.evaluate(() => [...document.querySelectorAll('.chat-panel .chat-line:not(.is-system)')].map((l) => l.textContent))
 
 try {
@@ -76,7 +87,7 @@ try {
   const stripHtml = await B.page.evaluate(() => document.querySelector('.chat-strip')?.innerHTML ?? '')
   check(!/<b>bold/.test(stripHtml) && stripHtml.includes('&lt;b&gt;bold'), 'markup arrives as text, not elements')
   check(!(await B.page.$('.chat-panel a')), 'links are not made clickable')
-  await B.page.click('.chat-toggle')
+  await clickPill(B.page, 'guest desktop')
   await B.page.waitForTimeout(400)
   check(!(await B.page.isVisible('.chat-unread')), 'opening the panel clears the unread count')
   const seen = await linesOn(B.page)
@@ -102,11 +113,13 @@ try {
   // Chat off for the room: the host turns it off, a guest's line is refused and not relayed.
   await A.page.evaluate(() => window.syn3h.params.set('chat.on', false))
   await B.page.waitForTimeout(800)
-  const beforeOff = (await linesOn(A.page)).length
-  await B.page.evaluate(() => window.syn3hChat.net.chat.send('can anyone hear me'))
+  // The guest's screen stops offering chat, and the room refuses even a line sent past that gate.
+  const gated = await B.page.evaluate(() => !window.syn3hChat.net.chat.canSend().ok)
+  await B.page.evaluate(() => window.syn3hChat.net.send({ type: 'chat', text: 'can anyone hear me' }))
   await B.page.waitForTimeout(1500)
-  const refusedNote = await B.page.evaluate(() => window.syn3hChat.net.chat.lines.some((l) => l.system && /turned chat off|host turned chat off/i.test(l.text)) || !window.syn3hChat.net.chat.canSend().ok)
-  check(refusedNote && (await linesOn(A.page)).length === beforeOff, 'chat off for the room: a guest\'s line is refused and not relayed')
+  const refused = await B.page.evaluate(() => window.syn3hChat.net.chat.lines.some((l) => l.system && /turned chat off/i.test(l.text)))
+  const leaked = (await linesOn(A.page)).some((t) => t.includes('can anyone hear me'))
+  check(gated && refused && !leaked, `chat off for the room: the guest cannot send (${gated}), the room refuses (${refused}), nothing relayed (${!leaked})`)
   await A.page.evaluate(() => window.syn3h.params.set('chat.on', true))
   await B.page.waitForTimeout(800)
 
@@ -169,7 +182,7 @@ try {
     })
     check(collapsed.button.length === 0, `${name}: the chat button overlaps nothing (${collapsed.button.join(', ')})`)
     check(collapsed.strip.length === 0 && collapsed.lines <= 3, `${name}: the strip (${collapsed.lines} lines) clears readouts, reticle, toasts and banner (${collapsed.strip.join(', ')})`)
-    if (touch) await P.page.tap('.chat-toggle'); else await P.page.click('.chat-toggle')
+    if (touch) await P.page.tap('.chat-toggle'); else await clickPill(P.page, name)
     await P.page.waitForTimeout(500)
     await shot(P.page, `${name}-open`)
     const sheetBox = await P.page.evaluate(() => {
