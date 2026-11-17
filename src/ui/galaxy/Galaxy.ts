@@ -1321,14 +1321,14 @@ export class Galaxy {
     })
     // The sun's bright core, which labels keep clear of.
     const toSun = sub([0, 0, 0], view.eye), sunZ = Math.max(dot(toSun, view.forward), 0.001)
-    this.sunScreen = { x: width * this.framing[0] + (dot(toSun, view.right) / (sunZ * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(toSun, view.up) / (sunZ * view.tan)) * short / 2, radius: Math.max(6, short * 0.02) }
+    this.sunScreen = { x: width * this.framing[0] + (dot(toSun, view.right) / (sunZ * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(toSun, view.up) / (sunZ * view.tan)) * short / 2, radius: Math.max(6, short * 0.02), depth: sunZ }
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
     // Arrival: a second and a half after choosing, whatever the frame rate.
     if (this.chosen >= 0 && !this.arrived && (this.arriving += this.step) > 1.5) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number; labelled?: boolean }[] = []
   /** Where the sun's core is on screen, as of the last frame drawn. */
-  sunScreen = { x: -1e4, y: -1e4, radius: 0 }
+  sunScreen: { x: number; y: number; radius: number; depth?: number } = { x: -1e4, y: -1e4, radius: 0 }
   private readonly markRig = new WordmarkRig()
   /** The planet glow (hoverGlow.ts), and what asks for it: the pointer, keyboard focus, a finger. */
   private readonly glow = new GlowState()
