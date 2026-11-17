@@ -16,6 +16,7 @@
  * Uses the room server Vite starts. Exits 1 on any validation error or a frozen picture.
  */
 import { chromium } from 'playwright-core'
+import { mkdir, writeFile } from 'node:fs/promises'
 
 const args = process.argv.slice(2)
 const url = args.find(a => /^https?:/.test(a)) ?? 'http://127.0.0.1:5291/'
@@ -41,10 +42,19 @@ async function changed(page, a, b) {
     return moved / (x.length / 4)
   }, [a.toString('base64'), b.toString('base64')])
 }
-const MIN_CHANGE = Number(opt('min-change') ?? 0.3)
+/**
+ * Calibrated on this machine: a frozen terrain (dd577fc9 at High) changed 1-2% of the lower
+ * half; a correctly drawn move changed 18-89%. The 18% was flat desert sand filling both
+ * frames (Ultra, by the descent, 16 November 2026, frames kept with --frames). 10% separates
+ * the two with room on both sides.
+ */
+const MIN_CHANGE = Number(opt('min-change') ?? 0.1)
+/** --frames DIR keeps each run's before and after pictures, to look at by eye. */
+const framesDir = opt('frames')
+const runs = Number(opt('runs') ?? 1)
 try {
   for (const level of levels) {
-    for (const path of ['descent', 'autoplay']) {
+    for (const path of (opt('paths') ?? 'descent,autoplay').split(',')) for (let run = 0; run < runs; run++) {
       const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
       await context.addInitScript(q => { try { localStorage.setItem('syn3h.quality.v2', JSON.stringify({ level: q, auto: false, pinned: true, overrides: {} })) } catch {} }, level)
       const page = await context.newPage()
@@ -79,6 +89,7 @@ try {
       await page.waitForTimeout(2500)
       const after = await canvas.screenshot()
       const change = await changed(page, before, after)
+      if (framesDir) { await mkdir(framesDir, { recursive: true }); for (const [name, png] of [['before', before], ['after', after]]) await writeFile(`${framesDir}/level${level}-${path}-${run}-${name}.png`, png) }
       const chunks = await page.evaluate(() => window.syn3h.terrain.triangleStats?.().drawn ?? -1)
       const still = change < MIN_CHANGE || chunks === 0
       if (still) frozen++
