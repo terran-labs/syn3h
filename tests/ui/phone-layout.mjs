@@ -82,8 +82,9 @@ for (const view of layouts) {
     }
     if (vehicle === 'buggy') {
       await page.waitForTimeout(3000)
+      // The lobby has no vehicle panel since 985797ab (vehicles are chosen in play): the vehicle
+      // chooser is checked in play below.
       await panel('index'); await shot('lobby', false)
-      await panel('vehicle'); await shot('vehicle-panel', false)
     }
     // Fixtures stand in for the room server so every state is the same on every run.
     await page.evaluate(() => { const s = window.syn3h.shell; s.onPlay = () => {}; s.play() })
@@ -149,17 +150,19 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   await page.waitForTimeout(3000)
   const starFps = ((await page.evaluate(() => window.syn3h.shell.galaxy?.frames ?? 0)) - f0) / ((Date.now() - s0) / 1000)
   const t0 = Date.now()
-  await page.locator('.galaxy-links [data-goto=worlds]').tap()
-  await page.waitForFunction(() => { const p = document.querySelector('.lobby-panels'); return p.dataset.busy === 'true' || p.dataset.activePanel === 'worlds' })
+  // The lobby's links are About (and Worlds only while the custom planet is offered, which it
+  // is not: OFFER_CUSTOM_PLANET in Shell.ts). Any of them answers a tap the same way.
+  await page.locator('.galaxy-links [data-goto=about]').tap()
+  await page.waitForFunction(() => { const p = document.querySelector('.lobby-panels'); return p.dataset.busy === 'true' || p.dataset.activePanel === 'about' })
   const tapMs = Date.now() - t0
-  await settle('worlds'); await page.waitForTimeout(5000)
+  await settle('about'); await page.waitForTimeout(5000)
   const during = await g()
   check(tapMs < 1000, `${view.name}: a tap took ${tapMs} ms to be answered while planets were painting`)
   check(starFps >= 8, `${view.name}: the galaxy fell to ${starFps.toFixed(1)} frames a second`)
   check(during.planetMaps >= 3, `${view.name}: only ${during.planetMaps} planet maps were painted`)
-  await fits('worlds')
-  check(await page.locator('#new-world').isDisabled(), `${view.name}: an invited guest can re-roll the world before joining`)
-  check(await page.locator('.galaxy-label[data-world=custom]').evaluate(l => l.classList.contains('is-locked')), `${view.name}: an invited guest can open Custom before joining`)
+  await fits('about')
+  // (The Worlds panel's re-roll and the Custom planet's lock were checked here; neither can be
+  // reached from the lobby while the custom planet is not offered.)
   await page.evaluate(() => window.syn3h.shell.openJoin()); await page.waitForTimeout(600)
   const qr = await page.evaluate(() => { const r = document.querySelector('.join-view .invite-qr').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: innerHeight } })
   check(qr.top >= 0 && qr.bottom <= qr.height, `${view.name}: the QR code does not fit the screen (${Math.round(qr.top)} to ${Math.round(qr.bottom)} of ${qr.height})`)
@@ -181,9 +184,8 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   // Back in the menu the sky returns; a hidden tab stops it; the lowest graphics level holds it still.
   await page.evaluate(() => window.syn3h.shell.openMenu()); await page.waitForTimeout(2500)
   const menu = await g()
-  // In the room, alone and so its host, the guest may shape the world: the Custom sliders fit.
+  // (The Custom planet's sliders were checked here; it is not offered: OFFER_CUSTOM_PLANET.)
   await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle('index')
-  await page.locator('.galaxy-label[data-world=custom]').dispatchEvent('click'); await settle('advanced'); await fits('custom')
   check(await page.evaluate(() => window.syn3h.shell.graphics.galaxyLive), `${view.name}: the galaxy did not come back with the menu`)
   await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange')) })
   const frames = () => page.evaluate(() => (window.syn3h.shell.galaxy?.frames ?? 0))
