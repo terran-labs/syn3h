@@ -19,11 +19,13 @@ import { startupTiming } from '../../core/diagnostics'
 /** Why the lobby showed the flat wordmark instead of the name in the scene, once, for the diagnostics. */
 function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmarkFallback) { startupTiming.wordmarkFallback = reason; console.info(`Syn3h: flat lobby wordmark: ${reason}`) } }
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
-import { introMode, LEAVING_SECONDS, leavingMark, openingPace, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState } from './opening'
+import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
+import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime } from './cameraRest'
+import { introMode, LEAVING_SECONDS, leavingMark, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
 import { WordmarkCrisp } from '../brand/wordmarkCrisp'
-import type { ParamValue } from '../../../shared/params'
+import { defineParam, type ParamValue } from '../../../shared/params'
 import { ORDINARY_BODY, planetById, type PlanetBody } from '../../world/planets'
 import { lobbyLook, type LobbyLook } from '../../world/lobbyLook'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
@@ -69,6 +71,8 @@ export interface GalaxyOptions {
    * its label shows while it is pointed at, even where the layout had to fade it.
    */
   onPoint?(id: string | undefined): void
+  /** Each frame drawn: every world's resting pulse, 0 to idlePeak, in the order the worlds came (idlePulse.ts). */
+  onRest?(pulses: readonly number[]): void
   /** Focus the label selected with a controller, so its normal activation stays accessible. */
   onFocus?(id: string): void
   /** Logo box in CSS pixels relative to this host, plus the existing graphics tier. */
@@ -88,6 +92,10 @@ export interface GalaxyOptions {
  * against a sphere, a shadow cut through the shafts); the limit is the screen and the maps.
  */
 export const GALAXY_MAX = 12
+/** The rest pulses' seed: the same breathing every visit, so checks can reproduce it. */
+const REST_SEED = 20261116
+/** Where the sun sits in the default view, up from the bottom: a little below the middle (53% down). */
+const FRAME_Y = 0.47
 const MAX = GALAXY_MAX
 /** Each world's axis leans this far. */
 const TILT = 0.38
@@ -100,6 +108,12 @@ const PITCH_LOW = -0.2, PITCH_HIGH = 1.25
 const PLANET = 0.5, INNER = 1.4, CLEAR = 0.08, RATE = 0.07
 /** The view's half angle on the short side of the screen, as a tangent. */
 const VIEW_TAN = 0.62
+/**
+ * The strength of the sun's god rays in the lobby. 0.95 until the owner asked for them at about
+ * half (16 November 2026). The opening grows them to this; the in-scene name keeps the light it
+ * had from them at 0.95.
+ */
+export const sunRays = defineParam({ id: 'lobby.sunRays', label: 'Lobby sun: god ray strength', group: 'Graphics', scope: 'client', default: 0.475, min: 0, max: 1.5, step: 0.025 })
 /**
  * A world's radius in the lobby from its size. Slightly compressed, so the ratios read true
  * (a moon is plainly a moon) while the smallest world is still something to tap on a phone.
@@ -204,12 +218,15 @@ export function orbitLayout(bodies: readonly OrbitBody[], time: number): OrbitPl
 export function fitDistance(bodies: readonly OrbitBody[]): number {
   return Math.max(...orbitLayout(bodies, 0).map(place => place.reach), INNER) * 1.08 / VIEW_TAN
 }
-/** Portrait phones start closer so the planets read; a pinch can reveal the outer orbits. */
+/**
+ * The default view's distance: closer than the whole system (lobby.zoom, the owner's framing of
+ * 16 November 2026, with the outer orbit running off the screen), and on a phone held upright its
+ * own share (lobby.zoomPortrait) that keeps the wordmark and the inner planets on screen. A pinch
+ * or wheel can still reveal the outer orbits; the view returns here when left alone.
+ */
 export function openingDistance(bodies: readonly OrbitBody[], width: number, height: number): number {
   const portraitPhone = width > 0 && width <= 600 && height > width * 1.2
-  // Short landscape screens are framed by the Shell (galaxyFrame: the space left of the button
-  // column), so they keep the fitted distance here.
-  return fitDistance(bodies) * (portraitPhone ? 0.8 : 1)
+  return fitDistance(bodies) * (portraitPhone ? lobbyZoomPortrait.value : lobbyZoom.value)
 }
 /** The body a galaxy world is laid out as: its recipe's, or an ordinary planet's. */
 export function bodyOf(world: GalaxyWorld): OrbitBody {
@@ -349,6 +366,10 @@ uniform vec2 uShed;                 // quality ladder: x sheds post effects, y s
 uniform float uAmbience;            // 1 keeps twinkle and drifting cloud, 0 sheds them
 uniform float uDive;                // 0 in orbit, 1 through the atmosphere of the chosen world
 uniform float uDim;                 // 1 as the lobby itself; lower behind an open panel
+uniform float uRays;               // the sun's god rays: their strength in the settled lobby
+uniform vec2 uBurst;                // the Big Bang's soft burst ring: radius, strength (opening.ts)
+uniform float uSpread;              // the Big Bang: stars streaming out from the centre, 0 to 1
+uniform vec4 uTrail[${MAX}];        // the Big Bang: where each flung world was a moment ago, and how bright its trail is
 uniform float uMarkCrisp;           // 1 when the wordmark's letters are drawn by its own full-resolution pass
 uniform vec4 uReveal;               // the opening (opening.ts): sun, shafts' front, stars, the point's swell
 uniform float uOrbit[${MAX}];       // the opening: how much of each world's orbit line is drawn
@@ -361,6 +382,7 @@ uniform float uPopulation[${MAX}];
 uniform vec4 uWorld[${MAX}];        // xyz position, w radius
 uniform vec3 uLand[${MAX}], uSea[${MAX}];
 uniform vec4 uKind[${MAX}];         // x glow, y has map, z spin, w seed
+uniform float uNight;               // the night side's fill (lobby.nightSide; 0 as before)
 uniform vec4 uAir[${MAX}];          // the limb's colour, and how deep the air is (0 none)
 uniform vec4 uLook[${MAX}];         // x cloud cover, y ground gloss, z night glow (1 lava, 2 glowcaps), w land share
 uniform vec3 uCloud[${MAX}];        // each world's cloud colour
@@ -393,6 +415,8 @@ vec3 toScreen(vec3 p) { vec3 d = p - uEye; float z = dot(d, uForward); return ve
 ${WORDMARK_SCENE_GLSL}
 // The glow round the world under the pointer (hoverGlow.ts).
 ${GLOW_GLSL}
+uniform float uPulse[${MAX}];      // the lobby at rest: each world's breath of its own glow (idlePulse.ts)
+uniform vec3 uPulseColour[${MAX}];
 void main() {
   float minSide = min(uSize.x, uSize.y);
   vec2 q = (gl_FragCoord.xy - uFrame.xy * uSize) / (minSide * uFrame.z) * 2.0;           // -1..1 on the short side
@@ -402,8 +426,10 @@ void main() {
   float markW = wordmarkFootprint(markAt.xy);
   vec3 c = SPACE;
   // Stars, fixed to the sky so they turn as the view does.
-  vec3 cell = floor(ray * 420.0);
-  float star = step(0.9965, hash(cell)), bright = step(0.99955, hash(floor(ray * 260.0) + 5.0));
+  // The Big Bang: the stars stream out from the centre, each ending exactly where it rests.
+  vec3 starRay = uSpread >= 1.0 ? ray : normalize(uForward + (q.x * uRight + q.y * uUp) * uTan / max(uSpread, 0.05));
+  vec3 cell = floor(starRay * 420.0);
+  float star = step(0.9965, hash(cell)), bright = step(0.99955, hash(floor(starRay * 260.0) + 5.0));
   float twinkle = mix(0.8, 0.55 + 0.45 * sin(uTime * 1.3 + hash(cell + 2.0) * 40.0), uAmbience);
   vec3 sky = vec3(0.97, 0.98, 0.99) * (star * 0.5 + bright * 1.2) * twinkle;
   // A faint band of cloud along the orbital plane's far side, for depth.
@@ -452,12 +478,15 @@ void main() {
   // The opening (opening.ts): the sun grows from a point, flaring a little past itself.
   // As a point it matches the loading veil's point of light (index.html), in pixels.
   // Before ignition it gathers: swelling to twice its size and brightening (uReveal.w).
-  float sunGrown = clamp(uReveal.x, 0.0, 1.0), sunSize = mix(uSunPoint * (1.0 + 1.1 * uReveal.w), 1.0, sunGrown), sunFlare = max(1.0, uReveal.x) * (1.0 + 0.7 * uReveal.w * (1.0 - sunGrown));
+  // Before the pop it squeezes (uReveal.w below 0): smaller and brighter, the anticipation.
+  float sunGrown = clamp(uReveal.x, 0.0, 1.0), sunSize = mix(uSunPoint * (1.0 + 1.1 * uReveal.w), 1.0, sunGrown), sunFlare = max(1.0, uReveal.x) * (1.0 + 0.7 * abs(uReveal.w) * (1.0 - sunGrown));
   vec3 sunLight = vec3(1.0, 0.98, 0.94) * exp(-sunDistance * 42.0 / sunSize) * 2.4 * sunFlare;
   sunLight += mix(WARM, vec3(1.0, 0.8, 0.55), 0.5) * exp(-sunDistance * 11.0 / sunSize) * 0.8 * sunGrown * sunFlare;
   // The wide haze and the shafts are kept apart from the sun itself: a world beyond the sun
   // still has the sun in front of it, but must not have the whole glow painted over it.
   vec3 sunHaze = mix(WARM, ACCENT_B, 0.35) * exp(-sunDistance * 2.8) * 0.22 * sunGrown;
+  // The pop's soft round burst: a warm ring rolling out from the sun and fading, never a flash.
+  if (uBurst.y > 0.0) sunHaze += mix(WARM, vec3(1.0, 0.9, 0.75), 0.5) * uBurst.y * exp(-pow((sunDistance - uBurst.x) / (0.05 + 0.08 * uBurst.x), 2.0));
   float shafts =
     pow(noise(vec3(sunDirection * 2.4, uTime * 0.09)), 2.0) * 0.9 +
     pow(noise(vec3(sunDirection * 6.5 + 3.0, uTime * 0.15)), 3.0) * 0.8 +
@@ -497,7 +526,8 @@ void main() {
     // An arriving world's shadow comes in with it.
     shade *= 1.0 - cut * 0.85 * (1.0 - uShed.x) * smoothstep(0.3, 1.0, uArrive[i]);
   }
-  vec3 sunShafts = mix(vec3(1.0, 0.86, 0.66), WARM, 0.3) * shafts * reach * 0.95 * shade;
+  // uRays: the shafts' strength (lobby.sunRays). The name catching them keeps its own light, below.
+  vec3 sunShafts = mix(vec3(1.0, 0.86, 0.66), WARM, 0.3) * shafts * reach * uRays * shade;
   // Lens: a horizontal streak and three ghosts toward the centre. Post effects, shed first.
   vec3 flare = vec3(0.55, 0.75, 1.0) * exp(-abs(toSun.y) * 120.0) * exp(-abs(toSun.x) * 2.6) * 0.5;
   vec2 view = q * 0.5, sunView = sunP.xy * 0.5;
@@ -549,6 +579,13 @@ void main() {
     float facing = dot(normal, light), soft = 0.06 * min(airOf.w, 1.5);
     float day = clamp((facing + soft) / (1.0 + soft), 0.0, 1.0);
     day = airOf.w > 0.0 ? pow(day, 0.85) : smoothstep(-0.01, 0.03, facing) * max(facing, 0.0);
+    // The night side (lobby.nightSide): a soft cool fill from the camera's side, strongest where
+    // the surface faces the viewer, as starlight and light off the rest of the system would give,
+    // and a terminator a little wider, fading into the dark. Only where the sun does not reach,
+    // so the day side is as it was.
+    float night = 1.0 - smoothstep(-0.02, 0.12, facing);
+    float tail = uNight * 0.05 * smoothstep(-0.28, 0.0, facing) * (1.0 - smoothstep(0.0, 0.12, facing));
+    vec3 fill = vec3(0.72, 0.82, 1.0) * uNight * 0.075 * (0.3 + 0.7 * clamp(dot(normal, -ray), 0.0, 1.0)) * night;
     // Glints: water always, glassy or icy ground by its gloss. Lava is too rough to mirror the sun.
     vec3 halfway = normalize(light - ray);
     float shine = wet * (uKind[found].x > 0.5 ? 0.0 : 0.55) + look.y * (1.0 - wet) * 0.8;
@@ -556,6 +593,7 @@ void main() {
     // A little fill, so a world seen from its night side is still a world and not a hole.
     vec3 ground = surface * (0.06 + 1.06 * day) + vec3(1.0, 0.96, 0.88) * glint * (1.0 - cloud);
     vec3 world = mix(ground, uCloud[found] * (0.04 + 1.0 * day), cloud);
+    world += mix(surface, uCloud[found], cloud) * (fill + vec3(tail));
     // Night side: lava glows through its crust; a wetland's glowcaps make a faint green shimmer.
     float dark = 1.0 - smoothstep(-0.05, 0.25, facing);
     if (look.z > 0.5 && look.z < 1.5) world += surface * wet * (0.35 + 0.55 * dark) * (1.0 - cloud * 0.6);
@@ -614,7 +652,7 @@ void main() {
         }
         // A dark face with a warm sheen, so the pale edge line carries the name. Lit by the
         // rays (3), the letters are a veil that catches the shafts and haze passing in front.
-        if (uMarkMode >= 3) { mark += rimColour * 0.02 + sunShafts * 1.5 + sunHaze * 0.9 + rimColour * 0.12 * lit * shadow; lineStrength = 0.75; }
+        if (uMarkMode >= 3) { mark += rimColour * 0.02 + sunShafts * 1.5 * (0.95 / max(uRays, 0.05)) + sunHaze * 0.9 + rimColour * 0.12 * lit * shadow; lineStrength = 0.75; }
         else mark += rimColour * (0.025 + 0.22 * lit * shadow);
       } else {
         // In front of the sun: backlit, dark, with a rim of light on the edges facing it.
@@ -660,8 +698,28 @@ void main() {
     c += vec3(0.8, 0.92, 1.0) * rush * uDive * 1.3;
   }
   // The glow round the world under the pointer, in focus or pressed: over the shafts, under the grade.
+  // The Big Bang: each flung world's trail, a soft streak on screen from where it was to where
+  // it is, brightest at the world, fading back along its way.
+  for (int i = 0; i < ${MAX}; i++) {
+    if (i >= uCount) break;
+    if (uTrail[i].w <= 0.01) continue;
+    vec3 a = toScreen(uTrail[i].xyz), b = toScreen(uWorld[i].xyz);
+    if (a.z <= 0.0 || b.z <= 0.0) continue;
+    vec2 ab = b.xy - a.xy, aq = q - a.xy;
+    float along = clamp(dot(aq, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
+    float width = max(uWorld[i].w / (b.z * uTan) * 0.7, 0.004), d = length(aq - ab * along);
+    float streak = exp(-d * d / (width * width)) * along * along * uTrail[i].w;
+    c += mix(vec3(1.0, 0.9, 0.72), uSea[i] * 1.6 + 0.3, 0.35) * streak * 0.9;
+  }
   vec4 glow = planetGlow(ray, nearest, found) * (1.0 - uDive);
   c = mix(c, glow.rgb * 1.25, clamp(glow.a * 0.7, 0.0, 0.85)) + glow.rgb * glow.a * 0.6;
+  // The lobby at rest: worlds breathing their own glow, the same effect laid on the same way.
+  for (int i = 0; i < ${MAX}; i++) {
+    if (i >= uCount) break;
+    if (uPulse[i] <= 0.001) continue;
+    float a = glowAura(i, ray, nearest, found, 0.0, uGlow.y) * uPulse[i] * uGlow.w * (1.0 - uDive);
+    c = mix(c, uPulseColour[i] * 1.25, clamp(a * 0.7, 0.0, 0.85)) + uPulseColour[i] * a * 0.6;
+  }
   // Connected humans by recipe: at most twelve lights; the label carries the exact total.
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount) break;
@@ -710,7 +768,7 @@ void main() {
   color = vec4(c / 12.0, 1.0);
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
-const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP'] as const
+const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uPulse', 'uPulseColour', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays', 'uBurst', 'uSpread', 'uTrail', 'uNight'] as const
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -822,6 +880,8 @@ export class Galaxy {
   private framing: Vec = [0.5, 0.5, 1]
   private dim = 1
   private distance = 13
+  /** The slow return's own velocities (tilt per second, log distance per second): it starts from rest. */
+  private restSpeed = { pitch: 0, zoom: 0 }
   private target: Vec = [0, 0, 0]
   /** The view's turn and tilt under the finger: see SWING. this.yaw and this.pitch are what is shown. */
   private swingYaw: SwingAxis = { aim: 0.6, aimSpeed: 0, view: 0.6, viewSpeed: 0 }
@@ -853,6 +913,9 @@ export class Galaxy {
     this.presence = new PresenceFeed(recipes, values => { this.population = values; this.wake = 2; options.onPresence?.(values) })
     this.reduced.addEventListener('change', () => { this.wake = 2 }, { signal: this.abort.signal })
     addEventListener('keydown', event => this.key(event), { signal: this.abort.signal })
+    // Any input ends the lobby's rest at once (idlePulse.ts).
+    const input = () => { this.lastInput = performance.now() }
+    for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart'] as const) addEventListener(type, input, { signal: this.abort.signal, passive: true, capture: true })
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(host)
     document.addEventListener('visibilitychange', () => { this.syncPresence(); cancelAnimationFrame(this.frame); if (this.active && !document.hidden) this.loop(0) }, { signal: this.abort.signal })
   }
@@ -1025,9 +1088,9 @@ export class Galaxy {
     // The opening: the first showing after the page loads, unless motion is reduced. Any tap,
     // click, wheel or key goes straight to the settled lobby.
     const intro = Math.round(introMode.value)
-    // The first load of a browser session plays it in full, later loads a short version
-    // (openingPace). Coming back from a world: only the name, kindled again (returningMark).
-    if (intro > 0 && !openingPlayed && !this.reduced.matches) { this.opening = { start: null, mode: intro as OpeningMode, pace: openingPace() }; openingPlayed = true }
+    // Every load plays the Big Bang in full. Coming back from a world is not a load: only the
+    // name fades in again (returningMark).
+    if (intro > 0 && !openingPlayed && !this.reduced.matches) { this.opening = { start: null, mode: intro as OpeningMode }; openingPlayed = true }
     else if (openingPlayed && !this.reduced.matches) this.returning = performance.now()
     for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, () => { if (this.opening) { this.opening = null; this.chrome(null); this.wake = 2 } }, { capture: true, passive: true, signal })
     canvas.addEventListener('webglcontextlost', event => {
@@ -1255,7 +1318,7 @@ export class Galaxy {
     this.swing(elapsed, !this.drag && this.chosen < 0 && !still && !this.clockHold, wallElapsed)
     const inset = Math.min(0.3, Math.max(0, this.options.topInset?.() ?? 0) / Math.max(1, this.host.clientHeight))
     // The short landscape layout (Shell, SHORT_LANDSCAPE) supplies its own frame.
-    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, 0.5 - inset / 2, 1 - inset]
+    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, FRAME_Y - inset / 2, 1 - inset]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
@@ -1266,6 +1329,14 @@ export class Galaxy {
     const lobby = this.opening === null && this.backdrop >= 1 && hoverGlowIntensity.value > 0
     const glowChanging = this.glow.step(lobby ? glowTarget({ hovered: this.pointed ?? this.hoverId, focused: this.focusId, chosen: this.chosen >= 0 ? worlds[this.chosen]?.id : null }) : null, elapsed)
     const glowMoving = glowChanging || (this.glow.strength > 0 && !this.reduced.matches && hoverGlowSpeed.value > 0 && !this.glow.chosen)
+    // The lobby at rest (idlePulse.ts): after a while with no input, each world breathes its own
+    // glow. Not behind a panel, while flying, in a hidden tab (no frames), held still or under
+    // reduced motion; any input fades it out and starts the wait again.
+    const resting = lobby && !still && !this.reduced.matches && this.chosen < 0 && !this.flight && idleAfter.value > 0 && (performance.now() - this.lastInput) / 1000 >= idleAfter.value
+    this.rest.fade(resting, elapsed)
+    if (this.rest.envelope > 0) this.restClock += elapsed
+    const glowing = this.glow.strength > 0 ? this.glow.id : null
+    this.pulses = this.rest.envelope > 0 ? this.rest.at(this.restClock).map((v, i) => worlds[i]?.id === glowing ? 0 : v * this.rest.envelope * idlePeak.value) : this.pulses.fill(0)
     let reveal = this.stepOpening(places)
     // Reduced motion: the name goes at once rather than being swept away.
     if (this.leaving !== null) reveal = { ...reveal, ...leavingMark(this.reduced.matches ? 1e3 : (performance.now() - this.leaving) / 1000) }
@@ -1275,6 +1346,25 @@ export class Galaxy {
     }
     if (reveal.reach !== 1) view.eye = [this.target[0] + (view.eye[0] - this.target[0]) * reveal.reach, this.target[1] + (view.eye[1] - this.target[1]) * reveal.reach, this.target[2] + (view.eye[2] - this.target[2]) * reveal.reach]
     const arrival = places.map((_, i) => reveal.arrive[this.lanes(places)[i]] ?? 1)
+    // The Big Bang flings each world out from the sun on a spiral: turned back along its way by
+    // up to 2.4 radians and drawn in toward the sun, passing its place a little, then settling.
+    // Drawn, picked and labelled where it is shown, so a tap lands on what is seen.
+    // Each also leaves a short fading trail, from where it was TRAIL_SECONDS ago (uTrail).
+    const spiral = (p: readonly number[], f: number): [number, number, number] => {
+      // Turned back against the orbits' own way, so the fling winds out the same way they run:
+      // clockwise on screen from above (as the orbits, measured), carrying straight on into the drift.
+      const turn = -(1 - Math.min(1, f)) * 2.4, c = Math.cos(turn), sn = Math.sin(turn)
+      return [(p[0] * c - p[2] * sn) * f, p[1] * f, (p[0] * sn + p[2] * c) * f]
+    }
+    const trails: number[] = []
+    places.forEach((place, i) => {
+      const lane = this.lanes(places)[i], f = this.opening ? reveal.fling[lane] ?? 1 : 1, behind = this.opening ? reveal.flingBehind[lane] ?? 1 : 1
+      const from = spiral(place.position, behind)
+      if (f !== 1) place.position = spiral(place.position, f)
+      // Bright while it travels, gone as it lands: by how far it moved in the trail's span.
+      const moved = Math.hypot(place.position[0] - from[0], place.position[1] - from[1], place.position[2] - from[2])
+      trails.push(...from, Math.min(1, moved / Math.max(0.05, place.radius * 1.5)))
+    })
     const mark = this.stepMark(elapsed, still)
     this.markView = view; this.markPlaced = mark.placement
     // Held still, draw only while something is moving; the last frame stays on the canvas.
@@ -1291,7 +1381,7 @@ export class Galaxy {
     gl.useProgram(this.program); this.upload(gl)
     // The frame's uniforms, for this pass and the wordmark's own full-resolution one.
     const setFrame = (gl: WebGL2RenderingContext, u: Record<string, WebGLUniformLocation | null>, width: number, height: number, bindField: () => void, crisp: number) => {
-      gl.uniform1i(u.uCloseIndex, this.closeIndex)
+      gl.uniform1i(u.uCloseIndex, this.closeIndex); gl.uniform1f(u.uRays, sunRays.value); gl.uniform2f(u.uBurst, ...reveal.burst); gl.uniform4fv(u.uTrail, trails.length ? trails : [0, 0, 0, 0]); gl.uniform1f(u.uSpread, reveal === SETTLED ? 1 : reveal.spread)
       gl.uniform1i(u.uMarkMode, mark.placement ? mark.mode : 0); gl.uniform1f(u.uMarkCrisp, crisp)
       if (mark.placement) {
         const p = mark.placement
@@ -1316,6 +1406,9 @@ export class Galaxy {
       gl.uniform1i(u.uGlowIndex, glowAt < MAX ? glowAt : -1); gl.uniform1f(u.uGlowTime, (performance.now() / 1000) % 1000)
       gl.uniform4f(u.uGlow, this.glow.strength, hoverGlowSpeed.value, this.reduced.matches ? 1 : this.glow.chosen ? 0.55 : 0, hoverGlowIntensity.value * (this.glow.chosen ? 1.25 : 1))
       if (glowWorld) gl.uniform3f(u.uGlowColour, ...glowColour(glowWorld.land, glowWorld.sea, glowWorld))
+      gl.uniform1fv(u.uPulse, this.pulses.slice(0, MAX))
+      gl.uniform1f(u.uNight, nightSide.value)
+      if (this.pulses.some(v => v > 0)) gl.uniform3fv(u.uPulseColour, Array.from({ length: MAX }, (_, i) => worlds[i] ? glowColour(worlds[i].land, worlds[i].sea, worlds[i]) : [0, 0, 0]).flat())
       // The veil's point at full progress is about 6.6 CSS pixels in radius; the sun's core is
       // half its peak at 0.0374 of its size in units of the short side.
       gl.uniform1f(u.uSunPoint, Math.min(1, Math.max(0.02, 6.6 * (width / Math.max(1, this.host.clientWidth)) / (Math.min(width, height) * this.framing[2] * 0.0374))))
@@ -1361,21 +1454,28 @@ export class Galaxy {
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
     this.screen = places.map((place, i) => {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
-      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 && arrival[i] >= 0.6, labelled: reveal.labels[this.lanes(places)[i]] ?? true, depth: z }
+      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 && arrival[i] >= 0.3, labelled: reveal.labels[this.lanes(places)[i]] ?? true, depth: z }
     })
     // The sun's bright core, which labels keep clear of.
     const toSun = sub([0, 0, 0], view.eye), sunZ = Math.max(dot(toSun, view.forward), 0.001)
-    this.sunScreen = { x: width * this.framing[0] + (dot(toSun, view.right) / (sunZ * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(toSun, view.up) / (sunZ * view.tan)) * short / 2, radius: Math.max(6, short * 0.02) }
+    this.sunScreen = { x: width * this.framing[0] + (dot(toSun, view.right) / (sunZ * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(toSun, view.up) / (sunZ * view.tan)) * short / 2, radius: Math.max(6, short * 0.02), depth: sunZ }
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
+    this.options.onRest?.(this.pulses)
     // Arrival: a second and a half after choosing, whatever the frame rate.
     if (this.chosen >= 0 && !this.arrived && (this.arriving += this.step) > 1.5) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number; labelled?: boolean }[] = []
   /** Where the sun's core is on screen, as of the last frame drawn. */
-  sunScreen = { x: -1e4, y: -1e4, radius: 0 }
+  sunScreen: { x: number; y: number; radius: number; depth?: number } = { x: -1e4, y: -1e4, radius: 0 }
   private readonly markRig = new WordmarkRig()
   /** The planet glow (hoverGlow.ts), and what asks for it: the pointer, keyboard focus, a finger. */
   private readonly glow = new GlowState()
+  /** The lobby at rest: each world's pulse this frame, 0 to idlePeak, and their clock and generator. */
+  pulses: number[] = new Array(MAX).fill(0)
+  private readonly rest = new IdlePulse(REST_SEED, MAX)
+  private restClock = 0
+  /** When the lobby last had any input: a pointer moving or pressed, a key, a wheel. */
+  lastInput = performance.now()
   /** For screenshots only: holds the orbits where they are and the view's slow drift. */
   clockHold = false
   private hoverId: string | null = null
@@ -1386,11 +1486,11 @@ export class Galaxy {
   /** performance.now() when the lobby came back from a world, while the name kindles again. */
   private returning: number | null = null
   /** The continuous opening, while it plays: started when loading ends (null until then). */
-  private opening: { start: number | null; mode: OpeningMode; pace: number } | null = null
+  private opening: { start: number | null; mode: OpeningMode } | null = null
   /** For screenshots only: holds the opening at this many seconds in. */
   openingAt: number | null = null
   /** Plays the opening again now (for screenshots and checks). */
-  replayOpening(mode: number, pace = 1): void { if (mode > 0 && !this.reduced.matches) { this.opening = { start: performance.now(), mode: mode as OpeningMode, pace }; this.wake = 2 } }
+  replayOpening(mode: number): void { if (mode > 0 && !this.reduced.matches) { this.opening = { start: performance.now(), mode: mode as OpeningMode }; this.wake = 2 } }
   /**
    * Holds the lobby's own controls (the hint, the links, the preview menu) while the opening
    * plays and fades them in as it settles: index.html's html[data-opening] rules. A skip
@@ -1408,7 +1508,7 @@ export class Galaxy {
     if (!o) return SETTLED
     if (o.start === null && document.documentElement.dataset.boot !== 'loading') o.start = performance.now()
     const at = this.openingAt ?? (o.start === null ? -1 : (performance.now() - o.start) / 1000)
-    const state = openingState(at, o.mode, places.length, o.pace)
+    const state = openingState(at, o.mode, places.length)
     if (state.done) {
       this.opening = null
       // Let the controls' fade in finish, then drop the attribute.
@@ -1468,7 +1568,9 @@ export class Galaxy {
     }
     const now = performance.now()
     if (this.markStart === null) this.markStart = held ? now - 1e6 : now
-    const t = Math.min(1, (now - this.markStart) / 1500), opacity = t * t * (3 - 2 * t)
+    // The opening and a return carry their own fade (opening.ts); otherwise (a placement
+    // changed, the context restored) the same curve runs from the first frame here.
+    const opacity = this.opening || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
     return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 }
   }
   /** For tests and screenshots: the in-space wordmark's state. */
@@ -1543,10 +1645,28 @@ export class Galaxy {
     // together, as the drift moves them, so the spring stays at rest and nothing fights.
     // Never under reduced motion, never round a chosen world, never while anything else moves.
     this.resting = false
+    const idle = (performance.now() - this.handled) / 1000
     if (!this.reduced.matches && this.chosen < 0 && !this.flight && !held && this.pointers.size === 0 && this.backdrop === 1 && this.swingResting) {
-      const tilt = restStep(this.swingPitch.view, (performance.now() - this.handled) / 1000, restElapsed, this.options.still?.() ? REST_LOW : REST)
-      if (tilt !== this.swingPitch.view) { this.swingPitch.aim = this.swingPitch.view = tilt; this.resting = true }
-    }
+      const home = openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
+      if (this.options.still?.()) {
+        // Low-end devices: the quick exponential settle, snapping the last step, so they can idle.
+        const tilt = restStep(this.swingPitch.view, idle, restElapsed, REST_LOW)
+        if (tilt !== this.swingPitch.view) { this.swingPitch.aim = this.swingPitch.view = tilt; this.resting = true }
+        const far = restStep(Math.log(this.distance), idle, restElapsed, { ...REST_LOW, pitch: Math.log(home), snap: 1e-3 })
+        if (far !== Math.log(this.distance)) { this.distance = Math.exp(far); this.resting = true }
+      } else if (idle >= returnDelay.value) {
+        // The slow return (cameraRest.ts): tilt and zoom on one critically damped spring rate,
+        // from rest, no overshoot; the heading is left where the player put it.
+        const omega = returnOmega(returnTime.value), dt = Math.min(0.25, restElapsed)
+        const [pitch, pitchSpeed] = springStep(this.swingPitch.view, this.restSpeed.pitch, REST.pitch, omega, dt)
+        const [far, farSpeed] = springStep(Math.log(this.distance), this.restSpeed.zoom, Math.log(home), omega, dt)
+        const done = Math.abs(pitch - REST.pitch) < 2e-4 && Math.abs(pitchSpeed) < 1e-4 && Math.abs(far - Math.log(home)) < 5e-4 && Math.abs(farSpeed) < 1e-4
+        this.swingPitch.aim = this.swingPitch.view = done ? REST.pitch : pitch
+        this.distance = done ? home : Math.exp(far)
+        this.restSpeed = done ? { pitch: 0, zoom: 0 } : { pitch: pitchSpeed, zoom: farSpeed }
+        this.resting = !done
+      } else this.restSpeed = { pitch: 0, zoom: 0 }
+    } else this.restSpeed = { pitch: 0, zoom: 0 }
     if (this.reduced.matches) {
       // No spring, coast or stretch: the view is where the finger or key put it, within limits.
       const pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.swingPitch.aim))

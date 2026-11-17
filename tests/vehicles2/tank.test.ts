@@ -93,8 +93,8 @@ describe('Sherpa tank with six shape casts',()=>{
    const height=v.body.translation().y
    previewTankBody('r8-wasp');expect(meshes().length).toBe(first);expect(v.body.translation().y).toBe(height)
    h.step(v,100);expect(v.groundedTracks).toBe(6);expect(v.body.mass()).toBeCloseTo(241)
-   // 0 is the Mars Explorer model, which loads in a browser only: nothing generated remains.
-   previewTankBody(null);expect(meshes().length).toBe(0);expect(v.object.userData.cockpit).toBe(false)
+   // No study id wears the shipped Sherpa again: always a generated body, never a model file.
+   previewTankBody(null);expect(meshes().length).toBeGreaterThan(0);expect(v.object.userData.cockpit).toBe(true)
    h.step(v,100);expect(v.groundedTracks).toBe(6)
   }finally{previewTankBody()}
   v.dispose();h.world.free()

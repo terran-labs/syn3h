@@ -15,7 +15,9 @@ for (const failure of ['draft', 'tag']) {
       writeFileSync(join(dir, 'bin/node'), '#!/bin/sh\necho "$*" >> "$CALLS"\ncase "$*" in *" draft "*) [ "$FAILURE" != draft ];; *showcase*) [ "$FAILURE" != capture ];; esac\n', { mode: 0o755 })
       writeFileSync(join(dir, 'bin/git'), '#!/bin/sh\n[ "$FAILURE" != tag ]\n', { mode: 0o755 })
       const calls = join(dir, 'calls')
-      const result = spawnSync('/bin/sh', ['-eu', '-c', hook], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, FAILURE: failure, CALLS: calls, CALVER: 'v26.11.1500', MILESTONE: 'test', COMMIT: '1234567', WHEN: 'test time', N: '3', PREV: 'release-2', DEST: dir, LOG: join(dir, 'log') } })
+      const result = spawnSync('/bin/sh', ['-eu', '-c', hook], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, FAILURE: failure, CALLS: calls, CALVER: 'v26.11.1500', MILESTONE: 'test', COMMIT: '1234567', WHEN: 'test time', N: '3', PREV: 'release-2', DEST: dir, LOG: join(dir, 'log'),
+        // Never start the real GitHub check from a test.
+        SYN3H_SKIP_VANTAGE: '1' } })
       assert.equal(result.status, 0, result.stderr)
       assert.match(result.stdout, /Warning: release is live/)
       // The showcase is its own step after the release: printed, never run or published here.
@@ -23,6 +25,7 @@ for (const failure of ['draft', 'tag']) {
       const ran = existsSync(calls) ? readFileSync(calls, 'utf8') : ''
       assert.doesNotMatch(ran, /showcase\.mjs/)
       assert.doesNotMatch(ran, /publish/)
+      assert.match(result.stdout, /VANTAGE: skipped \(SYN3H_SKIP_VANTAGE\)/)
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 }
@@ -37,7 +40,9 @@ for (const status of [0, 1]) {
   }))
 }
 
-const primaryCheck = release.slice(release.indexOf('# --- Primary public acceptance'), release.indexOf('# --- Record'))
+// The section calls settle(), defined earlier in release.sh: run the real function with it.
+const settleFn = release.slice(release.indexOf('settle() {'), release.indexOf('\n}\n', release.indexOf('settle() {')) + 3)
+const primaryCheck = settleFn + release.slice(release.indexOf('# --- Primary public acceptance'), release.indexOf('# --- Record'))
 for (const failure of ['none', 'assets', 'gameplay']) {
   test(`primary acceptance ${failure} failure cannot record a release`, () => {
     const dir = mkdtempSync(join(tmpdir(), 'syn3h-primary-check-'))
@@ -45,8 +50,10 @@ for (const failure of ['none', 'assets', 'gameplay']) {
       mkdirSync(join(dir, 'bin')); mkdirSync(join(dir, 'tools'))
       writeFileSync(join(dir, 'bin/node'), '#!/bin/sh\n[ "$FAILURE" != assets ]\n', { mode: 0o755 })
       writeFileSync(join(dir, 'bin/sleep'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+      // A clock that jumps 10 s a call, so a build that never matches gives up at once.
+      writeFileSync(join(dir, 'bin/date'), '#!/bin/sh\nn=$(cat "$CLOCK" 2>/dev/null || echo 0); echo $((n + 10)) > "$CLOCK"; echo $n\n', { mode: 0o755 })
       writeFileSync(join(dir, 'tools/domain.sh'), '#!/bin/sh\n[ "$FAILURE" != gameplay ]\n', { mode: 0o755 })
-      const result = spawnSync('/bin/sh', ['-eu', '-c', 'fail() { echo "$*" >&2; exit 1; };\n' + primaryCheck + '\necho RECORDED'], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, FAILURE: failure, DEST: dir, LOG: join(dir, 'log') } })
+      const result = spawnSync('/bin/sh', ['-eu', '-c', 'fail() { echo "$*" >&2; exit 1; };\n' + primaryCheck + '\necho RECORDED'], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, FAILURE: failure, DEST: dir, LOG: join(dir, 'log'), CLOCK: join(dir, 'clock'), STUB: '' } })
       assert.equal(result.status, failure === 'none' ? 0 : 1, result.stderr)
       assert.equal(result.stdout.includes('RECORDED'), failure === 'none')
     } finally { rmSync(dir, { recursive: true, force: true }) }
@@ -78,7 +85,7 @@ function section(source, start, end) {
 const smokeSections = {
   normal: section(release, 'SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.', '\n\nif [ -n "$DRY" ]'),
   latency: section(release, '  SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-latency.', '\n  echo\n'),
-  domain: section(domain, '  SHOT_PARENT="$(mktemp -d "/tmp/syn3h-shot-domain-', '\n  ;;'),
+  domain: section(domain, '  if [ -n "${SYN3H_SHORT_CHECK:-}" ]; then', '\n  ;;'),
   rollback: section(rollback, '# Preserve the check'),
 }
 function callerFixture(fn) {
@@ -120,7 +127,9 @@ exit 94
         cwd: dir, encoding: 'utf8', timeout: 3000, maxBuffer: 1024 * 1024,
         env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH,
           FIXTURE: dir, CALLS: calls, CASE: scenario, H: host, URL: 'https://example.test/',
-          LOG: join(dir, 'same-log'), PROXY_PORT: '12345', SYN3H_SHOT_EVIDENCE_DIR: '/must-not-reuse/evidence' },
+          LOG: join(dir, 'same-log'), PROXY_PORT: '12345', SYN3H_SHOT_EVIDENCE_DIR: '/must-not-reuse/evidence',
+          // The evidence-carrying smoke in the release section is the dry run's path now.
+          DRY: '1' },
       })
       assert.equal(result.error, undefined, String(result.error))
       return result
@@ -160,3 +169,18 @@ for (const kind of ['normal', 'latency', 'domain']) {
     assert.equal(invoke(kind, 'zero-no-marker').status, 1)
   }))
 }
+
+// The short public check after a production deploy: a crash is a fresh rerun, at most twice.
+for (const [name, codes, status] of [['passes', [0], 0], ['fails at once', [1, 0], 1], ['reruns after a crash', [3, 0], 0], ['gives up after three crashes', [3, 3, 3, 0], 1]]) {
+  test(`run_public_check ${name}`, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'syn3h-public-check-'))
+    try {
+      mkdirSync(join(dir, 'bin'))
+      writeFileSync(join(dir, 'codes'), codes.join('\n') + '\n')
+      writeFileSync(join(dir, 'bin/node'), '#!/bin/sh\nc=$(head -1 "$CODES"); tail -n +2 "$CODES" > "$CODES.next"; mv "$CODES.next" "$CODES"\n[ "$c" = 0 ] && echo "PUBLIC CHECK OK" || echo "PUBLIC CHECK FAILED"\nexit "$c"\n', { mode: 0o755 })
+      const result = spawnSync('/bin/sh', ['-eu', '-c', readFileSync(new URL('./smoke-run.sh', import.meta.url), 'utf8') + '\nrun_public_check https://example.test/ "$LOG"'], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, CODES: join(dir, 'codes'), LOG: join(dir, 'log') } })
+      assert.equal(result.status, status, result.stdout + result.stderr)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+}
+

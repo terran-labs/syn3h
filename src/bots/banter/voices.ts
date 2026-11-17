@@ -1,5 +1,5 @@
 /**
- * The bots' characters. A bot's name ends in its job ("Temolin Dust Clerk"), drawn from the
+ * The bots' characters. A bot is shown as "Temolin"; its hidden role is its job ("Dust Clerk"), drawn from the
  * world seed, so every client agrees who is who. Each job is a voice: its own vocabulary,
  * running jokes and way of taking a request. The lines themselves are in data/.
  */
@@ -41,9 +41,31 @@ export const VOICES: Record<VoiceId, Voice> = {
 
 export const VOICE_IDS = Object.keys(VOICES) as VoiceId[]
 
-/** The voice for a bot's display name, by its job; a name without one gets a voice from its hash. */
+/**
+ * Words in a bot's role, to the voice that suits them. Bot names come from src/ui/data/names.ts
+ * ("Mibiwise Glacier Courier", "Welowick Junior Ponderer"); the job word decides first, then
+ * the other words of the role. Keep this in step with that vocabulary when it grows.
+ */
+const ROLE_VOICES: Record<VoiceId, readonly string[]> = {
+  inspector: ['Inspector', 'Monitor', 'Officer', 'Spotter', 'Minder', 'Caretaker', 'Bolt', 'Rivet', 'Gasket', 'Valve', 'Hinge', 'Grommet', 'Sprocket', 'Spanner', 'Widget', 'Ladder'],
+  clerk: ['Clerk', 'Notary', 'Registrar', 'Archivist', 'Librarian', 'Accountant', 'Counter', 'Sorter', 'Liaison', 'Dispatcher', 'Steward', 'Consultant', 'Translator', 'Dust', 'Sundial', 'Acting', 'Deputy'],
+  pilot: ['Pilot', 'Navigator', 'Courier', 'Scout', 'Envoy', 'Spare', 'Chief', 'Senior', 'Compass', 'Sextant', 'Waypoint', 'Detour', 'Beacon', 'Gust', 'Breeze'],
+  probe: ['Probe', 'Snack', 'Taster', 'Biscuit', 'Teacup', 'Kettle', 'Thermos', 'Noodle', 'Gardener', 'Botanist', 'Pollen', 'Moss', 'Lichen', 'Sock', 'Doodle'],
+  marshal: ['Marshal', 'Cone', 'Keeper', 'Herder', 'Sweeper', 'Wrangler', 'Doorman', 'Pylon', 'Lantern', 'Retired', 'Former'],
+  moon: ['Moon', 'Orbit', 'Comet', 'Nebula', 'Satellite', 'Asteroid', 'Zenith', 'Apogee', 'Starlight', 'Meteor', 'Ponderer', 'Whisperer', 'Static', 'Echo', 'Ozone', 'Mist', 'Fog', 'Forecaster', 'Lost', 'Probably'],
+  auditor: ['Auditor', 'Surveyor', 'Curator', 'Collector', 'Rust', 'Basalt', 'Quartz', 'Pumice', 'Mica', 'Shale', 'Cobble', 'Fossil', 'Gravel', 'Pebble', 'Crater', 'Glacier', 'Canyon', 'Dune', 'Geyser', 'Magnet'],
+  intern: ['Intern', 'Apprentice', 'Hull', 'Junior', 'Assistant', 'Enthusiast', 'Admirer', 'Juggler', 'Tinkerer', 'Fixer', 'Mender', 'Tuner', 'Honorary', 'Visiting', 'Part-time', 'Puzzle', 'Wobble', 'Rainbow'],
+}
+const WORD_VOICE = new Map<string, VoiceId>()
+/** Every role word that has a voice, lower case. */
+export const ROLE_WORDS: ReadonlySet<string> = new Set(Object.values(ROLE_VOICES).flat().map((w) => w.toLowerCase()))
+for (const v of Object.keys(ROLE_VOICES) as VoiceId[]) for (const w of ROLE_VOICES[v]) if (!WORD_VOICE.has(w.toLowerCase())) WORD_VOICE.set(w.toLowerCase(), v)
+
+/** The voice for a bot's display name: its job word, then the rest of its role, then a hash. */
 export function voiceFor(name: string): VoiceId {
   for (const v of VOICE_IDS) if (name.endsWith(VOICES[v].job)) return v
+  const words = name.split(/\s+/).slice(1).map((w) => w.toLowerCase())
+  for (let i = words.length - 1; i >= 0; i--) { const v = WORD_VOICE.get(words[i]); if (v) return v }
   let h = 0
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
   return VOICE_IDS[h % VOICE_IDS.length]

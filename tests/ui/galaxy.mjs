@@ -58,7 +58,14 @@ try {
     await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle(page, 'index')
     await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 1, null, { timeout: 15000 })
     // Tapping a world drops straight into it: no form, no panel, one motion to the ground.
-    const alpine = await page.evaluate(() => window.syn3h.shell.galaxy.screen.find(s => s.id === 'alpine'))
+    // A world well on screen and not the one in play: at the closer default zoom an outer world
+    // can be off the edge of a phone, depending on where it is in its orbit.
+    const alpine = await page.evaluate(() => {
+      const current = window.syn3h.planets.currentPlanet().id, s = window.syn3h.shell.galaxy.screen
+      const onScreen = p => p.visible && p.x > p.radius + 4 && p.x < innerWidth - p.radius - 4 && p.y > p.radius + 4 && p.y < innerHeight - p.radius - 4 && p.radius > 6 && p.id !== current
+      return s.find(p => p.id === 'alpine' && onScreen(p)) ?? s.filter(onScreen).sort((a, b) => b.radius - a.radius)[0]
+    })
+    assert.ok(alpine, `${view.name}: a world is on screen to tap`)
     // Measure the actual transition. Screenshot transfer can finish after landing on a busy host.
     await page.evaluate(() => {
       const root = document.querySelector('.syn3h-shell')
@@ -76,7 +83,7 @@ try {
     await page.waitForTimeout(1300); await page.screenshot({ path: `${out}/${view.name}-descent-dive.png` })
     await page.waitForTimeout(1500); await page.screenshot({ path: `${out}/${view.name}-descent-arrive.png` })
     await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 15000 })
-    assert.equal(await page.evaluate(() => window.syn3h.planets.currentPlanet().id), 'alpine')
+    assert.equal(await page.evaluate(() => window.syn3h.planets.currentPlanet().id), alpine.id)
     const took = await page.evaluate(() => window.__dropTiming.end - window.__dropTiming.start)
     assert.ok(took > 2500 && took < 11000, `${view.name}: the drop took ${took} ms`)
     // (A slow headless browser can have dropped the graphics level by now, which retires the galaxy.)

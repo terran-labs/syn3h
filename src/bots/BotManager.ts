@@ -1,5 +1,5 @@
 import { worldSeed } from '../../shared/params'
-import { generateName } from '../ui/data/names'
+import { uniqueBotName } from '../ui/data/names'
 import { attachVehicleEffects } from '../vehicles/effects'
 import { Vector3 } from 'three/webgpu'
 import type { Game, System } from '../core/Game'
@@ -199,7 +199,7 @@ export class BotManager implements System {
     if (!place) return null
     const start = performance.now()
     const bot = createVehicle(this.game, this.terrain, kind, place.position, place.heading)
-    bot.isLocal = false; bot.id = `bot-${this.nextBotId++}`; bot.name = generateName(`${worldSeed.value}:${bot.id}`, 'bot')
+    bot.isLocal = false; bot.id = `bot-${this.nextBotId++}`; bot.name = uniqueBotName(`${worldSeed.value}:${bot.id}`, new Set([this.player.name, ...this.bots.map(other => other.name), ...[...this.leaving.keys()].map(other => other.name)].filter(Boolean).map(n => n!.toLowerCase())))
     bot.setColors(`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff')
     try { performance.measure('syn3h:bot build', { start, end: performance.now(), detail: kind }) } catch { /* Older engines. */ }
     return { bot, place }

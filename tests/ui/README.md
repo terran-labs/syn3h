@@ -197,8 +197,7 @@ supported version, generated with Nayuki's independent Python reference using
 `QrSegment.make_bytes`, `QrCode.Ecc.MEDIUM`, forced masks and `boostecl=False`.
 The MIT notice is shipped under `public/brand/licenses/qr.txt`.
 
-`node tests/ui/projector.mjs` checks desktop and 320 by 844 touch flows, all three
-camera shots, idle wakeup, long names, 16 score rows, invite clipboard contents,
+`node tests/ui/projector.mjs` checks desktop and 320 by 844 touch flows: long names, 16 score rows, invite clipboard contents,
 presentation mode and the round countdown. It writes screenshots and a JSON report
 to `tests/ui/artifacts/`. On macOS, independently decode the rendered screenshot:
 
@@ -513,8 +512,8 @@ On touch the cards start closed, and while open the minimap and drive controls s
 Checks (dev servers on 5187 and 8797):
 
 - `npx vitest run tests/ui/inspector.test.ts`: tree, limits, JSON round trip, clamping.
-- `node tests/ui/inspector.mjs`: Chrome; cards, accordion, search, copy, paste, glass,
-  pointer lock fade and the three focus looks. Screenshots in `artifacts/inspector/`.
+- `node tests/ui/inspector.mjs`: Chrome; the pointer lock fade, the three focus looks and
+  suspended input hiding the focus display. Screenshots in `artifacts/inspector/`.
 - `node tests/ui/inspector-touch.mjs`: WebKit at iPad, iPhone and iPhone landscape sizes.
 
 Known limits: about 35 of the 218 properties have a written description, the rest show

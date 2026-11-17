@@ -52,7 +52,9 @@
 .chat-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--s3-line-quiet, rgb(173 224 247 / .15)); }
 .chat-head h2, .syn3h-shell.exploration-ui .chat-head h2 { flex: 1; margin: 0; font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
 .syn3h-shell.exploration-ui .chat-head button, .syn3h-shell.exploration-ui .chat-people button, .syn3h-shell.exploration-ui .chat-menu button, .syn3h-shell .chat-head button, .syn3h-shell .chat-people button, .syn3h-shell .chat-menu button { min-height: 28px; padding: 2px 10px; border-radius: 999px; font: 400 12px 'Barlow', sans-serif; letter-spacing: .04em; cursor: pointer; }
-.chat-log { list-style: none; margin: 0; padding: 6px 12px; overflow-y: auto; max-height: max(100px, min(260px, calc(50vh - 232px))); overscroll-behavior: contain; scrollbar-width: thin; }
+/* A fixed height, not a maximum: lines arriving must not move the header (Close, People) under
+   the pointer. */
+.chat-log { list-style: none; margin: 0; padding: 6px 12px; overflow-y: auto; height: max(100px, min(260px, calc(50vh - 232px))); overscroll-behavior: contain; scrollbar-width: thin; }
 .chat-line { position: relative; padding: 2px 0; overflow-wrap: anywhere; }
 .chat-line.is-new { animation: chat-in .35s ease-out 1; }
 @keyframes chat-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
@@ -97,7 +99,7 @@
   position: fixed; left: 0; right: 0; bottom: var(--chat-kb, 0px); z-index: 60; width: auto; height: 50vh; height: 50dvh; max-height: calc(100dvh - var(--chat-kb, 0px) - 8px);
   border-radius: 12px 12px 0 0; padding-bottom: env(safe-area-inset-bottom); background: rgb(5 18 29 / .5); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
 }
-.syn3h-shell.has-touch .chat-log { max-height: none; flex: 1; min-height: 80px; }
+.syn3h-shell.has-touch .chat-log { max-height: none; height: auto; flex: 1; min-height: 80px; }
 .syn3h-shell.has-touch .chat-head button, .syn3h-shell.has-touch .chat-form .chat-send { min-height: 40px; }
 .syn3h-shell.has-touch .chat-form .chat-field { min-height: 40px; font-size: 16px; }
 .syn3h-shell.has-touch .chat-panel.is-open .chat-toggle { display: none; }
@@ -124,3 +126,13 @@
 .vehicle-nameplate.is-speaking::after { content: ''; position: absolute; right: -5px; top: -7px; width: 12px; height: 9px; border-radius: 6px 6px 6px 1px; background: var(--vehicle-tint); box-shadow: 0 0 0 1px rgb(3 11 19 / .7); animation: chat-speak-in .25s ease-out; }
 @keyframes chat-speak-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .vehicle-nameplate.is-speaking::after { animation: none; } }
+
+/* Hidden interface (hud.mode 2, interface-mode.css hides every overlay): open chat alone comes
+   back into view while it is open, so Y always gives the player a field to type in. */
+body.is-bare-interface .syn3h-shell .chat-panel.is-open,
+body.is-bare-interface .syn3h-shell .chat-panel.is-open * { visibility: visible !important; }
+body.is-bare-interface .syn3h-shell .chat-panel.is-open .chat-toggle,
+body.is-bare-interface .syn3h-shell .chat-panel.is-open .chat-strip { visibility: hidden !important; }
+
+/* The panel's foot: "Show new messages over the game" (overlayPreference.ts). */
+.chat-foot { padding: 4px 12px 8px; border-top: 1px solid var(--s3-line-quiet, rgb(173 224 247 / .15)); font-size: 12px; color: var(--s3-dim, #a5c1d1); }

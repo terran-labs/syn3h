@@ -62,3 +62,22 @@ describe('galaxy resting view', () => {
     expect(leave(part, REST.after - 0.1, 30)).toBe(part)
   })
 })
+
+describe('the slow return to the default view', () => {
+  it('settles tilt and zoom together in about the return time, from rest, with no overshoot', async () => {
+    const { springStep } = await import('../../src/ui/galaxy/Galaxy')
+    const { returnOmega } = await import('../../src/ui/galaxy/cameraRest')
+    const omega = returnOmega(25), fps = 30
+    let pitch = 1.1, pv = 0, zoom = Math.log(30), zv = 0, settledAt = -1
+    const target = 20 * Math.PI / 180, home = Math.log(18)
+    for (let t = 0; t < 40; t += 1 / fps) {
+      ;[pitch, pv] = springStep(pitch, pv, target, omega, 1 / fps)
+      ;[zoom, zv] = springStep(zoom, zv, home, omega, 1 / fps)
+      expect(pitch).toBeGreaterThanOrEqual(target - 1e-9)
+      expect(zoom).toBeGreaterThanOrEqual(home - 1e-9)
+      const left = Math.max((pitch - target) / (1.1 - target), (zoom - home) / (Math.log(30) - home))
+      if (settledAt < 0 && left < 0.01) settledAt = t
+    }
+    expect(settledAt).toBeGreaterThan(20); expect(settledAt).toBeLessThan(30)
+  })
+})

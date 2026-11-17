@@ -99,8 +99,37 @@ export function isBlockedName(name: string): boolean {
   return BLOCKED.some(word => flat.includes(word))
 }
 
-/** Stable across clients and runtimes. Names are labels, never unique identifiers. */
+/**
+ * Stable across clients and runtimes. Names are labels, never unique identifiers.
+ * A bot is shown by its given name alone ("Temolin"; the owner, 16 November 2026: "Bots should
+ * only ever have a single first name"). Its role ("Dust Clerk") is hidden character data, from
+ * botIdentity, for the voice it speaks in.
+ */
 export function generateName(seed: number | string, kind: NameKind): string {
+  return kind === 'bot' ? botIdentity(seed).name : fullName(seed, kind)
+}
+
+/**
+ * A bot's given name and its hidden role, generated exactly as the full names were before
+ * ("Temolin" and "Dust Clerk" from what was "Temolin Dust Clerk"), so a bot keeps its voice.
+ */
+export function botIdentity(seed: number | string): { name: string; role: string } {
+  const full = fullName(seed, 'bot'), space = full.indexOf(' ')
+  return { name: full.slice(0, space), role: full.slice(space + 1) }
+}
+
+/**
+ * A bot's display name, different from every name in `taken` (lower case): its own given name,
+ * or else deterministic rerolls from the same seed, so every client that knows the same room
+ * picks the same one.
+ */
+export function uniqueBotName(seed: number | string, taken: ReadonlySet<string>): string {
+  let name = botIdentity(seed).name
+  for (let k = 1; taken.has(name.toLowerCase()) && k < 64; k++) name = fullName(`${seed}~${k}`, 'player')
+  return name
+}
+
+function fullName(seed: number | string, kind: NameKind): string {
   const text = `${kind}:${seed}`
   let state = 2166136261
   for (let i = 0; i < text.length; i++) state = Math.imul(state ^ text.charCodeAt(i), 16777619) >>> 0

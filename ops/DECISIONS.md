@@ -476,3 +476,17 @@ what is playable, broken, or waiting on him. The coordination rules are in
 
 **What it changes.** The Orchestrator is carrying this out. The API keys committed in two
 other public repositories still need revoking by the owner.
+
+## Monday 16 November, about 10:28pm Pacific: generated skins for every vehicle
+
+**Decided** by the owner, in the generated-vehicles thread: "You are authorized to ship
+generated skins for all vehicles now, including the buggy."
+
+**What it changes.** The game loads no vehicle model files: the buggy is generated in code,
+and the tank's legacy model path is deleted. The model files move from public/models to
+tools/models as source material, never copied by the build, and the run-time asset check
+fails on any model request. This supersedes, from the release that ships veh/generated-vehicles,
+the entries above that kept the hovercraft and tank in model-based form for the candidate,
+that named the vehicle models as the one dated exception, and that kept the live models for
+the noon release.
+

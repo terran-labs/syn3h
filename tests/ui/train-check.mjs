@@ -10,7 +10,9 @@ try {
   await page.waitForFunction(() => window.syn3h?.audio, null, { timeout: 120000 })
   await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
   assert.deepEqual(await page.locator('#game-mode option').allTextContents(), ['Tag game', 'King of the Hill', 'Explore'])
-  assert.equal(await page.locator('.wi-vehicle-select').getAttribute('aria-label'), 'Vehicle')
+  // The vehicle picker keeps its accessible name and role.
+  assert.equal(await page.locator('.wi-vehicle-picker').getAttribute('aria-label'), 'Vehicle')
+  assert.equal(await page.locator('.wi-vehicle-picker').getAttribute('role'), 'radiogroup')
   await page.screenshot({ path: `${out}/lobby-desktop.png` })
   const result = await page.evaluate(async () => {
     const { Engine } = await import('/src/audio/Engine.ts')
