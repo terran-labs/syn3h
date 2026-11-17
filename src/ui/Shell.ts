@@ -473,6 +473,8 @@ export class Shell implements System {
   get playerName(): string { return this.nameInput.value.trim().slice(0, 24) || 'Explorer' }
   get room(): string { return this.roomInput.value.trim().slice(0, 64) || DEFAULT_ROOM }
   get playing(): boolean { return this.started && !this.menuVisible }
+  /** Keep world labels beside the inspector, but never over a modal or paused game. */
+  get vehicleLabelsVisible(): boolean { return this.playing && !this.userPaused && !this.inviteOpen && !this.exitAsking }
   get menuOpen(): boolean { return this.menuVisible }
   /** Idle driving must not take control while the player uses panels or enters text. */
   get daydreamBlocked(): boolean {
