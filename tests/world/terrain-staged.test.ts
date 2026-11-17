@@ -8,7 +8,7 @@ import { ProceduralTerrain } from '../../src/world/terrain/ProceduralTerrain'
  */
 describe('a staged terrain rebuild', () => {
   function terrain(steps: () => Generator<undefined>) {
-    const t = Object.create(ProceduralTerrain.prototype) as ProceduralTerrain & { rebuildSteps: () => Generator<undefined> }
+    const t = Object.create(ProceduralTerrain.prototype) as { rebuildSteps: () => Generator<undefined>; regenerateStaged(): Promise<void>; readonly ready: boolean; whenReady(): Promise<void> }
     Object.assign(t, { serial: 0, building: 0, built: Promise.resolve() })
     t.rebuildSteps = steps
     return t

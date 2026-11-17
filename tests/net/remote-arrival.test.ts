@@ -79,7 +79,7 @@ describe('a remote bot waiting its turn to be shown', () => {
     const { RemoteArrivals } = await import('../../src/net/arrivals')
     const { BOT_ID_BASE } = await import('../../shared/protocol')
     const id = BOT_ID_BASE + 1
-    const parked = (v: ReturnType<typeof vehicle>) => Object.assign(v, { object: {}, parked: false, setParked(p: boolean) { (v as { parked: boolean }).parked = p } })
+    const parked = (v: ReturnType<typeof vehicle>) => Object.assign(v, { object: {} as any, parked: false, setParked(p: boolean) { (v as unknown as { parked: boolean }).parked = p } })
     const old = parked(vehicle('buggy'))
     const replacement = parked(vehicle('jet'))
     vi.mocked(createVehicle).mockReturnValue(replacement as any)
