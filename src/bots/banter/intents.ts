@@ -55,7 +55,7 @@ export function normalize(text: string): string {
   return words.map((w) => TYPOS[w] ?? TYPOS[w.replace(/([a-z])\1/g, '$1')] ?? w).join(' ').replace(/\s+/g, ' ').trim()
 }
 
-const GROUP = /\b(you guys|you all|guys|everyone|everybody|all of you|bots|robots|team|gang|folks|people|crew|lads|friends|yall)\b/
+const GROUP = /\b(you guys|you all|guys|everyone|everybody|all of you|bots|robots|gang|folks|crew|yall)\b/
 
 // Each pattern runs on " <normalised line> " so \b works at both ends. Order matters: the
 // first match wins, so specific phrases come before the words they contain.
@@ -141,4 +141,4 @@ export function parseIntent(text: string, bots: readonly NamedBot[]): Intent | n
   return null
 }
 
-const LOOSE = new Set<IntentKind>(['stop', 'help', 'insult', 'thanks', 'bye', 'hello', 'what', 'look', 'come', 'follow'])
+const LOOSE = new Set<IntentKind>(['race', 'chase', 'stop', 'help', 'insult', 'thanks', 'bye', 'hello', 'what', 'look', 'come', 'follow'])
