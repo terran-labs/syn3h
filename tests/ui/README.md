@@ -197,8 +197,7 @@ supported version, generated with Nayuki's independent Python reference using
 `QrSegment.make_bytes`, `QrCode.Ecc.MEDIUM`, forced masks and `boostecl=False`.
 The MIT notice is shipped under `public/brand/licenses/qr.txt`.
 
-`node tests/ui/projector.mjs` checks desktop and 320 by 844 touch flows, all three
-camera shots, idle wakeup, long names, 16 score rows, invite clipboard contents,
+`node tests/ui/projector.mjs` checks desktop and 320 by 844 touch flows: long names, 16 score rows, invite clipboard contents,
 presentation mode and the round countdown. It writes screenshots and a JSON report
 to `tests/ui/artifacts/`. On macOS, independently decode the rendered screenshot:
 
