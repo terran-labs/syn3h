@@ -519,7 +519,7 @@
 /* The look is the shared label plate (src/ui/label-plate.css), as on the vehicle labels. */
 .syn3h-shell .galaxy-label.is-locked { opacity: .45; }
 /* No room for this label beside its world: it fades until focused. Its world still answers a tap. */
-.syn3h-shell .galaxy-label.is-crowded:not(:focus) { opacity: 0; pointer-events: none; }
+.syn3h-shell .galaxy-label.is-crowded:not(:focus):not(.is-pointed) { opacity: 0; pointer-events: none; }
 .syn3h-shell .galaxy-hint { margin: 0 0 6px; font-size: 15px; color: var(--s3-dim); text-shadow: 0 1px 6px #000; text-align: center; }
 .lobby-unsupported { max-width: 420px; margin: 0 auto; font-size: 17px; line-height: 1.4; text-align: center; color: var(--s3-ink); }
 /* The galaxy would not start: its labels become a row of buttons above the help line. */

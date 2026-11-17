@@ -44,8 +44,31 @@ try {
       if (sample === 0) await page.screenshot({ path: `${out}/check-${name}.png` })
       await page.waitForTimeout(1000)
     }
+    // Pointing at a planet shows its label even where the layout faded it: hover with a mouse,
+    // or a finger held on it. Focus does the same from the keyboard.
+    const faded = await page.evaluate(() => {
+      const chip = [...document.querySelectorAll('.galaxy-label.is-crowded')].find(c => !c.hidden)
+      const p = chip && window.syn3h.shell.galaxy.screen.find(s => s.id === chip.dataset.world)
+      return p ? { id: p.id, x: p.x, y: p.y } : null
+    })
+    const target = faded ?? await page.evaluate(() => { const p = window.syn3h.shell.galaxy.screen.find(s => s.visible && s.x > 0 && s.x < innerWidth && s.y > 0 && s.y < innerHeight); return { id: p.id, x: p.x, y: p.y } })
+    const cdp = phone ? await context.newCDPSession(page) : null
+    if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: target.x, y: target.y }] })
+    else await page.mouse.move(target.x, target.y)
+    await page.waitForTimeout(400)
+    // A small world moves while it is touched and may slip behind its planet: whichever world
+    // the finger is on, its label shows.
+    const pointed = await page.evaluate(() => { const id = window.syn3h.shell.galaxy.pointed; return id && { id, shown: Number(getComputedStyle(document.querySelector(`.galaxy-label[data-world="${id}"]`)).opacity) } })
+    assert.ok(pointed, `${name}: pointing near ${target.id} points at a world`)
+    assert.ok(pointed.shown > 0.5, `${name}: pointing at ${pointed.id} shows its label`)
+    await page.screenshot({ path: `${out}/point-${name}.png` })
+    if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
+    else await page.mouse.move(2, 2)
+    await page.evaluate(id => document.querySelector(`.galaxy-label[data-world="${id}"]`).focus(), target.id)
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: `${out}/focus-${name}.png` })
     assert.deepEqual(errors, [])
-    console.log(`${name}: no overlaps; named ${named.join(', ')} PASS`)
+    console.log(`${name}: no overlaps; named ${named.join(', ')}; pointing at ${pointed.id}${faded ? ` (aimed at faded ${target.id})` : ''} shows it PASS`)
     await context.close()
   }
 } finally { await browser.close() }

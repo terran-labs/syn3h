@@ -53,6 +53,11 @@ export interface GalaxyOptions {
   /** Where to centre the system and how large, as [x from left, y from bottom, scale], in
    *  fractions of the host. Asked each frame; undefined keeps the default framing. */
   frame?(): readonly [number, number, number] | undefined
+  /**
+   * The world under a hovering pointer or a finger held down, or undefined when there is none:
+   * its label shows while it is pointed at, even where the layout had to fade it.
+   */
+  onPoint?(id: string | undefined): void
   /** Focus the label selected with a controller, so its normal activation stays accessible. */
   onFocus?(id: string): void
   /** Logo box in CSS pixels relative to this host, plus the existing graphics tier. */
@@ -854,7 +859,8 @@ export class Galaxy {
       if (selected) this.choose(selected)
     }, options)
     canvas.addEventListener('pointerdown', event => this.down(event), options)
-    canvas.addEventListener('pointermove', event => this.move(event), options)
+    canvas.addEventListener('pointermove', event => { this.move(event); this.point(event) }, options)
+    canvas.addEventListener('pointerleave', () => this.pointAt(undefined), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
     canvas.addEventListener('wheel', event => { event.preventDefault(); this.handled = performance.now(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(this.farthest, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
     // Held upright, a phone has height to spare and no width: look down more steeply so the
@@ -1206,7 +1212,17 @@ export class Galaxy {
     }
     this.padButtons = buttons
   }
-  private down(event: PointerEvent): void { this.handled = performance.now();
+  /** Which world a pointer is over (on its disc, or just off it as a tap would pick), told to the labels when it changes. */
+  private pointed: string | undefined
+  private pointAt(id: string | undefined): void { if (id !== this.pointed) { this.pointed = id; this.options.onPoint?.(id) } }
+  private point(event: PointerEvent): void {
+    // A mouse hovers; a finger only points while it is down. A drag is not pointing.
+    if (event.pointerType !== 'mouse' && event.type !== 'pointerdown' && !this.pointers.has(event.pointerId)) return
+    if (this.drag?.moved) { this.pointAt(undefined); return }
+    const box = this.canvas.getBoundingClientRect()
+    this.pointAt(pickWorld(this.screen, event.clientX - box.left, event.clientY - box.top, event.pointerType === 'mouse' ? 6 : 16))
+  }
+  private down(event: PointerEvent): void { this.handled = performance.now(); this.point(event);
     this.canvas.setPointerCapture(event.pointerId); this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (this.pointers.size === 1) {
       // A finger stops a coast where it is, and picks up a stretched tilt where it shows.
@@ -1240,7 +1256,7 @@ export class Galaxy {
     if (this.reduced.matches) this.pull.pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.pull.pitch))
     pitch.aim = softLimit(this.pull.pitch, PITCH_LOW, PITCH_HIGH)
   }
-  private up(event: PointerEvent, tap: boolean): void { this.handled = performance.now();
+  private up(event: PointerEvent, tap: boolean): void { this.handled = performance.now(); if (event.pointerType !== 'mouse') this.pointAt(undefined);
     this.pointers.delete(event.pointerId)
     const drag = this.drag; if (!drag || drag.id !== event.pointerId) return
     this.drag = null

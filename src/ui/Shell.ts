@@ -25,7 +25,8 @@ import { SlidingPanels } from './SlidingPanels'
 import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
-import { placeLabels } from './galaxy/labels'
+import { LONG_LEADER, placeLabels } from './galaxy/labels'
+import { lobbyLook } from '../world/lobbyLook'
 import { LobbySettings } from './LobbySettings'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
@@ -82,6 +83,18 @@ export function planetLabelText(world: { id?: string; recipe?: string; label: st
   if (world.forming) return { name: world.label, biome: 'shape your own' }
   const recipe = planetById(world.recipe ?? world.id?.split('~')[0])
   return { name: worldName(world.nameSeed ?? 0, world.seed), biome: recipe ? biomeLine(recipe) : world.label.toLowerCase() }
+}
+/**
+ * A planet label's tint: the colour its world shows from space, lava's glow for a lava world,
+ * lifted toward white until it reads on the dark plate. CSS colour string.
+ */
+export function plateTint(recipeId: string): string {
+  const look = lobbyLook(recipeId)
+  let [r, g, b] = [16, 8, 0].map(k => ((look.night === 1 ? 0xff7a1a : look.land) >> k & 255) / 255)
+  // Relative luminance at least 0.42; then a little more saturation than the ground has.
+  for (let i = 0; i < 12 && 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.42; i++) { r += (1 - r) * 0.15; g += (1 - g) * 0.15; b += (1 - b) * 0.15 }
+  const hex = (v: number) => Math.round(Math.min(1, v) * 255).toString(16).padStart(2, '0')
+  return `#${hex(r)}${hex(g)}${hex(b)}`
 }
 /** Must match the short landscape block in shell.css. */
 const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
@@ -1129,6 +1142,12 @@ export class Shell implements System {
       chip.innerHTML = '<span class="s3-leader" aria-hidden="true" hidden></span><strong></strong><small class="s3-plate-quiet galaxy-biome"></small>'
       const text = planetLabelText(world)
       chip.querySelector('strong')!.textContent = text.name; chip.querySelector('small')!.textContent = text.biome
+      // Colour is identity: each planet's bar and leader in a colour of its own world.
+      if (!world.forming) {
+        const tint = plateTint(world.recipe ?? world.id.split('~')[0])
+        // The leader sets its own default tint (label-plate.css), so it is given this one too.
+        chip.style.setProperty('--plate-tint', tint); (chip.firstElementChild as HTMLElement).style.setProperty('--plate-tint', tint)
+      }
       if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; chip.append(count) }
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
       labels.append(chip); chips.set(world.id, chip)
@@ -1157,6 +1176,8 @@ export class Shell implements System {
       still: () => levelNumber(graphicsLevel.value) === 0,
       onTap: chosen => this.tapWorld(chosen),
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),
+      // A planet pointed at (hovered, or a finger on it) shows its label, faded or not.
+      onPoint: id => { for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
       onArrive: chosen => {
         const id = chosen.split('~')[0]
         if (id === 'custom') {
@@ -1231,8 +1252,8 @@ export class Shell implements System {
     const left = x - size.width / 2, nx = Math.min(left + size.width, Math.max(left, planet.x)), ny = Math.min(y + size.height, Math.max(y, planet.y))
     const dx = nx - planet.x, dy = ny - planet.y, reach = Math.hypot(dx, dy), length = reach - planet.radius
     const leader = chip.firstElementChild as HTMLElement
-    // The layout keeps leaders to 40 px (labels.ts); none when the plate touches the planet.
-    if (!(length > 1.5 && length <= 44)) { if (!leader.hidden) leader.hidden = true; last.length = -1; return }
+    // The layout keeps leaders to 40 px, or LONG_LEADER on its last rung (labels.ts); none when the plate touches the planet.
+    if (!(length > 1.5 && length <= LONG_LEADER + 4)) { if (!leader.hidden) leader.hidden = true; last.length = -1; return }
     const sx = nx - left, sy = ny - y, angle = Math.atan2(-dy, -dx)
     if (leader.hidden) leader.hidden = false
     if (Math.abs(sx - last.sx) <= .5 && Math.abs(sy - last.sy) <= .5 && Math.abs(length - last.length) <= .5 && Math.abs(angle - last.angle) <= .01) return

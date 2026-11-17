@@ -23,6 +23,23 @@ type Box = { left: number; top: number; right: number; bottom: number }
 /** The plate itself, without the spacing pad: the sun's core is kept off the plate, not off its pad. */
 const unpad = (b: Box): Box => ({ left: b.left + 4, top: b.top + 4, right: b.right - 4, bottom: b.bottom - 4 })
 const overlapping = (a: Box, b: Box) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+type Segment = { ax: number; ay: number; bx: number; by: number }
+/** Whether a line segment passes through a box (Liang-Barsky clipping). */
+function crosses(s: Segment, b: Box): boolean {
+  let t0 = 0, t1 = 1
+  const dx = s.bx - s.ax, dy = s.by - s.ay
+  for (const [p, q] of [[-dx, s.ax - b.left], [dx, b.right - s.ax], [-dy, s.ay - b.top], [dy, b.bottom - s.ay]]) {
+    if (p === 0) { if (q < 0) return false; continue }
+    const t = q / p
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t } else { if (t < t0) return false; if (t < t1) t1 = t }
+  }
+  return true
+}
+/** Whether a line segment passes within a disc. */
+function grazes(s: Segment, d: { x: number; y: number; radius: number }): boolean {
+  const dx = s.bx - s.ax, dy = s.by - s.ay, t = Math.max(0, Math.min(1, ((d.x - s.ax) * dx + (d.y - s.ay) * dy) / (dx * dx + dy * dy || 1)))
+  return Math.hypot(s.ax + dx * t - d.x, s.ay + dy * t - d.y) < d.radius
+}
 /** How much of disc a is covered by disc b, 0 to 1. */
 function covered(a: LabelPlace, b: LabelPlace): number {
   const d = Math.hypot(a.x - b.x, a.y - b.y), r = a.radius, s = b.radius
@@ -58,20 +75,30 @@ export function placeLabels(
     const next = placeOnce(places, sizes, bounds, options, promoted)
     if (next.filter(spot => spot.crowded).length < best.filter(spot => spot.crowded).length) best = next
   }
+  // The last rung: a world still unnamed (one hemmed in beside the sun on a short landscape
+  // phone) may take a spot further out, on a longer leader, so every world can be named
+  // without guessing. Only those worlds go first, and only if it names more.
+  const unnamed = best.filter(spot => spot.crowded).map(spot => spot.id)
+  if (unnamed.length) {
+    const next = placeOnce(places, sizes, bounds, options, new Set(unnamed), new Set(unnamed))
+    if (next.filter(spot => spot.crowded).length < unnamed.length) best = next
+  }
   return best
 }
+/** A leader is never longer than this, plate edge to limb; LONG_LEADER for the last rung only. */
+export const LEADER_MAX = 40, LONG_LEADER = 140
 function placeOnce(
   places: readonly LabelPlace[],
   sizes: ReadonlyMap<string, { width: number; height: number }>,
   bounds: { width: number; height: number; bottom: number; top?: number },
-  options: Options, promoted: ReadonlySet<string>,
+  options: Options, promoted: ReadonlySet<string>, longer: ReadonlySet<string> = new Set(),
 ): LabelSpot[] {
   const margin = 8, pad = 4
-  /** A label is adjacent to its world: its leader, plate edge to limb, is never longer. */
-  const LEADER_MAX = 40
   // Discs no label may cover besides the worlds, such as the sun's core.
   const avoid = (options.avoid ?? []).map(a => ({ id: '', x: a.x, y: a.y, radius: a.radius, visible: true }))
   const taken: Box[] = []
+  // Long leaders already drawn (the last rung): later plates keep off them.
+  const lines: Segment[] = []
   const discs = places.filter(place => place.visible), top = Math.max(margin, bounds.top ?? 0)
   // Nearer first; without depths, the bigger disc, which is usually the nearer.
   const depth = (place: LabelPlace) => place.depth ?? -place.radius
@@ -84,7 +111,7 @@ function placeOnce(
   const placedLabels: Placed[] = []
   for (const place of order) {
     const size = sizes.get(place.id) ?? { width: 90, height: 24 }, w = size.width, h = size.height
-    const gap = place.radius + 6, slant = gap * 0.72 + 2
+    const gap = place.radius + 6, slant = gap * 0.72 + 2, maxLeader = longer.has(place.id) ? LONG_LEADER : LEADER_MAX
     const nearer = place.depth === undefined ? [] : discs.filter(disc => disc.id !== place.id && disc.depth !== undefined && disc.depth < place.depth!)
     // Spots 0 to 3 keep their old numbers, so a held spot means the same side as before.
     const spots = [
@@ -94,7 +121,8 @@ function placeOnce(
       [place.x + slant + w / 2, place.y - slant - h / 2], [place.x - slant - w / 2, place.y - slant - h / 2],
     ]
     // Spots 8 to 23 are the same sides further out, for when all eight near ones are taken.
-    for (const reach of [1.6, 2.4]) for (let i = 0; i < 8; i++) {
+    // On the last rung, further still, for a world allowed a long leader.
+    for (const reach of longer.has(place.id) ? [1.6, 2.4, 3.4, 4.6] : [1.6, 2.4]) for (let i = 0; i < 8; i++) {
       const [sx, sy] = spots[i]
       spots.push([place.x + (sx - place.x) * reach, place.y + (sy + h / 2 - place.y) * reach - h / 2])
     }
@@ -108,9 +136,21 @@ function placeOnce(
       return Math.hypot(nx - place.x, ny - place.y) - place.radius
     }
     // `ignore` is a label about to move away and `extra` one about to arrive (see below).
+    // The leader as a segment, plate edge to the planet's limb.
+    const segment = (i: number): Segment => {
+      const [x, y] = spots[i], nx = Math.min(x + w / 2, Math.max(x - w / 2, place.x)), ny = Math.min(y + h, Math.max(y, place.y))
+      const d = Math.hypot(nx - place.x, ny - place.y) || 1
+      return { ax: nx, ay: ny, bx: place.x + (nx - place.x) / d * place.radius, by: place.y + (ny - place.y) / d * place.radius }
+    }
     const fits = (i: number, ignore?: Box, extra?: Box) => {
       const box = boxAt(i)
-      if (leader(i) > LEADER_MAX) return null
+      if (leader(i) > maxLeader) return null
+      if (lines.some(l => crosses(l, box))) return null
+      // A long leader crosses no other plate and no other world.
+      if (leader(i) > LEADER_MAX) {
+        const l = segment(i)
+        if (taken.some(t => t !== ignore && crosses(l, t)) || discs.some(d => d.id !== place.id && grazes(l, d)) || avoid.some(d => grazes(l, d))) return null
+      }
       if (taken.some(t => t !== ignore && overlapping(box, t)) || (extra && overlapping(box, extra))) return null
       // Clear of every world's disc, its own included, nearer or farther, and of the sun.
       for (const disc of discs) if (touches(box, disc)) return null
@@ -129,7 +169,7 @@ function placeOnce(
     // The world in play is named even over other labels, under it by preference, but never
     // over a world: first clear of every world and the sun, failing that of nearer worlds.
     const clearOfAll = (b: Box) => !discs.some(disc => touches(b, disc)) && !avoid.some(disc => touches(unpad(b), disc))
-    if (!box && place.id === options.first && !hidden) for (const i of tries) if (leader(i) <= LEADER_MAX && clearOfAll(boxAt(i))) { chosen = i; box = boxAt(i); break }
+    if (!box && place.id === options.first && !hidden) for (const i of tries) if (leader(i) <= maxLeader && clearOfAll(boxAt(i))) { chosen = i; box = boxAt(i); break }
     if (!box && place.id === options.first && !hidden) for (const i of tries) if (behindNothing(boxAt(i))) { chosen = i; box = boxAt(i); break }
     const settle = (i: number, b: Box) => {
       taken.push(b); const [x, y] = spots[i], spot: LabelSpot = { id: place.id, x, y, spot: i, crowded: false }
@@ -140,7 +180,7 @@ function placeOnce(
         for (const j of tries) {
           if (j === entry.spot.spot) continue
           const moved = boxAt(j)
-          if (leader(j) > LEADER_MAX || !clearOfAll(moved) || arriving.some(a => overlapping(moved, a))) continue
+          if (leader(j) > maxLeader || !clearOfAll(moved) || arriving.some(a => overlapping(moved, a))) continue
           const blockers = placedLabels.filter(other => other !== entry && overlapping(moved, other.box))
           if (blockers.length > 1 || blockers.length === 1 && (depth <= 0 || blockers[0].id === options.first || !blockers[0].retry([...arriving, moved], depth - 1))) continue
           taken[taken.indexOf(entry.box)] = moved; entry.box = moved
@@ -151,14 +191,14 @@ function placeOnce(
       } }
       placedLabels.push(entry)
     }
-    if (box) { settle(chosen, box); continue }
+    if (box) { settle(chosen, box); if (leader(chosen) > LEADER_MAX) lines.push(segment(chosen)); continue }
     // Every world is named: no spot of its own is free, so take one that a single placed label
     // blocks, if that label can move to another free spot of its own.
     if (onScreen(place) && !hidden) {
       let moved = false
       for (const i of tries) {
         const b = boxAt(i)
-        if (leader(i) > LEADER_MAX || discs.some(disc => touches(b, disc)) || avoid.some(disc => touches(unpad(b), disc))) continue
+        if (leader(i) > maxLeader || discs.some(disc => touches(b, disc)) || avoid.some(disc => touches(unpad(b), disc))) continue
         const blockers = placedLabels.filter(other => overlapping(b, other.box))
         if (blockers.length !== 1 || blockers[0].id === options.first || !blockers[0].retry([b], 1)) continue
         settle(i, b); moved = true; break
