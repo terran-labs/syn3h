@@ -26,7 +26,8 @@ import { defineParam, params, worldLavaAltitude } from '../../../shared/params'
 import type { Game } from '../../core/Game'
 import type { Terrain } from '../Terrain'
 import { paletteFor } from '../terrain/palettes'
-import { liquidDaylight } from './daylight'
+import { cameraInWater, liquidDaylight } from './daylight'
+import { waterClarity } from './params'
 import { UNDERWATER_DEFAULTS, type UnderwaterSettings, underwaterLook, underwaterRamp } from './waterEffectsMath'
 
 export const waterUnderwater = defineParam<boolean>({ id: 'water.underwater', label: 'Underwater camera', group: 'Water', scope: 'client', default: true })
@@ -76,6 +77,10 @@ export class Underwater {
   private causticLevel = uniform(-1e9)
   private causticGain = uniform(1)
   private sunDirection = uniform(new T.Vector3(0, 1, 0))
+  /** The planet's shallow water colour, normalised to its brightest channel: what water passes. */
+  private seaHue = uniform(new T.Vector3(0.05, 1, 0.93))
+  /** Per-metre loss along a sight line through water seen from above: 2.3 / water.clarity. */
+  private columnLoss = uniform(0.23)
   private readonly fogNode: T.Node
   private readonly savedFog: T.Scene['fogNode']
   private savedEnvironment = 1
@@ -88,12 +93,12 @@ export class Underwater {
   constructor(private game: Game, private terrain: Terrain) {
     const surfaceLook = underwaterLook(0)
     this.tint.value.setRGB(surfaceLook.red, surfaceLook.green, surfaceLook.blue)
-    for (const u of [this.tint, this.extinction, this.blend, this.lava, this.causticLevel, this.causticGain, this.sunDirection]) {
+    for (const u of [this.tint, this.extinction, this.blend, this.lava, this.causticLevel, this.causticGain, this.sunDirection, this.seaHue, this.columnLoss]) {
       (u as unknown as { setGroup(g: unknown): { onRenderUpdate(f: () => unknown): void } }).setGroup(renderGroup).onRenderUpdate(() => u.value)
     }
     this.savedFog = game.scene.fogNode
     const air = (this.savedFog ?? output) as T.Node<'vec4'>
-    const { tint, extinction, blend, lava, causticLevel, causticGain, sunDirection } = this
+    const { tint, extinction, blend, lava, causticLevel, causticGain, sunDirection, seaHue, columnLoss } = this
     this.fogNode = Fn(() => {
       const p = positionWorld
       const distance = positionView.length()
@@ -117,7 +122,16 @@ export class Underwater {
         caustic.assign(lines.mul(lines).mul(patch).mul(near).mul(causticGain).mul(sunUp).mul(1.8))
       })
       const lit = output.rgb.mul(caustic.add(1))
-      output.assign(vec4(lit, output.a))
+      // Seen from above the surface, anything under it is seen through the water column: each
+      // channel loses light at its own rate (red fastest in a turquoise sea), so the bed of a
+      // shallow lagoon reads clear and tinted, deeper water saturates to the planet's colour,
+      // and a sunk vehicle darkens into it instead of floating pale on top. Under water the
+      // medium below does this along the sight line instead.
+      const sight = normalize(p.sub(cameraPosition))
+      const column = below.max(0).mul(float(1.3).add(float(1).sub(sight.y.abs()).mul(0.6)))
+      const absorb = exp(column.mul(columnLoss).mul(float(1.25).sub(seaHue)).negate())
+      const seen = mix(lit.mul(absorb), lit, blend)
+      output.assign(vec4(seen, output.a))
       const result = vec4(air).toVar()
       If(blend.greaterThan(0.001), () => {
         const view = normalize(p.sub(cameraPosition))
@@ -214,6 +228,7 @@ export class Underwater {
     medium.kind = wet ? kind : null
     medium.depth = wet ? depth : 0
     medium.amount = this.blend.value
+    cameraInWater.value = wet && kind === 'water' ? 1 : 0
 
     const sky = this.findSky()
     // The same night ramp as the vehicles' (nightReadability.ts), from the sun's height.
@@ -239,6 +254,9 @@ export class Underwater {
     const seaIsWater = Number(params.get('world.seaKind')?.value ?? 0) === 1
     this.causticLevel.value = wet && kind === 'water' ? surface : seaIsWater ? worldLavaAltitude.value : -1e9
     this.causticGain.value = waterCaustics.value * (1 - night)
+    const [r, g, b] = this.settings.shallow, peak = Math.max(r, g, b, 1e-4)
+    this.seaHue.value.set(r / peak, g / peak, b / peak)
+    this.columnLoss.value = 2.3 / Math.max(1, waterClarity.value)
     if (sky) { sky.underwaterAmount = this.blend.value; const c = this.tint.value; sky.underwaterTint.value.set(c.r, c.g, c.b) }
     if (this.blend.value === 0 || this.lava.value === 1) return
     const scene = this.game.scene

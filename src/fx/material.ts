@@ -1,5 +1,5 @@
 import type { Node, Texture } from 'three/webgpu'
-import { Color, DoubleSide, MeshBasicNodeMaterial, Vector2, Vector3, Vector4 } from 'three/webgpu'
+import { Color, FrontSide, MeshBasicNodeMaterial, Vector2, Vector3, Vector4 } from 'three/webgpu'
 import {
   cameraPosition, float, floor, fract, length, max, mix, modelWorldMatrix, positionGeometry, positionLocal, positionWorld, sin,
   smoothstep, texture, uniform, uv, vec2, vec3, vec4,
@@ -85,7 +85,9 @@ export function createLavaMaterial(options: LavaOptions | boolean = {}, legacySh
     return h
   }
 
-  const material = new MeshBasicNodeMaterial({ side: DoubleSide })
+  // Front side only: from above, a back face is the lava sea curving away past the horizon,
+  // and no camera is ever under lava (ChaseCamera clamps every mode above it).
+  const material = new MeshBasicNodeMaterial({ side: FrontSide })
   if (o.clipmap) {
     const grid = clipmapNodes()
     const w = grid.world

@@ -27,7 +27,7 @@ import { rippleField } from './ripples'
 import { waterChop, waterClarity, waterReflection, waterWaveVisual } from './params'
 import { clipmapNodes } from './clipmap'
 import { NO_BED, type WaterBed } from './bed'
-import { liquidDaylightNode } from './daylight'
+import { cameraInWaterNode, liquidDaylightNode } from './daylight'
 export { buildBedTexture, type WaterBed } from './bed'
 import { prevailingWindStrength } from '../weather'
 
@@ -258,8 +258,12 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
       sz = sz.add(c.mul(u.y))
       crest = crest.add(sin(arg).mul(u.w))
     }
-    sx = sx.mul(shoalHere)
-    sz = sz.mul(shoalHere)
+    // Beyond the near field the swell's slope is too gentle to see in the light, so the far
+    // sea reads as flat haze. Steepen the light (normals only; nothing afloat feels this) with
+    // distance, so distant swells show as light and dark bands. water.waveVisual scales it.
+    const farBands = float(1).add(visual.mul(1.6).mul(smoothstep(60, 350, dist)))
+    sx = sx.mul(shoalHere).mul(farBands)
+    sz = sz.mul(shoalHere).mul(farBands)
   }
 
   // Detail: small wind ripples near the camera, and on a river they run downstream.
@@ -343,9 +347,13 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
     const warp = mx_noise_float(vec3(p.x.mul(0.045), p.z.mul(0.045), drift.mul(0.2))).mul(0.9)
     const lines = smoothstep(0.88, 0.99, sin(depth.add(warp).mul(1.7).add(time.mul(1.1))).mul(0.5).add(0.5))
     foam = max(foam, lines.mul(smoothstep(2.6, 0.5, depth)).mul(smoothstep(0.35, 0.75, breakup)).mul(0.7))
-    // Whitecaps on the highest crests when the sea is rough.
-    const rough = smoothstep(0.6, 2.2, ampTotal.mul(2))
-    foam = max(foam, smoothstep(0.72, 0.95, crestN).mul(rough).mul(smoothstep(0.35, 0.8, breakup)))
+    // Whitecaps on the highest crests when the sea is rough, and on any crest steep enough to
+    // break, broken up by noise so they read as caps, not stripes.
+    const rough = smoothstep(0.3, 1.4, ampTotal.mul(2))
+    const steepness = sx.mul(sx).add(sz.mul(sz)).sqrt()
+    foam = max(foam, smoothstep(0.62, 0.92, crestN).mul(max(rough, smoothstep(0.08, 0.16, steepness))).mul(smoothstep(0.4, 0.8, breakup)).mul(visual.min(1.2)))
+    // Waves shoaling over the last few metres crest and spill white before the shore.
+    foam = max(foam, smoothstep(0.35, 0.75, crestN).mul(smoothstep(3.5, 1.2, depth)).mul(smoothstep(0.3, 0.9, depth)).mul(smoothstep(0.3, 0.7, breakup)).mul(0.8))
   }
   if (mode === 'river') {
     // White water where the bed is steep: a cascade over a third of the run (the waterfall
@@ -374,7 +382,9 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   material.emissiveNode = below.mul(float(1).sub(fromAbove))
   // Inside the window the bright sky is the surface's own colour: mostly opaque so it reads
   // as a window of light rather than the fogged sky dome behind it.
-  material.opacityNode = mix(mix(float(0.92), float(0.85), window), material.opacityNode as THREE.Node<'float'>, fromAbove)
+  // The underside only exists for a camera in the water; from above it would be the far sea
+  // turning away past the horizon, drawn as a flat slab in front of the sky.
+  material.opacityNode = mix(mix(float(0.92), float(0.85), window).mul(cameraInWaterNode), material.opacityNode as THREE.Node<'float'>, fromAbove)
   // Glassy close up; rougher with distance, where many unresolved facets share a pixel and
   // a mirror would sparkle and alias.
   // Seen from below the surface is not a sky mirror (Snell's window above is the sky): fully

@@ -65,6 +65,17 @@ const SCENARIOS = {
   'water-rough-chase': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 8, max: 40, mode: 'float', params: { 'water.waveHeight': 3, 'weather.storminess': 1 }, shots: [['waves-rough', 3000]] },
   'water-under-up': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 8, max: 30, mode: 'under', look: 'up', shots: [['water-under-up', 3000]] },
   'water-under-bed': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 6, max: 20, mode: 'under', look: 'bed', shots: [['water-under-bed', 3000]] },
+  'sea-2m-calm': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 15, max: 80, mode: 'float', cam: [12, 2], params: { 'weather.storminess': 0 }, shots: [['sea-2m-calm', 3000]] },
+  'sea-2m-rough': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 15, max: 80, mode: 'float', cam: [12, 2], params: { 'weather.storminess': 1 }, shots: [['sea-2m-rough', 3000]] },
+  'sea-2m-dusk': { planet: 'archipelago', vehicle: 'buggy', hour: 18.6, kind: 'water', min: 15, max: 80, mode: 'float', cam: [12, 2], params: { 'weather.storminess': 0.5 }, shots: [['sea-2m-dusk', 3000]] },
+  'sea-30m-rough': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 15, max: 80, mode: 'float', cam: [40, 30], params: { 'weather.storminess': 1 }, shots: [['sea-30m-rough', 3000]] },
+  'sea-30m-noref': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 15, max: 80, mode: 'float', cam: [40, 30], params: { 'weather.storminess': 1, 'water.reflection': 0 }, shots: [['sea-30m-noref', 3000]] },
+  'sea-30m-novis': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 15, max: 80, mode: 'float', cam: [40, 30], params: { 'weather.storminess': 1, 'water.waveVisual': 0 }, shots: [['sea-30m-novis', 3000]] },
+  'sea-30m-nohaze': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 15, max: 80, mode: 'float', cam: [40, 30], params: { 'weather.storminess': 1, 'weather.hazeDensity': 0, 'weather.aerial': 0 }, shots: [['sea-30m-nohaze', 3000]] },
+  'sea-30m-calm-dusk': { planet: 'archipelago', vehicle: 'buggy', hour: 18.6, kind: 'water', min: 15, max: 80, mode: 'float', cam: [40, 30], params: { 'weather.storminess': 0 }, shots: [['sea-30m-calm-dusk', 3000]] },
+  'dawn-ice': { planet: 'ice', vehicle: 'buggy', hour: 6.5, kind: 'water', min: 10, max: 200, mode: 'horizon', shots: [['dawn-ice', 3000]] },
+  'dawn-archipelago': { planet: 'archipelago', vehicle: 'buggy', hour: 6.5, kind: 'water', min: 10, max: 200, mode: 'horizon', shots: [['dawn-archipelago', 3000]] },
+  'lagoon': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 0.8, max: 3, mode: 'float', cam: [14, 5], shots: [['lagoon', 3000]] },
   'water-under-night': { planet: 'archipelago', vehicle: 'buggy', hour: 22, kind: 'water', min: 6, max: 20, mode: 'under', look: 'bed', shots: [['water-under-night', 3000]] },
   'water-under-deep': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 25, max: 80, mode: 'under', look: 'bed', shots: [['water-under-deep', 3000]] },
   'water-shore': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 0.3, max: 1.2, mode: 'shore', shots: [['water-shore', 2500]] },
@@ -135,12 +146,21 @@ try {
     }, { sc, quality })
     if (!spot) { results[name] = { error: 'no liquid spot' }; await page.close(); continue }
     await wait(page, 1500)
+    if (sc.mode === 'horizon') {
+      // Over open water, looking toward the sun at the horizon.
+      await page.evaluate(({ spot }) => {
+        const s = window.syn3h, V = s.game.camera.position.constructor
+        const sky = s.game.scene.children.find(o => 'sunDirection' in o)
+        const d = sky?.sunDirection?.value ?? { x: 1, z: 0 }, len = Math.hypot(d.x, d.z) || 1
+        s.camera.setCinematicPose(new V(spot.x, spot.surface + 6, spot.z), new V(spot.x + d.x / len * 400, spot.surface + 6, spot.z + d.z / len * 400))
+      }, { spot })
+    }
     if (sc.mode === 'shore' || sc.mode === 'float') {
       await page.evaluate(({ sc, spot }) => {
         const s = window.syn3h, V = s.game.camera.position.constructor
-        const back = sc.mode === 'shore' ? 22 : 16, a = spot.land
+        const back = sc.cam?.[0] ?? (sc.mode === 'shore' ? 22 : 16), a = spot.land
         const x = spot.x + Math.cos(a) * back, z = spot.z + Math.sin(a) * back
-        const y = Math.max(s.terrain.heightAt(x, z), spot.surface) + (sc.mode === 'shore' ? 5 : 3.5)
+        const y = Math.max(s.terrain.heightAt(x, z), spot.surface) + (sc.cam?.[1] ?? (sc.mode === 'shore' ? 5 : 3.5))
         const fx = spot.x - Math.cos(a) * 30, fz = spot.z - Math.sin(a) * 30
         s.camera.setCinematicPose(new V(x, y, z), new V(fx, spot.surface, fz))
       }, { sc, spot })
