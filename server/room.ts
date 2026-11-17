@@ -387,6 +387,9 @@ export class Room {
       case 'bot':
         this.onBotKind(player, msg.id, msg.kind)
         break
+      case 'bot-leave':
+        this.onBotLeave(player, msg.bot)
+        break
       case 'cord': {
         const actor = this.gearActor(player, msg.bot)
         if (actor) this.onCord(peer, actor, msg.cord)
@@ -821,6 +824,19 @@ export class Room {
     if (!bot || bot.info.kind === clean) return
     bot.info.kind = clean
     this.broadcast({ type: 'profile', player: bot.info })
+  }
+
+  /**
+   * The host says it stopped simulating a bot: drop it now. Only the host, which alone
+   * simulates bots, may; a bot that comes back with the same id is a new one (its next state
+   * makes it again, with a join). BOT_EXPIRY_MS stays the fallback for a host that vanishes.
+   */
+  private onBotLeave(sender: Player, id: unknown): void {
+    if (sender.info.id !== this.host || typeof id !== 'number' || !isBotId(id)) return
+    const bot = this.bots.get(id)
+    if (!bot) return
+    this.removeBot(id, bot)
+    this.botKinds.delete(id)
   }
 
   private expireBots(): void {

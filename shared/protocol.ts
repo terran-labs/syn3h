@@ -397,6 +397,12 @@ export type ClientMessage =
   | { type: 'reset' }
   /** Host only: which vehicle bot `id` is, so guests build the same kind (mixed bot fleets). */
   | { type: 'bot'; id: number; kind: string }
+  /**
+   * The host stopped simulating this bot (fewer bots asked for, quality shedding, a new world):
+   * the room drops it now and tells everyone with the usual leave, instead of after
+   * BOT_EXPIRY_MS without its states. Older rooms ignore it and still expire the bot.
+   */
+  | { type: 'bot-leave'; bot: number }
   /** My Bungee cord changed. */
   | { type: 'cord'; cord: CordWire; bot?: number }
   /** I grabbed, flung or dropped a vehicle with Yoink. */
