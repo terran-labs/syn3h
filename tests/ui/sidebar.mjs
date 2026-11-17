@@ -50,9 +50,9 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
     }
     for (const term of ['vehicle', 'colour']) {
       await search.fill(term)
-      assert.ok(await page.locator('[data-section=you] .wi-vehicle-select').isVisible(), `${term} finds Me vehicle controls`)
+      assert.ok(await page.locator('[data-section=you] .wi-vehicle-picker').isVisible(), `${term} finds Me vehicle controls`)
     }
-    assert.equal(await page.locator('[data-section=vehicles] .wi-vehicle-select').count(), 0)
+    assert.equal(await page.locator('[data-section=vehicles] .wi-vehicle-picker').count(), 0)
     assert.equal(await page.locator('[data-section=you] .wi-colour-dots i').count(), 2)
     await search.fill(''); await search.blur()
     if (!touch) {
@@ -61,7 +61,7 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
       await search.blur()
     }
     await page.locator('[data-section=you] .wi-head').click()
-    const vehicle = page.locator('.wi-vehicle-select')
+    const vehicle = page.locator('.wi-vehicle-picker')
     await vehicle.scrollIntoViewIfNeeded()
     assert.ok(await vehicle.isVisible())
     await page.screenshot({ path: `${out}/${mode}-vehicle.png` })

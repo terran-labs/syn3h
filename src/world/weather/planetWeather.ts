@@ -36,7 +36,7 @@ export const PLANET_WEATHER: Record<string, Record<string, ParamValue>> = {
   obsidian: haze(0.002, 45, [0.45, 0.4, 0.52], 0.4),
   /** Ochre dust. */
   badlands: haze(0.002, 45, [1, 0.7, 0.45], 0.45),
-  /** Thick green methane murk, low over the water. */
+  /** The Mire's warm green mist, thick and low over the water. */
   swamp: haze(0.0016, 30, [0.7, 0.9, 0.5], 0.5),
   /** No air: no haze. */
   moon: haze(0, 70, [1, 1, 1], 0),

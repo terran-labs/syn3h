@@ -4,6 +4,7 @@ import { defineConfig } from 'vitest/config'
 import { manualReload } from './tools/manual-reload.mjs'
 import { releaseFeed } from './tools/release-feed.mjs'
 import { rapierWasmAsset } from './tools/rapier-wasm.mjs'
+import { devLabel } from './tools/build-label.mjs'
 
 // When launched by the preview broker, PASEO_PREVIEW_ORIGIN is the HTTPS origin the owner
 // opens. Hot reload has to connect back through it over WSS.
@@ -56,7 +57,8 @@ function tweakpaneWithoutBitmap(): Plugin {
 /** Shown in the lobby as the build version: the nearest tag and commit, read at build time. */
 function buildLabel(): string {
   if (process.env.SYN3H_RELEASE_VERSION) return process.env.SYN3H_RELEASE_VERSION
-  try { return execSync("git describe --tags --always --exclude 'archive/*'", { encoding: 'utf8' }).trim() } catch { return 'dev' }
+  // Development: "dev · <short commit>" (tools/build-label.mjs), never a long describe string.
+  try { return devLabel(execSync("git describe --tags --always --exclude 'archive/*'", { encoding: 'utf8' })) } catch { return 'dev' }
 }
 
 export default defineConfig({
