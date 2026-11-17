@@ -1,5 +1,5 @@
 import type { EffectiveQuality, FrameMetrics, GraphicsLevel } from './quality'
-import type { PerformanceLongFrames, PerformancePipelines, PerformancePoint, PerformanceRecommendation } from './performance'
+import type { PerformanceBots, PerformanceLongFrames, PerformancePipelines, PerformancePoint, PerformanceRecommendation } from './performance'
 
 export const PERFORMANCE_POLICY = Object.freeze({ historyPoints: 120, windowMs: 1000, warmupMs: 5000, slowMs: 10000, slowRatio: .8, interruptedMs: 1000, maxWindowFrames: 2048 })
 export const RECOMMENDATION_IGNORE_KEY = 'syn3h.performance.ignore'
@@ -71,7 +71,7 @@ export class PerformanceHistory {
     this.warmup = this.slow = 0; this.recommendation = null
   }
   ignore() { this.ignored = true; this.resetEvidence() }
-  sample(metrics: FrameMetrics, eligible: boolean, quality: EffectiveQuality): boolean {
+  sample(metrics: FrameMetrics, eligible: boolean, quality: EffectiveQuality, bots?: PerformanceBots | null): boolean {
     const ms = metrics.frameMs
     if (!eligible || !Number.isFinite(ms) || ms <= 0 || ms > PERFORMANCE_POLICY.interruptedMs) {
       const changed = this.recommendation !== null
@@ -97,8 +97,11 @@ export class PerformanceHistory {
     const exhausted = !quality.auto || quality.rung === quality.rungs - 1
     const slow = point.p90Ms > 1000 / quality.targetFps / PERFORMANCE_POLICY.slowRatio
     this.slow = exhausted && slow ? this.slow + this.elapsed : 0
-    this.recommendation = !this.ignored && quality.level > 0 && this.warmup >= PERFORMANCE_POLICY.warmupMs && this.slow >= PERFORMANCE_POLICY.slowMs
-      ? Object.freeze({ level: quality.level, targetLevel: (quality.level-1) as GraphicsLevel, observedFps: fps }) : null
+    // Bots are part of the offer when they measurably cost frames: fewer bots, or a lower level
+    // with the bots as they are. At the lowest level fewer bots is the only offer.
+    const fewerBots = !!bots && bots.carried > 0 && bots.costly
+    this.recommendation = !this.ignored && (quality.level > 0 || fewerBots) && this.warmup >= PERFORMANCE_POLICY.warmupMs && this.slow >= PERFORMANCE_POLICY.slowMs
+      ? Object.freeze({ level: quality.level, targetLevel: Math.max(0, quality.level-1) as GraphicsLevel, observedFps: fps, bots: bots?.carried ?? 0, fewerBots }) : null
     this.frames = []; this.elapsed = this.physics = this.draws = this.triangles = this.stalls = 0
     this.pipelineWindow = this.pipelines ? 0 : null
     this.unpublished = 0; this.dirty = false

@@ -87,6 +87,13 @@ export const REST_HEIGHT: Readonly<Record<string, number>> = { buggy: .69, 'bugg
 /** The hovercraft's cushion height slider, looked up once it is first needed (it is defined in Hovercraft.ts). */
 let hoverClearance: { value: unknown } | null | undefined
 
+/**
+ * While true, every vehicle keeps its close look whatever the camera's distance. Leaving a world
+ * climbs the camera away from every vehicle at once; switching them all to distant models
+ * never drawn before compiled their GPU pipelines together, 0.5 to 0.7 s frames at High.
+ */
+export const vehicleDetail = { holdNear: false }
+
 export abstract class Vehicle implements System {
   readonly object = new THREE.Group()
   private readonly visualDetails=new Set<VehicleDetail>()
@@ -458,7 +465,7 @@ export abstract class Vehicle implements System {
   update(dt: number, alpha: number): void {
     this.object.position.lerpVectors(this.prevPos, this.currPos, alpha)
     this.object.quaternion.slerpQuaternions(this.prevQuat, this.currQuat, alpha)
-    const distance=this.game.camera?.position.distanceTo(this.object.position)??0
+    const distance=vehicleDetail.holdNear?0:this.game.camera?.position.distanceTo(this.object.position)??0
     for(const detail of this.visualDetails)detail(distance,!this.isLocal,graphicsLevel.value)
     this.updateZorbShield(dt,distance)
   }

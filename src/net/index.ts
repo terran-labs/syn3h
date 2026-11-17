@@ -75,6 +75,7 @@ import { ShoveQueue, cleanShove, shoveFor } from './shove'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
 import { setWaterClock, waterTime } from '../world/water/seaWaves'
 import { RaceBridge, type RaceBots, type RacePresentation } from './races'
+import { RemoteArrivals } from './arrivals'
 import { TintTransition, type TintPair } from '../vehicles/tints'
 
 /** The slice of GameAudio (src/audio) networking uses. */
@@ -230,6 +231,8 @@ export class NetClient implements System {
   readonly pesters: Pesters
   /** Remote players and remote bots, by id. */
   readonly remotes = new Map<number, RemotePlayer>()
+  /** New remotes are compiled before they show, people first and bots one at a time (arrivals.ts). */
+  readonly arrivals = new RemoteArrivals(vehicle => this.ctx.onRemoteVehicleChanged?.(vehicle as Vehicle))
   readonly players = new Map<number, PlayerInfo>()
   readonly events: NetEvent[] = []
   /** Chat lines, mutes and display rules (src/net/chat.ts). */
@@ -799,6 +802,7 @@ export class NetClient implements System {
   }
 
   update(dt: number): void {
+    this.arrivals?.update()
     this.raceBridge.update()
     // Exit world opens the lobby over a still running game: let go of everything on the way out.
     const driving = this.raceBridge.driving
@@ -874,7 +878,7 @@ export class NetClient implements System {
       if (state) notes.push(state)
       tag.note = notes.join(' · ')
     }
-    for (const [id, r] of this.remotes) add(id, r.vehicle, r.paused ? 'PAUSED' : !r.responding ? 'NOT RESPONDING' : '')
+    for (const [id, r] of this.remotes) if (this.shown(id)) add(id, r.vehicle, r.paused ? 'PAUSED' : !r.responding ? 'NOT RESPONDING' : '')
     if (this.bots && !this.bots.remote) for (const [id, vehicle] of liveBots(this.bots.vehicles, this.ctx.game.world)) {
       if (!this.remotes.has(id)) add(id, vehicle)
     }
@@ -893,7 +897,7 @@ export class NetClient implements System {
       const fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
       list.push({ x: p.x, z: p.z, heading: Math.atan2(-fx, -fz), color: vehicle.colors.body, accent: vehicle.colors.accent, kind: isBotId(id) ? 'bot' : 'person', it: Boolean(it) && id === it })
     }
-    for (const [id, r] of this.remotes) add(id, r.vehicle)
+    for (const [id, r] of this.remotes) if (this.shown(id)) add(id, r.vehicle)
     // The bots this client simulates (the host's, or everyone's offline) are not remotes.
     if (this.bots && !this.bots.remote) {
       for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (!this.remotes.has(id)) add(id, bot)
@@ -1040,15 +1044,21 @@ export class NetClient implements System {
    */
   audibleVehicles(): readonly Vehicle[] {
     const own = this.bots && !this.bots.remote ? this.bots.vehicles : []
-    const remotes = [...this.remotes].map(([id, r]): [number, Vehicle] => [id, r.vehicle])
+    const remotes = [...this.remotes].filter(([id]) => this.shown(id)).map(([id, r]): [number, Vehicle] => [id, r.vehicle])
     return audibleVehicles(remotes, own, this.ctx.game.world, this.audible)
   }
+
+  /**
+   * False while a remote waits its turn to be shown (RemoteArrivals): parked, with no body in
+   * the world, it must not be labelled, mapped, heard or targeted until it appears.
+   */
+  private shown(id: number): boolean { return !this.arrivals?.isWaiting(id) }
 
   /** The vehicle that stands for an id on this client, if any. */
   vehicleOf(id: number): Vehicle | undefined {
     if (id === this.id) return this.ctx.player
     const r = this.remotes.get(id)
-    if (r) return r.vehicle
+    if (r) return this.shown(id) ? r.vehicle : undefined
     if (isBotId(id) && this.isHost) {
       const bot = this.bots?.vehicles[id - BOT_ID_BASE]
       return bot && bodyAlive(this.ctx.game.world, bot) ? bot : undefined
@@ -1063,7 +1073,7 @@ export class NetClient implements System {
 
   /** Ids of every vehicle here: ours, remote players and bots, and the bots we simulate. */
   private vehicleIds(): number[] {
-    const ids = [this.id, ...this.remotes.keys()]
+    const ids = [this.id, ...[...this.remotes.keys()].filter(id => this.shown(id))]
     if (this.bots && !this.bots.remote) for (const [id] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (!ids.includes(id)) ids.push(id)
     return ids
   }
@@ -1360,8 +1370,10 @@ export class NetClient implements System {
     r.groundAt = this.groundAt
     r.disposeEffects = this.attachEffects(vehicle)
     this.remotes.set(info.id, r)
+    this.arrivals?.admit(info.id, vehicle, !isBotId(info.id))
     this.uiDirty = true
-    this.ctx.audio?.play('materialize', { x: s.p[0], y: s.p[1], z: s.p[2] })
+    // A paced arrival is heard when it is shown, with its cloud.
+    if (!this.arrivals?.isWaiting(info.id)) this.ctx.audio?.play('materialize', { x: s.p[0], y: s.p[1], z: s.p[2] })
     return r
   }
 
@@ -1370,6 +1382,9 @@ export class NetClient implements System {
     const r = this.remotes.get(id)
     if (!r) return
     this.remotes.delete(id)
+    // A remote never shown (still compiling in RemoteArrivals) has nothing to depart from.
+    if (this.arrivals?.isWaiting(id)) depart = false
+    this.arrivals?.drop(id)
     this.uiDirty = true
     this.bungee.forget(id)
     this.yoink.forget(id)
@@ -1427,6 +1442,8 @@ export class NetClient implements System {
       this.remotes.set(info.id, next)
       const [body, accent] = isBotId(info.id) ? botColors(info.id - BOT_ID_BASE) : info.colors
       ;(v as VehicleExtras).setColors?.(body, accent)
+      // Still waiting its turn to be shown: the new vehicle waits in its place, unseen.
+      if (this.arrivals?.replace(info.id, v)) return
       try {
         this.ctx.onRemoteVehicleChanged?.(v)
       } catch (err) {
