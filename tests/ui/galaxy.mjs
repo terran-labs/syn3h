@@ -58,7 +58,13 @@ try {
     await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle(page, 'index')
     await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 1, null, { timeout: 15000 })
     // Tapping a world drops straight into it: no form, no panel, one motion to the ground.
-    const alpine = await page.evaluate(() => window.syn3h.shell.galaxy.screen.find(s => s.id === 'alpine'))
+    // The view eases home slowly (about 25 s) after the swing above, so tap a world that is on
+    // screen now: Alpine when it is, else the nearest on-screen world to the centre.
+    const alpine = await page.evaluate(({ w, h }) => {
+      const on = window.syn3h.shell.galaxy.screen.filter(s => s.visible && s.x > s.radius && s.x < w - s.radius && s.y > s.radius && s.y < h - s.radius)
+      return on.find(s => s.id === 'alpine') ?? on.sort((a, b) => Math.hypot(a.x - w / 2, a.y - h / 2) - Math.hypot(b.x - w / 2, b.y - h / 2))[0]
+    }, { w: view.viewport.width, h: view.viewport.height })
+    assert.ok(alpine, `${view.name}: a world is on screen to tap`)
     // Measure the actual transition. Screenshot transfer can finish after landing on a busy host.
     await page.evaluate(() => {
       const root = document.querySelector('.syn3h-shell')
@@ -76,7 +82,7 @@ try {
     await page.waitForTimeout(1300); await page.screenshot({ path: `${out}/${view.name}-descent-dive.png` })
     await page.waitForTimeout(1500); await page.screenshot({ path: `${out}/${view.name}-descent-arrive.png` })
     await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 15000 })
-    assert.equal(await page.evaluate(() => window.syn3h.planets.currentPlanet().id), 'alpine')
+    assert.equal(await page.evaluate(() => window.syn3h.planets.currentPlanet().id), alpine.id)
     const took = await page.evaluate(() => window.__dropTiming.end - window.__dropTiming.start)
     assert.ok(took > 2500 && took < 11000, `${view.name}: the drop took ${took} ms`)
     // (A slow headless browser can have dropped the graphics level by now, which retires the galaxy.)

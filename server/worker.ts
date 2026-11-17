@@ -9,7 +9,7 @@
 import type { PlayerInfo } from '../shared/protocol'
 import { RoomRegistry, type RegistryEntry } from './registry'
 import { PresenceReporter } from './presenceReporter'
-import { type Peer, Room, type RoomSnapshot } from './room'
+import { CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
 import { roomName } from './util'
 
@@ -159,6 +159,12 @@ export class RoomDO {
   private room: Room | null = null
   private snapshot: RoomSnapshot | undefined
   private readonly peers = new WeakMap<WebSocket, Peer>()
+  /**
+   * Epoch ms of the clock alarm this object last set, or 0 when none is pending. In memory
+   * only: after an eviction it reads 0, and the next message sets the alarm again, which
+   * merely replaces the pending one (an object has a single alarm).
+   */
+  private clockAt = 0
 
   constructor(private readonly state: DurableObjectState, private readonly env: Env) {
     state.blockConcurrencyWhile(async () => {
@@ -217,6 +223,7 @@ export class RoomDO {
     const peer = this.peer(ws)
     room.receive(peer, message)
     this.report(room)
+    this.keepClock(room)
     const att = ws.deserializeAttachment() as Attachment
     if (!att.info) {
       const info = room.info(peer)
@@ -250,8 +257,22 @@ export class RoomDO {
       // Nobody is connected, but places are held for players who may rejoin (game.rejoin).
       // Keep the storage for them, and come back when the holds have run out to tidy up:
       // with no sockets there are no messages to make the room notice the time.
+      // This replaces any clock alarm: nobody connected means nothing to time.
+      this.clockAt = 0
       void this.state.storage.setAlarm(Date.now() + (REJOIN_GRACE + 2) * 1000)
     }
+  }
+
+  /**
+   * Run the room's own clock while it needs one (Room.needsClock): an alarm CLOCK_MS from
+   * now, set again from alarm() each time it fires. Alarms are durable and survive an
+   * eviction, unlike setTimeout, and each one is a billed request plus one row written, so
+   * none is set while the room does not need it and an idle room can hibernate.
+   */
+  private keepClock(room: Room): void {
+    if (this.clockAt || !room.needsClock) return
+    this.clockAt = Date.now() + CLOCK_MS
+    void this.state.storage.setAlarm(this.clockAt)
   }
 
   /**
@@ -261,10 +282,22 @@ export class RoomDO {
    * memory although players are still connected (the room is rebuilt from their sockets on
    * the next message). "No room" must therefore never be read as "nobody here": that wiped
    * the storage under two connected players, and the room came back with default settings.
-   * Any connected socket means the room is in use, and it is left alone.
+   * Any connected socket means the room is in use: then the alarm is the room's clock
+   * (keepClock) and only ticks it, never tidying up.
    */
   async alarm(): Promise<void> {
-    if (this.state.getWebSockets().length > 0) return
+    this.clockAt = 0
+    const sockets = this.state.getWebSockets()
+    if (sockets.length > 0) {
+      // In use: this is the room's clock (keepClock), not the cleanup. Tick on room time, so
+      // the hill scores and races end while every page is quiet, then go again if still needed.
+      const room = this.roomFor(sockets[0])
+      if (!room) return
+      room.tick()
+      this.report(room)
+      this.keepClock(room)
+      return
+    }
     const room = this.room
     room?.tick()
     if (room) this.report(room)

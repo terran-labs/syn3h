@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { lobbyZoom, lobbyZoomPortrait } from '../../src/ui/galaxy/cameraRest'
 import { bodyOf, fitDistance, GALAXY_MAX, openingDistance, orbitLayout, orbitShape, worldRadius, type OrbitBody } from '../../src/ui/galaxy/Galaxy'
 import { ORDINARY_BODY, PLANETS } from '../../src/world/planets'
 
@@ -92,11 +93,11 @@ describe('galaxy layout', () => {
     expect(orbitLayout(recipeBodies, 123.4)).toEqual(orbitLayout(recipeBodies, 123.4))
     expect(orbitLayout(recipeBodies, 0)[0].position).not.toEqual(orbitLayout(recipeBodies, 10)[0].position)
   })
-  it('opens closer on portrait phones while leaving tablets and landscape fitted', () => {
+  it('opens at the default zoom: its own share on portrait phones, lobby.zoom elsewhere', () => {
     const full = fitDistance(recipeBodies)
-    expect(openingDistance(recipeBodies, 390, 844)).toBeCloseTo(full * 0.8)
+    expect(openingDistance(recipeBodies, 390, 844)).toBeCloseTo(full * lobbyZoomPortrait.value)
     for (const [width, height] of [[844, 390], [1024, 1366], [1440, 900]]) {
-      expect(openingDistance(recipeBodies, width, height)).toBe(full)
+      expect(openingDistance(recipeBodies, width, height)).toBeCloseTo(full * lobbyZoom.value)
     }
   })
   it('frames the whole system at the first view, with a tenth world too', () => {

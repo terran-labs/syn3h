@@ -49,8 +49,11 @@ export class PresenceFeed {
   setActive(active: boolean): void {
     if (active === this.active) return
     this.active = active; this.generation++
-    clearTimeout(this.pollTimer); clearTimeout(this.expiryTimer); clearTimeout(this.timeout)
-    this.request?.abort(); this.request = null
+    clearTimeout(this.pollTimer); clearTimeout(this.expiryTimer)
+    // A request in flight is left to finish and its answer dropped (the generation has moved
+    // on): aborting it was logged by the browser as a failed request every time a player
+    // entered a world mid-poll. It is one small answer, bounded by the 10 s timeout. Coming
+    // back before it lands, the next poll waits for it, so there is never a second in flight.
     this.snapshot = null
     if (active) { this.publish(); void this.poll() }
   }
@@ -80,12 +83,13 @@ export class PresenceFeed {
       if (generation !== this.generation) return
       this.snapshot = null
     } finally {
+      if (this.request === request) { clearTimeout(this.timeout); this.request = null }
       if (generation === this.generation) {
-        clearTimeout(this.timeout); this.request = null
         this.publish()
         if (this.active) this.pollTimer = setTimeout(() => { void this.poll() }, PRESENCE_POLL)
-      }
+      } else if (this.active) void this.poll()   // shown again while an old answer was in flight
     }
   }
-  dispose(): void { this.setActive(false) }
+  /** Stops for good: here an in-flight request is aborted, as the feed is going away. */
+  dispose(): void { this.setActive(false); this.request?.abort(); this.request = null; clearTimeout(this.timeout) }
 }

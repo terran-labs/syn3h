@@ -270,11 +270,9 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
 .syn3h-shell.exploration-ui .lobby-panels { animation: none; width: min(520px, 100%); margin-bottom: 118px; }
 .syn3h-shell.exploration-ui .lobby-stage { pointer-events: none; }
 .syn3h-shell.exploration-ui .lobby-panels { pointer-events: auto; }
-.syn3h-shell.exploration-ui:not(.galaxy-open) .galaxy-labels,
-.syn3h-shell.exploration-ui:not(.galaxy-open) .galaxy-hint { visibility: hidden; }
+.syn3h-shell.exploration-ui:not(.galaxy-open) .galaxy-labels { visibility: hidden; }
 .syn3h-shell.exploration-ui:not(.galaxy-open) .galaxy-canvas { pointer-events: none; }
 .syn3h-shell.exploration-ui .galaxy-links { margin: 0; }
-.syn3h-shell.exploration-ui .galaxy-hint { margin: 24px 0 26px; }
 @media (max-height: 550px) {
   .syn3h-shell.exploration-ui .lobby-panels { margin-bottom: 78px; }
 }
