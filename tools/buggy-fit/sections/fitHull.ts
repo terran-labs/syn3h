@@ -85,8 +85,8 @@ function nelderMead(f: (x: number[]) => number, x0: number[], iters: number): nu
 // 1 and 2: slices every 4 cm, and a hand-placed starting design (read off the slice sheet).
 const KEYS = [-1.95, -1.8, -1.6, -1.3, -.9, -.3, .3, .8, 1.2, 1.5, 1.75, 1.965]
 const START = [
-  [.22, .08, .15, .26, .12, .3, .05, .3, .31], [.1, .4, .55, .25, .5, .45, .25, .42, .45], [.02, .55, .72, .3, .66, .54, .3, .48, .52],
-  [-.02, .65, .85, .35, .78, .6, .35, .5, .52], [-.06, .7, .86, .4, .76, .67, .35, .64, .66], [-.07, .7, .8, .4, .7, .68, .35, .67, .68],
+  [.22, .08, .15, .26, .12, .3, .05, .3, .31], [.1, .4, .55, .25, .5, .45, .25, .42, .45], [.02, .5, .74, .45, .7, .55, .3, .48, .5],
+  [-.02, .6, .85, .5, .82, .6, .35, .5, .5], [-.06, .68, .86, .55, .83, .66, .35, .64, .66], [-.07, .68, .8, .55, .77, .68, .35, .67, .68],
   [-.08, .75, .93, .4, .78, .78, .4, .76, .78], [-.08, .7, .86, .45, .75, .8, .4, .78, .86], [-.06, .68, .87, .45, .78, .76, .45, .7, .76],
   [.02, .62, .84, .5, .76, .84, .45, .67, .68], [.2, .55, .76, .5, .7, .86, .45, .69, .7], [.45, .45, .66, .55, .6, .7, .4, .68, .7],
 ]
@@ -112,6 +112,15 @@ for (const step of [.03, .015, .007, .003]) for (let sweep = 0; sweep < 3; sweep
 }
 const total = slices.reduce((t, s) => t + sliceCost(s), 0) / slices.length
 console.log(`mean slice cost ${total.toExponential(2)} (start ${(costs.reduce((a, b) => a + b, 0) / slices.length).toExponential(2)}), rms about ${(Math.sqrt(total / 2) * 1000).toFixed(0)} mm`)
+// Design overrides: the front fenders flare out over the wheels at their top corners. The
+// fit rounds these corners off (they are thin features and cost little to miss), but they
+// are much of the buggy's character, so they are set by hand: [parameter, key index, value].
+const OVERRIDES: [typeof HULL_PARAMS[number], number, number][] = [
+  ['width', 3, .85], ['width', 4, .86], ['shoulderX', 3, .83], ['shoulderX', 4, .84],
+  ['widestY', 3, .55], ['widestY', 4, .58], ['shoulderY', 3, .61], ['shoulderY', 4, .65],
+  ['width', 2, .74], ['shoulderX', 2, .71], ['widestY', 2, .5],
+]
+for (const [name, k, v] of OVERRIDES) keys[k][HULL_PARAMS.indexOf(name)] = v
 const values: Record<string, number[]> = {}
 HULL_PARAMS.forEach((name, p) => { values[name] = keys.map(r => Math.round(r[p] * 1000) / 1000) })
 
@@ -120,7 +129,7 @@ writeFileSync(file, `import type { HullKeys } from './hull'
 
 /**
  * The hull's keys, fitted by tools/buggy-fit/sections/fitHull.ts (bend ${bend}, prior ${prior}) and then free to
- * edit by hand: ${HULL_PARAMS.length} section numbers at ${KEYS.length} stations along Z, metres.
+ * edit by hand (the front fender keys are hand set; see OVERRIDES there): ${HULL_PARAMS.length} section numbers at ${KEYS.length} stations along Z, metres.
  */
 export const HULL: HullKeys = {
   z: ${JSON.stringify(KEYS)},

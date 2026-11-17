@@ -10,7 +10,7 @@ export const FEATURES = {
   /** Headlights: a round duct each side of the nose, its bezel and depth. */
   head: { x: .56, y: .365, r: .085, bezel: .018, depth: .07 },
   /** Tail lamps: a thin bar each side of the rear panel, centre x and y, half length, half height, proud of the panel by `depth`. */
-  tail: { x: .48, y: .515, halfLength: .17, halfHeight: .016, depth: .012 },
+  tail: { x: .45, y: .515, halfLength: .14, halfHeight: .016, depth: .012 },
   /** Centre stripe half width, on the deck and the wing. */
   stripe: .17,
   /** Rear wing and end plates: superellipse rows [z, halfWidth, top, bottom, centreY, exponent]. The plates follow the fin line (the hull's shoulder) less `plateInset`. */
