@@ -38,7 +38,26 @@ export function problems(h: Handles): string[] {
   for (let z = d.features.cockpit.z - d.features.cockpit.halfLength - .05; z > -1.3; z -= .05) for (const x of [0, .15, .3]) deckAhead = Math.max(deckAhead, q.top(x, z))
   if (deckAhead > EYE[1] - .065) out.push(`deck ahead ${deckAhead.toFixed(2)} m blocks the view`)
   // The parts' duct lens must find the nose surface along its axis.
-  const L = DUCT_LAMP; if (!q.surface(L.centre, L.axis, .3)) out.push('duct lens off the nose')
+  // ...and the nose must meet the lens flush: every rim point finds the surface within the
+  // range the parts move the lens (0.2 m ahead to 0.1 m behind its centre), and the rim lies
+  // within 2.5 cm of a plane, so the bezel sits on the body instead of standing off it.
+  const L = DUCT_LAMP, n = L.axis, mj = L.major, md = mj[0] * n[0] + mj[1] * n[1] + mj[2] * n[2]
+  const u0 = [mj[0] - md * n[0], mj[1] - md * n[1], mj[2] - md * n[2]], ul = Math.hypot(...u0), u = u0.map(x => x / ul)
+  const w = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]], sc = d.features.head.scale
+  const offs: number[] = [], cs: number[] = [], sn: number[] = []
+  for (let i = 0; i < 14; i++) {
+    const t = i / 14 * Math.PI * 2, p: [number, number, number] = [0, 1, 2].map(k => L.centre[k] + (u[k] * L.a * Math.cos(t) + w[k] * L.b * Math.sin(t)) * sc) as [number, number, number]
+    const hit = q.surface(p, n as [number, number, number], .3)
+    if (!hit) { out.push('duct rim off the nose'); break }
+    offs.push((hit[0] - p[0]) * n[0] + (hit[1] - p[1]) * n[1] + (hit[2] - p[2]) * n[2]); cs.push(Math.cos(t)); sn.push(Math.sin(t))
+  }
+  if (offs.length === 14) {
+    const mean = offs.reduce((a, b) => a + b, 0) / 14
+    const tc = offs.reduce((a, o, i) => a + (o - mean) * cs[i], 0) / cs.reduce((a, c) => a + c * c, 0), ts = offs.reduce((a, o, i) => a + (o - mean) * sn[i], 0) / sn.reduce((a, c) => a + c * c, 0)
+    const gap = Math.max(...offs.map((o, i) => Math.abs(o - mean - tc * cs[i] - ts * sn[i])))
+    if (gap > .025) out.push(`duct bezel ${(gap * 100).toFixed(1)} cm off the nose`)
+    if (mean < -.1 || mean > .2) out.push(`nose ${mean.toFixed(2)} m from the lens`)
+  }
   // Every section outline is simple (no fold).
   for (let z = d.hull.z[0] + .02; z < d.hull.z[d.hull.z.length - 1]; z += .1) {
     const f = outline(paramsAt(d.hull, z)), p = Array.from({ length: 41 }, (_, i) => f(i / 40))

@@ -16,7 +16,7 @@ export interface EditorHandle { id: string; label: string; group: string; help: 
 
 export const EDITOR_HANDLES = [
   // Stance
-  { id: 'noseLength', label: 'Nose length', group: 'Stance', help: 'Stretches the body ahead of the front axle.', min: -.12, max: .12, step: .01 },
+  { id: 'noseLength', label: 'Nose length', group: 'Stance', help: 'Stretches the nose ahead of the headlights.', min: -.06, max: .12, step: .01 },
   { id: 'tailLength', label: 'Tail length', group: 'Stance', help: 'Stretches the body behind the rear axle.', min: -.15, max: .3, step: .01 },
   { id: 'width', label: 'Width', group: 'Stance', help: 'Scales the body\'s width (fraction).', min: -.04, max: .1, step: .01 },
   { id: 'ride', label: 'Floor height', group: 'Stance', help: 'Raises or lowers the floor between the axles.', min: -.04, max: .1, step: .01 },
@@ -39,7 +39,7 @@ export const EDITOR_HANDLES = [
   { id: 'scoopTilt', label: 'Scoop lean', group: 'Scoops', help: 'Leans the scoops back (degrees).', min: -30, max: 30, step: 5 },
   { id: 'scoopZ', label: 'Scoop position', group: 'Scoops', help: 'Moves the scoops along the body.', min: -.2, max: .2, step: .02 },
   // Lamps
-  { id: 'ductSize', label: 'Headlight duct', group: 'Lamps', help: 'Grows the duct round each headlight (fraction).', min: -.1, max: .3, step: .05 },
+  { id: 'ductSize', label: 'Headlight duct', group: 'Lamps', help: 'Grows the duct round each headlight (fraction).', min: -.1, max: .1, step: .05 },
   { id: 'tailLamp', label: 'Tail lamp length', group: 'Lamps', help: 'Lengthens the tail lamp bars (fraction).', min: -.5, max: .5, step: .1 },
   // Wing
   { id: 'wingHeight', label: 'Wing height', group: 'Wing', help: 'Raises the rear wing on its plates.', min: -.1, max: .25, step: .01 },
@@ -57,6 +57,8 @@ export function clampHandles(s: Partial<Handles>): Handles {
 }
 
 const AXLE = 1.24
+/** Just ahead of the headlight lens rims: the nose stretches forward of this. */
+const NOSE_PIVOT = -1.78
 /** Highest the deck may stand ahead of the cockpit: the driver's eye (0.8 m) less a margin for the view. */
 const SIGHT = .725
 const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
@@ -65,7 +67,8 @@ const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math
 export function applyHandles(h: Handles, base: { hull: HullKeys; features: Features } = { hull: HULL, features: FEATURES }): LoftDesign {
   const v = base.hull.values, zs = base.hull.z, z0 = zs[0], z1 = zs[zs.length - 1]
   // Stretch beyond the axles only, so the wheelbase stays.
-  const stretch = (z: number) => z < -AXLE ? z - h.noseLength * (z + AXLE) / (z0 + AXLE) : z > AXLE ? z + h.tailLength * (z - AXLE) / (z1 - AXLE) : z
+  // The nose stretches only ahead of the headlight lenses, which the parts fix in place.
+  const stretch = (z: number) => z < NOSE_PIVOT ? z - h.noseLength * (z - NOSE_PIVOT) / (z0 - NOSE_PIVOT) : z > AXLE ? z + h.tailLength * (z - AXLE) / (z1 - AXLE) : z
   const values = {} as Record<HullParam, number[]>
   const per = (p: HullParam, f: (x: number, k: number, z: number) => number) => { values[p] = v[p].map((x, k) => f(x, k, zs[k])) }
   const w = 1 + h.width
@@ -94,6 +97,16 @@ export function applyHandles(h: Handles, base: { hull: HullKeys; features: Featu
     if (z < -1.5 || z > -.2) return
     values.crownY[k] = Math.min(values.crownY[k], SIGHT); values.valleyY[k] = Math.min(values.valleyY[k], SIGHT)
     values.widestY[k] = Math.min(values.widestY[k], SIGHT - .06)
+  })
+  // The lamps: the parts seat a headlight lens and a small side lamp at fixed points in the
+  // nose, so around them the fenders (which carry the lamps) never fall below or inside the
+  // fitted body. Nose drop and a lower deck then lower the nose between the lamps.
+  zs.forEach((z, k) => {
+    if (z < -1.85 || z > -1.2) return
+    values.width[k] = Math.max(values.width[k], v.width[k]); values.shoulderX[k] = Math.max(values.shoulderX[k], v.shoulderX[k])
+    values.shoulderY[k] = Math.max(values.shoulderY[k], v.shoulderY[k]); values.widestY[k] = Math.max(values.widestY[k], v.widestY[k] - .02)
+    // Where the lens rims are (keys within about 0.2 m of the lens), the deck between them holds too.
+    if (z > -1.85 && z < -1.45) { values.valleyY[k] = Math.max(values.valleyY[k], v.valleyY[k]); values.crownY[k] = Math.max(values.crownY[k], v.crownY[k]) }
   })
   // Keep the named points in order up the side, whatever the handles did.
   zs.forEach((_, k) => {
@@ -138,7 +151,7 @@ export function decodeHandles(code: string): Handles {
   return clampHandles(s)
 }
 
-/** mulberry32, as in LoadedBuggySkin.ts. */
+/** mulberry32, as in the buggy skin. */
 function mulberry32(seed: number): () => number {
   return () => {
     seed = (seed + 0x6d2b79f5) | 0

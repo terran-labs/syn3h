@@ -10,7 +10,7 @@
  *   vehicle-lab.html?vehicle=loft-editor&design=crawler          a preset (streamliner, crawler, wedge)
  *   ...&full=1                                                   on the whole generated buggy
  *
- * "Body" regenerates the shell alone on every drag. "Whole buggy" rebuilds the generated skin
+ * "Body" regenerates the shell alone on every drag. "Whole buggy" rebuilds the game's skin (Syn3hBuggySkin)
  * (wheels, arms, shocks, canopy and fittings cast onto this body) and is slower.
  */
 import * as THREE from 'three/webgpu'
@@ -22,7 +22,7 @@ import { buildLoft } from '../../../vehicles/buggygen/sections/design'
 import { EDITOR_HANDLES, PRESETS, applyHandles, clampHandles, decodeHandles, defaultHandles, encodeHandles, seedHandles, type Handles } from '../../../vehicles/buggygen/sections/editor'
 
 const BODY = 0x1768b4, ACCENT = 0x49e6ff
-/** Wheel rest position as LoadedBuggySkin's LAYOUT; driver's eye as Syn3hBuggy's RIDE_HEIGHT. */
+/** Wheel rest position as the buggy skin's layout; driver's eye as Syn3hBuggy's RIDE_HEIGHT. */
 const REST = new THREE.Vector3(1.1, -.2, 1.3), RIDE_HEIGHT = .8
 
 export const loftEditor: LabExhibit = {
@@ -45,7 +45,7 @@ export const loftEditor: LabExhibit = {
     const object = new THREE.Group(), callbacks = new Set<VehicleDetail>()
     object.userData.registerVehicleDetail = (fn: VehicleDetail) => { callbacks.add(fn); return () => callbacks.delete(fn) }
     let meshes: THREE.Mesh[] = [], skin: BuggySkin | undefined, building = 0
-    const { GeneratedBuggySkin } = await import('../../../vehicles/buggygen/GeneratedBuggySkin')
+    const { Syn3hBuggySkin } = await import('../../../vehicles/skins/Syn3hBuggySkin')
 
     const readout = document.createElement('div')
     readout.style.cssText = 'position:fixed;left:12px;bottom:12px;padding:6px 10px;border-radius:6px;background:rgba(0,0,0,.55);color:#fff;font:12px/1.4 system-ui,sans-serif;z-index:5;pointer-events:none'
@@ -65,7 +65,7 @@ export const loftEditor: LabExhibit = {
       meshes = []
       if (full) {
         ctx.status('Building the whole buggy')
-        const t1 = performance.now(), next = new GeneratedBuggySkin({ id: `loft-${encodeHandles(handles)}`, build: d => buildLoft(design, d) })
+        const t1 = performance.now(), next = new Syn3hBuggySkin({ build: d => buildLoft(design, d) })
         await next.ready
         if (ticket !== building) { next.dispose(); return }
         skin?.dispose(); if (skin) object.remove(skin.object)

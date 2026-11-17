@@ -1,6 +1,6 @@
 import { HANDLES, clampShape, type Shape } from './handles'
 
-/** mulberry32, as in LoadedBuggySkin.ts: a small deterministic generator. */
+/** mulberry32, as in the buggy skin: a small deterministic generator. */
 export function mulberry32(seed: number): () => number {
   return () => {
     seed = (seed + 0x6d2b79f5) | 0
