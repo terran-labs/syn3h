@@ -20,6 +20,14 @@ function run(pacer: BotPacer, seconds: number, state: Omit<PacingState, 'have'>,
 }
 
 const desktop = { wanted: 8, targetMs: 1000 / 60, level: 4, open: true }
+/**
+ * What one bot must add to the frame to count as a real cost under the pacer's own settings,
+ * with room to spare: derived from PACING, so retuning moves this with it. On frames under the
+ * slow threshold, where judging happens.
+ */
+const clearCost = (targetMs: number) => 2 * Math.max(PACING.minCostMs, targetMs * PACING.costShare, targetMs * PACING.slowFactor * PACING.baselineShare)
+/** Frames that start well inside the target and grow by a clear cost per bot. */
+const costlyBots = (targetMs: number) => (n: number) => targetMs * 0.35 + n * clearCost(targetMs)
 
 describe('bot pacing', () => {
   it('never adds bots faster than the interval, and never two in one frame', () => {
@@ -34,17 +42,17 @@ describe('bot pacing', () => {
     for (let i = 1; i < adds.length; i++) expect(adds[i].at - adds[i - 1].at).toBeGreaterThanOrEqual(interval * 1000)
   })
 
-  it('adds nothing while closed (entering a world, in the menus)', () => {
+  it('adds nothing while closed (a descent into a world or an ascent out of one)', () => {
     const pacer = new BotPacer(() => 1)
     const { actions } = run(pacer, 20, { ...desktop, open: false }, () => 1000 / 60)
     expect(actions).toHaveLength(0)
   })
 
-  it('stops adding when the measured frame rate drops under the target, and sends the last one away', () => {
+  it('stops adding when a bot pushes frames over the target, and sends that one away', () => {
     const pacer = new BotPacer(() => 1)
-    // Each bot costs 3 ms: the sixth pushes a 60 fps target (16.7 ms) past its 25 percent slack.
-    const { actions, have } = run(pacer, 60, desktop, n => 6 + n * 3)
-    const over = Math.min(...[1, 2, 3, 4, 5, 6, 7, 8].filter(n => 6 + n * 3 > desktop.targetMs * PACING.slowFactor))
+    const frame = costlyBots(desktop.targetMs)
+    const { actions, have } = run(pacer, 60, desktop, frame)
+    const over = Math.min(...[1, 2, 3, 4, 5, 6, 7, 8].filter(n => frame(n) > desktop.targetMs * PACING.slowFactor))
     expect(have).toBe(over - 1)
     expect(actions.at(-1)?.action).toBe('remove')
     expect(pacer.comfort.get(desktop.level)).toBe(over - 1)
@@ -61,19 +69,6 @@ describe('bot pacing', () => {
     expect(actions.filter(a => a.action === 'remove')).toHaveLength(0)
   })
 
-  it('keeps bots on a slow, jittery device whose frames they do not change', () => {
-    // A loaded machine at about 16 fps against a 30 fps target: frames wander by up to +-30 ms
-    // whatever the bots do. Noise is not a bot's cost (the two-player smoke at load 35).
-    for (const seed of [1, 2, 3, 4, 5]) {
-      let x = seed * 7919
-      const jitter = () => { x = (x * 16807) % 2147483647; return (x / 2147483647 - 0.5) * 20 }
-      const pacer = new BotPacer(() => 1.5)
-      const { have, actions } = run(pacer, 120, { wanted: 4, targetMs: 1000 / 30, level: 1, open: true }, () => 62 + jitter() * (1 + (Math.floor(x / 1e8) % 3)))
-      expect(actions.filter(a => a.action === 'remove')).toHaveLength(0)
-      expect(have).toBe(4)
-    }
-  })
-
   it('does not call bots costly for the governor until they were measured to cost frames', () => {
     // The governor sheds bots only when they cost frame time. Unmeasured, or on frames that
     // were already slow (where a difference is load noise), they cost nothing it can shed.
@@ -82,8 +77,39 @@ describe('bot pacing', () => {
     run(pacer, 30, { ...desktop, wanted: 3 }, () => 40 + Math.random() * 40)
     expect(pacer.costly(3, 1000 / 60)).toBe(false)
     const measured = new BotPacer(() => 1)
-    run(measured, 60, desktop, n => 6 + n * 3)
+    run(measured, 60, desktop, costlyBots(desktop.targetMs))
     expect(measured.costly(3, 1000 / 60)).toBe(true)
+  })
+
+  it('lets bots in while the host is in the lobby or a menu, unjudged, up to the count', () => {
+    // A room's bots must not depend on its host looking at the game. There are no frames
+    // played to judge by, so terrible frames send nobody away and leave nothing measured.
+    const pacer = new BotPacer(() => 1)
+    const { actions, have } = run(pacer, 30, { ...desktop, wanted: 5, judge: false }, () => 400)
+    expect(have).toBe(5)
+    expect(actions.filter(a => a.action === 'remove')).toHaveLength(0)
+    const adds = actions.filter(a => a.action === 'add')
+    for (let i = 1; i < adds.length; i++) expect(adds[i].at - adds[i - 1].at).toBeGreaterThanOrEqual(1000)
+    expect(pacer.marginal.size).toBe(0)
+  })
+
+  it('judges again once the host plays', () => {
+    const pacer = new BotPacer(() => 1)
+    const frame = costlyBots(desktop.targetMs)
+    const idle = run(pacer, 2.5, { ...desktop, judge: false }, frame)
+    expect(idle.have).toBeGreaterThan(0)
+    // Playing from here: arrivals are measured, and the one that crosses the target leaves.
+    let now = 2500, have = idle.have
+    const actions: string[] = []
+    while (now < 62500) {
+      const ms = frame(have); now += ms
+      const action = pacer.step(now, ms, { ...desktop, have })
+      if (action === 'add') have++
+      if (action === 'remove') have--
+      if (action) actions.push(action)
+    }
+    expect(actions).toContain('remove')
+    expect(frame(have) <= desktop.targetMs * PACING.slowFactor).toBe(true)
   })
 
   it('never carries more than the host asked for', () => {

@@ -28,6 +28,8 @@ export interface BotArrivalEffect {
 }
 /** Slot by slot: half buggies, a quarter hovercraft, a quarter jets. */
 const MIXED_FLEET = ['buggy', 'hovercraft', 'buggy', 'jet'] as const
+export type ArrivalGate = 'playing' | 'idle' | 'closed'
+
 export class BotManager implements System {
   private readonly bots: Vehicle[] = []
   private readonly brains: BotBrain[] = []
@@ -41,8 +43,14 @@ export class BotManager implements System {
   /** Paces arrivals and measures what this device carries (see pacing.ts). */
   readonly pacer = new BotPacer()
   /** Bots may arrive only while this is true: driving, not entering a world or in the menus. */
-  private gate: () => boolean = () => true
-  setArrivalGate(open: () => boolean) { this.gate = open }
+  /**
+   * Whether bots may arrive now: 'playing' (the host is in the world: arrivals are judged by
+   * their frames), 'idle' (the host is in the lobby or a menu: they still arrive, unjudged, so
+   * a room's bots never depend on its host looking at the game) or 'closed' (a descent or an
+   * ascent is running, where an arrival would cost a frame of the transition).
+   */
+  private gate: () => ArrivalGate = () => 'playing'
+  setArrivalGate(gate: () => ArrivalGate) { this.gate = gate }
   private effect: BotArrivalEffect | null = null
   /** Bots arrive in the arrival cloud and leave in it. Without one they appear and go plainly. */
   setArrivalEffect(effect: BotArrivalEffect | null) { this.effect = effect }
@@ -265,8 +273,9 @@ export class BotManager implements System {
       // A bot still compiling counts as here: it is judged from the moment it was asked for.
       // Wall time: performance.now() and the frame's own duration. Right for players; under a
       // capture tool's virtual clock frames look free or costly regardless of the real work.
+      const gate = this.gate()
       const action = this.pacer.step(performance.now(), dt * 1000, {
-        have: this.bots.length + (this.arriving ? 1 : 0), wanted, targetMs: governor?.targetMs ?? 1000 / 60, level: governor?.level ?? 0, open: this.gate(),
+        have: this.bots.length + (this.arriving ? 1 : 0), wanted, targetMs: governor?.targetMs ?? 1000 / 60, level: governor?.level ?? 0, open: gate !== 'closed', judge: gate === 'playing',
       })
       if (action === 'remove') { if (!this.arriving) this.depart() }
       else if (action === 'add' && !this.arriving) {

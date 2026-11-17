@@ -50,8 +50,14 @@ export interface PacingState {
   targetMs: number
   /** The current quality level, for the session's record. */
   level: number
-  /** False while bots may not arrive: entering a world, in the menus, paused. */
+  /** False while bots may not arrive: a descent into a world or an ascent out of one. */
   open: boolean
+  /**
+   * False while the host is not looking at the game (the lobby, a menu): bots still arrive, an
+   * interval apart and up to the count, but nothing is judged, as there are no frames played
+   * to judge them by. Judging resumes when the host plays. Defaults to true.
+   */
+  judge?: boolean
 }
 
 export type PacingAction = 'add' | 'remove' | null
@@ -103,7 +109,8 @@ export class BotPacer {
     // not in the frame the player lands.
     if (state.open && !this.wasOpen) this.last = Math.max(this.last, now)
     this.wasOpen = state.open
-    const evidence = Number.isFinite(frameMs) && frameMs > 0 && frameMs < PACING.interruptedMs && state.open
+    const judging = state.judge !== false
+    const evidence = Number.isFinite(frameMs) && frameMs > 0 && frameMs < PACING.interruptedMs && state.open && judging
     if (evidence) this.recent.push({ at: now, ms: frameMs })
     const intervalMs = Math.max(0, this.interval()) * 1000
     const due = now - this.last >= intervalMs
@@ -117,7 +124,7 @@ export class BotPacer {
     const m = this.measuring
     if (m) {
       // Judged only on frames played with this many bots; the menus or a pause discard it.
-      if (!state.open || state.have !== m.count) { this.measuring = null; return null }
+      if (!state.open || !judging || state.have !== m.count) { this.measuring = null; return null }
       if (now - m.since < PACING.settleMs) return null
       if (evidence) m.frames.push(frameMs)
       const span = m.frames.reduce((s, f) => s + f, 0)
@@ -147,6 +154,12 @@ export class BotPacer {
       return null
     }
     if (!state.open || state.have >= goal || !due) return null
+    // Nobody is watching the game here: let the next bot in, unjudged (see PacingState.judge).
+    if (!judging) {
+      this.last = now
+      this.log.push({ at: now, have: state.have, action: 'add', targetMs: state.targetMs })
+      return 'add'
+    }
     // Judged against the frames just before it: with no baseline yet (the first moments of
     // play) wait, rather than blame the bot for whatever the frames were already doing.
     const before = this.recentMedian(now)

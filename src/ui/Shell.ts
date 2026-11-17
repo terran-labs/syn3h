@@ -710,6 +710,8 @@ export class Shell implements System {
   }
   /** True from a drop's tap until the player is on the ground. */
   private dropping = false
+  /** True while a descent into a world or an ascent out of one is running. */
+  get transitioning(): boolean { return this.dropping || this.savedEntering }
   openMenu(panel = 'index'): void {
     if (!this.started) return
     this.closeAbout()
