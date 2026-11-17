@@ -61,7 +61,6 @@ for(const mode of ['desktop','phone','short-phone']){
   await page.screenshot({path:`${out}/${mode}-static.png`})
   await page.evaluate(()=>{ const g=syn3h.shell.galaxy;g.logo=window.__savedLogo;g.wake=2 })
   await page.waitForFunction(()=>document.querySelector('.syn3h-shell').classList.contains('has-animated-logo'))
-  const nav=page.locator('.galaxy-links')
   // About is its own sheet from the icon above the gear. Bugs caught: the icon missing or not
   // opening; content in the page or images requested before the player asks; tabs, a Back
   // button or a second close control in the sheet; Escape or a tap outside not closing it;
@@ -107,7 +106,7 @@ for(const mode of ['desktop','phone','short-phone']){
   assert.equal(await page.evaluate(()=>syn3h.shell.playing),false,'a tap outside closes the sheet and does nothing else')
   assert.deepEqual(images,[],'About requests no images')
   const backPaths=[]
-  for(const id of ['explore','worlds','multiplayer','advanced']){
+  for(const id of ['explore','worlds','advanced']){
    await page.evaluate(id=>syn3h.shell.showPanel(id),id)
    await page.waitForFunction(()=>document.querySelector('.lobby-panels').dataset.busy==='false')
    const back=page.locator(`[data-panel=${id}] .panel-back`);await back.scrollIntoViewIfNeeded();await back.focus()
@@ -124,10 +123,12 @@ for(const mode of ['desktop','phone','short-phone']){
    assert.ok(r.height>=44,`${id}: projected height >=44`);if(mode==='desktop')assert.ok(r.width>=160,`${id}: projected width >=160`)
    assert.equal(await back.locator('[aria-hidden=true]').innerText(),'←')
    await page.keyboard.press('Enter'); await page.locator('.lobby-panels').waitFor({state:'hidden'})
-   assert.equal(await nav.locator('button').first().evaluate(el=>el===document.activeElement),true)
+   // With no bottom buttons, focus comes back to the About icon in the corner.
+   assert.equal(await page.locator('.lobby-gear-dock .lobby-about').evaluate(el=>el===document.activeElement),true)
    backPaths.push({id,width:r.width,height:r.height})
   }
-  await nav.locator('[data-goto=multiplayer]').click();await page.locator('[data-panel=multiplayer] [data-join]').click()
+  // The invite view opens with J in the lobby (the Multiplayer panel that also opened it is gone).
+  await page.evaluate(()=>document.activeElement?.blur());await page.keyboard.press('j')
   const invite=page.locator('.join-view'), back=invite.locator('.join-close');await invite.waitFor({state:'visible'})
   assert.equal(await back.evaluate(el=>el===document.activeElement),true)
   const r=await measureBack(back,mode,'invite');assert.ok(r.height>=44,'invite: projected height >=44');if(mode==='desktop')assert.ok(r.width>=160,'invite: projected width >=160')

@@ -22,3 +22,15 @@ class_name = "RoomDO"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RoomDO"]
+
+# Workers Logs: only the room server's own JSON lines (server/log.ts) are kept. Invocation
+# logs are off: every Durable Object WebSocket message is an invocation, about 65,000 a
+# player-hour. Query strings (they carry room names, which people type) are redacted from
+# any request URL that does reach logs or traces.
+[observability]
+enabled = true
+head_sampling_rate = 1
+redact_query_string = true
+
+[observability.logs]
+invocation_logs = false

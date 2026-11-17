@@ -10,10 +10,14 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     await page.goto(`${process.env.SYN3H_URL}?room=lobby-direct-${Date.now()}`)
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
-    const nav = page.locator('.galaxy-links')
-    await nav.waitFor({ state: 'visible' })
+    // The lobby's opening (about nine seconds) hides its controls; a key skips to the settled lobby.
+    await page.keyboard.press('Shift'); await page.waitForTimeout(700)
+    // The lobby's controls are the corner dock now (About and Updates over the gear); it has no bottom buttons.
+    const dock = page.locator('.lobby-gear-dock')
+    await dock.waitFor({ state: 'visible' })
+    assert.equal(await page.locator('.galaxy-links button').count(), 0, 'no bottom buttons')
     if (process.env.UX_BEFORE === '1') {
-      await nav.locator('[data-goto=multiplayer]').click()
+      await page.getByRole('button', { name: 'About Syn3h', exact: true }).click()
       await page.waitForTimeout(200)
       await page.screenshot({ path: `${out}/${mode}-before.png` })
       continue
@@ -42,36 +46,15 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     }
     await page.waitForTimeout(600)
     const spacing = await page.evaluate(() => {
-      const hint = document.querySelector('.galaxy-hint').getBoundingClientRect(), nav = document.querySelector('.galaxy-links').getBoundingClientRect()
-      const labels = [...document.querySelectorAll('.galaxy-label')].filter(el => !el.hidden && !el.classList.contains('is-crowded')).map(el => el.getBoundingClientRect().bottom)
-      return { gap: nav.top - hint.bottom, above: hint.top - Math.max(0, ...labels), bottom: innerHeight - nav.bottom }
+      // The corner dock keeps clear of the screen's bottom edge (and a phone's home indicator).
+      const dock = document.querySelector('.lobby-gear-dock').getBoundingClientRect()
+      return { bottom: innerHeight - dock.bottom }
     })
     console.log(`${mode} spacing ${JSON.stringify(spacing)}`)
-    assert.ok(spacing.gap >= 24 && spacing.gap <= 28 && spacing.above >= 23 && spacing.bottom >= 16)
+    assert.ok(spacing.bottom >= 8)
     await page.screenshot({ path: `${out}/${mode}-lobby.png` })
-    for (const reducedMotion of ['no-preference', 'reduce']) {
-      await page.emulateMedia({ reducedMotion })
-      for (const name of ['multiplayer']) {
-        await nav.locator(`[data-goto=${name}]`).click()
-        // The requested panel is the only visible section from the first paint onward.
-        assert.deepEqual(await page.locator('.lobby-panels > section:visible').evaluateAll(es => es.map(el => el.dataset.panel)), [name])
-        await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.busy === 'false')
-        const separated = await page.evaluate(() => {
-          const panel = document.querySelector('.lobby-panels').getBoundingClientRect()
-          const footer = document.querySelector('.lobby-footer').getBoundingClientRect()
-          const links = document.querySelector('.galaxy-links').getBoundingClientRect()
-          return { panelBottom: panel.bottom, footerTop: footer.top, footerBottom: footer.bottom, linksTop: links.top }
-        })
-        assert.ok(separated.panelBottom <= separated.footerTop && separated.footerBottom < separated.linksTop, `panel, status and navigation stay separate: ${JSON.stringify(separated)}`)
-        await page.screenshot({ path: `${out}/${mode}-${name}-${reducedMotion}.png` })
-      }
-      await page.keyboard.press('Escape')
-      await page.locator('.lobby-panels').waitFor({ state: 'hidden' })
-      await nav.locator('[data-goto=multiplayer]').click()
-      await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.busy === 'false')
-      await page.mouse.click(4, 4)
-      await page.locator('.lobby-panels').waitFor({ state: 'hidden' })
-    }
+    // The lobby has no panel buttons any more: About and Updates open as sheets from their
+    // corner icons, checked in tests/ui/lobby-about.mjs.
     assert.deepEqual(errors, [])
     console.log(`${mode}: direct lobby PASS`)
   } finally { await browser.close() }

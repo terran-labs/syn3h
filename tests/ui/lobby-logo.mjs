@@ -28,14 +28,13 @@ for (const engine of [chromium, webkit]) {
     await page.screenshot({ path: `tests/ui/artifacts/logo/${engine.name()}-settled.png` })
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.evaluate(() => { window.syn3h.shell.galaxy.wake = 2 })
-    await page.waitForTimeout(300)
-    assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.logo.look.sway), 0)
-    assert.ok(await page.evaluate(() => window.syn3h.shell.galaxy.logo.introTime) > 1e5, 'reduced motion skips the fade')
+    // Reduced motion holds the logo still and skips its fade on the next drawn frame: wait for
+    // that frame, not for a clock (a loaded machine may not draw one in a fixed 300 ms).
+    await page.waitForFunction(() => window.syn3h.shell.galaxy.logo.look.sway === 0 && window.syn3h.shell.galaxy.logo.introTime > 1e5, null, { timeout: 10000 })
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(() => { clearInterval(window.__pin); window.syn3h.params.set('gfx.level', 0); window.syn3h.shell.galaxy.wake = 2 })
-    await page.waitForTimeout(300)
-    assert.ok(await page.evaluate(() => window.syn3h.shell.galaxy.logo.look.particles) <= 220)
-    assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.logo.look.sway), 0)
+    // The lowest level's budget and stillness land on the next drawn frame: wait for it.
+    await page.waitForFunction(() => window.syn3h.shell.galaxy.logo.look.particles <= 220 && window.syn3h.shell.galaxy.logo.look.sway === 0, null, { timeout: 10000 })
     // Restore the context through the browser's own extension; the SVG bridges the loss.
     await page.evaluate(() => { const g = window.syn3h.shell.galaxy; window.__oldLogo = g.logo; window.__loss = g.gl.getExtension('WEBGL_lose_context'); window.__loss.loseContext() })
     await page.waitForFunction(() => !document.querySelector('.syn3h-shell').classList.contains('has-animated-logo'))

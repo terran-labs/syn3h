@@ -44,12 +44,6 @@ describe('frozen production resources', () => {
     expect(createFrozenResourceResolver(root + '/').resolve('/models/buggy.glb')).toBe('/models/buggy.glb')
   })
 
-  it('pins every production model and preserves a missing resource path without fallback', () => {
-    for (const path of ['/models/tank.glb', '/models/tanktread.glb', '/models/buggy.glb', '/models/buggy-boxarm.glb', '/models/missing.glb']) {
-      expect(frozen.resolve(path)).toBe('/v/26.11.1519' + path)
-    }
-  })
-
   it('covers all ten production licence anchors without changing external credits links', () => {
     const hrefs = [...creditsHtml.matchAll(/href="([^"]+)"/g)].map(match => match[1]!)
     const licences = hrefs.filter(href => href.startsWith('/brand/licenses/'))
@@ -61,14 +55,10 @@ describe('frozen production resources', () => {
     for (const href of hrefs.filter(href => !licences.includes(href))) expect(frozen.resolve(href)).toBe(href)
   })
 
-  it('wires the policy before vehicle construction and at both model-loading sites', () => {
+  it('wires the policy before vehicle construction and on the licence links', () => {
     const source = (path: string) => readFileSync(new URL('../../' + path, import.meta.url), 'utf8')
     const main = source('src/main.ts')
     expect(main.indexOf('initializeFrozenResources(location.href)')).toBeLessThan(main.indexOf('const game = new Game'))
-    expect(source('src/vehicles/skins/VehicleModel.ts')).toContain('loadModel(frozenResourceURL(url)')
-    const buggy = source('src/vehicles/skins/LoadedBuggySkin.ts')
-    expect(buggy).toContain("loadModel(frozenResourceURL('/models/buggy.glb')")
-    expect(buggy).toContain('loadModel(frozenResourceURL(BOX_ARM_BODY)')
     expect(source('src/ui/Shell.ts')).toContain(`querySelectorAll<HTMLAnchorElement>('a[href^="/brand/licenses/"]')) anchor.setAttribute('href', frozenResourceURL(`)
   })
 })

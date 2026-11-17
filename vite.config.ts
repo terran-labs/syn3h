@@ -74,7 +74,19 @@ export default defineConfig({
     proxy: { '/presence': { target: `http://127.0.0.1:${roomPort}` }, '/ws': { target: `ws://127.0.0.1:${roomPort}`, ws: true } },
     hmr: origin ? { protocol: 'wss', host: origin.hostname, clientPort: Number(origin.port || 443) } : undefined,
   },
-  build: { target: 'es2022', sourcemap: true },
+  build: {
+    target: 'es2022', sourcemap: true,
+    // The startup code in several files along its third-party seams (three, then the other
+    // libraries, each under half a megabyte) and the game's own code, instead of one 2.8 MB
+    // file: the loading view's megabyte count is what the browser has received, and it can
+    // only count files that have finished. Same bytes, fetched in parallel (each preloaded by
+    // the entry). The game's code stays one file: split by size, its modules' circular imports
+    // ran in the wrong order.
+    rolldownOptions: { output: { codeSplitting: { groups: [
+      { name: 'three', test: /node_modules[\\/]three[\\/]/, maxSize: 480_000 },
+      { name: 'vendor', test: /node_modules[\\/]/, maxSize: 480_000 },
+    ] } } },
+  },
   // tools/*.test.mjs use node:test and are run with `node --test`, not vitest.
   test: { exclude: ['**/node_modules/**', '**/dist/**', 'tools/**'] },
 })

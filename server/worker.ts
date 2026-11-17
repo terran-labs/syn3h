@@ -9,9 +9,10 @@
 import type { PlayerInfo } from '../shared/protocol'
 import { RoomRegistry, type RegistryEntry } from './registry'
 import { PresenceReporter } from './presenceReporter'
-import { type Peer, Room, type RoomSnapshot } from './room'
+import { CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
 import { roomName } from './util'
+import { logError, logEvent } from './log'
 
 interface DurableObjectId {}
 interface DurableObjectStub {
@@ -54,6 +55,8 @@ interface Attachment {
   info?: PlayerInfo
   /** The player's rejoin secret (game.rejoin), so it survives hibernation with the socket. */
   token?: string | null
+  /** Epoch ms the socket was accepted, for the close line's openMs. */
+  at?: number
   // The hello's page marker is not kept here: after a hibernation wake, a same-page reconnect
   // within 1.5 s of the place's last message falls back to the quiet rule (Room.quietFor).
 }
@@ -159,6 +162,16 @@ export class RoomDO {
   private room: Room | null = null
   private snapshot: RoomSnapshot | undefined
   private readonly peers = new WeakMap<WebSocket, Peer>()
+  /**
+   * Epoch ms of the clock alarm this object last set, or 0 when none is pending. In memory
+   * only: after an eviction it reads 0, and the next message sets the alarm again, which
+   * merely replaces the pending one (an object has a single alarm).
+   */
+  private clockAt = 0
+  /** The room's clock is running, for the clock_start and clock_stop lines (not per tick). */
+  private clockOn = false
+  /** Epoch ms of the last failed presence report line; at most one a minute. */
+  private reportErrorAt = -Infinity
 
   constructor(private readonly state: DurableObjectState, private readonly env: Env) {
     state.blockConcurrencyWhile(async () => {
@@ -170,6 +183,10 @@ export class RoomDO {
     const response = await this.env.ROOMS.get(this.env.ROOMS.idFromName(REGISTRY_ID))
       .fetch(new Request('https://registry/report', { method: 'POST', body: JSON.stringify(report) }))
     if (!response.ok) throw new Error('Registry report failed')
+  }, () => Date.now(), (error) => {
+    if (Date.now() - this.reportErrorAt < 60_000) return
+    this.reportErrorAt = Date.now()
+    logError('error', error, { where: 'presence', room: this.tag() })
   })
 
   /** Counting never blocks gameplay; hold the event alive until ordered delivery finishes. */
@@ -206,25 +223,38 @@ export class RoomDO {
     const pair = new WebSocketPair()
     const server = pair[1]
     this.state.acceptWebSocket(server)
-    server.serializeAttachment({ room: name } satisfies Attachment)
+    server.serializeAttachment({ room: name, at: Date.now() } satisfies Attachment)
     room.connect(this.peer(server))
+    logEvent('socket_open', { room: room.tag, sockets: this.state.getWebSockets().length })
     return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit)
   }
 
   webSocketMessage(ws: HibernatingWebSocket, message: string | ArrayBuffer): void {
     const room = this.roomFor(ws)
     if (!room) return
-    const peer = this.peer(ws)
-    room.receive(peer, message)
-    this.report(room)
-    const att = ws.deserializeAttachment() as Attachment
-    if (!att.info) {
-      const info = room.info(peer)
-      if (info) ws.serializeAttachment({ ...att, info, token: room.token(peer) } satisfies Attachment)
+    try {
+      const peer = this.peer(ws)
+      room.receive(peer, message)
+      this.report(room)
+      this.keepClock(room)
+      const att = ws.deserializeAttachment() as Attachment
+      if (!att.info) {
+        const info = room.info(peer)
+        if (info) ws.serializeAttachment({ ...att, info, token: room.token(peer) } satisfies Attachment)
+      }
+    } catch (error) {
+      // Logged, then thrown on as before: the runtime's handling of a failed event is unchanged.
+      logError('error', error, { where: 'message', room: room.tag })
+      throw error
     }
   }
 
-  webSocketClose(ws: HibernatingWebSocket, code: number, _reason: string): void {
+  webSocketClose(ws: HibernatingWebSocket, code: number, _reason: string, wasClean?: boolean): void {
+    const att = ws.deserializeAttachment() as Attachment | null
+    logEvent('socket_close', {
+      room: this.tag(ws), player: att?.info?.id ?? null, code, clean: wasClean ?? null,
+      openMs: att?.at ? Date.now() - att.at : null,
+    })
     this.drop(ws)
     try {
       ws.close(code === 1005 ? 1000 : code, 'closed')
@@ -233,7 +263,9 @@ export class RoomDO {
     }
   }
 
-  webSocketError(ws: HibernatingWebSocket): void {
+  webSocketError(ws: HibernatingWebSocket, error?: unknown): void {
+    const att = ws.deserializeAttachment() as Attachment | null
+    logError('socket_error', error, { room: this.tag(ws), player: att?.info?.id ?? null })
     this.drop(ws)
   }
 
@@ -244,14 +276,41 @@ export class RoomDO {
     this.report(room)
     // An empty room forgets its world: the next first player brings theirs.
     if (room.connectionCount === 0) {
+      this.stopClock(room, 'empty')
+      logEvent('room_cleanup', { room: room.tag, reason: 'empty' })
       this.state.storage.deleteAll()
       this.snapshot = undefined
     } else if (room.heldCount === room.connectionCount) {
       // Nobody is connected, but places are held for players who may rejoin (game.rejoin).
       // Keep the storage for them, and come back when the holds have run out to tidy up:
       // with no sockets there are no messages to make the room notice the time.
+      // This replaces any clock alarm: nobody connected means nothing to time.
+      this.clockAt = 0
+      this.stopClock(room, 'only_held')
       void this.state.storage.setAlarm(Date.now() + (REJOIN_GRACE + 2) * 1000)
     }
+  }
+
+  /**
+   * Run the room's own clock while it needs one (Room.needsClock): an alarm CLOCK_MS from
+   * now, set again from alarm() each time it fires. Alarms are durable and survive an
+   * eviction, unlike setTimeout, and each one is a billed request plus one row written, so
+   * none is set while the room does not need it and an idle room can hibernate.
+   */
+  private keepClock(room: Room): void {
+    if (this.clockAt || !room.needsClock) return
+    this.clockAt = Date.now() + CLOCK_MS
+    void this.state.storage.setAlarm(this.clockAt)
+    if (!this.clockOn) {
+      this.clockOn = true
+      logEvent('clock_start', { room: room.tag })
+    }
+  }
+
+  private stopClock(room: Room, reason: string): void {
+    if (!this.clockOn) return
+    this.clockOn = false
+    logEvent('clock_stop', { room: room.tag, reason })
   }
 
   /**
@@ -261,17 +320,54 @@ export class RoomDO {
    * memory although players are still connected (the room is rebuilt from their sockets on
    * the next message). "No room" must therefore never be read as "nobody here": that wiped
    * the storage under two connected players, and the room came back with default settings.
-   * Any connected socket means the room is in use, and it is left alone.
+   * Any connected socket means the room is in use: then the alarm is the room's clock
+   * (keepClock) and only ticks it, never tidying up.
    */
   async alarm(): Promise<void> {
-    if (this.state.getWebSockets().length > 0) return
+    try {
+      await this.runAlarm()
+    } catch (error) {
+      // Logged, then thrown on so the runtime retries the alarm as before.
+      logError('error', error, { where: 'alarm', room: this.tag() })
+      throw error
+    }
+  }
+
+  private async runAlarm(): Promise<void> {
+    this.clockAt = 0
+    const sockets = this.state.getWebSockets()
+    if (sockets.length > 0) {
+      // In use: this is the room's clock (keepClock), not the cleanup. Tick on room time, so
+      // the hill scores and races end while every page is quiet, then go again if still needed.
+      const room = this.roomFor(sockets[0])
+      if (!room) return
+      // With sockets open, an alarm is always the clock's: after an eviction this object did
+      // not see it start, but must still report it stopping.
+      this.clockOn = true
+      room.tick()
+      this.report(room)
+      this.keepClock(room)
+      if (!this.clockAt) this.stopClock(room, 'not_needed')
+      return
+    }
     const room = this.room
     room?.tick()
     if (room) this.report(room)
     if (!room || room.connectionCount === 0) {
+      logEvent('room_cleanup', { room: this.tag(), reason: 'holds_expired' })
       await this.state.storage.deleteAll()
       this.snapshot = undefined
     }
+  }
+
+  /**
+   * This room's log tag on any path, including after an eviction: the room in memory, else the
+   * room a socket's attachment names (rebuilding it, as the socket's own handling is about to),
+   * else the tag kept in the stored snapshot. "unknown" only for an object with none of these
+   * (an alarm on storage already wiped, or a snapshot stored before the tag was kept).
+   */
+  private tag(ws?: HibernatingWebSocket): string {
+    return (ws ? this.roomFor(ws) : this.room)?.tag ?? this.snapshot?.tag ?? 'unknown'
   }
 
   /** After hibernation the object is rebuilt from scratch; rebuild the room from the sockets. */
@@ -311,7 +407,7 @@ export class RoomDO {
           // the close completes: forget who it was.
           try {
             const att = ws.deserializeAttachment() as Attachment | null
-            if (att?.info) ws.serializeAttachment({ room: att.room } satisfies Attachment)
+            if (att?.info) ws.serializeAttachment({ room: att.room, at: att.at } satisfies Attachment)
           } catch {
             // No attachment API on this socket: nothing to forget.
           }

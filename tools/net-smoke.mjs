@@ -52,16 +52,32 @@ const crashedPages = []
 const transportErrors = []
 const shot = '/tmp/syn3h-net-smoke.png'
 
-const browser = await chromium.launch({
+// One browser process per page: a crashed page takes down only itself, not every client in the
+// check (reliability plan, section 3). Each is launched in open() and closed at the end.
+const browsers = []
+const launch = () => chromium.launch({
   channel: 'chrome',
   headless: true,
   args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist',
-    // Keep both pages running at full rate even though only one can be focused.
+    // Keep every page running at full rate even though only one can be focused.
     '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
 })
+/**
+ * The check proves networking and rules, not rendering: pages run at the Low level, pinned
+ * before load so no automatic step moves it. Low is the lowest level whose budget still allows
+ * the four default bots that "default bots join and replicate" asks for (Minimal allows 2).
+ * The viewport stays 960x540: at 640x360 the HUD readouts cover the middle of the screen, and
+ * the labels keep clear of them by design, so "B shows a name tag for A" would see no tag.
+ */
+const SMOKE_QUALITY = { level: 1, auto: false, pinned: true, overrides: {} }
+const SMOKE_VIEWPORT = { width: 960, height: 540 }
 const errors = []
+const handlerErrors = []
 async function open(name, extra = '') {
-  const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
+  const browser = await launch()
+  browsers.push(browser)
+  const ctx = await browser.newContext({ viewport: SMOKE_VIEWPORT })
+  await ctx.addInitScript((q) => localStorage.setItem('syn3h.quality.v2', JSON.stringify(q)), SMOKE_QUALITY)
   const page = await ctx.newPage()
   clients.push({ name, page })
   page.on('crash', () => crashedPages.push(name))
@@ -119,7 +135,7 @@ async function captureFailure() {
             network: { connected: n?.connected ?? null, welcomed: n?.welcomed ?? null,
               state: n?.conn?.state ?? null, socketState: n?.conn?.ws?.readyState ?? null,
               bufferedBytes: n?.conn?.ws?.bufferedAmount ?? null, retryAt: n?.conn?.retryAt ?? null,
-              reconnects: n?.conn?.reconnects ?? null, closes: n?.conn?.closes ?? null,
+              reconnects: n?.conn?.reconnects ?? null, closes: n?.conn?.closes ?? null, handlerErrors: n?.conn?.handlerErrors ?? null,
               clockSynced: n?.clock?.synced ?? null, rtt: n?.clock?.rtt ?? null, stats: n?.stats ?? null,
               remotes: n?.remotes ? [...n.remotes.entries()].map(([id, r]) => ({ id, responding: r.responding, paused: r.paused, mode: r.sample?.mode, newest: r.buffer?.newest?.t })) : [] },
             startup: window.syn3hStartup ?? null,
@@ -469,8 +485,11 @@ try {
   check('"it" scores for a laser tag', scoreAfter === scoreBefore + 1, { scoreBefore, scoreAfter, it: itNow })
 
   // 6. Sounds. A heard B arrive at the start; the ram and the shot are heard in this run.
-  const [soundSampleH, soundSampleV, soundSampleA] = [await audioCalls(H), await audioCalls(V), await audioCalls(a)]
   const calls = (x) => evidenceEnabled ? x.calls : x
+  // B's 'hit' frame can arrive a moment after A's page shows the score: wait up to 2 s for it
+  // rather than sampling once. The bug this still catches is the shooter never hearing its hit.
+  const heardHit = await settle(() => audioCalls(V), (x) => calls(x).slice(callsBase[1]).includes('laserHit'), 2000)
+  const [soundSampleH, soundSampleV, soundSampleA] = [await audioCalls(H), heardHit.value, await audioCalls(a)]
   const [soundsA, soundsB] = [calls(soundSampleH), calls(soundSampleV)]
   check('sounds: A heard B materialize and the ram', calls(soundSampleA).includes('materialize') && soundsA.slice(callsBase[0]).some((c) => c.startsWith('impact:')), { soundsA })
   check('sounds: B heard its shot and the hit', soundsB.slice(callsBase[1]).includes('laserShot') && soundsB.slice(callsBase[1]).includes('laserHit'), { soundsB })
@@ -714,10 +733,18 @@ try {
       }
       saveShotEvidence('finally-collectors')
     }
+    // The connection guards every message handler and counts what it catches
+    // (Connection.handlerErrors): a caught throw would otherwise look like a missing effect, so any
+    // count fails the run. Read while the pages are open; a page that cannot be read says so.
+    for (const { name, page } of clients) {
+      const counts = await page.evaluate(() => window.syn3hNet?.conn?.handlerErrors ?? {}).catch((e) => ({ unreadable: String(e).slice(0, 120) }))
+      if (counts && (counts.unreadable || Object.values(counts).some((n) => n > 0))) handlerErrors.push({ name, counts })
+    }
     if (errors.length || results.some(r => !r.ok)) await captureFailure().catch(e => console.error('Diagnostic capture failed', String(e)))
-  } finally { await browser.close() }
+  } finally { await Promise.all(browsers.map((b) => b.close())) }
 }
 
+check('no message handler errors on any page', handlerErrors.length === 0, handlerErrors)
 check('no page errors', errors.length === 0, errors)
 const failed = results.filter((r) => !r.ok)
 const evidenceFailed = evidenceEnabled && !evidenceComplete()

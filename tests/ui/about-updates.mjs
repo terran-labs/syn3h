@@ -1,10 +1,12 @@
 /**
  * The lobby's Updates sheet, the update banner and the mark on the Updates icon.
  *
- * Start the dev server as release 26.11.1601 so the page knows its own version, then
- * this check serves a /v/versions.json naming 26.11.1602 as live:
+ * Start the dev server as the release before the newest production one (the second-last
+ * production row of release-notes/history.tsv) so the page knows its own version, then this
+ * check serves a /v/versions.json naming the newest as live. Both are then in the dev feed,
+ * which lists only recent releases (fixed versions fell out of it and broke this check):
  *
- *   SYN3H_RELEASE_VERSION=26.11.1601 npx vite --port 5187
+ *   SYN3H_RELEASE_VERSION=<second-newest, e.g. 26.11.1706> npx vite --port 5187
  *   SYN3H_URL=http://127.0.0.1:5187/ tools/heavy.sh node tests/ui/about-updates.mjs
  */
 import { chromium, webkit, devices } from 'playwright-core'
@@ -13,16 +15,17 @@ import { mkdir } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 const out = 'tests/ui/artifacts/about-updates'
 await mkdir(out, { recursive: true })
-const RUNNING = '26.11.1601', LIVE = '26.11.1602'
 /** The feed lists the real production history, newest first: its top entry grows with every release. */
-const NEWEST = readFileSync('release-notes/history.tsv', 'utf8').split('\n').map((l) => l.split('\t'))
-  .filter(([v, , , , channel]) => /^v\d/.test(v ?? '') && channel?.trim() === 'production').at(-1)[0].slice(1)
+const PRODUCTION = readFileSync('release-notes/history.tsv', 'utf8').split('\n').map((l) => l.split('\t'))
+  .filter(([v, , , , channel]) => /^v\d/.test(v ?? '') && channel?.trim() === 'production').map(([v]) => v.slice(1))
+const NEWEST = PRODUCTION.at(-1)
+const RUNNING = process.env.SYN3H_RELEASE_VERSION ?? PRODUCTION.at(-2), LIVE = NEWEST
 /** What the banner covers: the wordmark in the scene, the hint, lobby buttons, settings gear, any planet label or planet. */
 const overlaps = page => page.evaluate(() => {
   const banner = document.querySelector('.update-banner').getBoundingClientRect()
   const hit = r => r.width && r.height && r.left < banner.right && banner.left < r.right && r.top < banner.bottom && banner.top < r.bottom
   const shown = el => getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden'
-  const found = [...document.querySelectorAll('.galaxy-hint, .lobby-links button, .lobby-gear-dock, .galaxy-labels > *, #syn3h-build-notice')]
+  const found = [...document.querySelectorAll('.lobby-links button, .lobby-gear-dock, .galaxy-labels > *, #syn3h-build-notice')]
     .filter(el => shown(el) && hit(el.getBoundingClientRect())).map(el => el.textContent.trim() || el.className.baseVal || el.className)
   // The wordmark stands in the scene now (src/ui/brand/wordmarkScene.ts): its box on screen.
   const mark = syn3h.shell.galaxy?.wordmarkScreenBox?.(), shell = document.querySelector('.galaxy-ui').getBoundingClientRect()
@@ -36,7 +39,7 @@ const overlaps = page => page.evaluate(() => {
   }
   return found
 })
-const live = route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ versions: ['26.11.1600', RUNNING, LIVE] }) })
+const live = route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ versions: [PRODUCTION.at(-3), RUNNING, LIVE] }) })
 
 for (const mode of ['desktop', 'phone', 'landscape']) {
   const touch = mode !== 'desktop'

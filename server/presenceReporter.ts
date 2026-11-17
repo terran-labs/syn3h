@@ -16,7 +16,9 @@ export class PresenceReporter {
   private running: Promise<void> | null = null
 
   constructor(private readonly send: (report: RoomPresenceReport) => Promise<void>,
-    private readonly now: () => number = Date.now) {}
+    private readonly now: () => number = Date.now,
+    /** Told of each failed delivery (the transport rate limits its log line). */
+    private readonly failed: (error: unknown) => void = () => {}) {}
 
   report(report: RoomPresenceReport, seed: unknown): Promise<void> {
     this.latest = { report: { ...report }, signature: JSON.stringify([report.players, report.recipeId, seed]) }
@@ -29,7 +31,8 @@ export class PresenceReporter {
   private async flush(): Promise<void> {
     while (this.latest) {
       const pending = this.latest
-      try { await this.send(pending.report) } catch {
+      try { await this.send(pending.report) } catch (error) {
+        this.failed(error)
         this.retryAt = this.now() + 1000
         return
       }

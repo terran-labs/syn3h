@@ -31,7 +31,7 @@ import {
 } from './params'
 import { cordGlow, cordPull, cordSag, predict, reducedMass, type CordTuning } from './rope'
 import { drapeCord, type CordSurface } from './drape'
-import { BEAD_SPACING, SLACK_RGB, TAUT_RGB, TETHER_SEGMENTS, TetherLook, tetherColor } from './tether'
+import { PHASE_WRAP, SLACK_RGB, TAUT_RGB, TETHER_SEGMENTS, TetherLook, paintGlow, reducedMotion, tetherColor } from './tether'
 
 type Vec3 = [number, number, number]
 
@@ -42,6 +42,8 @@ export interface BungeeVehicle {
   object: THREE.Object3D
   /** The centre as drawn this frame (Vehicle.drawnCentre); `object` may not have moved yet. */
   drawnCentre?(alpha: number, out: THREE.Vector3): THREE.Vector3
+  /** Its paint (Vehicle.colors): a taut cord glows in its owner's colour. */
+  readonly colors?: { readonly body: string; readonly accent: string }
 }
 
 export interface BungeeHooks {
@@ -94,8 +96,10 @@ interface Cord {
   twang: number
   /** For drawing: +1 when the pull carries the owner toward the far end, -1 the far end toward the owner. */
   flow: number
-  /** For drawing: how far the beads have run, metres, kept within one bead spacing. */
+  /** For drawing: how far the beads have run, metres, kept within PHASE_WRAP. */
   phase: number
+  /** For drawing: the owner's paint the taut colour was made from, and that colour. */
+  paint: { body: string; accent: string; rgb: number[] }
   /** Place in the shared tether buffers (tether.ts), or -1 when every place is taken. */
   slot: number
 }
@@ -225,6 +229,12 @@ export class Bungee implements System {
   /** The local player's cord, if any. */
   get mine(): Cord | undefined {
     return this.cords.get(this.hooks.self())
+  }
+
+  /** Anyone's cord as this client sees it: hook in the air, tied to vehicle `to`, or null. */
+  cordOf(owner: number): { flying: boolean; to: number | null } | null {
+    const c = this.cords.get(owner)
+    return c ? { flying: Boolean(c.hook), to: c.hook ? null : c.to } : null
   }
 
   /** True while the local player's cord is attached. For the HUD. */
@@ -477,7 +487,7 @@ export class Bungee implements System {
     this.remove(owner)
     const c: Cord = {
       owner, hook: null, to: null, at: null, normal: new THREE.Vector3(0, 1, 0), rest: 0, since: this.game.time,
-      pull: 0, mass: 1, twang: 0, flow: 1, phase: 0, slot: this.look.takeCord(),
+      pull: 0, mass: 1, twang: 0, flow: 1, phase: 0, paint: { body: '', accent: '', rgb: [...TAUT_RGB] }, slot: this.look.takeCord(),
     }
     this.cords.set(owner, c)
     return c
@@ -682,10 +692,12 @@ export class Bungee implements System {
     c.twang = Math.max(0, c.twang - dt * 2.5)
     const glow = c.hook ? 0.2 : cordGlow(c.pull, c.mass, t)
     const time = this.game.time
-    // Beads run the way the pull goes, a stroll when slack and a rush when taut.
+    // Beads run the way the pull goes, a stroll when slack and a rush when taut. Reduced
+    // motion holds them, and the taut pulse that shares their phase, still.
+    const still = reducedMotion()
     const flow = c.hook ? 1 : c.flow
-    const phase = c.phase - flow * (1.2 + 15 * glow) * dt
-    c.phase = ((phase % BEAD_SPACING) + BEAD_SPACING) % BEAD_SPACING
+    const phase = still ? c.phase : c.phase - flow * (1.2 + 15 * glow) * dt
+    c.phase = ((phase % PHASE_WRAP) + PHASE_WRAP) % PHASE_WRAP
     const side = this.drawSide.subVectors(b, a).cross(UP)
     if (side.lengthSq() < 1e-6) side.set(1, 0, 0)
     side.normalize()
@@ -695,12 +707,21 @@ export class Bungee implements System {
       const p = this.points[i].lerpVectors(a, b, u)
       p.y -= sag * 4 * u * (1 - u)
       // A plucked string: a twang on attach, and a hum that rises with tension.
-      const wobble = (c.twang * 0.7 + glow * 0.05) * Math.sin(Math.PI * u) * Math.sin(time * (18 + glow * 30))
+      const wobble = still ? 0 : (c.twang * 0.7 + glow * 0.05) * Math.sin(Math.PI * u) * Math.sin(time * (18 + glow * 30))
       p.addScaledVector(side, wobble)
     }
     if (this.hooks.surface) drapeCord(this.points, n + 1, this.hooks.surface)
-    const rgb = tetherColor(glow, this.rgb)
-    look.writeCord(c.slot, this.points, glow, c.phase, rgb, this.hooks.surface)
+    // Taut, the cord takes its owner's paint; worked out again only when the paint changes.
+    const paint = owner.colors
+    if (paint && (paint.body !== c.paint.body || paint.accent !== c.paint.accent)) {
+      c.paint.body = paint.body; c.paint.accent = paint.accent
+      paintGlow(paint.body, paint.accent, c.paint.rgb)
+    }
+    // A working tow pulls at a third to a half of the cord's strength: drawn, that already
+    // reads as taut, while a slack cord (glow near 0) stays exactly as quiet.
+    const taut = c.hook ? glow : 1 - (1 - glow) ** 3
+    const rgb = tetherColor(taut, this.rgb, c.paint.rgb)
+    look.writeCord(c.slot, this.points, taut, c.phase, rgb, this.hooks.surface)
 
     const star = look.cordSpark(c.slot, 0), tail = look.cordSpark(c.slot, 1), anchor = look.cordSpark(c.slot, 2)
     if (c.hook) {

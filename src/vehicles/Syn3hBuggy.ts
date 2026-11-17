@@ -25,7 +25,6 @@ import {
 import { applyLava, floatPoints, lavaThickness } from './lava'
 import { gripAt } from './surfaceGrip'
 import type { BuggySkin } from './skins/BuggySkin'
-import { retryDelay } from './skins/modelLoader'
 import { type MotorDriveInput, motorDrive, smoothEffort } from './skins/motorDrive'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
 import { Vehicle, type WheelEffect, createWheelEffects } from './Vehicle'
@@ -93,8 +92,8 @@ const AUTO_BRAKE_V2 = 1
 
 /**
  * Convex hull of the "Collider" mesh of Syn3h Buggy.blend (the prefab's convex MeshCollider,
- * scale 1), read from public/models/buggy.glb whose frame matches Unity's (its wheel nodes sit
- * at WheelPos). Turned 180 degrees about Y into our frame: nose at -Z.
+ * scale 1), read once from the original buggy.glb (now source material in tools/models) whose
+ * frame matches Unity's (its wheel nodes sit at WheelPos). Turned 180 degrees about Y into our frame: nose at -Z.
  */
 // prettier-ignore
 const HULL = [
@@ -216,8 +215,13 @@ function rayOrigin(i: number, out: THREE.Vector3, x = WHEEL_POS.x, z = WHEEL_POS
   return out.set(sx * (x + RAY_OUTSET * widthScale), WHEEL_POS.y, -z * (i < 2 ? 1 : -1))
 }
 
-/** Fresh skins tried when building one fails outright (a download failure retries inside). */
+/** Fresh skins tried when building one fails outright. */
 const SKIN_ATTEMPTS = 6
+
+/** Delay before retry `attempt` (1 based): 0.5 s, 1, 2, 4, 8, then 15 s. */
+function retryDelay(attempt: number): number {
+  return Math.min(15000, 500 * 2 ** (attempt - 1))
+}
 
 export interface SkinFactory {
   (): BuggySkin
@@ -377,10 +381,10 @@ export class Syn3hBuggy extends Vehicle {
   }
 
   /**
-   * Build the skin and show it when its models arrive. The skin's own loader retries a failed
-   * download until it succeeds (modelLoader.ts), so a rejection here means building the skin
-   * itself failed: try a fresh skin after a growing delay, a few times, rather than keeping
-   * the stand in for the rest of the session (which the player could only fix by reloading).
+   * Build the skin and show it once it is ready. The skin is generated in code, so a rejection
+   * here means building it failed: try a fresh skin after a growing delay, a few times, rather
+   * than keeping the stand in for the rest of the session (which the player could only fix by
+   * reloading).
    */
   private attachSkin(factory: SkinFactory): void {
     if (this.disposed) return
@@ -407,7 +411,7 @@ export class Syn3hBuggy extends Vehicle {
       },
       (err) => {
         if (this.skin !== skin) return
-        console.warn('Buggy model failed to load', err)
+        console.warn('Buggy skin failed to build', err)
         skin.object.removeFromParent()
         skin.dispose()
         this.skin = null

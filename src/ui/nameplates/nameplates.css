@@ -13,6 +13,6 @@
 @media (prefers-reduced-motion: reduce) { .vehicle-nameplate.s3-plate:not(#s3-plate) { transition: none; } }
 /* "+2": how many labels are stacked behind this one, unshown. Quiet, on the name line, in the
    room the plate's right padding makes for it (VehicleNameplates.ts MORE_FONT). */
-.vehicle-nameplate-more { position: absolute; top: 5px; right: 10px; font: 500 10px/17px 'Barlow', sans-serif; letter-spacing: .08em; color: var(--s3-soft, #cfe3ec); }
+.vehicle-nameplate-more { position: absolute; top: 5px; right: 10px; font: 500 10px/17px 'Barlow', sans-serif; letter-spacing: .08em; color: var(--s3-soft, #dedede); }
 .vehicle-nameplate.is-bot .vehicle-nameplate-more { top: 4px; right: 9px; line-height: 15px; }
 .vehicle-nameplate-more:empty { display: none; }

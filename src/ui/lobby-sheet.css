@@ -17,7 +17,7 @@
 
 /* The content scrolls inside, clear of both bowed edges. */
 .lobby-sheet-body {
-  position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #2b3a52 transparent;
+  position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #3a3a3c transparent;
   margin: calc(var(--inset-top, 0px) + 6px) 0 calc(var(--inset-bottom, 0px) + 6px); padding: 30px 56px 30px 44px; text-align: left;
 }
 .syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-title { margin: 0 0 24px; padding-right: 32px; font: 500 13px/1.2 'Barlow', sans-serif; letter-spacing: .26em; text-indent: 0; text-transform: uppercase; color: var(--s3-accent); }
@@ -25,7 +25,7 @@
 /* One clean X in the upper right corner, and nothing else for closing. */
 .syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-close {
   position: absolute; right: 12px; top: calc(var(--close-top, 0px) + 10px); width: 48px; height: 48px; min-width: 48px; min-height: 48px; padding: 0;
-  display: grid; place-items: center; border: 0; border-radius: 50%; background: none; box-shadow: none; color: rgb(220 240 255 / .78); cursor: pointer;
+  display: grid; place-items: center; border: 0; border-radius: 50%; background: none; box-shadow: none; color: rgb(236 236 236 / .78); cursor: pointer;
 }
 .lobby-sheet-close svg { width: 22px; height: 22px; }
 .lobby-sheet-close path { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }

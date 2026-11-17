@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { wingVertexSyn3h } from '../../src/vehicles/skins/LoadedBuggySkin'
+import { wingVertexSyn3h } from '../../src/vehicles/skins/Syn3hBuggySkin'
 
 describe('flight wing deformation', () => {
   it('collapses width and height while preserving length', () => {

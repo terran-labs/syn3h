@@ -3,13 +3,16 @@
  * never repeats, respects the chatter setting, says only lines that pass the filter, and
  * requests from players end on their own and respect the room's settings.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { BanterDirector, type BanterBot, type BanterPlayer, type Directive } from '../../src/bots/banter/Director'
 import { POOLS, POOL_FILES } from '../../src/bots/banter/data'
 import { FRAGMENTS } from '../../src/bots/banter/data/fragments'
 import { expand, type Context } from '../../src/bots/banter/grammar'
-import { VOICE_IDS } from '../../src/bots/banter/voices'
-import { botChatter, botChatterLevel, filterChat, MAX_CHAT_LENGTH } from '../../shared/chat'
+import { ROLE_WORDS, VOICE_IDS, VOICES } from '../../src/bots/banter/voices'
+import { botIdentity } from '../../src/ui/data/names'
+import { RESCUE_COLOUR_S } from '../../src/bots/banter/rescueLines'
+import { botChatter, botChatterAmount, botChatterLevel, filterChat, MAX_CHAT_LENGTH } from '../../shared/chat'
+import { EXCHANGE_MAX, exempt } from '../../src/bots/banter/budget'
 import { params } from '../../shared/params'
 import { seededRandom } from '../../src/bots/random'
 
@@ -42,9 +45,61 @@ function fakeWorld(count = 4) {
   return { director, bots, players, said, directed, allow, run, get now() { return now } }
 }
 
+// The scheduler's own tests run at the old amount (1); the budget has its own tests below.
+beforeEach(() => { params.set(botChatterAmount.def.id, 1) })
 afterEach(() => {
   params.set(botChatter.def.id, true)
   params.set(botChatterLevel.def.id, 1)
+  params.set(botChatterAmount.def.id, botChatterAmount.def.default)
+})
+
+describe('room-wide chatter budget', () => {
+  const unprompted = (w: ReturnType<typeof fakeWorld>, amount: number, seconds: number) => {
+    params.set(botChatterAmount.def.id, amount)
+    w.run(seconds)
+    return w.said.length
+  }
+
+  it('a quarter of the amount is about a quarter of the talk, as longer quiet stretches', () => {
+    const full = unprompted(fakeWorld(4), 1, 3600)
+    const quarter = unprompted(fakeWorld(4), 0.25, 3600)
+    console.log(`unprompted lines an hour, four bots: amount 1 ${full}, amount 0.25 ${quarter}`)
+    expect(quarter).toBeGreaterThan(full * 0.12)
+    expect(quarter).toBeLessThan(full * 0.38)
+  })
+
+  it('adding bots does not add noise', () => {
+    const four = unprompted(fakeWorld(4), 0.25, 3600)
+    const eight = unprompted(fakeWorld(8), 0.25, 3600)
+    expect(eight).toBeLessThanOrEqual(Math.ceil(four * 1.3) + 3)
+  })
+
+  it('an exchange runs to at most three lines, then the room is quiet', () => {
+    params.set(botChatterAmount.def.id, 0.25)
+    const w = fakeWorld(4)
+    w.run(3600)
+    let run = 1
+    for (let i = 1; i < w.said.length; i++) {
+      run = w.said[i].t - w.said[i - 1].t < 10 ? run + 1 : 1
+      expect(run).toBeLessThanOrEqual(EXCHANGE_MAX)
+    }
+  })
+
+  it('a bot still answers a person who addresses it, however quiet the room', () => {
+    params.set(botChatterAmount.def.id, 0.05)
+    const w = fakeWorld(4)
+    w.run(60)
+    const before = w.said.length
+    w.director.hear(1, 'Temolin, who are you')
+    w.run(10)
+    expect(w.said.length).toBeGreaterThan(before)
+    // Rescue lines are judged per line by the rescue wrapper (news or colour), not by key.
+    expect(exempt('req.who') && !exempt('idle.musing') && !exempt('conflict.bargain') && !exempt('rescue.start')).toBe(true)
+  })
+
+  it('amount 0 stops unprompted talk entirely', () => {
+    expect(unprompted(fakeWorld(4), 0, 3600)).toBe(0)
+  })
 })
 
 describe('bot banter', () => {
@@ -159,7 +214,7 @@ describe('bot banter', () => {
 
   it('every template, for every voice, expands to a line that passes the filter and the limits', () => {
     const r = seededRandom(7)
-    const ctx: Context = { me: 'Temolin', you: 'Detodak', subj: 'Fanirek', player: 'Sam', critter: 'very small moose', feature: 'the lava vent', activity: 'cruising the road', count: 'third', sea: 'lava', planet: 'volcanic', kind: 'jet' }
+    const ctx: Context = { me: 'Temolin', role: 'Glacier Courier', you: 'Detodak', subj: 'Fanirek', player: 'Sam', critter: 'very small moose', feature: 'the lava vent', activity: 'cruising the road', count: 'third', sea: 'lava', planet: 'volcanic', kind: 'jet' }
     let checked = 0
     const bad: string[] = []
     for (const [key, pool] of Object.entries(POOLS)) {
@@ -178,11 +233,119 @@ describe('bot banter', () => {
     expect(bad).toEqual([])
   })
 
+  it('nearly every generated bot name gets its voice from its role, not by chance', () => {
+    let byRole = 0
+    for (let i = 0; i < 2000; i++) {
+      // The display name is a first name; the hidden role carries the job words.
+      const { role } = botIdentity(`seed${i}`)
+      if (role.split(' ').some((w) => ROLE_WORDS.has(w.toLowerCase())) || VOICE_IDS.some((v) => role.endsWith(VOICES[v].job))) byRole++
+    }
+    expect(byRole / 2000).toBeGreaterThan(0.9)
+  })
+
   it('every key the director uses exists, and no data file shadows another', () => {
     const keys = Object.values(POOL_FILES).flatMap((p) => Object.keys(p))
     expect(new Set(keys).size).toBe(keys.length)
     for (const key of ['idle.musing', 'propose.tag', 'reply.busy', 'retort.busy', 'sight.critter', 'doubt.critter', 'mishap.stuck', 'req.accept.follow', 'bored.leave', 'stuck.call', 'rescue.start']) {
       expect(POOLS[key], key).toBeDefined()
     }
+  })
+
+  it('rescue lines name only the bots and people in that rescue, by the names on their labels', () => {
+    // The bug: "Hold on, Toratek" read as addressed to the stuck bot. Every name in a rescue line
+    // must be a label in the room, and one of the parties to that event.
+    const w = fakeWorld(4)
+    w.players.push({ id: 2, name: 'Toratek', x: 0, y: 10, z: 20, speed: 0, airFor: 0, idleFor: 0, kind: 'buggy', flippedFor: 0, stuckFor: 0 })
+    params.set(botChatterLevel.def.id, 2)
+    w.run(10)
+    const label = (id: number) => w.bots.find((b) => b.id === id)!.name.split(' ')[0]
+    const names = [...w.bots.map((b) => b.id).map(label), 'Sam', 'Toratek']
+    // A line is rescue speech when it fits a template from a rescue pool.
+    const templates = Object.entries(POOLS).filter(([k]) => /^(stuck|rescue|conflict)\./.test(k)).flatMap(([, pool]) => Object.values(pool).flat() as string[])
+    const pattern = (t: string) => new RegExp('^' + t.replace(/[.*+?^$()|\\]/g, '\\$&').replace(/\\\[|\[[^\]]*\]/g, '.+?').replace(/\{[^}]*\}/g, '.+?') + '$')
+    const patterns = templates.map(pattern)
+    const rescueLine = (text: string) => patterns.some((p) => p.test(text))
+    const [stuck, a, b] = [0xff00, 0xff01, 0xff02]
+    const events: { e: Parameters<typeof w.director.rescue>[0]; parties: string[] }[] = [
+      { e: { kind: 'stuck', stuck, clumsy: true, count: 1 }, parties: [label(stuck)] },
+      { e: { kind: 'conflict', bot: a, stuck, player: 1, going: true }, parties: [label(a), label(stuck), 'Sam'] },
+      { e: { kind: 'conflict', bot: b, stuck, player: 2, going: false }, parties: [label(b), label(stuck), label(a), 'Toratek'] },
+      { e: { kind: 'start', bot: a, stuck }, parties: [label(a), label(stuck)] },
+      { e: { kind: 'retry', bot: a, stuck }, parties: [label(a), label(stuck)] },
+      { e: { kind: 'join', bot: b, stuck, others: [a] }, parties: [label(a), label(b), label(stuck)] },
+      { e: { kind: 'waiting', stuck, minutes: 2 }, parties: [label(stuck)] },
+      { e: { kind: 'swap', bot: a, stuck }, parties: [label(a), label(stuck)] },
+      { e: { kind: 'player.ask', player: 1, stuck }, parties: [label(stuck), 'Sam'] },
+      { e: { kind: 'player.hooked', player: 1, stuck }, parties: [label(stuck), 'Sam'] },
+      { e: { kind: 'handoff', bot: b, stuck }, parties: [label(b), label(stuck)] },
+      { e: { kind: 'freed', stuck, by: [a], players: [1], count: 2 }, parties: [label(stuck), label(a), 'Sam'] },
+      { e: { kind: 'calloff', bot: a, stuck }, parties: [label(a), label(stuck)] },
+      { e: { kind: 'giveup', stuck }, parties: [label(stuck)] },
+    ]
+    let checked = 0
+    for (let round = 0; round < 6; round++) {
+      for (const { e, parties } of events) {
+        const before = w.said.length
+        w.director.rescue(e)
+        w.run(25)
+        for (const line of w.said.slice(before)) {
+          // Ordinary chatter in the gap may name anyone; only rescue speech is checked.
+          if (!rescueLine(line.text)) continue
+          checked++
+          for (const n of names) if (new RegExp(`\\b${n}\\b`).test(line.text)) expect(parties, `${e.kind}: ${line.text}`).toContain(n)
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(30)
+  })
+
+  it('a bot claims an earlier tow only when it really towed someone this session', () => {
+    const w = fakeWorld(4)
+    params.set(botChatterLevel.def.id, 2)
+    w.run(10)
+    const claims = /\b(I went last time|I did the last one|I did the last rescue|the last rescue)\b/
+    const [stuck, a, b] = [0xff00, 0xff01, 0xff02]
+    for (let i = 0; i < 40; i++) {
+      w.director.rescue({ kind: 'conflict', bot: a, stuck, player: 1, going: false })
+      w.director.rescue({ kind: 'conflict', bot: b, stuck, player: 1, going: false })
+      w.run(30)
+    }
+    expect(w.said.some((l) => claims.test(l.text))).toBe(false)
+    // Once b has really towed someone out, it may say so.
+    w.director.rescue({ kind: 'freed', stuck, by: [b], players: [], count: 1 })
+    let claimed = false
+    for (let i = 0; i < 60 && !claimed; i++) {
+      w.director.rescue({ kind: 'conflict', bot: a, stuck, player: 1, going: false })
+      w.director.rescue({ kind: 'conflict', bot: b, stuck, player: 1, going: false })
+      w.run(30)
+      claimed = w.said.some((l) => l.bot === b && claims.test(l.text))
+    }
+    expect(w.said.filter((l) => l.bot !== b && claims.test(l.text))).toEqual([])
+  })
+
+  it('a five-minute rescue does not fill the log: colour at most once per RESCUE_COLOUR_S, news once', () => {
+    const w = fakeWorld(4)
+    w.run(10)
+    const templates = Object.entries(POOLS).filter(([k]) => /^(stuck|rescue|conflict)\./.test(k)).flatMap(([, pool]) => Object.values(pool).flat() as string[])
+    const pattern = (t: string) => new RegExp('^' + t.replace(/[.*+?^$()|\\]/g, '\\$&').replace(/\\\[|\[[^\]]*\]/g, '.+?').replace(/\{[^}]*\}/g, '.+?') + '$')
+    const patterns = templates.map(pattern)
+    const [stuck, a, b, c] = [0xff00, 0xff01, 0xff02, 0xff03]
+    const before = w.said.length
+    w.director.rescue({ kind: 'stuck', stuck, clumsy: true, count: 2 })
+    // A hard rescue: every few seconds something happens, for five minutes.
+    const busy: Parameters<typeof w.director.rescue>[0][] = [
+      { kind: 'conflict', bot: c, stuck, player: 1, going: false }, { kind: 'start', bot: a, stuck }, { kind: 'retry', bot: a, stuck },
+      { kind: 'join', bot: b, stuck, others: [a] }, { kind: 'start', bot: b, stuck }, { kind: 'handoff', bot: b, stuck }, { kind: 'swap', bot: a, stuck },
+      { kind: 'waiting', stuck, minutes: 2 }, { kind: 'pointed', stuck }, { kind: 'retry', bot: c, stuck },
+    ]
+    for (let i = 0; i < 100; i++) { w.director.rescue(busy[i % busy.length]); w.run(3) }
+    w.director.rescue({ kind: 'calloff', bot: a, stuck })
+    w.director.rescue({ kind: 'giveup', stuck })
+    w.run(20)
+    const lines = w.said.slice(before).filter((l) => patterns.some((p) => p.test(l.text)))
+    // News: stuck, someone is coming, a rescuer is stuck too, called off, gone home; a reply to
+    // the stuck call may ride along. Colour: one per RESCUE_COLOUR_S.
+    expect(lines.length).toBeLessThanOrEqual(6 + Math.ceil(320 / RESCUE_COLOUR_S) + 1)
+    expect(lines.length).toBeGreaterThan(5)
   })
 })
