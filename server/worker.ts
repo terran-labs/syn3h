@@ -186,7 +186,7 @@ export class RoomDO {
   }, () => Date.now(), (error) => {
     if (Date.now() - this.reportErrorAt < 60_000) return
     this.reportErrorAt = Date.now()
-    logError('error', error, { where: 'presence', room: this.room?.tag ?? null })
+    logError('error', error, { where: 'presence', room: this.tag() })
   })
 
   /** Counting never blocks gameplay; hold the event alive until ordered delivery finishes. */
@@ -252,7 +252,7 @@ export class RoomDO {
   webSocketClose(ws: HibernatingWebSocket, code: number, _reason: string, wasClean?: boolean): void {
     const att = ws.deserializeAttachment() as Attachment | null
     logEvent('socket_close', {
-      room: this.room?.tag ?? null, player: att?.info?.id ?? null, code, clean: wasClean ?? null,
+      room: this.tag(ws), player: att?.info?.id ?? null, code, clean: wasClean ?? null,
       openMs: att?.at ? Date.now() - att.at : null,
     })
     this.drop(ws)
@@ -265,7 +265,7 @@ export class RoomDO {
 
   webSocketError(ws: HibernatingWebSocket, error?: unknown): void {
     const att = ws.deserializeAttachment() as Attachment | null
-    logError('socket_error', error, { room: this.room?.tag ?? null, player: att?.info?.id ?? null })
+    logError('socket_error', error, { room: this.tag(ws), player: att?.info?.id ?? null })
     this.drop(ws)
   }
 
@@ -328,7 +328,7 @@ export class RoomDO {
       await this.runAlarm()
     } catch (error) {
       // Logged, then thrown on so the runtime retries the alarm as before.
-      logError('error', error, { where: 'alarm', room: this.room?.tag ?? null })
+      logError('error', error, { where: 'alarm', room: this.tag() })
       throw error
     }
   }
@@ -341,6 +341,9 @@ export class RoomDO {
       // the hill scores and races end while every page is quiet, then go again if still needed.
       const room = this.roomFor(sockets[0])
       if (!room) return
+      // With sockets open, an alarm is always the clock's: after an eviction this object did
+      // not see it start, but must still report it stopping.
+      this.clockOn = true
       room.tick()
       this.report(room)
       this.keepClock(room)
@@ -351,10 +354,20 @@ export class RoomDO {
     room?.tick()
     if (room) this.report(room)
     if (!room || room.connectionCount === 0) {
-      logEvent('room_cleanup', { room: room?.tag ?? null, reason: 'holds_expired' })
+      logEvent('room_cleanup', { room: this.tag(), reason: 'holds_expired' })
       await this.state.storage.deleteAll()
       this.snapshot = undefined
     }
+  }
+
+  /**
+   * This room's log tag on any path, including after an eviction: the room in memory, else the
+   * room a socket's attachment names (rebuilding it, as the socket's own handling is about to),
+   * else the tag kept in the stored snapshot. "unknown" only for an object with none of these
+   * (an alarm on storage already wiped, or a snapshot stored before the tag was kept).
+   */
+  private tag(ws?: HibernatingWebSocket): string {
+    return (ws ? this.roomFor(ws) : this.room)?.tag ?? this.snapshot?.tag ?? 'unknown'
   }
 
   /** After hibernation the object is rebuilt from scratch; rebuild the room from the sockets. */
