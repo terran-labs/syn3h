@@ -70,7 +70,8 @@ try {
     assert.ok(target, `${name}: some planet on screen has a caption below full strength at rest`)
     if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: target.x, y: target.y }] })
     else await page.mouse.move(target.x, target.y)
-    await page.waitForTimeout(500)
+    // The pointed caption eases to full strength (a CSS transition): wait for it, not a clock.
+    await page.waitForFunction(() => { const c = document.querySelector('.galaxy-label.is-pointed'); return c && Number(getComputedStyle(c).opacity) > 0.97 }, null, { timeout: 10000 }).catch(() => {})
     const pointed = await page.evaluate(() => document.querySelector('.galaxy-label.is-pointed')?.dataset.world)
     const after = (await measure()).find(c => c.id === pointed)
     assert.ok(after, `${name}: pointing near ${target.id} points at a world with a caption`)
