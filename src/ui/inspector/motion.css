@@ -64,6 +64,19 @@
 @media (max-height: 500px), (max-width: 700px) {
   .syn3h-shell.exploration-ui .world-inspector .wi-cards { overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin; }
   .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card.is-open { min-height: calc(var(--wi-head) + 2px + 120px); }
+  /* In play, one card is open at a time (Inspector oneOpen). It takes its full height and the
+     stack is the only thing that scrolls: no box scrolling inside a scrolling box. Its header
+     sticks to the top of the stack while the content passes under it, so closing it is always
+     one tap away. overflow: clip, not hidden, so the card is not a scroller of its own. */
+  /* The stack's scroll is steered by openOnly while cards fold; the browser's own scroll
+     anchoring would steer it too, and the two fight. */
+  .syn3h-shell.exploration-ui .world-inspector:not(.lobby-settings) .wi-cards { overflow-anchor: none; }
+  .syn3h-shell.exploration-ui .world-inspector:not(.lobby-settings) .wi-cards > .wi-card.is-open { flex: 0 0 auto; overflow: clip; }
+  .syn3h-shell.exploration-ui .world-inspector:not(.lobby-settings) .wi-cards > .wi-card.is-open > .wi-body { flex: none; overflow: visible; }
+  .syn3h-shell.exploration-ui .world-inspector:not(.lobby-settings) .wi-cards > .wi-card.is-open > .wi-head {
+    position: sticky; top: 0; z-index: 2; border-radius: var(--halo-r, 16px) var(--halo-r, 16px) 0 0;
+    background: rgb(12 12 13 / .55); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  }
 }
 
 /* The Performance card: [lower] [level, centred] [raise], then Auto and "Reset all", the

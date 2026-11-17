@@ -43,7 +43,7 @@ for (const [name, options] of Object.entries({ desktop: { viewport: { width: 144
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     if (touch) await page.locator('.inspector-toggle').tap(); else if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
     const rail = page.locator('.world-inspector'); await rail.waitFor({ state: 'visible' })
-    await page.evaluate(() => { const p = document.querySelector('.rail-players'); if (p) p.open = true })
+    await page.evaluate(() => window.syn3h.shell.inspector.revealCard('players'))
     await page.waitForTimeout(500); await page.screenshot({ path: `${out}/${name}-play-players.png` })
     await press(page.locator('.rail-invite')); await page.locator('.join-view').waitFor({ state: 'visible' }); await page.waitForTimeout(500)
     await page.screenshot({ path: `${out}/${name}-play-invite.png` })

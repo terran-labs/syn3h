@@ -68,7 +68,7 @@ for (const mode of modes) {
     assert.ok(tip.x >= 0 && tip.y >= 0 && tip.x + tip.width <= page.viewportSize().width && tip.y + tip.height <= page.viewportSize().height)
     if (!touch) assert.ok(tip.x + tip.width < control.x, 'description floats left of control')
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-tooltip.png` })
-    await page.locator('.rail-players summary').click()
+    await page.locator('[data-section=players] > .wi-head').click()
     assert.equal(await page.locator('.rail-diagnostics input').isChecked(), false)
     await page.locator('.rail-diagnostics input').check()
     await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('show-diagnostics'))
