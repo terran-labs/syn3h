@@ -58,6 +58,7 @@ import { cleanPlayerName, loadPlayerName, savePlayerName, type NameSource } from
 import { TintTransition, randomTintPair } from '../vehicles/tints'
 import { Minimap, type MapEntity } from './Minimap'
 import { AccessoryControls } from './AccessoryControls'
+import { ChatRow } from './ChatRow'
 import type { AccessoryVehicle } from '../vehicles/accessories'
 import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
@@ -257,6 +258,8 @@ export class Shell implements System {
     // Under the drum, the driven vehicle's accessories (Zorb, wings, jet mode...), each with its
     // key and its state (src/vehicles/accessories.ts). Part of the left column, hud-column.css.
     this.accessories = new AccessoryControls(this.element, game.input, () => this.audio.cue('click'), this.abort.signal)
+    // Under them, the column's Chat row: opens chat and shows its unread count through chatLink.
+    new ChatRow(this.element, this.abort.signal)
     const signal = this.abort.signal
     this.followPointer(signal)
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true

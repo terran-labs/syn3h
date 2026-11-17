@@ -45,7 +45,7 @@
 /* Neutral palette for the column until ux/hud-neutral sets these shared tokens for the whole
    HUD (the owner's call: grey-white light, no blue cast). Delete this block when it lands;
    everything below reads only these tokens. */
-.syn3h-shell.exploration-ui :is(.gear-selector, .hud-accessories, .chat-panel .chat-toggle, .chat-panel .chat-strip, .shell-minimap) {
+.syn3h-shell.exploration-ui :is(.gear-selector, .hud-accessories, .hud-chat, .chat-panel .chat-strip, .shell-minimap) {
   --s3-ink: #f4f4f2; --s3-dim: #d6d6d3; --s3-soft: #a9a9a6; --s3-accent: #e6e6e3; --s3-accent-2: #ffffff;
   --s3-line: rgb(236 236 232 / .5); --s3-line-quiet: rgb(236 236 232 / .2); --s3-panel: rgb(8 8 8 / .38);
   --halo-glow: 0 0 6px rgb(255 255 255 / .14);
@@ -54,7 +54,7 @@
 }
 /* The column's look, from the shared tokens. Declared on the column's own parts so they read
    the tokens as set there. */
-.syn3h-shell.exploration-ui :is(.gear-selector, .hud-accessories, .chat-panel .chat-toggle, .chat-panel .chat-strip, .shell-minimap) {
+.syn3h-shell.exploration-ui :is(.gear-selector, .hud-accessories, .hud-chat, .chat-panel .chat-strip, .shell-minimap) {
   /* One shadow under all text, one under all lines. */
   --col-text-under: var(--hud-under);
   --col-line-under: var(--hud-line-under);
@@ -117,21 +117,29 @@
   }
 }
 
-/* ---------- Accessories ---------- */
+/* ---------- Accessories, then the Chat row: one row form ---------- */
 .hud-accessories {
   position: fixed; z-index: var(--gear-z, 12); left: var(--col-left, 16px); bottom: var(--col-acc-bottom, 260px);
   width: var(--col-w, 210px); display: grid; grid-auto-rows: var(--col-row, 30px);
   opacity: var(--col-rest, .72); transition: opacity .45s ease; pointer-events: auto;
 }
 .hud-accessories.is-awake { opacity: 1; transition-duration: .2s; }
-.syn3h-shell.has-touch .hud-accessories { display: none; }
-.syn3h-shell.is-focus .hud-accessories { pointer-events: none; }
-/* The spine continues from the drum: a hairline down the rows' left side. */
+/* The Chat row (ChatRow.ts) opens chat and shows its unread count through chatLink. Awake
+   while something is unread. */
+.hud-chat {
+  position: fixed; z-index: var(--gear-z, 12); left: var(--col-left, 16px); bottom: var(--col-chat-bottom, 230px);
+  width: var(--col-w, 210px); height: var(--col-row, 30px); display: grid;
+  opacity: var(--col-rest, .72); transition: opacity .45s ease; pointer-events: auto;
+}
+.hud-chat:is(:hover, :has(.is-on)) { opacity: 1; transition-duration: .2s; }
+.syn3h-shell.has-touch :is(.hud-accessories, .hud-chat) { display: none; }
+.syn3h-shell.is-focus :is(.hud-accessories, .hud-chat) { pointer-events: none; }
+/* The spine continues from the drum: a hairline down the rows' left side to Chat's node. */
 .hud-accessories::before {
-  content: ''; position: absolute; left: var(--col-spine, 4px); top: 0; bottom: calc(-1 * var(--col-gap, 10px)); width: 1px;
+  content: ''; position: absolute; left: var(--col-spine, 4px); top: 0; bottom: calc(-1 * var(--col-gap, 10px) - var(--col-row, 30px) / 2); width: 1px;
   background: var(--s3-line-quiet); pointer-events: none;
 }
-:root .syn3h-shell .hud-accessories button.acc-row {
+:root .syn3h-shell :is(.hud-accessories, .hud-chat) button.acc-row {
   position: relative; display: flex; align-items: center; gap: 10px; width: 100%; height: 100%; min-height: 0; margin: 0;
   padding: 0 var(--col-inset, 24px) 0 var(--col-inset, 24px); box-sizing: border-box;
   background: none; border: 0; border-radius: 0; box-shadow: none; outline: none;
@@ -139,86 +147,57 @@
   text-shadow: var(--col-text-under); text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
   -webkit-backdrop-filter: none; backdrop-filter: none; transition: color .2s ease;
 }
-:root .syn3h-shell .hud-accessories button.acc-row:hover { background: none; border: 0; box-shadow: none; color: var(--s3-ink); }
-:root .syn3h-shell .hud-accessories button.acc-row:focus-visible .acc-name { text-decoration: underline 1px var(--s3-accent-2); text-underline-offset: 5px; }
-/* One key cap, everywhere in the column: accessories, chat, the gear's numbers and its hints.
-   Touch has no keys and shows none (gear.css, chat.css). */
-:root .syn3h-shell.exploration-ui:not(.has-touch) :is(.gear-selector, .hud-accessories, .chat-panel .chat-toggle) kbd {
+:root .syn3h-shell :is(.hud-accessories, .hud-chat) button.acc-row:hover { background: none; border: 0; box-shadow: none; color: var(--s3-ink); }
+:root .syn3h-shell :is(.hud-accessories, .hud-chat) button.acc-row:focus-visible .acc-name { text-decoration: underline 1px var(--s3-accent-2); text-underline-offset: 5px; }
+/* One key cap, everywhere in the column: accessories, Chat, the gear's numbers and its hints.
+   Touch has no keys and shows none (gear.css). */
+:root .syn3h-shell.exploration-ui:not(.has-touch) :is(.gear-selector, .hud-accessories, .hud-chat) kbd {
   display: inline-block; flex: none; min-width: 22px; padding: 3px 7px 2px; box-sizing: border-box; text-align: center; white-space: nowrap;
   font: var(--col-cap-type); letter-spacing: .12em; text-transform: uppercase; color: var(--s3-ink); text-shadow: var(--col-text-under);
   border: var(--col-stroke); border-radius: 999px; background: none; box-shadow: var(--col-stroke-glow); opacity: 1;
 }
 /* Captured for driving: names and state only. Every key cap and hint steps out. Touch has no
    keys, so the gear's number caps never show there. */
-:root .syn3h-shell.exploration-ui.is-focus:not(.has-touch) :is(.hud-accessories, .chat-panel .chat-toggle) kbd { display: none; }
+:root .syn3h-shell.exploration-ui.is-focus:not(.has-touch) :is(.hud-accessories, .hud-chat) kbd { display: none; }
 :root .syn3h-shell.exploration-ui .gear-selector:is([data-mode=locked], [data-touch]) .gs-index { display: none; }
-.hud-accessories .acc-name { flex: 1 1 auto; white-space: nowrap; }
-/* The node on the spine: a hollow ring when off, lit when on, filling while it moves. */
-.hud-accessories .acc-pip {
+:is(.hud-accessories, .hud-chat) .acc-name { flex: 1 1 auto; white-space: nowrap; }
+/* The node on the spine: a hollow ring when off, lit when on (Chat: something unread),
+   filling while it moves. */
+:is(.hud-accessories, .hud-chat) .acc-pip {
   position: absolute; left: calc(var(--col-spine, 4px) - 3.5px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
   border-radius: 50%; border: var(--col-stroke); background: var(--col-node-off); pointer-events: none;
   transition: background-color .2s ease, box-shadow .2s ease, border-color .2s ease;
 }
-.hud-accessories .is-on .acc-name { color: var(--s3-ink); }
-.hud-accessories .is-on .acc-pip { border-color: var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-node-lit); }
+:is(.hud-accessories, .hud-chat) .is-on .acc-name { color: var(--s3-ink); }
+:is(.hud-accessories, .hud-chat) .is-on .acc-pip { border-color: var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-node-lit); }
 /* Moving between states (wings unfolding): the node fills from its rim as they move. */
 .hud-accessories .is-moving .acc-pip { background: radial-gradient(closest-side, var(--s3-accent-2) calc(var(--acc-moving, 0) * 100%), transparent calc(var(--acc-moving, 0) * 100% + 1%)); animation: acc-breathe 1.2s ease-in-out infinite; }
 @keyframes acc-breathe { 50% { box-shadow: var(--col-node-lit); } }
 /* Not usable now: dimmed, with the reason in its tooltip. */
 :root .syn3h-shell .hud-accessories button.acc-row[aria-disabled=true] { cursor: default; opacity: .48; }
+/* Chat's unread count: bright type at the row's end (brighter still when a person wrote), no
+   tag or pill around it. */
+.hud-chat .chat-count { flex: none; color: var(--s3-accent-2); font: var(--col-type); letter-spacing: var(--col-track); text-shadow: var(--col-text-under); }
+.hud-chat .chat-count[hidden] { display: none; }
+.hud-chat .chat-count.from-person { color: var(--s3-ink); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
-  .hud-accessories, .hud-accessories .acc-pip, :root .syn3h-shell .hud-accessories button.acc-row { transition: none; }
+  :is(.hud-accessories, .hud-chat), :is(.hud-accessories, .hud-chat) .acc-pip, :root .syn3h-shell :is(.hud-accessories, .hud-chat) button.acc-row { transition: none; }
   .hud-accessories .is-moving .acc-pip { animation: none; }
 }
 
-/* ---------- Chat: under the accessories, its log beside the minimap ---------- */
-/* The first-run control hints share the space beside the minimap; they step aside while the log is open. */
+/* ---------- Chat's floating strip and log, until the right panel's Chat card replaces them ---------- */
+/* Interim (ux/chat-card deletes ChatPanel and these rules): the panel's own button gives way
+   to the Chat row; its strip and open log fly out to the row's right, top-aligned with it, and
+   grow down beside the minimap. */
 .syn3h-shell.exploration-ui:not(.has-touch):has(.chat-panel.is-open) .spawn-help { visibility: hidden; }
-/* The control is one row of the column; the strip and the open log fly out to its right,
-   top-aligned with it, and grow down beside the minimap, clear of the readouts above. */
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel {
   left: var(--col-left); right: auto; bottom: auto; top: calc(100dvh - var(--col-chat-bottom) - var(--col-row));
   width: auto; display: grid; grid-template-columns: var(--col-w) var(--chat-fly, min(340px, calc(50vw - 300px)));
   column-gap: 12px; align-items: start;
 }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle {
-  grid-column: 1; grid-row: 1; position: relative; width: var(--col-w); height: var(--col-row); min-height: 0; margin: 0;
-  display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 0 var(--col-inset) 0 var(--col-inset); box-sizing: border-box; text-align: left;
-  border: 0; border-radius: 0; background: none; box-shadow: none; opacity: var(--col-rest);
-  color: var(--s3-dim); font: var(--col-type); letter-spacing: var(--col-track); text-transform: uppercase; text-shadow: var(--col-text-under);
-  transition: opacity .45s ease, color .2s ease;
-}
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle:hover,
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel.is-open .chat-toggle,
-/* Unread wakes the row: read from the badge itself, so ChatPanel.ts needs no extra state. */
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle:has(.chat-unread:not([hidden])) { opacity: 1; color: var(--s3-ink); }
-/* Its node is the spine's last, like every other row's: hollow while closed, lit while open. */
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle svg { display: none; }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle::before {
-  content: ''; display: block; position: absolute; left: calc(var(--col-spine) - 3.5px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
-  border-radius: 50%; border: var(--col-stroke); background: var(--col-node-off); pointer-events: none;
-  transition: background-color .2s ease, box-shadow .2s ease, border-color .2s ease;
-}
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel.is-open .chat-toggle::before { border-color: var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-node-lit); }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle kbd { order: -1; }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle-text { flex: 1 1 auto; }
-/* Open: the row is at full brightness (above); its key cap keeps the one stroke. */
-/* Unread: the count in bright type at the row's end (in the writer's colour when a person
-   wrote), no tag or pill around it. */
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-unread {
-  position: relative; top: auto; right: auto; order: 2; min-width: 0; height: auto; padding: 0; border: 0; border-radius: 0;
-  background: none; color: var(--s3-accent-2); font: var(--col-type); letter-spacing: var(--col-track); text-shadow: var(--col-text-under);
-  box-shadow: none;
-}
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-unread.from-person { background: none; color: var(--chat-person, var(--s3-accent-2)); }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-unread.from-person::after { display: none; }
-/* The strip: the newest lines as plain HUD text beside the column, no slab behind them
-   (on phones too, where the strip sits under the speed readout). */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle { display: none; }
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-strip { grid-column: 2; grid-row: 1; gap: 4px; padding-top: 6px; }
 :root .syn3h-shell.exploration-ui .chat-panel .chat-strip .chat-line { padding: 0; border-radius: 0; background: none; text-shadow: var(--col-text-under, var(--hud-under)); }
-/* The open log is a card like the sidebar's: its fill, border, radius, header type and buttons
-   come from the sidebar's own rules in theme-halo.css (.chat-sheet is in their lists), so it
-   follows them when they change. Only its place is set here. */
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-sheet {
   grid-column: 2; grid-row: 1; max-height: calc(var(--col-chat-bottom) + var(--col-row) - var(--col-bottom)); overflow: hidden;
 }
@@ -227,9 +206,6 @@
    place while it is open rather than squeezing both (its mute buttons ended up under Send). */
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-sheet:has(.chat-people:not([hidden])) .chat-log { display: none; }
 :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-people { flex: 1 1 auto; min-height: 0; max-height: none; }
-@media (prefers-reduced-motion: reduce) {
-  :root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle { transition: none; }
-}
 
 /* ---------- Minimap: the foot of the column ---------- */
 /* Its ring defines the column's one stroke (--col-stroke): a 1 px line with a tight halo over a

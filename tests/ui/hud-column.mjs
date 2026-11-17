@@ -33,7 +33,7 @@ const measure = (page) => page.evaluate(() => {
   const detail = document.querySelector('.gear-selector .gs-detail')
   return {
     minimap: box('.shell-minimap'), gear: box('.gear-selector'), drum: box('.gear-selector .gs-drum'),
-    accessories: box('.hud-accessories'), chat: box('.chat-panel .chat-toggle'),
+    accessories: box('.hud-accessories'), chat: box('.hud-chat'),
     detail: detail ? ink(detail).map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom })) : [],
     readouts: [...document.querySelectorAll('.focus-hud .fh-read')].filter((e) => getComputedStyle(e).opacity !== '0').flatMap((e) => ink(e)).map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom })),
     w: innerWidth, h: innerHeight,

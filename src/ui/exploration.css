@@ -243,7 +243,7 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 
 /* The gear drum and the accessory controls belong to play: hidden in the lobby, under the pause
    veil and while the exit question is up. Their place in the left column is hud-column.css. */
-.syn3h-shell:not(.is-playing) .gear-selector, .syn3h-shell:not(.is-playing) .gear-actions, .syn3h-shell:not(.is-playing) .hud-accessories { display: none !important; }
+.syn3h-shell:not(.is-playing) .gear-selector, .syn3h-shell:not(.is-playing) .gear-actions, .syn3h-shell:not(.is-playing) .hud-accessories, .syn3h-shell:not(.is-playing) .hud-chat { display: none !important; }
 
 /* The panel header is one line: the world's name, a search, Pause and the way back to
    driving. Leaving the world sits at the foot with the world actions. */

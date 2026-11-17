@@ -37,13 +37,15 @@ async function open(name, opts, extra = '') {
 }
 const desk = { viewport: { width: 1280, height: 800 } }
 const shot = (page, name) => page.screenshot({ path: `${out}/${name}.png` })
+/** The control that opens chat: the left column's Chat row on desktop, the chat button on touch. */
+const CHAT_OPENER = '.hud-chat .acc-row, .syn3h-shell.has-touch .chat-toggle'
 /** Click the chat pill; if something else is on top of it, say what, then click it directly. */
-async function clickPill(page, label, selector = '.chat-toggle') {
+async function clickPill(page, label, selector = CHAT_OPENER) {
   const blocked = await page.evaluate((selector) => {
     const b = document.querySelector(selector).getBoundingClientRect()
     const top = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)
     if (top?.closest(selector)) return null
-    return { top: `${top?.tagName}#${top?.id}.${top?.className}`, shell: document.querySelector('.syn3h-shell').className, body: document.body.className, pe: getComputedStyle(document.querySelector('.chat-toggle')).pointerEvents, vis: getComputedStyle(document.querySelector('.chat-toggle')).visibility }
+    return { top: `${top?.tagName}#${top?.id}.${top?.className}`, shell: document.querySelector('.syn3h-shell').className, body: document.body.className, pe: getComputedStyle(document.querySelector(selector)).pointerEvents, vis: getComputedStyle(document.querySelector(selector)).visibility }
   }, selector)
   if (blocked) { console.log(`BLOCKED ${selector} (${label})`, JSON.stringify(blocked)); failures.push(`${selector} not clickable: ${label}`) }
   await page.evaluate((selector) => document.querySelector(selector).click(), selector)
@@ -80,18 +82,18 @@ try {
   check(draft.includes('w') || true, 'typing reaches the field')
   await A.page.keyboard.press('Enter')
   // Wait for the line to arrive, not a fixed time: under load the relay takes longer than 1.5 s.
-  await B.page.waitForFunction(() => window.syn3hChat.net.chat.lines.some((l) => l.text?.includes('hello')) && !document.querySelector('.chat-unread')?.hidden, null, { timeout: 20000 }).catch(() => {})
+  await B.page.waitForFunction(() => window.syn3hChat.net.chat.lines.some((l) => l.text?.includes('hello')) && !document.querySelector('.hud-chat .chat-count')?.hidden, null, { timeout: 20000 }).catch(() => {})
   await B.page.waitForTimeout(300)
   await shot(B.page, 'desktop-collapsed-unread')
-  const badge = await B.page.textContent('.chat-unread')
-  const person = await B.page.evaluate(() => document.querySelector('.chat-unread')?.classList.contains('from-person'))
-  check(Number(badge.replace('+', '')) >= 1 && person, `B's pill counts unread lines (${badge}) and marks that a person wrote`)
+  const badge = await B.page.textContent('.hud-chat .chat-count')
+  const person = await B.page.evaluate(() => document.querySelector('.hud-chat .chat-count')?.classList.contains('from-person'))
+  check(Number(badge.replace('+', '')) >= 1 && person, `B's Chat row counts unread lines (${badge}) and marks that a person wrote`)
   const stripHtml = await B.page.evaluate(() => document.querySelector('.chat-strip')?.innerHTML ?? '')
   check(!/<b>bold/.test(stripHtml) && stripHtml.includes('&lt;b&gt;bold'), 'markup arrives as text, not elements')
   check(!(await B.page.$('.chat-panel a')), 'links are not made clickable')
   await clickPill(B.page, 'guest desktop')
   await B.page.waitForTimeout(400)
-  check(!(await B.page.isVisible('.chat-unread')), 'opening the panel clears the unread count')
+  check(!(await B.page.isVisible('.hud-chat .chat-count')), 'opening the panel clears the unread count')
   const seen = await linesOn(B.page)
   check(seen.some((t) => t.includes('<b>bold</b> hello')), 'B sees A\'s line')
   await shot(B.page, 'desktop-open')
@@ -240,7 +242,7 @@ try {
     const collapsed = await P.page.evaluate(() => {
       const hit = (a, b) => a.width > 0 && b.width > 0 && a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom
       const rects = (sel) => [...document.querySelectorAll(sel)].map((e) => [e.className?.baseVal ?? e.className, e.getBoundingClientRect()])
-      const button = document.querySelector('.chat-toggle').getBoundingClientRect()
+      const button = document.querySelector('.hud-chat .acc-row:not(:is(.has-touch *)), .syn3h-shell.has-touch .chat-toggle')?.getBoundingClientRect() ?? document.querySelector('.chat-toggle').getBoundingClientRect()
       const lines = [...document.querySelectorAll('.chat-strip .chat-line')].map((e) => e.getBoundingClientRect())
       const avoid = rects('.touch-actions button, .hud-navigation, .shell-minimap, .gear-selector .gs-item.is-active, .fh-read, .shell-toast:not([hidden]), #syn3h-build-notice, .build-banner')
       const reticle = { left: innerWidth / 2 - 60, right: innerWidth / 2 + 60, top: innerHeight / 2 - 60, bottom: innerHeight / 2 + 60, width: 120 }

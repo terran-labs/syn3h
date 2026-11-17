@@ -15,6 +15,7 @@ import { createSwitch } from '../inspector/switch'
 import { restoreChatOverlay } from './overlayPreference'
 import { params } from '../../../shared/params'
 import { touchLeftHanded as leftHanded } from '../TouchPreferences'
+import { chatLink } from './chatLink'
 import './chat.css'
 
 export interface ChatPanelOptions {
@@ -101,6 +102,8 @@ export class ChatPanel {
 
     const signal = this.abort.signal
     this.toggle.addEventListener('click', () => this.setOpen(!this.open, true), { signal })
+    // Interim: the left column's Chat row opens this panel through chatLink.
+    chatLink.setOpener(() => this.setOpen(true, true))
     q('.chat-close').addEventListener('click', () => this.setOpen(false), { signal })
     q('.chat-people-toggle').addEventListener('click', (e) => this.togglePeople(e.currentTarget as HTMLButtonElement), { signal })
     this.form.addEventListener('submit', (e) => { e.preventDefault(); this.submit() }, { signal })
@@ -195,6 +198,7 @@ export class ChatPanel {
   private keyboardOff?: () => void
 
   dispose(): void {
+    chatLink.setOpener(null)
     for (const t of this.speaking.values()) clearTimeout(t)
     this.keyboardOff?.()
     this.abort.abort()
@@ -278,6 +282,9 @@ export class ChatPanel {
     this.toggle.setAttribute('aria-label', this.unread ? `Chat, ${this.unread} unread` : 'Chat')
     b.classList.toggle('from-person', !!this.unreadPerson)
     b.style.setProperty('--chat-person', this.unreadPerson ? legibleTint(this.unreadPerson.color) : '')
+    // Interim, until the right panel's Chat card replaces this panel: the left column's Chat
+    // row reads the count through chatLink.
+    chatLink.setUnread(this.unread, !!this.unreadPerson)
     if (pulse) { b.classList.remove('pulse'); void b.offsetWidth; b.classList.add('pulse') }
   }
 
