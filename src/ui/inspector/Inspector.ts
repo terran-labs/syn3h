@@ -15,6 +15,8 @@ import { buildTree, describe, shownDef, shownValue, storedValue, exportSection, 
 import './params'
 import './inspector.css'
 import './motion.css'
+import { bindSwitch } from './switch'
+import { cardsToClose, comfortable, type FitCard } from './cardFit'
 
 export interface InspectorOptions {
   /** One line for a closed card, for example "Alpine · Harimos". Empty hides it. */
@@ -111,6 +113,14 @@ export class Inspector {
   private beforeSearch?: { cards: boolean[]; folds: boolean[] }
   /** The number being typed into, if any, and how to finish it. */
   private editing: { field: HTMLInputElement; finish(commit: boolean, refocus: boolean): void } | null = null
+  /**
+   * Open cards by section id, opened longest ago first. Survives the rail closing and
+   * reopening and registry rebuilds, so the oldest card is still known.
+   */
+  private readonly openOrder: string[] = []
+  /** A pointer is held down in this card (a slider being dragged). */
+  private pressed: HTMLElement | null = null
+  private fitQueued = false
   /** Card height animations in flight. A new toggle starts from wherever these have got to. */
   private readonly moving = new Map<HTMLElement, Animation>()
 
@@ -137,6 +147,13 @@ export class Inspector {
     this.vehicleControl.dataset.search = "vehicle colour color body accent buggy jet hovercraft tank"
     this.build()
     this.unsubscribe = params.onChange((id, value) => { this.rows.get(id)?.sync(value); for (const sync of this.presetSyncs) sync() })
+    // Space changes (a resize, a phone turning, a fold opening inside a card): refit once,
+    // on the next frame, not every frame.
+    window.addEventListener('resize', () => this.queueFit(null), { signal })
+    this.element.addEventListener('toggle', event => { const card = (event.target as Element).closest<HTMLElement>('.wi-card'); this.queueFit(card) }, { capture: true, signal })
+    if (typeof ResizeObserver !== 'undefined') { const watch = new ResizeObserver(() => this.queueFit(null)); watch.observe(this.element.querySelector('.wi-cards')!); signal.addEventListener('abort', () => watch.disconnect()) }
+    this.element.addEventListener('pointerdown', event => { this.pressed = (event.target as Element).closest<HTMLElement>('.wi-card') }, { signal })
+    window.addEventListener('pointerup', () => { this.pressed = null }, { signal }); window.addEventListener('pointercancel', () => { this.pressed = null }, { signal })
     this.element.addEventListener('click', event => this.click(event))
     this.element.querySelector<HTMLInputElement>('.wi-search')!.addEventListener('input', event => this.search((event.target as HTMLInputElement).value))
     // Typing here must not drive the vehicle.
@@ -190,7 +207,7 @@ export class Inspector {
   update(): void {
     if (params.all().length !== this.known) this.build()
     const editable = canEditWorld()
-    if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; for (const select of this.element.querySelectorAll<HTMLSelectElement>('.wi-preset select')) select.disabled = !editable; this.element.classList.toggle('is-locked', !editable) }
+    if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; for (const select of this.element.querySelectorAll<HTMLSelectElement>('.wi-preset select')) select.disabled = !editable; this.markLocks(); this.element.classList.toggle('is-locked', !editable) }
     for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) {
       const id = card.dataset.section!, extra = this.extras.get(id), sum = card.querySelector('.wi-sum')!
       const text = extra ? extra.summary() : this.options.summary(id) || `${this.tree.find(s => s.id === id)?.count ?? 0} properties`
@@ -253,6 +270,9 @@ export class Inspector {
     // Extra cards are the same elements across rebuilds, so they keep their open state.
     for (const extra of this.extras.values()) { this.place(extra); extra.fill?.() }
     this.placeSessionCard()
+    // Cards that did not come back are no longer open.
+    const present = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section!))
+    for (let i = this.openOrder.length - 1; i >= 0; i--) if (!present.has(this.openOrder[i])) this.openOrder.splice(i, 1)
     this.editable = !canEditWorld(); this.update()
   }
   private place(extra: ExtraCard): void {
@@ -286,7 +306,7 @@ export class Inspector {
   /** Open one card (leaving the others as they are), easing as a header click does. */
   revealCard(id: string): void {
     const card = this.element.querySelector<HTMLElement>(`.wi-card[data-section="${id}"]`)
-    if (card && !card.classList.contains('is-open')) this.reflow(() => this.toggle(card, true))
+    if (card && !card.classList.contains('is-open')) this.reflow(() => { this.toggle(card, true); this.fit(card, true) })
   }
   private vehicleSwitch(): HTMLElement {
     const label = document.createElement('label'); label.textContent = 'Vehicle'
@@ -362,6 +382,14 @@ export class Inspector {
     sync(); this.presetSyncs.push(sync)
     return row
   }
+  /** A shared switch a guest cannot change shows a lock and "host" beside its true state. */
+  private markLocks(): void {
+    for (const { row, def } of this.rows.values()) {
+      const lock = row.querySelector<HTMLElement>('.wi-lock'); if (!lock) continue
+      const locked = def.scope === 'world' && !this.editable
+      lock.hidden = !locked; row.classList.toggle('is-locked-row', locked)
+    }
+  }
   /** One property row: slider, toggle, choice or number, kept in sync with the registry. */
   row(def: PropertyDef): HTMLElement {
     if (def.id === 'post.gi') def = { ...def, label: 'Global illumination (GI)' }
@@ -376,15 +404,22 @@ export class Inspector {
       const seg = document.createElement('div'); seg.className = 'wi-seg'; seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', choices.name)
       for (const option of choices.options) { const button = document.createElement('button'); button.type = 'button'; button.dataset.value = String(option.value); button.textContent = option.label; button.addEventListener('click', () => params.set(def.id, option.value, 'local')); seg.append(button) }
       row.classList.add('is-choice'); row.append(label, seg)
-      sync = value => { for (const button of seg.querySelectorAll<HTMLElement>('button')) button.classList.toggle('is-on', Number(button.dataset.value) === Math.round(Number(value))) }
+      sync = value => { for (const button of seg.querySelectorAll<HTMLElement>('button')) { const on = Number(button.dataset.value) === Math.round(Number(value)); button.classList.toggle('is-on', on); button.setAttribute('aria-pressed', String(on)) } }
     } else if (typeof def.default === 'boolean') {
       label.textContent = def.label
-      const box = document.createElement('input'); box.type = 'checkbox'; box.setAttribute('aria-label', def.label)
+      // The standard switch (switch.ts): role switch, aria-checked, Space and Enter toggle.
+      const box = document.createElement('input'); box.setAttribute('aria-label', def.label)
+      const set = bindSwitch(box, { signal: this.abort.signal })
       box.addEventListener('change', () => params.set(def.id, box.checked, 'local'))
-      // The box stays small; the label around it is the 44 px target a thumb can hit.
+      // The track stays small; the label around it is the 44 px target a thumb can hit, and
+      // the row's own label text toggles it too.
       const hit = document.createElement('label'); hit.className = 'wi-hit'; hit.append(box)
-      row.append(label, hit, output)
-      sync = value => { box.checked = Boolean(value); output.textContent = show(Boolean(value)) }
+      label.addEventListener('click', () => { if (!box.disabled) box.click() })
+      // Shown only while a guest is held by the host's lock, so a locked switch never reads as off.
+      const lock = document.createElement('span'); lock.className = 'wi-lock'; lock.textContent = 'host'; lock.hidden = true
+      const word = document.createElement('span'); output.append(word, lock)
+      row.classList.add('is-switch'); row.append(label, hit, output)
+      sync = value => { set(Boolean(value)); word.textContent = show(Boolean(value)); row.classList.toggle('is-checked', Boolean(value)) }
     } else {
       label.textContent = def.label
       // A display mapping (ParamDef.display) puts the slider, number and typing in display
@@ -487,6 +522,10 @@ export class Inspector {
     pane.style.top = `${Math.max(12, Math.min(innerHeight - height - 12, fitsLeft ? row.top : row.top - height - 12))}px`
   }
   private toggle(card: HTMLElement, open = !card.classList.contains('is-open')): void {
+    const id = card.dataset.section!, at = this.openOrder.indexOf(id)
+    if (open && at < 0) this.openOrder.push(id)
+    if (!open && at >= 0) this.openOrder.splice(at, 1)
+    if (!open) card.style.removeProperty('min-height')
     const body = card.querySelector<HTMLElement>('.wi-body')!
     card.classList.toggle('is-open', open); body.hidden = !open; body.inert = !open; card.querySelector('.wi-head')!.setAttribute('aria-expanded', String(open))
   }
@@ -512,6 +551,76 @@ export class Inspector {
       const motion = card.animate([frame(from[i]), frame(to[i])], CARD_MOTION)
       motion.onfinish = () => { if (this.moving.get(card) === motion) this.land(card) }
       this.moving.set(card, motion)
+    })
+  }
+  private queueFit(keep: HTMLElement | null): void {
+    if (this.fitQueued) return
+    this.fitQueued = true
+    requestAnimationFrame(() => { this.fitQueued = false; if (this.moving.size) { this.queueFit(keep); return } this.reflow(() => this.fit(keep)) })
+  }
+  /** A card the player is using: focus inside it, a pointer held in it, or a number being typed. */
+  private busy(card: HTMLElement): boolean {
+    return card === this.pressed || card.contains(document.activeElement) && document.activeElement !== card.querySelector('.wi-head') || !!this.editing && card.contains(this.editing.field)
+  }
+  /**
+   * Close the cards open longest until every open card has a comfortable height (cardFit.ts),
+   * and hold each open card at that height so the stack never squeezes one into a sliver.
+   * `keep` is the card just opened, or the one whose content grew; `reveal` scrolls it into
+   * view when the motion lands. Not while searching, which
+   * opens every card with a match, nor while hidden, when nothing can be measured.
+   */
+  private fit(keep: HTMLElement | null, reveal = false): void {
+    const stack = this.element.querySelector<HTMLElement>('.wi-cards')!
+    if (!this.shown || this.element.classList.contains('is-searching') || !stack.clientHeight) return
+    const cards = [...stack.children].filter((el): el is HTMLElement => el instanceof HTMLElement && !el.hidden && el.getClientRects().length > 0)
+    const measured = new Map<HTMLElement, FitCard>()
+    for (const card of cards) {
+      const height = card.getBoundingClientRect().height
+      if (!card.classList.contains('wi-card')) { measured.set(card, { id: card.dataset.section ?? '', open: false, closed: height, natural: height, closable: false }); continue }
+      const head = card.querySelector<HTMLElement>(':scope > .wi-head'), body = card.querySelector<HTMLElement>(':scope > .wi-body')!
+      const frame = card.offsetHeight - card.clientHeight, closed = (head?.offsetHeight ?? 44) + frame
+      const open = card.classList.contains('is-open')
+      const natural = open ? height - body.clientHeight + body.scrollHeight : closed
+      measured.set(card, { id: card.dataset.section!, open, closed, natural, closable: !this.busy(card) })
+    }
+    const gap = parseFloat(getComputedStyle(stack).rowGap) || 0
+    const order = this.openOrder.filter(id => cards.some(card => card.dataset.section === id))
+    const close = new Set(cardsToClose([...measured.values()], order, stack.clientHeight, gap, keep?.dataset.section ?? null))
+    for (const [card, fit] of measured) {
+      if (!card.classList.contains('wi-card')) continue
+      if (close.has(fit.id)) this.toggle(card, false)
+      else if (fit.open) card.style.minHeight = `${Math.round(comfortable(fit))}px`
+    }
+    // Only a card the player has just opened is scrolled to; a fold opening inside a card
+    // leaves the stack where the player put it.
+    if (reveal && keep?.classList.contains('is-open') && keep.isConnected) this.revealAfterMotion(keep)
+  }
+  /**
+   * Once the cards have landed, bring the opened card into view: all of it when it fits,
+   * otherwise its header at the top of the stack.
+   */
+  private revealAfterMotion(card: HTMLElement): void {
+    const stack = this.element.querySelector<HTMLElement>('.wi-cards')!
+    // The player scrolling or touching the stack meanwhile wins: no yank back afterwards.
+    let moved = false
+    const stop = new AbortController(), mark = () => { moved = true }
+    for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const) stack.addEventListener(type, mark, { signal: stop.signal, passive: true })
+    let before = stack.scrollTop
+    requestAnimationFrame(() => {
+      before = stack.scrollTop
+      void Promise.all([...this.moving.values()].map(motion => motion.finished.catch(() => undefined))).then(() => {
+        stop.abort()
+        // Any other scroll is the player's, except the browser clamping it as cards above close.
+        const delta = stack.scrollTop - before, clamped = delta < 0 && stack.scrollTop >= stack.scrollHeight - stack.clientHeight - 1
+        if (moved || Math.abs(delta) > 2 && !clamped) return
+        if (!card.isConnected || !card.classList.contains('is-open')) return
+        const fits = card.getBoundingClientRect().height <= stack.clientHeight
+        const target = fits ? card : card.querySelector<HTMLElement>(':scope > .wi-head') ?? card
+        const box = target.getBoundingClientRect(), view = stack.getBoundingClientRect()
+        if (box.top < view.top) stack.scrollTop -= view.top - box.top
+        else if (fits && box.bottom > view.bottom) stack.scrollTop += box.bottom - view.bottom
+        else if (!fits && box.top > view.top) stack.scrollTop += box.top - view.top
+      })
     })
   }
   /** Stop every card animation now and leave each card in its resting state. */
@@ -565,7 +674,7 @@ export class Inspector {
     const card = button.closest<HTMLElement>('.wi-card'), section = card ? this.tree.find(s => s.id === card.dataset.section) : undefined
     const valueOf = (id: string) => params.get(id)?.value
     switch (button.dataset.wi) {
-      case 'toggle': if (card) this.reflow(() => this.toggle(card)); break
+      case 'toggle': if (card) this.reflow(() => { this.toggle(card); if (card.classList.contains('is-open')) this.fit(card, true) }); break
       case 'show-gi': this.showGI(); break
       case 'save-world': this.options.onSaveWorld?.(); break
       case 'copy-world': await this.copy(JSON.stringify(exportWorld(params.all().map(p => p.def as PropertyDef), valueOf), null, 2), 'This world'); break
