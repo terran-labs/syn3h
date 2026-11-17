@@ -20,7 +20,8 @@
  * brake lamps, paint and the game's three detail levels.
  *
  *   /vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=all        both, side by side
- *   /vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=generated  one of them (or loaded)
+ *   /vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=generated  one of them (or loaded,
+ *                                                                     or generated-loft)
  */
 import * as THREE from 'three/webgpu'
 import { referenceParts, type Mesh, type PartName } from '../../../../tools/buggy-fit/glb'
@@ -157,12 +158,13 @@ export const buggyFit: LabExhibit = {
     found.push(
       { id: 'loaded', name: 'Loaded skin', group: 'Skins', notes: ['LoadedBuggySkin: the game today, two model files.'] },
       { id: 'generated', name: 'Generated skin', group: 'Skins', notes: ['GeneratedBuggySkin: every part generated in code, no model file.', 'Body from src/vehicles/buggygen/body.ts.'] },
+      { id: 'generated-loft', name: 'Generated, loft body', group: 'Skins', notes: ['GeneratedBuggySkin with the section loft body, for comparison.'] },
     )
     return found
   },
   heading: group => group === 'Skins' ? 'Syn3h buggy: loaded and generated skins' : 'Generated buggy fit: parts',
   async build(info, ctx) {
-    if (info.id === 'loaded' || info.id === 'generated') return skinModel(info.id, ctx)
+    if (info.id === 'loaded' || info.id === 'generated' || info.id === 'generated-loft') return skinModel(info.id, ctx)
     ctx.status('Reading the reference model')
     const object = new THREE.Group(), paints: THREE.MeshStandardMaterial[] = []
     const entries = await referenceEntries()
@@ -226,16 +228,16 @@ const REST = new THREE.Vector3(1.1, -.2, 1.3), RIDE_HEIGHT = .8
 const timings: Record<string, number> = ((globalThis as { buggySkinReadyMs?: Record<string, number> }).buggySkinReadyMs ??= {})
 
 /** A real skin class in the lab, driven as Syn3hBuggy drives it. */
-async function skinModel(id: 'loaded' | 'generated', ctx: LabContext): Promise<LabModel> {
+async function skinModel(id: 'loaded' | 'generated' | 'generated-loft', ctx: LabContext): Promise<LabModel> {
   ctx.status(id === 'loaded' ? 'Loading the buggy models' : 'Generating the buggy')
   const object = new THREE.Group(), callbacks = new Set<VehicleDetail>()
   object.userData.registerVehicleDetail = (fn: VehicleDetail) => { callbacks.add(fn); return () => callbacks.delete(fn) }
   // Module loading is not part of construction: import first, then time construction to ready.
-  const Skin = id === 'loaded'
-    ? (await import('../../../vehicles/skins/LoadedBuggySkin')).LoadedBuggySkin
-    : (await import('../../../vehicles/buggygen/GeneratedBuggySkin')).GeneratedBuggySkin
+  const Loaded = id === 'loaded' ? (await import('../../../vehicles/skins/LoadedBuggySkin')).LoadedBuggySkin : undefined
+  const Generated = id === 'loaded' ? undefined : (await import('../../../vehicles/buggygen/GeneratedBuggySkin')).GeneratedBuggySkin
+  const loft = id === 'generated-loft' ? (await import('../../../vehicles/buggygen/sections/levelC')).default : undefined
   const started = performance.now()
-  const skin: BuggySkin = new Skin()
+  const skin: BuggySkin = Loaded ? new Loaded() : new Generated!(loft)
   object.add(skin.object)
   await skin.ready
   timings[id] = performance.now() - started

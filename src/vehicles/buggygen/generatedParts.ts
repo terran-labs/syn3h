@@ -39,16 +39,24 @@ const COLOUR: Record<string, [number, number, number]> = {
   Interior: [.035, .038, .045], Glass: [.01, .012, .02], Headlights: [1, .96, .75], TailLights: [.9, .02, .02],
 }
 
-/** Split lamp faces into headlights (ahead of the centre, -Z) and tail lamps. */
+/** Split lamp faces into headlights (ahead of the centre, -Z) and tail lamps, keeping any normals. */
 function splitLamps(geometry: THREE.BufferGeometry): [THREE.BufferGeometry, THREE.BufferGeometry] {
   const g = geometry.index ? geometry.toNonIndexed() : geometry
-  const pos = g.attributes.position, head: number[] = [], tail: number[] = []
+  const pos = g.attributes.position, nor = g.attributes.normal
+  const head = { p: [] as number[], n: [] as number[] }, tail = { p: [] as number[], n: [] as number[] }
   for (let t = 0; t < pos.count; t += 3) {
-    const z = (pos.getZ(t) + pos.getZ(t + 1) + pos.getZ(t + 2)) / 3
-    const out = z < 0 ? head : tail
-    for (let k = 0; k < 3; k++) out.push(pos.getX(t + k), pos.getY(t + k), pos.getZ(t + k))
+    const out = (pos.getZ(t) + pos.getZ(t + 1) + pos.getZ(t + 2)) / 3 < 0 ? head : tail
+    for (let k = t; k < t + 3; k++) {
+      out.p.push(pos.getX(k), pos.getY(k), pos.getZ(k))
+      if (nor) out.n.push(nor.getX(k), nor.getY(k), nor.getZ(k))
+    }
   }
-  const make = (p: number[]) => { const b = new THREE.BufferGeometry(); b.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); return b }
+  const make = (o: typeof head) => {
+    const b = new THREE.BufferGeometry()
+    b.setAttribute('position', new THREE.Float32BufferAttribute(o.p, 3))
+    if (nor) b.setAttribute('normal', new THREE.Float32BufferAttribute(o.n, 3))
+    return b
+  }
   return [make(head), make(tail)]
 }
 

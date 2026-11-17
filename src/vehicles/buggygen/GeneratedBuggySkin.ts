@@ -72,7 +72,8 @@ function extract(root: THREE.Object3D, transform = new THREE.Matrix4()): THREE.G
   root.traverse(o => {
     if (!isMesh(o)) return
     const geometry = o.geometry.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(transform, o.matrixWorld))
-    geometry.computeVertexNormals()
+    // Generated pieces may bring their own normals (the cage body splits them at creases); keep them.
+    if (!geometry.attributes.normal) geometry.computeVertexNormals()
     const mesh = new THREE.Mesh(geometry, Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone())
     mesh.name = o.name
     mesh.castShadow = mesh.receiveShadow = true
