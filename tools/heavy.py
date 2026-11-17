@@ -15,16 +15,21 @@ if slots < 1 or not sys.argv[1:]:
     sys.exit('heavy: a positive slot count and a command are required')
 
 hold = root / 'hold'
+HOLD_MAX_AGE = 3 * 3600
 
 
 def held():
     """A release waiting at the load gate or running holds new jobs back (see release.sh).
 
     The hold file names the release's PID. It holds only while that process lives, so a
-    crashed release cannot block anyone. The release's own jobs set SYN3H_HEAVY_RELEASE."""
+    crashed release cannot block anyone, and never once it is three hours old, so a dead PID
+    recycled by some long-lived process cannot either. The release's own jobs set
+    SYN3H_HEAVY_RELEASE."""
     if os.environ.get('SYN3H_HEAVY_RELEASE'):
         return False
     try:
+        if time.time() - hold.stat().st_mtime > HOLD_MAX_AGE:
+            return False
         pid = int(hold.read_text().split()[0])
         os.kill(pid, 0)
     except (FileNotFoundError, ValueError, IndexError, ProcessLookupError):
@@ -79,5 +84,11 @@ while True:
             except FileNotFoundError:
                 pass
             lock.close()
+            # A release exec'd into this wrapper (same PID): lift its hold now it is over.
+            try:
+                if hold.read_text().split()[:1] == [str(os.getpid())]:
+                    hold.unlink()
+            except (FileNotFoundError, IndexError):
+                pass
         sys.exit(code if code >= 0 else 128 - code)
     time.sleep(1)

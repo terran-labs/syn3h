@@ -47,6 +47,19 @@ class HeavyTests(unittest.TestCase):
         # A hold naming a process that no longer exists holds nothing.
         self.assertEqual(self.run_job('pass').wait(timeout=5), 0)
 
+    def test_stale_hold_is_ignored_and_a_release_lifts_its_own(self):
+        slots = self.root / 'slots'; slots.mkdir(parents=True, exist_ok=True)
+        hold = slots / 'hold'
+        # Names a live process (this test) but is over three hours old: a recycled PID.
+        hold.write_text(f'{os.getpid()}\n')
+        old = time.time() - 4 * 3600
+        os.utime(hold, (old, old))
+        self.assertEqual(self.run_job('pass').wait(timeout=5), 0)
+        # A wrapper whose own PID is in the hold removes it when its command ends.
+        code = f"import os; from pathlib import Path; Path({str(hold)!r}).write_text(str(os.getppid()) + '\\n')"
+        self.assertEqual(self.run_job(code).wait(timeout=5), 0)
+        self.assertFalse(hold.exists())
+
     def test_child_keeps_lock_after_wrapper_is_killed(self):
         self.env['SYN3H_HEAVY_SLOTS'] = '1'
         started = self.root / 'started'
