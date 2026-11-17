@@ -32,11 +32,17 @@ export const botChatterLevel = defineParam({ id: 'bots.chatterLevel', label: 'Bo
  * (src/bots/banter/budget.ts).
  */
 export const botChatterAmount = defineParam({ id: 'bots.chatterAmount', label: 'Bot chatter amount (1 = as before) (host only)', group: 'Bots', scope: 'world', default: 0.25, min: 0, max: 1, step: 0.05 })
+/**
+ * A rescue's news lines (the call for help, the start, the outcome) go past the chatter budget
+ * only when a person is within this many metres of the stuck bot or its rescuer; farther off
+ * they are colour like any other line. A bot asking a person for help is always news.
+ */
+export const botRescueNewsRange = defineParam({ id: 'bots.rescueNewsRange', label: 'Rescue news within (m) (host only)', group: 'Bots', scope: 'world', default: 150, min: 0, max: 2000, step: 10 })
 /** Bots go and free a stuck bot with the grapple (src/bots/rescue). Works with chatter off. */
 export const botRescue = defineParam({ id: 'bots.rescue', label: 'Bots rescue each other (host only)', group: 'Bots', scope: 'world', default: true })
 
 /** Parameters only the host may change. */
-export const HOST_ONLY_PARAMS: ReadonlySet<string> = new Set([chatOn.def.id, botChatter.def.id, botChatterLevel.def.id, botChatterAmount.def.id, botRescue.def.id])
+export const HOST_ONLY_PARAMS: ReadonlySet<string> = new Set([chatOn.def.id, botChatter.def.id, botChatterLevel.def.id, botChatterAmount.def.id, botRescueNewsRange.def.id, botRescue.def.id])
 
 // Personal settings, never sent.
 

@@ -13,7 +13,7 @@
  *   - silent while people are chatting, apart from answers to them
  *   - no template repeats in a session until its pool is used up
  */
-import { botChatter, botChatterAmount, botChatterLevel, botRescue } from '../../../shared/chat'
+import { botChatter, botChatterAmount, botChatterLevel, botRescue, botRescueNewsRange } from '../../../shared/chat'
 import { ChatterBudget, exempt } from './budget'
 import { hashString, seededRandom } from '../random'
 import { POOLS } from './data'
@@ -801,8 +801,11 @@ export class BanterDirector {
    */
   private rescueLine(subject: number, speaker: number, key: string): 'news' | 'colour' | null {
     // Someone is coming, and a rescuer got stuck too, are news once; repeats are colour.
-    if (key === 'rescue.start' || key === 'rescue.handoff') { const k = `${key}:${subject}`; if (!this.rescueStarted.has(k)) { this.rescueStarted.add(k); if (key === 'rescue.start') this.startedAt.set(subject, this.world.now()); return 'news' } }
-    else if (RESCUE_ESSENTIAL.has(key)) return 'news'
+    // News is news only near a person: within botRescueNewsRange of the stuck one or the bot
+    // speaking. A bot asking a person for help is always news.
+    const near = key === 'rescue.player.ask' || this.personNear([subject, speaker])
+    if (key === 'rescue.start' || key === 'rescue.handoff') { const k = `${key}:${subject}`; if (!this.rescueStarted.has(k)) { this.rescueStarted.add(k); if (key === 'rescue.start') this.startedAt.set(subject, this.world.now()); if (near) return 'news' } }
+    else if (RESCUE_ESSENTIAL.has(key) && near) return 'news'
     const now = this.world.now()
     if (key.startsWith('conflict.')) {
       const k = `${subject}:${speaker}`
@@ -813,7 +816,21 @@ export class BanterDirector {
     this.rescueColourAt.set(subject, now)
     return 'colour'
   }
-  /** When each rescue's first start line was said: a call for help it overtakes is dropped. */
+  /** A person is within botRescueNewsRange of any of these (bots or people; a person counts as near itself). */
+  private personNear(ids: number[]): boolean {
+    const people = this.world.players()
+    if (ids.some((id) => people.some((p) => p.id === id))) return true
+    const range = botRescueNewsRange.value
+    const bots = this.world.bots()
+    for (const id of ids) {
+      const v = bots.find((b) => b.id === id)
+      if (v && people.some((p) => Math.hypot(p.x - v.x, p.z - v.z) <= range)) return true
+    }
+    return false
+  }
+  /** When each rescue's first rescuer was sent: a call for help it overtakes is dropped. */
+  private readonly dispatchedAt = new Map<number, number>()
+  /** When each rescue's first start line was said. */
   private readonly startedAt = new Map<number, number>()
   private readonly rescueColourAt = new Map<number, number>()
   private readonly rescueStarted = new Set<string>()
@@ -838,14 +855,17 @@ export class BanterDirector {
     const others = (not: BotState) => [...this.bots.values()].filter((b) => b !== not)
     const t = now + 0.6
     switch (e.kind) {
+      case 'dispatch':
+        if (!this.dispatchedAt.has(e.stuck) || (this.dispatchedAt.get(e.stuck) ?? 0) < now - 60) this.dispatchedAt.set(e.stuck, now)
+        return
       case 'stuck': {
         const s = bot(e.stuck)
         if (!s) return
         s.bold = 0
-        // The call for help waits five seconds: if a rescuer's start line comes first, that
+        // The call for help waits five seconds: if a rescuer is sent in that time, its start
         // line carries the news and the call is not said.
         const calledAt = now
-        this.timers.push({ at: now + CALL_WAIT_S, run: () => { if (this.bots.has(s.id) && !((this.startedAt.get(e.stuck) ?? -Infinity) >= calledAt)) say(s, 'stuck.call', {}) } })
+        this.timers.push({ at: now + CALL_WAIT_S, run: () => { if (this.bots.has(s.id) && !((this.dispatchedAt.get(e.stuck) ?? -Infinity) >= calledAt)) say(s, 'stuck.call', {}) } })
         const o = others(s)
         // The clumsy one's first time today has a reputation but no count yet.
         if (o.length && (e.clumsy || e.count >= 2) && this.r() < 0.75) say(pickOne(o, this.r), e.count >= 2 ? 'stuck.reputation' : 'stuck.clumsy', { subj: s.short, you: s.short, count: ordinal(e.count) })

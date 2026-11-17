@@ -81,6 +81,8 @@ export type RescueEvent =
   | { kind: 'player.hooked'; player: number; stuck: number }
   | { kind: 'mishap'; bot: number }
   | { kind: 'handoff'; bot: number; stuck: number }
+  /** A rescuer was sent. No line of its own: it times the call for help (Director). */
+  | { kind: 'dispatch'; bot: number; stuck: number }
 
 export interface RescueNet {
   readonly isHost: boolean
@@ -478,6 +480,7 @@ export class HostRescue {
       },
     })
     r.rescuers.set(id, tow)
+    this.onEvent({ kind: 'dispatch', bot: id, stuck: r.stuck })
     brain.directive = { kind: 'control', step: (dt: number, input: InputState) => { tow.step(dt, input); return !tow.finished } }
     return true
   }
