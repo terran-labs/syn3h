@@ -92,7 +92,10 @@ ships; keep it out of blocking steps.
    staging page titled "[staging]" and its clone removed after the run, the notes-sections
    check, the rollback target read from www's build.json, rollback.sh logging to
    ../Syn3h-stable/rollbacks.tsv. First real use: the next release.
-3. The short public check (proposal section 1).
+3. Done, merged: after the production deploy release.sh runs tools/public-check.mjs (join,
+   state, a shared setting, King of the Hill scored by the room's own clock, a forced
+   reconnect as the same player, leave; about 40 s) on workers.dev and www instead of the full
+   smoke. The full smoke still runs on staging and in the dry run. First real use: the next release.
 4. Workers Logs on, with head sampling (section 5).
 5. A GitHub Actions second vantage point (section 4): workflow_dispatch only, no secrets.
 Also listed: roll_back ignores INT and TERM (done in release.sh); the rollback verification
