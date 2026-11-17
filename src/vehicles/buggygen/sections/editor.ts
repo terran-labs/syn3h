@@ -97,7 +97,7 @@ export function applyHandles(h: Handles, base: { hull: HullKeys; features: Featu
   const arches: Arches = { ...a0, front: a0.front + h.archFront, rear: a0.rear + h.archRear, flank: a0.flank + h.flank }
   const hull: HullKeys = { z: zs.map(stretch), values, arches }
 
-  const F = base.features, rows = (r: number[][], f: (row: number[]) => number[]) => r.map(f)
+  const F = base.features, rows = (r: number[][], f: (row: number[], i: number) => number[]) => r.map(f)
   const tailZ = stretch(z1) - z1
   const wingLead = F.wing[0][0]
   const features: Features = {
