@@ -9,7 +9,7 @@ import { params } from '../../shared/params'
 import { applyHull, applyWings, createHullState } from '../../src/vehicles/liquidHull'
 import { fieldOffset, liquidWavesAt, type LiquidBody } from '../../src/world/water/liquidWaves'
 import { setWeatherClock } from '../../src/world/weather/wind'
-import { type Run, type Sample, advance, ashore, dispose, entry, exitTime, fromRest, wingAscent } from './liquidScenarios'
+import { type Run, type Sample, advance, ashore, dispose, entry, exitTime, fromRest, turnOut, wingAscent } from './liquidScenarios'
 
 beforeAll(initPhysics)
 afterEach(() => { for (const p of params.all()) params.set(p.def.id, p.def.default) })
@@ -73,6 +73,22 @@ describe.each(['lava', 'water'] as const)('a buggy on size 3 tyres in %s', (liqu
   })
 })
 
+describe.each(['lava', 'water'] as const)('steering afloat in %s', (liquid) => {
+  it.each([1, 3])('turns round and drives out, on size %s tyres, without flipping', (size) => {
+    params.set('buggy.tyreSize', size)
+    // Facing away from the near shore, 10 m behind: lock and throttle must turn it round.
+    const o = turnOut(liquid, 1, OUT + 10)
+    try {
+      expect(o.finite).toBe(true)
+      expect(o.to90).not.toBeNull()
+      expect(o.to90!).toBeLessThan(OUT / 2)
+      expect(o.out).not.toBeNull()
+      expect(o.backOut).toBe(true)
+      expect(o.minUp).toBeGreaterThan(0)
+    } finally { dispose(o.run) }
+  })
+})
+
 describe('liquid forces', () => {
   it('are zero when no part of the hull or wings is in the liquid', async () => {
     const { harness } = await import('../vehicles2/harness')
@@ -83,7 +99,7 @@ describe('liquid forces', () => {
     const b = h.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 5, 0))
     h.world.createCollider(RAPIER.ColliderDesc.cuboid(1, 0.4, 1.6), b)
     const hull = createHullState()
-    const profile = { buoyancy: 2, thickness: 1, linear: 1, quadratic: 0.1, heave: 4, paddle: 9, paddleSpeed: 7, porpoise: 0.6, waddle: 0.5, gait: 1, planing: 6, skim: 0.5, planeLift: 0.5, deep: 0 }
+    const profile = { buoyancy: 2, thickness: 1, linear: 1, quadratic: 0.1, heave: 4, paddle: 9, paddleSpeed: 7, porpoise: 0.6, waddle: 0.5, gait: 1, planing: 6, skim: 0.5, planeLift: 0.5, deep: 0, steer: 1 }
     expect(applyHull(b, h.world, h.terrain, 'lava', profile, hull, { throttle: 1, wheelSpeed: 10 }, 1 / 60)).toBe(0)
     expect(applyWings(b, h.world, h.terrain, 'lava', { buoyancy: 1, authority: 1, density: 2 }, hull, { x: 1, y: 1 }, 1 / 60)).toBe(0)
     const f = b.userForce(), t = b.userTorque()
