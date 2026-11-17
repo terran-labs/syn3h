@@ -51,7 +51,7 @@ export interface GalaxyOptions {
   /** A world was tapped. Return true to take it from here (a drop); otherwise the camera flies to it. */
   onTap?(id: string): boolean
   /** Called every frame with where each world is on screen, for labels. depth is the distance along the view: smaller is nearer. */
-  onLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[], chosen?: string): void
+  onLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean; depth: number; /** False while the opening has not yet brought its label in. */ labelled?: boolean }[], chosen?: string): void
   /**
    * Asked each frame. True holds the system still: the worlds stop in their orbits and a frame
    * is drawn only while something moves (a drag, a flight, a dive). For the lowest graphics
@@ -1313,7 +1313,7 @@ export class Galaxy {
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
     this.screen = places.map((place, i) => {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
-      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 && arrival[i] >= 0.6 && (reveal.labels[this.lanes(places)[i]] ?? true), depth: z }
+      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 && arrival[i] >= 0.6, labelled: reveal.labels[this.lanes(places)[i]] ?? true, depth: z }
     })
     // The sun's bright core, which labels keep clear of.
     const toSun = sub([0, 0, 0], view.eye), sunZ = Math.max(dot(toSun, view.forward), 0.001)
@@ -1322,7 +1322,7 @@ export class Galaxy {
     // Arrival: a second and a half after choosing, whatever the frame rate.
     if (this.chosen >= 0 && !this.arrived && (this.arriving += this.step) > 1.5) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
-  private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[] = []
+  private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number; labelled?: boolean }[] = []
   /** Where the sun's core is on screen, as of the last frame drawn. */
   sunScreen = { x: -1e4, y: -1e4, radius: 0 }
   private readonly markRig = new WordmarkRig()

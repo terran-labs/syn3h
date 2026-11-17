@@ -227,6 +227,9 @@
          The galaxy sets data-opening (src/ui/galaxy/Galaxy.ts); a skip clears it at once. */
       html[data-opening="playing"] :is(.galaxy-hint, .galaxy-links, .lobby-gear-dock, .update-banner) { opacity: 0; visibility: hidden; }
       html[data-opening="settling"] :is(.galaxy-hint, .galaxy-links, .lobby-gear-dock, .update-banner) { transition: opacity 0.5s ease; }
+      /* The planets' plates come in as the opening settles: faded in where they stand, slowly. */
+      html .syn3h-shell .galaxy-label.is-unrevealed { opacity: 0; pointer-events: none; }
+      html[data-opening] .syn3h-shell button.galaxy-label { transition: opacity 0.45s ease; }
     </style>
     <script>
       // Never select, part 2. Some engines start a selection or a drag in spite of the
