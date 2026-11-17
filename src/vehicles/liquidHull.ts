@@ -53,6 +53,8 @@ export interface HullProfile {
   planeLift: number
   /** Extra vertical drag (1/s) once a column is wholly under: how slowly a sunk hull rises. */
   deep: number
+  /** Steering: how far the front paddles turn with the wheels (1 about 30 degrees at full lock). */
+  steer: number
 }
 
 export interface HullState {
@@ -73,6 +75,12 @@ export interface HullState {
 export const createHullState = (): HullState => ({ wet: new Float32Array(4), phase: 0, liquid: '', axle: 0, shed: Float32Array.of(0, 2.1), mean: 0 })
 
 /** Corner columns in the body frame: x half width, z half length, bottom and height. */
+/**
+ * Steering in a liquid: front paddle angle at full lock (radians, at steer setting 1), how much
+ * harder the outside wheels bite, and the steered wheels' rudder effect (per second).
+ */
+export const STEER = { angle: 0.5, differential: 0.35, rudder: 1 }
+
 /** Shape constants of the model, shared by both liquids. Settings scale these. */
 export const HULL_TUNING = { lagBase: 0.02, lagScale: 0.12, bowLift: 0.5, waddleLift: 0.6, pitchLift: 0.8 }
 
@@ -89,6 +97,8 @@ export interface HullInput {
   wheelSpeed: number
   /** Live wheel geometry (buggy.tyreSize): hub half track and half wheelbase, and tyre radius, m. */
   wheel?: { x: number; z: number; radius: number }
+  /** Steering input, -1 full left to 1 full right. */
+  steer?: number
 }
 /** The standard tyre the HULL columns were drawn around. */
 const STANDARD_WHEEL = { x: 1.1, z: 1.3, radius: 0.5 }
@@ -130,6 +140,9 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
   const extra = Math.max(0, wheel.radius - STANDARD_WHEEL.radius)
   const colBottom = HULL.bottom - 1.2 * extra, colHeight = HULL.height + 1.2 * extra
   const reach = Math.sqrt(Math.max(0.5, wheel.radius / STANDARD_WHEEL.radius))
+  const steer = THREE.MathUtils.clamp(input.steer ?? 0, -1, 1)
+  const angle = STEER.angle * p.steer * steer
+  const steerCos = Math.cos(angle), steerSin = Math.sin(angle)
   let total = 0
   for (let i = 0; i < 4; i++) {
     const sx = i & 1 ? 1 : -1, front = i < 2
@@ -157,16 +170,25 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
     f.z = -vz * drag * share
     const rise = terrain.liquidVerticalSpeedAt?.(cx, cz) ?? 0
     f.y = p.buoyancy * g * share * s.wet[i] - (v.y - (Number.isFinite(rise) ? rise : 0)) * heave * share
+    // Turned wheels moving through the liquid act as a rudder too, a little, even coasting.
+    if (front && steerSin !== 0) {
+      const rudder = STEER.rudder * p.steer * share * forward * Math.min(1, sub * 1.5) * steerSin
+      f.x += side.x * rudder
+      f.z += side.z * rudder
+    }
     // Bow dynamic lift on the front columns only, carried by their lagged wetness.
     if (front && forward > 0) f.y += p.porpoise * HULL_TUNING.bowLift * g * share * plane * Math.min(1, s.wet[i] * 2)
     // Planing: the whole hull rides up on its speed, wetting less and so lifting less: a skip.
     if (forward > 0) f.y += p.planeLift * g * share * plane * Math.min(1, sub * 3)
     // Paddle: rear and front wheels alike, alternating left and right bite.
     if (effort > 0) {
-      const bite = 1 + p.waddle * sway * sx
+      // In a turn the outside wheels dig in harder and the inside ones ease off.
+      const bite = (1 + p.waddle * sway * sx) * (1 - STEER.differential * p.steer * steer * sx)
       const push = p.paddle * share * slip * Math.min(1, sub * 1.5) * bite * reach
-      f.x += fwd.x * push
-      f.z += fwd.z * push
+      // Steered front wheels throw their wash where they point, so lock turns the bow.
+      const dx = front ? steerCos : 1, dy = front ? steerSin : 0
+      f.x += (fwd.x * dx + side.x * dy) * push
+      f.z += (fwd.z * dx + side.z * dy) * push
       // The wheel throws liquid back and down: a little lift on the side that bites.
       f.y += Math.abs(push) * HULL_TUNING.waddleLift * p.waddle * (1 + sway * sx)
       // Front and rear strokes alternate too: the porpoise, in time with the wheels.

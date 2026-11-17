@@ -267,6 +267,16 @@ async function liquids(kind: liquid.Kind): Promise<Figure[]> {
     fig('lava, deep, full throttle: roll swing (waddle), peak to peak', 'deg', wallow.roll.amplitude),
     fig('lava, deep, full throttle: roll rhythm', 's', wallow.roll.period ?? Infinity),
   )
+  for (const l of ['lava', 'water'] as const) {
+    const r = await at(() => { const x = liquid.turn('buggy', l, 1, 1); liquid.dispose(x.run); return x })
+    out.push(
+      fig(`${l}, deep, full throttle and lock: yaw rate`, 'deg/s', r.yawRate),
+      fig(`${l}, deep, full throttle and lock: turn radius`, 'm', r.radius),
+      fig(`${l}, deep, full throttle and lock from rest: time to turn 180`, 's', r.to180 ?? Infinity),
+    )
+    const o = await at(() => { const x = liquid.turnOut(l); liquid.dispose(x.run); return x })
+    out.push(fig(`${l}: facing away from a shore 10 m behind, time to turn round and get out`, 's', o.out ?? Infinity))
+  }
   out.push(fig('water: speed 20 m past the shore after entering at 40 m/s', 'm/s', await wet(() => liquid.entry('buggy', { liquid: 'water', length: 400, depth: 3, slope: 10 }, 40, 8), (r) => r.trace.find((s) => s.z < -20)?.speed ?? NaN)))
   for (const [l, w] of [['water', 'sea'], ['water', 'inland'], ['lava', 'sea']] as const) {
     const bob = await wet(() => liquid.afloat('buggy', l, w, 20), (r) => {
