@@ -1,5 +1,6 @@
 import type { RaceState } from '../../shared/protocol'
 import { raceDirection, raceView, type RacePosition, type RaceRole } from './raceModel'
+import { distanceText } from './units'
 export type { RaceRole } from './raceModel'
 const text = (element: HTMLElement, value: string) => { if (element.textContent !== value) element.textContent = value }
 
@@ -64,7 +65,7 @@ export class RaceHud {
     const direction = self && size > 0 && view.active ? raceDirection(this.snapshot!, self, size) : null
     this.arrow.hidden = !direction
     if (direction) this.arrow.style.transform = `rotate(${direction.degrees}deg)`
-    text(this.detail, `${view.role}${direction ? ` · ${direction.metres} m` : ''}`)
+    text(this.detail, `${view.role}${direction ? ` · ${distanceText(direction.metres)}` : ''}`)
   }
   dispose(): void { this.abort.abort(); this.parent.classList.remove('has-landmark-race'); this.element.remove() }
 }

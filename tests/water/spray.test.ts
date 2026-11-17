@@ -92,6 +92,7 @@ describe('spray simulation', () => {
     expect(sim.wakePoints).toBeGreaterThanOrEqual(before - 3)
   })
 
+  // 30,000 simulation steps: the 5 s default timed out at load 25 on 17 Nov.
   it('stays bounded over 10,000 steps with more vehicles than slots', () => {
     for (const tier of [0, 1, 2]) {
       const c = sprayCapacity(tier), sim = new SpraySim(c, sea)
@@ -109,7 +110,7 @@ describe('spray simulation', () => {
       }
       expect([sim.droplets.length, sim.points.length, sim.rings.length]).toEqual(sizes)
     }
-  })
+  }, 20000)
 
   it('thins every source evenly instead of overwriting when the pool is full', () => {
     const c = sprayCapacity(0), sim = new SpraySim(c, sea)

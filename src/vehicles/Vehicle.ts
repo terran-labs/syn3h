@@ -87,6 +87,13 @@ export const REST_HEIGHT: Readonly<Record<string, number>> = { buggy: .69, 'bugg
 /** The hovercraft's cushion height slider, looked up once it is first needed (it is defined in Hovercraft.ts). */
 let hoverClearance: { value: unknown } | null | undefined
 
+/**
+ * While true, every vehicle keeps its close look whatever the camera's distance. Leaving a world
+ * climbs the camera away from every vehicle at once; switching them all to distant models
+ * never drawn before compiled their GPU pipelines together, 0.5 to 0.7 s frames at High.
+ */
+export const vehicleDetail = { holdNear: false }
+
 export abstract class Vehicle implements System {
   readonly object = new THREE.Group()
   private readonly visualDetails=new Set<VehicleDetail>()
@@ -458,7 +465,7 @@ export abstract class Vehicle implements System {
   update(dt: number, alpha: number): void {
     this.object.position.lerpVectors(this.prevPos, this.currPos, alpha)
     this.object.quaternion.slerpQuaternions(this.prevQuat, this.currQuat, alpha)
-    const distance=this.game.camera?.position.distanceTo(this.object.position)??0
+    const distance=vehicleDetail.holdNear?0:this.game.camera?.position.distanceTo(this.object.position)??0
     for(const detail of this.visualDetails)detail(distance,!this.isLocal,graphicsLevel.value)
     this.updateZorbShield(dt,distance)
   }
@@ -494,14 +501,23 @@ export abstract class Vehicle implements System {
     let surface = this.terrain.heightAt(p.x, p.z)
     // The hovercraft's cushion and a zorb ball ride on liquid; everything else sinks to the bed.
     if (this.kind === 'hovercraft' || this.zorb.active) surface = Math.max(surface, this.terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity)
+    return Math.max(0, this.contactHeight() - surface)
+  }
+
+  /**
+   * World height of the vehicle's lowest contact surface (tyres, tracks, gear, cushion, or the
+   * zorb ball's underside), from the last physics step. Resting on level ground it equals the
+   * ground's height. The ALT readout measures this against sea level. Allocates nothing.
+   */
+  contactHeight(): number {
+    if (this.zorb.active) return this.zorb.centre(this.zorbCentre).y - this.zorb.radius
     let rest = this.restHeight()
     if (this.kind === 'hovercraft') {
       if (hoverClearance === undefined) hoverClearance = params.get('hover.clearance') ?? null
       const slider = Number(hoverClearance?.value)
       if (Number.isFinite(slider)) rest = slider
     }
-    const lowest = this.zorb.active ? this.zorb.centre(this.zorbCentre).y - this.zorb.radius : p.y - rest
-    return Math.max(0, lowest - surface)
+    return this.currPos.y - rest
   }
 
   /** Teleport, clearing motion and interpolation history. */

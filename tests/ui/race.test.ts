@@ -28,4 +28,12 @@ describe('canonical race presentation', () => {
     expect(raceDirection(race, { x: 490, z: 0, heading: 0 }, 1000)).toEqual({ metres: 20, degrees: 90 })
     expect(raceDirection(race, { x: 490, z: 0, heading: -Math.PI / 2 }, 1000).degrees).toBe(0)
   })
+  it('says how the player did once the race is over, never "Racing"', () => {
+    const over = (winnerId: number | null, status: 'racing' | 'finished' | 'withdrawn') => raceView({ ...race, phase: 'finished', winnerId, participants: [{ id: 1, name: 'Host', status }] }, host, 100).role
+    expect(over(9, 'racing')).toBe('Did not finish')
+    expect(over(1, 'finished')).toBe('You won')
+    expect(over(9, 'finished')).toBe('You finished')
+    expect(over(9, 'withdrawn')).toBe('You left')
+    expect(raceView({ ...race, phase: 'cancelled' }, host, 100).role).not.toBe('Racing')
+  })
 })

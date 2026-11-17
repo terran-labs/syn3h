@@ -9,7 +9,8 @@
  *             whatever audio setting is defined later).
  *   Graphics  the in-game Performance card's quality controls (a second PerformancePanel on the
  *             same quality controller), without the in-world frame diagnostics.
- *   Controls  left-handed touch, look sensitivity, daydream, and presentation mode.
+ *   Controls  left-handed touch, look sensitivity, daydream, units (metric or imperial), and
+ *             presentation mode.
  *   Room      the host's lock and reset, when the shell supplies them.
  *
  * Tap outside or Escape closes it; focus stays inside while it is open and returns to the gear.
@@ -28,7 +29,7 @@ import './lobby-settings.css'
 /** Sound settings shown before the Advanced fold, in this order. */
 export const SOUND_MAIN = ['audio.music', 'audio.master', 'audio.muted'] as const
 /** Personal control settings, in this order. Missing ones are skipped. */
-export const CONTROL_IDS = ['touch.leftHanded', 'camera.sensitivity', 'daydream.seconds'] as const
+export const CONTROL_IDS = ['touch.leftHanded', 'camera.sensitivity', 'daydream.seconds', 'hud.units'] as const
 
 /** Split the Audio group: the main rows, and everything else for the Advanced fold. */
 export function soundRows(defs: readonly PropertyDef[]): { main: PropertyDef[]; advanced: PropertyDef[] } {
@@ -162,6 +163,7 @@ export class LobbySettings {
     this.inspector.addCard('controls', 'Controls', controls, () => {
       const parts = [params.get('touch.leftHanded')?.value ? 'Left-handed' : 'Right-handed']
       const sensitivity = params.get('camera.sensitivity'); if (sensitivity) parts.push(`Look ${sensitivity.value}`)
+      const units = params.get('hud.units'); if (units) parts.push(Math.round(Number(units.value)) === 1 ? 'Imperial' : 'Metric')
       return parts.join(' · ')
     }, {
       fill: () => {
