@@ -18,14 +18,13 @@ describe.each(GRAVITIES)('shared vehicle behaviour under %s gravity',(_name,g)=>
     expect(low,`${kind} afterwards`).toBeGreaterThan(-.3)}finally{v.dispose();h.world.free()}
   }
  })
- it('wings lift a buggy clear of water and hold it about ten metres up',()=>{
+ it('open wings float a sunk buggy to the surface and no higher',()=>{
   const h=harness(g);h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=>'water'
-  const v=createVehicle(h.game,h.terrain,'buggy',new T.Vector3(0,9.5,0),0);v.isLocal=false
-  try{h.step(v,100);v.input.special=true
-   let clearAt=-1,peak=-Infinity;for(let i=0;i<400;i++){h.step(v);const y=v.body.translation().y;if(clearAt<0&&y>11)clearAt=i;if(i>250)peak=Math.max(peak,y)}
-   // Clear of the surface by a metre within a second, then held near the field's height, not drifting off.
-   expect(clearAt).toBeGreaterThan(-1);expect(clearAt*.02).toBeLessThan(1)
-   expect(peak).toBeGreaterThan(18);expect(peak).toBeLessThan(22)}finally{v.dispose();h.world.free()}
+  const v=createVehicle(h.game,h.terrain,'buggy',new T.Vector3(0,2,0),0);v.isLocal=false
+  try{v.input.special=true
+   let peak=-Infinity;for(let i=0;i<1500;i++){h.step(v);peak=Math.max(peak,v.body.translation().y)}
+   // Floating, not flying: only the rise's momentum carries it past the surface.
+   expect(Math.abs(v.body.translation().y-10)).toBeLessThan(1);expect(peak).toBeLessThan(12)}finally{v.dispose();h.world.free()}
  })
  it('a buggy stuck on its roof is set upright after three seconds',()=>{
   const h=harness(g),v=createVehicle(h.game,h.terrain,'buggy',new T.Vector3(0,1.2,0),0);v.isLocal=true
