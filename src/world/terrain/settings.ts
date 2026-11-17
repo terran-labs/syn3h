@@ -3,6 +3,7 @@
  * (`deferred`) because regenerating the mesh and collider is a visible hitch.
  */
 import { defineParam, type Param, worldSeed } from '../../../shared/params'
+import { BIOME_NAMES } from '../../../shared/recipes'
 
 const P = { scope: 'world', group: 'Terrain', deferred: true } as const
 
@@ -96,16 +97,21 @@ export const terrainNightLife = defineParam({
 /**
  * The SHAPE of the world: 0 a cone with a crater (lava lake, rivers and vents unless the
  * world is dry), 1 a great mesa with buttes, 2 a horn peak with ridged ranges. The colours
- * are a separate choice, `terrain.look`, so a planet is a shape plus a look plus sliders.
+ * are a separate choice, the biome (`terrain.look`), so a planet is a shape plus a biome plus sliders.
  * See world/planets.ts for the recipes.
  */
 export const terrainKind = defineParam({
   ...P, id: 'terrain.kind', label: 'Shape: 0 volcano, 1 mesa, 2 horn peak', default: 0, min: 0, max: 2, step: 1,
 })
-/** The ground's palette: an index into terrain/palettes.ts. Also names the planet. */
+/**
+ * The biome: the ground's palette, an index into terrain/palettes.ts. Also names the planet.
+ * Players see it as "Biome"; the id keeps its old name so saved rooms and links still load.
+ * The label lists the choices (names from shared/recipes.ts BIOME_NAMES) so the inspector
+ * draws named buttons, not a 0 to 8 slider.
+ */
 export const terrainLook = defineParam({
   ...P, id: 'terrain.look',
-  label: 'Look: 0 volcanic 1 desert 2 alpine 3 isles 4 ice 5 obsidian 6 badlands 7 moon 8 swamp',
+  label: `Biome: ${BIOME_NAMES.map((name, i) => `${i} ${name}`).join(', ')}`,
   default: 0, min: 0, max: 8, step: 1,
 })
 /** Where snow starts, as a fraction of the summit's height. 2 is above everything: no snow. */

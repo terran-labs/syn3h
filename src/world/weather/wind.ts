@@ -17,7 +17,8 @@
  *
  * Horizontal only: y is always 0.
  */
-import { worldLavaAltitude, worldSeed } from '../../../shared/params'
+import { worldSeed } from '../../../shared/params'
+import { seaLevel } from '../seaLevel'
 import type { Terrain } from '../Terrain'
 import { STORMINESS_REFERENCE, atmosphereValue, gustiness, storminess, windDirection, windSpeed } from './params'
 
@@ -234,7 +235,7 @@ function summitTop(terrain: Partial<Terrain> | null | undefined): number {
 export function currentWindFrame(terrain?: Partial<Terrain> | null, out: WindFrame = {} as WindFrame): WindFrame {
   out.seed = worldSeed.value | 0
   out.wrap = terrain?.wrapSize ?? terrain?.size ?? 2000
-  out.sea = worldLavaAltitude.value
+  out.sea = seaLevel()
   out.top = summitTop(terrain)
   out.storminess = storminess.value
   out.speed = windSpeed.value
