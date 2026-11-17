@@ -2,7 +2,7 @@
 // (844x390, 667x375), phone portrait (390x844) and desktop (1440x900, 1280x800), settled and
 // while the view is dragged, every caption's centre is level with its planet's centre and its
 // top sits CAPTION_GAP below the planet's limb, within a pixel. No plate or leader exists.
-// Pointing at a planet changes only its caption's opacity, never its place or size. Captions
+// Pointing at a planet brings its caption to full opacity, never changing its place or size. Captions
 // may overlap each other; that is the design (the owner, 16 November 2026).
 //   SYN3H_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/lobby-labels.mjs
 // Screenshots go to tests/ui/artifacts/lobby-labels/.
@@ -72,7 +72,7 @@ try {
     const after = (await measure()).find(c => c.id === pointed)
     assert.ok(after, `${name}: pointing near ${target.id} points at a world with a caption`)
     const was = pointed === target.id ? before : after
-    assert.ok(after.opacity >= was.opacity, `${name}: pointing does not dim the ${pointed} caption`)
+    assert.ok(after.opacity > 0.97, `${name}: pointing brings the ${pointed} caption to full strength (${after.opacity.toFixed(2)})`)
     assert.ok(Math.abs(after.width - was.width) < 0.5 && Math.abs(after.height - was.height) < 0.5, `${name}: pointing does not resize the ${pointed} caption`)
     check([after], 'while pointed at')
     await page.screenshot({ path: `${out}/point-${name}.png` })
