@@ -105,8 +105,6 @@ interface Built {
   temporalNode: N | null
   clouds: boolean
   pipeline: THREE.RenderPipeline
-  /** The passes that draw the scene itself, for precompiling its materials (see scenePasses). */
-  passes: Array<{ compileAsync(renderer: THREE.WebGPURenderer): Promise<void> }>
   disposables: Array<{ dispose?(): void; renderTarget?: { dispose(): void } }>
 }
 
@@ -260,13 +258,6 @@ export class PostChain {
       throw error
     }
   }
-
-  /**
-   * The passes that draw the scene, each with its own render target and outputs, so that
-   * shaders compiled through them are the ones the next frame uses. Empty before the first
-   * frame and when post-processing is off (the scene is then drawn straight to the screen).
-   */
-  scenePasses(): ReadonlyArray<{ compileAsync(renderer: THREE.WebGPURenderer): Promise<void> }> { return this.built?.passes ?? [] }
 
   /** Free the pipeline and every target it made. Safe to repeat. */
   release(): void {
@@ -636,7 +627,7 @@ export class PostChain {
     if (debug === 3 && raysRef) out = vec4(raysRef.sample(uv()).r, maskRef.sample(uv()).a, 0, 1)
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
     pipeline.outputColorTransform = false
-    this.built = { key, pipeline, passes: prePass ? [prePass, scenePass] : [scenePass], disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
+    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
     this.builds++
   }
 }

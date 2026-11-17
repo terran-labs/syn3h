@@ -130,8 +130,6 @@ export function viewState(shell: { contains(name: string): boolean } | null | un
 export interface PostChain<Renderer = unknown, Scene = unknown, Camera = unknown> {
   /** Draw this frame to the screen. `frameMs` is the time since the previous frame. */
   render(renderer: Renderer, scene: Scene, camera: Camera, frameMs: number): void
-  /** The passes that draw the scene, for compiling its shaders ahead of time (see Game.precompile). */
-  scenePasses?(): ReadonlyArray<{ compileAsync(renderer: Renderer): Promise<void> }>
 }
 
 /**

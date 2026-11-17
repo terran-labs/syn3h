@@ -3,8 +3,7 @@ import { uniqueBotName } from '../ui/data/names'
 import { attachVehicleEffects } from '../vehicles/effects'
 import { Vector3 } from 'three/webgpu'
 import type { Game, System } from '../core/Game'
-import { graphicsLevel, qualityBudget } from '../core/quality'
-import { compileVehicleAhead } from '../core/compileAhead'
+import { qualityBudget } from '../core/quality'
 import { createVehicle } from '../vehicles'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { BotBrain, isSafeGround, type BotMatch, type BotTerrain } from './BotBrain'
@@ -233,32 +232,22 @@ export class BotManager implements System {
   }
 
   /**
-   * One bot arrives. It is built off stage, its shaders compiled a slice per frame, and only
-   * then shown, in the arrival cloud at its place near the player, so its arrival costs no
-   * frame of its own. Resolves false when there was nowhere to put it or the world changed.
+   * One bot arrives, in the arrival cloud at its place near the player. Its shaders compile in
+   * the frame it is first drawn; arrivals are an interval apart, so those frames are spread
+   * out. Resolves false when there was nowhere to put it.
    */
   private async arrive(index: number): Promise<boolean> {
-    const world = this.world
     const built = this.build(index)
     if (!built) return false
-    const { bot, place } = built
-    // Off stage while its shaders compile: no body in the world, nothing drawn.
-    bot.setParked(true)
-    try {
-      // Both looks it may wear (close-up and distant), so driving off costs no frame either.
-      await compileVehicleAhead(bot, graphicsLevel.value)
-    } catch (error) { console.warn('Bot shaders not compiled ahead', error) }
-    if (this.disposed || this.remote || world !== this.world) { bot.dispose(); return false }
-    bot.setParked(false)
-    this.enter(bot, place, index)
+    this.enter(built.bot, built.place, index)
     return true
   }
 
   /**
    * In a running game bots are paced and measured. Without a renderer (tests, headless
-   * simulations) there is nothing to compile ahead or to measure: the fleet appears at once.
+   * simulations) there is nothing to measure: the fleet appears at once.
    */
-  private get paced(): boolean { return typeof (this.game as Partial<Game>).compileAhead === 'function' }
+  private get paced(): boolean { return typeof (this.game as Partial<Game>).precompile === 'function' }
 
   /** Reconcile outside the physics iterator so removing bots cannot skip another body's step. */
   update(dt = 0) {

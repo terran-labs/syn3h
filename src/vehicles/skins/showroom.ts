@@ -24,7 +24,6 @@ import {
 } from 'three/tsl'
 import { defineParam, params } from '../../../shared/params'
 import { vehicleShading } from '../../core/quality'
-import { compileAhead } from '../../core/compileAhead'
 import { hotExposureNode } from './hotExposure'
 import { mergedSurfaces, registerVehicleDetail } from './mergeStatic'
 
@@ -96,7 +95,7 @@ const WARM_FRAMES = 3
 /** Updates a vehicle may hold the turn without being drawn (hidden, or the world is behind the lobby) before it yields. */
 const WARM_PATIENCE = 180
 const WARM_SCALE = 1e-3
-interface Warm { key: string; group: T.Group | null; drawn: boolean; frames: number; waited: number; compiling?: boolean }
+interface Warm { key: string; group: T.Group | null; drawn: boolean; frames: number; waited: number }
 /** Vehicles waiting to warm, in order. Only the first one acts. */
 const warmQueue: Warm[] = []
 /** Counts for automated checks: sets warmed, turns given up or cancelled, and proxies now in a scene. */
@@ -624,14 +623,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
           proxy.onBeforeRender = () => { job.drawn = true }
           group.add(proxy); showroomWarm.proxies++
         }
-        job.group = group; root.getWorldPosition(group.position)
-        // In a running game the proxies are compiled a slice per frame and never drawn: drawing
-        // them compiled every pipeline in one frame, a stall of 70 to 100 ms on a fast Mac.
-        const ahead = compileAhead(group)
-        if (ahead) {
-          job.compiling = true
-          ahead.then(() => { if (warm === job) endWarm('warmed') }, () => { if (warm === job) endWarm('abandoned') })
-        } else scene.add(group)
+        job.group = group; root.getWorldPosition(group.position); scene.add(group)
       } catch (error) {
         // Warming is an optimisation. If a skin's meshes cannot be copied, the vehicle
         // simply compiles on arrival, as it did before.
@@ -642,7 +634,6 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
     }
     // Stay with the vehicle, so the proxies are lit and shadowed as it will be.
     root.getWorldPosition(job.group.position)
-    if (job.compiling) return
     if (job.drawn) { job.drawn = false; if (++job.frames >= WARM_FRAMES) endWarm('warmed') }
     else if (++job.waited > WARM_PATIENCE) endWarm('abandoned')
   }
