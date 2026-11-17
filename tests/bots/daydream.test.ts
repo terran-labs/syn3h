@@ -363,8 +363,10 @@ describe('bots that know the game', () => {
     const { step, player, manager } = await setup(3)
     manager.setMatch({ mode: 'tag', it: player })
     for (let i = 0; i < 1000; i++) step()
-    // They spawned 24 m from the player; twenty seconds later every one has put distance between them.
-    for (const bot of manager.vehicles) expect(far(bot), manager.vehicles.map(v => `${v.kind}:${far(v).toFixed(1)}`).join(', ')).toBeGreaterThan(60)
+    // They arrived about a spawn radius from the player; twenty seconds later every one has put
+    // at least that much again between them.
+    const radius = Number(params.get('bots.spawnRadius')!.value)
+    for (const bot of manager.vehicles) expect(far(bot), manager.vehicles.map(v => `${v.kind}:${far(v).toFixed(1)}`).join(', ')).toBeGreaterThan(2 * radius)
     const hunter = manager.vehicles[0]
     manager.setMatch({ mode: 'tag', it: hunter })
     let nearest = Infinity

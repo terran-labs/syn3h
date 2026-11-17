@@ -72,3 +72,44 @@ describe('remote vehicle arrival callback', () => {
     expect(() => f.net.applyProfile(f.info)).not.toThrow()
   })
 })
+
+describe('a remote bot waiting its turn to be shown', () => {
+  /** A guest with one remote bot parked in RemoteArrivals. */
+  async function waiting() {
+    const { RemoteArrivals } = await import('../../src/net/arrivals')
+    const { BOT_ID_BASE } = await import('../../shared/protocol')
+    const id = BOT_ID_BASE + 1
+    const parked = (v: ReturnType<typeof vehicle>) => Object.assign(v, { object: {} as any, parked: false, setParked(p: boolean) { (v as unknown as { parked: boolean }).parked = p } })
+    const old = parked(vehicle('buggy'))
+    const replacement = parked(vehicle('jet'))
+    vi.mocked(createVehicle).mockReturnValue(replacement as any)
+    const callback = vi.fn()
+    let release = () => {}
+    const arrivals = new RemoteArrivals(() => {}, () => 1, () => new Promise<void>(resolve => { release = resolve }))
+    arrivals.admit(id, old, false)
+    const net = Object.create(NetClient.prototype)
+    Object.assign(net, { ctx: { game: { add: vi.fn(), remove: vi.fn(), world: {} }, terrain: {}, onRemoteVehicleChanged: callback, audio: { play: vi.fn() } }, remotes: new Map([[id, { vehicle: old, owned: true, disposeEffects: vi.fn(), clearance: 1, buffer: { states: [] }, info: { id } }]]), attachEffects: vi.fn(() => vi.fn()), arrivals, audible: [] })
+    return { net, id, old, replacement, callback, arrivals, release: async () => { release(); await Promise.resolve(); await Promise.resolve() } }
+  }
+
+  it('changing kind keeps its new vehicle parked in its turn, without an arrival of its own', async () => {
+    const w = await waiting()
+    w.net.applyProfile({ id: w.id, name: 'Bot', kind: 'jet', colors: ['#000', '#fff'] })
+    expect(w.callback).not.toHaveBeenCalled()
+    expect(w.replacement.parked).toBe(true)
+    await w.release()
+    w.arrivals.update(0)
+    expect(w.replacement.parked).toBe(false)
+    expect(w.old.parked).toBe(true)
+  })
+
+  it('cannot be targeted, labelled or heard until it is shown', async () => {
+    const w = await waiting()
+    expect(w.net.vehicleOf(w.id)).toBeUndefined()
+    expect(w.net.vehicleIds()).not.toContain(w.id)
+    await w.release()
+    w.arrivals.update(0)
+    expect(w.net.vehicleOf(w.id)).toBe(w.old)
+    expect(w.net.vehicleIds()).toContain(w.id)
+  })
+})

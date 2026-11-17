@@ -18,6 +18,9 @@ import { seaWaves, setWaterClock } from '../water/seaWaves'
 import { configureLiquidWaves, liquidWaveOffset, liquidWaveSpeed, type LiquidBody } from '../water/liquidWaves'
 import { waterRiverMaxSpeed, waterSeaFrozen } from '../water/params'
 import { type TerrainData, generateTerrain } from './generate'
+import { type SliceStep, drain, runSliced } from '../../core/sliced'
+import type { TerrainSettings } from './settings'
+import { requestTerrain } from './terrainWorkerClient'
 import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
 import { rimRoadRadius } from './roads'
@@ -41,6 +44,17 @@ export interface SeamFollowers {
   player: SeamVehicle
   camera?: { shift(dx: number, dz: number): void }
   others(): readonly SeamVehicle[]
+}
+
+/**
+ * Size the sea's and the inland and lava waves to a world's tile, so they wrap at its seam.
+ * Both ways a world is built (generated here, or adopted from the terrain worker) call this:
+ * the worker path once set only the sea, leaving lava and lakes tiled to the previous world,
+ * so liquid heights, and buoyancy with them, differed between players and broke at the seam.
+ */
+export function configureWorldWater(size: number, seed: number): void {
+  seaWaves.configure(size, seed)
+  configureLiquidWaves(size)
 }
 
 export class ProceduralTerrain implements Terrain {
@@ -166,7 +180,8 @@ export class ProceduralTerrain implements Terrain {
       this.pending = true
       queueMicrotask(() => {
         this.pending = false
-        this.regenerate()
+        if (this.staged) this.regenerateStaged()
+        else this.regenerate()
       })
     })
   }
@@ -174,8 +189,7 @@ export class ProceduralTerrain implements Terrain {
   private generate(): TerrainData {
     const t = performance.now()
     const data = generateTerrain(this.seed, currentTerrainSettings())
-    seaWaves.configure(data.size, this.seed)
-    configureLiquidWaves(data.size)
+    configureWorldWater(data.size, this.seed)
     // The far row and column are the image of the first: make them identical so the
     // height field, mesh and collider are exactly periodic.
     this.lastSeamCorrection = sealSeam(data)
@@ -307,15 +321,125 @@ export class ProceduralTerrain implements Terrain {
     })
   }
 
+  /**
+   * While true, a change of world rebuilds in slices across frames instead of in one go, with
+   * the heights generated off the main thread. The shell sets it while the galaxy covers the
+   * world, where a half-built world cannot be seen. See regenerateStaged.
+   */
+  staged = false
+  /** The rebuild in progress, if any. A newer one supersedes it. */
+  private building = 0
+  private built: Promise<void> = Promise.resolve()
+  /** True when no staged rebuild is in progress. */
+  get ready(): boolean { return this.building === 0 }
+  /** Resolves when the world in the parameters is fully built (now, if it already is). */
+  whenReady(): Promise<void> { return this.built }
+
+  /** Worlds generated off the main thread, by seed and settings, and the requests in flight. */
+  private readonly prepared = new Map<string, { data: TerrainData; seam: number; ms: number }>()
+  private readonly preparing = new Map<string, Promise<void>>()
+  private worker: Worker | null | undefined
+  private static key(seed: number, settings: TerrainSettings): string { return `${seed | 0}:${JSON.stringify(settings)}` }
+
+  /**
+   * Start generating a world off the main thread before it is asked for: the shell calls this
+   * at the tap on a planet, so the heights are ready by the time the dive reaches the air.
+   * A later rebuild for the same seed and settings uses the result instead of generating.
+   */
+  prepare(seed: number, settings: TerrainSettings = currentTerrainSettings()): Promise<void> {
+    const key = ProceduralTerrain.key(seed, settings)
+    if (this.prepared.has(key)) return Promise.resolve()
+    const known = this.preparing.get(key)
+    if (known) return known
+    if (this.worker === undefined) {
+      try { this.worker = typeof Worker === 'undefined' ? null : new Worker(new URL('./terrainWorker.ts', import.meta.url), { type: 'module' }) } catch { this.worker = null }
+    }
+    const worker = this.worker
+    if (!worker) return Promise.resolve()
+    // Any failure leaves the world to be generated on the main thread (rebuildSteps); a worker
+    // that could not run or went silent is not used again.
+    const job = requestTerrain(worker, key, seed, settings).then(result => {
+      this.preparing.delete(key)
+      if ('data' in result) {
+        // Two worlds at most: the one being entered and perhaps the room's own.
+        if (this.prepared.size >= 2) this.prepared.delete(this.prepared.keys().next().value!)
+        this.prepared.set(key, result)
+      } else if ('broken' in result) {
+        console.warn('Terrain worker unavailable; generating on the main thread.', result.broken)
+        if (this.worker === worker) { worker.terminate(); this.worker = null }
+      } else console.warn('Terrain worker failed; generating on the main thread.', result.failed)
+    })
+    this.preparing.set(key, job)
+    return job
+  }
+
   /** Rebuild heights, mesh and collider in place, then notify listeners. */
   regenerate(): void {
+    // Anything staged is superseded: this builds the current parameters completely, now.
+    this.building = 0
+    drain(this.rebuildSteps(0))
+    this.built = Promise.resolve()
+  }
+
+  /**
+   * The same rebuild, spread across frames. The heights come from the worker; the ground's
+   * simulation (heights, collider) changes in one step together with the listeners that
+   * move the player onto it, so physics never sees a mismatched world; the drawn meshes,
+   * sea, trees and grass follow a piece per frame.
+   */
+  regenerateStaged(): Promise<void> {
+    const token = ++this.serial
+    this.building = token
+    // A rebuild that throws must still end: otherwise the ground never reports ready and every
+    // later descent's whenReady() would wait on, and reject from, the failed one.
+    this.built = runSliced(this.rebuildSteps(token), 5)
+      .catch(error => { console.warn('Terrain rebuild failed', error) })
+      .finally(() => { if (this.building === token) this.building = 0 })
+    return this.built
+  }
+  private serial = 0
+
+  private *rebuildSteps(token: number): Generator<SliceStep> {
+    const superseded = () => token !== 0 && this.building !== token
+    // Each stage is a `syn3h:terrain ...` user-timing measure, so a frame profile can name it.
+    let mark = performance.now()
+    const stage = (name: string) => { const now = performance.now(); try { performance.measure(`syn3h:terrain ${name}`, { start: mark, end: now }) } catch { /* Older engines. */ } mark = now }
+    const settings = currentTerrainSettings(), key = ProceduralTerrain.key(this.seed, settings)
+    if (token !== 0 && !this.prepared.has(key)) {
+      yield this.prepare(this.seed, settings)
+      if (superseded()) return
+      mark = performance.now()
+    }
     // New ground under the sea: no glide across it, the sea simply stands at the setting.
     snapSeaLevel()
     const old = this.data
-    this.data = this.generate()
+    const ready = this.prepared.get(key)
+    if (ready) {
+      this.prepared.delete(key)
+      this.data = ready.data
+      configureWorldWater(ready.data.size, this.seed)
+      this.lastSeamCorrection = ready.seam
+      this.lastGenerateMs = ready.ms
+    } else this.data = this.generate()
     this.sampler.data = this.data
+    this.look.setSummit(this.summitHeight())
+    this.lightLake()
+    stage(ready ? 'adopt worker heights' : 'generate')
+    this.game.world.removeCollider(this.collider, true)
+    this.colliderX = 0
+    this.colliderZ = 0
+    this.collider = createTerrainCollider(this.game.world, this.data)
+    this.iceKey = 'rebuilt'; this.syncIce()
+    stage('collider')
+    this.version++
+    console.info(`terrain regenerated: seed ${this.seed}, ${this.lastGenerateMs.toFixed(0)} ms${ready ? ' off the main thread' : ''}`)
+    for (const l of this.listeners) l()
+    stage('listeners')
+    yield
+    if (superseded()) return
+    mark = performance.now()
     if (this.data.size === old.size && this.data.resolution === old.resolution) {
-      this.meshes.update(this.data)
+      for (const _ of this.meshes.updateSteps(this.data)) { yield; if (superseded()) return }
     } else {
       // A new planet size: the chunk grid is sized from the tile, so build it afresh.
       this.game.scene.remove(this.meshes.group)
@@ -324,19 +448,22 @@ export class ProceduralTerrain implements Terrain {
       if (this.lod) this.meshes.setLodDistances(this.lod[0], this.lod[1])
       this.game.scene.add(this.meshes.group)
     }
-    this.look.setSummit(this.summitHeight())
-    this.lightLake()
-    this.game.world.removeCollider(this.collider, true)
-    this.colliderX = 0
-    this.colliderZ = 0
-    this.collider = createTerrainCollider(this.game.world, this.data)
-    this.iceKey = 'rebuilt'; this.syncIce()
+    stage('meshes')
+    yield
+    if (superseded()) return
+    mark = performance.now()
     this.volcanics.rebuild()
+    stage('volcanics')
+    yield
+    if (superseded()) return
+    mark = performance.now()
     this.trees.rebuild()
+    stage('trees')
+    yield
+    if (superseded()) return
+    mark = performance.now()
     this.cover.rebuild()
-    this.version++
-    console.info(`terrain regenerated: seed ${this.seed}, ${this.lastGenerateMs.toFixed(0)} ms`)
-    for (const l of this.listeners) l()
+    stage('cover')
   }
 
   wrapPosition(p: { x: number; z: number }): boolean {
@@ -416,6 +543,11 @@ export class ProceduralTerrain implements Terrain {
     b.liquid = (inland ? this.data.settings.kind === KIND_VOLCANIC : worldSeaKind.value === 0) ? 'lava' : 'water'
     b.frozen = !inland && waterSeaFrozen.value
     return b
+  }
+
+  /** The liquid surface at rest: liquidHeightAt without the sea's waves. */
+  liquidLevelAt(x: number, z: number): number {
+    return lavaSurfaceAt(this.data.lava, wrapCoord(x, this.data.size), wrapCoord(z, this.data.size), seaLevel())
   }
 
   /**
@@ -528,6 +660,8 @@ export class ProceduralTerrain implements Terrain {
 
   dispose(): void {
     this.unsubscribe()
+    this.building = 0
+    this.worker?.terminate(); this.worker = null
     this.game.remove(this.lodSystem)
     this.game.remove(this.volcanics)
     this.game.remove(this.trees)
