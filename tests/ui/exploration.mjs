@@ -12,10 +12,10 @@ for (const mode of modes) {
     await page.goto(`${process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'}?autoplay=1&room=exploration-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 90000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 90000 })
-    // Height above ground is measured from the contact surfaces: resting on its wheels, the
-    // buggy reads 0 m, not the height of the middle of its body.
+    // ALT is height above the sea at rest (src/ui/altitude.ts), so a parked buggy reads its
+    // ground's height there, not 0: check only that the readout shows a whole number.
     await page.waitForFunction(() => syn3h.player.wheelsGrounded > 0, null, { timeout: 30000 })
-    await page.waitForFunction(() => document.querySelector('.focus-hud [data-t="altitude"]').textContent === '0', null, { timeout: 10000 })
+    await page.waitForFunction(() => /^-?[\d,]+$/.test(document.querySelector('.focus-hud [data-t="altitude"]')?.textContent ?? ''), null, { timeout: 10000 })
     assert.equal(await page.locator('.shell-hud').isVisible(), false)
     assert.equal(await page.locator('.hud-navigation button').count(), 1)
     const map = await page.locator('.shell-minimap').boundingBox()
