@@ -50,7 +50,8 @@ export class BotManager implements System {
   /** A bot being built and compiled before it appears; at most one at a time. */
   private arriving = false
   /** Bots on their way out, still in the scene inside their cloud. */
-  private readonly leaving = new Set<Vehicle>()
+  /** Bots on their way out, with the brain still driving each until its cloud has gathered. */
+  private readonly leaving = new Map<Vehicle, BotBrain>()
   /** Changes when the world is rebuilt, so an arrival started on the old one is dropped. */
   private world = 0
   private targets: readonly Vehicle[]
@@ -138,7 +139,7 @@ export class BotManager implements System {
     const index = this.bots.length - 1
     this.bots.splice(index, 1); const brain = this.brains.splice(index, 1)[0]
     for (const controller of this.brains) controller.setPeers(this.bots)
-    this.leaving.add(bot)
+    this.leaving.set(bot, brain)
     const gone = () => {
       if (!this.leaving.delete(bot)) return
       this.effects.get(bot)?.(); this.effects.delete(bot)
@@ -148,7 +149,9 @@ export class BotManager implements System {
   }
   private clearBots() {
     while (this.bots.length) this.removeLast()
-    for (const bot of [...this.leaving]) { this.effect?.cancel(bot); this.leaving.delete(bot); this.effects.get(bot)?.(); this.effects.delete(bot); this.game.remove(bot) }
+    // A bot still leaving goes with its brain: a brain left running would read a removed body,
+    // which panics the physics engine for the rest of the session.
+    for (const [bot, brain] of [...this.leaving]) { this.effect?.cancel(bot); this.leaving.delete(bot); this.effects.get(bot)?.(); this.effects.delete(bot); this.game.remove(brain); this.game.remove(bot) }
   }
   /**
    * A place for a new bot near the player, wherever they are: on ground its vehicle can use
@@ -163,7 +166,7 @@ export class BotManager implements System {
     const r = this.player.body.rotation()
     const facing = moving ? Math.atan2(v.x, v.z) : Math.atan2(2 * (r.w * r.y + r.x * r.z), 1 - 2 * (r.y * r.y + r.x * r.x))
     const floats = kind === 'hovercraft' || kind === 'jet'
-    const others = [...this.targets, ...this.bots, ...this.leaving]
+    const others = [...this.targets, ...this.bots, ...this.leaving.keys()]
     // Bands of bearing off the heading, best first, each tried on both sides and at a few distances.
     const bands: [number, number][] = [[0.75, 1.1], [1.1, 1.75], [1.75, 2.6], [2.6, Math.PI]]
     const side = index % 2 ? 1 : -1
