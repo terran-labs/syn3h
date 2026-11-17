@@ -26,11 +26,13 @@ const CUTS: Ellipse[] = [
   { role: 'accent', plane: 'xz', c: [0, 0], r: [F.stripe, 99], band: [.2, 2], facing: .2, snap: .08 },
 ]
 const plain: Tagger = (_x, _y, _z, n) => n[1] < -.7 ? 'chrome' : 'paint'
-const hullTag = featureTagger(CUTS, plain)
+/** The stripe stops on a ring line short of the nose tip, where the columns bunch too tightly to carry its edge. */
+const stripeEnds = (tag: Tagger): Tagger => (x, y, z, n) => { const r = tag(x, y, z, n); return r === 'accent' && z < F.stripeStart ? 'paint' : r }
+const hullTag = stripeEnds(featureTagger(CUTS, plain))
 const ALONG: Record<0 | 1 | 2, number> = { 0: 56, 1: 20, 2: 12 }
 /** The middle distance keeps the cockpit cut and lip but paints the scoops and lamps on the grid. */
 const MID: Ellipse[] = [CUTS[0], { ...CUTS[1], role: 'frame' }, { ...CUTS[2], role: 'lamp' }, CUTS[3]]
-const midTag = featureTagger(MID, plain)
+const midTag = stripeEnds(featureTagger(MID, plain))
 const piece = (role: Role, geometry: THREE.BufferGeometry): BodyPiece => ({ part: 'body', role, geometry })
 
 /** The cockpit lip: an elliptical tube swept round the opening, resting on the deck. */

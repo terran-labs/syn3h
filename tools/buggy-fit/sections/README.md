@@ -127,3 +127,48 @@ limit; the curve is flat well before it.
 | C | 375 | 3,299 | 12.2 | 43.5 | 133.5 | 20.5 | 0.950 / 0.925 | no: 52 open edges, the cockpit cut |
 
 Model files for comparison: buggy-boxarm.glb is 148,408 bytes gzip.
+
+## Round 2: a designed hull instead of fitted radii (16 November 2026, night)
+
+The owner judged Level C "much lower visual quality than the current loaded buggy". This
+round dropped the free-radius hull and rebuilt `levelC.ts` (same module and id, so the lab's
+Skins group, `design=generated-loft`, shows it). The round 1 grid version is kept as
+`levelCgrid.ts` (id `sections-C-grid`).
+
+What changed:
+
+- **Hull (`hull.ts`, `dataHull.ts`).** Each section's half outline runs through five named
+  points: floor edge, widest point, shoulder peak, deck valley, crown. Cubic segments join
+  them, with creases at the floor edge and the shoulder and smooth tangents elsewhere. Each
+  of the nine numbers is a Catmull-Rom curve through 12 keys along Z. `fitHull.ts` fits the
+  keys globally by coordinate descent against reference slices every 4 cm, with a bending
+  penalty and a weak pull toward a hand-placed starting design, so each point keeps its
+  meaning along the body. The front fender keys are then set by hand (OVERRIDES in the
+  fitter): the fit rounds those corners off, and they carry much of the character.
+- **Creases (`loft.ts` skin, `creases` option).** Grid columns are allocated per outline
+  segment, so the floor edge and shoulder are always grid lines; vertices on them take each
+  cell's own normal, so the fold is crisp and everything else is smooth.
+- **Openings under separate pieces (`levelC.ts`).** The cockpit is cut under a swept chrome
+  lip (an elliptical tube resting on the deck). Each scoop is a slanted slot cut under a
+  body-colour lip with a recessed dark pocket behind it. Each headlight sits in a chrome duct
+  under a bezel with the lamp at its floor. Tail lamps are thin bars proud of the rear panel.
+  Grid vertices near each cut snap onto it, and the lip covers what is left of the staircase.
+- **Rear.** End plates follow the hull's fin line instead of sitting at a fixed x.
+
+Numbers (`compare.ts --part body --detail 0`, and `measure.ts`):
+
+| version | numbers | gzip B | triangles d0/d1/d2 | build ms | mean / p95 / max mm | IoU mean / min |
+| --- | --- | --- | --- | --- | --- | --- |
+| round 1 Level C (grid) | 375 | 3,299 | 5,972 / 1,132 / 316 | 26 to 62 | 12.2 / 43.5 / 133.5 | 0.950 / 0.925 |
+| round 2 Level C (designed hull) | 193 | 5,880 | 7,056 / 1,368 / 384 | 52 | 22.9 / 70.9 / 134.8 | 0.938 / 0.915 |
+| cage250 (for comparison) | 3,402 | 6,992 | 3,696 / 924 / 924 | 8 | 4.5 / 12.9 / 31.2 | 0.984 / 0.979 |
+
+Round 2 sits further from the sculpt in millimetres, by design: it trades closeness for a
+fair surface. Of its 193 numbers, 120 are the hull (12 key positions and 9 tracks of 12
+values) and 73 are features; every one is a named handle (floor height, floor width, width,
+belt line, fender line and height, deck dip, crown; cockpit, scoop, lamp, wing and plate
+sizes and positions). None is a fit coefficient without a meaning.
+
+Build time is dominated by placing the headlight ducts and scoops on the hull
+(`HullQuery.front` and `side` re-sample the outline on every call); caching the outline per
+z would bring it near the cage's.
