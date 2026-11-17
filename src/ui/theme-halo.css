@@ -104,7 +104,10 @@
 .syn3h-shell.exploration-ui .world-inspector .wi-group summary small { font: 400 12px 'Barlow', sans-serif; letter-spacing: 0; text-transform: none; color: var(--s3-soft); }
 .syn3h-shell.exploration-ui .world-inspector .wi-label { font-size: 13px; color: var(--s3-ink); }
 .syn3h-shell.exploration-ui .world-inspector .wi-row { border-radius: var(--s3-radius-small); }
-.syn3h-shell.exploration-ui .world-inspector .wi-row.is-selected { background: rgb(143 227 255 / .06); box-shadow: inset 0 0 0 1px rgb(198 241 255 / .38); }
+/* The row being described (its tooltip showing) is not boxed: a tint that fades out at both
+   ends and a brighter label. Keyboard focus keeps its ring, on the control itself. */
+.syn3h-shell.exploration-ui .world-inspector .wi-row.is-selected { background: linear-gradient(90deg, transparent, rgb(143 227 255 / .07) 22%, rgb(143 227 255 / .07) 78%, transparent); box-shadow: none; }
+.syn3h-shell.exploration-ui .world-inspector .wi-row.is-selected .wi-label { color: #fff; }
 .syn3h-shell.exploration-ui .world-inspector .wi-row output { color: var(--s3-accent-2); }
 
 /* Sliders: a 2 px track and a small bright thumb, drawn in the middle of the 44 px input. */
@@ -229,12 +232,10 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
 .syn3h-shell.exploration-ui .world-inspector .wi-cards { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .syn3h-shell.exploration-ui .world-inspector .rail-players { flex: 0 0 auto; max-height: none; min-height: 44px; }
 .syn3h-shell.exploration-ui .world-inspector .rail-players > summary { min-height: 44px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; }
-.syn3h-shell.exploration-ui .world-inspector .rail-foot { display: flex; flex-direction: column; align-items: stretch; flex: 0 0 auto; gap: 5px; padding: 6px 8px; }
+.syn3h-shell.exploration-ui .world-inspector .rail-foot { display: flex; flex-direction: column; align-items: stretch; flex: 0 0 auto; gap: 5px; padding: 0; }
 .syn3h-shell.exploration-ui .world-inspector .rail-tools { display: grid; grid-template-columns: minmax(0, .65fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .syn3h-shell.exploration-ui .world-inspector .rail-command input.wi-search[type=search] { width: 100%; min-width: 0; height: 44px; min-height: 44px; box-sizing: border-box; font-size: 16px; border: 1px solid var(--s3-line); border-radius: 8px; background: rgb(0 8 16 / .35); padding: 6px 8px; }
 .syn3h-shell.exploration-ui .world-inspector .rail-tools .rail-pause { min-height: 44px; padding: 6px 12px; }
-.syn3h-shell.exploration-ui .world-inspector .rail-foot .wi-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
-.syn3h-shell.exploration-ui .world-inspector .rail-foot .wi-actions button { min-height: 44px; min-width: 0; padding: 4px; margin: 0; font-size: 11px; white-space: normal; letter-spacing: 0; text-transform: none; }
 .syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden])) .hud-navigation { visibility: visible; z-index: 65; }
 /* Leave the existing edge toggle outside the touch panel's hit area. */
 .syn3h-shell.exploration-ui.has-touch .world-inspector { right: max(42px, env(safe-area-inset-right)); width: min(352px, calc(100vw - 58px)); }
@@ -340,3 +341,61 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .in-play-about { background
 .syn3h-shell.exploration-ui .world-inspector .rail-world { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 
 .syn3h-shell.exploration-ui .world-inspector .rail-command input.wi-search[type=search]:focus { border-color: var(--s3-accent-2); outline: 1px solid var(--s3-accent-2); outline-offset: 1px; }
+
+/* ---------- The foot: one way out ----------
+   Leave world, alone under the cards, in the lobby buttons' language: a hairline pill over an
+   even dark tint, thin spaced capitals, a small arrow-out glyph, a rim that brightens under the
+   pointer and on keyboard focus. Not red: leaving is ordinary, and it asks first. */
+:root .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world {
+  display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 44px; margin: 0; padding: 0 18px;
+  border: 1px solid var(--s3-line); border-radius: 999px; background: var(--halo-fill, rgb(3 11 19 / .55));
+  box-shadow: var(--halo-glow), inset 0 0 12px rgb(143 227 255 / .05);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  font: 500 11.5px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--s3-ink); text-shadow: var(--halo-under); white-space: nowrap;
+  transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease;
+}
+/* Tracking leaves a space after the last letter; take it back so the label sits centred. */
+:root .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world span { margin-right: -.22em; }
+:root .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world:is(:hover, :focus-visible) {
+  color: #fff; border-color: var(--s3-accent-2); background: rgb(143 227 255 / .07);
+  box-shadow: 0 0 10px rgb(143 227 255 / .22), inset 0 0 14px rgb(143 227 255 / .1);
+}
+:root .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world:active { background: rgb(143 227 255 / .13); }
+.syn3h-shell .world-inspector .wi-glyph { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- The World card's actions ----------
+   Copy and Paste, then a hairline, then Reset: three equal pills with a glyph and a short
+   label, centred, at the top of the card. Reset is quieter until asked, and warm while it
+   waits for the second press. */
+.syn3h-shell.exploration-ui .world-inspector .wi-world-actions {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 17px minmax(0, 1fr); align-items: center; column-gap: 6px;
+  margin: 2px 0 10px;
+}
+.syn3h-shell.exploration-ui .world-inspector .wi-world-actions::after { content: ''; grid-column: 3; grid-row: 1; justify-self: center; width: 1px; height: 22px; background: var(--s3-line-quiet); }
+.syn3h-shell.exploration-ui .world-inspector .wi-world-actions .wi-reset { grid-column: 4; grid-row: 1; }
+:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button {
+  display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 0; min-height: 36px; margin: 0; padding: 0 8px;
+  border: 1px solid var(--s3-line-quiet); border-radius: 999px; background: none; box-shadow: none;
+  font: 500 11px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--s3-ink); text-shadow: var(--halo-under); white-space: nowrap;
+  transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease;
+}
+:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button span { margin-right: -.14em; }
+:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button .wi-glyph { width: 14px; height: 14px; }
+:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button:is(:hover, :focus-visible) {
+  color: #fff; border-color: var(--s3-accent-2); background: rgb(143 227 255 / .07); box-shadow: 0 0 8px rgb(143 227 255 / .18);
+}
+:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button.wi-reset:not(.is-warning):not(:hover):not(:focus-visible) { color: var(--s3-dim); }
+:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button.wi-reset.is-warning { color: #ffd9b0; border-color: rgb(255 170 90 / .6); background: rgb(255 170 90 / .1); box-shadow: none; }
+/* A finger's target is 44 px; the pill stays slim and its hit area grows. */
+:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button { position: relative; }
+:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button::after { content: ''; position: absolute; inset: -5px -3px; }
+@media (pointer: coarse) { :root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button { min-height: 44px; } }
+
+/* ---------- Choices on touch layouts ----------
+   On a phone a row's label sits above its segmented control, which then takes the row's full
+   width, so a long option ("King of the Hill") never crowds its neighbours. */
+.syn3h-shell.exploration-ui.has-touch .world-inspector .wi-cards .wi-row.is-choice { grid-template-columns: minmax(0, 1fr); row-gap: 4px; padding-block: 6px; }
+.syn3h-shell.exploration-ui.has-touch .world-inspector .wi-cards .wi-row.is-choice .wi-seg { justify-self: stretch; }
+.syn3h-shell.exploration-ui.has-touch .world-inspector .wi-cards .wi-row.is-choice .wi-seg button { flex: 1 1 auto; }

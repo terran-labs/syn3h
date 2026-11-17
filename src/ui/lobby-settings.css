@@ -39,8 +39,13 @@
    darker ground than in play so labels behind it do not read through. It stops above the gear. */
 .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
   display: flex; z-index: 60; bottom: auto; height: auto; max-height: calc(100dvh - 32px - 60px);
-  padding: 8px; border-radius: 16px; background: rgb(3 10 18 / .82); box-shadow: 0 0 30px rgb(0 0 0 / .45);
+  padding: 8px; border-radius: 0; background: none; box-shadow: none;
 }
+/* One level of card: the panel is a column, not a sheet behind the cards (the owner, 16
+   November 2026: no card regions nested inside each other). The cards carry the darker body
+   the sheet used to give, so the galaxy's labels still do not read through them. */
+.syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings .wi-glass { --body: rgb(3 10 18 / .84); }
+.syn3h-shell.exploration-ui .lobby-settings-foot .build-line { text-shadow: 0 1px 3px rgb(0 8 14 / .9), 0 0 8px rgb(0 8 14 / .6); }
 .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { overflow-y: auto; min-height: 0; flex: 1 1 auto; overscroll-behavior: contain; }
 /* Unlike the in-game rail, whose cards share its height, here every card takes its natural
    height and the whole stack scrolls: an open card shows all its rows, on short screens too. */
@@ -65,6 +70,12 @@
     top: max(10px, env(safe-area-inset-top)); bottom: max(10px, env(safe-area-inset-bottom)); height: auto; max-height: none;
   }
   .lobby-gear-dock.is-open { visibility: hidden; }
+  /* The panel covers the lobby here, so the lobby behind it dims: a full-screen backdrop with
+     no edge, not a sheet round the cards. Taps pass through it to the close-on-outside rule. */
+  .syn3h-shell.exploration-ui:not(.is-playing) .lobby-settings-host::before { content: ''; position: fixed; inset: 0; z-index: 59; background: rgb(2 8 14 / .78); pointer-events: none; }
+  /* The stack takes only the height it needs, so the version line follows the last card
+     instead of sitting on the lobby's buttons at the foot of the screen. */
+  .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { flex: 0 1 auto; }
   /* Portrait: the version sits above the gear, which sits right of the lobby's buttons; both
      sit a little lower than the buttons' baseline to stay clear of the hint above them. */
   .lobby-gear-dock { flex-direction: column-reverse; align-items: flex-end; gap: 0; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); }

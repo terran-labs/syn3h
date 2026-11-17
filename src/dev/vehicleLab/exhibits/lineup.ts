@@ -34,7 +34,7 @@ export const lineup: LabExhibit = {
     return {
       ...model,
       controls: [...model.controls ?? [], {
-        kind: 'slider', id: 'lineup.tankBody', label: 'Tank body (0 original, 1 to 3 round ten, then rounds nine and eight)', group: 'Tank',
+        kind: 'slider', id: 'lineup.tankBody', label: 'Tank body (0 the shipped Sherpa, 1 to 3 round ten, then rounds nine and eight)', group: 'Tank',
         min: 0, max: TANK_BODIES.length, step: 1, value: 0, onChange: value => previewTankBody(TANK_BODIES[Math.round(value) - 1]?.id ?? null),
       }],
     }

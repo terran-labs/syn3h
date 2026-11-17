@@ -17,10 +17,11 @@ for (const mode of ['desktop', 'phone']) {
   else if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
   await rail.waitFor({ state: 'visible' })
   await page.evaluate(async () => { (await import('/src/ui/quality/ladder.ts')).setQualityChoice('full'); syn3h.game.quality.setAuto(false); syn3h.game.quality.setLevel(3) })
-  const surfaces = '.wi-cards > [data-section], .rail-foot'
+  // The foot is no longer a glass surface: it holds one button, which carries its own backing.
+  const surfaces = '.wi-cards > [data-section]'
   const readSurfaces = () => rail.locator(surfaces).evaluateAll(es => es.map(el => { const s = getComputedStyle(el); return { card: el.dataset.section || 'bottom', background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } }))
   const checkSurfaces = (rows, off = false) => {
-   assert.deepEqual(rows.map(r => r.card), ['you', 'game', 'players', 'vehicles', 'world', 'performance', 'bottom'])
+   assert.deepEqual(rows.map(r => r.card), ['you', 'game', 'players', 'vehicles', 'world', 'performance'])
    for (const r of rows) { if (off) assert.equal(r.blur, 'none', r.card); else assert.match(r.blur, /blur\(28px\)/, r.card); assert.match(r.background, off ? /0\.94\)/ : /0\.65\)/, r.card) }
   }
   const results = []

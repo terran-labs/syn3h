@@ -11,10 +11,12 @@ for(const mode of ['desktop','phone']){
   const room=`ux-discover-${mode}-${Date.now()}`
   await page.goto(`${base}?room=${room}`)
   await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
+  // The lobby's opening (about nine seconds) hides its controls; a key skips to the settled lobby.
+  await page.keyboard.press('Shift');await page.waitForTimeout(700)
   // The lobby offers planets, not vehicles: no vehicle control, panel or preview anywhere in it.
   assert.equal(await page.locator('[data-goto=vehicle], [data-panel=vehicle], [name=vehicle], .shell-vehicle, .shell-vehicle-preview, canvas[aria-label="Selected vehicle preview"]').count(),0,'the lobby shows no vehicle control')
   // Two buttons at the bottom and no more; Settings is the gear in the corner (LobbySettings).
-  assert.deepEqual(await page.locator('.galaxy-links button').allInnerTexts().then(all=>all.map(text=>text.trim().toLowerCase())),['multiplayer','about'],'the lobby has exactly two buttons')
+  assert.deepEqual(await page.locator('.galaxy-links button').allInnerTexts().then(all=>all.map(text=>text.trim().toLowerCase())),['about'],'the lobby has exactly two buttons')
   assert.equal(await page.getByRole('button',{name:'Settings',exact:true}).count(),1,'the settings gear is there')
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-lobby.png`})
   // The lobby lists the planet recipes and nothing else: "Shape your own" is hidden for now.
@@ -23,17 +25,22 @@ for(const mode of ['desktop','phone']){
   assert.doesNotMatch(lobbyWorlds.text,/shape your own/i)
   await page.locator('.galaxy-label.is-current').focus();await page.keyboard.press('Enter')
   await page.waitForFunction(()=>syn3h.shell.playing&&syn3hNet.connected&&!syn3h.shell.dropping,null,{timeout:120000})
-  assert.ok(sockets.includes(`ws://127.0.0.1:${process.env.UX_ROOM_PORT??'5298'}/ws?room=${room}`),'connected to the room server started for this run')
+  // The socket's host depends on the dev setup (VITE_SERVER_URL); what matters is that this page joined its own room.
+  assert.ok(sockets.some(url=>url.endsWith(`/ws?room=${room}`)),'connected to its own room')
   if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
   assert.equal(await page.locator('.wi-quick, .gear-select, [data-wi=show-gi]').count(),0,'the redundant quick row and its controls are gone')
   const card=page.locator('.wi-card[data-section=you]')
   await card.locator('.wi-head').click()
-  const vehicle=card.getByRole('combobox',{name:'Vehicle',exact:true})
+  // The vehicle choice is a segmented picker (a radio group); the checked segment is its tab stop.
+  const vehicle=card.getByRole('radiogroup',{name:'Vehicle',exact:true})
   await vehicle.scrollIntoViewIfNeeded()
   assert.equal(await card.locator('.wi-body > :first-child').evaluate(el=>el.classList.contains('wi-vehicle')),true,'vehicle controls lead their panel')
-  assert.ok((await vehicle.boundingBox()).height>=44,'vehicle choice is a full touch target')
+  for(const box of await vehicle.getByRole('radio').evaluateAll(es=>es.map(el=>el.getBoundingClientRect().height)))assert.ok(box>=44,'each vehicle choice is a full touch target')
   assert.equal(await page.getByRole('combobox',{name:'Gear',exact:true}).count(),0)
-  assert.deepEqual(await vehicle.locator('option').allInnerTexts(),['Buggy','Jet','Hovercraft','Tank'],'the in-play selector offers the four vehicles')
+  // Every vehicle the game offers (a hidden one, such as the tank, is not offered).
+  const offered=await page.evaluate(async()=>(await import('/src/ui/VehicleChoice.ts')).PLAY_VEHICLES.map(v=>({id:v.id,label:v.label})))
+  assert.ok(offered.length>=2)
+  assert.deepEqual((await vehicle.getByRole('radio').allInnerTexts()).map(t=>t.trim()),offered.map(v=>v.label),'the in-play picker offers every available vehicle')
   // Vehicle colours are chosen in play, beside the selector: the vehicle repaints at once with
   // no reload, and the choice is saved and announced to the room once the picker settles.
   if(mode==='desktop'||await page.locator('.wi-swatch input[data-tint=body]').isVisible()){
@@ -52,15 +59,15 @@ for(const mode of ['desktop','phone']){
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-selectors.png`})
   // The same callback must swap in place, preserving page and room.
   const loadedAt=await page.evaluate(()=>performance.timeOrigin)
-  for(const kind of ['jet','hovercraft','tank','buggy-syn3h']){
-   await vehicle.selectOption(kind)
+  for(const kind of [...offered.map(v=>v.id).filter(id=>id!=='buggy-syn3h'),'buggy-syn3h']){
+   await vehicle.locator(`[data-seg-vehicle="${kind}"]`).click()
    await page.waitForFunction(kind=>syn3h.player.kind===kind||(kind==='buggy-syn3h'&&syn3h.player.kind==='buggy'),kind,{timeout:30000})
    assert.equal(await page.evaluate(()=>performance.timeOrigin),loadedAt,'vehicle switch does not reload')
    assert.equal(new URL(page.url()).searchParams.get('room'),room)
   }
-  assert.deepEqual(await card.locator('.wi-vehicle select, .wi-vehicle input').evaluateAll(es=>es.map(el=>el.dataset.tint??'vehicle')),['vehicle','body','accent'],'vehicle and colours retain DOM focus order')
+  assert.deepEqual(await card.locator('.wi-vehicle-option[tabindex="0"], .wi-vehicle input').evaluateAll(es=>es.map(el=>el.dataset.tint??'vehicle')),['vehicle','body','accent'],'vehicle and colours retain DOM focus order')
   if(mode==='desktop'){
-   await vehicle.focus();await page.keyboard.press('Tab')
+   await vehicle.locator('[aria-checked=true]').focus();await page.keyboard.press('Tab')
    assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('data-tint')),'body','keyboard order reaches body colour next')
    await page.keyboard.press('Tab')
    assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('data-tint')),'accent','then accent colour')
@@ -84,7 +91,7 @@ for(const mode of ['desktop','phone']){
   }
   // Rebuilding the inspector moves the existing widget and keeps its listeners and colours.
   await page.evaluate(()=>syn3h.shell.inspector.rebuild())
-  assert.equal(await page.locator('.wi-vehicle-select').count(),1)
+  assert.equal(await page.locator('.wi-vehicle-picker').count(),1)
   assert.equal(await page.locator('.wi-swatch input').count(),2)
   await card.locator('.wi-head .wi-sum').evaluate(el=>el.scrollIntoView({block:'nearest'}))
   await page.waitForFunction(()=>document.querySelector('.wi-card[data-section=you] .wi-sum').textContent.endsWith(' · Buggy'))

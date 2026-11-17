@@ -54,7 +54,7 @@
 .syn3h-shell.exploration-ui .wi-row { padding-left: 6px; border-radius: 0; grid-template-columns: minmax(0,1fr) 100px 43px; gap: 6px; }
 .syn3h-shell.exploration-ui .wi-row.is-choice { grid-template-columns: minmax(0,82px) 1fr; }
 .syn3h-shell.exploration-ui .wi-label { font-size: 12px; }
-.syn3h-shell.exploration-ui .wi-row.is-selected { background: rgb(100 200 245 / .075); box-shadow: inset 1px 0 rgb(170 225 250 / .65); }
+.syn3h-shell.exploration-ui .wi-row.is-selected { background: linear-gradient(90deg, transparent, rgb(100 200 245 / .075) 22%, rgb(100 200 245 / .075) 78%, transparent); box-shadow: none; }
 .syn3h-shell.exploration-ui .wi-group summary { font-size: 12px; letter-spacing: .04em; }
 .syn3h-shell.exploration-ui .wi-group summary::before { border-width: 3px; border-left-width: 4px; }
 .syn3h-shell.exploration-ui .wi-status:empty { display: none; }
@@ -237,19 +237,12 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 .syn3h-shell.exploration-ui .rail-navigation .rail-pause { margin-left: 0; flex: 0 0 auto; }
 .syn3h-shell.exploration-ui .rail-navigation .rail-close { flex: 0 0 auto; }
 .syn3h-shell.exploration-ui .rail-foot { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; }
-.syn3h-shell.exploration-ui .rail-foot .wi-actions { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
-.syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world { flex: 0 0 auto; margin-left: auto; min-height: 34px; padding: 5px 4px 5px 9px; border: 1px solid transparent; background: none; box-shadow: none; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); white-space: nowrap; }
-.syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world:hover { border-color: var(--s3-line-quiet); }
 /* Short screens: the quick controls share the header's line, so the name gives way and the
    search takes a line of its own, as before. */
 @media (max-height: 500px) {
   .syn3h-shell.exploration-ui .rail-navigation { flex-wrap: wrap; justify-content: flex-end; row-gap: 2px; }
   .syn3h-shell.exploration-ui .rail-navigation .rail-world { display: none; }
   .syn3h-shell.exploration-ui .world-inspector .rail-navigation .wi-search { order: 9; flex: 1 0 100%; }
-  .syn3h-shell.exploration-ui .rail-foot { padding: 2px 8px; }
-  .syn3h-shell.exploration-ui .rail-foot .wi-actions { flex-wrap: nowrap; gap: 3px; }
-  .syn3h-shell.exploration-ui .rail-foot .wi-actions button { padding: 3px; font-size: 9px; min-height: 24px; }
-  .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world { min-height: 24px; padding-block: 2px; font-size: 10px; }
 }
 
 /* Explore has no game, so the player list shows who is here and no score column. */
@@ -262,7 +255,6 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 .syn3h-shell.exploration-ui .world-inspector .wi-top .rail-navigation .rail-world { max-width: none; min-width: 0; }
 .syn3h-shell.exploration-ui .world-inspector .wi-top .rail-navigation .wi-search { width: 100% !important; min-width: 0 !important; box-sizing: border-box; }
 .syn3h-shell.exploration-ui .world-inspector .rail-foot { min-width: 0; box-sizing: border-box; }
-.syn3h-shell.exploration-ui .world-inspector .rail-foot .wi-actions { flex: 1 1 auto; }
 @media (max-height: 500px) {
   /* The quick controls take the first line; Pause and the way back sit at its right end, and the search has the second line. */
   .syn3h-shell.exploration-ui .world-inspector .wi-top .rail-navigation { grid-template-columns: minmax(0, 1fr) max-content max-content; }

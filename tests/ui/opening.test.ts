@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { OPENING_SECONDS, openingState, SETTLED, SHORT_PACE } from '../../src/ui/galaxy/opening'
+import { OPENING_SECONDS, openingState, SETTLED, SETTLED_SECONDS } from '../../src/ui/galaxy/opening'
 
 describe('lobby opening timeline', () => {
   it('starts at a point, ends at the settled lobby, and brings the worlds in from the innermost out', () => {
@@ -20,9 +20,11 @@ describe('lobby opening timeline', () => {
       }
     }
     expect(SETTLED.done).toBe(true)
-    // Later loads in a session: the same opening, two to three seconds long.
-    const short = OPENING_SECONDS / SHORT_PACE
-    expect(short).toBeGreaterThanOrEqual(2); expect(short).toBeLessThanOrEqual(3)
-    expect(openingState(short, 2, 9, SHORT_PACE).done).toBe(true); expect(openingState(short - 0.1, 2, 9, SHORT_PACE).done).toBe(false)
+    // The bang has settled by SETTLED_SECONDS: every world exactly in its place, the stars where
+    // they rest, the sun itself; only the name's fade runs on.
+    const settled = openingState(SETTLED_SECONDS, 2, 9)
+    expect(settled.fling.every(f => f === 1)).toBe(true); expect(settled.spread).toBe(1)
+    expect(settled.sun).toBeCloseTo(1, 6); expect(settled.reach).toBeCloseTo(1, 6); expect(settled.chrome).toBe(1)
+    expect(settled.burst[1]).toBe(0)
   })
 })
