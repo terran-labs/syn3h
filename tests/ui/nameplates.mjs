@@ -125,6 +125,23 @@ for (const view of ['desktop', 'portrait', 'landscape']) {
     }
     await page.screenshot({ path: `${out}/far.png` })
     assert.ok(far, 'far: no label for a bot 220 m ahead')
+    // Stacked: three bots in a line ahead. Only the front one may keep its label, and it says
+    // how many are behind it ("+2"), so the player knows they are there.
+    let more = ''
+    for (let i = 0; i < 6 && !/^\+[1-9]$/.test(more); i++) {
+      await page.evaluate(() => {
+        const net = window.syn3hNet, cam = window.syn3h.game.camera, p = window.syn3h.player.body.translation(), terrain = window.syn3h.terrain
+        const f = cam.getWorldDirection(cam.position.clone()); f.y = 0; f.normalize()
+        net.tagList.filter(t => t.bot).slice(0, 3).forEach((b, i) => {
+          const d = 22 + i * 3, x = p.x + f.x * d + f.z * 4, z = p.z + f.z * d - f.x * 4
+          b.vehicle.teleport(cam.position.clone().set(x, terrain.heightAt(x, z) + 1, z), Math.atan2(f.x, f.z))
+        })
+      })
+      await page.waitForTimeout(1500)
+      more = await page.evaluate(() => [...document.querySelectorAll('.vehicle-nameplate:not([hidden]) .vehicle-nameplate-more')].map(e => e.textContent).find(Boolean) ?? '')
+    }
+    await page.screenshot({ path: `${out}/stacked.png` })
+    assert.match(more, /^\+[1-9]$/, 'stacked: no count on the front label of bots in a line')
     // Then up in the air with wings open.
     await page.evaluate(() => { const player = window.syn3h.player, p = player.body.translation(); player.teleport(player.object.position.clone().set(p.x, window.syn3h.terrain.heightAt(p.x, p.z) + 80, p.z), 0) })
     await page.keyboard.press('Space') // wings open
@@ -147,7 +164,7 @@ for (const view of ['desktop', 'portrait', 'landscape']) {
     assert.ok(seen >= tries - 1, `wings: a bot seen through your own wing lost its label (${seen}/${tries})`)
     await atRest('wings', page)
     assert.deepEqual(errors, [])
-    console.log(`wings: ${seen}/${tries} through the wing, far bot named PASS`)
+    console.log(`wings: ${seen}/${tries} through the wing, far bot named, stacked count ${more} PASS`)
   } finally { await browser.close() }
 }
 
@@ -173,6 +190,36 @@ for (const view of ['desktop', 'portrait', 'landscape']) {
     await atRest('people', host.page)
     await host.page.screenshot({ path: `${out}/people.png` })
     assert.deepEqual([...host.errors, ...visitor.errors], [])
+    // Behind terrain and back: the visitor's label eases to half strength and back, one small
+    // step a frame, and does not flutter. Terrain is simulated by making the sight test report
+    // blocked for a while (the same seam the physics ray uses).
+    {
+      const steps = await host.page.evaluate(async () => {
+        const tags = window.syn3hNet.tags, id = window.syn3hNet.tagList.find(t => !t.bot).id, real = tags.options.terrainHit
+        const values = []
+        const record = () => { const el = document.querySelector(`.vehicle-nameplate[data-vehicle="${id}"]`); values.push([performance.now(), el && !el.hidden ? Number(el.style.opacity || 0) : 0]) }
+        const frames = ms => new Promise(done => { const end = performance.now() + ms; const tick = () => { record(); performance.now() < end ? requestAnimationFrame(tick) : done() }; requestAnimationFrame(tick) })
+        await frames(400)
+        tags.options.terrainHit = () => true
+        await frames(1500)
+        tags.options.terrainHit = real
+        await frames(1500)
+        return values
+      })
+      // A step may be no larger than a 200 ms ease-out allows over that frame's own time (the
+      // change here is from full to half, 0.5), plus a small margin: never a jump, at any frame rate.
+      const times = steps.map(s => s[0]); steps.splice(0, steps.length, ...steps.map(s => s[1]))
+      const excess = steps.slice(1).map((v, i) => Math.abs(v - steps[i]) - (.5 * (1 - Math.exp(-3 * (times[i + 1] - times[i]) / 200)) + .03))
+      const biggest = Math.max(...excess), largest = Math.max(...steps.slice(1).map((v, i) => Math.abs(v - steps[i])))
+      const turns = steps.slice(2).filter((v, i) => (v - steps[i + 1]) * (steps[i + 1] - steps[i]) < -1e-6).length
+      const lowest = Math.min(...steps.slice(5))
+      assert.ok(steps[3] > .8, `behind: the person's label was not at full strength first (${steps[3]})`)
+      assert.ok(lowest > .4 && lowest < .6, `behind: the label did not settle at half strength (${lowest})`)
+      assert.ok(steps.at(-1) > .8, `behind: the label did not return to full strength (${steps.at(-1)})`)
+      assert.ok(biggest <= 0, `behind: opacity jumped ${biggest.toFixed(2)} more than an ease allows in one frame`)
+      assert.ok(turns <= 2, `behind: opacity fluttered (${turns} reversals)`)
+      console.log(`behind: eased to ${lowest.toFixed(2)} and back, largest step ${largest.toFixed(2)} over ${steps.length} frames`)
+    }
     // The visitor 600 m ahead keeps a label (dimmed if a hill is in the way).
     const visitorId = await host.page.evaluate(() => window.syn3hNet.tagList.find(t => !t.bot).id)
     let far = false

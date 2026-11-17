@@ -17,13 +17,16 @@ const RUNNING = '26.11.1601', LIVE = '26.11.1602'
 /** The feed lists the real production history, newest first: its top entry grows with every release. */
 const NEWEST = readFileSync('release-notes/history.tsv', 'utf8').split('\n').map((l) => l.split('\t'))
   .filter(([v, , , , channel]) => /^v\d/.test(v ?? '') && channel?.trim() === 'production').at(-1)[0].slice(1)
-/** What the banner covers: the wordmark, hint and lobby buttons, any planet label or planet. */
+/** What the banner covers: the wordmark in the scene, the hint, lobby buttons, settings gear, any planet label or planet. */
 const overlaps = page => page.evaluate(() => {
   const banner = document.querySelector('.update-banner').getBoundingClientRect()
   const hit = r => r.width && r.height && r.left < banner.right && banner.left < r.right && r.top < banner.bottom && banner.top < r.bottom
   const shown = el => getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden'
-  const found = [...document.querySelectorAll('.shell-logo, .galaxy-hint, .lobby-links button, .galaxy-labels > *, #syn3h-build-notice')]
+  const found = [...document.querySelectorAll('.galaxy-hint, .lobby-links button, .lobby-gear-dock, .galaxy-labels > *, #syn3h-build-notice')]
     .filter(el => shown(el) && hit(el.getBoundingClientRect())).map(el => el.textContent.trim() || el.className.baseVal || el.className)
+  // The wordmark stands in the scene now (src/ui/brand/wordmarkScene.ts): its box on screen.
+  const mark = syn3h.shell.galaxy?.wordmarkScreenBox?.(), shell = document.querySelector('.galaxy-ui').getBoundingClientRect()
+  if (mark && hit({ width: mark.width, height: mark.height, left: shell.left + mark.x, right: shell.left + mark.x + mark.width, top: shell.top + mark.y, bottom: shell.top + mark.y + mark.height })) found.push('wordmark')
   // Planets: the galaxy's own screen circles, in the overlay's coordinates.
   const host = document.querySelector('.galaxy-ui').getBoundingClientRect()
   for (const p of syn3h.shell.galaxy?.screen ?? []) {
@@ -55,6 +58,9 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     if (mode === 'desktop') await page.waitForFunction(() => document.querySelector('.update-banner-summary')?.textContent)
     assert.ok((await banner.boundingBox()).height <= 50, `${mode}: the banner is one slim row`)
     await page.waitForTimeout(1500) // the galaxy eases down to leave the banner its band
+    // The banner sits at the top centre of the screen.
+    const place = await banner.boundingBox(), width = page.viewportSize().width
+    assert.ok(place.y < 60 && Math.abs(place.x + place.width / 2 - width / 2) < 2, `${mode}: the banner is at the top centre (${JSON.stringify(place)})`)
     assert.equal(await banner.getByRole('button', { name: 'Reload' }).count(), 1)
     assert.equal(await banner.getByRole('button', { name: 'What’s new' }).count(), 1)
     for (const button of await banner.locator('button').all()) assert.ok((await button.boundingBox()).height >= 44, 'banner buttons are full tap targets')

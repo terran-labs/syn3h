@@ -112,9 +112,11 @@ export const PLANETS: readonly PlanetRecipe[] = [
       ...planetWeather('archipelago'),
       ...SKY_PRESETS['Earthlike'], 'weather.cloudCoverage': 0.3, 'weather.fogDensity': 0.00016,
       'terrain.kind': 1, 'terrain.look': 3, 'world.seaKind': 1, 'world.lavaAltitude': 0,
-      'terrain.planetSize': 0, 'terrain.landShare': 0.3,
-      'terrain.islandRadius': 640, 'terrain.coastWobble': 0.35,
-      'terrain.volcanoHeight': 150, 'terrain.volcanoRadius': 300, 'terrain.calderaSize': 80,
+      // A real archipelago: a medium tile, a modest home island round the landing point,
+      // and a scatter of isles across the rest with channels between them (landforms.ts).
+      'terrain.planetSize': 1, 'terrain.landShare': 0.3, 'terrain.isles': 9, 'terrain.landforms': 3,
+      'terrain.islandRadius': 480, 'terrain.coastWobble': 0.3,
+      'terrain.volcanoHeight': 150, 'terrain.volcanoRadius': 220, 'terrain.calderaSize': 60,
       'terrain.mesaHeight': 34, 'terrain.cragDensity': 0.14, 'terrain.spireHeight': 0,
       'terrain.duneHeight': 3, 'terrain.roughness': 0.25, 'terrain.treeCover': 0,
     },
@@ -287,7 +289,8 @@ export function encodeWorld(): string {
   const world = params.snapshot('world')
   const changed: string[] = []
   for (const id of Object.keys(world).sort()) {
-    if (id === worldSeed.def.id) continue
+    // The seed is a field of its own; the day clock's anchor is a moment, not part of the world.
+    if (id === worldSeed.def.id || id === 'sun.dayEpoch') continue
     const def = params.get(id)!.def
     const base = id in recipe.values ? recipe.values[id] : def.default
     if (world[id] !== base) changed.push(`${id}=${world[id]}`)

@@ -24,6 +24,9 @@ try {
     await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
     // Hold the graphics level, as galaxy.mjs does: a slow headless browser would retire the galaxy.
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
+    // The lobby's opening (src/ui/galaxy/opening.ts) runs about nine seconds; a key skips to the
+    // settled lobby, as for a player, and these checks are of that lobby.
+    await page.keyboard.press('Shift')
     await page.waitForTimeout(3500)
     const named = []
     for (let sample = 0; sample < 3; sample++) {

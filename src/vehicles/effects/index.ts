@@ -270,7 +270,8 @@ class VehicleEffects {
           const style=this.terrain.surfaceAt?TREADS[kind]:DEFAULT_TREAD
           // Wet ground by the water takes a darker, firmer print.
           const alpha=T.MathUtils.lerp(style.roll,style.slip,this.slide[i])*(wet?1.3:1)
-          const c=surfaceTone(look,kind,style,0),dim=wet?.75:1
+          // A sliding or braking wheel churns the ground darker still; frost stays pale.
+          const c=surfaceTone(look,kind,style,0),dim=(wet?.75:1)*(style.frost?1:1-.3*this.slide[i])
           markColor.setRGB(c[0]*dim,c[1]*dim,c[2]*dim)
           const prev=this.previousMarks[i]
           if(!this.hasMark[i]){
@@ -278,7 +279,9 @@ class VehicleEffects {
             this.lastAlpha[i]=alpha;this.lastTint[i].copy(markColor)
           }else{
             const step=prev.distanceTo(wp)
-            if(step>=.75){
+            // Longer segments at speed: a straight run at 20 m/s keeps about 500 m of track per
+            // wheel in the shared ring instead of 190, and long quads cost nothing more to draw.
+            if(step>=clamp(speed*.1,.75,2.5)){
               side.copy(wp).sub(prev).cross(normal).normalize()
               const start=this.runLength[i],end=start+step
               const id=w.marks.mark(prev,wp,side,.5*style.width*(tank?TANK_MARK_WIDTH/.5:contact?.width??1),style.life*lifeScale,this.lastAlpha[i],alpha,this.lastTint[i],markColor,style.tread,start,end)

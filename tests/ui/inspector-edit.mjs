@@ -71,11 +71,11 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
 
     // ---- Click a number, type, Enter: applied, clamped, snapped. ----
     const number = gravity.locator('.wi-num'), field = gravity.locator('.wi-num-edit')
-    assert.match(await number.getAttribute('aria-label'), /^Gravity: [\d.]+, edit$/)
+    assert.match(await number.getAttribute('aria-label'), /^Gravity \(m\/s²\): [\d.]+, edit$/)
     const before = await value(page, 'world.gravity')
     await press(number)
     await field.waitFor()
-    assert.equal(await field.getAttribute('aria-label'), 'Gravity'); assert.equal(await field.getAttribute('inputmode'), 'decimal')
+    assert.equal(await field.getAttribute('aria-label'), 'Gravity (m/s²)'); assert.equal(await field.getAttribute('inputmode'), 'decimal')
     assert.ok(await field.evaluate(el => document.activeElement === el && el.selectionStart === 0 && el.selectionEnd === el.value.length && el.value.length > 0), 'field is focused and preselected')
     await page.screenshot({ path: `${shots}/${mode}-editing.png` })
     await page.keyboard.type('12.344 m/s')

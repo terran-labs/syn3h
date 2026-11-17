@@ -15,6 +15,8 @@ export interface StartupTiming {
   navigation?: { responseEndMs: number; domContentLoadedMs: number; loadEventMs: number; scripts: number; scriptBytes: number; lastScriptEndMs: number }
   backend?: string
   fallbackReason?: string
+  /** Why the lobby drew the flat wordmark instead of the name in the scene (src/ui/galaxy/Galaxy.ts), if it did. */
+  wordmarkFallback?: string
   /** Set when the renderer's GPU device or WebGL context was lost. */
   deviceLost?: string
   pipelines?: { render: number; compute: number; vertexShaders: number; fragmentShaders: number }

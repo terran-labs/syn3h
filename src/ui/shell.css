@@ -35,6 +35,11 @@
 .lobby-stage { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; flex-direction: column; transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)); transition: transform .7s cubic-bezier(.2,.7,.2,1); }
 .lobby-brand { flex: 0 0 clamp(120px, 24vh, 250px); width: 100%; display: flex; align-items: center; justify-content: center; position: relative; pointer-events: none; perspective: 600px; }
 .shell-logo { width: min(600px, 72vw); max-height: 80%; animation: logo-enter 2.75s cubic-bezier(.333,0,.667,1) both; }
+/* The lobby's SVG mark, seen only where the name cannot stand in the scene (no WebGL2, or its
+   context lost for a moment): drawn in the name's own look, a dark face with a pale warm edge
+   and a warm glow, not the old blue one. */
+.shell-logo { filter: drop-shadow(0 0 1.5px #ffeed7) drop-shadow(0 0 10px rgb(255 213 156 / .65)) drop-shadow(0 0 30px rgb(255 196 128 / .4)); }
+.shell-logo path { stroke: #ffeed7; stroke-width: 1.2px; vector-effect: non-scaling-stroke; }
 /* Logo Idle.anim contains no keys. Keep its settled glow rather than inventing a pulse. */
 @keyframes logo-enter { 0% { transform: translateZ(50px); opacity: .1; filter: drop-shadow(0 0 0 transparent); } 27.27% { opacity: .7; filter: drop-shadow(0 0 4px var(--s3-glow)); } 100% { transform: translateZ(0); opacity: 1; } }
 /* The panel is a sheet of frosted glass over the sky: Dark Star's card radius and hairline. */

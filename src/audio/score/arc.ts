@@ -8,17 +8,16 @@
  *            forward at night, eased across dusk and dawn so it never switches.
  */
 import type { Role } from './Composer'
-import { params } from '../../../shared/params'
+import { currentHour } from '../../world/sky/dayCycle'
 
 const smooth = (a: number, b: number, v: number) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t) }
 const finite = (v: number, fallback: number) => Number.isFinite(v) ? v : fallback
 
 /**
- * The world's hour, 0..24, as the score hears it. The one place it is read: when
- * feat/day-by-orbit lands, sun.timeOfDay becomes an anchor hour and this should return
- * currentHour() from src/world/sky/dayCycle.ts instead.
+ * The world's hour, 0..24, as the score hears it: the hour now on the day clock
+ * (src/world/sky/dayCycle.ts), since sun.timeOfDay is only the clock's anchor.
  */
-export const worldHour = (): number => Number(params.get('sun.timeOfDay')?.value ?? 12)
+export const worldHour = (): number => currentHour()
 
 /** Growth at which each part of the arc may begin. `still` (pads, drone, a picked chord) is always open. */
 export const OPENS = { build: 0.35, theme: 0.55, climb: 0.8 } as const
