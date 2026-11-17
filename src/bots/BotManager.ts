@@ -17,8 +17,19 @@ import type { Navigator } from './pilot/types'
 import type { BotGearHooks } from './gear'
 import { BotRaces, type BotRaceHooks } from './races'
 import type { RaceState } from '../../shared/protocol'
+import { BotPacer } from './pacing'
+
+/** The arrival effect (src/vehicles/effects/Materialize.ts), as far as bots use it. */
+export interface BotArrivalEffect {
+  begin(vehicle: Vehicle, options?: { at?: Vector3; heading?: number; hold?: boolean; holdSeconds?: number }): Promise<void>
+  /** The arrival in reverse, look only; resolves when the vehicle can be removed inside the cloud. */
+  depart?(vehicle: Vehicle, options?: { holdSeconds?: number }): Promise<void>
+  cancel(vehicle: Vehicle): void
+}
 /** Slot by slot: half buggies, a quarter hovercraft, a quarter jets. */
 const MIXED_FLEET = ['buggy', 'hovercraft', 'buggy', 'jet'] as const
+export type ArrivalGate = 'playing' | 'idle' | 'closed'
+
 export class BotManager implements System {
   private readonly bots: Vehicle[] = []
   private readonly brains: BotBrain[] = []
@@ -29,22 +40,51 @@ export class BotManager implements System {
     for (const brain of this.brains) brain.setGear(this.remote ? null : hooks)
   }
   private nextBotId = 0
+  /** Paces arrivals and measures what this device carries (see pacing.ts). */
+  readonly pacer = new BotPacer()
+  /** Bots may arrive only while this is true: driving, not entering a world or in the menus. */
+  /**
+   * Whether bots may arrive now: 'playing' (the host is in the world: arrivals are judged by
+   * their frames), 'idle' (the host is in the lobby or a menu: they still arrive, unjudged, so
+   * a room's bots never depend on its host looking at the game) or 'closed' (a descent or an
+   * ascent is running, where an arrival would cost a frame of the transition).
+   */
+  private gate: () => ArrivalGate = () => 'playing'
+  setArrivalGate(gate: () => ArrivalGate) { this.gate = gate }
+  private effect: BotArrivalEffect | null = null
+  /** Bots arrive in the arrival cloud and leave in it. Without one they appear and go plainly. */
+  setArrivalEffect(effect: BotArrivalEffect | null) { this.effect = effect }
+  /** A bot being built and compiled before it appears; at most one at a time. */
+  private arriving = false
+  /** Bots on their way out, still in the scene inside their cloud. */
+  /** Bots on their way out, with the brain still driving each until its cloud has gathered. */
+  private readonly leaving = new Map<Vehicle, BotBrain>()
+  /** Changes when the world is rebuilt, so an arrival started on the old one is dropped. */
+  private world = 0
   private targets: readonly Vehicle[]
   private disposed = false
   private isRemote = false
   /** Networking owns inputs and rescue decisions on non-host clients. */
   get remote() { return this.isRemote }
   set remote(value: boolean) {
+    const was = this.isRemote
     this.isRemote = value
     if (value) { this.races.setHooks(null); this.clearBots() }
+    // Becoming the host: the race hooks handed over while these bots were still remote (the
+    // race bridge installs in the same frame, before networking flips this) take effect now.
+    else if (was) this.races.setHooks(this.raceHooks)
   }
   get vehicles(): readonly Vehicle[] { return this.bots }
+  /** What the host asked for, within the quality level's budget: never exceeded. */
+  get requested(): number { return Math.max(0, Math.min(qualityBudget().bots, Math.floor(botCount.value))) }
   /** The brains, index for index with `vehicles` (chatter and rescues read and steer them). */
   get brainList(): readonly BotBrain[] { return this.brains }
   /** The player's own vehicle driving itself after a spell of no input. See Daydream.ts. */
   readonly daydream: Daydream
   readonly races: BotRaces
-  setRaces(hooks: BotRaceHooks | null) { this.races.setHooks(this.remote ? null : hooks) }
+  /** The race hooks last given, kept while the bots are remote so they apply on becoming host. */
+  private raceHooks: BotRaceHooks | null = null
+  setRaces(hooks: BotRaceHooks | null) { this.raceHooks = hooks; this.races.setHooks(this.remote ? null : hooks) }
   applyRace(state: RaceState | null) { this.races.apply(state) }
   readonly navigator: Navigator & { dispose?(): void }
   /** Places worth driving to, found once per world and shared by every mind. */
@@ -57,7 +97,12 @@ export class BotManager implements System {
     // One route planner per terrain, shared by every mind: its caches are megabytes.
     this.navigator = createNavigator(terrain)
     this.races = new BotRaces(terrain, this.navigator, this.places)
-    terrain.onRegenerate?.(() => { this.sights = null; this.races.cancel('world-changed') })
+    terrain.onRegenerate?.(() => {
+      this.sights = null; this.races.cancel('world-changed')
+      // A new world: the bots of the old one go (the world is rebuilt under cover), and the
+      // new world's arrive one at a time near the player once they can drive.
+      this.world++; this.clearBots(); this.pacer.restart()
+    })
     this.daydream = new Daydream(game, terrain, player, { navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
   }
   fixedUpdate(dt: number) {
@@ -98,55 +143,152 @@ export class BotManager implements System {
     const bot = this.bots.pop()!
     this.effects.get(bot)?.(); this.effects.delete(bot)
     this.game.remove(this.brains.pop()!); this.game.remove(bot)
+    for (const controller of this.brains) controller.setPeers(this.bots)
   }
-  private clearBots() { while (this.bots.length) this.removeLast() }
-  private spawn(index: number) {
-    const center = this.player.body.translation()
-    for (let attempt = 0; attempt < 32; attempt++) {
-      // Index and simulation tick replace Unity's random bot placement. No wall clock dependency.
-      const angle = (index + attempt * 0.37) * 2.3999632297 + (this.game.tick % 997) * 0.001
-      const radius = spawnRadius.value + attempt % 4 * 4
-      const x = center.x + Math.cos(angle) * radius, z = center.z + Math.sin(angle) * radius
-      if (!isSafeGround(this.terrain, x, z) || this.terrain.normalAt(x, z, new Vector3()).y < 0.65) continue
-      if (this.bots.some(bot => { const p = bot.body.translation(); return Math.hypot(p.x - x, p.z - z) < 5 })) continue
-      const heading = Math.atan2(x - center.x, z - center.z)
-      const bot = createVehicle(this.game, this.terrain, Math.round(fleet.value) === 1 ? MIXED_FLEET[index % MIXED_FLEET.length] : 'buggy', new Vector3(x, this.terrain.heightAt(x, z) + 2, z), heading)
-      bot.isLocal = false; bot.id = `bot-${this.nextBotId++}`; bot.name = uniqueBotName(`${worldSeed.value}:${bot.id}`, new Set([this.player.name, ...this.bots.map(other => other.name)].filter(Boolean).map(n => n.toLowerCase())))
-      bot.setColors(`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff')
-      const brain = new BotBrain(this.game, this.terrain, bot, this.player, index)
-      brain.requestRecovery = () => {
-        // Reuse the same vehicle and stable identity when sticky terrain defeats it.
-        for (let attempt = 0; attempt < 16; attempt++) {
-          const spawn = this.terrain.spawnPoint(index + attempt + 1)
-          if (!isSafeGround(this.terrain, spawn.position.x, spawn.position.z)) continue
-          bot.teleport(spawn.position, spawn.heading); return true
-        }
-        return false
-      }
-      // Each bot gets a character from the world seed and its own id, and a mind to act on it.
-      const pilot = createPilot(bot, this.terrain)
-      if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
-      brain.navigator = this.navigator
-      brain.setGear(this.gearHooks)
-      brain.match = this.match
-      brain.remote = this.remote
-      brain.setTargets(this.targets)
-      // Register brain first so its input reaches the vehicle in the same physics step.
-      this.game.add(brain); this.game.add(bot); this.brains.push(brain); this.bots.push(bot)
-      this.effects.set(bot, attachVehicleEffects(this.game, this.terrain, bot, { local: false }))
-      for (const controller of this.brains) controller.setPeers(this.bots)
-      return true
+  /** Send the newest bot away: it leaves in the departure cloud where it is, then goes. */
+  private depart() {
+    const bot = this.bots[this.bots.length - 1]
+    if (!bot) return
+    if (!this.effect) { this.removeLast(); return }
+    // Out of the count now, so the next decision sees one fewer; gone once its cloud has gathered.
+    const index = this.bots.length - 1
+    this.bots.splice(index, 1); const brain = this.brains.splice(index, 1)[0]
+    for (const controller of this.brains) controller.setPeers(this.bots)
+    this.leaving.set(bot, brain)
+    const gone = () => {
+      if (!this.leaving.delete(bot)) return
+      this.effects.get(bot)?.(); this.effects.delete(bot)
+      this.game.remove(brain); this.game.remove(bot)
     }
-    return false
+    ;(this.effect.depart?.(bot) ?? this.effect.begin(bot, { hold: false, holdSeconds: 0.7 })).then(gone, gone)
   }
+  private clearBots() {
+    while (this.bots.length) this.removeLast()
+    // A bot still leaving goes with its brain: a brain left running would read a removed body,
+    // which panics the physics engine for the rest of the session.
+    for (const [bot, brain] of [...this.leaving]) { this.effect?.cancel(bot); this.leaving.delete(bot); this.effects.get(bot)?.(); this.effects.delete(bot); this.game.remove(brain); this.game.remove(bot) }
+  }
+  /**
+   * A place for a new bot near the player, wherever they are: on ground its vehicle can use
+   * (water only for a hovercraft or a jet, never lava), clear of every other vehicle, out of
+   * the player's way ahead, and close enough to be seen arriving: off to one side and a little
+   * ahead first, where the chase camera looks, then further round. Null when there is none.
+   */
+  private spot(index: number, kind: string): { position: Vector3; heading: number } | null {
+    const p = this.player.body.translation(), v = this.player.body.linvel()
+    // Where the player is heading: the way they are moving, or the way the vehicle faces.
+    const moving = Math.hypot(v.x, v.z) > 2
+    const r = this.player.body.rotation()
+    const facing = moving ? Math.atan2(v.x, v.z) : Math.atan2(2 * (r.w * r.y + r.x * r.z), 1 - 2 * (r.y * r.y + r.x * r.x))
+    const floats = kind === 'hovercraft' || kind === 'jet'
+    const others = [...this.targets, ...this.bots, ...this.leaving.keys()]
+    // Bands of bearing off the heading, best first, each tried on both sides and at a few distances.
+    const bands: [number, number][] = [[0.75, 1.1], [1.1, 1.75], [1.75, 2.6], [2.6, Math.PI]]
+    const side = index % 2 ? 1 : -1
+    for (const [from, to] of bands) {
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const off = from + (to - from) * ((attempt * 0.618 + index * 0.31) % 1)
+        const angle = facing + (attempt % 2 ? -side : side) * off
+        const radius = spawnRadius.value * (0.75 + 0.15 * (attempt % 4))
+        const x = p.x + Math.sin(angle) * radius, z = p.z + Math.cos(angle) * radius
+        const ground = this.terrain.heightAt(x, z)
+        if (!Number.isFinite(ground)) continue
+        if (floats) {
+          if (this.terrain.liquidKindAt?.(x, z) === 'lava') continue
+        } else if (!isSafeGround(this.terrain, x, z) || this.terrain.normalAt(x, z, new Vector3()).y < 0.65) continue
+        if (others.some(o => { const q = o.body.translation(); return Math.hypot(q.x - x, q.z - z) < 7 })) continue
+        // Facing roughly the player's way, so it falls in alongside rather than head on.
+        const surface = floats ? Math.max(ground, this.terrain.liquidHeightAt?.(x, z) ?? -Infinity) : ground
+        return { position: new Vector3(x, surface + 2, z), heading: facing }
+      }
+    }
+    return null
+  }
+
+  /** Build the vehicle for bot `index` at a place near the player, or null when there is none. */
+  private build(index: number): { bot: Vehicle; place: { position: Vector3; heading: number } } | null {
+    const kind = Math.round(fleet.value) === 1 ? MIXED_FLEET[index % MIXED_FLEET.length] : 'buggy'
+    const place = this.spot(index, kind)
+    if (!place) return null
+    const start = performance.now()
+    const bot = createVehicle(this.game, this.terrain, kind, place.position, place.heading)
+    bot.isLocal = false; bot.id = `bot-${this.nextBotId++}`; bot.name = uniqueBotName(`${worldSeed.value}:${bot.id}`, new Set([this.player.name, ...this.bots.map(other => other.name), ...[...this.leaving.keys()].map(other => other.name)].filter(Boolean).map(n => n!.toLowerCase())))
+    bot.setColors(`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff')
+    try { performance.measure('syn3h:bot build', { start, end: performance.now(), detail: kind }) } catch { /* Older engines. */ }
+    return { bot, place }
+  }
+
+  /** Put a built bot into play: its brain, mind, effects and the arrival cloud. */
+  private enter(bot: Vehicle, place: { position: Vector3; heading: number }, index: number): void {
+    const brain = new BotBrain(this.game, this.terrain, bot, this.player, index)
+    brain.requestRecovery = () => {
+      // Reuse the same vehicle and stable identity when sticky terrain defeats it.
+      for (let attempt = 0; attempt < 16; attempt++) {
+        const spawn = this.terrain.spawnPoint(index + attempt + 1)
+        if (!isSafeGround(this.terrain, spawn.position.x, spawn.position.z)) continue
+        bot.teleport(spawn.position, spawn.heading); return true
+      }
+      return false
+    }
+    // Each bot gets a character from the world seed and its own id, and a mind to act on it.
+    const pilot = createPilot(bot, this.terrain)
+    if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
+    brain.navigator = this.navigator
+    brain.setGear(this.gearHooks)
+    brain.match = this.match
+    brain.remote = this.remote
+    brain.setTargets(this.targets)
+    // Register brain first so its input reaches the vehicle in the same physics step.
+    this.game.add(brain); this.game.add(bot); this.brains.push(brain); this.bots.push(bot)
+    this.effects.set(bot, attachVehicleEffects(this.game, this.terrain, bot, { local: false }))
+    for (const controller of this.brains) controller.setPeers(this.bots)
+    void this.effect?.begin(bot, { at: place.position, heading: place.heading })
+  }
+
+  /**
+   * One bot arrives, in the arrival cloud at its place near the player. Its shaders compile in
+   * the frame it is first drawn; arrivals are an interval apart, so those frames are spread
+   * out. Resolves false when there was nowhere to put it.
+   */
+  private async arrive(index: number): Promise<boolean> {
+    const built = this.build(index)
+    if (!built) return false
+    this.enter(built.bot, built.place, index)
+    return true
+  }
+
+  /**
+   * In a running game bots are paced and measured. Without a renderer (tests, headless
+   * simulations) there is nothing to measure: the fleet appears at once.
+   */
+  private get paced(): boolean { return typeof (this.game as Partial<Game>).precompile === 'function' }
+
   /** Reconcile outside the physics iterator so removing bots cannot skip another body's step. */
   update(dt = 0) {
     if (this.disposed) return
     this.daydream.update(dt)
     if (this.remote) return
-    const count = Math.max(0, Math.min(qualityBudget().bots, Math.floor(botCount.value)))
-    while (this.bots.length > count) this.removeLast()
-    while (this.bots.length < count) if (!this.spawn(this.bots.length)) break
+    // The host's count is an upper bound; the level's budget and what this device was measured
+    // to carry come under it. One arrival or departure at a time, an interval apart.
+    const wanted = this.requested
+    if (!this.paced) {
+      while (this.bots.length > wanted) this.removeLast()
+      while (this.bots.length < wanted) { const built = this.build(this.bots.length); if (!built) break; this.enter(built.bot, built.place, this.bots.length) }
+    } else {
+      const governor = (this.game as { quality?: { governor?: { targetMs: number; level: number } } }).quality?.governor
+      // A bot still compiling counts as here: it is judged from the moment it was asked for.
+      // Wall time: performance.now() and the frame's own duration. Right for players; under a
+      // capture tool's virtual clock frames look free or costly regardless of the real work.
+      const gate = this.gate()
+      const action = this.pacer.step(performance.now(), dt * 1000, {
+        have: this.bots.length + (this.arriving ? 1 : 0), wanted, targetMs: governor?.targetMs ?? 1000 / 60, level: governor?.level ?? 0, open: gate !== 'closed', judge: gate === 'playing',
+      })
+      if (action === 'remove') { if (!this.arriving) this.depart() }
+      else if (action === 'add' && !this.arriving) {
+        this.arriving = true
+        void this.arrive(this.bots.length).catch(error => { console.warn('Bot arrival failed', error); return false }).finally(() => { this.arriving = false })
+      }
+    }
     // On a round world most of the map is behind the planet. A bot there still drives (its
     // physics is the host's to run) but there is nothing of it to draw.
     // On a round world three's own frustum culling is off (the bend moves things after it
