@@ -9,7 +9,6 @@
  * one token each, and then the room goes quiet until the bucket refills.
  */
 import { botChatterAmount } from '../../../shared/chat'
-import { RESCUE_ESSENTIAL } from './rescueLines'
 
 export { botChatterAmount }
 
@@ -25,10 +24,11 @@ export const EXCHANGE_MAX = 3
 /** The bucket holds at most one exchange. */
 const CAPACITY = EXCHANGE_MAX
 
-/** Rescue lines a player needs to follow what is happening, on main today. */
-const MAIN_ESSENTIAL = ['stuck.call', 'rescue.start', 'rescue.handoff', 'rescue.player.drive', 'rescue.success.thanks', 'rescue.success.ingrate', 'rescue.giveup', 'rescue.player.thanks']
 /** Pool keys that never count against the budget. */
-export const BUDGET_EXEMPT: ReadonlySet<string> = new Set([...MAIN_ESSENTIAL, ...RESCUE_ESSENTIAL])
+// Rescue lines are not exempt by key: the director's rescue wrapper (Director.rescueLine)
+// marks the ones a player needs as news (the first start of a rescue, the call, the outcome),
+// and repeats of the same keys are colour that counts.
+export const BUDGET_EXEMPT: ReadonlySet<string> = new Set<string>()
 
 /** A bot answering a person: requests, looks, tag, a request wearing off, choosing between two people. */
 export function isExemptPrefix(key: string): boolean {

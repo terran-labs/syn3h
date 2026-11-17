@@ -104,6 +104,8 @@ export interface BanterHooks {
 }
 
 /** Timings per chatter level: quiet, normal, chatty. Seconds. */
+/** Seconds a call for help waits for a rescuer's start line to overtake it. */
+const CALL_WAIT_S = 5
 const IDLE_GAP: [number, number][] = [[80, 150], [28, 50], [10, 20]]
 const MIN_GAP = [16, 9, 3]
 const EVENT_CHANCE = [0.3, 0.55, 1]
@@ -275,10 +277,10 @@ export class BanterDirector {
   }
 
   /** Queue a line from `key` at time `at` (or after the queue). Returns the time it will be said. */
-  private speak(bot: BotState, key: string, ctx: Context, at?: number, then?: () => void): number {
+  private speak(bot: BotState, key: string, ctx: Context, at?: number, then?: () => void, news = false): number {
     // The room-wide allowance for unprompted talk (budget.ts): a dropped line still lets its
-    // action happen.
-    if (!this.allowed(key)) { if (then) this.timers.push({ at: at ?? this.world.now(), run: then }); return at ?? this.world.now() }
+    // action happen. `news`: a rescue line a player needs, decided by rescueLine().
+    if (!news && !this.allowed(key)) { if (then) this.timers.push({ at: at ?? this.world.now(), run: then }); return at ?? this.world.now() }
     // Chatter off, or asked to be quiet: the bots still do what they agreed to, silently.
     if (!this.chatterOn || (this.world.now() < this.quietUntil && key !== 'req.talk')) {
       if (then) this.timers.push({ at: at ?? this.world.now(), run: then })
@@ -797,20 +799,22 @@ export class BanterDirector {
    * May this rescue line be said? Essential ones always; colour at most once per rescue every
    * RESCUE_COLOUR_S seconds, and a bot weighs going out loud once per rescue.
    */
-  private rescueLine(subject: number, speaker: number, key: string): boolean {
+  private rescueLine(subject: number, speaker: number, key: string): 'news' | 'colour' | null {
     // Someone is coming, and a rescuer got stuck too, are news once; repeats are colour.
-    if (key === 'rescue.start' || key === 'rescue.handoff') { const k = `${key}:${subject}`; if (!this.rescueStarted.has(k)) { this.rescueStarted.add(k); return true } }
-    else if (RESCUE_ESSENTIAL.has(key)) return true
+    if (key === 'rescue.start' || key === 'rescue.handoff') { const k = `${key}:${subject}`; if (!this.rescueStarted.has(k)) { this.rescueStarted.add(k); if (key === 'rescue.start') this.startedAt.set(subject, this.world.now()); return 'news' } }
+    else if (RESCUE_ESSENTIAL.has(key)) return 'news'
     const now = this.world.now()
     if (key.startsWith('conflict.')) {
       const k = `${subject}:${speaker}`
-      if (this.rescueVoiced.has(k)) return false
+      if (this.rescueVoiced.has(k)) return null
       this.rescueVoiced.add(k)
     }
-    if (now - (this.rescueColourAt.get(subject) ?? -Infinity) < RESCUE_COLOUR_S) return false
+    if (now - (this.rescueColourAt.get(subject) ?? -Infinity) < RESCUE_COLOUR_S) return null
     this.rescueColourAt.set(subject, now)
-    return true
+    return 'colour'
   }
+  /** When each rescue's first start line was said: a call for help it overtakes is dropped. */
+  private readonly startedAt = new Map<number, number>()
   private readonly rescueColourAt = new Map<number, number>()
   private readonly rescueStarted = new Set<string>()
   private endRescueLines(subject: number): void {
@@ -827,7 +831,8 @@ export class BanterDirector {
   rescue(e: RescueEvent): void {
     // Rescue colour is rationed per rescue (rescueLines.ts); the essential lines always go.
     const subject = 'stuck' in e ? e.stuck : e.bot
-    const say = (b: BotState, key: string, ctx: Context, at?: number) => { if (this.rescueLine(subject, b.id, key)) this.speak(b, key, ctx, at) }
+    // News goes past the chatter budget; colour (and repeats of news) draws from it.
+    const say = (b: BotState, key: string, ctx: Context, at?: number) => { const kind = this.rescueLine(subject, b.id, key); if (kind) this.speak(b, key, ctx, at, undefined, kind === 'news') }
     const now = this.world.now()
     const bot = (id: number) => this.bots.get(id)
     const others = (not: BotState) => [...this.bots.values()].filter((b) => b !== not)
@@ -837,7 +842,10 @@ export class BanterDirector {
         const s = bot(e.stuck)
         if (!s) return
         s.bold = 0
-        say(s, 'stuck.call', {}, t)
+        // The call for help waits five seconds: if a rescuer's start line comes first, that
+        // line carries the news and the call is not said.
+        const calledAt = now
+        this.timers.push({ at: now + CALL_WAIT_S, run: () => { if (this.bots.has(s.id) && !((this.startedAt.get(e.stuck) ?? -Infinity) >= calledAt)) say(s, 'stuck.call', {}) } })
         const o = others(s)
         // The clumsy one's first time today has a reputation but no count yet.
         if (o.length && (e.clumsy || e.count >= 2) && this.r() < 0.75) say(pickOne(o, this.r), e.count >= 2 ? 'stuck.reputation' : 'stuck.clumsy', { subj: s.short, you: s.short, count: ordinal(e.count) })
@@ -916,8 +924,9 @@ export class BanterDirector {
           const ingrate = (s.voice === 'pilot' || s.voice === 'moon') ? this.r() < 0.7 : this.r() < 0.2
           say(s, ingrate ? 'rescue.success.ingrate' : 'rescue.success.thanks', { you: thanksTo, player: thanksTo }, t)
         }
-        if (helper && this.r() < 0.7) say(helper, 'rescue.helper.modest', { subj: s?.short ?? 'them', you: s?.short ?? 'them' })
-        if (person && helper) say(helper, 'rescue.player.thanks', { player: person.name, you: person.name })
+        // One outcome line per rescue: the freed bot's own, to whoever freed it (a person
+        // first). No modest reply from the helper, no second thanks.
+        if (!s && person && helper) say(helper, 'rescue.player.thanks', { player: person.name, you: person.name })
         if (s && n >= 2) this.timers.push({ at: now + 90 + this.r() * 120, run: () => {
           const o = [...this.bots.values()].filter((b) => b !== s)
           if (o.length && this.bots.has(s.id)) say(pickOne(o, this.r), 'rescue.callback', { subj: s.short, you: s.short, count: ordinal(n) })

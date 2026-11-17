@@ -93,7 +93,8 @@ describe('room-wide chatter budget', () => {
     w.director.hear(1, 'Temolin, who are you')
     w.run(10)
     expect(w.said.length).toBeGreaterThan(before)
-    expect(exempt('req.who') && exempt('stuck.call') && exempt('rescue.start') && !exempt('idle.musing') && !exempt('conflict.bargain')).toBe(true)
+    // Rescue lines are judged per line by the rescue wrapper (news or colour), not by key.
+    expect(exempt('req.who') && !exempt('idle.musing') && !exempt('conflict.bargain') && !exempt('rescue.start')).toBe(true)
   })
 
   it('amount 0 stops unprompted talk entirely', () => {
