@@ -3,14 +3,19 @@
  * a room.
  *
  * Day length follows the planet's distance from the sun. A world's orbit (the lane the galaxy,
- * src/ui/galaxy/Galaxy.ts, gives it round the lobby's sun) sets its default day by one rule:
+ * src/ui/galaxy/Galaxy.ts, gives it round the lobby's sun) sets its default day by one rule,
+ * fitted to the system as it stands rather than to fixed distances:
  *
- *     day = 300 s × 2 ^ ((orbit − 5.5) / 5.5), clamped to 150 s … 600 s
+ *     t   = (orbit − innermost orbit) / (outermost orbit − innermost orbit)
+ *     day = DAY_INNERMOST × (DAY_OUTERMOST / DAY_INNERMOST) ^ t
  *
- * Five minutes at the middle of the system (5.5 lobby units out, Archipelago's lane today), half
- * that a full middle-distance nearer the sun, double it as far again beyond. Every inner world
- * spins faster than every outer one. The host may override it in the World card; the setting
- * `sun.dayLength` stores seconds, 0 for a stopped clock, ORBIT_DEFAULT to follow the orbit.
+ * The innermost world turns in under three minutes, the outermost in nine, and the middle of
+ * the system in about five (the geometric middle of the two). Every world farther out turns
+ * more slowly, and a planet added later lands between the ends or moves them, never past a
+ * clamp. A moon rides its planet's orbit (as the lobby draws it) and so shares its planet's
+ * day. ORBIT_DAY_MIN and ORBIT_DAY_MAX only catch nonsense input. The host may override it in
+ * the World card; the setting `sun.dayLength` stores seconds, 0 for a stopped clock,
+ * ORBIT_DEFAULT to follow the orbit.
  *
  * The hour is never stepped frame by frame. It is worked out from the room's shared clock:
  *
@@ -29,29 +34,38 @@ import { wrapHour } from './skyMath'
 
 /** `sun.dayLength` value meaning "follow the planet's orbit". */
 export const ORBIT_DEFAULT = -1
-/** A full day at the reference orbit, in seconds, and that orbit in lobby units. */
-export const DAY_AT_REFERENCE = 300, REFERENCE_ORBIT = 5.5
-/** Moving this far out (lobby units) doubles a day; this far in halves it. */
-export const DOUBLING_ORBIT = 5.5
-/** The playable range any orbit can give, in seconds. Only reached by worlds yet to be added. */
-export const ORBIT_DAY_MIN = 150, ORBIT_DAY_MAX = 600
+/** Full days at the innermost and outermost orbits of the system, in seconds. */
+export const DAY_INNERMOST = 165, DAY_OUTERMOST = 540
+/** Safety clamp for nonsense input only: no world in the system comes near it. */
+export const ORBIT_DAY_MIN = 60, ORBIT_DAY_MAX = 3600
 
-/** A world's default full day and night, in whole seconds, from its orbit in lobby units. */
-export function dayLengthForOrbit(orbit: number): number {
-  const day = DAY_AT_REFERENCE * Math.pow(2, (orbit - REFERENCE_ORBIT) / DOUBLING_ORBIT)
-  return Math.round(Math.min(ORBIT_DAY_MAX, Math.max(ORBIT_DAY_MIN, Number.isFinite(day) ? day : DAY_AT_REFERENCE)))
+let lanes: readonly { orbit: number; parent?: number }[] | undefined
+/**
+ * The galaxy's layout of the recipe worlds (src/ui/galaxy/Galaxy.ts), with their ids so a moon
+ * circles its planet there as in the lobby. A reordered system changes the days with it.
+ */
+function layout(): readonly { orbit: number; parent?: number }[] {
+  return lanes ??= orbitLayout(PLANETS.map(planet => ({ ...(planet.body ?? { size: 1, heat: 0.5 }), id: planet.id })), 0)
+}
+/** The innermost and outermost orbits round the sun, in lobby units. */
+export function systemOrbits(): { inner: number; outer: number } {
+  const orbits = layout().filter(place => place && place.parent === undefined).map(place => place.orbit)
+  return orbits.length ? { inner: Math.min(...orbits), outer: Math.max(...orbits) } : { inner: 1, outer: 2 }
 }
 
-let lanes: readonly { orbit: number }[] | undefined
-/**
- * A recipe's distance from the sun, read from the galaxy's own layout of the recipe worlds
- * (src/ui/galaxy/Galaxy.ts), so a reordered system changes the days with it. A moon in that
- * layout has a lane round the sun of its own and uses it. The middle orbit for an unknown id.
- */
+/** A world's default full day and night, in whole seconds, from its orbit in lobby units. */
+export function dayLengthForOrbit(orbit: number, range = systemOrbits()): number {
+  const span = range.outer - range.inner
+  const t = span > 0 ? (orbit - range.inner) / span : 0.5
+  const day = DAY_INNERMOST * Math.pow(DAY_OUTERMOST / DAY_INNERMOST, t)
+  return Math.round(Math.min(ORBIT_DAY_MAX, Math.max(ORBIT_DAY_MIN, Number.isFinite(day) ? day : DAY_INNERMOST)))
+}
+
+/** A recipe's distance from the sun in lobby units: a moon's is its planet's. The middle for an unknown id. */
 export function planetOrbit(id: string): number {
-  lanes ??= orbitLayout(PLANETS.map(planet => planet.body ?? { size: 1, heat: 0.5 }), 0)
-  const index = PLANETS.findIndex(planet => planet.id === id)
-  return index < 0 || !lanes[index] ? REFERENCE_ORBIT : lanes[index].orbit
+  const index = PLANETS.findIndex(planet => planet.id === id), places = layout()
+  if (index < 0 || !places[index]) { const { inner, outer } = systemOrbits(); return (inner + outer) / 2 }
+  return places[index].orbit
 }
 /** A recipe's default day length in seconds. */
 export function planetDayLength(id: string): number { return dayLengthForOrbit(planetOrbit(id)) }

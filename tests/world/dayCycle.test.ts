@@ -10,7 +10,7 @@ import { applyPlanet, PLANETS } from '../../src/world/planets'
 import { applyRoomWorld } from '../../src/net/params'
 import {
   ORBIT_DAY_MAX, ORBIT_DAY_MIN, ORBIT_DEFAULT, bindDayClock, currentHour, effectiveDayLength, followHour,
-  hourAt, planetDayLength, planetOrbit, setDayClock,
+  hourAt, planetDayLength, planetOrbit, setDayClock, dayLengthForOrbit, systemOrbits,
 } from '../../src/world/sky/dayCycle'
 import { sunDayEpoch, sunDayLength, sunTimeOfDay } from '../../src/world/sky/skyParams'
 import { dayToPosition, positionToSetting } from '../../src/ui/inspector/dayLength'
@@ -27,13 +27,26 @@ beforeEach(() => {
 afterEach(() => { unbind(); setDayClock(() => Date.now() / 1000) })
 
 describe('day length from orbit', () => {
-  it('rises with distance from the sun and stays playable on every planet', () => {
-    const byOrbit = PLANETS.map(p => ({ id: p.id, orbit: planetOrbit(p.id), day: planetDayLength(p.id) })).sort((a, b) => a.orbit - b.orbit)
-    for (let i = 1; i < byOrbit.length; i++) expect(byOrbit[i].day, `${byOrbit[i].id} after ${byOrbit[i - 1].id}`).toBeGreaterThan(byOrbit[i - 1].day)
-    for (const p of byOrbit) {
-      expect(p.day).toBeGreaterThanOrEqual(ORBIT_DAY_MIN)
-      expect(p.day).toBeLessThanOrEqual(ORBIT_DAY_MAX)
+  // Bug caught: two worlds at different distances turning at the same pace (the outer ones
+  // stuck on a clamp), or a default day too short or too long to play.
+  it('rises with distance from the sun; a moon shares its planet\'s day', () => {
+    const byOrbit = PLANETS.map(p => ({ id: p.id, parent: p.body?.parent, orbit: planetOrbit(p.id), day: planetDayLength(p.id) })).sort((a, b) => a.orbit - b.orbit || a.day - b.day)
+    for (let i = 1; i < byOrbit.length; i++) {
+      const [a, b] = [byOrbit[i - 1], byOrbit[i]]
+      const pair = a.parent === b.id || b.parent === a.id
+      if (pair) expect(b.day, `${b.id} with ${a.id}`).toBe(a.day)
+      else expect(b.day, `${b.id} after ${a.id}`).toBeGreaterThan(a.day)
     }
+  })
+  it('keeps every world playable, the innermost quick, the middle near five minutes', () => {
+    const days = PLANETS.map(p => planetDayLength(p.id))
+    for (const day of days) { expect(day).toBeGreaterThanOrEqual(120); expect(day).toBeLessThanOrEqual(600) }
+    expect(Math.min(...days)).toBeLessThanOrEqual(190)
+    const { inner, outer } = systemOrbits()
+    const middle = dayLengthForOrbit((inner + outer) / 2)
+    expect(middle).toBeGreaterThan(240); expect(middle).toBeLessThan(360)
+    // Nonsense orbits stay inside the safety clamp.
+    for (const orbit of [-1e9, NaN, 1e9]) { const d = dayLengthForOrbit(orbit); expect(d).toBeGreaterThanOrEqual(ORBIT_DAY_MIN); expect(d).toBeLessThanOrEqual(ORBIT_DAY_MAX) }
   })
 })
 
