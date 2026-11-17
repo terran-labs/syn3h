@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-17 07:00 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-17 13:00 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,9 +11,9 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.1704 (release-42), source e0145f7a, frozen copy 20261117-052057-e0145f7a,
-Worker version 64840a85, at https://www.syn3h.com/ since 17 November 05:37 PST. Main is
-d96e10f5 (the release record plus the merged test-browser change, tooling only).
+Live: v26.11.1707 (release-45), source 545c242d, frozen copy 20261117-115102-545c242d,
+Worker version 51a5471d, at https://www.syn3h.com/ since 17 November 12:48 PST. Main is
+8b13a996 (the release record).
 
 Releases since the evening of 16 November, all accepted unless marked:
 
@@ -28,6 +28,9 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.1702 | 40 | m-buggygen-1702 | the buggy generated in code, no model files |
 | v26.11.1703 | 41 | m-ridge-1703 | ridge colour blotches fixed, J closes the invite |
 | v26.11.1704 | 42 | m-bots-1704 | quieter bots, proper rescues, chat overlay switch |
+| v26.11.1705 | 43 | | (see release-notes/history.tsv) |
+| v26.11.1706 | 44 | m-reconnect-1706 | a throwing disconnect handler still reconnects; room log tags; latency proxy keeps order |
+| v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
 
@@ -53,10 +56,13 @@ On a train worktree (/Users/vtn/dev/Syn3h-wt/train-*), merge accepted tips, then
    Handling, Play, Performance, Known issues) and the player digest; release.sh does not
    check the sections yet, the publish tool does;
 5. fast-forward main, tag m-<name>-<version>, tools/release.sh <n> "note" --dry-run, restore
-   ../Syn3h-stable/current, the load gate, tools/release.sh <n> "note". Since ab0bf329
+   ../Syn3h-stable/current, the load gate, tools/release.sh <n> "note". Do NOT create the
+   v<version> tag by hand first: release.sh computes the version from existing tags and would
+   then ask for the next version's notes. Since ab0bf329
    release.sh itself checks the notes' sections before freezing and deploys to the staging
    Worker first (settle, frozen versions, full smoke; a crash is a rerun, up to four), then
-   production. tools/release.sh <n> "note" --staging stops after staging;
+   production, then the 7-check public check on both addresses, then the GitHub hosted
+   check (VANTAGE, report only). tools/release.sh <n> "note" --staging stops after staging;
 6. after RELEASE OK: correct the release time in the notes, check-public-build --feed on both
    addresses, commit history and stats, push main and the three tags, then
    `node tools/release-notes.mjs publish <version> --latest --dry-run` and `--yes-publish`.
@@ -76,7 +82,8 @@ The room ticks hill and race time on its own Durable Object alarm (fix/koth-serv
 | ux/touch-aim | 6ab92907 | touch builder c66af21c | the owner trying it on a phone; it also fixes the two phone-layout overlaps |
 | ux/hud-column | after a25c7ec5 | HUD builder 4308ed12 | the owner's review; carries a chat-check wait fix |
 | veh/tank, veh/loft-editor | | | do not merge (Foreman) |
-| perf/smooth-entry | | smooth-entry builder | held |
+| perf/smooth-entry | 702f9a8f, merging main | smooth-entry builder aa1e0a5e | its gate on main; accepted as the next release on its own. Host frame rate now limits room bots |
+| fix/lobby-wordmark-sun | f06dc96f | builder 900cc550 | captions commit 51b91265 waits for the owner; rewriting fixed waits in lobby checks |
 | build/weekend | | | delete after about 16:10 on 17 November if it is an ancestor of main |
 
 tests/ui/phone-layout.mjs fails on main on two real overlaps (jet landscape throttle-down over
@@ -96,8 +103,16 @@ ships; keep it out of blocking steps.
    state, a shared setting, King of the Hill scored by the room's own clock, a forced
    reconnect as the same player, leave; about 40 s) on workers.dev and www instead of the full
    smoke. The full smoke still runs on staging and in the dry run. First real use: the next release.
-4. Workers Logs on, with head sampling (section 5).
+4. Workers Logs on. Confirmed 17 Nov: the query API works with the token's Observability Read;
+   only our own structured lines are stored (a full smoke 29, a public check 19), and none
+   holds a name, chat, IP or query string.
 5. A GitHub Actions second vantage point (section 4): workflow_dispatch only, no secrets.
+Lesson (17 Nov): small clean samples misled us three times (1705's 0 failures in 9 was about a
+1 in 6 chance). Decide on evidence about the cause, not on a short run of passes.
+Lobby checks with fixed waits (lobby-logo's 700 ms "ordinary lobby animates") fail under
+load; two unexplained 1707 failures did not reproduce in 8 probed runs.
+GitHub's hosted machine loses its WebGPU device: 737 page errors on 1706, 6 on 1707 after the
+device-loss guard. The hosted reconnect step passes on both.
 Also listed: roll_back ignores INT and TERM (done in release.sh); the rollback verification
 retries its smoke after settling (done). The full proposal is /tmp/orch-reliability-proposal.md.
 
