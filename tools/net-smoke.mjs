@@ -52,16 +52,29 @@ const crashedPages = []
 const transportErrors = []
 const shot = '/tmp/syn3h-net-smoke.png'
 
-const browser = await chromium.launch({
+// One browser process per page: a crashed page takes down only itself, not every client in the
+// check (reliability plan, section 3). Each is launched in open() and closed at the end.
+const browsers = []
+const launch = () => chromium.launch({
   channel: 'chrome',
   headless: true,
   args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist',
-    // Keep both pages running at full rate even though only one can be focused.
+    // Keep every page running at full rate even though only one can be focused.
     '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
 })
+/**
+ * The check proves networking and rules, not rendering: pages run small and at the Low level,
+ * pinned before load so no automatic step moves it. Low is the lowest level whose budget still
+ * allows the four default bots that "default bots join and replicate" asks for (Minimal allows 2).
+ */
+const SMOKE_QUALITY = { level: 1, auto: false, pinned: true, overrides: {} }
+const SMOKE_VIEWPORT = { width: 640, height: 360 }
 const errors = []
 async function open(name, extra = '') {
-  const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
+  const browser = await launch()
+  browsers.push(browser)
+  const ctx = await browser.newContext({ viewport: SMOKE_VIEWPORT })
+  await ctx.addInitScript((q) => localStorage.setItem('syn3h.quality.v2', JSON.stringify(q)), SMOKE_QUALITY)
   const page = await ctx.newPage()
   clients.push({ name, page })
   page.on('crash', () => crashedPages.push(name))
@@ -715,7 +728,7 @@ try {
       saveShotEvidence('finally-collectors')
     }
     if (errors.length || results.some(r => !r.ok)) await captureFailure().catch(e => console.error('Diagnostic capture failed', String(e)))
-  } finally { await browser.close() }
+  } finally { await Promise.all(browsers.map((b) => b.close().catch(() => {}))) }
 }
 
 check('no page errors', errors.length === 0, errors)
