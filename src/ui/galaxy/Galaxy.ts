@@ -20,6 +20,7 @@ import { startupTiming } from '../../core/diagnostics'
 function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmarkFallback) { startupTiming.wordmarkFallback = reason; console.info(`Syn3h: flat lobby wordmark: ${reason}`) } }
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
 import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
+import { lobbyZoom, lobbyZoomPortrait, returnDelay, returnOmega, returnTime } from './cameraRest'
 import { introMode, LEAVING_SECONDS, leavingMark, openingPace, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
@@ -93,6 +94,8 @@ export interface GalaxyOptions {
 export const GALAXY_MAX = 12
 /** The rest pulses' seed: the same breathing every visit, so checks can reproduce it. */
 const REST_SEED = 20261116
+/** Where the sun sits in the default view, up from the bottom: a little below the middle (53% down). */
+const FRAME_Y = 0.47
 const MAX = GALAXY_MAX
 /** Each world's axis leans this far. */
 const TILT = 0.38
@@ -209,12 +212,15 @@ export function orbitLayout(bodies: readonly OrbitBody[], time: number): OrbitPl
 export function fitDistance(bodies: readonly OrbitBody[]): number {
   return Math.max(...orbitLayout(bodies, 0).map(place => place.reach), INNER) * 1.08 / VIEW_TAN
 }
-/** Portrait phones start closer so the planets read; a pinch can reveal the outer orbits. */
+/**
+ * The default view's distance: closer than the whole system (lobby.zoom, the owner's framing of
+ * 16 November 2026, with the outer orbit running off the screen), and on a phone held upright its
+ * own share (lobby.zoomPortrait) that keeps the wordmark and the inner planets on screen. A pinch
+ * or wheel can still reveal the outer orbits; the view returns here when left alone.
+ */
 export function openingDistance(bodies: readonly OrbitBody[], width: number, height: number): number {
   const portraitPhone = width > 0 && width <= 600 && height > width * 1.2
-  // Short landscape screens are framed by the Shell (galaxyFrame: the space left of the button
-  // column), so they keep the fitted distance here.
-  return fitDistance(bodies) * (portraitPhone ? 0.8 : 1)
+  return fitDistance(bodies) * (portraitPhone ? lobbyZoomPortrait.value : lobbyZoom.value)
 }
 /** The body a galaxy world is laid out as: its recipe's, or an ordinary planet's. */
 export function bodyOf(world: GalaxyWorld): OrbitBody {
@@ -836,6 +842,8 @@ export class Galaxy {
   private framing: Vec = [0.5, 0.5, 1]
   private dim = 1
   private distance = 13
+  /** The slow return's own velocities (tilt per second, log distance per second): it starts from rest. */
+  private restSpeed = { pitch: 0, zoom: 0 }
   private target: Vec = [0, 0, 0]
   /** The view's turn and tilt under the finger: see SWING. this.yaw and this.pitch are what is shown. */
   private swingYaw: SwingAxis = { aim: 0.6, aimSpeed: 0, view: 0.6, viewSpeed: 0 }
@@ -1233,7 +1241,7 @@ export class Galaxy {
     this.swing(elapsed, !this.drag && this.chosen < 0 && !still && !this.clockHold, wallElapsed)
     const inset = Math.min(0.3, Math.max(0, this.options.topInset?.() ?? 0) / Math.max(1, this.host.clientHeight))
     // The short landscape layout (Shell, SHORT_LANDSCAPE) supplies its own frame.
-    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, 0.5 - inset / 2, 1 - inset]
+    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, FRAME_Y - inset / 2, 1 - inset]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
@@ -1533,10 +1541,28 @@ export class Galaxy {
     // together, as the drift moves them, so the spring stays at rest and nothing fights.
     // Never under reduced motion, never round a chosen world, never while anything else moves.
     this.resting = false
+    const idle = (performance.now() - this.handled) / 1000
     if (!this.reduced.matches && this.chosen < 0 && !this.flight && !held && this.pointers.size === 0 && this.backdrop === 1 && this.swingResting) {
-      const tilt = restStep(this.swingPitch.view, (performance.now() - this.handled) / 1000, restElapsed, this.options.still?.() ? REST_LOW : REST)
-      if (tilt !== this.swingPitch.view) { this.swingPitch.aim = this.swingPitch.view = tilt; this.resting = true }
-    }
+      const home = openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
+      if (this.options.still?.()) {
+        // Low-end devices: the quick exponential settle, snapping the last step, so they can idle.
+        const tilt = restStep(this.swingPitch.view, idle, restElapsed, REST_LOW)
+        if (tilt !== this.swingPitch.view) { this.swingPitch.aim = this.swingPitch.view = tilt; this.resting = true }
+        const far = restStep(Math.log(this.distance), idle, restElapsed, { ...REST_LOW, pitch: Math.log(home), snap: 1e-3 })
+        if (far !== Math.log(this.distance)) { this.distance = Math.exp(far); this.resting = true }
+      } else if (idle >= returnDelay.value) {
+        // The slow return (cameraRest.ts): tilt and zoom on one critically damped spring rate,
+        // from rest, no overshoot; the heading is left where the player put it.
+        const omega = returnOmega(returnTime.value), dt = Math.min(0.25, restElapsed)
+        const [pitch, pitchSpeed] = springStep(this.swingPitch.view, this.restSpeed.pitch, REST.pitch, omega, dt)
+        const [far, farSpeed] = springStep(Math.log(this.distance), this.restSpeed.zoom, Math.log(home), omega, dt)
+        const done = Math.abs(pitch - REST.pitch) < 2e-4 && Math.abs(pitchSpeed) < 1e-4 && Math.abs(far - Math.log(home)) < 5e-4 && Math.abs(farSpeed) < 1e-4
+        this.swingPitch.aim = this.swingPitch.view = done ? REST.pitch : pitch
+        this.distance = done ? home : Math.exp(far)
+        this.restSpeed = done ? { pitch: 0, zoom: 0 } : { pitch: pitchSpeed, zoom: farSpeed }
+        this.resting = !done
+      } else this.restSpeed = { pitch: 0, zoom: 0 }
+    } else this.restSpeed = { pitch: 0, zoom: 0 }
     if (this.reduced.matches) {
       // No spring, coast or stretch: the view is where the finger or key put it, within limits.
       const pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.swingPitch.aim))
