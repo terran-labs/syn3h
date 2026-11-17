@@ -37,7 +37,7 @@ export function drawsEffects(tier: PostTier): boolean {
 
 /** Sun shaft march taps per tier. Quarter resolution, so even 32 is cheap. */
 export function shaftTaps(tier: PostTier): number {
-  return tier === 'full' ? 32 : tier === 'lite' ? 16 : 0
+  return tier === 'full' ? 48 : tier === 'lite' ? 24 : 0
 }
 
 /**

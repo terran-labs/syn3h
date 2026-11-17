@@ -18,9 +18,10 @@ import { AlienSkyMesh } from './sky/AlienSkyMesh'
 import { SKY_PRESET_NAMES, applySkyPreset } from './sky/presets'
 import {
   NIGHT_LEVEL, TWILIGHT_LEVEL, autoExposure, luminance, twilightAmount, twilightTint, betaM, betaR, horizonColors, moonAmount, nightAmount, nightTint, sanitizeRGB, sunDirection as sunDirectionAt,
-  sunE, sunlightColor, wrapHour, advanceHour, type RGB, type Vec3,
+  sunE, sunlightColor, lowSunGrade, glowTint, smoothstep, type RGB, type Vec3,
 } from './sky/skyMath'
 import * as P from './sky/skyParams'
+import { bindDayClock, currentHour, followHour } from './sky/dayCycle'
 import { applyBounce, lightSkyReflection, shadowSoftness, shadowStrength } from './lightRig'
 import { heightFog, weatherFogNode } from './weather/fog'
 import { advanceCloudDrift } from './weather/clouds'
@@ -50,7 +51,7 @@ export interface Environment extends System {
   setVolumetricCloudsActive(active: boolean): void
   /** Linear sky colour at the horizon, averaged around the compass. Matches the fog. */
   readonly horizonColor: THREE.Color
-  /** Current hour, 0 to 24. Advances on its own when the day length is non zero. */
+  /** The hour on screen, 0 to 24: the room clock's hour (dayCycle.ts), eased across steps. */
   readonly hour: number
 }
 
@@ -64,6 +65,23 @@ const SHADOW_FAR = 1000
 const MOON_TINT: RGB = [0.55, 0.65, 1.0]
 /** Fog colours are clamped so the Mie glow around a low sun does not flood the terrain. */
 const FOG_MAX = 8
+/** The sunward fog's cap with the sun on the horizon, and the glow's share of eye adaptation. */
+const SUNWARD_ADAPT = 0.1
+/**
+ * Low sun fill. A sun a few degrees up lights the ground with almost nothing, and the sky
+ * overhead is dark, so sunrise and sunset left the foreground near black. Sunlight keeps at
+ * least LOW_SUN_LIGHT of luminance (its colour unchanged) until it sets, and the sky light
+ * takes LOW_SUN_FILL of the horizon's glow. Both fade out with the low-sun grade.
+ */
+const LOW_SUN_LIGHT = 0.22, LOW_SUN_FILL = 0.45
+/** How tightly the sunward fog glow hugs the sun's bearing: broad by day, as narrow as the sky's glow at a low sun. */
+const FOG_LOBE_DAY = 4, FOG_LOBE_LOW_SUN = 48
+/** Scale a colour down so its brightest channel is at most `max`, keeping its hue. */
+function capRGB(c: RGB, max: number): RGB {
+  const m = Math.max(c[0], c[1], c[2])
+  if (m > max) for (let i = 0; i < 3; i++) c[i] *= max / m
+  return c
+}
 
 export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   const scene = game.scene
@@ -131,7 +149,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   // same pattern CSMShadowNode uses for its live values.
   const fogState = {
     toward: new THREE.Vector3(), away: new THREE.Vector3(), side: new THREE.Vector3(),
-    sunXZ: new THREE.Vector2(1, 0), density: P.fogDensity.value,
+    sunXZ: new THREE.Vector2(1, 0), density: P.fogDensity.value, lobe: FOG_LOBE_DAY,
   }
   const live = <T,>(initial: T, read: () => T) => (uniform(initial as never) as N).setGroup(renderGroup).onRenderUpdate(read)
   const fogToward = live(new THREE.Vector3(), () => fogState.toward)
@@ -139,6 +157,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   const fogSide = live(new THREE.Vector3(), () => fogState.side)
   const fogSunXZ = live(new THREE.Vector2(1, 0), () => fogState.sunXZ)
   const fogDensityU = live(fogState.density, () => fogState.density)
+  const fogLobe = live(FOG_LOBE_DAY, () => fogState.lobe)
   const view = normalize((positionWorld as N).sub(cameraPosition)) as N
   // How far the view ray points toward the sun's bearing. The horizontal part of the unit
   // view ray is used as it is, not normalised: a ray looking down at the ground near the
@@ -146,8 +165,9 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   // gave every pixel the full glow of its compass bearing, which from above drew a bright
   // wedge on the ground with its point under the camera. Level views are unchanged.
   const cosA = vec2(view.x, view.z).dot(fogSunXZ) as N
-  // The glow toward the sun is narrow, the darkening away from it broad.
-  const towardW = pow(max(cosA, 0.0), 4.0)
+  // The glow toward the sun is narrow, the darkening away from it broad. At a low sun the
+  // glow narrows to the sky's own, so the far sea and land under it match the sky above.
+  const towardW = pow(max(cosA, 0.0), fogLobe as N)
   const awayW = max(cosA.negate(), 0.0)
   const side = fogSide as N
   const fogColor = side.add((fogToward as N).sub(side).mul(towardW)).add((fogAway as N).sub(side).mul(awayW))
@@ -160,7 +180,8 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   ;(scene as unknown as { fogNode: unknown }).fogNode = weatherFogNode(haze.color, haze.factor)
 
   // State ---------------------------------------------------------------------------------
-  let hour = wrapHour(P.sunTimeOfDay.value)
+  const unbindDay = bindDayClock()
+  let hour = currentHour()
   const sun: Vec3 = [0, 1, 0]
   const sunDirection = new THREE.Vector3()
   const lightDirection = new THREE.Vector3()
@@ -196,8 +217,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
 
   const unlisten = params.onChange((id, value) => {
     if (/^(sky|sun|weather)\./.test(id) || id === 'world.atmosphere') reflections.invalidate()
-    if (id === P.sunTimeOfDay.def.id) hour = wrapHour(value as number)
-    else if (id === P.shadowQuality.def.id) buildLight(value as number)
+    if (id === P.shadowQuality.def.id) buildLight(value as number)
     else if (id === P.skyPresetPicker.def.id) {
       const name = SKY_PRESET_NAMES[(value as number) - 1]
       if (name) {
@@ -211,7 +231,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   const update = (dt: number) => {
     // Clouds drift downwind (src/world/weather/clouds.ts).
     advanceCloudDrift(sky.cloudOffset.value, P.cloudSpeed.value, dt, _terrain)
-    hour = advanceHour(hour, dt, P.sunDayLength.value)
+    hour = followHour(hour, currentHour(), dt)
     sunDirectionAt(hour, P.sunTilt.value, P.sunAzimuth.value, sun)
     sunDirection.set(sun[0], sun[1], sun[2])
     const sp = P.currentSkyParams()
@@ -223,6 +243,8 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     sky.betaM.value.set(rgb[0], rgb[1], rgb[2])
     sky.sunE.value = sunE(sun[1])
     sky.sunDirection.value.copy(sunDirection)
+    glowTint(sp, rgb)
+    sky.glowTint.value.set(rgb[0], rgb[1], rgb[2])
     const night = nightAmount(sun[1])
     nightTint(sp, tint)
     const nightLevel = night * Math.max(0, sp.nightBrightness) * NIGHT_LEVEL
@@ -238,6 +260,9 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     lightDirection.copy(sunDirection).multiplyScalar(moon > 0 ? -1 : 1)
     if (moon <= 0) {
       sanitizeRGB(sunlightColor(sun, sp, rgb), 1)
+      // Low sun fill: lift a near-horizon sun's light to a floor, same colour, until it sets.
+      const floor = LOW_SUN_LIGHT * lowSunGrade(sun[1]) * smoothstep(-0.04, 0.03, sun[1]), lum = luminance(rgb)
+      if (lum > 1e-6 && lum < floor) { const s = Math.min(floor / lum, 1 / Math.max(rgb[0], rgb[1], rgb[2], 1e-6)); for (let i = 0; i < 3; i++) rgb[i] *= s }
       const k = P.sunIntensity.value
       sunColor.setRGB(rgb[0] * k, rgb[1] * k, rgb[2] * k, THREE.LinearSRGBColorSpace)
       light.position.copy(sunDirection).multiplyScalar(500)
@@ -256,8 +281,10 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     const moonAmb = moon * P.sunMoonIntensity.value * 0.04
     const z = sanitizeRGB(hc.zenith, 50)
     const m = sanitizeRGB(hc.mean, 50)
+    // Low sun fill: the sky light takes some of the horizon's glow (see LOW_SUN_FILL).
+    const fill = lowSunGrade(sun[1]) * LOW_SUN_FILL * amb
     hemi.color.setRGB(
-      z[0] * amb + MOON_TINT[0] * moonAmb, z[1] * amb + MOON_TINT[1] * moonAmb, z[2] * amb + MOON_TINT[2] * moonAmb,
+      z[0] * amb + m[0] * fill + MOON_TINT[0] * moonAmb, z[1] * amb + m[1] * fill + MOON_TINT[1] * moonAmb, z[2] * amb + m[2] * fill + MOON_TINT[2] * moonAmb,
       THREE.LinearSRGBColorSpace,
     )
     skyGround.setRGB(m[0] * amb * 0.5, m[1] * amb * 0.5, m[2] * amb * 0.5, THREE.LinearSRGBColorSpace)
@@ -272,15 +299,21 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     // Eye adaptation from the sky we just evaluated: no render target readback needed.
     // Uses the side horizon, not the mean, so the glow around a setting sun does not
     // darken the whole scene.
-    const sideRaw = hc.side
-    for (let i = 0; i < 3; i++) avgSky[i] = 0.5 * z[i] + 0.5 * sideRaw[i]
+    // At a low sun the (graded, bounded) glow toward it gets a small share too: adapting only
+    // to the dark sky overhead turned the sunward horizon into a white wall.
+    const sideRaw = hc.side, low = lowSunGrade(sun[1]), glowShare = low * SUNWARD_ADAPT
+    const towardRaw = sanitizeRGB(hc.toward, 50)
+    for (let i = 0; i < 3; i++) avgSky[i] = (1 - glowShare) * (0.5 * z[i] + 0.5 * sideRaw[i]) + glowShare * towardRaw[i]
     const target = Math.log(autoExposure(luminance(avgSky), P.skyAutoExposure.value))
     adapted = Number.isNaN(adapted) ? target : adapted + (target - adapted) * Math.min(1, dt * 2)
     game.renderer.toneMappingExposure = P.skyExposure.value * Math.exp(adapted)
 
-    const t = sanitizeRGB(hc.toward, FOG_MAX)
-    const a = sanitizeRGB(hc.away, FOG_MAX)
-    const s = sanitizeRGB(hc.side, FOG_MAX)
+    // Scaled, not clamped per channel: a clamp kept one bright channel at the cap and let the
+    // others through, so the fog took a different hue from the sky above it.
+    const t = capRGB(sanitizeRGB(hc.toward, 1e3), FOG_MAX)
+    fogState.lobe = FOG_LOBE_DAY + (FOG_LOBE_LOW_SUN - FOG_LOBE_DAY) * low
+    const a = capRGB(sanitizeRGB(hc.away, 1e3), FOG_MAX)
+    const s = capRGB(sanitizeRGB(hc.side, 1e3), FOG_MAX)
     fogState.toward.set(t[0], t[1], t[2])
     fogState.away.set(a[0], a[1], a[2])
     fogState.side.set(s[0], s[1], s[2])
@@ -323,6 +356,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     update,
     dispose() {
       unlisten()
+      unbindDay()
       reflections.dispose()
       scene.remove(sky, light, light.target, hemi)
       csm?.dispose()

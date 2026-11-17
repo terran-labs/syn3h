@@ -33,7 +33,7 @@ Since 16 November 2026 the score opens bare (pads, drone and a picked chord) and
 bass and drums after a minute and a half, the build section at 0.35 of the way, the theme at
 0.55 when the lead is present enough, the climb and release at 0.8. Before, the score opened
 on a release and the full mix arrived within five seconds. The lobby stays in the bare
-opening and never climbs. The theremin lead follows the world's hour (`sun.timeOfDay`): a
+opening and never climbs. The theremin lead follows the world's hour now (`currentHour()`, the day clock): a
 quarter of its level by day, its full level at night, eased across dusk and dawn, and silent
 in the lobby. Its controls are under Sound, Advanced: Music build time, Theremin level,
 Theremin by day, Theremin in the lobby. `tests/audio/score-build.mjs` measures the build.

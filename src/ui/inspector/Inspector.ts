@@ -13,6 +13,9 @@ import { applyPreset, matchPreset, presetsFor } from '../../../shared/presets'
 import { canEditWorld, resetWorld } from '../worldPermissions'
 import { buildTree, describe, shownDef, shownValue, storedValue, exportSection, exportWorld, fraction, limits, parseWorld, pasteSummary, show, type PropertyDef, type SectionNode } from './model'
 import './params'
+import { fillDayLengthRow } from './dayLength'
+import { sunDayLength, sunTimeOfDay } from '../../world/sky/skyParams'
+import { currentHour } from '../../world/sky/dayCycle'
 import './inspector.css'
 import './motion.css'
 import { bindSwitch } from './switch'
@@ -163,7 +166,12 @@ export class Inspector {
     // which only blurs a text field (and the blur would otherwise save).
     window.addEventListener('keydown', event => { if (event.code === 'Escape' && event.target === this.nameInput) this.nameInput.value = this.options.playerName?.() ?? '' }, { capture: true, signal: this.abort.signal })
     this.build()
-    this.unsubscribe = params.onChange((id, value) => { this.rows.get(id)?.sync(value); for (const sync of this.presetSyncs) sync() })
+    this.unsubscribe = params.onChange((id, value) => {
+      this.rows.get(id)?.sync(value)
+      // The orbit default is the planet's: a new planet changes what the day length shows.
+      if (id === 'terrain.look') this.rows.get(sunDayLength.def.id)?.sync(params.get(sunDayLength.def.id)!.value)
+      for (const sync of this.presetSyncs) sync()
+    })
     // Space changes (a resize, a phone turning, a fold opening inside a card): refit once,
     // on the next frame, not every frame.
     window.addEventListener('resize', () => this.queueFit(null), { signal })
@@ -230,6 +238,9 @@ export class Inspector {
       const text = extra ? extra.summary() : this.options.summary(id) || `${this.tree.find(s => s.id === id)?.count ?? 0} properties`
       if (sum.textContent !== text) sum.textContent = text
     }
+    // The stored hour is the day clock's anchor; the row shows the hour now (dayCycle.ts).
+    const clock = this.rows.get(sunTimeOfDay.def.id)
+    if (clock) clock.sync(Math.round(currentHour() * 100) / 100)
     this.syncVehicles()
     const name = this.options.playerName?.() ?? ''
     if (this.nameInput && document.activeElement !== this.nameInput && this.nameInput.value !== name) this.nameInput.value = name
@@ -242,7 +253,7 @@ export class Inspector {
     const open = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section))
     const owned = new Set([...this.extras.values()].flatMap(extra => extra.owns?.() ?? []))
     const shown = this.options.sections
-    this.tree = buildTree(all.map(p => p.def as PropertyDef).filter(def => !owned.has(def.id))).filter(section => !shown || shown.includes(section.id))
+    this.tree = buildTree(all.map(p => p.def as PropertyDef).filter(def => !owned.has(def.id) && !def.hidden)).filter(section => !shown || shown.includes(section.id))
     this.rows.clear(); this.presetSyncs.length = 0; this.editing = null; this.settle()
     const cards = this.element.querySelector('.wi-cards')!; cards.replaceChildren()
     for (const section of this.tree) {
@@ -485,7 +496,11 @@ export class Inspector {
     const output = document.createElement('output')
     const param = params.get(def.id)!, choices = choicesOf(def)
     let sync: (value: ParamValue) => void
-    if (choices) {
+    if (def.id === sunDayLength.def.id) {
+      // Seconds stored, minutes shown, a log slider and the orbit default: its own control.
+      def = { ...def, label: 'Day length', limitsText: '20 s to 60 min on the slider, or stopped · default: the orbit' }
+      const day = fillDayLengthRow(row, def.id); sync = () => day()
+    } else if (choices) {
       label.textContent = choices.name
       const seg = document.createElement('div'); seg.className = 'wi-seg'; seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', choices.name)
       for (const option of choices.options) { const button = document.createElement('button'); button.type = 'button'; button.dataset.value = String(option.value); button.textContent = option.label; button.addEventListener('click', () => params.set(def.id, option.value, 'local')); seg.append(button) }

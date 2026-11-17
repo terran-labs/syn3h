@@ -34,6 +34,7 @@ import { applyPlanet, decodeWorld } from './world/planets'
 import { WaterEffects } from './world/water/WaterEffects'
 import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weather'
 import { applyWordmarkQuery } from './ui/brand/wordmarkFlags'
+import { setDayClock } from './world/sky/dayCycle'
 
 async function main(): Promise<void> {
   initializeFrozenResources(location.href)
@@ -230,7 +231,7 @@ async function main(): Promise<void> {
     shell.onRaceCancel = () => connection.cancelRace()
     // Every client reads the wind from the room's clock, so gusts agree between players.
     // Handed over by networking once that clock has synced (the sea gets it the same way).
-    connection.onRoomClock((now) => setWeatherClock(now))
+    connection.onRoomClock((now) => { setWeatherClock(now); setDayClock(now) })
     // The room hears about a pause for either reason: the paused heartbeat (one message a
     // second) is the one thing that keeps running, so others see "paused", not a dropout.
     pause.subscribe((paused) => connection.setPaused(paused))

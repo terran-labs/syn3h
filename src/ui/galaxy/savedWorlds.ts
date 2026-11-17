@@ -15,7 +15,8 @@ export const savedName = (entry: SavedWorld): string => {
   const nameSeed = entry.world.values['world.nameSeed']
   return worldName(typeof nameSeed === 'number' ? nameSeed : 0, entry.seed)
 }
-export const worldIdentity = (values: Record<string, ParamValue>): string => JSON.stringify(Object.entries(values).sort(([a], [b]) => a.localeCompare(b)))
+/** The same world, whenever it was captured: the day clock's anchor (sun.dayEpoch) is when, not what. */
+export const worldIdentity = (values: Record<string, ParamValue>): string => JSON.stringify(Object.entries(values).filter(([id]) => id !== 'sun.dayEpoch').sort(([a], [b]) => a.localeCompare(b)))
 
 /** Clipboard parsing is permissive. Saved records must pass strict validation first. */
 export function readSavedWorlds(raw: string | null, defs: readonly ParamDef[]): SavedLibrary {
