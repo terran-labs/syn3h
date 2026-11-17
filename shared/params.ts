@@ -124,3 +124,16 @@ export const worldSeed = defineParam({
   id: 'world.seed', label: 'Seed', group: 'World', scope: 'world',
   default: 1, min: 1, max: 999999, step: 1, deferred: true,
 })
+
+/**
+ * The world's name, kept apart from its seed so a new seed does not rename the planet, and
+ * synced and saved like any world setting. It is a number until names can be typed:
+ *  - above 0, the seed of a generated name (src/world/worldName.ts);
+ *  - 0, the name the world's seed gave before names had their own setting, so worlds
+ *    saved and links shared before this keep the names they were shown with;
+ *  - below 0, that older name of the seed -n, pinned when a seed is changed under it.
+ */
+export const worldNameSeed = defineParam({
+  id: 'world.nameSeed', label: 'Name', group: 'World', scope: 'world',
+  default: 0, min: -999999, max: 999999999, step: 1,
+})

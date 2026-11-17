@@ -508,14 +508,24 @@
 .galaxy-ui { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding: 0 16px max(18px, env(safe-area-inset-bottom)); }
 .galaxy-ui > * { pointer-events: auto; }
 .galaxy-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.syn3h-shell .galaxy-label { position: absolute; left: 0; top: 0; translate: -200px -200px; transform: translateX(-50%); pointer-events: auto; background: none; border: 0; box-shadow: none; padding: 4px 10px; min-height: 0; display: grid; justify-items: center; color: var(--s3-ink); text-shadow: 0 1px 6px #000; cursor: pointer; }
-.galaxy-label strong { font: 600 20px/1.1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: 0.04em; text-transform: uppercase; }
-.galaxy-label small { font-size: 13px; color: var(--s3-accent-2); }
-.galaxy-label small:empty { display: none; }
+.syn3h-shell button.galaxy-label { position: absolute; left: 0; top: 0; translate: -200px -200px; transform: translateX(-50%); pointer-events: auto; min-height: 0; min-width: 44px; display: grid; align-content: center; cursor: pointer; }
+/* The plate is drawn compact; the tap target reaches past it, invisibly, to at least 44 px. */
+.syn3h-shell button.galaxy-label::after { content: ''; position: absolute; inset: -5px -4px; }
+/* Two lines on every planet: its name, then its biome in small lower case. About 37 px tall. */
+.syn3h-shell button.galaxy-label:not(#s3-plate) { padding: 4px 10px 4px 14px; }
+.syn3h-shell button.galaxy-label:not(#s3-plate) > strong { line-height: 15px; }
+.syn3h-shell button.galaxy-label:not(#s3-plate) > small { line-height: 12px; }
+.syn3h-shell button.galaxy-label:not(#s3-plate) > small.galaxy-biome { font-size: 11px; letter-spacing: .04em; text-transform: none; }
+/* The look is the shared label plate (src/ui/label-plate.css), as on the vehicle labels. */
 .syn3h-shell .galaxy-label.is-locked { opacity: .45; }
-@media (max-width: 700px), (max-height: 550px) { .syn3h-shell .galaxy-label { padding: 2px 6px; } .galaxy-label strong { font-size: 16px; } .galaxy-label small { font-size: 12px; } }
-/* No room for this label beside its world: it fades until focused. Its world still answers a tap. */
-.syn3h-shell .galaxy-label.is-crowded:not(:focus) { opacity: 0; pointer-events: none; }
+/* No room for this label beside its world: it fades until focused or pointed at. Its world still
+   answers a tap. A label changing sides fades out and back in (Shell.ts); it never slides. */
+.syn3h-shell button.galaxy-label { transition: opacity .15s, border-color .18s, box-shadow .18s, background-color .18s, scale .18s; }
+.syn3h-shell .galaxy-label.is-crowded:not(:focus):not(.is-pointed), .syn3h-shell .galaxy-label.is-swapping { opacity: 0; pointer-events: none; }
+/* A pointed or focused label shown where there was no room: drawn on top at its preferred side,
+   and the plates under it step back while it shows. */
+.syn3h-shell .galaxy-label.is-raised { z-index: 2; }
+.syn3h-shell .galaxy-label.is-dimmed:not(.is-raised) { opacity: .35; }
 .syn3h-shell .galaxy-hint { margin: 0 0 6px; font-size: 15px; color: var(--s3-dim); text-shadow: 0 1px 6px #000; text-align: center; }
 .lobby-unsupported { max-width: 420px; margin: 0 auto; font-size: 17px; line-height: 1.4; text-align: center; color: var(--s3-ink); }
 /* The galaxy would not start: its labels become a row of buttons above the help line. */
@@ -537,7 +547,6 @@
 .syn3h-shell .shell-hud .gear-chip[hidden] { display: none; }
 .syn3h-shell.has-touch .shell-hud .gear-chip { min-height: 40px; padding: 6px 16px; }
 
-.syn3h-shell .galaxy-label:focus { outline: 2px solid var(--s3-accent-2); border-radius: 6px; }
 
 /* Custom keeps its generated planet in view while the player shapes it. */
 .is-shaping-world .lobby-brand { flex-basis: 100px; }
@@ -570,3 +579,40 @@
 
 /* The SVG retains its box and accessible name while Galaxy draws the same mark. */
 .has-animated-logo .shell-logo { opacity: 0; animation: none; }
+
+/* Short landscape phones (roughly 844x390 and smaller): the galaxy gets the height. The
+   wordmark shrinks into the top-left corner, the three buttons stack on the right edge with
+   the hint small above them, and the galaxy is framed into what is left (Shell measures it).
+   Desktop, tablet and portrait are untouched. */
+@media (orientation: landscape) and (max-height: 480px) {
+  .syn3h-shell.exploration-ui.galaxy-open .galaxy-ui {
+    justify-content: center; align-items: flex-end;
+    padding: 0 max(12px, env(safe-area-inset-right)) 0 0;
+  }
+  .syn3h-shell.exploration-ui.galaxy-open .galaxy-hint {
+    max-width: 128px; margin: 0 0 8px; font-size: 11px; line-height: 1.35; text-align: right;
+  }
+  .syn3h-shell.exploration-ui.galaxy-open .galaxy-links {
+    display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px 6px; border-radius: 22px;
+  }
+  .syn3h-shell.exploration-ui.galaxy-open .galaxy-links button { min-height: 44px; padding: 0 14px; font-size: 12px; }
+  /* A tighter plate so nine labels fit in the short band; the tap target stays 44 px. */
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate) { padding: 3px 8px 3px 12px; }
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate) > strong { font-size: 12px; line-height: 14px; letter-spacing: .06em; }
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate) > small { font-size: 9px; line-height: 11px; }
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate) > small.galaxy-biome { font-size: 10px; }
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate)::before { left: 4px; top: 5px; bottom: 5px; }
+  .syn3h-shell button.galaxy-label::after { inset: -11px -4px; }
+}
+
+/* Narrow phones in portrait: the same tighter two-line plate as short landscape, so nine fit. */
+@media (orientation: portrait) and (max-width: 480px) {
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate) { padding: 3px 8px 3px 12px; }
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate) > strong { font-size: 12px; line-height: 14px; letter-spacing: .06em; }
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate) > small { font-size: 9px; line-height: 11px; }
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate) > small.galaxy-biome { font-size: 10px; }
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate)::before { left: 4px; top: 5px; bottom: 5px; }
+  .syn3h-shell button.galaxy-label::after { inset: -7px -4px; }
+}
+/* The fallback when labels do not all fit: names only (Shell adds .galaxy-names-only). */
+.galaxy-names-only .galaxy-label:not(#s3-plate) > small.galaxy-biome { display: none; }

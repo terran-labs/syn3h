@@ -68,8 +68,9 @@
   /* Portrait: the version sits above the gear, which sits right of the lobby's buttons; both
      sit a little lower than the buttons' baseline to stay clear of the hint above them. */
   .lobby-gear-dock { flex-direction: column-reverse; align-items: flex-end; gap: 0; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); }
-  /* Narrow enough to sit right of the About button; the title carries the full version. */
-  .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version { min-height: 0; padding: 1px 2px; font-size: 10px; letter-spacing: .04em; max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Small enough to sit right of the About button. Labels are short ("v26.11.1609",
+     "dev · a1b2c3d"), so they are never cut off mid-identifier. */
+  .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version { min-height: 0; padding: 1px 2px; font-size: 10px; letter-spacing: .04em; white-space: nowrap; }
 }
 @media (max-height: 500px) and (pointer: coarse) and (orientation: landscape) {
   .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { left: auto; width: min(560px, calc(100vw - 20px)); top: 6px; bottom: 6px; padding: 6px; gap: 4px; }

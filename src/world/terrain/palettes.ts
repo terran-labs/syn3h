@@ -73,10 +73,11 @@ export const PALETTES: readonly Palette[] = [
     sparkle: 0.5, accent: 0, accentShore: 0,
     track: 0.8,
   },
-  // 4 Ice moon: blue-white ice plains, pale blue cliffs, wet and glinting.
+  // 4 Ice moon: white and pale cyan ice, glinting; blue only in shadowed cliffs and cracks
+  // (the owner, 16 November 2026: it read as a blue world).
   {
-    groundDark: 0x8fb4d0, groundLight: 0xd6e8f4, rockDark: 0x5f86a8, rockLight: 0xa9cbe0,
-    darkRockA: 0x3d5f80, darkRockB: 0x6f96b8, shore: 0xbfe0ee,
+    groundDark: 0xc4d6e2, groundLight: 0xeef4f8, rockDark: 0x7e9cb4, rockLight: 0xc4d8e6,
+    darkRockA: 0x56748e, darkRockB: 0x92acc0, shore: 0xdde9f0,
     roadDark: 0x4a6a86, roadLight: 0x5f809c, roadLine: 0xe8f6ff,
     snow: 0xf4f8ff, gloss: 0.18, seam: 0, seaDeep: 0x061a33, seaShallow: 0x1f5f8a,
     sparkle: 0.7, accent: 0x3fd0e0, accentShore: 0,
@@ -107,15 +108,21 @@ export const PALETTES: readonly Palette[] = [
     sparkle: 0.3, accent: 0, accentShore: 0,
     track: 0.3,
   },
-  // 8 Methane swamp: olive and ochre mud round a teal sea.
+  // 8 Mire: a warm wetland. Olive and ochre mud, reed and moss tones, round murky green-brown water.
   {
     groundDark: 0x4a5422, groundLight: 0x8c8a3a, rockDark: 0x5a4a22, rockLight: 0x9a8440,
     darkRockA: 0x3a3a1e, darkRockB: 0x5e5a2e, shore: 0x6c6a3a,
-    roadDark: 0x3e3a22, roadLight: 0x524c2c, roadLine: 0xc8c890, ...PLAIN, seaDeep: 0x0a3a34, seaShallow: 0x2fa890,
+    roadDark: 0x3e3a22, roadLight: 0x524c2c, roadLine: 0xc8c890, ...PLAIN, seaDeep: 0x1c2412, seaShallow: 0x5a5a2c,
     sparkle: 0, accent: 0xb05a2a, accentShore: 1,
     track: 0.9,
   },
 ]
+
+/**
+ * A frozen sea's ice (the Ice Moon's): floes in two whites, polished wind-scoured blue ice,
+ * and the blue of the cracks between floes. A little under white, so the sun does not burn it out. Shared by the ice sheet's material in the world and the lobby's painted maps.
+ */
+export const SEA_ICE = { floe: 0xd6e2ea, old: 0xb8c9d6, scour: 0x8eaec4, crack: 0x3a6688 } as const
 
 export function paletteFor(look: number): Palette {
   return PALETTES[look] ?? PALETTES[0]

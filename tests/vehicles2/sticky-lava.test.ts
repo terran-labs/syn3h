@@ -10,7 +10,8 @@ import {Tank} from '../../src/vehicles/Tank'
 import {harness} from './harness'
 beforeAll(initPhysics)
 afterEach(()=>{for(const p of params.all())params.set(p.def.id,p.def.default)})
-const kinds=[Syn3hBuggy,Jet,Hovercraft,Tank]
+// The buggy rides lava on its own hull (tests/vehicles/liquids.test.ts).
+const kinds=[Jet,Hovercraft,Tank]
 describe('indestructible viscous lava',()=>{
  it.each(kinds)('%s settles without skimming and can crawl',Kind=>{
   const h=harness();h.terrain.liquidHeightAt=()=>4;h.terrain.liquidKindAt=()=> 'lava'

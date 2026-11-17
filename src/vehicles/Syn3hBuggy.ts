@@ -21,7 +21,8 @@ import {
   buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyRearSteerFast, buggyShocks, buggySideGrip, buggySideHold, buggySlide, buggySpeed, buggyStability, buggySteerFollow, buggySteerLimit,
   buggyTraction, buggyTyreSize,
 } from './buggyParams'
-import { applyLava, floatPoints, lavaViscosity } from './lava'
+import { applyLava, floatPoints, lavaThickness } from './lava'
+import { gripAt } from './surfaceGrip'
 import type { BuggySkin } from './skins/BuggySkin'
 import { retryDelay } from './skins/modelLoader'
 import { type MotorDriveInput, motorDrive, smoothEffort } from './skins/motorDrive'
@@ -181,6 +182,8 @@ const REGEN_TORQUE_MARGIN = 1.25
 const CONTACT_TOUCH = 0.01
 /** How fast (1/s) water drags the wheels toward the body's speed while floating. */
 const WATER_MOTOR_DRAG = 6
+/** The same for thick lava, at lava.thickness 1. */
+const LAVA_MOTOR_DRAG = 6
 /** Fastest a kinematic copy is carried (m/s); see carriedVelocity(). */
 const CARRIED_MAX = 200
 /**
@@ -637,20 +640,24 @@ export class Syn3hBuggy extends Vehicle {
       this.motorSpeed += (smoothed.y * this.motorAccel) / MOTOR_MASS * dt
       this.motorSpeed += (-this.motorSpeed * (this.brakes ? 50 : MOTOR_DRAG)) / this.motorTorque * dt
     }
-    // Sticky lava (see applyVehicleLiquid in lava.ts) takes over the body while it is immersed
-    // and moves it at the lava crawl power, so no wheel force reaches it. The wheels churn in
-    // the same goo: drag the motor toward the body's speed so it cannot spin up unloaded and
-    // lurch when the tyres bite again at the shore.
+    // Lava (liquidHull.ts) paddles the buggy along with its wheels, but they churn in thick goo:
+    // drag the motor toward the body's speed so it cannot spin up unloaded and lurch when the
+    // tyres bite again at the shore.
     // Water does the same more gently, so the wheels are not at full speed when they touch
     // the beach. inLiquid is last step's value here.
-    if (this.lavaDepth > 0 || this.inLiquid) {
+    const hull = this.liquidState.hull
+    if (this.lavaDepth > 0 || this.inLiquid || hull.mean > 0) {
       const vf = ub.inverseTransformDirectionUnity(ub.velocity, this.v1).z
-      const drag = this.lavaDepth > 0 ? lavaViscosity.value : WATER_MOTOR_DRAG
+      const drag = this.lavaDepth > 0 || (hull.mean > 0 && hull.liquid === 'lava') ? LAVA_MOTOR_DRAG * Math.max(0.5, lavaThickness.value) : WATER_MOTOR_DRAG
       this.motorSpeed = vf + (this.motorSpeed - vf) * Math.exp(-drag * dt)
     }
     // Next-gen updates the motor from all four wheels at once (Jacobi). Updating it wheel by
     // wheel, as VB 323 does, favours the left wheels and pulls the buggy right.
     this.motorStep = this.motorSpeed
+    this.liquidState.wheelSpeed = this.motorSpeed
+    this.liquidState.wheel.x = this.hubX
+    this.liquidState.wheel.z = this.hubZ
+    this.liquidState.wheel.radius = this.wheelRadius
 
     // Wheels, VB 288-332.
     const wasAirborne = this.wheelsGrounded === 0
@@ -697,7 +704,8 @@ export class Syn3hBuggy extends Vehicle {
         continue
       }
       const friction =
-        buggyTraction.value * 13 * lerp(0.5, 1, this.hitCompress[i]) * Math.max(1, (20 - hitVel.length()) / 4)
+        buggyTraction.value * 13 * lerp(0.5, 1, this.hitCompress[i]) * Math.max(1, (20 - hitVel.length()) / 4) *
+        gripAt(this.terrain, this.hitPoint.x, this.hitPoint.z)
       // Vector3.Min against (1000, 1000, 1000): an upper clamp only, as in the source.
       const fx = Math.min(-hitVel.x * friction, 1000) // Sideslip
       const fz = Math.min(-(hitVel.z - this.motorSpeed) * friction, 1000) // Motor
@@ -908,7 +916,8 @@ export class Syn3hBuggy extends Vehicle {
       const floor = lerp(Math.max(buggySideGrip.value, buggySideHold.value * mu), buggySideGrip.value, landing)
       mu = Math.min(mu, lerp(mu, floor, broadside))
     }
-    const cap = mu * traction * load
+    // What the wheel is on: ice slides, wet shallows a little (surfaceGrip.ts).
+    const cap = mu * traction * load * gripAt(this.terrain, this.hitPoint.x, this.hitPoint.z)
     const n = Math.hypot(fx, fz)
     this.sliding[i] = n > cap
     // Regen is torque limited: past its force the wheel turns with the ground, not the motor.

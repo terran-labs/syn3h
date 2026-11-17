@@ -3,10 +3,14 @@ import type { Exclusion } from './layout'
 // The gear selector's own box reserves room for its detail pane even when that pane is empty,
 // and on a phone that box spans the screen's middle. Avoid only what is drawn: the drum and
 // each detail line while it is showing (empty lines carry [hidden] and are skipped below).
-const SELECTORS = '.world-inspector,.shell-minimap,.gear-selector .gs-drum,.gear-selector .gs-detail > *,.gear-actions,.zorb-toggle,.touch-actions,.touch-stick,.match-hud,.match-announcement,.race-hud,.performance-recommendation,.inspector-toggle,.spawn-help,.focus-hud .fh-read'
-/** Passive readouts (speed, height): a label may cover these when no other slot is free.
- *  Everything else is hard, including the world name and heading line (.fh-top), a title. */
-const SOFT = '.focus-hud .fh-read:not(.fh-top)'
+// The world inspector is the same: its box is the whole right-hand column, top to bottom, while
+// only its command bar, its cards and its foot are drawn. Avoiding the column hid every label on
+// the right of a desktop screen, which looked like your own wings hiding them in flight.
+const SELECTORS = '.world-inspector .rail-command,.world-inspector .wi-cards > *,.world-inspector .rail-foot,.shell-minimap,.gear-selector .gs-drum,.gear-selector .gs-detail > *,.gear-actions,.zorb-toggle,.touch-actions,.touch-stick,.match-hud,.match-announcement,.race-hud,.performance-recommendation,.inspector-toggle,.spawn-help,.focus-hud .fh-read'
+/** Passive text (speed, height, the gear's hint lines): a label may cover these when a step up
+ *  does not clear them. Everything else is hard, including the gear drum and the world name and
+ *  heading line (.fh-top), a title. */
+const SOFT = '.focus-hud .fh-read:not(.fh-top),.gear-selector .gs-detail > *'
 /** How often the HUD is re-measured even when nothing announced a change (style-only edits). */
 const BACKSTOP_MS = 250
 

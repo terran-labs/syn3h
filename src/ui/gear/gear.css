@@ -10,7 +10,7 @@
   --gs-slots: 5;
   --gs-width: 188px;
   --gs-glow: var(--halo-glow, 0 0 6px color-mix(in srgb, var(--s3-accent) 14%, transparent));
-  --gs-under: var(--halo-under, 0 0 2px var(--s3-panel), 0 1px 7px var(--s3-panel), 0 0 18px var(--s3-panel));
+  --gs-under: var(--hud-under, var(--halo-under, 0 0 2px var(--s3-panel), 0 1px 7px var(--s3-panel), 0 0 18px var(--s3-panel)));
   position: fixed; z-index: var(--gear-z, 12);
   left: var(--gear-left, max(20px, calc(env(safe-area-inset-left) + 14px))); top: var(--gear-top, 50%);
   width: calc(var(--gs-width) + var(--gear-detail-width, 220px)); height: calc(var(--gs-pitch) * var(--gs-slots));
@@ -23,7 +23,7 @@
 /* The falloff: a soft dark patch of world behind the type. Not a box: no edge, no fill line. */
 .gear-selector::before {
   content: ''; position: absolute; z-index: -1; left: -40px; top: -18%; width: calc(100% + 40px); height: 136%;
-  background: radial-gradient(ellipse 62% 50% at 40% 50%, color-mix(in srgb, var(--s3-panel) 70%, transparent), color-mix(in srgb, var(--s3-panel) 35%, transparent) 55%, transparent 80%);
+  background: radial-gradient(ellipse 62% 50% at 40% 50%, color-mix(in srgb, var(--s3-panel) 78%, transparent), color-mix(in srgb, var(--s3-panel) 45%, transparent) 55%, transparent 80%);
   pointer-events: none;
 }
 /* The spine: a hairline down the drum's left side, faded at both ends. */
