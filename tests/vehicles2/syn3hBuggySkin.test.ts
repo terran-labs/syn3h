@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { afterEach, expect, it, vi } from 'vitest'
-import { GeneratedBuggySkin } from '../../src/vehicles/buggygen/GeneratedBuggySkin'
+import { Syn3hBuggySkin } from '../../src/vehicles/skins/Syn3hBuggySkin'
 import { buggyBody } from '../../src/vehicles/buggygen/body'
 import { buildParts } from '../../src/vehicles/buggygen/parts'
 import type { VehicleDetail } from '../../src/vehicles/skins/mergeStatic'
@@ -31,7 +31,7 @@ it('gives every generated piece a role the skin knows, at every detail level', (
   }
 })
 
-// The generated skin must never fall back to a model request, and must come up whole.
+// The buggy is generated: it must never make a model request, and must come up whole.
 it('builds without any network request, with finite geometry, and moves its parts', async () => {
   const fetch = vi.fn(() => Promise.reject(new Error('no network in this test')))
   vi.stubGlobal('fetch', fetch)
@@ -39,7 +39,7 @@ it('builds without any network request, with finite geometry, and moves its part
   const callbacks = new Set<VehicleDetail>()
   const detail: VehicleDetail = (distance, remote, level) => callbacks.forEach(fn => fn(distance, remote, level))
   root.userData.registerVehicleDetail = (fn: VehicleDetail) => { callbacks.add(fn); return () => callbacks.delete(fn) }
-  const skin = new GeneratedBuggySkin(); root.add(skin.object)
+  const skin = new Syn3hBuggySkin(); root.add(skin.object)
   try {
     await skin.ready
     expect(fetch).not.toHaveBeenCalled()
@@ -57,6 +57,19 @@ it('builds without any network request, with finite geometry, and moves its part
     const tyres = skin.object.getObjectByName('Smooth tyres and chrome rings') as THREE.InstancedMesh
     const m = new THREE.Matrix4(); tyres.getMatrixAt(0, m)
     expect(new THREE.Vector3().setFromMatrixPosition(m).y).toBeCloseTo(-.35)
+    // Tyre size (buggy.tyreSize): the tyre and the stator grow by exactly the scale asked for,
+    // about the hub, so big tyres do not float off their hubs or sink into the ground.
+    skin.setTyreScale(2, 1.5)
+    skin.setWheel(0, new THREE.Vector3(-1.1, -.35, -1.3), 0, 0)
+    tyres.getMatrixAt(0, m)
+    const scale = new THREE.Vector3(), position = new THREE.Vector3()
+    m.decompose(position, new THREE.Quaternion(), scale)
+    expect(scale.x).toBeCloseTo(1.5); expect(scale.y).toBeCloseTo(2); expect(scale.z).toBeCloseTo(2)
+    expect(position.y).toBeCloseTo(-.35)
+    const stators = skin.object.getObjectByName('Stators') as THREE.InstancedMesh
+    stators.getMatrixAt(0, m); m.decompose(position, new THREE.Quaternion(), scale)
+    expect(scale.y).toBeCloseTo(2)
+    skin.setTyreScale(1, 1)
     // Wings open, flex and report tips on both sides, staying finite.
     skin.setWings(1, .5, -.5)
     expect(finite(root)).toBe(true)
