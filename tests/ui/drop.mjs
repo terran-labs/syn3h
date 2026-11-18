@@ -82,18 +82,36 @@ try {
     report.push({ view: view.name, ms: took, frames: watch.frames, worstGap: `${watch.worst[1]} ms at ${watch.worst[0]} ms`, over50: watch.over50.slice(0, 8).join(' ') })
     await page.close()
   }
-  // A drop that fails on the way (here the camera path throws) must not strand the lobby:
-  // no inert overlay, no blur, no half fade, and the galaxy is usable again.
-  for (const failAt of [1, 2, 3]) {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  // A drop that fails on the way (here the camera path throws, at its first, second or third
+  // use) must never strand the player. Failing before the game has started puts them back in a
+  // lobby they can use: the menu shown and clickable, and a world chosen again starts a new
+  // drop. Failing after it has started puts them in play: the menu out of the way, input live.
+  // Neither leaves a blur or a half fade. Which one depends on when the failure lands, so the
+  // check reads that from the session at the moment it throws. Desktop and phone.
+  for (const view of [{ name: 'desktop', viewport: { width: 1280, height: 800 } }, { name: 'phone', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }]) for (const failAt of [1, 2, 3]) {
+    const page = await browser.newPage(view)
     page.on('pageerror', e => { if (!/drop test failure/.test(e.message)) errors.push(`failure: ${e.message}`) })
     await page.goto(`${base}?room=drop-failure-${Date.now()}`, { waitUntil: 'load' }); await ready(page)
-    await page.evaluate(failAt => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400); const s = window.syn3h.shell, real = s.descentPose.bind(s); let calls = 0; s.descentPose = () => { if (++calls === failAt) { window.__dropFailed = true; throw new Error('drop test failure') } const pose = real(); return t => { if (failAt === 3 && t > 0) { window.__dropFailed = true; throw new Error('drop test failure') } pose(t) } } }, failAt)
+    await page.evaluate(failAt => {
+      window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400)
+      const s = window.syn3h.shell, real = s.descentPose.bind(s); let calls = 0
+      const fail = () => { window.__dropFailed = true; window.__startedAtFailure = s.started; throw new Error('drop test failure') }
+      s.descentPose = () => { if (++calls === failAt) fail(); const pose = real(); return t => { if (failAt === 3 && t > 0) fail(); pose(t) } }
+    }, failAt)
     await page.locator('.galaxy-label[data-world="desert"]').dispatchEvent('click')
     await page.waitForFunction(() => window.__dropFailed && !document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 20000 })
-    const after = await page.evaluate(() => ({ dropping: window.syn3h.shell.dropping, inert: document.querySelector('.shell-overlay').inert, opacity: document.querySelector('.shell-overlay').style.opacity, filter: document.getElementById('game').style.filter }))
-    assert.deepEqual(after, { dropping: false, inert: failAt > 1, opacity: '', filter: '' }, 'a failed drop restores the menu or play')
-    assert.equal(await page.evaluate(() => window.syn3h.game.input.suspended), failAt === 1, 'input follows the recovered session state')
+    const after = await page.evaluate(() => ({ started: window.__startedAtFailure, dropping: window.syn3h.shell.dropping, inert: document.querySelector('.shell-overlay').inert, hidden: document.querySelector('.shell-overlay').hidden, opacity: document.querySelector('.shell-overlay').style.opacity, filter: document.getElementById('game').style.filter, suspended: window.syn3h.game.input.suspended }))
+    const label = `${view.name}, failure at use ${failAt} (${after.started ? 'in play' : 'before play'})`
+    console.log(`${label}: ${JSON.stringify(after)}`)
+    assert.deepEqual({ dropping: after.dropping, opacity: after.opacity, filter: after.filter }, { dropping: false, opacity: '', filter: '' }, `${label}: no drop, fade or blur left behind`)
+    if (after.started) {
+      assert.equal(after.inert, true, `${label}: the menu is out of the way`); assert.equal(after.suspended, false, `${label}: the game takes input`)
+    } else {
+      assert.deepEqual({ inert: after.inert, hidden: after.hidden }, { inert: false, hidden: false }, `${label}: the lobby is shown and clickable`)
+      // And usable: choosing a world again starts a new drop (the injected failure is spent).
+      await page.locator('.galaxy-label[data-world="alpine"]').dispatchEvent('click')
+      await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 5000 })
+    }
     await page.close()
   }
   // WebKit at iPad size: the blur pass and the whole drop run there too.

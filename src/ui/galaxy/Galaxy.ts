@@ -1407,7 +1407,9 @@ export class Galaxy {
     if (still !== this.holding) this.wake = 2
     const time = this.clock; this.holding = still
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
-    this.swing(elapsed, !this.drag && this.chosen < 0 && !still && !this.clockHold, wallElapsed)
+    // Not during the opening: it lands on the fresh-load pose (freshPose), the pose a return
+    // from a world eases to, and the drift and the resting tilt take over only once it has.
+    this.swing(elapsed, !this.drag && this.chosen < 0 && !still && !this.clockHold && this.opening === null, wallElapsed)
     const inset = Math.min(0.3, Math.max(0, this.options.topInset?.() ?? 0) / Math.max(1, this.host.clientHeight))
     // The short landscape layout (Shell, SHORT_LANDSCAPE) supplies its own frame.
     const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, FRAME_Y - inset / 2, 1 - inset]
@@ -1611,6 +1613,8 @@ export class Galaxy {
     const state = openingState(at, o.mode, places.length)
     if (state.done) {
       this.opening = null
+      // The lobby's idle time (the resting tilt's delay) counts from here, not from the load.
+      this.handled = performance.now()
       // Let the controls' fade in finish, then drop the attribute.
       this.chromeTimer = setTimeout(() => this.chrome(null), 600)
       return SETTLED
@@ -1761,7 +1765,7 @@ export class Galaxy {
     // Never under reduced motion, never round a chosen world, never while anything else moves.
     this.resting = false
     const idle = (performance.now() - this.handled) / 1000
-    if (!this.reduced.matches && this.chosen < 0 && !this.flight && !held && this.pointers.size === 0 && this.backdrop === 1 && this.swingResting) {
+    if (!this.reduced.matches && this.chosen < 0 && !this.flight && !held && this.pointers.size === 0 && this.backdrop === 1 && this.swingResting && this.opening === null) {
       const home = openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
       if (this.options.still?.()) {
         // Low-end devices: the quick exponential settle, snapping the last step, so they can idle.
