@@ -21,11 +21,11 @@ for (const engine of [chromium, webkit]) {
     assert.ok(await page.evaluate(() => window.syn3h.shell.galaxy.logo.introTime) > before, 'ordinary lobby animates')
     assert.equal(await page.locator('.shell-logo').evaluate(el => getComputedStyle(el).opacity), '0', 'SVG does not draw over the animation')
     await page.screenshot({ path: `tests/ui/artifacts/logo/${engine.name()}.png` })
-    await page.evaluate(() => window.syn3h.shell.showPanel('about'))
-    // Behind a panel the galaxy dims and then holds the logo still (its sway, inert now, is
+    await page.evaluate(() => window.syn3h.shell.showLobbyAbout())
+    // Behind a sheet the galaxy dims and then holds the logo still (its sway, inert now, is
     // how the galaxy says so). Wait for that, not for a clock.
-    await waitForState(page, 'the logo to hold still behind the About panel', () => window.syn3h.shell.galaxy.logo.introTime > 1 && window.syn3h.shell.galaxy.logo.look.sway === 0, undefined, 30)
-    await page.evaluate(() => window.syn3h.shell.showPanel('index'))
+    await waitForState(page, 'the logo to hold still behind the About sheet', () => window.syn3h.shell.galaxy.logo.introTime > 1 && window.syn3h.shell.galaxy.logo.look.sway === 0, undefined, 30)
+    await page.keyboard.press('Escape')
     await page.waitForTimeout(500)
     await page.screenshot({ path: `tests/ui/artifacts/logo/${engine.name()}-settled.png` })
     await page.emulateMedia({ reducedMotion: 'reduce' })

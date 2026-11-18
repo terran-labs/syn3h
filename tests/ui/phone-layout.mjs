@@ -132,7 +132,7 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   const settle = id => page.waitForFunction(id => { const p = document.querySelector('.lobby-panels'); return p.dataset.activePanel === id && p.dataset.busy === 'false' }, id, { timeout: 30000 })
   const fits = async name => {
     const overflow = await page.evaluate(() => {
-      const wide = [...document.querySelectorAll('.lobby-panels > section:not([hidden]) *, .join-view:not([hidden]) *')].filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && (r.left < -1 || r.right > innerWidth + 1) })
+      const wide = [...document.querySelectorAll('.lobby-panels > section:not([hidden]) *, .join-view:not([hidden]) *, dialog.lobby-sheet[open] .lobby-sheet-body *')].filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && (r.left < -1 || r.right > innerWidth + 1) })
       return wide.slice(0, 3).map(el => el.className || el.tagName)
     })
     check(overflow.length === 0, `${view.name} ${name}: wider than the screen: ${overflow.join(', ')}`)
@@ -150,18 +150,17 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   await page.waitForTimeout(3000)
   const starFps = ((await page.evaluate(() => window.syn3h.shell.galaxy?.frames ?? 0)) - f0) / ((Date.now() - s0) / 1000)
   const t0 = Date.now()
-  // The lobby's links are About (and Worlds only while the custom planet is offered, which it
-  // is not: OFFER_CUSTOM_PLANET in Shell.ts). Any of them answers a tap the same way.
-  await page.locator('.galaxy-links [data-goto=about]').tap()
-  await page.waitForFunction(() => { const p = document.querySelector('.lobby-panels'); return p.dataset.busy === 'true' || p.dataset.activePanel === 'about' })
+  // About is an icon above the settings gear and opens its own sheet (LobbySheet).
+  await page.locator('.lobby-gear-dock .lobby-about').tap()
+  await page.locator('dialog.lobby-sheet-about[open] .about-columns').waitFor({ state: 'visible', timeout: 30000 })
   const tapMs = Date.now() - t0
-  await settle('about'); await page.waitForTimeout(5000)
+  await page.waitForTimeout(5000)
   const during = await g()
   // The outcome, not a tuned limit: the wait above fails if the tap is never answered (a dropped
   // tap). Its time is reported, since at 4x CPU throttle it follows the machine's load.
   check(starFps >= 8, `${view.name}: the galaxy fell to ${starFps.toFixed(1)} frames a second`)
   check(during.planetMaps >= 3, `${view.name}: only ${during.planetMaps} planet maps were painted`)
-  await fits('about')
+  await fits('about'); await page.keyboard.press('Escape'); await page.locator('dialog.lobby-sheet-about').waitFor({ state: 'hidden' })
   // (The Worlds panel's re-roll and the Custom planet's lock were checked here; neither can be
   // reached from the lobby while the custom planet is not offered.)
   await page.evaluate(() => window.syn3h.shell.openJoin()); await page.waitForTimeout(600)
