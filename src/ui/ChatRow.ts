@@ -2,7 +2,7 @@
  * The left column's Chat row (hud-column.css): the same row form as the accessories above it,
  * its node on the spine, its key cap (Y, shown only with the cursor free) and its name. It
  * opens chat and shows the unread count through chatLink alone, so it never touches the chat
- * surface's markup (today the floating ChatPanel, soon the right panel's Chat card). The node
+ * surface's markup (the right panel's Chat card, chat/ChatCard.ts). The node
  * is lit while something is unread and hollow otherwise; the count is bright type at the end.
  */
 import { chatLink } from './chat/chatLink'

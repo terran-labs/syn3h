@@ -65,7 +65,7 @@ async function run(device, quality, cases, tag) {
     const frames = async () => page.evaluate(() => new Promise(res => { const t = []; let last = performance.now(); const step = now => { t.push(now - last); last = now; if (t.length < 90) requestAnimationFrame(step); else res(t.sort((a, b) => a - b)[45]) }; requestAnimationFrame(step) }))
     const set = (id, v) => page.evaluate(([id, v]) => window.syn3h.params.set(id, v), [id, v])
     const shot = async (name, mode) => {
-      await set('post.shafts', mode === 'off' ? 0 : 1)
+      await set('post.shafts', mode === 'off' ? 0 : await page.evaluate(() => window.syn3h.params.get('post.shafts').def.default))
       await page.waitForTimeout(2000)
       const ms = await frames(), file = `${out}/${name}-${mode === 'on' ? phase : mode}.png`
       await page.screenshot({ path: file })

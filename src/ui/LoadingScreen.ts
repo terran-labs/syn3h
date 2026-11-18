@@ -14,6 +14,8 @@ export const phaseSteps: Record<string, string> = {
 }
 export interface LoadingDetail { phase?: string; progress?: number; elapsedMs?: number }
 
+/** Keeps the veil up once loading is done, and calls `lift` when it may go. */
+export type VeilHold = (lift: () => void) => void
 /** The progress meter the bootstrap script in index.html puts on `window`. */
 interface BootMeter { set(value: number): void; value(): number; stop(): void }
 const meter = (): BootMeter | undefined => (window as unknown as { __boot?: BootMeter }).__boot
@@ -92,29 +94,38 @@ export class LoadingScreen {
     this.label = text
     this.element.querySelector('.loading-phase')!.textContent = text
   }
-  /** Everything is here. Let the light finish its lap, then lift. */
-  finish(): void {
+  /**
+   * Everything is here. Let the light finish its lap, then lift. `hold`, if given, may keep
+   * the veil up after loading (src/ui/TapToBegin.ts): it is handed the function that lifts it.
+   */
+  finish(hold?: VeilHold): void {
     if (this.done) return
     this.done = true
     meter()?.set(1)
     const started = performance.now()
     const settle = () => {
       const current = meter()
-      if (!current || current.value() > 0.985 || performance.now() - started > 700) this.lift()
+      if (!current || current.value() > 0.985 || performance.now() - started > 700) this.lift(hold)
       else requestAnimationFrame(settle)
     }
     settle()
   }
-  /** Lift the veil. Safe to call more than once. */
-  private lift(): void {
+  /**
+   * Lift the veil. Safe to call more than once. Without a hold (a startup failure, the time
+   * limit) it lifts at once, ending any wait for a tap.
+   */
+  private lift(hold?: VeilHold): void {
     this.done = true
     clearTimeout(this.limit); meter()?.stop()
     const root = document.documentElement
     // A busy phone draws few frames while it loads, so the eased light may not have got
     // round in time. Complete the lap as the mark opens out: it never lifts unfinished.
     root.style.setProperty('--boot-progress', '1')
-    if (root.dataset.boot === 'loading') root.dataset.boot = 'done'
     this.element.hidden = true
+    // 'ready': loading is done and the veil waits for a tap (TapToBegin.ts).
+    const open = () => { if (root.dataset.boot === 'loading' || root.dataset.boot === 'ready') root.dataset.boot = 'done' }
+    if (hold && root.dataset.boot === 'loading') hold(open)
+    else open()
   }
   dispose(): void { this.lift(); this.abort.abort(); this.element.remove() }
 }

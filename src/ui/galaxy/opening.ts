@@ -18,6 +18,14 @@ export const introMode = defineParam({ id: 'lobby.intro', label: 'Lobby opening:
  * lasts as long as the name's fade; everything else has settled by SETTLED_SECONDS.
  */
 export const OPENING_SECONDS = 4.6
+/** Seconds from the opening's first frame to the pop (openingState below): where the score's drop lands when a tap began it. */
+export const POP_SECONDS = 0.3
+/**
+ * When a tap began the opening (src/ui/TapToBegin.ts): the performance.now() at which its sound
+ * is heard. The galaxy starts the opening there, not on whatever frame comes next, so a slow
+ * frame cannot pull the picture and the sound apart.
+ */
+export const openingCue: { at: number | null } = { at: null }
 export const SETTLED_SECONDS = 4.45
 
 export type OpeningMode = 1 | 2

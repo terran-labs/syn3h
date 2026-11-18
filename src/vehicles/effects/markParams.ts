@@ -14,13 +14,22 @@ export const tyreMarkStrength = defineParam({
 /** Share of each side of a mark that fades to nothing; 0.5 is a soft bell with no flat middle. */
 export const tyreMarkSoftness = defineParam({
   id: 'gfx.tyreMarks.softness', label: 'Tyre mark edge softness', group: 'Graphics', scope: 'client',
-  default: 0.3, min: 0.05, max: 0.5, step: 0.01,
+  default: 0.4, min: 0.05, max: 0.5, step: 0.01,
 })
 
 /** Multiplies how long marks take to fade away. */
 export const tyreMarkLife = defineParam({
   id: 'gfx.tyreMarks.life', label: 'Tyre mark lifetime', group: 'Graphics', scope: 'client',
   default: 1, min: 0.1, max: 3, step: 0.05,
+})
+
+/**
+ * Seconds a newly laid stretch of mark takes to ease in to full strength. The head of a
+ * track grows from nothing at the tyre, so new track never appears in steps behind a wheel.
+ */
+export const tyreMarkFadeIn = defineParam({
+  id: 'gfx.tyreMarks.fadeIn', label: 'Tyre mark fade-in (s)', group: 'Graphics', scope: 'client',
+  default: 0.35, min: 0, max: 2, step: 0.05,
 })
 
 /** Metres over which a mark fades in where it starts and out where it ends. */

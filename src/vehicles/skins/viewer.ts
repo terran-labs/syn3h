@@ -4,6 +4,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { Syn3hBuggySkin } from './index'
 import { params } from '../../../shared/params'
 import { vehicleShading } from '../../core/quality'
+import { motorSparkLoad, sparkLevel } from './motorDrive'
 
 async function main() {
   const renderer = new THREE.WebGPURenderer({antialias: true})
@@ -75,7 +76,7 @@ async function main() {
         // Syn3h travel is larger (0.4 m suspension range), so it shows the struts working.
         const travel = k ? .12 : .035
         skin.setWheel(i, new THREE.Vector3(i%2 ? r.x : -r.x, r.y + Math.sin(elapsed*2+i)*travel, i<2 ? -r.z : r.z), i<2 ? Math.sin(elapsed)*.2 : 0, -elapsed*3)
-        skin.setDrive?.(i, effort, regen)
+        skin.setDrive?.(i, effort, regen, regen ? 0 : sparkLevel(effort, motorSparkLoad.value))
       }
       skin.setLights?.(brake)
       skin.setWings(open, Math.sin(elapsed)*.7, Math.cos(elapsed*.7)*.4)

@@ -96,3 +96,31 @@ export function surfaceTone(look: number, kind: SurfaceKind, t: Tone, table: num
   if (!c) { c = tone(groundColour(look, kind), t, [0, 0, 0]); toned.set(k, c) }
   return c
 }
+
+const ratios = new Map<number, RGB>()
+
+/**
+ * A tyre mark's tone relative to the ground it is on, per channel: below 1 darker, above 1
+ * paler (the renderer multiplies the lit ground by it, RibbonBatch). Darkening is eased on
+ * ground that is already dark, down to DARK_KEEP of it on near-black ground, so a mark there
+ * does not read as a black stripe. Cached per planet and surface, so a wheel allocates nothing.
+ */
+export function markRatio(look: number, kind: SurfaceKind, t: Tone): Readonly<RGB> {
+  const k = look * 16 + SURFACE_KINDS.indexOf(kind)
+  let r = ratios.get(k)
+  if (r) return r
+  const ground = groundColour(look, kind), mark = tone(ground, t, [0, 0, 0]), l = luminance(ground)
+  // Linear luminance: 0.02 is very dark soil or obsidian, 0.15 mid soil and meadow.
+  const s = Math.min(1, Math.max(0, (l - 0.02) / 0.13)), keep = DARK_KEEP + (1 - DARK_KEEP) * s * s * (3 - 2 * s)
+  r = [0, 0, 0]
+  for (let i = 0; i < 3; i++) {
+    const q = Math.min(MAX_RATIO, Math.max(0, mark[i] / Math.max(1e-4, ground[i])))
+    r[i] = q < 1 ? 1 - (1 - q) * keep : q
+  }
+  ratios.set(k, r)
+  return r
+}
+/** Share of a mark's darkening kept on near-black ground. */
+export const DARK_KEEP = 0.55
+/** The most a mark can lighten the ground, as a multiple. */
+export const MAX_RATIO = 1.5

@@ -34,6 +34,8 @@ const LOBBY_LIFT = 2.5
  */
 const ARRIVAL_FADE = 3
 const ARRIVAL_SCORE_FADE = 6
+/** One frame: the opening starts on the frame after the veil lifts, so its sound waits that long. */
+const BANG_FRAME = 1 / 60
 /** Match the terrain classifier, including snow and roads within a world. */
 const IMPACT_SURFACE: Record<SurfaceKind, ImpactKind> = {
   dust: 'dust', sand: 'sand', grass: 'soil', mud: 'mud', snow: 'snow', ice: 'ice',
@@ -204,11 +206,39 @@ export class GameAudio implements System {
     // Arriving sound fades in from silence: the whole mix over a few seconds, the score slower.
     const now = context.currentTime, master = this.master!.gain
     master.cancelScheduledValues(now); master.setValueAtTime(0, now)
-    if (!this.paused) master.linearRampToValueAtTime(muted.value ? 0 : masterVolume.value, now + ARRIVAL_FADE)
     // Nothing to download, so the lobby has music from the first gesture.
     this.score!.setActive(true, Math.max(crossfade.value, ARRIVAL_SCORE_FADE))
+    const bang = this.bangPop
+    this.bangPop = undefined
+    if (bang !== undefined && !this.paused) {
+      // Begun by the tap that starts the Big Bang (src/ui/TapToBegin.ts): no fade. The score's
+      // swell starts with the opening's first frame and its drop lands on the pop. Scheduled
+      // early by the output's latency, so what is heard lines up with what is seen.
+      const latency = Math.min(0.1, Math.max(0, (context as { outputLatency?: number }).outputLatency || context.baseLatency || 0))
+      const start = now + Math.max(0.01, BANG_FRAME - latency)
+      master.setValueAtTime(muted.value ? 0 : masterVolume.value, start)
+      this.score!.synth.bang(start, start + bang)
+      this.bangAt = { context: start + latency, page: performance.now() + (start + latency - now) * 1000 }
+    } else if (!this.paused) master.linearRampToValueAtTime(muted.value ? 0 : masterVolume.value, now + ARRIVAL_FADE)
     markSoundStarted()
   }
+  /** Seconds from the tap's opening to the pop, while a Big Bang start is asked for. */
+  private bangPop?: number
+  /** When the Big Bang's sound was scheduled to be heard, for checks: audio clock and page clock. */
+  bangAt?: { context: number; page: number }
+  /**
+   * Start sound for the lobby's Big Bang, from inside the gesture that begins it: the score
+   * arrives with a swell and lands its drop `popSeconds` later, on the opening's pop, instead
+   * of fading in. Resolves once the sound is scheduled, or at once if sound had already
+   * started (then nothing changes). Call it inside the gesture: Safari needs that to resume.
+   */
+  begin(popSeconds: number): Promise<void> {
+    if (this.disposed || this.context) return Promise.resolve()
+    this.bangPop = popSeconds
+    return this.unlock()
+  }
+  /** Forget a Big Bang start that did not happen in time: sound arriving later fades in as usual. */
+  cancelBegin(): void { this.bangPop = undefined }
   /** The mix, in three steps with the page given a turn between them so no frame is held up. */
   private async buildGraph(context: AudioContext): Promise<void> {
     let mark = performance.now()

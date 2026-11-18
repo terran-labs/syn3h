@@ -8,7 +8,7 @@ import {ParticleBatch} from '../../src/vehicles/effects/ParticleBatch'
 import {OPEN_END,RibbonBatch} from '../../src/vehicles/effects/RibbonBatch'
 import {MAX_MARK_ALPHA,dustSprite,markEnvelope,markOpacity,numberOps,tyreMarkAlpha} from '../../src/vehicles/effects/sprites'
 import {DUSTS,TREADS} from '../../src/vehicles/effects/treads'
-import {LOOK_COUNT,groundColour,luminance,surfaceTone} from '../../src/vehicles/effects/groundTone'
+import {LOOK_COUNT,MAX_RATIO,groundColour,luminance,markRatio,surfaceTone} from '../../src/vehicles/effects/groundTone'
 import {tyreMarkStrength} from '../../src/vehicles/effects/markParams'
 import {SURFACE_KINDS,classifySurface} from '../../src/world/terrain/surface'
 
@@ -53,7 +53,7 @@ describe('tyre marks and dust by surface',()=>{
   // The owner (16 November 2026): plain driving on soil, sand and grass left no track at all.
   const strength=tyreMarkStrength.def.default as number
   for(let look=0;look<LOOK_COUNT;look++)for(const kind of ['dust','sand','grass','mud','regolith','snow'] as const){
-   const s=TREADS[kind],alpha=markOpacity(E,s.roll,strength)*markEnvelope(E,.5,5,OPEN_END,0,.3,1.2)
+   const s=TREADS[kind],alpha=markOpacity(E,s.roll,strength)*markEnvelope(E,.5,5,OPEN_END,0,.3,1.2,1)
    expect(alpha,`${look} ${kind}`).toBeGreaterThan(0)
    expect(Math.abs(luminance(surfaceTone(look,kind,s,0))-luminance(groundColour(look,kind))),`${look} ${kind}`).toBeGreaterThan(0)
   }
@@ -64,15 +64,18 @@ describe('tyre marks and dust by surface',()=>{
  })
  it('fades a mark to nothing at both edges, both ends and the end of its life',()=>{
   const soft=.42,fade=1.2
-  for(const u of [0,1])expect(markEnvelope(E,u,5,5,.2,soft,fade)).toBe(0)
-  expect(markEnvelope(E,.5,0,5,.2,soft,fade)).toBe(0)
-  expect(markEnvelope(E,.5,5,0,.2,soft,fade)).toBe(0)
-  expect(markEnvelope(E,.5,5,5,1,soft,fade)).toBe(0)
-  expect(markEnvelope(E,.5,5,5,1.5,soft,fade)).toBe(0)
+  for(const u of [0,1])expect(markEnvelope(E,u,5,5,.2,soft,fade,1)).toBe(0)
+  expect(markEnvelope(E,.5,0,5,.2,soft,fade,1)).toBe(0)
+  expect(markEnvelope(E,.5,5,0,.2,soft,fade,1)).toBe(0)
+  expect(markEnvelope(E,.5,5,5,1,soft,fade,1)).toBe(0)
+  expect(markEnvelope(E,.5,5,5,1.5,soft,fade,1)).toBe(0)
   // ...and it is there in the middle, and an unended mark has no end fade.
-  expect(markEnvelope(E,.5,5,OPEN_END,.05,soft,fade)).toBe(1)
+  expect(markEnvelope(E,.5,5,OPEN_END,.05,soft,fade,1)).toBe(1)
+  // New track eases in: nothing right at the tyre, full once it has settled.
+  expect(markEnvelope(E,.5,5,OPEN_END,0,soft,fade,0)).toBe(0)
+  expect(markEnvelope(E,.5,5,OPEN_END,0,soft,fade,.5)).toBeGreaterThan(0)
   // Older is fainter.
-  expect(markEnvelope(E,.5,5,5,.7,soft,fade)).toBeLessThan(markEnvelope(E,.5,5,5,.3,soft,fade))
+  expect(markEnvelope(E,.5,5,5,.7,soft,fade,1)).toBeLessThan(markEnvelope(E,.5,5,5,.3,soft,fade,1))
  })
  it('bounds how much a mark can cover, at any strength',()=>{
   const most=Math.max(...SURFACE_KINDS.map(k=>TREADS[k].slip))*1.3
@@ -94,6 +97,28 @@ describe('tyre marks and dust by surface',()=>{
   r.clock.value=4;r.expire()
   expect(r.used).toBe(0);expect(r.mesh.geometry.drawRange.count).toBe(0)
   r.dispose()
+ })
+ it('stretches a wheel\'s live head quad in place, so new track grows instead of popping in',()=>{
+  // The flashing behind the wheels (17 November 2026): track arrived a whole segment at a time.
+  const r=new RibbonBatch(4,tyreMarkAlpha,false,1.2),side=new T.Vector3(1,0,0),c=new T.Color()
+  const head=r.mark(new T.Vector3(),new T.Vector3(0,0,.2),side,.5,10,.1,.1,c,c,0,0,.2)
+  r.clock.value=.1
+  const again=r.mark(new T.Vector3(),new T.Vector3(0,0,.5),side,.5,10,.1,.1,c,c,0,0,.5,0,head)
+  expect(again).toBe(head);expect(r.used).toBe(1)
+  const p=r.mesh.geometry.attributes.position as T.BufferAttribute,age=r.mesh.geometry.attributes.fxAge as T.BufferAttribute
+  expect(p.getZ(2)).toBeCloseTo(.5)
+  // The tyre end is laid now, the far end when the head began.
+  expect([age.getX(0),age.getX(2)]).toEqual([0,.1].map(x=>Math.fround(x)))
+  r.dispose()
+ })
+ it('only shades the ground a mark is on, darker or paler within bounds, and less on dark ground',()=>{
+  for(let look=0;look<LOOK_COUNT;look++)for(const kind of SURFACE_KINDS){
+   const r=markRatio(look,kind,TREADS[kind])
+   for(const n of r)expect(n>=0&&n<=MAX_RATIO,`${look} ${kind}`).toBe(true)
+  }
+  // Obsidian's near-black ground keeps less of the darkening than the same surface elsewhere.
+  const dark=(look:number)=>1-luminance(markRatio(look,'dust',TREADS.dust).map((x,i)=>x*groundColour(look,'dust')[i]))/luminance(groundColour(look,'dust'))
+  expect(dark(5)).toBeLessThan(dark(1))
  })
  it('fades the end of a mark where it ended, and not a reused quad',()=>{
   const r=new RibbonBatch(2,tyreMarkAlpha,false,1.2),side=new T.Vector3(1,0,0),c=new T.Color()

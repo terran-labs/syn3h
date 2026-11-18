@@ -1,5 +1,5 @@
 /* The HUD's left column: one instrument, drawn by light. From the top: the gear selector, the
-   driven vehicle's accessories (AccessoryControls.ts), chat (chat/ChatPanel.ts) and the minimap.
+   driven vehicle's accessories (AccessoryControls.ts), the Chat row (ChatRow.ts) and the minimap.
    All four share the minimap's box: one left edge and one width. Inside it they share one
    content line, the minimap ring's left edge (24 px in), and one spine, the gear selector's
    hairline (4 px in), which runs down through the accessories, where a node on it lights
@@ -44,7 +44,7 @@
 }
 /* The column's look, from the shared tokens. Declared on the column's own parts so they read
    the tokens as set there. */
-.syn3h-shell.exploration-ui :is(.gear-selector, .hud-accessories, .hud-chat, .chat-panel .chat-strip, .shell-minimap) {
+.syn3h-shell.exploration-ui :is(.gear-selector, .hud-accessories, .hud-chat, .shell-minimap) {
   /* One shadow under all text, one under all lines. */
   --col-text-under: var(--hud-under);
   --col-line-under: var(--hud-line-under);
@@ -188,28 +188,6 @@
   .hud-accessories .is-moving .acc-pip { animation: none; }
 }
 
-/* ---------- Chat's floating strip and log, until the right panel's Chat card replaces them ---------- */
-/* Interim (ux/chat-card deletes ChatPanel and these rules): the panel's own button gives way
-   to the Chat row; its strip and open log fly out to the row's right, top-aligned with it, and
-   grow down beside the minimap. */
-.syn3h-shell.exploration-ui:not(.has-touch):has(.chat-panel.is-open) .spawn-help { visibility: hidden; }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel {
-  left: var(--col-left); right: auto; bottom: auto; top: calc(100dvh - var(--col-chat-bottom) - var(--col-row));
-  width: auto; display: grid; grid-template-columns: var(--col-w) var(--chat-fly, min(340px, calc(50vw - 300px)));
-  column-gap: 12px; align-items: start;
-}
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-toggle { display: none; }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-strip { grid-column: 2; grid-row: 1; gap: 4px; padding-top: 6px; }
-:root .syn3h-shell.exploration-ui .chat-panel .chat-strip .chat-line { padding: 0; border-radius: 0; background: none; text-shadow: var(--col-text-under, var(--hud-under)); }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-sheet {
-  grid-column: 2; grid-row: 1; max-height: calc(var(--col-chat-bottom) + var(--col-row) - var(--col-bottom)); overflow: hidden;
-}
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-log { max-height: calc(var(--col-chat-bottom) + var(--col-row) - var(--col-bottom) - 96px); }
-/* The card is only as tall as the column's foot allows, so the People list takes the log's
-   place while it is open rather than squeezing both (its mute buttons ended up under Send). */
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-sheet:has(.chat-people:not([hidden])) .chat-log { display: none; }
-:root .syn3h-shell.exploration-ui:not(.has-touch) .chat-panel .chat-people { flex: 1 1 auto; min-height: 0; max-height: none; }
-
 /* ---------- Minimap: the foot of the column ---------- */
 /* Its ring defines the column's one stroke (--col-stroke): a 1 px line with a tight halo over a
    barely-there dark edge, hairline ticks at east, south and west, and the N as a small glyph. */
@@ -220,6 +198,8 @@
     linear-gradient(var(--col-tick), var(--col-tick)) right center / 5px 1px no-repeat,
     linear-gradient(var(--col-tick), var(--col-tick)) center bottom / 1px 5px no-repeat,
     linear-gradient(var(--col-tick), var(--col-tick)) left center / 5px 1px no-repeat;
+  /* The ticks mark east, south and west, so they turn with a heading-up map, as the N does. */
+  transform: rotate(var(--map-turn, 0rad));
 }
 /* One slow shimmer travels round the ring; none under reduced motion. Composited, no paint. */
 .syn3h-shell.exploration-ui .shell-minimap::before {

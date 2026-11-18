@@ -50,6 +50,10 @@ export function declareAudioSession(playing: boolean): void {
 }
 
 let shared: AudioContext | undefined
+/** performance.now() when the shared context was made: its state may change in its first moments. */
+let sharedAt = 0
+/** How long ago the page's AudioContext was made, in milliseconds (Infinity if it has not been). */
+export const audioContextAge = (): number => shared ? performance.now() - sharedAt : Infinity
 let gestured = false
 let claimed = false
 const listeners = new Set<() => void>()
@@ -57,7 +61,7 @@ const listeners = new Set<() => void>()
 /** The page's AudioContext, made on first use. Undefined where Web Audio is unavailable. */
 export function audioContext(): AudioContext | undefined {
   if (!shared && typeof AudioContext !== 'undefined') {
-    try { shared = new AudioContext(); shared.addEventListener('statechange', () => { if (started) announce() }) } catch { /* no audio here */ }
+    try { shared = new AudioContext(); sharedAt = performance.now(); shared.addEventListener('statechange', () => { if (started) announce() }) } catch { /* no audio here */ }
   }
   return shared
 }

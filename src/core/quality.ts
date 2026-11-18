@@ -107,7 +107,8 @@ const PRESET_TABLE: Readonly<Record<string, PresetRow>> = {
   'light.bounce': [0, D, D, D, D, D],
   'light.skyReflection': [0, D, D, D, D, D],
   'post.on': [false, true, true, true, true, true],
-  'post.shafts': [0, 0, D, D, D, D],
+  // Every level has sun rays: Minimal and Low draw the sky's cheap form (src/fx/post/sunburst.ts).
+  'post.shafts': [D, D, D, D, D, D],
   'post.bloom': [0, 0, 0, D, D, D],
   'post.heat': [0, 0, 0, D, D, D],
   'post.temporal': [false, false, false, false, true, true],

@@ -53,7 +53,7 @@ export const chatShow = defineParam({ id: 'chat.show', label: 'Show chat', group
  * speaker's vehicle label). Off: they go only into the chat log, and the chat button counts
  * them. Remembered per device; off by default on phones and tablets (src/ui/chat/overlayPreference.ts).
  */
-export const chatOverlay = defineParam({ id: 'chat.overlay', label: 'Show new messages over the game', group: 'Chat', scope: 'client', default: true })
+export const chatOverlay = defineParam({ id: 'chat.overlay', label: 'Show new chat over the game', group: 'Chat', scope: 'client', default: true })
 /** Hide lines from bots on this screen only. */
 export const chatHideBots = defineParam({ id: 'chat.hideBots', label: 'Hide bot chatter', group: 'Chat', scope: 'client', default: false })
 
