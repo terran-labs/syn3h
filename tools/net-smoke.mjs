@@ -603,6 +603,11 @@ try {
     check('audio gets the other player and the bot', audible[0] === 2 && audible[1] === 2, { audible })
     const judgedBefore = await a.evaluate(({shooter,victim}) => { window.__shotEvidence?.begin('bot',shooter,victim); return window.syn3hNet.stats.hitsJudged }, {shooter:idB,victim:BOT})
     for (let i = 0; i < 6; i++) {
+      // Since v26.11.1708 the host's pacer or the quality governor can send a bot away when frames
+      // look costly (a loaded test machine does). Wait for B to have it before each shot, and say
+      // so plainly if it is gone, rather than reading a remote that is not there.
+      const present = await b.waitForFunction((id) => !!window.syn3hNet.remotes.get(id)?.vehicle, BOT, { timeout: 5000 }).then(() => true, () => false)
+      if (!present) throw new Error('the bot left (pacer or relief) before B could tag it; rerun')
       await b.evaluate((id) => {
         const n = window.syn3hNet
         window.__shotEvidence?.begin('bot',n.id,id)
