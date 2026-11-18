@@ -39,13 +39,18 @@ for (const mode of modes) {
     assert.equal(await page.locator('.shell-hud').isVisible(), false)
     assert.equal(await page.locator('.hud-navigation button').count(), 1)
     const map = await page.locator('.shell-minimap').boundingBox()
-    // The map lives in the lower left at every size (owner, 17 Nov; the HUD column's own checks
-    // and phone-layout cover its exact placement).
+    // The minimap keeps the lower left corner on every screen, phones and tablets as on desktop
+    // (the owner, 17 November 2026; hud-column.css, exploration.css): on screen, in the corner.
     const view = page.viewportSize()
-    assert.ok(map.x < 25 && map.y > view.height * .2, `map lives in lower left ${JSON.stringify(map)}`)
+    assert.ok(map.x >= 0 && map.x < 25 && map.y + map.height <= view.height && view.height - (map.y + map.height) < 25, `${mode}: map in the lower left corner ${JSON.stringify(map)}`)
     if (touch) {
-      // The stick floats under the thumb, so nothing sits there until a drag (it may start on the map).
+      // The stick floats under the thumb, so nothing sits there until a drag, and it may land on
+      // the map (the map takes no touches). The first-run drive hint sits just above the map,
+      // never over it.
       assert.equal(await page.locator('.touch-stick').evaluate(el => getComputedStyle(el).visibility), 'hidden', 'no permanent joystick')
+      // Measured even while the spawn card hides it for a few seconds.
+      const hint = await page.locator('.touch-stick-hint').evaluate(el => { const r = el.getBoundingClientRect(); return r.height ? { bottom: r.bottom, left: r.left } : null })
+      assert.ok(hint && hint.bottom <= map.y, `${mode}: the drive hint sits above the minimap ${JSON.stringify({ hint, map })}`)
     }
     assert.match(await page.locator('.shell-minimap canvas:not(.shell-minimap-marks)').evaluate(el => getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage), /radial-gradient/)
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-drive.png` })

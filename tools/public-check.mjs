@@ -19,6 +19,7 @@
  * page is the machine, not the deploy: PUBLIC CHECK BROWSER CRASHED, exit 3.
  */
 import { chromium } from 'playwright-core'
+import { browserEnv } from './lib/safe-env.mjs'
 import { isBrowserCrash, isTransportConsoleError } from './lib/smoke-retry.mjs'
 
 const base = process.argv[2]
@@ -33,7 +34,8 @@ const until = async (page, fn, arg, ms) => page.waitForFunction(fn, arg, { timeo
 
 // Same page setup as the smoke: one browser each, Low pinned, 960x540.
 async function open(name) {
-  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'] })
+  // No credentials in a browser's environment: a crash dump would record them (lib/safe-env.mjs).
+  const browser = await chromium.launch({ channel: 'chrome', headless: true, env: browserEnv(), args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'] })
   browsers.push(browser)
   const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
   await ctx.addInitScript(() => localStorage.setItem('syn3h.quality.v2', JSON.stringify({ level: 1, auto: false, pinned: true, overrides: {} })))
