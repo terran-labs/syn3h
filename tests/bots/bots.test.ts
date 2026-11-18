@@ -9,6 +9,7 @@ import type { Terrain } from '../../src/world/Terrain'
 import { BotBrain } from '../../src/bots/BotBrain'
 import { BotManager } from '../../src/bots/BotManager'
 import { RaceBridge } from '../../src/net/races'
+import { NetClient } from '../../src/net'
 import { params } from '../../shared/params'
 import '../../src/bots/params'
 import { generateName } from '../../src/ui/data/names'
@@ -279,5 +280,57 @@ describe('the race director behind the race bridge', () => {
     r.role.host = true; r.frame(); expect(r.directed()).toBe(true)
     r.role.host = false; r.frame(); expect(r.directed()).toBe(false)
     r.role.host = true; r.frame(); expect(r.directed()).toBe(true)
+  })
+})
+
+describe('the host\'s bots through a dropped connection', () => {
+  /**
+   * A host whose socket dropped used to stop being host at once: every bot was cleared and,
+   * on reconnect, rebuilt with new ids and names. Players saw every bot leave and new ones join
+   * each time (v26.11.1707 and 1708 on the live site). The real NetClient role logic and the
+   * real BotManager, with the connection and the room's welcome reduced to their state.
+   */
+  function hostWithBots(count: number) {
+    const { game } = harness(), player = stationaryTarget(game)
+    const manager = new BotManager(game, terrain, player)
+    manager.remote = true // as NetClient's constructor leaves it
+    const net = Object.create(NetClient.prototype) as Record<string, any>
+    Object.assign(net, {
+      bots: manager, id: 1, game: { host: 1 }, welcomed: true, conn: { state: 'open' },
+      wasHost: false, localAfterFull: false, hostThroughDrop: false,
+      botGear: new Map(), botKinds: new Map(), remotes: new Map(), uiDirty: false,
+      clock: { reset() {} }, raceBridge: { disconnect() {} }, resetGear() {}, event() {}, pingsSent: 0,
+    })
+    const previous = params.get('bots.count')!.value
+    params.set('bots.count', count)
+    net.updateBotRole(); manager.update()
+    const ids = () => manager.vehicles.map(v => v.id).join(',')
+    const drop = () => { net.conn.state = 'closed'; net.onDisconnect(true); net.updateBotRole(); manager.update() }
+    const welcome = (host: number) => { net.conn.state = 'open'; net.welcomed = true; net.hostThroughDrop = false; net.game = { host }; net.updateBotRole(); manager.update() }
+    return { manager, ids, drop, welcome, restore: () => params.set('bots.count', previous) }
+  }
+
+  it('keeps the same bots, ids and names, through a drop and a reconnect as host', () => {
+    const h = hostWithBots(3)
+    try {
+      const before = h.ids(), names = h.manager.vehicles.map(v => v.name).join(',')
+      expect(h.manager.vehicles).toHaveLength(3)
+      h.drop()
+      expect(h.ids()).toBe(before)
+      h.welcome(1)
+      expect(h.ids()).toBe(before)
+      expect(h.manager.vehicles.map(v => v.name).join(',')).toBe(names)
+      expect(h.manager.remote).toBe(false)
+    } finally { h.restore() }
+  })
+
+  it('clears them when the room handed the host to someone else meanwhile', () => {
+    const h = hostWithBots(3)
+    try {
+      h.drop()
+      h.welcome(2)
+      expect(h.manager.remote).toBe(true)
+      expect(h.manager.vehicles).toHaveLength(0)
+    } finally { h.restore() }
   })
 })

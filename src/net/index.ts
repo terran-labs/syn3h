@@ -1098,7 +1098,12 @@ export class NetClient implements System {
 
   /** Become or stop being the bot simulator when hosting changes hands. */
   private updateBotRole(): void {
-    const host = this.isHost || this.localAfterFull
+    // A host whose socket dropped stays host until the room's welcome says otherwise: its bots
+    // keep driving, with the same ids and names, instead of being cleared and rebuilt on every
+    // short drop (which players saw as every bot leaving and new ones joining). If the room
+    // handed the host to someone else meanwhile, the welcome makes us a guest and only then are
+    // our bots cleared; the room's hold and handover rules stay the authority.
+    const host = this.isHost || this.localAfterFull || this.hostThroughDrop
     if (host === this.wasHost) return
     this.wasHost = host
     if (!host) {
@@ -1531,6 +1536,8 @@ export class NetClient implements System {
         break
       case 'welcome': {
         this.localAfterFull = false
+        // From here the room says who hosts (see updateBotRole).
+        this.hostThroughDrop = false
         this.joinStatus = ''
         this.id = msg.id
         this.slot = msg.slot
@@ -1685,7 +1692,13 @@ export class NetClient implements System {
     this.send({ type: 'param', id, value })
   }
 
+  /** True from losing the socket as host, while retrying, until the next welcome. */
+  private hostThroughDrop = false
+
   private onDisconnect(retrying = true): void {
+    this.hostThroughDrop = retrying && this.wasHost
+    // A reconnect is a new connection: our bots' kinds are announced to the room afresh.
+    this.botKinds.clear()
     // The room drops our cord and carry when it loses us; drop everything here too, since a
     // reconnect may land in a world that has changed meanwhile. The connection's own state
     // goes first, and each cleanup step runs even if an earlier one throws (a renderer that
