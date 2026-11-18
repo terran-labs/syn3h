@@ -7,6 +7,8 @@ for(const mode of ['desktop','phone']){
  const browser=await(mode==='desktop'?chromium.launch({channel:'chrome',headless:true}):webkit.launch())
  try{
   const page=await browser.newPage(mode==='desktop'?{viewport:{width:1440,height:1000}}:devices['iPhone 14'])
+  // Images: none in ordinary play (AGENTS.md); the Welcome pictures only once About is opened.
+  const images=[];page.on('request',r=>{if(r.resourceType()==='image')images.push(new URL(r.url()).pathname)})
   const errors=[],sockets=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});page.on('websocket',ws=>sockets.push(ws.url()))
   const room=`ux-discover-${mode}-${Date.now()}`
   await page.goto(`${base}?room=${room}`)
@@ -19,6 +21,16 @@ for(const mode of ['desktop','phone']){
   assert.equal(await page.locator('.galaxy-links button').count(),0,'the lobby has no bottom buttons')
   for(const name of ['Settings','About Syn3h',/^Updates/]) assert.equal(await page.getByRole('button',{name,exact:typeof name==='string'}).count(),1,`the ${name} icon is there`)
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-lobby.png`})
+  // About is the Welcome guide: its sections are there, and its pictures load only now.
+  assert.deepEqual(images,[],'no image request in the lobby before About is opened')
+  await page.getByRole('button',{name:'About Syn3h',exact:true}).click()
+  const welcome=page.locator('dialog.lobby-sheet .welcome-body')
+  await welcome.waitFor({state:'visible'})
+  for(const heading of ['Start in three moves','Controls','Settings worth knowing'])assert.equal(await welcome.getByRole('heading',{name:heading}).count(),1,`Welcome has ${heading}`)
+  await page.waitForFunction(()=>[...document.querySelectorAll('dialog.lobby-sheet .welcome-shot')].some(f=>f.classList.contains('is-loaded')),null,{timeout:30000})
+  assert.ok(images.length>0&&images.every(url=>/^\/welcome\/[\w-]+-(640|1280)\.webp$/.test(url)),`only Welcome pictures load after opening ${JSON.stringify(images)}`)
+  await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-welcome.png`})
+  await page.keyboard.press('Escape');await welcome.waitFor({state:'hidden'})
   // The lobby lists the planet recipes and nothing else: "Shape your own" is hidden for now.
   const lobbyWorlds=await page.evaluate(()=>({labels:[...document.querySelectorAll('.galaxy-label')].map(chip=>chip.dataset.world),forming:syn3h.shell.galaxy.options.worlds.filter(world=>world.forming).length,text:document.querySelector('.galaxy-labels').textContent}))
   assert.ok(lobbyWorlds.labels.length>0&&!lobbyWorlds.labels.includes('custom')&&lobbyWorlds.forming===0,'the lobby lists only the planet recipes')

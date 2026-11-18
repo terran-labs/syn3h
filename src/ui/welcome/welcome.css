@@ -1,0 +1,112 @@
+/*
+ * Welcome (welcome.ts). Content only: the host owns the panel, its padding and its scroll.
+ * Colours come from the neutral HUD tokens so the host can retint the sheet; the pictures are
+ * the only fixed colours. Layout follows the body's own width (300 to 880 px) through a
+ * container query, never the viewport. No row is transformed here: the host may bend
+ * `.welcome-body > *` along its curve.
+ */
+.welcome-body {
+  container: welcome / inline-size;
+  --w-ink: var(--s3-ink, #f4f4f4); --w-dim: var(--s3-dim, #c4c4c4); --w-soft: var(--s3-soft, #a2a2a2);
+  --w-line: var(--s3-line, rgb(225 225 225 / .28)); --w-quiet: var(--s3-line-quiet, rgb(225 225 225 / .15));
+  color: var(--w-dim); font: 400 15.5px/1.6 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .005em;
+  text-align: left; overflow-wrap: break-word;
+}
+.welcome-body > * { margin: 0 0 16px; max-width: 100%; }
+.welcome-body > :last-child { margin-bottom: 0; }
+.welcome-body h3 {
+  margin: 40px 0 14px; padding-top: 18px; border-top: 1px solid var(--w-quiet);
+  font: 600 14px/1.2 'Barlow', sans-serif; letter-spacing: .24em; text-transform: uppercase; color: var(--w-ink);
+}
+.welcome-body p { max-width: 62ch; }
+.welcome-body strong { color: var(--w-ink); font-weight: 500; }
+.welcome-body em { font-style: normal; color: var(--w-ink); }
+/* The hosts' older About rules size every p (lobby-sheet.css, theme-halo.css); these two differ on purpose. */
+.syn3h-shell .welcome-body.welcome-body p.welcome-lede, .welcome-body .welcome-lede { margin-bottom: 22px; font: 300 clamp(19px, 2.6cqi + 11px, 26px)/1.35 'Barlow', sans-serif; letter-spacing: .005em; color: var(--w-ink); max-width: 30ch; }
+.syn3h-shell .welcome-body.welcome-body p.welcome-note, .welcome-body .welcome-note { color: var(--w-soft); font-size: 13.5px; }
+.welcome-body .welcome-kicker { margin: 0 0 14px; font: 500 11.5px/1.2 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; color: var(--w-soft); }
+
+/* Key caps: the left column's plain bright glyphs (gear.css), a hairline pill around the key. */
+.welcome-body kbd {
+  display: inline-block; min-width: 1.9em; margin: 0 .12em; padding: .18em .55em .1em; box-sizing: border-box;
+  font: 500 11.5px/1.25 'Barlow', sans-serif; letter-spacing: .12em; text-transform: uppercase; text-align: center; vertical-align: .08em;
+  color: var(--w-ink); border: 1px solid var(--w-line); border-radius: 999px; background: none; white-space: nowrap;
+}
+.welcome-body .welcome-pill { display: inline-block; padding: .25em .8em .15em; font: 500 11px/1.2 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--w-ink); border: 1px solid var(--w-line); border-radius: 999px; }
+
+/* Pictures: 16:9, rounded, the average colour until the picture arrives. */
+.welcome-shot { margin: 8px 0 22px; }
+.welcome-shot img {
+  display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 12px; object-fit: cover;
+  background: var(--shot-colour, rgb(255 255 255 / .06)); opacity: .001; transition: opacity .5s ease;
+}
+.welcome-shot.is-loaded img { opacity: 1; }
+.welcome-shot.is-failed img { opacity: 1; }
+.welcome-shot figcaption { margin-top: 8px; font-size: 13px; line-height: 1.4; color: var(--w-soft); }
+.welcome-hero { margin-top: 4px; }
+.welcome-pair { display: grid; gap: 16px; }
+.welcome-pair .welcome-shot { margin: 0; }
+@container welcome (min-width: 520px) { .welcome-pair { grid-template-columns: 1fr 1fr; } }
+@media (prefers-reduced-motion: reduce) { .welcome-shot img { transition: none; } }
+
+/* Lists */
+.welcome-body ol, .welcome-body ul { padding: 0; list-style: none; }
+.welcome-steps { counter-reset: step; display: grid; gap: 12px; }
+.welcome-steps li { max-width: 68ch; counter-increment: step; position: relative; padding-left: 40px; min-height: 26px; }
+.welcome-steps li::before {
+  content: counter(step); position: absolute; left: 0; top: 0; width: 26px; height: 26px; box-sizing: border-box;
+  display: grid; place-items: center; border: 1px solid var(--w-line); border-radius: 50%;
+  font: 500 12px/1 'Barlow', sans-serif; color: var(--w-ink);
+}
+.welcome-cards { display: grid; gap: 10px; }
+@container welcome (min-width: 560px) { .welcome-cards { grid-template-columns: repeat(3, 1fr); } }
+.welcome-cards li, .welcome-modes > div { padding: 14px 16px; border: 1px solid var(--w-quiet); border-radius: 12px; }
+.welcome-cards strong, .welcome-modes dt { display: block; margin-bottom: 4px; font: 500 12px/1.3 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; color: var(--w-ink); }
+.welcome-cards span { display: block; font-size: 14.5px; line-height: 1.5; }
+.welcome-modes { margin: 0 0 12px; display: grid; gap: 10px; }
+@container welcome (min-width: 560px) { .welcome-modes { grid-template-columns: repeat(3, 1fr); } }
+.welcome-modes dd { margin: 0; font-size: 14.5px; line-height: 1.5; }
+
+.welcome-gear { display: grid; gap: 4px; }
+@container welcome (min-width: 560px) { .welcome-gear { grid-template-columns: 1fr 1fr; column-gap: 20px; } }
+.welcome-gear li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--w-quiet); }
+.welcome-gear svg { width: 26px; height: 26px; margin-top: 1px; fill: none; stroke: var(--w-ink); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.welcome-gear strong { display: block; font-weight: 500; }
+.welcome-gear span { display: block; font-size: 14px; line-height: 1.45; }
+
+/* Controls: keyboard and touch side by side when there is room. */
+.welcome-controls { display: grid; gap: 28px; }
+@container welcome (min-width: 620px) { .welcome-controls { grid-template-columns: 1.15fr 1fr; gap: 32px; } }
+.welcome-drive { display: flex; align-items: center; gap: 18px; margin: 0 0 14px; }
+.syn3h-shell .welcome-body.welcome-body .welcome-drive p { margin: 0; font-size: 14px; line-height: 1.4; }
+.welcome-wasd { display: grid; grid-template-columns: repeat(3, 34px); gap: 5px; flex: none; }
+.welcome-wasd kbd { display: grid; place-items: center; height: 30px; margin: 0; padding: 0; min-width: 0; border-radius: 9px; font-size: 12.5px; }
+.welcome-keys { display: grid; gap: 2px; }
+.welcome-keys li { display: grid; grid-template-columns: minmax(96px, auto) 1fr; gap: 12px; align-items: center; padding: 5px 0; font-size: 14px; line-height: 1.4; border-bottom: 1px solid var(--w-quiet); }
+.welcome-keys li > span { white-space: nowrap; color: var(--w-ink); font-size: 13px; }
+.welcome-keys li > span i { font-style: normal; color: var(--w-soft); font-size: 11px; margin: 0 2px; }
+.welcome-keys kbd:first-child { margin-left: 0; }
+
+.welcome-touch { display: block; width: 100%; max-width: 360px; height: auto; margin: 0 0 14px; }
+.welcome-touch .wt-frame { fill: none; stroke: var(--w-line); stroke-width: 1.2; }
+.welcome-touch .wt-stick { fill: none; stroke: var(--w-line); stroke-dasharray: 3 4; }
+.welcome-touch .wt-knob { fill: none; stroke: var(--w-ink); stroke-width: 1.2; }
+.welcome-touch .wt-buttons circle { fill: none; stroke: var(--w-line); stroke-width: 1.1; }
+.welcome-touch .wt-buttons .wt-tag { stroke: var(--w-ink); }
+.welcome-touch .wt-tab { fill: none; stroke: var(--w-line); }
+.welcome-touch text { fill: var(--w-dim); font: 500 7px 'Barlow', sans-serif; letter-spacing: .1em; text-anchor: middle; }
+.welcome-touch .wt-labels text { font-size: 6px; fill: var(--w-ink); dominant-baseline: middle; }
+.welcome-touch .wt-note { font-size: 8.5px; fill: var(--w-soft); letter-spacing: .12em; text-transform: uppercase; }
+
+.welcome-settings { display: grid; gap: 10px; }
+.welcome-settings li { padding-left: 16px; position: relative; }
+.welcome-settings li::before { content: ""; position: absolute; left: 0; top: .72em; width: 6px; height: 1px; background: var(--w-line); }
+
+/* The outside links and the licences, carried over from About. */
+.welcome-body .about-links { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--w-quiet); }
+.welcome-body .about-links a { color: var(--w-ink); font-size: 14px; text-decoration: none; border-bottom: 1px solid var(--w-line); }
+.welcome-body .about-links a:hover, .welcome-body .about-links a:focus-visible { border-bottom-color: var(--w-ink); }
+.welcome-body .shell-credits { font-size: 13px; color: var(--w-soft); }
+.welcome-body .shell-credits summary { cursor: pointer; color: var(--w-dim); min-height: 44px; display: flex; align-items: center; }
+.welcome-body .shell-credits a { color: var(--w-dim); }
+.welcome-body .shell-credits ul { list-style: disc; padding-left: 18px; }

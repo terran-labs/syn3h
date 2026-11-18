@@ -25,7 +25,7 @@ export function createFrozenResourceResolver(entryHref: string) {
   return Object.freeze({
     version: selected,
     resolve(resource: string): string {
-      // Only the two production static-resource families belong to this policy.
+      // Only these production static-resource families belong to this policy.
       // External, data/blob, protocol-relative and network endpoint URLs pass through.
       if (!resource.startsWith('/') || resource.startsWith('//')) return resource
       const existing = pathVersion(resource.split(/[?#]/)[0]!)
@@ -33,7 +33,8 @@ export function createFrozenResourceResolver(entryHref: string) {
         if (selected !== null && existing !== selected) throw new Error('Conflicting frozen resource version')
         return resource
       }
-      if (!/^\/(?:models|brand\/licenses)\//.test(resource)) return resource
+      // The Welcome pictures too, so a pinned build shows its own release's pictures.
+      if (!/^\/(?:models|brand\/licenses|welcome)\//.test(resource)) return resource
       if (selected === null) return resource
       const parsed = new URL(resource, entry.origin)
       if (parsed.pathname !== resource.split(/[?#]/)[0]) throw new Error('Invalid frozen resource path')
