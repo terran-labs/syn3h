@@ -75,7 +75,7 @@ for(const mode of ['desktop','phone','short-phone']){
   await icon.click()
   const about=page.locator('.lobby-sheet-about')
   await about.locator('.welcome-body > h3').first().waitFor({state:'visible'})
-  assert.equal(await about.locator('h2').first().innerText(),'Welcome','the sheet is titled Welcome')
+  assert.equal((await about.locator('h2').first().textContent()).trim(),'Welcome','the sheet is titled Welcome')
   // The panel's own motion (the buttons beside it keep their slow gear turn).
   await page.waitForFunction(()=>!document.querySelector('.lobby-sheet-about .lobby-sheet-panel').getAnimations({subtree:true}).some(a=>a.playState==='running'))
   const geometry=await about.locator('.lobby-sheet-panel').evaluate(el=>{const r=el.getBoundingClientRect();return {rect:{x:r.x,y:r.y,width:r.width,right:r.right,bottom:r.bottom},viewportWidth:innerWidth,viewportHeight:innerHeight,scrollWidth:document.documentElement.scrollWidth}})
