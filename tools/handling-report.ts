@@ -24,6 +24,8 @@ import * as buggy from '../tests/vehicles/syn3hScenarios'
 import * as jet from '../tests/vehicles2/jetScenarios'
 import * as liquid from '../tests/vehicles/liquidScenarios'
 import * as zorb from '../tests/vehicles2/zorbSkipScenarios'
+import { harness } from '../tests/vehicles2/harness'
+import { Syn3hBuggy } from '../src/vehicles/Syn3hBuggy'
 
 /** One measured figure. `null` means the event never happened in the scenario's window. */
 interface Figure { label: string; unit: string; value: number | null }
@@ -347,9 +349,21 @@ async function zorbLiquids(): Promise<Figure[]> {
         fig(`${what}: deepest the ball's base went`, 'm', s.deepest),
       )
     }
-    const { trace } = await launch(l, 30, 8, 20, (r) => { r.v.zorbView = new THREE.Quaternion(); r.v.input.y = 1 })
-    out.push(fig(`${l}: speed after 20 s rolling forward, from 30 m/s`, 'm/s', Math.max(...trace.slice(-60).map((t) => t.speed))))
+    const { trace } = await launch(l, 0, 0, 20, (r) => { r.v.zorbView = new THREE.Quaternion(); r.v.input.y = 1 })
+    out.push(fig(`${l}: top speed in 20 s rolling forward from rest (uncapped)`, 'm/s', Math.max(...trace.map((t) => t.speed))))
   }
+  out.push(fig('flat land: top speed in 20 s rolling forward from rest (uncapped)', 'm/s', await at(() => {
+    const h = harness()
+    const v = new Syn3hBuggy(h.game, h.terrain, new THREE.Vector3(0, 2, 0))
+    try {
+      v.isLocal = false; v.input.zorb = true
+      h.step(v, 600)
+      v.zorbView = new THREE.Quaternion(); v.input.y = 1
+      let top = 0
+      for (let i = 0; i < 20 / FIXED_DT; i++) { h.step(v); const l = v.body.linvel(); top = Math.max(top, Math.hypot(l.x, l.z)) }
+      return top
+    } finally { v.dispose(); h.world.free() }
+  })))
   return out
 }
 

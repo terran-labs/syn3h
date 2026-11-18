@@ -189,6 +189,33 @@ interface ZorbTerrain {
 /** Liquid functions the ball floats on. */
 type ZorbLiquidTerrain = Pick<Terrain, 'liquidHeightAt' | 'liquidKindAt' | 'liquidFlowAt' | 'liquidVerticalSpeedAt'>
 
+/**
+ * `skimForce` for a ball centred at `p` over the liquid of `kind` whose surface under it is at
+ * `surface`, moving at `v`: the surface's slope, current and rise come from the terrain at the
+ * ball's position on the shared wave clock, so every client that built the same world
+ * computes the same force. Writes into and returns `out`.
+ */
+export function zorbSkimAt(terrain: ZorbLiquidTerrain, kind: string, p: { x: number; y: number; z: number }, r: number, surface: number,
+  v: { x: number; y: number; z: number }, g: number, out: SkimForce): SkimForce {
+  const at = (x: number, z: number) => {
+    if (terrain.liquidKindAt && terrain.liquidKindAt(x, z) !== kind) return NaN
+    return terrain.liquidHeightAt?.(x, z) ?? NaN
+  }
+  // Central differences, or one-sided at a shore.
+  const d = SKIM_SLOPE_SAMPLE
+  const slope = (lo: number, hi: number) => Number.isFinite(lo) && Number.isFinite(hi) ? (hi - lo) / (2 * d)
+    : Number.isFinite(hi) ? (hi - surface) / d : Number.isFinite(lo) ? (surface - lo) / d : 0
+  skimFlow.x = skimFlow.z = 0
+  terrain.liquidFlowAt?.(p.x, p.z, skimFlow)
+  const rise = terrain.liquidVerticalSpeedAt?.(p.x, p.z) ?? 0
+  return skimForce({
+    radius: r, height: p.y - surface,
+    slopeX: slope(at(p.x - d, p.z), at(p.x + d, p.z)), slopeZ: slope(at(p.x, p.z - d), at(p.x, p.z + d)),
+    vx: v.x - (Number.isFinite(skimFlow.x) ? skimFlow.x : 0), vy: v.y - (Number.isFinite(rise) ? rise : 0), vz: v.z - (Number.isFinite(skimFlow.z) ? skimFlow.z : 0),
+    g,
+  }, out)
+}
+
 /** Everything `skimForce` reads: the ball, the liquid surface under it and gravity. */
 export interface SkimInput {
   /** Ball radius, metres. */
@@ -555,30 +582,12 @@ export class ZorbBall {
   }
 
   /**
-   * Apply `skimForce` for the liquid under the ball and return its share of the support. The
-   * surface's slope, current and rise all come from the terrain at the ball's position and the
-   * shared wave clock, so remote and local copies agree. Pushes at the centre of mass: the
+   * Apply `zorbSkimAt` for the liquid under the ball and return its share of the support.
+   * Pushes at the centre of mass: the
    * vehicle inside hangs from the ball, and a push at the ball's base would only spin it.
    */
   private skim(terrain: ZorbLiquidTerrain, kind: string, p: THREE.Vector3, r: number, surface: number): number {
-    const at = (x: number, z: number) => {
-      if (terrain.liquidKindAt && terrain.liquidKindAt(x, z) !== kind) return NaN
-      return terrain.liquidHeightAt?.(x, z) ?? NaN
-    }
-    // Central differences, or one-sided at a shore.
-    const d = SKIM_SLOPE_SAMPLE
-    const slope = (lo: number, hi: number) => Number.isFinite(lo) && Number.isFinite(hi) ? (hi - lo) / (2 * d)
-      : Number.isFinite(hi) ? (hi - surface) / d : Number.isFinite(lo) ? (surface - lo) / d : 0
-    skimFlow.x = skimFlow.z = 0
-    terrain.liquidFlowAt?.(p.x, p.z, skimFlow)
-    const rise = terrain.liquidVerticalSpeedAt?.(p.x, p.z) ?? 0
-    const v = this.body.linvel()
-    const f = skimForce({
-      radius: r, height: p.y - surface,
-      slopeX: slope(at(p.x - d, p.z), at(p.x + d, p.z)), slopeZ: slope(at(p.x, p.z - d), at(p.x, p.z + d)),
-      vx: v.x - (Number.isFinite(skimFlow.x) ? skimFlow.x : 0), vy: v.y - (Number.isFinite(rise) ? rise : 0), vz: v.z - (Number.isFinite(skimFlow.z) ? skimFlow.z : 0),
-      g: -this.world.gravity.y,
-    }, skimOut)
+    const f = zorbSkimAt(terrain, kind, p, r, surface, this.body.linvel(), -this.world.gravity.y, skimOut)
     if (!Number.isFinite(f.x + f.y + f.z + f.share)) return 0
     const mass = this.body.mass()
     if (f.depth > 0) this.body.addForce({ x: f.x * mass, y: f.y * mass, z: f.z * mass }, true)
