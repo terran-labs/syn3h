@@ -13,7 +13,7 @@ import { waitForState } from './stateWait.mjs'
 
 const url = process.env.SYN3H_URL
 assert.ok(url, 'SYN3H_URL is required')
-/** Must match CAPTION_GAP in src/ui/Shell.ts. */
+/** Must match CAPTION_GAP in src/ui/Shell.ts: the gap at the captions' smallest size; it grows with --caption-scale. */
 const GAP = 5
 const out = 'tests/ui/artifacts/lobby-labels'
 await mkdir(out, { recursive: true })
@@ -35,14 +35,14 @@ try {
       const screen = window.syn3h.shell.galaxy.screen
       return [...document.querySelectorAll('.galaxy-label')].filter(c => !c.hidden).map(c => {
         const r = c.getBoundingClientRect(), p = screen.find(s => s.id === c.dataset.world)
-        return { id: c.dataset.world, dx: r.left + r.width / 2 - p.x, dy: r.top - (p.y + p.radius), width: r.width, height: r.height, opacity: Number(getComputedStyle(c).opacity) }
+        return { id: c.dataset.world, dx: r.left + r.width / 2 - p.x, dy: r.top - (p.y + p.radius), width: r.width, height: r.height, opacity: Number(getComputedStyle(c).opacity), scale: Number(c.style.getPropertyValue('--caption-scale') || 1) }
       })
     })
     const check = (captions, when) => {
       assert.ok(captions.length > 0, `${name}: captions are shown ${when}`)
       for (const c of captions) {
         assert.ok(Math.abs(c.dx) <= 1, `${name}: the ${c.id} caption is centred under its planet ${when} (${c.dx.toFixed(2)} px off)`)
-        assert.ok(Math.abs(c.dy - GAP) <= 1, `${name}: the ${c.id} caption sits ${GAP} px below its planet ${when} (${c.dy.toFixed(2)} px)`)
+        assert.ok(Math.abs(c.dy - GAP * c.scale) <= 1, `${name}: the ${c.id} caption sits ${(GAP * c.scale).toFixed(1)} px below its planet ${when} (${c.dy.toFixed(2)} px)`)
       }
     }
     assert.equal(await page.evaluate(() => document.querySelectorAll('.galaxy-labels .s3-plate, .galaxy-labels .s3-leader').length), 0, `${name}: no plates or leaders`)
@@ -79,7 +79,9 @@ try {
     const was = resting.find(c => c.id === pointed) ?? after
     assert.ok(after.opacity > was.opacity + 0.02, `${name}: pointing lifts the ${pointed} caption (${was.opacity.toFixed(2)} to ${after.opacity.toFixed(2)})`)
     assert.ok(after.opacity > 0.97, `${name}: pointing brings the ${pointed} caption to full strength (${after.opacity.toFixed(2)})`)
-    assert.ok(Math.abs(after.width - was.width) < 0.5 && Math.abs(after.height - was.height) < 0.5, `${name}: pointing does not resize the ${pointed} caption`)
+    // Its size follows its planet's alone (captionScale.ts), which keeps moving, so the check is
+    // that pointing adds nothing: once eased, the caption's font size is exactly its scale.
+    await waitForState(page, `the pointed ${pointed} caption's size to match its planet's scale`, id => { const c = document.querySelector(`.galaxy-label[data-world="${id}"]`); return Math.abs(parseFloat(getComputedStyle(c).fontSize) - Number(c.style.getPropertyValue('--caption-scale') || 1)) < 0.01 }, pointed, 10)
     check([after], 'while pointed at')
     await page.screenshot({ path: `${out}/point-${name}.png` })
     if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
