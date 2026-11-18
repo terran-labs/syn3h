@@ -291,8 +291,8 @@ describe('the host\'s bots through a dropped connection', () => {
    * real BotManager, with the connection and the room's welcome reduced to their state.
    */
   function hostWithBots(count: number) {
-    const { game } = harness(), player = stationaryTarget(game)
-    const manager = new BotManager(game, terrain, player)
+    const { game, step } = harness(), player = stationaryTarget(game)
+    const manager = game.add(new BotManager(game, terrain, player))
     manager.remote = true // as NetClient's constructor leaves it
     const net = Object.create(NetClient.prototype) as Record<string, any>
     Object.assign(net, {
@@ -306,8 +306,8 @@ describe('the host\'s bots through a dropped connection', () => {
     net.updateBotRole(); manager.update()
     const ids = () => manager.vehicles.map(v => v.id).join(',')
     const drop = () => { net.conn.state = 'closed'; net.onDisconnect(true); net.updateBotRole(); manager.update() }
-    const welcome = (host: number) => { net.conn.state = 'open'; net.welcomed = true; net.hostThroughDrop = false; net.game = { host }; net.updateBotRole(); manager.update() }
-    return { manager, ids, drop, welcome, restore: () => params.set('bots.count', previous) }
+    const welcome = (host: number, id = 1) => { net.conn.state = 'open'; net.welcomed = true; net.hostThroughDrop = false; net.id = id; net.game = { host }; net.updateBotRole(); manager.update() }
+    return { manager, ids, drop, welcome, step, restore: () => params.set('bots.count', previous) }
   }
 
   it('keeps the same bots, ids and names, through a drop and a reconnect as host', () => {
@@ -331,6 +331,39 @@ describe('the host\'s bots through a dropped connection', () => {
       h.welcome(2)
       expect(h.manager.remote).toBe(true)
       expect(h.manager.vehicles).toHaveLength(0)
+    } finally { h.restore() }
+  })
+
+  it('after the hold expired, back as a new player hosting an empty room: still one fleet', () => {
+    const h = hostWithBots(3)
+    try {
+      const before = h.ids()
+      h.drop()
+      h.welcome(7, 7) // a new player id, and the room's host
+      expect(h.manager.remote).toBe(false)
+      expect(h.ids()).toBe(before)
+      expect(h.manager.vehicles).toHaveLength(3)
+    } finally { h.restore() }
+  })
+
+  it('after the hold expired, back as a new player beside another host: no second fleet', () => {
+    const h = hostWithBots(3)
+    try {
+      h.drop()
+      h.welcome(2, 7) // someone else hosts now; we are player 7
+      expect(h.manager.remote).toBe(true)
+      expect(h.manager.vehicles).toHaveLength(0)
+    } finally { h.restore() }
+  })
+
+  it('keeps driving its bots locally, without errors, if it never reconnects', () => {
+    const h = hostWithBots(3)
+    try {
+      const before = h.ids()
+      h.drop()
+      expect(() => { for (let i = 0; i < 300; i++) { h.step(); h.manager.update(0.02) } }).not.toThrow()
+      expect(h.ids()).toBe(before)
+      expect(h.manager.remote).toBe(false)
     } finally { h.restore() }
   })
 })

@@ -92,7 +92,8 @@ describe('roads', () => {
     expect(s.worstCross).toBeLessThan(CROSS_CAP)
   }, 20000)
 
+  // Two full terrain generations: the 5 s default timed out under load (16) on 17 Nov.
   it('are deterministic', () => {
     expect(generateTerrain(5, settings).roads).toEqual(generateTerrain(5, settings).roads)
-  })
+  }, 20000)
 })

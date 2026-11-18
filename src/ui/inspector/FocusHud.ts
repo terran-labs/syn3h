@@ -11,13 +11,15 @@
  * It is all SVG and text. Nothing here draws unless the display is visible.
  */
 import { focusStyle, reticleStyle } from './params'
+import './focus-readouts.css'
+import { displayUnits, heightUnit, heightValue, speedUnit, speedValue, wholeNumber } from '../units'
 
 export interface Telemetry {
   /** Metres per second. */
   speed: number
   /** Resolved Jet thrust, -1 to 1; absent for other vehicles. */
   thrust?: number
-  /** Metres above the ground under the vehicle. */
+  /** Metres above sea level, from the vehicle's lowest contact surface; negative below it. */
   altitude: number
   /** Radians; 0 faces -Z (north on the minimap). */
   heading: number
@@ -32,6 +34,8 @@ const POINTS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
 export const bearing = (heading: number) => ((-(heading * 180) / Math.PI) % 360 + 360) % 360
 export const compassPoint = (degrees: number) => POINTS[Math.round(degrees / 45) % 8]
 const pad = (value: number, width: number) => String(Math.max(0, Math.round(value))).padStart(width, '0')
+/** Zero padded like pad, keeping a minus sign in front: "−012". */
+const signedPad = (value: number, width: number) => { const n = Math.round(value); return n < 0 ? `\u2212${pad(-n, width - 1)}` : pad(n, width) }
 const clock = (hour: number) => `${pad(Math.floor(hour) % 24, 2)}:${pad(Math.floor((hour % 1) * 60), 2)}`
 // An arc of radius 210 from 150 to 210 degrees (left) or -30 to 30 (right), as an SVG path.
 const arc = (from: number, to: number) => { const p = (a: number) => `${(Math.cos(a * Math.PI / 180) * 210).toFixed(1)} ${(Math.sin(a * Math.PI / 180) * 210).toFixed(1)}`; return `M${p(from)}A210 210 0 0 ${to > from ? 1 : 0} ${p(to)}` }
@@ -53,14 +57,14 @@ export class FocusHud {
       <g data-style="0"><path class="fh-faint" d="${arc(150, 210)}"/><path class="fh-faint" d="${arc(30, -30)}"/><path class="fh-accent" data-arc="speed" pathLength="100" stroke-dasharray="100" d="${arc(150, 210)}"/><path class="fh-accent" data-arc="altitude" pathLength="100" stroke-dasharray="100" d="${arc(30, -30)}"/></g>
       <g data-style="1" transform="translate(0 -372)"><path class="fh-faint" d="M-420 0H420"/><g data-tape>${ticks}</g><path class="fh-accent" d="M0 6V18"/></g>
     </svg>
-    <div class="fh-read fh-left" data-style="0"><b data-t="speed"></b><small>MPH</small></div>
-    <div class="fh-read fh-right" data-style="0"><b data-t="altitude"></b><small>M ABOVE GROUND</small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
+    <div class="fh-read fh-left" data-style="0"><b><span data-t="speed"></span><i data-t="speedUnit"></i></b><small>SPEED</small></div>
+    <div class="fh-read fh-right" data-style="0"><b><span data-t="altitude"></span><i data-t="heightUnit"></i></b><small>ALT</small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
     <div class="fh-read fh-top" data-style="0"><small data-t="world"></small><span data-t="heading"></span></div>
-    <div class="fh-read fh-top" data-style="1" style="top:104px"><b data-t="heading"></b><small><span data-t="speed"></span> MPH · <span data-t="altitude"></span> M · <span data-t="clock"></span></small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
+    <div class="fh-read fh-top" data-style="1" style="top:104px"><b data-t="heading"></b><small><span data-t="speed"></span> <span data-t="speedUnit"></span> · ALT <span data-t="altitude"></span> <span data-t="heightUnit"></span> · <span data-t="clock"></span></small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
     <div class="fh-read fh-corner fh-tl" data-style="2"><small>SYN3H // SURVEY</small><span data-t="world"></span></div>
     <div class="fh-read fh-corner fh-tr" data-style="2"><small>LOCAL TIME</small><span data-t="clock"></span><small>ELAPSED <span data-t="elapsed"></span></small></div>
-    <div class="fh-read fh-corner fh-bl" data-style="2"><small>VELOCITY</small><b data-t="speed3"></b><small>MPH</small></div>
-    <div class="fh-read fh-corner fh-br" data-style="2"><small>HEADING</small><b data-t="heading"></b><small>ALT <span data-t="altitude4"></span> M</small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>`
+    <div class="fh-read fh-corner fh-bl" data-style="2"><small>VELOCITY</small><b data-t="speed3"></b><small data-t="speedUnit"></small></div>
+    <div class="fh-read fh-corner fh-br" data-style="2"><small>HEADING</small><b data-t="heading"></b><small>ALT <span data-t="altitude4"></span> <span data-t="heightUnit"></span></small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>`
     for (const node of this.element.querySelectorAll<HTMLElement>('[data-t]')) { const key = node.dataset.t!; this.text.set(key, [...(this.text.get(key) ?? []), node]) }
     this.thrustRows = [...this.element.querySelectorAll<HTMLElement>('[data-thrust]')]
     parent.append(this.element)
@@ -76,8 +80,11 @@ export class FocusHud {
     const thrust = t.thrust !== undefined
     if (thrust !== this.thrustShown) { this.thrustShown = thrust; for (const node of this.thrustRows) node.hidden = !thrust }
     if (thrust) this.set('thrust', thrustPercent(t.thrust!))
+    const units = displayUnits.value, speed = speedValue(t.speed, units), height = heightValue(t.altitude, units)
+    // The arcs keep one physical scale whatever the units: full at 140 mph and 600 m.
     const mph = Math.abs(t.speed) * 2.23694, degrees = bearing(t.heading), seconds = (performance.now() - this.started) / 1000
-    this.set('speed', String(Math.round(mph))); this.set('speed3', pad(mph, 3)); this.set('altitude', String(Math.max(0, Math.round(t.altitude)))); this.set('altitude4', pad(t.altitude, 4))
+    this.set('speed', wholeNumber(speed)); this.set('speed3', pad(speed, 3)); this.set('altitude', wholeNumber(height)); this.set('altitude4', signedPad(height, 4))
+    this.set('speedUnit', speedUnit(units)); this.set('heightUnit', heightUnit(units))
     this.set('heading', `${pad(degrees, 3)}° ${compassPoint(degrees)}`); this.set('world', t.world); this.set('clock', clock(t.hour))
     this.set('elapsed', `${pad(Math.floor(seconds / 60), 2)}:${pad(seconds % 60, 2)}`)
     if (style === '0') {

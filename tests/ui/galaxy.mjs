@@ -11,6 +11,7 @@
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { waitForState } from './stateWait.mjs'
 const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
 const out = 'tests/ui/artifacts/galaxy'
 await mkdir(out, { recursive: true })
@@ -30,7 +31,8 @@ try {
     // The opening (src/ui/galaxy/opening.ts) runs about nine seconds; a key skips straight to the
     // settled lobby, as for a player, and the checks below are of that lobby.
     await page.keyboard.press('Shift')
-    await page.waitForTimeout(4000)
+    // The settled lobby: the opening gone and every planet's label shown.
+    await waitForState(page, 'the settled lobby (opening over, every planet labelled)', () => !window.syn3h.shell.galaxy.opening && document.querySelectorAll('.galaxy-label:not([hidden])').length >= window.syn3h.planets.PLANETS.length, undefined, 60)
     const state = () => page.evaluate(() => { const g = window.syn3h.shell.galaxy; return { open: document.querySelector('.syn3h-shell').classList.contains('galaxy-open'), live: g.live, frames: g.frames, labels: [...document.querySelectorAll('.galaxy-label:not([hidden])')].map(l => { const r = l.getBoundingClientRect(); return { id: l.dataset.world, x: r.left + r.width / 2, y: r.top } }) } })
     const first = await state()
     assert.equal(first.open, true); assert.equal(first.live, true)
@@ -41,21 +43,22 @@ try {
     // Dragging empty space swings the view: the worlds move across the screen.
     const from = { x: view.viewport.width * 0.5, y: view.viewport.height * 0.16 }
     await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(from.x + 160, from.y + 30, { steps: 8 }); await page.mouse.up()
-    await page.waitForTimeout(700)
+    // The swing plays out over drawn frames: wait until a label has moved, as the assertion needs.
+    await waitForState(page, 'a label moved by the swing, with frames drawn', first => [...document.querySelectorAll('.galaxy-label:not([hidden])')].some(l => { const r = l.getBoundingClientRect(), b = first.labels.find(x => x.id === l.dataset.world); return b && Math.hypot(r.left + r.width / 2 - b.x, r.top - b.y) > 25 }) && window.syn3h.shell.galaxy.frames > first.frames, first, 30)
     const swung = await state()
     assert.ok(swung.frames > first.frames, 'it keeps drawing')
     assert.ok(swung.labels.some(l => { const before = first.labels.find(b => b.id === l.id); return before && Math.hypot(l.x - before.x, l.y - before.y) > 25 }), `${view.name}: the view swung`)
     await page.screenshot({ path: `${out}/${view.name}-swung.png` })
     // Behind a panel the galaxy dims and stops drawing; back at the index it is bright again.
-    // Settings moved to the gear's sheet; About is a full lobby panel, as Settings was.
-    await page.evaluate(() => window.syn3h.shell.showPanel('about')); await settle(page, 'about')
-    await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 0.35, null, { timeout: 15000 })
+    // About is a sheet from its icon above the gear: behind it the galaxy dims and holds still too.
+    await page.locator('.lobby-about').click()
+    await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 0.6, null, { timeout: 15000 })
     // A map arriving, or the camera still easing home, draws a frame; then it rests.
     let rests = false
     for (let i = 0; i < 20 && !rests; i++) { const f = (await state()).frames; await page.waitForTimeout(1200); rests = (await state()).frames === f }
     assert.ok(rests, `${view.name}: the galaxy keeps drawing behind a panel`)
     await page.screenshot({ path: `${out}/${view.name}-panel.png` })
-    await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle(page, 'index')
+    await page.keyboard.press('Escape'); await page.locator('.lobby-sheet-about').waitFor({ state: 'hidden' })
     await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 1, null, { timeout: 15000 })
     // Tapping a world drops straight into it: no form, no panel, one motion to the ground.
     // A world well on screen and not the one in play: at the closer default zoom an outer world
@@ -130,9 +133,13 @@ try {
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
     await page.locator('.galaxy-label[data-world=desert]').dispatchEvent('click')
     await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 1000 })
-    await page.waitForTimeout(400); const pressed = Date.now(); await page.keyboard.press('w')
+    // A key lands at once: it skips the blurred fall through the air (Shell.descent), which an
+    // unskipped drop always shows. Watched as state, not timed, so a busy machine cannot fail it.
+    await page.evaluate(() => { const game = document.getElementById('game'); window.__blurred = false; new MutationObserver(() => { if (/blur/.test(game.style.filter)) window.__blurred = true }).observe(game, { attributes: true, attributeFilter: ['style'] }) })
+    // The skip listens from the frame after the drop starts: press after two frames.
+    await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.keyboard.press('w')
     await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 15000 })
-    assert.ok(Date.now() - pressed < 1500, `a key took ${Date.now() - pressed} ms to land`)
+    assert.equal(await page.evaluate(() => window.__blurred), false, 'a key skips the fall through the air')
     assert.equal(await page.evaluate(() => localStorage.getItem('syn3h.descents')), '4')
     await page.close()
   }

@@ -21,7 +21,7 @@ export class SavedMoons {
       button.style.cssText = 'position:absolute;width:44px;height:44px;padding:10px;box-sizing:border-box;border:0;border-radius:50%;background:transparent;pointer-events:auto;cursor:pointer'
       const orb = document.createElement('span')
       const color = `#${recipe.swatch[0].toString(16).padStart(6, '0')}`
-      orb.style.cssText = `display:block;margin:auto;width:20px;height:20px;border-radius:50%;border:1px solid #9de5ff88;background:radial-gradient(circle at 30% 25%,#d5f5ff 0%,${color} 35%,#07121d 85%);box-shadow:0 0 10px #7de4ff55;pointer-events:none`
+      orb.style.cssText = `display:block;margin:auto;width:20px;height:20px;border-radius:50%;border:1px solid #dddddd88;background:radial-gradient(circle at 30% 25%,#d5f5ff 0%,${color} 35%,#07121d 85%);box-shadow:0 0 10px #ffffff33;pointer-events:none`
       button.append(orb); button.hidden = true
       button.addEventListener('click', () => this.enter(entry)); this.element.append(button)
       return button
