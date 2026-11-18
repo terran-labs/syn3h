@@ -493,6 +493,10 @@ export function lavaSurfaceAt(lava: LavaFeatures, x: number, z: number, fallback
       for (let i = 0; i < pts.length - 1; i++) {
         const a = pts[i], c = pts[i + 1], dx = c.x - a.x, dz = c.z - a.z, len2 = dx * dx + dz * dz
         let t = len2 > 0 ? ((x - a.x) * dx + (z - a.z) * dz) / len2 : 0
+        // The drawn ribbon ends square at the river's first and last points: nothing beyond
+        // (a centimetre of slack, for drawn vertices stored as 32 bit floats).
+        const reach = 0.01 / Math.sqrt(len2 || 1)
+        if ((i === 0 && t < -reach) || (i === pts.length - 2 && t > 1 + reach)) continue
         t = t < 0 ? 0 : t > 1 ? 1 : t
         const e = sq(a.x + dx * t - x) + sq(a.z + dz * t - z)
         if (e < best) { best = e; sy = a.y + (c.y - a.y) * t }
