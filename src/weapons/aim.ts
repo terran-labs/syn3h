@@ -2,7 +2,9 @@
  * Where gear points. With the cursor captured on desktop the chase camera orbits with the
  * mouse, and gear goes where the camera looks: a ray from the camera through the middle of
  * the screen finds the point, and the gear leaves its muzzle toward that point, so near and
- * far targets both line up. Otherwise (touch, gamepad, cursor free) it goes straight ahead.
+ * far targets both line up. A touch player holding the Tag stick aims the same way, through the
+ * touch reticle (src/core/touchAim.ts). Otherwise (gamepad, cursor free, touch without Tag held)
+ * it goes straight ahead.
  *
  * Read only use of the camera: the camera itself belongs to the Bots, Performance and QA lane.
  */
@@ -10,6 +12,7 @@ import * as THREE from 'three/webgpu'
 import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_LIQUID, GROUP_PROJECTILE, RAPIER, groups } from '../core/physics'
 import { laserLifetime, laserSpeed } from './params'
+import { touchAiming } from '../core/touchAim'
 
 /** Optional input supplied by a bot controller instead of the local keyboard and camera. */
 export interface GearControl {
@@ -31,9 +34,9 @@ export interface Aim {
 
 const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
 
-/** True while the cursor is captured by the game canvas, so mouse movement aims. */
+/** True while the cursor is captured by the game canvas, or a touch player holds the Tag stick, so the camera aims. */
 export function cursorAims(game: Game): boolean {
-  return typeof document !== 'undefined' && document.pointerLockElement === game.canvas
+  return touchAiming() || (typeof document !== 'undefined' && document.pointerLockElement === game.canvas)
 }
 
 /** Only player input uses camera aim; scripted shots retain their explicit direction. */

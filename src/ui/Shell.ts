@@ -4,6 +4,7 @@ import { DEFAULT_ROOM, isDefaultRoom, roomFromQuery } from '../core/roomAddress'
 import { modeChoices, modeName } from './modeAvailability'
 import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
 import { GearSelector, type GearSource } from './gear/GearSelector'
+import { tagModeFor } from './tagStick'
 import { postTier } from '../fx/post/gate'
 import { PerformancePanel } from './PerformancePanel'
 import type { PauseControl } from './pauseControl'
@@ -61,9 +62,12 @@ import { rollPlayerName } from './data/names'
 import { cleanPlayerName, loadPlayerName, savePlayerName, type NameSource } from './playerName'
 import { TintTransition, randomTintPair } from '../vehicles/tints'
 import { Minimap, cameraHeading, type MapEntity } from './Minimap'
+import { AccessoryControls } from './AccessoryControls'
+import { ChatRow } from './ChatRow'
+import type { AccessoryVehicle } from '../vehicles/accessories'
 import { bootLoading } from './LoadingScreen'
 import { tapToBegin } from './TapToBegin'
-import { renderHelp, touchHelp } from './VehicleHelp'
+import { fillHelpLine, renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
 import './label-plate.css'
@@ -71,6 +75,7 @@ import { isVehicleAvailable } from '../vehicles/available'
 import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
+import './hud-column.css'
 
 /**
  * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
@@ -263,17 +268,30 @@ export class Shell implements System {
     this.board = new Scoreboard(document.createElement('div'), text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
     this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {})
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
+    // TAG reads the gear in hand: Plasma Tag streams while held, other gear sends on the lift,
+    // and Cancel drops a charge or carry the way the in-play guide does (src/ui/tagStick.ts).
+    this.touch.tag = {
+      mode: () => {
+        const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+        if (!rack) return 'stream'
+        const controls = rack.controls()
+        return tagModeFor(controls.gear, controls.actions[0])
+      },
+      tap: () => {
+        const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+        if (rack) rack.tap(); else game.input.external.fire = true
+      },
+      cancel: () => { this.cancelActions?.(); game.input.external.fire = false },
+    }
     // The gear drum at the centre-left edge, in both cursor states: the gear in hand, its
     // neighbours, and the controls that apply right now. On touch it adds buttons for the
     // gear's extra actions (the Grapple's Let out and Let go).
     this.gearSelector = new GearSelector(this.element, () => this.gearSource(), { touch: this.touch.available, onSelect: () => this.audio.cue('click') })
-    // Zorb mode sits under the drum, with its key and its state, so it can be found.
-    this.zorbToggle.type = 'button'; this.zorbToggle.className = 'zorb-toggle'; this.zorbToggle.setAttribute('aria-pressed', 'false')
-    // The small track mirrors the standard switch, so Zorb's state reads the same way at a glance.
-    this.zorbToggle.innerHTML = '<kbd>X</kbd><span>Zorb</span><i class="zorb-switch" aria-hidden="true"></i><b>Off</b>'
-    this.zorbToggle.title = 'Zorb mode: ride inside a ball. Press X to switch.'
-    this.zorbToggle.addEventListener('click', () => { game.input.toggleZorb(); this.audio.cue('click'); this.zorbToggle.blur() }, { signal: this.abort.signal })
-    this.element.append(this.zorbToggle)
+    // Under the drum, the driven vehicle's accessories (Zorb, wings, jet mode...), each with its
+    // key and its state (src/vehicles/accessories.ts). Part of the left column, hud-column.css.
+    this.accessories = new AccessoryControls(this.element, game.input, () => this.audio.cue('click'), this.abort.signal)
+    // Under them, the column's Chat row: opens chat and shows its unread count through chatLink.
+    new ChatRow(this.element, this.abort.signal)
     const signal = this.abort.signal
     this.followPointer(signal)
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
@@ -1698,8 +1716,9 @@ export class Shell implements System {
   /** Call after an actual spawn so query overrides and future respawns show the right controls. */
   private muteShown: boolean | undefined
   private readonly gearSelector: GearSelector
-  private readonly zorbToggle = document.createElement('button')
-  private zorbShown = false
+  private readonly accessories: AccessoryControls
+  /** The vehicle being driven, for the accessory controls; set every frame by the bridge. */
+  private drivenVehicle: AccessoryVehicle | null = null
   private gearRack?: GearRack
   private gearView?: GearSource
   /** The rack, wrapped once so the drum gets every gear's player-facing name. */
@@ -1739,6 +1758,8 @@ export class Shell implements System {
     this.inspector.setGIStatus(status, eligible)
   }
   private hasSeveralGear = false
+  /** The vehicle being driven, read by the accessory controls each frame. */
+  setDrivenVehicle(vehicle: AccessoryVehicle | null): void { this.drivenVehicle = vehicle }
   setVehicleKind(kind: VehicleKind): void { this.activeVehicleKind = kind; this.touch.setVehicleKind(kind); if (this.started) this.showHelp(false) }
   /**
    * The controls card, in the lower left so it never covers the vehicle. After Play it is the
@@ -1750,7 +1771,7 @@ export class Shell implements System {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!, touch = this.touch.available
     renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full, this.hasSeveralGear)
     hint.classList.toggle('is-full', full); hint.classList.remove('is-hint'); this.touch.highlight(null)
-    hint.querySelector('small')!.textContent = touch ? '' : full ? 'H or ? to hide' : 'H: all controls'
+    fillHelpLine(hint.querySelector('small')!, touch ? '' : full ? 'H or ?: hide' : 'H: all controls')
     hint.hidden = false; clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
     const hide = () => this.hideHelp()
     this.helpTimer = setTimeout(hide, full ? 8500 : 5000)
@@ -1818,8 +1839,7 @@ export class Shell implements System {
     if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.switches.get('mute')!(this.muteShown) }
     this.updateGear()
     this.gearSelector.update(this.element.classList.contains('is-focus'))
-    const zorb = this.game.input.state.zorb
-    if (zorb !== this.zorbShown) { this.zorbShown = zorb; this.zorbToggle.setAttribute('aria-pressed', String(zorb)); this.zorbToggle.lastElementChild!.textContent = zorb ? 'On' : 'Off' }
+    this.accessories.update(this.drivenVehicle)
     if (this.inspector.open) this.updateGI()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
@@ -1901,6 +1921,7 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     const q = activePlayer.body.rotation()
     const heading = Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y))
     shell.setMapSelf({ x: p.x, z: p.z, heading, color: activePlayer.colors.body, self: true })
+    shell.setDrivenVehicle(activePlayer)
     // Height above ground (contact surfaces, 0 when resting) for the arrival camera; the ALT
     // readout shows the contact surfaces' height above sea level instead.
     shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)), activePlayer.kind === 'jet' && !activePlayer.zorbed ? activePlayer.input.z : undefined, altitudeAboveSea(activePlayer.contactHeight()))

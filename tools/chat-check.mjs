@@ -101,6 +101,9 @@ try {
   const unread = await unreadOn(B.page)
   const summary = await B.page.textContent(`${CHAT_HEAD} .wi-sum`)
   check(unread >= 1 && /new/.test(summary) && !/…|\.\.\./.test(summary), `B's closed Chat card counts unread lines (${unread}, "${summary}")`)
+  // The left column's Chat row shows the same count, through chatLink.
+  const rowCount = await B.page.evaluate(() => { const c = document.querySelector('.hud-chat .chat-count'); return c && !c.hidden ? Number(c.textContent.replace('+', '')) : 0 })
+  check(rowCount === Math.min(unread, 9) || (unread > 9 && rowCount === 9), `the left column's Chat row shows the unread count (${rowCount} of ${unread})`)
   const stripHtml = await B.page.evaluate(() => document.querySelector('.chat-strip')?.innerHTML ?? '')
   check(!/<b>bold/.test(stripHtml) && stripHtml.includes('&lt;b&gt;bold'), 'markup arrives as text, not elements')
   await showPanels(B.page)
@@ -160,7 +163,8 @@ try {
 
   // Chat off for the room: the host turns it off, a guest's line is refused and not relayed.
   await A.page.evaluate(() => window.syn3h.params.set('chat.on', false))
-  await B.page.waitForTimeout(800)
+  // The setting reaches the guest through the room: wait for it rather than a fixed time.
+  await B.page.waitForFunction(() => !window.syn3hChat.net.chat.canSend().ok, null, { timeout: 20000 }).catch(() => {})
   // The guest's screen stops offering chat, and the room refuses even a line sent past that gate.
   const gated = await B.page.evaluate(() => !window.syn3hChat.net.chat.canSend().ok)
   await B.page.evaluate(() => window.syn3hChat.net.send({ type: 'chat', text: 'can anyone hear me' }))

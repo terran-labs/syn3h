@@ -1,6 +1,7 @@
 import type { Game } from './Game'
 import type { PerformanceEnvironment } from './performance'
 import { deviceLostMessage } from './renderOptions'
+import type { StartFailure } from './graphicsSupport'
 
 /**
  * Startup phase timing, always on. Each phase is a performance.measure named
@@ -62,17 +63,72 @@ export function formatStartup(timing: StartupTiming = startupTiming): string {
   return lines.join('\n')
 }
 
-/** The part of `document` the lost-device notice needs, so tests can pass a fake. */
+/** The part of `document` the notices need, so tests can pass a fake. */
+export interface NoticeNode { id: string; textContent: string | null; style: { cssText: string }; setAttribute(name: string, value: string): void; append(...nodes: unknown[]): void; addEventListener(type: 'click', listener: () => void): void }
 export interface NoticeDocument {
   getElementById(id: string): unknown
-  createElement(tag: 'div' | 'p' | 'button'): { id: string; textContent: string | null; style: { cssText: string }; setAttribute(name: string, value: string): void; append(...nodes: unknown[]): void; addEventListener(type: 'click', listener: () => void): void }
+  createElement(tag: 'div' | 'p' | 'button' | 'ul' | 'li' | 'details' | 'summary' | 'pre'): NoticeNode
   body: { append(node: unknown): void }
+}
+/** What a notice says: plain sentences, steps a person can take, one action, and technical detail behind a disclosure. */
+export interface NoticeContent { text: string; steps?: readonly string[]; action?: { label: string; run: () => void }; details?: string }
+
+/**
+ * The look every full-screen notice shares (a lost device, a failed start): the HUD's neutral
+ * greys, readable on a phone. Plain DOM and inline styles, not src/ui, so it works whatever
+ * state the lobby is in and before any stylesheet has applied; the tokens fall back to their values.
+ */
+export const NOTICE_STYLE = 'position:fixed;inset:0;z-index:2147483646;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;box-sizing:border-box;overflow:auto;background:rgb(8 8 9 / .94);color:var(--s3-ink,#efefef);font:17px/1.5 Barlow,system-ui,sans-serif;text-align:center'
+const BUTTON_STYLE = 'font:inherit;min-height:44px;padding:10px 28px;border-radius:999px;border:1px solid var(--s3-line,rgb(225 225 225 / .28));background:rgb(205 205 205 / .08);color:var(--s3-ink,#efefef);cursor:pointer'
+
+/** Fill `box` with a notice: the text, then the steps, then the action, then the details. */
+export function fillNotice(doc: NoticeDocument, box: NoticeNode, content: NoticeContent): void {
+  const text = doc.createElement('p')
+  text.textContent = content.text
+  text.style.cssText = 'margin:0;max-width:34em'
+  box.append(text)
+  if (content.steps?.length) {
+    const list = doc.createElement('ul')
+    list.style.cssText = 'margin:0;padding:0 0 0 1.2em;max-width:30em;text-align:left;color:var(--s3-dim,#c4c4c4)'
+    for (const step of content.steps) { const item = doc.createElement('li'); item.textContent = step; item.style.cssText = 'margin:6px 0'; list.append(item) }
+    box.append(list)
+  }
+  if (content.action) {
+    const button = doc.createElement('button')
+    button.textContent = content.action.label
+    button.style.cssText = BUTTON_STYLE
+    button.addEventListener('click', content.action.run)
+    box.append(button)
+  }
+  if (content.details) {
+    // The raw error, for a bug report: never the first thing a player reads.
+    const details = doc.createElement('details'), summary = doc.createElement('summary'), pre = doc.createElement('pre')
+    summary.textContent = 'Details'
+    summary.style.cssText = 'cursor:pointer;color:var(--s3-soft,#a2a2a2);font-size:14px'
+    pre.textContent = content.details
+    pre.style.cssText = 'margin:8px 0 0;max-width:min(34em,90vw);white-space:pre-wrap;word-break:break-word;text-align:left;font:13px/1.4 ui-monospace,monospace;color:var(--s3-soft,#a2a2a2)'
+    details.append(summary, pre)
+    box.append(details)
+  }
+}
+
+/**
+ * The game could not start: a plain notice in #fatal (the loading veil lifts when it shows).
+ * The raw error stays behind Details and in the console; a reload is offered only when it can help.
+ */
+export function showStartFailure(failure: StartFailure, doc: NoticeDocument | undefined = typeof document !== 'undefined' ? document as unknown as NoticeDocument : undefined, reload: () => void = () => location.reload()): boolean {
+  const box = doc?.getElementById('fatal') as (NoticeNode & { dataset?: Record<string, string> }) | null | undefined
+  if (!doc || !box) return false
+  box.style.cssText = NOTICE_STYLE
+  box.setAttribute('role', 'alert')
+  box.setAttribute('data-failure', failure.kind)
+  fillNotice(doc, box, { text: failure.text, steps: failure.steps, action: failure.reload ? { label: 'Reload', run: reload } : undefined, details: failure.details })
+  return true
 }
 
 /**
  * Tell the player the renderer's GPU device or WebGL context is gone and offer a reload,
  * instead of leaving a frozen or black canvas. Shown once; later losses only update the record.
- * Plain DOM made here, not in src/ui, so it works whatever state the lobby is in.
  */
 export function showRendererLost(info?: { api?: string; message?: string; reason?: string | null }, doc: NoticeDocument | undefined = typeof document !== 'undefined' ? document as unknown as NoticeDocument : undefined, reload: () => void = () => location.reload()): boolean {
   startupTiming.deviceLost = [info?.api ?? 'GPU', info?.reason, info?.message].filter(Boolean).join(': ')
@@ -80,14 +136,8 @@ export function showRendererLost(info?: { api?: string; message?: string; reason
   const box = doc.createElement('div')
   box.id = 'syn3h-device-lost'
   box.setAttribute('role', 'alert')
-  box.style.cssText = 'position:fixed;inset:0;z-index:2147483646;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;background:#020308e6;color:#e8edf5;font:16px/1.4 system-ui,sans-serif;text-align:center'
-  const text = doc.createElement('p')
-  text.textContent = deviceLostMessage(info)
-  const button = doc.createElement('button')
-  button.textContent = 'Reload'
-  button.style.cssText = 'font:inherit;padding:10px 28px;border-radius:8px;border:1px solid #4da3ff;background:#0b1830;color:#e8edf5;cursor:pointer'
-  button.addEventListener('click', reload)
-  box.append(text, button)
+  box.style.cssText = NOTICE_STYLE
+  fillNotice(doc, box, { text: deviceLostMessage(info), action: { label: 'Reload', run: reload } })
   doc.body.append(box)
   return true
 }

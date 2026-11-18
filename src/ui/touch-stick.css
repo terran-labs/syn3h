@@ -26,10 +26,11 @@
   will-change: transform;
 }
 
-/* First run: a faint ghost of the stick and one line, in the lower left below the minimap,
-   until this device has driven once. */
+/* First run: a faint ghost of the stick and one line, in the lower left just above the
+   minimap (which holds the corner), until this device has driven once. --map-top is the
+   minimap's top edge from the bottom of the screen (exploration.css). */
 .touch-controls .touch-stick-hint {
-  position: absolute; left: max(24px, env(safe-area-inset-left)); bottom: max(28px, env(safe-area-inset-bottom));
+  position: absolute; left: max(24px, env(safe-area-inset-left)); bottom: calc(var(--map-top, 192px) + 12px);
   display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none;
   transition: opacity .3s ease-out, visibility 0s;
 }
@@ -57,39 +58,26 @@ body:has(.syn3h-shell.is-playing .spawn-help:not([hidden])) .touch-controls .tou
   color: color-mix(in srgb, var(--s3-ink) 78%, transparent); text-shadow: 0 1px 3px rgb(0 0 0 / .6);
 }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .touch-controls .touch-stick-hint { left: max(18px, env(safe-area-inset-left)); bottom: max(18px, env(safe-area-inset-bottom)); }
+  .touch-controls .touch-stick-hint { left: max(18px, env(safe-area-inset-left)); }
   .touch-controls .touch-stick-ghost { width: 72px; height: 72px; }
 }
 @media (prefers-reduced-motion: reduce) { .touch-controls .touch-stick-ghost > span { animation: none; transform: translate(10px, -12px); } }
 
 /* Left-handed play (touch.leftHanded): the stick side, the action buttons, the first-run hint
    and the minimap that sits above the stick all swap sides. Buttons keep their own text
-   direction; TAG stays on the outer edge, under the thumb. */
-.touch-controls[data-hand="left"] .touch-actions { right: auto; left: max(24px, env(safe-area-inset-left)); direction: rtl; }
+   direction; the grid's columns mirror, so every button keeps its distance from the edge. */
+.touch-controls[data-hand="left"] .touch-actions { right: auto; left: max(var(--thumb-margin), env(safe-area-inset-left)); direction: rtl; }
 .touch-controls[data-hand="left"] .touch-actions button { direction: ltr; }
 .touch-controls[data-hand="left"] .touch-stick-hint { left: auto; right: max(24px, env(safe-area-inset-right)); align-items: flex-end; }
 .touch-controls[data-hand="left"] .touch-stick-ghost > span { animation-name: touch-stick-ghost-left; }
 @keyframes touch-stick-ghost-left { 0%, 15%, 100% { transform: none; } 45%, 65% { transform: translate(-14px, -16px); } }
-/* Clear of the Panels tab, which stays on the right edge (about 36 px wide). */
-html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minimap { left: auto; right: calc(max(16px, env(safe-area-inset-right)) + 44px); }
-@media (max-width: 700px) {
-  .touch-controls[data-hand="left"] .touch-actions { left: 12px; }
-}
+/* The minimap goes with the stick, to the lower right corner, so it is not under the action
+   buttons. The Panels tab on the right edge sits higher, clear of it. */
+html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minimap { left: auto; right: max(16px, env(safe-area-inset-right)); }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .touch-controls[data-hand="left"] .touch-actions { left: max(18px, env(safe-area-inset-left)); }
   .touch-controls[data-hand="left"] .touch-stick-hint { right: max(18px, env(safe-area-inset-right)); }
 }
 
-/* Phones: the minimap docks in the top right corner, in either hand. Lower down it sat over
-   the player's own vehicle; top left holds the gear selector, which does not mirror; the
-   heading line is centred and the Panels tab and readouts sit lower. The html[data-touch-hand]
-   prefix outranks the left-handed rule above, which still applies on tablets. */
-@media (max-width: 700px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  html[data-touch-hand] .syn3h-shell.exploration-ui.has-touch .shell-minimap {
-    top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); bottom: auto; left: auto;
-    width: 96px; height: 96px;
-  }
-}
 /* The speed and altitude readouts' phone placement is in inspector/focus-readouts.css. */
 
 /* Phones: toasts in one line where they cover nothing the player reads or touches. Portrait:
@@ -108,4 +96,70 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
     /* The heading line (.fh-top) starts 34 px down and is about 32 px tall. */
     top: 72px; max-width: 290px;
   }
+}
+
+/* ---------------------------------------------------------------------------------------
+   The thumb grid. Every thumb button, the shell's (.touch-actions) and the gear's extra ones
+   (.gear-actions, src/ui/gear/gear.css), is one size and sits on the same two rows in evenly
+   spaced columns. Right-handed, from the inside out:
+
+       buggy, tank, hovercraft          jet
+       [ Grapple ] [ TAG  ] [ WINGS ]   [ Grapple ] [ THR + ] [ TAG  ] [ MODE  ]
+       [ Grapple ] [ ZORB ] [ BRAKE ]   [ Grapple ] [ THR - ] [ ZORB ] [ BRAKE ]
+
+   The Grapple's LET GO (top) and LET OUT (bottom) show only while a cord is attached. The
+   hovercraft has no WINGS; its slot stays empty so TAG is in the same place on every vehicle.
+   The left-handed grid is the mirror image. TouchControls sets --thumb-columns (2, or 3 on the
+   jet) so the gear's column starts one slot further out.
+   --------------------------------------------------------------------------------------- */
+:root { --thumb-size: 62px; --thumb-gap: 12px; --thumb-margin: 24px; --thumb-bottom: 30px; }
+@media (max-width: 700px) { :root { --thumb-margin: 18px; } }
+@media (max-width: 350px) { :root { --thumb-size: 56px; --thumb-gap: 8px; --thumb-margin: 12px; } }
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { :root { --thumb-size: 56px; --thumb-gap: 8px; --thumb-margin: 18px; --thumb-bottom: 18px; } }
+
+.touch-controls .touch-actions { grid-template-rows: repeat(2, var(--thumb-size)); grid-template-areas: "fire special" "zorb brakes"; }
+.touch-controls[data-vehicle="jet"] .touch-actions { grid-template-areas: "throttleUp fire special" "throttleDown zorb brakes"; }
+.touch-controls .touch-actions [data-action="fire"] { grid-area: fire; }
+.touch-controls .touch-actions [data-action="special"] { grid-area: special; }
+.touch-controls .touch-actions [data-action="zorb"] { grid-area: zorb; }
+.touch-controls .touch-actions [data-action="brakes"] { grid-area: brakes; }
+.touch-controls .touch-actions [data-action="throttleUp"] { grid-area: throttleUp; }
+.touch-controls .touch-actions [data-action="throttleDown"] { grid-area: throttleDown; }
+/* Labels stay in one type style and wrap inside the circle rather than resize it. */
+.touch-controls .touch-actions button { min-height: 0; padding: 0 4px; line-height: 1.1; white-space: normal; overflow-wrap: anywhere; }
+
+/* The Cancel ring for a held Tag shot: diagonally above the cluster, placed by
+   TouchControls.cancelZone. Shown only while Tag is dragged with gear that sends on release;
+   lit while the thumb is on it, when lifting sends nothing. */
+.touch-controls .touch-cancel {
+  position: absolute; left: 0; top: 0; box-sizing: border-box; border-radius: 50%;
+  display: grid; place-items: center; pointer-events: none;
+  border: 1.5px dashed color-mix(in srgb, var(--s3-ink) 55%, transparent);
+  background: color-mix(in srgb, var(--s3-panel) 35%, transparent);
+  color: color-mix(in srgb, var(--s3-ink) 85%, transparent);
+  font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .12em; text-transform: uppercase;
+  opacity: 0; visibility: hidden; transition: opacity .12s ease-out, visibility 0s linear .12s;
+}
+.touch-controls .touch-cancel.is-shown { opacity: 1; visibility: visible; transition: opacity .08s ease-out, visibility 0s; }
+.touch-controls .touch-cancel.is-armed { border-style: solid; border-color: var(--s3-ink); background: color-mix(in srgb, var(--s3-ink) 22%, transparent); color: var(--s3-ink); }
+
+/* The touch reticle: the desktop focus reticle (FocusHud), drawn on touch only while TAG is held
+   (html[data-touch-aim="on"]) and fading out over 150 ms after the lift ("out"). Same SVG and
+   classes as desktop, so it follows the shared HUD tokens and the Reticle setting. */
+.syn3h-shell.has-touch .focus-hud svg [data-reticle] { opacity: 0; transition: opacity .15s ease-out; }
+html[data-touch-aim="on"] .syn3h-shell.has-touch .focus-hud svg [data-reticle] { opacity: 1; transition-duration: .05s; }
+
+/* Landscape phones: the Panels tab (.hud-navigation), centred on the right edge, would end
+   exactly where the thumb grid's top row starts. Stand it on the grid instead, one gap clear,
+   so the two never touch for any vehicle or hand. */
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .syn3h-shell.exploration-ui.has-touch .hud-navigation {
+    top: auto; transform: none;
+    bottom: calc(max(var(--thumb-bottom), env(safe-area-inset-bottom)) + 2 * var(--thumb-size) + var(--thumb-gap) + 12px);
+  }
+}
+/* A match announcement (a hill taken, a round won) is the text that matters while it shows:
+   the Panels tab steps out of its way and comes back when it goes. */
+.syn3h-shell.has-touch:has(.match-announcement:not([hidden])) .hud-navigation {
+  opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s ease-out, visibility 0s linear .2s;
 }
