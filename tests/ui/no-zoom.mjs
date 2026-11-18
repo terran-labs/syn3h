@@ -28,17 +28,16 @@ try {
     })
     assert.deepEqual(refused, { gesturestart: true, gesturechange: true, twoFingerMove: true, oneFingerMove: false, doubleTap: true }, name)
     // No field anywhere is under 16px, the size below which Safari zooms in on focus.
-    const testedPanels = []
-    for (const panel of ['explore', 'worlds', 'advanced', 'about']) {
-      assert.equal(await page.locator(`[data-panel="${panel}"]`).count(),1)
-      testedPanels.push(panel)
+    // Every lobby panel there is, so a panel added or removed needs no edit here.
+    const panels = await page.locator('.lobby-panels > [data-panel]').evaluateAll(es => es.map(e => e.dataset.panel).filter(id => id !== 'index'))
+    assert.ok(panels.length > 0, 'the lobby has panels to check')
+    for (const panel of panels) {
       await page.evaluate(id => window.syn3h.shell.showPanel(id), panel)
       await page.waitForFunction(id => { const p = document.querySelector('.lobby-panels'); return p.dataset.activePanel === id && p.dataset.busy === 'false' }, panel)
       const small = await page.evaluate(() => [...document.querySelectorAll('input, select, textarea')].filter(el => el.offsetParent !== null && !['range', 'checkbox', 'radio', 'color'].includes(el.type) && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => `${el.className || el.id || el.tagName} ${getComputedStyle(el).fontSize}`))
       assert.deepEqual(small, [], `${name}: fields under 16px in ${panel}`)
     }
-    assert.equal(testedPanels.length,4)
-    console.log(JSON.stringify({name,testedPanels,count:testedPanels.length}))
+    console.log(JSON.stringify({name,panels}))
     // Typing a name does not leave the page scaled.
     await page.evaluate(() => window.syn3h.shell.showPanel('explore'))
     await page.locator('#shell-room').tap(); await page.keyboard.type('Zoomless')

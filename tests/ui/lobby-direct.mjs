@@ -12,10 +12,12 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     // The lobby's opening (about nine seconds) hides its controls; a key skips to the settled lobby.
     await page.keyboard.press('Shift'); await page.waitForTimeout(700)
-    const nav = page.locator('.galaxy-links')
-    await nav.waitFor({ state: 'visible' })
+    // The lobby's controls are the corner dock now (About and Updates over the gear); it has no bottom buttons.
+    const dock = page.locator('.lobby-gear-dock')
+    await dock.waitFor({ state: 'visible' })
+    assert.equal(await page.locator('.galaxy-links button').count(), 0, 'no bottom buttons')
     if (process.env.UX_BEFORE === '1') {
-      await nav.locator('[data-goto=about]').click()
+      await page.getByRole('button', { name: 'About Syn3h', exact: true }).click()
       await page.waitForTimeout(200)
       await page.screenshot({ path: `${out}/${mode}-before.png` })
       continue
@@ -44,35 +46,15 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     }
     await page.waitForTimeout(600)
     const spacing = await page.evaluate(() => {
-      // The hint above the buttons is gone (the owner, 16 November 2026); the buttons keep their margin.
-      const nav = document.querySelector('.galaxy-links').getBoundingClientRect()
-      return { bottom: innerHeight - nav.bottom }
+      // The corner dock keeps clear of the screen's bottom edge (and a phone's home indicator).
+      const dock = document.querySelector('.lobby-gear-dock').getBoundingClientRect()
+      return { bottom: innerHeight - dock.bottom }
     })
     console.log(`${mode} spacing ${JSON.stringify(spacing)}`)
-    assert.ok(spacing.bottom >= 16)
+    assert.ok(spacing.bottom >= 8)
     await page.screenshot({ path: `${out}/${mode}-lobby.png` })
-    for (const reducedMotion of ['no-preference', 'reduce']) {
-      await page.emulateMedia({ reducedMotion })
-      // About is the lobby's one panel button now; it opens straight to its panel.
-      for (const name of ['about']) {
-        // A full-screen panel (About on a short landscape phone) covers the buttons: close it first.
-        if (!await nav.locator(`[data-goto=${name}]`).isVisible()) { await page.keyboard.press('Escape'); await page.locator('.lobby-panels').waitFor({ state: 'hidden' }) }
-        await nav.locator(`[data-goto=${name}]`).click()
-        // The requested panel is the only visible section from the first paint onward.
-        assert.deepEqual(await page.locator('.lobby-panels > section:visible').evaluateAll(es => es.map(el => el.dataset.panel)), [name])
-        await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.busy === 'false')
-        // No check that the panel clears the bottom buttons: on a short landscape phone About fills
-        // the screen and covers them while open (Escape or Back closes it), and Multiplayer and About are leaving the lobby's
-        // bottom row (other branches, 16 November 2026), so the check guarded nothing a player meets.
-        await page.screenshot({ path: `${out}/${mode}-${name}-${reducedMotion}.png` })
-      }
-      await page.keyboard.press('Escape')
-      await page.locator('.lobby-panels').waitFor({ state: 'hidden' })
-      await nav.locator('[data-goto=about]').click()
-      await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.busy === 'false')
-      await page.mouse.click(4, 4)
-      await page.locator('.lobby-panels').waitFor({ state: 'hidden' })
-    }
+    // The lobby has no panel buttons any more: About and Updates open as sheets from their
+    // corner icons, checked in tests/ui/lobby-about.mjs.
     assert.deepEqual(errors, [])
     console.log(`${mode}: direct lobby PASS`)
   } finally { await browser.close() }

@@ -26,7 +26,7 @@ for (const [name, options] of Object.entries({ desktop: { viewport: { width: 144
     if (!touch) { await page.evaluate(() => document.activeElement?.blur()); await page.keyboard.press('KeyJ'); await page.locator('.join-view').waitFor({ state: 'visible' }); await page.waitForTimeout(500); await page.screenshot({ path: `${out}/${name}-lobby-j.png` }); await page.locator('.join-close').click(); await page.locator('.join-view').waitFor({ state: 'hidden' })
       // J closes the invite view from its own focused buttons, and focus goes back to where it
       // was. Bug caught: a player clicks Copy, presses J, and nothing happens.
-      const about = page.locator('.galaxy-links [data-goto=about]')
+      const about = page.locator('.lobby-gear-dock .lobby-about')
       await about.focus(); await page.evaluate(() => window.syn3h.shell.openJoin()); await page.locator('.join-view').waitFor({ state: 'visible' })
       await page.locator('.join-copy').click()
       assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('join-copy')), true, 'Copy keeps focus after a click')

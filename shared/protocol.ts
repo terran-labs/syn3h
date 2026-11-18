@@ -362,7 +362,7 @@ export type ClientMessage =
    * `page` is random per page load: a hello with the same secret and the same page is that page
    * reconnecting, and takes its place back at once; a duplicated tab has the secret, not the page.
    */
-  | { type: 'hello'; v: number; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string }
+  | { type: 'hello'; v: number; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string; drop?: DropReport }
   /**
    * Change vehicle kind, colours or name after joining. `name` is optional and newer: an older
    * room ignores it, and the name then changes at the next join. The room cleans and
@@ -485,4 +485,39 @@ export function parseJson<T>(text: string): T | null {
 
 export function isVec3(v: unknown): v is Vec3 {
   return Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n))
+}
+
+/**
+ * Sent once, on the hello after a reconnect: what the browser saw when the previous socket
+ * died. Numbers and short enums only (no names, rooms, addresses or anything typed), so the
+ * room can log it on the rejoin line and tell a closed tab, a frozen page, a long stall and a
+ * network drop apart. Milliseconds are -1 when unknown.
+ */
+export interface DropReport {
+  /** WebSocket close code and reason (the reason only if a short word), and wasClean. */
+  code: number; reason: string; clean: boolean
+  /** Whether the socket had opened; how long it was open; since it last received and sent. */
+  wasOpen: boolean; openMs: number; rxMs: number; txMs: number
+  /** Page visibility at the close, and milliseconds since it was last hidden or frozen. */
+  vis: 'visible' | 'hidden'; hiddenMs: number; frozenMs: number
+  /** navigator.onLine at the close, and the longest frame in the five seconds before it. */
+  online: boolean; frameMs: number
+}
+
+const DROP_REASONS = new Set(['silent', 'replaced', 'protocol', 'full', 'going away', 'open handler failed'])
+
+/** A DropReport from the wire, made safe to log: clamped numbers, known enums, a short word. */
+export function cleanDropReport(raw: unknown): DropReport | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const ms = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? Math.max(-1, Math.min(1e8, Math.round(v))) : -1
+  // Only the reasons the room and the browser are known to give; anything else, which could
+  // be text someone typed, is 'other'.
+  const reason = typeof r.reason === 'string' && DROP_REASONS.has(r.reason) ? r.reason : r.reason ? 'other' : ''
+  return {
+    code: typeof r.code === 'number' && Number.isInteger(r.code) && r.code >= 0 && r.code <= 4999 ? r.code : -1, reason, clean: r.clean === true,
+    wasOpen: r.wasOpen === true, openMs: ms(r.openMs), rxMs: ms(r.rxMs), txMs: ms(r.txMs),
+    vis: r.vis === 'hidden' ? 'hidden' : 'visible', hiddenMs: ms(r.hiddenMs), frozenMs: ms(r.frozenMs),
+    online: r.online !== false, frameMs: ms(r.frameMs),
+  }
 }

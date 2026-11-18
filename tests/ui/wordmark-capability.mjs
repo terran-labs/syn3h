@@ -7,6 +7,7 @@
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { waitForState } from './stateWait.mjs'
 const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5247/'
 const out = 'tests/ui/artifacts/wordmark'
 await mkdir(out, { recursive: true })
@@ -28,7 +29,8 @@ try {
     await page.goto(`${base}?room=cap-${name}-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
     await page.evaluate(() => { window.__pin = setInterval(() => syn3h.params.set('gfx.level', 2), 400) })
-    await page.keyboard.press('Shift'); await page.waitForTimeout(3000)
+    await page.keyboard.press('Shift')
+    await waitForState(page, 'the name to stand in the scene', () => !!syn3h.shell.galaxy.wordmarkScreenBox(), undefined, 60)
     const s = report[name] = await state(page)
     assert.equal(s.placed, true, `${name}: the name stands in the scene`); assert.equal(s.fallback, null, `${name}: no fallback recorded`)
     if (name === 'slow-bake') assert.ok(s.bakeMs >= 250, `the bake was made slow (${s.bakeMs} ms)`)
@@ -52,7 +54,8 @@ try {
       await page.evaluate(t => { const g = syn3h.shell.galaxy; g.replayOpening(syn3h.params.get('lobby.intro').value); g.openingAt = t; g.wake = 2 }, t)
       await page.waitForTimeout(900); await page.screenshot({ path: `${out}/cap-land-throttled-t${t.toFixed(1)}.png` })
     }
-    await page.evaluate(() => { const g = syn3h.shell.galaxy; g.openingAt = null; g.replayOpening(0) }); await page.waitForTimeout(1500)
+    await page.evaluate(() => { const g = syn3h.shell.galaxy; g.openingAt = null; g.replayOpening(0) })
+    await waitForState(page, 'the name to stand in the scene', () => !!syn3h.shell.galaxy.wordmarkScreenBox(), undefined, 60)
     const s = report.landThrottled = await state(page)
     assert.equal(s.placed, true, 'phone landscape, throttled: the name stands in the scene'); assert.equal(s.fallback, null)
     await page.screenshot({ path: `${out}/cap-land-throttled-settled.png` })
