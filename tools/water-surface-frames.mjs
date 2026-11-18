@@ -55,22 +55,37 @@ async function open(planet, seed) {
 }
 const shot = (page, name) => page.screenshot({ path: `${out}/${name}.png` })
 
-/** Lens down through the surface at p, paused where the line crosses mid view; or a timed sequence. */
+/**
+ * The lens at the surface. The lens rule (WaterEffects.applyLens) holds the lens clear of the
+ * surface and lets the waterline sheet show only for the moment of a crossing; for a still frame
+ * the rule is switched off, the crossing held, and the lens pinned to the physics surface at its
+ * own position plus `offset`, after the chase or cinematic camera has placed it. Capture rig only.
+ */
+async function lensAtSurface(page, name, offset = 0) {
+  await page.evaluate((offset) => {
+    const s = window.syn3h, fx = s.game.systems.find((x) => x.waterline)
+    fx.applyLens = () => {}
+    fx.lens.t = 0.5
+    window.pin = { offset, live: true }
+    if (!window.pinSystem) {
+      window.pinSystem = { update() { if (!window.pin?.live) return; const c = s.game.camera.position, y = s.terrain.liquidHeightAt(c.x, c.z); if (Number.isFinite(y)) c.y = y + window.pin.offset } }
+      s.game.add(window.pinSystem, fx)
+    }
+  }, offset)
+  await page.waitForTimeout(900)
+  await shot(page, name)
+  notes[name] = await page.evaluate(() => { const s = window.syn3h, c = s.game.camera.position, fx = s.game.systems.find((x) => x.waterline); return { lensAboveSurface: +(c.y - s.terrain.liquidHeightAt(c.x, c.z)).toFixed(3), sheet: fx.waterline.mesh.visible } })
+  await page.evaluate(() => { window.pin.live = false; const fx = window.syn3h.game.systems.find((x) => x.waterline); delete fx.applyLens; fx.lens.t = -1 })
+}
+/** A still lens at the surface at p, looking along `look`. */
 async function crossing(page, name, p, look) {
   await page.evaluate(({ p, look }) => {
-    const s = window.syn3h, V = s.game.camera.position.constructor, y0 = s.terrain.liquidHeightAt(p.x, p.z), start = performance.now()
-    window.waterlineHeld = false; window.waterlineHold = true
-    const move = () => { const t = Math.min(1, (performance.now() - start) / 4000); const y = y0 + 1 - 2 * t; s.camera.setCinematicPose(new V(p.x, y, p.z), new V(p.x + look.x, y - 0.4, p.z + look.z), 60); if (t < 1 && !window.waterlineHeld) requestAnimationFrame(move) }
-    move()
+    const s = window.syn3h, V = s.game.camera.position.constructor, y = s.terrain.liquidHeightAt(p.x, p.z)
+    s.camera.setCinematicPose(new V(p.x, y, p.z), new V(p.x + look.x, y - 0.3, p.z + look.z), 60)
   }, { p, look })
-  const held = await page.waitForFunction(() => window.waterlineHeld, null, { timeout: 6000 }).then(() => true, () => false)
-  await shot(page, `${name}-mid`)
-  notes[name] = await page.evaluate(() => { const s = window.syn3h, c = s.game.camera.position; return { held: window.waterlineHeld, lensAboveSurface: +(c.y - s.terrain.liquidHeightAt(c.x, c.z)).toFixed(3), hasWaterline: window.hasWaterline } })
-  notes[name].held = held
-  notes[name].trace = await page.evaluate(() => (window.waterlineTrace ?? []).filter((r, i, a) => r.visible || (a[i + 1]?.visible) || Math.abs(r.lens) < 0.4).slice(-12))
-  await page.evaluate(() => { window.waterlineTrace = [] })
-  await page.evaluate(() => { const s = window.syn3h; s.game.resume(); s.camera.clearCinematicPose() })
-  await page.waitForTimeout(800)
+  await page.waitForTimeout(1500)
+  await lensAtSurface(page, `${name}-mid`)
+  await page.evaluate(() => window.syn3h.camera.clearCinematicPose())
 }
 
 // River and lake on the desert world, at the stretch where the build before the fix floated
@@ -83,9 +98,9 @@ async function crossing(page, name, p, look) {
       const s = window.syn3h
       if (s.player.kind !== kind) s.swapVehicle(kind)
       s.player.teleport({ x: p.x, y: s.terrain.liquidHeightAt(p.x, p.z) + 0.8, z: p.z }, 0)
-      s.game.input.external.y = kind === 'buggy' ? 1 : 0
+      s.game.input.external.y = 0
     }, { p: spot, kind })
-    await page.waitForTimeout(2500)
+    await page.waitForTimeout(1500)
     await page.evaluate(() => {
       const s = window.syn3h, V = s.game.camera.position.constructor
       const follow = () => { const b = s.player.body.translation(), y = s.terrain.liquidHeightAt(b.x, b.z) + 0.5; s.camera.setCinematicPose(new V(b.x + 6, y, b.z + 2), new V(b.x, b.y, b.z), 45); window.followId = requestAnimationFrame(follow) }
@@ -101,17 +116,16 @@ async function crossing(page, name, p, look) {
   const lake = await page.evaluate(() => { const l = window.syn3h.terrain.data.lava; const b = l.lake ?? l.pools[0]; return b ? { x: b.x, z: b.z } : null })
   if (lake) {
     await crossing(page, 'lens-lake', lake, { x: 10, z: 4 })
-    // Behind a moving buggy, driving in with the chase camera low.
+    // Behind a moving buggy driving into the lake, the chase camera's lens pinned to the surface.
     await page.evaluate((p) => {
       const s = window.syn3h
-      s.player.teleport({ x: p.x + 30, y: s.terrain.heightAt(p.x + 30, p.z) + 1.5, z: p.z }, Math.PI / 2)
+      s.player.teleport({ x: p.x + 25, y: s.terrain.heightAt(p.x + 25, p.z) + 1.5, z: p.z }, Math.PI / 2)
       s.game.input.external.y = 1
-      window.waterlineHeld = false; window.waterlineHold = true
     }, lake)
-    const held = await page.waitForFunction(() => window.waterlineHeld, null, { timeout: 15000 }).then(() => true, () => false)
-    await shot(page, 'lens-moving-mid')
-    notes['lens-moving'] = { held }
-    await page.evaluate(() => { const s = window.syn3h; s.game.resume(); s.game.input.external.y = 0 })
+    await page.waitForTimeout(3500)
+    await lensAtSurface(page, 'lens-moving-mid')
+    notes['lens-moving-mid'].speed = await page.evaluate(() => { const v = window.syn3h.player.body.linvel(); return +Math.hypot(v.x, v.z).toFixed(1) })
+    await page.evaluate(() => { window.syn3h.game.input.external.y = 0 })
   }
   await ctx.close()
 }
