@@ -352,7 +352,7 @@ async function main() {
           await page.keyboard.down('KeyV'); await page.waitForTimeout(400); await page.keyboard.up('KeyV')
           await page.waitForTimeout(500)
         }
-        await page.keyboard.press('KeyT')
+        await page.keyboard.press('Digit1')
         return list.join(', ')
       })
       await step('return to the lobby and visit each panel', async () => {

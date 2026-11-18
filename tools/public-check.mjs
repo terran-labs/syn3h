@@ -12,9 +12,9 @@
  *  4. King of the Hill: A alone in the zone gets 2 points within 10 s from the room's own clock;
  *  5. A's socket is closed under it and A rejoins as the same player, still seen by B;
  *  6. A leaves and the room tells B (after the rejoin grace).
- * SYN3H_CHECK_WEBGL=1 starts both pages in WebGL 2 (?webgl=1). The hosted run sets it: GitHub's
- * runners have no GPU, so WebGPU there loses its device and every frame logs the loss, which
- * says nothing about the deploy. The steps above do not depend on the renderer.
+ * SYN3H_CHECK_TOLERATE_DEVICE_LOSS=1 (the hosted run on GitHub's GPU-less runners, where WebGPU
+ * loses its device) lets "no page errors" pass over exactly the WebGPU device-loss messages,
+ * printing each one it passed over; any other page error still fails.
  * Prints PUBLIC CHECK OK and exits 0, or PUBLIC CHECK FAILED and exits 1. A crashed browser
  * page is the machine, not the deploy: PUBLIC CHECK BROWSER CRASHED, exit 3.
  */
@@ -22,7 +22,9 @@ import { chromium } from 'playwright-core'
 import { isBrowserCrash, isTransportConsoleError } from './lib/smoke-retry.mjs'
 
 const base = process.argv[2]
-const webgl = process.env.SYN3H_CHECK_WEBGL === '1'
+const tolerateDeviceLoss = process.env.SYN3H_CHECK_TOLERATE_DEVICE_LOSS === '1'
+// The WebGPU device-loss family, as three and Chrome word it on a machine without a GPU.
+const DEVICE_LOSS = /WebGPU Device Lost|Instance dropped|A valid external Instance reference no longer exists/
 if (!base) { console.error('usage: node tools/public-check.mjs <public url>'); process.exit(2) }
 const room = `check${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
 const results = [], errors = [], crashed = [], browsers = [], consoleLines = []
@@ -47,8 +49,13 @@ async function open(name) {
     ws.on('close', () => consoleLines.push({ name, at: Date.now(), type: 'websocket-close', text: '' }))
     ws.on('socketerror', (e) => consoleLines.push({ name, at: Date.now(), type: 'websocket-error', text: String(e) }))
   })
-  await page.goto(`${base}?room=${room}&name=${name}&autoplay=1${webgl ? '&webgl=1' : ''}`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3hNet?.id > 0 && window.syn3h?.player, null, { timeout: 60000 })
+  await page.goto(`${base}?room=${room}&name=${name}&autoplay=1`, { waitUntil: 'load' })
+  await page.waitForFunction(() => window.syn3hNet?.id > 0 && window.syn3h?.player, null, { timeout: 60000 }).catch(async (error) => {
+    // Say what the page had got to, not only that it timed out.
+    const state = await page.evaluate(() => ({ boot: document.documentElement.dataset.boot ?? null, backend: window.syn3h?.game?.backend ?? null, net: window.syn3hNet?.id ?? null, player: !!window.syn3h?.player })).catch(() => null)
+    const recent = consoleLines.filter((l) => l.name === name).slice(-8).map((l) => `${l.type}: ${l.text}`)
+    throw new Error(`${name} never became ready: ${error.message}; page ${JSON.stringify(state)}; console ${JSON.stringify(recent)}`)
+  })
   await page.evaluate(() => { window.syn3h.shell.play(); document.activeElement?.blur?.() })
   return page
 }
@@ -59,7 +66,7 @@ try {
   const idA = await a.evaluate(() => window.syn3hNet.id), idB = await b.evaluate(() => window.syn3hNet.id)
   const sees = (page, ids) => until(page, (ids) => ids.every((id) => window.syn3hNet.players.has(id)), ids, 15000)
   const backends = await Promise.all([a, b].map((p) => p.evaluate(() => window.syn3h?.game?.backend ?? null).catch(() => null)))
-  check('both join and see each other', idA !== idB && await sees(a, [idA, idB]) && await sees(b, [idA, idB]), { idA, idB, renderer: backends, webglRequested: webgl })
+  check('both join and see each other', idA !== idB && await sees(a, [idA, idB]) && await sees(b, [idA, idB]), { idA, idB, renderer: backends })
 
   // No bots: a moving bot in the zone would contest the hill in step 4 (as in the full smoke).
   await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
@@ -128,7 +135,10 @@ try {
   if (isBrowserCrash(String(e?.message ?? e))) crashed.push('a page')
   check('no exception', false, { message: String(e?.message ?? e) })
 }
-check('no page errors', errors.length === 0, { count: errors.length, first: errors.slice(0, 5).map((e) => e.slice(0, 300)) })
+const tolerated = tolerateDeviceLoss ? errors.filter((e) => DEVICE_LOSS.test(e)) : []
+const counted = errors.filter((e) => !tolerated.includes(e))
+if (tolerated.length) console.log(`TOLERATED ${tolerated.length} WebGPU device-loss page errors (SYN3H_CHECK_TOLERATE_DEVICE_LOSS): ${JSON.stringify(tolerated.slice(0, 5).map((e) => e.slice(0, 200)))}`)
+check('no page errors', counted.length === 0, { count: counted.length, tolerated: tolerated.length, first: counted.slice(0, 5).map((e) => e.slice(0, 300)) })
 await Promise.all(browsers.map((x) => x.close()))
 
 const crashedRun = crashed.length > 0

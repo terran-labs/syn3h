@@ -16,12 +16,18 @@ it('right-handed drives on the left and aims on the right; left-handed mirrors i
   expect(touchRole(at(W * (1 - STICK_REGION) - 1, { leftHanded: true }))).toBe('aim')
 })
 
-it('a touch that starts on a button, panel, the minimap or the button block neither drives nor aims', () => {
+it('a touch that starts on a button, panel or the button block neither drives nor aims', () => {
   for (const leftHanded of [false, true]) {
     for (const x of [100, 700]) {
       expect(touchRole(at(x, { leftHanded, onGameView: false }))).toBeNull()
-      expect(touchRole(at(x, { leftHanded, onMinimap: true }))).toBeNull()
       expect(touchRole(at(x, { leftHanded, onActions: true }))).toBeNull()
     }
   }
+})
+
+it('a touch that starts on the minimap starts the stick on the driving side and never aims', () => {
+  expect(touchRole(at(100, { onMinimap: true }))).toBe('drive')
+  expect(touchRole(at(700, { leftHanded: true, onMinimap: true }))).toBe('drive')
+  expect(touchRole(at(700, { onMinimap: true }))).toBeNull()
+  expect(touchRole(at(100, { leftHanded: true, onMinimap: true }))).toBeNull()
 })

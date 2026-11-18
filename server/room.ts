@@ -47,6 +47,7 @@ import {
   tileSize,
   MAX_BOTS, type WireVehicleKind,
   CLOSE_REPLACED,
+  cleanDropReport,
 } from '../shared/protocol'
 // Imported for their side effect of defining world parameters, so the server knows their
 // ranges. Modules that define parameters next to Three.js code cannot be imported here; their
@@ -757,7 +758,10 @@ export class Room {
       // The replaced connection, if it was still open, is closed. Its close arrives with a
       // peer that no longer has a place, so it does nothing: no hold, no leave, no new host.
       if (!player.heldUntil) key.close(CLOSE_REPLACED, 'replaced')
-      logEvent('rejoin', { room: this.tag, player: player.info.id, from: player.heldUntil ? 'held' : 'quiet' })
+      // What the client saw when its previous socket died (shared/protocol.ts DropReport): a
+      // handful of numbers and short enums, cleaned, so a quiet rejoin can be explained.
+      const drop = cleanDropReport((msg as { drop?: unknown }).drop)
+      logEvent('rejoin', { room: this.tag, player: player.info.id, from: player.heldUntil ? 'held' : 'quiet', ...(drop ? Object.fromEntries(Object.entries(drop).map(([k, v]) => [`drop${k[0].toUpperCase()}${k.slice(1)}`, v])) : {}) })
       player.heldUntil = 0
       player.page = page
       player.lastHeardAt = this.now()

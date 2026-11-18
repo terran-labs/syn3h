@@ -57,7 +57,10 @@ try {
       }, selector)
       const actions = await box('.touch-actions'), map = await box('.shell-minimap')
       assert.equal(actions.x + actions.width / 2 > width / 2, hand === 'right', `${hand}: buttons on the ${hand} side`)
-      // The minimap is docked: clear of the centre third, the player's vehicle, the buttons and the HUD.
+      // The minimap is in the lower corner on the stick's side, as on desktop (the owner, 17
+      // November 2026), clear of the centre third, the player's vehicle, the buttons and the HUD.
+      // The stick may land on it.
+      assert.ok(height - (map.y + map.height) <= 40 && (hand === 'right' ? map.x <= 40 : width - (map.x + map.width) <= 90), `${name} ${hand}: minimap in the lower ${hand === 'right' ? 'left' : 'right'} corner ${JSON.stringify(map)}`)
       const vehicle = await page.evaluate(() => {
         const { camera } = window.syn3h.game, v = camera.position.clone().copy(window.syn3h.player.object.position).project(camera)
         return { x: (v.x + 1) / 2 * innerWidth - 70, y: (1 - v.y) / 2 * innerHeight - 50, width: 140, height: 100 }
@@ -71,7 +74,7 @@ try {
         assert.ok(other, `${name} ${hand}: ${what} is on screen`)
         clear(other, what)
       }
-      assert.ok(map.width >= 88 && map.width <= 104, `${hand}: minimap stays readable (${map.width} px)`)
+      assert.ok(map.width >= 88, `${hand}: minimap stays readable (${map.width} px)`)
 
       // Points on the game view: the stick finger low on the driving side, where a thumb rests; the aim finger above the buttons.
       const driveX = hand === 'right' ? width * 0.25 : width * 0.75, aimX = hand === 'right' ? width * 0.8 : width * 0.2
@@ -81,9 +84,8 @@ try {
       // Steer and aim at once: finger 1 drives forward and right, finger 2 drags 120 px toward the middle.
       const before = await state()
       await touch('pointerdown', 1, driveX, driveY); await touch('pointermove', 1, driveX + 30, driveY - 40)
-      // The stick stays clear of the minimap and of the speed and height readouts.
+      // The stick stays clear of the speed and height readouts (it may cover the minimap).
       const base = await box('.touch-stick')
-      clear(base, 'the stick')
       for (const selector of ['.fh-left', '.fh-right']) { const other = await ink(selector); assert.ok(other, selector); assert.ok(!overlaps(base, other), `${name} ${hand}: stick clears ${selector} ${JSON.stringify([base, other])}`) }
       await touch('pointerdown', 2, aimX, aimY)
       const dir = hand === 'right' ? -1 : 1

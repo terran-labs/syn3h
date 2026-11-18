@@ -114,9 +114,12 @@ Lobby checks with fixed waits (lobby-logo's 700 ms "ordinary lobby animates") fa
 load; two unexplained 1707 failures did not reproduce in 8 probed runs.
 GitHub's hosted machine loses its WebGPU device: 737 page errors on 1706, 6 on 1707 after the
 device-loss guard. The hosted reconnect step passes on both. Since 17 Nov evening the hosted
-run starts in WebGL 2 (SYN3H_CHECK_WEBGL=1), so it NO LONGER exercises WebGPU device loss, the
-path that found the reconnect bug. That path is covered only by the local forced-loss
-reproduction from 60076fc5: anyone who touches device-loss handling must rerun it.
+run sets SYN3H_CHECK_TOLERATE_DEVICE_LOSS=1: it still runs WebGPU and still exercises device
+loss (the path that found the reconnect bug), but "no page errors" passes over exactly the
+device-loss messages and prints them. A device-loss regression that only adds those messages
+will not fail it; rerun the local forced-loss reproduction from 60076fc5 after touching
+device-loss handling. (A WebGL 2 hosted run was tried and dropped: software WebGL on the
+GPU-less runner did not bring both pages up.)
 The heavy hold is live (tools/heavy.py): a release holds new heavy jobs until it exits; a
 hold over 3 h old or naming a dead PID is ignored.
 Also listed: roll_back ignores INT and TERM (done in release.sh); the rollback verification

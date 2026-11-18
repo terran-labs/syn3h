@@ -60,13 +60,17 @@ Set on `.syn3h-shell` (or any ancestor) to fit the shell's layout:
 | `--gear-top` | `50%` (`40%` under 500 px tall) | Vertical centre of the drum |
 | `--gear-z` | `12` | Drum stacking; the settings rail is 13 |
 | `--gear-detail-width` | `220px` (`190px` touch, `170px` phone) | Column beside the drum |
-| `--gear-actions-right` | `calc(max(24px, safe-area) + 148px)`; phone `calc(max(18px, safe-area) + 150px)` | Touch action column, from the right |
-| `--gear-actions-bottom` | `max(30px, safe-area)`; phone `max(18px, safe-area)` | Touch action column, from the bottom |
+| `--gear-actions-right` | the next column out from the thumb grid | Touch action column, from the right (right-handed) |
+| `--gear-actions-left` | the same, mirrored | Touch action column, from the left (left-handed) |
+| `--gear-actions-bottom` | the thumb grid's bottom | Touch action column, from the bottom |
 | `--gear-actions-z` | `12` | Touch action stacking |
-| `--gear-action-size` | `60px`; phone `56px` | Touch action button diameter |
 
-The action column stacks upward just left of `.touch-actions`, clear of the drive stick and the
-minimap. Colours all come from the `--s3-*` tokens.
+The button size and gap are the thumb grid's own (`--thumb-size`, `--thumb-gap`, set in
+`src/ui/touch-stick.css`), so gear buttons are always the same size as WINGS, BRAKE, ZORB
+and TAG and sit on the same two rows.
+
+The action column stacks upward as the next column of the thumb grid, inside `.touch-actions`
+on the screen, clear of the drive stick and the minimap. Colours all come from the `--s3-*` tokens.
 
 ## Touch buttons
 

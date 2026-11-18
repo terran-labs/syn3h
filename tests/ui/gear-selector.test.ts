@@ -59,9 +59,10 @@ describe('gear hints', () => {
     expect(hintSignature(a)).not.toBe(hintSignature(hintModel(controls([action('reelIn', false, ['Hold click'])]))))
   })
   it('words the key reminder for the size of the rack', () => {
-    expect(keyHint(5)).toBe('T next · 1 to 5')
-    expect(keyHint(2)).toBe('T next · 1 or 2')
-    expect(keyHint(12)).toBe('T next · 1 to 9')
+    expect(keyHint(5)).toBe('1 to 5')
+    expect(keyHint(2)).toBe('1 or 2')
+    expect(keyHint(12)).toBe('1 to 9')
+    expect(keyHint(1)).toBe('')
     expect(fallbackLabel('pester')).toBe('Pester')
   })
 })
