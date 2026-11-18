@@ -31,6 +31,7 @@ class HeavyTests(unittest.TestCase):
         self.assertLessEqual(maximum, 2)
         self.assertEqual(self.run_job('raise SystemExit(7)').wait(timeout=5), 7)
     def test_hold_waits_for_a_live_release_and_ignores_a_dead_one(self):
+        self.env['SYN3H_HEAVY_HELD_SLOTS'] = '0'  # a full hold, to see waiting at all
         slots = self.root / 'slots'; slots.mkdir(parents=True, exist_ok=True)
         holder = subprocess.Popen(['sleep', '30'])
         try:
@@ -46,6 +47,24 @@ class HeavyTests(unittest.TestCase):
             if holder.poll() is None: holder.kill()
         # A hold naming a process that no longer exists holds nothing.
         self.assertEqual(self.run_job('pass').wait(timeout=5), 0)
+
+    def test_held_machine_lets_other_jobs_share_one_slot(self):
+        slots = self.root / 'slots'; slots.mkdir(parents=True, exist_ok=True)
+        holder = subprocess.Popen(['sleep', '30'])
+        log = self.root / 'events'
+        try:
+            (slots / 'hold').write_text(f'{holder.pid}\n')
+            code = f"import time; p={str(log)!r}; open(p,'a').write('1\\n'); time.sleep(.6); open(p,'a').write('-1\\n')"
+            jobs = [self.run_job(code) for _ in range(3)]
+            for job in jobs:
+                self.assertEqual(job.wait(timeout=12), 0)
+            count = maximum = 0
+            for event in log.read_text().splitlines():
+                count += int(event); maximum = max(maximum, count)
+            # Two slots, one held for the release: other jobs still run, one at a time.
+            self.assertEqual(maximum, 1)
+        finally:
+            holder.kill(); holder.wait()
 
     def test_stale_hold_is_ignored_and_a_release_lifts_its_own(self):
         slots = self.root / 'slots'; slots.mkdir(parents=True, exist_ok=True)

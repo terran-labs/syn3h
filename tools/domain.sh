@@ -23,12 +23,12 @@ API=https://api.cloudflare.com/client/v4
 WRANGLER="$REPO/node_modules/wrangler/bin/wrangler.js"
 
 die() { printf '\nDOMAIN FAILED: %s\n' "$*" >&2; exit 1; }
-[ -n "${CLOUDFLARE_API_TOKEN:-}" ] || die "no Cloudflare token: put it in $SYN3H_CLOUDFLARE_TOKEN_FILE or set CLOUDFLARE_API_TOKEN"
+cf_has_token || die "no Cloudflare token: put it in $SYN3H_CLOUDFLARE_TOKEN_FILE or set CLOUDFLARE_API_TOKEN"
 command -v jq >/dev/null || die "jq is required"
 
 # cf METHOD PATH [JSON]: call the API, fail on success=false, print the JSON.
 cf() {
-  out="$(curl -sS -X "$1" "$API$2" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' ${3:+--data "$3"})"
+  out="$(cf_curl -sS -X "$1" "$API$2" -H 'Content-Type: application/json' ${3:+--data "$3"})"
   printf '%s' "$out" | jq -e '.success == true' >/dev/null 2>&1 || { printf '%s\n' "$out" >&2; return 1; }
   printf '%s' "$out"
 }
@@ -41,8 +41,13 @@ check_hosts() {
   [ $# -gt 0 ] || die "name at least one host"
 }
 # The web records at a host: the only records this script ever deletes or restores.
+# The release's Worker with its Custom Domains (wrangler.domain.toml in $DEST); the token goes to
+# wrangler alone. Not cf: that is the API helper above.
+deploy_with_domains() { (cd "$DEST" && with_cf_token node "$WRANGLER" deploy -c wrangler.domain.toml --message "$1" </dev/null); }
 web_records() { jq -c --arg h "$1" '[.result[] | select(.name == $h and (.type == "A" or .type == "AAAA" or .type == "CNAME"))]' "$2"; }
 
+# Tests source the functions above without running a command (tools/secret-env.test.mjs).
+[ -z "${SYN3H_DOMAIN_LIB:-}" ] || return 0
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 case "$cmd" in
 export)
@@ -50,7 +55,7 @@ export)
   DIR="$STORE/dns/$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$DIR"
   cf GET "/zones/$Z/dns_records?per_page=5000" > "$DIR/records.json"
-  curl -sS "$API/zones/$Z/dns_records/export" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" > "$DIR/zone.bind"
+  cf_curl -sS "$API/zones/$Z/dns_records/export" > "$DIR/zone.bind"
   # Redirect rules and page rules explain today's apex to www redirect. Optional: the token may
   # not be allowed to read them.
   cf GET "/zones/$Z/rulesets/phases/http_request_dynamic_redirect/entrypoint" > "$DIR/redirect-rules.json" 2>/dev/null || echo "(redirect rules not readable with this token)"
@@ -91,7 +96,7 @@ attach)
   # workers_dev stays on so the workers.dev address keeps working.
   { echo "workers_dev = true"; cat "$DEST/wrangler.toml"; for h in "$@"; do printf '\n[[routes]]\npattern = "%s"\ncustom_domain = true\n' "$h"; done; } > "$DEST/wrangler.domain.toml"
   echo "Deploying $REL with Custom Domains:$HOSTS"
-  if ! (cd "$DEST" && node "$WRANGLER" deploy -c wrangler.domain.toml --message "$REL on$HOSTS" </dev/null) > "/tmp/syn3h-domain-attach.log" 2>&1; then
+  if ! deploy_with_domains "$REL on$HOSTS" > "/tmp/syn3h-domain-attach.log" 2>&1; then
     cat /tmp/syn3h-domain-attach.log
     echo "Deploy failed: restoring the records just removed."
     "$REPO/tools/domain.sh" rollback "$EXPORT" "$@"

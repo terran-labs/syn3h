@@ -39,19 +39,18 @@ for (const mode of modes) {
     assert.equal(await page.locator('.shell-hud').isVisible(), false)
     assert.equal(await page.locator('.hud-navigation button').count(), 1)
     const map = await page.locator('.shell-minimap').boundingBox()
-    // Phones dock the map in the top right corner (it sat over the player's vehicle lower
-    // down); tablets and desktop keep it in the lower left. Either way it stays on screen and
-    // clear of the vehicle in the middle.
-    const view = page.viewportSize(), phone = touch && (view.width <= 700 || view.height <= 500)
-    if (phone) assert.ok(map.x + map.width > view.width - 25 && map.y < 25, `phone map docks top right ${JSON.stringify(map)}`)
-    else assert.ok(map.x < 25 && map.y > view.height * .2, 'map lives in lower left')
+    // The minimap keeps the lower left corner on every screen, phones and tablets as on desktop
+    // (the owner, 17 November 2026; hud-column.css, exploration.css): on screen, in the corner.
+    const view = page.viewportSize()
+    assert.ok(map.x >= 0 && map.x < 25 && map.y + map.height <= view.height && view.height - (map.y + map.height) < 25, `${mode}: map in the lower left corner ${JSON.stringify(map)}`)
     if (touch) {
-      // The stick floats under the thumb, so nothing sits there until a drag; the first-run
-      // hint has the lower left instead and must clear the minimap.
+      // The stick floats under the thumb, so nothing sits there until a drag, and it may land on
+      // the map (the map takes no touches). The first-run drive hint sits just above the map,
+      // never over it.
       assert.equal(await page.locator('.touch-stick').evaluate(el => getComputedStyle(el).visibility), 'hidden', 'no permanent joystick')
       // Measured even while the spawn card hides it for a few seconds.
-      const hint = await page.locator('.touch-stick-hint').evaluate(el => { const r = el.getBoundingClientRect(); return r.height ? { y: r.top } : null })
-      assert.ok(hint && map.y + map.height + 12 <= hint.y, 'touch minimap clears the drive hint')
+      const hint = await page.locator('.touch-stick-hint').evaluate(el => { const r = el.getBoundingClientRect(); return r.height ? { bottom: r.bottom, left: r.left } : null })
+      assert.ok(hint && hint.bottom <= map.y, `${mode}: the drive hint sits above the minimap ${JSON.stringify({ hint, map })}`)
     }
     assert.match(await page.locator('.shell-minimap canvas:not(.shell-minimap-marks)').evaluate(el => getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage), /radial-gradient/)
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-drive.png` })
@@ -83,8 +82,8 @@ for (const mode of modes) {
     await row.evaluate(el => { el.closest('details').open = true })
     await row.scrollIntoViewIfNeeded()
     if (touch) await row.locator('.wi-label').tap(); else await row.hover()
-    await page.locator('.wi-tooltip').waitFor({ state: 'visible' })
-    const tip = await page.locator('.wi-tooltip').boundingBox(), control = await row.boundingBox()
+    await page.locator('#setting-tooltip').waitFor({ state: 'visible' })
+    const tip = await page.locator('#setting-tooltip').boundingBox(), control = await row.boundingBox()
     assert.ok(tip.x >= 0 && tip.y >= 0 && tip.x + tip.width <= page.viewportSize().width && tip.y + tip.height <= page.viewportSize().height)
     if (!touch) assert.ok(tip.x + tip.width < control.x, 'description floats left of control')
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-tooltip.png` })

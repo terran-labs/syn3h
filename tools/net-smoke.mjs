@@ -32,6 +32,7 @@ import { MAX_STEP_RETRIES, isBrowserCrash, isTransportConsoleError, retryDecisio
 // First: it turns on Playwright's browser log channel before playwright-core loads.
 import { chromeTail, nameNextLaunch, prepareChromeLogs } from './lib/chrome-log.mjs'
 import { chromium } from 'playwright-core'
+import { browserEnv } from './lib/safe-env.mjs'
 import { createShotEvidence, createShotDecision } from './shot-evidence.mjs'
 
 // Opt-in only. Reserve a caller-owned fresh directory before opening a browser.
@@ -70,6 +71,8 @@ const traceFor = (name) => { if (!pageTrace.has(name)) pageTrace.set(name, { con
 const launch = (name) => (nameNextLaunch(name), chromium.launch({
   channel: 'chrome',
   headless: true,
+  // No credentials in a browser's environment: a crash dump would record them (lib/safe-env.mjs).
+  env: browserEnv(),
   args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist',
     // Keep every page running at full rate even though only one can be focused.
     '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
@@ -322,7 +325,10 @@ try {
   ids.set('Alice', idA); ids.set('Bob', idB)
   const humanViews = await both(() => [...window.syn3hNet.players.values()].filter(p => !p.bot))
   check('both connected and see each other', idA && idB && idA !== idB && humanViews.every(ps => ps.length === 2 && ps.some(p => p.id === idA && p.name === 'Alice') && ps.some(p => p.id === idB && p.name === 'Bob')), { idA, idB, humanViews })
-  await Promise.all([a, b].map(p => p.waitForFunction(() => [...window.syn3hNet.players.values()].some(p => p.bot), null, { timeout: 10000 })))
+  // Bots arrive one at a time since v26.11.1708, slower on a loaded machine: allow 30 s, and say
+  // plainly if none came rather than failing on a bare timeout.
+  const botsCame = await Promise.all([a, b].map(p => p.waitForFunction(() => [...window.syn3hNet.players.values()].some(p => p.bot), null, { timeout: 30000 }).then(() => true, () => false)))
+  if (!botsCame.every(Boolean)) throw new Error(`no bot arrived within 30 s (A ${botsCame[0]}, B ${botsCame[1]}): the pacer may be holding bots back on a slow machine; rerun`)
   const readBots = () => both(() => ({ requested: window.syn3h.params.get('bots.count').value, ids: [...window.syn3hNet.players.values()].filter(p => p.bot).map(p => p.id).sort(), effective: window.syn3h.bots.vehicles.length }))
   let defaultBots = await readBots()
   for (let i = 0; i < 50 && !(defaultBots[0].ids.length === defaultBots[0].effective && defaultBots[0].effective > 0 && JSON.stringify(defaultBots[0].ids) === JSON.stringify(defaultBots[1].ids)); i++) {
