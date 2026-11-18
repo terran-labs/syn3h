@@ -12,6 +12,9 @@
  *  4. King of the Hill: A alone in the zone gets 2 points within 10 s from the room's own clock;
  *  5. A's socket is closed under it and A rejoins as the same player, still seen by B;
  *  6. A leaves and the room tells B (after the rejoin grace).
+ * SYN3H_CHECK_WEBGL=1 starts both pages in WebGL 2 (?webgl=1). The hosted run sets it: GitHub's
+ * runners have no GPU, so WebGPU there loses its device and every frame logs the loss, which
+ * says nothing about the deploy. The steps above do not depend on the renderer.
  * Prints PUBLIC CHECK OK and exits 0, or PUBLIC CHECK FAILED and exits 1. A crashed browser
  * page is the machine, not the deploy: PUBLIC CHECK BROWSER CRASHED, exit 3.
  */
@@ -19,6 +22,7 @@ import { chromium } from 'playwright-core'
 import { isBrowserCrash, isTransportConsoleError } from './lib/smoke-retry.mjs'
 
 const base = process.argv[2]
+const webgl = process.env.SYN3H_CHECK_WEBGL === '1'
 if (!base) { console.error('usage: node tools/public-check.mjs <public url>'); process.exit(2) }
 const room = `check${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
 const results = [], errors = [], crashed = [], browsers = [], consoleLines = []
@@ -43,7 +47,7 @@ async function open(name) {
     ws.on('close', () => consoleLines.push({ name, at: Date.now(), type: 'websocket-close', text: '' }))
     ws.on('socketerror', (e) => consoleLines.push({ name, at: Date.now(), type: 'websocket-error', text: String(e) }))
   })
-  await page.goto(`${base}?room=${room}&name=${name}&autoplay=1`, { waitUntil: 'load' })
+  await page.goto(`${base}?room=${room}&name=${name}&autoplay=1${webgl ? '&webgl=1' : ''}`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.syn3hNet?.id > 0 && window.syn3h?.player, null, { timeout: 60000 })
   await page.evaluate(() => { window.syn3h.shell.play(); document.activeElement?.blur?.() })
   return page
@@ -54,7 +58,8 @@ try {
   const a = await open('Alice'), b = await open('Bob')
   const idA = await a.evaluate(() => window.syn3hNet.id), idB = await b.evaluate(() => window.syn3hNet.id)
   const sees = (page, ids) => until(page, (ids) => ids.every((id) => window.syn3hNet.players.has(id)), ids, 15000)
-  check('both join and see each other', idA !== idB && await sees(a, [idA, idB]) && await sees(b, [idA, idB]), { idA, idB })
+  const backends = await Promise.all([a, b].map((p) => p.evaluate(() => window.syn3h?.game?.backend ?? null).catch(() => null)))
+  check('both join and see each other', idA !== idB && await sees(a, [idA, idB]) && await sees(b, [idA, idB]), { idA, idB, renderer: backends, webglRequested: webgl })
 
   // No bots: a moving bot in the zone would contest the hill in step 4 (as in the full smoke).
   await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
