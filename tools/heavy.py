@@ -39,11 +39,18 @@ def held():
     return True
 
 
+# While a release holds the machine, other jobs share one slot (the last) instead of none:
+# a single builder job keeps the load far under the gate's limit and keeps work moving.
+HELD_SLOTS = int(os.environ.get('SYN3H_HEAVY_HELD_SLOTS', '1'))
+
 while True:
+    usable = range(1, slots + 1)
     if held():
-        time.sleep(2)
-        continue
-    for i in range(1, slots + 1):
+        if HELD_SLOTS < 1:
+            time.sleep(2)
+            continue
+        usable = range(max(1, slots - HELD_SLOTS + 1), slots + 1)
+    for i in usable:
         lock = open(root / f'slot-{i}.lock', 'a+')
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
