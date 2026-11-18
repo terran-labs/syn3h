@@ -39,7 +39,7 @@ for (const [name, options] of Object.entries({ desktop: { viewport: { width: 144
     }
     await page.evaluate(() => window.syn3h.params.set('sun.timeOfDay', 12.5))
     await page.evaluate(() => window.syn3h.shell.toast?.('A message from the game')); await page.waitForTimeout(400)
-    await page.evaluate(() => { const p = document.querySelector('.rail-players'); if (p) p.open = true }); await page.waitForTimeout(400)
+    await page.evaluate(() => window.syn3h.shell.inspector.revealCard('players')); await page.waitForTimeout(400)
     await page.screenshot({ path: `${out}/${name}-play-players.png` })
     // The invite view, About, the leave question, then pause, then (phone) the drive buttons.
     await press(page.locator('.rail-invite')); await page.locator('.join-view').waitFor({ state: 'visible' }); await page.waitForTimeout(500)
@@ -50,7 +50,7 @@ for (const [name, options] of Object.entries({ desktop: { viewport: { width: 144
     await page.screenshot({ path: `${out}/${name}-about.png` })
     await page.evaluate(() => window.syn3h.shell.closeAbout?.()); await page.waitForTimeout(400)
     if (touch && await page.locator('.world-inspector').isHidden()) await page.locator('.inspector-toggle').tap()
-    await press(page.locator('.rail-foot .exit-world')); await page.waitForTimeout(500)
+    await press(page.locator('.rail-command .exit-world')); await page.waitForTimeout(500)
     await page.screenshot({ path: `${out}/${name}-leave-question.png` })
     await press(page.locator('.exit-stay')); await page.waitForTimeout(400)
     if (touch) { if (await page.locator('.world-inspector').isVisible()) await page.locator('.inspector-toggle').tap(); await page.waitForTimeout(600); await page.screenshot({ path: `${out}/${name}-touch.png` }) }

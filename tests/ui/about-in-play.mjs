@@ -24,7 +24,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     if (touch) await page.locator('.inspector-toggle').tap()
     else if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
     await page.locator('.world-inspector').waitFor({ state: 'visible' })
-    await page.locator('.rail-players summary').click()
+    await page.locator('[data-section=players] > .wi-head').click()
 
     // Hold fire (L), then open the guide with it still down.
     await page.keyboard.down('l')

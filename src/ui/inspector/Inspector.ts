@@ -65,6 +65,14 @@ export interface InspectorOptions {
   sections?: readonly string[]
   /** Settings to show and edit as a percentage (a 0 to 1 value shown as 0% to 100%). */
   percent?(def: PropertyDef): boolean
+  /**
+   * True where only one card should be open at a time (phones). Opening a card then closes the
+   * others, keeps the tapped header under the finger while they go, and eases the card into
+   * view. Asked at every tap, so turning the phone counts.
+   */
+  oneOpen?(): boolean
+  /** A localStorage key: which cards are open is kept there and restored on the next visit. */
+  rememberOpen?: string
 }
 /** "Mode (0 tag, 1 hill)" or "Glass: 0 Clear, 1 Frosted" gives a name and named choices. */
 export function choicesOf(def: PropertyDef): { name: string; options: { value: number; label: string }[] } | null {
@@ -117,6 +125,10 @@ interface ExtraCard extends ExtraCardOptions { id: string; card: HTMLElement; su
 
 /** How long a card takes to make room for another, and the curve it eases along. */
 const CARD_MOTION: KeyframeAnimationOptions = { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' }
+/** On a phone the stack moves less far and the player is waiting on a thumb: a little quicker. */
+const PHONE_MOTION: KeyframeAnimationOptions = { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' }
+/** Close to the cards' easing curve, for the scroll that runs beside them. */
+const easeOut = (t: number): number => 1 - (1 - t) ** 3
 
 export class Inspector {
   readonly element = document.createElement('aside')
@@ -129,7 +141,10 @@ export class Inspector {
   private readonly rows = new Map<string, { row: HTMLElement; sync(value: ParamValue): void; def: PropertyDef }>()
   private readonly extras = new Map<string, ExtraCard>()
   private readonly unsubscribe: () => void
-  private sessionCard?: HTMLDetailsElement
+  /** Remembered open cards whose card has not been built yet (extras arrive after the first build). */
+  private restoring: string[] = []
+  /** Stops a running header glide (openOnly). */
+  private glideStop?: () => void
   private shown = true
   private visibilityMotion?: Animation
   private visibilityInitialized = false
@@ -175,6 +190,7 @@ export class Inspector {
     // Escape in the name field cancels the edit. This runs before the shell's own Escape,
     // which only blurs a text field (and the blur would otherwise save).
     window.addEventListener('keydown', event => { if (event.code === 'Escape' && event.target === this.nameInput) this.nameInput.value = this.options.playerName?.() ?? '' }, { capture: true, signal: this.abort.signal })
+    this.restoring = this.recall()
     this.build()
     this.unsubscribe = params.onChange((id, value) => {
       this.rows.get(id)?.sync(value)
@@ -225,17 +241,18 @@ export class Inspector {
       this.visibilityMotion = undefined
     }
   }
-  /** Keep the session controls and their listeners intact through registry rebuilds. */
-  setSessionCard(card: HTMLDetailsElement): void {
-    this.sessionCard = card
-    card.dataset.section = 'players'
-    this.placeSessionCard()
+  /** The open cards saved by an earlier visit, newest last; only the newest where one is open at a time. */
+  private recall(): string[] {
+    const key = this.options.rememberOpen; if (!key) return []
+    let ids: string[] = []
+    try { const saved: unknown = JSON.parse(localStorage.getItem(key) ?? '[]'); if (Array.isArray(saved)) ids = saved.filter((id): id is string => typeof id === 'string') } catch { /* Storage is optional. */ }
+    return this.options.oneOpen?.() ? ids.slice(-1) : ids
   }
-  private placeSessionCard(): void {
-    if (!this.sessionCard) return
-    const cards = this.element.querySelector('.wi-cards')!
-    const game = cards.querySelector('[data-section="game"]')
-    if (game) game.after(this.sessionCard); else cards.prepend(this.sessionCard)
+  private remember(): void {
+    const key = this.options.rememberOpen
+    // A search opens every card with a match; that is not the player's choice.
+    if (!key || this.element.classList.contains('is-searching')) return
+    try { localStorage.setItem(key, JSON.stringify([...this.restoring, ...this.openOrder])) } catch { /* Storage is optional. */ }
   }
 
   /** Rebuild if properties have been defined since the last look; refresh summaries and locks. */
@@ -306,7 +323,11 @@ export class Inspector {
     }
     // Extra cards are the same elements across rebuilds, so they keep their open state.
     for (const extra of this.extras.values()) { this.place(extra); extra.fill?.() }
-    this.placeSessionCard()
+    // Open what the last visit left open, as each card arrives.
+    for (const id of [...this.restoring]) {
+      const card = cards.querySelector<HTMLElement>(`:scope > .wi-card[data-section="${CSS.escape(id)}"]`)
+      if (card) { this.restoring.splice(this.restoring.indexOf(id), 1); if (!card.classList.contains('is-open')) this.toggle(card, true) }
+    }
     // Cards that did not come back are no longer open.
     const present = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section!))
     for (let i = this.openOrder.length - 1; i >= 0; i--) if (!present.has(this.openOrder[i])) this.openOrder.splice(i, 1)
@@ -343,7 +364,9 @@ export class Inspector {
   /** Open one card (leaving the others as they are), easing as a header click does. */
   revealCard(id: string): void {
     const card = this.element.querySelector<HTMLElement>(`.wi-card[data-section="${id}"]`)
-    if (card && !card.classList.contains('is-open')) this.reflow(() => { this.toggle(card, true); this.fit(card, true) })
+    if (!card || card.classList.contains('is-open')) return
+    if (this.options.oneOpen?.()) this.openOnly(card)
+    else this.reflow(() => { this.toggle(card, true); this.fit(card, true) })
   }
   /**
    * The Me card's vehicle picker: a segmented control, one segment per vehicle with a drawn
@@ -647,13 +670,59 @@ export class Inspector {
     if (!open && this.selected && card.querySelector(`.wi-row[data-id="${CSS.escape(this.selected)}"]`)) this.hideTooltip()
     const body = card.querySelector<HTMLElement>('.wi-body')!
     card.classList.toggle('is-open', open); body.hidden = !open; body.inert = !open; card.querySelector('.wi-head')!.setAttribute('aria-expanded', String(open))
+    if (open !== (at >= 0)) this.remember()
+  }
+  /** A tap on a card's header. */
+  private tap(card: HTMLElement): void {
+    if (!card.classList.contains('is-open') && this.options.oneOpen?.()) { this.openOnly(card); return }
+    this.reflow(() => { this.toggle(card); if (card.classList.contains('is-open')) this.fit(card, true) })
+  }
+  /**
+   * Phones: open this card and close the rest in one motion. The tapped header stays under the
+   * finger while cards above it fold away (the stack's scroll takes up their height where it
+   * can), then eases to where the whole card shows, or to the top of the stack when the card is
+   * taller than the stack. The scroll runs beside the cards' own easing, one write per frame,
+   * and stops the moment the player touches or scrolls the stack.
+   */
+  private openOnly(card: HTMLElement): void {
+    const stack = this.element.querySelector<HTMLElement>('.wi-cards')!
+    this.glideStop?.()
+    // The card's own top, not its header's: an open header sticks, and reports where it is stuck.
+    const start = card.getBoundingClientRect().top, scrolled = stack.scrollTop
+    let height = 0
+    this.reflow(() => {
+      for (const other of this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')) if (other !== card) this.toggle(other, false)
+      this.toggle(card, true)
+      height = card.getBoundingClientRect().height
+    }, PHONE_MOTION)
+    // Closing the others shortened the stack for a moment and the browser clamped its scroll;
+    // the cards now start from their old heights, so the old scroll fits again.
+    stack.scrollTop = scrolled
+    const view = stack.getBoundingClientRect()
+    // Where the header should come to rest: where it is if the card then fits below it, else
+    // as high as needed for the whole card to show, and never above the top of the stack.
+    const end = Math.max(view.top, Math.min(start, view.bottom - height))
+    const hold = (y: number) => { const drift = card.getBoundingClientRect().top - y; if (Math.abs(drift) >= 0.5) stack.scrollTop += drift }
+    const motion = this.moving.get(card)
+    if (!motion) { hold(end); return }
+    const stop = new AbortController(); let frame = 0
+    this.glideStop = () => { stop.abort(); cancelAnimationFrame(frame); this.glideStop = undefined }
+    for (const type of ['wheel', 'touchstart', 'keydown'] as const) stack.addEventListener(type, () => this.glideStop?.(), { signal: stop.signal, passive: true })
+    const duration = Number(PHONE_MOTION.duration)
+    const step = () => {
+      const t = Math.min(1, (Number(motion.currentTime) || 0) / duration)
+      hold(start + (end - start) * easeOut(t))
+      if (t < 1 && motion.playState === 'running') frame = requestAnimationFrame(step)
+      else { hold(end); this.glideStop?.() }
+    }
+    frame = requestAnimationFrame(step)
   }
   /**
    * Open or close cards, easing every card's height from where it was to where it lands
    * (FLIP on height). The browser runs the animation; no script runs per frame. A closing
    * body stays drawn, inert and clipped, until its card has shrunk to the header.
    */
-  private reflow(change: () => void): void {
+  private reflow(change: () => void, timing = CARD_MOTION): void {
     const cards = [...this.element.querySelectorAll<HTMLElement>('.wi-card')]
     const from = cards.map(card => card.getBoundingClientRect().height)
     this.settle(); change()
@@ -667,7 +736,7 @@ export class Inspector {
       const body = card.querySelector<HTMLElement>('.wi-body')!
       body.hidden = false; card.classList.add('is-moving')
       const frame = (height: number): Keyframe => ({ flexGrow: 0, flexShrink: 0, flexBasis: `${height}px`, minHeight: '0px' })
-      const motion = card.animate([frame(from[i]), frame(to[i])], CARD_MOTION)
+      const motion = card.animate([frame(from[i]), frame(to[i])], timing)
       motion.onfinish = () => { if (this.moving.get(card) === motion) this.land(card) }
       this.moving.set(card, motion)
     })
@@ -690,6 +759,9 @@ export class Inspector {
    */
   private fit(keep: HTMLElement | null, reveal = false): void {
     const stack = this.element.querySelector<HTMLElement>('.wi-cards')!
+    // With one card open at a time the stack simply scrolls: nothing to close or hold. Closing
+    // here also closed the card a player had open whenever the panel came back on a phone.
+    if (this.options.oneOpen?.()) return
     if (!this.shown || this.element.classList.contains('is-searching') || !stack.clientHeight) return
     const cards = [...stack.children].filter((el): el is HTMLElement => el instanceof HTMLElement && !el.hidden && el.getClientRects().length > 0)
     const measured = new Map<HTMLElement, FitCard>()
@@ -776,7 +848,6 @@ export class Inspector {
       card.hidden = words.length > 0 && cardHits === 0
       if (words.length) this.toggle(card, cardHits > 0)
     }
-    if (this.sessionCard) this.sessionCard.hidden = words.length > 0 && !words.every(word => this.sessionCard!.textContent!.toLowerCase().includes(word))
     if (!words.length && this.beforeSearch) {
       const before = this.beforeSearch; this.beforeSearch = undefined
       cards.forEach((card, i) => this.toggle(card, before.cards[i] ?? false)); folds.forEach((fold, i) => { fold.open = before.folds[i] ?? false })
@@ -793,7 +864,7 @@ export class Inspector {
     const card = button.closest<HTMLElement>('.wi-card'), section = card ? this.tree.find(s => s.id === card.dataset.section) : undefined
     const valueOf = (id: string) => params.get(id)?.value
     switch (button.dataset.wi) {
-      case 'toggle': if (card) this.reflow(() => { this.toggle(card); if (card.classList.contains('is-open')) this.fit(card, true) }); break
+      case 'toggle': if (card) this.tap(card); break
       case 'show-gi': this.showGI(); break
       case 'save-world': this.options.onSaveWorld?.(); break
       case 'copy-world': await this.copy(JSON.stringify(exportWorld(params.all().map(p => p.def as PropertyDef), valueOf), null, 2), 'This world'); break
@@ -839,5 +910,5 @@ export class Inspector {
     this.element.querySelector<HTMLElement>('.wi-sheet')!.hidden = true
     const line = pasteSummary(result); this.say(line); return line
   }
-  dispose(): void { this.visibilityMotion?.cancel(); this.settle(); this.unsubscribe(); this.abort.abort(); clearTimeout(this.armed); clearTimeout(this.tooltipTimer); this.tooltip.remove(); this.element.remove() }
+  dispose(): void { this.glideStop?.(); this.visibilityMotion?.cancel(); this.settle(); this.unsubscribe(); this.abort.abort(); clearTimeout(this.armed); clearTimeout(this.tooltipTimer); this.tooltip.remove(); this.element.remove() }
 }
