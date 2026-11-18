@@ -95,7 +95,7 @@
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-resolution .wi-res-value { text-align: right; color: var(--s3-accent-2); font: 500 13px 'Barlow', sans-serif; font-variant-numeric: tabular-nums; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-resolution .wi-res-auto { position: relative; min-height: 28px; padding: 3px 10px; border: 1px solid var(--s3-line); border-radius: 999px; background: none; box-shadow: none; color: var(--s3-dim); font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .06em; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-resolution .wi-res-auto::after { content: ""; position: absolute; inset: calc((28px - var(--wi-hit)) / 2 - 1px) -4px; }
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-resolution .wi-res-auto.is-on { color: #021018; border-color: transparent; background: var(--s3-accent-2); box-shadow: 0 0 8px rgb(131 217 245 / .45); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-resolution .wi-res-auto.is-on { color: #0d0d0d; border-color: transparent; background: var(--s3-accent-2); box-shadow: 0 0 8px rgb(194 194 194 / .45); }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-resolution .wi-res-size { grid-column: 2 / -1; grid-row: 2; margin-top: -8px; color: var(--s3-soft); font-size: 11px; font-variant-numeric: tabular-nums; }
 /* Reset marks use a second line so they never consume the setting label. */
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-fine { grid-template-columns: minmax(0,1fr) 100px var(--wi-num); }

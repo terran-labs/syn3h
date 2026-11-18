@@ -1,6 +1,7 @@
 /**
- * About's content, shared by the lobby About panel and the in-play guide so they cannot drift:
- * two tabs, About (the story and credits) and Updates (recent releases and their notes).
+ * About's content, shared by the lobby sheets and the in-play guide so they cannot drift. The
+ * in-play guide shows it as two tabs, About (the story and credits) and Updates (recent
+ * releases and their notes); the lobby gives each its own sheet (LobbySheet.ts), without tabs.
  * Updates fetches the release feed the first time it is opened.
  */
 import { creditsHtml } from '../data/credits'
@@ -20,6 +21,11 @@ export function aboutHtml(): string {
     <div class="about-pane" role="tabpanel" id="${id}-about" aria-labelledby="${id}-tab-about" data-about-pane="about">${creditsHtml}</div>
     <div class="about-pane" role="tabpanel" id="${id}-updates" aria-labelledby="${id}-tab-updates" data-about-pane="updates" hidden><div class="about-updates" aria-live="polite"></div></div>`
 }
+
+/** The lobby's About sheet body: the story and credits, no tabs. */
+export const aboutSheetHtml = (): string => `<div class="about-pane">${creditsHtml}</div>`
+/** The lobby's Updates sheet body: the release list, filled by fillUpdates when it opens. */
+export const updatesSheetHtml = (): string => '<div class="about-updates" aria-live="polite"></div>'
 
 export type AboutTab = 'about' | 'updates'
 

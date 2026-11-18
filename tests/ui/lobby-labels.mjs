@@ -9,6 +9,7 @@
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { waitForState } from './stateWait.mjs'
 
 const url = process.env.SYN3H_URL
 assert.ok(url, 'SYN3H_URL is required')
@@ -70,7 +71,8 @@ try {
     assert.ok(target, `${name}: some planet on screen has a caption below full strength at rest`)
     if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: target.x, y: target.y }] })
     else await page.mouse.move(target.x, target.y)
-    await page.waitForTimeout(500)
+    // The pointed caption eases to full strength (a CSS transition): wait for it, not a clock.
+    await waitForState(page, 'the pointed caption to reach full strength', () => { const c = document.querySelector('.galaxy-label.is-pointed'); return c && Number(getComputedStyle(c).opacity) > 0.97 }, undefined, 30)
     const pointed = await page.evaluate(() => document.querySelector('.galaxy-label.is-pointed')?.dataset.world)
     const after = (await measure()).find(c => c.id === pointed)
     assert.ok(after, `${name}: pointing near ${target.id} points at a world with a caption`)

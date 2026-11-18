@@ -1,10 +1,12 @@
 /**
- * Updates in About and the update banner.
+ * The lobby's Updates sheet, the update banner and the mark on the Updates icon.
  *
- * Start the dev server as release 26.11.1601 so the page knows its own version, then
- * this check serves a /v/versions.json naming 26.11.1602 as live:
+ * Start the dev server as the release before the newest production one (the second-last
+ * production row of release-notes/history.tsv) so the page knows its own version, then this
+ * check serves a /v/versions.json naming the newest as live. Both are then in the dev feed,
+ * which lists only recent releases (fixed versions fell out of it and broke this check):
  *
- *   SYN3H_RELEASE_VERSION=26.11.1601 npx vite --port 5187
+ *   SYN3H_RELEASE_VERSION=<second-newest, e.g. 26.11.1706> npx vite --port 5187
  *   SYN3H_URL=http://127.0.0.1:5187/ tools/heavy.sh node tests/ui/about-updates.mjs
  */
 import { chromium, webkit, devices } from 'playwright-core'
@@ -13,10 +15,11 @@ import { mkdir } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 const out = 'tests/ui/artifacts/about-updates'
 await mkdir(out, { recursive: true })
-const RUNNING = '26.11.1601', LIVE = '26.11.1602'
 /** The feed lists the real production history, newest first: its top entry grows with every release. */
-const NEWEST = readFileSync('release-notes/history.tsv', 'utf8').split('\n').map((l) => l.split('\t'))
-  .filter(([v, , , , channel]) => /^v\d/.test(v ?? '') && channel?.trim() === 'production').at(-1)[0].slice(1)
+const PRODUCTION = readFileSync('release-notes/history.tsv', 'utf8').split('\n').map((l) => l.split('\t'))
+  .filter(([v, , , , channel]) => /^v\d/.test(v ?? '') && channel?.trim() === 'production').map(([v]) => v.slice(1))
+const NEWEST = PRODUCTION.at(-1)
+const RUNNING = process.env.SYN3H_RELEASE_VERSION ?? PRODUCTION.at(-2), LIVE = NEWEST
 /** What the banner covers: the wordmark in the scene, the hint, lobby buttons, settings gear, any planet label or planet. */
 const overlaps = page => page.evaluate(() => {
   const banner = document.querySelector('.update-banner').getBoundingClientRect()
@@ -36,7 +39,7 @@ const overlaps = page => page.evaluate(() => {
   }
   return found
 })
-const live = route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ versions: ['26.11.1600', RUNNING, LIVE] }) })
+const live = route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ versions: [PRODUCTION.at(-3), RUNNING, LIVE] }) })
 
 for (const mode of ['desktop', 'phone', 'landscape']) {
   const touch = mode !== 'desktop'
@@ -69,11 +72,13 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await page.waitForTimeout(3000)
     assert.equal(loads, 1, 'nothing reloads by itself')
 
-    // What's new opens About at Updates: newest first, the newest open with its notes.
+    // The Updates icon above the gear carries a quiet mark while a newer version is out.
+    assert.equal(await page.locator('.lobby-updates.has-update').count(), 1, `${mode}: the Updates icon is marked`)
+    // What's new opens the Updates sheet: newest first, the newest open with its notes, no tabs.
     await banner.getByRole('button', { name: 'What’s new' }).click()
-    const about = page.locator('[data-panel="about"]')
+    const about = page.locator('.lobby-sheet-updates')
     await about.locator('.update-release').first().waitFor({ state: 'visible', timeout: 15000 })
-    assert.equal(await about.getByRole('tab', { name: 'Updates' }).getAttribute('aria-selected'), 'true')
+    assert.equal(await about.getByRole('tab').count(), 0, 'the Updates sheet has no tabs')
     const first = about.locator('.update-release').first()
     assert.equal(await first.getAttribute('data-version'), NEWEST)
     assert.ok(await first.evaluate(d => d.open), 'the newest release starts open')
@@ -85,10 +90,10 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     for (const [target, rel, protocol] of links) { assert.equal(target, '_blank'); assert.match(rel, /noopener/); assert.match(protocol, /^https?:$/) }
     const mine = about.locator(`.update-release[data-version="${RUNNING}"]`)
     assert.match(await mine.locator('.update-badge').innerText(), /playing this/i)
-    await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.busy === 'false' && !document.querySelector('.lobby-panels').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
+    await page.waitForFunction(() => !document.querySelector('.lobby-sheet-updates').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
     if (mode === 'landscape') {
-      const sheet = await page.locator('.lobby-panels').boundingBox()
-      assert.ok(sheet.height >= page.viewportSize().height - 40, `landscape: About is a full-height sheet (${sheet.height}px)`)
+      const sheet = await about.locator('.lobby-sheet-panel').boundingBox()
+      assert.ok(sheet.height >= page.viewportSize().height - 40, `landscape: Updates is a full-height sheet (${sheet.height}px)`)
     }
     await page.screenshot({ path: `${out}/${mode}-updates.png` })
     if (!touch) {
@@ -100,9 +105,10 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     }
     assert.equal(loads, 1, 'still the first load')
 
-    assert.ok(await banner.isHidden(), 'an open lobby panel hides the banner')
-    // Back on the galaxy it returns; dismissed, it stays away for the session.
-    await about.locator('button.panel-back').click()
+    assert.ok(await banner.isHidden(), 'an open sheet hides the banner')
+    // Closed with its X, the galaxy and the banner return; dismissed, it stays away for the session.
+    await about.getByRole('button', { name: 'Close Updates' }).click()
+    await about.waitFor({ state: 'hidden' })
     await banner.waitFor({ state: 'visible' })
     await banner.getByRole('button', { name: 'Dismiss for now' }).click()
     assert.ok(await banner.isHidden())
@@ -142,7 +148,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await pinned.waitForTimeout(6000)
     assert.ok(await pinned.locator('.update-banner').isHidden(), 'no banner on a pinned page')
     await pinned.evaluate(() => syn3h.shell.showUpdates())
-    const note = pinned.locator('[data-panel="about"] .updates-pinned')
+    const note = pinned.locator('.lobby-sheet-updates .updates-pinned')
     await note.waitFor({ timeout: 15000 })
     assert.match(await note.innerText(), new RegExp(`pinned version v${RUNNING.replaceAll('.', '\\.')}`))
     assert.equal(await note.locator('a').getAttribute('href'), '/')
