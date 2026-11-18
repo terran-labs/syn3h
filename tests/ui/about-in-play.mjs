@@ -1,6 +1,7 @@
 /**
- * The About guide opened in play: from the sidebar it shows over the world, cancels held
- * fire, closes on Escape without firing, and leaves the address and the room alone.
+ * The Welcome guide (it was About) opened in play: from the sidebar it shows over the world, cancels held
+ * fire, closes on Escape without firing, and leaves the address and the room alone. No image
+ * loads before it opens; after, only the Welcome pictures (src/ui/welcome/welcome.ts).
  *
  *   SYN3H_URL=http://127.0.0.1:5187/ tools/heavy.sh node tests/ui/about-in-play.mjs
  */
@@ -9,14 +10,16 @@ import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 const out = 'tests/ui/artifacts/about-in-play'
 await mkdir(out, { recursive: true })
-for (const mode of ['desktop', 'phone', 'landscape']) {
+for (const mode of process.env.MODES ? process.env.MODES.split(',') : ['desktop', 'phone', 'landscape']) {
   const touch = mode !== 'desktop'
   const browser = await (touch ? webkit.launch() : chromium.launch({ channel: 'chrome', headless: true }))
   try {
     const page = await browser.newPage(touch ? devices[mode === 'landscape' ? 'iPhone 14 landscape' : 'iPhone 14'] : { viewport: { width: 1440, height: 900 } })
     const errors = []; page.on('pageerror', e => errors.push(e.message))
-    // The guide has no images; none may load at any point.
-    const images = []; page.on('request', r => { if (r.resourceType() === 'image') images.push(r.url()) })
+    // The owner's rule (AGENTS.md): no image in ordinary play. The Welcome pictures are the one
+    // exception, and only once the player opens the guide: none before, and only those after.
+    const images = []; let opened = false
+    page.on('request', r => { if (r.resourceType() === 'image') images.push({ url: new URL(r.url()).pathname, opened }) })
     await page.goto(`${process.env.SYN3H_URL}?autoplay=1&room=about-${mode}-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
@@ -29,11 +32,18 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     // Hold fire (L), then open the guide with it still down.
     await page.keyboard.down('l')
     await page.waitForFunction(() => syn3h.game.input.state.fire)
+    assert.deepEqual(images, [], 'no image request before the guide opens')
+    opened = true
     await page.locator('.rail-about').click()
     const guide = page.locator('.in-play-about')
     await guide.waitFor({ state: 'visible' })
+    // Headings step down from the guide's h2, and every picture says what it shows.
+    const outline = await guide.evaluate(d => ({ levels: [...d.querySelectorAll('h2, h3, h4')].map(h => Number(h.tagName[1])), alts: [...d.querySelectorAll('.welcome-shot img')].map(i => i.alt.trim().length) }))
+    assert.equal(outline.levels[0], 2, 'the guide starts at its h2')
+    assert.ok(outline.levels.every((level, i) => i === 0 || level <= outline.levels[i - 1] + 1), `headings never skip a level ${outline.levels}`)
+    assert.ok(outline.alts.length >= 5 && outline.alts.every(n => n > 20), 'every picture has alt text')
     assert.ok(await guide.evaluate(d => d.open && d.matches(':modal')), 'the guide is a modal')
-    assert.match(await guide.innerText(), /About Syn3h/i)
+    assert.match(await guide.locator('h2').innerText(), /Welcome/i)
     assert.equal(await page.evaluate(() => syn3h.game.input.state.fire), false, 'held fire is cancelled on open')
     assert.ok(await page.evaluate(() => document.activeElement?.closest('.in-play-about') !== null), 'focus moves into the guide')
     await page.screenshot({ path: `${out}/${mode}.png` })
@@ -62,8 +72,11 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await page.waitForFunction(() => syn3h.game.input.state.fire)
     await page.keyboard.up('l')
     if (!touch) {
-      // From the Paused veil: About opens over it, and closing leaves the world paused.
+      // From the Paused veil: the guide opens over it, and closing leaves the world paused.
       await page.locator('.rail-pause').click()
+      // If the pause does not take, say what the page was doing instead of timing out on the button.
+      const pauseState = () => page.evaluate(() => ({ paused: document.querySelector('.syn3h-shell').classList.contains('is-paused'), lock: !!document.pointerLockElement, guide: document.querySelector('.in-play-about').open, suspended: syn3h.game.input.suspended, focus: document.activeElement?.className, buttonHidden: document.querySelector('.pause-about').hidden }))
+      await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-paused'), null, { timeout: 5000 }).catch(async () => { throw new Error(`Pause did not take: ${JSON.stringify(await pauseState())}`) })
       await page.locator('.pause-about').click()
       await guide.waitFor({ state: 'visible' })
       await page.screenshot({ path: `${out}/desktop-paused.png` })
@@ -75,7 +88,9 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     }
     assert.equal(page.url(), url, 'the address is unchanged')
     assert.equal(await page.evaluate(() => syn3h.shell.room), room, 'the room is unchanged')
-    assert.deepEqual(images, [], 'no image requests')
+    const strays = images.filter(i => !/^\/welcome\/[\w-]+-(640|960|1280|1920)\.webp$/.test(i.url))
+    assert.deepEqual(strays, [], 'after opening, only the Welcome pictures load')
+    assert.ok(images.length > 0, 'the Welcome pictures load once the guide is open')
     assert.deepEqual(errors, [])
     console.log(mode, 'ok')
   } finally { await browser.close() }

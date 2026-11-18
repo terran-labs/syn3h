@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { OPENING_SECONDS, openingState, SETTLED, SETTLED_SECONDS } from '../../src/ui/galaxy/opening'
+import { FIRST, FLIGHT, GAP, OPENING_SECONDS, openingState, POP_SECONDS, SETTLED, SETTLED_SECONDS } from '../../src/ui/galaxy/opening'
 
 describe('lobby opening timeline', () => {
   it('starts at a point, ends at the settled lobby, and brings the worlds in from the innermost out', () => {
@@ -26,5 +26,17 @@ describe('lobby opening timeline', () => {
     expect(settled.fling.every(f => f === 1)).toBe(true); expect(settled.spread).toBe(1)
     expect(settled.sun).toBeCloseTo(1, 6); expect(settled.reach).toBeCloseTo(1, 6); expect(settled.chrome).toBe(1)
     expect(settled.burst[1]).toBe(0)
+  })
+  // The score's drop is scheduled at POP_SECONDS (src/ui/TapToBegin.ts): the sun must not
+  // appear before it, and must be showing just after it, or picture and sound part.
+  it('pops exactly when the score drops', () => {
+    expect(openingState(POP_SECONDS - 0.02, 2, 9).sun).toBe(0)
+    expect(openingState(POP_SECONDS + 0.05, 2, 9).sun).toBeGreaterThan(0)
+  })
+  // The owner: the name arrives last. It is still arriving after the last world has landed.
+  it('brings the name in last', () => {
+    const landed = FIRST + GAP * 8 + FLIGHT
+    expect(openingState(landed, 2, 9).mark).toBeLessThan(1)
+    expect(openingState(OPENING_SECONDS, 2, 9).mark).toBe(1)
   })
 })

@@ -20,6 +20,8 @@
  *              the README's showcase block (the change is left uncommitted)
  *   --publish-only  publish an earlier capture in <out>/<version>/ without capturing again
  *   --repo     GitHub repository (default terran-labs/syn3h)
+ *   --hud hidden  capture every in-world shot with the interface hidden (key I's Hidden);
+ *              for the Welcome guide's pictures (tools/welcome-images.mjs), not for publishing
  *
  * How a frame is made. Chrome runs headed on the real GPU. The page's clock is virtual:
  * requestAnimationFrame and performance.now are driven by this tool, one frame of exactly
@@ -51,7 +53,7 @@ const GPU_ARGS = ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-b
 const here = fileURLToPath(new URL('.', import.meta.url))
 const root = resolve(here, '..')
 
-const options = parseArgs(process.argv.slice(2), ['version', 'dir', 'url', 'port', 'out', 'only', 'preview', 'publish', 'publish-only', 'repo'])
+const options = parseArgs(process.argv.slice(2), ['version', 'dir', 'url', 'port', 'out', 'only', 'preview', 'publish', 'publish-only', 'repo', 'hud'])
 if (!options.version || !/^v[\w.-]+$/.test(options.version)) throw new Error('--version is required, like v26.11.1607')
 if (options.dir && options.url) throw new Error('Give at most one of --dir or --url')
 const version = options.version
@@ -60,7 +62,12 @@ const preview = Boolean(options.preview)
 const VIEW = preview ? { width: 1280, height: 720, dpr: 1 } : { width: 1920, height: 1080, dpr: 2 }
 const SETTLE = preview ? { min: 30, quiet: 12, max: 240 } : { min: 120, quiet: 45, max: 900 }
 const outDir = resolve(typeof options.out === 'string' ? options.out : join(root, 'captures'), version)
+// --hud hidden: every in-world shot without the interface (the Welcome guide's pictures, which
+// must not go stale when the HUD changes). The lobby keeps its own look.
+if (options.hud !== undefined && options.hud !== 'hidden') throw new Error('--hud takes only "hidden"')
+if (options.hud === 'hidden' && options.publish) throw new Error('--hud hidden is for local captures; do not publish it as the release showcase')
 const shots = selectShots(typeof options.only === 'string' ? options.only.split(',') : null)
+  .map(shot => options.hud === 'hidden' && shot.hud === 'driving' ? { ...shot, hud: 'hidden' } : shot)
 const runTag = Date.now().toString(36)
 
 if (options['publish-only']) { await publish(); process.exit(0) }

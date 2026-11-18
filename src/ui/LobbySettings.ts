@@ -76,10 +76,39 @@ export function gearPath(teeth = 8, outer = 10.5, inner = 8, hub = 3.4): string 
   return `M${points.join('L')}Z M${12 + hub} 12a${hub} ${hub} 0 1 0 ${-2 * hub} 0a${hub} ${hub} 0 1 0 ${2 * hub} 0Z`
 }
 
-/** About: an i in the ring, drawn as strokes like the gear. */
-export const ABOUT_ICON = 'M12 10.6V17.4M10.2 17.4H13.8M10.6 10.6H12M12 6.4a.9 .9 0 1 0 .01 0Z'
-/** Updates: a turning arrow round a clock's hands, for what changed and when. */
-export const UPDATES_ICON = 'M18.6 12a6.6 6.6 0 1 1-1.93-4.67M17.4 3.9v3.6h-3.6M12 8.4V12l2.6 1.6'
+/** Welcome: an open book, a guide to the game. */
+export const WELCOME_ICON = 'M12 6.6C10 5.3 7 4.9 3.6 5.3V18.4C7 18 10 18.4 12 19.7C14 18.4 17 18 20.4 18.4V5.3C17 4.9 14 5.3 12 6.6ZM12 6.6V19.7'
+/** Updates: sparkles, for what is new. */
+export const UPDATES_ICON = 'M10 3.5C10.6 7.1 12.4 8.9 16 9.5C12.4 10.1 10.6 11.9 10 15.5C9.4 11.9 7.6 10.1 4 9.5C7.6 8.9 9.4 7.1 10 3.5ZM18 13.5C18.3 15.3 19.2 16.2 21 16.5C19.2 16.8 18.3 17.7 18 19.5C17.7 17.7 16.8 16.8 15 16.5C16.8 16.2 17.7 15.3 18 13.5ZM18.5 3V6.5M16.75 4.75H20.25'
+/**
+ * One of the lobby's three holographic buttons: a small icon at its left edge and its word.
+ * The frame, its light and its states are all CSS (lobby-settings.css, .lobby-control).
+ */
+let frames = 0
+function controlButton(button: HTMLButtonElement, className: string, word: string, icon: string): void {
+  button.type = 'button'; button.className = `lobby-control ${className}`; button.title = word
+  // The edge is a vector outline of the cut plate, its stroke a gradient that drifts slowly from
+  // cool to warm. Not under reduced motion, and not on touch screens: on a 4x throttled phone the
+  // drift cost the galaxy about 7 percent of its frames (17 November 2026); see layoutFrame.
+  const id = `lobby-edge-${++frames}`
+  button.innerHTML = `<svg class="lobby-control-frame" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0" spreadMethod="reflect">`
+    + '<stop offset="0" stop-color="#cfe0ff"/><stop offset=".3" stop-color="#ffffff"/><stop offset=".55" stop-color="#ffd9ac"/><stop offset=".8" stop-color="#ffffff"/><stop offset="1" stop-color="#d6e2ff"/>'
+    + `<animateTransform attributeName="gradientTransform" type="translate" values="-.6 0;.6 0;-.6 0" dur="18s" repeatCount="indefinite"/></linearGradient></defs><polygon stroke="url(#${id})"/></svg>`
+    + `<svg class="lobby-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${icon}"/></svg><span class="lobby-control-word"></span><span class="lobby-control-glint" aria-hidden="true"></span>`
+  button.querySelector('.lobby-control-word')!.textContent = word
+}
+/** The plate's corner cut, CSS pixels: must match --cut in lobby-settings.css. */
+const CUT = 9
+/** Draws each control's outline at its laid-out size: the cut corners stay 45 degrees at any width. */
+function layoutFrame(button: HTMLElement, reduced: boolean): void {
+  const svg = button.querySelector<SVGSVGElement>('.lobby-control-frame'), polygon = svg?.querySelector('polygon')
+  const w = button.offsetWidth, h = button.offsetHeight
+  if (!svg || !polygon || !w || !h) return
+  const i = 0.75, c = CUT
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
+  if (reduced) svg.querySelector('animateTransform')?.remove()
+  polygon.setAttribute('points', `${c + i * 0.4},${i} ${w - i},${i} ${w - i},${h - c - i * 0.4} ${w - c - i * 0.4},${h - i} ${i},${h - i} ${i},${c + i * 0.4}`)
+}
 
 export interface LobbySettingsOptions {
   quality?: QualitySource
@@ -99,6 +128,8 @@ export class LobbySettings {
   /** The gear and the version beside it, for the lobby to place. */
   readonly dock = document.createElement('div')
   readonly gear = document.createElement('button')
+  /** The version's own corner, the lower left, for the lobby to place beside the dock. */
+  readonly versionDock = document.createElement('div')
   /**
    * The running version beside the gear. A stable hook for the Updates view in About: find it
    * by `[data-lobby-version]` and listen for its click. It does nothing until something does.
@@ -114,6 +145,12 @@ export class LobbySettings {
   private readonly abort = new AbortController()
   private shown = false
   private closing?: Animation
+  /**
+   * The lobby sheet the panel lives in, when it is one of the lobby's sheets (LobbySheet): then
+   * the sheet owns the title, the close control, Escape, a tap outside and the focus trap, and
+   * the gear opens the sheet instead of this panel.
+   */
+  private embedded?: HTMLElement
   private readonly advancedOpen = { value: false }
   private roomCard?: HTMLElement
 
@@ -121,17 +158,21 @@ export class LobbySettings {
     const signal = this.abort.signal
     const label = versionLabel(options.build, location.href)
     this.dock.className = 'lobby-gear-dock'
-    this.gear.type = 'button'; this.gear.className = 'lobby-gear'
-    this.gear.setAttribute('aria-label', 'Settings'); this.gear.setAttribute('aria-expanded', 'false'); this.gear.setAttribute('aria-controls', 'lobby-settings')
-    this.gear.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${gearPath()}"/></svg>`
+    // Welcome, Updates and Settings, top to bottom, each a labelled holographic button.
+    controlButton(this.about, 'lobby-about', 'Welcome', WELCOME_ICON)
+    controlButton(this.updates, 'lobby-updates', 'Updates', UPDATES_ICON)
+    controlButton(this.gear, 'lobby-gear', 'Settings', gearPath())
+    for (const button of [this.about, this.updates]) button.setAttribute('aria-haspopup', 'dialog')
+    this.gear.setAttribute('aria-expanded', 'false'); this.gear.setAttribute('aria-controls', 'lobby-settings')
     this.version.type = 'button'; this.version.className = 'lobby-version'; this.version.dataset.lobbyVersion = ''
     this.version.textContent = label; this.version.title = `Version ${label}`; this.version.setAttribute('aria-label', `Version ${label}`)
-    for (const [button, name, path] of [[this.about, 'About Syn3h', ABOUT_ICON], [this.updates, 'Updates', UPDATES_ICON]] as const) {
-      button.type = 'button'; button.className = `lobby-dock-icon lobby-${name === 'Updates' ? 'updates' : 'about'}`
-      button.setAttribute('aria-label', name); button.setAttribute('aria-haspopup', 'dialog'); button.title = name
-      button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`
-    }
-    this.dock.append(this.about, this.updates, this.gear, this.version)
+    this.dock.append(this.about, this.updates, this.gear)
+    // Outline each control at its laid-out size, and again whenever a breakpoint resizes it.
+    const reduced = matchMedia('(prefers-reduced-motion: reduce), (pointer: coarse)').matches
+    const frame = () => { for (const button of [this.about, this.updates, this.gear]) layoutFrame(button, reduced) }
+    const resized = new ResizeObserver(frame); resized.observe(this.dock); signal.addEventListener('abort', () => resized.disconnect())
+    // The version sits apart, in the lower left (versionDock), small and quiet.
+    this.versionDock.className = 'lobby-version-dock'; this.versionDock.append(this.version)
 
     this.host.className = 'lobby-settings-host'
     this.inspector = new Inspector(this.host, { summary: () => '', vehicles: () => ({ options: [], current: '' }), onVehicle() {}, sections: [], percent: isVolume })
@@ -190,10 +231,10 @@ export class LobbySettings {
       this.roomCard = this.inspector.addCard('room', 'Room', room, () => options.hostSummary?.() ?? '')
     }
 
-    this.gear.addEventListener('click', () => { if (this.shown) this.close(); else this.open() }, { signal })
+    this.gear.addEventListener('click', () => { if (this.embedded) return; if (this.shown) this.close(); else this.open() }, { signal })
     // Tap outside closes; that tap does nothing else (it does not also pick a planet).
     const outside = (event: Event) => {
-      if (!this.shown) return
+      if (!this.shown || this.embedded) return
       const target = event.target as Node
       if (this.host.contains(target) || this.dock.contains(target)) return
       event.preventDefault(); event.stopPropagation()
@@ -201,7 +242,7 @@ export class LobbySettings {
     }
     for (const type of ['pointerdown', 'click'] as const) window.addEventListener(type, outside, { capture: true, signal })
     window.addEventListener('keydown', event => {
-      if (!this.shown) return
+      if (!this.shown || this.embedded) return
       if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); this.close(); return }
       if (event.key === 'Tab') {
         // The panel owns Tab while open; the lobby's own trap would pull focus back to the galaxy.
@@ -226,9 +267,19 @@ export class LobbySettings {
       .filter(el => !(el as HTMLButtonElement).disabled && !el.closest('[hidden], [inert]') && el.getClientRects().length > 0)
   }
 
+  /** Live inside a lobby sheet's body from now on (see `embedded`). */
+  embedIn(container: HTMLElement): void { this.embedded = container; this.host.classList.add('is-embedded') }
+
   open(): void {
     if (this.shown) return
     this.shown = true; this.closing?.cancel(); this.closing = undefined
+    if (this.embedded) {
+      // The sheet fades itself in and owns the cue and focus.
+      this.embedded.append(this.host)
+      this.inspector.rebuild(); this.update()
+      this.gear.setAttribute('aria-expanded', 'true'); this.dock.classList.add('is-open')
+      return
+    }
     this.options.cue?.()
     this.parent.append(this.host)
     this.inspector.rebuild(); this.update()
@@ -244,6 +295,8 @@ export class LobbySettings {
     this.shown = false
     this.inspector.hideTooltip()
     this.gear.setAttribute('aria-expanded', 'false'); this.dock.classList.remove('is-open')
+    // In a sheet, the sheet returns focus to whatever opened it, and fades itself out.
+    if (this.embedded) return
     this.gear.focus({ preventScroll: true })
     const detach = () => { if (!this.shown) this.host.remove() }
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { detach(); return }

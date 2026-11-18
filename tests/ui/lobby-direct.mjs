@@ -17,7 +17,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await dock.waitFor({ state: 'visible' })
     assert.equal(await page.locator('.galaxy-links button').count(), 0, 'no bottom buttons')
     if (process.env.UX_BEFORE === '1') {
-      await page.getByRole('button', { name: 'About Syn3h', exact: true }).click()
+      await page.getByRole('button', { name: 'Welcome', exact: true }).click()
       await page.waitForTimeout(200)
       await page.screenshot({ path: `${out}/${mode}-before.png` })
       continue

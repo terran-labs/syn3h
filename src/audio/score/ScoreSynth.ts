@@ -62,7 +62,9 @@ export function applySubmerge(filter: BiquadFilterNode, depth: number, time: num
 export const LAYERS = ['pad', 'drone', 'choir', 'organ', 'sequencer', 'pluck', 'strings', 'bass', 'drums', 'theremin', 'brass', 'bells', 'shimmer', 'air', 'tags', 'weather'] as const
 export type Layer = (typeof LAYERS)[number]
 /** Where the composition is in its arc, as the synthesiser needs it. Both 0..1. */
-export interface Arc { tension: number; release: number; /** 0..1, how far forward the theremin may come (arc.ts). Left out, as before. */ lead?: number }
+export interface Arc { tension: number; release: number; /** 0..1, how far forward the theremin may come (arc.ts). Left out, as before. */ lead?: number; /** The lobby's mix (Score.ts lobby* parameters); left out in play. */ lobby?: LobbyMix }
+/** The lobby's mix: glass tones, shimmer, hall send and pads, and how much of the old plucked string, bell and beeps. */
+export interface LobbyMix { glass: number; shimmer: number; hall: number; pad: number; pluck: number }
 
 export class ScoreSynth {
   /** Per-layer level trims, 0 to mute. The lab uses these to solo and mute layers. */
@@ -133,6 +135,10 @@ export class ScoreSynth {
   private readonly beepVca: GainNode
   private readonly airBus: GainNode
   private readonly pluckBus: GainNode
+  /** The lobby's glass tones (glass): sine partials, mostly in the hall and the shimmer. */
+  private readonly glassBus: GainNode
+  /** The lobby's mix while in the lobby; undefined in play. */
+  private lobby?: LobbyMix
   private pluck?: AudioWorkletNode
   private readonly brassOscs: OscillatorNode[] = []
   private readonly brassFilter: BiquadFilterNode
@@ -352,6 +358,7 @@ export class ScoreSynth {
     }
 
     this.pluckBus = gain(0, sum, gain(0.3, delayIn), gain(0.55, reverb))
+    this.glassBus = gain(0, gain(0.45, sum), gain(0.2, delayIn), gain(1.1, reverb))
 
     // Tag notes: a bright two-operator ping, for tag beams that have been turned into music.
     this.tagBus = gain(0, sum, gain(0.35, delayIn), gain(0.5, reverb))
@@ -402,7 +409,7 @@ export class ScoreSynth {
     // bell and theremin, and returned through the hall.
     const shimmerIn = gain(1)
     this.shimmerOut = gain(0, reverb, gain(0.25, sum))
-    for (const [from, amount] of [[this.padBus, 0.5], [this.pluckBus, 0.5], [this.bellBus, 0.7], [this.leadBus, 0.4], [this.organGain, 0.4]] as const) from.connect(gain(amount, shimmerIn))
+    for (const [from, amount] of [[this.padBus, 0.5], [this.pluckBus, 0.5], [this.glassBus, 0.8], [this.bellBus, 0.7], [this.leadBus, 0.4], [this.organGain, 0.4]] as const) from.connect(gain(amount, shimmerIn))
 
     // Plucked strings, a sung choir and the shimmer are audio worklets. Each loads on its own:
     // if one fails, or a browser has no worklets, the score plays on without it.
@@ -449,9 +456,10 @@ export class ScoreSynth {
     const trim = this.trim, bright = unit(level.brightness + 0.3 * arc.tension + 0.2 * arc.release)
     this.brightness = bright; this.drums = level.drums
     to(this.swell.gain, 0.72 + 0.1 * arc.tension + 0.33 * arc.release, 0.3)
-    to(this.padBus.gain, level.pad * 0.9 * trim.pad)
+    const lobby = this.lobby = arc.lobby
+    to(this.padBus.gain, level.pad * 0.9 * trim.pad * (lobby?.pad ?? 1))
     to(this.padFilter.frequency, 320 + bright ** 1.5 * 4200)
-    to(this.droneGain.gain, level.drone * 0.4 * trim.drone)
+    to(this.droneGain.gain, level.drone * 0.4 * trim.drone * (lobby?.pad ?? 1))
     // The low choir is always near; the release brings it and the high choir fully forward.
     // The men are always near; the women are held back for a release or for high open air, so
     // their entry means something. The mouths open as the music climbs. The oscillator choirs
@@ -469,7 +477,7 @@ export class ScoreSynth {
       to(this.choir.parameters.get('women')!, women, 0.6)
       to(this.choir.parameters.get('open')!, unit(0.15 + 0.6 * arc.tension + 0.25 * level.choir), 1)
     }
-    to(this.shimmerOut.gain, unit(0.15 + 0.5 * arc.tension + 0.35 * level.choir + 0.3 * arc.release) * 0.7 * trim.shimmer, 1.5)
+    to(this.shimmerOut.gain, (lobby ? lobby.shimmer : unit(0.15 + 0.5 * arc.tension + 0.35 * level.choir + 0.3 * arc.release) * 0.7) * trim.shimmer, 1.5)
     to(this.stringBus.gain, 0.55 * trim.strings * carried(0))
     to(this.tagBus.gain, 0.5 * trim.tags)
     to(this.weatherBus.gain, 0.5 * trim.weather)
@@ -486,11 +494,12 @@ export class ScoreSynth {
     // keeps a floor, so a night theme over a moving mix is distant rather than lost.
     to(this.leadBus.gain, Math.max(level.lead * 0.6, arc.lead === undefined ? 0 : 0.6, arc.release) * 0.2 * trim.theremin * unit(arc.lead ?? 1), 1)
     to(this.airBus.gain, level.air * 0.1 * trim.air * (1 - 0.8 * unit(this.wind)), 2)
-    to(this.pluckBus.gain, 0.5 * trim.pluck)
+    to(this.pluckBus.gain, 0.5 * trim.pluck * (lobby ? lobby.pluck : 1))
+    to(this.glassBus.gain, 0.5 * trim.pluck * (lobby?.glass ?? 1), 1)
     to(this.brassBus.gain, 0.45 * trim.brass * carried(1))
     to(this.bellBus.gain, 0.6 * trim.bells * carried(2))
     // Under water the hall grows, as if the sound had nowhere to go.
-    to(this.reverbSend.gain, reverb * (0.8 + 0.5 * unit(depth)))
+    to(this.reverbSend.gain, reverb * (0.8 + 0.5 * unit(depth)) * (lobby?.hall ?? 1))
     // The algorithmic hall can do what a recorded impulse cannot: its tail lengthens at a release and under water.
     if (this.hall) to(this.hall.parameters.get('decay')!, (this.lite ? 4 : 5.5) * (1 + 0.6 * arc.release + 0.5 * unit(depth)), 0.5)
     if (this.braamUntil >= 0 && now > this.braamUntil) { this.braamVca.disconnect(); this.braamUntil = -1 }
@@ -538,7 +547,10 @@ export class ScoreSynth {
       this.leadVca.gain.setTargetAtTime(step.lead.velocity, t, 0.16)
       this.leadVca.gain.setTargetAtTime(0, t + hold * 0.9, 0.3)
     }
-    if (step.pluck) this.pluck?.port.postMessage({ t, hz: midiHz(step.pluck.midi), velocity: step.pluck.velocity, sustain: 1.5 + duration * step.pluck.steps })
+    // In the lobby the plucked string, the bell and the beeps only sound as far as lobbyPluck asks (0 by default).
+    const old = this.lobby ? this.lobby.pluck : 1
+    if (step.pluck && old > 0) this.pluck?.port.postMessage({ t, hz: midiHz(step.pluck.midi), velocity: step.pluck.velocity, sustain: 1.5 + duration * step.pluck.steps })
+    if (step.glass) this.glass(midiHz(step.glass.midi), t, step.glass.velocity, duration * step.glass.steps)
     if (step.brass) {
       const hz = midiHz(step.brass.midi), hold = duration * step.brass.steps, v = step.brass.velocity
       for (const o of this.brassOscs) { o.frequency.setValueAtTime(hz * 0.983, t); o.frequency.exponentialRampToValueAtTime(hz, t + 0.12) }
@@ -546,7 +558,7 @@ export class ScoreSynth {
       this.brassVca.gain.setTargetAtTime(0.5 * v, t, 0.07); this.brassVca.gain.setTargetAtTime(0, t + hold * 0.92, 0.2)
       this.brassWaver.gain.setValueAtTime(0, t); this.brassWaver.gain.linearRampToValueAtTime(13, t + 1)
     }
-    if (step.bell) {
+    if (step.bell && old > 0) {
       const hz = midiHz(step.bell.midi)
       for (const p of this.bellPartials) {
         p.osc.frequency.setValueAtTime(hz * p.ratio, t)
@@ -559,7 +571,7 @@ export class ScoreSynth {
       tag.index.gain.setValueAtTime(hz * 2.2 * v, t); tag.index.gain.setTargetAtTime(hz * 0.1, t, 0.05)
       tag.vca.gain.setTargetAtTime(0.4 * v, t, 0.002); tag.vca.gain.setTargetAtTime(0, t + 0.02, 0.12)
     }
-    if (step.beep) {
+    if (step.beep && old > 0) {
       this.beep.frequency.setValueAtTime(midiHz(step.beep) * this.doppler, t)
       this.beepVca.gain.setTargetAtTime(0.1, t, 0.004); this.beepVca.gain.setTargetAtTime(0, t + duration * 1.2, 0.008)
     }
@@ -666,6 +678,28 @@ export class ScoreSynth {
     this.pump.gain.setTargetAtTime(1, time, 0.01); this.dry.gain.setTargetAtTime(0.46, time, 0.004); this.hushAt = Infinity
     this.boomVca.gain.setTargetAtTime(0.5 * strength, time, 0.004); this.boomVca.gain.setTargetAtTime(0, time + 0.15, 0.5)
     this.crashVca.gain.setTargetAtTime(0.2 * strength, time, 0.003); this.crashVca.gain.setTargetAtTime(0, time + 0.03, 0.6)
+  }
+
+  /**
+   * A glass tone, the lobby's celestial voice: a sine, its octave and a faint twelfth, with a
+   * second sine 6 cents sharp so the pair beats slowly. It swells in over 1.2 s and falls over
+   * about `seconds`, mostly into the hall and the shimmer: no attack transient, nothing nasal.
+   * Built per note and released when it ends; the lobby asks for one every few seconds.
+   */
+  private glass(hz: number, t: number, velocity: number, seconds: number): void {
+    if (this.disposed) return
+    const c = this.context, vca = c.createGain(), attack = 1.2, end = t + attack + seconds * 1.5
+    vca.gain.setValueAtTime(0, t); vca.gain.linearRampToValueAtTime(0.32 * velocity, t + attack); vca.gain.setTargetAtTime(0, t + attack, seconds / 4)
+    vca.connect(this.glassBus)
+    const partials = [[1, 1, 0], [1, 0.55, 6], [2, 0.3, -3], [3, 0.06, 0]] as const
+    let playing = partials.length
+    for (const [ratio, level, cents] of partials) {
+      const o = c.createOscillator(), g = c.createGain()
+      o.frequency.value = hz * ratio; o.detune.value = cents; g.gain.value = level
+      o.connect(g).connect(vca); o.start(t); o.stop(end)
+      // Released on the audio clock's own schedule, so an offline render is never cut short.
+      o.onended = () => { o.disconnect(); g.disconnect(); if (--playing === 0) vca.disconnect() }
+    }
   }
 
   /**

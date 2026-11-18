@@ -3,7 +3,8 @@
  * in one motion. No form, no panel, no lobby screen in between. This check taps a world (a
  * different one from the world in play, so the world is rebuilt on the way) and records:
  * that no panel ever opened, how long the drop took, every frame gap from tap to ground (the
- * longest, and when), and stills along the way. Desktop and phone.
+ * longest, and when), and stills along the way. Desktop and phone. The tap lands while the
+ * opening is still throwing the world out to its orbit, and must enter that world.
  *
  *   SYN3H_URL=http://127.0.0.1:5193/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/drop.mjs
  *
@@ -32,9 +33,28 @@ try {
       const tick = now => { w.__gaps.push([now - w.__t0, now - last]); last = now; const p = document.querySelector('.lobby-panels').dataset.activePanel; if (p && p !== 'index' && !document.querySelector('.syn3h-shell').classList.contains('is-playing')) w.__panels.add(p); if (!w.__done) requestAnimationFrame(tick) }
       w.__t0 = performance.now(); requestAnimationFrame(tick)
     })
-    const target = 'alpine', where = await page.evaluate(id => window.syn3h.shell.galaxy.screen.find(s => s.id === id), target)
+    // Click the world while the opening is still throwing it out to its orbit, where it is drawn
+    // that frame: the world under the pointer is the one entered, never whatever rests there.
+    // The opening is held at a moment when the world is in flight, well away from its orbit; the
+    // press skips the opening; a frame is drawn before the release, as in any real click (a
+    // person holds it about a tenth of a second), so the worlds are back on their orbits by then.
+    const target = 'alpine'
+    const where = await page.evaluate(id => {
+      const g = window.syn3h.shell.galaxy, mode = window.syn3h.params.get('lobby.intro').value
+      const draw = at => { g.replayOpening(mode); g.openingAt = at; g.wake = 2; g.last = 0; g.loop(performance.now()); return g.screen.find(s => s.id === id) }
+      const home = draw(100)
+      for (let at = 0.5; at < 12; at += 0.05) {
+        const s = draw(at)
+        if (s?.visible && s.radius > 6 && Math.hypot(s.x - home.x, s.y - home.y) > 4 * s.radius) return { ...s, at: +at.toFixed(2), home, playing: Boolean(g.opening) }
+      }
+      return null
+    }, target)
+    assert.ok(where, `${view.name}: ${target} is never seen in flight away from its orbit`)
     const t0 = Date.now()
-    await page.mouse.click(where.x, where.y)
+    await page.mouse.move(where.x, where.y); await page.mouse.down()
+    await page.evaluate(() => { const g = window.syn3h.shell.galaxy; g.openingAt = null; g.wake = 2; g.last = 0; g.loop(performance.now()) })
+    await page.mouse.up()
+    console.log(`${view.name}: clicked ${target} in flight at ${where.at} s (opening playing: ${where.playing}) at ${Math.round(where.x)},${Math.round(where.y)}; it rests at ${Math.round(where.home.x)},${Math.round(where.home.y)}`)
     await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 1000 })
     for (const at of [300, 900, 1600, 2300, 3000, 3800, 4600, 5400]) { await page.waitForTimeout(Math.max(0, at - (Date.now() - t0))); await page.screenshot({ path: `${out}/${view.name}-${String(at).padStart(4, '0')}.png` }) }
     await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 20000 })
@@ -62,18 +82,36 @@ try {
     report.push({ view: view.name, ms: took, frames: watch.frames, worstGap: `${watch.worst[1]} ms at ${watch.worst[0]} ms`, over50: watch.over50.slice(0, 8).join(' ') })
     await page.close()
   }
-  // A drop that fails on the way (here the camera path throws) must not strand the lobby:
-  // no inert overlay, no blur, no half fade, and the galaxy is usable again.
-  for (const failAt of [1, 2, 3]) {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  // A drop that fails on the way (here the camera path throws, at its first, second or third
+  // use) must never strand the player. Failing before the game has started puts them back in a
+  // lobby they can use: the menu shown and clickable, and a world chosen again starts a new
+  // drop. Failing after it has started puts them in play: the menu out of the way, input live.
+  // Neither leaves a blur or a half fade. Which one depends on when the failure lands, so the
+  // check reads that from the session at the moment it throws. Desktop and phone.
+  for (const view of [{ name: 'desktop', viewport: { width: 1280, height: 800 } }, { name: 'phone', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }]) for (const failAt of [1, 2, 3]) {
+    const page = await browser.newPage(view)
     page.on('pageerror', e => { if (!/drop test failure/.test(e.message)) errors.push(`failure: ${e.message}`) })
     await page.goto(`${base}?room=drop-failure-${Date.now()}`, { waitUntil: 'load' }); await ready(page)
-    await page.evaluate(failAt => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400); const s = window.syn3h.shell, real = s.descentPose.bind(s); let calls = 0; s.descentPose = () => { if (++calls === failAt) { window.__dropFailed = true; throw new Error('drop test failure') } const pose = real(); return t => { if (failAt === 3 && t > 0) { window.__dropFailed = true; throw new Error('drop test failure') } pose(t) } } }, failAt)
+    await page.evaluate(failAt => {
+      window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400)
+      const s = window.syn3h.shell, real = s.descentPose.bind(s); let calls = 0
+      const fail = () => { window.__dropFailed = true; window.__startedAtFailure = s.started; throw new Error('drop test failure') }
+      s.descentPose = () => { if (++calls === failAt) fail(); const pose = real(); return t => { if (failAt === 3 && t > 0) fail(); pose(t) } }
+    }, failAt)
     await page.locator('.galaxy-label[data-world="desert"]').dispatchEvent('click')
     await page.waitForFunction(() => window.__dropFailed && !document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 20000 })
-    const after = await page.evaluate(() => ({ dropping: window.syn3h.shell.dropping, inert: document.querySelector('.shell-overlay').inert, opacity: document.querySelector('.shell-overlay').style.opacity, filter: document.getElementById('game').style.filter }))
-    assert.deepEqual(after, { dropping: false, inert: failAt > 1, opacity: '', filter: '' }, 'a failed drop restores the menu or play')
-    assert.equal(await page.evaluate(() => window.syn3h.game.input.suspended), failAt === 1, 'input follows the recovered session state')
+    const after = await page.evaluate(() => ({ started: window.__startedAtFailure, dropping: window.syn3h.shell.dropping, inert: document.querySelector('.shell-overlay').inert, hidden: document.querySelector('.shell-overlay').hidden, opacity: document.querySelector('.shell-overlay').style.opacity, filter: document.getElementById('game').style.filter, suspended: window.syn3h.game.input.suspended }))
+    const label = `${view.name}, failure at use ${failAt} (${after.started ? 'in play' : 'before play'})`
+    console.log(`${label}: ${JSON.stringify(after)}`)
+    assert.deepEqual({ dropping: after.dropping, opacity: after.opacity, filter: after.filter }, { dropping: false, opacity: '', filter: '' }, `${label}: no drop, fade or blur left behind`)
+    if (after.started) {
+      assert.equal(after.inert, true, `${label}: the menu is out of the way`); assert.equal(after.suspended, false, `${label}: the game takes input`)
+    } else {
+      assert.deepEqual({ inert: after.inert, hidden: after.hidden }, { inert: false, hidden: false }, `${label}: the lobby is shown and clickable`)
+      // And usable: choosing a world again starts a new drop (the injected failure is spent).
+      await page.locator('.galaxy-label[data-world="alpine"]').dispatchEvent('click')
+      await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 5000 })
+    }
     await page.close()
   }
   // WebKit at iPad size: the blur pass and the whole drop run there too.

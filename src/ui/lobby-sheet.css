@@ -1,31 +1,33 @@
-/* Lobby sheets (LobbySheet.ts): About and Updates, each a large flat black panel over the
-   galaxy. Flat: no blur, no border, no nested cards or rules inside. Partially opaque, so the
-   lobby stays faintly visible behind it. The bent shape is an SVG path drawn behind the content;
-   the round comparison (?sheet=round) uses border-radius instead. Selectors carry
-   .exploration-ui to outrank the lobby's general button, heading and dialog rules. */
+/* Lobby sheets (LobbySheet.ts): Welcome, Updates and Settings, one flat frosted panel with
+   rounded corners under the name, the same for all three. No border and no nested cards or
+   rules inside. Selectors carry .exploration-ui to outrank the lobby's general button, heading
+   and dialog rules. */
 
 .syn3h-shell.exploration-ui dialog.lobby-sheet {
   position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0;
   border: 0; background: none; box-shadow: none; overflow: hidden; color: var(--s3-ink);
 }
 .syn3h-shell.exploration-ui dialog.lobby-sheet::backdrop { background: none; }
-/* Near-solid black (the owner asked for black panels): nothing behind competes with the text. */
-.lobby-sheet-panel { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; --sheet-fill: rgb(6 6 7 / .96); }
-.lobby-sheet-slab { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.lobby-sheet-slab path { fill: var(--sheet-fill); }
-.lobby-sheet[data-shape="round"] .lobby-sheet-panel { background: var(--sheet-fill); border-radius: var(--sheet-radius, 24px); overflow: hidden; }
-.lobby-sheet[data-shape="round"] .lobby-sheet-slab { display: none; }
+.lobby-sheet-panel {
+  position: absolute; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden;
+  --sheet-fill: rgb(8 8 10 / .74); border-radius: var(--sheet-radius, 24px);
+  /* The lit top edge it shares with the name above, and a warm glow along it. */
+  box-shadow: inset 0 1px 0 rgb(255 238 214 / .55), 0 -3px 22px -8px rgb(255 226 190 / .45);
+}
+/* Translucent black over a blur of what is behind, so the galaxy is a soft glow that nothing can
+   read through (the owner: a little more transparent and frosted). */
+.lobby-sheet-frost { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: var(--sheet-fill); -webkit-backdrop-filter: blur(18px) saturate(.85); backdrop-filter: blur(18px) saturate(.85); }
 
-/* The content scrolls inside, clear of both bowed edges. */
+/* The content scrolls inside. */
 .lobby-sheet-body {
   position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #3a3a3c transparent;
-  margin: calc(var(--inset-top, 0px) + 6px) 0 calc(var(--inset-bottom, 0px) + 6px); padding: 30px 56px 30px 44px; text-align: left;
+  margin: 6px 0; padding: 30px 56px 30px 44px; text-align: left;
 }
 .syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-title { margin: 0 0 24px; padding-right: 32px; font: 500 13px/1.2 'Barlow', sans-serif; letter-spacing: .26em; text-indent: 0; text-transform: uppercase; color: var(--s3-accent); }
 
 /* One clean X in the upper right corner, and nothing else for closing. */
 .syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-close {
-  position: absolute; right: 12px; top: calc(var(--close-top, 0px) + 10px); width: 48px; height: 48px; min-width: 48px; min-height: 48px; padding: 0;
+  position: absolute; right: 12px; top: 10px; width: 48px; height: 48px; min-width: 48px; min-height: 48px; padding: 0;
   display: grid; place-items: center; border: 0; border-radius: 50%; background: none; box-shadow: none; color: rgb(236 236 236 / .78); cursor: pointer;
 }
 .lobby-sheet-close svg { width: 22px; height: 22px; }
@@ -34,7 +36,7 @@
 .syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-close:focus-visible { color: #fff; outline: 2px solid var(--s3-accent); outline-offset: -4px; }
 
 /* About's text, as in the in-play guide, without its rules between sections. */
-.syn3h-shell.exploration-ui .lobby-sheet p { font-size: 16px; line-height: 1.6; color: var(--s3-dim); }
+.syn3h-shell.exploration-ui .lobby-sheet-body:not(.welcome-body) p { font-size: 16px; line-height: 1.6; color: var(--s3-dim); }
 .syn3h-shell.exploration-ui .lobby-sheet :is(.about-intro, .about-links) { border: 0; }
 .syn3h-shell.exploration-ui .lobby-sheet .shell-credits { margin: 16px 0 24px; text-align: left; }
 .syn3h-shell.exploration-ui .lobby-sheet .shell-credits summary { min-height: 44px; align-content: center; color: var(--s3-accent-2); cursor: pointer; }
@@ -52,4 +54,4 @@
 /* Text behind the sheet would read through it and tangle with the sheet's own: the planet
    captions, the corner icons, the hint, the lobby's buttons and the update banner step aside
    while one is open. Only the galaxy itself stays, faintly, behind the black. */
-.syn3h-shell.exploration-ui:has(dialog.lobby-sheet[open]) :is(.galaxy-labels, .lobby-gear-dock, .galaxy-hint, .lobby-links, .update-banner) { visibility: hidden; }
+.syn3h-shell.exploration-ui:has(dialog.lobby-sheet[open]) :is(.galaxy-labels, .lobby-version-dock, .galaxy-hint, .lobby-links, .update-banner) { visibility: hidden; }

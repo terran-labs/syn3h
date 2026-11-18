@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-17 17:25 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-18 13:45 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,14 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.1709 (release-47), source 28442de0, frozen copy 20261117-164026-28442de0,
-Worker version 7fd0a8e7, at https://www.syn3h.com/ since 17 November 17:16 PST.
+Live: v26.11.1713 (release-51), source eb0d638c, frozen copy 20261117-223317-eb0d638c,
+Worker version 61a2c3c6, at https://www.syn3h.com/ since 17 November 22:58 PST.
+
+Outage, 18 November: the Orchestrator (and builder aa1e0a5e at 00:38) stopped at about 00:18 PST
+with "Can't reach the API server", a network or DNS outage, just after v26.11.1714's second
+check run finished. Nothing ran until the Foreman resumed it at about 13:40 PST: about 13 hours
+and 20 minutes lost. On resume, main, the 1714 train and production were as left, and no
+release, hold file, dev server or smoke was still running. Resume from disk, not memory.
 
 Releases since the evening of 16 November, all accepted unless marked:
 
@@ -31,6 +37,10 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.1706 | 44 | m-reconnect-1706 | a throwing disconnect handler still reconnects; room log tags; latency proxy keeps order |
 | v26.11.1708 | 46 | m-smooth-1708 | smooth planet entry and exit, paced bots, bot races for a host |
 | v26.11.1709 | 47 | m-hud-1709 | neutral HUD, About/Updates icons, ALT and units, brighter captions |
+| v26.11.1710 | 48 | m-botfix-1710 | bots kept through a host's dropped connection; drop report on rejoin |
+| v26.11.1711 | 49 | m-gentle-1711 | tap to begin, softer tyre tracks, gentle sun rays, larger near captions |
+| v26.11.1712 | 50 | m-column-1712 | driving column, touch aiming, chat card, heading-up minimap, lobby returns upright |
+| v26.11.1713 | 51 | m-physics-1713 | Zorb skips on water and lava, bot pacing hold and keepCount, fresh vehicle on a new planet |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
