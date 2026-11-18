@@ -48,7 +48,7 @@ try {
     // The lobby underneath takes the taps, once the opening (src/ui/galaxy/opening.ts) has
     // brought its controls in.
     await page.waitForFunction(() => document.querySelector('.lobby-panels')?.dataset.busy === 'false' && !document.documentElement.dataset.opening, null, { timeout: 60000 })
-    assert.equal(await page.evaluate(() => { const b = document.querySelector('.galaxy-links button').getBoundingClientRect(); return document.elementFromPoint(b.left + 12, b.top + 12)?.closest('.galaxy-links') !== null }), true)
+    assert.equal(await page.evaluate(() => { const b = document.querySelector('.lobby-gear-dock .lobby-gear').getBoundingClientRect(); return document.elementFromPoint(b.left + 12, b.top + 12)?.closest('.lobby-gear-dock') !== null }), true)
     await page.screenshot({ path: `${out}/${view.name}-lobby.png` })
     await context.close()
   }
