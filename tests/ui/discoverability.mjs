@@ -28,7 +28,7 @@ for(const mode of ['desktop','phone']){
   await welcome.waitFor({state:'visible'})
   for(const heading of ['Start in three moves','Controls','Settings worth knowing'])assert.equal(await welcome.getByRole('heading',{name:heading}).count(),1,`Welcome has ${heading}`)
   await page.waitForFunction(()=>[...document.querySelectorAll('dialog.lobby-sheet .welcome-shot')].some(f=>f.classList.contains('is-loaded')),null,{timeout:30000})
-  assert.ok(images.length>0&&images.every(url=>/^\/welcome\/[\w-]+-(640|1280)\.webp$/.test(url)),`only Welcome pictures load after opening ${JSON.stringify(images)}`)
+  assert.ok(images.length>0&&images.every(url=>/^\/welcome\/[\w-]+-(640|960|1280|1920)\.webp$/.test(url)),`only Welcome pictures load after opening ${JSON.stringify(images)}`)
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-welcome.png`})
   await page.keyboard.press('Escape');await welcome.waitFor({state:'hidden'})
   // The lobby lists the planet recipes and nothing else: "Shape your own" is hidden for now.

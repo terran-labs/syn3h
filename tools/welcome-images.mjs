@@ -7,8 +7,8 @@
  *
  * The originals are 3840 x 2160 captures from tools/showcase.mjs --hud hidden (v26.11.1711,
  * the interface hidden so the pictures never show a HUD the game has replaced) and stay in
- * the repository as source. Each becomes two widths, 640 and 1280, which cover the panel
- * (300 to 880 CSS px wide) at 1x and 2x. The manifest (src/ui/welcome/shots.generated.ts)
+ * the repository as source. Each becomes four widths, 640 to 1920, so a phone fetches a small
+ * one and a large high-density screen a sharp one (welcome.ts picks with srcset and sizes). The manifest (src/ui/welcome/shots.generated.ts)
  * records each file's width, height and bytes and the picture's average colour, which the
  * panel paints while the picture loads, so no extra bytes are spent on a placeholder.
  *
@@ -27,8 +27,15 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const FFMPEG = process.env.FFMPEG ?? '/opt/homebrew/bin/ffmpeg'
 const CWEBP = process.env.CWEBP ?? '/opt/homebrew/bin/cwebp'
-const WIDTHS = [640, 1280]
-const QUALITY = 72
+const WIDTHS = [640, 960, 1280, 1920]
+/**
+ * Quality for a page whose job is to look good (Foreman, 17 November 2026): WebP quality 88
+ * with noise shaping and the deblocking filter off, which keeps the fine detail (the wings' hex
+ * pattern, terrain texture, the vehicles) crisp; checked at 100 percent for banding and smearing.
+ * A picture whose largest width would pass MAX_BYTES is instead encoded to that size.
+ */
+const QUALITY = ['-q', '88', '-sns', '0', '-f', '0']
+const MAX_BYTES = 120 * 1024
 
 /** The pictures, in the order the panel shows them. Alt text describes what is in frame. */
 export const SHOTS = [
@@ -66,7 +73,11 @@ for (const shot of SHOTS) {
   const files = []
   for (const width of WIDTHS) {
     const out = outputOf(shot.id, width)
-    if (!check) execFileSync(CWEBP, ['-quiet', '-q', String(QUALITY), '-m', '6', '-sharp_yuv', '-metadata', 'none', '-resize', String(width), '0', source, '-o', out])
+    if (!check) {
+      const encode = (rate) => execFileSync(CWEBP, ['-quiet', ...rate, '-m', '6', '-sharp_yuv', '-metadata', 'none', '-resize', String(width), '0', source, '-o', out])
+      encode(QUALITY)
+      if (statSync(out).size > MAX_BYTES) encode(['-size', String(MAX_BYTES - 2048), '-pass', '6', '-sns', '0', '-f', '0'])
+    }
     if (!existsSync(out)) { console.error(`missing ${out}`); process.exit(1) }
     files.push({ width, url: `/welcome/${shot.id}-${width}.webp`, bytes: statSync(out).size })
   }
@@ -80,3 +91,4 @@ if (check) {
 let total = 0
 for (const e of entries) for (const f of e.files) { total += f.bytes; console.log(`${f.url}\t${(f.bytes / 1024).toFixed(1)} KB`) }
 console.log(`total\t${(total / 1024).toFixed(1)} KB (${entries.length} pictures, ${WIDTHS.length} widths each)`)
+for (const width of WIDTHS) console.log(`at ${width}\t${(entries.reduce((sum, e) => sum + e.files.find(f => f.width === width).bytes, 0) / 1024).toFixed(1)} KB for all ${entries.length}`)

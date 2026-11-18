@@ -88,7 +88,7 @@ for (const mode of process.env.MODES ? process.env.MODES.split(',') : ['desktop'
     }
     assert.equal(page.url(), url, 'the address is unchanged')
     assert.equal(await page.evaluate(() => syn3h.shell.room), room, 'the room is unchanged')
-    const strays = images.filter(i => !/^\/welcome\/[\w-]+-(640|1280)\.webp$/.test(i.url))
+    const strays = images.filter(i => !/^\/welcome\/[\w-]+-(640|960|1280|1920)\.webp$/.test(i.url))
     assert.deepEqual(strays, [], 'after opening, only the Welcome pictures load')
     assert.ok(images.length > 0, 'the Welcome pictures load once the guide is open')
     assert.deepEqual(errors, [])

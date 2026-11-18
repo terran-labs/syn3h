@@ -25,7 +25,7 @@ export const REQUIRED_BITMAPS = ['brand/apple-touch-icon.png', 'brand/icon-192.p
  * tools/welcome-images.mjs pass; tools/runtime-assets-check.mjs and the about and
  * discoverability browser checks prove none loads in ordinary play.
  */
-export const ABOUT_PICTURES = /^welcome\/[a-z0-9-]+-(640|1280)\.webp$/
+export const ABOUT_PICTURES = /^welcome\/[a-z0-9-]+-(640|960|1280|1920)\.webp$/
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

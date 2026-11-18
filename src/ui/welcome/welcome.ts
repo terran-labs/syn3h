@@ -40,11 +40,21 @@ const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;
  * so nothing moves when it arrives. `sizes` is the width it is drawn at.
  */
 function figure(id: string, caption: string, sizes: string, className = ''): string {
-  const s = shot(id), largest = s.files[s.files.length - 1]!
+  // The fallback src is the 1280 px file; any browser that reads srcset picks for itself.
+  const s = shot(id), largest = s.files[s.files.length - 1]!, fallback = s.files.find(f => f.width === 1280) ?? largest
   const srcset = s.files.map(f => `${f.url} ${f.width}w`).join(', ')
-  return `<figure class="welcome-shot${className ? ` ${className}` : ''}" style="--shot-colour:${s.colour}"><img alt="${escape(s.alt)}" width="${largest.width}" height="${Math.round(largest.width * s.height / s.width)}" decoding="async" loading="lazy" data-src="${largest.url}" data-srcset="${srcset}" data-sizes="${sizes}"><figcaption>${caption}</figcaption></figure>`
+  return `<figure class="welcome-shot${className ? ` ${className}` : ''}" style="--shot-colour:${s.colour}"><img alt="${escape(s.alt)}" width="${largest.width}" height="${Math.round(largest.width * s.height / s.width)}" decoding="async" loading="lazy" data-src="${fallback.url}" data-srcset="${srcset}" data-sizes="${sizes}"><figcaption>${caption}</figcaption></figure>`
 }
 
+/**
+ * How wide each picture is drawn, so the browser fetches the right file (srcset in figure()).
+ * The in-play guide is about 1150 CSS px wide on a large desktop, the lobby sheet up to 880.
+ * Phones, upright or on their side (max-height 500px), are told a smaller width than they draw,
+ * so every phone fetches the 960 px files: about 180 KB for the six, inside the Foreman's
+ * 200 KB budget for a phone, at a little under two device pixels per CSS pixel on its side.
+ */
+const FULL = '(max-width: 699px) and (min-resolution: 2.5dppx) 66vw, (max-width: 699px) 100vw, (max-height: 500px) and (min-resolution: 2.5dppx) 320px, (max-height: 500px) 480px, (min-width: 1280px) 1150px, 90vw'
+const PAIR = '(max-width: 519px) and (min-resolution: 2.5dppx) 66vw, (max-width: 519px) 100vw, (max-width: 699px) 50vw, (max-height: 500px) and (min-resolution: 2.5dppx) 160px, (max-height: 500px) 240px, (min-width: 1280px) 565px, 45vw'
 const k = (key: string, label = key) => `<kbd aria-label="${escape(label)}">${escape(key)}</kbd>`
 
 /** The five pieces of gear, each with a mark drawn in SVG. Order as the gear rack shows them. */
@@ -80,7 +90,7 @@ function html(where: WelcomeWhere): string {
   const enter = where === 'play' ? 'You are already on one. Back in the galaxy, each planet is its own world' : 'Tap a planet in the galaxy and you drop straight in'
   return `
 <p class="welcome-lede">Syn3h is a sci-fi playground of small worlds. Drive them, fly over them and wander them with friends, right here in the browser.</p>
-${figure('wings-glide', 'Off a Badlands ridge on the buggy’s force-field wings.', '(min-width: 720px) 720px, 100vw', 'welcome-hero')}
+${figure('wings-glide', 'Off a Badlands ridge on the buggy’s force-field wings.', FULL, 'welcome-hero')}
 <h3>Start in three moves</h3>
 <ol class="welcome-steps">
   <li><strong>Pick a planet.</strong> ${enter}: volcanoes, lagoons, badlands, a mire and more.</li>
@@ -94,7 +104,7 @@ ${figure('wings-glide', 'Off a Badlands ridge on the buggy’s force-field wings
   <li><strong>Hovercraft</strong><span>Rides a cushion of air over sand, water and lava alike. The shortest way across a lagoon.</span></li>
 </ul>
 <p>Switch machines from the panels whenever you like. On any of them, ${k('X')} closes a Zorb ball around you: roll it, bounce it, shove your friends with it.</p>
-<div class="welcome-pair">${figure('jet-tiny-world', 'High enough in the jet, the world is a ball.', '(min-width: 560px) 360px, 100vw')}${figure('lagoon-hovercraft', 'Across the lagoon and up the beach: the hovercraft doesn’t mind which.', '(min-width: 560px) 360px, 100vw')}</div>
+<div class="welcome-pair">${figure('jet-tiny-world', 'High enough in the jet, the world is a ball.', PAIR)}${figure('lagoon-hovercraft', 'Across the lagoon and up the beach: the hovercraft doesn’t mind which.', PAIR)}</div>
 <h3>Gear</h3>
 <p>Five tools ride in the rack on the left. Pick one with the number keys, or click or tap it in the rack. ${k('L')} or a click in the world uses it; on a phone, <strong>TAG</strong> does. In Explore they are toys. In a match they are tactics.</p>
 <ul class="welcome-gear">${gearList}</ul>
@@ -105,7 +115,7 @@ ${figure('wings-glide', 'Off a Badlands ridge on the buggy’s force-field wings
   <div><dt>King of the Hill</dt><dd>Hold the marked zone alone to score. Share it and the clock stops until someone wins it back.</dd></div>
 </dl>
 <p class="welcome-note">Choose the mode in the Game panel. The whole room plays the same one.</p>
-${figure('canyon-convoy', 'Tag is better with company.', '(min-width: 720px) 720px, 100vw')}
+${figure('canyon-convoy', 'Tag is better with company.', FULL)}
 <h3>Controls</h3>
 <div class="welcome-controls">
   <section aria-labelledby="welcome-keyboard">
@@ -139,7 +149,7 @@ ${figure('canyon-convoy', 'Tag is better with company.', '(min-width: 720px) 720
     </ul>
   </section>
 </div>
-${figure('lava-night', 'Night on the volcanic world: the sea is lava.', '(min-width: 720px) 720px, 100vw')}
+${figure('lava-night', 'Night on the volcanic world: the sea is lava.', FULL)}
 <h3>Share a room</h3>
 <p>Every room has its own link. ${k('J')} or <em>Invite players</em> shows it with a QR code a phone can scan from across the sofa. Everyone in a room shares one world: the same terrain, the same weather, the same waves.</p>
 <h3>Settings worth knowing</h3>
@@ -149,7 +159,7 @@ ${figure('lava-night', 'Night on the volcanic world: the sea is lava.', '(min-wi
   <li><strong>Quality.</strong> The game picks a level for your device and adjusts as you play. Set it yourself in Settings, then Graphics.</li>
   <li><strong>Left-handed touch.</strong> Swaps the driving thumb to the right. Settings, then Controls.</li>
 </ul>
-${figure('swamp-river', 'A river through the Mire.', '(min-width: 720px) 720px, 100vw')}
+${figure('swamp-river', 'A river through the Mire.', FULL)}
 <h3>Made, not shipped</h3>
 <p>Almost nothing you see or hear is a file. The terrain grows from a seed and wraps around a small planet. The sky is computed from how light scatters. The vehicles are built in code, the engines are synthesised, and the music is composed while you play. The pictures on this page are the exception: they load only when you open it.</p>
 <p class="welcome-close">Land somewhere unfamiliar, learn what your machine can do, and find your own reasons to stay.</p>

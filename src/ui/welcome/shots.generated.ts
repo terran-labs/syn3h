@@ -11,12 +11,22 @@ export const WELCOME_SHOTS: readonly WelcomeShot[] = [
       {
         "width": 640,
         "url": "/welcome/wings-glide-640.webp",
-        "bytes": 8736
+        "bytes": 16682
+      },
+      {
+        "width": 960,
+        "url": "/welcome/wings-glide-960.webp",
+        "bytes": 28302
       },
       {
         "width": 1280,
         "url": "/welcome/wings-glide-1280.webp",
-        "bytes": 21486
+        "bytes": 41522
+      },
+      {
+        "width": 1920,
+        "url": "/welcome/wings-glide-1920.webp",
+        "bytes": 72050
       }
     ]
   },
@@ -30,12 +40,22 @@ export const WELCOME_SHOTS: readonly WelcomeShot[] = [
       {
         "width": 640,
         "url": "/welcome/jet-tiny-world-640.webp",
-        "bytes": 8848
+        "bytes": 17616
+      },
+      {
+        "width": 960,
+        "url": "/welcome/jet-tiny-world-960.webp",
+        "bytes": 30486
       },
       {
         "width": 1280,
         "url": "/welcome/jet-tiny-world-1280.webp",
-        "bytes": 22258
+        "bytes": 44258
+      },
+      {
+        "width": 1920,
+        "url": "/welcome/jet-tiny-world-1920.webp",
+        "bytes": 76224
       }
     ]
   },
@@ -49,12 +69,22 @@ export const WELCOME_SHOTS: readonly WelcomeShot[] = [
       {
         "width": 640,
         "url": "/welcome/lagoon-hovercraft-640.webp",
-        "bytes": 4060
+        "bytes": 7976
+      },
+      {
+        "width": 960,
+        "url": "/welcome/lagoon-hovercraft-960.webp",
+        "bytes": 15030
       },
       {
         "width": 1280,
         "url": "/welcome/lagoon-hovercraft-1280.webp",
-        "bytes": 10860
+        "bytes": 24118
+      },
+      {
+        "width": 1920,
+        "url": "/welcome/lagoon-hovercraft-1920.webp",
+        "bytes": 48392
       }
     ]
   },
@@ -68,12 +98,22 @@ export const WELCOME_SHOTS: readonly WelcomeShot[] = [
       {
         "width": 640,
         "url": "/welcome/lava-night-640.webp",
-        "bytes": 8238
+        "bytes": 15692
+      },
+      {
+        "width": 960,
+        "url": "/welcome/lava-night-960.webp",
+        "bytes": 29948
       },
       {
         "width": 1280,
         "url": "/welcome/lava-night-1280.webp",
-        "bytes": 24750
+        "bytes": 47270
+      },
+      {
+        "width": 1920,
+        "url": "/welcome/lava-night-1920.webp",
+        "bytes": 91522
       }
     ]
   },
@@ -87,12 +127,22 @@ export const WELCOME_SHOTS: readonly WelcomeShot[] = [
       {
         "width": 640,
         "url": "/welcome/swamp-river-640.webp",
-        "bytes": 12366
+        "bytes": 24556
+      },
+      {
+        "width": 960,
+        "url": "/welcome/swamp-river-960.webp",
+        "bytes": 45140
       },
       {
         "width": 1280,
         "url": "/welcome/swamp-river-1280.webp",
-        "bytes": 34346
+        "bytes": 69172
+      },
+      {
+        "width": 1920,
+        "url": "/welcome/swamp-river-1920.webp",
+        "bytes": 121400
       }
     ]
   },
@@ -106,12 +156,22 @@ export const WELCOME_SHOTS: readonly WelcomeShot[] = [
       {
         "width": 640,
         "url": "/welcome/canyon-convoy-640.webp",
-        "bytes": 8934
+        "bytes": 18068
+      },
+      {
+        "width": 960,
+        "url": "/welcome/canyon-convoy-960.webp",
+        "bytes": 34408
       },
       {
         "width": 1280,
         "url": "/welcome/canyon-convoy-1280.webp",
-        "bytes": 24954
+        "bytes": 53122
+      },
+      {
+        "width": 1920,
+        "url": "/welcome/canyon-convoy-1920.webp",
+        "bytes": 103914
       }
     ]
   }
