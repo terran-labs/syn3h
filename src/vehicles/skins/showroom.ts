@@ -107,19 +107,43 @@ export const showroomWarm = { warmed: 0, abandoned: 0, cancelled: 0, proxies: 0 
 type N = any
 
 // ---------------------------------------------------------------------------------------
-// Materials shared between vehicles
+// Materials shared between vehicles (perf/shared-showroom). Read this first.
 // ---------------------------------------------------------------------------------------
 //
-// The renderer builds a node material (graph to shader, then a pipeline per pass) for every
-// material object it meets: a node's cache key is its own id, so two materials built alike are
-// still two builds. A bot arriving with its own copies of its kind's showroom materials cost
-// 31 to 75 ms of builds at High on a fast Mac, about half a second on a slow machine.
+// Why. The renderer builds every material object it meets (node graph to shader, then a
+// pipeline per pass), and a node's cache key is its own id (Node.customCacheKey), so two
+// materials built alike are still two builds. Every bot arriving with its own copies of its
+// kind's showroom materials paid all of them again: 29 to 73 ms per arrival at High on a fast
+// Mac, about half a second on a slow machine.
 //
-// So the materials are shared: every vehicle whose surfaces are alike (same kind, tier and
-// decoration: see `signature`) draws the same material objects, and only the first one of a
-// kind builds anything. What differs between them, their colours and accent, is read per
-// object as each mesh draws (`perObject`), from its own source materials, which the vehicle
-// classes and setColors keep writing to as before.
+// Scheme.
+//   1. `build` takes nothing per vehicle into the graph. Colours, emissive colours and the
+//      accent are `perObject` uniforms: as each mesh draws, they read that mesh's own source
+//      materials and its vehicle's accent from `paintOf`, which applyShowroom fills.
+//   2. `signature` names everything `build` and the decoration do put into the graph (roles,
+//      authored roughness and metalness, emissive intensity, flags, tier, canopy choice, the
+//      decoration's source text, whether the vehicle can be heated). Equal signatures get the
+//      same material object from `pool`.
+//   3. Decoration (night readability, lava glow) runs once per material, by the first vehicle
+//      that wears it (userData.nightReadable and userData.lavaGlow mark it). The lava glow
+//      reads heat per object, from the mesh's own vehicle (lavaGlow.ts).
+//   4. Each vehicle's tier set counts once per shared material (`taken`); `drop` and the
+//      disposer give each back once. The last release disposes it.
+//
+// Invariants (tests/vehicles2/showroom.test.ts):
+//   - Two vehicles with equal signatures draw the same material, each in its own colours, and
+//     setColors on a source shows on the next draw.
+//   - Nothing differing per vehicle is baked into a shared graph: a surface whose emission the
+//     vehicle authored itself (any node not in standardEmission, the buggy's stators) is built
+//     for that vehicle alone.
+//   - A shared material is never disposed while a vehicle holds it. The disposer puts the
+//     vehicle's own plain set back on its meshes before returning, because every vehicle class
+//     then disposes whatever is still attached.
+//   - Heat is per vehicle: a shared material glows only on the vehicle in the lava.
+//   - Per-object data lives in WeakMaps keyed by mesh, never in userData: Object3D.clone (used
+//     for the warm-up proxies) copies userData through JSON. Proxies are given their mesh's paint.
+//   - Tier 0 (the plain materials the vehicle was built with) is untouched: it was always per
+//     vehicle, and still is.
 
 /** What a drawn mesh paints with: its own source materials (packed order) and its vehicle's accent. */
 interface Paint { sources: readonly Standard[]; accent: T.Color | null }
