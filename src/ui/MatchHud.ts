@@ -75,7 +75,7 @@ export class MatchHud {
     const message = matchAnnouncement(this.previous, next)
     if (next.winner) {
       clearTimeout(this.timer); this.announcement.classList.add('round-end'); this.announcement.hidden = false; this.parent.classList.add('match-announcing')
-      this.announcement.style.setProperty('--winner-color', CSS.supports('color', next.winnerColor ?? '') ? next.winnerColor! : '#8dbce5')
+      this.announcement.style.setProperty('--winner-color', CSS.supports('color', next.winnerColor ?? '') ? next.winnerColor! : '#d2d2d2')
       const title = document.createElement('strong'); title.textContent = `${next.winner} wins!`
       const count = document.createElement('small'); this.announcement.replaceChildren(title, count)
       const tick = () => { const seconds = Math.max(0, Math.ceil((this.roundEnds - performance.now()) / 1000)); if(seconds>0&&seconds<=5&&seconds!==this.lastTick){this.lastTick=seconds;this.countdownTick()} count.textContent = seconds ? `Next round in ${seconds}` : 'Waiting for the next round' }

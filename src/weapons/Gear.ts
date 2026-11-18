@@ -22,6 +22,7 @@ import { bungeeAllowed } from './bungee/params'
 import { yoinkAllowed } from './yoink/params'
 import { bigRedAllowed } from './bigRedParams'
 import { pesterAllowed } from './pester/params'
+import { displayUnits, distanceText } from '../ui/units'
 import { lasersAllowed } from './params'
 
 export type GearId = 'beam' | 'bungee' | 'yoink' | 'red' | 'pester'
@@ -101,7 +102,7 @@ export class GearRack implements System {
   private systems: GearSystems | null = null
   private shown: GearControls | null = null
   /** What `shown` was built from; `detail` is cord metres or the carried vehicle's id. */
-  private shownKey = { gear: '' as GearId | '', state: '', detail: NaN, bound: false }
+  private shownKey = { gear: '' as GearId | '', state: '', detail: NaN, bound: false, units: NaN }
   private actions: Partial<Record<string, readonly GearAction[]>> = {}
   /** A one press action raised the tag control; drop it once a step has seen it. */
   private pulse = false
@@ -180,8 +181,9 @@ export class GearRack implements System {
       }
     }
     const k = this.shownKey
-    if (this.shown && k.gear === gear && k.state === state && Object.is(k.detail, detail) && k.bound === Boolean(sys)) return this.shown
-    k.gear = gear; k.state = state; k.detail = detail; k.bound = Boolean(sys)
+    const units = displayUnits.value
+    if (this.shown && k.gear === gear && k.state === state && Object.is(k.detail, detail) && k.bound === Boolean(sys) && k.units === units) return this.shown
+    k.gear = gear; k.state = state; k.detail = detail; k.bound = Boolean(sys); k.units = units
     this.shown = this.build(gear, state, detail)
     return this.shown
   }
@@ -218,7 +220,7 @@ export class GearRack implements System {
   private build(gear: GearId, state: string, detail: number): GearControls {
     const sys = this.systems
     let status: string | undefined
-    if (gear === 'bungee' && detail === detail) status = `Cord ${detail} m`
+    if (gear === 'bungee' && detail === detail) status = `Cord ${distanceText(detail)}`
     if (gear === 'yoink' && detail === detail) status = `Holding ${sys?.nameOf?.(detail) ?? detail}`
     const base = {
       gear, name: GEAR_LABELS[gear], description: GEAR_DESCRIPTIONS[gear], state, status,

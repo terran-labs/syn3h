@@ -4,24 +4,44 @@
    The gear is vector line work with a glow: no image. Selectors carry .exploration-ui to
    outrank the lobby's general button and heading rules. */
 
+/* About and Updates stack above the gear, the version sits to its left. */
 .lobby-gear-dock {
   position: fixed; z-index: 30; right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom));
-  display: flex; flex-direction: row-reverse; align-items: center; gap: 4px; pointer-events: auto;
+  display: grid; grid-template-columns: auto 44px; grid-template-areas: '. about' '. updates' 'version gear'; align-items: center; justify-items: end; gap: 10px 4px; pointer-events: none;
 }
-.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-gear {
+.lobby-gear-dock > * { pointer-events: auto; }
+.lobby-gear-dock .lobby-about { grid-area: about; }
+.lobby-gear-dock .lobby-updates { grid-area: updates; }
+.lobby-gear-dock .lobby-gear { grid-area: gear; }
+.lobby-gear-dock .lobby-version { grid-area: version; }
+.syn3h-shell.exploration-ui .lobby-gear-dock :is(.lobby-gear, .lobby-dock-icon) {
   width: 44px; height: 44px; min-height: 44px; min-width: 44px; padding: 0; display: grid; place-items: center; border-radius: 50%;
-  border: 1px solid rgb(143 227 255 / .32); background: radial-gradient(closest-side, rgb(143 227 255 / .1), rgb(2 9 15 / .2));
-  box-shadow: 0 0 14px rgb(100 200 250 / .14), inset 0 0 10px rgb(143 227 255 / .08); color: #9fe6ff; cursor: pointer;
+  border: 1px solid rgb(205 205 205 / .32); background: radial-gradient(closest-side, rgb(205 205 205 / .1), rgb(2 9 15 / .2));
+  box-shadow: 0 0 14px rgb(176 176 176 / .14), inset 0 0 10px rgb(205 205 205 / .08); color: #d4d4d4; cursor: pointer;
   transition: border-color .2s ease, box-shadow .2s ease;
 }
-.lobby-gear svg { width: 28px; height: 28px; overflow: visible; }
+.lobby-gear svg, .lobby-dock-icon svg { width: 28px; height: 28px; overflow: visible; }
+/* The icons share the gear's line and glow; they hold still. */
+.lobby-dock-icon path {
+  fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; opacity: .9;
+  filter: drop-shadow(0 0 2px rgb(194 194 194 / .9)) drop-shadow(0 0 6px rgb(147 147 147 / .5));
+}
+.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-dock-icon:is(:hover, :focus-visible) {
+  border-color: rgb(230 230 230 / .8); box-shadow: 0 0 18px rgb(188 188 188 / .3), inset 0 0 12px rgb(205 205 205 / .16);
+}
+/* A newer version is out: a small steady dot on the Updates ring. */
+.lobby-dock-icon { position: relative; }
+.lobby-updates.has-update::after {
+  content: ''; position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--s3-accent-2, #f7f7f7); box-shadow: 0 0 6px rgb(255 255 255 / .6);
+}
 .lobby-gear path {
   fill: none; stroke: currentColor; stroke-width: 1.1; stroke-linejoin: round;
-  filter: drop-shadow(0 0 2px rgb(120 220 255 / .9)) drop-shadow(0 0 6px rgb(60 170 255 / .5));
+  filter: drop-shadow(0 0 2px rgb(194 194 194 / .9)) drop-shadow(0 0 6px rgb(147 147 147 / .5));
   transform-origin: 12px 12px; animation: lobby-gear-turn 40s linear infinite, lobby-gear-shimmer 5s ease-in-out infinite;
 }
 .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-gear:hover, .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-gear:focus-visible, .syn3h-shell.exploration-ui .lobby-gear-dock.is-open .lobby-gear {
-  border-color: rgb(198 241 255 / .8); box-shadow: 0 0 18px rgb(120 210 255 / .3), inset 0 0 12px rgb(143 227 255 / .16);
+  border-color: rgb(230 230 230 / .8); box-shadow: 0 0 18px rgb(188 188 188 / .3), inset 0 0 12px rgb(205 205 205 / .16);
 }
 @keyframes lobby-gear-turn { to { transform: rotate(360deg); } }
 @keyframes lobby-gear-shimmer { 0%, 100% { opacity: .78; } 50% { opacity: 1; } }
@@ -30,10 +50,10 @@
 /* Small and quiet; a hook for the Updates view (data-lobby-version). */
 .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version {
   min-height: 24px; min-width: 0; padding: 4px 6px; border: 0; border-radius: 4px; background: none; box-shadow: none;
-  font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .12em; text-transform: none; color: rgb(200 232 250 / .62);
+  font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .12em; text-transform: none; color: rgb(224 224 224 / .62);
   text-shadow: 0 1px 3px rgb(0 8 14 / .8); cursor: pointer;
 }
-.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version:hover, .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version:focus-visible { color: rgb(220 242 255 / .9); background: none; }
+.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version:hover, .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version:focus-visible { color: rgb(237 237 237 / .9); background: none; }
 
 /* The panel: the sidebar's right-edge column, shown in the lobby above the galaxy's labels, on a
    darker ground than in play so labels behind it do not read through. It stops above the gear. */
@@ -44,7 +64,7 @@
 /* One level of card: the panel is a column, not a sheet behind the cards (the owner, 16
    November 2026: no card regions nested inside each other). The cards carry the darker body
    the sheet used to give, so the galaxy's labels still do not read through them. */
-.syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings .wi-glass { --body: rgb(3 10 18 / .84); }
+.syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings .wi-glass { --body: rgb(12 12 13 / .84); }
 .syn3h-shell.exploration-ui .lobby-settings-foot .build-line { text-shadow: 0 1px 3px rgb(0 8 14 / .9), 0 0 8px rgb(0 8 14 / .6); }
 .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { overflow-y: auto; min-height: 0; flex: 1 1 auto; overscroll-behavior: contain; }
 /* Unlike the in-game rail, whose cards share its height, here every card takes its natural
@@ -58,7 +78,7 @@
 .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 12px; font: 500 13px 'Barlow', sans-serif; letter-spacing: .08em; }
 .lobby-settings-close span[aria-hidden] { font-size: 18px; line-height: 1; }
 .lobby-settings-foot { flex: 0 0 auto; padding: 2px 8px 0; text-align: right; }
-.syn3h-shell.exploration-ui .lobby-settings-foot .build-line { font: 400 11px 'Barlow', sans-serif; letter-spacing: .1em; color: rgb(200 232 250 / .55); }
+.syn3h-shell.exploration-ui .lobby-settings-foot .build-line { font: 400 11px 'Barlow', sans-serif; letter-spacing: .1em; color: rgb(224 224 224 / .55); }
 .syn3h-shell.exploration-ui .world-inspector.lobby-settings .presentation-toggle { width: 100%; margin-top: 6px; padding: 0 6px 0 16px; }
 .world-inspector.lobby-settings .host-controls { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
 .world-inspector.lobby-settings .host-controls legend { display: none; }
@@ -74,12 +94,11 @@
      no edge, not a sheet round the cards. Taps pass through it to the close-on-outside rule. */
   .syn3h-shell.exploration-ui:not(.is-playing) .lobby-settings-host::before { content: ''; position: fixed; inset: 0; z-index: 59; background: rgb(2 8 14 / .78); pointer-events: none; }
   /* The stack takes only the height it needs, so the version line follows the last card
-     instead of sitting on the lobby's buttons at the foot of the screen. */
+     instead of sitting at the foot of the screen. */
   .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { flex: 0 1 auto; }
-  /* Portrait: the version sits above the gear, which sits right of the lobby's buttons; both
-     sit a little lower than the buttons' baseline to stay clear of the hint above them. */
-  .lobby-gear-dock { flex-direction: column-reverse; align-items: flex-end; gap: 0; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); }
-  /* Small enough to sit right of the About button. Labels are short ("v26.11.1609",
+  /* The same stack as on a desktop (About and Updates over the gear), a little tighter to the corner. */
+  .lobby-gear-dock { gap: 8px 2px; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); }
+  /* Small and quiet beside the gear. Labels are short ("v26.11.1609",
      "dev · a1b2c3d"), so they are never cut off mid-identifier. */
   .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version { min-height: 0; padding: 1px 2px; font-size: 10px; letter-spacing: .04em; white-space: nowrap; }
 }
@@ -89,5 +108,5 @@
   .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close { min-height: 40px; min-width: 44px; }
   /* The version line joins the header row, beside Close, to give the rows its height. */
   .syn3h-shell.exploration-ui .world-inspector.lobby-settings .lobby-settings-foot { position: absolute; top: 20px; right: 130px; padding: 0; }
-  .lobby-gear-dock { flex-direction: row-reverse; align-items: center; right: max(12px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
+  .lobby-gear-dock { gap: 6px 2px; right: max(12px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
 }

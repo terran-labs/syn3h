@@ -135,7 +135,7 @@ describe('gear controls', () => {
       expect(c.state).toBe('vehicle')
       expect(ids(c)).toEqual(['reelIn', 'payOut', 'release'])
       expect(c.actions.map(a => a.hold)).toEqual([true, true, false])
-      expect(c.status).toMatch(/^Cord \d+ m$/)
+      expect(c.status).toMatch(/^Cord \d+ (m|ft)$/)
       expect(c.level).toBeGreaterThanOrEqual(0)
       expect(c.level).toBeLessThanOrEqual(1)
       // Same rounded length, same object.

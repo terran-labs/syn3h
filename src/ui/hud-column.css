@@ -42,27 +42,20 @@
   --col-track: .16em;
   --col-cap-type: 500 10.5px/1.2 'Barlow', sans-serif;
 }
-/* Neutral palette for the column until ux/hud-neutral sets these shared tokens for the whole
-   HUD (the owner's call: grey-white light, no blue cast). Delete this block when it lands;
-   everything below reads only these tokens. */
-.syn3h-shell.exploration-ui :is(.gear-selector, .hud-accessories, .hud-chat, .chat-panel .chat-strip, .shell-minimap) {
-  --s3-ink: #f4f4f2; --s3-dim: #d6d6d3; --s3-soft: #a9a9a6; --s3-accent: #e6e6e3; --s3-accent-2: #ffffff;
-  --s3-line: rgb(236 236 232 / .5); --s3-line-quiet: rgb(236 236 232 / .2); --s3-panel: rgb(8 8 8 / .38);
-  --halo-glow: 0 0 6px rgb(255 255 255 / .14);
-  --hud-under: 0 0 1px rgb(0 0 0 / 1), 0 0 2px rgb(0 0 0 / .9), 0 0 4px rgb(0 0 0 / .7), 0 0 10px rgb(0 0 0 / .45);
-  --hud-line-under: drop-shadow(0 0 1px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .45));
-}
 /* The column's look, from the shared tokens. Declared on the column's own parts so they read
    the tokens as set there. */
 .syn3h-shell.exploration-ui :is(.gear-selector, .hud-accessories, .hud-chat, .chat-panel .chat-strip, .shell-minimap) {
   /* One shadow under all text, one under all lines. */
   --col-text-under: var(--hud-under);
   --col-line-under: var(--hud-line-under);
-  /* One stroke: the minimap ring's. Key caps, the ring and anything else outlined use it. */
-  --col-stroke: 1px solid var(--s3-line);
-  --col-stroke-glow: 0 0 0 1px var(--s3-panel), 0 0 4px var(--s3-panel), var(--halo-glow);
+  /* One stroke: the minimap ring's, for the ring and the hollow nodes. Derived from the shared
+     tokens (exploration.css) at the strength the owner approved on the preview: the shared
+     line is a quieter .28 and the shared panel a near-opaque .83, both made for cards. */
+  --col-tick: color-mix(in srgb, var(--s3-accent) 50%, transparent);
+  --col-stroke: 1px solid var(--col-tick);
+  --col-stroke-glow: 0 0 0 1px color-mix(in srgb, var(--s3-panel) 45%, transparent), 0 0 4px color-mix(in srgb, var(--s3-panel) 45%, transparent), var(--halo-glow);
   /* The node: hollow when off, lit (with its own glow) when on. */
-  --col-node-off: color-mix(in srgb, var(--s3-panel) 100%, transparent);
+  --col-node-off: color-mix(in srgb, var(--s3-panel) 45%, transparent);
   --col-node-lit: 0 0 6px color-mix(in srgb, var(--s3-accent-2) 80%, transparent);
 }
 .syn3h-shell.exploration-ui.is-focus { --col-rest: .84; }
@@ -224,9 +217,9 @@
   border: var(--col-stroke);
   box-shadow: var(--col-stroke-glow);
   background:
-    linear-gradient(var(--s3-line), var(--s3-line)) right center / 5px 1px no-repeat,
-    linear-gradient(var(--s3-line), var(--s3-line)) center bottom / 1px 5px no-repeat,
-    linear-gradient(var(--s3-line), var(--s3-line)) left center / 5px 1px no-repeat;
+    linear-gradient(var(--col-tick), var(--col-tick)) right center / 5px 1px no-repeat,
+    linear-gradient(var(--col-tick), var(--col-tick)) center bottom / 1px 5px no-repeat,
+    linear-gradient(var(--col-tick), var(--col-tick)) left center / 5px 1px no-repeat;
 }
 /* One slow shimmer travels round the ring; none under reduced motion. Composited, no paint. */
 .syn3h-shell.exploration-ui .shell-minimap::before {
