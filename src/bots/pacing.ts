@@ -67,6 +67,8 @@ export interface PacingState {
    * to judge them by. Judging resumes when the host plays. Defaults to true.
    */
   judge?: boolean
+  /** The host keeps its count whatever the frame rate (bots.keepCount): nothing is judged away. */
+  keep?: boolean
 }
 
 export type PacingAction = 'add' | 'remove' | null
@@ -101,7 +103,8 @@ export class BotPacer {
   }
 
   /** The number of bots to aim for now: what is wanted, within what the device carries. */
-  goal(state: Pick<PacingState, 'wanted'>): number { return Math.max(0, Math.min(state.wanted, this.allowed, this.ceiling)) }
+  // Keeping the count lifts only what the pacer measured; a player who accepted fewer keeps that.
+  goal(state: Pick<PacingState, 'wanted' | 'keep'>): number { return Math.max(0, Math.min(state.wanted, state.keep ? Infinity : this.allowed, this.ceiling)) }
   /** At most this many for the rest of the session: set when the player accepts fewer bots. */
   private ceiling = Infinity
 
@@ -152,7 +155,7 @@ export class BotPacer {
       // What a bot costs is recorded only from frames that kept up: on frames already slow the
       // difference is load noise, and the governor would shed bots for it (see costly).
       if (keptUp) this.marginal.set(m.count, medianMs - m.before)
-      const worse = keptUp && medianMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare, m.before * PACING.baselineShare)
+      const worse = !state.keep && keptUp && medianMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare, m.before * PACING.baselineShare)
       if (p90 > state.targetMs * PACING.slowFactor && worse) {
         // That one was too many: carry one fewer at this level, and send it off.
         this.allowed = Math.max(0, m.count - 1)

@@ -169,4 +169,16 @@ describe('bot pacing', () => {
     for (; now < 5 * 60_000 + PACING.budgetRiseMs + 2000; now += 1000) v = hold.value(8, now)
     expect(v).toBe(8)
   })
+
+  it('with keep on (bots.keepCount), never sends a bot away for performance under a load that does without it', () => {
+    const frame = costlyBots(desktop.targetMs)
+    const off = run(new BotPacer(() => 1), 60, desktop, frame)
+    expect(off.actions.some(a => a.action === 'remove')).toBe(true)
+    const kept = run(new BotPacer(() => 1), 60, { ...desktop, keep: true }, frame)
+    expect(kept.actions.filter(a => a.action === 'remove')).toHaveLength(0)
+    expect(kept.have).toBe(desktop.wanted)
+    // Arrivals are still spaced: never two inside the interval.
+    const adds = kept.actions.filter(a => a.action === 'add')
+    for (let i = 1; i < adds.length; i++) expect(adds[i].at - adds[i - 1].at).toBeGreaterThanOrEqual(1000)
+  })
 })

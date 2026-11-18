@@ -10,6 +10,7 @@ import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
 import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
+import { botsKeepCount } from './bots/params'
 import { ChaseCamera } from './core/ChaseCamera'
 import { Game } from './core/Game'
 import { botColors, startNetworking } from './net'
@@ -127,8 +128,9 @@ async function main(): Promise<void> {
   game.quality.attachBots({
     carried: () => bots.remote ? 0 : bots.vehicles.length,
     requested: () => bots.remote ? 0 : bots.requested,
-    costly: targetMs => !bots.remote && bots.pacer.costly(bots.vehicles.length, targetMs),
-    shed: byPlayer => !bots.remote && bots.pacer.shed(bots.vehicles.length, byPlayer),
+    // A host keeping its count (bots.keepCount): bots are never the governor's to shed.
+    costly: targetMs => !bots.remote && !botsKeepCount.value && bots.pacer.costly(bots.vehicles.length, targetMs),
+    shed: byPlayer => !bots.remote && (byPlayer || !botsKeepCount.value) && bots.pacer.shed(bots.vehicles.length, byPlayer),
     climb: () => !bots.remote && bots.pacer.climb(bots.vehicles.length, bots.requested),
   })
   // The descent from the galaxy poses this camera.
