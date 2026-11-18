@@ -90,6 +90,14 @@ describe('room log lines', () => {
     room.webSocketMessage(b as never, `{"type": "chat", "text": "${CHAT}`)
     sockets.splice(sockets.indexOf(a), 1)
     room.webSocketClose(a as never, 1001, 'going away', true)
+    // Back for its held place, with its record of the drop: anything typed that a modified
+    // client tucks into it (a name as the reason, the room as an extra field) is not logged.
+    const back = new FakeSocket({ room: ROOM, at: Date.now() })
+    sockets.push(back)
+    room = await durableObject(sockets, store)
+    room.webSocketMessage(back as never, hello(NAME, { resume: 'secret-token-aaaaaaaa', drop: { code: 1006, reason: NAME, clean: false, wasOpen: true, openMs: 120000.4, rxMs: 31, txMs: 12, vis: 'hidden', hiddenMs: 900, frozenMs: -1, online: true, frameMs: 4200, room: ROOM, name: RENAMED } }))
+    sockets.splice(sockets.indexOf(back), 1)
+    room.webSocketClose(back as never, 1001, 'going away', true)
 
     // Evicted with the clock running: the next object knows nothing in memory. Its clock
     // alarm rebuilds the room from the sockets and finds nobody playing.
@@ -113,6 +121,9 @@ describe('room log lines', () => {
     // The players heard each other's names and chat: the logs must not have.
     expect(b.sent.some((m) => m.includes(CHAT))).toBe(true)
     const events = lines.map((l) => JSON.parse(l) as { event: string; room?: unknown })
+    const rejoin = events.find((x) => x.event === 'rejoin') as Record<string, unknown> | undefined
+    expect(rejoin).toMatchObject({ dropCode: 1006, dropReason: 'other', dropVis: 'hidden', dropOpenMs: 120000, dropFrameMs: 4200, dropOnline: true })
+    expect(Object.keys(rejoin!).filter((k) => k.startsWith('drop')).sort()).toEqual(['dropClean', 'dropCode', 'dropFrameMs', 'dropFrozenMs', 'dropHiddenMs', 'dropOnline', 'dropOpenMs', 'dropReason', 'dropRxMs', 'dropTxMs', 'dropVis', 'dropWasOpen'])
     for (const e of ['socket_close', 'hello', 'mode', 'hill_capture', 'clock_start', 'clock_stop', 'place_held', 'malformed', 'room_cleanup']) {
       expect(events.map((x) => x.event)).toContain(e)
     }
