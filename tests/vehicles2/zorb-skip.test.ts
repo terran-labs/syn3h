@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
-import { initPhysics } from '../../src/core/physics'
+import { FIXED_DT, initPhysics } from '../../src/core/physics'
 import { params } from '../../shared/params'
 import { decodeState, encodeState } from '../../shared/protocol'
 import { emptyInput } from '../../src/core/Input'
@@ -52,8 +52,12 @@ describe('zorb skipping', () => {
       try {
         coast(r, 5)
         expect(finite(r)).toBe(true)
-        // Rapier lets a ball sink a few centimetres into the heightfield; never more.
-        for (const s of r.trace) expect(s.y - r.radius).toBeGreaterThan(r.bed(s.z) - 0.25)
+        // A contact can overlap the bed by up to one step's travel before Rapier pushes it out;
+        // falling through goes deeper and never comes back. It must end resting on top.
+        const step = zorbSkipSpeed.value * speed * FIXED_DT
+        for (const s of r.trace) expect(s.y - r.radius).toBeGreaterThan(r.bed(s.z) - step)
+        const end = r.trace[r.trace.length - 1]
+        expect(end.y - r.radius).toBeGreaterThan(r.bed(end.z) - 0.05)
       } finally { r.dispose() }
     }
   })

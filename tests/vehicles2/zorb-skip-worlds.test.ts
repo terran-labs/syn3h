@@ -18,7 +18,11 @@ import { setWeatherClock } from '../../src/world/weather/wind'
 import type { TerrainData } from '../../src/world/terrain/generate'
 import { zorbRadius, zorbSize, zorbSkimAt, ZORB_DEFAULT_CAM_OFFSET, type SkimForce } from '../../src/vehicles/zorb'
 
-type Shell = ProceduralTerrain & { seed: number; sampler: HeightSampler; generate(): TerrainData; rebuildSteps(token: number): Generator<unknown>; building: number; prepared: Map<string, unknown> }
+/** The terrain's public liquid methods plus the private parts the two build paths use. */
+type Shell = Pick<ProceduralTerrain, 'size' | 'liquidKindAt' | 'liquidHeightAt' | 'liquidVerticalSpeedAt' | 'liquidFlowAt'> & {
+  seed: number; data: TerrainData; sampler: HeightSampler; generate(): TerrainData
+  rebuildSteps(token: number): Generator<unknown>; building: number; prepared: Map<string, unknown>
+}
 
 beforeAll(async () => {
   await initPhysics()
@@ -35,7 +39,7 @@ afterAll(() => { vi.restoreAllMocks(); for (const id of ['terrain.planetSize', '
 function shell(data: TerrainData, seed: number): Shell {
   const world = createWorld(9.81)
   const quiet = new Proxy({}, { get: () => () => {} })
-  const t = Object.create(ProceduralTerrain.prototype) as Shell
+  const t = Object.create(ProceduralTerrain.prototype) as unknown as Shell
   Object.assign(t, {
     seed, data, sampler: new HeightSampler(data), look: quiet, game: { world }, collider: createTerrainCollider(world, data),
     listeners: new Set(), prepared: new Map(), preparing: new Map(), building: 0, serial: 0, version: 0,
@@ -83,7 +87,7 @@ describe('zorb skimming after entering a planet of another size', () => {
     const fromWorker = sample(staged)
 
     const main = shell(before, 7)
-    ;(main as { data: TerrainData }).data = main.generate()
+    main.data = main.generate()
     main.sampler.data = main.data
     const fromMain = sample(main)
 
