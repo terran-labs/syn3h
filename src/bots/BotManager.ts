@@ -7,7 +7,7 @@ import { qualityBudget } from '../core/quality'
 import { createVehicle } from '../vehicles'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { BotBrain, isSafeGround, type BotMatch, type BotTerrain } from './BotBrain'
-import { botCount, fleet, spawnRadius } from './params'
+import { botCount, botsKeepCount, fleet, spawnRadius } from './params'
 import { Daydream } from './Daydream'
 import { curveFactor, overHorizon } from '../world/curve'
 import { Mind } from './mind/Mind'
@@ -17,7 +17,7 @@ import type { Navigator } from './pilot/types'
 import type { BotGearHooks } from './gear'
 import { BotRaces, type BotRaceHooks } from './races'
 import type { RaceState } from '../../shared/protocol'
-import { BotPacer } from './pacing'
+import { BotPacer, BudgetHysteresis } from './pacing'
 
 /** The arrival effect (src/vehicles/effects/Materialize.ts), as far as bots use it. */
 export interface BotArrivalEffect {
@@ -76,7 +76,12 @@ export class BotManager implements System {
   }
   get vehicles(): readonly Vehicle[] { return this.bots }
   /** What the host asked for, within the quality level's budget: never exceeded. */
-  get requested(): number { return Math.max(0, Math.min(qualityBudget().bots, Math.floor(botCount.value))) }
+  get requested(): number {
+    // In a running game a larger level budget waits for the level to settle (BudgetHysteresis).
+    const budget = botsKeepCount.value ? Infinity : this.paced ? this.budgetHold.value(qualityBudget().bots, performance.now()) : qualityBudget().bots
+    return Math.max(0, Math.min(budget, Math.floor(botCount.value)))
+  }
+  private readonly budgetHold = new BudgetHysteresis()
   /** The brains, index for index with `vehicles` (chatter and rescues read and steer them). */
   get brainList(): readonly BotBrain[] { return this.brains }
   /** The player's own vehicle driving itself after a spell of no input. See Daydream.ts. */
@@ -281,7 +286,7 @@ export class BotManager implements System {
       // capture tool's virtual clock frames look free or costly regardless of the real work.
       const gate = this.gate()
       const action = this.pacer.step(performance.now(), dt * 1000, {
-        have: this.bots.length + (this.arriving ? 1 : 0), wanted, targetMs: governor?.targetMs ?? 1000 / 60, level: governor?.level ?? 0, open: gate !== 'closed', judge: gate === 'playing',
+        have: this.bots.length + (this.arriving ? 1 : 0), wanted, targetMs: governor?.targetMs ?? 1000 / 60, level: governor?.level ?? 0, open: gate !== 'closed', judge: gate === 'playing', keep: botsKeepCount.value,
       })
       if (action === 'remove') { if (!this.arriving) this.depart() }
       else if (action === 'add' && !this.arriving) {

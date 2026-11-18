@@ -2,6 +2,13 @@ import { defineParam } from '../../shared/params'
 const number = (id: string, label: string, value: number, min: number, max: number, step = 0.1) => defineParam({ id: `bots.${id}`, label, group: 'Bots', scope: 'world', default: value, min, max, step })
 export const botCount = number('count', 'Bot count', 4, 0, 16, 1)
 /**
+ * Keep the host's bot count whatever the frame rate: arrivals are still spaced, but no bot is
+ * judged away for performance, the quality governor sheds none, and the quality level's bot
+ * budget is ignored (a host who asks for four at any cost should not lose two to automatic
+ * quality dropping a level). Off by default.
+ */
+export const botsKeepCount = defineParam({ id: 'bots.keepCount', label: 'Keep this many bots whatever the frame rate', group: 'Bots', scope: 'world', default: false })
+/**
  * How hard a chasing bot drives at its target: steering gain, throttle and how far it leads
  * a moving target. At or below RAM_AGGRESSION a bot never drives into anyone on purpose: it
  * catches up, matches speed and keeps a small gap. Above it, the original pursuit rams.

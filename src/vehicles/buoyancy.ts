@@ -29,8 +29,12 @@ export function hasWaterContact(body:RAPIER.RigidBody,terrain:Terrain):boolean {
 // Match ZORB_FLOAT_DEPTH in zorb.ts: the generated force field rides on its base, rather
 // than displacing water like a solid sphere. Keep current-relative drag in the shared pass.
 const ZORB_SUPPORT_DEPTH=.4
-/** A box's four displacement columns, or the sealed field's shallow support envelope. */
-export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrain:Terrain,kind:string,dt:number, radius=0,centre?:THREE.Vector3):void {
+/**
+ * A box's four displacement columns, or the sealed field's shallow support envelope. `bulk`
+ * scales the drag and heave damping (not the buoyancy): a skipping zorb gives them way to its
+ * own skimming lift (zorb.ts `skimForce`).
+ */
+export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrain:Terrain,kind:string,dt:number, radius=0,centre?:THREE.Vector3,bulk=1):void {
  if(body.isKinematic())return
  const profile=kind.includes('buggy')?waterProfiles.buggy:waterProfiles[kind as keyof typeof waterProfiles]??waterProfiles.hovercraft
  const p=centre??body.translation(),r=body.rotation();q.set(r.x,r.y,r.z,r.w)
@@ -54,7 +58,7 @@ export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrai
   const v=body.velocityAtPoint(point),vx=v.x-flow.x,vy=v.y-surfaceSpeed,vz=v.z-flow.z
   const speed=Math.hypot(vx,vy,vz),horizontal=Math.hypot(vx,vz)
   // F/m = -(linear + quadratic |v|) v. Limit only the numerical decay per step.
-  const drag=Math.min(.8/Math.max(dt,.001),waterLinearDrag.value+waterQuadraticDrag.value*speed)*fraction*mass/n
+  const drag=Math.min(.8/Math.max(dt,.001),waterLinearDrag.value+waterQuadraticDrag.value*speed)*fraction*bulk*mass/n
   const buoy=profile.buoyancy.value*mass*g*fraction/n
   // Planing is a surface effect, fading within a metre below the hull. No tank planing.
   // Dynamic lift can carry the hull's weight with a little to spare, never more: past that a
@@ -64,7 +68,7 @@ export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrai
   // Heave damping: water resists a hull bobbing up and down far more than drag along it.
   // About critical for the buoyancy spring (omega = sqrt(lift per metre / mass) ~ 4.5 /s).
   // Only while the hull is crossing the surface: fully under, it sinks at its drag speed.
-  const heave=6*4*fraction*(1-fraction)*mass/n
+  const heave=6*4*fraction*(1-fraction)*bulk*mass/n
   body.addForceAtPoint({x:-vx*drag-buoy*slope.x,y:buoy+plane-vy*drag-vy*heave,z:-vz*drag-buoy*slope.z},point,true)
  }
 }

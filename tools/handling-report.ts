@@ -12,6 +12,7 @@
  * unless its label says otherwise. To add a vehicle (the hovercraft), write its scenarios next to
  * its tests and add an entry to `vehicles` below. The tank is hidden from the game and left out.
  */
+import * as THREE from 'three/webgpu'
 import { params } from '../shared/params'
 import type { HandlingPreset } from '../shared/presets'
 // Registers world.atmosphere, which the jet and the buggy's wings read.
@@ -22,6 +23,9 @@ import { JET_PRESETS } from '../src/vehicles/Jet'
 import * as buggy from '../tests/vehicles/syn3hScenarios'
 import * as jet from '../tests/vehicles2/jetScenarios'
 import * as liquid from '../tests/vehicles/liquidScenarios'
+import * as zorb from '../tests/vehicles2/zorbSkipScenarios'
+import { harness } from '../tests/vehicles2/harness'
+import { Syn3hBuggy } from '../src/vehicles/Syn3hBuggy'
 
 /** One measured figure. `null` means the event never happened in the scenario's window. */
 interface Figure { label: string; unit: string; value: number | null }
@@ -325,6 +329,44 @@ async function liquids(kind: liquid.Kind): Promise<Figure[]> {
   return out
 }
 
+// ---- Zorb on liquids ---------------------------------------------------------------------
+
+/** A zorbed buggy launched across open liquid with no input (tests/vehicles2/zorbSkipScenarios.ts). */
+async function zorbLiquids(): Promise<Figure[]> {
+  const out: Figure[] = []
+  const launch = (l: liquid.Liquid, speed: number, angle: number, seconds: number, setup?: (r: zorb.ZorbRun) => void) => at(() => {
+    const r = zorb.zorbLaunch({ liquid: l, depth: 30 }, speed, angle)
+    try { setup?.(r); zorb.coast(r, seconds); return { s: zorb.summary(r), trace: r.trace } } finally { r.dispose() }
+  })
+  for (const l of ['water', 'lava'] as const) {
+    for (const [speed, angle] of [[5, 5], [10, 8], [20, 8], [30, 8], [20, 35]] as const) {
+      const { s } = await launch(l, speed, angle, 12)
+      const what = `${l}, ${speed} m/s at ${angle}°`
+      out.push(
+        fig(`${what}: skips`, '', s.skips),
+        fig(`${what}: speed lost in the first second`, 'm/s', s.lossFirstSecond),
+        fig(`${what}: distance to half speed`, 'm', s.halfSpeedDistance ?? Infinity),
+        fig(`${what}: deepest the ball's base went`, 'm', s.deepest),
+      )
+    }
+    const { trace } = await launch(l, 0, 0, 20, (r) => { r.v.zorbView = new THREE.Quaternion(); r.v.input.y = 1 })
+    out.push(fig(`${l}: top speed in 20 s rolling forward from rest (uncapped)`, 'm/s', Math.max(...trace.map((t) => t.speed))))
+  }
+  out.push(fig('flat land: top speed in 20 s rolling forward from rest (uncapped)', 'm/s', await at(() => {
+    const h = harness()
+    const v = new Syn3hBuggy(h.game, h.terrain, new THREE.Vector3(0, 2, 0))
+    try {
+      v.isLocal = false; v.input.zorb = true
+      h.step(v, 600)
+      v.zorbView = new THREE.Quaternion(); v.input.y = 1
+      let top = 0
+      for (let i = 0; i < 20 / FIXED_DT; i++) { h.step(v); const l = v.body.linvel(); top = Math.max(top, Math.hypot(l.x, l.z)) }
+      return top
+    } finally { v.dispose(); h.world.free() }
+  })))
+  return out
+}
+
 // ---- Report ----------------------------------------------------------------------------
 
 /** Each vehicle, its presets (the default first), and how its summary columns were measured. */
@@ -340,6 +382,10 @@ const vehicles: Record<string, { run: () => Promise<VehicleReport>; presets: rea
   'hovercraft liquids': {
     run: async () => ({ summary: NO_SUMMARY, detail: await liquids('hovercraft') }), presets: [{ name: 'default', description: '', values: {} }],
     how: 'It rides above lava and water on its cushion.',
+  },
+  'zorb liquids': {
+    run: async () => ({ summary: NO_SUMMARY, detail: await zorbLiquids() }), presets: [{ name: 'default', description: '', values: {} }],
+    how: 'A zorbed buggy launched across open water or lava, coasting (tests/vehicles2/zorbSkipScenarios.ts). Skips are the times its base rose 0.15 m clear of the surface. Tune with zorb.skipSpeed, zorb.skipAngle, zorb.skipFriction and zorb.skipKeep.',
   },
   jet: {
     run: () => jetReport(), presets: JET_PRESETS,

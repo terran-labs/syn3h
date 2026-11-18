@@ -520,6 +520,23 @@ export abstract class Vehicle implements System {
     return this.currPos.y - rest
   }
 
+  /**
+   * Back to how the vehicle is built: the player has entered a different world. Clears its
+   * input, including the toggles (wings or flight mode on `special`, Zorb on `zorb`), removes
+   * the Zorb ball outright rather than shrinking it, and cools it from lava. Identity and
+   * tuning (kind, colours, name, parameters) are untouched. Follow with `teleport`, which
+   * clears motion and each controller's own mechanism state (wings, motor, suspension).
+   */
+  resetForWorld(): void {
+    Object.assign(this.input, emptyInput())
+    this.zorb.remove()
+    this.zorbShield?.dispose()
+    this.zorbShield = null
+    const l = this.liquidState
+    l.heat = 0; l.stuck = false; l.lavaDepth = 0; l.entrySpeed = 0; l.hullWet = 0
+    this.stuckSteps = 0
+  }
+
   /** Teleport, clearing motion and interpolation history. */
   teleport(position: THREE.Vector3, heading = 0): void {
     this.liquidState.wingLiftSurface=-Infinity

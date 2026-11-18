@@ -81,7 +81,14 @@ const hash = (i: number) => {
 
 /** Tile width, for wave vectors that repeat across the wrap. Set when a world is built. */
 let tileSize = 2048
-export function configureLiquidWaves(size: number): void { tileSize = size }
+/**
+ * Size the waves to a new world's tile. The fields below are cached by water time alone, so
+ * clear them: the sea's comes from seaWaves, reconfigured alongside (configureWorldWater).
+ */
+export function configureLiquidWaves(size: number): void {
+  tileSize = size
+  at.sea = at.lava = at.inland = Number.NaN
+}
 
 function bodyField(b: BodyWaves, out: LiquidWaveField, t: number): void {
   const sum = RATIO.reduce((a, r) => a + r, 0)

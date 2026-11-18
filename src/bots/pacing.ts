@@ -39,6 +39,15 @@ export const PACING = {
   baselineShare: 0.12,
   /** Frames longer than this are a pause or a hidden tab, not evidence. */
   interruptedMs: 1000,
+  /**
+   * After a bot is sent away for performance (the pacer's judgement or the governor's shed),
+   * no bot comes back for this long, and not at all through a change of quality level. Bots
+   * that came and went with every level change or burst of headroom were seen on the live
+   * site as a parade of joins and leaves, each arrival a hitch.
+   */
+  holdMs: 5 * 60_000,
+  /** A level's larger bot budget applies only once that level has held this long. */
+  budgetRiseMs: 60_000,
 }
 
 export interface PacingState {
@@ -58,6 +67,8 @@ export interface PacingState {
    * to judge them by. Judging resumes when the host plays. Defaults to true.
    */
   judge?: boolean
+  /** The host keeps its count whatever the frame rate (bots.keepCount): nothing is judged away. */
+  keep?: boolean
 }
 
 export type PacingAction = 'add' | 'remove' | null
@@ -92,7 +103,8 @@ export class BotPacer {
   }
 
   /** The number of bots to aim for now: what is wanted, within what the device carries. */
-  goal(state: Pick<PacingState, 'wanted'>): number { return Math.max(0, Math.min(state.wanted, this.allowed, this.ceiling)) }
+  // Keeping the count lifts only what the pacer measured; a player who accepted fewer keeps that.
+  goal(state: Pick<PacingState, 'wanted' | 'keep'>): number { return Math.max(0, Math.min(state.wanted, state.keep ? Infinity : this.allowed, this.ceiling)) }
   /** At most this many for the rest of the session: set when the player accepts fewer bots. */
   private ceiling = Infinity
 
@@ -101,9 +113,11 @@ export class BotPacer {
    * interval, never an addition while closed or while the last arrival is still being judged.
    */
   step(now: number, frameMs: number, state: PacingState): PacingAction {
+    this.now = now
     if (this.level !== state.level) {
       // A new level is a new device budget: start from what it carried before, if anything.
-      this.level = state.level; this.allowed = this.comfort.get(state.level) ?? Infinity; this.measuring = null
+      // Never more than the session's performance ceiling: a level change does not readmit.
+      this.level = state.level; this.allowed = Math.min(this.comfort.get(state.level) ?? Infinity, this.performanceCap); this.measuring = null
     }
     // Opening (the player can drive) starts the clock: the first bot comes an interval later,
     // not in the frame the player lands.
@@ -141,11 +155,12 @@ export class BotPacer {
       // What a bot costs is recorded only from frames that kept up: on frames already slow the
       // difference is load noise, and the governor would shed bots for it (see costly).
       if (keptUp) this.marginal.set(m.count, medianMs - m.before)
-      const worse = keptUp && medianMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare, m.before * PACING.baselineShare)
+      const worse = !state.keep && keptUp && medianMs - m.before > Math.max(PACING.minCostMs, state.targetMs * PACING.costShare, m.before * PACING.baselineShare)
       if (p90 > state.targetMs * PACING.slowFactor && worse) {
         // That one was too many: carry one fewer at this level, and send it off.
         this.allowed = Math.max(0, m.count - 1)
         this.comfort.set(state.level, this.allowed)
+        this.holdAfterRemoval(now)
         this.last = now; this.log.push({ at: now, have: state.have, action: 'remove', p90, meanMs, targetMs: state.targetMs })
         return 'remove'
       }
@@ -175,9 +190,10 @@ export class BotPacer {
    * change (there was a bot to lose). Bots are offered before the picture is made coarser
    * only when they measurably cost frame time; see `costly`.
    */
-  shed(have: number, byPlayer = false): boolean {
+  shed(have: number, byPlayer = false, now = this.now): boolean {
     if (have <= 0) return false
     this.allowed = have - 1; this.measuring = null
+    this.holdAfterRemoval(now)
     // The player's own choice of fewer bots holds for the session: headroom does not undo it.
     if (byPlayer) this.ceiling = Math.min(this.ceiling, this.allowed)
     if (this.level !== null) this.comfort.set(this.level, this.allowed)
@@ -185,10 +201,24 @@ export class BotPacer {
   }
 
   /** The governor sees headroom: allow one more, up to what was wanted. True when that changes anything. */
-  climb(have: number, wanted: number): boolean {
+  climb(have: number, wanted: number, now = this.now): boolean {
     if (have >= Math.min(wanted, this.ceiling) || this.allowed > have) return false
+    // Headroom does not bring a bot straight back after one was sent away for performance.
+    if (now < this.heldUntil) return false
     this.allowed = have + 1
+    this.performanceCap = Math.max(this.performanceCap, this.allowed)
     return true
+  }
+
+  /** The lowest count a performance removal left this session; level changes stay under it. */
+  private performanceCap = Infinity
+  /** No readmission before this (see PACING.holdMs). */
+  private heldUntil = -Infinity
+  /** The clock of the latest step, for shed and climb, which the governor calls without one. */
+  private now = 0
+  private holdAfterRemoval(now: number): void {
+    this.performanceCap = Math.min(this.performanceCap, this.allowed)
+    this.heldUntil = now + PACING.holdMs
   }
 
   /**
@@ -206,4 +236,21 @@ export class BotPacer {
 
   /** Forget the pace (a new world): the next bot may come at once, and is judged afresh. */
   restart(): void { this.last = -Infinity; this.measuring = null; this.recent = [] }
+}
+
+/**
+ * The bot budget of the current quality level, with hysteresis: a smaller budget applies at
+ * once (bots must leave a level that cannot carry them), a larger one only once it has held
+ * for PACING.budgetRiseMs, so a level that flaps between two values does not add and remove
+ * bots each time.
+ */
+export class BudgetHysteresis {
+  private held = Infinity
+  private risingSince: number | null = null
+  value(budget: number, now: number): number {
+    if (budget <= this.held) { this.held = budget; this.risingSince = null; return this.held }
+    this.risingSince ??= now
+    if (now - this.risingSince >= PACING.budgetRiseMs) { this.held = budget; this.risingSince = null }
+    return this.held
+  }
 }

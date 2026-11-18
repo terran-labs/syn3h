@@ -10,6 +10,7 @@ import type { PlayerInfo, WireState } from '../../shared/protocol'
 import { RAPIER } from '../core/physics'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { emptySample, type Sample, SnapshotBuffer } from './SnapshotBuffer'
+import { emptyInput } from '../core/Input'
 
 /** Bounds on the learned ride height, metres; see RemotePlayer.clearance. */
 const MIN_CLEARANCE = 0.1
@@ -152,8 +153,13 @@ export class RemotePlayer {
     this.physical = physical
   }
 
-  /** The terrain changed under us: park on the new ground until fresh states arrive. */
-  reseat(heightAt: (x: number, z: number) => number): void {
+  /**
+   * The terrain changed under us: park on the new ground until fresh states arrive. In a
+   * different world (`entered`), its owner arrives in a fresh vehicle too: drop the copy's Zorb
+   * ball and toggles now, so it shows no ball or open wings while its first state is on the way.
+   */
+  reseat(heightAt: (x: number, z: number) => number, entered = false): void {
+    if (entered) { Object.assign(this.vehicle.input, emptyInput()); this.vehicle.zorb.remove() }
     this.buffer.clear()
     this.setPhysical(false)
     const t = this.vehicle.body.translation()
