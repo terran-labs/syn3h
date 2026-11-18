@@ -43,10 +43,10 @@ describe('rivers off a drop', () => {
 
   it('never draws a vertex hanging above both the ground and the receiving water', () => {
     const before = buildRiverSurface(cliff, planned, 10, () => 1)
-    expect(highestFloat(cliff, pool, before)).toBeGreaterThan(15)
+    expect(highestFloat(cliff, pool, before, 10)).toBeGreaterThan(15)
     const pieces = riverPieces(cliff, planned, 9, pool, 9.81, 6)
     const after = buildRiverSurface(cliff, pieces.points, 10, () => 1)
-    expect(highestFloat(cliff, pool, after)).toBeLessThanOrEqual(1e-3)
+    expect(highestFloat(cliff, pool, after, 10)).toBeLessThanOrEqual(1e-3)
     // It stops at the pool instead of lying on top of it.
     const end = pieces.points.at(-1)!
     expect(end.x).toBeGreaterThanOrEqual(30)
@@ -84,10 +84,10 @@ describe('rivers off a drop', () => {
     let worstBefore = 0, worstAfter = 0
     for (const r of lava.rivers) {
       const before = buildRiverSurface(ground, r.points, r.width + 1.5, () => 1)
-      worstBefore = Math.max(worstBefore, highestFloat(ground, waterAt, before))
+      worstBefore = Math.max(worstBefore, highestFloat(ground, waterAt, before, r.width + 1.5))
       const pieces = riverPieces(ground, r.points, r.width, waterAt, 9.81, 6)
       const after = buildRiverSurface(ground, pieces.points, r.width + 1.5, () => 1)
-      worstAfter = Math.max(worstAfter, highestFloat(ground, waterAt, after))
+      worstAfter = Math.max(worstAfter, highestFloat(ground, waterAt, after, r.width + 1.5))
     }
     // River 1 ran its last 18 m level over its mouth pool, 4 m above the water.
     expect(worstBefore).toBeGreaterThan(3)
@@ -95,11 +95,19 @@ describe('rivers off a drop', () => {
   })
 })
 
-/** Metres the highest ribbon vertex stands above both the water depth over the ground and the receiving water. */
-function highestFloat(ground: { heightAt(x: number, z: number): number }, waterAt: (x: number, z: number) => number, g: THREE.BufferGeometry): number {
+/**
+ * Metres the highest ribbon vertex that could hang in the air stands above both the water depth
+ * over the ground and the receiving water: the centre line (the drape's own) and the outer edges.
+ * Columns in between lie level across the river (surface.ts buildRiverSurface), over water that
+ * may run deeper on one side of the bed, which is not floating.
+ */
+function highestFloat(ground: { heightAt(x: number, z: number): number }, waterAt: (x: number, z: number) => number, g: THREE.BufferGeometry, width: number, step = 3): number {
   const p = g.getAttribute('position')
+  const cols = Math.max(3, 2 * Math.round(width / step / 2) + 1)
   let worst = -Infinity
   for (let i = 0; i < p.count; i++) {
+    const c = i % cols
+    if (c !== 0 && c !== cols - 1 && c !== (cols - 1) / 2) continue
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i)
     worst = Math.max(worst, y - Math.max(ground.heightAt(x, z) + RIVER_DRAPE_DEPTH, waterAt(x, z)))
   }

@@ -49,8 +49,9 @@ describe('water rivers: physics floats on the river that is drawn', () => {
   })
 
   it('the drawn ribbon lies on the physics surface along every centre line, at two sea levels and two planet sizes', () => {
-    for (const [planet, seed] of WORLDS) for (const size of [1, Math.log2(3)]) for (const sea of [0, 3]) {
+    for (const [planet, seed] of WORLDS) for (const size of [1, Math.log2(3)]) {
       const { data, ground } = world(planet, seed, size)
+      for (const sea of [0, 3]) {
       const lava = data.lava, lines = drapedRivers(lava, ground, sea), waterAt = receivingWater(lava, sea)
       let compared = 0
       lava.rivers.forEach((r, ri) => {
@@ -58,10 +59,25 @@ describe('water rivers: physics floats on the river that is drawn', () => {
         // Exactly as volcanics.ts builds the drawn river.
         const pieces = riverPieces(ground, r.points, r.width, waterAt, 9.81, 4, lines[ri])
         if (pieces.points.length < 2) return
-        const geo = buildRiverSurface(ground, pieces.points, r.width + 1.5, () => 1, 3)
-        const pos = geo.getAttribute('position'), cols = Math.max(3, 2 * Math.round((r.width + 1.5) / 3 / 2) + 1)
         // This river alone, so a confluence or the lake it runs into does not count against it.
         const alone = { lake: null, pools: [], rivers: [r] }
+        // Across the width too, at a coarse and a fine mesh (quality sets the spacing): the water
+        // inside the river is level, as physics has it. On a bend a vertex's nearest stretch of
+        // centre line can be the next one, so it may differ by the river's own fall across its
+        // width, never more.
+        const line = lines[ri]
+        let fall = 0
+        for (let i = 1; i < line.length; i++) fall = Math.max(fall, (line[i - 1].y - line[i].y) / Math.max(0.1, Math.hypot(line[i].x - line[i - 1].x, line[i].z - line[i - 1].z)))
+        // The width check once per world (sea level only moves where a river stops).
+        if (sea === 0) for (const step of [2.5, 1]) {
+          const across = buildRiverSurface(ground, pieces.points, r.width + 1.5, () => 1, step).getAttribute('position')
+          for (let i = 0; i < across.count; i++) {
+            const phys = lavaSurfaceAt(alone, across.getX(i), across.getZ(i), -Infinity, [line])
+            if (Number.isFinite(phys)) expect(Math.abs(phys - across.getY(i))).toBeLessThanOrEqual(0.02 + fall * (r.width + 1.5))
+          }
+        }
+        const geo = buildRiverSurface(ground, pieces.points, r.width + 1.5, () => 1, 3)
+        const pos = geo.getAttribute('position'), cols = Math.max(3, 2 * Math.round((r.width + 1.5) / 3 / 2) + 1)
         for (let i = (cols - 1) / 2; i < pos.count; i += cols) {
           const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i)
           expect(lavaSurfaceAt(alone, x, z, -Infinity, [lines[ri]])).toBeCloseTo(y, 3)
@@ -71,8 +87,9 @@ describe('water rivers: physics floats on the river that is drawn', () => {
         }
       })
       expect(compared, `${planet} ${seed}`).toBeGreaterThan(20)
+      }
     }
-  })
+  }, 30_000)
 
   it('a floating hull carried over the steepest fall is tipped over it, never flung', () => {
     for (const [planet, seed] of WORLDS) {

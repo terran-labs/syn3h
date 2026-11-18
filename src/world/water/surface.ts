@@ -451,6 +451,11 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
 const RIVER_STEP = 3
 /** Highest a ribbon edge may stand above the bank under it, metres. */
 const RIVER_EDGE_CLEARANCE = 0.25
+/**
+ * How far the drawn ribbon reaches past the river's own width on each side, metres
+ * (volcanics.ts builds it `r.width + 1.5` wide): a skirt that tucks into the banks.
+ */
+export const RIVER_SKIRT = 0.75
 
 /**
  * A ribbon at the river's true surface (`points[].y`), carrying for the water material: uv
@@ -507,9 +512,11 @@ export function buildRiverSurface(
       const x = p.x - (dz / len) * (width / 2) * side
       const z = p.z + (dx / len) * (width / 2) * side
       const g = ground.heightAt(x, z)
-      // A bank lower than the water would leave the edge hanging in the air: lay it on the
-      // bank instead, so the surface spills over rather than floating past it.
-      positions.push(x, side !== 0 ? Math.min(p.y, g + RIVER_EDGE_CLEARANCE) : p.y, z)
+      // Across the river itself the water is level at its surface, as physics floats things on
+      // it (lavaSurfaceAt). Only the skirt beyond, on the banks, is laid on a bank lower than the
+      // water, so the edge spills over rather than floating past it.
+      const skirt = Math.abs(side) * (width / 2) > width / 2 - RIVER_SKIRT
+      positions.push(x, skirt ? Math.min(p.y, g + RIVER_EDGE_CLEARANCE) : p.y, z)
       uvs.push((side * width) / 2, distance)
       bed.push(g)
       speed.push(speedAt(slope))
