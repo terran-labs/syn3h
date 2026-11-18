@@ -10,15 +10,19 @@
  *
  *   scene pass      colour (half float, the canvas's MSAA) and depth.
  *   glow            three's BloomNode on the exposed colour, clamped, as tuned on feat/fx-bloom.
- *   sun shafts      a sunburst round a low sun: the lobby galaxy's streak pattern (sunburst.ts),
- *                   fixed in the world round the sun, drawn as a share of the sky's near-sun
- *                   forward glow (AlienSkyMesh.skyScatter) that the dark streaks take away and
- *                   the bright ones add. A mask at half (full tier) or quarter resolution holds
- *                   that glow and how open each pixel is (open sky less cloud; terrain,
- *                   vehicles and smoke closed); a march toward the sun, weighted to its end,
- *                   says how open the way to the sun is. The streaks show only there, so a
- *                   ridge, a cloud bank or a vehicle throws gaps into the burst; where the way
- *                   is shut the frame is exactly the sky as drawn, never darker.
+ *   sun rays        soft streaks round the sun at any height: the lobby galaxy's streak
+ *                   pattern (sunburst.ts), fixed in the world round the sun, carrying the sky's
+ *                   forward glow plus a share of its own light (AlienSkyMesh.rayLight), most at
+ *                   a low sun (post.rayHighSun sets how much is left with it high). The streaks
+ *                   add light and barely darken anything (sunburst.RAY_DARK). A mask at half
+ *                   (full tier) or quarter resolution holds that light and how open each pixel
+ *                   is (open sky less cloud; terrain, vehicles and smoke closed); a march toward
+ *                   the sun, weighted to its end and blurred, says how open the way to the sun
+ *                   is, so a ridge, a cloud bank or a vehicle throws beams and gaps into the
+ *                   burst. Open sky keeps RAY_SKY_FLOOR of it even behind a ridge. The sky
+ *                   shader draws the same burst over open sky as the cheap form wherever this
+ *                   pass does not: Minimal and Low, a shed post budget, a sun off screen. The
+ *                   two crossfade so open sky always gets the set strength.
  *   lens flare      an anamorphic streak and three ghosts, from the sun's screen position,
  *                   dimmed by the same mask read at the sun: the volcano eclipses it.
  *   tone map        the renderer's own ACES and exposure, as renderer.render would.
@@ -31,7 +35,7 @@
  */
 import * as THREE from 'three/webgpu'
 import {
-  Fn, If, Loop, abs, acos, screenSize, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
+  Fn, If, Loop, abs, screenSize, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
   builtinAOContext, builtinGIContext, getViewPosition, builtinShadowContext, context, mrt, nodeObject, normalView, output, screenUV, renderOutput, renderGroup, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
@@ -42,8 +46,9 @@ import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { traa } from 'three/addons/tsl/display/TRAANode.js'
 import { CurvedVelocity } from './CurvedVelocity'
 import { cloudVolume, compositeClouds } from './clouds'
-import { AlienSkyMesh, skyCloudField, skyScatter } from '../../world/sky/AlienSkyMesh'
-import { sunburstPattern } from './sunburst'
+import { AlienSkyMesh, rayLight, skyCloudField, skyScatter } from '../../world/sky/AlienSkyMesh'
+import { BURST_CORE, RAY_DARK, burstReach, burstSwing, createBurstUniforms, writeBurstFrame } from './sunburst'
+import { rayGlowShare } from '../../world/sky/skyMath'
 import { underwaterAmountForCamera } from '../../world/water/underwater'
 import type { CloudInputs } from '../../world/Environment'
 import { motionBlurred } from './motion'
@@ -58,12 +63,9 @@ type N = any // TSL node
 export const HOT_CLAMP = 2
 /** Brightest exposed value the lens flare takes from the sun. */
 export const SHAFT_CLAMP = 1.5
-/**
- * Sunburst reach: the streaks fade with angle from the sun over this many radians at a sun on
- * the horizon (longer as it drops, see render), and start this far out, so the sun's core
- * stays round.
- */
-export const BURST_REACH = 0.6, BURST_CORE = 0.012
+export { BURST_CORE }
+/** Share of the burst open sky keeps when the march toward the sun is blocked. */
+export const RAY_SKY_FLOOR = 0.35
 /** Cloud opacity at which a cloud starts to block the sun for the shafts, and blocks it fully. */
 export const CLOUD_THIN = 0.12, CLOUD_SOLID = 0.55
 /** Distance (m) over which the haze in front of terrain reaches the full post.shaftHaze. */
@@ -129,13 +131,10 @@ export class PostChain {
     shaftLength: uniform(0.75),
     shaftHaze: uniform(0.35),
     shaftReach: uniform(0.05),
-    burstSun: uniform(new THREE.Vector3(0, 1, 0)),
-    burstAcross: uniform(new THREE.Vector3(1, 0, 0)),
-    burstUp: uniform(new THREE.Vector3(0, 0, 1)),
-    burstTime: uniform(0),
-    burstPhase: uniform(0),
-    burstContrast: uniform(1),
-    burstReach: uniform(BURST_REACH),
+    /** Share of the forward glow the rays carry at this sun height (skyMath.rayGlowShare). */
+    rayShare: uniform(0),
+    /** Share of the sky's own light the rays also move (post.rayFill). */
+    rayFill: uniform(0),
     flare: uniform(0.5),
     gain: uniform(new THREE.Vector3(1, 1, 1)),
     lift: uniform(new THREE.Vector3(0, 0, 0)),
@@ -171,6 +170,9 @@ export class PostChain {
   private sky: AlienSkyMesh | null = null
   private screenFade = 0
   private readonly reducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null
+  /** The burst's frame round the sun, shared in shape with the sky's cheap rays. */
+  private readonly burst = createBurstUniforms()
+  private burstClock = 0
 
   constructor(private readonly host: PostChainHost, private readonly sun: SunSource) {}
 
@@ -182,16 +184,24 @@ export class PostChain {
     // separates the look alone (base) from a chain that draws effects (lite, full).
     const effects = drawsEffects(tier)
     this.tier = tier
-    // Anything the governor could shed: everything but the colour look itself.
-    this.reportActive(tier !== 'off' && (P.postTemporal.value || [P.postBloom, P.postShafts, P.postFlare, P.postAO, P.postContact, P.postMotionBlur, P.postGI, P.postClouds].some(p => p.value > 0)))
+    // Anything the governor could shed: everything but the colour look itself. Sun rays count
+    // only where the level draws them here; at Minimal and Low the sky draws its cheap form,
+    // which nothing sheds.
+    const levelEffects = drawsEffects(this.host.quality.postTier ?? 'full')
+    this.reportActive(tier !== 'off' && (P.postTemporal.value || [P.postBloom, levelEffects ? P.postShafts : null, P.postFlare, P.postAO, P.postContact, P.postMotionBlur, P.postGI, P.postClouds].some(p => p && p.value > 0)))
     this.sky ??= findSky(scene)
+    const fade = tier === 'base' || tier === 'off' ? 0 : 1 - shed
+    const sunVis = this.updateSun(camera, renderer)
+    // The rays: drawn here as far as the sun is on screen and post effects are not faded, and
+    // by the sky's cheap form for the rest, so the two always add to the set strength in open
+    // sky. Minimal and Low, a shed post budget and a sun off screen all get the sky's rays.
+    const shaftShare = effects && P.postShafts.value > 0 ? fade * this.screenFade : 0
+    this.updateBurst(camera, P.postShafts.value * (1 - shaftShare))
     if (tier === 'off') {
       this.release()
       renderer.render(scene, camera)
       return
     }
-    const fade = tier === 'base' ? 0 : 1 - shed
-    const sunVis = this.updateSun(camera, renderer)
     const glowOn = effects && P.postBloom.value > 0
     const shaftsOn = effects && (P.postShafts.value > 0 || P.postFlare.value > 0)
     const flareOn = effects && P.postFlare.value > 0
@@ -217,9 +227,8 @@ export class PostChain {
     u.bloomThreshold.value = P.postBloomThreshold.value
     u.bloomRadius.value = P.postBloomRadius.value
     // The burst needs the sun on screen (its openness march aims at it); past 1 it deepens.
-    const shaftAmount = shaftsOn ? P.postShafts.value * fade * this.screenFade : 0
+    const shaftAmount = shaftsOn ? P.postShafts.value * shaftShare : 0
     u.shafts.value = shaftAmount
-    this.updateBurst()
     u.shaftLength.value = P.postShaftLength.value
     u.shaftHaze.value = P.postShaftHaze.value
     u.shaftReach.value = P.postShaftReach.value
@@ -268,7 +277,11 @@ export class PostChain {
     this.built = null
   }
 
-  dispose(): void { this.release(); this.reportActive(false) }
+  dispose(): void {
+    this.release(); this.reportActive(false)
+    // The sky's cheap rays follow this chain's settings; without it they stop.
+    if (this.sky) this.sky.rays.strength.value = 0
+  }
 
   private active = false
   private reportActive(on: boolean): void {
@@ -309,21 +322,27 @@ export class PostChain {
   /**
    * The burst's frame in the world: two axes square to the sun, so the streaks stay put as the
    * camera turns or rolls. Its drift runs on the wall clock and its phase on the world seed,
-   * so every player in a room sees the same burst; reduced motion stops the drift.
+   * so every player in a room sees the same burst; reduced motion stops the drift. The sky's
+   * cheap rays get the same frame and `skyStrength`.
    */
-  private updateBurst(): void {
-    const u = this.u, sun = this.sun.sunDirection
-    ;(u.burstSun.value as THREE.Vector3).copy(sun)
-    const across = (u.burstAcross.value as THREE.Vector3).set(0, 1, 0).cross(sun)
-    if (across.lengthSq() < 1e-8) across.set(1, 0, 0)
-    across.normalize()
-    ;(u.burstUp.value as THREE.Vector3).crossVectors(sun, across).normalize()
+  private updateBurst(camera: THREE.Camera, skyStrength: number): void {
+    const sun = this.sun.sunDirection
+    if (!this.reducedMotion?.matches || this.burstClock === 0) this.burstClock = Date.now() / 1000
     const seed = Number(params.get('world.seed')?.value ?? 0)
-    u.burstPhase.value = ((Math.abs(seed) * 0.6180339887) % 1) * 50
-    if (!this.reducedMotion?.matches) u.burstTime.value = (Date.now() / 1000) % 86400
-    u.burstContrast.value = P.postShaftContrast.value
     // Longer streaks as the sun drops toward the horizon.
-    u.burstReach.value = BURST_REACH * (0.6 + 0.6 * lowSunAmount(sun.y))
+    const reach = burstReach(sun.y, P.postRayLength.value * Math.PI / 180)
+    const share = rayGlowShare(sun.y, P.postRayHighSun.value)
+    writeBurstFrame(this.burst, sun, seed, this.burstClock, P.postShaftContrast.value, reach)
+    this.u.rayShare.value = share
+    this.u.rayFill.value = P.postRayFill.value
+    const sky = this.sky
+    if (sky) {
+      writeBurstFrame(sky.rays.burst, sun, seed, this.burstClock, P.postShaftContrast.value, reach)
+      sky.rays.share.value = share
+      sky.rays.fill.value = P.postRayFill.value
+      sky.rays.strength.value = skyStrength
+      sky.raysCamera = camera
+    }
   }
 
   /** Sun position on screen (top-left origin, as the post quad's uv) and its visibility. */
@@ -507,7 +526,7 @@ export class PostChain {
         // Cloud that looks solid blocks the sun outright; only thin edges let some through.
         const cloud = volumeCover ? volumeCover.sample(p).a : skyCloud ? skyCloudField(direction, skyCloud).opacity : float(0)
         open.mulAssign(float(1).sub(smoothstep(CLOUD_THIN, CLOUD_SOLID, cloud)))
-        const glow = sky ? skyScatter(direction, sky).glow : vec3(0)
+        const glow = sky ? rayLight(skyScatter(direction, sky, false), u.rayShare, u.rayFill) : vec3(0)
         return vec4(glow, open)
       })
       // Half resolution on the full tier keeps narrow beams; a quarter elsewhere.
@@ -551,16 +570,24 @@ export class PostChain {
       const view = getViewPosition(at, d, u.projInv)
       const distance = view.length()
       const ray = u.camWorld.mul(vec4(view.normalize(), 0)).xyz.normalize()
-      const around = vec2(dot(ray, u.burstAcross), dot(ray, u.burstUp))
-      const angle = acos(clamp(dot(ray, u.burstSun), -1, 1))
-      const burst = sunburstPattern(around.div(max(length(around), 1e-5)), u.burstTime, u.burstPhase, tier === 'full' ? 3 : 2)
-      const reach = smoothstep(BURST_CORE, BURST_CORE * 4, angle).mul(exp(angle.div(u.burstReach).negate()))
+      // Two octaves at every tier: the third's fine streaks read as hard spokes.
+      const pattern = burstSwing(ray, this.burst, 2)
       const haze = u.shaftHaze.mul(mix(float(1), float(1).sub(exp(distance.div(-SHAFT_HAZE_DEPTH))), solid))
       // The mask is coarser than the screen: at a ridge its openness bleeds onto the terrain
       // pixels next to the sky. Solid pixels take only the haze share, never the mask's own.
-      const open = raysTex.sample(at).r.mul(mix(haze, float(1), here.a.mul(float(1).sub(solid))))
-      // Over terrain a streak may at most double or remove the pixel's own light.
-      const swing = clamp(burst.sub(1).mul(u.burstContrast).mul(reach).mul(open).mul(u.shafts), -1, mix(float(1e4), float(1), solid))
+      // Open sky keeps RAY_SKY_FLOOR of the burst even where the march finds the way shut, so a
+      // sun just behind a ridge still throws rays past it; the march shapes the rest into beams.
+      // A small cross blur at the rays target's own texel size hides the march's dither, which
+      // otherwise shows as a fixed screen-door pattern over the sky as the camera moves.
+      const texel = vec2(1, 1).div(screenSize.mul(tier === 'full' ? 0.5 : 0.25))
+      const marched = raysTex.sample(at).r.mul(0.4)
+        .add(raysTex.sample(at.add(texel.mul(vec2(1.5, 0)))).r.mul(0.15)).add(raysTex.sample(at.sub(texel.mul(vec2(1.5, 0)))).r.mul(0.15))
+        .add(raysTex.sample(at.add(texel.mul(vec2(0, 1.5)))).r.mul(0.15)).add(raysTex.sample(at.sub(texel.mul(vec2(0, 1.5)))).r.mul(0.15))
+      const skyOpen = here.a.mul(float(1).sub(solid))
+      const open = mix(marched.mul(haze), max(marched, float(RAY_SKY_FLOOR)), skyOpen)
+      // Over terrain a streak may at most double the pixel's own light; anywhere it removes at
+      // most RAY_DARK of the light it carries.
+      const swing = clamp(pattern.mul(open).mul(u.shafts), -RAY_DARK, mix(float(1e4), float(1), solid))
       // Bright streaks in open sky add the glow, the approved look. Anywhere else (every dark
       // streak, and bright ones over terrain) the streak scales the pixel by up to the glow's
       // share of its light. That keeps the pixel's own hue: subtracting the sky's glow from

@@ -18,7 +18,8 @@
  *
  * `sunburstPatternCpu` is the same maths in plain numbers, for the mean and for tests.
  */
-import { float, floor, fract, mix, pow, vec3 } from 'three/tsl'
+import { Vector3 } from 'three/webgpu'
+import { acos, clamp, dot, exp, float, floor, fract, length, max, mix, pow, smoothstep, uniform, vec2, vec3 } from 'three/tsl'
 
 type N = any // TSL node
 
@@ -99,4 +100,89 @@ export function sunburstPattern(around: N, time: N, phase: N, octaves: 2 | 3): N
   }
   const cubed = pow(sum, SUNBURST_GAMMA)
   return cubed.div(cubed.div(SUNBURST_CEILING).add(1)).div(SUNBURST_MEAN[octaves])
+}
+
+// ---- Shared by the post chain's rays and the sky's cheap rays ----------------------------
+/**
+ * The burst's settings as uniforms. The post chain (src/fx/post/PostChain.ts) draws the full
+ * rays, with beams marched through the gaps between occluders; the sky shader
+ * (src/world/sky/AlienSkyMesh.ts) draws the same burst over open sky as the cheap form, where
+ * the post chain does not: at Minimal and Low, when the frame governor has shed post effects,
+ * and while the sun is off screen. Both read one set of numbers, written by
+ * `writeBurstFrame`, so the two forms hand over without a seam.
+ */
+export interface BurstUniforms {
+  /** Unit vector toward the sun. */
+  sun: N
+  /** Two axes square to the sun: the burst's frame, fixed in the world. */
+  across: N
+  up: N
+  time: N
+  phase: N
+  /** How strongly bright and dark streaks differ (post.shaftContrast). */
+  contrast: N
+  /** Radians over which the streaks fade with angle from the sun. */
+  reach: N
+}
+
+/**
+ * Deepest share of the light it carries a dark streak takes away, in both forms. The rays are
+ * light through haze: they add light and barely darken anything. Deep gaps between them read
+ * as hard spokes (the owner, on v26.11.1708: "awful and way too intense").
+ */
+export const RAY_DARK = 0.06
+
+/** The streaks start this far (radians) from the sun's centre, so its core stays round. */
+export const BURST_CORE = 0.012
+
+/**
+ * How far the pattern moves the light toward a unit world direction `ray`, before strength and
+ * openness: (burst - 1) times contrast and the fade with angle from the sun. Mean about 0 round
+ * the sun, so open sky keeps its brightness on average.
+ */
+export function burstSwing(ray: N, b: BurstUniforms, octaves: 2 | 3): N {
+  const around = vec2(dot(ray, b.across), dot(ray, b.up))
+  const angle = acos(clamp(dot(ray, b.sun), -1, 1))
+  const burst = sunburstPattern(around.div(max(length(around), 1e-5)), b.time, b.phase, octaves)
+  const reach = smoothstep(BURST_CORE, BURST_CORE * 4, angle).mul(exp(angle.div(b.reach).negate()))
+  return burst.sub(1).mul(b.contrast).mul(reach)
+}
+
+/** Fresh burst uniforms. */
+export function createBurstUniforms(): BurstUniforms {
+  return {
+    sun: uniform(new Vector3(0, 1, 0)), across: uniform(new Vector3(1, 0, 0)), up: uniform(new Vector3(0, 0, 1)),
+    time: uniform(0), phase: uniform(0), contrast: uniform(1), reach: uniform(0.6),
+  }
+}
+
+/**
+ * The angle (radians) the streaks fade over: `lengthRad` at the horizon, three quarters of it
+ * with a high sun, so a sun above the frame still reaches into it.
+ */
+export function burstReach(sunY: number, lengthRad: number): number {
+  const low = 1 - smoothCpu(0.08, 0.55, sunY)
+  return lengthRad * (0.75 + 0.25 * low)
+}
+
+/**
+ * Write the burst's frame round `sun`. Its drift runs on the wall clock (`nowSeconds`) and its
+ * phase on the world seed, so every player in a room sees the same burst; pass the previous
+ * time to hold it still (reduced motion).
+ */
+export function writeBurstFrame(b: BurstUniforms, sun: Vector3, seed: number, nowSeconds: number, contrast: number, reach: number): void {
+  ;(b.sun.value as Vector3).copy(sun)
+  const across = (b.across.value as Vector3).set(0, 1, 0).cross(sun)
+  if (across.lengthSq() < 1e-8) across.set(1, 0, 0)
+  across.normalize()
+  ;(b.up.value as Vector3).crossVectors(sun, across).normalize()
+  b.phase.value = ((Math.abs(seed) * 0.6180339887) % 1) * 50
+  b.time.value = nowSeconds % 86400
+  b.contrast.value = contrast
+  b.reach.value = reach
+}
+
+function smoothCpu(e0: number, e1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)))
+  return t * t * (3 - 2 * t)
 }
