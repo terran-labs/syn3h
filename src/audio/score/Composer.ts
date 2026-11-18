@@ -96,6 +96,8 @@ export interface Step {
   openHat?: number
   /** A plucked string (koto, harp): doubles the sequencer an octave up, or picks out the chord alone when calm. */
   pluck?: Note
+  /** A glass tone (the lobby's celestial voice): a slow swell and a long fall, mostly in the hall. */
+  glass?: Note
   /** A struck bell on the home note: full at a release, soft at the start of a still section. */
   bell?: Note
   /** A short bowed chord from the string section: three notes, played together. */
@@ -342,10 +344,17 @@ export class Composer {
       const midi = this.pitch(degree + ARP_TONES[line[s]]) + base + (mood.lift > 0.6 || role === 'release' ? 12 : 0)
       out.arp = { midi, velocity: s % 4 === 0 ? 1 : 0.7, steps: every }
       if (s % 2 === 0) out.pluck = { midi: midi + 12, velocity: out.arp.velocity * 0.8, steps: 8 }
-    } else if (level.arp === 0 && s % 4 === 0 && !breath) {
-      // Too calm for the sequencer: a string picks out the chord, one note to a beat.
-      const base = fold(this.pitch(degree), 48) - this.pitch(degree)
-      out.pluck = { midi: this.pitch(degree + ARP_TONES[line[s]]) + base, velocity: s === 0 ? 0.7 : 0.45, steps: 16 }
+    } else if (level.arp === 0 && !breath) {
+      // Too calm for the sequencer (in practice, the lobby). A string picks out the chord, one
+      // note to a beat; the synth leaves it out in the lobby unless audio.score.lobbyPluck asks.
+      if (s % 4 === 0) {
+        const base = fold(this.pitch(degree), 48) - this.pitch(degree)
+        out.pluck = { midi: this.pitch(degree + ARP_TONES[line[s]]) + base, velocity: s === 0 ? 0.7 : 0.45, steps: 16 }
+      }
+      // A high glass tone swells in on each chord's fifth, and on every second chord a softer
+      // third answers it. From the position, not the random stream, so play's music is unchanged.
+      if (inChord === 0) out.glass = { midi: fold(this.pitch(degree + 4), 74), velocity: 0.55, steps: STEPS_PER_CHORD }
+      else if (inChord === 20 && chordIndex % 2 === 1) out.glass = { midi: fold(this.pitch(degree + 2), 79), velocity: 0.4, steps: STEPS_PER_CHORD }
     }
     if (pos === 0 && (role === 'release' || role === 'still')) out.bell = { midi: fold(this.pitch(0), 48), velocity: role === 'release' ? 1 : 0.45, steps: 32 }
 

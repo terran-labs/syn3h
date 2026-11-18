@@ -53,7 +53,7 @@ import { underwaterAmountForCamera } from '../../world/water/underwater'
 import type { CloudInputs } from '../../world/Environment'
 import { motionBlurred } from './motion'
 import { params } from '../../../shared/params'
-import { type PostTier, drawsEffects, lowSunAmount, postTier, shaftTaps, sunHeightFactor, sunScreenFade } from './gate'
+import { type PostTier, drawsEffects, lowSunAmount, rayDryness, postTier, shaftTaps, sunHeightFactor, sunScreenFade } from './gate'
 import { type Grade, gradeFor, lookForKind } from './looks'
 import * as P from './params'
 
@@ -64,6 +64,8 @@ export const HOT_CLAMP = 2
 /** Brightest exposed value the lens flare takes from the sun. */
 export const SHAFT_CLAMP = 1.5
 export { BURST_CORE }
+/** Share of the scene fog's under-surface blend over which the sun rays fade out. */
+export const RAY_WET_FADE = 0.5
 /** Share of the burst open sky keeps when the march toward the sun is blocked. */
 export const RAY_SKY_FLOOR = 0.35
 /** Cloud opacity at which a cloud starts to block the sun for the shafts, and blocks it fully. */
@@ -191,12 +193,21 @@ export class PostChain {
     this.reportActive(tier !== 'off' && (P.postTemporal.value || [P.postBloom, levelEffects ? P.postShafts : null, P.postFlare, P.postAO, P.postContact, P.postMotionBlur, P.postGI, P.postClouds].some(p => p && p.value > 0)))
     this.sky ??= findSky(scene)
     const fade = tier === 'base' || tier === 'off' ? 0 : 1 - shed
-    const sunVis = this.updateSun(camera, renderer)
+    // Sun rays, lens flare and their passes are light through air. With the camera in water or
+    // lava they would draw the sky's glow through the medium as hard white spokes (the owner,
+    // v26.11.1713, on an iPhone at the bed of a desert lake). They fade out over the first part
+    // of the scene fog's own eased crossing, so they are gone before the medium is thick and
+    // come back as the lens clears the surface: no pop, and nothing is drawn below.
+    const dry = rayDryness(underwaterAmountForCamera(camera), RAY_WET_FADE)
+    const sunVis = this.updateSun(camera, renderer) * dry
     // The rays: drawn here as far as the sun is on screen and post effects are not faded, and
     // by the sky's cheap form for the rest, so the two always add to the set strength in open
     // sky. Minimal and Low, a shed post budget and a sun off screen all get the sky's rays.
-    const shaftShare = effects && P.postShafts.value > 0 ? fade * this.screenFade : 0
-    this.updateBurst(camera, P.postShafts.value * (1 - shaftShare))
+    // The shaft passes are only redrawn while the sun is lit for them (sunVis, see render's end);
+    // drawing the burst from a mask that is not being redrawn shows the last daylight frame's
+    // rays after sunset. Fade the pass with the same visibility, before it stops redrawing.
+    const shaftShare = effects && P.postShafts.value > 0 ? fade * this.screenFade * smooth01(0.001, 0.05, sunVis) : 0
+    this.updateBurst(camera, P.postShafts.value * (1 - shaftShare) * dry)
     if (tier === 'off') {
       this.release()
       renderer.render(scene, camera)
@@ -227,13 +238,13 @@ export class PostChain {
     u.bloomThreshold.value = P.postBloomThreshold.value
     u.bloomRadius.value = P.postBloomRadius.value
     // The burst needs the sun on screen (its openness march aims at it); past 1 it deepens.
-    const shaftAmount = shaftsOn ? P.postShafts.value * shaftShare : 0
+    const shaftAmount = shaftsOn ? P.postShafts.value * shaftShare * dry : 0
     u.shafts.value = shaftAmount
     u.shaftLength.value = P.postShaftLength.value
     u.shaftHaze.value = P.postShaftHaze.value
     u.shaftReach.value = P.postShaftReach.value
     // Ghosts and streak belong to a low sun; overhead they read as smudges on the ground.
-    u.flare.value = P.postFlare.value * fade * (0.25 + 0.75 * lowSunAmount(this.sun.sunDirection.y))
+    u.flare.value = P.postFlare.value * fade * dry * (0.25 + 0.75 * lowSunAmount(this.sun.sunDirection.y))
     const g = gradeFor(lookForKind(params.get('terrain.kind')?.value), P.postLook.value, { contrast: P.postContrast.value, saturation: P.postSaturation.value, warmth: P.postWarmth.value }, this.grade)
     ;(u.gain.value as THREE.Vector3).set(g.gain[0], g.gain[1], g.gain[2])
     ;(u.lift.value as THREE.Vector3).set(g.lift[0], g.lift[1], g.lift[2])

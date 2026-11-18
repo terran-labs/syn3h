@@ -157,7 +157,8 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   const t0 = Date.now()
   // About is an icon above the settings gear and opens its own sheet (LobbySheet).
   await page.locator('.lobby-gear-dock .lobby-about').tap()
-  await page.locator('dialog.lobby-sheet-about[open] .about-columns').waitFor({ state: 'visible', timeout: 30000 })
+  // The Welcome guide (src/ui/welcome) in its sheet: its first section heading shows.
+  await page.locator('dialog.lobby-sheet-about[open] .welcome-body > h3').first().waitFor({ state: 'visible', timeout: 30000 })
   const tapMs = Date.now() - t0
   await page.waitForTimeout(5000)
   const during = await g()

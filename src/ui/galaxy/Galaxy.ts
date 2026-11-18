@@ -12,7 +12,7 @@
 import { PresenceFeed, type Populations } from './presence'
 import { FIELD_UNIT, LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
-import { placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement } from '../brand/wordmarkScene'
+import { liftPlacement, placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement } from '../brand/wordmarkScene'
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
 import { startupTiming } from '../../core/diagnostics'
@@ -21,7 +21,7 @@ function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmar
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
 import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
 import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime } from './cameraRest'
-import { introMode, LEAVING_SECONDS, openingCue, leavingMark, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
+import { introMode, LEAVING_SECONDS, openingCue, SPIRAL_TURN, leavingMark, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
 /** The loading veil is still up: loading, or waiting for the tap that begins (src/ui/TapToBegin.ts). */
@@ -1178,7 +1178,13 @@ export class Galaxy {
     if (intro > 0 && !openingPlayed && !this.reduced.matches) { this.opening = { start: null, mode: intro as OpeningMode }; openingPlayed = true }
     else if (openingPlayed && !this.reduced.matches) this.returning = performance.now()
     // Only once it is playing: a tap while loading, or the tap that begins it (TapToBegin.ts), is not a skip.
-    for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, () => { if (this.opening && this.opening.start !== null) { this.opening = null; this.chrome(null); this.wake = 2 } }, { capture: true, passive: true, signal })
+    // A press that skips it also keeps where the worlds were shown, so lifting it on a world
+    // in flight still picks that world (up), not whatever settled under the finger.
+    for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, event => {
+      if (!this.opening || this.opening.start === null) return
+      if (event instanceof PointerEvent) this.skipped = { pointer: event.pointerId, screen: this.screen }
+      this.opening = null; this.chrome(null); this.wake = 2
+    }, { capture: true, passive: true, signal })
     canvas.addEventListener('webglcontextlost', event => {
       if (this.canvas !== canvas || this.gl !== gl) return
       event.preventDefault(); cancelAnimationFrame(this.frame); this.options.onLogo?.(false); this.markOverlay?.hide()
@@ -1401,7 +1407,9 @@ export class Galaxy {
     if (still !== this.holding) this.wake = 2
     const time = this.clock; this.holding = still
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
-    this.swing(elapsed, !this.drag && this.chosen < 0 && !still && !this.clockHold, wallElapsed)
+    // Not during the opening: it lands on the fresh-load pose (freshPose), the pose a return
+    // from a world eases to, and the drift and the resting tilt take over only once it has.
+    this.swing(elapsed, !this.drag && this.chosen < 0 && !still && !this.clockHold && this.opening === null, wallElapsed)
     const inset = Math.min(0.3, Math.max(0, this.options.topInset?.() ?? 0) / Math.max(1, this.host.clientHeight))
     // The short landscape layout (Shell, SHORT_LANDSCAPE) supplies its own frame.
     const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, FRAME_Y - inset / 2, 1 - inset]
@@ -1437,13 +1445,13 @@ export class Galaxy {
     if (reveal.reach !== 1) view.eye = [this.target[0] + (view.eye[0] - this.target[0]) * reveal.reach, this.target[1] + (view.eye[1] - this.target[1]) * reveal.reach, this.target[2] + (view.eye[2] - this.target[2]) * reveal.reach]
     const arrival = places.map((_, i) => reveal.arrive[this.lanes(places)[i]] ?? 1)
     // The Big Bang flings each world out from the sun on a spiral: turned back along its way by
-    // up to 2.4 radians and drawn in toward the sun, passing its place a little, then settling.
+    // up to SPIRAL_TURN radians and drawn in toward the sun, passing its place a little, then settling.
     // Drawn, picked and labelled where it is shown, so a tap lands on what is seen.
     // Each also leaves a short fading trail, from where it was TRAIL_SECONDS ago (uTrail).
     const spiral = (p: readonly number[], f: number): [number, number, number] => {
       // Turned back against the orbits' own way, so the fling winds out the same way they run:
       // clockwise on screen from above (as the orbits, measured), carrying straight on into the drift.
-      const turn = -(1 - Math.min(1, f)) * 2.4, c = Math.cos(turn), sn = Math.sin(turn)
+      const turn = -(1 - Math.min(1, f)) * SPIRAL_TURN, c = Math.cos(turn), sn = Math.sin(turn)
       return [(p[0] * c - p[2] * sn) * f, p[1] * f, (p[0] * sn + p[2] * c) * f]
     }
     const trails: number[] = []
@@ -1556,6 +1564,8 @@ export class Galaxy {
     if (this.chosen >= 0 && !this.arrived && (this.arriving += this.step) > 1.5) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number; labelled?: boolean }[] = []
+  /** Where the worlds were shown when a press skipped the opening: that press picks from these. */
+  private skipped: { pointer: number; screen: Galaxy['screen'] } | null = null
   /** Where the sun's core is on screen, as of the last frame drawn. */
   sunScreen: { x: number; y: number; radius: number; depth?: number } = { x: -1e4, y: -1e4, radius: 0 }
   private readonly markRig = new WordmarkRig()
@@ -1603,6 +1613,8 @@ export class Galaxy {
     const state = openingState(at, o.mode, places.length)
     if (state.done) {
       this.opening = null
+      // The lobby's idle time (the resting tilt's delay) counts from here, not from the load.
+      this.handled = performance.now()
       // Let the controls' fade in finish, then drop the attribute.
       this.chromeTimer = setTimeout(() => this.chrome(null), 600)
       return SETTLED
@@ -1653,7 +1665,13 @@ export class Galaxy {
     const screen = { x: (fx - this.framing[0] * this.canvas.width) / minSide * 2, y: (fy - this.framing[1] * this.canvas.height) / minSide * 2, unit: box.height * sy / minSide * 2 }
     // The system's size, out to the far edge of the outermost world: what the in-system placements are sized by.
     const system = Math.max(...orbitLayout(this.options.worlds.map(bodyOf), 0).map(p => p.reach + p.radius), INNER)
-    const placement = placeWordmark(mode, poseView(this.markRig.pose!, VIEW_TAN), screen, system)
+    // A panel open: the name eases up and a little smaller (liftPlacement), and back on close.
+    const liftGoal = this.markLift > 0 ? 1 : 0
+    // (Not `held`: behind a panel the galaxy holds still, and the name must still glide there.)
+    this.liftShown = this.reduced.matches ? liftGoal : this.liftShown + (liftGoal - this.liftShown) * (1 - Math.exp(-Math.max(0, elapsed) / 0.16))
+    if (Math.abs(this.liftShown - liftGoal) < 0.002) this.liftShown = liftGoal
+    const lift = this.liftShown * this.liftShown * (3 - 2 * this.liftShown)
+    const placement = liftPlacement(placeWordmark(mode, poseView(this.markRig.pose!, VIEW_TAN), screen, system), lift)
     if (!this.markCrisp && wordmarkCrispPass.value && this.canvas) {
       this.markCrisp = new WordmarkCrisp(VERTEX, FRAGMENT, UNIFORMS)
       this.canvas.after(this.markCrisp.canvas)
@@ -1663,13 +1681,17 @@ export class Galaxy {
     // The opening and a return carry their own fade (opening.ts); otherwise (a placement
     // changed, the context restored) the same curve runs from the first frame here.
     const opacity = this.opening || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
-    return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 }
+    return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 || this.liftShown !== liftGoal }
   }
   /** For checks: the in-space wordmark's opacity as last drawn (0 when hidden). */
   markShown = 0
   /** For tests and screenshots: the in-space wordmark's state. */
   private markView: { eye: Vec; forward: Vec; right: Vec; up: Vec; tan: number } | null = null
   private markPlaced: ReturnType<typeof placeWordmark> | null = null
+  /** 1 while a lobby panel is open: the name moves up and a little smaller to stand over it (LobbySheet). */
+  markLift = 0
+  /** The eased lift drawn this frame, 0 to 1; 1 when the name has finished moving. */
+  liftShown = 0
   /** Where the in-space wordmark is on screen now, in CSS pixels of the host (its bounding box), or null. */
   wordmarkScreenBox(): { x: number; y: number; width: number; height: number } | null {
     const edges = this.wordmarkEdges(8)
@@ -1753,7 +1775,7 @@ export class Galaxy {
     // Never under reduced motion, never round a chosen world, never while anything else moves.
     this.resting = false
     const idle = (performance.now() - this.handled) / 1000
-    if (!this.reduced.matches && this.chosen < 0 && !this.flight && !held && this.pointers.size === 0 && this.backdrop === 1 && this.swingResting) {
+    if (!this.reduced.matches && this.chosen < 0 && !this.flight && !held && this.pointers.size === 0 && this.backdrop === 1 && this.swingResting && this.opening === null) {
       const home = openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
       if (this.options.still?.()) {
         // Low-end devices: the quick exponential settle, snapping the last step, so they can idle.
@@ -1867,7 +1889,7 @@ export class Galaxy {
   }
   private up(event: PointerEvent, tap: boolean): void { this.handled = performance.now(); if (event.pointerType !== 'mouse') this.pointAt(undefined);
     this.pointers.delete(event.pointerId)
-    const drag = this.drag; if (!drag || drag.id !== event.pointerId) return
+    const drag = this.drag; if (!drag || drag.id !== event.pointerId) { if (this.skipped?.pointer === event.pointerId) this.skipped = null; return }
     this.drag = null
     // Let go: the aim coasts at the finger's speed, faded if the finger had paused. Past a
     // tilt limit it springs back instead. Reduced motion has no coast.
@@ -1878,10 +1900,12 @@ export class Galaxy {
       const inside = pitch.aim <= PITCH_HIGH && pitch.aim >= PITCH_LOW
       pitch.aimSpeed = inside ? Math.max(-4, Math.min(4, pitchSpeed * 0.7)) : 0
     }
+    const skipped = this.skipped?.pointer === event.pointerId ? this.skipped.screen : null
+    this.skipped = null
     if (drag.moved || !tap) return
     // A tap: the nearest world under the finger, with a generous margin on small screens.
     const box = this.canvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top
-    const found = pickWorld(this.screen, x, y)
+    const found = pickWorld(skipped ?? this.screen, x, y)
     if (found) { if (!this.options.onTap?.(found)) this.choose(found) } else if (this.chosen >= 0 && !this.flight) this.home()
   }
   dispose(): void { this.presence.dispose(); this.active = false; this.abort.abort(); this.resizeObserver.disconnect(); this.release() }

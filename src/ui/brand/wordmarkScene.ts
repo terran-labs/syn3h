@@ -123,6 +123,24 @@ function placeInSystem(mode: number, view: View, system: number): Placement {
   return { centre: add(scale(far, shape.radius), up, shape.offset), right: scale(sideways, size), up: scale(up, size), sunDistance: Math.hypot(...add(scale(far, shape.radius), up, shape.offset)), shape }
 }
 
+/**
+ * While a lobby panel is open the name moves up a little and grows a little smaller, so the
+ * panel can stand beneath it on the same curved wall (LobbySheet.ts). `lift` runs 0 (at rest)
+ * to 1 (a panel open); the rise is in the name's own heights.
+ */
+export const LIFT_SCALE = 0.78, LIFT_RISE = 0.55
+export function liftPlacement(p: Placement, lift: number): Placement {
+  if (!(lift > 0)) return p
+  const k = 1 - (1 - LIFT_SCALE) * lift, height = Math.hypot(...p.up), rise = height * LIFT_RISE * lift
+  if (p.shape.kind === 1) {
+    const shape: Shape = { ...p.shape, size: p.shape.size * k, offset: p.shape.offset + rise }
+    const centre: Vec3 = [p.centre[0], shape.offset, p.centre[2]]
+    return { centre, right: scale(p.right, k), up: scale(p.up, k), sunDistance: Math.hypot(...centre), shape }
+  }
+  const centre = add(p.centre, scale(p.up, 1 / height), rise)
+  return { centre, right: scale(p.right, k), up: scale(p.up, k), sunDistance: Math.hypot(...centre), shape: p.shape }
+}
+
 /** The band of the camera's elevation, in radians either side of edge-on, the name glides through the plane over. */
 export const PLANE_BAND = 0.12
 /** +1 with the camera above the plane, -1 below, eased through edge-on. */

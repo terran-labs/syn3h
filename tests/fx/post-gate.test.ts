@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type PostGateInput, drawsEffects, postTier, shaftTaps, sunHeightFactor, sunScreenFade } from '../../src/fx/post/gate'
+import { type PostGateInput, drawsEffects, postTier, rayDryness, shaftTaps, sunHeightFactor, sunScreenFade } from '../../src/fx/post/gate'
 import { LOOKS, gradeFor, lookForKind } from '../../src/fx/post/looks'
 import { postOverride } from '../../src/fx/post/params'
 
@@ -75,5 +75,17 @@ describe('?post= override', () => {
     expect(postOverride('?post')).toBe(true)
     expect(postOverride('?post=0')).toBe(false)
     expect(postOverride('?seed=3')).toBeUndefined()
+  })
+})
+
+// Bug this catches: sun rays drawn through the water with the camera under the surface, as
+// hard white spokes from the horizon (the owner, v26.11.1713, iPhone, a desert lake's bed).
+describe('sun rays under a liquid surface', () => {
+  it('are full in air, gone once the medium has half blended in, and never jump between', () => {
+    expect(rayDryness(0)).toBe(1)
+    expect(rayDryness(0.5)).toBe(0)
+    expect(rayDryness(1)).toBe(0)
+    let last = 1
+    for (let a = 0; a <= 0.5; a += 0.01) { const d = rayDryness(a); expect(d).toBeLessThanOrEqual(last + 1e-12); expect(last - d).toBeLessThan(0.05); last = d }
   })
 })

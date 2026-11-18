@@ -55,8 +55,9 @@ import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
-import { aboutHtml, aboutSheetHtml, fillUpdates, showAboutTab, updatesSheetHtml, wireAbout, type AboutTab } from './updates/about'
-import { LobbySheet, sheetShape } from './LobbySheet'
+import { aboutHtml, fillUpdates, showAboutTab, updatesSheetHtml, wireAbout, type AboutTab } from './updates/about'
+import { mountWelcome, type Welcome } from './welcome/welcome'
+import { LobbySheet } from './LobbySheet'
 import { UpdateNotice } from './updates/UpdateNotice'
 import { rollPlayerName } from './data/names'
 import { cleanPlayerName, loadPlayerName, savePlayerName, type NameSource } from './playerName'
@@ -246,11 +247,11 @@ export class Shell implements System {
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels" role="group" aria-label="Worlds. Drag to look around; choose a world to go there."></div><nav class="lobby-links galaxy-links" aria-label="Lobby"${LOBBY_LINKS ? '' : ' hidden'}>${LOBBY_LINKS}</nav></div>
     </section>
-    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">About Syn3h</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
+    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">Welcome</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Panels</span></button></nav>
     <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="exit-stay">Stay</button><button type="button" class="exit-leave">Leave world</button></div></div></div>
-    <button type="button" class="pause-about" aria-haspopup="dialog" hidden>About &amp; how to play</button>
+    <button type="button" class="pause-about" aria-haspopup="dialog" hidden>Welcome &amp; how to play</button>
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
@@ -322,7 +323,7 @@ export class Shell implements System {
     const railTop = this.inspector.element.querySelector('.wi-top')!
     // Players & session is a card like the others: same header, chevron, easing and memory.
     const players = document.createElement('div')
-    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite about how to play help connection diagnostics mute audio sound"><button type="button" class="rail-invite">Invite players</button><button type="button" class="rail-about" aria-haspopup="dialog">About &amp; how to play</button>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
+    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite welcome about how to play help connection diagnostics mute audio sound"><button type="button" class="rail-invite">Invite players</button><button type="button" class="rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     this.inspector.addCard('players', 'Players & session', players, () => {
       const count = this.element.querySelectorAll('.hud-scoreboard .score-row').length
@@ -339,21 +340,41 @@ export class Shell implements System {
       quality: this.game.quality, presentation: this.presentationToggle, host: this.hostControls, build,
       hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', inRoom: () => { const net = hostControls(); return !!net && (net.isHost || canEditWorld()) }, cue: () => this.audio.cue('click'),
     })
-    this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock)
+    this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock, this.lobbySettings.versionDock)
     // The version beside the lobby's settings gear opens What's new.
     this.lobbySettings.version.addEventListener('click', () => { this.audio.cue('click'); this.showUpdates() }, { signal })
     // About and Updates, each its own sheet from its icon above the gear. Their content is
     // built on first open, so nothing in them is requested before the player asks.
-    const shape = sheetShape(location.search), edges = () => this.galaxy?.wordmarkEdges() ?? null
+    const edges = () => this.galaxy?.wordmarkEdges() ?? null
     // Behind a sheet the galaxy dims a little and holds still, as behind a panel; it comes back once both are closed.
-    const closed = () => { if (this.galaxy && !this.aboutSheet.isOpen && !this.updatesSheet.isOpen && this.panels.active === 'index' && !this.playing) this.galaxy.backdrop = 1 }
-    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'About Syn3h', shape, edges, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { body.insertAdjacentHTML('beforeend', aboutSheetHtml()); pinLicenses(body) } })
+    // ...and the name moves back down from over it (Galaxy.markLift).
+    const closed = () => {
+      if (this.lobbySheets.some(s => s.isOpen)) return
+      // The buttons go back to their corner of the lobby.
+      const dock = this.lobbySettings.dock
+      this.element.querySelector('.galaxy-ui')!.append(dock); dock.classList.remove('is-beside-sheet')
+      for (const button of [this.lobbySettings.about, this.lobbySettings.updates, this.lobbySettings.gear]) { button.classList.remove('is-current'); button.removeAttribute('aria-current') }
+      if (this.galaxy) this.galaxy.markLift = 0
+      if (this.galaxy && this.panels.active === 'index' && !this.playing) this.galaxy.backdrop = 1
+    }
+    // While the name rises to stand over an open sheet, the sheet follows it (LobbySheet).
+    const following = () => !!this.galaxy && this.galaxy.liftShown !== (this.galaxy.markLift > 0 ? 1 : 0)
+    // The Welcome guide's content (src/ui/welcome): mounted on first open, its images loading on each.
+    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'Welcome', edges, following, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { this.lobbyWelcome = mountWelcome(body, { where: 'lobby' }) }, opened: () => this.lobbyWelcome?.opened() })
     this.updatesSheet = new LobbySheet(this.element, {
-      name: 'updates', title: 'Updates', shape, edges, home: () => this.lobbySettings.updates, closed, cue: () => this.audio.cue('click'),
+      name: 'updates', title: 'Updates', edges, following, home: () => this.lobbySettings.updates, closed, cue: () => this.audio.cue('click'),
       fill: body => body.insertAdjacentHTML('beforeend', updatesSheetHtml()), opened: body => { void fillUpdates(body.querySelector<HTMLElement>('.about-updates')!) },
     })
     this.lobbySettings.about.addEventListener('click', () => this.openLobbySheet(this.aboutSheet), { signal })
     this.lobbySettings.updates.addEventListener('click', () => this.openLobbySheet(this.updatesSheet), { signal })
+    // Settings is the third of the same sheets: the settings panel lives in its body.
+    this.settingsSheet = new LobbySheet(this.element, {
+      name: 'settings', title: 'Settings', edges, following, home: () => this.lobbySettings.gear, cue: () => this.audio.cue('click'),
+      fill: () => {}, opened: () => this.lobbySettings.open(), closed: () => { this.lobbySettings.close(); closed() },
+    })
+    // From the start, so the panel's own gear handling never opens it as a separate column.
+    this.lobbySettings.embedIn(this.settingsSheet.body)
+    this.lobbySettings.gear.addEventListener('click', () => { if (this.settingsSheet.isOpen) this.settingsSheet.close(); else this.openLobbySheet(this.settingsSheet) }, { signal })
     // The top row (the owner, 17 November 2026): exactly three controls, side by side with no
     // plate around them, sized like a card's title row so the row reads as the first of the
     // stack. Search takes the free width. The world's name is in the World card's summary.
@@ -377,6 +398,10 @@ export class Shell implements System {
     players.querySelector('.rail-about')!.addEventListener('click', () => this.openAbout(), { signal })
     // About and Updates as two tabs in the in-play guide; the lobby gives each its own sheet.
     wireAbout(this.element.querySelector<HTMLElement>('.in-play-about')!, signal)
+    // The Welcome guide fills the About pane now; its pictures wait until the player shows it.
+    const aboutPane = this.element.querySelector<HTMLElement>('.in-play-about [data-about-pane="about"]')!
+    this.playWelcome = mountWelcome(aboutPane, { where: 'play' })
+    this.element.querySelector('.in-play-about [data-about-tab="about"]')!.addEventListener('click', () => this.playWelcome.opened(), { signal })
     // A newer live version: a banner in the lobby, a chip in the sidebar in play. What's new
     // opens Updates wherever the player is, and the lobby's Updates icon carries a quiet mark.
     this.updateNotice = new UpdateNotice(() => this.showUpdates(), signal, () => { this.updateBand(); this.lobbySettings.markUpdate(this.updateNotice.version) })
@@ -551,15 +576,31 @@ export class Shell implements System {
   /** The lobby's About sheet, as its icon opens it. */
   showLobbyAbout(): void { this.openLobbySheet(this.aboutSheet) }
   private readonly aboutSheet: LobbySheet
+  private lobbyWelcome?: Welcome
+  private readonly playWelcome: Welcome
   private readonly updatesSheet: LobbySheet
+  private readonly settingsSheet: LobbySheet
+  private get lobbySheets(): LobbySheet[] { return [this.aboutSheet, this.updatesSheet, this.settingsSheet] }
   /** One lobby sheet at a time, over the galaxy; settings close first. */
   private openLobbySheet(sheet: LobbySheet): void {
     if (this.playing) return
-    const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : sheet === this.aboutSheet ? this.lobbySettings.about : this.lobbySettings.updates
-    this.lobbySettings.close()
-    for (const other of [this.aboutSheet, this.updatesSheet]) if (other !== sheet) other.close()
-    if (this.galaxy) this.galaxy.backdrop = SHEET_BACKDROP
-    sheet.open(opener)
+    // Its own button again: close it, as the gear always has.
+    if (sheet.isOpen) { sheet.close(); return }
+    const home = sheet === this.aboutSheet ? this.lobbySettings.about : sheet === this.updatesSheet ? this.lobbySettings.updates : this.lobbySettings.gear
+    const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body && !document.activeElement.closest('dialog.lobby-sheet') ? document.activeElement : home
+    // Another sheet already up: it hands over and this one takes its place, so the panel stays
+    // and only its contents change (a morph, not a close and reopen).
+    const current = this.lobbySheets.find(s => s.isOpen)
+    if (current) { if (current === this.settingsSheet) this.lobbySettings.close(); current.handOff() }
+    if (this.galaxy) { this.galaxy.backdrop = SHEET_BACKDROP; this.galaxy.markLift = 1 }
+    // The three buttons stay beside the open sheet, above its backdrop, to switch between them;
+    // the open one is marked.
+    const dock = this.lobbySettings.dock
+    sheet.element.append(dock); dock.classList.add('is-beside-sheet')
+    for (const [button, owner] of [[this.lobbySettings.about, this.aboutSheet], [this.lobbySettings.updates, this.updatesSheet], [this.lobbySettings.gear, this.settingsSheet]] as const) {
+      button.classList.toggle('is-current', owner === sheet); if (owner === sheet) button.setAttribute('aria-current', 'true'); else button.removeAttribute('aria-current')
+    }
+    sheet.open(opener, !!current)
   }
   openAbout(tab?: AboutTab): void {
     if (!this.playing || this.aboutOpen || this.inviteOpen || this.exitAsking || this.dropping) return
@@ -570,6 +611,7 @@ export class Shell implements System {
     this.game.input.suspended = true; this.game.input.poll(); this.touch.enabled = false
     const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
     if (tab) showAboutTab(guide, tab)
+    if (!guide.querySelector<HTMLElement>('[data-about-pane="about"]')!.hidden) this.playWelcome.opened()
     guide.showModal()
     guide.scrollTop = 0
     guide.querySelector<HTMLElement>('h2')!.focus({ preventScroll: true })
@@ -1035,7 +1077,7 @@ export class Shell implements System {
     if (!this.started || this.dropping) return
     this.lobbyAddress?.showPlay(this.room)
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; if (this.galaxy) this.galaxy.enabled = false
-    this.lobbySettings.close(); this.aboutSheet.close(); this.updatesSheet.close()
+    this.lobbySettings.close(); for (const sheet of this.lobbySheets) sheet.close()
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true; this.audio.setLobbyVisible(false); this.paramPanel?.hide()
     this.element.classList.add('is-playing')
     this.element.querySelector<HTMLElement>('.shell-hud')!.hidden = false
@@ -1216,6 +1258,8 @@ export class Shell implements System {
   private keydown(event: KeyboardEvent): void {
     // Waiting for the tap that begins (TapToBegin.ts): that press only begins.
     if (document.documentElement.dataset.boot === 'ready') return
+    // A lobby sheet is open: it owns the keyboard (LobbySheet), and no shortcut fires behind it.
+    if (this.lobbySheets.some(sheet => sheet?.isOpen)) return
     if (this.aboutOpen) {
       // The guide owns the keyboard: Tab, links and disclosures work natively inside it, and
       // no shortcut or driving key reaches the game. Escape closes it and does nothing else.
@@ -1893,7 +1937,7 @@ export class Shell implements System {
     if (keep) { keepRow.querySelector<HTMLInputElement>('#bots-keep')!.checked = keep.value === true; }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.settingsSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }

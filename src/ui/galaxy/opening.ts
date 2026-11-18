@@ -14,19 +14,22 @@ import { defineParam } from '../../../shared/params'
 export const introMode = defineParam({ id: 'lobby.intro', label: 'Lobby opening: 2 push in (the lobby); 0 off, 1 pull back', group: 'Graphics', scope: 'client', default: 2, min: 0, max: 2, step: 1 })
 
 /**
- * The opening, every load: a cartoon Big Bang (the owner's direction, 16 November 2026). It
- * lasts as long as the name's fade; everything else has settled by SETTLED_SECONDS.
+ * The opening, every load: a cartoon Big Bang (the owner's direction, 16 November 2026), made
+ * slower and more dramatic on 17 November ("the lobby animation should be slower and more
+ * dramatic"): a held breath, a harder bang, longer arcs, the camera pulling back with weight,
+ * and the name arriving last. 8.6 s, from 4.6. Everything but the name has settled by
+ * SETTLED_SECONDS.
  */
-export const OPENING_SECONDS = 4.6
+export const OPENING_SECONDS = 8.6
 /** Seconds from the opening's first frame to the pop (openingState below): where the score's drop lands when a tap began it. */
-export const POP_SECONDS = 0.3
+export const POP_SECONDS = 1.2
 /**
  * When a tap began the opening (src/ui/TapToBegin.ts): the performance.now() at which its sound
  * is heard. The galaxy starts the opening there, not on whatever frame comes next, so a slow
  * frame cannot pull the picture and the sound apart.
  */
 export const openingCue: { at: number | null } = { at: null }
-export const SETTLED_SECONDS = 4.45
+export const SETTLED_SECONDS = 7.8
 
 export type OpeningMode = 1 | 2
 /** 1: pull back from the sun; 2: push in through the rays. */
@@ -96,33 +99,39 @@ export const FLING_OVERSHOOT = 0
 /** How far behind a flung world its fading trail reaches, in seconds of its flight. */
 export const TRAIL_SECONDS = 0.2
 /** Departures: the first world, the gap between worlds, and each world's flight, in seconds. */
-export const FIRST = 0.45, GAP = 0.2, FLIGHT = 2.3
+export const FIRST = POP_SECONDS + 0.25, GAP = 0.25, FLIGHT = 3.8
+/** How far (radians) a world's way out turns back along its orbit: a longer arc than the 2.4 before. */
+export const SPIRAL_TURN = 3.4
+/** When the name begins to arrive: last, as the worlds land. Its fade is the same curve as everywhere. */
+export const MARK_FROM = OPENING_SECONDS - WORDMARK_FADE_SECONDS
 /** A world's flight, 0 to 1 (raw), by lane. */
 export const flight = (t: number, lane: number) => span(t, FIRST + GAP * lane, FIRST + GAP * lane + FLIGHT)
 
 /**
- * The Big Bang, in seconds after loading ends. The squeeze and the pop are crisp, the cartoon
- * beat; everything after them unfolds slowly, to settle as the name finishes its fade:
- *   0.00 to 0.30  anticipation: the point squeezes small and bright;
- *   0.30 to 0.65  the pop: the sun swells past itself (1.35), settling by 1.6 s;
- *   0.30 to 2.20  a soft warm burst ring rolls out past every screen edge, slowing as it goes,
- *                 thick and bright at first, thinning and fading (no full-screen flash);
- *   0.35 to 2.60  the stars drift out from the centre to where they rest;
- *   0.40 to 3.00  the rays grow to their settled strength;
- *   0.45 to 4.35  the worlds are flung out, innermost first, 0.2 s apart, each gliding 2.3 s
- *                 along its spiral, fast out and slowing the whole way onto its orbit, a small
- *                 bright mote with a fading trail growing to itself over the same span; each
- *                 orbit line draws round just ahead of its world;
- *   0.30 to 4.20  the view eases out, as the universe expands;
- *   3.90 to 4.35  the labels, each once its world has landed, outermost last; 4.00 to 4.45
- *                 the lobby's controls;
- *   0.00 to 4.20  the name fades in (wordmarkFade).
+ * The Big Bang, in seconds from its first frame (the end of loading, or the tap that begins it).
+ * P is POP_SECONDS, 1.2:
+ *   0 to P        the held breath: the point draws in, brightening and trembling a little more
+ *                 as the pop nears; the score's swell rises over the same span;
+ *   P to P+0.5    the pop: the sun flares well past itself (1.6), settling by P+2;
+ *   P to P+3      a warm burst ring rolls out past every screen edge, brighter than before,
+ *                 slowing and thinning as it goes (still no full-screen flash);
+ *   P to P+3.2    the stars drift out to where they rest, their light building over P to P+2.4;
+ *   P to P+4      the rays grow to their settled strength;
+ *   P+0.25 on     the worlds are thrown out, innermost first, 0.25 s apart, each decelerating
+ *                 along a longer spiral (SPIRAL_TURN) for 3.8 s onto its orbit; the last lands
+ *                 by 7.3 s with nine worlds; each orbit line draws round just ahead of its world;
+ *   P to 7.4      the view pulls back from close in, slow to start and slow to settle;
+ *   7.3 to 7.75   the labels, each once its world has landed, outermost last; 7.3 to 7.8 the
+ *                 lobby's controls;
+ *   4.4 to 8.6    the name arrives last: its light front sweeps the letters as the worlds land.
  */
 export function openingState(time: number, _mode: OpeningMode, lanes: number): OpeningState {
-  const t = time
-  const swell = t <= 0 ? 0 : t < 0.3 ? -0.55 * ease(span(t, 0, 0.3)) : -0.55 * (1 - span(t, 0.3, 0.4))
-  const sun = t < 0.3 ? 0 : t < 0.65 ? 1.35 * out(span(t, 0.3, 0.65)) : 1 + 0.35 * (1 - smoother(span(t, 0.65, 1.6)))
-  const burstAt = span(t, 0.3, 2.2)
+  const t = time, P = POP_SECONDS
+  // The held breath: drawn in slowly, then a fine tremble grows as the pop nears.
+  const held = span(t, 0, P), tremble = t > 0 && t < P ? 0.08 * held * held * Math.sin(t * 46) : 0
+  const swell = t <= 0 ? 0 : t < P ? -0.7 * smoother(held) + tremble : -0.7 * (1 - span(t, P, P + 0.12))
+  const sun = t < P ? 0 : t < P + 0.5 ? 1.6 * out(span(t, P, P + 0.5)) : 1 + 0.6 * (1 - smoother(span(t, P + 0.5, P + 2)))
+  const burstAt = span(t, P, P + 3)
   const lane = Array.from({ length: lanes }, (_, i) => i)
   const fling = lane.map(i => flingOf(flight(t, i)))
   const flingBehind = lane.map(i => flingOf(flight(t - TRAIL_SECONDS, i)))
@@ -130,25 +139,26 @@ export function openingState(time: number, _mode: OpeningMode, lanes: number): O
   const orbits = lane.map(i => ease(span(t, FIRST + GAP * i - 0.1, FIRST + GAP * i + FLIGHT * 0.6)))
   // A small bright mote at once, growing to itself over its whole glide.
   const arrive = lane.map(i => { const x = flight(t, i); return x <= 0 ? 0 : Math.min(1, 0.32 * out(span(x, 0, 0.05)) + 0.68 * smoother(x)) })
-  // Each label once its world has landed, and not before 3.9 s: the outermost last.
-  const labels = lane.map(i => t >= Math.max(3.9 + 0.4 * i / Math.max(1, lanes), FIRST + GAP * i + FLIGHT))
+  // Each label once its world has landed, and not before 7.3 s: the outermost last.
+  const labels = lane.map(i => t >= Math.max(7.3 + 0.45 * i / Math.max(1, lanes), FIRST + GAP * i + FLIGHT))
+  const mark = wordmarkFade(t - MARK_FROM)
   return {
     swell,
-    burst: [1.4 * (1 - (1 - burstAt) ** 2), burstAt > 0 && burstAt < 1 ? 0.7 * (1 - burstAt) ** 1.5 : 0],
-    spread: t <= 0.35 ? 0 : smoother(span(t, 0.35, 2.6)),
+    burst: [1.6 * (1 - (1 - burstAt) ** 2), burstAt > 0 && burstAt < 1 ? 0.95 * (1 - burstAt) ** 1.5 : 0],
+    spread: t <= P ? 0 : smoother(span(t, P + 0.05, P + 3.2)),
     fling,
     flingBehind,
     sun,
-    front: 2.6 * inOut(span(t, 0.4, 3.0)),
-    stars: ease(span(t, 0.35, 1.2)),
+    front: 2.6 * inOut(span(t, P + 0.1, P + 4)),
+    stars: smoother(span(t, P + 0.05, P + 2.4)),
     orbits,
     arrive,
     labels,
-    // The name fades in from the first frame, its light front crossing the letters as it does.
-    markFront: 0.15 + 1.6 * wordmarkFade(t),
-    mark: wordmarkFade(t),
-    reach: 0.8 + 0.2 * smoother(span(t, 0.3, 4.2)),
-    chrome: ease(span(t, 4.0, 4.45)),
+    // The name arrives last, its light front crossing the letters as it does.
+    markFront: 0.15 + 1.6 * mark,
+    mark,
+    reach: 0.62 + 0.38 * smoother(span(t, P, 7.4)),
+    chrome: ease(span(t, 7.3, 7.8)),
     done: t >= OPENING_SECONDS,
   }
 }

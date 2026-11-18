@@ -33,6 +33,16 @@ it('fails on any audio file and any bitmap no platform requires, and names them'
   expect(result.stderr).toContain('audio/SpaceStation.mp3'); expect(result.stderr).toContain('models/textures/armor-scales.jpg')
 })
 
+it('lets the Welcome pictures through, and nothing else in their folder', () => {
+  const pictures = mkdtempSync(join(tmpdir(), 'syn3h-welcome-'))
+  try {
+    for (const path of ['welcome/lava-night-640.webp', 'welcome/lava-night-1280.webp', 'welcome/lava-night.jpg', 'welcome/big-3840.webp', 'other/lava-night-640.webp']) {
+      mkdirSync(join(pictures, path, '..'), { recursive: true }); writeFileSync(join(pictures, path), 'x')
+    }
+    expect(findForbidden(pictures).images.map((f: { path: string }) => f.path).sort()).toEqual(['other/lava-night-640.webp', 'welcome/big-3840.webp', 'welcome/lava-night.jpg'])
+  } finally { rmSync(pictures, { recursive: true, force: true }) }
+})
+
 it('a waiver lets one named file through and says so; audio still fails', () => {
   const result = run(dir, '--allow', 'models/textures/armor-scales.jpg')
   expect(result.status).toBe(1)
