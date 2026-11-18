@@ -32,11 +32,22 @@ const ALLOWED = new Map<string, string>([
 /** The list may never be longer than it was on the day it was written. */
 const CEILING = 7
 
+/**
+ * Not part of the shrinking list: the owner's one content exception (AGENTS.md, "Curated About
+ * images may load only after deliberate About entry"). The Welcome guide's six screenshots are
+ * kept as originals in art/welcome/ and encoded by tools/welcome-images.mjs to WebP in four
+ * widths. Exactly these names pass, matching tools/check-shipped-assets.mjs ABOUT_PICTURES;
+ * the about-in-play and discoverability checks and tools/runtime-assets-check.mjs prove none
+ * loads before the player opens the guide.
+ */
+const ABOUT_PICTURES = ['wings-glide', 'jet-tiny-world', 'lagoon-hovercraft', 'lava-night', 'swamp-river', 'canyon-convoy']
+const aboutPicture = (f: string) => ABOUT_PICTURES.some((id) => f === `art/welcome/${id}.jpg` || new RegExp(`^public/welcome/${id}-(640|960|1280|1920)\\.webp$`).test(f))
+
 const tracked = (): string[] =>
   execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\0').filter((f) => IMAGE.test(f))
 
 it('no tracked image file exists outside the shrinking allow list', () => {
-  const extra = tracked().filter((f) => !ALLOWED.has(f))
+  const extra = tracked().filter((f) => !ALLOWED.has(f) && !aboutPicture(f))
   expect(extra, `New image files are not allowed. Generate them (shader, vector path, seeded generator or build step) instead:\n${extra.join('\n')}`).toEqual([])
 })
 
@@ -45,6 +56,12 @@ it('the allow list only shrinks and names only files that still exist', () => {
   const present = new Set(tracked())
   const gone = [...ALLOWED.keys()].filter((f) => !present.has(f))
   expect(gone, `These files are gone. Delete their lines from the allow list and lower CEILING to match:\n${gone.join('\n')}`).toEqual([])
+})
+
+it('the About picture exception names only pictures that still exist', () => {
+  const present = new Set(tracked())
+  const gone = ABOUT_PICTURES.filter((id) => !present.has(`art/welcome/${id}.jpg`))
+  expect(gone, `These Welcome originals are gone. Delete them from ABOUT_PICTURES:\n${gone.join('\n')}`).toEqual([])
 })
 
 it('image data is not embedded in source either', () => {
