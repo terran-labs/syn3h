@@ -41,6 +41,12 @@ const shot = (page, name) => page.screenshot({ path: `${out}/${name}.png` })
 const CHAT_OPENER = '.hud-chat .acc-row, .syn3h-shell.has-touch .chat-toggle'
 /** Click the chat pill; if something else is on top of it, say what, then click it directly. */
 async function clickPill(page, label, selector = CHAT_OPENER) {
+  // A captured cursor clicks nothing (the column's rows take no pointer then; Y opens chat):
+  // free it first, as a player would, before clicking the Chat row.
+  if (await page.evaluate(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-focus') && !s.classList.contains('has-touch') })) {
+    await page.keyboard.press('Escape')
+    await page.waitForFunction(() => !document.querySelector('.syn3h-shell').classList.contains('is-focus'), null, { timeout: 5000 }).catch(() => {})
+  }
   const blocked = await page.evaluate((selector) => {
     const b = document.querySelector(selector).getBoundingClientRect()
     const top = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)
