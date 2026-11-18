@@ -145,6 +145,12 @@ export class LobbySettings {
   private readonly abort = new AbortController()
   private shown = false
   private closing?: Animation
+  /**
+   * The lobby sheet the panel lives in, when it is one of the lobby's sheets (LobbySheet): then
+   * the sheet owns the title, the close control, Escape, a tap outside and the focus trap, and
+   * the gear opens the sheet instead of this panel.
+   */
+  private embedded?: HTMLElement
   private readonly advancedOpen = { value: false }
   private roomCard?: HTMLElement
 
@@ -225,10 +231,10 @@ export class LobbySettings {
       this.roomCard = this.inspector.addCard('room', 'Room', room, () => options.hostSummary?.() ?? '')
     }
 
-    this.gear.addEventListener('click', () => { if (this.shown) this.close(); else this.open() }, { signal })
+    this.gear.addEventListener('click', () => { if (this.embedded) return; if (this.shown) this.close(); else this.open() }, { signal })
     // Tap outside closes; that tap does nothing else (it does not also pick a planet).
     const outside = (event: Event) => {
-      if (!this.shown) return
+      if (!this.shown || this.embedded) return
       const target = event.target as Node
       if (this.host.contains(target) || this.dock.contains(target)) return
       event.preventDefault(); event.stopPropagation()
@@ -236,7 +242,7 @@ export class LobbySettings {
     }
     for (const type of ['pointerdown', 'click'] as const) window.addEventListener(type, outside, { capture: true, signal })
     window.addEventListener('keydown', event => {
-      if (!this.shown) return
+      if (!this.shown || this.embedded) return
       if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); this.close(); return }
       if (event.key === 'Tab') {
         // The panel owns Tab while open; the lobby's own trap would pull focus back to the galaxy.
@@ -261,9 +267,19 @@ export class LobbySettings {
       .filter(el => !(el as HTMLButtonElement).disabled && !el.closest('[hidden], [inert]') && el.getClientRects().length > 0)
   }
 
+  /** Live inside a lobby sheet's body from now on (see `embedded`). */
+  embedIn(container: HTMLElement): void { this.embedded = container; this.host.classList.add('is-embedded') }
+
   open(): void {
     if (this.shown) return
     this.shown = true; this.closing?.cancel(); this.closing = undefined
+    if (this.embedded) {
+      // The sheet fades itself in and owns the cue and focus.
+      this.embedded.append(this.host)
+      this.inspector.rebuild(); this.update()
+      this.gear.setAttribute('aria-expanded', 'true'); this.dock.classList.add('is-open')
+      return
+    }
     this.options.cue?.()
     this.parent.append(this.host)
     this.inspector.rebuild(); this.update()
@@ -279,6 +295,8 @@ export class LobbySettings {
     this.shown = false
     this.inspector.hideTooltip()
     this.gear.setAttribute('aria-expanded', 'false'); this.dock.classList.remove('is-open')
+    // In a sheet, the sheet returns focus to whatever opened it, and fades itself out.
+    if (this.embedded) return
     this.gear.focus({ preventScroll: true })
     const detach = () => { if (!this.shown) this.host.remove() }
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { detach(); return }

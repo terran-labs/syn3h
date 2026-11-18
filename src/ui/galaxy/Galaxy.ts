@@ -12,7 +12,7 @@
 import { PresenceFeed, type Populations } from './presence'
 import { FIELD_UNIT, LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
-import { placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement } from '../brand/wordmarkScene'
+import { liftPlacement, placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement } from '../brand/wordmarkScene'
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
 import { startupTiming } from '../../core/diagnostics'
@@ -1653,7 +1653,13 @@ export class Galaxy {
     const screen = { x: (fx - this.framing[0] * this.canvas.width) / minSide * 2, y: (fy - this.framing[1] * this.canvas.height) / minSide * 2, unit: box.height * sy / minSide * 2 }
     // The system's size, out to the far edge of the outermost world: what the in-system placements are sized by.
     const system = Math.max(...orbitLayout(this.options.worlds.map(bodyOf), 0).map(p => p.reach + p.radius), INNER)
-    const placement = placeWordmark(mode, poseView(this.markRig.pose!, VIEW_TAN), screen, system)
+    // A panel open: the name eases up and a little smaller (liftPlacement), and back on close.
+    const liftGoal = this.markLift > 0 ? 1 : 0
+    // (Not `held`: behind a panel the galaxy holds still, and the name must still glide there.)
+    this.liftShown = this.reduced.matches ? liftGoal : this.liftShown + (liftGoal - this.liftShown) * (1 - Math.exp(-Math.max(0, elapsed) / 0.16))
+    if (Math.abs(this.liftShown - liftGoal) < 0.002) this.liftShown = liftGoal
+    const lift = this.liftShown * this.liftShown * (3 - 2 * this.liftShown)
+    const placement = liftPlacement(placeWordmark(mode, poseView(this.markRig.pose!, VIEW_TAN), screen, system), lift)
     if (!this.markCrisp && wordmarkCrispPass.value && this.canvas) {
       this.markCrisp = new WordmarkCrisp(VERTEX, FRAGMENT, UNIFORMS)
       this.canvas.after(this.markCrisp.canvas)
@@ -1663,13 +1669,17 @@ export class Galaxy {
     // The opening and a return carry their own fade (opening.ts); otherwise (a placement
     // changed, the context restored) the same curve runs from the first frame here.
     const opacity = this.opening || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
-    return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 }
+    return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 || this.liftShown !== liftGoal }
   }
   /** For checks: the in-space wordmark's opacity as last drawn (0 when hidden). */
   markShown = 0
   /** For tests and screenshots: the in-space wordmark's state. */
   private markView: { eye: Vec; forward: Vec; right: Vec; up: Vec; tan: number } | null = null
   private markPlaced: ReturnType<typeof placeWordmark> | null = null
+  /** 1 while a lobby panel is open: the name moves up and a little smaller to stand over it (LobbySheet). */
+  markLift = 0
+  /** The eased lift drawn this frame, 0 to 1; 1 when the name has finished moving. */
+  liftShown = 0
   /** Where the in-space wordmark is on screen now, in CSS pixels of the host (its bounding box), or null. */
   wordmarkScreenBox(): { x: number; y: number; width: number; height: number } | null {
     const edges = this.wordmarkEdges(8)
