@@ -33,10 +33,20 @@ try {
   const phone = await open({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true }, 'phone')
   // Parked bots (bots.canDrive off, as tools/bots-net-check.mjs does) stay where they are put.
   await host.evaluate((n) => { const p = window.syn3h.params; p.set('gfx.auto', false); p.set('gfx.quality', 4); p.set('bots.canDrive', false); p.set('bots.count', n) }, BOTS)
-  await host.waitForFunction((n) => window.syn3h.bots.vehicles.length >= n, BOTS, { timeout: 60000 }).catch(async (error) => {
-    console.log(JSON.stringify(await host.evaluate(() => ({ n: window.syn3h.bots.vehicles.length, count: window.syn3h.params.get('bots.count').value, q: window.syn3h.params.get('quality.level')?.value, g: window.syn3h.params.get('gfx.level')?.value, host: window.syn3hNet.isHost, remotes: [...window.syn3hNet.remotes.keys()] }))))
-    throw error
-  })
+  // Bots arrive one at a time (src/bots/pacing.ts), each judged for about three seconds, longer
+  // on a busy machine. Wait for all of them as long as they keep coming; fail only when no new
+  // bot has arrived for 30 s, or the pacer has decided this device carries fewer.
+  await host.evaluate(() => window.syn3h.params.set('bots.arrivalInterval', 1))
+  for (let seen = -1, since = Date.now(); ;) {
+    const s = await host.evaluate(() => ({ n: window.syn3h.bots.vehicles.length, allowed: window.syn3h.bots.pacer?.allowed ?? null, log: (window.syn3h.bots.pacer?.log ?? []).slice(-6).map(l => `${(l.at / 1000).toFixed(1)}s ${l.action} at ${l.have}`) }))
+    if (s.n >= BOTS) break
+    if (s.n !== seen) { seen = s.n; since = Date.now() }
+    if (Date.now() - since > 30000 || (s.allowed !== null && s.allowed < BOTS)) {
+      console.log(JSON.stringify({ ...s, count: await host.evaluate(() => window.syn3h.params.get('bots.count').value), host: await host.evaluate(() => window.syn3hNet.isHost) }))
+      throw new Error(`bots stopped arriving at ${s.n} of ${BOTS}${s.allowed !== null && s.allowed < BOTS ? ` (the pacer allows ${s.allowed} on this device)` : ' (none for 30 s)'}`)
+    }
+    await host.waitForTimeout(1000)
+  }
   await host.waitForFunction(() => window.syn3hNet.remotes.size >= 1, null, { timeout: 60000 })
   // Let the bots finish arriving (a materializing vehicle ignores a teleport); the guest needs no detail.
   await host.waitForTimeout(4000)
