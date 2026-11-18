@@ -45,5 +45,9 @@ test('pins snapshot, serves cache policy and rejects escaped files', async () =>
     assert.equal((await fetch(base + '/missing')).status, 404);
     assert.equal((await fetch(base, { method: 'POST' })).status, 405);
     assert.equal((await fetch(base + '/ws')).status, 426);
+    // The lobby's presence poll gets an empty snapshot, not a 404 the smoke counts as an error.
+    response = await fetch(base + '/presence');
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).byRecipe, []);
   } finally { if (app) await app.close(); await rm(root, { recursive: true, force: true }); }
 });

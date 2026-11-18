@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-17 13:00 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-17 17:25 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,9 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.1707 (release-45), source 545c242d, frozen copy 20261117-115102-545c242d,
-Worker version 51a5471d, at https://www.syn3h.com/ since 17 November 12:48 PST. Main is
-8b13a996 (the release record).
+Live: v26.11.1709 (release-47), source 28442de0, frozen copy 20261117-164026-28442de0,
+Worker version 7fd0a8e7, at https://www.syn3h.com/ since 17 November 17:16 PST.
 
 Releases since the evening of 16 November, all accepted unless marked:
 
@@ -30,6 +29,8 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.1704 | 42 | m-bots-1704 | quieter bots, proper rescues, chat overlay switch |
 | v26.11.1705 | 43 | | (see release-notes/history.tsv) |
 | v26.11.1706 | 44 | m-reconnect-1706 | a throwing disconnect handler still reconnects; room log tags; latency proxy keeps order |
+| v26.11.1708 | 46 | m-smooth-1708 | smooth planet entry and exit, paced bots, bot races for a host |
+| v26.11.1709 | 47 | m-hud-1709 | neutral HUD, About/Updates icons, ALT and units, brighter captions |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
@@ -112,7 +113,15 @@ Lesson (17 Nov): small clean samples misled us three times (1705's 0 failures in
 Lobby checks with fixed waits (lobby-logo's 700 ms "ordinary lobby animates") fail under
 load; two unexplained 1707 failures did not reproduce in 8 probed runs.
 GitHub's hosted machine loses its WebGPU device: 737 page errors on 1706, 6 on 1707 after the
-device-loss guard. The hosted reconnect step passes on both.
+device-loss guard. The hosted reconnect step passes on both. Since 17 Nov evening the hosted
+run sets SYN3H_CHECK_TOLERATE_DEVICE_LOSS=1: it still runs WebGPU and still exercises device
+loss (the path that found the reconnect bug), but "no page errors" passes over exactly the
+device-loss messages and prints them. A device-loss regression that only adds those messages
+will not fail it; rerun the local forced-loss reproduction from 60076fc5 after touching
+device-loss handling. (A WebGL 2 hosted run was tried and dropped: software WebGL on the
+GPU-less runner did not bring both pages up.)
+The heavy hold is live (tools/heavy.py): a release holds new heavy jobs until it exits; a
+hold over 3 h old or naming a dead PID is ignored.
 Also listed: roll_back ignores INT and TERM (done in release.sh); the rollback verification
 retries its smoke after settling (done). The full proposal is /tmp/orch-reliability-proposal.md.
 

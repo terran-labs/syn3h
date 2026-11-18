@@ -23,7 +23,11 @@ export class Connection {
   /** Opens after the first, so diagnostics can tell a dropped and recovered connection. */
   reconnects = 0
   /** The last few closes, newest last: what ended each socket, for diagnostics. */
-  readonly closes: { code: number; reason: string; clean: boolean; wasOpen: boolean; at: number }[] = []
+  readonly closes: { code: number; reason: string; clean: boolean; wasOpen: boolean; at: number; openMs: number; rxMs: number; txMs: number }[] = []
+  /** When the current socket opened, and last received or sent anything (performance.now()). */
+  private openedAt = 0
+  private lastRx = 0
+  private lastTx = 0
   /** Handler failures by handler, for diagnostics; only the first of each is logged. */
   readonly handlerErrors: Partial<Record<Handler, number>> = {}
   private opened = false
@@ -46,6 +50,8 @@ export class Connection {
   }
 
   close(): void {
+    // Closing our own socket is rare and deliberate; say where from, for the drop diagnostics.
+    if (this.ws) console.info('Syn3h: closing the room connection', new Error().stack?.split('\n').slice(2, 5).join(' | '))
     this.stopped = true
     this.clearTimer()
     const ws = this.ws
@@ -55,7 +61,7 @@ export class Connection {
   }
 
   send(data: string | Uint8Array<ArrayBuffer>): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(data)
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) { this.ws.send(data); this.lastTx = performance.now() }
   }
 
   /** Run a handler; a throw is reported (first time) and counted, never propagated. */
@@ -82,6 +88,7 @@ export class Connection {
     const previous = this.ws
     this.ws = null
     if (previous) {
+      console.info('Syn3h: replacing the room connection', new Error().stack?.split('\n').slice(2, 5).join(' | '))
       try { previous.close() } catch { /* already closing */ }
     }
     this.state = 'connecting'
@@ -97,6 +104,7 @@ export class Connection {
     ws.onopen = () => {
       if (this.ws !== ws || this.stopped) return
       this.state = 'open'
+      this.openedAt = this.lastRx = this.lastTx = performance.now()
       if (this.opened) this.reconnects++
       this.opened = true
       if (this.guard('open', () => this.onOpen())) {
@@ -109,6 +117,7 @@ export class Connection {
     }
     ws.onmessage = (e) => {
       if (this.ws !== ws || this.stopped) return
+      this.lastRx = performance.now()
       if (typeof e.data === 'string') { const text = e.data; this.guard('text', () => this.onText(text)) }
       else if (e.data instanceof ArrayBuffer) { const data = e.data; this.guard('binary', () => this.onBinary(data)) }
     }
@@ -116,7 +125,8 @@ export class Connection {
       if (this.ws !== ws) return
       this.ws = null
       const wasOpen = this.state === 'open'
-      this.closes.push({ code: e.code, reason: e.reason, clean: e.wasClean, wasOpen, at: Math.round(performance.now()) })
+      const now = performance.now(), since = (t: number) => wasOpen ? Math.round(now - t) : -1
+      this.closes.push({ code: e.code, reason: e.reason, clean: e.wasClean, wasOpen, at: Math.round(now), openMs: since(this.openedAt), rxMs: since(this.lastRx), txMs: since(this.lastTx) })
       if (this.closes.length > 10) this.closes.shift()
       this.state = 'closed'
       // The retry first: nothing a handler does can then stop it, except a deliberate close().
