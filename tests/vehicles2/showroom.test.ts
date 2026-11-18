@@ -323,6 +323,13 @@ describe('showroom vehicle shading',()=>{
   release(b)
   expect(disposed).toBe(1)
  })
+ it('paints a later clone of a vehicle mesh (the lab\'s stress copies) in that vehicle\'s colours',()=>{
+  params.set(vehicleShading.def.id,2)
+  const a=vehicle(0xff0000,0x00ff00),b=vehicle(0x0000ff,0xffff00),copy=b.root.clone(true),body=copy.children[0] as T.Mesh
+  expect(body.material).toBe(a.body.material)
+  expect(drawnFor((body.material as T.MeshStandardNodeMaterial).colorNode,body)).toContain(b.paint.color)
+  a.dispose();b.dispose()
+ })
  it('glows in lava only on the vehicle that is in it, though the material is shared',()=>{
   params.set(vehicleShading.def.id,2)
   const a=vehicle(0xff0000,0x00ff00),b=vehicle(0xff0000,0x00ff00)

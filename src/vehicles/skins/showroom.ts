@@ -149,10 +149,21 @@ type N = any
 interface Paint { sources: readonly Standard[]; accent: T.Color | null }
 /** By mesh, not userData: Object3D.clone copies userData through JSON. */
 const paintOf = new WeakMap<T.Object3D, Paint>()
+/**
+ * By geometry, for a mesh cloned from a registered one after the fact (the vehicle lab's stress
+ * copies): a clone shares its original's geometry. Without this it would draw in the colours of
+ * whichever vehicle first built the shared material. Found once, then kept by mesh.
+ */
+const paintOfGeometry = new WeakMap<object, Paint>()
+function paintFor(object: T.Object3D): Paint | undefined {
+  let paint = paintOf.get(object)
+  if (!paint) { const geometry = (object as Partial<T.Mesh>).geometry; paint = geometry ? paintOfGeometry.get(geometry) : undefined; if (paint) paintOf.set(object, paint) }
+  return paint
+}
 /** A colour read from the mesh being drawn, or `fallback` (a copy) for a mesh with no paint of its own. */
 function perObject(fallback: T.Color, read: (paint: Paint) => T.Color | null | undefined): N {
   const own = fallback.clone()
-  return uniform(own).onObjectUpdate(({ object }) => { const paint = object ? paintOf.get(object) : undefined; return (paint && read(paint)) ?? own })
+  return uniform(own).onObjectUpdate(({ object }) => { const paint = object ? paintFor(object) : undefined; return (paint && read(paint)) ?? own })
 }
 /** Shared materials by signature, with how many vehicle tier sets hold each. */
 const pool = new Map<string, { material: T.Material; users: number }>()
@@ -601,7 +612,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
   for (let o: T.Object3D | null = root; o; o = o.parent) { const c = o.userData.vehicleColors as { accent?: T.Color } | undefined; if (c?.accent) { accent = c.accent; break } }
   // Lava glow coats a vehicle that can be heated; a model with no vehicle (a viewer) is left plain.
   const heated = Boolean(heatOwner(root))
-  for (const e of entries) paintOf.set(e.mesh, { sources: mergedSurfaces.get(e.source) ?? [e.source], accent })
+  for (const e of entries) { const paint = { sources: mergedSurfaces.get(e.source) ?? [e.source], accent }; paintOf.set(e.mesh, paint); paintOfGeometry.set(e.mesh.geometry, paint) }
   // Read before anything is decorated: tier 0 decoration wraps these nodes in place.
   const authored = new Map<T.Material, N | null>()
   for (const e of entries) authored.set(e.source, (e.source as unknown as T.MeshStandardNodeMaterial).emissiveNode ?? null)
