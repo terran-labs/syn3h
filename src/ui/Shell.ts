@@ -37,7 +37,7 @@ import { FocusHud } from './inspector/FocusHud'
 import { bindSwitch, switchWord } from './inspector/switch'
 import { RaceHud, type RaceRole } from './RaceHud'
 import type { RaceState } from '../../shared/protocol'
-import { glassStyle, diagnostics, interfaceMode } from './inspector/params'
+import { glassStyle, diagnostics, interfaceMode, mapNorthUp } from './inspector/params'
 import { InterfaceVeil, INTERFACE_KEY, nextInterfaceMode, setInterfaceMode } from './interfaceMode'
 import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
@@ -60,7 +60,7 @@ import { UpdateNotice } from './updates/UpdateNotice'
 import { rollPlayerName } from './data/names'
 import { cleanPlayerName, loadPlayerName, savePlayerName, type NameSource } from './playerName'
 import { TintTransition, randomTintPair } from '../vehicles/tints'
-import { Minimap, type MapEntity } from './Minimap'
+import { Minimap, cameraHeading, type MapEntity } from './Minimap'
 import { bootLoading } from './LoadingScreen'
 import { tapToBegin } from './TapToBegin'
 import { renderHelp, touchHelp } from './VehicleHelp'
@@ -127,6 +127,8 @@ export function captionAccent(world: { land: number; sea: number; glow?: boolean
 }
 /** Pixels from a planet's limb to the top of its caption, at the captions' smallest size (it grows with them). */
 const CAPTION_GAP = 5
+/** The sidebar's phone layout, upright or on its side (inspector/motion.css uses the same). */
+const PHONE_SIDEBAR = '(max-width: 700px), (max-height: 500px)'
 /** Must match the short landscape block in shell.css. */
 const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
 const LOBBY_LINKS = OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''
@@ -136,6 +138,15 @@ declare const __SYN3H_BUILD__: string | undefined
 const build = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? __SYN3H_BUILD__ : undefined
 /** Controls the shell wires, shown in the lobby settings panel (LobbySettings). */
 // On/off settings are the standard switch (inspector/switch.ts); bindSwitch gives them role and state.
+/**
+ * The top row's icons, drawn as strokes on a 24 unit grid like the lobby's gear, About and
+ * Updates icons (no image files). Leave world is a door with an arrow going out. An arrow
+ * leaving a planet's rim was tried beside it and read as the male symbol at button size.
+ */
+export const PAUSE_ICON = 'M9.2 6.8v10.4M14.8 6.8v10.4'
+export const PLAY_ICON = 'M9 6.4v11.2l8.6-5.6Z'
+export const LEAVE_WORLD_ICON = 'M13 4.8H7.2A1.2 1.2 0 0 0 6 6v12a1.2 1.2 0 0 0 1.2 1.2H13M10.5 12h9M16.6 9l3 3-3 3'
+const railIcon = (path: string) => `<svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${path}"/></svg>`
 const switchHtml = (className: string, text: string, inputAttributes = '') => `<label class="s3-switch-field ${className}"><span class="s3-switch-text">${text}</span><input type="checkbox"${inputAttributes}><span class="s3-switch-word" aria-hidden="true">off</span></label>`
 const presentationHtml = switchHtml('presentation-toggle', 'Presentation mode · P')
 const hostHtml = `<fieldset class="host-controls"><legend>Host</legend>${switchHtml('host-lock', 'Lock shared sliders', ' id="host-lock"')}<p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>`
@@ -164,6 +175,8 @@ export class Shell implements System {
   private joinOpener?: HTMLElement
   private readonly matchHud: MatchHud
   private minimap?: Minimap
+  /** The camera's heading across the ground, kept for when it looks straight down. */
+  private viewHeading = 0
   private readonly panels: SlidingPanels
   private readonly board: Scoreboard
   private readonly hudBoard: Scoreboard
@@ -171,7 +184,6 @@ export class Shell implements System {
   /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
   private advancedGroups?: readonly string[]
   private worldDirty = true
-  private worldShown = ''
   private readonly inspector: Inspector
   private readonly focusHud: FocusHud
   private readonly raceHud: RaceHud
@@ -279,6 +291,10 @@ export class Shell implements System {
       onColor: (key, value) => this.setTint(key, value),
       onRandomizeColors: () => this.randomizeTint(),
       onSaveWorld: () => this.saveWorld(),
+      // Phones keep one card open at a time; the query matches the sidebar's phone layout
+      // (inspector/motion.css). Which cards are open survives a reload.
+      oneOpen: () => matchMedia(PHONE_SIDEBAR).matches,
+      rememberOpen: 'syn3h.sidebar.open',
     })
     // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
     // function of cursor locking." With the cursor captured you are driving and only the
@@ -286,10 +302,14 @@ export class Shell implements System {
     // state: `syncPanels` derives it from the real lock, every frame and on every lock event.
     this.inspector.open = false
     const railTop = this.inspector.element.querySelector('.wi-top')!
-    const players = document.createElement('details'); players.className = 'rail-players'
-    players.innerHTML = `<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><button type="button" class="rail-about" aria-haspopup="dialog">About &amp; how to play</button>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
+    // Players & session is a card like the others: same header, chevron, easing and memory.
+    const players = document.createElement('div')
+    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite about how to play help connection diagnostics mute audio sound"><button type="button" class="rail-invite">Invite players</button><button type="button" class="rail-about" aria-haspopup="dialog">About &amp; how to play</button>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
-    this.inspector.setSessionCard(players)
+    this.inspector.addCard('players', 'Players & session', players, () => {
+      const count = this.element.querySelectorAll('.hud-scoreboard .score-row').length
+      return count > 1 ? `${count} players` : count ? 'Just you' : ''
+    }, { after: 'game' })
     // Performance follows World; its controls remain part of the searchable card stack.
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
     // The lobby's settings: a gear in the lower right of the galaxy, with the running version
@@ -316,20 +336,21 @@ export class Shell implements System {
     })
     this.lobbySettings.about.addEventListener('click', () => this.openLobbySheet(this.aboutSheet), { signal })
     this.lobbySettings.updates.addEventListener('click', () => this.openLobbySheet(this.updatesSheet), { signal })
-    // The foot is not a card of its own: one button under the stack, like the lobby's buttons.
+    // The top row (the owner, 17 November 2026): exactly three controls, side by side with no
+    // plate around them, sized like a card's title row so the row reads as the first of the
+    // stack. Search takes the free width. The world's name is in the World card's summary.
+    const command = document.createElement('div'); command.className = 'rail-command'
+    command.innerHTML = `<button type="button" class="rail-pause wi-glass" aria-label="Pause" data-tip="Pause">${railIcon(PAUSE_ICON)}</button><button type="button" class="exit-world wi-glass" aria-label="Leave world" data-tip="Leave world">${railIcon(LEAVE_WORLD_ICON)}</button>`
+    const search = railTop.querySelector<HTMLInputElement>('.wi-search')!; search.classList.add('wi-glass'); command.prepend(search)
+    // Under the stack, only what docks there now and then: the update chip and a slow-frames
+    // recommendation (PerformancePanel). Empty, it takes no space.
     const foot = document.createElement('div'); foot.className = 'rail-foot'
-    // Header and footer stay outside the scrolling card stack.
-    const command = document.createElement('div'); command.className = 'rail-command wi-glass'
-    command.innerHTML = '<div class="rail-tools"><strong class="rail-world"></strong><button type="button" class="rail-pause">Pause</button></div>'
-    command.querySelector('.rail-world')!.after(railTop.querySelector('.wi-search')!)
-    // The foot holds one thing: the way out. The world's own actions are in the World card.
-    foot.innerHTML = `<button type="button" class="exit-world"><svg class="wi-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M9.5 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h5.5M7 8h7M11.5 5.5 14 8l-2.5 2.5"/></svg><span>Leave world</span></button>`
     railTop.remove()
     const cards = this.inspector.element.querySelector('.wi-cards')!
     cards.before(command); cards.after(foot)
     // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
     // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
-    foot.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
+    command.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
     const exitConfirm = this.element.querySelector<HTMLElement>('.exit-confirm')!
     exitConfirm.addEventListener('click', event => { if (event.target === exitConfirm) this.answerExit(false) }, { signal })
     exitConfirm.querySelector('.exit-stay')!.addEventListener('click', () => this.answerExit(false), { signal })
@@ -344,7 +365,7 @@ export class Shell implements System {
     // With the galaxy, so it goes when a panel opens, play starts or the descent begins. It
     // sits just under the wordmark, and the galaxy leaves it that band (updateBand).
     this.element.querySelector('.galaxy-ui')!.prepend(this.updateNotice.banner)
-    command.append(this.updateNotice.chip)
+    foot.append(this.updateNotice.chip)
     this.element.querySelector('.pause-about')!.addEventListener('click', () => this.openAbout(), { signal })
     const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
     guide.querySelector('.about-back')!.addEventListener('click', () => this.closeAbout(), { signal })
@@ -365,7 +386,7 @@ export class Shell implements System {
     // Touch has no cursor to capture, so one control switches between driving and the panels.
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
     toggle.addEventListener('click', () => { this.touchPanels = !this.touchPanels; this.syncPanels() }, { signal })
-    command.querySelector('.rail-pause')!.addEventListener('click', () => this.requestPause(), { signal })
+    command.querySelector('.rail-pause')!.addEventListener('click', () => { if (this.userPaused) this.requestResume(); else this.requestPause() }, { signal })
     this.element.querySelector('.pause-veil')!.addEventListener('click', () => this.requestResume(), { signal })
     // Follow the lock itself, not what was asked for: the browser can drop it on its own
     // (Escape, a switch of window, a system dialog) and can refuse a request.
@@ -1102,6 +1123,27 @@ export class Shell implements System {
       if (locked && focused instanceof HTMLElement && this.gearSelector.element.contains(focused)) focused.blur()
     }
   }
+  /** Add a card to the end of the sidebar's stack (Chat, src/ui/chat/ChatCard.ts). */
+  addCard(id: string, title: string, body: HTMLElement, summary: () => string): HTMLElement { return this.inspector.addCard(id, title, body, summary) }
+  /**
+   * Show the panels with this card open (Y and the left column's Chat row). Freeing the cursor
+   * returns the interface to Full; the mode the player had comes back with returnToDriving.
+   */
+  showCard(id: string): void {
+    if (!this.playing) return
+    if (!this.inspector.open) this.modeBeforeCard = Math.round(interfaceMode.value)
+    // Full now, not when the cursor is let go: the card's field must be focusable at once.
+    if (Math.round(interfaceMode.value) !== 0) setInterfaceMode(0)
+    this.showPanels(); this.inspector.revealCard(id)
+  }
+  private modeBeforeCard: number | null = null
+  /** True while the sidebar is showing. */
+  get panelsOpen(): boolean { return this.inspector.open }
+  /** Hide the panels and go back to driving: on a desktop, capture the cursor. */
+  returnToDriving(): void {
+    this.drive()
+    if (this.modeBeforeCard !== null) { setInterfaceMode(this.modeBeforeCard); this.modeBeforeCard = null }
+  }
   /** Show the panels: on a desktop that is letting the cursor go. */
   private showPanels(): void { if (this.capturesCursor) this.releaseCursor(); else this.touchPanels = true; this.syncPanels() }
   /** Return to driving: on a desktop that is capturing the cursor, which needs a gesture. */
@@ -1137,6 +1179,9 @@ export class Shell implements System {
     this.userPaused = user
     const veil = this.element.querySelector<HTMLButtonElement>('.pause-veil')!
     veil.hidden = !user; this.element.classList.toggle('is-paused', user)
+    // The sidebar's Pause shows play while paused, and resumes.
+    const pause = this.element.querySelector<HTMLButtonElement>('.rail-pause')
+    if (pause) { const word = user ? 'Resume' : 'Pause'; pause.setAttribute('aria-label', word); pause.dataset.tip = word; pause.querySelector('path')!.setAttribute('d', user ? PLAY_ICON : PAUSE_ICON) }
     this.element.querySelector<HTMLButtonElement>('.pause-about')!.hidden = !user
     this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking || this.aboutOpen
     if (user) {
@@ -1744,13 +1789,25 @@ export class Shell implements System {
   setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {syn3hNet?:{players?:Map<number,{bot?:boolean}>}}).syn3hNet?.players; const count = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length
     // The status arrives every frame; the invite only depends on it through the player count.
     if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }
+  /**
+   * The bearing the compass readout shows, the same as the minimap's top: the camera's
+   * heading when the map is heading up, your vehicle's when it is north up.
+   */
+  private compassHeading(): number { return mapNorthUp.value || !this.minimap ? this.self?.heading ?? 0 : this.minimap.turn }
   setSpeed(metresPerSecond: number): void {
     this.speed.textContent = String(Math.round(speedValue(metresPerSecond)))
     const unit = this.speed.nextElementSibling!, text = speedUnit().toUpperCase(); if (unit.textContent !== text) unit.textContent = text
   }
   update(dt = 0): void {
     if (this.tintTransition.update(dt)) this.onTint?.(this.tintTransition.current.body, this.tintTransition.current.accent, false)
-    this.touch.update(); if (!this.menuVisible) this.minimap?.update()
+    this.touch.update()
+    if (!this.menuVisible && this.minimap) {
+      // The camera has moved for this frame already (the chase camera updates before the shell).
+      this.minimap.setNorthUp(mapNorthUp.value)
+      this.viewHeading = cameraHeading(this.game.camera.quaternion, this.viewHeading)
+      this.minimap.setView(this.viewHeading)
+      this.minimap.update()
+    }
     // A captured cursor alone is insufficient while a menu or another flow suspends input.
     this.syncPanels()
     this.performancePanel.setContext(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'))
@@ -1768,12 +1825,7 @@ export class Shell implements System {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
       const world = `${currentWorldName()} · ${currentPlanet().label}`
-      if (world !== this.worldShown) {
-        this.worldShown = world
-        const label = this.element.querySelector<HTMLElement>('.rail-world')!
-        label.textContent = world; label.title = world
-      }
-      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.seaAltitude, thrust: this.telemetry.thrust, heading: this.self?.heading ?? 0, world, hour: currentHour() })
+      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.seaAltitude, thrust: this.telemetry.thrust, heading: this.compassHeading(), world, hour: currentHour() })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
     // The stylesheet drops frost at the lowest graphics level.

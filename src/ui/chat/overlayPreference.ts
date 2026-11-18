@@ -1,5 +1,5 @@
 /**
- * "Show new messages over the game" (shared/chat.ts chat.overlay): remembered on this device,
+ * "Show new chat over the game" (shared/chat.ts chat.overlay): remembered on this device,
  * and off by default on touch-first devices, where a line popping up mid-screen covers half
  * the view. A player's own choice, once made, wins over the default.
  */
