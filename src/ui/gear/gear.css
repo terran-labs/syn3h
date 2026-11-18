@@ -65,7 +65,7 @@
 :root .gear-selector .gs-drum button.gs-item:focus-visible .gs-text { text-decoration: underline 1px var(--s3-accent-2); text-underline-offset: 5px; }
 .gear-selector .gs-label {
   display: inline-flex; align-items: baseline; gap: 10px; white-space: nowrap;
-  transform: scale(var(--s, 1)); transform-origin: 0 50%;
+  transform: scale(calc(var(--s, 1) * var(--fit, 1))); transform-origin: 0 50%;
   transition: transform .22s cubic-bezier(.2,.8,.2,1);
 }
 .gear-selector .gs-index { font: 500 11px/1 'Barlow', sans-serif; color: var(--s3-soft, var(--s3-dim)); letter-spacing: .08em; font-variant-numeric: tabular-nums; }
@@ -99,13 +99,16 @@
 /* Cursor captured: a quieter, slimmer display the pointer passes through. */
 .gear-selector[data-mode=locked] { --gs-pitch: 32px; --gs-width: 172px; opacity: .84; }
 .gear-selector[data-mode=locked] .gs-drum { pointer-events: none; }
-.gear-selector[data-mode=locked] .gs-desc { display: none; }
+/* Captured: names and state only. The description, the key caps beside each name and every
+   hint show only while the cursor is free (the owner, 17 November 2026). */
+.gear-selector[data-mode=locked] :is(.gs-desc, .gs-index, .gs-hints, .gs-keyhint) { display: none; }
 .gear-selector[data-mode=locked]::before { opacity: .7; }
 .gear-selector[data-mode=free] .gs-keyhint { opacity: .6; }
 
 /* Touch: bigger targets; the action buttons replace key hints. */
 .gear-selector[data-touch] { --gs-pitch: 52px; --gs-width: 180px; --gear-detail-width: 190px; }
-.gear-selector[data-touch] .gs-hints, .gear-selector[data-touch] .gs-keyhint { display: none; }
+/* Touch has no keys: no number caps and no key hints. */
+.gear-selector[data-touch] :is(.gs-hints, .gs-keyhint, .gs-index) { display: none; }
 @media (max-width: 700px) {
   .gear-selector { --gs-slots: 3.6; --gs-width: 164px; --gear-detail-width: 170px; left: var(--gear-left, max(12px, calc(env(safe-area-inset-left) + 10px))); }
   .gear-selector .gs-desc { font-size: 12px; }
@@ -114,19 +117,25 @@
   .gear-selector { --gs-slots: 3; top: var(--gear-top, 40%); }
 }
 
-/* Extra gear actions on touch, left of the shell's own touch buttons. */
+/* Extra gear actions on touch: the next column out from the shell's own thumb buttons, the
+   same size and on the same two rows (the --thumb-* grid in src/ui/touch-stick.css). The first
+   action stands in the bottom row, the second above it. */
 .gear-actions {
-  position: fixed; z-index: var(--gear-actions-z, 12);
-  right: var(--gear-actions-right, calc(max(24px, env(safe-area-inset-right)) + 148px));
-  bottom: var(--gear-actions-bottom, max(30px, env(safe-area-inset-bottom)));
-  display: flex; flex-direction: column-reverse; gap: 10px; pointer-events: none;
+  --gear-thumb-offset: calc(var(--thumb-columns, 2) * (var(--thumb-size, 62px) + var(--thumb-gap, 12px)));
+  /* Above the minimap (z 12, later in the page): on a narrow phone the Grapple's column can
+     reach the map in the lower left, and a button must never be drawn under it. */
+  position: fixed; z-index: var(--gear-actions-z, 13);
+  right: var(--gear-actions-right, calc(max(var(--thumb-margin, 24px), env(safe-area-inset-right)) + var(--gear-thumb-offset)));
+  bottom: var(--gear-actions-bottom, max(var(--thumb-bottom, 30px), env(safe-area-inset-bottom)));
+  display: flex; flex-direction: column-reverse; gap: var(--thumb-gap, 12px); pointer-events: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
+html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actions-left, calc(max(var(--thumb-margin, 24px), env(safe-area-inset-left)) + var(--gear-thumb-offset))); }
 :root .gear-actions button.gs-action {
-  width: var(--gear-action-size, 60px); height: var(--gear-action-size, 60px); min-height: 0; padding: 0; margin: 0;
+  width: var(--thumb-size, 62px); height: var(--thumb-size, 62px); min-height: 0; padding: 0 4px; margin: 0;
   border-radius: 50%; border: 1px solid var(--s3-line); box-shadow: var(--halo-glow, 0 0 6px color-mix(in srgb, var(--s3-accent) 12%, transparent));
   background: radial-gradient(closest-side, color-mix(in srgb, var(--s3-panel) 90%, transparent), color-mix(in srgb, var(--s3-panel) 45%, transparent)); color: var(--s3-ink);
-  font: 500 11px/1.15 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase;
+  font: 500 11px/1.1 'Barlow', sans-serif; letter-spacing: .1em; text-transform: uppercase; white-space: normal; overflow-wrap: anywhere;
   text-shadow: var(--halo-under, 0 0 2px var(--s3-panel), 0 1px 7px var(--s3-panel)); -webkit-backdrop-filter: none; backdrop-filter: none;
   pointer-events: auto; touch-action: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
@@ -134,9 +143,6 @@
 :root .gear-actions button.gs-action.held {
   background: color-mix(in srgb, var(--s3-accent) 10%, transparent); border-color: var(--s3-accent-2);
   box-shadow: inset 0 0 8px color-mix(in srgb, var(--s3-accent) 20%, transparent), 0 0 6px color-mix(in srgb, var(--s3-accent) 20%, transparent);
-}
-@media (max-width: 700px), (max-height: 500px) {
-  .gear-actions { --gear-action-size: 56px; right: var(--gear-actions-right, calc(max(18px, env(safe-area-inset-right)) + 150px)); bottom: var(--gear-actions-bottom, max(18px, env(safe-area-inset-bottom))); gap: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

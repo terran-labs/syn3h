@@ -252,7 +252,9 @@ export class GameAudio implements System {
     ceiling.curve=curve;ceiling.oversample='2x'
     this.submerge = context.createBiquadFilter(); this.submerge.type = 'lowpass'; this.submerge.frequency.value = 20000
     this.meter = context.createAnalyser(); this.meter.fftSize = 2048; this.meterData = new Float32Array(this.meter.fftSize)
-    this.master = context.createGain(); this.master.connect(this.submerge).connect(limiter).connect(ceiling).connect(context.destination); ceiling.connect(this.meter)
+    // Silent until the arrival fade raises it (start). The graph may be built on a clock that is
+    // already running (a key or tap during loading), and nothing may sound at full level meanwhile.
+    this.master = context.createGain(); this.master.gain.value = 0; this.master.connect(this.submerge).connect(limiter).connect(ceiling).connect(context.destination); ceiling.connect(this.meter)
     this.music = context.createGain(); this.music.connect(this.master)
     this.effects = context.createGain(); this.effects.connect(this.master)
     this.cueBus=context.createGain();this.cueBus.connect(this.master)

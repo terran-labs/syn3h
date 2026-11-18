@@ -8,7 +8,8 @@
  * held, contested and won, the join QR view and the in-game menu. In every in-game state it
  * measures the thumb stick (when held) and its first-run hint, each action button, the minimap, the HUD, the hill strip, the
  * menu buttons, the controls card, the toast, any announcement and the vehicle's place on
- * screen, and fails if any two of them overlap. `--record` only reports, for capturing a
+ * screen, and fails if any two of them overlap, or if the thumb buttons stop forming one
+ * grid of equal circles on two rows (tests/ui/thumbGrid.mjs). `--record` only reports, for capturing a
  * build known to fail. Match and score states are fixtures fed to the shell.
  *
  * It then plays a guest's first run on a slow phone: see the section near the end. That part
@@ -16,6 +17,7 @@
  */
 import { chromium, devices, webkit } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { thumbGrid } from './thumbGrid.mjs'
 
 const label = process.argv[2] ?? 'run'
 const strict = !process.argv.includes('--record')
@@ -43,11 +45,14 @@ const measure = page => page.evaluate(() => {
       boxes.push({ name: selector + (el.dataset.action ? `[${el.dataset.action}]` : ''), group, left: r.left, right: r.right, top: r.top, bottom: r.bottom })
     }
   }
-  add('.touch-stick', 'stick'); add('.touch-stick-hint', 'stick'); add('.touch-actions button', 'actions'); add('.shell-minimap'); add('.shell-hud'); add('.match-hud')
-  add('.hud-navigation'); add('.spawn-help'); add('.shell-toast'); add('.match-announcement')
+  add('.touch-stick', 'stick'); add('.touch-stick-hint', 'stick'); add('.touch-actions button', 'actions'); add('.gear-actions button', 'actions'); add('.shell-minimap'); add('.shell-hud'); add('.match-hud')
+  add('.hud-navigation'); add('.chat-toggle'); add('.spawn-help'); add('.shell-toast'); add('.match-announcement')
   const overlaps = []
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
     const a = boxes[i], b = boxes[j]
+    // The owner's call (17 November 2026): the minimap stays in the lower left as on desktop and
+    // the floating stick may land on top of it for a moment. The map takes no touches.
+    if ([a.name, b.name].includes('.touch-stick') && [a.name, b.name].includes('.shell-minimap')) continue
     if (a.group !== b.group && a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1) overlaps.push(`${a.name} × ${b.name}`)
   }
   const offscreen = boxes.filter(b => b.group !== 'vehicle' && (b.left < -1 || b.top < -1 || b.right > innerWidth + 1 || b.bottom > innerHeight + 1)).map(b => b.name)
@@ -72,8 +77,8 @@ for (const view of layouts) {
     await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 120000 })
     const shot = async (state, inGame = true) => {
       await page.screenshot({ path: `${out}/${label}-${view.name}-${vehicle}-${state}.png` })
-      const m = inGame ? await measure(page) : { overlaps: [], offscreen: [] }
-      report.states.push({ view: view.name, vehicle, state, overlaps: m.overlaps, offscreen: m.offscreen, boxes: m.boxes })
+      const m = inGame ? { ...await measure(page), grid: await page.evaluate(thumbGrid) } : { overlaps: [], offscreen: [], grid: [] }
+      report.states.push({ view: view.name, vehicle, state, overlaps: m.overlaps, offscreen: m.offscreen, grid: m.grid, boxes: m.boxes })
     }
     const panel = async id => {
       await page.evaluate(id => window.syn3h.shell.showPanel(id), id)
@@ -222,8 +227,8 @@ for (const row of report.guest) console.log(`guest ${row.view}: lobby usable in 
 for (const failure of guestFailures) console.log(`GUEST FAIL ${failure}`)
 if (strict && guestFailures.length) process.exitCode = 1
 await browser.close(); await safari.close()
-const bad = report.states.filter(s => s.overlaps.length || s.offscreen.length)
+const bad = report.states.filter(s => s.overlaps.length || s.offscreen.length || s.grid.length)
 await writeFile(`${out}/${label}-report.json`, JSON.stringify(report, null, 1))
-for (const s of report.states) console.log(`${s.view} ${s.vehicle} ${s.state}: ${s.overlaps.length || s.offscreen.length ? [...s.overlaps, ...s.offscreen.map(n => `${n} off screen`)].join('; ') : 'clear'}`)
+for (const s of report.states) console.log(`${s.view} ${s.vehicle} ${s.state}: ${s.overlaps.length || s.offscreen.length || s.grid.length ? [...s.overlaps, ...s.offscreen.map(n => `${n} off screen`), ...s.grid.map(g => `thumb grid: ${g}`)].join('; ') : 'clear'}`)
 console.log(`errors: ${JSON.stringify(report.errors)}`)
 if (report.errors.length || (strict && bad.length)) process.exitCode = 1

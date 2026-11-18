@@ -88,7 +88,6 @@ Press **H** in the game at any time for the controls of the vehicle you are in.
 | Space | The vehicle's special: wings on the buggy, hover or flight on the jet, a hop inside the Zorb ball |
 | X | Roll inside a Zorb ball, or leave it |
 | L, Enter or left click | Use the selected gear (Plasma Tag to start) |
-| T | Next gear |
 | 1 to 9 | Choose a gear by its place in the rack |
 | H or ? | Show or hide the controls |
 | J | Show or hide the invite panel with its QR code |

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ARROW, FORMS, MAP_LUMA, RIM, UNITS, heightPixels, mapPoint, markColor, markShades, markLook, placeMark, rimFade, type MarkPlace } from '../../src/ui/Minimap'
+import { Quaternion, Vector3, Matrix4 } from 'three'
+import { ARROW, FORMS, MAP_LUMA, RIM, UNITS, cameraHeading, followTurn, turnOffset, heightPixels, mapPoint, markColor, markShades, markLook, placeMark, rimFade, type MarkPlace } from '../../src/ui/Minimap'
 import { wrapDelta } from '../../shared/wrap'
 
 describe('minimap projection and terrain cache', () => {
@@ -116,5 +117,70 @@ describe("the map shows the world's own colours", () => {
     expect(ground[0]).toBeGreaterThan(ground[2])
     const sea = rgb(heightPixels({ size: 600, heightAt: () => 0, liquidKindAt: () => 'water' }, 4))
     expect(sea[2]).toBeGreaterThan(sea[0])
+  })
+})
+
+describe('heading-up minimap', () => {
+  // Game headings: 0 faces north (-z), -π/2 east, π south; east is +x, which is screen right north up.
+  const NORTH = 0, EAST = -Math.PI / 2, SOUTH = Math.PI
+  const at = (dx: number, dz: number, turn: number) => turnOffset(dx, dz, turn, { x: 0, y: 0 })
+  it('puts a target due east on the right facing north, at the top facing east, on the left facing south', () => {
+    const north = at(100, 0, NORTH), east = at(100, 0, EAST), south = at(100, 0, SOUTH)
+    expect(north.x).toBeCloseTo(100); expect(north.y).toBeCloseTo(0)
+    expect(east.x).toBeCloseTo(0); expect(east.y).toBeCloseTo(-100)
+    expect(south.x).toBeCloseTo(-100); expect(south.y).toBeCloseTo(0)
+  })
+  it("puts whatever is to the camera's right on the right of the map, not mirrored", () => {
+    for (const heading of [0, .7, -1.9, 2.8]) {
+      const ahead = [-Math.sin(heading), -Math.cos(heading)], right = [Math.cos(heading), -Math.sin(heading)]
+      const a = at(ahead[0] * 50, ahead[1] * 50, heading), r = at(right[0] * 50, right[1] * 50, heading)
+      expect(a.x).toBeCloseTo(0); expect(a.y).toBeCloseTo(-50)
+      expect(r.x).toBeCloseTo(50); expect(r.y).toBeCloseTo(0)
+    }
+  })
+  it('sits the N at the top only when the camera faces north', () => {
+    for (let deg = 0; deg < 360; deg += 15) {
+      const n = at(0, -1, deg * Math.PI / 180), top = n.y < -.999
+      expect(top).toBe(deg === 0)
+    }
+  })
+  it('maps wrapped positions the same in both orientations, at the same distance', () => {
+    const dx = wrapDelta(size / 2 - 10, -size / 2 + 20, size), dz = wrapDelta(-size / 2 + 5, size / 2 - 15, size)
+    const up = placeMark(dx, dz, perMetre, 0, place())
+    for (const turn of [0, 1.1, -2.4, Math.PI]) {
+      const o = at(dx, dz, turn), turned = placeMark(o.x, o.y, perMetre, 0, place())
+      expect(turned.distance).toBeCloseTo(up.distance)
+      expect(Math.hypot(turned.x, turned.y)).toBeCloseTo(Math.hypot(up.x, up.y))
+      const back = at(turned.x, turned.y, -turn)
+      expect(back.x).toBeCloseTo(up.x); expect(back.y).toBeCloseTo(up.y)
+    }
+  })
+  const lookFrom = (heading: number, pitch: number) => {
+    const forward = new Vector3(-Math.sin(heading) * Math.cos(pitch), Math.sin(pitch), -Math.cos(heading) * Math.cos(pitch))
+    // A camera with no roll: its up is in the vertical plane through forward.
+    const up = new Vector3(Math.sin(heading) * Math.sin(pitch), Math.cos(pitch), Math.cos(heading) * Math.sin(pitch))
+    const right = new Vector3().crossVectors(forward, up)
+    return new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(right, up, forward.clone().negate()))
+  }
+  it("follows the camera's heading at every pitch, straight down and up included, without flipping", () => {
+    for (const heading of [0, .5, -1.2, 2.9]) for (const pitch of [-Math.PI / 2, -1.4, -.3, 0, .6, 1.5, Math.PI / 2]) {
+      const h = cameraHeading(lookFrom(heading, pitch), 99)
+      expect(Math.abs(Math.atan2(Math.sin(h - heading), Math.cos(h - heading)))).toBeLessThan(1e-6)
+    }
+  })
+  it('reads three.js lookAt cameras the same way', () => {
+    const q = new Quaternion().setFromRotationMatrix(new Matrix4().lookAt(new Vector3(0, 0, 0), new Vector3(10, -2, 0), new Vector3(0, 1, 0)))
+    expect(cameraHeading(q, 0)).toBeCloseTo(EAST)
+  })
+  it('keeps up with a turning camera and only eases hairline wobble', () => {
+    expect(followTurn(0, .3)).toBeCloseTo(.3)
+    expect(followTurn(3.1, -3.1)).toBeCloseTo(-3.1)
+    const small = followTurn(0, .005)
+    expect(small).toBeGreaterThan(0); expect(small).toBeLessThan(.005)
+    let t = 0; for (let i = 0; i < 20; i++) t = followTurn(t, .005)
+    expect(t).toBeCloseTo(.005, 5)
+  })
+  it('never produces a non-finite heading', () => {
+    expect(Number.isFinite(cameraHeading({ x: NaN, y: 0, z: 0, w: 1 }, .4))).toBe(true)
   })
 })

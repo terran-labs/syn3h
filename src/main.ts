@@ -12,8 +12,10 @@ import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { ChaseCamera } from './core/ChaseCamera'
 import { Game } from './core/Game'
+import { showStartFailure, startupTiming } from './core/diagnostics'
+import { canCreateWebGL2, startFailure } from './core/graphicsSupport'
 import { botColors, startNetworking } from './net'
-import { ChatPanel } from './ui/chat/ChatPanel'
+import { ChatCard } from './ui/chat/ChatCard'
 import { HostBanter } from './bots/banter/HostBanter'
 import { BOT_ID_BASE } from '../shared/protocol'
 import { ParamPanel } from './ui/ParamPanel'
@@ -250,8 +252,15 @@ async function main(): Promise<void> {
     // second) is the one thing that keeps running, so others see "paused", not a dropout.
     pause.subscribe((paused) => connection.setPaused(paused))
     connection.setPaused(pause.paused)
-    // Chat (src/ui/chat): the pill, strip and log, inside the shell so it shows only in play.
-    const chat = new ChatPanel(shell.element, {
+    // Chat (src/ui/chat): the last card in the sidebar's stack, and a strip of new lines over
+    // the game. Y, the card's header and the left column's Chat row open it.
+    const chat = new ChatCard({
+      element: shell.element,
+      addCard: (id, title, body, summary) => shell.addCard(id, title, body, summary),
+      showCard: (id) => shell.showCard(id),
+      drive: () => shell.returnToDriving(),
+      panelsOpen: () => shell.panelsOpen,
+    }, {
       channel: connection.chat,
       input: game.input,
       canOpen: () => shell.playing && !game.input.suspended,
@@ -299,16 +308,8 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   console.error(err)
-  const el = document.getElementById('fatal')!
-  el.style.display = 'flex'
-  el.style.flexDirection = 'column'
-  el.style.gap = '16px'
-  // The game never started, so nothing runs behind this: the only way on is a reload.
-  el.textContent = `Syn3h failed to start: ${err?.message ?? err}`
-  const reload = document.createElement('button')
-  reload.type = 'button'
-  reload.textContent = 'Reload'
-  reload.style.cssText = 'font: inherit; padding: 10px 22px; border-radius: 8px; border: 1px solid #e8e6e3; background: transparent; color: inherit; cursor: pointer;'
-  reload.addEventListener('click', () => location.reload())
-  el.append(reload)
+  // The game never started, so nothing runs behind this. A device that cannot draw at all is
+  // told what it can do instead (no Reload: it cannot help there); anything else gets a plain
+  // sentence and a Reload, with the raw error behind Details (graphicsSupport.ts).
+  showStartFailure(startFailure(err, { rendererStarted: Boolean(startupTiming.backend), webgl2: canCreateWebGL2() }))
 })

@@ -20,21 +20,18 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
     await page.waitForFunction(() => !document.querySelector('.world-inspector').getAnimations().some(a => a.playState === 'running'))
     assert.equal(await page.locator('.wi-top, .rail-close, .wi-quick, .gear-select').count(), 0)
     const order = () => page.locator('.wi-cards > [data-section]').evaluateAll(es => es.map(e => e.dataset.section))
-    const expected = ['you', 'game', 'players', 'vehicles', 'world', 'performance']
+    const expected = ['you', 'game', 'players', 'vehicles', 'world', 'performance', 'chat']
     assert.deepEqual(await order(), expected)
     await page.evaluate(() => syn3h.shell.inspector.rebuild())
     assert.deepEqual(await order(), expected, 'session card survives registry rebuild')
-    const footer = rail.locator('.rail-foot'), header = rail.locator('.rail-command')
-    const pause = header.locator('.rail-pause'), search = header.locator('.wi-search')
+    const header = rail.locator('.rail-command')
+    const pause = header.locator('.rail-pause'), search = header.locator('.wi-search'), leave = header.getByRole('button', { name: 'Leave world', exact: true })
     assert.ok(await header.evaluate(el => el.nextElementSibling.classList.contains('wi-cards')))
-    assert.ok(await footer.evaluate(el => el.previousElementSibling.classList.contains('wi-cards')))
-    assert.ok(await header.locator('.rail-world').innerText(), 'header names the current world')
-    assert.equal(await footer.getByRole('button', { name: 'Leave world', exact: true }).count(), 1)
-    // The foot holds only the way out; the world's own actions are in the World card. Bugs
-    // caught: Copy, Paste or Reset going missing, and one stray tap on Reset wiping the world.
-    // (A slow-frames recommendation may dock here too, with its own buttons.)
-    assert.equal(await footer.locator(':scope > button').count(), 1, 'the foot holds one control')
-    assert.ok((await footer.locator('.exit-world').boundingBox()).height >= 44 - .5, 'Leave world is a full touch target')
+    // The top row is the search, Pause and Leave world, nothing else (the owner, 17 November 2026).
+    assert.deepEqual(await header.locator(':scope > *').evaluateAll(es => es.map(e => e.className.split(' ')[0])), ['wi-search', 'rail-pause', 'exit-world'], 'the top row holds search, Pause and Leave world')
+    assert.equal(await leave.count(), 1, 'Leave world has its name')
+    for (const control of [search, pause, leave]) assert.ok((await control.boundingBox()).height >= 44 - .5, 'top row controls are full touch targets')
+    assert.ok((await pause.boundingBox()).width >= 44 - .5 && (await leave.boundingBox()).width >= 44 - .5, 'icon buttons are full touch targets')
     const worldActions = rail.locator('.wi-card[data-section=world] .wi-world-actions button')
     assert.deepEqual(await worldActions.evaluateAll(es => es.map(el => el.getAttribute('aria-label'))), ['Copy world', 'Paste world', 'Reset world to defaults'])
     const seedBefore = await page.evaluate(() => syn3h.params.get('world.seed').value)
@@ -44,17 +41,11 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
     await page.evaluate(seed => syn3h.params.set('world.seed', seed, 'local'), seedBefore)
     const headerBounds = await header.boundingBox()
     assert.ok(headerBounds.y >= 0 && headerBounds.y + headerBounds.height <= page.viewportSize().height, 'header stays in viewport')
-    const bounds = await footer.boundingBox()
-    assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= page.viewportSize().height, 'footer stays in viewport')
-    assert.ok((await pause.boundingBox()).height >= 44, 'Pause stays a full touch target')
-    const nameBox = await header.locator('.rail-world').boundingBox()
-    const searchBox = await search.boundingBox(), pauseBox = await pause.boundingBox()
-    assert.ok(searchBox.height >= 44, 'search stays a full touch target')
-    assert.ok(nameBox.x + nameBox.width <= searchBox.x && searchBox.x + searchBox.width <= pauseBox.x, 'world, search and Pause run left to right')
+    const searchBox = await search.boundingBox(), pauseBox = await pause.boundingBox(), leaveBox = await leave.boundingBox()
+    assert.ok(searchBox.x + searchBox.width <= pauseBox.x && pauseBox.x + pauseBox.width <= leaveBox.x, 'search, Pause and Leave world run left to right')
     const middle = box => box.y + box.height / 2
-    assert.ok(Math.abs(middle(nameBox) - middle(searchBox)) < 1 && Math.abs(middle(searchBox) - middle(pauseBox)) < 1, 'all header controls share one row')
-    assert.ok(pauseBox.x + pauseBox.width <= headerBounds.x + headerBounds.width, 'Pause fits within the header')
-    assert.ok(await search.evaluate(el => { const css = getComputedStyle(el); return parseFloat(css.borderTopWidth) > 0 && css.borderTopStyle === 'solid' }), 'search has a visible field outline')
+    assert.ok(Math.abs(middle(searchBox) - middle(pauseBox)) < 1 && Math.abs(middle(pauseBox) - middle(leaveBox)) < 1, 'all header controls share one row')
+    assert.ok(leaveBox.x + leaveBox.width <= headerBounds.x + headerBounds.width + .5, 'Leave world fits within the row')
     await page.screenshot({ path: `${out}/${mode}-cards.png` })
     for (const section of expected) {
       await search.fill(section === 'sky' ? 'Sky' : section === 'players' ? 'Players' : section === 'you' ? 'Me' : section)
@@ -86,6 +77,16 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
       const tag = size ? `${mode}-${size[1]}` : mode
       const history = await openInTurn(page, rail, stackIds, { tap: touch, prefix: `${out}/${tag}-stack`, label: tag })
       console.log(`${tag}: open after each step ${JSON.stringify(history)}`)
+      // Phones keep one card open at a time.
+      if (mode === 'phone' || mode === 'landscape') assert.ok(history.every(open => open.length === 1), `${tag}: one card open at a time (${JSON.stringify(history)})`)
+      // Bug caught: on a phone, hiding the panels with its own button and bringing them back
+      // closed the card the player had open.
+      if (touch) {
+        const open = await page.evaluate(() => [...document.querySelectorAll('.world-inspector .wi-card.is-open')].map(c => c.dataset.section))
+        await page.locator('.inspector-toggle').tap(); await rail.waitFor({ state: 'hidden' })
+        await page.locator('.inspector-toggle').tap(); await rail.waitFor({ state: 'visible' }); await page.waitForTimeout(400)
+        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.world-inspector .wi-card.is-open')].map(c => c.dataset.section)), open, `${tag}: the open card survives the panels button`)
+      }
       // The order survives the rail closing and reopening.
       const before = await page.evaluate(() => [...document.querySelectorAll('.world-inspector .wi-card.is-open')].map(c => c.dataset.section))
       await page.evaluate(() => { const i = syn3h.shell.inspector; i.open = false; i.open = true })

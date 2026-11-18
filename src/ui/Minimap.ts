@@ -90,6 +90,12 @@ const RIM_UNITS = RIM * UNITS / 2
 const HANDOVER = 10
 /** More rim glyphs than this within a quarter of the ring are laid out as an ordered crowd. */
 const CROWD = 6
+/**
+ * How far (radians, about 3 degrees) the marks may be carried by a transform before they are
+ * redrawn at the map's new angle. Within it, only their shading's light and the Tag tick lean
+ * with the map, too little to see.
+ */
+const REDRAW_TURN = .05
 
 /** CIE L* (0..100) to relative luminance (0..1). */
 function luminance(lightness: number): number {
@@ -120,13 +126,54 @@ export function markLook(kind: MapKind, fade: number, out: MarkLook = { radius: 
 /** Arrow sizes inside the map (units from the centre to the tip). */
 export const ARROW = { self: 13.5, person: 11.5, bot: 7 } as const
 
+/**
+ * Which way the camera looks across the ground, as a game heading (the same angle as a
+ * vehicle's: 0 looks north, toward -z, and forward is (-sin h, -cos h)). `q` is the camera's
+ * world rotation. Looking level, that is just the forward vector flattened. Pitched toward
+ * straight down or up the flattened forward shrinks to nothing, so the camera's up vector
+ * fills in: for any camera without roll, forward·cos(pitch) - up·sin(pitch) flattened is
+ * exactly the level view direction, at every pitch, so the map neither spins nor flips as
+ * the view passes through vertical. Only a heavily rolled camera pointing straight down can
+ * leave nothing usable; then the last good heading stands.
+ */
+export function cameraHeading(q: { x: number; y: number; z: number; w: number }, last: number): number {
+  const { x, y, z, w } = q
+  const fx = -2 * (x * z + w * y), fy = -2 * (y * z - w * x), fz = -(1 - 2 * (x * x + y * y))
+  const ux = 2 * (x * y - w * z), uz = 2 * (y * z + w * x)
+  const level = Math.sqrt(Math.max(0, 1 - fy * fy))
+  const hx = fx * level - ux * fy, hz = fz * level - uz * fy
+  return hx * hx + hz * hz > .0025 && Number.isFinite(hx + hz) ? Math.atan2(-hx, -hz) : last
+}
+/** An angle in (-π, π]. */
+const wrapAngle = (a: number): number => a - Math.PI * 2 * Math.round(a / (Math.PI * 2))
+/**
+ * The map's next turn toward the camera's heading. A change of a degree or more is taken at
+ * once, so the map never trails the camera; below that the step eases in proportion, which
+ * settles the spring camera's hairline wobble without a lag anyone could see.
+ */
+export function followTurn(current: number, target: number): number {
+  const d = wrapAngle(target - current)
+  return wrapAngle(current + d * Math.min(1, Math.max(.35, Math.abs(d) / .0175)))
+}
+/**
+ * A world offset (east `dx`, south `dz`, metres) turned onto the map, where `turn` is the
+ * heading at the top of the map: 0 is north up. With the camera facing `turn`, what lies
+ * ahead of it is up the map and what lies to its right is to the right.
+ */
+export function turnOffset(dx: number, dz: number, turn: number, out: { x: number; y: number }): { x: number; y: number } {
+  const c = Math.cos(turn), s = Math.sin(turn)
+  out.x = dx * c - dz * s; out.y = dx * s + dz * c
+  return out
+}
+
 export interface MarkPlace { x: number; y: number; distance: number; bearing: number; blend: number }
 /**
  * Where a mark goes, relative to the map centre. `dx`, `dz` are the shortest offsets round
  * the planet (wrapDelta). Inside the rim, `blend` is 0 and the mark is an arrow at its true
  * place; past it, `blend` is 1 and the mark is a dot `lane` units outside the rim on the
  * bearing toward the vehicle. Across the rim it slides and cross-fades between the two.
- * `bearing` is screen radians: 0 east, π/2 south (north is up).
+ * `bearing` is screen radians: 0 right, π/2 down. The caller turns the offsets with
+ * `turnOffset` first when the map is heading up.
  */
 export function placeMark(dx: number, dz: number, unitsPerMetre: number, lane: number, out: MarkPlace): MarkPlace {
   const distance = Math.hypot(dx, dz), r = distance * unitsPerMetre
@@ -242,8 +289,8 @@ export class Minimap {
   /** Rim glyphs by bearing, reused each draw. */
   private readonly rim: number[] = []
   private self?: MapEntity
-  /** Your own mark: white, shaded in cool greys so its facets read. */
-  private readonly selfShades: readonly string[] = ['#8d9aa8', '#a6b3c0', '#bcc8d4', '#d3dde6', '#e6edf3', '#f4f8fb', '#ffffff']
+  /** Your own mark: white, shaded in neutral greys so its facets read. */
+  private readonly selfShades: readonly string[] = ['#8f8f8d', '#a8a8a6', '#bdbdbb', '#d4d4d2', '#e7e7e5', '#f5f5f4', '#ffffff']
   /** Marks grow on small maps so a phone's 96 px map stays legible. Updated on resize, not per draw. */
   private markScale = 1
   /** Units per device pixel on the marks canvas, so hairlines are one device pixel. */
@@ -260,12 +307,25 @@ export class Minimap {
   private northY = 0
   private northR = 0
   private unwatchRatio?: () => void
+  /** The heading at the top of the map: 0 when north is up, else the camera's, smoothed. */
+  turn = 0
+  /** The turn the marks and the N were last drawn at. */
+  private drawnTurn = 0
+  private viewHeading = 0
+  private hasView = false
+  private northUp = false
+  private northLabel!: HTMLSpanElement
+  /** The N label's resting centre and the rim radius, in CSS pixels from the map's centre. */
+  private labelRadius = 0
+  private labelY = 0
+  private width = 0
+  private readonly offset = { x: 0, y: 0 }
   constructor(private readonly terrain: Terrain, parent: HTMLElement) {
     this.element.className = 'shell-minimap'; this.canvas.width = this.canvas.height = this.base.width = this.base.height = this.pixels
     this.marks.className = 'shell-minimap-marks'; this.marks.width = this.marks.height = 2 * UNITS
-    this.canvas.setAttribute('role', 'img'); this.canvas.setAttribute('aria-label', 'Terrain map, centred on your vehicle. White dart is you; people are larger folded darts, bots small flat plates, each in its own colour. Glowing ticks on the ring point to vehicles beyond it, fainter and shorter the farther away. North is up.')
+    this.canvas.setAttribute('role', 'img'); this.describe()
     this.marks.setAttribute('aria-hidden', 'true')
-    const north = document.createElement('span'); north.textContent = 'N'; this.element.append(this.canvas, this.marks, north); parent.append(this.element)
+    const north = this.northLabel = document.createElement('span'); north.textContent = 'N'; this.element.append(this.canvas, this.marks, north); parent.append(this.element)
     // Layout is read only here: on resize, and when the screen's pixel ratio changes (a window
     // moved to another monitor, or zoom), never per draw.
     const fit = (): void => {
@@ -276,11 +336,17 @@ export class Minimap {
       const device = Math.max(64, Math.round(width * (window.devicePixelRatio || 1)))
       if (this.marks.width !== device) { this.marks.width = this.marks.height = device; this.shadows.clear(); this.glows.clear(); this.auras.clear() }
       this.px = UNITS / device
-      // Where the N label sits, in mark units, so glyphs can keep off it.
+      // Where the N label rests (north up), measured without the turn, in mark units so
+      // glyphs can keep off it; placeNorth turns it round the rim from there.
+      const turned = north.style.transform; north.style.transform = ''
       const label = north.getBoundingClientRect(), k = UNITS / width
-      this.northX = (label.left + label.width / 2 - box.left - width / 2) * k
-      this.northY = (label.top + label.height / 2 - box.top - box.height / 2) * k
+      north.style.transform = turned
+      this.width = width
+      this.labelY = label.top + label.height / 2 - box.top - box.height / 2
+      this.labelRadius = Math.hypot(label.left + label.width / 2 - box.left - width / 2, this.labelY)
       this.northR = label.width > 0 ? Math.max(label.width, label.height) / 2 * k : 0
+      // The N's offset depends on the size just measured: let the next draw place it again.
+      this.element.style.removeProperty('--map-turn')
       this.draw()
     }
     if (typeof ResizeObserver !== 'undefined') { this.resize = new ResizeObserver(fit); this.resize.observe(this.element) }
@@ -316,8 +382,26 @@ export class Minimap {
     this.count = n
   }
   setSelf(entity: MapEntity): void { this.self = entity }
+  /** The camera's heading (see cameraHeading), once a frame before update. */
+  setView(heading: number): void { if (Number.isFinite(heading)) { this.viewHeading = heading; this.hasView = true } }
+  /** North up (true) or heading up, the default. */
+  setNorthUp(northUp: boolean): void {
+    if (northUp === this.northUp) return
+    this.northUp = northUp; this.describe()
+    // Switching snaps; only the camera's own motion is followed.
+    this.turn = northUp ? 0 : this.viewHeading
+  }
+  private describe(): void {
+    this.canvas.setAttribute('aria-label', `Terrain map, centred on your vehicle. White dart is you; people are larger folded darts, bots small flat plates, each in its own colour. Glowing ticks on the ring point to vehicles beyond it, fainter and shorter the farther away. ${this.northUp ? 'North is up.' : 'The map turns with the camera: up is the way you are looking, and N on the ring marks north.'}`)
+  }
   update(): void {
     const now = performance.now()
+    this.turn = this.northUp || !this.hasView ? 0 : followTurn(this.turn, this.viewHeading)
+    // Every frame the terrain, ticks, N and marks turn by transforms; the marks are redrawn
+    // at the new angle only once they have been carried REDRAW_TURN, so a sweeping camera
+    // costs a redraw every few frames, not every frame.
+    if (Math.abs(wrapAngle(this.turn - this.drawnTurn)) > REDRAW_TURN) { this.lastDraw = now; this.draw() }
+    else this.placeNorth()
     // The map's colours follow the sea: a gliding sea level or a freezing sea changes the
     // hook's key. Checked twice a second, rebaked at most once a second while it moves.
     if (now - this.keyChecked > 500) {
@@ -336,6 +420,7 @@ export class Minimap {
    * Vehicles past the rim become glyphs on it, on the bearing toward them.
    */
   private draw(): void {
+    this.drawnTurn = this.turn; this.placeNorth()
     const ctx = this.canvas.getContext('2d')!, n = this.pixels, size = this.terrain.size
     const me = this.self
     const cx = me && Number.isFinite(me.x) ? me.x : 0, cz = me && Number.isFinite(me.z) ? me.z : 0
@@ -345,6 +430,30 @@ export class Minimap {
     const ox = -((((px - n / 2) % n) + n) % n), oz = -((((pz - n / 2) % n) + n) % n)
     for (const dz of [0, n]) for (const dx of [0, n]) ctx.drawImage(this.base, Math.round(ox) + dx, Math.round(oz) + dz)
     this.drawMarks(cx, cz, size)
+  }
+  /**
+   * Turn the terrain and the ring's ticks by a CSS transform (the picture is never redrawn
+   * to turn it), carry the marks from the angle they were drawn at to this one the same way,
+   * and move the N round the rim to where north is. Its keep-clear spot for rim glyphs is
+   * where it was when the marks were drawn.
+   */
+  private placeNorth(): void {
+    const turn = this.turn, angle = `${turn.toFixed(4)}rad`, north = this.offset
+    // Each written only when it changes. The marks' carry changes on a redraw even when the
+    // map's angle does not.
+    const carry = `${wrapAngle(turn - this.drawnTurn).toFixed(4)}rad`
+    if (this.element.style.getPropertyValue('--marks-turn') !== carry) this.element.style.setProperty('--marks-turn', carry)
+    if (this.element.style.getPropertyValue('--map-turn') !== angle) {
+      // CSS rotate() and turnOffset turn the same way: clockwise on screen for a positive angle.
+      this.element.style.setProperty('--map-turn', angle)
+      // North is the world's -z: one metre north, turned like everything else.
+      turnOffset(0, -1, turn, north)
+      const r = this.labelRadius
+      this.northLabel.style.transform = turn === 0 ? '' : `translate(-50%, 0) translate(${(north.x * r).toFixed(2)}px, ${(north.y * r - this.labelY).toFixed(2)}px)`
+    }
+    turnOffset(0, -1, this.drawnTurn, north)
+    const k = this.width > 0 ? UNITS / this.width : 0
+    this.northX = north.x * this.labelRadius * k; this.northY = north.y * this.labelRadius * k
   }
   private drawMarks(cx: number, cz: number, size: number): void {
     const ctx = this.marks.getContext('2d')!, k = this.marks.width / UNITS, m = this.markScale
@@ -356,7 +465,9 @@ export class Minimap {
     const order = this.order; order.length = 0
     for (let i = 0; i < this.count; i++) {
       const s = this.slots[i]
-      placeMark(wrapDelta(cx, s.x, size), wrapDelta(cz, s.z, size), unitsPerMetre, 0, s.place)
+      // Wrap first (the nearest image round the planet), then turn: turning keeps distances.
+      const o = turnOffset(wrapDelta(cx, s.x, size), wrapDelta(cz, s.z, size), this.turn, this.offset)
+      placeMark(o.x, o.y, unitsPerMetre, 0, s.place)
       s.fade = s.kind === 'zone' ? 1 : rimFade(s.place.distance, rimDistance, farthest); s.crowd = false
       markLook(s.kind, s.fade, s.look)
       s.look.radius *= m; s.shown = s.look.alpha * s.place.blend > .01 || s.place.blend < 1
@@ -382,7 +493,8 @@ export class Minimap {
     for (let a = order.length - 1; a >= 0; a--) { const s = this.slots[order[a]]; if (s.shown) this.drawMark(ctx, s, m) }
     const me = this.self
     if (me && Number.isFinite(me.x) && Number.isFinite(me.z) && Number.isFinite(me.heading)) {
-      this.solid(ctx, FORMS[Minimap.markStyle], 0, 0, me.heading, ARROW.self * m, this.selfShades, '#ffffff', 1, 1)
+      // Your dart shows your heading against the camera's: straight up when you drive the way it looks.
+      this.solid(ctx, FORMS[Minimap.markStyle], 0, 0, me.heading - this.turn, ARROW.self * m, this.selfShades, '#ffffff', 1, 1)
       if (me.it) this.itMark(ctx, 0, 0, (ARROW.self + 5) * m, 1)
     }
   }
@@ -598,7 +710,7 @@ export class Minimap {
         const glow = this.glow(s.color), r = ARROW.person * 1.7 * m
         ctx.globalAlpha = inside * .45; ctx.drawImage(glow, x - r, y - r, r * 2, r * 2)
       }
-      this.solid(ctx, person ? FORMS[Minimap.markStyle] : FORMS.bot, x, y, s.heading, (person ? ARROW.person : ARROW.bot) * m, s.shades, s.accent, inside * (person ? 1 : .85), person ? 1 : .7)
+      this.solid(ctx, person ? FORMS[Minimap.markStyle] : FORMS.bot, x, y, s.heading - this.turn, (person ? ARROW.person : ARROW.bot) * m, s.shades, s.accent, inside * (person ? 1 : .85), person ? 1 : .7)
       if (s.it) this.itMark(ctx, x, y, (person ? ARROW.person + 5 : ARROW.bot + 5) * m, inside)
     }
     if (outside > .01) this.rimGlyph(ctx, s, outside, m)

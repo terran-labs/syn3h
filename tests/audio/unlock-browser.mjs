@@ -1,7 +1,7 @@
 // Sound starts on the first gesture anywhere on the page, in Chromium (with its default autoplay
 // policy and with a gesture forced to be required) and in WebKit. For each, a fresh page:
 //  - before any input, the context is suspended (or running, if the browser allows it)
-//  - after one key press in the lobby, it runs and the master gain is ramping up from silence
+//  - after one key press in the lobby, it runs and what is heard rises from silence (the mix's meter)
 //  - after one pointer down on the lobby background, the same, and after one touch tap there
 //  - after one key press during the loading view, before the game exists, the same once it loads
 //
@@ -40,6 +40,8 @@ for (const [name, launch, enforce] of engines) {
       if (enforce) await page.addInitScript(strict)
       const errors = []
       page.on('pageerror', error => errors.push(String(error)))
+      // Where the browser allows sound without a gesture, it is already playing before input.
+      let startedBefore = false
       try {
         if (input === 'key while loading') {
           await page.goto(`${origin}/`, { waitUntil: 'commit' })
@@ -56,6 +58,7 @@ for (const [name, launch, enforce] of engines) {
           const before = await audioState(page)
           console.log(`${name} | before input: ${JSON.stringify(before)}`)
           if (before.published !== 'running') assert.ok(before.waiting, 'waiting for a gesture before input')
+          startedBefore = before.published === 'running'
           if (input === 'key') await page.keyboard.press('KeyQ')
           // A touch going down is not a user activation; lifting it is. The first must not strand the second.
           else if (input === 'tap') await page.touchscreen.tap(640, 120)
@@ -67,12 +70,21 @@ for (const [name, launch, enforce] of engines) {
           }
         }
         await page.waitForFunction(() => window.syn3h.audio.state === 'running', null, { timeout: 8000 })
-        const a = await audioState(page)
-        await page.waitForTimeout(1200)
+        // What is heard, from the mix's own output meter every frame, not the master's reported
+        // value: WebKit reports a gain's value a frame late, so it read 1 as the fade began.
+        const levels = await page.evaluate(() => new Promise(resolve => {
+          const rows = [], end = performance.now() + 1300
+          const step = () => { rows.push(window.syn3h.audio.outputLevel); if (performance.now() < end) requestAnimationFrame(step); else resolve(rows) }
+          requestAnimationFrame(step)
+        }))
+        const heard = levels.filter(Number.isFinite), first = heard[0] ?? -Infinity, last = heard.at(-1) ?? -Infinity
         const b = await audioState(page)
-        console.log(`${name} | after ${input}: running, master ${a.master.toFixed(3)} -> ${b.master.toFixed(3)}`)
-        assert.ok(b.master > a.master, 'master gain ramps up after the gesture')
-        assert.ok(a.master < 0.8, 'master starts from silence, not at full level')
+        console.log(`${name} | after ${input}: running${startedBefore ? ' (already before input)' : ''}, output ${first.toFixed(1)} dB -> ${last.toFixed(1)} dB`)
+        if (startedBefore) assert.ok(last > -60, 'sound the browser started without a gesture keeps playing')
+        else {
+          assert.ok(first < -50, 'sound arrives from silence, not at full level')
+          assert.ok(last > first + 10, 'the mix fades in after the gesture')
+        }
         assert.equal(b.waiting, false)
         assert.deepEqual(errors, [])
         if (input === 'pointer') await page.mouse.up()
