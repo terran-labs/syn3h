@@ -930,7 +930,8 @@ export class Shell implements System {
   private async ascent(): Promise<void> {
     const galaxy = this.galaxy
     if (!this.started || this.menuVisible) return
-    if (!galaxy || this.dropping || matchMedia('(prefers-reduced-motion: reduce)').matches) { this.openMenu(); return }
+    // Every way out of a world ends at the fresh-load lobby view (Galaxy.returnHome).
+    if (!galaxy || this.dropping || matchMedia('(prefers-reduced-motion: reduce)').matches) { this.openMenu(); galaxy?.returnHome(); return }
     const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     const game = document.getElementById('game'), root = this.element, camera = this.cinematic
     this.dropping = true
@@ -984,12 +985,13 @@ export class Shell implements System {
       // flying its close-up of the world back out: that fly-out, the first close-up a freshly
       // made galaxy context drew, stalled the GPU for up to 2 s in some exits at High. Without
       // it no exit frame passed 100 ms, and leaving is shorter. The name kindles once, here.
-      galaxy.home()
+      galaxy.returnHome()
       root.classList.remove('is-descending')
       camera?.clearCinematicPose()
       await flight.done
     } catch (error) {
       console.warn('World ascent failed', error)
+      galaxy.returnHome()
     } finally {
       this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity')
       root.classList.remove('is-descending')
