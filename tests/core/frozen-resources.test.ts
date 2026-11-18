@@ -59,6 +59,6 @@ describe('frozen production resources', () => {
     const source = (path: string) => readFileSync(new URL('../../' + path, import.meta.url), 'utf8')
     const main = source('src/main.ts')
     expect(main.indexOf('initializeFrozenResources(location.href)')).toBeLessThan(main.indexOf('const game = new Game'))
-    expect(source('src/ui/Shell.ts')).toContain('[data-panel="about"] a[href^="/brand/licenses/"]')
+    expect(source('src/ui/Shell.ts')).toContain(`querySelectorAll<HTMLAnchorElement>('a[href^="/brand/licenses/"]')) anchor.setAttribute('href', frozenResourceURL(`)
   })
 })

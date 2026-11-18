@@ -12,10 +12,30 @@ for (const mode of modes) {
     await page.goto(`${process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'}?autoplay=1&room=exploration-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 90000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 90000 })
-    // Height above ground is measured from the contact surfaces: resting on its wheels, the
-    // buggy reads 0 m, not the height of the middle of its body.
+    // ALT is height above the sea at rest (src/ui/altitude.ts): a parked buggy reads its
+    // ground's height, a whole number with a real minus sign below the sea, labelled ALT, in
+    // the units the setting chooses. Raising the sea to the buggy's wheels reads 0.
     await page.waitForFunction(() => syn3h.player.wheelsGrounded > 0, null, { timeout: 30000 })
-    await page.waitForFunction(() => document.querySelector('.focus-hud [data-t="altitude"]').textContent === '0', null, { timeout: 10000 })
+    const readout = () => page.evaluate(() => {
+      const right = document.querySelector('.focus-hud .fh-right'), left = document.querySelector('.focus-hud .fh-left')
+      const text = selector => right.querySelector(selector)?.textContent ?? ''
+      return { alt: text('[data-t="altitude"]'), unit: text('[data-t="heightUnit"]'), label: right.querySelector('small')?.textContent ?? '', speedUnit: left.querySelector('[data-t="speedUnit"]')?.textContent ?? '' }
+    })
+    const metres = n => Number(n.replace('\u2212', '-'))
+    for (const [units, speed, height] of [[0, 'km/h', 'm'], [1, 'mph', 'ft']]) {
+      await page.evaluate(units => syn3h.params.set('hud.units', units), units)
+      await page.waitForFunction(unit => document.querySelector('.focus-hud [data-t="heightUnit"]')?.textContent === unit, height, { timeout: 5000 })
+      const shown = await readout()
+      assert.match(shown.alt, /^\u2212?\d+$/, `${mode}: ALT is a whole number ${JSON.stringify(shown)}`)
+      assert.deepEqual([shown.unit, shown.speedUnit, shown.label], [height, speed, 'ALT'], `${mode}: ALT and speed follow the units setting`)
+    }
+    await page.evaluate(() => syn3h.params.set('hud.units', 0))
+    const sea = await page.evaluate(() => syn3h.params.get('world.lavaAltitude').value)
+    await page.evaluate(() => syn3h.params.set('world.lavaAltitude', Math.round(syn3h.player.contactHeight() * 2) / 2))
+    // The sea glides there over 1.5 s; the floating buggy reads 0, give or take a wave.
+    await page.waitForFunction(() => Math.abs(Number(document.querySelector('.focus-hud [data-t="altitude"]').textContent.replace('\u2212', '-'))) <= 1, null, { timeout: 10000 })
+    assert.ok(Math.abs(metres((await readout()).alt)) <= 1, `${mode}: ALT reads 0 at the sea surface`)
+    await page.evaluate(sea => syn3h.params.set('world.lavaAltitude', sea), sea)
     assert.equal(await page.locator('.shell-hud').isVisible(), false)
     assert.equal(await page.locator('.hud-navigation button').count(), 1)
     const map = await page.locator('.shell-minimap').boundingBox()

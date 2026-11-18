@@ -61,15 +61,27 @@ for(const mode of ['desktop','phone','short-phone']){
   await page.screenshot({path:`${out}/${mode}-static.png`})
   await page.evaluate(()=>{ const g=syn3h.shell.galaxy;g.logo=window.__savedLogo;g.wake=2 })
   await page.waitForFunction(()=>document.querySelector('.syn3h-shell').classList.contains('has-animated-logo'))
-  const nav=page.locator('.galaxy-links')
-  await nav.locator('[data-goto=about]').click()
-  await page.waitForFunction(()=>document.querySelector('.lobby-panels').dataset.busy==='false')
-  const about=page.locator('[data-panel=about]')
-  const geometry=await page.locator('.lobby-panels').evaluate(el=>{const r=el.getBoundingClientRect();return {layoutWidth:getComputedStyle(el).width,rect:{x:r.x,y:r.y,width:r.width,right:r.right,bottom:r.bottom},stageTransform:getComputedStyle(el.closest('.lobby-stage')).transform,viewportWidth:innerWidth,scrollWidth:document.documentElement.scrollWidth}})
+  // About is its own sheet from the icon above the gear. Bugs caught: the icon missing or not
+  // opening; content in the page or images requested before the player asks; tabs, a Back
+  // button or a second close control in the sheet; Escape or a tap outside not closing it;
+  // focus left nowhere afterwards; the sheet running off a phone screen.
+  const images=[];page.on('request',r=>{if(r.resourceType()==='image')images.push(r.url())})
+  assert.equal(await page.locator('.lobby-sheet-about .about-columns').count(),0,'About content is not in the page before it is opened')
+  const icon=page.getByRole('button',{name:'About Syn3h',exact:true})
+  assert.equal(await icon.getAttribute('title'),'About Syn3h')
+  await icon.click()
+  const about=page.locator('.lobby-sheet-about')
+  await about.locator('.about-columns').waitFor({state:'visible'})
+  await page.waitForFunction(()=>!document.querySelector('.lobby-sheet-about').getAnimations({subtree:true}).some(a=>a.playState==='running'))
+  const geometry=await about.locator('.lobby-sheet-panel').evaluate(el=>{const r=el.getBoundingClientRect();return {rect:{x:r.x,y:r.y,width:r.width,right:r.right,bottom:r.bottom},viewportWidth:innerWidth,viewportHeight:innerHeight,scrollWidth:document.documentElement.scrollWidth}})
   console.log(JSON.stringify({mode,geometry}))
-  if(mode==='desktop')assert.equal(geometry.layoutWidth,'900px')
-  assert.ok(geometry.rect.x>=0 && geometry.rect.right<=geometry.viewportWidth,'projected panel fits viewport')
+  assert.ok(geometry.rect.x>=0&&geometry.rect.right<=geometry.viewportWidth&&geometry.rect.bottom<=geometry.viewportHeight,'the sheet fits the viewport')
+  if(mode!=='desktop')assert.ok(geometry.rect.width>=geometry.viewportWidth-24,'on a phone the sheet is nearly full width')
   assert.ok(geometry.scrollWidth<=geometry.viewportWidth,'no horizontal document overflow')
+  assert.equal(await about.getByRole('tab').count(),0,'no tabs')
+  assert.equal(await about.locator('.panel-back').count(),0,'no Back button')
+  assert.deepEqual(await about.locator('button').evaluateAll(bs=>bs.filter(b=>/close/i.test(b.getAttribute('aria-label')??'')).length),1,'one close control')
+  assert.equal(await page.evaluate(()=>document.activeElement?.classList.contains('lobby-sheet-close')),true,'focus starts on the X')
   assert.equal(await about.locator('a[href="https://aubreyfalconer.com"]').count(),1)
   assert.equal(await about.locator('a[href="https://github.com/terran-labs/syn3h"]').count(),1)
   assert.equal(await about.locator('a[href*="tarranlabmoods"]').count(),0)
@@ -83,11 +95,18 @@ for(const mode of ['desktop','phone','short-phone']){
   await about.locator('.shell-credits summary').click()
   assert.equal(await about.locator('.shell-credits').evaluate(el=>el.open),true)
   assert.equal(await about.locator('a[href^="/brand/licenses/"]').count(),10)
-  await about.locator('.panel-back').scrollIntoViewIfNeeded()
+  await about.locator('.shell-credits').evaluate(el=>el.scrollIntoView({block:'end'}))
   await page.screenshot({path:`${out}/${mode}-about-credits-bottom.png`})
-  assert.ok(await about.locator('.panel-back').isVisible())
+  // Tab stays inside the sheet.
+  for(let i=0;i<40;i++){await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>!!document.activeElement?.closest('.lobby-sheet-about')),true,'focus stays in the sheet')}
+  await page.keyboard.press('Escape');await about.waitFor({state:'hidden'})
+  assert.equal(await page.evaluate(()=>document.activeElement?.classList.contains('lobby-about')),true,'Escape returns focus to the About icon')
+  await icon.click();await about.locator('.about-columns').waitFor({state:'visible'})
+  await page.mouse.click(4,4);await about.waitFor({state:'hidden'})
+  assert.equal(await page.evaluate(()=>syn3h.shell.playing),false,'a tap outside closes the sheet and does nothing else')
+  assert.deepEqual(images,[],'About requests no images')
   const backPaths=[]
-  for(const id of ['about','explore','worlds','advanced']){
+  for(const id of ['explore','worlds','advanced']){
    await page.evaluate(id=>syn3h.shell.showPanel(id),id)
    await page.waitForFunction(()=>document.querySelector('.lobby-panels').dataset.busy==='false')
    const back=page.locator(`[data-panel=${id}] .panel-back`);await back.scrollIntoViewIfNeeded();await back.focus()
@@ -104,7 +123,8 @@ for(const mode of ['desktop','phone','short-phone']){
    assert.ok(r.height>=44,`${id}: projected height >=44`);if(mode==='desktop')assert.ok(r.width>=160,`${id}: projected width >=160`)
    assert.equal(await back.locator('[aria-hidden=true]').innerText(),'←')
    await page.keyboard.press('Enter'); await page.locator('.lobby-panels').waitFor({state:'hidden'})
-   assert.equal(await nav.locator('button').first().evaluate(el=>el===document.activeElement),true)
+   // With no bottom buttons, focus comes back to the About icon in the corner.
+   assert.equal(await page.locator('.lobby-gear-dock .lobby-about').evaluate(el=>el===document.activeElement),true)
    backPaths.push({id,width:r.width,height:r.height})
   }
   // The invite view opens with J in the lobby (the Multiplayer panel that also opened it is gone).

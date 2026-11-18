@@ -1,6 +1,7 @@
 /**
  * The lobby's settings: a floating holographic gear in a lower corner of the galaxy, with the
- * running version beside it, that slides a settings panel in from that edge. The panel is the
+ * running version beside it and the About and Updates icons stacked above it (the shell opens
+ * their sheets), that slides a settings panel in from that edge. The panel is the
  * in-game sidebar's own component (an Inspector showing only the cards added here), so the
  * cards, rows, accordion motion and glass are the same and cannot drift:
  *
@@ -75,6 +76,11 @@ export function gearPath(teeth = 8, outer = 10.5, inner = 8, hub = 3.4): string 
   return `M${points.join('L')}Z M${12 + hub} 12a${hub} ${hub} 0 1 0 ${-2 * hub} 0a${hub} ${hub} 0 1 0 ${2 * hub} 0Z`
 }
 
+/** About: an i in the ring, drawn as strokes like the gear. */
+export const ABOUT_ICON = 'M12 10.6V17.4M10.2 17.4H13.8M10.6 10.6H12M12 6.4a.9 .9 0 1 0 .01 0Z'
+/** Updates: a turning arrow round a clock's hands, for what changed and when. */
+export const UPDATES_ICON = 'M18.6 12a6.6 6.6 0 1 1-1.93-4.67M17.4 3.9v3.6h-3.6M12 8.4V12l2.6 1.6'
+
 export interface LobbySettingsOptions {
   quality?: QualitySource
   /** Elements the shell already wires, moved into cards: presentation toggle and host fieldset. */
@@ -98,6 +104,9 @@ export class LobbySettings {
    * by `[data-lobby-version]` and listen for its click. It does nothing until something does.
    */
   readonly version = document.createElement('button')
+  /** About and Updates, stacked above the gear. The shell wires their clicks to its sheets. */
+  readonly about = document.createElement('button')
+  readonly updates = document.createElement('button')
   /** Holds the panel and its tooltip; attached to the page only while open. */
   private readonly host = document.createElement('div')
   private readonly inspector: Inspector
@@ -117,7 +126,12 @@ export class LobbySettings {
     this.gear.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${gearPath()}"/></svg>`
     this.version.type = 'button'; this.version.className = 'lobby-version'; this.version.dataset.lobbyVersion = ''
     this.version.textContent = label; this.version.title = `Version ${label}`; this.version.setAttribute('aria-label', `Version ${label}`)
-    this.dock.append(this.gear, this.version)
+    for (const [button, name, path] of [[this.about, 'About Syn3h', ABOUT_ICON], [this.updates, 'Updates', UPDATES_ICON]] as const) {
+      button.type = 'button'; button.className = `lobby-dock-icon lobby-${name === 'Updates' ? 'updates' : 'about'}`
+      button.setAttribute('aria-label', name); button.setAttribute('aria-haspopup', 'dialog'); button.title = name
+      button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`
+    }
+    this.dock.append(this.about, this.updates, this.gear, this.version)
 
     this.host.className = 'lobby-settings-host'
     this.inspector = new Inspector(this.host, { summary: () => '', vehicles: () => ({ options: [], current: '' }), onVehicle() {}, sections: [], percent: isVolume })
@@ -198,6 +212,14 @@ export class LobbySettings {
   }
 
   get isOpen(): boolean { return this.shown }
+
+  /** A quiet mark on the Updates icon while a newer version is out. */
+  markUpdate(version: string | null): void {
+    const on = version !== null
+    this.updates.classList.toggle('has-update', on)
+    this.updates.setAttribute('aria-label', on ? 'Updates, a newer version is out' : 'Updates')
+    this.updates.title = on ? 'Updates: a newer version is out' : 'Updates'
+  }
 
   private focusable(): HTMLElement[] {
     return [...this.inspector.element.querySelectorAll<HTMLElement>('button, input, select, summary, [tabindex]:not([tabindex="-1"])')]
