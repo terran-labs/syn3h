@@ -90,10 +90,12 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     for (const [target, rel, protocol] of links) { assert.equal(target, '_blank'); assert.match(rel, /noopener/); assert.match(protocol, /^https?:$/) }
     const mine = about.locator(`.update-release[data-version="${RUNNING}"]`)
     assert.match(await mine.locator('.update-badge').innerText(), /playing this/i)
-    await page.waitForFunction(() => !document.querySelector('.lobby-sheet-updates').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
+    // The panel's own motion (the buttons beside it keep their slow gear turn).
+    await page.waitForFunction(() => !document.querySelector('.lobby-sheet-updates .lobby-sheet-panel').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
     if (mode === 'landscape') {
       const sheet = await about.locator('.lobby-sheet-panel').boundingBox()
-      assert.ok(sheet.height >= page.viewportSize().height - 40, `landscape: Updates is a full-height sheet (${sheet.height}px)`)
+      // It stands under the name, which keeps it at least half the screen tall (LobbySheet.frame).
+      assert.ok(sheet.height >= page.viewportSize().height * 0.5 - 1, `landscape: Updates keeps at least half the screen (${sheet.height}px)`)
     }
     await page.screenshot({ path: `${out}/${mode}-updates.png` })
     if (!touch) {

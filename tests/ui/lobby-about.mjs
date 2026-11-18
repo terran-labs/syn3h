@@ -72,7 +72,8 @@ for(const mode of ['desktop','phone','short-phone']){
   await icon.click()
   const about=page.locator('.lobby-sheet-about')
   await about.locator('.about-columns').waitFor({state:'visible'})
-  await page.waitForFunction(()=>!document.querySelector('.lobby-sheet-about').getAnimations({subtree:true}).some(a=>a.playState==='running'))
+  // The panel's own motion (the buttons beside it keep their slow gear turn).
+  await page.waitForFunction(()=>!document.querySelector('.lobby-sheet-about .lobby-sheet-panel').getAnimations({subtree:true}).some(a=>a.playState==='running'))
   const geometry=await about.locator('.lobby-sheet-panel').evaluate(el=>{const r=el.getBoundingClientRect();return {rect:{x:r.x,y:r.y,width:r.width,right:r.right,bottom:r.bottom},viewportWidth:innerWidth,viewportHeight:innerHeight,scrollWidth:document.documentElement.scrollWidth}})
   console.log(JSON.stringify({mode,geometry}))
   assert.ok(geometry.rect.x>=0&&geometry.rect.right<=geometry.viewportWidth&&geometry.rect.bottom<=geometry.viewportHeight,'the sheet fits the viewport')

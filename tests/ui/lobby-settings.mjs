@@ -51,7 +51,8 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await tap(gear)
     const panel = page.locator('.world-inspector.lobby-settings')
     await panel.waitFor({ state: 'visible' })
-    assert.ok(await page.evaluate(() => document.activeElement?.closest('.lobby-settings') !== null), `${mode}: focus inside the panel`)
+    // Settings is one of the lobby's sheets (LobbySheet): focus moves into it.
+    assert.ok(await page.evaluate(() => document.activeElement?.closest('dialog.lobby-sheet-settings') !== null), `${mode}: focus inside the panel`)
     // Not in a room here, so the Room card (host lock and reset) has nothing to act on and hides.
     assert.deepEqual(await panel.locator('.wi-card').evaluateAll((cards) => cards.filter((c) => c.getClientRects().length).map((c) => c.dataset.section)), ['sound', 'performance', 'controls'])
     assert.match(await panel.locator('.wi-card[data-section=sound] .wi-sum').textContent(), /Music \d+% · Master \d+%/)
@@ -149,25 +150,25 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     if (mode === 'desktop') await page.setViewportSize({ width: 1440, height: 900 })
 
     // Escape closes and focus returns to the gear (the close control does the same on phones).
-    if (touch) await tap(panel.locator('.lobby-settings-close'))
+    if (touch) await tap(page.locator('dialog.lobby-sheet-settings .lobby-sheet-close'))
     else await page.keyboard.press('Escape')
-    await page.waitForFunction(() => !document.querySelector('.world-inspector.lobby-settings'))
+    await page.waitForFunction(() => !document.querySelector('dialog.lobby-sheet-settings[open]'))
     assert.ok(await page.evaluate(() => document.activeElement?.classList.contains('lobby-gear')), `${mode}: focus back on the gear`)
     if (!touch) {
       // Tab stays inside while open; a click outside closes without reaching the galaxy.
       await gear.click(); await panel.waitFor({ state: 'visible' })
       for (let i = 0; i < 30; i++) await page.keyboard.press('Tab')
-      assert.ok(await page.evaluate(() => document.activeElement?.closest('.lobby-settings') !== null), 'desktop: focus trapped')
-      await page.mouse.click(200, 450)
-      await page.waitForFunction(() => !document.querySelector('.world-inspector.lobby-settings'))
+      assert.ok(await page.evaluate(() => document.activeElement?.closest('dialog.lobby-sheet-settings') !== null), 'desktop: focus trapped')
+      await page.mouse.click(120, 450)
+      await page.waitForFunction(() => !document.querySelector('dialog.lobby-sheet-settings[open]'))
       assert.equal(await page.evaluate(() => document.querySelector('.shell-overlay .lobby-panels')?.hidden ?? true), true, 'desktop: outside click did not open a planet')
     }
     // The version beside the gear opens the Updates sheet.
     await tap(page.locator('[data-lobby-version]'))
     await page.locator('.lobby-sheet-updates .about-updates').waitFor({ state: 'visible', timeout: 10000 })
     await page.keyboard.press('Escape'); await page.locator('.lobby-sheet-updates').waitFor({ state: 'hidden' })
-    // Closed, the in-game rail is again the only .world-inspector.
-    assert.equal(await page.locator('.world-inspector').count(), 1)
+    // Closed, no settings panel shows (it waits in its closed sheet).
+    assert.equal(await page.locator('.world-inspector.lobby-settings:visible').count(), 0)
     assert.deepEqual(errors, [], `${mode}: no page errors`)
     console.log(`${mode}: ok`)
   } finally { await browser.close() }

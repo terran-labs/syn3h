@@ -114,7 +114,7 @@
     left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); width: auto;
     top: max(10px, env(safe-area-inset-top)); bottom: max(10px, env(safe-area-inset-bottom)); height: auto; max-height: none;
   }
-  .lobby-gear-dock.is-open { visibility: hidden; }
+  .lobby-gear-dock.is-open:not(.is-beside-sheet) { visibility: hidden; }
   /* The panel covers the lobby here, so the lobby behind it dims: a full-screen backdrop with
      no edge, not a sheet round the cards. Taps pass through it to the close-on-outside rule. */
   .syn3h-shell.exploration-ui:not(.is-playing) .lobby-settings-host::before { content: ''; position: fixed; inset: 0; z-index: 59; background: rgb(2 8 14 / .78); pointer-events: none; }
@@ -136,4 +136,26 @@
 /* Touch: every control a full 44 px target. */
 @media (pointer: coarse) {
   .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control { height: 44px; min-height: 44px; font-size: 11px; letter-spacing: .18em; gap: 8px; padding: 0 10px 0 11px; }
+}
+
+/* In the lobby's sheet (LobbySheet, is-embedded): the panel is the sheet's contents, not a
+   column of its own. The sheet gives the title, the close control and the frosted ground, so
+   the panel's own header, backdrop and placement step aside and its cards fill the width. */
+.lobby-settings-host.is-embedded::before { display: none; }
+.syn3h-shell.exploration-ui:not(.is-playing) dialog.lobby-sheet .lobby-settings-host.is-embedded .world-inspector.lobby-settings {
+  position: static; inset: auto; width: auto; height: auto; max-height: none; margin: 0; padding: 0; transform: none;
+  display: flex; flex-direction: column; gap: 8px; background: none; box-shadow: none; border: 0;
+}
+.syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-settings-host.is-embedded .lobby-settings-head { display: none; }
+.syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-settings-host.is-embedded .world-inspector.lobby-settings .wi-cards { overflow: visible; flex: 0 0 auto; }
+.syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-settings-host.is-embedded .lobby-settings-foot { position: static; padding: 4px 8px 0; }
+
+/* Beside an open sheet (Shell moves the dock into the sheet's dialog): the open one is lit, the
+   others switch to theirs. A phone held upright has no room beside it: a row of three under it. */
+.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control.is-current { --glow: 1; --bloom: 9px; }
+.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control.is-current::after { background: linear-gradient(180deg, rgb(255 250 242 / .34), rgb(255 248 238 / .14) 50%, rgb(255 248 238 / .06)); }
+dialog.lobby-sheet .lobby-gear-dock { z-index: 2; }
+@media (max-width: 600px) and (orientation: portrait) {
+  dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet { left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); width: auto; grid-auto-flow: column; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet .lobby-control { gap: 6px; padding: 0 6px 0 9px; letter-spacing: .12em; font-size: 10.5px; }
 }
