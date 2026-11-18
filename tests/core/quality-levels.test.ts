@@ -43,7 +43,7 @@ describe('level presets', () => {
   it('turns finished features on by the level that can afford them, and never off again above it', () => {
     const at = (level: QualityLevel, id: string) => presetFor(level)[id]
     expect(at(0, 'post.on')).toBe(false); expect(at(1, 'post.on')).toBe(true)
-    expect(at(2, 'post.shafts')).toBeGreaterThan(0); expect(at(1, 'post.shafts')).toBe(0)
+    for (const level of [0, 1, 2, 3, 4, 5] as const) expect(at(level, 'post.shafts')).toBeGreaterThan(0)
     expect(at(3, 'post.bloom')).toBeGreaterThan(0); expect(at(2, 'post.bloom')).toBe(0)
     for (const id of ['post.ao', 'post.clouds', 'post.contact', 'post.flare', 'post.motionBlur']) { expect(at(3, id), id).toBe(0); expect(at(4, id), id).toBeGreaterThan(0) }
     expect(at(4, 'post.temporal')).toBe(true); expect(at(3, 'post.temporal')).toBe(false)

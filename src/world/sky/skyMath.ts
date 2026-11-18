@@ -246,7 +246,16 @@ export const GLOW_CAP_COS = Math.cos(GLOW_CAP_DEG * DEG)
 export const GLOW_SHARE_FROM = 0.1, GLOW_SHARE_TO = 0.45
 /** 1 for a sun on the horizon, 0 once it is up about 27 degrees or set. */
 export function lowSunGlowShare(sunY: number): number {
-  return (1 - smoothstep(GLOW_SHARE_FROM, GLOW_SHARE_TO, sunY)) * smoothstep(-0.03, 0.02, sunY)
+  return rayGlowShare(sunY, 0)
+}
+/**
+ * The share of the forward glow the sun rays carry (src/fx/post/PostChain.ts): 1 for a sun
+ * on the horizon, easing to `high` once it is up about 27 degrees, 0 once it has set. With
+ * `high` 0 this is lowSunGlowShare, the sunrise-only rays of v26.11.1611.
+ */
+export function rayGlowShare(sunY: number, high: number): number {
+  const low = 1 - smoothstep(GLOW_SHARE_FROM, GLOW_SHARE_TO, sunY)
+  return (high + (1 - high) * low) * smoothstep(-0.03, 0.02, sunY)
 }
 
 /**
@@ -254,13 +263,13 @@ export function lowSunGlowShare(sunY: number): number {
  * the sky minus the same sky with the Mie phase held at its GLOW_CAP_DEG value. The sun
  * shafts draw this light through the gaps between occluders instead of the sky shader
  * drawing it everywhere (AlienSkyMesh.skyScatter is the shader copy). Non-negative; 0 beyond
- * the cap angle and for a high or set sun.
+ * the cap angle and for a set sun. `share` defaults to the low sun's (0 for a high sun); the
+ * rays pass rayGlowShare, which keeps some of the glow at any height.
  */
-export function forwardGlow(dir: Vec3, sun: Vec3, p: SkyParams, out: RGB = [0, 0, 0]): RGB {
+export function forwardGlow(dir: Vec3, sun: Vec3, p: SkyParams, out: RGB = [0, 0, 0], share = lowSunGlowShare(sun[1])): RGB {
   const cosTheta = dir[0] * sun[0] + dir[1] * sun[1] + dir[2] * sun[2]
-  const share = lowSunGlowShare(sun[1])
   out[0] = out[1] = out[2] = 0
-  if (!(cosTheta > GLOW_CAP_COS) || !(share > 0) || !(lowSunGrade(sun[1]) > 0)) return out
+  if (!(cosTheta > GLOW_CAP_COS) || !(share > 0)) return out
   scatterGraded(dir, sun, p, 1, out)
   const capped = scatterGraded(dir, sun, p, GLOW_CAP_COS, _capped)
   for (let i = 0; i < 3; i++) out[i] = Math.max(0, out[i] - capped[i]) * share

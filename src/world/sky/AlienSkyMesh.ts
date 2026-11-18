@@ -18,6 +18,7 @@ import {
   Fn, If, acos, add, cameraPosition, clamp, cos, dot, exp, float, floor, fract, length, max, min, mix,
   modelViewProjection, mul, normalize, positionWorld, pow, renderGroup, smoothstep, sub, time, uniform, vec2, vec3, vec4,
 } from 'three/tsl'
+import { RAY_DARK, burstSwing, createBurstUniforms } from '../../fx/post/sunburst'
 import { BETA_EPSILON, GLOW_CAP_COS, GLOW_SHARE_FROM, GLOW_SHARE_TO, GLOW_DESAT, GLOW_KNEE, GLOW_POWER, MIE_ZENITH_LENGTH, SAT_LEAN, SUN_DESAT, RAYLEIGH_ZENITH_LENGTH, SKY_FLOOR, SKY_SCALE } from './skyMath'
 
 type N = any // TSL node; the published types are too strict for shader code written like this
@@ -86,8 +87,10 @@ export interface SkyScatterInputs { sunDirection: N; betaR: N; betaM: N; sunE: N
  * cap angle, so it is 0 beyond the cap and fades to 0 as the sun climbs (lowSunGrade).
  * skyMath.forwardGlow is the CPU copy. One definition for the sky shader and for the sun
  * shafts (src/fx/post/PostChain.ts), which draw their streaks as a share of that glow.
+ * `forward(share)` is the same glow scaled by any share (a node): the rays pass
+ * skyMath.rayGlowShare, which keeps some of it with the sun high.
  */
-export function skyScatter(direction: N, s: SkyScatterInputs, withGlow = true): { graded: N; glow: N; Fex: N; L0: N; cosTheta: N; grade: N; c: N } {
+export function skyScatter(direction: N, s: SkyScatterInputs, withGlow = true): { graded: N; glow: N; forward: (share: N) => N; Fex: N; L0: N; cosTheta: N; grade: N; c: N } {
   const pi = float(Math.PI)
   const THREE_OVER_SIXTEENPI = float(0.05968310365946075)
   const ONE_OVER_FOURPI = float(0.07957747154594767)
@@ -126,12 +129,27 @@ export function skyScatter(direction: N, s: SkyScatterInputs, withGlow = true): 
     return mix(base.div(lum), s.glowTint as N, lean).mul(gradedLum)
   }
   const graded = sky(mie(cosTheta)).toVar() as N
-  // Only at a low sun and only near it: elsewhere the capped sky is the sky.
-  const glow = vec3(0.0).toVar() as N
-  if (withGlow) If(cosTheta.greaterThan(GLOW_CAP_COS).and(grade.greaterThan(0.0)), () => {
-    glow.assign(max(graded.sub(sky(mie(float(GLOW_CAP_COS)))), vec3(0.0)).mul(lowSunGlow(sunDir.y)))
-  })
-  return { graded, glow, Fex, L0, cosTheta, grade, c }
+  // Only near the sun, and only where the share is above 0: elsewhere the capped sky is the sky.
+  const forward = (share: N): N => {
+    const out = vec3(0.0).toVar() as N
+    If(cosTheta.greaterThan(GLOW_CAP_COS).and(share.greaterThan(0.0)), () => {
+      out.assign(max(graded.sub(sky(mie(float(GLOW_CAP_COS)))), vec3(0.0)).mul(share))
+    })
+    return out
+  }
+  // The low sun's share is 0 exactly where the grade is (sun up 27 degrees or set).
+  const glow = withGlow ? forward(lowSunGlow(sunDir.y)) : vec3(0.0)
+  return { graded, glow, forward, Fex, L0, cosTheta, grade, c }
+}
+
+/**
+ * The light the sun rays move toward a direction: the forward glow round the sun at `share`,
+ * plus `fill` of the sky's own light at the same share. The glow ends 45 degrees from the sun;
+ * the fill lets rays reach a frame edge with the sun well off to the side. Never more than the
+ * sky holds there, so a dark streak cannot take a channel below zero.
+ */
+export function rayLight(scatter: { graded: N; forward: (share: N) => N }, share: N, fill: N): N {
+  return min(scatter.forward(share).add(scatter.graded.mul(fill).mul(share)), scatter.graded)
 }
 
 /** skyMath.lowSunGlowShare as a node. */
@@ -167,6 +185,17 @@ export class AlienSkyMesh extends Mesh {
   cloudLayerVisible = true
   private readonly cloudVisibility = uniform(1).setGroup(renderGroup).onRenderUpdate(() => this.cloudLayerVisible ? 1 : 0)
 
+
+  /**
+   * The cheap sun rays: the burst (src/fx/post/sunburst.ts) over open sky, drawn here where the
+   * post chain does not draw its own (it writes these each frame). 0 strength draws nothing.
+   * Ridges, vehicles and the sky's clouds cut them because they are drawn over the sky; there
+   * are no beams in front of terrain. Only for `raysCamera`, so reflections stay still.
+   */
+  readonly rays = { burst: createBurstUniforms(), strength: uniform(0), share: uniform(0), fill: uniform(0) }
+  raysCamera: Camera | null = null
+  private readonly raysOn = uniform(0).setGroup(renderGroup).onRenderUpdate(frame =>
+    frame.camera === this.raysCamera ? 1 : 0)
 
   /** Camera-only water attenuation. The shared PMREM proxy uses other cameras. */
   underwaterCamera: Camera | null = null
@@ -206,6 +235,15 @@ export class AlienSkyMesh extends Mesh {
 
       const graded = scatter.graded as N
       const texColor = graded.add(sundiscColor).add(night).toVar() as N
+
+      // Cheap sun rays, before the clouds so a cloud covers them. With no march toward the sun,
+      // nothing dims the gaps round a sun hidden behind a ridge, so a dark streak takes at most
+      // RAY_DARK of the light it carries: gaps read as shade between rays, never as a hole.
+      const raysStrength = (this.rays.strength as N).mul(this.raysOn)
+      If(raysStrength.greaterThan(0.0).and(direction.y.greaterThan(-0.02)), () => {
+        const swing = burstSwing(direction, this.rays.burst, 2).mul(raysStrength).max(-RAY_DARK)
+        texColor.addAssign(rayLight(scatter, this.rays.share, this.rays.fill).mul(swing))
+      })
 
       // Stars: one candidate per cell of a 3D grid over the view direction. Sinless hash so
       // every GPU agrees; the cell jitter hides the grid. Extinction dims them at the horizon.

@@ -18,17 +18,39 @@ export const postBloom = defineParam({ id: 'post.bloom', label: 'Glow strength',
 export const postBloomThreshold = defineParam({ id: 'post.bloomThreshold', label: 'Glow threshold (on-screen brightness)', group: g, scope: c, default: 3, min: 0.5, max: 6, step: 0.05 })
 export const postBloomRadius = defineParam({ id: 'post.bloomRadius', label: 'Glow radius', group: g, scope: c, default: 0.4, min: 0, max: 1, step: 0.05 })
 
-export const postShafts = defineParam({ id: 'post.shafts', label: 'Sun shafts', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
-export const postShaftLength = defineParam({ id: 'post.shaftLength', label: 'Sun shaft length', group: g, scope: c, default: 0.9, min: 0.2, max: 1, step: 0.05 })
+/**
+ * Sun ray strength. The rays are a burst of streaks round the sun, in the lobby sun's style
+ * (src/fx/post/sunburst.ts), cut by ridges, cloud and vehicles. Every quality level draws them:
+ * Medium and up with beams through the gaps (the post chain), Minimal and Low as a cheaper
+ * form over open sky (the sky shader). 0 removes them everywhere.
+ */
+export const postShafts = defineParam({ id: 'post.shafts', label: 'Sun ray strength', group: g, scope: c, default: 0.55, min: 0, max: 3, step: 0.05 })
+/**
+ * Sun rays with the sun high, as a share of their strength at a sun on the horizon. The rays
+ * carry the sky's forward glow round the sun; this keeps a share of it once the sun is up
+ * about 27 degrees (skyMath.rayGlowShare). 0 is the sunrise and sunset only rays of v26.11.1611.
+ */
+export const postRayHighSun = defineParam({ id: 'post.rayHighSun', label: 'Sun rays with a high sun (share of low-sun strength)', group: g, scope: c, default: 0.4, min: 0, max: 1, step: 0.05 })
+/**
+ * How far the rays reach from the sun, in degrees of sky, with the sun on the horizon. A high
+ * sun's are three quarters as long. The streaks fade over this angle, so they are faint well before it.
+ */
+/**
+ * Share of the sky's own light the rays move, on top of the glow round the sun. The glow ends
+ * 45 degrees from the sun; this carries rays to the frame's edge with the sun off to the side.
+ */
+export const postRayFill = defineParam({ id: 'post.rayFill', label: 'Sun rays across the sky (share of sky light)', group: g, scope: c, default: 0.25, min: 0, max: 1, step: 0.05 })
+export const postRayLength = defineParam({ id: 'post.rayLength', label: 'Sun ray length at a low sun (°)', group: g, scope: c, default: 45, min: 10, max: 90, step: 1 })
+export const postShaftLength = defineParam({ id: 'post.shaftLength', label: 'Sun shaft march toward the sun (share of the way)', group: g, scope: c, default: 0.9, min: 0.2, max: 1, step: 0.05 })
 /**
  * Share of the low sun's glow the shafts add in front of what blocks it (cloud, and terrain
  * by its distance), as lit haze. 0 leaves occluders dark; open sky always gets it all back.
  */
 export const postShaftHaze = defineParam({ id: 'post.shaftHaze', label: 'Sun shaft haze', group: g, scope: c, default: 0.35, min: 0, max: 1, step: 0.05 })
 /** How strongly the sunburst's bright and dark streaks differ: 0 is the plain glow. */
-export const postShaftContrast = defineParam({ id: 'post.shaftContrast', label: 'Sun ray contrast', group: g, scope: c, default: 1.5, min: 0, max: 2, step: 0.05 })
+export const postShaftContrast = defineParam({ id: 'post.shaftContrast', label: 'Sun ray contrast', group: g, scope: c, default: 0.8, min: 0, max: 2, step: 0.05 })
 /** How far from the sun (screen heights) the gaps and clouds that shape the beams are weighed. */
-export const postShaftReach = defineParam({ id: 'post.shaftReach', label: 'Sun shaft source size', group: g, scope: c, default: 0.05, min: 0.02, max: 0.5, step: 0.01 })
+export const postShaftReach = defineParam({ id: 'post.shaftReach', label: 'Sun shaft source size', group: g, scope: c, default: 0.12, min: 0.02, max: 0.5, step: 0.01 })
 export const postLowSun = defineParam({ id: 'post.lowSun', label: 'Extra shafts at low sun', group: g, scope: c, default: 0.6, min: 0, max: 3, step: 0.05 })
 export const postFlare = defineParam({ id: 'post.flare', label: 'Lens streak and ghosts', group: g, scope: c, default: 0.5, min: 0, max: 2, step: 0.05 })
 

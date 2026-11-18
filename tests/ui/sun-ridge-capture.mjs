@@ -35,7 +35,7 @@ try {
   const shoot = async name => {
     const files = {}
     for (const mode of ['off', 'on']) {
-      await set('post.shafts', mode === 'off' ? 0 : 1); await page.waitForTimeout(2500)
+      await set('post.shafts', mode === 'off' ? 0 : await page.evaluate(() => window.syn3h.params.get('post.shafts').def.default)); await page.waitForTimeout(2500)
       files[mode] = `${out}/${name}-${mode === 'on' ? phase : 'off'}.png`; await page.screenshot({ path: files[mode] })
     }
     console.log(JSON.stringify({ frame: name, phase, ...(await fringe(files.off, files.on)) }))
