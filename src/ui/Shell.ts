@@ -1120,6 +1120,27 @@ export class Shell implements System {
       if (locked && focused instanceof HTMLElement && this.gearSelector.element.contains(focused)) focused.blur()
     }
   }
+  /** Add a card to the end of the sidebar's stack (Chat, src/ui/chat/ChatCard.ts). */
+  addCard(id: string, title: string, body: HTMLElement, summary: () => string): HTMLElement { return this.inspector.addCard(id, title, body, summary) }
+  /**
+   * Show the panels with this card open (Y and the left column's Chat row). Freeing the cursor
+   * returns the interface to Full; the mode the player had comes back with returnToDriving.
+   */
+  showCard(id: string): void {
+    if (!this.playing) return
+    if (!this.inspector.open) this.modeBeforeCard = Math.round(interfaceMode.value)
+    // Full now, not when the cursor is let go: the card's field must be focusable at once.
+    if (Math.round(interfaceMode.value) !== 0) setInterfaceMode(0)
+    this.showPanels(); this.inspector.revealCard(id)
+  }
+  private modeBeforeCard: number | null = null
+  /** True while the sidebar is showing. */
+  get panelsOpen(): boolean { return this.inspector.open }
+  /** Hide the panels and go back to driving: on a desktop, capture the cursor. */
+  returnToDriving(): void {
+    this.drive()
+    if (this.modeBeforeCard !== null) { setInterfaceMode(this.modeBeforeCard); this.modeBeforeCard = null }
+  }
   /** Show the panels: on a desktop that is letting the cursor go. */
   private showPanels(): void { if (this.capturesCursor) this.releaseCursor(); else this.touchPanels = true; this.syncPanels() }
   /** Return to driving: on a desktop that is capturing the cursor, which needs a gesture. */
