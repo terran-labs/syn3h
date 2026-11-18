@@ -131,7 +131,7 @@ for(const mode of ['desktop','phone','short-phone']){
   await page.screenshot({path:`${out}/${mode}-invite.png`});await page.keyboard.press('Enter');await invite.waitFor({state:'hidden'})
   backPaths.push({id:'invite',width:r.width,height:r.height})
   await page.keyboard.press('Escape');await page.locator('.lobby-panels').waitFor({state:'hidden'})
-  assert.deepEqual(errors,[]);report.push({mode,canvas,geometry,cols,backPaths,errors});console.log(JSON.stringify(report.at(-1)))
+  assert.deepEqual(errors,[]);report.push({mode,canvas,geometry,backPaths,errors});console.log(JSON.stringify(report.at(-1)))
  }finally{await browser.close()}
 }
 await writeFile(`${out}/report.json`,JSON.stringify(report,null,2))
