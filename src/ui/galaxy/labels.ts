@@ -35,12 +35,12 @@ export function captionHidden(place: LabelPlace, places: readonly LabelPlace[], 
  * centred on its planet, so nothing has to be measured. The disc edge is a one pixel ramp
  * at the planet's limb, crisp and antialiased. 'none' when nothing nearer touches it.
  */
-export function captionMask(place: LabelPlace, places: readonly LabelPlace[], sun: { x: number; y: number; radius: number; depth?: number } | undefined, top: number): string {
+export function captionMask(place: LabelPlace, places: readonly LabelPlace[], sun: { x: number; y: number; radius: number; depth?: number } | undefined, top: number, scale = 1): string {
   const nearer = places.filter(other => other.id !== place.id && other.visible && other.depth < place.depth)
   const bodies: { x: number; y: number; radius: number }[] = [...nearer]
   if (sun && sun.depth !== undefined && sun.depth < place.depth) bodies.push(sun)
-  // Only bodies that can reach the caption: within a generous box under the planet.
-  const reach = bodies.filter(b => Math.abs(b.x - place.x) < b.radius + 160 && b.y + b.radius > top - 2 && b.y - b.radius < top + 40)
+  // Only bodies that can reach the caption: within a generous box under the planet, as large as the caption is drawn.
+  const reach = bodies.filter(b => Math.abs(b.x - place.x) < b.radius + 160 * scale && b.y + b.radius > top - 2 && b.y - b.radius < top + 40 * scale)
   if (!reach.length) return 'none'
   return reach.map(b => {
     const dx = (b.x - place.x).toFixed(1), dy = (b.y - top).toFixed(1), r = b.radius
