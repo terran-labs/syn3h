@@ -13,6 +13,7 @@ import { abs, attribute, clamp, dot, float, instancedBufferAttribute, length, mi
 import {mergeStatic,registerVehicleDetail,detailLevel} from './mergeStatic'
 import type { BuggySkin } from './BuggySkin'
 import { MotorSparks } from './motorSparks'
+import { motorSparkAmount } from './motorDrive'
 import type Node from 'three/src/nodes/core/Node.js'
 
 const up = new THREE.Vector3(0, 1, 0)
@@ -557,7 +558,7 @@ export class Syn3hBuggySkin implements BuggySkin {
     this.tailLamps?.setRGB(braking ? BRAKE_LAMP : TAIL_LAMP, 0, 0)
   }
 
-  setDrive(index: number, effort: number, regen = false): void {
+  setDrive(index: number, effort: number, regen = false, sparks = 0): void {
     if (!this.sparks) return
     effort = THREE.MathUtils.clamp(effort, 0, 1)
     this.effort[index] = effort; this.regen[index] = regen
@@ -573,11 +574,12 @@ export class Syn3hBuggySkin implements BuggySkin {
       const on = lit > .004
       this.sparks.setHalo(index * 2 + tip, p.x, p.y, p.z, on ? .08 + .16 * effort : 0, c.r * lit, c.g * lit, c.b * lit)
     }
-    // Sparks: only near full effort, a few per second rising to a spray, from a random tip.
+    // Sparks: only at the motor's peak load (the caller's `sparks`), a few per second rising
+    // to a spray, from a random tip.
     const now = (performance.now() - this.start) / 1000
     if (index === 0) { this.lastDriveTime = this.lastDriveTime < 0 ? now : this.lastDriveTime; scratch.dt = Math.min(.1, now - this.lastDriveTime); this.lastDriveTime = now }
-    const hard = regen ? 0 : Math.max(0, (effort - .65) / .35)
-    this.sparkDebt[index] = Math.min(3, this.sparkDebt[index] + hard * hard * 36 * scratch.dt)
+    const hard = regen ? 0 : THREE.MathUtils.clamp(sparks, 0, 1)
+    this.sparkDebt[index] = Math.min(3, this.sparkDebt[index] + hard * hard * 36 * motorSparkAmount.value * scratch.dt)
     while (this.sparkDebt[index] >= 1) {
       this.sparkDebt[index] -= 1
       const tip = this.random() < .5 ? 1 : -1, rnd = this.random

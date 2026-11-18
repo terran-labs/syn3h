@@ -9,7 +9,8 @@
  * wheel touched, then holds the loop on a drawn frame, projects those points (3 to 18 m behind
  * the car) to the screen with the frame's own camera, and compares the picture there with the
  * ground 1.3 m outside the same wheel. Contrast is (ground - track) / ground luminance, in per
- * cent: positive darker, negative lighter. It saves the frame it measured. Prints one JSON line
+ * cent: positive darker, negative lighter, with the fade-in of new track turned off so the
+ * held frame shows settled marks. It saves the frame it measured. Prints one JSON line
  * per measurement and writes <label>-contrast.json.
  */
 import { chromium } from 'playwright-core'
@@ -53,6 +54,9 @@ try {
       const s = window.syn3h
       s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', hour); s.params.set('sun.dayLength', 0)
       if (tyre) s.params.set('buggy.tyreSize', tyre)
+      // Settled strength: the frame is held right after a manoeuvre, so without this the last
+      // fraction of a second of track would still be easing in (gfx.tyreMarks.fadeIn).
+      if (s.params.get('gfx.tyreMarks.fadeIn')) s.params.set('gfx.tyreMarks.fadeIn', 0)
     }, { hour, tyre })
     for (const [move, { legs }] of Object.entries(MOVES)) {
       // A fresh flat patch of the surface, facing more of it, every time.

@@ -20,10 +20,11 @@ export interface BuggySkin {
   setColors(body: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void
   /**
    * Hub motor load for wheel `index`, 0 idle to 1 flat out (see motorDrive.ts); `regen` while
-   * the motor is braking. Drives the rotor/stator glow and sparks. Call once per wheel per
-   * frame after setWheel. Optional: skins without hub motors ignore it.
+   * the motor is braking. Drives the rotor/stator glow. `sparks` 0..1 is how hard the motor
+   * throws sparks (Syn3hBuggy: only near its peak load, see motorLoad); absent means none.
+   * Call once per wheel per frame after setWheel. Optional: skins without hub motors ignore it.
    */
-  setDrive?(index: number, effort: number, regen?: boolean): void
+  setDrive?(index: number, effort: number, regen?: boolean, sparks?: number): void
   /** Brake lamps on while braking or regenerating. Optional: only mesh lamps need it. */
   setLights?(braking: boolean): void
   /**

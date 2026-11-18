@@ -8,8 +8,8 @@ import {ParticleBatch} from './ParticleBatch'
 import {RibbonBatch} from './RibbonBatch'
 import {dustSprite,glowSprite,plasmaSprite,tyreMarkAlpha} from './sprites'
 import {DEFAULT_TREAD,DUSTS,TREADS} from './treads'
-import {surfaceTone} from './groundTone'
-import {MARK_END_FADE,tyreMarkLife,tyreMarkSoftness,tyreMarkStrength} from './markParams'
+import {markRatio,surfaceTone} from './groundTone'
+import {MARK_END_FADE,tyreMarkFadeIn,tyreMarkLife,tyreMarkSoftness,tyreMarkStrength} from './markParams'
 import type {SurfaceKind} from '../../world/terrain/surface'
 import {windDrift} from '../../world/weather'
 
@@ -93,7 +93,7 @@ class EffectWorld implements System {
     const start=performance.now();dt=Math.min(.1,dt);this.clock+=dt
     if(this.level!==graphicsLevel.value)this.rebudget()
     const clock=this.clock;this.dust.clock.value=clock;this.energy.clock.value=clock;this.sparks.clock.value=clock;this.redSparks.clock.value=clock;this.marks.clock.value=clock;this.trails.clock.value=clock
-    this.marks.strength.value=tyreMarkStrength.value;this.marks.softness.value=tyreMarkSoftness.value
+    this.marks.strength.value=tyreMarkStrength.value;this.marks.softness.value=tyreMarkSoftness.value;this.marks.fadeIn.value=tyreMarkFadeIn.value
     this.marks.expire();this.trails.expire()
     for(const e of this.vehicles.values())e.update(dt)
     this.stats.vehicles=this.vehicles.size;this.stats.marks=this.marks.used
@@ -115,11 +115,14 @@ class VehicleEffects {
   // Last tyre mark and wing tip positions, kept in place; the flags say which are live.
   private readonly previousMarks=[new T.Vector3(),new T.Vector3(),new T.Vector3(),new T.Vector3()]
   private readonly hasMark=[false,false,false,false]
-  // Per wheel: metres since its mark began, the alpha and tint where it last left off, how much
-  // it is sliding (smoothed, so a mark strengthens gradually), and its last few quads, so the
-  // mark's end can be faded where the wheel lifts or stops.
+  // Per wheel: metres since its mark began, the alpha, tint and clock time where it last left
+  // off, how much it is sliding (smoothed, so a mark strengthens gradually), its live head quad
+  // (stretched from the last committed point to the tyre every frame) and its last few quads,
+  // so the mark's end can be faded where the wheel lifts or stops.
   private readonly runLength=[0,0,0,0]
   private readonly lastAlpha=[0,0,0,0]
+  private readonly lastBorn=[0,0,0,0]
+  private readonly head=[-1,-1,-1,-1]
   private readonly lastTint=[new T.Color(),new T.Color(),new T.Color(),new T.Color()]
   private readonly slide=[0,0,0,0]
   private readonly recentId=new Float64Array(4*RECENT)
@@ -193,12 +196,22 @@ class VehicleEffects {
   private endMark(i:number){
     if(!this.hasMark[i])return
     this.hasMark[i]=false
-    const end=this.runLength[i]
+    // The head quad, if one is drawn, is the mark's last stretch.
+    if(this.head[i]>=0){this.remember(i,this.head[i],this.runLength[i],this.headEnd[i]);this.head[i]=-1}
+    const end=this.headEnd[i]
     for(let k=0;k<this.recentCount[i];k++){
       const r=i*RECENT+k
       this.world.marks.endAt(this.recentId[r],end-this.recentStart[r*2],end-this.recentStart[r*2+1])
     }
     this.recentCount[i]=0
+  }
+  /** Where wheel `i`'s head quad reaches, metres from where its mark began. */
+  private readonly headEnd=[0,0,0,0]
+  /** Keep quad `id` (metres `start` to `end` of wheel `i`'s mark) among its last few, newest last. */
+  private remember(i:number,id:number,start:number,end:number){
+    let n=this.recentCount[i]
+    if(n===RECENT){for(let k=1;k<RECENT;k++){const a=i*RECENT+k;this.recentId[a-1]=this.recentId[a];this.recentStart[(a-1)*2]=this.recentStart[a*2];this.recentStart[(a-1)*2+1]=this.recentStart[a*2+1]}n--}
+    const r=i*RECENT+n;this.recentId[r]=id;this.recentStart[r*2]=start;this.recentStart[r*2+1]=end;this.recentCount[i]=n+1
   }
   /** Ground within a little of the water's surface: wet. Lava shores are scorched rock instead. */
   private wet(p:T.Vector3,ground:number,kind:SurfaceKind){return kind!=='rock'&&(this.terrain.liquidHeightAt?.(p.x,p.z)??-Infinity)>ground-.6}
@@ -269,27 +282,33 @@ class VehicleEffects {
         if(strength>0){
           const style=this.terrain.surfaceAt?TREADS[kind]:DEFAULT_TREAD
           // Wet ground by the water takes a darker, firmer print.
-          const alpha=T.MathUtils.lerp(style.roll,style.slip,this.slide[i])*(wet?1.3:1)
-          // A sliding or braking wheel churns the ground darker still; frost stays pale.
-          const c=surfaceTone(look,kind,style,0),dim=(wet?.75:1)*(style.frost?1:1-.3*this.slide[i])
-          markColor.setRGB(c[0]*dim,c[1]*dim,c[2]*dim)
+          const alpha=T.MathUtils.lerp(style.roll,style.slip,this.slide[i])*(wet?1.15:1)
+          // The mark's tone relative to the ground (groundTone.markRatio): the renderer
+          // multiplies the lit ground under it by this. A sliding or braking wheel churns the
+          // ground darker still; frost stays pale.
+          const c=markRatio(look,kind,style),dim=(wet?.85:1)*(style.frost?1:1-.3*this.slide[i])
+          markColor.setRGB(c[0]<1?c[0]*dim:c[0],c[1]<1?c[1]*dim:c[1],c[2]<1?c[2]*dim:c[2])
           const prev=this.previousMarks[i]
           if(!this.hasMark[i]){
-            prev.copy(wp);this.hasMark[i]=true;this.runLength[i]=0;this.recentCount[i]=0
-            this.lastAlpha[i]=alpha;this.lastTint[i].copy(markColor)
+            prev.copy(wp);this.hasMark[i]=true;this.runLength[i]=this.headEnd[i]=0;this.recentCount[i]=0;this.head[i]=-1
+            this.lastAlpha[i]=alpha;this.lastTint[i].copy(markColor);this.lastBorn[i]=w.clock
           }else{
             const step=prev.distanceTo(wp)
-            // Longer segments at speed: a straight run at 20 m/s keeps about 500 m of track per
-            // wheel in the shared ring instead of 190, and long quads cost nothing more to draw.
-            if(step>=clamp(speed*.1,.75,2.5)){
+            // Every frame the head quad stretches from the last committed point to the tyre,
+            // so the track grows continuously from the contact; its newest end is laid now and
+            // eases in over the fade-in time (RibbonBatch, markEnvelope). Once it is a segment
+            // long it is committed as it stands and the next head starts from its end: nothing
+            // is redrawn, so nothing steps. Longer segments at speed: a straight run at 20 m/s
+            // keeps about 500 m of track per wheel in the shared ring instead of 190.
+            if(step>=.05){
               side.copy(wp).sub(prev).cross(normal).normalize()
               const start=this.runLength[i],end=start+step
-              const id=w.marks.mark(prev,wp,side,.5*style.width*(tank?TANK_MARK_WIDTH/.5:contact?.width??1),style.life*lifeScale,this.lastAlpha[i],alpha,this.lastTint[i],markColor,style.tread,start,end)
-              // Keep the last few quads, newest last, for fading the end.
-              let n=this.recentCount[i]
-              if(n===RECENT){for(let k=1;k<RECENT;k++){const a=i*RECENT+k;this.recentId[a-1]=this.recentId[a];this.recentStart[(a-1)*2]=this.recentStart[a*2];this.recentStart[(a-1)*2+1]=this.recentStart[a*2+1]}n--}
-              const r=i*RECENT+n;this.recentId[r]=id;this.recentStart[r*2]=start;this.recentStart[r*2+1]=end;this.recentCount[i]=n+1
-              this.runLength[i]=end;this.lastAlpha[i]=alpha;this.lastTint[i].copy(markColor);prev.copy(wp)
+              const id=w.marks.mark(prev,wp,side,.5*style.width*(tank?TANK_MARK_WIDTH/.5:contact?.width??1),style.life*lifeScale,this.lastAlpha[i],alpha,this.lastTint[i],markColor,style.tread,start,end,this.lastBorn[i],this.head[i])
+              this.head[i]=id;this.headEnd[i]=end
+              if(id>=0&&step>=clamp(speed*.1,.75,2.5)){
+                this.remember(i,id,start,end);this.head[i]=-1
+                this.runLength[i]=end;this.lastAlpha[i]=alpha;this.lastTint[i].copy(markColor);this.lastBorn[i]=w.clock;prev.copy(wp)
+              }
             }
           }
         }else this.endMark(i)

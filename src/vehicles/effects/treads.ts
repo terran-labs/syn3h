@@ -2,12 +2,15 @@
  * What a wheel leaves on each kind of ground: the tyre mark, and the dust it throws. Plain
  * numbers, so tests can hold the tables to the owner's rules.
  *
- * Marks (15 and 16 November 2026): they differ by surface, only the swamp's mud keeps heavy
- * ruts, and overall they are something you notice on a second look: a shade of the ground
- * itself (groundTone.ts), darker and a little greyer on soil and grass, a pale frosty scuff on
- * ice and snow, faint on hard ground and stronger only where the tyre slides. `roll` and
- * `slip` are the alpha when rolling and when sliding, before the strength setting
- * (markParams.ts) scales them.
+ * Marks (15 to 17 November 2026): they differ by surface and overall they are something you
+ * notice on a second look, never the strongest thing in the frame: a shade of the ground
+ * itself (groundTone.ts markRatio, multiplied into the lit ground), darker and a little greyer
+ * on soil and grass, a pale frosty scuff on ice and snow, faint on hard ground, and stronger
+ * where the tyre slides, spins or brakes. Mud, the Mire's whole floor, is only a little
+ * stronger than other soft ground. `roll` and `slip` are the alpha when rolling and when
+ * sliding, before the strength setting (markParams.ts) scales them: the share of the way from
+ * the ground to the mark's tone. On soft ground rolling darkens the ground by about 15 per
+ * cent (linear), sliding by about 35 to 40.
  *
  * Dust: its colour is the ground's, toned; ice and snow throw a little fine pale spray that
  * settles quickly, sand a lot that hangs, grass a few flecks, rock sparse grit.
@@ -29,14 +32,15 @@ export interface TreadStyle extends Tone {
 }
 
 export const TREADS:Readonly<Record<SurfaceKind,TreadStyle>>={
-  // Wet swamp mud: deep, dark, lasting ruts. The heaviest mark.
-  mud:{shade:.22,sat:.8,frost:0,roll:.5,slip:.85,tread:1,width:1.15,life:90},
+  // Wet swamp mud: the Mire's whole floor. A little darker and longer lasting than other soft
+  // ground, and still a disturbance of the ground, not a rut painted on it.
+  mud:{shade:.22,sat:.8,frost:0,roll:.24,slip:.5,tread:1,width:1.15,life:90},
   // Dry soil, ash and clay: a clear pressed print a shade darker than the ground.
-  dust:{shade:.32,sat:.8,frost:0,roll:.36,slip:.8,tread:.6,width:1,life:60},
+  dust:{shade:.32,sat:.8,frost:0,roll:.22,slip:.46,tread:.6,width:1,life:60},
   // Loose sand: a wide soft trough darker than the sand, soon filled.
-  sand:{shade:.3,sat:.85,frost:0,roll:.42,slip:.85,tread:.5,width:1.15,life:40},
+  sand:{shade:.3,sat:.85,frost:0,roll:.21,slip:.46,tread:.5,width:1.15,life:40},
   // Turf: flattened grass, a darker green; earth shows only where a wheel tears it.
-  grass:{shade:.34,sat:.7,frost:0,earth:.25,roll:.36,slip:.85,tread:.35,width:1,life:50},
+  grass:{shade:.34,sat:.7,frost:0,earth:.25,roll:.24,slip:.5,tread:.35,width:1,life:50},
   // Snow: packed paler and a little blue, never brown, and no dark tread.
   snow:{shade:1,sat:.6,frost:.6,roll:.4,slip:.65,tread:0,width:1.1,life:90},
   // Ice: a faint pale scratch of frost rolling, a scuff sliding.
@@ -44,13 +48,13 @@ export const TREADS:Readonly<Record<SurfaceKind,TreadStyle>>={
   // Obsidian glass: a faint pale smear, almost nothing unless the wheel slides.
   glass:{shade:2.2,sat:.4,frost:0,roll:.05,slip:.3,tread:.1,width:.85,life:40},
   // Moon powder: crisp lug prints, and no wind to wear them away.
-  regolith:{shade:.36,sat:1,frost:0,roll:.34,slip:.75,tread:.8,width:1,life:120},
+  regolith:{shade:.36,sat:1,frost:0,roll:.23,slip:.48,tread:.8,width:1,life:120},
   // Bare rock and lava crust: barely anything rolling, a grey scuff when sliding.
   rock:{shade:.55,sat:.25,frost:0,roll:.04,slip:.35,tread:0,width:.9,life:30},
   // A made road: rubber only when the tyre lets go.
   road:{shade:.35,sat:.2,frost:0,roll:.03,slip:.4,tread:.1,width:.9,life:45},
   // A worn dirt track is already packed: a lighter print on top.
-  track:{shade:.42,sat:.8,frost:0,roll:.24,slip:.65,tread:.4,width:1,life:50},
+  track:{shade:.42,sat:.8,frost:0,roll:.18,slip:.45,tread:.4,width:1,life:50},
 }
 
 /** Used where a terrain cannot say what it is made of (stand-in terrains in tests and demos). */

@@ -124,12 +124,14 @@ export const MAX_MARK_ALPHA = .85
  * The soft outline of a tyre mark, 0 to 1. `u` 0 to 1 across the mark; `start` and `end` are
  * metres from where the mark began and to where it ended. Zero at both edges and both ends:
  * `soft` is the share of each side that fades, `fade` the metres each end takes. `age` 0 to 1
- * over the mark's life fades it away gradually, oldest first, to nothing at 1.
+ * over the mark's life fades it away gradually, oldest first, to nothing at 1. `arrive` 0 to 1
+ * is how far this point has eased in since the tyre laid it (seconds since laid over the
+ * fade-in time): zero right at the tyre, so the head of a track grows in instead of appearing.
  */
-export function markEnvelope<X>(o: EnvelopeOps<X>, u: X, start: X, end: X, age: X, soft: number | X, fade: number): X {
+export function markEnvelope<X>(o: EnvelopeOps<X>, u: X, start: X, end: X, age: X, soft: number | X, fade: number, arrive: X): X {
   const across = o.mul(o.smoothstep(0, soft, u), o.smoothstep(0, soft, o.oneMinus(u)))
   const along = o.mul(o.smoothstep(0, fade, start), o.smoothstep(0, fade, end))
-  return o.mul(o.mul(across, along), o.oneMinus(o.smoothstep(.3, 1, age)))
+  return o.mul(o.mul(o.mul(across, along), o.oneMinus(o.smoothstep(.3, 1, age))), o.smoothstep(0, 1, arrive))
 }
 
 /** A mark's alpha before its envelope: its own alpha times the strength setting, bounded. */
@@ -143,7 +145,7 @@ export function particleSeed(birth: N, slot: N): N {
 }
 
 /**
- * Brightness for unlit, normally blended effects (dust and tyre marks). The scene's lights do not reach a
+ * Brightness for unlit, normally blended effects (dust). The scene's lights do not reach a
  * sprite, so without this a tinted puff glows at night. It follows the same night ramp as the
  * vehicle night fill and keeps a fifth of its daytime brightness in full dark, which reads as
  * dust caught by headlights and moonlight. One render-group uniform, no per-frame allocation.
