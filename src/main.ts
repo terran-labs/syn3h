@@ -5,6 +5,7 @@
 import { initializeFrozenResources } from './core/frozenResources'
 import { ResumeSession, RESUME_KEY } from './core/resume'
 import { applyStartWorld } from './core/startWorld'
+import { createWorldEntry, freshVehicle } from './core/worldEntry'
 import { randomSeed } from './world/planets'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
@@ -76,7 +77,12 @@ async function main(): Promise<void> {
   // swapper owns them from here on: it moves them when the vehicle changes.
   const swapper = createVehicleSwapper(game, terrain, slot)
   // A new seed or terrain parameter rebuilds the ground in place: put the player back on it.
+  // Entering a different world (another planet from the galaxy, or the room moving everyone
+  // to one) also gives the player a fresh vehicle: modes off, nothing held, nothing carried
+  // over. A rebuild of the same world (a slider, quality, the worker) keeps the modes.
+  const enteredWorld = createWorldEntry()
   terrain.onRegenerate?.(() => {
+    if (enteredWorld()) freshVehicle(slot.current, game.input, { daydream: bots.daydream, materialize })
     const s = terrain.spawnPoint(0)
     slot.current.teleport(s.position, s.heading)
   })

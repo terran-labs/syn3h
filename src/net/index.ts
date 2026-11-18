@@ -66,6 +66,7 @@ import { Connection, serverUrl } from './Connection'
 import { VehicleNameplates as NameTags, type NameplateInfo as TagInfo } from '../ui/nameplates/VehicleNameplates'
 import { terrainOcclusion } from '../ui/nameplates/terrain'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
+import { createWorldEntry } from '../core/worldEntry'
 import { RemotePlayer } from './RemotePlayer'
 import { pressHoldsFire } from './pointerFire'
 import { LocalSeat } from './LocalSeat'
@@ -1471,11 +1472,16 @@ export class NetClient implements System {
     if (!isBotId(info.id)) this.tintRemote(info.id, extras, info.colors)
   }
 
+  /** True on the rebuild that brings a different world (see core/worldEntry.ts). */
+  private readonly enteredWorld = createWorldEntry()
+
   private onTerrainRegenerated(): void {
     // A new world (another planet, a new seed, the room's world on joining) is built in place,
     // under the same gear systems: a cord anchored in the old ground would hang in the new
     // sky, and a carry or shot would continue in a world it never belonged to.
     this.resetGear()
+    // Re-seated on the new ground, out of any lava: a stuck countdown from before is void.
+    this.seat.rescue.release()
     // The summit moved with the world: recompute the hill now, and the host resends it.
     this.zoneTimer = 0
     if (this.everWelcomed) {
@@ -1483,7 +1489,8 @@ export class NetClient implements System {
       this.ctx.player.teleport(s.position, s.heading)
     }
     const h = (x: number, z: number) => this.ctx.terrain.heightAt(x, z)
-    for (const r of this.remotes.values()) r.reseat(h)
+    const entered = this.enteredWorld()
+    for (const r of this.remotes.values()) r.reseat(h, entered)
   }
 
   // -------------------------------------------------------------------------------------

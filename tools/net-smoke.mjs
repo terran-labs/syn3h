@@ -29,6 +29,8 @@ import { randomBytes } from 'node:crypto'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { MAX_STEP_RETRIES, isBrowserCrash, isTransportConsoleError, retryDecision, uncleanSince } from './lib/smoke-retry.mjs'
+// First: it turns on Playwright's browser log channel before playwright-core loads.
+import { chromeTail, nameNextLaunch, prepareChromeLogs } from './lib/chrome-log.mjs'
 import { chromium } from 'playwright-core'
 import { createShotEvidence, createShotDecision } from './shot-evidence.mjs'
 
@@ -55,13 +57,24 @@ const shot = '/tmp/syn3h-net-smoke.png'
 // One browser process per page: a crashed page takes down only itself, not every client in the
 // check (reliability plan, section 3). Each is launched in open() and closed at the end.
 const browsers = []
-const launch = () => chromium.launch({
+/**
+ * Why a page crashed, kept for the next crash anywhere in the release path: each page's Chrome
+ * logs to stderr, kept per page in a capped file, with crash dumps beside it, outside the repo
+ * (SYN3H_SMOKE_CHROME_LOGS, default /tmp/syn3h-smoke-chrome; the ten newest runs are kept). On a
+ * crash the smoke prints that page's last stderr and console lines and its last memory sample.
+ */
+const chromeLogRoot = process.env.SYN3H_SMOKE_CHROME_LOGS || '/tmp/syn3h-smoke-chrome'
+const chromeLogDir = prepareChromeLogs(chromeLogRoot, room)
+const pageTrace = new Map()
+const traceFor = (name) => { if (!pageTrace.has(name)) pageTrace.set(name, { console: [], memory: null }); return pageTrace.get(name) }
+const launch = (name) => (nameNextLaunch(name), chromium.launch({
   channel: 'chrome',
   headless: true,
   args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist',
     // Keep every page running at full rate even though only one can be focused.
-    '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
-})
+    '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
+    '--enable-logging=stderr', '--v=0', `--crash-dumps-dir=${join(chromeLogDir, 'dumps')}`],
+}))
 /**
  * The check proves networking and rules, not rendering: pages run at the Low level, pinned
  * before load so no automatic step moves it. Low is the lowest level whose budget still allows
@@ -74,13 +87,26 @@ const SMOKE_VIEWPORT = { width: 960, height: 540 }
 const errors = []
 const handlerErrors = []
 async function open(name, extra = '') {
-  const browser = await launch()
+  const browser = await launch(name)
   browsers.push(browser)
   const ctx = await browser.newContext({ viewport: SMOKE_VIEWPORT })
   await ctx.addInitScript((q) => localStorage.setItem('syn3h.quality.v2', JSON.stringify(q)), SMOKE_QUALITY)
+  // A memory sample every 5 s, for the crash report below (Chrome's performance.memory).
+  await ctx.addInitScript(() => setInterval(() => { const m = performance.memory; if (m) console.debug(`SMOKE-MEM ${Math.round(m.usedJSHeapSize / 1048576)} MB of ${Math.round(m.jsHeapSizeLimit / 1048576)} MB`) }, 5000))
   const page = await ctx.newPage()
   clients.push({ name, page })
-  page.on('crash', () => crashedPages.push(name))
+  page.on('console', (m) => {
+    const t = traceFor(name), text = String(m.text?.() ?? '')
+    if (text.startsWith('SMOKE-MEM ')) { t.memory = text.slice(10); return }
+    t.console.push(`${m.type?.()}: ${text.slice(0, 300)}`); if (t.console.length > 15) t.console.shift()
+  })
+  page.on('crash', () => {
+    crashedPages.push(name)
+    const t = traceFor(name)
+    console.log(`NET SMOKE PAGE CRASH ${name} at ${new Date().toISOString()}: memory ${t.memory ?? 'unknown'}; Chrome log ${join(chromeLogDir, name + '.log')}, dumps ${join(chromeLogDir, 'dumps')}`)
+    console.log(`NET SMOKE PAGE CRASH ${name} last Chrome stderr: ${JSON.stringify(chromeTail(name).slice(-20))}`)
+    console.log(`NET SMOKE PAGE CRASH ${name} last console: ${JSON.stringify(t.console)}`)
+  })
   page.on('pageerror', (e) => errors.push(`${name} pageerror: ${e.message}`))
   page.on('console', (m) => {
     if (m.type() !== 'error') return
@@ -577,6 +603,11 @@ try {
     check('audio gets the other player and the bot', audible[0] === 2 && audible[1] === 2, { audible })
     const judgedBefore = await a.evaluate(({shooter,victim}) => { window.__shotEvidence?.begin('bot',shooter,victim); return window.syn3hNet.stats.hitsJudged }, {shooter:idB,victim:BOT})
     for (let i = 0; i < 6; i++) {
+      // Since v26.11.1708 the host's pacer or the quality governor can send a bot away when frames
+      // look costly (a loaded test machine does). Wait for B to have it before each shot, and say
+      // so plainly if it is gone, rather than reading a remote that is not there.
+      const present = await b.waitForFunction((id) => !!window.syn3hNet.remotes.get(id)?.vehicle, BOT, { timeout: 5000 }).then(() => true, () => false)
+      if (!present) throw new Error('the bot left (pacer or relief) before B could tag it; rerun')
       await b.evaluate((id) => {
         const n = window.syn3hNet
         window.__shotEvidence?.begin('bot',n.id,id)

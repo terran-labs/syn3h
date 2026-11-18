@@ -261,6 +261,12 @@ export class Jet extends Vehicle {
     this.model?.setColors(this.colors.body, this.colors.accent)
   }
   override teleport(position:THREE.Vector3,heading=0):void {super.teleport(position,heading);this.smoothed.set(0,0,0,0)}
+  /** A fresh jet: gear as built and any altitude-hold release from an earlier arrival forgotten. */
+  override resetForWorld():void {
+    super.resetForWorld()
+    this.gearAmount=0;this.colliderGear=-1
+    this.holdReleased=this.freshHoldRelease=false
+  }
   override dispose():void {
     this.model.dispose()
     super.dispose()
