@@ -33,7 +33,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     const guide = page.locator('.in-play-about')
     await guide.waitFor({ state: 'visible' })
     assert.ok(await guide.evaluate(d => d.open && d.matches(':modal')), 'the guide is a modal')
-    assert.match(await guide.innerText(), /About Syn3h/i)
+    assert.match(await guide.innerText(), /Welcome/i)
     assert.equal(await page.evaluate(() => syn3h.game.input.state.fire), false, 'held fire is cancelled on open')
     assert.ok(await page.evaluate(() => document.activeElement?.closest('.in-play-about') !== null), 'focus moves into the guide')
     await page.screenshot({ path: `${out}/${mode}.png` })

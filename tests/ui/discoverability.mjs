@@ -17,7 +17,7 @@ for(const mode of ['desktop','phone']){
   assert.equal(await page.locator('[data-goto=vehicle], [data-panel=vehicle], [name=vehicle], .shell-vehicle, .shell-vehicle-preview, canvas[aria-label="Selected vehicle preview"]').count(),0,'the lobby shows no vehicle control')
   // No bottom buttons (Multiplayer was removed); Settings, About and Updates are icons in the corner (LobbySettings).
   assert.equal(await page.locator('.galaxy-links button').count(),0,'the lobby has no bottom buttons')
-  for(const name of ['Settings','About Syn3h',/^Updates/]) assert.equal(await page.getByRole('button',{name,exact:typeof name==='string'}).count(),1,`the ${name} icon is there`)
+  for(const name of ['Settings','Welcome',/^Updates/]) assert.equal(await page.getByRole('button',{name,exact:typeof name==='string'}).count(),1,`the ${name} icon is there`)
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-lobby.png`})
   // The lobby lists the planet recipes and nothing else: "Shape your own" is hidden for now.
   const lobbyWorlds=await page.evaluate(()=>({labels:[...document.querySelectorAll('.galaxy-label')].map(chip=>chip.dataset.world),forming:syn3h.shell.galaxy.options.worlds.filter(world=>world.forming).length,text:document.querySelector('.galaxy-labels').textContent}))

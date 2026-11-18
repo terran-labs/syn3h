@@ -52,4 +52,4 @@
 /* Text behind the sheet would read through it and tangle with the sheet's own: the planet
    captions, the corner icons, the hint, the lobby's buttons and the update banner step aside
    while one is open. Only the galaxy itself stays, faintly, behind the black. */
-.syn3h-shell.exploration-ui:has(dialog.lobby-sheet[open]) :is(.galaxy-labels, .lobby-gear-dock, .galaxy-hint, .lobby-links, .update-banner) { visibility: hidden; }
+.syn3h-shell.exploration-ui:has(dialog.lobby-sheet[open]) :is(.galaxy-labels, .lobby-gear-dock, .lobby-version-dock, .galaxy-hint, .lobby-links, .update-banner) { visibility: hidden; }
