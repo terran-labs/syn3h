@@ -2,10 +2,13 @@
  * The waterline: crossing the surface is a moment, not a cut.
  *
  * A sheet just in front of the lens. While the lens is near the surface the sheet draws the
- * surface as it would cross the lens: everything below a wavy line takes the liquid's colour,
- * the line itself is a bright meniscus, and as the lens moves the line sweeps across the view.
- * The lens is about ten centimetres tall, so the line would flick past in a frame; it is drawn
- * as if the lens were SPAN metres tall, so the sweep takes most of the one-second crossing.
+ * surface where it crosses the glass: everything below the line takes the liquid's colour and
+ * the line itself is a bright meniscus. The line is the real intersection of the water surface
+ * (the physics surface at the lens, its height and slope, liquidHeightAt) with the sheet, so it
+ * sits where the drawn water meets the lens, tilts with a wave face and with the camera's roll
+ * and pitch. The owner, on v26.11.1713: "where my camera is intersected by the water surface, it
+ * seems like you generally draw the foam line differently than where the water plane actually
+ * hits the camera."
  *
  * After the lens comes up, drops and streaks run down the view and clear: water ones clear
  * and bright, lava ones glowing orange that cool to dark as they slide.
@@ -13,19 +16,42 @@
 import * as T from 'three/webgpu'
 import { abs, float, floor, fract, max, mix, renderGroup, sin, smoothstep, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
 
-/** How tall the lens is treated as, metres: sets how long the waterline takes to sweep across. */
-const SPAN = 1.6
+/** How far in front of the lens the sheet sits, in near-plane distances. */
+const SHEET = 1.5
+/** Half width of the bright meniscus, as a share of the sheet's half height. */
+const MENISCUS = 0.018
 /** Seconds the drops take to run off after surfacing. */
 export const DRIP_SECONDS = 1.6
 
 const hash = (v: T.Node<'float'>) => fract(sin(v.mul(127.1)).mul(43758.5453))
 
+/**
+ * Height above the water surface of points on the sheet: writes (centre, per unit right, per
+ * unit up) into `out` for sheet coordinates in -1..1. `height` is the lens' height above the
+ * surface under it, `forward`, `right` and `up` the lens' unit axes in world space, `d` the
+ * sheet's distance, `halfW` and `halfH` its half size, and the slopes the surface's rise per
+ * metre along x and z there. The surface is a plane over the sheet's few centimetres.
+ */
+export function waterlinePlane(
+  height: number, forward: { x: number; y: number; z: number }, right: readonly number[], up: readonly number[],
+  d: number, halfW: number, halfH: number, slopeX: number, slopeZ: number, out: T.Vector3,
+): T.Vector3 {
+  const rise = (x: number, y: number, z: number) => y - slopeX * x - slopeZ * z
+  return out.set(
+    height + d * rise(forward.x, forward.y, forward.z),
+    halfW * rise(right[0], right[1], right[2]),
+    halfH * rise(up[0], up[1], up[2]),
+  )
+}
+
 export class Waterline {
   readonly mesh: T.Mesh<T.PlaneGeometry, T.MeshBasicNodeMaterial>
-  /** Lens height above the surface, metres (negative below). */
-  private readonly height = uniform(10)
-  /** World-up seen in screen space: how the line tilts with camera roll and pitch. (x, y) of up in view. */
-  private readonly up = uniform(new T.Vector2(0, 1))
+  /**
+   * Height above the water surface of a point on the sheet, metres, as h = x + y s.x + z s.y for
+   * sheet coordinates s in -1..1 (centre, right, up). Exact for a plane surface; the sheet spans
+   * centimetres, over which the surface is one.
+   */
+  private readonly plane = uniform(new T.Vector3(10, 0, 0))
   /** 0..1: how far into a crossing the lens is (the lens rule's wash); the line shows only then. */
   private readonly crossing = uniform(0)
   /** Seconds since the lens last came up out of a liquid. */
@@ -37,20 +63,20 @@ export class Waterline {
   private readonly forward = new T.Vector3()
 
   constructor(private readonly scene: T.Scene) {
-    for (const u of [this.height, this.up, this.sinceUp, this.tint, this.lava, this.crossing]) (u as unknown as { setGroup(g: unknown): { onRenderUpdate(f: () => unknown): void } }).setGroup(renderGroup).onRenderUpdate(() => u.value)
+    for (const u of [this.plane, this.sinceUp, this.tint, this.lava, this.crossing]) (u as unknown as { setGroup(g: unknown): { onRenderUpdate(f: () => unknown): void } }).setGroup(renderGroup).onRenderUpdate(() => u.value)
     const material = new T.MeshBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false })
     material.fog = false
     const s = uv().mul(2).sub(1)
-    // Height of this pixel on the virtual lens: along world-up as it appears on screen.
-    const along = s.x.mul(this.up.x).add(s.y.mul(this.up.y))
-    const across = s.x.mul(this.up.y).sub(s.y.mul(this.up.x))
-    const ripple = sin(across.mul(9).add(time.mul(3.1))).mul(0.025).add(sin(across.mul(23).sub(time.mul(4.7))).mul(0.01))
-    const level = this.height.negate().div(SPAN * 0.5).add(ripple)
-    const below = smoothstep(0.012, -0.012, along.sub(level))
-    const meniscus = smoothstep(0.018, 0, abs(along.sub(level)))
+    // This pixel's height above the surface, and its distance from the line in sheet units.
+    const h = this.plane.x.add(this.plane.y.mul(s.x)).add(this.plane.z.mul(s.y))
+    const grad = vec2(this.plane.y, this.plane.z).length().max(1e-6)
+    const signed = h.div(grad)
+    const below = smoothstep(0.012, -0.012, signed)
+    const meniscus = smoothstep(MENISCUS, 0, abs(signed))
     // Below the line: the liquid's colour, a little lighter at the line where light comes through.
-    const under = mix(this.tint.mul(1.4), this.tint.mul(0.85), smoothstep(0, 0.6, level.sub(along)))
-    const near = smoothstep(SPAN * 0.75, SPAN * 0.25, abs(this.height)).mul(this.crossing)
+    const under = mix(this.tint.mul(1.4), this.tint.mul(0.85), smoothstep(0, 0.6, signed.negate()))
+    // Only while the surface crosses the sheet (the line lies within it), and during a crossing.
+    const near = smoothstep(1.2, 0.9, abs(this.plane.x).div(grad)).mul(this.crossing)
     const lineColour = mix(vec3(1.8, 2, 2), vec3(4, 1.6, 0.3), this.lava)
     const lineAlpha = meniscus.mul(0.85).mul(near)
     const bodyAlpha = below.mul(near).mul(0.55)
@@ -83,9 +109,10 @@ export class Waterline {
 
   /**
    * Per frame, after the lens is placed. `surface` is the liquid height at the lens or
-   * -Infinity; `kind` which liquid; `tint` its colour as seen from inside.
+   * -Infinity, `slopeX` and `slopeZ` its rise per metre there; `kind` which liquid; `tint` its
+   * colour as seen from inside.
    */
-  update(camera: T.PerspectiveCamera, surface: number, kind: 'water' | 'lava' | null, tint: T.Color, dt: number, crossing = 1): void {
+  update(camera: T.PerspectiveCamera, surface: number, kind: 'water' | 'lava' | null, tint: T.Color, dt: number, crossing = 1, slopeX = 0, slopeZ = 0): void {
     // Settled near the surface, the scene itself shows the surface; the sheet is for the move.
     this.crossing.value = Math.min(1, crossing * 1.6)
     const height = Number.isFinite(surface) ? camera.position.y - surface : 10
@@ -93,27 +120,26 @@ export class Waterline {
     if (this.wasUnder && !under) this.surfaced = 0
     this.wasUnder = under
     this.surfaced = Math.min(99, this.surfaced + Math.max(0, Math.min(0.1, dt)))
-    const active = (Math.abs(height) < SPAN && crossing > 0.01) || this.surfaced < DRIP_SECONDS
+    // The sheet, just past the near plane, filling the view.
+    const d = camera.near * SHEET
+    const halfH = d * Math.tan((camera.fov * Math.PI) / 360) * 1.05, halfW = halfH * camera.aspect
+    camera.getWorldDirection(this.forward)
+    this.mesh.position.copy(camera.position).addScaledVector(this.forward, d)
+    this.mesh.quaternion.copy(camera.quaternion)
+    this.mesh.scale.set(halfW * 2, halfH * 2, 1)
+    // Height above the surface plane through the lens' surface point, at the sheet's centre and
+    // along its right and up edges (waterlinePlane).
+    const e = camera.matrixWorld.elements
+    waterlinePlane(height, this.forward, [e[0], e[1], e[2]], [e[4], e[5], e[6]], d, halfW, halfH, slopeX, slopeZ, this.plane.value)
+    const p = this.plane.value, reach = Math.hypot(p.y, p.z)
+    const active = (Math.abs(p.x) < reach * 1.2 && crossing > 0.01) || this.surfaced < DRIP_SECONDS
     this.mesh.visible = active
     if (!active) return
     if (kind) {
       this.lava.value = kind === 'lava' ? 1 : 0
       this.tint.value.copy(tint)
     }
-    this.height.value = height
     this.sinceUp.value = this.surfaced
-    // World up in the camera's view: its screen x and y components.
-    const e = camera.matrixWorld.elements
-    const ux = e[1], uy = e[5]
-    const len = Math.hypot(ux, uy) || 1
-    this.up.value.set(ux / len, uy / len)
-    // Fill the view just past the near plane.
-    const d = camera.near * 1.5
-    const h = 2 * d * Math.tan((camera.fov * Math.PI) / 360)
-    camera.getWorldDirection(this.forward)
-    this.mesh.position.copy(camera.position).addScaledVector(this.forward, d)
-    this.mesh.quaternion.copy(camera.quaternion)
-    this.mesh.scale.set(h * camera.aspect * 1.05, h * 1.05, 1)
   }
 
   dispose(): void {
