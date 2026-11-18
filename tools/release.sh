@@ -75,7 +75,7 @@ fi
 WRANGLER="$REPO/node_modules/wrangler/bin/wrangler.js"
 [ -f "$WRANGLER" ] || fail "wrangler is not installed in node_modules"
 if [ -z "$DRY" ]; then
-  if node "$WRANGLER" whoami 2>&1 | grep -qi "not authenticated"; then
+  if cf node "$WRANGLER" whoami 2>&1 | grep -qi "not authenticated"; then
     fail "wrangler is not authenticated (put the token in $SYN3H_CLOUDFLARE_TOKEN_FILE, set CLOUDFLARE_API_TOKEN, or npx wrangler login)"
   fi
 fi
@@ -195,7 +195,7 @@ LOG="/tmp/syn3h-release-$N"
 if [ -n "$DRY" ]; then
   # --- Dry run: the deploy checks, then the frozen copy served locally ----------------------
   echo "Checking the deploy bundle (wrangler deploy --dry-run)..."
-  (cd "$DEST" && node "$WRANGLER" deploy --dry-run --outdir "$LOG-bundle") >"$LOG-check.log" 2>&1 \
+  (cd "$DEST" && cf node "$WRANGLER" deploy --dry-run --outdir "$LOG-bundle") >"$LOG-check.log" 2>&1 \
     || { tail -30 "$LOG-check.log"; fail "wrangler deploy --dry-run"; }
   grep -iE "Total Upload|gzip|bindings|ROOMS|ASSETS" "$LOG-check.log" || true
   PORT="${RELEASE_DRY_PORT:-8795}"
@@ -220,7 +220,7 @@ else
   if [ -n "$STUB" ]; then
     echo "STUB: (cd $STAGING_DEST && wrangler deploy --config wrangler.staging.toml --message \"$MILESTONE $COMMIT: $NOTE\")"
   else
-    (cd "$STAGING_DEST" && node "$WRANGLER" deploy --config wrangler.staging.toml --message "$MILESTONE $COMMIT: $NOTE" </dev/null) >"$LOG-staging-deploy.log" 2>&1 \
+    (cd "$STAGING_DEST" && cf node "$WRANGLER" deploy --config wrangler.staging.toml --message "$MILESTONE $COMMIT: $NOTE" </dev/null) >"$LOG-staging-deploy.log" 2>&1 \
       || { cat "$LOG-staging-deploy.log"; fail "staging deploy failed (production untouched)"; }
     STAGING_URL="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' "$LOG-staging-deploy.log" | head -1)/"
     [ "$STAGING_URL" != "/" ] || fail "no staging address in the deploy output (production untouched)"
@@ -259,7 +259,7 @@ else
   fi
   # Not interactive: if the account has no workers.dev subdomain yet, wrangler stops here with
   # a link to register one in the dashboard rather than choosing a public name for us.
-  if [ -z "$STUB" ] && ! (cd "$DEST" && node "$WRANGLER" deploy $UPDATE_MODE --tag "release-$N" --message "$MILESTONE $COMMIT: $NOTE" </dev/null) >"$LOG-deploy.log" 2>&1; then
+  if [ -z "$STUB" ] && ! (cd "$DEST" && cf node "$WRANGLER" deploy $UPDATE_MODE --tag "release-$N" --message "$MILESTONE $COMMIT: $NOTE" </dev/null) >"$LOG-deploy.log" 2>&1; then
     cat "$LOG-deploy.log"; fail "wrangler deploy (see $LOG-deploy.log)"
   fi
   cat "$LOG-deploy.log"

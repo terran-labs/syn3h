@@ -127,6 +127,12 @@ retries its smoke after settling (done). The full proposal is /tmp/orch-reliabil
 
 ## Operations
 
+Credentials (17 Nov 2026, ops/PROTOCOL.md section 13): never print a crash dump, a process
+environment, a token file or anything that may hold a credential; count or list matches only.
+The Cloudflare token is passed only to wrangler and API calls (`cf`), never exported; browsers
+get `browserEnv()`. Sixteen Chrome crash dumps held the token until 17 Nov (deleted; Crashpad
+uploads were off, no upload ever attempted); the owner was asked to rotate it.
+
 All tests, builds and headless browsers run through tools/heavy.sh (three slots). Never kill
 processes you did not start. Do not move research_notes/ or reports/ in the integration
 checkout. Published notes never start with an "(AI Generated)" line, and builds are named by

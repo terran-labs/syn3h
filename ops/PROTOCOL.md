@@ -141,3 +141,21 @@ link in the same merge. Since 16 November 2026 this is the Orchestrator's job at
 merge and not an automated test: a missing link is not a bug a player can hit, so it does
 not block a release. Dead links come off, or
 are marked down, at each sweep.
+
+## 13. Never print anything that may hold a credential
+
+Set by the Foreman on 17 November 2026, after a Chrome crash dump from a smoke held the
+Cloudflare token and an agent printed part of that dump into its own transcript.
+
+- Never run `strings`, `cat`, `head`, `tail`, `less`, `xxd`, or `grep` without `-c` or `-l` on a
+  crash dump (`*.dmp`, Crashpad folders, core files), a process environment (`env`, `ps e`,
+  `/proc/*/environ`), a token file, or any file that may hold a credential. Count or list
+  matches only (`grep -c`, `grep -l`), match on a short prefix, and redact in place without
+  printing (keep the length, overwrite the value).
+- Credentials go only to the command that needs them: release scripts read the Cloudflare token
+  into an unexported variable and pass it with `cf <command>` (tools/cloudflare-token.sh).
+  Browsers a check launches get `browserEnv()` (tools/lib/safe-env.mjs), which drops every
+  variable named like TOKEN, SECRET, KEY, PASSWORD or CLOUDFLARE. tools/secret-env.test.mjs fails
+  if a child can see one.
+- A credential that reaches a transcript, a log, a dump or a commit is treated as exposed: say
+  so to the Foreman at once, by name never value, and the owner rotates it.

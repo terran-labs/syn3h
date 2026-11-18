@@ -32,6 +32,7 @@ import { MAX_STEP_RETRIES, isBrowserCrash, isTransportConsoleError, retryDecisio
 // First: it turns on Playwright's browser log channel before playwright-core loads.
 import { chromeTail, nameNextLaunch, prepareChromeLogs } from './lib/chrome-log.mjs'
 import { chromium } from 'playwright-core'
+import { browserEnv } from './lib/safe-env.mjs'
 import { createShotEvidence, createShotDecision } from './shot-evidence.mjs'
 
 // Opt-in only. Reserve a caller-owned fresh directory before opening a browser.
@@ -70,6 +71,8 @@ const traceFor = (name) => { if (!pageTrace.has(name)) pageTrace.set(name, { con
 const launch = (name) => (nameNextLaunch(name), chromium.launch({
   channel: 'chrome',
   headless: true,
+  // No credentials in a browser's environment: a crash dump would record them (lib/safe-env.mjs).
+  env: browserEnv(),
   args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist',
     // Keep every page running at full rate even though only one can be focused.
     '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
