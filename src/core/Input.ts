@@ -113,6 +113,19 @@ export class Input {
     return s
   }
 
+  /**
+   * Let go of everything, toggles included: wings or flight mode (`special`), Zorb, held keys,
+   * the touch and gear controls' additions and a held mouse fire. For entering a different
+   * world, where the player arrives in a fresh vehicle (src/core/worldEntry.ts). Suspending
+   * input (the menus) keeps the toggles; this does not.
+   */
+  releaseAll(): void {
+    this.keys.clear()
+    Object.assign(this.state, emptyInput())
+    for (const key of Object.keys(this.external) as (keyof typeof this.external)[]) delete this.external[key]
+    this.mouseFire = false
+  }
+
   /** Switch zorb mode. For the X key and a future touch button. */
   toggleZorb(): void {
     this.state.zorb = !this.state.zorb

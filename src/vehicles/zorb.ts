@@ -517,6 +517,13 @@ export class ZorbBall {
     this.buffered = 0
     this.damp = 0
     this.onLiquid = false
+    // Nothing of this ball carries to the next one (a fresh world, see Vehicle.resetForWorld).
+    this.hopCooldown = 0
+    this.pulse = 0
+    this.lastSpecial = false
+    this.shrinkSpeed = 0
+    this.contact = 0
+    this.impact = 0
   }
 }
 
