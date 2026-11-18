@@ -13,7 +13,7 @@ import { BotManager } from './bots/BotManager'
 import { ChaseCamera } from './core/ChaseCamera'
 import { Game } from './core/Game'
 import { botColors, startNetworking } from './net'
-import { ChatPanel } from './ui/chat/ChatPanel'
+import { ChatCard } from './ui/chat/ChatCard'
 import { HostBanter } from './bots/banter/HostBanter'
 import { BOT_ID_BASE } from '../shared/protocol'
 import { ParamPanel } from './ui/ParamPanel'
@@ -250,8 +250,15 @@ async function main(): Promise<void> {
     // second) is the one thing that keeps running, so others see "paused", not a dropout.
     pause.subscribe((paused) => connection.setPaused(paused))
     connection.setPaused(pause.paused)
-    // Chat (src/ui/chat): the pill, strip and log, inside the shell so it shows only in play.
-    const chat = new ChatPanel(shell.element, {
+    // Chat (src/ui/chat): the last card in the sidebar's stack, and a strip of new lines over
+    // the game. Y, the card's header and the left column's Chat row open it.
+    const chat = new ChatCard({
+      element: shell.element,
+      addCard: (id, title, body, summary) => shell.addCard(id, title, body, summary),
+      showCard: (id) => shell.showCard(id),
+      drive: () => shell.returnToDriving(),
+      panelsOpen: () => shell.panelsOpen,
+    }, {
       channel: connection.chat,
       input: game.input,
       canOpen: () => shell.playing && !game.input.suspended,

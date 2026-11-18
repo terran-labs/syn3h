@@ -20,7 +20,7 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
     await page.waitForFunction(() => !document.querySelector('.world-inspector').getAnimations().some(a => a.playState === 'running'))
     assert.equal(await page.locator('.wi-top, .rail-close, .wi-quick, .gear-select').count(), 0)
     const order = () => page.locator('.wi-cards > [data-section]').evaluateAll(es => es.map(e => e.dataset.section))
-    const expected = ['you', 'game', 'players', 'vehicles', 'world', 'performance']
+    const expected = ['you', 'game', 'players', 'vehicles', 'world', 'performance', 'chat']
     assert.deepEqual(await order(), expected)
     await page.evaluate(() => syn3h.shell.inspector.rebuild())
     assert.deepEqual(await order(), expected, 'session card survives registry rebuild')

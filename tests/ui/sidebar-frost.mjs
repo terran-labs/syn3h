@@ -21,7 +21,7 @@ for (const mode of ['desktop', 'phone']) {
   const surfaces = '.wi-cards > [data-section]'
   const readSurfaces = () => rail.locator(surfaces).evaluateAll(es => es.map(el => { const s = getComputedStyle(el); return { card: el.dataset.section || 'bottom', background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } }))
   const checkSurfaces = (rows, off = false) => {
-   assert.deepEqual(rows.map(r => r.card), ['you', 'game', 'players', 'vehicles', 'world', 'performance'])
+   assert.deepEqual(rows.map(r => r.card), ['you', 'game', 'players', 'vehicles', 'world', 'performance', 'chat'])
    for (const r of rows) { if (off) assert.equal(r.blur, 'none', r.card); else assert.match(r.blur, /blur\(28px\)/, r.card); { const alpha = Number(/,\s*([\d.]+)\)$/.exec(r.background)?.[1] ?? 1); assert.ok(off ? alpha >= .9 : alpha >= .6, `${r.card}: the card body is dense enough to read over a bright world (${r.background})`) } }
   }
   const results = []
