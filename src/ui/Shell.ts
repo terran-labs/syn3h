@@ -61,6 +61,7 @@ import { cleanPlayerName, loadPlayerName, savePlayerName, type NameSource } from
 import { TintTransition, randomTintPair } from '../vehicles/tints'
 import { Minimap, type MapEntity } from './Minimap'
 import { bootLoading } from './LoadingScreen'
+import { tapToBegin } from './TapToBegin'
 import { renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
@@ -457,7 +458,8 @@ export class Shell implements System {
     document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement !== game.canvas) game.input.mouseFire = false }, { signal })
     for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) game.canvas.addEventListener(name, () => { game.input.mouseFire = false }, { signal })
     window.addEventListener('blur', () => { game.input.mouseFire = false }, { signal })
-    this.updateHelp(); bootLoading?.finish()
+    // Where sound is blocked, the veil waits for the tap that begins (TapToBegin.ts).
+    this.updateHelp(); bootLoading?.finish(tapToBegin(this.audio))
     void this.panels.show('index', true); this.update()
   }
   private updateRoomLabels(): void {
@@ -1145,6 +1147,8 @@ export class Shell implements System {
     this.syncPanels()
   }
   private keydown(event: KeyboardEvent): void {
+    // Waiting for the tap that begins (TapToBegin.ts): that press only begins.
+    if (document.documentElement.dataset.boot === 'ready') return
     if (this.aboutOpen) {
       // The guide owns the keyboard: Tab, links and disclosures work natively inside it, and
       // no shortcut or driving key reaches the game. Escape closes it and does nothing else.

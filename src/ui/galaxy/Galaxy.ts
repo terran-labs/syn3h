@@ -21,9 +21,11 @@ function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmar
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
 import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
 import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime } from './cameraRest'
-import { introMode, LEAVING_SECONDS, leavingMark, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
+import { introMode, LEAVING_SECONDS, openingCue, leavingMark, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
+/** The loading veil is still up: loading, or waiting for the tap that begins (src/ui/TapToBegin.ts). */
+const veiled = () => { const boot = document.documentElement.dataset.boot; return boot === 'loading' || boot === 'ready' }
 import { WordmarkCrisp } from '../brand/wordmarkCrisp'
 import { defineParam, type ParamValue } from '../../../shared/params'
 import { ORDINARY_BODY, planetById, type PlanetBody } from '../../world/planets'
@@ -1092,7 +1094,8 @@ export class Galaxy {
     // name fades in again (returningMark).
     if (intro > 0 && !openingPlayed && !this.reduced.matches) { this.opening = { start: null, mode: intro as OpeningMode }; openingPlayed = true }
     else if (openingPlayed && !this.reduced.matches) this.returning = performance.now()
-    for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, () => { if (this.opening) { this.opening = null; this.chrome(null); this.wake = 2 } }, { capture: true, passive: true, signal })
+    // Only once it is playing: a tap while loading, or the tap that begins it (TapToBegin.ts), is not a skip.
+    for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, () => { if (this.opening && this.opening.start !== null) { this.opening = null; this.chrome(null); this.wake = 2 } }, { capture: true, passive: true, signal })
     canvas.addEventListener('webglcontextlost', event => {
       if (this.canvas !== canvas || this.gl !== gl) return
       event.preventDefault(); cancelAnimationFrame(this.frame); this.options.onLogo?.(false); this.markOverlay?.hide()
@@ -1442,7 +1445,7 @@ export class Galaxy {
       const budget = logoBudget(layout.level), held = this.reduced.matches || budget.still || this.backdrop < 1
       if (held) logo.skipIntro()
       // Behind the loading veil the logo waits at nothing: its fade starts as the veil lifts.
-      else if (document.documentElement.dataset.boot === 'loading') logo.replayIntro()
+      else if (veiled()) logo.replayIntro()
       logo.setLook({ particles: Math.round(budget.particles * (1 - qualityShed(1) * 0.65)), sway: held ? 0 : 0.07, opacity: (1 - this.dive) * reveal.mark })
       const sx = this.canvas.width / this.host.clientWidth, sy = this.canvas.height / this.host.clientHeight, box = layout.box
       logo.draw(held ? STILL_SECONDS : time, { x: box.x * sx, y: box.y * sy, width: box.width * sx, height: box.height * sy })
@@ -1506,7 +1509,8 @@ export class Galaxy {
   private stepOpening(places: readonly { orbit: number }[]): OpeningState {
     const o = this.opening
     if (!o) return SETTLED
-    if (o.start === null && document.documentElement.dataset.boot !== 'loading') o.start = performance.now()
+    // Held while the veil is up: loading, then waiting for the tap that begins it (TapToBegin.ts).
+    if (o.start === null && !veiled()) { o.start = openingCue.at ?? performance.now(); openingCue.at = null }
     const at = this.openingAt ?? (o.start === null ? -1 : (performance.now() - o.start) / 1000)
     const state = openingState(at, o.mode, places.length)
     if (state.done) {
