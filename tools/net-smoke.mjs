@@ -582,6 +582,9 @@ try {
   await a.evaluate(() => {
     const s = window.syn3h
     s.params.set('bots.canDrive', false); s.params.set('bots.canFire', false)
+    // This step tests networking, not the frame rate: keep the one bot whatever a loaded
+    // headless page measures (bots.keepCount), or the pacer may judge it away mid-step.
+    if (s.params.get('bots.keepCount')) s.params.set('bots.keepCount', true)
     s.params.set('bots.count', 1)
     window.__bots = s.bots
   })

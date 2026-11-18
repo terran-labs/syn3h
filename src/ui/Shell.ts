@@ -236,7 +236,7 @@ export class Shell implements System {
           <button class="shell-play is-primary" type="submit">Enter World ›</button></form>${back}
         </section>
         <section data-panel="worlds">${heading('Worlds to Explore')}
-          <p class="planet-current"></p><fieldset class="world-controls"><legend>World</legend><label for="world-seed">Seed</label><div class="input-action"><input id="world-seed" type="number" min="1" max="999999" step="1"><button id="new-world" type="button">New world</button></div><label class="bots-control" hidden>Bots <output></output><input id="bots-count" type="range" step="1"></label></fieldset>
+          <p class="planet-current"></p><fieldset class="world-controls"><legend>World</legend><label for="world-seed">Seed</label><div class="input-action"><input id="world-seed" type="number" min="1" max="999999" step="1"><button id="new-world" type="button">New world</button></div><label class="bots-control" hidden>Bots <output></output><input id="bots-count" type="range" step="1"></label><label class="bots-keep" hidden><input id="bots-keep" type="checkbox"> Keep this many bots whatever the frame rate<small>Off, bots leave a slow device to keep play smooth.</small></label></fieldset>
           <fieldset class="world-controls"><legend>Sky</legend><div class="sky-presets">${SKY_PRESET_NAMES.map(name => `<button type="button" data-sky="${name}">${name}</button>`).join('')}</div><label for="sky-time">Time of day <output id="sky-time-value"></output></label><input id="sky-time" type="range" min="0" max="24" step="0.05"></fieldset>
           <p class="world-lock-note" hidden>Sliders locked by host.</p><button data-goto="explore">Explore this world ›</button>${back}
         </section>
@@ -453,6 +453,7 @@ export class Shell implements System {
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-sky]')) button.addEventListener('click', () => { if (canEditWorld()) applySkyPreset(button.dataset.sky as SkyPresetName) }, { signal })
     this.element.querySelector('#sky-time')!.addEventListener('input', event => { if (canEditWorld()) params.set('sun.timeOfDay', (event.target as HTMLInputElement).value) }, { signal })
     this.element.querySelector('#bots-count')!.addEventListener('input', event => { if (canEditWorld()) params.set('bots.count', (event.target as HTMLInputElement).value) }, { signal })
+    this.element.querySelector('#bots-keep')!.addEventListener('change', event => { if (canEditWorld()) params.set('bots.keepCount', (event.target as HTMLInputElement).checked) }, { signal })
     // Two presses: the first asks, the second (within four seconds) does it. No modal dialog.
     const reset = this.hostControls.querySelector<HTMLButtonElement>('.world-reset')!
     let resetArmed: ReturnType<typeof setTimeout> | undefined
@@ -1885,6 +1886,9 @@ export class Shell implements System {
     const bots = params.get('bots.count'), botsRow = this.element.querySelector<HTMLElement>('.bots-control')!
     botsRow.hidden = !bots
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
+    const keep = params.get('bots.keepCount'), keepRow = this.element.querySelector<HTMLElement>('.bots-keep')!
+    keepRow.hidden = !bots || !keep
+    if (keep) { keepRow.querySelector<HTMLInputElement>('#bots-keep')!.checked = keep.value === true; }
   }
   dispose(): void {
     this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()

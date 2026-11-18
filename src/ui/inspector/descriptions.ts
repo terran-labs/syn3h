@@ -35,6 +35,7 @@ export const DESCRIPTIONS: Record<string, string> = {
   'koth.targetScore': 'How many seconds on the hill win a round of King of the Hill.',
   'koth.zoneRadius': 'How wide the hill is.',
   'bots.count': 'How many computer drivers share the world with you.',
+  'bots.keepCount': 'Keeps that many bots even when the frame rate drops. Off, bots leave a slow device to keep play smooth.',
   'bots.tagBeams': 'Whether computer drivers use Plasma Tag.',
   'camera.mode': 'Where you watch from: behind the vehicle, inside the cockpit, circling it, from a fixed spot, or flying free.',
   'camera.sensitivity': 'How far the view turns for each movement of the mouse.',
