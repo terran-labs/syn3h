@@ -771,6 +771,10 @@ void main() {
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
 const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uPulse', 'uPulseColour', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays', 'uBurst', 'uSpread', 'uTrail', 'uNight'] as const
+/** The fresh-load heading and the tall-phone tilt (see the first framing in acquire). */
+export const FRESH_YAW = 0.6, PORTRAIT_PITCH = 0.85
+/** Milliseconds returnHome takes back to the fresh-load view. */
+const RETURN_MS = 1600
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -805,6 +809,21 @@ export function releaseSpeed(samples: readonly { t: number; value: number }[], a
   return span > 0.008 ? (last.value - base.value) / span : 0
 }
 /** The shortest signed turn from angle a to angle b. */
+/**
+ * The view `t` (0 to 1) of the way along returnHome's ease: the heading turns the short way,
+ * the tilt moves straight from where the flight left it to the resting tilt (so a view that
+ * starts above the plane never dips under it), the distance on a log scale. Smootherstep, so
+ * neither end has a jolt. At t = 1 it is `to` exactly.
+ */
+export function homeward(from: { yaw: number; pitch: number; distance: number }, to: { yaw: number; pitch: number; distance: number }, t: number): { yaw: number; pitch: number; distance: number } {
+  if (t >= 1) return { ...to }
+  const e = smootherstep(t)
+  return {
+    yaw: from.yaw + turn(from.yaw, to.yaw) * e,
+    pitch: from.pitch + (to.pitch - from.pitch) * e,
+    distance: Math.exp(Math.log(from.distance) + (Math.log(to.distance) - Math.log(from.distance)) * e),
+  }
+}
 const turn = (a: number, b: number) => { const d = (b - a) % (Math.PI * 2); return d > Math.PI ? d - Math.PI * 2 : d < -Math.PI ? d + Math.PI * 2 : d }
 /**
  * Where the camera settles round a chosen world, as a bearing from the world and a tilt. `sun`
@@ -868,7 +887,7 @@ export class Galaxy {
   /** Frames skipped because nothing moved, for the checks. */
   idle = 0
   // The view: an orbit round a point, which is the sun until a world is chosen.
-  private yaw = 0.6
+  private yaw = FRESH_YAW
   /** The first view is the resting view, so nothing has to move to reach it (reduced motion never moves by itself). */
   private pitch: number = REST.pitch
   private framed = false
@@ -992,15 +1011,79 @@ export class Galaxy {
     if (value) { this.logoSeen = false; this.handled = performance.now(); this.acquire() } else this.release()
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
+  /**
+   * The view a fresh load rests at: the first heading, the resting tilt above the orbital plane
+   * (steeper on a tall phone), the opening distance. Leaving a world returns here every time.
+   */
+  freshPose(): { yaw: number; pitch: number; distance: number } {
+    const portrait = this.host.clientHeight > this.host.clientWidth * 1.2 && !this.reduced?.matches
+    return { yaw: FRESH_YAW, pitch: portrait ? PORTRAIT_PITCH : REST.pitch, distance: openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight) }
+  }
+  /**
+   * Back to the lobby after leaving a world: home(), then an eased return to the fresh-load
+   * view. The descent left the view on the world's lit side, often below the orbital plane, and
+   * home() alone left it there (the name under the planets). The heading turns the short way,
+   * the tilt rises straight to the resting tilt, and any touch ends the return where it is.
+   */
+  returnHome(): void { this.away = true; this.home() }
+  /**
+   * True from a descent or ascent until the view is home: the view is still where the flight
+   * left it. Every route back to the galaxy (the climb, reduced motion, a panel opened from play
+   * and closed) goes through home(), which starts the return while this is set.
+   */
+  private away = false
+  private startReturn(): void {
+    this.away = false
+    const to = this.freshPose()
+    if (this.reduced?.matches) { this.applyPose(to); this.returnTo = null; this.markRig.pose = null; return }
+    this.returnTo = { start: performance.now(), from: { yaw: this.yaw, pitch: this.pitch, distance: this.distance }, to, target: [...this.target], reach: this.reach }
+    this.wake = 2
+  }
+  /**
+   * The return under way. The orbit's centre and the camera's reach (left on the world by the
+   * flight) are carried by the same clock as the view, so everything lands together: on its
+   * own the centre eases per frame, and on a slow device it was still sliding back to the sun
+   * when the name began to fade in.
+   */
+  private returnTo: { start: number; from: { yaw: number; pitch: number; distance: number }; to: { yaw: number; pitch: number; distance: number }; target: Vec; reach: number } | null = null
+  private applyPose(p: { yaw: number; pitch: number; distance: number }): void {
+    this.yaw = p.yaw; this.pitch = p.pitch; this.distance = p.distance
+    this.swingYaw = { aim: p.yaw, aimSpeed: 0, view: p.yaw, viewSpeed: 0 }
+    this.swingPitch = { aim: p.pitch, aimSpeed: 0, view: p.pitch, viewSpeed: 0 }
+    this.shown = { yaw: p.yaw, pitch: p.pitch }
+    this.restSpeed = { pitch: 0, zoom: 0 }
+  }
+  /** One frame of returnHome's ease; true while it runs. */
+  private stepReturn(): boolean {
+    const r = this.returnTo
+    if (!r) return false
+    if (this.drag || this.pointers.size > 0) { this.endReturn(); return false }
+    const t = Math.min(1, (performance.now() - r.start) / RETURN_MS)
+    const pose = homeward(r.from, r.to, t), e = t >= 1 ? 1 : smootherstep(t)
+    this.applyPose(pose)
+    this.target = [r.target[0] * (1 - e), r.target[1] * (1 - e), r.target[2] * (1 - e)]
+    this.reach = Math.exp(Math.log(r.reach) + (Math.log(pose.distance) - Math.log(r.reach)) * e)
+    if (t >= 1) this.endReturn()
+    this.wake = 2
+    return true
+  }
+  /** The view has stopped (or a touch took it): the name fades in where it rests, its rig placed there at once. */
+  private endReturn(): void {
+    this.returnTo = null; this.markRig.pose = null
+    this.returning = this.reduced?.matches ? null : performance.now()
+  }
+  /** For tests: true while returnHome's ease runs. */
+  get returningHome(): boolean { return this.returnTo !== null }
   home(): void { this.handled = performance.now(); this.wake = 2; this.chosen = -1
     // Back in the lobby with the name gone (a choice cancelled, or the reverse flight out of a
     // world landing, perf/smooth-entry's ascend): it kindles again, once, from here.
     if (this.leaving !== null && !this.reduced?.matches) this.returning = performance.now()
-    this.leaving = null; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0; this.flight = undefined; this.flightDone = false; this.blur = 0 }
+    this.leaving = null; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0; this.flight = undefined; this.flightDone = false; this.blur = 0
+    if (this.away) this.startReturn() }
   /** The descent: fall toward a world until its air fills the view. Resolves when it has. `quick` for a player who has seen it. */
   descend(id: string, quick = false): Promise<void> {
     if (!this.gl) return Promise.resolve()
-    this.choose(id); this.arrived = true; this.diving = true; this.wake = 2
+    this.choose(id); this.arrived = true; this.diving = true; this.wake = 2; this.away = true
     // One timed path from wherever the view is now, so a slow frame never makes it lurch:
     // across the system to the world, round to its lit side, and down into its air.
     this.flightDone = false
@@ -1017,7 +1100,7 @@ export class Galaxy {
     const index = this.options.worlds.findIndex(world => world.id === id)
     if (!this.gl || index < 0 || index >= MAX) { this.home(); return { launch() {}, done: Promise.resolve() } }
     const yaw = this.yaw
-    this.choose(id); this.arrived = true; this.diving = true; this.wake = 2
+    this.choose(id); this.arrived = true; this.diving = true; this.wake = 2; this.away = true
     const place = this.places(this.clock)[index]
     // Start where the descent ends: on the world, in its air.
     this.target = [...place.position]; this.reach = place.radius * 1.03; this.dive = 1
@@ -1126,7 +1209,7 @@ export class Galaxy {
     if (!this.framed) {
       this.framed = true
       this.distance = this.reach = openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
-      if (this.host.clientHeight > this.host.clientWidth * 1.2 && !this.reduced.matches) this.pitch = 0.85
+      if (this.host.clientHeight > this.host.clientWidth * 1.2 && !this.reduced.matches) this.pitch = PORTRAIT_PITCH
     }
     this.paintMaps(); this.resize(); this.loop(0)
   }
@@ -1343,6 +1426,10 @@ export class Galaxy {
     let reveal = this.stepOpening(places)
     // Reduced motion: the name goes at once rather than being swept away.
     if (this.leaving !== null) reveal = { ...reveal, ...leavingMark(this.reduced.matches ? 1e3 : (performance.now() - this.leaving) / 1000) }
+    // While returnHome eases the view, the name stays dark: its place follows the camera's
+    // tilt and side of the plane, so shown now it would slide in from an edge. It fades in,
+    // in place, once the view has settled (stepReturn).
+    else if (this.returnTo) reveal = { ...reveal, ...returningMark(0), mark: 0 }
     else if (this.returning !== null) {
       const t = (performance.now() - this.returning) / 1000
       if (t > RETURN_SECONDS) this.returning = null; else reveal = { ...reveal, ...returningMark(t) }
@@ -1370,6 +1457,7 @@ export class Galaxy {
     })
     const mark = this.stepMark(elapsed, still)
     this.markView = view; this.markPlaced = mark.placement
+    this.markShown = mark.placement ? mark.opacity * reveal.mark * (1 - this.dive) : 0
     // Held still, draw only while something is moving; the last frame stays on the canvas.
     const moving = glowMoving || this.opening !== null || this.returning !== null || (this.leaving !== null && performance.now() - this.leaving < LEAVING_SECONDS * 1000 + 100) || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
@@ -1577,6 +1665,8 @@ export class Galaxy {
     const opacity = this.opening || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
     return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 }
   }
+  /** For checks: the in-space wordmark's opacity as last drawn (0 when hidden). */
+  markShown = 0
   /** For tests and screenshots: the in-space wordmark's state. */
   private markView: { eye: Vec; forward: Vec; right: Vec; up: Vec; tan: number } | null = null
   private markPlaced: ReturnType<typeof placeWordmark> | null = null
@@ -1651,6 +1741,8 @@ export class Galaxy {
   private get swingResting(): boolean { return swingResting(this.swingYaw) && swingResting(this.swingPitch) }
   /** Step the view's spring and coast by the real time since the last frame. */
   private swing(elapsed: number, drift: boolean, restElapsed = elapsed): void {
+    // Returning to the fresh-load view after leaving a world writes the view itself.
+    if (this.stepReturn()) return
     // A flight or the settle round a chosen world writes the view itself; adopt() hands it over.
     this.adopt()
     // Left alone, the view drifts very slowly round, aim and view together.

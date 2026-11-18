@@ -146,7 +146,8 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
 
     // ---- Disabled numbers are not editable. ----
     await page.evaluate(() => { document.querySelector('.wi-row[data-id="world.gravity"] .wi-num').disabled = true })
-    await gravity.scrollIntoViewIfNeeded()
+    // On a phone one card is open at a time, so revealing the budget above closed World.
+    await reveal(page, 'world.gravity')
     await number.click({ force: true })
     assert.equal(await field.count(), 0, 'a locked number stays a number')
     await page.evaluate(() => { document.querySelector('.wi-row[data-id="world.gravity"] .wi-num').disabled = false })
