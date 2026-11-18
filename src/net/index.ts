@@ -14,6 +14,7 @@ import { type ParamValue, params, worldSeed } from '../../shared/params'
 import {
   BOT_ID_BASE,
   type ClientMessage,
+  type DropReport,
   DEFAULT_COLORS,
   MAX_NAME_LENGTH,
   type GameState,
@@ -482,7 +483,9 @@ export class NetClient implements System {
       this.send({
         type: 'hello', v: PROTOCOL_VERSION, modes: 2, name: playerName(), params: params.snapshot('world'),
         kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room), page: PAGE_LOAD,
+        ...(this.dropReport ? { drop: this.dropReport } : {}),
       })
+      this.dropReport = null
     }
     this.conn.onText = (text) => {
       const msg = parseJson<ServerMessage>(text)
@@ -498,6 +501,11 @@ export class NetClient implements System {
     // Registered after main.ts's listener, so this runs last and wins: our own slot, not 0.
     ctx.terrain.onRegenerate?.(() => this.onTerrainRegenerated())
     document.addEventListener('visibilitychange', () => this.onVisibility())
+    // For the drop report: when the page was last hidden or frozen (a locked phone, an app
+    // switch, a suspended background tab can kill the socket on this side only).
+    document.addEventListener('visibilitychange', () => { if (document.hidden) this.hiddenAt = performance.now() })
+    document.addEventListener('freeze', () => { this.frozenAt = performance.now() })
+    document.addEventListener('resume', () => { this.frozenAt = performance.now() })
 
     // The original fired with the mouse; nothing else uses a canvas click yet.
     const canvas = game.renderer.domElement
@@ -814,6 +822,8 @@ export class NetClient implements System {
     // After a long task the browser often renders before it delivers the queued messages, so
     // the gap check in onState alone misses them: also distrust the next moment after a gap.
     if (frameAt - this.frameAt > LOCAL_STALL_MS) this.stallUntil = frameAt + LOCAL_STALL_MS
+    this.frameGaps.push([frameAt, frameAt - this.frameAt])
+    while (this.frameGaps.length && this.frameGaps[0][0] < frameAt - 5000) this.frameGaps.shift()
     this.frameAt = frameAt
     this.pingTimer -= dt
     if (this.conn.state === 'open' && this.pingTimer <= 0) {
@@ -1692,11 +1702,30 @@ export class NetClient implements System {
     this.send({ type: 'param', id, value })
   }
 
+  /** What the browser saw when the last socket died, sent once with the next hello. */
+  private dropReport: DropReport | null = null
+  private hiddenAt = -Infinity
+  private frozenAt = -Infinity
+  /** [time, gap] of the last five seconds of frames, for the drop report. */
+  private readonly frameGaps: [number, number][] = []
+  /** Builds the drop report from the connection's record of the close that just happened. */
+  private noteDrop(): void {
+    const c = this.conn.closes.at(-1)
+    if (!c) return
+    const now = performance.now(), ago = (t: number) => Number.isFinite(t) ? Math.round(now - t) : -1
+    this.dropReport = {
+      code: c.code, reason: c.reason, clean: c.clean, wasOpen: c.wasOpen, openMs: c.openMs, rxMs: c.rxMs, txMs: c.txMs,
+      vis: document.hidden ? 'hidden' : 'visible', hiddenMs: ago(this.hiddenAt), frozenMs: ago(this.frozenAt),
+      online: navigator.onLine !== false, frameMs: Math.round(Math.max(0, ...this.frameGaps.map(([, gap]) => gap))),
+    }
+  }
+
   /** True from losing the socket as host, while retrying, until the next welcome. */
   private hostThroughDrop = false
 
   private onDisconnect(retrying = true): void {
     this.hostThroughDrop = retrying && this.wasHost
+    if (retrying) { try { this.noteDrop() } catch { /* diagnostics only */ } }
     // A reconnect is a new connection: our bots' kinds are announced to the room afresh.
     this.botKinds.clear()
     // The room drops our cord and carry when it loses us; drop everything here too, since a
