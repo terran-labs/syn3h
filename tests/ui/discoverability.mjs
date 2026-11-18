@@ -21,9 +21,9 @@ for(const mode of ['desktop','phone']){
   assert.equal(await page.locator('.galaxy-links button').count(),0,'the lobby has no bottom buttons')
   for(const name of ['Settings','Welcome',/^Updates/]) assert.equal(await page.getByRole('button',{name,exact:typeof name==='string'}).count(),1,`the ${name} icon is there`)
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-lobby.png`})
-  // About is the Welcome guide: its sections are there, and its pictures load only now.
-  assert.deepEqual(images,[],'no image request in the lobby before About is opened')
-  await page.getByRole('button',{name:'About Syn3h',exact:true}).click()
+  // The Welcome guide: its sections are there, and its pictures load only now.
+  assert.deepEqual(images,[],'no image request in the lobby before Welcome is opened')
+  await page.getByRole('button',{name:'Welcome',exact:true}).click()
   const welcome=page.locator('dialog.lobby-sheet .welcome-body')
   await welcome.waitFor({state:'visible'})
   for(const heading of ['Start in three moves','Controls','Settings worth knowing'])assert.equal(await welcome.getByRole('heading',{name:heading}).count(),1,`Welcome has ${heading}`)
