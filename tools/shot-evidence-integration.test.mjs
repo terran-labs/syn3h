@@ -86,6 +86,7 @@ async function fixtureChild(scenario) {
       return { async close() { closes++; if (scenario === 'close-rejection') throw new Error('fixture browser close rejected') } }
     } } }),
     './shot-evidence.mjs': new vm.SourceTextModule(readFileSync(path.join(here, 'shot-evidence.mjs'), 'utf8'), { context }),
+    './lib/chrome-log.mjs': moduleFrom({ prepareChromeLogs: () => '/tmp/fixture-chrome-logs', nameNextLaunch() {}, chromeTail: () => [] }),
     './lib/smoke-retry.mjs': new vm.SourceTextModule(readFileSync(path.join(here, 'lib', 'smoke-retry.mjs'), 'utf8'), { context }),
   }
   let thrown = null
