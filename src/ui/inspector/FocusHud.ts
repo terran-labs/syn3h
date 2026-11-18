@@ -78,7 +78,7 @@ export class FocusHud {
     if (thrust) this.set('thrust', thrustPercent(t.thrust!))
     const mph = Math.abs(t.speed) * 2.23694, degrees = bearing(t.heading), seconds = (performance.now() - this.started) / 1000
     this.set('speed', String(Math.round(mph))); this.set('speed3', pad(mph, 3)); this.set('altitude', String(Math.max(0, Math.round(t.altitude)))); this.set('altitude4', pad(t.altitude, 4))
-    this.set('heading', `${pad(degrees, 3)}° ${compassPoint(degrees)}`); this.set('world', t.world); this.set('clock', clock(t.hour))
+    this.set('heading', `${pad(Math.round(degrees) % 360, 3)}° ${compassPoint(degrees)}`); this.set('world', t.world); this.set('clock', clock(t.hour))
     this.set('elapsed', `${pad(Math.floor(seconds / 60), 2)}:${pad(seconds % 60, 2)}`)
     if (style === '0') {
       this.element.querySelector<SVGPathElement>('[data-arc=speed]')!.style.strokeDashoffset = String(100 - Math.min(100, (mph / 140) * 100))

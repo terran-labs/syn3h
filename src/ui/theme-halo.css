@@ -180,6 +180,8 @@
     linear-gradient(rgb(226 238 255 / .62), rgb(226 238 255 / .62)) right center / 5px 1px no-repeat,
     linear-gradient(rgb(226 238 255 / .62), rgb(226 238 255 / .62)) center bottom / 1px 5px no-repeat,
     linear-gradient(rgb(226 238 255 / .62), rgb(226 238 255 / .62)) left center / 5px 1px no-repeat;
+  /* The ticks mark east, south and west, so they turn with a heading-up map, as the N does. */
+  transform: rotate(var(--map-turn, 0rad));
 }
 /* One slow shimmer travels round the ring; none under reduced motion. Composited, no paint. */
 .syn3h-shell.exploration-ui .shell-minimap::before {

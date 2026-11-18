@@ -33,7 +33,7 @@ import { FocusHud } from './inspector/FocusHud'
 import { bindSwitch, switchWord } from './inspector/switch'
 import { RaceHud, type RaceRole } from './RaceHud'
 import type { RaceState } from '../../shared/protocol'
-import { glassStyle, diagnostics, interfaceMode } from './inspector/params'
+import { glassStyle, diagnostics, interfaceMode, mapNorthUp } from './inspector/params'
 import { InterfaceVeil, INTERFACE_KEY, nextInterfaceMode, setInterfaceMode } from './interfaceMode'
 import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
@@ -55,7 +55,7 @@ import { UpdateNotice } from './updates/UpdateNotice'
 import { rollPlayerName } from './data/names'
 import { cleanPlayerName, loadPlayerName, savePlayerName, type NameSource } from './playerName'
 import { TintTransition, randomTintPair } from '../vehicles/tints'
-import { Minimap, type MapEntity } from './Minimap'
+import { Minimap, cameraHeading, type MapEntity } from './Minimap'
 import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
@@ -141,6 +141,8 @@ export class Shell implements System {
   private joinOpener?: HTMLElement
   private readonly matchHud: MatchHud
   private minimap?: Minimap
+  /** The camera's heading across the ground, kept for when it looks straight down. */
+  private viewHeading = 0
   private readonly panels: SlidingPanels
   private readonly board: Scoreboard
   private readonly hudBoard: Scoreboard
@@ -1679,10 +1681,22 @@ export class Shell implements System {
   setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {syn3hNet?:{players?:Map<number,{bot?:boolean}>}}).syn3hNet?.players; const count = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length
     // The status arrives every frame; the invite only depends on it through the player count.
     if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }
+  /**
+   * The bearing the compass readout shows, the same as the minimap's top: the camera's
+   * heading when the map is heading up, your vehicle's when it is north up.
+   */
+  private compassHeading(): number { return mapNorthUp.value || !this.minimap ? this.self?.heading ?? 0 : this.minimap.turn }
   setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
   update(dt = 0): void {
     if (this.tintTransition.update(dt)) this.onTint?.(this.tintTransition.current.body, this.tintTransition.current.accent, false)
-    this.touch.update(); if (!this.menuVisible) this.minimap?.update()
+    this.touch.update()
+    if (!this.menuVisible && this.minimap) {
+      // The camera has moved for this frame already (the chase camera updates before the shell).
+      this.minimap.setNorthUp(mapNorthUp.value)
+      this.viewHeading = cameraHeading(this.game.camera.quaternion, this.viewHeading)
+      this.minimap.setView(this.viewHeading)
+      this.minimap.update()
+    }
     // A captured cursor alone is insufficient while a menu or another flow suspends input.
     this.syncPanels()
     this.performancePanel.setContext(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'))
@@ -1705,7 +1719,7 @@ export class Shell implements System {
         const label = this.element.querySelector<HTMLElement>('.rail-world')!
         label.textContent = world; label.title = world
       }
-      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, thrust: this.telemetry.thrust, heading: this.self?.heading ?? 0, world, hour: currentHour() })
+      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, thrust: this.telemetry.thrust, heading: this.compassHeading(), world, hour: currentHour() })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
     // The stylesheet drops frost at the lowest graphics level.
