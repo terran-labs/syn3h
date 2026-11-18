@@ -90,7 +90,9 @@ export function visiblePlayURL(entry: URL): URL {
  * public room) and the world, so an empty room rebuilds the same one.
  */
 export function inviteAddress(entry: URL, room: string, world?: string): string {
-  const url = new URL(entry.pathname, entry.origin)
+  // The path with repeated slashes collapsed: "//" alone would read as a link to another host,
+  // and an address like https://www.syn3h.com// threw here at startup.
+  const url = new URL(entry.pathname.replace(/\/{2,}/g, '/'), entry.origin)
   const version = entry.searchParams.get('v')
   if (version !== null) url.searchParams.set('v', version)
   writeRoom(url, room)

@@ -23,7 +23,9 @@ const stallDevice = () => {
   navigator.gpu.requestAdapter = async options => { const a = await request(options); if (a && options?.featureLevel) a.requestDevice = () => new Promise(() => {}); return a }
 }
 const cases = [
-  { name: 'healthy', query: 'diag=1', expect: s => s.backend === (s.gpu ? 'webgpu' : 'webgl') && !s.fallbackReason && /startup:/.test(s.overlay) },
+  // The ?diag=1 overlay this case also read (a `details pre`) moved into the quality controller on
+  // 15 November (ddc6ee9a); a healthy start is the right backend and no fallback.
+  { name: 'healthy', query: 'diag=1', expect: s => s.backend === (s.gpu ? 'webgpu' : 'webgl') && !s.fallbackReason },
   { name: 'stalled adapter probe', query: 'gpudeadline=1500', init: stallAdapter, expect: s => s.backend === 'webgl' && /probe stalled/.test(s.fallbackReason ?? '') },
   { name: 'stalled device request', query: 'gpudeadline=1500', init: stallDevice, needsGpu: true, expect: s => s.backend === 'webgl' && /longer than 1500 ms/.test(s.fallbackReason ?? '') && s.canvases === 1 },
   { name: 'WebGL context lost', query: 'webgl=1', lose: 'webgl', expect: s => s.notice?.includes('WebGL context was lost') && s.reloadButton },

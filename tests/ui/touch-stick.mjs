@@ -161,9 +161,10 @@ try {
     await touch('pointerup', 7, ox + 40, oy)
     await page.evaluate(() => document.querySelector('#stick-probe').remove())
 
-    // A drag that starts on the minimap is not a stick either.
+    // A drag that starts on the minimap, which sits in the stick's corner, is a stick (the
+    // owner, 17 November 2026): the map takes no touches.
     await touch('pointerdown', 8, map.x + map.width / 2, map.y + map.height / 2); await touch('pointermove', 8, map.x + map.width / 2 + 40, map.y + map.height / 2)
-    assert.equal((await stick()).active, false, 'no stick from the minimap'); await touch('pointerup', 8, map.x + map.width / 2 + 40, map.y + map.height / 2)
+    assert.equal((await stick()).active, true, 'a stick from the minimap'); await touch('pointerup', 8, map.x + map.width / 2 + 40, map.y + map.height / 2)
     // Nor one that starts on the right side.
     await touch('pointerdown', 9, width * 0.7, oy); await touch('pointermove', 9, width * 0.7 - 40, oy)
     assert.equal((await stick()).active, false, 'no stick from the right side'); await touch('pointerup', 9, width * 0.7 - 40, oy)

@@ -100,9 +100,9 @@ export function touchActions(controls: GearControls | undefined): readonly GearA
   return controls ? controls.actions.slice(1) : []
 }
 
-/** The quiet reminder shown beside the drum. */
+/** The quiet reminder shown beside the drum: the number keys that pick a gear. None for one gear. */
 export function keyHint(count: number): string {
-  return count <= 2 ? `T next · 1 or ${count}` : `T next · 1 to ${Math.min(count, 9)}`
+  return count <= 1 ? '' : count === 2 ? '1 or 2' : `1 to ${Math.min(count, 9)}`
 }
 
 /** A readable fallback when the rack offers no names: "pester" becomes "Pester". */
@@ -155,6 +155,8 @@ export class GearSelector {
   private suppressClick = false
   private wheelAcc = 0
   private wheelAt = 0
+  /** Refits the names whenever the drum changes size (mode, viewport, shown). */
+  private readonly fitter = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => this.fit())
 
   constructor(parent: HTMLElement, private readonly source: () => GearSource | undefined, options: GearSelectorOptions = {}) {
     this.touch = Boolean(options.touch)
@@ -203,6 +205,8 @@ export class GearSelector {
     parent.append(this.actionsElement)
 
     this.listen()
+    this.fitter?.observe(this.drum)
+    document.fonts?.ready.then(() => this.fit(), () => {})
   }
 
   /** Call every frame. `focused` is true while the cursor is captured for driving. */
@@ -235,6 +239,7 @@ export class GearSelector {
   dispose(): void {
     this.releaseAll()
     this.abort.abort()
+    this.fitter?.disconnect()
     this.element.remove()
     this.actionsElement.remove()
   }
@@ -267,7 +272,7 @@ export class GearSelector {
       button.tabIndex = -1
       const label = document.createElement('span')
       label.className = 'gs-label'
-      const number = document.createElement('span')
+      const number = document.createElement('kbd')
       number.className = 'gs-index'
       number.textContent = String(index + 1)
       const text = document.createElement('span')
@@ -279,9 +284,33 @@ export class GearSelector {
       return { id, button, label, offset: 99 }
     })
     this.drum.replaceChildren(...this.items.map(i => i.button))
-    this.keyHintEl.textContent = keyHint(list.length)
+    // The number range, its numbers drawn as key glyphs like every other key in the column.
+    const range = keyHint(list.length)
+    this.keyHintEl.replaceChildren(...range.split(/(\d+)/).filter(Boolean).map((s) => {
+      if (!/^\d+$/.test(s)) return document.createTextNode(s)
+      const key = document.createElement('kbd'); key.textContent = s; return key
+    }))
+    this.keyHintEl.hidden = !range
     this.current = ''
     this.moveTo(source, source.current, true)
+    this.fit()
+  }
+
+  /**
+   * A gear's name is never cut off: where a name at full size is wider than its row (a long
+   * name on a narrow phone), it is drawn smaller to fit (--fit, multiplied into the slot's
+   * scale). Layout widths ignore transforms, so this reads the name's true width. Runs on
+   * rebuild, when the fonts arrive and when the drum changes size; never per frame.
+   */
+  private fit(): void {
+    for (const item of this.items) {
+      const natural = item.label.offsetWidth
+      if (!natural) continue
+      const style = getComputedStyle(item.button)
+      const room = item.button.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 2
+      const fit = room > 0 && natural > room ? Math.floor(room / natural * 1000) / 1000 : 1
+      item.label.style.setProperty('--fit', String(fit))
+    }
   }
 
   private moveTo(source: GearSource, current: string, force = false): void {
@@ -333,6 +362,8 @@ export class GearSelector {
     this.element.toggleAttribute('inert', focused)
     if (focused && this.element.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
     if (focused) this.endDrag()
+    // The number keys show only with the cursor free, so a name's width changes with the mode.
+    this.fit()
   }
 
   private setControls(controls: GearControls | undefined): void {

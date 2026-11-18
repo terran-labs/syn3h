@@ -16,7 +16,7 @@
  * the file is requested once.
  */
 export const PHYSICS_LOAD_TIMEOUT_MS = 30000
-/** Thrown when the physics engine cannot be loaded. main.ts shows `message` with a reload button. */
+/** Thrown when the physics engine cannot be loaded. The start-failure notice shows `message` with a reload button, `detail` behind Details (graphicsSupport.ts). */
 export class PhysicsLoadError extends Error {
   constructor(readonly detail: string) {
     super('The physics engine could not be loaded. Check your connection and reload.')

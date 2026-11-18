@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LobbyAddress } from '../../src/ui/LobbyAddress'
+import { inviteAddress, LobbyAddress } from '../../src/ui/LobbyAddress'
 
 function browser(href: string) {
   const location = { href }
@@ -94,3 +94,15 @@ describe('lobby address presentation', () => {
 // Browser allocation must exercise actual startup invite/resume consumption,
 // normal/autoplay entry, openMenu/closeMenu, joined early return and invite/QR.
 // These units do not claim the composition or frozen server has been exercised.
+
+describe('an address with doubled slashes', () => {
+  // A pasted link such as https://www.syn3h.com// threw at startup, lifting the veil without the game.
+  it('makes an invite link on the same host without throwing', () => {
+    for (const href of ['https://www.syn3h.com//', 'https://www.syn3h.com//game//?room=party', 'https://www.syn3h.com//evil.example/x']) {
+      const link = new URL(inviteAddress(new URL(href), 'party'))
+      expect(link.host).toBe('www.syn3h.com')
+      expect(link.pathname).not.toContain('//')
+      expect(link.searchParams.get('room')).toBe('party')
+    }
+  })
+})
