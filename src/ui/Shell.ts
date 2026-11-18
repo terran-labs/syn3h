@@ -340,7 +340,7 @@ export class Shell implements System {
       quality: this.game.quality, presentation: this.presentationToggle, host: this.hostControls, build,
       hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', inRoom: () => { const net = hostControls(); return !!net && (net.isHost || canEditWorld()) }, cue: () => this.audio.cue('click'),
     })
-    this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock)
+    this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock, this.lobbySettings.versionDock)
     // The version beside the lobby's settings gear opens What's new.
     this.lobbySettings.version.addEventListener('click', () => { this.audio.cue('click'); this.showUpdates() }, { signal })
     // About and Updates, each its own sheet from its icon above the gear. Their content is
@@ -348,7 +348,7 @@ export class Shell implements System {
     const shape = sheetShape(location.search), edges = () => this.galaxy?.wordmarkEdges() ?? null
     // Behind a sheet the galaxy dims a little and holds still, as behind a panel; it comes back once both are closed.
     const closed = () => { if (this.galaxy && !this.aboutSheet.isOpen && !this.updatesSheet.isOpen && this.panels.active === 'index' && !this.playing) this.galaxy.backdrop = 1 }
-    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'About Syn3h', shape, edges, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { this.lobbyWelcome = mountWelcome(body, { where: 'lobby' }) }, opened: () => this.lobbyWelcome?.opened() })
+    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'Welcome', shape, edges, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { this.lobbyWelcome = mountWelcome(body, { where: 'lobby' }) }, opened: () => this.lobbyWelcome?.opened() })
     this.updatesSheet = new LobbySheet(this.element, {
       name: 'updates', title: 'Updates', shape, edges, home: () => this.lobbySettings.updates, closed, cue: () => this.audio.cue('click'),
       fill: body => body.insertAdjacentHTML('beforeend', updatesSheetHtml()), opened: body => { void fillUpdates(body.querySelector<HTMLElement>('.about-updates')!) },

@@ -19,7 +19,7 @@ for(const mode of ['desktop','phone']){
   assert.equal(await page.locator('[data-goto=vehicle], [data-panel=vehicle], [name=vehicle], .shell-vehicle, .shell-vehicle-preview, canvas[aria-label="Selected vehicle preview"]').count(),0,'the lobby shows no vehicle control')
   // No bottom buttons (Multiplayer was removed); Settings, About and Updates are icons in the corner (LobbySettings).
   assert.equal(await page.locator('.galaxy-links button').count(),0,'the lobby has no bottom buttons')
-  for(const name of ['Settings','About Syn3h',/^Updates/]) assert.equal(await page.getByRole('button',{name,exact:typeof name==='string'}).count(),1,`the ${name} icon is there`)
+  for(const name of ['Settings','Welcome',/^Updates/]) assert.equal(await page.getByRole('button',{name,exact:typeof name==='string'}).count(),1,`the ${name} icon is there`)
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-lobby.png`})
   // About is the Welcome guide: its sections are there, and its pictures load only now.
   assert.deepEqual(images,[],'no image request in the lobby before About is opened')

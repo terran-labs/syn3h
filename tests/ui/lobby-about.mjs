@@ -67,8 +67,8 @@ for(const mode of ['desktop','phone','short-phone']){
   // focus left nowhere afterwards; the sheet running off a phone screen.
   const images=[];page.on('request',r=>{if(r.resourceType()==='image')images.push(r.url())})
   assert.equal(await page.locator('.lobby-sheet-about .about-columns').count(),0,'About content is not in the page before it is opened')
-  const icon=page.getByRole('button',{name:'About Syn3h',exact:true})
-  assert.equal(await icon.getAttribute('title'),'About Syn3h')
+  const icon=page.getByRole('button',{name:'Welcome',exact:true})
+  assert.equal(await icon.getAttribute('title'),'Welcome')
   await icon.click()
   const about=page.locator('.lobby-sheet-about')
   await about.locator('.about-columns').waitFor({state:'visible'})

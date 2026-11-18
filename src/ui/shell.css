@@ -516,7 +516,9 @@
 .galaxy-open .lobby-panels, .galaxy-open .lobby-footer { visibility: hidden; }
 .galaxy-ui { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding: 0 16px max(18px, env(safe-area-inset-bottom)); }
 .galaxy-ui > * { pointer-events: auto; }
-.galaxy-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+/* Its own stacking layer: captions order by depth among themselves (Shell sets z-index per caption)
+   and stay under the lobby's controls. */
+.galaxy-labels { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 /* Planet captions (the owner, 16 November 2026: "a lot more subtle... remove the borders and
    backgrounds entirely and always have the text be below"): type set straight on the scene,
    centred under each planet, like a star chart's. No plate, no rim, no bar. Shell.ts places
