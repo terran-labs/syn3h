@@ -101,13 +101,13 @@ describe('rivers off a drop', () => {
  * Columns in between lie level across the river (surface.ts buildRiverSurface), over water that
  * may run deeper on one side of the bed, which is not floating.
  */
-function highestFloat(ground: { heightAt(x: number, z: number): number }, waterAt: (x: number, z: number) => number, g: THREE.BufferGeometry, width: number, step = 3): number {
-  const p = g.getAttribute('position')
-  const cols = Math.max(3, 2 * Math.round(width / step / 2) + 1)
+function highestFloat(ground: { heightAt(x: number, z: number): number }, waterAt: (x: number, z: number) => number, g: THREE.BufferGeometry, width: number): number {
+  const p = g.getAttribute('position'), uv = g.getAttribute('uv')
   let worst = -Infinity
   for (let i = 0; i < p.count; i++) {
-    const c = i % cols
-    if (c !== 0 && c !== cols - 1 && c !== (cols - 1) / 2) continue
+    // uv.x is the offset across: the centre line, or an outer edge.
+    const offset = Math.abs(uv.getX(i))
+    if (offset > 1e-6 && Math.abs(offset - width / 2) > 1e-6) continue
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i)
     worst = Math.max(worst, y - Math.max(ground.heightAt(x, z) + RIVER_DRAPE_DEPTH, waterAt(x, z)))
   }

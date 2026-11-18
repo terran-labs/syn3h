@@ -77,8 +77,9 @@ describe('water rivers: physics floats on the river that is drawn', () => {
           }
         }
         const geo = buildRiverSurface(ground, pieces.points, r.width + 1.5, () => 1, 3)
-        const pos = geo.getAttribute('position'), cols = Math.max(3, 2 * Math.round((r.width + 1.5) / 3 / 2) + 1)
-        for (let i = (cols - 1) / 2; i < pos.count; i += cols) {
+        const pos = geo.getAttribute('position'), uv = geo.getAttribute('uv')
+        for (let i = 0; i < pos.count; i++) {
+          if (uv.getX(i) !== 0) continue
           const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i)
           expect(lavaSurfaceAt(alone, x, z, -Infinity, [lines[ri]])).toBeCloseTo(y, 3)
           // With everything else too, the water there is never lower than what is drawn.
