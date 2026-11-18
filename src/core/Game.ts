@@ -10,6 +10,7 @@
  * Systems register with `game.add(system)`. Order of registration is order of execution.
  */
 import * as THREE from 'three/webgpu'
+import { canCreateWebGL2, NoGraphicsError, webgpuUsable } from './graphicsSupport'
 import { installRenderDiagnostics, recordStartupPhase, showRendererLost, startupTiming, timeStartup } from './diagnostics'
 import { guardDevice, type GuardedRenderer } from './deviceLoss'
 import { drawFrame, gpuDeadlineMs, startRenderer, viewState, type PostChain } from './renderOptions'
@@ -87,6 +88,9 @@ export class Game {
     // WebGPU startup is bounded: a stall, a rejection or a missing adapter ends in WebGL 2
     // with the reason recorded in diagnostics, never a hang. Healthy devices are unchanged.
     const probe = this.quality.adapterProbe
+    // Nothing to draw with: no WebGPU adapter to start (or WebGL forced) and no WebGL 2 context
+    // either. Stop here with a plain reason rather than inside three.js (graphicsSupport.ts).
+    if ((forceWebGL || !webgpuUsable(probe)) && !canCreateWebGL2()) throw new NoGraphicsError(`no WebGL 2 context; WebGPU ${forceWebGL ? 'not tried (?webgl=1)' : `adapter probe: ${probe}`}`)
     const started = await timeStartup('renderer.init (adapter, device, context)', () => startRenderer((webgl, freshCanvas) => {
       if (freshCanvas) this.replaceCanvas()
       this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true, forceWebGL: webgl })
