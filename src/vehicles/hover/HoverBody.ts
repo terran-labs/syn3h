@@ -3,7 +3,7 @@ import type Node from 'three/src/nodes/core/Node.js'
 import { attribute, float, uniform, vec3 } from 'three/tsl'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Mat } from '../jetgen/shapes'
-import { mergeStatic, mergedSurfaces } from '../skins/mergeStatic'
+import { mergeStatic, mergedSurfaces, standardEmission } from '../skins/mergeStatic'
 import { applyShowroom, setRole } from '../skins/showroom'
 import { addLavaGlow } from '../skins/lavaGlow'
 import { addNightReadability } from '../skins/nightReadability'
@@ -43,7 +43,7 @@ function mergedMaterial(materials: T.MeshStandardMaterial[]): T.MeshStandardNode
   })
   const material = new T.MeshStandardNodeMaterial()
   material.colorNode = color; material.emissiveNode = emission; material.roughnessNode = roughness; material.metalnessNode = metalness
-  mergedSurfaces.set(material, materials)
+  mergedSurfaces.set(material, materials); standardEmission.add(emission)
   return material
 }
 
