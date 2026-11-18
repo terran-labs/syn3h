@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BotPacer, PACING, type PacingState } from '../../src/bots/pacing'
+import { BotPacer, BudgetHysteresis, PACING, type PacingState } from '../../src/bots/pacing'
 
 /**
  * Drive a pacer frame by frame. `frame(have)` gives each frame's duration for the bots alive;
@@ -125,7 +125,48 @@ describe('bot pacing', () => {
     expect(pacer.shed(8)).toBe(true)
     expect(pacer.goal({ wanted: 8 })).toBe(7)
     expect(pacer.shed(0)).toBe(false)
-    expect(pacer.climb(7, 8)).toBe(true)
+    // Headroom brings one back only after the readmit hold (PACING.holdMs).
+    expect(pacer.climb(7, 8, 31_000 + PACING.holdMs)).toBe(true)
     expect(pacer.goal({ wanted: 8 })).toBe(8)
+  })
+
+  it('never readmits a bot it sent away, through any number of quality level changes', () => {
+    // The live churn: a bot judged too costly left, the automatic level changed, the pacer
+    // forgot and let one back, and the cycle repeated with a hitch at every arrival.
+    const pacer = new BotPacer(() => 1)
+    const frame = costlyBots(desktop.targetMs)
+    let now = 0, have = 0, removedAt = -1
+    const actions: { at: number; action: string }[] = []
+    for (let t = 0; now < 10 * 60_000; t++) {
+      const level = removedAt < 0 ? desktop.level : (Math.floor(now / 3000) % 2 ? 3 : 4)
+      const ms = frame(have); now += ms
+      const action = pacer.step(now, ms, { ...desktop, level, have })
+      if (action === 'add') have++
+      if (action === 'remove') { have--; if (removedAt < 0) removedAt = now }
+      if (action) actions.push({ at: now, action })
+    }
+    expect(removedAt).toBeGreaterThan(0)
+    expect(actions.filter(a => a.at > removedAt && a.action === 'add')).toHaveLength(0)
+  })
+
+  it('does not let the governor bring a bot back within the hold after sending one away', () => {
+    const pacer = new BotPacer(() => 1)
+    run(pacer, 20, { ...desktop, wanted: 3 }, () => 1000 / 120)
+    expect(pacer.shed(3, false, 20_000)).toBe(true)
+    expect(pacer.climb(2, 3, 20_000 + PACING.holdMs - 1)).toBe(false)
+    expect(pacer.climb(2, 3, 20_000 + PACING.holdMs)).toBe(true)
+  })
+
+  it('keeps the count steady when the level, and with it the bot budget, flaps', () => {
+    const hold = new BudgetHysteresis()
+    const seen: number[] = []
+    // The budget of a level that changes every ten seconds, for five minutes.
+    for (let now = 0; now < 5 * 60_000; now += 1000) seen.push(hold.value(Math.floor(now / 10_000) % 2 ? 6 : 8, now))
+    // From the first drop on (ten seconds in), never back up while it flaps.
+    expect(Math.max(...seen.slice(10))).toBe(6)
+    // A higher budget that holds is taken, after the wait.
+    let now = 5 * 60_000, v = 0
+    for (; now < 5 * 60_000 + PACING.budgetRiseMs + 2000; now += 1000) v = hold.value(8, now)
+    expect(v).toBe(8)
   })
 })
