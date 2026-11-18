@@ -21,7 +21,7 @@ function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmar
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
 import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
 import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime } from './cameraRest'
-import { introMode, LEAVING_SECONDS, openingCue, leavingMark, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
+import { introMode, LEAVING_SECONDS, openingCue, SPIRAL_TURN, leavingMark, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
 /** The loading veil is still up: loading, or waiting for the tap that begins (src/ui/TapToBegin.ts). */
@@ -1095,7 +1095,13 @@ export class Galaxy {
     if (intro > 0 && !openingPlayed && !this.reduced.matches) { this.opening = { start: null, mode: intro as OpeningMode }; openingPlayed = true }
     else if (openingPlayed && !this.reduced.matches) this.returning = performance.now()
     // Only once it is playing: a tap while loading, or the tap that begins it (TapToBegin.ts), is not a skip.
-    for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, () => { if (this.opening && this.opening.start !== null) { this.opening = null; this.chrome(null); this.wake = 2 } }, { capture: true, passive: true, signal })
+    // A press that skips it also keeps where the worlds were shown, so lifting it on a world
+    // in flight still picks that world (up), not whatever settled under the finger.
+    for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, event => {
+      if (!this.opening || this.opening.start === null) return
+      if (event instanceof PointerEvent) this.skipped = { pointer: event.pointerId, screen: this.screen }
+      this.opening = null; this.chrome(null); this.wake = 2
+    }, { capture: true, passive: true, signal })
     canvas.addEventListener('webglcontextlost', event => {
       if (this.canvas !== canvas || this.gl !== gl) return
       event.preventDefault(); cancelAnimationFrame(this.frame); this.options.onLogo?.(false); this.markOverlay?.hide()
@@ -1350,13 +1356,13 @@ export class Galaxy {
     if (reveal.reach !== 1) view.eye = [this.target[0] + (view.eye[0] - this.target[0]) * reveal.reach, this.target[1] + (view.eye[1] - this.target[1]) * reveal.reach, this.target[2] + (view.eye[2] - this.target[2]) * reveal.reach]
     const arrival = places.map((_, i) => reveal.arrive[this.lanes(places)[i]] ?? 1)
     // The Big Bang flings each world out from the sun on a spiral: turned back along its way by
-    // up to 2.4 radians and drawn in toward the sun, passing its place a little, then settling.
+    // up to SPIRAL_TURN radians and drawn in toward the sun, passing its place a little, then settling.
     // Drawn, picked and labelled where it is shown, so a tap lands on what is seen.
     // Each also leaves a short fading trail, from where it was TRAIL_SECONDS ago (uTrail).
     const spiral = (p: readonly number[], f: number): [number, number, number] => {
       // Turned back against the orbits' own way, so the fling winds out the same way they run:
       // clockwise on screen from above (as the orbits, measured), carrying straight on into the drift.
-      const turn = -(1 - Math.min(1, f)) * 2.4, c = Math.cos(turn), sn = Math.sin(turn)
+      const turn = -(1 - Math.min(1, f)) * SPIRAL_TURN, c = Math.cos(turn), sn = Math.sin(turn)
       return [(p[0] * c - p[2] * sn) * f, p[1] * f, (p[0] * sn + p[2] * c) * f]
     }
     const trails: number[] = []
@@ -1468,6 +1474,8 @@ export class Galaxy {
     if (this.chosen >= 0 && !this.arrived && (this.arriving += this.step) > 1.5) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number; labelled?: boolean }[] = []
+  /** Where the worlds were shown when a press skipped the opening: that press picks from these. */
+  private skipped: { pointer: number; screen: Galaxy['screen'] } | null = null
   /** Where the sun's core is on screen, as of the last frame drawn. */
   sunScreen: { x: number; y: number; radius: number; depth?: number } = { x: -1e4, y: -1e4, radius: 0 }
   private readonly markRig = new WordmarkRig()
@@ -1775,7 +1783,7 @@ export class Galaxy {
   }
   private up(event: PointerEvent, tap: boolean): void { this.handled = performance.now(); if (event.pointerType !== 'mouse') this.pointAt(undefined);
     this.pointers.delete(event.pointerId)
-    const drag = this.drag; if (!drag || drag.id !== event.pointerId) return
+    const drag = this.drag; if (!drag || drag.id !== event.pointerId) { if (this.skipped?.pointer === event.pointerId) this.skipped = null; return }
     this.drag = null
     // Let go: the aim coasts at the finger's speed, faded if the finger had paused. Past a
     // tilt limit it springs back instead. Reduced motion has no coast.
@@ -1786,10 +1794,12 @@ export class Galaxy {
       const inside = pitch.aim <= PITCH_HIGH && pitch.aim >= PITCH_LOW
       pitch.aimSpeed = inside ? Math.max(-4, Math.min(4, pitchSpeed * 0.7)) : 0
     }
+    const skipped = this.skipped?.pointer === event.pointerId ? this.skipped.screen : null
+    this.skipped = null
     if (drag.moved || !tap) return
     // A tap: the nearest world under the finger, with a generous margin on small screens.
     const box = this.canvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top
-    const found = pickWorld(this.screen, x, y)
+    const found = pickWorld(skipped ?? this.screen, x, y)
     if (found) { if (!this.options.onTap?.(found)) this.choose(found) } else if (this.chosen >= 0 && !this.flight) this.home()
   }
   dispose(): void { this.presence.dispose(); this.active = false; this.abort.abort(); this.resizeObserver.disconnect(); this.release() }

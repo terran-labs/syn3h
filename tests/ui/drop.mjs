@@ -3,7 +3,8 @@
  * in one motion. No form, no panel, no lobby screen in between. This check taps a world (a
  * different one from the world in play, so the world is rebuilt on the way) and records:
  * that no panel ever opened, how long the drop took, every frame gap from tap to ground (the
- * longest, and when), and stills along the way. Desktop and phone.
+ * longest, and when), and stills along the way. Desktop and phone. The tap lands while the
+ * opening is still throwing the world out to its orbit, and must enter that world.
  *
  *   SYN3H_URL=http://127.0.0.1:5193/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/drop.mjs
  *
@@ -32,9 +33,28 @@ try {
       const tick = now => { w.__gaps.push([now - w.__t0, now - last]); last = now; const p = document.querySelector('.lobby-panels').dataset.activePanel; if (p && p !== 'index' && !document.querySelector('.syn3h-shell').classList.contains('is-playing')) w.__panels.add(p); if (!w.__done) requestAnimationFrame(tick) }
       w.__t0 = performance.now(); requestAnimationFrame(tick)
     })
-    const target = 'alpine', where = await page.evaluate(id => window.syn3h.shell.galaxy.screen.find(s => s.id === id), target)
+    // Click the world while the opening is still throwing it out to its orbit, where it is drawn
+    // that frame: the world under the pointer is the one entered, never whatever rests there.
+    // The opening is held at a moment when the world is in flight, well away from its orbit; the
+    // press skips the opening; a frame is drawn before the release, as in any real click (a
+    // person holds it about a tenth of a second), so the worlds are back on their orbits by then.
+    const target = 'alpine'
+    const where = await page.evaluate(id => {
+      const g = window.syn3h.shell.galaxy, mode = window.syn3h.params.get('lobby.intro').value
+      const draw = at => { g.replayOpening(mode); g.openingAt = at; g.wake = 2; g.last = 0; g.loop(performance.now()); return g.screen.find(s => s.id === id) }
+      const home = draw(100)
+      for (let at = 0.5; at < 12; at += 0.05) {
+        const s = draw(at)
+        if (s?.visible && s.radius > 6 && Math.hypot(s.x - home.x, s.y - home.y) > 4 * s.radius) return { ...s, at: +at.toFixed(2), home, playing: Boolean(g.opening) }
+      }
+      return null
+    }, target)
+    assert.ok(where, `${view.name}: ${target} is never seen in flight away from its orbit`)
     const t0 = Date.now()
-    await page.mouse.click(where.x, where.y)
+    await page.mouse.move(where.x, where.y); await page.mouse.down()
+    await page.evaluate(() => { const g = window.syn3h.shell.galaxy; g.openingAt = null; g.wake = 2; g.last = 0; g.loop(performance.now()) })
+    await page.mouse.up()
+    console.log(`${view.name}: clicked ${target} in flight at ${where.at} s (opening playing: ${where.playing}) at ${Math.round(where.x)},${Math.round(where.y)}; it rests at ${Math.round(where.home.x)},${Math.round(where.home.y)}`)
     await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 1000 })
     for (const at of [300, 900, 1600, 2300, 3000, 3800, 4600, 5400]) { await page.waitForTimeout(Math.max(0, at - (Date.now() - t0))); await page.screenshot({ path: `${out}/${view.name}-${String(at).padStart(4, '0')}.png` }) }
     await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 20000 })
