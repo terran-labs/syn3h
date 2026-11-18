@@ -1,5 +1,5 @@
 /**
- * Welcome: the guide a first-time visitor reads (it was About). This module owns everything
+ * Welcome: the guide a first-time visitor reads (it was About; players see it as Welcome). This module owns everything
  * inside the panel; the panel itself (its shell, title, close control and motion) belongs to
  * whoever hosts it: the lobby sheet (LobbySheet.ts) or the in-play guide (Shell.ts).
  *
@@ -57,15 +57,22 @@ const GEAR_MARKS: Record<keyof typeof GEAR_LABELS, string> = {
 }
 const gearList = (Object.keys(GEAR_LABELS) as (keyof typeof GEAR_LABELS)[]).map(id => `<li><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${GEAR_MARKS[id]}</svg><div><strong>${escape(GEAR_LABELS[id])}</strong><span>${escape(GEAR_DESCRIPTIONS[id])}</span></div></li>`).join('')
 
-/** A phone on its side with the touch controls where the game puts them, drawn in SVG. */
-const touchDiagram = `<svg class="welcome-touch" viewBox="0 0 320 150" role="img" aria-labelledby="welcome-touch-title"><title id="welcome-touch-title">A phone on its side: the left thumb drives anywhere on the left half; the action buttons sit on the right; Panels is the tab on the right edge</title>
-  <rect x="2" y="2" width="316" height="146" rx="22" class="wt-frame"/>
-  <circle cx="70" cy="98" r="28" class="wt-stick"/><circle cx="78" cy="90" r="11" class="wt-knob"/>
-  <text x="70" y="44" class="wt-note">Left thumb: drive</text>
-  <g class="wt-buttons"><circle cx="226" cy="78" r="15"/><circle cx="264" cy="78" r="15"/><circle cx="226" cy="116" r="15"/><circle cx="264" cy="116" r="15" class="wt-tag"/></g>
-  <g class="wt-labels"><text x="226" y="78">WINGS</text><text x="264" y="78">BRAKE</text><text x="226" y="116">ZORB</text><text x="264" y="116">TAG</text></g>
-  <rect x="296" y="30" width="12" height="44" rx="6" class="wt-tab"/>
-  <text x="245" y="44" class="wt-note">Buttons</text>
+/**
+ * A phone on its side with the touch controls where the game puts them (TouchControls.ts and
+ * touch-stick.css, as of v26.11.1712): the gear rack top left, the minimap lower left, the
+ * stick wherever the left thumb lands, the four buttons lower right and the Panels tab on the
+ * right edge. Drawn in SVG at the phone's own 844 x 390 points, the buttons a little larger.
+ */
+const touchDiagram = `<svg class="welcome-touch" viewBox="0 0 844 390" role="img" aria-labelledby="welcome-touch-title"><title id="welcome-touch-title">A phone on its side. Top left: the gear rack. Lower left: the minimap. Anywhere on the left half: put your thumb down to drive. Right half: drag to look round. Lower right: TAG and WINGS above ZORB and BRAKE. Right edge: the Panels tab.</title>
+  <rect x="3" y="3" width="838" height="384" rx="48" class="wt-frame"/>
+  <rect x="34" y="22" width="190" height="64" rx="14" class="wt-tab"/><text x="129" y="54" class="wt-name">GEAR RACK</text>
+  <circle cx="82" cy="318" r="46" class="wt-tab"/><text x="82" y="318" class="wt-name">MAP</text>
+  <circle cx="290" cy="250" r="66" class="wt-stick"/><circle cx="310" cy="232" r="28" class="wt-knob"/>
+  <text x="250" y="160" class="wt-note">left half: drive</text>
+  <text x="610" y="160" class="wt-note">right half: look</text>
+  <g class="wt-buttons"><circle cx="672" cy="250" r="34" class="wt-tag"/><circle cx="752" cy="250" r="34"/><circle cx="672" cy="330" r="34"/><circle cx="752" cy="330" r="34"/></g>
+  <g class="wt-labels"><text x="672" y="250">TAG</text><text x="752" y="250">WINGS</text><text x="672" y="330">ZORB</text><text x="752" y="330">BRAKE</text></g>
+  <rect x="800" y="120" width="26" height="100" rx="13" class="wt-tab"/>
 </svg>`
 
 /** The page. Every top-level element is one row (see the contract above). */
@@ -76,7 +83,7 @@ function html(where: WelcomeWhere): string {
 ${figure('wings-glide', 'Off a Badlands ridge on the buggy’s force-field wings.', '(min-width: 720px) 720px, 100vw', 'welcome-hero')}
 <h3>Start in three moves</h3>
 <ol class="welcome-steps">
-  <li><strong>Pick a planet.</strong> ${enter}: volcanoes, lagoons, badlands, swamps and more.</li>
+  <li><strong>Pick a planet.</strong> ${enter}: volcanoes, lagoons, badlands, a mire and more.</li>
   <li><strong>Drive.</strong> ${k('W')}${k('A')}${k('S')}${k('D')} or the arrow keys on a computer, your left thumb on a phone. Everything else can wait.</li>
   <li><strong>Bring a friend.</strong> ${where === 'play' ? 'Press' : 'In a world, press'} ${k('J')} or <em>Invite players</em> for a link and a QR code. Whoever opens it lands in your world. No accounts.</li>
 </ol>
@@ -87,9 +94,9 @@ ${figure('wings-glide', 'Off a Badlands ridge on the buggy’s force-field wings
   <li><strong>Hovercraft</strong><span>Rides a cushion of air over sand, water and lava alike. The shortest way across a lagoon.</span></li>
 </ul>
 <p>Switch machines from the panels whenever you like. On any of them, ${k('X')} closes a Zorb ball around you: roll it, bounce it, shove your friends with it.</p>
-<div class="welcome-pair">${figure('jet-tiny-world-clean', 'High enough in the jet, the world is a ball.', '(min-width: 560px) 360px, 100vw')}${figure('lagoon-hovercraft', 'The hovercraft takes the lagoon.', '(min-width: 560px) 360px, 100vw')}</div>
+<div class="welcome-pair">${figure('jet-tiny-world', 'High enough in the jet, the world is a ball.', '(min-width: 560px) 360px, 100vw')}${figure('lagoon-hovercraft', 'Across the lagoon and up the beach: the hovercraft doesn’t mind which.', '(min-width: 560px) 360px, 100vw')}</div>
 <h3>Gear</h3>
-<p>Five tools ride in the rack on the left. ${k('T')} switches, ${k('L')} or a click uses what you hold; on a phone, tap the rack and press <strong>TAG</strong>. In Explore they are toys. In a match they are tactics.</p>
+<p>Five tools ride in the rack on the left. Pick one with the number keys, or click or tap it in the rack. ${k('L')} or a click in the world uses it; on a phone, <strong>TAG</strong> does. In Explore they are toys. In a match they are tactics.</p>
 <ul class="welcome-gear">${gearList}</ul>
 <h3>Ways to play</h3>
 <dl class="welcome-modes">
@@ -109,12 +116,13 @@ ${figure('canyon-convoy', 'Tag is better with company.', '(min-width: 720px) 720
       <li><span>${k('Space')}</span>wings, or hover and flight in the jet</li>
       <li><span>${k('E')}${k('Q')}</span>jet: climb, descend</li>
       <li><span>${k('L')}<i>or</i>${k('click', 'Mouse click')}</span>use gear</li>
-      <li><span>${k('T')}</span>switch gear</li>
+      <li><span>${k('1')}<i>to</i>${k('5')}</span>choose gear</li>
       <li><span>${k('X')}</span>Zorb ball</li>
       <li><span>${k('click', 'Mouse click')}</span>capture the mouse to look round</li>
       <li><span>${k('C')}</span>camera views</li>
       <li><span>${k('H')}</span>this vehicle’s controls</li>
       <li><span>${k('J')}</span>invite</li>
+      <li><span>${k('Y')}</span>chat</li>
       <li><span>${k('I')}</span>interface: full, driving, hidden</li>
       <li><span>${k('Esc')}</span>free the mouse, open the panels</li>
     </ul>
@@ -125,8 +133,9 @@ ${figure('canyon-convoy', 'Tag is better with company.', '(min-width: 720px) 720
     <ul class="welcome-keys">
       <li><span>Left half</span>drive: put your thumb down anywhere and push</li>
       <li><span>Right half</span>drag to look round</li>
-      <li><span><b class="welcome-pill">TAG</b></span>use the gear in the rack</li>
-      <li><span><b class="welcome-pill">Panels</b></span>vehicle, game mode and world</li>
+      <li><span>Gear rack</span>tap a gear to choose it</li>
+      <li><span><b class="welcome-pill">TAG</b></span>use it: hold, and drag to aim</li>
+      <li><span><b class="welcome-pill">Panels</b></span>vehicle, game mode, world and chat</li>
     </ul>
   </section>
 </div>
@@ -140,11 +149,10 @@ ${figure('lava-night', 'Night on the volcanic world: the sea is lava.', '(min-wi
   <li><strong>Quality.</strong> The game picks a level for your device and adjusts as you play. Set it yourself in Settings, then Graphics.</li>
   <li><strong>Left-handed touch.</strong> Swaps the driving thumb to the right. Settings, then Controls.</li>
 </ul>
-${figure('swamp-river', 'A river through the Methane Swamp.', '(min-width: 720px) 720px, 100vw')}
-<h3>The story</h3>
-<p>Aubrey Falconer’s Mars Explorer put flying cars, volcanoes and vehicle tag in one place, and a community stayed for years to explore and build together. Syn3h carries that invitation on: land somewhere unfamiliar, learn what your machine can do, and find your own reasons to stay.</p>
+${figure('swamp-river', 'A river through the Mire.', '(min-width: 720px) 720px, 100vw')}
 <h3>Made, not shipped</h3>
 <p>Almost nothing you see or hear is a file. The terrain grows from a seed and wraps around a small planet. The sky is computed from how light scatters. The vehicles are built in code, the engines are synthesised, and the music is composed while you play. The pictures on this page are the exception: they load only when you open it.</p>
+<p class="welcome-close">Land somewhere unfamiliar, learn what your machine can do, and find your own reasons to stay.</p>
 ${aboutLinksHtml}
 ${licencesHtml}
 `

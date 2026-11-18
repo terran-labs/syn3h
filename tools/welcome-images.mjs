@@ -5,7 +5,8 @@
  *   node tools/welcome-images.mjs          # write public/welcome/*.webp and the manifest
  *   node tools/welcome-images.mjs --check  # exit 1 if the outputs are missing or stale
  *
- * The originals are 3840 x 2160 captures from tools/showcase.mjs (v26.11.1610) and stay in
+ * The originals are 3840 x 2160 captures from tools/showcase.mjs --hud hidden (v26.11.1711,
+ * the interface hidden so the pictures never show a HUD the game has replaced) and stay in
  * the repository as source. Each becomes two widths, 640 and 1280, which cover the panel
  * (300 to 880 CSS px wide) at 1x and 2x. The manifest (src/ui/welcome/shots.generated.ts)
  * records each file's width, height and bytes and the picture's average colour, which the
@@ -31,12 +32,12 @@ const QUALITY = 72
 
 /** The pictures, in the order the panel shows them. Alt text describes what is in frame. */
 export const SHOTS = [
-  { id: 'wings-glide', alt: 'A buggy gliding off a sandstone ridge on translucent blue force-field wings, low sun on the Badlands' },
-  { id: 'jet-tiny-world-clean', alt: 'The jet climbing above a small planet whose whole curved surface fills the bottom of the view' },
-  { id: 'lagoon-hovercraft', alt: 'A hovercraft skimming a bright blue lagoon toward low islands' },
-  { id: 'lava-night', alt: 'A buggy on a dark shore beside a glowing lava sea at night, a volcano behind' },
-  { id: 'swamp-river', alt: 'A buggy on green slopes beside a river in the Methane Swamp, under a hazy green sky' },
-  { id: 'canyon-convoy', alt: 'Three buggies together on a red canyon floor at golden hour, a jet overhead' },
+  { id: 'wings-glide', alt: 'A buggy gliding on translucent blue force-field wings past a red canyon wall, teal water below' },
+  { id: 'jet-tiny-world', alt: 'The jet climbing away from a small planet whose whole curved surface fills the bottom of the view' },
+  { id: 'lagoon-hovercraft', alt: 'A hovercraft hovering over a pale sand slope on an island under a blue sky, a buggy on the crest above' },
+  { id: 'lava-night', alt: 'A buggy on a dark shore beside a glowing lava sea at night, a volcano and other buggies behind' },
+  { id: 'swamp-river', alt: 'A buggy on green grass above a pale green river in the Mire, hazy hills beyond' },
+  { id: 'canyon-convoy', alt: 'Three buggies together on a red canyon floor at golden hour, a jet low overhead' },
 ]
 
 const sourceOf = id => join(root, 'art/welcome', `${id}.jpg`)

@@ -23,6 +23,7 @@
 .welcome-body em { font-style: normal; color: var(--w-ink); }
 /* The hosts' older About rules size every p (lobby-sheet.css, theme-halo.css); these two differ on purpose. */
 .syn3h-shell .welcome-body.welcome-body p.welcome-lede, .welcome-body .welcome-lede { margin-bottom: 22px; font: 300 clamp(19px, 2.6cqi + 11px, 26px)/1.35 'Barlow', sans-serif; letter-spacing: .005em; color: var(--w-ink); max-width: 30ch; }
+.syn3h-shell .welcome-body.welcome-body p.welcome-close, .welcome-body .welcome-close { margin-top: 28px; color: var(--w-ink); font: 300 18px/1.45 'Barlow', sans-serif; max-width: 34ch; }
 .syn3h-shell .welcome-body.welcome-body p.welcome-note, .welcome-body .welcome-note { color: var(--w-soft); font-size: 13.5px; }
 .welcome-body .welcome-kicker { margin: 0 0 14px; font: 500 11.5px/1.2 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; color: var(--w-soft); }
 
@@ -87,16 +88,17 @@
 .welcome-keys li > span i { font-style: normal; color: var(--w-soft); font-size: 11px; margin: 0 2px; }
 .welcome-keys kbd:first-child { margin-left: 0; }
 
-.welcome-touch { display: block; width: 100%; max-width: 360px; height: auto; margin: 0 0 14px; }
-.welcome-touch .wt-frame { fill: none; stroke: var(--w-line); stroke-width: 1.2; }
-.welcome-touch .wt-stick { fill: none; stroke: var(--w-line); stroke-dasharray: 3 4; }
-.welcome-touch .wt-knob { fill: none; stroke: var(--w-ink); stroke-width: 1.2; }
-.welcome-touch .wt-buttons circle { fill: none; stroke: var(--w-line); stroke-width: 1.1; }
+.welcome-touch { display: block; width: 100%; max-width: 380px; height: auto; margin: 0 0 14px; }
+.welcome-touch .wt-frame { fill: none; stroke: var(--w-line); stroke-width: 3; }
+.welcome-touch .wt-tab { fill: none; stroke: var(--w-quiet); stroke-width: 3; }
+.welcome-touch .wt-stick { fill: none; stroke: var(--w-line); stroke-width: 3; stroke-dasharray: 8 10; }
+.welcome-touch .wt-knob { fill: none; stroke: var(--w-ink); stroke-width: 3; }
+.welcome-touch .wt-buttons circle { fill: none; stroke: var(--w-line); stroke-width: 3; }
 .welcome-touch .wt-buttons .wt-tag { stroke: var(--w-ink); }
-.welcome-touch .wt-tab { fill: none; stroke: var(--w-line); }
-.welcome-touch text { fill: var(--w-dim); font: 500 7px 'Barlow', sans-serif; letter-spacing: .1em; text-anchor: middle; }
-.welcome-touch .wt-labels text { font-size: 6px; fill: var(--w-ink); dominant-baseline: middle; }
-.welcome-touch .wt-note { font-size: 8.5px; fill: var(--w-soft); letter-spacing: .12em; text-transform: uppercase; }
+.welcome-touch text { fill: var(--w-dim); font: 500 22px 'Barlow', sans-serif; letter-spacing: .12em; text-anchor: middle; dominant-baseline: middle; text-transform: uppercase; }
+.welcome-touch .wt-labels text { font-size: 17px; fill: var(--w-ink); }
+.welcome-touch .wt-name { font-size: 18px; fill: var(--w-soft); }
+.welcome-touch .wt-note { font-size: 24px; fill: var(--w-soft); }
 
 .welcome-settings { display: grid; gap: 10px; }
 .welcome-settings li { padding-left: 16px; position: relative; }

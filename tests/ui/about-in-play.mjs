@@ -1,5 +1,5 @@
 /**
- * The About guide opened in play: from the sidebar it shows over the world, cancels held
+ * The Welcome guide (it was About) opened in play: from the sidebar it shows over the world, cancels held
  * fire, closes on Escape without firing, and leaves the address and the room alone. No image
  * loads before it opens; after, only the Welcome pictures (src/ui/welcome/welcome.ts).
  *
@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 const out = 'tests/ui/artifacts/about-in-play'
 await mkdir(out, { recursive: true })
-for (const mode of ['desktop', 'phone', 'landscape']) {
+for (const mode of process.env.MODES ? process.env.MODES.split(',') : ['desktop', 'phone', 'landscape']) {
   const touch = mode !== 'desktop'
   const browser = await (touch ? webkit.launch() : chromium.launch({ channel: 'chrome', headless: true }))
   try {
@@ -43,7 +43,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     assert.ok(outline.levels.every((level, i) => i === 0 || level <= outline.levels[i - 1] + 1), `headings never skip a level ${outline.levels}`)
     assert.ok(outline.alts.length >= 5 && outline.alts.every(n => n > 20), 'every picture has alt text')
     assert.ok(await guide.evaluate(d => d.open && d.matches(':modal')), 'the guide is a modal')
-    assert.match(await guide.innerText(), /About Syn3h/i)
+    assert.match(await guide.locator('h2').innerText(), /Welcome/i)
     assert.equal(await page.evaluate(() => syn3h.game.input.state.fire), false, 'held fire is cancelled on open')
     assert.ok(await page.evaluate(() => document.activeElement?.closest('.in-play-about') !== null), 'focus moves into the guide')
     await page.screenshot({ path: `${out}/${mode}.png` })
@@ -72,8 +72,11 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await page.waitForFunction(() => syn3h.game.input.state.fire)
     await page.keyboard.up('l')
     if (!touch) {
-      // From the Paused veil: About opens over it, and closing leaves the world paused.
+      // From the Paused veil: the guide opens over it, and closing leaves the world paused.
       await page.locator('.rail-pause').click()
+      // If the pause does not take, say what the page was doing instead of timing out on the button.
+      const pauseState = () => page.evaluate(() => ({ paused: document.querySelector('.syn3h-shell').classList.contains('is-paused'), lock: !!document.pointerLockElement, guide: document.querySelector('.in-play-about').open, suspended: syn3h.game.input.suspended, focus: document.activeElement?.className, buttonHidden: document.querySelector('.pause-about').hidden }))
+      await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-paused'), null, { timeout: 5000 }).catch(async () => { throw new Error(`Pause did not take: ${JSON.stringify(await pauseState())}`) })
       await page.locator('.pause-about').click()
       await guide.waitFor({ state: 'visible' })
       await page.screenshot({ path: `${out}/desktop-paused.png` })

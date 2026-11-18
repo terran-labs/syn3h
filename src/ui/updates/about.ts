@@ -13,8 +13,8 @@ let uid = 0
 /** The HTML for one About: tabs, the About pane and an empty Updates pane. */
 export function aboutHtml(): string {
   const id = `about-${++uid}`
-  return `<div class="about-tabs" role="tablist" aria-label="About">
-      <button type="button" role="tab" id="${id}-tab-about" aria-controls="${id}-about" aria-selected="true" data-about-tab="about">About</button>
+  return `<div class="about-tabs" role="tablist" aria-label="Welcome">
+      <button type="button" role="tab" id="${id}-tab-about" aria-controls="${id}-about" aria-selected="true" data-about-tab="about">Welcome</button>
       <button type="button" role="tab" id="${id}-tab-updates" aria-controls="${id}-updates" aria-selected="false" tabindex="-1" data-about-tab="updates">Updates</button>
     </div>
     <div class="about-pane" role="tabpanel" id="${id}-about" aria-labelledby="${id}-tab-about" data-about-pane="about"></div>
