@@ -38,6 +38,10 @@ export async function serveStable({ dir, port }) {
       if (!['GET', 'HEAD'].includes(req.method)) { res.writeHead(405, { Allow: 'GET, HEAD' }).end(); return; }
       const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
       if (pathname === '/ws') { res.writeHead(426).end('WebSocket upgrade required'); return; }
+      // The lobby polls /presence (server/dev.ts and the Worker answer it). This one process has
+      // no cross-room registry, so it says no rooms are reporting: the shape the client reads,
+      // instead of a 404 that the smoke's "no page errors" check counts as a failure.
+      if (pathname === '/presence') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify({ version: 1, generatedAt: Date.now(), ttlMs: 90000, byRecipe: [] })); return; }
       if (pathname.includes('\0') || pathname.includes('\\')) { res.writeHead(400).end(); return; }
       const requested = resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
       if (!inside(root, requested)) { res.writeHead(403).end(); return; }
