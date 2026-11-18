@@ -1,9 +1,10 @@
 /**
  * The galaxy with many worlds: the lobby as it ships, and the most the galaxy holds
  * (`?worlds=12`, development builds only, repeats the recipes). At desktop, phone portrait
- * and phone landscape it checks that every world is on screen at the first view, that the
- * labels shown do not overlap each other or leave the screen, and that a tap on the smallest
- * world's disc begins a drop. It times the trace on this Mac's GPU for both systems.
+ * and phone landscape it checks that every world is traced, that each caption of a world on
+ * screen is anchored on screen with it, and that a tap on the smallest world's disc begins a
+ * drop. Captions may overlap each other and clip at the screen's edge, and the closer default
+ * view lets outer worlds run off the edges (the owner, 16 November 2026), so none is checked. It times the trace on this Mac's GPU for both systems.
  *
  *   SYN3H_URL=http://127.0.0.1:5193/ tools/heavy.sh node tests/ui/galaxy-crowd.mjs
  *
@@ -45,11 +46,11 @@ try {
       assert.equal(state.screen.length, state.labels.length, `${view.name} ${count}: a traced world for every label`)
       // Twelve with the forming world, eleven while the lobby hides it.
       if (count !== 'default') assert.ok(state.screen.length >= count - 1 && state.screen.length <= count, `${view.name}: ${state.screen.length} worlds traced of ${count}`)
-      const off = state.screen.filter(s => !s.visible || s.x < 0 || s.x > view.viewport.width || s.y < 0 || s.y > view.viewport.height).map(s => s.id)
-      assert.deepEqual(off, [], `${view.name} ${count}: worlds off the screen`)
+      const onScreen = new Set(state.screen.filter(s => s.visible && s.x >= 0 && s.x <= view.viewport.width && s.y >= 0 && s.y <= view.viewport.height).map(s => s.id))
       const shown = state.labels.filter(l => !l.hidden && !l.crowded)
-      for (const a of shown) for (const b of shown) if (a.id < b.id) assert.ok(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top, `${view.name} ${count}: labels ${a.id} and ${b.id} overlap`)
-      for (const l of shown) assert.ok(l.left >= 0 && l.right <= view.viewport.width && l.top >= 0 && l.bottom <= view.viewport.height, `${view.name} ${count}: label ${l.id} off the screen`)
+      // A world on screen keeps its caption's anchor, the top centre under the planet, on screen
+      // too: a caption detached from its planet fails here, one clipped at the edge does not.
+      for (const l of shown.filter(l => onScreen.has(l.id))) { const x = (l.left + l.right) / 2; assert.ok(x >= 0 && x <= view.viewport.width && l.top >= 0 && l.top <= view.viewport.height, `${view.name} ${count}: the ${l.id} caption is anchored off the screen`) }
       await page.screenshot({ path: `${out}/${view.name}-${count}.png` })
       row[`labels${count}`] = `${shown.length} of ${state.screen.length}`
       row[`smallest${count}`] = Math.round(Math.min(...state.screen.map(s => s.r)))
@@ -57,7 +58,7 @@ try {
       if (count === 'default') {
         // A tap straight on the smallest world's disc is a drop into it: the smallest world,
         // a moon a few pixels across on a phone, is still a working target.
-        const small = [...state.screen].sort((a, b) => a.r - b.r)[0]
+        const small = state.screen.filter(s => onScreen.has(s.id)).sort((a, b) => a.r - b.r)[0]
         row.smallestWorld = `${small.id} ${Math.round(small.r)} px`
         const now = await page.evaluate(id => window.syn3h.shell.galaxy.screen.find(s => s.id === id), small.id)
         await page.mouse.click(now.x, now.y)
