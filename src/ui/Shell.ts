@@ -55,7 +55,8 @@ import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
-import { aboutHtml, aboutSheetHtml, fillUpdates, showAboutTab, updatesSheetHtml, wireAbout, type AboutTab } from './updates/about'
+import { aboutHtml, fillUpdates, showAboutTab, updatesSheetHtml, wireAbout, type AboutTab } from './updates/about'
+import { mountWelcome, type Welcome } from './welcome/welcome'
 import { LobbySheet, sheetShape } from './LobbySheet'
 import { UpdateNotice } from './updates/UpdateNotice'
 import { rollPlayerName } from './data/names'
@@ -347,7 +348,7 @@ export class Shell implements System {
     const shape = sheetShape(location.search), edges = () => this.galaxy?.wordmarkEdges() ?? null
     // Behind a sheet the galaxy dims a little and holds still, as behind a panel; it comes back once both are closed.
     const closed = () => { if (this.galaxy && !this.aboutSheet.isOpen && !this.updatesSheet.isOpen && this.panels.active === 'index' && !this.playing) this.galaxy.backdrop = 1 }
-    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'Welcome', shape, edges, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { body.insertAdjacentHTML('beforeend', aboutSheetHtml()); pinLicenses(body) } })
+    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'Welcome', shape, edges, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { this.lobbyWelcome = mountWelcome(body, { where: 'lobby' }) }, opened: () => this.lobbyWelcome?.opened() })
     this.updatesSheet = new LobbySheet(this.element, {
       name: 'updates', title: 'Updates', shape, edges, home: () => this.lobbySettings.updates, closed, cue: () => this.audio.cue('click'),
       fill: body => body.insertAdjacentHTML('beforeend', updatesSheetHtml()), opened: body => { void fillUpdates(body.querySelector<HTMLElement>('.about-updates')!) },
@@ -377,6 +378,10 @@ export class Shell implements System {
     players.querySelector('.rail-about')!.addEventListener('click', () => this.openAbout(), { signal })
     // About and Updates as two tabs in the in-play guide; the lobby gives each its own sheet.
     wireAbout(this.element.querySelector<HTMLElement>('.in-play-about')!, signal)
+    // The Welcome guide fills the About pane now; its pictures wait until the player shows it.
+    const aboutPane = this.element.querySelector<HTMLElement>('.in-play-about [data-about-pane="about"]')!
+    this.playWelcome = mountWelcome(aboutPane, { where: 'play' })
+    this.element.querySelector('.in-play-about [data-about-tab="about"]')!.addEventListener('click', () => this.playWelcome.opened(), { signal })
     // A newer live version: a banner in the lobby, a chip in the sidebar in play. What's new
     // opens Updates wherever the player is, and the lobby's Updates icon carries a quiet mark.
     this.updateNotice = new UpdateNotice(() => this.showUpdates(), signal, () => { this.updateBand(); this.lobbySettings.markUpdate(this.updateNotice.version) })
@@ -550,6 +555,8 @@ export class Shell implements System {
   /** The lobby's About sheet, as its icon opens it. */
   showLobbyAbout(): void { this.openLobbySheet(this.aboutSheet) }
   private readonly aboutSheet: LobbySheet
+  private lobbyWelcome?: Welcome
+  private readonly playWelcome: Welcome
   private readonly updatesSheet: LobbySheet
   /** One lobby sheet at a time, over the galaxy; settings close first. */
   private openLobbySheet(sheet: LobbySheet): void {
@@ -569,6 +576,7 @@ export class Shell implements System {
     this.game.input.suspended = true; this.game.input.poll(); this.touch.enabled = false
     const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
     if (tab) showAboutTab(guide, tab)
+    if (!guide.querySelector<HTMLElement>('[data-about-pane="about"]')!.hidden) this.playWelcome.opened()
     guide.showModal()
     guide.scrollTop = 0
     guide.querySelector<HTMLElement>('h2')!.focus({ preventScroll: true })

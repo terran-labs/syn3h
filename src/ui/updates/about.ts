@@ -1,10 +1,9 @@
 /**
- * About's content, shared by the lobby sheets and the in-play guide so they cannot drift. The
- * in-play guide shows it as two tabs, About (the story and credits) and Updates (recent
- * releases and their notes); the lobby gives each its own sheet (LobbySheet.ts), without tabs.
+ * The in-play guide's two tabs, About (the Welcome guide, src/ui/welcome/welcome.ts, mounted
+ * into the About pane by Shell.ts) and Updates (recent releases and their notes). The lobby
+ * gives each its own sheet (LobbySheet.ts), without tabs.
  * Updates fetches the release feed the first time it is opened.
  */
-import { creditsHtml } from '../data/credits'
 import { loadFeed, pinnedVersion, runningVersion, type Release } from './feed'
 import { renderMarkdown, safeHref } from './markdown'
 import { isNewer } from './version'
@@ -18,12 +17,10 @@ export function aboutHtml(): string {
       <button type="button" role="tab" id="${id}-tab-about" aria-controls="${id}-about" aria-selected="true" data-about-tab="about">Welcome</button>
       <button type="button" role="tab" id="${id}-tab-updates" aria-controls="${id}-updates" aria-selected="false" tabindex="-1" data-about-tab="updates">Updates</button>
     </div>
-    <div class="about-pane" role="tabpanel" id="${id}-about" aria-labelledby="${id}-tab-about" data-about-pane="about">${creditsHtml}</div>
+    <div class="about-pane" role="tabpanel" id="${id}-about" aria-labelledby="${id}-tab-about" data-about-pane="about"></div>
     <div class="about-pane" role="tabpanel" id="${id}-updates" aria-labelledby="${id}-tab-updates" data-about-pane="updates" hidden><div class="about-updates" aria-live="polite"></div></div>`
 }
 
-/** The lobby's About sheet body: the story and credits, no tabs. */
-export const aboutSheetHtml = (): string => `<div class="about-pane">${creditsHtml}</div>`
 /** The lobby's Updates sheet body: the release list, filled by fillUpdates when it opens. */
 export const updatesSheetHtml = (): string => '<div class="about-updates" aria-live="polite"></div>'
 

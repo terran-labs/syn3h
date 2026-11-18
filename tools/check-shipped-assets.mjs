@@ -2,7 +2,8 @@
 // Release check for the owner's rule of 15 November 2026 (AGENTS.md, ops/DECISIONS.md):
 // no recorded audio and no pre-generated bitmaps ship. Music, cues and wind are synthesised;
 // images are shaders, vectors or generated at run time. The only bitmaps allowed are the
-// ones platforms demand: install icons and the social share card.
+// ones platforms demand (install icons and the social share card) and the Welcome guide's
+// curated pictures, which load only once the player opens it (ABOUT_PICTURES below).
 //
 //   node tools/check-shipped-assets.mjs            # checks dist/ (the built site)
 //   node tools/check-shipped-assets.mjs public     # checks the static source folder
@@ -18,6 +19,13 @@ export const AUDIO = /\.(mp3|wav|ogg|oga|opus|m4a|aac|flac|aiff?|wma|mid|midi|we
 export const IMAGE = /\.(png|jpe?g|webp|gif|bmp|ico|avif|tga|tiff?|ktx2?|hdr|exr|dds|basis)$/i
 /** Bitmaps a platform requires. Paths are relative to the checked folder. */
 export const REQUIRED_BITMAPS = ['brand/apple-touch-icon.png', 'brand/icon-192.png', 'brand/icon-512.png', 'brand/share.png']
+/**
+ * The owner's one content exception (AGENTS.md): curated About pictures, the Welcome guide's
+ * screenshots, fetched only after the player deliberately opens it. Only web-sized WebP made by
+ * tools/welcome-images.mjs pass; tools/runtime-assets-check.mjs and the about and
+ * discoverability browser checks prove none loads in ordinary play.
+ */
+export const ABOUT_PICTURES = /^welcome\/[a-z0-9-]+-(640|960|1280|1920)\.webp$/
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -40,6 +48,7 @@ export function findForbidden(dir, allow = []) {
     const kind = AUDIO.test(name) ? audio : IMAGE.test(name) ? images : null
     if (!kind) continue
     const item = { path: name, bytes: statSync(path).size }
+    if (kind === images && ABOUT_PICTURES.test(name)) continue
     if (!allowed.has(name)) kind.push(item)
     else if (allow.includes(name)) waived.push(item)
   }

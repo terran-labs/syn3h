@@ -17,6 +17,7 @@ describe('frozen production resources', () => {
     new LobbyAddress(location, history).showLobby()
     expect(location.href).toBe(`${root}/`)
     expect(resolve('/models/tank.glb')).toBe('/v/26.11.1519/models/tank.glb')
+    expect(resolve('/welcome/lava-night-640.webp')).toBe('/v/26.11.1519/welcome/lava-night-640.webp')
   })
 
   it.each(['?v=26.11.1519', '?v=%20v26.11.1519%20', '/v/26.11.1519/', '/v/26.11.1519/?v=v26.11.1519'])('accepts the server version grammar: %s', suffix => {
