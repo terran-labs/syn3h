@@ -38,6 +38,14 @@ quarter of its level by day, its full level at night, eased across dusk and dawn
 in the lobby. Its controls are under Sound, Advanced: Music build time, Theremin level,
 Theremin by day, Theremin in the lobby. `tests/audio/score-build.mjs` measures the build.
 
+Since 17 November 2026 (the owner: "more ambient and celestial") the lobby has no plucked
+string, bell or telemetry beep. Glass tones take their place: a sine pair beating slowly, an
+octave and a faint twelfth, swelling in over 1.2 s, once or twice a chord, with more shimmer
+and hall. In play the picked chord and the rest are unchanged. The lobby's levels are the
+`audio.score.lobby*` parameters, and `audio.score.lobbyPluck` brings the old lobby back for
+comparison. `tools/lobby-audio-render.mjs` renders the lobby and the opening offline, with a
+loudness and spectrum summary.
+
 ## The arc
 
 A steady texture never raises a hair, so sections of eight bars follow a six-part cycle:

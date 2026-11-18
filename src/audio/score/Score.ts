@@ -17,7 +17,7 @@
  *  - The lead. Its presence follows the world's hour: a quarter by day, full at night, eased
  *    across dusk and dawn; at most half its former level, further back in the hall, with
  *    rests between phrases. By day it waits for the climb.
- *  - The lobby. Growth 0, intensity 0.06: pads, drone and a picked chord, no lead, no climb.
+ *  - The lobby. Growth 0, intensity 0.06: pads, drone and slow glass tones, no lead, no climb.
  *    Before: intensity 0.2 and the whole arc, with the lead sounding over half the time.
  *
  * The conductor of the adaptive score. It turns raw game state into a smoothed mood, asks
@@ -43,6 +43,17 @@ const tune = (id: string, label: string, value: number, min: number, max: number
 export const scoreEnergy = tune('energy', 'Score intensity', 1, 0, 2)
 export const scoreTempo = tune('tempo', 'Tempo scale', 1, 0.6, 1.4)
 export const scoreReverb = tune('reverb', 'Hall size', 0.9, 0, 1.5)
+/**
+ * The lobby's mix (the owner, 17 November 2026: "more ambient and celestial", fewer twangy
+ * strings). In the lobby the plucked string, the bell and the telemetry beeps give way to glass
+ * tones that swell in slowly, and the shimmer and the hall come forward.
+ */
+export const lobbyGlass = tune('lobbyGlass', 'Lobby: glass tones', 1, 0, 2)
+export const lobbyShimmer = tune('lobbyShimmer', 'Lobby: high shimmer', 0.45, 0, 1)
+export const lobbyHall = tune('lobbyHall', 'Lobby: hall send (times the hall size)', 1.35, 0.5, 2)
+export const lobbyPad = tune('lobbyPad', 'Lobby: pads and drone', 1, 0, 1.5)
+/** The plucked string, the bell and the telemetry beeps in the lobby: 0 since 17 November 2026. */
+export const lobbyPluck = tune('lobbyPluck', 'Lobby: plucked string, bell and beeps (the old lobby)', 0, 0, 1)
 /**
  * The cheaper instrument set, for phones. The quality system may set it; the score also sets
  * it itself when the browser reports the audio thread falling behind.
@@ -97,7 +108,7 @@ export interface MatchMood { holding: boolean; contested: boolean; /** 0..1 shar
  */
 const LOOKAHEAD = 0.35
 /**
- * The lobby's intensity: below the sequencer, so the lobby is pads, drone and a picked chord.
+ * The lobby's intensity: below the sequencer, so the lobby is pads, drone and glass tones.
  * It was 0.2 (sequencer moving) until 16 November 2026, when the owner asked for a calmer lobby.
  */
 const LOBBY_INTENSITY = 0.06
@@ -294,7 +305,8 @@ export class Score {
     this.bpm = follow(this.bpm, level.bpm * scoreTempo.value, 4, dt)
     // The release arrives at once and fades over the section that follows it.
     this.release = follow(this.release, this.composer.role === 'release' && this.active ? 1 : 0, this.composer.role === 'release' ? 0.4 : 5, dt)
-    this.synth.setLevels(level, m.depth, scoreReverb.value, { tension: this.composer.tension, release: this.release, lead: this.presence })
+    this.synth.setLevels(level, m.depth, scoreReverb.value, { tension: this.composer.tension, release: this.release, lead: this.presence,
+      lobby: this.lobby ? { glass: lobbyGlass.value, shimmer: lobbyShimmer.value, hall: lobbyHall.value, pad: lobbyPad.value, pluck: lobbyPluck.value } : undefined })
     if (!this.active) return
     // After a stall (a hidden tab, a long frame) start again from now; never play catch-up.
     if (this.nextTime < now - 0.05) { this.nextTime = now + 0.06; this.stalls++ }

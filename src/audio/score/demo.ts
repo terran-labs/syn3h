@@ -39,7 +39,8 @@ function drive(score: Score, scene: Scene): void {
 }
 
 /** Render a scene offline and measure it. Used by tests/audio/score-render.mjs. */
-export async function renderScene(name: string | Scene, seconds = 16, seed = 1234, rate = 44100, cue?: Role | 'surge', only?: readonly string[], lite = false, network = false, options: readonly string[] = []) {
+/** `bang`: play the lobby's Big Bang as a tap begins it (ScoreSynth.bang), its swell from `start`, its drop at `pop`. */
+export async function renderScene(name: string | Scene, seconds = 16, seed = 1234, rate = 44100, cue?: Role | 'surge', only?: readonly string[], lite = false, network = false, options: readonly string[] = [], bang?: { start: number; pop: number }) {
   params.set(scoreLite.def.id, lite); params.set(scoreNetworkHall.def.id, network)
   for (const param of [scoreTagNotes, scoreConvoy, scoreTerrain, scoreWeather]) params.set(param.def.id, options.includes(param.def.id))
   const context = new OfflineAudioContext(2, rate * seconds, rate), scene = typeof name === 'string' ? SCENES[name] : name
@@ -48,7 +49,8 @@ export async function renderScene(name: string | Scene, seconds = 16, seed = 123
   await score.synth.ready
   // Solo some layers, to measure an instrument on its own.
   if (only) for (const layer of LAYERS) score.synth.trim[layer] = only.includes(layer) ? 1 : 0
-  score.setActive(true, 0.3)
+  score.setActive(true, bang ? 6 : 0.3)
+  if (bang) score.synth.bang(bang.start, bang.pop)
   if (cue) score.cue(cue)
   const roles: Role[] = []
   const tick = () => { if (scoreTagNotes.value) score.combat(0.14); drive(score, scene); applySubmerge(filter, score.mood.depth, context.currentTime); roles[Math.floor(context.currentTime)] = score.role }
