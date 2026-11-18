@@ -16,7 +16,8 @@ import { chromium, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 
-const origin = process.argv[2] ?? 'http://127.0.0.1:5291'
+// With or without a trailing slash: "http://host//?tap=1" makes the page throw on start, lifting the veil.
+const origin = (process.argv[2] ?? process.env.SYN3H_URL ?? 'http://127.0.0.1:5291').replace(/\/+$/, '')
 const out = process.argv[3] ?? '/tmp/tap-to-begin'
 mkdirSync(out, { recursive: true })
 
