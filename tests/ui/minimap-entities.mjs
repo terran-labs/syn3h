@@ -32,7 +32,9 @@ try {
   const host = await open({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 }, 'desktop')
   const phone = await open({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true }, 'phone')
   // Parked bots (bots.canDrive off, as tools/bots-net-check.mjs does) stay where they are put.
-  await host.evaluate((n) => { const p = window.syn3h.params; p.set('gfx.auto', false); p.set('gfx.quality', 4); p.set('bots.canDrive', false); p.set('bots.count', n) }, BOTS)
+  // Keep all eight whatever a loaded headless page measures (bots.keepCount, v26.11.1713 on);
+  // guarded so the check still runs on builds without the setting.
+  await host.evaluate((n) => { const p = window.syn3h.params; p.set('gfx.auto', false); p.set('gfx.quality', 4); p.set('bots.canDrive', false); if (p.get('bots.keepCount')) p.set('bots.keepCount', true); p.set('bots.count', n) }, BOTS)
   // Bots arrive one at a time (src/bots/pacing.ts), each judged for about three seconds, longer
   // on a busy machine. Wait for all of them as long as they keep coming; fail only when no new
   // bot has arrived for 30 s, or the pacer has decided this device carries fewer.
