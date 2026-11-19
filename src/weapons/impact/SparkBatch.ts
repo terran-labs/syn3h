@@ -83,18 +83,23 @@ export class SparkBatch {
     const speed: N = vel.length()
     const along: N = speed.greaterThan(1e-3).select(vel.div(speed.max(1e-3)), vec3(0, 1, 0))
     const side: N = normalize(cross(along, normalize(cameraPosition.sub(centre))))
-    const width: N = cfg.z.mul(alive), length: N = speed.mul(motion.y).max(cfg.z).min(2.5).mul(alive)
+    // Thin, but never thinner than about a pixel and a half on screen (a thinner line flickers
+    // away), and as long as the distance it covers in the streak's time: fast sparks are lines.
+    const away: N = cameraPosition.sub(centre).length()
+    const width: N = cfg.z.max(away.mul(0.004)).mul(alive), length: N = speed.mul(motion.y).max(width.mul(2)).min(3).mul(alive)
     const corner: N = positionGeometry
     const m = new T.MeshBasicNodeMaterial({ name, transparent: true, depthWrite: false, blending: T.AdditiveBlending })
     m.positionNode = centre.add(along.mul(corner.y.mul(length))).add(side.mul(corner.x.mul(width)))
     // Hot white at birth, cooling to its own colour over the first part of its life.
     const u: N = t.div(life).clamp(0, 1)
-    const colour: N = mix(vec3(3, 2.7, 2.2), attribute('sparkTint', 'vec3'), smoothstep(0, 0.25, u))
+    // White-hot at birth, the tint by a fifth of its life, then cooling dimmer and redder.
+    const tint: N = attribute('sparkTint', 'vec3')
+    const colour: N = mix(mix(vec3(6, 5.4, 4.4), tint, smoothstep(0, 0.2, u)), tint.mul(vec3(0.9, 0.35, 0.25)), smoothstep(0.45, 1, u))
     // The quad's own uv, from its corner (-0.5 to 0.5).
     const across: N = float(1).sub(corner.x.mul(2).abs())
     const head: N = corner.y.add(0.5)
     m.colorNode = colour.mul(hotExposureNode())
-    m.opacityNode = float(1).sub(u).pow(1.5).mul(across.pow(2.5)).mul(head.mul(0.75).add(0.25))
+    m.opacityNode = float(1).sub(u).pow(1.5).mul(across.pow(1.5)).mul(head.mul(0.75).add(0.25))
     m.fog = false
     this.mesh = new T.Mesh(g, m); this.mesh.frustumCulled = false; this.mesh.renderOrder = 4
   }

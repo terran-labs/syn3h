@@ -75,7 +75,7 @@ export class ImpactFx {
     this.level = Number(graphicsLevel.value)
     this.sparks?.dispose(); this.flash?.dispose(); this.debris?.dispose()
     const budget = qualityBudget().particles
-    this.sparks = new SparkBatch(Math.max(48, Math.floor(budget * 0.12)), 'gear impact sparks')
+    this.sparks = new SparkBatch(Math.max(48, Math.floor(budget * 0.2)), 'gear impact sparks')
     this.flash = new ParticleBatch(24, flashSprite, true, this.level === 0 ? 1 : 2)
     this.debris = new ParticleBatch(Math.max(24, Math.floor(budget * 0.05)), dustSprite, false, this.level === 0 ? 1 : 2)
     this.scorch.limit = this.level === 0 ? 0 : this.level === 1 ? 12 : SCORCH_CAPACITY
@@ -101,17 +101,20 @@ export class ImpactFx {
     // On a liquid the surface faces up, whatever the bed beneath it did.
     const n = this.n.copy(surface === 'water' || surface === 'lava' ? T.Object3D.DEFAULT_UP : normal).normalize()
     const counts = impactCounts(recipe, impactSparks.value, this.level, thunder)
-    const scale = thunder ? 1.8 : 1
+    // Seen from the chase camera, 15 to 25 m off, an impact at its true size is a speck: the
+    // flash and the light grow with distance from the camera (from 12 m, up to 2.5 times).
+    const far = Math.min(2.5, Math.max(1, this.game.camera.position.distanceTo(at) / 12))
+    const scale = (thunder ? 1.8 : 1) * far
     this.stats.impacts++; this.stats.last = surface
 
     // Flash: one or two hot cores, briefly very bright.
     if (impactFlash.value > 0) {
-      this.color.copy(color).multiplyScalar(1.4).addScalar(1.2)
+      this.color.copy(color).multiplyScalar(2).addScalar(2.5)
       // Lifted off the surface by a third of its size: through the ground, a camera-facing flash
       // was cut in half by it; lifted further, it floated free of the hit.
-      const lifted = this.b.copy(at).addScaledVector(n, impactFlash.value * scale * 0.35)
-      this.flash.emit(lifted, this.v.set(0, 0, 0), thunder ? 0.24 : 0.18, impactFlash.value * scale, impactFlash.value * scale * 2, this.color)
-      if (thunder) this.flash.emit(lifted, this.v.set(0, 0, 0), 0.32, impactFlash.value * 2.4, impactFlash.value * 3, this.color.copy(color).multiplyScalar(0.8))
+      const lifted = this.b.copy(at).addScaledVector(n, impactFlash.value * scale * 0.3)
+      this.flash.emit(lifted, this.v.set(0, 0, 0), thunder ? 0.12 : 0.09, impactFlash.value * scale, impactFlash.value * scale * 3, this.color)
+      if (thunder) this.flash.emit(lifted, this.v.set(0, 0, 0), 0.2, impactFlash.value * 2, impactFlash.value * 4, this.color.copy(color).multiplyScalar(0.9))
     }
 
     // Sparks: a cone around the normal, two waves (the second slower and a touch later in life).
@@ -121,12 +124,12 @@ export class ImpactFx {
     s.normal.x = n.x; s.normal.y = n.y; s.normal.z = n.z; s.bounce = recipe.bounce
     const speed = impactSparkSpeed.value * recipe.speed * (thunder ? 1.35 : 1)
     for (let i = 0; i < counts.sparks; i++) {
-      const second = i % 3 === 2, a = this.noise() * Math.PI * 2, spread = 0.35 + this.noise() * 0.9
+      const second = i % 4 === 3, a = this.noise() * Math.PI * 2, spread = second ? 0.6 + this.noise() * 0.9 : 0.3 + this.noise() * 0.8
       const v = this.v.copy(n).multiplyScalar(0.6 + this.noise() * 0.8)
         .addScaledVector(tangent, Math.cos(a) * spread).addScaledVector(bitangent, Math.sin(a) * spread)
-        .normalize().multiplyScalar(speed * (second ? 0.25 + this.noise() * 0.35 : 0.4 + this.noise() * 0.9))
-      s.life = (second ? 1 : 0.55) + this.noise() * 0.4; s.width = (thunder ? 0.045 : 0.03) * (second ? 0.8 : 1)
-      s.drag = second ? 1.6 : 2.4; s.gravity = 1; s.streak = second ? 0.04 : 0.03
+        .normalize().multiplyScalar(speed * (second ? 0.3 + this.noise() * 0.25 : 0.6 + this.noise() * 0.8))
+      s.life = second ? 0.9 + this.noise() * 0.5 : 0.3 + this.noise() * 0.3; s.width = thunder ? 0.03 : 0.02
+      s.drag = second ? 1.2 : 4.5; s.gravity = second ? 1.2 : 0.6; s.streak = second ? 0.035 : 0.06
       this.sparks.emit(at, v, s, this.color.copy(color))
     }
     this.stats.sparks += counts.sparks
@@ -134,7 +137,7 @@ export class ImpactFx {
     // Light on the ground around it.
     if (impactLight.value > 0) {
       this.color.copy(color).multiplyScalar(0.5 * impactLight.value)
-      this.light.emit(at, n, { radius: impactLightRadius.value * (thunder ? 3 : 1), seconds: thunder ? 0.7 : 0.35, color: this.color })
+      this.light.emit(at, n, { radius: impactLightRadius.value * (thunder ? 2.5 : 1) * Math.sqrt(far), seconds: thunder ? 0.45 : 0.25, color: this.color })
     }
 
     // What the surface throws up.
@@ -143,8 +146,9 @@ export class ImpactFx {
 
     // A scorch on solid ground.
     if (recipe.scorch && impactScorch.value > 0) {
-      this.color.copy(color).multiplyScalar(0.45)
-      this.scorch.emit(at, n, (thunder ? 3.2 : 1.3) * (0.85 + this.noise() * 0.3), impactScorch.value * (thunder ? 1.5 : 1), this.color, thunder ? 0.7 : 0.55, this.noise())
+      this.color.copy(color).multiplyScalar(0.9)
+      // The quad's width: the burn is its middle 0.42, about 0.5 m across for Tag and 1.2 m for Thunder; its streaks reach further.
+      this.scorch.emit(at, n, (thunder ? 2.9 : 1.2) * (0.85 + this.noise() * 0.3), impactScorch.value * (thunder ? 1.5 : 1), this.color, 0.78, this.noise())
       this.stats.scorches++
     }
     return surface
