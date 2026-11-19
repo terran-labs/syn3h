@@ -156,6 +156,7 @@ export class GearSelector {
   private wheelAcc = 0
   private wheelAt = 0
   /** Refits the names whenever the drum changes size (mode, viewport, shown). */
+  private readoutWatched: HTMLElement | null = null
   private readonly fitter = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => this.fit())
 
   constructor(parent: HTMLElement, private readonly source: () => GearSource | undefined, options: GearSelectorOptions = {}) {
@@ -328,6 +329,8 @@ export class GearSelector {
     detail.style.removeProperty('--gs-detail-max'); detail.style.removeProperty('--gs-detail-drop')
     if (this.element.hidden || !detail.offsetWidth) return
     const readout = document.querySelector<HTMLElement>('.focus-hud .fh-left')
+    // Watched too: it appears after the drum, and widens when its number gains a digit.
+    if (readout && readout !== this.readoutWatched) { this.fitter?.observe(readout); this.readoutWatched = readout }
     if (!readout || !readout.offsetWidth) return
     const a = detail.getBoundingClientRect(), r = readout.getBoundingClientRect()
     const left = Math.min(r.left, r.right - 112)

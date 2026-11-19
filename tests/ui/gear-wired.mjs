@@ -60,7 +60,12 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     assert.equal(names.length, rack.length, `one slot per gear (${names.join(', ')})`)
     for (const name of ['Plasma Tag', 'Grapple']) assert.ok(names.some(n => n.toLowerCase().includes(name.toLowerCase())), `${name} is on the drum: ${names.join(', ').replace(/\n/g, ' ')}`)
     await page.screenshot({ path: `${out}/desktop-free.png` })
-    await page.locator('.gear-selector .gs-item', { hasText: /grapple/i }).click()
+    // The drum shows the selected gear and one either side (the owner, 18 November 2026): a click
+    // on a neighbour picks it; a gear further round is reached by its number key.
+    await page.locator('.gear-selector .gs-item', { hasText: /plasma thunder/i }).click()
+    await page.waitForFunction(() => syn3hNet.gear.current === 'red')
+    const grapple = await page.evaluate(() => syn3hNet.gear.list().indexOf('bungee') + 1)
+    await page.keyboard.press(`Digit${grapple}`)
     await page.waitForFunction(() => syn3hNet.gear.current === 'bungee')
     await page.waitForFunction(() => document.querySelectorAll('.gear-selector .gs-hints li').length > 0)
     const hints = await page.locator('.gear-selector .gs-hints').innerText()

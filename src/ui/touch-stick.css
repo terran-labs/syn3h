@@ -57,6 +57,11 @@ body:has(.syn3h-shell.is-playing .spawn-help:not([hidden])) .touch-controls .tou
   font: 400 13px/1.2 'Barlow', 'Avenir Next', sans-serif; letter-spacing: .06em;
   color: color-mix(in srgb, var(--s3-ink) 78%, transparent); text-shadow: 0 1px 3px rgb(0 0 0 / .6);
 }
+/* Portrait phones: the thumb grid (three columns on the jet) reaches the hint's line, so the
+   hint stands above the grid's top row as well as above the map. */
+@media (max-width: 700px) {
+  .touch-controls .touch-stick-hint { bottom: max(calc(var(--map-top, 192px) + 12px), calc(max(var(--thumb-bottom), env(safe-area-inset-bottom)) + 2 * var(--thumb-size) + var(--thumb-gap) + 12px)); }
+}
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .touch-controls .touch-stick-hint { left: var(--edge-left); }
   .touch-controls .touch-stick-ghost { width: 72px; height: 72px; }
