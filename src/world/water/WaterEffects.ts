@@ -18,6 +18,9 @@ import { lensWash, newLensState, stepLens } from './underwaterCamera'
 import { camMode } from '../../core/ChaseCamera'
 import { submergedFraction, verticalHalfExtent } from './waterEffectsMath'
 
+/** Heights (m) of a hovercraft's hull and of a jet above the liquid where they stop disturbing it. */
+const HOVER_REACH=6,JET_REACH=5
+
 /** Register after Environment and ChaseCamera. The live net binding includes later joins. */
 export class WaterEffects implements System {
   readonly ripples:Ripples
@@ -33,6 +36,7 @@ export class WaterEffects implements System {
   private serial=0
   private point=new Vector3()
   private velocity=new Vector3()
+  private readonly shape:{ball:number;air:'cushion'|'downwash'|null;near:number;beam:number}={ball:0,air:null,near:0,beam:1}
   constructor(private game:Game,private terrain:Terrain,private slot:PlayerSlot,private bots:{readonly vehicles:readonly Vehicle[]}){
     this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples,terrain);this.lavaSpray=new Spray(game.scene,this.ripples,terrain,'lava');this.underwater=new Underwater(game,terrain);this.bubbles=new UnderwaterBubbles(game.scene,terrain,game.camera)
     this.motes=new Motes(game.scene);this.waterline=new Waterline(game.scene)
@@ -68,6 +72,8 @@ export class WaterEffects implements System {
           const half=verticalHalfExtent(h,c.rotation()),y=c.translation().y
           bottom=Math.min(bottom,y-half);top=Math.max(top,y+half)
         }
+        // How high the craft's own hull rides above the liquid, for a cushion or a downwash.
+        const clearance=bottom-surface
         // The shared water model displaces columns from body y-.5 to y+.5. A planing
         // buggy's thin skid plate can already be dry while those columns still lift it.
         // Include that same envelope so a supported skimming hull still makes spray.
@@ -77,11 +83,19 @@ export class WaterEffects implements System {
         // Measured over the ball's bottom metre: a floating ball dips only its base, a few per cent
         // of its height, and a skip must still read as an entry.
         if(ball&&v.zorb.radius>0){bottom=ball.translation().y-v.zorb.radius;top=bottom+1}
+        // The ball touches the water at one patch: it leaves one soft trail, not a hull's wake.
+        this.shape.ball=ball&&v.zorb.radius>0?v.zorb.radius:0
+        // A hovercraft's cushion works the water within about 6 m; a jet's downwash within 5 m,
+        // and only while the jet itself is clear of it.
+        const hover=v.kind==='hovercraft'&&!v.zorbed,jet=v.kind==='jet'&&!v.zorbed
+        this.shape.air=hover?'cushion':jet?'downwash':null
+        this.shape.near=hover?1-clearance/HOVER_REACH:jet?1-clearance/JET_REACH:0
+        this.shape.beam=hover?1.6:1.2
         const fraction=submergedFraction(bottom,top,surface)
         let id=this.ids.get(v);if(!id){id=`water-${++this.serial}`;this.ids.set(v,id)}
         const velocity=v.body.linvel();this.point.set(x,surface,z);this.velocity.set(velocity.x,velocity.y,velocity.z)
         // Send dry intervals too, so re-entry splashes detect the transition.
-        ;(kind==='lava'?this.lavaSpray:this.spray).vehicle(id,this.point,this.velocity,fraction,dt)
+        ;(kind==='lava'?this.lavaSpray:this.spray).vehicle(id,this.point,this.velocity,fraction,dt,this.shape)
         if(kind==='water'&&!waterSpray.value&&fraction>0&&Math.hypot(velocity.x,velocity.z)>1)this.ripples.disturb(x,z,1.5,Math.min(.15,Math.hypot(velocity.x,velocity.z)*.004)*Math.min(.1,Math.max(0,dt))*60)
       }
     }
