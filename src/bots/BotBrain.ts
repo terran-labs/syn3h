@@ -321,6 +321,8 @@ export class BotBrain implements System {
    */
   recover(): void { this.rescue(); this.mind?.reset() }
   private rescue() {
+    // A hop is for bots only: never move a vehicle a person drives (the owner's rule, AGENTS.md).
+    if (this.vehicle.isLocal) return
     if (this.requestRecovery) {
       if (this.requestRecovery()) {
         this.lastPosition.copy(this.vehicle.body.translation()); this.immobileTime = this.liquidTime = this.flippedTime = this.strategyTime = 0

@@ -251,13 +251,20 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
  const fraction=Math.min(1,immersion/.5)
  state.stuck=state.lavaDepth>=lavaSinkDepth.value*.65&&Math.hypot(v.x,v.z)<1.5
  if(body.isKinematic())return
- // Replace native drive forces only while immersed. Gravity still belongs to Rapier.
+ // Replace native drive forces only while immersed. Gravity still belongs to Rapier. The
+ // vehicle's own upward lift (a jet's hover thrust, a hovercraft's fans) is kept as a climb
+ // through the lava's drag: a vehicle that can climb out under its own power must be able to
+ // (the owner's rule of 18 November 2026, AGENTS.md). Its wheels and thrust along the ground
+ // stay replaced by the crawl below, so driving through lava feels the same.
+ // The lava already carries the weight (the support below), so only lift beyond it climbs.
+ const ownLift=Math.max(0,body.userForce().y+world.gravity.y*body.mass())
  body.resetForces(true);body.resetTorques(true)
  const drag=(lava?lavaViscosity.value:1.2)*fraction*(1+Math.min(2,state.lavaDepth))
  const decay=Math.exp(-drag*dt),verticalBlend=1-Math.exp(-Math.max(3,drag*2)*dt)
  // In shallows, support the chassis above the bed instead of commanding it into the shore.
  const target=Math.max(surface-(lava?lavaSinkDepth.value:0),Math.min(surface+.3,terrain.heightAt(p.x,p.z)+.7))
- const verticalTarget=THREE.MathUtils.clamp((target-p.y)*2,-1.5,2)
+ // The vehicle's own lift climbs at its terminal speed through the lava's drag.
+ const verticalTarget=THREE.MathUtils.clamp((target-p.y)*2,-1.5,2)+ownLift/body.mass()/Math.max(1,drag)
  forward.set(0,0,-1).applyQuaternion(liquidQ);forward.y=0
  if(forward.lengthSq()<.01)forward.set(0,0,-1);else forward.normalize()
  const throttle=THREE.MathUtils.clamp(kind==='jet'?input.z:input.y,-1,1)

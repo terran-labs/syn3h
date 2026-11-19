@@ -386,6 +386,8 @@ describe('HUD exclusions', () => {
       const doc = { body: {}, defaultView: undefined, querySelectorAll: () => [] }
       const hud = new HudExclusions({ ownerDocument: doc, querySelectorAll: query } as unknown as HTMLElement)
       expect(hud.read(390, 844).map(b => [b.left, b.right])).toEqual([[6, 190], [170, 352]])
+      // The gear's explanation is hard: a label over it made its key lines unreadable (owner, 18 November 2026).
+      expect(hud.read(390, 844).some(b => b.soft)).toBe(false)
       all[2].hidden = true // the detail pane empties: only the drum remains
       expect(hud.measure(390, 844).map(b => [b.left, b.right])).toEqual([[6, 190]])
       hud.dispose()

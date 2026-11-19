@@ -156,6 +156,7 @@ export class GearSelector {
   private wheelAcc = 0
   private wheelAt = 0
   /** Refits the names whenever the drum changes size (mode, viewport, shown). */
+  private readoutWatched: HTMLElement | null = null
   private readonly fitter = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => this.fit())
 
   constructor(parent: HTMLElement, private readonly source: () => GearSource | undefined, options: GearSelectorOptions = {}) {
@@ -311,6 +312,32 @@ export class GearSelector {
       const fit = room > 0 && natural > room ? Math.floor(room / natural * 1000) / 1000 : 1
       item.label.style.setProperty('--fit', String(fit))
     }
+    this.fitDetail()
+  }
+
+  /**
+   * The detail sits beside the selected gear and must never run into the speed readout beside
+   * the left arc (inspector/focus-readouts.css), keeping room for a three-digit speed, since the
+   * readout grows leftwards with its number. Where the two would meet, the detail is narrowed to
+   * the room left of the readout (--gs-detail-max, hud-column.css); where that room is under
+   * 160 px (narrow screens), it keeps its width and drops just below the readout instead
+   * (--gs-detail-drop). Runs with fit(): on rebuild, fonts, mode and size changes, and when the
+   * gear's text changes; never per frame.
+   */
+  private fitDetail(): void {
+    const detail = this.detail
+    detail.style.removeProperty('--gs-detail-max'); detail.style.removeProperty('--gs-detail-drop')
+    if (this.element.hidden || !detail.offsetWidth) return
+    const readout = document.querySelector<HTMLElement>('.focus-hud .fh-left')
+    // Watched too: it appears after the drum, and widens when its number gains a digit.
+    if (readout && readout !== this.readoutWatched) { this.fitter?.observe(readout); this.readoutWatched = readout }
+    if (!readout || !readout.offsetWidth) return
+    const a = detail.getBoundingClientRect(), r = readout.getBoundingClientRect()
+    const left = Math.min(r.left, r.right - 112)
+    if (a.bottom + 8 < r.top || a.top - 8 > r.bottom || a.right + 12 <= left) return
+    const room = Math.floor(left - 12 - a.left)
+    if (room >= 160) detail.style.setProperty('--gs-detail-max', `${room}px`)
+    else detail.style.setProperty('--gs-detail-drop', `${Math.ceil(r.bottom + 8 - a.top)}px`)
   }
 
   private moveTo(source: GearSource, current: string, force = false): void {
@@ -370,7 +397,7 @@ export class GearSelector {
     this.controls = controls
     const own = controls && controls.gear === this.current ? controls : undefined
     const description = own?.description ?? ''
-    if (description !== this.description) { this.description = description; this.descEl.textContent = description; this.descEl.hidden = !description }
+    if (description !== this.description) { this.description = description; this.descEl.textContent = description; this.descEl.hidden = !description; this.fitDetail() }
     const status = own?.status ?? ''
     if (status !== this.status) { this.status = status; this.statusEl.textContent = status; this.statusEl.hidden = !status }
     this.own = own
@@ -522,6 +549,8 @@ export class GearSelector {
   private listen(): void {
     const signal = this.abort.signal
     const drum = this.drum
+    // The readouts move with the viewport, so the detail's room is checked again on resize.
+    addEventListener('resize', () => this.fitDetail(), { signal })
     drum.addEventListener('click', (event) => {
       if (this.suppressClick) { this.suppressClick = false; event.preventDefault(); return }
       const button = (event.target as Element).closest<HTMLElement>('.gs-item')

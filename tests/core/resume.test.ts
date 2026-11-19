@@ -14,12 +14,17 @@ describe('resume validation', () => {
     expect(parseResume(raw, undefined, undefined, s.savedAt - 1)).toBeNull()
     for (const change of [{q:[0,0,0,0]}, {v:[999,0,0]}, {colors:{}}, {world:{x:'oops'}}, {p:[null,0,0]}]) expect(parseResume(JSON.stringify({...s,...change}))).toBeNull()
   })
-  it('rejects ground, liquid and the map edge', () => {
-    const s = saved(), terrain = {size:100,heightAt:()=>10,liquidHeightAt:()=>0}
+  // Bugs caught: a player who quit in lava or deep water is moved on resume (the owner's
+  // rule, AGENTS.md); a buried or broken pose is restored.
+  it('restores a pose in liquid, and refuses only a broken one', () => {
+    const s = saved(), terrain = {size:100,heightAt:()=>10}
     expect(safeResumePosition(s,terrain)).toBe(true)
+    expect(safeResumePosition(s,{...terrain,liquidHeightAt:()=>40} as typeof terrain)).toBe(true)
+    expect(safeResumePosition({...s,p:[50,12,20]},terrain)).toBe(true)
     expect(safeResumePosition({...s,p:[10,10,20]},terrain)).toBe(false)
-    expect(safeResumePosition(s,{...terrain,liquidHeightAt:()=>12})).toBe(false)
-    expect(safeResumePosition({...s,p:[50,12,20]},terrain)).toBe(false)
+    expect(safeResumePosition({...s,p:[90,12,20]},terrain)).toBe(false)
+    expect(safeResumePosition({...s,p:[10,NaN,20]},terrain)).toBe(false)
+    expect(safeResumePosition(s,{...terrain,heightAt:()=>NaN})).toBe(false)
   })
   it('explicit navigation wins and only world settings can be restored', () => {
     defineParam({id:'resume.test.client',label:'test',group:'test',scope:'client',default:0})

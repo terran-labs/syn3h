@@ -58,6 +58,15 @@ interface Envelope {x:number;w:number;y0:number;y1:number;z:number;l:number}
 /** The assisted glide keeps every point of the hull envelope at least this far above the surface, in metres. */
 const HULL_GUARD=.4
 
+/**
+ * A correction deeper than this is not a hull grazing a crest or a wave: the craft is under a
+ * liquid (it sank, or a rising sea came over it). The guard then leaves it to buoyancy and
+ * its own lift instead of setting it on the surface in one step, which shot a craft on a lava
+ * bed 59 m straight up. The owner's rule of 18 November 2026: only physics moves a player
+ * for where they drove (AGENTS.md). In metres.
+ */
+const HULL_GUARD_REACH=1
+
 /** Hovercraft.js 12-61, with world-down probing and Unity's explicit damping rule. */
 export class Hovercraft extends Vehicle {
   readonly kind = 'hovercraft' as const
@@ -258,7 +267,7 @@ export class Hovercraft extends Vehicle {
     if(hoverAssist.value&&!this.body.isKinematic()&&!this.zorbed){
       const p=this.gA.copy(this.body.translation()),q=this.gQ.copy(this.body.rotation())
       const clearance=this.hullClearance(p,q)
-      if(clearance<HULL_GUARD){
+      if(clearance<HULL_GUARD&&HULL_GUARD-clearance<=HULL_GUARD_REACH){
         p.y+=HULL_GUARD-clearance;this.body.setTranslation(p,true);this.clearanceCorrections++
         const v=this.body.linvel();if(v.y<0)this.body.setLinvel({x:v.x,y:0,z:v.z},true)
       }
@@ -270,7 +279,7 @@ export class Hovercraft extends Vehicle {
     const rest=this.zorbed
     this.study.update(rest?0:this.input.x,rest?0:Math.max(0,this.input.y),!rest&&this.input.brakes,!rest,dt)
     // Interpolating two valid poses can cut through a sharp crest; keep the rendered hull clear too.
-    if(hoverAssist.value){const c=this.hullClearance(this.object.position,this.object.quaternion);if(c<HULL_GUARD)this.object.position.y+=HULL_GUARD-c}
+    if(hoverAssist.value){const c=this.hullClearance(this.object.position,this.object.quaternion);if(c<HULL_GUARD&&HULL_GUARD-c<=HULL_GUARD_REACH)this.object.position.y+=HULL_GUARD-c}
   }
 
   protected override applyColors():void {

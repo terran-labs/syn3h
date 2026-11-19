@@ -183,6 +183,8 @@ const MAX_STATES_PER_SECOND = 70
 const MAX_JSON_PER_SECOND = 40
 /** A player whose state is older than this cannot ram or be rammed (the original's isResponding). */
 const RESPONDING_MS = 1500
+/** Seconds a `held` stuck report keeps a player off the hill if its `freed` never arrives. */
+const HELD_STUCK_S = 600
 /**
  * How often a transport ticks the room on its own clock while a time based rule is in play
  * (see Room.needsClock), ms. Without it the room only notices time when a message arrives,
@@ -474,8 +476,15 @@ export class Room {
           const bot = this.bots.get(msg.bot)
           if (bot && player.info.id === this.host) this.onStuck(bot)
         } else {
-          this.onStuck(player)
+          this.onStuck(player, msg.type === 'stuck' && msg.held === true)
         }
+        break
+      case 'freed':
+        delete this.koth.out[player.info.id]
+        break
+      case 'rescued':
+        // Always a bug: a vehicle left the world or its position stopped being a number.
+        console.error(JSON.stringify({ event: 'rescued', room: this.tag, player: player.info.id, cause: ['fell', 'outside', 'nonfinite', 'underground'].includes(msg.cause) ? msg.cause : 'other' }))
         break
       default:
         if ((msg as { type: string }).type !== 'hello') this.malformed(peer, 'type', data.length)
@@ -1095,16 +1104,18 @@ export class Room {
   }
 
   /**
-   * A client says its vehicle is stuck in the lava. It sits out of the hill count for the
-   * return delay (by then it has crawled out or been lifted back to its pad), and whoever
-   * touched it last, within the window, is credited with a dunk.
+   * A client says its vehicle is stuck in the lava, and whoever touched it last, within the
+   * window, is credited with a dunk. It sits out of the hill count until it crawls free: a
+   * `held` report lasts until the client's `freed` (players are never moved out of the lava),
+   * with HELD_STUCK_S as a backstop against a lost message; an older bundle's report and a
+   * bot's last the return delay, by when the old bundle or the host has lifted it to a pad.
    */
-  private onStuck(player: Player): void {
+  private onStuck(player: Player, held = false): void {
     if (this.mode !== MODE_KOTH) return
     const id = player.info.id
     const now = this.now()
     if (this.koth.out[id] && this.koth.out[id] * 1000 > now) return
-    this.koth.out[id] = (now + this.paramNumber(kothRespawnDelay.def) * 1000) / 1000
+    this.koth.out[id] = (now + (held ? HELD_STUCK_S : this.paramNumber(kothRespawnDelay.def)) * 1000) / 1000
     const contact = this.lastContact.get(id)
     this.lastContact.delete(id)
     const by = contact && now - contact.at <= KNOCK_WINDOW * 1000 ? this.byId(contact.by) : undefined
