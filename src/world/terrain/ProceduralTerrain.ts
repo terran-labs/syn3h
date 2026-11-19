@@ -14,9 +14,10 @@ import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, Terrai
 import { createTerrainCollider } from './collider'
 import { createSeaIceCollider, seaFrozen } from './seaIce'
 import { lavaSurfaceAt, liquidFlowAt } from './lava'
+import { waterRiverLines } from '../water/falls'
 import { seaWaves, setWaterClock } from '../water/seaWaves'
 import { configureLiquidWaves, liquidWaveOffset, liquidWaveSpeed, type LiquidBody } from '../water/liquidWaves'
-import { waterRiverMaxSpeed, waterSeaFrozen } from '../water/params'
+import { waterRiverMaxSpeed, waterSeaFrozen, waterWaves } from '../water/params'
 import { type TerrainData, generateTerrain } from './generate'
 import { type SliceStep, drain, runSliced } from '../../core/sliced'
 import type { TerrainSettings } from './settings'
@@ -533,7 +534,7 @@ export class ProceduralTerrain implements Terrain {
     const sea = seaLevel()
     x = wrapCoord(x, this.data.size)
     z = wrapCoord(z, this.data.size)
-    const surface = lavaSurfaceAt(this.data.lava, x, z, sea)
+    const surface = lavaSurfaceAt(this.data.lava, x, z, sea, this.waterRivers(sea))
     const ground = this.sampler.heightAt(x, z)
     this.restSurface = surface
     this.restGround = ground
@@ -547,7 +548,17 @@ export class ProceduralTerrain implements Terrain {
 
   /** The liquid surface at rest: liquidHeightAt without the sea's waves. */
   liquidLevelAt(x: number, z: number): number {
-    return lavaSurfaceAt(this.data.lava, wrapCoord(x, this.data.size), wrapCoord(z, this.data.size), seaLevel())
+    const sea = seaLevel()
+    return lavaSurfaceAt(this.data.lava, wrapCoord(x, this.data.size), wrapCoord(z, this.data.size), sea, this.waterRivers(sea))
+  }
+
+  /**
+   * The draped river lines when the rivers are drawn draped (water rivers with the new water,
+   * volcanics.ts), so physics floats things on the river that is drawn; undefined otherwise
+   * (lava rivers and the old water draw their planned lines). See falls.ts drapedRivers.
+   */
+  private waterRivers(sea: number): readonly (readonly { x: number; y: number; z: number }[])[] | undefined {
+    return waterRiverLines(this.data, this.sampler, sea)
   }
 
   /**
@@ -563,7 +574,7 @@ export class ProceduralTerrain implements Terrain {
     const key = this.mapColourKey()
     if (key !== this.mapKey) {
       const sea = seaLevel(), lava = (worldSeaKind.value as number) === 0
-      this.mapGrid = bakeMapColours(this.data, this.sampler, { sea, lava, frozen: this.iceTop > -Infinity, snow: this.snowHeight() }); this.mapKey = key
+      this.mapGrid = bakeMapColours(this.data, this.sampler, { sea, lava, frozen: this.iceTop > -Infinity, snow: this.snowHeight() }, this.waterRivers(sea)); this.mapKey = key
     }
     const n = MAP_GRID, size = this.data.size
     const ix = Math.min(n - 1, Math.floor((wrapCoord(x, size) / size + 0.5) * n)), iz = Math.min(n - 1, Math.floor((wrapCoord(z, size) / size + 0.5) * n))
@@ -571,7 +582,7 @@ export class ProceduralTerrain implements Terrain {
   }
   /** See Terrain.mapColourKey: the inputs of mapColourAt's bake, read without baking. */
   mapColourKey(): string {
-    return `${this.version}:${seaLevel()}:${worldSeaKind.value}:${this.iceTop}`
+    return `${this.version}:${seaLevel()}:${worldSeaKind.value}:${this.iceTop}:${waterWaves.value}`
   }
   private mapGrid: Uint32Array | null = null
   private mapKey = ''

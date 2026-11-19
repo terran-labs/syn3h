@@ -23,7 +23,9 @@ const mixHex = (a: number, b: number, t: number) => {
  * Bake the grid, row by row from the north-west corner (x and z from -size/2). About 65,000
  * height, slope and liquid reads: 15 to 40 ms on a desktop, once per world and seed.
  */
-export function bakeMapColours(data: TerrainData, sampler: Pick<HeightSampler, 'heightAt' | 'normalAt'>, sea: { sea: number; lava: boolean; frozen: boolean; snow: number }): Uint32Array {
+export function bakeMapColours(data: TerrainData, sampler: Pick<HeightSampler, 'heightAt' | 'normalAt'>, sea: { sea: number; lava: boolean; frozen: boolean; snow: number },
+  /** The river lines the water is drawn at (falls.ts waterRiverLines); planned lines if undefined. */
+  rivers?: readonly (readonly { x: number; y: number; z: number }[])[]): Uint32Array {
   const n = MAP_GRID, size = data.size, pal = paletteFor(data.settings.look), dry = data.settings.dry > 0
   const summit = Math.max(1, data.layout.summitHeight), out = new Uint32Array(n * n), normal = new Vector3()
   const lakeIsLava = data.settings.kind === KIND_VOLCANIC
@@ -41,7 +43,7 @@ export function bakeMapColours(data: TerrainData, sampler: Pick<HeightSampler, '
       if (!dry) c = mixHex(c, pal.shore, (6 - (h - sea.sea)) / 4)
       if (h > sea.snow) c = mixHex(c, pal.snow, (h - sea.snow) / 30)
       // Lake, pools and rivers above the sea: lava on a volcano's world, else water.
-      if (!dry && lavaSurfaceAt(data.lava, x, z, -Infinity) > h - 0.5) c = lakeIsLava ? 0xff7a1a : mixHex(pal.seaDeep, pal.seaShallow, 0.6)
+      if (!dry && lavaSurfaceAt(data.lava, x, z, -Infinity, rivers) > h - 0.5) c = lakeIsLava ? 0xff7a1a : mixHex(pal.seaDeep, pal.seaShallow, 0.6)
     }
     out[iz * n + ix] = c
   }

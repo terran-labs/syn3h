@@ -468,17 +468,75 @@ export const ventsPass: TerrainPass = {
  * Lava surface height at (x, z): the lake inside the caldera, pools and rivers where they
  * are, otherwise `fallback` (the world lava altitude). Where both apply, the higher wins.
  */
-export function lavaSurfaceAt(lava: LavaFeatures, x: number, z: number, fallback: number): number {
+type RiverPoint = { x: number; y: number; z: number }
+/** Unit direction of the first stretch of `pts` with length from point `i` on, stepping by `step` (1 or -1). */
+function stretchDirection(pts: readonly RiverPoint[], i: number, step: 1 | -1): [number, number] | null {
+  for (let k = i; k >= 0 && k + 1 < pts.length; k += step) {
+    const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z, l = Math.hypot(dx, dz)
+    if (l > 1e-9) return [dx / l, dz / l]
+  }
+  return null
+}
+/** The cross-section's direction along the river at a joint: halfway between the two stretches. */
+function jointNormal(before: [number, number] | null, after: [number, number]): [number, number] {
+  if (!before) return after
+  const nx = before[0] + after[0], nz = before[1] + after[1], l = Math.hypot(nx, nz)
+  return l > 1e-6 ? [nx / l, nz / l] : after
+}
+
+/**
+ * A draped water river's surface at (x, z), the way its ribbon is drawn (surface.ts
+ * buildRiverSurface): each stretch covers the strip between the cross-sections at its ends, which
+ * at a joint halve the turn, out to `half` the river's width either side of its line, and the
+ * height runs linearly between the two cross-sections. Where strips overlap on the inside of a
+ * bend the stretch the point is nearest across wins. Square at both ends; -Infinity outside.
+ */
+export function riverStripAt(pts: readonly RiverPoint[], half: number, x: number, z: number): number {
+  let best = half, y = -Infinity
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const a = pts[i], c = pts[i + 1], dx = c.x - a.x, dz = c.z - a.z, len = Math.hypot(dx, dz)
+    if (len < 1e-9) continue
+    const ux = dx / len, uz = dz / len
+    const across = Math.abs((x - a.x) * -uz + (z - a.z) * ux)
+    if (across >= best) continue
+    const here: [number, number] = [ux, uz]
+    const na = jointNormal(i > 0 ? stretchDirection(pts, i - 1, -1) : null, here)
+    const after = stretchDirection(pts, i + 1, 1)
+    const nc = after ? jointNormal(here, after) : here
+    // A centimetre of slack, for drawn vertices stored as 32 bit floats.
+    const s0 = (x - a.x) * na[0] + (z - a.z) * na[1], s1 = (x - c.x) * nc[0] + (z - c.z) * nc[1]
+    if (s0 < -0.01 || s1 > 0.01) continue
+    const t = s0 - s1 > 1e-9 ? Math.min(1, Math.max(0, s0 / (s0 - s1))) : 0
+    best = across
+    y = a.y + (c.y - a.y) * t
+  }
+  return y
+}
+
+/**
+ * The liquid surface at (x, z): the highest of the lake, pools and rivers covering the spot,
+ * else `fallback`. Rivers are their planned centre lines, or `rivers` when given (the draped
+ * lines water rivers are drawn at, falls.ts drapedRivers, in `lava.rivers` order). Within one
+ * river its strip counts (riverStripAt), not the highest of every segment within reach: at a bend
+ * or below a lip the upstream run would otherwise lift the water metres above the ribbon.
+ */
+export function lavaSurfaceAt(lava: LavaFeatures, x: number, z: number, fallback: number, rivers?: readonly (readonly { x: number; y: number; z: number }[])[]): number {
   let y = fallback
   const lake = lava.lake
   if (lake && sq(x - lake.x) + sq(z - lake.z) < sq(lake.radius) && lake.surface > y) y = lake.surface
   for (const p of lava.pools) {
     if (sq(x - p.x) + sq(z - p.z) < sq(p.radius) && p.surface > y) y = p.surface
   }
-  for (const r of lava.rivers) {
+  for (let ri = 0; ri < lava.rivers.length; ri++) {
+    const r = lava.rivers[ri]
     const b = r.bounds
     const w = r.width / 2
     if (x < b.minX - w || x > b.maxX + w || z < b.minZ - w || z > b.maxZ + w) continue
+    if (rivers) {
+      const sy = riverStripAt(rivers[ri], w, x, z)
+      if (sy > y) y = sy
+      continue
+    }
     const pts = r.points
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i]

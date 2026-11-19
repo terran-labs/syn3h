@@ -317,6 +317,11 @@ try {
   await a.waitForFunction(() => window.syn3hNet?.connected, null, { timeout: 30000 })
   check('new room defaults to Explore', await a.evaluate(() => window.syn3hNet.game.mode === 2 && window.syn3hNet.game.it === 0))
   await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
+  // The host keeps the bots it asked for whatever its frame rate (bots.keepCount, v26.11.1713):
+  // on a loaded test machine the pacer otherwise judges the first bot costly and allows none
+  // (v26.11.1803's dry run, 18 Nov: added at 8.5 s, removed at 12.6 s, allowed 0). The smoke
+  // tests replication, not pacing, which has its own tests. Guarded for builds without it.
+  await a.evaluate(() => { const p = window.syn3h.params; if (p.get('bots.keepCount')) p.set('bots.keepCount', true) })
   await spyAudio(a)
   const b = await open('Bob')
   const both = (fn, arg) => Promise.all([a.evaluate(fn, arg), b.evaluate(fn, arg)])
