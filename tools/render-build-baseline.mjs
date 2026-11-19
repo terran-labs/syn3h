@@ -192,12 +192,24 @@ try {
     const builds = frames.flatMap(frame => frame.nodeBuilds)
     const gpu = frames.map(frame => gpuTimes.get(frame.rendererFrame)).filter(Number.isFinite).sort((a,b)=>a-b)
     const materials = new Set(builds.map(build => build.materialId).filter(id => id != null))
+    const byMaterial = new Map()
+    for (const build of builds) {
+      const entry = byMaterial.get(build.materialId) ?? {
+        id: build.materialId, material: build.material, builds: 0, cpuMs: 0, objects: new Set(),
+      }
+      entry.builds++
+      entry.cpuMs += build.ms
+      if (build.object) entry.objects.add(build.object)
+      byMaterial.set(entry.id, entry)
+    }
     const buildIntervals = frames
       .filter(frame => frame.nodeBuilds.length || frame.pipelines)
       .map(frame => followingIntervals.get(frame.gameFrame))
       .filter(Number.isFinite)
     return {
       phase, frames: frames.length, materialsBuilt: materials.size, nodeBuilds: builds.length,
+      buildsByMaterial: [...byMaterial.values()].sort((a,b) => b.cpuMs - a.cpuMs)
+        .map(entry => ({ ...entry, objects: [...entry.objects] })),
       gpuSamples: gpu.length, gpuMedianMs: gpu[Math.floor(gpu.length / 2)] ?? null,
       nodeBuildMs: frames.reduce((sum, frame) => sum + frame.nodeBuildMs, 0),
       shaderStageCalls: frames.reduce((sum, frame) => sum + frame.shaderStageCalls, 0),
