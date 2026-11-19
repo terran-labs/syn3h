@@ -9,7 +9,9 @@
  */
 import type { Game, System } from '../../core/Game'
 import type { Vehicle } from '../../vehicles/Vehicle'
-import { BOT_ID_BASE, MODE_TAG } from '../../../shared/protocol'
+import { BOT_ID_BASE, MODE_EXPLORE, MODE_TAG } from '../../../shared/protocol'
+import { PlayDirector, type PlayPerson } from '../play/PlayDirector'
+import { wrapDistance } from '../../../shared/wrap'
 import { worldLavaAltitude } from '../../../shared/params'
 import { liveBots } from '../../net/bots'
 import type { ChatChannel } from '../../net/chat'
@@ -31,7 +33,11 @@ export interface BanterNet {
   readonly id: number
   readonly mode: number
   readonly chat: ChatChannel
-  readonly players: ReadonlyMap<number, { id: number; kind: string; bot?: boolean }>
+  readonly players: ReadonlyMap<number, { id: number; kind: string; bot?: boolean; play?: boolean }>
+  /** Host: someone broke free of a bot's cord themselves (net 'unhook'). Set by HostBanter. */
+  onBotUnhooked?: (by: number, bot: number) => void
+  /** Whether a remote person's game is paused (a hidden tab). */
+  pausedOf?(id: number): boolean
   displayName(id: number): string
   /** A bot's hidden role, for its voice. */
   botRole?(id: number): string
@@ -63,6 +69,8 @@ export class HostBanter implements System {
   director: BanterDirector | null = null
   /** Bots rescuing each other (src/bots/rescue); runs with chatter on or off. */
   rescue: HostRescue | null = null
+  /** Bots playing with people in Explore (src/bots/play): a grab for fun, and stop means stop. */
+  play: PlayDirector | null = null
   private sampleTime = 0
   private thinkTime = 0
   private readonly tracks = new Map<number, Track>()
@@ -85,7 +93,8 @@ export class HostBanter implements System {
     terrain.onRegenerate?.(() => { this.pois = null })
     // People's lines reach the director; it decides whether the bots answer or act.
     this.unsubscribe = net.chat.onHear((line) => {
-      if (!line.bot && !line.system && this.director && this.net.isHost) this.director.hear(line.from, line.text)
+      // A stop about play is answered once, by the play's own kind line; anything else, as before.
+      if (!line.bot && !line.system && this.director && this.net.isHost && !this.play?.hear(line.from, line.text)) this.director.hear(line.from, line.text)
     })
   }
 
@@ -96,7 +105,7 @@ export class HostBanter implements System {
     const elapsed = this.sampleTime
     this.sampleTime = 0
     const net = this.net
-    if (!this.net.connected || !this.net.isHost) { this.director = null; this.rescue?.dispose(); this.rescue = null; this.tracks.clear(); return }
+    if (!this.net.connected || !this.net.isHost) { this.play?.dispose(); this.play = null; this.director = null; this.rescue?.dispose(); this.rescue = null; this.tracks.clear(); return }
     this.director ??= new BanterDirector(this.world(), this.hooks(), { seed: `${this.net.id}:${Date.now()}`, onLine: this.onLine })
     this.rescue ??= new HostRescue(this.terrain, {
       get isHost() { return net.isHost }, get connected() { return net.connected }, get mode() { return net.mode },
@@ -106,11 +115,49 @@ export class HostBanter implements System {
     }, this.bots, this.bots.navigator ?? null, (e) => this.director?.rescue(e), (bot) => this.withPlayer(bot), (bot) => this.director?.playerOf(bot) ?? null)
     this.rescue.update(elapsed)
     this.sample(elapsed)
+    if (!this.play) {
+      const rescue = this.rescue, director = this.director
+      this.play = new PlayDirector({
+        now: () => this.game.time,
+        explore: () => net.mode === MODE_EXPLORE && !this.bots.brainList.some(b => b.raceGoal),
+        people: () => this.playPeople(),
+        bots: () => this.bots.brainList.map((b, i) => ({ id: BOT_ID_BASE + i, vehicle: b.vehicle, free: b.vehicle.body.isValid() && !b.directive && !b.raceGoal })),
+        tug: (bot, target, pull, hold) => rescue.tug(bot, target, pull, hold),
+        attached: (bot, person) => { const c = net.botCord(bot); return !!c && !c.flying && c.to === person },
+        say: (bot, text, exempt) => director.announce(bot, text, exempt),
+        distance: (a, b) => { const p = a.body.translation(), q = b.body.translation(), w = this.terrain.wrapSize; return w ? wrapDistance(p.x, p.z, q.x, q.z, w) : Math.hypot(p.x - q.x, p.z - q.z) },
+      }, `${this.net.id}:${Date.now()}`)
+      net.onBotUnhooked = (by, bot) => this.play?.unhooked(by, bot)
+    }
+    this.play.update()
     if (this.thinkTime >= THINK) { this.thinkTime = 0; this.director.tick() }
     this.cost.calls++; this.cost.ms += performance.now() - t0
   }
 
-  dispose(): void { this.unsubscribe(); this.rescue?.dispose() }
+  dispose(): void { this.unsubscribe(); this.play?.dispose(); this.rescue?.dispose() }
+
+  /**
+   * The people the bots may play with, and whether each is busy or struggling right now: fast,
+   * airborne, in lava or water, on their side or roof, arriving, paused. (Racing is the whole
+   * room's, in `explore`.) Uses the tracks `sample` keeps.
+   */
+  private playPeople(): PlayPerson[] {
+    const out: PlayPerson[] = []
+    for (const info of this.net.players.values()) {
+      if (info.bot) continue
+      const v = this.net.vehicleOf(info.id)
+      if (!v || !v.body.isValid()) continue
+      const p = v.body.translation(), vel = v.body.linvel(), r = v.body.rotation()
+      const track = this.tracks.get(info.id)
+      const liquid = this.terrain.liquidHeightAt?.(p.x, p.z)
+      const wet = liquid != null && Number.isFinite(liquid) && liquid > this.terrain.heightAt(p.x, p.z) && p.y < liquid + 1
+      const upY = 1 - 2 * (r.x * r.x + r.z * r.z)
+      const busy = Math.hypot(vel.x, vel.z) > 20 || (track?.air ?? 0) > 0 || wet || upY < 0.5
+        || v.object.userData.materializing === true || this.net.pausedOf?.(info.id) === true
+      out.push({ id: info.id, name: this.net.displayName(info.id), vehicle: v, allows: info.play !== false, busy })
+    }
+    return out
+  }
 
   /** The player a bot is with: one who asked it, or the host it trails by default when close. */
   private withPlayer(bot: number): number | null {

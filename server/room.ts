@@ -435,8 +435,19 @@ export class Room {
         this.onHit(player, msg.shooter, msg.shot, msg.victim)
         break
       case 'profile':
-        this.onProfile(player, msg.kind, msg.colors, msg.name)
+        this.onProfile(player, msg.kind, msg.colors, msg.name, msg.play)
         break
+      case 'unhook': {
+        // The grabbed player asks a cord's owner to let go. Only a cord the room last relayed as
+        // tied to the sender counts; anything else is ignored quietly, and an owner on an older
+        // build that never answers is not an error (its cord's stretch snap still applies).
+        const owner = typeof msg.from === 'number' ? this.byId(msg.from) : undefined
+        if (!owner || owner === player || !owner.cordOn || owner.cordTo !== player.info.id) break
+        const host = owner.info.bot ? this.byId(this.host) : owner
+        const to = host ? this.peerOf(host) : undefined
+        if (to) this.sendTo(to, { type: 'unhook', by: player.info.id, owner: owner.info.id })
+        break
+      }
       case 'ram':
         this.onRam(player, msg.other, msg.push)
         break
@@ -773,6 +784,8 @@ export class Room {
       const drop = cleanDropReport((msg as { drop?: unknown }).drop)
       logEvent('rejoin', { room: this.tag, player: player.info.id, from: player.heldUntil ? 'held' : 'quiet', ...(drop ? Object.fromEntries(Object.entries(drop).map(([k, v]) => [`drop${k[0].toUpperCase()}${k.slice(1)}`, v])) : {}) })
       player.heldUntil = 0
+      if (msg.play === false) player.info.play = false
+      else delete player.info.play
       player.page = page
       player.lastHeardAt = this.now()
       player.joinedAt = this.now()
@@ -818,6 +831,8 @@ export class Room {
       id, name: this.uniqueName(cleanName(msg.name, id)), slot, score: 0,
       kind: cleanKind(msg.kind) ?? 'buggy',
       colors: cleanColors(msg.colors) ?? [...DEFAULT_COLORS],
+      // Only a deliberate no is carried: absent means the bots may play.
+      ...(msg.play === false ? { play: false } : {}),
     }
     const player = this.newPlayer(info)
     // Two connections must never share a secret (a duplicated tab copies it): the second is
@@ -1023,15 +1038,18 @@ export class Room {
     return bot
   }
 
-  private onProfile(player: Player, kind: unknown, colors: unknown, name: unknown): void {
+  private onProfile(player: Player, kind: unknown, colors: unknown, name: unknown, play?: unknown): void {
     const k = kind === undefined ? player.info.kind : cleanKind(kind)
     const c = colors === undefined ? player.info.colors : cleanColors(colors)
     if (!k || !c) return
     const n = name === undefined ? player.info.name : this.rename(player, name)
-    if (k === player.info.kind && c[0] === player.info.colors[0] && c[1] === player.info.colors[1] && n === player.info.name) return
+    const mayPlay = play === undefined ? player.info.play !== false : play !== false
+    if (k === player.info.kind && c[0] === player.info.colors[0] && c[1] === player.info.colors[1] && n === player.info.name && mayPlay === (player.info.play !== false)) return
     player.info.kind = k
     player.info.colors = c
     player.info.name = n
+    if (mayPlay) delete player.info.play
+    else player.info.play = false
     this.broadcast({ type: 'profile', player: player.info })
   }
 
