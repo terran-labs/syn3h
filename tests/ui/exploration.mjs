@@ -77,6 +77,10 @@ for (const mode of modes) {
     while (await others.count()) await others.first().click()
     if (!(await page.locator('.wi-card[data-section=world]').evaluate(el => el.classList.contains('is-open')))) await page.locator('.wi-card[data-section=world] .wi-head').click()
     await page.waitForFunction(() => !document.querySelector('.wi-cards').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
+    // Wait for the opened state itself: under load the opening animation may not have started
+    // when the check above runs, so measuring at once read a still-closed card (failed twice
+    // on 18 Nov at load 9 to 22, landscape and phone; passed on other runs).
+    await page.waitForFunction(() => (document.querySelector('.wi-card[data-section=world] .wi-body')?.clientHeight ?? 0) > 60, null, { timeout: 10000 }).catch(() => {})
     assert.ok(await page.locator('.wi-card[data-section=world] .wi-body').evaluate(el => el.clientHeight > 60), 'selected panel has usable internal space')
     const row = page.locator('.wi-row[data-id="sun.timeOfDay"]')
     await row.evaluate(el => { el.closest('details').open = true })
