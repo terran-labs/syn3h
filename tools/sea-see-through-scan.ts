@@ -29,6 +29,8 @@ const g = new HeightSampler(data), sea = Number(params.get('world.lavaAltitude')
 const R = curveRadius(data.size, Number(roundness)), clarity = Number(params.get('water.clarity')?.value ?? 10)
 const IOR2 = 1.333 * 1.333, EYE = 1.2
 const MARCH_GEOMETRIC = Number(process.env.MARCH_G ?? 8), MARCH_EVEN = Number(process.env.MARCH_E ?? 0)
+/** The march's margin, metres (surface.ts sightLineMeetsBed): MARGIN=lo,hi overrides it. */
+const MARGIN = (process.env.MARGIN ?? '0,1.5').split(',').map(Number)
 
 const smooth = (a: number, b: number, x: number) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u) }
 /**
@@ -49,7 +51,7 @@ function reachesBed(x0: number, z0: number, dx: number, dz: number, ex: number, 
   }
   for (let k = 0; k < MARCH_GEOMETRIC; k++, u *= 2) at(Math.min(u, chord * 0.95))
   for (let k = 1; k <= MARCH_EVEN; k++) at((chord * 0.95 * k) / (MARCH_EVEN + 1))
-  return smooth(0, 0.3, best)
+  return smooth(MARGIN[0], MARGIN[1], best)
 }
 /** The water shader's opacity from above, given the sight line's grazing sine and the depth. */
 function opacity(up: number, depth: number, fixed: boolean, reach = 1): number {
