@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu'
 import { abs, float, materialColor, max, mix, mx_noise_float, smoothstep, time, uv, vec3 } from 'three/tsl'
 import { DROP_FALL, findDrops, riverSpeed, type LavaFeatures, type RiverDrop } from '../terrain/lava'
+import { KIND_VOLCANIC } from '../terrain/settings'
+import { waterWaves } from './params'
 
 type Point = { x: number; y: number; z: number }
 type Ground = { heightAt(x: number, z: number): number }
@@ -60,7 +62,10 @@ export function receivingWater(lava: LavaFeatures, sea: number): (x: number, z: 
   }
 }
 
-const draped = new WeakMap<LavaFeatures, { sea: number; ground: Ground; rivers: readonly (readonly Point[])[] }>()
+/** Per world, the drapes for the last few sea levels: physics reads the live, gliding level and
+ * grass the target one, and one slot would make them push each other out on every call. */
+const draped = new WeakMap<LavaFeatures, { sea: number; ground: Ground; rivers: readonly (readonly Point[])[] }[]>()
+const DRAPES_KEPT = 4
 
 /**
  * Every river's draped centre line (`drapeRiver`), in `lava.rivers` order: the surface water
@@ -69,12 +74,26 @@ const draped = new WeakMap<LavaFeatures, { sea: number; ground: Ground; rivers: 
  * the sea gliding to a new level recomputes it, a few milliseconds.
  */
 export function drapedRivers(lava: LavaFeatures, ground: Ground, sea: number): readonly (readonly Point[])[] {
-  const known = draped.get(lava)
-  if (known && known.sea === sea && known.ground === ground) return known.rivers
+  let kept = draped.get(lava)
+  if (!kept) draped.set(lava, (kept = []))
+  const known = kept.find((k) => k.sea === sea && k.ground === ground)
+  if (known) return known.rivers
   const waterAt = receivingWater(lava, sea)
   const rivers = lava.rivers.map((r) => (r.points.length < 2 ? [] : drapeRiver(ground, r.points, waterAt)))
-  draped.set(lava, { sea, ground, rivers })
+  kept.unshift({ sea, ground, rivers })
+  kept.length = Math.min(kept.length, DRAPES_KEPT)
   return rivers
+}
+
+/**
+ * The river lines water is drawn and floated at, for anything that asks where a world's water
+ * is (physics, the minimap's colours, where grass grows): the draped lines when water rivers are
+ * drawn draped (the new water, water.waves, on a world whose rivers are water), else undefined,
+ * meaning each river's planned line (lava rivers, and the old water, are drawn on those).
+ */
+export function waterRiverLines(data: { lava: LavaFeatures; settings: { kind: number; dry: number } }, ground: Ground, sea: number): readonly (readonly Point[])[] | undefined {
+  if (data.settings.kind === KIND_VOLCANIC || !waterWaves.value) return undefined
+  return drapedRivers(data.lava, ground, data.settings.dry ? -Infinity : sea)
 }
 
 function lerp(a: Point, b: Point, t: number): Point {

@@ -14,7 +14,7 @@ import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, Terrai
 import { createTerrainCollider } from './collider'
 import { createSeaIceCollider, seaFrozen } from './seaIce'
 import { lavaSurfaceAt, liquidFlowAt } from './lava'
-import { drapedRivers } from '../water/falls'
+import { waterRiverLines } from '../water/falls'
 import { seaWaves, setWaterClock } from '../water/seaWaves'
 import { configureLiquidWaves, liquidWaveOffset, liquidWaveSpeed, type LiquidBody } from '../water/liquidWaves'
 import { waterRiverMaxSpeed, waterSeaFrozen, waterWaves } from '../water/params'
@@ -558,8 +558,7 @@ export class ProceduralTerrain implements Terrain {
    * (lava rivers and the old water draw their planned lines). See falls.ts drapedRivers.
    */
   private waterRivers(sea: number): readonly (readonly { x: number; y: number; z: number }[])[] | undefined {
-    if (this.data.settings.kind === KIND_VOLCANIC || !waterWaves.value) return undefined
-    return drapedRivers(this.data.lava, this.sampler, this.data.settings.dry ? -Infinity : sea)
+    return waterRiverLines(this.data, this.sampler, sea)
   }
 
   /**
@@ -575,7 +574,7 @@ export class ProceduralTerrain implements Terrain {
     const key = this.mapColourKey()
     if (key !== this.mapKey) {
       const sea = seaLevel(), lava = (worldSeaKind.value as number) === 0
-      this.mapGrid = bakeMapColours(this.data, this.sampler, { sea, lava, frozen: this.iceTop > -Infinity, snow: this.snowHeight() }); this.mapKey = key
+      this.mapGrid = bakeMapColours(this.data, this.sampler, { sea, lava, frozen: this.iceTop > -Infinity, snow: this.snowHeight() }, this.waterRivers(sea)); this.mapKey = key
     }
     const n = MAP_GRID, size = this.data.size
     const ix = Math.min(n - 1, Math.floor((wrapCoord(x, size) / size + 0.5) * n)), iz = Math.min(n - 1, Math.floor((wrapCoord(z, size) / size + 0.5) * n))
@@ -583,7 +582,7 @@ export class ProceduralTerrain implements Terrain {
   }
   /** See Terrain.mapColourKey: the inputs of mapColourAt's bake, read without baking. */
   mapColourKey(): string {
-    return `${this.version}:${seaLevel()}:${worldSeaKind.value}:${this.iceTop}`
+    return `${this.version}:${seaLevel()}:${worldSeaKind.value}:${this.iceTop}:${waterWaves.value}`
   }
   private mapGrid: Uint32Array | null = null
   private mapKey = ''
