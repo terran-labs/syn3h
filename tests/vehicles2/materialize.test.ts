@@ -274,24 +274,22 @@ describe('arrival level',()=>{
 })
 
 describe('the scene\'s lights',()=>{
-  it('an arrival and a departure never change the set of lights the scene is drawn with',async()=>{
-    // three keys every lit material's shader on the set of visible lights (LightsNode hashes
-    // their ids). An effect that adds, removes or hides a light during play rebuilds every
-    // lit material in the scene: 251 builds and a 234 ms frame at High on 16 November 2026,
-    // on each vehicle swap and remote departure, and on every bot arrival once bots arrived
-    // in the cloud. The arrival light may only change its intensity, colour and place.
+  it('keeps the same scene lights across quality changes, arrivals and departures',async()=>{
     const {params}=await import('../../shared/params')
     const before=params.get('gfx.level')!.value
     try{
       params.set('gfx.level',2)
       const {h,v,m,step}=bed('buggy')
+      const sun=new T.DirectionalLight()
+      h.game.scene.add(sun)
       const lights=()=>{const ids:number[]=[];h.game.scene.traverseVisible(o=>{if((o as T.Light).isLight)ids.push(o.id)});return ids.sort().join()}
       const frame=()=>{step();m.update(FIXED_DT)}
       frame()
       const idle=lights()
-      expect(idle).not.toBe('')
+      expect(idle).toContain(String(sun.id))
       let arrived=false
       void m.begin(v,{holdSeconds:HOLD}).then(()=>{arrived=true})
+      for(const level of [1,2]){params.set('gfx.level',level);frame();expect(lights()).toBe(idle)}
       for(let i=0;i<HOLD_STEPS*4&&!arrived;i++){frame();expect(lights()).toBe(idle);await Promise.resolve()}
       for(let i=0;i<120;i++){frame();expect(lights()).toBe(idle)}
       let gone=false

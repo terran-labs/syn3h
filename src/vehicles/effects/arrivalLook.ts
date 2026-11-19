@@ -162,10 +162,11 @@ export class ArrivalLook {
   /** The vehicle's lowest and highest points above its origin, for the silhouette sweep. */
   private low = -1
   private high = 1
-  private size = 1
+  private readonly flash: T.Mesh<T.PlaneGeometry, T.MeshBasicNodeMaterial>
+  private readonly flashStrength = uniform(0)
+  private sampledReach = 0
   private releaseAge = -1
   private cancelAge = -1
-  private intensity = 1
   /** True between start() and the end of the release or cancel fade. */
   active = false
   /**
@@ -176,7 +177,7 @@ export class ArrivalLook {
    */
   departing = false
 
-  constructor(level: number) {
+  constructor(private level: number) {
     this.u = {
       progress: uniform(0), release: uniform(0), strength: uniform(1), motion: uniform(1), front: uniform(0), far: uniform(0),
       accent: uniform(new T.Color(.5, .85, 1)), body: uniform(new T.Color(.2, .4, .8)),
@@ -188,20 +189,45 @@ export class ArrivalLook {
     const quad = new T.PlaneGeometry(2, 2).rotateX(-Math.PI / 2)
     this.ground = new T.Mesh(quad, groundMaterial(this.u))
     this.ground.renderOrder = 2
+    // The additive layer follows terrain and liquid. Lower tiers draw only the original decal.
+    const flashMaterial = new T.MeshBasicNodeMaterial({transparent: true, blending: T.AdditiveBlending, depthWrite: false})
+    flashMaterial.fog = false
+    flashMaterial.colorNode = vec3(.055, .78, 1).mul(hotExposureNode())
+    const falloff = float(1).sub(smoothstep(0, 1, uv().mul(2).sub(1).length()))
+    flashMaterial.opacityNode = falloff.pow(2).mul(this.flashStrength)
+    this.flash = new T.Mesh(new T.PlaneGeometry(2, 2, 12, 12).rotateX(-Math.PI / 2), flashMaterial)
+    this.flash.renderOrder = 3
+    this.flash.visible = level === 2
     const column = new T.CylinderGeometry(1, 1, 1, 16, 1, true).translate(0, .5, 0)
     this.beam = new T.Mesh(column, beamMaterial(this.u))
     this.beam.renderOrder = 5
     this.ghostMat = ghostMaterial(this.u)
-    for (const m of [this.volume, this.ground, this.beam]) { m.frustumCulled = false; m.castShadow = m.receiveShadow = false }
-    this.object.add(this.volume, this.ground, this.beam)
+    for (const m of [this.volume, this.ground, this.flash, this.beam]) { m.frustumCulled = false; m.castShadow = m.receiveShadow = false }
+    this.object.add(this.volume, this.ground, this.flash, this.beam)
     this.object.visible = false
   }
 
+  setLevel(level: number): void {
+    if (level === this.level) return
+    if ((this.level === 0) !== (level === 0)) {
+      this.volume.geometry.dispose()
+      this.volume.geometry = new T.IcosahedronGeometry(1, level === 0 ? 2 : 4)
+    }
+    if ((this.level === 2) !== (level === 2)) {
+      ;(this.volume.material as T.Material).dispose()
+      this.volume.material = volumeMaterial(this.u, level === 2 ? 2 : 1)
+    }
+    this.level = level
+    this.flash.visible = level === 2
+    this.sampledReach = 0
+  }
+
   /** Everything this look draws, for shader compilation ahead of the first arrival. */
-  get meshes(): T.Mesh[] { return [this.volume, this.ground, this.beam] }
+  get meshes(): T.Mesh[] { return [this.volume, this.ground, this.flash, this.beam] }
 
   start(vehicle: {object: T.Object3D; colors: {body: T.ColorRepresentation; accent: T.ColorRepresentation}}, reducedMotion: boolean, departing = false): void {
     this.detachGhosts()
+    this.sampledReach = 0
     this.active = true
     this.departing = departing
     this.releaseAge = this.cancelAge = -1
@@ -215,10 +241,8 @@ export class ArrivalLook {
   }
 
   /** Per frame while active. `progress` is the hold's share elapsed; `surface` the ground or liquid height under the centre. */
-  update(dt: number, progress: number, surface: number, size: number, intensity: number, distance = 0): void {
+  update(dt: number, progress: number, surface: number, size: number, intensity: number, distance = 0, surfaceAt?: (x: number, z: number) => number): void {
     if (!this.active) return
-    this.size = size
-    this.intensity = intensity
     let strength = intensity
     if (this.cancelAge >= 0) {
       this.cancelAge += dt
@@ -249,6 +273,10 @@ export class ArrivalLook {
     const reach = size * 7
     this.ground.position.set(this.centre.x, surface + .12, this.centre.z)
     this.ground.scale.set(reach, 1, reach)
+    if (this.flash.visible && surfaceAt) {
+      this.flashStrength.value = strength * (r > 0 ? 1.8 * (1 - r) ** 2 : .35 + .65 * p)
+      this.placeFlash(size * 10, surface, surfaceAt)
+    }
     this.beam.position.set(this.centre.x, surface, this.centre.z)
     const distant = this.u.far.value as number
     this.beam.scale.set((.45 + .15 * distant) * size * far, (40 + 20 * distant) * size * Math.sqrt(far), (.45 + .15 * distant) * size * far)
@@ -257,14 +285,21 @@ export class ArrivalLook {
     this.u.front.value = bottom + (this.high - this.low + .4) * ease(p)
   }
 
-  /** The light this arrival casts now, 0 when it casts none (for the shared point light). */
-  light(): number {
-    if (!this.active || this.cancelAge >= 0) return 0
-    const r = this.u.release.value as number
-    return this.intensity * (r > 0 ? (1 - r) ** 2 * 3 : .4 + .8 * (this.u.progress.value as number))
+  /** A stationary hold reuses its sampled surface until it moves or changes size. */
+  private placeFlash(reach: number, surface: number, surfaceAt: (x: number, z: number) => number): void {
+    const {x, z} = this.centre
+    const mesh = this.flash
+    if (reach === this.sampledReach && mesh.position.x === x && mesh.position.z === z && mesh.position.y === surface) return
+    this.sampledReach = reach
+    mesh.position.set(x, surface, z)
+    mesh.scale.set(reach, 1, reach)
+    const vertices = mesh.geometry.attributes.position
+    for (let i = 0; i < vertices.count; i++) {
+      const height = surfaceAt(x + reach * vertices.getX(i), z + reach * vertices.getZ(i))
+      vertices.setY(i, height - surface + .16)
+    }
+    vertices.needsUpdate = true
   }
-
-  get accent(): T.Color { return this.u.accent.value as T.Color }
 
   release(): void {
     if (!this.active || this.releaseAge >= 0 || this.cancelAge >= 0) return
@@ -320,7 +355,7 @@ export class ArrivalLook {
   dispose(): void {
     this.end()
     this.object.removeFromParent()
-    for (const m of [this.volume, this.ground, this.beam]) { m.geometry.dispose(); (m.material as T.Material).dispose() }
+    for (const m of [this.volume, this.ground, this.flash, this.beam]) { m.geometry.dispose(); (m.material as T.Material).dispose() }
     this.ghostMat.dispose()
   }
 }

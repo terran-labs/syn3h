@@ -132,13 +132,8 @@ export const DEPART_SECONDS=1
 /** Arrivals that get the full look at once; more at the same moment get only particles. */
 const LOOKS=4
 /**
- * The arrival's point light (graphics level 2 only): peak intensity at intensity 1, and reach in
- * metres at cloud size 1. It lights the ground and any vehicle beside the cloud.
- */
-const LIGHT_INTENSITY=60,LIGHT_REACH=16
-/**
  * The arrival's own level: the three-step graphics level, but at most the middle one on a touch
- * device (no point light, the lighter volume). A phone at High measured 2.2 ms a frame more with
+ * device (the original ground decal and lighter volume). A phone at High measured 2.2 ms a frame more with
  * the full arrival under 4x CPU throttling; the owner's budget is about half a millisecond.
  */
 const touchDevice=typeof navigator!=='undefined'&&(navigator.maxTouchPoints>0||(typeof matchMedia==='function'&&matchMedia('(pointer: coarse)').matches))
@@ -192,9 +187,6 @@ export class Materialize implements System {
   private lastWall=now()
   /** Pooled arrival looks for the current graphics level. */
   private looks:ArrivalLook[]=[]
-  /** One light shared by every arrival, given to the brightest; null below level 2. */
-  private light:T.PointLight|null=null
-
   constructor(readonly game:Game,readonly terrain:Terrain,options:{onCue?:MaterializeCueHandler}={}){
     this.onCue=options.onCue
     this.build()
@@ -210,20 +202,12 @@ export class Materialize implements System {
     this.cloud.clock.value=this.clock
     this.cloud.mesh.visible=this.clock<this.aliveUntil
     this.game.scene.add(this.cloud.mesh)
-    for(const look of this.looks)look.dispose()
-    this.looks=Array.from({length:LOOKS},()=>new ArrivalLook(level))
-    for(const look of this.looks)this.game.scene.add(look.object)
-    // Automatic quality can change the level mid-arrival: running arrivals carry on in a new look.
-    for(const hold of this.holds){
-      hold.look=this.looks.find(l=>!l.active)??null
-      if(hold.look){hold.look.centre.copy(hold.holds?hold.point:hold.vehicle.object.position);hold.look.start(hold.vehicle,this.calm)}
+    if(this.looks.length){
+      for(const look of this.looks)look.setLevel(level)
+    }else{
+      this.looks=Array.from({length:LOOKS},()=>new ArrivalLook(level))
+      for(const look of this.looks)this.game.scene.add(look.object)
     }
-    // Only the desktop level pays for a real light: a light in the scene costs every lit pixel.
-    if(level===2&&!this.light){
-      this.light=new T.PointLight(0xffffff,0,LIGHT_REACH,2)
-      this.light.castShadow=false
-      this.game.scene.add(this.light)
-    }else if(level<2&&this.light){this.light.removeFromParent();this.light.dispose();this.light=null}
   }
 
   /**
@@ -357,29 +341,19 @@ export class Materialize implements System {
   /** Hold progress per look, written in update and read by updateLooks. */
   private readonly progress=new Map<ArrivalLook,number>()
 
-  /** Advance every arrival look, holding or releasing, and give the light to the brightest. */
+  private readonly surfaceAt=(x:number,z:number):number=>
+    Math.max(this.terrain.heightAt(x,z),this.terrain.liquidHeightAt?.(x,z)??-Infinity)
+
+  /** Advance every arrival look, holding or releasing. */
   private updateLooks(dt:number):void {
     const size=Number(materializeCloudSize.value),intensity=Number(materializeBrightness.value)
-    let best:ArrivalLook|null=null,bestLight=0
     for(const look of this.looks){
       if(!look.active)continue
       const c=look.centre
-      const surface=Math.max(this.terrain.heightAt(c.x,c.z),this.terrain.liquidHeightAt?.(c.x,c.z)??-Infinity)
+      const surface=this.surfaceAt(c.x,c.z)
       const distance=this.game.camera?this.game.camera.position.distanceTo(c):0
-      look.update(Math.max(0,dt),this.progress.get(look)??1,surface,size,intensity,distance)
-      const light=look.light()
-      if(light>bestLight){bestLight=light;best=look}
+      look.update(Math.max(0,dt),this.progress.get(look)??1,surface,size,intensity,distance,this.surfaceAt)
     }
-    const light=this.light
-    if(!light)return
-    // Dark, never hidden: three gathers only visible lights, so toggling visibility changed every
-    // lit material's light set and rebuilt their shaders on each arrival and departure (500 to
-    // 975 ms frames at High under load, once per bot when bots arrive one at a time).
-    if(!best){light.intensity=0;return}
-    light.position.copy(best.centre).y+=.6*size
-    light.color.copy(best.accent)
-    light.intensity=bestLight*LIGHT_INTENSITY
-    light.distance=LIGHT_REACH*size
   }
 
   /** The vehicle's body and accent colours, linear, into the scratch colours. */
@@ -392,7 +366,6 @@ export class Materialize implements System {
     this.cloud.dispose()
     for(const look of this.looks)look.dispose()
     this.looks=[]
-    if(this.light){this.light.removeFromParent();this.light.dispose();this.light=null}
   }
 
   private noise():number {return effectNoise(this.serial++)}
