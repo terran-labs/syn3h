@@ -118,6 +118,40 @@ try {
       }, hour === 0)
     })
   }
+  const shadows = []
+  const shadowImages = new Map()
+  await page.evaluate(() => {
+    const s = window.syn3h
+    const target = s.terrain.spawnPoint(0).position.clone()
+    const eye = target.clone()
+    eye.x += 14
+    eye.z += 18
+    eye.y = s.terrain.heightAt(eye.x, eye.z) + 8
+    s.camera.setCinematicPose(eye, target, 55)
+  })
+  let from = await page.evaluate(() => window.syn3h.params.get('gfx.shadowQuality').value)
+  for (const level of [0, 1, 2, 3, 2, 1, 0]) {
+    if (from === level) continue
+    const phase = 'sun-shadow-' + from + '-to-' + level
+    await record(phase, () => page.evaluate(level => window.syn3h.params.set('gfx.shadowQuality', level), level))
+    const state = await page.evaluate(() => {
+      const s = window.syn3h
+      const sun = s.game.scene.children.find(child => child.isDirectionalLight)
+      return { level: s.params.get('gfx.shadowQuality').value, casts: sun.castShadow,
+        seed: s.params.get('world.seed').value, camera: s.game.camera.position.toArray(),
+        orientation: s.game.camera.quaternion.toArray(), fov: s.game.camera.fov,
+        cascades: sun.castShadow ? sun.shadow.shadowNode?.cascades : 0,
+        mapSize: sun.castShadow ? sun.shadow.mapSize.toArray() : null }
+    })
+    assert.equal(state.level, level)
+    assert.equal(state.casts, level > 0)
+    const image = await page.locator('canvas').evaluateAll(nodes => nodes.indexOf(window.syn3h.game.canvas))
+    assert.ok(image >= 0)
+    const screenshot = output + '.' + phase + '.png'
+    shadowImages.set(screenshot, await page.locator('canvas').nth(image).screenshot())
+    shadows.push({ phase, ...state, screenshot })
+    from = level
+  }
   sampleLoad()
   assert.ok(samples.every(s => s.oneMinute <= 8), 'Load exceeded 8. Discarding run.')
   const result = await page.evaluate(() => {
@@ -160,7 +194,8 @@ try {
       longestFrameMs: Math.max(...frames.map(frame => frame.frameMs)),
     }
   })
-  await writeFile(output, JSON.stringify({ ...result, profile, renderSize, lightingNode, measurements, sceneMaterials, load: samples }), { flag: 'wx' })
+  await writeFile(output, JSON.stringify({ ...result, profile, renderSize, lightingNode, measurements, sceneMaterials, shadows, load: samples }), { flag: 'wx' })
+  for (const [path, png] of shadowImages) await writeFile(path, png, { flag: 'wx' })
   console.table(measurements)
 } finally {
   clearInterval(timer)
