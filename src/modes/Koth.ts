@@ -1,18 +1,18 @@
 /**
  * King of the Hill, the local side. Nothing in this world can be destroyed: lava is thick and
- * sticky, and a vehicle that sinks into it is stuck. It may crawl out under its own power;
- * if it is still in the lava when the return delay ends it is lifted back to its spawn pad.
- * A vehicle that leaves the world is returned to its pad at once. The server keeps score and
- * leaves a stuck vehicle out of the hill count; see server/room.ts.
+ * sticky, and a vehicle that sinks into it is stuck. A player's vehicle stays where it is until
+ * it crawls out under its own power: the game never moves it for being in the lava (the
+ * owner's rule of 18 November 2026, see AGENTS.md). Stuck only matters for the score: the
+ * server leaves a stuck player out of the hill count until it is free; see server/room.ts.
+ * The host's bots still get lifted back to a pad after the return delay (net/index.ts).
  *
  * The drag and the glow of a vehicle in lava belong to the vehicle code (src/vehicles/lava.ts).
  */
 import type { Game } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
-import { kothRespawnDelay } from './params'
 
-/** How a stuck vehicle got free: under its own power, or lifted back to its pad. */
+/** How a stuck vehicle got free: under its own power, or (bots only) lifted back to a pad. */
 export type FreedBy = 'crawled' | 'returned'
 
 /** Touching counts a little above the surface: wheels dip in before the body does. */
@@ -44,7 +44,7 @@ export function inStickyLiquid(terrain: LiquidTerrain, p: { x: number; y: number
  * in the lava each step; it answers what just happened.
  */
 export class StuckTimer {
-  /** Game time when the vehicle is lifted back to its pad, or 0 while free. */
+  /** Game time when the vehicle is lifted back to its pad (Infinity: never), or 0 while free. */
   until = 0
   private clearSince = 0
 
@@ -77,14 +77,15 @@ export class StuckTimer {
   }
 }
 
+/**
+ * The local player's stuck-in-lava bookkeeping. It reports stuck and free; it never moves the
+ * vehicle. A vehicle that falls out of the world is BoundsGuard's (src/modes/Tag.ts), in every mode.
+ */
 export class LocalRescue {
-  slot = 0
   /** The vehicle just sank into the lava. */
   onStuck: () => void = () => {}
-  /** It is free again: it crawled out, or was lifted back to its pad. */
-  onFreed: (by: FreedBy) => void = () => {}
-  /** It left the world and was put back on its pad. */
-  onReturned: () => void = () => {}
+  /** It crawled out under its own power. */
+  onFreed: () => void = () => {}
   private readonly timer = new StuckTimer()
 
   constructor(private readonly game: Game, private readonly terrain: Terrain, private readonly player: Vehicle) {}
@@ -93,38 +94,15 @@ export class LocalRescue {
     return this.timer.stuck
   }
 
-  /** Whole seconds until a stuck vehicle is lifted back to its pad. */
-  get secondsLeft(): number {
-    return this.timer.stuck ? Math.max(0, Math.ceil(this.timer.until - this.game.time)) : 0
-  }
-
   /** Run after each physics step while King of the Hill is on. */
   check(): void {
-    const p = this.player.body.translation()
-    const half = this.terrain.size * 0.5
-    // A wrapping world has no edge to leave by: only falling through it counts.
-    const outside = !this.terrain.wrapSize && (Math.abs(p.x) > half * 1.5 || Math.abs(p.z) > half * 1.5)
-    if (p.y < -250 || outside) {
-      this.timer.clear()
-      this.toPad()
-      this.onReturned()
-      return
-    }
-    const what = this.timer.step(this.game.time, inStickyLiquid(this.terrain, p), kothRespawnDelay.value)
+    const what = this.timer.step(this.game.time, inStickyLiquid(this.terrain, this.player.body.translation()), Infinity)
     if (what === 'stuck') this.onStuck()
-    else if (what) {
-      if (what === 'returned') this.toPad()
-      this.onFreed(what)
-    }
+    else if (what === 'crawled') this.onFreed()
   }
 
-  /** The mode ended: forget any countdown. The vehicle stays where it is. */
+  /** The mode ended: forget the stuck state. The vehicle stays where it is. */
   release(): void {
     this.timer.clear()
-  }
-
-  private toPad(): void {
-    const s = this.terrain.spawnPoint(this.slot)
-    this.player.teleport(s.position, s.heading)
   }
 }

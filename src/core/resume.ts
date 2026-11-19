@@ -75,11 +75,18 @@ export function linkSeed(query: URLSearchParams): number | null {
 /** 'buggy-syn3h' is an alias, and the retired 'buggy-classic' now resumes as the Syn3h buggy. */
 const normalizeKind = (kind: string) => kind === 'buggy-syn3h' || kind === 'buggy-classic' ? 'buggy' : kind
 
-export function safeResumePosition(saved: ResumeSnapshot, terrain: Pick<Terrain, 'size' | 'heightAt' | 'liquidHeightAt'>): boolean {
+/**
+ * Whether a saved position can be restored as it is. Only a broken pose is refused: not a
+ * number, outside the world, under the ground or absurdly high. A vehicle saved in lava or
+ * deep water resumes there (the owner's rule of 18 November 2026: the game never moves a
+ * player for where they drove; see AGENTS.md).
+ */
+export function safeResumePosition(saved: ResumeSnapshot, terrain: Pick<Terrain, 'size' | 'heightAt'>): boolean {
   const [x, y, z] = saved.p
-  if (Math.abs(x) >= terrain.size / 2 - 2 || Math.abs(z) >= terrain.size / 2 - 2) return false
-  const ground = terrain.heightAt(x, z), liquid = terrain.liquidHeightAt?.(x, z) ?? -Infinity
-  return Number.isFinite(ground) && y >= ground + 0.2 && y <= ground + 10000 && y > liquid + 1
+  if (![x, y, z].every(Number.isFinite)) return false
+  if (Math.abs(x) > terrain.size / 2 + 2 || Math.abs(z) > terrain.size / 2 + 2) return false
+  const ground = terrain.heightAt(x, z)
+  return Number.isFinite(ground) && y >= ground + 0.2 && y <= ground + 10000
 }
 interface ResumeNetwork { connected: boolean; isHost: boolean; setProfile?(profile: { colors: { body: string; accent: string } }): void }
 interface ResumeOptions {

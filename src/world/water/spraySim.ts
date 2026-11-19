@@ -13,28 +13,35 @@
  *   drifts outward, widens and fades with age, and follows the moving water surface. Joining
  *   consecutive points gives one continuous strip per arm, so nothing stacks.
  * - Rings: one expanding foam circle per entry splash.
+ * - Ripplets: a small faint ring where a falling drop lands, so a splash's rain dimples the
+ *   water. Only drops big enough to show make one; a small pool, overwritten oldest first.
+ *
+ * What touches the water shapes the wake (`WakeShape`). A hull leaves the three arms. A Zorb's
+ * ball touches at one patch, so it leaves one soft trail from that patch, as wide as the patch
+ * and spreading behind it, broken wherever the ball leaves the water, and a soft ring where
+ * each skip lands. Soft trails and rings are flagged for the renderer's soft foam.
  */
 
 /** Where the water is. `liquidHeightAt` includes the waves. Optional: without it the caller's y is used. */
 export interface SprayWater { liquidHeightAt?(x: number, z: number): number }
 
-export interface SprayCapacity { droplets: number; vehicles: number; points: number; rings: number }
+export interface SprayCapacity { droplets: number; vehicles: number; points: number; rings: number; ripplets: number }
 /** Pools per graphics level: safe, mobile, desktop. */
 export function sprayCapacity(tier: number): SprayCapacity {
   const t = Math.max(0, Math.min(2, Math.round(Number.isFinite(tier) ? tier : 0)))
   return [
-    { droplets: 384, vehicles: 4, points: 14, rings: 4 },
-    { droplets: 900, vehicles: 6, points: 24, rings: 6 },
-    { droplets: 1800, vehicles: 8, points: 36, rings: 8 },
+    { droplets: 384, vehicles: 4, points: 14, rings: 4, ripplets: 16 },
+    { droplets: 900, vehicles: 6, points: 24, rings: 6, ripplets: 40 },
+    { droplets: 1800, vehicles: 8, points: 36, rings: 8, ripplets: 96 },
   ][t]
 }
 
 // Droplet record layout.
 const D = 11, DX = 0, DY = 1, DZ = 2, DVX = 3, DVY = 4, DVZ = 5, DAGE = 6, DLIFE = 7, DSIZE = 8, DFLOOR = 9, DKIND = 10
 // Wake point layout: position, outward drift velocity, age, life, starting half width, strength, linked to previous.
-const W = 10, WX = 0, WY = 1, WZ = 2, WVX = 3, WVZ = 4, WAGE = 5, WLIFE = 6, WWIDTH = 7, WSTRENGTH = 8, WLINK = 9
+const W = 12, WX = 0, WY = 1, WZ = 2, WVX = 3, WVZ = 4, WAGE = 5, WLIFE = 6, WWIDTH = 7, WSTRENGTH = 8, WLINK = 9, WSPREAD = 10, WRUN = 11
 // Ring layout.
-const R = 7, RX = 0, RY = 1, RZ = 2, RAGE = 3, RLIFE = 4, RSIZE = 5, RSTRENGTH = 6
+const R = 8, RX = 0, RY = 1, RZ = 2, RAGE = 3, RLIFE = 4, RSIZE = 5, RSTRENGTH = 6, RSOFT = 7
 /** Arms per vehicle: left, right and the churned wash down the middle. */
 export const ARMS = 3
 const GRAVITY = 9.81
@@ -42,8 +49,42 @@ const GRAVITY = 9.81
 export const WAKE_LIFT = .04
 /** Drop the oldest wake points at this age, seconds, at full speed. */
 const WAKE_LIFE = 2.8
+/** Smallest drop radius (m) that leaves a ripplet where it lands: splash drops, not fine spray. */
+const RIPPLET_DROP = .05
 /** Half the beam of a typical hull, metres: where the wash starts and the arms leave from. */
 const HULL = .95
+/** Index of the centre trail among a vehicle's arms: the wash, or a ball's one trail. */
+const CENTRE = 2
+/** Metres over which a strip rises from nothing at its live source. */
+const HEAD_FADE = 1.5
+/** Metres over which a piece of soft trail fades in from where it began and out to where it ended. */
+const SOFT_END = 2.5
+/** A ball off the water for less than this (s) is skimming, not skipping: its trail stays joined. */
+const SKIM_GAP = .12
+
+/**
+ * What meets the water. `ball` is a Zorb's radius, metres (0 for a hull): it touches at one
+ * patch, so it leaves one soft trail and soft skip rings instead of a boat's arms and wash.
+ */
+export interface WakeShape {
+  ball: number
+  /** Air over the liquid that does not touch it: a hovercraft's cushion or a jet's downwash. */
+  air?: 'cushion' | 'downwash' | null
+  /** 0..1: how close that air is, 1 at the surface, 0 out of reach. */
+  near?: number
+  /** Half the craft's beam, metres. */
+  beam?: number
+}
+const HULL_SHAPE: WakeShape = { ball: 0 }
+/**
+ * Half width of the patch where a ball of radius `r` meets water `depth` deep: the chord of
+ * the sphere at that depth, at least a hand's width so a ball just kissing the water still
+ * leaves a line, at most the radius.
+ */
+export function ballPatch(r: number, depth: number): number {
+  const d = Math.max(0, Math.min(r, depth))
+  return Math.max(.25, Math.min(r, Math.sqrt(Math.max(0, 2 * r * d - d * d))))
+}
 
 /**
  * The size of an entry splash for an impact speed (m/s): all of it bounded, none of it ever
@@ -91,7 +132,9 @@ interface VehicleState {
   slot: number; seen: number; submerged: number
   x: number; z: number; dirX: number; dirZ: number
   bow: number; tail: number; mist: number
-  touching: boolean; speed: number
+  touching: boolean; speed: number; ball: number
+  /** Seconds since it last touched the water. */
+  dry: number
 }
 
 export class SpraySim {
@@ -107,6 +150,17 @@ export class SpraySim {
   readonly armHeadActive: Uint8Array
   readonly rings: Float32Array
   ringCount = 0
+  /** Ripplets, in the ring layout; `rippletCount` live, `rippletNext` the slot to overwrite when full. */
+  readonly ripplets: Float32Array
+  rippletCount = 0
+  private rippletNext = 0
+  /** Per arm: what it draws as (3 a soft trail, the only kind drawn now; 0 unset). */
+  readonly armKind: Uint8Array
+  /** Multiplies every soft trail's and ring's strength and width (water.wakeStrength, water.wakeWidth). */
+  wakeStrength = 1
+  wakeWidth = 1
+  /** A broad low swell beside a hull (water.bowSwell); off by default. */
+  bowSwell = false
   private vehicles = new Map<string, VehicleState>()
   /**
    * Share of requested droplets actually emitted. When the pool would overflow, every source is
@@ -122,6 +176,8 @@ export class SpraySim {
   private slotUsed: Uint8Array
   private time = 0
   private seed = 0x5eed
+  /** Droplets emitted, for their drawn size. */
+  private drops = 0
   /** Bumped whenever anything visible changes, so the renderer packs at most once per change. */
   version = 0
   constructor(cap: SprayCapacity, private water: SprayWater | null = null) {
@@ -132,6 +188,8 @@ export class SpraySim {
     this.armCount = new Int32Array(cap.vehicles * ARMS)
     this.armHead = new Float32Array(cap.vehicles * ARMS * 5)
     this.armHeadActive = new Uint8Array(cap.vehicles * ARMS)
+    this.armKind = new Uint8Array(cap.vehicles * ARMS)
+    this.ripplets = new Float32Array(cap.ripplets * R)
     this.rings = new Float32Array(cap.rings * R)
     this.slotUsed = new Uint8Array(cap.vehicles)
   }
@@ -145,8 +203,8 @@ export class SpraySim {
   get vehicleCount() { return this.vehicles.size }
 
   clear() {
-    this.dropletCount = this.ringCount = 0
-    this.armStart.fill(0); this.armCount.fill(0); this.armHeadActive.fill(0); this.slotUsed.fill(0)
+    this.dropletCount = this.ringCount = this.rippletCount = this.rippletNext = 0
+    this.armStart.fill(0); this.armCount.fill(0); this.armHeadActive.fill(0); this.armKind.fill(0); this.slotUsed.fill(0)
     this.vehicles.clear(); this.version++
   }
 
@@ -165,6 +223,7 @@ export class SpraySim {
       d[o + DVY] = d[o + DVY] * (mist ? drag : 1) - (mist ? .6 : GRAVITY) * dt
       d[o + DX] += d[o + DVX] * dt; d[o + DY] += d[o + DVY] * dt; d[o + DZ] += d[o + DVZ] * dt
       const landed = !mist && d[o + DVY] < 0 && d[o + DY] <= d[o + DFLOOR]
+      if (landed && d[o + DSIZE] >= RIPPLET_DROP) this.ripplet(d[o + DX], d[o + DFLOOR], d[o + DZ], d[o + DSIZE])
       if (d[o + DAGE] >= d[o + DLIFE] || landed) {
         this.meanLife += (d[o + DAGE] - this.meanLife) * .01
         const last = (--this.dropletCount) * D
@@ -202,6 +261,13 @@ export class SpraySim {
       r[o + RY] = this.surface(r[o + RX], r[o + RZ], r[o + RY] - WAKE_LIFT) + WAKE_LIFT
       i++
     }
+    const q = this.ripplets
+    for (let i = 0; i < this.rippletCount;) {
+      const o = i * R
+      q[o + RAGE] += dt
+      if (q[o + RAGE] >= q[o + RLIFE]) { const last = (--this.rippletCount) * R; if (last !== o) q.copyWithin(o, last, last + R); if (this.rippletNext > this.rippletCount) this.rippletNext = 0; continue }
+      i++
+    }
     for (const [id, s] of this.vehicles) {
       if (this.time - s.seen > 8) { this.slotUsed[s.slot] = 0; for (let a = 0; a < ARMS; a++) this.armHeadActive[s.slot * ARMS + a] = 0; this.vehicles.delete(id) }
       else if (this.time - s.seen > .25) for (let a = 0; a < ARMS; a++) this.armHeadActive[s.slot * ARMS + a] = 0
@@ -221,16 +287,18 @@ export class SpraySim {
       for (let a = 0; a < ARMS; a++) { this.armCount[slot * ARMS + a] = 0; this.armHeadActive[slot * ARMS + a] = 0 }
     }
     this.slotUsed[slot] = 1
-    s = { slot, seen: this.time, submerged: 0, x, z, dirX: 0, dirZ: 1, bow: 0, tail: 0, mist: 0, touching: false, speed: 0 }
+    this.armKind.fill(0, slot * ARMS, slot * ARMS + ARMS)
+    s = { slot, seen: this.time, submerged: 0, x, z, dirX: 0, dirZ: 1, bow: 0, tail: 0, mist: 0, touching: false, speed: 0, ball: 0, dry: 0 }
     this.vehicles.set(id, s)
     return s
   }
 
   /**
-   * One vehicle this frame. `y` is the water surface under it; `submerged` 0 to 1. Returns
+   * One vehicle this frame. `y` is the water surface under it; `submerged` 0 to 1 (for a ball,
+   * the share of its bottom metre under water). `shape` says what touches the water. Returns
    * true when this call detected an entry splash.
    */
-  vehicle(id: string, x: number, y: number, z: number, vx: number, vy: number, vz: number, submerged: number, dt: number, scale = 1): boolean {
+  vehicle(id: string, x: number, y: number, z: number, vx: number, vy: number, vz: number, submerged: number, dt: number, scale = 1, shape: WakeShape = HULL_SHAPE): boolean {
     if (![x, y, z, vx, vy, vz].every(Number.isFinite)) return false
     dt = Math.max(0, Math.min(.1, Number.isFinite(dt) ? dt : 0))
     scale = Math.max(.25, Math.min(3, scale))
@@ -244,7 +312,18 @@ export class SpraySim {
     // A fast hull touching down flat (a jet skimming, a Zorb skipping) splashes too: a skip.
     const entering = s.submerged < .1 && sub - s.submerged > .1 && (vy < -1.5 || (speed > 9 && sub - s.submerged > .15))
     s.seen = this.time; s.speed = speed
+    // A trail joins points laid while the ball stayed on the water; a skimming ball that lifts
+    // for a moment (under SKIM_GAP) is still on it, a skip is not.
+    const skipped = s.dry > SKIM_GAP
     s.touching = sub > 0
+    s.dry = sub > 0 ? 0 : s.dry + dt
+    const ball = Number.isFinite(shape.ball) && shape.ball > 0 ? shape.ball : 0
+    const near = shape.air && sub <= 0 ? Math.max(0, Math.min(1, Number.isFinite(shape.near) ? shape.near! : 0)) : 0
+    if (near > .02) { s.touching = true; s.dry = 0 }
+    // What each arm draws as: 1 a crest, 2 a churned patch, 3 a trail.
+    // Every strip draws as a soft trail now: no crest lines.
+    for (let a = 0; a < ARMS; a++) this.armKind[s.slot * ARMS + a] = 3
+    s.ball = ball
     if (sub > 0 && dt > 0) {
       // Bow spray: rate grows with speed; a slow wade sheds only the odd drop.
       // Demand is measured before throttling; measuring after it would chase its own tail.
@@ -275,9 +354,11 @@ export class SpraySim {
         const sign = i % 2 ? 1 : -1, along = (this.random() - .5) * 2.4
         this.drop(x + fx * along + sx * sign * 1.1, y + .25, z + fz * along + sz * sign * 1.1, vx * .4 + sx * sign * 1.2, .5 + this.random() * .5, vz * .4 + sz * sign * 1.2, .45 + this.random() * .35, y, 1, scale)
       }
-      this.lay(s, x, y, z, speed, teleported, scale)
-    } else for (let a = 0; a < ARMS; a++) this.armHeadActive[s.slot * ARMS + a] = 0
-    if (entering) this.splash(x, y, z, vx, Math.min(vy, 0), vz, scale)
+      if (ball) this.trail(s, x, y, z, speed, sub, teleported || skipped, scale)
+      else this.lay(s, x, y, z, speed, sub, teleported || skipped, scale)
+    } else if (near > .02 && dt > 0) this.air(s, x, y, z, vx, vz, speed, shape.air === 'cushion', near, Math.max(.5, shape.beam ?? 1.5) * scale, dt, teleported || skipped, scale)
+    else this.off(s)
+    if (entering) this.splash(x, y, z, vx, Math.min(vy, 0), vz, scale, ball)
     s.submerged = sub; s.x = x; s.z = z
     this.version++
     return entering
@@ -289,14 +370,24 @@ export class SpraySim {
     const i = this.dropletCount++, d = this.droplets, o = i * D
     d[o + DX] = x; d[o + DY] = y; d[o + DZ] = z; d[o + DVX] = vx; d[o + DVY] = vy; d[o + DVZ] = vz
     // Ballistic droplets live until they land; the cap only bounds a stray one.
-    d[o + DAGE] = 0; d[o + DLIFE] = kind ? .7 + this.random() * .5 : 3; d[o + DSIZE] = size * scale
+    // Drawn sizes vary (0.6 to 1.7 times), from their own hash so the motion's random
+    // sequence is untouched.
+    d[o + DAGE] = 0; d[o + DLIFE] = kind ? .7 + this.random() * .5 : 3; d[o + DSIZE] = size * scale * (kind ? 1 : .6 + 1.1 * hashUnit(++this.drops) ** 1.5)
     d[o + DFLOOR] = this.surface(x, z, floor); d[o + DKIND] = kind
+  }
+
+  /** A mist puff with a given life, drawing nothing from the shared random sequence. */
+  private mistAt(x: number, y: number, z: number, vx: number, vy: number, vz: number, size: number, floor: number, scale: number, life: number) {
+    if (this.dropletCount >= this.cap.droplets) { this.refused++; return }
+    const o = (this.dropletCount++) * D, d = this.droplets
+    d[o + DX] = x; d[o + DY] = y; d[o + DZ] = z; d[o + DVX] = vx; d[o + DVY] = vy; d[o + DVZ] = vz
+    d[o + DAGE] = 0; d[o + DLIFE] = life; d[o + DSIZE] = size * scale; d[o + DFLOOR] = this.surface(x, z, floor); d[o + DKIND] = 1
   }
 
   /** Impact speed for an entry: all of the vertical speed and part of the horizontal. */
   static impact(vx: number, vy: number, vz: number): number { return Math.hypot(vy, .45 * Math.hypot(vx, vz)) }
 
-  private splash(x: number, y: number, z: number, vx: number, vy: number, vz: number, scale: number) {
+  private splash(x: number, y: number, z: number, vx: number, vy: number, vz: number, scale: number, ball = 0) {
     const impact = SpraySim.impact(vx, vy, vz)
     const k = splashShape(impact)
     // Whatever the impact, a splash takes at most half the pool, shared out by the throttle.
@@ -328,6 +419,16 @@ export class SpraySim {
         this.drop(x + dx * 1.2, y + .05, z + dz * 1.2, dx * out, (.3 + this.random() * .5) * k.crownUp, dz * out, .04 + this.random() * .06, y, 0, scale)
       }
     }
+    // Fine mist at the top of a tall column, where its spray breaks up.
+    if (column > 0) {
+      const fine = Math.round(column * .2)
+      // Its own hash, not the shared random sequence, so every other particle moves as before.
+      const h = () => hashUnit(++this.drops)
+      for (let i = 0; i < fine; i++) {
+        const a = h() * Math.PI * 2, r = h() * .8, top = k.columnHeight * (.55 + h() * .45)
+        this.mistAt(x + Math.cos(a) * r, y + top, z + Math.sin(a) * r, Math.cos(a) * .6, .3 + h() * .6, Math.sin(a) * .6, .35 + h() * .3, y, scale, .7 + h() * .5)
+      }
+    }
     // Mist that hangs for a moment round the impact.
     const mist = Math.round(k.mist * share)
     for (let i = 0; i < mist; i++) {
@@ -336,49 +437,115 @@ export class SpraySim {
     }
     const i = this.ringCount < this.cap.rings ? this.ringCount++ : 0, o = i * R, r = this.rings
     r[o + RX] = x; r[o + RY] = y + WAKE_LIFT; r[o + RZ] = z; r[o + RAGE] = 0; r[o + RLIFE] = k.ringLife
-    r[o + RSIZE] = k.ringSize * scale; r[o + RSTRENGTH] = Math.min(1, .4 + impact * .06)
+    r[o + RSIZE] = k.ringSize * scale; r[o + RSTRENGTH] = Math.min(1, .4 + impact * .06); r[o + RSOFT] = 0
+    if (ball) {
+      // A skip: a soft ring spreading from the patch the ball struck, as wide as that patch to
+      // start with, so a skipping run leaves a dotted line of spreading rings.
+      r[o + RSIZE] = Math.max(k.ringSize, ballPatch(ball, .6) * 2.2) * scale * this.wakeWidth
+      r[o + RSTRENGTH] = Math.min(1, .35 + impact * .05) * this.wakeStrength; r[o + RLIFE] = k.ringLife + .8; r[o + RSOFT] = 1
+    }
     this.lastSplash = impact
+  }
+  /** A small ring where a drop of `size` (radius, m) landed. */
+  private ripplet(x: number, y: number, z: number, size: number) {
+    if (!this.cap.ripplets || !Number.isFinite(x + y + z)) return
+    let i: number
+    if (this.rippletCount < this.cap.ripplets) i = this.rippletCount++
+    else { i = this.rippletNext; this.rippletNext = (this.rippletNext + 1) % this.cap.ripplets }
+    const o = i * R, q = this.ripplets
+    q[o + RX] = x; q[o + RY] = y + WAKE_LIFT; q[o + RZ] = z; q[o + RAGE] = 0; q[o + RLIFE] = .6 + Math.min(.6, size * 6)
+    q[o + RSIZE] = Math.max(.2, Math.min(.6, size * 4)); q[o + RSTRENGTH] = Math.min(.35, .12 + size); q[o + RSOFT] = 2
   }
   /** Impact speed of the most recent entry splash, m/s: for the ripple field and evidence. */
   lastSplash = 0
 
-  /** Extend the three arms of a vehicle's wake. Points are laid by distance, so a stationary hull adds none. */
-  private lay(s: VehicleState, x: number, y: number, z: number, speed: number, teleported: boolean, scale: number) {
-    const P = this.cap.points, p = this.points, fx = s.dirX, fz = s.dirZ, sx = -fz, sz = fx
-    const moving = speed > .8
-    // Arms are the faint crests at the edge of the wash; the wash itself only appears when planing.
-    const strength = Math.min(1, speed / 7), wash = smoothstep01((speed - 4) / 9)
-    // Space points so a full ring spans the whole wake lifetime: length then grows with speed.
-    const spacing = Math.max(.6, speed * WAKE_LIFE / (P - 2))
-    for (let a = 0; a < ARMS; a++) {
-      const arm = s.slot * ARMS + a, side = a === 0 ? -1 : a === 1 ? 1 : 0
-      // The wash starts at hull width at the stern; the arms start at its edges, further forward.
-      const back = side ? .9 : 1.4, ax = x - fx * back + sx * side * HULL, az = z - fz * back + sz * side * HULL
-      const halfWidth = (side ? .12 + speed * .006 : HULL * (.6 + .4 * wash)) * scale
-      const head = arm * 5
-      if (!moving) { this.armHeadActive[arm] = 0; continue }
-      const h = this.armHead
-      const pointStrength = side ? strength * (.75 - .3 * wash) : wash
-      h[head] = ax; h[head + 1] = this.surface(ax, az, y) + WAKE_LIFT; h[head + 2] = az; h[head + 3] = halfWidth; h[head + 4] = pointStrength
-      this.armHeadActive[arm] = 1
-      let count = this.armCount[arm]
-      if (count > 0 && !teleported) {
-        const o = (arm * P + (this.armStart[arm] + count - 1) % P) * W
-        if (Math.hypot(ax - p[o + WX], az - p[o + WZ]) < spacing) continue
-      }
-      if (count === P) { this.armStart[arm] = (this.armStart[arm] + 1) % P; count--; p[(arm * P + this.armStart[arm]) * W + WLINK] = 0 }
-      const o = (arm * P + (this.armStart[arm] + count) % P) * W
-      p[o + WX] = ax; p[o + WY] = h[head + 1]; p[o + WZ] = az
-      // Arms spread outward at roughly the Kelvin angle; the centre wash stays put and widens.
-      // Slow enough to hug the widening wash for its first second, then open into the V.
-      const drift = side * speed * .16
-      p[o + WVX] = sx * drift; p[o + WVZ] = sz * drift
-      // The wash breaks up over roughly 20 m whatever the speed.
-      p[o + WAGE] = 0; p[o + WLIFE] = side ? WAKE_LIFE : Math.max(.8, Math.min(2.2, 20 / Math.max(1, speed)))
-      p[o + WWIDTH] = halfWidth; p[o + WSTRENGTH] = pointStrength
-      p[o + WLINK] = count > 0 && !teleported ? 1 : 0
-      this.armCount[arm] = count + 1
+  /**
+   * Lay one point of an arm at (x, z), joined to the last unless `fresh` (a skip, a teleport,
+   * the first touch after leaving the liquid), and keep its live head there. `half` is its half
+   * width, `life` seconds, `spread` how many half widths it gains a second, `drift` its outward
+   * speed along the side (sx, sz), m/s. Points are laid by distance, so a stopped source adds none.
+   */
+  private point(arm: number, x: number, y: number, z: number, half: number, strength: number, life: number, spread: number, spacing: number, fresh: boolean, sx = 0, sz = 0, drift = 0) {
+    const P = this.cap.points, p = this.points, head = arm * 5, h = this.armHead
+    h[head] = x; h[head + 1] = this.surface(x, z, y) + WAKE_LIFT; h[head + 2] = z; h[head + 3] = half; h[head + 4] = strength
+    this.armHeadActive[arm] = 1
+    let count = this.armCount[arm]
+    if (count > 0 && !fresh) {
+      const o = (arm * P + (this.armStart[arm] + count - 1) % P) * W
+      if (Math.hypot(x - p[o + WX], z - p[o + WZ]) < spacing) return
     }
+    if (count === P) { this.armStart[arm] = (this.armStart[arm] + 1) % P; count--; p[(arm * P + this.armStart[arm]) * W + WLINK] = 0 }
+    const o = (arm * P + (this.armStart[arm] + count) % P) * W
+    p[o + WX] = x; p[o + WY] = h[head + 1]; p[o + WZ] = z; p[o + WVX] = sx * drift; p[o + WVZ] = sz * drift
+    p[o + WAGE] = 0; p[o + WLIFE] = life; p[o + WWIDTH] = half; p[o + WSTRENGTH] = strength; p[o + WSPREAD] = spread
+    p[o + WLINK] = count > 0 && !fresh ? 1 : 0
+    // Metres from where this piece began, for its soft ends.
+    if (p[o + WLINK]) { const l = (arm * P + (this.armStart[arm] + count - 1) % P) * W; p[o + WRUN] = p[l + WRUN] + Math.hypot(x - p[l + WX], z - p[l + WZ]) } else p[o + WRUN] = 0
+    this.armCount[arm] = count + 1
+  }
+  private off(s: VehicleState, except = -1) { for (let a = 0; a < ARMS; a++) if (a !== except) this.armHeadActive[s.slot * ARMS + a] = 0 }
+
+  /**
+   * A ball's one soft trail, laid from its contact patch. As wide as the patch (which grows
+   * with how deep the ball sits), spreading behind it, faster at speed; strongest at the patch
+   * and gone about 40 m behind whatever the speed.
+   */
+  private trail(s: VehicleState, x: number, y: number, z: number, speed: number, sub: number, fresh: boolean, scale: number) {
+    this.off(s, CENTRE)
+    if (speed < .3) { this.off(s); return }
+    // A skimming ball throws water wider than the chord it dips: never narrower than a 15 cm dip.
+    const half = ballPatch(s.ball, Math.max(sub, .15)) * .85 * scale * this.wakeWidth
+    // Faint at a drift, full by a brisk roll; a ball barely touching leaves a little less.
+    const strength = Math.min(1, .5 + speed / 8) * Math.min(1, .7 + sub * 2) * this.wakeStrength
+    this.point(s.slot * ARMS + CENTRE, x, y, z, half, strength, Math.max(1.5, Math.min(4, 40 / Math.max(1, speed))), .3 + Math.min(.6, speed * .03), Math.max(.5, speed * 2.4 / (this.cap.points - 2)), fresh)
+  }
+
+  /**
+   * A hull: one wake from the stern, dense foam there that spreads and breaks into lace and
+   * patches behind, wider and longer lived the faster it goes and the deeper it sits. With
+   * `bowSwell` on, a broad, low, short-lived swell of disturbed water beside the hull too
+   * (off by default: arms beside a hull read as drawn lines).
+   */
+  private lay(s: VehicleState, x: number, y: number, z: number, speed: number, sub: number, fresh: boolean, scale: number) {
+    if (speed < .8) { this.off(s); return }
+    const fx = s.dirX, fz = s.dirZ, sx = -fz, sz = fx, P = this.cap.points, wet = Math.min(1, .5 + sub)
+    const spacing = Math.max(.6, speed * 2.4 / (P - 2)), k = this.wakeStrength * wet, w = scale * this.wakeWidth
+    if (this.bowSwell) for (const side of [-1, 1]) {
+      const ax = x + fx * .4 + sx * side * HULL * 1.6, az = z + fz * .4 + sz * side * HULL * 1.6
+      this.point(s.slot * ARMS + (side < 0 ? 0 : 1), ax, y, az, (1 + speed * .03) * w, Math.min(1, speed / 8) * .3 * k, .7, 1, spacing, fresh, sx * side, sz * side, speed * .12)
+    } else { this.armHeadActive[s.slot * ARMS] = 0; this.armHeadActive[s.slot * ARMS + 1] = 0 }
+    const strength = Math.min(1, .3 + speed / 8) * k
+    this.point(s.slot * ARMS + CENTRE, x - fx * 1.4, y, z - fz * 1.4, HULL * (1.1 + Math.min(.6, speed * .03)) * w, strength, Math.max(1, Math.min(3, 30 / Math.max(1, speed))), .5 + Math.min(.6, speed * .03), spacing, fresh)
+  }
+
+  /**
+   * Air over the liquid without touching it: a hovercraft's cushion, or a jet's downwash.
+   * `near` is 1 at the surface, 0 out of reach. A cushion flattens a wide patch and throws a
+   * ring of spray round the craft, leaving a wide soft trail; a downwash streaks the surface
+   * under a low jet and raises mist, and only when close.
+   */
+  private air(s: VehicleState, x: number, y: number, z: number, vx: number, vz: number, speed: number, cushion: boolean, near: number, beam: number, dt: number, fresh: boolean, scale: number) {
+    this.off(s, CENTRE)
+    const fx = s.dirX, fz = s.dirZ, k = this.wakeStrength
+    // Spray: a cushion sheds it all round its skirt; a downwash blows it back and up as mist.
+    const rawDrops = (cushion ? 30 + speed * 5 : speed * 1.5) * near
+    const rawMist = (cushion ? 4 + speed * .6 : 10 + speed * .8) * near
+    this.requested += (rawDrops + rawMist) * dt
+    let n = due(this.throttle * rawDrops, dt, s.bow); s.bow = carried
+    for (let i = 0; i < n; i++) {
+      const a = this.random() * Math.PI * 2, r = beam * (cushion ? 1.3 + this.random() * .5 : .4 * this.random()), out = cushion ? 1.5 + this.random() * 1.5 : .5
+      const cx = Math.cos(a), cz = Math.sin(a)
+      this.drop(x + cx * r, y + .05, z + cz * r, vx * .5 + cx * out - (cushion ? 0 : fx * speed * .3), (cushion ? 1 : .6) + this.random() * 1.5, vz * .5 + cz * out - (cushion ? 0 : fz * speed * .3), .006 + this.random() * .01, y, 0, scale)
+    }
+    n = due(this.throttle * rawMist, dt, s.mist); s.mist = carried
+    for (let i = 0; i < n; i++) {
+      const a = this.random() * Math.PI * 2, r = beam * (cushion ? 1.2 + this.random() * .4 : this.random() * .6)
+      this.drop(x + Math.cos(a) * r - fx * (cushion ? 0 : 1.5), y + .2, z + Math.sin(a) * r - fz * (cushion ? 0 : 1.5), vx * .3 + Math.cos(a) * 1.2, .3 + this.random() * .6, vz * .3 + Math.sin(a) * 1.2, .5 + this.random() * .4, y, 1, scale)
+    }
+    if (speed < .5 && !cushion) { this.off(s); return }
+    const w = scale * this.wakeWidth, spacing = Math.max(.6, speed * 2.4 / (this.cap.points - 2))
+    if (cushion) this.point(s.slot * ARMS + CENTRE, x, y, z, beam * 1.1 * Math.sqrt(near) * w, near * Math.min(1, .45 + speed / 10) * k, Math.max(1.5, Math.min(4, 30 / Math.max(1, speed))), .4 + Math.min(.5, speed * .02), spacing, fresh)
+    else this.point(s.slot * ARMS + CENTRE, x - fx * 2, y, z - fz * 2, (.8 + speed * .02) * w, near ** 1.5 * Math.min(1, speed / 15) * k, Math.max(1, Math.min(2.5, 20 / Math.max(1, speed))), .6, spacing, fresh)
   }
 
   /** The world moved by a whole tile under the player: move everything with it. */
@@ -388,6 +555,7 @@ export class SpraySim {
     for (let i = 0; i < this.points.length; i += W) { this.points[i + WX] += dx; this.points[i + WZ] += dz }
     for (let i = 0; i < this.armHead.length; i += 5) { this.armHead[i] += dx; this.armHead[i + 2] += dz }
     for (let i = 0; i < this.ringCount; i++) { this.rings[i * R + RX] += dx; this.rings[i * R + RZ] += dz }
+    for (let i = 0; i < this.rippletCount; i++) { this.ripplets[i * R + RX] += dx; this.ripplets[i * R + RZ] += dz }
     for (const s of this.vehicles.values()) { s.x += dx; s.z += dz }
     this.version++
   }
@@ -426,20 +594,49 @@ export class SpraySim {
     for (let arm = 0; arm < this.armCount.length; arm++) {
       const count = this.armCount[arm], start = this.armStart[arm], head = this.armHeadActive[arm] === 1
       const total = count + (head ? 1 : 0)
+      this.pieceEnds(arm, head)
       for (let k = 1; k < total && n < max; k++) {
         if (k < count && p[(arm * P + (start + k) % P) * W + WLINK] === 0) continue
         n = this.segment(arm, k - 1, k, total, n, a, b, side, look)
       }
     }
-    const r = this.rings
-    for (let i = 0; i < this.ringCount && n < max; i++, n++) {
+    n = this.packRings(this.rings, this.ringCount, n, max, a, b, side, look)
+    n = this.packRings(this.ripplets, this.rippletCount, n, max, a, b, side, look)
+    return n
+  }
+
+  /** Rings as foam instances: zero sides, centre and radius in a, style (0 hard, 1 soft, 2 ripplet) in b.w. */
+  private packRings(r: Float32Array, count: number, n: number, max: number, a: Float32Array, b: Float32Array, side: Float32Array, look: Float32Array) {
+    for (let i = 0; i < count && n < max; i++, n++) {
       const o = i * R, t = r[o + RAGE] / r[o + RLIFE]
       a[n * 4] = r[o + RX]; a[n * 4 + 1] = r[o + RY]; a[n * 4 + 2] = r[o + RZ]; a[n * 4 + 3] = r[o + RSIZE] * (.35 + .65 * (1 - (1 - t) ** 2))
-      b.fill(0, n * 4, n * 4 + 4); side.fill(0, n * 4, n * 4 + 4)
+      b.fill(0, n * 4, n * 4 + 4); side.fill(0, n * 4, n * 4 + 4); b[n * 4 + 3] = r[o + RSOFT]
       const alpha = r[o + RSTRENGTH] * Math.min(1, r[o + RAGE] / .08) * (1 - t) ** 1.5
       look[n * 4] = alpha; look[n * 4 + 1] = alpha; look[n * 4 + 2] = r[o + RAGE]; look[n * 4 + 3] = t
     }
     return n
+  }
+
+  /**
+   * For a soft arm: the run (metres) at which each point's piece of trail ends, into `ends`, so
+   * a piece fades out toward where the ball left the water. The piece still being laid has no
+   * end yet (Infinity): it runs on under the ball.
+   */
+  private ends = new Float32Array(64)
+  private headRun = Infinity
+  private pieceEnds(arm: number, head: boolean) {
+    const P = this.cap.points, p = this.points, count = this.armCount[arm], start = this.armStart[arm]
+    if (this.ends.length < count) this.ends = new Float32Array(P)
+    let k = count - 1, end = head ? Infinity : count ? p[(arm * P + (start + k) % P) * W + WRUN] : 0
+    // Where the live head reaches along the newest piece, for the fade-in from the source.
+    this.headRun = Infinity
+    if (head && count) { const o = (arm * P + (start + k) % P) * W, h = arm * 5; this.headRun = p[o + WRUN] + Math.hypot(this.armHead[h] - p[o + WX], this.armHead[h + 2] - p[o + WZ]) }
+    for (; k >= 0; k--) {
+      const o = (arm * P + (start + k) % P) * W
+      this.ends[k] = end
+      // This point began its piece: the piece before it ended at the point before.
+      if (p[o + WLINK] === 0 && k > 0) end = p[(arm * P + (start + k - 1) % P) * W + WRUN]
+    }
   }
 
   /** Point k of an arm in draw order, oldest first; index `count` is the live head. */
@@ -448,15 +645,20 @@ export class SpraySim {
     if (k >= count) {
       const h = arm * 5
       out[at] = this.armHead[h]; out[at + 1] = this.armHead[h + 1]; out[at + 2] = this.armHead[h + 2]
-      out[at + 3] = this.armHead[h + 3]; out[at + 4] = this.armHead[h + 4] * .9; out[at + 5] = 0
+      // Nothing at the source itself: the strip rises from it over its first segment, so it
+      // never ends square at a skirt, a stern or under a jet.
+      out[at + 3] = this.armHead[h + 3]; out[at + 4] = 0; out[at + 5] = 0
       return
     }
     const p = this.points, o = (arm * this.cap.points + (this.armStart[arm] + k) % this.cap.points) * W
     const t = p[o + WAGE] / p[o + WLIFE]
     out[at] = p[o + WX]; out[at + 1] = p[o + WY]; out[at + 2] = p[o + WZ]
     // The wash spreads fast behind the hull; the crests stay thin.
-    out[at + 3] = p[o + WWIDTH] * (1 + p[o + WAGE] * (arm % ARMS === 2 ? 2.2 : .5))
-    out[at + 4] = p[o + WSTRENGTH] * Math.max(0, 1 - t) ** 1.4
+    out[at + 3] = p[o + WWIDTH] * (1 + p[o + WAGE] * p[o + WSPREAD])
+    // A soft trail holds its strength longer, fades out at the end of its life, and fades in
+    // and out over SOFT_END at the ends of each piece, so no piece starts or stops square.
+    const ends = smoothstep01(p[o + WRUN] / SOFT_END) * smoothstep01((this.ends[k] - p[o + WRUN]) / SOFT_END) * (this.ends[k] === Infinity ? smoothstep01((this.headRun - p[o + WRUN]) / HEAD_FADE) : 1)
+    out[at + 4] = p[o + WSTRENGTH] * Math.max(0, 1 - t) ** .6 * ends
     out[at + 5] = t
   }
   private scratch = new Float32Array(24)
@@ -471,8 +673,9 @@ export class SpraySim {
     const turn = Math.acos(Math.max(-1, Math.min(1, side[n * 4] * side[n * 4 + 2] + side[n * 4 + 1] * side[n * 4 + 3])))
     const length = Math.hypot(s[12] - s[6], s[14] - s[8]), half = Math.max(s[9], s[15])
     const fold = turn > 1e-3 ? Math.max(0, Math.min(1, (length / turn / Math.max(half, 1e-3) - 1) / .5)) : 1
-    // Side vectors of length two mark the centre wash for the shader; rings have none.
-    if (arm % ARMS === 2) for (let j = 0; j < 4; j++) side[n * 4 + j] *= 2
+    // Strips carry side vectors of length three (a soft trail); rings have none.
+    const mark = this.armKind[arm] || (arm % ARMS === CENTRE ? 2 : 1)
+    if (mark > 1) for (let j = 0; j < 4; j++) side[n * 4 + j] *= mark
     a[n * 4] = s[6]; a[n * 4 + 1] = s[7]; a[n * 4 + 2] = s[8]; a[n * 4 + 3] = s[9]
     b[n * 4] = s[12]; b[n * 4 + 1] = s[13]; b[n * 4 + 2] = s[14]; b[n * 4 + 3] = s[15]
     look[n * 4] = s[10] * fold; look[n * 4 + 1] = s[16] * fold; look[n * 4 + 2] = s[11]; look[n * 4 + 3] = s[17]
@@ -494,5 +697,8 @@ function due(rate: number, dt: number, carry: number): number {
   carried = total - count
   return count
 }
+
+/** A number in 0..1 from an integer, for drawn variation that must not touch the random sequence. */
+function hashUnit(i: number) { let n = Math.imul(i ^ 0x9e3779b9, 0x45d9f3b); n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); return ((n ^ (n >>> 16)) >>> 0) / 4294967296 }
 
 function smoothstep01(x: number) { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t) }

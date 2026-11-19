@@ -128,6 +128,7 @@ ${figure('canyon-convoy', 'Tag is better with company.', FULL)}
       <li><span>${k('L')}<i>or</i>${k('click', 'Mouse click')}</span>use gear</li>
       <li><span>${k('1')}<i>to</i>${k('5')}</span>choose gear</li>
       <li><span>${k('X')}</span>Zorb ball</li>
+      <li><span>${k('U')}</span>flip upright, when nearly stopped</li>
       <li><span>${k('click', 'Mouse click')}</span>capture the mouse to look round</li>
       <li><span>${k('C')}</span>camera views</li>
       <li><span>${k('H')}</span>this vehicle’s controls</li>
@@ -145,6 +146,7 @@ ${figure('canyon-convoy', 'Tag is better with company.', FULL)}
       <li><span>Right half</span>drag to look round</li>
       <li><span>Gear rack</span>tap a gear to choose it</li>
       <li><span><b class="welcome-pill">TAG</b></span>use it: hold, and drag to aim</li>
+      <li><span><b class="welcome-pill">FLIP</b></span>on your side or roof: back onto your wheels</li>
       <li><span><b class="welcome-pill">Panels</b></span>vehicle, game mode, world and chat</li>
     </ul>
   </section>

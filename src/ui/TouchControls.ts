@@ -89,7 +89,7 @@ export class TouchControls {
     this.element.setAttribute('aria-label', 'Touch driving controls')
     this.element.hidden = true
     if (!this.available) return
-    this.element.innerHTML = `<div class="touch-stick touch-float" aria-hidden="true"><span class="touch-knob"></span></div><div class="touch-stick-hint" hidden><span class="touch-stick-ghost"><span></span></span><span class="touch-stick-label">Drag on the left to drive</span></div><div class="touch-actions"><button type="button" data-action="throttleUp" hidden>THR +</button><button type="button" data-action="throttleDown" hidden>THR −</button><button type="button" data-action="special" aria-pressed="false">WINGS</button><button type="button" data-action="brakes">BRAKE</button><button type="button" data-action="zorb" aria-pressed="false">ZORB</button><button type="button" data-action="letOut" hidden>LET OUT</button><button type="button" data-action="letGo" hidden>LET GO</button><button type="button" class="touch-fire" data-action="fire">TAG</button></div><div class="touch-cancel" aria-hidden="true"><span>Cancel</span></div>`
+    this.element.innerHTML = `<div class="touch-stick touch-float" aria-hidden="true"><span class="touch-knob"></span></div><div class="touch-stick-hint" hidden><span class="touch-stick-ghost"><span></span></span><span class="touch-stick-label">Drag on the left to drive</span></div><div class="touch-actions"><button type="button" data-action="throttleUp" hidden>THR +</button><button type="button" data-action="throttleDown" hidden>THR −</button><button type="button" data-action="special" aria-pressed="false">WINGS</button><button type="button" data-action="brakes">BRAKE</button><button type="button" data-action="flip" aria-label="Flip upright" hidden>FLIP</button><button type="button" data-action="zorb" aria-pressed="false">ZORB</button><button type="button" data-action="letOut" hidden>LET OUT</button><button type="button" data-action="letGo" hidden>LET GO</button><button type="button" class="touch-fire" data-action="fire">TAG</button></div><div class="touch-cancel" aria-hidden="true"><span>Cancel</span></div>`
     parent.append(this.element)
     const signal = this.abort.signal
     this.hint = this.element.querySelector<HTMLElement>('.touch-stick-hint')!
@@ -102,10 +102,10 @@ export class TouchControls {
     this.aim(signal)
     this.tagButton(signal)
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('button:not([data-action="fire"])')) {
-      const action = button.dataset.action as 'brakes' | 'special' | 'throttleUp' | 'throttleDown' | 'zorb' | 'letOut' | 'letGo'
+      const action = button.dataset.action as 'brakes' | 'special' | 'throttleUp' | 'throttleDown' | 'zorb' | 'letOut' | 'letGo' | 'flip'
       const pointers = new Set<number>()
       const throttle = action === 'throttleUp' || action === 'throttleDown'
-      const release = () => { pointers.clear(); if (throttle) { this.thrust.delete(action); this.syncThrust() } else if (action === 'letOut') this.key('keyup'); else if (action !== 'special' && action !== 'zorb' && action !== 'letGo') input.external[action] = false; button.classList.remove('held') }
+      const release = () => { pointers.clear(); if (throttle) { this.thrust.delete(action); this.syncThrust() } else if (action === 'letOut') this.key('keyup'); else if (action !== 'special' && action !== 'zorb' && action !== 'letGo' && action !== 'flip') input.external[action] = false; button.classList.remove('held') }
       this.resetters.push(release)
       button.addEventListener('pointerdown', (event) => {
         if (!this.active || input.suspended) return
@@ -117,6 +117,8 @@ export class TouchControls {
         // Bungee: LET GO drops the cord; LET OUT pays it out for as long as it is held (the V key).
         else if (action === 'letGo') this.gear?.letGo()
         else if (action === 'letOut') this.key('keydown')
+        // Flip upright, the U key: offered in BRAKE's place only while it can act (setFlipReady).
+        else if (action === 'flip') input.requestFlip()
         else input.external[action] = true
         button.classList.add('held'); this.update()
       }, { signal })
@@ -343,6 +345,19 @@ export class TouchControls {
     for (const action of ['letOut', 'letGo']) { const button = this.element.querySelector<HTMLElement>(`[data-action="${action}"]`); if (button && button.hidden === cord) button.hidden = !cord }
     this.element.querySelector('[data-action="special"]')?.setAttribute('aria-pressed', String(this.input.state.special))
     this.element.querySelector('[data-action="zorb"]')?.setAttribute('aria-pressed', String(this.input.state.zorb))
+  }
+  private flipReady = false
+  /**
+   * Offer Flip upright: while the vehicle lies on its side or roof, nearly still
+   * (Vehicle.canFlip), FLIP takes BRAKE's place in the thumb grid, where the thumb rests and
+   * where braking does nothing for a vehicle that is not moving. The grid keeps its shape.
+   */
+  setFlipReady(ready: boolean): void {
+    if (ready === this.flipReady || !this.available) return
+    this.flipReady = ready
+    const flip = this.element.querySelector<HTMLElement>('[data-action="flip"]'), brakes = this.element.querySelector<HTMLElement>('[data-action="brakes"]')
+    if (flip) flip.hidden = !ready
+    if (brakes) brakes.hidden = ready
   }
   /** Pulse one button, to go with a hint that names it. Null clears it. */
   highlight(action: string | null): void {

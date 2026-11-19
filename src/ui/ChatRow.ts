@@ -20,7 +20,7 @@ export class ChatRow {
   constructor(parent: HTMLElement, signal?: AbortSignal) {
     this.element.className = 'hud-chat'
     this.button.type = 'button'; this.button.className = 'acc-row'; this.button.dataset.id = 'chat'
-    this.button.innerHTML = '<kbd aria-hidden="true">Y</kbd><span class="acc-name" aria-hidden="true">Chat</span><i class="acc-pip" aria-hidden="true"></i>'
+    this.button.innerHTML = '<span class="acc-name" aria-hidden="true">Chat</span><kbd aria-hidden="true">Y</kbd><i class="acc-pip" aria-hidden="true"></i>'
     this.count.className = 'chat-count'; this.count.setAttribute('aria-hidden', 'true'); this.count.hidden = true
     this.button.append(this.count)
     this.element.append(this.button)
