@@ -270,6 +270,8 @@ const swish = new SwishField()
 const swishCentre = uniform(new THREE.Vector2())
 const swishTop = uniform(1)
 const swishBend = uniform(0)
+/** How far a plant in a track is laid over at full strength (cover.swishBend 1): 80 degrees. */
+const LAY = 1.4
 /** Ground vehicles' footprints: half length and half width in metres, by kind. */
 const FOOTPRINTS: Record<string, { halfLength: number; halfWidth: number }> = {
   buggy: { halfLength: 1.5, halfWidth: 1.05 }, 'buggy-classic': { halfLength: 1.5, halfWidth: 1.05 }, 'buggy-syn3h': { halfLength: 1.5, halfWidth: 1.05 },
@@ -682,18 +684,22 @@ function coverMaterial(reach: number, look: TerrainMaterial | null): THREE.MeshS
   // Wheels and treads: the track map holds how bent the ground is here and which way it was
   // pushed. Eased with a smoothstep, so a plant lies still in the track, rises gently and
   // settles into the wind without overshoot. No shiver: only the wash flutters. Faded out
-  // toward the map's edge, where it would otherwise repeat.
+  // toward the map's edge, where it would otherwise repeat. A plant in the track is laid
+  // over: turned about its foot toward the push, by up to LAY radians at full strength, so
+  // its blades keep their length rather than being squashed into the ground.
   const track = texture(swish.texture, foot.div(SWISH_N * SWISH_CELL)).level(float(0))
   const edge = foot.sub(swishCentre).abs()
   const inMap = smoothstep(SWISH_N * SWISH_CELL * 0.5, SWISH_N * SWISH_CELL * 0.5 - 3, edge.x.max(edge.y))
-  const lying = smoothstep(0, 1, track.z.mul(swishTop).min(1)).mul(inMap).mul(swishBend)
+  const lying = smoothstep(0, 1, track.z.mul(swishTop).min(1)).mul(inMap)
   const swept = vec2(track.x, track.y).mul(255 / 127).sub(128 / 127)
-  const flutterPress = press
-  press = press.max(lying)
-  push = push.add(swept.mul(lying))
+  // Where the push is too small to say (a vehicle standing still), the plant falls downwind.
+  const fall = normalize(swept.add(vec2(windDir.x, windDir.y).mul(0.05)))
+  const angle = lying.mul(swishBend).mul(LAY).min(1.54)
   const up = local.y.mul(size)
-  const shove = vec3(push.x.mul(0.85), press.mul(-0.72), push.y.mul(0.85)).mul(up)
-  const shiver = sin(time.mul(23).add(origin.x.mul(5.1)).add(origin.z.mul(3.7))).mul(0.03).mul(flutterPress).mul(tipness).mul(size)
+  const laid = vec3(fall.x.mul(sin(angle)), cos(angle).sub(1), fall.y.mul(sin(angle))).mul(up)
+  // The wash: pressed and shoved by the benders above, exactly as before.
+  const shove = vec3(push.x.mul(0.85), press.mul(-0.72), push.y.mul(0.85)).mul(up).add(laid)
+  const shiver = sin(time.mul(23).add(origin.x.mul(5.1)).add(origin.z.mul(3.7))).mul(0.03).mul(press).mul(tipness).mul(size)
   // Night life wanders round its cell and bobs, each mote on its own phase.
   const phase = param.x.mul(7.3)
   const drift = vec3(

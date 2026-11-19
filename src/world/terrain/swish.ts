@@ -8,7 +8,7 @@
  * cell every SWISH_CELL metres, SWISH_N across, holding how bent each cell is and which way.
  *
  * Each cell's bend is set to full where a vehicle's footprint covers it, held for HOLD
- * seconds, then falls linearly to nothing over `cover.swishRise` seconds. The shader eases
+ * seconds, then falls linearly to nothing over `cover.swishRise` seconds (4 by default). The shader eases
  * that with a smoothstep, so a plant starts rising gently, never moves faster than about
  * 1.5 times the average rate, and settles into the wind with zero speed: no overshoot, no pop.
  *
@@ -26,8 +26,9 @@ export const SWISH_CELL = 0.5
 /** Seconds a track stays fully bent before it starts to rise. */
 const HOLD = 0.5
 
-export const coverSwishRise = defineParam({ id: 'cover.swishRise', label: 'Grass rises back after wheels, seconds', group: 'Graphics', scope: 'client', default: 3, min: 0.5, max: 10, step: 0.1 })
-export const coverSwishBend = defineParam({ id: 'cover.swishBend', label: 'How far wheels bend the grass', group: 'Graphics', scope: 'client', default: 1, min: 0, max: 1.5, step: 0.05 })
+export const coverSwishRise = defineParam({ id: 'cover.swishRise', label: 'Grass rises back after wheels, seconds', group: 'Graphics', scope: 'client', default: 4, min: 0.5, max: 10, step: 0.1 })
+/** 1 lays plants in a track over by 80 degrees; the shader caps the lean just short of flat. */
+export const coverSwishBend = defineParam({ id: 'cover.swishBend', label: 'How far wheels lay the grass over', group: 'Graphics', scope: 'client', default: 1, min: 0, max: 1.1, step: 0.05 })
 
 /** A vehicle touching the ground this frame: a capsule along its heading, and where it was last frame. */
 export interface Footprint {
