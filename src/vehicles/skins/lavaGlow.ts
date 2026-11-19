@@ -51,11 +51,23 @@ const ownerOf=(object:T.Object3D|undefined|null):T.Object3D|null=>{
  if(owner===undefined){owner=heatOwner(object);if(owner)owners.set(object,owner)}
  return owner
 }
-const sharedPlaneValue=new T.Vector4()
+// The heat plane runs for every mesh in every pass, so it costs nothing when the vehicle is cold
+// (almost always): no plane, and the glow is zero by heat anyway. A hot vehicle's plane is worked
+// out once per frame (its world position and rotation walk the parent chain) and reused by all
+// its meshes and passes.
+const noPlane=new T.Vector4(0,1,0,1e9)
+const planes=new WeakMap<T.Object3D,{frame:number;value:T.Vector4}>()
+function sharedPlane(vehicle:T.Object3D|null,frame:number):T.Vector4 {
+ if(!vehicle||!((vehicle.userData.vehicleHeat as LiquidState).heat>0))return noPlane
+ let cached=planes.get(vehicle)
+ if(!cached){cached={frame:-1,value:new T.Vector4()};planes.set(vehicle,cached)}
+ if(cached.frame!==frame){planeOf(vehicle,cached.value);cached.frame=frame}
+ return cached.value
+}
 let shared:Node<'vec3'>|null=null
 function sharedGlow():Node<'vec3'> {
  if(shared)return shared
- const plane=uniform(sharedPlaneValue).onObjectUpdate(({object})=>{const vehicle=ownerOf(object);return vehicle?planeOf(vehicle,sharedPlaneValue):sharedPlaneValue.set(0,1,0,1e9)})
+ const plane=uniform(new T.Vector4().copy(noPlane)).onObjectUpdate((frame:{object?:T.Object3D|null;frameId?:number})=>sharedPlane(ownerOf(frame.object),frame.frameId??-1))
  const heat=uniform(0).onObjectUpdate(({object})=>{const vehicle=ownerOf(object);return vehicle?(vehicle.userData.vehicleHeat as LiquidState).heat:0})
  return shared=glowFrom(plane,heat)
 }

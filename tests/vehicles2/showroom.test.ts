@@ -341,6 +341,25 @@ describe('showroom vehicle shading',()=>{
   expect(emission(a.body)).toContain(.8);expect(emission(b.body)).not.toContain(.8)
   a.dispose();b.dispose()
  })
+ it('works out a shared material\'s heat plane only for a hot vehicle, once per frame',()=>{
+  // The plane runs for every mesh in every pass; a cold vehicle must cost nothing there.
+  params.set(vehicleShading.def.id,2)
+  const a=vehicle(0xff0000,0x00ff00),b=vehicle(0xff0000,0x00ff00),m=b.body.material as T.MeshStandardNodeMaterial
+  expect(m).toBe(a.body.material)
+  let walks=0;const proto=T.Object3D.prototype,gq=proto.getWorldQuaternion
+  proto.getWorldQuaternion=function(this:T.Object3D,q:T.Quaternion){walks++;return gq.call(this,q)}
+  try{
+   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   const draw=(mesh:T.Mesh,frameId:number)=>m.emissiveNode!.traverse((n:any)=>{if(n.isUniformNode&&n.updateType==='object')n.update({object:mesh,frameId})})
+   for(let f=0;f<3;f++){draw(a.body,f);draw(b.body,f);draw(a.canopy,f)}
+   expect(walks).toBe(0)
+   ;(a.owner.userData.vehicleHeat as ReturnType<typeof createLiquidState>).heat=.5
+   draw(a.body,10);draw(a.body,10);draw(b.body,10)
+   expect(walks).toBe(1)
+   draw(a.body,11);expect(walks).toBe(2)
+  }finally{proto.getWorldQuaternion=gq}
+  a.dispose();b.dispose()
+ })
  it('leaves a vehicle\'s own plain materials with no per-object uniforms from the lava glow, and heat still on that vehicle',()=>{
   // Per-object uniforms on every mesh cost each its own binding: a jet's first frame at Low
   // stalled for half a second. Only shared materials read heat per object.
