@@ -54,7 +54,7 @@ async function open(planet, seed, viewport, quality) {
   const ctx = await browser.newContext({ viewport })
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(e.message))
-  await page.goto(`http://127.0.0.1:${port}/?autoplay=1&vehicle=buggy&planet=${planet}&seed=${seed}&room=rl${Date.now().toString(36)}`)
+  await page.goto(`http://127.0.0.1:${port}/?autoplay=1&vehicle=buggy&planet=${planet}&seed=${seed}&room=rl${Date.now().toString(36)}&daydream=0`)
   await page.waitForFunction(() => window.syn3h?.game.tick > 30 && window.syn3h.shell.playing, null, { timeout: 120000 })
   await page.evaluate((q) => {
     const s = window.syn3h

@@ -335,7 +335,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   // What the water itself sends back: the shallow tint where little of it lies along the
   // sight line, the deep colour once the line has crossed about a clarity's worth.
   // A river is a few metres deep at most: it darkens over its own depths, so its pools read deep.
-  const body = mix(shallowColour, deepColour, smoothstep(0.3, mode === 'river' ? 5 : 16, waterPath(depth)))
+  const body = mix(shallowColour, deepColour, smoothstep(0.3, mode === 'river' ? 9 : 16, waterPath(depth)))
   // Crests catch the light: a step toward the shallow colour, brightened.
   // Steep little faces let light through their thin tops: the same lift, from the chop.
   const lifted = mix(body, shallowColour.mul(1.15), max(smoothstep(0.2, 1, crestN).mul(0.35), smoothstep(0.05, 0.22, chopSlope).mul(0.3)))
@@ -377,17 +377,17 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   if (mode === 'river') {
     const churn = attribute<'float'>('churn', 'float'), edge = attribute<'float'>('edge', 'float')
     // Where water breaks. A change of slope along the river: lips, steps, the foot of a fall.
-    // Shallow fast water: the Froude number v / sqrt(g d) well past 1, where the surface tears.
-    // A steep cascade, partly, as broken lace rather than a sheet.
+    // A steep chute, the steeper the whiter: a fall (more than one in one) is nearly all white.
+    // Shallow fast water, a little: the Froude number v / sqrt(g d) well past 1, where it tears.
     const froude = flowSpeed.div(max(depth, 0.05).mul(9.81).sqrt())
-    const breaking = max(max(churn, smoothstep(0.35, 0.9, steep).mul(0.5)), smoothstep(1.8, 3.5, froude).mul(smoothstep(0.1, 0.45, depth)).mul(0.55))
-    // Lace: thin filaments of ridged noise stretched five times along the flow, two scales,
-    // carried downstream at the river's speed.
-    const ridge = (n: THREE.Node<'float'>) => { const r = float(1).sub(abs(n)); return r.mul(r).mul(r).mul(r).mul(r) }
+    const breaking = max(max(churn, smoothstep(0.3, 1.1, steep).mul(0.85)), smoothstep(2, 4, froude).mul(smoothstep(0.15, 0.6, depth)).mul(0.3))
+    // Streaks: ridged noise that changes fifteen times faster across the river than along it, so
+    // its ridges are thin lines running with the flow; two scales, carried at the river's speed.
+    const ridge = (n: THREE.Node<'float'>) => { const r = float(1).sub(abs(n)); return r.mul(r).mul(r).mul(r) }
     const along = uv().y.sub(time.mul(flowSpeed))
     const lace = max(
-      ridge(mx_noise_float(vec3(uv().x.mul(0.8), along.mul(0.16), drift.mul(0.35)))),
-      ridge(mx_noise_float(vec3(uv().x.mul(2.1), along.mul(0.42).sub(time.mul(0.2)), drift.mul(0.6).add(9)))).mul(0.8),
+      ridge(mx_noise_float(vec3(uv().x.mul(1.2), along.mul(0.08), drift.mul(0.3)))),
+      ridge(mx_noise_float(vec3(uv().x.mul(3.3), along.mul(0.2).sub(time.mul(0.3)), drift.mul(0.5).add(9)))).mul(0.85),
     )
     // More breaking, more of the lace turns white; a little stays laced even at full churn.
     const white = smoothstep(float(0.62).sub(breaking.mul(0.5)), float(0.85).sub(breaking.mul(0.35)), lace).mul(breaking.min(1))
