@@ -27,6 +27,7 @@ import type { Game } from '../../core/Game'
 import { graphicsLevel } from '../../core/quality'
 import { ImpactPulses } from '../pulse'
 import { SparkBatch, type SparkSpec } from '../impact/SparkBatch'
+import { fireworkSize, fireworkWidth } from '../impact/params'
 import { fireworkShape, type FireworkShape } from '../thunderRules'
 
 export const MAX_BURSTS = 6
@@ -122,7 +123,7 @@ export class Fireworks {
       emit(spec.at, this.v.set(0, g * CLIMB_SECONDS, 0), s, gold, 0)
       top.y += spec.climb; delay = CLIMB_SECONDS
     }
-    const stars = STARS[level], speed = 20 + this.next() * 6
+    const stars = STARS[level], speed = (20 + this.next() * 6) * fireworkSize.value
     const colour = (i: number) => (i % 3 === 2 ? b : a)
     // A unit direction from the Fibonacci sphere, turned by the burst's own angle.
     const turn = this.next() * Math.PI * 2
@@ -170,7 +171,7 @@ export class Fireworks {
         travel(top, v, 1.1, 0.3, split, this.p)
         const at = this.p.clone(), side = new T.Vector3(-v.z, 0, v.x).normalize(), upV = new T.Vector3().crossVectors(v, side).normalize()
         base(1.4, 0.11, 1.4, 0.4, 0.07)
-        for (const [x, y] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) emit(at, this.v.copy(side).multiplyScalar(x * 12).addScaledVector(upV, y * 12), s, b, delay + split)
+        for (const [x, y] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) emit(at, this.v.copy(side).multiplyScalar(x * 12 * fireworkSize.value).addScaledVector(upV, y * 12 * fireworkSize.value), s, b, delay + split)
       }
     }
     // Crackle: white twinkles scattered through the burst a second in.
@@ -197,6 +198,7 @@ export class Fireworks {
     this.clock += Math.min(0.1, dt)
     // Stars written this frame go up together (SparkBatch.flush).
     this.stars.flush()
+    this.stars.minWidth.value = fireworkWidth.value
     this.stars.clock.value = this.clock
     for (let i = this.lights.length - 1; i >= 0; i--) {
       const l = this.lights[i]

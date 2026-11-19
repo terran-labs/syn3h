@@ -41,6 +41,8 @@ export interface SparkSpec {
 export class SparkBatch {
   readonly mesh: T.Mesh
   readonly clock = uniform(0)
+  /** The narrowest a spark draws, as a share of its distance from the camera (0.004: about a pixel and a half). */
+  readonly minWidth = uniform(0.004)
   private readonly origin: T.InstancedBufferAttribute
   private readonly velocity: T.InstancedBufferAttribute
   private readonly settings: T.InstancedBufferAttribute
@@ -86,7 +88,7 @@ export class SparkBatch {
     // Thin, but never thinner than about a pixel and a half on screen (a thinner line flickers
     // away), and as long as the distance it covers in the streak's time: fast sparks are lines.
     const away: N = cameraPosition.sub(centre).length()
-    const width: N = cfg.z.max(away.mul(0.004)).mul(alive), length: N = speed.mul(motion.y).max(width.mul(2)).min(3).mul(alive)
+    const width: N = cfg.z.max(away.mul(this.minWidth)).mul(alive), length: N = speed.mul(motion.y).max(width.mul(2)).min(3).mul(alive)
     const corner: N = positionGeometry
     const m = new T.MeshBasicNodeMaterial({ name, transparent: true, depthWrite: false, blending: T.AdditiveBlending })
     m.positionNode = centre.add(along.mul(corner.y.mul(length))).add(side.mul(corner.x.mul(width)))

@@ -17,3 +17,7 @@ export const impactLight = defineParam({ id: 'fx.impact.light', label: 'Impact g
 export const impactLightRadius = defineParam({ id: 'fx.impact.lightRadius', label: 'Impact light radius (m)', group, scope, default: 3, min: 0.5, max: 12, step: 0.25 })
 /** How long a scorch lasts, s; 0 for none. */
 export const impactScorch = defineParam({ id: 'fx.impact.scorch', label: 'Impact scorch (s)', group, scope, default: 6, min: 0, max: 30, step: 0.5 })
+/** Plasma Thunder's fireworks: the narrowest a star may draw, as a share of its distance (about 3 px at 0.0075), so a burst reads across the map and against a noon sky. */
+export const fireworkWidth = defineParam({ id: 'fx.fireworks.width', label: 'Firework star width (share of distance)', group, scope, default: 0.0075, min: 0.002, max: 0.02, step: 0.0005 })
+/** Plasma Thunder's fireworks: the size of a burst, as a multiple of its stars' speed. */
+export const fireworkSize = defineParam({ id: 'fx.fireworks.size', label: 'Firework size', group, scope, default: 1.4, min: 0.5, max: 3, step: 0.05 })
