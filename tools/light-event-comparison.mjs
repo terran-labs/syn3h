@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { chromium } from 'playwright-core'
+import { loadavg } from 'node:os'
 import { installRawCollector } from './performance-check.mjs'
 
 const [origin, output, backend, mode, size, quality] = process.argv.slice(2)
@@ -12,6 +13,7 @@ assert.ok(origin && output && ['webgpu', 'webgl'].includes(backend) && ['fixed',
 const level = quality === 'Low' ? 1 : 2
 const [width, height] = size.split('x').map(Number)
 const url = new URL('/', origin)
+assert.ok(['127.0.0.1', 'localhost'].includes(url.hostname))
 url.searchParams.set('world', 'volcanic.49731~sun.dayLength=0,sun.timeOfDay=12,weather.cloudSpeed=0,water.waves=false,bots.count=0')
 url.searchParams.set('vehicle', 'buggy')
 if (mode === 'batched') url.searchParams.set('lighting', 'batched')
@@ -287,7 +289,8 @@ function summarize(rows, allFrames, timestamps, pixels, eventPhase) {
   const worstBy = key => intervals.filter(row => Number.isFinite(row[key])).reduce(
     (worst, row) => !worst || row[key] > worst[key] ? row : worst, null)
   return {
-    frames: rows.length, cpu, worstCpuFrame: worstBy('cpuMs'),
+    frames: rows.length, nodeBuilds: rows.reduce((sum,row) => sum + row.nodeBuilds.length, 0),
+    cpu, worstCpuFrame: worstBy('cpuMs'),
     worstFollowingInterval: worstBy('followingMs'),
     gpu: { samples: values.length, medianMs: median, medianNsPerOutputPixel: median === null ? null : median * 1e6 / pixels },
   }
@@ -309,7 +312,12 @@ const report = {
   cases: {},
 }
 let browser
+const load = []
+const sampleLoad = () => load.push({ at: Date.now(), oneMinute: loadavg()[0] })
+sampleLoad()
+const timer = setInterval(sampleLoad, 1000)
 try {
+  assert.ok(load[0].oneMinute < 8, 'Load must be below 8 before launch')
   browser = await chromium.launch({ channel: 'chrome', headless: false,
     args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
   for (const [name, events] of Object.entries(cases)) {
@@ -418,6 +426,8 @@ try {
       await writeFile(join(output, name + '.raw.json'), JSON.stringify(raw, null, 2), { flag: 'wx' })
       assert.deepEqual(result.errors, [], 'Browser errors in ' + name)
       console.log(name + ' recorded')
+      sampleLoad()
+      assert.ok(load.every(sample => sample.oneMinute < 8), 'Load reached or exceeded 8. Discarding run.')
     } finally {
       await context.close()
     }
@@ -426,6 +436,8 @@ try {
   report.failure = String(error)
   throw error
 } finally {
+  clearInterval(timer)
+  report.load = load
   await browser?.close()
   await writeFile(join(output, 'report.json'), JSON.stringify(report, null, 2), { flag: 'wx' })
 }
