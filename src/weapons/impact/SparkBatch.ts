@@ -57,6 +57,8 @@ export class SparkBatch {
   private readonly attributes: readonly (readonly [T.InstancedBufferAttribute, number])[]
   emitted = 0
 
+  /** Multiplies an additive batch's light, for an owner that brightens a whole batch (fireworks at night). */
+  readonly glow = uniform(1)
   /** Multiplies every spark's opacity, for an owner that fades a whole batch. */
   readonly opacity = uniform(1)
 
@@ -108,7 +110,7 @@ export class SparkBatch {
     // The quad's own uv, from its corner (-0.5 to 0.5).
     const across: N = float(1).sub(corner.x.mul(2).abs())
     const head: N = corner.y.add(0.5)
-    m.colorNode = solid ? tint : colour.mul(hotExposureNode())
+    m.colorNode = solid ? tint : colour.mul(hotExposureNode()).mul(this.glow)
     m.opacityNode = this.opacity.mul(float(1)).sub(u).pow(1.5).mul(across.pow(1.5)).mul(head.mul(0.75).add(0.25))
     m.fog = false
     this.mesh = new T.Mesh(g, m); this.mesh.frustumCulled = false; this.mesh.renderOrder = 4

@@ -55,6 +55,16 @@ const WIDTH = 4
 const SNAP = 1.8
 /** Smoke puffs' strength before fx.fireworks.smoke: the dust sprite is made faint for tyre dust. */
 const SMOKE_ALPHA = 4.5
+/** Night glitter: sparks shed along the stars' paths, hanging a second or more (night only). */
+const GLITTER = [60, 140, 330] as const, GLITTER_EVERY = [5, 3, 2] as const
+/**
+ * A phone (narrow or touch screen): Low's star and smoke counts and smaller puffs at any graphics level,
+ * since a sky full of large soft puffs and opaque daytime stars is what costs a phone's GPU most.
+ */
+function narrowScreen(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && (window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 700)
+}
 const GRAVITY = 9.8
 
 export interface BurstSpec {
@@ -89,15 +99,22 @@ export class Fireworks {
   /** Daytime smoke, blended normally so it darkens a bright sky: what shows a burst at noon. */
   private smoke!: ParticleBatch
   private level = -1
+  private narrow = false
+  /** The graphics level smoke follows: Low's at most on a phone. */
+  private get smokeLevel(): number { return this.starLevel }
+  /** The graphics level star counts follow: on a phone, Low's at most, so six bursts stay cheap there. */
+  private get starLevel(): number { return this.narrow ? Math.min(1, this.level) : this.level }
   private clock = 0
   private rand = 0
   private readonly ends: number[] = []
-  private readonly lights: { at: T.Vector3; time: number; radius: number; color: T.Color }[] = []
+  private readonly lights: { at: T.Vector3; time: number; radius: number; color: T.Color; seconds: number }[] = []
   private readonly spec: SparkSpec = { life: 2, width: 0.1, drag: 1.2, gravity: 0.35, streak: 0.06, normal: { x: 0, y: 1, z: 0 }, bounce: -1 }
   private readonly o = new T.Vector3()
   private readonly v = new T.Vector3()
   private readonly v2 = new T.Vector3()
   private readonly dayColor = new T.Color()
+  private readonly c2 = new T.Color()
+  private readonly g = new T.Vector3()
   private readonly trails: { at: T.Vector3; size: number; delay: number }[] = []
   private readonly p = new T.Vector3()
   private readonly c = new T.Color()
@@ -115,17 +132,18 @@ export class Fireworks {
   private rebuild(): void {
     this.level = Math.max(0, Math.min(2, Number(graphicsLevel.value)))
     this.stars?.dispose()
-    this.stars = new SparkBatch(MAX_BURSTS * PER_BURST[this.level], 'thunder fireworks')
+    this.narrow = narrowScreen()
+    this.stars = new SparkBatch(MAX_BURSTS * (PER_BURST[this.starLevel] + GLITTER[this.starLevel]), 'thunder fireworks')
     this.stars.clock.value = this.clock
     // Long streaks for fast stars, and their own colour rather than an impact spark's white-hot.
     this.stars.maxLength.value = 14; this.stars.heat.value = 0.15
     this.game.scene.add(this.stars.mesh)
     this.flash?.dispose(); this.smoke?.dispose(); this.dayStars?.dispose()
-    this.dayStars = new SparkBatch(MAX_BURSTS * PER_BURST[this.level], 'thunder fireworks by day', true)
+    this.dayStars = new SparkBatch(MAX_BURSTS * PER_BURST[this.starLevel], 'thunder fireworks by day', true)
     this.dayStars.maxLength.value = 14; this.dayStars.clock.value = this.clock
     this.game.scene.add(this.dayStars.mesh)
     this.flash = new ParticleBatch(MAX_BURSTS * 2, flashSprite, true, 1)
-    this.smoke = new ParticleBatch(MAX_BURSTS * SMOKE[this.level], dustSprite, false, this.level === 0 ? 1 : 2)
+    this.smoke = new ParticleBatch(MAX_BURSTS * SMOKE[this.smokeLevel], dustSprite, false, this.level === 0 ? 1 : 2)
     this.flash.clock.value = this.smoke.clock.value = this.clock
     // Fog off, as for the stars: a burst high and far would otherwise fade into the sky colour.
     this.flash.mesh.material.fog = false; this.smoke.mesh.material.fog = false
@@ -140,8 +158,12 @@ export class Fireworks {
 
   burst(spec: BurstSpec): void {
     this.rand = spec.seed >>> 0
-    const shape = fireworkShape(spec.seed), level = this.level, budget = PER_BURST[level]
-    let used = 0
+    const shape = fireworkShape(spec.seed), level = this.starLevel, budget = PER_BURST[level], sl = this.smokeLevel, puffScale = this.narrow ? 0.6 : 1
+    let used = 0, glitter = 0
+    // How dark it is as it bursts (0 by day, 1 at night): the night display lives longer, trails
+    // and glitters more and glows brighter. Nothing here changes it by day.
+    const night = vehicleNightAmount(this.game.scene)
+    const glitterSpec: SparkSpec = { life: 1.4, width: 0.25 * WIDTH, drag: 3, gravity: 0.15, streak: 0.02, normal: { x: 0, y: 1, z: 0 }, bounce: -1 }
     // While `trailing`, every SMOKE_EVERY-th star also leaves smoke along its path (made below).
     let trailing = false, trailSize = 0
     const emit = (at: T.Vector3, v: T.Vector3, s: SparkSpec, color: T.Color, delay: number) => {
@@ -150,8 +172,17 @@ export class Fireworks {
       // Its daytime twin: the same path, in the colour brought down to a plain, saturated paint.
       const top = Math.max(color.r, color.g, color.b, 1e-3)
       this.dayStars.emit(at, v, s, this.dayColor.setRGB(color.r / top * 0.8, color.g / top * 0.8, color.b / top * 0.8), delay)
-      if (!trailing || used % SMOKE_EVERY[level] !== 0) return
-      for (let k = 1; k <= SMOKE_PUFFS[level]; k++) {
+      if (!trailing) return
+      // At night every GLITTER_EVERY-th star sheds glitter that hangs where it passed.
+      if (night > 0.3 && used % GLITTER_EVERY[level] === 0) {
+        for (const t of [0.2, 0.45, 0.75]) {
+          if (glitter >= GLITTER[level] || t > s.life * 0.7) break
+          glitterSpec.life = 1.2 + this.next() * 0.6
+          this.stars.emit(travel(at, v, s.drag, s.gravity, t, this.g), this.v2.set(0, -1.5, 0), glitterSpec, this.c2.copy(color).multiplyScalar(0.6), delay + t); glitter++
+        }
+      }
+      if (used % SMOKE_EVERY[sl] !== 0) return
+      for (let k = 1; k <= SMOKE_PUFFS[sl]; k++) {
         const t = k * 0.28
         if (t < s.life * 0.8) this.trails.push({ at: travel(at, v, s.drag, s.gravity, t, new T.Vector3()), size: trailSize, delay: delay + t })
       }
@@ -172,8 +203,8 @@ export class Fireworks {
     const grey = this.c.setRGB(0.72, 0.72, 0.74).lerp(new T.Color(a.r / 4.2, a.g / 4.2, a.b / 4.2), 0.18).clone()
     let puffs = 0
     const puff = (at: T.Vector3, life: number, size: number, grow: number, delay: number) => {
-      if (puffs >= SMOKE[level]) return
-      this.smoke.emit(at, this.v2.set((this.next() - 0.5) * 0.6, -0.4, (this.next() - 0.5) * 0.6), life, size, grow, grey, delay); puffs++
+      if (puffs >= SMOKE[sl]) return
+      this.smoke.emit(at, this.v2.set((this.next() - 0.5) * 0.6, -0.4, (this.next() - 0.5) * 0.6), life, size * puffScale, grow * puffScale, grey, delay); puffs++
     }
 
     const s = this.spec
@@ -188,14 +219,17 @@ export class Fireworks {
       for (let k = 0; k < 5; k++) {
         const t = k / 5 * CLIMB_SECONDS, from = this.p.copy(spec.at).setY(spec.at.y + g * CLIMB_SECONDS * t - 0.5 * g * t * t)
         s.life = CLIMB_SECONDS / 5 * 1.25
-        emit(from, this.v.set(0, g * (CLIMB_SECONDS - t), 0), s, this.c.copy(gold).multiplyScalar(1.5), t)
+        emit(from, this.v.set(0, g * (CLIMB_SECONDS - t), 0), s, this.c.copy(gold).multiplyScalar(1.5 + 2 * night), t)
       }
       // Its trail: sparks shed on the way up, hanging and fading behind it, and by day smoke.
-      s.life = 1.1; s.width = 0.9; s.drag = 2; s.gravity = 0.3; s.streak = 0.05
-      for (let k = 1; k <= 12; k++) {
-        const t = k / 13 * CLIMB_SECONDS, at = this.p.copy(spec.at).setY(spec.at.y + g * CLIMB_SECONDS * t - 0.5 * g * t * t)
-        emit(at, this.v.set((this.next() - 0.5) * 3, -2, (this.next() - 0.5) * 3), s, this.c.copy(gold).multiplyScalar(0.6), t)
-        if (k % 3 === 0) puff(at, 3.5, 2.5, 1.2, t)
+      // At night more of them, each leaving with a little of the shell's own upward speed, so it
+      // draws as a short streak along the climb and the trail is one line rather than dots.
+      const shed = night > 0.3 ? 40 : 12
+      s.life = 1.1 + 0.5 * night; s.width = 0.9; s.drag = 2 + 2 * night; s.gravity = 0.3; s.streak = 0.05 + 0.08 * night
+      for (let k = 1; k <= shed; k++) {
+        const t = k / (shed + 1) * CLIMB_SECONDS, at = this.p.copy(spec.at).setY(spec.at.y + g * CLIMB_SECONDS * t - 0.5 * g * t * t)
+        emit(at, this.v.set((this.next() - 0.5) * 3, night > 0.3 ? g * (CLIMB_SECONDS - t) * 0.15 : -2, (this.next() - 0.5) * 3), s, this.c.copy(gold).multiplyScalar(0.6 + 0.6 * night), t)
+        if (k % (shed / 4) === 0) puff(at, 3.5, 2.5, 1.2, t)
       }
       top.y += spec.climb; delay = CLIMB_SECONDS
     }
@@ -208,7 +242,7 @@ export class Fireworks {
       const y = 1 - 2 * (i + 0.5) / n, r = Math.sqrt(1 - y * y), phi = i * 2.399963229728653 + turn
       return this.v.set(Math.cos(phi) * r, y, Math.sin(phi) * r)
     }
-    const base = (life: number, width: number, drag: number, gravity: number, streak: number) => { s.life = life; s.width = width * WIDTH; s.drag = drag * SNAP; s.gravity = gravity; s.streak = streak }
+    const base = (life: number, width: number, drag: number, gravity: number, streak: number) => { s.life = life * (1 + 0.6 * night); s.width = width * WIDTH; s.drag = drag * SNAP; s.gravity = gravity; s.streak = streak * (1 + 0.8 * night) }
 
     if (shape === 'peony' || shape === 'chrysanthemum') {
       base(shape === 'peony' ? 2.1 : 2.6, 0.12, 1.25, 0.35, shape === 'peony' ? 0.05 : 0.16)
@@ -270,11 +304,11 @@ export class Fireworks {
     }
     // Embers: slow, dim, falling and fading for a few seconds.
     base(4, 0.09, 2.5, 0.25, 0.02)
-    const embers = level === 0 ? 10 : 24
-    for (let i = 0; i < embers; i++) emit(top, sphere(i, embers).multiplyScalar(speed * 0.5), s, this.c.copy(a).multiplyScalar(0.35), delay + 0.3)
+    const embers = Math.round((level === 0 ? 10 : 24) * (1 + 0.7 * night))
+    for (let i = 0; i < embers; i++) emit(top, sphere(i, embers).multiplyScalar(speed * 0.5), s, this.c.copy(a).multiplyScalar(0.35 + 0.6 * night), delay + 0.3)
 
     // The light it throws on the ground, as the burst comes.
-    if (Number.isFinite(spec.ground)) this.lights.push({ at: new T.Vector3(top.x, spec.ground, top.z), time: this.clock + delay, radius: Math.max(12, (top.y - spec.ground) * 0.9), color: this.c.copy(a).multiplyScalar(0.12).clone() })
+    if (Number.isFinite(spec.ground)) this.lights.push({ at: new T.Vector3(top.x, spec.ground, top.z), time: this.clock + delay, radius: Math.max(12, (top.y - spec.ground) * 0.9), color: this.c.copy(a).multiplyScalar(0.12 + 0.25 * night).clone(), seconds: 1.6 + 0.8 * night })
     this.ends.push(this.clock + delay + 4.5); if (this.ends.length > MAX_BURSTS) this.ends.shift()
     this.stats.bursts++; this.stats.stars += used; this.stats.last = shape
   }
@@ -284,19 +318,23 @@ export class Fireworks {
     this.clock += Math.min(0.1, dt)
     // Stars written this frame go up together (SparkBatch.flush).
     this.stars.flush(); this.dayStars.flush()
-    this.stars.minWidth.value = fireworkWidth.value
     // By day the stars draw about 2.5 times as wide and fully opaque: the share of sky a burst
     // covers is what makes it seen from across the map against a bright sky.
-    this.dayStars.minWidth.value = fireworkWidth.value * 2.5
+    // On a phone 1.8 times: the screen is small and the fill is what costs.
+    this.dayStars.minWidth.value = fireworkWidth.value * (this.narrow ? 1.8 : 2.5)
     const day = 1 - vehicleNightAmount(this.game.scene)
+    // At night the stars glow brighter (the scene's exposure dims hot colours there) and draw a
+    // little wider, so they bloom.
+    this.stars.glow.value = 1 + 1.4 * (1 - day)
+    this.stars.minWidth.value = fireworkWidth.value * (1 + 0.5 * (1 - day))
     this.dayStars.opacity.value = 1.8 * day; this.dayStars.mesh.visible = day > 0.02
     this.dayStars.clock.value = this.stars.clock.value = this.flash.clock.value = this.smoke.clock.value = this.clock
     // Smoke shows by day and fades out at night, when the stars carry the burst alone.
-    this.smoke.opacity.value = SMOKE_ALPHA * fireworkSmoke.value * day
+    this.smoke.opacity.value = SMOKE_ALPHA * fireworkSmoke.value * day; this.smoke.mesh.visible = day > 0.02
     for (let i = this.lights.length - 1; i >= 0; i--) {
       const l = this.lights[i]
       if (this.clock < l.time) continue
-      this.light.emit(l.at, T.Object3D.DEFAULT_UP, { radius: l.radius, seconds: 1.6, color: l.color })
+      this.light.emit(l.at, T.Object3D.DEFAULT_UP, { radius: l.radius, seconds: l.seconds, color: l.color })
       this.lights.splice(i, 1)
     }
     this.light.update(dt)

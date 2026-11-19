@@ -16,7 +16,8 @@ await mkdir(`${out}/raw`, { recursive: true })
 const phone = process.env.SYN3H_VIEW === 'phone', size = phone ? 'phone' : 'desktop'
 const TIMES = [0.7, 1.45, 1.9, 2.5, 3.3, 4.5]
 const SHAPES = ['peony', 'chrysanthemum', 'ring', 'willow', 'palm', 'crossette']
-const HOURS = { noon: 12, night: 22 }
+// SYN3H_HOURS=night for one of them.
+const HOURS = Object.fromEntries(Object.entries({ noon: 12, night: 22 }).filter(([k]) => !process.env.SYN3H_HOURS || process.env.SYN3H_HOURS.split(',').includes(k)))
 // SYN3H_DISTANCES=60,300,800: metres from the camera to the burst's ground point (60: from behind the car).
 const DISTANCES = (process.env.SYN3H_DISTANCES ?? '60').split(',').map(Number)
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
