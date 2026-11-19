@@ -35,7 +35,7 @@ import { defineParam, params } from '../../../shared/params'
 import { seaLevel } from '../seaLevel'
 import { curveFactor } from '../curve'
 import { hazeTinted } from './haze'
-import { FOG_BANK_SATURATION, FOG_BANK_TAU_MAX, FOG_BANK_WARM, VALLEY_TOP_SOFTNESS } from './fogMap'
+import { FOG_BANK_ALBEDO, FOG_BANK_LIT_SATURATION, FOG_BANK_SUN_FLOOR, FOG_BANK_SATURATION, FOG_BANK_TAU_MAX, FOG_BANK_WARM, VALLEY_TOP_SOFTNESS } from './fogMap'
 import { atmosphereValue, storminess } from './params'
 
 type N = any // TSL node
@@ -122,6 +122,8 @@ export interface FogSun {
   color: () => THREE.Color
   /** 0 to 1, how far the air in front of this surface is in sunlight (Environment's airLit). */
   lit?: N
+  /** The sky's light on an upward face (Environment's hemisphere light colour), for lit mist. */
+  sky?: () => THREE.Color
 }
 
 /**
@@ -309,7 +311,21 @@ export function heightFog(color: N, uniformDensity: N, sun?: FogSun, banks?: Fog
   // reads as a pale mass from outside without hiding more of what is behind it.
   // Mostly grey at its own brightness, leaning a little warm: mist, never mistaken for water
   // by taking the planet's blue haze tint or the ground's green.
-  const bankColor = banks ? mix(vec3(dot(fogged, vec3(0.2126, 0.7152, 0.0722))), fogged, FOG_BANK_SATURATION).mul(vec3(...FOG_BANK_WARM)).mul(banks.glow) : fogged
+  let bankColor = banks ? mix(vec3(dot(fogged, vec3(0.2126, 0.7152, 0.0722))), fogged, FOG_BANK_SATURATION).mul(vec3(...FOG_BANK_WARM)).mul(banks.glow) : fogged
+  if (banks && sun?.sky) {
+    // Lit mist: the light falling on the bank, not the colour of the sight line, which from
+    // above is the dim side of the sky and left a dawn bank over the sea the grey of the water.
+    // As a matte face in the scene takes it: the sky's light, plus the sun's by its height, with
+    // a floor because a low sun lights a bank through its side as well as its top. A dawn bank
+    // is then the pale warm of sunlit mist over the dark sea; by night it takes the moon's and
+    // the sky's little light. Paler than the light: mist keeps only part of the light's hue.
+    const skyU = live(new THREE.Color(), sun.sky)
+    const sunDirB = live(new THREE.Vector3(0, 1, 0), sun.direction)
+    const sunColorB = live(new THREE.Color(), sun.color)
+    const onTop = max((sunDirB as N).y, 0.0).add(FOG_BANK_SUN_FLOOR) as N
+    const light = vec3(skyU as N).add(vec3(sunColorB as N).mul(onTop)).mul(FOG_BANK_ALBEDO) as N
+    bankColor = mix(vec3(dot(light, vec3(0.2126, 0.7152, 0.0722))), light, FOG_BANK_LIT_SATURATION)
+  }
   // One colour for the whole fog that gives mix(mix(o, haze, a), bank, c) when the scene fog
   // applies mix(o, color, factor): each layer's colour weighted by its share of the factor.
   const wholeColor = banks

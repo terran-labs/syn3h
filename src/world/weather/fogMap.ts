@@ -65,6 +65,12 @@ export const NIGHT_SHARE = 0.35
 export const FOG_BANK_GLOW = 0.5
 /** How much of the haze's own hue a bank's mist keeps (the rest is grey at its brightness). */
 export const FOG_BANK_SATURATION = 0.3
+/**
+ * Lit mist (fog.ts, with Environment's sky light): the share of the light falling on a bank
+ * that it sends back, the sun's floor (a low sun lights a bank's side as well as its top), and
+ * how much of the light's hue it keeps. Tuned by frames of Archipelago's coast at dawn.
+ */
+export const FOG_BANK_ALBEDO = 0.55, FOG_BANK_SUN_FLOOR = 0.15, FOG_BANK_LIT_SATURATION = 0.6
 /** The mist's slight warm lean (luminance about 1). */
 export const FOG_BANK_WARM: [number, number, number] = [1.05, 1, 0.93]
 /** Metres up and down the valley fog's top wanders, from the seed, so the top is uneven. */
