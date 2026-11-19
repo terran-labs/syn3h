@@ -317,7 +317,9 @@ describe('showroom vehicle shading',()=>{
   let disposed=0;shared.addEventListener('dispose',()=>disposed++)
   // The owner disposes whatever is still attached after the showroom lets go (as every vehicle class does).
   const release=(v:ReturnType<typeof vehicle>)=>{v.dispose();v.root.traverse(o=>{if(o instanceof T.Mesh)(o.material as T.Material).dispose()})}
+  const users=showroomShare.users
   release(a)
+  expect(showroomShare.users).toBeLessThan(users)
   expect(disposed).toBe(0);expect(b.body.material).toBe(shared)
   expect(a.body.material).not.toBe(shared)
   release(b)

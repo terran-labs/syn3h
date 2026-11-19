@@ -168,12 +168,13 @@ function perObject(fallback: T.Color, read: (paint: Paint) => T.Color | null | u
 /** Shared materials by signature, with how many vehicle tier sets hold each. */
 const pool = new Map<string, { material: T.Material; users: number }>()
 const pooled = new Map<T.Material, string>()
-/** Counts for automated checks: shared materials alive, times one was reused, and materials built unshared. */
-export const showroomShare = { alive: 0, reused: 0, unshared: 0 }
+/** Counts for automated checks: shared materials alive, vehicle tier sets holding them, times one was reused, and materials built unshared. */
+export const showroomShare = { alive: 0, users: 0, reused: 0, unshared: 0 }
 function releaseShared(material: T.Material): boolean {
   const key = pooled.get(material)
   if (key === undefined) return false
   const entry = pool.get(key)!
+  showroomShare.users--
   if (--entry.users <= 0) { pool.delete(key); pooled.delete(material); material.dispose(); showroomShare.alive-- }
   return true
 }
@@ -645,11 +646,11 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
           const packed = mergedSurfaces.get(e.source), sources = packed ?? [e.source], own = authored.get(e.source) ?? null
           const key = signature(sources, Boolean(packed), tier, e.mesh.name, own, accent, instanced, decorate, heated)
           const found = key === null ? undefined : pool.get(key)
-          if (found) { variant = found.material; if (!taken.has(variant)) { taken.add(variant); found.users++; showroomShare.reused++ } }
+          if (found) { variant = found.material; if (!taken.has(variant)) { taken.add(variant); found.users++; showroomShare.users++; showroomShare.reused++ } }
           else {
             variant = build(sources, Boolean(packed), tier as 1 | 2 | 3, e.mesh.name, own && standardEmission.has(own) ? null : own, accent, instanced)
             if (key === null) showroomShare.unshared++
-            else { pool.set(key, { material: variant, users: 1 }); pooled.set(variant, key); taken.add(variant); showroomShare.alive++ }
+            else { pool.set(key, { material: variant, users: 1 }); pooled.set(variant, key); taken.add(variant); showroomShare.alive++; showroomShare.users++ }
           }
           shared.set(e.source, variant); built.add(variant)
         }
