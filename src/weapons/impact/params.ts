@@ -20,4 +20,6 @@ export const impactScorch = defineParam({ id: 'fx.impact.scorch', label: 'Impact
 /** Plasma Thunder's fireworks: the narrowest a star may draw, as a share of its distance (about 3 px at 0.0075), so a burst reads across the map and against a noon sky. */
 export const fireworkWidth = defineParam({ id: 'fx.fireworks.width', label: 'Firework star width (share of distance)', group, scope, default: 0.0075, min: 0.002, max: 0.02, step: 0.0005 })
 /** Plasma Thunder's fireworks: the size of a burst, as a multiple of its stars' speed. */
-export const fireworkSize = defineParam({ id: 'fx.fireworks.size', label: 'Firework size', group, scope, default: 1.4, min: 0.5, max: 3, step: 0.05 })
+export const fireworkSize = defineParam({ id: 'fx.fireworks.size', label: 'Firework size', group, scope, default: 4.9, min: 0.5, max: 8, step: 0.05 })
+/** Plasma Thunder's fireworks: how strongly their smoke shows by day (it fades out at night); 0 for none. */
+export const fireworkSmoke = defineParam({ id: 'fx.fireworks.smoke', label: 'Firework smoke by day', group, scope, default: 1, min: 0, max: 3, step: 0.05 })

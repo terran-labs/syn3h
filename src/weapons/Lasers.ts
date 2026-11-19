@@ -27,7 +27,7 @@ import { bigRedRadius, bigRedSpeed } from './bigRedParams'
 import { warmGear } from './warm'
 import { ImpactPulses } from './pulse'
 import { ImpactFx, type ImpactTerrain } from './impact/ImpactFx'
-import { Fireworks } from './fireworks/Fireworks'
+import { CLIMB_SECONDS, Fireworks } from './fireworks/Fireworks'
 import { thunderFlareHeight, thunderFuseAir, thunderFuseAirHeight, thunderFuseArm, thunderFuseGround, thunderSkipAngle, thunderSkipBounce, thunderSkipGravity, thunderSkipKeep, thunderSkipPush, thunderSkips } from './thunderParams'
 import { fireworkSeed, fuseArmed, fuseRadius, nearestOnSegment, skipOff, type ThunderCause, type V3 } from './thunderRules'
 import { thunderBlastRadius } from './blastParams'
@@ -617,7 +617,7 @@ export class Lasers implements System {
     const climb = cause === 'end' && Number.isFinite(ground) && at.y - ground < 6 ? thunderFlareHeight.value : 0
     const colors = this.hooks.colorsOf?.(shooter) ?? [RED_FALLBACK, GOLD_FALLBACK] as const
     this.fireworks.burst({ at, climb, ground, colors, seed: fireworkSeed(shooter, shot) })
-    this.hooks.onBurst?.(shooter, at.clone().setY(at.y + climb), cause, climb > 0 ? 0.9 : 0)
+    this.hooks.onBurst?.(shooter, at.clone().setY(at.y + climb), cause, climb > 0 ? CLIMB_SECONDS : 0)
   }
 
   /**

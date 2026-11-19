@@ -43,6 +43,10 @@ export class SparkBatch {
   readonly clock = uniform(0)
   /** The narrowest a spark draws, as a share of its distance from the camera (0.004: about a pixel and a half). */
   readonly minWidth = uniform(0.004)
+  /** The longest a streak draws, m. */
+  readonly maxLength = uniform(3)
+  /** How much of the white-hot birth and red cooling a spark shows: 1 for impact sparks; a firework star keeps its own colour. */
+  readonly heat = uniform(1)
   private readonly origin: T.InstancedBufferAttribute
   private readonly velocity: T.InstancedBufferAttribute
   private readonly settings: T.InstancedBufferAttribute
@@ -53,7 +57,11 @@ export class SparkBatch {
   private readonly attributes: readonly (readonly [T.InstancedBufferAttribute, number])[]
   emitted = 0
 
-  constructor(readonly capacity: number, name: string) {
+  /** Multiplies every spark's opacity, for an owner that fades a whole batch. */
+  readonly opacity = uniform(1)
+
+  /** `solid`: blended normally in its own colour (unlit), so it shows on a white cloud by day; else additive light. */
+  constructor(readonly capacity: number, name: string, solid = false) {
     const quad = new T.PlaneGeometry(1, 1), g = new T.InstancedBufferGeometry().copy(quad as unknown as T.InstancedBufferGeometry)
     quad.dispose(); g.instanceCount = capacity
     // WebGPU allows eight vertex buffers to a draw: the quad's corners and six of the spark's own
@@ -88,20 +96,20 @@ export class SparkBatch {
     // Thin, but never thinner than about a pixel and a half on screen (a thinner line flickers
     // away), and as long as the distance it covers in the streak's time: fast sparks are lines.
     const away: N = cameraPosition.sub(centre).length()
-    const width: N = cfg.z.max(away.mul(this.minWidth)).mul(alive), length: N = speed.mul(motion.y).max(width.mul(2)).min(3).mul(alive)
+    const width: N = cfg.z.max(away.mul(this.minWidth)).mul(alive), length: N = speed.mul(motion.y).max(width.mul(2)).min(this.maxLength).mul(alive)
     const corner: N = positionGeometry
-    const m = new T.MeshBasicNodeMaterial({ name, transparent: true, depthWrite: false, blending: T.AdditiveBlending })
+    const m = new T.MeshBasicNodeMaterial({ name, transparent: true, depthWrite: false, blending: solid ? T.NormalBlending : T.AdditiveBlending })
     m.positionNode = centre.add(along.mul(corner.y.mul(length))).add(side.mul(corner.x.mul(width)))
     // Hot white at birth, cooling to its own colour over the first part of its life.
     const u: N = t.div(life).clamp(0, 1)
     // White-hot at birth, the tint by a fifth of its life, then cooling dimmer and redder.
     const tint: N = attribute('sparkTint', 'vec3')
-    const colour: N = mix(mix(vec3(6, 5.4, 4.4), tint, smoothstep(0, 0.2, u)), tint.mul(vec3(0.9, 0.35, 0.25)), smoothstep(0.45, 1, u))
+    const colour: N = mix(tint, mix(mix(vec3(6, 5.4, 4.4), tint, smoothstep(0, 0.2, u)), tint.mul(vec3(0.9, 0.35, 0.25)), smoothstep(0.45, 1, u)), this.heat)
     // The quad's own uv, from its corner (-0.5 to 0.5).
     const across: N = float(1).sub(corner.x.mul(2).abs())
     const head: N = corner.y.add(0.5)
-    m.colorNode = colour.mul(hotExposureNode())
-    m.opacityNode = float(1).sub(u).pow(1.5).mul(across.pow(1.5)).mul(head.mul(0.75).add(0.25))
+    m.colorNode = solid ? tint : colour.mul(hotExposureNode())
+    m.opacityNode = this.opacity.mul(float(1)).sub(u).pow(1.5).mul(across.pow(1.5)).mul(head.mul(0.75).add(0.25))
     m.fog = false
     this.mesh = new T.Mesh(g, m); this.mesh.frustumCulled = false; this.mesh.renderOrder = 4
   }

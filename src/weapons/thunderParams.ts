@@ -30,6 +30,6 @@ export const thunderFuseAirHeight = defineParam({ id: 'thunder.fuseAirHeight', l
 /** Seconds of flight before the fuse arms. Contact with a vehicle detonates it before then too. */
 export const thunderFuseArm = defineParam({ id: 'thunder.fuseArm', label: 'Fuse arms after (s)', group, scope, default: 0.25, min: 0, max: 2, step: 0.05 })
 /** How high above a ground detonation the star shell bursts, m. */
-export const thunderFlareHeight = defineParam({ id: 'thunder.flareHeight', label: 'Flare height (m)', group, scope, default: 40, min: 0, max: 150, step: 1 })
+export const thunderFlareHeight = defineParam({ id: 'thunder.flareHeight', label: 'Flare height (m)', group, scope, default: 120, min: 0, max: 150, step: 1 })
 /** Seconds a flare shows on the minimap; 0 for none. */
 export const thunderMapPing = defineParam({ id: 'thunder.mapPing', label: 'Minimap ping (s)', group, scope, default: 8, min: 0, max: 30, step: 0.5 })
