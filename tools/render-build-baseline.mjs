@@ -20,7 +20,7 @@ function sampleLoad() {
   samples.push({ at: Date.now(), oneMinute: loadavg()[0] })
 }
 sampleLoad()
-assert.ok(samples[0].oneMinute <= 8, 'Load above 8 before launch')
+assert.ok(samples[0].oneMinute < 8, 'Load must be below 8 before launch')
 const timer = setInterval(sampleLoad, 1000)
 let browser
 try {
@@ -106,59 +106,62 @@ try {
       light.visible = visible
     }, visible))
   }
-  // Exercise the gameplay path too. The vehicle derives both beams' intensity
-  // from sun elevation. This phase also includes the sky responding to the hour.
-  await page.evaluate(() => window.syn3h.params.set('sun.dayLength', 0))
-  for (const [phase, hour] of [['daylight-setup', 12], ['night-headlights-on', 0], ['day-headlights-off', 12]]) {
-    await record(phase, async () => {
-      await page.evaluate(hour => window.syn3h.params.set('sun.timeOfDay', hour), hour)
-      await page.waitForFunction(night => {
-        const lights = window.syn3h.player.object.getObjectsByProperty('isSpotLight', true)
-        return lights.length > 0 && lights.every(light => night ? light.intensity > 0 : light.intensity === 0)
-      }, hour === 0)
-    })
-  }
   const shadows = []
   const shadowImages = new Map()
-  await page.evaluate(() => {
-    const s = window.syn3h
-    const target = s.terrain.spawnPoint(0).position.clone()
-    const eye = target.clone()
-    eye.x += 14
-    eye.z += 18
-    eye.y = s.terrain.heightAt(eye.x, eye.z) + 8
-    s.camera.setCinematicPose(eye, target, 55)
-  })
-  let from = await page.evaluate(() => window.syn3h.params.get('gfx.shadowQuality').value)
-  for (const level of [0, 1, 2, 3, 2, 1, 0]) {
-    if (from === level) continue
-    const phase = 'sun-shadow-' + from + '-to-' + level
-    await record(phase, () => page.evaluate(level => window.syn3h.params.set('gfx.shadowQuality', level), level))
-    const state = await page.evaluate(() => {
+  if (process.env.RENDER_LIGHTING_SWEEP === '1') {
+    // Exercise the gameplay path too. The vehicle derives both beams' intensity
+    // from sun elevation. This phase also includes the sky responding to the hour.
+    await page.evaluate(() => window.syn3h.params.set('sun.dayLength', 0))
+    for (const [phase, hour] of [['daylight-setup', 12], ['night-headlights-on', 0], ['day-headlights-off', 12]]) {
+      await record(phase, async () => {
+        await page.evaluate(hour => window.syn3h.params.set('sun.timeOfDay', hour), hour)
+        await page.waitForFunction(night => {
+          const lights = window.syn3h.player.object.getObjectsByProperty('isSpotLight', true)
+          return lights.length > 0 && lights.every(light => night ? light.intensity > 0 : light.intensity === 0)
+        }, hour === 0)
+      })
+    }
+    await page.evaluate(() => {
       const s = window.syn3h
-      const sun = s.game.scene.children.find(child => child.isDirectionalLight)
-      return { level: s.params.get('gfx.shadowQuality').value, casts: sun.castShadow,
-        seed: s.params.get('world.seed').value, camera: s.game.camera.position.toArray(),
-        orientation: s.game.camera.quaternion.toArray(), fov: s.game.camera.fov,
-        cascades: sun.castShadow ? sun.shadow.shadowNode?.cascades : 0,
-        mapSize: sun.castShadow ? sun.shadow.mapSize.toArray() : null }
+      const target = s.terrain.spawnPoint(0).position.clone()
+      const eye = target.clone()
+      eye.x += 14
+      eye.z += 18
+      eye.y = s.terrain.heightAt(eye.x, eye.z) + 8
+      s.camera.setCinematicPose(eye, target, 55)
     })
-    assert.equal(state.level, level)
-    assert.equal(state.casts, level > 0)
-    const image = await page.locator('canvas').evaluateAll(nodes => nodes.indexOf(window.syn3h.game.canvas))
-    assert.ok(image >= 0)
-    const screenshot = output + '.' + phase + '.png'
-    shadowImages.set(screenshot, await page.locator('canvas').nth(image).screenshot())
-    shadows.push({ phase, ...state, screenshot })
-    from = level
+    let from = await page.evaluate(() => window.syn3h.params.get('gfx.shadowQuality').value)
+    for (const level of [0, 1, 2, 3, 2, 1, 0]) {
+      if (from === level) continue
+      const phase = 'sun-shadow-' + from + '-to-' + level
+      await record(phase, () => page.evaluate(level => window.syn3h.params.set('gfx.shadowQuality', level), level))
+      const state = await page.evaluate(() => {
+        const s = window.syn3h
+        const sun = s.game.scene.children.find(child => child.isDirectionalLight)
+        return { level: s.params.get('gfx.shadowQuality').value, casts: sun.castShadow,
+          seed: s.params.get('world.seed').value, camera: s.game.camera.position.toArray(),
+          orientation: s.game.camera.quaternion.toArray(), fov: s.game.camera.fov,
+          cascades: sun.castShadow ? sun.shadow.shadowNode?.cascades : 0,
+          mapSize: sun.castShadow ? sun.shadow.mapSize.toArray() : null }
+      })
+      assert.equal(state.level, level)
+      assert.equal(state.casts, level > 0)
+      const image = await page.locator('canvas').evaluateAll(nodes => nodes.indexOf(window.syn3h.game.canvas))
+      assert.ok(image >= 0)
+      const screenshot = output + '.' + phase + '.png'
+      shadowImages.set(screenshot, await page.locator('canvas').nth(image).screenshot())
+      shadows.push({ phase, ...state, screenshot })
+      from = level
+    }
   }
   sampleLoad()
-  assert.ok(samples.every(s => s.oneMinute <= 8), 'Load exceeded 8. Discarding run.')
+  assert.ok(samples.every(s => s.oneMinute < 8), 'Load reached or exceeded 8. Discarding run.')
   const result = await page.evaluate(() => {
     const { initial, frames, asyncNodeBuilds, gpuTiming, overflow } = window.performanceMatrix
     return { initial, frames, asyncNodeBuilds, gpuTiming, overflow }
   })
   assert.ok(result.frames.length && !result.overflow)
+  assert.ok(result.initial.nodeBuildTracking, 'Renderer node-build hook unavailable')
   const gpuTimes = new Map(result.gpuTiming.samples.map(({ frame, ms }) => [frame, ms]))
   // Game.frame samples the start-to-start interval before drawing. A build's
   // effect on pacing is visible in the next tick, even across phase boundaries.

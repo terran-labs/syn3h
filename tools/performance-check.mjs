@@ -67,8 +67,9 @@ export function installRawCollector(options) {
     let shaderStageCalls=0,shaderStageSubmissionMs=0
     // Installed only in the injected collector. Time graph construction on cache misses,
     // including fallback materials. Builder allocation alone misses this work.
-    const createBuilder=b.createNodeBuilder.bind(b)
-    b.createNodeBuilder=(...args)=>{
+    const createBuilder=b.createNodeBuilder?.bind(b)
+    raw.initial.nodeBuildTracking=Boolean(createBuilder)
+    if(createBuilder)b.createNodeBuilder=(...args)=>{
       const builder=createBuilder(...args)
       const build=builder.build
       builder.build=function(...buildArgs){
@@ -106,10 +107,10 @@ export function installRawCollector(options) {
       const row={...m,at:before,phase:raw.phase,hidden:document.hidden,judge,quality:effective,targetBudgetMs:effective.targetMs,renderCpuMs,pipelineMs,pipelines,uploads,uploadCpuMs,
         camera:{...g.camera.position},waterDepth:s.terrain.liquidKindAt?.(g.camera.position.x,g.camera.position.z)==='water'?s.terrain.liquidHeightAt(g.camera.position.x,g.camera.position.z)-g.camera.position.y:null,sceneNodes:{fog:g.scene.fogNode?.uuid??null,background:g.scene.backgroundNode?.uuid??null,environment:g.scene.environmentNode?.uuid??null},position:{...s.player.body.translation()},bots:s.bots.vehicles.length,remotes:window.syn3hNet?.remotes.size??0}
       row.gameFrame=g.frames
-      row.rendererFrame=r.info.frame
+      row.rendererFrame=r.info?.frame??null
       // Includes shadow and post draws performed through three's renderer.
       // Driver-internal passes such as texture resolves are outside this counter.
-      row.rendererCalls=r.info.render.frameCalls
+      row.rendererCalls=r.info?.render?.frameCalls??null
       if(sampleGpu && !pendingGpu && !raw.gpuTiming.error && row.rendererCalls>0){
         pendingGpu=true
         r.resolveTimestampsAsync('render').then(ms=>{
