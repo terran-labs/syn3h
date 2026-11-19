@@ -103,6 +103,29 @@ export class Game {
       return this.renderer
     }, { forceWebGL, deadlineMs: gpuDeadlineMs(location.search), probe, skipWebGPU: probe === 'timeout' ? 'the WebGPU adapter probe stalled; started WebGL 2' : undefined }))
     this.renderer = started.renderer
+    if (renderQuery.get('phoneReport') === '1') {
+      const { createPhoneRenderRecorder } = await import('../dev/phoneRenderReport')
+      const recorder = createPhoneRenderRecorder()
+      this.interruptPhoneReport = () => recorder.interrupt('The game paused.')
+      const renderer = this.renderer
+      // r187 exposes the frame IDs in its backend JS but omits them from the type declarations.
+      const timing = renderer.backend as unknown as { trackTimestamp: boolean; getTimestampFrames(type: string): number[] }
+      timing.trackTimestamp = renderer.hasFeature('timestamp-query')
+      let pending = false
+      this.recordPhoneFrame = (startMs, intervalMs, playing) => {
+        const frame = this.frames
+        const rendererFrame = renderer.info.frame
+        recorder.recordFrame({ frame, startMs, intervalMs, cpuMs: performance.now() - startMs,
+          renderCalls: renderer.info.render.frameCalls, quality: this.quality.governor.level, backend: this.backend, playing })
+        if (!playing || pending || !timing.trackTimestamp || !renderer.info.render.frameCalls) return
+        pending = true
+        void renderer.resolveTimestampsAsync().then(gpuMs => {
+          if (gpuMs !== undefined && gpuMs > 0 && timing.getTimestampFrames('render').at(-1) === rendererFrame) {
+            recorder.recordGpu({ frame, gpuMs })
+          }
+        }).catch(() => { timing.trackTimestamp = false }).finally(() => { pending = false })
+      }
+    }
     if (started.fallbackReason) { startupTiming.fallbackReason = started.fallbackReason; console.warn(`Syn3h: ${started.fallbackReason}`) }
     this.backend = (this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl'
     startupTiming.backend = this.backend
@@ -181,6 +204,8 @@ export class Game {
   }
 
   private started = false
+  private recordPhoneFrame?: (startMs: number, intervalMs: number, playing: boolean) => void
+  private interruptPhoneReport?: () => void
   private paused = false
   /** True while the loop is stopped because nobody can see the page. */
   get isPaused(): boolean { return this.paused }
@@ -193,6 +218,7 @@ export class Game {
   pause(): void {
     if (this.paused) return
     this.paused = true
+    this.interruptPhoneReport?.()
     if (!this.started) return
     this.renderer.setAnimationLoop(null)
     // Clearing the callback is not enough: three keeps requesting animation frames for its own
@@ -271,6 +297,7 @@ export class Game {
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
     this.quality.frame(metrics, view === 'playing')
+    this.recordPhoneFrame?.(now, frameMs, view === 'playing')
   }
 
   /**
