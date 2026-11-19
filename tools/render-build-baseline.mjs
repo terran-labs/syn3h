@@ -223,6 +223,11 @@ try {
   await writeFile(output, JSON.stringify({ ...result, profile, renderSize, lightingNode, measurements, sceneMaterials, shadows, load: samples }), { flag: 'wx' })
   for (const [path, png] of shadowImages) await writeFile(path, png, { flag: 'wx' })
   console.table(measurements)
+  if (process.env.RENDER_VEHICLE_LIFETIMES === '1') {
+    const { runVehicleLifetimeProbe } = await import('./vehicle-lifetime-probe.mjs')
+    const lifetimes = await runVehicleLifetimeProbe(page)
+    await writeFile(output + '.vehicle-lifetimes.json', JSON.stringify(lifetimes), { flag: 'wx' })
+  }
 } finally {
   clearInterval(timer)
   await browser?.close()

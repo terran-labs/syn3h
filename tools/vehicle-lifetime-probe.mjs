@@ -1,5 +1,31 @@
 const CYCLES = 20
 
+// Three r187 counts renderer geometries and textures, but exposes no material
+// counter. Count reachable Material instances separately at the two endpoints.
+async function countHeapMaterials(page) {
+  const session = await page.context().newCDPSession(page)
+  const group = 'vehicle-lifetime-materials'
+  try {
+    await session.send('HeapProfiler.collectGarbage')
+    const { result } = await session.send('Runtime.evaluate', { objectGroup: group, expression: `(() => {
+      let material
+      window.syn3h.game.scene.traverse(o => { material ??= Array.isArray(o.material) ? o.material[0] : o.material })
+      for (let proto = Object.getPrototypeOf(material); proto; proto = Object.getPrototypeOf(proto)) {
+        if (Object.hasOwn(proto, 'setValues') && Object.hasOwn(proto, 'customProgramCacheKey')) return proto
+      }
+    })()` })
+    if (!result.objectId) throw new Error('Three Material prototype unavailable')
+    const { objects } = await session.send('Runtime.queryObjects', { prototypeObjectId: result.objectId, objectGroup: group })
+    const count = await session.send('Runtime.callFunctionOn', { objectId: objects.objectId,
+      functionDeclaration: 'function () { return this.filter(m => Object.hasOwn(m, "isMaterial") && m.isMaterial).length }',
+      returnByValue: true })
+    if (!Number.isInteger(count.result.value) || count.result.value < 1) throw new Error('Invalid heap material count')
+    return count.result.value
+  } finally {
+    try { await session.send('Runtime.releaseObjectGroup', { objectGroup: group }) } finally { await session.detach() }
+  }
+}
+
 /**
  * Run on an existing visible Playwright page in a dedicated solo host room.
  * Each cycle adds a fresh bot, swaps the player out and back through the
@@ -80,6 +106,7 @@ export async function runVehicleLifetimeProbe(page, { settleMs = 3000, timeout =
     })
     await settle()
     const initial = await snapshot()
+    initial.heapMaterials = await countHeapMaterials(page)
     for (let cycle = 1; cycle <= CYCLES; cycle++) {
       await setBotCount(1)
       await wait(() => {
@@ -97,6 +124,7 @@ export async function runVehicleLifetimeProbe(page, { settleMs = 3000, timeout =
     }
     await settle()
     const final = await snapshot()
+    final.heapMaterials = await countHeapMaterials(page)
     const rendererMemoryDelta = Object.fromEntries(
       Object.entries(initial.rendererMemory)
         .filter(([key]) => Object.hasOwn(final.rendererMemory, key))
@@ -108,6 +136,7 @@ export async function runVehicleLifetimeProbe(page, { settleMs = 3000, timeout =
       final,
       delta: {
         rendererMemory: rendererMemoryDelta,
+        heapMaterials: final.heapMaterials - initial.heapMaterials,
         rendererLivePipelines: final.rendererLivePipelines === null || initial.rendererLivePipelines === null
           ? null : final.rendererLivePipelines - initial.rendererLivePipelines,
         sceneUniqueMaterials: final.sceneUniqueMaterials - initial.sceneUniqueMaterials,
