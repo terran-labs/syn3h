@@ -113,6 +113,8 @@ export function hazeDepth(h: { density: number; height: number; sea: number }, f
 export interface FogSun {
   direction: () => THREE.Vector3
   color: () => THREE.Color
+  /** 0 to 1, how far the air in front of this surface is in sunlight (Environment's airLit). */
+  lit?: N
 }
 
 /**
@@ -197,7 +199,7 @@ export function heightFog(color: N, uniformDensity: N, sun?: FogSun): { color: N
     const c4 = c2.mul(c2) as N
     const lobe = c4.mul(c4) as N
     const share = tauA.div(tau.add(tauA).add(1e-6)) as N
-    fogged = fogged.add(vec3(sunColor as N).mul(lobe.mul(share).mul(AERIAL_SUN_GLOW)))
+    fogged = fogged.add(vec3(sunColor as N).mul(lobe.mul(share).mul(AERIAL_SUN_GLOW).mul(sun.lit ?? float(1))))
   }
   return { color: fogged, factor }
 }
