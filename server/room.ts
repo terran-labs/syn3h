@@ -60,6 +60,8 @@ import { sunDayLength } from '../src/world/sky/dayParams'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
 import { bigRedAllowed, bigRedCooldown } from '../src/weapons/bigRedParams'
+import { thunderFuseArm } from '../src/weapons/thunderParams'
+import { detonationEffect, fuseArmed, mayReport } from '../src/weapons/thunderRules'
 import { pesterAllowed, pesterCooldown, pesterLife, pesterMax, pesterRange } from '../src/weapons/pester/params'
 import { yoinkAllowed, yoinkCooldown, yoinkFling, yoinkHoldDistance, yoinkHoldTime, yoinkPunt, yoinkPuntRange, yoinkRange } from '../src/weapons/yoink/params'
 import {
@@ -165,6 +167,8 @@ interface Player {
   lastPesterAt: number
   /** Shots fired recently, by shot id, with server ms of firing. */
   shots: Map<number, number>
+  /** Which of `shots` are Plasma Thunder, the only kind that detonates. */
+  reds: Set<number>
   /** Server ms of this player's last tag change. */
   lastTag: number
   /** Simple per second budgets against floods. */
@@ -431,6 +435,9 @@ export class Room {
       }
       case 'hit':
         this.onHit(player, msg.shooter, msg.shot, msg.victim)
+        break
+      case 'detonate':
+        this.onDetonate(player, msg.shooter, msg.shot, msg.at, msg.cause, msg.victim)
         break
       case 'profile':
         this.onProfile(player, msg.kind, msg.colors, msg.name)
@@ -1221,6 +1228,7 @@ export class Room {
     if (red) player.lastRedAt = now
     else player.lastFireAt = now
     player.shots.set(shot.id, now)
+    if (red) { player.reds.add(shot.id); if (player.reds.size > 64) player.reds.delete(player.reds.values().next().value as number) }
     if (player.shots.size > 64) player.shots.delete(player.shots.keys().next().value as number)
     this.broadcast({ type: 'fire', from: player.info.id, shot }, peer)
   }
@@ -1423,6 +1431,47 @@ export class Room {
     shooter.shots.delete(shotId)
     shooter.pesters.delete(shotId)
     shooter.pesterTargets.delete(shotId)
+    shooter.reds.delete(shotId)
+    this.applyHit(shooter, victim, shotId, now)
+  }
+
+  /**
+   * A Plasma Thunder detonation (src/weapons/thunderRules.ts). One authority: the room takes the
+   * first valid report for a shot and ignores the rest, as for hits. Contact counts as a hit
+   * (tags in Tag, contact on the hill); a fuse is a knock (contact on the hill, never a tag);
+   * an end catches nobody. Every client bursts where this says.
+   */
+  private onDetonate(reporter: Player, shooterId: unknown, shotId: unknown, at: unknown, cause: unknown, victimId?: unknown): void {
+    if (typeof shooterId !== 'number' || typeof shotId !== 'number') return
+    if (cause !== 'contact' && cause !== 'fuse' && cause !== 'end') return
+    if (!Array.isArray(at) || at.length !== 3 || !at.every(v => typeof v === 'number' && Number.isFinite(v))) return
+    const shooter = this.byId(shooterId)
+    if (!shooter || !shooter.reds.has(shotId)) return
+    const firedAt = shooter.shots.get(shotId)
+    if (firedAt === undefined) return
+    const now = this.now()
+    if (now - firedAt > (laserLifetime(this.paramNumber(laserSpeed.def)) + 1) * 1000) return
+    let victim: Player | undefined
+    if (cause !== 'end') {
+      victim = typeof victimId === 'number' && victimId !== reporter.info.id ? this.bots.get(victimId) : reporter
+      if (!victim) return
+    }
+    if (!mayReport(cause, reporter.info.id, shooter.info.id, victim?.info.id, this.host, isBotId)) return
+    // The fuse arms after a moment of flight; the fire message itself took a little while to
+    // come, so allow a fifth of a second for that.
+    if (cause === 'fuse' && !fuseArmed((now - firedAt) / 1000 + 0.2, this.paramNumber(thunderFuseArm.def))) return
+    shooter.shots.delete(shotId)
+    shooter.reds.delete(shotId)
+    const point = at as [number, number, number]
+    this.broadcast({ type: 'detonated', shooter: shooter.info.id, shot: shotId, at: point, cause, ...(victim ? { victim: victim.info.id } : {}) })
+    if (!victim) return
+    const effect = detonationEffect(cause)
+    if (effect.tag) this.applyHit(shooter, victim, shotId, now)
+    else if (effect.contact && this.mode !== MODE_TAG) this.lastContact.set(victim.info.id, { by: shooter.info.id, at: now })
+  }
+
+  /** A hit the room has accepted: tell everyone, then the mode's rule (a tag, or contact on the hill). */
+  private applyHit(shooter: Player, victim: Player, shotId: number, now: number): void {
     this.broadcast({ type: 'hit', shooter: shooter.info.id, victim: victim.info.id, shot: shotId })
     if (this.mode !== MODE_TAG) {
       // On the hill a tag beam is a shove, and counts as contact for dunks.
@@ -1577,7 +1626,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, cordTo: null, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, page: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, cordTo: null, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, page: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), reds: new Set(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now, raceDriving: false, chat: null,
     }
   }

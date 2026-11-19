@@ -67,9 +67,13 @@ export class Blast {
   constructor(private readonly game: Game, private readonly hooks: BlastHooks) {}
 
   /** An impact of `kind` at `at`: push every vehicle in reach that this client simulates. */
-  at(kind: BlastKind, at: { x: number; y: number; z: number }): void {
-    if (!blastAllowed.value) return
-    const spec = blastSpec(kind)
+  /**
+   * A blast of `kind` at `at`. `share` scales its push and its reach: a Plasma Thunder skip is a
+   * third of a detonation (about 5 m and a third of the shove).
+   */
+  at(kind: BlastKind, at: { x: number; y: number; z: number }, share = 1): void {
+    if (!blastAllowed.value || !(share > 0)) return
+    const full = blastSpec(kind), spec = share === 1 ? full : { ...full, radius: full.radius * share, push: full.push * share }
     if (!(spec.radius > 0) || !(spec.push > 0)) return
     this.stats.blasts++
     const size = this.hooks.wrapSize()

@@ -2,7 +2,8 @@ import { wrapDelta } from '../../shared/wrap'
 import type { Terrain } from '../world/Terrain'
 
 /** What a marker stands for. People and bots are vehicles; a zone is a place (the hill). */
-export type MapKind = 'person' | 'bot' | 'zone'
+/** A flare: where a Plasma Thunder burst went up, in its shooter's colour, fading. */
+export type MapKind = 'person' | 'bot' | 'zone' | 'flare'
 export interface MapEntity {
   x: number; z: number; heading: number
   /** The vehicle's own tint, '#rrggbb'. Colour on the map means identity, never kind. */
@@ -11,6 +12,8 @@ export interface MapEntity {
   accent?: string
   /** Absent means a person: the safe default is the more prominent mark. */
   kind?: MapKind
+  /** A flare's remaining life, 1 new to 0 gone. */
+  fade?: number
   /** Whoever is "it" in Tag. */
   it?: boolean
   self?: boolean
@@ -119,7 +122,7 @@ export interface MarkLook { radius: number; alpha: number }
 export function markLook(kind: MapKind, fade: number, out: MarkLook = { radius: 0, alpha: 0 }): MarkLook {
   // A bot's lightness bends up (fade^.7) so the nearest third of the fade stays clearly visible.
   if (kind === 'bot') { out.alpha = luminance(96 * fade ** .7); out.radius = 2.2 + .9 * fade }
-  else if (kind === 'zone') { out.alpha = 1; out.radius = 4 }
+  else if (kind === 'zone' || kind === 'flare') { out.alpha = 1; out.radius = 4 }
   else { out.alpha = luminance(38 + 62 * fade); out.radius = 3.4 + 1.6 * fade }
   return out
 }
@@ -229,8 +232,10 @@ interface Slot {
   fade: number
   /** True when the glyph is part of a crowd on the rim, laid out as an ordered sector. */
   crowd: boolean
+  /** A flare's remaining life, 1 new to 0 gone. */
+  life: number
 }
-const newSlot = (): Slot => ({ x: 0, z: 0, heading: 0, kind: 'person', it: false, self: false, color: '', shades: [], accent: '', place: { x: 0, y: 0, distance: 0, bearing: 0, blend: 0 }, look: { radius: 0, alpha: 0 }, priority: 0, shown: false, fade: 1, crowd: false })
+const newSlot = (): Slot => ({ x: 0, z: 0, heading: 0, kind: 'person', it: false, self: false, color: '', shades: [], accent: '', place: { x: 0, y: 0, distance: 0, bearing: 0, blend: 0 }, look: { radius: 0, alpha: 0 }, priority: 0, shown: false, fade: 1, crowd: false, life: 1 })
 
 const IT = '#9dff8a', HAIRLINE = 'rgba(4, 10, 18, .55)'
 /** Mix steps from the paint toward black (negative) or white (positive): the facet shades. */
@@ -376,8 +381,9 @@ export class Minimap {
       slot.x = entity.x; slot.z = entity.z; slot.heading = entity.heading
       slot.kind = entity.kind ?? 'person'; slot.it = Boolean(entity.it); slot.self = false
       slot.color = slot.kind === 'zone' ? (/^#[0-9a-f]{6}$/i.test(entity.color) ? entity.color : '#ffb814') : markColor(entity.color)
+      slot.life = Math.min(1, Math.max(0, entity.fade ?? 1))
       slot.shades = markShades(slot.color); slot.accent = entity.accent ? markColor(entity.accent) : slot.shades[6]
-      slot.priority = slot.kind === 'person' ? 0 : slot.kind === 'zone' ? 1 : 2
+      slot.priority = slot.kind === 'person' ? 0 : slot.kind === 'zone' || slot.kind === 'flare' ? 1 : 2
     }
     this.count = n
   }
@@ -468,7 +474,7 @@ export class Minimap {
       // Wrap first (the nearest image round the planet), then turn: turning keeps distances.
       const o = turnOffset(wrapDelta(cx, s.x, size), wrapDelta(cz, s.z, size), this.turn, this.offset)
       placeMark(o.x, o.y, unitsPerMetre, 0, s.place)
-      s.fade = s.kind === 'zone' ? 1 : rimFade(s.place.distance, rimDistance, farthest); s.crowd = false
+      s.fade = s.kind === 'zone' || s.kind === 'flare' ? 1 : rimFade(s.place.distance, rimDistance, farthest); s.crowd = false
       markLook(s.kind, s.fade, s.look)
       s.look.radius *= m; s.shown = s.look.alpha * s.place.blend > .01 || s.place.blend < 1
       let j = order.length; order.push(i)
@@ -508,7 +514,7 @@ export class Minimap {
     const rim = this.rim; rim.length = 0
     for (let i = 0; i < this.count; i++) {
       const s = this.slots[i]
-      if (s.kind === 'zone' || !s.shown || s.place.blend < .5) continue
+      if (s.kind === 'zone' || s.kind === 'flare' || !s.shown || s.place.blend < .5) continue
       let j = rim.length; rim.push(i)
       while (j > 0 && this.slots[rim[j - 1]].place.bearing > s.place.bearing) { rim[j] = rim[j - 1]; j-- }
       rim[j] = i
@@ -702,6 +708,14 @@ export class Minimap {
       const r = (7 - 2 * blend) * m
       ctx.globalAlpha = .28; ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill()
       ctx.globalAlpha = 1; ctx.strokeStyle = s.color; ctx.lineWidth = 1.5 * this.px; ctx.stroke(); return
+    }
+    if (s.kind === 'flare') {
+      // A Plasma Thunder flare: a bright point with rings going out from it, in the shooter's
+      // colour, fading over its life. Shown at the rim when it is off the map, like the hill.
+      const phase = (performance.now() / 900) % 1, r = (3 + 7 * phase) * m
+      ctx.globalAlpha = s.life; ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(x, y, 2.6 * m, 0, Math.PI * 2); ctx.fill()
+      ctx.globalAlpha = s.life * (1 - phase); ctx.strokeStyle = s.color; ctx.lineWidth = 1.5 * this.px; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke()
+      ctx.globalAlpha = 1; return
     }
     const person = s.kind === 'person'
     if (inside > .01) {

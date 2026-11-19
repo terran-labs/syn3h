@@ -24,6 +24,16 @@ function setup(kind: BotGearOption['id'] = 'pester') {
 }
 
 describe('bot gear decisions', () => {
+  it('picks Plasma Thunder against a target flying above it, when Thunder is in range', () => {
+    // A jet 20 m up and 60 m ahead, inside a 30 degree cone; Grapple and Thunder both reach.
+    const vehicle = { id: 'bot-1', kind: 'buggy', body: { isValid: () => true, translation: () => ({ x: 0, y: 0, z: 0 }), rotation: () => ({ x: 0, y: 0, z: 0, w: 1 }), linvel: () => ({ x: 0, y: 0, z: -5 }) } } as unknown as Vehicle
+    const jet = { body: { isValid: () => true, translation: () => ({ x: 0, y: 20, z: -60 }) } } as unknown as Vehicle
+    const actions: BotGearAction[] = []
+    const controller = new BotGearController(vehicle, () => 128, () => true, () => true)
+    controller.setHooks({ available: () => [{ id: 'bungee', range: 120, cooldown: 2 }, { id: 'red', range: 250, cooldown: 2, chargeSeconds: 1 }], threats: () => [], act: (_v, a) => actions.push(a) })
+    for (let i = 0; i < 200 && !actions.length; i++) controller.step(0.02, jet, emptyInput(), true, true)
+    expect(actions[0]).toMatchObject({ gear: 'red', phase: 'press' })
+  })
   it('does nothing without hooks, and waits before reacting', () => {
     const s = setup()
     s.step(3); expect(s.actions).toEqual([])
