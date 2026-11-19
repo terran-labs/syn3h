@@ -8,7 +8,7 @@
  * one never recompiles a shader. The one exception is shadow quality, which rebuilds the light.
  */
 import * as THREE from 'three/webgpu'
-import { cameraPosition, max, normalize, positionWorld, pow, renderGroup, uniform, vec2, vec3 } from 'three/tsl'
+import { cameraPosition, dot, float, max, mix, normalWorld, normalize, positionWorld, pow, renderGroup, smoothstep as smoothNode, uniform, vec2, vec3 } from 'three/tsl'
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js'
 import { params } from '../../shared/params'
 import type { Game, System } from '../core/Game'
@@ -76,6 +76,12 @@ const SUNWARD_ADAPT = 0.1
 const LOW_SUN_LIGHT = 0.22, LOW_SUN_FILL = 0.45
 /** How tightly the sunward fog glow hugs the sun's bearing: broad by day, as narrow as the sky's glow at a low sun. */
 const FOG_LOBE_DAY = 4, FOG_LOBE_LOW_SUN = 48
+/**
+ * Surface sun angle (cosine of the normal to the sun) over which the air in front of it goes
+ * from the surface's shadow to sunlight, for the sun-ward fog glow. Open ground under a low
+ * sun sits inside the ramp, so it keeps a soft glow; a face turned from the sun keeps none.
+ */
+const FOG_AIR_SHADE_FROM = -0.1, FOG_AIR_SHADE_TO = 0.25
 /** Scale a colour down so its brightest channel is at most `max`, keeping its hue. */
 function capRGB(c: RGB, max: number): RGB {
   const m = Math.max(c[0], c[1], c[2])
@@ -167,7 +173,17 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   const cosA = vec2(view.x, view.z).dot(fogSunXZ) as N
   // The glow toward the sun is narrow, the darkening away from it broad. At a low sun the
   // glow narrows to the sky's own, so the far sea and land under it match the sky above.
-  const towardW = pow(max(cosA, 0.0), fogLobe as N)
+  // Haze in front of a surface that faces away from the sun lies in that surface's own
+  // shadow along a sun-ward view: it scatters the sky's light, not the sun's. Without this a
+  // hill with a low sun behind it took the bright sun-ward fog colour across its face, a glow
+  // that followed the sun (the owner, v26.11.1801, Alpine at sunrise). Sunlit faces and open
+  // ground keep the glow; the sky draws no fog, so the sky round the sun is unchanged.
+  const fogSunDir = live(new THREE.Vector3(0, 1, 0), () => sunDirection)
+  // Only while the sun is up: after sunset every surface faces from it, and the twilight in
+  // the far haze is the sky's light, which stays.
+  const sunUp = smoothNode(-0.05, 0.02, (fogSunDir as N).y)
+  const airLit = mix(float(1), smoothNode(FOG_AIR_SHADE_FROM, FOG_AIR_SHADE_TO, dot(normalWorld, fogSunDir as N)), sunUp) as N
+  const towardW = pow(max(cosA, 0.0), fogLobe as N).mul(airLit)
   const awayW = max(cosA.negate(), 0.0)
   const side = fogSide as N
   const fogColor = side.add((fogToward as N).sub(side).mul(towardW)).add((fogAway as N).sub(side).mul(awayW))
@@ -176,7 +192,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   // Height fog (src/world/weather/fog.ts): per planet haze that thins with altitude, plus the
   // uniform fog density above.
   // The sun is read at render time, after the state below exists.
-  const haze = heightFog(max(fogColor, vec3(0.0)), fogDensityU, { direction: () => sunDirection, color: () => sunColor })
+  const haze = heightFog(max(fogColor, vec3(0.0)), fogDensityU, { direction: () => sunDirection, color: () => sunColor, lit: airLit })
   ;(scene as unknown as { fogNode: unknown }).fogNode = weatherFogNode(haze.color, haze.factor)
 
   // State ---------------------------------------------------------------------------------

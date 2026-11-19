@@ -37,7 +37,7 @@ import { qualityLevel } from '../../core/quality'
 import { liquidWaves, type LiquidBody } from '../water/liquidWaves'
 import { buildBedTexture, buildRiverSurface, buildStillSurface, createWaterSurface, configureWaterBlending, waterOpacityNode, type WaterBed } from '../water/surface'
 import { WaterfallMist, fallsFromRivers } from '../water/mist'
-import { createFallMaterial, riverPieces } from '../water/falls'
+import { createFallMaterial, drapedRivers, receivingWater, riverPieces } from '../water/falls'
 import { paletteFor } from './palettes'
 
 interface Liquid {
@@ -333,18 +333,14 @@ export class Volcanics implements System {
       for (const p of lava.pools) add(buildStillSurface(ground, p.x, p.surface, p.z, p.radius, stillSpacing), still, true)
       // Receiving water for a river's mouth: the lake, a pool or the sea, never a river.
       const seaLevel = data.settings.dry ? -Infinity : this.builtSea
-      const waterAt = (x: number, z: number) => {
-        let y = seaLevel
-        for (const b of lava.lake ? [lava.lake, ...lava.pools] : lava.pools) {
-          if ((x - b.x) ** 2 + (z - b.z) ** 2 < b.radius ** 2) y = Math.max(y, b.surface)
-        }
-        return y
-      }
+      const waterAt = receivingWater(lava, seaLevel)
       const drawn: { points: { x: number; y: number; z: number }[]; drops: RiverDrop[] }[] = []
-      for (const r of lava.rivers) {
+      // The drape physics floats on (ProceduralTerrain.waterRivers): one line for both.
+      const lines = drapedRivers(lava, this.sampler, seaLevel)
+      for (const [ri, r] of lava.rivers.entries()) {
         if (r.points.length < 2) continue
         // Drawn where the water is held up; off a lip it falls (falls.ts drapeRiver).
-        const pieces = riverPieces(ground, r.points, r.width, waterAt, worldGravity.value, waterRiverMaxSpeed.value)
+        const pieces = riverPieces(ground, r.points, r.width, waterAt, worldGravity.value, waterRiverMaxSpeed.value, lines[ri])
         if (pieces.points.length < 2) continue
         add(buildRiverSurface(ground, pieces.points, r.width + 1.5, (slope) => riverSpeed(slope, waterRiverMaxSpeed.value), riverStep), this.newRiver.material, false, riverStep)
         for (const sheet of pieces.sheets) add(sheet, this.fallMaterial, false)

@@ -104,7 +104,10 @@ export class WaterEffects implements System {
     this.underwater.update(dt,lensWash(this.lens))
     {
       const c=game.camera.position,kind=waterUnderwater.value?terrain.liquidKindAt?.(c.x,c.z)??null:null
-      this.waterline.update(game.camera,kind?terrain.liquidHeightAt?.(c.x,c.z)??-Infinity:-Infinity,kind,this.underwater.tintColour,dt,lensWash(this.lens))
+      // The surface at the lens and its slope, from the one surface physics floats on.
+      const at=(x:number,z:number)=>kind?terrain.liquidHeightAt?.(x,z)??-Infinity:-Infinity
+      const surface=at(c.x,c.z),e=.25,sx=(at(c.x+e,c.z)-at(c.x-e,c.z))/(2*e),sz=(at(c.x,c.z+e)-at(c.x,c.z-e))/(2*e)
+      this.waterline.update(game.camera,surface,kind,this.underwater.tintColour,dt,lensWash(this.lens),Number.isFinite(sx)?sx:0,Number.isFinite(sz)?sz:0)
       const medium=cameraMedium();this.motes.update(medium.kind,medium.amount,this.underwater.tintColour)
     }
     this.trailBubbles(dt)

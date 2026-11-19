@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu'
-import { float, materialColor, mix, sin, smoothstep, time, uv, vec3 } from 'three/tsl'
-import { DROP_FALL, findDrops, riverSpeed, type RiverDrop } from '../terrain/lava'
+import { abs, float, materialColor, max, mix, mx_noise_float, smoothstep, time, uv, vec3 } from 'three/tsl'
+import { DROP_FALL, findDrops, riverSpeed, type LavaFeatures, type RiverDrop } from '../terrain/lava'
 
 type Point = { x: number; y: number; z: number }
 type Ground = { heightAt(x: number, z: number): number }
@@ -9,8 +9,8 @@ type Ground = { heightAt(x: number, z: number): number }
 export const RIVER_DRAPE_DEPTH = 1.7
 
 /**
- * Where a river is drawn. The planned surface (`points[].y`, what the physics floats on)
- * never rises, but the ground under it can fall away faster: a mouth pool carved into a
+ * Where a water river is, drawn and floated on alike (drapedRivers; physics reads it through
+ * ProceduralTerrain.waterRivers). The planned surface (`points[].y`) never rises, but the ground under it can fall away faster: a mouth pool carved into a
  * bowl, or a cliff the channel carve could not follow on the 4 m grid. Drawn at the planned
  * height there, the ribbon is a level slab hanging in the air. Unsupported water falls, so
  * each point is lowered to sit no more than RIVER_DRAPE_DEPTH above the ground under it, or
@@ -50,6 +50,33 @@ export function drapeRiver(ground: Ground, points: readonly Point[], waterAt: (x
 
 const DRAPE_STEP = 2.5
 
+/** The water a river's mouth runs into: the lake, a pool or the sea, -Infinity where there is none. */
+export function receivingWater(lava: LavaFeatures, sea: number): (x: number, z: number) => number {
+  const bodies = lava.lake ? [lava.lake, ...lava.pools] : lava.pools
+  return (x, z) => {
+    let y = sea
+    for (const b of bodies) if ((x - b.x) ** 2 + (z - b.z) ** 2 < b.radius ** 2) y = Math.max(y, b.surface)
+    return y
+  }
+}
+
+const draped = new WeakMap<LavaFeatures, { sea: number; ground: Ground; rivers: readonly (readonly Point[])[] }>()
+
+/**
+ * Every river's draped centre line (`drapeRiver`), in `lava.rivers` order: the surface water
+ * rivers are drawn at and float things at. A pure function of the world (its rivers, its ground)
+ * and the sea level, so every client computes the same line. Memoised per world and sea level;
+ * the sea gliding to a new level recomputes it, a few milliseconds.
+ */
+export function drapedRivers(lava: LavaFeatures, ground: Ground, sea: number): readonly (readonly Point[])[] {
+  const known = draped.get(lava)
+  if (known && known.sea === sea && known.ground === ground) return known.rivers
+  const waterAt = receivingWater(lava, sea)
+  const rivers = lava.rivers.map((r) => (r.points.length < 2 ? [] : drapeRiver(ground, r.points, waterAt)))
+  draped.set(lava, { sea, ground, rivers })
+  return rivers
+}
+
 function lerp(a: Point, b: Point, t: number): Point {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t }
 }
@@ -71,8 +98,10 @@ export interface RiverPieces {
 export function riverPieces(
   ground: Ground, points: readonly Point[], width: number, waterAt: (x: number, z: number) => number,
   gravity: number, maxSpeed: number,
+  /** The drape already made (drapedRivers), so drawing uses exactly what physics floats on. */
+  ready?: readonly Point[],
 ): RiverPieces {
-  const draped = drapeRiver(ground, points, waterAt)
+  const draped = ready ? [...ready] : drapeRiver(ground, points, waterAt)
   const drops = findDrops(draped)
   const sheets: THREE.BufferGeometry[] = []
   const covered: number[] = []
@@ -148,11 +177,15 @@ export function buildFallSheet(
 /** Procedural streaks move in flight-time coordinates, accelerating as the sheet falls. */
 export function createFallMaterial(): THREE.MeshStandardNodeMaterial {
   const material = new THREE.MeshStandardNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, roughness: .3 })
-  const p = uv(), travel = p.y.sub(time)
-  const streak = sin(p.x.mul(75).add(sin(travel.mul(13)))).mul(.5).add(.5)
-  const foam = smoothstep(.35, .85, streak.add(sin(travel.mul(24).add(p.x.mul(17))).mul(.15)))
-  material.colorNode = mix(materialColor.rgb, vec3(.86, .96, 1), foam)
-  const edge = smoothstep(0, .12, p.x).mul(float(1).sub(smoothstep(.88, 1, p.x)))
-  material.opacityNode = edge.mul(foam.mul(.35).add(.5))
+  // Falling water: white ropes running down the sheet between clearer strands, at a scale that
+  // still reads from across a valley (0.8 m strands averaged to a milky slab), carried down at
+  // the fall's speed. Its sides fade over a fifth of its width, so it has no hard edge.
+  const p = uv(), travel = p.y.sub(time.mul(1.2))
+  const rope = (n: THREE.Node<'float'>) => { const r = float(1).sub(abs(n)); return r.mul(r).mul(r) }
+  const ropes = max(rope(mx_noise_float(vec3(p.x.mul(7), travel.mul(0.6), time.mul(0.2)))), rope(mx_noise_float(vec3(p.x.mul(17), travel.mul(1.3), time.mul(0.3).add(5)))).mul(0.8))
+  const foam = smoothstep(.3, .75, ropes)
+  material.colorNode = mix(materialColor.rgb, vec3(.9, .97, 1), foam)
+  const edge = smoothstep(0, .2, p.x).mul(float(1).sub(smoothstep(.8, 1, p.x)))
+  material.opacityNode = edge.mul(foam.mul(.55).add(.3))
   return material
 }
