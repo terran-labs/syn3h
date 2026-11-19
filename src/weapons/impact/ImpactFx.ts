@@ -115,6 +115,9 @@ export class ImpactFx {
       const lifted = this.b.copy(at).addScaledVector(n, impactFlash.value * scale * 0.3)
       this.flash.emit(lifted, this.v.set(0, 0, 0), thunder ? 0.12 : 0.09, impactFlash.value * scale, impactFlash.value * scale * 3, this.color)
       if (thunder) this.flash.emit(lifted, this.v.set(0, 0, 0), 0.2, impactFlash.value * 2, impactFlash.value * 4, this.color.copy(color).multiplyScalar(0.9))
+      // After the flash, a faint glow of plasma in the gear's colour that fades over about 0.3 s:
+      // something for the eye to follow once the core has gone.
+      this.flash.emit(lifted, this.v.set(0, 0.4, 0), thunder ? 0.4 : 0.32, impactFlash.value * scale * 1.1, impactFlash.value * scale * 1.2, this.color.copy(color).multiplyScalar(0.35))
     }
 
     // Sparks: a cone around the normal, two waves (the second slower and a touch later in life).
@@ -128,7 +131,7 @@ export class ImpactFx {
       const v = this.v.copy(n).multiplyScalar(0.6 + this.noise() * 0.8)
         .addScaledVector(tangent, Math.cos(a) * spread).addScaledVector(bitangent, Math.sin(a) * spread)
         .normalize().multiplyScalar(speed * (second ? 0.3 + this.noise() * 0.25 : 0.6 + this.noise() * 0.8))
-      s.life = second ? 0.9 + this.noise() * 0.5 : 0.3 + this.noise() * 0.3; s.width = thunder ? 0.03 : 0.02
+      s.life = second ? 1.35 + this.noise() * 0.75 : 0.3 + this.noise() * 0.3; s.width = thunder ? 0.03 : 0.02
       s.drag = second ? 1.2 : 4.5; s.gravity = second ? 1.2 : 0.6; s.streak = second ? 0.035 : 0.06
       this.sparks.emit(at, v, s, this.color.copy(color))
     }

@@ -26,7 +26,7 @@ if (process.argv[2] === '--compose') {
     const cell = (src, i) => `<figure><img src="file://${src}"><figcaption>${ages[i]} ms</figcaption></figure>`
     // A page in a file beside the frames: one set from a string cannot load files.
     const { writeFileSync } = await import('node:fs')
-    writeFileSync(`${dir}/strip.html`, `<body style="margin:0;background:#111;color:#eee;font:14px system-ui"><h3 style="margin:8px">${strip}</h3>${[oldLabel, newLabel].map(lab => `<div style="display:flex;align-items:center"><b style="width:60px;padding-left:8px">${lab}</b>${row(lab).map(cell).join('')}</div>`).join('')}<style>figure{margin:3px}img{width:${strip.startsWith('phone') ? 200 : 300}px;display:block}figcaption{font-size:11px;text-align:center}</style></body>`)
+    writeFileSync(`${dir}/strip.html`, `<body style="margin:0;background:#111;color:#eee;font:14px system-ui"><h3 style="margin:8px">${strip}</h3>${[oldLabel, newLabel].filter(Boolean).map(lab => `<div style="display:flex;align-items:center"><b style="width:60px;padding-left:8px">${lab}</b>${row(lab).map(cell).join('')}</div>`).join('')}<style>figure{margin:3px}img{width:${strip.startsWith('phone') ? 200 : 300}px;display:block}figcaption{font-size:11px;text-align:center}</style></body>`)
     await page.goto(`file://${dir}/strip.html`)
     await page.waitForTimeout(300)
     await page.screenshot({ path: `${dir}/../strips/${strip}.png`, fullPage: true })
@@ -46,7 +46,10 @@ const SURFACES = process.env.SYN3H_SURFACES ? process.env.SYN3H_SURFACES.split('
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const report = []
 try {
-  const page = await browser.newPage(phone ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport: { width: 1280, height: 800 } })
+  const context = await browser.newContext(phone ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport: { width: 1280, height: 800 } })
+  // Offline: the room would set its own time of day (and other world settings) back over noon.
+  await context.routeWebSocket(/\/ws(?:\?|$)/, socket => socket.close())
+  const page = await context.newPage()
   const errors = []; page.on('pageerror', e => errors.push(e.message))
   // The same world in every build (a fixed planet and seed), so both stand in the same places.
   await page.goto(`${base}?planet=alpine&seed=7&autoplay=1&room=strips-${Date.now()}`)
@@ -55,6 +58,8 @@ try {
     document.exitPointerLock?.()
     const s = window.syn3h, p = s.params
     p.set('gfx.auto', false); p.set('gfx.level', 2); p.set('daydream.seconds', 0)
+    // Offline, this client simulates the bots itself (as tools/frame-profile.mjs does).
+    s.bots.remote = false
     p.set('bots.count', 1); p.set('bots.canDrive', false); p.set('bots.canFire', false)
     p.set('bigRed.cooldown', 0.3)
     // Noon, held, in every build; no interface in the frames.
@@ -64,7 +69,19 @@ try {
     // The impact effects of either build: frozen while a strip is taken, stepped by hand.
     const L = window.syn3hNet.lasers, world = s.game.systems.find(x => x.constructor?.name === 'EffectWorld')
     window.__fx = [L.fx, L.pulses, world].filter(Boolean).map(sys => ({ sys, update: sys.update.bind(sys) }))
-    window.__freeze = on => { for (const f of window.__fx) f.sys.update = on ? () => {} : f.update }
+    window.__freeze = on => {
+      for (const f of window.__fx) f.sys.update = on ? () => {} : f.update
+      // The player's car held still too, so a blast beside it cannot throw it (and the camera).
+      const b = window.syn3h.player.body; b.lockTranslations(on, true); b.lockRotations(on, true)
+      if (on) { b.setLinvel({ x: 0, y: 0, z: 0 }, true); b.setAngvel({ x: 0, y: 0, z: 0 }, true) }
+    }
+    // For the vehicle strips, a camera this script places (absolute `__cam` eye and look): the
+    // chase camera settles side on often enough that the bot hides behind the car.
+    s.game.add({ update() {
+      const c = window.__cam
+      if (!c) return
+      s.game.camera.position.set(...c.eye); s.game.camera.lookAt(...c.look); s.game.camera.updateMatrixWorld()
+    } })
     window.__step = seconds => { for (let t = 0; t < seconds - 1e-6; t += 1 / 120) for (const f of window.__fx) f.update(Math.min(1 / 120, seconds - t)) }
   })
   await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 1, null, { timeout: 30000 })
@@ -108,7 +125,7 @@ try {
     await page.waitForTimeout(5000)
     // The target: where a ray from the camera, right of centre and low on the screen, meets the
     // ground or the water. In view by construction, beside the car rather than behind it.
-    const aimed = await page.evaluate(surface => {
+    const aimed = await page.evaluate(([surface, phone]) => {
       const s = window.syn3h, t = s.terrain, cam = s.game.camera, o = s.player.object.position
       const dir = o.clone().set(0.35, -0.3, 0.5).unproject(cam).sub(cam.position).normalize()
       const p = cam.position.clone()
@@ -119,16 +136,21 @@ try {
       }
       const bot = s.bots.vehicles[0]
       if (surface === 'vehicle' && bot) {
-        // The bot 9 m ahead of the car and 3 m to its right, side on to the camera, every time.
-        const q = s.player.object.quaternion, f = o.clone().set(0, 0, -1).applyQuaternion(q).setY(0).normalize(), right = o.clone().set(-f.z, 0, f.x)
-        p.copy(o).addScaledVector(f, 9).addScaledVector(right, 3); p.y = t.heightAt(p.x, p.z) + 1
+        // The bot 12 m ahead of the car and 3 m right; the camera behind the car's left
+        // shoulder, as a chase camera would sit, so the bot shows clear of the car on any screen.
+        const f = o.clone().set(0, 0, -1).applyQuaternion(s.player.object.quaternion).setY(0).normalize(), right = o.clone().set(-f.z, 0, f.x)
+        p.copy(o).addScaledVector(f, 12).addScaledVector(right, 3)
+        p.y = t.heightAt(p.x, p.z) + 1
+        const eye = o.clone().addScaledVector(f, -6).addScaledVector(right, phone ? -1 : -2.5).setY(o.y + 2.6)
+        const look = o.clone().lerp(p, 0.7)
+        window.__cam = { eye: eye.toArray(), look: look.toArray() }
         bot.teleport(p.clone(), Math.atan2(-right.x, -right.z)); bot.body.setLinvel({ x: 0, y: 0, z: 0 }, true); bot.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
         p.y += 0.3
       }
       window.__target = { x: p.x, y: p.y, z: p.z }
       const wet = (t.liquidHeightAt?.(p.x, p.z) ?? -Infinity) > t.heightAt(p.x, p.z)
       return wet ? t.liquidKindAt?.(p.x, p.z) : t.surfaceAt?.(p.x, p.z)
-    }, surface)
+    }, [surface, phone])
     placed.found = aimed
     if (surface === 'vehicle') await page.waitForTimeout(1200)
     for (const weapon of ['tag', 'thunder']) {
@@ -155,6 +177,7 @@ try {
       report.push(`${surface} (${placed.found}) ${weapon}: ${landed ? 'landed' : 'no impact seen'}`)
       await page.waitForTimeout(1500)
     }
+    await page.evaluate(() => { window.__cam = null })
   }
   if (errors.length) report.push(`page errors: ${errors.slice(0, 3).join(' | ')}`)
 } finally {
