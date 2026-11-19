@@ -33,6 +33,7 @@ export class WaterEffects implements System {
   private serial=0
   private point=new Vector3()
   private velocity=new Vector3()
+  private readonly shape={ball:0}
   constructor(private game:Game,private terrain:Terrain,private slot:PlayerSlot,private bots:{readonly vehicles:readonly Vehicle[]}){
     this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples,terrain);this.lavaSpray=new Spray(game.scene,this.ripples,terrain,'lava');this.underwater=new Underwater(game,terrain);this.bubbles=new UnderwaterBubbles(game.scene,terrain,game.camera)
     this.motes=new Motes(game.scene);this.waterline=new Waterline(game.scene)
@@ -77,11 +78,13 @@ export class WaterEffects implements System {
         // Measured over the ball's bottom metre: a floating ball dips only its base, a few per cent
         // of its height, and a skip must still read as an entry.
         if(ball&&v.zorb.radius>0){bottom=ball.translation().y-v.zorb.radius;top=bottom+1}
+        // The ball touches the water at one patch: it leaves one soft trail, not a hull's wake.
+        this.shape.ball=ball&&v.zorb.radius>0?v.zorb.radius:0
         const fraction=submergedFraction(bottom,top,surface)
         let id=this.ids.get(v);if(!id){id=`water-${++this.serial}`;this.ids.set(v,id)}
         const velocity=v.body.linvel();this.point.set(x,surface,z);this.velocity.set(velocity.x,velocity.y,velocity.z)
         // Send dry intervals too, so re-entry splashes detect the transition.
-        ;(kind==='lava'?this.lavaSpray:this.spray).vehicle(id,this.point,this.velocity,fraction,dt)
+        ;(kind==='lava'?this.lavaSpray:this.spray).vehicle(id,this.point,this.velocity,fraction,dt,this.shape)
         if(kind==='water'&&!waterSpray.value&&fraction>0&&Math.hypot(velocity.x,velocity.z)>1)this.ripples.disturb(x,z,1.5,Math.min(.15,Math.hypot(velocity.x,velocity.z)*.004)*Math.min(.1,Math.max(0,dt))*60)
       }
     }

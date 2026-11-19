@@ -25,14 +25,15 @@ describe('spray simulation', () => {
     expect(sim.dropletCount).toBeGreaterThan(50)
     // Each arm has a run of points; segments join consecutive points plus the live head.
     expect(sim.wakePoints).toBeGreaterThan(ARMS * 10)
-    const n = cap.vehicles * ARMS * cap.points + cap.rings, A = new Float32Array(n * 4), B = new Float32Array(n * 4), S = new Float32Array(n * 4), L = new Float32Array(n * 4)
+    const n = cap.vehicles * ARMS * cap.points + cap.rings + cap.ripplets, A = new Float32Array(n * 4), B = new Float32Array(n * 4), S = new Float32Array(n * 4), L = new Float32Array(n * 4)
     const segments = sim.packSurface(A, B, S, L)
-    // A fast first touchdown also splashes: its foam ring is drawn after the wake.
-    expect(segments).toBe(sim.wakePoints + sim.ringCount)
+    // A fast first touchdown also splashes: its foam ring, and the small rings where its drops
+    // landed, are drawn after the wake.
+    expect(segments).toBe(sim.wakePoints + sim.ringCount + sim.rippletCount)
     // Consecutive segments of one arm share their joint exactly: no gaps, no overlapping slats.
     expect(A[4]).toBe(B[0]); expect(A[6]).toBe(B[2]); expect(S[4 + 0]).toBe(S[2]); expect(S[4 + 1]).toBe(S[3])
     // Foam rides the true moving surface, a little above it.
-    for (let i = 0; i < segments - sim.ringCount; i++) expect(A[i * 4 + 1]).toBeCloseTo(sea.liquidHeightAt(A[i * 4]) + WAKE_LIFT, 4)
+    for (let i = 0; i < segments - sim.ringCount - sim.rippletCount; i++) expect(A[i * 4 + 1]).toBeCloseTo(sea.liquidHeightAt(A[i * 4]) + WAKE_LIFT, 4)
   })
 
   it('grows the wake with speed', () => {
