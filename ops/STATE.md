@@ -11,8 +11,14 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.1713 (release-51), source eb0d638c, frozen copy 20261117-223317-eb0d638c,
-Worker version 61a2c3c6, at https://www.syn3h.com/ since 17 November 22:58 PST.
+Live: v26.11.1802 (release-54), source 128d3245, frozen copy 20261118-172353-128d3245,
+Worker version 81b393e0, at https://www.syn3h.com/ since 18 November 18:19 PST.
+
+Gate relaxed once, 18 November, by the Foreman, for v26.11.1802 only: macOS's own
+mediaanalysisd (about 300% CPU), Spotlight indexing, a virtual machine and Docker held the
+one-minute load at 24 to 28 for 45 minutes with no builder causing it. The release went when no
+builder held a heavy slot and the load stayed under 20 for two minutes (it passed at 6.44).
+Staging took the risk first. The script's default gate (under 12 for two minutes) is unchanged.
 
 Outage, 18 November: the Orchestrator (and builder aa1e0a5e at 00:38) stopped at about 00:18 PST
 with "Can't reach the API server", a network or DNS outage, just after v26.11.1714's second
@@ -41,6 +47,9 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.1711 | 49 | m-gentle-1711 | tap to begin, softer tyre tracks, gentle sun rays, larger near captions |
 | v26.11.1712 | 50 | m-column-1712 | driving column, touch aiming, chat card, heading-up minimap, lobby returns upright |
 | v26.11.1713 | 51 | m-physics-1713 | Zorb skips on water and lava, bot pacing hold and keepCount, fresh vehicle on a new planet |
+| v26.11.1800 | 52 | m-lobby-1800 | Welcome guide, labelled lobby buttons and frosted panel, calmer lobby music, longer opening |
+| v26.11.1801 | 53 | m-rays-1801 | no sun rays or flare under water or lava; no rays after sunset |
+| v26.11.1802 | 54 | m-water-1802 | vehicles float on the drawn river; rivers level; true camera waterline |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
