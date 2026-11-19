@@ -299,6 +299,33 @@ describe('vegetation', () => {
       expect(a.cover.pressed().length).toBe(0)
     })
 
+    it('lets wheels, treads and a Zorb leave a track, and only hovercraft and jets flutter it', () => {
+      const a = coverAt(start.x, start.z)
+      const vehicle = (kind: string, zorbRadius = 0) => {
+        const o = new THREE.Object3D()
+        o.userData.vehicleTouch = () => ({ kind, zorbRadius, grounded: kind === 'hovercraft' || kind === 'jet' ? 0 : 4 })
+        return o
+      }
+      const buggy = vehicle('buggy'), tank = vehicle('tank'), zorb = vehicle('hovercraft', 1.6), hover = vehicle('hovercraft'), jet = vehicle('jet')
+      const lanes: [THREE.Object3D, number, number][] = [[buggy, -8, 0.7], [tank, -4, 1.2], [zorb, 0, 1.6], [hover, 4, 1.5], [jet, 8, 1]]
+      a.cover.setVehicles(() => lanes.map(([o]) => o))
+      for (let i = 0; i < 30; i++) {
+        for (const [o, dz, lift] of lanes) {
+          const x = start.x - 6 + i * 0.2, z = start.z + dz
+          o.position.set(x, sampler.heightAt(x, z) + lift, z)
+        }
+        a.cover.update(1 / 60)
+      }
+      // Where the ground vehicles passed, a track; none under the wash of the others.
+      for (const dz of [-8, -4, 0]) expect(a.cover.tracked(start.x - 3, start.z + dz).bend).toBeGreaterThan(0.9)
+      for (const dz of [4, 8]) expect(a.cover.tracked(start.x - 3, start.z + dz).bend).toBe(0)
+      // The hovercraft and the low jet flutter it (with the trail), as before; the others do not.
+      const pressed = a.cover.pressed()
+      for (const b of pressed) expect(Math.abs(b.z - start.z - 4) < 0.5 || Math.abs(b.z - start.z - 8) < 0.5).toBe(true)
+      expect(pressed.some(b => Math.abs(b.z - start.z - 4) < 0.5)).toBe(true)
+      expect(pressed.some(b => Math.abs(b.z - start.z - 8) < 0.5)).toBe(true)
+    })
+
     it('builds night life only where the level and the room allow it', () => {
       const c = coverAt(start.x, start.z, 2)
       const all = c.cover.stats().drawn.length
