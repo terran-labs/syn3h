@@ -1,7 +1,8 @@
 /** GPU-backed profiling with one change per case, fresh contexts, fixed quality and pixel ratio.
- * node tools/frame-profile.mjs [URL] [output JSON] [headed|headless] [all|probe|verify|round]
+ * node tools/frame-profile.mjs [URL] [output JSON] [headed|headless] [all|probe|verify|round|fire]
  * round: the round planet against the same world drawn flat, back to back at 1920 x 1080,
  * parked, moving and with eight bots; the first pair is repeated at the end to show drift.
+ * fire: idle against eight vehicles' worth of gear impacts, at High and Low, desktop and phone.
  * Set PROFILER_WAIT_QUIET=1 to gate launch on host load below 3 and run unchanged terrain tests.
  * Otherwise host load is recorded and paired measurements run immediately.
  * CPU submission time, GPU timestamp time and RAF interval are separate measurements.
@@ -24,8 +25,8 @@ if(process.argv[5]!=='probe'&&process.env.PROFILER_WAIT_QUIET==='1'){
 const browser=await chromium.launch({channel:'chrome',headless,args:['--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=metal','--ignore-gpu-blocklist']})
 const cases=['baseline','shadow0','shadow1','shadow3','terrainLow','terrainMedium','skyOff','cloudZero','effectsOff','moving','movingEffectsOff','night','nightHeadlightOff','bots4','bots8','koth','koth4','koth8','kothMarkerOff','minimapOff','tags8','domOff','lobby','pixel075','pixel15','pixel2','uniformSweep','baselineEnd']
 try {
- for(const [width,height] of process.argv[5]==='probe'?[[1280,720]]:process.argv[5]==='round'?[[1920,1080]]:process.argv[5]==='verify'?[[1920,1080],[390,844]]:[[1280,720],[1920,1080],[390,844]]) {
-  for(const variant of process.argv[5]==='probe'?['baseline']:process.argv[5]==='round'?['round','flat','roundMoving','flatMoving','roundBots8','flatBots8','round','flat']:process.argv[5]==='verify'?(width===390?['qualityMobile4','qualitySafe2']:['qualityDesktop8']):width===390?['phone0','phone1','phone2']:cases){
+ for(const [width,height] of process.argv[5]==='fire'?[[1280,720],[390,844]]:process.argv[5]==='probe'?[[1280,720]]:process.argv[5]==='round'?[[1920,1080]]:process.argv[5]==='verify'?[[1920,1080],[390,844]]:[[1280,720],[1920,1080],[390,844]]) {
+  for(const variant of process.argv[5]==='fire'?['baseline','fire8','baselineLow','fire8Low']:process.argv[5]==='probe'?['baseline']:process.argv[5]==='round'?['round','flat','roundMoving','flatMoving','roundBots8','flatBots8','round','flat']:process.argv[5]==='verify'?(width===390?['qualityMobile4','qualitySafe2']:['qualityDesktop8']):width===390?['phone0','phone1','phone2']:cases){
    const context=await browser.newContext({viewport:{width,height},deviceScaleFactor:width===390?3:process.argv[5]==='verify'?2:1})
    await context.routeWebSocket(/\/ws(?:\?|$)/,socket=>socket.close())
    const page=await context.newPage(), errors=[]
@@ -73,6 +74,14 @@ try {
       const tags=window.syn3hNet.tags, original=tags.update.bind(tags)
       const list=Array.from({length:8},(_,i)=>({vehicle:{object:{position:s.player.object.position.clone().add({x:(i-4)*3,y:0,z:-15})}},name:`Profile ${i}`,it:false}))
       tags.update=()=>original(list)
+    }
+    // fire: eight vehicles' worth of gear impacts, at High and at Low (gfx.level 1): eight Plasma
+    // Tag shots into the ground around the player every quarter second, and a Plasma Thunder
+    // every 2.5 seconds. The impact effects are the change being measured.
+    if(variant.endsWith('Low'))s.params.set('gfx.level',1)
+    if(variant.startsWith('fire8')){
+      let n=0
+      setInterval(()=>{const net=window.syn3hNet;if(!net)return;for(let i=0;i<8;i++){const a=i/8*Math.PI*2+n*.3;net.fire([Math.cos(a)*.75,-.6,Math.sin(a)*.75])};if(++n%10===0)net.fire([0,-.45,-.9],undefined,'red')},250)
     }
     if(variant==='domOff')for(const node of document.body.children)if(node.tagName!=='CANVAS'&&node.tagName!=='SCRIPT')node.style.display='none'
     if(variant==='lobby')s.shell.openMenu()

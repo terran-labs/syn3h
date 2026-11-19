@@ -38,7 +38,10 @@ export class ParticleBatch {
     const cfg=attribute('fxSettings','vec4'),age=this.clock.sub(cfg.x),unit=age.div(cfg.y).clamp(0,1)
     const m=new T.SpriteNodeMaterial({transparent:true,depthWrite:false,blending:additive?T.AdditiveBlending:T.NormalBlending})
     m.positionNode=attribute('fxOrigin','vec3').add(attribute('fxVelocity','vec3').mul(age.max(0)))
-    const size=cfg.z.add(cfg.w.mul(age.max(0))).max(0)
+    // Nothing once its life is over (or before it starts): a zero-size quad is never rasterised.
+    // The size grew with age without end, so every dead slot was still drawn, transparent and
+    // ever larger, for as long as the batch lived.
+    const size=cfg.z.add(cfg.w.mul(age.max(0))).max(0).mul(age.greaterThanEqual(0).and(age.lessThan(cfg.y)).select(1,0))
     m.scaleNode=vec2(size,size)
     const look=sprite(uv().mul(2).sub(1),particleSeed(cfg.x,float(instanceIndex)),age.max(0),octaves)
     m.colorNode=attribute('fxTint','vec3').mul(look.rgb)

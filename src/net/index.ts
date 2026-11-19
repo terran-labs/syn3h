@@ -38,7 +38,7 @@ import {
 } from '../../shared/protocol'
 import type { Game, System } from '../core/Game'
 import { createVehicle, type VehicleKind } from '../vehicles'
-import type { Vehicle } from '../vehicles/Vehicle'
+import type { Vehicle, VehicleObjectEvents } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import type { BotGearHooks as BotDecisionHooks } from '../bots/gear'
 import { BotGear, botGearOptions } from '../weapons/BotGear'
@@ -349,6 +349,8 @@ export class NetClient implements System {
         return true
       },
       judgedId: (h) => this.judgedId(h),
+      // Impacts look like what they struck: dust on sand, steam on water (weapons/impact).
+      terrain: () => this.ctx.terrain,
       isVehicleBody: (h) => [...this.remotes.values()].some((r) => r.vehicle.body.handle === h),
       onHit: (shooter, shot, victim, at, dir, red) => {
         if (materializing(this.vehicleOf(shooter)) || materializing(this.vehicleOf(victim))) return
@@ -375,6 +377,7 @@ export class NetClient implements System {
         this.send(victim === this.id ? { type: 'hit', shooter, shot } : { type: 'hit', shooter, shot, victim })
       },
     })
+    this.followSeam(this.ctx.player)
     // Gear (Weapons lane). The Bungee pulls only vehicles this client simulates.
     this.gear = new GearRack(game)
     this.bungee = new Bungee(game, {
@@ -630,6 +633,7 @@ export class NetClient implements System {
         // Letting go is a courtesy to the room; it must never stop the swap.
         console.warn('gear not released on vehicle swap', err)
       }
+      this.followSeam(vehicle)
       this.ctx.player = vehicle
       this.seat.swap(vehicle)
       this.marker.local = vehicle
@@ -937,6 +941,7 @@ export class NetClient implements System {
   }
 
   dispose(): void {
+    if (this.seamVehicle) (this.seamVehicle.object as THREE.Object3D<VehicleObjectEvents>).removeEventListener('tileshift', this.onTileShift)
     this.offRescue()
     this.resetGear()
     this.raceBridge.disconnect()
@@ -1074,6 +1079,20 @@ export class NetClient implements System {
   }
 
   /** True if this client simulates the vehicle (ours, or a bot while we run the bots), so gear may push it. */
+  /**
+   * When the world wraps under the local player (its vehicle's tileshift), shots, impacts and
+   * fireworks move with it, so a flare stays where it went up. Follows the player's vehicle
+   * through a swap.
+   */
+  private readonly onTileShift = ({ dx, dz }: { dx: number; dz: number }) => this.lasers.shift(dx, dz)
+  private seamVehicle: Vehicle | null = null
+  private followSeam(vehicle: Vehicle): void {
+    type Seamed = THREE.Object3D<VehicleObjectEvents>
+    if (this.seamVehicle) (this.seamVehicle.object as Seamed).removeEventListener('tileshift', this.onTileShift)
+    this.seamVehicle = vehicle
+    ;(vehicle.object as Seamed).addEventListener('tileshift', this.onTileShift)
+  }
+
   private ownsVehicle(id: number): boolean {
     return id === this.id || (isBotId(id) && Boolean(this.bots && !this.bots.remote) && !this.remotes.has(id))
   }
