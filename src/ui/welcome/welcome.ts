@@ -128,6 +128,7 @@ ${figure('canyon-convoy', 'Tag is better with company.', FULL)}
       <li><span>${k('L')}<i>or</i>${k('click', 'Mouse click')}</span>use gear</li>
       <li><span>${k('1')}<i>to</i>${k('5')}</span>choose gear</li>
       <li><span>${k('X')}</span>Zorb ball</li>
+      <li><span>${k('U')}</span>flip upright, when nearly stopped</li>
       <li><span>${k('click', 'Mouse click')}</span>capture the mouse to look round</li>
       <li><span>${k('C')}</span>camera views</li>
       <li><span>${k('H')}</span>this vehicle’s controls</li>

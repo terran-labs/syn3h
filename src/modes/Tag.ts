@@ -2,6 +2,7 @@
  * Tag display: a marker floating over whoever is "it", and the original's bounds reset for
  * the local vehicle (VehicleMe.js 70-77). The rules themselves run on the room server.
  */
+import { reportRescue } from '../core/rescueLog'
 import * as THREE from 'three/webgpu'
 import type { Game, System } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
@@ -70,6 +71,8 @@ export class BoundsGuard implements System {
     if (p.y < -300 || outside || !Number.isFinite(p.y)) {
       const s = this.terrain.spawnPoint(this.slot)
       this.player.teleport(s.position, s.heading)
+      // A broken state, never a consequence of driving: logged as a bug (src/core/rescueLog.ts).
+      reportRescue(!Number.isFinite(p.y) ? 'nonfinite' : outside ? 'outside' : 'fell')
       this.onReset()
       return
     }
