@@ -13,7 +13,7 @@
  * A spark whose life is over (or has not begun) collapses to a point and is never rasterised.
  */
 import * as T from 'three/webgpu'
-import { attribute, cameraPosition, cross, dot, exp, float, mix, normalize, positionGeometry, smoothstep, uniform, uv, vec3 } from 'three/tsl'
+import { attribute, cameraPosition, cross, dot, exp, float, mix, normalize, positionGeometry, smoothstep, uniform, vec3 } from 'three/tsl'
 import { hotExposureNode } from '../../vehicles/skins/hotExposure'
 
 type N = any // TSL's arithmetic nodes are dynamically typed.
@@ -48,13 +48,19 @@ export class SparkBatch {
   private readonly motion: T.InstancedBufferAttribute
   private readonly tint: T.InstancedBufferAttribute
   private next = 0
+  private readonly attributes: readonly (readonly [T.InstancedBufferAttribute, number])[]
   emitted = 0
 
   constructor(readonly capacity: number, name: string) {
     const quad = new T.PlaneGeometry(1, 1), g = new T.InstancedBufferGeometry().copy(quad as unknown as T.InstancedBufferGeometry)
     quad.dispose(); g.instanceCount = capacity
+    // WebGPU allows eight vertex buffers to a draw: the quad's corners and six of the spark's own
+    // are seven. The quad's normal and uv would make nine (the draw, and the pass with it, are
+    // rejected), so they go; the corner gives the uv.
+    g.deleteAttribute('normal'); g.deleteAttribute('uv')
     const attr = (size: number) => new T.InstancedBufferAttribute(new Float32Array(capacity * size), size).setUsage(T.DynamicDrawUsage)
     this.origin = attr(3); this.velocity = attr(3); this.settings = attr(4); this.plane = attr(4); this.motion = attr(2); this.tint = attr(3)
+    this.attributes = [[this.origin, 3], [this.velocity, 3], [this.settings, 4], [this.plane, 4], [this.motion, 2], [this.tint, 3]]
     for (let i = 0; i < capacity; i++) this.settings.setXYZW(i, -1e4, 1, 0, 1)
     g.setAttribute('sparkOrigin', this.origin); g.setAttribute('sparkVelocity', this.velocity); g.setAttribute('sparkSettings', this.settings)
     g.setAttribute('sparkPlane', this.plane); g.setAttribute('sparkMotion', this.motion); g.setAttribute('sparkTint', this.tint)
@@ -83,11 +89,12 @@ export class SparkBatch {
     m.positionNode = centre.add(along.mul(corner.y.mul(length))).add(side.mul(corner.x.mul(width)))
     // Hot white at birth, cooling to its own colour over the first part of its life.
     const u: N = t.div(life).clamp(0, 1)
-    const colour: N = mix(vec3(5, 4.3, 3.2), attribute('sparkTint', 'vec3'), smoothstep(0, 0.4, u))
-    const across: N = float(1).sub(uv().x.mul(2).sub(1).abs())
-    const head: N = uv().y
+    const colour: N = mix(vec3(3, 2.7, 2.2), attribute('sparkTint', 'vec3'), smoothstep(0, 0.25, u))
+    // The quad's own uv, from its corner (-0.5 to 0.5).
+    const across: N = float(1).sub(corner.x.mul(2).abs())
+    const head: N = corner.y.add(0.5)
     m.colorNode = colour.mul(hotExposureNode())
-    m.opacityNode = float(1).sub(u).pow(1.5).mul(across.mul(across)).mul(head.mul(0.75).add(0.25))
+    m.opacityNode = float(1).sub(u).pow(1.5).mul(across.pow(2.5)).mul(head.mul(0.75).add(0.25))
     m.fog = false
     this.mesh = new T.Mesh(g, m); this.mesh.frustumCulled = false; this.mesh.renderOrder = 4
   }
@@ -99,17 +106,27 @@ export class SparkBatch {
     this.settings.setXYZW(i, this.clock.value + Math.max(0, delay), spec.life, spec.width, spec.drag)
     this.plane.setXYZW(i, spec.normal.x, spec.normal.y, spec.normal.z, spec.bounce)
     this.motion.setXY(i, spec.gravity, spec.streak); this.tint.setXYZ(i, color.r, color.g, color.b)
-    // Spelled out, as in ParticleBatch: a list of pairs here would allocate for every spark born.
-    this.origin.addUpdateRange(i * 3, 3); this.origin.needsUpdate = true
-    this.velocity.addUpdateRange(i * 3, 3); this.velocity.needsUpdate = true
-    this.settings.addUpdateRange(i * 4, 4); this.settings.needsUpdate = true
-    this.plane.addUpdateRange(i * 4, 4); this.plane.needsUpdate = true
-    this.motion.addUpdateRange(i * 2, 2); this.motion.needsUpdate = true
-    this.tint.addUpdateRange(i * 3, 3); this.tint.needsUpdate = true
+    // The slots written this frame, uploaded together by flush: an impact writes a dozen or so
+    // sparks in a row, and a range per spark per attribute was a separate upload each.
+    if (this.lo < 0) this.lo = this.hi = i
+    else if (i === this.hi + 1) this.hi = i
+    else this.wrapped = true
+  }
+
+  private lo = -1
+  private hi = -1
+  private wrapped = false
+  /** Upload what emit wrote since the last flush: one range per attribute. Call once a frame, before drawing. */
+  flush(): void {
+    if (this.lo < 0) return
+    const whole = this.wrapped, lo = this.lo, n = this.hi - this.lo + 1
+    for (const [a, size] of this.attributes) { a.clearUpdateRanges(); a.addUpdateRange(whole ? 0 : lo * size, whole ? this.capacity * size : n * size); a.needsUpdate = true }
+    this.lo = this.hi = -1; this.wrapped = false
   }
 
   /** Carry everything already drawn across a world seam. */
   shift(dx: number, dz: number): void {
+    this.flush()
     const a = this.origin.array as Float32Array
     for (let i = 0; i < a.length; i += 3) { a[i] += dx; a[i + 2] += dz }
     this.origin.clearUpdateRanges(); this.origin.addUpdateRange(0, a.length); this.origin.needsUpdate = true

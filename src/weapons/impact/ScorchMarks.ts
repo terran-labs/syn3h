@@ -36,16 +36,18 @@ export class ScorchMarks {
     const age: N = this.clock.sub(s.x), life: N = s.y.max(0.1)
     const p: N = uv().mul(2).sub(1), r: N = p.length(), a: N = atan(p.y, p.x)
     // A ragged edge from two sine waves round it, a different shape for every mark.
-    const edge: N = float(0.72).add(a.mul(5).add(s.z.mul(6.28)).sin().mul(0.09)).add(a.mul(11).add(s.z.mul(17)).sin().mul(0.05))
+    const edge: N = float(0.72).add(a.mul(5).add(s.z.mul(6.28)).sin().mul(0.045)).add(a.mul(11).add(s.z.mul(17)).sin().mul(0.025))
     const inside: N = float(1).sub(smoothstep(edge.sub(0.3), edge, r))
     const rim: N = smoothstep(edge.sub(0.4), edge.sub(0.08), r).mul(inside)
     const live: N = age.greaterThanEqual(0).and(age.lessThan(life)).select(float(1), float(0))
-    const heat: N = exp(age.max(0).negate().div(0.45))
+    const heat: N = exp(age.max(0).negate().div(0.25))
     const fade: N = float(1).sub(smoothstep(life.mul(0.55), life, age))
     const m = new T.MeshBasicNodeMaterial({ name: 'gear scorch', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
     m.blending = T.CustomBlending; m.blendSrc = T.OneFactor; m.blendDst = T.OneMinusSrcAlphaFactor
-    m.colorNode = attribute('scorchGlow', 'vec3').mul(heat.mul(rim.mul(1.6).add(inside.mul(0.5)))).mul(live).mul(hotExposureNode())
+    m.colorNode = attribute('scorchGlow', 'vec3').mul(heat.mul(rim.mul(1.2).add(inside.mul(0.15)))).mul(live).mul(hotExposureNode())
     m.opacityNode = inside.mul(s.w).mul(fade).mul(smoothstep(0, 0.2, age)).mul(live)
+    // No fog: with this blend, fog added to the clear part of the quad drew it as a pale square.
+    m.fog = false
     this.mesh = new T.InstancedMesh(g, m, SCORCH_CAPACITY)
     this.mesh.frustumCulled = false; this.mesh.renderOrder = 2
     this.mesh.instanceMatrix.setUsage(T.DynamicDrawUsage)

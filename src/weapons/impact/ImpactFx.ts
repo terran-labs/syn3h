@@ -24,7 +24,8 @@ import * as T from 'three/webgpu'
 import type { Game } from '../../core/Game'
 import { graphicsLevel, qualityBudget } from '../../core/quality'
 import { ParticleBatch } from '../../vehicles/effects/ParticleBatch'
-import { dustSprite, glowSprite } from '../../vehicles/effects/sprites'
+import { dustSprite } from '../../vehicles/effects/sprites'
+import { flashSprite } from './flashSprite'
 import { surfaceTone, type Tone } from '../../vehicles/effects/groundTone'
 import type { SurfaceKind } from '../../world/terrain/surface'
 import { ImpactPulses } from '../pulse'
@@ -75,7 +76,7 @@ export class ImpactFx {
     this.sparks?.dispose(); this.flash?.dispose(); this.debris?.dispose()
     const budget = qualityBudget().particles
     this.sparks = new SparkBatch(Math.max(48, Math.floor(budget * 0.12)), 'gear impact sparks')
-    this.flash = new ParticleBatch(24, glowSprite, true, this.level === 0 ? 1 : 2)
+    this.flash = new ParticleBatch(24, flashSprite, true, this.level === 0 ? 1 : 2)
     this.debris = new ParticleBatch(Math.max(24, Math.floor(budget * 0.05)), dustSprite, false, this.level === 0 ? 1 : 2)
     this.scorch.limit = this.level === 0 ? 0 : this.level === 1 ? 12 : SCORCH_CAPACITY
     this.game.scene.add(this.sparks.mesh, this.flash.mesh, this.debris.mesh)
@@ -106,8 +107,11 @@ export class ImpactFx {
     // Flash: one or two hot cores, briefly very bright.
     if (impactFlash.value > 0) {
       this.color.copy(color).multiplyScalar(1.4).addScalar(1.2)
-      this.flash.emit(at, this.v.set(0, 0, 0), thunder ? 0.16 : 0.1, impactFlash.value * scale, impactFlash.value * scale * 2, this.color)
-      if (thunder) this.flash.emit(at, this.v.set(0, 0, 0), 0.32, impactFlash.value * 2.4, impactFlash.value * 3, this.color.copy(color).multiplyScalar(0.8))
+      // Lifted off the surface by a third of its size: through the ground, a camera-facing flash
+      // was cut in half by it; lifted further, it floated free of the hit.
+      const lifted = this.b.copy(at).addScaledVector(n, impactFlash.value * scale * 0.35)
+      this.flash.emit(lifted, this.v.set(0, 0, 0), thunder ? 0.24 : 0.18, impactFlash.value * scale, impactFlash.value * scale * 2, this.color)
+      if (thunder) this.flash.emit(lifted, this.v.set(0, 0, 0), 0.32, impactFlash.value * 2.4, impactFlash.value * 3, this.color.copy(color).multiplyScalar(0.8))
     }
 
     // Sparks: a cone around the normal, two waves (the second slower and a touch later in life).
@@ -120,9 +124,9 @@ export class ImpactFx {
       const second = i % 3 === 2, a = this.noise() * Math.PI * 2, spread = 0.35 + this.noise() * 0.9
       const v = this.v.copy(n).multiplyScalar(0.6 + this.noise() * 0.8)
         .addScaledVector(tangent, Math.cos(a) * spread).addScaledVector(bitangent, Math.sin(a) * spread)
-        .normalize().multiplyScalar(speed * (second ? 0.45 : 0.7 + this.noise() * 0.6))
-      s.life = (second ? 0.9 : 0.45) + this.noise() * 0.35; s.width = (thunder ? 0.08 : 0.05) * (second ? 0.8 : 1)
-      s.drag = second ? 1.6 : 2.6; s.gravity = 1; s.streak = second ? 0.05 : 0.03
+        .normalize().multiplyScalar(speed * (second ? 0.25 + this.noise() * 0.35 : 0.4 + this.noise() * 0.9))
+      s.life = (second ? 1 : 0.55) + this.noise() * 0.4; s.width = (thunder ? 0.045 : 0.03) * (second ? 0.8 : 1)
+      s.drag = second ? 1.6 : 2.4; s.gravity = 1; s.streak = second ? 0.04 : 0.03
       this.sparks.emit(at, v, s, this.color.copy(color))
     }
     this.stats.sparks += counts.sparks
@@ -176,6 +180,7 @@ export class ImpactFx {
   update(dt: number): void {
     if (this.level !== Number(graphicsLevel.value)) this.rebuild()
     this.clock += Math.min(0.1, dt)
+    this.sparks.flush()
     this.sparks.clock.value = this.clock; this.flash.clock.value = this.clock; this.debris.clock.value = this.clock; this.scorch.clock.value = this.clock
     this.light.update(dt)
   }

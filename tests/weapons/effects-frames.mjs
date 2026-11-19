@@ -4,7 +4,7 @@
 // is a short run of stills stamped with the time since the trigger. Evidence, not a test: it
 // asserts only that each trigger ran.
 //
-//   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/effects-frames.mjs [out dir] [world]
+//   SYN3H_URL=http://127.0.0.1:<port>/ [SYN3H_VIEW=phone] tools/heavy.sh node tests/weapons/effects-frames.mjs [out dir] [world]
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright-core'
@@ -18,7 +18,8 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true, args:
 const errors = [], done = []
 const stamp = (page, text) => page.evaluate(text => { let s = document.getElementById('fx-stamp'); if (!s) { s = document.createElement('div'); s.id = 'fx-stamp'; s.style.cssText = 'position:fixed;left:10px;top:10px;z-index:99999;font:600 15px/1.3 ui-monospace,monospace;color:#fff;background:rgb(0 0 0 / .6);padding:5px 8px;border-radius:6px;white-space:pre'; document.body.append(s) } s.textContent = text }, text)
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  // SYN3H_VIEW=phone for a phone (390 x 844, touch), else a 1280 x 800 desktop.
+  const page = await browser.newPage(process.env.SYN3H_VIEW === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport: { width: 1280, height: 800 } })
   page.on('pageerror', e => errors.push(e.message))
   await page.goto(`${base}?room=fx-frames-${Date.now()}`)
   await page.waitForFunction(() => window.syn3h?.game.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 120000 })
