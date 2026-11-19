@@ -22,6 +22,8 @@ import {
   abs, attribute, cameraPosition, select, cameraViewMatrix, color, cos, faceDirection, float, max, mix, modelWorldMatrix,
   mx_noise_float, normalize, positionGeometry, positionView, positionLocal, positionWorld, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4, renderGroup,
 } from 'three/tsl'
+// The fragment's colour as the scene fog reads it (hazeCurve).
+import { output as fogInput } from 'three/tsl'
 import { SEA_COMPONENTS as WAVE_COUNT } from './seaWaves'
 import { rippleField } from './ripples'
 import { waterChop, waterClarity, waterReflection, waterWaveVisual } from './params'
@@ -29,8 +31,10 @@ import { clipmapNodes } from './clipmap'
 import { bentGrazing, curveInverseRadius } from '../curve'
 import { NO_BED, type WaterBed } from './bed'
 import { cameraInWaterNode, liquidDaylightNode } from './daylight'
+import { airFogOf } from './underwater'
 export { buildBedTexture, type WaterBed } from './bed'
 import { prevailingWindStrength } from '../weather'
+import { fogLayersOf } from '../weather/fog'
 
 /** A float node that sums are folded into. TSL's operator typings do not narrow through a loop. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -185,7 +189,8 @@ export const WATER_HAZE = { near: 0.15, from: 300, to: 1600 }
  * toward the unfogged colour by `keep` is the same as applying the haze at f * (1 - keep). So
  * near the camera the water takes only WATER_HAZE.near of it, easing to all of it by
  * WATER_HAZE.to metres and at the horizon, where it meets the land's haze exactly. No change
- * while the camera is in the water (the medium there is the fog). With no scene fog (a lab,
+ * while the camera is in the water (the medium there is the fog). Under the weather fog
+ * (fogLayersOf), the curve eases only the height haze; fog banks apply in full. With no scene fog (a lab,
  * a test, a world built before Environment) this is exactly the default. It wraps whatever
  * fog node the material is compiled against, so a rebuilt Environment is picked up when its
  * new fog node recompiles the material.
@@ -199,7 +204,20 @@ export function hazeCurve(material: THREE.NodeMaterial): void {
     if (!builder.fogNode) return fogged
     const share = mix(float(WATER_HAZE.near), float(1), smoothstep(WATER_HAZE.from, WATER_HAZE.to, positionView.length()))
     const keep = float(1).sub(share).mul(float(1).sub(cameraInWaterNode))
-    return mix(fogged as THREE.Node<'vec4'>, output as THREE.Node<'vec4'>, keep)
+    const layers = fogLayersOf(airFogOf(builder.fogNode))
+    if (!layers) return mix(fogged as THREE.Node<'vec4'>, output as THREE.Node<'vec4'>, keep)
+    // The weather fog in its two layers: the height haze on the water's curve as above, and fog
+    // banks in full, so a bank lying on the sea shows on the sea. The scene fog runs first: an
+    // underwater fog node writes the colour seen through the water column into `output`, which
+    // the air fog then fogs. With no banks (bankFactor 0) this is the line above exactly; in
+    // the water it is the scene fog as before.
+    const whole = vec4(0).toVar()
+    whole.assign(fogged as THREE.Node<'vec4'>)
+    const plain = output as THREE.Node<'vec4'>
+    const hazed = mix(fogInput.rgb, layers.hazeColor as THREE.Node<'vec3'>, layers.hazeFactor as THREE.Node<'vec3'>)
+    const eased = mix(hazed, plain.rgb, keep)
+    const above = vec4(mix(eased, layers.bankColor as THREE.Node<'vec3'>, layers.bankFactor as THREE.Node<'float'>), plain.a)
+    return mix(above, whole, cameraInWaterNode)
   }
 }
 

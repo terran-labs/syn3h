@@ -30,11 +30,12 @@
  * Storminess thickens it a little and lifts it a little.
  */
 import * as THREE from 'three/webgpu'
-import { Fn, abs, atan, cameraPosition, dot, exp, float, length, max, mix, normalize, output, positionWorld, renderGroup, select, sqrt, uniform, vec2, vec3, vec4 } from 'three/tsl'
+import { Fn, If, abs, atan, cameraPosition, clamp, min, dot, exp, float, length, max, mix, normalize, output, positionWorld, renderGroup, select, sqrt, uniform, vec2, vec3, vec4 } from 'three/tsl'
 import { defineParam, params } from '../../../shared/params'
 import { seaLevel } from '../seaLevel'
 import { curveFactor } from '../curve'
 import { hazeTinted } from './haze'
+import { FOG_BANK_SATURATION, FOG_BANK_TAU_MAX, FOG_BANK_WARM, VALLEY_TOP_SOFTNESS } from './fogMap'
 import { atmosphereValue, storminess } from './params'
 
 type N = any // TSL node
@@ -139,12 +140,61 @@ function meanExp(ac: N, ec: N, ap: N): N {
 export const weatherFogNode = Fn(([color, factor]: [N, N]) => vec4(mix((output as N).rgb, color, factor), (output as N).a))
 
 /**
+ * The scene fog's layers, for a surface that treats them apart.
+ *
+ *   color       the whole fog's colour toward this pixel
+ *   factor      the whole fog: mix(output, color, factor), what the scene fog node applies
+ *   hazeColor   the height haze's colour; hazeFactor its share, per channel
+ *   bankColor   the fog banks' colour (lit mist); bankFactor their share, grey
+ *
+ * factor = 1 - (1 - hazeFactor) * (1 - bankFactor), and color weights the two layers' colours so
+ * mix(output, color, factor) = mix(mix(output, hazeColor, hazeFactor), bankColor, bankFactor). A surface that eases the haze by its own
+ * rule (the water does, near the camera: surface.ts hazeCurve) should ease hazeFactor only and
+ * apply bankFactor in full, so a fog bank lying on the sea shows on the sea:
+ *
+ *   const L = fogLayersOf(builder.fogNode)            // null without the weather fog
+ *   const haze = L.hazeFactor.mul(easedShare)         // the surface's own curve
+ *   mix(mix(output.rgb, L.hazeColor, haze), L.bankColor, L.bankFactor)
+ */
+export interface FogLayers { color: N; factor: N; hazeColor: N; hazeFactor: N; bankColor: N; bankFactor: N }
+const layersByNode = new WeakMap<object, FogLayers>()
+/** The weather fog node for `layers`, remembered so fogLayersOf can find the layers again. */
+export function weatherFog(layers: FogLayers): N {
+  const node = weatherFogNode(layers.color, layers.factor)
+  layersByNode.set(node, layers)
+  return node
+}
+/** The layers behind a scene fog node made by weatherFog, or null for any other fog. */
+export function fogLayersOf(fogNode: unknown): FogLayers | null {
+  return fogNode && typeof fogNode === 'object' ? layersByNode.get(fogNode) ?? null : null
+}
+
+/**
  * Fog colour and per channel factor for `weatherFogNode`: `color` (the sky's directional fog
  * colour) and `uniformDensity` (the existing `weather.fogDensity` uniform) come from
  * Environment, and `sun` for the aerial layer's glow. Uniforms update once per render from
  * the sliders; dragging one never recompiles.
  */
-export function heightFog(color: N, uniformDensity: N, sun?: FogSun): { color: N; factor: N } {
+/**
+ * Fog banks for heightFog (fogMap.ts), as nodes Environment keeps current: the map texture,
+ * how much of each kind the hour shows times the world's strength, the bank height, the
+ * detail (0 off, 1 one tap, 2 three), and the density at the camera, worked out on the CPU.
+ */
+export interface FogBanksInput {
+  map: N
+  /** (coast weight, valley weight) already times strength and FOG_BANK_DENSITY. */
+  weights: N
+  /** 1 / the map's world size. */
+  invSize: N
+  height: N
+  detail: N
+  /** The map's (coast, valley, valley fog top) at the camera's ground position. */
+  atCamera: N
+  /** How much brighter than the haze a bank's mist is: 1 at night, more by day. */
+  glow: N
+}
+
+export function heightFog(color: N, uniformDensity: N, sun?: FogSun, banks?: FogBanksInput): FogLayers {
   const state = hazeNow()
   const tint = new THREE.Vector3(1, 1, 1)
   let tintAmount = 0
@@ -180,6 +230,52 @@ export function heightFog(color: N, uniformDensity: N, sun?: FogSun): { color: N
   const ap = above.div(height) as N
   const dist = L.mul(uniformDensity) as N
   const tau = (density as N).mul(L).mul(meanExp(camU.x, camU.y, ap)).add(dist.mul(dist)) as N
+  // The fog banks' own optical depth, kept apart so a surface can treat the two layers apart.
+  let tauBank: N = float(0)
+
+  // Fog banks (fogMap.ts): sampled where the sight line ends and, at full detail, half way
+  // along it, at the true ground position (the curve undone), averaged with the camera's.
+  if (banks) {
+    // Inside its own shader function: If needs one, and heightFog builds its graph outside any.
+    const bankDepth = Fn(() => {
+      const out = float(0).toVar() as N
+      If(banks.detail.greaterThan(0.5).and(banks.weights.x.add(banks.weights.y).greaterThan(0)), () => {
+        const toward = vec2(bent.x, bent.z).sub(vec2(cam.x, cam.z)) as N
+        const dirXZ = toward.div(max(along, 1e-4)) as N
+        // The map gives each place's coastal and valley density and its valley fog top; the
+        // height profiles are integrated along the ray in closed form, so a ray that only dips
+        // into a bank at its end takes only what it crosses.
+        const mapAt = (f: number): N => banks.map.sample(vec2(cam.x, cam.z).add(dirXZ.mul(ground.mul(f))).mul(banks.invSize).add(0.5)).level(float(0)) as N
+        // Mean of the bank's profile along the ray: full density below its top, exp(-(y - top) /
+        // soft) above. The ray's height runs linearly from the camera's to the pixel's, so the
+        // share of it below the top is exact, and the part above takes meanExp in closed form.
+        const lo = min(cam.y, y) as N, hi = max(cam.y, y) as N, span = max(hi.sub(lo), 1e-3) as N
+        const profile = (top: N, soft: N): N => {
+          const below = clamp(top.sub(lo).div(span), 0.0, 1.0) as N
+          const aLo = max(lo.sub(top), 0.0).div(soft) as N, aHi = max(hi.sub(top), 0.0).div(soft) as N
+          return below.add(float(1).sub(below).mul(meanExp(aLo, exp(aLo.negate()), aHi)))
+        }
+        // Each sample brings its own valley fog top: a ray over a hollow to a far peak takes the
+        // hollow's lake where it crosses it, not the peak's.
+        const coastProfile = profile(sea, banks.height)
+        const valleyOf = (m: N): N => m.g.mul(profile(sea.add(m.b), float(VALLEY_TOP_SOFTNESS)))
+        const atPixel = mapAt(1)
+        const coastSum = banks.atCamera.x.add(atPixel.r).toVar() as N
+        const valleySum = banks.atCamera.y.mul(profile(sea.add(banks.atCamera.z), float(VALLEY_TOP_SOFTNESS))).add(valleyOf(atPixel)).toVar() as N
+        const parts = float(2).toVar() as N
+        If(banks.detail.greaterThan(1.5), () => {
+          const mid = mapAt(0.5)
+          coastSum.addAssign(mid.r.mul(4)); valleySum.addAssign(valleyOf(mid).mul(4))
+          parts.assign(6)
+        })
+        const coast = coastSum.div(parts).mul(banks.weights.x).mul(coastProfile)
+        const valley = valleySum.div(parts).mul(banks.weights.y)
+        out.assign(min(L.mul(coast.add(valley)), float(FOG_BANK_TAU_MAX)))
+      })
+      return out
+    })
+    tauBank = bankDepth()
+  }
 
   // The aerial layer, per channel. Zero when weather.aerial is 0 or there is no air.
   const aerialDensity = live(0, () => aerialDensityNow())
@@ -187,7 +283,11 @@ export function heightFog(color: N, uniformDensity: N, sun?: FogSun): { color: N
   const ah = float(1 / AERIAL_HEIGHT)
   const tauA = (aerialDensity as N).mul(L).mul(meanExp(camU.z, camU.w, above.mul(ah))) as N
   const tauRGB = vec3(tau, tau, tau).add((weights as N).mul(tauA)) as N
-  const factor = vec3(1, 1, 1).sub(exp(tauRGB.negate()))
+  // The height haze and aerial layer, per channel, and the fog banks, grey: the whole fog is
+  // what both let through, 1 - (1 - haze)(1 - bank).
+  const hazeFactor = vec3(1, 1, 1).sub(exp(tauRGB.negate()))
+  const bankFactor = float(1).sub(exp((tauBank as N).negate()))
+  const factor = vec3(1, 1, 1).sub(vec3(1, 1, 1).sub(hazeFactor).mul(float(1).sub(bankFactor)))
 
   // Shift the hue toward the tint and keep the sky colour's brightness (the sky's horizon
   // band uses the same function, src/world/weather/haze.ts).
@@ -205,7 +305,17 @@ export function heightFog(color: N, uniformDensity: N, sun?: FogSun): { color: N
     const share = tauA.div(tau.add(tauA).add(1e-6)) as N
     fogged = fogged.add(vec3(sunColor as N).mul(lobe.mul(share).mul(AERIAL_SUN_GLOW).mul(sun.lit ?? float(1))))
   }
-  return { color: fogged, factor }
+  // Fog banks are lit mist: by day brighter than the haze round them (banks.glow), so a bank
+  // reads as a pale mass from outside without hiding more of what is behind it.
+  // Mostly grey at its own brightness, leaning a little warm: mist, never mistaken for water
+  // by taking the planet's blue haze tint or the ground's green.
+  const bankColor = banks ? mix(vec3(dot(fogged, vec3(0.2126, 0.7152, 0.0722))), fogged, FOG_BANK_SATURATION).mul(vec3(...FOG_BANK_WARM)).mul(banks.glow) : fogged
+  // One colour for the whole fog that gives mix(mix(o, haze, a), bank, c) when the scene fog
+  // applies mix(o, color, factor): each layer's colour weighted by its share of the factor.
+  const wholeColor = banks
+    ? fogged.mul(hazeFactor).mul(float(1).sub(bankFactor)).add(bankColor.mul(bankFactor)).div(max(factor, vec3(1e-4)))
+    : fogged
+  return { color: wholeColor, factor, hazeColor: fogged, hazeFactor, bankColor, bankFactor }
 }
 const weightsValue = new THREE.Vector3()
 const camState = { density: 0, height: 70, sea: 0 }
