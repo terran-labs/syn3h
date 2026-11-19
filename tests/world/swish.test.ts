@@ -53,9 +53,15 @@ describe('wheel tracks through the grass', () => {
     field.update(0, 6, 0, [], 0, RISE)
     expect(field.bendAt(3, 0)).toBe(0)
   })
+  it('keeps the track unbroken on a slow frame', () => {
+    const field = new SwishField()
+    // Five frames a second at 25 m/s: 5 m a frame.
+    for (let x = 0; x < 15; x += 5) field.update(0.2, x, 0, [buggy(x + 5, 0, x, 0)], 1, RISE)
+    for (let x = 1; x < 14; x += SWISH_CELL) expect(field.bendAt(x, 0)).toBeGreaterThan(0.5)
+  })
   it('stamps nothing for a teleport, only where it lands', () => {
     const field = new SwishField()
-    field.update(DT, 10, 0, [buggy(10, 0, 0, 0)], 1, RISE)
-    expect(field.bendAt(10, 0)).toBe(1); expect(field.bendAt(5, 0)).toBe(0)
+    field.update(DT, 10, 0, [buggy(10, 0, -10, 0)], 1, RISE)
+    expect(field.bendAt(10, 0)).toBe(1); expect(field.bendAt(0, 0)).toBe(0)
   })
 })

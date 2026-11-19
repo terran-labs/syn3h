@@ -681,7 +681,7 @@ function coverMaterial(reach: number, look: TerrainMaterial | null): THREE.MeshS
   // pushed. Eased with a smoothstep, so a plant lies still in the track, rises gently and
   // settles into the wind without overshoot. No shiver: only the wash flutters. Faded out
   // toward the map's edge, where it would otherwise repeat.
-  const track = texture(swish.texture, foot.div(SWISH_N * SWISH_CELL)).level(0)
+  const track = texture(swish.texture, foot.div(SWISH_N * SWISH_CELL)).level(float(0))
   const edge = foot.sub(swishCentre).abs()
   const inMap = smoothstep(SWISH_N * SWISH_CELL * 0.5, SWISH_N * SWISH_CELL * 0.5 - 3, edge.x.max(edge.y))
   const lying = smoothstep(0, 1, track.z.mul(swishTop).min(1)).mul(inMap).mul(swishBend)

@@ -109,7 +109,7 @@ export class SwishField {
       }
       this.active = any; changed = true
     }
-    for (let i = 0; i < count; i++) if (prints[i].w > 0 && this.stamp(prints[i], top)) changed = true
+    for (let i = 0; i < count; i++) if (prints[i].w > 0 && this.stamp(prints[i], top, dt)) changed = true
     this.top = top
     if (changed) this.texture.needsUpdate = true
   }
@@ -143,12 +143,13 @@ export class SwishField {
    * fast vehicle leaves a continuous track. Plants are pushed along the way it travels and
    * out to the sides, more to the side the nearer the footprint's edge they stand.
    */
-  private stamp(p: Footprint, top: number): boolean {
+  private stamp(p: Footprint, top: number, dt: number): boolean {
     const mx = p.x - p.px, mz = p.z - p.pz, moved = Math.hypot(mx, mz)
-    // Teleports and respawns are not drives: press only where it is now.
-    const sweep = moved < 4
+    // Teleports and respawns are not drives: press only where it is now. Anything a vehicle
+    // could cover in the frame (80 m/s, plus slack) is a drive, however slow the frame.
+    const sweep = moved < 2 + 80 * Math.max(dt, 1 / 60)
     const tx = sweep && moved > 1e-3 ? mx / moved : 0, tz = sweep && moved > 1e-3 ? mz / moved : 0
-    const steps = sweep ? Math.max(1, Math.ceil(moved / SWISH_CELL)) : 1
+    const steps = sweep ? Math.min(128, Math.max(1, Math.ceil(moved / SWISH_CELL))) : 1
     const r = p.halfWidth, reach = Math.max(0, p.halfLength - r)
     let hit = false
     for (let s = 1; s <= steps; s++) {
