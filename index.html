@@ -217,10 +217,17 @@
          swells as loading goes on. When loading ends the veil goes in 0.3 s and the galaxy,
          drawing the same point beneath it, makes it the sun. The name waits for the reveal
          (intro 1 and 2) or stays on the veil as today (3). */
-      .boot-point { display: none; }
+      /* Where the point sits: exactly where the galaxy draws its sun on the opening's first frame,
+         so the Big Bang leaves from the point (the owner, 18 November 2026). The galaxy publishes
+         that place as --sun-x and --sun-y on <html> while the opening waits (Galaxy.ts,
+         publishSun), following any resize or rotation; before its first frame the default here
+         is its own framing (FRAME_Y: 53% down). --boot-ring-r is the pulse rings' largest radius:
+         the lines under the point start that far below it, plus a margin, so no ring crosses them. */
+      :root { --boot-ring-r: 60px; --boot-under: calc(var(--sun-y, 53%) + var(--boot-ring-r) + 18px); }
+      .boot-point, .boot-pulse { display: none; }
       html[data-intro] .boot-mark { display: none; }
       html[data-intro] .boot-point {
-        display: block; position: fixed; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%;
+        display: block; position: fixed; left: var(--sun-x, 50%); top: var(--sun-y, 53%); width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%;
         /* Gathering: from a faint speck to a bright point with a warm glow, plainly growing. */
         background: #fffaf0; opacity: calc(0.65 + var(--boot-progress, 0) * 0.35);
         transform: scale(calc(0.8 + var(--boot-progress, 0) * 1.1));
@@ -231,9 +238,18 @@
          The breath is on the separate scale and rotate properties, so it multiplies the progress
          size above (transform): the point still grows as loading goes on. */
       html[data-intro] .boot-point { animation: boot-breath 1.8s cubic-bezier(.45,0,.55,1) infinite; }
-      html[data-intro] .boot-point::after {
-        content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid rgb(255 214 160 / .7);
-        opacity: 0; animation: boot-puff 1.8s cubic-bezier(.2,.6,.3,1) infinite;
+      /* The ring puffing off each beat. Drawn at its largest size and only ever scaled down, so
+         it is rasterized at the screen's full resolution: a small ring scaled up seven times
+         showed its pixels (the owner, 18 November 2026). The outer box follows loading as the
+         point does; the inner one is the beat. Both scale at most 1. */
+      html[data-intro] .boot-pulse {
+        display: block; position: fixed; left: var(--sun-x, 50%); top: var(--sun-y, 53%); width: calc(var(--boot-ring-r) * 2); height: calc(var(--boot-ring-r) * 2);
+        margin: calc(var(--boot-ring-r) * -1) 0 0 calc(var(--boot-ring-r) * -1); pointer-events: none;
+        transform: scale(calc((0.8 + var(--boot-progress, 0) * 1.1) / 1.9));
+      }
+      html[data-intro] .boot-pulse::after {
+        content: ""; position: absolute; inset: 0; border-radius: 50%; box-sizing: border-box; border: 6px solid rgb(255 214 160 / .7);
+        opacity: 0; transform: scale(0.143); animation: boot-puff 1.8s cubic-bezier(.2,.6,.3,1) infinite; will-change: transform, opacity;
       }
       @keyframes boot-breath {
         0%, 100% { scale: 1 1; rotate: 0deg; filter: brightness(1); }
@@ -243,21 +259,21 @@
         70% { scale: 1.1 1.0; rotate: -2deg; filter: brightness(1.2); }
       }
       @keyframes boot-puff {
-        0%, 40% { transform: scale(1); opacity: 0; }
+        0%, 40% { transform: scale(0.143); opacity: 0; }
         45% { opacity: .75; }
-        100% { transform: scale(7); opacity: 0; }
+        100% { transform: scale(1); opacity: 0; }
       }
       /* Reduced motion still shows it is working: a breath of brightness and glow only. */
       @media (prefers-reduced-motion: reduce) {
         html[data-intro] .boot-point { animation: boot-glow 1.8s ease-in-out infinite; }
-        html[data-intro] .boot-point::after { animation: none; }
+        html[data-intro] .boot-pulse::after { animation: none; }
       }
       @keyframes boot-glow { 0%, 100% { filter: brightness(0.7) drop-shadow(0 0 2px rgb(255 214 160 / .3)); } 50% { filter: brightness(1.7) drop-shadow(0 0 10px rgb(255 214 160 / .9)); } }
       /* Loading done: the breath stops at rest, so the galaxy's point beneath takes over without a jump. */
       html[data-intro][data-boot="done"] .boot-point { animation: none; scale: 1; rotate: 0deg; filter: none; }
-      html[data-intro][data-boot="done"] .boot-point::after { animation: none; opacity: 0; }
-      html[data-intro] .boot-status { position: fixed; left: 0; right: 0; top: calc(50% + 34px); margin: 0 auto; padding: 0 24px; }
-      html[data-intro] .boot-still { position: fixed; left: 0; right: 0; top: calc(50% + 34px + 3.3em); }
+      html[data-intro][data-boot="done"] .boot-pulse::after { animation: none; opacity: 0; }
+      html[data-intro] .boot-status { position: fixed; left: 0; right: 0; top: var(--boot-under); margin: 0 auto; padding: 0 var(--edge, 24px); }
+      html[data-intro] .boot-still { position: fixed; left: 0; right: 0; top: calc(var(--boot-under) + 3.3em); }
       html[data-intro][data-boot="done"] .boot-veil { transition: opacity 0.3s ease, visibility 0s linear 0.3s; }
       /* ---- Tap to begin (src/ui/TapToBegin.ts). Where sound is blocked, the veil stays up
          after loading (data-boot="ready"): the point keeps breathing, the loading lines go,
@@ -270,8 +286,8 @@
         cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; outline: none;
       }
       .tap-gate-line {
-        position: absolute; left: 0; right: 0; top: calc(50% + 34px); margin: 0 auto; padding: 4px 12px;
-        width: fit-content; max-width: min(26em, calc(100% - 48px)); text-wrap: balance; text-align: center;
+        position: absolute; left: 0; right: 0; top: var(--boot-under); margin: 0 auto; padding: 4px 12px;
+        width: fit-content; max-width: min(26em, calc(100% - 2 * var(--edge, 24px))); text-wrap: balance; text-align: center;
         border-radius: 8px; opacity: 0; transition: opacity 0.6s ease;
       }
       /* Calm at rest: it fades in, then breathes slowly, two of the point's breaths to one of its. */
@@ -377,6 +393,7 @@
            line saying it is still working. A slow first visit must never look like a blank
            page. The path is the wordmark from src/ui/brand/wordmarkPath.ts. -->
       <div class="boot-point" aria-hidden="true"></div>
+      <div class="boot-pulse" aria-hidden="true"></div>
       <svg class="boot-mark" viewBox="0 0 120 120" aria-hidden="true">
         <circle class="boot-orbit" cx="60" cy="60" r="54" />
         <g class="boot-moon">

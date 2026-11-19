@@ -168,10 +168,10 @@ export class AimTouches {
   get pinching(): boolean { return this.pinch !== null }
   get looking(): boolean { return this.pointer !== null }
 
-  /** A free aiming-side touch went down. `orbit` is whether the orbit camera is in use. */
-  down(id: number, x: number, y: number, orbit: boolean): 'look' | 'pinch' | null {
+  /** A free aiming-side touch went down. `zoomable` is whether the camera in use has a distance to pinch (chase or orbit). */
+  down(id: number, x: number, y: number, zoomable: boolean): 'look' | 'pinch' | null {
     if (this.pinch || this.points.has(id)) return null
-    if (this.points.size === 1 && orbit) {
+    if (this.points.size === 1 && zoomable) {
       const [[first, p]] = this.points
       this.points.set(id, { x, y, from: { x, y } })
       this.pinch = [first, id]; this.pending = null; this.pointer = null

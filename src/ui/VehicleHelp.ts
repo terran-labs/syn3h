@@ -22,7 +22,7 @@ export const gearTouchHelp = [
   'Yoink: aim at a vehicle and hold TAG to grab; let go to fling. With no target, tap TAG for a gust.',
   'Plasma Thunder: hold TAG until fully charged, then let go. Letting go early fizzles.',
   'Chaser: hold TAG, drag to aim at a vehicle, and let go to send a Chaser after it.',
-  'Orbit camera: pinch with two fingers on the right to zoom.',
+  'Pinch with two fingers on the right to bring the camera in or out.',
 ]
 /** Chat, on a keyboard: the left column's Chat row opens the same. */
 export const chatHelp = 'Y: Chat · Enter: send · Esc: close'
