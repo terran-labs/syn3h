@@ -86,9 +86,6 @@ export class Game {
     // initialises but draws nothing (first seen as a black screen on iPadOS Safari).
     const renderQuery = new URLSearchParams(location.search)
     const forceWebGL = renderQuery.has('webgl')
-    // Benchmark both lighting paths on the same production build and scene.
-    const batchedLighting = renderQuery.get('lighting') === 'batched'
-      ? await import('three/addons/lighting/DynamicLighting.js') : null
     // WebGPU startup is bounded: a stall, a rejection or a missing adapter ends in WebGL 2
     // with the reason recorded in diagnostics, never a hang. Healthy devices are unchanged.
     const probe = this.quality.adapterProbe
@@ -98,7 +95,6 @@ export class Game {
     const started = await timeStartup('renderer.init (adapter, device, context)', () => startRenderer((webgl, freshCanvas) => {
       if (freshCanvas) this.replaceCanvas()
       this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true, forceWebGL: webgl })
-      if (batchedLighting) this.renderer.lighting = new batchedLighting.DynamicLighting()
       this.observeRenderer?.()
       return this.renderer
     }, { forceWebGL, deadlineMs: gpuDeadlineMs(location.search), probe, skipWebGPU: probe === 'timeout' ? 'the WebGPU adapter probe stalled; started WebGL 2' : undefined }))

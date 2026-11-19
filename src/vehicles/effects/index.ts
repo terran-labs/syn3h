@@ -104,6 +104,25 @@ class EffectWorld implements System {
 }
 function worldFor(game:Game){let w=worlds.get(game);if(!w){w=new EffectWorld(game);worlds.set(game,w);game.add(w)}return w}
 
+/** Keep the existing road lights in the scene when ride view hides their vehicle.
+ * Sample the final drawn pose and visibility after the vehicle and camera have updated. */
+class HeadlightRig extends T.Group {
+  beamIntensity=0
+  constructor(private readonly anchor:T.Object3D,private readonly spots:T.SpotLight[]){
+    super()
+    this.matrixWorldAutoUpdate=false
+  }
+  override updateMatrixWorld(force?:boolean){
+    this.anchor.updateWorldMatrix(true,false)
+    this.matrixWorld.copy(this.anchor.matrixWorld)
+    let parent:T.Object3D|null=this.anchor
+    while(parent && parent!==this.parent && parent.visible)parent=parent.parent
+    const intensity=parent===this.parent ? this.beamIntensity : 0
+    for(const spot of this.spots)spot.intensity=intensity
+    super.updateMatrixWorld(force)
+  }
+}
+
 class VehicleEffects {
   private readonly root=new T.Group()
   private readonly headMaterial=new T.MeshBasicMaterial({color:new T.Color(2.447059,2.858824,3)})
@@ -111,6 +130,7 @@ class VehicleEffects {
   private readonly lampPoints:T.Object3D[]=[]
   private readonly lampMatrix=new T.Matrix4()
   private readonly spots:T.SpotLight[]=[]
+  private readonly headlightRig?:HeadlightRig
   private readonly ownsSpots:boolean
   // Last tyre mark and wing tip positions, kept in place; the flags say which are live.
   private readonly previousMarks=[new T.Vector3(),new T.Vector3(),new T.Vector3(),new T.Vector3()]
@@ -157,6 +177,8 @@ class VehicleEffects {
       const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,hover?.35:.12,jet?2.7:1.7);this.root.add(tail);this.lampPoints.push(tail)
     }
     if(local){
+      this.headlightRig=new HeadlightRig(this.root,this.spots)
+      world.game.scene.add(this.headlightRig)
       // Syn3h prefab range50, cone60 degrees. Unity intensity is not candela.
       // Aim farther down the road and use candela suitable for inverse-square falloff.
       // Each buggy lamp casts its own beam. Split the old total intensity between them
@@ -166,7 +188,7 @@ class VehicleEffects {
         const spot=sharedSpots?.[i]??new T.SpotLight(new T.Color(1,.9965517,.875),0,50,Math.PI/6,.45,2)
         spot.name=this.buggy?(x<0?'Left headlight':'Right headlight'):'Headlight'
         spot.position.set(x,hover?.23:this.buggy?.036:.35,hover?-1.85:-front);spot.target.position.set(x,-.8,-22);spot.castShadow=false
-        this.spots.push(spot);this.root.add(spot,spot.target)
+        this.spots.push(spot);this.headlightRig.add(spot,spot.target)
       }
     }
     this.unlisten=terrain.onRegenerate?.(()=>{this.reset();world.marks.clear();world.trails.clear()})
@@ -234,10 +256,10 @@ class VehicleEffects {
     this.throttle=T.MathUtils.lerp(this.throttle,Math.max(0,v.kind==='hovercraft'?v.input.y:v.input.z),Math.min(1,dt*10))
     this.color.set(v.colors.accent)
     this.tailMaterial.color.setRGB(v.input.brakes?5:2,0,0)
-    if(this.spots.length){
+    if(this.headlightRig){
       const sunY=w.sunY()
       const intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?1800:1600)/this.spots.length
-      for(const spot of this.spots)spot.intensity=intensity
+      this.headlightRig.beamIntensity=intensity
     }
     // A sealed zorb has no running engine plume or tyre contact. Keep lamps current above;
     // particles already in flight finish their bounded lifetime.
@@ -366,7 +388,7 @@ class VehicleEffects {
       }
     }else if(!trails)this.hasTip.fill(false)
   }
-  dispose(){this.unlisten?.();this.events.removeEventListener('tileshift',this.onTileShift);this.root.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();if(this.ownsSpots)for(const spot of this.spots)spot.dispose()}
+  dispose(){this.unlisten?.();this.events.removeEventListener('tileshift',this.onTileShift);this.root.removeFromParent();this.headlightRig?.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();if(this.ownsSpots)for(const spot of this.spots)spot.dispose()}
 }
 
 /**

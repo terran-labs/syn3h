@@ -38,8 +38,7 @@ try {
     const { renderer, scene } = window.syn3h.game
     return renderer.lighting.getNode(scene).type
   })
-  const batched = url.searchParams.get('lighting') === 'batched'
-  assert.equal(lightingNode, batched ? 'DynamicLightsNode' : 'LightsNode')
+  assert.equal(lightingNode, 'LightsNode')
   const phases = []
   const sceneMaterials = {}
   async function record(phase, act) {
@@ -127,7 +126,7 @@ try {
       await record(phase, async () => {
         await page.evaluate(hour => window.syn3h.params.set('sun.timeOfDay', hour), hour)
         await page.waitForFunction(night => {
-          const lights = window.syn3h.player.object.getObjectsByProperty('isSpotLight', true)
+          const lights = window.syn3h.game.scene.getObjectsByProperty('isSpotLight', true)
           return lights.length > 0 && lights.every(light => night ? light.intensity > 0 : light.intensity === 0)
         }, hour === 0)
       })
