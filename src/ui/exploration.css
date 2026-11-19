@@ -6,7 +6,16 @@
      dark scene it is dark on dark and all but disappears; over a pale sky, ice or lava it is
      what keeps light type readable. Not an outline and not a box. */
   --hud-under: 0 0 1px rgb(0 0 0 / .95), 0 0 3px rgb(0 0 0 / .8), 0 0 6px rgb(0 0 0 / .6), 0 0 6px rgb(0 0 0 / .45), 0 0 16px rgb(0 0 0 / .35);
-  --hud-line-under: drop-shadow(0 0 1px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .45)); }
+  --hud-line-under: drop-shadow(0 0 1px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .45));
+  /* One edge distance for everything pinned to a screen edge (the owner, 18 November 2026: "make
+     it uniform"): the left column's line, the minimap's ring, the right panel and its top row,
+     the readouts on phones, the touch controls. A little larger than any inset before it (16 to
+     24 px). The per-side forms keep clear of a phone's safe areas. */
+  --edge: 28px;
+  --edge-left: max(var(--edge), env(safe-area-inset-left)); --edge-right: max(var(--edge), env(safe-area-inset-right));
+  --edge-top: max(var(--edge), env(safe-area-inset-top)); --edge-bottom: max(var(--edge), env(safe-area-inset-bottom)); }
+/* Phones: the same rule at a phone's scale. */
+@media (max-width: 700px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { :root { --edge: 24px; } }
 .syn3h-shell.exploration-ui :is(button, .liquid-glass), .touch-controls button {
   color: var(--s3-ink); background: rgb(24 24 24 / .36); background-image: none;
   border: 1px solid rgb(213 213 213 / .3); border-radius: 3px;
@@ -31,7 +40,7 @@
 .syn3h-shell.exploration-ui:has(.world-inspector:not([hidden])) .hud-navigation { visibility: hidden; }
 
 /* The rail never scrolls as a whole. Headers stay visible; open bodies share its space. */
-.syn3h-shell.exploration-ui .world-inspector { top: max(16px,env(safe-area-inset-top)); bottom: max(16px,env(safe-area-inset-bottom)); right: max(16px,env(safe-area-inset-right)); width: min(352px, calc(100vw - 32px)); height: calc(100dvh - 32px); max-height: none; gap: 7px; }
+.syn3h-shell.exploration-ui .world-inspector { top: var(--edge-top); bottom: var(--edge-bottom); right: var(--edge-right); width: min(352px, calc(100vw - 2 * var(--edge))); height: calc(100dvh - var(--edge-top) - var(--edge-bottom)); max-height: none; gap: 7px; }
 .syn3h-shell.exploration-ui .wi-glass { --body: rgb(18 18 18 / .76); --frost: 16px; border: 1px solid rgb(211 211 211 / .24); border-radius: 4px; background: var(--body); box-shadow: inset 0 1px rgb(218 218 218 / .06), 0 0 24px rgb(158 158 158 / .035); -webkit-backdrop-filter: blur(var(--frost)); backdrop-filter: blur(var(--frost)); }
 .syn3h-shell.exploration-ui .wi-glass::before { display: none; }
 .syn3h-shell.exploration-ui[data-glass="0"] .wi-glass { --body: rgb(18 18 18 / .55); --frost: 6px; }
@@ -83,7 +92,9 @@
 .syn3h-shell.exploration-ui.is-focus .wi-tooltip, .syn3h-shell.exploration-ui:not(.is-playing) .wi-tooltip { display: none; }
 
 /* A map fading into the world, centred on the player, with no rectangular backing. */
-.syn3h-shell.exploration-ui .shell-minimap, .syn3h-shell.exploration-ui:not(.has-touch):has(.world-inspector:not([hidden])) .shell-minimap { left: max(16px,env(safe-area-inset-left)); bottom: max(16px,env(safe-area-inset-bottom)); top: auto; right: auto; width: 210px; height: 210px; border: 0; background: none; box-shadow: none; pointer-events: none; }
+/* The minimap is placed by what is drawn, its ring (inset 11.5% of the box), so the ring sits
+   on the shared edge (--edge). --map-size is its box; layouts below change only that. */
+.syn3h-shell.exploration-ui .shell-minimap, .syn3h-shell.exploration-ui:not(.has-touch):has(.world-inspector:not([hidden])) .shell-minimap { --map-size: 210px; --map-ring: calc(var(--map-size) * .115); left: calc(var(--edge-left) - var(--map-ring)); bottom: calc(var(--edge-bottom) - var(--map-ring)); top: auto; right: auto; width: var(--map-size); height: var(--map-size); border: 0; background: none; box-shadow: none; pointer-events: none; }
 /* The owner wants the map at least 80% opaque in the centre. Opacity, this feathering mask
    and the focus fade below multiply, so the product is what counts: .94 here, .94 x .92 = .86
    with the cursor captured. tests/ui/minimap-opacity.mjs measures it from pixels. */
@@ -105,8 +116,8 @@
 .touch-controls .touch-stick { background: radial-gradient(circle,transparent 58%,rgb(201 201 201 / .09) 69%,transparent 71%); border: 1px solid rgb(213 213 213 / .25); box-shadow: none; }
 .touch-controls .touch-knob { background: rgb(194 194 194 / .08); border: 1px solid rgb(213 213 213 / .42); box-shadow: 0 0 14px rgb(194 194 194 / .06); }
 .touch-controls button { border-radius: 50%; font-size: 12px; }
-@media (max-width: 700px) { .syn3h-shell.exploration-ui .world-inspector { top: 10px; bottom: 10px; height: calc(100dvh - 20px); right: 10px; width: min(340px,calc(100vw - 20px)); } .syn3h-shell.exploration-ui .shell-minimap { width: 120px; height: 120px; bottom: 206px; left: 12px; } .syn3h-shell.exploration-ui .spawn-help { left: 12px; bottom: 184px; } .syn3h-shell.exploration-ui:not(.is-focus) .focus-hud { opacity: .65; } }
-@media (max-height: 500px) { .syn3h-shell.exploration-ui .world-inspector { top: 8px; bottom: 8px; height: calc(100dvh - 16px); gap: 3px; } .syn3h-shell.exploration-ui .wi-cards { gap: 3px; } .syn3h-shell.exploration-ui .wi-top { padding-block: 3px; gap: 2px; } .syn3h-shell.exploration-ui .wi-card { flex-basis: 28px; min-height: 28px; } .syn3h-shell.exploration-ui .world-inspector .wi-head { flex-basis: 27px; min-height: 27px; padding-block: 5px; } .syn3h-shell.exploration-ui .shell-minimap { width: 96px; height: 96px; bottom: 156px; } .syn3h-shell.exploration-ui .spawn-help { left: 180px; bottom: 12px; } }
+@media (max-width: 700px) { .syn3h-shell.exploration-ui .world-inspector { top: var(--edge-top); bottom: var(--edge-bottom); height: calc(100dvh - var(--edge-top) - var(--edge-bottom)); right: var(--edge-right); width: min(340px, calc(100vw - 2 * var(--edge))); } .syn3h-shell.exploration-ui .shell-minimap { --map-size: 120px; bottom: 206px; } .syn3h-shell.exploration-ui .spawn-help { left: 12px; bottom: 184px; } .syn3h-shell.exploration-ui:not(.is-focus) .focus-hud { opacity: .65; } }
+@media (max-height: 500px) { .syn3h-shell.exploration-ui .world-inspector { top: var(--edge-top); bottom: var(--edge-bottom); height: calc(100dvh - var(--edge-top) - var(--edge-bottom)); gap: 3px; } .syn3h-shell.exploration-ui .wi-cards { gap: 3px; } .syn3h-shell.exploration-ui .wi-top { padding-block: 3px; gap: 2px; } .syn3h-shell.exploration-ui .wi-card { flex-basis: 28px; min-height: 28px; } .syn3h-shell.exploration-ui .world-inspector .wi-head { flex-basis: 27px; min-height: 27px; padding-block: 5px; } .syn3h-shell.exploration-ui .shell-minimap { --map-size: 96px; bottom: 156px; } .syn3h-shell.exploration-ui .spawn-help { left: 180px; bottom: 12px; } }
 @media (prefers-reduced-motion: reduce) { .syn3h-shell.exploration-ui *, .touch-controls * { transition-duration: 0s !important; } }
 .syn3h-shell.exploration-ui .wi-top #syn3h-build-notice { position: static !important; inset: auto !important; width: 100% !important; padding: 4px 6px !important; min-height: 24px; font: 11px/1.3 'Barlow',sans-serif !important; border: 1px solid var(--s3-line-quiet) !important; border-radius: 2px !important; background: rgb(57 57 57 / .2) !important; box-shadow: none !important; }
 
@@ -148,23 +159,23 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
    touches (pointer-events: none above), so a drag that starts on it still starts the stick.
    Sized for the screen, never moved or shrunk for the stick. --map-top (its top edge from the
    bottom) places the first-run stick hint just above it (touch-stick.css). */
-body { --map-top: calc(max(16px, env(safe-area-inset-bottom)) + 160px); }
-.syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 160px; height: 160px; top: auto; right: auto; left: max(16px, env(safe-area-inset-left)); bottom: max(16px, env(safe-area-inset-bottom)); }
+body { --map-top: calc(var(--edge-bottom) + 160px * .885); }
+.syn3h-shell.exploration-ui.has-touch .shell-minimap { --map-size: 160px; top: auto; right: auto; left: calc(var(--edge-left) - var(--map-ring)); bottom: calc(var(--edge-bottom) - var(--map-ring)); }
 @media (max-width: 700px) {
-  body { --map-top: calc(max(16px, env(safe-area-inset-bottom)) + 120px); }
-  .syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 120px; height: 120px; }
+  body { --map-top: calc(var(--edge-bottom) + 120px * .885); }
+  .syn3h-shell.exploration-ui.has-touch .shell-minimap { --map-size: 120px; }
 }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  body { --map-top: calc(max(16px, env(safe-area-inset-bottom)) + 96px); }
-  .syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 96px; height: 96px; }
+  body { --map-top: calc(var(--edge-bottom) + 96px * .885); }
+  .syn3h-shell.exploration-ui.has-touch .shell-minimap { --map-size: 96px; }
 }
 /* The first-run controls card sits beside the minimap, not over it, where the screen is wide
    enough (landscape phones and tablets); portrait phones stack it above the stick instead. */
 @media (min-width: 701px) and (min-height: 501px) {
-  .syn3h-shell.exploration-ui.has-touch .spawn-help { transform: none; left: calc(max(16px, env(safe-area-inset-left)) + 160px + 14px); }
+  .syn3h-shell.exploration-ui.has-touch .spawn-help { transform: none; left: calc(var(--edge-left) + 160px * .885 + 14px); }
 }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .syn3h-shell.exploration-ui.has-touch .spawn-help { transform: none; left: calc(max(16px, env(safe-area-inset-left)) + 96px + 14px); }
+  .syn3h-shell.exploration-ui.has-touch .spawn-help { transform: none; left: calc(var(--edge-left) + 96px * .885 + 14px); }
 }
 
 /* Diagnostics consume rail space; only their body scrolls. SVG reuses core history. */
@@ -239,9 +250,9 @@ body { --map-top: calc(max(16px, env(safe-area-inset-bottom)) + 160px); }
 
 /* "New build available. Press to reload": a banner floating at the bottom centre, clear of
    the touch controls and the home indicator. The dev server creates the button on <body>. */
-#syn3h-build-notice, .build-banner { position: fixed; left: 50%; right: auto; top: auto; bottom: max(18px, calc(env(safe-area-inset-bottom) + 10px)); transform: translateX(-50%); z-index: 10000; max-width: calc(100vw - 32px); min-height: 44px; margin: 0; padding: 10px 22px; border: 1px solid rgb(211 211 211 / .45); border-radius: 999px; background: rgb(17 17 17 / .72); color: #efefef; font: 500 14px/1.2 'Barlow',system-ui,sans-serif; letter-spacing: .04em; white-space: nowrap; cursor: pointer; box-shadow: 0 0 26px rgb(176 176 176 / .22), inset 0 1px 0 rgb(255 255 255 / .18); -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4); }
+#syn3h-build-notice, .build-banner { position: fixed; left: 50%; right: auto; top: auto; bottom: var(--edge-bottom); transform: translateX(-50%); z-index: 10000; max-width: calc(100vw - 32px); min-height: 44px; margin: 0; padding: 10px 22px; border: 1px solid rgb(211 211 211 / .45); border-radius: 999px; background: rgb(17 17 17 / .72); color: #efefef; font: 500 14px/1.2 'Barlow',system-ui,sans-serif; letter-spacing: .04em; white-space: nowrap; cursor: pointer; box-shadow: 0 0 26px rgb(176 176 176 / .22), inset 0 1px 0 rgb(255 255 255 / .18); -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4); }
 /* On touch the bottom corners hold the thumb controls: the banner floats just above them. */
-body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-notice, .build-banner) { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 168px); }
+body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-notice, .build-banner) { bottom: calc(var(--edge-bottom) + 168px); }
 
 /* The gear drum and the accessory controls belong to play: hidden in the lobby, under the pause
    veil and while the exit question is up. Their place in the left column is hud-column.css. */

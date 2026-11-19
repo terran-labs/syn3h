@@ -13,10 +13,10 @@
    moment when something changes or is pointed at.
 
    One row form for every control (the owner, 17 November 2026: "standardize all of these"):
-   its node on the spine, then its key cap, then its name. No pill or outline around a row or
-   around the selected gear. Key caps, the gear's description and every other hint show only
-   while the cursor is free (paused, a panel open, not captured); driving with the cursor
-   captured, the column shows names and state alone. One type scale: --col-type for names
+   its node on the spine, then its name, then its key (18 November: the name first, the key in a
+   second column). No pill or outline around a row or around the selected gear. The keys of
+   Wings, Flight, Zorb and Chat show always; the gear's number glyphs, its description and
+   every other hint show only while the cursor is free (paused, a panel open, not captured). One type scale: --col-type for names
    and hints, --col-cap-type for key caps; the one larger size is the selected gear's name
    (gear.css, .gs-text), which is also brighter.
 
@@ -24,16 +24,20 @@
    and ZORB buttons already show these states). The minimap keeps the lower left corner on
    every screen (exploration.css). */
 .syn3h-shell.exploration-ui {
-  --col-left: max(16px, env(safe-area-inset-left));
-  --col-bottom: max(16px, env(safe-area-inset-bottom));
+  /* The column's line (its spine, --col-spine in) sits on the shared edge (--edge,
+     exploration.css), the same distance from the left as the minimap's ring and the right
+     panel from the right. */
+  --col-spine: 4px;
+  --col-left: calc(var(--edge-left) - var(--col-spine));
+  --col-bottom: var(--edge-bottom);
   --col-w: 210px;
   --col-row: 30px;
   --col-gap: 10px;
   /* The content line and the spine, from the column's left edge. */
   --col-inset: 24px;
-  --col-spine: 4px;
-  /* Bottom edges, stacked up from the minimap (210 px, plus 4 px so chat clears its box). */
-  --col-chat-bottom: calc(var(--col-bottom) + 214px);
+  /* Bottom edges, stacked up from the minimap: its ring sits on the edge, and its box (210 px)
+     reaches 88.5% of its size above that; chat clears the box by 4 px. */
+  --col-chat-bottom: calc(var(--col-bottom) + 210px * .885 + 4px);
   --col-acc-bottom: calc(var(--col-chat-bottom) + var(--col-row) + var(--col-gap));
   --col-gear-bottom: calc(var(--col-acc-bottom) + var(--acc-rows, 1) * var(--col-row) + var(--col-gap));
   --col-rest: .72;
@@ -63,7 +67,13 @@
 /* ---------- Gear selector: the top of the column ---------- */
 :root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector {
   left: var(--col-left); top: auto; bottom: var(--col-gear-bottom); transform: none;
-  --gs-width: var(--col-w);
+  /* Three rows, the selected gear and one either side (the owner, 18 November 2026), at one
+     spacing whether the cursor is free or captured: unlocking only reveals the number glyphs. */
+  --gs-width: var(--col-w); --gs-pitch: 36px; --gs-slots: 3;
+}
+:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum {
+  -webkit-mask-image: linear-gradient(transparent, #000 24%, #000 76%, transparent);
+  mask-image: linear-gradient(transparent, #000 24%, #000 76%, transparent);
 }
 /* The drum's look, on every device (touch keeps its own placement and sizes, gear.css):
    no dark falloff behind it, legibility from the one text shadow alone; no pill around the
@@ -100,14 +110,12 @@
 /* The column's placement, desktop only: the drum spans the column from its left edge. */
 :root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum { left: 0; width: var(--col-w); }
 :root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum button.gs-item { padding-left: var(--col-inset); }
-:root .syn3h-shell.exploration-ui.has-touch .gear-selector { --gs-drum-left: 8px; }
-/* Its detail (what the gear does, what to press) sits beside the selected gear, but never
-   beside the speed readout: on screens where the window lands near mid-height, the detail
-   rises until its last line clears the readouts (centred at 50%, about 30 px either side). */
-@media (max-height: 1000px) {
-  :root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-detail {
-    top: auto; bottom: max(calc(50% - var(--gs-pitch) / 2 + 4px), calc(50dvh + 40px - var(--col-gear-bottom)));
-  }
+:root .syn3h-shell.exploration-ui.has-touch .gear-selector { --gs-drum-left: 8px; --gear-left: calc(var(--edge-left) - var(--col-spine)); }
+/* Its detail (what the gear does, what to press) sits beside the selected gear: its first line
+   level with the selected name (the owner, 18 November 2026). It never runs into the speed
+   readout: where the two would meet, GearSelector narrows it to the room left (--gs-detail-max). */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-detail {
+  top: calc(50% - 9px); bottom: auto; max-width: var(--gs-detail-max, none);
 }
 
 /* ---------- Accessories, then the Chat row: one row form ---------- */
@@ -151,7 +159,10 @@
   font: var(--col-cap-type); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--s3-accent-2); text-shadow: var(--col-text-under);
   border: 0; border-radius: 0; background: none; box-shadow: none; opacity: 1;
 }
-/* Keys sit in a fixed column, so the names beside them line up (SPACE is the widest). */
+/* Wings, Flight, Zorb and Chat: the name first, in a fixed column, then its key in a second
+   column, shown always, the cursor free or captured (the owner, 18 November 2026). The gear's
+   number glyphs still show only with the cursor free. Touch has no keys. */
+:root .syn3h-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat) .acc-name { flex: none; width: 66px; }
 :root .syn3h-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat) kbd { min-width: 46px; }
 /* The same key form everywhere else the HUD names a key: the controls card (first run and H)
    and the lobby's controls list. A bright, bolder glyph in the line's own size; no outline. */
@@ -159,9 +170,7 @@
   display: inline; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
   font: inherit; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--s3-accent-2);
 }
-/* Captured for driving: names and state only. Every key cap and hint steps out. Touch has no
-   keys, so the gear's number caps never show there. */
-:root .syn3h-shell.exploration-ui.is-focus:not(.has-touch) :is(.hud-accessories, .hud-chat) kbd { display: none; }
+/* Captured for driving, the gear's number caps and hints step out; touch never shows them. */
 :root .syn3h-shell.exploration-ui .gear-selector:is([data-mode=locked], [data-touch]) .gs-index { display: none; }
 :is(.hud-accessories, .hud-chat) .acc-name { flex: 1 1 auto; white-space: nowrap; }
 /* The node on the spine: a hollow ring when off, lit when on (Chat: something unread),

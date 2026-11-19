@@ -53,7 +53,7 @@ export class AccessoryControls {
       const button = document.createElement('button')
       button.type = 'button'; button.className = 'acc-row'; button.dataset.id = accessory.id
       button.setAttribute('aria-pressed', 'false')
-      button.innerHTML = `<kbd aria-hidden="true">${accessory.cap}</kbd><span class="acc-name" aria-hidden="true">${accessory.name}</span><i class="acc-pip" aria-hidden="true"></i>`
+      button.innerHTML = `<span class="acc-name" aria-hidden="true">${accessory.name}</span><kbd aria-hidden="true">${accessory.cap}</kbd><i class="acc-pip" aria-hidden="true"></i>`
       const row: Row = { accessory, button, on: false, shown: '', unavailable: '', moving: -2 }
       button.addEventListener('click', () => {
         this.wake()
