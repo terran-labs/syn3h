@@ -31,7 +31,8 @@ export interface PhoneRenderRecorder {
 }
 
 const MINUTE = 60_000
-const RUN = 10 * MINUTE
+const WARMUP_END = 10 * MINUTE
+const RUN = WARMUP_END + MINUTE
 const HITCH = 50
 
 type Reading = Omit<PhoneRenderFrame, 'playing' | 'startMs' | 'intervalMs'> & {
@@ -139,9 +140,9 @@ export function createPhoneRenderRecorder(parent: HTMLElement = document.body): 
       state === 'ended' ? endReason : 'Recording in progress',
       summarize('First minute', first, Math.min(elapsedMs, MINUTE)),
     ]
-    if (elapsedMs === RUN) {
-      lines.push(summarize('Full ten minutes', samples, RUN))
-      lines.push(summarize('Final minute', samples.filter(sample => sample.elapsedMs >= RUN - MINUTE), MINUTE))
+    if (elapsedMs >= WARMUP_END) {
+      lines.push(summarize('First ten minutes', samples.filter(sample => sample.elapsedMs < WARMUP_END), WARMUP_END))
+      lines.push(summarize('After ten minutes', samples.filter(sample => sample.elapsedMs >= WARMUP_END), elapsedMs - WARMUP_END))
     }
     return lines.join('\n\n')
   }
@@ -184,7 +185,7 @@ export function createPhoneRenderRecorder(parent: HTMLElement = document.body): 
     show.setAttribute('aria-expanded', 'false')
     show.disabled = true
     start.textContent = 'Stop'
-    announce('Waiting for play')
+    announce('Waiting for play · 11-minute run')
   })
   show.addEventListener('click', () => {
     report.hidden = !report.hidden
@@ -234,7 +235,7 @@ export function createPhoneRenderRecorder(parent: HTMLElement = document.body): 
       lastFrame = sample.frame
       elapsedMs = Math.min(RUN, sample.startMs - startedAt)
       if (elapsedMs === RUN) {
-        finish('Completed ten minutes of visible play.', 'Recording complete')
+        finish('Completed the minute after ten minutes of continuous play.', 'Recording complete')
         return
       }
       const { frame, cpuMs, renderCalls, quality, backend } = sample
@@ -247,7 +248,7 @@ export function createPhoneRenderRecorder(parent: HTMLElement = document.body): 
       if (second !== shownSecond) {
         shownSecond = second
         const remainder = String(second % 60).padStart(2, '0')
-        status.textContent = `Recording ${Math.floor(second / 60)}:${remainder}`
+        status.textContent = `Recording ${Math.floor(second / 60)}:${remainder} / 11:00`
       }
     },
     recordGpu({ frame, gpuMs }) {
