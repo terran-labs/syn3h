@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { float, materialColor, mix, sin, smoothstep, time, uv, vec3 } from 'three/tsl'
+import { abs, float, materialColor, max, mix, mx_noise_float, smoothstep, time, uv, vec3 } from 'three/tsl'
 import { DROP_FALL, findDrops, riverSpeed, type LavaFeatures, type RiverDrop } from '../terrain/lava'
 
 type Point = { x: number; y: number; z: number }
@@ -177,11 +177,15 @@ export function buildFallSheet(
 /** Procedural streaks move in flight-time coordinates, accelerating as the sheet falls. */
 export function createFallMaterial(): THREE.MeshStandardNodeMaterial {
   const material = new THREE.MeshStandardNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, roughness: .3 })
-  const p = uv(), travel = p.y.sub(time)
-  const streak = sin(p.x.mul(75).add(sin(travel.mul(13)))).mul(.5).add(.5)
-  const foam = smoothstep(.35, .85, streak.add(sin(travel.mul(24).add(p.x.mul(17))).mul(.15)))
-  material.colorNode = mix(materialColor.rgb, vec3(.86, .96, 1), foam)
-  const edge = smoothstep(0, .12, p.x).mul(float(1).sub(smoothstep(.88, 1, p.x)))
-  material.opacityNode = edge.mul(foam.mul(.35).add(.5))
+  // Falling water: white ropes running down the sheet between clearer strands, at a scale that
+  // still reads from across a valley (0.8 m strands averaged to a milky slab), carried down at
+  // the fall's speed. Its sides fade over a fifth of its width, so it has no hard edge.
+  const p = uv(), travel = p.y.sub(time.mul(1.2))
+  const rope = (n: THREE.Node<'float'>) => { const r = float(1).sub(abs(n)); return r.mul(r).mul(r) }
+  const ropes = max(rope(mx_noise_float(vec3(p.x.mul(7), travel.mul(0.6), time.mul(0.2)))), rope(mx_noise_float(vec3(p.x.mul(17), travel.mul(1.3), time.mul(0.3).add(5)))).mul(0.8))
+  const foam = smoothstep(.3, .75, ropes)
+  material.colorNode = mix(materialColor.rgb, vec3(.9, .97, 1), foam)
+  const edge = smoothstep(0, .2, p.x).mul(float(1).sub(smoothstep(.8, 1, p.x)))
+  material.opacityNode = edge.mul(foam.mul(.55).add(.3))
   return material
 }
