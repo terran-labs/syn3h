@@ -109,6 +109,8 @@ const PRESET_TABLE: Readonly<Record<string, PresetRow>> = {
   'post.on': [false, true, true, true, true, true],
   // Every level has sun rays: Minimal and Low draw the sky's cheap form (src/fx/post/sunburst.ts).
   'post.shafts': [D, D, D, D, D, D],
+  // Fog banks (src/world/weather/fogMap.ts): off at Minimal, one sample at Low, three above.
+  'gfx.fogBanks': [0, 1, 2, 2, 2, 2],
   'post.bloom': [0, 0, 0, D, D, D],
   'post.heat': [0, 0, 0, D, D, D],
   'post.temporal': [false, false, false, false, true, true],
