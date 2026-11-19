@@ -134,10 +134,14 @@ async function prepare({ name, mode, level, stepMs }) {
     setFixture(false)
     // Startup can register a type even with zero intensity. Start the fixture with a
     // fresh scene light node while retaining production renderer and material caches.
-    const lighting = renderer.lighting
-    const old = lighting.getNode(scene)
-    const cache = mode === 'batched' ? lighting._nodes : lighting._lightsNodeMap
-    if (!cache.delete(scene) || lighting.getNode(scene) === old) throw new Error('Could not reset the scene light node')
+    // RenderLists also caches by lighting-manager identity and retains its lightsNode.
+    // A fresh manager gives every camera a matching fresh list for this scene.
+    const previous = renderer.lighting
+    renderer.lighting = new previous.constructor(previous.options)
+    const list = renderer._renderLists.get(scene, camera, renderer.lighting)
+    if (list.lightsNode === previous.getNode(scene) || list.lightsNode !== renderer.lighting.getNode(scene)) {
+      throw new Error('Expected the render list to use the new scene light node')
+    }
   }
   player.update(0, 0)
 
