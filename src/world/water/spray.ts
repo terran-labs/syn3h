@@ -176,20 +176,25 @@ function foamMaterial(light: N, tint: N, lava = false, octaves = 2) {
   const lace = mx_fractal_noise_float(vec3(positionWorld.xz.mul(2.4), 3.7), octaves, 2, .55).mul(.5).add(.5)
   // Strips: a feathered profile across whose edge wanders; a crest is a narrow ridge.
   const edge = q.x.abs().add(patchy.sub(.5).mul(.4)).max(0)
-  const profile = select(crest, float(1).sub(smoothstep(0, 1, edge)).pow(2.2), float(1).sub(smoothstep(.12, 1, edge)).pow(1.3))
+  const profile = select(crest, float(1).sub(smoothstep(0, 1, edge)).pow(1.6), float(1).sub(smoothstep(.12, 1, edge)).pow(1.3))
   // Young foam is a blanket; with age it opens into patches over clear water, which thin
   // until the last pieces go. A churned patch breaks up sooner.
-  const open = age.mul(select(churn, 1, .85)).add(.08)
+  // A crest is never a solid line: it is lace from the start and thins fastest.
+  const open = age.mul(select(crest, 1.1, select(churn, 1, .85))).add(select(crest, .3, .08))
   const patches = smoothstep(open.sub(.13), open.add(.13), patchy.mul(.62).add(lace.mul(.5)))
-  const blanket = float(1).sub(smoothstep(0, .22, age))
+  const blanket = float(1).sub(smoothstep(0, .22, age)).mul(select(crest, 0, 1))
   const stripAlpha = profile.mul(patches.max(blanket.mul(.85))).mul(fade)
-  // Rings: a thin crest, uneven round the circle, breaking up unevenly; calmer inside.
+  // Rings: a crest of water, not a drawn line. Its radius wobbles, its thickness and brightness
+  // vary round the circle, and gaps open in it as it spreads; calmer water inside.
   const around = mx_fractal_noise_float(vec3(q.x.mul(2.2), q.y.mul(2.2), A.x.add(A.z).mul(.13)), octaves, 2, .5).mul(.5).add(.5)
-  const rr = q.length().add(around.sub(.5).mul(.07))
-  const band = float(1).sub(smoothstep(0, select(ripplet, .05, .075), rr.sub(.84).abs()))
-  const broken = smoothstep(age.mul(.95).sub(.12), age.mul(.95).add(.12), around.mul(.6).add(lace.mul(.45)))
-  const inside = float(1).sub(smoothstep(.45, .82, rr)).mul(float(1).sub(smoothstep(0, .35, age))).mul(select(ripplet, 0, .14))
-  const ringAlpha = band.mul(broken).mul(around.mul(.7).add(.5)).add(inside).mul(float(1).sub(smoothstep(.95, 1, q.length()))).mul(fade)
+  const gaps = mx_fractal_noise_float(vec3(q.x.mul(5.5), q.y.mul(5.5), A.x.sub(A.z).mul(.11).add(7)), octaves, 2, .5).mul(.5).add(.5)
+  const rr = q.length().add(around.sub(.5).mul(.1))
+  const thick = select(ripplet, .05, .03).add(around.mul(select(ripplet, .03, .09)))
+  const band = float(1).sub(smoothstep(0, thick, rr.sub(.84).abs()))
+  // Gaps open from the start and widen with age, unevenly.
+  const broken = smoothstep(age.mul(.7).add(.32).sub(.1), age.mul(.7).add(.32).add(.1), gaps.mul(.7).add(lace.mul(.35)))
+  const inside = float(1).sub(smoothstep(.45, .82, rr)).mul(float(1).sub(smoothstep(0, .35, age))).mul(select(ripplet, 0, .12))
+  const ringAlpha = band.mul(broken).mul(around.mul(.9).add(.3)).add(inside).mul(float(1).sub(smoothstep(.95, 1, q.length()))).mul(fade)
   const alpha = select(ring, ringAlpha, stripAlpha).clamp(0, 1)
   m.opacityNode = alpha.mul(.95)
   // Fresh foam is white with air; as it settles it takes the liquid's own colour.

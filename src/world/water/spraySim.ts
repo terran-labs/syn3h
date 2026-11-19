@@ -508,7 +508,7 @@ export class SpraySim {
     const spacing = Math.max(.6, speed * WAKE_LIFE / (P - 2)), k = this.wakeStrength * wet, w = scale * this.wakeWidth
     for (const side of [-1, 1]) {
       const ax = x + fx * .9 + sx * side * HULL * .85, az = z + fz * .9 + sz * side * HULL * .85
-      this.point(s.slot * ARMS + (side < 0 ? 0 : 1), ax, y, az, (.25 + speed * .012) * w, Math.min(1, speed / 6) * .7 * k, WAKE_LIFE, .9, spacing, fresh, sx * side, sz * side, speed * .33)
+      this.point(s.slot * ARMS + (side < 0 ? 0 : 1), ax, y, az, (.45 + speed * .015) * w, Math.min(1, speed / 6) * .45 * k, WAKE_LIFE, 1.2, spacing, fresh, sx * side, sz * side, speed * .33)
     }
     // The churned patch: short, rough, gone about 12 m behind the stern.
     const churn = smoothstep01((speed - 1.5) / 6)
@@ -638,7 +638,9 @@ export class SpraySim {
     if (k >= count) {
       const h = arm * 5
       out[at] = this.armHead[h]; out[at + 1] = this.armHead[h + 1]; out[at + 2] = this.armHead[h + 2]
-      out[at + 3] = this.armHead[h + 3]; out[at + 4] = this.armHead[h + 4] * .9; out[at + 5] = 0
+      // Nothing at the source itself: the strip rises from it over its first segment, so it
+      // never ends square at a skirt, a stern or under a jet.
+      out[at + 3] = this.armHead[h + 3]; out[at + 4] = 0; out[at + 5] = 0
       return
     }
     const p = this.points, o = (arm * this.cap.points + (this.armStart[arm] + k) % this.cap.points) * W
