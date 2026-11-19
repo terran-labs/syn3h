@@ -19,7 +19,7 @@
 import * as T from 'three/webgpu'
 import { attribute, float, uniform, vec3 } from 'three/tsl'
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
-import { mergedSurfaces } from '../skins/mergeStatic'
+import { mergedSurfaces, standardEmission } from '../skins/mergeStatic'
 import { TRACK_LUGS, applyShowroom, setRole, wrapTrackScroll, type Decorate } from '../skins/showroom'
 
 export type Section = [z: number, width: number, keel: number, belt: number, roofWidth: number, roof: number]
@@ -655,7 +655,7 @@ function surfaces(color: T.ColorRepresentation, accent: T.ColorRepresentation, t
   })
   const packed = new T.MeshStandardNodeMaterial(); packed.name = 'Tank surfaces'
   packed.colorNode = colour; packed.emissiveNode = emission; packed.roughnessNode = roughness; packed.metalnessNode = metalness
-  mergedSurfaces.set(packed, list)
+  mergedSurfaces.set(packed, list); standardEmission.add(emission)
   // Shown as it is only where the shared force field is not applied (the distance levels).
   const canopy = setRole(new T.MeshStandardMaterial({ color: accent, transparent: true, opacity: .18, depthWrite: false, side: T.DoubleSide }), 'canopy')
   canopy.name = 'Tank canopy'

@@ -15,9 +15,10 @@ export function addNightReadability(root:T.Object3D):void {
  root.traverse(o=>{
   if(!(o instanceof T.Mesh))return
   for(const material of Array.isArray(o.material)?o.material:[o.material]){
-   if(seen.has(material)||material.transparent)continue
+   // A material shared between vehicles (skins/showroom.ts) is decorated once, by the first.
+   if(seen.has(material)||material.transparent||(material.userData.sharedShowroom&&material.userData.nightReadable))continue
    if(!(material instanceof T.MeshStandardMaterial)&&!(material instanceof T.MeshStandardNodeMaterial))continue
-   seen.add(material)
+   seen.add(material);if(material.userData.sharedShowroom)material.userData.nightReadable=true
    if(material instanceof T.MeshStandardNodeMaterial){
     const night=uniform(0).setGroup(renderGroup).onRenderUpdate(frame=>vehicleNightAmount(frame.scene as T.Scene))
     const paint=material.colorNode??uniform(material.color)

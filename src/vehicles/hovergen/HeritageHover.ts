@@ -3,9 +3,10 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { bodyRings, loft, type Mat } from '../jetgen/shapes'
 import { mergeStatic } from '../skins/mergeStatic'
 import { applyShowroom, setRole } from '../skins/showroom'
-import { addLavaGlow } from '../skins/lavaGlow'
-import { addNightReadability } from '../skins/nightReadability'
+
+
 import { buildHeritage, heritageHull, addHeritageBox, type HeritageDesign } from './heritage'
+import { vehicleDecoration, noDecoration } from '../skins/decoration'
 
 /** Round two uses the common vehicle materials. Round one retains its original builder. */
 export class HeritageHover {
@@ -90,7 +91,7 @@ export class HeritageHover {
     }
     mergeStatic(this.object)
     this.object.traverse(o => { if (o instanceof T.Mesh && o.material === this.glow) this.glowMeshes.push(o) })
-    if (!game) this.detach = applyShowroom(this.object, () => {})
+    if (!game) this.detach = applyShowroom(this.object, noDecoration)
     this.setLights(false, false)
   }
 
@@ -98,7 +99,7 @@ export class HeritageHover {
   showroom(): void {
     if (!this.game || this.level === 2 || this.shaded) return
     this.shaded = true
-    this.detach = applyShowroom(this.object, root => { addNightReadability(root); addLavaGlow(root) })
+    this.detach = applyShowroom(this.object, vehicleDecoration)
   }
   private shaded = false
 

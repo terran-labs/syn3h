@@ -1,8 +1,7 @@
 import { WingTipAnchors } from './wingTips'
 import { smoothBuggyWheel, distantBuggyBody, distantBuggyArm } from './buggyGeometry'
 import {hotExposureNode} from './hotExposure'
-import {addLavaGlow} from './lavaGlow'
-import {addNightReadability} from './nightReadability'
+
 import {applyShowroom,setRole} from './showroom'
 import { forceField, type ForceField } from './forceField'
 import { graphicsLevel, levelNumber } from '../../core/quality'
@@ -17,6 +16,7 @@ import type { BuggySkin } from './BuggySkin'
 import { MotorSparks } from './motorSparks'
 import { motorSparkAmount } from './motorDrive'
 import type Node from 'three/src/nodes/core/Node.js'
+import { vehicleDecoration } from './decoration'
 
 const up = new THREE.Vector3(0, 1, 0)
 /** Axle mounts: Unity `axelPos`/`AxelPos` mirrored per wheel, z flipped to our -Z forward. */
@@ -411,7 +411,7 @@ export class Syn3hBuggySkin implements BuggySkin {
       const cast=!remote||distance<(level===2?20:0)
       shadows.forEach(m=>{m.castShadow=cast})
     })
-    this.detachShowroom = applyShowroom(this.object, root => { addNightReadability(root); addLavaGlow(root) })
+    this.detachShowroom = applyShowroom(this.object, vehicleDecoration)
     this.object.visible = true
   }
 
