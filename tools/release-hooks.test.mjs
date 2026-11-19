@@ -184,3 +184,27 @@ for (const [name, codes, status] of [['passes', [0], 0], ['fails at once', [1, 0
   })
 }
 
+
+test('the hosted check step cannot hold an accepted release open', () => {
+  // 18 Nov 2026: a hosted run stuck "in progress" and `gh run watch` waited 36 minutes.
+  const source = readFileSync(join(process.cwd(), 'tools', 'release.sh'), 'utf8')
+  const start = source.indexOf('vantage() {'), end = source.indexOf('\n}\n', start)
+  assert.ok(start >= 0 && end > start, 'release.sh defines vantage()')
+  const dir = mkdtempSync(join(tmpdir(), 'syn3h-vantage-'))
+  try {
+    // A stand-in gh: the dispatch works, the run appears, and it never finishes.
+    writeFileSync(join(dir, 'gh'), `#!/bin/sh
+case "$1 $2" in
+  "workflow run") exit 0 ;;
+  "run list") echo 4242 ;;
+  "run view") echo in_progress ;;
+esac
+`, { mode: 0o755 })
+    const script = `${source.slice(start, end + 2)}\nsleep() { :; }\nLOG="${dir}/log"; CALVER=v0.0.0; vantage`
+    const started = Date.now()
+    const result = spawnSync('/bin/sh', ['-c', script], { encoding: 'utf8', timeout: 20000, env: { PATH: `${dir}:${process.env.PATH}`, SYN3H_VANTAGE_WAIT: '1' } })
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /VANTAGE: GitHub public check of v0\.0\.0 still in_progress after 1 s, not waited for/)
+    assert.ok(Date.now() - started < 15000, 'the step returned promptly')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
