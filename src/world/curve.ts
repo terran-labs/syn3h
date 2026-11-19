@@ -167,6 +167,33 @@ function viewDrop(worldPoint: any) {
   return cameraViewMatrix.mul(vec4(curveWorldOffset(worldPoint, curveState), 0)).xyz
 }
 
+/**
+ * The sine of the angle between the straight sight line from the camera to a point on a liquid
+ * surface and that surface, as drawn on the bent planet: positive when the camera is above it.
+ * On a flat world, the flat view vector's height. On a small planet the surface a few dozen
+ * metres out is tilted toward the camera by d / R, so this is larger than the flat value there.
+ * The camera is the bend's anchor, so it is drawn where it is.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function bentGrazing(worldPoint: any, camera: any) {
+  const invR = curveState.z
+  const flat = invR.lessThanEqual(0)
+  const R = float(1).div(invR.max(1e-9))
+  const d = vec2(worldPoint.x, worldPoint.z).sub(curveState.xy).length()
+  const t = d.mul(invR).min(Math.PI)
+  const r = R.add(worldPoint.y)
+  // In the plane through the camera, the point and the planet's centre: the point's drawn place,
+  // the line from it to the camera, and the surface's normal there.
+  const along = r.mul(sin(t)), up = r.mul(cos(t)).sub(R)
+  const vx = along.negate(), vy = camera.y.sub(up)
+  const bent = vx.mul(sin(t)).add(vy.mul(cos(t))).div(vec2(vx, vy).length().max(1e-6))
+  const level = camera.y.sub(worldPoint.y).div(camera.sub(worldPoint).length().max(1e-6))
+  return select(flat, level, bent)
+}
+
+/** 1 / R in use for drawing (0 when flat), as a shader node. */
+export const curveInverseRadius = curveState.z
+
 /** Shared GPU mapping for visible geometry and its previous-frame projection. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function curveWorldOffset(worldPoint: any, bend: typeof curveState) {
