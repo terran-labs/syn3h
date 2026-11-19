@@ -91,7 +91,7 @@ try {
       // A/B in one run: every second the fireworks are hidden or shown (camera layer), and each
       // sample says which, so a busy shared machine weighs on both halves alike.
       window.__fwOn=true
-      setInterval(()=>{const F=window.syn3hNet?.lasers?.fireworks;if(!F)return;window.__fwOn=!window.__fwOn;for(const k of ['stars','dayStars','smoke','flash'])F[k]?.mesh.layers.set(window.__fwOn?0:31)},1000)
+      setInterval(()=>{const F=window.syn3hNet?.lasers?.fireworks;if(!F)return;window.__fwOn=!window.__fwOn;for(const k of ['stars','dayStars','smoke','flash'])F[k]?.mesh.layers.set(window.__fwOn?0:31);for(const g of F.glow?.slots??[])g.mesh.layers.set(window.__fwOn?0:31)},1000)
       setInterval(()=>{const F=window.syn3hNet?.lasers?.fireworks;if(!F)return;const c=g.camera,d=c.getWorldDirection(c.position.clone()),at=c.position.clone().addScaledVector(d,120).add(d.clone().set(Math.sin(n)*25,Math.cos(n*1.3)*12,0));F.burst({at,climb:0,ground:-Infinity,colors:[{r:.9,g:.08,b:.05},{r:1,g:.75,b:.3}],seed:n++})},750)
     }
     if(variant.startsWith('fwBaseline')){s.params.set('sun.dayLength',0);s.params.set('sun.timeOfDay',12)}

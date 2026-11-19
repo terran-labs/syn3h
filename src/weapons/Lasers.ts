@@ -616,7 +616,8 @@ export class Lasers implements System {
     // On the ground, a star shell climbs before it bursts: a flare seen across the world.
     const climb = cause === 'end' && Number.isFinite(ground) && at.y - ground < 6 ? thunderFlareHeight.value : 0
     const colors = this.hooks.colorsOf?.(shooter) ?? [RED_FALLBACK, GOLD_FALLBACK] as const
-    this.fireworks.burst({ at, climb, ground, colors, seed: fireworkSeed(shooter, shot) })
+    const terrain = this.hooks.terrain?.()
+    this.fireworks.burst({ at, climb, ground, colors, seed: fireworkSeed(shooter, shot), heightAt: terrain?.heightAt ? (x, z) => terrain.heightAt!(x, z) : undefined })
     this.hooks.onBurst?.(shooter, at.clone().setY(at.y + climb), cause, climb > 0 ? CLIMB_SECONDS : 0)
   }
 

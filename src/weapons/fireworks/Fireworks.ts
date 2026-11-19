@@ -15,7 +15,7 @@
  *
  * Colours from the shooter's two vehicle colours, lifted so a dark paint still shows. Fog off,
  * so a burst is seen from across the world. At night the ground under it lights up (the light
- * disc of ImpactPulses, no real light).
+ * glow of GroundGlow, lying on the terrain, no real light).
  *
  * Every star is a spark in one SparkBatch, written once when the burst is made, including the
  * later stages (born later, at positions worked out here from the same formula the shader uses).
@@ -25,7 +25,7 @@
 import * as T from 'three/webgpu'
 import type { Game } from '../../core/Game'
 import { graphicsLevel } from '../../core/quality'
-import { ImpactPulses } from '../pulse'
+import { GroundGlow } from './GroundGlow'
 import { SparkBatch, type SparkSpec } from '../impact/SparkBatch'
 import { fireworkSize, fireworkSmoke, fireworkWidth } from '../impact/params'
 import { flashSprite } from '../impact/flashSprite'
@@ -55,10 +55,6 @@ const WIDTH = 4
 const SNAP = 1.8
 /** Smoke puffs' strength before fx.fireworks.smoke: the dust sprite is made faint for tyre dust. */
 const SMOKE_ALPHA = 4.5
-/** Reach of the ground light, m: from a burst up at the flare height down to the ground and round it. */
-const GLOW_REACH = 400
-/** Its brightness at night, candela: about 0.5 of irradiance on the ground 120 m below. */
-const GLOW_CANDELA = 7000
 /** Night glitter: sparks shed along the stars' paths, hanging a second or more (night only). */
 const GLITTER = [60, 140, 330] as const, GLITTER_EVERY = [5, 3, 2] as const
 /**
@@ -80,6 +76,8 @@ export interface BurstSpec {
   ground: number
   /** The shooter's two colours. */
   colors: readonly [T.Color, T.Color]
+  /** The terrain's height, for the glow it throws on the ground; flat at `ground` without it. */
+  heightAt?: (x: number, z: number) => number
   seed: number
 }
 
@@ -91,7 +89,7 @@ function travel(o: T.Vector3, v: T.Vector3, drag: number, gravity: number, t: nu
 
 export class Fireworks {
   private stars!: SparkBatch
-  private readonly light: ImpactPulses
+  private readonly glow: GroundGlow
   /** The pop at the moment of the burst: a small sun by day, a bloom at night. */
   private flash!: ParticleBatch
   /**
@@ -102,17 +100,6 @@ export class Fireworks {
   private dayStars!: SparkBatch
   /** Daytime smoke, blended normally so it darkens a bright sky: what shows a burst at noon. */
   private smoke!: ParticleBatch
-  /**
-   * The light a burst throws on the ground, as a real light, at High on a desktop only (a light in
-   * the scene costs every lit pixel, as for Materialize's). One, kept in the scene at intensity 0
-   * when idle so the light count never changes and nothing recompiles; moved to the newest burst.
-   * The ground glow disc (ImpactPulses) cannot follow hills, so on its own it shows only on flat
-   * ground; it stays as the cheap form at every level.
-   */
-  private glowLight: T.PointLight | null = null
-  private glowStart = -Infinity
-  private glowSeconds = 1
-  private glowPeak = 0
   private level = -1
   private narrow = false
   /** The graphics level smoke follows: Low's at most on a phone. */
@@ -122,7 +109,6 @@ export class Fireworks {
   private clock = 0
   private rand = 0
   private readonly ends: number[] = []
-  private readonly lights: { at: T.Vector3; top: number; time: number; radius: number; color: T.Color; seconds: number; strength: number }[] = []
   private readonly spec: SparkSpec = { life: 2, width: 0.1, drag: 1.2, gravity: 0.35, streak: 0.06, normal: { x: 0, y: 1, z: 0 }, bounce: -1 }
   private readonly o = new T.Vector3()
   private readonly v = new T.Vector3()
@@ -137,7 +123,7 @@ export class Fireworks {
   readonly stats = { bursts: 0, stars: 0, last: '' as FireworkShape | '' }
 
   constructor(private readonly game: Game) {
-    this.light = new ImpactPulses(game, 'glow')
+    this.glow = new GroundGlow(game)
     this.rebuild()
   }
 
@@ -163,11 +149,7 @@ export class Fireworks {
     // Fog off, as for the stars: a burst high and far would otherwise fade into the sky colour.
     this.flash.mesh.material.fog = false; this.smoke.mesh.material.fog = false
     this.game.scene.add(this.flash.mesh, this.smoke.mesh)
-    if (this.level === 2 && !this.narrow && !this.glowLight) {
-      this.glowLight = new T.PointLight(0xffffff, 0, GLOW_REACH, 2)
-      this.glowLight.castShadow = false
-      this.game.scene.add(this.glowLight)
-    } else if ((this.level < 2 || this.narrow) && this.glowLight) { this.glowLight.removeFromParent(); this.glowLight.dispose(); this.glowLight = null }
+    this.glow.build(this.level)
   }
 
   /** A seeded sequence for one burst, so its shape and scatter come from the shot. */
@@ -332,7 +314,7 @@ export class Fireworks {
     for (let i = 0; i < embers; i++) emit(top, sphere(i, embers).multiplyScalar(speed * 0.5), s, this.c.copy(a).multiplyScalar(0.35 + 0.6 * night), delay + 0.3)
 
     // The light it throws on the ground, as the burst comes.
-    if (Number.isFinite(spec.ground)) this.lights.push({ at: new T.Vector3(top.x, spec.ground, top.z), time: this.clock + delay, radius: Math.max(12, (top.y - spec.ground) * 0.9), color: this.c.copy(a).multiplyScalar(0.12 + 0.25 * night).clone(), seconds: 1.6 + 0.8 * night, top: top.y, strength: night })
+    if (Number.isFinite(spec.ground)) this.glow.emit(top.x, top.z, spec.ground, Math.max(12, (top.y - spec.ground) * 0.9), this.c.copy(a).multiplyScalar(0.12 + 0.25 * night), 1.6 + 0.8 * night, delay, spec.heightAt)
     this.ends.push(this.clock + delay + 4.5); if (this.ends.length > MAX_BURSTS) this.ends.shift()
     this.stats.bursts++; this.stats.stars += used; this.stats.last = shape
   }
@@ -355,26 +337,10 @@ export class Fireworks {
     this.dayStars.clock.value = this.stars.clock.value = this.flash.clock.value = this.smoke.clock.value = this.clock
     // Smoke shows by day and fades out at night, when the stars carry the burst alone.
     this.smoke.opacity.value = SMOKE_ALPHA * fireworkSmoke.value * day; this.smoke.mesh.visible = day > 0.02
-    for (let i = this.lights.length - 1; i >= 0; i--) {
-      const l = this.lights[i]
-      if (this.clock < l.time) continue
-      this.light.emit(l.at, T.Object3D.DEFAULT_UP, { radius: l.radius, seconds: l.seconds, color: l.color })
-      if (this.glowLight && l.strength > 0.05) {
-        // The burst's own colour, softened toward white, from the burst, fading over the glow's time.
-        this.glowLight.position.set(l.at.x, l.top, l.at.z)
-        this.glowLight.color.copy(l.color).multiplyScalar(1 / Math.max(1e-3, l.color.r, l.color.g, l.color.b)).lerp(this.c.setRGB(1, 0.9, 0.8), 0.35)
-        this.glowStart = this.clock; this.glowSeconds = l.seconds; this.glowPeak = GLOW_CANDELA * l.strength
-      }
-      this.lights.splice(i, 1)
-    }
-    this.light.update(dt)
-    if (this.glowLight) {
-      const t = (this.clock - this.glowStart) / this.glowSeconds
-      this.glowLight.intensity = t >= 0 && t < 1 ? this.glowPeak * (1 - t) ** 1.6 : 0
-    }
+    this.glow.update(dt)
   }
 
-  shift(dx: number, dz: number): void { this.glowLight?.position.add(this.v2.set(dx, 0, dz)); this.stars.shift(dx, dz); this.dayStars.shift(dx, dz); this.flash.shift(dx, dz); this.smoke.shift(dx, dz); this.light.shift(dx, dz); for (const l of this.lights) { l.at.x += dx; l.at.z += dz } }
-  reset(): void { this.lights.length = 0; this.light.reset(); this.glowStart = -Infinity; if (this.glowLight) this.glowLight.intensity = 0 }
-  dispose(): void { this.glowLight?.removeFromParent(); this.glowLight?.dispose(); this.stars.dispose(); this.dayStars.dispose(); this.flash.dispose(); this.smoke.dispose(); this.light.dispose() }
+  shift(dx: number, dz: number): void { this.stars.shift(dx, dz); this.dayStars.shift(dx, dz); this.flash.shift(dx, dz); this.smoke.shift(dx, dz); this.glow.shift(dx, dz) }
+  reset(): void { this.glow.reset() }
+  dispose(): void { this.stars.dispose(); this.dayStars.dispose(); this.flash.dispose(); this.smoke.dispose(); this.glow.dispose() }
 }

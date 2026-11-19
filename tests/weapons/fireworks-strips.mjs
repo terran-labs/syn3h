@@ -78,7 +78,7 @@ try {
       await page.evaluate(() => {
         window.__freeze(true)
         const T = window.syn3h.player.object.position.constructor, b = window.__burst
-        window.syn3hNet.lasers.fireworks.burst({ at: new T(...b.at), climb: b.climb, ground: b.ground, colors: [{ r: 0.9, g: 0.08, b: 0.05 }, { r: 1, g: 0.75, b: 0.3 }], seed: b.seed })
+        window.syn3hNet.lasers.fireworks.burst({ at: new T(...b.at), climb: b.climb, ground: b.ground, colors: [{ r: 0.9, g: 0.08, b: 0.05 }, { r: 1, g: 0.75, b: 0.3 }], seed: b.seed, heightAt: (x, z) => window.syn3h.terrain.heightAt(x, z) })
       })
       let at = 0
       for (const [i, time] of TIMES.entries()) {
