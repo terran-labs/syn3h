@@ -14,7 +14,7 @@ import { Bungee } from '../../src/weapons/bungee/Bungee'
 beforeAll(initPhysics)
 afterEach(() => { params.set('bungee.allowed', false); vi.unstubAllGlobals() })
 
-function setup(inHand = false) {
+function setup(inHand = false, offered = true) {
   vi.stubGlobal('window', { performance })
   const world = createWorld(0)
   const make = (z: number) => {
@@ -30,7 +30,7 @@ function setup(inHand = false) {
     self: () => 1, vehicleOf: id => id === 1 ? me : id === 1000 ? grappler : undefined,
     idOfBody: h => h === me.body.handle ? 1 : h === grappler.body.handle ? 1000 : null,
     owns: id => id === 1, lagOf: () => 0, wrapSize: () => 0, now: () => game.time, inHand: () => inHand,
-    unhook: owner => asked.push(owner),
+    unhook: owner => asked.push(owner), mayUnhook: () => offered,
   }, new EventTarget() as unknown as Window)
   // Bot 1000's cord, tied to us, as the room relays it.
   bungee.applyRemote(1000, { s: 'on', to: 1, r: 12 })
@@ -48,6 +48,14 @@ describe('breaking free of a cord on you', () => {
       expect(s.asked).toEqual([])
       s.input.brakes = true; s.step(); s.input.brakes = false; s.step(3); s.input.brakes = true; s.step()
       expect(s.asked).toEqual([1000])
+    } finally { s.close() }
+  })
+  it('offers nothing where breaking free is not offered (the games)', () => {
+    params.set('bungee.allowed', true)
+    const s = setup(false, false)
+    try {
+      s.input.brakes = true; s.step(); s.input.brakes = false; s.step(3); s.input.brakes = true; s.step()
+      expect(s.asked).toEqual([])
     } finally { s.close() }
   })
   it('the first press of your own Grapple cuts their cord instead of launching yours', () => {

@@ -441,8 +441,10 @@ export class Room {
         // The grabbed player asks a cord's owner to let go. Only a cord the room last relayed as
         // tied to the sender counts; anything else is ignored quietly, and an owner on an older
         // build that never answers is not an error (its cord's stretch snap still applies).
+        // Explore only: in the games a cord on you is part of the play (the hill's holder pulled
+        // off), and the counter there is the weapons' sever rule, not a free cut.
         const owner = typeof msg.from === 'number' ? this.byId(msg.from) : undefined
-        if (!owner || owner === player || !owner.cordOn || owner.cordTo !== player.info.id) break
+        if (this.mode !== MODE_EXPLORE || !owner || owner === player || !owner.cordOn || owner.cordTo !== player.info.id) break
         const host = owner.info.bot ? this.byId(this.host) : owner
         const to = host ? this.peerOf(host) : undefined
         if (to) this.sendTo(to, { type: 'unhook', by: player.info.id, owner: owner.info.id })

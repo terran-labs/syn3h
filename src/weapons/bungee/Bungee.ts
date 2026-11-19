@@ -76,6 +76,8 @@ export interface BungeeHooks {
    * 'unhook'): a press of their own Grapple, or a double tap of brake. Optional.
    */
   unhook?(owner: number): void
+  /** Whether breaking free is offered now (Explore only; see `unhook`). Without it, never. */
+  mayUnhook?(): boolean
 }
 
 /**
@@ -475,7 +477,7 @@ export class Bungee implements System {
     // Tied to by someone else's cord: the grabbed player's ways out (the Foreman, 19 November
     // 2026). A double tap of brake asks every such cord's owner to let go, and so does the first
     // press of their own Grapple, instead of launching it. Never for a bot's Bungee (controlled).
-    if (!this.hooks.control) {
+    if (!this.hooks.control && this.hooks.mayUnhook?.()) {
       const on = this.hookedBy()
       const brake = input.brakes
       if (on.length && brake && !this.brakeWas) {

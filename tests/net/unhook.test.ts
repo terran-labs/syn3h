@@ -68,6 +68,15 @@ describe('unhook', () => {
     expect(host.peer.all('unhook')).toEqual([])
     expect(third.peer.all('error')).toEqual([])
   })
+  // Bug caught: a free cut in the games, where a cord on the hill's holder is the play.
+  it.each([[0, 'Tag'], [1, 'King of the Hill']])('ignores every unhook in game mode %s (%s)', (mode) => {
+    const { host, guest } = setup()
+    send(host.peer, { type: 'param', id: 'game.mode', value: mode })
+    expect(host.peer.all('game').at(-1)?.game.mode).toBe(mode)
+    send(host.peer, { type: 'cord', bot, cord: { s: 'on', to: guest.id, r: 20 } })
+    send(guest.peer, { type: 'unhook', from: bot })
+    expect(host.peer.all('unhook')).toEqual([])
+  })
   it('relays a person\'s cord unhook to that person', () => {
     const { host, guest } = setup()
     send(guest.peer, { type: 'cord', cord: { s: 'on', to: host.id, r: 20 } })

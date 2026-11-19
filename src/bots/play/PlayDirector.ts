@@ -17,14 +17,15 @@
  *  - Consent: a stop request from the person (consent.ts) ends every grab on them at once, the
  *    bots say so kindly, once, and never play with them again this session. Breaking a bot's
  *    cord yourself three times counts as stop. The room's setting (bots.play) and the person's
- *    own ("Bots may play with me") turn it off.
+ *    own ("Bots may play with me") turn it off. A stop lasts for the session (it is not saved),
+ *    unless they invite the bots back ("you can play again") or toggle their setting off and on.
  *  - A cord is physics: nothing here moves a person any other way (AGENTS.md).
  *
  * Host only, ticked from HostBanter. Free of the game apart from the hooks, for tests.
  */
 import type { Vehicle } from '../../vehicles/Vehicle'
 import { defineParam } from '../../../shared/params'
-import { isStopRequest } from './consent'
+import { isPlayAgain, isStopRequest } from './consent'
 import { hashString, seededRandom } from '../random'
 
 export const botsPlay = defineParam({ id: 'bots.play', label: 'Bots play with people (a grab for fun, in Explore)', group: 'Bots', scope: 'world', default: true })
@@ -79,7 +80,7 @@ export interface PlayHooks {
   distance(a: Vehicle, b: Vehicle): number
 }
 
-interface Person { firstSeen: number; clearSince: number; lastPlay: number; played: boolean; stopped: boolean; breaks: number }
+interface Person { firstSeen: number; clearSince: number; lastPlay: number; played: boolean; stopped: boolean; breaks: number; allowed: boolean }
 interface Play { person: number; tugs: Map<number, Tug>; started: number; attachedAt: number; pin: boolean; announcer: number }
 
 const START = [
@@ -89,6 +90,7 @@ const START = [
 const PIN = ['Everybody, grab {name}!', 'Group hug for {name}!', 'Pile on {name}! Gently!']
 const FIRST = ' (Say stop and we will.)'
 const END = ['Ha! You are free.', 'And released. Thanks for playing!', 'Okay, okay, off you go.', 'That was fun. Free again!']
+const AGAIN = ['Yay! Game on, {name}.', 'Deal, {name}. We will play nicely.', 'Oh good. Back in the game, {name}!']
 const ACK = ['Got it, {name}. No more grabbing. Sorry!', 'Okay! Hands off, {name}.', 'Understood, {name}. We will leave you be.']
 
 export class PlayDirector {
@@ -112,8 +114,11 @@ export class PlayDirector {
     const people = this.hooks.people()
     for (const p of people) {
       let s = this.persons.get(p.id)
-      if (!s) this.persons.set(p.id, s = { firstSeen: now, clearSince: now, lastPlay: -Infinity, played: false, stopped: false, breaks: 0 })
+      if (!s) this.persons.set(p.id, s = { firstSeen: now, clearSince: now, lastPlay: -Infinity, played: false, stopped: false, breaks: 0, allowed: p.allows })
       if (p.busy) s.clearSince = now
+      // Turning "Bots may play with me" off and on again is a fresh start: any stop is cleared.
+      if (p.allows && !s.allowed) { s.stopped = false; s.breaks = 0 }
+      s.allowed = p.allows
     }
     if (this.play) { this.tend(now, people); return }
     if (!botsPlay.value || !this.hooks.explore() || now - this.lastCheck < 5) return
@@ -131,7 +136,16 @@ export class PlayDirector {
    */
   hear(person: number, text: string): boolean {
     const s = this.persons.get(person)
-    if (!s || s.stopped) return false
+    if (!s) return false
+    if (s.stopped) {
+      // Invited back ("you can play again", "ok you can grab me"): one kind reply, inside the budget.
+      if (!isPlayAgain(text)) return false
+      s.stopped = false; s.breaks = 0
+      const bot = this.hooks.bots()[0]?.id
+      const name = this.hooks.people().find(p => p.id === person)?.name ?? 'friend'
+      if (bot !== undefined) this.hooks.say(bot, AGAIN[Math.floor(this.random() * AGAIN.length)].replace('{name}', name))
+      return true
+    }
     const now = this.hooks.now()
     const inWindow = this.play?.person === person || now - s.lastPlay < WINDOW_S
     if (!isStopRequest(text, inWindow)) return false

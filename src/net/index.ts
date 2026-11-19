@@ -409,6 +409,8 @@ export class NetClient implements System {
       cue: (name, at) => { try { this.ctx.audio?.cue?.(name, at) } catch { /* no such cue yet */ } },
       // Someone else's cord on us: ask its owner, through the room, to let go.
       unhook: (owner) => { if (this.connected) this.send({ type: 'unhook', from: owner }) },
+      // Breaking free is Explore's: in the games a cord on you is part of the play.
+      mayUnhook: () => this.connected && this.mode === MODE_EXPLORE,
       // Positions go on the wire inside the tile, like every other position.
       send: (cord) => {
         if (!this.connected) return
@@ -1031,7 +1033,7 @@ export class NetClient implements System {
    */
   private cordHint(): void {
     const on = this.bungee.hookedBy().length > 0
-    if (on && !this.cordOnUs && this.cordHints < 2) {
+    if (on && !this.cordOnUs && this.cordHints < 2 && this.mode === MODE_EXPLORE) {
       this.cordHints++
       const touch = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0
       this.event(touch ? 'A cord is on you: double tap BRAKE to break free' : 'A cord is on you: double tap Shift (brake) to break free')
