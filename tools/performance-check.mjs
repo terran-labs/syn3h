@@ -46,20 +46,57 @@ export function judgePacing(gaps, expectedMs, durationMs = CONTROL_MS) {
 }
 
 /** Injected before application modules; Object.assign(window,{syn3h}) occurs before game.start. */
-export function installRawCollector() {
-  const raw={frames:[],phase:'startup',events:[],initial:null,overflow:false}
+export function installRawCollector(options) {
+  const raw={frames:[],phase:'startup',events:[],asyncNodeBuilds:[],initial:null,overflow:false}
   window.performanceMatrix=raw
   let value
   Object.defineProperty(window,'syn3h',{configurable:true,get:()=>value,set:s=>{
     value=s
     const g=s.game,q=g.quality,r=g.renderer,b=r.backend,device=b.device,info=device?.adapterInfo
+    const sampleGpu=options?.gpuTimestamps === true && r.hasFeature('timestamp-query')
+    let pendingGpu=false,lastGpuFrame=-1
+    if(sampleGpu)b.trackTimestamp=true
+    raw.gpuTiming={supported:sampleGpu,samples:[],error:null}
     const settings=()=>({level:q.governor.level,rung:q.governor.rung,auto:q.governor.auto,levelPinned:q.governor.levelPinned,settings:{...q.governor.settings},targetMs:q.governor.targetMs})
     raw.initial={at:performance.now(),firstFrameMs:g.performance.firstFrameMs,qualityState:q.getQualityState?.()??null,adapterProbe:q.adapterProbe,quality:settings(),backend:g.backend,
       hardware:{userAgent:navigator.userAgent,touchPoints:navigator.maxTouchPoints,memoryGB:navigator.deviceMemory??null,adapter:info?{vendor:info.vendor,architecture:info.architecture,description:info.description}:null,maxTextureSize:device?.limits.maxTextureDimension2D??null},
       viewport:[innerWidth,innerHeight],buffer:[g.canvas.width,g.canvas.height],devicePixelRatio,storage:{quality:(()=>{try{return localStorage.getItem('syn3h.quality.v2')}catch{return null}})()}}
     let renderCpuMs=0,pipelineMs=0,pipelines=0,uploads=0,uploadCpuMs=0
+    let nodeBuildMs=0
+    let nodeBuilds=[]
+    let shaderStageCalls=0,shaderStageSubmissionMs=0
+    // Installed only in the injected collector. Time graph construction on cache misses,
+    // including fallback materials. Builder allocation alone misses this work.
+    const createBuilder=b.createNodeBuilder.bind(b)
+    b.createNodeBuilder=(...args)=>{
+      const builder=createBuilder(...args)
+      const build=builder.build
+      builder.build=function(...buildArgs){
+        const start=performance.now()
+        try{return build.apply(this,buildArgs)}
+        finally{
+          const ms=performance.now()-start
+          nodeBuildMs+=ms
+          nodeBuilds.push({ms,phase:raw.phase,materialId:this.material?.id??null,
+            material:this.material?.name||this.material?.type||null,object:this.object?.name||null})
+        }
+      }
+      // Async compilation yields between stages. Record its interval separately
+      // so scheduler waits cannot inflate synchronous CPU time on a hitch frame.
+      const buildAsync=builder.buildAsync
+      builder.buildAsync=async function(...buildArgs){
+        const event={start:performance.now(),end:null,phase:raw.phase,materialId:this.material?.id??null}
+        raw.asyncNodeBuilds.push(event)
+        try{return await buildAsync.apply(this,buildArgs)}
+        finally{event.end=performance.now()}
+      }
+      return builder
+    }
     const wrap=(object,key,done)=>{if(typeof object?.[key]!=='function')return;const original=object[key].bind(object);object[key]=(...args)=>{const t=performance.now();try{return original(...args)}finally{done(performance.now()-t)}}}
     wrap(g.postChain??r,'render',ms=>renderCpuMs+=ms)
+    // WebGL compiles individual shaders here before linking the pipeline.
+    // WebGPU creates shader modules here before requesting the pipeline.
+    wrap(b,'createProgram',ms=>{shaderStageCalls++;shaderStageSubmissionMs+=ms})
     wrap(b,'createRenderPipeline',ms=>{pipelineMs+=ms;pipelines++})
     // Existing backend method only. Counts CPU submission calls, not GPU transfer completion.
     wrap(b,'updateTexture',ms=>{uploadCpuMs+=ms;uploads++})
@@ -68,6 +105,28 @@ export function installRawCollector() {
       const before=performance.now(),effective=settings()
       const row={...m,at:before,phase:raw.phase,hidden:document.hidden,judge,quality:effective,targetBudgetMs:effective.targetMs,renderCpuMs,pipelineMs,pipelines,uploads,uploadCpuMs,
         camera:{...g.camera.position},waterDepth:s.terrain.liquidKindAt?.(g.camera.position.x,g.camera.position.z)==='water'?s.terrain.liquidHeightAt(g.camera.position.x,g.camera.position.z)-g.camera.position.y:null,sceneNodes:{fog:g.scene.fogNode?.uuid??null,background:g.scene.backgroundNode?.uuid??null,environment:g.scene.environmentNode?.uuid??null},position:{...s.player.body.translation()},bots:s.bots.vehicles.length,remotes:window.syn3hNet?.remotes.size??0}
+      row.gameFrame=g.frames
+      row.rendererFrame=r.info.frame
+      // Includes shadow and post draws performed through three's renderer.
+      // Driver-internal passes such as texture resolves are outside this counter.
+      row.rendererCalls=r.info.render.frameCalls
+      if(sampleGpu && !pendingGpu && !raw.gpuTiming.error && row.rendererCalls>0){
+        pendingGpu=true
+        r.resolveTimestampsAsync('render').then(ms=>{
+          const frame=b.getTimestampFrames('render').at(-1)
+          if(Number.isFinite(ms) && ms>0 && frame>lastGpuFrame){
+            raw.gpuTiming.samples.push({frame,ms})
+            lastGpuFrame=frame
+          }
+        }).catch(error=>{raw.gpuTiming.error=String(error)}).finally(()=>{pendingGpu=false})
+      }
+      row.shaderStageCalls=shaderStageCalls
+      row.shaderStageSubmissionMs=shaderStageSubmissionMs
+      shaderStageCalls=shaderStageSubmissionMs=0
+      row.nodeBuildMs=nodeBuildMs
+      row.nodeBuilds=nodeBuilds
+      nodeBuildMs=0
+      nodeBuilds=[]
       original(m,judge);row.telemetryMs=performance.now()-before
       if(raw.frames.length<100000)raw.frames.push(row);else raw.overflow=true
       renderCpuMs=pipelineMs=pipelines=uploads=uploadCpuMs=0
