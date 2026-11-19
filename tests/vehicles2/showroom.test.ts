@@ -341,6 +341,21 @@ describe('showroom vehicle shading',()=>{
   expect(emission(a.body)).toContain(.8);expect(emission(b.body)).not.toContain(.8)
   a.dispose();b.dispose()
  })
+ it('leaves a vehicle\'s own plain materials with no per-object uniforms from the lava glow, and heat still on that vehicle',()=>{
+  // Per-object uniforms on every mesh cost each its own binding: a jet's first frame at Low
+  // stalled for half a second. Only shared materials read heat per object.
+  params.set(vehicleShading.def.id,0)
+  const a=vehicle(0xff0000,0x00ff00),b=vehicle(0xff0000,0x00ff00)
+  expect(b.body.material).not.toBe(a.body.material)
+  // Uniforms with a callback run for each object drawn (not the group node every plain uniform sits in).
+  const perObject=(m:T.Material)=>{let n=0;(m as T.MeshStandardNodeMaterial).emissiveNode?.traverse((x:unknown)=>{const u=x as {isUniformNode?:boolean;updateType?:string};if(u.isUniformNode&&u.updateType==='object')n++});return n}
+  expect(perObject(a.body.material as T.Material)).toBe(0)
+  ;(a.owner.userData.vehicleHeat as ReturnType<typeof createLiquidState>).heat=.8
+  // The heat uniform is updated once per frame, from this vehicle: run that update and read it.
+  const perRender=(m:T.Material)=>{const v:unknown[]=[];(m as T.MeshStandardNodeMaterial).emissiveNode?.traverse((x:unknown)=>{const u=x as {isUniformNode?:boolean;updateType?:string;update?:(f:unknown)=>void;value?:unknown};if(u.isUniformNode&&u.updateType==='render'&&typeof u.update==='function'){u.update({});v.push(u.value)}});return v}
+  expect(perRender(a.body.material as T.Material)).toContain(.8);expect(perRender(b.body.material as T.Material)).not.toContain(.8)
+  a.dispose();b.dispose()
+ })
  it('keeps a vehicle\'s own authored emission to itself',()=>{
   params.set(vehicleShading.def.id,2)
   const make=()=>{const root=new T.Group(),m=new T.MeshStandardNodeMaterial();m.name='Stator';m.emissiveNode=uniform(new T.Color(1,0,0));const mesh=new T.Mesh(box(),m);root.add(mesh);return {mesh,dispose:applyShowroom(root,()=>{})}}

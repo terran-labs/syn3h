@@ -124,9 +124,12 @@ type N = any
 //      authored roughness and metalness, emissive intensity, flags, tier, canopy choice, the
 //      decoration's source text, whether the vehicle can be heated). Equal signatures get the
 //      same material object from `pool`.
-//   3. Decoration (night readability, lava glow) runs once per material, by the first vehicle
-//      that wears it (userData.nightReadable and userData.lavaGlow mark it). The lava glow
-//      reads heat per object, from the mesh's own vehicle (lavaGlow.ts).
+//   3. Decoration (night readability, lava glow) runs once per shared material, by the first
+//      vehicle that wears it (userData.sharedShowroom marks a pooled material; nightReadable and
+//      lavaGlow mark it done). On a shared material the lava glow reads heat per object, from the
+//      mesh's own vehicle. A vehicle's own materials (tier 0, and anything built unshared) are
+//      decorated exactly as before: per-object uniforms there would give every mesh its own
+//      binding, and a many-meshed vehicle's first frame stalled for half a second at Low.
 //   4. Each vehicle's tier set counts once per shared material (`taken`); `drop` and the
 //      disposer give each back once. The last release disposes it.
 //
@@ -650,7 +653,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
           else {
             variant = build(sources, Boolean(packed), tier as 1 | 2 | 3, e.mesh.name, own && standardEmission.has(own) ? null : own, accent, instanced)
             if (key === null) showroomShare.unshared++
-            else { pool.set(key, { material: variant, users: 1 }); pooled.set(variant, key); taken.add(variant); showroomShare.alive++; showroomShare.users++ }
+            else { variant.userData.sharedShowroom = true; pool.set(key, { material: variant, users: 1 }); pooled.set(variant, key); taken.add(variant); showroomShare.alive++; showroomShare.users++ }
           }
           shared.set(e.source, variant); built.add(variant)
         }
