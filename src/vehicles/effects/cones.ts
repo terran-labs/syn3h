@@ -2,8 +2,9 @@
  * Headlight cones in mist: the beam of each front lamp seen in the air, the "flashlight in the
  * fog" look (the owner, 18 November 2026: simulated, not real scattered light).
  *
- * One instanced mesh of soft, open cones, one per front headlight of every vehicle with effects
- * (bots and remote players too: no real light is needed per lamp). Each cone sits on its lamp
+ * One instanced mesh of soft, open cones, one per front headlight of every buggy with effects
+ * (bots and remote players too: no real light is needed per lamp). Other kinds join one at a
+ * time once their lamps have been checked in frames. Each cone sits on its lamp
  * point (VehicleEffects' lamp points: even ones are the front headlights) and points down the
  * road as the real beam does. Its brightness is the lamp's (the beam's dusk-to-dawn ramp, and
  * for the buggy the headlight setting) times the haze in the air at each point of the cone, from
@@ -82,9 +83,13 @@ export function createConeBatch(haze: ConeHaze): T.InstancedMesh {
   const along = clamp(positionGeometry.z.negate(), 0, 1) as N
   // Brightest through the middle of the beam, nothing at its rim.
   const facing = abs(dot(normalize(normalView), normalize(positionView.negate()))) as N
-  const rim = pow(facing, float(2))
+  // Brightest through the middle of the beam and gone at its outline; the upper half of the
+  // shell is dimmer still, so the beam's top edge is a soft fade, not a line against the dark.
+  const up = smoothstep(-0.2, 1.0, positionGeometry.y.div(max(along, float(1e-3))))
+  const rim = pow(facing, float(3)).mul(float(1).sub(up.mul(0.75)))
   // Brighter near the lamp, gone at the end; and not a hard ring at the lamp itself.
-  const fall = pow(float(1).sub(along), float(1.6)).mul(smoothstep(0.0, 0.06, along))
+  // Bright at the lamp, thinning toward the beam's reach: most of it in the first third.
+  const fall = pow(float(1).sub(along), float(2.6)).mul(smoothstep(0.0, 0.06, along))
   // Where it meets the world behind it: the scene's depth at this pixel against the cone's.
   const sceneZ = perspectiveDepthToViewZ(viewportDepthTexture().x, cameraNear, cameraFar) as N
   const soft = smoothstep(0.0, CONE_SOFT_DEPTH, positionView.z.sub(sceneZ))

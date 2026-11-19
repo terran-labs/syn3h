@@ -217,8 +217,11 @@ class VehicleEffects {
   private get events(){return this.vehicle.object as T.Object3D<VehicleObjectEvents>}
   /** This vehicle's headlight cones (cones.ts) at `night` (the beam ramp times the cone setting). */
   writeCones(batch:T.InstancedMesh,index:number,night:number,camera:T.Vector3):number {
+    // Buggies only for now: other kinds' lamps sit and point differently (the jet's beam lands on
+    // its wing roots, the hovercraft's pools under it) and join with their own frames.
+    if(!this.buggy)return index
     this.root.updateWorldMatrix(true,true)
-    return writeVehicleCones(batch,index,this.vehicle.object,this.lampPoints,CONE_COLOUR,night*(this.buggy?headlightScale().beam:1),this.lampMatrix,camera)
+    return writeVehicleCones(batch,index,this.vehicle.object,this.lampPoints,CONE_COLOUR,night*headlightScale().beam,this.lampMatrix,camera)
   }
   writeLamps(batch:T.InstancedMesh,index:number):number {
     this.root.updateWorldMatrix(true,true)
