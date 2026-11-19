@@ -1683,7 +1683,9 @@ export class NetClient implements System {
       case 'mode': this.event(msg.game.mode === MODE_KOTH ? 'King of the Hill: get to the rim and hold it' : msg.game.mode === MODE_TAG ? 'Tag game: ram or beam whoever is it' : 'Explore: no game running'); break
       case 'capture': this.event(`${a} ${msg.actor === this.id ? 'hold' : 'holds'} the hill`); break
       case 'contest': this.event('The hill is contested'); break
-      case 'stuck': this.event(`${a} ${is(a)} stuck in the lava`); break
+      // Our own vehicle in the lava already has its calm local line (LocalRescue.onStuck and the
+      // status line, both from our own physics, never waiting on the room): no second, scarier one.
+      case 'stuck': if (msg.actor !== this.id) this.event(`${a} is in the lava: off the hill`); break
       case 'dunk': this.event(`${a} dunked ${b}: +${kothKnockBonus.value}`); break
       case 'win':
         this.event(`${a} ${msg.actor === this.id ? 'win' : 'wins'} the hill!`)

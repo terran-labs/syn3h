@@ -84,6 +84,9 @@ describe('room log lines', () => {
     room.webSocketMessage(c as never, hello(RENAMED, { resume: 'secret-token-cccccccc' }))
     room.webSocketMessage(a as never, JSON.stringify({ type: 'zone', zone: { x: 100, z: 0, inner: 20, outer: 40, yMin: 40, yMax: 80 } }))
     room.webSocketMessage(a as never, state([130, 50, 0]))
+    // Into the lava and out again: logged as the player's number only.
+    room.webSocketMessage(b as never, JSON.stringify({ type: 'stuck', held: true }))
+    room.webSocketMessage(b as never, JSON.stringify({ type: 'freed' }))
     room.webSocketMessage(a as never, JSON.stringify({ type: 'chat', text: CHAT }))
     room.webSocketMessage(a as never, JSON.stringify({ type: 'profile', name: RENAMED }))
     // A malformed message that carries the typed text: logged without its content.
@@ -124,7 +127,7 @@ describe('room log lines', () => {
     const rejoin = events.find((x) => x.event === 'rejoin') as Record<string, unknown> | undefined
     expect(rejoin).toMatchObject({ dropCode: 1006, dropReason: 'other', dropVis: 'hidden', dropOpenMs: 120000, dropFrameMs: 4200, dropOnline: true })
     expect(Object.keys(rejoin!).filter((k) => k.startsWith('drop')).sort()).toEqual(['dropClean', 'dropCode', 'dropFrameMs', 'dropFrozenMs', 'dropHiddenMs', 'dropOnline', 'dropOpenMs', 'dropReason', 'dropRxMs', 'dropTxMs', 'dropVis', 'dropWasOpen'])
-    for (const e of ['socket_close', 'hello', 'mode', 'hill_capture', 'clock_start', 'clock_stop', 'place_held', 'malformed', 'room_cleanup']) {
+    for (const e of ['socket_close', 'hello', 'mode', 'hill_capture', 'clock_start', 'clock_stop', 'place_held', 'malformed', 'room_cleanup', 'lava_stuck', 'lava_freed']) {
       expect(events.map((x) => x.event)).toContain(e)
     }
     // Each line is one JSON object whose first key is its event name, and names its room by

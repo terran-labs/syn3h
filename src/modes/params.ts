@@ -37,7 +37,7 @@ export const kothZoneRadius = defineParam({
   default: 1, min: 0.25, max: 3, step: 0.05,
 })
 
-/** Seconds a vehicle stuck in the lava has to crawl out before it is lifted back to its pad.
+/** Seconds a bot stuck in the lava has to crawl out before it is lifted back to its pad (a person never is).
  * The id predates the sticky lava rule and stays, so saved rooms keep their value. */
 export const kothRespawnDelay = defineParam({
   id: 'koth.respawnDelay', label: 'Hill: seconds stuck before return', group: 'Game', scope: 'world',
