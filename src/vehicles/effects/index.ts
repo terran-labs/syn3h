@@ -108,7 +108,7 @@ function worldFor(game:Game){let w=worlds.get(game);if(!w){w=new EffectWorld(gam
  * Sample the final drawn pose and visibility after the vehicle and camera have updated. */
 class HeadlightRig extends T.Group {
   beamIntensity=0
-  constructor(private readonly anchor:T.Object3D,private readonly spots:T.SpotLight[]){
+  constructor(private readonly anchor:T.Object3D){
     super()
     this.matrixWorldAutoUpdate=false
   }
@@ -118,7 +118,8 @@ class HeadlightRig extends T.Group {
     let parent:T.Object3D|null=this.anchor
     while(parent && parent!==this.parent && parent.visible)parent=parent.parent
     const intensity=parent===this.parent ? this.beamIntensity : 0
-    for(const spot of this.spots)spot.intensity=intensity
+    // Swaps move the same emitters to the next rig. Only their current owner writes them.
+    for(const child of this.children)if(child instanceof T.SpotLight)child.intensity=intensity
     super.updateMatrixWorld(force)
   }
 }
@@ -177,7 +178,7 @@ class VehicleEffects {
       const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,hover?.35:.12,jet?2.7:1.7);this.root.add(tail);this.lampPoints.push(tail)
     }
     if(local){
-      this.headlightRig=new HeadlightRig(this.root,this.spots)
+      this.headlightRig=new HeadlightRig(this.root)
       world.game.scene.add(this.headlightRig)
       // Syn3h prefab range50, cone60 degrees. Unity intensity is not candela.
       // Aim farther down the road and use candela suitable for inverse-square falloff.
