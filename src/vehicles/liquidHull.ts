@@ -64,6 +64,20 @@ export interface HullProfile {
   liftSpeed?: number
   /** Extra drag (1/s, growing with speed) when not paddling: water wins once you stop trying. */
   coast?: number
+  /**
+   * Vertical drag (1/s) on a column wholly under, in place of `heave` (water). Lower lets a sunk
+   * hull fall at a believable rate; the bob and the skip at the surface keep `heave`. Unset, a
+   * column under keeps `heave`, as lava's does.
+   */
+  sunkHeave?: number
+  /**
+   * Tyres skimming the surface (water): lift over weight and forward pull (m/s²) at full effect,
+   * per wheel whose tyre is at the surface (part wet, neither dry nor under), at full throttle,
+   * with the hull and the wheels both past `tyreSpeed` (m/s). A slow or sinking hull gets none.
+   */
+  tyreLift?: number
+  tyrePull?: number
+  tyreSpeed?: number
 }
 
 export interface HullState {
@@ -207,7 +221,10 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
     const drag = Math.min(0.9 / dt, p.thickness * (p.linear + p.quadratic * vh) * sub * skim)
     // Coasting drag acts low on the hull, so letting go pitches the nose down into it.
     const plough = Math.min(0.9 / dt - drag, coasting * (1 + vh / 16) * Math.min(1, sub * 2))
-    const heave = Math.min(0.9 / dt, p.heave * sub + p.deep * Math.max(0, sub - 0.9) / 0.1)
+    // Wholly under, a column falls or rises through the liquid with `sunkHeave` instead of the
+    // surface's `heave`; the two blend over the last tenth of its height.
+    const under = p.sunkHeave === undefined ? 0 : THREE.MathUtils.smoothstep(sub, 0.9, 1)
+    const heave = Math.min(0.9 / dt, (p.heave * (1 - under) + (p.sunkHeave ?? 0) * under) * sub + p.deep * Math.max(0, sub - 0.9) / 0.1)
     f.x = -vx * drag * share
     f.z = -vz * drag * share
     const rise = terrain.liquidVerticalSpeedAt?.(cx, cz) ?? 0
@@ -222,6 +239,21 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
     if (front && forward > 0) f.y += p.porpoise * HULL_TUNING.bowLift * g * share * plane * Math.min(1, s.wet[i] * 2) * lifted
     // Planing: the whole hull rides up on its speed, wetting less and so lifting less: a skip.
     if (forward > 0) f.y += p.planeLift * g * share * plane * Math.min(1, sub * 3) * lifted
+    // Tyres skimming: a fast-spinning tyre at the surface planes on it and throws water back,
+    // lifting and pulling its corner. Only at the surface (a band of wetness, nothing when the
+    // tyre is clear or under), only under throttle, and only with the hull and the wheels both
+    // fast: a buggy that has slowed or begun to sink is not rescued by it.
+    if (p.tyreLift !== undefined && throttle > 0 && forward > 0) {
+      const band = THREE.MathUtils.smoothstep(sub, 0.02, 0.15) * (1 - THREE.MathUtils.smoothstep(sub, 0.5, 0.8))
+      const from = p.tyreSpeed ?? 12
+      const fast = THREE.MathUtils.smoothstep(forward, from, from + 8) * THREE.MathUtils.smoothstep(input.wheelSpeed, from, from + 8)
+      const k = throttle * band * fast
+      if (k > 0) {
+        f.y += (p.tyreLift ?? 0) * g * share * k
+        f.x += fwd.x * (p.tyrePull ?? 0) * share * k
+        f.z += fwd.z * (p.tyrePull ?? 0) * share * k
+      }
+    }
     // Paddle: rear and front wheels alike, alternating left and right bite.
     if (effort > 0) {
       // In a turn the outside wheels dig in harder and the inside ones ease off.

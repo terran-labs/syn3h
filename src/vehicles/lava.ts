@@ -144,12 +144,20 @@ export const waterCoast=defineParam({...W,id:'water.coast',label:'Buggy: coastin
 export const waterSteer=defineParam({...W,id:'water.steer',label:'Buggy: steering (0 to 2)',default:.55,min:0,max:2,step:.05})
 export const waterWaddle=defineParam({...W,id:'water.waddle',label:'Buggy: waddle (0 to 1)',default:.2,min:0,max:1,step:.05})
 export const waterSkim=defineParam({...W,id:'water.skim',label:'Buggy: planing lift / weight',default:.9,min:0,max:2,step:.05})
+// The owner, 18 November 2026: "once it starts sinking, the water should feel like water and not
+// like honey", and the tyres "should even be able to pull it a little bit further up and out of
+// the water under full throttle if it's skimming across the top".
+export const waterSunkDrag=defineParam({...W,id:'water.sunkDrag',label:'Buggy: vertical drag once under (1/s, lower sinks faster)',default:1.2,min:.2,max:6,step:.05})
+export const waterTyreLift=defineParam({...W,id:'water.tyreLift',label:'Buggy: skimming tyre lift / weight',default:.5,min:0,max:1.5,step:.05})
+export const waterTyrePull=defineParam({...W,id:'water.tyrePull',label:'Buggy: skimming tyre pull (m/s²)',default:10,min:0,max:20,step:.5})
+export const waterTyreSpeed=defineParam({...W,id:'water.tyreSpeed',label:'Buggy: speed from which skimming tyres lift (m/s)',default:12,min:3,max:40,step:.5})
 export const waterGrip=defineParam({...W,id:'water.grip',label:'Buggy: wheel grip on the bed (0 to 1)',default:.6,min:0,max:1,step:.05})
 const waterHull:HullProfile={buoyancy:1.6,thickness:1,linear:.5,quadratic:.04,heave:3,paddle:6,paddleSpeed:8,porpoise:.3,waddle:.2,gait:1.6,planing:10,skim:.3,planeLift:.9,deep:0,steer:.55}
 function waterProfile():HullProfile{
  const w=waterProfiles.buggy
  waterHull.buoyancy=w.buoyancy.value;waterHull.planing=w.planing.value;waterHull.thickness=waterThickness.value;waterHull.paddle=waterPaddle.value
  waterHull.porpoise=waterPorpoise.value;waterHull.waddle=waterWaddle.value;waterHull.planeLift=waterSkim.value;waterHull.steer=waterSteer.value;waterHull.liftSpeed=waterLiftSpeed.value;waterHull.coast=waterCoast.value
+ waterHull.sunkHeave=waterSunkDrag.value;waterHull.tyreLift=waterTyreLift.value;waterHull.tyrePull=waterTyrePull.value;waterHull.tyreSpeed=waterTyreSpeed.value
  return waterHull
 }
 export const lavaCoolingTime=defineParam({id:'lava.coolingTime',label:'Cooling time (s)',group:'Lava',scope:'world',default:20,min:1,max:120,step:1})
