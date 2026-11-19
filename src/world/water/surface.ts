@@ -451,6 +451,11 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
 const RIVER_STEP = 3
 /** Highest a ribbon edge may stand above the bank under it, metres. */
 const RIVER_EDGE_CLEARANCE = 0.25
+/**
+ * How far the drawn ribbon reaches past the river's own width on each side, metres
+ * (volcanics.ts builds it `r.width + 1.5` wide): a skirt that tucks into the banks.
+ */
+export const RIVER_SKIRT = 0.75
 
 /**
  * A ribbon at the river's true surface (`points[].y`), carrying for the water material: uv
@@ -466,8 +471,15 @@ export function buildRiverSurface(
   /** Metres between cross sections; the columns across are about as far apart. */
   step = RIVER_STEP,
 ): THREE.BufferGeometry {
-  // An odd count, so one column runs down the centre line.
-  const cols = Math.max(3, 2 * Math.round(width / step / 2) + 1)
+  // Columns across, as offsets from the centre line: about `step` apart, one on the centre line,
+  // one on each edge of the river itself (the skirt starts there) and one at each outer edge.
+  const half = width / 2, inner = Math.max(0, half - RIVER_SKIRT)
+  const offsets = [0]
+  const n = Math.max(1, Math.round(inner / step))
+  for (let k = 1; k <= n; k++) offsets.push((inner * k) / n)
+  if (half > inner) offsets.push(half)
+  const across = [...offsets.slice(1).reverse().map((o) => -o), ...offsets]
+  const cols = across.length
   // Resample along the path.
   const path: { x: number; y: number; z: number; slope: number }[] = []
   for (let i = 0; i < points.length - 1; i++) {
@@ -502,15 +514,16 @@ export function buildRiverSurface(
     // Smooth the slope over neighbours so white water does not flicker segment to segment.
     const slope = (prev.slope + p.slope * 2 + next.slope) / 4
     // A centre sample keeps bank heights from making the entire channel look like foam.
-    for (let column = 0; column < cols; column++) {
-      const side = -1 + (2 * column) / (cols - 1)
-      const x = p.x - (dz / len) * (width / 2) * side
-      const z = p.z + (dx / len) * (width / 2) * side
+    for (const offset of across) {
+      const x = p.x - (dz / len) * offset
+      const z = p.z + (dx / len) * offset
       const g = ground.heightAt(x, z)
-      // A bank lower than the water would leave the edge hanging in the air: lay it on the
-      // bank instead, so the surface spills over rather than floating past it.
-      positions.push(x, side !== 0 ? Math.min(p.y, g + RIVER_EDGE_CLEARANCE) : p.y, z)
-      uvs.push((side * width) / 2, distance)
+      // Across the river itself the water is level at its surface, as physics floats things on
+      // it (lavaSurfaceAt). Only the skirt beyond, on the banks, is laid on a bank lower than the
+      // water, so the edge spills over rather than floating past it.
+      const skirt = Math.abs(offset) > inner + 1e-6
+      positions.push(x, skirt ? Math.min(p.y, g + RIVER_EDGE_CLEARANCE) : p.y, z)
+      uvs.push(offset, distance)
       bed.push(g)
       speed.push(speedAt(slope))
       slopes.push(slope)

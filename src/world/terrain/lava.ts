@@ -468,17 +468,42 @@ export const ventsPass: TerrainPass = {
  * Lava surface height at (x, z): the lake inside the caldera, pools and rivers where they
  * are, otherwise `fallback` (the world lava altitude). Where both apply, the higher wins.
  */
-export function lavaSurfaceAt(lava: LavaFeatures, x: number, z: number, fallback: number): number {
+/**
+ * The liquid surface at (x, z): the highest of the lake, pools and rivers covering the spot,
+ * else `fallback`. Rivers are their planned centre lines, or `rivers` when given (the draped
+ * lines water rivers are drawn at, falls.ts drapedRivers, in `lava.rivers` order). Within one
+ * river the nearest segment's height counts, not the highest of every segment within reach: at a
+ * bend or below a lip the upstream run would otherwise lift the water metres above the ribbon.
+ */
+export function lavaSurfaceAt(lava: LavaFeatures, x: number, z: number, fallback: number, rivers?: readonly (readonly { x: number; y: number; z: number }[])[]): number {
   let y = fallback
   const lake = lava.lake
   if (lake && sq(x - lake.x) + sq(z - lake.z) < sq(lake.radius) && lake.surface > y) y = lake.surface
   for (const p of lava.pools) {
     if (sq(x - p.x) + sq(z - p.z) < sq(p.radius) && p.surface > y) y = p.surface
   }
-  for (const r of lava.rivers) {
+  for (let ri = 0; ri < lava.rivers.length; ri++) {
+    const r = lava.rivers[ri]
     const b = r.bounds
     const w = r.width / 2
     if (x < b.minX - w || x > b.maxX + w || z < b.minZ - w || z > b.maxZ + w) continue
+    if (rivers) {
+      const pts = rivers[ri]
+      let best = w * w, sy = -Infinity
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], c = pts[i + 1], dx = c.x - a.x, dz = c.z - a.z, len2 = dx * dx + dz * dz
+        let t = len2 > 0 ? ((x - a.x) * dx + (z - a.z) * dz) / len2 : 0
+        // The drawn ribbon ends square at the river's first and last points: nothing beyond
+        // (a centimetre of slack, for drawn vertices stored as 32 bit floats).
+        const reach = 0.01 / Math.sqrt(len2 || 1)
+        if ((i === 0 && t < -reach) || (i === pts.length - 2 && t > 1 + reach)) continue
+        t = t < 0 ? 0 : t > 1 ? 1 : t
+        const e = sq(a.x + dx * t - x) + sq(a.z + dz * t - z)
+        if (e < best) { best = e; sy = a.y + (c.y - a.y) * t }
+      }
+      if (sy > y) y = sy
+      continue
+    }
     const pts = r.points
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i]
