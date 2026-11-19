@@ -15,7 +15,7 @@ assert.ok(process.env.SYN3H_URL, 'SYN3H_URL is required')
 await mkdir(`${out}/raw`, { recursive: true })
 const phone = process.env.SYN3H_VIEW === 'phone', size = phone ? 'phone' : 'desktop'
 const TIMES = [0.7, 1.45, 1.9, 2.5, 3.3, 4.5]
-const SHAPES = ['peony', 'chrysanthemum', 'ring', 'willow', 'palm', 'crossette']
+const SHAPES = ['peony', 'chrysanthemum', 'ring', 'willow', 'palm', 'crossette'].slice(0, Number(process.env.SYN3H_SHAPES ?? 6))
 // SYN3H_HOURS=night for one of them.
 const HOURS = Object.fromEntries(Object.entries({ noon: 12, night: 22 }).filter(([k]) => !process.env.SYN3H_HOURS || process.env.SYN3H_HOURS.split(',').includes(k)))
 // SYN3H_DISTANCES=60,300,800: metres from the camera to the burst's ground point (60: from behind the car).
@@ -53,7 +53,7 @@ try {
     for (const dist of DISTANCES) for (const [seed, shape] of SHAPES.entries()) {
       // A detonation on the ground 60 m ahead of the car; the camera behind the car, looking up at
       // where the shell will burst (flareHeight up).
-      await page.evaluate(([seed, dist]) => {
+      await page.evaluate(([seed, dist, ground]) => {
         const s = window.syn3h, t = s.terrain, o = s.player.object.position
         const f = o.clone().set(0, 0, -1).applyQuaternion(s.player.object.quaternion).setY(0).normalize()
         const at = o.clone().addScaledVector(f, 60); at.y = t.heightAt(at.x, at.z) + 0.3
@@ -70,8 +70,10 @@ try {
           }
         }
         window.__cam = { eye: eye.toArray(), look: at.clone().setY(at.y + climb).toArray() }
+        // SYN3H_GROUND=1: looking down at the ground under the burst instead, for its glow.
+        if (ground) { const e = at.clone().addScaledVector(f, -dist); e.y = Math.max(t.heightAt(e.x, e.z), at.y) + 30; window.__cam = { eye: e.toArray(), look: at.toArray() } }
         window.__burst = { at: at.toArray(), climb, ground: at.y - 0.3, seed }
-      }, [seed, dist])
+      }, [seed, dist, process.env.SYN3H_GROUND === '1'])
       await page.waitForTimeout(500)
       await page.evaluate(() => {
         window.__freeze(true)
