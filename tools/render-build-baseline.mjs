@@ -28,6 +28,8 @@ try {
   const page = await browser.newPage(phoneSize ? {
     viewport: { width: 390, height: 844 }, deviceScaleFactor: 3,
   } : { viewport: { width: 1280, height: 720 } })
+  page.on('pageerror', error => console.error('Page error:', error.message))
+  page.on('websocket', socket => console.log('Socket opened:', new URL(socket.url()).pathname))
   await page.addInitScript(installRawCollector, { gpuTimestamps: true })
   await page.goto(url.href)
   await page.waitForFunction(() => window.syn3h?.shell)
@@ -78,9 +80,18 @@ try {
     s.params.set('bots.count', 0)
   })
   await record('world-entry', async () => {
-    await page.locator('.galaxy-label.is-current').press('Enter')
+    // Use the lobby form's entry handler, including the normal descent.
+    await page.evaluate(() => window.syn3h.shell.play(true))
     await page.waitForFunction(room => window.syn3h.shell.playing && window.syn3h.shell.room === room
-      && window.syn3hNet?.connected && window.syn3hNet.isHost, room)
+      && window.syn3hNet?.connected && window.syn3hNet.isHost, room, { timeout: 90000 }).catch(async error => {
+      console.error('World entry state:', await page.evaluate(() => ({
+        playing: window.syn3h.shell.playing, room: window.syn3h.shell.room,
+        transitioning: window.syn3h.shell.transitioning, connected: window.syn3hNet?.connected,
+        host: window.syn3hNet?.isHost, frames: window.syn3h.game.frames,
+        active: document.activeElement?.className,
+      })))
+      throw error
+    })
   })
   await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 0)
   await record('bot-arrival', async () => {
