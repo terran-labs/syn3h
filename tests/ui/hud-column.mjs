@@ -1,7 +1,10 @@
 // The HUD's left column (src/ui/hud-column.css): what must stay true.
 //   SYN3H_URL=http://127.0.0.1:5213/ node tests/ui/hud-column.mjs
-// 1. Gear selector, accessories, chat and minimap share one left edge and one width (1 px),
-//    stacked in that order without overlapping, at 1440x900 and 1280x800, both cursor modes.
+// 1. One edge distance: the column's line (the gear's spine) sits as far from the left as the
+//    minimap's ring and the right panel from the right (1 px). Gear selector, accessories and
+//    chat share one left edge, stacked over the minimap in that order without overlapping, at
+//    1440x900 and 1280x800, both cursor modes. The drum is three rows and the same height in
+//    both modes, and the Wings, Zorb and Chat keys show in both.
 // 2. Nothing in the column covers the speed or height readouts (at a three-digit speed) or the reticle.
 // 3. Each vehicle lists the accessories it exposes: wings where it has wings, a mode where it hovers.
 // 4. A key and a click switch the same state.
@@ -32,7 +35,8 @@ const measure = (page) => page.evaluate(() => {
   const ink = (root) => [...root.querySelectorAll('*')].filter((e) => !e.children.length && e.textContent.trim() && e.checkVisibility?.({ opacityProperty: true })).map((e) => e.getBoundingClientRect()).filter((r) => r.width)
   const detail = document.querySelector('.gear-selector .gs-detail')
   return {
-    minimap: box('.shell-minimap'), gear: box('.gear-selector'), drum: box('.gear-selector .gs-drum'),
+    minimap: box('.shell-minimap'), gear: box('.gear-selector'), drum: box('.gear-selector .gs-drum'), spine: box('.gear-selector .gs-spine'),
+    panel: box('.world-inspector'), keys: [...document.querySelectorAll('.hud-accessories kbd, .hud-chat kbd')].map((k) => k.checkVisibility() && k.textContent),
     accessories: box('.hud-accessories'), chat: box('.hud-chat'),
     detail: detail ? ink(detail).map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom })) : [],
     readouts: [...document.querySelectorAll('.focus-hud .fh-read')].filter((e) => getComputedStyle(e).opacity !== '0').flatMap((e) => ink(e)).map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom })),
@@ -44,16 +48,23 @@ const hit = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.
 try {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const { context, page } = await open({ viewport: { width: w, height: h } })
+    let drumFree = null
     for (const mode of ['free', 'focus']) {
       if (mode === 'focus') { await page.mouse.click(w / 2, h * .3); await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-focus'), null, { timeout: 5000 }) }
       await page.waitForTimeout(500)
       const m = await measure(page), at = `${w}x${h} ${mode}`
-      // 1. One edge, one width, in order.
+      // 1. One edge distance, one left edge, in order.
+      const ring = m.minimap.left + (m.minimap.right - m.minimap.left) * .115
+      assert.ok(Math.abs(m.spine.left - ring) <= 1, `${at}: the column's line sits on the minimap ring's edge ${JSON.stringify([m.spine, ring])}`)
+      if (mode === 'free' && m.panel) assert.ok(Math.abs((w - m.panel.right) - m.spine.left) <= 1, `${at}: the right panel keeps the same edge distance ${JSON.stringify([m.panel, m.spine])}`)
       for (const [name, part] of [['accessories', m.accessories], ['chat', m.chat]]) {
         assert.ok(part, `${at}: ${name} shown`)
-        assert.ok(Math.abs(part.left - m.minimap.left) <= 1 && Math.abs(part.right - m.minimap.right) <= 1, `${at}: ${name} shares the minimap's edge and width ${JSON.stringify([part, m.minimap])}`)
+        assert.ok(Math.abs(part.left - m.gear.left) <= 1, `${at}: ${name} shares the gear's left edge ${JSON.stringify([part, m.gear])}`)
       }
-      assert.ok(Math.abs(m.gear.left - m.minimap.left) <= 1 && Math.abs(m.drum.right - m.minimap.right) <= 1, `${at}: the gear drum shares the column's edges ${JSON.stringify([m.gear, m.drum, m.minimap])}`)
+      assert.ok(Math.abs((m.drum.bottom - m.drum.top) - 3 * 36) <= 1, `${at}: the drum is three rows ${JSON.stringify(m.drum)}`)
+      if (mode === 'free') drumFree = m.drum
+      else assert.ok(Math.abs(m.drum.top - drumFree.top) <= 1 && Math.abs(m.drum.bottom - drumFree.bottom) <= 1, `${at}: capturing the cursor moves nothing in the drum ${JSON.stringify([drumFree, m.drum])}`)
+      assert.ok(m.keys.length >= 3 && m.keys.every(Boolean), `${at}: the Wings, Zorb and Chat keys show ${JSON.stringify(m.keys)}`)
       assert.ok(m.gear.bottom <= m.accessories.top + 1 && m.accessories.bottom <= m.chat.top + 1 && m.chat.bottom <= m.minimap.top + 1, `${at}: gear, accessories, chat, minimap from the top, apart ${JSON.stringify(m)}`)
       // 2. Clear of the readouts and the reticle.
       const reticle = { left: w / 2 - 40, right: w / 2 + 40, top: h / 2 - 40, bottom: h / 2 + 40 }

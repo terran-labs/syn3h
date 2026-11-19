@@ -175,7 +175,7 @@
 .syn3h-shell.exploration-ui .spawn-help strong { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
 /* The minimap ring and its N: hud-column.css, with the rest of the left column. */
 /* The touch panels switch: a floating pill, clear of the screen edge. */
-.syn3h-shell.exploration-ui .hud-navigation { right: max(12px, env(safe-area-inset-right)); }
+.syn3h-shell.exploration-ui .hud-navigation { right: var(--edge-right); }
 .syn3h-shell.exploration-ui .hud-navigation .inspector-toggle { border: 1px solid var(--s3-line); border-radius: 999px; background: var(--halo-fill); box-shadow: var(--halo-glow), var(--halo-spread); font: 500 11px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
 
 /* Touch controls: hairline rings, no fills to speak of, small letter-spaced captions. */
@@ -244,7 +244,8 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(230
 .syn3h-shell.exploration-ui .world-inspector .wi-card[data-section="players"] .rail-player-body { padding: 6px 0 0; }
 .syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden])) .hud-navigation { visibility: visible; z-index: 65; }
 /* Leave the existing edge toggle outside the touch panel's hit area. */
-.syn3h-shell.exploration-ui.has-touch .world-inspector { right: max(42px, env(safe-area-inset-right)); width: min(352px, calc(100vw - 58px)); }
+/* Beside the Panels tab (about 34 px wide, on the shared edge), one 6 px gap clear of it. */
+.syn3h-shell.exploration-ui.has-touch .world-inspector { right: calc(var(--edge-right) + 40px); width: min(352px, calc(100vw - var(--edge) * 2 - 40px)); }
 
 /* Lobby navigation stays available while one requested panel opens directly. */
 .syn3h-shell.exploration-ui .lobby-panels { animation: none; width: min(520px, 100%); margin-bottom: 118px; }
