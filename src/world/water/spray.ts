@@ -11,6 +11,8 @@ export const waterSprayScale=defineParam({id:'water.sprayScale',label:'Spray siz
 /** How strongly soft wakes and skip rings show: 0 none, 1 as tuned, 2 twice as dense. */
 export const waterWakeStrength=defineParam({id:'water.wakeStrength',label:'Wake strength',group:'Water',scope:'client',default:1,min:0,max:2,step:.05})
 /** Width of soft wakes and skip rings, as a multiple of what touches the water. */
+/** A broad, low swell of disturbed water beside a hull. Off: beside-hull wakes read as drawn lines. */
+export const waterBowSwell=defineParam<boolean>({id:'water.bowSwell',label:'Bow swell beside hulls',group:'Water',scope:'client',default:false})
 export const waterWakeWidth=defineParam({id:'water.wakeWidth',label:'Wake width',group:'Water',scope:'client',default:1,min:.3,max:3,step:.05})
 
 // TSL nodes are dynamically typed; sprites.ts uses the same alias.
@@ -146,22 +148,19 @@ function dropletMaterial(light: N, tint: N, lava = false) {
 /**
  * Foam lying on the liquid: wake strips and rings, all soft, none cut out with a hard edge.
  * A strip quad runs from one wake point to the next, each end with its own side vector, half
- * width and fade, so consecutive quads share their edges exactly. Side vector length says the
- * strip's kind: 1 a crest of a hull's V, 2 the churned patch behind a hull, 3 a trail (a
- * ball's, a cushion's, a downwash streak). A ring has zero side vectors; B.w is 2 for the small
- * ring a landing drop leaves.
+ * width and fade, so consecutive quads share their edges exactly. A ring has zero side
+ * vectors; B.w is 2 for the soft patch a landing drop leaves.
  *
  * Foam has structure: it is densest right behind its source, then opens into separate patches
  * with clear water between that thin with age, so a trail dissolves in pieces rather than
  * fading as one shape. The patches are laid out across the strip in its own proportions, so
- * they drift apart as the strip spreads. A ring is a thin bright crest, uneven round its
- * circumference, breaking up unevenly, with a calmer disc inside. `octaves` 1 at the safe
- * graphics level keeps it cheap.
+ * they drift apart as the strip spreads. A ring is a band of foam broken into arcs and
+ * flecks. `octaves` 1 at the safe graphics level keeps it cheap.
  */
 function foamMaterial(light: N, tint: N, lava = false, octaves = 2) {
   const A = attribute('foamA', 'vec4'), B = attribute('foamB', 'vec4'), S = attribute('foamSide', 'vec4'), L = attribute('foamLook', 'vec4')
   const kindLength = S.xy.length()
-  const ring = kindLength.lessThan(.5), crest = ring.not().and(kindLength.lessThan(1.5)), churn = kindLength.greaterThan(1.5).and(kindLength.lessThan(2.5))
+  const ring = kindLength.lessThan(.5)
   const ripplet = ring.and(B.w.greaterThan(1.5))
   const q = uv().mul(2).sub(1), t = uv().y
   const sides = normalize(mix(S.xy, S.zw, t).add(1e-5))
@@ -174,32 +173,36 @@ function foamMaterial(light: N, tint: N, lava = false, octaves = 2) {
   const along = dot(positionWorld.xz, vec2(sides.y, sides.x.negate()))
   const patchy = mx_fractal_noise_float(vec3(q.x.mul(1.7), along.mul(.32), 0), octaves, 2, .5).mul(.5).add(.5)
   const lace = mx_fractal_noise_float(vec3(positionWorld.xz.mul(2.4), 3.7), octaves, 2, .55).mul(.5).add(.5)
-  // Strips: a feathered profile across whose edge wanders; a crest is a narrow ridge.
+  // Strips: a feathered profile across whose edge wanders.
   const edge = q.x.abs().add(patchy.sub(.5).mul(.4)).max(0)
-  const profile = select(crest, float(1).sub(smoothstep(0, 1, edge)).pow(1.6), float(1).sub(smoothstep(.12, 1, edge)).pow(1.3))
+  const profile = float(1).sub(smoothstep(.12, 1, edge)).pow(1.3)
   // Young foam is a blanket; with age it opens into patches over clear water, which thin
   // until the last pieces go. A churned patch breaks up sooner.
-  // A crest is never a solid line: it is lace from the start and thins fastest.
-  const open = age.mul(select(crest, 1.1, select(churn, 1, .85))).add(select(crest, .3, .08))
+  const open = age.mul(.85).add(.08)
   const patches = smoothstep(open.sub(.13), open.add(.13), patchy.mul(.62).add(lace.mul(.5)))
-  const blanket = float(1).sub(smoothstep(0, .22, age)).mul(select(crest, 0, 1))
+  const blanket = float(1).sub(smoothstep(0, .22, age))
   const stripAlpha = profile.mul(patches.max(blanket.mul(.85))).mul(fade)
-  // Rings: a crest of water, not a drawn line. Its radius wobbles, its thickness and brightness
-  // vary round the circle, and gaps open in it as it spreads; calmer water inside.
+  // Rings: a band of foam, a few times thicker where it starts, broken into arcs and flecks
+  // from the first frame and fading from the outside in, so no continuous outline ever shows.
+  // A ripplet (where a drop landed) is a soft patch of disturbed water, never an outline.
   const around = mx_fractal_noise_float(vec3(q.x.mul(2.2), q.y.mul(2.2), A.x.add(A.z).mul(.13)), octaves, 2, .5).mul(.5).add(.5)
-  const gaps = mx_fractal_noise_float(vec3(q.x.mul(5.5), q.y.mul(5.5), A.x.sub(A.z).mul(.11).add(7)), octaves, 2, .5).mul(.5).add(.5)
-  const rr = q.length().add(around.sub(.5).mul(.1))
-  const thick = select(ripplet, .05, .03).add(around.mul(select(ripplet, .03, .09)))
-  const band = float(1).sub(smoothstep(0, thick, rr.sub(.84).abs()))
-  // Gaps open from the start and widen with age, unevenly.
-  const broken = smoothstep(age.mul(.7).add(.32).sub(.1), age.mul(.7).add(.32).add(.1), gaps.mul(.7).add(lace.mul(.35)))
-  const inside = float(1).sub(smoothstep(.45, .82, rr)).mul(float(1).sub(smoothstep(0, .35, age))).mul(select(ripplet, 0, .12))
-  const ringAlpha = band.mul(broken).mul(around.mul(.9).add(.3)).add(inside).mul(float(1).sub(smoothstep(.95, 1, q.length()))).mul(fade)
+  const flecks = mx_fractal_noise_float(vec3(q.x.mul(7), q.y.mul(7), A.x.sub(A.z).mul(.11).add(7)), octaves, 2, .5).mul(.5).add(.5)
+  const rr = q.length().add(around.sub(.5).mul(.12))
+  const thick = mix(float(.26), float(.09), age.clamp(0, 1)).mul(around.mul(.8).add(.6))
+  const centreR = float(.8)
+  const band = float(1).sub(smoothstep(thick.mul(.2), thick, rr.sub(centreR).abs()))
+  // The outer side of the band goes first.
+  const outerGone = smoothstep(centreR.add(thick.mul(float(1).sub(age.mul(1.3)).max(-1))), centreR.add(thick.mul(float(1).sub(age.mul(1.3)).max(-1))).add(.12), rr)
+  const arcs = smoothstep(.4, .58, around.mul(.55).add(flecks.mul(.55)).sub(age.mul(.25)))
+  const ringFoam = band.mul(arcs).mul(float(1).sub(outerGone)).mul(flecks.mul(.6).add(.55))
+  const inside = float(1).sub(smoothstep(.3, .75, rr)).mul(float(1).sub(smoothstep(0, .35, age))).mul(.12)
+  const patch = float(1).sub(smoothstep(0, .95, rr)).pow(1.5).mul(smoothstep(.3, .7, flecks.mul(.6).add(lace.mul(.5)))).mul(.6)
+  const ringAlpha = select(ripplet, patch, ringFoam.add(inside)).mul(float(1).sub(smoothstep(.92, 1, q.length()))).mul(fade)
   const alpha = select(ring, ringAlpha, stripAlpha).clamp(0, 1)
   m.opacityNode = alpha.mul(.95)
   // Fresh foam is white with air; as it settles it takes the liquid's own colour.
   const fresh = float(1).sub(smoothstep(.05, .7, age))
-  m.colorNode = mix(mix(tint, vec3(1, 1, 1), .55), vec3(.95, .98, 1), fresh).mul(light).mul(lace.mul(.15).add(.95)).mul(select(ring, band.mul(.15).add(1), float(1)))
+  m.colorNode = mix(mix(tint, vec3(1, 1, 1), .55), vec3(.95, .98, 1), fresh).mul(light).mul(lace.mul(.15).add(.95)).mul(select(ring, ringFoam.mul(.12).add(1), float(1)))
   if (lava) {
     // Churned lava: bright where the crust was broken, crusting over dark as it ages.
     m.colorNode = mix(vec3(3.2, 1.25, .2).mul(lace.mul(.4).add(.8)), vec3(.07, .035, .025), smoothstep(.15, .85, age)).add(vec3(2.5, .9, .1).mul(blanket.mul(.6)))
@@ -272,7 +275,7 @@ export class Spray {
   vehicle(id: string, position: T.Vector3, velocity: T.Vector3, submergedFraction: number, dt: number, shape?: WakeShape) {
     if (!waterSpray.value) return
     if (!this.sim) this.allocate(Math.max(0, Math.min(2, Math.round(graphicsLevel.value))))
-    this.sim!.wakeStrength = waterWakeStrength.value; this.sim!.wakeWidth = waterWakeWidth.value
+    this.sim!.wakeStrength = waterWakeStrength.value; this.sim!.wakeWidth = waterWakeWidth.value; this.sim!.bowSwell = waterBowSwell.value
     const entering = this.sim!.vehicle(id, position.x, position.y, position.z, velocity.x, velocity.y, velocity.z, submergedFraction, dt, waterSprayScale.value * (this.liquid === 'lava' ? .7 : 1), shape)
     if (this.liquid === 'lava') return entering
     const sub = Math.max(0, Math.min(1, submergedFraction)), speed = Math.hypot(velocity.x, velocity.z)

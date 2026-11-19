@@ -154,11 +154,13 @@ export class SpraySim {
   readonly ripplets: Float32Array
   rippletCount = 0
   private rippletNext = 0
-  /** Per arm: what it draws as (1 a crest, 2 a churned patch, 3 a trail). */
+  /** Per arm: what it draws as (3 a soft trail, the only kind drawn now; 0 unset). */
   readonly armKind: Uint8Array
   /** Multiplies every soft trail's and ring's strength and width (water.wakeStrength, water.wakeWidth). */
   wakeStrength = 1
   wakeWidth = 1
+  /** A broad low swell beside a hull (water.bowSwell); off by default. */
+  bowSwell = false
   private vehicles = new Map<string, VehicleState>()
   /**
    * Share of requested droplets actually emitted. When the pool would overflow, every source is
@@ -319,8 +321,8 @@ export class SpraySim {
     const near = shape.air && sub <= 0 ? Math.max(0, Math.min(1, Number.isFinite(shape.near) ? shape.near! : 0)) : 0
     if (near > .02) { s.touching = true; s.dry = 0 }
     // What each arm draws as: 1 a crest, 2 a churned patch, 3 a trail.
-    const kind = ball || near > .02 ? 3 : 2
-    if (this.armKind[s.slot * ARMS + CENTRE] !== kind) { this.armKind[s.slot * ARMS] = this.armKind[s.slot * ARMS + 1] = 1; this.armKind[s.slot * ARMS + CENTRE] = kind }
+    // Every strip draws as a soft trail now: no crest lines.
+    for (let a = 0; a < ARMS; a++) this.armKind[s.slot * ARMS + a] = 3
     s.ball = ball
     if (sub > 0 && dt > 0) {
       // Bow spray: rate grows with speed; a slow wade sheds only the odd drop.
@@ -499,22 +501,21 @@ export class SpraySim {
   }
 
   /**
-   * A hull: a short churned patch behind the stern, and a V of two soft crests leaving the bow
-   * and spreading outward at about the Kelvin angle (19.5 degrees, an outward speed of a third
-   * of the hull's), widening and thinning as they go. Both grow with speed and with how much
-   * of the hull is in the liquid.
+   * A hull: one wake from the stern, dense foam there that spreads and breaks into lace and
+   * patches behind, wider and longer lived the faster it goes and the deeper it sits. With
+   * `bowSwell` on, a broad, low, short-lived swell of disturbed water beside the hull too
+   * (off by default: arms beside a hull read as drawn lines).
    */
   private lay(s: VehicleState, x: number, y: number, z: number, speed: number, sub: number, fresh: boolean, scale: number) {
     if (speed < .8) { this.off(s); return }
     const fx = s.dirX, fz = s.dirZ, sx = -fz, sz = fx, P = this.cap.points, wet = Math.min(1, .5 + sub)
-    const spacing = Math.max(.6, speed * WAKE_LIFE / (P - 2)), k = this.wakeStrength * wet, w = scale * this.wakeWidth
-    for (const side of [-1, 1]) {
-      const ax = x + fx * .9 + sx * side * HULL * .85, az = z + fz * .9 + sz * side * HULL * .85
-      this.point(s.slot * ARMS + (side < 0 ? 0 : 1), ax, y, az, (.45 + speed * .015) * w, Math.min(1, speed / 6) * .45 * k, WAKE_LIFE, 1.2, spacing, fresh, sx * side, sz * side, speed * .33)
-    }
-    // The churned patch: short, rough, gone about 12 m behind the stern.
-    const churn = smoothstep01((speed - 1.5) / 6)
-    this.point(s.slot * ARMS + CENTRE, x - fx * 1.4, y, z - fz * 1.4, HULL * .9 * w, churn * k, Math.max(.5, Math.min(1.4, 12 / Math.max(1, speed))), 1.6, spacing * .6, fresh)
+    const spacing = Math.max(.6, speed * 2.4 / (P - 2)), k = this.wakeStrength * wet, w = scale * this.wakeWidth
+    if (this.bowSwell) for (const side of [-1, 1]) {
+      const ax = x + fx * .4 + sx * side * HULL * 1.6, az = z + fz * .4 + sz * side * HULL * 1.6
+      this.point(s.slot * ARMS + (side < 0 ? 0 : 1), ax, y, az, (1 + speed * .03) * w, Math.min(1, speed / 8) * .3 * k, .7, 1, spacing, fresh, sx * side, sz * side, speed * .12)
+    } else { this.armHeadActive[s.slot * ARMS] = 0; this.armHeadActive[s.slot * ARMS + 1] = 0 }
+    const strength = Math.min(1, .3 + speed / 8) * k
+    this.point(s.slot * ARMS + CENTRE, x - fx * 1.4, y, z - fz * 1.4, HULL * (1.1 + Math.min(.6, speed * .03)) * w, strength, Math.max(1, Math.min(3, 30 / Math.max(1, speed))), .5 + Math.min(.6, speed * .03), spacing, fresh)
   }
 
   /**
@@ -672,7 +673,7 @@ export class SpraySim {
     const turn = Math.acos(Math.max(-1, Math.min(1, side[n * 4] * side[n * 4 + 2] + side[n * 4 + 1] * side[n * 4 + 3])))
     const length = Math.hypot(s[12] - s[6], s[14] - s[8]), half = Math.max(s[9], s[15])
     const fold = turn > 1e-3 ? Math.max(0, Math.min(1, (length / turn / Math.max(half, 1e-3) - 1) / .5)) : 1
-    // Side vectors of length two mark the centre wash for the shader, three a soft trail; rings have none.
+    // Strips carry side vectors of length three (a soft trail); rings have none.
     const mark = this.armKind[arm] || (arm % ARMS === CENTRE ? 2 : 1)
     if (mark > 1) for (let j = 0; j < 4; j++) side[n * 4 + j] *= mark
     a[n * 4] = s[6]; a[n * 4 + 1] = s[7]; a[n * 4 + 2] = s[8]; a[n * 4 + 3] = s[9]
