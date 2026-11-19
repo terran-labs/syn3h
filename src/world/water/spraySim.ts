@@ -55,6 +55,8 @@ const RIPPLET_DROP = .05
 const HULL = .95
 /** Index of the centre trail among a vehicle's arms: the wash, or a ball's one trail. */
 const CENTRE = 2
+/** Metres over which a strip rises from nothing at its live source. */
+const HEAD_FADE = 1.5
 /** Metres over which a piece of soft trail fades in from where it began and out to where it ended. */
 const SOFT_END = 2.5
 /** A ball off the water for less than this (s) is skimming, not skipping: its trail stays joined. */
@@ -620,10 +622,14 @@ export class SpraySim {
    * end yet (Infinity): it runs on under the ball.
    */
   private ends = new Float32Array(64)
+  private headRun = Infinity
   private pieceEnds(arm: number, head: boolean) {
     const P = this.cap.points, p = this.points, count = this.armCount[arm], start = this.armStart[arm]
     if (this.ends.length < count) this.ends = new Float32Array(P)
     let k = count - 1, end = head ? Infinity : count ? p[(arm * P + (start + k) % P) * W + WRUN] : 0
+    // Where the live head reaches along the newest piece, for the fade-in from the source.
+    this.headRun = Infinity
+    if (head && count) { const o = (arm * P + (start + k) % P) * W, h = arm * 5; this.headRun = p[o + WRUN] + Math.hypot(this.armHead[h] - p[o + WX], this.armHead[h + 2] - p[o + WZ]) }
     for (; k >= 0; k--) {
       const o = (arm * P + (start + k) % P) * W
       this.ends[k] = end
@@ -650,7 +656,7 @@ export class SpraySim {
     out[at + 3] = p[o + WWIDTH] * (1 + p[o + WAGE] * p[o + WSPREAD])
     // A soft trail holds its strength longer, fades out at the end of its life, and fades in
     // and out over SOFT_END at the ends of each piece, so no piece starts or stops square.
-    const ends = smoothstep01(p[o + WRUN] / SOFT_END) * smoothstep01((this.ends[k] - p[o + WRUN]) / SOFT_END)
+    const ends = smoothstep01(p[o + WRUN] / SOFT_END) * smoothstep01((this.ends[k] - p[o + WRUN]) / SOFT_END) * (this.ends[k] === Infinity ? smoothstep01((this.headRun - p[o + WRUN]) / HEAD_FADE) : 1)
     out[at + 4] = p[o + WSTRENGTH] * Math.max(0, 1 - t) ** .6 * ends
     out[at + 5] = t
   }
