@@ -291,12 +291,14 @@ describe('showroom vehicle shading',()=>{
  })
  // A bot arriving with its own copies of its kind's materials paid for every node build again
  // (31 to 75 ms at High on a fast Mac). Alike vehicles now draw the same materials.
+ // One named decoration for the test vehicles: sharing is keyed by the decoration's id.
+ const lavaOnly=Object.assign((r:T.Object3D)=>{addLavaGlow(r)},{decorationId:'test-lava'})
  const vehicle=(paintHex:number,accentHex:number)=>{
   const owner=new T.Group(),root=new T.Group();owner.add(root)
   const accent=new T.Color(accentHex);owner.userData.vehicleColors={accent};owner.userData.vehicleHeat=createLiquidState()
   const paint=setRole(std('Body',paintHex),'paint'),body=new T.Mesh(box(),paint),canopy=new T.Mesh(box(),setRole(std('Cockpit'),'canopy'))
   root.add(body,canopy)
-  const dispose=applyShowroom(root,r=>{addLavaGlow(r)})
+  const dispose=applyShowroom(root,lavaOnly)
   return {owner,root,paint,accent,body,canopy,dispose}
  }
  it('shares materials between alike vehicles, each drawing its own paint and accent',()=>{
@@ -344,7 +346,7 @@ describe('showroom vehicle shading',()=>{
  it('works out a shared material\'s heat plane only for a hot vehicle, once per frame',()=>{
   // The plane runs for every mesh in every pass; a cold vehicle must cost nothing there.
   params.set(vehicleShading.def.id,2)
-  const a=vehicle(0xff0000,0x00ff00),b=vehicle(0xff0000,0x00ff00),m=b.body.material as T.MeshStandardNodeMaterial
+  const a=vehicle(0xff0000,0x00ff00),b=vehicle(0xff0000,0x00ff00),m=b.body.material as unknown as T.MeshStandardNodeMaterial
   expect(m).toBe(a.body.material)
   let walks=0;const proto=T.Object3D.prototype,gq=proto.getWorldQuaternion
   proto.getWorldQuaternion=function(this:T.Object3D,q:T.Quaternion){walks++;return gq.call(this,q)}
@@ -374,6 +376,73 @@ describe('showroom vehicle shading',()=>{
   const perRender=(m:T.Material)=>{const v:unknown[]=[];(m as T.MeshStandardNodeMaterial).emissiveNode?.traverse((x:unknown)=>{const u=x as {isUniformNode?:boolean;updateType?:string;update?:(f:unknown)=>void;value?:unknown};if(u.isUniformNode&&u.updateType==='render'&&typeof u.update==='function'){u.update({});v.push(u.value)}});return v}
   expect(perRender(a.body.material as T.Material)).toContain(.8);expect(perRender(b.body.material as T.Material)).not.toContain(.8)
   a.dispose();b.dispose()
+ })
+ it('shares a glow between craft at different throttles (its intensity is not part of it)',()=>{
+  params.set(vehicleShading.def.id,2)
+  const craft=(intensity:number)=>{const owner=new T.Group(),root=new T.Group();owner.add(root);owner.userData.vehicleColors={accent:new T.Color(0x00ffcc)}
+   const glow=setRole(std('Port'),'glow');glow.emissiveIntensity=intensity;const port=new T.Mesh(box(),glow);root.add(port);return {port,dispose:applyShowroom(root,lavaOnly)}}
+  const a=craft(.2),b=craft(1.7)
+  expect(b.port.material).toBe(a.port.material)
+  a.dispose();b.dispose()
+ })
+ it('does not share between decorators that are not the same named decoration',()=>{
+  params.set(vehicleShading.def.id,2)
+  const make=(decorate:(r:T.Object3D)=>void)=>{const root=new T.Group(),body=new T.Mesh(box(),setRole(std('Body'),'paint'));root.add(body);return {body,dispose:applyShowroom(root,decorate)}}
+  const a=make(()=>{}),b=make(()=>{})
+  expect(b.body.material).not.toBe(a.body.material)
+  a.dispose();b.dispose()
+ })
+ it('rebuilds both vehicles\' canopies when the canopy setting changes with both alive, each in its own accent',()=>{
+  params.set(vehicleShading.def.id,2)
+  const a=vehicle(0xff0000,0x00ff00),b=vehicle(0x0000ff,0xffff00)
+  const before=a.canopy.material as T.Material,users=showroomShare.users
+  expect(b.canopy.material).toBe(before)
+  let disposed=0;before.addEventListener('dispose',()=>disposed++)
+  params.set(paintCanopy.def.id,!paintCanopy.value)
+  const after=a.canopy.material as T.Material
+  expect(b.canopy.material).toBe(after);expect(after).not.toBe(before)
+  expect(disposed).toBe(1)
+  const colours=(mesh:T.Mesh)=>drawnFor((mesh.material as T.MeshBasicNodeMaterial).colorNode,mesh)
+  expect(colours(a.canopy)).toContain(a.accent);expect(colours(b.canopy)).toContain(b.accent)
+  params.set(paintCanopy.def.id,!paintCanopy.value)
+  expect(b.canopy.material).toBe(a.canopy.material)
+  expect(showroomShare.users).toBe(users)
+  a.dispose();b.dispose()
+ })
+ it('shares a packed body (several surfaces merged into one draw) and paints each vehicle\'s surfaces as its own',()=>{
+  // The tank kit and the hovercraft pack their surfaces as mergeStatic does (standardEmission).
+  params.set(vehicleShading.def.id,2)
+  const packed=(paintHex:number,trimHex:number)=>{
+   const owner=new T.Group(),root=new T.Group();owner.add(root);owner.userData.vehicleHeat=createLiquidState()
+   const paint=setRole(std('Paint',paintHex),'paint'),trim=setRole(std('Trim',trimHex),'trim')
+   const p=new T.Mesh(box(),paint),t=new T.Mesh(box(),trim);t.position.x=2;root.add(p,t)
+   mergeStatic(root,true)
+   const merged=root.children.find(o=>(o as T.Mesh).isMesh&&mergedSurfaces.has((o as T.Mesh).material as T.Material)) as T.Mesh
+   return {merged,paint,trim,dispose:applyShowroom(root,lavaOnly)}
+  }
+  const a=packed(0xff0000,0x222222),b=packed(0x0000ff,0x444444)
+  expect(a.merged).toBeTruthy()
+  expect(b.merged.material).toBe(a.merged.material)
+  const colours=(m:T.Mesh)=>drawnFor((m.material as T.MeshStandardNodeMaterial).colorNode,m)
+  expect(colours(a.merged)).toEqual(expect.arrayContaining([a.paint.color,a.trim.color]))
+  expect(colours(b.merged)).toEqual(expect.arrayContaining([b.paint.color,b.trim.color]))
+  expect(colours(b.merged)).not.toContain(a.paint.color)
+  a.dispose();b.dispose()
+ })
+ it('gives back what a tier set took when building it fails part way',()=>{
+  params.set(vehicleShading.def.id,2)
+  const a=vehicle(0xff0000,0x00ff00)
+  const users=showroomShare.users,alive=showroomShare.alive
+  // A second vehicle whose second surface throws while its tier is built: its first surface has
+  // already taken the shared paint material that the first vehicle holds.
+  const owner=new T.Group(),root=new T.Group();owner.add(root);owner.userData.vehicleHeat=createLiquidState()
+  const paint=setRole(std('Body',0x00ff00),'paint'),body=new T.Mesh(box(),paint),bad=setRole(std('Bad'),'paint')
+  Object.defineProperty(bad,'roughness',{get(){throw new Error('broken surface')},configurable:true})
+  root.add(body,new T.Mesh(box(),bad))
+  expect(()=>applyShowroom(root,lavaOnly)).toThrow('broken surface')
+  expect(showroomShare.users).toBe(users);expect(showroomShare.alive).toBe(alive)
+  expect(body.material).toBe(paint)
+  a.dispose()
  })
  it('keeps a vehicle\'s own authored emission to itself',()=>{
   params.set(vehicleShading.def.id,2)

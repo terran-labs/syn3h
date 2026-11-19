@@ -5,10 +5,11 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Mat } from '../jetgen/shapes'
 import { mergeStatic, mergedSurfaces, standardEmission } from '../skins/mergeStatic'
 import { applyShowroom, setRole } from '../skins/showroom'
-import { addLavaGlow } from '../skins/lavaGlow'
-import { addNightReadability } from '../skins/nightReadability'
+
+
 import type { HoverBuild } from './kit'
 import { DuctFan } from './DuctFan'
+import { vehicleDecoration, noDecoration } from '../skins/decoration'
 
 /** Triangle budgets per detail level (PATTERN.md rule 4). */
 export const R3_BUDGET = [12000, 2500, 500] as const
@@ -132,7 +133,7 @@ export class HoverBody {
       this.object.add(this.fan.object)
     }
     this.object.traverse(o => { if (o instanceof T.Mesh && o.material === this.glow) this.glowMeshes.push(o) })
-    if (!game) this.detach = applyShowroom(this.object, () => {})
+    if (!game) this.detach = applyShowroom(this.object, noDecoration)
     this.setLights(false, false)
   }
 
@@ -179,7 +180,7 @@ export class HoverBody {
   showroom(): void {
     if (!this.game || this.level === 2 || this.shaded) return
     this.shaded = true
-    this.detach = applyShowroom(this.object, root => { addNightReadability(root); addLavaGlow(root) })
+    this.detach = applyShowroom(this.object, vehicleDecoration)
   }
 
   setColors(body: T.ColorRepresentation, accent: T.ColorRepresentation): void {

@@ -158,9 +158,16 @@ const paintOf = new WeakMap<T.Object3D, Paint>()
  * whichever vehicle first built the shared material. Found once, then kept by mesh.
  */
 const paintOfGeometry = new WeakMap<object, Paint>()
+let warnedUnpainted = false
 function paintFor(object: T.Object3D): Paint | undefined {
   let paint = paintOf.get(object)
   if (!paint) { const geometry = (object as Partial<T.Mesh>).geometry; paint = geometry ? paintOfGeometry.get(geometry) : undefined; if (paint) paintOf.set(object, paint) }
+  // No game path reaches this: a mesh that applyShowroom never saw, drawing a shared material,
+  // shows a frozen copy of the colours of whichever vehicle built it. Loud once in development.
+  if (!paint && !warnedUnpainted && (import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
+    warnedUnpainted = true
+    console.warn(`Showroom: mesh "${object.name}" draws a shared vehicle material but was never registered by applyShowroom; it shows the colours of the vehicle that built the material.`)
+  }
   return paint
 }
 /** A colour read from the mesh being drawn, or `fallback` (a copy) for a mesh with no paint of its own. */
@@ -593,15 +600,30 @@ function scrolls(mesh: T.Mesh, source: Standard): boolean {
  */
 function signature(sources: readonly Standard[], merged: boolean, tier: number, meshName: string, authored: N | null, accent: T.Color | null, instanced: boolean, decorate: Decorate, heated: boolean): string | null {
   if (authored && !standardEmission.has(authored)) return null
-  const surfaces = sources.map(m => [
-    roleOf(m, meshName), m.name, m instanceof T.MeshPhysicalMaterial ? `p${m.clearcoat}/${m.clearcoatRoughness}` : 's', m.roughness, m.metalness, m.emissiveIntensity,
+  const surfaces = sources.map(m => {
+    // A single glow or canopy surface (the hovercraft sets its glow's intensity from the throttle
+    // every frame) is built without its emissive intensity: leave it out, or craft share only at
+    // equal throttle.
+    const role = roleOf(m, meshName), intensity = !merged && (role === 'glow' || role === 'canopy' || (role === 'glass' && paintCanopy.value)) ? '' : m.emissiveIntensity
+    return [
+    role, m.name, m instanceof T.MeshPhysicalMaterial ? `p${m.clearcoat}/${m.clearcoatRoughness}` : 's', m.roughness, m.metalness, intensity,
     m.userData.accentMask === true ? 'mask' : '', m.userData.trackWidth ?? '', m.side, m.transparent ? 't' : '', m.opacity, m.flatShading ? 'flat' : '',
-  ].join(':'))
-  return [tier, merged ? 'merged' : '', instanced ? 'instanced' : '', accent ? 'accent' : '', paintCanopy.value ? 'field' : 'glass', heated ? 'heat' : '', meshName, decorate.toString(), ...surfaces].join('|')
+  ].join(':')
+  })
+  return [tier, merged ? 'merged' : '', instanced ? 'instanced' : '', accent ? 'accent' : '', paintCanopy.value ? 'field' : 'glass', heated ? 'heat' : '', meshName, decorationIdOf(decorate), ...surfaces].join('|')
 }
 
 /** Runs the shared night and lava passes over whatever materials the meshes currently hold. */
-export type Decorate = (root: T.Object3D) => void
+export type Decorate = ((root: T.Object3D) => void) & {
+  /**
+   * Names the decoration in the sharing key (skins/decoration.ts). Without one, each decorator
+   * function counts as its own decoration: never shared with another, so never confused with one.
+   */
+  decorationId?: string
+}
+const anonymous = new WeakMap<Decorate, string>()
+let anonymousCount = 0
+const decorationIdOf = (decorate: Decorate): string => decorate.decorationId ?? anonymous.get(decorate) ?? (anonymous.set(decorate, `anonymous-${++anonymousCount}`), `anonymous-${anonymousCount}`)
 
 /**
  * Take over the standard materials under `root` and swap them by shading tier. Call once the
@@ -642,6 +664,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
       const cache = new Map<T.Material, T.Material>(), instancedCache = new Map<T.Material, T.Material>()
       // A set holds each shared material once, however many of its meshes wear it (see drop).
       const taken = new Set<T.Material>()
+      try {
       for (const e of entries) {
         const instanced = scrolls(e.mesh, e.source), shared = instanced ? instancedCache : cache
         let variant = tier === 0 ? e.source : shared.get(e.source)
@@ -660,6 +683,13 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
         e.mesh.material = variant
       }
       decorate(root)
+      } catch (error) {
+        // Part way through: give back what this set took (no tier set holds it, so nothing else
+        // would) and put the meshes back as they were, then let the caller see the error.
+        for (const m of taken) { built.delete(m); releaseShared(m) }
+        for (const e of entries) e.mesh.material = tiers[current]?.get(e.mesh) ?? e.source
+        throw error
+      }
       set = new Map(entries.map(e => [e.mesh, e.mesh.material as T.Material]))
       for (const m of set.values()) built.add(m)
       tiers[tier] = set
@@ -796,7 +826,9 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
       refresh()
     } else if (id === vehicleShading.def.id || id === paintGloss.def.id) refresh()
   })
-  refresh()
+  // A first build that fails leaves nothing behind: no detail callback or settings listener for a
+  // vehicle whose caller never got the disposer (use() has already given back what it took).
+  try { refresh() } catch (error) { detach(); unsubscribe(); throw error }
   return () => {
     detach(); unsubscribe(); endWarm('cancelled'); releaseKept()
     // Shared materials go back to the pool, and the vehicle's own plain set goes back on its
