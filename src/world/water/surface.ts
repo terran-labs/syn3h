@@ -506,21 +506,33 @@ export function buildRiverSurface(
   if (half > inner) offsets.push(half)
   const across = [...offsets.slice(1).reverse().map((o) => -o), ...offsets]
   const cols = across.length
-  // Resample along the path.
-  const path: { x: number; y: number; z: number; slope: number }[] = []
+  // Resample along the path. Each cross-section lies square to its stretch, and at a joint along
+  // the bisector of the two stretches, whatever the step: exactly as physics reads the river
+  // (lava.ts riverStripAt), so the two agree across the width at every quality.
+  const path: { x: number; y: number; z: number; slope: number; dx: number; dz: number }[] = []
+  const unit = (i: number) => {
+    const a = points[i], b = points[i + 1], l = Math.hypot(b.x - a.x, b.z - a.z)
+    return l > 1e-9 ? [(b.x - a.x) / l, (b.z - a.z) / l] : null
+  }
+  let before: number[] | null = null
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i]
     const b = points[i + 1]
     const run = Math.hypot(b.x - a.x, b.z - a.z)
     const slope = run > 0 ? Math.max(0, a.y - b.y) / run : 0
+    const here = unit(i)
+    if (!here) continue
+    let jx = here[0], jz = here[1]
+    if (before) { const nx = before[0] + here[0], nz = before[1] + here[1], l = Math.hypot(nx, nz); if (l > 1e-6) { jx = nx / l; jz = nz / l } }
     const n = Math.max(1, Math.ceil(run / step))
     for (let k = 0; k < n; k++) {
       const t = k / n
-      path.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t, slope })
+      path.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t, slope, dx: k === 0 ? jx : here[0], dz: k === 0 ? jz : here[1] })
     }
+    before = here
   }
   const last = points[points.length - 1]
-  path.push({ x: last.x, y: last.y, z: last.z, slope: path.length ? path[path.length - 1].slope : 0 })
+  path.push({ x: last.x, y: last.y, z: last.z, slope: path.length ? path[path.length - 1].slope : 0, dx: before?.[0] ?? 1, dz: before?.[1] ?? 0 })
 
   // Where the river breaks: the change of slope along it, over about RIVER_CHURN_RUN metres either
   // side. A lip (gentle into steep), the foot of a fall (steep into gentle) and a step in a
@@ -546,8 +558,8 @@ export function buildRiverSurface(
     const p = path[i]
     const prev = path[Math.max(0, i - 1)]
     const next = path[Math.min(path.length - 1, i + 1)]
-    const dx = next.x - prev.x
-    const dz = next.z - prev.z
+    const dx = p.dx
+    const dz = p.dz
     const len = Math.hypot(dx, dz) || 1
     if (i) distance += Math.hypot(p.x - prev.x, p.z - prev.z)
     // Smooth the slope over neighbours so white water does not flicker segment to segment.
