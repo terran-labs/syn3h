@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { PerspectiveCamera } from 'three/webgpu'
 import { params } from '../../shared/params'
-import { ChaseCamera, cameraWheelNotches, camZoomSpeed } from '../../src/core/ChaseCamera'
+import { ChaseCamera, cameraWheelNotches, camZoomSpeed, zoomLimits } from '../../src/core/ChaseCamera'
 import type { Game } from '../../src/core/Game'
 import type { Terrain } from '../../src/world/Terrain'
 
@@ -52,6 +52,21 @@ describe('proportional camera zoom', () => {
     expect(params.get('camera.distance')!.value).toBe(0)
     chase.zoom(NaN)
     expect(params.get('camera.distance')!.value).toBe(0)
+    chase.dispose()
+  })
+  // Bug it catches: a pinch or the wheel taking the chase camera inside the car or out of sight.
+  it('stops at each vehicle\'s near and far limits, and remembers the distance for the session', () => {
+    const { chase } = harness()
+    const set = (kind: string) => (chase as unknown as { vehicle: { kind: string } | null }).vehicle = { kind }
+    set('buggy'); params.set('camera.distance', 13.9)
+    for (let i = 0; i < 10; i++) chase.zoom(100)
+    expect(params.get('camera.distance')!.value).toBeCloseTo(zoomLimits('buggy')[1])
+    set('jet')
+    for (let i = 0; i < 40; i++) chase.zoom(100)
+    expect(params.get('camera.distance')!.value).toBeCloseTo(zoomLimits('jet')[1])
+    for (let i = 0; i < 80; i++) chase.zoom(-100)
+    expect(params.get('camera.distance')!.value).toBeCloseTo(zoomLimits('jet')[0])
+    if (typeof sessionStorage !== 'undefined') expect(Number(sessionStorage.getItem('syn3h.cameraDistance'))).toBeCloseTo(zoomLimits('jet')[0])
     chase.dispose()
   })
   it('keeps scope and roam units while scaling their fractional deltas', () => {
