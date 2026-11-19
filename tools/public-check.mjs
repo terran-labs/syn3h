@@ -12,6 +12,7 @@
  *  4. King of the Hill: A alone in the zone gets 2 points within 10 s from the room's own clock;
  *  5. A's socket is closed under it and A rejoins as the same player, still seen by B;
  *  6. A leaves and the room tells B (after the rejoin grace).
+ * SYN3H_CHECK_OLD_VERSION=<version> loads the first page from that frozen build, for a mixed room.
  * SYN3H_CHECK_TOLERATE_DEVICE_LOSS=1 (the hosted run on GitHub's GPU-less runners, where WebGPU
  * loses its device) lets "no page errors" pass over exactly the WebGPU device-loss messages,
  * printing each one it passed over; any other page error still fails.
@@ -51,7 +52,10 @@ async function open(name) {
     ws.on('close', () => consoleLines.push({ name, at: Date.now(), type: 'websocket-close', text: '' }))
     ws.on('socketerror', (e) => consoleLines.push({ name, at: Date.now(), type: 'websocket-error', text: String(e) }))
   })
-  await page.goto(`${base}?room=${room}&name=${name}&autoplay=1`, { waitUntil: 'load' })
+  // SYN3H_CHECK_OLD_VERSION=<version> loads Alice from that frozen build (?v=), so an older
+  // client is checked against the newly deployed room: a protocol change must not strand it.
+  const old = name === 'Alice' && process.env.SYN3H_CHECK_OLD_VERSION ? `&v=${process.env.SYN3H_CHECK_OLD_VERSION}` : ''
+  await page.goto(`${base}?room=${room}&name=${name}&autoplay=1${old}`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.syn3hNet?.id > 0 && window.syn3h?.player, null, { timeout: 60000 }).catch(async (error) => {
     // Say what the page had got to, not only that it timed out.
     const state = await page.evaluate(() => ({ boot: document.documentElement.dataset.boot ?? null, backend: window.syn3h?.game?.backend ?? null, net: window.syn3hNet?.id ?? null, player: !!window.syn3h?.player })).catch(() => null)

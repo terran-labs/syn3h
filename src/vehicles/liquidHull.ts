@@ -97,7 +97,13 @@ export const HULL_TUNING = { lagBase: 0.02, lagScale: 0.12, bowLift: 0.5, waddle
 
 export const HULL = { x: 1.0, z: 1.5, bottom: -0.35, height: 0.85 }
 
-const corner = new THREE.Vector3(), q = new THREE.Quaternion(), fwd = new THREE.Vector3(), up = new THREE.Vector3(), side = new THREE.Vector3(), torque = new THREE.Vector3(), worldUp = new THREE.Vector3(0, 1, 0), com = new THREE.Vector3()
+/**
+ * The righting moment of a capsized hull: below `below` (the up axis's height) the liquid's lift
+ * acts `arm` metres off the centre of mass, rolling it back over. See applyHull.
+ */
+export const CAPSIZE = { below: 0.3, arm: 0.6 }
+
+const corner = new THREE.Vector3(), q = new THREE.Quaternion(), fwd = new THREE.Vector3(), up = new THREE.Vector3(), side = new THREE.Vector3(), torque = new THREE.Vector3(), roll = new THREE.Vector3(), worldUp = new THREE.Vector3(0, 1, 0), com = new THREE.Vector3()
 const flow = { x: 0, z: 0 }
 const f = { x: 0, y: 0, z: 0 }
 
@@ -247,6 +253,17 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
   // Righting: a buoyant hull floats right way up. Weak, so it rocks; enough to undo a flip.
   const mean = total / 4
   torque.copy(up).cross(worldUp).multiplyScalar(m * 6 * mean * (up.y < 0.3 ? 3 : 1))
+  // Capsized: the buggy's weight sits low in its chassis, so upside down its centre of mass
+  // rides above the hull's centre of buoyancy and the liquid rolls it back over, harder the
+  // more the liquid lifts it. Without this a flipped hull in lava, which floats high, rested
+  // on its roof for good (the owner's report, 18 November 2026). It does not vanish on the
+  // roof itself, where the lean above does: there it rolls over sideways, about the nose.
+  if (up.y < CAPSIZE.below) {
+    roll.copy(up).cross(worldUp)
+    const sign = Math.sign(roll.dot(fwd)) || 1
+    roll.addScaledVector(fwd, sign * 0.3).normalize()
+    torque.addScaledVector(roll, buoyancy * m * g * mean * CAPSIZE.arm)
+  }
   const w = body.angvel()
   body.addTorque({ x: torque.x - w.x * m * 1.2 * mean, y: -w.y * m * 0.3 * mean * Math.min(2, p.thickness), z: torque.z - w.z * m * 1.2 * mean }, true)
   return s.axle

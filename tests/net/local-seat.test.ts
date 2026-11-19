@@ -47,7 +47,6 @@ describe('LocalSeat', () => {
     seat.bounds.slot = 5
     seat.swap('tank')
     expect(seat.bounds.slot).toBe(5)
-    expect(seat.rescue.slot).toBe(5)
   })
 
   it('does nothing when handed the vehicle it already has', () => {

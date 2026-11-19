@@ -1887,6 +1887,7 @@ export class Shell implements System {
     this.updateGear()
     this.gearSelector.update(this.element.classList.contains('is-focus'))
     this.accessories.update(this.drivenVehicle)
+    this.touch.setFlipReady(Boolean(this.drivenVehicle?.canFlip))
     if (this.inspector.open) this.updateGI()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')

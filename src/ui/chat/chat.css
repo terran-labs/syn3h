@@ -7,7 +7,7 @@
             own vehicle is there): at 1280 wide it ends 100 px short of it.
    phone    on the left under the speed readout; it never takes a touch. */
 .chat-strip {
-  position: fixed; z-index: 22; left: 242px; bottom: max(16px, env(safe-area-inset-bottom)); width: clamp(260px, calc(50vw - 352px), 360px);
+  position: fixed; z-index: 22; left: 242px; bottom: var(--edge-bottom); width: clamp(260px, calc(50vw - 352px), 360px);
   display: flex; flex-direction: column; gap: 3px; pointer-events: none; transition: opacity .4s ease;
   color: var(--s3-ink, #f4f4f4); font: 400 13.5px/1.35 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif;
 }
@@ -18,9 +18,9 @@
 .chat-strip .chat-line.is-leaving { opacity: 0; }
 .chat-strip .chat-time { display: none; }
 .chat-strip .chat-name { pointer-events: none; }
-.syn3h-shell.has-touch .chat-strip { left: 12px; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 250px); width: calc(100% - 84px); font-size: 12.5px; }
+.syn3h-shell.has-touch .chat-strip { left: var(--edge-left); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 250px); width: calc(100% - 84px); font-size: 12.5px; }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .syn3h-shell.has-touch .chat-strip { left: max(20px, env(safe-area-inset-left)); top: 150px; bottom: auto; width: min(280px, 33vw); }
+  .syn3h-shell.has-touch .chat-strip { left: var(--edge-left); top: 150px; bottom: auto; width: min(280px, 33vw); }
   .syn3h-shell.has-touch .chat-strip.is-left-hand { left: max(76px, calc(env(safe-area-inset-left) + 64px)); }
 }
 /* While the sidebar is open the strip is not needed: the card is there. */

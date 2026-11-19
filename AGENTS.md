@@ -77,3 +77,36 @@ that fails because someone improved the game is a cost, and we stop paying it.
    has needed editing in most changes to its subject, rewrite it as an invariant or
    remove it. Slow tests (over ten seconds) need a reason to be in the blocking suite.
 
+
+## Game principle: nothing but physics moves a player for where they drove
+
+Set by the owner on 18 November 2026, after the game set his buggy upright in a lava pool
+he had fallen into on v26.11.1802: "This is a non-violent game. There is no death... It's
+about exploration."
+
+**The game never moves, resets or respawns a player's vehicle as a consequence of where
+they drove.** Lava, deep water, a fall, being stuck or lying upside down are places to be
+and to get out of, not failures the game repairs. In practice:
+
+- Lava and water slow, float, sink and heat a vehicle by physics. Nothing teleports a
+  player out, and every vehicle can leave a pool under its own power (a jet's lift climbs
+  through lava; a capsized buggy floats back onto its wheels). King of the Hill counts a player in lava as off the hill until they drive
+  out; it never sends them to their pad.
+- Automatic uprighting (`Vehicle.uprightRescue`) never fires in or over lava or water. On
+  dry ground it stays, pending the owner's decision.
+- The player's own controls are allowed to move them: Flip upright (the U key, and FLIP in
+  BRAKE's place on touch, both offered only while it can act), and the Zorb. So is in-fiction help by physics: bots that tow a stuck player out
+  with a cord, and the player's own grapple (the rescue rework the owner approved on
+  17 November 2026).
+- A reload resumes the saved pose, in liquid too. A rebuild of the same world re-seats the
+  vehicle where it is, on the ground or the liquid's surface, whichever is higher. Only
+  entering a different world starts at a spawn pad.
+- The nets that remain (falling below the world, a non-finite position, tunnelling under the
+  ground) are for broken states only. Each one firing is a bug: it is logged to the console
+  and the room server's log (`src/core/rescueLog.ts`).
+- Bots may hop themselves back to a pad; a bot hop never applies to a vehicle a person drives.
+
+`tests/vehicles2/no-reset.test.ts` holds this: every vehicle held in deep lava and deep water
+for a minute, and a buggy on its roof in shallow lava and water, is moved by nothing but
+physics; and every vehicle leaves a lava or water pool from its surface and its bed within the
+pool's radius at walking pace.

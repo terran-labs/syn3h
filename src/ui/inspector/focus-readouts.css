@@ -45,6 +45,6 @@
 @media (max-width: 700px) and (orientation: portrait) {
   /* The block ends just above the phone toast (30% + 30 px), the Jet's THRUST line included. */
   .syn3h-shell .focus-hud :is(.fh-left, .fh-right) { --fh-number: 24px; top: calc(30% - 26px); }
-  .syn3h-shell .focus-hud .fh-left { right: auto; left: max(18px, env(safe-area-inset-left)); text-align: left; justify-items: start; }
-  .syn3h-shell .focus-hud .fh-right { left: auto; right: max(18px, env(safe-area-inset-right)); text-align: right; justify-items: end; }
+  .syn3h-shell .focus-hud .fh-left { right: auto; left: var(--edge-left); text-align: left; justify-items: start; }
+  .syn3h-shell .focus-hud .fh-right { left: auto; right: var(--edge-right); text-align: right; justify-items: end; }
 }

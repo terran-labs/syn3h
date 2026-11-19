@@ -14,7 +14,10 @@
  * which every newly rolled or galaxy world carries; a world with name seed 0 is named by its
  * terrain seed, so there a seed change is a new world.
  */
+import * as THREE from 'three'
 import { currentPlanet, currentWorldName } from '../world/planets'
+import { SPAWN_CLEARANCE } from '../world/terrain/spawn'
+import type { Terrain } from '../world/Terrain'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Input } from './Input'
 
@@ -52,4 +55,38 @@ export function freshVehicle(
   vehicle.resetForWorld()
   // An arrival still holding the vehicle (a switch a moment ago) would pin it to the old world.
   also.materialize?.cancel(vehicle)
+}
+
+/**
+ * Where a vehicle goes when the same world is rebuilt under it (a slider, a quality change,
+ * the terrain worker finishing): straight up or down at the same x and z, onto the ground or
+ * the liquid's surface, whichever is higher, at the spawn clearance, keeping its heading. Never
+ * to a spawn pad: the player has not gone anywhere (the owner's rule of 18 November 2026,
+ * see AGENTS.md). A sea-level glide is not a rebuild and moves nobody.
+ */
+export function reseatPosition(at: { x: number; z: number }, terrain: Pick<Terrain, 'heightAt' | 'liquidHeightAt'>): THREE.Vector3 {
+  const ground = terrain.heightAt(at.x, at.z)
+  const liquid = terrain.liquidHeightAt?.(at.x, at.z) ?? -Infinity
+  return new THREE.Vector3(at.x, Math.max(ground, Number.isFinite(liquid) ? liquid : -Infinity) + SPAWN_CLEARANCE, at.z)
+}
+
+/** The heading a vehicle faces, from its forward axis on the ground (its up axis when nose-down). */
+export function headingOf(r: { x: number; y: number; z: number; w: number }): number {
+  const f = new THREE.Vector3(0, 0, -1).applyQuaternion(new THREE.Quaternion(r.x, r.y, r.z, r.w))
+  if (f.x * f.x + f.z * f.z < 0.01) f.set(0, 1, 0).applyQuaternion(new THREE.Quaternion(r.x, r.y, r.z, r.w)).negate()
+  return Math.atan2(-f.x, -f.z)
+}
+
+/**
+ * Put the player's vehicle on a rebuilt terrain: a different world starts at the spawn pad,
+ * the same world re-seats it in place (`reseatPosition`).
+ */
+export function seatAfterRebuild(vehicle: Vehicle, terrain: Pick<Terrain, 'heightAt' | 'liquidHeightAt' | 'spawnPoint'>, entered: boolean, slot: number): void {
+  if (entered) {
+    const s = terrain.spawnPoint(slot)
+    vehicle.teleport(s.position, s.heading)
+    return
+  }
+  const t = vehicle.body.translation()
+  vehicle.teleport(reseatPosition(t, terrain), headingOf(vehicle.body.rotation()))
 }

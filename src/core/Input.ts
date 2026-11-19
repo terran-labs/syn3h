@@ -51,6 +51,7 @@ export class Input {
         e.preventDefault()
       }
       if (e.code === 'KeyX') this.toggleZorb()
+      if (e.code === 'KeyU') this.requestFlip()
     })
     target.addEventListener('keyup', (e) => this.keys.delete(e.code))
     target.addEventListener('blur', () => this.keys.clear())
@@ -124,7 +125,21 @@ export class Input {
     Object.assign(this.state, emptyInput())
     for (const key of Object.keys(this.external) as (keyof typeof this.external)[]) delete this.external[key]
     this.mouseFire = false
+    this.flipRequested = false
   }
+
+  /** Ask for Flip upright (the U key, or a touch button): the local vehicle takes it next step. */
+  requestFlip(): void {
+    this.flipRequested = true
+  }
+
+  /** Whether Flip upright was asked for since the last call. The local vehicle calls this each step. */
+  takeFlip(): boolean {
+    const asked = this.flipRequested
+    this.flipRequested = false
+    return asked
+  }
+  private flipRequested = false
 
   /** Switch zorb mode. For the X key and a future touch button. */
   toggleZorb(): void {
