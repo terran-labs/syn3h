@@ -119,8 +119,8 @@ function waterPath(depth: THREE.Node<'float'>) {
  * mirrors the sky more the shallower the view, so the far sea is a mirror and the water at
  * your wheels is a window. The same graph on both backends and every quality tier.
  */
-export function waterOpacityNode(depth: THREE.Node<'float'>, foam: THREE.Node<'float'>) {
-  const clarity = uniform(waterClarity.value).setGroup(renderGroup).onRenderUpdate(() => waterClarity.value)
+export function waterOpacityNode(depth: THREE.Node<'float'>, foam: THREE.Node<'float'>, clarityScale = 1) {
+  const clarity = uniform(waterClarity.value * clarityScale).setGroup(renderGroup).onRenderUpdate(() => waterClarity.value * clarityScale)
   const view = normalize(cameraPosition.sub(positionWorld))
   const kept = waterPath(depth).mul(-2.3).div(clarity).exp()
   const mirror = float(1).sub(abs(view.y)).pow(5).mul(0.98).add(0.02)
@@ -395,7 +395,8 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
     riverFade = smoothstep(0.02, 0.35, depth).mul(smoothstep(0, RIVER_SKIRT, edge))
     foam = max(foam, white.mul(smoothstep(0.05, 0.3, depth)))
   }
-  material.opacityNode = waterOpacityNode(depth, foam).mul(riverFade)
+  // A running river is clearer than standing water: twice the clarity, so its bed shows.
+  material.opacityNode = waterOpacityNode(depth, foam, mode === 'river' ? 2 : 1).mul(riverFade)
   const above = mix(lifted, color(FOAM), foam.mul(0.9))
 
   // From below: Snell's window. The sky shows through a cone round the surface normal (so it
