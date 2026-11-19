@@ -205,7 +205,7 @@ export class Materialize implements System {
     if(this.looks.length){
       for(const look of this.looks)look.setLevel(level)
     }else{
-      this.looks=Array.from({length:LOOKS},()=>new ArrivalLook(level))
+      this.looks=Array.from({length:LOOKS},()=>new ArrivalLook(level,this.terrain))
       for(const look of this.looks)this.game.scene.add(look.object)
     }
   }
@@ -352,7 +352,7 @@ export class Materialize implements System {
       const c=look.centre
       const surface=this.surfaceAt(c.x,c.z)
       const distance=this.game.camera?this.game.camera.position.distanceTo(c):0
-      look.update(Math.max(0,dt),this.progress.get(look)??1,surface,size,intensity,distance,this.surfaceAt)
+      look.update(Math.max(0,dt),this.progress.get(look)??1,surface,size,intensity,distance)
     }
   }
 

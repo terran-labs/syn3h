@@ -24,6 +24,7 @@
  * still. Graphics level 0 uses one noise octave and a coarser sphere.
  */
 import * as T from 'three/webgpu'
+import type {Terrain} from '../../world/Terrain'
 import {abs,clamp,dot,exp,float,mix,mx_fractal_noise_float,normalView,positionLocal,positionViewDirection,positionWorld,renderGroup,smoothstep,time,uniform,uv,vec3} from 'three/tsl'
 import {hotExposureNode} from '../skins/hotExposure'
 import {vehicleNightAmount} from '../skins/nightReadability'
@@ -41,6 +42,7 @@ const CANCEL_SECONDS = .25
 const FAR_SCALE = 1 / 25
 /** At most this many of the vehicle's meshes are drawn again as the silhouette. */
 const MAX_GHOSTS = 32
+const FLASH_SEGMENTS = 16
 
 /**
  * 1 in daylight, 0 at night. By day the cloud is deeper coloured and more opaque, since glow
@@ -165,6 +167,7 @@ export class ArrivalLook {
   private readonly flash: T.Mesh<T.PlaneGeometry, T.MeshBasicNodeMaterial>
   private readonly flashStrength = uniform(0)
   private sampledReach = 0
+  private sampleAge = 0
   private releaseAge = -1
   private cancelAge = -1
   /** True between start() and the end of the release or cancel fade. */
@@ -177,7 +180,7 @@ export class ArrivalLook {
    */
   departing = false
 
-  constructor(private level: number) {
+  constructor(private level: number, private readonly terrain: Terrain) {
     this.u = {
       progress: uniform(0), release: uniform(0), strength: uniform(1), motion: uniform(1), front: uniform(0), far: uniform(0),
       accent: uniform(new T.Color(.5, .85, 1)), body: uniform(new T.Color(.2, .4, .8)),
@@ -195,7 +198,7 @@ export class ArrivalLook {
     flashMaterial.colorNode = vec3(.055, .78, 1).mul(hotExposureNode())
     const falloff = float(1).sub(smoothstep(0, 1, uv().mul(2).sub(1).length()))
     flashMaterial.opacityNode = falloff.pow(2).mul(this.flashStrength)
-    this.flash = new T.Mesh(new T.PlaneGeometry(2, 2, 12, 12).rotateX(-Math.PI / 2), flashMaterial)
+    this.flash = new T.Mesh(new T.PlaneGeometry(2, 2, FLASH_SEGMENTS, FLASH_SEGMENTS).rotateX(-Math.PI / 2), flashMaterial)
     this.flash.renderOrder = 3
     this.flash.visible = level === 2
     const column = new T.CylinderGeometry(1, 1, 1, 16, 1, true).translate(0, .5, 0)
@@ -241,7 +244,7 @@ export class ArrivalLook {
   }
 
   /** Per frame while active. `progress` is the hold's share elapsed; `surface` the ground or liquid height under the centre. */
-  update(dt: number, progress: number, surface: number, size: number, intensity: number, distance = 0, surfaceAt?: (x: number, z: number) => number): void {
+  update(dt: number, progress: number, surface: number, size: number, intensity: number, distance = 0): void {
     if (!this.active) return
     let strength = intensity
     if (this.cancelAge >= 0) {
@@ -273,9 +276,9 @@ export class ArrivalLook {
     const reach = size * 7
     this.ground.position.set(this.centre.x, surface + .12, this.centre.z)
     this.ground.scale.set(reach, 1, reach)
-    if (this.flash.visible && surfaceAt) {
+    if (this.flash.visible) {
       this.flashStrength.value = strength * (r > 0 ? 1.8 * (1 - r) ** 2 : .35 + .65 * p)
-      this.placeFlash(size * 10, surface, surfaceAt)
+      this.placeFlash(size * 10, surface, dt)
     }
     this.beam.position.set(this.centre.x, surface, this.centre.z)
     const distant = this.u.far.value as number
@@ -285,20 +288,37 @@ export class ArrivalLook {
     this.u.front.value = bottom + (this.high - this.low + .4) * ease(p)
   }
 
-  /** A stationary hold reuses its sampled surface until it moves or changes size. */
-  private placeFlash(reach: number, surface: number, surfaceAt: (x: number, z: number) => number): void {
+  /** Align the patch edges and diagonals with the visible terrain triangles, including coarser LODs. */
+  private placeFlash(reach: number, surface: number, dt: number): void {
     const {x, z} = this.centre
     const mesh = this.flash
-    if (reach === this.sampledReach && mesh.position.x === x && mesh.position.z === z && mesh.position.y === surface) return
+    this.sampleAge += dt
+    // Resample stationary arrivals too: waves and the terrain mesh can move under the flash.
+    if (this.sampleAge < .1 && reach === this.sampledReach && mesh.position.x === x && mesh.position.z === z && mesh.position.y === surface) return
+    this.sampleAge = 0
     this.sampledReach = reach
     mesh.position.set(x, surface, z)
-    mesh.scale.set(reach, 1, reach)
-    const vertices = mesh.geometry.attributes.position
-    for (let i = 0; i < vertices.count; i++) {
-      const height = surfaceAt(x + reach * vertices.getX(i), z + reach * vertices.getZ(i))
-      vertices.setY(i, height - surface + .16)
+    const terrain = this.terrain
+    const minPitch = 2 * reach / (FLASH_SEGMENTS - 1)
+    const cell = terrain.renderCellSize ?? minPitch
+    const pitch = cell / 2 ** Math.floor(Math.log2(cell / minPitch))
+    const origin = -terrain.size / 2
+    const left = origin + pitch * Math.floor((x - reach - origin) / pitch)
+    const back = origin + pitch * Math.floor((z - reach - origin) / pitch)
+    const {position, uv: coords} = mesh.geometry.attributes
+    for (let row = 0; row <= FLASH_SEGMENTS; row++) {
+      for (let col = 0; col <= FLASH_SEGMENTS; col++) {
+        const wx = left + col * pitch, wz = back + row * pitch
+        const ground = terrain.renderHeightAt?.(wx, wz) ?? terrain.heightAt(wx, wz)
+        const liquid = terrain.liquidHeightAt?.(wx, wz) ?? -Infinity
+        const ice = liquid === -Infinity && terrain.surfaceAt?.(wx, wz) === 'ice' ? terrain.heightAt(wx, wz) : -Infinity
+        const height = Math.max(ground, ice, liquid)
+        const i = row * (FLASH_SEGMENTS + 1) + col
+        position.setXYZ(i, wx - x, height - surface + .12, wz - z)
+        coords.setXY(i, .5 + (wx - x) / (2 * reach), .5 + (wz - z) / (2 * reach))
+      }
     }
-    vertices.needsUpdate = true
+    position.needsUpdate = coords.needsUpdate = true
   }
 
   release(): void {
