@@ -200,7 +200,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   // The sun is read at render time, after the state below exists.
   // Fog banks (src/world/weather/fogMap.ts): built from the terrain and seed, rebuilt with it.
   const banks = createFogBanks(_terrain)
-  const haze = heightFog(max(fogColor, vec3(0.0)), fogDensityU, { direction: () => sunDirection, color: () => sunColor, lit: airLit }, banks.input)
+  const haze = heightFog(max(fogColor, vec3(0.0)), fogDensityU, { direction: () => sunDirection, color: () => sunColor, lit: airLit, sky: () => hemi.color }, banks.input)
   ;(scene as unknown as { fogNode: unknown }).fogNode = weatherFog(haze)
 
   // State ---------------------------------------------------------------------------------
