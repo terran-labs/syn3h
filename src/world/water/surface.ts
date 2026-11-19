@@ -19,17 +19,22 @@
  */
 import * as THREE from 'three/webgpu'
 import {
-  abs, attribute, cameraPosition, cameraViewMatrix, color, cos, faceDirection, float, max, mix, modelWorldMatrix,
+  abs, attribute, cameraPosition, select, cameraViewMatrix, color, cos, faceDirection, float, max, mix, modelWorldMatrix,
   mx_noise_float, normalize, positionGeometry, positionView, positionLocal, positionWorld, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4, renderGroup,
 } from 'three/tsl'
+// The fragment's colour as the scene fog reads it (hazeCurve).
+import { output as fogInput } from 'three/tsl'
 import { SEA_COMPONENTS as WAVE_COUNT } from './seaWaves'
 import { rippleField } from './ripples'
 import { waterChop, waterClarity, waterReflection, waterWaveVisual } from './params'
 import { clipmapNodes } from './clipmap'
+import { bentGrazing, curveInverseRadius } from '../curve'
 import { NO_BED, type WaterBed } from './bed'
 import { cameraInWaterNode, liquidDaylightNode } from './daylight'
+import { airFogOf } from './underwater'
 export { buildBedTexture, type WaterBed } from './bed'
 import { prevailingWindStrength } from '../weather'
+import { fogLayersOf } from '../weather/fog'
 
 /** A float node that sums are folded into. TSL's operator typings do not narrow through a loop. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -103,7 +108,8 @@ const IOR2 = 1.333 * 1.333
 
 /** Metres of water a sight line crosses to reach the bed: deeper, and longer when oblique. */
 function waterPath(depth: THREE.Node<'float'>) {
-  const up = abs(normalize(cameraPosition.sub(positionWorld)).y)
+  // The true angle of the sight line to the surface as it is drawn (round planet included).
+  const up = abs(bentGrazing(positionWorld, cameraPosition)).min(1)
   // The refracted ray is never flatter than 41 degrees below the surface, so the path is at
   // most one and a half times the depth however low the camera sits.
   const cosBelow = float(1).sub(float(1).sub(up.mul(up)).div(IOR2)).sqrt()
@@ -119,15 +125,58 @@ function waterPath(depth: THREE.Node<'float'>) {
  * mirrors the sky more the shallower the view, so the far sea is a mirror and the water at
  * your wheels is a window. The same graph on both backends and every quality tier.
  */
-export function waterOpacityNode(depth: THREE.Node<'float'>, foam: THREE.Node<'float'>, clarityScale = 1) {
+export function waterOpacityNode(depth: THREE.Node<'float'>, foam: THREE.Node<'float'>, clarityScale = 1, behindIsAbove: THREE.Node<'float'> = float(0)) {
   const clarity = uniform(waterClarity.value * clarityScale).setGroup(renderGroup).onRenderUpdate(() => waterClarity.value * clarityScale)
   const view = normalize(cameraPosition.sub(positionWorld))
   const kept = waterPath(depth).mul(-2.3).div(clarity).exp()
-  const mirror = float(1).sub(abs(view.y)).pow(5).mul(0.98).add(0.02)
-  const above = max(float(1).sub(float(1).sub(mirror).mul(kept)), foam.mul(0.9))
+  // Fresnel from the true grazing angle: on a small planet the near surface is tilted toward the
+  // camera, so it mirrors less than the flat angle says.
+  const grazing = bentGrazing(positionWorld, cameraPosition)
+  const mirror = float(1).sub(abs(grazing).min(1)).pow(5).mul(0.98).add(0.02)
+  // Whole where the straight sight line leaves the water without meeting the bed (sightLineMeetsBed).
+  const above = max(max(float(1).sub(float(1).sub(mirror).mul(kept)), foam.mul(0.9)), behindIsAbove)
   // From underwater, a clear Snell window and nearly opaque reflection outside its cone.
   const window = smoothstep(SNELL_COS - .14, SNELL_COS + .06, view.y.negate())
   return view.y.greaterThanEqual(0).select(above, mix(float(.98), float(.12), window))
+}
+
+/**
+ * Does the straight sight line through this pixel get below the bed before it comes back out of
+ * the water? 1 when it does (what alpha blending shows behind the surface is the bed, as the
+ * opacity assumes), 0 when it does not. Then what lies behind is above the water, and the water
+ * must be whole. The owner, on v26.11.1801: "why can I see these distant hills underneath the
+ * ocean?" On the drawn round planet (curve.ts) a line entering shallow water at the edge of a
+ * drop-off runs on over deep water, comes back out of the curving surface and meets the hills.
+ *
+ * Exact on the drawn sphere: in the plane through the camera, the pixel and the planet's centre,
+ * the line from its entry is stepped at eight distances growing by doubles, from where a flat bed
+ * at this pixel's depth would be met out to where the line leaves the water (2 R sin a). At each
+ * the line's height over the sphere is compared with the bed under its ground point. Eight bed
+ * fetches per pixel; no extra pass. Always 1 on a flat world, where the line never comes back out.
+ * tools/sea-see-through-scan.ts casts the same test over real terrain.
+ */
+function sightLineMeetsBed(surfaceY: THREE.Node<'float'>, depth: THREE.Node<'float'>, bedAt: (xz: THREE.Node<'vec2'>) => THREE.Node<'float'>) {
+  const invR = curveInverseRadius
+  const R = float(1).div(invR.max(1e-9))
+  const sinA = bentGrazing(positionWorld, cameraPosition).max(1e-3)
+  const chord = sinA.mul(2).mul(R)
+  const flat = vec2(positionWorld.x, positionWorld.z).sub(vec2(cameraPosition.x, cameraPosition.z))
+  const d = flat.length(), dir = flat.div(d.max(1e-4))
+  // The entry as drawn, the camera at (0, camera height) over its own ground point, the centre at (0, -R).
+  const t0 = d.mul(invR).min(Math.PI), r0 = R.add(surfaceY)
+  const ex = r0.mul(sin(t0)), ey = r0.mul(cos(t0)).sub(R)
+  const ray = vec2(ex, ey.sub(cameraPosition.y)), v = ray.div(ray.length().max(1e-6))
+  let best: Sum = float(-1e9)
+  let u: THREE.Node<'float'> = max(depth, 0.05).div(sinA)
+  for (let k = 0; k < 8; k++) {
+    const s = u.min(chord.mul(0.95))
+    const px = ex.add(v.x.mul(s)), py = ey.add(v.y.mul(s))
+    const rho = vec2(px, py.add(R)).length(), t = px.atan(py.add(R))
+    const ground = vec2(cameraPosition.x, cameraPosition.z).add(dir.mul(R.mul(t)))
+    best = best.max(bedAt(ground).sub(rho.sub(R)))
+    u = u.mul(2)
+  }
+  return select(invR.lessThanEqual(0), float(1), smoothstep(0, 0.3, best))
 }
 
 /** Share of the scene's aerial haze the water takes at the camera, and the distances it eases over. */
@@ -140,7 +189,8 @@ export const WATER_HAZE = { near: 0.15, from: 300, to: 1600 }
  * toward the unfogged colour by `keep` is the same as applying the haze at f * (1 - keep). So
  * near the camera the water takes only WATER_HAZE.near of it, easing to all of it by
  * WATER_HAZE.to metres and at the horizon, where it meets the land's haze exactly. No change
- * while the camera is in the water (the medium there is the fog). With no scene fog (a lab,
+ * while the camera is in the water (the medium there is the fog). Under the weather fog
+ * (fogLayersOf), the curve eases only the height haze; fog banks apply in full. With no scene fog (a lab,
  * a test, a world built before Environment) this is exactly the default. It wraps whatever
  * fog node the material is compiled against, so a rebuilt Environment is picked up when its
  * new fog node recompiles the material.
@@ -154,7 +204,20 @@ export function hazeCurve(material: THREE.NodeMaterial): void {
     if (!builder.fogNode) return fogged
     const share = mix(float(WATER_HAZE.near), float(1), smoothstep(WATER_HAZE.from, WATER_HAZE.to, positionView.length()))
     const keep = float(1).sub(share).mul(float(1).sub(cameraInWaterNode))
-    return mix(fogged as THREE.Node<'vec4'>, output as THREE.Node<'vec4'>, keep)
+    const layers = fogLayersOf(airFogOf(builder.fogNode))
+    if (!layers) return mix(fogged as THREE.Node<'vec4'>, output as THREE.Node<'vec4'>, keep)
+    // The weather fog in its two layers: the height haze on the water's curve as above, and fog
+    // banks in full, so a bank lying on the sea shows on the sea. The scene fog runs first: an
+    // underwater fog node writes the colour seen through the water column into `output`, which
+    // the air fog then fogs. With no banks (bankFactor 0) this is the line above exactly; in
+    // the water it is the scene fog as before.
+    const whole = vec4(0).toVar()
+    whole.assign(fogged as THREE.Node<'vec4'>)
+    const plain = output as THREE.Node<'vec4'>
+    const hazed = mix(fogInput.rgb, layers.hazeColor as THREE.Node<'vec3'>, layers.hazeFactor as THREE.Node<'vec3'>)
+    const eased = mix(hazed, plain.rgb, keep)
+    const above = vec4(mix(eased, layers.bankColor as THREE.Node<'vec3'>, layers.bankFactor as THREE.Node<'float'>), plain.a)
+    return mix(above, whole, cameraInWaterNode)
   }
 }
 
@@ -396,7 +459,9 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
     foam = max(foam, white.mul(smoothstep(0.05, 0.3, depth)))
   }
   // A running river is clearer than standing water: twice the clarity, so its bed shows.
-  material.opacityNode = waterOpacityNode(depth, foam, mode === 'river' ? 2 : 1).mul(riverFade)
+  const bedAt = (xz: THREE.Node<'vec2'>) => bedMap.sample(xz.mul(bedFrame.x).add(bedFrame.y.add(0.5))).level(float(0)).r.add(bedFrame.z)
+  const behindIsAbove = float(1).sub(sightLineMeetsBed(surfaceY, depth, bedAt))
+  material.opacityNode = waterOpacityNode(depth, foam, mode === 'river' ? 2 : 1, behindIsAbove).mul(riverFade)
   const above = mix(lifted, color(FOAM), foam.mul(0.9))
 
   // From below: Snell's window. The sky shows through a cone round the surface normal (so it

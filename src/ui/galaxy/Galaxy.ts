@@ -1558,6 +1558,7 @@ export class Galaxy {
     // The sun's bright core, which labels keep clear of.
     const toSun = sub([0, 0, 0], view.eye), sunZ = Math.max(dot(toSun, view.forward), 0.001)
     this.sunScreen = { x: width * this.framing[0] + (dot(toSun, view.right) / (sunZ * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(toSun, view.up) / (sunZ * view.tan)) * short / 2, radius: Math.max(6, short * 0.02), depth: sunZ }
+    this.publishSun()
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
     this.options.onRest?.(this.pulses)
     // Arrival: a second and a half after choosing, whatever the frame rate.
@@ -1568,6 +1569,23 @@ export class Galaxy {
   private skipped: { pointer: number; screen: Galaxy['screen'] } | null = null
   /** Where the sun's core is on screen, as of the last frame drawn. */
   sunScreen: { x: number; y: number; radius: number; depth?: number } = { x: -1e4, y: -1e4, radius: 0 }
+  private sunPublished = { x: NaN, y: NaN }
+  /**
+   * While the loading veil is up, the veil's point of light (index.html, .boot-point) sits where
+   * this draws the sun, so the Big Bang leaves from the point: the sun's place goes on <html> as
+   * --sun-x and --sun-y, rewritten only when it moves by a quarter pixel (a resize, a rotation,
+   * the framing settling). The host fills the screen from its top left corner, so its
+   * coordinates are the page's. Once the veil has gone the point is gone, and nothing is written.
+   */
+  private publishSun(): void {
+    const root = document.documentElement
+    if (root.dataset.boot === 'done' || !root.hasAttribute('data-boot')) return
+    const { x, y } = this.sunScreen
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < -1e3) return
+    if (Math.abs(x - this.sunPublished.x) < 0.25 && Math.abs(y - this.sunPublished.y) < 0.25) return
+    this.sunPublished = { x, y }
+    root.style.setProperty('--sun-x', `${x.toFixed(2)}px`); root.style.setProperty('--sun-y', `${y.toFixed(2)}px`)
+  }
   private readonly markRig = new WordmarkRig()
   /** The planet glow (hoverGlow.ts), and what asks for it: the pointer, keyboard focus, a finger. */
   private readonly glow = new GlowState()

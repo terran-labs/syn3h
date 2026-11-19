@@ -57,6 +57,19 @@ export interface CameraVehicle extends Vehicle {
   ridePosition?: THREE.Object3D
   ridePos?: THREE.Object3D
 }
+/**
+ * How near and far the chase and orbit cameras may be brought, by vehicle (camera.distance, on
+ * top of the vehicle's own camOffset): the jet flies, so it may be watched from further off.
+ * The wheel and a touch pinch both stop at these; a distance chosen for one vehicle is kept and
+ * read within the next one's limits.
+ */
+export function zoomLimits(kind: string | undefined): readonly [number, number] {
+  if (kind === 'jet') return [3, 22]
+  if (kind === 'tank') return [2.5, 16]
+  return [1.5, 14]
+}
+/** The distance chosen this session: kept across reloads in this tab (sessionStorage), not for good. */
+const DISTANCE_KEY = 'syn3h.cameraDistance'
 const ease = (dt: number, rate: number) => 1 - Math.exp(-Math.max(0, dt) * rate)
 const clamp = THREE.MathUtils.clamp
 
@@ -177,6 +190,10 @@ export class ChaseCamera implements System {
 
   constructor(private readonly game: Game, private readonly terrain: Terrain) {
     if (typeof window === 'undefined') return
+    try {
+      const saved = Number(sessionStorage.getItem(DISTANCE_KEY))
+      if (sessionStorage.getItem(DISTANCE_KEY) !== null && Number.isFinite(saved)) params.set(camDistance.def.id, saved)
+    } catch { /* Storage is optional. */ }
     const listen = (target: EventTarget, type: string, handler: EventListener, options?: AddEventListenerOptions) => {
       target.addEventListener(type, handler, options)
       this.unbind.push(() => target.removeEventListener(type, handler, options))
@@ -225,11 +242,22 @@ export class ChaseCamera implements System {
     this.lastManual = this.elapsed
   }
 
-  /** Proportional wheel input, preserving scope and roam units and parameter ranges. */
+  /**
+   * Proportional wheel input (and a touch pinch, as wheel pixels), preserving scope and roam
+   * units and parameter ranges. The chase and orbit distance stops at the vehicle's limits
+   * (zoomLimits) and is remembered for the session.
+   */
   zoom(deltaY: number, deltaMode = 0): void {
     const param = this.scopeHeld ? camScope : Math.round(camMode.value) === 4 ? camRoamSpeed : camDistance
     const step = this.scopeHeld ? -0.25 : param === camRoamSpeed ? 1 : camZoomSpeed.value
-    params.set(param.def.id, param.value + cameraWheelNotches(deltaY, deltaMode) * step)
+    let next = param.value + cameraWheelNotches(deltaY, deltaMode) * step
+    if (param === camDistance) {
+      const [near, far] = zoomLimits(this.vehicle?.kind)
+      // A notch never crosses a limit; a distance already outside them (the panel's slider) only comes back toward them.
+      next = clamp(next, Math.min(near, param.value), Math.max(far, param.value))
+    }
+    params.set(param.def.id, next)
+    if (param === camDistance) try { sessionStorage.setItem(DISTANCE_KEY, String(params.get(param.def.id)?.value ?? next)) } catch { /* Storage is optional. */ }
   }
 
   /** Chooses shots while the vehicle drives itself. Started and stopped by Daydream's event. */
@@ -351,7 +379,7 @@ export class ChaseCamera implements System {
       this.direction.set(0, 0, -1).applyQuaternion(target.quaternion)
       this.yaw = Math.atan2(-this.direction.x, -this.direction.z); this.pitch = 0
       this.rotation.setFromEuler(this.euler.set(0, this.yaw, 0)); this.velocity.set(0, 0, 0)
-      this.distance = camDistance.value; this.speed = 0; this.lastManual = -Infinity
+      this.distance = clamp(camDistance.value, ...zoomLimits(vehicle?.kind)); this.speed = 0; this.lastManual = -Infinity
     }
     // Aim by a steadier velocity than the body's own: a wheel over a rock kicks the true one
     // about, and the view should not twitch with it. At walking pace the car's own nose is
@@ -362,7 +390,9 @@ export class ChaseCamera implements System {
     const speed = this.velocity.length(), mode = Math.round(camMode.value), first = mode === 1 || this.scopeHeld
     const flight = camFlight.value && Boolean(vehicle?.wingsOpen || vehicle?.wingOpen || vehicle?.kind === 'jet')
     this.speed = THREE.MathUtils.lerp(this.speed, speed, ease(dt, camVelocitySmoothing.value))
-    this.distance = THREE.MathUtils.lerp(this.distance, camDistance.value, ease(dt, camDistanceSmoothing.value))
+    // Within this vehicle's limits: a far jet distance becomes the buggy's furthest, and comes back for the jet.
+    const [near, far] = zoomLimits(vehicle?.kind)
+    this.distance = THREE.MathUtils.lerp(this.distance, clamp(camDistance.value, near, far), ease(dt, camDistanceSmoothing.value))
     this.pivot.copy(target.position)
     // A zorb ball is a larger clearance: keep the camera outside it (src/vehicles/zorb.ts).
     const offset = Math.max(vehicle?.camOffset ?? camOffset.value, vehicle?.zorb?.radius ?? 0)

@@ -487,6 +487,7 @@ export class Room {
         }
         break
       case 'freed':
+        if (this.koth.out[player.info.id]) logEvent('lava_freed', { room: this.tag, player: player.info.id })
         delete this.koth.out[player.info.id]
         break
       case 'rescued':
@@ -1123,6 +1124,8 @@ export class Room {
     const now = this.now()
     if (this.koth.out[id] && this.koth.out[id] * 1000 > now) return
     this.koth.out[id] = (now + (held ? HELD_STUCK_S : this.paramNumber(kothRespawnDelay.def)) * 1000) / 1000
+    // People only: the host's bots go in and out of lava far more often, and are not the record we need.
+    if (!player.info.bot) logEvent('lava_stuck', { room: this.tag, player: id, held })
     const contact = this.lastContact.get(id)
     this.lastContact.delete(id)
     const by = contact && now - contact.at <= KNOCK_WINDOW * 1000 ? this.byId(contact.by) : undefined

@@ -547,11 +547,13 @@ try {
   await b.waitForFunction((id) => window.syn3hNet.players.get(id)?.colors[0] === '#ff2200', idA, { timeout: 5000 }).catch(() => {})
   const infoA = await b.evaluate((id) => window.syn3hNet.players.get(id), idA)
   check('vehicle kind and colours reach B', infoA?.kind === 'buggy-syn3h' && infoA.colors[0] === '#ff2200' && infoA.colors[1] === '#00ffcc', infoA)
-  // Put B behind A, looking at it, so A's tag is on B's screen.
+  // Put B behind A, looking at it, so A's tag is on B's screen. 24 m back: at 14 the tag stood
+  // up by the heading line and the gear's explanation, which labels keep clear of by design
+  // (the left column's hard areas), and hid or showed depending on where the camera settled.
   await a.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(0); window.syn3h.player.teleport(s.position, 0) })
   await b.evaluate(() => {
     const s = window.syn3h.terrain.spawnPoint(0)
-    s.position.z += 14
+    s.position.z += 24
     s.position.y = window.syn3h.terrain.heightAt(s.position.x, s.position.z) + 1.5
     window.syn3h.player.teleport(s.position, 0)
   })
@@ -733,19 +735,23 @@ try {
       }, { zone, lavaAt })
       const sunk = await settle(async () => ({
         outB: await a.evaluate((id) => window.syn3hNet.game.koth.out[id] ?? 0, idB),
-        stuck: await b.evaluate(() => ({ count: window.syn3hNet.stats.stuck, visible: window.syn3h.player.object.visible, hud: document.getElementById('hud').textContent.match(/stuck in the lava[^\n]*/)?.[0] ?? null })),
+        // B's own line, from its own physics (the room's echo is for everyone else).
+        stuck: await b.evaluate(() => ({ count: window.syn3hNet.stats.stuck, visible: window.syn3h.player.object.visible, hud: document.getElementById('hud').textContent.match(/in the lava: off the hill[^\n]*/i)?.[0] ?? null })),
         visibleOnA: await a.evaluate((id) => window.syn3hNet.remotes.get(id)?.vehicle.object.visible === true, idB),
       }), (v) => v.stuck.count === stuckBase + 1 && v.stuck.visible && v.stuck.hud && v.outB > 0 && v.visibleOnA)
       const { outB, stuck, visibleOnA } = sunk.value
       check('lava sticks B: it sits out of the hill count but stays in the world', stuck.count === stuckBase + 1 && stuck.visible && stuck.hud && outB > 0 && visibleOnA, { stuck, outB, visibleOnA, waitedMs: sunk.waitedMs })
-      // The rule's own delay first ("back to your pad in 3 s"): shallow lava can already read as on the ground.
-      await wait(3000)
-      const lifted = await settle(() => b.evaluate(() => {
+      // Nothing but physics moves a player (AGENTS.md): after the old return delay and more, B is
+      // still where it sank, still off the hill, and its line still says so: a steady line, not a
+      // flicker. The pad is far from the lake, so a return would show as metres moved.
+      const sank = await b.evaluate(() => { const p = window.syn3h.player.body.translation(); return { x: p.x, z: p.z } })
+      await wait(4000)
+      const after = await b.evaluate((sank) => {
         const p = window.syn3h.player.body.translation()
-        return { visible: window.syn3h.player.object.visible, y: +p.y.toFixed(1), ground: +window.syn3h.terrain.heightAt(p.x, p.z).toFixed(1) }
-      }), (v) => v.visible && v.y > v.ground - 1 && v.y < v.ground + 6)
-      const back = lifted.value
-      check('B is lifted back to its pad after the delay', back.visible && back.y > back.ground - 1 && back.y < back.ground + 6, { ...back, waitedMs: lifted.waitedMs })
+        return { moved: +Math.hypot(p.x - sank.x, p.z - sank.z).toFixed(1), visible: window.syn3h.player.object.visible, hud: document.getElementById('hud').textContent.match(/in the lava: off the hill[^\n]*/i)?.[0] ?? null }
+      }, sank)
+      const stillOut = await a.evaluate((id) => window.syn3hNet.game.koth.out[id] ?? 0, idB)
+      check('B stays in the lava, never moved to its pad, off the hill with a steady line', after.visible && after.moved < 8 && after.hud && stillOut > 0, { ...after, stillOut })
     } else {
       console.log('SKIP lava: no lava under the zone centre on this terrain')
     }

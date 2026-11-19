@@ -1,6 +1,8 @@
 /**
- * Bots are playful company by default. These tests pin the defaults the owner asked for:
- * a bot never uses a tag beam or any other gear on anyone unless the room turns it on.
+ * Bots are playful company by default. These tests pin the defaults the owner asked for: in
+ * free play a bot never uses a tag beam or any other gear on anyone unless the room turns it
+ * on (bots.tagBeams). In the games (Tag, King of the Hill) the owner asked for gear on
+ * 18 November 2026, under its own switch (bots.gameGear), which a host can turn off.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { Scene, Vector3 } from 'three/webgpu'
@@ -61,7 +63,11 @@ function session(mode: 'free' | 'tag-player-it' | 'tag-bot-it' | 'hill', seconds
     bots.push(bot); brains.push(brain)
   }
   const match: BotMatch | null = mode === 'free' ? null : mode === 'hill' ? { mode: 'hill', zone: { x: 40, z: 40, radius: 12 } } : { mode: 'tag', it: mode === 'tag-player-it' ? player : bots[0] }
-  for (const brain of brains) brain.match = match
+  for (const brain of brains) {
+    brain.match = match
+    // The bot manager's game targets: in tag everyone goes for "it"; on the hill nobody is in the zone.
+    if (match?.mode === 'tag' && match.it !== brain.vehicle) brain.gameTarget = match.it ?? null
+  }
   for (let i = 0; i < seconds / DT; i++) {
     const t = i * DT
     // The player drives slow loops that stay on the map, and stops now and then.
@@ -88,13 +94,27 @@ describe('bots do not fire by default', () => {
     expect(params.get('bots.tagBeams')?.value).toBe(false)
   })
 
-  it.each(['free', 'tag-player-it', 'tag-bot-it', 'hill'] as const)('%s: no beam and no gear across five minutes', (mode) => {
+  it('free play: no beam and no gear across five minutes', () => {
+    const mode = 'free'
     const r = session(mode, 300)
     // The session is real: the player drives hundreds of metres and stays on the map.
     expect(r.travelled, JSON.stringify(r)).toBeGreaterThan(300)
     expect(r.farthest, JSON.stringify(r)).toBeLessThan(SIZE / 2 - 10)
     expect({ beams: r.beams, gearUses: r.gearUses }).toEqual({ beams: 0, gearUses: 0 })
   }, 120000)
+
+  it.each(['tag-player-it', 'tag-bot-it', 'hill'] as const)('%s with game gear off: no beam and no gear across five minutes', (mode) => {
+    params.set('bots.gameGear', false)
+    const r = session(mode, 300)
+    expect(r.travelled, JSON.stringify(r)).toBeGreaterThan(300)
+    expect({ beams: r.beams, gearUses: r.gearUses }).toEqual({ beams: 0, gearUses: 0 })
+  }, 120000)
+
+  it('game gear is on by default, under its own id, and in tag the bots use it on "it"', () => {
+    expect(params.get('bots.gameGear')?.def.default).toBe(true)
+    const r = session('tag-player-it', 60)
+    expect(r.gearUses).toBeGreaterThan(0)
+  }, 60000)
 
   it('with tag beams turned on, the same session does fire: the test can see it', () => {
     params.set('bots.tagBeams', true)

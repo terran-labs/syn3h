@@ -18,6 +18,9 @@ import type { BotGearHooks } from './gear'
 import { BotRaces, type BotRaceHooks } from './races'
 import type { RaceState } from '../../shared/protocol'
 import { BotPacer, BudgetHysteresis } from './pacing'
+import { assignTargets, type Candidate } from './tactics'
+import { difficultyScale, PER_PERSON, skill } from './skills'
+import { wrapDistance } from '../../shared/wrap'
 
 /** The arrival effect (src/vehicles/effects/Materialize.ts), as far as bots use it. */
 export interface BotArrivalEffect {
@@ -115,7 +118,87 @@ export class BotManager implements System {
     if (!this.remote) {
       this.races.update()
       for (const brain of this.brains) brain.raceGoal = this.races.goal(brain.vehicle)
+      this.assignClock -= dt
+      if (this.assignClock <= 0) { this.assignClock = 1; this.assignGames() }
     }
+  }
+  private assignClock = 0
+  private lastIt: Vehicle | null = null
+  /**
+   * Whether a vehicle may be gone after in a game right now. Networking sets it: not while it
+   * is materializing, paused, or was just tagged or knocked. Everyone, until then.
+   */
+  gameAvailable: (vehicle: Vehicle) => boolean = () => true
+  /**
+   * Who each bot goes after in the games, at most PER_PERSON bots on any one person (the
+   * Foreman, 18 November 2026), the rest on each other. On the hill: anyone in the zone, the
+   * holder first. In tag: whoever is "it" (persistently, so the two on a person keep at it),
+   * and for a bot that is "it", someone near to score on. Free play gives no game targets.
+   */
+  private assignGames(): void {
+    const match = this.match
+    const brains = this.brains
+    if (!match) { for (const b of brains) { b.gameTarget = null; b.gameSlot = 0; b.gameOf = 1 } return }
+    const wrap = this.terrain.wrapSize
+    const flat = (a: { x: number; z: number }, b: { x: number; z: number }) => wrap ? wrapDistance(a.x, a.z, b.x, b.z, wrap) : Math.hypot(a.x - b.x, a.z - b.z)
+    const isBot = new Set<Vehicle>(this.bots)
+    const people = this.targets.filter(v => v.body.isValid() && !isBot.has(v))
+    const everyone = [...people, ...this.bots.filter(v => v.body.isValid())]
+    const idOf = new Map<Vehicle, string>(everyone.map((v, i) => [v, `v${i}`]))
+    const byId = new Map<string, Vehicle>([...idOf].map(([v, id]) => [id, v]))
+    const candidate = (v: Vehicle, weight = 0): Candidate => ({ id: idOf.get(v)!, position: v.body.translation(), person: !isBot.has(v), available: this.gameAvailable(v), weight })
+    let hunters = brains.filter(b => b.vehicle.body.isValid())
+    let candidates: Candidate[] = []
+    if (match.mode === 'hill') {
+      const ring = match.ring
+      const inZone = (v: Vehicle) => {
+        if (!ring) return false
+        const q = v.body.translation(), d = flat(q, ring)
+        return d >= ring.inner - 6 && d <= ring.outer + 6
+      }
+      candidates = everyone.filter(inZone).map(v => candidate(v, v === match.holder ? 40 : 0))
+      // The bots near the hill do the fighting (the ones far off are still on their way up);
+      // and a person in the zone is who they go for first, before each other.
+      if (ring) hunters = hunters.filter(b => flat(b.vehicle.body.translation(), ring) <= ring.outer + 300)
+    } else if (match.it?.body.isValid() && idOf.has(match.it)) {
+      const it = match.it
+      // Everyone else goes for "it"; a bot that is "it" picks someone to score on.
+      const itBrain = brains.find(b => b.vehicle === it)
+      hunters = hunters.filter(b => b !== itBrain)
+      candidates = [candidate(it, 30)]
+      if (itBrain) {
+        const scoreOn = assignTargets([{ id: idOf.get(it)!, position: it.body.translation(), current: itBrain.gameTarget ? idOf.get(itBrain.gameTarget) : null }], everyone.filter(v => v !== it).map(v => candidate(v)), PER_PERSON - 1, flat)
+        const pick = scoreOn.get(idOf.get(it)!)
+        itBrain.gameTarget = pick ? byId.get(pick) ?? null : null
+        itBrain.gameSlot = 0; itBrain.gameOf = 1
+      }
+    }
+    if (match.mode === 'hill' && match.ring) {
+      // A few bots at once take a turn holding the zone, the ones nearest it: one at the default
+      // difficulty, more as it rises. Four parked in it at once left a person no hill to hold.
+      const cap = Math.max(1, Math.round(skill(1.5)))
+      const order = [...brains].sort((p, q) => flat(p.vehicle.body.translation(), match.ring!) - flat(q.vehicle.body.translation(), match.ring!))
+      order.forEach((b, i) => { b.mayContest = i < cap })
+    } else for (const b of brains) b.mayContest = true
+    if (match.mode === 'tag') {
+      // When the role changes hands, the hunters take a beat to regroup: about three seconds at
+      // the default difficulty, less as it rises, so a new "it" has a moment to use it.
+      const it = match.it ?? null
+      if (it !== this.lastIt) {
+        this.lastIt = it
+        for (const b of brains) b.regroupUntil = b.clock + 2.5 / difficultyScale()
+      }
+    }
+    const assigned = assignTargets(hunters.map(b => ({ id: idOf.get(b.vehicle) ?? '', position: b.vehicle.body.translation(), current: b.gameTarget ? idOf.get(b.gameTarget) ?? null : null })), candidates, PER_PERSON, flat, match.mode === 'hill' ? 250 : 25, 60)
+    const slots = new Map<string, number>()
+    for (const b of hunters) {
+      const id = assigned.get(idOf.get(b.vehicle) ?? '') ?? null
+      b.gameTarget = id ? byId.get(id) ?? null : null
+      b.gameSlot = id ? slots.get(id) ?? 0 : 0
+      if (id) slots.set(id, b.gameSlot + 1)
+    }
+    for (const b of hunters) { const id = b.gameTarget ? idOf.get(b.gameTarget) : undefined; b.gameOf = id ? slots.get(id) ?? 1 : 1 }
+    for (const b of brains) if (!hunters.includes(b) && !(match.mode === 'tag' && b.vehicle === match.it)) b.gameTarget = null
   }
   /**
    * The player changed vehicle in place (main.ts swapVehicle). Everything that held the old

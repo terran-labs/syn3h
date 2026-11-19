@@ -11,8 +11,11 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.1804 (release-56), source b7150620, frozen copy 20261118-201649-b7150620,
-Worker version fe59de37, at https://www.syn3h.com/ since 18 November 21:05 PST.
+Live: v26.11.1901 (release-58), source f952d8e3, frozen copy 20261119-014556-f952d8e3,
+Worker version 5dd023ea, at https://www.syn3h.com/ since 19 November 02:18 PST.
+Room protocol changed in 1900 (King of the Hill no longer returns a player to the pad; 'freed').
+Before it went live, staging ran a mixed room (tools/public-check.mjs, SYN3H_CHECK_OLD_VERSION)
+with a frozen 26.11.1804 and a frozen 26.11.1712 client against the new room: 7 of 7 each.
 
 Gate relaxed once, 18 November, by the Foreman, for v26.11.1802 only: macOS's own
 mediaanalysisd (about 300% CPU), Spotlight indexing, a virtual machine and Docker held the
@@ -52,6 +55,8 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.1802 | 54 | m-water-1802 | vehicles float on the drawn river; rivers level; true camera waterline |
 | v26.11.1803 | 55 | m-river-1803 | rivers that look like flowing water; no glow on a hill hiding the sun |
 | v26.11.1804 | 56 | m-lights-1804 | softer buggy headlights, horizon haze, vehicles float true at river bends |
+| v26.11.1900 | 57 | m-noreset-1900 | never moves you for where you drove; Flip upright; left column; wakes; grass swish |
+| v26.11.1901 | 58 | m-fog-1901 | dawn fog banks, headlight beams, Plasma Tag strikes, buggy water, sea sight line, opening and pinch |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
