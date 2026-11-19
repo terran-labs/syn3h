@@ -30,6 +30,7 @@ import { wrapCoord } from '../../../shared/wrap'
 import type { System } from '../../core/Game'
 import { FLORA, type Ground, type LayerSpec, type Plant, unit } from './flora'
 import { lavaSurfaceAt } from './lava'
+import { waterRiverLines } from '../water/falls'
 import type { GroundNode, TerrainMaterial } from './material'
 import { phash2, pperlin } from './noise'
 import { distanceToPolyline } from './raster'
@@ -516,7 +517,8 @@ class Layer {
     // Clear of the sea by the tallest wave the Water Lab's waves can raise (1.5 m, its
     // WAVE_MAX_AMPLITUDE in shared/water/waves.ts) plus a little.
     const sea = worldLavaAltitude.value
-    if (y < sea + SHORE_MARGIN || lavaSurfaceAt(data.lava, wx, wz, -1e9) > y - 0.3) return
+    // Where the water is drawn: the draped water rivers, not their planned lines (falls.ts).
+    if (y < sea + SHORE_MARGIN || lavaSurfaceAt(data.lava, wx, wz, -1e9, waterRiverLines(data, this.sampler, sea)) > y - 0.3) return
     const nrm = this.sampler.normalAt(x, z, UP)
     if (nrm.y < 0.84) return
     const half = data.size / 2

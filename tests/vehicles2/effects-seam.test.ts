@@ -7,6 +7,8 @@ import {RibbonBatch} from '../../src/vehicles/effects/RibbonBatch'
 import {ParticleBatch} from '../../src/vehicles/effects/ParticleBatch'
 import {dustSprite} from '../../src/vehicles/effects/sprites'
 import {attachVehicleEffects} from '../../src/vehicles/effects'
+import {buggyHeadlights} from '../../src/vehicles/effects/headlights'
+import {params} from '../../shared/params'
 
 /** Effects that follow the player across a world seam. */
 const TILE=400
@@ -85,7 +87,12 @@ describe('buggy headlights',()=>{
   expect(beams[1].position.x).toBe(-beams[0].position.x)
   for(const beam of beams){expect(beam.position.z).toBeLessThan(0);expect(beam.target.position.z).toBeLessThan(beam.position.z);expect(beam.castShadow).toBe(false)}
   s.world().update(0)
-  expect(beams.map(b=>b.intensity)).toEqual([800,800])
+  // Both beams share the night strength, which follows the headlight setting (headlights.ts).
+  const night=beams.map(b=>b.intensity)
+  expect(night[0]).toBeGreaterThan(0);expect(night[1]).toBe(night[0])
+  params.set(buggyHeadlights.def.id,1);s.world().update(0);const full=beams[0].intensity
+  params.set(buggyHeadlights.def.id,.5);s.world().update(0);expect(beams[0].intensity).toBeCloseTo(full/2,6)
+  params.set(buggyHeadlights.def.id,buggyHeadlights.def.default)
   sky.sunDirection.value.y=1;s.world().update(0)
   expect(beams.map(b=>b.intensity)).toEqual([0,0])
   let disposed=0

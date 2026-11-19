@@ -119,8 +119,8 @@ function waterPath(depth: THREE.Node<'float'>) {
  * mirrors the sky more the shallower the view, so the far sea is a mirror and the water at
  * your wheels is a window. The same graph on both backends and every quality tier.
  */
-export function waterOpacityNode(depth: THREE.Node<'float'>, foam: THREE.Node<'float'>) {
-  const clarity = uniform(waterClarity.value).setGroup(renderGroup).onRenderUpdate(() => waterClarity.value)
+export function waterOpacityNode(depth: THREE.Node<'float'>, foam: THREE.Node<'float'>, clarityScale = 1) {
+  const clarity = uniform(waterClarity.value * clarityScale).setGroup(renderGroup).onRenderUpdate(() => waterClarity.value * clarityScale)
   const view = normalize(cameraPosition.sub(positionWorld))
   const kept = waterPath(depth).mul(-2.3).div(clarity).exp()
   const mirror = float(1).sub(abs(view.y)).pow(5).mul(0.98).add(0.02)
@@ -334,7 +334,8 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   const crestN = crest.div(max(ampTotal, 0.001)).mul(shoalHere)
   // What the water itself sends back: the shallow tint where little of it lies along the
   // sight line, the deep colour once the line has crossed about a clarity's worth.
-  const body = mix(shallowColour, deepColour, smoothstep(0.3, 16, waterPath(depth)))
+  // A river is a few metres deep at most: it darkens over its own depths, so its pools read deep.
+  const body = mix(shallowColour, deepColour, smoothstep(0.3, mode === 'river' ? 9 : 16, waterPath(depth)))
   // Crests catch the light: a step toward the shallow colour, brightened.
   // Steep little faces let light through their thin tops: the same lift, from the chop.
   const lifted = mix(body, shallowColour.mul(1.15), max(smoothstep(0.2, 1, crestN).mul(0.35), smoothstep(0.05, 0.22, chopSlope).mul(0.3)))
@@ -347,7 +348,8 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   let foam = smoothstep(0.42, 0.06, depth.add(rx.mul(0.18)).add(lap)).mul(smoothstep(-0.25, 0.02, depth)).mul(breakup.mul(0.6).add(0.4))
   // Pools and river banks shelve gently, so the same depth band is metres wide there: a
   // faint wet edge, not a white collar.
-  if (mode !== 'sea') foam = foam.mul(mode === 'still' ? 0.35 : 0.5)
+  // A river's edge is the bed showing through ever thinner water (riverFade below): no foam line.
+  if (mode !== 'sea') foam = foam.mul(mode === 'still' ? 0.35 : 0)
   if (mode === 'sea') {
     // Rolling lines running in to the shore: phase rises with depth so the bands travel toward
     // the coast, and they fade with depth and wherever the noise breaks them up.
@@ -365,14 +367,36 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
     // Waves shoaling over the last few metres crest and spill white before the shore.
     foam = max(foam, smoothstep(0.35, 0.75, crestN).mul(smoothstep(3.5, 1.2, depth)).mul(smoothstep(0.3, 0.9, depth)).mul(smoothstep(0.3, 0.7, breakup)).mul(0.8))
   }
+  // A river: clear moving water over its bed, white only where it breaks, fading to nothing over
+  // its shallows and its skirt so it has no edge. The owner, on v26.11.1801: "make areas where
+  // it's very shallow nearly transparent ... like water flowing down a mountain, not like some
+  // kind of white, jaggy toothpaste blob". Before, white came from the bed's slope alone
+  // (smoothstep(0.12, 0.5, slope)): every stretch steeper than one in two was white from bank to
+  // bank, and foam set the floor of the opacity, so the shallows and the edge were opaque too.
+  let riverFade: THREE.Node<'float'> = float(1)
   if (mode === 'river') {
-    // White water where the bed is steep: a cascade over a third of the run (the waterfall
-    // threshold) and solid white on a falling sheet.
-    const white = smoothstep(0.12, 0.5, steep)
-    const streaks = mx_noise_float(vec3(uv().x.mul(1.4), uv().y.sub(time.mul(flowSpeed)).mul(0.25), drift)).mul(0.5).add(0.5)
-    foam = max(foam, white.mul(smoothstep(0.25, 0.6, streaks).mul(0.6).add(white.mul(0.4))))
+    const churn = attribute<'float'>('churn', 'float'), edge = attribute<'float'>('edge', 'float')
+    // Where water breaks. A change of slope along the river: lips, steps, the foot of a fall.
+    // A steep chute, the steeper the whiter: a fall (more than one in one) is nearly all white.
+    // Shallow fast water, a little: the Froude number v / sqrt(g d) well past 1, where it tears.
+    const froude = flowSpeed.div(max(depth, 0.05).mul(9.81).sqrt())
+    const breaking = max(max(churn, smoothstep(0.3, 1.1, steep).mul(0.85)), smoothstep(2, 4, froude).mul(smoothstep(0.15, 0.6, depth)).mul(0.3))
+    // Streaks: ridged noise that changes fifteen times faster across the river than along it, so
+    // its ridges are thin lines running with the flow; two scales, carried at the river's speed.
+    const ridge = (n: THREE.Node<'float'>) => { const r = float(1).sub(abs(n)); return r.mul(r).mul(r).mul(r) }
+    const along = uv().y.sub(time.mul(flowSpeed))
+    const lace = max(
+      ridge(mx_noise_float(vec3(uv().x.mul(1.2), along.mul(0.08), drift.mul(0.3)))),
+      ridge(mx_noise_float(vec3(uv().x.mul(3.3), along.mul(0.2).sub(time.mul(0.3)), drift.mul(0.5).add(9)))).mul(0.85),
+    )
+    // More breaking, more of the lace turns white; a little stays laced even at full churn.
+    const white = smoothstep(float(0.62).sub(breaking.mul(0.5)), float(0.85).sub(breaking.mul(0.35)), lace).mul(breaking.min(1))
+    // Water this thin shows its bed, white or not; the skirt fades to nothing at the mesh's edge.
+    riverFade = smoothstep(0.02, 0.35, depth).mul(smoothstep(0, RIVER_SKIRT, edge))
+    foam = max(foam, white.mul(smoothstep(0.05, 0.3, depth)))
   }
-  material.opacityNode = waterOpacityNode(depth, foam)
+  // A running river is clearer than standing water: twice the clarity, so its bed shows.
+  material.opacityNode = waterOpacityNode(depth, foam, mode === 'river' ? 2 : 1).mul(riverFade)
   const above = mix(lifted, color(FOAM), foam.mul(0.9))
 
   // From below: Snell's window. The sky shows through a cone round the surface normal (so it
@@ -456,6 +480,8 @@ const RIVER_EDGE_CLEARANCE = 0.25
  * (volcanics.ts builds it `r.width + 1.5` wide): a skirt that tucks into the banks.
  */
 export const RIVER_SKIRT = 0.75
+/** Metres either side of a point over which a river's slope is compared, for where it breaks. */
+const RIVER_CHURN_RUN = 6
 
 /**
  * A ribbon at the river's true surface (`points[].y`), carrying for the water material: uv
@@ -480,35 +506,60 @@ export function buildRiverSurface(
   if (half > inner) offsets.push(half)
   const across = [...offsets.slice(1).reverse().map((o) => -o), ...offsets]
   const cols = across.length
-  // Resample along the path.
-  const path: { x: number; y: number; z: number; slope: number }[] = []
+  // Resample along the path. Each cross-section lies square to its stretch, and at a joint along
+  // the bisector of the two stretches, whatever the step: exactly as physics reads the river
+  // (lava.ts riverStripAt), so the two agree across the width at every quality.
+  const path: { x: number; y: number; z: number; slope: number; dx: number; dz: number }[] = []
+  const unit = (i: number) => {
+    const a = points[i], b = points[i + 1], l = Math.hypot(b.x - a.x, b.z - a.z)
+    return l > 1e-9 ? [(b.x - a.x) / l, (b.z - a.z) / l] : null
+  }
+  let before: number[] | null = null
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i]
     const b = points[i + 1]
     const run = Math.hypot(b.x - a.x, b.z - a.z)
     const slope = run > 0 ? Math.max(0, a.y - b.y) / run : 0
+    const here = unit(i)
+    if (!here) continue
+    let jx = here[0], jz = here[1]
+    if (before) { const nx = before[0] + here[0], nz = before[1] + here[1], l = Math.hypot(nx, nz); if (l > 1e-6) { jx = nx / l; jz = nz / l } }
     const n = Math.max(1, Math.ceil(run / step))
     for (let k = 0; k < n; k++) {
       const t = k / n
-      path.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t, slope })
+      path.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t, slope, dx: k === 0 ? jx : here[0], dz: k === 0 ? jz : here[1] })
     }
+    before = here
   }
   const last = points[points.length - 1]
-  path.push({ x: last.x, y: last.y, z: last.z, slope: path.length ? path[path.length - 1].slope : 0 })
+  path.push({ x: last.x, y: last.y, z: last.z, slope: path.length ? path[path.length - 1].slope : 0, dx: before?.[0] ?? 1, dz: before?.[1] ?? 0 })
+
+  // Where the river breaks: the change of slope along it, over about RIVER_CHURN_RUN metres either
+  // side. A lip (gentle into steep), the foot of a fall (steep into gentle) and a step in a
+  // cascade churn; an even slope, however steep, runs smooth between them.
+  const reach = Math.max(1, Math.round(RIVER_CHURN_RUN / Math.max(0.5, step)))
+  const mean = (from: number, to: number) => {
+    let s = 0, n = 0
+    for (let j = Math.max(0, from); j < Math.min(path.length, to); j++) { s += path[j].slope; n++ }
+    return n ? s / n : 0
+  }
+  const churns = path.map((_, i) => Math.min(1, Math.max(0, (Math.abs(mean(i, i + reach) - mean(i - reach, i)) - 0.06) / 0.3)))
 
   const positions: number[] = []
   const uvs: number[] = []
   const bed: number[] = []
   const speed: number[] = []
   const slopes: number[] = []
+  const churn: number[] = []
+  const edge: number[] = []
   const index: number[] = []
   let distance = 0
   for (let i = 0; i < path.length; i++) {
     const p = path[i]
     const prev = path[Math.max(0, i - 1)]
     const next = path[Math.min(path.length - 1, i + 1)]
-    const dx = next.x - prev.x
-    const dz = next.z - prev.z
+    const dx = p.dx
+    const dz = p.dz
     const len = Math.hypot(dx, dz) || 1
     if (i) distance += Math.hypot(p.x - prev.x, p.z - prev.z)
     // Smooth the slope over neighbours so white water does not flicker segment to segment.
@@ -527,6 +578,8 @@ export function buildRiverSurface(
       bed.push(g)
       speed.push(speedAt(slope))
       slopes.push(slope)
+      churn.push(churns[i])
+      edge.push(half - Math.abs(offset))
     }
     if (i) {
       const a = (i - 1) * cols
@@ -539,6 +592,8 @@ export function buildRiverSurface(
   geometry.setAttribute('groundHeight', new THREE.Float32BufferAttribute(bed, 1))
   geometry.setAttribute('flowSpeed', new THREE.Float32BufferAttribute(speed, 1))
   geometry.setAttribute('slope', new THREE.Float32BufferAttribute(slopes, 1))
+  geometry.setAttribute('churn', new THREE.Float32BufferAttribute(churn, 1))
+  geometry.setAttribute('edge', new THREE.Float32BufferAttribute(edge, 1))
   geometry.setIndex(index)
   geometry.computeBoundingSphere()
   return geometry

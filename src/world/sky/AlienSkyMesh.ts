@@ -19,6 +19,7 @@ import {
   modelViewProjection, mul, normalize, positionWorld, pow, renderGroup, smoothstep, sub, time, uniform, vec2, vec3, vec4,
 } from 'three/tsl'
 import { RAY_DARK, burstSwing, createBurstUniforms } from '../../fx/post/sunburst'
+import { SKY_HAZE_TOP, hazeDirectionalColour, hazeTinted, skyHazeAmount, skyHazeDepth } from '../weather/haze'
 import { BETA_EPSILON, GLOW_CAP_COS, GLOW_SHARE_FROM, GLOW_SHARE_TO, GLOW_DESAT, GLOW_KNEE, GLOW_POWER, MIE_ZENITH_LENGTH, SAT_LEAN, SUN_DESAT, RAYLEIGH_ZENITH_LENGTH, SKY_FLOOR, SKY_SCALE } from './skyMath'
 
 type N = any // TSL node; the published types are too strict for shader code written like this
@@ -193,6 +194,17 @@ export class AlienSkyMesh extends Mesh {
    * are no beams in front of terrain. Only for `raysCamera`, so reflections stay still.
    */
   readonly rays = { burst: createBurstUniforms(), strength: uniform(0), share: uniform(0), fill: uniform(0) }
+  /**
+   * The haze band at the horizon (src/world/weather/haze.ts): the haze a sky ray crosses over
+   * the curved planet, in the same colour the land's haze takes. Environment writes these
+   * each frame. strength 0 draws the sky as it was.
+   */
+  readonly haze = {
+    strength: uniform(0), density: uniform(0), height: uniform(40), aerialDensity: uniform(0), aerialHeight: uniform(1600),
+    camAbove: uniform(2), invR: uniform(0),
+    toward: uniform(new Vector3()), side: uniform(new Vector3()), away: uniform(new Vector3()),
+    sunXZ: uniform(new Vector2(1, 0)), lobe: uniform(4), tint: uniform(new Vector3(1, 1, 1)), tintAmount: uniform(0),
+  }
   raysCamera: Camera | null = null
   private readonly raysOn = uniform(0).setGroup(renderGroup).onRenderUpdate(frame =>
     frame.camera === this.raysCamera ? 1 : 0)
@@ -300,6 +312,16 @@ export class AlienSkyMesh extends Mesh {
         texColor.subAssign(L0.mul(0.04).add(sundiscColor).mul(alpha))
         const cloudAerial = mix(texColor, cloudColor, Fex)
         texColor.assign(mix(texColor, cloudAerial, alpha))
+      })
+
+      // The horizon's haze band, after the clouds so a cloud low on the horizon fades too.
+      const haze = this.haze as Record<string, N>
+      If(haze.strength.greaterThan(0.0).and(direction.y.lessThan(SKY_HAZE_TOP)), () => {
+        const tau = skyHazeDepth(direction, haze as never)
+        const colour = hazeTinted(hazeDirectionalColour(direction, haze as never), haze.tint, haze.tintAmount)
+        // Faded out before the test's edge, so no line is drawn across the sky there.
+        const fade = smoothstep(SKY_HAZE_TOP, SKY_HAZE_TOP * 0.4, direction.y)
+        texColor.assign(mix(texColor, colour, skyHazeAmount(tau, haze.strength).mul(fade)))
       })
 
       return vec4(mix(max(texColor, vec3(0.0)), this.underwaterTint, this.underwaterMix), 1.0)

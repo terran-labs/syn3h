@@ -1,4 +1,5 @@
 import {hotExposureDim} from '../skins/hotExposure'
+import {headlightScale} from './headlights'
 import * as T from 'three/webgpu'
 import type {Game,System} from '../../core/Game'
 import {qualityBudget,graphicsLevel} from '../../core/quality'
@@ -236,7 +237,8 @@ class VehicleEffects {
     this.tailMaterial.color.setRGB(v.input.brakes?5:2,0,0)
     if(this.spots.length){
       const sunY=w.sunY()
-      const intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?1800:1600)/this.spots.length
+      // The buggy's beam follows the headlight setting (headlights.ts); other kinds are unchanged.
+      const intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?1800:1600)/this.spots.length*(this.buggy?headlightScale().beam:1)
       for(const spot of this.spots)spot.intensity=intensity
     }
     // A sealed zorb has no running engine plume or tyre contact. Keep lamps current above;

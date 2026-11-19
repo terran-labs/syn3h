@@ -377,7 +377,19 @@ vantage() {
       -q "[.[] | select(.createdAt >= \"$_since\")][0].databaseId" 2>/dev/null || true)"
   done
   [ -n "$_run" ] || { echo "VANTAGE: skipped (the GitHub run did not appear within a minute)"; return 0; }
-  gh run watch "$_run" --interval 15 >>"$LOG-vantage.log" 2>&1 || true
+  # Polled, never watched: on 18 Nov 2026 a hosted run stuck "in progress" for 36 minutes and
+  # `gh run watch` held the accepted release open with it. At most SYN3H_VANTAGE_WAIT seconds
+  # (default 1200); a run still going then is reported as such, and the release ends.
+  _deadline=$(( $(date +%s) + ${SYN3H_VANTAGE_WAIT:-1200} )); _status=""
+  while [ "$(date +%s)" -lt "$_deadline" ]; do
+    _status="$(gh run view "$_run" --json status -q .status 2>/dev/null || true)"
+    [ "$_status" = completed ] && break
+    sleep 15
+  done
+  if [ "$_status" != completed ]; then
+    echo "VANTAGE: GitHub public check of $CALVER still ${_status:-unknown} after ${SYN3H_VANTAGE_WAIT:-1200} s, not waited for: https://github.com/terran-labs/syn3h/actions/runs/$_run"
+    return 0
+  fi
   _result="$(gh run view "$_run" --json conclusion,url -q '.conclusion + " " + .url' 2>/dev/null || echo "unknown")"
   echo "VANTAGE: GitHub public check of $CALVER from a hosted machine: $_result"
 }

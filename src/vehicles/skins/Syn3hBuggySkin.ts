@@ -8,6 +8,8 @@ import { forceField, type ForceField } from './forceField'
 import { graphicsLevel, levelNumber } from '../../core/quality'
 import * as THREE from 'three/webgpu'
 import { buggyBody } from '../buggygen/body'
+import { buggyHeadlights, headlightScale } from '../effects/headlights'
+import { params } from '../../../shared/params'
 import { buildParts } from '../buggygen/parts'
 import { abs, attribute, clamp, dot, float, instancedBufferAttribute, length, min, normalView, positionGeometry, positionViewDirection, sin, smoothstep, time, uniform, vec2 } from 'three/tsl'
 import {mergeStatic,registerVehicleDetail,detailLevel} from './mergeStatic'
@@ -39,6 +41,8 @@ const STRUT_SPAN = .828
  * Same 2:5 ratio, scaled: 0.6 renders deep red, the brake's 1.5 a hotter red (255,64,33).
  */
 const TAIL_LAMP = .6
+/** The headlight lenses' glow at the old full brightness (setting 1). */
+const HEAD_LAMP = new THREE.Color().setRGB(2.447059, 2.858824, 3)
 /** Size of one cell of the wings' lattice (m): twice the canopy's, for a surface seen from further off. */
 const WING_CELL = .24
 /** Cockpit glow spots: emission as a multiple of the vehicle's accent colour. */
@@ -202,6 +206,10 @@ export class Syn3hBuggySkin implements BuggySkin {
   private readonly strutRest: number
   /** Emissive colour shared with the merged body (and its far LOD). */
   private tailLamps?: THREE.Color
+  /** The headlight lenses' glow: HEAD_LAMP times the headlight setting (effects/headlights.ts), kept current by unlistenLamps. */
+  private headLamps?: THREE.Color
+  /** Follows the headlight setting while this skin lives; removed in dispose. */
+  private readonly unlistenLamps = params.onChange(id => { if (id === buggyHeadlights.def.id) this.headLamps?.copy(HEAD_LAMP).multiplyScalar(headlightScale().lamp) })
   private bodyColor = new THREE.Color(0x1768b4)
   private accentColor = new THREE.Color(0x49e6ff)
   private readonly bodyMaterials: THREE.MeshStandardMaterial[] = []
@@ -266,7 +274,7 @@ export class Syn3hBuggySkin implements BuggySkin {
       // hotExposureNode, as the effects lamps use hotExposureDim, so they do not bleach under the
       // night exposure. mergeStatic reads the emissive Color by reference, so setLights can
       // change it after the merge.
-      else if (key === 'headlight') { setRole(m, 'lamp'); m.color.set(0xe8f0ff); m.emissive.setRGB(2.447059, 2.858824, 3); m.metalness = 0 }
+      else if (key === 'headlight') { setRole(m, 'lamp'); m.color.set(0xe8f0ff); m.emissive.copy(HEAD_LAMP).multiplyScalar(headlightScale().lamp); m.metalness = 0; this.headLamps = m.emissive }
       else if (key === 'taillight') { setRole(m, 'lamp'); m.color.set(0x400000); m.emissive.setRGB(TAIL_LAMP, 0, 0); m.metalness = 0; this.tailLamps = m.emissive }
       else setRole(m, 'trim')
       surfaces.set(key, m)
@@ -634,6 +642,7 @@ export class Syn3hBuggySkin implements BuggySkin {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.unlistenLamps()
     this.detachDetail()
     this.detachShowroom()
     this.object.removeFromParent()
