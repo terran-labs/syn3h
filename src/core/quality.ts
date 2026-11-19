@@ -111,6 +111,8 @@ const PRESET_TABLE: Readonly<Record<string, PresetRow>> = {
   'post.shafts': [D, D, D, D, D, D],
   // Fog banks (src/world/weather/fogMap.ts): off at Minimal, one sample at Low, three above.
   'gfx.fogBanks': [0, 1, 2, 2, 2, 2],
+  // Headlight cones in mist (src/vehicles/effects/cones.ts): off at Minimal.
+  'light.headlightCones': [0, D, D, D, D, D],
   'post.bloom': [0, 0, 0, D, D, D],
   'post.heat': [0, 0, 0, D, D, D],
   'post.temporal': [false, false, false, false, true, true],

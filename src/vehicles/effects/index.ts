@@ -1,5 +1,10 @@
 import {hotExposureDim} from '../skins/hotExposure'
 import {headlightScale} from './headlights'
+import {type ConeHaze,MAX_CONES,createConeBatch,createConeHaze,headlightCones,hideUnusedCones,writeVehicleCones} from './cones'
+import {hazeNow} from '../../world/weather/fog'
+import {activeFogBanks} from '../../world/weather/fogBanks'
+/** The beam's colour (the spot lights', effects/index.ts). */
+const CONE_COLOUR=new T.Color(1,.9965517,.875)
 import * as T from 'three/webgpu'
 import type {Game,System} from '../../core/Game'
 import {qualityBudget,graphicsLevel} from '../../core/quality'
@@ -59,7 +64,30 @@ class EffectWorld implements System {
     this.lamps.frustumCulled=false;this.lamps.count=0
     this.lamps.onBeforeRender=()=>{this.lamps.material.color.setScalar(hotExposureDim(game.renderer.toneMappingExposure));let index=0;for(const e of this.vehicles.values())index=e.writeLamps(this.lamps,index);hideUnusedLamps(this.lamps,index);this.lamps.instanceMatrix.needsUpdate=true;if(this.lamps.instanceColor)this.lamps.instanceColor.needsUpdate=true}
     game.scene.add(this.lamps,this.marks.mesh,this.trails.mesh);this.rebudget();game.scene.userData.vehicleEffects=this.stats
+    // Headlight cones in mist (cones.ts): every vehicle's front lamps, lit by the haze round them.
+    this.coneHaze=createConeHaze()
+    this.cones=createConeBatch(this.coneHaze)
+    this.cones.onBeforeRender=(_r,_s,camera)=>{
+      const eye=this.coneEye.setFromMatrixPosition(camera.matrixWorld)
+      const h=hazeNow(this.coneHazeState),c=this.coneHaze
+      c.hazeD.value=h.density;c.hazeH.value=h.height;c.sea.value=h.sea
+      // The fog banks are looked up each frame: the Environment that owns them may start after this world.
+      const banks=activeFogBanks()?.input as unknown as {map:{value:T.Texture},weights:{value:T.Vector2},invSize:{value:number}}|undefined
+      if(banks){c.bankMap.value=banks.map.value;c.bankWeights.value.copy(banks.weights.value);c.bankInvSize.value=banks.invSize.value}
+      else c.bankWeights.value.set(0,0)
+      // The beam's dusk-to-dawn ramp, as the real spot lights use it (VehicleEffects.update).
+      const night=clamp((.08-this.sunY())/.18,0,1)*headlightCones.value
+      let index=0
+      for(const e of this.vehicles.values())index=e.writeCones(this.cones,index,night,eye)
+      hideUnusedCones(this.cones,index)
+      this.cones.instanceMatrix.needsUpdate=true;if(this.cones.instanceColor)this.cones.instanceColor.needsUpdate=true
+    }
+    game.scene.add(this.cones)
   }
+  readonly cones:T.InstancedMesh
+  private readonly coneHaze:ConeHaze
+  private readonly coneHazeState={density:0,height:40,sea:0}
+  private readonly coneEye=new T.Vector3()
   retain(){this.references++}
   release(){if(--this.references===0){worlds.delete(this.game);this.game.remove(this)}}
   private rebudget(){
@@ -101,7 +129,7 @@ class EffectWorld implements System {
     this.stats.emitted=this.dust.emitted+this.energy.emitted+this.sparks.emitted+this.redSparks.emitted
     this.stats.updateMs=performance.now()-start;this.stats.peakUpdateMs=Math.max(this.stats.peakUpdateMs,this.stats.updateMs)
   }
-  dispose(){this.lamps.removeFromParent();this.lamps.geometry.dispose();this.lamps.material.dispose();for(const e of this.vehicles.values())e.dispose();this.vehicles.clear();for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.dispose();delete this.game.scene.userData.vehicleEffects}
+  dispose(){this.lamps.removeFromParent();this.lamps.geometry.dispose();this.lamps.material.dispose();this.cones.removeFromParent();this.cones.geometry.dispose();(this.cones.material as T.Material).dispose();for(const e of this.vehicles.values())e.dispose();this.vehicles.clear();for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.dispose();delete this.game.scene.userData.vehicleEffects}
 }
 function worldFor(game:Game){let w=worlds.get(game);if(!w){w=new EffectWorld(game);worlds.set(game,w);game.add(w)}return w}
 
@@ -187,6 +215,11 @@ class VehicleEffects {
     this.events.addEventListener('tileshift',this.onTileShift)
   }
   private get events(){return this.vehicle.object as T.Object3D<VehicleObjectEvents>}
+  /** This vehicle's headlight cones (cones.ts) at `night` (the beam ramp times the cone setting). */
+  writeCones(batch:T.InstancedMesh,index:number,night:number,camera:T.Vector3):number {
+    this.root.updateWorldMatrix(true,true)
+    return writeVehicleCones(batch,index,this.vehicle.object,this.lampPoints,CONE_COLOUR,night*(this.buggy?headlightScale().beam:1),this.lampMatrix,camera)
+  }
   writeLamps(batch:T.InstancedMesh,index:number):number {
     this.root.updateWorldMatrix(true,true)
     return writeVehicleLamps(batch,index,this.vehicle.object,this.lampPoints,this.headMaterial.color,this.tailMaterial.color,this.lampMatrix)
@@ -396,9 +429,9 @@ export function hideUnusedLamps(batch:T.InstancedMesh,index:number):void {
 export function attachVehicleEffects(game:Game,terrain:Terrain,vehicle:Vehicle,options:{local:boolean;spots?:T.SpotLight[]}):()=>void{
   const world=worldFor(game)
   if(world.vehicles.has(vehicle))throw new Error('Vehicle effects already attached')
-  const effects=new VehicleEffects(world,terrain,vehicle,options.local,options.spots);world.vehicles.set(vehicle,effects);world.lamps.count=Math.min(512,world.vehicles.size*4);world.retain()
+  const effects=new VehicleEffects(world,terrain,vehicle,options.local,options.spots);world.vehicles.set(vehicle,effects);world.lamps.count=Math.min(512,world.vehicles.size*4);world.cones.count=Math.min(MAX_CONES,world.vehicles.size*2);world.retain()
   let disposed=false
-  return()=>{if(disposed)return;disposed=true;effects.dispose();world.vehicles.delete(vehicle);world.lamps.count=Math.min(512,world.vehicles.size*4);world.release()}
+  return()=>{if(disposed)return;disposed=true;effects.dispose();world.vehicles.delete(vehicle);world.lamps.count=Math.min(512,world.vehicles.size*4);world.cones.count=Math.min(MAX_CONES,world.vehicles.size*2);world.release()}
 }
 
 /** Visual hooks only. Networking retains projectile authority and audio ownership. */

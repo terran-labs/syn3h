@@ -23,6 +23,10 @@ export interface FogBanks {
   dispose(): void
 }
 
+let active: FogBanks | null = null
+/** The fog banks of the current Environment, for anything that lights the haze (headlight cones), or null before one exists. */
+export function activeFogBanks(): FogBanks | null { return active }
+
 export function createFogBanks(terrain: Terrain): FogBanks {
   // One texture for the life of the Environment; each world's map is written into it.
   const tex = createFogMapTexture()
@@ -53,7 +57,7 @@ export function createFogBanks(terrain: Terrain): FogBanks {
   build()
   const unsubscribe = terrain.onRegenerate?.(build) ?? (() => {})
 
-  return {
+  const banks: FogBanks = {
     input: { map: mapNode, weights, invSize, height, detail, atCamera, glow },
     get map() { return map },
     update(hour, camera, sunY = 1) {
@@ -72,6 +76,8 @@ export function createFogBanks(terrain: Terrain): FogBanks {
         ;(atCamera.value as THREE.Vector3).set(sample.coast, sample.valley, sample.top)
       } else (atCamera.value as THREE.Vector3).set(0, 0, 0)
     },
-    dispose() { unsubscribe(); tex.dispose() },
+    dispose() { unsubscribe(); tex.dispose(); if (active === banks) active = null },
   }
+  active = banks
+  return banks
 }

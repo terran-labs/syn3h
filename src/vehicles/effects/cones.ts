@@ -1,0 +1,154 @@
+/**
+ * Headlight cones in mist: the beam of each front lamp seen in the air, the "flashlight in the
+ * fog" look (the owner, 18 November 2026: simulated, not real scattered light).
+ *
+ * One instanced mesh of soft, open cones, one per front headlight of every vehicle with effects
+ * (bots and remote players too: no real light is needed per lamp). Each cone sits on its lamp
+ * point (VehicleEffects' lamp points: even ones are the front headlights) and points down the
+ * road as the real beam does. Its brightness is the lamp's (the beam's dusk-to-dawn ramp, and
+ * for the buggy the headlight setting) times the haze in the air at each point of the cone, from
+ * the shared haze field: the height haze (weather/fog.ts) and the fog banks (weather/fogMap.ts).
+ * So it shows where there is mist to show it and is nothing in clear air or by day.
+ *
+ * Soft everywhere: brightest down its middle and fading to nothing at its rim (by the angle to
+ * the view), fading along its length, and fading where it meets the road or a wall (the scene
+ * depth behind it), so it never cuts a line into the world. Additive, depth tested, writes no
+ * depth.
+ */
+import * as T from 'three/webgpu'
+import {
+  abs, cameraFar, cameraNear, clamp, dot, exp, float, instanceColor, max, normalView, normalize, perspectiveDepthToViewZ,
+  positionGeometry, positionView, positionWorld, pow, smoothstep, texture, uniform, vec2, vec3, viewportDepthTexture,
+} from 'three/tsl'
+import { applyCurve } from '../../world/curve'
+import { defineParam } from '../../../shared/params'
+
+type N = any // TSL node
+
+/** How bright the cones are, on top of the lamps' own brightness. 0 turns them off. */
+export const headlightCones = defineParam({ id: 'light.headlightCones', label: 'Headlight beams in mist', group: 'Light', scope: 'client', default: 1, min: 0, max: 3, step: 0.05 })
+
+/** Cone length (m) and half angle (radians) of the visible beam. */
+export const CONE_LENGTH = 18, CONE_HALF_ANGLE = (12 * Math.PI) / 180
+/** The real beam's tip below the lamp at 22 m ahead: the cone follows it (effects/index.ts spot target). */
+export const CONE_DROP = Math.atan2(0.8, 22)
+/**
+ * Brightness of a cone in thick mist, per unit of lamp brightness, and the haze density (per
+ * metre) at which it reaches about two thirds of that: the glow saturates, so a dense bank
+ * reads as a bright beam rather than a white-out. Tuned by frames.
+ */
+export const CONE_GAIN = 1.6, CONE_DENSITY_SCALE = 120
+/** Metres over which a cone fades where it meets the scene behind it. */
+export const CONE_SOFT_DEPTH = 1.5
+/** Most cones drawn (two per vehicle). */
+export const MAX_CONES = 128
+
+/** The shared haze numbers a cone reads, written by the effects world each frame. */
+export interface ConeHaze {
+  hazeD: N; hazeH: N; sea: N
+  /**
+   * The fog bank map (fogMap.ts) and its weights, or zero weights with no banks. `bankMap` is
+   * the shader's final sampled node: set its `value` to swap the map in (a texture node's
+   * sample() and level() copy it, so only the last one drawn from is live).
+   */
+  bankMap: N; bankWeights: N; bankInvSize: N
+}
+
+export function createConeHaze(): ConeHaze {
+  return {
+    hazeD: uniform(0), hazeH: uniform(40), sea: uniform(0),
+    bankMap: null, bankWeights: uniform(new T.Vector2(0, 0)), bankInvSize: uniform(1 / 2048),
+  }
+}
+let empty: T.DataTexture | null = null
+function emptyMap(): T.DataTexture {
+  if (!empty) { empty = new T.DataTexture(new Uint16Array(4), 1, 1, T.RGBAFormat, T.HalfFloatType); empty.needsUpdate = true }
+  return empty
+}
+
+/** The cone geometry: apex at the origin, opening along -Z, length 1 and end radius 1. */
+function coneGeometry(): T.BufferGeometry {
+  const g = new T.ConeGeometry(1, 1, 32, 1, true)
+  g.translate(0, -0.5, 0) // apex at the origin, base at y = -1
+  g.rotateX(Math.PI / 2) // y -> z: base at z = -1
+  return g
+}
+
+/** The cone batch: one instanced mesh for every vehicle's front lamps. */
+export function createConeBatch(haze: ConeHaze): T.InstancedMesh {
+  const material = new T.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: T.DoubleSide, blending: T.AdditiveBlending, fog: false })
+  // How far along the cone (0 at the lamp, 1 at its end).
+  // The geometry's own position: positionLocal already carries the instance matrix.
+  const along = clamp(positionGeometry.z.negate(), 0, 1) as N
+  // Brightest through the middle of the beam, nothing at its rim.
+  const facing = abs(dot(normalize(normalView), normalize(positionView.negate()))) as N
+  const rim = pow(facing, float(2))
+  // Brighter near the lamp, gone at the end; and not a hard ring at the lamp itself.
+  const fall = pow(float(1).sub(along), float(1.6)).mul(smoothstep(0.0, 0.06, along))
+  // Where it meets the world behind it: the scene's depth at this pixel against the cone's.
+  const sceneZ = perspectiveDepthToViewZ(viewportDepthTexture().x, cameraNear, cameraFar) as N
+  const soft = smoothstep(0.0, CONE_SOFT_DEPTH, positionView.z.sub(sceneZ))
+  // The haze here: height haze, plus the fog banks from the map at this place.
+  const y = positionWorld.y as N
+  const height = (haze.hazeD as N).mul(exp(y.sub(haze.sea).div(haze.hazeH).negate()))
+  const m = (texture(emptyMap()) as N).sample(vec2(positionWorld.x, positionWorld.z).mul(haze.bankInvSize).add(0.5)).level(float(0))
+  haze.bankMap = m
+  const bank = m.r.mul(haze.bankWeights.x).add(m.g.mul(haze.bankWeights.y))
+  const density = height.add(bank)
+  const glow = float(1).sub(exp(density.mul(-CONE_DENSITY_SCALE)))
+  const light = vec3(instanceColor).mul(glow).mul(CONE_GAIN).mul(rim).mul(fall).mul(soft)
+  material.colorNode = max(light, vec3(0))
+  applyCurve(material)
+  const mesh = new T.InstancedMesh(coneGeometry(), material, MAX_CONES)
+  mesh.name = 'headlight-cones'
+  mesh.frustumCulled = false
+  mesh.count = 0
+  mesh.renderOrder = 5
+  mesh.setColorAt(0, new T.Color(0, 0, 0))
+  return mesh
+}
+
+const tilt = new T.Matrix4(), shape = new T.Matrix4()
+/**
+ * Write one vehicle's cones from its lamp points (even ones are the front headlights) at
+ * `brightness` (the lamp's, before haze). Returns the next free index.
+ */
+export function writeVehicleCones(mesh: T.InstancedMesh, index: number, object: T.Object3D, points: readonly T.Object3D[], colour: T.Color, brightness: number, scratch: T.Matrix4, camera?: T.Vector3): number {
+  tilt.makeRotationX(-CONE_DROP)
+  const radius = CONE_LENGTH * Math.tan(CONE_HALF_ANGLE)
+  shape.makeScale(radius, radius, CONE_LENGTH)
+  for (let i = 0; i < points.length && index < MAX_CONES; i += 2, index++) {
+    scratch.copy(points[i].matrixWorld).multiply(tilt).multiply(shape)
+    let fade = 1
+    if (camera) fade = insideFade(scratch, camera, radius)
+    if (!object.visible || !(brightness * fade > 0)) scratch.makeScale(0, 0, 0)
+    mesh.setMatrixAt(index, scratch)
+    mesh.setColorAt(index, tmpColour.copy(colour).multiplyScalar(brightness * fade))
+  }
+  return index
+}
+
+const inverse = new T.Matrix4(), local = new T.Vector3()
+/**
+ * A shell of a cone cannot show the beam from inside it (its walls would draw as a tunnel), so
+ * a cone fades out as the camera comes within CONE_INSIDE_FADE metres of its surface and is
+ * gone with the camera inside. From in front, the lamps' own glare carries the look.
+ */
+export function insideFade(matrix: T.Matrix4, camera: T.Vector3, radius: number): number {
+  local.copy(camera).applyMatrix4(inverse.copy(matrix).invert())
+  const along = -local.z
+  if (along > 1.2) return 1
+  // Metres outside the cone's wall, roughly: the radial gap at this depth, or the distance
+  // behind the lamp.
+  const outside = along <= 0 ? Math.hypot(local.x * radius, local.y * radius, along * CONE_LENGTH) : (Math.hypot(local.x, local.y) - Math.max(along, 0)) * radius
+  const t = Math.min(1, Math.max(0, outside / CONE_INSIDE_FADE))
+  return t * t * (3 - 2 * t)
+}
+/** Metres from a cone's surface over which it fades as the camera comes in. */
+export const CONE_INSIDE_FADE = 2
+const tmpColour = new T.Color()
+const hidden = new T.Matrix4().makeScale(0, 0, 0)
+/** Collapse the slots no vehicle wrote this frame. */
+export function hideUnusedCones(mesh: T.InstancedMesh, index: number): void {
+  for (let i = index; i < mesh.count; i++) mesh.setMatrixAt(i, hidden)
+}
