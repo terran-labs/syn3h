@@ -200,6 +200,10 @@ export abstract class Vehicle implements System {
     registerLiquidTerrain(this.body,terrain,this.liquidState)
     this.object.userData.vehicleHeat=this.liquidState
     this.object.userData.vehicleColors=this.liveColors
+    // How the grass reads this vehicle (src/world/terrain/groundcover.ts): what it is and
+    // how it touches the ground. A function, so a userData copy (JSON) leaves it out.
+    const touch={kind:'',zorbRadius:0,grounded:0}
+    this.object.userData.vehicleTouch=()=>{touch.kind=this.kind;touch.zorbRadius=this.zorb.active?this.zorb.radius:0;touch.grounded=this.wheelsGrounded;return touch}
     this.currPos.copy(position)
     this.prevPos.copy(position)
     this.currQuat.copy(q)
