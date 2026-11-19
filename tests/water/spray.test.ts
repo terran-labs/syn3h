@@ -10,6 +10,17 @@ const drive = (sim: SpraySim, frames: number, speed = 20, sub = .5, dt = 1 / 60,
   return x
 }
 const live = (sim: SpraySim) => sim.dropletCount + sim.wakePoints + sim.ringCount
+/** Everything on the surface, as the renderer gets it. */
+const foam = (sim: SpraySim) => {
+  const n = cap.vehicles * ARMS * cap.points + cap.rings + cap.ripplets, A = new Float32Array(n * 4), B = new Float32Array(n * 4), S = new Float32Array(n * 4), L = new Float32Array(n * 4)
+  return { A, B, S, L, m: sim.packSurface(A, B, S, L) }
+}
+/** Strips of a kind (1 crest, 2 churn, 3 trail) by their side vectors' length. */
+const strips = (f: ReturnType<typeof foam>, kind: number) => {
+  const out: number[] = []
+  for (let i = 0; i < f.m; i++) { const l = Math.hypot(f.S[i * 4], f.S[i * 4 + 1]); if (l > .5 && Math.round(l) === kind) out.push(i) }
+  return out
+}
 
 describe('spray simulation', () => {
   it('emits nothing while dry', () => {
@@ -39,8 +50,9 @@ describe('spray simulation', () => {
   it('grows the wake with speed', () => {
     const span = (speed: number) => {
       const sim = new SpraySim(cap, sea); drive(sim, 240, speed)
+      const { A, m } = foam(sim)
       let lo = Infinity, hi = -Infinity
-      for (let i = 0; i < sim.points.length; i += 10) if (sim.points[i] !== 0) { lo = Math.min(lo, sim.points[i]); hi = Math.max(hi, sim.points[i]) }
+      for (let i = 0; i < m; i++) { lo = Math.min(lo, A[i * 4]); hi = Math.max(hi, A[i * 4]) }
       return hi - lo
     }
     expect(span(20)).toBeGreaterThan(span(6) * 2)
@@ -130,22 +142,48 @@ describe('spray simulation', () => {
     expect(sim.refused - refused).toBeLessThan(60)
   })
 
-  it('makes the centre wash dominant when planing and drops it at low speed', () => {
-    const strengths = (speed: number) => {
-      const sim = new SpraySim(cap, sea); drive(sim, 120, speed)
-      const n = cap.vehicles * ARMS * cap.points + cap.rings, A = new Float32Array(n * 4), B = new Float32Array(n * 4), S = new Float32Array(n * 4), L = new Float32Array(n * 4)
-      const m = sim.packSurface(A, B, S, L)
-      let wash = 0, arms = 0, washWidth = 0, armWidth = 0
-      for (let i = 0; i < m; i++) { if (Math.hypot(S[i * 4], S[i * 4 + 1], S[i * 4 + 2], S[i * 4 + 3]) < .5) continue; const w = Math.hypot(S[i * 4], S[i * 4 + 1]) > 1.5; if (w) { wash = Math.max(wash, L[i * 4]); washWidth = Math.max(washWidth, A[i * 4 + 3]) } else { arms = Math.max(arms, L[i * 4]); armWidth = Math.max(armWidth, A[i * 4 + 3]) } }
-      return { wash, arms, washWidth, armWidth }
+  it('leaves a hull a spreading V and a churned patch only when it moves fast enough to churn', () => {
+    const fast = new SpraySim(cap, sea); drive(fast, 120, 22)
+    const f = foam(fast), crests = strips(f, 1), churn = strips(f, 2)
+    expect(crests.length).toBeGreaterThan(0); expect(churn.length).toBeGreaterThan(0)
+    expect(Math.max(...churn.map((i) => f.L[i * 4]))).toBeGreaterThan(.3)
+    // The two crests open into a V: their oldest points are further apart than their newest.
+    const side = (i: number) => f.A[i * 4 + 2]
+    const left = crests.filter((i) => side(i) < 0), right = crests.filter((i) => side(i) > 0)
+    expect(side(right[0]) - side(left[0])).toBeGreaterThan(side(right.at(-1)!) - side(left.at(-1)!) + 1)
+    const slow = new SpraySim(cap, sea); drive(slow, 120, 2)
+    const g = foam(slow)
+    expect(Math.max(0, ...strips(g, 2).map((i) => g.L[i * 4]))).toBeLessThan(.05)
+    expect(Math.max(0, ...strips(g, 1).map((i) => g.L[i * 4]))).toBeGreaterThan(.2)
+  })
+
+  it('leaves a ball one trail from its patch, and no bridge over the water it skipped', () => {
+    const sim = new SpraySim(cap, sea), ball = { ball: 5 }
+    let x = 0
+    const run = (frames: number, sub: number) => { for (let i = 0; i < frames; i++) { sim.step(1 / 60); x += 14 / 60; sim.vehicle('z', x, sea.liquidHeightAt(x), 0, 14, 0, 0, sub, 1 / 60, 1, ball) } }
+    run(60, .2); const leftAt = x; run(30, 0); const backAt = x; run(60, .2)
+    const f = foam(sim)
+    expect(strips(f, 1).length + strips(f, 2).length).toBe(0)
+    const trail = strips(f, 3)
+    expect(trail.length).toBeGreaterThan(4)
+    // No strip spans the half second in the air.
+    for (const i of trail) expect(Math.min(f.A[i * 4], f.B[i * 4]) >= backAt - .5 || Math.max(f.A[i * 4], f.B[i * 4]) <= leftAt + .5).toBe(true)
+    // Wider than a hull's crest: as wide as the patch the ball dips.
+    expect(Math.max(...trail.map((i) => f.A[i * 4 + 3]))).toBeGreaterThan(1)
+  })
+
+  it('disturbs the water under a cushion or a low jet only when close, never when far', () => {
+    for (const air of ['cushion', 'downwash'] as const) {
+      const near = new SpraySim(cap, sea), far = new SpraySim(cap, sea)
+      for (let i = 0; i < 120; i++) for (const [sim, n] of [[near, .8], [far, 0]] as const) { sim.step(1 / 60); sim.vehicle('h', i * .25, sea.liquidHeightAt(i * .25), 0, 15, 0, 0, 0, 1 / 60, 1, { ball: 0, air, near: n, beam: 1.6 }) }
+      expect(strips(foam(near), 3).length, air).toBeGreaterThan(2); expect(near.dropletCount, air).toBeGreaterThan(0)
+      expect(live(far), air).toBe(0)
     }
-    const fast = strengths(22), slow = strengths(2.5)
-    expect(fast.wash).toBeGreaterThan(fast.arms); expect(fast.washWidth).toBeGreaterThan(fast.armWidth * 2)
-    expect(slow.wash).toBeLessThan(.05); expect(slow.arms).toBeGreaterThan(.2)
   })
 
   it('fades strips through bends tighter than their width instead of folding', () => {
-    const sim = new SpraySim(cap, sea), r = 2.5, w = 15 / r
+    // A turn of 1 m radius at 15 m/s: tight enough that some strips are wider than their bend.
+    const sim = new SpraySim(cap, sea), r = 1, w = 15 / r
     for (let i = 0; i < 240; i++) {
       const t = i / 60, x = r * Math.sin(w * t), z = r * Math.cos(w * t)
       sim.step(1 / 60); sim.vehicle('a', x, 0, z, 15 * Math.cos(w * t), 0, -15 * Math.sin(w * t), .5, 1 / 60)
