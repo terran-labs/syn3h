@@ -46,7 +46,8 @@ describe('water rivers: physics floats on the river that is drawn', () => {
     const second = drapedRivers(b.data.lava, b.ground, 2).map((r) => r.map((p) => [p.x, p.y, p.z]))
     expect(first.flat().length).toBeGreaterThan(10)
     expect(second).toEqual(first)
-  })
+    // Generates three worlds.
+  }, 30_000)
 
   it('the drawn ribbon lies on the physics surface along every centre line, at two sea levels and two planet sizes', () => {
     for (const [planet, seed] of WORLDS) for (const size of [1, Math.log2(3)]) {
@@ -143,6 +144,62 @@ describe('water rivers: physics floats on the river that is drawn', () => {
       }
     }
   })
+})
+
+/** The highest drawn water at (x, z) among `meshes` (world-space triangles), or -Infinity. */
+function drawnAt(meshes: THREE.BufferGeometry[], x: number, z: number): number {
+  let best = -Infinity
+  for (const g of meshes) {
+    const box = g.boundingBox ?? (g.computeBoundingBox(), g.boundingBox!)
+    if (x < box.min.x || x > box.max.x || z < box.min.z || z > box.max.z) continue
+    const pos = g.getAttribute('position'), idx = g.getIndex()!
+    for (let k = 0; k < idx.count; k += 3) {
+      const a = idx.getX(k), b = idx.getX(k + 1), c = idx.getX(k + 2)
+      const ax = pos.getX(a), az = pos.getZ(a), bx = pos.getX(b), bz = pos.getZ(b), cx = pos.getX(c), cz = pos.getZ(c)
+      if (x < Math.min(ax, bx, cx) || x > Math.max(ax, bx, cx) || z < Math.min(az, bz, cz) || z > Math.max(az, bz, cz)) continue
+      const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz)
+      if (Math.abs(d) < 1e-12) continue
+      const u = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d, v = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d
+      if (u < -1e-6 || v < -1e-6 || u + v > 1 + 1e-6) continue
+      best = Math.max(best, u * pos.getY(a) + v * pos.getY(b) + (1 - u - v) * pos.getY(c))
+    }
+  }
+  return best
+}
+
+describe('physics is the water that is drawn, wherever it is sampled', () => {
+  it('in rivers, across them and in the lakes they run into, at a coarse and a fine mesh', () => {
+    for (const [planet, seed] of WORLDS) for (const step of [3, 1]) {
+      const { data, ground } = world(planet, seed)
+      const lava = data.lava, lines = drapedRivers(lava, ground, 0), waterAt = receivingWater(lava, 0)
+      // Everything volcanics.ts draws for water rivers, lakes and pools, but the fall sheets.
+      const meshes: THREE.BufferGeometry[] = []
+      lava.rivers.forEach((r, ri) => {
+        if (r.points.length < 2) return
+        const pieces = riverPieces(ground, r.points, r.width, waterAt, 9.81, 4, lines[ri])
+        if (pieces.points.length >= 2) meshes.push(buildRiverSurface(ground, pieces.points, r.width + 1.5, () => 1, step))
+      })
+      for (const b of lava.lake ? [lava.lake, ...lava.pools] : lava.pools) meshes.push(buildStillSurface(ground, b.x, b.surface, b.z, b.radius, step))
+      // Points down every river, on its line and either side, and round every lake and pool.
+      const points: [number, number][] = []
+      for (const r of lava.rivers) for (let i = 0; i + 1 < r.points.length; i += 2) {
+        const a = r.points[i], c = r.points[i + 1], l = Math.hypot(c.x - a.x, c.z - a.z) || 1, nx = -(c.z - a.z) / l, nz = (c.x - a.x) / l
+        for (const f of [0, -0.45, 0.45]) points.push([a.x + nx * r.width * f, a.z + nz * r.width * f])
+      }
+      for (const b of lava.lake ? [lava.lake, ...lava.pools] : lava.pools) for (let k = 0; k < 12; k++) points.push([b.x + Math.cos(k) * b.radius * 0.6, b.z + Math.sin(k) * b.radius * 0.6])
+      let compared = 0, agree = 0
+      for (const [x, z] of points) {
+        const physics = lavaSurfaceAt(lava, x, z, -Infinity, lines), drawn = drawnAt(meshes, x, z)
+        if (!Number.isFinite(physics) || !Number.isFinite(drawn) || physics <= ground.heightAt(x, z)) continue
+        compared++
+        // The ribbon lays a joint's cross-section through its resample points' neighbours, a little
+        // off the exact bisector physics uses: on a sloping stretch that is a few centimetres.
+        if (Math.abs(physics - drawn) < 0.1) agree++
+      }
+      expect(compared, `${planet} ${seed}`).toBeGreaterThan(50)
+      expect(agree / compared, `${planet} ${seed} at ${step} m`).toBe(1)
+    }
+  }, 60_000)
 })
 
 describe('the camera waterline is the surface meeting the lens', () => {
