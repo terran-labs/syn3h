@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { float, materialColor, mix, sin, smoothstep, time, uv, vec3 } from 'three/tsl'
-import { DROP_FALL, findDrops, riverSpeed, type RiverDrop } from '../terrain/lava'
+import { DROP_FALL, findDrops, riverSpeed, type LavaFeatures, type RiverDrop } from '../terrain/lava'
 
 type Point = { x: number; y: number; z: number }
 type Ground = { heightAt(x: number, z: number): number }
@@ -9,8 +9,8 @@ type Ground = { heightAt(x: number, z: number): number }
 export const RIVER_DRAPE_DEPTH = 1.7
 
 /**
- * Where a river is drawn. The planned surface (`points[].y`, what the physics floats on)
- * never rises, but the ground under it can fall away faster: a mouth pool carved into a
+ * Where a water river is, drawn and floated on alike (drapedRivers; physics reads it through
+ * ProceduralTerrain.waterRivers). The planned surface (`points[].y`) never rises, but the ground under it can fall away faster: a mouth pool carved into a
  * bowl, or a cliff the channel carve could not follow on the 4 m grid. Drawn at the planned
  * height there, the ribbon is a level slab hanging in the air. Unsupported water falls, so
  * each point is lowered to sit no more than RIVER_DRAPE_DEPTH above the ground under it, or
@@ -50,6 +50,33 @@ export function drapeRiver(ground: Ground, points: readonly Point[], waterAt: (x
 
 const DRAPE_STEP = 2.5
 
+/** The water a river's mouth runs into: the lake, a pool or the sea, -Infinity where there is none. */
+export function receivingWater(lava: LavaFeatures, sea: number): (x: number, z: number) => number {
+  const bodies = lava.lake ? [lava.lake, ...lava.pools] : lava.pools
+  return (x, z) => {
+    let y = sea
+    for (const b of bodies) if ((x - b.x) ** 2 + (z - b.z) ** 2 < b.radius ** 2) y = Math.max(y, b.surface)
+    return y
+  }
+}
+
+const draped = new WeakMap<LavaFeatures, { sea: number; ground: Ground; rivers: readonly (readonly Point[])[] }>()
+
+/**
+ * Every river's draped centre line (`drapeRiver`), in `lava.rivers` order: the surface water
+ * rivers are drawn at and float things at. A pure function of the world (its rivers, its ground)
+ * and the sea level, so every client computes the same line. Memoised per world and sea level;
+ * the sea gliding to a new level recomputes it, a few milliseconds.
+ */
+export function drapedRivers(lava: LavaFeatures, ground: Ground, sea: number): readonly (readonly Point[])[] {
+  const known = draped.get(lava)
+  if (known && known.sea === sea && known.ground === ground) return known.rivers
+  const waterAt = receivingWater(lava, sea)
+  const rivers = lava.rivers.map((r) => (r.points.length < 2 ? [] : drapeRiver(ground, r.points, waterAt)))
+  draped.set(lava, { sea, ground, rivers })
+  return rivers
+}
+
 function lerp(a: Point, b: Point, t: number): Point {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t }
 }
@@ -71,8 +98,10 @@ export interface RiverPieces {
 export function riverPieces(
   ground: Ground, points: readonly Point[], width: number, waterAt: (x: number, z: number) => number,
   gravity: number, maxSpeed: number,
+  /** The drape already made (drapedRivers), so drawing uses exactly what physics floats on. */
+  ready?: readonly Point[],
 ): RiverPieces {
-  const draped = drapeRiver(ground, points, waterAt)
+  const draped = ready ? [...ready] : drapeRiver(ground, points, waterAt)
   const drops = findDrops(draped)
   const sheets: THREE.BufferGeometry[] = []
   const covered: number[] = []
