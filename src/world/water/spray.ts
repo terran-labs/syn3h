@@ -5,9 +5,15 @@ import { paletteFor } from '../terrain/palettes'
 import { graphicsLevel } from '../../core/quality'
 import { applyCurve } from '../curve'
 import type { Ripples } from './ripples'
-import { SpraySim, sprayCapacity, type SprayWater } from './spraySim'
+import { SpraySim, sprayCapacity, type SprayWater, type WakeShape } from './spraySim'
 export const waterSpray=defineParam<boolean>({id:'water.spray',label:'Spray and wakes',group:'Water',scope:'client',default:true})
 export const waterSprayScale=defineParam({id:'water.sprayScale',label:'Spray size',group:'Water',scope:'client',default:1,min:.25,max:3,step:.05})
+/** How strongly soft wakes and skip rings show: 0 none, 1 as tuned, 2 twice as dense. */
+export const waterWakeStrength=defineParam({id:'water.wakeStrength',label:'Wake strength',group:'Water',scope:'client',default:1,min:0,max:2,step:.05})
+/** Width of soft wakes and skip rings, as a multiple of what touches the water. */
+/** A broad, low swell of disturbed water beside a hull. Off: beside-hull wakes read as drawn lines. */
+export const waterBowSwell=defineParam<boolean>({id:'water.bowSwell',label:'Bow swell beside hulls',group:'Water',scope:'client',default:false})
+export const waterWakeWidth=defineParam({id:'water.wakeWidth',label:'Wake width',group:'Water',scope:'client',default:1,min:.3,max:3,step:.05})
 
 // TSL nodes are dynamically typed; sprites.ts uses the same alias.
 type N = any // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -88,33 +94,46 @@ function dropletMaterial(light: N, tint: N, lava = false) {
   // Motion blur of about a sixtieth of a second, plus the drop itself.
   const axis = select(speed.greaterThan(.05), across.div(speed.max(1e-4)), normalize(cross(view, vec3(1, 0, 0)).add(vec3(0, 1e-4, 0))))
   const side = normalize(cross(axis, view))
-  const half = select(mist, radius, radius.add(speed.mul(.016)))
+  // Motion blur of about a thirtieth of a second: a fast drop is a streak with a round head at
+  // the drop and a tail that tapers to nothing behind it.
+  const half = select(mist, radius, radius.add(speed.mul(.009)))
   const q = uv().mul(2).sub(1)
   const m = new T.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: T.DoubleSide })
-  m.positionNode = centre.add(side.mul(q.x.mul(radius))).add(axis.mul(q.y.mul(half)))
-  const r = q.length()
-  // A bead: bright rim catching the light and a slightly clearer middle reads as water, not chalk.
-  // A drop is mostly transparent water tinted like the sea, with a bright rim and a small
-  // highlight. The tinted body reads against a pale sky, the bright rim against dark water.
-  // Big clots (splash crowns and columns) are churned full of air: white, lit by the sun.
-  // Fine spray keeps the sea's tint.
-  const aerated = smoothstep(.03, .12, size)
-  const body = float(1).sub(smoothstep(.6, 1, r))
-  const rim = smoothstep(.55, .85, r).mul(float(1).sub(smoothstep(.85, 1, r)))
-  const glint = float(1).sub(smoothstep(0, .3, q.sub(vec2(-.25, .35)).length()))
-  const bead = body.mul(.65).add(rim.mul(.25)).add(glint.mul(.5)).min(1)
+  // q.y = 1 is the head, one radius ahead of the drop; the quad runs back 2 x half - radius.
+  m.positionNode = centre.add(side.mul(q.x.mul(radius))).add(axis.mul(q.y.mul(half).sub(half.sub(radius))))
+  // In drop radii from the drop's centre: `ahead` along the motion (1 at the head), `width` the
+  // tail's taper (1 at the drop, 0 at its end) and `rs` the distance from the drop's outline.
+  const ahead = q.y.mul(half).sub(half.sub(radius)).div(radius.max(1e-4))
+  const length = half.mul(2).sub(radius).div(radius.max(1e-4)).max(1e-3)
+  // The tail narrows only to 40 per cent and fades: a soft smear behind the drop, not a thorn.
+  const fall = ahead.negate().div(length).clamp(0, 1)
+  const width = select(ahead.greaterThan(0), float(1), float(1).sub(fall.mul(.6)))
+  const rs = select(ahead.greaterThan(0), vec2(q.x, ahead).length(), q.x.abs().div(width.max(.05)))
+  // Everything soft: a smooth falloff to nothing at the outline, no disc edge.
+  const body = float(1).sub(smoothstep(0, 1, rs)).pow(1.3).mul(float(1).sub(fall).pow(1.5))
+  // Light on a drop: a bright rim and a highlight on the head over a clear body tinted like the sea.
+  const rim = smoothstep(.45, .85, rs).mul(float(1).sub(smoothstep(.85, 1, rs))).mul(float(1).sub(fall))
+  const glint = float(1).sub(smoothstep(0, .35, vec2(q.x.add(.3), ahead.sub(.25)).length()))
   const n = mx_fractal_noise_float(vec3(q.mul(1.7).add(centre.xz.mul(.37)), 0), 2, 2, .5).mul(.5).add(.5)
-  const puff = float(1).sub(smoothstep(.15, 1, r.add(n.mul(.35)))).mul(n.mul(.6).add(.4))
+  const puff = float(1).sub(smoothstep(.1, 1, q.length().add(n.mul(.3)))).pow(1.5).mul(n.mul(.6).add(.4))
   // Drops passing right by the lens would fill the screen with blobs: fade them out up close.
   const near = smoothstep(1.5, 6, distance)
   const alpha = select(mist, b.w.sub(2), b.w).mul(near)
-  // A clot is a soft, nearly opaque white disc, not a clear bead.
-  const clot = float(1).sub(smoothstep(.35, 1, r)).mul(.95)
-  m.opacityNode = select(mist, puff.mul(alpha).mul(.7), mix(bead.mul(.55), clot, aerated).mul(alpha).mul(cover.mul(.75).add(.25)))
-  const water = mix(tint, vec3(1, 1, 1), .35)
-  const drop = mix(mix(water, vec3(1.15, 1.18, 1.2), rim.max(glint).mul(.85)), vec3(1.2, 1.22, 1.24), aerated.mul(.75))
+  // Big clots (splash crowns and columns) are churned full of air: a soft white tuft, uneven
+  // with noise, with a faint haze of fine mist round it, never a flat disc.
+  const aerated = smoothstep(.03, .12, size)
+  const tuft = float(1).sub(smoothstep(0, 1, rs.add(n.sub(.5).mul(.45)))).pow(1.4).mul(n.mul(.5).add(.6)).mul(float(1).sub(fall).pow(.8))
+  const drop = body.mul(.65).add(rim.mul(.35)).add(glint.mul(.5)).min(1)
+  m.opacityNode = select(mist, puff.mul(alpha).mul(.6), mix(drop.mul(.8), tuft.mul(.9), aerated).mul(alpha).mul(cover.mul(.75).add(.25)))
+  // A drop is clear water: the sea's colour through it, deeper below and paler where its upper
+  // side catches the sky, with a white glint and rim, so it reads against a pale sky as well as
+  // against the sea. A clot is white with air, a little of the sea in its shadow side.
+  const up = positionWorld.y.sub(centre.y).div(radius.max(1e-4)).clamp(-1, 1)
+  const water = mix(tint.mul(.9), mix(tint, vec3(.8, .9, 1), .45), smoothstep(-.6, .8, up))
+  const clot = mix(mix(tint, vec3(1, 1, 1), .6), vec3(1.15, 1.18, 1.2), smoothstep(-.9, .3, up))
+  const lit = mix(mix(water, vec3(1.15, 1.18, 1.2), rim.max(glint).mul(.85)), clot, aerated.mul(.85))
   // Spray thrown into the sun scatters it forward: clots and mist read brighter than lit sand.
-  m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .7).mul(1.4), drop.mul(mix(float(1), float(1.8), aerated))).mul(light)
+  m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .75).mul(1.35), lit.mul(mix(float(1), float(1.6), aerated))).mul(light)
   if (lava) {
     // Molten drops glow on their own and cool as they fade: yellow-orange to a dark clot.
     // Lava "mist" is a hot, dark smoke.
@@ -127,15 +146,22 @@ function dropletMaterial(light: N, tint: N, lava = false) {
 }
 
 /**
- * Foam lying on the water: wake strips and splash rings. A strip quad runs from one wake
- * point to the next, each end with its own side vector, half width and fade, so consecutive
- * quads share their edges exactly. A ring has zero side vectors and draws an annulus.
- * Foam texture is world-anchored noise that breaks into lace as the foam ages.
+ * Foam lying on the liquid: wake strips and rings, all soft, none cut out with a hard edge.
+ * A strip quad runs from one wake point to the next, each end with its own side vector, half
+ * width and fade, so consecutive quads share their edges exactly. A ring has zero side
+ * vectors; B.w is 2 for the soft patch a landing drop leaves.
+ *
+ * Foam has structure: it is densest right behind its source, then opens into separate patches
+ * with clear water between that thin with age, so a trail dissolves in pieces rather than
+ * fading as one shape. The patches are laid out across the strip in its own proportions, so
+ * they drift apart as the strip spreads. A ring is a band of foam broken into arcs and
+ * flecks. `octaves` 1 at the safe graphics level keeps it cheap.
  */
-function foamMaterial(light: N, lava = false) {
+function foamMaterial(light: N, tint: N, lava = false, octaves = 2) {
   const A = attribute('foamA', 'vec4'), B = attribute('foamB', 'vec4'), S = attribute('foamSide', 'vec4'), L = attribute('foamLook', 'vec4')
-  // Side vectors: zero for a ring, length two for the centre wash, unit for an arm crest.
-  const ring = S.xy.length().lessThan(.5), wash = S.xy.length().greaterThan(1.5)
+  const kindLength = S.xy.length()
+  const ring = kindLength.lessThan(.5)
+  const ripplet = ring.and(B.w.greaterThan(1.5))
   const q = uv().mul(2).sub(1), t = uv().y
   const sides = normalize(mix(S.xy, S.zw, t).add(1e-5))
   const strip = mix(A.xyz, B.xyz, t).add(vec3(sides.x, 0, sides.y).mul(mix(A.w, B.w, t).mul(q.x)))
@@ -143,24 +169,44 @@ function foamMaterial(light: N, lava = false) {
   const m = new T.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: T.DoubleSide })
   m.positionNode = select(ring, disc, strip)
   const fade = select(ring, L.x, mix(L.x, L.y, t)), age = select(ring, L.w, mix(L.z, L.w, t))
-  const coarse = mx_fractal_noise_float(vec3(positionWorld.xz.mul(.55), 0), 2, 2, .5).mul(.5).add(.5)
-  const fine = mx_fractal_noise_float(vec3(positionWorld.xz.mul(2.6), 3.7), 2, 2, .55).mul(.5).add(.5)
-  const texture: N = coarse.mul(.55).add(fine.mul(.55))
-  // Feathered edges across the strip; a soft band for the ring. The wash has a ragged edge.
-  const ragged = float(1).sub(smoothstep(.3, 1, q.x.abs().add(coarse.sub(.5).mul(.7))))
-  const crest = float(1).sub(smoothstep(.2, 1, q.x.abs()))
-  const shape = select(ring, float(1).sub(smoothstep(0, .2, q.length().sub(.78).abs())), select(wash, ragged, crest))
-  // The wash is solid and brightest right at the stern, then breaks into lace.
-  const lead = select(wash, float(1).sub(smoothstep(0, .15, age)), float(0))
-  // Young foam is a near-solid blanket; old foam keeps only its brightest lace.
-  const threshold = age.mul(select(wash, .62, .5)).add(.24).sub(lead.mul(.3))
-  const foam = smoothstep(threshold, threshold.add(.22), texture.mul(shape.mul(.5).add(.6)))
-  m.opacityNode = foam.mul(shape).mul(fade).mul(.8)
-  m.colorNode = vec3(.86, .93, .98).mul(light).mul(fine.mul(.2).add(1.05).add(lead.mul(.2)))
+  // Along the strip in metres, across it in its own proportions: patches spread as it widens.
+  const along = dot(positionWorld.xz, vec2(sides.y, sides.x.negate()))
+  const patchy = mx_fractal_noise_float(vec3(q.x.mul(1.7), along.mul(.32), 0), octaves, 2, .5).mul(.5).add(.5)
+  const lace = mx_fractal_noise_float(vec3(positionWorld.xz.mul(2.4), 3.7), octaves, 2, .55).mul(.5).add(.5)
+  // Strips: a feathered profile across whose edge wanders.
+  const edge = q.x.abs().add(patchy.sub(.5).mul(.4)).max(0)
+  const profile = float(1).sub(smoothstep(.12, 1, edge)).pow(1.3)
+  // Young foam is a blanket; with age it opens into patches over clear water, which thin
+  // until the last pieces go. A churned patch breaks up sooner.
+  const open = age.mul(.85).add(.08)
+  const patches = smoothstep(open.sub(.13), open.add(.13), patchy.mul(.62).add(lace.mul(.5)))
+  const blanket = float(1).sub(smoothstep(0, .22, age))
+  const stripAlpha = profile.mul(patches.max(blanket.mul(.85))).mul(fade)
+  // Rings: a band of foam, a few times thicker where it starts, broken into arcs and flecks
+  // from the first frame and fading from the outside in, so no continuous outline ever shows.
+  // A ripplet (where a drop landed) is a soft patch of disturbed water, never an outline.
+  const around = mx_fractal_noise_float(vec3(q.x.mul(2.2), q.y.mul(2.2), A.x.add(A.z).mul(.13)), octaves, 2, .5).mul(.5).add(.5)
+  const flecks = mx_fractal_noise_float(vec3(q.x.mul(7), q.y.mul(7), A.x.sub(A.z).mul(.11).add(7)), octaves, 2, .5).mul(.5).add(.5)
+  const rr = q.length().add(around.sub(.5).mul(.12))
+  const thick = mix(float(.26), float(.09), age.clamp(0, 1)).mul(around.mul(.8).add(.6))
+  const centreR = float(.8)
+  const band = float(1).sub(smoothstep(thick.mul(.2), thick, rr.sub(centreR).abs()))
+  // The outer side of the band goes first.
+  const outerGone = smoothstep(centreR.add(thick.mul(float(1).sub(age.mul(1.3)).max(-1))), centreR.add(thick.mul(float(1).sub(age.mul(1.3)).max(-1))).add(.12), rr)
+  const arcs = smoothstep(.4, .58, around.mul(.55).add(flecks.mul(.55)).sub(age.mul(.25)))
+  const ringFoam = band.mul(arcs).mul(float(1).sub(outerGone)).mul(flecks.mul(.6).add(.55))
+  const inside = float(1).sub(smoothstep(.3, .75, rr)).mul(float(1).sub(smoothstep(0, .35, age))).mul(.12)
+  const patch = float(1).sub(smoothstep(0, .95, rr)).pow(1.5).mul(smoothstep(.3, .7, flecks.mul(.6).add(lace.mul(.5)))).mul(.6)
+  const ringAlpha = select(ripplet, patch, ringFoam.add(inside)).mul(float(1).sub(smoothstep(.92, 1, q.length()))).mul(fade)
+  const alpha = select(ring, ringAlpha, stripAlpha).clamp(0, 1)
+  m.opacityNode = alpha.mul(.95)
+  // Fresh foam is white with air; as it settles it takes the liquid's own colour.
+  const fresh = float(1).sub(smoothstep(.05, .7, age))
+  m.colorNode = mix(mix(tint, vec3(1, 1, 1), .55), vec3(.95, .98, 1), fresh).mul(light).mul(lace.mul(.15).add(.95)).mul(select(ring, ringFoam.mul(.12).add(1), float(1)))
   if (lava) {
-    // Churned lava: bright where the crust was broken, crusting over dark as the trail ages.
-    m.colorNode = mix(vec3(3.2, 1.25, .2).mul(fine.mul(.4).add(.8)), vec3(.07, .035, .025), smoothstep(.15, .85, age)).add(vec3(2.5, .9, .1).mul(lead))
-    m.opacityNode = foam.mul(shape).mul(fade).mul(.95)
+    // Churned lava: bright where the crust was broken, crusting over dark as it ages.
+    m.colorNode = mix(vec3(3.2, 1.25, .2).mul(lace.mul(.4).add(.8)), vec3(.07, .035, .025), smoothstep(.15, .85, age)).add(vec3(2.5, .9, .1).mul(blanket.mul(.6)))
+    m.opacityNode = alpha
   }
   return m
 }
@@ -184,15 +230,16 @@ export class Spray {
   get state() { return this.sim }
   private allocate(tier: number) {
     this.release()
-    const cap = sprayCapacity(tier)
+    // Lava drops sink into the crust: no ripplets where they land.
+    const cap = { ...sprayCapacity(tier), ...(this.liquid === 'lava' ? { ripplets: 0 } : {}) }
     this.sim = new SpraySim(cap, this.water); this.tier = tier; this.packed = -1
     const light = sprayLight()
     const d = batch(cap.droplets, ['sprayA', 'sprayB'])
     const lava = this.liquid === 'lava'
     const dropMesh = new T.Mesh(d.g, dropletMaterial(light, waterTint(), lava))
-    const segments = cap.vehicles * 3 * cap.points + cap.rings
+    const segments = cap.vehicles * 3 * cap.points + cap.rings + cap.ripplets
     const f = batch(segments, ['foamA', 'foamB', 'foamSide', 'foamLook'])
-    const foamMesh = new T.Mesh(f.g, foamMaterial(light, lava))
+    const foamMesh = new T.Mesh(f.g, foamMaterial(light, waterTint(), lava, tier === 0 ? 1 : 2))
     dropMesh.name = `${this.liquid}-spray`; foamMesh.name = `${this.liquid}-foam`
     // After the water (transparent, no depth write) so foam lies on it; droplets after foam.
     foamMesh.renderOrder = 2; dropMesh.renderOrder = 3
@@ -224,13 +271,18 @@ export class Spray {
     if (tier !== this.tier) this.allocate(tier)
     this.sim!.step(dt)
   }
-  vehicle(id: string, position: T.Vector3, velocity: T.Vector3, submergedFraction: number, dt: number) {
+  /** One vehicle this frame; `shape` says what touches the liquid (spraySim.ts WakeShape). */
+  vehicle(id: string, position: T.Vector3, velocity: T.Vector3, submergedFraction: number, dt: number, shape?: WakeShape) {
     if (!waterSpray.value) return
     if (!this.sim) this.allocate(Math.max(0, Math.min(2, Math.round(graphicsLevel.value))))
-    const entering = this.sim!.vehicle(id, position.x, position.y, position.z, velocity.x, velocity.y, velocity.z, submergedFraction, dt, waterSprayScale.value * (this.liquid === 'lava' ? .7 : 1))
+    this.sim!.wakeStrength = waterWakeStrength.value; this.sim!.wakeWidth = waterWakeWidth.value; this.sim!.bowSwell = waterBowSwell.value
+    const entering = this.sim!.vehicle(id, position.x, position.y, position.z, velocity.x, velocity.y, velocity.z, submergedFraction, dt, waterSprayScale.value * (this.liquid === 'lava' ? .7 : 1), shape)
     if (this.liquid === 'lava') return entering
     const sub = Math.max(0, Math.min(1, submergedFraction)), speed = Math.hypot(velocity.x, velocity.z)
     if (sub > 0 && speed > 1) this.ripples.disturb(position.x, position.z, 1.5, Math.min(.15, speed * .004) * Math.min(.1, Math.max(0, dt)) * 60)
+    // Air pressing on the water (a cushion, a downwash) ruffles a wider patch of it, even at rest.
+    const near = shape?.air && sub <= 0 ? Math.max(0, Math.min(1, shape.near ?? 0)) : 0
+    if (near > .02) this.ripples.disturb(position.x, position.z, (shape!.beam ?? 1.5) * 1.4, near * (shape!.air === 'cushion' ? .06 : .04) * Math.min(.1, Math.max(0, dt)) * 60)
     // Rings of ripples spreading from the hole, wider and stronger for a harder hit.
     if (entering) { const impact = this.sim!.lastSplash; this.ripples.disturb(position.x, position.z, 2 + Math.min(4, impact * .12), Math.min(.6, impact * .04 + .1)) }
     return entering

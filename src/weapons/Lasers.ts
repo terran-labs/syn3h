@@ -121,6 +121,7 @@ const UP_NORMAL = new THREE.Vector3(0, 1, 0)
 const END_WAIT = 1.5
 const RED_FALLBACK = new THREE.Color(0.9, 0.08, 0.05)
 const GOLD_FALLBACK = new THREE.Color(1, 0.75, 0.3)
+const TAG_SHOCK = new THREE.Color(0.9, 4, 1.4).multiplyScalar(0.5)
 const RED_CORE_RGB = [4, 0.55, 0.35] as const
 const RED_HALO_RGB = [1.8, 0.18, 0.1] as const
 const RED_TINT_RGB = [0.8, 0.05, 0.03] as const
@@ -661,9 +662,10 @@ export class Lasers implements System {
     if (this.impacted.size > 256) this.impacted.delete(this.impacted.values().next().value as string)
     const n = normal ?? new THREE.Vector3(0, 1, 0)
     this.fx.impact(at, n, dir ?? n.clone().negate(), onVehicle, red ? RED_IMPACT : TAG_IMPACT, red)
-    // Plasma Thunder keeps a thin shock ring the size of its push; Plasma Tag's flat ring gave
-    // way to the light on the ground (ImpactFx).
+    // A shock ring: Thunder's the size of its push; Plasma Tag's small and quick, which is what
+    // reads at a distance.
     if (red) this.pulses.emit(at, n, { radius: Math.max(1.5, thunderBlastRadius.value), seconds: 0.9, color: RED_SHOCK })
+    else this.pulses.emit(at, n, { radius: 1.8, seconds: 0.3, color: TAG_SHOCK })
     // Plasma Thunder's push comes with its burst (burst), once, where the room says.
     if (!red) this.hooks.onImpact?.(at, red)
   }

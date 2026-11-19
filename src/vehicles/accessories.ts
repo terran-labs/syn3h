@@ -18,6 +18,8 @@ export interface AccessoryVehicle {
   readonly zorbed?: boolean
   /** The buggy's wings, 0 folded to 1 open; between the two while moving. */
   readonly wingState?: number
+  /** True while Flip upright can act and is offered (Vehicle.canFlip). */
+  readonly canFlip?: boolean
 }
 
 /** An accessory's state this frame. Written into a reused object: reading allocates nothing. */
@@ -48,6 +50,8 @@ export interface Accessory {
   read(vehicle: AccessoryVehicle, input: InputState, out: AccessoryState): AccessoryState
   /** Switch it exactly as the key does. */
   toggle(input: Input): void
+  /** Shown only while this is true; always shown without it. */
+  shown?(vehicle: AccessoryVehicle): boolean
 }
 
 /** Ride inside a ball (src/vehicles/zorb.ts). Every vehicle has it; a world can turn it off. */
@@ -91,21 +95,36 @@ export const FLIGHT: Accessory = {
 }
 
 /**
+ * Flip upright (U): the player's own way back onto the wheels from a side or a roof, in lava
+ * and water too, where the game no longer rights a vehicle by itself (the owner's rule of
+ * 18 November 2026, AGENTS.md). An action, not a switch, offered only while it can act.
+ */
+export const FLIP: Accessory = {
+  id: 'flip', name: 'Flip', cap: 'U', code: 'KeyU', title: 'Flip upright: set the vehicle back on its wheels where it is. U, while it lies on its side or roof.',
+  read(_vehicle, _input, out) {
+    out.on = false; out.value = 'Ready'; out.moving = -1; out.unavailable = ''
+    return out
+  },
+  toggle(input) { input.requestFlip() },
+  shown: vehicle => Boolean(vehicle.canFlip),
+}
+
+/**
  * The registry: each vehicle kind's accessories, in the order the HUD lists them. Kinds not
  * listed (or added later without an entry) still get Zorb.
  */
 export const ACCESSORIES: Readonly<Record<VehicleKind, readonly Accessory[]>> = {
-  buggy: [WINGS, ZORB],
-  'buggy-syn3h': [WINGS, ZORB],
-  'buggy-classic': [WINGS, ZORB],
-  jet: [FLIGHT, ZORB],
-  hovercraft: [ZORB],
-  tank: [ZORB],
+  buggy: [WINGS, ZORB, FLIP],
+  'buggy-syn3h': [WINGS, ZORB, FLIP],
+  'buggy-classic': [WINGS, ZORB, FLIP],
+  jet: [FLIGHT, ZORB, FLIP],
+  hovercraft: [ZORB, FLIP],
+  tank: [ZORB, FLIP],
 }
 
 /** The accessories of a vehicle, by its kind. */
 export function accessoriesOf(kind: string): readonly Accessory[] {
-  return (ACCESSORIES as Record<string, readonly Accessory[]>)[kind] ?? [ZORB]
+  return (ACCESSORIES as Record<string, readonly Accessory[]>)[kind] ?? [ZORB, FLIP]
 }
 
 export const newAccessoryState = (): AccessoryState => ({ on: false, value: '', moving: -1, unavailable: '' })

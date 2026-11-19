@@ -67,7 +67,7 @@ import { Connection, serverUrl } from './Connection'
 import { VehicleNameplates as NameTags, type NameplateInfo as TagInfo } from '../ui/nameplates/VehicleNameplates'
 import { terrainOcclusion } from '../ui/nameplates/terrain'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
-import { createWorldEntry } from '../core/worldEntry'
+import { createWorldEntry, seatAfterRebuild } from '../core/worldEntry'
 import { RemotePlayer } from './RemotePlayer'
 import { pressHoldsFire } from './pointerFire'
 import { LocalSeat } from './LocalSeat'
@@ -80,6 +80,7 @@ import { setWaterClock, waterTime } from '../world/water/seaWaves'
 import { RaceBridge, type RaceBots, type RacePresentation } from './races'
 import { RemoteArrivals } from './arrivals'
 import { TintTransition, type TintPair } from '../vehicles/tints'
+import { onRescue } from '../core/rescueLog'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -307,6 +308,9 @@ export class NetClient implements System {
   private localZone: HillZone | null = null
   private localZoneKey = ''
 
+  /** A safety net moving our vehicle is a bug: tell the room server's log. */
+  private readonly offRescue = onRescue((cause) => { if (this.connected) this.send({ type: 'rescued', cause }) })
+
   constructor(private readonly ctx: NetContext) {
     const { game, player } = ctx
     this.kind = cleanKind(announcedKind(ctx.kind)) ?? cleanKind((player as VehicleExtras).kind) ?? 'buggy'
@@ -470,27 +474,19 @@ export class NetClient implements System {
     this.seat = new LocalSeat(player, {
       makeBounds: (vehicle) => {
         const bounds = new BoundsGuard(vehicle, ctx.terrain)
-        bounds.onReset = () => this.event('Returned to your pad')
+        // Not announced: a net firing is a bug, logged through rescueLog (sent on below).
         return bounds
       },
       makeRescue: (vehicle) => {
         const rescue = new LocalRescue(game, ctx.terrain, vehicle)
         rescue.onStuck = () => {
           this.stats.stuck++
-          this.event('You are stuck in the lava')
-          if (this.connected) this.send({ type: 'stuck' })
+          this.event('In the lava: off the hill until you drive free')
+          if (this.connected) this.send({ type: 'stuck', held: true })
         }
-        rescue.onFreed = (by) => {
-          this.event(by === 'crawled' ? 'You crawled free of the lava' : 'Returned to your pad')
-          if (by === 'returned') {
-            this.resetGear('own')
-            this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
-          }
-        }
-        rescue.onReturned = () => {
-          this.resetGear('own')
-          this.event('Returned to your pad')
-          this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
+        rescue.onFreed = () => {
+          this.event('You crawled free of the lava')
+          if (this.connected) this.send({ type: 'freed' })
         }
         return rescue
       },
@@ -814,7 +810,6 @@ export class NetClient implements System {
   }
 
   postPhysics(dt: number): void {
-    this.rescue.slot = this.slot
     if (this.mode === MODE_KOTH) this.rescue.check()
     else this.rescue.release()
     if (!this.connected) return
@@ -965,6 +960,7 @@ export class NetClient implements System {
 
   dispose(): void {
     if (this.seamVehicle) (this.seamVehicle.object as THREE.Object3D<VehicleObjectEvents>).removeEventListener('tileshift', this.onTileShift)
+    this.offRescue()
     this.resetGear()
     this.raceBridge.disconnect()
     this.bots?.setGear?.(null)
@@ -1298,7 +1294,7 @@ export class NetClient implements System {
       if (!timer) this.botTimers.set(bot, (timer = new StuckTimer()))
       const what = timer.step(time, inStickyLiquid(this.ctx.terrain, bot.body.translation()), kothRespawnDelay.value)
       if (what === 'stuck') this.send({ type: 'stuck', bot: id })
-      else if (what === 'returned') {
+      else if (what === 'returned' && !bot.isLocal) {
         // The pads the bot manager itself uses (BotBrain): one past the bot's index.
         const s = this.ctx.terrain.spawnPoint(id - BOT_ID_BASE + 1)
         bot.teleport(s.position, s.heading)
@@ -1543,16 +1539,16 @@ export class NetClient implements System {
     // under the same gear systems: a cord anchored in the old ground would hang in the new
     // sky, and a carry or shot would continue in a world it never belonged to.
     this.resetGear()
-    // Re-seated on the new ground, out of any lava: a stuck countdown from before is void.
+    // Re-seated on the new ground: a stuck state from before is void (noticed afresh if it
+    // is still in the lava), so the room counts the player on the hill again meanwhile.
+    if (this.seat.rescue.stuck && this.connected) this.send({ type: 'freed' })
     this.seat.rescue.release()
     // The summit moved with the world: recompute the hill now, and the host resends it.
     this.zoneTimer = 0
-    if (this.everWelcomed) {
-      const s = this.ctx.terrain.spawnPoint(this.slot)
-      this.ctx.player.teleport(s.position, s.heading)
-    }
-    const h = (x: number, z: number) => this.ctx.terrain.heightAt(x, z)
     const entered = this.enteredWorld()
+    // A different world: our pad. The same world rebuilt: where we are (seatAfterRebuild).
+    if (this.everWelcomed) seatAfterRebuild(this.ctx.player, this.ctx.terrain, entered, this.slot)
+    const h = (x: number, z: number) => this.ctx.terrain.heightAt(x, z)
     for (const r of this.remotes.values()) r.reseat(h, entered)
   }
 
@@ -1989,7 +1985,7 @@ export class NetClient implements System {
     } else {
       lines.push('hill: free')
     }
-    if (this.rescue.stuck) lines.push(`stuck in the lava: crawl free, or back to your pad in ${this.rescue.secondsLeft} s`)
+    if (this.rescue.stuck) lines.push('in the lava: off the hill until you drive free')
     return lines
   }
 

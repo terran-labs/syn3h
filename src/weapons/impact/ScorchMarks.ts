@@ -35,17 +35,22 @@ export class ScorchMarks {
     const s: N = attribute('scorchState', 'vec4') // birth, life, seed, darkness
     const age: N = this.clock.sub(s.x), life: N = s.y.max(0.1)
     const p: N = uv().mul(2).sub(1), r: N = p.length(), a: N = atan(p.y, p.x)
-    // A ragged edge from two sine waves round it, a different shape for every mark.
-    const edge: N = float(0.72).add(a.mul(5).add(s.z.mul(6.28)).sin().mul(0.045)).add(a.mul(11).add(s.z.mul(17)).sin().mul(0.025))
-    const inside: N = float(1).sub(smoothstep(edge.sub(0.3), edge, r))
-    const rim: N = smoothstep(edge.sub(0.4), edge.sub(0.08), r).mul(inside)
+    // A small dark burn with a slightly ragged edge, a different shape for every mark, and a few
+    // dark streaks thrown out from it. While hot, a thin rim at its edge glows in the gear's
+    // colour, cooling within a fraction of a second; the mark itself never glows (the light on
+    // the ground around an impact is ImpactPulses' glow, and it is brief).
+    const edge: N = float(0.42).add(a.mul(5).add(s.z.mul(6.28)).sin().mul(0.03)).add(a.mul(11).add(s.z.mul(17)).sin().mul(0.015))
+    const inside: N = float(1).sub(smoothstep(edge.sub(0.12), edge, r))
+    const band: N = r.sub(edge.sub(0.04)).div(0.035)
+    const rim: N = exp(band.mul(band).negate())
+    const rays: N = a.mul(6.5).add(s.z.mul(20)).sin().abs().pow(16).mul(float(1).sub(smoothstep(edge, edge.add(0.5), r))).mul(smoothstep(edge.sub(0.1), edge, r))
     const live: N = age.greaterThanEqual(0).and(age.lessThan(life)).select(float(1), float(0))
-    const heat: N = exp(age.max(0).negate().div(0.25))
+    const heat: N = exp(age.max(0).negate().div(0.15))
     const fade: N = float(1).sub(smoothstep(life.mul(0.55), life, age))
     const m = new T.MeshBasicNodeMaterial({ name: 'gear scorch', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
     m.blending = T.CustomBlending; m.blendSrc = T.OneFactor; m.blendDst = T.OneMinusSrcAlphaFactor
-    m.colorNode = attribute('scorchGlow', 'vec3').mul(heat.mul(rim.mul(1.2).add(inside.mul(0.15)))).mul(live).mul(hotExposureNode())
-    m.opacityNode = inside.mul(s.w).mul(fade).mul(smoothstep(0, 0.2, age)).mul(live)
+    m.colorNode = attribute('scorchGlow', 'vec3').mul(heat.mul(rim.mul(2.4))).mul(live).mul(hotExposureNode())
+    m.opacityNode = inside.max(rays.mul(0.65)).mul(s.w).mul(fade).mul(smoothstep(0, 0.08, age)).mul(live)
     // No fog: with this blend, fog added to the clear part of the quad drew it as a pale square.
     m.fog = false
     this.mesh = new T.InstancedMesh(g, m, SCORCH_CAPACITY)

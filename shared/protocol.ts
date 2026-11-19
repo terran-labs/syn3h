@@ -395,8 +395,19 @@ export type ClientMessage =
   | { type: 'lock'; locked: boolean }
   /** Host only: the King of the Hill zone it computed from the terrain. */
   | { type: 'zone'; zone: HillZone }
-  /** My vehicle (or, from the host, bot `bot`) is stuck in the lava. */
-  | { type: 'stuck'; bot?: number }
+  /**
+   * My vehicle (or, from the host, bot `bot`) is stuck in the lava. `held`: it stays stuck
+   * until a `freed` follows (players are never moved out of the lava). Without it, an older
+   * bundle: stuck for the return delay, after which it was lifted back to its pad.
+   */
+  | { type: 'stuck'; bot?: number; held?: boolean }
+  /** My vehicle crawled out of the lava: it counts on the hill again. */
+  | { type: 'freed' }
+  /**
+   * A safety net moved my vehicle: it fell out of the world or its position stopped being a
+   * number. Always a bug; the server logs it (no names). See BoundsGuard in src/modes/Tag.ts.
+   */
+  | { type: 'rescued'; cause: 'fell' | 'outside' | 'nonfinite' | 'underground' }
   /** The old name for `stuck`, still accepted from tabs holding an older bundle. */
   | { type: 'died'; cause: 'lava' | 'fell'; bot?: number }
   /** Put the shared world back to defaults (allowed whenever moving a shared slider is). */

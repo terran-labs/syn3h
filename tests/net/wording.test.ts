@@ -44,7 +44,7 @@ function playerText(file: string): string[] {
 describe('player-visible wording', () => {
   it('finds the text it is meant to scan', () => {
     const text = playerText('src/net/index.ts')
-    expect(text).toContain('You are stuck in the lava')
+    expect(text).toContain('You crawled free of the lava')
     expect(text).toContain('mode: Tag   ram or beam whoever is it')
     expect(text.some((s) => s.includes('dunked'))).toBe(true)
     expect(playerText('server/room.ts')).toContain('room is full')

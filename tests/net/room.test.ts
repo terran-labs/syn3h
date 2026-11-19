@@ -563,6 +563,19 @@ describe('Room King of the Hill', () => {
     expect(b.peer.last('game')!.game.scores[host.id]).toBe(10)
   })
 
+  // Bug caught: a player sitting in lava inside the zone counting again after the old return
+  // delay, now that players are never lifted out (the owner's rule, AGENTS.md).
+  it('a held stuck report keeps a player off the hill until it crawls free', () => {
+    const { host, b } = setup()
+    run(1, [[host.peer, state(elsewhere)], [b.peer, state(inside)]])
+    send(b.peer, { type: 'stuck', held: true })
+    run(8, [[b.peer, state(inside)], [host.peer, state(elsewhere)]])
+    expect(host.peer.last('game')!.game.koth.holder).not.toBe(b.id)
+    send(b.peer, { type: 'freed' })
+    run(3, [[b.peer, state(inside)], [host.peer, state(elsewhere)]])
+    expect(host.peer.last('game')!.game.koth.holder).toBe(b.id)
+  })
+
   it('announces a winner at the target, pauses, then resets', () => {
     const { host, b } = setup()
     send(host.peer, { type: 'param', id: 'koth.targetScore', value: 5 })

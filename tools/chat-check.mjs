@@ -104,6 +104,9 @@ try {
   // The left column's Chat row shows the same count, through chatLink.
   const rowCount = await B.page.evaluate(() => { const c = document.querySelector('.hud-chat .chat-count'); return c && !c.hidden ? Number(c.textContent.replace('+', '')) : 0 })
   check(rowCount === Math.min(unread, 9) || (unread > 9 && rowCount === 9), `the left column's Chat row shows the unread count (${rowCount} of ${unread})`)
+  // Wait for the escaped line to reach the strip (it can lag under load) before judging it:
+  // failed twice on 18 Nov at load 25 to 35 by reading too early, with no element injected.
+  await B.page.waitForFunction(() => (document.querySelector('.chat-strip')?.innerHTML ?? '').includes('bold'), null, { timeout: 15000 }).catch(() => {})
   const stripHtml = await B.page.evaluate(() => document.querySelector('.chat-strip')?.innerHTML ?? '')
   check(!/<b>bold/.test(stripHtml) && stripHtml.includes('&lt;b&gt;bold'), 'markup arrives as text, not elements')
   await showPanels(B.page)

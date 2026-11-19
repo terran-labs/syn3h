@@ -10,6 +10,7 @@ import {applyVehicleLiquid,createLiquidState,registerLiquidTerrain} from './lava
  * each step. A remote one has its `input` and target state written by the network layer,
  * which is why all control state lives in `input` and `getState`/`setState` here.
  */
+import { reportRescue } from '../core/rescueLog'
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import type { Game, System } from '../core/Game'
@@ -199,6 +200,10 @@ export abstract class Vehicle implements System {
     registerLiquidTerrain(this.body,terrain,this.liquidState)
     this.object.userData.vehicleHeat=this.liquidState
     this.object.userData.vehicleColors=this.liveColors
+    // How the grass reads this vehicle (src/world/terrain/groundcover.ts): what it is and
+    // how it touches the ground. A function, so a userData copy (JSON) leaves it out.
+    const touch={kind:'',zorbRadius:0,grounded:0}
+    this.object.userData.vehicleTouch=()=>{touch.kind=this.kind;touch.zorbRadius=this.zorb.active?this.zorb.radius:0;touch.grounded=this.wheelsGrounded;return touch}
     this.currPos.copy(position)
     this.prevPos.copy(position)
     this.currQuat.copy(q)
@@ -236,6 +241,8 @@ export abstract class Vehicle implements System {
       Object.assign(this.input, this.game.input.state)
       this.zorbView = this.game.camera?.quaternion ?? null
       this.localSafety()
+      if (this.game.input.takeFlip?.()) this.flipUpright()
+      this.flipReadyFor = this.flipPossible() ? this.flipReadyFor + dt : 0
     }
     this.body.resetForces(true)
     this.body.resetTorques(true)
@@ -291,6 +298,7 @@ export abstract class Vehicle implements System {
       const s = this.terrain.spawnPoint(this.spawnSlot)
       this.teleport(s.position, s.heading)
       b.setLinvel({ x: v.x / len, y: v.y / len, z: v.z / len }, true)
+      reportRescue('fell')
       return
     }
     const half = this.terrain.size / 2
@@ -302,7 +310,7 @@ export abstract class Vehicle implements System {
           this.safetyRay, 1e4, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
           groups(GROUP_ALL, GROUP_TERRAIN), undefined, b,
         )
-        if (!below) b.setTranslation({ x: t.x, y: ground + 3, z: t.z }, true)
+        if (!below) { b.setTranslation({ x: t.x, y: ground + 3, z: t.z }, true); reportRescue('underground') }
       }
     }
     const v = b.linvel()
@@ -331,10 +339,43 @@ export abstract class Vehicle implements System {
     const t = b.translation()
     const v = b.linvel()
     const ground = this.terrain.heightAt(t.x, t.z)
-    const stuck = upY < 0.3 && v.x * v.x + v.y * v.y + v.z * v.z < 9 && t.y - ground < 3
+    const stuck = upY < 0.3 && v.x * v.x + v.y * v.y + v.z * v.z < 9 && t.y - ground < 3 && !this.inOrOverLiquid(t)
     this.stuckSteps = stuck ? this.stuckSteps + 1 : 0
     if (this.stuckSteps * FIXED_DT < Vehicle.STUCK_SECONDS) return
+    this.setUpright()
+  }
+
+  /** How far above a liquid's surface a vehicle still counts as in it, for `inOrOverLiquid`, in metres. */
+  static readonly LIQUID_UPRIGHT_MARGIN = 1.5
+  /** How far round the vehicle `inOrOverLiquid` also looks, so the edge of a pool counts, in metres. */
+  static readonly LIQUID_UPRIGHT_REACH = 2.5
+
+  /**
+   * True when lava or water is under the vehicle or right beside it and the vehicle is at or
+   * below its surface (with a margin). Automatic uprighting never fires then: set upright in a
+   * pool reads as the game moving the player (the owner's rule of 18 November 2026, AGENTS.md).
+   * The player's own Flip upright still works there.
+   */
+  protected inOrOverLiquid(t: { x: number; y: number; z: number }): boolean {
+    const r = Vehicle.LIQUID_UPRIGHT_REACH
+    for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) {
+      const x = t.x + dx, z = t.z + dz
+      const surface = this.terrain.liquidHeightAt?.(x, z) ?? -Infinity
+      if (!Number.isFinite(surface) || surface <= this.terrain.heightAt(x, z)) continue
+      // A terrain that cannot name its liquid has one wherever its surface is above the ground.
+      if (this.terrain.liquidKindAt && !this.terrain.liquidKindAt(x, z)) continue
+      if (t.y <= surface + Vehicle.LIQUID_UPRIGHT_MARGIN) return true
+    }
+    return false
+  }
+
+  /** Set the vehicle upright where it is, keeping its heading, lifted 1.5 m clear of the ground. */
+  protected setUpright(): void {
     this.stuckSteps = 0
+    const b = this.body
+    const r = b.rotation()
+    const t = b.translation()
+    const ground = this.terrain.heightAt(t.x, t.z)
     // Heading from the forward axis projected on the ground; fall back to the up axis when the
     // nose points straight up or down.
     const q = new THREE.Quaternion(r.x, r.y, r.z, r.w)
@@ -342,6 +383,40 @@ export abstract class Vehicle implements System {
     if (f.x * f.x + f.z * f.z < 0.01) f.set(0, 1, 0).applyQuaternion(q).negate()
     const heading = Math.atan2(-f.x, -f.z)
     this.teleport(new THREE.Vector3(t.x, Math.max(t.y, ground) + 1.5, t.z), heading)
+  }
+
+  /** Slower than this, in metres per second, a vehicle may be flipped upright on request. */
+  static readonly FLIP_MAX_SPEED = 3
+  /** Tilted past this (the height of its up axis: 0.5 is 60 degrees), it may be flipped upright. */
+  static readonly FLIP_TILT = 0.5
+  /** How long it must have been flippable before the controls offer it, in seconds, so a slow tumble does not flash them. */
+  static readonly FLIP_OFFER_AFTER = 0.5
+  /** Seconds the local vehicle has been flippable without a break; 0 when it is not. */
+  flipReadyFor = 0
+
+  /** Whether Flip upright would act now: tilted past FLIP_TILT, nearly at rest, not in a Zorb. */
+  flipPossible(): boolean {
+    if (this.zorbed) return false
+    const r = this.body.rotation()
+    const v = this.body.linvel()
+    return 1 - 2 * (r.x * r.x + r.z * r.z) < Vehicle.FLIP_TILT && v.x * v.x + v.y * v.y + v.z * v.z < Vehicle.FLIP_MAX_SPEED ** 2
+  }
+
+  /** Whether the controls offer Flip upright: possible, and for FLIP_OFFER_AFTER already. */
+  get canFlip(): boolean { return this.flipReadyFor >= Vehicle.FLIP_OFFER_AFTER }
+
+  /**
+   * The player's Flip upright control (the U key, or FLIP on touch): set a vehicle that is on
+   * its side or roof and nearly at rest (`flipPossible`) upright where it is, keeping its
+   * heading, as `uprightRescue` does. The player asks for
+   * it, so it is not the game moving them. Ignored while moving, when already upright, and
+   * in a Zorb (the ball tumbles by design). Returns whether it flipped.
+   */
+  flipUpright(): boolean {
+    if (!this.flipPossible()) return false
+    this.flipReadyFor = 0
+    this.setUpright()
+    return true
   }
 
   /**

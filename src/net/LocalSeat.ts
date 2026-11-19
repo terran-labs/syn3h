@@ -1,6 +1,6 @@
 /**
  * The things networking builds around the one vehicle the player drives: the guard that
- * returns it to its pad when it leaves the world, and the lava rescue. Both are constructed
+ * returns it to its pad when it falls out of the world (a bug), and the lava bookkeeping. Both are constructed
  * for a particular vehicle, so when the player switches vehicle in play (no reload) they
  * must be rebuilt for the new one, or they would go on watching a vehicle that has been
  * removed. This keeps the two together, keeps the guard registered with the game exactly
@@ -8,7 +8,7 @@
  *
  * Generic over the parts so it is unit tested with plain objects, no physics or Three.js.
  */
-export interface SeatParts<V, B extends { slot: number }, R extends { slot: number }> {
+export interface SeatParts<V, B extends { slot: number }, R> {
   /** Build the guard for a vehicle, with its callbacks wired. */
   makeBounds(vehicle: V): B
   /** Build the rescue for a vehicle, with its callbacks wired. */
@@ -18,7 +18,7 @@ export interface SeatParts<V, B extends { slot: number }, R extends { slot: numb
   remove(bounds: B): void
 }
 
-export class LocalSeat<V, B extends { slot: number }, R extends { slot: number }> {
+export class LocalSeat<V, B extends { slot: number }, R> {
   bounds: B
   rescue: R
   private started = false
@@ -48,7 +48,6 @@ export class LocalSeat<V, B extends { slot: number }, R extends { slot: number }
     this.bounds = this.parts.makeBounds(vehicle)
     this.bounds.slot = slot
     this.rescue = this.parts.makeRescue(vehicle)
-    this.rescue.slot = slot
     if (this.started) this.parts.add(this.bounds)
     return true
   }

@@ -5,7 +5,7 @@
 import { initializeFrozenResources } from './core/frozenResources'
 import { ResumeSession, RESUME_KEY } from './core/resume'
 import { applyStartWorld } from './core/startWorld'
-import { createWorldEntry, freshVehicle } from './core/worldEntry'
+import { createWorldEntry, freshVehicle, seatAfterRebuild } from './core/worldEntry'
 import { randomSeed } from './world/planets'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
@@ -79,13 +79,14 @@ async function main(): Promise<void> {
   const swapper = createVehicleSwapper(game, terrain, slot)
   // A new seed or terrain parameter rebuilds the ground in place: put the player back on it.
   // Entering a different world (another planet from the galaxy, or the room moving everyone
-  // to one) also gives the player a fresh vehicle: modes off, nothing held, nothing carried
-  // over. A rebuild of the same world (a slider, quality, the worker) keeps the modes.
+  // to one) gives the player a fresh vehicle on the spawn pad: modes off, nothing held,
+  // nothing carried over. A rebuild of the same world (a slider, quality, the worker) keeps
+  // the modes and re-seats the vehicle where it is (seatAfterRebuild).
   const enteredWorld = createWorldEntry()
   terrain.onRegenerate?.(() => {
-    if (enteredWorld()) freshVehicle(slot.current, game.input, { daydream: bots.daydream, materialize })
-    const s = terrain.spawnPoint(0)
-    slot.current.teleport(s.position, s.heading)
+    const entered = enteredWorld()
+    if (entered) freshVehicle(slot.current, game.input, { daydream: bots.daydream, materialize })
+    seatAfterRebuild(slot.current, terrain, entered, 0)
   })
 
   // Bots chase and ram the player. The 'bots.count' slider sets the requested fleet size.

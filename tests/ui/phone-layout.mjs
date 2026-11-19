@@ -75,6 +75,9 @@ for (const view of layouts) {
     page.on('console', m => { if (m.type() === 'error') report.errors.push(`${view.name} ${vehicle}: ${m.text()}`) })
     await page.goto(`${base}?room=phone-${label}-${view.name}-${vehicle}&vehicle=${vehicle}`, { waitUntil: 'load' })
     await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 120000 })
+    // No daydream: this measures the layout, and the idle autopilot taking the wheel part way
+    // through moved the vehicle (and the camera) under the stick hint, by timing and load.
+    await page.evaluate(() => window.syn3h.params.set('daydream.seconds', 0))
     const shot = async (state, inGame = true) => {
       await page.screenshot({ path: `${out}/${label}-${view.name}-${vehicle}-${state}.png` })
       const m = inGame ? { ...await measure(page), grid: await page.evaluate(thumbGrid) } : { overlaps: [], offscreen: [], grid: [] }
@@ -96,15 +99,42 @@ for (const view of layouts) {
     await page.evaluate(lines => window.syn3h.shell.setStatus(lines), status(['Gevotek Spare Pilot joined']))
     await page.waitForTimeout(1200)
     await shot('game')                                   // controls card and a toast on screen
+    // Last of the measured states, so it cannot shift the others: on its roof and still, Flip
+    // upright takes BRAKE's place in the thumb grid (TouchControls setFlipReady). The vehicle
+    // keeps its place and heading, is held still (kinematic) through the measurement, with a
+    // moment for the camera to settle, then is put back exactly as it was.
+    const flipState = async () => {
+      const pose = await page.evaluate(() => { const v = window.syn3h.player, t = v.body.translation(), q = v.body.rotation(); return { t: { x: t.x, y: t.y, z: t.z }, q: { x: q.x, y: q.y, z: q.z, w: q.w } } })
+      await page.evaluate(({ t, q }) => {
+        const v = window.syn3h.player, b = v.body
+        // Rolled over about its own nose: the heading, and so the camera, stay as they were.
+        const roll = { x: 0, y: 0, z: 1, w: 0 }
+        const r = { w: q.w * roll.w - q.x * roll.x - q.y * roll.y - q.z * roll.z, x: q.w * roll.x + q.x * roll.w + q.y * roll.z - q.z * roll.y, y: q.w * roll.y - q.x * roll.z + q.y * roll.w + q.z * roll.x, z: q.w * roll.z + q.x * roll.y - q.y * roll.x + q.z * roll.w }
+        // Held still from the start (kinematic), so it cannot roll back by itself before the
+        // offer's half second is up.
+        b.setTranslation({ x: t.x, y: t.y + 0.6, z: t.z }, true); b.setRotation(r, true); b.setLinvel({ x: 0, y: 0, z: 0 }, true); b.setAngvel({ x: 0, y: 0, z: 0 }, true)
+        b.setBodyType(2, true)
+      }, pose)
+      await page.locator('.touch-controls [data-action="flip"]').waitFor({ state: 'visible', timeout: 60000 })
+      await page.waitForTimeout(1200); await shot('flip-offered')
+      // The tap on FLIP is the player's activity: the idle autopilot's clock starts again.
+      await page.evaluate(({ t, q }) => {
+        const v = window.syn3h.player, b = v.body
+        b.setBodyType(0, true); b.setTranslation(t, true); b.setRotation(q, true); b.setLinvel({ x: 0, y: 0, z: 0 }, true); b.setAngvel({ x: 0, y: 0, z: 0 }, true)
+        window.syn3h.bots.daydream?.noteActivity()
+      }, pose)
+    }
     await page.waitForTimeout(5500)
     await page.evaluate(m => window.syn3h.shell.setMatchState(m), koth({ holderName: 'Phone QA', holderIsYou: true }))
     await page.waitForTimeout(400); await shot('hill-announce')
     await page.waitForTimeout(3200); await shot('hill-held')
+    if (vehicle !== 'buggy') await flipState()
     if (vehicle === 'buggy') {
       await page.evaluate(m => window.syn3h.shell.setMatchState(m), koth({ holderName: 'Phone QA', holderIsYou: true, contested: true }))
       await page.waitForTimeout(3200); await shot('hill-contested')
       await page.evaluate(m => window.syn3h.shell.setMatchState(m), koth({ holderName: 'Phone QA', holderIsYou: true, winner: 'Phone QA', winnerColor: '#ff8844', nextRoundIn: 6 }))
       await page.waitForTimeout(600); await shot('hill-winner')
+      await flipState()
       await page.evaluate(() => window.syn3h.shell.openJoin()); await page.waitForTimeout(500); await shot('join-qr', false)
       await page.evaluate(() => window.syn3h.shell.closeJoin())
       await page.evaluate(() => window.syn3h.shell.openMenu()); await page.waitForTimeout(2300); await shot('menu', false)

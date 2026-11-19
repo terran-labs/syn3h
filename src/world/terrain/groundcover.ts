@@ -41,6 +41,7 @@ import type { HeightSampler } from './sampler'
 import { paletteFor } from './palettes'
 import { terrainFloraHue, terrainFloraSeed, terrainFlowers, terrainGroundCover, terrainNightLife, terrainRoadStyle } from './settings'
 import { prevailingWindHeading, prevailingWindStrength } from '../weather/wind'
+import { SWISH_CELL, SWISH_N, SwishField, coverSwishBend, coverSwishRise, type Footprint } from './swish'
 export const groundCover = terrainGroundCover
 
 export const groundCoverShade = defineParam({
@@ -261,6 +262,23 @@ const hueTurn = uniform(new THREE.Matrix3())
  */
 const BENDERS = 6
 const benders = Array.from({ length: BENDERS }, () => uniform(new THREE.Vector4(0, 0, 1, 0)))
+/**
+ * Tracks left by what touches the ground (wheels, treads, a Zorb): see swish.ts. One map for
+ * the module, like the benders, since only one cover is drawn at a time.
+ */
+const swish = new SwishField()
+const swishCentre = uniform(new THREE.Vector2())
+const swishTop = uniform(1)
+const swishBend = uniform(0)
+/** How far a plant in a track is laid over at full strength (cover.swishBend 1): 80 degrees. */
+const LAY = 1.4
+/** Ground vehicles' footprints: half length and half width in metres, by kind. */
+const FOOTPRINTS: Record<string, { halfLength: number; halfWidth: number }> = {
+  buggy: { halfLength: 1.5, halfWidth: 1.05 }, 'buggy-classic': { halfLength: 1.5, halfWidth: 1.05 }, 'buggy-syn3h': { halfLength: 1.5, halfWidth: 1.05 },
+  tank: { halfLength: 2.9, halfWidth: 1.75 },
+}
+/** What a vehicle tells the grass about itself (Vehicle.ts sets userData.vehicleTouch). */
+interface VehicleTouch { kind: string; zorbRadius: number; grounded: number }
 
 /** A rotation of linear RGB about the grey axis by `degrees`: hue changes, brightness and greys do not. */
 export function hueMatrix(degrees: number, out = new THREE.Matrix3()): THREE.Matrix3 {
@@ -663,8 +681,24 @@ function coverMaterial(reach: number, look: TerrainMaterial | null): THREE.MeshS
     press = press.max(w)
     push = push.add(d.div(len.max(0.05)).mul(w))
   }
+  // Wheels and treads: the track map holds how bent the ground is here and which way it was
+  // pushed. Eased with a smoothstep, so a plant lies still in the track, rises gently and
+  // settles into the wind without overshoot. No shiver: only the wash flutters. Faded out
+  // toward the map's edge, where it would otherwise repeat. A plant in the track is laid
+  // over: turned about its foot toward the push, by up to LAY radians at full strength, so
+  // its blades keep their length rather than being squashed into the ground.
+  const track = texture(swish.texture, foot.div(SWISH_N * SWISH_CELL)).level(float(0))
+  const edge = foot.sub(swishCentre).abs()
+  const inMap = smoothstep(SWISH_N * SWISH_CELL * 0.5, SWISH_N * SWISH_CELL * 0.5 - 3, edge.x.max(edge.y))
+  const lying = smoothstep(0, 1, track.z.mul(swishTop).min(1)).mul(inMap)
+  const swept = vec2(track.x, track.y).mul(255 / 127).sub(128 / 127)
+  // Where the push is too small to say (a vehicle standing still), the plant falls downwind.
+  const fall = normalize(swept.add(vec2(windDir.x, windDir.y).mul(0.05)))
+  const angle = lying.mul(swishBend).mul(LAY).min(1.54)
   const up = local.y.mul(size)
-  const shove = vec3(push.x.mul(0.85), press.mul(-0.72), push.y.mul(0.85)).mul(up)
+  const laid = vec3(fall.x.mul(sin(angle)), cos(angle).sub(1), fall.y.mul(sin(angle))).mul(up)
+  // The wash: pressed and shoved by the benders above, exactly as before.
+  const shove = vec3(push.x.mul(0.85), press.mul(-0.72), push.y.mul(0.85)).mul(up).add(laid)
   const shiver = sin(time.mul(23).add(origin.x.mul(5.1)).add(origin.z.mul(3.7))).mul(0.03).mul(press).mul(tipness).mul(size)
   // Night life wanders round its cell and bobs, each mote on its own phase.
   const phase = param.x.mul(7.3)
@@ -676,7 +710,9 @@ function coverMaterial(reach: number, look: TerrainMaterial | null): THREE.MeshS
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.9, metalness: 0, side: THREE.DoubleSide })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const wind = windDir as any
-  const blown = vec3(wind.x.mul(bend).add(shiver), 0, wind.y.mul(bend).add(shiver))
+  // A plant lying in a track sways less, and takes the wind back as it rises.
+  const calm = float(1).sub(lying.mul(0.75))
+  const blown = vec3(wind.x.mul(bend).mul(calm).add(shiver), 0, wind.y.mul(bend).mul(calm).add(shiver))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   material.positionNode = (origin as any).add(turned).add(lean).add(blown).add(shove).add(drift)
 
@@ -807,7 +843,7 @@ export class GroundCover implements System {
     reachScale.value = reach || 1
     lodNear = detailNear
     this.group.visible = density > 0
-    if (!bend) for (const b of benders) b.value.w = 0
+    if (!bend) { for (const b of benders) b.value.w = 0; swishBend.value = 0 }
     if (replant) this.rebuild()
     else for (const l of this.layers) l.redraw()
   }
@@ -898,7 +934,7 @@ export class GroundCover implements System {
     // Kept within a turn so the shader's sine stays exact however long the game runs.
     gustPhase.value = (gustPhase.value + dt * (0.9 + 1.4 * strength)) % (Math.PI * 2)
     this.clock += dt
-    if (this.budget.bend) this.press()
+    if (this.budget.bend) this.press(dt)
     const p = this.camera.position
     let changed = false
     // One deadline for all layers, so the frame's replanting is bounded however many
@@ -922,17 +958,24 @@ export class GroundCover implements System {
    * to touch the grass, and at two points on the nearest one's trail, so the grass it
    * crossed takes a moment to stand up again.
    */
-  private press(): void {
+  private press(dt: number): void {
     const cam = this.camera.position, slots = this.pressing
     for (const s of slots) { s.w = 0; s.d2 = Infinity; s.o = null }
+    let prints = 0
     if (this.vehicles) {
       for (const o of this.vehicles()) {
         const x = o.position.x, z = o.position.z
         const d2 = (x - cam.x) ** 2 + (z - cam.z) ** 2
         if (d2 > 90 * 90) continue
-        // Wheels press hardest; a hovercraft a metre or two up still flattens it with its
-        // wash, over a wider circle; nothing higher than about 6 m reaches the ground.
         const clearance = Math.max(0, o.position.y - this.sampler.heightAt(x, z))
+        // Whatever rolls on the ground (wheels, treads, a Zorb) leaves a track; see swish.ts.
+        const touch = (o.userData.vehicleTouch as (() => VehicleTouch) | undefined)?.()
+        const ground = touch ? this.footprint(o, touch, clearance, prints, d2) : 'wash'
+        if (ground === 'printed') prints++
+        if (ground !== 'wash') continue
+        // A hovercraft's or a jet's wash flutters the grass: wheels press hardest; a
+        // hovercraft a metre or two up still flattens it with its wash, over a wider
+        // circle; nothing higher than about 6 m reaches the ground.
         const w = Math.max(0, Math.min(1, 1 - (clearance - 1.5) / 4.5))
         if (w <= 0) continue
         // Keep the four nearest, nearest first.
@@ -945,6 +988,8 @@ export class GroundCover implements System {
       }
     }
     for (let i = 0; i < slots.length; i++) benders[i].value.set(slots[i].x, slots[i].z, slots[i].r, slots[i].w)
+    swish.update(dt, cam.x, cam.z, this.prints, prints, coverSwishRise.value)
+    swishCentre.value.copy(swish.centre); swishTop.value = swish.top; swishBend.value = coverSwishBend.value
     // The trail: where the nearest vehicle was about a quarter and a half second ago.
     const lead = slots[0], trail = this.trail
     if (lead.o !== this.trailOf) { this.trailOf = lead.o; trail.length = 0 }
@@ -961,6 +1006,48 @@ export class GroundCover implements System {
       else benders[k].value.w = 0
       k++
     }
+  }
+
+  /** Footprints of ground vehicles this frame, reused; and where each was last frame. */
+  private readonly prints: Footprint[] = []
+  private readonly last = new WeakMap<THREE.Object3D, { x: number; z: number }>()
+
+  /**
+   * If this vehicle rolls on the ground (wheels, treads, a Zorb), write its footprint into
+   * `prints[at]` ('printed'), or 'off' while it is in the air or beyond the track map's
+   * reach (24 m). Hovercraft and jets are 'wash': they flutter the grass instead.
+   */
+  private footprint(o: THREE.Object3D, touch: VehicleTouch, clearance: number, at: number, d2: number): 'printed' | 'off' | 'wash' {
+    const size = FOOTPRINTS[touch.kind]
+    let w = 0, halfLength = 0, halfWidth = 0
+    if (touch.zorbRadius > 0) {
+      // A rolling ball presses a path about three quarters as wide as itself.
+      halfLength = halfWidth = touch.zorbRadius * 0.75
+      w = clearance < touch.zorbRadius + 0.6 ? 1 : 0
+    } else if (size) {
+      halfLength = size.halfLength; halfWidth = size.halfWidth
+      // Wheels on the ground; copies whose contact is not simulated go by their height.
+      w = touch.grounded > 0 ? 1 : clearance < 1.0 ? 1 : clearance < 1.6 ? (1.6 - clearance) / 0.6 : 0
+    } else return 'wash'
+    const x = o.position.x, z = o.position.z
+    let was = this.last.get(o)
+    if (!was) { was = { x, z }; this.last.set(o, was) }
+    const px = was.x, pz = was.z
+    was.x = x; was.z = z
+    if (w <= 0 || d2 > (SWISH_N * SWISH_CELL * 0.5 + 4) ** 2) return 'off'
+    // Its heading on the ground: the object's forward (-z), flattened.
+    const q = o.quaternion
+    let fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
+    const n = Math.hypot(fx, fz)
+    if (n > 1e-3) { fx /= n; fz /= n } else { fx = 0; fz = -1 }
+    const p = this.prints[at] ?? (this.prints[at] = { x: 0, z: 0, px: 0, pz: 0, fx: 0, fz: 0, halfLength: 0, halfWidth: 0, w: 0 })
+    p.x = x; p.z = z; p.px = px; p.pz = pz; p.fx = fx; p.fz = fz; p.halfLength = halfLength; p.halfWidth = halfWidth; p.w = w
+    return 'printed'
+  }
+
+  /** How bent the grass is in a ground vehicle's track at a point, 0..1, and the way it was pushed. For tests and the lab. */
+  tracked(x: number, z: number): { bend: number; push: { x: number; z: number } } {
+    return { bend: swish.bendAt(x, z), push: swish.pushAt(x, z) }
   }
 
   private disposeLayers(): void {
