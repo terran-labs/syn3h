@@ -11,7 +11,7 @@ import type { ShotInfo } from '../../shared/protocol'
 import type { Game } from '../../src/core/Game'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from '../../src/core/physics'
 import { Lasers, type LaserHooks } from '../../src/weapons/Lasers'
-import { thunderSkips } from '../../src/weapons/thunderParams'
+import { thunderFuseGround, thunderSkips } from '../../src/weapons/thunderParams'
 
 beforeAll(initPhysics)
 afterEach(() => vi.unstubAllGlobals())
@@ -79,7 +79,8 @@ describe('Plasma Thunder in flight', () => {
     w.run(120)
     expect(w.log.detonations).toHaveLength(1)
     expect(w.log.detonations[0]).toMatchObject({ cause: 'fuse', victim: 22 })
-    expect(w.log.detonations[0].at.z).toBeCloseTo(-70, 0)
+    // It goes off within the fuse's reach of that vehicle (on the step that first comes in range).
+    expect(w.log.detonations[0].at.distanceTo(new THREE.Vector3(2, 3, -70))).toBeLessThanOrEqual(thunderFuseGround.value)
   })
 
   it('goes off at once on contact with a vehicle, before it has armed', () => {
