@@ -195,6 +195,8 @@ export class Fireworks {
   update(dt: number): void {
     if (this.level !== Math.max(0, Math.min(2, Number(graphicsLevel.value)))) this.rebuild()
     this.clock += Math.min(0.1, dt)
+    // Stars written this frame go up together (SparkBatch.flush).
+    this.stars.flush()
     this.stars.clock.value = this.clock
     for (let i = this.lights.length - 1; i >= 0; i--) {
       const l = this.lights[i]
