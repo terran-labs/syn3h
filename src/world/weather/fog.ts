@@ -34,6 +34,7 @@ import { Fn, abs, atan, cameraPosition, dot, exp, float, length, max, mix, norma
 import { defineParam, params } from '../../../shared/params'
 import { seaLevel } from '../seaLevel'
 import { curveFactor } from '../curve'
+import { hazeTinted } from './haze'
 import { atmosphereValue, storminess } from './params'
 
 type N = any // TSL node
@@ -80,6 +81,11 @@ export function aerialWeights(out = new THREE.Vector3()): THREE.Vector3 {
   const r = Number(params.get('sky.rayleighR')?.value ?? 1), g = Number(params.get('sky.rayleighG')?.value ?? 1), b = Number(params.get('sky.rayleighB')?.value ?? 1)
   const mean = (r + g + b) / 3 || 1
   return out.set(0.5 + 0.5 * r / mean, 0.5 + 0.5 * g / mean, 0.5 + 0.5 * b / mean)
+}
+
+/** The aerial layer's extinction per metre at sea level now: 0 with weather.aerial 0 or no air. */
+export function aerialDensityNow(): number {
+  return AERIAL_DENSITY * aerial.value * Math.max(0, Math.min(1, atmosphereValue()))
 }
 
 /** How much a gale (storminess 1) thickens and lifts the haze, beyond the calm values. */
@@ -176,18 +182,16 @@ export function heightFog(color: N, uniformDensity: N, sun?: FogSun): { color: N
   const tau = (density as N).mul(L).mul(meanExp(camU.x, camU.y, ap)).add(dist.mul(dist)) as N
 
   // The aerial layer, per channel. Zero when weather.aerial is 0 or there is no air.
-  const aerialDensity = live(0, () => AERIAL_DENSITY * aerial.value * Math.max(0, Math.min(1, atmosphereValue())))
+  const aerialDensity = live(0, () => aerialDensityNow())
   const weights = live(new THREE.Vector3(1, 1, 1), () => aerialWeights(weightsValue))
   const ah = float(1 / AERIAL_HEIGHT)
   const tauA = (aerialDensity as N).mul(L).mul(meanExp(camU.z, camU.w, above.mul(ah))) as N
   const tauRGB = vec3(tau, tau, tau).add((weights as N).mul(tauA)) as N
   const factor = vec3(1, 1, 1).sub(exp(tauRGB.negate()))
 
-  // Shift the hue toward the tint and keep the sky colour's brightness.
-  const lumW = vec3(0.2126, 0.7152, 0.0722)
-  const lum = dot(color, lumW) as N
-  const tinted = (tintU as N).mul(lum.div(max(dot(tintU, lumW), 0.05)))
-  let fogged = mix(color, tinted, tintAmountU) as N
+  // Shift the hue toward the tint and keep the sky colour's brightness (the sky's horizon
+  // band uses the same function, src/world/weather/haze.ts).
+  let fogged = hazeTinted(color, tintU, tintAmountU) as N
   if (sun) {
     // A low sun fills the far air: a forward lobe, in the aerial layer's share of the fog only.
     const sunDir = live(new THREE.Vector3(0, 1, 0), sun.direction)

@@ -23,7 +23,9 @@ import {
 import * as P from './sky/skyParams'
 import { bindDayClock, currentHour, followHour } from './sky/dayCycle'
 import { applyBounce, lightSkyReflection, shadowSoftness, shadowStrength } from './lightRig'
-import { heightFog, weatherFogNode } from './weather/fog'
+import { AERIAL_HEIGHT, hazeNow, hazeTintAmount, hazeTintB, hazeTintG, hazeTintR, heightFog, weatherFogNode } from './weather/fog'
+import { horizonHaze } from './weather/haze'
+import { curveFactor } from './curve'
 import { advanceCloudDrift } from './weather/clouds'
 import { atmosphereValue } from './weather/params'
 
@@ -153,6 +155,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   // Uniforms in the scene fog node stayed frozen at their first upload in r187 when left in
   // the default object group, so these use the render group with a per render callback, the
   // same pattern CSMShadowNode uses for its live values.
+  const skyHazeState = { density: 0, height: 70, sea: 0 }
   const fogState = {
     toward: new THREE.Vector3(), away: new THREE.Vector3(), side: new THREE.Vector3(),
     sunXZ: new THREE.Vector2(1, 0), density: P.fogDensity.value, lobe: FOG_LOBE_DAY,
@@ -335,6 +338,26 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     fogState.side.set(s[0], s[1], s[2])
     const hl = Math.hypot(sun[0], sun[2])
     if (hl > 1e-6) fogState.sunXZ.set(sun[0] / hl, sun[2] / hl)
+
+    // The sky's horizon haze band (src/world/weather/haze.ts): the same haze and the same
+    // colour the land fades into, so the planet's edge melts into the sky.
+    const hz = sky.haze, h = hazeNow(skyHazeState)
+    hz.strength.value = h.density > 0 ? horizonHaze.value : 0
+    hz.density.value = h.density
+    hz.height.value = h.height
+    // The height haze only: the thin aerial layer is the sky's own scattering already, and
+    // counted again it whitened the whole lower sky.
+    hz.aerialDensity.value = 0
+    hz.aerialHeight.value = AERIAL_HEIGHT
+    hz.camAbove.value = Math.max(0, game.camera.position.y - h.sea)
+    hz.invR.value = curveFactor()
+    ;(hz.toward.value as THREE.Vector3).copy(fogState.toward)
+    ;(hz.side.value as THREE.Vector3).copy(fogState.side)
+    ;(hz.away.value as THREE.Vector3).copy(fogState.away)
+    ;(hz.sunXZ.value as THREE.Vector2).copy(fogState.sunXZ)
+    hz.lobe.value = fogState.lobe
+    ;(hz.tint.value as THREE.Vector3).set(hazeTintR.value, hazeTintG.value, hazeTintB.value)
+    hz.tintAmount.value = hazeTintAmount.value
 
     reflections.update(dt, hour)
 
