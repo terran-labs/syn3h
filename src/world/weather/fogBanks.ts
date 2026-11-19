@@ -9,7 +9,7 @@ import { params } from '../../../shared/params'
 import type { Terrain } from '../Terrain'
 import { seaLevel } from '../seaLevel'
 import type { FogBanksInput } from './fog'
-import { FOG_BANK_DENSITY, FOG_BANK_GLOW, type FogMap, buildFogMap, createFogMapTexture, fogAllDay, fogBankDetail, fogBankHeight, fogBanks, fogCoast, fogHourWeights, fogValley, sampleFogMap, writeFogMap } from './fogMap'
+import { FOG_BANK_DENSITY, FOG_BANK_GLOW, FOG_MAP_CELLS, type FogMap, buildFogMap, createFogMapTexture, fogAllDay, fogBankDetail, fogBankHeight, fogBanks, fogCoast, fogHourWeights, fogValley, sampleFogMap, writeFogMap } from './fogMap'
 import { atmosphereValue } from './params'
 
 type N = any // TSL node
@@ -43,7 +43,10 @@ export function createFogBanks(terrain: Terrain): FogBanks {
       liquidAt: (x: number, z: number) => terrain.liquidKindAt?.(x, z) ?? null,
     }
     if (!(ground.size > 0)) return
-    map = buildFogMap(ground, seaLevel(), Number(params.get('world.seed')?.value ?? 0))
+    // The spawn pads: the first eight players each get their own (terrain/spawn.ts).
+    const pads: { x: number; z: number }[] = []
+    for (let i = 0; i < 8; i++) { const p = terrain.spawnPoint?.(i)?.position; if (p) pads.push({ x: p.x, z: p.z }) }
+    map = buildFogMap(ground, seaLevel(), Number(params.get('world.seed')?.value ?? 0), FOG_MAP_CELLS, pads)
     writeFogMap(tex, map)
     invSize.value = 1 / map.size
   }

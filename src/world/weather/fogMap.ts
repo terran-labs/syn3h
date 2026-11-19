@@ -42,7 +42,13 @@ export const fogAllDay = defineParam({ id: 'weather.fogAllDay', label: 'Fog that
 export const fogBankDetail = defineParam({ id: 'gfx.fogBanks', label: 'Fog bank detail: 0 off, 1 cheap, 2 full', group: 'Graphics', scope: 'client', default: 2, min: 0, max: 2, step: 1 })
 
 /** Metres over which valley fog thins above its flat top. */
-export const VALLEY_TOP_SOFTNESS = 6
+export const VALLEY_TOP_SOFTNESS = 12
+/**
+ * Most optical depth a fog bank alone adds to a sight line: a bank never hides more than 63% of
+ * what is behind it, so from inside one the ridges stay as silhouettes and the sky brightens
+ * above: fog you are in, never a blank screen.
+ */
+export const FOG_BANK_TAU_MAX = 1
 /** How far up its rim a hollow's fog fills it, as a share of the hollow's depth. */
 export const VALLEY_FILL = 0.8
 
@@ -128,7 +134,14 @@ function blur(src: Float32Array, n: number, r: number): Float32Array {
 }
 
 /** Build a world's fog map from its ground and seed. */
-export function buildFogMap(ground: FogGround, sea: number, seed: number, cells = FOG_MAP_CELLS): FogMap {
+/** Banks are cleared round each spawn pad: none within the first distance, full past the second (m). */
+export const SPAWN_CLEAR = { from: 80, to: 220 }
+
+/**
+ * Build a world's fog map from its ground and seed. `clearings` are the spawn pads: no bank
+ * lies on one, so a player never arrives inside fog, whatever the hour.
+ */
+export function buildFogMap(ground: FogGround, sea: number, seed: number, cells = FOG_MAP_CELLS, clearings: ReadonlyArray<{ x: number; z: number }> = []): FogMap {
   const n = cells, cell = ground.size / n
   const h = new Float32Array(n * n), water = new Uint8Array(n * n), land = new Uint8Array(n * n)
   for (let z = 0; z < n; z++) for (let x = 0; x < n; x++) {
@@ -143,7 +156,15 @@ export function buildFogMap(ground: FogGround, sea: number, seed: number, cells 
   const patch = seededNoise(n, 10, seed), patchFine = seededNoise(n, 4, seed + 17)
   const data = new Float32Array(n * n * 4)
   for (let i = 0; i < n * n; i++) {
-    const broken = 0.45 + 0.75 * patch[i] * (0.7 + 0.3 * patchFine[i])
+    const px = -ground.size / 2 + ((i % n) + 0.5) * cell, pz = -ground.size / 2 + (Math.floor(i / n) + 0.5) * cell
+    let nearest = Infinity
+    for (const c of clearings) {
+      // Wrapping distance: the tile repeats.
+      const dx = Math.abs(px - c.x) % ground.size, dz = Math.abs(pz - c.z) % ground.size
+      nearest = Math.min(nearest, Math.hypot(Math.min(dx, ground.size - dx), Math.min(dz, ground.size - dz)))
+    }
+    const clear = smooth(SPAWN_CLEAR.from, SPAWN_CLEAR.to, nearest)
+    const broken = (0.45 + 0.75 * patch[i] * (0.7 + 0.3 * patchFine[i])) * clear
     // Coastal: thick over water within about 700 m of land, and up to about 250 m inland.
     const coast = water[i] ? Math.exp(-toLand[i] * cell / 700) : land[i] ? Math.exp(-toWater[i] * cell / 250) : 0
     // Valleys: ground lying below its surroundings by 4 to 35 m holds fog; none over liquid.

@@ -78,3 +78,15 @@ describe('the fog node with banks', () => {
     expect(() => heightFog(vec3(0.5, 0.6, 0.7), uniform(0.0002), undefined, banks)).not.toThrow()
   })
 })
+
+// Bug this catches: a player arriving inside a fog bank (a white-out as the first sight of a
+// world, the Foreman, 19 November 2026).
+describe('spawn pads', () => {
+  it('have no fog banks on them', () => {
+    const pad = { x: 400, z: 0 }
+    const cleared = buildFogMap(island, 0, 7, 128, [pad])
+    const at = sampleFogMap(cleared, pad.x, pad.z)
+    expect(at.coast).toBeLessThan(0.01)
+    expect(at.valley).toBeLessThan(0.01)
+  })
+})

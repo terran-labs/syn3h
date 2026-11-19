@@ -35,7 +35,7 @@ import { defineParam, params } from '../../../shared/params'
 import { seaLevel } from '../seaLevel'
 import { curveFactor } from '../curve'
 import { hazeTinted } from './haze'
-import { FOG_BANK_SATURATION, FOG_BANK_WARM, VALLEY_TOP_SOFTNESS } from './fogMap'
+import { FOG_BANK_SATURATION, FOG_BANK_TAU_MAX, FOG_BANK_WARM, VALLEY_TOP_SOFTNESS } from './fogMap'
 import { atmosphereValue, storminess } from './params'
 
 type N = any // TSL node
@@ -270,7 +270,7 @@ export function heightFog(color: N, uniformDensity: N, sun?: FogSun, banks?: Fog
         })
         const coast = coastSum.div(parts).mul(banks.weights.x).mul(coastProfile)
         const valley = valleySum.div(parts).mul(banks.weights.y)
-        out.assign(L.mul(coast.add(valley)))
+        out.assign(min(L.mul(coast.add(valley)), float(FOG_BANK_TAU_MAX)))
       })
       return out
     })
