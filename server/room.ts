@@ -451,7 +451,14 @@ export class Room {
         break
       }
       case 'ram':
-        this.onRam(player, msg.other, msg.push)
+        if (msg.bot === undefined) this.onRam(player, msg.other, msg.push)
+        else {
+          // A host's bot against another of its bots: only the host can see that contact, and
+          // only for two live bots. A bot against a person is reported by the person's client.
+          const actor = this.gearActor(player, msg.bot)
+          const other = typeof msg.other === 'number' ? this.byId(msg.other) : undefined
+          if (actor && actor.info.bot && other?.info.bot) this.onRam(actor, msg.other)
+        }
         break
       case 'lock':
         this.onLock(player, msg.locked)
@@ -876,6 +883,7 @@ export class Room {
       game: this.gameState(),
       serverTime: this.now() / 1000,
       race: this.raceView(),
+      botRams: true,
     })
     // Show the newcomer where everyone already is, even players who are standing still.
     for (const other of this.players.values()) {

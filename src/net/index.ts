@@ -56,6 +56,7 @@ import { bigRedAllowed, bigRedPush, bigRedSpeed } from '../weapons/bigRedParams'
 import { aimError as botAimError, fireRate as botFireRate, gameGear, grappleRate as botGrappleRate, skill as botSkill, thunderShare as botThunderShare } from '../bots/skills'
 import { aimDirection } from '../bots/tactics'
 import { botGameOptions } from './bots'
+import { BotRamReporter } from './botRams'
 import type { BotGearOption } from '../bots/gear'
 import { seededRandom } from '../bots/random'
 import { playWithMe } from '../bots/play/PlayDirector'
@@ -1040,6 +1041,8 @@ export class NetClient implements System {
     }
     this.cordOnUs = on
   }
+  /** Host: our bots' contacts with each other, reported only to a room that understands them. */
+  private readonly botRams = new BotRamReporter(RAM_REPEAT)
   /** Whether a remote person's game is paused (a hidden tab). */
   pausedOf(id: number): boolean { return this.remotes.get(id)?.paused ?? false }
   /** Host: player `by` broke free of bot `bot`'s cord themselves. The play director counts these. */
@@ -1388,6 +1391,13 @@ export class NetClient implements System {
       }
       r.touching = touching
     }
+    // On the host, our own bots against each other: only we can see that contact. Reported for
+    // the rammer bot, edge-triggered per pair, and only to a room that understands it (an older
+    // room would credit our own player).
+    if (this.isHost && this.bots) {
+      const live = liveBots(this.bots.vehicles, this.ctx.game.world).map(([id, v]) => { const l = v.body.linvel(); return [id, v, Math.hypot(l.x, l.z)] as const })
+      for (const r of this.botRams.step(now, live, (a, b) => this.touching(a, b))) this.send({ type: 'ram', other: r.other, bot: r.bot })
+    }
     // On the host, our own player against our own bots: both are simulated here.
     if (this.isHost && this.bots) {
       liveBots(this.bots.vehicles, this.ctx.game.world).forEach(([id, bot]) => {
@@ -1681,6 +1691,8 @@ export class NetClient implements System {
         this.raceBridge.receive(msg.race)
         break
       case 'welcome': {
+        // Bot-on-bot rams are reported only to a room that says it understands them.
+        this.botRams.enabled = msg.botRams === true
         this.localAfterFull = false
         // From here the room says who hosts (see updateBotRole).
         this.hostThroughDrop = false

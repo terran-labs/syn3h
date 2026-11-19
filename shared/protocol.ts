@@ -397,7 +397,15 @@ export type ClientMessage =
    * change, m/s, the rammer's client worked out for the other vehicle; the server relays it
    * to that player as `shove`. See src/net/shove.ts.
    */
-  | { type: 'ram'; other: number; push?: [number, number, number] }
+  | {
+    type: 'ram'; other: number; push?: [number, number, number]
+    /**
+     * Newer, host only: the rammer is bot `bot`, against bot `other` (the host simulates both,
+     * so nobody else can see the contact). Sent only to a room whose welcome says `botRams`: an
+     * older room would credit the host's own player.
+     */
+    bot?: number
+  }
   /** Host only: lock or unlock shared parameters for everyone else. */
   | { type: 'lock'; locked: boolean }
   /** Host only: the King of the Hill zone it computed from the terrain. */
@@ -459,6 +467,8 @@ export type ServerMessage =
       game: GameState
       serverTime: number
       race?: RaceState | null
+      /** This room understands a ram reported for a bot (`ram.bot`). Absent from older rooms. */
+      botRams?: true
     }
   | { type: 'pong'; t: number; serverTime: number }
   | { type: 'join'; player: PlayerInfo }
