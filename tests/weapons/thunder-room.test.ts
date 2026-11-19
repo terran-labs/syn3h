@@ -8,7 +8,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { type Peer, Room } from '../../server/room'
-import { PROTOCOL_VERSION, type ServerMessage, type WireState, encodeState } from '../../shared/protocol'
+import { BOT_ID_BASE, PROTOCOL_VERSION, type ServerMessage, type WireState, encodeState } from '../../shared/protocol'
 
 class FakePeer implements Peer {
   json: ServerMessage[] = []
@@ -27,8 +27,8 @@ function join(name: string, params: Record<string, number | boolean> = {}) {
   room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, modes: 2, name, params }))
   return { peer, id: peer.all('welcome')[0]!.id }
 }
-function state(p: [number, number, number]): Uint8Array {
-  const s: WireState = { id: 0, t: clock / 1000, p, q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0], input: { x: 0, y: 0, z: 0, w: 0, brakes: false, special: false, fire: false } }
+function state(p: [number, number, number], bot?: number): Uint8Array {
+  const s: WireState = { id: bot ?? 0, ...(bot !== undefined ? { bot: true } : {}), t: clock / 1000, p, q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0], input: { x: 0, y: 0, z: 0, w: 0, brakes: false, special: false, fire: false } }
   return encodeState(s)
 }
 const send = (peer: Peer, msg: object) => room.receive(peer, JSON.stringify(msg))
@@ -92,7 +92,7 @@ describe('Plasma Thunder detonations at the room', () => {
     expect(b.peer.all('detonated')).toHaveLength(1)
   })
 
-  it('does nothing for a Plasma Tag shot, or a point that is not a point', () => {
+  it('does nothing for a Plasma Tag shot, a point that is not a point, or one outside the world', () => {
     const { a, b } = setUp()
     clock += 400
     room.receive(a.peer, state([0, 0, 0]))
@@ -100,6 +100,36 @@ describe('Plasma Thunder detonations at the room', () => {
     clock += 300
     send(a.peer, { type: 'detonate', shooter: a.id, shot: 3, at: [0, 0, -40], cause: 'end' })
     send(a.peer, { type: 'detonate', shooter: a.id, shot: 2, at: [0, 'x', -40], cause: 'end' })
+    send(a.peer, { type: 'detonate', shooter: a.id, shot: 2, at: [1e30, 0, -40], cause: 'end' })
+    send(a.peer, { type: 'detonate', shooter: a.id, shot: 2, at: [0, 1e30, -40], cause: 'end' })
     expect(b.peer.all('detonated')).toHaveLength(0)
+  })
+
+  it('a bot fires Thunder through the host, and only the host can say where it ended', () => {
+    const { a, b } = setUp()
+    // A is the host; it simulates a bot beside it, which fires shot 7.
+    room.receive(a.peer, state([3, 0, 0], BOT_ID_BASE))
+    clock += 2000
+    room.receive(a.peer, state([0, 0, 0])); room.receive(a.peer, state([3, 0, 0], BOT_ID_BASE))
+    send(a.peer, { type: 'fire', bot: BOT_ID_BASE, shot: shot(7, 'red') })
+    clock += 300
+    send(b.peer, { type: 'detonate', shooter: BOT_ID_BASE, shot: 7, at: [0, 0, -40], cause: 'end' })
+    expect(b.peer.all('detonated')).toHaveLength(0)
+    send(a.peer, { type: 'detonate', shooter: BOT_ID_BASE, shot: 7, at: [0, 0, -40], cause: 'end' })
+    expect(b.peer.all('detonated')).toEqual([{ type: 'detonated', shooter: BOT_ID_BASE, shot: 7, at: [0, 0, -40], cause: 'end' }])
+  })
+
+  it('a bot can be caught by a fuse, reported by the host and by no one else', () => {
+    const { a, b } = setUp()
+    room.receive(a.peer, state([0, 0, -30], BOT_ID_BASE))
+    clock += 300
+    send(b.peer, { type: 'detonate', shooter: a.id, shot: 2, at: [1, 2, -29], cause: 'fuse', victim: BOT_ID_BASE })
+    expect(b.peer.all('detonated')).toHaveLength(0)
+    // B fires its own shot 4; the host (A) reports the bot caught by its fuse.
+    room.receive(b.peer, state([0, 0, -30]))
+    send(b.peer, { type: 'fire', shot: { ...shot(4, 'red'), o: [0, 0.5, -31] } })
+    clock += 300
+    send(a.peer, { type: 'detonate', shooter: b.id, shot: 4, at: [1, 2, -29], cause: 'fuse', victim: BOT_ID_BASE })
+    expect(b.peer.all('detonated')).toEqual([{ type: 'detonated', shooter: b.id, shot: 4, at: [1, 2, -29], cause: 'fuse', victim: BOT_ID_BASE }])
   })
 })

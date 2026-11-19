@@ -158,7 +158,11 @@ export class Fireworks {
 
   burst(spec: BurstSpec): void {
     this.rand = spec.seed >>> 0
-    const shape = fireworkShape(spec.seed), level = this.starLevel, budget = PER_BURST[level], sl = this.smokeLevel, puffScale = this.narrow ? 0.6 : 1
+    // A crowded sky (two bursts already alive, so this is the third or later): Low's counts for
+    // this one, as on a phone. Bots launch these too, and six full bursts in view cost too much.
+    const crowded = this.alive >= 2
+    const level = crowded ? Math.min(1, this.starLevel) : this.starLevel, sl = crowded ? Math.min(1, this.smokeLevel) : this.smokeLevel
+    const shape = fireworkShape(spec.seed), budget = PER_BURST[level], puffScale = this.narrow ? 0.6 : 1
     let used = 0, glitter = 0
     // How dark it is as it bursts (0 by day, 1 at night): the night display lives longer, trails
     // and glitters more and glows brighter. Nothing here changes it by day.

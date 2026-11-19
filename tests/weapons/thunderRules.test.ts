@@ -6,7 +6,7 @@
  * different fireworks for the same shot.
  */
 import { describe, expect, it } from 'vitest'
-import { detonationEffect, fireworkSeed, fireworkShape, fuseArmed, fuseRadius, mayReport, nearestOnSegment, skipOff, type V3 } from '../../src/weapons/thunderRules'
+import { BURST_MARGIN, burstPointPlausible, detonationEffect, fireworkSeed, fireworkShape, fuseArmed, fuseRadius, mayReport, nearestOnSegment, skipOff, type V3 } from '../../src/weapons/thunderRules'
 
 const rule = { left: 3, maxAngle: 35, keep: 0.85, bounce: 0.5 }
 const up: V3 = [0, 1, 0]
@@ -68,5 +68,22 @@ describe('fireworks', () => {
     expect(fireworkSeed(4, 17)).toBe(fireworkSeed(4, 17))
     const shapes = new Set(Array.from({ length: 60 }, (_, i) => fireworkShape(fireworkSeed(4, i))))
     expect(shapes.size).toBeGreaterThan(3)
+  })
+})
+
+describe('where a detonation may be reported', () => {
+  // A 2048 m tile: the planet's radius is 2048 / (2 sqrt(pi)), about 578 m; a 120 m flare.
+  const size = 2048, flare = 120, ceiling = size / (2 * Math.sqrt(Math.PI)) + flare + BURST_MARGIN
+  it('takes anywhere in the world, up to the planet radius and the flare height above it', () => {
+    expect(burstPointPlausible([0, 0, 0], size, flare)).toBe(true)
+    expect(burstPointPlausible([-1024, 300, 1023], size, flare)).toBe(true)
+    expect(burstPointPlausible([0, ceiling - 1, 0], size, flare)).toBe(true)
+  })
+  it('refuses a point far outside the tile, far up or down, or not a number', () => {
+    expect(burstPointPlausible([1e30, 0, 0], size, flare)).toBe(false)
+    expect(burstPointPlausible([0, 0, size / 2 + BURST_MARGIN + 1], size, flare)).toBe(false)
+    expect(burstPointPlausible([0, ceiling + 1, 0], size, flare)).toBe(false)
+    expect(burstPointPlausible([0, -BURST_MARGIN - 1, 0], size, flare)).toBe(false)
+    expect(burstPointPlausible([0, Number.NaN, 0], size, flare)).toBe(false)
   })
 })

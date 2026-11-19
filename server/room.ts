@@ -60,8 +60,8 @@ import { sunDayLength } from '../src/world/sky/dayParams'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
 import { bigRedAllowed, bigRedCooldown } from '../src/weapons/bigRedParams'
-import { thunderFuseArm } from '../src/weapons/thunderParams'
-import { detonationEffect, fuseArmed, mayReport } from '../src/weapons/thunderRules'
+import { thunderFlareHeight, thunderFuseArm } from '../src/weapons/thunderParams'
+import { burstPointPlausible, detonationEffect, fuseArmed, mayReport } from '../src/weapons/thunderRules'
 import { pesterAllowed, pesterCooldown, pesterLife, pesterMax, pesterRange } from '../src/weapons/pester/params'
 import { yoinkAllowed, yoinkCooldown, yoinkFling, yoinkHoldDistance, yoinkHoldTime, yoinkPunt, yoinkPuntRange, yoinkRange } from '../src/weapons/yoink/params'
 import {
@@ -1459,6 +1459,7 @@ export class Room {
     if (typeof shooterId !== 'number' || typeof shotId !== 'number') return
     if (cause !== 'contact' && cause !== 'fuse' && cause !== 'end') return
     if (!Array.isArray(at) || at.length !== 3 || !at.every(v => typeof v === 'number' && Number.isFinite(v))) return
+    if (!burstPointPlausible(at as [number, number, number], this.wrapSize(), this.paramNumber(thunderFlareHeight.def))) return
     const shooter = this.byId(shooterId)
     if (!shooter || !shooter.reds.has(shotId)) return
     const firedAt = shooter.shots.get(shotId)

@@ -66,6 +66,18 @@ describe('Plasma Thunder in flight', () => {
     expect(onlooker.log.pushes.map(v => v.toArray())).toEqual([at.toArray()])
   })
 
+  it('bursts on its own, without a push, when the room never says where a shot ended (an older shooter)', () => {
+    // An older client fires but never reports an end: an onlooker on this build still ends the
+    // bolt, then bursts where it saw it end once END_WAIT has passed, and pushes nobody.
+    const bursts: string[] = []
+    const onlooker = world({ ownsShot: () => false, onBurst: (_s, _at, cause) => bursts.push(cause) })
+    onlooker.lasers.spawn(SHOOTER, shot())
+    onlooker.run(900)
+    onlooker.lasers.update(0.016, 1)
+    expect(bursts).toEqual(['end'])
+    expect(onlooker.log.pushes).toHaveLength(0)
+  })
+
   it('goes off by its fuse only once armed, never on the shooter\'s own vehicle, and on a vehicle beside its path', () => {
     // 110 m/s: armed after 0.25 s, about 28 m out. One vehicle 2 m beside the path at 10 m
     // (not yet armed), the shooter's own at 40 m, another 2 m beside the path at 70 m.
