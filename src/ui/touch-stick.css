@@ -129,6 +129,8 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
 .touch-controls .touch-actions [data-action="special"] { grid-area: special; }
 .touch-controls .touch-actions [data-action="zorb"] { grid-area: zorb; }
 .touch-controls .touch-actions [data-action="brakes"] { grid-area: brakes; }
+/* Flip upright stands in BRAKE's slot while it can act (TouchControls.setFlipReady). */
+.touch-controls .touch-actions [data-action="flip"] { grid-area: brakes; }
 .touch-controls .touch-actions [data-action="throttleUp"] { grid-area: throttleUp; }
 .touch-controls .touch-actions [data-action="throttleDown"] { grid-area: throttleDown; }
 /* Labels stay in one type style and wrap inside the circle rather than resize it. */

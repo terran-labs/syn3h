@@ -89,12 +89,13 @@ they drove.** Lava, deep water, a fall, being stuck or lying upside down are pla
 and to get out of, not failures the game repairs. In practice:
 
 - Lava and water slow, float, sink and heat a vehicle by physics. Nothing teleports a
-  player out. King of the Hill counts a player in lava as off the hill until they drive
+  player out, and every vehicle can leave a pool under its own power (a jet's lift climbs
+  through lava; a capsized buggy floats back onto its wheels). King of the Hill counts a player in lava as off the hill until they drive
   out; it never sends them to their pad.
 - Automatic uprighting (`Vehicle.uprightRescue`) never fires in or over lava or water. On
   dry ground it stays, pending the owner's decision.
-- The player's own controls are allowed to move them: Flip upright (the U key, and a touch
-  button), and the Zorb. So is in-fiction help by physics: bots that tow a stuck player out
+- The player's own controls are allowed to move them: Flip upright (the U key, and FLIP in
+  BRAKE's place on touch, both offered only while it can act), and the Zorb. So is in-fiction help by physics: bots that tow a stuck player out
   with a cord, and the player's own grapple (the rescue rework the owner approved on
   17 November 2026).
 - A reload resumes the saved pose, in liquid too. A rebuild of the same world re-seats the
@@ -106,4 +107,6 @@ and to get out of, not failures the game repairs. In practice:
 - Bots may hop themselves back to a pad; a bot hop never applies to a vehicle a person drives.
 
 `tests/vehicles2/no-reset.test.ts` holds this: every vehicle held in deep lava and deep water
-for a minute, and a buggy on its roof in shallow lava and water, is moved by nothing but physics.
+for a minute, and a buggy on its roof in shallow lava and water, is moved by nothing but
+physics; and every vehicle leaves a lava or water pool from its surface and its bed within the
+pool's radius at walking pace.

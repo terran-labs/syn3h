@@ -149,6 +149,8 @@
   text-shadow: var(--col-text-under); text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
   -webkit-backdrop-filter: none; backdrop-filter: none; transition: color .2s ease;
 }
+/* A row offered only while it can act (Flip upright, AccessoryControls) is out of the grid otherwise. */
+:root .syn3h-shell .hud-accessories button.acc-row[hidden] { display: none; }
 :root .syn3h-shell :is(.hud-accessories, .hud-chat) button.acc-row:hover { background: none; border: 0; box-shadow: none; color: var(--s3-ink); }
 :root .syn3h-shell :is(.hud-accessories, .hud-chat) button.acc-row:focus-visible .acc-name { text-decoration: underline 1px var(--s3-accent-2); text-underline-offset: 5px; }
 /* One key cap, everywhere in the column: accessories, Chat, the gear's numbers and its hints.

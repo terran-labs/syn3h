@@ -19,6 +19,8 @@ interface Row {
   shown: string
   unavailable: string
   moving: number
+  /** Whether the row shows: an accessory with `shown` appears only while it can act (Flip). */
+  visible: boolean
 }
 
 /** How long the column stays awake after a change, in milliseconds. */
@@ -54,7 +56,7 @@ export class AccessoryControls {
       button.type = 'button'; button.className = 'acc-row'; button.dataset.id = accessory.id
       button.setAttribute('aria-pressed', 'false')
       button.innerHTML = `<span class="acc-name" aria-hidden="true">${accessory.name}</span><kbd aria-hidden="true">${accessory.cap}</kbd><i class="acc-pip" aria-hidden="true"></i>`
-      const row: Row = { accessory, button, on: false, shown: '', unavailable: '', moving: -2 }
+      const row: Row = { accessory, button, on: false, shown: '', unavailable: '', moving: -2, visible: true }
       button.addEventListener('click', () => {
         this.wake()
         if (!row.unavailable) { accessory.toggle(this.input); this.onToggle?.() }
@@ -66,9 +68,14 @@ export class AccessoryControls {
       this.element.append(button)
       return row
     })
-    this.element.dataset.count = String(this.rows.length)
-    // The column above stacks on this count (hud-column.css, --acc-rows).
-    this.element.parentElement?.style.setProperty('--acc-rows', String(this.rows.length))
+    this.count()
+  }
+
+  /** The column above stacks on the number of rows showing (hud-column.css, --acc-rows). */
+  private count(): void {
+    const shown = this.rows.filter(row => row.visible).length
+    this.element.dataset.count = String(shown)
+    this.element.parentElement?.style.setProperty('--acc-rows', String(shown))
   }
 
   /** Show the column at full strength for a moment: after a change, or while pointed at. */
@@ -77,7 +84,15 @@ export class AccessoryControls {
   update(vehicle: AccessoryVehicle | null, now = performance.now()): void {
     if (!vehicle) return
     if (vehicle.kind !== this.kind) this.build(vehicle.kind)
+    let recount = false
     for (const row of this.rows) {
+      const visible = row.accessory.shown?.(vehicle) ?? true
+      if (visible !== row.visible) {
+        row.visible = visible; row.button.hidden = !visible; recount = true
+        if (visible) this.wake(now)
+        else if (this.tipRow === row) this.hideTip()
+      }
+      if (!visible) continue
       const s = row.accessory.read(vehicle, this.input.state, this.state)
       // Wings move for about a second: a coarse step keeps the writes to a few.
       const moving = s.moving < 0 ? -1 : Math.round(s.moving * 10) / 10
@@ -92,6 +107,7 @@ export class AccessoryControls {
       row.button.setAttribute('aria-label', `${row.accessory.name}: ${s.unavailable ? this.reason(row) : s.value}. Key ${row.accessory.cap}.`)
       if (this.tipRow === row && !this.tip.hidden) this.fillTip(row)
     }
+    if (recount) this.count()
     const awake = now < this.awakeUntil || this.element.matches(':hover')
     if (awake !== this.awake) { this.awake = awake; this.element.classList.toggle('is-awake', awake) }
   }

@@ -238,6 +238,7 @@ export abstract class Vehicle implements System {
       this.zorbView = this.game.camera?.quaternion ?? null
       this.localSafety()
       if (this.game.input.takeFlip?.()) this.flipUpright()
+      this.flipReadyFor = this.flipPossible() ? this.flipReadyFor + dt : 0
     }
     this.body.resetForces(true)
     this.body.resetTorques(true)
@@ -382,20 +383,34 @@ export abstract class Vehicle implements System {
 
   /** Slower than this, in metres per second, a vehicle may be flipped upright on request. */
   static readonly FLIP_MAX_SPEED = 3
+  /** Tilted past this (the height of its up axis: 0.5 is 60 degrees), it may be flipped upright. */
+  static readonly FLIP_TILT = 0.5
+  /** How long it must have been flippable before the controls offer it, in seconds, so a slow tumble does not flash them. */
+  static readonly FLIP_OFFER_AFTER = 0.5
+  /** Seconds the local vehicle has been flippable without a break; 0 when it is not. */
+  flipReadyFor = 0
+
+  /** Whether Flip upright would act now: tilted past FLIP_TILT, nearly at rest, not in a Zorb. */
+  flipPossible(): boolean {
+    if (this.zorbed) return false
+    const r = this.body.rotation()
+    const v = this.body.linvel()
+    return 1 - 2 * (r.x * r.x + r.z * r.z) < Vehicle.FLIP_TILT && v.x * v.x + v.y * v.y + v.z * v.z < Vehicle.FLIP_MAX_SPEED ** 2
+  }
+
+  /** Whether the controls offer Flip upright: possible, and for FLIP_OFFER_AFTER already. */
+  get canFlip(): boolean { return this.flipReadyFor >= Vehicle.FLIP_OFFER_AFTER }
 
   /**
-   * The player's Flip upright control (the U key): set a vehicle that is tilted and nearly at
-   * rest upright where it is, keeping its heading, as `uprightRescue` does. The player asks for
+   * The player's Flip upright control (the U key, or FLIP on touch): set a vehicle that is on
+   * its side or roof and nearly at rest (`flipPossible`) upright where it is, keeping its
+   * heading, as `uprightRescue` does. The player asks for
    * it, so it is not the game moving them. Ignored while moving, when already upright, and
    * in a Zorb (the ball tumbles by design). Returns whether it flipped.
    */
   flipUpright(): boolean {
-    if (this.zorbed) return false
-    const b = this.body
-    const r = b.rotation()
-    const upY = 1 - 2 * (r.x * r.x + r.z * r.z)
-    const v = b.linvel()
-    if (upY > 0.9 || v.x * v.x + v.y * v.y + v.z * v.z > Vehicle.FLIP_MAX_SPEED ** 2) return false
+    if (!this.flipPossible()) return false
+    this.flipReadyFor = 0
     this.setUpright()
     return true
   }

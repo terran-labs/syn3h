@@ -96,6 +96,14 @@ for (const view of layouts) {
     await page.evaluate(lines => window.syn3h.shell.setStatus(lines), status(['Gevotek Spare Pilot joined']))
     await page.waitForTimeout(1200)
     await shot('game')                                   // controls card and a toast on screen
+    // On its roof and still: Flip upright takes BRAKE's place in the thumb grid (TouchControls
+    // setFlipReady). Held still (kinematic) for the measurement, then let go.
+    await page.evaluate(() => { const v = window.syn3h.player, t = v.body.translation(); v.teleport(v.object.position.clone().set(t.x, window.syn3h.terrain.heightAt(t.x, t.z) + 1.2, t.z), 0); v.body.setRotation({ x: 0, y: 0, z: 1, w: 0 }, true) })
+    await page.waitForFunction(() => { const b = document.querySelector('.touch-controls [data-action="flip"]'); if (b && !b.hidden) { window.syn3h.player.body.setBodyType(2, true); return true } return false }, null, { timeout: 60000, polling: 'raf' })
+    await page.waitForTimeout(300); await shot('flip-offered')
+    // The tap on FLIP is the player's activity: the idle autopilot's clock starts again, as it
+    // would for a real touch (else it takes over during the hill states that follow).
+    await page.evaluate(() => { const v = window.syn3h.player; v.body.setBodyType(0, true); v.flipUpright(); window.syn3h.bots.daydream?.noteActivity() })
     await page.waitForTimeout(5500)
     await page.evaluate(m => window.syn3h.shell.setMatchState(m), koth({ holderName: 'Phone QA', holderIsYou: true }))
     await page.waitForTimeout(400); await shot('hill-announce')

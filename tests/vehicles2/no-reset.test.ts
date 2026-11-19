@@ -85,7 +85,9 @@ describe('a player in a liquid is moved by nothing but physics', () => {
 
 describe('a player on its roof in a shallow pool is moved by nothing but physics', () => {
   // The owner's report on v26.11.1802: he fell into a lava pool and the game "reset" him. It
-  // was the automatic uprighting, which measured from the bed, firing under the lava.
+  // was the automatic uprighting, which measured from the bed, firing under the lava. Lava
+  // also held a flipped buggy on its roof for good until the hull's capsize moment
+  // (liquidHull.ts, CAPSIZE).
   for (const liquid of ['lava', 'water'] as const) it(`a buggy on its roof in shallow ${liquid} for a minute`, () => {
     const h = harness()
     h.terrain.liquidHeightAt = () => 0.8
@@ -98,6 +100,9 @@ describe('a player on its roof in a shallow pool is moved by nothing but physics
     const writes = watchWrites(v)
     h.step(v, 3000)
     expect(writes).toEqual([])
+    // And the liquid rolls it back onto its wheels, by physics: Flip upright is a convenience.
+    const r = v.body.rotation()
+    expect(1 - 2 * (r.x * r.x + r.z * r.z)).toBeGreaterThan(0.9)
   }, 60_000)
 
   it('Flip upright on U still works there, as the player\'s own choice', () => {
@@ -115,6 +120,35 @@ describe('a player on its roof in a shallow pool is moved by nothing but physics
     const r = v.body.rotation()
     expect(1 - 2 * (r.x * r.x + r.z * r.z)).toBeGreaterThan(0.95)
   })
+})
+
+describe('every vehicle leaves a pool under its own power', () => {
+  // Bugs caught: the jet held on a lava bed by the lava's grip with its lift discarded; any
+  // vehicle a player could only leave by being moved. A round pool over a level bed and shore,
+  // so this measures the liquid alone. The bound is the pool's radius at walking pace (1 m/s):
+  // a vehicle slower than a person walking out has not escaped under its own power.
+  const RADIUS = 25, BOUND_S = RADIUS / 1
+  for (const liquid of ['lava', 'water'] as const) for (const depth of [1.5, 4, 12]) for (const start of ['surface', 'bed'] as const) {
+    it.each(KINDS)(`%s from the ${start} of ${depth} m of ${liquid}`, (kind) => {
+      const h = harness()
+      h.terrain.liquidHeightAt = (x, z) => Math.hypot(x, z) < RADIUS ? depth : -Infinity
+      h.terrain.liquidKindAt = (x, z) => Math.hypot(x, z) < RADIUS ? liquid : null
+      const input = new Input(new EventTarget() as unknown as Window)
+      ;(h.game as unknown as { input: Input }).input = input
+      const v = createVehicle(h.game, h.terrain, kind, new THREE.Vector3(0, start === 'surface' ? depth + 1 : 1.2, 0))
+      v.isLocal = true
+      h.step(v, 150)
+      // Full ahead; the jet climbs on its lift (E) and then pitches forward, as a player flies out.
+      let out = Infinity
+      for (let i = 0; i < BOUND_S / 0.02 && out === Infinity; i++) {
+        Object.assign(input.state, kind === 'jet' ? { y: i < 150 ? 0 : 0.4, z: 1 } : { y: 1 })
+        h.step(v)
+        const p = v.body.translation()
+        if (Math.hypot(p.x, p.z) > RADIUS + 2) out = i * 0.02
+      }
+      expect(out).toBeLessThan(BOUND_S)
+    })
+  }
 })
 
 describe('nets that may move a player are for broken states only', () => {

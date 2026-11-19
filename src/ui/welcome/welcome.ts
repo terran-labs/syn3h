@@ -146,6 +146,7 @@ ${figure('canyon-convoy', 'Tag is better with company.', FULL)}
       <li><span>Right half</span>drag to look round</li>
       <li><span>Gear rack</span>tap a gear to choose it</li>
       <li><span><b class="welcome-pill">TAG</b></span>use it: hold, and drag to aim</li>
+      <li><span><b class="welcome-pill">FLIP</b></span>on your side or roof: back onto your wheels</li>
       <li><span><b class="welcome-pill">Panels</b></span>vehicle, game mode, world and chat</li>
     </ul>
   </section>
