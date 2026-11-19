@@ -13,6 +13,8 @@ import type { Mind } from './mind/Mind'
 import { GROUND_PROFILE } from './pilot/ground'
 import type { Navigator } from './pilot/types'
 import { hashString, seededRandom } from './random'
+import { gameGear, intercept as interceptSkill, ramming, skill } from './skills'
+import { interceptPoint, pincerOffset } from './tactics'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
 export type BotTerrain = Terrain & RoadTerrain & { liquidHeightAt?(x: number, z: number): number | null | undefined }
 const clamp = (x: number, max = 1) => Math.max(-max, Math.min(max, x))
@@ -36,6 +38,10 @@ export interface BotMatch {
   it?: Vehicle | null
   /** King of the Hill: the zone to hold. */
   zone?: { x: number; z: number; radius: number } | null
+  /** King of the Hill: the zone itself (a ring round the lake, or a disc), to tell who is in it. */
+  ring?: { x: number; z: number; inner: number; outer: number } | null
+  /** King of the Hill: who holds it now, if anyone. */
+  holder?: Vehicle | null
 }
 /**
  * A request from outside the bot's own head, for a while: a player's chat request
@@ -74,6 +80,24 @@ export class BotBrain implements System {
   }
 
   remote = false
+  /**
+   * The games (src/bots/BotManager.ts assigns it): whom this bot goes after. On the hill, a
+   * person or bot in the zone to ram or grapple off it; in tag, whoever is "it" (to take the
+   * role), or for a bot that is "it", whom to score on with a laser. Null leaves it to its
+   * moods. `gameSlot` of `gameOf` is its place among the bots on the same target (the pincer).
+   */
+  gameTarget: Vehicle | null = null
+  gameSlot = 0
+  gameOf = 1
+  /** The hill: whether this bot may take its turn holding the zone (a few at once, by difficulty). */
+  mayContest = true
+  /** Tag: brain seconds until which this bot lets a new "it" get away, before going after them. */
+  regroupUntil = 0
+  /** Driving at `target` to make contact in a game: interception, pincer and ram commitment. */
+  private hunting = false
+  /** The hill, in turns: holding the zone, then moving on so it does not become a jam. */
+  private hillPhase: 'contest' | 'away' = 'contest'
+  private hillTime = 0
   private gear: BotGearController | null = null
   setGear(hooks: BotGearHooks | null) {
     if (hooks && !this.gear) this.gear = new BotGearController(this.vehicle, () => this.terrain.wrapSize, target => {
@@ -338,10 +362,45 @@ export class BotBrain implements System {
       this.reversing = false; this.routeTime = 0; this.waypoint = null; this.reverseBrake = p.reverseBrakeTime.value; this.rescues++; return
     }
   }
+  /**
+   * Whether gear may be used now. In the games (bots.gameGear) only with a part in them: on
+   * the hill at whoever it is driving off the zone, in tag at "it", or by "it" at its target.
+   * In free play, bots.tagBeams governs as before.
+   */
+  mayUseGear: () => boolean = () => {
+    const match = this.match
+    if (!match) return p.canFire.value
+    if (!gameGear.value || !this.target) return false
+    if (match.mode === 'hill') return this.hunting
+    return this.hunting || (match.it === this.vehicle && this.target === this.gameTarget)
+  }
   fixedUpdate(dt: number) {
     if (this.remote) { this.gear?.cancel(); return }
     this.drive(dt)
-    this.gear?.step(dt, this.target, this.vehicle.input, p.canFire.value, p.canDrive.value)
+    this.gear?.step(dt, this.target, this.vehicle.input, this.mayUseGear(), p.canDrive.value)
+  }
+  /**
+   * The hill in turns. A bot holds the zone for 20 to 35 seconds, then goes elsewhere for 15
+   * to 25 (seeded per bot), so bots fight for it without parking in it for good: a person is
+   * never stalled indefinitely, and a parked bot can always be pushed. True while contesting.
+   */
+  private hillSpell(dt: number): boolean {
+    this.hillTime -= dt
+    if (this.hillTime <= 0) {
+      this.hillPhase = this.hillPhase === 'contest' ? 'away' : 'contest'
+      const r = this.random()
+      this.hillTime = this.hillPhase === 'contest' ? 20 + r * 15 : 15 + r * 10
+      if (this.hillPhase === 'away') { this.mind?.reset(); this.moodTime = 0 }
+    }
+    return this.hillPhase === 'contest'
+  }
+  /** Nearest other vehicle within `radius` metres, for a bot that is "it" to run from. */
+  private nearestWithin(here: { x: number; z: number }, radius: number): Vehicle | null {
+    const v = this.nearestOther(here)
+    if (!v) return null
+    const q = v.body.translation(), wrap = this.terrain.wrapSize
+    const d = wrap ? wrapDistance(here.x, here.z, q.x, q.z, wrap) : Math.hypot(q.x - here.x, q.z - here.z)
+    return d <= radius ? v : null
   }
   /** Act on the directive. True when it has driven this step; false to carry on as usual. */
   private steerByDirective(dt: number, input: InputState): boolean {
@@ -398,17 +457,44 @@ export class BotBrain implements System {
     }
     if (this.racing) { this.mind?.reset(); this.racing = false; this.moodTime = 0 }
     if (this.directive && this.mind && p.canDrive.value && p.topThrottle.value > 0 && this.steerByDirective(dt, input)) return
+    // A part in a game (BotManager.assignGames): on the hill, someone in the zone to drive off;
+    // in tag, whoever is "it", to take the role. Then the target is theirs.
+    {
+      const m = this.match, g = this.gameTarget
+      this.hunting = Boolean(m && g?.body.isValid() && g !== this.vehicle && (m.mode === 'hill' || (m.mode === 'tag' && m.it === g && this.clock >= this.regroupUntil)))
+      if (this.hunting) this.target = g
+    }
     if (this.mind && p.canDrive.value && p.topThrottle.value > 0) {
       const here = this.vehicle.body.translation(), there = this.target ? this.imageOf(this.target.body.translation(), here) : undefined
       const match = this.match
-      if (match?.mode === 'hill' && match.zone && (this.index % 3 !== 2 || p.freeSpirit.value <= 0)) {
-        // Two bots in three contest the hill; the third keeps to its own agenda.
-        if (this.mind.activity.kind !== 'hold') this.mind.hold(match.zone, match.zone.radius, 120)
-        this.mood = 'roam'; this.roam(dt, input, here); return
+      if (match?.mode === 'hill' && match.zone) {
+        if (this.hunting) {
+          // Someone is in the zone: drive at them to ram them off it (the grapple is gear).
+          this.mood = 'chase'; this.moodTime = Math.max(this.moodTime, 1)
+        } else if (this.mayContest && this.hillSpell(dt)) {
+          if (this.mind.activity.kind !== 'hold') this.mind.hold(match.zone, match.zone.radius, 120)
+          this.mood = 'roam'; this.roam(dt, input, here); return
+        }
+      } else if (match?.mode === 'tag' && match.it?.body.isValid()) {
+        if (match.it === this.vehicle) {
+          // It: run from whoever comes close, catchably (the flee re-plans every two seconds,
+          // and a gentler bot runs slower); between threats, keep near someone to score on.
+          if (this.gameTarget?.body.isValid()) this.target = this.gameTarget
+          const chaser = this.nearestWithin(here, 45)
+          if (chaser) {
+            if (this.mind.activity.kind !== 'flee' || this.mind.activity.leader !== chaser) this.mind.flee(chaser, 6)
+            this.mood = 'roam'; this.roam(dt, input, here)
+            input.y *= 0.6 + 0.4 * skill(ramming.value, 'unit')
+            return
+          }
+        } else if (this.hunting) {
+          // Someone else is it: go and take the role, cutting them off.
+          this.mood = 'chase'; this.moodTime = Math.max(this.moodTime, 1)
+        }
       }
-      // Default tag rooms still provide playful company. Competitive fleeing and
-      // hunting are opt-in through aggression or disabling following.
-      if (!this.playful && match?.mode === 'tag' && match.it?.body.isValid()) {
+      // The older competitive tag below (above RAM_AGGRESSION, or following off) still applies
+      // to a bot the games gave no part.
+      if (!this.hunting && !this.playful && match?.mode === 'tag' && match.it?.body.isValid()) {
         if (match.it === this.vehicle) {
           // It: hunt whoever is nearest, relentlessly, until someone else is it.
           this.mood = 'chase'; this.moodTime = Math.max(this.moodTime, 1); this.target = this.nearestOther(here) ?? this.target
@@ -426,7 +512,7 @@ export class BotBrain implements System {
       // The original pursuit below steers wheels. A hovercraft or a jet chases through its
       // mind instead: it tails the target with its own pilot.
       const wheeled = this.vehicle.kind !== 'jet' && this.vehicle.kind !== 'hovercraft'
-      if (!wheeled && this.mood === 'chase' && this.target && this.mind.activity.leader !== this.target) this.mind.pursue(this.target, this.moodTime)
+      if (!wheeled && this.mood === 'chase' && this.target && (this.mind.activity.leader !== this.target || this.mind.activity.kind !== 'follow')) this.mind.pursue(this.target, Math.max(this.moodTime, this.hunting ? 5 : 0), this.hunting)
       if (this.mood === 'roam' || !this.target || !wheeled) { this.roam(dt, input, here); return }
     }
     if (!this.target) return
@@ -438,7 +524,7 @@ export class BotBrain implements System {
     const velocity = this.vehicle.body.linvel(), speed = Math.hypot(velocity.x, velocity.z)
     // Outside races, a playful bot trails its target like a duckling. Being tagged
     // does not silently change the player's following choice.
-    const ducking = this.mind !== null && this.playful && !this.raceGoal && p.canDrive.value
+    const ducking = this.mind !== null && this.playful && !this.hunting && !this.raceGoal && p.canDrive.value
     if (ducking) this.duck.follow(this.target)
     this.duck.active = ducking
     const step = ducking ? this.duck.step(dt, here, there, p.playfulness.value, (x, z) => this.standable(x, z)) : null
@@ -475,13 +561,22 @@ export class BotBrain implements System {
       }
       if (!this.targetAshore) { this.roam(dt, input, here); return }
       if (!this.lineClear && !this.waypoint) {
-        if (this.mind.activity.leader !== this.target || this.mind.activity.kind !== 'follow') this.mind.pursue(this.target, 30)
+        if (this.mind.activity.leader !== this.target || this.mind.activity.kind !== 'follow') this.mind.pursue(this.target, 30, this.hunting)
         this.roam(dt, input, here); return
       }
     }
     const targetVelocity = this.target.body.linvel()
     const lead = Math.min(0.8, distance / 45) * p.aggression.value
     let aimX = duck ? duck.x : there.x + targetVelocity.x * lead, aimZ = duck ? duck.z : there.z + targetVelocity.z * lead
+    if (this.hunting) {
+      // Cut them off: head for where we can meet, at the speed this bot can make, blended from
+      // where they are by the interception skill; a second pursuer takes the other flank.
+      const reach = Math.max(speed, p.cornerSpeed.value)
+      const meet = interceptPoint(here, reach, there, targetVelocity, skill(interceptSkill.value, 'unit'))
+      const side = pincerOffset(this.gameSlot, this.gameOf, distance)
+      const tx = meet.x - here.x, tz = meet.z - here.z, tl = Math.hypot(tx, tz) || 1
+      aimX = meet.x + tz / tl * side; aimZ = meet.z - tx / tl * side
+    }
     const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
     const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5 && !isRoadFord(this.terrain, here.x, here.z)
     // Chasing, a bot in liquid always heads for the shore (below): trouble only while slow.
@@ -506,7 +601,7 @@ export class BotBrain implements System {
     const waypoint = !duck && !afloat && distance > 4 ? this.waypoint : null
     if (waypoint) { aimX = waypoint.x; aimZ = waypoint.z }
     // Stable per-bot lateral offsets fade out near contact so every bot can still ram.
-    const spread = ((this.index * 0.61803398875 % 1) - 0.5) * p.approachSpread.value * Math.min(1, Math.max(0, distance - 8) / 20)
+    const spread = this.hunting ? 0 : ((this.index * 0.61803398875 % 1) - 0.5) * p.approachSpread.value * Math.min(1, Math.max(0, distance - 8) / 20)
     if (!duck && !afloat && distance > 0.1) {
       const ax = aimX - here.x, az = aimZ - here.z, length = Math.hypot(ax, az) || 1
       const offset = waypoint ? Math.max(-1, Math.min(1, spread)) : spread
@@ -522,7 +617,7 @@ export class BotBrain implements System {
     // Include the pursued player: catching a slow leader is not permission to ram on a bend.
     let trafficLimit = Infinity
     const roadAhead = (aimX - here.x) * this.forward.x + (aimZ - here.z) * this.forward.z
-    if (waypoint && roadAhead > Math.hypot(aimX - here.x, aimZ - here.z) * 0.8) for (const peer of new Set([...this.peers, this.target])) {
+    if (waypoint && roadAhead > Math.hypot(aimX - here.x, aimZ - here.z) * 0.8) for (const peer of new Set(this.hunting ? this.peers : [...this.peers, this.target])) {
       if (peer === this.vehicle || !peer.body.isValid()) continue
       const pos = this.imageOf(peer.body.translation(), here, this.peerImage)
       const px = pos.x - here.x, pz = pos.z - here.z
@@ -541,7 +636,13 @@ export class BotBrain implements System {
     // Getting out of a reversing target's way is the one time the gap must not hold a bot back.
     // Only while heading toward it: a bot moving off to a place farther away is not closing.
     const toward = (aimX - here.x) * dx + (aimZ - here.z) * dz > 0
-    if (p.aggression.value <= p.RAM_AGGRESSION && distance > 0.1 && duck?.mode !== 'give-way' && toward) {
+    if (this.hunting && distance > 0.1 && toward) {
+      // In a game contact is the point: close as fast as the ramming skill commits to, from a
+      // firm nudge (about 3 m/s faster than the target) to a full-speed hit.
+      const away = (targetVelocity.x * dx + targetVelocity.z * dz) / distance
+      const commit = skill(ramming.value, 'unit')
+      trafficLimit = Math.min(trafficLimit, Math.max(0, away + 3 + commit * 14 + Math.max(0, distance - 12) * 0.8))
+    } else if (p.aggression.value <= p.RAM_AGGRESSION && distance > 0.1 && duck?.mode !== 'give-way' && toward) {
       const tagging = this.match?.mode === 'tag' && this.match.it === this.vehicle
       const away = (targetVelocity.x * dx + targetVelocity.z * dz) / distance
       const allowed = tagging ? away + Math.max(TAP_SPEED, (distance - KEEP_GAP) * 0.8) : away + (distance - KEEP_GAP) * 0.8
@@ -576,14 +677,15 @@ export class BotBrain implements System {
         this.reversing = false
         if (!afloat) { this.immobileTime = 0; this.strategyTime = 0; this.lastPosition.copy(here) }
       }
-      input.x = this.reversing ? clamp(-rotation) : Math.abs(rotation) < 0.1 ? 0 : clamp(rotation * p.aggression.value, waypoint || distance < 15 ? 1 : 0.6)
+      const gain = this.hunting ? Math.max(1, p.aggression.value) : p.aggression.value
+      input.x = this.reversing ? clamp(-rotation) : Math.abs(rotation) < 0.1 ? 0 : clamp(rotation * gain, waypoint || distance < 15 ? 1 : 0.6)
       if (waypoint && !this.reversing) {
         // Four-wheel steering needs a gentle curvature command on narrow roads.
         // Full original pursuit lock makes the buggy circle an eight-metre waypoint.
         const look = Math.max(8, Math.hypot(aimX - here.x, aimZ - here.z))
         input.x = Math.abs(error) > Math.PI / 2 ? Math.sign(error) * 0.6 : clamp(6 * Math.sin(error) / look, 0.6)
       }
-      input.y = Math.min(1, p.aggression.value) * p.topThrottle.value * (this.reversing ? -1 : 1)
+      input.y = (this.hunting ? 1 : Math.min(1, p.aggression.value)) * p.topThrottle.value * (this.reversing ? -1 : 1)
       // Keep enough throttle to turn, but shed speed before a tight corner.
       if (!this.reversing && Math.abs(error) > 0.6 && speed > p.cornerSpeed.value) {
         input.y *= 0.25; input.brakes = speed > p.cornerSpeed.value * 1.5

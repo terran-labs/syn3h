@@ -139,10 +139,16 @@ export class Mind {
     return this.visits.size / (side * side)
   }
 
-  /** Go after one vehicle for a while: how a bot that cannot ram still joins the chase. */
-  pursue(leader: Vehicle, seconds: number): void {
-    this.clearPlan(); this.begin('follow', null, leader, seconds)
+  /**
+   * Go after one vehicle for a while: how a bot that cannot ram still joins the chase. With
+   * `contact` (a game: taking "it", driving someone off the hill) it heads for the vehicle
+   * itself, leading it, at full speed, and keeps on when it stops.
+   */
+  pursue(leader: Vehicle, seconds: number, contact = false): void {
+    this.clearPlan(); this.begin('follow', null, leader, seconds); this.contact = contact
   }
+  /** The current pursuit is for contact (see `pursue`). */
+  private contact = false
 
   /** Get away from one vehicle for a while: what a bot does when whoever is "it" comes close. */
   flee(threat: Vehicle, seconds: number): void {
@@ -196,9 +202,13 @@ export class Mind {
       const p = wrap ? { x: nearestImage(raw.x, here.x, wrap), z: nearestImage(raw.z, here.z, wrap) } : raw
       const lv = a.leader.body.linvel(), ls = Math.hypot(lv.x, lv.z) || 1
       const side = this.personality.mischief > 0.5 ? 4 : -4
-      a.destination = { x: p.x - lv.x / ls * 9 + lv.z / ls * side, z: p.z - lv.z / ls * 9 - lv.x / ls * side }
-      // A leader that has stopped is no longer leading anywhere.
-      this.leaderIdle = Math.hypot(lv.x, lv.z) < 1.5 ? this.leaderIdle + dt : 0
+      if (this.contact) {
+        // For contact: where it will be a moment from now, not a few lengths behind it.
+        const lead = Math.min(1.2, Math.hypot(p.x - here.x, p.z - here.z) / 20)
+        a.destination = { x: p.x + lv.x * lead, z: p.z + lv.z * lead }
+      } else a.destination = { x: p.x - lv.x / ls * 9 + lv.z / ls * side, z: p.z - lv.z / ls * 9 - lv.x / ls * side }
+      // A leader that has stopped is no longer leading anywhere (unless the point is to reach it).
+      this.leaderIdle = !this.contact && Math.hypot(lv.x, lv.z) < 1.5 ? this.leaderIdle + dt : 0
       if (this.leaderIdle > 4) a.until = 0
     }
     if (a.kind === 'flee') {
@@ -414,6 +424,7 @@ export class Mind {
 
   private begin(kind: ActivityKind, destination: NavPoint | null, leader: Vehicle | null, seconds: number): void {
     this.activity = { kind, destination, leader, until: this.time + seconds }
+    this.contact = false
     this.leaderIdle = 0
     this.lastKind = kind
   }
@@ -543,6 +554,9 @@ export class Mind {
     const onRoad = this.waypoint !== null && !this.options.navigator
     let speed = onRoad ? roadSpeed.value * (0.85 + bold * 0.4) : 8 + bold * 6
     if (this.pilot.profile.flies) speed = 11 + bold * 4
+    // Going for contact in a game: as fast as it dares for the last stretch. Farther off it
+    // drives as usual, so switchbacks on the way are taken at road speed.
+    if (activity.kind === 'follow' && this.contact && distance < 60) speed = Math.max(speed, this.pilot.profile.flies ? 18 : 16 + bold * 6)
     return speed
   }
 

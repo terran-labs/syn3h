@@ -5,10 +5,13 @@ import { nearestImage } from '../../shared/wrap'
 import { hashString } from './random'
 
 export interface BotGearOption {
-  id: 'bungee' | 'yoink' | 'red' | 'pester'
+  /** 'beam' is Plasma Tag, fired by networking's own fire path (no held gear). */
+  id: 'bungee' | 'yoink' | 'red' | 'pester' | 'beam'
   range: number
   cooldown: number
   chargeSeconds?: number
+  /** Bungee: seconds to keep the cord on after it catches, before letting go (a drag off the hill). */
+  hold?: number
 }
 export interface BotGearAction {
   gear: BotGearOption['id']
@@ -23,6 +26,11 @@ export interface BotGearHooks {
   available(vehicle: Vehicle): readonly BotGearOption[]
   threats(vehicle: Vehicle): readonly { id: string; position: { x: number; y: number; z: number }; velocity: { x: number; y: number; z: number } }[]
   act(vehicle: Vehicle, action: BotGearAction): void
+  /**
+   * Which usable option to use now (the games weigh Plasma Thunder against Plasma Tag).
+   * Without it, or when it returns null, the options take turns.
+   */
+  pick?(vehicle: Vehicle, usable: readonly BotGearOption[]): BotGearOption | null
 }
 
 /** Decisions only. The gear owner validates and executes actions, including their effects. */
@@ -84,7 +92,7 @@ export class BotGearController {
       input.fire = false
       a.held += dt
       // Three physics steps cover executor ordering and floating point charge accumulation.
-      const duration = a.option.id === 'red' ? Math.max(0.05, a.option.chargeSeconds ?? 1.5) + 0.06 : a.option.id === 'yoink' ? 0.8 : a.option.id === 'bungee' ? 1.2 : 0
+      const duration = a.option.id === 'red' ? Math.max(0.05, a.option.chargeSeconds ?? 1.5) + 0.06 : a.option.id === 'yoink' ? 0.8 : a.option.id === 'bungee' ? 1.2 + (a.option.hold ?? 0) : 0
       if (a.held >= duration) {
         this.hooks.act(this.vehicle, { gear: a.option.id, target, phase: a.option.id === 'bungee' ? 'cancel' : 'release' })
         this.wait = Math.max(1.5, a.option.cooldown) + this.seed % 5 * 0.1
@@ -95,7 +103,7 @@ export class BotGearController {
     if (this.candidate !== target) { this.candidate = target; this.seenFor = 0 }
     this.seenFor += dt
     if (this.wait > 0 || this.seenFor < 0.4 + this.seed % 4 * 0.1) return
-    const option = usable[(this.seed + this.sequence++) % usable.length]
+    const option = this.hooks.pick?.(this.vehicle, usable) ?? usable[(this.seed + this.sequence++) % usable.length]
     this.active = { option: { ...option }, target, held: 0 }
     input.fire = false
     this.hooks.act(this.vehicle, { gear: option.id, target, phase: 'press' })

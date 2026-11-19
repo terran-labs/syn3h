@@ -547,11 +547,13 @@ try {
   await b.waitForFunction((id) => window.syn3hNet.players.get(id)?.colors[0] === '#ff2200', idA, { timeout: 5000 }).catch(() => {})
   const infoA = await b.evaluate((id) => window.syn3hNet.players.get(id), idA)
   check('vehicle kind and colours reach B', infoA?.kind === 'buggy-syn3h' && infoA.colors[0] === '#ff2200' && infoA.colors[1] === '#00ffcc', infoA)
-  // Put B behind A, looking at it, so A's tag is on B's screen.
+  // Put B behind A, looking at it, so A's tag is on B's screen. 24 m back: at 14 the tag stood
+  // up by the heading line and the gear's explanation, which labels keep clear of by design
+  // (the left column's hard areas), and hid or showed depending on where the camera settled.
   await a.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(0); window.syn3h.player.teleport(s.position, 0) })
   await b.evaluate(() => {
     const s = window.syn3h.terrain.spawnPoint(0)
-    s.position.z += 14
+    s.position.z += 24
     s.position.y = window.syn3h.terrain.heightAt(s.position.x, s.position.z) + 1.5
     window.syn3h.player.teleport(s.position, 0)
   })

@@ -45,14 +45,19 @@ import { BotGear, botGearOptions } from '../weapons/BotGear'
 import { Lasers } from '../weapons/Lasers'
 import { Blast } from '../weapons/blast'
 import { beamAimDirection } from '../weapons/aim'
-import { laserInterval, lasersAllowed } from '../weapons/params'
+import { laserInterval, lasersAllowed, laserSpeed } from '../weapons/params'
 import { GearRack } from '../weapons/Gear'
 import { Bungee } from '../weapons/bungee/Bungee'
 import { Yoink } from '../weapons/yoink/Yoink'
 import { BigRed } from '../weapons/BigRed'
 import { Pesters } from '../weapons/pester/Pesters'
 import { pesterAllowed, pesterBump, pesterCooldown, pesterMax } from '../weapons/pester/params'
-import { bigRedAllowed, bigRedPush } from '../weapons/bigRedParams'
+import { bigRedAllowed, bigRedPush, bigRedSpeed } from '../weapons/bigRedParams'
+import { aimError as botAimError, fireRate as botFireRate, gameGear, grappleRate as botGrappleRate, skill as botSkill, thunderShare as botThunderShare } from '../bots/skills'
+import { aimDirection } from '../bots/tactics'
+import { botGameOptions } from './bots'
+import type { BotGearOption } from '../bots/gear'
+import { seededRandom } from '../bots/random'
 import { BoundsGuard } from '../modes/Tag'
 // The "it" marker: one draw, and shown over the local player's own vehicle too.
 import { ItMarker as TagMarker } from './ItMarker'
@@ -104,6 +109,12 @@ export interface NetBots extends RaceBots {
   /** Tell the bots what game is on (the host's manager acts on it). Null is free play. */
   setMatch?(match: BotMatchInfo<Vehicle> | null): void
   setGear?(hooks: BotDecisionHooks | null): void
+  /** The host's bots and whom each is after (for aiming a bot's laser). */
+  readonly brainList?: readonly { readonly vehicle: Vehicle; readonly target: Vehicle | null }[]
+  /** Everyone the bots may play with: the host's own vehicle and every remote person's. */
+  setTargets?(vehicles: readonly Vehicle[]): void
+  /** Whether a vehicle may be gone after in a game now (not materializing, paused or just tagged). */
+  gameAvailable?: (vehicle: Vehicle) => boolean
 }
 
 export interface PlayerColors {
@@ -215,6 +226,11 @@ interface VehicleExtras {
   kind?: string
   setColors?(body: string, accent: string): void
 }
+
+/** Seconds a bot holds its fire at someone who was just tagged or knocked (the Foreman's "a couple of seconds"). */
+const BOT_HOLD_AFTER_HIT = 2.5
+/** Seconds between two bots' shots at the same target: they take turns, never all at once. */
+const BOT_STAGGER = 1.5
 
 export class NetClient implements System {
   readonly clock = new ServerClock()
@@ -372,6 +388,7 @@ export class NetClient implements System {
           }
         }
         this.stats.hitsJudged++
+        this.hitAt.set(victim, this.ctx.game.time)
         this.ctx.audio?.play('laserHit', at)
         if (!this.connected) return
         this.send(victim === this.id ? { type: 'hit', shooter, shot } : { type: 'hit', shooter, shot, victim })
@@ -965,7 +982,14 @@ export class NetClient implements System {
       // Two simultaneous users leave room for human messages in the shared connection budget.
       const controllers = [...this.botGear.values()]
       const mine = controllers.find(c => c.vehicle === vehicle)
-      return mine?.active || controllers.filter(c => c.active).length < 2 ? botGearOptions() : []
+      const free = mine?.active || controllers.filter(c => c.active).length < 2
+      return free ? this.botGameOptions() : []
+    },
+    pick: (_vehicle, usable) => {
+      // Tag: mostly Plasma Tag, now and then Plasma Thunder (bots.thunderShare).
+      const red = usable.find(o => o.id === 'red'), beam = usable.find(o => o.id === 'beam')
+      if (red && beam) return this.botRandom() < botThunderShare.value ? red : beam
+      return null
     },
     threats: vehicle => {
       const id = this.vehicleIdOfBody(vehicle.body.handle)
@@ -980,6 +1004,11 @@ export class NetClient implements System {
       if (!this.isHost) return
       const id = this.vehicleIdOfBody(vehicle.body.handle)
       if (id === null || !isBotId(id) || this.vehicleOf(id) !== vehicle) return
+      // Plasma Tag is not held gear: a bot's beam goes through the same fire path as Thunder.
+      if (action.gear === 'beam') {
+        if (action.phase === 'press') this.fireBot(id, [0, 0, -1], undefined, 'beam')
+        return
+      }
       let controller = this.botGear.get(id)
       if (!controller) {
         if (action.phase === 'cancel' || !botGearOptions().some(o => o.id === action.gear)) return
@@ -990,6 +1019,30 @@ export class NetClient implements System {
       }
       controller.act(action)
     },
+  }
+
+  /** When each vehicle id was last tagged or knocked by a laser, in game seconds. */
+  private readonly hitAt = new Map<number, number>()
+  /** When a bot last fired at each vehicle id, in game seconds: bots take turns. */
+  private readonly botShotAt = new Map<number, number>()
+  private readonly botRandom = seededRandom(0x5b07)
+  /** The vehicle a bot is shooting at: its brain's current target. */
+  private botShotTarget(vehicle: Vehicle): Vehicle | null {
+    const brain = this.bots?.brainList?.find(b => b.vehicle === vehicle)
+    const t = brain?.target
+    return t && t !== vehicle && t.body.isValid() ? t : null
+  }
+  /**
+   * What a bot may use, by game (the owner, 18 November 2026). Tag: Plasma Tag at
+   * bots.fireRate, and Plasma Thunder (the share is in `pick`). The hill: the Grapple only, at
+   * bots.grappleRate, held a couple of seconds to drag the holder off; never Yoink, which
+   * "would be too overpowered". Free play: whatever the room allows (bots.tagBeams governs).
+   */
+  private botGameOptions(): BotGearOption[] {
+    return botGameOptions(this.mode === MODE_KOTH ? 'hill' : this.mode === MODE_TAG ? 'tag' : 'free', botGearOptions(), {
+      fireRate: botSkill(botFireRate.value), grappleRate: botSkill(botGrappleRate.value), thunderShare: botThunderShare.value,
+      lasers: lasersAllowed.value, jitter: 0.75 + this.botRandom() * 0.5,
+    })
   }
 
   /** Bot rescues (src/bots/rescue) fire the grapple through the same hooks as bot decisions. */
@@ -1011,17 +1064,39 @@ export class NetClient implements System {
       heldElsewhere: target => this.yoink.holderOf(target) !== null || [...this.botGear].some(([actor, g]) => actor !== id && g.yoink.holderOf(target) !== null),
       sendCord: (bot, cord) => { if (this.isHost) this.send({ type: 'cord', bot, cord }) },
       sendYoink: (bot, y) => { if (this.isHost) this.send({ type: 'yoink', bot, y }) },
-      fireRed: (bot, direction) => this.fireBot(bot, direction),
+      fireRed: (bot, direction) => this.fireBot(bot, direction, undefined, 'red'),
       launchPester: (bot, target, direction) => this.fireBot(bot, direction, target),
     })
   }
 
-  private fireBot(bot: number, direction: [number, number, number], target?: Vehicle): boolean {
+  private fireBot(bot: number, direction: [number, number, number], target?: Vehicle, kind?: 'beam' | 'red'): boolean {
     if (!this.isHost) return false
     const vehicle = this.vehicleOf(bot)
     if (!vehicle || materializing(vehicle)) return false
     const shot = this.lasers.aim(vehicle.body, this.clock.now())
     shot.d = direction
+    if (kind) {
+      // A bot's laser in a game: aimed at its target with lead and a deliberate error
+      // (bots.aimError, scaled by difficulty), and held while another bot has just fired at
+      // the same one or it was just tagged or knocked (so bots never pile on).
+      const at = this.botShotTarget(vehicle)
+      if (!at) return false
+      const victim = this.vehicleIdOfBody(at.body.handle)
+      const now = this.ctx.game.time
+      if (victim === null || now - (this.hitAt.get(victim) ?? -Infinity) < BOT_HOLD_AFTER_HIT || now - (this.botShotAt.get(victim) ?? -Infinity) < BOT_STAGGER) return false
+      this.botShotAt.set(victim, now)
+      const c = at.body.translation(), v = at.body.linvel()
+      const from = { x: shot.o[0], y: shot.o[1], z: shot.o[2] }
+      const to = this.wrapSize > 0 ? { x: nearestImage(c.x, from.x, this.wrapSize), y: c.y, z: nearestImage(c.z, from.z, this.wrapSize) } : c
+      shot.d = aimDirection(from, to, v, kind === 'red' ? bigRedSpeed.value : laserSpeed.value, botSkill(botAimError.value, 'error'), this.botRandom)
+      if (kind === 'beam') {
+        if (!lasersAllowed.value) return false
+        this.lasers.spawn(bot, shot)
+        this.ctx.audio?.play('laserShot', { x: shot.o[0], y: shot.o[1], z: shot.o[2] })
+        this.send({ type: 'fire', bot, shot: { ...shot, o: this.canonical(shot.o) } })
+        return true
+      }
+    }
     if (target) {
       if (!pesterAllowed.value || this.pesters.list().filter(o => o.shooter === bot).length >= pesterMax.value) return false
       const to = this.vehicleIdOfBody(target.body.handle)
@@ -1179,6 +1254,7 @@ export class NetClient implements System {
 
   private botMatchKey = 'unset'
   private botMatchIt: Vehicle | null = null
+  private botMatchHolder: Vehicle | null = null
 
   /**
    * Keep the host's bots told what game is on: the mode, the vehicle that is "it", the hill.
@@ -1194,13 +1270,42 @@ export class NetClient implements System {
     const koth = this.mode === MODE_KOTH
     const zone = on && koth ? this.game.koth.zone : null
     const it = on && !koth && this.game.it ? (this.vehicleOf(this.game.it) ?? null) : null
-    const key = !on ? '' : koth ? `hill:${JSON.stringify(zone)}` : `tag:${this.game.it}`
-    if (key === this.botMatchKey && it === this.botMatchIt) return
+    const holder = on && koth && this.game.koth.holder ? (this.vehicleOf(this.game.koth.holder) ?? null) : null
+    this.syncBotPeople()
+    const key = !on ? '' : koth ? `hill:${JSON.stringify(zone)}:${this.game.koth.holder}` : `tag:${this.game.it}`
+    if (key === this.botMatchKey && it === this.botMatchIt && holder === this.botMatchHolder) return
+    this.botMatchHolder = holder
     this.botMatchKey = key
     this.botMatchIt = it
     if (!on) bots.setMatch(null)
-    else if (koth) bots.setMatch({ mode: 'hill', zone: zone ? hillHold(zone, this.ctx.player.body.translation()) : null })
+    else if (koth) bots.setMatch({ mode: 'hill', zone: zone ? hillHold(zone, this.ctx.player.body.translation()) : null, ring: zone, holder })
     else bots.setMatch({ mode: 'tag', it })
+  }
+
+  /** The people the host's bots play with, last told: the host's vehicle and each remote person's. */
+  private botPeople: Vehicle[] = []
+  private botAvailabilitySet: NetBots | null = null
+  /**
+   * Keep the host's bots told who the people in the room are, so a remote person is a target
+   * the same as the host (the Foreman, 18 November 2026), and which of them may be gone after.
+   */
+  private syncBotPeople(): void {
+    const bots = this.bots
+    if (!bots?.setTargets) return
+    const people = [this.ctx.player, ...(this.isHost ? [...this.remotes.values()].map(r => r.vehicle) : [])]
+    if (people.length !== this.botPeople.length || people.some((v, i) => v !== this.botPeople[i])) {
+      this.botPeople = people
+      bots.setTargets(people)
+    }
+    if (this.botAvailabilitySet === bots) return
+    this.botAvailabilitySet = bots
+    bots.gameAvailable = (vehicle: Vehicle) => {
+      if (materializing(vehicle)) return false
+      const id = this.vehicleIdOfBody(vehicle.body.handle)
+      if (id === null) return false
+      if (this.remotes.get(id)?.paused) return false
+      return this.ctx.game.time - (this.hitAt.get(id) ?? -Infinity) >= BOT_HOLD_AFTER_HIT
+    }
   }
 
   /** The vehicle kind last announced to the room for each of our bots, by bot id. */
@@ -1648,6 +1753,7 @@ export class NetClient implements System {
       }
       case 'hit': {
         const victim = this.vehicleOf(msg.victim)
+        this.hitAt.set(msg.victim, this.ctx.game.time)
         this.lasers.confirmHit(msg.shooter, msg.shot, victim?.object.position)
         this.pesters.confirmHit(msg.shooter, msg.shot)
         // The judging client already played it.
