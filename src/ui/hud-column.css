@@ -113,9 +113,10 @@
 :root .syn3h-shell.exploration-ui.has-touch .gear-selector { --gs-drum-left: 8px; --gear-left: calc(var(--edge-left) - var(--col-spine)); }
 /* Its detail (what the gear does, what to press) sits beside the selected gear: its first line
    level with the selected name (the owner, 18 November 2026). It never runs into the speed
-   readout: where the two would meet, GearSelector narrows it to the room left (--gs-detail-max). */
+   readout: where the two would meet, GearSelector narrows it to the room left (--gs-detail-max),
+   or on narrow screens drops it just below the readout (--gs-detail-drop). */
 :root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-detail {
-  top: calc(50% - 9px); bottom: auto; max-width: var(--gs-detail-max, none);
+  top: calc(50% - 9px + var(--gs-detail-drop, 0px)); bottom: auto; max-width: var(--gs-detail-max, none);
 }
 
 /* ---------- Accessories, then the Chat row: one row form ---------- */
@@ -141,7 +142,7 @@
   background: var(--s3-line-quiet); pointer-events: none;
 }
 :root .syn3h-shell :is(.hud-accessories, .hud-chat) button.acc-row {
-  position: relative; display: flex; align-items: center; gap: 10px; width: 100%; height: 100%; min-height: 0; margin: 0;
+  position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; height: 100%; min-height: 0; margin: 0;
   padding: 0 var(--col-inset, 24px) 0 var(--col-inset, 24px); box-sizing: border-box;
   background: none; border: 0; border-radius: 0; box-shadow: none; outline: none;
   color: var(--s3-dim); font: var(--col-type); letter-spacing: var(--col-track); text-transform: uppercase;

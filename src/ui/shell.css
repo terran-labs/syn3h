@@ -453,7 +453,7 @@
   .touch-actions button { font-size: 13px; }
   .match-hud { top: 10px; left: 50%; transform: translateX(-50%); width: min(300px, calc(100% - 420px)); }
   .syn3h-shell.is-playing .shell-toast { top: auto; bottom: 46px; max-width: calc(100% - 400px); font-size: 13px; padding: 5px 12px; }
-  .has-touch .spawn-help { bottom: 12px; }
+  .has-touch .spawn-help { bottom: var(--edge-bottom); }
   .match-announcement { top: 118px; width: min(420px, calc(100% - 400px)); font-size: 20px; padding: 6px 10px; }
   .match-announcement.round-end { top: 114px; left: 200px; width: calc(100% - 400px); transform: none; padding: 8px 12px; border-width: 2px; }
   .round-end strong { font-size: 24px; }
