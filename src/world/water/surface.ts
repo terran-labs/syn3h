@@ -140,6 +140,9 @@ export function waterOpacityNode(depth: THREE.Node<'float'>, foam: THREE.Node<'f
   return view.y.greaterThanEqual(0).select(above, mix(float(.98), float(.12), window))
 }
 
+/** Metres below the bed over which a sight line counts as reaching it (sightLineMeetsBed). */
+const SIGHT_LINE_MARGIN = 1.5
+
 /**
  * Does the straight sight line through this pixel get below the bed before it comes back out of
  * the water? 1 when it does (what alpha blending shows behind the surface is the bed, as the
@@ -176,7 +179,11 @@ function sightLineMeetsBed(surfaceY: THREE.Node<'float'>, depth: THREE.Node<'flo
     best = best.max(bedAt(ground).sub(rho.sub(R)))
     u = u.mul(2)
   }
-  return select(invR.lessThanEqual(0), float(1), smoothstep(0, 0.3, best))
+  // Eased over SIGHT_LINE_MARGIN metres below the bed, not 0.3: the narrow margin drew a hard
+  // line on the far sea where lines stop reaching the bed. The margin starts at 0, never
+  // below: counting a near miss as reaching the bed lets the land behind show through again
+  // (tools/sea-see-through-scan.ts, MARGIN).
+  return select(invR.lessThanEqual(0), float(1), smoothstep(0, SIGHT_LINE_MARGIN, best))
 }
 
 /** Share of the scene's aerial haze the water takes at the camera, and the distances it eases over. */
