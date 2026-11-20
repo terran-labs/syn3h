@@ -79,6 +79,15 @@ if [ -z "$DRY" ]; then
     fail "wrangler is not authenticated (put the token in $SYN3H_CLOUDFLARE_TOKEN_FILE, set CLOUDFLARE_API_TOKEN, or npx wrangler login)"
   fi
 fi
+# Every earlier release must be whole in R2 before anything is built: deploys no longer carry
+# them, so the Worker serves them from R2 alone. A version without a verified row in
+# ../Syn3h-stable/r2-verified.tsv is uploaded and verified here; if that fails, the release stops
+# with nothing frozen, deployed or recorded. (A local dry run has no R2 to serve from: skipped.)
+if [ -z "$DRY" ] && [ -z "$STUB" ]; then
+  with_cf_token node tools/frozen-versions.mjs r2-preflight >"/tmp/syn3h-release-$N-r2-preflight.log" 2>&1 \
+    || { cat "/tmp/syn3h-release-$N-r2-preflight.log"; fail "earlier releases are not all verified in R2; nothing was built or deployed"; }
+  tail -1 "/tmp/syn3h-release-$N-r2-preflight.log"
+fi
 
 # Resolve the calendar label before building, so the UI and frozen metadata agree.
 CALVER="$(node tools/release-notes.mjs next)" || fail "could not compute the calendar version"
@@ -115,12 +124,12 @@ echo "Freezing $MILESTONE ($COMMIT)..."
 ID="$(tools/promote-stable.sh "release-$N: $NOTE" | tail -1)"
 DEST="$(cd ../Syn3h-stable/"$ID" && pwd)"
 printf '*.map\n' > "$DEST/dist/.assetsignore"
-# Every deploy carries each earlier release, and this one, under dist/v/ so that
-# https://www.syn3h.com/?v=<version> keeps serving it. A deploy without them breaks those links.
-# The durable copy is R2 (bucket syn3h-versions, tools/frozen-versions.mjs r2-upload), which the
-# Worker reads first; the carried copies are its fallback until step two of the R2 move. After a
-# rollback, frozen versions are served by the restored Worker: see tools/rollback.sh.
-node tools/frozen-versions.mjs carry "$DEST" "$CALVER" || fail "could not carry the frozen versions into the build"
+# Frozen versions (https://www.syn3h.com/?v=<version>): the Worker serves this release's own
+# version from this build and every earlier one from R2 (bucket syn3h-versions, checked by the
+# preflight above). The build carries no old versions, only dist/v/versions.json listing them
+# all, and `prepare` refuses a build that changes a root file an earlier version also serves.
+# After a rollback, frozen versions are served by the restored Worker: see tools/rollback.sh.
+node tools/frozen-versions.mjs prepare "$DEST" "$CALVER" || fail "could not prepare the frozen versions list"
 echo "Frozen copy: $DEST"
 echo "Assets: $(find "$DEST/dist" -type f ! -name '*.map' ! -name .assetsignore | wc -l | tr -d ' ') files, $(du -sh "$DEST/dist" | cut -f1) with maps"
 
@@ -281,9 +290,11 @@ else
 fi
 
 # --- Frozen versions ------------------------------------------------------------------------
-# Each frozen release's page and every one of its files, as that page asks for them, fetched
-# and hashed 16 at a time.
-node tools/frozen-versions.mjs check "$URL" "$DEST" >"$LOG-frozen.log" 2>&1 \
+# This release's page and every one of its files, as its page asks for them, and the page of
+# every earlier version (served from R2), fetched and hashed 16 at a time. Served locally (a dry
+# run or a stub) there is no R2, so only this release is checked; staging checks them all.
+FROZEN_SCOPE=""; { [ -n "$DRY" ] || [ -n "$STUB" ]; } && FROZEN_SCOPE="--new-only"
+node tools/frozen-versions.mjs check "$URL" "$DEST" $FROZEN_SCOPE >"$LOG-frozen.log" 2>&1 \
   || { cat "$LOG-frozen.log"; fail "frozen version links are broken at $URL (see $LOG-frozen.log)"; }
 tail -2 "$LOG-frozen.log"
 
@@ -338,9 +349,13 @@ DEPLOYED=""
 # --- Record ---------------------------------------------------------------------------------
 WHEN="$(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "release-$N" "$WHEN" "$URL" "$MILESTONE" "$COMMIT" "$VERSION" "$ID" >> ../Syn3h-stable/releases.tsv
-# Accepted: keep this release so every later deploy carries it. A failure here must be
-# repaired before the next release, but does not undo a verified one.
-node tools/frozen-versions.mjs archive "$DEST" "$CALVER" || echo "Warning: release is live but $CALVER was not archived; run tools/frozen-versions.mjs archive before the next release."
+# Accepted: keep this release (a second copy in ../Syn3h-stable/versions) and store it in R2,
+# verified, so later releases can serve it. A failure does not undo a verified release, but it is
+# loud: the release ends with exit 1, and the next release's r2-preflight uploads it or stops.
+ARCHIVE_FAILED=""
+with_cf_token node tools/frozen-versions.mjs archive "$DEST" "$CALVER" >"$LOG-archive.log" 2>&1 || ARCHIVE_FAILED=1
+tail -3 "$LOG-archive.log"
+[ -z "$ARCHIVE_FAILED" ] || printf '\nARCHIVE FAILED: release-%s is live, but %s is not verified in R2 (see %s).\nRun: bash -c %s\n\n' "$N" "$CALVER" "$LOG-archive.log" "'. tools/cloudflare-token.sh; with_cf_token node tools/frozen-versions.mjs archive $DEST $CALVER'" >&2
 git tag -a "release-$N" -m "release-$N: $NOTE ($URL, version $VERSION)"
 echo
 echo "RELEASE OK: release-$N is live at $URL"
@@ -403,3 +418,6 @@ if [ -f tools/dashboard-stats.mjs ]; then
     echo "Warning: release is live; dashboard statistics need refresh. See $LOG-dashboard-stats.log."
   fi
 fi
+
+# Last, so every other step has run: a release whose archive failed ends in failure.
+[ -z "$ARCHIVE_FAILED" ] || { echo "release-$N is live but $CALVER is NOT stored in R2: run the archive command above before the next release." >&2; exit 1; }

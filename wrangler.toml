@@ -14,10 +14,9 @@ binding = "ASSETS"
 # because their names are not content hashed and a frozen page must get its own copies.
 run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*", "/v/*"]
 
-# Frozen versions, stored once in R2 (tools/frozen-versions.mjs r2-upload) and read by the Worker
-# before the copies under /v/ that each deployment still carries; "/v/*" above sends a frozen
-# page's own /v/<version>/... addresses to the Worker so they are read from R2 too. The Worker
-# only reads it (server/worker.ts, FrozenBucket).
+# Frozen versions, stored once in R2 (tools/frozen-versions.mjs archive) and read by the Worker for
+# every version but its own; deployments carry none. "/v/*" above sends a frozen page's own
+# /v/<version>/... addresses to the Worker. The Worker only reads it (server/worker.ts, FrozenBucket).
 [[r2_buckets]]
 binding = "FROZEN"
 bucket_name = "syn3h-versions"

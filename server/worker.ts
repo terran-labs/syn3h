@@ -104,8 +104,7 @@ export default {
 /**
  * Frozen versions in R2, the durable copy: v/<version>/<path> in the syn3h-versions bucket
  * (tools/frozen-versions.mjs r2-upload). Answers a GET or HEAD for `path` of `version`, honouring
- * If-None-Match and If-Modified-Since (304) and Range (206), or null when the object is not there,
- * so the caller can fall back to the static assets each deployment still carries.
+ * If-None-Match and If-Modified-Since (304) and Range (206), or null when the object is not there.
  */
 const HASHED = /-[A-Za-z0-9_-]{8}\.[a-z0-9]+$/
 async function fromR2(req: Request, env: Env, version: string, path: string, kind: 'document' | 'routed' | 'direct'): Promise<Response | null> {
@@ -143,13 +142,13 @@ async function fromR2(req: Request, env: Env, version: string, path: string, kin
 }
 
 /**
- * Frozen versions. Each is read from R2 first (fromR2), then from the static assets: every
- * deployment still carries each frozen release's files under
- * /v/<version>/ (listed in /v/versions.json). `/?v=26.11.1503` serves that release's
- * document at the root; its content-hashed files then resolve either at the root (while it
- * is still the latest build) or, once a later build has replaced them, through the
- * not-found fallback below. Files whose names are not hashed (build.json, models) are
- * chosen by the page that asks for them, read from the Referer's own `v`.
+ * Frozen versions (step two of the move to R2). `/?v=26.11.1503` serves that release's page at
+ * the root; the files its page asks for by root path are chosen by the Referer's own `v` when the
+ * Worker sees them (build.json, models: run_worker_first), and its own /v/<version>/ addresses
+ * (src/core/frozenResources.ts) name the version outright. This deployment's own version is
+ * served from its own static assets, so its link works before `archive` has stored it; every
+ * other version is read from R2 only (fromR2). Deployments carry no old versions, only
+ * /v/versions.json, the list used for the unknown-version page and the search order below.
  */
 const VERSION = /^v?(\d+\.\d+\.\d+)$/
 function versionOf(value: string | null): string | null {
@@ -165,12 +164,38 @@ async function frozenVersions(req: Request, env: Env): Promise<string[]> {
     return []
   }
 }
+/** This deployment's version, from its own build.json, read once per isolate (a failure is retried). */
+let own: Promise<string | null> | undefined
+function ownVersion(req: Request, env: Env): Promise<string | null> {
+  own ??= env.ASSETS.fetch(new Request(new URL('/build.json', req.url)))
+    .then(async (r) => (r.ok ? versionOf(((await r.json()) as { version?: string }).version ?? null) : null))
+    .catch(() => null)
+    .then((v) => { if (v === null) own = undefined; return v })
+  return own
+}
+/** Tests run many deployments in one isolate. */
+export function forgetOwnVersion(): void { own = undefined }
+/** A response from this deployment's own static assets, marked as `version`. */
+async function fromOwnAssets(req: Request, env: Env, path: string, version: string, kind: 'document' | 'routed' | 'direct'): Promise<Response> {
+  const got = await env.ASSETS.fetch(new Request(new URL(path, req.url), { method: req.method, headers: req.headers }))
+  const out = new Response(got.body, got)
+  if (!got.ok && got.status !== 304) return out
+  out.headers.set('x-syn3h-version', version)
+  if (kind === 'document') out.headers.set('cache-control', 'no-store')
+  if (kind === 'routed') out.headers.append('vary', 'Referer')
+  return out
+}
+const notFound = () => new Response('not found', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } })
 const DIRECT = /^\/v\/(\d+\.\d+\.\d+)(\/.+)$/
 async function serveVersioned(req: Request, url: URL, env: Env): Promise<Response> {
   if (req.method !== 'GET' && req.method !== 'HEAD') return env.ASSETS.fetch(req)
-  // A frozen page's own address for a file (src/core/frozenResources.ts): /v/<version>/<path>.
+  if (url.pathname === '/v/versions.json') return env.ASSETS.fetch(req)
+  // A frozen page's own address for a file: /v/<version>/<path>.
   const direct = DIRECT.exec(url.pathname)
-  if (direct) return (await fromR2(req, env, direct[1], direct[2], 'direct')) ?? env.ASSETS.fetch(req)
+  if (direct) {
+    if (direct[1] === await ownVersion(req, env)) return fromOwnAssets(req, env, direct[2], direct[1], 'direct')
+    return (await fromR2(req, env, direct[1], direct[2], 'direct')) ?? notFound()
+  }
   const isDocument = url.pathname === '/' || url.pathname === '/index.html'
   let referrerV: string | null = null
   try {
@@ -183,29 +208,22 @@ async function serveVersioned(req: Request, url: URL, env: Env): Promise<Respons
   const wanted = isDocument ? versionOf(url.searchParams.get('v')) : referrerV
   if (isDocument && asked && !wanted) return unknownVersion(url.searchParams.get('v') ?? '', await frozenVersions(req, env))
   if (wanted) {
-    const stored = await fromR2(req, env, wanted, url.pathname, isDocument ? 'document' : 'routed')
+    const kind = isDocument ? 'document' : 'routed'
+    if (wanted === await ownVersion(req, env)) return fromOwnAssets(req, env, isDocument ? '/' : url.pathname, wanted, kind)
+    const stored = await fromR2(req, env, wanted, url.pathname, kind)
     if (stored) return stored
-    const path = isDocument ? `/v/${wanted}/` : `/v/${wanted}${url.pathname}`
-    const frozen = await env.ASSETS.fetch(new Request(new URL(path, url.origin), { method: req.method, headers: req.headers }))
-    if (frozen.ok || frozen.status === 304) {
-      const out = new Response(frozen.body, frozen)
-      out.headers.set('x-syn3h-version', wanted)
-      if (!isDocument) out.headers.append('vary', 'Referer')
-      if (isDocument) out.headers.set('cache-control', 'no-store')
-      return out
-    }
     if (isDocument) return unknownVersion(wanted, await frozenVersions(req, env))
+    // A root file this version never had: the latest build's, as a browser would get it.
   }
   const latest = await env.ASSETS.fetch(req)
-  if (latest.status !== 404 || isDocument) return latest
-  // A file the latest build no longer has: a frozen release may still own it.
-  for (const version of await frozenVersions(req, env)) {
-    const frozen = await env.ASSETS.fetch(new Request(new URL(`/v/${version}${url.pathname}`, url.origin), { method: req.method, headers: req.headers }))
-    if (frozen.ok || frozen.status === 304) {
-      const out = new Response(frozen.body, frozen)
-      out.headers.set('x-syn3h-version', version)
-      return out
-    }
+  if (latest.status !== 404 || isDocument || !HASHED.test(url.pathname)) return latest
+  // A content-hashed file the latest build no longer has, asked without a usable Referer: the
+  // release that owns it is in R2. Newest first; a name that matches nowhere costs one read per
+  // version, so only hashed names are searched.
+  const mine = await ownVersion(req, env)
+  for (const version of (await frozenVersions(req, env)).filter((v) => v !== mine).reverse()) {
+    const stored = await fromR2(req, env, version, url.pathname, 'direct')
+    if (stored) return stored
   }
   return latest
 }

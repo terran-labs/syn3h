@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-20 01:10 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-20 02:25 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,13 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2000 (release-65), source 554b06b9, frozen copy 20261120-005547-554b06b9,
-Worker version 0e32d7ee, at https://www.syn3h.com/ since 20 November 01:02 PST.
+Live: v26.11.2002 (release-67), source e4d6f5b8, frozen copy 20261120-021322-e4d6f5b8,
+Worker version 77f52e23, at https://www.syn3h.com/ since 20 November 02:18 PST.
+Since 2002 (R2 step two) deployments carry no old versions: the Worker serves its own version
+from its assets and every earlier one from R2 only (bucket syn3h-versions, ledger
+../Syn3h-stable/r2-verified.tsv). release.sh runs r2-preflight before building and archives the
+accepted release to R2 (ARCHIVE FAILED exits 1: run the printed command before the next release).
+A missing hashed file costs one R2 read per version: a made-up name took 3 to 4 s to 404 on staging.
 Release-64 (the freeze release, tag m-freeze-1907, 3636e736) failed www's movement step and rolled
 back: player B was still behind the longer covered entry. Unrecorded on the Foreman's word; it
 returns after the entry-time work and the public-check fix (tools/public-check-playable).
@@ -71,6 +76,8 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.1906 | 63 | m-bots-1906 | bots play in Explore (tows, tugs, stop words, breaking free), bots bump each other, hovercraft and jet beams, R2 frozen versions |
 | (v26.11.1907) | 64 | m-freeze-1907 | rolled back: www movement step ran while B was still entering; not recorded |
 | v26.11.2000 | 65 | m-ui-2000 | one glass style, phone panels, chat bubbles, pause screen with screenshots, sunk Zorb cue, own it marker clear |
+| v26.11.2001 | 66 | m-freeze-2001 | shaders and pipelines prepared at Play under cover, in parallel; bots build nothing in play; Copy diagnostics |
+| v26.11.2002 | 67 | m-r2-2002 | deployments stop carrying old versions; earlier versions served from R2 only |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
