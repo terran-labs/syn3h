@@ -54,6 +54,7 @@ import { BigRed } from '../weapons/BigRed'
 import { Pesters } from '../weapons/pester/Pesters'
 import { pesterAllowed, pesterBump, pesterCooldown, pesterMax } from '../weapons/pester/params'
 import { bigRedAllowed, bigRedPush, bigRedSpeed } from '../weapons/bigRedParams'
+import { thunderMapPing } from '../weapons/thunderParams'
 import { aimError as botAimError, fireRate as botFireRate, gameGear, grappleRate as botGrappleRate, skill as botSkill, thunderShare as botThunderShare } from '../bots/skills'
 import { aimDirection } from '../bots/tactics'
 import { botGameOptions } from './bots'
@@ -191,7 +192,9 @@ export interface MapMarker {
   heading: number
   color: string
   accent?: string
-  kind?: 'person' | 'bot' | 'zone'
+  kind?: 'person' | 'bot' | 'zone' | 'flare'
+  /** A flare's remaining life, 1 new to 0 gone. */
+  fade?: number
   it?: boolean
   self?: boolean
 }
@@ -363,7 +366,7 @@ export class NetClient implements System {
       wrapSize: () => this.wrapSize,
     })
     this.lasers = new Lasers(game, {
-      onImpact: (at, red) => this.blast.at(red ? 'thunder' : 'tag', at),
+      onImpact: (at, red, share) => this.blast.at(red ? 'thunder' : 'tag', at, share),
       bodyOf: (id) => this.vehicleOf(id)?.body,
       centreOf: (id, alpha, out) => {
         const v = this.vehicleOf(id)
@@ -374,6 +377,17 @@ export class NetClient implements System {
       judgedId: (h) => this.judgedId(h),
       // Impacts look like what they struck: dust on sand, steam on water (weapons/impact).
       terrain: () => this.ctx.terrain,
+      // Plasma Thunder (weapons/thunderRules.ts): the vehicles this client judges for its fuse,
+      // whose ends it reports, and where the room is told it went off.
+      judged: () => this.judgedVehicles(),
+      ownsShot: (shooter) => !this.connected || shooter === this.id || (isBotId(shooter) && this.isHost),
+      onDetonate: (shooter, shot, cause, at, victim) => {
+        if (!this.connected) return
+        const where = this.canonical([at.x, at.y, at.z])
+        this.send(victim === undefined || victim === this.id ? { type: 'detonate', shooter, shot, at: where, cause } : { type: 'detonate', shooter, shot, at: where, cause, victim })
+      },
+      colorsOf: (id) => { const v = this.vehicleOf(id); return v ? [new THREE.Color(v.colors.body), new THREE.Color(v.colors.accent)] : undefined },
+      onBurst: (shooter, at, cause, delay) => this.thunderBurst(shooter, at, cause, delay),
       isVehicleBody: (h) => [...this.remotes.values()].some((r) => r.vehicle.body.handle === h),
       onHit: (shooter, shot, victim, at, dir, red) => {
         if (materializing(this.vehicleOf(shooter)) || materializing(this.vehicleOf(victim))) return
@@ -397,7 +411,8 @@ export class NetClient implements System {
         this.stats.hitsJudged++
         this.hitAt.set(victim, this.ctx.game.time)
         this.ctx.audio?.play('laserHit', at)
-        if (!this.connected) return
+        // Plasma Thunder's contact goes to the room as its detonation (onDetonate), which counts as the hit.
+        if (!this.connected || red) return
         this.send(victim === this.id ? { type: 'hit', shooter, shot } : { type: 'hit', shooter, shot, victim })
       },
     })
@@ -934,6 +949,9 @@ export class NetClient implements System {
 
   private mapMarkers(): MapMarker[] {
     const list: MapMarker[] = []
+    const now = this.ctx.game.time
+    for (let i = this.flares.length - 1; i >= 0; i--) if (this.flares[i].until <= now) this.flares.splice(i, 1)
+    for (const f of this.flares) if (f.from <= now) list.push({ x: f.x, z: f.z, heading: 0, color: f.color, kind: 'flare', fade: 1 - (now - f.from) / Math.max(0.01, f.until - f.from) })
     const it = this.game.mode === MODE_TAG ? this.game.it : 0
     // Colour is identity: each vehicle's own paint, as '#rrggbb' (Vehicle.setColors normalizes it).
     const add = (id: number, vehicle: Vehicle): void => {
@@ -1210,6 +1228,32 @@ export class NetClient implements System {
     if (this.seamVehicle) (this.seamVehicle.object as Seamed).removeEventListener('tileshift', this.onTileShift)
     this.seamVehicle = vehicle
     ;(vehicle.object as Seamed).addEventListener('tileshift', this.onTileShift)
+  }
+
+  /** The vehicles this client judges hits on, where they are and how high above the ground: for Plasma Thunder's fuse. */
+  private *judgedVehicles(): Generator<{ id: number; x: number; y: number; z: number; clearance: number }> {
+    const terrain = this.ctx.terrain
+    const at = (id: number, v: Vehicle) => { const p = v.object.position; return { id, x: p.x, y: p.y, z: p.z, clearance: p.y - terrain.heightAt(p.x, p.z) } }
+    if (!materializing(this.ctx.player)) yield at(this.id, this.ctx.player)
+    if (this.isHost && this.bots) for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (!materializing(bot)) yield at(id, bot)
+  }
+
+  /** Flares on the map, newest last: where Plasma Thunder burst, in the shooter's colour, until `until` (game time). */
+  private readonly flares: { x: number; z: number; color: string; from: number; until: number }[] = []
+
+  /**
+   * A Plasma Thunder burst seen here: its sound (a whump, then a crackle), and a flare on the
+   * map for thunder.mapPing seconds, so everyone can find where it went up.
+   */
+  private thunderBurst(shooter: number, at: THREE.Vector3, _cause: string, delay: number): void {
+    const now = this.ctx.game.time, ping = thunderMapPing.value
+    const color = this.vehicleOf(shooter)?.colors.body ?? '#ff3a1a'
+    if (ping > 0) {
+      this.flares.push({ x: at.x, z: at.z, color, from: now + delay, until: now + delay + ping })
+      if (this.flares.length > 6) this.flares.shift()
+    }
+    const play = () => { this.gearCue('thunderBurst', at); setTimeout(() => this.gearCue('thunderCrackle', at), 900) }
+    if (delay > 0) setTimeout(play, delay * 1000); else play()
   }
 
   private ownsVehicle(id: number): boolean {
@@ -1859,6 +1903,13 @@ export class NetClient implements System {
           const v = this.ctx.player.body.linvel()
           this.shoves.add(msg.from, push, this.ctx.game.time, this.remotes.get(msg.from)?.delay ?? 0.1, [v.x, v.y, v.z], this.velHistory[0] ?? [v.x, v.y, v.z])
         }
+        break
+      }
+      case 'detonated': {
+        const size = this.wrapSize, me = this.ctx.player.body.translation()
+        const [x, y, z] = msg.at
+        const at = new THREE.Vector3(size > 0 ? nearestImage(x, me.x, size) : x, y, size > 0 ? nearestImage(z, me.z, size) : z)
+        this.lasers.detonated(msg.shooter, msg.shot, at, msg.cause)
         break
       }
       case 'hit': {

@@ -393,6 +393,12 @@ export type ClientMessage =
    */
   | { type: 'hit'; shooter: number; shot: number; victim?: number }
   /**
+   * Plasma Thunder went off (src/weapons/thunderRules.ts). contact or fuse: sent by the client
+   * that judges `victim` (its own client; the host for a bot), like a hit. end: sent by the
+   * shooter's client (the host for a bot's shot). The room takes the first for each shot.
+   */
+  | { type: 'detonate'; shooter: number; shot: number; at: Vec3; cause: 'contact' | 'fuse' | 'end'; victim?: number }
+  /**
    * Sent by a client whose vehicle touched another player's vehicle. `push` is the velocity
    * change, m/s, the rammer's client worked out for the other vehicle; the server relays it
    * to that player as `shove`. See src/net/shove.ts.
@@ -478,6 +484,8 @@ export type ServerMessage =
   | { type: 'param'; id: string; value: ParamWireValue; from: number }
   | { type: 'fire'; from: number; shot: ShotInfo }
   | { type: 'hit'; shooter: number; victim: number; shot: number }
+  /** Where Plasma Thunder shot `shot` from `shooter` went off, the room's word, once per shot. */
+  | { type: 'detonated'; shooter: number; shot: number; at: Vec3; cause: 'contact' | 'fuse' | 'end'; victim?: number }
   /** Player `from` rammed you: the velocity change to apply if your own physics missed it. */
   | { type: 'shove'; from: number; push: [number, number, number] }
   /** Relayed: player `by` asks the cord of `owner` (you, or a bot you simulate) to let go of them. */
