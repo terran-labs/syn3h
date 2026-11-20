@@ -500,7 +500,9 @@ export class Bungee implements System {
         else this.lastBrake = this.game.time
       }
       this.brakeWas = brake
-      if (on.length && pressed && !this.mine) { for (const owner of on) this.hooks.unhook?.(owner); this.lastPress = this.game.time; return }
+      // That press is spent on asking: holding on after it launches nothing, even once the cord
+      // on us has gone (heldFire.ts); a new press does.
+      if (on.length && pressed && !this.mine) { for (const owner of on) this.hooks.unhook?.(owner); this.lastPress = this.game.time; this.trigger.clear(); this.waiting = false; return }
     }
 
     const c = this.mine
