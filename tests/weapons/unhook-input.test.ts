@@ -67,4 +67,21 @@ describe('breaking free of a cord on you', () => {
       expect(s.bungee.mine).toBeUndefined()
     } finally { s.close() }
   })
+
+  // A held button is intent (src/weapons/heldFire.ts), but not this one: the press was spent on
+  // asking to be let go. Bug caught: the hook flying off on its own once their cord goes.
+  it('holding on after asking to be let go launches nothing, even once their cord has gone', () => {
+    params.set('bungee.allowed', true)
+    const s = setup(true)
+    try {
+      s.input.fire = true; s.step()
+      expect(s.asked).toEqual([1000])
+      s.bungee.applyRemote(1000, { s: 'off' })
+      s.step(30)
+      expect(s.bungee.mine).toBeUndefined()
+      // A new press does.
+      s.input.fire = false; s.step(); s.input.fire = true; s.step()
+      expect(s.bungee.mine).toBeDefined()
+    } finally { s.close() }
+  })
 })

@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-20 03:30 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-20 03:55 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,10 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2004 (release-69, the join hotfix), source 93d91af8, frozen copy
-20261120-031842-93d91af8, Worker version 61229e80, at https://www.syn3h.com/ since 20 November 03:22 PST.
+Live: v26.11.2005 (release-70), source 1cd10652, frozen copy 20261120-034355-1cd10652,
+Worker version c9f1d61d, at https://www.syn3h.com/ since 20 November 03:48 PST.
+Smoke pages refuse AudioWorklet modules since 2005 (every renderer crash dump was Chrome's assertion on
+its realtime AudioWorklet thread); release-70 had no renderer crash. The crash budget stays at two.
 2004: a page that sends largeWelcome in its hello takes a welcome up to a bound for a full room; for
 older pages the room trims the welcome under 8,192 and sends the rest as ordinary messages. Staging:
 a late joiner after 4 bots took an 8,350-character welcome; a 2003 page got a trimmed 7,832 and joined.
@@ -89,6 +91,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2002 | 67 | m-r2-2002 | deployments stop carrying old versions; earlier versions served from R2 only |
 | v26.11.2003 | 68 | m-thunder-2003 | Plasma Thunder skips, flares and ends in fireworks |
 | v26.11.2004 | 69 | m-join-2004 | joining a room that already has bots works again |
+| v26.11.2005 | 70 | m-bundle-2005 | held charges on time, matching beams in mist, sun rays through gaps, bounded missing-file search |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker

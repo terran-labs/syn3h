@@ -94,6 +94,19 @@ async function open(name, extra = '') {
   browsers.push(browser)
   const ctx = await browser.newContext({ viewport: SMOKE_VIEWPORT })
   await ctx.addInitScript((q) => localStorage.setItem('syn3h.quality.v2', JSON.stringify(q)), SMOKE_QUALITY)
+  // No score worklets on smoke pages (the Foreman, 20 November 2026). Headless Chrome 157 under a
+  // loaded release run kills the renderer now and then with a CHECK on its "Realtime AudioWorklet
+  // thread" (EXC_BREAKPOINT): 37 crash dumps from test browsers since 15 November, most at this
+  // smoke's ram step, cause unknown and not reproduced in 60 isolated rams. That thread exists
+  // only once a page asks for an AudioWorklet module, so the request is refused before it is made
+  // (refusing only the file would come after Chrome has started the thread). The score
+  // (src/audio/score) already plays on without its worklet voices when a module fails to load.
+  // The smoke checks networking and rules, not music. Evidence and how to read a dump:
+  // ops/KNOWN-ISSUES.md.
+  await ctx.addInitScript(() => {
+    if (typeof AudioWorklet === 'undefined') return
+    AudioWorklet.prototype.addModule = () => Promise.reject(new DOMException('net-smoke: no AudioWorklet modules', 'AbortError'))
+  })
   // A memory sample every 5 s, for the crash report below (Chrome's performance.memory).
   await ctx.addInitScript(() => setInterval(() => { const m = performance.memory; if (m) console.debug(`SMOKE-MEM ${Math.round(m.usedJSHeapSize / 1048576)} MB of ${Math.round(m.jsHeapSizeLimit / 1048576)} MB`) }, 5000))
   const page = await ctx.newPage()
@@ -714,7 +727,12 @@ try {
     await b.screenshot({ path: '/tmp/syn3h-koth-far.png' })
 
     await park(b, 0.3 + 0.15)
-    await settle(() => b.evaluate(() => window.syn3hNet.game.koth.contested), (c) => c === true)
+    // Both pages must have seen the contest before the baseline is taken. The room sends any
+    // point it scored before the hill became contested ahead of the 'contest' update, so a page
+    // that shows "contested" has every earlier point. Waiting on B alone and reading the score on
+    // A raced: on 20 November A's page, at 7 fps, had not yet applied the point scored just
+    // before the contest (9 then 10) while B already showed it (10) and "contested".
+    await settle(() => Promise.all([a, b].map((p) => p.evaluate(() => window.syn3hNet.game.koth.contested))), (both) => both.every((c) => c === true))
     const s1 = await score(idA)
     // A measured window, not a wait for readiness: nobody may score while the hill is contested.
     await wait(2500)
