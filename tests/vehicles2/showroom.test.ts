@@ -113,36 +113,39 @@ describe('showroom vehicle shading',()=>{
   }
   const scene=new T.Scene();let made=0
   const before={...showroomWarm},a=make(),b=make()
-  // Both far. The first to ask takes the turn; the other waits and builds nothing.
-  a.tick(80);b.tick(80)
-  expect(a.body.material,'still plain while far').toBe(a.paint)
-  expect(a.proxies()?.length).toBe(2);expect(b.proxies()).toBeUndefined()
-  const [bodyProxy,wheelProxy]=a.proxies()!,near=bodyProxy.material
-  expect(near).toBeInstanceOf(T.MeshPhysicalNodeMaterial);expect(bodyProxy.geometry).toBe(a.body.geometry)
-  expect(wheelProxy).toBeInstanceOf(T.InstancedMesh);expect(bodyProxy.castShadow).toBe(true);expect(bodyProxy.frustumCulled).toBe(false)
-  // In the scene at the vehicle's position, not under the hidden model, and far too small to see.
-  expect(a.group()!.parent).toBe(scene);expect(a.group()!.position.toArray()).toEqual([40,3,-7]);expect(a.group()!.scale.x).toBeLessThan(.01)
-  expect(a.root.children).toHaveLength(2)
-  // Updates without a draw (the world behind the lobby) do not count.
-  a.tick(80);a.tick(80);expect(a.proxies()?.length).toBe(2)
-  for(let i=0;i<3;i++){a.draw();a.tick(80);b.tick(80)}
-  expect(a.proxies(),'proxies gone after three drawn frames').toBeUndefined()
-  expect(showroomWarm.warmed-before.warmed).toBe(1)
-  // Now the second vehicle has the turn.
-  b.tick(80);expect(b.proxies()?.length).toBe(2)
-  // Arriving: the mesh takes the very material that was warmed, and nothing new is built or decorated.
-  const decorations=a.decorations()
-  a.tick(20);expect(a.body.material).toBe(near);expect(a.wheels.material).toBe(wheelProxy.material);expect(a.decorations()).toBe(decorations)
-  a.tick(80);a.tick(80);expect(a.proxies(),'no second warm at the same tier and level').toBeUndefined()
-  // A graphics level change replaces every pipeline: warm again, reusing the same materials.
-  for(let i=0;i<3;i++){b.draw();b.tick(80)}
-  a.tick(80,1);expect(a.proxies()?.[0].material).toBe(near)
-  // Coming close mid-warm cancels it; a vehicle that is never drawn gives up its turn.
-  const cancelledBeforeArrival=showroomWarm.cancelled
-  a.tick(10,1);expect(a.proxies()).toBeUndefined();expect(showroomWarm.cancelled-cancelledBeforeArrival).toBe(1)
-  b.tick(80,1);for(let i=0;i<200;i++)b.tick(80,1)
-  expect(b.proxies()).toBeUndefined();expect(showroomWarm.abandoned-before.abandoned).toBe(1)
-  a.dispose();b.dispose()
+  try {
+   // Both far. The first to ask takes the turn; the other waits and builds nothing.
+   a.tick(80);b.tick(80)
+   expect(a.body.material,'still plain while far').toBe(a.paint)
+   expect(a.proxies()?.length).toBe(2);expect(b.proxies()).toBeUndefined()
+   const [bodyProxy,wheelProxy]=a.proxies()!,near=bodyProxy.material
+   expect(near).toBeInstanceOf(T.MeshPhysicalNodeMaterial);expect(bodyProxy.geometry).toBe(a.body.geometry)
+   expect(wheelProxy).toBeInstanceOf(T.InstancedMesh)
+   expect(wheelProxy.castShadow).toBe(true);expect(bodyProxy.castShadow).toBe(false)
+   expect(bodyProxy.frustumCulled).toBe(false)
+   // In the scene at the vehicle's position, not under the hidden model, and far too small to see.
+   expect(a.group()!.parent).toBe(scene);expect(a.group()!.position.toArray()).toEqual([40,3,-7]);expect(a.group()!.scale.x).toBeLessThan(.01)
+   expect(a.root.children).toHaveLength(2)
+   // Updates without a draw (the world behind the lobby) do not count.
+   a.tick(80);a.tick(80);expect(a.proxies()?.length).toBe(2)
+   for(let i=0;i<3;i++){a.draw();a.tick(80);b.tick(80)}
+   expect(a.proxies(),'proxies gone after three drawn frames').toBeUndefined()
+   expect(showroomWarm.warmed-before.warmed).toBe(1)
+   // Now the second vehicle has the turn.
+   b.tick(80);expect(b.proxies()?.length).toBe(2)
+   // Arriving: the mesh takes the very material that was warmed, and nothing new is built or decorated.
+   const decorations=a.decorations()
+   a.tick(20);expect(a.body.material).toBe(near);expect(a.wheels.material).toBe(wheelProxy.material);expect(a.decorations()).toBe(decorations)
+   a.tick(80);a.tick(80);expect(a.proxies(),'no second warm at the same tier and level').toBeUndefined()
+   // A graphics level change replaces every pipeline: warm again, reusing the same materials.
+   for(let i=0;i<3;i++){b.draw();b.tick(80)}
+   a.tick(80,1);expect(a.proxies()?.[0].material).toBe(near)
+   // Coming close mid-warm cancels it; a vehicle that is never drawn gives up its turn.
+   const cancelledBeforeArrival=showroomWarm.cancelled
+   a.tick(10,1);expect(a.proxies()).toBeUndefined();expect(showroomWarm.cancelled-cancelledBeforeArrival).toBe(1)
+   b.tick(80,1);for(let i=0;i<200;i++)b.tick(80,1)
+   expect(b.proxies()).toBeUndefined();expect(showroomWarm.abandoned-before.abandoned).toBe(1)
+  } finally { a.dispose();b.dispose() }
   expect(showroomWarm.proxies-before.proxies,'no proxy left in a scene').toBe(0)
   expect(scene.children.filter(o=>o.name==='Showroom warm')).toHaveLength(0)
   // A model that is in no scene cannot be drawn, so it does not hold the turn.
