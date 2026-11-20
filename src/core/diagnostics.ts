@@ -86,7 +86,7 @@ export function recordStartupPrecompile(durationMs: number): void {
   startupTiming.entryPrecompileMs ??= durationMs
 }
 
-type WarmIssue = 'Entry warm-up timed out' | 'GPU completion timed out' | 'Entry warm-up failed' | 'GPU completion failed' | 'System warm-up failed' | 'Bot warm draw failed' | 'Player vehicle warm-up failed'
+type WarmIssue = 'Pipeline compilation failed' | 'Entry warm-up timed out' | 'GPU completion timed out' | 'Entry warm-up failed' | 'GPU completion failed' | 'System warm-up failed' | 'Bot warm draw failed' | 'Player vehicle warm-up failed'
 const warmIssues = new Map<WarmIssue, { count: number; lastSystem?: number }>()
 
 /** Session totals use fixed labels. A thrown error can contain private URLs. */

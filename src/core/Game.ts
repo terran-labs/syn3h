@@ -1,3 +1,4 @@
+import { CoveredPipelines } from './coveredPipelines'
 import { longFrames } from './longFrames'
 import { installLongFrameRenderer } from './longFrameRenderer'
 /**
@@ -335,10 +336,12 @@ export class Game {
   async precompile(progress?: (label: string) => void): Promise<void> {
     const start = performance.now()
     const stop = new AbortController()
+    const limit = 15_000
+    const deadline = start + limit
     try {
-      const result = await withDeadline(this.warmEntry(stop.signal, progress), 15_000)
+      const result = await withDeadline(this.warmEntry(stop.signal, deadline, progress), limit)
       if (!result.ok) {
-        recordEntryWarmIssue(result.reason === 'timeout' ? 'Entry warm-up timed out' : 'Entry warm-up failed')
+        recordEntryWarmIssue(result.reason === 'timeout' || performance.now() >= deadline ? 'Entry warm-up timed out' : 'Entry warm-up failed')
         if (result.reason === 'rejected') console.warn('Covered entry warm-up failed', result.error)
       }
     } finally {
@@ -350,19 +353,25 @@ export class Game {
     }
   }
 
-  private async warmEntry(signal: AbortSignal, progress?: (label: string) => void): Promise<void> {
-    // Drawn for real, through the frames' own passes, so every shader and pipeline is built
-    // exactly as play will use it, with culling off so what the camera cannot see yet is in
-    // too. Each such frame may stall while it compiles: call this only while the world is
-    // covered and the cover is still (the galaxy holding in the world's air).
-    const yieldFrame = async (label: string) => {
+  private async warmEntry(signal: AbortSignal, deadline: number, progress?: (label: string) => void): Promise<void> {
+    // Traverse the game passes with the cover opaque. The first sweep issues pipelines
+    // with the live light set, geometry, material side and render target. After they
+    // settle the second sweep exercises the real draws for those same configurations.
+    let batch = CoveredPipelines.forRenderer(this.renderer, this.scene)
+    const check = () => {
       signal.throwIfAborted()
-      progress?.(label)
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-      signal.throwIfAborted()
+      if (performance.now() >= deadline) throw new Error('Entry warm-up timed out')
     }
+    const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    const yieldFrame = async (label: string) => {
+      check()
+      progress?.(label)
+      if (!batch) await nextFrame()
+      check()
+    }
+    let discover = !!batch
     const draw = (vehicleKind?: string) => {
-      signal.throwIfAborted()
+      check()
       const drawStart = longFrames.start()
       longFrames.event('Covered precompile')
       for (const system of this.systems) system.prepareCoveredDraw?.()
@@ -378,7 +387,11 @@ export class Game {
             }
           }
         }
-        runGuarded(this.renderer as unknown as GuardedRenderer, () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16))
+        const submit = () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+        runGuarded(this.renderer as unknown as GuardedRenderer, () => {
+          if (batch) batch.run(discover, submit)
+          else submit()
+        })
       } finally {
         for (let j = hidden.length - 1; j >= 0; j--) hidden[j].visible = false
         for (const o of culled) o.frustumCulled = true
@@ -387,20 +400,34 @@ export class Game {
       }
     }
     const warm = { draw, yieldFrame }
-    for (let i = 0; i < 2; i++) {
-      await yieldFrame('Preparing world')
-      draw()
-    }
-    for (const [index, system] of [...this.systems].entries()) {
-      signal.throwIfAborted()
-      if (!system.warmCovered) continue
-      try {
-        await system.warmCovered(warm)
-      } catch (error) {
-        signal.throwIfAborted()
-        recordEntryWarmIssue('System warm-up failed', index + 1)
-        console.warn('Covered system warm-up failed', systemName(system), error)
+    const sweep = async () => {
+      for (let i = 0; i < 2; i++) {
+        await yieldFrame('Preparing world')
+        draw()
       }
+      for (const [index, system] of [...this.systems].entries()) {
+        check()
+        if (!system.warmCovered) continue
+        try {
+          await system.warmCovered(warm)
+        } catch (error) {
+          check()
+          recordEntryWarmIssue('System warm-up failed', index + 1)
+          console.warn('Covered system warm-up failed', systemName(system), error)
+        }
+      }
+    }
+    await sweep()
+    if (batch) {
+      if (!await batch.ready()) recordEntryWarmIssue('Pipeline compilation failed')
+      check()
+      discover = false
+      await sweep()
+      // The confirmation draws can leave partially filled world and shadow targets.
+      // Refresh them from the settled scene before lifting cover.
+      batch = null
+      await yieldFrame('Preparing first frame')
+      draw()
     }
     // Submission can return before Metal finishes work for the first draw. Drain our
     // world queue while the cover is still opaque, independently of the galaxy renderer.
@@ -418,7 +445,8 @@ export class Game {
           const deadline = performance.now() + 2_000
           while (!gl.isContextLost() && gl.clientWaitSync(fence, 0, 0) === gl.TIMEOUT_EXPIRED) {
             if (performance.now() >= deadline) { recordEntryWarmIssue('GPU completion timed out'); break }
-            await yieldFrame('Finishing graphics')
+            check()
+            await nextFrame()
           }
         } finally { gl.deleteSync(fence) }
       }

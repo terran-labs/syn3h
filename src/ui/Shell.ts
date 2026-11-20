@@ -951,9 +951,11 @@ export class Shell implements System {
       await this.waitForEntryWorld()
       // Keep the overlay opaque through the last draw, even on cold phone drivers.
       // A tap can skip the flight itself, but never interrupts a covered shader build.
+      const graphics = this.warmEntryGraphics()
       const diveBy = performance.now() + 4000
-      while (!dived && performance.now() < diveBy) { lift(); await frame() }
-      await this.warmEntryGraphics()
+      await Promise.all([graphics, (async () => {
+        while (!dived && performance.now() < diveBy) { lift(); await frame() }
+      })()])
       try { performance.measure('syn3h:descent preparation', { start: prepareStart, end: performance.now() }) } catch { /* Older engines. */ }
       if (ground) ground.staged = false
       this.game.holdDraws = false
