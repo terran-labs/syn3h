@@ -32,7 +32,7 @@ try {
   await contextA.addInitScript(() => {
     if (location.protocol !== 'http:' && location.protocol !== 'https:') return
     if (localStorage.getItem('syn3h.playerName') === null) {
-      localStorage.setItem('syn3h.playerName', 'Saved Pilot')
+      localStorage.setItem('syn3h.playerName', 'Captain Ozzie')
       localStorage.setItem('syn3h.playerNameSource', 'typed')
     }
   })
@@ -54,9 +54,9 @@ try {
     window.syn3h.player.name,
     window.syn3hNet.players.get(window.syn3hNet.id)?.name,
     localStorage.getItem('syn3h.playerName'),
-  ]), ['Link Pilot', 'Link Pilot', 'Saved Pilot'])
+  ]), ['Link Pilot', 'Link Pilot', 'Captain Ozzie'])
 
-  // An explicit edit is sent to the room and becomes the name used on later ordinary entries.
+  // Typing the already saved name must replace the link name locally and in the room.
   await a.locator('.wi-name-input').click()
   await a.keyboard.press('Meta+A'); await a.keyboard.type('Captain Ozzie'); await a.keyboard.press('Enter')
   step('saved name', await a.evaluate(() => localStorage.getItem('syn3h.playerName')))
