@@ -77,6 +77,8 @@ import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
 import './hud-column.css'
+import './pause-screen.css'
+import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shotFileName } from './screenshot'
 
 /**
  * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
@@ -92,7 +94,6 @@ function pinLicenses(root: ParentNode): void {
   for (const anchor of root.querySelectorAll<HTMLAnchorElement>('a[href^="/brand/licenses/"]')) anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
 }
 /** Keys that mean "I want to drive": they resume a pause and capture the cursor. */
-const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 /**
  * The lobby's bottom buttons: none today. Multiplayer was removed (the invite lives in the
  * sidebar and on J), and About and Updates are icons above the settings gear in the lower
@@ -152,6 +153,13 @@ const build = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? __SYN3H_B
 export const PAUSE_ICON = 'M9.2 6.8v10.4M14.8 6.8v10.4'
 export const PLAY_ICON = 'M9 6.4v11.2l8.6-5.6Z'
 export const LEAVE_WORLD_ICON = 'M13 4.8H7.2A1.2 1.2 0 0 0 6 6v12a1.2 1.2 0 0 0 1.2 1.2H13M10.5 12h9M16.6 9l3 3-3 3'
+/** How long PAUSED and its resume line stay before fading, with nothing moving (ms). */
+const PAUSE_WHISPER_MS = 2500
+/** The pause screen's three buttons, drawn in the rail icons' line (24 px box, stroked). */
+const WELCOME_ICON = 'M12 20.2a8.2 8.2 0 1 0 0-16.4 8.2 8.2 0 0 0 0 16.4ZM12 11v5.2M12 7.9v.1'
+const SHOT_ICON = 'M4.5 8.6A1.6 1.6 0 0 1 6.1 7h2.1l1.4-2h4.8l1.4 2h2.1a1.6 1.6 0 0 1 1.6 1.6v8.8a1.6 1.6 0 0 1-1.6 1.6H6.1a1.6 1.6 0 0 1-1.6-1.6ZM12 16.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z'
+const SAVED_ICON = 'M6 12.5l4 4 8-9'
+const pauseIcon = (path: string) => `<svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${path}"/></svg>`
 const railIcon = (path: string) => `<svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${path}"/></svg>`
 const switchHtml = (className: string, text: string, inputAttributes = '') => `<label class="s3-switch-field ${className}"><span class="s3-switch-text">${text}</span><input type="checkbox"${inputAttributes}><span class="s3-switch-word" aria-hidden="true">off</span></label>`
 const presentationHtml = switchHtml('presentation-toggle', 'Presentation mode · P')
@@ -251,7 +259,7 @@ export class Shell implements System {
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Panels</span></button></nav>
     <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="exit-stay">Stay</button><button type="button" class="exit-leave">Leave world</button></div></div></div>
-    <button type="button" class="pause-about" aria-haspopup="dialog" hidden>Welcome &amp; how to play</button>
+    <div class="pause-actions" role="group" aria-label="Paused" hidden><button type="button" class="pause-exit liquid-glass" aria-haspopup="dialog" aria-label="Leave world">${pauseIcon(LEAVE_WORLD_ICON)}<span class="pause-word"><span class="pause-long">Exit world</span><span class="pause-short">Exit</span></span></button><button type="button" class="pause-about liquid-glass" aria-haspopup="dialog" aria-label="Welcome and how to play">${pauseIcon(WELCOME_ICON)}<span class="pause-word">Welcome</span></button><button type="button" class="pause-shot liquid-glass" aria-label="Save a screenshot" aria-describedby="pause-shot-keys">${pauseIcon(SHOT_ICON)}<span class="pause-word"><span class="pause-long">Screenshot <kbd>S</kbd></span><span class="pause-short">Photo</span></span></button><span class="pause-shot-hint" role="status" aria-live="polite" hidden></span><span class="pause-shot-keys" id="pause-shot-keys" aria-hidden="true">S saves a screenshot. W, A, D or the arrows resume.</span></div>
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
@@ -410,6 +418,10 @@ export class Shell implements System {
     this.element.querySelector('.galaxy-ui')!.prepend(this.updateNotice.banner)
     foot.append(this.updateNotice.chip)
     this.element.querySelector('.pause-about')!.addEventListener('click', () => this.openAbout(), { signal })
+    // The pause screen's other two buttons. They sit beside the veil, not on it, so a click on
+    // one never also resumes.
+    this.element.querySelector('.pause-exit')!.addEventListener('click', () => this.askExit(), { signal })
+    this.element.querySelector('.pause-shot')!.addEventListener('click', () => { void this.takeShot() }, { signal })
     const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
     guide.querySelector('.about-back')!.addEventListener('click', () => this.closeAbout(), { signal })
     // The dialog's own Escape (cancel) and any other close route through closeAbout.
@@ -1106,7 +1118,8 @@ export class Shell implements System {
   private exitAsking = false
   /** Show "Leave this world?". Stay has the focus, so Enter, Escape and a click outside all stay. */
   private askExit(): void {
-    if (!this.started || this.menuVisible || this.exitAsking || this.userPaused || this.aboutOpen) return
+    // From the pause screen too: the question then stands above the veil (pause-screen.css).
+    if (!this.started || this.menuVisible || this.exitAsking || this.aboutOpen) return
     this.exitAsking = true
     const dialog = this.element.querySelector<HTMLElement>('.exit-confirm')!
     dialog.hidden = false
@@ -1119,7 +1132,7 @@ export class Shell implements System {
     this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true
     this.game.input.suspended = this.userPaused || this.menuVisible || this.inviteOpen
     if (leave) void this.ascent()
-    else this.element.querySelector<HTMLButtonElement>('.exit-world')?.focus({ preventScroll: true })
+    else this.element.querySelector<HTMLButtonElement>(this.userPaused ? '.pause-exit' : '.exit-world')?.focus({ preventScroll: true })
   }
   /**
    * Vehicle colours are chosen in play, beside the vehicle selector (the lobby offers only
@@ -1245,7 +1258,8 @@ export class Shell implements System {
     // The sidebar's Pause shows play while paused, and resumes.
     const pause = this.element.querySelector<HTMLButtonElement>('.rail-pause')
     if (pause) { const word = user ? 'Resume' : 'Pause'; pause.setAttribute('aria-label', word); pause.dataset.tip = word; pause.querySelector('path')!.setAttribute('d', user ? PLAY_ICON : PAUSE_ICON) }
-    this.element.querySelector<HTMLButtonElement>('.pause-about')!.hidden = !user
+    this.element.querySelector<HTMLElement>('.pause-actions')!.hidden = !user
+    this.whisper(user)
     this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking || this.aboutOpen
     if (user) {
       this.game.input.mouseFire = false
@@ -1255,6 +1269,53 @@ export class Shell implements System {
     }
     this.syncPanels()
   }
+  /**
+   * The pause screen goes quiet: PAUSED and how to resume show for a moment, then fade to
+   * nothing until the pointer moves, a key goes down or the screen is touched, so the view is
+   * clean to look at. The three buttons and the minimap stay.
+   */
+  private whisper(on: boolean): void {
+    this.whisperWatch?.abort(); this.whisperWatch = undefined; clearTimeout(this.whisperTimer)
+    this.element.classList.remove('is-whisper')
+    if (!on) return
+    const watch = this.whisperWatch = new AbortController()
+    const wake = () => {
+      clearTimeout(this.whisperTimer)
+      this.element.classList.remove('is-whisper')
+      this.whisperTimer = setTimeout(() => this.element.classList.add('is-whisper'), PAUSE_WHISPER_MS)
+    }
+    for (const type of ['pointermove', 'pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, wake, { signal: watch.signal, passive: true, capture: true })
+    wake()
+  }
+  private whisperWatch?: AbortController
+  private whisperTimer?: ReturnType<typeof setTimeout>
+  private shooting = false
+  /**
+   * Save what the player is looking at (src/ui/screenshot.ts). Only on the pause screen: the
+   * loop is stopped there, so the extra frame and the encode cost nothing in play. The picture
+   * is the canvas alone, with the paused camera, so no interface and no pause shade are in it.
+   * The Screenshot button says how it went, quietly, in place.
+   */
+  private async takeShot(): Promise<void> {
+    if (!this.userPaused || this.shooting) return
+    this.shooting = true
+    const button = this.element.querySelector<HTMLButtonElement>('.pause-shot')!, hint = this.element.querySelector<HTMLElement>('.pause-shot-hint')!
+    const say = (text: string, done: boolean) => {
+      hint.textContent = text; hint.hidden = !text
+      button.classList.toggle('is-saved', done); button.querySelector('path')!.setAttribute('d', done ? SAVED_ICON : SHOT_ICON)
+    }
+    try {
+      const frame = this.game.snapshot()
+      const blob = frame ? await encodeShot(frame) : null
+      if (!blob) { say('The view could not be captured', false); return }
+      const outcome = await deliverShot(blob, shotFileName(currentWorldName(), currentPlanet().label, new Date()), this.touch.available)
+      if (outcome !== 'cancelled') say(outcome === 'shared' ? 'Shared' : 'Saved', true)
+    } finally {
+      this.shooting = false
+      clearTimeout(this.shotTimer); this.shotTimer = setTimeout(() => say('', false), 2200)
+    }
+  }
+  private shotTimer?: ReturnType<typeof setTimeout>
   private keydown(event: KeyboardEvent): void {
     // Waiting for the tap that begins (TapToBegin.ts): that press only begins.
     if (document.documentElement.dataset.boot === 'ready') return
@@ -1298,7 +1359,14 @@ export class Shell implements System {
     // capture the cursor (a key press is a gesture). This is also the keyboard-only way back.
     // While paused, focus rests on the pause message, which is a button, so a drive key
     // counts wherever focus is: it resumes. That press does not also drive.
-    if (this.userPaused && !event.repeat && DRIVE_KEYS.has(event.code)) { event.preventDefault(); this.requestResume(); return }
+    // S is the one exception: on the pause screen it saves a screenshot (the Screenshot button's
+    // hint says so). pausedKeyAction is null whenever the player's own pause does not hold, so
+    // S never does this in play, where it reverses and brakes as always.
+    const typingHere = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName))
+    const paused = pausedKeyAction(event.code, { paused: this.userPaused, repeat: event.repeat, typing: typingHere })
+    if (paused === 'shot') { event.preventDefault(); void this.takeShot(); return }
+    if (paused === 'resume') { event.preventDefault(); this.requestResume(); return }
+    if (this.userPaused && event.code === 'KeyS') { event.preventDefault(); return }
     // A drive key means the player wants to drive, unless it is being typed into a field or
     // moving a slider or select. A focused button or summary does not count: it only owns
     // Space and Enter, and focus rests on one after any click on the panels.

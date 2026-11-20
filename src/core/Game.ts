@@ -212,6 +212,28 @@ export class Game {
     this.renderer.setAnimationLoop(() => this.frame())
   }
 
+  /**
+   * The view as it stands, for a screenshot (src/ui/screenshot.ts): draw one frame with the
+   * camera exactly where it is, through the same post chain, and copy the canvas into a new 2D
+   * canvas in the same task. Neither backend keeps a drawn frame readable once the task ends
+   * (WebGL without preserveDrawingBuffer, WebGPU once the frame is presented), so the copy is
+   * made before returning. Nothing steps: no physics, no system update, the clock untouched.
+   * Meant for the pause screen, where the loop is stopped and a frame costs nothing in play.
+   * Null before the first frame or with a lost device.
+   */
+  snapshot(): HTMLCanvasElement | null {
+    if (!this.started || (this.renderer as unknown as GuardedRenderer)._isDeviceLost) return null
+    const { width, height } = this.canvas
+    if (!width || !height) return null
+    const copy = document.createElement('canvas'); copy.width = width; copy.height = height
+    const context = copy.getContext('2d'); if (!context) return null
+    let drawn = false
+    runGuarded(this.renderer as unknown as GuardedRenderer, () => { drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16); drawn = true })
+    if (!drawn) return null
+    context.drawImage(this.canvas, 0, 0)
+    return copy
+  }
+
   /** Frames the loop has run since start, drawn or not. Stands still while paused. */
   frames = 0
 
