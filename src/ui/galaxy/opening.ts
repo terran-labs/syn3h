@@ -2,7 +2,8 @@
  * The continuous opening (a prototype behind ?intro=, lobby.intro): the loading veil is black
  * space with one point of light where the galaxy's sun will be (index.html), and when loading
  * ends the point becomes the sun. It flares, its shafts burst outward, the stars come up, the
- * orbits draw round, the worlds arrive from the innermost out, and the wordmark comes last.
+ * orbits draw round, and the worlds arrive from the innermost out with the wordmark fading in
+ * as they come.
  * The camera either pulls back from the sun to the lobby's framing or pushes in to it.
  *
  * This module is the timeline only: what each part shows at a time since loading ended. The
@@ -17,8 +18,9 @@ export const introMode = defineParam({ id: 'lobby.intro', label: 'Lobby opening:
  * The opening, every load: a cartoon Big Bang (the owner's direction, 16 November 2026), made
  * slower and more dramatic on 17 November ("the lobby animation should be slower and more
  * dramatic"): a held breath, a harder bang, longer arcs, the camera pulling back with weight,
- * and the name arriving last. 8.6 s, from 4.6. Everything but the name has settled by
- * SETTLED_SECONDS.
+ * and (19 November 2026, the owner: "it should be fading in while the planets are spinning
+ * in") the name arriving with the worlds, no longer after them. 8.6 s, from 4.6. Everything has
+ * settled by SETTLED_SECONDS.
  */
 export const OPENING_SECONDS = 8.6
 /** Seconds from the opening's first frame to the pop (openingState below): where the score's drop lands when a tap began it. */
@@ -102,8 +104,13 @@ export const TRAIL_SECONDS = 0.2
 export const FIRST = POP_SECONDS + 0.25, GAP = 0.25, FLIGHT = 3.8
 /** How far (radians) a world's way out turns back along its orbit: a longer arc than the 2.4 before. */
 export const SPIRAL_TURN = 3.4
-/** When the name begins to arrive: last, as the worlds land. Its fade is the same curve as everywhere. */
-export const MARK_FROM = OPENING_SECONDS - WORDMARK_FADE_SECONDS
+/**
+ * The name arrives with the worlds (the owner, 19 November 2026): its fade starts as the first
+ * world is thrown out and ends as the last one lands, on the same smootherstep as everywhere.
+ */
+export const MARK_FROM = FIRST
+/** Seconds the name takes to arrive in the opening, with `lanes` worlds: until the last has landed. */
+export const markSeconds = (lanes: number) => GAP * Math.max(0, lanes - 1) + FLIGHT
 /** A world's flight, 0 to 1 (raw), by lane. */
 export const flight = (t: number, lane: number) => span(t, FIRST + GAP * lane, FIRST + GAP * lane + FLIGHT)
 
@@ -120,10 +127,11 @@ export const flight = (t: number, lane: number) => span(t, FIRST + GAP * lane, F
  *   P+0.25 on     the worlds are thrown out, innermost first, 0.25 s apart, each decelerating
  *                 along a longer spiral (SPIRAL_TURN) for 3.8 s onto its orbit; the last lands
  *                 by 7.3 s with nine worlds; each orbit line draws round just ahead of its world;
+ *   P+0.25 to 7.25  the name arrives with the worlds: its light front sweeps the letters
+ *                 from the first world's throw to the last one's landing (nine worlds);
  *   P to 7.4      the view pulls back from close in, slow to start and slow to settle;
  *   7.3 to 7.75   the labels, each once its world has landed, outermost last; 7.3 to 7.8 the
- *                 lobby's controls;
- *   4.4 to 8.6    the name arrives last: its light front sweeps the letters as the worlds land.
+ *                 lobby's controls.
  */
 export function openingState(time: number, _mode: OpeningMode, lanes: number): OpeningState {
   const t = time, P = POP_SECONDS
@@ -141,7 +149,7 @@ export function openingState(time: number, _mode: OpeningMode, lanes: number): O
   const arrive = lane.map(i => { const x = flight(t, i); return x <= 0 ? 0 : Math.min(1, 0.32 * out(span(x, 0, 0.05)) + 0.68 * smoother(x)) })
   // Each label once its world has landed, and not before 7.3 s: the outermost last.
   const labels = lane.map(i => t >= Math.max(7.3 + 0.45 * i / Math.max(1, lanes), FIRST + GAP * i + FLIGHT))
-  const mark = wordmarkFade(t - MARK_FROM)
+  const mark = smoother(span(t, MARK_FROM, MARK_FROM + markSeconds(lanes)))
   return {
     swell,
     burst: [1.6 * (1 - (1 - burstAt) ** 2), burstAt > 0 && burstAt < 1 ? 0.95 * (1 - burstAt) ** 1.5 : 0],
@@ -154,7 +162,7 @@ export function openingState(time: number, _mode: OpeningMode, lanes: number): O
     orbits,
     arrive,
     labels,
-    // The name arrives last, its light front crossing the letters as it does.
+    // The name arrives with the worlds, its light front crossing the letters as it does.
     markFront: 0.15 + 1.6 * mark,
     mark,
     reach: 0.62 + 0.38 * smoother(span(t, P, 7.4)),
@@ -163,13 +171,17 @@ export function openingState(time: number, _mode: OpeningMode, lanes: number): O
   }
 }
 
+/** Seconds the view takes to swing back to the lobby's resting view after a world (Galaxy.returnHome). */
+export const RETURN_VIEW_SECONDS = 1.6
 /**
- * Coming back from a world: the name alone fades in again, on the same curve as at the
- * opening, from the moment the lobby is back.
+ * Coming back from a world: the name fades in again while the lobby swings back into view and
+ * is in full as it settles (the owner, 19 November 2026: with the planets, not after them), on
+ * the same smootherstep. `t` is seconds since the return began.
  */
-export const RETURN_SECONDS = WORDMARK_FADE_SECONDS
+export const RETURN_SECONDS = RETURN_VIEW_SECONDS
 export function returningMark(t: number): { markFront: number; mark: number } {
-  return { markFront: 0.15 + 1.6 * wordmarkFade(t), mark: wordmarkFade(t) }
+  const mark = smoother(span(t, 0, RETURN_SECONDS))
+  return { markFront: 0.15 + 1.6 * mark, mark }
 }
 
 
