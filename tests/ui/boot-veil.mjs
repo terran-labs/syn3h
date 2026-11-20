@@ -10,6 +10,8 @@
 import { chromium, devices, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+/** The dev server to check (default the lane's old port). */
+const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
 const out = 'tests/ui/artifacts/boot-veil'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
@@ -22,7 +24,7 @@ try {
     let release; const held = new Promise(resolve => { release = resolve })
     await page.route(/\/src\/main\.ts/, async route => { await held; await route.continue() })
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
-    await page.goto(`http://127.0.0.1:5187/?room=boot-${view.name}-${Date.now()}`, { waitUntil: 'commit' })
+    await page.goto(`${base}?room=boot-${view.name}-${Date.now()}`, { waitUntil: 'commit' })
     const state = () => page.evaluate(() => ({ boot: document.documentElement.dataset.boot, progress: Number(getComputedStyle(document.documentElement).getPropertyValue('--boot-progress')), veil: getComputedStyle(document.querySelector('.boot-veil')).opacity, game: Boolean(window.syn3h) }))
     await page.waitForFunction(() => document.documentElement.dataset.boot === 'loading' && document.querySelector('.boot-mark'))
     await page.waitForTimeout(1200)
@@ -65,7 +67,7 @@ try {
     // cannot take one while the page's module script is pending. The Chrome pass above has them.
     let arrive; const slow = new Promise(resolve => { arrive = resolve })
     await page.route(/\/src\/main\.ts/, async route => { await slow; await route.continue() })
-    await page.goto(`http://127.0.0.1:5187/?room=boot-${name.replace(/\W+/g, '-')}-${Date.now()}`, { waitUntil: 'commit' })
+    await page.goto(`${base}?room=boot-${name.replace(/\W+/g, '-')}-${Date.now()}`, { waitUntil: 'commit' })
     await page.waitForFunction(() => document.documentElement.dataset.boot === 'loading' && document.querySelector('.boot-status'))
     await page.waitForTimeout(1500)
     const seen = () => page.evaluate(() => {
@@ -76,7 +78,9 @@ try {
     assert.equal(first.game, false)
     assert.equal(first.wordmark, false, `${name}: no name on the loading view`)
     assert.ok(first.point.width > 0 && first.point.opacity > 0.2 && first.point.inView, `${name}: the point of light is there`)
-    assert.ok(Math.abs(first.point.top + first.point.height / 2 - (await page.evaluate(() => innerHeight)) / 2) < 3, `${name}: at the centre, where the sun will be`)
+    // Before the bundle, where the galaxy frames its sun by default: 53% down (1 - FRAME_Y,
+    // src/ui/galaxy/Galaxy.ts). Once it runs, the galaxy publishes the exact place (--sun-y).
+    assert.ok(Math.abs(first.point.top + first.point.height / 2 - (await page.evaluate(() => innerHeight)) * 0.53) < 3, `${name}: where the sun will be, 53% down`)
     assert.ok(first.status.text.length > 10, `${name}: a line of status is ready`); assert.ok(first.status.opacity < 0.1, `${name}: but waits to be shown`)
     assert.ok(first.point.bottom <= first.status.top, `${name}: the line sits beneath the point`)
     assert.ok(first.still.opacity < 0.1, `${name}: the second line waits`)
@@ -98,7 +102,7 @@ try {
   // A failure at startup is shown at once, not hidden behind the veil.
   const broken = await browser.newPage({ viewport: { width: 1280, height: 720 } })
   await broken.addInitScript(() => { Object.defineProperty(navigator, 'gpu', { get() { throw new Error('graphics refused for this test') } }); HTMLCanvasElement.prototype.getContext = () => { throw new Error('graphics refused for this test') } })
-  await broken.goto(`http://127.0.0.1:5187/?room=boot-broken-${Date.now()}`, { waitUntil: 'load' })
+  await broken.goto(`${base}?room=boot-broken-${Date.now()}`, { waitUntil: 'load' })
   await broken.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 20000 })
   await broken.waitForTimeout(1200)
   assert.equal(await broken.evaluate(() => getComputedStyle(document.querySelector('.boot-veil')).visibility), 'hidden', 'the veil is out of the way of a startup failure')

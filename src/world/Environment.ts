@@ -22,8 +22,9 @@ import {
 } from './sky/skyMath'
 import * as P from './sky/skyParams'
 import { bindDayClock, currentHour, followHour } from './sky/dayCycle'
+import { type FogBanks, createFogBanks } from './weather/fogBanks'
 import { applyBounce, lightSkyReflection, shadowSoftness, shadowStrength } from './lightRig'
-import { AERIAL_HEIGHT, hazeNow, hazeTintAmount, hazeTintB, hazeTintG, hazeTintR, heightFog, weatherFogNode } from './weather/fog'
+import { AERIAL_HEIGHT, hazeNow, hazeTintAmount, hazeTintB, hazeTintG, hazeTintR, heightFog, weatherFog } from './weather/fog'
 import { horizonHaze } from './weather/haze'
 import { curveFactor } from './curve'
 import { advanceCloudDrift } from './weather/clouds'
@@ -55,6 +56,8 @@ export interface Environment extends System {
   readonly horizonColor: THREE.Color
   /** The hour on screen, 0 to 24: the room clock's hour (dayCycle.ts), eased across steps. */
   readonly hour: number
+  /** The world's fog banks (src/world/weather/fogBanks.ts), for tools and for local haze. */
+  readonly fogBanks: FogBanks
 }
 
 type N = any // TSL node
@@ -195,8 +198,10 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   // Height fog (src/world/weather/fog.ts): per planet haze that thins with altitude, plus the
   // uniform fog density above.
   // The sun is read at render time, after the state below exists.
-  const haze = heightFog(max(fogColor, vec3(0.0)), fogDensityU, { direction: () => sunDirection, color: () => sunColor, lit: airLit })
-  ;(scene as unknown as { fogNode: unknown }).fogNode = weatherFogNode(haze.color, haze.factor)
+  // Fog banks (src/world/weather/fogMap.ts): built from the terrain and seed, rebuilt with it.
+  const banks = createFogBanks(_terrain)
+  const haze = heightFog(max(fogColor, vec3(0.0)), fogDensityU, { direction: () => sunDirection, color: () => sunColor, lit: airLit, sky: () => hemi.color }, banks.input)
+  ;(scene as unknown as { fogNode: unknown }).fogNode = weatherFog(haze)
 
   // State ---------------------------------------------------------------------------------
   const unbindDay = bindDayClock()
@@ -358,6 +363,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     hz.lobe.value = fogState.lobe
     ;(hz.tint.value as THREE.Vector3).set(hazeTintR.value, hazeTintG.value, hazeTintB.value)
     hz.tintAmount.value = hazeTintAmount.value
+    banks.update(hour, game.camera.position, sun[1])
 
     reflections.update(dt, hour)
 
@@ -385,6 +391,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   }
 
   return {
+    fogBanks: banks,
     sunDirection,
     sunColor,
     lightDirection,

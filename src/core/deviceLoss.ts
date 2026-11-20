@@ -69,6 +69,49 @@ export function guardDevice(renderer: GuardedRenderer): boolean {
   return true
 }
 
+/**
+ * Run one frame's work (updates and drawing) so a lost device cannot throw into the page.
+ *
+ * Two windows matter. Once the renderer is marked lost, three's render, compute and compile
+ * return early, and the game makes no other renderer calls in `work` (Game.frame skips its
+ * draw), so the frame touches the GPU not at all. Before that, between the instance dropping and
+ * device.lost resolving, three may still create a buffer for something drawn for the first
+ * time, and Chrome then throws synchronously ("createBuffer failed, size (48) is too large for
+ * the implementation when mappedAtCreation == true", v26.11.1901's hosted check): an uncaught
+ * page error out of the animation frame. Such a throw from a WebGPU call is held here instead.
+ * If the loss is reported within LOSS_CONFIRM_MS it was the loss and stays silent; if not, it
+ * was a real error and is thrown then, so a genuine bug is never hidden.
+ */
+export function runGuarded(renderer: GuardedRenderer, work: () => void): void {
+  if (!renderer._isDeviceLost) {
+    try { work() } catch (error) { if (!holdGpuError(renderer, error)) throw error }
+    return
+  }
+  try { work() } catch (error) {
+    // Lost already: a WebGPU call failing now is the loss, not news.
+    if (!isGpuCallError(error)) throw error
+  }
+}
+
+/** How long a WebGPU call's error waits for the device loss that would explain it. */
+export const LOSS_CONFIRM_MS = 2000
+const held = new WeakSet<GuardedRenderer>()
+function holdGpuError(renderer: GuardedRenderer, error: unknown): boolean {
+  if (!isGpuCallError(error)) return false
+  if (held.has(renderer)) return true
+  held.add(renderer)
+  setTimeout(() => {
+    held.delete(renderer)
+    if (!renderer._isDeviceLost) throw error
+  }, LOSS_CONFIRM_MS)
+  return true
+}
+
+/** An exception thrown by a WebGPU API call ("Failed to execute 'createBuffer' on 'GPUDevice': ..."). */
+export function isGpuCallError(error: unknown): boolean {
+  return /on 'GPU[A-Za-z]+'/.test(errorMessage(error))
+}
+
 function errorMessage(error: unknown): string {
   return (error as { message?: string } | null)?.message || String(error)
 }

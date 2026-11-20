@@ -12,7 +12,7 @@
 import * as THREE from 'three/webgpu'
 import { canCreateWebGL2, NoGraphicsError, webgpuUsable } from './graphicsSupport'
 import { installRenderDiagnostics, recordStartupPhase, showRendererLost, startupTiming, timeStartup } from './diagnostics'
-import { guardDevice, type GuardedRenderer } from './deviceLoss'
+import { guardDevice, runGuarded, type GuardedRenderer } from './deviceLoss'
 import { drawFrame, gpuDeadlineMs, startRenderer, viewState, type PostChain } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
@@ -27,6 +27,8 @@ export interface System {
   postPhysics?(dt: number): void
   /** Once per rendered frame. `alpha` blends between the previous and current physics state. */
   update?(dt: number, alpha: number): void
+  /** Existing hidden meshes that should participate in the covered precompile draw. */
+  precompileMeshes?(): Iterable<THREE.Mesh>
   dispose?(): void
 }
 
@@ -213,7 +215,14 @@ export class Game {
   /** Frames the loop has run since start, drawn or not. Stands still while paused. */
   frames = 0
 
-  private frame(): void {
+  /**
+   * One animation frame, inside the device-loss guard (deviceLoss.ts runGuarded): once the
+   * renderer is lost the world still steps (the room and other players go on) but nothing is
+   * drawn and no frame's work can throw a dead device's errors into the page.
+   */
+  private frame(): void { runGuarded(this.renderer as unknown as GuardedRenderer, () => this.step()) }
+
+  private step(): void {
     const now = performance.now()
     this.frames++
     if (this.loopStart) { recordStartupPhase('game.start to first animation frame', this.loopStart); this.loopStart = 0 }
@@ -251,7 +260,8 @@ export class Game {
     // to keep it warm for the descent, instead of every frame under a full-screen shader.
     // The first frames always draw: loading ends, and shaders compile, on a real frame.
     const view = this.view()
-    const draw = !this.holdDraws && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
+    // A lost device draws nothing: no render, no buffer, no pipeline (see frame()).
+    const draw = !this.holdDraws && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
     if (draw) { drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs); this.lastDraw = now }
     if (this.startupFrames < 3) this.recordStartupFrame(updateStart, renderStart)
     const metrics = this.performance
@@ -291,7 +301,21 @@ export class Game {
     for (let i = 0; i < 2; i++) {
       const culled: THREE.Object3D[] = []
       this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
-      try { drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16) } finally { for (const o of culled) o.frustumCulled = true }
+      const hidden: THREE.Object3D[] = []
+      try {
+        for (const system of this.systems) {
+          if (!system.precompileMeshes) continue
+          for (const mesh of system.precompileMeshes()) {
+            for (let object: THREE.Object3D | null = mesh; object && object !== this.scene; object = object.parent) {
+              if (!object.visible) { hidden.push(object); object.visible = true }
+            }
+          }
+        }
+        runGuarded(this.renderer as unknown as GuardedRenderer, () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16))
+      } finally {
+        for (let j = hidden.length - 1; j >= 0; j--) hidden[j].visible = false
+        for (const o of culled) o.frustumCulled = true
+      }
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     }
     try { performance.measure('syn3h:precompile', { start, end: performance.now() }) } catch { /* Older engines. */ }

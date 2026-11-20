@@ -56,8 +56,8 @@ export interface TouchTag {
 }
 /** How long the reticle and the camera aim outlast the lift, ms: a release shot still goes where it pointed. */
 export const TAG_FADE_MS = 150
-/** The orbit camera (camera.mode 2), the one mode where a pinch zooms. */
-const orbitCamera = (): boolean => Math.round(Number(params.get('camera.mode')?.value ?? 0)) === 2
+/** The cameras with a distance to pinch: chase (camera.mode 0) and orbit (2). Cockpit, stationary and roam have none. */
+const zoomableCamera = (): boolean => { const mode = Math.round(Number(params.get('camera.mode')?.value ?? 0)); return mode === 0 || mode === 2 }
 export class TouchControls {
   readonly element = document.createElement('div')
   private readonly abort = new AbortController()
@@ -219,15 +219,16 @@ export class TouchControls {
    * The free game view opposite the stick (see `touchRole`). Like the stick, a touch is only a
    * candidate until it moves 8 px, so a tap still reaches whatever is under it. One finger
    * dragging turns the camera by the finger's travel, at the mouse look sensitivity
-   * (camera.sensitivity). In the orbit camera a second finger there makes a pinch that zooms
-   * as the wheel does; see AimTouches in src/ui/tagStick.ts.
+   * (camera.sensitivity). In the chase and orbit cameras a second finger there makes a pinch
+   * that zooms as the wheel does, while the stick and buttons go on working; see AimTouches in
+   * src/ui/tagStick.ts.
    */
   private aim(signal: AbortSignal): void {
     const touches = new AimTouches({ look: (dx, dy) => this.onLook(dx, dy), zoom: (deltaY) => this.onZoom(deltaY) }, () => touchPinchSpeed.value)
     this.resetters.push(() => touches.reset())
     addEventListener('pointerdown', (event) => {
       if (!this.active || this.input.suspended || this.role(event) !== 'aim') return
-      if (touches.down(event.pointerId, event.clientX, event.clientY, orbitCamera()) === 'pinch') event.preventDefault()
+      if (touches.down(event.pointerId, event.clientX, event.clientY, zoomableCamera()) === 'pinch') event.preventDefault()
     }, { capture: true, signal })
     addEventListener('pointermove', (event) => {
       if (this.input.suspended) { touches.reset(); return }

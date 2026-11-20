@@ -81,19 +81,27 @@ describe('buggy headlights',()=>{
   s.game.scene.add(sky)
   const dispose=attachVehicleEffects(s.game,s.terrain,v as unknown as Vehicle,{local:true})
   const beams:T.SpotLight[]=[]
-  v.object.traverse(o=>{if(o instanceof T.SpotLight)beams.push(o)})
+  s.game.scene.add(v.object)
+  s.game.scene.traverse(o=>{if(o instanceof T.SpotLight)beams.push(o)})
   expect(beams).toHaveLength(2)
   expect(beams[0].position.x).toBeLessThan(0)
   expect(beams[1].position.x).toBe(-beams[0].position.x)
   for(const beam of beams){expect(beam.position.z).toBeLessThan(0);expect(beam.target.position.z).toBeLessThan(beam.position.z);expect(beam.castShadow).toBe(false)}
-  s.world().update(0)
+  const updateLights=()=>{s.world().update(0);s.game.scene.updateMatrixWorld()}
+  updateLights()
   // Both beams share the night strength, which follows the headlight setting (headlights.ts).
   const night=beams.map(b=>b.intensity)
   expect(night[0]).toBeGreaterThan(0);expect(night[1]).toBe(night[0])
-  params.set(buggyHeadlights.def.id,1);s.world().update(0);const full=beams[0].intensity
-  params.set(buggyHeadlights.def.id,.5);s.world().update(0);expect(beams[0].intensity).toBeCloseTo(full/2,6)
+  v.object.visible=false;s.game.scene.updateMatrixWorld()
+  expect(beams.map(b=>b.intensity)).toEqual([0,0])
+  const visible:T.Object3D[]=[];s.game.scene.traverseVisible(o=>visible.push(o))
+  expect(beams.every(b=>visible.includes(b)&&visible.includes(b.target))).toBe(true)
+  v.object.visible=true;s.game.scene.updateMatrixWorld()
+  expect(beams.map(b=>b.intensity)).toEqual(night)
+  params.set(buggyHeadlights.def.id,1);updateLights();const full=beams[0].intensity
+  params.set(buggyHeadlights.def.id,.5);updateLights();expect(beams[0].intensity).toBeCloseTo(full/2,6)
   params.set(buggyHeadlights.def.id,buggyHeadlights.def.default)
-  sky.sunDirection.value.y=1;s.world().update(0)
+  sky.sunDirection.value.y=1;updateLights()
   expect(beams.map(b=>b.intensity)).toEqual([0,0])
   let disposed=0
   for(const beam of beams)beam.addEventListener('dispose',()=>disposed++)
@@ -103,7 +111,7 @@ describe('buggy headlights',()=>{
  })
  it('does not allocate road lights for remote vehicles',()=>{
   const s=scene(),v=stand(),dispose=attachVehicleEffects(s.game,s.terrain,v as unknown as Vehicle,{local:false})
-  const beams:T.SpotLight[]=[];v.object.traverse(o=>{if(o instanceof T.SpotLight)beams.push(o)})
+  const beams:T.SpotLight[]=[];s.game.scene.traverse(o=>{if(o instanceof T.SpotLight)beams.push(o)})
   expect(beams).toHaveLength(0);dispose()
  })
 })

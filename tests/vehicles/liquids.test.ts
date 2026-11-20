@@ -38,8 +38,11 @@ describe.each(['lava', 'water'] as const)('buggy in %s', (liquid) => {
       expect(ashore(r)).toBe(true)
       // Never launched into the sky: the bank is 1 m, a ramp hop is a few metres at most.
       expect(Math.max(...r.trace.map((s) => s.y))).toBeLessThan(10)
-      // Not stuck on its side or roof once it has settled on land.
+      // Not stuck on its side or roof once it has settled on land. Braking: leaving the far
+      // shore at 40 m/s, three seconds of coasting reach the end of the test's 120 m of ground,
+      // and a fall off that edge is the test bed, not the liquid.
       r.v.input.y = 0
+      r.v.input.brakes = true
       advance(r, 3)
       expect(r.trace[r.trace.length - 1].up).toBeGreaterThan(0.5)
     } finally { dispose(r) }

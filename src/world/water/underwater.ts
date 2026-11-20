@@ -67,6 +67,16 @@ const LAVA_GLOW = new T.Vector3(2.2, 0.62, 0.08)
 /** Metres of lava at which a tenth of an object's colour survives. */
 const LAVA_VISIBILITY = 7
 
+/** The air fog each underwater fog node wraps (see the constructor). */
+const airUnder = new WeakMap<object, unknown>()
+/**
+ * The air fog behind the scene fog node: the one an underwater fog node wraps, or the node
+ * itself. For a surface that treats the air fog's layers apart (surface.ts hazeCurve).
+ */
+export function airFogOf(fogNode: unknown): unknown {
+  return fogNode && typeof fogNode === 'object' ? airUnder.get(fogNode) ?? fogNode : fogNode
+}
+
 /** Installed after Environment, before the first frame. Crossings change uniforms only. */
 export class Underwater {
   private tint = uniform(new T.Color())
@@ -170,6 +180,7 @@ export class Underwater {
     // Retain Environment's live air graph. Swapping its identity at the surface rebuilds
     // every affected material and GPU pipeline, even on the tenth crossing.
     game.scene.fogNode = this.fogNode
+    airUnder.set(this.fogNode, this.savedFog)
   }
 
   /** Restore light overrides without disturbing newer Environment writes. */

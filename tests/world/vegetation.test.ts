@@ -205,6 +205,29 @@ describe('vegetation', () => {
     for (let i = 0; i < shape.count; i++) { expect(shape.getX(i)).toBe(3); expect(shape.getZ(i)).toBe(1) }
   })
 
+  it('offers hidden night motes for precompile only while the cover group is visible', () => {
+    const settings = defaultTerrainSettings()
+    settings.look = KIND_VOLCANIC
+    const scene = new THREE.Scene()
+    let exposure = 1
+    const cover = new GroundCover(scene, new HeightSampler(generateTerrain(3, settings)), new THREE.PerspectiveCamera(), () => exposure)
+    try {
+      cover.update()
+      const group = scene.getObjectByName('groundcover')!
+      const hiddenByDay = group.children.filter(mesh => !mesh.visible)
+      const warm = [...cover.precompileMeshes()]
+      expect(warm.length).toBeGreaterThan(0)
+      expect(warm.every(mesh => !mesh.visible)).toBe(true)
+      exposure = 5
+      cover.update()
+      expect(warm.map(mesh => mesh.id)).toEqual(hiddenByDay.filter(mesh => mesh.visible).map(mesh => mesh.id))
+      group.visible = false
+      expect([...cover.precompileMeshes()]).toEqual([])
+    } finally {
+      cover.dispose()
+    }
+  })
+
   describe('drawing round the camera', () => {
     const settings = defaultTerrainSettings()
     settings.look = 1

@@ -26,7 +26,8 @@ import { laserGravity, laserLifetime, laserRicochet, laserSpeed } from './params
 import { bigRedRadius, bigRedSpeed } from './bigRedParams'
 import { warmGear } from './warm'
 import { ImpactPulses } from './pulse'
-import { tagBlastRadius, thunderBlastRadius } from './blastParams'
+import { ImpactFx, type ImpactTerrain } from './impact/ImpactFx'
+import { thunderBlastRadius } from './blastParams'
 
 export interface LaserHooks {
   /** Body of a player's (or bot's) vehicle, local or remote, if it exists here. */
@@ -48,6 +49,8 @@ export interface LaserHooks {
    * The drawn beam leaves from this point. Without it, beams are drawn as they fly.
    */
   centreOf?(playerId: number, alpha: number, out: THREE.Vector3): boolean
+  /** The world's terrain, for impacts that look like what they struck (impact/ImpactFx.ts). */
+  terrain?(): ImpactTerrain | undefined
 }
 
 interface Projectile {
@@ -90,6 +93,11 @@ const CORE_RGB = [0.9, 4, 1.4] as const
 const HALO_RGB = [0.25, 1.6, 0.45] as const
 const TINT_RGB = [0.1, 0.75, 0.25] as const
 /** Big Red's colours, the same recipe in red. */
+/** Colours of an impact: the gear's own, bright (linear). */
+const TAG_IMPACT = new THREE.Color(0.9, 4, 1.4)
+const RED_IMPACT = new THREE.Color(4, 0.55, 0.35)
+const RED_SHOCK = new THREE.Color(4, 0.55, 0.35).multiplyScalar(0.6)
+const TAG_SHOCK = new THREE.Color(0.9, 4, 1.4).multiplyScalar(0.5)
 const RED_CORE_RGB = [4, 0.55, 0.35] as const
 const RED_HALO_RGB = [1.8, 0.18, 0.1] as const
 const RED_TINT_RGB = [0.8, 0.05, 0.03] as const
@@ -161,6 +169,8 @@ export class Lasers implements System {
   private readonly axis = new THREE.Vector3()
   private readonly effects: ReturnType<typeof createWeaponEffects> | null
   private readonly pulses: ImpactPulses
+  /** What an impact looks like: flash, sparks, ground light, debris and scorch, by surface. */
+  readonly fx: ImpactFx
   /** Shots that already showed their impact here, so a later server confirmation does not repeat it. */
   private readonly impacted = new Set<string>()
   private readonly ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
@@ -172,6 +182,7 @@ export class Lasers implements System {
 
   constructor(private readonly game: Game, private readonly hooks: LaserHooks) {
     this.pulses = new ImpactPulses(game)
+    this.fx = new ImpactFx(game, () => this.hooks.terrain?.())
     let effects: ReturnType<typeof createWeaponEffects> | null = null
     try {
       effects = createWeaponEffects(game)
@@ -268,8 +279,18 @@ export class Lasers implements System {
     const i = this.shots.findIndex((s) => s.shooter === shooter && s.id === shot)
     const p = i >= 0 ? this.shots[i] : null
     const where = at ?? p?.pos
-    if (where) this.impact(shooter, shot, where, p ? p.vel.clone().normalize().negate() : undefined, p?.red ?? false)
+    if (where) this.impact(shooter, shot, where, p ? p.vel.clone().normalize().negate() : undefined, p?.red ?? false, true)
     if (i >= 0) this.kill(i)
+  }
+
+  /**
+   * The world wrapped under the local player, who moved one tile over by (dx, dz) (Vehicle's
+   * tileshift): carry everything drawn here with it, so nothing jumps at the seam: shots in
+   * flight, impacts and scorches.
+   */
+  shift(dx: number, dz: number): void {
+    for (const p of this.shots) { p.pos.x += dx; p.pos.z += dz; p.prev.x += dx; p.prev.z += dz; p.mesh.position.x += dx; p.mesh.position.z += dz }
+    this.pulses.shift(dx, dz); this.fx.shift(dx, dz)
   }
 
   /** Remove every shot in flight: for a world change or leaving it. Impact effects fade on their own. */
@@ -277,6 +298,7 @@ export class Lasers implements System {
     while (this.shots.length) this.kill(this.shots.length - 1)
     while (this.glows.length) this.dropGlow(this.glows.length - 1)
     this.pulses.reset()
+    this.fx.reset()
   }
 
   fixedUpdate(dt: number): void {
@@ -289,6 +311,7 @@ export class Lasers implements System {
 
   update(dt: number, alpha: number): void {
     this.pulses.update(dt)
+    this.fx.update(dt)
     // The sky raises the exposure at night, which would bleach these unlit HDR colours toward
     // white. Scale each from its own constant every frame; never from the current colour,
     // which would compound.
@@ -401,6 +424,7 @@ export class Lasers implements System {
     this.glowGeo.dispose(); this.glowMat.dispose(); this.redGlowMat.dispose()
     this.effects?.dispose()
     this.pulses.dispose()
+    this.fx.dispose()
     this.unwarm()
     this.coreGeo.dispose(); this.haloGeo.dispose()
     for (const m of [this.coreMat, this.haloMat, this.tintMat, this.redCoreMat, this.redHaloMat, this.redTintMat]) m.dispose()
@@ -441,7 +465,7 @@ export class Lasers implements System {
       const wide = this.wideCatch(p, dir, hit ? hit.timeOfImpact : dist, shooterBody)
       if (wide) {
         this.hooks.onHit(p.shooter, p.id, wide.victim, wide.point, dir.clone(), true)
-        this.impact(p.shooter, p.id, wide.point, dir.clone().negate(), true)
+        this.impact(p.shooter, p.id, wide.point, dir.clone().negate(), true, true)
         this.kill(this.shots.indexOf(p))
         return
       }
@@ -455,14 +479,14 @@ export class Lasers implements System {
     const victim = parent ? this.hooks.judgedId(parent.handle) : null
     if (victim !== null) {
       this.hooks.onHit(p.shooter, p.id, victim, point, dir.clone(), p.red)
-      this.impact(p.shooter, p.id, point, dir.clone().negate(), p.red)
+      this.impact(p.shooter, p.id, point, dir.clone().negate(), p.red, true)
       this.kill(this.shots.indexOf(p))
       return
     }
     const rico = p.red ? 0 : laserRicochet.value
     const isBody = parent && !parent.isFixed()
     if (isBody || rico === 0) {
-      this.impact(p.shooter, p.id, point, new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z), p.red)
+      this.impact(p.shooter, p.id, point, new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z), p.red, Boolean(isBody), dir)
       this.kill(this.shots.indexOf(p))
       return
     }
@@ -505,18 +529,21 @@ export class Lasers implements System {
     return best
   }
 
-  /** Sparks where a shot ended, once per shot. */
-  private impact(shooter: number, shot: number, at: THREE.Vector3, normal?: THREE.Vector3, red = false): void {
+  /**
+   * The look of where a shot ended, once per shot. `onVehicle` for a vehicle (or anything else
+   * that moves); `dir` the shot's own direction where known, else straight into the surface.
+   */
+  private impact(shooter: number, shot: number, at: THREE.Vector3, normal?: THREE.Vector3, red = false, onVehicle = false, dir?: THREE.Vector3): void {
     const key = `${shooter}:${shot}`
     if (this.impacted.has(key)) return
     this.impacted.add(key)
     if (this.impacted.size > 256) this.impacted.delete(this.impacted.values().next().value as string)
-    this.effects?.impact(at.clone(), normal ?? new THREE.Vector3(0, 1, 0), red)
-    this.pulses.emit(at, normal ?? new THREE.Vector3(0, 1, 0), {
-      radius: Math.max(1.5, red ? thunderBlastRadius.value : tagBlastRadius.value),
-      seconds: red ? 0.9 : 0.55,
-      color: new THREE.Color(...(red ? RED_CORE_RGB : CORE_RGB)),
-    })
+    const n = normal ?? new THREE.Vector3(0, 1, 0)
+    this.fx.impact(at, n, dir ?? n.clone().negate(), onVehicle, red ? RED_IMPACT : TAG_IMPACT, red)
+    // A shock ring: Thunder's the size of its push; Plasma Tag's small and quick, which is what
+    // reads at a distance.
+    if (red) this.pulses.emit(at, n, { radius: Math.max(1.5, thunderBlastRadius.value), seconds: 0.9, color: RED_SHOCK })
+    else this.pulses.emit(at, n, { radius: 1.8, seconds: 0.3, color: TAG_SHOCK })
     this.hooks.onImpact?.(at, red)
   }
 

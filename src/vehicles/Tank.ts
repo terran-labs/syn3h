@@ -5,11 +5,12 @@ import { RAPIER } from '../core/physics'
 import { defineParam } from '../../shared/params'
 import { defaultPreset, definePresets } from '../../shared/presets'
 import { Vehicle } from './Vehicle'
-import { addLavaGlow } from './skins/lavaGlow'
-import { addNightReadability } from './skins/nightReadability'
+
+
 import { detailLevel, registerVehicleDetail } from './skins/mergeStatic'
 import { ExpeditionTank } from './tank/kit'
 import { sherpa, type TankBody } from './tank/shipped'
+import { vehicleDecoration } from './skins/decoration'
 
 export const tankPower=defineParam({id:'tank.power',label:'Power',group:'Tank',scope:'world',default:2000,min:500,max:3500,step:10})
 export const tankSpeed=defineParam({id:'tank.speed',label:'Speed',group:'Tank',scope:'world',default:25,min:10,max:40,step:.1})
@@ -113,7 +114,7 @@ export class Tank extends Vehicle {
     // The cabin is modelled to be sat in, and the lamps are faces of the hull.
     this.object.userData.cockpit=true;this.object.userData.ownLamps=true
     this.modelReady=Promise.resolve()
-    if(typeof window!=='undefined')tank.showroom(root=>{addNightReadability(root);addLavaGlow(root)})
+    if(typeof window!=='undefined')tank.showroom(vehicleDecoration)
     this.level=0;this.castsShadows=true
     this.detachDetail=registerVehicleDetail(tank.object,(distance,remote,graphics)=>{
       this.level=detailLevel(distance,remote,this.level);tank.setLevel(this.level)

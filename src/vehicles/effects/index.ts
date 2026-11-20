@@ -1,5 +1,10 @@
 import {hotExposureDim} from '../skins/hotExposure'
 import {headlightScale} from './headlights'
+import {type ConeHaze,MAX_CONES,createConeBatch,createConeHaze,headlightCones,hideUnusedCones,writeVehicleCones} from './cones'
+import {hazeNow} from '../../world/weather/fog'
+import {activeFogBanks} from '../../world/weather/fogBanks'
+/** The beam's colour (the spot lights', effects/index.ts). */
+const CONE_COLOUR=new T.Color(1,.9965517,.875)
 import * as T from 'three/webgpu'
 import type {Game,System} from '../../core/Game'
 import {qualityBudget,graphicsLevel} from '../../core/quality'
@@ -59,7 +64,30 @@ class EffectWorld implements System {
     this.lamps.frustumCulled=false;this.lamps.count=0
     this.lamps.onBeforeRender=()=>{this.lamps.material.color.setScalar(hotExposureDim(game.renderer.toneMappingExposure));let index=0;for(const e of this.vehicles.values())index=e.writeLamps(this.lamps,index);hideUnusedLamps(this.lamps,index);this.lamps.instanceMatrix.needsUpdate=true;if(this.lamps.instanceColor)this.lamps.instanceColor.needsUpdate=true}
     game.scene.add(this.lamps,this.marks.mesh,this.trails.mesh);this.rebudget();game.scene.userData.vehicleEffects=this.stats
+    // Headlight cones in mist (cones.ts): every vehicle's front lamps, lit by the haze round them.
+    this.coneHaze=createConeHaze()
+    this.cones=createConeBatch(this.coneHaze)
+    this.cones.onBeforeRender=(_r,_s,camera)=>{
+      const eye=this.coneEye.setFromMatrixPosition(camera.matrixWorld)
+      const h=hazeNow(this.coneHazeState),c=this.coneHaze
+      c.hazeD.value=h.density;c.hazeH.value=h.height;c.sea.value=h.sea
+      // The fog banks are looked up each frame: the Environment that owns them may start after this world.
+      const banks=activeFogBanks()?.input as unknown as {map:{value:T.Texture},weights:{value:T.Vector2},invSize:{value:number}}|undefined
+      if(banks){c.bankMap.value=banks.map.value;c.bankWeights.value.copy(banks.weights.value);c.bankInvSize.value=banks.invSize.value}
+      else c.bankWeights.value.set(0,0)
+      // The beam's dusk-to-dawn ramp, as the real spot lights use it (VehicleEffects.update).
+      const night=clamp((.08-this.sunY())/.18,0,1)*headlightCones.value
+      let index=0
+      for(const e of this.vehicles.values())index=e.writeCones(this.cones,index,night,eye)
+      hideUnusedCones(this.cones,index)
+      this.cones.instanceMatrix.needsUpdate=true;if(this.cones.instanceColor)this.cones.instanceColor.needsUpdate=true
+    }
+    game.scene.add(this.cones)
   }
+  readonly cones:T.InstancedMesh
+  private readonly coneHaze:ConeHaze
+  private readonly coneHazeState={density:0,height:40,sea:0}
+  private readonly coneEye=new T.Vector3()
   retain(){this.references++}
   release(){if(--this.references===0){worlds.delete(this.game);this.game.remove(this)}}
   private rebudget(){
@@ -101,9 +129,29 @@ class EffectWorld implements System {
     this.stats.emitted=this.dust.emitted+this.energy.emitted+this.sparks.emitted+this.redSparks.emitted
     this.stats.updateMs=performance.now()-start;this.stats.peakUpdateMs=Math.max(this.stats.peakUpdateMs,this.stats.updateMs)
   }
-  dispose(){this.lamps.removeFromParent();this.lamps.geometry.dispose();this.lamps.material.dispose();for(const e of this.vehicles.values())e.dispose();this.vehicles.clear();for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.dispose();delete this.game.scene.userData.vehicleEffects}
+  dispose(){this.lamps.removeFromParent();this.lamps.geometry.dispose();this.lamps.material.dispose();this.cones.removeFromParent();this.cones.geometry.dispose();(this.cones.material as T.Material).dispose();for(const e of this.vehicles.values())e.dispose();this.vehicles.clear();for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.dispose();delete this.game.scene.userData.vehicleEffects}
 }
 function worldFor(game:Game){let w=worlds.get(game);if(!w){w=new EffectWorld(game);worlds.set(game,w);game.add(w)}return w}
+
+/** Keep the existing road lights in the scene when ride view hides their vehicle.
+ * Sample the final drawn pose and visibility after the vehicle and camera have updated. */
+class HeadlightRig extends T.Group {
+  beamIntensity=0
+  constructor(private readonly anchor:T.Object3D){
+    super()
+    this.matrixWorldAutoUpdate=false
+  }
+  override updateMatrixWorld(force?:boolean){
+    this.anchor.updateWorldMatrix(true,false)
+    this.matrixWorld.copy(this.anchor.matrixWorld)
+    let parent:T.Object3D|null=this.anchor
+    while(parent && parent!==this.parent && parent.visible)parent=parent.parent
+    const intensity=parent===this.parent ? this.beamIntensity : 0
+    // Swaps move the same emitters to the next rig. Only their current owner writes them.
+    for(const child of this.children)if(child instanceof T.SpotLight)child.intensity=intensity
+    super.updateMatrixWorld(force)
+  }
+}
 
 class VehicleEffects {
   private readonly root=new T.Group()
@@ -112,6 +160,7 @@ class VehicleEffects {
   private readonly lampPoints:T.Object3D[]=[]
   private readonly lampMatrix=new T.Matrix4()
   private readonly spots:T.SpotLight[]=[]
+  private readonly headlightRig?:HeadlightRig
   private readonly ownsSpots:boolean
   // Last tyre mark and wing tip positions, kept in place; the flags say which are live.
   private readonly previousMarks=[new T.Vector3(),new T.Vector3(),new T.Vector3(),new T.Vector3()]
@@ -158,6 +207,8 @@ class VehicleEffects {
       const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,hover?.35:.12,jet?2.7:1.7);this.root.add(tail);this.lampPoints.push(tail)
     }
     if(local){
+      this.headlightRig=new HeadlightRig(this.root)
+      world.game.scene.add(this.headlightRig)
       // Syn3h prefab range50, cone60 degrees. Unity intensity is not candela.
       // Aim farther down the road and use candela suitable for inverse-square falloff.
       // Each buggy lamp casts its own beam. Split the old total intensity between them
@@ -167,7 +218,7 @@ class VehicleEffects {
         const spot=sharedSpots?.[i]??new T.SpotLight(new T.Color(1,.9965517,.875),0,50,Math.PI/6,.45,2)
         spot.name=this.buggy?(x<0?'Left headlight':'Right headlight'):'Headlight'
         spot.position.set(x,hover?.23:this.buggy?.036:.35,hover?-1.85:-front);spot.target.position.set(x,-.8,-22);spot.castShadow=false
-        this.spots.push(spot);this.root.add(spot,spot.target)
+        this.spots.push(spot);this.headlightRig.add(spot,spot.target)
       }
     }
     this.unlisten=terrain.onRegenerate?.(()=>{this.reset();world.marks.clear();world.trails.clear()})
@@ -187,6 +238,14 @@ class VehicleEffects {
     this.events.addEventListener('tileshift',this.onTileShift)
   }
   private get events(){return this.vehicle.object as T.Object3D<VehicleObjectEvents>}
+  /** This vehicle's headlight cones (cones.ts) at `night` (the beam ramp times the cone setting). */
+  writeCones(batch:T.InstancedMesh,index:number,night:number,camera:T.Vector3):number {
+    // Buggies only for now: other kinds' lamps sit and point differently (the jet's beam lands on
+    // its wing roots, the hovercraft's pools under it) and join with their own frames.
+    if(!this.buggy)return index
+    this.root.updateWorldMatrix(true,true)
+    return writeVehicleCones(batch,index,this.vehicle.object,this.lampPoints,CONE_COLOUR,night*headlightScale().beam,this.lampMatrix,camera)
+  }
   writeLamps(batch:T.InstancedMesh,index:number):number {
     this.root.updateWorldMatrix(true,true)
     return writeVehicleLamps(batch,index,this.vehicle.object,this.lampPoints,this.headMaterial.color,this.tailMaterial.color,this.lampMatrix)
@@ -235,11 +294,11 @@ class VehicleEffects {
     this.throttle=T.MathUtils.lerp(this.throttle,Math.max(0,v.kind==='hovercraft'?v.input.y:v.input.z),Math.min(1,dt*10))
     this.color.set(v.colors.accent)
     this.tailMaterial.color.setRGB(v.input.brakes?5:2,0,0)
-    if(this.spots.length){
+    if(this.headlightRig){
       const sunY=w.sunY()
       // The buggy's beam follows the headlight setting (headlights.ts); other kinds are unchanged.
       const intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?1800:1600)/this.spots.length*(this.buggy?headlightScale().beam:1)
-      for(const spot of this.spots)spot.intensity=intensity
+      this.headlightRig.beamIntensity=intensity
     }
     // A sealed zorb has no running engine plume or tyre contact. Keep lamps current above;
     // particles already in flight finish their bounded lifetime.
@@ -368,7 +427,7 @@ class VehicleEffects {
       }
     }else if(!trails)this.hasTip.fill(false)
   }
-  dispose(){this.unlisten?.();this.events.removeEventListener('tileshift',this.onTileShift);this.root.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();if(this.ownsSpots)for(const spot of this.spots)spot.dispose()}
+  dispose(){this.unlisten?.();this.events.removeEventListener('tileshift',this.onTileShift);this.root.removeFromParent();this.headlightRig?.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();if(this.ownsSpots)for(const spot of this.spots)spot.dispose()}
 }
 
 /**
@@ -396,9 +455,9 @@ export function hideUnusedLamps(batch:T.InstancedMesh,index:number):void {
 export function attachVehicleEffects(game:Game,terrain:Terrain,vehicle:Vehicle,options:{local:boolean;spots?:T.SpotLight[]}):()=>void{
   const world=worldFor(game)
   if(world.vehicles.has(vehicle))throw new Error('Vehicle effects already attached')
-  const effects=new VehicleEffects(world,terrain,vehicle,options.local,options.spots);world.vehicles.set(vehicle,effects);world.lamps.count=Math.min(512,world.vehicles.size*4);world.retain()
+  const effects=new VehicleEffects(world,terrain,vehicle,options.local,options.spots);world.vehicles.set(vehicle,effects);world.lamps.count=Math.min(512,world.vehicles.size*4);world.cones.count=Math.min(MAX_CONES,world.vehicles.size*2);world.retain()
   let disposed=false
-  return()=>{if(disposed)return;disposed=true;effects.dispose();world.vehicles.delete(vehicle);world.lamps.count=Math.min(512,world.vehicles.size*4);world.release()}
+  return()=>{if(disposed)return;disposed=true;effects.dispose();world.vehicles.delete(vehicle);world.lamps.count=Math.min(512,world.vehicles.size*4);world.cones.count=Math.min(MAX_CONES,world.vehicles.size*2);world.release()}
 }
 
 /** Visual hooks only. Networking retains projectile authority and audio ownership. */

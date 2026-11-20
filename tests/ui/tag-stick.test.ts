@@ -182,7 +182,7 @@ describe('pinch on the free right side', () => {
     return { t, looks, zooms }
   }
 
-  it('in the orbit camera, spreading two fingers zooms in and pinching zooms out', () => {
+  it('in the chase and orbit cameras, spreading two fingers zooms in and pinching zooms out', () => {
     const { t, zooms } = pinchRig()
     expect(t.down(1, 500, 300, true)).toBe('look')
     expect(t.down(2, 600, 300, true)).toBe('pinch')
@@ -200,7 +200,7 @@ describe('pinch on the free right side', () => {
     expect(looks).toEqual([])
   })
 
-  it('outside the orbit camera a second finger does nothing and the first keeps looking', () => {
+  it('in a camera with no distance (cockpit, stationary, roam) a second finger does nothing and the first keeps looking', () => {
     const { t, looks, zooms } = pinchRig()
     t.down(1, 500, 300, false); t.move(1, 520, 300)
     expect(t.down(2, 600, 300, false)).toBeNull()

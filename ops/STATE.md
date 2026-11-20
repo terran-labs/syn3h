@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-18 13:45 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-19 17:30 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.1900 (release-57), source ea6d00a0, frozen copy 20261119-004331-ea6d00a0,
-Worker version 8d355938, at https://www.syn3h.com/ since 19 November 01:16 PST.
+Live: v26.11.1903 (release-60), source 119de12c, frozen copy 20261119-033714-119de12c,
+Worker version 61a6f332, at https://www.syn3h.com/ since 19 November 04:16 PST.
 Room protocol changed in 1900 (King of the Hill no longer returns a player to the pad; 'freed').
 Before it went live, staging ran a mixed room (tools/public-check.mjs, SYN3H_CHECK_OLD_VERSION)
 with a frozen 26.11.1804 and a frozen 26.11.1712 client against the new room: 7 of 7 each.
@@ -56,6 +56,9 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.1803 | 55 | m-river-1803 | rivers that look like flowing water; no glow on a hill hiding the sun |
 | v26.11.1804 | 56 | m-lights-1804 | softer buggy headlights, horizon haze, vehicles float true at river bends |
 | v26.11.1900 | 57 | m-noreset-1900 | never moves you for where you drove; Flip upright; left column; wakes; grass swish |
+| v26.11.1901 | 58 | m-fog-1901 | dawn fog banks, headlight beams, Plasma Tag strikes, buggy water, sea sight line, opening and pinch |
+| v26.11.1902 | 59 | m-bots-1902 | bots play King of the Hill and Tag; dawn fog lit by the morning |
+| v26.11.1903 | 60 | m-showroom-1903 | vehicles of one kind share materials; bot arrivals build far fewer shaders |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
