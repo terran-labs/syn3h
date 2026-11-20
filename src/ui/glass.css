@@ -6,9 +6,11 @@
  * a button's surface; size, padding and placement stay with each component.
  *
  * What it is, and nothing more:
- *   - A thin, clear body: a smoked neutral tint over a light frost of what is behind. The frost
- *     dims bright sky a little (brightness) and keeps the scene's own colour (saturate), so the
- *     tint follows what is behind without a blue cast of its own.
+ *   - A clear body (the owner: glass, not smoked plastic): a breath of white over a light frost
+ *     of what is behind, so the button reads through to the scene and takes its colour. The rim,
+ *     the highlight and the frost make it glass; the label's own dark halo (--glass-under), not
+ *     a dark fill, keeps it legible over bright sky. Only the fallbacks without frost (lowest
+ *     graphics level, reduced transparency, more contrast) carry a dense body.
  *   - One fine specular rim, 1 px, brightest where the light strikes (upper left at rest; it
  *     turns toward the pointer, Shell.glass sets --rim-angle), with a faint spectral shift along
  *     it: the holographic part. A press brings the spectrum up.
@@ -35,15 +37,15 @@
  */
 @property --rim-angle { syntax: "<angle>"; inherits: false; initial-value: 315deg; }
 :root {
-  --glass-body: rgb(20 20 22 / .3);
-  --glass-body-hover: rgb(44 44 48 / .34);
-  --glass-body-on: rgb(236 236 236 / .16);
+  --glass-body: rgb(255 255 255 / .05);
+  --glass-body-hover: rgb(255 255 255 / .1);
+  --glass-body-on: rgb(255 255 255 / .2);
   --glass-blur: 12px;
-  --glass-frost: blur(var(--glass-blur)) saturate(1.35) brightness(.86);
+  --glass-frost: blur(var(--glass-blur)) saturate(1.3) brightness(.97);
   --glass-rim: .62;
   --glass-sheen: .5;
   --glass-ink: #f4f4f4;
-  --glass-under: 0 0 1px rgb(0 0 0 / .85), 0 1px 3px rgb(0 0 0 / .55);
+  --glass-under: 0 0 1px rgb(0 0 0 / .9), 0 1px 3px rgb(0 0 0 / .7), 0 0 10px rgb(0 0 0 / .45);
   --glass-radius: 999px;
 }
 
@@ -98,7 +100,7 @@
 .liquid-glass:active, .liquid-glass.held { --glass-sheen: 1; --glass-rim: 1; transform: scale(.97); }
 .liquid-glass:is([aria-pressed="true"], .is-current) { --glass-rim: 1; --glass-sheen: .75; background-color: var(--glass-body-on); }
 /* The action that leads on: the same glass, a little paler, so it is found first. */
-.liquid-glass.is-primary { --glass-body: rgb(236 236 236 / .14); --glass-body-hover: rgb(236 236 236 / .2); --glass-rim: .8; }
+.liquid-glass.is-primary { --glass-body: rgb(255 255 255 / .12); --glass-body-hover: rgb(255 255 255 / .17); --glass-rim: .8; }
 .liquid-glass:focus-visible { outline: 1.5px solid rgb(244 244 244 / .92); outline-offset: 3px; }
 .liquid-glass:disabled { opacity: .42; cursor: default; transform: none; }
 .liquid-glass.glass-round { --glass-radius: 50%; }
