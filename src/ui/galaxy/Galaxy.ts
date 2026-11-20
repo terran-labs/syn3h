@@ -15,7 +15,7 @@ import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import { liftPlacement, placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement } from '../brand/wordmarkScene'
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
-import { startupTiming } from '../../core/diagnostics'
+import { recordStartupLobbyFrame, startupTiming } from '../../core/diagnostics'
 /** Why the lobby showed the flat wordmark instead of the name in the scene, once, for the diagnostics. */
 function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmarkFallback) { startupTiming.wordmarkFallback = reason; console.info(`Syn3h: flat lobby wordmark: ${reason}`) } }
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
@@ -1531,6 +1531,8 @@ export class Galaxy {
       gl.uniform1f(this.blurUniforms.uBlur, this.blur); gl.uniform2f(this.blurUniforms.uSize, this.canvas.width, this.canvas.height)
       gl.drawArrays(gl.TRIANGLES, 0, 3); gl.useProgram(this.program)
     }
+    // The main galaxy pass has reached the canvas, through the blur composite if used.
+    if (this.frames === 0) recordStartupLobbyFrame()
     if (this.markCrisp) {
       const box = crisp ? this.wordmarkScreenBox() : null
       this.markCrisp.draw(box, this.host.clientWidth, this.host.clientHeight, Math.min(3, devicePixelRatio || 1), mark.pixelsPerUnit, (g, l, w, h, bind) => setFrame(g, l, w, h, bind, 0))

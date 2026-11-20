@@ -2,7 +2,7 @@ import { WingTipAnchors } from './wingTips'
 import { smoothBuggyWheel, distantBuggyBody, distantBuggyArm } from './buggyGeometry'
 import {hotExposureNode} from './hotExposure'
 
-import {applyShowroom,setRole} from './showroom'
+import {addStatorGlow,applyShowroom,setRole} from './showroom'
 import { forceField, type ForceField } from './forceField'
 import { graphicsLevel, levelNumber } from '../../core/quality'
 import * as THREE from 'three/webgpu'
@@ -10,13 +10,12 @@ import { buggyBody } from '../buggygen/body'
 import { buggyHeadlights, headlightScale } from '../effects/headlights'
 import { params } from '../../../shared/params'
 import { buildParts } from '../buggygen/parts'
-import { abs, attribute, clamp, dot, float, instancedBufferAttribute, length, min, normalView, positionGeometry, positionViewDirection, sin, smoothstep, time, uniform, vec2 } from 'three/tsl'
+import { attribute, clamp, dot, float, length, min, normalView, positionViewDirection, sin, smoothstep, time, uniform, vec2 } from 'three/tsl'
 import {mergeStatic,registerVehicleDetail,detailLevel} from './mergeStatic'
 import type { BuggySkin } from './BuggySkin'
 import { MotorSparks } from './motorSparks'
 import { motorSparkAmount } from './motorDrive'
-import type Node from 'three/src/nodes/core/Node.js'
-import { vehicleDecoration } from './decoration'
+import { decorateBuggyDistance } from './buggyDistanceShading'
 
 const up = new THREE.Vector3(0, 1, 0)
 /** Axle mounts: Unity `axelPos`/`AxelPos` mirrored per wheel, z flipped to our -Z forward. */
@@ -411,7 +410,9 @@ export class Syn3hBuggySkin implements BuggySkin {
       const cast=!remote||distance<(level===2?20:0)
       shadows.forEach(m=>{m.castShadow=cast})
     })
-    this.detachShowroom = applyShowroom(this.object, vehicleDecoration)
+    this.detachShowroom = applyShowroom(this.object, decorateBuggyDistance(
+      [midBody, farBody, this.midTyres, this.midArms], { body: this.bodyColor, accent: this.accentColor },
+    ))
     this.object.visible = true
   }
 
@@ -501,14 +502,13 @@ export class Syn3hBuggySkin implements BuggySkin {
     }
     // Rotor/stator interface: the stator's two tips, lit in proportion to motor effort. The
     // glow colour is a per-instance attribute, so four wheels stay one draw call.
-    const glow = instancedBufferAttribute(this.statorGlow, 'vec3')
-    const tips = smoothstep(STATOR_TIP - .1, STATOR_TIP, abs(positionGeometry.z))
     this.stators = [0].map(lod => {
       const part = prepare()
       mergeStatic(part, true)
       const merged = part.children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardNodeMaterial>
       const material = merged.material
-      material.emissiveNode = (material.emissiveNode as Node<'vec3'>).add((glow as Node<'vec3'>).mul(tips).mul(2.5))
+      merged.geometry.setAttribute('statorGlow', this.statorGlow)
+      addStatorGlow(material, STATOR_TIP)
       const mesh = new THREE.InstancedMesh(merged.geometry, material, 4)
       mesh.name = 'Stators'
       mesh.castShadow = mesh.receiveShadow = true
@@ -621,6 +621,27 @@ export class Syn3hBuggySkin implements BuggySkin {
     return found
   }
 
+  drawCoveredWings(draw: () => void): void {
+    const hidden: THREE.Object3D[] = []
+    try {
+      for (const { mesh } of this.wings) {
+        for (let part: THREE.Object3D | null = mesh; part && part !== this.object; part = part.parent) {
+          if (part.visible) continue
+          hidden.push(part)
+          part.visible = true
+        }
+      }
+      draw()
+    } finally {
+      for (const part of hidden) part.visible = false
+    }
+  }
+
+  drawCoveredMotorSparks(draw: () => void): void {
+    if (this.sparks) this.sparks.drawCovered(draw)
+    else draw()
+  }
+
   setWings(openAmount: number, steer: number, pitch: number): void {
     this.wingInput = [openAmount, steer, pitch]
     for (const body of this.distantBodies) body.userData.setWings(THREE.MathUtils.clamp(openAmount, 0, 1))
@@ -644,6 +665,8 @@ export class Syn3hBuggySkin implements BuggySkin {
     this.disposed = true
     this.unlistenLamps()
     this.detachDetail()
+    this.sparks?.dispose()
+    for (const stator of this.stators) stator.dispose()
     this.detachShowroom()
     this.object.removeFromParent()
     release(this.object)

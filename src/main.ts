@@ -6,13 +6,14 @@ import { initializeFrozenResources } from './core/frozenResources'
 import { ResumeSession, RESUME_KEY } from './core/resume'
 import { applyStartWorld } from './core/startWorld'
 import { createWorldEntry, freshVehicle, seatAfterRebuild } from './core/worldEntry'
-import { randomSeed } from './world/planets'
+import { currentPlanet, currentWorldName, randomSeed } from './world/planets'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
 import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { botsKeepCount } from './bots/params'
 import { ChaseCamera } from './core/ChaseCamera'
+import { diagnosticReport } from './core/diagnosticReport'
 import { Game } from './core/Game'
 import { showStartFailure, startupTiming } from './core/diagnostics'
 import { canCreateWebGL2, startFailure } from './core/graphicsSupport'
@@ -30,7 +31,7 @@ import { type VehicleKind, createVehicle } from './vehicles'
 import { PlayerSlot } from './vehicles/PlayerSlot'
 import { createVehicleSwapper } from './vehicles/swap'
 import { Materialize } from './vehicles/effects/Materialize'
-import { onZorbPulse } from './vehicles/zorb'
+import { onZorbPulse, warmZorbShields } from './vehicles/zorb'
 import type { Vehicle } from './vehicles/Vehicle'
 import { createEnvironment } from './world/Environment'
 import { createPostChain } from './fx/post/PostChain'
@@ -58,7 +59,7 @@ async function main(): Promise<void> {
   const terrain = createTerrain(game, worldSeed.value)
   // Graphics levels thin out distant terrain on weaker devices.
   game.quality.attachTerrain(terrain)
-  const environment = game.add(createEnvironment(game, terrain))
+  const environment = game.add(createEnvironment(game, terrain), 'Environment and sky')
   // Post effects follow the player's settings and the current rendering budget.
   game.setPostChain(createPostChain(game, environment))
 
@@ -70,10 +71,11 @@ async function main(): Promise<void> {
   const player = createVehicle(game, terrain, kind, spawn.position, spawn.heading)
   player.isLocal = true
   player.setColors?.(choice.bodyColor, choice.accentColor)
-  game.add(player)
+  game.add(player, 'Player vehicle')
   // Everything that follows the player reads it from this slot, so the vehicle can be changed
   // in place without rebuilding those systems. `player` is only the vehicle spawned first.
   const slot = new PlayerSlot(player)
+  game.vehicleKind = () => slot.current.kind
   // Tracks, dust, thrusters and lights, with the real headlight a local vehicle gets. The
   // swapper owns them from here on: it moves them when the vehicle changes.
   const swapper = createVehicleSwapper(game, terrain, slot)
@@ -90,23 +92,23 @@ async function main(): Promise<void> {
   })
 
   // Bots chase and ram the player. The 'bots.count' slider sets the requested fleet size.
-  const bots = game.add(new BotManager(game, terrain, player))
+  const bots = game.add(new BotManager(game, terrain, player), 'Bot manager')
   bots.setTargets([player])
   slot.onChange((next) => bots.setPlayer(next))
 
-  const camera = game.add(new ChaseCamera(game, terrain))
+  const camera = game.add(new ChaseCamera(game, terrain), 'Chase camera')
   camera.setVehicle(player)
   slot.onChange((next) => camera.setVehicle(next))
   // A wrapping world carries the player, the camera and the bots across its seam.
   ;(terrain as { followSeam?: (f: unknown) => void }).followSeam?.({ get player() { return slot.current }, camera, others: () => bots.vehicles })
   // Wind: a force on the vehicles this client owns (the player and its bots), never on remote
   // copies, whose owners apply it themselves. `?weather=0.5` sets the storminess for a look.
-  game.add(new WeatherSystem(() => terrain, () => [slot.current, ...bots.vehicles]))
+  game.add(new WeatherSystem(() => terrain, () => [slot.current, ...bots.vehicles]), 'Weather')
   applyWeatherQuery(location.search)
   // ?wordmark= and ?intro=: silent developer overrides for the lobby's name and opening.
   applyWordmarkQuery(location.search)
   // The round planet is drawn relative to the camera: place it after the camera has moved.
-  game.add({ update: () => (terrain as { afterCamera?: () => void }).afterCamera?.() })
+  game.add({ update: () => (terrain as { afterCamera?: () => void }).afterCamera?.() }, 'Terrain after camera')
 
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
@@ -115,15 +117,23 @@ async function main(): Promise<void> {
   // The HUD bridge, hints and the engine voice follow the slot.
   slot.onChange(setPlayer)
   // A vehicle arriving by a switch hangs in a small glowing cloud for a second, then drops.
-  const materialize = game.add(new Materialize(game, terrain, { onCue: (cue, position, _hold, vehicle) => audio.materialize(cue, position, vehicle) }))
-  void materialize.prewarm()
+  const materialize = game.add(new Materialize(game, terrain, { onCue: (cue, position, _hold, vehicle) => audio.materialize(cue, position, vehicle) }), 'Vehicle materialization')
   // Bots arrive one at a time once the player can drive (never while entering a world or in
   // the menus), each in the arrival cloud near the player, and leave in it.
   bots.setArrivalGate(() => shell.playing ? 'playing' : shell.transitioning ? 'closed' : 'idle')
   bots.setArrivalEffect(materialize)
+  game.add(warmZorbShields(game), 'Zorb shields')
   const offZorbPulse = onZorbPulse((_ball, centre) => audio.zorbPulse(centre))
-  game.add({ dispose: offZorbPulse })
+  game.add({ dispose: offZorbPulse }, 'Zorb audio')
+  let sessionNetwork: ReturnType<typeof startNetworking> | undefined
   shell.configurePerformance({
+    diagnosticReport: () => {
+      const botKinds = bots.remote && sessionNetwork
+        ? Array.from(sessionNetwork.players.values()).filter(player => player.bot).map(player => player.kind)
+        : bots.vehicles.map(bot => bot.kind)
+      return diagnosticReport(game.quality.getPerformanceSnapshot(), slot.current.kind, botKinds, currentWorldName(), currentPlanet().label,
+        sessionNetwork?.diagnosticLine(), game.quality.levelChanges)
+    },
     getPerformanceSnapshot: () => game.quality.getPerformanceSnapshot(),
     subscribePerformance: listener => game.quality.subscribePerformance(listener),
     setDiagnosticsVisible: visible => game.quality.setDiagnosticsVisible(visible),
@@ -231,7 +241,8 @@ async function main(): Promise<void> {
       cancelRemoteDeparture: vehicle => materialize.cancel(vehicle),
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
-      name: shell.playerName,
+      // The lobby may clear the address bar before the socket sends its hello.
+      name: query.get('name') || shell.playerName,
       room: shell.room || roomFromQuery(query),
       setStatus: (lines) => { netStatus = lines; shell.setStatus(lines) },
       setMapEntities: (e) => shell.setMapEntities(e),
@@ -239,6 +250,7 @@ async function main(): Promise<void> {
       names: (seed, kind) => generateName(seed, kind),
       botRole: seed => botIdentity(seed).role,
     })
+    sessionNetwork = connection
     // Opening the in-play guide drops gear in hand without firing it: a Big Red charge is
     // discarded, a Yoink carry is set down (no fling), a reel stops and the tag control lets
     // go. The Grapple cord stays attached; the world keeps running.
@@ -279,12 +291,12 @@ async function main(): Promise<void> {
       })),
     })
     // Bot banter (src/bots/banter): the host's bots talk, and answer people's requests.
-    const banter = game.add(new HostBanter(game, terrain, connection, bots, environment))
+    const banter = game.add(new HostBanter(game, terrain, connection, bots, environment), 'Host banter')
     // For automated checks (tools/chat-check.mjs). Join can run before window.syn3h exists.
     Object.assign(window, { syn3hChat: { net: connection, panel: chat, banter } })
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
-    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || roomFromQuery(query), saved, network: connection, entrySearch: lobbyAddress.playURL().search }))
+    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || roomFromQuery(query), saved, network: connection, entrySearch: lobbyAddress.playURL().search }), 'Session resume')
   }
   shell.onPlay = join
   // The in-play vehicle selector calls this; the shell takes it if it has the hook.
@@ -299,10 +311,10 @@ async function main(): Promise<void> {
       const mph = Math.round(Math.hypot(v.x, v.y, v.z) * 2.23)
       hud.textContent = [`${mph} MPH   ${game.backend}   ${Math.round(game.fps)} fps`, ...netStatus].join('\n')
     },
-  })
+  }, 'Driving HUD')
 
   // Water effects follow their normal-entry defaults and explicit player controls.
-  game.add(new WaterEffects(game, terrain, slot, bots))
+  game.add(new WaterEffects(game, terrain, slot, bots), 'Water effects')
 
   // Handles for debugging and automated checks.
   // The game does not run in a background tab: one controller, obeyed by the loop here. Audio

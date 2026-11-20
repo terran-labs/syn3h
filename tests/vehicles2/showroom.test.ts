@@ -4,9 +4,9 @@ import {uniform} from 'three/tsl'
 import {params} from '../../shared/params'
 import {addLavaGlow} from '../../src/vehicles/skins/lavaGlow'
 import {createLiquidState} from '../../src/vehicles/lava'
-import {vehicleShading} from '../../src/core/quality'
+import {graphicsLevel,vehicleShading} from '../../src/core/quality'
 import {LOD_FAR,LOD_NEAR,detailLevel,mergeStatic,mergedSurfaces} from '../../src/vehicles/skins/mergeStatic'
-import {TRACK_LUGS,showroomShare,showroomWarm,applyShowroom,paintCanopy,paintFlakes,paintScaleDepth,paintScaleSize,paintSeams,roleOf,setRole,wrapTrackScroll} from '../../src/vehicles/skins/showroom'
+import {TRACK_LUGS,showroomShare,showroomWarm,applyShowroom,drawCoveredShowroom,markReducedShowroomDetail,paintCanopy,paintFlakes,paintGloss,paintScaleDepth,paintScaleSize,paintSeams,roleOf,setRole,wrapTrackScroll} from '../../src/vehicles/skins/showroom'
 
 const box=()=>new T.BoxGeometry(1,1,1)
 const std=(name:string,color=0x336699)=>{const m=new T.MeshStandardMaterial({color});m.name=name;return m}
@@ -103,7 +103,7 @@ describe('showroom vehicle shading',()=>{
    let detail:(distance:number,remote:boolean,level:number)=>void=()=>{}
    owner.userData.registerVehicleDetail=(fn:typeof detail)=>{detail=fn;return()=>{}}
    const paint=setRole(std('Body'),'paint'),body=new T.Mesh(box(),paint);root.add(body)
-   const wheels=new T.InstancedMesh(box(),setRole(std('Tyres'),'tyre'),4);root.add(wheels)
+   const wheels=new T.InstancedMesh(box(),setRole(std('Tyres'),'tyre'),4);wheels.castShadow=true;root.add(wheels)
    let decorated=0
    const dispose=applyShowroom(root,()=>{decorated++})
    const group=()=>scene.children.find(o=>o.name==='Showroom warm'&&o.position.x===owner.position.x)
@@ -151,6 +151,56 @@ describe('showroom vehicle shading',()=>{
   loose.userData.registerVehicleDetail=(fn:typeof tick)=>{tick=fn;return()=>{}}
   const drop=applyShowroom(lone,()=>{});tick(80,true,2);tick(80,true,2)
   expect(showroomWarm.proxies-before.proxies).toBe(0);drop()
+ })
+ it('reuses only observed covered draws and warms again after a quality change',()=>{
+  params.set(vehicleShading.def.id, 2)
+  const scene = new T.Scene(), camera = new T.PerspectiveCamera()
+  const owner = new T.Group(), root = new T.Group()
+  scene.add(owner); owner.add(root)
+  let tick: (distance: number, remote: boolean, level: number) => void = () => {}
+  owner.userData.registerVehicleDetail = (fn: typeof tick) => { tick = fn; return () => {} }
+  const body = new T.Mesh(box(), setRole(std('Body'), 'paint'))
+  const trim = new T.Mesh(box(), setRole(std('Trim'), 'trim'))
+  root.add(body, trim)
+  const dispose = applyShowroom(root, () => {})
+  const proxies = () => scene.children.find(o => o.name === 'Showroom warm')?.children
+  try {
+   const level = graphicsLevel.value
+   tick(8, true, level)
+   const coveredMaterial = body.material, previous = body.onAfterRender
+   drawCoveredShowroom(root, scene, camera, () => {
+    const renderer = {} as Parameters<typeof body.onAfterRender>[0]
+    const group = {} as Parameters<typeof body.onAfterRender>[5]
+    body.onAfterRender(renderer, scene, camera, body.geometry, body.material, group)
+   })
+   expect(body.onAfterRender).toBe(previous)
+   tick(80, true, level)
+   expect(proxies()?.map(proxy => (proxy as T.Mesh).geometry)).toEqual([trim.geometry])
+
+   tick(8, true, level)
+   expect(body.material).toBe(coveredMaterial)
+   tick(80, true, level === 2 ? 1 : 2)
+   // A real graphics level change changes the applied quality even if this material stays shared.
+   expect(proxies()?.map(proxy => (proxy as T.Mesh).geometry)).toContain(body.geometry)
+  } finally { dispose() }
+ })
+ it('keeps reduced showroom material selection without building a separate approach proxy',()=>{
+  params.set(vehicleShading.def.id, 2)
+  const scene = new T.Scene(), owner = new T.Group(), root = new T.Group()
+  scene.add(owner); owner.add(root)
+  markReducedShowroomDetail(root)
+  let tick: (distance: number, remote: boolean, level: number) => void = () => {}
+  owner.userData.registerVehicleDetail = (fn: typeof tick) => { tick = fn; return () => {} }
+  const paint = setRole(std('Body'), 'paint'), body = new T.Mesh(box(), paint)
+  root.add(body)
+  const dispose = applyShowroom(root, () => {})
+  try {
+   tick(80, true, 2)
+   expect(body.material).toBe(paint)
+   expect(scene.children.some(o => o.name === 'Showroom warm')).toBe(false)
+   tick(8, true, 2)
+   expect(body.material).toBeInstanceOf(T.MeshPhysicalNodeMaterial)
+  } finally { dispose() }
  })
  it('gives a new set the sky map as it is built, so first use does not ask for a recompile',()=>{
   params.set(vehicleShading.def.id,2)
@@ -312,6 +362,40 @@ describe('showroom vehicle shading',()=>{
   // setColors writes the source in place: the next draw shows it.
   b.paint.color.set(0x123456);expect((colour(b.body).find(v=>v===b.paint.color) as T.Color).getHex()).toBe(0x123456)
   a.dispose();b.dispose()
+ })
+ it('keeps the warmed canopy version when a detached model borrows it and enters the same scene',()=>{
+  const scene = new T.Scene(), sky = new T.Texture()
+  scene.environment = sky
+  params.set(vehicleShading.def.id, 1)
+  const active = vehicle(0xff0000, 0x00ff00)
+  const gloss: number = paintGloss.value
+  const refreshGloss = gloss === 0 ? .5 : 0
+  let parked: ReturnType<typeof vehicle> | undefined
+  try {
+   scene.add(active.owner)
+   params.set(paintGloss.def.id, refreshGloss)
+   const canopy = active.canopy.material as unknown as T.MeshBasicMaterial
+   const version = canopy.version
+   expect(canopy.envMap).toBe(sky)
+
+   parked = vehicle(0x0000ff, 0xffff00)
+   expect(parked.canopy.material).toBe(canopy)
+   expect(canopy.envMap).toBe(sky)
+   scene.add(parked.owner)
+   params.set(paintGloss.def.id, gloss)
+   expect(canopy.envMap).toBe(sky)
+   expect(canopy.version).toBe(version)
+
+   scene.environment = null
+   params.set(paintGloss.def.id, refreshGloss)
+   expect(canopy.envMap).toBeNull()
+   expect(canopy.version).toBe(version + 1)
+  } finally {
+   parked?.dispose()
+   active.dispose()
+   sky.dispose()
+   params.set(paintGloss.def.id, gloss)
+  }
  })
  it('never disposes a shared material while another vehicle draws it, and frees it after the last',()=>{
   params.set(vehicleShading.def.id,2)

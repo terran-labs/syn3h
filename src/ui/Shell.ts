@@ -1,3 +1,6 @@
+import { longFrames } from '../core/longFrames'
+import { cancelStartupPlayRequest, recordStartupPlayRequest, recordStartupReveal } from '../core/diagnostics'
+import { markShaderReveal } from '../core/diagnosticShaders'
 import { frozenResourceURL } from '../core/frozenResources'
 import type { LobbyAddress } from './LobbyAddress'
 import { DEFAULT_ROOM, isDefaultRoom, roomFromQuery } from '../core/roomAddress'
@@ -790,15 +793,16 @@ export class Shell implements System {
    * the game's camera comes down out of that brightness from high above the spawn point to
    * its place behind the vehicle, and the blur clears. The room is joined at the start, so
    * the wait is spent falling. Called from code (tests, autoplay, Return to Game) it is
-   * immediate, and so it is for anyone who asks for reduced motion.
+   * shown without a flight, as it is for reduced motion. Entry still waits for graphics.
    */
   play(descend = false): void {
+    if (!this.started) recordStartupPlayRequest()
     this.stopAttract()
     if (this.started) { this.closeMenu(); return }
     this.requestEntryCursor()
     this.unlockAudio(); this.begin()
     if (descend && this.galaxy?.live && this.menuVisible && !matchMedia('(prefers-reduced-motion: reduce)').matches) { this.onPlay?.(); void this.descent(currentPlanet().id); return }
-    this.closeMenu(); this.showHelp(false); this.onPlay?.()
+    this.onPlay?.(); void this.enterWithoutFlight()
   }
   /** Audio may only start inside a tap or a key press: call this from one. */
   private unlockAudio(): void {
@@ -806,6 +810,7 @@ export class Shell implements System {
   }
   /** The session starts: the name is kept and the choices that cannot change in play are fixed. */
   private begin(): void {
+    longFrames.event('Join world')
     // Play has begun: from here the cursor request made at the entering gesture (if any) is
     // judged like any other.
     this.enteringByGesture = false
@@ -823,6 +828,7 @@ export class Shell implements System {
     if (id === 'custom') return false
     if (this.invited && !this.started && id !== current) { this.say('You were invited to another world. You can change it once you are in, if the host allows.'); return true }
     if (!canEditWorld() && id !== current) { this.say('The host has locked this world.'); return true }
+    if (!this.started) recordStartupPlayRequest()
     this.stopAttract()
     // No galaxy to fly through (or no motion wanted): straight in.
     if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -852,6 +858,49 @@ export class Shell implements System {
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
   }
+  /** A room welcome may replace the selected planet. Compile against the settled world. */
+  private async waitForEntryWorld() {
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    const joinBy = performance.now() + 5000
+    const net = () => (window as { syn3hNet?: { connected?: boolean } }).syn3hNet
+    while (net() && !net()!.connected && performance.now() < joinBy) await frame()
+    await frame()
+    while (this.ground?.ready === false) await this.ground.whenReady?.()
+  }
+
+  private async warmEntryGraphics() {
+    const progress = document.createElement('div')
+    progress.className = 'entry-warm-progress'
+    progress.setAttribute('role', 'status')
+    progress.textContent = 'Preparing world'
+    // The lobby controls are inert during entry. Keep the status accessible outside them.
+    this.element.append(progress)
+    try {
+      await this.game.precompile(label => {
+        if (progress.textContent !== label) progress.textContent = label
+      })
+    } finally { progress.remove() }
+  }
+
+  /** Reduced motion, direct play and autoplay use the same covered production draws. */
+  private async enterWithoutFlight() {
+    if (this.dropping) return
+    this.dropping = true
+    this.game.holdDraws = true
+    this.overlay.inert = true
+    try {
+      await this.waitForEntryWorld()
+      await this.warmEntryGraphics()
+    } catch (error) {
+      console.warn('World preparation failed; entering anyway.', error)
+    } finally {
+      this.game.holdDraws = false
+      this.dropping = false
+      this.closeMenu()
+      this.showHelp(false)
+    }
+  }
+
   /**
    * The drop, one unbroken motion. The galaxy flies across the system to the world and down
    * into its air, with motion blur (Galaxy.descend). Under the light at the bottom of the
@@ -887,10 +936,8 @@ export class Shell implements System {
       // turn, before the renderer can expose a frame over the previous spawn.
       stopFollowingWorld = this.ground?.onRegenerate?.(lift)
       // The world is prepared behind the dive, not under its light: from the tap it is rebuilt
-      // in slices (heights from a worker), the room is joined, and every shader it needs is
-      // compiled a slice per frame, with nothing of it drawn meanwhile. Each piece stays a few
-      // milliseconds, so the dive itself never misses a frame. If preparation outlasts the
-      // dive, the dive holds in the air until it is done.
+      // in slices (heights from a worker) and the room is joined. The expensive draws wait
+      // for the opaque hold; one cold driver pipeline can take hundreds of milliseconds.
       const ground = this.ground
       if (ground) ground.staged = true
       this.game.holdDraws = true
@@ -898,27 +945,12 @@ export class Shell implements System {
       void this.galaxy!.descend(galaxyId, seen > 0).then(() => { dived = true })
       underLight?.(); lift()
       const prepareStart = performance.now()
-      let prepared = false
-      const preparation = (async () => {
-        const net = () => (window as { syn3hNet?: { connected?: boolean } }).syn3hNet
-        // The room's welcome can replace the world (its own seed and planet): wait for it.
-        const joinBy = performance.now() + 5000
-        while (net() && !net()!.connected && performance.now() < joinBy) await frame()
-        // A world the welcome set starts its rebuild on a microtask: let it begin.
-        await frame()
-        while (ground && ground.ready === false) await ground.whenReady?.()
-        // The warm-up frames may stall while shaders compile: draw them only once the dive is
-        // holding still in the world's air, where a stalled frame cannot be seen.
-        const diveBy = performance.now() + 4000
-        while (!dived && performance.now() < diveBy) await frame()
-        await this.game.precompile()
-      })().catch(error => console.warn('World preparation failed; entering anyway.', error)).finally(() => { prepared = true })
-      await until(() => dived, 4000, true)
-      // Never cut the preparation short, not even for a tap: what it has not built would be
-      // built in the first frames instead, which is the freeze this exists to prevent.
-      const holdUntil = performance.now() + 15000
-      while (!prepared && performance.now() < holdUntil) { lift(); await frame() }
-      void preparation
+      await this.waitForEntryWorld()
+      // Keep the overlay opaque through the last draw, even on cold phone drivers.
+      // A tap can skip the flight itself, but never interrupts a covered shader build.
+      const diveBy = performance.now() + 4000
+      while (!dived && performance.now() < diveBy) { lift(); await frame() }
+      await this.warmEntryGraphics()
       try { performance.measure('syn3h:descent preparation', { start: prepareStart, end: performance.now() }) } catch { /* Older engines. */ }
       if (ground) ground.staged = false
       this.game.holdDraws = false
@@ -926,7 +958,9 @@ export class Shell implements System {
       // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
       const length = skip ? 0 : seen > 0 ? 1700 : 2400
       if (game) { game.style.transition = 'none'; game.style.filter = skip ? 'none' : 'blur(12px) brightness(1.3)' }
-      this.overlay.style.transition = `opacity ${skip ? 0.2 : 0.6}s ease-out`; this.overlay.style.opacity = '0'
+      this.overlay.style.transition = `opacity ${skip ? 0.2 : 0.6}s ease-out`
+      if (this.started && recordStartupReveal()) markShaderReveal()
+      this.overlay.style.opacity = '0'
       await frame()
       if (game && !skip) { game.style.transition = `filter ${(length * 0.7 / 1000).toFixed(2)}s cubic-bezier(.1,.6,.3,1)`; game.style.filter = 'none' }
       const started = performance.now()
@@ -951,7 +985,8 @@ export class Shell implements System {
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.removeProperty('visibility') }
       this.game.holdDraws = false
       this.dropping = false; this.enteringByGesture = false
-      if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
+      if (this.started) { this.closeMenu(); this.showHelp(false) }
+      else { cancelStartupPlayRequest(); this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
     }
   }
   /**
@@ -1076,6 +1111,7 @@ export class Shell implements System {
     // transition ends by putting the menu where it belongs.
     if (!this.started || this.dropping) return
     this.lobbyAddress?.showPlay(this.room)
+    if (this.menuVisible && recordStartupReveal()) markShaderReveal()
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; if (this.galaxy) this.galaxy.enabled = false
     this.lobbySettings.close(); for (const sheet of this.lobbySheets) sheet.close()
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true; this.audio.setLobbyVisible(false); this.paramPanel?.hide()
@@ -1450,6 +1486,7 @@ export class Shell implements System {
       const plan = savedWorldPlan(latest, params.all().map(p => p.def))
       const allowed = () => worldIdentity(plan) === worldIdentity(params.snapshot('world')) || (canEditWorld() && !(this.invited && !this.started))
       if (!allowed()) { this.say('This room controls its world settings. The saved world was not applied.'); return }
+      if (!this.started) recordStartupPlayRequest()
       this.stopAttract()
       this.suspendCustomRefresh = true; clearTimeout(this.customMapTimer)
       const apply = () => {
@@ -1459,7 +1496,7 @@ export class Shell implements System {
       }
       this.requestEntryCursor()
       if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        apply(); this.closeMenu()
+        apply(); await this.enterWithoutFlight()
       } else {
         if (!this.started) this.unlockAudio()
         release = this.galaxy.savedWorldTarget(latest.recipeId, latest.seed, plan, latest.id)
@@ -1468,7 +1505,10 @@ export class Shell implements System {
       }
       if (applied) this.reportSavedOutcome(plan)
     } catch (error) { this.say(`Saved world was not entered. ${error instanceof Error ? error.message : 'Please try again.'}`) }
-    finally { release?.(); this.savedEntering = false }
+    finally {
+      if (!this.started) cancelStartupPlayRequest()
+      release?.(); this.savedEntering = false
+    }
   }
   /** A room welcome can replace a local plan. Never claim a restore until authority settles. */
   private savedOutcomeStop?: () => void
@@ -1945,7 +1985,7 @@ export class Shell implements System {
 
 /** Call after creating the player, before constructing ParamPanel. */
 export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { shell: Shell; audio: GameAudio; setPlayer: (player: Vehicle) => void; dispose: () => void } {
-  const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio))
+  const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio), 'Shell and lobby')
   shell.setVehicleKind(player.kind); shell.setTerrain(terrain); audio.setPlayer(player,terrain)
   let activePlayer = player
   // Read the body directly: the HUD snapshot can still describe the previous world
@@ -1980,7 +2020,7 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     const input = activePlayer.input
     const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut })
     if (hint) shell.showHint(hint)
-  } })
-  game.add(audio)
+  } }, 'Telemetry and hints')
+  game.add(audio, 'Game audio')
   return { shell, audio, setPlayer(next) { activePlayer = next; height = new HeightAboveGround(); hints.reset(); audio.setPlayer(next,terrain); shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
 }

@@ -47,6 +47,7 @@ import {params} from '../../../shared/params'
 import type {Game,System} from '../../core/Game'
 import {RAPIER} from '../../core/physics'
 import type {Terrain} from '../../world/Terrain'
+import {JET_TAIL_LIGHTS_MESH_NAME} from '../jetgen/JetTailLights'
 import {REST_HEIGHT,type Vehicle} from '../Vehicle'
 import {graphicsLevel,levelNumber} from '../../core/quality'
 import {effectNoise} from './index'
@@ -187,6 +188,9 @@ export class Materialize implements System {
   private lastWall=now()
   /** Pooled arrival looks for the current graphics level. */
   private looks:ArrivalLook[]=[]
+  private buggyStatorGeometry?:T.BufferGeometry
+  private jetTailGeometry?:T.BufferGeometry
+  private readonly jetTailSilhouettes=new Map<ArrivalLook,T.Mesh>()
   constructor(readonly game:Game,readonly terrain:Terrain,options:{onCue?:MaterializeCueHandler}={}){
     this.onCue=options.onCue
     this.build()
@@ -206,14 +210,54 @@ export class Materialize implements System {
       for(const look of this.looks)look.setLevel(level)
     }else{
       this.looks=Array.from({length:LOOKS},()=>new ArrivalLook(level,this.terrain))
-      this.looks[0].prepareSilhouetteWarmup()
-      for(const look of this.looks)this.game.scene.add(look.object)
+      for(const look of this.looks){
+        look.prepareSilhouetteWarmup()
+        this.game.scene.add(look.object)
+      }
     }
   }
 
+  prepareCoveredDraw():void {
+    if(this.buggyStatorGeometry)return
+    // A covered buggy draw can attach its finished skin after the first world draw.
+    // Register these fixtures before Game disables culling for the current draw.
+    const stators=this.game.scene.getObjectByName('Stators')
+    if(!(stators instanceof T.InstancedMesh)||!stators.geometry.hasAttribute('statorGlow'))return
+    // The ghost keeps statorGlow in its geometry key even though its material does not read it.
+    const geometry=this.buggyStatorGeometry=stators.geometry.clone()
+    for(const look of this.looks)look.addInstancedSilhouetteWarmup(geometry,stators)
+  }
+
   *precompileMeshes(): Iterable<T.Mesh> {
+    this.build()
     yield this.cloud.mesh
-    yield* this.looks[0].getPrecompileMeshes()
+    if(!this.jetTailGeometry){
+      // The opaque jet tail lights also get a live ghost. Its color and tailLens
+      // attributes distinguish it from the existing plain and merged fixtures.
+      const tail=this.game.scene.getObjectByName(JET_TAIL_LIGHTS_MESH_NAME)
+      if(tail instanceof T.Mesh)this.jetTailGeometry=tail.geometry.clone()
+    }
+    // Arrivals and departures use the same look pool and shader graph. A departure
+    // reverses the live uniforms; overlapping holds can spend any slot in the pool.
+    for(const look of this.looks){
+      let silhouette:T.Mesh|undefined
+      for(const mesh of look.getPrecompileMeshes()){
+        if(mesh.userData.arrivalGhost===true)silhouette??=mesh
+        yield mesh
+      }
+      if(!this.jetTailGeometry||!silhouette)continue
+      let ghost=this.jetTailSilhouettes.get(look)
+      if(!ghost){
+        ghost=new T.Mesh(this.jetTailGeometry,silhouette.material)
+        ghost.visible=false
+        ghost.castShadow=ghost.receiveShadow=false
+        ghost.renderOrder=6
+        ghost.userData.arrivalGhost=true
+        look.object.add(ghost)
+        this.jetTailSilhouettes.set(look,ghost)
+      }
+      yield ghost
+    }
   }
 
   /**
@@ -370,8 +414,14 @@ export class Materialize implements System {
   dispose():void {
     for(let i=this.holds.length-1;i>=0;i--)this.release(this.holds[i],false)
     this.cloud.dispose()
+    for(const ghost of this.jetTailSilhouettes.values())ghost.removeFromParent()
+    this.jetTailSilhouettes.clear()
+    this.jetTailGeometry?.dispose()
+    this.jetTailGeometry=undefined
     for(const look of this.looks)look.dispose()
     this.looks=[]
+    this.buggyStatorGeometry?.dispose()
+    this.buggyStatorGeometry=undefined
   }
 
   private noise():number {return effectNoise(this.serial++)}

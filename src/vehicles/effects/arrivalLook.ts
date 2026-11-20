@@ -237,13 +237,23 @@ export class ArrivalLook {
     merged.setAttribute('surfaceId', new T.Float32BufferAttribute(new Float32Array(plain.attributes.position.count), 1))
     this.mergedWarmGeometry = merged
     for (const geometry of [plain, merged]) {
-      for (const mesh of [new T.Mesh(geometry, this.ghostMat), new T.InstancedMesh(geometry, this.ghostMat, 1)]) {
-        mesh.visible = false
-        mesh.userData.arrivalGhost = true
-        this.silhouetteWarmMeshes.push(mesh)
-        this.object.add(mesh)
-      }
+      this.addSilhouetteWarmMesh(new T.Mesh(geometry, this.ghostMat))
+      this.addSilhouetteWarmMesh(new T.InstancedMesh(geometry, this.ghostMat, 1))
     }
+  }
+
+  /** Submit a cloned instance layout with the same material as this look's live ghosts. */
+  addInstancedSilhouetteWarmup(geometry: T.BufferGeometry, source: T.InstancedMesh): void {
+    const mesh = new T.InstancedMesh(geometry, this.ghostMat, source.count)
+    mesh.instanceMatrix.copy(source.instanceMatrix)
+    this.addSilhouetteWarmMesh(mesh)
+  }
+
+  private addSilhouetteWarmMesh(mesh: T.Mesh): void {
+    mesh.visible = false
+    mesh.userData.arrivalGhost = true
+    this.silhouetteWarmMeshes.push(mesh)
+    this.object.add(mesh)
   }
 
   *getPrecompileMeshes(): Iterable<T.Mesh> {

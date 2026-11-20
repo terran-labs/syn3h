@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { detailLevel, registerVehicleDetail } from '../skins/mergeStatic'
+import { markReducedShowroomDetail } from '../skins/showroom'
 import { HoverBody, type HoverSpec } from './HoverBody'
 import { HOVER_EYE } from './kit'
 
@@ -23,6 +24,7 @@ export class GameHover {
 
   constructor(readonly design: HoverSpec) {
     this.levels = [new HoverBody(design, 0, true), new HoverBody(design, 1, true), new HoverBody(design, 2, true)]
+    markReducedShowroomDetail(this.levels[1].object)
     this.object.add(...this.levels.map(h => h.object))
     this.object.updateMatrixWorld(true)
     this.bounds.setFromObject(this.levels[0].object)
@@ -48,6 +50,16 @@ export class GameHover {
     const h = this.levels[this.level]
     if (this.level === 0) { h.setVector(steer * .35); h.fan?.update(dt, throttle, running) }
     if (this.level < 2) { h.setThrottle(throttle, running); h.setLights(true, braking) }
+  }
+
+  resetMotion(): void {
+    this.setLevel(0)
+    for (const h of this.levels) {
+      h.setVector(0)
+      h.setThrottle(0, true)
+      h.setLights(true, false)
+      h.fan?.reset()
+    }
   }
 
   setColors(body: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void {

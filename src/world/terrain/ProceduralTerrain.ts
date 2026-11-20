@@ -6,6 +6,8 @@ import * as THREE from 'three/webgpu'
 import { params, worldSeed } from '../../../shared/params'
 import { seaLevel, seaLevelSpeed, snapSeaLevel } from '../seaLevel'
 import { nearestImage, wrapCoord } from '../../../shared/wrap'
+import { longFrames } from '../../core/longFrames'
+import { recordInitialTerrainGeneration } from '../../core/diagnostics'
 import type { Game, System } from '../../core/Game'
 import type { RAPIER } from '../../core/physics'
 import { applyCurve, curveParam, updateCurve } from '../curve'
@@ -107,6 +109,7 @@ export class ProceduralTerrain implements Terrain {
     // Single player: waves follow simulated time. Networking may swap in the server clock.
     setWaterClock(() => game.time)
     this.data = this.generate()
+    recordInitialTerrainGeneration(this.lastGenerateMs)
     this.sampler = new HeightSampler(this.data)
     this.look = createTerrainMaterial()
     this.look.setSummit(this.summitHeight())
@@ -117,12 +120,13 @@ export class ProceduralTerrain implements Terrain {
     this.syncIce()
     // Level of detail follows the camera once per frame, after the camera has moved.
     this.lodSystem = game.add({
+      prepareCoveredDraw: () => this.syncSceneCurve(),
       // Before each physics step, and before the vehicles' own steps: carry things across
       // the seam and keep the ground under them.
       fixedUpdate: () => { this.keepSeam(); this.syncIce() },
       // Until something calls afterCamera() itself, do the camera-dependent work here.
       update: () => { if (!this.cameraLed) this.followCamera() },
-    })
+    }, 'Terrain and collider')
     this.followCamera = () => {
       {
         // Curved horizon. Every material in the scene must take the same bend or its objects
@@ -133,23 +137,7 @@ export class ProceduralTerrain implements Terrain {
         // After the curve: level of detail also hides chunks that are over the horizon.
         this.meshes.updateLod(game.camera.position)
         this.look.setSea(seaLevel())
-        const round = curveParam.value > 0
-        if (round || this.wasRound) {
-          game.scene.traverse((o) => {
-            const m = (o as THREE.Mesh).material
-            if (!m || o instanceof AlienSkyMesh) return
-            if (round) {
-              if (Array.isArray(m)) for (const x of m) applyCurve(x)
-              else applyCurve(m)
-            }
-            // On a sphere, ground that is off screen on the flat world can be in view (the
-            // far limb from high up), so the flat world's culling boxes are wrong.
-            const u = o.userData as { flatCulled?: boolean }
-            if (round && o.frustumCulled) { u.flatCulled = true; o.frustumCulled = false }
-            else if (!round && u.flatCulled) { u.flatCulled = false; o.frustumCulled = true }
-          })
-          this.wasRound = round
-        }
+        this.syncSceneCurve()
       }
     }
     this.volcanics = game.add(new Volcanics(
@@ -157,13 +145,13 @@ export class ProceduralTerrain implements Terrain {
       () => game.renderer.toneMappingExposure,
       () => Number(params.get('sky.exposure')?.value ?? game.renderer.toneMappingExposure),
       game.camera,
-    ))
-    this.trees = game.add(new Trees(game.scene, this.sampler, game.camera))
+    ), 'Lava and sea')
+    this.trees = game.add(new Trees(game.scene, this.sampler, game.camera), 'Trees')
     this.cover = game.add(new GroundCover(
       game.scene, this.sampler, game.camera,
       () => game.renderer.toneMappingExposure / Math.max(1e-3, Number(params.get('sky.exposure')?.value ?? game.renderer.toneMappingExposure)),
       this.look,
-    ))
+    ), 'Ground cover')
     // Every vehicle in the scene (the player, bots and other players) marks its object
     // with its heat state; the grass bends under those.
     const scene = game.scene
@@ -187,15 +175,41 @@ export class ProceduralTerrain implements Terrain {
     })
   }
 
+  private syncSceneCurve(): void {
+    const round = curveParam.value > 0
+    if (round || this.wasRound) {
+      this.game.scene.traverse((o) => {
+        const m = (o as THREE.Mesh).material
+        if (!m || o instanceof AlienSkyMesh) return
+        if (round) {
+          if (Array.isArray(m)) for (const x of m) applyCurve(x)
+          else applyCurve(m)
+        }
+        // On a sphere, ground that is off screen on the flat world can be in view (the
+        // far limb from high up), so the flat world's culling boxes are wrong.
+        const u = o.userData as { flatCulled?: boolean }
+        if (round && o.frustumCulled) { u.flatCulled = true; o.frustumCulled = false }
+        else if (!round && u.flatCulled) { u.flatCulled = false; o.frustumCulled = true }
+      })
+      this.wasRound = round
+    }
+  }
+
   private generate(): TerrainData {
-    const t = performance.now()
-    const data = generateTerrain(this.seed, currentTerrainSettings())
-    configureWorldWater(data.size, this.seed)
-    // The far row and column are the image of the first: make them identical so the
-    // height field, mesh and collider are exactly periodic.
-    this.lastSeamCorrection = sealSeam(data)
-    this.lastGenerateMs = performance.now() - t
-    return data
+    const spanStart = longFrames.start()
+    try {
+      longFrames.event('terrain.generate')
+      const t = performance.now()
+      const data = generateTerrain(this.seed, currentTerrainSettings())
+      configureWorldWater(data.size, this.seed)
+      // The far row and column are the image of the first: make them identical so the
+      // height field, mesh and collider are exactly periodic.
+      this.lastSeamCorrection = sealSeam(data)
+      this.lastGenerateMs = performance.now() - t
+      return data
+    } finally {
+      longFrames.end('terrain.generate', spanStart)
+    }
   }
 
   private summitHeight(): number {
@@ -237,6 +251,7 @@ export class ProceduralTerrain implements Terrain {
     const dx = p.x > half + 4 ? -size : p.x < -half - 4 ? size : 0
     const dz = p.z > half + 4 ? -size : p.z < -half - 4 ? size : 0
     if (dx || dz) {
+      longFrames.event('terrain.seam.wrap')
       f.player.shiftBy(dx, dz)
       f.camera?.shift(dx, dz)
     }
@@ -269,11 +284,17 @@ export class ProceduralTerrain implements Terrain {
   }
 
   private moveCollider(x: number, z: number): void {
-    const cell = this.data.cell
-    this.colliderX = Math.round(x / cell) * cell
-    this.colliderZ = Math.round(z / cell) * cell
-    this.game.world.removeCollider(this.collider, true)
-    this.collider = createTerrainCollider(this.game.world, this.data, this.colliderX, this.colliderZ)
+    const spanStart = longFrames.start()
+    try {
+      longFrames.event('terrain.collider.move')
+      const cell = this.data.cell
+      this.colliderX = Math.round(x / cell) * cell
+      this.colliderZ = Math.round(z / cell) * cell
+      this.game.world.removeCollider(this.collider, true)
+      this.collider = createTerrainCollider(this.game.world, this.data, this.colliderX, this.colliderZ)
+    } finally {
+      longFrames.end('terrain.collider.move', spanStart)
+    }
   }
 
   /** Colours, snow and glow for this kind of world and its sea. */
@@ -352,34 +373,46 @@ export class ProceduralTerrain implements Terrain {
     if (this.prepared.has(key)) return Promise.resolve()
     const known = this.preparing.get(key)
     if (known) return known
-    if (this.worker === undefined) {
-      try { this.worker = typeof Worker === 'undefined' ? null : new Worker(new URL('./terrainWorker.ts', import.meta.url), { type: 'module' }) } catch { this.worker = null }
+    const spanStart = longFrames.start()
+    try {
+      if (this.worker === undefined) {
+        try { this.worker = typeof Worker === 'undefined' ? null : new Worker(new URL('./terrainWorker.ts', import.meta.url), { type: 'module' }) } catch { this.worker = null }
+      }
+      const worker = this.worker
+      if (!worker) return Promise.resolve()
+      longFrames.event('terrain.worker.request')
+      // Any failure leaves the world to be generated on the main thread (rebuildSteps); a worker
+      // that could not run or went silent is not used again.
+      const job = requestTerrain(worker, key, seed, settings).then(result => {
+        this.preparing.delete(key)
+        if ('data' in result) {
+          // Two worlds at most: the one being entered and perhaps the room's own.
+          if (this.prepared.size >= 2) this.prepared.delete(this.prepared.keys().next().value!)
+          this.prepared.set(key, result)
+        } else if ('broken' in result) {
+          console.warn('Terrain worker unavailable; generating on the main thread.', result.broken)
+          if (this.worker === worker) { worker.terminate(); this.worker = null }
+        } else console.warn('Terrain worker failed; generating on the main thread.', result.failed)
+      })
+      this.preparing.set(key, job)
+      return job
+    } finally {
+      longFrames.end('terrain.worker.prepare', spanStart)
     }
-    const worker = this.worker
-    if (!worker) return Promise.resolve()
-    // Any failure leaves the world to be generated on the main thread (rebuildSteps); a worker
-    // that could not run or went silent is not used again.
-    const job = requestTerrain(worker, key, seed, settings).then(result => {
-      this.preparing.delete(key)
-      if ('data' in result) {
-        // Two worlds at most: the one being entered and perhaps the room's own.
-        if (this.prepared.size >= 2) this.prepared.delete(this.prepared.keys().next().value!)
-        this.prepared.set(key, result)
-      } else if ('broken' in result) {
-        console.warn('Terrain worker unavailable; generating on the main thread.', result.broken)
-        if (this.worker === worker) { worker.terminate(); this.worker = null }
-      } else console.warn('Terrain worker failed; generating on the main thread.', result.failed)
-    })
-    this.preparing.set(key, job)
-    return job
   }
 
   /** Rebuild heights, mesh and collider in place, then notify listeners. */
   regenerate(): void {
+    longFrames.event('terrain.rebuild')
     // Anything staged is superseded: this builds the current parameters completely, now.
     this.building = 0
-    drain(this.rebuildSteps(0))
-    this.built = Promise.resolve()
+    const spanStart = longFrames.start()
+    try {
+      drain(this.rebuildSteps(0))
+      this.built = Promise.resolve()
+    } finally {
+      longFrames.end('terrain.rebuild', spanStart)
+    }
   }
 
   /**
@@ -389,6 +422,7 @@ export class ProceduralTerrain implements Terrain {
    * sea, trees and grass follow a piece per frame.
    */
   regenerateStaged(): Promise<void> {
+    longFrames.event('terrain.rebuild.staged')
     const token = ++this.serial
     this.building = token
     // A rebuild that throws must still end: otherwise the ground never reports ready and every
@@ -416,25 +450,41 @@ export class ProceduralTerrain implements Terrain {
     const old = this.data
     const ready = this.prepared.get(key)
     if (ready) {
-      this.prepared.delete(key)
-      this.data = ready.data
-      configureWorldWater(ready.data.size, this.seed)
-      this.lastSeamCorrection = ready.seam
-      this.lastGenerateMs = ready.ms
+      const spanStart = longFrames.start()
+      try {
+        longFrames.event('terrain.worker.adopt')
+        this.prepared.delete(key)
+        this.data = ready.data
+        configureWorldWater(ready.data.size, this.seed)
+        this.lastSeamCorrection = ready.seam
+        this.lastGenerateMs = ready.ms
+      } finally {
+        longFrames.end('terrain.worker.adopt', spanStart)
+      }
     } else this.data = this.generate()
     this.sampler.data = this.data
     this.look.setSummit(this.summitHeight())
     this.lightLake()
     stage(ready ? 'adopt worker heights' : 'generate')
-    this.game.world.removeCollider(this.collider, true)
-    this.colliderX = 0
-    this.colliderZ = 0
-    this.collider = createTerrainCollider(this.game.world, this.data)
-    this.iceKey = 'rebuilt'; this.syncIce()
+    const colliderStart = longFrames.start()
+    try {
+      this.game.world.removeCollider(this.collider, true)
+      this.colliderX = 0
+      this.colliderZ = 0
+      this.collider = createTerrainCollider(this.game.world, this.data)
+      this.iceKey = 'rebuilt'; this.syncIce()
+    } finally {
+      longFrames.end('terrain.collider.replace', colliderStart)
+    }
     stage('collider')
     this.version++
     console.info(`terrain regenerated: seed ${this.seed}, ${this.lastGenerateMs.toFixed(0)} ms${ready ? ' off the main thread' : ''}`)
-    for (const l of this.listeners) l()
+    const listenersStart = longFrames.start()
+    try {
+      for (const l of this.listeners) l()
+    } finally {
+      longFrames.end('terrain.rebuild.listeners', listenersStart)
+    }
     stage('listeners')
     yield
     if (superseded()) return
@@ -442,28 +492,48 @@ export class ProceduralTerrain implements Terrain {
     if (this.data.size === old.size && this.data.resolution === old.resolution) {
       for (const _ of this.meshes.updateSteps(this.data)) { yield; if (superseded()) return }
     } else {
-      // A new planet size: the chunk grid is sized from the tile, so build it afresh.
-      this.game.scene.remove(this.meshes.group)
-      this.meshes.dispose()
-      this.meshes = createTerrainMeshes(this.data, this.look.material)
-      if (this.lod) this.meshes.setLodDistances(this.lod[0], this.lod[1])
-      this.game.scene.add(this.meshes.group)
+      const spanStart = longFrames.start()
+      try {
+        // A new planet size: the chunk grid is sized from the tile, so build it afresh.
+        this.game.scene.remove(this.meshes.group)
+        this.meshes.dispose()
+        this.meshes = createTerrainMeshes(this.data, this.look.material)
+        if (this.lod) this.meshes.setLodDistances(this.lod[0], this.lod[1])
+        this.game.scene.add(this.meshes.group)
+      } finally {
+        longFrames.end('terrain.mesh.replace', spanStart)
+      }
     }
     stage('meshes')
     yield
     if (superseded()) return
     mark = performance.now()
-    this.volcanics.rebuild()
+    const volcanicsStart = longFrames.start()
+    try {
+      this.volcanics.rebuild()
+    } finally {
+      longFrames.end('terrain.rebuild.volcanics', volcanicsStart)
+    }
     stage('volcanics')
     yield
     if (superseded()) return
     mark = performance.now()
-    this.trees.rebuild()
+    const treesStart = longFrames.start()
+    try {
+      this.trees.rebuild()
+    } finally {
+      longFrames.end('terrain.rebuild.trees', treesStart)
+    }
     stage('trees')
     yield
     if (superseded()) return
     mark = performance.now()
-    this.cover.rebuild()
+    const coverStart = longFrames.start()
+    try {
+      this.cover.rebuild()
+    } finally {
+      longFrames.end('terrain.rebuild.cover', coverStart)
+    }
     stage('cover')
   }
 

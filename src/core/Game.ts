@@ -1,3 +1,5 @@
+import { longFrames } from './longFrames'
+import { installLongFrameRenderer } from './longFrameRenderer'
 /**
  * Game: owns the renderer, scene, physics world and the fixed step loop.
  *
@@ -11,7 +13,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { canCreateWebGL2, NoGraphicsError, webgpuUsable } from './graphicsSupport'
-import { installRenderDiagnostics, recordStartupPhase, showRendererLost, startupTiming, timeStartup } from './diagnostics'
+import { installRenderDiagnostics, recordCoveredVehicleDraw, recordStartupGameDraw, recordStartupPhase, recordStartupPrecompile, showRendererLost, startupTiming, timeStartup } from './diagnostics'
 import { guardDevice, runGuarded, type GuardedRenderer } from './deviceLoss'
 import { drawFrame, gpuDeadlineMs, startRenderer, viewState, type PostChain } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
@@ -20,7 +22,16 @@ import { QualityController, reportLoading, type FrameMetrics } from './quality'
 import { PipelineCounter } from './performanceHistory'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
 
+/** A normal frame through the production post chain, drawn with the entry overlay opaque. */
+export interface CoveredWarm {
+  draw(vehicleKind?: string): void
+  yieldFrame(label: string): Promise<void>
+}
+
 export interface System {
+  warmCovered?(warm: CoveredWarm): Promise<void>
+  /** Apply scene-wide material inputs to any model temporarily attached for this draw. */
+  prepareCoveredDraw?(): void
   /** Apply forces. Runs before every physics step. */
   fixedUpdate?(dt: number): void
   /** Read results. Runs after every physics step. */
@@ -55,6 +66,8 @@ export class Game {
   fps = 0
 
   readonly quality = new QualityController()
+  vehicleKind = (): string => 'unknown'
+  readLongFrames(after = 0) { return longFrames.read(after) }
   private readonly pipelineCounter = new PipelineCounter()
   readonly performance: FrameMetrics = { fps: 0, frameMs: 0, physicsMs: 0, drawCalls: 0, triangles: 0, firstFrameMs: null }
 
@@ -111,6 +124,7 @@ export class Game {
     // A dropped WebGPU instance or a device destroyed underneath us counts as that loss too, and
     // three's error scopes stop rejecting into the page (deviceLoss.ts).
     guardDevice(this.renderer as unknown as GuardedRenderer)
+    installLongFrameRenderer(this.renderer)
     this.quality.attachRenderer(this.renderer)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.shadowMap.enabled = true
@@ -128,6 +142,14 @@ export class Game {
     // and let the failure reach the page, which asks for a reload. Nothing else has started.
     try { await timeStartup('wait for physics after the renderer', () => physics) } catch (error) { this.quality.dispose(); throw error }
     this.world = createWorld(worldGravity.value)
+    // Bot and player vehicles use the same Rapier world. Capture actual collider creation
+    // inside construction separately from mesh creation and the enclosing bot spawn.
+    const createCollider = this.world.createCollider
+    this.world.createCollider = function (descriptor, parent) {
+      const start = longFrames.start()
+      try { return createCollider.call(this, descriptor, parent) }
+      finally { longFrames.end('Physics collider creation', start) }
+    }
     params.onChange((id, value) => {
       if (id === worldGravity.def.id) this.world.gravity = { x: 0, y: -(value as number), z: 0 }
     })
@@ -151,14 +173,14 @@ export class Game {
   }
 
   /** Insert before an existing system, or append if the anchor is absent. */
-  add<T extends System>(system: T, before?: System): T {
-    const at = before ? this.systems.indexOf(before) : -1
+  add<T extends System>(system: T, before?: System | string): T {
+    const at = before && typeof before !== 'string' ? this.systems.indexOf(before) : -1
     if (at < 0) this.systems.push(system)
     else this.systems.splice(at, 0, system)
     // Before the loop starts, each add closes the phase that built the system. In order,
     // main adds environment and sky, the player vehicle, bots, the chase camera, then the
     // HUD after the shell and lobby are built.
-    if (this.buildMark) this.buildMark = recordStartupPhase(`build until add ${this.systems.length}: ${systemName(system)}`, this.buildMark)
+    if (this.buildMark) this.buildMark = recordStartupPhase(`build until add ${this.systems.length}: ${typeof before === 'string' ? before : systemName(system)}`, this.buildMark)
     return system
   }
 
@@ -189,6 +211,7 @@ export class Game {
    */
   pause(): void {
     if (this.paused) return
+    longFrames.pause()
     this.paused = true
     if (!this.started) return
     this.renderer.setAnimationLoop(null)
@@ -220,11 +243,15 @@ export class Game {
    * renderer is lost the world still steps (the room and other players go on) but nothing is
    * drawn and no frame's work can throw a dead device's errors into the page.
    */
-  private frame(): void { runGuarded(this.renderer as unknown as GuardedRenderer, () => this.step()) }
+  private frame(): void {
+    try { runGuarded(this.renderer as unknown as GuardedRenderer, () => this.step()) }
+    finally { longFrames.finish(performance.now()) }
+  }
 
   private step(): void {
     const now = performance.now()
     this.frames++
+    longFrames.begin(now, this.frames, this.backend, this.quality.governor.level, this.vehicleKind())
     if (this.loopStart) { recordStartupPhase('game.start to first animation frame', this.loopStart); this.loopStart = 0 }
     const frameMs = now - this.last
     const frameDt = Math.min(0.25, frameMs / 1000)
@@ -241,7 +268,9 @@ export class Game {
     let steps = 0
     while (this.accumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
       for (const s of this.systems) s.fixedUpdate?.(FIXED_DT)
+      const physicsStep = longFrames.start()
       this.world.step()
+      longFrames.end('Physics step', physicsStep)
       for (const s of this.systems) s.postPhysics?.(FIXED_DT)
       this.accumulator -= FIXED_DT
       this.time += FIXED_DT
@@ -259,10 +288,21 @@ export class Game {
     // Behind the opaque galaxy lobby nobody can see the world: draw it twice a second, enough
     // to keep it warm for the descent, instead of every frame under a full-screen shader.
     // The first frames always draw: loading ends, and shaders compile, on a real frame.
+    longFrames.end('System updates', updateStart)
     const view = this.view()
+    longFrames.renderContext(view, this.scene.userData.playerVehicleCache?.current)
     // A lost device draws nothing: no render, no buffer, no pipeline (see frame()).
     const draw = !this.holdDraws && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
-    if (draw) { drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs); this.lastDraw = now }
+    if (draw) {
+      const watchingDraw = startupTiming.firstWorldFrameMs === undefined ||
+        (view === 'playing' && startupTiming.playRequestMs !== undefined && startupTiming.firstPlayableFrameMs === undefined)
+      const previousDraws = watchingDraw ? this.renderer.info.render.drawCalls : 0
+      drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs)
+      longFrames.end('Render submission', renderStart)
+      this.lastDraw = now
+      // A render invocation without draw calls (or an earlier covered draw) is not this frame.
+      if (watchingDraw && this.renderer.info.render.drawCalls > previousDraws) recordStartupGameDraw(view === 'playing')
+    }
     if (this.startupFrames < 3) this.recordStartupFrame(updateStart, renderStart)
     const metrics = this.performance
     metrics.fps = this.fps
@@ -292,13 +332,20 @@ export class Game {
    * too. three's compileAsync is not used: in r187 it built shared uniform bind groups for its
    * own render context, and materials it built read camera uniforms that never updated.
    */
-  async precompile(): Promise<void> {
+  async precompile(progress?: (label: string) => void): Promise<void> {
     const start = performance.now()
     // Drawn for real, through the frames' own passes, so every shader and pipeline is built
     // exactly as play will use it, with culling off so what the camera cannot see yet is in
     // too. Each such frame may stall while it compiles: call this only while the world is
     // covered and the cover is still (the galaxy holding in the world's air).
-    for (let i = 0; i < 2; i++) {
+    const yieldFrame = async (label: string) => {
+      progress?.(label)
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    }
+    const draw = (vehicleKind?: string) => {
+      const drawStart = longFrames.start()
+      longFrames.event('Covered precompile')
+      for (const system of this.systems) system.prepareCoveredDraw?.()
       const culled: THREE.Object3D[] = []
       this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
       const hidden: THREE.Object3D[] = []
@@ -315,10 +362,36 @@ export class Game {
       } finally {
         for (let j = hidden.length - 1; j >= 0; j--) hidden[j].visible = false
         for (const o of culled) o.frustumCulled = true
+        if (vehicleKind) recordCoveredVehicleDraw(vehicleKind, performance.now() - drawStart)
+        longFrames.end('Covered precompile', drawStart)
       }
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     }
-    try { performance.measure('syn3h:precompile', { start, end: performance.now() }) } catch { /* Older engines. */ }
+    const warm = { draw, yieldFrame }
+    for (let i = 0; i < 2; i++) {
+      await yieldFrame('Preparing world')
+      draw()
+    }
+    for (const system of [...this.systems]) await system.warmCovered?.(warm)
+    // Submission can return before Metal finishes work for the first draw. Drain our
+    // world queue while the cover is still opaque, independently of the galaxy renderer.
+    const backend = this.renderer.backend as { device?: GPUDevice; gl?: WebGL2RenderingContext }
+    await yieldFrame('Finishing graphics')
+    if (backend.device) await backend.device.queue.onSubmittedWorkDone()
+    else if (backend.gl) {
+      const gl = backend.gl
+      const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
+      if (fence) {
+        try {
+          gl.flush()
+          while (!gl.isContextLost() && gl.clientWaitSync(fence, 0, 0) === gl.TIMEOUT_EXPIRED) {
+            await yieldFrame('Finishing graphics')
+          }
+        } finally { gl.deleteSync(fence) }
+      }
+    }
+    const end = performance.now()
+    recordStartupPrecompile(end - start)
+    try { performance.measure('syn3h:precompile', { start, end }) } catch { /* Older engines. */ }
   }
 
   private postChain: PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> | null = null

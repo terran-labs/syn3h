@@ -1,3 +1,4 @@
+import { longFrames } from '../core/longFrames'
 import { params } from '../../shared/params'
 import { QUALITY, type QualitySource, type QualityState } from '../core/quality'
 import type { PerformanceSnapshot, PerformanceSource } from '../core/performance'
@@ -88,7 +89,9 @@ export class PerformancePanel {
       <details class="wi-group performance-diagnostics"><summary><span>Diagnostics</span><small></small></summary>
       <div class="performance-body">
       <svg class="performance-chart" viewBox="0 0 288 64" role="img" aria-label="Frame time history"><path d="M0 63H288"/><polyline fill="none"/></svg>
-      <p class="performance-history"></p><dl></dl><p class="performance-recovery" role="status"></p>
+      <p class="performance-history"></p><p class="performance-long-frames" style="user-select:text"></p><button type="button" data-performance="copy-report">Copy diagnostics</button>
+      <span data-performance="copy-status" role="status"></span>
+      <textarea data-performance="copy-text" aria-label="Diagnostics report" rows="8" readonly hidden></textarea><dl></dl><p class="performance-recovery" role="status"></p>
       <button type="button" data-performance="reload" hidden>Reload to recover</button></div></details>`
     this.select = this.element.querySelector('select')!
     this.diagnostics = this.element.querySelector('details')!
@@ -114,6 +117,23 @@ export class PerformancePanel {
     this.recommendation.querySelector('[data-performance=lower]')!.addEventListener('click', () => this.source?.lowerRecommendedTier(), { signal })
     this.recommendation.querySelector('[data-performance=bots]')!.addEventListener('click', () => this.source?.fewerRecommendedBots?.(), { signal })
     this.element.querySelector('[data-performance=reload]')!.addEventListener('click', () => location.reload(), { signal })
+    this.element.querySelector('[data-performance=copy-report]')!.addEventListener('click', async () => {
+      const status = this.element.querySelector<HTMLElement>('[data-performance=copy-status]')!
+      const fallback = this.element.querySelector<HTMLTextAreaElement>('[data-performance=copy-text]')!
+      const report = this.source?.diagnosticReport?.()
+      fallback.hidden = true
+      if (!report) { status.textContent = 'Diagnostics are initializing.'; return }
+      try {
+        await navigator.clipboard.writeText(report)
+        status.textContent = 'Diagnostics copied.'
+      } catch {
+        fallback.value = report
+        fallback.hidden = false
+        fallback.focus()
+        fallback.select()
+        status.textContent = 'Select and copy the report below.'
+      }
+    }, { signal })
     if (quality) this.configureQuality(quality)
     inspector?.addCard(PerformancePanel.CARD, 'Performance', this.element, () => this.state ? `${this.state.name} · Auto ${this.state.auto ? 'on' : 'off'}${this.snapshot?.recommendation ? ' · Running slow' : ''}` : '',
       { after: 'world', owns: () => this.owned(), fill: () => this.fill() })
@@ -289,6 +309,7 @@ export class PerformancePanel {
     }
     this.renderStatus()
     if (!snapshot.visible) return
+    this.element.querySelector('.performance-long-frames')!.textContent = longFrames.summary()
     const { environment } = snapshot
     const history = snapshot.history.slice(-120), latest = history.at(-1)
     const ceiling = Math.max(34, ...history.map(point => Number.isFinite(point.p95Ms) ? point.p95Ms : 0))
