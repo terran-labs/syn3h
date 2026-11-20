@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { Scene } from 'three/webgpu'
+import { Scene, error as rendererError } from 'three/webgpu'
+import { guardDevice } from '../../src/core/deviceLoss'
 import { Game, type CoveredWarm, type System } from '../../src/core/Game'
 import { startupReportLines } from '../../src/core/diagnostics'
 import { Shell } from '../../src/ui/Shell'
@@ -57,4 +58,34 @@ it('opens play at the overall deadline and prevents a late system from drawing',
   await vi.advanceTimersByTimeAsync(5)
   expect(render).toHaveBeenCalledTimes(calls)
   expect(startupReportLines().join('\n')).toMatch(/Entry warm-up timed out/)
+})
+
+it('ends covered entry and reports one loss when its pending pipelines reject', async () => {
+  const reload = vi.fn(), errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const device = {
+    lost: new Promise(() => {}), popErrorScope: async () => null,
+    createRenderPipelineAsync: async () => { throw new Error('A valid external Instance reference no longer exists') },
+  }
+  const { shell, entering } = entry([{
+    async warmCovered() {
+      await Promise.all([1, 2, 3].map(async id => {
+        try { await device.createRenderPipelineAsync() }
+        catch (err) { rendererError(`WebGPURenderer: Async render pipeline creation failed (${id}): ${(err as Error).message}`) }
+      }))
+    },
+  }], () => new Promise<void>(() => {}))
+  const renderer = shell.game.renderer
+  Object.assign(renderer.backend.device, device)
+  renderer.onDeviceLost = reload
+  guardDevice(renderer)
+  // Submit through the same guarded device used by the renderer.
+  device.createRenderPipelineAsync = renderer.backend.device.createRenderPipelineAsync
+  await vi.advanceTimersByTimeAsync(15_001)
+  await entering
+  expect(reload).toHaveBeenCalledOnce()
+  expect(shell.game.holdDraws).toBe(false)
+  expect(shell.closeMenu).toHaveBeenCalledOnce()
+  expect(errors).not.toHaveBeenCalled()
+  expect(warnings.mock.calls.filter(([line]) => String(line).includes('outstanding render pipelines'))).toHaveLength(1)
 })
