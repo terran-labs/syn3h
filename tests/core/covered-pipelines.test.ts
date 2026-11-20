@@ -1,6 +1,6 @@
 import type { WebGPURenderer } from 'three/webgpu'
 import { expect, it, vi } from 'vitest'
-import { CoveredPipelines } from '../../src/core/coveredPipelines'
+import { CoveredPipelines, registerCoveredComposite } from '../../src/core/coveredPipelines'
 
 it('issues both pending pipelines before confirmation and restores normal draws after a failure', async () => {
   const finish: (() => void)[] = []
@@ -32,4 +32,30 @@ it('issues both pending pipelines before confirmation and restores normal draws 
   expect(backend.draw).toBe(submit)
   backend.draw(variants[0])
   expect(submit).toHaveBeenCalledTimes(3)
+})
+
+it('defers the final glass quad but submits intermediate texture generators during discovery', async () => {
+  const submit = vi.fn()
+  const create = vi.fn((_object: object, pending: Promise<void>[] | null) => {
+    pending?.push(Promise.resolve())
+  })
+  const backend = { device: {}, createRenderPipeline: create, draw: submit }
+  const renderer = { backend, _nodes: { nodeFrame: { frameId: 0 } } } as unknown as WebGPURenderer
+  const batch = CoveredPipelines.forRenderer(renderer, {})!
+  const quad = {}
+  registerCoveredComposite({ _quadMesh: quad })
+  const final = { object: quad, scene: {}, pipeline: {}, geometry: {} }
+  const intermediate = { ...final, object: {} }
+  batch.run(true, () => {
+    for (const pass of [intermediate, final]) {
+      backend.createRenderPipeline(pass, null)
+      backend.draw(pass)
+    }
+  })
+  expect(create.mock.calls[0][1]).toBeNull()
+  expect(create.mock.calls[1][1]).toHaveLength(1)
+  expect(submit.mock.calls).toEqual([[intermediate]])
+  expect(await batch.ready()).toBe(true)
+  batch.run(false, () => backend.draw(final))
+  expect(submit).toHaveBeenLastCalledWith(final)
 })

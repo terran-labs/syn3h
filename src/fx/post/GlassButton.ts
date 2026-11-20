@@ -1,3 +1,4 @@
+import { longFrames } from '../../core/longFrames'
 import { Vector4 } from 'three/webgpu'
 import { uniform, uniformArray } from 'three/tsl'
 
@@ -92,6 +93,7 @@ export class GlassButton {
     const c = this.canvas.getBoundingClientRect()
     const rects = this.controls.map(b => b.hidden ? null : b.getBoundingClientRect())
     this.lastBoundsMs = performance.now() - start
+    longFrames.end('Glass DOM bounds', start)
     this.viewport.value.set(c.width, c.height, Number(this.dark.matches), Number(this.clear))
     const boxes = this.boxes.array as Vector4[]
     for (const v of boxes) v.z = 0
