@@ -1,5 +1,4 @@
-import { createGlassGaussian } from '../../liquid-glass/gaussian'
-import { registerCoveredComposite } from '../../core/coveredPipelines'
+import type { GlassPost } from './GlassPost'
 import { longFrames } from '../../core/longFrames'
 /**
  * The in-game post chain: what turns the rendered world into the picture.
@@ -47,8 +46,6 @@ import { sss } from 'three/addons/tsl/display/SSSNode.js'
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { traa } from 'three/addons/tsl/display/TRAANode.js'
-import { composeGlass } from '../../liquid-glass/compose'
-import { GlassButton } from './GlassButton'
 import { CurvedVelocity } from './CurvedVelocity'
 import { cloudVolume, compositeClouds } from './clouds'
 import { AlienSkyMesh, rayLight, skyCloudField, skyScatter } from '../../world/sky/AlienSkyMesh'
@@ -113,9 +110,7 @@ interface Built {
   giNode: N | null
   temporalNode: N | null
   clouds: boolean
-  glassBlur: ReturnType<typeof createGlassGaussian> | null
   pipeline: THREE.RenderPipeline
-  restingGlass: THREE.RenderPipeline | null
   disposables: Array<{ dispose?(): void; renderTarget?: { dispose(): void } }>
 }
 
@@ -155,7 +150,6 @@ export class PostChain {
     grain: uniform(0.35),
     seed: uniform(0),
     heat: uniform(0.6),
-    glassMaterial: uniform(new THREE.Vector4()),
     time: uniform(0),
     // Camera, for rebuilding positions from depth (three's camera nodes describe the post
     // quad's camera inside the pipeline, so the scene camera is passed in by hand).
@@ -186,15 +180,8 @@ export class PostChain {
   private readonly burst = createBurstUniforms()
   private burstClock = 0
 
-  private covered = false
-  private glass: GlassButton | null = null
-  private readonly glassSourceWidth = uniform(1)
-  private readonly bufferSize = new THREE.Vector2()
-  private glassBuilt = false
-  private readonly glassMode = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('glass')
-  setCovered(covered: boolean): void { this.covered = covered }
-
-  constructor(private readonly host: PostChainHost, private readonly sun: SunSource) {}
+  setCovered(covered: boolean): void { if (this.glass) this.glass.covered = covered }
+  constructor(private readonly host: PostChainHost, private readonly sun: SunSource, private readonly glass?: GlassPost) {}
 
   render(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, _frameMs?: number): void {
     const budget = this.host.quality.postBudget
@@ -247,8 +234,7 @@ export class PostChain {
     const composeOn = effects && (motionOn || P.postHeat.value > 0)
     const historyKey = temporalOn ? ['world.curve', 'world.seed', 'terrain.kind', 'terrain.planetSize', 'camera.mode'].map(id => params.get(id)?.value).join('|') : ''
     const key = `${debug}|${tier}|${motionOn}|${composeOn}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${temporalOn}|${historyKey}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
-    const warmGlass = this.covered && !debug && (this.glassMode === 'inline' || this.glassMode === 'target')
-    if (this.built?.key !== key || (warmGlass && !this.glassBuilt)) {
+    if (this.built?.key !== key || (this.glass?.covered && !debug && !this.glass.built)) {
       const start = longFrames.start()
       try { this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn) }
       finally { longFrames.end('Post chain rebuild', start) }
@@ -296,19 +282,8 @@ export class PostChain {
     if (built.raysTex) built.raysTex.autoUpdate = sunLit && shaftAmount > 0
     this.sun.setVolumetricCloudsActive?.(built.clouds)
     try {
-      if (this.glassBuilt && this.glass) {
-        u.glassMaterial.value.set(P.glassThickness.value, P.glassBevel.value, P.glassIndex.value, P.glassDispersion.value)
-        this.glass.update()
-        const view = this.glass.viewport.value
-        built.glassBlur?.update(view.x, view.y, this.covered || this.glass.hasSurface)
-      }
-      // Discover and submit both real composites under the entry overlay.
-      // During play exactly one runs. Idle press-only controls use the same
-      // GPU program as six ordinary controls, with no merge field or branch.
-      if (built.restingGlass && this.covered) built.restingGlass.render()
-      if (built.restingGlass && !this.covered && !this.glass?.pairSlots?.value.z) built.restingGlass.render()
+      if (this.glass?.built) this.glass.render(built.pipeline)
       else built.pipeline.render()
-      if (this.glassBuilt) this.glass?.present()
     } catch (error) {
       this.sun.setVolumetricCloudsActive?.(false)
       throw error
@@ -317,8 +292,7 @@ export class PostChain {
 
   /** Free the pipeline and every target it made. Safe to repeat. */
   release(): void {
-    this.glass?.hide()
-    this.glassBuilt = false
+    this.glass?.release()
     this.sun.setVolumetricCloudsActive?.(false)
     if (!this.built) return
     this.built.pipeline.dispose()
@@ -327,7 +301,7 @@ export class PostChain {
   }
 
   dispose(): void {
-    this.glass?.dispose(); this.glass = null
+    this.glass?.dispose()
     this.release(); this.reportActive(false)
     // The sky's cheap rays follow this chain's settings; without it they stop.
     if (this.sky) this.sky.rays.strength.value = 0
@@ -399,8 +373,7 @@ export class PostChain {
   private updateSun(camera: THREE.Camera, renderer: THREE.WebGPURenderer): number {
     const sun = this.sun.sunDirection
     const cam = camera as THREE.PerspectiveCamera
-    const size = renderer.getDrawingBufferSize(this.bufferSize)
-    this.glassSourceWidth.value = size.x
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2())
     this.u.aspect.value = size.y > 0 ? size.x / size.y : 16 / 9
     camera.getWorldDirection(this.forward)
     const inFront = this.forward.dot(sun) > 0.02
@@ -709,64 +682,18 @@ export class PostChain {
       return vec4(c, 1)
     })
 
-    let glassBlur: ReturnType<typeof createGlassGaussian> | null = null
-    let restingGlass: THREE.RenderPipeline | null = null
     let out: N = graded()
-    if (this.covered && !debug && (this.glassMode === 'target' || this.glassMode === 'inline')) {
-      const glass = this.glass ??= new GlassButton(renderer.domElement, new URLSearchParams(location.search).get('glassSet') === 'one' ? 1 : 6)
-      const finished: N = this.glassMode === 'target' ? rtt(out, null, null, { type: THREE.HalfFloatType }) : null
-      if (finished) disposables.push(finished)
-      const original = finished ? finished.sample(uv()) : out
-      const sample = (at: N) => {
-        if (finished) return finished.sample(at).rgb
-        const display = (coord: N) => renderOutput(vec4(color.sample(coord).rgb, 1), toneMap, renderer.outputColorSpace).rgb
-        return original.rgb.add(display(at).sub(display(uv())))
-      }
-      // Under trial: generate lower levels of the source already used by the
-      // composite, and sample those for frost without another full-size target.
-      let filtered: ((coord: N, footprint: N) => N) | undefined
-      const blurMode = new URLSearchParams(location.search).get('glassBlur')
-      let blurred: ((at: N) => N) | undefined
-      if (blurMode !== 'direct') {
-        const source = finished ?? color
-        const targetTexture = finished ? finished.value : temporalNode ? temporalNode.getTextureNode().value : scenePass.getTexture('output')
-        if (targetTexture) {
-          targetTexture.generateMipmaps = true
-          targetTexture.minFilter = THREE.LinearMipmapLinearFilter
-          const displaySample = (coord: N, footprint: N) => {
-            const level = max(footprint.mul(this.glassSourceWidth).div(glass.viewport.x.max(1)), 1).log2()
-            const raw = source.sample(coord).level(level).rgb
-            return finished ? raw : renderOutput(vec4(raw, 1), toneMap, renderer.outputColorSpace).rgb
-          }
-          const correction = finished ? vec3(0) : original.rgb.sub(renderOutput(vec4(color.sample(uv()).rgb, 1), toneMap, renderer.outputColorSpace).rgb)
-          if (blurMode !== 'mip' && !this.glass.clearMaterial) {
-            glassBlur = createGlassGaussian(at => displaySample(at, float(2)), glass.viewport)
-            for (const pass of glassBlur.passes) registerCoveredComposite(pass)
-            const blur = glassBlur
-            blurred = at => blur.sample(at).add(correction)
-            disposables.push(blur)
-          }
-          filtered = (coord, footprint) => displaySample(coord, footprint).add(correction)
-        }
-      }
-      if (glass.pressOnly && glass.pairSlots && blurred) {
-        const rest = composeGlass(original, sample, glass, u.glassMaterial, filtered, blurred, false)
-        restingGlass = new THREE.RenderPipeline(renderer, velocity ? rest.context({ velocity }) : rest)
-        restingGlass.outputColorTransform = false
-        registerCoveredComposite(restingGlass)
-        disposables.push(restingGlass)
-      }
-      out = composeGlass(original, sample, glass, u.glassMaterial, filtered, blurred)
-      this.glassBuilt = true
+    if (this.glass?.covered && !debug) {
+      out = this.glass.build(out, color, renderer, toneMap, velocity, temporalNode, scenePass, disposables)
     }
     // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
     if (debug === 1 && aoNode) out = vec4(vec3(aoNode.getTextureNode().sample(uv()).r), 1)
     if (debug === 2 && contactTex) out = vec4(vec3(contactTex), 1)
     if (debug === 3 && raysRef) out = vec4(raysRef.sample(uv()).r, maskRef.sample(uv()).a, 0, 1)
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
-    if (this.glassBuilt) registerCoveredComposite(pipeline)
+    this.glass?.register(pipeline)
     pipeline.outputColorTransform = false
-    this.built = { key, pipeline, restingGlass, glassBlur, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
+    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
     this.builds++
   }
 }

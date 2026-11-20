@@ -34,7 +34,7 @@ import { Materialize } from './vehicles/effects/Materialize'
 import { onZorbPulse, warmZorbShields } from './vehicles/zorb'
 import type { Vehicle } from './vehicles/Vehicle'
 import { createEnvironment } from './world/Environment'
-import { createPostChain } from './fx/post/PostChain'
+import { PostChain } from './fx/post/PostChain'
 import { createTerrain } from './world'
 import * as planets from './world/planets'
 import { WaterEffects } from './world/water/WaterEffects'
@@ -61,7 +61,13 @@ async function main(): Promise<void> {
   game.quality.attachTerrain(terrain)
   const environment = game.add(createEnvironment(game, terrain), 'Environment and sky')
   // Post effects follow the player's settings and the current rendering budget.
-  game.setPostChain(createPostChain(game, environment))
+  const mode = query.get('glass')
+  let glass
+  if (mode === 'inline' || mode === 'target') {
+    try { const { GlassPost } = await import('./fx/post/GlassPost'); glass = new GlassPost(mode) }
+    catch (error) { console.warn('Glass shader unavailable, using CSS', error) }
+  }
+  game.setPostChain(new PostChain(game, environment, glass))
 
   const spawn = terrain.spawnPoint(0)
   // The vehicle comes from ?vehicle=..., else the choice saved by the lobby, else the Syn3h buggy.

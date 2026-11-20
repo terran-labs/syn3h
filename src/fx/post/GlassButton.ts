@@ -7,6 +7,18 @@ const panel = '.hud-navigation .inspector-toggle.liquid-glass'
 const round = '.touch-actions .liquid-glass.glass-round'
 const vectors = (count: number) => Array.from({ length: count }, () => new Vector4())
 
+/** The authored RGB token and its production CSS equivalent use display RGB. */
+export function readGlassTint(value: string): [number, number, number, number] | null {
+  const hex = /^#([a-f\d]{3,4}|[a-f\d]{6}|[a-f\d]{8})$/i.exec(value)
+  if (hex) {
+    const digits = hex[1].length <= 4 ? [...hex[1]].map(c => c + c).join('') : hex[1]
+    const channel = (at: number) => parseInt(digits.slice(at, at + 2), 16) / 255
+    return [channel(0), channel(2), channel(4), digits.length === 8 ? channel(6) : 1]
+  }
+  const rgb = /^rgb\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\/\s*([\d.]+)\s*\)$/.exec(value)
+  return rgb ? [+rgb[1] / 255, +rgb[2] / 255, +rgb[3] / 255, +rgb[4]] : null
+}
+
 /** The opt-in uses one fixed buffer layout from covered entry to exit. Spare
  * slots cost a box test, but showing a control never changes the shader graph. */
 export class GlassButton {
@@ -139,6 +151,14 @@ export class GlassButton {
     if (!this.controls.length || !this.controls[0].isConnected) {
       this.controls = Array.from(document.querySelectorAll<HTMLElement>(this.capacity === 1 ? panel : panel + ',' + round))
       for (const b of this.controls) {
+        const actions = b.closest<HTMLElement>('.touch-actions')
+        if (this.pairSlots && actions) actions.dataset.glassContainer = 'thumb-actions'
+        if (this.brake && b.dataset.action === 'brakes' && !b.querySelector('.brake-glass-label')) {
+          const label = document.createElement('span')
+          label.className = 'brake-glass-label'
+          label.textContent = b.textContent
+          b.replaceChildren(label)
+        }
         this.resize.observe(b)
         for (let el: HTMLElement | null = b; el; el = el.parentElement) {
           this.changes.observe(el, { attributes: true, attributeOldValue: true, attributeFilter: ['class', 'hidden', 'style', 'data-hand', 'data-ui-frost', 'data-gfx', 'aria-pressed'] })
@@ -171,7 +191,7 @@ export class GlassButton {
       if (!b.checkVisibility({ opacityProperty: true, visibilityProperty: true }) || b.closest('[data-ui-frost="off"]')) continue
       if (this.motion.size && Array.from(this.motion.keys()).some(el => el.contains(b))) continue
       const token = b.matches('[aria-pressed="true"], .is-current, :active, .held') ? '--glass-body-on' : b.matches(':hover') ? '--glass-body-hover' : '--glass-body'
-      const rgba = /^rgb\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\/\s*([\d.]+)\s*\)$/.exec(style.getPropertyValue(token).trim())
+      const rgba = readGlassTint(style.getPropertyValue(token).trim())
       const filter = /^blur\(([\d.]+)px\)\s+saturate\(([\d.]+)\)\s+brightness\(([\d.]+)\)$/.exec(style.getPropertyValue('--glass-frost').trim())
       if (!rgba || !filter) continue
       const i = this.drawn.size
@@ -179,7 +199,7 @@ export class GlassButton {
       const radius = (s: string) => Math.min(half, s.endsWith('%') ? parseFloat(s) * half / 50 : parseFloat(s))
       boxes[i].set(rect.left - c.left + rect.width / 2, rect.top - c.top + rect.height / 2, rect.width / 2, rect.height / 2)
       ;(this.radii.array[i] as Vector4).set(radius(style.borderTopLeftRadius), radius(style.borderTopRightRadius), radius(style.borderBottomLeftRadius), radius(style.borderBottomRightRadius))
-      ;(this.bodies.array[i] as Vector4).set(+rgba[1] / 255, +rgba[2] / 255, +rgba[3] / 255, Math.min(+rgba[4], 0.065))
+      ;(this.bodies.array[i] as Vector4).set(rgba[0], rgba[1], rgba[2], Math.min(rgba[3], 0.065))
       ;(this.filters.array[i] as Vector4).set(+filter[1], +filter[2], Number(this.hover.matches && b.matches(':hover')), Number(this.pressed === b || b.matches(':active, .held')))
       this.drawn.add(b)
       if (this.pairSlots && b.dataset.action === 'zorb') {
