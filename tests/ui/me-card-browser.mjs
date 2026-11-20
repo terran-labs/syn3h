@@ -20,6 +20,8 @@ const ready = async page => {
 }
 const meCard = '.wi-card[data-section="you"]'
 async function openMe(page) {
+  await page.waitForFunction(() => window.syn3h.shell.playing && !window.syn3h.shell.transitioning, null, { timeout: 90000 })
+  await page.evaluate(() => window.syn3h.shell.showCard('you'))
   const card = page.locator(meCard)
   // The panels appear once the arrival has finished, which a loaded machine can stretch.
   await card.waitFor({ state: 'visible', timeout: 90000 })
