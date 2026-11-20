@@ -47,7 +47,11 @@ export function mergeReferencePair(separate: N, group: N, glass: N, sample: (p: 
         const luma = dot(bg, vec3(.2126, .7152, .0722))
         const light = float(.9).sub(luma.mul(.59))
         const opacity = light.add(dark.mul(max(luma.sub(.5), 0).pow(2)).mul(1.22).div(max(luma,.001)))
-        const hair = clamp(float(.5).sub(exterior).mul(group).add(.5), 0, 1)
+        // Facing tips lose most of the isolated cap's dark hairline.
+        // Native open-gap captures show a weaker, broader exterior falloff.
+        const hairWidth = float(.5).add(float(1).sub(slope).mul(.75))
+        const hair = clamp(hairWidth.sub(exterior).mul(group).add(.5), 0, 1)
+          .mul(slope.pow(1.7))
         const direction = float(1).sub(gradient.y.abs().div(slope).pow(2).mul(mix(.69, 1, dark)))
         const halo = max(gradient.y.add(.2).div(1.2), 0).mul(.014)
           .mul(clamp(float(1).sub(exterior.div(14)), 0, 1))
@@ -63,8 +67,11 @@ export function mergeReferencePair(separate: N, group: N, glass: N, sample: (p: 
           const neck = squared.mul(squared).negate().exp()
           const reach = radius.mul(mix(1.4, .767, fraction))
           const exponent = mix(float(8.75).sub(gradient.y.abs().mul(.34)), 4.28, fraction)
+          // The native optical depth decays faster on the 30-point cap
+          // than on the 24-point cap. The two weights share one gradient.
+          const decay = mix(.24, .94, fraction)
           const gain = clamp(float(1).add(distance.div(reach)), .0001, 1)
-            .pow(exponent.mul(neck).mul(.78))
+            .pow(exponent.mul(neck).mul(decay)).mul(float(1).sub(neck.mul(.11)))
           const folded = (at: N, footprint: N) => filtered(uv().add(at.sub(uv()).mul(gain)), footprint)
           const face = regularGlass(vec2(radius), distance, gradient, uv(), size, dark, sample, folded, blurred)
           bg.assign(mix(bg, face, coverage))
