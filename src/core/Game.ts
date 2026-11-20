@@ -27,6 +27,8 @@ export interface System {
   postPhysics?(dt: number): void
   /** Once per rendered frame. `alpha` blends between the previous and current physics state. */
   update?(dt: number, alpha: number): void
+  /** Existing hidden meshes that should participate in the covered precompile draw. */
+  precompileMeshes?(): Iterable<THREE.Mesh>
   dispose?(): void
 }
 
@@ -319,7 +321,19 @@ export class Game {
     for (let i = 0; i < 2; i++) {
       const culled: THREE.Object3D[] = []
       this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
-      try { drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16) } finally { for (const o of culled) o.frustumCulled = true }
+      const hidden: THREE.Mesh[] = []
+      try {
+        for (const system of this.systems) {
+          if (!system.precompileMeshes) continue
+          for (const mesh of system.precompileMeshes()) {
+            if (!mesh.visible) { hidden.push(mesh); mesh.visible = true }
+          }
+        }
+        drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+      } finally {
+        for (const mesh of hidden) mesh.visible = false
+        for (const o of culled) o.frustumCulled = true
+      }
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     }
     try { performance.measure('syn3h:precompile', { start, end: performance.now() }) } catch { /* Older engines. */ }

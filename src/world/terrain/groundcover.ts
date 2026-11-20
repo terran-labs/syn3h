@@ -868,6 +868,14 @@ export class GroundCover implements System {
     this.planted = this.sliders()
   }
 
+  /** Daytime hides the planted motes. Warm their real material before night reveals them. */
+  *precompileMeshes(): Iterable<THREE.Mesh> {
+    if (!this.group.visible) return
+    for (const layer of this.layers) {
+      if (layer.kind === 'motes') yield* layer.meshes
+    }
+  }
+
   /** The sliders that decide what is planted, as one value to compare. */
   private sliders(): string {
     return `${groundCover.value} ${terrainRoadStyle.value} ${terrainFlowers.value} ${terrainNightLife.value} ${terrainFloraSeed.value}`
