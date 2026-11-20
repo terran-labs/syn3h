@@ -8,14 +8,20 @@ import { perlin, rng } from '../../src/world/terrain/noise'
 import { HeightSampler } from '../../src/world/terrain/sampler'
 import { defaultTerrainSettings } from '../../src/world/terrain/settings'
 import { spawnPointAt } from '../../src/world/terrain/spawn'
+import { sharedTerrain } from './sharedTerrain'
 
 const settings = defaultTerrainSettings()
 
 describe('terrain generation', () => {
+  // A coarse grid: the noise lattice is fixed in metres, so the same generator runs at any
+  // resolution, a tenth of the work. Full-size worlds are generated twice and compared in the
+  // lava test (lava and vents) and the road test (roads).
+  const coarse = { resolution: 129 }
+
   it('is deterministic for a seed and differs between seeds', () => {
-    const a = generateTerrain(42, settings)
-    const b = generateTerrain(42, settings)
-    const c = generateTerrain(43, settings)
+    const a = generateTerrain(42, settings, coarse)
+    const b = generateTerrain(42, settings, coarse)
+    const c = generateTerrain(43, settings, coarse)
     expect(a.heights).toEqual(b.heights)
     expect(a.volcanic).toEqual(b.volcanic)
     expect(terrainChecksum(a)).toBe(terrainChecksum(b))
@@ -26,14 +32,14 @@ describe('terrain generation', () => {
   })
 
   it('reacts to parameters', () => {
-    const a = generateTerrain(7, settings)
-    const b = generateTerrain(7, { ...settings, volcanoHeight: settings.volcanoHeight + 50 })
+    const a = generateTerrain(7, settings, coarse)
+    const b = generateTerrain(7, { ...settings, volcanoHeight: settings.volcanoHeight + 50 }, coarse)
     expect(terrainChecksum(a)).not.toBe(terrainChecksum(b))
   })
 
   it('has a volcano at the centre with a crater below its flat summit', () => {
     for (const seed of [1, 2, 3, 99, 12345]) {
-      const d = generateTerrain(seed, settings)
+      const d = sharedTerrain(seed, settings)
       const s = new HeightSampler(d)
       const v = d.layout.volcano
       expect(v.x).toBe(0)
@@ -47,11 +53,11 @@ describe('terrain generation', () => {
       expect(summit).toBeGreaterThan(SPAWN_LEVEL + settings.volcanoHeight * 0.4)
       expect(Math.abs(summit - d.layout.summitHeight)).toBeLessThan(6)
     }
-  }, 20000)
+  })
 
   it('is a wrapping tile: opposite edges match, and about the asked share is land', () => {
     for (const seed of [1, 2, 3, 99, 12345]) {
-      const d = generateTerrain(seed, settings)
+      const d = sharedTerrain(seed, settings)
       const n = d.resolution
       const h = d.heights
       // The first and last row, and the first and last column, are the same line of the
@@ -85,7 +91,7 @@ describe('terrain generation', () => {
     const large = generateTerrain(7, { ...settings, planetSize: 2 })
     expect(large.size).toBe(4096)
     expect(large.cell).toBe(4)
-  }, 60000)
+  })
 
   it('profiles a continuous cone', () => {
     expect(coneProfile(0)).toBeCloseTo(1, 6)
@@ -205,7 +211,7 @@ describe('terrain collider', () => {
 describe('spawn points', () => {
   it('are on flat pads round the coast, apart from each other, facing the volcano', () => {
     for (const seed of [1, 2, 3, 99]) {
-      const d = generateTerrain(seed, settings)
+      const d = sharedTerrain(seed, settings)
       const s = new HeightSampler(d)
       const pts = Array.from({ length: 24 }, (_, i) => spawnPointAt(s, i))
       const n = { x: 0, y: 0, z: 0 }
@@ -235,5 +241,5 @@ describe('spawn points', () => {
       // Same seed, same spawn.
       expect(spawnPointAt(s, 3)).toEqual(spawnPointAt(s, 3))
     }
-  }, 20000)
+  })
 })

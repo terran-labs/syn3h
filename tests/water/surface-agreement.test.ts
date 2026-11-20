@@ -26,28 +26,37 @@ import { waterlinePlane } from '../../src/world/water/waterline'
 beforeAll(initPhysics)
 afterEach(() => { applyPlanet('volcanic', 1, { nameSeed: 0 }); for (const id of ['gfx.quality', 'terrain.planetSize']) params.set(id, params.get(id)!.def.default) })
 
-function world(planet: string, seed: number, planetSize = 1) {
+const built = new Map<string, { data: ReturnType<typeof generateTerrain>, ground: HeightSampler }>()
+/**
+ * A planet's world, generated once per planet, seed and size for this file (generation is a pure
+ * function of those; the draped-line test builds afresh to prove it). Shared: read it, never write.
+ */
+function world(planet: string, seed: number, planetSize = 1, fresh = false) {
   applyPlanet(planet, seed, { nameSeed: 1 })
   params.set('terrain.planetSize', planetSize)
+  const key = `${planet}|${seed}|${planetSize}`
+  if (!fresh && built.has(key)) return built.get(key)!
   const data = generateTerrain(seed, currentTerrainSettings()); sealSeam(data)
-  return { data, ground: new HeightSampler(data) }
+  const out = { data, ground: new HeightSampler(data) }
+  built.set(key, out)
+  return out
 }
 const WORLDS = [['desert', 4], ['alpine', 4], ['swamp', 4]] as const
 
 describe('water rivers: physics floats on the river that is drawn', () => {
   it('the draped line is a pure function of the world: the same for every client, whatever its quality or order', () => {
-    const a = world('desert', 77)
+    const a = world('desert', 77, 1, true)
     params.set('gfx.quality', 0)
     const first = drapedRivers(a.data.lava, a.ground, 2).map((r) => r.map((p) => [p.x, p.y, p.z]))
     // Another world in between, then the same world built afresh at another quality.
-    const other = world('alpine', 9); drapedRivers(other.data.lava, other.ground, 2)
+    const other = world('alpine', 9, 1, true); drapedRivers(other.data.lava, other.ground, 2)
     params.set('gfx.quality', 5)
-    const b = world('desert', 77)
+    const b = world('desert', 77, 1, true)
     const second = drapedRivers(b.data.lava, b.ground, 2).map((r) => r.map((p) => [p.x, p.y, p.z]))
     expect(first.flat().length).toBeGreaterThan(10)
     expect(second).toEqual(first)
     // Generates three worlds.
-  }, 30_000)
+  })
 
   it('the drawn ribbon lies on the physics surface along every centre line, at two sea levels and two planet sizes', () => {
     for (const [planet, seed] of WORLDS) for (const size of [1, Math.log2(3)]) {
@@ -91,7 +100,7 @@ describe('water rivers: physics floats on the river that is drawn', () => {
       expect(compared, `${planet} ${seed}`).toBeGreaterThan(20)
       }
     }
-  }, 30_000)
+  })
 
   it('a floating hull carried over the steepest fall is tipped over it, never flung', () => {
     for (const [planet, seed] of WORLDS) {
@@ -199,7 +208,7 @@ describe('physics is the water that is drawn, wherever it is sampled', () => {
       expect(compared, `${planet} ${seed}`).toBeGreaterThan(50)
       expect(agree / compared, `${planet} ${seed} at ${step} m`).toBe(1)
     }
-  }, 60_000)
+  })
 })
 
 describe('the camera waterline is the surface meeting the lens', () => {

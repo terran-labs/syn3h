@@ -88,5 +88,13 @@ export default defineConfig({
     ] } } },
   },
   // tools/*.test.mjs use node:test and are run with `node --test`, not vitest.
-  test: { exclude: ['**/node_modules/**', '**/dist/**', 'tools/**'] },
+  test: {
+    exclude: ['**/node_modules/**', '**/dist/**', 'tools/**'],
+    // A timeout is there to stop a hung test, not to time one: vitest's 5 s default failed
+    // world generation tests at a machine load of 45 with nothing wrong (AGENTS.md, testing:
+    // a timing limit that fails on load must not block a release). A test that needs a real
+    // time limit sets its own.
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
+  },
 })
