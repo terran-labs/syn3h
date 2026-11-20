@@ -81,7 +81,7 @@ export class Pesters implements System {
 
   constructor(private readonly game: Game, private readonly hooks: PesterHooks) {
     game.scene.add(this.cloud.haze, this.cloud.light)
-    this.unwarm = warmGear(game, [], () => this.cloud.warm())
+    this.unwarm = warmGear(game, [], () => this.cloud.warm(), () => [this.cloud.haze, this.cloud.light])
   }
 
   /** Pesters the local player has out. */

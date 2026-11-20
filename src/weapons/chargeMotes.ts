@@ -17,8 +17,10 @@ export class ChargeMotes {
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
     this.mesh.frustumCulled = false
     this.mesh.visible = false
+    const hidden = new THREE.Matrix4().makeScale(0, 0, 0)
+    for (let i = 0; i < COUNT; i++) this.mesh.setMatrixAt(i, hidden)
     game.scene.add(this.mesh)
-    this.unwarm = warmGear(game, [], () => { this.warming = 2 })
+    this.unwarm = warmGear(game, [], () => { this.warming = 2 }, () => [this.mesh])
   }
 
   update(at: THREE.Vector3, charge: number, time: number): void {

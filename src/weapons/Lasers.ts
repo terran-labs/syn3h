@@ -85,8 +85,6 @@ const LENGTH = 4
 const TRAIL = 10
 /** A shot younger than this is fresh: it gets a muzzle flash. Replayed old shots do not. */
 const FRESH = 0.15
-/** How far under the camera the sparks are compiled, metres: under any terrain. */
-const SPARK_WARM_DEPTH = 4000
 
 /** The beam's colours at daytime exposure, linear RGB: core, additive halo, blended tint. */
 const CORE_RGB = [0.9, 4, 1.4] as const
@@ -191,18 +189,11 @@ export class Lasers implements System {
       console.warn('tag beam effects unavailable', err)
     }
     this.effects = effects
-    // The sparks are instanced batches that draw nothing until a particle exists, so the
-    // only way to compile them early is one short flash far below the ground.
-    const below = new THREE.Vector3(), ahead = new THREE.Vector3(0, 0, -1)
     this.unwarm = warmGear(game, [
       [this.coreGeo, this.coreMat], [this.haloGeo, this.tintMat], [this.haloGeo, this.haloMat],
       [this.coreGeo, this.redCoreMat], [this.haloGeo, this.redTintMat], [this.haloGeo, this.redHaloMat],
       [this.glowGeo, this.glowMat], [this.glowGeo, this.redGlowMat],
-    ], () => {
-      game.camera.getWorldPosition(below).y -= SPARK_WARM_DEPTH
-      this.effects?.muzzle(below, ahead, false)
-      this.effects?.muzzle(below, ahead, true)
-    })
+    ])
   }
 
   get count(): number {

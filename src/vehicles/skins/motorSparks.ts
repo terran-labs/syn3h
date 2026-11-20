@@ -5,6 +5,29 @@ import {attribute,float,smoothstep,uniform,uv,vec2,vec3} from 'three/tsl'
 /** Vehicle-local gravity for spark arcs, m/s². */
 const GRAVITY = 6
 
+const clocks = new WeakMap<T.Object3D, { value: number }>()
+let sharedMaterial: T.SpriteNodeMaterial | undefined
+let materialUsers = 0
+
+function makeMaterial(): T.SpriteNodeMaterial {
+  const clock=uniform(0).onObjectUpdate(({object})=>object ? clocks.get(object)?.value ?? 0 : 0)
+  const info=attribute('sparkInfo','vec4'),halo=info.w,spark=float(1).sub(halo)
+  const age=clock.sub(info.x).max(0),unit=age.div(info.y).clamp(0,1)
+  const alive=halo.max(clock.sub(info.x).greaterThanEqual(0).and(age.lessThan(info.y)).select(1,0))
+  const m=new T.SpriteNodeMaterial({transparent:true,depthWrite:false,blending:T.AdditiveBlending})
+  m.fog=false
+  // Halos stay put; sparks fly out along their launch velocity and fall in the vehicle frame.
+  m.positionNode=attribute('sparkOrigin','vec3').add(attribute('sparkVelocity','vec3').mul(age).add(vec3(0,-GRAVITY*.5,0).mul(age.mul(age))).mul(spark))
+  const size=info.z.mul(float(1).sub(unit.mul(.6).mul(spark)))
+  m.scaleNode=vec2(size,size)
+  const r=uv().sub(.5).length().mul(2)
+  // A hard white core for sparks, a soft wide falloff for the halo.
+  const falloff=halo.greaterThan(.5).select(float(1).sub(r).clamp(0,1).pow(2.5),float(1).sub(smoothstep(.2,1,r)).pow(2))
+  m.colorNode=attribute('sparkTint','vec3').mul(hotExposureNode())
+  m.opacityNode=falloff.mul(alive).mul(float(1).sub(unit.mul(spark)))
+  return m
+}
+
 /**
  * One additive billboard batch per vehicle for the hub motors: a fixed set of halo slots that
  * sit on the rotor/stator interface points and follow the motor effort every frame, plus a
@@ -14,7 +37,8 @@ const GRAVITY = 6
  */
 export class MotorSparks {
   readonly mesh:T.Mesh<T.InstancedBufferGeometry,T.SpriteNodeMaterial>
-  readonly clock=uniform(0)
+  private readonly clock={value:0}
+  private disposed=false
   private next=0
   private readonly origin:T.InstancedBufferAttribute
   private readonly velocity:T.InstancedBufferAttribute
@@ -32,21 +56,10 @@ export class MotorSparks {
     this.origin=make(3);this.velocity=make(3);this.info=make(4);this.tint=make(3)
     for(let i=0;i<capacity;i++)this.info.setXYZW(i,-1e4,1,0,i<halos?1:0)
     g.setAttribute('sparkOrigin',this.origin);g.setAttribute('sparkVelocity',this.velocity);g.setAttribute('sparkInfo',this.info);g.setAttribute('sparkTint',this.tint)
-    const info=attribute('sparkInfo','vec4'),halo=info.w,spark=float(1).sub(halo)
-    const age=this.clock.sub(info.x).max(0),unit=age.div(info.y).clamp(0,1)
-    const alive=halo.max(this.clock.sub(info.x).greaterThanEqual(0).and(age.lessThan(info.y)).select(1,0))
-    const m=new T.SpriteNodeMaterial({transparent:true,depthWrite:false,blending:T.AdditiveBlending})
-    m.fog=false
-    // Halos stay put; sparks fly out along their launch velocity and fall in the vehicle frame.
-    m.positionNode=attribute('sparkOrigin','vec3').add(attribute('sparkVelocity','vec3').mul(age).add(vec3(0,-GRAVITY*.5,0).mul(age.mul(age))).mul(spark))
-    const size=info.z.mul(float(1).sub(unit.mul(.6).mul(spark)))
-    m.scaleNode=vec2(size,size)
-    const r=uv().sub(.5).length().mul(2)
-    // A hard white core for sparks, a soft wide falloff for the halo.
-    const falloff=halo.greaterThan(.5).select(float(1).sub(r).clamp(0,1).pow(2.5),float(1).sub(smoothstep(.2,1,r)).pow(2))
-    m.colorNode=attribute('sparkTint','vec3').mul(hotExposureNode())
-    m.opacityNode=falloff.mul(alive).mul(float(1).sub(unit.mul(spark)))
+    const m=sharedMaterial??=makeMaterial()
     this.mesh=new T.Mesh(g,m);this.mesh.name='Motor sparks';this.mesh.frustumCulled=false;this.mesh.renderOrder=4;this.mesh.visible=false
+    materialUsers++
+    clocks.set(this.mesh,this.clock)
   }
 
   /** Place halo `i`; a zero size or black tint turns it off. */
@@ -69,5 +82,35 @@ export class MotorSparks {
     this.mesh.visible=active
     if(active)for(const a of [this.origin,this.velocity,this.info,this.tint])a.needsUpdate=true
     this.halosLit=false
+  }
+
+  /** Submit the live batch under cover without touching particle data or the simulation clock. */
+  drawCovered(draw: () => void): void {
+    if (this.disposed) { draw(); return }
+    const { geometry, visible } = this.mesh
+    const instanceCount = geometry.instanceCount
+    try {
+      // A zero instance count would make Three skip submission. One existing slot is enough.
+      geometry.instanceCount = 1
+      this.mesh.visible = true
+      draw()
+    } finally {
+      geometry.instanceCount = instanceCount
+      this.mesh.visible = visible
+    }
+  }
+
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.mesh.removeFromParent()
+    this.mesh.dispose()
+    this.mesh.geometry.dispose()
+    clocks.delete(this.mesh)
+    if (--materialUsers === 0) {
+      const material = sharedMaterial
+      sharedMaterial = undefined
+      material?.dispose()
+    }
   }
 }
