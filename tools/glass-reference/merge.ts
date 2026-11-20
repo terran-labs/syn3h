@@ -73,7 +73,14 @@ export function mergeReferencePair(separate: N, group: N, glass: N, sample: (p: 
           const decay = mix(.24, .94, fraction)
           const gain = clamp(float(1).add(distance.div(reach)), .0001, 1)
             .pow(exponent.mul(neck).mul(decay)).mul(float(1).sub(neck.mul(.11)))
-          const folded = (at: N, footprint: N) => filtered(uv().add(at.sub(uv()).mul(gain)), footprint)
+          // The native seven-point phase capture has 7.7% more horizontal
+          // travel and 3% more transmitted contrast through the facing tips.
+          const travel = vec2(float(1).add(neck.mul(.077)), 1)
+          const folded = (at: N, footprint: N) => {
+            const ray = uv().add(at.sub(uv()).mul(gain).mul(travel))
+            const detail = filtered(ray, footprint)
+            return detail.add(detail.sub(blurred(uv())).mul(neck.mul(.03)))
+          }
           const face = regularGlass(vec2(radius), distance, gradient, uv(), size, dark, sample, folded, blurred)
           bg.assign(mix(bg, face, coverage))
         })
