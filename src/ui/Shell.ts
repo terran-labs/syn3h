@@ -1131,6 +1131,9 @@ export class Shell implements System {
     this.exitAsking = false
     this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true
     this.game.input.suspended = this.userPaused || this.menuVisible || this.inviteOpen
+    // Leaving from the pause screen ends the pause first, without taking the cursor: the
+    // ascent needs the world running, and the lobby must not open under the veil.
+    if (leave && this.userPaused) { if (this.pauseControl) this.pauseControl.resume('user'); else this.applyPause(false, null) }
     if (leave) void this.ascent()
     else this.element.querySelector<HTMLButtonElement>(this.userPaused ? '.pause-exit' : '.exit-world')?.focus({ preventScroll: true })
   }
