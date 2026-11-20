@@ -11,25 +11,39 @@ const wideOffsets = Array.from({ length: 32 }, (_, i) => {
   return [radius * Math.cos(angle), radius * Math.sin(angle)]
 })
 
-export function regularGlass(halfSize: N, distance: N, normal: N, screen: N, size: N, dark: N, sample: (uv: N) => N): N {
+export function regularGlass(halfSize: N, distance: N, normal: N, screen: N, size: N, dark: N, sample: (uv: N) => N, filtered?: (uv: N, width: N) => N): N {
   const radius = min(halfSize.x, halfSize.y)
   const depth = max(distance.negate(), 0)
   // Phase of the 32-point native grating, unwrapped from the undistorted centre.
-  const reach = radius.mul(0.58)
-  const shift = radius.mul(0.73).mul(clamp(float(1).sub(depth.div(reach)), 0, 1).pow(2.5))
+  const small = clamp(float(30).sub(radius).div(6), 0, 1)
+  const amplitude = mix(.743, float(.832).add(normal.y.abs().mul(.044)), small)
+  const reach = radius.mul(mix(.767, 1.4, small))
+  const power = mix(4.28, float(8.75).sub(normal.y.abs().mul(.34)), small)
+  const shift = radius.mul(amplitude).mul(clamp(float(1).sub(depth.div(reach)), 0, 1).pow(power))
   const at = screen.sub(normal.mul(shift).div(size))
-  const detail = sample(clamp(at, 0, 1))
+  const detail = filtered ? filtered(clamp(at, 0, 1), float(1.15)) : sample(clamp(at, 0, 1))
   const wide = vec3(0).toVar()
-  for (const [x, y] of wideOffsets) {
-    wide.addAssign(sample(clamp(screen.add(vec2(x, y).mul(15.5).div(size)), 0, 1)))
+  if (filtered) {
+    // Four broad footprint samples approximate the second moment of the native
+    // 15.5 point Gaussian. Width describes one mip texel in logical pixels.
+    for (const x of [-1, 1]) for (const y of [-1, 1]) {
+      wide.addAssign(filtered(clamp(screen.add(vec2(x, y).mul(11).div(size)), 0, 1), float(24)))
+    }
+    wide.divAssign(4)
+  } else {
+    for (const [x, y] of wideOffsets) {
+      wide.addAssign(sample(clamp(screen.add(vec2(x, y).mul(15.5).div(size)), 0, 1)))
+    }
+    wide.divAssign(wideOffsets.length)
   }
-  wide.divAssign(wideOffsets.length)
   const delta = detail.sub(wide)
   const body = wide.add(delta.mul(0.275)).add(delta.abs().mul(mix(0.22, -0.22, dark)))
   const luma = dot(body, vec3(.2126, .7152, .0722))
   // Native neutral fields from RGB 0 to 255, captured in both appearances.
   const lightTone = luma.mul(luma).mul(-.034).add(luma.mul(.506)).add(133 / 255)
   const darkTone = luma.mul(luma).mul(-.39).add(luma.mul(.99)).add(32 / 255)
-  const chroma = body.sub(luma).mul(mix(.49, float(.9).sub(luma.mul(.28)), dark))
+  const gain = mix(vec3(.988, .952, .979).add(vec3(-.076, .028, -.045).mul(luma)),
+    vec3(1.317, 1.256, 1.314).add(vec3(-.427, -.351, -.429).mul(luma)), dark)
+  const chroma = body.sub(luma).mul(gain)
   return clamp(vec3(mix(lightTone, darkTone, dark)).add(chroma), 0, 1)
 }

@@ -687,7 +687,26 @@ export class PostChain {
         const display = (coord: N) => renderOutput(vec4(color.sample(coord).rgb, 1), toneMap, renderer.outputColorSpace).rgb
         return original.rgb.add(display(at).sub(display(uv())))
       }
-      out = composeGlass(original, sample, glass, u.glassMaterial)
+      // Under trial: generate lower levels of the source already used by the
+      // composite, and sample those for frost without another full-size target.
+      let filtered: ((coord: N, footprint: N) => N) | undefined
+      if (new URLSearchParams(location.search).get('glassBlur') === 'mip') {
+        const source = finished ?? color
+        const targetTexture = finished ? finished.value : temporalNode ? temporalNode.getTextureNode().value : scenePass.getTexture('output')
+        if (targetTexture) {
+          targetTexture.generateMipmaps = true
+          targetTexture.minFilter = THREE.LinearMipmapLinearFilter
+          filtered = (coord, footprint) => {
+            const level = max(footprint.mul(screenSize.x).div(glass.viewport.x.max(1)), 1).log2()
+            const raw = source.sample(coord).level(level).rgb
+            if (finished) return raw
+            const display = renderOutput(vec4(raw, 1), toneMap, renderer.outputColorSpace).rgb
+            const center = renderOutput(vec4(color.sample(uv()).rgb, 1), toneMap, renderer.outputColorSpace).rgb
+            return original.rgb.add(display.sub(center))
+          }
+        }
+      }
+      out = composeGlass(original, sample, glass, u.glassMaterial, filtered)
       this.glassBuilt = true
     }
     // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.

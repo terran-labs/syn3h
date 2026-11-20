@@ -14,7 +14,7 @@ export interface GlassSurfaces {
 }
 
 /** Compose over display-encoded RGB. Sample and original must use the same colour space. */
-export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurfaces, material: N): N {
+export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurfaces, material: N, filtered?: (uv: N, width: N) => N): N {
   return Fn(() => {
     const result = original.toVar()
     const size = glass.viewport.xy.max(vec2(1))
@@ -36,7 +36,7 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
         If(glass.viewport.w.greaterThan(0.5), () => {
           body.assign(glassOptics(box.zw, distance, gradient, uv(), size, material, glass.filters.element(i), glass.bodies.element(i), sample))
         }).Else(() => {
-          body.assign(regularGlass(box.zw, distance, gradient, uv(), size, glass.viewport.z, sample))
+          body.assign(regularGlass(box.zw, distance, gradient, uv(), size, glass.viewport.z, sample, filtered))
         })
         result.assign(vec4(mix(vec3(original.rgb), vec3(body), float(1).sub(smoothstep(-0.5, 0.5, distance))), 1))
       })
