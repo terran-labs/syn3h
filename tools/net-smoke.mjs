@@ -726,7 +726,12 @@ try {
     await b.screenshot({ path: '/tmp/syn3h-koth-far.png' })
 
     await park(b, 0.3 + 0.15)
-    await settle(() => b.evaluate(() => window.syn3hNet.game.koth.contested), (c) => c === true)
+    // Both pages must have seen the contest before the baseline is taken. The room sends any
+    // point it scored before the hill became contested ahead of the 'contest' update, so a page
+    // that shows "contested" has every earlier point. Waiting on B alone and reading the score on
+    // A raced: on 20 November A's page, at 7 fps, had not yet applied the point scored just
+    // before the contest (9 then 10) while B already showed it (10) and "contested".
+    await settle(() => Promise.all([a, b].map((p) => p.evaluate(() => window.syn3hNet.game.koth.contested))), (both) => both.every((c) => c === true))
     const s1 = await score(idA)
     // A measured window, not a wait for readiness: nobody may score while the hill is contested.
     await wait(2500)
