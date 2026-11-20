@@ -16,13 +16,15 @@
 .chat-strip.is-yielding { opacity: .18; }
 /* Each line is one message bubble (the owner, 19 November 2026): the Panels button's radius (a
    34 px pill, so 17 px) on three corners and a square lower left, the corner a speech bubble's
-   tail leaves. The name is plain text in the speaker's colour inside it. The surface borrows
-   only the shared glass tokens (shell.css) so it sits with the buttons; it is not a button. */
+   tail leaves. The name is plain text in the speaker's colour inside it. It is not a button: it
+   borrows the glass ink and halo (src/ui/glass.css) to sit with the buttons, but keeps its own
+   smoked body, since a sentence over bright sky needs more under it than a clear lens gives.
+   CHAT_NAME_SURFACE (ChatCard.ts) is this body over a bright sky. */
 .chat-strip { --chat-bubble-radius: 17px; align-items: flex-start; }
 .chat-strip .chat-line {
   box-sizing: border-box; max-width: 100%; padding: 5px 12px;
   border-radius: var(--chat-bubble-radius) var(--chat-bubble-radius) var(--chat-bubble-radius) 0;
-  background: var(--glass-body, rgb(12 12 13 / .62)); color: var(--glass-ink, var(--s3-ink, #f4f4f4));
+  background: rgb(12 12 13 / .62); color: var(--glass-ink, var(--s3-ink, #f4f4f4));
   text-shadow: var(--glass-under, 0 1px 2px rgb(0 0 0 / .6));
   transition: opacity .7s ease; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
