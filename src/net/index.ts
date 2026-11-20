@@ -524,7 +524,7 @@ export class NetClient implements System {
 
     this.conn.onOpen = () => {
       this.send({
-        type: 'hello', v: PROTOCOL_VERSION, modes: 2, name: playerName(), params: params.snapshot('world'),
+        type: 'hello', v: PROTOCOL_VERSION, largeWelcome: true, modes: 2, name: playerName(), params: params.snapshot('world'),
         kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room), page: PAGE_LOAD,
         ...(this.dropReport ? { drop: this.dropReport } : {}),
         // "Bots may play with me": only a no is sent; an older room ignores the field.
@@ -533,7 +533,7 @@ export class NetClient implements System {
       this.dropReport = null
     }
     this.conn.onText = (text) => {
-      const msg = parseJson<ServerMessage>(text)
+      const msg = parseJson<ServerMessage>(text, 'welcome')
       if (msg) this.onMessage(msg)
     }
     this.conn.onBinary = (data) => this.onState(data)

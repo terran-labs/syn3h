@@ -30,7 +30,7 @@ import {
   MODE_TAG,
   MAX_NAME_LENGTH,
   RENAME_INTERVAL_MS,
-  MAX_PLAYER_ID,
+  MAX_PLAYER_ID, MAX_ROOM_PLAYERS, MAX_EXTRA_ROOM_PARAMS, MAX_JSON_BYTES,
   PROTOCOL_VERSION,
   STATE_BYTES,
   type WireState,
@@ -182,7 +182,7 @@ interface Player {
 }
 
 const ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/
-const MAX_UNKNOWN_PARAMS = 256
+
 const MAX_STATES_PER_SECOND = 70
 const MAX_JSON_PER_SECOND = 40
 /** A player whose state is older than this cannot ram or be rammed (the original's isResponding). */
@@ -322,7 +322,7 @@ export class Room {
     this.name = name
     this.tag = roomTag(name)
     this.now = opts.now ?? Date.now
-    this.maxPlayers = opts.maxPlayers ?? 16
+    this.maxPlayers = opts.maxPlayers ?? MAX_ROOM_PLAYERS
     this.onPersist = opts.onPersist
     this.setDefaults()
     this.activeAt = this.now()
@@ -396,7 +396,7 @@ export class Room {
       if (player && !this.onState(player, bytes)) this.malformed(peer, 'state', bytes.byteLength)
       return
     }
-    const msg = parseJson<ClientMessage>(data)
+    const msg = parseJson<ClientMessage>(data, this.pending.has(peer) ? 'hello' : undefined)
     if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') {
       this.malformed(peer, 'json', data.length)
       return
@@ -807,7 +807,7 @@ export class Room {
       player.joinedAt = this.now()
       player.windowStart = this.now()
       player.stateCount = player.jsonCount = 0
-      this.welcome(peer, player)
+      this.welcome(peer, player, msg.largeWelcome === true)
       this.persist()
       return
     }
@@ -869,7 +869,7 @@ export class Room {
     // Scores for players who are no longer in the room (the same rebuild) are not kept.
     for (const old in this.scores) if (!this.byId(Number(old))) delete this.scores[old]
 
-    this.welcome(peer, player)
+    this.welcome(peer, player, msg.largeWelcome === true)
     logEvent('hello', { room: this.tag, player: info.id, bot: false, players: this.players.size, host: this.host === info.id })
     this.broadcast({ type: 'join', player: info }, peer)
     // Being "it" by default is news only while a game of tag is on.
@@ -878,8 +878,8 @@ export class Room {
   }
 
   /** Tell a player who it is and what the room holds, and where everyone else is. */
-  private welcome(peer: Peer, player: Player): void {
-    this.sendTo(peer, {
+  private welcome(peer: Peer, player: Player, largeWelcome: boolean): void {
+    const welcome: Extract<ServerMessage, { type: 'welcome' }> = {
       type: 'welcome',
       v: PROTOCOL_VERSION,
       id: player.info.id,
@@ -891,7 +891,25 @@ export class Room {
       serverTime: this.now() / 1000,
       race: this.raceView(),
       botRams: true,
-    })
+    }
+    const text = JSON.stringify(welcome)
+    if (largeWelcome || text.length <= MAX_JSON_BYTES) peer.send(text)
+    else {
+      // Frozen clients discard a whole welcome above 8192 characters. Deliver the
+      // local seat first, followed by the remaining state using messages they know.
+      const others = welcome.players.filter(p => p.id !== welcome.id)
+      welcome.players = [player.info]
+      const settings = welcome.params
+      const sendSettings = JSON.stringify(welcome).length > MAX_JSON_BYTES
+      if (sendSettings) welcome.params = {}
+      const race = welcome.race
+      const sendRace = JSON.stringify(welcome).length > MAX_JSON_BYTES
+      if (sendRace) welcome.race = null
+      this.sendTo(peer, welcome)
+      if (sendSettings) for (const [id, value] of Object.entries(settings)) this.sendTo(peer, { type: 'param', id, value, from: this.host })
+      for (const p of others) this.sendTo(peer, { type: 'profile', player: p })
+      if (sendRace) this.sendTo(peer, { type: 'race', race: race ?? null })
+    }
     // Show the newcomer where everyone already is, even players who are standing still.
     for (const other of this.players.values()) {
       if (other !== player && other.lastState) peer.send(encodeStored(other))
@@ -1635,7 +1653,7 @@ export class Room {
     const v = this.validateParam(id, raw)
     if (v === null) return null
     if (!this.values.has(id)) {
-      if (this.unknownCount >= MAX_UNKNOWN_PARAMS) return null
+      if (this.unknownCount >= MAX_EXTRA_ROOM_PARAMS) return null
       this.unknownCount++
     }
     this.values.set(id, v)
