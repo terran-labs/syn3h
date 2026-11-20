@@ -1,4 +1,5 @@
-// Usage: node tests/core/mote-precompile-browser.mjs <app URL>
+// Manual WebGL 2 diagnostic for the first visible mote draw.
+// Usage: node tools/mote-precompile-check.mjs <app URL>
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright-core'
 
