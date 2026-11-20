@@ -25,7 +25,8 @@ import {
 import { defineParam, params } from '../../../shared/params'
 import { vehicleShading } from '../../core/quality'
 import { hotExposureNode } from './hotExposure'
-import { mergedSurfaces, registerVehicleDetail } from './mergeStatic'
+import { mergedSurfaces, registerVehicleDetail, standardEmission } from './mergeStatic'
+import { heatOwner } from './lavaGlow'
 
 /**
  * Player-facing paint controls. Each drives a shader uniform, so a change shows on the next
@@ -104,6 +105,89 @@ export const showroomWarm = { warmed: 0, abandoned: 0, cancelled: 0, proxies: 0 
 // TSL node types do not compose through arithmetic chains, so shader values stay loosely typed.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any
+
+// ---------------------------------------------------------------------------------------
+// Materials shared between vehicles (perf/shared-showroom). Read this first.
+// ---------------------------------------------------------------------------------------
+//
+// Why. The renderer builds every material object it meets (node graph to shader, then a
+// pipeline per pass), and a node's cache key is its own id (Node.customCacheKey), so two
+// materials built alike are still two builds. Every bot arriving with its own copies of its
+// kind's showroom materials paid all of them again: 29 to 73 ms per arrival at High on a fast
+// Mac, about half a second on a slow machine.
+//
+// Scheme.
+//   1. `build` takes nothing per vehicle into the graph. Colours, emissive colours and the
+//      accent are `perObject` uniforms: as each mesh draws, they read that mesh's own source
+//      materials and its vehicle's accent from `paintOf`, which applyShowroom fills.
+//   2. `signature` names everything `build` and the decoration do put into the graph (roles,
+//      authored roughness and metalness, emissive intensity, flags, tier, canopy choice, the
+//      decoration's source text, whether the vehicle can be heated). Equal signatures get the
+//      same material object from `pool`.
+//   3. Decoration (night readability, lava glow) runs once per shared material, by the first
+//      vehicle that wears it (userData.sharedShowroom marks a pooled material; nightReadable and
+//      lavaGlow mark it done). On a shared material the lava glow reads heat per object, from the
+//      mesh's own vehicle. A vehicle's own materials (tier 0, and anything built unshared) are
+//      decorated exactly as before: per-object uniforms there would give every mesh its own
+//      binding, and a many-meshed vehicle's first frame stalled for half a second at Low.
+//   4. Each vehicle's tier set counts once per shared material (`taken`); `drop` and the
+//      disposer give each back once. The last release disposes it.
+//
+// Invariants (tests/vehicles2/showroom.test.ts):
+//   - Two vehicles with equal signatures draw the same material, each in its own colours, and
+//     setColors on a source shows on the next draw.
+//   - Nothing differing per vehicle is baked into a shared graph: a surface whose emission the
+//     vehicle authored itself (any node not in standardEmission, the buggy's stators) is built
+//     for that vehicle alone.
+//   - A shared material is never disposed while a vehicle holds it. The disposer puts the
+//     vehicle's own plain set back on its meshes before returning, because every vehicle class
+//     then disposes whatever is still attached.
+//   - Heat is per vehicle: a shared material glows only on the vehicle in the lava.
+//   - Per-object data lives in WeakMaps keyed by mesh, never in userData: Object3D.clone (used
+//     for the warm-up proxies) copies userData through JSON. Proxies are given their mesh's paint.
+//   - Tier 0 (the plain materials the vehicle was built with) is untouched: it was always per
+//     vehicle, and still is.
+
+/** What a drawn mesh paints with: its own source materials (packed order) and its vehicle's accent. */
+interface Paint { sources: readonly Standard[]; accent: T.Color | null }
+/** By mesh, not userData: Object3D.clone copies userData through JSON. */
+const paintOf = new WeakMap<T.Object3D, Paint>()
+/**
+ * By geometry, for a mesh cloned from a registered one after the fact (the vehicle lab's stress
+ * copies): a clone shares its original's geometry. Without this it would draw in the colours of
+ * whichever vehicle first built the shared material. Found once, then kept by mesh.
+ */
+const paintOfGeometry = new WeakMap<object, Paint>()
+let warnedUnpainted = false
+function paintFor(object: T.Object3D): Paint | undefined {
+  let paint = paintOf.get(object)
+  if (!paint) { const geometry = (object as Partial<T.Mesh>).geometry; paint = geometry ? paintOfGeometry.get(geometry) : undefined; if (paint) paintOf.set(object, paint) }
+  // No game path reaches this: a mesh that applyShowroom never saw, drawing a shared material,
+  // shows a frozen copy of the colours of whichever vehicle built it. Loud once in development.
+  if (!paint && !warnedUnpainted && (import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
+    warnedUnpainted = true
+    console.warn(`Showroom: mesh "${object.name}" draws a shared vehicle material but was never registered by applyShowroom; it shows the colours of the vehicle that built the material.`)
+  }
+  return paint
+}
+/** A colour read from the mesh being drawn, or `fallback` (a copy) for a mesh with no paint of its own. */
+function perObject(fallback: T.Color, read: (paint: Paint) => T.Color | null | undefined): N {
+  const own = fallback.clone()
+  return uniform(own).onObjectUpdate(({ object }) => { const paint = object ? paintFor(object) : undefined; return (paint && read(paint)) ?? own })
+}
+/** Shared materials by signature, with how many vehicle tier sets hold each. */
+const pool = new Map<string, { material: T.Material; users: number }>()
+const pooled = new Map<T.Material, string>()
+/** Counts for automated checks: shared materials alive, vehicle tier sets holding them, times one was reused, and materials built unshared. */
+export const showroomShare = { alive: 0, users: 0, reused: 0, unshared: 0 }
+function releaseShared(material: T.Material): boolean {
+  const key = pooled.get(material)
+  if (key === undefined) return false
+  const entry = pool.get(key)!
+  showroomShare.users--
+  if (--entry.users <= 0) { pool.delete(key); pooled.delete(material); material.dispose(); showroomShare.alive-- }
+  return true
+}
 
 interface Look {
   roughness: number; metalness: number; coat: number
@@ -304,10 +388,10 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
     // Livery without an authored look: a paint surface whose geometry carries a per-vertex
     // `accentMask` (0 to 1) blends from its own colour to the vehicle's accent by it. Scales,
     // coat and flakes carry on across the boundary. Opt in with `userData.accentMask = true`.
-    const own_colour: N = uniform(source.color)
+    const own_colour: N = perObject(source.color, paint => paint.sources[i]?.color)
     color = color.add((role === 'paint' && source.userData.accentMask === true && accent
-      ? mix(own_colour, uniform(accent), clamp(attribute<'float'>('accentMask', 'float'), 0, 1)) : own_colour).mul(mask))
-    emission = emission.add(uniform(source.emissive).mul(source.emissiveIntensity).mul(mask))
+      ? mix(own_colour, perObject(accent, paint => paint.accent), clamp(attribute<'float'>('accentMask', 'float'), 0, 1)) : own_colour).mul(mask))
+    emission = emission.add(perObject(source.emissive, paint => paint.sources[i]?.emissive).mul(source.emissiveIntensity).mul(mask))
     roughness = roughness.add(mask.mul(own ? source.roughness : look.roughness))
     metalness = metalness.add(mask.mul(own ? source.metalness : look.metalness))
     coat = coat.add(mask.mul(own ? authoredCoat : look.coat))
@@ -389,8 +473,8 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
  * black in linear light) and a force field or a nozzle has to glow whatever the player
  * picked: keep the hue, lift it to full brightness, and add a little white.
  */
-function glowTint(color: T.Color, white: number): N {
-  const hue: N = vec3(uniform(color) as N)
+function glowTint(color: N, white: number): N {
+  const hue: N = vec3(color)
   const brightest: N = max(max(hue.x, hue.y), max(hue.z, float(.02)))
   return mix(hue.div(brightest), vec3(1), white)
 }
@@ -409,10 +493,12 @@ function buildGlow(source: Standard, accent: T.Color | null): T.Material {
   const level = uniform(1).onObjectUpdate(({ object }) => Number(object?.userData.glow ?? 1))
   // Hottest where the view looks straight into it, thinner toward the lip.
   const core = clamp(abs(dot(normalView, positionViewDirection)), 0, 1).pow(.6).mul(.75).add(.25)
-  material.colorNode = glowTint(accent ?? source.color, .3).mul(core).mul(level).mul(GLOW_GAIN).mul(hotExposureNode())
+  material.colorNode = glowTint(accentOf(source, accent), .3).mul(core).mul(level).mul(GLOW_GAIN).mul(hotExposureNode())
   return material
 }
 const GLOW_GAIN = 3
+/** The vehicle's accent, per object; a model shown alone falls back to the colour it was authored with. */
+const accentOf = (source: Standard, accent: T.Color | null): N => perObject(accent ?? source.color, paint => paint.accent ?? paint.sources[0]?.color)
 
 /** Strength of the canopy's own light, for our tone mapped frame. */
 const CANOPY_GAIN = 5
@@ -441,7 +527,7 @@ function buildCanopy(source: Standard, tier: 1 | 2 | 3, accent: T.Color | null):
   material.forceSinglePass = true
   // The tint is the owner vehicle's accent Color object where there is one, so it follows
   // setColors; a model shown alone falls back to the colour it was authored with.
-  const tint = glowTint(accent ?? source.color, .34)
+  const tint = glowTint(accentOf(source, accent), .34)
   const facing = clamp(abs(dot(normalView, positionViewDirection)), 0, 1)
   const rim = float(1).sub(facing).pow(2.5)
   // faceDirection is 1 on the outside and -1 seen from within.
@@ -486,8 +572,8 @@ function buildGlass(source: Standard): T.Material {
   const facing = clamp(abs(dot(normalView, positionViewDirection)), 0, 1)
   const fresnel = float(.9).sub(facing.mul(.5))
   // The 2011 canopy reads as pale lavender over the tint, so lift the tint toward white.
-  material.colorNode = mix(uniform(source.color), vec3(.85, .7, 1), .35)
-  material.emissiveNode = uniform(source.emissive).mul(source.emissiveIntensity)
+  material.colorNode = mix(perObject(source.color, paint => paint.sources[0]?.color), vec3(.85, .7, 1), .35)
+  material.emissiveNode = perObject(source.emissive, paint => paint.sources[0]?.emissive).mul(source.emissiveIntensity)
   material.opacityNode = fresnel
   material.roughnessNode = float(.04)
   material.metalnessNode = float(.6)
@@ -506,8 +592,38 @@ function scrolls(mesh: T.Mesh, source: Standard): boolean {
   return source.userData.instancedScroll === true || mesh.geometry.hasAttribute('trackScroll')
 }
 
+/**
+ * What makes two vehicles' materials for a surface interchangeable: everything `build` and the
+ * decoration bake into the graph (roles, authored responses, intensities, tier, flags), and
+ * nothing that is read per object (colours, accent). Null when the surface carries emission of
+ * its vehicle's own (see standardEmission): that one is built for its vehicle alone.
+ */
+function signature(sources: readonly Standard[], merged: boolean, tier: number, meshName: string, authored: N | null, accent: T.Color | null, instanced: boolean, decorate: Decorate, heated: boolean): string | null {
+  if (authored && !standardEmission.has(authored)) return null
+  const surfaces = sources.map(m => {
+    // A single glow or canopy surface (the hovercraft sets its glow's intensity from the throttle
+    // every frame) is built without its emissive intensity: leave it out, or craft share only at
+    // equal throttle.
+    const role = roleOf(m, meshName), intensity = !merged && (role === 'glow' || role === 'canopy' || (role === 'glass' && paintCanopy.value)) ? '' : m.emissiveIntensity
+    return [
+    role, m.name, m instanceof T.MeshPhysicalMaterial ? `p${m.clearcoat}/${m.clearcoatRoughness}` : 's', m.roughness, m.metalness, intensity,
+    m.userData.accentMask === true ? 'mask' : '', m.userData.trackWidth ?? '', m.side, m.transparent ? 't' : '', m.opacity, m.flatShading ? 'flat' : '',
+  ].join(':')
+  })
+  return [tier, merged ? 'merged' : '', instanced ? 'instanced' : '', accent ? 'accent' : '', paintCanopy.value ? 'field' : 'glass', heated ? 'heat' : '', meshName, decorationIdOf(decorate), ...surfaces].join('|')
+}
+
 /** Runs the shared night and lava passes over whatever materials the meshes currently hold. */
-export type Decorate = (root: T.Object3D) => void
+export type Decorate = ((root: T.Object3D) => void) & {
+  /**
+   * Names the decoration in the sharing key (skins/decoration.ts). Without one, each decorator
+   * function counts as its own decoration: never shared with another, so never confused with one.
+   */
+  decorationId?: string
+}
+const anonymous = new WeakMap<Decorate, string>()
+let anonymousCount = 0
+const decorationIdOf = (decorate: Decorate): string => decorate.decorationId ?? anonymous.get(decorate) ?? (anonymous.set(decorate, `anonymous-${++anonymousCount}`), `anonymous-${anonymousCount}`)
 
 /**
  * Take over the standard materials under `root` and swap them by shading tier. Call once the
@@ -520,6 +636,9 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
   // The owner vehicle publishes its live colours (see Vehicle.setColors); a viewer has none.
   let accent: T.Color | null = null
   for (let o: T.Object3D | null = root; o; o = o.parent) { const c = o.userData.vehicleColors as { accent?: T.Color } | undefined; if (c?.accent) { accent = c.accent; break } }
+  // Lava glow coats a vehicle that can be heated; a model with no vehicle (a viewer) is left plain.
+  const heated = Boolean(heatOwner(root))
+  for (const e of entries) { const paint = { sources: mergedSurfaces.get(e.source) ?? [e.source], accent }; paintOf.set(e.mesh, paint); paintOfGeometry.set(e.mesh.geometry, paint) }
   // Read before anything is decorated: tier 0 decoration wraps these nodes in place.
   const authored = new Map<T.Material, N | null>()
   for (const e of entries) authored.set(e.source, (e.source as unknown as T.MeshStandardNodeMaterial).emissiveNode ?? null)
@@ -543,17 +662,34 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
     else {
       // Keyed by source, and apart for meshes that scroll a track per instance (see `scrolls`).
       const cache = new Map<T.Material, T.Material>(), instancedCache = new Map<T.Material, T.Material>()
+      // A set holds each shared material once, however many of its meshes wear it (see drop).
+      const taken = new Set<T.Material>()
+      try {
       for (const e of entries) {
         const instanced = scrolls(e.mesh, e.source), shared = instanced ? instancedCache : cache
         let variant = tier === 0 ? e.source : shared.get(e.source)
         if (!variant) {
-          const packed = mergedSurfaces.get(e.source)
-          variant = build(packed ?? [e.source], Boolean(packed), tier as 1 | 2 | 3, e.mesh.name, authored.get(e.source) ?? null, accent, instanced)
+          const packed = mergedSurfaces.get(e.source), sources = packed ?? [e.source], own = authored.get(e.source) ?? null
+          const key = signature(sources, Boolean(packed), tier, e.mesh.name, own, accent, instanced, decorate, heated)
+          const found = key === null ? undefined : pool.get(key)
+          if (found) { variant = found.material; if (!taken.has(variant)) { taken.add(variant); found.users++; showroomShare.users++; showroomShare.reused++ } }
+          else {
+            variant = build(sources, Boolean(packed), tier as 1 | 2 | 3, e.mesh.name, own && standardEmission.has(own) ? null : own, accent, instanced)
+            if (key === null) showroomShare.unshared++
+            else { variant.userData.sharedShowroom = true; pool.set(key, { material: variant, users: 1 }); pooled.set(variant, key); taken.add(variant); showroomShare.alive++; showroomShare.users++ }
+          }
           shared.set(e.source, variant); built.add(variant)
         }
         e.mesh.material = variant
       }
       decorate(root)
+      } catch (error) {
+        // Part way through: give back what this set took (no tier set holds it, so nothing else
+        // would) and put the meshes back as they were, then let the caller see the error.
+        for (const m of taken) { built.delete(m); releaseShared(m) }
+        for (const e of entries) e.mesh.material = tiers[current]?.get(e.mesh) ?? e.source
+        throw error
+      }
       set = new Map(entries.map(e => [e.mesh, e.mesh.material as T.Material]))
       for (const m of set.values()) built.add(m)
       tiers[tier] = set
@@ -618,6 +754,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
           if (!material || seen.has(pair)) continue
           seen.add(pair)
           const proxy = e.mesh.clone(false)
+          const paint = paintOf.get(e.mesh); if (paint) paintOf.set(proxy, paint)
           proxy.material = material; proxy.visible = true; proxy.frustumCulled = false; proxy.castShadow = true
           // Only frames that really draw count: the world is not rendered behind the lobby.
           proxy.onBeforeRender = () => { job.drawn = true }
@@ -636,6 +773,10 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
     root.getWorldPosition(job.group.position)
     if (job.drawn) { job.drawn = false; if (++job.frames >= WARM_FRAMES) endWarm('warmed') }
     else if (++job.waited > WARM_PATIENCE) endWarm('abandoned')
+  }
+  /** Let go of a tier set: shared materials back to the pool (once each), the rest disposed. */
+  const drop = (set: Map<T.Mesh, T.Material> | undefined): void => {
+    for (const m of new Set(set?.values() ?? [])) { built.delete(m); if (!releaseShared(m)) m.dispose() }
   }
   const refresh = (): void => {
     // The frame governor caps this by graphics level (safe 0, mobile 0, desktop 3) and sheds it
@@ -681,13 +822,20 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
       // The switch changes which material a canopy gets, so the built tiers are stale.
       use(0)
       endWarm('cancelled'); releaseKept(); warmed = ''
-      for (let tier = 1; tier < tiers.length; tier++) { for (const m of tiers[tier]?.values() ?? []) m.dispose(); tiers[tier] = undefined }
+      for (let tier = 1; tier < tiers.length; tier++) { drop(tiers[tier]); tiers[tier] = undefined }
       refresh()
     } else if (id === vehicleShading.def.id || id === paintGloss.def.id) refresh()
   })
-  refresh()
+  // A first build that fails leaves nothing behind: no detail callback or settings listener for a
+  // vehicle whose caller never got the disposer (use() has already given back what it took).
+  try { refresh() } catch (error) { detach(); unsubscribe(); throw error }
   return () => {
     detach(); unsubscribe(); endWarm('cancelled'); releaseKept()
+    // Shared materials go back to the pool, and the vehicle's own plain set goes back on its
+    // meshes: the owner disposes whatever is attached, and must never dispose a material other
+    // vehicles are drawing.
+    for (const e of entries) if (pooled.has(e.mesh.material as T.Material)) e.mesh.material = tiers[0]?.get(e.mesh) ?? e.source
+    for (let tier = 1; tier < tiers.length; tier++) { drop(tiers[tier]); tiers[tier] = undefined }
     const live = new Set<T.Material>()
     root.traverse(o => { if (o instanceof T.Mesh) for (const m of Array.isArray(o.material) ? o.material : [o.material]) live.add(m) })
     // The owner releases whatever is still attached; drop the tiers that are not.

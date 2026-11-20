@@ -27,14 +27,15 @@
 import * as THREE from 'three/webgpu'
 import { referenceParts, type Mesh, type PartName } from '../../../../tools/buggy-fit/glb'
 import { smoothBuggyWheel } from '../../../vehicles/skins/buggyGeometry'
-import { addLavaGlow } from '../../../vehicles/skins/lavaGlow'
-import { addNightReadability } from '../../../vehicles/skins/nightReadability'
+
+
 import { applyShowroom, setRole, type SurfaceRole } from '../../../vehicles/skins/showroom'
 import type { LabContext, LabDesignInfo, LabExhibit, LabModel } from '../types'
 import type { BuggySkin } from '../../../vehicles/skins/BuggySkin'
 import type { VehicleDetail } from '../../../vehicles/skins/mergeStatic'
 import type { BuggyBodySource } from '../../../vehicles/skins/Syn3hBuggySkin'
 import { motorSparkLoad, sparkLevel } from '../../../vehicles/skins/motorDrive'
+import { vehicleDecoration } from '../../../vehicles/skins/decoration'
 
 /** The candidate contract (tools/buggy-fit/README.md), declared structurally. */
 interface CandidatePart { part: PartName; role: string; geometry: THREE.BufferGeometry }
@@ -179,7 +180,7 @@ export const buggyFit: LabExhibit = {
     for (const h of HUBS) { const w = wheel.clone(); w.position.copy(h); object.add(w) }
     let showWings = false
     // The shared shading, applied once every mesh is in place.
-    const showroom = () => applyShowroom(object, root => { addNightReadability(root); addLavaGlow(root) })
+    const showroom = () => applyShowroom(object, vehicleDecoration)
     if (info.id === 'reference') {
       refWire.root.visible = false
       const detachShowroom = showroom()
