@@ -692,27 +692,40 @@ export class PostChain {
             const q = abs(local).sub(box.zw).add(radius)
             const outer = max(q, vec2(0))
             const distance = length(outer).add(min(max(q.x, q.y), 0)).sub(radius)
-            const bevel = min(box.z, box.w).mul(0.58).max(1)
-            const edge = smoothstep(bevel.negate(), 0, distance)
+            const half = min(box.z, box.w)
+            const bevel = clamp(half.mul(0.31), 3, 12)
+            const band = clamp(float(1).add(distance.div(bevel)), 0, 1)
+            const edge = band.mul(band)
             const side = step(q.y, q.x)
             const normal = mix(vec2(side, float(1).sub(side)), outer.div(max(length(outer), 0.001)), step(0.001, length(outer))).mul(local.sign())
             const filter: N = glass.filters.element(i)
             const tint: N = glass.bodies.element(i)
-            const bend = normal.mul(edge).mul(bevel).mul(filter.w.mul(0.27).add(0.65)).div(size)
+            const bend = normal.mul(edge).mul(half).mul(filter.w.mul(0.15).add(0.48)).div(size)
+            const centre = uv().sub(local.mul(0.035).div(size))
             const sample = (scale: number, frost = 0) => {
-              const at = clamp(uv().sub(bend.mul(scale)).add(vec2(frost, -frost).mul(filter.x).div(size)), 0, 1)
+              const at = clamp(centre.sub(bend.mul(scale)).add(vec2(frost, -frost).mul(filter.x).div(size)), 0, 1)
               if (finished) return finished.sample(at).rgb
               // Keep the final composite's local lighting and grade. Only the scene
               // colour difference is displaced in this cheaper trial.
               const display = (coord: N) => renderOutput(vec4(color.sample(coord).rgb, 1), toneMap, renderer.outputColorSpace).rgb
               return original.rgb.add(display(at).sub(display(uv())))
             }
-            const lens = vec3(sample(1.04).r, sample(1).g, sample(0.96).b)
+            const mid = sample(1)
+            const red = sample(1.065).r
+            const blue = sample(0.935).b
+            const contrast = abs(red.sub(mid.r)).add(abs(blue.sub(mid.b)))
+            const lens = mix(mid, vec3(red, mid.g, blue), smoothstep(0.025, 0.22, contrast).mul(band))
             const frost = sample(1, 0.65).add(sample(1, -0.65)).mul(0.5)
-            const blurred = mix(lens, frost, 0.18)
+            const blurred = mix(lens, frost, 0.09)
             const luminance = dot(blurred, vec3(0.2126, 0.7152, 0.0722))
-            const filtered = clamp(mix(vec3(luminance), blurred, mix(1, filter.y, 0.3)).mul(mix(1, filter.z, 0.2)), 0, 1)
-            const body = mix(filtered, tint.rgb, tint.a)
+            const filtered = clamp(mix(vec3(luminance), blurred, mix(1, filter.y, 0.3)).mul(1.035), 0, 1)
+            const tinted = mix(filtered, tint.rgb, tint.a)
+            // A slim directional reflection rides on the wider band of bent light.
+            const facing = dot(normal, vec2(-0.67, -0.74))
+            const rim = smoothstep(-2.1, -0.35, distance)
+            const reflection = rim.mul(smoothstep(-0.05, 0.92, facing)).mul(0.66)
+            const counter = rim.mul(smoothstep(0.0, 0.95, facing.negate())).mul(0.20)
+            const body = mix(tinted.mul(float(1).sub(counter)), vec3(1), reflection)
             result.assign(vec4(mix(original.rgb, body, float(1).sub(smoothstep(-0.5, 0.5, distance))), 1))
           })
         })
