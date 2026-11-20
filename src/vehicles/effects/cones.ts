@@ -105,11 +105,7 @@ function emptyMap(): T.DataTexture {
 
 /** The cone geometry: apex at the origin, opening along -Z, length 1 and end radius 1. */
 function coneGeometry(): T.BufferGeometry {
-  // A tip of a millimetre, not a point. three's cone has one triangle per side at a pointed tip,
-  // whose tip vertex carries that side's right-edge normal, so neighbouring sides meet with
-  // different normals and the beam, lit by its walls' angle to the view, showed one band per
-  // side up close. With a tip ring every side is a quad with shared, smooth normals.
-  const g = new T.CylinderGeometry(0.001, 1, 1, 32, 1, true)
+  const g = new T.ConeGeometry(1, 1, 32, 1, true)
   g.translate(0, -0.5, 0) // apex at the origin, base at y = -1
   g.rotateX(Math.PI / 2) // y -> z: base at z = -1
   return g
