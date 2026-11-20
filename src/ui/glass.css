@@ -142,5 +142,5 @@ html[data-gfx="0"] .liquid-glass, [data-ui-frost="off"] .liquid-glass { --glass-
 .liquid-glass[data-glass-surface="shader"][data-glass-press="brake"] { transform: none; }
 .liquid-glass[data-glass-surface="shader"][data-glass-press="brake"] > .brake-glass-label {
   position: absolute; inset: 0; display: grid; place-items: center;
-  font-size: 125.7143%; line-height: 1; text-shadow: none; pointer-events: none;
+  font-size: 134.2857%; line-height: 1; text-shadow: none; pointer-events: none;
 }

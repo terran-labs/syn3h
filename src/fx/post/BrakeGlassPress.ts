@@ -1,6 +1,19 @@
 import { Vector2, Vector4 } from 'three/webgpu'
 import { uniform } from 'three/tsl'
 
+// Time in milliseconds, outline displacement and face lift. Separate fits to
+// the native circle use linear interpolation between measured phases. Size can
+// overshoot or undershoot; the optical lift stays between zero and one.
+const pressCurve = [
+  [0, 0, 0], [20, 0, .49], [45, .16, .86], [80, .38, .98],
+  [105, 1.06, .99], [160, 1.24, .95], [230, 1.29, 1], [320, 1, 1],
+]
+const releaseCurve = [
+  [0, 1, 1], [35, .93, .89], [90, .37, .68], [155, -.36, .49],
+  [210, -.25, .38], [320, -.415, .243], [345, -.013, .236], [410, 0, .204],
+  [550, 0, .192], [580, 0, 0],
+]
+
 /** Brake input owns .held. Only its painted dimensions change. */
 export class BrakeGlassPress {
   readonly state = uniform(new Vector2(-1, 0))
@@ -45,32 +58,30 @@ export class BrakeGlassPress {
     this.moving = true
   }
 
-  advance() {
+  advance(now?: number) {
     if (!this.moving) return
-    const elapsed = (performance.now() - this.start) / 1000
-    const duration = this.target ? .09 : .65
-    if (elapsed >= duration || this.reduced.matches) {
+    const elapsed = (now ?? performance.now()) - this.start
+    const curve = this.target ? pressCurve : releaseCurve
+    if (elapsed >= curve[curve.length - 1][0] || this.reduced.matches) {
       this.write(this.target, this.target)
       this.moving = false
       return
     }
+    let index = 1
+    while (elapsed > curve[index][0]) index++
+    const [t0, s0, l0] = curve[index - 1]
+    const [t1, s1, l1] = curve[index]
+    const u = Math.max(0, (elapsed - t0) / (t1 - t0))
+    const size = s0 + u * (s1 - s0)
+    const lift = l0 + u * (l1 - l0)
     if (this.target) {
-      const remaining = (1 - elapsed / duration) ** 4
-      this.write(1 - (1 - this.initialSize) * remaining, 1 - (1 - this.initialLift) * remaining)
-    } else {
-      // Native release briefly passes below resting size around 200 ms.
-      // Its face stays bright after the outline has returned to rest.
-      const angle = 14 * elapsed
-      const spring = Math.exp(-5.8 * elapsed) * (Math.cos(angle) + 5.8 / 14 * Math.sin(angle))
-      const floor = Math.exp(-duration / .25)
-      const lift = (Math.exp(-elapsed / .25) - floor) / (1 - floor)
-      this.write(this.initialSize * spring, this.initialLift * lift)
-    }
+      this.write(this.initialSize + (1 - this.initialSize) * size, this.initialLift + (1 - this.initialLift) * lift)
+    } else this.write(this.initialSize * size, this.initialLift * lift)
   }
 
   private write(sizeProgress: number, lift: number) {
     this.sizeProgress = sizeProgress
-    const scale = 1 + sizeProgress * (44 / 35 - 1)
+    const scale = 1 + sizeProgress * (43.5 / 35 - 1)
     this.state.value.y = lift
     if (this.box && this.radius) {
       this.box.z = this.rest.z * scale
@@ -79,7 +90,7 @@ export class BrakeGlassPress {
     }
     if (this.label && this.labelScale !== scale) {
       this.labelScale = scale
-      this.label.style.transform = 'scale(' + scale * 35 / 44 + ')'
+      this.label.style.transform = 'scale(' + scale * 35 / 47 + ')'
     }
   }
 

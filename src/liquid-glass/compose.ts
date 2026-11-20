@@ -73,7 +73,7 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
             body.assign(regularGlass(box.zw, distance, gradient, uv(), size, dark, sample, filtered, blurred))
           })
           if (glass.pressState) {
-            const lift = glass.pressState.y.mul(.45).mul(float(i.equal(glass.pressState.x)))
+            const lift = glass.pressState.y.mul(.405).mul(float(i.equal(glass.pressState.x)))
             body.assign(mix(body, vec3(1), lift))
           }
           under.assign(mix(under, body, coverage))
