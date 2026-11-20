@@ -1,3 +1,4 @@
+import type { Node } from 'three/webgpu'
 import { Fn, If, abs, clamp, dot, float, length, max, min, mix, step, uv, vec2, vec3, vec4 } from 'three/tsl'
 import { regularGlass } from '../../src/liquid-glass/regular'
 
@@ -7,10 +8,10 @@ type N = any
 export function mergeReferencePair(separate: N, group: N, glass: N, sample: (p: N) => N,
   filtered: (p: N, width: N) => N, blurred: (p: N) => N) {
   return Fn(() => {
-    const size = glass.viewport.xy
+    const size = glass.viewport.xy as Node<'vec2'>
     const point = uv().mul(size)
-    const circle = glass.boxes.element(0)
-    const pill = glass.boxes.element(1)
+    const circle = glass.boxes.element(0) as Node<'vec4'>
+    const pill = glass.boxes.element(1) as Node<'vec4'>
     const dark = glass.viewport.z
     const result = vec4(sample(uv()), 1).toVar()
     If(group.greaterThan(0), () => {
