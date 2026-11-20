@@ -137,9 +137,7 @@ html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actio
   font: 500 11px/1.1 'Barlow', sans-serif; letter-spacing: .1em; text-transform: uppercase; white-space: normal; overflow-wrap: anywhere;
   pointer-events: auto; touch-action: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
-/* Held: the same shared "on" state as the shell's thumb buttons (shell.css) until the glass
-   class has its own pressed look for .held. */
-:root .gear-actions button.gs-action.held { background: var(--s3-on-fill, var(--s3-accent-2)); color: var(--s3-on-ink, #141416); box-shadow: var(--s3-on-glow, none); }
+/* Held: the glass class's pressed look (.liquid-glass.held, src/ui/glass.css); nothing here. */
 
 @media (prefers-reduced-motion: reduce) {
   .gear-selector, .gear-selector .gs-window, :root .gear-selector .gs-drum button.gs-item, .gear-selector .gs-label, .gear-selector .gs-level i { transition: none; }
