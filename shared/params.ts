@@ -98,9 +98,10 @@ export const params = {
     return () => listeners.delete(listener)
   },
   /** All shared values, for late joiners and presets. */
-  snapshot(scope: 'world' | 'client' | 'all' = 'world'): Record<string, ParamValue> {
+  snapshot(scope: 'world' | 'client' | 'all' = 'world', overridesOnly = false): Record<string, ParamValue> {
     const out: Record<string, ParamValue> = {}
     for (const p of registry.values()) {
+      if (overridesOnly && p.value === p.def.default) continue
       if (scope === 'all' || p.def.scope === scope) out[p.def.id] = p.value
     }
     return out

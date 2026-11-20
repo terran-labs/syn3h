@@ -78,6 +78,14 @@ describe('Room', () => {
     expect(parseJson(JSON.stringify({ type: 'chat', text: 'x'.repeat(MAX_JSON_BYTES) }), 'hello')).toBeNull()
   })
 
+  it('preserves world overrides for a late join and supplies explicit defaults to older pages', () => {
+    const caps = { largeWelcome: true, sparseWorld: true }
+    join('Host', { 'game.mode': 0, 'world.futureSwitch': false }, caps)
+    const guest = join('Guest', { 'game.mode': 2 }, caps)
+    expect(guest.peer.last('welcome')?.params).toEqual({ 'game.mode': 0, 'world.futureSwitch': false })
+    expect(join('Earlier page').peer.last('welcome')?.params).toEqual(room.snapshot().params)
+  })
+
   it('assigns ids and slots and tells everyone about joins', () => {
     const a = join('Ann', { 'game.mode': 0 })
     const b = join('Bob')

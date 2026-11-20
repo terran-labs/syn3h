@@ -371,7 +371,7 @@ export type ClientMessage =
    * `page` is random per page load: a hello with the same secret and the same page is that page
    * reconnecting, and takes its place back at once; a duplicated tab has the secret, not the page.
    */
-  | { type: 'hello'; v: number; largeWelcome?: true; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string; drop?: DropReport; play?: boolean }
+  | { type: 'hello'; v: number; largeWelcome?: true; sparseWorld?: true; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string; drop?: DropReport; play?: boolean }
   /**
    * Change vehicle kind, colours or name after joining. `name` is optional and newer: an older
    * room ignores it, and the name then changes at the next join. The room cleans and
@@ -527,11 +527,17 @@ export const MAX_NAME_LENGTH = 24
 export const RENAME_INTERVAL_MS = 2000
 
 /** Parse a control message without throwing. Returns null on anything malformed. */
-export function parseJson<T>(text: string, handshake?: 'hello' | 'welcome'): T | null {
-  if (text.length > MAX_JSON_BYTES && (!handshake || text.length > (handshake === 'hello' ? maxHelloChars() : maxWelcomeChars()))) return null
+export function parseJson<T>(text: string, handshake?: 'hello' | 'welcome', onOversize?: (length: number) => void): T | null {
+  if (text.length > MAX_JSON_BYTES && (!handshake || text.length > (handshake === 'hello' ? maxHelloChars() : maxWelcomeChars()))) {
+    onOversize?.(text.length)
+    return null
+  }
   try {
     const v = JSON.parse(text)
-    if (text.length > MAX_JSON_BYTES && v?.type !== handshake) return null
+    if (text.length > MAX_JSON_BYTES && v?.type !== handshake) {
+      onOversize?.(text.length)
+      return null
+    }
     return v && typeof v === 'object' && typeof v.type === 'string' ? (v as T) : null
   } catch {
     return null

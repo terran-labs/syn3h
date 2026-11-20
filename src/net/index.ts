@@ -280,6 +280,10 @@ export class NetClient implements System {
   /** The shell's play state last frame: leaving play (Exit world) drops the gear. */
   private wasDriving = false
   private welcomed = false
+  private oversizedMessages = 0
+  private readonly recordOversize = (length: number) => {
+    if (++this.oversizedMessages === 1) console.warn(`Dropped oversized room message (${length} characters). See Copy diagnostics for the session count.`)
+  }
   private sessionDrops = 0
   private sessionRejoins = 0
   private everWelcomed = false
@@ -524,7 +528,7 @@ export class NetClient implements System {
 
     this.conn.onOpen = () => {
       this.send({
-        type: 'hello', v: PROTOCOL_VERSION, largeWelcome: true, modes: 2, name: playerName(), params: params.snapshot('world'),
+        type: 'hello', v: PROTOCOL_VERSION, largeWelcome: true, sparseWorld: true, modes: 2, name: playerName(), params: params.snapshot('world', true),
         kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room), page: PAGE_LOAD,
         ...(this.dropReport ? { drop: this.dropReport } : {}),
         // "Bots may play with me": only a no is sent; an older room ignores the field.
@@ -533,7 +537,7 @@ export class NetClient implements System {
       this.dropReport = null
     }
     this.conn.onText = (text) => {
-      const msg = parseJson<ServerMessage>(text, 'welcome')
+      const msg = parseJson<ServerMessage>(text, 'welcome', this.recordOversize)
       if (msg) this.onMessage(msg)
     }
     this.conn.onBinary = (data) => this.onState(data)
@@ -577,7 +581,7 @@ export class NetClient implements System {
   diagnosticLine(): string {
     const state = this.connected ? 'connected' : this.conn.state === 'open' ? 'awaiting welcome' : this.conn.state
     const rtt = this.connected && this.clock.synced ? Math.round(1000 * this.clock.rtt) + ' ms' : 'unavailable'
-    return `Room connection: ${state}, drops ${this.sessionDrops}, rejoins ${this.sessionRejoins}, RTT ${rtt}`
+    return `Room connection: ${state}, drops ${this.sessionDrops}, rejoins ${this.sessionRejoins}, RTT ${rtt}, oversized messages dropped ${this.oversizedMessages}`
   }
 
   get connected(): boolean {

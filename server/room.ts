@@ -807,7 +807,7 @@ export class Room {
       player.joinedAt = this.now()
       player.windowStart = this.now()
       player.stateCount = player.jsonCount = 0
-      this.welcome(peer, player, msg.largeWelcome === true)
+      this.welcome(peer, player, msg.largeWelcome === true, msg.sparseWorld === true)
       this.persist()
       return
     }
@@ -822,6 +822,7 @@ export class Room {
     // So does the first into a room reset for idleness; parked players there are told.
     const bringsWorld = this.players.size === 0 || this.vacant
     if (bringsWorld && msg.params && typeof msg.params === 'object') {
+      if (msg.sparseWorld === true) this.resetParamValues()
       for (const id in msg.params) {
         // Frozen protocol-2 clients send Tag as a default, not an explicit choice.
         // They can still choose Tag later through the existing param message.
@@ -869,7 +870,7 @@ export class Room {
     // Scores for players who are no longer in the room (the same rebuild) are not kept.
     for (const old in this.scores) if (!this.byId(Number(old))) delete this.scores[old]
 
-    this.welcome(peer, player, msg.largeWelcome === true)
+    this.welcome(peer, player, msg.largeWelcome === true, msg.sparseWorld === true)
     logEvent('hello', { room: this.tag, player: info.id, bot: false, players: this.players.size, host: this.host === info.id })
     this.broadcast({ type: 'join', player: info }, peer)
     // Being "it" by default is news only while a game of tag is on.
@@ -878,7 +879,7 @@ export class Room {
   }
 
   /** Tell a player who it is and what the room holds, and where everyone else is. */
-  private welcome(peer: Peer, player: Player, largeWelcome: boolean): void {
+  private welcome(peer: Peer, player: Player, largeWelcome: boolean, sparseWorld: boolean): void {
     const welcome: Extract<ServerMessage, { type: 'welcome' }> = {
       type: 'welcome',
       v: PROTOCOL_VERSION,
@@ -886,7 +887,7 @@ export class Room {
       slot: player.info.slot,
       room: this.name,
       players: this.playerList(),
-      params: Object.fromEntries(this.values),
+      params: Object.fromEntries(sparseWorld ? [...this.values].filter(([id, value]) => registry.get(id)?.def.default !== value) : this.values),
       game: this.gameState(),
       serverTime: this.now() / 1000,
       race: this.raceView(),
@@ -1766,10 +1767,14 @@ export class Room {
 
   /** World parameters to their defaults: those the server knows; others are forgotten. */
   private setDefaults(): void {
+    this.resetParamValues()
+    this.mode = this.paramNumber(gameMode.def)
+  }
+
+  private resetParamValues(): void {
     this.values.clear()
     this.unknownCount = 0
     for (const p of registry.all()) if (p.def.scope === 'world') this.values.set(p.def.id, p.def.default)
-    this.mode = this.paramNumber(gameMode.def)
   }
 
   /**

@@ -323,9 +323,12 @@ try {
   // tests replication, not pacing, which has its own tests. Guarded for builds without it.
   await a.evaluate(() => { const p = window.syn3h.params; if (p.get('bots.keepCount')) p.set('bots.keepCount', true) })
   await spyAudio(a)
+  await a.waitForFunction(() => [...window.syn3hNet.players.values()].filter(p => p.bot).length >= 4, null, { timeout: 60000 })
+  const existingBots = await a.evaluate(() => [...window.syn3hNet.players.values()].filter(p => p.bot).map(p => p.id))
   const b = await open('Bob')
   const both = (fn, arg) => Promise.all([a.evaluate(fn, arg), b.evaluate(fn, arg)])
   await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet?.connected && [...window.syn3hNet.players.values()].filter(p => !p.bot).length === 2, null, { timeout: 30000 })))
+  check('late join receives the existing bot roster', await b.evaluate(ids => ids.every(id => window.syn3hNet.players.get(id)?.bot), existingBots), { existingBots })
   const [idA, idB] = await both(() => window.syn3hNet.id)
   ids.set('Alice', idA); ids.set('Bob', idB)
   const humanViews = await both(() => [...window.syn3hNet.players.values()].filter(p => !p.bot))
