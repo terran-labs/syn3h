@@ -42,8 +42,12 @@ export const CONE_DROP = Math.atan2(0.8, 22)
 export interface ConeShape { length: number; halfAngle: number; drop: number }
 export const CONE_SHAPES: Readonly<Record<'buggy' | 'hovercraft' | 'jet', ConeShape>> = {
   buggy: { length: CONE_LENGTH, halfAngle: CONE_HALF_ANGLE, drop: CONE_DROP },
-  hovercraft: { length: CONE_LENGTH, halfAngle: CONE_HALF_ANGLE, drop: CONE_DROP },
-  jet: { length: CONE_LENGTH, halfAngle: CONE_HALF_ANGLE, drop: CONE_DROP },
+  // The hovercraft's lamp (.23 m up) aims 1 m down at 20 m; it sits low over water, so a
+  // shorter, wider beam that meets the surface instead of tunnelling under it.
+  hovercraft: { length: 16, halfAngle: (14 * Math.PI) / 180, drop: Math.atan2(1.03, 20.15) },
+  // The jet's lamps hang under the nose and it is usually flying: a longer, narrower beam
+  // reads as a landing light reaching ahead rather than a puddle under the fuselage.
+  jet: { length: 28, halfAngle: (9 * Math.PI) / 180, drop: Math.atan2(1.15, 18.7) },
 }
 /** The cone shape for a vehicle kind, or null for a kind without cones. */
 export function coneShapeFor(kind: string): ConeShape | null {
