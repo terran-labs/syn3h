@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { guardDevice, type DeviceLossInfo, type GuardedRenderer } from '../../src/core/deviceLoss'
+import { describe, expect, it, vi } from 'vitest'
+import { LOSS_CONFIRM_MS, guardDevice, runGuarded, type DeviceLossInfo, type GuardedRenderer } from '../../src/core/deviceLoss'
 
 /** A WebGPU-shaped device whose loss and error scopes the test controls. */
 function fake() {
@@ -52,5 +52,55 @@ describe('a lost WebGPU device', () => {
     const f = fake()
     expect(guardDevice(f.renderer)).toBe(true)
     expect(guardDevice(f.renderer)).toBe(false)
+  })
+})
+
+/**
+ * A game frame against a device whose instance has dropped. Like three, `render` returns early
+ * once the renderer is marked lost; before that, it creates a vertex buffer for a mesh drawn for
+ * the first time, and Chrome throws as it did on v26.11.1901's hosted check.
+ */
+function frameRig() {
+  const f = fake()
+  let gpuCalls = 0
+  const createBuffer = () => {
+    gpuCalls++
+    if (f.device.dropped) throw new RangeError("Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (48) is too large for the implementation when mappedAtCreation == true")
+  }
+  const render = () => { if (f.renderer._isDeviceLost) return; createBuffer() }
+  const frame = () => runGuarded(f.renderer, () => { render() })
+  return { ...f, frame, get gpuCalls() { return gpuCalls } }
+}
+
+describe('a game frame after the device is lost', () => {
+  it('throws nothing in the window before the loss is reported, and nothing touches the GPU after it', async () => {
+    vi.useFakeTimers()
+    try {
+      const r = frameRig()
+      guardDevice(r.renderer)
+      r.device.dropped = true
+      // The instance is gone but device.lost has not resolved yet: frames still try to draw.
+      for (let i = 0; i < 5; i++) expect(() => r.frame()).not.toThrow()
+      r.lose({ reason: 'unknown', message: 'A valid external Instance reference no longer exists.' })
+      // three's own handler marks the renderer lost when device.lost resolves.
+      r.renderer._isDeviceLost = true
+      const before = r.gpuCalls
+      for (let i = 0; i < 60; i++) expect(() => r.frame()).not.toThrow()
+      expect(r.gpuCalls).toBe(before)
+      // The held error is dropped once the loss confirms it: nothing reaches the page later.
+      expect(() => vi.advanceTimersByTime(LOSS_CONFIRM_MS + 10)).not.toThrow()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('still throws an ordinary bug at once, and a WebGPU error on a healthy device soon after', () => {
+    vi.useFakeTimers()
+    try {
+      const r = frameRig()
+      expect(() => runGuarded(r.renderer, () => { throw new TypeError('x is undefined') })).toThrow('x is undefined')
+      // A failing WebGPU call with no loss behind it is a real error: held, then thrown.
+      r.device.dropped = true
+      expect(() => r.frame()).not.toThrow()
+      expect(() => vi.advanceTimersByTime(LOSS_CONFIRM_MS + 10)).toThrow(/createBuffer/)
+    } finally { vi.useRealTimers() }
   })
 })

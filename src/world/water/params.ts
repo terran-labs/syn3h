@@ -7,8 +7,12 @@ import { WAVE_MAX_HEIGHT } from '../../../shared/water/waves'
 
 const P = { group: 'Water', scope: 'world' as const }
 
-/** Master switch for the new sea surface: waves, shoreline foam lines, the new water look. */
-export const waterWaves = defineParam({ ...P, id: 'water.waves', label: 'Sea waves', default: true })
+/**
+ * Which water system draws the liquids: on, the current surface (clipmap sea with waves, lakes
+ * and rivers, shoreline foam); off, the classic chunked look. Not a wave height: for calm water
+ * set water.waveHeight and water.chop to 0. The id stays water.waves so saved settings load.
+ */
+export const waterWaves = defineParam({ ...P, id: 'water.waves', label: 'Current water (off: classic look)', default: true })
 /** Approximate light attenuation distance through the water column, in metres. */
 export const waterClarity = defineParam({
   ...P, id: 'water.clarity', label: 'Water clarity (m)', default: 10, min: 1, max: 50, step: 1,
