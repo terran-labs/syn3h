@@ -311,7 +311,7 @@ export class Game {
             }
           }
         }
-        this.postChain?.setCovered?.(true)
+        this.postChain?.setCovered?.(this.holdDraws)
         runGuarded(this.renderer as unknown as GuardedRenderer, () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16))
       } finally {
         this.postChain?.setCovered?.(false)

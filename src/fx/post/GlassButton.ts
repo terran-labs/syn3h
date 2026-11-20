@@ -17,7 +17,12 @@ export class GlassButton {
   private dirty = true
   private readonly invalidate = () => { this.dirty = true }
   private readonly resize = new ResizeObserver(this.invalidate)
-  private readonly changes = new MutationObserver(this.invalidate)
+  private readonly changes = new MutationObserver(records => {
+    // TouchControls writes aria-pressed each tick, including when its value stays
+    // the same. Those notifications must never trigger a layout read.
+    if (records.some(r => r.oldValue !== (r.target as Element).getAttribute(r.attributeName!))) this.invalidate()
+  })
+  private readonly hover = matchMedia('(hover: hover)')
   private readonly reduced = matchMedia('(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)')
   private controls: HTMLElement[] = []
   private readonly drawn = new Set<HTMLElement>()
@@ -48,7 +53,7 @@ export class GlassButton {
       for (const b of this.controls) {
         this.resize.observe(b)
         for (let el: HTMLElement | null = b; el; el = el.parentElement) {
-          this.changes.observe(el, { attributes: true, attributeFilter: ['class', 'hidden', 'style', 'data-ui-frost', 'data-gfx', 'aria-pressed'] })
+          this.changes.observe(el, { attributes: true, attributeOldValue: true, attributeFilter: ['class', 'hidden', 'style', 'data-ui-frost', 'data-gfx', 'aria-pressed'] })
         }
       }
       this.dirty = true
@@ -72,8 +77,8 @@ export class GlassButton {
       for (let el: HTMLElement | null = b; !moving && el; el = el.parentElement) {
         moving = el.getAnimations().some(a => a.playState === 'running' && (!(a instanceof CSSTransition) || ['transform', 'translate', 'scale', 'opacity', 'left', 'right', 'top', 'bottom'].includes(a.transitionProperty)))
       }
-      if (moving) { this.dirty = true; continue }
-      const token = b.matches('[aria-pressed="true"], .is-current') ? '--glass-body-on' : b.matches(':hover') ? '--glass-body-hover' : '--glass-body'
+      if (moving) continue // transitionend or animationend restores the shader
+      const token = b.matches('[aria-pressed="true"], .is-current, :active, .held') ? '--glass-body-on' : b.matches(':hover') ? '--glass-body-hover' : '--glass-body'
       const rgba = /^rgb\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\/\s*([\d.]+)\s*\)$/.exec(style.getPropertyValue(token).trim())
       const filter = /^blur\(([\d.]+)px\)\s+saturate\(([\d.]+)\)\s+brightness\(([\d.]+)\)$/.exec(style.getPropertyValue('--glass-frost').trim())
       if (!rgba || !filter) continue
@@ -83,7 +88,7 @@ export class GlassButton {
       boxes[i].set(rect.left - c.left + rect.width / 2, rect.top - c.top + rect.height / 2, rect.width / 2, rect.height / 2)
       ;(this.radii.array[i] as Vector4).set(radius(style.borderTopLeftRadius), radius(style.borderTopRightRadius), radius(style.borderBottomLeftRadius), radius(style.borderBottomRightRadius))
       ;(this.bodies.array[i] as Vector4).set(+rgba[1] / 255, +rgba[2] / 255, +rgba[3] / 255, Math.min(+rgba[4], 0.065))
-      ;(this.filters.array[i] as Vector4).set(+filter[1], +filter[2], +filter[3], Number(this.pressed === b || b.matches(':active, .held')))
+      ;(this.filters.array[i] as Vector4).set(+filter[1], +filter[2], Number(this.hover.matches && b.matches(':hover')), Number(this.pressed === b || b.matches(':active, .held')))
       this.drawn.add(b)
     }
     this.lastLayoutMs = performance.now() - start

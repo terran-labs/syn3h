@@ -70,6 +70,13 @@ export const postDebug = defineParam({ id: 'post.debug', label: 'Debug view: 0 o
 export const postToneMap = defineParam({ id: 'post.toneMap', label: 'Tone mapping: 0 ACES, 1 AgX, 2 Neutral', group: g, scope: c, default: 0, min: 0, max: 2, step: 1 })
 
 
+// Lengths relative to the smaller half-extent keep the same optical shape on a
+// round thumb button and on a taller or wider pill.
+export const glassThickness = defineParam({ id: 'glass.thickness', label: 'Glass thickness / radius', group: 'Glass', scope: c, default: 1.12, min: 0.05, max: 2, step: 0.01 })
+export const glassBevel = defineParam({ id: 'glass.bevel', label: 'Bevel width / radius', group: 'Glass', scope: c, default: 0.53, min: 0.05, max: 1, step: 0.01 })
+export const glassIndex = defineParam({ id: 'glass.index', label: 'Refractive index', group: 'Glass', scope: c, default: 1.5, min: 1.1, max: 2, step: 0.01 })
+export const glassDispersion = defineParam({ id: 'glass.dispersion', label: 'Blue to red index difference', group: 'Glass', scope: c, default: 0.025, min: 0, max: 0.12, step: 0.001 })
+
 export const postHeat = defineParam({ id: 'post.heat', label: 'Heat shimmer over lava', group: g, scope: c, default: 0.6, min: 0, max: 2, step: 0.05 })
 
 export const postLook = defineParam({ id: 'post.look', label: 'Planet colour look', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
