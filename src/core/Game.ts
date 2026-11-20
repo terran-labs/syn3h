@@ -13,9 +13,9 @@ import { installLongFrameRenderer } from './longFrameRenderer'
  */
 import * as THREE from 'three/webgpu'
 import { canCreateWebGL2, NoGraphicsError, webgpuUsable } from './graphicsSupport'
-import { installRenderDiagnostics, recordCoveredVehicleDraw, recordStartupGameDraw, recordStartupPhase, recordStartupPrecompile, showRendererLost, startupTiming, timeStartup } from './diagnostics'
+import { installRenderDiagnostics, recordCoveredVehicleDraw, recordEntryWarmIssue, recordStartupGameDraw, recordStartupPhase, recordStartupPrecompile, showRendererLost, startupTiming, timeStartup } from './diagnostics'
 import { guardDevice, runGuarded, type GuardedRenderer } from './deviceLoss'
-import { drawFrame, gpuDeadlineMs, startRenderer, viewState, type PostChain } from './renderOptions'
+import { drawFrame, gpuDeadlineMs, startRenderer, viewState, withDeadline, type PostChain } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
 import { QualityController, reportLoading, type FrameMetrics } from './quality'
@@ -334,15 +334,35 @@ export class Game {
    */
   async precompile(progress?: (label: string) => void): Promise<void> {
     const start = performance.now()
+    const stop = new AbortController()
+    try {
+      const result = await withDeadline(this.warmEntry(stop.signal, progress), 15_000)
+      if (!result.ok) {
+        recordEntryWarmIssue(result.reason === 'timeout' ? 'Entry warm-up timed out' : 'Entry warm-up failed')
+        if (result.reason === 'rejected') console.warn('Covered entry warm-up failed', result.error)
+      }
+    } finally {
+      // A skin load or frame callback may settle after the overlay has gone.
+      stop.abort()
+      const end = performance.now()
+      recordStartupPrecompile(end - start)
+      try { performance.measure('syn3h:precompile', { start, end }) } catch { /* Older engines. */ }
+    }
+  }
+
+  private async warmEntry(signal: AbortSignal, progress?: (label: string) => void): Promise<void> {
     // Drawn for real, through the frames' own passes, so every shader and pipeline is built
     // exactly as play will use it, with culling off so what the camera cannot see yet is in
     // too. Each such frame may stall while it compiles: call this only while the world is
     // covered and the cover is still (the galaxy holding in the world's air).
     const yieldFrame = async (label: string) => {
+      signal.throwIfAborted()
       progress?.(label)
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      signal.throwIfAborted()
     }
     const draw = (vehicleKind?: string) => {
+      signal.throwIfAborted()
       const drawStart = longFrames.start()
       longFrames.event('Covered precompile')
       for (const system of this.systems) system.prepareCoveredDraw?.()
@@ -371,27 +391,38 @@ export class Game {
       await yieldFrame('Preparing world')
       draw()
     }
-    for (const system of [...this.systems]) await system.warmCovered?.(warm)
+    for (const [index, system] of [...this.systems].entries()) {
+      signal.throwIfAborted()
+      if (!system.warmCovered) continue
+      try {
+        await system.warmCovered(warm)
+      } catch (error) {
+        signal.throwIfAborted()
+        recordEntryWarmIssue('System warm-up failed', index + 1)
+        console.warn('Covered system warm-up failed', systemName(system), error)
+      }
+    }
     // Submission can return before Metal finishes work for the first draw. Drain our
     // world queue while the cover is still opaque, independently of the galaxy renderer.
     const backend = this.renderer.backend as { device?: GPUDevice; gl?: WebGL2RenderingContext }
     await yieldFrame('Finishing graphics')
-    if (backend.device) await backend.device.queue.onSubmittedWorkDone()
-    else if (backend.gl) {
+    if (backend.device) {
+      const result = await withDeadline(backend.device.queue.onSubmittedWorkDone(), 2_000)
+      if (!signal.aborted && !result.ok) recordEntryWarmIssue(result.reason === 'timeout' ? 'GPU completion timed out' : 'GPU completion failed')
+    } else if (backend.gl) {
       const gl = backend.gl
       const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
       if (fence) {
         try {
           gl.flush()
+          const deadline = performance.now() + 2_000
           while (!gl.isContextLost() && gl.clientWaitSync(fence, 0, 0) === gl.TIMEOUT_EXPIRED) {
+            if (performance.now() >= deadline) { recordEntryWarmIssue('GPU completion timed out'); break }
             await yieldFrame('Finishing graphics')
           }
         } finally { gl.deleteSync(fence) }
       }
     }
-    const end = performance.now()
-    recordStartupPrecompile(end - start)
-    try { performance.measure('syn3h:precompile', { start, end }) } catch { /* Older engines. */ }
   }
 
   private postChain: PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> | null = null

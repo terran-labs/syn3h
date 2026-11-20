@@ -86,6 +86,14 @@ export function recordStartupPrecompile(durationMs: number): void {
   startupTiming.entryPrecompileMs ??= durationMs
 }
 
+type WarmIssue = 'Entry warm-up timed out' | 'GPU completion timed out' | 'Entry warm-up failed' | 'GPU completion failed' | 'System warm-up failed' | 'Bot warm draw failed' | 'Player vehicle warm-up failed'
+const warmIssues = new Map<WarmIssue, { count: number; lastSystem?: number }>()
+
+/** Session totals use fixed labels. A thrown error can contain private URLs. */
+export function recordEntryWarmIssue(reason: WarmIssue, system?: number): void {
+  warmIssues.set(reason, { count: (warmIssues.get(reason)?.count ?? 0) + 1, lastSystem: system })
+}
+
 const coveredVehicleKinds = ['buggy', 'jet', 'hovercraft', 'tank'] as const
 type CoveredVehicleKind = typeof coveredVehicleKinds[number]
 const coveredVehicleDraws = new Map<CoveredVehicleKind, { count: number; ms: number }>()
@@ -122,6 +130,9 @@ export function startupReportLines(): string[] {
     `First lobby frame submitted from navigation ${ms(t.firstLobbyFrameMs)}`,
     `Covered entry precompile (elapsed) ${ms(t.entryPrecompileMs)}`,
   ]
+  for (const [reason, issue] of warmIssues) {
+    lines.push(`${reason} x${issue.count}${issue.lastSystem ? ` (last system ${issue.lastSystem})` : ''}`)
+  }
   const vehicleLines = coveredVehicleKinds.flatMap(kind => {
     const entry = coveredVehicleDraws.get(kind)
     return entry ? [`${kind} ${ms(entry.ms)} (${entry.count} ${entry.count === 1 ? 'draw' : 'draws'})`] : []

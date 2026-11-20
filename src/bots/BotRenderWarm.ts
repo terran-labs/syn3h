@@ -1,5 +1,6 @@
 import { Mesh, Vector3 } from 'three/webgpu'
 import type { CoveredWarm, Game } from '../core/Game'
+import { recordEntryWarmIssue } from '../core/diagnostics'
 import { RAPIER } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import { canonicalVehicleKind, createVehicle, VEHICLE_KINDS, type VehicleKind } from '../vehicles'
@@ -142,7 +143,12 @@ export class BotRenderWarm {
           for (const look of kind === 'jet' ? jetLooks : looks) {
             await warm.yieldFrame(`Bot ${kind} ${look.name}`)
             if (!current()) break
-            this.draw(vehicle, look, warm)
+            try {
+              this.draw(vehicle, look, warm)
+            } catch (error) {
+              recordEntryWarmIssue('Bot warm draw failed')
+              console.warn('Covered bot draw failed', kind, look.name, error)
+            }
           }
         } finally {
           if (!current()) vehicle.dispose()

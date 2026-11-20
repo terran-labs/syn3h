@@ -1,5 +1,6 @@
 /** Cache each real player vehicle so repeat switches retain their compiled GPU programs. */
 import * as THREE from 'three/webgpu'
+import { recordEntryWarmIssue } from '../core/diagnostics'
 import { longFrames } from '../core/longFrames'
 import type { CoveredWarm, Game } from '../core/Game'
 import type { Terrain } from '../world/Terrain'
@@ -125,6 +126,7 @@ export function createVehicleSwapper(
               cache.set(key, vehicle)
             } catch (error) {
               vehicle?.dispose()
+              recordEntryWarmIssue('Player vehicle warm-up failed')
               console.warn('Covered vehicle creation failed', kind, error)
               continue
             }
@@ -137,6 +139,7 @@ export function createVehicleSwapper(
         try {
           drawPlayerVehicleWarm(game, slot.current, vehicle, warm)
         } catch (error) {
+          recordEntryWarmIssue('Player vehicle warm-up failed')
           console.warn('Covered vehicle warm draw failed', kind, error)
         }
       }
