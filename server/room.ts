@@ -1405,6 +1405,7 @@ export class Room {
       player.carry = { to: y.to, at: now }
       player.yoinkAt = now
       this.broadcast({ type: 'yoink', from: player.info.id, y }, peer)
+      this.sever(other, player.info.id)
       return
     }
     // A fling: the end of a carry, or a gust on a vehicle in reach.
@@ -1419,6 +1420,18 @@ export class Room {
     }
     player.yoinkAt = now
     this.broadcast({ type: 'yoink', from: player.info.id, y }, peer)
+    this.sever(other, player.info.id)
+  }
+
+  /**
+   * The sever rule (the owner's, 19 November 2026): hitting a player who is grappling you with
+   * another weapon severs their cord. `target` was just hit by `by` (a hit accepted here, or a
+   * Yoink grab or fling); if its cord is tied to `by`, drop it, telling everyone, its owner
+   * included. Every client already obeys a cord 'off', old ones too. A hit from anyone else, and
+   * a cord on the ground, are left alone. In every mode: in the games it is the only counter.
+   */
+  private sever(target: Player, by: number): void {
+    if (target.cordOn && target.cordTo === by) this.dropCord(target)
   }
 
   /** How far apart a Yoink's two vehicles may be, metres: the game's reaches with slack. */
@@ -1534,6 +1547,7 @@ export class Room {
   /** A hit the room has accepted: tell everyone, then the mode's rule (a tag, or contact on the hill). */
   private applyHit(shooter: Player, victim: Player, shotId: number, now: number): void {
     this.broadcast({ type: 'hit', shooter: shooter.info.id, victim: victim.info.id, shot: shotId })
+    this.sever(victim, shooter.info.id)
     if (this.mode !== MODE_TAG) {
       // On the hill a tag beam is a shove, and counts as contact for dunks.
       this.lastContact.set(victim.info.id, { by: shooter.info.id, at: now })

@@ -27,8 +27,9 @@ import { aimFrom, castAim, type GearControl } from '../aim'
 import { sharedLook } from '../warm'
 import {
   bungeeAllowed, bungeeCooldown, bungeeDamping, bungeeHookSpeed, bungeeLength, bungeeMaxPull, bungeeMinLength,
-  bungeeReelSpeed, bungeeSnap, bungeeStiffness, bungeeTimeout, bungeeVehicles,
+  bungeeReelSpeed, bungeeSnap, bungeeStiffness, bungeeTimeout, bungeeVehicles, grappleReleaseTime, grappleSailTime,
 } from './params'
+import { LooseCord, type LooseKind } from './release'
 import { cordGlow, cordPull, cordSag, predict, reducedMass, type CordTuning } from './rope'
 import { drapeCord, type CordSurface } from './drape'
 import { PHASE_WRAP, SLACK_RGB, TAUT_RGB, TETHER_SEGMENTS, TetherLook, paintGlow, reducedMotion, tetherColor } from './tether'
@@ -79,6 +80,12 @@ export interface BungeeHooks {
   unhook?(owner: number): void
   /** Whether breaking free is offered now (Explore only; see `unhook`). Without it, never. */
   mayUnhook?(): boolean
+  /**
+   * Whether vehicle `owner` was hit just now by `by` (a hit the room accepted, or a Yoink grab
+   * or fling), so a relayed 'off' for its cord to `by` was the room severing it. Looks only:
+   * without it, or after a lost or late message, the cord shows the plain release.
+   */
+  severedBy?(owner: number, by: number): boolean
 }
 
 /**
@@ -120,7 +127,26 @@ interface Cord {
   paint: { body: string; accent: string; rgb: number[] }
   /** Place in the shared tether buffers (tether.ts), or -1 when every place is taken. */
   slot: number
+  /** The cord as last drawn, owner's end first, and its colour: where a release effect starts. */
+  drawn: THREE.Vector3[] | null
+  drawnRgb: number[]
 }
+
+/** A let-go cord fading in a slot of its own, and whose ends it reels back to. */
+interface Loose {
+  cord: LooseCord
+  slot: number
+  owner: number
+  /** A severed cord's far vehicle, or null. */
+  to: number | null
+  /** A severed ground cord's anchor, or null. */
+  anchor: THREE.Vector3 | null
+}
+
+/** The flash where a cord is severed or snaps: white gold. */
+const FLASH_RGB = [4, 3.1, 1.6]
+/** How much brighter a missed hook's sailing cord is drawn than the cord was. */
+const SAIL_BRIGHT = 2
 
 export const SEGMENTS = 24
 /** Each layer's width grows with distance past this many metres per metre of width. */
@@ -195,6 +221,8 @@ export class CordView {
 
 export class Bungee implements System {
   private readonly cords = new Map<number, Cord>()
+  /** Let-go cords still fading (release.ts). Looks only. */
+  private readonly loose: Loose[] = []
   private readonly shared: { look: TetherLook; release(): void }
   private readonly look: TetherLook
   /** This Bungee's landing marker in the shared look, or -1 (bots aim without one). */
@@ -206,6 +234,7 @@ export class Bungee implements System {
   private readonly drawB = new THREE.Vector3()
   private readonly drawSide = new THREE.Vector3()
   private readonly rgb = [0, 0, 0]
+  private readonly sailRgb = [0, 0, 0]
 
   private fireWas = false
   /**
@@ -321,9 +350,49 @@ export class Bungee implements System {
     this.stats[why]++
     const me = this.hooks.vehicleOf(c.owner)
     if (me) this.hooks.cue?.('bungeeRelease', me.object.position)
+    // A hook still in flight sails away with its cord; an attached cord whips back. The effect
+    // takes a free slot if there is one, and the cord is let go whether or not there was.
+    this.loosen(c, c.hook ? 'sail' : why)
     this.remove(c.owner)
     this.readyAt = this.game.time + bungeeCooldown.value
     this.hooks.send?.({ s: 'off' })
+  }
+
+  /**
+   * The sever rule on this side (the owner's rule: hitting a player who is grappling you with
+   * another weapon severs their cord). Let go of this Bungee's own cord if it is attached to
+   * vehicle `by`. The room drops the cord too; this gives the owner the reason and its effect.
+   */
+  severIfTiedTo(by: number): boolean {
+    const c = this.mine
+    if (!c || c.hook || c.to !== by) return false
+    this.letGo('severed')
+    return true
+  }
+
+  /** How a cord let go by a relayed 'off' should look: severed if a hit from its far end came just before. */
+  private relayedKind(c: Cord): LooseKind {
+    if (c.hook) return 'sail'
+    return c.to !== null && this.hooks.severedBy?.(c.owner, c.to) ? 'severed' : 'released'
+  }
+
+  /** Start a let-go cord's effect from where it was last drawn, in a free slot if there is one. */
+  private loosen(c: Cord, kind: LooseKind): void {
+    const life = kind === 'sail' ? grappleSailTime.value : grappleReleaseTime.value
+    if (!(life > 0) || !c.drawn || c.drawn.length !== this.look.segments + 1) return
+    const slot = this.look.takeCord()
+    if (slot < 0) return
+    const n = c.drawn.length - 1
+    const anchor = kind === 'severed' && c.to === null ? c.drawn[n].clone() : null
+    this.loose.push({ cord: new LooseCord(c.drawn, kind, life, c.drawnRgb.slice(), c.phase, c.hook?.vel), slot, owner: c.owner, to: kind === 'severed' ? c.to : null, anchor })
+  }
+
+  /** Let-go cords fading, and how each was let go, for automated checks. */
+  get fading(): LooseKind[] { return this.loose.map(l => l.cord.kind) }
+
+  private dropLoose(): void {
+    for (const l of this.loose) this.look.freeCord(l.slot)
+    this.loose.length = 0
   }
 
   /** Drop the cord and clear the input edge when a controller is interrupted. */
@@ -344,6 +413,7 @@ export class Bungee implements System {
   reset(): void {
     const had = this.mine !== undefined
     for (const id of [...this.cords.keys()]) this.remove(id)
+    this.dropLoose()
     if (had) this.hooks.send?.({ s: 'off' })
     this.fireWas = false; this.trigger.clear(); this.waiting = false
     this.lastPress = -Infinity
@@ -368,10 +438,20 @@ export class Bungee implements System {
   /** Another player's cord, as relayed. `age` is seconds since it was sent. */
   applyRemote(from: number, wire: CordWire, age = 0): void {
     if (from === this.hooks.self()) {
-      if (wire.s === 'off') { this.remove(from); this.readyAt = this.game.time + bungeeCooldown.value }
+      // The room dropped our cord (it severed it, or the far end left) before we let go ourselves.
+      if (wire.s === 'off') {
+        const c = this.cords.get(from)
+        if (c) this.loosen(c, this.relayedKind(c))
+        this.remove(from); this.readyAt = this.game.time + bungeeCooldown.value
+      }
       return
     }
-    if (wire.s === 'off') { this.remove(from); return }
+    if (wire.s === 'off') {
+      const c = this.cords.get(from)
+      if (c) this.loosen(c, this.relayedKind(c))
+      this.remove(from)
+      return
+    }
     if (wire.s === 'hook') {
       this.remove(from)
       const o = this.nearest(new THREE.Vector3(...wire.o))
@@ -455,12 +535,14 @@ export class Bungee implements System {
     const camPos = this.look.begin(this.game.camera, this.game.time)
     const t = this.tuning()
     for (const c of this.cords.values()) this.drawCord(c, dt, camPos, t)
+    this.drawLoose(dt)
     this.drawReticle(camPos)
     this.look.flush()
   }
 
   dispose(): void {
     for (const id of [...this.cords.keys()]) this.remove(id)
+    this.dropLoose()
     this.look.freeMarker(this.marker)
     this.look.flush()
     this.shared.release()
@@ -549,6 +631,7 @@ export class Bungee implements System {
     const c: Cord = {
       owner, hook: null, to: null, at: null, normal: new THREE.Vector3(0, 1, 0), rest: 0, since: this.game.time,
       pull: 0, mass: 1, twang: 0, flow: 1, phase: 0, paint: { body: '', accent: '', rgb: [...TAUT_RGB] }, slot: this.look.takeCord(),
+      drawn: null, drawnRgb: [...SLACK_RGB],
     }
     this.cords.set(owner, c)
     return c
@@ -582,8 +665,9 @@ export class Bungee implements System {
     if (!hit) {
       h.pos.addScaledVector(dir, dist)
       if (h.travelled > bungeeLength.value * (mine ? 1 : 1.5)) {
+        // A miss: the hook sails on with its cord (letGo makes the effect for our own).
         if (mine) this.letGo('released')
-        else this.remove(c.owner)
+        else { this.loosen(c, 'sail'); this.remove(c.owner) }
       }
       return
     }
@@ -783,6 +867,9 @@ export class Bungee implements System {
     const taut = c.hook ? glow : 1 - (1 - glow) ** 3
     const rgb = tetherColor(taut, this.rgb, c.paint.rgb)
     look.writeCord(c.slot, this.points, taut, c.phase, rgb, this.hooks.surface)
+    if (!c.drawn || c.drawn.length !== n + 1) c.drawn = Array.from({ length: n + 1 }, () => new THREE.Vector3())
+    for (let i = 0; i <= n; i++) c.drawn[i].copy(this.points[i])
+    c.drawnRgb[0] = rgb[0]; c.drawnRgb[1] = rgb[1]; c.drawnRgb[2] = rgb[2]
 
     const star = look.cordSpark(c.slot, 0), tail = look.cordSpark(c.slot, 1), anchor = look.cordSpark(c.slot, 2)
     if (c.hook) {
@@ -806,6 +893,45 @@ export class Bungee implements System {
       look.ring(anchor, this.drawSide.copy(b).addScaledVector(c.normal, 0.06), c.normal, 0.7, rgb, breath + flash, wave)
     } else {
       look.star(anchor, b, 0.32 + flash * 0.15, rgb, breath + 0.3 + flash, 0.5)
+    }
+  }
+
+  /** Let-go cords: step each loose rope, reel it to its ends, draw it fading, and free it when done. */
+  private drawLoose(dt: number): void {
+    const look = this.look, size = this.hooks.wrapSize(), ground = this.hooks.surface?.heightAt.bind(this.hooks.surface)
+    for (let k = this.loose.length - 1; k >= 0; k--) {
+      const l = this.loose[k], rope = l.cord
+      // A graphics level change alters the segment count: that cord's effect simply ends.
+      if (rope.done || rope.pos.length !== look.segments + 1) { look.freeCord(l.slot); this.loose.splice(k, 1); continue }
+      const owner = this.hooks.vehicleOf(l.owner)
+      const a = owner ? this.hitch(owner, this.drawA) : null
+      let b: THREE.Vector3 | null = null
+      if (l.to !== null) { const v = this.hooks.vehicleOf(l.to); if (v) b = this.hitch(v, this.drawB) } else if (l.anchor) b = this.drawB.copy(l.anchor)
+      // Both ends in the same image of the wrapping world as the rope itself.
+      const ref = rope.pos[0]
+      if (size > 0) for (const p of [a, b]) if (p) { p.x = nearestImage(p.x, ref.x, size); p.z = nearestImage(p.z, ref.z, size) }
+      const step = Math.min(dt, 1 / 30) / 2
+      rope.step(step, a, b, ground); rope.step(step, a, b, ground)
+      // Drawn as a cord still half under tension as it goes (wider and brighter than slack),
+      // easing to slack as it fades, so the whip reads at a distance.
+      const sail = rope.kind === 'sail', n = rope.pos.length - 1
+      // A missed hook sails off as a taut, bright line easing slack as it goes, its star at the
+      // head with a comet tail: drawn like a let-go cord it was too faint to see at play distance
+      // (the sail strip, 19 November 2026).
+      let rgb = rope.rgb
+      if (sail) { for (let i = 0; i < 3; i++) this.sailRgb[i] = rope.rgb[i] * SAIL_BRIGHT; rgb = this.sailRgb }
+      look.writeCord(l.slot, rope.pos, (sail ? 1 : 0.6) * rope.fade, rope.phase, rgb, undefined, rope.fade)
+      const star = look.cordSpark(l.slot, 0), tail = look.cordSpark(l.slot, 1)
+      if (rope.flash && rope.flashLevel > 0) {
+        const f = rope.flashLevel
+        look.star(star, rope.flash, 0.8 + 1.6 * f, FLASH_RGB, 4 * f, 0.3)
+      } else if (sail) {
+        const head = rope.pos[n], dir = this.drawSide.subVectors(head, rope.pos[n - 1])
+        look.star(star, head, 0.75, rgb, 2.6 * rope.fade, 0.6)
+        const length = dir.length()
+        if (length > 1e-4) look.tail(tail, head, dir.divideScalar(length), 3.2 * rope.fade, 0.4, rgb, 1.6 * rope.fade)
+        else look.hideSpark(tail)
+      } else look.hideSpark(star)
     }
   }
 

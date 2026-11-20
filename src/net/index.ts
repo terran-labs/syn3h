@@ -435,6 +435,7 @@ export class NetClient implements System {
       unhook: (owner) => { if (this.connected) this.send({ type: 'unhook', from: owner }) },
       // Breaking free is Explore's: in the games a cord on you is part of the play.
       mayUnhook: () => this.connected && this.mode === MODE_EXPLORE,
+      severedBy: (owner, by) => this.struckBy(owner, by),
       // Positions go on the wire inside the tile, like every other position.
       send: (cord) => {
         if (!this.connected) return
@@ -454,7 +455,13 @@ export class NetClient implements System {
       responding: (id) => this.remotes.get(id)?.responding ?? true,
       heldElsewhere: (id) => [...this.botGear.values()].some(g => g.yoink.holderOf(id) !== null),
       cue: (name, at) => this.gearCue(name, at),
-      send: (y) => { if (this.connected) this.send({ type: 'yoink', y }) },
+      send: (y) => {
+        if (!this.connected) return
+        this.send({ type: 'yoink', y })
+        // The room does not echo our own Yoink back, so a grab or fling on a bot we run that
+        // has its cord on us is severed here (the room drops it for everyone else).
+        if (this.isHost && (y.s === 'grab' || y.s === 'fling') && isBotId(y.to)) this.onStruck(y.to, this.id)
+      },
     })
     this.bigRed = new BigRed(game, {
       body: () => this.ctx.player.body,
@@ -1084,6 +1091,26 @@ export class NetClient implements System {
   pausedOf(id: number): boolean { return this.remotes.get(id)?.paused ?? false }
   /** Host: player `by` broke free of bot `bot`'s cord themselves. The play director counts these. */
   onBotUnhooked: (by: number, bot: number) => void = () => {}
+  /** The last hit (accepted by the room) or Yoink grab or fling on each vehicle id: by whom, when in game seconds. */
+  private readonly struck = new Map<number, { by: number; at: number }>()
+
+  /**
+   * The sever rule (the owner's, 19 November 2026): hitting a player who is grappling you with
+   * another weapon severs their cord. The room drops the cord for everyone; here the grappler
+   * (us, or a bot we run as host) lets go with the reason, and a bot's cord severed by a person
+   * counts toward that person's "stop" in a play, as breaking free does.
+   */
+  private onStruck(victim: number, by: number): void {
+    this.struck.set(victim, { by, at: this.ctx.game.time })
+    if (victim === this.id) this.bungee.severIfTiedTo(by)
+    else if (this.isHost && isBotId(victim) && this.botGear.get(victim)?.bungee.severIfTiedTo(by)) this.onBotUnhooked(by, victim)
+  }
+
+  /** Whether `owner` was struck by `by` within the last second and a half: a relayed 'off' then shows as severed. */
+  private struckBy(owner: number, by: number): boolean {
+    const s = this.struck.get(owner)
+    return !!s && s.by === by && this.ctx.game.time - s.at < 1.5
+  }
   /** When each vehicle id was last tagged or knocked by a laser, in game seconds. */
   private readonly hitAt = new Map<number, number>()
   /** When a bot last fired at each vehicle id, in game seconds: bots take turns. */
@@ -1128,6 +1155,7 @@ export class NetClient implements System {
       sendCord: (bot, cord) => { if (this.isHost) this.send({ type: 'cord', bot, cord }) },
       sendYoink: (bot, y) => { if (this.isHost) this.send({ type: 'yoink', bot, y }) },
       fireRed: (bot, direction) => this.fireBot(bot, direction, undefined, 'red'),
+      severedBy: (owner, by) => this.struckBy(owner, by),
       launchPester: (bot, target, direction) => this.fireBot(bot, direction, target),
     })
   }
@@ -1888,6 +1916,7 @@ export class NetClient implements System {
         break
       case 'yoink':
         if (this.players.has(msg.from)) (this.botGear.get(msg.from)?.yoink ?? this.yoink).applyRemote(msg.from, msg.y)
+        if (msg.y.s === 'grab' || msg.y.s === 'fling') this.onStruck(msg.y.to, msg.from)
         break
       case 'unhook':
         // The player our cord (or our bot's) is tied to asked to be let go. The room checked it.
@@ -1916,6 +1945,7 @@ export class NetClient implements System {
       case 'hit': {
         const victim = this.vehicleOf(msg.victim)
         this.hitAt.set(msg.victim, this.ctx.game.time)
+        this.onStruck(msg.victim, msg.shooter)
         this.lasers.confirmHit(msg.shooter, msg.shot, victim?.object.position)
         this.pesters.confirmHit(msg.shooter, msg.shot)
         // The judging client already played it.

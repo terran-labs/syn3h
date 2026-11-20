@@ -52,6 +52,7 @@ export class BotGear {
       ...common, idOfBody: hooks.idOfBody, now: hooks.now, surface: hooks.surface,
       reportInterval: 0.5,
       inHand: () => this.selected === 'bungee', send: cord => hooks.sendCord(id, cord), cue: hooks.cue,
+      severedBy: hooks.severedBy,
     })
     this.yoink = new Yoink(game, {
       ...common, vehicleIds: hooks.vehicleIds, heldElsewhere: hooks.heldElsewhere,
