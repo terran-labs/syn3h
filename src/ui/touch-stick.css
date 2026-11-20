@@ -120,6 +120,15 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
 /* The grid keeps the shared edge (--edge, exploration.css) from the side and the bottom; only
    the narrowest phones, where four columns would not fit, tuck it closer. */
 :root { --thumb-size: 62px; --thumb-gap: 12px; --thumb-margin: var(--edge); --thumb-bottom: var(--edge); }
+/* Shared geometry for what stands on the grid (the Show panels control, phone-panels.css).
+   --thumb-base: the grid's resolved bottom. --thumb-top: the top of its upper row, measured
+   from the bottom. --thumb-pair-width: TAG and WINGS, two buttons and one gap. The same names
+   arrive with ux/phone-controls-1950; keep one definition when the two meet. */
+:root {
+  --thumb-base: max(var(--thumb-bottom), env(safe-area-inset-bottom));
+  --thumb-top: calc(var(--thumb-base) + 2 * var(--thumb-size) + var(--thumb-gap));
+  --thumb-pair-width: calc(2 * var(--thumb-size) + var(--thumb-gap));
+}
 @media (max-width: 350px) { :root { --thumb-size: 56px; --thumb-gap: 8px; --thumb-margin: 12px; } }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { :root { --thumb-size: 56px; --thumb-gap: 8px; } }
 

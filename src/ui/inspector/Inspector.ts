@@ -71,6 +71,12 @@ export interface InspectorOptions {
    * view. Asked at every tap, so turning the phone counts.
    */
   oneOpen?(): boolean
+  /**
+   * Phones in play (the owner, 19 November 2026): an open card is the only thing on screen,
+   * the list comes back when it closes, and the stack grows out of the Show panels control.
+   * Asked at every change, so turning the phone counts.
+   */
+  phonePanels?(): boolean
   /** A localStorage key: which cards are open is kept there and restored on the next visit. */
   rememberOpen?: string
 }
@@ -122,6 +128,15 @@ export interface ExtraCardOptions {
   fill?(): void
 }
 interface ExtraCard extends ExtraCardOptions { id: string; card: HTMLElement; summary(): string }
+
+/**
+ * A card's header. The x (phones only, src/ui/phone-panels.css) shows while the card is the
+ * one panel on screen. The whole header is the button, so the x wears the shared glass
+ * (liquid-glass) but is drawn, not a separate target.
+ */
+const CARD_HEAD = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span><span class="wi-x liquid-glass glass-round" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>'
+/** Phone panels: how long each change between the three states takes (ms). Shorten, never lengthen: this is mid-game. */
+export const PHONE_PANEL_MS = { show: 220, hide: 160, open: 240, back: 200, stagger: 15, staggerCap: 6, ghost: 140 } as const
 
 /** How long a card takes to make room for another, and the curve it eases along. */
 const CARD_MOTION: KeyframeAnimationOptions = { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' }
@@ -231,9 +246,22 @@ export class Inspector {
     this.element.style.pointerEvents = value ? '' : 'none'
     if (!value) this.hideTooltip()
     this.element.hidden = false
+    const phone = !!this.options.phonePanels?.()
+    // Show panels always opens the list (the owner's call, 19 November 2026). The stack is
+    // hidden here, so closing the card shows nothing; the Y key and the Chat row open their
+    // card straight after this.
+    if (value && phone) this.collapseAll()
+    this.syncSingle()
     if (!animate) { this.element.hidden = !value; return }
-    const frames = [{ opacity: 0, transform: 'translateX(20px)' }, { opacity: 1, transform: 'translateX(0)' }]
-    const motion = this.element.animate(value ? frames : [...frames].reverse(), { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' })
+    // Phones: the stack grows out of the Show panels control (transform-origin is set beside
+    // it in phone-panels.css) and goes back into it, quicker. Transform and opacity only, so
+    // the compositor runs it and the game canvas is never laid out again.
+    const frames = phone
+      ? [{ opacity: 0, transform: 'translateY(24px) scale(.94)' }, { opacity: 1, transform: 'none' }]
+      : [{ opacity: 0, transform: 'translateX(20px)' }, { opacity: 1, transform: 'translateX(0)' }]
+    const duration = phone ? (value ? PHONE_PANEL_MS.show : PHONE_PANEL_MS.hide) : 180
+    if (phone && value) this.arrive()
+    const motion = this.element.animate(value ? frames : [...frames].reverse(), { duration, easing: phone && !value ? 'cubic-bezier(.4,0,.8,.4)' : 'cubic-bezier(.2,.8,.2,1)' })
     this.visibilityMotion = motion
     motion.onfinish = () => {
       if (this.visibilityMotion !== motion) return
@@ -286,7 +314,7 @@ export class Inspector {
     for (const section of this.tree) {
       const card = document.createElement('section'); card.className = 'wi-card wi-glass'; card.dataset.section = section.id
       const head = document.createElement('button'); head.type = 'button'; head.className = 'wi-head'; head.dataset.wi = 'toggle'; head.setAttribute('aria-expanded', 'false')
-      head.innerHTML = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span>'; head.querySelector('h3')!.textContent = section.title
+      head.innerHTML = CARD_HEAD; head.querySelector('h3')!.textContent = section.title
       const body = document.createElement('div'); body.className = 'wi-body'; body.hidden = true
       if (section.id === 'you') {
         body.append(this.vehicleControl, this.nameControl)
@@ -346,7 +374,7 @@ export class Inspector {
     this.removeCard(id)
     const card = document.createElement('section'); card.className = 'wi-card wi-glass'; card.dataset.section = id
     const head = document.createElement('button'); head.type = 'button'; head.className = 'wi-head'; head.dataset.wi = 'toggle'; head.setAttribute('aria-expanded', 'false')
-    head.innerHTML = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span>'; head.querySelector('h3')!.textContent = title
+    head.innerHTML = CARD_HEAD; head.querySelector('h3')!.textContent = title
     body.classList.add('wi-body'); body.hidden = true; body.inert = true
     card.append(head, body)
     this.extras.set(id, { ...options, id, card, summary })
@@ -365,6 +393,8 @@ export class Inspector {
   revealCard(id: string): void {
     const card = this.element.querySelector<HTMLElement>(`.wi-card[data-section="${id}"]`)
     if (!card || card.classList.contains('is-open')) return
+    // The panels are still growing into view: land on the card without a second motion.
+    if (this.single) { this.showOnly(card); return }
     if (this.options.oneOpen?.()) this.openOnly(card)
     else this.reflow(() => { this.toggle(card, true); this.fit(card, true) })
   }
@@ -671,9 +701,11 @@ export class Inspector {
     const body = card.querySelector<HTMLElement>('.wi-body')!
     card.classList.toggle('is-open', open); body.hidden = !open; body.inert = !open; card.querySelector('.wi-head')!.setAttribute('aria-expanded', String(open))
     if (open !== (at >= 0)) this.remember()
+    this.syncSingle()
   }
   /** A tap on a card's header. */
   private tap(card: HTMLElement): void {
+    if (this.single) { if (card.classList.contains('is-open')) this.backToList(card); else this.openPanel(card); return }
     if (!card.classList.contains('is-open') && this.options.oneOpen?.()) { this.openOnly(card); return }
     this.reflow(() => { this.toggle(card); if (card.classList.contains('is-open')) this.fit(card, true) })
   }
@@ -716,6 +748,125 @@ export class Inspector {
       else { hold(end); this.glideStop?.() }
     }
     frame = requestAnimationFrame(step)
+  }
+  /** Phone panels are on: one card at a time, alone on screen. Not while searching, which opens every card with a match. */
+  private get single(): boolean { return !!this.options.phonePanels?.() && !this.element.classList.contains('is-searching') }
+  /** The one-panel state is a class on the stack: CSS hides everything but the open card. */
+  private syncSingle(): void {
+    const on = this.single && !!this.element.querySelector('.wi-cards > .wi-card.is-open')
+    if (this.element.classList.contains('is-single') !== on) this.element.classList.toggle('is-single', on)
+  }
+  /** Close every card at once, no motion (phones, before the list shows again). */
+  collapseAll(): void {
+    this.glideStop?.(); this.settle(); this.panelMotion?.()
+    for (const card of this.element.querySelectorAll<HTMLElement>('.wi-cards > .wi-card.is-open')) this.toggle(card, false)
+  }
+  /** Where the list was scrolled before a panel opened, so going back lands there. */
+  private listScroll = 0
+  /** Cancels the running phone panel motion, leaving its end state. */
+  private panelMotion?: () => void
+  private get reduced(): boolean { return matchMedia('(prefers-reduced-motion: reduce)').matches }
+  /** Open this card as the only thing on screen, with no motion. */
+  private showOnly(card: HTMLElement): void {
+    const stack = this.element.querySelector<HTMLElement>('.wi-cards')!
+    if (!this.element.classList.contains('is-single')) this.listScroll = stack.scrollTop
+    for (const other of this.element.querySelectorAll<HTMLElement>('.wi-cards > .wi-card.is-open')) if (other !== card) this.toggle(other, false)
+    this.toggle(card, true); stack.scrollTop = 0
+  }
+  /**
+   * List to one panel. The tapped header lifts from its place in the list to the top while the
+   * card opens below it (a clip on the card, not its height, so nothing is laid out per frame);
+   * the rest of the list drifts away, above up and below down, as fading copies of the headers.
+   */
+  private openPanel(card: HTMLElement): void {
+    this.panelMotion?.(); this.glideStop?.(); this.settle()
+    const animate = this.open && !this.element.hidden && !this.reduced
+    const from = card.getBoundingClientRect()
+    const ghosts = animate ? this.ghostList(card, from) : null
+    this.showOnly(card)
+    if (!animate) return
+    const to = card.getBoundingClientRect(), r = getComputedStyle(card).borderTopLeftRadius
+    const motions: Animation[] = []
+    const timing: KeyframeAnimationOptions = { duration: PHONE_PANEL_MS.open, easing: 'cubic-bezier(.2,.8,.2,1)' }
+    motions.push(card.animate([
+      { transform: `translate(${from.left - to.left}px, ${from.top - to.top}px)`, clipPath: `inset(0 ${Math.max(0, to.width - from.width)}px ${Math.max(0, to.height - from.height)}px 0 round ${r})` },
+      { transform: 'none', clipPath: `inset(0 0 0 0 round ${r})` },
+    ], timing))
+    const body = card.querySelector<HTMLElement>(':scope > .wi-body')
+    if (body) motions.push(body.animate([{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], { duration: PHONE_PANEL_MS.open - 60, delay: 60, easing: 'ease-out', fill: 'backwards' }))
+    if (ghosts) motions.push(...ghosts.motions)
+    this.track(motions, () => ghosts?.layer.remove())
+  }
+  /**
+   * One panel back to the list, in two short beats: the card folds up to its header where it
+   * is, then the header settles into its place in the list while the others drift back in.
+   */
+  private backToList(card: HTMLElement): void {
+    this.panelMotion?.(); this.glideStop?.(); this.settle()
+    const stack = this.element.querySelector<HTMLElement>('.wi-cards')!
+    const land = () => { this.toggle(card, false); stack.scrollTop = this.listScroll; this.syncSingle() }
+    if (!this.open || this.element.hidden || this.reduced) { land(); return }
+    const fold = Math.round(PHONE_PANEL_MS.back * 0.45), settle = PHONE_PANEL_MS.back - fold
+    const head = card.querySelector<HTMLElement>(':scope > .wi-head')!, r = getComputedStyle(card).borderTopLeftRadius
+    const box = card.getBoundingClientRect(), headBottom = head.getBoundingClientRect().bottom - box.top
+    const first = card.animate([{ clipPath: `inset(0 0 0 0 round ${r})` }, { clipPath: `inset(0 0 ${Math.max(0, box.height - headBottom)}px 0 round ${r})` }], { duration: fold, easing: 'cubic-bezier(.4,0,.6,1)', fill: 'forwards' })
+    let second: Animation[] = []
+    let done = false
+    const finish = () => { if (done) return; done = true; first.cancel(); for (const m of second) m.cancel(); if (card.classList.contains('is-open')) land(); this.panelMotion = undefined }
+    this.panelMotion = finish
+    first.onfinish = () => {
+      if (done) return
+      const top = box.top
+      first.cancel(); land()
+      const now = card.getBoundingClientRect()
+      second = [card.animate([{ transform: `translateY(${top - now.top}px)` }, { transform: 'none' }], { duration: settle, easing: 'cubic-bezier(.2,.8,.2,1)' })]
+      const rest = [...this.element.querySelectorAll<HTMLElement>('.rail-command, .rail-foot, .wi-cards > :not([hidden])')].filter(el => el !== card)
+      for (const el of rest) {
+        const above = el.getBoundingClientRect().top < now.top
+        second.push(el.animate([{ opacity: 0, transform: `translateY(${above ? -12 : 12}px)` }, { opacity: 1, transform: 'none' }], { duration: Math.min(settle, PHONE_PANEL_MS.ghost), easing: 'ease-out' }))
+      }
+      void Promise.all(second.map(m => m.finished.catch(() => undefined))).then(() => { if (this.panelMotion === finish) this.panelMotion = undefined; done = true })
+    }
+  }
+  /**
+   * Fading copies of what leaves when a panel opens: the other cards' headers and the rail
+   * above and below them, placed where they were and drifting apart. Headers only, never a
+   * card's body: a copied form control could take part in the real one's group.
+   */
+  private ghostList(card: HTMLElement, from: DOMRect): { layer: HTMLElement; motions: Animation[] } {
+    const host = this.element.getBoundingClientRect()
+    const layer = document.createElement('div'); layer.className = 'wi-ghosts'; layer.setAttribute('aria-hidden', 'true'); layer.inert = true
+    const motions: Animation[] = []
+    const leaving = [...this.element.querySelectorAll<HTMLElement>('.rail-command, .rail-foot, .wi-cards > :not([hidden])')].filter(el => el !== card)
+    for (const el of leaving) {
+      const box = el.getBoundingClientRect()
+      if (!box.height || box.bottom < host.top || box.top > host.bottom) continue
+      const ghost = el.cloneNode(false) as HTMLElement
+      ghost.removeAttribute('data-section'); ghost.classList.remove('wi-card', 'is-open'); ghost.classList.add('wi-ghost')
+      const head = el.matches('.wi-card') ? el.querySelector(':scope > .wi-head') : null
+      if (head) ghost.append(head.cloneNode(true))
+      else if (!el.matches('.wi-card')) for (const child of el.children) if (!child.matches('input, textarea, select')) ghost.append(child.cloneNode(true))
+      Object.assign(ghost.style, { position: 'absolute', margin: '0', left: `${box.left - host.left}px`, top: `${box.top - host.top}px`, width: `${box.width}px`, height: `${box.height}px` })
+      layer.append(ghost)
+      const above = box.top < from.top
+      motions.push(ghost.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateY(${above ? -12 : 12}px)` }], { duration: PHONE_PANEL_MS.ghost, easing: 'ease-in', fill: 'forwards' }))
+    }
+    this.element.append(layer)
+    return { layer, motions }
+  }
+  /** Keep a phone panel motion cancellable; `after` runs once when it ends either way. */
+  private track(motions: Animation[], after: () => void): void {
+    let done = false
+    const finish = () => { if (done) return; done = true; for (const m of motions) m.cancel(); after(); if (this.panelMotion === finish) this.panelMotion = undefined }
+    this.panelMotion = finish
+    void Promise.all(motions.map(m => m.finished.catch(() => undefined))).then(finish)
+  }
+  /** The list arrives a beat behind the stack itself: a short stagger, capped. The glass's own sheen is the only light. */
+  private arrive(): void {
+    const items = [...this.element.querySelectorAll<HTMLElement>('.rail-command, .wi-cards > :not([hidden]), .rail-foot, .panels-close')].filter(el => el.getClientRects().length)
+    items.slice(0, PHONE_PANEL_MS.staggerCap + 2).forEach((el, i) => {
+      el.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: PHONE_PANEL_MS.show - 60, delay: Math.min(i, PHONE_PANEL_MS.staggerCap) * PHONE_PANEL_MS.stagger, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' })
+    })
   }
   /**
    * Open or close cards, easing every card's height from where it was to where it lands
@@ -853,6 +1004,7 @@ export class Inspector {
       cards.forEach((card, i) => this.toggle(card, before.cards[i] ?? false)); folds.forEach((fold, i) => { fold.open = before.folds[i] ?? false })
     }
     this.say(words.length ? `${[...this.rows.values()].filter(r => !r.row.hidden).length} found` : '')
+    this.syncSingle()
   }
   /** Feedback stays visible while the inspector suppresses transient game toasts. */
   setStatus(message: string): void { this.element.querySelector('.wi-status')!.textContent = message }

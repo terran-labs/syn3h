@@ -77,6 +77,7 @@ import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
 import './hud-column.css'
+import './phone-panels.css'
 
 /**
  * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
@@ -135,6 +136,12 @@ export function captionAccent(world: { land: number; sea: number; glow?: boolean
 const CAPTION_GAP = 5
 /** The sidebar's phone layout, upright or on its side (inspector/motion.css uses the same). */
 const PHONE_SIDEBAR = '(max-width: 700px), (max-height: 500px)'
+/**
+ * Phones' Show panels and Close panels glyphs (phone-panels.css): two chevrons drawn as one
+ * vector path, nothing to fetch. Up opens, down closes.
+ */
+const PANELS_CHEVRONS_UP = '<svg class="nav-chevrons" viewBox="0 0 20 16" aria-hidden="true" focusable="false"><path d="M4 8.5l6-5 6 5M4 13.5l6-5 6 5"/></svg>'
+const PANELS_CHEVRONS_DOWN = '<svg class="nav-chevrons" viewBox="0 0 20 16" aria-hidden="true" focusable="false"><path d="M4 2.5l6 5 6-5M4 7.5l6 5 6-5"/></svg>'
 /** Must match the short landscape block in shell.css. */
 const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
 const LOBBY_LINKS = OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''
@@ -249,7 +256,7 @@ export class Shell implements System {
     </section>
     <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">Welcome</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
-    <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Panels</span></button></nav>
+    <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span class="nav-glyph" aria-hidden="true">≡</span>${PANELS_CHEVRONS_UP}<span class="nav-label"> Panels</span></button></nav>
     <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="exit-stay">Stay</button><button type="button" class="exit-leave">Leave world</button></div></div></div>
     <button type="button" class="pause-about" aria-haspopup="dialog" hidden>Welcome &amp; how to play</button>
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
@@ -313,6 +320,9 @@ export class Shell implements System {
       // Phones keep one card open at a time; the query matches the sidebar's phone layout
       // (inspector/motion.css). Which cards are open survives a reload.
       oneOpen: () => matchMedia(PHONE_SIDEBAR).matches,
+      // Phone-sized touch screens: one panel at a time, alone (phone-panels.css). Tablets and
+      // desktops keep the stack as it was.
+      phonePanels: () => this.touch.available && matchMedia(PHONE_SIDEBAR).matches,
       rememberOpen: 'syn3h.sidebar.open',
     })
     // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
@@ -387,6 +397,19 @@ export class Shell implements System {
     railTop.remove()
     const cards = this.inspector.element.querySelector('.wi-cards')!
     cards.before(command); cards.after(foot)
+    // Phones: Close panels, at the foot of the panels under the thumb, back to driving. A tap in
+    // the empty space below the last card does the same, but only 12 px or more below it, so a
+    // near miss on a header never throws the player back into the drive.
+    const closeAll = document.createElement('button'); closeAll.type = 'button'; closeAll.className = 'panels-close liquid-glass'
+    closeAll.innerHTML = `${PANELS_CHEVRONS_DOWN}<span>Close panels</span>`
+    this.inspector.element.append(closeAll)
+    closeAll.addEventListener('click', () => this.returnToDriving(), { signal })
+    cards.addEventListener('click', event => {
+      if (event.target !== cards || !this.touch.available || !matchMedia(PHONE_SIDEBAR).matches || this.inspector.element.classList.contains('is-single')) return
+      const shown = [...cards.children].filter(card => card instanceof HTMLElement && !card.hidden)
+      const last = shown.at(-1)?.getBoundingClientRect().bottom ?? cards.getBoundingClientRect().top
+      if ((event as MouseEvent).clientY >= last + 12) this.returnToDriving()
+    }, { signal })
     // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
     // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
     command.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
@@ -1174,6 +1197,8 @@ export class Shell implements System {
     const wanted = this.panelsWanted
     if (this.inspector.open !== wanted) {
       this.inspector.hideTooltip(); this.inspector.open = wanted
+      // Phones fade Show panels out as the panels grow from it (phone-panels.css).
+      this.element.classList.toggle('is-panels', wanted)
       this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(wanted))
     }
     const locked = this.started && !this.menuVisible && !this.game.input.suspended && this.drivingView
