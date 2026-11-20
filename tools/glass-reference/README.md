@@ -22,6 +22,12 @@ Generate neutral fields and phase-shifted gratings with `calibration.py`. Their 
 
 The browser demo is the Vite entry at `src/liquid-glass/demo/index.html`. It generates its initial grid locally and accepts a reference background through the file picker. The `webgl` query flag exercises the WebGL backend.
 
-The two-control merge trial runs at `tools/glass-reference/merge.html` in the development server. Load the bare reference crop and enter a gap in points. The circle moves toward the fixed pill. Both belong to the same marked DOM container. The `separate` query flag draws the independent controls for the timing baseline, `webgl` selects WebGL 2 and `light` selects the light material. The trial defaults to dark Regular. Its merge shader is specific to the facing caps in this reference chart.
+The two-control merge trial runs at `tools/glass-reference/merge.html` in the development server. Load the bare reference crop and enter a gap in points. The circle moves toward the fixed pill. Both belong to the same marked DOM container. The `separate` query flag draws the independent controls for the timing baseline, `webgl` selects WebGL 2 and `light` selects the light material. The trial defaults to dark Regular.
 
 The in-game Brake pilot requires both `glass=inline` and `glassPress=brake`. The touch controller owns the brake input and its held class. The pilot changes the painted dimensions and DOM label only while the shader owns the control.
+
+For the Zorb and Brake merge pilot, open the game with `?glass=inline&glassPress=brake&glassMerge=zorb-brake`. The two visible actions must share a `data-glass-container` ancestor and a horizontal centreline. Their hit targets remain independent, and Flip takes Brake’s place outside the pair. The circle and capsule reference page and the game use the same shader.
+
+Use `glassMerge=zorb-brake-pressed` to enable the bridge only during a press. At zero strength the renderer skips the merged surface and draws the two individual controls. Both settings are opt-in.
+
+For the native pair recording, launch the simulator harness with `-button-pair -diameter 56 -gap 8` for landscape or `-button-pair -diameter 62 -gap 12` for portrait. The stock glass buttons share a container with 18 pt spacing. The upper-left marker turns red on contact. At 8 pt the buttons rest joined and separate briefly during release. At 12 pt they rest apart and join during the press.

@@ -35,6 +35,21 @@ import UIKit
         }
     }
 
+    func pairButton(_ title: String, diameter: CGFloat) -> some View {
+        let labelSize = max(1, diameter - CGFloat(Double(option("-inset", "14")) ?? 14))
+        return Button {
+        } label: {
+            Text(title).font(.system(size: 10, weight: .semibold))
+                .frame(width: labelSize, height: labelSize)
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .accessibilityLabel(title)
+        .simultaneousGesture(DragGesture(minimumDistance: 0)
+            .onChanged { _ in contact = 1 }
+            .onEnded { _ in contact = 0 })
+    }
+
     var body: some Scene {
         WindowGroup {
             let name = option("-background", "grid")
@@ -48,7 +63,18 @@ import UIKit
                             .frame(width: 344, height: 160).offset(x: shift - 8)
                     }
                     if !args.contains("-bare") {
-                        if args.contains("-motion") {
+                        if args.contains("-button-pair") {
+                            let diameter = CGFloat(Double(option("-diameter", "56")) ?? 56)
+                            let gap = CGFloat(Double(option("-gap", "8")) ?? 8)
+                            GlassEffectContainer(spacing: 18) {
+                                ZStack(alignment: .topLeading) {
+                                    pairButton("Zorb", diameter: diameter).position(x: 110, y: 80)
+                                    pairButton("Brake", diameter: diameter).position(x: 110 + diameter + gap, y: 80)
+                                }
+                            }
+                            Rectangle().fill(contact == 1 ? Color.red : Color.black)
+                                .frame(width: 5, height: 5).allowsHitTesting(false)
+                        } else if args.contains("-motion") {
                             // The gesture moves the control with the finger. SwiftUI
                             // alone draws its pressed surface and the joined shape.
                             GlassEffectContainer(spacing: 18) {

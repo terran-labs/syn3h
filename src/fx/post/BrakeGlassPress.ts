@@ -2,16 +2,17 @@ import { Vector2, Vector4 } from 'three/webgpu'
 import { uniform } from 'three/tsl'
 
 // Time in milliseconds, outline displacement and face lift. Separate fits to
-// the native circle use linear interpolation between measured phases. Size can
-// overshoot or undershoot; the optical lift stays between zero and one.
+// the native circle use linear interpolation between phases. Press can overshoot.
+// The native release has one shallow rebound, reaching its minimum near 200 ms.
 const pressCurve = [
   [0, 0, 0], [20, 0, .49], [45, .16, .86], [80, .38, .98],
   [105, 1.06, .99], [160, 1.24, .95], [230, 1.29, 1], [320, 1, 1],
 ]
 const releaseCurve = [
-  [0, 1, 1], [35, .93, .89], [90, .37, .68], [155, -.36, .49],
-  [210, -.25, .38], [320, -.415, .243], [345, -.013, .236], [410, 0, .204],
-  [550, 0, .192], [580, 0, 0],
+  [0, 1, 1], [35, .88, .89], [80, .36, .72], [113, .04, .61], [130, -.10, .56],
+  [146, -.19, .51], [165, -.286, .47], [182, -.295, .43], [205, -.30, .38],
+  [245, -.26, .33], [273, -.18, .30], [280, -.10, .29], [312, 0, .25], [345, 0, .236],
+  [410, 0, .204], [550, 0, .192], [580, 0, 0],
 ]
 
 /** Brake input owns .held. Only its painted dimensions change. */
@@ -78,6 +79,8 @@ export class BrakeGlassPress {
       this.write(this.initialSize + (1 - this.initialSize) * size, this.initialLift + (1 - this.initialLift) * lift)
     } else this.write(this.initialSize * size, this.initialLift * lift)
   }
+
+  get expansion(): number { return Math.max(0, Math.min(1, this.sizeProgress)) }
 
   private write(sizeProgress: number, lift: number) {
     this.sizeProgress = sizeProgress

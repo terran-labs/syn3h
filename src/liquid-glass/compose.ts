@@ -1,10 +1,12 @@
 import { Fn, If, Loop, abs, dot, float, length, max, min, mix, clamp, screenSize, step, uv, vec2, vec3, vec4 } from 'three/tsl'
+import { mergedGlassPair } from './mergedPair'
 import { glassOptics } from './optics'
 import { regularGlass } from './regular'
 
 type N = any // TSL expression with a shader-dependent node type.
 
 export interface GlassSurfaces {
+  pairSlots?: N
   pressState?: N
   capacity: number
   viewport: N
@@ -15,16 +17,19 @@ export interface GlassSurfaces {
 }
 
 /** Compose over display-encoded RGB. Sample and original must use the same colour space. */
-export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurfaces, material: N, filtered?: (uv: N, width: N) => N, blurred?: (uv: N) => N): N {
+export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurfaces, material: N, filtered?: (uv: N, width: N) => N, blurred?: (uv: N) => N, mergePair = true): N {
   return Fn(() => {
     const result = original.toVar()
     const size = glass.viewport.xy.max(vec2(1))
     const pixel = uv().mul(size)
     const pixelsPerPoint = screenSize.x.div(size.x)
+    const pair = mergePair && filtered && blurred ? glass.pairSlots : undefined
     Loop(glass.capacity, ({ i }: { i: N }) => {
       const box: N = glass.boxes.element(i)
       const local = pixel.sub(box.xy)
-      If(box.z.greaterThan(0).and(abs(local.x).lessThanEqual(box.z.add(14))).and(abs(local.y).lessThanEqual(box.w.add(14))), () => {
+      const visible = box.z.greaterThan(0)
+      const single = pair ? visible.and(pair.z.lessThanEqual(0).or(i.notEqual(pair.x).and(i.notEqual(pair.y)))) : visible
+      If(single.and(abs(local.x).lessThanEqual(box.z.add(14))).and(abs(local.y).lessThanEqual(box.w.add(14))), () => {
         const corners: N = glass.radii.element(i)
         const top = mix(corners.x, corners.y, step(0, local.x))
         const bottom = mix(corners.z, corners.w, step(0, local.x))
@@ -81,6 +86,12 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
         result.assign(vec4(under, 1))
       })
     })
+    if (pair && filtered && blurred) {
+      If(pair.z.greaterThan(0), () => {
+        result.assign(mergedGlassPair(result, glass.boxes.element(pair.x.toInt()), glass.boxes.element(pair.y.toInt()),
+          glass.viewport, pixelsPerPoint, sample, filtered, blurred, glass.pressState?.y, pair.z))
+      })
+    }
     return result
   })()
 }

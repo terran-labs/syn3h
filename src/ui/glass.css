@@ -142,5 +142,11 @@ html[data-gfx="0"] .liquid-glass, [data-ui-frost="off"] .liquid-glass { --glass-
 .liquid-glass[data-glass-surface="shader"][data-glass-press="brake"] { transform: none; }
 .liquid-glass[data-glass-surface="shader"][data-glass-press="brake"] > .brake-glass-label {
   position: absolute; inset: 0; display: grid; place-items: center;
+  grid-template-columns: minmax(0, 1fr); white-space: nowrap;
   font-size: 134.2857%; line-height: 1; text-shadow: none; pointer-events: none;
 }
+
+/* The sunk-buggy cue animates these two native DOM layers along with its
+   outline and shadow. Keep them visible while the pair supplies the body. */
+.liquid-glass[data-glass-paired].is-cued::before,
+.liquid-glass[data-glass-paired].is-cued::after { opacity: 1; }

@@ -1,9 +1,9 @@
 import '../../src/ui/glass.css'
 import { CanvasTexture, NoColorSpace, RenderPipeline, Vector4, WebGPURenderer } from 'three/webgpu'
-import { float, texture, uniform, uniformArray, uv, vec4 } from 'three/tsl'
+import { Fn, If, float, texture, uniform, uniformArray, uv, vec4 } from 'three/tsl'
 import { composeGlass } from '../../src/liquid-glass/compose'
 import { createGlassGaussian } from '../../src/liquid-glass/gaussian'
-import { mergeReferencePair } from './merge'
+import { mergedGlassPair } from '../../src/liquid-glass/mergedPair'
 
 const q = new URLSearchParams(location.search)
 const canvas = document.querySelector('canvas')!
@@ -23,7 +23,7 @@ tex.flipY = false; tex.colorSpace = NoColorSpace
 const sample = (at: any) => texture(tex, at).rgb
 const filtered = (at: any, width: any) => texture(tex, at).level(width.mul(ratio).max(1).log2()).rgb
 const boxes = [new Vector4(), new Vector4()]
-const vecs = (a: Vector4[]) => uniformArray(a, 'vec4')
+const vecs = (a: Vector4[]) => uniformArray(a, 'vec4' as const)
 const glass = { capacity: 2, viewport: uniform(new Vector4(328,160,Number(!q.has('light')),0)),
   boxes: vecs(boxes), radii: vecs([new Vector4().setScalar(30),new Vector4().setScalar(24)]),
   filters: vecs([new Vector4(),new Vector4()]), bodies: vecs([new Vector4(),new Vector4()]) }
@@ -31,7 +31,13 @@ const blur = createGlassGaussian(at => filtered(at, float(2)), glass.viewport)
 blur.update(328,160,true)
 const separate = composeGlass(vec4(sample(uv()),1), sample, glass, vec4(1.12,.53,1.5,.025),filtered,blur.sample)
 const group = uniform(0)
-const pipeline = new RenderPipeline(renderer,q.has('separate') ? separate : mergeReferencePair(separate,group,glass,sample,filtered,blur.sample))
+const pipeline = new RenderPipeline(renderer,q.has('separate') ? separate : Fn(() => {
+  const result = vec4(sample(uv()), 1).toVar()
+  If(group.greaterThan(0), () => {
+    result.assign(mergedGlassPair(result, glass.boxes.element(0), glass.boxes.element(1), glass.viewport, group, sample, filtered, blur.sample))
+  }).Else(() => { result.assign(separate) })
+  return result
+})())
 pipeline.outputColorTransform = false
 const circle = document.querySelector<HTMLElement>('#circle')!, pill = document.querySelector<HTMLElement>('#pill')!
 const gap = document.querySelector<HTMLInputElement>('#gap')!

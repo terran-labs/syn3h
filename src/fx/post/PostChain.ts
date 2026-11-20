@@ -115,6 +115,7 @@ interface Built {
   clouds: boolean
   glassBlur: ReturnType<typeof createGlassGaussian> | null
   pipeline: THREE.RenderPipeline
+  restingGlass: THREE.RenderPipeline | null
   disposables: Array<{ dispose?(): void; renderTarget?: { dispose(): void } }>
 }
 
@@ -298,7 +299,12 @@ export class PostChain {
         const view = this.glass.viewport.value
         built.glassBlur?.update(view.x, view.y, this.covered || this.glass.hasSurface)
       }
-      built.pipeline.render()
+      // Discover and submit both real composites under the entry overlay.
+      // During play exactly one runs. Idle press-only controls use the same
+      // GPU program as six ordinary controls, with no merge field or branch.
+      if (built.restingGlass && this.covered) built.restingGlass.render()
+      if (built.restingGlass && !this.covered && !this.glass?.pairSlots?.value.z) built.restingGlass.render()
+      else built.pipeline.render()
       if (this.glassBuilt) this.glass?.present()
     } catch (error) {
       this.sun.setVolumetricCloudsActive?.(false)
@@ -690,6 +696,7 @@ export class PostChain {
     })
 
     let glassBlur: ReturnType<typeof createGlassGaussian> | null = null
+    let restingGlass: THREE.RenderPipeline | null = null
     let out: N = graded()
     if (this.covered && !debug && (this.glassMode === 'target' || this.glassMode === 'inline')) {
       const glass = this.glass ??= new GlassButton(renderer.domElement, new URLSearchParams(location.search).get('glassSet') === 'one' ? 1 : 6)
@@ -728,6 +735,13 @@ export class PostChain {
           filtered = (coord, footprint) => displaySample(coord, footprint).add(correction)
         }
       }
+      if (glass.pressOnly && glass.pairSlots && blurred) {
+        const rest = composeGlass(original, sample, glass, u.glassMaterial, filtered, blurred, false)
+        restingGlass = new THREE.RenderPipeline(renderer, velocity ? rest.context({ velocity }) : rest)
+        restingGlass.outputColorTransform = false
+        registerCoveredComposite(restingGlass)
+        disposables.push(restingGlass)
+      }
       out = composeGlass(original, sample, glass, u.glassMaterial, filtered, blurred)
       this.glassBuilt = true
     }
@@ -738,7 +752,7 @@ export class PostChain {
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
     if (this.glassBuilt) registerCoveredComposite(pipeline)
     pipeline.outputColorTransform = false
-    this.built = { key, pipeline, glassBlur, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
+    this.built = { key, pipeline, restingGlass, glassBlur, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
     this.builds++
   }
 }
