@@ -311,8 +311,10 @@ export class Game {
             }
           }
         }
+        this.postChain?.setCovered?.(true)
         runGuarded(this.renderer as unknown as GuardedRenderer, () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16))
       } finally {
+        this.postChain?.setCovered?.(false)
         for (let j = hidden.length - 1; j >= 0; j--) hidden[j].visible = false
         for (const o of culled) o.frustumCulled = true
       }

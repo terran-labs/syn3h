@@ -44,6 +44,7 @@ import { sss } from 'three/addons/tsl/display/SSSNode.js'
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { traa } from 'three/addons/tsl/display/TRAANode.js'
+import { GlassButton } from './GlassButton'
 import { CurvedVelocity } from './CurvedVelocity'
 import { cloudVolume, compositeClouds } from './clouds'
 import { AlienSkyMesh, rayLight, skyCloudField, skyScatter } from '../../world/sky/AlienSkyMesh'
@@ -176,6 +177,12 @@ export class PostChain {
   private readonly burst = createBurstUniforms()
   private burstClock = 0
 
+  private covered = false
+  private glass: GlassButton | null = null
+  private glassBuilt = false
+  private readonly glassMode = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('glass')
+  setCovered(covered: boolean): void { this.covered = covered }
+
   constructor(private readonly host: PostChainHost, private readonly sun: SunSource) {}
 
   render(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, _frameMs?: number): void {
@@ -229,7 +236,8 @@ export class PostChain {
     const composeOn = effects && (motionOn || P.postHeat.value > 0)
     const historyKey = temporalOn ? ['world.curve', 'world.seed', 'terrain.kind', 'terrain.planetSize', 'camera.mode'].map(id => params.get(id)?.value).join('|') : ''
     const key = `${debug}|${tier}|${motionOn}|${composeOn}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${temporalOn}|${historyKey}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
-    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn)
+    const warmGlass = this.covered && !debug && (this.glassMode === 'inline' || this.glassMode === 'target')
+    if (this.built?.key !== key || (warmGlass && !this.glassBuilt)) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn)
 
     const u = this.u
     u.exposure.value = Math.max(1e-4, renderer.toneMappingExposure)
@@ -272,7 +280,9 @@ export class PostChain {
     if (built.raysTex) built.raysTex.autoUpdate = sunLit && shaftAmount > 0
     this.sun.setVolumetricCloudsActive?.(built.clouds)
     try {
+      if (this.glassBuilt) this.glass?.update()
       built.pipeline.render()
+      if (this.glassBuilt) this.glass?.present()
     } catch (error) {
       this.sun.setVolumetricCloudsActive?.(false)
       throw error
@@ -281,6 +291,8 @@ export class PostChain {
 
   /** Free the pipeline and every target it made. Safe to repeat. */
   release(): void {
+    this.glass?.hide()
+    this.glassBuilt = false
     this.sun.setVolumetricCloudsActive?.(false)
     if (!this.built) return
     this.built.pipeline.dispose()
@@ -289,6 +301,7 @@ export class PostChain {
   }
 
   dispose(): void {
+    this.glass?.dispose(); this.glass = null
     this.release(); this.reportActive(false)
     // The sky's cheap rays follow this chain's settings; without it they stop.
     if (this.sky) this.sky.rays.strength.value = 0
@@ -659,6 +672,43 @@ export class PostChain {
     })
 
     let out: N = graded()
+    if (this.covered && !debug && (this.glassMode === 'target' || this.glassMode === 'inline')) {
+      const glass = this.glass ??= new GlassButton(renderer.domElement)
+      const finished: N = this.glassMode === 'target' ? rtt(out, null, null, { type: THREE.HalfFloatType }) : null
+      if (finished) disposables.push(finished)
+      const original = finished ? finished.sample(uv()) : out
+      out = Fn(() => {
+        const result = original.toVar()
+        const box = glass.box
+        const size = glass.viewport.xy.max(vec2(1))
+        const local = uv().mul(size).sub(box.xy)
+        const radius = glass.viewport.z.max(1)
+        const q = abs(local).sub(box.zw).add(radius)
+        const outer = max(q, vec2(0))
+        const distance = length(outer).add(min(max(q.x, q.y), 0)).sub(radius)
+        If(box.z.greaterThan(0).and(distance.lessThan(0.5)), () => {
+          const edge = smoothstep(radius.mul(-0.7), 0, distance)
+          const normal = outer.div(max(length(outer), 0.001)).mul(local.sign())
+          const bend = normal.mul(edge).mul(radius).mul(glass.pressed.mul(0.10).add(0.24)).div(size)
+          const sample = (scale: number, frost = 0) => {
+            const at = clamp(uv().sub(bend.mul(scale)).add(vec2(frost, -frost).div(size)), 0, 1)
+            if (finished) return finished.sample(at).rgb
+            // Keep the final composite's local lighting and grade. Only the scene
+            // colour difference is displaced in this cheaper trial.
+            const display = (coord: N) => renderOutput(vec4(color.sample(coord).rgb, 1), toneMap, renderer.outputColorSpace).rgb
+            return original.rgb.add(display(at).sub(display(uv())))
+          }
+          const lens = vec3(sample(1.04).r, sample(1).g, sample(0.96).b)
+          const tint = dot(lens, vec3(0.2126, 0.7152, 0.0722)).mul(0.16).add(0.06)
+          const rim = smoothstep(-1.5, -0.4, distance).mul(dot(normal, vec2(-0.45, -0.89)).mul(0.16).add(0.18))
+          const frost = sample(1, 1.25).add(sample(1, -1.25)).mul(0.5)
+          const body = mix(mix(lens, frost, 0.18), vec3(0.13), tint).add(rim)
+          result.assign(vec4(mix(original.rgb, body, float(1).sub(smoothstep(-0.5, 0.5, distance))), 1))
+        })
+        return result
+      })()
+      this.glassBuilt = true
+    }
     // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
     if (debug === 1 && aoNode) out = vec4(vec3(aoNode.getTextureNode().sample(uv()).r), 1)
     if (debug === 2 && contactTex) out = vec4(vec3(contactTex), 1)
