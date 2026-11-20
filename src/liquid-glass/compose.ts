@@ -1,10 +1,11 @@
-import { Fn, If, Loop, abs, float, length, max, min, mix, smoothstep, step, uv, vec2, vec3, vec4 } from 'three/tsl'
+import { Fn, If, Loop, abs, dot, float, length, max, min, mix, clamp, screenSize, step, uv, vec2, vec3, vec4 } from 'three/tsl'
 import { glassOptics } from './optics'
 import { regularGlass } from './regular'
 
 type N = any // TSL expression with a shader-dependent node type.
 
 export interface GlassSurfaces {
+  pressState?: N
   capacity: number
   viewport: N
   boxes: N // Centre and half-size in CSS pixels, origin at top left.
@@ -14,31 +15,70 @@ export interface GlassSurfaces {
 }
 
 /** Compose over display-encoded RGB. Sample and original must use the same colour space. */
-export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurfaces, material: N, filtered?: (uv: N, width: N) => N): N {
+export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurfaces, material: N, filtered?: (uv: N, width: N) => N, blurred?: (uv: N) => N): N {
   return Fn(() => {
     const result = original.toVar()
     const size = glass.viewport.xy.max(vec2(1))
     const pixel = uv().mul(size)
+    const pixelsPerPoint = screenSize.x.div(size.x)
     Loop(glass.capacity, ({ i }: { i: N }) => {
       const box: N = glass.boxes.element(i)
       const local = pixel.sub(box.xy)
-      If(box.z.greaterThan(0).and(abs(local.x).lessThanEqual(box.z)).and(abs(local.y).lessThanEqual(box.w)), () => {
+      If(box.z.greaterThan(0).and(abs(local.x).lessThanEqual(box.z.add(14))).and(abs(local.y).lessThanEqual(box.w.add(14))), () => {
         const corners: N = glass.radii.element(i)
         const top = mix(corners.x, corners.y, step(0, local.x))
         const bottom = mix(corners.z, corners.w, step(0, local.x))
         const radius = mix(top, bottom, step(0, local.y))
         const q = vec2(abs(local).sub(box.zw).add(radius) as N)
         const outer = max(q, vec2(0))
-        const distance = length(outer).add(min(max(q.x, q.y), 0)).sub(radius)
+        const roundDistance = length(outer).add(min(max(q.x, q.y), 0)).sub(radius)
         const side = step(q.y, q.x)
         const gradient = mix(vec2(side, float(1).sub(side)), outer.div(max(length(outer), 0.001)), step(0.001, length(outer))).mul(local.sign())
-        const body = vec3(0).toVar()
-        If(glass.viewport.w.greaterThan(0.5), () => {
-          body.assign(glassOptics(box.zw, distance, gradient, uv(), size, material, glass.filters.element(i), glass.bodies.element(i), sample))
-        }).Else(() => {
-          body.assign(regularGlass(box.zw, distance, gradient, uv(), size, glass.viewport.z, sample, filtered))
+        const clear = glass.viewport.w.greaterThan(.5)
+        const dark = glass.viewport.z
+        // SwiftUI's continuous capsule rolls into the cap a fraction of a
+        // point before a circular arc would. Its extrema and centre coincide.
+        const short = min(box.z, box.w)
+        const horizontal = step(box.w, box.z)
+        const along = mix(local.y.abs(), local.x.abs(), horizontal)
+        const acrossNormal = mix(gradient.x.abs(), gradient.y.abs(), horizontal)
+        const spine = max(box.z, box.w).sub(short)
+        const capPosition = along.sub(spine).sub(short.mul(.12)).div(max(short.mul(.28), .01))
+        const join = capPosition.mul(capPosition).negate().exp().mul(short.mul(.017))
+          .mul(acrossNormal.mul(acrossNormal)).mul(clamp(spine.div(short), 0, 1))
+          .mul(clamp(radius.div(short).sub(.9).mul(10), 0, 1))
+        const distance = roundDistance.add(join)
+        const d = max(distance, 0)
+        const under = result.rgb.toVar()
+        If(clear.not(), () => {
+          const luma = dot(under, vec3(.2126, .7152, .0722))
+          const lightOpacity = float(.90).sub(luma.mul(.59))
+          const darkOpacity = lightOpacity.add(max(luma.sub(.5), 0).pow(2).mul(1.22).div(max(luma, .001)))
+          // The half-point contour ends at half coverage. Its antialiasing
+          // footprint is one backing pixel, including at fractional scale.
+          const hair = clamp(float(.5).sub(d).mul(pixelsPerPoint).add(.5), 0, 1)
+          const pole = gradient.y.abs().pow(2)
+          const direction = float(1).sub(pole.mul(mix(.69, 1, dark)))
+          const halo = float(.014).mul(max(gradient.y.add(.2).div(1.2), 0))
+            .mul(clamp(float(1).sub(d.div(14)), 0, 1))
+          const opacity = mix(lightOpacity, darkOpacity, dark).mul(hair).mul(direction)
+          under.assign(under.mul(float(1).sub(halo)).mul(float(1).sub(opacity)))
         })
-        result.assign(vec4(mix(vec3(original.rgb), vec3(body), float(1).sub(smoothstep(-0.5, 0.5, distance))), 1))
+        const coverage = clamp(float(.5).sub(distance.mul(pixelsPerPoint)), 0, 1)
+        If(coverage.greaterThan(0), () => {
+          const body = vec3(0).toVar()
+          If(clear, () => {
+            body.assign(glassOptics(box.zw, distance, gradient, uv(), size, material, glass.filters.element(i), glass.bodies.element(i), sample))
+          }).Else(() => {
+            body.assign(regularGlass(box.zw, distance, gradient, uv(), size, dark, sample, filtered, blurred))
+          })
+          if (glass.pressState) {
+            const lift = glass.pressState.y.mul(.45).mul(float(i.equal(glass.pressState.x)))
+            body.assign(mix(body, vec3(1), lift))
+          }
+          under.assign(mix(under, body, coverage))
+        })
+        result.assign(vec4(under, 1))
       })
     })
     return result

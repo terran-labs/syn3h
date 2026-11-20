@@ -1,3 +1,4 @@
+import { BrakeGlassPress } from './BrakeGlassPress'
 import { longFrames } from '../../core/longFrames'
 import { Vector4 } from 'three/webgpu'
 import { uniform, uniformArray } from 'three/tsl'
@@ -14,6 +15,10 @@ export class GlassButton {
   readonly bodies = uniformArray(vectors(6), 'vec4')
   readonly filters = uniformArray(vectors(6), 'vec4')
   readonly viewport = uniform(new Vector4())
+  private readonly query = new URLSearchParams(location.search)
+  private readonly brake = this.query.get('glass') === 'inline' && this.query.get('glassPress') === 'brake'
+    && this.query.get('glassMaterial') !== 'clear' ? new BrakeGlassPress() : null
+  readonly pressState = this.brake?.state
   private readonly events = new AbortController()
   private dirty = true
   private readonly invalidate = () => { this.dirty = true }
@@ -21,10 +26,20 @@ export class GlassButton {
   private readonly changes = new MutationObserver(records => {
     // TouchControls writes aria-pressed each tick, including when its value stays
     // the same. Those notifications must never trigger a layout read.
-    if (records.some(r => r.oldValue !== (r.target as Element).getAttribute(r.attributeName!))) this.invalidate()
+    for (const record of records) {
+      const el = record.target as Element
+      if (record.oldValue === el.getAttribute(record.attributeName!)) continue
+      if (el.matches('[data-glass-press="brake"]') && record.attributeName === 'class') {
+        this.brake?.sync()
+        const prior = (record.oldValue ?? '').split(/\s+/).filter(c => c && c !== 'held')
+        const next = Array.from(el.classList).filter(c => c !== 'held')
+        if (prior.length === next.length && prior.every(c => next.includes(c))) continue
+      }
+      this.invalidate()
+    }
   })
   private readonly dark = matchMedia('(prefers-color-scheme: dark)')
-  private readonly clear = new URLSearchParams(location.search).get('glassMaterial') === 'clear'
+  readonly clearMaterial = this.query.get('glassMaterial') === 'clear'
   private readonly hover = matchMedia('(hover: hover)')
   private readonly reduced = matchMedia('(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)')
   private controls: HTMLElement[] = []
@@ -66,8 +81,13 @@ export class GlassButton {
         if (this.hover.matches && e.target instanceof Element && e.target.closest('.liquid-glass')) this.invalidate()
       }, options)
     }
-    window.addEventListener('pointerdown', e => { this.pressed = e.target instanceof Element ? e.target.closest('button') : null; this.invalidate() }, options)
-    const release = () => { this.pressed = null; this.invalidate() }
+    window.addEventListener('pointerdown', e => {
+      const button = e.target instanceof Element ? e.target.closest('button') : null
+      if (button?.dataset.glassPress === 'brake') return
+      this.pressed = button
+      this.invalidate()
+    }, options)
+    const release = () => { if (this.pressed) { this.pressed = null; this.invalidate() } }
     for (const event of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(event, release, options)
     visualViewport?.addEventListener('resize', this.invalidate, options)
     visualViewport?.addEventListener('scroll', this.invalidate, options)
@@ -86,7 +106,7 @@ export class GlassButton {
       }
       this.dirty = true
     }
-    if (!this.dirty) return
+    if (!this.dirty) { this.brake?.advance(); return }
     const start = performance.now()
     this.dirty = false
     this.drawn.clear()
@@ -94,9 +114,10 @@ export class GlassButton {
     const rects = this.controls.map(b => b.hidden ? null : b.getBoundingClientRect())
     this.lastBoundsMs = performance.now() - start
     longFrames.end('Glass DOM bounds', start)
-    this.viewport.value.set(c.width, c.height, Number(this.dark.matches), Number(this.clear))
+    this.viewport.value.set(c.width, c.height, Number(this.dark.matches), Number(this.clearMaterial))
     const boxes = this.boxes.array as Vector4[]
     for (const v of boxes) v.z = 0
+    let brakeVisible = false
     for (const [index, b] of this.controls.entries()) {
       if (this.drawn.size === this.capacity || this.reduced.matches || document.documentElement.dataset.gfx === '0') break
       const rect = rects[index]
@@ -116,9 +137,17 @@ export class GlassButton {
       ;(this.bodies.array[i] as Vector4).set(+rgba[1] / 255, +rgba[2] / 255, +rgba[3] / 255, Math.min(+rgba[4], 0.065))
       ;(this.filters.array[i] as Vector4).set(+filter[1], +filter[2], Number(this.hover.matches && b.matches(':hover')), Number(this.pressed === b || b.matches(':active, .held')))
       this.drawn.add(b)
+      if (this.brake && b.dataset.action === 'brakes') {
+        this.brake.bind(b, i, boxes[i], this.radii.array[i] as Vector4)
+        brakeVisible = true
+      }
     }
+    if (brakeVisible) this.brake?.advance()
+    else this.brake?.clear()
     this.lastLayoutMs = performance.now() - start
   }
+
+  get hasSurface(): boolean { return this.drawn.size > 0 }
 
   present(): void {
     for (const b of this.controls) {
@@ -127,6 +156,6 @@ export class GlassButton {
     }
   }
 
-  hide(): void { this.drawn.clear(); this.present(); this.dirty = true }
+  hide(): void { this.brake?.clear(); this.drawn.clear(); this.present(); this.dirty = true }
   dispose(): void { this.hide(); this.events.abort(); this.resize.disconnect(); this.changes.disconnect() }
 }

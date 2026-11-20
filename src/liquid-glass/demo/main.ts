@@ -1,6 +1,8 @@
+import type Node from 'three/src/nodes/core/Node.js'
 import { CanvasTexture, NoColorSpace, RenderPipeline, Vector4, WebGPURenderer } from 'three/webgpu'
-import { texture, uniform, uniformArray, uv, vec4 } from 'three/tsl'
+import { float, texture, uniform, uniformArray, uv, vec4 } from 'three/tsl'
 import { composeGlass } from '../compose'
+import { createGlassGaussian } from '../gaussian'
 
 const width = 328
 const height = 160
@@ -28,13 +30,18 @@ backdrop.colorSpace = NoColorSpace
 const sample = (at: ReturnType<typeof uv>) => texture(backdrop, at).rgb
 const surfaces = {
   capacity: 2,
-  viewport: uniform(new Vector4(width, height, 0, 0)),
+  viewport: uniform(new Vector4(width, height, Number(matchMedia('(prefers-color-scheme: dark)').matches), 0)),
   boxes: uniformArray([new Vector4(80, 80, 30, 30), new Vector4(212, 80, 70, 24)], 'vec4'),
   radii: uniformArray([new Vector4().setScalar(30), new Vector4().setScalar(24)], 'vec4'),
   filters: uniformArray([new Vector4(2, 1.2, 0, 0), new Vector4(3, 1.2, 0, 0)], 'vec4'),
   bodies: uniformArray([new Vector4(1, 1, 1, .06), new Vector4(1, 1, 1, .06)], 'vec4'),
 }
-const pipeline = new RenderPipeline(renderer, composeGlass(vec4(sample(uv()), 1), sample, surfaces, vec4(1.12, .53, 1.5, .025)))
+const filtered = (at: ReturnType<typeof uv>, footprint: Node<'float'>) =>
+  texture(backdrop, at).level(footprint.mul(ratio).max(1).log2()).rgb
+const blur = createGlassGaussian(at => filtered(at, float(2)), surfaces.viewport)
+blur.update(width, height, true)
+const pipeline = new RenderPipeline(renderer, composeGlass(vec4(sample(uv()), 1), sample, surfaces,
+  vec4(1.12, .53, 1.5, .025), filtered, blur.sample))
 pipeline.outputColorTransform = false
 pipeline.render()
 

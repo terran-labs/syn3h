@@ -21,7 +21,7 @@
  * canvases is a later shader (Route B, docs/research/liquid-glass.md on the research branch). It
  * can take over the surface one button at a time without touching any markup: once its surface
  * for a button is drawn and ready it sets data-glass-surface="shader" on that button, and the
- * rule at the end clears that button's CSS body and frost. Removing the attribute (any frame)
+ * rule at the end hands that button's body, frost, rim and sheen to the shader. Removing the attribute (any frame)
  * hands the surface back to CSS at once.
  *
  * Tokens (on :root, because the touch controls sit outside .syn3h-shell). Override them only in
@@ -129,8 +129,18 @@ html[data-gfx="0"] .liquid-glass, [data-ui-frost="off"] .liquid-glass { --glass-
   .liquid-glass, .liquid-glass::before { transition: none; }
   .liquid-glass:active, .liquid-glass.held { transform: none; }
 }
-/* A surface drawn by our own shader (Route B), per button: only this button's CSS body and frost
-   step aside; rim, highlight, label, focus and the pressed and on states stay CSS. The shader
-   draws its body in this button's computed --glass-body (the hover and on bodies likewise), so
-   the swap does not flash. */
-.liquid-glass[data-glass-surface="shader"] { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* The renderer sets this only after submitting the surface. Keep the real
+   button for input, its label and its focus ring. Clearing the attribute
+   restores the complete CSS material in the same frame. */
+.liquid-glass[data-glass-surface="shader"] { background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+.liquid-glass[data-glass-surface="shader"]::before,
+.liquid-glass[data-glass-surface="shader"]::after { opacity: 0; }
+
+/* Keep the native input box fixed. Rasterize the label at its largest size
+   and scale it down around the centre with the same value as the lens. */
+.liquid-glass[data-glass-surface="shader"][data-glass-press="brake"] { transform: none; }
+.liquid-glass[data-glass-surface="shader"][data-glass-press="brake"] > .brake-glass-label {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 125.7143%; line-height: 1; text-shadow: none; pointer-events: none;
+}

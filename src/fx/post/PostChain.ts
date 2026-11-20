@@ -1,3 +1,4 @@
+import { createGlassGaussian } from '../../liquid-glass/gaussian'
 import { registerCoveredComposite } from '../../core/coveredPipelines'
 import { longFrames } from '../../core/longFrames'
 /**
@@ -112,6 +113,7 @@ interface Built {
   giNode: N | null
   temporalNode: N | null
   clouds: boolean
+  glassBlur: ReturnType<typeof createGlassGaussian> | null
   pipeline: THREE.RenderPipeline
   disposables: Array<{ dispose?(): void; renderTarget?: { dispose(): void } }>
 }
@@ -183,6 +185,8 @@ export class PostChain {
 
   private covered = false
   private glass: GlassButton | null = null
+  private readonly glassSourceWidth = uniform(1)
+  private readonly bufferSize = new THREE.Vector2()
   private glassBuilt = false
   private readonly glassMode = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('glass')
   setCovered(covered: boolean): void { this.covered = covered }
@@ -288,9 +292,11 @@ export class PostChain {
     if (built.raysTex) built.raysTex.autoUpdate = sunLit && shaftAmount > 0
     this.sun.setVolumetricCloudsActive?.(built.clouds)
     try {
-      if (this.glassBuilt) {
+      if (this.glassBuilt && this.glass) {
         u.glassMaterial.value.set(P.glassThickness.value, P.glassBevel.value, P.glassIndex.value, P.glassDispersion.value)
-        this.glass?.update()
+        this.glass.update()
+        const view = this.glass.viewport.value
+        built.glassBlur?.update(view.x, view.y, this.covered || this.glass.hasSurface)
       }
       built.pipeline.render()
       if (this.glassBuilt) this.glass?.present()
@@ -384,7 +390,8 @@ export class PostChain {
   private updateSun(camera: THREE.Camera, renderer: THREE.WebGPURenderer): number {
     const sun = this.sun.sunDirection
     const cam = camera as THREE.PerspectiveCamera
-    const size = renderer.getDrawingBufferSize(new THREE.Vector2())
+    const size = renderer.getDrawingBufferSize(this.bufferSize)
+    this.glassSourceWidth.value = size.x
     this.u.aspect.value = size.y > 0 ? size.x / size.y : 16 / 9
     camera.getWorldDirection(this.forward)
     const inFront = this.forward.dot(sun) > 0.02
@@ -682,6 +689,7 @@ export class PostChain {
       return vec4(c, 1)
     })
 
+    let glassBlur: ReturnType<typeof createGlassGaussian> | null = null
     let out: N = graded()
     if (this.covered && !debug && (this.glassMode === 'target' || this.glassMode === 'inline')) {
       const glass = this.glass ??= new GlassButton(renderer.domElement, new URLSearchParams(location.search).get('glassSet') === 'one' ? 1 : 6)
@@ -696,23 +704,31 @@ export class PostChain {
       // Under trial: generate lower levels of the source already used by the
       // composite, and sample those for frost without another full-size target.
       let filtered: ((coord: N, footprint: N) => N) | undefined
-      if (new URLSearchParams(location.search).get('glassBlur') === 'mip') {
+      const blurMode = new URLSearchParams(location.search).get('glassBlur')
+      let blurred: ((at: N) => N) | undefined
+      if (blurMode !== 'direct') {
         const source = finished ?? color
         const targetTexture = finished ? finished.value : temporalNode ? temporalNode.getTextureNode().value : scenePass.getTexture('output')
         if (targetTexture) {
           targetTexture.generateMipmaps = true
           targetTexture.minFilter = THREE.LinearMipmapLinearFilter
-          filtered = (coord, footprint) => {
-            const level = max(footprint.mul(screenSize.x).div(glass.viewport.x.max(1)), 1).log2()
+          const displaySample = (coord: N, footprint: N) => {
+            const level = max(footprint.mul(this.glassSourceWidth).div(glass.viewport.x.max(1)), 1).log2()
             const raw = source.sample(coord).level(level).rgb
-            if (finished) return raw
-            const display = renderOutput(vec4(raw, 1), toneMap, renderer.outputColorSpace).rgb
-            const center = renderOutput(vec4(color.sample(uv()).rgb, 1), toneMap, renderer.outputColorSpace).rgb
-            return original.rgb.add(display.sub(center))
+            return finished ? raw : renderOutput(vec4(raw, 1), toneMap, renderer.outputColorSpace).rgb
           }
+          const correction = finished ? vec3(0) : original.rgb.sub(renderOutput(vec4(color.sample(uv()).rgb, 1), toneMap, renderer.outputColorSpace).rgb)
+          if (blurMode !== 'mip' && !this.glass.clearMaterial) {
+            glassBlur = createGlassGaussian(at => displaySample(at, float(2)), glass.viewport)
+            for (const pass of glassBlur.passes) registerCoveredComposite(pass)
+            const blur = glassBlur
+            blurred = at => blur.sample(at).add(correction)
+            disposables.push(blur)
+          }
+          filtered = (coord, footprint) => displaySample(coord, footprint).add(correction)
         }
       }
-      out = composeGlass(original, sample, glass, u.glassMaterial, filtered)
+      out = composeGlass(original, sample, glass, u.glassMaterial, filtered, blurred)
       this.glassBuilt = true
     }
     // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
@@ -722,7 +738,7 @@ export class PostChain {
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
     if (this.glassBuilt) registerCoveredComposite(pipeline)
     pipeline.outputColorTransform = false
-    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
+    this.built = { key, pipeline, glassBlur, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
     this.builds++
   }
 }

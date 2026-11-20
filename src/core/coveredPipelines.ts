@@ -2,8 +2,8 @@ import type { WebGPURenderer } from 'three/webgpu'
 
 const composites = new WeakSet<object>()
 
-/** Three's final output mesh has its own scene. Only this terminal draw may
- * join world discovery; intermediate texture generators still submit in order. */
+/** Three's final output mesh has its own scene. The terminal composite and its dedicated
+ * blur passes may join discovery together. Other texture generators still submit in order. */
 export function registerCoveredComposite(pipeline: object) {
   const mesh = (pipeline as { _quadMesh?: object })._quadMesh
   if (mesh) composites.add(mesh)

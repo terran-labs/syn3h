@@ -11,7 +11,7 @@ const wideOffsets = Array.from({ length: 32 }, (_, i) => {
   return [radius * Math.cos(angle), radius * Math.sin(angle)]
 })
 
-export function regularGlass(halfSize: N, distance: N, normal: N, screen: N, size: N, dark: N, sample: (uv: N) => N, filtered?: (uv: N, width: N) => N): N {
+export function regularGlass(halfSize: N, distance: N, normal: N, screen: N, size: N, dark: N, sample: (uv: N) => N, filtered?: (uv: N, width: N) => N, blurred?: (uv: N) => N): N {
   const radius = min(halfSize.x, halfSize.y)
   const depth = max(distance.negate(), 0)
   // Phase of the 32-point native grating, unwrapped from the undistorted centre.
@@ -23,7 +23,9 @@ export function regularGlass(halfSize: N, distance: N, normal: N, screen: N, siz
   const at = screen.sub(normal.mul(shift).div(size))
   const detail = filtered ? filtered(clamp(at, 0, 1), float(1.15)) : sample(clamp(at, 0, 1))
   const wide = vec3(0).toVar()
-  if (filtered) {
+  if (blurred) {
+    wide.assign(blurred(screen))
+  } else if (filtered) {
     // Four broad footprint samples approximate the second moment of the native
     // 15.5 point Gaussian. Width describes one mip texel in logical pixels.
     for (const x of [-1, 1]) for (const y of [-1, 1]) {
@@ -45,5 +47,18 @@ export function regularGlass(halfSize: N, distance: N, normal: N, screen: N, siz
   const gain = mix(vec3(.988, .952, .979).add(vec3(-.076, .028, -.045).mul(luma)),
     vec3(1.317, 1.256, 1.314).add(vec3(-.427, -.351, -.429).mul(luma)), dark)
   const chroma = body.sub(luma).mul(gain)
-  return clamp(vec3(mix(lightTone, darkTone, dark)).add(chroma), 0, 1)
+  const tone = mix(lightTone, darkTone, dark)
+  const vertical = normal.y.abs()
+  const narrow = max(float(1).sub(depth.div(1.17)), 0)
+  const contour = max(float(1).sub(depth.div(.48)), 0)
+  // Measured on neutral fields. The narrow peak sits on both vertical normals;
+  // the weaker shoulder decays into the face. Bright faces reflect less light.
+  const response = (light: number, lightSlope: number, night: number, nightSlope: number) =>
+    mix(light, night, dark).add(tone.mul(mix(lightSlope, nightSlope, dark)))
+  const rim = narrow.mul(vertical.pow(2)).mul(response(.1225, -.0184, .1478, -.069))
+    .add(narrow.mul(vertical.pow(8)).mul(response(.0442, -.087, .019, .0065)))
+    .add(depth.mul(-.5).exp().mul(vertical.pow(4)).mul(response(.101, -.0911, .0909, -.0779)))
+    .add(depth.mul(-.2).exp().mul(float(1).sub(vertical.pow(2))).mul(response(.0007, -.028, .0031, -.0344)))
+    .add(contour.mul(response(-.1476, .0954, -.0743, .0941)))
+  return clamp(vec3(tone.add(rim)).add(chroma), 0, 1)
 }
