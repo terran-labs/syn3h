@@ -1313,7 +1313,8 @@ export class Shell implements System {
       // A picture already made, waiting for the tap Safari asked for: share it now, in this tap.
       const ready = this.shotReady; this.shotReady = null
       const result = ready ? { outcome: await shareShot(ready), file: ready } : await (async () => {
-        const frame = this.game.snapshot()
+        // The device's full resolution, whatever Auto resolution chose for play (Game.snapshot).
+      const frame = this.game.snapshot({ full: true })
         const blob = frame ? await encodeShot(frame) : null
         return blob ? deliverShot(blob, shotFileName(currentWorldName(), currentPlanet().label, new Date()), this.touch.available) : null
       })()
