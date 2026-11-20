@@ -5,9 +5,9 @@ import { longFrames } from '../../core/longFrames'
  * Registered with `game.setPostChain(chain)`; Game then hands each frame to `render` instead
  * of calling `renderer.render` itself. When the gate says off (post effects switched off,
  * graphics level 0, or a phone or tablet not opted in) `render` is exactly
- * `renderer.render(scene, camera)` and no pipeline or render target exists.
+ * `renderer.render(scene, camera)`. A neighboring post graph may remain parked.
  *
- * One pipeline, rebuilt only when its shape changes (tier, or an effect taken to or from 0):
+ * One active pipeline, selected by shape (tier, or an effect taken to or from 0):
  *
  *   scene pass      colour (half float, the canvas's MSAA) and depth.
  *   glow            three's BloomNode on the exposed colour, clamped, as tuned on feat/fx-bloom.
@@ -53,7 +53,10 @@ import { rayGlowShare } from '../../world/sky/skyMath'
 import { underwaterAmountForCamera } from '../../world/water/underwater'
 import type { CloudInputs } from '../../world/Environment'
 import { motionBlurred } from './motion'
-import { params } from '../../../shared/params'
+import { params, type Param, type ParamValue } from '../../../shared/params'
+import type { CoveredWarm } from '../../core/Game'
+import type { QualityLevel } from '../../core/quality'
+import type { GuardedRenderer } from '../../core/deviceLoss'
 import { type PostTier, drawsEffects, lowSunAmount, rayDryness, postTier, shaftTaps, sunHeightFactor, sunScreenFade } from './gate'
 import { type Grade, gradeFor, lookForKind } from './looks'
 import * as P from './params'
@@ -74,6 +77,8 @@ export const CLOUD_THIN = 0.12, CLOUD_SOLID = 0.55
 /** Distance (m) over which the haze in front of terrain reaches the full post.shaftHaze. */
 export const SHAFT_HAZE_DEPTH = 700
 
+const MAX_STANDBY_GRAPHS = 2
+
 export interface PostChainHost {
   /**
    * The frame governor (src/core/quality.ts), the one in-game quality authority.
@@ -83,7 +88,12 @@ export interface PostChainHost {
    * the governor whether there is anything to shed, so its post rung exists only while the
    * chain draws a costly effect.
    */
-  readonly quality: { readonly postTier?: PostTier; readonly postBudget?: number; setPostActive?(on: boolean): void }
+  readonly quality: {
+    readonly postTier?: PostTier
+    readonly postBudget?: number
+    getQualityState?(): { readonly level: QualityLevel }
+    setPostActive?(on: boolean): void
+  }
 }
 export interface SunSource {
   readonly sunDirection: THREE.Vector3
@@ -98,8 +108,47 @@ export interface SunSource {
 /** three's tone mapping constants for post.toneMap 0, 1, 2. */
 const TONE_MAPS = [THREE.ACESFilmicToneMapping, THREE.AgXToneMapping, THREE.NeutralToneMapping]
 
+/** Fully resolved preset values, including player overrides. Undefined falls back to the live value. */
+export interface PostGraphPreset {
+  tier: PostTier
+  level: QualityLevel
+  value(id: string): ParamValue | undefined
+}
+
+interface GraphSpec {
+  key: string
+  tier: PostTier
+  glowOn: boolean
+  shaftsOn: boolean
+  flareOn: boolean
+  aoOn: boolean
+  light: THREE.DirectionalLight | null
+  toneMap: THREE.ToneMapping
+  debug: number
+  giOn: boolean
+  cloudsOn: boolean
+  temporalOn: boolean
+  motionOn: boolean
+  composeOn: boolean
+}
+
+function postValue<T extends ParamValue>(param: Param<T>, preset?: PostGraphPreset): T {
+  return (preset?.value(param.def.id) ?? param.value) as T
+}
+
+interface GraphScope {
+  renderer: THREE.WebGPURenderer
+  backend: THREE.WebGPURenderer['backend']
+  context: unknown
+  device: unknown
+  scene: THREE.Scene
+  camera: THREE.Camera
+}
+
 interface Built {
   key: string
+  tier: PostTier
+  targets: THREE.RenderTarget[]
   /** Quarter resolution shaft targets: skipped entirely while the sun is out of view. */
   maskTex: N | null
   raysTex: N | null
@@ -110,14 +159,43 @@ interface Built {
   temporalNode: N | null
   clouds: boolean
   pipeline: THREE.RenderPipeline
-  disposables: Array<{ dispose?(): void; renderTarget?: { dispose(): void } }>
+  disposables: Array<{ dispose?(): void }>
 }
 
 export class PostChain {
   private built: Built | null = null
+  private readonly standby = new Map<string, Built>()
+  private readonly presetKeys = new Map<QualityLevel, string>()
+  private scope: GraphScope | null = null
+  private generation = 0
+  private disposed = false
+  private warming = false
+  private warmPreset: PostGraphPreset | undefined
+  private volumetricCloudsActive = false
+  private coveredDraws = 0
+  private activations = 0
+  private restoredTargets = 0
+
+  /**
+   * Attachment texels describe logical dormant sizes. Restored targets counts the targets
+   * enlarged by the first live draw after activation, excluding passes gated off that frame.
+   */
+  get reuseStats() {
+    const targets = [...this.standby.values()].flatMap(graph => graph.targets)
+    const dormantAttachmentTexels = targets.reduce((total, target) =>
+      total + target.width * target.height * (target.textures.length + Number(target.depthBuffer || !!target.depthTexture)), 0)
+    return {
+      coveredDraws: this.coveredDraws,
+      activations: this.activations,
+      restoredTargets: this.restoredTargets,
+      dormantGraphs: this.standby.size,
+      dormantTargets: targets.length,
+      dormantAttachmentTexels,
+    }
+  }
   /** Times a pipeline has been built, for checks. */
   builds = 0
-  /** Camera discontinuities that discarded temporal history, for diagnostics. */
+  /** Camera discontinuities and covered draws that discarded active temporal history. */
   historyResets = 0
   /** The tier the last frame used, for checks and the lab. */
   tier: PostTier = 'off'
@@ -181,10 +259,55 @@ export class PostChain {
 
   constructor(private readonly host: PostChainHost, private readonly sun: SunSource) {}
 
+  /** Exact post context for covered draw deduplication. Also records equivalent preset levels. */
+  coveredVariantKey(preset: PostGraphPreset): string | undefined {
+    const scope = this.scope
+    if (!scope) return undefined
+    const tier = this.coveredTier(preset)
+    const key = tier === 'off' ? 'off' : this.describeGraph(scope.renderer, scope.scene, tier, preset).key
+    this.rememberPreset(preset.level, key)
+    return key
+  }
+
+  /** Submit one production draw under the target post graph, including on a graph cache hit. */
+  async warmCovered(warm: Pick<CoveredWarm, 'draw' | 'yieldFrame'>, preset: PostGraphPreset): Promise<void> {
+    if (this.disposed) return
+    if (this.warming) throw new Error('Post graph warm is already in progress')
+    this.warming = true
+    const generation = this.generation
+    try {
+      await warm.yieldFrame('Preparing post effects')
+      if (this.disposed || this.generation !== generation) return
+      this.warmPreset = preset
+      warm.draw()
+    } finally {
+      this.warmPreset = undefined
+      this.warming = false
+    }
+  }
+
   render(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, _frameMs?: number): void {
+    if (this.disposed) {
+      renderer.render(scene, camera)
+      return
+    }
+    if ((renderer as unknown as GuardedRenderer)._isDeviceLost) {
+      if (this.scope) {
+        this.release()
+        this.scope = null
+      }
+      return
+    }
+    this.bindScope(renderer, scene, camera)
+    if (this.warmPreset) {
+      this.renderCovered(renderer, scene, camera, this.warmPreset)
+      return
+    }
     const budget = this.host.quality.postBudget
     const shed = 1 - Math.min(1, Math.max(0, budget ?? 1))
-    const tier = postTier({ on: P.postOn.value, tier: this.host.quality.postTier ?? 'full', shed })
+    const level = this.host.quality.getQualityState?.().level
+    const qualityTier = this.host.quality.postTier ?? 'full'
+    const tier = postTier({ on: P.postOn.value, tier: qualityTier, shed })
     // The quality level owns which effects exist, through their strengths. Tier only
     // separates the look alone (base) from a chain that draws effects (lite, full).
     const effects = drawsEffects(tier)
@@ -192,9 +315,8 @@ export class PostChain {
     // Anything the governor could shed: everything but the colour look itself. Sun rays count
     // only where the level draws them here; at Minimal and Low the sky draws its cheap form,
     // which nothing sheds.
-    const levelEffects = drawsEffects(this.host.quality.postTier ?? 'full')
+    const levelEffects = drawsEffects(qualityTier)
     this.reportActive(tier !== 'off' && (P.postTemporal.value || [P.postBloom, levelEffects ? P.postShafts : null, P.postFlare, P.postAO, P.postContact, P.postMotionBlur, P.postGI, P.postClouds].some(p => p && p.value > 0)))
-    this.sky ??= findSky(scene)
     const fade = tier === 'base' || tier === 'off' ? 0 : 1 - shed
     // Sun rays, lens flare and their passes are light through air. With the camera in water or
     // lava they would draw the sky's glow through the medium as hard white spokes (the owner,
@@ -212,31 +334,25 @@ export class PostChain {
     const shaftShare = effects && P.postShafts.value > 0 ? fade * this.screenFade * smooth01(0.001, 0.05, sunVis) : 0
     this.updateBurst(camera, P.postShafts.value * (1 - shaftShare) * dry)
     if (tier === 'off') {
-      this.release()
+      if (qualityTier === 'off' && level !== undefined) {
+        this.rememberPreset(level, 'off')
+        this.pruneStandby(level)
+        const previous = this.built
+        this.built = null
+        if (previous) this.retire(previous)
+        this.setVolumetricCloudsActive(false)
+      } else if (this.built || this.standby.size) {
+        this.clearGraphs()
+      }
       renderer.render(scene, camera)
       return
     }
-    const glowOn = effects && P.postBloom.value > 0
-    const shaftsOn = effects && (P.postShafts.value > 0 || P.postFlare.value > 0)
-    const flareOn = effects && P.postFlare.value > 0
-    const aoOn = effects && P.postAO.value > 0
-    const giOn = effects && P.postGI.value > 0
-    const clouds = this.sun.clouds
-    const cloudsOn = effects && P.postClouds.value > 0 && !!clouds && clouds.coverage > 0 && clouds.density > 0 && clouds.atmosphere > 0
-    const light = effects && P.postContact.value > 0 ? findSun(scene) : null
-    const toneMap = TONE_MAPS[Math.round(P.postToneMap.value)] ?? renderer.toneMapping
-    const debug = Math.round(P.postDebug.value)
-    const temporalOn = effects && P.postTemporal.value && debug === 0
-    // Motion blur and heat shimmer share one composite, built only if one is wanted.
-    const motionOn = effects && P.postMotionBlur.value > 0
-    const composeOn = effects && (motionOn || P.postHeat.value > 0)
-    const historyKey = temporalOn ? ['world.curve', 'world.seed', 'terrain.kind', 'terrain.planetSize', 'camera.mode'].map(id => params.get(id)?.value).join('|') : ''
-    const key = `${debug}|${tier}|${motionOn}|${composeOn}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${temporalOn}|${historyKey}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
-    if (this.built?.key !== key) {
-      const start = longFrames.start()
-      try { this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn) }
-      finally { longFrames.end('Post chain rebuild', start) }
-    }
+    const spec = this.describeGraph(renderer, scene, tier)
+    const { shaftsOn } = spec
+    // A shed frame uses base temporarily. Keep the current level's full-budget graph eligible.
+    if (tier === qualityTier) this.rememberPreset(level, spec.key)
+    this.pruneStandby(level)
+    const reusing = this.activateGraph(renderer, scene, camera, spec)
 
     const u = this.u
     u.exposure.value = Math.max(1e-4, renderer.toneMappingExposure)
@@ -278,28 +394,225 @@ export class PostChain {
     const sunLit = sunVis > 0.001
     if (built.maskTex) built.maskTex.autoUpdate = sunLit
     if (built.raysTex) built.raysTex.autoUpdate = sunLit && shaftAmount > 0
-    this.sun.setVolumetricCloudsActive?.(built.clouds)
+    this.setVolumetricCloudsActive(built.clouds)
     try {
       built.pipeline.render()
+      if (reusing) this.restoredTargets += built.targets.filter(target => target.width > 1 || target.height > 1).length
     } catch (error) {
-      this.sun.setVolumetricCloudsActive?.(false)
+      this.setVolumetricCloudsActive(false)
       throw error
     }
   }
 
-  /** Free the pipeline and every target it made. Safe to repeat. */
-  release(): void {
-    this.sun.setVolumetricCloudsActive?.(false)
-    if (!this.built) return
-    this.built.pipeline.dispose()
-    for (const d of this.built.disposables) { d.dispose?.(); d.renderTarget?.dispose() }
+  private bindScope(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera): void {
+    const backend = renderer.backend
+    const context = renderer.getContext?.()
+    const device = (backend as { device?: unknown } | undefined)?.device
+    const scope = this.scope
+    const changed = !scope || scope.renderer !== renderer || scope.backend !== backend ||
+      scope.context !== context || scope.device !== device || scope.scene !== scene || scope.camera !== camera
+    const sky = !changed && this.sky?.parent === scene ? this.sky : findSky(scene)
+    if (changed || sky !== this.sky) {
+      if (scope) this.clearGraphs()
+      if (this.sky && this.sky !== sky) this.sky.rays.strength.value = 0
+      this.sky = sky
+      this.scope = { renderer, backend, context, device, scene, camera }
+      this.hasPrev = false
+    }
+  }
+
+  private describeGraph(renderer: THREE.WebGPURenderer, scene: THREE.Scene, tier: PostTier, preset?: PostGraphPreset): GraphSpec {
+    const effects = drawsEffects(tier)
+    const value = <T extends ParamValue>(param: Param<T>) => postValue(param, preset)
+    const glowOn = effects && value(P.postBloom) > 0
+    const shaftsOn = effects && (value(P.postShafts) > 0 || value(P.postFlare) > 0)
+    const flareOn = effects && value(P.postFlare) > 0
+    const aoOn = effects && value(P.postAO) > 0
+    const giOn = effects && value(P.postGI) > 0
+    const clouds = this.sun.clouds
+    const cloudsOn = effects && value(P.postClouds) > 0 && !!clouds && clouds.coverage > 0 && clouds.density > 0 && clouds.atmosphere > 0
+    const light = effects && value(P.postContact) > 0 ? findSun(scene) : null
+    const toneMap = TONE_MAPS[Math.round(value(P.postToneMap))] ?? renderer.toneMapping
+    const debug = Math.round(value(P.postDebug))
+    const temporalOn = effects && value(P.postTemporal) && debug === 0
+    // Motion blur and heat shimmer share one composite, built only if one is wanted.
+    const motionOn = effects && value(P.postMotionBlur) > 0
+    const composeOn = effects && (motionOn || value(P.postHeat) > 0)
+    const historyKey = temporalOn ? ['world.curve', 'world.seed', 'terrain.kind', 'terrain.planetSize', 'camera.mode'].map(id => preset?.value(id) ?? params.get(id)?.value).join('|') : ''
+    const key = `${debug}|${tier}|${motionOn}|${composeOn}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${temporalOn}|${historyKey}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
+    return { key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn }
+  }
+
+  /** Return whether this frame is reactivating previously parked targets. */
+  private activateGraph(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, spec: GraphSpec): boolean {
+    if (this.built?.key === spec.key) return false
+    const previous = this.built
+    const hit = this.standby.get(spec.key)
+    if (hit) {
+      this.standby.delete(spec.key)
+      this.built = hit
+      this.activations++
+      if (previous) this.retire(previous, spec.tier)
+      return true
+    }
     this.built = null
+    if (previous) this.retire(previous, spec.tier)
+    this.built = this.build(renderer, scene, camera, spec)
+    return false
+  }
+
+  private renderCovered(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, preset: PostGraphPreset): void {
+    const clouds = this.volumetricCloudsActive
+    const tier = this.coveredTier(preset)
+    if (tier === 'off') {
+      this.rememberPreset(preset.level, 'off')
+      try {
+        this.setVolumetricCloudsActive(false)
+        renderer.render(scene, camera)
+        this.coveredDraws++
+      } finally {
+        this.setVolumetricCloudsActive(clouds)
+      }
+      return
+    }
+
+    const spec = this.describeGraph(renderer, scene, tier, preset)
+    this.rememberPreset(preset.level, spec.key)
+    this.pruneStandby()
+    const active = this.built?.key === spec.key
+    let graph = active ? this.built! : this.standby.get(spec.key)
+    if (!graph) {
+      this.makeStandbyRoom()
+      graph = this.build(renderer, scene, camera, spec)
+    }
+    const perspective = camera as THREE.PerspectiveCamera
+    const cameraView = graph.temporalNode ? {
+      aspect: perspective.aspect,
+      view: perspective.view && { ...perspective.view },
+      projection: perspective.projectionMatrix.clone(),
+      inverse: perspective.projectionMatrixInverse.clone(),
+    } : null
+    const { toneMapping, outputColorSpace } = renderer
+    const xrEnabled = renderer.xr?.enabled
+    const maskUpdate = graph.maskTex?.autoUpdate
+    const raysUpdate = graph.raysTex?.autoUpdate
+    if (graph.maskTex) graph.maskTex.autoUpdate = true
+    if (graph.raysTex) graph.raysTex.autoUpdate = true
+    let drew = false
+    try {
+      this.setVolumetricCloudsActive(graph.clouds)
+      graph.pipeline.render()
+      this.coveredDraws++
+      drew = true
+    } finally {
+      // A thrown render can bypass Three's pipeline cleanup. Even a successful TRAA
+      // draw changes the camera's view offset while jittering the covered frame.
+      renderer.toneMapping = toneMapping
+      renderer.outputColorSpace = outputColorSpace
+      if (xrEnabled !== undefined) renderer.xr.enabled = xrEnabled
+      if (cameraView) {
+        perspective.view = cameraView.view
+        perspective.aspect = cameraView.aspect
+        perspective.projectionMatrix.copy(cameraView.projection)
+        perspective.projectionMatrixInverse.copy(cameraView.inverse)
+      }
+      this.setVolumetricCloudsActive(clouds)
+      if (graph.maskTex) graph.maskTex.autoUpdate = maskUpdate
+      if (graph.raysTex) graph.raysTex.autoUpdate = raysUpdate
+      if (active) {
+        // A same-graph draw can contain parked actors. Discard its history before gameplay.
+        if (graph.temporalNode) { graph.temporalNode.setSize(1, 1); this.historyResets++ }
+      } else if (drew && this.isNeighborKey(graph.key)) {
+        this.park(graph)
+      } else {
+        this.standby.delete(graph.key)
+        this.disposeGraph(graph)
+      }
+    }
+  }
+
+  private coveredTier(preset: PostGraphPreset): PostTier {
+    return postTier({ on: postValue(P.postOn, preset), tier: preset.tier, shed: 0 })
+  }
+
+  private rememberPreset(level: QualityLevel | undefined, key: string): void {
+    if (level !== undefined) this.presetKeys.set(level, key)
+  }
+
+  private pruneStandby(level = this.host.quality.getQualityState?.().level): void {
+    if (level === undefined) return
+    for (const candidate of this.presetKeys.keys()) {
+      if (Math.abs(candidate - level) > 1) this.presetKeys.delete(candidate)
+    }
+    for (const graph of this.standby.values()) {
+      if (!this.isNeighborKey(graph.key)) this.evict(graph)
+    }
+  }
+
+  private isNeighborKey(key: string): boolean {
+    for (const known of this.presetKeys.values()) if (known === key) return true
+    return false
+  }
+
+  private retire(graph: Built, nextTier?: PostTier): void {
+    const known = this.host.quality.getQualityState?.()
+    if (known ? this.isNeighborKey(graph.key) : graph.tier === 'lite' && nextTier === 'lite') this.park(graph)
+    else this.disposeGraph(graph)
+  }
+
+  private makeStandbyRoom(): void {
+    if (this.standby.size < MAX_STANDBY_GRAPHS) return
+    const oldest = this.standby.values().next().value
+    if (oldest) this.evict(oldest)
+  }
+
+  private evict(graph: Built): void {
+    this.standby.delete(graph.key)
+    this.disposeGraph(graph)
+  }
+
+  private park(graph: Built): void {
+    // Three's render context keys include attachment formats and MRT identity, not dimensions.
+    // Shrinking releases full-size backing storage and makes TRAA seed fresh on the next draw.
+    for (const target of graph.targets) target.setSize(1, 1)
+    this.standby.delete(graph.key)
+    this.makeStandbyRoom()
+    this.standby.set(graph.key, graph)
+  }
+
+  private disposeGraph(graph: Built): void {
+    graph.pipeline.dispose()
+    for (const node of graph.disposables) node.dispose?.()
+  }
+
+  private setVolumetricCloudsActive(active: boolean): void {
+    this.sun.setVolumetricCloudsActive?.(active)
+    this.volumetricCloudsActive = active
+  }
+
+  /** Free both graphs and their targets. Safe to repeat. */
+  release(): void {
+    this.generation++
+    this.clearGraphs()
+  }
+
+  private clearGraphs(): void {
+    this.setVolumetricCloudsActive(false)
+    if (this.built) this.disposeGraph(this.built)
+    for (const graph of this.standby.values()) this.disposeGraph(graph)
+    this.built = null
+    this.standby.clear()
+    this.presetKeys.clear()
   }
 
   dispose(): void {
-    this.release(); this.reportActive(false)
+    this.disposed = true
+    this.release()
+    this.scope = null
+    this.reportActive(false)
     // The sky's cheap rays follow this chain's settings; without it they stop.
     if (this.sky) this.sky.rays.strength.value = 0
+    this.sky = null
   }
 
   private active = false
@@ -380,8 +693,14 @@ export class PostChain {
     return this.screenFade * sunHeightFactor(sun.y, P.postLowSun.value)
   }
 
-  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping, debug = 0, giOn = false, cloudsOn = false, temporalOn = false, motionOn = false, composeOn = false): void {
-    this.release()
+  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, spec: GraphSpec): Built {
+    const start = longFrames.start()
+    try { return this.buildGraph(renderer, scene, camera, spec) }
+    finally { longFrames.end('Post chain rebuild', start) }
+  }
+
+  private buildGraph(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, spec: GraphSpec): Built {
+    const { key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn } = spec
     const u = this.u as Record<keyof PostChain['u'], N>
     const disposables: Built['disposables'] = []
     let maskRef: N = null
@@ -684,9 +1003,23 @@ export class PostChain {
     if (debug === 3 && raysRef) out = vec4(raysRef.sample(uv()).r, maskRef.sample(uv()).a, 0, 1)
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
     pipeline.outputColorTransform = false
-    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
     this.builds++
+    return { key, tier, pipeline, disposables, targets: ownedTargets(disposables), maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
   }
+}
+
+/** Three's pass nodes own their targets directly, including Bloom's arrays of mip targets. */
+function ownedTargets(nodes: Built['disposables']): THREE.RenderTarget[] {
+  const targets = new Set<THREE.RenderTarget>()
+  for (const node of nodes) {
+    for (const field of Object.values(node)) {
+      if (field instanceof THREE.RenderTarget) targets.add(field)
+      else if (Array.isArray(field)) {
+        for (const entry of field) if (entry instanceof THREE.RenderTarget) targets.add(entry)
+      }
+    }
+  }
+  return [...targets]
 }
 
 function smooth01(e0: number, e1: number, x: number): number {
