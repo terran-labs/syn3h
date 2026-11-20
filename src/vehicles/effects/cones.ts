@@ -29,10 +29,31 @@ type N = any // TSL node
 /** How bright the cones are, on top of the lamps' own brightness. 0 turns them off. */
 export const headlightCones = defineParam({ id: 'light.headlightCones', label: 'Headlight beams in mist', group: 'Light', scope: 'client', default: 1, min: 0, max: 3, step: 0.05 })
 
-/** Cone length (m) and half angle (radians) of the visible beam. */
+/** Cone length (m) and half angle (radians) of the buggy's visible beam. */
 export const CONE_LENGTH = 18, CONE_HALF_ANGLE = (12 * Math.PI) / 180
 /** The real beam's tip below the lamp at 22 m ahead: the cone follows it (effects/index.ts spot target). */
 export const CONE_DROP = Math.atan2(0.8, 22)
+
+/**
+ * A vehicle kind's beam in mist: its length (m), half angle and drop below the lamp's axis
+ * (radians). Every kind draws into the one cone batch with the one material; a kind joins by
+ * having a shape here (coneShapeFor), so any vehicle, a bot's included, reuses it.
+ */
+export interface ConeShape { length: number; halfAngle: number; drop: number }
+export const CONE_SHAPES: Readonly<Record<'buggy' | 'hovercraft' | 'jet', ConeShape>> = {
+  buggy: { length: CONE_LENGTH, halfAngle: CONE_HALF_ANGLE, drop: CONE_DROP },
+  // The hovercraft's lamp (.23 m up) aims 1 m down at 20 m; it sits low over water, so a
+  // shorter, wider beam that meets the surface instead of tunnelling under it.
+  hovercraft: { length: 16, halfAngle: (14 * Math.PI) / 180, drop: Math.atan2(1.03, 20.15) },
+  // The jet's lamps hang under the nose and it is usually flying: a longer, narrower beam
+  // reads as a landing light reaching ahead rather than a puddle under the fuselage.
+  jet: { length: 28, halfAngle: (9 * Math.PI) / 180, drop: Math.atan2(1.15, 18.7) },
+}
+/** The cone shape for a vehicle kind, or null for a kind without cones. */
+export function coneShapeFor(kind: string): ConeShape | null {
+  if (kind.startsWith('buggy')) return CONE_SHAPES.buggy
+  return kind === 'hovercraft' || kind === 'jet' ? CONE_SHAPES[kind] : null
+}
 /**
  * Brightness of a cone in thick mist, per unit of lamp brightness, and the haze density (per
  * metre) at which it reaches about two thirds of that: the glow saturates, so a dense bank
@@ -118,14 +139,14 @@ const tilt = new T.Matrix4(), shape = new T.Matrix4()
  * Write one vehicle's cones from its lamp points (even ones are the front headlights) at
  * `brightness` (the lamp's, before haze). Returns the next free index.
  */
-export function writeVehicleCones(mesh: T.InstancedMesh, index: number, object: T.Object3D, points: readonly T.Object3D[], colour: T.Color, brightness: number, scratch: T.Matrix4, camera?: T.Vector3): number {
-  tilt.makeRotationX(-CONE_DROP)
-  const radius = CONE_LENGTH * Math.tan(CONE_HALF_ANGLE)
-  shape.makeScale(radius, radius, CONE_LENGTH)
+export function writeVehicleCones(mesh: T.InstancedMesh, index: number, object: T.Object3D, points: readonly T.Object3D[], colour: T.Color, brightness: number, scratch: T.Matrix4, camera?: T.Vector3, cone: ConeShape = CONE_SHAPES.buggy): number {
+  tilt.makeRotationX(-cone.drop)
+  const radius = cone.length * Math.tan(cone.halfAngle)
+  shape.makeScale(radius, radius, cone.length)
   for (let i = 0; i < points.length && index < MAX_CONES; i += 2, index++) {
     scratch.copy(points[i].matrixWorld).multiply(tilt).multiply(shape)
     let fade = 1
-    if (camera) fade = insideFade(scratch, camera, radius)
+    if (camera) fade = insideFade(scratch, camera, radius, cone.length)
     if (!object.visible || !(brightness * fade > 0)) scratch.makeScale(0, 0, 0)
     mesh.setMatrixAt(index, scratch)
     mesh.setColorAt(index, tmpColour.copy(colour).multiplyScalar(brightness * fade))
@@ -139,13 +160,13 @@ const inverse = new T.Matrix4(), local = new T.Vector3()
  * a cone fades out as the camera comes within CONE_INSIDE_FADE metres of its surface and is
  * gone with the camera inside. From in front, the lamps' own glare carries the look.
  */
-export function insideFade(matrix: T.Matrix4, camera: T.Vector3, radius: number): number {
+export function insideFade(matrix: T.Matrix4, camera: T.Vector3, radius: number, length = CONE_LENGTH): number {
   local.copy(camera).applyMatrix4(inverse.copy(matrix).invert())
   const along = -local.z
   if (along > 1.2) return 1
   // Metres outside the cone's wall, roughly: the radial gap at this depth, or the distance
   // behind the lamp.
-  const outside = along <= 0 ? Math.hypot(local.x * radius, local.y * radius, along * CONE_LENGTH) : (Math.hypot(local.x, local.y) - Math.max(along, 0)) * radius
+  const outside = along <= 0 ? Math.hypot(local.x * radius, local.y * radius, along * length) : (Math.hypot(local.x, local.y) - Math.max(along, 0)) * radius
   const t = Math.min(1, Math.max(0, outside / CONE_INSIDE_FADE))
   return t * t * (3 - 2 * t)
 }
