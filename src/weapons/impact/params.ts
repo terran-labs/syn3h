@@ -23,3 +23,13 @@ export const fireworkWidth = defineParam({ id: 'fx.fireworks.width', label: 'Fir
 export const fireworkSize = defineParam({ id: 'fx.fireworks.size', label: 'Firework size', group, scope, default: 4.9, min: 0.5, max: 8, step: 0.05 })
 /** Plasma Thunder's fireworks: how strongly their smoke shows by day (it fades out at night); 0 for none. */
 export const fireworkSmoke = defineParam({ id: 'fx.fireworks.smoke', label: 'Firework smoke by day', group, scope, default: 1, min: 0, max: 3, step: 0.05 })
+/**
+ * Plasma Thunder's fireworks: bursts already alive before a new one is drawn with Low's star and
+ * smoke counts, so a sky full of bots' fireworks stays cheap. 0: every burst at Low's counts.
+ */
+export const fireworkCrowd = defineParam({ id: 'fx.fireworks.crowd', label: 'Firework bursts at full detail', group, scope, default: 2, min: 0, max: 6, step: 1 })
+/**
+ * Plasma Thunder's fireworks: how much of High's extra stars, glitter, crackle and smoke a burst
+ * draws at High, from Low's counts (0) to High's (1). Below 1 it is cheaper without a reload.
+ */
+export const fireworkHighDetail = defineParam({ id: 'fx.fireworks.highDetail', label: 'Firework detail at High', group, scope, default: 1, min: 0, max: 1, step: 0.05 })

@@ -27,7 +27,7 @@ import type { Game } from '../../core/Game'
 import { graphicsLevel } from '../../core/quality'
 import { GroundGlow } from './GroundGlow'
 import { SparkBatch, type SparkSpec } from '../impact/SparkBatch'
-import { fireworkSize, fireworkSmoke, fireworkWidth } from '../impact/params'
+import { fireworkCrowd, fireworkHighDetail, fireworkSize, fireworkSmoke, fireworkWidth } from '../impact/params'
 import { flashSprite } from '../impact/flashSprite'
 import { ParticleBatch } from '../../vehicles/effects/ParticleBatch'
 import { dustSprite } from '../../vehicles/effects/sprites'
@@ -66,6 +66,15 @@ function narrowScreen(): boolean {
     && (window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 700)
 }
 const GRAVITY = 9.8
+/**
+ * One of the per-level counts above for a burst at `level`. At High it runs from Low's count to
+ * High's by fx.fireworks.highDetail; the batches are always sized for High's, so lowering it needs
+ * no rebuild.
+ */
+function count(table: readonly [number, number, number], level: number): number {
+  if (level < 2) return table[level]
+  return Math.round(table[1] + (table[2] - table[1]) * Math.max(0, Math.min(1, fireworkHighDetail.value)))
+}
 
 export interface BurstSpec {
   /** Where it detonated. */
@@ -160,12 +169,13 @@ export class Fireworks {
 
   burst(spec: BurstSpec): void {
     this.rand = spec.seed >>> 0
-    // A crowded sky (two bursts already alive, so this is the third or later): Low's counts for
+    // A crowded sky (fx.fireworks.crowd bursts already alive, two by default): Low's counts for
     // this one, as on a phone. Bots launch these too, and six full bursts in view cost too much.
-    const crowded = this.alive >= 2
+    const crowded = this.alive >= Math.round(fireworkCrowd.value)
     const level = crowded ? Math.min(1, this.starLevel) : this.starLevel, sl = crowded ? Math.min(1, this.smokeLevel) : this.smokeLevel
-    const shape = fireworkShape(spec.seed), budget = PER_BURST[level], puffScale = this.narrow ? 0.6 : 1
+    const shape = fireworkShape(spec.seed), budget = count(PER_BURST, level), puffScale = this.narrow ? 0.6 : 1
     let used = 0, glitter = 0
+    const glitterCap = count(GLITTER, level), smokeCap = count(SMOKE, sl)
     // How dark it is as it bursts (0 by day, 1 at night): the night display lives longer, trails
     // and glitters more and glows brighter. Nothing here changes it by day.
     const night = vehicleNightAmount(this.game.scene)
@@ -182,7 +192,7 @@ export class Fireworks {
       // At night every GLITTER_EVERY-th star sheds glitter that hangs where it passed.
       if (night > 0.3 && used % GLITTER_EVERY[level] === 0) {
         for (const t of [0.2, 0.45, 0.75]) {
-          if (glitter >= GLITTER[level] || t > s.life * 0.7) break
+          if (glitter >= glitterCap || t > s.life * 0.7) break
           glitterSpec.life = 1.2 + this.next() * 0.6
           this.stars.emit(travel(at, v, s.drag, s.gravity, t, this.g), this.v2.set(0, -1.5, 0), glitterSpec, this.c2.copy(color).multiplyScalar(0.6), delay + t); glitter++
         }
@@ -209,7 +219,7 @@ export class Fireworks {
     const grey = this.c.setRGB(0.72, 0.72, 0.74).lerp(new T.Color(a.r / 4.2, a.g / 4.2, a.b / 4.2), 0.18).clone()
     let puffs = 0
     const puff = (at: T.Vector3, life: number, size: number, grow: number, delay: number) => {
-      if (puffs >= SMOKE[sl]) return
+      if (puffs >= smokeCap) return
       this.smoke.emit(at, this.v2.set((this.next() - 0.5) * 0.6, -0.4, (this.next() - 0.5) * 0.6), life, size * puffScale, grow * puffScale, grey, delay); puffs++
     }
 
@@ -239,7 +249,7 @@ export class Fireworks {
       }
       top.y += spec.climb; delay = CLIMB_SECONDS
     }
-    const stars = STARS[level], speed = (20 + this.next() * 6) * fireworkSize.value * SNAP
+    const stars = count(STARS, level), speed = (20 + this.next() * 6) * fireworkSize.value * SNAP
     const colour = (i: number) => (i % 3 === 2 ? b : a)
     trailing = true; trailSize = speed / (1.25 * SNAP) * 0.07
     // A unit direction from the Fibonacci sphere, turned by the burst's own angle.
@@ -303,7 +313,7 @@ export class Fireworks {
     this.trails.length = 0
     // Crackle: white twinkles scattered through the burst a second in.
     base(0.08, 0.14, 4, 0, 0)
-    const crackle = level === 0 ? 14 : level === 1 ? 24 : 48
+    const crackle = count([14, 24, 48], level)
     for (let i = 0; i < crackle; i++) {
       const d = sphere(i, crackle).multiplyScalar(radius * (0.4 + this.next() * 0.6))
       emit(this.p.copy(top).add(d), this.v.set(0, 0, 0), s, this.c.setRGB(5, 5, 4.6), delay + 1 + this.next() * 0.9)
