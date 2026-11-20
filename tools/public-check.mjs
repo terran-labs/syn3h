@@ -27,6 +27,9 @@ const base = process.argv[2]
 const tolerateDeviceLoss = process.env.SYN3H_CHECK_TOLERATE_DEVICE_LOSS === '1'
 // The WebGPU device-loss family, as three and Chrome word it on a machine without a GPU.
 const DEVICE_LOSS = /WebGPU Device Lost|Instance dropped|A valid external Instance reference no longer exists/
+// Most device-loss lines a hosted run may tolerate. v26.11.2009's hosted run had 2 (one per page);
+// runs from 1707 to 1906 had 6. 8 leaves that margin; 2001 to 2008 had 204 to 406 before the fixes.
+const MAX_DEVICE_LOSS = 8
 if (!base) { console.error('usage: node tools/public-check.mjs <public url>'); process.exit(2) }
 const room = `check${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
 const results = [], errors = [], crashed = [], browsers = [], consoleLines = []
@@ -66,12 +69,20 @@ async function open(name) {
   })
   const start = Date.now()
   await page.evaluate(() => { window.syn3h.shell.play(); document.activeElement?.blur?.() })
-  // Room membership precedes playable entry. Observe each page independently while
-  // the other joins, and fail entry separately if its loading overlay never clears.
-  entryReady.set(page, until(page, () => {
+  // Wait for this player to be playable before the next browser is launched, so one player's
+  // figure never includes another browser's launch and boot on the same machine. ?autoplay=1
+  // already requested play at boot, so the figure that counts is the page's own: from its play
+  // request to its first reveal (window.syn3hStartup, src/core/diagnostics.ts). It is printed,
+  // never a threshold; entry fails only if the loading overlay never clears.
+  const ok = await until(page, () => {
     const { shell, game } = window.syn3h
     return shell.playing && !shell.transitioning && !game.holdDraws
-  }, null, 45000).then(ok => ({ name, ok, observedMs: Date.now() - start })))
+  }, null, 45000)
+  const own = await page.evaluate(() => {
+    const t = window.syn3hStartup
+    return t?.playRequestMs !== undefined && t?.firstRevealMs !== undefined ? Math.round(t.firstRevealMs - t.playRequestMs) : null
+  }).catch(() => null)
+  entryReady.set(page, Promise.resolve({ name, ok, playToPlayableMs: own, observedMs: Date.now() - start }))
   return page
 }
 
@@ -88,7 +99,7 @@ try {
 
   // 2. A moves 30 m along the ground; B's copy of A follows.
   const entry = await Promise.all([entryReady.get(a), entryReady.get(b)])
-  console.log('Playable entry observed (ms since check requested play)', JSON.stringify(entry))
+  console.log('Playable entry (playToPlayableMs: the page\'s own play request to first reveal; observedMs: since the check pressed Play)', JSON.stringify(entry))
   if (!entry.every(client => client.ok)) throw new Error('Playable entry failed before movement check')
   const target = await a.evaluate(() => {
     const s = window.syn3h.terrain.spawnPoint(0), x = s.position.x + 30, z = s.position.z
@@ -155,8 +166,17 @@ try {
 }
 const tolerated = tolerateDeviceLoss ? errors.filter((e) => DEVICE_LOSS.test(e)) : []
 const counted = errors.filter((e) => !tolerated.includes(e))
-if (tolerated.length) console.log(`TOLERATED ${tolerated.length} WebGPU device-loss page errors (SYN3H_CHECK_TOLERATE_DEVICE_LOSS): ${JSON.stringify(tolerated.slice(0, 5).map((e) => e.slice(0, 200)))}`)
-check('no page errors', counted.length === 0, { count: counted.length, tolerated: tolerated.length, first: counted.slice(0, 5).map((e) => e.slice(0, 300)) })
+// Group the tolerated lines by message (numbers stripped, first 160 characters) so a new kind of
+// device-loss line shows with its count instead of hiding past the first few samples.
+const groups = new Map()
+for (const e of tolerated) { const k = e.replace(/\d+/g, 'N').slice(0, 160); groups.set(k, (groups.get(k) ?? 0) + 1) }
+if (tolerated.length) {
+  console.log(`TOLERATED ${tolerated.length} WebGPU device-loss page errors (SYN3H_CHECK_TOLERATE_DEVICE_LOSS), by message:`)
+  for (const [k, n] of [...groups].sort((x, y) => y[1] - x[1])) console.log(`  ${n} x ${JSON.stringify(k)}`)
+}
+// Past the cap, device loss is no longer the runner's ordinary loss but something we added.
+const maxTolerated = Number(process.env.SYN3H_CHECK_MAX_DEVICE_LOSS ?? MAX_DEVICE_LOSS)
+check('no page errors', counted.length === 0 && tolerated.length <= maxTolerated, { count: counted.length, tolerated: tolerated.length, maxTolerated, first: counted.slice(0, 5).map((e) => e.slice(0, 300)) })
 await Promise.all(browsers.map((x) => x.close()))
 
 const crashedRun = crashed.length > 0

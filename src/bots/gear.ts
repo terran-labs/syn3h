@@ -33,6 +33,9 @@ export interface BotGearHooks {
   pick?(vehicle: Vehicle, usable: readonly BotGearOption[]): BotGearOption | null
 }
 
+/** A target this many metres above a bot counts as flying, for its choice of gear. */
+const AIR_TARGET = 8
+
 /** Decisions only. The gear owner validates and executes actions, including their effects. */
 export class BotGearController {
   private hooks: BotGearHooks | null = null
@@ -103,7 +106,9 @@ export class BotGearController {
     if (this.candidate !== target) { this.candidate = target; this.seenFor = 0 }
     this.seenFor += dt
     if (this.wait > 0 || this.seenFor < 0.4 + this.seed % 4 * 0.1) return
-    const option = this.hooks.pick?.(this.vehicle, usable) ?? usable[(this.seed + this.sequence++) % usable.length]
+    // Against something flying, Plasma Thunder when it can: its proximity fuse is made for
+    // aircraft (thunderRules.ts). Otherwise the games' choice, else each piece of gear in turn.
+    const option = (dy > AIR_TARGET && usable.find(o => o.id === 'red')) || this.hooks.pick?.(this.vehicle, usable) || usable[(this.seed + this.sequence++) % usable.length]
     this.active = { option: { ...option }, target, held: 0 }
     input.fire = false
     this.hooks.act(this.vehicle, { gear: option.id, target, phase: 'press' })

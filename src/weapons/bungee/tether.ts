@@ -115,6 +115,8 @@ function cordGeometry(verts: number): THREE.BufferGeometry {
   g.setAttribute('gtAlong', dyn(4))
   // Linear colour, and the bead phase in metres.
   g.setAttribute('gtColor', dyn(4))
+  // How much of the cord shows, 0 to 1: a let-go cord fades out (Bungee's release effects).
+  g.setAttribute('gtFade', dyn(1))
   return g
 }
 
@@ -148,6 +150,7 @@ export class TetherLook {
   private readonly pos: Float32Array
   private readonly along: Float32Array
   private readonly color: Float32Array
+  private readonly fade: Float32Array
   private readonly sC: Float32Array
   private readonly sU: Float32Array
   private readonly sV: Float32Array
@@ -182,6 +185,7 @@ export class TetherLook {
     this.pos = cordGeo.getAttribute('position').array as Float32Array
     this.along = cordGeo.getAttribute('gtAlong').array as Float32Array
     this.color = cordGeo.getAttribute('gtColor').array as Float32Array
+    this.fade = cordGeo.getAttribute('gtFade').array as Float32Array
     cordGeo.setDrawRange(0, 0)
 
     const sparkGeo = sparkGeometry(MARKERS + TETHER_CORDS * PER_CORD)
@@ -210,7 +214,7 @@ export class TetherLook {
   private cordMaterial(): THREE.MeshBasicNodeMaterial {
     const m = new THREE.MeshBasicNodeMaterial({ name: 'gear bungee tether' })
     tintAndLight(m)
-    const along: N = attribute('gtAlong', 'vec4'), col: N = attribute('gtColor', 'vec4')
+    const along: N = attribute('gtAlong', 'vec4'), col: N = attribute('gtColor', 'vec4'), fade: N = attribute('gtFade', 'float')
     const s = along.x, rest = along.y, across = along.z.abs(), tension = along.w
     const ends = smoothstep(0, END_FADE, s).mul(smoothstep(0, END_FADE, rest))
     // This pixel's ribbon half width, as writeCord chose it for the vertex (without the taper
@@ -235,8 +239,8 @@ export class TetherLook {
     const bead = along1.mul(along1).mul(wide.mul(wide)).mul(mix(0.35, 2.4, tension)).mul(ends)
     const hot: N = hotExposureNode()
     const light = col.xyz.mul(filament.mul(pulse.mul(0.8).add(0.9)).add(sheath).add(bead))
-    const tintA = soft.pow(2).mul(0.42).mul(ends).clamp(0, 1)
-    m.colorNode = light.add(col.xyz.mul(TINT).mul(tintA)).mul(hot)
+    const tintA = soft.pow(2).mul(0.42).mul(ends).clamp(0, 1).mul(fade)
+    m.colorNode = light.mul(fade).add(col.xyz.mul(TINT).mul(tintA)).mul(hot)
     m.opacityNode = tintA
     return m
   }
@@ -306,9 +310,10 @@ export class TetherLook {
 
   /**
    * Write one cord's ribbon through `points` (this.segments + 1 of them, owner's end first).
-   * `tension` is 0 to 1, `phase` is the bead offset in metres, `rgb` its linear colour.
+   * `tension` is 0 to 1, `phase` is the bead offset in metres, `rgb` its linear colour, and
+   * `fade` how much of it shows (1 for a live cord, toward 0 as a let-go cord fades out).
    */
-  writeCord(slot: number, points: readonly THREE.Vector3[], tension: number, phase: number, rgb: readonly number[], surface?: CordSurface): void {
+  writeCord(slot: number, points: readonly THREE.Vector3[], tension: number, phase: number, rgb: readonly number[], surface?: CordSurface, fade = 1): void {
     if (slot < 0) return
     const n = this.segments
     let total = 0
@@ -344,6 +349,7 @@ export class TetherLook {
         this.pos[v * 3 + 2] = p.z + this.side.z * sign
         this.along[v * 4] = s; this.along[v * 4 + 1] = total - s; this.along[v * 4 + 2] = sign; this.along[v * 4 + 3] = tension
         this.color[v * 4] = rgb[0]; this.color[v * 4 + 1] = rgb[1]; this.color[v * 4 + 2] = rgb[2]; this.color[v * 4 + 3] = phase
+        this.fade[v] = fade
       }
     }
     if (surface) {
@@ -451,7 +457,7 @@ export class TetherLook {
     const g = this.cord.geometry
     g.setDrawRange(0, top * this.segments * 6)
     this.cord.visible = top > 0
-    for (const [name, size] of [['position', 3], ['gtAlong', 4], ['gtColor', 4]] as const) {
+    for (const [name, size] of [['position', 3], ['gtAlong', 4], ['gtColor', 4], ['gtFade', 1]] as const) {
       const a = g.getAttribute(name) as THREE.BufferAttribute
       a.clearUpdateRanges()
       if (top > 0) { a.addUpdateRange(0, top * CORD_VERTS * size); a.needsUpdate = true }

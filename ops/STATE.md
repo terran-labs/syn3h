@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-20 01:10 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-20 05:40 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,30 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2000 (release-65), source 554b06b9, frozen copy 20261120-005547-554b06b9,
-Worker version 0e32d7ee, at https://www.syn3h.com/ since 20 November 01:02 PST.
+Live: v26.11.2009 (release-74), source 0ad09167, frozen copy 20261120-052549-0ad09167,
+Worker version 8f427a61, at https://www.syn3h.com/ since 20 November 05:30 PST.
+2009 counts shader-diagnostics rejections after a known loss into the one summary; the hosted check
+then tolerated 2 device-loss lines (204 on 2008). Smoke pages keep every AudioContext suspended since
+2009 (the renderer crash was Chrome's own audio rendering under load); crash budget still two.
+Hello and welcome carry only world settings that differ from their defaults. Staging: a late joiner
+after 4 bots took a 999-character welcome (a 2006 page 3,214); mixed room with 26.11.2006 7 of 7.
+Staging's mixed room with a frozen 26.11.2005 client passed 7 of 7.
+Smoke pages refuse AudioWorklet modules since 2005 (every renderer crash dump was Chrome's assertion on
+its realtime AudioWorklet thread); release-70 had no renderer crash. The crash budget stays at two.
+2004: a page that sends largeWelcome in its hello takes a welcome up to a bound for a full room; for
+older pages the room trims the welcome under 8,192 and sends the rest as ordinary messages. Staging:
+a late joiner after 4 bots took an 8,350-character welcome; a 2003 page got a trimmed 7,832 and joined.
+2003 had a late-join bug: a welcome over 8,192 was dropped and the player never got a room id.
+Protocol gained detonate and detonated in 2003; staging's mixed room with a frozen 26.11.2002 client
+passed 7 of 7, and a one-off check (/tmp/orch-scripts/thunder-mixed.mjs) showed the old page takes the
+new messages without error and a new client bursts an old player's bolt itself after END_WAIT.
+The first 2003 attempt stopped in its dry run on two renderer crashes at the ram step (no deploy);
+the weapons builder traced every renderer crash since 17 Nov to Chrome's realtime AudioWorklet thread.
+Since 2002 (R2 step two) deployments carry no old versions: the Worker serves its own version
+from its assets and every earlier one from R2 only (bucket syn3h-versions, ledger
+../Syn3h-stable/r2-verified.tsv). release.sh runs r2-preflight before building and archives the
+accepted release to R2 (ARCHIVE FAILED exits 1: run the printed command before the next release).
+A missing hashed file costs one R2 read per version: a made-up name took 3 to 4 s to 404 on staging.
 Release-64 (the freeze release, tag m-freeze-1907, 3636e736) failed www's movement step and rolled
 back: player B was still behind the longer covered entry. Unrecorded on the Foreman's word; it
 returns after the entry-time work and the public-check fix (tools/public-check-playable).
@@ -71,6 +93,15 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.1906 | 63 | m-bots-1906 | bots play in Explore (tows, tugs, stop words, breaking free), bots bump each other, hovercraft and jet beams, R2 frozen versions |
 | (v26.11.1907) | 64 | m-freeze-1907 | rolled back: www movement step ran while B was still entering; not recorded |
 | v26.11.2000 | 65 | m-ui-2000 | one glass style, phone panels, chat bubbles, pause screen with screenshots, sunk Zorb cue, own it marker clear |
+| v26.11.2001 | 66 | m-freeze-2001 | shaders and pipelines prepared at Play under cover, in parallel; bots build nothing in play; Copy diagnostics |
+| v26.11.2002 | 67 | m-r2-2002 | deployments stop carrying old versions; earlier versions served from R2 only |
+| v26.11.2003 | 68 | m-thunder-2003 | Plasma Thunder skips, flares and ends in fireworks |
+| v26.11.2004 | 69 | m-join-2004 | joining a room that already has bots works again |
+| v26.11.2005 | 70 | m-bundle-2005 | held charges on time, matching beams in mist, sun rays through gaps, bounded missing-file search |
+| v26.11.2006 | 71 | m-grapple-2006 | strike your grappler to cut the cord; let-go cords whip back; missed hooks sail off |
+| v26.11.2007 | 72 | m-handshake-2007 | lighter joining: only non-default settings sent; oversized messages warn |
+| v26.11.2008 | 73 | m-loss-2008 | Reload promptly when graphics fail during loading; re-entry reuses its preparation |
+| v26.11.2009 | 74 | m-quiet-2009 | after a lost graphics device, shader diagnostics stay quiet on the page |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker

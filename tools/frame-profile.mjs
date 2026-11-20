@@ -25,8 +25,8 @@ if(process.argv[5]!=='probe'&&process.env.PROFILER_WAIT_QUIET==='1'){
 const browser=await chromium.launch({channel:'chrome',headless,args:['--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=metal','--ignore-gpu-blocklist']})
 const cases=['baseline','shadow0','shadow1','shadow3','terrainLow','terrainMedium','skyOff','cloudZero','effectsOff','moving','movingEffectsOff','night','nightHeadlightOff','bots4','bots8','koth','koth4','koth8','kothMarkerOff','minimapOff','tags8','domOff','lobby','pixel075','pixel15','pixel2','uniformSweep','baselineEnd']
 try {
- for(const [width,height] of process.argv[5]==='fire'?[[1280,720],[390,844]]:process.argv[5]==='probe'?[[1280,720]]:process.argv[5]==='round'?[[1920,1080]]:process.argv[5]==='verify'?[[1920,1080],[390,844]]:[[1280,720],[1920,1080],[390,844]]) {
-  for(const variant of process.argv[5]==='fire'?['baseline','fire8','baselineLow','fire8Low']:process.argv[5]==='probe'?['baseline']:process.argv[5]==='round'?['round','flat','roundMoving','flatMoving','roundBots8','flatBots8','round','flat']:process.argv[5]==='verify'?(width===390?['qualityMobile4','qualitySafe2']:['qualityDesktop8']):width===390?['phone0','phone1','phone2']:cases){
+ for(const [width,height] of process.argv[5]==='fire'||process.argv[5]==='fireworks'?[[1280,720],[390,844]]:process.argv[5]==='probe'?[[1280,720]]:process.argv[5]==='round'?[[1920,1080]]:process.argv[5]==='verify'?[[1920,1080],[390,844]]:[[1280,720],[1920,1080],[390,844]]) {
+  for(const variant of process.argv[5]==='fire'?['baseline','fire8','baselineLow','fire8Low']:process.argv[5]==='fireworks'?['fireworks6','fireworks6Low']:process.argv[5]==='probe'?['baseline']:process.argv[5]==='round'?['round','flat','roundMoving','flatMoving','roundBots8','flatBots8','round','flat']:process.argv[5]==='verify'?(width===390?['qualityMobile4','qualitySafe2']:['qualityDesktop8']):width===390?['phone0','phone1','phone2']:cases){
    const context=await browser.newContext({viewport:{width,height},deviceScaleFactor:width===390?3:process.argv[5]==='verify'?2:1})
    await context.routeWebSocket(/\/ws(?:\?|$)/,socket=>socket.close())
    const page=await context.newPage(), errors=[]
@@ -83,6 +83,18 @@ try {
       let n=0
       setInterval(()=>{const net=window.syn3hNet;if(!net)return;for(let i=0;i<8;i++){const a=i/8*Math.PI*2+n*.3;net.fire([Math.cos(a)*.75,-.6,Math.sin(a)*.75])};if(++n%10===0)net.fire([0,-.45,-.9],undefined,'red')},250)
     }
+    // fireworks: Plasma Thunder's fireworks at the cap of six alive, by day (when the smoke is
+    // drawn): a new burst every 0.75 s, 120 m along the camera's view so every one is on screen.
+    if(variant.startsWith('fireworks6')){
+      s.params.set('sun.dayLength',0);s.params.set('sun.timeOfDay',12)
+      let n=0
+      // A/B in one run: every second the fireworks are hidden or shown (camera layer), and each
+      // sample says which, so a busy shared machine weighs on both halves alike.
+      window.__fwOn=true
+      setInterval(()=>{const F=window.syn3hNet?.lasers?.fireworks;if(!F)return;window.__fwOn=!window.__fwOn;for(const k of ['stars','dayStars','smoke','flash'])F[k]?.mesh.layers.set(window.__fwOn?0:31);for(const g of F.glow?.slots??[])g.mesh.layers.set(window.__fwOn?0:31)},1000)
+      setInterval(()=>{const F=window.syn3hNet?.lasers?.fireworks;if(!F)return;const c=g.camera,d=c.getWorldDirection(c.position.clone()),at=c.position.clone().addScaledVector(d,120).add(d.clone().set(Math.sin(n)*25,Math.cos(n*1.3)*12,0));F.burst({at,climb:0,ground:-Infinity,colors:[{r:.9,g:.08,b:.05},{r:1,g:.75,b:.3}],seed:n++})},750)
+    }
+    if(variant.startsWith('fwBaseline')){s.params.set('sun.dayLength',0);s.params.set('sun.timeOfDay',12)}
     if(variant==='domOff')for(const node of document.body.children)if(node.tagName!=='CANVAS'&&node.tagName!=='SCRIPT')node.style.display='none'
     if(variant==='lobby')s.shell.openMenu()
     if(variant==='uniformSweep')setInterval(()=>s.params.set('weather.cloudCoverage',.15+.05*Math.sin(performance.now()/500)),100)
@@ -101,7 +113,7 @@ try {
     r.render=(...args)=>{const t=performance.now();const result=originalRender(...args);renderMs+=performance.now()-t;return result}
     const samples=[];let collecting=false
     g.quality.frame=metrics=>{
-      if(collecting)samples.push({...metrics,cpu:{...cpu},renderCpuMs:renderMs,pipelines,gpuMs:lastGpu,steps:g.tick-lastTick,environmentCaptures:g.scene.userData.skyEnvironment?.captures,effectsMs:g.scene.userData.vehicleEffects?.updateMs})
+      if(collecting)samples.push({fwOn:window.__fwOn,...metrics,cpu:{...cpu},renderCpuMs:renderMs,pipelines,gpuMs:lastGpu,steps:g.tick-lastTick,environmentCaptures:g.scene.userData.skyEnvironment?.captures,effectsMs:g.scene.userData.vehicleEffects?.updateMs})
       for(const key of Object.keys(cpu))cpu[key]=0;renderMs=0;pipelines=0;lastTick=g.tick
       if(r.backend.trackTimestamp&&!gpuPending){gpuPending=true;r.resolveTimestampsAsync().then(value=>{lastGpu=value}).finally(()=>{gpuPending=false})}
     }
@@ -109,7 +121,7 @@ try {
     return {adapter:{vendor:i.vendor,architecture:i.architecture,description:i.description,fallback:i.isFallbackAdapter},timestampQueries:r.backend.trackTimestamp,backend:g.backend}
    },variant)
    await page.waitForTimeout(2500)
-   await page.evaluate(()=>window.frameProfile.start());await page.waitForTimeout(5000)
+   await page.evaluate(()=>window.frameProfile.start());await page.waitForTimeout(process.argv[5]==='fireworks'?20000:5000)
    const trace=await page.evaluate(()=>window.frameProfile.stop())
    const percentile=(values,p)=>{values=values.filter(Number.isFinite).sort((a,b)=>a-b);return values.length?values[Math.floor((values.length-1)*p)]:null}
    const median=key=>percentile(trace.samples.map(s=>s[key]),.5)

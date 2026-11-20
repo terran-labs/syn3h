@@ -4,18 +4,21 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
-import { apiStore, archive, archivedVersions, bareVersion, carry, changedInPlace, check, contentType, mapPool, r2Upload, r2WriteIndex, retrying } from './frozen-versions.mjs'
+import {
+  apiStore, archive, archivedVersions, bareVersion, changedInPlace, check, contentType, ledgerFile, mapPool, prepare,
+  r2Preflight, r2Upload, r2WriteIndex, retrying, verifiedVersions,
+} from './frozen-versions.mjs'
 import { findForbidden } from './check-shipped-assets.mjs'
 import { draftNotes, frozenUrl } from './release-notes.mjs'
 import { parseHistory } from './lib/release-version.mjs'
 
 /** A frozen copy holding a tiny built site whose page names its own version. */
-function build(root, name, mark) {
+function build(root, name, mark, version) {
   const copy = join(root, name)
   mkdirSync(join(copy, 'dist', 'assets'), { recursive: true })
   mkdirSync(join(copy, 'dist', 'brand'), { recursive: true })
   writeFileSync(join(copy, 'dist', 'index.html'), `<title>${mark}</title>`)
-  writeFileSync(join(copy, 'dist', 'build.json'), JSON.stringify({ mark }))
+  writeFileSync(join(copy, 'dist', 'build.json'), JSON.stringify({ mark, version: `v${version}` }))
   writeFileSync(join(copy, 'dist', 'assets', `app-${mark}.js`), mark)
   writeFileSync(join(copy, 'dist', 'assets', `app-${mark}.js.map`), 'map')
   writeFileSync(join(copy, 'dist', 'brand', 'share.png'), 'png')
@@ -24,35 +27,62 @@ function build(root, name, mark) {
   return copy
 }
 
-test('each release carries itself and every archived release, and only acceptance archives', () => {
+/** Two accepted releases in an archive under root, and a third being released. */
+function released(root) {
+  const store = join(root, 'versions')
+  for (const [name, mark, v] of [['a', 'one', '26.11.1503'], ['b', 'two', '26.11.1600']]) {
+    const copy = build(root, name, mark, v)
+    prepare(copy, v, store)
+    archive(copy, v, store)
+  }
+  const copy = build(root, 'c', 'six', '26.11.1700')
+  writeFileSync(join(copy, 'dist', 'assets', 'big-Ab12Cd34.bin'), Buffer.alloc(4096, 7))
+  prepare(copy, '26.11.1700', store)
+  return { copy, store }
+}
+
+test('a release lists every version but carries none, and only acceptance archives', () => {
   const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-'))
   try {
     const store = join(root, 'versions')
-    const first = build(root, 'first', 'one')
-    assert.deepEqual(carry(first, 'v26.11.1503', store), ['26.11.1503'])
-    assert.equal(readFileSync(join(first, 'dist/v/26.11.1503/index.html'), 'utf8'), '<title>one</title>')
-    assert.ok(!existsSync(join(first, 'dist/v/26.11.1503/assets/app-one.js.map')), 'source maps are not carried')
-    assert.ok(!existsSync(join(first, 'dist/v/26.11.1503/releases.json')), 'the Updates feed is the live site\'s, never carried')
-    assert.ok(!existsSync(join(first, 'dist/v/26.11.1503/v')), 'a frozen version never nests the others')
-    assert.deepEqual(archivedVersions(store), [], 'carrying alone archives nothing: a dry run or rollback leaves no trace')
+    const first = build(root, 'first', 'one', '26.11.1503')
+    assert.deepEqual(prepare(first, 'v26.11.1503', store), ['26.11.1503'])
+    assert.deepEqual(archivedVersions(store), [], 'preparing alone archives nothing: a dry run or rollback leaves no trace')
     archive(first, 'v26.11.1503', store)
     assert.deepEqual(archivedVersions(store), ['26.11.1503'])
+    assert.ok(!existsSync(join(store, '26.11.1503/assets/app-one.js.map')), 'source maps are not archived')
+    assert.ok(!existsSync(join(store, '26.11.1503/releases.json')), 'the Updates feed is the live site\'s, never archived')
+    assert.ok(!existsSync(join(store, '26.11.1503/v')), 'an archived version holds no list of the others')
 
-    const second = build(root, 'second', 'two')
-    assert.deepEqual(carry(second, 'v26.11.1600', store), ['26.11.1503', '26.11.1600'])
-    assert.equal(readFileSync(join(second, 'dist/v/26.11.1503/assets/app-one.js'), 'utf8'), 'one')
-    assert.equal(readFileSync(join(second, 'dist/v/26.11.1600/index.html'), 'utf8'), '<title>two</title>')
+    const second = build(root, 'second', 'two', '26.11.1600')
+    mkdirSync(join(second, 'dist', 'v', '26.11.1503'), { recursive: true })
+    writeFileSync(join(second, 'dist', 'v', '26.11.1503', 'index.html'), 'stale carried copy')
+    assert.deepEqual(prepare(second, 'v26.11.1600', store), ['26.11.1503', '26.11.1600'])
+    // Only the list: the Updates banner reads it for the newest release, this one included.
     assert.deepEqual(JSON.parse(readFileSync(join(second, 'dist/v/versions.json'), 'utf8')).versions, ['26.11.1503', '26.11.1600'])
-    // Carrying twice (a dry run, then the release) gives the same result, not a nested copy.
-    assert.deepEqual(carry(second, 'v26.11.1600', store), ['26.11.1503', '26.11.1600'])
-    assert.ok(!existsSync(join(second, 'dist/v/26.11.1600/v')))
+    assert.ok(!existsSync(join(second, 'dist/v/26.11.1503')), 'no old version is carried')
+    // Preparing twice (a dry run, then the release) gives the same result.
+    assert.deepEqual(prepare(second, 'v26.11.1600', store), ['26.11.1503', '26.11.1600'])
 
     // An accepted release is what a judge was promised: it is never replaced.
     assert.throws(() => archive(second, 'v26.11.1503', store), /never replaced/)
     assert.equal(readFileSync(join(store, '26.11.1503/index.html'), 'utf8'), '<title>one</title>')
-
-    // The bitmap rule judges the new build, not the frozen ones it carries.
     assert.deepEqual(findForbidden(join(second, 'dist')).images, [])
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('prepare refuses a build that changes a root file a frozen version also serves', () => {
+  const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-'))
+  try {
+    const { store } = released(root)
+    const next = build(root, 'next', 'three', '26.11.1800')
+    // Same share.png bytes as before, and its own build.json and script: fine.
+    assert.deepEqual(changedInPlace(join(next, 'dist'), archivedVersions(store), store), [])
+    // A redrawn share.png at the same address would reach every frozen page.
+    writeFileSync(join(next, 'dist', 'brand', 'share.png'), 'new png')
+    assert.deepEqual(changedInPlace(join(next, 'dist'), archivedVersions(store), store), ['brand/share.png (differs from 2 archived versions, newest 26.11.1600)'])
+    assert.throws(() => prepare(next, 'v26.11.1800', store), /rename them instead:\n  brand\/share\.png/)
+    assert.ok(!existsSync(join(next, 'dist', 'v')), 'a refused build gets no list')
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -110,38 +140,45 @@ test('the pool never runs more than its limit at once and keeps results in order
   assert.deepEqual(out, [...Array(40).keys()].map((i) => i * 2))
 })
 
+
 /**
- * A site that answers like server/worker.ts: /?v=<version> is that release's page, a file is
- * looked up in the version its Referer names, then in the latest build, then in any frozen
- * version. `faults` changes what it serves.
+ * A site that answers like server/worker.ts in step two: the release being made (`copy`) is the
+ * latest build and serves its own version from its own files; every archived version is served
+ * from `store` (standing in for R2). A file is looked up in the version its Referer names, then
+ * in the latest build. `faults` changes what it serves: drop '<version>/<file>' (or
+ * 'latest/<file>'), swap '<version>/<file>' to other bytes of the same size.
  */
-async function site(copy, faults = {}) {
-  const frozen = join(copy, 'dist', 'v')
-  const { versions } = JSON.parse(readFileSync(join(frozen, 'versions.json'), 'utf8'))
+async function site(copy, store, faults = {}) {
+  const dist = join(copy, 'dist')
+  const own = bareVersion(JSON.parse(readFileSync(join(dist, 'build.json'), 'utf8')).version)
   const read = (path) => { try { return readFileSync(path) } catch { return null } }
+  const from = (v, file) => {
+    // The release being made is the latest build: dropping one drops the other.
+    if (faults.drop === `${v}/${file}` || (v === own && faults.drop === `latest/${file}`)) return null
+    const bytes = read(v === own ? join(dist, file) : join(store, v, file))
+    return faults.swap === `${v}/${file}` && bytes ? Buffer.from(bytes.toString().replace(/./, '#')) : bytes
+  }
   const seen = { requests: 0, limited: 0 }
   const server = createServer((req, res) => {
     seen.requests++
     const url = new URL(req.url, 'http://x')
     if (faults.limitOnce && !seen.limited++) { res.writeHead(429, { 'retry-after': '1' }); return res.end() }
     let body = null, version = null
-    if (url.pathname === '/') {
+    const direct = /^\/v\/(\d+\.\d+\.\d+)\/(.+)$/.exec(url.pathname)
+    if (url.pathname === '/v/versions.json') body = faults.drop === 'latest/v/versions.json' ? null : read(join(dist, 'v', 'versions.json'))
+    else if (direct) { version = direct[1]; body = from(direct[1], direct[2]) }
+    else if (url.pathname === '/') {
       const v = url.searchParams.get('v')?.replace(/^v/, '')
-      if (v && !versions.includes(v)) { res.writeHead(404); return res.end() }
       version = v ?? null
-      body = read(v ? join(frozen, v, 'index.html') : join(copy, 'dist', 'index.html'))
+      body = v ? from(v, 'index.html') : read(join(dist, 'index.html'))
     } else {
       const file = url.pathname.slice(1)
       const v = new URL(req.headers.referer ?? 'http://x/').searchParams.get('v')
-      const dropped = (w) => faults.drop === `${w}/${file}` || faults.drop === `*/${file}`
-      const swap = (bytes, w) => (faults.swap === `${w}/${file}` && bytes ? Buffer.from(bytes.toString().replace(/./, '#')) : bytes)
-      if (v && !dropped(v)) { body = swap(read(join(frozen, v, file)), v); version = v }
-      if (!dropped('latest')) body ??= read(join(copy, 'dist', file))
-      for (const w of versions) if (!body && !dropped(w)) body = read(join(frozen, w, file))
+      if (v) { body = from(v, file); version = v }
+      if (!body && faults.drop !== `latest/${file}`) { body = read(join(dist, file)); version = null }
     }
     if (!body) { res.writeHead(404); return res.end() }
-    const headers = { etag: '"e"', ...(version ? { 'x-syn3h-version': version } : {}) }
-    headers['content-length'] = body.length
+    const headers = { etag: '"e"', 'content-length': body.length, ...(version ? { 'x-syn3h-version': version } : {}) }
     if (req.headers['if-none-match'] === '"e"') { res.writeHead(304, headers); return res.end() }
     res.writeHead(200, headers)
     res.end(body)
@@ -150,103 +187,105 @@ async function site(copy, faults = {}) {
   return { url: `http://127.0.0.1:${server.address().port}/`, seen, close: () => new Promise((done) => server.close(done)) }
 }
 
-/** Two archived releases and a new one, whose build.json differ at the same size. */
-function released(root) {
-  const store = join(root, 'versions')
-  for (const [name, mark, v] of [['a', 'one', '26.11.1503'], ['b', 'two', '26.11.1600']]) {
-    const copy = build(root, name, mark)
-    carry(copy, v, store)
-    archive(copy, v, store)
-  }
-  const copy = build(root, 'c', 'six')
-  writeFileSync(join(copy, 'dist', 'assets', 'big-Ab12Cd34.bin'), Buffer.alloc(4096, 7))
-  carry(copy, 'v26.11.1700', store)
-  return { copy }
-}
-
-test('the frozen check passes a correct site, fetching every file once', async () => {
+test('the frozen check passes: every file of the new release, and every old version\'s page', async () => {
   const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-check-'))
-  const { copy } = released(root)
-  const s = await site(copy)
+  const { copy, store } = released(root)
+  const s = await site(copy, store)
   try {
-    const { problems, stats } = await check(s.url, copy)
+    const { problems, stats } = await check(s.url, copy, { archive: store })
     assert.deepEqual(problems, [])
     assert.equal(stats.versions, 3)
-    assert.equal(stats.files, 10)
-    // Two spellings and a repeat visit per page, every file, an unknown version, the plain page.
-    assert.equal(stats.requests, 3 * 3 + 10 + 2)
+    // The new release's own files: build.json, its script, the big file, share.png, v/versions.json is not one.
+    assert.equal(stats.files, 4)
+    // Per version two spellings and a repeat visit; the new files; its /v/ address, the list,
+    // an unknown version and the plain page.
+    assert.equal(stats.requests, 3 * 3 + 4 + 4)
     assert.equal(s.seen.requests, stats.requests)
+    // Served locally there is no R2: the new release alone.
+    const local = await check(s.url, copy, { archive: store, newOnly: true })
+    assert.deepEqual(local.problems, [])
+    assert.equal(local.stats.versions, 1)
   } finally { await s.close(); rmSync(root, { recursive: true, force: true }) }
 })
 
-test('the frozen check fails loudly on a missing file, a wrong size or the wrong bytes', async () => {
+test('the frozen check fails loudly on a missing or wrong file of the new release or an old page', async () => {
   const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-check-'))
-  const { copy } = released(root)
-  const fails = async (faults, pattern) => {
-    const s = await site(copy, faults)
+  const { copy, store } = released(root)
+  const fails = async (faults, pattern, count = 1) => {
+    const s = await site(copy, store, faults)
     try {
-      const { problems } = await check(s.url, copy)
-      assert.equal(problems.length, 1, `${JSON.stringify(faults)}: ${problems}`)
-      assert.match(problems[0], pattern)
+      const { problems } = await check(s.url, copy, { archive: store })
+      assert.equal(problems.length, count, `${JSON.stringify(faults)}: ${problems}`)
+      assert.match(problems.join('\n'), pattern)
     } finally { await s.close() }
   }
   try {
-    // Gone from every version and the latest build: a 404.
-    await fails({ drop: '*/assets/big-Ab12Cd34.bin' }, /\/assets\/big-Ab12Cd34\.bin asked by the 26\.11\.1700 page .*HTTP 404/)
-    await fails({ drop: '*/assets/app-one.js' }, /\/assets\/app-one\.js asked by the 26\.11\.1503 page .*HTTP 404/)
-    // Same size, other bytes: build.json of an archived release.
-    await fails({ swap: '26.11.1503/build.json' }, /\/build\.json asked by the 26\.11\.1503 page/)
-    // Dropped from its version, and another version's file of another size answers instead.
-    writeFileSync(join(copy, 'dist', 'v', '26.11.1503', 'brand', 'share.png'), 'png-longer')
-    await fails({ drop: '26.11.1503/brand/share.png' }, /\/brand\/share\.png asked by the 26\.11\.1503 page .*\(HTTP 200, 3 bytes, want 10\)/)
+    // A file of the new release missing everywhere: a 404.
+    await fails({ drop: 'latest/assets/big-Ab12Cd34.bin' }, /\/assets\/big-Ab12Cd34\.bin asked by the 26\.11\.1700 page .*HTTP 404/)
+    // The new release's build.json, same size, other bytes: by root path and by its /v/ address.
+    await fails({ swap: '26.11.1700/build.json' }, /\/build\.json asked by the 26\.11\.1700 page[^]*\/v\/26\.11\.1700\/build\.json is not this release's/, 2)
+    // An old version's page gone from R2: both spellings fail, as the repeat visit cannot happen.
+    await fails({ drop: '26.11.1503/index.html' }, /\/\?v=26\.11\.1503 does not serve the frozen 26\.11\.1503 page \(HTTP 404\)/, 4)
+    // The list without this release: the Updates banner would never see it.
+    await fails({ drop: 'latest/v/versions.json' }, /\/v\/versions\.json does not list 26\.11\.1700/)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
 test('a 429 holds the check for its Retry-After, and then it passes', async () => {
   const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-check-'))
-  const { copy } = released(root)
-  const s = await site(copy, { limitOnce: true })
+  const { copy, store } = released(root)
+  const s = await site(copy, store, { limitOnce: true })
   try {
     const started = Date.now()
-    assert.deepEqual((await check(s.url, copy)).problems, [])
+    assert.deepEqual((await check(s.url, copy, { archive: store })).problems, [])
     assert.ok(Date.now() - started >= 1000, 'the 429 held the check for its Retry-After')
   } finally { await s.close(); rmSync(root, { recursive: true, force: true }) }
 })
 
-/** A bucket in memory: { get(key), put(key, file, type) }, with a hook to corrupt reads. */
-function memoryStore(objects = new Map(), { corrupt } = {}) {
+/** A bucket in memory: { get(key), put(key, file, type) }, with hooks to corrupt reads or fail. */
+function memoryStore(objects = new Map(), { corrupt, failPut } = {}) {
   return {
     objects, puts: [],
     async get(key) { const o = objects.get(key); return o ? (corrupt === key ? Buffer.from('bad') : o.bytes) : null },
-    async put(key, file, type) { this.puts.push(key); objects.set(key, { bytes: readFileSync(file), type }) },
+    async put(key, file, type) {
+      if (failPut === key) throw new Error(`could not upload ${key}: HTTP 500`)
+      this.puts.push(key); objects.set(key, { bytes: readFileSync(file), type })
+    },
   }
 }
 
-test('R2 upload stores each archived file once, with its type, and verifies it', async () => {
+test('R2 upload stores each archived file once, with its type, verifies it, and records the version', async () => {
   const root = mkdtempSync(join(tmpdir(), 'syn3h-r2-'))
   try {
-    const { store: dir } = archivedTwo(root)
+    const { store: dir } = released(root)
     const store = memoryStore()
     const report = await r2Upload(['26.11.1503', '26.11.1600'], { store, archive: dir })
     assert.deepEqual({ ...report, bytes: undefined }, { versions: 2, objects: 8, bytes: undefined, uploaded: 8, present: 0, refused: [], mismatched: [] })
     assert.equal(store.objects.get('v/26.11.1503/assets/app-one.js').bytes.toString(), 'one')
     assert.equal(store.objects.get('v/26.11.1503/index.html').type, 'text/html; charset=utf-8')
     assert.equal(contentType('a/b.glb'), 'model/gltf-binary')
-    // Again: everything is already there with the same bytes, so nothing is written.
+    assert.deepEqual([...verifiedVersions(dir)], ['26.11.1503', '26.11.1600'])
+    assert.match(readFileSync(ledgerFile(dir), 'utf8'), /^26\.11\.1503\t4 objects\t\d+ bytes\t\d{4}-/)
+    // Again: everything is already there with the same bytes, so nothing is written or re-recorded.
     store.puts.length = 0
     const again = await r2Upload(['26.11.1503', '26.11.1600'], { store, archive: dir })
     assert.equal(again.present, 8)
     assert.deepEqual(store.puts, [])
+    assert.equal(readFileSync(ledgerFile(dir), 'utf8').split('\n').filter(Boolean).length, 2)
+    // A read-only audit writes nothing and finds what is missing.
+    const audit = await r2Upload(['26.11.1503'], { store: memoryStore(), archive: dir, verifyOnly: true })
+    assert.equal(audit.mismatched.length, 4)
+    assert.equal(audit.uploaded, 0)
     // The index lists the versions whose page is in the bucket, and only that object is rewritten.
     assert.deepEqual(await r2WriteIndex(['26.11.1600', '26.11.1503', '26.11.1700'], { store }), ['26.11.1503', '26.11.1600'])
     assert.deepEqual(JSON.parse(store.objects.get('v/versions.json').bytes).versions, ['26.11.1503', '26.11.1600'])
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test('R2 upload refuses to overwrite a key holding other bytes, and catches a bad read-back', async () => {
+test('R2 upload refuses to overwrite other bytes, catches a bad read-back, and records neither', async () => {
   const root = mkdtempSync(join(tmpdir(), 'syn3h-r2-'))
   try {
-    const { store: dir } = archivedTwo(root)
+    const { store: dir } = released(root)
     const objects = new Map([['v/26.11.1503/build.json', { bytes: Buffer.from('{"mark":"xxx"}'), type: 'application/json' }]])
     const store = memoryStore(objects)
     const report = await r2Upload(['26.11.1503'], { store, archive: dir })
@@ -255,35 +294,31 @@ test('R2 upload refuses to overwrite a key holding other bytes, and catches a ba
     assert.ok(!store.puts.includes('v/26.11.1503/build.json'))
     const bad = await r2Upload(['26.11.1600'], { store: memoryStore(new Map(), { corrupt: 'v/26.11.1600/brand/share.png' }), archive: dir })
     assert.deepEqual(bad.mismatched, ['v/26.11.1600/brand/share.png'])
+    assert.deepEqual([...verifiedVersions(dir)], [], 'a version with a refused or mismatched object is not recorded')
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test('carry refuses a build that changes a root file a frozen version also serves', () => {
+test('the release preflight uploads what is not yet verified, and stops when it cannot', async () => {
   const root = mkdtempSync(join(tmpdir(), 'syn3h-r2-'))
   try {
-    const { store: dir } = archivedTwo(root)
-    const next = build(root, 'next', 'three')
-    // Same share.png bytes as before, and its own build.json and script: fine.
-    assert.deepEqual(changedInPlace(join(next, 'dist'), archivedVersions(dir), dir), [])
-    // A redrawn share.png at the same address would reach every frozen page.
-    writeFileSync(join(next, 'dist', 'brand', 'share.png'), 'new png')
-    mkdirSync(join(next, 'dist', 'models'), { recursive: true })
-    assert.deepEqual(changedInPlace(join(next, 'dist'), archivedVersions(dir), dir), ['brand/share.png (differs from 2 archived versions, newest 26.11.1600)'])
-    assert.throws(() => carry(next, 'v26.11.1700', dir), /rename them instead:\n  brand\/share\.png/)
-    assert.ok(!existsSync(join(next, 'dist', 'v')), 'a refused carry leaves no half-built dist/v')
+    const { store: dir } = released(root)
+    const store = memoryStore()
+    await r2Upload(['26.11.1503'], { store, archive: dir })
+    // 26.11.1600 was accepted but never stored: the preflight stores it before anything is built.
+    const first = await r2Preflight({ store, archive: dir })
+    assert.deepEqual(first.missing, ['26.11.1600'])
+    assert.deepEqual(first.unverified, [])
+    assert.ok(store.objects.has('v/26.11.1600/index.html'))
+    // Nothing left to do: nothing read or written.
+    const quiet = memoryStore()
+    assert.deepEqual(await r2Preflight({ store: quiet, archive: dir }), { missing: [], report: null, unverified: [] })
+    // An upload that cannot happen stops the release.
+    rmSync(ledgerFile(dir))
+    await assert.rejects(r2Preflight({ store: memoryStore(new Map(), { failPut: 'v/26.11.1503/index.html' }), archive: dir }), /could not upload v\/26\.11\.1503\/index\.html/)
+    const refused = await r2Preflight({ store: memoryStore(new Map([['v/26.11.1503/build.json', { bytes: Buffer.from('other'), type: 'x' }]])), archive: dir })
+    assert.deepEqual(refused.unverified, ['26.11.1503'])
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
-
-/** Two accepted releases in an archive under root. */
-function archivedTwo(root) {
-  const store = join(root, 'versions')
-  for (const [name, mark, v] of [['a', 'one', '26.11.1503'], ['b', 'two', '26.11.1600']]) {
-    const copy = build(root, name, mark)
-    carry(copy, v, store)
-    archive(copy, v, store)
-  }
-  return { store }
-}
 
 test('the R2 API client sends the token only as its Authorization header and never reports it', async () => {
   const TOKEN = 'fake-token-for-the-test-0123456789'

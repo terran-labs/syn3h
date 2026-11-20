@@ -1,4 +1,4 @@
-export type GearCue = 'yoinkGrab' | 'yoinkFling' | 'yoinkGust' | 'bigRedCharge' | 'bigRedReady' | 'bigRedFizzle' | 'pesterLaunch' | 'pesterCatch' | 'thunderFire'
+export type GearCue = 'yoinkGrab' | 'yoinkFling' | 'yoinkGust' | 'bigRedCharge' | 'bigRedReady' | 'bigRedFizzle' | 'pesterLaunch' | 'pesterCatch' | 'thunderFire' | 'thunderBurst' | 'thunderCrackle'
 export type Cue = 'capture'|'contested'|'lost'|'win'|'tick'|'tag'|'join'|'leave'|'click'|'deploy'|'retract'|'lava'|'splash'|'bungeeLaunch'|'bungeeAttach'|'bungeeRelease'|'beam'|'tagged'|'materialize'|GearCue
 const notes:Record<Exclude<Cue,'beam'|'tagged'|'materialize'|GearCue>,readonly number[]>={capture:[330,440,660],contested:[220,233,220],lost:[330,220],win:[262,330,392,523],tick:[660],tag:[520,260,780],join:[392,523],leave:[392,294],click:[880],deploy:[110,440],retract:[440,110],lava:[150,64,58,205],splash:[320,170],bungeeLaunch:[196,392,587],bungeeAttach:[147,98,196],bungeeRelease:[392,294,147]}
 /** Seconds the materialize swoosh builds for when the caller does not say. */
@@ -100,6 +100,9 @@ const gearVoices: Record<GearCue, GearVoice> = {
   pesterLaunch: { seconds: .45, from: 660, to: 990, tone: 'sine', gain: .11, air: .08 },
   pesterCatch: { seconds: .4, from: 880, to: 1760, tone: 'sine', gain: .12, air: .15 },
   thunderFire: { seconds: .7, from: 145, to: 38, tone: 'sine', gain: .36, air: .28 },
+  // Plasma Thunder's firework: a deep whump as it bursts, then a dry crackle of its twinkles.
+  thunderBurst: { seconds: 1.4, from: 95, to: 28, tone: 'sine', gain: .42, air: .34 },
+  thunderCrackle: { seconds: .9, from: 2600, to: 1900, tone: 'square', gain: .035, air: .3 },
 }
 function isGearCue(cue: Cue): cue is GearCue { return Object.hasOwn(gearVoices, cue) }
 
@@ -131,10 +134,10 @@ function synthGearCue(context: BaseAudioContext, output: AudioNode, cue: GearCue
   harmonic.frequency.exponentialRampToValueAtTime(voice.to * 2, end - .02)
   harmonic.connect(harmonicGain)
   const air = envelope(voice.air), filter = keep(context.createBiquadFilter())
-  filter.type = cue === 'thunderFire' ? 'lowpass' : 'bandpass'
+  filter.type = cue === 'thunderFire' || cue === 'thunderBurst' ? 'lowpass' : 'bandpass'
   filter.Q.value = .7
-  filter.frequency.setValueAtTime(cue === 'thunderFire' ? 650 : voice.from * 3, now)
-  filter.frequency.exponentialRampToValueAtTime(cue === 'thunderFire' ? 110 : Math.max(100, voice.to * 2), end)
+  filter.frequency.setValueAtTime(cue === 'thunderFire' || cue === 'thunderBurst' ? 650 : voice.from * 3, now)
+  filter.frequency.exponentialRampToValueAtTime(cue === 'thunderFire' || cue === 'thunderBurst' ? 110 : Math.max(100, voice.to * 2), end)
   filter.connect(air)
   const hiss = keep(context.createBufferSource())
   hiss.buffer = noise

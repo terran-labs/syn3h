@@ -22,6 +22,7 @@ import { warmGear } from '../warm'
 import { PesterCloud } from './cloud'
 import { pesterAllowed, pesterLife, pesterMax, pesterRadius, pesterRange, pesterSpeed, pesterTurn } from './params'
 import { steer, type V3 } from './steer'
+import { HeldFire } from '../heldFire'
 
 export interface PesterHooks {
   self(): number
@@ -34,6 +35,8 @@ export interface PesterHooks {
   inHand(): boolean
   /** Launch a Pester at `target` (null: none in range) from the local vehicle. */
   launch(target: number | null): void
+  /** Whether a launch now would go (cooldown and the cap on Chasers in flight), so a held button looks for a target only then. */
+  canLaunch?(): boolean
   /** A Pester caught a vehicle this client judges. */
   onCatch(shooter: number, shot: number, victim: number, at: THREE.Vector3, dir: THREE.Vector3): void
   /** A Pester caught something at `at`; once per Pester on every client. For the impact push. */
@@ -72,6 +75,8 @@ export class Pesters implements System {
   private readonly cloud = new PesterCloud()
   private readonly unwarm: () => void
   private fireWas = false
+  /** The player's press, held: a Chaser goes each time one may (heldFire.ts). */
+  private readonly trigger = new HeldFire()
   stats = { launched: 0, caught: 0, popped: 0 }
 
   constructor(private readonly game: Game, private readonly hooks: PesterHooks) {
@@ -178,6 +183,7 @@ export class Pesters implements System {
     for (const o of this.orbs) this.cloud.free(o.slot)
     this.orbs.length = 0
     this.fireWas = false
+    this.trigger.clear()
   }
 
   fixedUpdate(dt: number): void {
@@ -185,9 +191,10 @@ export class Pesters implements System {
       for (const o of this.orbs) if (o.popped < 0) this.pop(o)
       this.fireWas = false
     } else {
-      const fire = this.hooks.inHand() && this.game.input.state.fire
-      if (fire && !this.fireWas) this.hooks.launch(this.pick())
-      this.fireWas = fire
+      // Held, it sends one each time the cooldown and the cap on Chasers in flight allow, as
+      // if pressed then (the launch refuses the rest); a press alone sends one, as always.
+      this.trigger.step(this.game.input.state.fire, this.hooks.inHand())
+      if (this.trigger.held && (this.hooks.canLaunch?.() ?? true)) this.hooks.launch(this.pick())
     }
     for (const o of this.orbs) {
       o.prev.copy(o.pos)

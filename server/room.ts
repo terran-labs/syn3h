@@ -30,7 +30,7 @@ import {
   MODE_TAG,
   MAX_NAME_LENGTH,
   RENAME_INTERVAL_MS,
-  MAX_PLAYER_ID,
+  MAX_PLAYER_ID, MAX_ROOM_PLAYERS, MAX_EXTRA_ROOM_PARAMS, MAX_JSON_BYTES,
   PROTOCOL_VERSION,
   STATE_BYTES,
   type WireState,
@@ -60,6 +60,8 @@ import { sunDayLength } from '../src/world/sky/dayParams'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
 import { bigRedAllowed, bigRedCooldown } from '../src/weapons/bigRedParams'
+import { thunderFlareHeight, thunderFuseArm } from '../src/weapons/thunderParams'
+import { burstPointPlausible, detonationEffect, fuseArmed, mayReport } from '../src/weapons/thunderRules'
 import { pesterAllowed, pesterCooldown, pesterLife, pesterMax, pesterRange } from '../src/weapons/pester/params'
 import { yoinkAllowed, yoinkCooldown, yoinkFling, yoinkHoldDistance, yoinkHoldTime, yoinkPunt, yoinkPuntRange, yoinkRange } from '../src/weapons/yoink/params'
 import {
@@ -165,6 +167,8 @@ interface Player {
   lastPesterAt: number
   /** Shots fired recently, by shot id, with server ms of firing. */
   shots: Map<number, number>
+  /** Which of `shots` are Plasma Thunder, the only kind that detonates. */
+  reds: Set<number>
   /** Server ms of this player's last tag change. */
   lastTag: number
   /** Simple per second budgets against floods. */
@@ -178,7 +182,7 @@ interface Player {
 }
 
 const ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/
-const MAX_UNKNOWN_PARAMS = 256
+
 const MAX_STATES_PER_SECOND = 70
 const MAX_JSON_PER_SECOND = 40
 /** A player whose state is older than this cannot ram or be rammed (the original's isResponding). */
@@ -318,7 +322,7 @@ export class Room {
     this.name = name
     this.tag = roomTag(name)
     this.now = opts.now ?? Date.now
-    this.maxPlayers = opts.maxPlayers ?? 16
+    this.maxPlayers = opts.maxPlayers ?? MAX_ROOM_PLAYERS
     this.onPersist = opts.onPersist
     this.setDefaults()
     this.activeAt = this.now()
@@ -392,7 +396,7 @@ export class Room {
       if (player && !this.onState(player, bytes)) this.malformed(peer, 'state', bytes.byteLength)
       return
     }
-    const msg = parseJson<ClientMessage>(data)
+    const msg = parseJson<ClientMessage>(data, this.pending.has(peer) ? 'hello' : undefined)
     if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') {
       this.malformed(peer, 'json', data.length)
       return
@@ -433,6 +437,9 @@ export class Room {
       }
       case 'hit':
         this.onHit(player, msg.shooter, msg.shot, msg.victim)
+        break
+      case 'detonate':
+        this.onDetonate(player, msg.shooter, msg.shot, msg.at, msg.cause, msg.victim)
         break
       case 'profile':
         this.onProfile(player, msg.kind, msg.colors, msg.name, msg.play)
@@ -800,7 +807,7 @@ export class Room {
       player.joinedAt = this.now()
       player.windowStart = this.now()
       player.stateCount = player.jsonCount = 0
-      this.welcome(peer, player)
+      this.welcome(peer, player, msg.largeWelcome === true, msg.sparseWorld === true)
       this.persist()
       return
     }
@@ -815,6 +822,7 @@ export class Room {
     // So does the first into a room reset for idleness; parked players there are told.
     const bringsWorld = this.players.size === 0 || this.vacant
     if (bringsWorld && msg.params && typeof msg.params === 'object') {
+      if (msg.sparseWorld === true) this.resetParamValues()
       for (const id in msg.params) {
         // Frozen protocol-2 clients send Tag as a default, not an explicit choice.
         // They can still choose Tag later through the existing param message.
@@ -862,7 +870,7 @@ export class Room {
     // Scores for players who are no longer in the room (the same rebuild) are not kept.
     for (const old in this.scores) if (!this.byId(Number(old))) delete this.scores[old]
 
-    this.welcome(peer, player)
+    this.welcome(peer, player, msg.largeWelcome === true, msg.sparseWorld === true)
     logEvent('hello', { room: this.tag, player: info.id, bot: false, players: this.players.size, host: this.host === info.id })
     this.broadcast({ type: 'join', player: info }, peer)
     // Being "it" by default is news only while a game of tag is on.
@@ -871,20 +879,38 @@ export class Room {
   }
 
   /** Tell a player who it is and what the room holds, and where everyone else is. */
-  private welcome(peer: Peer, player: Player): void {
-    this.sendTo(peer, {
+  private welcome(peer: Peer, player: Player, largeWelcome: boolean, sparseWorld: boolean): void {
+    const welcome: Extract<ServerMessage, { type: 'welcome' }> = {
       type: 'welcome',
       v: PROTOCOL_VERSION,
       id: player.info.id,
       slot: player.info.slot,
       room: this.name,
       players: this.playerList(),
-      params: Object.fromEntries(this.values),
+      params: Object.fromEntries(sparseWorld ? [...this.values].filter(([id, value]) => registry.get(id)?.def.default !== value) : this.values),
       game: this.gameState(),
       serverTime: this.now() / 1000,
       race: this.raceView(),
       botRams: true,
-    })
+    }
+    const text = JSON.stringify(welcome)
+    if (largeWelcome || text.length <= MAX_JSON_BYTES) peer.send(text)
+    else {
+      // Frozen clients discard a whole welcome above 8192 characters. Deliver the
+      // local seat first, followed by the remaining state using messages they know.
+      const others = welcome.players.filter(p => p.id !== welcome.id)
+      welcome.players = [player.info]
+      const settings = welcome.params
+      const sendSettings = JSON.stringify(welcome).length > MAX_JSON_BYTES
+      if (sendSettings) welcome.params = {}
+      const race = welcome.race
+      const sendRace = JSON.stringify(welcome).length > MAX_JSON_BYTES
+      if (sendRace) welcome.race = null
+      this.sendTo(peer, welcome)
+      if (sendSettings) for (const [id, value] of Object.entries(settings)) this.sendTo(peer, { type: 'param', id, value, from: this.host })
+      for (const p of others) this.sendTo(peer, { type: 'profile', player: p })
+      if (sendRace) this.sendTo(peer, { type: 'race', race: race ?? null })
+    }
     // Show the newcomer where everyone already is, even players who are standing still.
     for (const other of this.players.values()) {
       if (other !== player && other.lastState) peer.send(encodeStored(other))
@@ -1263,6 +1289,7 @@ export class Room {
     if (red) player.lastRedAt = now
     else player.lastFireAt = now
     player.shots.set(shot.id, now)
+    if (red) { player.reds.add(shot.id); if (player.reds.size > 64) player.reds.delete(player.reds.values().next().value as number) }
     if (player.shots.size > 64) player.shots.delete(player.shots.keys().next().value as number)
     this.broadcast({ type: 'fire', from: player.info.id, shot }, peer)
   }
@@ -1379,6 +1406,7 @@ export class Room {
       player.carry = { to: y.to, at: now }
       player.yoinkAt = now
       this.broadcast({ type: 'yoink', from: player.info.id, y }, peer)
+      this.sever(other, player.info.id)
       return
     }
     // A fling: the end of a carry, or a gust on a vehicle in reach.
@@ -1393,6 +1421,18 @@ export class Room {
     }
     player.yoinkAt = now
     this.broadcast({ type: 'yoink', from: player.info.id, y }, peer)
+    this.sever(other, player.info.id)
+  }
+
+  /**
+   * The sever rule (the owner's, 19 November 2026): hitting a player who is grappling you with
+   * another weapon severs their cord. `target` was just hit by `by` (a hit accepted here, or a
+   * Yoink grab or fling); if its cord is tied to `by`, drop it, telling everyone, its owner
+   * included. Every client already obeys a cord 'off', old ones too. A hit from anyone else, and
+   * a cord on the ground, are left alone. In every mode: in the games it is the only counter.
+   */
+  private sever(target: Player, by: number): void {
+    if (target.cordOn && target.cordTo === by) this.dropCord(target)
   }
 
   /** How far apart a Yoink's two vehicles may be, metres: the game's reaches with slack. */
@@ -1465,7 +1505,50 @@ export class Room {
     shooter.shots.delete(shotId)
     shooter.pesters.delete(shotId)
     shooter.pesterTargets.delete(shotId)
+    shooter.reds.delete(shotId)
+    this.applyHit(shooter, victim, shotId, now)
+  }
+
+  /**
+   * A Plasma Thunder detonation (src/weapons/thunderRules.ts). One authority: the room takes the
+   * first valid report for a shot and ignores the rest, as for hits. Contact counts as a hit
+   * (tags in Tag, contact on the hill); a fuse is a knock (contact on the hill, never a tag);
+   * an end catches nobody. Every client bursts where this says.
+   */
+  private onDetonate(reporter: Player, shooterId: unknown, shotId: unknown, at: unknown, cause: unknown, victimId?: unknown): void {
+    if (typeof shooterId !== 'number' || typeof shotId !== 'number') return
+    if (cause !== 'contact' && cause !== 'fuse' && cause !== 'end') return
+    if (!Array.isArray(at) || at.length !== 3 || !at.every(v => typeof v === 'number' && Number.isFinite(v))) return
+    if (!burstPointPlausible(at as [number, number, number], this.wrapSize(), this.paramNumber(thunderFlareHeight.def))) return
+    const shooter = this.byId(shooterId)
+    if (!shooter || !shooter.reds.has(shotId)) return
+    const firedAt = shooter.shots.get(shotId)
+    if (firedAt === undefined) return
+    const now = this.now()
+    if (now - firedAt > (laserLifetime(this.paramNumber(laserSpeed.def)) + 1) * 1000) return
+    let victim: Player | undefined
+    if (cause !== 'end') {
+      victim = typeof victimId === 'number' && victimId !== reporter.info.id ? this.bots.get(victimId) : reporter
+      if (!victim) return
+    }
+    if (!mayReport(cause, reporter.info.id, shooter.info.id, victim?.info.id, this.host, isBotId)) return
+    // The fuse arms after a moment of flight; the fire message itself took a little while to
+    // come, so allow a fifth of a second for that.
+    if (cause === 'fuse' && !fuseArmed((now - firedAt) / 1000 + 0.2, this.paramNumber(thunderFuseArm.def))) return
+    shooter.shots.delete(shotId)
+    shooter.reds.delete(shotId)
+    const point = at as [number, number, number]
+    this.broadcast({ type: 'detonated', shooter: shooter.info.id, shot: shotId, at: point, cause, ...(victim ? { victim: victim.info.id } : {}) })
+    if (!victim) return
+    const effect = detonationEffect(cause)
+    if (effect.tag) this.applyHit(shooter, victim, shotId, now)
+    else if (effect.contact && this.mode !== MODE_TAG) this.lastContact.set(victim.info.id, { by: shooter.info.id, at: now })
+  }
+
+  /** A hit the room has accepted: tell everyone, then the mode's rule (a tag, or contact on the hill). */
+  private applyHit(shooter: Player, victim: Player, shotId: number, now: number): void {
     this.broadcast({ type: 'hit', shooter: shooter.info.id, victim: victim.info.id, shot: shotId })
+    this.sever(victim, shooter.info.id)
     if (this.mode !== MODE_TAG) {
       // On the hill a tag beam is a shove, and counts as contact for dunks.
       this.lastContact.set(victim.info.id, { by: shooter.info.id, at: now })
@@ -1585,7 +1668,7 @@ export class Room {
     const v = this.validateParam(id, raw)
     if (v === null) return null
     if (!this.values.has(id)) {
-      if (this.unknownCount >= MAX_UNKNOWN_PARAMS) return null
+      if (this.unknownCount >= MAX_EXTRA_ROOM_PARAMS) return null
       this.unknownCount++
     }
     this.values.set(id, v)
@@ -1619,7 +1702,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, cordTo: null, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, page: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, cordTo: null, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, page: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), reds: new Set(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now, raceDriving: false, chat: null,
     }
   }
@@ -1698,10 +1781,14 @@ export class Room {
 
   /** World parameters to their defaults: those the server knows; others are forgotten. */
   private setDefaults(): void {
+    this.resetParamValues()
+    this.mode = this.paramNumber(gameMode.def)
+  }
+
+  private resetParamValues(): void {
     this.values.clear()
     this.unknownCount = 0
     for (const p of registry.all()) if (p.def.scope === 'world') this.values.set(p.def.id, p.def.default)
-    this.mode = this.paramNumber(gameMode.def)
   }
 
   /**

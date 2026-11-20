@@ -22,6 +22,7 @@ export async function serveStable({ dir, port }) {
   const options = { parentURL: pathToFileURL(join(snapshot, 'package.json')).href, tsconfig: join(snapshot, 'tsconfig.json') };
   // Never import from the live checkout: a protocol mismatch can corrupt a room.
   const { Room, CLOCK_MS = 1000 } = await tsImport(pathToFileURL(join(snapshot, 'server/room.ts')).href, options);
+  const { maxClientFrameBytes } = await tsImport(pathToFileURL(join(snapshot, 'shared/protocol.ts')).href, options);
   const { roomName } = await tsImport(pathToFileURL(join(snapshot, 'server/util.ts')).href, options);
   const { WebSocketServer, WebSocket } = require('ws');
   const rooms = new Map();
@@ -32,7 +33,7 @@ export async function serveStable({ dir, port }) {
     if (clocks.has(room) || !room.needsClock) return;
     clocks.set(room, setTimeout(() => { clocks.delete(room); if (rooms.get(room.name) !== room) return; room.tick(); keepClock(room); }, CLOCK_MS));
   };
-  const sockets = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
+  const sockets = new WebSocketServer({ noServer: true, maxPayload: maxClientFrameBytes?.() ?? 16 * 1024 });
   const server = createServer(async (req, res) => {
     try {
       if (!['GET', 'HEAD'].includes(req.method)) { res.writeHead(405, { Allow: 'GET, HEAD' }).end(); return; }

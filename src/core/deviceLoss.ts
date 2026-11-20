@@ -16,6 +16,28 @@
  * There is no live switch to WebGL 2: every material and target would have to be rebuilt.
  */
 
+import { getConsoleFunction, setConsoleFunction } from 'three/webgpu'
+
+// Three catches the native rejection, then logs the reason once for each material.
+// Tag only rejections whose own device has been lost. Other renderers may be healthy.
+const LOST_PIPELINE = 'Syn3h covered pipeline rejected on a lost device'
+let filteringLostPipelines = false
+function silenceLostPipelineDetails(): void {
+  if (filteringLostPipelines) return
+  filteringLostPipelines = true
+  const previous = getConsoleFunction()
+  setConsoleFunction((level, message, ...args) => {
+    if (level === 'error' && message.startsWith('THREE.WebGPURenderer: Async render pipeline creation failed (') &&
+        message.endsWith(': ' + LOST_PIPELINE)) return
+    if (previous) previous(level, message, ...args)
+    else {
+      const trace = args[0] as { isStackTrace?: boolean; getError?(message: string): unknown } | undefined
+      if (trace?.isStackTrace && trace.getError) console[level](trace.getError(message))
+      else console[level](message, ...args)
+    }
+  })
+}
+
 /** What three's WebGPURenderer exposes that this needs. */
 export interface GuardedRenderer {
   backend: unknown
@@ -25,9 +47,14 @@ export interface GuardedRenderer {
 }
 export interface DeviceLossInfo { api: string; message: string; reason: string | null; originalEvent?: unknown }
 
+interface ShaderDiagnostics {
+  _reportShaderDiagnostics(stages: unknown, label: string): Promise<void>
+}
+
 interface GuardableDevice {
   lost: Promise<{ reason?: string; message?: string }>
   popErrorScope: () => Promise<unknown>
+  createRenderPipelineAsync?: GPUDevice['createRenderPipelineAsync']
 }
 
 /**
@@ -35,7 +62,7 @@ interface GuardableDevice {
  * true when installed. Safe to call once per renderer; a second call is ignored.
  */
 export function guardDevice(renderer: GuardedRenderer): boolean {
-  const backend = renderer.backend as { device?: GuardableDevice; __syn3hGuarded?: boolean } | undefined
+  const backend = renderer.backend as { device?: GuardableDevice; pipelineUtils?: ShaderDiagnostics; __syn3hGuarded?: boolean } | undefined
   const device = backend?.device
   if (!backend || !device || backend.__syn3hGuarded) return false
   backend.__syn3hGuarded = true
@@ -47,13 +74,54 @@ export function guardDevice(renderer: GuardedRenderer): boolean {
     renderer._isDeviceLost = true
   }
 
+  const cancelled = { pipelines: 0, shaderDiagnostics: 0 }
+  let reported = false
+  let summaryTimer: ReturnType<typeof setTimeout> | undefined
+  const recordCancellation = (kind: keyof typeof cancelled) => {
+    cancelled[kind]++
+    if (reported) return
+    clearTimeout(summaryTimer)
+    summaryTimer = setTimeout(() => {
+      reported = true
+      console.warn('WebGPU device lost during pipeline preparation; outstanding render pipelines and shader diagnostics were cancelled.', cancelled)
+    }, 100)
+  }
+
+  // Three reads module diagnostics only after a pipeline error. Catch at that call site:
+  // it includes modules created before this guard and leaves normal compilation untouched.
+  const utils = backend.pipelineUtils
+  if (typeof utils?._reportShaderDiagnostics === 'function') {
+    const report = utils._reportShaderDiagnostics.bind(utils)
+    utils._reportShaderDiagnostics = async (stages, label) => {
+      try { await report(stages, label) } catch (error) {
+        if (!renderer._isDeviceLost || !/instance dropped|device (?:was )?(?:lost|destroyed)|valid external instance reference no longer exists/i.test(errorMessage(error))) throw error
+        recordCancellation('shaderDiagnostics')
+      }
+    }
+  }
+  const create = device.createRenderPipelineAsync?.bind(device)
+  if (create) {
+    device.createRenderPipelineAsync = async descriptor => {
+      try { return await create(descriptor) } catch (error) {
+        const message = errorMessage(error)
+        if (!renderer._isDeviceLost && /a valid external instance reference no longer exists|instance dropped/i.test(message)) {
+          lose('unknown', message, error)
+        }
+        if (!renderer._isDeviceLost) throw error
+        silenceLostPipelineDetails()
+        recordCancellation('pipelines')
+        throw new Error(LOST_PIPELINE, { cause: error })
+      }
+    }
+  }
+
   // A rejected scope means the instance is gone: report the loss once and answer three's
   // .then() with "no error", so nothing reaches the page as an unhandled rejection.
   const pop = device.popErrorScope.bind(device)
   device.popErrorScope = () => {
     let pending: Promise<unknown>
     try { pending = pop() } catch (error) { lose('unknown', errorMessage(error)); return Promise.resolve(null) }
-    return pending.catch(error => { lose('unknown', errorMessage(error)); return null })
+    return pending.then(result => renderer._isDeviceLost ? null : result).catch(error => { lose('unknown', errorMessage(error)); return null })
   }
 
   // three ignores reason 'destroyed' (its own dispose destroys the device). Anything else that

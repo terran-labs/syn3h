@@ -30,6 +30,23 @@ describe('a lost WebGPU device', () => {
     expect(f.renderer._isDeviceLost).toBe(true)
   })
 
+  it('finishes pending shader diagnostics on loss and preserves a healthy rejection', async () => {
+    const f = fake()
+    let reject!: (error: Error) => void
+    const utils = { _reportShaderDiagnostics: () => new Promise<void>((_, fail) => { reject = fail }) }
+    Object.assign(f.renderer.backend as object, { pipelineUtils: utils })
+    guardDevice(f.renderer)
+    const error = new Error('Instance dropped error in getCompilationInfo')
+    const healthy = utils._reportShaderDiagnostics()
+    reject(error)
+    await expect(healthy).rejects.toBe(error)
+    const pending = utils._reportShaderDiagnostics()
+    f.lose({ reason: 'destroyed' })
+    await settle()
+    reject(error)
+    await expect(pending).resolves.toBeUndefined()
+  })
+
   it('counts a device destroyed by someone else as lost, but not the renderer disposing itself', async () => {
     const other = fake()
     guardDevice(other.renderer)

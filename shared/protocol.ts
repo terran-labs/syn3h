@@ -10,6 +10,7 @@
  *
  * No browser or Node dependencies: the client, the Node server and the Worker share it.
  */
+import { params } from './params'
 import { wrapDistance } from './wrap'
 
 export const PROTOCOL_VERSION = 2
@@ -23,6 +24,8 @@ export const BIN_BOT_STATE = 2
 
 /** Bots get ids from this base up, so they share the player id space without colliding. */
 export const BOT_ID_BASE = 0xff00
+export const MAX_ROOM_PLAYERS = 16
+export const MAX_EXTRA_ROOM_PARAMS = 256
 export const MAX_BOTS = 64
 export const isBotId = (id: number) => id >= BOT_ID_BASE && id < BOT_ID_BASE + MAX_BOTS
 /** Highest id the server hands to a real player. */
@@ -368,7 +371,7 @@ export type ClientMessage =
    * `page` is random per page load: a hello with the same secret and the same page is that page
    * reconnecting, and takes its place back at once; a duplicated tab has the secret, not the page.
    */
-  | { type: 'hello'; v: number; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string; drop?: DropReport; play?: boolean }
+  | { type: 'hello'; v: number; largeWelcome?: true; sparseWorld?: true; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string; drop?: DropReport; play?: boolean }
   /**
    * Change vehicle kind, colours or name after joining. `name` is optional and newer: an older
    * room ignores it, and the name then changes at the next join. The room cleans and
@@ -392,6 +395,12 @@ export type ClientMessage =
    * reports hits on bots, naming the bot as `victim`.
    */
   | { type: 'hit'; shooter: number; shot: number; victim?: number }
+  /**
+   * Plasma Thunder went off (src/weapons/thunderRules.ts). contact or fuse: sent by the client
+   * that judges `victim` (its own client; the host for a bot), like a hit. end: sent by the
+   * shooter's client (the host for a bot's shot). The room takes the first for each shot.
+   */
+  | { type: 'detonate'; shooter: number; shot: number; at: Vec3; cause: 'contact' | 'fuse' | 'end'; victim?: number }
   /**
    * Sent by a client whose vehicle touched another player's vehicle. `push` is the velocity
    * change, m/s, the rammer's client worked out for the other vehicle; the server relays it
@@ -478,6 +487,8 @@ export type ServerMessage =
   | { type: 'param'; id: string; value: ParamWireValue; from: number }
   | { type: 'fire'; from: number; shot: ShotInfo }
   | { type: 'hit'; shooter: number; victim: number; shot: number }
+  /** Where Plasma Thunder shot `shot` from `shooter` went off, the room's word, once per shot. */
+  | { type: 'detonated'; shooter: number; shot: number; at: Vec3; cause: 'contact' | 'fuse' | 'end'; victim?: number }
   /** Player `from` rammed you: the velocity change to apply if your own physics missed it. */
   | { type: 'shove'; from: number; push: [number, number, number] }
   /** Relayed: player `by` asks the cord of `owner` (you, or a bot you simulate) to let go of them. */
@@ -504,15 +515,29 @@ export type ServerMessage =
   | { type: 'chat-refused'; reason: 'rate' | 'off'; wait?: number }
 
 export const MAX_JSON_BYTES = 8192
+// The room retains its registered world settings and up to 256 additional ids. A 64-character id, finite number and JSON punctuation
+// fit in 96 characters. Keep the ordinary message budget for the hello envelope.
+export const maxHelloChars = () => MAX_JSON_BYTES + (params.worldCount + MAX_EXTRA_ROOM_PARAMS) * 96
+// Each seat can occur in the roster, scores, hill and race, including escaped names.
+const maxWelcomeChars = () => maxHelloChars() + (MAX_ROOM_PLAYERS + MAX_BOTS) * 1024
+// WebSocket payload limits use UTF-8 bytes. One UTF-16 code unit needs at most three.
+export const maxClientFrameBytes = () => 3 * maxHelloChars()
 export const MAX_NAME_LENGTH = 24
 /** The least time between two renames by one player, so a name cannot flood a room. */
 export const RENAME_INTERVAL_MS = 2000
 
 /** Parse a control message without throwing. Returns null on anything malformed. */
-export function parseJson<T>(text: string): T | null {
-  if (text.length > MAX_JSON_BYTES) return null
+export function parseJson<T>(text: string, handshake?: 'hello' | 'welcome', onOversize?: (length: number) => void): T | null {
+  if (text.length > MAX_JSON_BYTES && (!handshake || text.length > (handshake === 'hello' ? maxHelloChars() : maxWelcomeChars()))) {
+    onOversize?.(text.length)
+    return null
+  }
   try {
     const v = JSON.parse(text)
+    if (text.length > MAX_JSON_BYTES && v?.type !== handshake) {
+      onOversize?.(text.length)
+      return null
+    }
     return v && typeof v === 'object' && typeof v.type === 'string' ? (v as T) : null
   } catch {
     return null

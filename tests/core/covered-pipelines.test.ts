@@ -59,3 +59,23 @@ it('defers the final glass quad but submits intermediate texture generators duri
   batch.run(false, () => backend.draw(final))
   expect(submit).toHaveBeenLastCalledWith(final)
 })
+
+it('reuses only previously submitted geometry and pipelines on the same backend', () => {
+  const backend = { parallel: true, draw: vi.fn(), createRenderPipeline: vi.fn() }
+  const renderer = { backend, _nodes: { nodeFrame: { frameId: 1 } } } as unknown as WebGPURenderer
+  const scene = {}, object = { pipeline: {}, geometry: {}, scene }
+  const visit = () => {
+    const batch = CoveredPipelines.forRenderer(renderer, scene)!
+    batch.run(true, () => backend.draw(object))
+    return batch
+  }
+  expect(visit().needsConfirmation).toBe(true)
+  const first = visit()
+  first.run(false, () => backend.draw(object))
+  expect(visit().needsConfirmation).toBe(false)
+  object.pipeline = {}
+  expect(visit().needsConfirmation).toBe(true)
+  first.run(false, () => backend.draw(object))
+  object.geometry = {}
+  expect(visit().needsConfirmation).toBe(true)
+})

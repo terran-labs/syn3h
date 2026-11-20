@@ -394,7 +394,9 @@ export class Game {
     const deadline = start + limit
     try {
       const result = await withDeadline(this.warmEntry(stop.signal, deadline, progress), limit)
-      if (!result.ok) {
+      if ((this.renderer as unknown as GuardedRenderer)._isDeviceLost) {
+        recordEntryWarmIssue('GPU device lost during entry')
+      } else if (!result.ok) {
         recordEntryWarmIssue(result.reason === 'timeout' || performance.now() >= deadline ? 'Entry warm-up timed out' : 'Entry warm-up failed')
         if (result.reason === 'rejected') console.warn('Covered entry warm-up failed', result.error)
       }
@@ -414,6 +416,7 @@ export class Game {
     let batch = CoveredPipelines.forRenderer(this.renderer, this.scene)
     const check = () => {
       signal.throwIfAborted()
+      if ((this.renderer as unknown as GuardedRenderer)._isDeviceLost) throw new Error('GPU device lost during entry')
       if (performance.now() >= deadline) throw new Error('Entry warm-up timed out')
     }
     const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
@@ -479,7 +482,9 @@ export class Game {
       if (!await batch.ready()) recordEntryWarmIssue('Pipeline compilation failed')
       check()
       discover = false
-      await sweep()
+      // Discovery uses the actual scene and renderer cache. Parked models or changed
+      // passes get confirmed again, while an unchanged entry needs only its final draw.
+      if (batch.needsConfirmation) await sweep()
       // The confirmation draws can leave partially filled world and shadow targets.
       // Refresh them from the settled scene before lifting cover.
       batch = null

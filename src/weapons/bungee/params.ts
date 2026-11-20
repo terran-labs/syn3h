@@ -81,3 +81,16 @@ export const bungeeSnap = defineParam({
 export const bungeeVehicles = defineParam({
   id: 'bungee.vehicles', label: 'Hook catches vehicles', group, scope: 'world', default: true,
 })
+
+/**
+ * Looks only, each player's own: how long a let-go cord takes to whip back and fade, in
+ * seconds (0 for none), and how long a hook that missed takes to sail away with its cord.
+ */
+export const grappleReleaseTime = defineParam({
+  id: 'fx.grapple.release', label: 'Let-go cord fades over (s)', group, scope: 'client',
+  default: 0.7, min: 0, max: 3, step: 0.05,
+})
+export const grappleSailTime = defineParam({
+  id: 'fx.grapple.sail', label: 'Missed hook sails for (s)', group, scope: 'client',
+  default: 1.2, min: 0, max: 4, step: 0.05,
+})
