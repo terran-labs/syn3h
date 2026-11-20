@@ -136,7 +136,7 @@ interface ExtraCard extends ExtraCardOptions { id: string; card: HTMLElement; su
  */
 const CARD_HEAD = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span><span class="wi-x liquid-glass glass-round" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>'
 /** Phone panels: how long each change between the three states takes (ms). Shorten, never lengthen: this is mid-game. */
-export const PHONE_PANEL_MS = { show: 220, hide: 160, open: 240, back: 200, stagger: 15, staggerCap: 6, ghost: 140 } as const
+export const PHONE_PANEL_MS = { show: 220, hide: 160, open: 240, back: 200, stagger: 15, staggerCap: 6, ghost: 140, ghostOut: 90 } as const
 
 /** How long a card takes to make room for another, and the curve it eases along. */
 const CARD_MOTION: KeyframeAnimationOptions = { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' }
@@ -793,7 +793,7 @@ export class Inspector {
       { transform: 'none', clipPath: `inset(0 0 0 0 round ${r})` },
     ], timing))
     const body = card.querySelector<HTMLElement>(':scope > .wi-body')
-    if (body) motions.push(body.animate([{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], { duration: PHONE_PANEL_MS.open - 60, delay: 60, easing: 'ease-out', fill: 'backwards' }))
+    if (body) motions.push(body.animate([{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], { duration: PHONE_PANEL_MS.open - 90, delay: 90, easing: 'ease-out', fill: 'backwards' }))
     if (ghosts) motions.push(...ghosts.motions)
     this.track(motions, () => ghosts?.layer.remove())
   }
@@ -808,8 +808,11 @@ export class Inspector {
     if (!this.open || this.element.hidden || this.reduced) { land(); return }
     const fold = Math.round(PHONE_PANEL_MS.back * 0.45), settle = PHONE_PANEL_MS.back - fold
     const head = card.querySelector<HTMLElement>(':scope > .wi-head')!, r = getComputedStyle(card).borderTopLeftRadius
+    // The open card is often far taller than the screen (the stack scrolls): fold from the
+    // stack's visible bottom edge, not the card's, or the fold runs off screen unseen.
     const box = card.getBoundingClientRect(), headBottom = head.getBoundingClientRect().bottom - box.top
-    const first = card.animate([{ clipPath: `inset(0 0 0 0 round ${r})` }, { clipPath: `inset(0 0 ${Math.max(0, box.height - headBottom)}px 0 round ${r})` }], { duration: fold, easing: 'cubic-bezier(.4,0,.6,1)', fill: 'forwards' })
+    const below = Math.max(0, box.bottom - stack.getBoundingClientRect().bottom)
+    const first = card.animate([{ clipPath: `inset(0 0 ${below}px 0 round ${r})` }, { clipPath: `inset(0 0 ${Math.max(below, box.height - headBottom)}px 0 round ${r})` }], { duration: fold, easing: 'cubic-bezier(.4,0,.6,1)', fill: 'forwards' })
     let second: Animation[] = []
     let done = false
     const finish = () => { if (done) return; done = true; first.cancel(); for (const m of second) m.cancel(); if (card.classList.contains('is-open')) land(); this.panelMotion = undefined }
@@ -849,7 +852,9 @@ export class Inspector {
       Object.assign(ghost.style, { position: 'absolute', margin: '0', left: `${box.left - host.left}px`, top: `${box.top - host.top}px`, width: `${box.width}px`, height: `${box.height}px` })
       layer.append(ghost)
       const above = box.top < from.top
-      motions.push(ghost.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateY(${above ? -12 : 12}px)` }], { duration: PHONE_PANEL_MS.ghost, easing: 'ease-in', fill: 'forwards' }))
+      // Gone quickly, out of the opening panel's way: its glass is translucent, and headers
+      // still showing through it read as clutter (seen in the strips, 19 November 2026).
+      motions.push(ghost.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateY(${above ? -12 : 12}px)` }], { duration: PHONE_PANEL_MS.ghostOut, easing: 'cubic-bezier(.2,.6,.4,1)', fill: 'forwards' }))
     }
     this.element.append(layer)
     return { layer, motions }
