@@ -21,7 +21,7 @@ function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmar
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
 import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
 import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime } from './cameraRest'
-import { introMode, LEAVING_SECONDS, openingCue, SPIRAL_TURN, leavingMark, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
+import { introMode, LEAVING_SECONDS, openingCue, SPIRAL_TURN, leavingMark, openingState, RETURN_MARK_FROM, RETURN_SECONDS, RETURN_VIEW_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
 /** The loading veil is still up: loading, or waiting for the tap that begins (src/ui/TapToBegin.ts). */
@@ -780,7 +780,7 @@ const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uWorlds', 'uFrame', 'u
 /** The fresh-load heading and the tall-phone tilt (see the first framing in acquire). */
 export const FRESH_YAW = 0.6, PORTRAIT_PITCH = 0.85
 /** Milliseconds returnHome takes back to the fresh-load view. */
-const RETURN_MS = 1600
+const RETURN_MS = RETURN_VIEW_SECONDS * 1000
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -1077,10 +1077,14 @@ export class Galaxy {
     this.wake = 2
     return true
   }
-  /** The view has stopped (or a touch took it): the name fades in where it rests, its rig placed there at once. */
+  /**
+   * The view has stopped (or a touch took it). The name's fade, begun in the swing's last tenth
+   * (returningMark), carries on from where it is; its rig trails the view again.
+   */
   private endReturn(): void {
+    const from = this.returnTo ? this.returnTo.start + RETURN_MARK_FROM * RETURN_MS : performance.now()
     this.returnTo = null; this.markRig.pose = null
-    this.returning = this.reduced?.matches ? null : performance.now()
+    this.returning = this.reduced?.matches ? null : Math.min(performance.now(), from)
   }
   /** For tests: true while returnHome's ease runs. */
   get returningHome(): boolean { return this.returnTo !== null }
@@ -1446,10 +1450,9 @@ export class Galaxy {
     let reveal = this.stepOpening(places)
     // Reduced motion: the name goes at once rather than being swept away.
     if (this.leaving !== null) reveal = { ...reveal, ...leavingMark(this.reduced.matches ? 1e3 : (performance.now() - this.leaving) / 1000) }
-    // While returnHome eases the view, the name stays dark: its place follows the camera's
-    // tilt and side of the plane, so shown now it would slide in from an edge. It fades in,
-    // in place, once the view has settled (stepReturn).
-    else if (this.returnTo) reveal = { ...reveal, ...returningMark(0), mark: 0 }
+    // While returnHome eases the view the name stays dark until the swing's last tenth, where
+    // it is within a few pixels of its place, then fades in as the view lands (returningMark).
+    else if (this.returnTo) reveal = { ...reveal, ...returningMark((performance.now() - this.returnTo.start - RETURN_MARK_FROM * RETURN_MS) / 1000) }
     else if (this.returning !== null) {
       const t = (performance.now() - this.returning) / 1000
       if (t > RETURN_SECONDS) this.returning = null; else reveal = { ...reveal, ...returningMark(t) }
@@ -1551,7 +1554,9 @@ export class Galaxy {
     if (mark.placement) { this.options.onLogo?.(true); if (layout) this.markOverlay?.update(layout.box, 0) }
     else if (logo && layout) {
       const budget = logoBudget(layout.level), held = this.reduced.matches || budget.still || this.backdrop < 1
-      if (held) logo.skipIntro()
+      // The opening and a return carry the fade themselves (reveal.mark): the logo's own would
+      // only delay it further.
+      if (held || this.opening || this.returnTo || this.returning !== null) logo.skipIntro()
       // Behind the loading veil the logo waits at nothing: its fade starts as the veil lifts.
       else if (veiled()) logo.replayIntro()
       logo.setLook({ particles: Math.round(budget.particles * (1 - qualityShed(1) * 0.65)), sway: held ? 0 : 0.07, opacity: (1 - this.dive) * reveal.mark })
@@ -1687,7 +1692,9 @@ export class Galaxy {
     if (mode <= 0 || !field?.ok || !layout || !this.canvas) return none
     const goal = { yaw: this.yaw, pitch: this.pitch, reach: this.reach, target: [...this.target] as [number, number, number] }
     const held = still || this.reduced.matches
-    const rigMoving = this.markRig.step(goal, elapsed, held)
+    // During a return the rig keeps up with the view exactly: trailing it, the name would lag
+    // its place as it fades in at the end of the swing.
+    const rigMoving = this.markRig.step(goal, elapsed, held || this.returnTo !== null)
     // The HTML logo box, in the shader's q units.
     const sx = this.canvas.width / Math.max(1, this.host.clientWidth), sy = this.canvas.height / Math.max(1, this.host.clientHeight)
     const minSide = Math.min(this.canvas.width, this.canvas.height) * this.framing[2], box = layout.box
@@ -1710,7 +1717,7 @@ export class Galaxy {
     if (this.markStart === null) this.markStart = held ? now - 1e6 : now
     // The opening and a return carry their own fade (opening.ts); otherwise (a placement
     // changed, the context restored) the same curve runs from the first frame here.
-    const opacity = this.opening || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
+    const opacity = this.opening || this.returnTo || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
     return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 || this.liftShown !== liftGoal }
   }
   /** For checks: the in-space wordmark's opacity as last drawn (0 when hidden). */

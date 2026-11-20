@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FIRST, FLIGHT, GAP, OPENING_SECONDS, openingState, POP_SECONDS, SETTLED, SETTLED_SECONDS } from '../../src/ui/galaxy/opening'
+import { FIRST, FLIGHT, GAP, OPENING_SECONDS, openingState, POP_SECONDS, RETURN_FADE_SECONDS, RETURN_MARK_FROM, RETURN_VIEW_SECONDS, returningMark, SETTLED, SETTLED_SECONDS } from '../../src/ui/galaxy/opening'
 
 describe('lobby opening timeline', () => {
   it('starts at a point, ends at the settled lobby, and brings the worlds in from the innermost out', () => {
@@ -33,10 +33,21 @@ describe('lobby opening timeline', () => {
     expect(openingState(POP_SECONDS - 0.02, 2, 9).sun).toBe(0)
     expect(openingState(POP_SECONDS + 0.05, 2, 9).sun).toBeGreaterThan(0)
   })
-  // The owner: the name arrives last. It is still arriving after the last world has landed.
-  it('brings the name in last', () => {
+  // The owner (19 November 2026): the name fades in while the worlds spin in, not after. Not
+  // before the first is thrown (so not before the pop, nor before the tap that begins it), and
+  // in full as the last one lands.
+  it('brings the name in with the worlds', () => {
     const landed = FIRST + GAP * 8 + FLIGHT
-    expect(openingState(landed, 2, 9).mark).toBeLessThan(1)
+    expect(openingState(-1, 2, 9).mark).toBe(0)
+    expect(openingState(FIRST, 2, 9).mark).toBe(0)
+    expect(openingState(FIRST + 0.5, 2, 9).mark).toBeGreaterThan(0)
+    expect(openingState((FIRST + landed) / 2, 2, 9).mark).toBeCloseTo(0.5, 6)
+    expect(openingState(landed, 2, 9).mark).toBe(1)
     expect(openingState(OPENING_SECONDS, 2, 9).mark).toBe(1)
+  })
+  it('brings the name back in as the lobby lands from a world, in under a second', () => {
+    expect(returningMark(0).mark).toBe(0)
+    expect(returningMark(RETURN_FADE_SECONDS).mark).toBe(1)
+    expect(RETURN_FADE_SECONDS + (1 - RETURN_MARK_FROM) * RETURN_VIEW_SECONDS).toBeLessThan(1.2)
   })
 })
