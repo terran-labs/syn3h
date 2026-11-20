@@ -141,14 +141,19 @@ describe('frozen versions', () => {
     expect(await head.text()).toBe('')
   })
 
-  it('finds a content-hashed file asked without a Referer in R2, newest first, and searches nothing else', async () => {
+  it('finds a stored version\'s content-hashed file asked without a Referer, and 404s a made-up one', async () => {
     const script = await call(env, '/assets/app-OLD-AbCd1234.js')
+    expect(script.status).toBe(200)
     expect(await script.text()).toBe('r2 old script')
     expect(script.headers.get('x-syn3h-version')).toBe('26.11.1503')
-    expect(FROZEN.keys).toEqual(['v/26.11.1600/assets/app-OLD-AbCd1234.js', 'v/26.11.1503/assets/app-OLD-AbCd1234.js'])
-    FROZEN.keys.length = 0
-    expect((await call(env, '/models/never.glb')).status).toBe(404)
-    expect(FROZEN.keys).toEqual([])
+    expect((await call(env, '/assets/nope-Zz9Qx7Lk.js')).status).toBe(404)
+    // Many versions: still found in the oldest, still 404 for a name nobody has.
+    const versions = Array.from({ length: 60 }, (_, i) => `26.12.${1000 + i}`)
+    const many = { [`v/${versions[0]}/assets/first-Aa11Bb22.js`]: { body: 'oldest', type: 'text/javascript' } }
+    const wide = { ASSETS: { fetch: async (req: Request) => new URL(req.url).pathname === '/v/versions.json' ? new Response(JSON.stringify({ versions })) : ASSETS.fetch(req) }, FROZEN: bucket(many) }
+    forgetOwnVersion()
+    expect(await (await call(wide, '/assets/first-Aa11Bb22.js')).text()).toBe('oldest')
+    expect((await call(wide, '/assets/nope-Zz9Qx7Lk.js')).status).toBe(404)
   })
 
   it('answers an unknown version with the list, and asks R2 nothing for the latest build', async () => {
