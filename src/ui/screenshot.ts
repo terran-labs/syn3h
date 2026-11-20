@@ -51,25 +51,45 @@ export function encodeShot(frame: HTMLCanvasElement, mark?: ShotMark): Promise<B
   return new Promise(resolve => frame.toBlob(blob => resolve(blob), 'image/png'))
 }
 
-export type ShotOutcome = 'shared' | 'saved' | 'cancelled'
+export type ShotOutcome = 'shared' | 'saved' | 'cancelled' | 'blocked'
+
+/** The picture as a file the share sheet can take, or null where files cannot be shared. */
+export function shareableShot(blob: Blob, name: string): File | null {
+  if (typeof File === 'undefined' || typeof navigator.share !== 'function') return null
+  const file = new File([blob], name, { type: 'image/png' })
+  return navigator.canShare?.({ files: [file] }) ? file : null
+}
 
 /**
- * Hand the picture to the player: the share sheet on touch screens where the browser can share
- * files (a download is awkward on a phone), otherwise a download. A share the player dismisses
- * is cancelled, not an error; a share the browser refuses falls back to the download.
+ * Open the share sheet with the file. Safari opens it only within a short time of the tap that
+ * asked; when the encode outlasts that, it refuses (NotAllowedError) and this says 'blocked',
+ * so the caller can offer a second tap that shares at once, the file already made.
  */
-export async function deliverShot(blob: Blob, name: string, preferShare: boolean): Promise<ShotOutcome> {
-  if (preferShare && typeof File !== 'undefined' && typeof navigator.share === 'function') {
-    const file = new File([blob], name, { type: 'image/png' })
-    if (navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file] }); return 'shared' }
-      catch (error) { if ((error as DOMException)?.name === 'AbortError') return 'cancelled' }
-    }
+export async function shareShot(file: File): Promise<ShotOutcome> {
+  try { await navigator.share({ files: [file] }); return 'shared' }
+  catch (error) {
+    const name = (error as DOMException)?.name
+    return name === 'AbortError' ? 'cancelled' : name === 'NotAllowedError' ? 'blocked' : 'cancelled'
   }
+}
+
+/** Save the picture as a download. */
+export function downloadShot(blob: Blob, name: string): ShotOutcome {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a'); link.href = url; link.download = name; link.style.display = 'none'
   document.body.append(link); link.click(); link.remove()
   // The download has its own copy once started; give the browser a moment before letting go.
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
   return 'saved'
+}
+
+/**
+ * Hand the picture to the player: the share sheet on touch screens where the browser can share
+ * files (a download is awkward on a phone), otherwise a download. A dismissed sheet is
+ * cancelled, not an error. A sheet the browser refused for lack of a fresh tap is 'blocked'.
+ */
+export async function deliverShot(blob: Blob, name: string, preferShare: boolean): Promise<{ outcome: ShotOutcome; file: File | null }> {
+  const file = preferShare ? shareableShot(blob, name) : null
+  if (file) return { outcome: await shareShot(file), file }
+  return { outcome: downloadShot(blob, name), file: null }
 }

@@ -78,7 +78,7 @@ import './exploration.css'
 import './theme-halo.css'
 import './hud-column.css'
 import './pause-screen.css'
-import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shotFileName } from './screenshot'
+import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shareShot, shotFileName } from './screenshot'
 
 /**
  * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
@@ -1262,6 +1262,7 @@ export class Shell implements System {
     const pause = this.element.querySelector<HTMLButtonElement>('.rail-pause')
     if (pause) { const word = user ? 'Resume' : 'Pause'; pause.setAttribute('aria-label', word); pause.dataset.tip = word; pause.querySelector('path')!.setAttribute('d', user ? PLAY_ICON : PAUSE_ICON) }
     this.element.querySelector<HTMLElement>('.pause-actions')!.hidden = !user
+    if (!user) { this.shotReady = null; const hint = this.element.querySelector<HTMLElement>('.pause-shot-hint'); if (hint) hint.hidden = true }
     this.whisper(user)
     this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking || this.aboutOpen
     if (user) {
@@ -1307,17 +1308,26 @@ export class Shell implements System {
       hint.textContent = text; hint.hidden = !text
       button.classList.toggle('is-saved', done); button.querySelector('path')!.setAttribute('d', done ? SAVED_ICON : SHOT_ICON)
     }
+    let waiting = false
     try {
-      const frame = this.game.snapshot()
-      const blob = frame ? await encodeShot(frame) : null
-      if (!blob) { say('The view could not be captured', false); return }
-      const outcome = await deliverShot(blob, shotFileName(currentWorldName(), currentPlanet().label, new Date()), this.touch.available)
-      if (outcome !== 'cancelled') say(outcome === 'shared' ? 'Shared' : 'Saved', true)
+      // A picture already made, waiting for the tap Safari asked for: share it now, in this tap.
+      const ready = this.shotReady; this.shotReady = null
+      const result = ready ? { outcome: await shareShot(ready), file: ready } : await (async () => {
+        const frame = this.game.snapshot()
+        const blob = frame ? await encodeShot(frame) : null
+        return blob ? deliverShot(blob, shotFileName(currentWorldName(), currentPlanet().label, new Date()), this.touch.available) : null
+      })()
+      if (!result) { say('The view could not be captured', false); return }
+      if (result.outcome === 'blocked' && result.file) { this.shotReady = result.file; waiting = true; say('Ready. Tap again to share', false); return }
+      if (result.outcome !== 'cancelled') say(result.outcome === 'shared' ? 'Shared' : 'Saved', true)
     } finally {
       this.shooting = false
-      clearTimeout(this.shotTimer); this.shotTimer = setTimeout(() => say('', false), 2200)
+      clearTimeout(this.shotTimer)
+      if (!waiting) this.shotTimer = setTimeout(() => say('', false), 2200)
     }
   }
+  /** A picture made but refused by the share sheet for want of a fresh tap: the next tap shares it. Dropped on resume. */
+  private shotReady: File | null = null
   private shotTimer?: ReturnType<typeof setTimeout>
   private keydown(event: KeyboardEvent): void {
     // Waiting for the tap that begins (TapToBegin.ts): that press only begins.
