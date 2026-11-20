@@ -172,10 +172,18 @@ html[data-touch-aim="on"] .syn3h-shell.has-touch .focus-hud svg [data-reticle] {
   opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s ease-out, visibility 0s linear .2s;
 }
 
-/* A sunk buggy's Zorb cue (Shell.cueZorb): the ZORB button's own glass rim and sheen swell and
-   settle, slowly, instead of a message. Only the shared glass tokens move (src/ui/glass.css);
-   the keyframe names only the peak, so rest is whatever the class sets. Reduced motion holds
-   the peak steady. */
-@keyframes zorb-cue { 50% { --glass-rim: 1; --glass-sheen: 1; } }
-.touch-controls .touch-actions button.is-cued { animation: zorb-cue 2.6s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) { .touch-controls .touch-actions button.is-cued { animation: none; --glass-rim: 1; --glass-sheen: 1; } }
+/* A sunk buggy's Zorb cue (Shell.cueZorb), instead of a message: once every 2.6 s the ZORB
+   button swells to the glass "on" look (its body, rim and sheen, src/ui/glass.css) and one soft
+   ring leaves it and fades, then it settles to rest, which is whatever the class sets. The ring
+   is the outline, since the glass draws with both pseudo-elements; it follows the round
+   corners. Reduced motion holds the peak look, without the ring. */
+@keyframes zorb-cue {
+  0% { outline-color: rgb(255 255 255 / 0); outline-offset: 0; }
+  8% { outline-color: rgb(255 255 255 / .75); outline-offset: 1px; }
+  50% { --glass-rim: 1; --glass-sheen: 1; background-color: var(--glass-body-on, rgb(255 255 255 / .18)); outline-color: rgb(255 255 255 / 0); outline-offset: 18px; }
+  100% { outline-color: rgb(255 255 255 / 0); outline-offset: 18px; }
+}
+.touch-controls .touch-actions button.is-cued { outline: 1.5px solid rgb(255 255 255 / 0); animation: zorb-cue 2.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .touch-controls .touch-actions button.is-cued { animation: none; outline: 0; --glass-rim: 1; --glass-sheen: 1; background-color: var(--glass-body-on, rgb(255 255 255 / .18)); }
+}
