@@ -66,12 +66,20 @@ async function open(name) {
   })
   const start = Date.now()
   await page.evaluate(() => { window.syn3h.shell.play(); document.activeElement?.blur?.() })
-  // Room membership precedes playable entry. Observe each page independently while
-  // the other joins, and fail entry separately if its loading overlay never clears.
-  entryReady.set(page, until(page, () => {
+  // Wait for this player to be playable before the next browser is launched, so one player's
+  // figure never includes another browser's launch and boot on the same machine. ?autoplay=1
+  // already requested play at boot, so the figure that counts is the page's own: from its play
+  // request to its first reveal (window.syn3hStartup, src/core/diagnostics.ts). It is printed,
+  // never a threshold; entry fails only if the loading overlay never clears.
+  const ok = await until(page, () => {
     const { shell, game } = window.syn3h
     return shell.playing && !shell.transitioning && !game.holdDraws
-  }, null, 45000).then(ok => ({ name, ok, observedMs: Date.now() - start })))
+  }, null, 45000)
+  const own = await page.evaluate(() => {
+    const t = window.syn3hStartup
+    return t?.playRequestMs !== undefined && t?.firstRevealMs !== undefined ? Math.round(t.firstRevealMs - t.playRequestMs) : null
+  }).catch(() => null)
+  entryReady.set(page, Promise.resolve({ name, ok, playToPlayableMs: own, observedMs: Date.now() - start }))
   return page
 }
 
@@ -88,7 +96,7 @@ try {
 
   // 2. A moves 30 m along the ground; B's copy of A follows.
   const entry = await Promise.all([entryReady.get(a), entryReady.get(b)])
-  console.log('Playable entry observed (ms since check requested play)', JSON.stringify(entry))
+  console.log('Playable entry (playToPlayableMs: the page\'s own play request to first reveal; observedMs: since the check pressed Play)', JSON.stringify(entry))
   if (!entry.every(client => client.ok)) throw new Error('Playable entry failed before movement check')
   const target = await a.evaluate(() => {
     const s = window.syn3h.terrain.spawnPoint(0), x = s.position.x + 30, z = s.position.z
