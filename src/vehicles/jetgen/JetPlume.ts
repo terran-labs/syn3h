@@ -5,6 +5,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { defineParam } from '../../../shared/params'
 import { hotExposureNode } from '../skins/hotExposure'
 import { loft } from './shapes'
+import { MK2_FITTINGS } from './shipped'
 
 type N = Node<'float'> | Node<'vec2'> | Node<'vec3'> | Node<'vec4'> | any // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -63,6 +64,35 @@ function plumeMaterial(): THREE.Material {
   return shared = material
 }
 
+function createPlumeGeometry(fittings: PlumeFittings): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = []
+  const cone = (x: number, y: number, z: number, r: number, port: boolean) => {
+    // Starts a little inside the throat, bulges slightly, then tapers to a point.
+    const L = r * (port ? PORT_LENGTH : MAIN_LENGTH), stations = [[0, .62], [.1, .7], [.4, .48], [.75, .2], [1, .01]], around = 8
+    const rings = stations.map(([s, f]) => Array.from({ length: around }, (_, i) => {
+      const a = i / around * Math.PI * 2, u = Math.cos(a) * r * f, v = Math.sin(a) * r * f
+      return port ? new THREE.Vector3(x + u, y - s * L, z + v) : new THREE.Vector3(x + u, y + v, z + s * L)
+    }))
+    const g = loft(rings, false, false), count = g.attributes.position.count, width = around + 1
+    const where = new Float32Array(count * 2), stretch = new Float32Array(count * 3)
+    for (let i = 0; i < count; i++) {
+      const s = stations[Math.floor(i / width)][0]
+      where[i * 2] = s; where[i * 2 + 1] = port ? 1 : 0
+      stretch[i * 3 + (port ? 1 : 2)] = (port ? -1 : 1) * s * L
+    }
+    g.setAttribute('plume', new THREE.BufferAttribute(where, 2)); g.setAttribute('stretch', new THREE.BufferAttribute(stretch, 3))
+    parts.push(g)
+  }
+  for (const n of fittings.nozzles) cone(n.x, n.y, n.z - .12, n.r, false)
+  for (const p of fittings.ports) cone(p.x, p.y + .06, p.z, p.r, true)
+  const geometry = mergeGeometries(parts); parts.forEach(g => g.dispose())
+  // The cones stretch in the vertex shader, so cull against their longest reach.
+  geometry.computeBoundingSphere(); geometry.boundingSphere!.radius += 3 * Math.max(...fittings.nozzles.map(n => n.r * MAIN_LENGTH), 1)
+  return geometry
+}
+
+let mk2PlumeGeometry: THREE.BufferGeometry | undefined
+
 /**
  * The jet's thrust plume: a soft cone behind each rear nozzle and under each belly port, drawn
  * as one mesh in one draw at every detail level. Generated; no image, no particles.
@@ -73,29 +103,9 @@ export class JetPlume {
   private readonly colour = new THREE.Color()
 
   constructor(fittings: PlumeFittings) {
-    const parts: THREE.BufferGeometry[] = []
-    const cone = (x: number, y: number, z: number, r: number, port: boolean) => {
-      // Starts a little inside the throat, bulges slightly, then tapers to a point.
-      const L = r * (port ? PORT_LENGTH : MAIN_LENGTH), stations = [[0, .62], [.1, .7], [.4, .48], [.75, .2], [1, .01]], around = 8
-      const rings = stations.map(([s, f]) => Array.from({ length: around }, (_, i) => {
-        const a = i / around * Math.PI * 2, u = Math.cos(a) * r * f, v = Math.sin(a) * r * f
-        return port ? new THREE.Vector3(x + u, y - s * L, z + v) : new THREE.Vector3(x + u, y + v, z + s * L)
-      }))
-      const g = loft(rings, false, false), count = g.attributes.position.count, width = around + 1
-      const where = new Float32Array(count * 2), stretch = new Float32Array(count * 3)
-      for (let i = 0; i < count; i++) {
-        const s = stations[Math.floor(i / width)][0]
-        where[i * 2] = s; where[i * 2 + 1] = port ? 1 : 0
-        stretch[i * 3 + (port ? 1 : 2)] = (port ? -1 : 1) * s * L
-      }
-      g.setAttribute('plume', new THREE.BufferAttribute(where, 2)); g.setAttribute('stretch', new THREE.BufferAttribute(stretch, 3))
-      parts.push(g)
-    }
-    for (const n of fittings.nozzles) cone(n.x, n.y, n.z - .12, n.r, false)
-    for (const p of fittings.ports) cone(p.x, p.y + .06, p.z, p.r, true)
-    const geometry = mergeGeometries(parts); parts.forEach(g => g.dispose())
-    // The cones stretch in the vertex shader, so cull against their longest reach.
-    geometry.computeBoundingSphere(); geometry.boundingSphere!.radius += 3 * Math.max(...fittings.nozzles.map(n => n.r * MAIN_LENGTH), 1)
+    const geometry = fittings === MK2_FITTINGS
+      ? (mk2PlumeGeometry ??= createPlumeGeometry(fittings))
+      : createPlumeGeometry(fittings)
     this.mesh = new THREE.Mesh(geometry, plumeMaterial())
     this.mesh.name = 'jet-plume'; this.mesh.castShadow = false; this.mesh.receiveShadow = false; this.mesh.renderOrder = 2
     this.mesh.userData.plume = this.state; this.mesh.userData.plumeColor = this.colour
@@ -119,6 +129,8 @@ export class JetPlume {
 
   setColor(accent: THREE.ColorRepresentation): void { this.colour.set(accent) }
 
-  /** The material is shared by every jet and stays alive. */
-  dispose(): void { this.mesh.geometry.dispose() }
+  dispose(): void {
+    this.mesh.removeFromParent()
+    if (this.mesh.geometry !== mk2PlumeGeometry) this.mesh.geometry.dispose()
+  }
 }

@@ -6,6 +6,7 @@
  * remote vehicles are played back from snapshot buffers and stay physical near us so ramming
  * works. Lasers, identity and the tag game ride on rare JSON messages.
  */
+import { longFrames } from '../core/longFrames'
 import * as THREE from 'three/webgpu'
 import { joinedText } from '../ui/toastText'
 import { ChatChannel } from './chat'
@@ -57,8 +58,10 @@ import { thunderMapPing } from '../weapons/thunderParams'
 import { aimError as botAimError, fireRate as botFireRate, gameGear, grappleRate as botGrappleRate, skill as botSkill, thunderShare as botThunderShare } from '../bots/skills'
 import { aimDirection } from '../bots/tactics'
 import { botGameOptions } from './bots'
+import { BotRamReporter } from './botRams'
 import type { BotGearOption } from '../bots/gear'
 import { seededRandom } from '../bots/random'
+import { playWithMe } from '../bots/play/PlayDirector'
 import { BoundsGuard } from '../modes/Tag'
 // The "it" marker: one draw, and shown over the local player's own vehicle too.
 import { ItMarker as TagMarker } from './ItMarker'
@@ -107,6 +110,8 @@ export interface NetAudio {
 export interface NetBots extends RaceBots {
   readonly vehicles: readonly Vehicle[]
   remote?: boolean
+  acquireBotVehicle?(kind: VehicleKind, position: THREE.Vector3, heading: number): Vehicle
+  releaseBotVehicle?(vehicle: Vehicle): boolean
   /** Tell the bots what game is on (the host's manager acts on it). Null is free play. */
   setMatch?(match: BotMatchInfo<Vehicle> | null): void
   setGear?(hooks: BotDecisionHooks | null): void
@@ -275,6 +280,8 @@ export class NetClient implements System {
   /** The shell's play state last frame: leaving play (Exit world) drops the gear. */
   private wasDriving = false
   private welcomed = false
+  private sessionDrops = 0
+  private sessionRejoins = 0
   private everWelcomed = false
   /**
    * World settings changed here while the connection was down, newest value each: the socket
@@ -424,6 +431,10 @@ export class NetClient implements System {
       inHand: () => this.gear.current === 'bungee',
       // Sound is cosmetic: an audio build without these cue names must never stop the Bungee.
       cue: (name, at) => { try { this.ctx.audio?.cue?.(name, at) } catch { /* no such cue yet */ } },
+      // Someone else's cord on us: ask its owner, through the room, to let go.
+      unhook: (owner) => { if (this.connected) this.send({ type: 'unhook', from: owner }) },
+      // Breaking free is Explore's: in the games a cord on you is part of the play.
+      mayUnhook: () => this.connected && this.mode === MODE_EXPLORE,
       // Positions go on the wire inside the tile, like every other position.
       send: (cord) => {
         if (!this.connected) return
@@ -516,6 +527,8 @@ export class NetClient implements System {
         type: 'hello', v: PROTOCOL_VERSION, modes: 2, name: playerName(), params: params.snapshot('world'),
         kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room), page: PAGE_LOAD,
         ...(this.dropReport ? { drop: this.dropReport } : {}),
+        // "Bots may play with me": only a no is sent; an older room ignores the field.
+        ...(playWithMe.value ? {} : { play: false }),
       })
       this.dropReport = null
     }
@@ -559,6 +572,12 @@ export class NetClient implements System {
     this.seat.start()
     g.add(this.hill)
     this.conn.open()
+  }
+
+  diagnosticLine(): string {
+    const state = this.connected ? 'connected' : this.conn.state === 'open' ? 'awaiting welcome' : this.conn.state
+    const rtt = this.connected && this.clock.synced ? Math.round(1000 * this.clock.rtt) + ' ms' : 'unavailable'
+    return `Room connection: ${state}, drops ${this.sessionDrops}, rejoins ${this.sessionRejoins}, RTT ${rtt}`
   }
 
   get connected(): boolean {
@@ -829,6 +848,7 @@ export class NetClient implements System {
   postPhysics(dt: number): void {
     if (this.mode === MODE_KOTH) this.rescue.check()
     else this.rescue.release()
+    this.cordHint()
     if (!this.connected) return
     if (this.isHost && this.mode === MODE_KOTH) this.checkBotsStuck()
     this.detectRams()
@@ -976,6 +996,7 @@ export class NetClient implements System {
   }
 
   dispose(): void {
+    this.disposed = true
     if (this.seamVehicle) (this.seamVehicle.object as THREE.Object3D<VehicleObjectEvents>).removeEventListener('tileshift', this.onTileShift)
     this.offRescue()
     this.resetGear()
@@ -986,6 +1007,7 @@ export class NetClient implements System {
     this.conn.close()
     this.heartbeat.stop()
     for (const id of [...this.remotes.keys()]) this.removeRemote(id)
+    this.finishRemoteDepartures()
     this.tags.dispose()
   }
 
@@ -1039,6 +1061,28 @@ export class NetClient implements System {
     },
   }
 
+  private cordOnUs = false
+  private cordHints = 0
+  /**
+   * Someone else's cord (a person's or a bot's) just tied on to us: the first two times in a
+   * session, say calmly how to break free, where the lava line goes (the event line), worded for
+   * the device. The Foreman, 19 November 2026.
+   */
+  private cordHint(): void {
+    const on = this.bungee.hookedBy().length > 0
+    if (on && !this.cordOnUs && this.cordHints < 2 && this.mode === MODE_EXPLORE) {
+      this.cordHints++
+      const touch = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0
+      this.event(touch ? 'A cord is on you: double tap BRAKE to break free' : 'A cord is on you: double tap Shift (brake) to break free')
+    }
+    this.cordOnUs = on
+  }
+  /** Host: our bots' contacts with each other, reported only to a room that understands them. */
+  private readonly botRams = new BotRamReporter(RAM_REPEAT)
+  /** Whether a remote person's game is paused (a hidden tab). */
+  pausedOf(id: number): boolean { return this.remotes.get(id)?.paused ?? false }
+  /** Host: player `by` broke free of bot `bot`'s cord themselves. The play director counts these. */
+  onBotUnhooked: (by: number, bot: number) => void = () => {}
   /** When each vehicle id was last tagged or knocked by a laser, in game seconds. */
   private readonly hitAt = new Map<number, number>()
   /** When a bot last fired at each vehicle id, in game seconds: bots take turns. */
@@ -1423,6 +1467,13 @@ export class NetClient implements System {
       }
       r.touching = touching
     }
+    // On the host, our own bots against each other: only we can see that contact. Reported for
+    // the rammer bot, edge-triggered per pair, and only to a room that understands it (an older
+    // room would credit our own player).
+    if (this.isHost && this.bots) {
+      const live = liveBots(this.bots.vehicles, this.ctx.game.world).map(([id, v]) => { const l = v.body.linvel(); return [id, v, Math.hypot(l.x, l.z)] as const })
+      for (const r of this.botRams.step(now, live, (a, b) => this.touching(a, b))) this.send({ type: 'ram', other: r.other, bot: r.bot })
+    }
     // On the host, our own player against our own bots: both are simulated here.
     if (this.isHost && this.bots) {
       liveBots(this.bots.vehicles, this.ctx.game.world).forEach(([id, bot]) => {
@@ -1535,12 +1586,19 @@ export class NetClient implements System {
     else if (this.game.mode === MODE_KOTH || this.game.it === this.id || this.game.it === id) this.send({ type: 'ram', other: id })
   }
 
+  private makeReplica(info: PlayerInfo, position: THREE.Vector3): Vehicle {
+    const kind = info.kind as VehicleKind
+    const prepared = isBotId(info.id) ? this.bots?.acquireBotVehicle?.(kind, position, 0) : undefined
+    return prepared ?? createVehicle(this.ctx.game, this.ctx.terrain, kind, position, 0)
+  }
+
   private spawnRemote(info: PlayerInfo, s: WireState): RemotePlayer {
     const old = this.departing?.get(info.id)
-    if (old) { this.departing.delete(info.id); this.ctx.cancelRemoteDeparture?.(old) }
-    // Bots too get a replica of our own, so the set follows the host's roster exactly and is
-    // never touched by our bot manager or its local quality cap.
-    const vehicle = createVehicle(this.ctx.game, this.ctx.terrain, info.kind as VehicleKind, new THREE.Vector3(...s.p), 0)
+    if (old) {
+      try { this.ctx.cancelRemoteDeparture?.(old.vehicle) } finally { old.finish() }
+    }
+    // Bot replicas follow the host's roster regardless of the local bot manager's quality cap.
+    const vehicle = this.makeReplica(info, new THREE.Vector3(...s.p))
     vehicle.isLocal = false
     vehicle.body.setRotation({ x: s.q[0], y: s.q[1], z: s.q[2], w: s.q[3] }, true)
     this.ctx.game.add(vehicle)
@@ -1575,19 +1633,49 @@ export class NetClient implements System {
     if (depart) {
       try { leaving = this.ctx.onRemoteVehicleLeaving?.(r.vehicle) } catch (err) { console.warn('remote departure effect failed', err) }
     }
-    // Gone from the game and the physics world in this frame, whatever the effect does: no
-    // gameplay list waits on an animation. A departure plays on what is left, a picture.
-    this.ctx.game.remove(r.vehicle, !leaving)
-    if (!leaving) return
     const vehicle = r.vehicle
-    vehicle.detach()
-    this.departing.set(id, vehicle)
-    const done = () => { if (this.departing.get(id) === vehicle) this.departing.delete(id); vehicle.dispose() }
-    leaving.then(done, done)
+    if (!leaving) {
+      if (isBotId(id)) this.ctx.cancelRemoteDeparture?.(vehicle)
+      if (this.retainReplica(id, vehicle)) this.ctx.game.remove(vehicle, false)
+      else this.ctx.game.remove(vehicle)
+      return
+    }
+    // Deregister now. A pooled bot's rigid body is disabled for the picture, as it will
+    // be used again, while an ordinary player's body is removed from the physics world.
+    this.ctx.game.remove(vehicle, false)
+    if (isBotId(id) && this.bots?.releaseBotVehicle && !this.disposed) {
+      vehicle.setParked(true)
+      this.ctx.game.scene.add(vehicle.object)
+    } else {
+      vehicle.detach()
+    }
+    const departure = {
+      vehicle,
+      finish: () => {
+        if (this.departing.get(id) !== departure) return
+        this.departing.delete(id)
+        if (!this.retainReplica(id, vehicle)) vehicle.dispose()
+      },
+    }
+    this.departing.set(id, departure)
+    void leaving.then(departure.finish, departure.finish)
   }
 
-  /** Departures still playing, by id: dropped at once if the same id arrives again. */
-  private readonly departing = new Map<number, Vehicle>()
+  private disposed = false
+  /** Departures still playing, by id: canceled at once if the same id arrives again. */
+  private readonly departing = new Map<number, { vehicle: Vehicle; finish: () => void }>()
+
+  private retainReplica(id: number, vehicle: Vehicle): boolean {
+    return !this.disposed && isBotId(id) && (this.bots?.releaseBotVehicle?.(vehicle) ?? false)
+  }
+
+  private finishRemoteDepartures(): void {
+    for (const departure of this.departing.values()) {
+      try { this.ctx.cancelRemoteDeparture?.(departure.vehicle) }
+      catch (error) { console.warn('Remote departure cancellation failed', error) }
+      finally { departure.finish() }
+    }
+  }
 
   /** Dust, tracks, lamps and trails for a remote vehicle. Returns its disposer. */
   private attachEffects(vehicle: Vehicle): () => void {
@@ -1610,8 +1698,10 @@ export class NetClient implements System {
       const t = r.vehicle.body.translation()
       const q = r.vehicle.body.rotation()
       r.disposeEffects()
-      this.ctx.game.remove(r.vehicle)
-      const v = createVehicle(this.ctx.game, this.ctx.terrain, info.kind as VehicleKind, new THREE.Vector3(t.x, t.y, t.z), 0)
+      if (isBotId(info.id)) this.ctx.cancelRemoteDeparture?.(r.vehicle)
+      if (this.retainReplica(info.id, r.vehicle)) this.ctx.game.remove(r.vehicle, false)
+      else this.ctx.game.remove(r.vehicle)
+      const v = this.makeReplica(info, new THREE.Vector3(t.x, t.y, t.z))
       v.body.setRotation(q, true)
       this.ctx.game.add(v)
       const next = new RemotePlayer(info, v)
@@ -1699,7 +1789,11 @@ export class NetClient implements System {
     if (s.bot && this.isHost) return
     const info = this.players.get(s.id)
     if (!info) return
-    const r = this.remotes.get(s.id) ?? this.spawnRemote(info, s)
+    let r = this.remotes.get(s.id)
+    if (!r) {
+      longFrames.event('network.remote.spawn')
+      r = this.spawnRemote(info, s)
+    }
     // A state handled long after our last frame waited behind a local stall (terrain rebuild,
     // shader compile, a hidden tab): its age says nothing about the network.
     const at = performance.now()
@@ -1716,6 +1810,9 @@ export class NetClient implements System {
         this.raceBridge.receive(msg.race)
         break
       case 'welcome': {
+        longFrames.event('network.welcome')
+        // Bot-on-bot rams are reported only to a room that says it understands them.
+        this.botRams.enabled = msg.botRams === true
         this.localAfterFull = false
         // From here the room says who hosts (see updateBotRole).
         this.hostThroughDrop = false
@@ -1732,6 +1829,7 @@ export class NetClient implements System {
         // spawns, and onTerrainRegenerated seats us on the new ground.
         // The room's world replaces ours entirely, gaps included; see applyRoomWorld.
         applyRoomWorld(msg.params)
+        if (this.everWelcomed && !this.welcomed) this.sessionRejoins++
         this.welcomed = true
         this.raceBridge.receive(msg.race ?? null)
         this.raceBridge.update()
@@ -1752,10 +1850,12 @@ export class NetClient implements System {
         this.clock.pong(msg.t, msg.serverTime)
         break
       case 'join':
+        longFrames.event('network.join')
         this.players.set(msg.player.id, msg.player)
         if (!msg.player.bot) this.event(`${msg.player.name} joined`)
         break
       case 'profile': {
+        longFrames.event('network.profile')
         const before = this.players.get(msg.player.id)?.name
         this.players.set(msg.player.id, msg.player)
         this.applyProfile(msg.player)
@@ -1764,11 +1864,13 @@ export class NetClient implements System {
         break
       }
       case 'leave':
+        longFrames.event('network.leave')
         if (!isBotId(msg.id)) this.event(`${this.nameOf(msg.id)} left`)
         this.players.delete(msg.id)
         this.removeRemote(msg.id, true)
         break
       case 'param':
+        longFrames.event('network.param')
         params.set(msg.id, msg.value, 'remote')
         if (msg.from === 0) this.event(`Shared sliders are locked by the host`)
         break
@@ -1785,6 +1887,14 @@ export class NetClient implements System {
         break
       case 'yoink':
         if (this.players.has(msg.from)) (this.botGear.get(msg.from)?.yoink ?? this.yoink).applyRemote(msg.from, msg.y)
+        break
+      case 'unhook':
+        // The player our cord (or our bot's) is tied to asked to be let go. The room checked it.
+        if (msg.owner === this.id) this.bungee.letGo('unhooked')
+        else if (this.isHost && isBotId(msg.owner)) {
+          this.botGear.get(msg.owner)?.bungee.letGo('unhooked')
+          this.onBotUnhooked(msg.by, msg.owner)
+        }
         break
       case 'shove': {
         if (materializing(this.ctx.player) || materializing(this.vehicleOf(msg.from))) break
@@ -1817,6 +1927,7 @@ export class NetClient implements System {
         this.onGame(msg)
         break
       case 'reset': {
+        longFrames.event('network.reset')
         // Defaults for whatever the server does not know, then the room's values.
         applyRoomWorld(msg.params)
         this.zoneTimer = 0
@@ -1874,6 +1985,8 @@ export class NetClient implements System {
 
   private onParamChange(id: string, value: ParamValue, source: string): void {
     if (source === 'remote') return
+    // "Bots may play with me" is personal: it goes to the room as part of who we are.
+    if (id === playWithMe.def.id) { if (this.connected) this.send({ type: 'profile', play: value !== false }); return }
     const p = params.get(id)
     if (!p || p.def.scope !== 'world') return
     // Before the first welcome the hello carries our world; after it, a change made while the
@@ -1905,6 +2018,7 @@ export class NetClient implements System {
   private hostThroughDrop = false
 
   private onDisconnect(retrying = true): void {
+    if (this.welcomed && retrying) this.sessionDrops++
     this.hostThroughDrop = retrying && this.wasHost
     if (retrying) { try { this.noteDrop() } catch { /* diagnostics only */ } }
     // A reconnect is a new connection: our bots' kinds are announced to the room afresh.
@@ -1925,6 +2039,7 @@ export class NetClient implements System {
     step(() => this.resetGear())
     step(() => this.raceBridge.disconnect())
     for (const id of [...this.remotes.keys()]) step(() => this.removeRemote(id))
+    step(() => this.finishRemoteDepartures())
     if (retrying) step(() => this.event('Disconnected, reconnecting'))
     if (failed) throw first
   }

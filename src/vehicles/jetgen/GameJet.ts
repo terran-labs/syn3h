@@ -5,6 +5,7 @@ import { JetTailLights } from './JetTailLights'
 import { NextJet } from './NextJet'
 import { buildJetSilhouette } from './JetSilhouette'
 import { detailLevel, mergeStatic, registerVehicleDetail } from '../skins/mergeStatic'
+import { markReducedShowroomDetail } from '../skins/showroom'
 
 type Level = 0 | 1 | 2
 
@@ -27,7 +28,7 @@ export class GameJet {
   readonly tailLights = new JetTailLights()
   private nearModel?: NextJet
   private readonly mediumModels: [NextJet | undefined, NextJet | undefined] = [undefined, undefined]
-  private farModel?: THREE.Mesh
+  private farModel?: ReturnType<typeof buildJetSilhouette>
   private level: Level = 0
   private gear = 0
   private pitch = 0
@@ -61,16 +62,17 @@ export class GameJet {
       jet.thruster.removeFromParent()
       if (pose === 0) jet.gear.removeFromParent()
       mergeStatic(jet.object, true)
+      markReducedShowroomDetail(jet.object)
       this.adopt(jet)
     }
     return jet
   }
 
   /** Far outline: one opaque draw. Built on first use. */
-  get far(): THREE.Mesh {
+  get far(): ReturnType<typeof buildJetSilhouette> {
     if (!this.farModel) {
-      this.farModel = buildJetSilhouette(this.design)
-      ;(this.farModel.material as THREE.MeshStandardMaterial).color.set(this.body)
+      this.farModel = buildJetSilhouette()
+      this.farModel.material.color.set(this.body)
       this.farModel.visible = false
       this.object.add(this.farModel)
     }
@@ -115,14 +117,26 @@ export class GameJet {
     this.show()
   }
 
+  /** Reset the parked model before its next arrival, including an already built hidden close model. */
+  resetPose(): void {
+    this.gear = this.pitch = this.yaw = this.throttle = 0
+    this.controls.set(0, 0, 0)
+    this.plume.set(0, true)
+    this.plume.mesh.visible = true
+    if (this.nearModel && this.level !== 0) this.poseNear(this.nearModel)
+    if (this.level !== 0 || this.nearModel) this.show()
+  }
+
+  private poseNear(jet: NextJet): void {
+    jet.setGear(this.gear); jet.setVector(this.pitch, this.yaw); jet.setThrottle(this.throttle)
+    jet.setControls(this.controls.x, this.controls.y, this.controls.z)
+  }
+
   /** Build the level on screen if needed, bring it up to date and hide the others. */
   private show(): void {
     const pose = this.gear >= .5 ? 1 : 0
-    if (this.level === 0) {
-      const jet = this.near
-      jet.setGear(this.gear); jet.setVector(this.pitch, this.yaw); jet.setThrottle(this.throttle)
-      jet.setControls(this.controls.x, this.controls.y, this.controls.z)
-    } else if (this.level === 1) this.medium(pose).setThrottle(this.throttle)
+    if (this.level === 0) this.poseNear(this.near)
+    else if (this.level === 1) this.medium(pose).setThrottle(this.throttle)
     else void this.far
     if (this.nearModel) this.nearModel.object.visible = this.level === 0
     this.mediumModels.forEach((j, i) => { if (j) j.object.visible = this.level === 1 && i === pose })
@@ -133,11 +147,11 @@ export class GameJet {
     this.body = body; this.accent = accent
     this.plume.setColor(accent)
     this.nearModel?.setColors(body, accent); this.mediumModels.forEach(j => j?.setColors(body, accent))
-    if (this.farModel) (this.farModel.material as THREE.MeshStandardMaterial).color.set(body)
+    if (this.farModel) this.farModel.material.color.set(body)
   }
 
   dispose(): void {
     this.tailLights.dispose(); this.plume.dispose(); this.detachDetail(); this.nearModel?.dispose(); this.mediumModels.forEach(j => j?.dispose())
-    if (this.farModel) { this.farModel.geometry.dispose(); (this.farModel.material as THREE.Material).dispose() }
+    this.farModel?.material.dispose()
   }
 }

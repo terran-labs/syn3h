@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { generateTerrain } from '../../src/world/terrain/generate'
+import { sharedTerrain } from './sharedTerrain'
 import { DROP_FALL, ROAD_CLEARANCE, findDrops, lavaSurfaceAt } from '../../src/world/terrain/lava'
 import { distanceToPolyline } from '../../src/world/terrain/raster'
 import { FORD_DEPTH } from '../../src/world/terrain/roads'
@@ -13,7 +14,7 @@ describe('lava and vents', () => {
   it('produce a lake, rivers, pools and vents, deterministically', () => {
     const counts: string[] = []
     for (const seed of SEEDS) {
-      const d = generateTerrain(seed, settings)
+      const d = sharedTerrain(seed, settings)
       const { lake, rivers, pools } = d.lava
       expect(lake).not.toBeNull()
       expect(lake!.surface).toBeGreaterThan(lake!.floor)
@@ -30,11 +31,11 @@ describe('lava and vents', () => {
     const b = generateTerrain(9, settings)
     expect(a.lava).toEqual(b.lava)
     expect(a.vents).toEqual(b.vents)
-  }, 20000)
+  })
 
   it('rivers run downhill in carved channels to their pool, clear of roads', () => {
     for (const seed of SEEDS) {
-      const d = generateTerrain(seed, settings)
+      const d = sharedTerrain(seed, settings)
       const s = new HeightSampler(d)
       const v = d.layout.volcano
       for (const r of d.lava.rivers) {
@@ -56,7 +57,7 @@ describe('lava and vents', () => {
         expect(s.heightAt(r.pool.x, r.pool.z)).toBeLessThan(r.pool.surface)
       }
     }
-  }, 20000)
+  })
 
   it('marks steep runs of a river as drops', () => {
     // A bed that falls gently, then 6 m in 12 m, then gently again.
@@ -75,7 +76,7 @@ describe('lava and vents', () => {
     expect(findDrops(pts.map((p, i) => ({ ...p, y: 50 - i * 0.5 })))).toEqual([])
     // Every generated river carries the field, with indices inside its points.
     for (const seed of SEEDS) {
-      for (const r of generateTerrain(seed, settings).lava.rivers) {
+      for (const r of sharedTerrain(seed, settings).lava.rivers) {
         for (const d of r.drops) {
           expect(d.start).toBeGreaterThanOrEqual(0)
           expect(d.end).toBeLessThan(r.points.length)
@@ -84,16 +85,16 @@ describe('lava and vents', () => {
         }
       }
     }
-  }, 20000)
+  })
 
   it('fords: on by default for water rivers, optional, shallow and some reach the sea', () => {
     expect(settings.fords).toBe(1)
     const water = { ...settings, kind: 2 }
-    for (const seed of SEEDS) for (const r of generateTerrain(seed, { ...water, fords: 0 }).roads) expect(r.fords).toEqual([])
+    for (const seed of SEEDS) for (const r of sharedTerrain(seed, { ...water, fords: 0 }).roads) expect(r.fords).toEqual([])
     let fords = 0
     let toSea = 0
     for (const seed of SEEDS) {
-      const d = generateTerrain(seed, water)
+      const d = sharedTerrain(seed, water)
       const s = new HeightSampler(d)
       for (const road of d.roads) {
         // Only the level roads of the plain are forded, never the climb or the rim.
@@ -114,15 +115,15 @@ describe('lava and vents', () => {
         for (let i = 1; i < r.points.length; i++) expect(r.points[i].y).toBeLessThanOrEqual(r.points[i - 1].y)
       }
       // Lava never fords.
-      for (const road of generateTerrain(seed, { ...settings, kind: 0, fords: 1 }).roads) expect(road.fords).toEqual([])
+      for (const road of sharedTerrain(seed, { ...settings, kind: 0, fords: 1 }).roads) expect(road.fords).toEqual([])
     }
     process.stdout.write(`fords: ${fords} fords and ${toSea} rivers to the sea over ${SEEDS.length} alpine seeds\n`)
     expect(fords).toBeGreaterThan(3)
     expect(toSea).toBeGreaterThan(1)
-  }, 60000)
+  })
 
   it('liquid height: lake in the caldera, rivers and pools, fallback elsewhere', () => {
-    const d = generateTerrain(3, settings)
+    const d = sharedTerrain(3, settings)
     const lake = d.lava.lake!
     expect(lavaSurfaceAt(d.lava, lake.x, lake.z, 0)).toBe(lake.surface)
     const pool = d.lava.pools[0]

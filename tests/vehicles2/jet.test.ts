@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics, RAPIER } from '../../src/core/physics'
 import { Jet, JET_LIFT_KEYS, jetFlightThrust, jetHoverHold } from '../../src/vehicles/Jet'
+import type { GameJet } from '../../src/vehicles/jetgen/GameJet'
 import { harness } from './harness'
 import { flightSpeedAfter, vectorRate } from './jetScenarios'
 
@@ -154,6 +155,49 @@ describe('Jet hover and flight',()=>{
   v.teleport(new THREE.Vector3(0,40,0));v.releaseHoverHold();v.input.z=.5;h.step(v,5);v.input.z=0;h.step(v,250)
   expect(v.body.translation().y).toBeGreaterThan(30)
   v.dispose();h.world.free()
+ })
+ it('returns a parked jet to neutral before the next kinematic arrival takes a physics step',()=>{
+  const h = harness(0, false), spawn = new THREE.Vector3(0, 6000, 0)
+  const jet = new Jet(h.game, h.terrain, spawn)
+  const { model, gearCollider } = jet as unknown as { model: GameJet; gearCollider: RAPIER.Collider }
+  jet.isLocal = false
+  const { atmosDensity: freshDensity, stallFactor: freshStall } = jet
+  try {
+   h.step(jet, 70)
+   jet.input.special = true
+   jet.input.y = -.8
+   jet.input.w = .4
+   jet.body.setLinvel({ x: 0, y: 0, z: -40 }, true)
+   h.step(jet)
+   jet.update(1 / 60, 1)
+   expect(gearCollider.isEnabled()).toBe(true)
+   expect(model.near.gear.visible).toBe(true)
+   expect(model.near.vector.length()).toBeGreaterThan(0)
+   expect(model.near.controls.length()).toBeGreaterThan(0)
+   expect(jet.wingsOpen).toBe(true)
+   expect(jet.atmosDensity).not.toBe(freshDensity)
+   expect(jet.stallFactor).not.toBe(freshStall)
+
+   jet.setParked(true)
+   jet.resetForWorld()
+   expect(jet.object.parent).toBeNull()
+   jet.teleport(spawn)
+   jet.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true)
+   jet.setParked(false)
+
+   expect(gearCollider.isEnabled()).toBe(false)
+   expect(model.near.gear.visible).toBe(false)
+   expect(model.near.vector.length()).toBe(0)
+   expect(model.near.controls.length()).toBe(0)
+   expect(model.plume.levels[3]).toBeGreaterThan(0)
+   expect(jet.hoverMode).toBe(true)
+   expect(jet.wingsOpen).toBe(false)
+   expect(jet.atmosDensity).toBe(freshDensity)
+   expect(jet.stallFactor).toBe(freshStall)
+  } finally {
+   jet.dispose()
+   h.world.free()
+  }
  })
  it('observes the kinematic materialization flag and does not rearm hold on descend',()=>{
   const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,30,0));v.isLocal=false

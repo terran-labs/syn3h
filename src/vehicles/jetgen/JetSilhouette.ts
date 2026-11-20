@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { Builder, bodyRings, loft, surfRings, type Mat } from './shapes'
-import type { JetDesign } from './shipped'
+import { SHIPPED_JET } from './shipped'
 import { setRole } from '../skins/showroom'
 
 /** Far-distance geometry uses the design's outline, without intakes, joints or moving parts. */
@@ -39,14 +39,21 @@ class SilhouetteBuilder extends Builder {
   }
 }
 
-/** One opaque draw. Intended for the selected Mk2, beyond 120 metres. */
-export function buildJetSilhouette(design: JetDesign): THREE.Mesh {
-  const builder = new SilhouetteBuilder(); design.build(builder)
+function createSilhouetteGeometry(): THREE.BufferGeometry {
+  const builder = new SilhouetteBuilder(); SHIPPED_JET.build(builder)
   const parts = builder.pieces.map(p => p.geometry)
   const geometry = mergeGeometries(parts); parts.forEach(g => g.dispose())
+  return geometry
+}
+
+let silhouetteGeometry: THREE.BufferGeometry | undefined
+
+/** One opaque draw beyond 120 metres. The fixed outline is shared and paint belongs to the mesh. */
+export function buildJetSilhouette(): THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> {
+  const geometry = silhouetteGeometry ??= createSilhouetteGeometry()
   // The same plain numbers as the closer levels' paint, so the jet does not turn pale when it
   // steps down to the outline at 120 metres.
-  const mesh = new THREE.Mesh(geometry, setRole(new THREE.MeshStandardMaterial({ color: design.paint, metalness: .8, roughness: .3 }), 'paint'))
+  const mesh = new THREE.Mesh(geometry, setRole(new THREE.MeshStandardMaterial({ color: SHIPPED_JET.paint, metalness: .8, roughness: .3 }), 'paint'))
   mesh.name = 'jet-silhouette'
   return mesh
 }

@@ -387,6 +387,19 @@ describe('bots that know the game', () => {
     expect(nearest).toBeLessThan(8)
     manager.dispose()
   })
+  // Bug caught: with bot-on-bot rams counting, every bot on a bot "it" kept the role among
+  // themselves and left the person watching.
+  it('tag, a bot is it: at most two bots go after it, the rest stay out of it', async () => {
+    const { step, manager } = await setup(4)
+    for (let i = 0; i < 200; i++) step()
+    const it = manager.vehicles[0]
+    manager.setMatch({ mode: 'tag', it })
+    let most = 0
+    for (let i = 0; i < 1500; i++) { step(); most = Math.max(most, manager.brainList.filter(b => b.gameTarget === it).length) }
+    expect(most).toBeGreaterThan(0)
+    expect(most).toBeLessThanOrEqual(2)
+    manager.dispose()
+  })
   it('hill: most bots go to the zone and stay in it', async () => {
     const { step, manager } = await setup(3)
     const zone = { x: 90, z: -70, radius: 14 }

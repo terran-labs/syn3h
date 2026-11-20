@@ -10,7 +10,8 @@
  *
  * Everything a player wrote is drawn with textContent, never as markup, and links are left as
  * plain text. Colour means identity in this game, so each name is drawn in its vehicle's tint,
- * lifted where a dark tint would vanish on the glass. Bots carry a small "bot" mark.
+ * lifted where a dark tint would vanish on the glass. Bots carry a small robot mark before
+ * the name (botIcon.ts).
  *
  * While the field has focus `input.typing` is set, which stops every driving key, the stick and
  * the gamepad (src/core/Input.ts). It is cleared on blur, however focus leaves.
@@ -19,6 +20,7 @@ import { CHAT_SPEAK_EVENT, type ChatChannel, type ChatLine } from '../../net/cha
 import { chatHideBots, chatOn, chatOverlay, chatShow, MAX_CHAT_LENGTH } from '../../../shared/chat'
 import { createSwitch } from '../inspector/switch'
 import { restoreChatOverlay } from './overlayPreference'
+import { botIcon } from './botIcon'
 import { chatLink } from './chatLink'
 import { params } from '../../../shared/params'
 import { touchLeftHanded as leftHanded } from '../TouchPreferences'
@@ -58,17 +60,38 @@ const SPEAKING_MS = 3500
 /** Key that opens chat: Y, the usual "say" key (Enter fires). */
 export const CHAT_KEY = 'KeyY'
 
-/** Make a tint readable on dark glass: keep its hue, raise its lightness if needed. */
+/**
+ * The surface a name must read on: a chat bubble (chat.css) over a bright daytime sky, the
+ * lightest place the bubble usually sits. The log's frosted card is darker, so a name that
+ * passes here passes there too.
+ */
+export const CHAT_NAME_SURFACE: readonly [number, number, number] = [66, 80, 95]
+/** WCAG AA for normal text. */
+export const CHAT_NAME_CONTRAST = 4.5
+
+const channel = (v: number) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }
+const luminance = ([r, g, b]: readonly number[]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+/** WCAG contrast ratio between two sRGB colours. */
+export function contrastRatio(a: readonly number[], b: readonly number[]): number {
+  const x = luminance(a), y = luminance(b)
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+}
+
+/**
+ * Make a player's tint readable as a name on a chat bubble: keep its hue and lift it towards
+ * white just far enough to reach AA contrast on CHAT_NAME_SURFACE. Light tints pass unchanged.
+ */
 export function legibleTint(color: string): string {
   const m = /^#([0-9a-f]{6})$/i.exec(color.trim())
   if (!m) return color
   const n = parseInt(m[1], 16)
-  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255
-  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
-  if (lum >= 0.45) return color
-  // Mix towards white until bright enough: plain sRGB is fine for a name label.
-  const t = Math.min(0.8, (0.45 - lum) / (1 - lum) + 0.12)
-  r = Math.round(r + (255 - r) * t); g = Math.round(g + (255 - g) * t); b = Math.round(b + (255 - b) * t)
+  const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  const mix = (t: number) => rgb.map((v) => Math.round(v + (255 - v) * t))
+  if (contrastRatio(rgb, CHAT_NAME_SURFACE) >= CHAT_NAME_CONTRAST) return color
+  // The least lift that passes, by bisection (white always passes, at about 8:1).
+  let lo = 0, hi = 1
+  for (let i = 0; i < 12; i++) { const t = (lo + hi) / 2; if (contrastRatio(mix(t), CHAT_NAME_SURFACE) >= CHAT_NAME_CONTRAST) hi = t; else lo = t }
+  const [r, g, b] = mix(hi)
   return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`
 }
 
@@ -381,14 +404,20 @@ export class ChatCard {
     row.className = `chat-line${line.system ? ' is-system' : ''}${line.bot ? ' is-bot' : ''}${line.mine ? ' is-mine' : ''}${fresh ? ' is-new' : ''}`
     row.dataset.seq = String(line.seq)
     if (line.system) { row.textContent = line.text; return row }
-    const name = document.createElement('button')
-    name.type = 'button'; name.className = 'chat-name'; name.dataset.from = String(line.from)
-    name.textContent = line.mine ? 'You' : line.name
+    // In the log the name opens the mute menu; over the game (the strip) it is plain text, as
+    // the strip takes no touches.
+    const inLog = tag === 'li'
+    const name = document.createElement(inLog ? 'button' : 'span')
+    if (name instanceof HTMLButtonElement) {
+      name.type = 'button'; name.title = line.mine ? '' : `Options for ${line.name}`
+      if (line.mine) name.disabled = true
+    }
+    name.className = 'chat-name'; name.dataset.from = String(line.from)
     name.style.color = legibleTint(line.color)
-    name.title = line.mine ? '' : `Options for ${line.name}`
-    if (line.mine) name.disabled = true
+    // A bot's name leads with the bot mark, in the same colour; screen readers hear "Bot".
+    if (line.bot) name.append(botIcon())
+    name.append(line.mine ? 'You' : line.name)
     row.append(name)
-    if (line.bot) { const mark = document.createElement('span'); mark.className = 'chat-bot'; mark.textContent = 'bot'; mark.setAttribute('aria-label', '(bot)'); row.append(mark) }
     const text = document.createElement('span'); text.className = 'chat-text'; text.textContent = line.text
     const time = document.createElement('time'); time.className = 'chat-time'; time.dateTime = new Date(line.wall).toISOString(); time.textContent = timeOf(line.wall)
     row.append(text, time)
@@ -429,9 +458,10 @@ export class ChatCard {
     const list = this.people.querySelector('ul')!
     const rows = this.options.roster().map((p) => {
       const li = document.createElement('li')
-      const name = document.createElement('span'); name.className = 'chat-name'; name.textContent = p.name; name.style.color = legibleTint(p.color)
+      const name = document.createElement('span'); name.className = 'chat-name'; name.style.color = legibleTint(p.color)
+      if (p.bot) name.append(botIcon())
+      name.append(p.name)
       li.append(name)
-      if (p.bot) { const mark = document.createElement('span'); mark.className = 'chat-bot'; mark.textContent = 'bot'; li.append(mark) }
       const muted = this.options.channel.muted.has(p.id)
       const b = document.createElement('button'); b.type = 'button'; b.className = 'chat-mute'; b.setAttribute('aria-pressed', String(muted))
       b.textContent = muted ? 'Muted' : 'Mute'; b.setAttribute('aria-label', `${muted ? 'Unmute' : 'Mute'} ${p.name}`)

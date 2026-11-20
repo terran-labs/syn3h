@@ -299,6 +299,8 @@ describe('the host\'s bots through a dropped connection', () => {
       bots: manager, id: 1, game: { host: 1 }, welcomed: true, conn: { state: 'open' },
       wasHost: false, localAfterFull: false, hostThroughDrop: false,
       botGear: new Map(), botKinds: new Map(), remotes: new Map(), uiDirty: false,
+      // Object.create bypasses the field initializers used by disconnect cleanup.
+      departing: new Map(), sessionDrops: 0,
       clock: { reset() {} }, raceBridge: { disconnect() {} }, resetGear() {}, event() {}, pingsSent: 0,
     })
     const previous = params.get('bots.count')!.value
