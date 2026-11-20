@@ -1,6 +1,6 @@
 import {hotExposureDim} from '../skins/hotExposure'
 import {headlightScale} from './headlights'
-import {type ConeHaze,MAX_CONES,createConeBatch,createConeHaze,headlightCones,hideUnusedCones,writeVehicleCones} from './cones'
+import {type ConeHaze,MAX_CONES,coneShapeFor,createConeBatch,createConeHaze,headlightCones,hideUnusedCones,writeVehicleCones} from './cones'
 import {hazeNow} from '../../world/weather/fog'
 import {activeFogBanks} from '../../world/weather/fogBanks'
 /** The beam's colour (the spot lights', effects/index.ts). */
@@ -203,7 +203,7 @@ class VehicleEffects {
   private readonly unlisten?:()=>void
   private readonly onTileShift:(e:TileShiftEvent)=>void
   private readonly buggy:boolean
-  constructor(private readonly world:EffectWorld,private readonly terrain:Terrain,private readonly vehicle:EffectsVehicle,local:boolean,sharedSpots?:T.SpotLight[]){
+  constructor(private readonly world:EffectWorld,private readonly terrain:Terrain,private readonly vehicle:EffectsVehicle,private readonly local:boolean,sharedSpots?:T.SpotLight[]){
     this.ownsSpots=!sharedSpots
     this.buggy=vehicle.kind.startsWith('buggy')
     this.root.name='Vehicle effects';vehicle.object.add(this.root);this.lastPosition.copy(vehicle.object.position)
@@ -248,11 +248,14 @@ class VehicleEffects {
   private get events(){return this.vehicle.object as T.Object3D<VehicleObjectEvents>}
   /** This vehicle's headlight cones (cones.ts) at `night` (the beam ramp times the cone setting). */
   writeCones(batch:T.InstancedMesh,index:number,night:number,camera:T.Vector3):number {
-    // Buggies only for now: other kinds' lamps sit and point differently (the jet's beam lands on
-    // its wing roots, the hovercraft's pools under it) and join with their own frames.
-    if(!this.buggy)return index
+    // Each kind's beam has its own shape (cones.ts CONE_SHAPES). Every buggy draws one; the
+    // hovercraft and jet only for the player's own vehicle, since bots' lamps belong to the
+    // headlights lane, which can enable them per kind through the same shapes and batch.
+    const shape=coneShapeFor(this.vehicle.kind)
+    if(!shape||(!this.buggy&&!this.local))return index
     this.root.updateWorldMatrix(true,true)
-    return writeVehicleCones(batch,index,this.vehicle.object,this.lampPoints,CONE_COLOUR,night*headlightScale().beam,this.lampMatrix,camera)
+    // The lamps' brightness is unchanged: the buggy's follows its headlight setting, others' are 1.
+    return writeVehicleCones(batch,index,this.vehicle.object,this.lampPoints,CONE_COLOUR,night*(this.buggy?headlightScale().beam:1),this.lampMatrix,camera,shape)
   }
   writeLamps(batch:T.InstancedMesh,index:number):number {
     this.root.updateWorldMatrix(true,true)

@@ -27,6 +27,7 @@
  * choices are a few dozen height samples a second per rescuer. No per-frame work here.
  */
 import type { InputState } from '../../core/Input'
+import { PlayTug } from '../play/PlayTug'
 import type { Vehicle } from '../../vehicles/Vehicle'
 import { BOT_ID_BASE, MODE_TAG } from '../../../shared/protocol'
 import { botRescue } from '../../../shared/chat'
@@ -486,6 +487,30 @@ export class HostRescue {
     this.onEvent({ kind: 'dispatch', bot: id, stuck: r.stuck })
     brain.directive = { kind: 'control', step: (dt: number, input: InputState) => { tow.step(dt, input); return !tow.finished } }
     return true
+  }
+
+  /**
+   * A playful tug (src/bots/play/PlayDirector.ts, PlayTug.ts): bot `id` drives up beside
+   * `target`, hooks it, reels for `hold` seconds along `pull`, then lets go. Null when the bot is
+   * busy (a rescue, a request) or cannot pilot. Cancel lets go at once.
+   */
+  tug(id: number, target: Vehicle, pull: { x: number; z: number }, hold = 5): { readonly finished: boolean; cancel(): void } | null {
+    const brain = this.brain(id), v = this.vehicle(id)
+    if (!brain || !v || brain.directive) return null
+    const pilot = createPilot(v, this.terrain)
+    if (!pilot) return null
+    const tow = new PlayTug(v, target, this.gearFor(id, v), pilot, pull, hold)
+    let cancelled = false
+    const directive = { kind: 'control' as const, step: (dt: number, input: InputState) => { if (cancelled) return false; tow.step(dt, input); return !tow.finished } }
+    brain.directive = directive
+    return {
+      get finished() { return cancelled || tow.finished },
+      cancel: () => {
+        if (cancelled) return
+        cancelled = true; tow.letGo()
+        if (brain.directive === directive) { brain.directive = null; brain.mind?.reset() }
+      },
+    }
   }
 
   /** The grapple through the bots' gear hooks: the same gear, limits and network as a player's. */

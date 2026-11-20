@@ -295,6 +295,21 @@ export class BanterDirector {
     return when
   }
 
+  /**
+   * A line for the bots' play (src/bots/play): queued now and true when it will be said, inside
+   * the room's chatter budget. Chatter off, quiet asked for, or the budget spent: false, and the
+   * play does not happen (no silent grabs). `exempt`: the one kind line after a stop, which goes
+   * past the budget as an answer does (it is still not said with chatter off).
+   */
+  announce(bot: number, text: string, exempt = false): boolean {
+    const s = this.bots.get(bot), now = this.world.now()
+    if (!s || !this.chatterOn || (!exempt && now < this.quietUntil)) return false
+    if (!exempt && !this.budget.take(now, this.queue.length === 0, botChatterAmount.value, this.level)) return false
+    this.queue.push({ at: now, bot, text, key: exempt ? 'play.ack' : 'play.line' })
+    this.queue.sort((a, b) => a.at - b.at)
+    return true
+  }
+
   private readonly budget = new ChatterBudget()
   private allowed(key: string): boolean {
     if (exempt(key) || !this.chatterOn) return true
@@ -676,7 +691,9 @@ export class BanterDirector {
       t = say('req.switch', { you: prior.name }, t)
     }
     const r = this.r()
-    if (r < v.contrary) {
+    // A request to stop or to be left alone is never answered with the opposite (the Foreman,
+    // 18 November 2026): a contrary bot may tease about anything else.
+    if (r < v.contrary && kind !== 'stop' && kind !== 'scatter') {
       // The contrarian does the opposite, briefly.
       const opposite: Partial<Record<IntentKind, Directive>> = {
         follow: { kind: 'avoid', player: player.id, seconds: 8 }, come: { kind: 'avoid', player: player.id, seconds: 8 },
