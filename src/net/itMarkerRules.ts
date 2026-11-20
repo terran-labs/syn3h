@@ -60,10 +60,10 @@ export function itMarkerTarget<V>(tagMode: boolean, it: number, vehicleOf: (id: 
   return vehicleOf(it) ?? null
 }
 
-/** Highest your own marker may be raised to clear the middle of the view, metres. */
-export const CLEAR_LIFT_MAX = 30
+/** Highest your own marker may be raised to clear the middle of the view, metres: the length of its beam. */
+export const CLEAR_LIFT_MAX = 40
 /** Clearance kept above the circle, as a share of its radius; the fade runs across it. */
-export const CLEAR_MARGIN = 0.25
+export const CLEAR_MARGIN = 0.5
 /** How far below the marker's centre its lowest point is, metres (the gem's point, the bob, the halo). */
 export const MARKER_BOTTOM = 1.7
 
@@ -99,4 +99,32 @@ export function clearOfCentre(base: number, radius: number, screenOf: (lift: num
   let lo = base, hi = top
   for (let i = 0; i < 18; i++) { const mid = (lo + hi) / 2; if (gap(mid) >= want) hi = mid; else lo = mid }
   return { lift: hi, opacity: 1 }
+}
+
+/** Seconds an eased jump takes to close most of the way (about two thirds). */
+export const LIFT_EASE = 0.1
+
+/**
+ * One frame of your own marker: where it is drawn and how much of it shows. While it shows in
+ * full, the clear lift is followed at once, however fast the camera moves, unless the way there
+ * passes through the circle: with the car off to one side and the camera steeply up, the nearest
+ * lift that clears it can switch from beside it to above it. That jump is eased instead, and so
+ * is any move while it is faded, so it fades back in where it lands rather than appearing there.
+ * How much shows is measured where it is drawn, so on its way through the circle it is not seen:
+ * it never shows over the centre, and never pops. `last` is last frame's result, or null.
+ */
+export function stepOwnMarker(last: { lift: number; opacity: number } | null, base: number, radius: number, screenOf: (lift: number) => readonly [number, number] | null, dt: number): { lift: number; opacity: number } {
+  const target = clearOfCentre(base, radius, screenOf).lift
+  const shown = last?.lift ?? null
+  const delta = shown === null ? 0 : target - shown
+  let ease = last !== null && last.opacity < 0.999
+  if (shown !== null && radius > 0) for (let k = 1; k < 8 && !ease; k++) {
+    const p = screenOf(shown + delta * k / 8)
+    ease = p !== null && clearance(p[0], p[1], radius) < 0
+  }
+  const lift = shown === null || !ease ? target : shown + delta * (1 - Math.exp(-Math.max(0, dt) / LIFT_EASE))
+  if (!(radius > 0)) return { lift, opacity: 1 }
+  const p = screenOf(lift)
+  const x = p ? Math.min(1, Math.max(0, clearance(p[0], p[1], radius) / (radius * CLEAR_MARGIN))) : 1
+  return { lift, opacity: x * x * (3 - 2 * x) }
 }

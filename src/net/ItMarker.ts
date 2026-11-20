@@ -17,7 +17,7 @@ import { attribute, float, min, mix, normalView, positionViewDirection, select, 
 import type { Game, System } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { hotExposureDim } from '../vehicles/skins/hotExposure'
-import { clearOfCentre, itMarkerVisible, localMarkerLift, MARKER_BOTTOM, ownMarkerClear, REMOTE_LIFT } from './itMarkerRules'
+import { stepOwnMarker, itMarkerVisible, localMarkerLift, MARKER_BOTTOM, ownMarkerClear, REMOTE_LIFT } from './itMarkerRules'
 
 /** Gem: sides round the waist, waist radius, crown and pavilion heights (a long point down). */
 const GEM_SIDES = 6
@@ -149,6 +149,8 @@ export class ItMarker implements System {
   /** How much of the marker shows: below 1 only for your own, where it cannot clear the centre. */
   private readonly fade: ReturnType<typeof buildItMarkerMaterial>['fade']
   private readonly probe = new THREE.Vector3()
+  /** Your own marker's lift and opacity last frame (stepOwnMarker); null when not shown. */
+  private own: { lift: number; opacity: number } | null = null
   readonly mesh: THREE.Mesh
   private readonly cam = new THREE.Vector3()
   private t = 0
@@ -177,7 +179,7 @@ export class ItMarker implements System {
     }
     const distance = Math.hypot(horizontal, rise)
     this.mesh.visible = itMarkerVisible(v, this.local, distance)
-    if (!v || !this.mesh.visible) return
+    if (!v || !this.mesh.visible) { this.own = null; return }
     const bob = Math.sin(this.t * 2.2) * 0.18
     let lift = REMOTE_LIFT + bob, opacity = 1
     if (v === this.local) {
@@ -185,14 +187,14 @@ export class ItMarker implements System {
       // view, where you aim (clearOfCentre). Measured on this frame's camera.
       camera.updateMatrixWorld()
       const p = v.object.position, h = Math.max(1, this.game.renderer.domElement.clientHeight), w = Math.max(1, this.game.renderer.domElement.clientWidth)
-      const clear = clearOfCentre(localMarkerLift(horizontal, rise, camera.fov) + bob, ownMarkerClear.value, l => {
+      const clear = this.own = stepOwnMarker(this.own, localMarkerLift(horizontal, rise, camera.fov) + bob, ownMarkerClear.value, l => {
         const q = this.probe.set(p.x, p.y + l - MARKER_BOTTOM, p.z).applyMatrix4(camera.matrixWorldInverse)
         if (q.z > -0.05) return null
         q.applyMatrix4(camera.projectionMatrix)
         return [q.x * w / (2 * h), q.y / 2]
-      })
+      }, dt)
       lift = clear.lift; opacity = clear.opacity
-    }
+    } else this.own = null
     this.fade.value = opacity
     this.mesh.visible = opacity > 0.01
     this.mesh.position.copy(v.object.position)

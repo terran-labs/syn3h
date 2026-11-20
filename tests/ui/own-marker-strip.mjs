@@ -30,16 +30,9 @@ try {
       const s = window.syn3h, n = window.syn3hNet, p = s.params
       p.set('gfx.auto', false); p.set('daydream.seconds', 0); p.set('bots.count', 0); p.set('sun.dayLength', 0); p.set('sun.timeOfDay', 14)
       for (const node of document.body.children) if (node.tagName !== 'CANVAS' && node.tagName !== 'SCRIPT') node.style.visibility = 'hidden'
-      // You are "it", whatever the room says: the marker reads target and local each frame.
-      const marker = n.marker, update = marker.update.bind(marker)
-      marker.update = dt => { marker.target = marker.local = s.player; update(dt) }
-      // The clear circle, outlined over the canvas.
-      const ring = document.createElement('div')
-      ring.style.cssText = 'position:fixed;left:50%;top:50%;border:2px solid rgba(255,40,40,.9);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:99'
-      document.documentElement.appendChild(ring)
-      window.__ring = ring
-      // The camera: behind the car at `back` metres, `up` above, looking `pitch` degrees above level.
-      s.game.add({ update() {
+      // The camera: behind the car at `back` metres, `up` above, looking `pitch` degrees above
+      // level. Placed just before the marker updates, so it solves against the camera drawn.
+      const placeCam = () => {
         const c = window.__cam
         if (!c) return
         const v = s.player.object.position, cam = s.game.camera, h = (window.__heading ??= Math.atan2(cam.position.x - v.x, cam.position.z - v.z))
@@ -47,7 +40,17 @@ try {
         const r = c.pitch * Math.PI / 180
         cam.lookAt(cam.position.x - Math.sin(h) * Math.cos(r), cam.position.y + Math.sin(r), cam.position.z - Math.cos(h) * Math.cos(r))
         cam.updateMatrixWorld()
-      } })
+      }
+      // You are "it", whatever the room says: the marker reads target and local each frame.
+      const marker = n.marker, update = marker.update.bind(marker)
+      marker.update = (dt, alpha) => { marker.target = marker.local = s.player; placeCam(); update(dt, alpha) }
+      // The clear circle, outlined over the canvas.
+      const ring = document.createElement('div')
+      ring.style.cssText = 'position:fixed;left:50%;top:50%;border:2px solid rgba(255,40,40,.9);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:99'
+      document.documentElement.appendChild(ring)
+      window.__ring = ring
+      // And again after everything else, so nothing later in the frame moves it.
+      s.game.add({ update: placeCam })
     })
     await page.waitForTimeout(3000)
     for (const back of DISTANCES) for (const [i, pitch] of PITCHES.entries()) {

@@ -9,7 +9,7 @@
  * screen's shape does not enter.
  */
 import { describe, expect, it } from 'vitest'
-import { CLEAR_MARGIN, clearance, clearOfCentre, localMarkerLift, MARKER_BOTTOM } from '../../src/net/itMarkerRules'
+import { CLEAR_MARGIN, clearance, clearOfCentre, localMarkerLift, MARKER_BOTTOM, stepOwnMarker } from '../../src/net/itMarkerRules'
 
 const R = 0.12, FOV = 60
 function camera(back: number, up: number, pitchDeg: number, side = 0) {
@@ -36,15 +36,22 @@ describe('your own it marker and the middle of the view', () => {
         expect(lift).toBeGreaterThanOrEqual(base)
       }
     })
-    it(`moves smoothly as the camera pitches (${side} m to the side)`, () => {
-      for (const back of [6, 14, 30]) {
+    // Frame by frame, as the game draws it, with the camera pitching at up to 45 degrees a
+    // second: never seen over the centre, and no visible jump or blink.
+    it(`moves without popping as the camera pitches (${side} m to the side)`, () => {
+      const DT = 1 / 60
+      for (const back of [6, 14, 30]) for (const speed of [20, 45]) for (const dir of [1, -1]) {
         let last: { lift: number; opacity: number } | null = null
-        for (let pitch = -50; pitch <= 50; pitch += 0.05) {
+        for (let i = 0; i <= 100 / speed / DT; i++) {
+          const pitch = dir * (-50 + i * speed * DT)
           const screen = camera(back, 3, pitch, side)
-          const now = clearOfCentre(localMarkerLift(back, 3, FOV), R, screen)
+          const now = stepOwnMarker(last, localMarkerLift(back, 3, FOV), R, screen, DT)
+          const at = `back ${back} speed ${speed} pitch ${pitch.toFixed(2)}`
+          const p = screen(now.lift)
+          if (p && now.opacity > 0) expect(clearance(p[0], p[1], R), at).toBeGreaterThan(0)
           if (last) {
-            expect(Math.abs(now.lift - last.lift), `back ${back} pitch ${pitch.toFixed(2)}`).toBeLessThan(0.5)
-            expect(Math.abs(now.opacity - last.opacity)).toBeLessThan(0.1)
+            expect(Math.abs(now.lift - last.lift) * Math.min(now.opacity, last.opacity), at).toBeLessThan(1.2)
+            expect(Math.abs(now.opacity - last.opacity), at).toBeLessThan(0.35)
           }
           last = now
         }
