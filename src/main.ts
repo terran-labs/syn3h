@@ -132,7 +132,7 @@ async function main(): Promise<void> {
         ? Array.from(sessionNetwork.players.values()).filter(player => player.bot).map(player => player.kind)
         : bots.vehicles.map(bot => bot.kind)
       return diagnosticReport(game.quality.getPerformanceSnapshot(), slot.current.kind, botKinds, currentWorldName(), currentPlanet().label,
-        sessionNetwork?.diagnosticLine(), game.quality.levelChanges)
+        sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine)
     },
     getPerformanceSnapshot: () => game.quality.getPerformanceSnapshot(),
     subscribePerformance: listener => game.quality.subscribePerformance(listener),

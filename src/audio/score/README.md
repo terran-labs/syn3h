@@ -108,9 +108,20 @@ Why it costs what it does:
 
 `audio.score.lite` builds a cheaper set of instruments: no sung choir (filtered saws stand
 in), no shimmer, halo or endless rise, fewer oscillators, and the algorithmic hall. The music
-is the same. The quality system may set it, and the score sets it itself after two strained
-readings from the browser's audio counters (`renderCapacity` or `playbackStats`), where a
-browser has them.
+is the same. The quality system may set it, and the score sets it itself, for the rest of
+the session, after two strained readings in a row from the browser's audio counters, where a
+browser has them: `renderCapacity` (an underrun ratio over 0.01 or a load over 75%), or
+`playbackStats`, polled every 2 s (2 or more new underrun events). Chrome 157 has
+`playbackStats` and not `renderCapacity`. The step-down is a crossfade: the full set fades out
+over 0.4 s as the lighter set fades in over 0.6 s. Copy diagnostics has a Music line with the
+tier, whether the step-down fired and the underrun count; `tests/audio/score-stepdown.test.ts`
+pins the rule.
+
+**Silencing idle sections (measured 20 November 2026, not built).** Sleeping the instruments a
+passage leaves silent was to be built only if the lighter tier, which drops most of them, saved
+2 points of a core or more in play. It saves 1.46 to 1.57 points while driving and 2.4 to 2.8
+parked or in the lobby, so it was not built. If it is ever wanted, the cheapest subset is the
+rise bank, the tag voices and the drum one-shots.
 
 ## Tuning
 

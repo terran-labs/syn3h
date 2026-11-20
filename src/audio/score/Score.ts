@@ -119,12 +119,26 @@ const SURGE_COOLDOWN = 40
 /** Move `value` toward `target` with a time constant in seconds. */
 const follow = (value: number, target: number, tau: number, dt: number) => value + (target - value) * (1 - Math.exp(-dt / tau))
 
+/** Whether the score stepped itself down to the lighter tier this session (kept across audio graph rebuilds). */
+let steppedDown = false
+
+/** One line for Copy diagnostics: the music tier in use, whether the step-down fired, the underrun count. */
+export function scoreReportLine(score: Score | undefined): string {
+  if (!score) return 'Music: not started'
+  const tier = score.synth.lite ? 'lighter' : 'full'
+  const why = steppedDown ? ', stepped down this session under audio strain' : scoreLite.value ? ', lighter by setting' : ''
+  const underruns = score.underruns === null ? 'underruns not reported' : `${score.underruns} underrun events`
+  return `Music: ${tier} score${why}; ${underruns}`
+}
+
 export class Score {
   /** The instruments. Replaced when the lighter tier is switched on or off, so read it afresh each time. */
   synth: ScoreSynth
   private strain = 0
   private nextPoll = 0
   private underrunEvents = -1
+  /** Underrun events the browser reported on this context at the last poll, or null where it reports none. */
+  underruns: number | null = null
   /** The smoothed mood the music is following, for the lab and for tests. */
   readonly mood: Mood & { depth: number; heat: number; energy: number } = { intensity: 0, lift: 0, darkness: 0.3, triumph: 0, depth: 0, heat: 0, energy: 0 }
   private composer: Composer
@@ -222,7 +236,7 @@ export class Score {
   /** Step down to the lighter instruments after two strained readings in a row. */
   private strained(bad: boolean): void {
     this.strain = this.active && bad ? this.strain + 1 : 0
-    if (this.strain >= 2 && !scoreLite.value) params.set(scoreLite.def.id, true)
+    if (this.strain >= 2 && !scoreLite.value) { params.set(scoreLite.def.id, true); steppedDown = true }
   }
   /** Chrome's other counter: output frames the device was left without. Polled every two seconds. */
   private pollUnderruns(now: number): void {
@@ -232,6 +246,7 @@ export class Score {
     const events = stats.underrunEvents ?? stats.fallbackFramesEvents ?? 0
     if (this.underrunEvents >= 0) this.strained(events - this.underrunEvents >= 2)
     this.underrunEvents = events
+    this.underruns = events
   }
 
   /** Space weather: whistlers come more often the higher you fly; the chorus only in open air. */

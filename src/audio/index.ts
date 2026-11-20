@@ -8,7 +8,7 @@ import { synthMaterialize, synthZorbPulse, type MaterializeVoice } from './Vehic
 import type { SurfaceKind } from '../world/terrain/surface'
 import { WorldAudio, lavaProximity, type AudioTerrain } from './WorldAudio'
 import type { Vehicle } from '../vehicles/Vehicle'
-import { Score, scoreSeed, type MatchMood } from './score/Score'
+import { Score, scoreReportLine, scoreSeed, type MatchMood } from './score/Score'
 import { applySubmerge } from './score/ScoreSynth'
 import { WeatherWind } from './weatherWind'
 import { senseConvoy, senseRelief, type ConvoyVoice } from './scoreSenses'
@@ -435,6 +435,8 @@ export class GameAudio implements System {
     stop=synthCue(this.context,out.node,cue,this.engine!.noise,()=>{this.cueStops.delete(stop);out.dispose()})
     this.cueStops.add(stop)
   }
+  /** The music line of Copy diagnostics. */
+  get musicReportLine(): string { return scoreReportLine(this.score) }
   get diagnostics(){return {state:this.state,score:this.score?{playing:this.score.playing,mode:this.score.mode,tempo:Math.round(this.score.tempo),stalls:this.score.stalls,mood:{...this.score.mood},nodes:this.score.synth.nodeCount}:null,remoteVoices:this.remote.size,engineNodes:(this.engine?.nodeCount??0)+(this.weatherWind?.nodeCount??0)+[...this.remote.values()].reduce((n,v)=>n+v.engine.nodeCount,0),oneShots:this.voices.size+this.cueStops.size,trackedVehicles:this.events.size}}
   private readVehicle(v:Vehicle):MotionAudio {
     const velocity=v.body.linvel(),p=v.object.position,ground=this.terrain?.heightAt(p.x,p.z)??p.y
