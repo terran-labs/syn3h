@@ -62,8 +62,8 @@
 /* Scoped to the in-game panels, so the lobby keeps its own buttons. Card headers and the
    editable numbers have their own rules below. :where keeps this just above exploration.css's
    all-buttons rule and below every specific rule here, such as .is-on. */
-.syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num)) { background: none; border: 1px solid var(--s3-line-quiet); border-radius: 999px; box-shadow: none; text-shadow: var(--halo-under); font-weight: 400; letter-spacing: .04em; -webkit-backdrop-filter: none; backdrop-filter: none; }
-.syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num)):hover { background: rgb(205 205 205 / .07); border-color: var(--s3-line); box-shadow: var(--halo-glow); }
+.syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num, .liquid-glass)) { background: none; border: 1px solid var(--s3-line-quiet); border-radius: 999px; box-shadow: none; text-shadow: var(--halo-under); font-weight: 400; letter-spacing: .04em; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num, .liquid-glass)):hover { background: rgb(205 205 205 / .07); border-color: var(--s3-line); box-shadow: var(--halo-glow); }
 .syn3h-shell.exploration-ui button:focus-visible, .syn3h-shell.exploration-ui input:focus-visible, .syn3h-shell.exploration-ui select:focus-visible { outline: 1px solid var(--s3-accent-2); outline-offset: 3px; }
 /* Fields draw as an underline; the top row's search (.wi-glass) is drawn as a card instead. */
 .syn3h-shell.exploration-ui .world-inspector :is(input:not([type=range]):not([type=checkbox]):not([type=color]):not(.wi-glass), select, textarea) { color: var(--s3-ink); background: none; border: 0; border-bottom: 1px solid var(--s3-line-quiet); border-radius: 0; box-shadow: none; }
@@ -176,11 +176,13 @@
 /* The minimap ring and its N: hud-column.css, with the rest of the left column. */
 /* The touch panels switch: a floating pill, clear of the screen edge. */
 .syn3h-shell.exploration-ui .hud-navigation { right: var(--edge-right); }
-.syn3h-shell.exploration-ui .hud-navigation .inspector-toggle { border: 1px solid var(--s3-line); border-radius: 999px; background: var(--halo-fill); box-shadow: var(--halo-glow), var(--halo-spread); font: 500 11px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
+.syn3h-shell.exploration-ui .hud-navigation .inspector-toggle { font: 500 11px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
 
 /* Touch controls: hairline rings, no fills to speak of, small letter-spaced captions. */
-.syn3h-shell.exploration-ui .touch-controls button, .touch-controls button { border: 1px solid var(--s3-line, rgb(231 231 231 / .5)); border-radius: 50%; background: radial-gradient(closest-side, rgb(2 9 15 / .34), rgb(2 9 15 / .16)); box-shadow: 0 0 6px rgb(205 205 205 / .12); color: #f3fbff; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
-.touch-controls button:active { background: rgb(205 205 205 / .1); border-color: rgb(230 230 230 / .9); box-shadow: inset 0 0 8px rgb(205 205 205 / .2), 0 0 6px rgb(205 205 205 / .2); }
+/* Their surface is glass (glass.css); a button not yet given the class keeps the hairline ring. */
+.syn3h-shell.exploration-ui .touch-controls button, .touch-controls button { border-radius: 50%; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
+.syn3h-shell.exploration-ui .touch-controls button:not(.liquid-glass), .touch-controls button:not(.liquid-glass) { border: 1px solid var(--s3-line, rgb(231 231 231 / .5)); background: radial-gradient(closest-side, rgb(2 9 15 / .34), rgb(2 9 15 / .16)); box-shadow: 0 0 6px rgb(205 205 205 / .12); color: #f3fbff; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.touch-controls button:not(.liquid-glass):active { background: rgb(205 205 205 / .1); border-color: rgb(230 230 230 / .9); box-shadow: inset 0 0 8px rgb(205 205 205 / .2), 0 0 6px rgb(205 205 205 / .2); }
 .touch-controls .touch-stick { border: 1px solid rgb(236 236 236 / .4); background: radial-gradient(circle, transparent 66%, rgb(205 205 205 / .06)); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .touch-controls .touch-knob { border: 1px solid rgb(255 255 255 / .85); background: radial-gradient(closest-side, rgb(255 255 255 / .14), rgb(255 255 255 / .03)); box-shadow: 0 0 6px rgb(205 205 205 / .25); }
 
@@ -304,8 +306,9 @@ html .syn3h-shell.exploration-ui[data-ui-frost="off"] :is(.lobby-panels, .in-pla
 .syn3h-shell.exploration-ui .in-play-about .shell-credits { margin: 16px 0 24px; text-align: left; }
 .syn3h-shell.exploration-ui .in-play-about .shell-credits summary { min-height: 44px; align-content: center; color: var(--s3-accent-2); cursor: pointer; }
 .syn3h-shell.exploration-ui .in-play-about .shell-credits li { margin: 8px 0; line-height: 1.5; }
-.syn3h-shell.exploration-ui button.panel-back { display: inline-flex; justify-content: center; align-items: center; gap: 16px; box-sizing: border-box; min-width: 164px; min-height: 48px; max-width: 100%; padding: 10px 24px; border: 1px solid var(--s3-line); border-radius: 999px; color: var(--s3-accent-2); background: rgb(205 205 205 / .06); }
-.syn3h-shell.exploration-ui button.panel-back::before { content: none; }
+.syn3h-shell.exploration-ui button.panel-back { display: inline-flex; justify-content: center; align-items: center; gap: 16px; box-sizing: border-box; min-width: 164px; min-height: 48px; max-width: 100%; padding: 10px 24px; }
+.syn3h-shell.exploration-ui button.panel-back:not(.liquid-glass) { border: 1px solid var(--s3-line); border-radius: 999px; color: var(--s3-accent-2); background: rgb(205 205 205 / .06); }
+.syn3h-shell.exploration-ui button.panel-back:not(.liquid-glass)::before { content: none; }
 /* The in-play guide: the lobby About (same glass, content and rules above) as a modal over
  * the world. Only its frame is its own: a sticky header with Back, and a scrolling body. */
 .syn3h-shell.exploration-ui .in-play-about { box-sizing: border-box; width: min(900px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; color: var(--s3-ink); overflow: auto; overscroll-behavior: contain; }
@@ -318,9 +321,8 @@ html .syn3h-shell.exploration-ui[data-ui-frost="off"] :is(.lobby-panels, .in-pla
 html .syn3h-shell.exploration-ui:is([data-glass], *) .in-play-about { background: rgb(3 7 12 / .95); }
 .syn3h-shell.exploration-ui .in-play-about-body { padding: 24px 36px; text-align: left; }
 /* While paused, About sits low on the Paused veil, above it. */
-.syn3h-shell .pause-about { position: fixed; z-index: 61; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%); min-height: 44px; max-width: calc(100vw - 32px); padding: 10px 24px; border: 1px solid var(--s3-line); border-radius: 999px; color: var(--s3-accent-2); background: rgb(3 6 10 / .9); }
+.syn3h-shell .pause-about { position: fixed; z-index: 61; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%); min-height: 44px; max-width: calc(100vw - 32px); padding: 10px 24px; }
 .syn3h-shell .pause-about[hidden] { display: none; }
-.syn3h-shell .pause-about:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 4px; }
 /* Phones, portrait and landscape: one header row of 56px, title left and a compact Back. */
 @media (max-width: 600px), (max-height: 550px) {
   .syn3h-shell.exploration-ui .in-play-about > header { flex-wrap: nowrap; box-sizing: border-box; height: 56px; padding: 6px 8px 6px 18px; }

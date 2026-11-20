@@ -77,6 +77,7 @@ import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
 import './hud-column.css'
+import './glass.css'
 
 /**
  * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
@@ -1700,17 +1701,20 @@ export class Shell implements System {
     return { galaxyLive: this.galaxy?.live ?? false, galaxyFrames: this.galaxy?.frames ?? 0, planetMaps: this.galaxy?.painted ?? 0 }
   }
   /**
-   * Every button is terranlabs.com's glass button (.liquid-glass in shell.css), except the
-   * quiet text links. This also carries that site's GlassShine: while the pointer is over a
+   * Every button is the game's glass button (.liquid-glass in glass.css), except the quiet text
+   * links, the Paused veil (a full-screen button) and the panels' rows and switches. This also carries that site's GlassShine: while the pointer is over a
    * glass button, the bright side of its one-pixel rim turns to face the pointer, and settles
    * back when the pointer leaves. Nothing is drawn on the face of the button.
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .lobby-gear-dock *, .syn3h-advanced *, .world-inspector *, .exit-confirm *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
+    // In the panels, only the two plain actions are buttons in this sense; the rest are rows, switches and choices.
+    for (const button of this.element.querySelectorAll<HTMLElement>('.rail-invite, .rail-about')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
-    const REST = 205
+    // Upper left, where the light strikes at rest (glass.css).
+    const REST = 315
     let current: HTMLElement | null = null
     // Kept unwrapped (it may pass 360) so the CSS transition always takes the short way round.
     let angle = REST
