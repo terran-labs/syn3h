@@ -63,10 +63,10 @@ try {
       const m = await page.evaluate(() => {
         const n = window.syn3hNet, mk = n.marker, s = window.syn3h
         const at = mk.mesh.position.clone().project(s.game.camera)
-        return { lift: mk.mesh.position.y - s.player.object.position.y, opacity: mk.fade.value, visible: mk.mesh.visible, screenY: at.y / 2 }
+        return { lift: mk.mesh.position.y - s.player.object.position.y, opacity: mk.fade.value, beam: mk.beam.value, visible: mk.mesh.visible, screenY: at.y / 2 }
       })
       await writeFile(`${out}/raw/${device}-${back}-${i}.png`, await page.screenshot())
-      summary.push(`${device} ${back} m, pitch ${pitch}: lift ${m.lift.toFixed(2)} m, opacity ${m.opacity.toFixed(2)}, marker centre ${(m.screenY * 100).toFixed(1)}% of height above the middle`)
+      summary.push(`${device} ${back} m, pitch ${pitch}: lift ${m.lift.toFixed(2)} m, opacity ${m.opacity.toFixed(2)}, beam ${m.beam.toFixed(2)}, marker centre ${(m.screenY * 100).toFixed(1)}% of height above the middle`)
       await writeFile(`${out}/raw/${device}-${back}-${i}.json`, JSON.stringify({ pitch, ...m }))
     }
     // One sheet per device: a row per distance, a frame per pitch.
@@ -75,7 +75,7 @@ try {
       const cells = []
       for (const [i] of PITCHES.entries()) {
         const m = JSON.parse(await readFile(`${out}/raw/${device}-${back}-${i}.json`, 'utf8'))
-        cells.push(`<figure><img src="data:image/png;base64,${(await readFile(`${out}/raw/${device}-${back}-${i}.png`)).toString('base64')}"><figcaption>pitch ${m.pitch}°: lift ${m.lift.toFixed(1)} m, opacity ${m.opacity.toFixed(2)}</figcaption></figure>`)
+        cells.push(`<figure><img src="data:image/png;base64,${(await readFile(`${out}/raw/${device}-${back}-${i}.png`)).toString('base64')}"><figcaption>pitch ${m.pitch}°: lift ${m.lift.toFixed(1)} m, opacity ${m.opacity.toFixed(2)}, beam ${m.beam.toFixed(2)}</figcaption></figure>`)
       }
       rows.push(`<div style="display:flex;align-items:center"><b style="width:70px;padding-left:8px">${back} m</b>${cells.join('')}</div>`)
     }
