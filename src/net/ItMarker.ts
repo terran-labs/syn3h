@@ -17,7 +17,7 @@ import { attribute, float, min, mix, normalView, positionViewDirection, select, 
 import type { Game, System } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { hotExposureDim } from '../vehicles/skins/hotExposure'
-import { stepOwnMarker, itMarkerVisible, localMarkerLift, MARKER_BOTTOM, ownMarkerClear, REMOTE_LIFT } from './itMarkerRules'
+import { type OwnMarker, stepOwnMarker, itMarkerVisible, localMarkerLift, MARKER_BOTTOM, ownMarkerClear, REMOTE_LIFT } from './itMarkerRules'
 
 /** Gem: sides round the waist, waist radius, crown and pavilion heights (a long point down). */
 const GEM_SIDES = 6
@@ -149,8 +149,8 @@ export class ItMarker implements System {
   /** How much of the marker shows: below 1 only for your own, where it cannot clear the centre. */
   private readonly fade: ReturnType<typeof buildItMarkerMaterial>['fade']
   private readonly probe = new THREE.Vector3()
-  /** Your own marker's lift and opacity last frame (stepOwnMarker); null when not shown. */
-  private own: { lift: number; opacity: number } | null = null
+  /** Your own marker last frame (stepOwnMarker); null when not shown. */
+  private own: OwnMarker | null = null
   readonly mesh: THREE.Mesh
   private readonly cam = new THREE.Vector3()
   private t = 0

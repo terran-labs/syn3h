@@ -9,7 +9,7 @@
  * screen's shape does not enter.
  */
 import { describe, expect, it } from 'vitest'
-import { CLEAR_MARGIN, clearance, clearOfCentre, localMarkerLift, MARKER_BOTTOM, stepOwnMarker } from '../../src/net/itMarkerRules'
+import { CLEAR_MARGIN, clearance, clearOfCentre, localMarkerLift, MARKER_BOTTOM, type OwnMarker, stepOwnMarker } from '../../src/net/itMarkerRules'
 
 const R = 0.12, FOV = 60
 function camera(back: number, up: number, pitchDeg: number, side = 0) {
@@ -24,7 +24,7 @@ function camera(back: number, up: number, pitchDeg: number, side = 0) {
 }
 
 describe('your own it marker and the middle of the view', () => {
-  for (const side of [0, 1.5, 4]) {
+  for (const side of [0, 1.5, 3, 4]) {
     it(`never shows over the centre at any pitch or zoom (${side} m to the side)`, () => {
       for (const back of [4, 8, 14, 25, 45]) for (const up of [1, 3, 6]) for (let pitch = -60; pitch <= 60; pitch += 0.5) {
         const screen = camera(back, up, pitch, side)
@@ -37,20 +37,25 @@ describe('your own it marker and the middle of the view', () => {
       }
     })
     // Frame by frame, as the game draws it, with the camera pitching at up to 45 degrees a
-    // second: never seen over the centre, and no visible jump or blink.
+    // second: never seen over the centre, and no visible jump or blink. A jump is how far the
+    // change of lift moves the marker on screen, seen through this frame's camera: holding its
+    // place while the camera pitches takes about a frame's worth of the camera's own turn (some
+    // 1.3% of the screen's height at 45 degrees a second); the 22 m jump this guards against is
+    // many times that.
     it(`moves without popping as the camera pitches (${side} m to the side)`, () => {
       const DT = 1 / 60
-      for (const back of [6, 14, 30]) for (const speed of [20, 45]) for (const dir of [1, -1]) {
-        let last: { lift: number; opacity: number } | null = null
-        for (let i = 0; i <= 100 / speed / DT; i++) {
-          const pitch = dir * (-50 + i * speed * DT)
+      for (const back of [6, 10, 14, 20, 30]) for (const speed of [20, 45]) for (const dir of [1, -1]) {
+        let last: OwnMarker | null = null
+        for (let i = 0; i <= 140 / speed / DT; i++) {
+          const pitch = dir * (-70 + i * speed * DT)
           const screen = camera(back, 3, pitch, side)
           const now = stepOwnMarker(last, localMarkerLift(back, 3, FOV), R, screen, DT)
           const at = `back ${back} speed ${speed} pitch ${pitch.toFixed(2)}`
           const p = screen(now.lift)
           if (p && now.opacity > 0) expect(clearance(p[0], p[1], R), at).toBeGreaterThan(0)
-          if (last) {
-            expect(Math.abs(now.lift - last.lift) * Math.min(now.opacity, last.opacity), at).toBeLessThan(1.2)
+          const before = last && screen(last.lift)
+          if (last && p && before) {
+            expect(Math.hypot(p[0] - before[0], p[1] - before[1]) * Math.min(now.opacity, last.opacity), at).toBeLessThan(0.06)
             expect(Math.abs(now.opacity - last.opacity), at).toBeLessThan(0.35)
           }
           last = now

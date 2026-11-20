@@ -68,13 +68,12 @@ export const CLEAR_MARGIN = 0.5
 export const MARKER_BOTTOM = 1.7
 
 /**
- * How far a point on screen is clear of the circle of `radius` round the centre, upward: its
- * height above the circle's upper edge where it is within the circle's width, and to the sides
- * how far beyond its width. Positive outside, negative inside or under it, and continuous, so a
- * marker kept above it never jumps. `x`, `y`: from the screen's centre, as shares of its height.
+ * How far a point on screen is clear of the circle of `radius` round the centre: its distance
+ * from the circle's edge, positive outside and negative inside. `x`, `y`: from the screen's
+ * centre, as shares of its height.
  */
 export function clearance(x: number, y: number, radius: number): number {
-  return Math.max(y - Math.sqrt(Math.max(0, radius * radius - x * x)), Math.abs(x) - radius)
+  return Math.hypot(x, y) - radius
 }
 
 /**
@@ -101,30 +100,43 @@ export function clearOfCentre(base: number, radius: number, screenOf: (lift: num
   return { lift: hi, opacity: 1 }
 }
 
-/** Seconds an eased jump takes to close most of the way (about two thirds). */
-export const LIFT_EASE = 0.1
+/** Seconds your own marker takes to fade out before a jump, and back in after it. */
+export const JUMP_FADE = 0.15
+/** A change of lift that would move the marker more than this share of the screen's height in one frame is a jump. */
+export const JUMP_SCREEN = 0.05
+
+/** Your own marker this frame: its lift, how much shows, and the jump fade (1 shown, 0 hidden). */
+export interface OwnMarker { lift: number; opacity: number; fade: number }
 
 /**
- * One frame of your own marker: where it is drawn and how much of it shows. While it shows in
- * full, the clear lift is followed at once, however fast the camera moves, unless the way there
- * passes through the circle: with the car off to one side and the camera steeply up, the nearest
- * lift that clears it can switch from beside it to above it. That jump is eased instead, and so
- * is any move while it is faded, so it fades back in where it lands rather than appearing there.
- * How much shows is measured where it is drawn, so on its way through the circle it is not seen:
- * it never shows over the centre, and never pops. `last` is last frame's result, or null.
+ * One frame of your own marker. It follows the lowest lift that keeps it clear of the circle
+ * (clearOfCentre) as the camera moves. Where that lift jumps (with the car to one side, or the
+ * camera steep, it can switch from one side of the circle to the other), the marker does not
+ * fly across: it fades out where it is, as long as that is still outside the circle, moves
+ * unseen, and fades back in at its new place. How much shows is also measured where it is
+ * drawn, so it is never seen inside the circle. `last` is last frame's result, or null.
  */
-export function stepOwnMarker(last: { lift: number; opacity: number } | null, base: number, radius: number, screenOf: (lift: number) => readonly [number, number] | null, dt: number): { lift: number; opacity: number } {
+export function stepOwnMarker(last: OwnMarker | null, base: number, radius: number, screenOf: (lift: number) => readonly [number, number] | null, dt: number): OwnMarker {
   const target = clearOfCentre(base, radius, screenOf).lift
-  const shown = last?.lift ?? null
-  const delta = shown === null ? 0 : target - shown
-  let ease = last !== null && last.opacity < 0.999
-  if (shown !== null && radius > 0) for (let k = 1; k < 8 && !ease; k++) {
-    const p = screenOf(shown + delta * k / 8)
-    ease = p !== null && clearance(p[0], p[1], radius) < 0
+  const gap = (lift: number) => { const p = screenOf(lift); return p ? clearance(p[0], p[1], radius) : Infinity }
+  const shows = (lift: number) => {
+    if (!(radius > 0)) return 1
+    const x = Math.min(1, Math.max(0, gap(lift) / (radius * CLEAR_MARGIN)))
+    return x * x * (3 - 2 * x)
   }
-  const lift = shown === null || !ease ? target : shown + delta * (1 - Math.exp(-Math.max(0, dt) / LIFT_EASE))
-  if (!(radius > 0)) return { lift, opacity: 1 }
-  const p = screenOf(lift)
-  const x = p ? Math.min(1, Math.max(0, clearance(p[0], p[1], radius) / (radius * CLEAR_MARGIN))) : 1
-  return { lift, opacity: x * x * (3 - 2 * x) }
+  if (!last) return { lift: target, fade: 1, opacity: shows(target) }
+  const step = Math.max(0, dt) / JUMP_FADE
+  let jump = false
+  if (radius > 0 && target !== last.lift) {
+    const a = screenOf(last.lift), b = screenOf(target)
+    jump = !a || !b || Math.hypot(b[0] - a[0], b[1] - a[1]) > JUMP_SCREEN
+    for (let k = 1; k < 8 && !jump; k++) jump = gap(last.lift + (target - last.lift) * k / 8) < 0
+  }
+  let lift = target, fade = Math.min(1, last.fade + step)
+  if (jump) {
+    // Fade out in place while that place is still clear of the circle; then move, unseen.
+    fade = gap(last.lift) > 0 ? Math.max(0, last.fade - step) : 0
+    lift = fade > 0 ? last.lift : target
+  }
+  return { lift, fade, opacity: fade * shows(lift) }
 }
