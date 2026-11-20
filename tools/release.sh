@@ -117,6 +117,9 @@ DEST="$(cd ../Syn3h-stable/"$ID" && pwd)"
 printf '*.map\n' > "$DEST/dist/.assetsignore"
 # Every deploy carries each earlier release, and this one, under dist/v/ so that
 # https://www.syn3h.com/?v=<version> keeps serving it. A deploy without them breaks those links.
+# The durable copy is R2 (bucket syn3h-versions, tools/frozen-versions.mjs r2-upload), which the
+# Worker reads first; the carried copies are its fallback until step two of the R2 move. After a
+# rollback, frozen versions are served by the restored Worker: see tools/rollback.sh.
 node tools/frozen-versions.mjs carry "$DEST" "$CALVER" || fail "could not carry the frozen versions into the build"
 echo "Frozen copy: $DEST"
 echo "Assets: $(find "$DEST/dist" -type f ! -name '*.map' ! -name .assetsignore | wc -l | tr -d ' ') files, $(du -sh "$DEST/dist" | cut -f1) with maps"

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
-import { archive, archivedVersions, bareVersion, carry, check, mapPool, retrying } from './frozen-versions.mjs'
+import { apiStore, archive, archivedVersions, bareVersion, carry, changedInPlace, check, contentType, mapPool, r2Upload, r2WriteIndex, retrying } from './frozen-versions.mjs'
 import { findForbidden } from './check-shipped-assets.mjs'
 import { draftNotes, frozenUrl } from './release-notes.mjs'
 import { parseHistory } from './lib/release-version.mjs'
@@ -211,4 +211,98 @@ test('a 429 holds the check for its Retry-After, and then it passes', async () =
     assert.deepEqual((await check(s.url, copy)).problems, [])
     assert.ok(Date.now() - started >= 1000, 'the 429 held the check for its Retry-After')
   } finally { await s.close(); rmSync(root, { recursive: true, force: true }) }
+})
+
+/** A bucket in memory: { get(key), put(key, file, type) }, with a hook to corrupt reads. */
+function memoryStore(objects = new Map(), { corrupt } = {}) {
+  return {
+    objects, puts: [],
+    async get(key) { const o = objects.get(key); return o ? (corrupt === key ? Buffer.from('bad') : o.bytes) : null },
+    async put(key, file, type) { this.puts.push(key); objects.set(key, { bytes: readFileSync(file), type }) },
+  }
+}
+
+test('R2 upload stores each archived file once, with its type, and verifies it', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'syn3h-r2-'))
+  try {
+    const { store: dir } = archivedTwo(root)
+    const store = memoryStore()
+    const report = await r2Upload(['26.11.1503', '26.11.1600'], { store, archive: dir })
+    assert.deepEqual({ ...report, bytes: undefined }, { versions: 2, objects: 8, bytes: undefined, uploaded: 8, present: 0, refused: [], mismatched: [] })
+    assert.equal(store.objects.get('v/26.11.1503/assets/app-one.js').bytes.toString(), 'one')
+    assert.equal(store.objects.get('v/26.11.1503/index.html').type, 'text/html; charset=utf-8')
+    assert.equal(contentType('a/b.glb'), 'model/gltf-binary')
+    // Again: everything is already there with the same bytes, so nothing is written.
+    store.puts.length = 0
+    const again = await r2Upload(['26.11.1503', '26.11.1600'], { store, archive: dir })
+    assert.equal(again.present, 8)
+    assert.deepEqual(store.puts, [])
+    // The index lists the versions whose page is in the bucket, and only that object is rewritten.
+    assert.deepEqual(await r2WriteIndex(['26.11.1600', '26.11.1503', '26.11.1700'], { store }), ['26.11.1503', '26.11.1600'])
+    assert.deepEqual(JSON.parse(store.objects.get('v/versions.json').bytes).versions, ['26.11.1503', '26.11.1600'])
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('R2 upload refuses to overwrite a key holding other bytes, and catches a bad read-back', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'syn3h-r2-'))
+  try {
+    const { store: dir } = archivedTwo(root)
+    const objects = new Map([['v/26.11.1503/build.json', { bytes: Buffer.from('{"mark":"xxx"}'), type: 'application/json' }]])
+    const store = memoryStore(objects)
+    const report = await r2Upload(['26.11.1503'], { store, archive: dir })
+    assert.deepEqual(report.refused, ['v/26.11.1503/build.json'])
+    assert.equal(objects.get('v/26.11.1503/build.json').bytes.toString(), '{"mark":"xxx"}', 'never overwritten')
+    assert.ok(!store.puts.includes('v/26.11.1503/build.json'))
+    const bad = await r2Upload(['26.11.1600'], { store: memoryStore(new Map(), { corrupt: 'v/26.11.1600/brand/share.png' }), archive: dir })
+    assert.deepEqual(bad.mismatched, ['v/26.11.1600/brand/share.png'])
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('carry refuses a build that changes a root file a frozen version also serves', () => {
+  const root = mkdtempSync(join(tmpdir(), 'syn3h-r2-'))
+  try {
+    const { store: dir } = archivedTwo(root)
+    const next = build(root, 'next', 'three')
+    // Same share.png bytes as before, and its own build.json and script: fine.
+    assert.deepEqual(changedInPlace(join(next, 'dist'), archivedVersions(dir), dir), [])
+    // A redrawn share.png at the same address would reach every frozen page.
+    writeFileSync(join(next, 'dist', 'brand', 'share.png'), 'new png')
+    mkdirSync(join(next, 'dist', 'models'), { recursive: true })
+    assert.deepEqual(changedInPlace(join(next, 'dist'), archivedVersions(dir), dir), ['brand/share.png (differs from 2 archived versions, newest 26.11.1600)'])
+    assert.throws(() => carry(next, 'v26.11.1700', dir), /rename them instead:\n  brand\/share\.png/)
+    assert.ok(!existsSync(join(next, 'dist', 'v')), 'a refused carry leaves no half-built dist/v')
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+/** Two accepted releases in an archive under root. */
+function archivedTwo(root) {
+  const store = join(root, 'versions')
+  for (const [name, mark, v] of [['a', 'one', '26.11.1503'], ['b', 'two', '26.11.1600']]) {
+    const copy = build(root, name, mark)
+    carry(copy, v, store)
+    archive(copy, v, store)
+  }
+  return { store }
+}
+
+test('the R2 API client sends the token only as its Authorization header and never reports it', async () => {
+  const TOKEN = 'fake-token-for-the-test-0123456789'
+  assert.throws(() => apiStore('b', { token: '' }), /with_cf_token/)
+  const seen = []
+  const server = createServer((req, res) => {
+    seen.push({ url: req.url, auth: req.headers.authorization })
+    if (req.url.startsWith('/zones')) { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ result: [{ account: { id: 'acc' } }] })) }
+    // An error that echoes the request back, as a careless API might.
+    res.writeHead(403, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ errors: [{ code: 10000, message: `Authentication error for ${req.headers.authorization}`.replace(TOKEN, '<redacted>') }] }))
+  })
+  await new Promise((done) => server.listen(0, '127.0.0.1', done))
+  try {
+    const store = apiStore('syn3h-versions', { token: TOKEN, api: `http://127.0.0.1:${server.address().port}` })
+    const error = await store.get('v/26.11.1503/index.html').then(() => null, (e) => e)
+    assert.match(error.message, /could not read v\/26\.11\.1503\/index\.html: HTTP 403: Authentication error/)
+    assert.ok(!error.message.includes(TOKEN))
+    assert.equal(seen.at(-1).url, '/accounts/acc/r2/buckets/syn3h-versions/objects/v/26.11.1503/index.html')
+    assert.ok(seen.every((r) => r.auth === `Bearer ${TOKEN}` && !r.url.includes(TOKEN)))
+  } finally { await new Promise((done) => server.close(done)) }
 })
