@@ -180,6 +180,12 @@ export interface PlayerInfo {
   colors: [string, string]
   /** A vehicle simulated by the host rather than a person. */
   bot?: boolean
+  /**
+   * "Bots may play with me" (the person's own setting): false asks the host's bots never to
+   * grab them for fun. Absent means yes, which is what an older client that never sends it gets;
+   * the stop words in chat still work for everyone.
+   */
+  play?: boolean
 }
 
 /**
@@ -362,14 +368,21 @@ export type ClientMessage =
    * `page` is random per page load: a hello with the same secret and the same page is that page
    * reconnecting, and takes its place back at once; a duplicated tab has the secret, not the page.
    */
-  | { type: 'hello'; v: number; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string; drop?: DropReport }
+  | { type: 'hello'; v: number; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string; drop?: DropReport; play?: boolean }
   /**
    * Change vehicle kind, colours or name after joining. `name` is optional and newer: an older
    * room ignores it, and the name then changes at the next join. The room cleans and
    * de-duplicates a name exactly as at hello, and takes at most one rename per
    * RENAME_INTERVAL_MS; an ignored rename is answered with the player's current profile.
    */
-  | { type: 'profile'; kind?: string; colors?: [string, string]; name?: string }
+  | { type: 'profile'; kind?: string; colors?: [string, string]; name?: string; play?: boolean }
+  /**
+   * The grabbed player asks player (or bot) `from` to let go of the cord it has tied to them: a
+   * press of their own Grapple, or a double tap of brake. The room checks that `from`'s cord is
+   * on the sender and relays it to whoever simulates `from`. Newer: an older owner ignores it,
+   * and the cord's stretch snap still frees them.
+   */
+  | { type: 'unhook'; from: number }
   | { type: 'ping'; t: number }
   | { type: 'param'; id: string; value: ParamWireValue }
   /** Optional bot actor: only the current host may act for a live bot it simulates. */
@@ -384,7 +397,15 @@ export type ClientMessage =
    * change, m/s, the rammer's client worked out for the other vehicle; the server relays it
    * to that player as `shove`. See src/net/shove.ts.
    */
-  | { type: 'ram'; other: number; push?: [number, number, number] }
+  | {
+    type: 'ram'; other: number; push?: [number, number, number]
+    /**
+     * Newer, host only: the rammer is bot `bot`, against bot `other` (the host simulates both,
+     * so nobody else can see the contact). Sent only to a room whose welcome says `botRams`: an
+     * older room would credit the host's own player.
+     */
+    bot?: number
+  }
   /** Host only: lock or unlock shared parameters for everyone else. */
   | { type: 'lock'; locked: boolean }
   /** Host only: the King of the Hill zone it computed from the terrain. */
@@ -446,6 +467,8 @@ export type ServerMessage =
       game: GameState
       serverTime: number
       race?: RaceState | null
+      /** This room understands a ram reported for a bot (`ram.bot`). Absent from older rooms. */
+      botRams?: true
     }
   | { type: 'pong'; t: number; serverTime: number }
   | { type: 'join'; player: PlayerInfo }
@@ -457,6 +480,8 @@ export type ServerMessage =
   | { type: 'hit'; shooter: number; victim: number; shot: number }
   /** Player `from` rammed you: the velocity change to apply if your own physics missed it. */
   | { type: 'shove'; from: number; push: [number, number, number] }
+  /** Relayed: player `by` asks the cord of `owner` (you, or a bot you simulate) to let go of them. */
+  | { type: 'unhook'; by: number; owner: number }
   /** Player `from`'s Bungee cord, relayed at server time `t`. */
   | { type: 'cord'; from: number; cord: CordWire; t: number }
   /** Player `from` used Yoink on vehicle `y.to`. */

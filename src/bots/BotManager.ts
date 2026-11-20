@@ -165,7 +165,10 @@ export class BotManager implements System {
       // Everyone else goes for "it"; a bot that is "it" picks someone to score on.
       const itBrain = brains.find(b => b.vehicle === it)
       hunters = hunters.filter(b => b !== itBrain)
-      candidates = [candidate(it, 30)]
+      // At most PER_PERSON bots go after "it", a bot as much as a person: with bot-on-bot rams
+      // passing the role, three or four bots on a bot "it" would keep it among themselves and
+      // leave the person watching. The rest keep the person company, as in free play.
+      candidates = [{ ...candidate(it, 30), person: true }]
       if (itBrain) {
         const scoreOn = assignTargets([{ id: idOf.get(it)!, position: it.body.translation(), current: itBrain.gameTarget ? idOf.get(itBrain.gameTarget) : null }], everyone.filter(v => v !== it).map(v => candidate(v)), PER_PERSON - 1, flat)
         const pick = scoreOn.get(idOf.get(it)!)
