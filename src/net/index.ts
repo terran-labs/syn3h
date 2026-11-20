@@ -447,6 +447,7 @@ export class NetClient implements System {
       wrapSize: () => this.wrapSize,
       inHand: () => this.gear.current === 'pester',
       launch: (target) => this.launchPester(target),
+      canLaunch: () => this.ctx.game.time - this.lastPester >= pesterCooldown.value && this.pesters.mine < pesterMax.value,
       onCatch: (shooter, shot, victim, at, dir) => {
         if (materializing(this.vehicleOf(shooter)) || materializing(this.vehicleOf(victim))) return
         if (victim === this.id) this.stats.hitsTaken++

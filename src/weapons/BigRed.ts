@@ -12,6 +12,7 @@ import { aimFrom, type GearControl } from './aim'
 import { bigRedAllowed, bigRedCharge, bigRedCooldown } from './bigRedParams'
 import { sharedLook, warmGear } from './warm'
 import { ChargeMotes } from './chargeMotes'
+import { HeldFire } from './heldFire'
 
 export interface BigRedHooks {
   control?(): GearControl
@@ -54,6 +55,8 @@ export class BigRed implements System {
   /** 0 to 1 while charging; -1 when not. */
   charge = -1
   private fireWas = false
+  /** A player's press, held: starts the charge the moment the cooldown ends (heldFire.ts). */
+  private readonly trigger = new HeldFire()
   private readyAt = 0
   private readonly glow: THREE.Mesh
   private readonly core: THREE.Mesh
@@ -82,11 +85,20 @@ export class BigRed implements System {
   }
 
   fixedUpdate(dt: number): void {
-    const fire = bigRedAllowed.value && this.hooks.inHand() && (this.hooks.control?.().fire ?? this.game.input.state.fire)
-    const pressed = fire && !this.fireWas
-    const released = !fire && this.fireWas
-    this.fireWas = fire
-    if (pressed && this.game.time >= this.readyAt) {
+    const control = this.hooks.control?.()
+    let fire: boolean, start: boolean, released: boolean
+    if (control) {
+      // A bot: a press starts a charge if it is ready, as always.
+      fire = bigRedAllowed.value && this.hooks.inHand() && control.fire
+      start = fire && !this.fireWas
+      released = !fire && this.fireWas
+      this.fireWas = fire
+    } else {
+      // A player: a press held through the cooldown starts the charge as soon as it ends.
+      released = this.trigger.step(bigRedAllowed.value && this.game.input.state.fire, this.hooks.inHand()).released
+      fire = start = this.trigger.held
+    }
+    if (start && this.charge < 0 && this.game.time >= this.readyAt) {
       this.charge = 0
       const o = this.hooks.object()
       if (o) this.hooks.cue?.('bigRedCharge', o.position)
@@ -123,6 +135,8 @@ export class BigRed implements System {
   cancel(): void {
     this.charge = -1
     this.fireWas = false
+    // A cancelled charge does not start again under a button still held: a new press does.
+    this.trigger.clear()
   }
 
   /** Drop a charge without firing or fizzling, for a world change or leaving the world. */
