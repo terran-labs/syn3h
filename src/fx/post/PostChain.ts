@@ -673,38 +673,48 @@ export class PostChain {
 
     let out: N = graded()
     if (this.covered && !debug && (this.glassMode === 'target' || this.glassMode === 'inline')) {
-      const glass = this.glass ??= new GlassButton(renderer.domElement)
+      const glass = this.glass ??= new GlassButton(renderer.domElement, new URLSearchParams(location.search).get('glassSet') === 'one' ? 1 : 6)
       const finished: N = this.glassMode === 'target' ? rtt(out, null, null, { type: THREE.HalfFloatType }) : null
       if (finished) disposables.push(finished)
       const original = finished ? finished.sample(uv()) : out
       out = Fn(() => {
         const result = original.toVar()
-        const box = glass.box
         const size = glass.viewport.xy.max(vec2(1))
-        const local = uv().mul(size).sub(box.xy)
-        const radius = glass.viewport.z.max(1)
-        const q = abs(local).sub(box.zw).add(radius)
-        const outer = max(q, vec2(0))
-        const distance = length(outer).add(min(max(q.x, q.y), 0)).sub(radius)
-        If(box.z.greaterThan(0).and(distance.lessThan(0.5)), () => {
-          const edge = smoothstep(radius.mul(-0.7), 0, distance)
-          const normal = outer.div(max(length(outer), 0.001)).mul(local.sign())
-          const bend = normal.mul(edge).mul(radius).mul(glass.pressed.mul(0.10).add(0.24)).div(size)
-          const sample = (scale: number, frost = 0) => {
-            const at = clamp(uv().sub(bend.mul(scale)).add(vec2(frost, -frost).mul(glass.frost.x).div(size)), 0, 1)
-            if (finished) return finished.sample(at).rgb
-            // Keep the final composite's local lighting and grade. Only the scene
-            // colour difference is displaced in this cheaper trial.
-            const display = (coord: N) => renderOutput(vec4(color.sample(coord).rgb, 1), toneMap, renderer.outputColorSpace).rgb
-            return original.rgb.add(display(at).sub(display(uv())))
-          }
-          const lens = vec3(sample(1.04).r, sample(1).g, sample(0.96).b)
-          const frost = sample(1, 0.65).add(sample(1, -0.65)).mul(0.5)
-          const blurred = mix(lens, frost, 0.5)
-          const luminance = dot(blurred, vec3(0.2126, 0.7152, 0.0722))
-          const filtered = clamp(mix(vec3(luminance), blurred, glass.frost.y).mul(glass.frost.z), 0, 1)
-          const body = mix(filtered, glass.body.rgb, glass.body.a)
-          result.assign(vec4(mix(original.rgb, body, float(1).sub(smoothstep(-0.5, 0.5, distance))), 1))
+        const pixel = uv().mul(size)
+        Loop(glass.capacity, ({ i }: { i: N }) => {
+          const box: N = glass.boxes.element(i)
+          const local = pixel.sub(box.xy)
+          If(box.z.greaterThan(0).and(abs(local.x).lessThanEqual(box.z)).and(abs(local.y).lessThanEqual(box.w)), () => {
+            const corners: N = glass.radii.element(i)
+            const top = mix(corners.x, corners.y, step(0, local.x))
+            const bottom = mix(corners.z, corners.w, step(0, local.x))
+            const radius = mix(top, bottom, step(0, local.y))
+            const q = abs(local).sub(box.zw).add(radius)
+            const outer = max(q, vec2(0))
+            const distance = length(outer).add(min(max(q.x, q.y), 0)).sub(radius)
+            const bevel = min(box.z, box.w).mul(0.58).max(1)
+            const edge = smoothstep(bevel.negate(), 0, distance)
+            const side = step(q.y, q.x)
+            const normal = mix(vec2(side, float(1).sub(side)), outer.div(max(length(outer), 0.001)), step(0.001, length(outer))).mul(local.sign())
+            const filter: N = glass.filters.element(i)
+            const tint: N = glass.bodies.element(i)
+            const bend = normal.mul(edge).mul(bevel).mul(filter.w.mul(0.27).add(0.65)).div(size)
+            const sample = (scale: number, frost = 0) => {
+              const at = clamp(uv().sub(bend.mul(scale)).add(vec2(frost, -frost).mul(filter.x).div(size)), 0, 1)
+              if (finished) return finished.sample(at).rgb
+              // Keep the final composite's local lighting and grade. Only the scene
+              // colour difference is displaced in this cheaper trial.
+              const display = (coord: N) => renderOutput(vec4(color.sample(coord).rgb, 1), toneMap, renderer.outputColorSpace).rgb
+              return original.rgb.add(display(at).sub(display(uv())))
+            }
+            const lens = vec3(sample(1.04).r, sample(1).g, sample(0.96).b)
+            const frost = sample(1, 0.65).add(sample(1, -0.65)).mul(0.5)
+            const blurred = mix(lens, frost, 0.18)
+            const luminance = dot(blurred, vec3(0.2126, 0.7152, 0.0722))
+            const filtered = clamp(mix(vec3(luminance), blurred, mix(1, filter.y, 0.3)).mul(mix(1, filter.z, 0.2)), 0, 1)
+            const body = mix(filtered, tint.rgb, tint.a)
+            result.assign(vec4(mix(original.rgb, body, float(1).sub(smoothstep(-0.5, 0.5, distance))), 1))
+          })
         })
         return result
       })()
