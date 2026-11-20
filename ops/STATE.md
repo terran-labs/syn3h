@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-20 01:10 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-20 02:00 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2000 (release-65), source 554b06b9, frozen copy 20261120-005547-554b06b9,
-Worker version 0e32d7ee, at https://www.syn3h.com/ since 20 November 01:02 PST.
+Live: v26.11.2001 (release-66, the freeze release), source c405b30c, frozen copy
+20261120-014542-c405b30c, Worker version f63feab8, at https://www.syn3h.com/ since 20 November 01:52 PST.
 Release-64 (the freeze release, tag m-freeze-1907, 3636e736) failed www's movement step and rolled
 back: player B was still behind the longer covered entry. Unrecorded on the Foreman's word; it
 returns after the entry-time work and the public-check fix (tools/public-check-playable).
@@ -71,6 +71,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.1906 | 63 | m-bots-1906 | bots play in Explore (tows, tugs, stop words, breaking free), bots bump each other, hovercraft and jet beams, R2 frozen versions |
 | (v26.11.1907) | 64 | m-freeze-1907 | rolled back: www movement step ran while B was still entering; not recorded |
 | v26.11.2000 | 65 | m-ui-2000 | one glass style, phone panels, chat bubbles, pause screen with screenshots, sunk Zorb cue, own it marker clear |
+| v26.11.2001 | 66 | m-freeze-2001 | shaders and pipelines prepared at Play under cover, in parallel; bots build nothing in play; Copy diagnostics |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
