@@ -32,6 +32,7 @@ import {
 import { cordGlow, cordPull, cordSag, predict, reducedMass, type CordTuning } from './rope'
 import { drapeCord, type CordSurface } from './drape'
 import { PHASE_WRAP, SLACK_RGB, TAUT_RGB, TETHER_SEGMENTS, TetherLook, paintGlow, reducedMotion, tetherColor } from './tether'
+import { HeldFire } from '../heldFire'
 
 type Vec3 = [number, number, number]
 
@@ -207,6 +208,12 @@ export class Bungee implements System {
   private readonly rgb = [0, 0, 0]
 
   private fireWas = false
+  /**
+   * The player's press, held (heldFire.ts): a launch refused while the Grapple recharges goes
+   * as soon as it is ready. Once it has gone, holding reels in, as it always has.
+   */
+  private readonly trigger = new HeldFire()
+  private waiting = false
   private lastPress = -Infinity
   private brakeWas = false
   private lastBrake = -Infinity
@@ -322,7 +329,7 @@ export class Bungee implements System {
   /** Drop the cord and clear the input edge when a controller is interrupted. */
   cancel(): void {
     this.letGo()
-    this.fireWas = false
+    this.fireWas = false; this.trigger.clear(); this.waiting = false
     this.lastPress = -Infinity
     this.wheel = 0
   }
@@ -338,7 +345,7 @@ export class Bungee implements System {
     const had = this.mine !== undefined
     for (const id of [...this.cords.keys()]) this.remove(id)
     if (had) this.hooks.send?.({ s: 'off' })
-    this.fireWas = false
+    this.fireWas = false; this.trigger.clear(); this.waiting = false
     this.lastPress = -Infinity
     this.readyAt = 0
     this.wheel = 0
@@ -465,9 +472,17 @@ export class Bungee implements System {
     const input = this.game.input.state
     const inHand = this.hooks.inHand()
     const control = this.hooks.control?.()
-    const fire = inHand && (control?.fire ?? input.fire)
-    const pressed = fire && !this.fireWas
-    this.fireWas = fire
+    let fire: boolean, pressed: boolean
+    if (control) {
+      // A bot: as always.
+      fire = inHand && control.fire
+      pressed = fire && !this.fireWas
+      this.fireWas = fire
+    } else {
+      pressed = this.trigger.step(input.fire, inHand).pressed
+      fire = this.trigger.held
+      if (!fire) this.waiting = false
+    }
     const pad = this.hooks.control ? null : navigator.getGamepads?.().find((p) => p && p.connected)
     const padOut = Boolean(pad?.buttons[4]?.pressed)
     const padRelease = Boolean(pad?.buttons[5]?.pressed)
@@ -485,14 +500,17 @@ export class Bungee implements System {
         else this.lastBrake = this.game.time
       }
       this.brakeWas = brake
-      if (on.length && pressed && !this.mine) { for (const owner of on) this.hooks.unhook?.(owner); this.lastPress = this.game.time; return }
+      // That press is spent on asking: holding on after it launches nothing, even once the cord
+      // on us has gone (heldFire.ts); a new press does.
+      if (on.length && pressed && !this.mine) { for (const owner of on) this.hooks.unhook?.(owner); this.lastPress = this.game.time; this.trigger.clear(); this.waiting = false; return }
     }
 
     const c = this.mine
     if (!c) {
       this.wheel = 0
       this.reel = 0
-      if (pressed) { this.launch(control?.direction); this.lastPress = this.game.time }
+      if (pressed) { this.waiting = !this.launch(control?.direction) && !control; this.lastPress = this.game.time }
+      else if (this.waiting && fire) this.waiting = !this.launch()
       return
     }
     if (c.hook) return

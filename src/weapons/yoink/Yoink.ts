@@ -22,6 +22,7 @@ import { hotExposureDim } from '../../vehicles/skins/hotExposure'
 import { aimFrom, type GearControl } from '../aim'
 import { sharedLook, warmGear } from '../warm'
 import { gustPush, holdAccel, type V3 } from './hold'
+import { HeldFire } from '../heldFire'
 import {
   yoinkAllowed, yoinkCone, yoinkCooldown, yoinkFling, yoinkGrip, yoinkHoldDistance, yoinkHoldHeight, yoinkHoldTime,
   yoinkPunt, yoinkPuntRange, yoinkRange,
@@ -131,6 +132,13 @@ export class Yoink implements System {
   private readonly look: YoinkLook
   private readonly waves: Wave[] = []
   private fireWas = false
+  /**
+   * The player's press, held (heldFire.ts): one refused while the Yoink recharges goes as soon as
+   * it is ready, and a gust that caught nothing goes again each time it is. Once something is
+   * grabbed, holding is the carry, and that same hold never grabs again.
+   */
+  private readonly trigger = new HeldFire()
+  private waiting = false
   private readyAt = 0
   /** Counts for automated checks. */
   stats = { grabs: 0, flings: 0, drops: 0, gusts: 0, gusted: 0, carried: 0 }
@@ -210,6 +218,7 @@ export class Yoink implements System {
   cancel(): void {
     this.drop()
     this.fireWas = false
+    this.trigger.clear(); this.waiting = false
   }
 
   /**
@@ -228,6 +237,7 @@ export class Yoink implements System {
     }
     this.waves.length = 0
     this.fireWas = false
+    this.trigger.clear(); this.waiting = false
     this.readyAt = 0
   }
 
@@ -302,12 +312,20 @@ export class Yoink implements System {
   // ---------------------------------------------------------------------------------------
 
   private controls(): void {
-    const fire = this.hooks.inHand() && (this.hooks.control?.().fire ?? this.game.input.state.fire)
-    const pressed = fire && !this.fireWas
-    const released = !fire && this.fireWas
-    this.fireWas = fire
-    if (pressed) this.press()
-    else if (released) this.release()
+    const control = this.hooks.control?.()
+    if (control) {
+      // A bot: press and release, as always.
+      const fire = this.hooks.inHand() && control.fire
+      const pressed = fire && !this.fireWas
+      const released = !fire && this.fireWas
+      this.fireWas = fire
+      if (pressed) this.press()
+      else if (released) this.release()
+    } else {
+      const { pressed, released } = this.trigger.step(this.game.input.state.fire, this.hooks.inHand())
+      if (pressed || (this.waiting && this.trigger.held)) this.waiting = this.press() !== 'grab'
+      else if (released) { this.waiting = false; this.release() }
+    }
     const to = this.holding
     if (to !== null) {
       const limit = yoinkHoldTime.value
