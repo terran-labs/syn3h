@@ -45,9 +45,30 @@ interface DurableObjectState {
 }
 declare const WebSocketPair: { new (): { 0: WebSocket; 1: HibernatingWebSocket } }
 
+/**
+ * The R2 bucket of frozen versions, as this Worker may use it: read only. The binding itself can
+ * write (Cloudflare has no read-only R2 binding), so the type leaves put and delete out and the
+ * typecheck refuses them; tools/frozen-versions.mjs is the only writer, with the release token.
+ * Staging binds the same bucket and so cannot damage production's archive either.
+ */
+interface R2Range { offset?: number; length?: number; suffix?: number }
+interface R2Object {
+  size: number
+  httpEtag: string
+  range?: R2Range
+  writeHttpMetadata(headers: Headers): void
+}
+interface R2ObjectBody extends R2Object { body: ReadableStream }
+export interface FrozenBucket {
+  get(key: string, options?: { onlyIf?: Headers; range?: Headers }): Promise<R2Object | R2ObjectBody | null>
+  head(key: string): Promise<R2Object | null>
+}
+
 interface Env {
   ROOMS: DurableObjectNamespace
   ASSETS: Fetcher
+  /** Frozen versions in R2 (v/<version>/<path>); absent in local dev and tests that omit it. */
+  FROZEN?: FrozenBucket
 }
 
 interface Attachment {
@@ -81,7 +102,49 @@ export default {
 }
 
 /**
- * Frozen versions. Every deployment carries each frozen release's files under
+ * Frozen versions in R2, the durable copy: v/<version>/<path> in the syn3h-versions bucket
+ * (tools/frozen-versions.mjs r2-upload). Answers a GET or HEAD for `path` of `version`, honouring
+ * If-None-Match and If-Modified-Since (304) and Range (206), or null when the object is not there,
+ * so the caller can fall back to the static assets each deployment still carries.
+ */
+const HASHED = /-[A-Za-z0-9_-]{8}\.[a-z0-9]+$/
+async function fromR2(req: Request, env: Env, version: string, path: string, kind: 'document' | 'routed' | 'direct'): Promise<Response | null> {
+  if (!env.FROZEN) return null
+  const key = `v/${version}${kind === 'document' ? '/index.html' : path}`
+  const head = req.method === 'HEAD'
+  const object = head ? await env.FROZEN.head(key) : await env.FROZEN.get(key, { onlyIf: req.headers, range: req.headers })
+  if (!object) return null
+  const headers = new Headers()
+  object.writeHttpMetadata(headers)
+  headers.set('etag', object.httpEtag)
+  headers.set('x-syn3h-version', version)
+  // A page is never cached (its version comes from the address). A file whose address names it
+  // uniquely (a content hash, or /v/<version>/...) never changes. A root path chosen by the
+  // Referer (build.json, models) is the same address for every version: revalidate it.
+  if (kind === 'document') headers.set('cache-control', 'no-store')
+  else if (kind === 'direct' || HASHED.test(path)) headers.set('cache-control', 'public, max-age=31536000, immutable')
+  else headers.set('cache-control', 'no-cache')
+  if (kind === 'routed') headers.append('vary', 'Referer')
+  if (head) { headers.set('content-length', String(object.size)); return new Response(null, { headers }) }
+  const body = 'body' in object ? (object as R2ObjectBody).body : null
+  if (!body) {
+    // A precondition held back the body: unchanged for If-None-Match or If-Modified-Since.
+    const unchanged = req.headers.has('If-None-Match') || req.headers.has('If-Modified-Since')
+    return new Response(null, { status: unchanged ? 304 : 412, headers })
+  }
+  const range = object.range
+  if (range && req.headers.has('Range')) {
+    const offset = range.suffix !== undefined ? object.size - range.suffix : range.offset ?? 0
+    const length = range.suffix !== undefined ? range.suffix : range.length ?? object.size - offset
+    headers.set('content-range', `bytes ${offset}-${offset + length - 1}/${object.size}`)
+    return new Response(body, { status: 206, headers })
+  }
+  return new Response(body, { headers })
+}
+
+/**
+ * Frozen versions. Each is read from R2 first (fromR2), then from the static assets: every
+ * deployment still carries each frozen release's files under
  * /v/<version>/ (listed in /v/versions.json). `/?v=26.11.1503` serves that release's
  * document at the root; its content-hashed files then resolve either at the root (while it
  * is still the latest build) or, once a later build has replaced them, through the
@@ -102,8 +165,12 @@ async function frozenVersions(req: Request, env: Env): Promise<string[]> {
     return []
   }
 }
+const DIRECT = /^\/v\/(\d+\.\d+\.\d+)(\/.+)$/
 async function serveVersioned(req: Request, url: URL, env: Env): Promise<Response> {
   if (req.method !== 'GET' && req.method !== 'HEAD') return env.ASSETS.fetch(req)
+  // A frozen page's own address for a file (src/core/frozenResources.ts): /v/<version>/<path>.
+  const direct = DIRECT.exec(url.pathname)
+  if (direct) return (await fromR2(req, env, direct[1], direct[2], 'direct')) ?? env.ASSETS.fetch(req)
   const isDocument = url.pathname === '/' || url.pathname === '/index.html'
   let referrerV: string | null = null
   try {
@@ -116,6 +183,8 @@ async function serveVersioned(req: Request, url: URL, env: Env): Promise<Respons
   const wanted = isDocument ? versionOf(url.searchParams.get('v')) : referrerV
   if (isDocument && asked && !wanted) return unknownVersion(url.searchParams.get('v') ?? '', await frozenVersions(req, env))
   if (wanted) {
+    const stored = await fromR2(req, env, wanted, url.pathname, isDocument ? 'document' : 'routed')
+    if (stored) return stored
     const path = isDocument ? `/v/${wanted}/` : `/v/${wanted}${url.pathname}`
     const frozen = await env.ASSETS.fetch(new Request(new URL(path, url.origin), { method: req.method, headers: req.headers }))
     if (frozen.ok || frozen.status === 304) {
