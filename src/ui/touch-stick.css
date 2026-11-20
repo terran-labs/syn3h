@@ -171,3 +171,11 @@ html[data-touch-aim="on"] .syn3h-shell.has-touch .focus-hud svg [data-reticle] {
 .syn3h-shell.has-touch:has(.match-announcement:not([hidden])) .hud-navigation {
   opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s ease-out, visibility 0s linear .2s;
 }
+
+/* A sunk buggy's Zorb cue (Shell.cueZorb): the ZORB button's own glass rim and sheen swell and
+   settle, slowly, instead of a message. Only the shared glass tokens move (src/ui/glass.css);
+   the keyframe names only the peak, so rest is whatever the class sets. Reduced motion holds
+   the peak steady. */
+@keyframes zorb-cue { 50% { --glass-rim: 1; --glass-sheen: 1; } }
+.touch-controls .touch-actions button.is-cued { animation: zorb-cue 2.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .touch-controls .touch-actions button.is-cued { animation: none; --glass-rim: 1; --glass-sheen: 1; } }

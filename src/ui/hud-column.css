@@ -187,6 +187,12 @@
 :is(.hud-accessories, .hud-chat) .is-on .acc-pip { border-color: var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-node-lit); }
 /* Moving between states (wings unfolding): the node fills from its rim as they move. */
 .hud-accessories .is-moving .acc-pip { background: radial-gradient(closest-side, var(--s3-accent-2) calc(var(--acc-moving, 0) * 100%), transparent calc(var(--acc-moving, 0) * 100% + 1%)); animation: acc-breathe 1.2s ease-in-out infinite; }
+/* A sunk buggy's Zorb cue (Shell.cueZorb): the Zorb row's node lights and dims slowly, in the
+   column's own light, and its name brightens, while the column is held awake. Reduced motion
+   keeps the node lit and still. */
+.hud-accessories button.acc-row.is-cued .acc-name { color: var(--s3-ink); }
+.hud-accessories button.acc-row.is-cued .acc-pip { animation: acc-cue 2.6s ease-in-out infinite; }
+@keyframes acc-cue { 50% { border-color: var(--s3-accent-2); box-shadow: var(--col-node-lit); } }
 @keyframes acc-breathe { 50% { box-shadow: var(--col-node-lit); } }
 /* Not usable now: dimmed, with the reason in its tooltip. */
 :root .syn3h-shell .hud-accessories button.acc-row[aria-disabled=true] { cursor: default; opacity: .48; }
@@ -198,6 +204,7 @@
 @media (prefers-reduced-motion: reduce) {
   :is(.hud-accessories, .hud-chat), :is(.hud-accessories, .hud-chat) .acc-pip, :root .syn3h-shell :is(.hud-accessories, .hud-chat) button.acc-row { transition: none; }
   .hud-accessories .is-moving .acc-pip { animation: none; }
+  .hud-accessories button.acc-row.is-cued .acc-pip { animation: none; border-color: var(--s3-accent-2); box-shadow: var(--col-node-lit); }
 }
 
 /* ---------- Minimap: the foot of the column ---------- */
