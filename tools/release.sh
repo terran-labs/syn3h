@@ -229,7 +229,7 @@ else
     tail -1 "$LOG-staging-assets.log"
     node tools/frozen-versions.mjs check "$STAGING_URL" "$STAGING_DEST" >"$LOG-staging-frozen.log" 2>&1 \
       || { cat "$LOG-staging-frozen.log"; fail "frozen version links are broken on staging (production untouched)"; }
-    tail -1 "$LOG-staging-frozen.log"
+    tail -2 "$LOG-staging-frozen.log"
     SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-staging.XXXXXX)" || fail "could not reserve staging evidence directory"
     echo "Smoke testing staging, with shot evidence in $SHOT_PARENT/evidence ..."
     # Staging has its own crash budget, larger than production's: a crash is the machine, not
@@ -278,10 +278,11 @@ else
 fi
 
 # --- Frozen versions ------------------------------------------------------------------------
-# Each frozen release's page and every one of its files, as that page asks for them.
+# Each frozen release's page and every one of its files, as that page asks for them, in
+# parallel (--full fetches and hashes every file instead of sizing most of them).
 node tools/frozen-versions.mjs check "$URL" "$DEST" >"$LOG-frozen.log" 2>&1 \
   || { cat "$LOG-frozen.log"; fail "frozen version links are broken at $URL (see $LOG-frozen.log)"; }
-tail -1 "$LOG-frozen.log"
+tail -2 "$LOG-frozen.log"
 
 # --- Smoke test -----------------------------------------------------------------------------
 echo "Smoke testing $URL ..."
@@ -320,15 +321,12 @@ settle "$PRIMARY_URL" "$DEST" "$LOG-primary-assets.log" --feed || { tail -20 "$L
 tail -1 "$LOG-primary-assets.log"
 if ! SYN3H_SHORT_CHECK=1 tools/domain.sh check www.syn3h.com >"$LOG-primary.log" 2>&1; then
   cat "$LOG-primary.log"
-node tools/frozen-versions.mjs check "$PRIMARY_URL" "$DEST" >"$LOG-primary-frozen.log" 2>&1 \
-  || { cat "$LOG-primary-frozen.log"; fail "frozen version links are broken on the primary domain; roll back the deployment"; }
-tail -1 "$LOG-primary-frozen.log"
   fail "primary domain acceptance failed; roll back the deployment"
 fi
 cat "$LOG-primary.log"
 node tools/frozen-versions.mjs check "$PRIMARY_URL" "$DEST" >"$LOG-primary-frozen.log" 2>&1 \
   || { cat "$LOG-primary-frozen.log"; fail "frozen version links are broken on the primary domain; roll back the deployment"; }
-tail -1 "$LOG-primary-frozen.log"
+tail -2 "$LOG-primary-frozen.log"
 
 [ -z "$STUB" ] || fail "stub run reached the record step; a stub records nothing"
 # Accepted: from here on a failure does not roll back.
