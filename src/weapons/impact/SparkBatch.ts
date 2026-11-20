@@ -47,14 +47,14 @@ export class SparkBatch {
   readonly maxLength = uniform(3)
   /** How much of the white-hot birth and red cooling a spark shows: 1 for impact sparks; a firework star keeps its own colour. */
   readonly heat = uniform(1)
-  private readonly origin: T.InstancedBufferAttribute
-  private readonly velocity: T.InstancedBufferAttribute
-  private readonly settings: T.InstancedBufferAttribute
-  private readonly plane: T.InstancedBufferAttribute
-  private readonly motion: T.InstancedBufferAttribute
-  private readonly tint: T.InstancedBufferAttribute
+  private origin!: T.InstancedBufferAttribute
+  private velocity!: T.InstancedBufferAttribute
+  private settings!: T.InstancedBufferAttribute
+  private plane!: T.InstancedBufferAttribute
+  private motion!: T.InstancedBufferAttribute
+  private tint!: T.InstancedBufferAttribute
   private next = 0
-  private readonly attributes: readonly (readonly [T.InstancedBufferAttribute, number])[]
+  private attributes!: readonly (readonly [T.InstancedBufferAttribute, number])[]
   emitted = 0
 
   /** Multiplies an additive batch's light, for an owner that brightens a whole batch (fireworks at night). */
@@ -62,8 +62,7 @@ export class SparkBatch {
   /** Multiplies every spark's opacity, for an owner that fades a whole batch. */
   readonly opacity = uniform(1)
 
-  /** `solid`: blended normally in its own colour (unlit), so it shows on a white cloud by day; else additive light. */
-  constructor(readonly capacity: number, name: string, solid = false) {
+  private buffers(capacity: number): T.InstancedBufferGeometry {
     const quad = new T.PlaneGeometry(1, 1), g = new T.InstancedBufferGeometry().copy(quad as unknown as T.InstancedBufferGeometry)
     quad.dispose(); g.instanceCount = capacity
     // WebGPU allows eight vertex buffers to a draw: the quad's corners and six of the spark's own
@@ -76,6 +75,21 @@ export class SparkBatch {
     for (let i = 0; i < capacity; i++) this.settings.setXYZW(i, -1e4, 1, 0, 1)
     g.setAttribute('sparkOrigin', this.origin); g.setAttribute('sparkVelocity', this.velocity); g.setAttribute('sparkSettings', this.settings)
     g.setAttribute('sparkPlane', this.plane); g.setAttribute('sparkMotion', this.motion); g.setAttribute('sparkTint', this.tint)
+    return g
+  }
+
+  resetCapacity(capacity: number): void {
+    const previous = this.mesh.geometry
+    this.capacity = capacity
+    this.mesh.geometry = this.buffers(capacity)
+    this.next = this.emitted = 0
+    this.lo = this.hi = -1
+    this.wrapped = false
+    previous.dispose()
+  }
+
+  constructor(public capacity: number, name: string, solid = false) {
+    const g = this.buffers(capacity)
 
     const o: N = attribute('sparkOrigin', 'vec3'), v0: N = attribute('sparkVelocity', 'vec3')
     const cfg: N = attribute('sparkSettings', 'vec4') // birth, life, width, drag

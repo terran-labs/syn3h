@@ -72,14 +72,25 @@ export class ImpactFx {
 
   /** Pools for the current quality level. Sparks and debris are a share of the particle budget. */
   private rebuild(): void {
+    const previous = this.level
     this.level = Number(graphicsLevel.value)
-    this.sparks?.dispose(); this.flash?.dispose(); this.debris?.dispose()
     const budget = qualityBudget().particles
-    this.sparks = new SparkBatch(Math.max(48, Math.floor(budget * 0.2)), 'gear impact sparks')
+    const sparkCount = Math.max(48, Math.floor(budget * 0.2))
+    this.scorch.limit = this.level === 0 ? 0 : this.level === 1 ? 12 : SCORCH_CAPACITY
+    if (this.sparks) this.sparks.resetCapacity(sparkCount)
+    else {
+      this.sparks = new SparkBatch(sparkCount, 'gear impact sparks')
+      this.game.scene.add(this.sparks.mesh)
+    }
+    if (previous > 0 && this.level > 0) {
+      this.flash.resetCapacity(24)
+      this.debris.resetCapacity(Math.max(24, Math.floor(budget * 0.05)))
+      return
+    }
+    this.flash?.dispose(); this.debris?.dispose()
     this.flash = new ParticleBatch(24, flashSprite, true, this.level === 0 ? 1 : 2)
     this.debris = new ParticleBatch(Math.max(24, Math.floor(budget * 0.05)), dustSprite, false, this.level === 0 ? 1 : 2)
-    this.scorch.limit = this.level === 0 ? 0 : this.level === 1 ? 12 : SCORCH_CAPACITY
-    this.game.scene.add(this.sparks.mesh, this.flash.mesh, this.debris.mesh)
+    this.game.scene.add(this.flash.mesh, this.debris.mesh)
   }
 
   private noise(): number {

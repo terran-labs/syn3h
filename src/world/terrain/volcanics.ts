@@ -511,6 +511,7 @@ export class Volcanics implements System {
 
   dispose(): void {
     this.clear()
+    this.emitters.dispose()
     this.fallMaterial.dispose()
     this.bed?.texture.dispose()
     this.emitters.dispose()

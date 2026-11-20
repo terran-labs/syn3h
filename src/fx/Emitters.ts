@@ -11,6 +11,7 @@ interface Vent extends VentOptions { x: number; y: number; z: number; birth: num
 function seed(i: number) { let n = Math.imul(i + 1, 0x45d9f3b); n = Math.imul(n ^ n >>> 16, 0x45d9f3b); return ((n ^ n >>> 16) >>> 0) / 4294967296 }
 export class Emitters implements System {
   private readonly vents: Vent[] = []
+  private readonly materials = new Map<VentKind, SpriteNodeMaterial>()
   private readonly meshes: Mesh<InstancedBufferGeometry, SpriteNodeMaterial>[] = []
   private readonly clock = uniform(0)
   private readonly wind = uniform(new Vector2())
@@ -26,7 +27,7 @@ export class Emitters implements System {
     this.vents.push({ ...options, ...position, birth: this.clock.value }); this.dirty = true
   }
   private release() {
-    for (const mesh of this.meshes) { this.scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose() }
+    for (const mesh of this.meshes) { this.scene.remove(mesh); mesh.geometry.dispose() }
     this.meshes.length = 0; this.particleCount = 0
   }
   clear() { this.vents.length = 0; this.release(); this.dirty = false }
@@ -53,28 +54,35 @@ export class Emitters implements System {
       geometry.setAttribute('ventOrigin', new InstancedBufferAttribute(new Float32Array(origins), 3))
       geometry.setAttribute('ventSettings', new InstancedBufferAttribute(new Float32Array(settings), 4))
       geometry.setAttribute('particleSeed', new InstancedBufferAttribute(new Float32Array(seeds), 2))
-      const origin = attribute('ventOrigin', 'vec3'), config = attribute('ventSettings', 'vec4'), random = attribute('particleSeed', 'vec2')
-      const lifetime = kind === 'smoke' ? 8 : kind === 'embers' ? 3 : 2
-      const age = fract(this.clock.sub(config.w).div(lifetime).add(random.x))
-      const angle = random.y.mul(Math.PI * 2)
-      const spread = kind === 'smoke' ? age.mul(2).add(0.5) : float(1).sub(age.mul(0.6))
-      const radius = config.x.mul(spread).mul(random.x.sqrt())
-      const drift = this.wind.mul(age).mul(lifetime)
-      const material = new SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: kind === 'smoke' ? NormalBlending : AdditiveBlending })
-      material.positionNode = origin.add(vec3(angle.cos().mul(radius).add(drift.x), age.mul(config.y), angle.sin().mul(radius).add(drift.y)))
-      const size = kind === 'embers' ? float(0.16).add(random.y.mul(0.14)) : config.x.mul(kind === 'smoke' ? 2 : 1.3).mul(kind === 'smoke' ? age.add(0.5) : float(1).sub(age.mul(0.7)))
-      material.scaleNode = vec2(size, size.mul(kind === 'flame' ? 2.3 : 1))
-      const disc = float(1).sub(smoothstep(0.1, 0.5, uv().sub(0.5).length()))
-      const fade = smoothstep(0, 0.1, age).mul(float(1).sub(smoothstep(0.45, 1, age)))
-      material.opacityNode = disc.mul(disc).mul(fade).mul(config.z).mul(kind === 'smoke' ? 0.26 : 0.75)
-      // Smoke is lit from below by the fire it rises from: warm at the base, cooling to grey.
-      material.colorNode = kind === 'smoke' ? mix(vec3(0.9, 0.32, 0.08), uniform(new Color(0x45414a)), smoothstep(0, 0.45, age)) : mix(vec3(4, 1.5, 0.12), vec3(1.5, 0.035, 0.001), age)
+      const material = this.material(kind)
       const mesh = new Mesh(geometry, material)
       // The vertex shader moves particles outside the base quad's CPU bounds.
       mesh.frustumCulled = false; mesh.renderOrder = kind === 'smoke' ? 2 : 1
       this.scene.add(mesh); this.meshes.push(mesh); this.particleCount += count
     }
     this.dirty = false
+  }
+  private material(kind: VentKind): SpriteNodeMaterial {
+    const cached = this.materials.get(kind)
+    if (cached) return cached
+    const origin = attribute('ventOrigin', 'vec3'), config = attribute('ventSettings', 'vec4'), random = attribute('particleSeed', 'vec2')
+    const lifetime = kind === 'smoke' ? 8 : kind === 'embers' ? 3 : 2
+    const age = fract(this.clock.sub(config.w).div(lifetime).add(random.x))
+    const angle = random.y.mul(Math.PI * 2)
+    const spread = kind === 'smoke' ? age.mul(2).add(0.5) : float(1).sub(age.mul(0.6))
+    const radius = config.x.mul(spread).mul(random.x.sqrt())
+    const drift = this.wind.mul(age).mul(lifetime)
+    const material = new SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: kind === 'smoke' ? NormalBlending : AdditiveBlending })
+    material.positionNode = origin.add(vec3(angle.cos().mul(radius).add(drift.x), age.mul(config.y), angle.sin().mul(radius).add(drift.y)))
+    const size = kind === 'embers' ? float(0.16).add(random.y.mul(0.14)) : config.x.mul(kind === 'smoke' ? 2 : 1.3).mul(kind === 'smoke' ? age.add(0.5) : float(1).sub(age.mul(0.7)))
+    material.scaleNode = vec2(size, size.mul(kind === 'flame' ? 2.3 : 1))
+    const disc = float(1).sub(smoothstep(0.1, 0.5, uv().sub(0.5).length()))
+    const fade = smoothstep(0, 0.1, age).mul(float(1).sub(smoothstep(0.45, 1, age)))
+    material.opacityNode = disc.mul(disc).mul(fade).mul(config.z).mul(kind === 'smoke' ? 0.26 : 0.75)
+    // Smoke is lit from below by the fire it rises from: warm at the base, cooling to grey.
+    material.colorNode = kind === 'smoke' ? mix(vec3(0.9, 0.32, 0.08), uniform(new Color(0x45414a)), smoothstep(0, 0.45, age)) : mix(vec3(4, 1.5, 0.12), vec3(1.5, 0.035, 0.001), age)
+    this.materials.set(kind, material)
+    return material
   }
   /** Where the wind is sampled: the vent nearest this point (the camera), set by the owner. */
   readonly listener = { x: 0, y: 0, z: 0 }
@@ -90,5 +98,9 @@ export class Emitters implements System {
     this.clock.value += dt; this.wind.value.set(this.drift.x + windX.value, this.drift.z + windZ.value)
     if (this.dirty || Math.floor(Math.min(particleBudget.value, qualityBudget().particles) * PARTICLE_SHARES.vents) !== this.budget) this.rebuild()
   }
-  dispose() { this.clear() }
+  dispose() {
+    this.clear()
+    for (const material of this.materials.values()) material.dispose()
+    this.materials.clear()
+  }
 }
