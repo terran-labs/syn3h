@@ -173,17 +173,17 @@ html[data-touch-aim="on"] .syn3h-shell.has-touch .focus-hud svg [data-reticle] {
 }
 
 /* A sunk buggy's Zorb cue (Shell.cueZorb), instead of a message: once every 2.6 s the ZORB
-   button swells to the glass "on" look (its body, rim and sheen, src/ui/glass.css) and one soft
-   ring leaves it and fades, then it settles to rest, which is whatever the class sets. The ring
+   button swells to the glass "on" look (its body, rim and sheen, src/ui/glass.css) with a soft
+   glow, and at that peak one ring leaves it and fades; then it settles to rest, which is
+   whatever the class sets. The ring
    is the outline, since the glass draws with both pseudo-elements; it follows the round
    corners. Reduced motion holds the peak look, without the ring. */
 @keyframes zorb-cue {
-  0% { outline-color: rgb(255 255 255 / 0); outline-offset: 0; }
-  8% { outline-color: rgb(255 255 255 / .75); outline-offset: 1px; }
-  50% { --glass-rim: 1; --glass-sheen: 1; background-color: var(--glass-body-on, rgb(255 255 255 / .18)); outline-color: rgb(255 255 255 / 0); outline-offset: 18px; }
-  100% { outline-color: rgb(255 255 255 / 0); outline-offset: 18px; }
+  0%, 38% { outline-color: rgb(255 255 255 / 0); outline-offset: 0; }
+  50% { --glass-rim: 1; --glass-sheen: 1; background-color: var(--glass-body-on, rgb(255 255 255 / .18)); filter: drop-shadow(0 0 9px rgb(255 255 255 / .55)) drop-shadow(0 0 2px rgb(0 0 0 / .35)); outline-color: rgb(255 255 255 / .85); outline-offset: 2px; }
+  92%, 100% { outline-color: rgb(255 255 255 / 0); outline-offset: 20px; }
 }
 .touch-controls .touch-actions button.is-cued { outline: 1.5px solid rgb(255 255 255 / 0); animation: zorb-cue 2.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .touch-controls .touch-actions button.is-cued { animation: none; outline: 0; --glass-rim: 1; --glass-sheen: 1; background-color: var(--glass-body-on, rgb(255 255 255 / .18)); }
+  .touch-controls .touch-actions button.is-cued { animation: none; outline: 0; --glass-rim: 1; --glass-sheen: 1; background-color: var(--glass-body-on, rgb(255 255 255 / .18)); filter: drop-shadow(0 0 9px rgb(255 255 255 / .55)) drop-shadow(0 0 2px rgb(0 0 0 / .35)); }
 }
