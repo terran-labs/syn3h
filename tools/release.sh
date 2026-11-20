@@ -278,8 +278,8 @@ else
 fi
 
 # --- Frozen versions ------------------------------------------------------------------------
-# Each frozen release's page and every one of its files, as that page asks for them, in
-# parallel (--full fetches and hashes every file instead of sizing most of them).
+# Each frozen release's page and every one of its files, as that page asks for them, fetched
+# and hashed 16 at a time.
 node tools/frozen-versions.mjs check "$URL" "$DEST" >"$LOG-frozen.log" 2>&1 \
   || { cat "$LOG-frozen.log"; fail "frozen version links are broken at $URL (see $LOG-frozen.log)"; }
 tail -2 "$LOG-frozen.log"

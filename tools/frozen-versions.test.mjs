@@ -119,10 +119,9 @@ async function site(copy, faults = {}) {
   const frozen = join(copy, 'dist', 'v')
   const { versions } = JSON.parse(readFileSync(join(frozen, 'versions.json'), 'utf8'))
   const read = (path) => { try { return readFileSync(path) } catch { return null } }
-  const seen = { requests: 0, heads: 0, limited: 0 }
+  const seen = { requests: 0, limited: 0 }
   const server = createServer((req, res) => {
     seen.requests++
-    if (req.method === 'HEAD') seen.heads++
     const url = new URL(req.url, 'http://x')
     if (faults.limitOnce && !seen.limited++) { res.writeHead(429, { 'retry-after': '1' }); return res.end() }
     let body = null, version = null
@@ -142,11 +141,10 @@ async function site(copy, faults = {}) {
     }
     if (!body) { res.writeHead(404); return res.end() }
     const headers = { etag: '"e"', ...(version ? { 'x-syn3h-version': version } : {}) }
-    if (faults.noLength && req.method === 'HEAD') headers['transfer-encoding'] = 'chunked'
-    else headers['content-length'] = body.length
+    headers['content-length'] = body.length
     if (req.headers['if-none-match'] === '"e"') { res.writeHead(304, headers); return res.end() }
     res.writeHead(200, headers)
-    res.end(req.method === 'HEAD' ? undefined : body)
+    res.end(body)
   })
   await new Promise((done) => server.listen(0, '127.0.0.1', done))
   return { url: `http://127.0.0.1:${server.address().port}/`, seen, close: () => new Promise((done) => server.close(done)) }
@@ -163,76 +161,54 @@ function released(root) {
   const copy = build(root, 'c', 'six')
   writeFileSync(join(copy, 'dist', 'assets', 'big-Ab12Cd34.bin'), Buffer.alloc(4096, 7))
   carry(copy, 'v26.11.1700', store)
-  return { copy, store }
+  return { copy }
 }
 
-test('the frozen check passes a correct site and hashes only what size cannot tell apart', async () => {
+test('the frozen check passes a correct site, fetching every file once', async () => {
   const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-check-'))
-  const { copy, store } = released(root)
+  const { copy } = released(root)
   const s = await site(copy)
   try {
-    const quick = await check(s.url, copy, { archive: store })
-    assert.deepEqual(quick.problems, [])
-    assert.deepEqual(quick.stats.fresh, ['26.11.1700'])
-    // Archived releases: build.json differs between them at one size, so it is hashed; their
-    // brand image is the same everywhere and their scripts have their own names, so sized.
-    // Everything of the new release is hashed.
-    assert.equal(quick.stats.files, 10)
-    assert.equal(quick.stats.hashed, 2 + 4)
-    assert.equal(quick.stats.sized, 4)
-    const full = await check(s.url, copy, { archive: store, full: true })
-    assert.deepEqual(full.problems, [])
-    assert.equal(full.stats.hashed, 10)
+    const { problems, stats } = await check(s.url, copy)
+    assert.deepEqual(problems, [])
+    assert.equal(stats.versions, 3)
+    assert.equal(stats.files, 10)
+    // Two spellings and a repeat visit per page, every file, an unknown version, the plain page.
+    assert.equal(stats.requests, 3 * 3 + 10 + 2)
+    assert.equal(s.seen.requests, stats.requests)
   } finally { await s.close(); rmSync(root, { recursive: true, force: true }) }
 })
 
-test('the frozen check fails loudly on a missing file or a wrong one, in quick and full modes', async () => {
+test('the frozen check fails loudly on a missing file, a wrong size or the wrong bytes', async () => {
   const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-check-'))
-  const { copy, store } = released(root)
-  try {
-    for (const faults of [{ drop: '26.11.1503/assets/app-one.js' }, { drop: '*/assets/big-Ab12Cd34.bin' }]) {
-      const s = await site(copy, faults)
-      try {
-        for (const full of [false, true]) {
-          const { problems } = await check(s.url, copy, { archive: store, full })
-          assert.equal(problems.length, 1, `${JSON.stringify(faults)} full=${full}: ${problems}`)
-          assert.match(problems[0], /HTTP 404/)
-        }
-      } finally { await s.close() }
-    }
-    // Same size, other bytes, where only a hash can tell: build.json of an archived release.
-    const s = await site(copy, { swap: '26.11.1503/build.json' })
+  const { copy } = released(root)
+  const fails = async (faults, pattern) => {
+    const s = await site(copy, faults)
     try {
-      const { problems } = await check(s.url, copy, { archive: store })
-      assert.equal(problems.length, 1)
-      assert.match(problems[0], /\/build\.json asked by the 26\.11\.1503 page/)
+      const { problems } = await check(s.url, copy)
+      assert.equal(problems.length, 1, `${JSON.stringify(faults)}: ${problems}`)
+      assert.match(problems[0], pattern)
     } finally { await s.close() }
-    // A dropped archived file that another version serves at another size.
+  }
+  try {
+    // Gone from every version and the latest build: a 404.
+    await fails({ drop: '*/assets/big-Ab12Cd34.bin' }, /\/assets\/big-Ab12Cd34\.bin asked by the 26\.11\.1700 page .*HTTP 404/)
+    await fails({ drop: '*/assets/app-one.js' }, /\/assets\/app-one\.js asked by the 26\.11\.1503 page .*HTTP 404/)
+    // Same size, other bytes: build.json of an archived release.
+    await fails({ swap: '26.11.1503/build.json' }, /\/build\.json asked by the 26\.11\.1503 page/)
+    // Dropped from its version, and another version's file of another size answers instead.
     writeFileSync(join(copy, 'dist', 'v', '26.11.1503', 'brand', 'share.png'), 'png-longer')
-    const t = await site(copy, { drop: '26.11.1503/brand/share.png' })
-    try {
-      const { problems } = await check(t.url, copy, { archive: store })
-      assert.equal(problems.length, 1)
-      assert.match(problems[0], /\/brand\/share\.png asked by the 26\.11\.1503 page .*want 10\)/)
-    } finally { await t.close() }
+    await fails({ drop: '26.11.1503/brand/share.png' }, /\/brand\/share\.png asked by the 26\.11\.1503 page .*\(HTTP 200, 3 bytes, want 10\)/)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test('a HEAD without a length falls back to a GET, and a 429 backs off and passes', async () => {
+test('a 429 holds the check for its Retry-After, and then it passes', async () => {
   const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-check-'))
-  const { copy, store } = released(root)
+  const { copy } = released(root)
+  const s = await site(copy, { limitOnce: true })
   try {
-    const s = await site(copy, { noLength: true })
-    try {
-      const { problems, stats } = await check(s.url, copy, { archive: store })
-      assert.deepEqual(problems, [])
-      assert.equal(stats.hashed, 10)
-    } finally { await s.close() }
-    const t = await site(copy, { limitOnce: true })
-    try {
-      const started = Date.now()
-      assert.deepEqual((await check(t.url, copy, { archive: store })).problems, [])
-      assert.ok(Date.now() - started >= 1000, 'the 429 held the check for its Retry-After')
-    } finally { await t.close() }
-  } finally { rmSync(root, { recursive: true, force: true }) }
+    const started = Date.now()
+    assert.deepEqual((await check(s.url, copy)).problems, [])
+    assert.ok(Date.now() - started >= 1000, 'the 429 held the check for its Retry-After')
+  } finally { await s.close(); rmSync(root, { recursive: true, force: true }) }
 })
