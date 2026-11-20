@@ -144,6 +144,8 @@ interface Loose {
 
 /** The flash where a cord is severed or snaps: white gold. */
 const FLASH_RGB = [4, 3.1, 1.6]
+/** How much brighter a missed hook's sailing cord is drawn than the cord was. */
+const SAIL_BRIGHT = 2
 
 export const SEGMENTS = 24
 /** Each layer's width grows with distance past this many metres per metre of width. */
@@ -231,6 +233,7 @@ export class Bungee implements System {
   private readonly drawB = new THREE.Vector3()
   private readonly drawSide = new THREE.Vector3()
   private readonly rgb = [0, 0, 0]
+  private readonly sailRgb = [0, 0, 0]
 
   private fireWas = false
   private lastPress = -Infinity
@@ -893,13 +896,24 @@ export class Bungee implements System {
       rope.step(step, a, b, ground); rope.step(step, a, b, ground)
       // Drawn as a cord still half under tension as it goes (wider and brighter than slack),
       // easing to slack as it fades, so the whip reads at a distance.
-      look.writeCord(l.slot, rope.pos, 0.6 * rope.fade, rope.phase, rope.rgb, undefined, rope.fade)
-      const star = look.cordSpark(l.slot, 0)
+      const sail = rope.kind === 'sail', n = rope.pos.length - 1
+      // A missed hook sails off as a taut, bright line easing slack as it goes, its star at the
+      // head with a comet tail: drawn like a let-go cord it was too faint to see at play distance
+      // (the sail strip, 19 November 2026).
+      let rgb = rope.rgb
+      if (sail) { for (let i = 0; i < 3; i++) this.sailRgb[i] = rope.rgb[i] * SAIL_BRIGHT; rgb = this.sailRgb }
+      look.writeCord(l.slot, rope.pos, (sail ? 1 : 0.6) * rope.fade, rope.phase, rgb, undefined, rope.fade)
+      const star = look.cordSpark(l.slot, 0), tail = look.cordSpark(l.slot, 1)
       if (rope.flash && rope.flashLevel > 0) {
         const f = rope.flashLevel
         look.star(star, rope.flash, 0.8 + 1.6 * f, FLASH_RGB, 4 * f, 0.3)
-      } else if (rope.kind === 'sail') look.star(star, rope.pos[rope.pos.length - 1], 0.4, rope.rgb, 1.6 * rope.fade, 0.6)
-      else look.hideSpark(star)
+      } else if (sail) {
+        const head = rope.pos[n], dir = this.drawSide.subVectors(head, rope.pos[n - 1])
+        look.star(star, head, 0.75, rgb, 2.6 * rope.fade, 0.6)
+        const length = dir.length()
+        if (length > 1e-4) look.tail(tail, head, dir.divideScalar(length), 3.2 * rope.fade, 0.4, rgb, 1.6 * rope.fade)
+        else look.hideSpark(tail)
+      } else look.hideSpark(star)
     }
   }
 

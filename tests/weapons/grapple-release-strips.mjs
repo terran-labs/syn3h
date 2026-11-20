@@ -44,6 +44,14 @@ try {
     window.__freeze = on => { B.update = on ? () => {} : update }
     window.__step = seconds => { for (let t = 0; t < seconds - 1e-6; t += 1 / 120) update(Math.min(1 / 120, seconds - t)) }
     s.game.add({ update() {
+      // Following a missed hook: from the side of its line of flight, on the hook in flight and
+      // then on the middle of the loose cord as it sails, 22 m back and a little above.
+      const fol = window.__follow
+      if (fol) {
+        const B = window.syn3hNet.bungee, rope = B.loose[0]?.cord, hook = B.mine?.hook
+        const at = rope ? rope.pos[Math.floor(rope.pos.length / 2)] : hook ? hook.pos.clone().lerp(s.player.object.position, 0.4) : null
+        if (at) window.__cam = { eye: [at.x - fol[0] * 22, at.y + 4, at.z - fol[1] * 22], look: [at.x, at.y, at.z] }
+      }
       const c = window.__cam
       if (!c) return
       s.game.camera.position.set(...c.eye); s.game.camera.lookAt(...c.look); s.game.camera.updateMatrixWorld()
@@ -70,20 +78,21 @@ try {
     await page.evaluate(() => window.__freeze(false))
     await place(); await page.waitForTimeout(1500); await place(); await page.waitForTimeout(500)
     if (effect === 'sail') {
-      // A short cord shot up and away from the bot: it reaches full length without catching.
+      // A short cord shot flat across open ground, at right angles to the bot (so it cannot
+      // catch it), a little up: it reaches full length without catching. The camera follows it
+      // from the side; one frame in flight, then the frames after it lets go.
       await page.evaluate(() => {
         window.syn3h.params.set('bungee.length', 30)
         const n = window.syn3hNet, [fx, fz] = window.__f
+        window.__follow = [fx, fz]
         n.gear.select('bungee')
-        n.bungee.launch([-fx * 0.4, 0.9, -fz * 0.4])
+        n.bungee.launch([fz, 0.12, -fx])
       })
+      await page.waitForFunction(() => (window.syn3hNet.bungee.mine?.hook?.travelled ?? 0) >= 18, null, { timeout: 5000, polling: 'raf' })
+      await page.waitForTimeout(50)
+      await writeFile(`${out}/raw/${effect}-before.png`, await page.screenshot())
       await page.waitForFunction(() => window.syn3hNet.bungee.fading.includes('sail'), null, { timeout: 5000, polling: 'raf' })
-      await page.evaluate(() => {
-        window.__freeze(true)
-        // Frame the rope as it leaves: from the side, far enough back to follow it a while.
-        const rope = window.syn3hNet.bungee.loose[0].cord, [fx, fz] = window.__f, m = rope.pos[Math.floor(rope.pos.length / 2)]
-        window.__cam = { eye: [m.x + fz * 30, m.y + 4, m.z - fx * 30], look: [m.x, m.y + 6, m.z] }
-      })
+      await page.evaluate(() => window.__freeze(true))
     } else {
       await page.evaluate(() => {
         window.syn3h.params.set('bungee.length', 120)
@@ -115,7 +124,7 @@ try {
   await page.evaluate(() => window.__freeze(false))
   // One sheet per effect: a row of frames.
   for (const [effect, times] of Object.entries(EFFECTS)) {
-    const before = effect === 'sail' ? [] : [`<figure><img src="data:image/png;base64,${(await readFile(`${out}/raw/${effect}-before.png`)).toString('base64')}"><figcaption>attached</figcaption></figure>`]
+    const before = [`<figure><img src="data:image/png;base64,${(await readFile(`${out}/raw/${effect}-before.png`)).toString('base64')}"><figcaption>${effect === 'sail' ? 'in flight' : 'attached'}</figcaption></figure>`]
     const imgs = before.concat(await Promise.all(times.map(async (t, i) => `<figure><img src="data:image/png;base64,${(await readFile(`${out}/raw/${effect}-${i}.png`)).toString('base64')}"><figcaption>${t} s</figcaption></figure>`)))
     const sheet = await browser.newPage({ viewport: { width: 2240, height: 300 } })
     await sheet.setContent(`<body style="margin:0;background:#111;color:#eee;font:14px system-ui"><h3 style="margin:8px">Grapple ${effect}</h3><div style="display:flex">${imgs.join('')}</div><style>figure{margin:3px}img{width:310px;display:block}figcaption{font-size:11px;text-align:center}</style></body>`)
