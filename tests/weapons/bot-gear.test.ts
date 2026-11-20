@@ -120,6 +120,21 @@ describe('bot gear execution', () => {
     } finally { s.close() }
   })
 
+  // Bug caught: a person asking to be let go (an 'unhook' the room relayed) left on a bot's cord.
+  it('lets a bot\'s cord go at once when the player it is tied to unhooks', () => {
+    params.set('bungee.allowed', true)
+    const s = setup()
+    try {
+      s.controller.act({ gear: 'bungee', target: s.target, phase: 'press' }); s.step()
+      expect(s.controller.bungee.mine).toBeDefined()
+      // What net does with the relayed 'unhook', in the same message handler: no step waits.
+      s.controller.bungee.letGo('unhooked')
+      expect(s.controller.bungee.mine).toBeUndefined()
+      expect(s.cords.at(-1)).toEqual({ s: 'off' })
+      expect(s.controller.bungee.stats.unhooked).toBe(1)
+    } finally { s.close() }
+  })
+
   it.each(['press', 'hold', 'release'] as const)('rejects %s against a removed target before aiming', phase => {
     params.set('pester.allowed', true)
     const s = setup()
