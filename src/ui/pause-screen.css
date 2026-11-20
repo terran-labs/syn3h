@@ -15,7 +15,9 @@ body:has(> .syn3h-shell.is-paused) > :is(.touch-controls, .syn3h-nametags, .dayd
 }
 
 /* ---- The veil: still the whole screen and still one click to resume, now clear glass. ---- */
-html .syn3h-shell.exploration-ui .pause-veil, html .syn3h-shell.exploration-ui .pause-veil:hover { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* It is a button holding focus while paused, so general button styling (a border, a focus
+   ring, a glow) would draw a frame round the whole screen. None of that here. */
+html .syn3h-shell.exploration-ui .pause-veil, html .syn3h-shell.exploration-ui .pause-veil:is(:hover, :focus, :focus-visible) { background: transparent; border: 0; outline: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .syn3h-shell .pause-veil::before {
   content: ""; position: absolute; left: 50%; top: 50%; z-index: -1; width: min(640px, 110vw); height: 300px; translate: -50% -50%;
   background: radial-gradient(closest-side, rgb(2 8 14 / .42), rgb(2 8 14 / .2) 55%, transparent); pointer-events: none;
