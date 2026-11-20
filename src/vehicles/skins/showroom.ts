@@ -105,7 +105,9 @@ export const showroomWarm = { warmed: 0, abandoned: 0, cancelled: 0, proxies: 0 
 const reducedDetail = new WeakSet<T.Object3D>()
 
 /** Reduced models already drop to plain shading at their detail boundary. */
-export function markReducedShowroomDetail(root: T.Object3D): void { reducedDetail.add(root) }
+export function markReducedShowroomDetail(root: T.Object3D): void {
+  root.traverse(object => reducedDetail.add(object))
+}
 
 type CoveredMesh = {
   scene: T.Scene
@@ -853,6 +855,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
         group.name = 'Showroom warm'; group.scale.setScalar(WARM_SCALE)
         const shadowsOn = params.get('gfx.shadowQuality')?.value !== 0
         for (const e of entries) {
+          if (reducedDetail.has(e.mesh)) continue
           const material = set.get(e.mesh)
           if (!material) continue
           const covered = coveredMeshes.get(e.mesh)

@@ -2,7 +2,7 @@ import { WingTipAnchors } from './wingTips'
 import { smoothBuggyWheel, distantBuggyBody, distantBuggyArm } from './buggyGeometry'
 import {hotExposureNode} from './hotExposure'
 
-import {addStatorGlow,applyShowroom,setRole} from './showroom'
+import {addStatorGlow,applyShowroom,markReducedShowroomDetail,setRole} from './showroom'
 import { forceField, type ForceField } from './forceField'
 import { graphicsLevel, levelNumber } from '../../core/quality'
 import * as THREE from 'three/webgpu'
@@ -410,8 +410,10 @@ export class Syn3hBuggySkin implements BuggySkin {
       const cast=!remote||distance<(level===2?20:0)
       shadows.forEach(m=>{m.castShadow=cast})
     })
+    const reduced = [midBody, farBody, this.midTyres, this.midArms]
+    for (const part of reduced) markReducedShowroomDetail(part)
     this.detachShowroom = applyShowroom(this.object, decorateBuggyDistance(
-      [midBody, farBody, this.midTyres, this.midArms], { body: this.bodyColor, accent: this.accentColor },
+      reduced, { body: this.bodyColor, accent: this.accentColor },
     ))
     this.object.visible = true
   }

@@ -34,6 +34,8 @@ export interface System {
   warmCovered?(warm: CoveredWarm): Promise<void>
   /** Apply scene-wide material inputs to any model temporarily attached for this draw. */
   prepareCoveredDraw?(): void
+  /** Apply world render state after updates can attach actors or switch their materials. */
+  prepareWorldDraw?(): void
   /** Apply forces. Runs before every physics step. */
   fixedUpdate?(dt: number): void
   /** Read results. Runs after every physics step. */
@@ -349,6 +351,7 @@ export class Game {
       const watchingDraw = startupTiming.firstWorldFrameMs === undefined ||
         (view === 'playing' && startupTiming.playRequestMs !== undefined && startupTiming.firstPlayableFrameMs === undefined)
       const previousDraws = watchingDraw ? this.renderer.info.render.drawCalls : 0
+      for (const system of this.systems) system.prepareWorldDraw?.()
       drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs)
       longFrames.end('Render submission', renderStart)
       this.lastDraw = now
@@ -426,6 +429,7 @@ export class Game {
       const drawStart = longFrames.start()
       longFrames.event('Covered precompile')
       for (const system of this.systems) system.prepareCoveredDraw?.()
+      for (const system of this.systems) system.prepareWorldDraw?.()
       const culled: THREE.Object3D[] = []
       this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
       const hidden: THREE.Object3D[] = []

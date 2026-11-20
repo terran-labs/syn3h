@@ -388,6 +388,13 @@ export class Syn3hBuggy extends Vehicle {
     return this.skin === skin && this.skinReady && !this.disposed
   }
 
+  /** A freshly spawned buggy can draw its stand-in until its generated skin attaches. */
+  drawCoveredStandIn(draw: () => void): void {
+    const visible = this.fallback.visible
+    this.fallback.visible = true
+    try { draw() } finally { this.fallback.visible = visible }
+  }
+
   drawCoveredMotorSparks(draw: () => void): void {
     if (this.skin?.drawCoveredMotorSparks) this.skin.drawCoveredMotorSparks(draw)
     else draw()

@@ -120,7 +120,8 @@ export class ProceduralTerrain implements Terrain {
     this.syncIce()
     // Level of detail follows the camera once per frame, after the camera has moved.
     this.lodSystem = game.add({
-      prepareCoveredDraw: () => this.syncSceneCurve(),
+      // Bots and their LOD materials may arrive after the camera update in the same frame.
+      prepareWorldDraw: () => this.syncSceneCurve(),
       // Before each physics step, and before the vehicles' own steps: carry things across
       // the seam and keep the ground under them.
       fixedUpdate: () => { this.keepSeam(); this.syncIce() },
@@ -137,7 +138,6 @@ export class ProceduralTerrain implements Terrain {
         // After the curve: level of detail also hides chunks that are over the horizon.
         this.meshes.updateLod(game.camera.position)
         this.look.setSea(seaLevel())
-        this.syncSceneCurve()
       }
     }
     this.volcanics = game.add(new Volcanics(

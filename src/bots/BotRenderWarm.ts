@@ -212,7 +212,7 @@ export class BotRenderWarm {
       }
       if (look.distance === near.distance) {
         drawCoveredShowroom(vehicle.object, this.game.scene, camera, () => {
-          if (look === near && vehicle instanceof Syn3hBuggy) vehicle.drawCoveredMotorSparks(() => warm.draw(vehicle.kind))
+          if (look === near && vehicle instanceof Syn3hBuggy) vehicle.drawCoveredStandIn(() => vehicle.drawCoveredMotorSparks(() => warm.draw(vehicle.kind)))
           else warm.draw(vehicle.kind)
         })
       } else warm.draw(vehicle.kind)
