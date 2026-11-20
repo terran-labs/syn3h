@@ -3,10 +3,11 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { Builder, GROUND_Y, type Leg, type Mat } from './shapes'
 import type { JetDesign } from './shipped'
 import { applyShowroom, setRole } from '../skins/showroom'
-import { addNightReadability } from '../skins/nightReadability'
+
 import { mergeStatic } from '../skins/mergeStatic'
-import { addLavaGlow } from '../skins/lavaGlow'
+
 import { MovingBatch } from './MovingBatch'
+import { vehicleDecoration } from '../skins/decoration'
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
 const ease = (v: number) => { const t = clamp01(v); return t * t * (3 - 2 * t) }
@@ -171,7 +172,7 @@ export class NextJet {
    * then, and at shading tier 0, the plain tagged materials show.
    */
   showroom(): void {
-    this.detachShowroom ??= applyShowroom(this.object, root => { addNightReadability(root); addLavaGlow(root) })
+    this.detachShowroom ??= applyShowroom(this.object, vehicleDecoration)
   }
 
   private buildLeg(spec: Leg): BuiltLeg {

@@ -15,6 +15,7 @@ import { ExpeditionTank } from '../../../vehicles/tankDesigns/expeditionKit'
 import { makeMats, withDetail } from '../../../vehicles/tankDesigns/kit'
 import { addHeadlightBeams } from '../materials'
 import type { LabExhibit, LabModel } from '../types'
+import { noDecoration } from '../../../vehicles/skins/decoration'
 
 const ROUNDS = [{ group: '4', designs: round4, hinge: 'Six treads, each on one trailing arm from a single boss on the body' }, { group: '5', designs: round5, hinge: 'Tall cockpit, six big headlamps, a solid rear bumper beam' },
   { group: '6', designs: round6, hinge: 'Each tread on one heavy swing arm that is also its fender, with one coilover to a tower on the hull' },
@@ -73,7 +74,7 @@ export const tank: LabExhibit = {
 function buildExpedition(d: TankBody): LabModel {
   const tank = new ExpeditionTank(d.hull(), d.color, d.accent), object = new THREE.Group()
   object.add(tank.object)
-  tank.showroom(() => {})
+  tank.showroom(noDecoration)
   const beams = addHeadlightBeams(object, [tank.headlamps[0], tank.headlamps[tank.headlamps.length / 2]])
   return {
     object,
