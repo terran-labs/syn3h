@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-20 05:15 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-20 05:40 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,10 +11,11 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2008 (release-73, device-loss guard and re-entry reuse), source 0029642f, frozen copy
-20261120-050025-0029642f, Worker version 1ebc0645, at https://www.syn3h.com/ since 20 November 05:04 PST.
-The hosted check still tolerates device-loss lines without a limit (204 on 2008, 406 on 2001 to 2007);
-not tightened, because the count did not fall to the expected handful.
+Live: v26.11.2009 (release-74), source 0ad09167, frozen copy 20261120-052549-0ad09167,
+Worker version 8f427a61, at https://www.syn3h.com/ since 20 November 05:30 PST.
+2009 counts shader-diagnostics rejections after a known loss into the one summary; the hosted check
+then tolerated 2 device-loss lines (204 on 2008). Smoke pages keep every AudioContext suspended since
+2009 (the renderer crash was Chrome's own audio rendering under load); crash budget still two.
 Hello and welcome carry only world settings that differ from their defaults. Staging: a late joiner
 after 4 bots took a 999-character welcome (a 2006 page 3,214); mixed room with 26.11.2006 7 of 7.
 Staging's mixed room with a frozen 26.11.2005 client passed 7 of 7.
@@ -100,6 +101,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2006 | 71 | m-grapple-2006 | strike your grappler to cut the cord; let-go cords whip back; missed hooks sail off |
 | v26.11.2007 | 72 | m-handshake-2007 | lighter joining: only non-default settings sent; oversized messages warn |
 | v26.11.2008 | 73 | m-loss-2008 | Reload promptly when graphics fail during loading; re-entry reuses its preparation |
+| v26.11.2009 | 74 | m-quiet-2009 | after a lost graphics device, shader diagnostics stay quiet on the page |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
