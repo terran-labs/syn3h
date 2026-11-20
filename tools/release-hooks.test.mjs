@@ -30,6 +30,22 @@ for (const failure of ['draft', 'tag']) {
   })
 }
 
+// The release is accepted and recorded before these steps; an archive that failed earlier
+// (ARCHIVE_FAILED, set in the Record step) still lets every one of them run, then ends the
+// release in failure so it cannot pass unnoticed.
+test('a failed archive runs every later step, then ends the release with exit 1', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'syn3h-release-hook-'))
+  try {
+    mkdirSync(join(dir, 'bin')); mkdirSync(join(dir, 'release-notes'))
+    writeFileSync(join(dir, 'bin/node'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    writeFileSync(join(dir, 'bin/git'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    const result = spawnSync('/bin/sh', ['-eu', '-c', hook], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, ARCHIVE_FAILED: '1', CALVER: 'v26.11.1500', MILESTONE: 'test', COMMIT: '1234567', WHEN: 'test time', N: '3', PREV: 'release-2', DEST: dir, LOG: join(dir, 'log'), SYN3H_SKIP_VANTAGE: '1' } })
+    assert.equal(result.status, 1)
+    assert.match(result.stdout, /VANTAGE: skipped/, 'the steps after the archive still ran')
+    assert.match(result.stderr, /release-3 is live but v26\.11\.1500 is NOT stored in R2/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
 const rollback = readFileSync(new URL('./rollback.sh', import.meta.url), 'utf8')
 // Preserve the original rollback success/failure cases using the bounded fixture below.
 for (const status of [0, 1]) {
