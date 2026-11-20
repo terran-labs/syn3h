@@ -480,7 +480,9 @@ export class Game {
       if (!await batch.ready()) recordEntryWarmIssue('Pipeline compilation failed')
       check()
       discover = false
-      await sweep()
+      // Discovery uses the actual scene and renderer cache. Parked models or changed
+      // passes get confirmed again, while an unchanged entry needs only its final draw.
+      if (batch.needsConfirmation) await sweep()
       // The confirmation draws can leave partially filled world and shadow targets.
       // Refresh them from the settled scene before lifting cover.
       batch = null
