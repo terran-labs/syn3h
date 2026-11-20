@@ -126,7 +126,7 @@ let steppedDown = false
 export function scoreReportLine(score: Score | undefined): string {
   if (!score) return 'Music: not started'
   const tier = score.synth.lite ? 'lighter' : 'full'
-  const why = steppedDown ? ', stepped down this session under audio strain' : scoreLite.value ? ', lighter by setting' : ''
+  const why = steppedDown ? ', stepped down this session under audio strain' : scoreLite.value ? ', by setting' : ''
   const underruns = score.underruns === null ? 'underruns not reported' : `${score.underruns} underrun events`
   return `Music: ${tier} score${why}; ${underruns}`
 }
