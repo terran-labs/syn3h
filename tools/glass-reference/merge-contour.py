@@ -31,6 +31,23 @@ def facing_contour(image, midpoint):
     return np.column_stack((x[keep], y[keep])) / 3
 
 
+def filled_neck_height(image, gap):
+    """Measure connected glass face at the midpoint of this 3x dark-grid fixture."""
+    x = round(3 * (142 - gap / 2))
+    red, green, blue = image[:, x-1:x+2].mean(axis=1).T
+    # Exclude exposed navy, cyan and gold grid pixels and the dark hairline.
+    face = (red > 44) & (red < 143) & (green < 160) & (blue > red)
+    center = image.shape[0] // 2
+    if not face[center]:
+        return 0.
+    top = bottom = center
+    while top > 0 and face[top - 1]:
+        top -= 1
+    while bottom + 1 < len(face) and face[bottom + 1]:
+        bottom += 1
+    return (bottom - top + 1) / 3
+
+
 def measure(apple, ours, gap):
     midpoint = 142 - gap / 2
     a = facing_contour(apple, midpoint)
@@ -47,9 +64,10 @@ if __name__ == "__main__":
     parser.add_argument("directory", type=Path)
     parser.add_argument("gaps", type=int, nargs="+")
     args = parser.parse_args()
-    print("gap backend contour mean/p95/peak (pt) neck RGB mean/max-channel p95/peak")
+    print("gap backend contour mean/p95/peak (pt) neck RGB mean/max-channel p95/peak; filled height Apple/ours (pt)")
     for gap in args.gaps:
         apple = rgb(args.directory / f"native-merge-{gap}.png")
         for backend in ("webgpu", "webgl"):
             ours = rgb(args.directory / f"{backend}-merge-{gap}.png")
-            print(gap, backend, *(round(v, 2) for v in measure(apple, ours, gap)))
+            print(gap, backend, *(round(v, 2) for v in [*measure(apple, ours, gap),
+                                               filled_neck_height(apple, gap), filled_neck_height(ours, gap)]))
