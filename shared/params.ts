@@ -48,6 +48,7 @@ export type ParamSource = 'local' | 'remote' | 'preset'
 export type ParamListener = (id: string, value: ParamValue, source: ParamSource) => void
 
 const registry = new Map<string, Param<ParamValue>>()
+let worldParamCount = 0
 const listeners = new Set<ParamListener>()
 
 /** Clamp and coerce a raw value to what the definition allows. */
@@ -70,10 +71,12 @@ export function defineParam<T extends ParamValue>(def: ParamDef<T>): Param<T> {
   if (existing) return existing as unknown as Param<T>
   const param = { def, value: def.default } as Param<T>
   registry.set(def.id, param as unknown as Param<ParamValue>)
+  if (def.scope === 'world') worldParamCount++
   return param
 }
 
 export const params = {
+  get worldCount(): number { return worldParamCount },
   all(): Param<ParamValue>[] {
     return [...registry.values()]
   },

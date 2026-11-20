@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { type Peer, Room } from '../../server/room'
-import { BOT_ID_BASE, DEFAULT_COLORS, PROTOCOL_VERSION, type ServerMessage, type WireState, decodeState, encodeState } from '../../shared/protocol'
+import { BOT_ID_BASE, DEFAULT_COLORS, PROTOCOL_VERSION, MAX_BOTS, MAX_ROOM_PLAYERS, MAX_EXTRA_ROOM_PARAMS, MAX_JSON_BYTES, parseJson, type ServerMessage, type WireState, decodeState, encodeState } from '../../shared/protocol'
 import { roomName } from '../../server/util'
 import { emptyInputLike } from './helpers'
 
@@ -48,6 +48,36 @@ beforeEach(() => {
 })
 
 describe('Room', () => {
+  it('admits the last player to a full roster with a complete world snapshot', () => {
+    const settings = Object.fromEntries(Array.from({ length: MAX_EXTRA_ROOM_PARAMS }, (_, i) =>
+      [`world.setting.${i}.${'x'.repeat(43)}`, i + 0.25]))
+    const host = join('Host', settings, { largeWelcome: true })
+    for (let i = 0; i < MAX_BOTS; i++) {
+      room.receive(host.peer, state([i, 0, 0], [0, 0, 0], { bot: true, id: BOT_ID_BASE + i }))
+    }
+    for (let i = 1; i < MAX_ROOM_PLAYERS - 1; i++) join(`Driver ${i}`, {}, { largeWelcome: true })
+    const bob = join('Bob', {}, { largeWelcome: true })
+    const packet = JSON.stringify(bob.peer.last('welcome'))
+    expect(packet.length).toBeGreaterThan(MAX_JSON_BYTES)
+    const decoded = parseJson<Extract<ServerMessage, { type: 'welcome' }>>(packet, 'welcome')
+    expect(decoded?.id).toBe(bob.id)
+    expect(decoded?.players).toHaveLength(MAX_ROOM_PLAYERS + MAX_BOTS)
+    expect(decoded?.params).toEqual(room.snapshot().params)
+
+    // A frozen page can still recover its seat and all world values from legacy-sized frames.
+    const oldRoom = new Room('legacy')
+    const alice = new FakePeer(), guest = new FakePeer()
+    oldRoom.connect(alice)
+    oldRoom.receive(alice, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name: 'Alice', params: settings }))
+    oldRoom.connect(guest)
+    oldRoom.receive(guest, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name: 'Guest' }))
+    const first = guest.last('welcome')!
+    expect(first.id).toBeGreaterThan(0)
+    expect(guest.json.every(msg => parseJson(JSON.stringify(msg)) !== null)).toBe(true)
+    expect(Object.assign({}, first.params, Object.fromEntries(guest.all('param').map(msg => [msg.id, msg.value])))).toEqual(oldRoom.snapshot().params)
+    expect(parseJson(JSON.stringify({ type: 'chat', text: 'x'.repeat(MAX_JSON_BYTES) }), 'hello')).toBeNull()
+  })
+
   it('assigns ids and slots and tells everyone about joins', () => {
     const a = join('Ann', { 'game.mode': 0 })
     const b = join('Bob')

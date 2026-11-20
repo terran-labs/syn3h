@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-20 02:55 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-20 03:30 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,12 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2003 (release-68, Thunder fireworks), source 387dbcfc, frozen copy
-20261120-024251-387dbcfc, Worker version bbc0f56e, at https://www.syn3h.com/ since 20 November 02:46 PST.
+Live: v26.11.2004 (release-69, the join hotfix), source 93d91af8, frozen copy
+20261120-031842-93d91af8, Worker version 61229e80, at https://www.syn3h.com/ since 20 November 03:22 PST.
+2004: a page that sends largeWelcome in its hello takes a welcome up to a bound for a full room; for
+older pages the room trims the welcome under 8,192 and sends the rest as ordinary messages. Staging:
+a late joiner after 4 bots took an 8,350-character welcome; a 2003 page got a trimmed 7,832 and joined.
+2003 had a late-join bug: a welcome over 8,192 was dropped and the player never got a room id.
 Protocol gained detonate and detonated in 2003; staging's mixed room with a frozen 26.11.2002 client
 passed 7 of 7, and a one-off check (/tmp/orch-scripts/thunder-mixed.mjs) showed the old page takes the
 new messages without error and a new client bursts an old player's bolt itself after END_WAIT.
@@ -84,6 +88,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2001 | 66 | m-freeze-2001 | shaders and pipelines prepared at Play under cover, in parallel; bots build nothing in play; Copy diagnostics |
 | v26.11.2002 | 67 | m-r2-2002 | deployments stop carrying old versions; earlier versions served from R2 only |
 | v26.11.2003 | 68 | m-thunder-2003 | Plasma Thunder skips, flares and ends in fireworks |
+| v26.11.2004 | 69 | m-join-2004 | joining a room that already has bots works again |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker

@@ -4,6 +4,7 @@
  *
  *   PORT=8787 npm run server
  */
+import { maxClientFrameBytes } from '../shared/protocol'
 import { createServer } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { CLOCK_MS, type Peer, Room } from './room'
@@ -76,7 +77,7 @@ const http = createServer((req, res) => {
   res.end(`Syn3h room server\n${counts.join('\n')}\n`)
 })
 
-const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 })
+const wss = new WebSocketServer({ noServer: true, maxPayload: maxClientFrameBytes() })
 
 http.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '/', 'http://localhost')
