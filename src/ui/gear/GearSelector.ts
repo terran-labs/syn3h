@@ -461,7 +461,8 @@ export class GearSelector {
   private actionButton(action: GearAction): ActionButton {
     const button = document.createElement('button')
     button.type = 'button'
-    button.className = 'gs-action'
+    // The shared round glass button, like the shell's thumb buttons (touch-stick.css).
+    button.className = 'liquid-glass glass-round gs-action'
     button.dataset.action = action.id
     button.dataset.hold = String(action.hold)
     button.textContent = action.label
