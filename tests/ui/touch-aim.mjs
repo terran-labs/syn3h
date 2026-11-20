@@ -23,7 +23,7 @@ try {
     await page.goto(`${base}?autoplay=1&room=touch-aim-${name}-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
-    if (await page.locator('.world-inspector').isVisible()) await page.locator('.inspector-toggle').tap()
+    if (await page.locator('.world-inspector').isVisible()) await page.locator('.panels-close').tap()
     await page.locator('.world-inspector').waitFor({ state: 'hidden' })
     await page.locator('.touch-controls').waitFor({ state: 'visible' })
     await page.evaluate(() => {
