@@ -10,7 +10,16 @@ preview_urls = false
 [assets]
 directory = "./dist"
 binding = "ASSETS"
-run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*"]
+run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*", "/v/*"]
+
+# Frozen versions, stored once in R2 (tools/frozen-versions.mjs r2-upload) and read by the Worker
+# before the copies under /v/ that each deployment still carries; "/v/*" above sends a frozen
+# page's own /v/<version>/... addresses to the Worker so they are read from R2 too. The Worker
+# only reads it (server/worker.ts, FrozenBucket). Staging reads the same bucket, so it proves the real archive,
+# and having no write path it cannot damage it.
+[[r2_buckets]]
+binding = "FROZEN"
+bucket_name = "syn3h-versions"
 
 [[durable_objects.bindings]]
 name = "ROOMS"
