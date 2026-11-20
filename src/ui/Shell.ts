@@ -73,6 +73,7 @@ import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
 import './label-plate.css'
 import { isVehicleAvailable } from '../vehicles/available'
+import { zorbSpeed } from '../vehicles/zorb'
 import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
@@ -1847,7 +1848,7 @@ export class Shell implements System {
   showHelp(full = true): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!, touch = this.touch.available
     renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full, this.hasSeveralGear)
-    hint.classList.toggle('is-full', full); hint.classList.remove('is-hint'); this.touch.highlight(null)
+    hint.classList.toggle('is-full', full); hint.classList.remove('is-hint', 'is-quiet'); this.touch.highlight(null)
     fillHelpLine(hint.querySelector('small')!, touch ? '' : full ? 'H or ?: hide' : 'H: all controls')
     hint.hidden = false; clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
     const hide = () => this.hideHelp()
@@ -1873,12 +1874,38 @@ export class Shell implements System {
   showHint(hint: Hint): void {
     const card = this.element.querySelector<HTMLElement>('.spawn-help')!
     if (!this.started || this.menuVisible || (!card.hidden && card.classList.contains('is-full'))) return
+    // A Zorb cue is the Zorb control's pulse (cueZorb); words only where no Zorb control shows.
+    if (hint.cue === 'zorb' && this.zorbControl()) return
     const line = document.createElement('div'); line.textContent = hint.text
     card.querySelector('div')!.replaceChildren(line); card.querySelector('small')!.textContent = ''
-    card.classList.remove('is-full'); card.classList.add('is-hint'); card.hidden = false
+    card.classList.remove('is-full'); card.classList.add('is-hint'); card.classList.toggle('is-quiet', hint.cue === 'zorb'); card.hidden = false
     this.touch.highlight(hint.touchAction ?? null)
     clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
     this.helpTimer = setTimeout(() => this.hideHelp(), 5000)
+  }
+  /**
+   * The Zorb control on screen, if one shows: the ZORB thumb button on touch, or the Zorb row of
+   * the left column. Null when the HUD is hidden, the layout leaves it out or it is off screen.
+   */
+  private zorbControl(): HTMLElement | null {
+    const options = [this.touch.available ? this.touch.element.querySelector<HTMLElement>('[data-action="zorb"]') : null, this.accessories.element.querySelector<HTMLElement>('.acc-row[data-id="zorb"]')]
+    for (const el of options) {
+      if (!el || !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue
+      const box = el.getBoundingClientRect()
+      if (box.width > 0 && box.right > 0 && box.bottom > 0 && box.left < innerWidth && box.top < innerHeight) return el
+    }
+    return null
+  }
+  private zorbCue: { on: boolean; el: HTMLElement | null } = { on: false, el: null }
+  /**
+   * Pulse the Zorb control while a sunk buggy should reach for it (PlayHints.zorbCue). Runs every
+   * frame; looks for the control only when the cue starts, and touches the DOM only on a change.
+   */
+  cueZorb(on: boolean): void {
+    if (on === this.zorbCue.on) { if (on && this.zorbCue.el?.classList.contains('acc-row')) this.accessories.wake(); return }
+    this.zorbCue.el?.classList.remove('is-cued')
+    this.zorbCue = { on, el: on ? this.zorbControl() : null }
+    this.zorbCue.el?.classList.add('is-cued')
   }
   private toggleHelp(): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!
@@ -2008,8 +2035,9 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)), activePlayer.kind === 'jet' && !activePlayer.zorbed ? activePlayer.input.z : undefined, altitudeAboveSea(activePlayer.contactHeight()))
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
     const input = activePlayer.input
-    const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut })
+    const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut, zorbed: activePlayer.zorbed, zorbAvailable: zorbSpeed.value > 0 })
     if (hint) shell.showHint(hint)
+    shell.cueZorb(hints.zorbCue)
   } })
   game.add(audio)
   return { shell, audio, setPlayer(next) { activePlayer = next; height = new HeightAboveGround(); hints.reset(); audio.setPlayer(next,terrain); shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
