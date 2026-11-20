@@ -19,10 +19,19 @@ if candidate.size != reference.size or reference.height != 160 * scale:
 diff = np.abs(np.asarray(reference, dtype=np.int16) - np.asarray(candidate, dtype=np.int16))
 y, x = np.mgrid[:reference.height, :reference.width]
 x, y = (x + 0.5) / scale, (y + 0.5) / scale
-regions = {
-    "Circle": np.hypot(x - 80, y - 80) <= 30,
-    "Pill": np.hypot(np.maximum(np.abs(x - 212) - 46, 0), y - 80) <= 24,
+shapes = {
+    "Circle": (30, np.hypot(x - 80, y - 80)),
+    "Pill": (24, np.hypot(np.maximum(np.abs(x - 212) - 46, 0), y - 80)),
 }
+regions = {}
+for name, (radius, distance) in shapes.items():
+    depth = radius - distance
+    regions[name] = depth >= 0
+    regions[f"{name} rim, 2 pt in to 3 pt out"] = (depth >= -3) & (depth < 2)
+    regions[f"{name} inner 2 pt"] = (depth >= 0) & (depth < 2)
+    regions[f"{name} exterior 3 pt"] = (depth >= -3) & (depth < 0)
+    regions[f"{name} fold"] = (depth >= 2) & (depth < 0.55 * radius)
+    regions[f"{name} interior"] = depth >= 0.55 * radius
 # Keep Apple's image on the left at full capture resolution.
 board = Image.new("RGB", (reference.width * 3, reference.height + 32), "#1e2227")
 draw = ImageDraw.Draw(board)
@@ -35,5 +44,6 @@ for i, (label, im) in enumerate([
     draw.text((i * reference.width + 8, 10), label, fill="white")
 board.save(args.output)
 for name, mask in regions.items():
-    print(f"{name}  MAE {diff[mask].mean():.2f}  p95 {np.percentile(diff[mask], 95):.0f}")
+    pixel_error = diff[mask].max(axis=1)
+    print(f"{name}  RGB MAE {diff[mask].mean():.2f}  max-channel p95 {np.percentile(pixel_error, 95):.0f}  peak {pixel_error.max()}")
 print(f"Top registration strip MAE {diff[y < 8].mean():.3f}")
