@@ -2,7 +2,8 @@
  * A held fire button as intent (the owner, 19 November 2026): holding fire through a gear's
  * cooldown starts its charge or shot the moment it is ready. Bugs these catch: a press during
  * the cooldown still lost (click again); a charge starting under a button let go before the
- * cooldown ended; one starting under a button still held from before a gear switch.
+ * cooldown ended; a gear firing after the player has left it, or a charge carried across a
+ * switch; a cancelled charge starting again under the same hold.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three/webgpu'
@@ -27,20 +28,17 @@ describe('HeldFire', () => {
     expect(t.step(false, true).released).toBe(true)
     expect(t.held).toBe(false)
   })
-  it('ends when the gear leaves the hand, and coming back while still held is not a press', () => {
+  it('ends when the gear leaves the hand, and holds again when it comes back with the button down', () => {
     const t = new HeldFire()
     t.step(true, true)
     expect(t.step(true, false).released).toBe(true)
-    expect(t.step(true, true).pressed).toBe(false)
     expect(t.held).toBe(false)
-    t.step(false, true)
     expect(t.step(true, true).pressed).toBe(true)
   })
-  it('a press made with another gear in hand does not count', () => {
+  it('a gear that comes into hand with the button already down holds (fire as soon as you can)', () => {
     const t = new HeldFire()
     t.step(true, false)
-    t.step(true, true)
-    expect(t.held).toBe(false)
+    expect(t.step(true, true).pressed).toBe(true)
   })
   it('clear() ends it until a new press', () => {
     const t = new HeldFire()
@@ -106,17 +104,34 @@ describe('Plasma Thunder held through its cooldown', () => {
     } finally { s.close() }
   })
 
-  it('a gear switch ends it: back in hand with the button still held starts nothing', () => {
+  it('never charges while out of hand, carries no half-built charge across, and charges when back and ready', () => {
+    const s = setup()
+    try {
+      // Half a charge, then the gear leaves the hand with the button still down: it is let go
+      // there (a fizzle, as always), not kept.
+      s.hold(true); s.tick(3)
+      expect(s.red.charge).toBeGreaterThan(0)
+      s.setHand(false); s.tick()
+      expect(s.red.charge).toBe(-1)
+      // Out of hand, held through the pause: nothing.
+      s.tick(Math.ceil(bigRedCooldown.value / DT) + 10)
+      expect(s.red.charge).toBe(-1)
+      // Back in hand, button still down and ready: it charges from nothing, at once.
+      s.setHand(true); s.tick()
+      expect(s.red.charge).toBeGreaterThanOrEqual(0)
+      expect(s.red.charge).toBeLessThan(0.2)
+    } finally { s.close() }
+  })
+
+  it('a gear coming into hand during its cooldown with the button held charges when ready', () => {
     const s = setup()
     try {
       s.sendOne()
-      s.hold(true); s.tick(5)
-      s.setHand(false); s.tick()
+      const readyAt = s.game.time + bigRedCooldown.value
+      s.setHand(false); s.hold(true); s.tick(3)
       s.setHand(true)
-      s.tick(Math.ceil(bigRedCooldown.value / DT) + 10)
-      expect(s.red.charge).toBe(-1)
-      // A new press does.
-      s.hold(false); s.tick(); s.hold(true); s.tick()
+      while (s.game.time + DT < readyAt - 1e-9) { s.tick(); expect(s.red.charge).toBe(-1) }
+      s.tick(); if (s.game.time < readyAt) s.tick()
       expect(s.red.charge).toBeGreaterThanOrEqual(0)
     } finally { s.close() }
   })
