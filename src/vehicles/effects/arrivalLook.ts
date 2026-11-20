@@ -42,7 +42,7 @@ const CANCEL_SECONDS = .25
 const FAR_SCALE = 1 / 25
 /** At most this many of the vehicle's meshes are drawn again as the silhouette. */
 const MAX_GHOSTS = 32
-const FLASH_SEGMENTS = 16
+const FLASH_SEGMENTS = 12
 
 /**
  * 1 in daylight, 0 at night. By day the cloud is deeper coloured and more opaque, since glow
@@ -195,7 +195,7 @@ export class ArrivalLook {
     // The additive layer follows terrain and liquid. Lower tiers draw only the original decal.
     const flashMaterial = new T.MeshBasicNodeMaterial({transparent: true, blending: T.AdditiveBlending, depthWrite: false})
     flashMaterial.fog = false
-    flashMaterial.colorNode = vec3(.055, .78, 1).mul(hotExposureNode())
+    flashMaterial.colorNode = this.u.accent.mul(hotExposureNode())
     const falloff = float(1).sub(smoothstep(0, 1, uv().mul(2).sub(1).length()))
     flashMaterial.opacityNode = falloff.pow(2).mul(this.flashStrength)
     this.flash = new T.Mesh(new T.PlaneGeometry(2, 2, FLASH_SEGMENTS, FLASH_SEGMENTS).rotateX(-Math.PI / 2), flashMaterial)

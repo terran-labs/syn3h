@@ -274,6 +274,8 @@ describe('arrival level',()=>{
 })
 
 describe('the scene\'s lights',()=>{
+  // Three includes visible lights in lit materials’ shader keys. Adding, removing or hiding
+  // a light during play can rebuild shaders across the scene.
   it('keeps the same scene lights across quality changes, arrivals and departures',async()=>{
     const {params}=await import('../../shared/params')
     const before=params.get('gfx.level')!.value
