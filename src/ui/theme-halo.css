@@ -320,9 +320,7 @@ html .syn3h-shell.exploration-ui[data-ui-frost="off"] :is(.lobby-panels, .in-pla
 /* Over a busy world and the open sidebar, the glass needs more body than the lobby's. */
 html .syn3h-shell.exploration-ui:is([data-glass], *) .in-play-about { background: rgb(3 7 12 / .95); }
 .syn3h-shell.exploration-ui .in-play-about-body { padding: 24px 36px; text-align: left; }
-/* While paused, About sits low on the Paused veil, above it. */
-.syn3h-shell .pause-about { position: fixed; z-index: 61; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%); min-height: 44px; max-width: calc(100vw - 32px); padding: 10px 24px; }
-.syn3h-shell .pause-about[hidden] { display: none; }
+/* While paused, Welcome sits in the pause screen's row of three: pause-screen.css. */
 /* Phones, portrait and landscape: one header row of 56px, title left and a compact Back. */
 @media (max-width: 600px), (max-height: 550px) {
   .syn3h-shell.exploration-ui .in-play-about > header { flex-wrap: nowrap; box-sizing: border-box; height: 56px; padding: 6px 8px 6px 18px; }
