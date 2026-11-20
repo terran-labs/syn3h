@@ -218,14 +218,39 @@ async function serveVersioned(req: Request, url: URL, env: Env): Promise<Respons
   const latest = await env.ASSETS.fetch(req)
   if (latest.status !== 404 || isDocument || !HASHED.test(url.pathname)) return latest
   // A content-hashed file the latest build no longer has, asked without a usable Referer: the
-  // release that owns it is in R2. Newest first; a name that matches nowhere costs one read per
-  // version, so only hashed names are searched.
+  // release that owns it is in R2. Only hashed names are searched.
   const mine = await ownVersion(req, env)
-  for (const version of (await frozenVersions(req, env)).filter((v) => v !== mine).reverse()) {
-    const stored = await fromR2(req, env, version, url.pathname, 'direct')
-    if (stored) return stored
+  return (await searchHashed(req, env, url, (await frozenVersions(req, env)).filter((v) => v !== mine).reverse())) ?? latest
+}
+
+/**
+ * Find `url`'s path among `versions` (newest first) in R2. One read per version in series grew
+ * with every release (2.9 s for a made-up name at 54 versions), so the versions are looked up
+ * SEARCH_BATCH at a time with HEAD reads, and the first batch holding the file decides. A name
+ * found nowhere is remembered at the edge for SEARCH_MISS_SECONDS (the Cache API: the custom
+ * domain only, never workers.dev), so a client or a scanner repeating it costs no reads. A
+ * cached miss cannot hide a file: hashed names are content-addressed, the latest build's files
+ * are served by the static assets before the Worker runs, and a version's files are all in R2
+ * before any page can ask for them.
+ */
+const SEARCH_BATCH = 16
+const SEARCH_MISS_SECONDS = 300
+async function searchHashed(req: Request, env: Env, url: URL, versions: string[]): Promise<Response | null> {
+  if (!env.FROZEN || !versions.length) return null
+  const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default
+  const key = new Request(`${url.origin}${url.pathname}`)
+  if (cache) { const hit = await cache.match(key); if (hit) return hit }
+  for (let i = 0; i < versions.length; i += SEARCH_BATCH) {
+    const batch = versions.slice(i, i + SEARCH_BATCH)
+    const found = await Promise.all(batch.map((v) => env.FROZEN!.head(`v/${v}${url.pathname}`)))
+    const at = found.findIndex(Boolean)
+    if (at >= 0) return fromR2(req, env, batch[at], url.pathname, 'direct')
   }
-  return latest
+  // Best effort: a cache that will not take it changes nothing but the next miss's cost.
+  if (cache) {
+    await cache.put(key, new Response('not found', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': `public, max-age=${SEARCH_MISS_SECONDS}` } })).catch(() => {})
+  }
+  return null
 }
 function unknownVersion(asked: string, versions: string[]): Response {
   const list = versions.map(v => `https://www.syn3h.com/?v=${v}`).join('\n')
