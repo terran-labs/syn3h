@@ -54,6 +54,12 @@
      line, ux/phone-controls-1950) stands clear of it by this much: its height and its gap. */
   html:has(> body .syn3h-shell.exploration-ui.has-touch.is-playing:not(.is-panels) > .hud-navigation:not([hidden])) { --thumb-above: calc(36px + var(--thumb-gap)); }
 
+  /* The thumb grid and the minimap step back while the panels show (inspector/motion rules in
+     inspector.css follow the stack's hidden attribute, which lands only when its close motion
+     ends). On phones they start back the moment Close panels is tapped, alongside the stack
+     leaving, rather than 160 ms later. Taps reach them once the stack is hidden. */
+  html:has(.syn3h-shell.exploration-ui.has-touch.is-playing:not(.is-panels) .world-inspector:not([hidden])) :is(.touch-controls, .shell-minimap) { opacity: 1; transition: opacity .2s ease-out; }
+
   /* ---- The stack: full width between the shared edges, above the thumb grid while it shows,
      growing out of Show panels and going back into it. ---- */
   html .syn3h-shell.exploration-ui.has-touch .world-inspector {
