@@ -17,8 +17,10 @@
  * What it cannot be: CSS cannot bend the pixels behind an element in Safari (every iPhone), so
  * this is frost and rim light, a convincing imitation, not refraction. Refraction over our own
  * canvases is a later shader (Route B, docs/research/liquid-glass.md on the research branch). It
- * can take over the surface without touching any markup: it sets html[data-glass-surface="shader"],
- * finds its rectangles by this class, and the rule at the end clears the CSS body and frost.
+ * can take over the surface one button at a time without touching any markup: once its surface
+ * for a button is drawn and ready it sets data-glass-surface="shader" on that button, and the
+ * rule at the end clears that button's CSS body and frost. Removing the attribute (any frame)
+ * hands the surface back to CSS at once.
  *
  * Tokens (on :root, because the touch controls sit outside .syn3h-shell). Override them only in
  * your own scope; never restyle the class's rules.
@@ -54,7 +56,8 @@
      bottom one, and a short soft shadow under the body. */
   box-shadow: inset 0 1px 0 rgb(255 255 255 / calc(var(--glass-rim) * .28)), inset 0 -1px 0 rgb(0 0 0 / .22), 0 2px 10px rgb(0 0 0 / .16);
   color: var(--glass-ink); text-shadow: var(--glass-under);
-  transition: background-color .2s ease, box-shadow .2s ease, transform .12s ease, --glass-rim .2s ease, --glass-sheen .3s ease;
+  /* No transition on the body: the shader hand-over swaps it in one frame, both ways. */
+  transition: box-shadow .2s ease, transform .12s ease, --glass-rim .2s ease, --glass-sheen .3s ease;
 }
 /* The rim: a conic light masked to a 1 px ring. White at the struck edge and its opposite, and a
    faint spectrum (cool, rose, warm) in between whose strength is --glass-sheen. */
@@ -119,6 +122,8 @@ html[data-gfx="0"] .liquid-glass, [data-ui-frost="off"] .liquid-glass { --glass-
   .liquid-glass, .liquid-glass::before { transition: none; }
   .liquid-glass:active, .liquid-glass.held { transform: none; }
 }
-/* A surface drawn by our own shader (Route B, not built): the CSS body and frost step aside and
-   the rim, highlight and label stay on top of the shader's glass. */
-html[data-glass-surface="shader"] .liquid-glass { --glass-frost: none; --glass-body: transparent; --glass-body-hover: rgb(255 255 255 / .04); }
+/* A surface drawn by our own shader (Route B), per button: only this button's CSS body and frost
+   step aside; rim, highlight, label, focus and the pressed and on states stay CSS. The shader
+   draws its body in this button's computed --glass-body (the hover and on bodies likewise), so
+   the swap does not flash. */
+.liquid-glass[data-glass-surface="shader"] { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
