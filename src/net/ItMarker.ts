@@ -17,7 +17,7 @@ import { attribute, float, min, mix, normalView, positionViewDirection, select, 
 import type { Game, System } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { hotExposureDim } from '../vehicles/skins/hotExposure'
-import { itMarkerVisible, localMarkerLift, REMOTE_LIFT } from './itMarkerRules'
+import { clearOfCentre, itMarkerVisible, localMarkerLift, MARKER_BOTTOM, ownMarkerClear, REMOTE_LIFT } from './itMarkerRules'
 
 /** Gem: sides round the waist, waist radius, crown and pavilion heights (a long point down). */
 const GEM_SIDES = 6
@@ -115,7 +115,7 @@ export function buildItMarkerGeometry(): THREE.BufferGeometry {
 
 /** The marker's one material, and `scale`, which multiplies every colour so night exposure does not bleach it. */
 export function buildItMarkerMaterial() {
-  const scale = uniform(1)
+  const scale = uniform(1), fade = uniform(1)
   const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: true, side: THREE.FrontSide })
   m.fog = false
   const partId = attribute('itPart', 'float'), mk = attribute('itMark', 'vec4')
@@ -135,8 +135,8 @@ export function buildItMarkerMaterial() {
 
   const isGem = partId.lessThan(0.5), isHalo = partId.lessThan(1.5)
   m.colorNode = select(isGem, gem, select(isHalo, vec3(HALO.r, HALO.g, HALO.b), vec3(BEAM.r, BEAM.g, BEAM.b))).mul(scale)
-  m.opacityNode = select(isGem, float(1), select(isHalo, haloAlpha, beamAlpha))
-  return { material: m, scale }
+  m.opacityNode = select(isGem, float(1), select(isHalo, haloAlpha, beamAlpha)).mul(fade)
+  return { material: m, scale, fade }
 }
 
 export class ItMarker implements System {
@@ -146,13 +146,16 @@ export class ItMarker implements System {
   local: Vehicle | null = null
   /** Colour scale for the sky's exposure, read by the material. */
   private readonly dim: ReturnType<typeof buildItMarkerMaterial>['scale']
+  /** How much of the marker shows: below 1 only for your own, where it cannot clear the centre. */
+  private readonly fade: ReturnType<typeof buildItMarkerMaterial>['fade']
+  private readonly probe = new THREE.Vector3()
   readonly mesh: THREE.Mesh
   private readonly cam = new THREE.Vector3()
   private t = 0
 
   constructor(private readonly game: Game) {
-    const { material, scale } = buildItMarkerMaterial()
-    this.dim = scale
+    const { material, scale, fade } = buildItMarkerMaterial()
+    this.dim = scale; this.fade = fade
     this.mesh = new THREE.Mesh(buildItMarkerGeometry(), material)
     // Drawn after the other see through things, so its depth writes hide nothing of theirs.
     this.mesh.renderOrder = 10
@@ -175,9 +178,25 @@ export class ItMarker implements System {
     const distance = Math.hypot(horizontal, rise)
     this.mesh.visible = itMarkerVisible(v, this.local, distance)
     if (!v || !this.mesh.visible) return
-    const lift = v === this.local ? localMarkerLift(horizontal, rise, camera.fov) : REMOTE_LIFT
+    const bob = Math.sin(this.t * 2.2) * 0.18
+    let lift = REMOTE_LIFT + bob, opacity = 1
+    if (v === this.local) {
+      // Your own: high enough to read from the chase camera, and never over the middle of your
+      // view, where you aim (clearOfCentre). Measured on this frame's camera.
+      camera.updateMatrixWorld()
+      const p = v.object.position, h = Math.max(1, this.game.renderer.domElement.clientHeight), w = Math.max(1, this.game.renderer.domElement.clientWidth)
+      const clear = clearOfCentre(localMarkerLift(horizontal, rise, camera.fov) + bob, ownMarkerClear.value, l => {
+        const q = this.probe.set(p.x, p.y + l - MARKER_BOTTOM, p.z).applyMatrix4(camera.matrixWorldInverse)
+        if (q.z > -0.05) return null
+        q.applyMatrix4(camera.projectionMatrix)
+        return [q.x * w / (2 * h), q.y / 2]
+      })
+      lift = clear.lift; opacity = clear.opacity
+    }
+    this.fade.value = opacity
+    this.mesh.visible = opacity > 0.01
     this.mesh.position.copy(v.object.position)
-    this.mesh.position.y += lift + Math.sin(this.t * 2.2) * 0.18
+    this.mesh.position.y += lift
     // A slow turn: the facets catch the light one after another.
     this.mesh.rotation.y = this.t * 0.9
     this.dim.value = hotExposureDim(this.game.renderer.toneMappingExposure)
