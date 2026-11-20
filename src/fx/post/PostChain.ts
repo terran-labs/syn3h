@@ -44,7 +44,7 @@ import { sss } from 'three/addons/tsl/display/SSSNode.js'
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { traa } from 'three/addons/tsl/display/TRAANode.js'
-import { glassOptics } from './glassOptics'
+import { composeGlass } from '../../liquid-glass/compose'
 import { GlassButton } from './GlassButton'
 import { CurvedVelocity } from './CurvedVelocity'
 import { cloudVolume, compositeClouds } from './clouds'
@@ -682,34 +682,12 @@ export class PostChain {
       const finished: N = this.glassMode === 'target' ? rtt(out, null, null, { type: THREE.HalfFloatType }) : null
       if (finished) disposables.push(finished)
       const original = finished ? finished.sample(uv()) : out
-      out = Fn(() => {
-        const result = original.toVar()
-        const size = glass.viewport.xy.max(vec2(1))
-        const pixel = uv().mul(size)
-        Loop(glass.capacity, ({ i }: { i: N }) => {
-          const box: N = glass.boxes.element(i)
-          const local = pixel.sub(box.xy)
-          If(box.z.greaterThan(0).and(abs(local.x).lessThanEqual(box.z)).and(abs(local.y).lessThanEqual(box.w)), () => {
-            const corners: N = glass.radii.element(i)
-            const top = mix(corners.x, corners.y, step(0, local.x))
-            const bottom = mix(corners.z, corners.w, step(0, local.x))
-            const radius = mix(top, bottom, step(0, local.y))
-            const q = abs(local).sub(box.zw).add(radius)
-            const outer = max(q, vec2(0))
-            const distance = length(outer).add(min(max(q.x, q.y), 0)).sub(radius)
-            const side = step(q.y, q.x)
-            const gradient = mix(vec2(side, float(1).sub(side)), outer.div(max(length(outer), 0.001)), step(0.001, length(outer))).mul(local.sign())
-            const sample = (at: N) => {
-              if (finished) return finished.sample(at).rgb
-              const display = (coord: N) => renderOutput(vec4(color.sample(coord).rgb, 1), toneMap, renderer.outputColorSpace).rgb
-              return original.rgb.add(display(at).sub(display(uv())))
-            }
-            const body = glassOptics(box.zw, distance, gradient, uv(), size, u.glassMaterial, glass.filters.element(i), glass.bodies.element(i), sample)
-            result.assign(vec4(mix(vec3(original.rgb), vec3(body), float(1).sub(smoothstep(-0.5, 0.5, distance))), 1))
-          })
-        })
-        return result
-      })()
+      const sample = (at: N) => {
+        if (finished) return finished.sample(at).rgb
+        const display = (coord: N) => renderOutput(vec4(color.sample(coord).rgb, 1), toneMap, renderer.outputColorSpace).rgb
+        return original.rgb.add(display(at).sub(display(uv())))
+      }
+      out = composeGlass(original, sample, glass, u.glassMaterial)
       this.glassBuilt = true
     }
     // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
