@@ -58,7 +58,7 @@ import UIKit
                                         .simultaneousGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
                                             .onChanged { drag in contact = 1; dragX = drag.translation.width }
                                             .onEnded { _ in contact = 0; dragX = 0 })
-                                        .position(x: 80 + dragX, y: 80)
+                                        .position(x: 112 - CGFloat(Double(option("-gap", "32")) ?? 32) + dragX, y: 80)
                                     motionFace("Show panels", width: 140, height: 48, shape: Capsule(), border: .capsule, glass: glass)
                                         .contentShape(Capsule())
                                         .simultaneousGesture(DragGesture(minimumDistance: 0)
