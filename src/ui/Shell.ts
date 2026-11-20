@@ -87,7 +87,7 @@ import './glass.css'
  */
 const OFFER_CUSTOM_PLANET: boolean = false
 /** How bright the galaxy stays behind a lobby sheet: faintly there, and held still. */
-const SHEET_BACKDROP = 0.6
+const SHEET_BACKDROP = 0.7
 /** Point the licence disclosures in `root` at the captured entry version's copies. Only those links, never invite or networking links. */
 function pinLicenses(root: ParentNode): void {
   for (const anchor of root.querySelectorAll<HTMLAnchorElement>('a[href^="/brand/licenses/"]')) anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
@@ -355,7 +355,7 @@ export class Shell implements System {
       const dock = this.lobbySettings.dock
       this.element.querySelector('.galaxy-ui')!.append(dock); dock.classList.remove('is-beside-sheet')
       for (const button of [this.lobbySettings.about, this.lobbySettings.updates, this.lobbySettings.gear]) { button.classList.remove('is-current'); button.removeAttribute('aria-current') }
-      if (this.galaxy) this.galaxy.markLift = 0
+      if (this.galaxy) { this.galaxy.markLift = 0; this.galaxy.worlds = 1 }
       if (this.galaxy && this.panels.active === 'index' && !this.playing) this.galaxy.backdrop = 1
     }
     // While the name rises to stand over an open sheet, the sheet follows it (LobbySheet).
@@ -593,7 +593,8 @@ export class Shell implements System {
     // and only its contents change (a morph, not a close and reopen).
     const current = this.lobbySheets.find(s => s.isOpen)
     if (current) { if (current === this.settingsSheet) this.lobbySettings.close(); current.handOff() }
-    if (this.galaxy) { this.galaxy.backdrop = SHEET_BACKDROP; this.galaxy.markLift = 1 }
+    // The worlds fade out, the sky dims a little and the name rises over the contents (LobbySheet).
+    if (this.galaxy) { this.galaxy.backdrop = SHEET_BACKDROP; this.galaxy.markLift = 1; this.galaxy.worlds = 0 }
     // The three buttons stay beside the open sheet, above its backdrop, to switch between them;
     // the open one is marked.
     const dock = this.lobbySettings.dock
@@ -986,7 +987,7 @@ export class Shell implements System {
       // are drawn before anyone can see them.
       this.overlay.style.transition = 'none'; this.overlay.style.opacity = '0'
       this.overlay.hidden = false; this.overlay.inert = true
-      galaxy.backdrop = 1
+      galaxy.backdrop = 1; galaxy.worlds = 1; galaxy.markLift = 0
       galaxy.enabled = true
       // Every vehicle keeps its close look on the way up (see vehicleDetail).
       vehicleDetail.holdNear = true

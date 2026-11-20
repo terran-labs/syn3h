@@ -1,45 +1,21 @@
 /**
  * A lobby sheet: Welcome, Updates and Settings each open one from the lobby's buttons (the
- * owner, 16 and 17 November 2026). One flat frosted panel with rounded corners, the same for all
- * three, joined to the name above it: the name rises and grows a little smaller as a sheet opens
- * (Galaxy.markLift) and the panel stands just under it, sharing a lit top edge and its glow.
+ * owner, 16 and 17 November 2026). No box (the owner, 19 November 2026: "had the contents of
+ * each panel appear pretty much where they currently are, but without the box or the planets
+ * behind them"): as a sheet opens the worlds fade out, the sky dims a little and the name rises
+ * and grows smaller (Galaxy.worlds, backdrop, markLift, set by Shell), and the contents appear
+ * under the name on the darkened sky, their scroll edges fading out rather than ending at an edge.
  * Switching between the three swaps the contents in place (open with `morph`, after the open
  * sheet's handOff); the buttons stay beside it. Escape, a tap outside and the one X close it;
  * focus stays inside while it is open and returns to whatever opened it.
- *
- * Flat by the owner's rule: a curved frame needs curved contents, and contents cannot curve here
- * (a trial moving each word by the panel's bow stepped and wobbled, and sliders cannot bend).
  */
 import { cycleFocus } from './LobbySettings'
 import './lobby-sheet.css'
 
 export type Point = readonly [number, number]
-/** y = a + b (x - x0) + c (x - x0)^2, in screen pixels. */
-export interface Parabola { a: number; b: number; c: number; x0: number }
-export const at = (p: Parabola, x: number) => p.a + p.b * (x - p.x0) + p.c * (x - p.x0) ** 2
-
-/** The least squares parabola through `points`, measured from x0 (their middle by default). */
-export function fitParabola(points: readonly Point[], x0 = (points[0]![0] + points[points.length - 1]![0]) / 2): Parabola {
-  // Normal equations for [a, b, c] over u = x - x0.
-  const s = [0, 0, 0, 0, 0], t = [0, 0, 0]
-  for (const [x, y] of points) { const u = x - x0; let k = 1; for (let i = 0; i < 5; i++) { s[i]! += k; if (i < 3) t[i]! += k * y; k *= u } }
-  const m = [[s[0]!, s[1]!, s[2]!], [s[1]!, s[2]!, s[3]!], [s[2]!, s[3]!, s[4]!]]
-  const det = (q: number[][]) => q[0]![0]! * (q[1]![1]! * q[2]![2]! - q[1]![2]! * q[2]![1]!) - q[0]![1]! * (q[1]![0]! * q[2]![2]! - q[1]![2]! * q[2]![0]!) + q[0]![2]! * (q[1]![0]! * q[2]![1]! - q[1]![1]! * q[2]![0]!)
-  const d = det(m)
-  if (!Number.isFinite(d) || Math.abs(d) < 1e-9) return { a: t[0]! / Math.max(1, s[0]!), b: 0, c: 0, x0 }
-  const swap = (col: number) => m.map((row, i) => row.map((v, j) => (j === col ? t[i]! : v)))
-  return { a: det(swap(0)) / d, b: det(swap(1)) / d, c: det(swap(2)) / d, x0 }
-}
-
 /** The wordmark's lines on screen, as Galaxy.wordmarkEdges returns them. */
 export interface WordmarkEdges { top: Point[]; bottom: Point[] }
 export interface Box { left: number; top: number; width: number; height: number }
-/**
- * The round of the wordmark's S, as a fraction of the wordmark's height: its outer bowl,
- * fitted from the traced outline (src/ui/brand/wordmarkPath.ts), is about 40 units round on a
- * 226 unit tall mark. Every other corner of the letters is square. The panel's corners take it.
- */
-export const WORDMARK_ROUND = 40 / 226
 
 export interface LobbySheetOptions {
   /** A short class name for the sheet: lobby-sheet-<name>. */
@@ -65,8 +41,6 @@ export class LobbySheet {
   readonly element = document.createElement('dialog')
   readonly panel = document.createElement('div')
   readonly body = document.createElement('div')
-  /** The frost under the panel's tint: the galaxy blurred through it. */
-  private readonly frost = document.createElement('div')
   private readonly close_ = document.createElement('button')
   private readonly abort = new AbortController()
   private filled = false
@@ -79,13 +53,12 @@ export class LobbySheet {
     this.element.className = `lobby-sheet lobby-sheet-${options.name}`
     this.element.setAttribute('aria-labelledby', `${id}-title`)
     this.panel.className = 'lobby-sheet-panel'
-    this.frost.className = 'lobby-sheet-frost'
     const title = document.createElement('h2'); title.id = `${id}-title`; title.className = 'lobby-sheet-title'; title.textContent = options.title
     this.close_.type = 'button'; this.close_.className = 'lobby-sheet-close'; this.close_.setAttribute('aria-label', `Close ${options.title}`); this.close_.title = 'Close'
     this.close_.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6L18 18M18 6L6 18"/></svg>'
     this.body.className = 'lobby-sheet-body'
     this.body.append(title)
-    this.panel.append(this.frost, this.body, this.close_)
+    this.panel.append(this.body, this.close_)
     this.element.append(this.panel)
     parent.append(this.element)
 
@@ -120,10 +93,11 @@ export class LobbySheet {
       .filter(el => !(el as HTMLButtonElement).disabled && !el.closest('[hidden], [inert]') && el.getClientRects().length > 0)
   }
 
-  /** Where the panel goes: most of the screen, under the wordmark where there is room. */
+  /** Where the contents go: most of the screen, under the wordmark where there is room. */
   private frame(): Box {
     const w = innerWidth, h = innerHeight, phone = w < 600 || h < 500
-    const width = phone ? w - 16 : Math.min(1000, w - 48)
+    // One reading column, centred: the contents stand where the panel's body stood.
+    const width = phone ? w - 16 : Math.min(680, w - 48)
     // Under the name, which rises to stand over the panel (Galaxy.markLift), so the two read as
     // one object; on a phone as well, while that leaves the panel at least half the screen.
     const edges = this.options.edges?.(), under = edges ? Math.max(...edges.bottom.map(p => p[1])) + (phone ? 10 : 18) : 0
@@ -141,17 +115,14 @@ export class LobbySheet {
   }
 
   private layout(): void {
-    const frame = this.frame(), edges = this.options.edges?.() ?? null, style = this.panel.style
-    // The corners round as the name's S does, at the size the name is drawn.
-    const mark = edges ? Math.abs(at(fitParabola(edges.top), frame.left + frame.width / 2) - at(fitParabola(edges.bottom), frame.left + frame.width / 2)) : 0
-    style.setProperty('--sheet-radius', `${Math.round(mark ? mark * WORDMARK_ROUND : 24)}px`)
-    Object.assign(style, { left: `${frame.left}px`, top: `${frame.top}px`, width: `${frame.width}px`, height: `${frame.height}px` })
+    const frame = this.frame()
+    Object.assign(this.panel.style, { left: `${frame.left}px`, top: `${frame.top}px`, width: `${frame.width}px`, height: `${frame.height}px` })
   }
 
   /**
    * Open the sheet. `morph`: another sheet is handing over to this one (switching between
-   * Welcome, Updates and Settings): the panel is already on screen, so only its contents
-   * change, crossfading, and the shape stays put.
+   * Welcome, Updates and Settings): the sky is already dark, so only the contents change,
+   * crossfading.
    */
   open(opener: HTMLElement | null = document.activeElement as HTMLElement | null, morph = false): void {
     if (this.shown) return
@@ -164,8 +135,12 @@ export class LobbySheet {
     if (!this.element.open) this.element.showModal()
     this.layout()
     this.body.scrollTop = 0
+    // The contents arrive just after the sky starts to darken and the worlds to fade (150 ms),
+    // rising a few pixels into place. Reduced motion: a short crossfade, nothing moves.
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (!still) (morph ? this.body : this.panel).animate([{ opacity: 0 }, { opacity: 1 }], { duration: morph ? 180 : 260, easing: 'ease-out' })
+    if (still) this.panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: 'linear' })
+    else if (morph) this.body.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' })
+    else this.panel.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 320, delay: 150, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'backwards' })
     this.close_.focus({ preventScroll: true })
     // Follow the name while it rises to stand over the panel, so the two stay joined.
     const follow = () => { if (!this.shown) return; this.layout(); if (this.options.following?.()) requestAnimationFrame(follow) }
@@ -192,8 +167,9 @@ export class LobbySheet {
       opener?.focus({ preventScroll: true })
       if (document.activeElement !== opener) this.options.home?.()?.focus({ preventScroll: true })
     }
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { done(); return }
-    this.fading = this.panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 150, easing: 'ease-in' })
+    // The contents go first; then (closed, in Shell) the worlds come back and the name settles.
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches
+    this.fading = this.panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration: still ? 120 : 150, easing: 'ease-in' })
     this.fading.onfinish = done
   }
 
