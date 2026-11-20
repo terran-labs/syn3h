@@ -487,7 +487,8 @@ async function main(argv) {
     case 'r2-upload': {
       const wanted = pick('Usage: frozen-versions.mjs r2-upload --all | <version>...')
       const store = apiStore()
-      if (!printReport(await r2Upload(wanted, { store, log }), Date.now())) { console.log('R2 UPLOAD FAILED: index not rewritten'); return 1 }
+      const started = Date.now()
+      if (!printReport(await r2Upload(wanted, { store, log }), started)) { console.log('R2 UPLOAD FAILED: index not rewritten'); return 1 }
       console.log(`R2 index lists ${(await r2WriteIndex(archivedVersions(), { store })).length} versions`)
       return 0
     }
