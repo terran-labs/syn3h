@@ -111,6 +111,9 @@ export class GroundGlow {
 
   reset(): void { for (const s of this.slots) { s.start = -Infinity; s.fade.value = 0; s.mesh.visible = false } }
 
+  /** Every slot's mesh, hidden until a burst: drawn under the world entry's cover (Game.precompile). */
+  *precompileMeshes(): Iterable<T.Mesh> { for (const s of this.slots) yield s.mesh }
+
   dispose(): void {
     for (const s of this.slots) { s.mesh.removeFromParent(); s.mesh.geometry.dispose(); s.mesh.material.dispose() }
     this.slots = []; this.level = -1

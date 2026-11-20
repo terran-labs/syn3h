@@ -335,6 +335,9 @@ export class Lasers implements System {
     }
   }
 
+  /** Hidden meshes to draw under the world entry's cover: the fireworks' (Fireworks.precompileMeshes). */
+  *precompileMeshes(): Iterable<THREE.Mesh> { yield* this.fireworks.precompileMeshes() }
+
   update(dt: number, alpha: number): void {
     this.pulses.update(dt)
     this.fx.update(dt)

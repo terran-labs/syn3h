@@ -352,5 +352,15 @@ export class Fireworks {
 
   shift(dx: number, dz: number): void { this.stars.shift(dx, dz); this.dayStars.shift(dx, dz); this.flash.shift(dx, dz); this.smoke.shift(dx, dz); this.glow.shift(dx, dz) }
   reset(): void { this.glow.reset() }
+
+  /**
+   * Everything a burst draws, for the world entry's covered draw (Game.precompile), so the first
+   * firework builds nothing in play: the ground glow's slots are hidden until a burst, and the
+   * daytime stars and smoke while it is night (tests/weapons/fireworks-pipelines.mjs).
+   */
+  *precompileMeshes(): Iterable<T.Mesh> {
+    yield this.stars.mesh; yield this.dayStars.mesh; yield this.flash.mesh; yield this.smoke.mesh
+    yield* this.glow.precompileMeshes()
+  }
   dispose(): void { this.stars.dispose(); this.dayStars.dispose(); this.flash.dispose(); this.smoke.dispose(); this.glow.dispose() }
 }
