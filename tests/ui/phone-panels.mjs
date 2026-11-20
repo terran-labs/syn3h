@@ -40,7 +40,9 @@ try {
     await page.evaluate(() => window.syn3h.shell.toast('A toast while the panels are open'))
     await page.waitForTimeout(150)
     const toast = page.locator('.shell-toast')
-    if (await toast.isVisible()) assert.ok(!overlaps(await toast.boundingBox(), await panels.boundingBox()), `${name}: a toast never sits under the panels`)
+    // The panels hide toasts by opacity (exploration.css), which Playwright still calls visible.
+    const toastShows = await toast.evaluate(el => !el.hidden && Number(getComputedStyle(el).opacity) > 0.05)
+    if (toastShows) assert.ok(!overlaps(await toast.boundingBox(), await panels.boundingBox()), `${name}: a toast never sits under the panels`)
 
     const head = page.locator('.world-inspector .wi-card .wi-head').first()
     await head.tap(); await page.waitForTimeout(400)
