@@ -40,7 +40,7 @@ import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
 import { bindSwitch, switchWord } from './inspector/switch'
 import { RaceHud, type RaceRole } from './RaceHud'
-import type { RaceState } from '../../shared/protocol'
+import { MAX_NAME_LENGTH, type RaceState } from '../../shared/protocol'
 import { glassStyle, diagnostics, interfaceMode, mapNorthUp } from './inspector/params'
 import { InterfaceVeil, INTERFACE_KEY, nextInterfaceMode, setInterfaceMode } from './interfaceMode'
 import { RESUME_KEY } from '../core/resume'
@@ -225,7 +225,7 @@ export class Shell implements System {
   private readonly switches = new Map<string, (on: boolean) => void>()
   private readonly hostControls: HTMLFieldSetElement
 
-  constructor(private readonly game: Game, readonly audio: GameAudio) {
+  constructor(private readonly game: Game, readonly audio: GameAudio, entryName?: string | null) {
     this.previousSuspended = game.input.suspended; game.input.suspended = true
     this.element.className = 'syn3h-shell exploration-ui'
     this.element.innerHTML = `<section class="shell-overlay" role="dialog" aria-modal="true" aria-label="Syn3h lobby">
@@ -265,6 +265,11 @@ export class Shell implements System {
     this.matchHud = new MatchHud(this.element, () => audio.cue('tick'))
     this.overlay = this.element.querySelector('.shell-overlay')!
     this.nameInput = this.element.querySelector('#shell-name')!; this.roomInput = this.element.querySelector('#shell-room')!
+    // The room caps UTF-16 length. Keep link names within that limit without cutting a character.
+    const linkedName = cleanPlayerName(entryName ?? '').slice(0, MAX_NAME_LENGTH).replace(/[\ud800-\udbff]$/, '').trimEnd()
+    const identity = linkedName ? { name: linkedName, source: 'link' as const } : loadPlayerName()
+    this.nameInput.value = identity.name
+    this.nameSource = identity.source
     this.speed = this.element.querySelector('.shell-speed strong')!
     this.panels = new SlidingPanels(this.element.querySelector('.lobby-panels')!)
     // The lobby's Multiplayer panel, which drew this board, is gone (the in-play board is the
@@ -448,8 +453,6 @@ export class Shell implements System {
     window.addEventListener('storage', event => { if (event.key === SAVED_WORLDS_KEY || event.key === null) this.refreshSavedWorlds() }, { signal })
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') { this.worldDirty = true; this.refreshCustomPlanet() } })
     signal.addEventListener('abort', unsubscribeWorld)
-    // Kept in the browser (src/ui/playerName.ts): a first visit is given a generated name at once.
-    const saved = loadPlayerName(); this.nameInput.value = saved.name; this.nameSource = saved.source
     this.nameInput.addEventListener('input', () => { this.nameSource = 'typed' }, { signal })
     // The public room is an empty field (placeholder "Public room"), never its internal name.
     const entryRoom = roomFromQuery(new URL(location.href).searchParams)
@@ -652,8 +655,8 @@ export class Shell implements System {
   get bodyColor(): string { return this.choice.bodyColor }
   get accentColor(): string { return this.choice.accentColor }
   get playerName(): string { return cleanPlayerName(this.nameInput.value) || 'Explorer' }
-  /** Where the name came from: a typed name is never replaced by a generated one. */
-  private nameSource: NameSource = 'generated'
+  /** A link supplies the name for this session until the player chooses one. */
+  private nameSource: NameSource | 'link'
   /** Set by initGameShell: the name changed in play, so the vehicle and the room follow. */
   onRename?: (name: string) => void
   /** The player renamed themselves in the Me card: saved at once, and the room told. */
@@ -814,7 +817,7 @@ export class Shell implements System {
     // Play has begun: from here the cursor request made at the entering gesture (if any) is
     // judged like any other.
     this.enteringByGesture = false
-    savePlayerName(this.playerName, this.nameSource)
+    if (this.nameSource !== 'link') savePlayerName(this.playerName, this.nameSource)
     this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
   }
@@ -1984,10 +1987,11 @@ export class Shell implements System {
 }
 
 /** Call after creating the player, before constructing ParamPanel. */
-export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { shell: Shell; audio: GameAudio; setPlayer: (player: Vehicle) => void; dispose: () => void } {
-  const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio), 'Shell and lobby')
+export function initGameShell(game: Game, player: Vehicle, terrain: Terrain, entryName?: string | null): { shell: Shell; audio: GameAudio; setPlayer: (player: Vehicle) => void; dispose: () => void } {
+  const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio, entryName), 'Shell and lobby')
   shell.setVehicleKind(player.kind); shell.setTerrain(terrain); audio.setPlayer(player,terrain)
   let activePlayer = player
+  activePlayer.name = shell.playerName
   // Read the body directly: the HUD snapshot can still describe the previous world
   // when a room rebuild moves the spawn between animation frames.
   shell.arrivalVehicle = () => {

@@ -112,7 +112,7 @@ async function main(): Promise<void> {
 
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
-  const { shell, audio, setPlayer } = initGameShell(game, player, terrain)
+  const { shell, audio, setPlayer } = initGameShell(game, player, terrain, query.get('name'))
   bots.daydream.setBlocker(() => shell.daydreamBlocked)
   // The HUD bridge, hints and the engine voice follow the slot.
   slot.onChange(setPlayer)
@@ -225,7 +225,8 @@ async function main(): Promise<void> {
       return
     }
     joined = true
-    player.name = shell.playerName
+    const name = shell.playerName
+    player.name = name
     player.setColors?.(shell.bodyColor, shell.accentColor)
     const connection = startNetworking({
       game, terrain, player, audio, bots,
@@ -241,8 +242,7 @@ async function main(): Promise<void> {
       cancelRemoteDeparture: vehicle => materialize.cancel(vehicle),
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
-      // The lobby may clear the address bar before the socket sends its hello.
-      name: query.get('name') || shell.playerName,
+      name,
       room: shell.room || roomFromQuery(query),
       setStatus: (lines) => { netStatus = lines; shell.setStatus(lines) },
       setMapEntities: (e) => shell.setMapEntities(e),
@@ -250,6 +250,9 @@ async function main(): Promise<void> {
       names: (seed, kind) => generateName(seed, kind),
       botRole: seed => botIdentity(seed).role,
     })
+    // Seed the hello before the socket opens. Networking's legacy URL fallback can still
+    // see the raw link name after showPlay, even when the player edited it in the lobby.
+    connection.setName(name)
     sessionNetwork = connection
     // Opening the in-play guide drops gear in hand without firing it: a Big Red charge is
     // discarded, a Yoink carry is set down (no fling), a reel stops and the tag control lets
