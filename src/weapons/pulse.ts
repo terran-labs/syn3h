@@ -47,11 +47,15 @@ export class ImpactPulses {
     this.mesh.visible = false
     this.mesh.renderOrder = 4
     // Allocate instance colors before warm-up, so first use cannot change the shader layout.
-    for (let i = 0; i < CAPACITY; i++) this.mesh.setColorAt(i, new THREE.Color(0, 0, 0))
+    const hidden = new THREE.Matrix4().makeScale(0, 0, 0)
+    const black = new THREE.Color(0, 0, 0)
+    for (let i = 0; i < CAPACITY; i++) {
+      this.mesh.setMatrixAt(i, hidden)
+      this.mesh.setColorAt(i, black)
+    }
     this.mesh.instanceColor!.setUsage(THREE.DynamicDrawUsage)
     game.scene.add(this.mesh)
-    // A matching instanced proxy is required: a plain Mesh has a different shader layout.
-    this.unwarm = warmGear(game, [], () => { this.warming = 2 })
+    this.unwarm = warmGear(game, [], () => { this.warming = 2 }, () => [this.mesh])
   }
 
   get active(): number { return this.entries.filter(e => e.age < e.seconds).length }

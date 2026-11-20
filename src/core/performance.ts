@@ -1,5 +1,6 @@
 /** Read-only telemetry contract. QualityController remains the sole quality authority. */
-import type { EffectiveQuality, GraphicsLevel } from './quality'
+import type { EffectiveQuality, GovernorReason, GraphicsLevel } from './quality'
+import type { RendererBackendReason } from './renderOptions'
 
 /** One second of eligible play, not a continuous wall-clock timeline. Times are ms. */
 export interface PerformancePoint {
@@ -28,7 +29,11 @@ export interface PerformancePipelines { readonly live: number; readonly created:
 export interface PerformanceLongFrames { readonly over50: number; readonly over1000: number }
 export interface PerformanceEnvironment {
   readonly backend: string
+  readonly backendReason?: RendererBackendReason | null
   readonly adapter: string | null
+  /** Adapter fields are filtered to recognized hardware labels in the copied report. */
+  readonly adapterVendor?: string | null
+  readonly adapterArchitecture?: string | null
   /** Browser estimate, not measured RAM or available GPU memory. */
   readonly memoryGB: number | null
   readonly maxTextureSize: number | null
@@ -53,6 +58,11 @@ export interface PerformanceSnapshot {
   readonly visible: boolean
   readonly quality: Readonly<EffectiveQuality>
   readonly levelPinned: boolean
+  readonly qualityReason?: GovernorReason | 'start'
+  /** Automatic changes across levels and easing rungs since the governor started. */
+  readonly qualityChanges?: number
+  /** All transitions after applying the initial quality level. */
+  readonly qualityLevelChanges?: number
   readonly history: readonly PerformancePoint[]
   readonly recommendation: Readonly<PerformanceRecommendation> | null
   readonly environment: Readonly<PerformanceEnvironment>
@@ -64,6 +74,7 @@ export interface PerformanceSnapshot {
 }
 /** Bind methods to their controller before passing this interface to presentation code. */
 export interface PerformanceSource {
+  diagnosticReport?(): string
   getPerformanceSnapshot(): PerformanceSnapshot
   subscribePerformance(listener: (snapshot: PerformanceSnapshot) => void): () => void
   setDiagnosticsVisible(visible: boolean): void

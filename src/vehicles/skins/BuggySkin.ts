@@ -13,6 +13,9 @@ export interface BuggySkin {
    * wheel's, applied from the next setWheel. Optional: skins without it keep standard wheels.
    */
   setTyreScale?(radius: number, width: number): void
+  /** Expose real wing draws under cover without changing the live wing pose. */
+  drawCoveredMotorSparks?(draw: () => void): void
+  drawCoveredWings?(draw: () => void): void
   /** Caller advances openAmount by dt * 2 for the original half-second transition. */
   setWings(openAmount: number, steer: number, pitch: number): void
   /** Actual visible wing tip in skin-local coordinates; false before load or when folded. */

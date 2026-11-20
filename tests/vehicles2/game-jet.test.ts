@@ -71,6 +71,48 @@ describe('approved Mk2 game model', () => {
   })
 })
 
+it('shares fixed jet resources across concurrent actors and retains them when all leave', () => {
+  const a = new GameJet(), b = new GameJet()
+  const tail = a.tailLights.mesh, plume = a.plume.mesh, far = a.far
+  const shared = [tail.geometry, tail.material as THREE.Material, plume.geometry, plume.material as THREE.Material, far.geometry]
+  let disposals = 0
+  const recordDisposal = () => { disposals++ }
+  for (const resource of shared) resource.addEventListener('dispose', recordDisposal)
+
+  expect(b.tailLights.mesh).not.toBe(tail)
+  expect(b.tailLights.mesh.geometry).toBe(tail.geometry)
+  expect(b.tailLights.mesh.material).toBe(tail.material)
+  expect(b.plume.mesh.geometry).toBe(plume.geometry)
+  expect(b.plume.mesh.material).toBe(plume.material)
+  expect(b.far.geometry).toBe(far.geometry)
+  expect(b.far.material).not.toBe(far.material)
+
+  const idle = b.plume.levels
+  a.setLevel(2)
+  a.setColors(0x123456, 0xabcdef)
+  a.update(0, 0, 0, 1, undefined, false)
+  expect(a.plume.levels).not.toEqual(idle)
+  expect(b.plume.levels).toEqual(idle)
+  expect(plume.userData.plumeColor.getHex()).toBe(0xabcdef)
+  expect(b.plume.mesh.userData.plumeColor.getHex()).toBe(b.design.accent)
+  expect(b.far.material.color.getHex()).toBe(b.design.paint)
+
+  a.dispose()
+  expect(b.tailLights.mesh.parent).toBe(b.object)
+  expect(disposals).toBe(0)
+  b.dispose()
+  expect(disposals).toBe(0)
+  const later = new GameJet()
+  expect(later.tailLights.mesh.geometry).toBe(tail.geometry)
+  expect(later.tailLights.mesh.material).toBe(tail.material)
+  expect(later.plume.mesh.geometry).toBe(plume.geometry)
+  expect(later.plume.mesh.material).toBe(plume.material)
+  expect(later.far.geometry).toBe(far.geometry)
+  later.dispose()
+  expect(disposals).toBe(0)
+  for (const resource of shared) resource.removeEventListener('dispose', recordDisposal)
+})
+
 it('switches remote models with hysteresis and unregisters on disposal', () => {
   const owner = new THREE.Group(), callbacks = new Set<(distance: number, remote: boolean, level: number) => void>()
   owner.userData.registerVehicleDetail = (callback: (distance: number, remote: boolean, level: number) => void) => {

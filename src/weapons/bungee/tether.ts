@@ -208,7 +208,7 @@ export class TetherLook {
     cordProxy.setIndex([0, 1, 2, 1, 3, 2])
     const sparkProxy = sparkGeometry(1)
     this.proxies = [cordProxy, sparkProxy]
-    this.unwarm = warmGear(game, [[cordProxy, this.cord.material], [sparkProxy, this.sparks.material]])
+    this.unwarm = warmGear(game, [[cordProxy, this.cord.material], [sparkProxy, this.sparks.material]], undefined, () => [this.cord, this.sparks])
   }
 
   private cordMaterial(): THREE.MeshBasicNodeMaterial {

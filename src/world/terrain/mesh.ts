@@ -16,6 +16,7 @@
  *    invisible: the heights are periodic and the seam row is shared (see `sealSeam`).
  */
 import * as THREE from 'three/webgpu'
+import { longFrames } from '../../core/longFrames'
 import { wrapCoord } from '../../../shared/wrap'
 import { overHorizon } from '../curve'
 import type { TerrainData } from './generate'
@@ -169,6 +170,15 @@ interface Chunk {
 }
 
 export function createTerrainMeshes(data: TerrainData, material: THREE.Material): TerrainMeshes {
+  const spanStart = longFrames.start()
+  try {
+    return buildTerrainMeshes(data, material)
+  } finally {
+    longFrames.end('terrain.mesh.create', spanStart)
+  }
+}
+
+function buildTerrainMeshes(data: TerrainData, material: THREE.Material): TerrainMeshes {
   const group = new THREE.Group()
   group.name = 'terrain'
   const cellsPerSide = data.resolution - 1
@@ -261,11 +271,16 @@ export function createTerrainMeshes(data: TerrainData, material: THREE.Material)
     },
     *updateSteps(next) {
       for (const ch of chunks) {
-        fillChunk(ch.base, next, ch.x0, ch.z0, ch.cells)
-        ch.box.copy(ch.base.boundingBox!).translate(new THREE.Vector3(ch.ox, 0, ch.oz))
-        for (const m of ch.levels) {
-          m.geometry.boundingBox = ch.base.boundingBox
-          m.geometry.boundingSphere = ch.base.boundingSphere
+        const spanStart = longFrames.start()
+        try {
+          fillChunk(ch.base, next, ch.x0, ch.z0, ch.cells)
+          ch.box.copy(ch.base.boundingBox!).translate(new THREE.Vector3(ch.ox, 0, ch.oz))
+          for (const m of ch.levels) {
+            m.geometry.boundingBox = ch.base.boundingBox
+            m.geometry.boundingSphere = ch.base.boundingSphere
+          }
+        } finally {
+          longFrames.end('terrain.mesh.chunk', spanStart)
         }
         yield
       }
