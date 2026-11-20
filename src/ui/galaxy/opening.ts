@@ -174,13 +174,20 @@ export function openingState(time: number, _mode: OpeningMode, lanes: number): O
 /** Seconds the view takes to swing back to the lobby's resting view after a world (Galaxy.returnHome). */
 export const RETURN_VIEW_SECONDS = 1.6
 /**
- * Coming back from a world: the name fades in again while the lobby swings back into view and
- * is in full as it settles (the owner, 19 November 2026: with the planets, not after them), on
- * the same smootherstep. `t` is seconds since the return began.
+ * Coming back from a world, the name fades in again as the lobby's view lands (the owner,
+ * 19 November 2026: sooner, with the planets, not after them). It cannot start earlier: until
+ * the last tenth of the swing home its place in space is nowhere near where it rests on screen
+ * (measured: millions of pixels off while the camera is near the world, 68 px at 83% of the
+ * swing, 15 px at 92%), and the owner's earlier rule is that it fades in where it belongs and
+ * never slides in (tests/ui/lobby-return.mjs). So it starts at RETURN_MARK_FROM of the swing and
+ * takes RETURN_FADE_SECONDS: in full about 0.65 s after the view lands, where it took 4.2 s.
+ * `t` is seconds since the fade began.
  */
-export const RETURN_SECONDS = RETURN_VIEW_SECONDS
+export const RETURN_MARK_FROM = 0.9
+export const RETURN_FADE_SECONDS = 0.8
+export const RETURN_SECONDS = RETURN_FADE_SECONDS
 export function returningMark(t: number): { markFront: number; mark: number } {
-  const mark = smoother(span(t, 0, RETURN_SECONDS))
+  const mark = smoother(span(t, 0, RETURN_FADE_SECONDS))
   return { markFront: 0.15 + 1.6 * mark, mark }
 }
 

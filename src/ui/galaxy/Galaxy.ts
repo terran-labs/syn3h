@@ -21,7 +21,7 @@ function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmar
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
 import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
 import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime } from './cameraRest'
-import { introMode, LEAVING_SECONDS, openingCue, SPIRAL_TURN, leavingMark, openingState, RETURN_SECONDS, RETURN_VIEW_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
+import { introMode, LEAVING_SECONDS, openingCue, SPIRAL_TURN, leavingMark, openingState, RETURN_MARK_FROM, RETURN_SECONDS, RETURN_VIEW_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
 /** The loading veil is still up: loading, or waiting for the tap that begins (src/ui/TapToBegin.ts). */
@@ -1068,13 +1068,13 @@ export class Galaxy {
     return true
   }
   /**
-   * The view has stopped (or a touch took it). The name has been fading in at its place on
-   * screen since the return began, and carries on from there; its rig trails the view again.
+   * The view has stopped (or a touch took it). The name's fade, begun in the swing's last tenth
+   * (returningMark), carries on from where it is; its rig trails the view again.
    */
   private endReturn(): void {
-    const start = this.returnTo?.start ?? performance.now()
+    const from = this.returnTo ? this.returnTo.start + RETURN_MARK_FROM * RETURN_MS : performance.now()
     this.returnTo = null; this.markRig.pose = null
-    this.returning = this.reduced?.matches ? null : start
+    this.returning = this.reduced?.matches ? null : Math.min(performance.now(), from)
   }
   /** For tests: true while returnHome's ease runs. */
   get returningHome(): boolean { return this.returnTo !== null }
@@ -1438,9 +1438,9 @@ export class Galaxy {
     let reveal = this.stepOpening(places)
     // Reduced motion: the name goes at once rather than being swept away.
     if (this.leaving !== null) reveal = { ...reveal, ...leavingMark(this.reduced.matches ? 1e3 : (performance.now() - this.leaving) / 1000) }
-    // While returnHome eases the view, the name fades in with it (the owner: with the planets,
-    // not after them), holding its place on screen (stepMark keeps its rig with the view).
-    else if (this.returnTo) reveal = { ...reveal, ...returningMark((performance.now() - this.returnTo.start) / 1000) }
+    // While returnHome eases the view the name stays dark until the swing's last tenth, where
+    // it is within a few pixels of its place, then fades in as the view lands (returningMark).
+    else if (this.returnTo) reveal = { ...reveal, ...returningMark((performance.now() - this.returnTo.start - RETURN_MARK_FROM * RETURN_MS) / 1000) }
     else if (this.returning !== null) {
       const t = (performance.now() - this.returning) / 1000
       if (t > RETURN_SECONDS) this.returning = null; else reveal = { ...reveal, ...returningMark(t) }
@@ -1680,8 +1680,8 @@ export class Galaxy {
     if (mode <= 0 || !field?.ok || !layout || !this.canvas) return none
     const goal = { yaw: this.yaw, pitch: this.pitch, reach: this.reach, target: [...this.target] as [number, number, number] }
     const held = still || this.reduced.matches
-    // During a return the rig keeps up with the view exactly, so the name holds its place on
-    // screen while the worlds swing round behind it (lagging, it slid in from an edge).
+    // During a return the rig keeps up with the view exactly: trailing it, the name would lag
+    // its place as it fades in at the end of the swing.
     const rigMoving = this.markRig.step(goal, elapsed, held || this.returnTo !== null)
     // The HTML logo box, in the shader's q units.
     const sx = this.canvas.width / Math.max(1, this.host.clientWidth), sy = this.canvas.height / Math.max(1, this.host.clientHeight)

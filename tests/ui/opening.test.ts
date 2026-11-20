@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FIRST, FLIGHT, GAP, OPENING_SECONDS, openingState, POP_SECONDS, RETURN_VIEW_SECONDS, returningMark, SETTLED, SETTLED_SECONDS } from '../../src/ui/galaxy/opening'
+import { FIRST, FLIGHT, GAP, OPENING_SECONDS, openingState, POP_SECONDS, RETURN_FADE_SECONDS, RETURN_MARK_FROM, RETURN_VIEW_SECONDS, returningMark, SETTLED, SETTLED_SECONDS } from '../../src/ui/galaxy/opening'
 
 describe('lobby opening timeline', () => {
   it('starts at a point, ends at the settled lobby, and brings the worlds in from the innermost out', () => {
@@ -45,8 +45,9 @@ describe('lobby opening timeline', () => {
     expect(openingState(landed, 2, 9).mark).toBe(1)
     expect(openingState(OPENING_SECONDS, 2, 9).mark).toBe(1)
   })
-  it('brings the name back in as the lobby swings back from a world', () => {
+  it('brings the name back in as the lobby lands from a world, in under a second', () => {
     expect(returningMark(0).mark).toBe(0)
-    expect(returningMark(RETURN_VIEW_SECONDS).mark).toBe(1)
+    expect(returningMark(RETURN_FADE_SECONDS).mark).toBe(1)
+    expect(RETURN_FADE_SECONDS + (1 - RETURN_MARK_FROM) * RETURN_VIEW_SECONDS).toBeLessThan(1.2)
   })
 })

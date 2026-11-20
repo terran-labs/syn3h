@@ -5,8 +5,9 @@
  * against the worlds' progress, as a chart, with six frames along the way.
  *
  *   Opening: the worlds' progress is their mean arrival (opening.ts openingState().arrive).
- *   Return:  the view's progress back to the lobby's resting view (returnHome's ease). The
- *            view is first swung away and below the plane, as a world's descent leaves it.
+ *   Return:  a real exit from a world: the view's progress home (0 while it flies out of the
+ *            world, then returnHome's ease, 1 once home), and the name's distance in pixels
+ *            from where it rests (it must be dark until it is within a few).
  *
  *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/ui/logo-timing-strip.mjs [out dir]
  */
@@ -26,31 +27,38 @@ try {
     page.on('pageerror', e => errors.push(`${device}: ${e.message}`))
     await page.goto(`${base}?room=logo-timing-${Date.now()}`); await ready(page)
     await page.waitForTimeout(1500)
+    const rest = await page.evaluate(() => { const b = window.syn3h.shell.galaxy.wordmarkScreenBox(); return b && [b.x + b.width / 2, b.y + b.height / 2] })
     for (const kind of ['opening', 'return']) {
+      if (kind === 'return') {
+        await page.locator('.galaxy-label[data-world="alpine"]').dispatchEvent('click')
+        await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 60000 })
+        await page.waitForTimeout(1500)
+      }
       // Record every frame: time, the name's opacity, the worlds' progress.
-      await page.evaluate(async kind => {
+      await page.evaluate(async ([kind, rest]) => {
         const g = window.syn3h.shell.galaxy, O = await import('/src/ui/galaxy/opening.ts')
         window.__samples = []; window.__done = false
         if (kind === 'opening') g.replayOpening(window.syn3h.params.get('lobby.intro').value)
-        else {
-          // Away and under the plane, as a descent leaves the view, then home.
-          g.yaw += 2.2; g.pitch = -0.35; g.distance *= 0.4
-          g.returnHome()
-        }
+        else { const s = window.syn3h.shell; s.askExit(); s.answerExit(true) }
         const t0 = performance.now()
+        let eased = false
         const tick = () => {
           const now = performance.now()
           let planets = 1
           if (kind === 'opening' && g.opening) {
             const t = g.opening.start === null ? -1 : (now - g.opening.start) / 1000, lanes = g.laneCache.length || 9
             const s = O.openingState(t, g.opening.mode, lanes); planets = s.arrive.reduce((a, b) => a + b, 0) / lanes
-          } else if (kind === 'return' && g.returnTo) planets = Math.min(1, (now - g.returnTo.start) / 1000 / O.RETURN_VIEW_SECONDS)
-          window.__samples.push({ t: (now - t0) / 1000, mark: g.markShown, planets })
+          } else if (kind === 'return') {
+            if (g.returnTo && document.querySelector('.syn3h-shell').classList.contains('is-playing') === false) eased = true
+            planets = g.returnTo && eased ? Math.min(1, (now - g.returnTo.start) / 1000 / O.RETURN_VIEW_SECONDS) : eased ? 1 : 0
+          }
+          const b = g.wordmarkScreenBox(), off = b && rest ? Math.hypot(b.x + b.width / 2 - rest[0], b.y + b.height / 2 - rest[1]) : null
+          window.__samples.push({ t: (now - t0) / 1000, mark: g.markShown, planets, off })
           if (!window.__done) requestAnimationFrame(tick)
         }
         requestAnimationFrame(tick)
-      }, kind)
-      const length = kind === 'opening' ? 9 : 3, shots = []
+      }, [kind, rest])
+      const length = kind === 'opening' ? 9 : 6, shots = []
       for (let i = 0; i < 6; i++) {
         const at = length * (i + 0.5) / 6
         await page.waitForFunction(at => (window.__samples.at(-1)?.t ?? 0) >= at, at, { timeout: 30000, polling: 'raf' })
@@ -64,6 +72,8 @@ try {
       // When the name reaches half and full, and the worlds' progress then.
       const first = p => samples.find(s => s.mark >= p)
       const half = first(0.5), full = first(0.99)
+      const worstOff = Math.max(0, ...samples.filter(x => x.mark > 0.01 && x.off !== null).map(x => x.off))
+      if (kind === 'return') summary.push(`${device} return: worst distance from its resting place while visible ${worstOff.toFixed(1)} px`)
       summary.push(`${device} ${kind}: name at half ${half ? `${half.t.toFixed(2)} s (worlds ${(half.planets * 100).toFixed(0)}%)` : 'never'}, full ${full ? `${full.t.toFixed(2)} s (worlds ${(full.planets * 100).toFixed(0)}%)` : 'never'}; worlds done ${(samples.find(s => s.planets >= 0.999)?.t ?? NaN).toFixed(2)} s`)
       // The chart: name opacity (gold) and the worlds' progress (blue) against time.
       const W = 900, H = 220, x = t => 40 + t / length * (W - 60), y = v => H - 30 - v * (H - 50)
@@ -71,7 +81,7 @@ try {
       const ticks = Array.from({ length: length + 1 }, (_, t) => `<text x="${x(t)}" y="${H - 10}" fill="#aaa" font-size="12" text-anchor="middle">${t} s</text>`).join('')
       const chart = `<svg width="${W}" height="${H}" style="background:#181818"><line x1="40" x2="${W - 20}" y1="${y(0)}" y2="${y(0)}" stroke="#444"/><line x1="40" x2="${W - 20}" y1="${y(1)}" y2="${y(1)}" stroke="#333"/>${ticks}${line('planets', '#6cb6ff')}${line('mark', '#f2c14e')}<text x="48" y="22" fill="#6cb6ff" font-size="13">${kind === 'opening' ? 'worlds arrived' : 'view back home'}</text><text x="220" y="22" fill="#f2c14e" font-size="13">Syn3h name opacity</text></svg>`
       const { readFileSync } = await import('node:fs')
-      const frames = shots.map(s => `<figure><img src="data:image/png;base64,${readFileSync(`${out}/${s.file}`).toString('base64')}"><figcaption>${s.t.toFixed(2)} s: worlds ${(s.planets * 100).toFixed(0)}%, name ${(s.mark * 100).toFixed(0)}%</figcaption></figure>`).join('')
+      const frames = shots.map(s => `<figure><img src="data:image/png;base64,${readFileSync(`${out}/${s.file}`).toString('base64')}"><figcaption>${s.t.toFixed(2)} s: ${kind === 'opening' ? 'worlds' : 'view home'} ${(s.planets * 100).toFixed(0)}%, name ${(s.mark * 100).toFixed(0)}%</figcaption></figure>`).join('')
       const sheet = await browser.newPage({ viewport: { width: 1900, height: 400 } })
       await sheet.setContent(`<body style="margin:0;background:#111;color:#eee;font:14px system-ui"><h3 style="margin:8px">${device}: ${kind}</h3>${chart}<div style="display:flex;flex-wrap:wrap">${frames}</div><style>figure{margin:3px}img{width:${device === 'phone' ? 150 : 300}px;display:block}figcaption{font-size:11px;text-align:center}</style></body>`)
       await sheet.screenshot({ path: `${out}/${device}-${kind}.png`, fullPage: true })
