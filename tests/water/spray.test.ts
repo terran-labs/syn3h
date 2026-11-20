@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { InstancedBufferGeometry, Mesh, MeshBasicNodeMaterial } from 'three/webgpu'
 import { ARMS, SpraySim, WAKE_LIFT, sprayCapacity } from '../../src/world/water/spraySim'
 
 // A gently sloping sea so tests can tell a re-queried height from the caller's y.
@@ -208,6 +209,59 @@ describe('spray simulation', () => {
 })
 
 describe('spray render wrapper', () => {
+  it('keeps separate liquid materials across quality budgets and releases them when disabled', async () => {
+    const T = await import('three/webgpu')
+    const { Spray, waterSpray } = await import('../../src/world/water/spray')
+    const { graphicsLevel } = await import('../../src/core/quality')
+    const level = graphicsLevel.value, enabled = waterSpray.value
+    const scene = new T.Scene(), ripples = { disturb: () => {} } as never
+    const water = new Spray(scene, ripples, sea), lava = new Spray(scene, ripples, sea, 'lava')
+    const tick = () => { water.update(1 / 60); lava.update(1 / 60) }
+    try {
+      waterSpray.value = true
+      graphicsLevel.value = 1
+      tick()
+      const meshes = scene.children.filter((mesh): mesh is Mesh<InstancedBufferGeometry, MeshBasicNodeMaterial> =>
+        mesh instanceof T.Mesh && mesh.geometry instanceof T.InstancedBufferGeometry && mesh.material instanceof T.MeshBasicNodeMaterial)
+      const materials = meshes.map(mesh => mesh.material), medium = water.state
+      expect(new Set(materials).size).toBe(4)
+      expect(water.state).not.toBe(lava.state)
+      let releasedGeometry = 0, releasedMaterials = 0
+      for (const mesh of meshes) {
+        mesh.geometry.addEventListener('dispose', () => releasedGeometry++)
+        mesh.material.addEventListener('dispose', () => releasedMaterials++)
+      }
+      for (const tier of [2, 1]) {
+        graphicsLevel.value = tier
+        tick()
+        const capacity = sprayCapacity(tier)
+        expect(scene.children).toEqual(meshes)
+        expect(water.state).not.toBe(medium)
+        expect(water.state!.cap).toEqual(capacity)
+        expect(lava.state!.cap).toEqual({ ...capacity, ripplets: 0 })
+        for (const [i, mesh] of meshes.entries()) {
+          expect(mesh.material).toBe(materials[i])
+          const attr = mesh.name.endsWith('-spray') ? 'sprayA' : 'foamA'
+          const limit = attr === 'sprayA' ? capacity.droplets :
+            capacity.vehicles * 3 * capacity.points + capacity.rings + (mesh.name.startsWith('lava-') ? 0 : capacity.ripplets)
+          expect(mesh.geometry.getAttribute(attr).count).toBe(limit)
+          expect(mesh.geometry.instanceCount).toBe(0)
+        }
+      }
+      expect(releasedGeometry).toBe(4)
+      expect(releasedMaterials).toBe(0)
+      waterSpray.value = false
+      tick()
+      expect(releasedMaterials).toBe(4)
+      expect(scene.children).toHaveLength(0)
+    } finally {
+      water.dispose()
+      lava.dispose()
+      waterSpray.value = enabled
+      graphicsLevel.value = level
+    }
+  })
+
   it('allocates once at the quality tier, emits nothing when off, and disposes', async () => {
     const T = await import('three/webgpu')
     const { Spray, waterSpray } = await import('../../src/world/water/spray')

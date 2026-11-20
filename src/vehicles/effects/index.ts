@@ -99,17 +99,27 @@ class EffectWorld implements System {
   retain(){this.references++}
   release(){if(--this.references===0){worlds.delete(this.game);this.game.remove(this)}}
   private rebudget(){
-    this.level=graphicsLevel.value;this.dust?.dispose();this.energy?.dispose();this.sparks?.dispose();this.redSparks?.dispose()
-    // One noise octave at the safe level, two above it. Rebuilt here when the level changes.
-    const budget=Math.floor(qualityBudget().particles*.25),octaves=Number(this.level)===0?1:2
-    this.dust=new ParticleBatch(Math.floor(budget*.6),dustSprite,false,octaves)
-    this.energy=new ParticleBatch(Math.floor(budget*.3),glowSprite,true,octaves)
-    this.sparks=new ParticleBatch(Math.max(2,Math.floor(budget*.05)),greenPlasma,true,octaves)
-    this.redSparks=new ParticleBatch(Math.max(2,Math.floor(budget*.05)),redPlasma,true,octaves)
+    const previousOctaves = this.level === 0 ? 1 : 2
+    this.level = graphicsLevel.value
+    const octaves = this.level === 0 ? 1 : 2
+    const budget = Math.floor(qualityBudget().particles * .25)
+    const batch = (current: ParticleBatch | undefined, capacity: number, sprite: typeof dustSprite, additive: boolean) => {
+      if (current && previousOctaves === octaves) {
+        current.resetCapacity(capacity)
+        return current
+      }
+      current?.dispose()
+      const next = new ParticleBatch(capacity, sprite, additive, octaves)
+      this.game.scene.add(next.mesh)
+      return next
+    }
+    this.dust = batch(this.dust, Math.floor(budget * .6), dustSprite, false)
+    this.energy = batch(this.energy, Math.floor(budget * .3), glowSprite, true)
+    this.sparks = batch(this.sparks, Math.max(2, Math.floor(budget * .05)), greenPlasma, true)
+    this.redSparks = batch(this.redSparks, Math.max(2, Math.floor(budget * .05)), redPlasma, true)
     // Dust and exhaust lean downwind with the weather; weapon sparks are too brief to. Tyre
     // marks are on the ground and take none.
     this.dust.windShare=DUST_WIND;this.dust.drift=windDrift;this.energy.windShare=EXHAUST_WIND;this.energy.drift=windDrift
-    this.game.scene.add(this.dust.mesh,this.energy.mesh,this.sparks.mesh,this.redSparks.mesh)
     this.stats.particles=this.dust.capacity+this.energy.capacity+this.sparks.capacity+this.redSparks.capacity
   }
   noise(){return effectNoise(this.serial++)}

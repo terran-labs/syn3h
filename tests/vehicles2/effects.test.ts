@@ -3,7 +3,9 @@ import * as T from 'three/webgpu'
 import {RibbonBatch} from '../../src/vehicles/effects/RibbonBatch'
 import {ParticleBatch} from '../../src/vehicles/effects/ParticleBatch'
 import {dustSprite} from '../../src/vehicles/effects/sprites'
-import {DUST_WIND,EXHAUST_WIND,effectNoise,hideUnusedLamps,writeVehicleLamps} from '../../src/vehicles/effects'
+import {DUST_WIND,EXHAUST_WIND,createWeaponEffects,effectNoise,hideUnusedLamps,writeVehicleLamps} from '../../src/vehicles/effects'
+import type {Game,System} from '../../src/core/Game'
+import {graphicsLevel,qualityLevel} from '../../src/core/quality'
 describe('bounded vehicle effects',()=>{
  it('caps the quad ring and rejects teleport bridges',()=>{
   const r=new RibbonBatch(4),a=new T.Vector3(),b=new T.Vector3(0,0,1),side=new T.Vector3(1,0,0),color=new T.Color()
@@ -18,6 +20,67 @@ describe('bounded vehicle effects',()=>{
   for(let i=0;i<500;i++)p.emit(v,v,.3,1,2,c)
   expect(p.mesh.geometry.instanceCount).toBe(8);expect(p.mesh.geometry.attributes.fxOrigin.count).toBe(8)
   expect(p.emitted).toBe(500);p.dispose()
+ })
+ it('keeps each live effect material while resetting its quality-sized emission ring', () => {
+  const graphics = graphicsLevel.value, quality = qualityLevel.value
+  const scene = new T.Scene()
+  let effects: System | undefined
+  const game = {
+   scene,
+   add(system: System) { effects = system },
+   remove(system: System) { system.dispose?.() },
+  } as unknown as Game
+  const meshes = () => scene.children.filter((mesh): mesh is ParticleBatch['mesh'] =>
+   mesh instanceof T.Mesh && mesh.material instanceof T.SpriteNodeMaterial)
+  const position = new T.Vector3(5, 6, 7), direction = new T.Vector3(0, 0, 1)
+  let weapon: ReturnType<typeof createWeaponEffects> | undefined
+  try {
+   graphicsLevel.value = 1
+   qualityLevel.value = 2
+   weapon = createWeaponEffects(game)
+   const batches = meshes(), materials = batches.map(mesh => mesh.material)
+   expect(new Set(materials).size).toBe(4)
+   const medium = batches.map(mesh => mesh.geometry.instanceCount)
+   let releasedGeometry = 0, releasedMaterials = 0
+   for (const mesh of batches) {
+    mesh.geometry.addEventListener('dispose', () => releasedGeometry++)
+    mesh.material.addEventListener('dispose', () => releasedMaterials++)
+   }
+   effects!.update!(.05, 1)
+   weapon.muzzle(position, direction, true)
+   expect(batches[3].geometry.attributes.fxSettings.getX(0)).toBeCloseTo(.05)
+   expect(batches[2].geometry.attributes.fxSettings.getX(0)).toBeLessThan(0)
+
+   graphicsLevel.value = 2
+   qualityLevel.value = 3
+   effects!.update!(.05, 1)
+   expect(meshes()).toEqual(batches)
+   const high = batches.map(mesh => mesh.geometry.instanceCount)
+   for (let i = 0; i < batches.length; i++) {
+    expect(batches[i].material).toBe(materials[i])
+    expect(high[i]).toBeGreaterThan(medium[i])
+    expect(batches[i].geometry.attributes.fxSettings.count).toBe(high[i])
+    expect(batches[i].geometry.attributes.fxSettings.getX(0)).toBeLessThan(0)
+   }
+   expect(releasedGeometry).toBe(4)
+   expect(releasedMaterials).toBe(0)
+   weapon.muzzle(position, direction)
+   expect(batches[2].geometry.attributes.fxSettings.getX(0)).toBeCloseTo(.1)
+   expect(batches[3].geometry.attributes.fxSettings.getX(0)).toBeLessThan(0)
+
+   graphicsLevel.value = 1
+   qualityLevel.value = 2
+   effects!.update!(.05, 1)
+   expect(batches.map(mesh => mesh.geometry.instanceCount)).toEqual(medium)
+   for (let i = 0; i < batches.length; i++) expect(batches[i].material).toBe(materials[i])
+   weapon.dispose()
+   expect(releasedMaterials).toBe(4)
+   expect(meshes()).toHaveLength(0)
+  } finally {
+   weapon?.dispose()
+   graphicsLevel.value = graphics
+   qualityLevel.value = quality
+  }
  })
  it('has repeatable cosmetic variation',()=>{
   expect(effectNoise(42)).toBe(effectNoise(42));expect(effectNoise(42)).not.toBe(effectNoise(43))

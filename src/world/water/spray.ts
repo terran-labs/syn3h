@@ -229,24 +229,35 @@ export class Spray {
   /** Live simulation, for tests and evidence tools. */
   get state() { return this.sim }
   private allocate(tier: number) {
-    this.release()
+    const octaves = tier === 0 ? 1 : 2
+    // Only the safe tier changes the foam shader. The other budgets use the same draw objects.
+    if (this.tier >= 0 && (this.tier === 0) !== (tier === 0)) this.release()
     // Lava drops sink into the crust: no ripplets where they land.
     const cap = { ...sprayCapacity(tier), ...(this.liquid === 'lava' ? { ripplets: 0 } : {}) }
     this.sim = new SpraySim(cap, this.water); this.tier = tier; this.packed = -1
-    const light = sprayLight()
     const d = batch(cap.droplets, ['sprayA', 'sprayB'])
     const lava = this.liquid === 'lava'
-    const dropMesh = new T.Mesh(d.g, dropletMaterial(light, waterTint(), lava))
     const segments = cap.vehicles * 3 * cap.points + cap.rings + cap.ripplets
     const f = batch(segments, ['foamA', 'foamB', 'foamSide', 'foamLook'])
-    const foamMesh = new T.Mesh(f.g, foamMaterial(light, waterTint(), lava, tier === 0 ? 1 : 2))
-    dropMesh.name = `${this.liquid}-spray`; foamMesh.name = `${this.liquid}-foam`
-    // After the water (transparent, no depth write) so foam lies on it; droplets after foam.
-    foamMesh.renderOrder = 2; dropMesh.renderOrder = 3
-    for (const mesh of [dropMesh, foamMesh]) {
-      mesh.frustumCulled = false; applyCurve(mesh.material); this.scene.add(mesh)
-      // Pack at most once per change, after this frame's emissions, just before the draw.
-      mesh.onBeforeRender = () => this.pack()
+    let dropMesh = this.drops?.mesh, foamMesh = this.foam?.mesh
+    if (dropMesh && foamMesh) {
+      const oldDrops = dropMesh.geometry, oldFoam = foamMesh.geometry
+      dropMesh.geometry = d.g
+      foamMesh.geometry = f.g
+      oldDrops.dispose()
+      oldFoam.dispose()
+    } else {
+      const light = sprayLight()
+      dropMesh = new T.Mesh(d.g, dropletMaterial(light, waterTint(), lava))
+      foamMesh = new T.Mesh(f.g, foamMaterial(light, waterTint(), lava, octaves))
+      dropMesh.name = `${this.liquid}-spray`; foamMesh.name = `${this.liquid}-foam`
+      // After the water (transparent, no depth write) so foam lies on it; droplets after foam.
+      foamMesh.renderOrder = 2; dropMesh.renderOrder = 3
+      for (const mesh of [dropMesh, foamMesh]) {
+        mesh.frustumCulled = false; applyCurve(mesh.material); this.scene.add(mesh)
+        // Pack at most once per change, after this frame's emissions, just before the draw.
+        mesh.onBeforeRender = () => this.pack()
+      }
     }
     this.drops = { mesh: dropMesh, a: d.attributes[0].array as Float32Array, b: d.attributes[1].array as Float32Array, attributes: d.attributes }
     this.foam = { mesh: foamMesh, arrays: f.attributes.map(x => x.array as Float32Array), attributes: f.attributes }
@@ -290,7 +301,12 @@ export class Spray {
   /** The world moved by a whole tile under the player: move what spray has left behind with it. */
   shift(dx: number, dz: number) { this.sim?.shift(dx, dz) }
   private release() {
-    for (const mesh of [this.drops?.mesh, this.foam?.mesh]) if (mesh) { mesh.removeFromParent(); mesh.geometry.dispose(); mesh.material.dispose() }
+    for (const mesh of [this.drops?.mesh, this.foam?.mesh]) if (mesh) {
+      mesh.removeFromParent()
+      mesh.dispose()
+      mesh.geometry.dispose()
+      mesh.material.dispose()
+    }
     this.drops = this.foam = null; this.sim = null; this.tier = -1
   }
   dispose() { this.release() }
