@@ -1,27 +1,29 @@
 /**
- * Frozen versions: every production deploy carries each earlier release's files, so
- * https://www.syn3h.com/?v=<version> keeps serving that exact build after later releases.
+ * Frozen versions: https://www.syn3h.com/?v=<version> keeps serving that exact build after later
+ * releases. The owner's rule of 15 November 2026: judges must be able to load the build frozen
+ * before noon (v26.11.1503) by a version in the address while newer builds keep shipping.
  *
- * The owner's rule of 15 November 2026: judges must be able to load the build frozen before
- * noon (v26.11.1503) by a version in the address while newer builds keep shipping. A deploy
- * that leaves out dist/v/ breaks every frozen link, so tools/release.sh runs `carry` before
- * it deploys and `check` against what it deployed, and fails the release on either.
+ * Where they live (the owner's decision of 19 November 2026, step two of the move to R2): each
+ * accepted release is stored once in the R2 bucket syn3h-versions under v/<version>/<path>, and
+ * server/worker.ts reads every frozen version from there, except its own, which it serves from
+ * its own static assets so a release's link works from its first minute. Deployments no longer
+ * carry old versions. ../Syn3h-stable/versions/<version>/ keeps a second copy on this Mac.
  *
- *   node tools/frozen-versions.mjs carry <frozen-copy> [version]   fill <frozen-copy>/dist/v/
- *   node tools/frozen-versions.mjs archive <frozen-copy> <version> keep an accepted release
- *   node tools/frozen-versions.mjs check <base-url> <frozen-copy>  verify a running site
- *   node tools/frozen-versions.mjs r2-upload --all | <version>...  store archived versions in R2
- *   node tools/frozen-versions.mjs list                            archived versions
+ *   node tools/frozen-versions.mjs r2-preflight                     before freeze: every archived version in R2
+ *   node tools/frozen-versions.mjs prepare <frozen-copy> <version>   before deploy: guard, versions.json
+ *   node tools/frozen-versions.mjs check <base-url> <frozen-copy> [--new-only]  verify a running site
+ *   node tools/frozen-versions.mjs archive <frozen-copy> <version>   after acceptance: keep, upload, verify
+ *   node tools/frozen-versions.mjs r2-upload --all | <version>...    upload and verify archived versions
+ *   node tools/frozen-versions.mjs r2-verify --all | <version>...    re-download and compare, writing nothing
+ *   node tools/frozen-versions.mjs list                              archived versions
  *
- * The archive lives beside the frozen copies, in ../Syn3h-stable/versions/<version>/, one
- * directory per accepted production release, holding that release's dist without source maps.
- * `carry` copies every archived version into dist/v/<version>/, adds the build being released
- * under its own version so its link works from its first minute, and writes
- * dist/v/versions.json for server/worker.ts. Only `archive`, run after public acceptance,
- * adds to the archive: a dry run or a rolled back release leaves nothing behind.
+ * The commands that talk to R2 (r2-*, archive) run through the scoped-token wrapper:
+ *   bash -c '. tools/cloudflare-token.sh; with_cf_token node tools/frozen-versions.mjs r2-preflight'
+ * Only `archive`, run after public acceptance, adds a version: a dry run or a rolled back release
+ * leaves nothing behind, locally or in R2.
  */
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -76,33 +78,24 @@ function walk(dir, base = dir) {
 }
 
 /**
- * Fill <copy>/dist/v/ with every archived version, plus the build in <copy>/dist itself when
- * its version is given. Returns the versions carried, oldest first.
+ * Ready a frozen copy for deploy: refuse a build that changes a root file a frozen version also
+ * serves (changedInPlace), drop any dist/v/, and write dist/v/versions.json, the list of every
+ * archived version and this one. The Updates banner (src/ui/updates/feed.ts) reads that list for
+ * the newest release, and the Worker for its unknown-version page and its search order; serving
+ * a version never depends on it. Returns the versions listed, oldest first.
  */
-export function carry(copy, version, archive = archiveDir()) {
+export function prepare(copy, version, archive = archiveDir()) {
   const dist = join(copy, 'dist')
   if (!existsSync(join(dist, 'index.html'))) throw new Error(`${dist} holds no built site`)
-  const current = version ? bareVersion(version) : null
-  const target = join(dist, 'v')
-  // Built beside dist and moved in: Node refuses to copy a directory into itself.
-  const staging = join(copy, '.frozen-versions')
-  rmSync(staging, { recursive: true, force: true })
-  mkdirSync(staging, { recursive: true })
+  const current = bareVersion(version)
   const versions = archivedVersions(archive).filter((v) => v !== current)
   const changed = changedInPlace(dist, versions, archive)
-  if (changed.length) {
-    rmSync(staging, { recursive: true, force: true })
-    throw new Error(`this build changes files that frozen versions also serve at the same address, and static assets would give every frozen page the new bytes; rename them instead:\n  ${changed.join('\n  ')}`)
-  }
-  for (const v of versions) copyBuild(join(archive, v), join(staging, v))
-  if (current) {
-    copyBuild(dist, join(staging, current))
-    versions.push(current)
-  }
+  if (changed.length) throw new Error(`this build changes files that frozen versions also serve at the same address, and static assets would give every frozen page the new bytes; rename them instead:\n  ${changed.join('\n  ')}`)
+  versions.push(current)
   versions.sort(compare)
-  writeFileSync(join(staging, 'versions.json'), JSON.stringify({ versions, note: 'Open https://www.syn3h.com/?v=<version> to play a frozen build.' }) + '\n')
-  rmSync(target, { recursive: true, force: true })
-  renameSync(staging, target)
+  rmSync(join(dist, 'v'), { recursive: true, force: true })
+  mkdirSync(join(dist, 'v'))
+  writeFileSync(join(dist, 'v', 'versions.json'), JSON.stringify({ versions, note: 'Open https://www.syn3h.com/?v=<version> to play a frozen build.' }) + '\n')
   return versions
 }
 
@@ -111,8 +104,7 @@ export function archive(copy, version, dir = archiveDir()) {
   const v = bareVersion(version)
   const to = join(dir, v)
   if (existsSync(join(to, 'index.html'))) throw new Error(`${v} is already archived in ${to}; an accepted release is never replaced`)
-  const carried = join(copy, 'dist', 'v', v)
-  copyBuild(existsSync(join(carried, 'index.html')) ? carried : join(copy, 'dist'), to)
+  copyBuild(join(copy, 'dist'), to)
   return to
 }
 
@@ -205,8 +197,12 @@ export function apiStore(bucket = BUCKET, { token = process.env.CLOUDFLARE_API_T
  * Upload `versions` from the archive to the store and verify every object. A key already
  * holding other bytes is refused, never overwritten. Returns a report; `refused` and
  * `mismatched` must both be empty for the run to count. `store` is { get(key), put(key, file, type) }.
+ * With `verifyOnly`, nothing is written: an absent object counts as mismatched. A version all of
+ * whose objects verify gets its row in the ledger (verifiedVersions).
+ * @param {string[]} versions
+ * @param {{ store: Store, archive?: string, concurrency?: number, verifyOnly?: boolean, log?: (line: string) => void }} options
  */
-export async function r2Upload(versions, { store, archive = archiveDir(), concurrency = 8, log = (/** @type {string} */ _line) => {} }) {
+export async function r2Upload(versions, { store, archive = archiveDir(), concurrency = 8, verifyOnly = false, log = (/** @type {string} */ _line) => {} }) {
   const report = { versions: versions.length, objects: 0, bytes: 0, uploaded: 0, present: 0, refused: /** @type {string[]} */ ([]), mismatched: /** @type {string[]} */ ([]) }
   const entries = versions.flatMap((v) => walk(join(archive, v)).map((file) => ({ v, file, key: `v/${v}/${file}`, path: join(archive, v, file) })))
   report.objects = entries.length
@@ -214,6 +210,7 @@ export async function r2Upload(versions, { store, archive = archiveDir(), concur
     const bytes = readFileSync(e.path)
     report.bytes += bytes.length
     const there = await store.get(e.key)
+    if (there === null && verifyOnly) { report.mismatched.push(e.key); return }
     if (there === null) { await store.put(e.key, e.path, contentType(e.file)); report.uploaded++ }
     else if (sha(there) === sha(bytes)) report.present++
     else { report.refused.push(e.key); return }
@@ -223,6 +220,14 @@ export async function r2Upload(versions, { store, archive = archiveDir(), concur
     if (done % 100 === 0) log(`r2: ${done} of ${entries.length} objects`)
   })
   report.refused.sort(); report.mismatched.sort()
+  // A version every one of whose objects verified is recorded as whole in R2.
+  const failed = new Set([...report.refused, ...report.mismatched].map((key) => key.split('/')[1]))
+  const known = verifiedVersions(archive)
+  for (const v of versions) {
+    if (failed.has(v) || known.has(v)) continue
+    const mine = entries.filter((e) => e.v === v)
+    recordVerified(archive, v, mine.length, mine.reduce((sum, e) => sum + statSync(e.path).size, 0))
+  }
   return report
 }
 
@@ -240,6 +245,35 @@ export async function r2WriteIndex(versions, { store }) {
   await store.put(INDEX_KEY, file, CONTENT_TYPES.json)
   rmSync(dir, { recursive: true, force: true })
   return listed
+}
+
+/**
+ * The versions known to be whole in R2: a row in r2-verified.tsv beside the archive, written only
+ * after every object of the version was uploaded or found and then read back hash-equal. Objects
+ * are written once and only this tool writes them, so a verified version stays verified;
+ * `r2-verify` re-downloads to audit that on demand.
+ */
+export function ledgerFile(archive = archiveDir()) { return join(dirname(archive), 'r2-verified.tsv') }
+export function verifiedVersions(archive = archiveDir()) {
+  const file = ledgerFile(archive)
+  return new Set(existsSync(file) ? readFileSync(file, 'utf8').split('\n').map((line) => line.split('\t')[0]).filter((v) => VERSION.test(v)) : [])
+}
+function recordVerified(archive, version, objects, bytes) {
+  appendFileSync(ledgerFile(archive), `${version}\t${objects} objects\t${bytes} bytes\t${new Date().toISOString()}\n`)
+}
+
+/**
+ * Before a release: every archived version must be verified in R2, because the deploy no longer
+ * carries any. A version without a ledger row is uploaded and verified now. Returns what was
+ * done; `unverified` must be empty for the release to go on.
+ * @param {{ store: Store, archive?: string, log?: (line: string) => void }} options
+ */
+export async function r2Preflight({ store, archive = archiveDir(), log = (/** @type {string} */ _line) => {} }) {
+  const done = verifiedVersions(archive)
+  const missing = archivedVersions(archive).filter((v) => !done.has(v))
+  const report = missing.length ? await r2Upload(missing, { store, archive, log }) : null
+  const now = verifiedVersions(archive)
+  return { missing, report, unverified: archivedVersions(archive).filter((v) => !now.has(v)) }
 }
 
 /**
@@ -334,26 +368,29 @@ async function get(url, { headers = {}, pool } = {}) {
 }
 
 /**
- * Verify a running site against <copy>/dist/v: each frozen version's page, every one of its
- * files as that page would ask for it, a browser's repeat visit, and an unknown version.
- * Every file is fetched and hashed, CONCURRENCY at a time. Returns { problems, stats }; an
- * empty problems list is a pass.
+ * Verify a running site after a deploy. The release being made (the copy's build.json version):
+ * its page in both spellings, every one of its files as its page asks for them (from its own
+ * static assets), one of its direct /v/<version>/ addresses, and that /v/versions.json lists it.
+ * Every archived version: its page in both spellings, marked with its version, and a repeat
+ * visit by ETag; those pages come from R2, so this proves R2 is serving them. Then an unknown
+ * version and the plain address. Every file fetched is hashed, CONCURRENCY at a time. Returns
+ * { problems, stats }; an empty problems list is a pass. `newOnly` checks the new release alone,
+ * for a copy served locally, where there is no R2 to serve the others from.
  */
-export async function check(base, copy, { concurrency = CONCURRENCY } = {}) {
+export async function check(base, copy, { concurrency = CONCURRENCY, archive = archiveDir(), newOnly = false } = {}) {
   const root = join(copy, 'dist')
-  const frozen = join(root, 'v')
   const problems = []
   const origin = new URL(base).origin
   const stats = { versions: 0, files: 0, requests: 0 }
-  if (!existsSync(join(frozen, 'versions.json'))) return { problems: [`${frozen} has no versions.json: this build carries no frozen versions`], stats }
-  const { versions } = JSON.parse(readFileSync(join(frozen, 'versions.json'), 'utf8'))
-  if (!versions.length) problems.push('versions.json lists no versions')
+  const current = bareVersion(JSON.parse(readFileSync(join(root, 'build.json'), 'utf8')).version)
+  const versions = newOnly ? [current] : [...new Set([...archivedVersions(archive), current])].sort(compare)
+  const pageOf = (v) => readFileSync(v === current ? join(root, 'index.html') : join(archive, v, 'index.html'))
   const pool = backoff()
   const request = (url, options = {}) => { stats.requests++; return get(url, { ...options, pool }) }
 
   // Pages: both spellings, the version header, and a browser's repeat visit with the ETag.
   await mapPool(versions, concurrency, async (v) => {
-    const page = sha(readFileSync(join(frozen, v, 'index.html')))
+    const page = sha(pageOf(v))
     for (const address of [`/?v=${v}`, `/?v=v${v}`]) {
       const got = await request(origin + address)
       if (got.status !== 200 || sha(got.body) !== page) problems.push(`${address} does not serve the frozen ${v} page (HTTP ${got.status})`)
@@ -367,61 +404,98 @@ export async function check(base, copy, { concurrency = CONCURRENCY } = {}) {
     }
   })
 
-  // Every file, asked for the way the frozen page asks: by its root path, from that page.
-  const entries = versions.flatMap((v) => walk(join(frozen, v)).filter((file) => file !== 'index.html').map((file) => ({ version: v, file })))
-  await mapPool(entries, concurrency, async ({ version, file }) => {
-    const got = await request(`${origin}/${file}`, { headers: { Referer: `${origin}/?v=${version}` } })
-    const want = readFileSync(join(frozen, version, file))
+  // The new release's files, asked for the way its page asks: by root path, from that page.
+  const files = walk(root).filter((file) => file !== 'index.html' && !file.endsWith('.map') && file !== '.assetsignore' && file !== 'releases.json' && !file.startsWith('v/'))
+  await mapPool(files, concurrency, async (file) => {
+    const got = await request(`${origin}/${file}`, { headers: { Referer: `${origin}/?v=${current}` } })
+    const want = readFileSync(join(root, file))
     if (got.status === 200 && sha(got.body) === sha(want)) return
-    // Hashed names carry no Referer rule: the latest build wins when it has the same name.
-    // That is right only when the bytes are the same, so any difference is a failure.
-    problems.push(`/${file} asked by the ${version} page is not that release's file (HTTP ${got.status}, ${got.body.length} bytes, want ${want.length})`)
+    problems.push(`/${file} asked by the ${current} page is not that release's file (HTTP ${got.status}, ${got.body.length} bytes, want ${want.length})`)
   })
+  // Its own /v/ address (a pinned page asks for models, licences and pictures this way).
+  const direct = await request(`${origin}/v/${current}/build.json`)
+  if (direct.status !== 200 || sha(direct.body) !== sha(readFileSync(join(root, 'build.json')))) problems.push(`/v/${current}/build.json is not this release's build.json (HTTP ${direct.status})`)
+  const listed = await request(`${origin}/v/versions.json`)
+  let list = []
+  try { list = JSON.parse(listed.body.toString()).versions ?? [] } catch { /* reported below */ }
+  if (!list.includes(current)) problems.push(`/v/versions.json does not list ${current} (HTTP ${listed.status})`)
 
   const unknown = await request(`${origin}/?v=0.0.0`)
   if (unknown.status !== 404) problems.push(`an unknown version answers HTTP ${unknown.status}, not 404`)
   if ((await request(`${origin}/`)).status !== 200) problems.push('the plain address does not answer 200')
   problems.sort()
-  return { problems, stats: { versions: versions.length, files: entries.length, requests: stats.requests } }
+  return { problems, stats: { versions: versions.length, files: files.length, requests: stats.requests } }
+}
+
+/** Print an upload or verification report; returns true when nothing was refused or mismatched. */
+function printReport(report, started, verb = 'uploaded') {
+  for (const key of report.refused) console.log(`REFUSED: ${key} already holds other bytes; not overwritten`)
+  for (const key of report.mismatched) console.log(`MISMATCH: ${key} is missing or does not read back as the archived bytes`)
+  console.log(`R2 ${BUCKET}: ${report.versions} versions, ${report.objects} objects, ${report.bytes} bytes; ${report.uploaded} ${verb}, ${report.present} already there; ${report.refused.length} refused, ${report.mismatched.length} mismatched; ${((Date.now() - started) / 1000).toFixed(0)} s`)
+  return !report.refused.length && !report.mismatched.length
 }
 
 async function main(argv) {
   const [command, a, b] = argv
+  const pick = (usage) => {
+    const all = archivedVersions()
+    const wanted = argv.includes('--all') ? all : argv.slice(1).map(bareVersion)
+    if (!wanted.length) throw new Error(usage)
+    for (const v of wanted) if (!all.includes(v)) throw new Error(`${v} is not archived`)
+    return wanted
+  }
+  const log = (line) => console.log(line)
   switch (command) {
-    case 'carry': {
-      if (!a) throw new Error('Usage: frozen-versions.mjs carry <frozen-copy> [version]')
-      console.log(`Frozen versions carried: ${carry(resolve(a), b).join(', ') || 'none'}`)
+    case 'prepare': {
+      if (!a || !b) throw new Error('Usage: frozen-versions.mjs prepare <frozen-copy> <version>')
+      console.log(`Frozen versions listed: ${prepare(resolve(a), b).join(', ')}`)
+      return 0
+    }
+    case 'r2-preflight': {
+      // Before a release: every archived version must be whole in R2, since no deploy carries them.
+      const started = Date.now()
+      const { missing, report, unverified } = await r2Preflight({ store: apiStore(), log })
+      if (report) printReport(report, started)
+      if (unverified.length) { console.log(`R2 PREFLIGHT FAILED: not verified in R2: ${unverified.join(', ')}`); return 1 }
+      console.log(`R2 PREFLIGHT OK: ${archivedVersions().length} versions verified in R2${missing.length ? ` (uploaded and verified now: ${missing.join(', ')})` : ''}`)
       return 0
     }
     case 'archive': {
+      // After acceptance: the local second copy, then R2, verified. Loud on any failure.
       if (!a || !b) throw new Error('Usage: frozen-versions.mjs archive <frozen-copy> <version>')
-      console.log(`Archived ${bareVersion(b)} at ${archive(resolve(a), b)}`)
+      const v = bareVersion(b)
+      if (existsSync(join(archiveDir(), v, 'index.html'))) console.log(`${v} is already archived locally; not replaced`)
+      else console.log(`Archived ${v} at ${archive(resolve(a), v)}`)
+      const store = apiStore()
+      const started = Date.now()
+      let ok = false
+      try { ok = printReport(await r2Upload([v], { store, log }), started) } catch (error) { console.log(`R2 error: ${error instanceof Error ? error.message : String(error)}`) }
+      if (!ok) { console.log(`ARCHIVE FAILED: ${v} is not verified in R2. The next release's r2-preflight uploads it again or stops.`); return 1 }
+      console.log(`R2 index lists ${(await r2WriteIndex(archivedVersions(), { store })).length} versions`)
+      console.log(`ARCHIVE OK: ${v} kept locally and verified in R2`)
       return 0
     }
     case 'check': {
-      if (!a || !b) throw new Error('Usage: frozen-versions.mjs check <base-url> <frozen-copy>')
+      if (!a || !b) throw new Error('Usage: frozen-versions.mjs check <base-url> <frozen-copy> [--new-only]')
       const started = Date.now()
-      const { problems, stats } = await check(a, resolve(b))
+      const { problems, stats } = await check(a, resolve(b), { newOnly: argv.includes('--new-only') })
       for (const problem of problems) console.log(`FAIL: ${problem}`)
-      console.log(`Checked ${stats.files} files of ${stats.versions} versions in ${stats.requests} requests, ${((Date.now() - started) / 1000).toFixed(1)} s`)
+      console.log(`Checked ${stats.versions} version pages and ${stats.files} files of the new one in ${stats.requests} requests, ${((Date.now() - started) / 1000).toFixed(1)} s`)
       console.log(problems.length ? `FROZEN VERSIONS FAILED at ${a}` : `FROZEN VERSIONS OK at ${a}`)
       return problems.length ? 1 : 0
     }
     case 'r2-upload': {
-      // r2-upload --all | <version>...: upload and verify, then rewrite the index.
-      const all = archivedVersions()
-      const wanted = argv.includes('--all') ? all : argv.slice(1).map(bareVersion)
-      if (!wanted.length) throw new Error('Usage: frozen-versions.mjs r2-upload --all | <version>...')
-      for (const v of wanted) if (!all.includes(v)) throw new Error(`${v} is not archived`)
+      const wanted = pick('Usage: frozen-versions.mjs r2-upload --all | <version>...')
       const store = apiStore()
+      if (!printReport(await r2Upload(wanted, { store, log }), Date.now())) { console.log('R2 UPLOAD FAILED: index not rewritten'); return 1 }
+      console.log(`R2 index lists ${(await r2WriteIndex(archivedVersions(), { store })).length} versions`)
+      return 0
+    }
+    case 'r2-verify': {
+      const wanted = pick('Usage: frozen-versions.mjs r2-verify --all | <version>...')
       const started = Date.now()
-      const report = await r2Upload(wanted, { store, log: (line) => console.log(line) })
-      for (const key of report.refused) console.log(`REFUSED: ${key} already holds other bytes; not overwritten`)
-      for (const key of report.mismatched) console.log(`MISMATCH: ${key} does not read back as the archived bytes`)
-      console.log(`R2 ${BUCKET}: ${report.versions} versions, ${report.objects} objects, ${report.bytes} bytes; ${report.uploaded} uploaded, ${report.present} already there; ${report.refused.length} refused, ${report.mismatched.length} mismatched; ${((Date.now() - started) / 1000).toFixed(0)} s`)
-      if (report.refused.length || report.mismatched.length) { console.log('R2 UPLOAD FAILED: index not rewritten'); return 1 }
-      const listed = await r2WriteIndex(all, { store })
-      console.log(`R2 index lists ${listed.length} versions`)
+      if (!printReport(await r2Upload(wanted, { store: apiStore(), verifyOnly: true, log }), started, 'written')) { console.log('R2 VERIFY FAILED'); return 1 }
+      console.log('R2 VERIFY OK')
       return 0
     }
     case 'list': {
@@ -429,7 +503,7 @@ async function main(argv) {
       return 0
     }
     default:
-      throw new Error('Usage: frozen-versions.mjs carry|archive|check|r2-upload|list')
+      throw new Error('Usage: frozen-versions.mjs prepare|r2-preflight|check|archive|r2-upload|r2-verify|list')
   }
 }
 
