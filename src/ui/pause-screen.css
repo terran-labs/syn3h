@@ -25,6 +25,8 @@ html .syn3h-shell.exploration-ui .pause-veil, html .syn3h-shell.exploration-ui .
 }
 .syn3h-shell .pause-veil > * { transition: opacity .6s ease; }
 .syn3h-shell.is-whisper .pause-veil::before, .syn3h-shell.is-whisper .pause-veil > * { opacity: 0; }
+/* "Leave this world?" is the only text while it asks: PAUSED steps out from behind it. */
+.syn3h-shell:has(.exit-confirm:not([hidden])) .pause-veil::before, .syn3h-shell:has(.exit-confirm:not([hidden])) .pause-veil > * { opacity: 0; }
 
 /* ---- Exit world, Welcome, Screenshot: one row at the bottom centre, above the veil. ---- */
 .syn3h-shell .pause-actions {
@@ -61,9 +63,10 @@ html .syn3h-shell .pause-actions button {
 /* "Leave this world?" asked from the pause screen stands above the veil and its buttons. */
 .syn3h-shell.is-paused .exit-confirm { z-index: 62; }
 
-/* Phones: one row in portrait, icons with short words. */
+/* Phones: one row in portrait, icons with short words, standing above the minimap, which holds
+   the lower left corner and stays on screen while paused (--map-top, exploration.css). */
 @media (max-width: 520px) {
-  .syn3h-shell .pause-actions { gap: 8px; }
+  .syn3h-shell .pause-actions { gap: 8px; bottom: calc(var(--map-top, 160px) + 12px); }
   html .syn3h-shell .pause-actions button { height: 44px; min-height: 44px; padding: 0 14px; gap: 7px; font-size: 11px; letter-spacing: .1em; }
   .syn3h-shell .pause-actions .pause-long { display: none; }
   .syn3h-shell .pause-actions .pause-short { display: inline; }
