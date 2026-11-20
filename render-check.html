@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#18202a">
+  <title>Rendering check · Syn3h</title>
+  <style>
+    * { box-sizing: border-box }
+    body { margin: 0; background: #18202a; color: #f4f6fa; font: 16px/1.5 system-ui, sans-serif }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none }
+    main { position: relative; width: min(42rem, calc(100% - 2rem)); margin: max(1rem, env(safe-area-inset-top)) auto; padding: clamp(1rem, 4vw, 2rem); border: 1px solid #4d5963; border-radius: .85rem; background: #17212af5 }
+    h1 { font-size: clamp(1.45rem, 5vw, 2rem); margin: 0 }
+    button, input { font: inherit; border-radius: .4rem; padding: .55rem .8rem }
+    input { display: block; margin: .35rem 0 1rem; background: #10171e; border: 1px solid #7b8997; color: inherit; width: min(100%, 22rem) }
+    button { background: #c5eadb; border: 0; color: #13251c; font-weight: 600; cursor: pointer }
+    button:disabled { opacity: .5 }
+    button + button { margin-left: .4rem }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font: .85rem/1.55 ui-monospace, monospace }
+    [hidden] { display: none!important }
+    main.running { padding: .7rem 1rem; width: fit-content; max-width: 95%; margin-left: 1rem }
+    main.running h1 { font-size: 1rem }
+    main.running p { margin: .25rem 0 }
+  </style>
+</head>
+<body>
+  <canvas aria-hidden="true"></canvas>
+  <main>
+    <h1>Rendering check</h1>
+    <section id="setup">
+      <p>Measure the same shoreline at six graphics levels. Keep this page visible and the phone in one orientation for up to a minute.</p>
+      <label>Phone model (optional)<input id="model" maxlength="80" placeholder="e.g. iPhone 15 Pro"></label>
+      <button id="start">Start check</button>
+    </section>
+    <p id="status" role="status"></p>
+    <div id="actions" hidden><button id="copy">Copy result</button><button id="share">Share</button><button id="again">Run again</button></div>
+    <pre id="result"></pre>
+    <details id="details" hidden><summary>Pass timings and cross-checks</summary><pre id="timings"></pre></details>
+  </main>
+  <script type="module" src="/src/dev/renderCheck.ts"></script>
+</body>
+</html>

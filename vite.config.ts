@@ -82,7 +82,7 @@ export default defineConfig({
     // only count files that have finished. Same bytes, fetched in parallel (each preloaded by
     // the entry). The game's code stays one file: split by size, its modules' circular imports
     // ran in the wrong order.
-    rolldownOptions: { output: { codeSplitting: { groups: [
+    rolldownOptions: { input: { index: 'index.html', renderCheck: 'render-check.html' }, output: { codeSplitting: { groups: [
       { name: 'three', test: /node_modules[\\/]three[\\/]/, maxSize: 480_000 },
       { name: 'vendor', test: /node_modules[\\/]/, maxSize: 480_000 },
     ] } } },

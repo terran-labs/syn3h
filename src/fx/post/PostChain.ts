@@ -438,6 +438,7 @@ export class PostChain {
       const filter = denoise(giNode.getGINode(), sourceDepth, normals, camera)
       filter.radius.value = 3
       const filtered: N = rtt(filter)
+      filtered.renderTarget.texture.name = 'Indirect light denoise'
       disposables.push(giNode, filter, filtered)
       const occlusion: N = aoNode ? aoNode.getTextureNode().sample(screenUV).r : float(1)
       scenePass.contextNode = builtinGIContext(occlusion, filtered.sample(screenUV).rgb)
@@ -477,6 +478,7 @@ export class PostChain {
       // Surface crossings update only this uniform and preserve the pipeline graph.
       const visibility = uniform(1).setGroup(renderGroup).onRenderUpdate(() => 1 - underwaterAmountForCamera(camera))
       const composite: N = compositeClouds(color, volume, depth, u.projInv, visibility)
+      composite.renderTarget.texture.name = 'Cloud composite'
       disposables.push(volume, composite)
       color = composite
     }
@@ -542,6 +544,7 @@ export class PostChain {
       })
       // Half resolution on the full tier keeps narrow beams; a quarter elsewhere.
       const maskTex: N = rtt(mask(), null, null, { resolutionScale: tier === 'full' ? 0.5 : 0.25, type: THREE.HalfFloatType })
+      maskTex.renderTarget.texture.name = 'Sun shaft mask'
       disposables.push(maskTex)
       maskRef = maskTex
       const taps = shaftTaps(tier)
@@ -567,6 +570,7 @@ export class PostChain {
         return vec4(vec3(open.mul(open)), 1)
       })
       const raysTex: N = rtt(rays(), null, null, { resolutionScale: tier === 'full' ? 0.5 : 0.25 })
+      raysTex.renderTarget.texture.name = 'Sun shaft march'
       disposables.push(raysTex)
       raysRef = raysTex
       // The burst: the streak pattern round the sun, fixed in the world (burstAcross and
