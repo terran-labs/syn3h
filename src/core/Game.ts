@@ -301,17 +301,19 @@ export class Game {
     for (let i = 0; i < 2; i++) {
       const culled: THREE.Object3D[] = []
       this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
-      const hidden: THREE.Mesh[] = []
+      const hidden: THREE.Object3D[] = []
       try {
         for (const system of this.systems) {
           if (!system.precompileMeshes) continue
           for (const mesh of system.precompileMeshes()) {
-            if (!mesh.visible) { hidden.push(mesh); mesh.visible = true }
+            for (let object: THREE.Object3D | null = mesh; object && object !== this.scene; object = object.parent) {
+              if (!object.visible) { hidden.push(object); object.visible = true }
+            }
           }
         }
         runGuarded(this.renderer as unknown as GuardedRenderer, () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16))
       } finally {
-        for (const mesh of hidden) mesh.visible = false
+        for (let j = hidden.length - 1; j >= 0; j--) hidden[j].visible = false
         for (const o of culled) o.frustumCulled = true
       }
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))

@@ -206,8 +206,14 @@ export class Materialize implements System {
       for(const look of this.looks)look.setLevel(level)
     }else{
       this.looks=Array.from({length:LOOKS},()=>new ArrivalLook(level,this.terrain))
+      this.looks[0].prepareSilhouetteWarmup()
       for(const look of this.looks)this.game.scene.add(look.object)
     }
+  }
+
+  *precompileMeshes(): Iterable<T.Mesh> {
+    yield this.cloud.mesh
+    yield* this.looks[0].getPrecompileMeshes()
   }
 
   /**
