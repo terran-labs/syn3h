@@ -72,7 +72,12 @@ function sourceCommit(): string | null {
 function glassNotices(): Plugin {
   return {
     name: 'glass-distribution-notices',
-    generateBundle() {
+    generateBundle(_options, bundle) {
+      for (const chunk of Object.values(bundle)) {
+        if (chunk.type === 'chunk' && chunk.moduleIds.some(id => id.endsWith('/liquid-glass/regular.ts'))) {
+          chunk.code += '\n/*! Adapted from liquidglass, Copyright 2026 Shayan, Apache-2.0. See liquid-glass/NOTICE.md and liquid-glass/licenses/ beside this file. */\n'
+        }
+      }
       for (const path of ['NOTICE.md', 'licenses/Apache-2.0.txt', 'licenses/Shayan-NOTICE.txt']) {
         this.emitFile({ type: 'asset', fileName: 'assets/liquid-glass/' + path,
           source: readFileSync(new URL('./src/liquid-glass/' + path, import.meta.url)) })
@@ -106,10 +111,7 @@ export default defineConfig({
     // only count files that have finished. Same bytes, fetched in parallel (each preloaded by
     // the entry). The game's code stays one file: split by size, its modules' circular imports
     // ran in the wrong order.
-    rolldownOptions: { output: {
-      footer: chunk => chunk.name === 'GlassPost'
-        ? '/*! Adapted from liquidglass, Copyright 2026 Shayan, Apache-2.0. See liquid-glass/NOTICE.md and liquid-glass/licenses/ beside this file. */' : '',
-      codeSplitting: { groups: [
+    rolldownOptions: { output: { codeSplitting: { groups: [
       { name: 'three', test: /node_modules[\\/]three[\\/]/, maxSize: 480_000 },
       { name: 'vendor', test: /node_modules[\\/]/, maxSize: 480_000 },
     ] } } },
