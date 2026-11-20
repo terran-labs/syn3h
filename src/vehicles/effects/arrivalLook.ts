@@ -158,6 +158,8 @@ export class ArrivalLook {
   readonly beam: T.Mesh
   private readonly u: Uniforms
   private readonly ghostMat: T.MeshBasicNodeMaterial
+  private readonly silhouetteWarmMeshes: T.Mesh[] = []
+  private mergedWarmGeometry?: T.BufferGeometry
   private readonly ghosts: T.Mesh[] = []
   /** Where the cloud is (the hold point, or a moving remote copy's position). */
   readonly centre = new T.Vector3()
@@ -225,8 +227,32 @@ export class ArrivalLook {
     this.sampledReach = 0
   }
 
-  /** Everything this look draws, for shader compilation ahead of the first arrival. */
-  get meshes(): T.Mesh[] { return [this.volume, this.ground, this.flash, this.beam] }
+  /** The first look warms the two body layouts and their instanced wheel or fan variants.
+   * Keep these hidden meshes in the scene so the world applies the same planet curve to
+   * their material before the covered draw as it does to a live vehicle silhouette. */
+  prepareSilhouetteWarmup(): void {
+    if (this.silhouetteWarmMeshes.length) return
+    const plain = this.ground.geometry
+    const merged = plain.clone()
+    merged.setAttribute('surfaceId', new T.Float32BufferAttribute(new Float32Array(plain.attributes.position.count), 1))
+    this.mergedWarmGeometry = merged
+    for (const geometry of [plain, merged]) {
+      for (const mesh of [new T.Mesh(geometry, this.ghostMat), new T.InstancedMesh(geometry, this.ghostMat, 1)]) {
+        mesh.visible = false
+        mesh.userData.arrivalGhost = true
+        this.silhouetteWarmMeshes.push(mesh)
+        this.object.add(mesh)
+      }
+    }
+  }
+
+  *getPrecompileMeshes(): Iterable<T.Mesh> {
+    yield this.volume
+    yield this.ground
+    if (this.level === 2) yield this.flash
+    yield this.beam
+    yield* this.silhouetteWarmMeshes
+  }
 
   start(vehicle: {object: T.Object3D; colors: {body: T.ColorRepresentation; accent: T.ColorRepresentation}}, reducedMotion: boolean, departing = false): void {
     this.detachGhosts()
@@ -376,6 +402,10 @@ export class ArrivalLook {
     this.end()
     this.object.removeFromParent()
     for (const m of [this.volume, this.ground, this.flash, this.beam]) { m.geometry.dispose(); (m.material as T.Material).dispose() }
+    for (const mesh of this.silhouetteWarmMeshes) {
+      if (mesh instanceof T.InstancedMesh) mesh.dispose()
+    }
+    this.mergedWarmGeometry?.dispose()
     this.ghostMat.dispose()
   }
 }
