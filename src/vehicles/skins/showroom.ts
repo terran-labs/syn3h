@@ -102,6 +102,22 @@ const warmQueue: Warm[] = []
 /** Counts for automated checks: sets warmed, turns given up or cancelled, and proxies now in a scene. */
 export const showroomWarm = { warmed: 0, abandoned: 0, cancelled: 0, proxies: 0 }
 
+const coveredShading = new WeakMap<T.Object3D, (tier: 1 | 2) => (() => void) | undefined>()
+
+/** Draw standard or clearcoat on the real visible models for one synchronous covered draw. */
+export function drawCoveredShowroomVariant(root: T.Object3D, tier: 1 | 2, draw: () => void): void {
+  const restore: (() => void)[] = []
+  try {
+    root.traverseVisible(object => {
+      const reset = coveredShading.get(object)?.(tier)
+      if (reset) restore.push(reset)
+    })
+    draw()
+  } finally {
+    for (let i = restore.length - 1; i >= 0; i--) restore[i]()
+  }
+}
+
 const reducedDetail = new WeakSet<T.Object3D>()
 
 /** Reduced models already drop to plain shading at their detail boundary. */
@@ -893,6 +909,39 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
   const drop = (set: Map<T.Mesh, T.Material> | undefined): void => {
     for (const m of new Set(set?.values() ?? [])) { built.delete(m); if (!releaseShared(m)) m.dispose() }
   }
+  const bindSky = (tier: 1 | 2 | 3, scene: T.Scene | null): void => {
+    // Reflect the scene's own sky map at paint strength. It appears a moment after start,
+    // and a standalone viewer may have none. A set is given the map when it is built (`use`),
+    // so this recompiles only when the map itself is a different texture.
+    for (const m of tiers[tier]!.values()) {
+      const std = m as Standard
+      // A parked model can still borrow a material used in the scene. Keep its sky binding
+      // until an attached model refreshes it.
+      if (scene && std.envMap !== scene.environment) {
+        std.envMap = scene.environment
+        std.needsUpdate = true
+      }
+      // The live sky map is captured for a subdued scene fill (0.15); paint reflects it at its own strength.
+      std.envMapIntensity = paintGloss.value * (std.userData.glass ? 1.3 : 1)
+    }
+  }
+  const useCoveredVariant = (tier: 1 | 2): (() => void) | undefined => {
+    const scene = sceneOf()
+    if (!scene || far || reducedDetail.has(root) || current === tier) return
+    const displayed = entries.map(({ mesh }) => mesh.material), displayedTier = current
+    const restore = () => {
+      entries.forEach(({ mesh }, i) => { mesh.material = displayed[i] })
+      current = displayedTier
+    }
+    try {
+      use(tier)
+      bindSky(tier, scene)
+    } catch (error) {
+      restore()
+      throw error
+    }
+    return restore
+  }
   const refresh = (): void => {
     // The frame governor caps this by graphics level (safe 0, mobile 0, desktop 3) and sheds it
     // under load. A value the player set by hand is honoured as it is.
@@ -920,21 +969,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
       }
       return
     }
-    // Reflect the scene's own sky map at paint strength. It appears a moment after start,
-    // and a standalone viewer may have none. A set is given the map when it is built (`use`),
-    // so this recompiles only when the map itself is a different texture.
-    const scene = sceneOf()
-    for (const m of tiers[tier]!.values()) {
-      const std = m as Standard
-      // A parked model can still borrow a material used in the scene. Keep its sky binding
-      // until an attached model refreshes it.
-      if (scene && std.envMap !== scene.environment) {
-        std.envMap = scene.environment
-        std.needsUpdate = true
-      }
-      // The live sky map is captured for a subdued scene fill (0.15); paint reflects it at its own strength.
-      std.envMapIntensity = paintGloss.value * (std.userData.glass ? 1.3 : 1)
-    }
+    bindSky(tier, sceneOf())
   }
   const detach = registerVehicleDetail(root, (d, isRemote, graphics) => { distance = d; remote = isRemote; level = graphics; refresh(); stepWarm() })
   const unsubscribe = params.onChange(id => {
@@ -949,7 +984,9 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
   // A first build that fails leaves nothing behind: no detail callback or settings listener for a
   // vehicle whose caller never got the disposer (use() has already given back what it took).
   try { refresh() } catch (error) { detach(); unsubscribe(); throw error }
+  coveredShading.set(root, useCoveredVariant)
   return () => {
+    coveredShading.delete(root)
     detach(); unsubscribe(); endWarm('cancelled'); releaseKept()
     // Shared materials go back to the pool, and the vehicle's own plain set goes back on its
     // meshes: the owner disposes whatever is attached, and must never dispose a material other

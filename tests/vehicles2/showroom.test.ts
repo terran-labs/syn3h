@@ -6,7 +6,7 @@ import {addLavaGlow} from '../../src/vehicles/skins/lavaGlow'
 import {createLiquidState} from '../../src/vehicles/lava'
 import {graphicsLevel,vehicleShading} from '../../src/core/quality'
 import {LOD_FAR,LOD_NEAR,detailLevel,mergeStatic,mergedSurfaces} from '../../src/vehicles/skins/mergeStatic'
-import {TRACK_LUGS,showroomShare,showroomWarm,applyShowroom,drawCoveredShowroom,markReducedShowroomDetail,paintCanopy,paintFlakes,paintGloss,paintScaleDepth,paintScaleSize,paintSeams,roleOf,setRole,wrapTrackScroll} from '../../src/vehicles/skins/showroom'
+import {TRACK_LUGS,showroomShare,showroomWarm,applyShowroom,drawCoveredShowroom,drawCoveredShowroomVariant,markReducedShowroomDetail,paintCanopy,paintFlakes,paintGloss,paintScaleDepth,paintScaleSize,paintSeams,roleOf,setRole,wrapTrackScroll} from '../../src/vehicles/skins/showroom'
 
 const box=()=>new T.BoxGeometry(1,1,1)
 const std=(name:string,color=0x336699)=>{const m=new T.MeshStandardMaterial({color});m.name=name;return m}
@@ -214,6 +214,44 @@ describe('showroom vehicle shading',()=>{
   const material=body.material as T.MeshStandardMaterial
   expect(material.envMap).toBe(sky);expect(material.version).toBe(0)
   dispose()
+ })
+ it('draws real adjacent showroom materials under cover and restores the current look',()=>{
+  params.set(vehicleShading.def.id, 1)
+  const scene = new T.Scene(), sky = new T.Texture(), root = new T.Group()
+  scene.environment = sky
+  scene.add(root)
+  const paint = setRole(std('Body', 0x123456), 'paint')
+  const body = new T.Mesh(box(), paint)
+  body.castShadow = true
+  body.receiveShadow = true
+  root.add(body)
+  const dispose = applyShowroom(root, () => {})
+  const standard = body.material
+  let clearcoat: T.MeshPhysicalNodeMaterial | undefined
+  const failure = new Error('covered draw failed')
+  try {
+   expect(() => drawCoveredShowroomVariant(scene, 2, () => {
+    expect(body.material).toBeInstanceOf(T.MeshPhysicalNodeMaterial)
+    clearcoat = body.material as unknown as T.MeshPhysicalNodeMaterial
+    expect(clearcoat.envMap).toBe(sky)
+    expect(drawnFor(clearcoat.colorNode, body)).toContain(paint.color)
+    expect(body.castShadow && body.receiveShadow).toBe(true)
+    expect(vehicleShading.value).toBe(1)
+    throw failure
+   })).toThrow(failure)
+   expect(body.material).toBe(standard)
+
+   params.set(vehicleShading.def.id, 2)
+   expect(body.material).toBe(clearcoat)
+   drawCoveredShowroomVariant(root, 1, () => {
+    expect(body.material).toBe(standard)
+    expect(vehicleShading.value).toBe(2)
+   })
+   expect(body.material).toBe(clearcoat)
+  } finally {
+   dispose()
+   sky.dispose()
+  }
  })
  it('keeps emission a skin added to a merged material, at every tier',()=>{
   params.set(vehicleShading.def.id,0)
