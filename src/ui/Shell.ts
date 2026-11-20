@@ -77,6 +77,7 @@ import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
 import './hud-column.css'
+import './glass.css'
 
 /**
  * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
@@ -86,7 +87,7 @@ import './hud-column.css'
  */
 const OFFER_CUSTOM_PLANET: boolean = false
 /** How bright the galaxy stays behind a lobby sheet: faintly there, and held still. */
-const SHEET_BACKDROP = 0.6
+const SHEET_BACKDROP = 0.7
 /** Point the licence disclosures in `root` at the captured entry version's copies. Only those links, never invite or networking links. */
 function pinLicenses(root: ParentNode): void {
   for (const anchor of root.querySelectorAll<HTMLAnchorElement>('a[href^="/brand/licenses/"]')) anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
@@ -354,7 +355,7 @@ export class Shell implements System {
       const dock = this.lobbySettings.dock
       this.element.querySelector('.galaxy-ui')!.append(dock); dock.classList.remove('is-beside-sheet')
       for (const button of [this.lobbySettings.about, this.lobbySettings.updates, this.lobbySettings.gear]) { button.classList.remove('is-current'); button.removeAttribute('aria-current') }
-      if (this.galaxy) this.galaxy.markLift = 0
+      if (this.galaxy) { this.galaxy.markLift = 0; this.galaxy.worlds = 1 }
       if (this.galaxy && this.panels.active === 'index' && !this.playing) this.galaxy.backdrop = 1
     }
     // While the name rises to stand over an open sheet, the sheet follows it (LobbySheet).
@@ -592,7 +593,8 @@ export class Shell implements System {
     // and only its contents change (a morph, not a close and reopen).
     const current = this.lobbySheets.find(s => s.isOpen)
     if (current) { if (current === this.settingsSheet) this.lobbySettings.close(); current.handOff() }
-    if (this.galaxy) { this.galaxy.backdrop = SHEET_BACKDROP; this.galaxy.markLift = 1 }
+    // The worlds fade out, the sky dims a little and the name rises over the contents (LobbySheet).
+    if (this.galaxy) { this.galaxy.backdrop = SHEET_BACKDROP; this.galaxy.markLift = 1; this.galaxy.worlds = 0 }
     // The three buttons stay beside the open sheet, above its backdrop, to switch between them;
     // the open one is marked.
     const dock = this.lobbySettings.dock
@@ -985,7 +987,7 @@ export class Shell implements System {
       // are drawn before anyone can see them.
       this.overlay.style.transition = 'none'; this.overlay.style.opacity = '0'
       this.overlay.hidden = false; this.overlay.inert = true
-      galaxy.backdrop = 1
+      galaxy.backdrop = 1; galaxy.worlds = 1; galaxy.markLift = 0
       galaxy.enabled = true
       // Every vehicle keeps its close look on the way up (see vehicleDetail).
       vehicleDetail.holdNear = true
@@ -1700,17 +1702,20 @@ export class Shell implements System {
     return { galaxyLive: this.galaxy?.live ?? false, galaxyFrames: this.galaxy?.frames ?? 0, planetMaps: this.galaxy?.painted ?? 0 }
   }
   /**
-   * Every button is terranlabs.com's glass button (.liquid-glass in shell.css), except the
-   * quiet text links. This also carries that site's GlassShine: while the pointer is over a
+   * Every button is the game's glass button (.liquid-glass in glass.css), except the quiet text
+   * links, the Paused veil (a full-screen button) and the panels' rows and switches. This also carries that site's GlassShine: while the pointer is over a
    * glass button, the bright side of its one-pixel rim turns to face the pointer, and settles
    * back when the pointer leaves. Nothing is drawn on the face of the button.
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .lobby-gear-dock *, .syn3h-advanced *, .world-inspector *, .exit-confirm *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
+    // In the panels, only the two plain actions are buttons in this sense; the rest are rows, switches and choices.
+    for (const button of this.element.querySelectorAll<HTMLElement>('.rail-invite, .rail-about')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
-    const REST = 205
+    // Upper left, where the light strikes at rest (glass.css).
+    const REST = 315
     let current: HTMLElement | null = null
     // Kept unwrapped (it may pass 360) so the CSS transition always takes the short way round.
     let angle = REST

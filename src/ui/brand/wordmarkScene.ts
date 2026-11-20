@@ -128,7 +128,9 @@ function placeInSystem(mode: number, view: View, system: number): Placement {
  * panel can stand beneath it on the same curved wall (LobbySheet.ts). `lift` runs 0 (at rest)
  * to 1 (a panel open); the rise is in the name's own heights.
  */
-export const LIFT_SCALE = 0.78, LIFT_RISE = 0.55
+// Rise 0.45: the smaller name's top then sits below where the larger one's did, so a phone
+// held upright keeps all of it on screen (0.66 cut its top off).
+export const LIFT_SCALE = 0.55, LIFT_RISE = 0.45
 export function liftPlacement(p: Placement, lift: number): Placement {
   if (!(lift > 0)) return p
   const k = 1 - (1 - LIFT_SCALE) * lift, height = Math.hypot(...p.up), rise = height * LIFT_RISE * lift

@@ -16,7 +16,8 @@
   --edge-top: max(var(--edge), env(safe-area-inset-top)); --edge-bottom: max(var(--edge), env(safe-area-inset-bottom)); }
 /* Phones: the same rule at a phone's scale. */
 @media (max-width: 700px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { :root { --edge: 24px; } }
-.syn3h-shell.exploration-ui :is(button, .liquid-glass), .touch-controls button {
+/* Buttons that are not glass (glass.css owns the surface of those). */
+.syn3h-shell.exploration-ui button:not(.liquid-glass), .touch-controls button:not(.liquid-glass) {
   color: var(--s3-ink); background: rgb(24 24 24 / .36); background-image: none;
   border: 1px solid rgb(213 213 213 / .3); border-radius: 3px;
   box-shadow: inset 0 0 12px rgb(178 178 178 / .025), 0 0 9px rgb(178 178 178 / .04);
@@ -24,8 +25,8 @@
   -webkit-backdrop-filter: none; backdrop-filter: none;
   transition: border-color .2s, background-color .2s, box-shadow .2s;
 }
-.syn3h-shell.exploration-ui :is(button, .liquid-glass)::before, .touch-controls button::before { display: none; }
-.syn3h-shell.exploration-ui button:hover, .touch-controls button:active { background: rgb(95 95 95 / .17); border-color: rgb(222 222 222 / .65); box-shadow: 0 0 12px rgb(176 176 176 / .12); }
+.syn3h-shell.exploration-ui button:not(.liquid-glass)::before, .touch-controls button:not(.liquid-glass)::before { display: none; }
+.syn3h-shell.exploration-ui button:not(.liquid-glass):hover, .touch-controls button:not(.liquid-glass):active { background: rgb(95 95 95 / .17); border-color: rgb(222 222 222 / .65); box-shadow: 0 0 12px rgb(176 176 176 / .12); }
 .syn3h-shell.exploration-ui button:focus-visible, .syn3h-shell.exploration-ui input:focus-visible, .syn3h-shell.exploration-ui select:focus-visible { outline: 1px solid #dbdbdb; outline-offset: 3px; }
 .syn3h-shell.exploration-ui :is(input:not([type=range]):not([type=checkbox]):not([type=color]), select, textarea) { color: #efefef; background: rgb(14 14 14 / .58); border: 0; border-bottom: 1px solid rgb(214 214 214 / .4); border-radius: 0; box-shadow: none; }
 .syn3h-shell.exploration-ui select option { background: #171717; }
@@ -233,9 +234,7 @@ body { --map-top: calc(var(--edge-bottom) + 160px * .885); }
 .syn3h-shell .exit-confirm strong { font: 500 13px/1.3 'Barlow', sans-serif; letter-spacing: .22em; margin-right: -.22em; text-transform: uppercase; }
 .syn3h-shell .exit-confirm p { margin: 0; font-size: 13.5px; line-height: 1.4; color: var(--s3-dim); }
 .syn3h-shell .exit-confirm-actions { display: flex; gap: 10px; margin-top: 6px; }
-.syn3h-shell.exploration-ui .exit-confirm button { min-height: 44px; min-width: 112px; padding: 8px 18px; border: 1px solid var(--s3-line-quiet); border-radius: 999px; background: none; box-shadow: none; color: var(--s3-ink); font: 400 13.5px 'Barlow', sans-serif; letter-spacing: .04em; cursor: pointer; }
-.syn3h-shell.exploration-ui .exit-confirm .exit-stay { border-color: var(--s3-line); box-shadow: inset 0 0 8px rgb(205 205 205 / .16); }
-.syn3h-shell.exploration-ui .exit-confirm button:focus-visible { outline: 1px solid var(--s3-accent-2); outline-offset: 3px; }
+.syn3h-shell.exploration-ui .exit-confirm button { min-height: 44px; min-width: 112px; padding: 8px 18px; font: 400 13.5px 'Barlow', sans-serif; letter-spacing: .04em; cursor: pointer; }
 @media (pointer: coarse) { .syn3h-shell.exploration-ui .exit-confirm button { min-height: 48px; } }
 
 /* Paused: one floating message over the dimmed, still world. The whole veil is the button. */
