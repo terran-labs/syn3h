@@ -30,6 +30,9 @@
   html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle {
     writing-mode: horizontal-tb; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 7px;
     width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 10px;
+    /* The tablet edge tab squares its right side and drops that border (exploration.css); a
+       pill on the grid is the glass's own shape. */
+    border-radius: var(--glass-radius, 999px); border-right-width: revert;
     font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; white-space: nowrap;
   }
   /* The drawn pill is 36 px; the finger gets 44. */
