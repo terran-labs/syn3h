@@ -126,24 +126,18 @@
      reach the map in the lower left, and a button must never be drawn under it. */
   position: fixed; z-index: var(--gear-actions-z, 13);
   right: var(--gear-actions-right, calc(max(var(--thumb-margin, 24px), env(safe-area-inset-right)) + var(--gear-thumb-offset)));
-  bottom: var(--gear-actions-bottom, max(var(--thumb-bottom, 30px), env(safe-area-inset-bottom)));
+  bottom: var(--gear-actions-bottom, var(--thumb-base, 30px));
   display: flex; flex-direction: column-reverse; gap: var(--thumb-gap, 12px); pointer-events: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
 html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actions-left, calc(max(var(--thumb-margin, 24px), env(safe-area-inset-left)) + var(--gear-thumb-offset))); }
 :root .gear-actions button.gs-action {
-  width: var(--thumb-size, 62px); height: var(--thumb-size, 62px); min-height: 0; padding: 0 4px; margin: 0;
-  border-radius: 50%; border: 1px solid var(--s3-line); box-shadow: var(--halo-glow, 0 0 6px color-mix(in srgb, var(--s3-accent) 12%, transparent));
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--s3-panel) 90%, transparent), color-mix(in srgb, var(--s3-panel) 45%, transparent)); color: var(--s3-ink);
+  /* Size and type only: the surface is the shared glass button's (.liquid-glass.glass-round). */
+  width: var(--thumb-size, 62px); height: var(--thumb-size, 62px); min-height: 0; padding: 0 4px; margin: 0; border-radius: 50%;
   font: 500 11px/1.1 'Barlow', sans-serif; letter-spacing: .1em; text-transform: uppercase; white-space: normal; overflow-wrap: anywhere;
-  text-shadow: var(--halo-under, 0 0 2px var(--s3-panel), 0 1px 7px var(--s3-panel)); -webkit-backdrop-filter: none; backdrop-filter: none;
   pointer-events: auto; touch-action: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
-:root .gear-actions button.gs-action:hover { border-color: var(--s3-line); }
-:root .gear-actions button.gs-action.held {
-  background: color-mix(in srgb, var(--s3-accent) 10%, transparent); border-color: var(--s3-accent-2);
-  box-shadow: inset 0 0 8px color-mix(in srgb, var(--s3-accent) 20%, transparent), 0 0 6px color-mix(in srgb, var(--s3-accent) 20%, transparent);
-}
+/* Held: the glass class's pressed look (.liquid-glass.held, src/ui/glass.css); nothing here. */
 
 @media (prefers-reduced-motion: reduce) {
   .gear-selector, .gear-selector .gs-window, :root .gear-selector .gs-drum button.gs-item, .gear-selector .gs-label, .gear-selector .gs-level i { transition: none; }

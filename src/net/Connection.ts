@@ -1,6 +1,7 @@
 /**
  * A WebSocket that reconnects. Binary frames arrive as ArrayBuffer, text as string.
  */
+import { longFrames } from '../core/longFrames'
 export type ConnectionState = 'connecting' | 'open' | 'closed'
 
 /** Close code for a socket this client gave up on because its open handler failed. */
@@ -118,8 +119,17 @@ export class Connection {
     ws.onmessage = (e) => {
       if (this.ws !== ws || this.stopped) return
       this.lastRx = performance.now()
-      if (typeof e.data === 'string') { const text = e.data; this.guard('text', () => this.onText(text)) }
-      else if (e.data instanceof ArrayBuffer) { const data = e.data; this.guard('binary', () => this.onBinary(data)) }
+      if (typeof e.data === 'string') {
+        const text = e.data
+        const start = longFrames.start()
+        try { this.guard('text', () => this.onText(text)) }
+        finally { longFrames.end('network.text', start) }
+      } else if (e.data instanceof ArrayBuffer) {
+        const data = e.data
+        const start = longFrames.start()
+        try { this.guard('binary', () => this.onBinary(data)) }
+        finally { longFrames.end('network.binary', start) }
+      }
     }
     ws.onclose = (e) => {
       if (this.ws !== ws) return

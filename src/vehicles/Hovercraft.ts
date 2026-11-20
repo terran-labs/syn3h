@@ -286,6 +286,12 @@ export class Hovercraft extends Vehicle {
     // The base constructor tints before the body exists.
     this.study?.setColors(this.colors.body,this.colors.accent)
   }
+  override resetForWorld(): void {
+    super.resetForWorld()
+    this.clearanceCorrections = 0
+    this.configureChassis()
+    this.study.resetMotion()
+  }
   override teleport(position: THREE.Vector3, heading = 0): void {
     super.teleport(position,heading); this.lastDistance = 0; this.targetHeight = 0
   }

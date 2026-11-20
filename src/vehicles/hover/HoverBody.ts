@@ -9,7 +9,8 @@ import { applyShowroom, setRole } from '../skins/showroom'
 
 import type { HoverBuild } from './kit'
 import { DuctFan } from './DuctFan'
-import { vehicleDecoration, noDecoration } from '../skins/decoration'
+import { noDecoration } from '../skins/decoration'
+import { applyHoverShowroom } from './hoverPlain'
 
 /** Triangle budgets per detail level (PATTERN.md rule 4). */
 export const R3_BUDGET = [12000, 2500, 500] as const
@@ -180,7 +181,7 @@ export class HoverBody {
   showroom(): void {
     if (!this.game || this.level === 2 || this.shaded) return
     this.shaded = true
-    this.detach = applyShowroom(this.object, vehicleDecoration)
+    this.detach = applyHoverShowroom(this.object)
   }
 
   setColors(body: T.ColorRepresentation, accent: T.ColorRepresentation): void {

@@ -4,65 +4,27 @@
    The gear is vector line work with a glow: no image. Selectors carry .exploration-ui to
    outrank the lobby's general button and heading rules. */
 
-/* The lobby's three controls, Welcome, Updates and Settings, stacked in the lower right (the
-   owner, 17 November 2026: "labeled text inside of a holographic button style", a tiny icon at
-   the left edge). Each is light more than glass: a nearly clear, lightly frosted body cut at two
-   corners, a thin luminous edge that drifts slowly from cool to warm with a soft bloom round it,
-   an inner light brightening toward the top, and lettering lit from within. Hover brightens it
-   and sends a glint across; a press is brightest and gives a little. All CSS and vector paths. */
+/* The lobby's three controls, Welcome, Updates and Settings, stacked in the lower right, each a
+   small icon and its word. Their surface is the game's one glass button (.liquid-glass,
+   glass.css); these rules only lay them out. */
 .lobby-gear-dock {
   position: fixed; z-index: 30; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom));
   display: grid; justify-items: stretch; gap: 8px; width: 148px; pointer-events: none;
 }
 .lobby-gear-dock > * { pointer-events: auto; }
 .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control {
-  --cut: 9px; --glow: .45; --bloom: 3px;
-  position: relative; isolation: isolate; display: flex; align-items: center; gap: 10px; box-sizing: border-box;
-  width: 100%; height: 44px; min-height: 44px; min-width: 0; margin: 0; padding: 0 14px 0 13px; border: 0; border-radius: 0;
-  background: none; box-shadow: none; cursor: pointer; color: #fff;
-  font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; text-align: left;
-  text-shadow: 0 1px 2px rgb(0 0 0 / .55), 0 0 7px rgb(255 244 230 / var(--glow)), 0 0 1px rgb(255 255 255 / .9);
-  transition: transform .12s ease;
+  display: flex; align-items: center; justify-content: flex-start; gap: 10px; box-sizing: border-box;
+  width: 100%; height: 44px; min-height: 44px; min-width: 0; margin: 0; padding: 0 16px 0 14px;
+  font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; text-align: left;
 }
-/* The body: nearly clear, frosting the scene a little, light gathering toward the top edge with
-   the faintest band across the middle. Under the outline, cut at the same two corners. */
-.lobby-gear-dock .lobby-control::after {
-  content: ''; position: absolute; inset: 0; z-index: -2; pointer-events: none;
-  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
-  background: linear-gradient(180deg, rgb(255 248 238 / .17), rgb(255 248 238 / .04) 40%, rgb(255 255 255 / .06) 52%, rgb(255 255 255 / .015) 60%, rgb(10 10 12 / .14));
-  /* The frost also dims what is behind: over the sun's glare the lettering keeps a darker ground. */
-  -webkit-backdrop-filter: blur(4px) brightness(.6); backdrop-filter: blur(4px) brightness(.6);
-}
-/* The edge: a thin luminous outline with a soft bloom (LobbySettings draws it to size). */
-.lobby-gear-dock .lobby-control-frame {
-  position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; overflow: visible;
-  filter: drop-shadow(0 0 var(--bloom) rgb(255 240 222 / calc(var(--glow) * .9))); transition: filter .25s ease;
-}
-.lobby-gear-dock .lobby-control-frame polygon { fill: none; stroke-width: 1.4; stroke-linejoin: miter; stroke-opacity: calc(.45 + var(--glow) * .55); transition: stroke-opacity .25s ease; }
-.lobby-gear-dock .lobby-control-icon { width: 17px; height: 17px; flex: none; overflow: visible; filter: drop-shadow(0 0 3px rgb(255 242 226 / calc(var(--glow) + .25))); }
+.lobby-gear-dock .lobby-control-icon { width: 16px; height: 16px; flex: none; overflow: visible; opacity: .85; }
 .lobby-gear-dock .lobby-control-icon path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .lobby-gear-dock .lobby-control-word { white-space: nowrap; }
-/* A specular glint that travels across on hover. */
-.lobby-gear-dock .lobby-control-glint {
-  position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
-  background: linear-gradient(105deg, transparent 40%, rgb(255 255 255 / .34) 49%, rgb(255 236 210 / .12) 53%, transparent 62%) -160% 0 / 260% 100% no-repeat;
-}
-/* Rest is calm; hover clearly brighter with the glint; a press brightest and a little compressed. */
-.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control:hover { --glow: .95; --bloom: 8px; }
-.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control:hover::after { background: linear-gradient(180deg, rgb(255 248 238 / .26), rgb(255 248 238 / .08) 40%, rgb(255 255 255 / .1) 52%, rgb(255 255 255 / .04) 60%, rgb(10 10 12 / .1)); }
-.lobby-gear-dock .lobby-control:hover .lobby-control-glint { animation: lobby-glint .8s ease-out; }
-.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control:active, .syn3h-shell.exploration-ui .lobby-gear-dock.is-open .lobby-gear { --glow: 1; --bloom: 12px; }
-.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control:active { transform: scale(.96); }
-.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control:is(:active, .is-pressed)::after, .syn3h-shell.exploration-ui .lobby-gear-dock.is-open .lobby-gear::after { background: linear-gradient(180deg, rgb(255 250 242 / .42), rgb(255 248 238 / .2) 50%, rgb(255 248 238 / .1)); }
-.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control:focus-visible { outline: 2px solid rgb(255 255 255 / .9); outline-offset: 3px; }
-@keyframes lobby-glint { from { background-position: -160% 0; } to { background-position: 160% 0; } }
 /* The gear keeps its slow turn. */
 .lobby-gear path { transform-origin: 12px 12px; animation: lobby-gear-turn 40s linear infinite; }
 @keyframes lobby-gear-turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .lobby-gear path, .lobby-gear-dock .lobby-control:hover .lobby-control-glint { animation: none; }
-  .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control, .lobby-gear-dock .lobby-control-frame { transition: none; }
+  .lobby-gear path { animation: none; }
 }
 /* A newer version is out: a small steady dot at the Updates button's top right. */
 .lobby-updates.has-update .lobby-control-word::after {
@@ -135,7 +97,7 @@
 }
 /* Touch: every control a full 44 px target. */
 @media (pointer: coarse) {
-  .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control { height: 44px; min-height: 44px; font-size: 11px; letter-spacing: .18em; gap: 8px; padding: 0 10px 0 11px; }
+  .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control { height: 44px; min-height: 44px; font-size: 11px; letter-spacing: .18em; gap: 8px; padding: 0 12px 0 12px; }
 }
 
 /* In the lobby's sheet (LobbySheet, is-embedded): the panel is the sheet's contents, not a
@@ -150,12 +112,11 @@
 .syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-settings-host.is-embedded .world-inspector.lobby-settings .wi-cards { overflow: visible; flex: 0 0 auto; }
 .syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-settings-host.is-embedded .lobby-settings-foot { position: static; padding: 4px 8px 0; }
 
-/* Beside an open sheet (Shell moves the dock into the sheet's dialog): the open one is lit, the
-   others switch to theirs. A phone held upright has no room beside it: a row of three under it. */
-.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control.is-current { --glow: 1; --bloom: 9px; }
-.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control.is-current::after { background: linear-gradient(180deg, rgb(255 250 242 / .34), rgb(255 248 238 / .14) 50%, rgb(255 248 238 / .06)); }
+/* Beside an open sheet (Shell moves the dock into the sheet's dialog): the open one shows as
+   pressed (.is-current, glass.css), the others switch to theirs. A phone held upright has no room
+   beside it: a row of three under it. */
 dialog.lobby-sheet .lobby-gear-dock { z-index: 2; }
 @media (max-width: 600px) and (orientation: portrait) {
   dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet { left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); width: auto; grid-auto-flow: column; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  .syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet .lobby-control { gap: 6px; padding: 0 6px 0 9px; letter-spacing: .12em; font-size: 10.5px; }
+  .syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet .lobby-control { justify-content: center; gap: 6px; padding: 0 8px; letter-spacing: .12em; font-size: 10.5px; }
 }

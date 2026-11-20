@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-19 22:10 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-20 01:10 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,11 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.1906 (release-63), source 4b81e5bc, frozen copy 20261119-215041-4b81e5bc,
-Worker version 870e303c, at https://www.syn3h.com/ since 19 November 22:00 PST.
+Live: v26.11.2000 (release-65), source 554b06b9, frozen copy 20261120-005547-554b06b9,
+Worker version 0e32d7ee, at https://www.syn3h.com/ since 20 November 01:02 PST.
+Release-64 (the freeze release, tag m-freeze-1907, 3636e736) failed www's movement step and rolled
+back: player B was still behind the longer covered entry. Unrecorded on the Foreman's word; it
+returns after the entry-time work and the public-check fix (tools/public-check-playable).
 Frozen versions are read from the R2 bucket syn3h-versions (binding FROZEN) first, then from the
 carried /v/ assets; deploys still carry every version (feat/frozen-r2 step one). Protocol gained
 unhook, the play field, welcome.botRams and ram.bot in 1906; staging's mixed room with a frozen
@@ -66,6 +69,8 @@ Releases since the evening of 16 November, all accepted unless marked:
 | (v26.11.1904) | 61 | m-sea-1904 | rolled back: www's public check hit a PhysicsLoadError while builders loaded the machine; withdrawn, folded into 1905 |
 | v26.11.1905 | 62 | m-render-1905 | 1904's fixes plus headlights in first person, arrival glow, arrival effects warmed behind entry |
 | v26.11.1906 | 63 | m-bots-1906 | bots play in Explore (tows, tugs, stop words, breaking free), bots bump each other, hovercraft and jet beams, R2 frozen versions |
+| (v26.11.1907) | 64 | m-freeze-1907 | rolled back: www movement step ran while B was still entering; not recorded |
+| v26.11.2000 | 65 | m-ui-2000 | one glass style, phone panels, chat bubbles, pause screen with screenshots, sunk Zorb cue, own it marker clear |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker

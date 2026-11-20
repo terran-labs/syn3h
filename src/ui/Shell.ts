@@ -1,3 +1,6 @@
+import { longFrames } from '../core/longFrames'
+import { cancelStartupPlayRequest, recordStartupPlayRequest, recordStartupReveal } from '../core/diagnostics'
+import { markShaderReveal } from '../core/diagnosticShaders'
 import { frozenResourceURL } from '../core/frozenResources'
 import type { LobbyAddress } from './LobbyAddress'
 import { DEFAULT_ROOM, isDefaultRoom, roomFromQuery } from '../core/roomAddress'
@@ -37,7 +40,7 @@ import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
 import { bindSwitch, switchWord } from './inspector/switch'
 import { RaceHud, type RaceRole } from './RaceHud'
-import type { RaceState } from '../../shared/protocol'
+import { MAX_NAME_LENGTH, type RaceState } from '../../shared/protocol'
 import { glassStyle, diagnostics, interfaceMode, mapNorthUp } from './inspector/params'
 import { InterfaceVeil, INTERFACE_KEY, nextInterfaceMode, setInterfaceMode } from './interfaceMode'
 import { RESUME_KEY } from '../core/resume'
@@ -73,10 +76,15 @@ import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
 import './label-plate.css'
 import { isVehicleAvailable } from '../vehicles/available'
+import { zorbSpeed } from '../vehicles/zorb'
 import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
 import './hud-column.css'
+import './glass.css'
+import './phone-panels.css'
+import './pause-screen.css'
+import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shareShot, shotFileName } from './screenshot'
 
 /**
  * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
@@ -86,13 +94,12 @@ import './hud-column.css'
  */
 const OFFER_CUSTOM_PLANET: boolean = false
 /** How bright the galaxy stays behind a lobby sheet: faintly there, and held still. */
-const SHEET_BACKDROP = 0.6
+const SHEET_BACKDROP = 0.7
 /** Point the licence disclosures in `root` at the captured entry version's copies. Only those links, never invite or networking links. */
 function pinLicenses(root: ParentNode): void {
   for (const anchor of root.querySelectorAll<HTMLAnchorElement>('a[href^="/brand/licenses/"]')) anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
 }
 /** Keys that mean "I want to drive": they resume a pause and capture the cursor. */
-const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 /**
  * The lobby's bottom buttons: none today. Multiplayer was removed (the invite lives in the
  * sidebar and on J), and About and Updates are icons above the settings gear in the lower
@@ -135,6 +142,12 @@ export function captionAccent(world: { land: number; sea: number; glow?: boolean
 const CAPTION_GAP = 5
 /** The sidebar's phone layout, upright or on its side (inspector/motion.css uses the same). */
 const PHONE_SIDEBAR = '(max-width: 700px), (max-height: 500px)'
+/**
+ * Phones' Show panels and Close panels glyphs (phone-panels.css): two chevrons drawn as one
+ * vector path, nothing to fetch. Up opens, down closes.
+ */
+const PANELS_CHEVRONS_UP = '<svg class="nav-chevrons" viewBox="0 0 20 16" aria-hidden="true" focusable="false"><path d="M4 8.5l6-5 6 5M4 13.5l6-5 6 5"/></svg>'
+const PANELS_CHEVRONS_DOWN = '<svg class="nav-chevrons" viewBox="0 0 20 16" aria-hidden="true" focusable="false"><path d="M4 2.5l6 5 6-5M4 7.5l6 5 6-5"/></svg>'
 /** Must match the short landscape block in shell.css. */
 const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
 const LOBBY_LINKS = OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''
@@ -152,6 +165,13 @@ const build = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? __SYN3H_B
 export const PAUSE_ICON = 'M9.2 6.8v10.4M14.8 6.8v10.4'
 export const PLAY_ICON = 'M9 6.4v11.2l8.6-5.6Z'
 export const LEAVE_WORLD_ICON = 'M13 4.8H7.2A1.2 1.2 0 0 0 6 6v12a1.2 1.2 0 0 0 1.2 1.2H13M10.5 12h9M16.6 9l3 3-3 3'
+/** How long PAUSED and its resume line stay before fading, with nothing moving (ms). */
+const PAUSE_WHISPER_MS = 2500
+/** The pause screen's three buttons, drawn in the rail icons' line (24 px box, stroked). */
+const WELCOME_ICON = 'M12 20.2a8.2 8.2 0 1 0 0-16.4 8.2 8.2 0 0 0 0 16.4ZM12 11v5.2M12 7.9v.1'
+const SHOT_ICON = 'M4.5 8.6A1.6 1.6 0 0 1 6.1 7h2.1l1.4-2h4.8l1.4 2h2.1a1.6 1.6 0 0 1 1.6 1.6v8.8a1.6 1.6 0 0 1-1.6 1.6H6.1a1.6 1.6 0 0 1-1.6-1.6ZM12 16.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z'
+const SAVED_ICON = 'M6 12.5l4 4 8-9'
+const pauseIcon = (path: string) => `<svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${path}"/></svg>`
 const railIcon = (path: string) => `<svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${path}"/></svg>`
 const switchHtml = (className: string, text: string, inputAttributes = '') => `<label class="s3-switch-field ${className}"><span class="s3-switch-text">${text}</span><input type="checkbox"${inputAttributes}><span class="s3-switch-word" aria-hidden="true">off</span></label>`
 const presentationHtml = switchHtml('presentation-toggle', 'Presentation mode · P')
@@ -222,7 +242,7 @@ export class Shell implements System {
   private readonly switches = new Map<string, (on: boolean) => void>()
   private readonly hostControls: HTMLFieldSetElement
 
-  constructor(private readonly game: Game, readonly audio: GameAudio) {
+  constructor(private readonly game: Game, readonly audio: GameAudio, entryName?: string | null) {
     this.previousSuspended = game.input.suspended; game.input.suspended = true
     this.element.className = 'syn3h-shell exploration-ui'
     this.element.innerHTML = `<section class="shell-overlay" role="dialog" aria-modal="true" aria-label="Syn3h lobby">
@@ -249,9 +269,9 @@ export class Shell implements System {
     </section>
     <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">Welcome</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
-    <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Panels</span></button></nav>
+    <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span class="nav-glyph" aria-hidden="true">≡</span>${PANELS_CHEVRONS_UP}<span class="nav-label"> Panels</span></button></nav>
     <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="exit-stay">Stay</button><button type="button" class="exit-leave">Leave world</button></div></div></div>
-    <button type="button" class="pause-about" aria-haspopup="dialog" hidden>Welcome &amp; how to play</button>
+    <div class="pause-actions" role="group" aria-label="Paused" hidden><button type="button" class="pause-exit liquid-glass" aria-haspopup="dialog" aria-label="Leave world">${pauseIcon(LEAVE_WORLD_ICON)}<span class="pause-word"><span class="pause-long">Exit world</span><span class="pause-short">Exit</span></span></button><button type="button" class="pause-about liquid-glass" aria-haspopup="dialog" aria-label="Welcome and how to play">${pauseIcon(WELCOME_ICON)}<span class="pause-word">Welcome</span></button><button type="button" class="pause-shot liquid-glass" aria-label="Save a screenshot" aria-describedby="pause-shot-keys">${pauseIcon(SHOT_ICON)}<span class="pause-word"><span class="pause-long">Screenshot <kbd>S</kbd></span><span class="pause-short">Photo</span></span></button><span class="pause-shot-hint" role="status" aria-live="polite" hidden></span><span class="pause-shot-keys" id="pause-shot-keys" aria-hidden="true">S saves a screenshot. W, A, D or the arrows resume.</span></div>
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
@@ -262,6 +282,11 @@ export class Shell implements System {
     this.matchHud = new MatchHud(this.element, () => audio.cue('tick'))
     this.overlay = this.element.querySelector('.shell-overlay')!
     this.nameInput = this.element.querySelector('#shell-name')!; this.roomInput = this.element.querySelector('#shell-room')!
+    // The room caps UTF-16 length. Keep link names within that limit without cutting a character.
+    const linkedName = cleanPlayerName(entryName ?? '').slice(0, MAX_NAME_LENGTH).replace(/[\ud800-\udbff]$/, '').trimEnd()
+    const identity = linkedName ? { name: linkedName, source: 'link' as const } : loadPlayerName()
+    this.nameInput.value = identity.name
+    this.nameSource = identity.source
     this.speed = this.element.querySelector('.shell-speed strong')!
     this.panels = new SlidingPanels(this.element.querySelector('.lobby-panels')!)
     // The lobby's Multiplayer panel, which drew this board, is gone (the in-play board is the
@@ -313,6 +338,9 @@ export class Shell implements System {
       // Phones keep one card open at a time; the query matches the sidebar's phone layout
       // (inspector/motion.css). Which cards are open survives a reload.
       oneOpen: () => matchMedia(PHONE_SIDEBAR).matches,
+      // Phone-sized touch screens: one panel at a time, alone (phone-panels.css). Tablets and
+      // desktops keep the stack as it was.
+      phonePanels: () => this.touch.available && matchMedia(PHONE_SIDEBAR).matches,
       rememberOpen: 'syn3h.sidebar.open',
     })
     // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
@@ -354,7 +382,7 @@ export class Shell implements System {
       const dock = this.lobbySettings.dock
       this.element.querySelector('.galaxy-ui')!.append(dock); dock.classList.remove('is-beside-sheet')
       for (const button of [this.lobbySettings.about, this.lobbySettings.updates, this.lobbySettings.gear]) { button.classList.remove('is-current'); button.removeAttribute('aria-current') }
-      if (this.galaxy) this.galaxy.markLift = 0
+      if (this.galaxy) { this.galaxy.markLift = 0; this.galaxy.worlds = 1 }
       if (this.galaxy && this.panels.active === 'index' && !this.playing) this.galaxy.backdrop = 1
     }
     // While the name rises to stand over an open sheet, the sheet follows it (LobbySheet).
@@ -387,6 +415,19 @@ export class Shell implements System {
     railTop.remove()
     const cards = this.inspector.element.querySelector('.wi-cards')!
     cards.before(command); cards.after(foot)
+    // Phones: Close panels, at the foot of the panels under the thumb, back to driving. A tap in
+    // the empty space below the last card does the same, but only 12 px or more below it, so a
+    // near miss on a header never throws the player back into the drive.
+    const closeAll = document.createElement('button'); closeAll.type = 'button'; closeAll.className = 'panels-close liquid-glass'
+    closeAll.innerHTML = `${PANELS_CHEVRONS_DOWN}<span>Close panels</span>`
+    this.inspector.element.append(closeAll)
+    closeAll.addEventListener('click', () => this.returnToDriving(), { signal })
+    cards.addEventListener('click', event => {
+      if (event.target !== cards || !this.touch.available || !matchMedia(PHONE_SIDEBAR).matches || this.inspector.element.classList.contains('is-single')) return
+      const shown = [...cards.children].filter(card => card instanceof HTMLElement && !card.hidden)
+      const last = shown.at(-1)?.getBoundingClientRect().bottom ?? cards.getBoundingClientRect().top
+      if ((event as MouseEvent).clientY >= last + 12) this.returnToDriving()
+    }, { signal })
     // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
     // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
     command.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
@@ -410,6 +451,10 @@ export class Shell implements System {
     this.element.querySelector('.galaxy-ui')!.prepend(this.updateNotice.banner)
     foot.append(this.updateNotice.chip)
     this.element.querySelector('.pause-about')!.addEventListener('click', () => this.openAbout(), { signal })
+    // The pause screen's other two buttons. They sit beside the veil, not on it, so a click on
+    // one never also resumes.
+    this.element.querySelector('.pause-exit')!.addEventListener('click', () => this.askExit(), { signal })
+    this.element.querySelector('.pause-shot')!.addEventListener('click', () => { void this.takeShot() }, { signal })
     const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
     guide.querySelector('.about-back')!.addEventListener('click', () => this.closeAbout(), { signal })
     // The dialog's own Escape (cancel) and any other close route through closeAbout.
@@ -445,8 +490,6 @@ export class Shell implements System {
     window.addEventListener('storage', event => { if (event.key === SAVED_WORLDS_KEY || event.key === null) this.refreshSavedWorlds() }, { signal })
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') { this.worldDirty = true; this.refreshCustomPlanet() } })
     signal.addEventListener('abort', unsubscribeWorld)
-    // Kept in the browser (src/ui/playerName.ts): a first visit is given a generated name at once.
-    const saved = loadPlayerName(); this.nameInput.value = saved.name; this.nameSource = saved.source
     this.nameInput.addEventListener('input', () => { this.nameSource = 'typed' }, { signal })
     // The public room is an empty field (placeholder "Public room"), never its internal name.
     const entryRoom = roomFromQuery(new URL(location.href).searchParams)
@@ -592,7 +635,8 @@ export class Shell implements System {
     // and only its contents change (a morph, not a close and reopen).
     const current = this.lobbySheets.find(s => s.isOpen)
     if (current) { if (current === this.settingsSheet) this.lobbySettings.close(); current.handOff() }
-    if (this.galaxy) { this.galaxy.backdrop = SHEET_BACKDROP; this.galaxy.markLift = 1 }
+    // The worlds fade out, the sky dims a little and the name rises over the contents (LobbySheet).
+    if (this.galaxy) { this.galaxy.backdrop = SHEET_BACKDROP; this.galaxy.markLift = 1; this.galaxy.worlds = 0 }
     // The three buttons stay beside the open sheet, above its backdrop, to switch between them;
     // the open one is marked.
     const dock = this.lobbySettings.dock
@@ -649,8 +693,8 @@ export class Shell implements System {
   get bodyColor(): string { return this.choice.bodyColor }
   get accentColor(): string { return this.choice.accentColor }
   get playerName(): string { return cleanPlayerName(this.nameInput.value) || 'Explorer' }
-  /** Where the name came from: a typed name is never replaced by a generated one. */
-  private nameSource: NameSource = 'generated'
+  /** A link supplies the name for this session until the player chooses one. */
+  private nameSource: NameSource | 'link'
   /** Set by initGameShell: the name changed in play, so the vehicle and the room follow. */
   onRename?: (name: string) => void
   /** The player renamed themselves in the Me card: saved at once, and the room told. */
@@ -790,15 +834,16 @@ export class Shell implements System {
    * the game's camera comes down out of that brightness from high above the spawn point to
    * its place behind the vehicle, and the blur clears. The room is joined at the start, so
    * the wait is spent falling. Called from code (tests, autoplay, Return to Game) it is
-   * immediate, and so it is for anyone who asks for reduced motion.
+   * shown without a flight, as it is for reduced motion. Entry still waits for graphics.
    */
   play(descend = false): void {
+    if (!this.started) recordStartupPlayRequest()
     this.stopAttract()
     if (this.started) { this.closeMenu(); return }
     this.requestEntryCursor()
     this.unlockAudio(); this.begin()
     if (descend && this.galaxy?.live && this.menuVisible && !matchMedia('(prefers-reduced-motion: reduce)').matches) { this.onPlay?.(); void this.descent(currentPlanet().id); return }
-    this.closeMenu(); this.showHelp(false); this.onPlay?.()
+    this.onPlay?.(); void this.enterWithoutFlight()
   }
   /** Audio may only start inside a tap or a key press: call this from one. */
   private unlockAudio(): void {
@@ -806,10 +851,11 @@ export class Shell implements System {
   }
   /** The session starts: the name is kept and the choices that cannot change in play are fixed. */
   private begin(): void {
+    longFrames.event('Join world')
     // Play has begun: from here the cursor request made at the entering gesture (if any) is
     // judged like any other.
     this.enteringByGesture = false
-    savePlayerName(this.playerName, this.nameSource)
+    if (this.nameSource !== 'link') savePlayerName(this.playerName, this.nameSource)
     this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
   }
@@ -823,6 +869,7 @@ export class Shell implements System {
     if (id === 'custom') return false
     if (this.invited && !this.started && id !== current) { this.say('You were invited to another world. You can change it once you are in, if the host allows.'); return true }
     if (!canEditWorld() && id !== current) { this.say('The host has locked this world.'); return true }
+    if (!this.started) recordStartupPlayRequest()
     this.stopAttract()
     // No galaxy to fly through (or no motion wanted): straight in.
     if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -852,6 +899,49 @@ export class Shell implements System {
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
   }
+  /** A room welcome may replace the selected planet. Compile against the settled world. */
+  private async waitForEntryWorld() {
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    const joinBy = performance.now() + 5000
+    const net = () => (window as { syn3hNet?: { connected?: boolean } }).syn3hNet
+    while (net() && !net()!.connected && performance.now() < joinBy) await frame()
+    await frame()
+    while (this.ground?.ready === false) await this.ground.whenReady?.()
+  }
+
+  private async warmEntryGraphics() {
+    const progress = document.createElement('div')
+    progress.className = 'entry-warm-progress'
+    progress.setAttribute('role', 'status')
+    progress.textContent = 'Preparing world'
+    // The lobby controls are inert during entry. Keep the status accessible outside them.
+    this.element.append(progress)
+    try {
+      await this.game.precompile(label => {
+        if (progress.textContent !== label) progress.textContent = label
+      })
+    } finally { progress.remove() }
+  }
+
+  /** Reduced motion, direct play and autoplay use the same covered production draws. */
+  private async enterWithoutFlight() {
+    if (this.dropping) return
+    this.dropping = true
+    this.game.holdDraws = true
+    this.overlay.inert = true
+    try {
+      await this.waitForEntryWorld()
+      await this.warmEntryGraphics()
+    } catch (error) {
+      console.warn('World preparation failed; entering anyway.', error)
+    } finally {
+      this.game.holdDraws = false
+      this.dropping = false
+      this.closeMenu()
+      this.showHelp(false)
+    }
+  }
+
   /**
    * The drop, one unbroken motion. The galaxy flies across the system to the world and down
    * into its air, with motion blur (Galaxy.descend). Under the light at the bottom of the
@@ -887,10 +977,8 @@ export class Shell implements System {
       // turn, before the renderer can expose a frame over the previous spawn.
       stopFollowingWorld = this.ground?.onRegenerate?.(lift)
       // The world is prepared behind the dive, not under its light: from the tap it is rebuilt
-      // in slices (heights from a worker), the room is joined, and every shader it needs is
-      // compiled a slice per frame, with nothing of it drawn meanwhile. Each piece stays a few
-      // milliseconds, so the dive itself never misses a frame. If preparation outlasts the
-      // dive, the dive holds in the air until it is done.
+      // in slices (heights from a worker) and the room is joined. The expensive draws wait
+      // for the opaque hold; one cold driver pipeline can take hundreds of milliseconds.
       const ground = this.ground
       if (ground) ground.staged = true
       this.game.holdDraws = true
@@ -898,27 +986,14 @@ export class Shell implements System {
       void this.galaxy!.descend(galaxyId, seen > 0).then(() => { dived = true })
       underLight?.(); lift()
       const prepareStart = performance.now()
-      let prepared = false
-      const preparation = (async () => {
-        const net = () => (window as { syn3hNet?: { connected?: boolean } }).syn3hNet
-        // The room's welcome can replace the world (its own seed and planet): wait for it.
-        const joinBy = performance.now() + 5000
-        while (net() && !net()!.connected && performance.now() < joinBy) await frame()
-        // A world the welcome set starts its rebuild on a microtask: let it begin.
-        await frame()
-        while (ground && ground.ready === false) await ground.whenReady?.()
-        // The warm-up frames may stall while shaders compile: draw them only once the dive is
-        // holding still in the world's air, where a stalled frame cannot be seen.
-        const diveBy = performance.now() + 4000
-        while (!dived && performance.now() < diveBy) await frame()
-        await this.game.precompile()
-      })().catch(error => console.warn('World preparation failed; entering anyway.', error)).finally(() => { prepared = true })
-      await until(() => dived, 4000, true)
-      // Never cut the preparation short, not even for a tap: what it has not built would be
-      // built in the first frames instead, which is the freeze this exists to prevent.
-      const holdUntil = performance.now() + 15000
-      while (!prepared && performance.now() < holdUntil) { lift(); await frame() }
-      void preparation
+      await this.waitForEntryWorld()
+      // Keep the overlay opaque through the last draw, even on cold phone drivers.
+      // A tap can skip the flight itself, but never interrupts a covered shader build.
+      const graphics = this.warmEntryGraphics()
+      const diveBy = performance.now() + 4000
+      await Promise.all([graphics, (async () => {
+        while (!dived && performance.now() < diveBy) { lift(); await frame() }
+      })()])
       try { performance.measure('syn3h:descent preparation', { start: prepareStart, end: performance.now() }) } catch { /* Older engines. */ }
       if (ground) ground.staged = false
       this.game.holdDraws = false
@@ -926,7 +1001,9 @@ export class Shell implements System {
       // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
       const length = skip ? 0 : seen > 0 ? 1700 : 2400
       if (game) { game.style.transition = 'none'; game.style.filter = skip ? 'none' : 'blur(12px) brightness(1.3)' }
-      this.overlay.style.transition = `opacity ${skip ? 0.2 : 0.6}s ease-out`; this.overlay.style.opacity = '0'
+      this.overlay.style.transition = `opacity ${skip ? 0.2 : 0.6}s ease-out`
+      if (this.started && recordStartupReveal()) markShaderReveal()
+      this.overlay.style.opacity = '0'
       await frame()
       if (game && !skip) { game.style.transition = `filter ${(length * 0.7 / 1000).toFixed(2)}s cubic-bezier(.1,.6,.3,1)`; game.style.filter = 'none' }
       const started = performance.now()
@@ -951,7 +1028,8 @@ export class Shell implements System {
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.removeProperty('visibility') }
       this.game.holdDraws = false
       this.dropping = false; this.enteringByGesture = false
-      if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
+      if (this.started) { this.closeMenu(); this.showHelp(false) }
+      else { cancelStartupPlayRequest(); this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
     }
   }
   /**
@@ -985,7 +1063,7 @@ export class Shell implements System {
       // are drawn before anyone can see them.
       this.overlay.style.transition = 'none'; this.overlay.style.opacity = '0'
       this.overlay.hidden = false; this.overlay.inert = true
-      galaxy.backdrop = 1
+      galaxy.backdrop = 1; galaxy.worlds = 1; galaxy.markLift = 0
       galaxy.enabled = true
       // Every vehicle keeps its close look on the way up (see vehicleDetail).
       vehicleDetail.holdNear = true
@@ -1076,6 +1154,7 @@ export class Shell implements System {
     // transition ends by putting the menu where it belongs.
     if (!this.started || this.dropping) return
     this.lobbyAddress?.showPlay(this.room)
+    if (this.menuVisible && recordStartupReveal()) markShaderReveal()
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; if (this.galaxy) this.galaxy.enabled = false
     this.lobbySettings.close(); for (const sheet of this.lobbySheets) sheet.close()
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true; this.audio.setLobbyVisible(false); this.paramPanel?.hide()
@@ -1106,7 +1185,8 @@ export class Shell implements System {
   private exitAsking = false
   /** Show "Leave this world?". Stay has the focus, so Enter, Escape and a click outside all stay. */
   private askExit(): void {
-    if (!this.started || this.menuVisible || this.exitAsking || this.userPaused || this.aboutOpen) return
+    // From the pause screen too: the question then stands above the veil (pause-screen.css).
+    if (!this.started || this.menuVisible || this.exitAsking || this.aboutOpen) return
     this.exitAsking = true
     const dialog = this.element.querySelector<HTMLElement>('.exit-confirm')!
     dialog.hidden = false
@@ -1118,8 +1198,11 @@ export class Shell implements System {
     this.exitAsking = false
     this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true
     this.game.input.suspended = this.userPaused || this.menuVisible || this.inviteOpen
+    // Leaving from the pause screen ends the pause first, without taking the cursor: the
+    // ascent needs the world running, and the lobby must not open under the veil.
+    if (leave && this.userPaused) { if (this.pauseControl) this.pauseControl.resume('user'); else this.applyPause(false, null) }
     if (leave) void this.ascent()
-    else this.element.querySelector<HTMLButtonElement>('.exit-world')?.focus({ preventScroll: true })
+    else this.element.querySelector<HTMLButtonElement>(this.userPaused ? '.pause-exit' : '.exit-world')?.focus({ preventScroll: true })
   }
   /**
    * Vehicle colours are chosen in play, beside the vehicle selector (the lobby offers only
@@ -1174,6 +1257,8 @@ export class Shell implements System {
     const wanted = this.panelsWanted
     if (this.inspector.open !== wanted) {
       this.inspector.hideTooltip(); this.inspector.open = wanted
+      // Phones fade Show panels out as the panels grow from it (phone-panels.css).
+      this.element.classList.toggle('is-panels', wanted)
       this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(wanted))
     }
     const locked = this.started && !this.menuVisible && !this.game.input.suspended && this.drivingView
@@ -1245,7 +1330,9 @@ export class Shell implements System {
     // The sidebar's Pause shows play while paused, and resumes.
     const pause = this.element.querySelector<HTMLButtonElement>('.rail-pause')
     if (pause) { const word = user ? 'Resume' : 'Pause'; pause.setAttribute('aria-label', word); pause.dataset.tip = word; pause.querySelector('path')!.setAttribute('d', user ? PLAY_ICON : PAUSE_ICON) }
-    this.element.querySelector<HTMLButtonElement>('.pause-about')!.hidden = !user
+    this.element.querySelector<HTMLElement>('.pause-actions')!.hidden = !user
+    if (!user) { this.shotReady = null; const hint = this.element.querySelector<HTMLElement>('.pause-shot-hint'); if (hint) hint.hidden = true }
+    this.whisper(user)
     this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking || this.aboutOpen
     if (user) {
       this.game.input.mouseFire = false
@@ -1255,6 +1342,63 @@ export class Shell implements System {
     }
     this.syncPanels()
   }
+  /**
+   * The pause screen goes quiet: PAUSED and how to resume show for a moment, then fade to
+   * nothing until the pointer moves, a key goes down or the screen is touched, so the view is
+   * clean to look at. The three buttons and the minimap stay.
+   */
+  private whisper(on: boolean): void {
+    this.whisperWatch?.abort(); this.whisperWatch = undefined; clearTimeout(this.whisperTimer)
+    this.element.classList.remove('is-whisper')
+    if (!on) return
+    const watch = this.whisperWatch = new AbortController()
+    const wake = () => {
+      clearTimeout(this.whisperTimer)
+      this.element.classList.remove('is-whisper')
+      this.whisperTimer = setTimeout(() => this.element.classList.add('is-whisper'), PAUSE_WHISPER_MS)
+    }
+    for (const type of ['pointermove', 'pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, wake, { signal: watch.signal, passive: true, capture: true })
+    wake()
+  }
+  private whisperWatch?: AbortController
+  private whisperTimer?: ReturnType<typeof setTimeout>
+  private shooting = false
+  /**
+   * Save what the player is looking at (src/ui/screenshot.ts). Only on the pause screen: the
+   * loop is stopped there, so the extra frame and the encode cost nothing in play. The picture
+   * is the canvas alone, with the paused camera, so no interface and no pause shade are in it.
+   * The Screenshot button says how it went, quietly, in place.
+   */
+  private async takeShot(): Promise<void> {
+    if (!this.userPaused || this.shooting) return
+    this.shooting = true
+    const button = this.element.querySelector<HTMLButtonElement>('.pause-shot')!, hint = this.element.querySelector<HTMLElement>('.pause-shot-hint')!
+    const say = (text: string, done: boolean) => {
+      hint.textContent = text; hint.hidden = !text
+      button.classList.toggle('is-saved', done); button.querySelector('path')!.setAttribute('d', done ? SAVED_ICON : SHOT_ICON)
+    }
+    let waiting = false
+    try {
+      // A picture already made, waiting for the tap Safari asked for: share it now, in this tap.
+      const ready = this.shotReady; this.shotReady = null
+      const result = ready ? { outcome: await shareShot(ready), file: ready } : await (async () => {
+        // The device's full resolution, whatever Auto resolution chose for play (Game.snapshot).
+      const frame = this.game.snapshot({ full: true })
+        const blob = frame ? await encodeShot(frame) : null
+        return blob ? deliverShot(blob, shotFileName(currentWorldName(), currentPlanet().label, new Date()), this.touch.available) : null
+      })()
+      if (!result) { say('The view could not be captured', false); return }
+      if (result.outcome === 'blocked' && result.file) { this.shotReady = result.file; waiting = true; say('Ready. Tap again to share', false); return }
+      if (result.outcome !== 'cancelled') say(result.outcome === 'shared' ? 'Shared' : 'Saved', true)
+    } finally {
+      this.shooting = false
+      clearTimeout(this.shotTimer)
+      if (!waiting) this.shotTimer = setTimeout(() => say('', false), 2200)
+    }
+  }
+  /** A picture made but refused by the share sheet for want of a fresh tap: the next tap shares it. Dropped on resume. */
+  private shotReady: File | null = null
+  private shotTimer?: ReturnType<typeof setTimeout>
   private keydown(event: KeyboardEvent): void {
     // Waiting for the tap that begins (TapToBegin.ts): that press only begins.
     if (document.documentElement.dataset.boot === 'ready') return
@@ -1298,7 +1442,14 @@ export class Shell implements System {
     // capture the cursor (a key press is a gesture). This is also the keyboard-only way back.
     // While paused, focus rests on the pause message, which is a button, so a drive key
     // counts wherever focus is: it resumes. That press does not also drive.
-    if (this.userPaused && !event.repeat && DRIVE_KEYS.has(event.code)) { event.preventDefault(); this.requestResume(); return }
+    // S is the one exception: on the pause screen it saves a screenshot (the Screenshot button's
+    // hint says so). pausedKeyAction is null whenever the player's own pause does not hold, so
+    // S never does this in play, where it reverses and brakes as always.
+    const typingHere = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName))
+    const paused = pausedKeyAction(event.code, { paused: this.userPaused, repeat: event.repeat, typing: typingHere })
+    if (paused === 'shot') { event.preventDefault(); void this.takeShot(); return }
+    if (paused === 'resume') { event.preventDefault(); this.requestResume(); return }
+    if (this.userPaused && event.code === 'KeyS') { event.preventDefault(); return }
     // A drive key means the player wants to drive, unless it is being typed into a field or
     // moving a slider or select. A focused button or summary does not count: it only owns
     // Space and Enter, and focus rests on one after any click on the panels.
@@ -1450,6 +1601,7 @@ export class Shell implements System {
       const plan = savedWorldPlan(latest, params.all().map(p => p.def))
       const allowed = () => worldIdentity(plan) === worldIdentity(params.snapshot('world')) || (canEditWorld() && !(this.invited && !this.started))
       if (!allowed()) { this.say('This room controls its world settings. The saved world was not applied.'); return }
+      if (!this.started) recordStartupPlayRequest()
       this.stopAttract()
       this.suspendCustomRefresh = true; clearTimeout(this.customMapTimer)
       const apply = () => {
@@ -1459,7 +1611,7 @@ export class Shell implements System {
       }
       this.requestEntryCursor()
       if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        apply(); this.closeMenu()
+        apply(); await this.enterWithoutFlight()
       } else {
         if (!this.started) this.unlockAudio()
         release = this.galaxy.savedWorldTarget(latest.recipeId, latest.seed, plan, latest.id)
@@ -1468,7 +1620,10 @@ export class Shell implements System {
       }
       if (applied) this.reportSavedOutcome(plan)
     } catch (error) { this.say(`Saved world was not entered. ${error instanceof Error ? error.message : 'Please try again.'}`) }
-    finally { release?.(); this.savedEntering = false }
+    finally {
+      if (!this.started) cancelStartupPlayRequest()
+      release?.(); this.savedEntering = false
+    }
   }
   /** A room welcome can replace a local plan. Never claim a restore until authority settles. */
   private savedOutcomeStop?: () => void
@@ -1700,17 +1855,20 @@ export class Shell implements System {
     return { galaxyLive: this.galaxy?.live ?? false, galaxyFrames: this.galaxy?.frames ?? 0, planetMaps: this.galaxy?.painted ?? 0 }
   }
   /**
-   * Every button is terranlabs.com's glass button (.liquid-glass in shell.css), except the
-   * quiet text links. This also carries that site's GlassShine: while the pointer is over a
+   * Every button is the game's glass button (.liquid-glass in glass.css), except the quiet text
+   * links, the Paused veil (a full-screen button) and the panels' rows and switches. This also carries that site's GlassShine: while the pointer is over a
    * glass button, the bright side of its one-pixel rim turns to face the pointer, and settles
    * back when the pointer leaves. Nothing is drawn on the face of the button.
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .lobby-gear-dock *, .syn3h-advanced *, .world-inspector *, .exit-confirm *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
+    // In the panels, only the two plain actions are buttons in this sense; the rest are rows, switches and choices.
+    for (const button of this.element.querySelectorAll<HTMLElement>('.rail-invite, .rail-about')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
-    const REST = 205
+    // Upper left, where the light strikes at rest (glass.css).
+    const REST = 315
     let current: HTMLElement | null = null
     // Kept unwrapped (it may pass 360) so the CSS transition always takes the short way round.
     let angle = REST
@@ -1817,7 +1975,7 @@ export class Shell implements System {
   showHelp(full = true): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!, touch = this.touch.available
     renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full, this.hasSeveralGear)
-    hint.classList.toggle('is-full', full); hint.classList.remove('is-hint'); this.touch.highlight(null)
+    hint.classList.toggle('is-full', full); hint.classList.remove('is-hint', 'is-quiet'); this.touch.highlight(null)
     fillHelpLine(hint.querySelector('small')!, touch ? '' : full ? 'H or ?: hide' : 'H: all controls')
     hint.hidden = false; clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
     const hide = () => this.hideHelp()
@@ -1843,12 +2001,38 @@ export class Shell implements System {
   showHint(hint: Hint): void {
     const card = this.element.querySelector<HTMLElement>('.spawn-help')!
     if (!this.started || this.menuVisible || (!card.hidden && card.classList.contains('is-full'))) return
+    // A Zorb cue is the Zorb control's pulse (cueZorb); words only where no Zorb control shows.
+    if (hint.cue === 'zorb' && this.zorbControl()) return
     const line = document.createElement('div'); line.textContent = hint.text
     card.querySelector('div')!.replaceChildren(line); card.querySelector('small')!.textContent = ''
-    card.classList.remove('is-full'); card.classList.add('is-hint'); card.hidden = false
+    card.classList.remove('is-full'); card.classList.add('is-hint'); card.classList.toggle('is-quiet', hint.cue === 'zorb'); card.hidden = false
     this.touch.highlight(hint.touchAction ?? null)
     clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
     this.helpTimer = setTimeout(() => this.hideHelp(), 5000)
+  }
+  /**
+   * The Zorb control on screen, if one shows: the ZORB thumb button on touch, or the Zorb row of
+   * the left column. Null when the HUD is hidden, the layout leaves it out or it is off screen.
+   */
+  private zorbControl(): HTMLElement | null {
+    const options = [this.touch.available ? this.touch.element.querySelector<HTMLElement>('[data-action="zorb"]') : null, this.accessories.element.querySelector<HTMLElement>('.acc-row[data-id="zorb"]')]
+    for (const el of options) {
+      if (!el || !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue
+      const box = el.getBoundingClientRect()
+      if (box.width > 0 && box.right > 0 && box.bottom > 0 && box.left < innerWidth && box.top < innerHeight) return el
+    }
+    return null
+  }
+  private zorbCue: { on: boolean; el: HTMLElement | null } = { on: false, el: null }
+  /**
+   * Pulse the Zorb control while a sunk buggy should reach for it (PlayHints.zorbCue). Runs every
+   * frame; looks for the control only when the cue starts, and touches the DOM only on a change.
+   */
+  cueZorb(on: boolean): void {
+    if (on === this.zorbCue.on) { if (on && this.zorbCue.el?.classList.contains('acc-row')) this.accessories.wake(); return }
+    this.zorbCue.el?.classList.remove('is-cued')
+    this.zorbCue = { on, el: on ? this.zorbControl() : null }
+    this.zorbCue.el?.classList.add('is-cued')
   }
   private toggleHelp(): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!
@@ -1944,10 +2128,11 @@ export class Shell implements System {
 }
 
 /** Call after creating the player, before constructing ParamPanel. */
-export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { shell: Shell; audio: GameAudio; setPlayer: (player: Vehicle) => void; dispose: () => void } {
-  const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio))
+export function initGameShell(game: Game, player: Vehicle, terrain: Terrain, entryName?: string | null): { shell: Shell; audio: GameAudio; setPlayer: (player: Vehicle) => void; dispose: () => void } {
+  const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio, entryName), 'Shell and lobby')
   shell.setVehicleKind(player.kind); shell.setTerrain(terrain); audio.setPlayer(player,terrain)
   let activePlayer = player
+  activePlayer.name = shell.playerName
   // Read the body directly: the HUD snapshot can still describe the previous world
   // when a room rebuild moves the spawn between animation frames.
   shell.arrivalVehicle = () => {
@@ -1978,9 +2163,10 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)), activePlayer.kind === 'jet' && !activePlayer.zorbed ? activePlayer.input.z : undefined, altitudeAboveSea(activePlayer.contactHeight()))
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
     const input = activePlayer.input
-    const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut })
+    const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut, zorbed: activePlayer.zorbed, zorbAvailable: zorbSpeed.value > 0 })
     if (hint) shell.showHint(hint)
-  } })
-  game.add(audio)
+    shell.cueZorb(hints.zorbCue)
+  } }, 'Telemetry and hints')
+  game.add(audio, 'Game audio')
   return { shell, audio, setPlayer(next) { activePlayer = next; height = new HeightAboveGround(); hints.reset(); audio.setPlayer(next,terrain); shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
 }

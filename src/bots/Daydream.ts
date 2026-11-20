@@ -188,10 +188,9 @@ export class Daydream implements System {
   }
 
   private createPill(): HTMLDivElement {
-    // Top centre: the bottom edge belongs to the minimap, touch controls and reload notice.
+    // Drawn and placed by .daydream-pill in src/ui/shell.css (desktop) and touch-stick.css (phones).
     const pill = document.createElement('div')
     pill.className = 'daydream-pill'; pill.setAttribute('role', 'status')
-    pill.style.cssText = 'position:fixed;left:50%;top:max(52px,calc(env(safe-area-inset-top) + 44px));transform:translateX(-50%);z-index:20;padding:7px 16px;border-radius:999px;background:rgba(8,12,20,.55);color:#dff6ff;font:500 13px/1.3 system-ui,sans-serif;letter-spacing:.02em;pointer-events:none;backdrop-filter:blur(6px);max-width:min(90vw,440px);text-align:center'
     document.body.append(pill)
     return pill
   }

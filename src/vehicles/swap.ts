@@ -1,20 +1,18 @@
 /** Cache each real player vehicle so repeat switches retain their compiled GPU programs. */
 import * as THREE from 'three/webgpu'
-import type { Game } from '../core/Game'
+import { recordEntryWarmIssue } from '../core/diagnostics'
+import { longFrames } from '../core/longFrames'
+import type { CoveredWarm, Game } from '../core/Game'
 import type { Terrain } from '../world/Terrain'
 import { attachVehicleEffects } from './effects'
 import { canonicalVehicleKind, createVehicle, isVehicleAvailable, type VehicleKind } from './index'
 import type { PlayerSlot } from './PlayerSlot'
 import { REST_HEIGHT, type Vehicle } from './Vehicle'
-import { PlayerVehicleWarm } from './PlayerVehicleWarm'
+import { drawPlayerVehicleWarm } from './PlayerVehicleWarm'
+import { Syn3hBuggy } from './Syn3hBuggy'
 
 /** Metres of air left under the new vehicle's resting height when it has to be lifted clear. */
 export const SWAP_CLEARANCE = 0.3
-
-/** Seconds the warm-up waits for a cached vehicle's real body before skipping it. */
-const WARM_WAIT = 30
-/** Vehicles that load a body (the buggy) say whether it has arrived; the rest are generated. */
-const bodyReady = (vehicle: Vehicle) => (vehicle as { bodyReady?: boolean }).bodyReady !== false
 
 /** Where and how the old vehicle was moving when the player switched. */
 export interface SwapPose {
@@ -101,97 +99,112 @@ export function createVehicleSwapper(
   const cache = new Map<string, Vehicle>([[canonicalVehicleKind(slot.current.kind), slot.current]])
   let detach = attachEffects(slot.current)
   let disposed = false
-  const warmer = new PlayerVehicleWarm(game)
-  const queue = (['jet', 'hovercraft', 'tank', 'buggy'] as VehicleKind[]).filter(isVehicleAvailable)
+  const kinds = (['jet', 'hovercraft', 'tank', 'buggy'] as const).filter(isVehicleAvailable)
   const warmStats = { pending: true, current: null as string | null }
   game.scene.userData.playerVehicleCache = warmStats
-  let idleSeconds = 0
-  /**
-   * A cached vehicle whose real body is still loading. Warming it now would compile only the
-   * stand in, and the warm-up's saved visibility, put back after the body arrived, used to
-   * leave that stand in showing. Wait for the body, up to WARM_WAIT seconds.
-   */
-  let waiting: Vehicle | null = null
-  let waited = 0
-  const warmUpdate = (dt: number) => {
-    if (disposed || !game.renderer?.backend) return
-    idleSeconds += Math.min(dt, .1)
-    if (idleSeconds < 3) return
-    if (warmer.current) { warmer.update(); warmStats.current = warmer.current?.kind ?? null; return }
-    if (waiting) {
-      waited += Math.min(dt, .1)
-      if (!bodyReady(waiting) && waited < WARM_WAIT) return
-      if (bodyReady(waiting)) { warmer.begin(waiting); warmStats.current = waiting.kind }
-      waiting = null
-      return
+  let warming: Promise<void> | null = null
+
+  async function warmVehicles(warm: CoveredWarm): Promise<void> {
+    warmStats.pending = true
+    try {
+      for (const kind of kinds) {
+        if (disposed) return
+        const key = canonicalVehicleKind(kind)
+        warmStats.current = kind
+        let vehicle = cache.get(key)
+        if (!vehicle) {
+          await warm.yieldFrame(`Preparing ${kind}`)
+          if (disposed) return
+          vehicle = cache.get(key)
+          if (!vehicle) {
+            const player = slot.current
+            try {
+              vehicle = createVehicle(game, terrain, kind, player.object.position, 0)
+              vehicle.setParked(true)
+              vehicle.isLocal = true
+              vehicle.setColors(player.colors.body, player.colors.accent)
+              cache.set(key, vehicle)
+            } catch (error) {
+              vehicle?.dispose()
+              recordEntryWarmIssue('Player vehicle warm-up failed')
+              console.warn('Covered vehicle creation failed', kind, error)
+              continue
+            }
+          }
+        }
+        if (vehicle instanceof Syn3hBuggy && !(await vehicle.waitForCoveredBody())) continue
+        if (disposed) return
+        await warm.yieldFrame(`Warming ${kind}`)
+        if (disposed) return
+        try {
+          drawPlayerVehicleWarm(game, slot.current, vehicle, warm)
+        } catch (error) {
+          recordEntryWarmIssue('Player vehicle warm-up failed')
+          console.warn('Covered vehicle warm draw failed', kind, error)
+        }
+      }
+    } finally {
+      warmStats.current = null
+      warmStats.pending = false
     }
-    const kind = queue.shift()
-    if (!kind) { warmStats.pending = false; return }
-    const key = canonicalVehicleKind(kind)
-    if (cache.has(key)) return
-    const v = createVehicle(game, terrain, kind, slot.current.object.position, 0)
-    v.isLocal = true
-    v.setColors(slot.current.colors.body, slot.current.colors.accent)
-    cache.set(key, v)
-    if (bodyReady(v)) { warmer.begin(v); warmStats.current = kind; return }
-    // Out of the world while it waits, as the warm-up would leave it.
-    v.setParked(true)
-    waiting = v
-    waited = 0
   }
+
   const swapper: VehicleSwapper = {
     swap(kind) {
       if (disposed) throw new Error('Vehicle swapper disposed')
       const previous = slot.current
       // Aliases and retired names all build the buggy: asking for one while driving it is no change.
       if (canonicalVehicleKind(kind) === canonicalVehicleKind(previous.kind)) return previous
-      const body = previous.body
-      // A held (kinematic) body reports no velocity of its own: it is carried, not moving.
-      const held = body.isKinematic()
-      const place = swapPlacement({
-        position: body.translation(), rotation: body.rotation(),
-        linvel: held ? { x: 0, y: 0, z: 0 } : body.linvel(), angvel: held ? { x: 0, y: 0, z: 0 } : body.angvel(),
-      }, kind, terrain)
-      const { position, heading } = place
-
-      const key = canonicalVehicleKind(kind)
-      const next = cache.get(key) ?? createVehicle(game, terrain, kind, position, heading)
-      cache.set(key, next)
-      if (warmer.current === next) warmer.finish()
-      if (waiting === next) waiting = null
-      next.teleport(position, heading)
-      next.setParked(false)
-      next.isLocal = previous.isLocal
-      next.id = previous.id
-      next.name = previous.name
-      next.spawnSlot = previous.spawnSlot
-      next.setColors(previous.colors.body, previous.colors.accent)
-      next.wind.copy(previous.wind)
-      Object.assign(next.input, previous.input)
-      next.body.setLinvel(place.linvel, true)
-      next.body.setAngvel(place.angvel, true)
-      // The old vehicle's zorb ball goes with it; the zorb toggle is the player's and carries in
-      // the input, so the new vehicle grows its own ball if the mode is still on.
-      previous.zorb.remove()
-      // Preserve interpolation before the camera, including cached vehicle activation.
-      game.add(next, previous)
-      // Attach first so the shared effect world stays alive even when there are no bots.
-      const oldDetach = detach
-      detach = attachEffects(next)
-      oldDetach()
+      const spanStart = longFrames.start()
       try {
-        slot.set(next)
+        longFrames.event('vehicle.swap')
+        const body = previous.body
+        // A held (kinematic) body reports no velocity of its own: it is carried, not moving.
+        const held = body.isKinematic()
+        const place = swapPlacement({
+          position: body.translation(), rotation: body.rotation(),
+          linvel: held ? { x: 0, y: 0, z: 0 } : body.linvel(), angvel: held ? { x: 0, y: 0, z: 0 } : body.angvel(),
+        }, kind, terrain)
+        const { position, heading } = place
+
+        const key = canonicalVehicleKind(kind)
+        const next = cache.get(key) ?? createVehicle(game, terrain, kind, position, heading)
+        cache.set(key, next)
+        next.teleport(position, heading)
+        next.setParked(false)
+        next.isLocal = previous.isLocal
+        next.id = previous.id
+        next.name = previous.name
+        next.spawnSlot = previous.spawnSlot
+        next.setColors(previous.colors.body, previous.colors.accent)
+        next.wind.copy(previous.wind)
+        Object.assign(next.input, previous.input)
+        next.body.setLinvel(place.linvel, true)
+        next.body.setAngvel(place.angvel, true)
+        // The old vehicle's zorb ball goes with it; the zorb toggle is the player's and carries in
+        // the input, so the new vehicle grows its own ball if the mode is still on.
+        previous.zorb.remove()
+        // Preserve interpolation before the camera, including cached vehicle activation.
+        game.add(next, previous)
+        // Attach first so the shared effect world stays alive even when there are no bots.
+        const oldDetach = detach
+        detach = attachEffects(next)
+        oldDetach()
+        try {
+          slot.set(next)
+        } finally {
+          // Even if a follower fails, the old controller and collider must stop.
+          game.remove(previous, false)
+          previous.setParked(true)
+        }
+        return next
       } finally {
-        // Even if a follower fails, the old controller and collider must stop.
-        game.remove(previous, false)
-        previous.setParked(true)
+        longFrames.end('vehicle.swap', spanStart)
       }
-      return next
     },
     dispose() {
       if (disposed) return
       disposed = true
-      warmer.finish()
       delete game.scene.userData.playerVehicleCache
       detach()
       for (const vehicle of cache.values()) if (vehicle !== slot.current) vehicle.dispose()
@@ -200,6 +213,12 @@ export function createVehicleSwapper(
       detach = () => {}
     },
   }
-  game.add({ update: warmUpdate, dispose: () => swapper.dispose() })
+  game.add({
+    warmCovered(warm: CoveredWarm): Promise<void> {
+      if (disposed) return Promise.resolve()
+      return warming ??= warmVehicles(warm).finally(() => { warming = null })
+    },
+    dispose: () => swapper.dispose(),
+  }, 'Vehicle cache')
   return swapper
 }

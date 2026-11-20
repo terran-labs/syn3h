@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.."
 NOTE="${1:-}"
 ID="$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD)"
 DEST="../Syn3h-stable/$ID"
-npm run build >/tmp/syn3h-stable-build.log 2>&1 || { tail -20 /tmp/syn3h-stable-build.log; exit 1; }
+SYN3H_FREEZE_ID="$ID" npm run build >/tmp/syn3h-stable-build.log 2>&1 || { tail -20 /tmp/syn3h-stable-build.log; exit 1; }
 mkdir -p "$(dirname "$DEST")"
 mkdir "$DEST"
 cp -R dist wrangler.toml wrangler.staging.toml server shared src package.json tsconfig.json "$DEST/"

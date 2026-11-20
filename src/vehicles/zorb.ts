@@ -46,6 +46,8 @@ import {
   positionViewDirection, pow, sin, smoothstep, time, uniform, vec3, clamp } from 'three/tsl'
 import { defineParam } from '../../shared/params'
 import { FIXED_DT, GROUP_ALL, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
+import type { Game, System } from '../core/Game'
+import { graphicsLevel, levelNumber } from '../core/quality'
 import { type InputState, emptyInput } from '../core/Input'
 import type { Terrain } from '../world/Terrain'
 import { applyWaterForces, waterSinking } from './buoyancy'
@@ -750,6 +752,37 @@ function releaseShared(): void {
   if (!shared || --shared.users > 0) return
   shared.full.dispose(); shared.cheap.dispose(); shared.geometry.dispose()
   shared = null
+}
+
+/** Real shield layouts for the first local Zorb and a distant remote Zorb. Keep one
+ * material lease for the session so the last fading shield cannot evict the warm state. */
+export function warmZorbShields(game: Game): System {
+  let materials: ReturnType<typeof acquireShared> | undefined
+  const meshes: THREE.Mesh[] = []
+  return {
+    async warmCovered(warm) {
+      await warm.yieldFrame('Preparing Zorb shields')
+      materials ??= acquireShared()
+      const variants = levelNumber(graphicsLevel.value) === 0 ? [materials.cheap] : [materials.cheap, materials.full]
+      const forward = game.camera.getWorldDirection(new THREE.Vector3())
+      try {
+        for (const [i, material] of variants.entries()) {
+          const mesh = meshes[i] ??= new THREE.Mesh(materials.geometry, material)
+          mesh.material = material
+          mesh.renderOrder = 2
+          mesh.userData.zorbShield ??= { tint: new THREE.Color(1, 1, 1), alpha: ZORB_REST_ALPHA, contact: 0, contactDir: new THREE.Vector3(0, -1, 0) }
+          game.camera.getWorldPosition(mesh.position).addScaledVector(forward, 8 + i * 3)
+          game.scene.add(mesh)
+        }
+        warm.draw()
+      } finally { for (const mesh of meshes) mesh.removeFromParent() }
+    },
+    dispose() {
+      for (const mesh of meshes) mesh.removeFromParent()
+      meshes.length = 0
+      if (materials) { releaseShared(); materials = undefined }
+    },
+  }
 }
 
 /** Distance beyond which a remote vehicle's shield uses the cheap material. */
