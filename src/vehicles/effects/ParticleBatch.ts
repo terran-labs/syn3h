@@ -11,6 +11,8 @@ import {particleSeed,unlitShadeNode,type Sprite} from './sprites'
 export class ParticleBatch {
   readonly mesh:T.Mesh<T.InstancedBufferGeometry,T.SpriteNodeMaterial>
   readonly clock=uniform(0)
+  /** Multiplies every particle's opacity, for an owner that fades a whole batch (fireworks smoke by daylight). */
+  readonly opacity=uniform(1)
   private next=0
   private readonly origin:T.InstancedBufferAttribute
   private readonly velocity:T.InstancedBufferAttribute
@@ -47,15 +49,16 @@ export class ParticleBatch {
     m.colorNode=attribute('fxTint','vec3').mul(look.rgb)
     m.colorNode=m.colorNode.mul(additive?hotExposureNode():unlitShadeNode())
     // Original particle five-key alpha: near zero, .707, 1, .707, zero.
-    m.opacityNode=look.alpha.mul(unit.mul(Math.PI).sin().max(0).mul(age.greaterThanEqual(0).select(1,0)).mul(age.lessThan(cfg.y).select(1,0)).mul(additive?.8:.4).mul(float(1).sub(smoothstep(.42,.5,uv().sub(.5).length()))))
+    m.opacityNode=look.alpha.mul(this.opacity).mul(unit.mul(Math.PI).sin().max(0).mul(age.greaterThanEqual(0).select(1,0)).mul(age.lessThan(cfg.y).select(1,0)).mul(additive?.8:.4).mul(float(1).sub(smoothstep(.42,.5,uv().sub(.5).length()))))
     this.mesh=new T.Mesh(g,m);this.mesh.frustumCulled=false;this.mesh.renderOrder=additive?4:3
   }
-  emit(position:T.Vector3,velocity:T.Vector3,life:number,size:number,grow:number,color:T.Color){
+  /** `delay`: born that many seconds from now (nothing drawn until then). */
+  emit(position:T.Vector3,velocity:T.Vector3,life:number,size:number,grow:number,color:T.Color,delay=0){
     const i=this.next;this.next=(i+1)%this.capacity;this.emitted++
     let vx=velocity.x,vz=velocity.z
     if(this.windShare>0&&this.drift){const g=this.gust;g.x=g.y=g.z=0;this.drift(position.x,position.y,position.z,g);if(Number.isFinite(g.x)&&Number.isFinite(g.z)){vx+=g.x*this.windShare;vz+=g.z*this.windShare}}
     this.origin.setXYZ(i,position.x,position.y,position.z);this.velocity.setXYZ(i,vx,velocity.y,vz)
-    this.settings.setXYZW(i,this.clock.value,life,size,grow);this.tint.setXYZ(i,color.r,color.g,color.b)
+    this.settings.setXYZW(i,this.clock.value+delay,life,size,grow);this.tint.setXYZ(i,color.r,color.g,color.b)
     // Spelled out: a tuple list here allocated five arrays for every particle born.
     this.origin.addUpdateRange(i*3,3);this.origin.needsUpdate=true;this.velocity.addUpdateRange(i*3,3);this.velocity.needsUpdate=true
     this.settings.addUpdateRange(i*4,4);this.settings.needsUpdate=true;this.tint.addUpdateRange(i*3,3);this.tint.needsUpdate=true

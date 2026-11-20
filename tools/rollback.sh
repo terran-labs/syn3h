@@ -8,13 +8,14 @@
 # assets, so this restores the exact client and server that release shipped. Releases are
 # listed in ../Syn3h-stable/releases.tsv (written by tools/release.sh).
 #
-# Frozen versions (?v=<version>) after a rollback: the Worker restored is the old one, with its
-# own code and its own carried copies under /v/. A Worker without the FROZEN binding (every
-# release before the R2 move) serves frozen versions from those carried copies only, so versions accepted after it
-# 404 until production moves forward again; their files are safe in R2 (bucket syn3h-versions).
-# A Worker with the FROZEN binding reads R2 first, then its carried copies, so every uploaded
-# version keeps working. Once deployments stop carrying (step two of the R2 move, see
-# tools/frozen-versions.mjs), R2 is the only place a frozen version is served from.
+# Frozen versions (?v=<version>) after a rollback are served by the Worker restored, as it was:
+#   - a Worker from step two of the R2 move on serves its own version from its own static
+#     assets and every other version from R2 (bucket syn3h-versions) only, so every version
+#     stored there works, newer ones included;
+#   - a step-one Worker (release-63 up to step two) reads R2 first, then the copies it carried;
+#   - a Worker from before R2 (release-62 and earlier) has only the copies it carried, so
+#     versions accepted after it 404 until production moves forward; they are safe in R2.
+# The restored build's /v/versions.json (the Updates banner's newest release) is its own list.
 set -eu
 cd "$(dirname "$0")/.."
 . tools/cloudflare-token.sh

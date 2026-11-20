@@ -5,7 +5,7 @@
  * from SYN3H_RELEASE_VERSION, which tools/release.sh sets; a dev build carries a git label and
  * has no version, so it never prompts). The latest version is the newest entry in
  * /v/versions.json, which every production deploy writes with the release it ships
- * (tools/frozen-versions.mjs carry). The notes come from /releases.json (tools/release-feed.mjs).
+ * (tools/frozen-versions.mjs prepare). The notes come from /releases.json (tools/release-feed.mjs).
  *
  * Both files are fetched from the site root without a Referer: the Worker serves a pinned
  * (?v=) page's assets by its Referer, and these must describe the live site, not the pin.
