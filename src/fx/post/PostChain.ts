@@ -133,6 +133,8 @@ export class PostChain {
     shaftLength: uniform(0.75),
     shaftHaze: uniform(0.35),
     shaftReach: uniform(0.05),
+    /** Swing at a fully edged path (post.gapShafts times post.gapContrast). */
+    gapGain: uniform(1),
     /** Share of the forward glow the rays carry at this sun height (skyMath.rayGlowShare). */
     rayShare: uniform(0),
     /** Share of the sky's own light the rays also move (post.rayFill). */
@@ -243,6 +245,7 @@ export class PostChain {
     u.shaftLength.value = P.postShaftLength.value
     u.shaftHaze.value = P.postShaftHaze.value
     u.shaftReach.value = P.postShaftReach.value
+    u.gapGain.value = P.postGapShafts.value * P.postGapContrast.value
     // Ghosts and streak belong to a low sun; overhead they read as smudges on the ground.
     u.flare.value = P.postFlare.value * fade * dry * (0.25 + 0.75 * lowSunAmount(this.sun.sunDirection.y))
     const g = gradeFor(lookForKind(params.get('terrain.kind')?.value), P.postLook.value, { contrast: P.postContrast.value, saturation: P.postSaturation.value, warmth: P.postWarmth.value }, this.grade)
@@ -553,18 +556,25 @@ export class PostChain {
         const step = u.sunUv.sub(p).mul(u.shaftLength).div(taps)
         p.addAssign(step.mul(interleavedGradientNoise(screenCoordinate)))
         const sum = float(0).toVar()
+        const squares = float(0).toVar()
         const total = float(1e-4).toVar()
         Loop(taps, () => {
           const fromSun = length(p.sub(u.sunUv).mul(vec2(u.aspect, 1)))
           const w = exp(fromSun.div(u.shaftReach).negate())
-          sum.addAssign(maskTex.sample(p).a.mul(w))
+          const a = maskTex.sample(p).a
+          sum.addAssign(a.mul(w))
+          squares.addAssign(a.mul(a).mul(w))
           total.addAssign(w)
           p.addAssign(step)
         })
         // Squared: a path half blocked passes a quarter, so beams keep their edges; a clear
         // path is still 1, so open sky still balances.
         const open = sum.div(total)
-        return vec4(vec3(open.mul(open)), 1)
+        // How mixed the way is, from the same taps: their weighted variance, 0 when all open or
+        // all shut, a quarter when half and half. Scaled to 0..1 in g. An edge on the way to the
+        // sun (a ridge, a gap in cloud) is where a beam belongs.
+        const edged = clamp(squares.div(total).sub(open.mul(open)).mul(4), 0, 1)
+        return vec4(open.mul(open), edged, 0, 1)
       })
       const raysTex: N = rtt(rays(), null, null, { resolutionScale: tier === 'full' ? 0.5 : 0.25 })
       disposables.push(raysTex)
@@ -591,14 +601,18 @@ export class PostChain {
       // A small cross blur at the rays target's own texel size hides the march's dither, which
       // otherwise shows as a fixed screen-door pattern over the sky as the camera moves.
       const texel = vec2(1, 1).div(screenSize.mul(tier === 'full' ? 0.5 : 0.25))
-      const marched = raysTex.sample(at).r.mul(0.4)
-        .add(raysTex.sample(at.add(texel.mul(vec2(1.5, 0)))).r.mul(0.15)).add(raysTex.sample(at.sub(texel.mul(vec2(1.5, 0)))).r.mul(0.15))
-        .add(raysTex.sample(at.add(texel.mul(vec2(0, 1.5)))).r.mul(0.15)).add(raysTex.sample(at.sub(texel.mul(vec2(0, 1.5)))).r.mul(0.15))
+      const blurred = raysTex.sample(at).mul(0.4)
+        .add(raysTex.sample(at.add(texel.mul(vec2(1.5, 0)))).mul(0.15)).add(raysTex.sample(at.sub(texel.mul(vec2(1.5, 0)))).mul(0.15))
+        .add(raysTex.sample(at.add(texel.mul(vec2(0, 1.5)))).mul(0.15)).add(raysTex.sample(at.sub(texel.mul(vec2(0, 1.5)))).mul(0.15))
+      const marched = blurred.r
+      // Beams through gaps and past edges are stronger and crisper; open sky keeps the shipped
+      // burst (post.gapShafts, post.gapContrast).
+      const gap = mix(float(1), u.gapGain, smoothstep(0.05, 0.5, blurred.g))
       const skyOpen = here.a.mul(float(1).sub(solid))
       const open = mix(marched.mul(haze), max(marched, float(RAY_SKY_FLOOR)), skyOpen)
       // Over terrain a streak may at most double the pixel's own light; anywhere it removes at
       // most RAY_DARK of the light it carries.
-      const swing = clamp(pattern.mul(open).mul(u.shafts), -RAY_DARK, mix(float(1e4), float(1), solid))
+      const swing = clamp(pattern.mul(open).mul(u.shafts).mul(gap), -RAY_DARK, mix(float(1e4), float(1), solid))
       // Bright streaks in open sky add the glow, the approved look. Anywhere else (every dark
       // streak, and bright ones over terrain) the streak scales the pixel by up to the glow's
       // share of its light. That keeps the pixel's own hue: subtracting the sky's glow from
