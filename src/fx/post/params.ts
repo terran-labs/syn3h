@@ -51,6 +51,16 @@ export const postShaftHaze = defineParam({ id: 'post.shaftHaze', label: 'Sun sha
 export const postShaftContrast = defineParam({ id: 'post.shaftContrast', label: 'Sun ray contrast', group: g, scope: c, default: 0.8, min: 0, max: 2, step: 0.05 })
 /** How far from the sun (screen heights) the gaps and clouds that shape the beams are weighed. */
 export const postShaftReach = defineParam({ id: 'post.shaftReach', label: 'Sun shaft source size', group: g, scope: c, default: 0.12, min: 0.02, max: 0.5, step: 0.01 })
+/**
+ * Sun rays where the way to the sun is partly blocked: ray strength and contrast are multiplied
+ * by up to these where the march toward the sun crosses an edge (a ridge, a spire, trees, a
+ * break in cloud), and by 1 where it is all open sky or all shut. So beams through gaps and past
+ * edges sharpen while a sun in open sky keeps its soft shipped burst. Both scale the same
+ * streaks: their product is what shows (2 and 1.75 give 3.5 times the swing, as post.shafts 1.1
+ * with post.shaftContrast 1.4 did globally). 1 and 1 turn it off.
+ */
+export const postGapShafts = defineParam({ id: 'post.gapShafts', label: 'Sun rays through gaps: extra strength', group: g, scope: c, default: 2, min: 1, max: 4, step: 0.05 })
+export const postGapContrast = defineParam({ id: 'post.gapContrast', label: 'Sun rays through gaps: extra contrast', group: g, scope: c, default: 1.75, min: 1, max: 3, step: 0.05 })
 export const postLowSun = defineParam({ id: 'post.lowSun', label: 'Extra shafts at low sun', group: g, scope: c, default: 0.6, min: 0, max: 3, step: 0.05 })
 export const postFlare = defineParam({ id: 'post.flare', label: 'Lens streak and ghosts', group: g, scope: c, default: 0.5, min: 0, max: 2, step: 0.05 })
 
