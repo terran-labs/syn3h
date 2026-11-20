@@ -32,6 +32,9 @@ The release record and `ops/STATE.md` identify the exact source and validation e
     loaded. With worklets loaded, the same graph renders on the "Realtime AudioWorklet thread",
     which is why every earlier dump named that thread. The fault is in Web Audio rendering
     under load, whatever thread does it.
+  - For players: a Chrome 157 renderer can crash while rendering this page's ordinary Web Audio
+    on a heavily loaded machine. Observed only in headless test browsers at load 12 and above;
+    never observed in a real session. No product avoidance is known.
   - Established: all 39 such crash dumps on the release machine since 15 November come from
     Playwright test browsers (remote debugging, unsafe WebGPU), none from a real browser
     session. They cover several test scripts as well as the net smoke, where they land most
@@ -42,9 +45,11 @@ The release record and `ops/STATE.md` identify the exact source and validation e
     did not crash in 60 isolated rams with audio running.
   - Not established: which CHECK fires (no public symbols for this official Mac build; no
     matching Chromium issue found), what the loaded release runs add, and whether players hit it.
-  - Not avoided: the net smoke's pages refuse AudioWorklet modules (tools/net-smoke.mjs), which
-    removes the worklet thread but not the crash. No product change. A draft Chromium report
-    awaits the owner's decision to file; it names the worklet thread and needs this correction.
+  - Avoided in the net smoke only: its pages keep every AudioContext suspended
+    (tools/net-smoke.mjs), which stops Chrome's rendering callbacks (a probe counted 46 a second
+    running and none suspended); the game then never builds its audio graph. Refusing only the
+    worklet modules did not avoid it and was removed. No product change. A draft Chromium report
+    awaits the owner's decision to file.
   - Dumps: headless Chrome on macOS ignores `--crash-dumps-dir` and writes to
     `~/Library/Application Support/Google/Chrome/Crashpad/completed`. They hold environment
     variables: keep them on the machine. To print a dump's faulting thread and whether a test
