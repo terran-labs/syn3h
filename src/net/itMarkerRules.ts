@@ -64,8 +64,33 @@ export function itMarkerTarget<V>(tagMode: boolean, it: number, vehicleOf: (id: 
 export const CLEAR_LIFT_MAX = 40
 /** Clearance kept above the circle, as a share of its radius; the fade runs across it. */
 export const CLEAR_MARGIN = 0.5
-/** How far below the marker's centre its lowest point is, metres (the gem's point, the bob, the halo). */
+/** How far below and above the marker's centre its lowest and highest points are, metres (the gem's points, the bob, the halo). */
 export const MARKER_BOTTOM = 1.7
+export const MARKER_TOP = 1.0
+
+/**
+ * How far the whole marker at `lift` is clear of the circle: the lesser of its lowest and
+ * highest points' clearances (above the circle the lowest point is the nearer, below it the
+ * highest). `screenOf(height)` is where a point that high over the vehicle's origin lands on
+ * screen ([x, y] from the centre, as shares of the screen's height), or null behind the camera.
+ */
+export function markerGap(lift: number, radius: number, screenOf: (height: number) => readonly [number, number] | null): number {
+  let gap = Infinity
+  for (const h of [lift - MARKER_BOTTOM, lift + MARKER_TOP]) { const p = screenOf(h); if (p) gap = Math.min(gap, clearance(p[0], p[1], radius)) }
+  return gap
+}
+
+/**
+ * How much of the marker's beam shows: its light rises from the gem, so with the gem under the
+ * circle and within its width it would cross the middle of the view. Full above the circle and
+ * well to its sides, none under it, eased across the sides.
+ */
+export function beamShows(lift: number, radius: number, screenOf: (height: number) => readonly [number, number] | null): number {
+  const p = screenOf(lift)
+  if (!p || p[1] >= 0 || !(radius > 0)) return 1
+  const x = Math.min(1, Math.max(0, (Math.abs(p[0]) - radius) / (radius * 0.5)))
+  return x * x * (3 - 2 * x)
+}
 
 /**
  * How far a point on screen is clear of the circle of `radius` round the centre: its distance
@@ -78,16 +103,15 @@ export function clearance(x: number, y: number, radius: number): number {
 
 /**
  * Your own marker's lift over your vehicle, raised from `base` just far enough that its lowest
- * point sits CLEAR_MARGIN above the clear circle, and how much of it shows. `screenOf(lift)` is
- * where the marker's lowest point lands on screen at that lift ([x, y] from the centre, as shares
- * of the screen's height), or null when it is behind the camera. Raising it moves it up the
+ * point sits CLEAR_MARGIN clear of the circle (markerGap), and how much of it shows. `screenOf` is
+ * as for markerGap. Raising it moves it up the
  * screen. Where even CLEAR_LIFT_MAX is not enough, it stays there and fades by its clearance,
  * to nothing at the circle's edge: it may sit dimly at the circle's rim, never over the centre.
  */
 export function clearOfCentre(base: number, radius: number, screenOf: (lift: number) => readonly [number, number] | null): { lift: number; opacity: number } {
   if (!(radius > 0)) return { lift: base, opacity: 1 }
   const want = radius * CLEAR_MARGIN
-  const gap = (lift: number) => { const p = screenOf(lift); return p ? clearance(p[0], p[1], radius) : Infinity }
+  const gap = (lift: number) => markerGap(lift, radius, screenOf)
   if (gap(base) >= want) return { lift: base, opacity: 1 }
   const top = Math.max(base, CLEAR_LIFT_MAX), highest = gap(top)
   if (highest < want) {
@@ -105,8 +129,8 @@ export const JUMP_FADE = 0.15
 /** A change of lift that would move the marker more than this share of the screen's height in one frame is a jump. */
 export const JUMP_SCREEN = 0.05
 
-/** Your own marker this frame: its lift, how much shows, and the jump fade (1 shown, 0 hidden). */
-export interface OwnMarker { lift: number; opacity: number; fade: number }
+/** Your own marker this frame: its lift, how much shows, the jump fade (1 shown, 0 hidden), and how much of its beam shows (beamShows). */
+export interface OwnMarker { lift: number; opacity: number; fade: number; beam: number }
 
 /**
  * One frame of your own marker. It follows the lowest lift that keeps it clear of the circle
@@ -118,13 +142,13 @@ export interface OwnMarker { lift: number; opacity: number; fade: number }
  */
 export function stepOwnMarker(last: OwnMarker | null, base: number, radius: number, screenOf: (lift: number) => readonly [number, number] | null, dt: number): OwnMarker {
   const target = clearOfCentre(base, radius, screenOf).lift
-  const gap = (lift: number) => { const p = screenOf(lift); return p ? clearance(p[0], p[1], radius) : Infinity }
+  const gap = (lift: number) => markerGap(lift, radius, screenOf)
   const shows = (lift: number) => {
     if (!(radius > 0)) return 1
     const x = Math.min(1, Math.max(0, gap(lift) / (radius * CLEAR_MARGIN)))
     return x * x * (3 - 2 * x)
   }
-  if (!last) return { lift: target, fade: 1, opacity: shows(target) }
+  if (!last) return { lift: target, fade: 1, opacity: shows(target), beam: beamShows(target, radius, screenOf) }
   const step = Math.max(0, dt) / JUMP_FADE
   let jump = false
   if (radius > 0 && target !== last.lift) {
@@ -138,5 +162,5 @@ export function stepOwnMarker(last: OwnMarker | null, base: number, radius: numb
     fade = gap(last.lift) > 0 ? Math.max(0, last.fade - step) : 0
     lift = fade > 0 ? last.lift : target
   }
-  return { lift, fade, opacity: fade * shows(lift) }
+  return { lift, fade, opacity: fade * shows(lift), beam: beamShows(lift, radius, screenOf) }
 }

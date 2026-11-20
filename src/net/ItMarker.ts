@@ -17,7 +17,7 @@ import { attribute, float, min, mix, normalView, positionViewDirection, select, 
 import type { Game, System } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { hotExposureDim } from '../vehicles/skins/hotExposure'
-import { type OwnMarker, stepOwnMarker, itMarkerVisible, localMarkerLift, MARKER_BOTTOM, ownMarkerClear, REMOTE_LIFT } from './itMarkerRules'
+import { type OwnMarker, stepOwnMarker, itMarkerVisible, localMarkerLift, ownMarkerClear, REMOTE_LIFT } from './itMarkerRules'
 
 /** Gem: sides round the waist, waist radius, crown and pavilion heights (a long point down). */
 const GEM_SIDES = 6
@@ -115,7 +115,7 @@ export function buildItMarkerGeometry(): THREE.BufferGeometry {
 
 /** The marker's one material, and `scale`, which multiplies every colour so night exposure does not bleach it. */
 export function buildItMarkerMaterial() {
-  const scale = uniform(1), fade = uniform(1)
+  const scale = uniform(1), fade = uniform(1), beam = uniform(1)
   const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: true, side: THREE.FrontSide })
   m.fog = false
   const partId = attribute('itPart', 'float'), mk = attribute('itMark', 'vec4')
@@ -135,8 +135,8 @@ export function buildItMarkerMaterial() {
 
   const isGem = partId.lessThan(0.5), isHalo = partId.lessThan(1.5)
   m.colorNode = select(isGem, gem, select(isHalo, vec3(HALO.r, HALO.g, HALO.b), vec3(BEAM.r, BEAM.g, BEAM.b))).mul(scale)
-  m.opacityNode = select(isGem, float(1), select(isHalo, haloAlpha, beamAlpha)).mul(fade)
-  return { material: m, scale, fade }
+  m.opacityNode = select(isGem, float(1), select(isHalo, haloAlpha, beamAlpha.mul(beam))).mul(fade)
+  return { material: m, scale, fade, beam }
 }
 
 export class ItMarker implements System {
@@ -148,6 +148,8 @@ export class ItMarker implements System {
   private readonly dim: ReturnType<typeof buildItMarkerMaterial>['scale']
   /** How much of the marker shows: below 1 only for your own, where it cannot clear the centre. */
   private readonly fade: ReturnType<typeof buildItMarkerMaterial>['fade']
+  /** How much of the beam shows: none while your own gem is under the middle of the view (beamShows). */
+  private readonly beam: ReturnType<typeof buildItMarkerMaterial>['beam']
   private readonly probe = new THREE.Vector3()
   /** Your own marker last frame (stepOwnMarker); null when not shown. */
   private own: OwnMarker | null = null
@@ -156,8 +158,8 @@ export class ItMarker implements System {
   private t = 0
 
   constructor(private readonly game: Game) {
-    const { material, scale, fade } = buildItMarkerMaterial()
-    this.dim = scale; this.fade = fade
+    const { material, scale, fade, beam } = buildItMarkerMaterial()
+    this.dim = scale; this.fade = fade; this.beam = beam
     this.mesh = new THREE.Mesh(buildItMarkerGeometry(), material)
     // Drawn after the other see through things, so its depth writes hide nothing of theirs.
     this.mesh.renderOrder = 10
@@ -181,21 +183,21 @@ export class ItMarker implements System {
     this.mesh.visible = itMarkerVisible(v, this.local, distance)
     if (!v || !this.mesh.visible) { this.own = null; return }
     const bob = Math.sin(this.t * 2.2) * 0.18
-    let lift = REMOTE_LIFT + bob, opacity = 1
+    let lift = REMOTE_LIFT + bob, opacity = 1, beam = 1
     if (v === this.local) {
       // Your own: high enough to read from the chase camera, and never over the middle of your
       // view, where you aim (clearOfCentre). Measured on this frame's camera.
       camera.updateMatrixWorld()
       const p = v.object.position, h = Math.max(1, this.game.renderer.domElement.clientHeight), w = Math.max(1, this.game.renderer.domElement.clientWidth)
       const clear = this.own = stepOwnMarker(this.own, localMarkerLift(horizontal, rise, camera.fov) + bob, ownMarkerClear.value, l => {
-        const q = this.probe.set(p.x, p.y + l - MARKER_BOTTOM, p.z).applyMatrix4(camera.matrixWorldInverse)
+        const q = this.probe.set(p.x, p.y + l, p.z).applyMatrix4(camera.matrixWorldInverse)
         if (q.z > -0.05) return null
         q.applyMatrix4(camera.projectionMatrix)
         return [q.x * w / (2 * h), q.y / 2]
       }, dt)
-      lift = clear.lift; opacity = clear.opacity
+      lift = clear.lift; opacity = clear.opacity; beam = clear.beam
     } else this.own = null
-    this.fade.value = opacity
+    this.fade.value = opacity; this.beam.value = beam
     this.mesh.visible = opacity > 0.01
     this.mesh.position.copy(v.object.position)
     this.mesh.position.y += lift
