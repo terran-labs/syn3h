@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-20 02:25 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-20 02:55 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,13 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2002 (release-67), source e4d6f5b8, frozen copy 20261120-021322-e4d6f5b8,
-Worker version 77f52e23, at https://www.syn3h.com/ since 20 November 02:18 PST.
+Live: v26.11.2003 (release-68, Thunder fireworks), source 387dbcfc, frozen copy
+20261120-024251-387dbcfc, Worker version bbc0f56e, at https://www.syn3h.com/ since 20 November 02:46 PST.
+Protocol gained detonate and detonated in 2003; staging's mixed room with a frozen 26.11.2002 client
+passed 7 of 7, and a one-off check (/tmp/orch-scripts/thunder-mixed.mjs) showed the old page takes the
+new messages without error and a new client bursts an old player's bolt itself after END_WAIT.
+The first 2003 attempt stopped in its dry run on two renderer crashes at the ram step (no deploy);
+the weapons builder traced every renderer crash since 17 Nov to Chrome's realtime AudioWorklet thread.
 Since 2002 (R2 step two) deployments carry no old versions: the Worker serves its own version
 from its assets and every earlier one from R2 only (bucket syn3h-versions, ledger
 ../Syn3h-stable/r2-verified.tsv). release.sh runs r2-preflight before building and archives the
@@ -78,6 +83,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2000 | 65 | m-ui-2000 | one glass style, phone panels, chat bubbles, pause screen with screenshots, sunk Zorb cue, own it marker clear |
 | v26.11.2001 | 66 | m-freeze-2001 | shaders and pipelines prepared at Play under cover, in parallel; bots build nothing in play; Copy diagnostics |
 | v26.11.2002 | 67 | m-r2-2002 | deployments stop carrying old versions; earlier versions served from R2 only |
+| v26.11.2003 | 68 | m-thunder-2003 | Plasma Thunder skips, flares and ends in fireworks |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
