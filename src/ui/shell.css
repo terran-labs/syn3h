@@ -642,14 +642,3 @@
   .syn3h-shell button.galaxy-label > strong { font-size: 9em; line-height: 1.3333; letter-spacing: .2em; margin-right: -.2em; }
   .syn3h-shell button.galaxy-label > small { font-size: 8.5em; line-height: 1.1765; }
 }
-
-/* The covered, opt-in game composite owns only this button's material. */
-html .syn3h-shell.exploration-ui .hud-navigation .inspector-toggle[data-glass-drawn] {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-html .hud-navigation .inspector-toggle[data-glass-drawn]::before,
-html .hud-navigation .inspector-toggle[data-glass-drawn]::after { opacity: 0; }

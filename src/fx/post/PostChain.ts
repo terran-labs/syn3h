@@ -691,7 +691,7 @@ export class PostChain {
           const normal = outer.div(max(length(outer), 0.001)).mul(local.sign())
           const bend = normal.mul(edge).mul(radius).mul(glass.pressed.mul(0.10).add(0.24)).div(size)
           const sample = (scale: number, frost = 0) => {
-            const at = clamp(uv().sub(bend.mul(scale)).add(vec2(frost, -frost).div(size)), 0, 1)
+            const at = clamp(uv().sub(bend.mul(scale)).add(vec2(frost, -frost).mul(glass.frost.x).div(size)), 0, 1)
             if (finished) return finished.sample(at).rgb
             // Keep the final composite's local lighting and grade. Only the scene
             // colour difference is displaced in this cheaper trial.
@@ -699,10 +699,11 @@ export class PostChain {
             return original.rgb.add(display(at).sub(display(uv())))
           }
           const lens = vec3(sample(1.04).r, sample(1).g, sample(0.96).b)
-          const tint = dot(lens, vec3(0.2126, 0.7152, 0.0722)).mul(0.16).add(0.06)
-          const rim = smoothstep(-1.5, -0.4, distance).mul(dot(normal, vec2(-0.45, -0.89)).mul(0.16).add(0.18))
-          const frost = sample(1, 1.25).add(sample(1, -1.25)).mul(0.5)
-          const body = mix(mix(lens, frost, 0.18), vec3(0.13), tint).add(rim)
+          const frost = sample(1, 0.65).add(sample(1, -0.65)).mul(0.5)
+          const blurred = mix(lens, frost, 0.5)
+          const luminance = dot(blurred, vec3(0.2126, 0.7152, 0.0722))
+          const filtered = clamp(mix(vec3(luminance), blurred, glass.frost.y).mul(glass.frost.z), 0, 1)
+          const body = mix(filtered, glass.body.rgb, glass.body.a)
           result.assign(vec4(mix(original.rgb, body, float(1).sub(smoothstep(-0.5, 0.5, distance))), 1))
         })
         return result
