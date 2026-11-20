@@ -97,7 +97,7 @@
 .liquid-glass:hover { --glass-rim: .85; background-color: var(--glass-body-hover); }
 /* Pressed (and .held, the touch controls' finger-down state): the spectrum comes up and the
    glass gives a little. On (aria-pressed, .is-current): a pale body, the rim at full. */
-.liquid-glass:active, .liquid-glass.held { --glass-sheen: 1; --glass-rim: 1; transform: scale(.97); }
+.liquid-glass:active, .liquid-glass.held { --glass-sheen: 1; --glass-rim: 1; transform: scale(.97); background-color: var(--glass-body-on); }
 .liquid-glass:is([aria-pressed="true"], .is-current) { --glass-rim: 1; --glass-sheen: .75; background-color: var(--glass-body-on); }
 /* The action that leads on: the same glass, a little paler, so it is found first. */
 .liquid-glass.is-primary { --glass-body: rgb(255 255 255 / .12); --glass-body-hover: rgb(255 255 255 / .17); --glass-rim: .8; }

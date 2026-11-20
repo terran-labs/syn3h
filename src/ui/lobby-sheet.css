@@ -51,7 +51,7 @@
 .syn3h-shell.exploration-ui .lobby-sheet .about-updates .updates-pinned { border: 0; padding: 0; background: none; }
 
 @media (max-width: 600px), (max-height: 500px) {
-  .lobby-sheet-body { padding: 22px 52px 32px 12px; }
+  .lobby-sheet-body { padding: 22px 60px 32px 12px; }
   .syn3h-shell.exploration-ui .lobby-sheet .about-columns { grid-template-columns: 1fr; gap: 16px; }
 }
 
