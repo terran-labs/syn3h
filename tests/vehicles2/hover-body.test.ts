@@ -1,6 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as T from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
+import { params } from '../../shared/params'
+import { vehicleShading } from '../../src/core/quality'
+import { mergedSurfaces } from '../../src/vehicles/skins/mergeStatic'
 import { Hovercraft, HOVER_DESIGN } from '../../src/vehicles/Hovercraft'
 import { GameHover } from '../../src/vehicles/hover/GameHover'
 import { R3_EYE } from '../../src/vehicles/hovergen/round3'
@@ -20,7 +23,6 @@ const study = (v: Hovercraft) => (v as unknown as { study: GameHover }).study
 describe('the generated hovercraft body', () => {
   it('is one round four design, with no body selector and no loading state', async () => {
     expect(R4_DESIGNS.map(d => d.id)).toContain(HOVER_DESIGN.id)
-    const { params } = await import('../../shared/params')
     expect(params.get('hover.body')).toBeUndefined()
     const h = harness(), v = new Hovercraft(h.game, h.terrain, new T.Vector3(0, 3, 0))
     await v.modelReady
@@ -180,6 +182,70 @@ describe('shared hovercraft geometry', () => {
     expect(disposed).toBe(0)
     second.dispose()
   })
+})
+
+it('shares plain hovercraft graphs while keeping each craft’s paint, lamps and material lifetime', () => {
+  const savedTier = vehicleShading.value
+  params.set(vehicleShading.def.id, 0)
+  const h = harness()
+  const first = new Hovercraft(h.game, h.terrain, new T.Vector3(0, 3, 0))
+  const second = new Hovercraft(h.game, h.terrain, new T.Vector3(10, 3, 0))
+  const packedMesh = (vehicle: Hovercraft, level: 0 | 1) => {
+    const mesh = study(vehicle).levels[level].object.children.find(node =>
+      node instanceof T.Mesh && node.geometry.hasAttribute('surfaceId'))
+    if (!(mesh instanceof T.Mesh)) throw new Error('Expected the packed hovercraft hull')
+    return mesh as T.Mesh<T.BufferGeometry, T.MeshStandardNodeMaterial>
+  }
+  const valuesFor = (mesh: T.Mesh<T.BufferGeometry, T.MeshStandardNodeMaterial>, channel: 'colorNode' | 'emissiveNode') => {
+    const values: unknown[] = []
+    mesh.material[channel]?.traverse(node => {
+      const n = node as unknown as { updateType?: string; update?: (frame: unknown) => void; value?: unknown }
+      if (n.updateType === 'object') n.update?.({ object: mesh, material: mesh.material })
+      if ('value' in n) values.push(n.value)
+    })
+    return values
+  }
+  let disposedFirst = false
+  try {
+    first.setColors(0xff0000, 0x00ff00)
+    second.setColors(0x0000ff, 0xffffff)
+    for (const level of [0, 1] as const) {
+      const a = packedMesh(first, level), b = packedMesh(second, level)
+      expect(a.material).not.toBe(b.material)
+      expect(a.material.customProgramCacheKey()).toBe(b.material.customProgramCacheKey())
+      expect(a.material.colorNode).toBe(b.material.colorNode)
+      expect(a.material.emissiveNode).toBe(b.material.emissiveNode)
+      const aSources = mergedSurfaces.get(a.material)!, bSources = mergedSurfaces.get(b.material)!
+      const paintA = aSources.find(source => source.userData.showroom === 'paint')!
+      const paintB = bSources.find(source => source.userData.showroom === 'paint')!
+      expect(valuesFor(a, 'colorNode')).toContain(paintA.color)
+      expect(valuesFor(b, 'colorNode')).toContain(paintB.color)
+      expect(valuesFor(b, 'colorNode')).not.toContain(paintA.color)
+
+      study(first).levels[level].setLights(true, true)
+      study(second).levels[level].setLights(false, false)
+      const tailA = aSources.find(source => source.color.getHex() === 0x400808)!
+      const tailB = bSources.find(source => source.color.getHex() === 0x400808)!
+      expect(tailA.emissive).not.toEqual(tailB.emissive)
+      expect(valuesFor(a, 'emissiveNode')).toContain(tailA.emissive)
+      expect(valuesFor(b, 'emissiveNode')).toContain(tailB.emissive)
+      expect(valuesFor(b, 'emissiveNode')).not.toContain(tailA.emissive)
+    }
+    const survivor = packedMesh(second, 0)
+    let survivorDisposed = false
+    survivor.material.addEventListener('dispose', () => { survivorDisposed = true })
+    first.dispose()
+    disposedFirst = true
+    expect(survivorDisposed).toBe(false)
+    expect(valuesFor(survivor, 'colorNode')).toContain(
+      mergedSurfaces.get(survivor.material)!.find(source => source.userData.showroom === 'paint')!.color,
+    )
+  } finally {
+    if (!disposedFirst) first.dispose()
+    second.dispose()
+    params.set(vehicleShading.def.id, savedTier)
+    h.world.free()
+  }
 })
 
 describe('hovercraft lights', () => {

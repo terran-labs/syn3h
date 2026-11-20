@@ -57,6 +57,25 @@ describe('swapping the player vehicle in place',()=>{
   expect(old.body.isEnabled()).toBe(false)
   w.physics.free()
  })
+ it('keeps both shared headlights lit on the next frame of a nighttime round trip',()=>{
+  const w=world(),{swapper}=player(w)
+  w.game.scene.add(Object.assign(new T.Object3D(),{sunDirection:{value:new T.Vector3(0,-1,0)}}))
+  const beams=()=>w.game.scene.getObjectsByProperty('isSpotLight',true) as T.SpotLight[]
+  const original=beams()
+  expect(original).toHaveLength(2)
+  for(const kind of ['hovercraft','buggy'] as const){
+   const oldRig=original[0].parent!
+   swapper.swap(kind)
+   expect(oldRig.parent).toBeNull()
+   // Simulate a stale traversal after the new owner, with the former vehicle parked.
+   w.game.scene.add(oldRig)
+   w.step();w.game.scene.updateMatrixWorld()
+   expect(beams().map(b=>b.id)).toEqual(original.map(b=>b.id))
+   expect(original.every(b=>b.intensity>0&&b.parent===b.target.parent)).toBe(true)
+   oldRig.removeFromParent()
+  }
+  swapper.dispose();w.physics.free()
+ })
  it('does nothing when the player already drives that kind, aliases included',()=>{
   const w=world(),{slot,swapper}=player(w),before=slot.current
   expect(swapper.swap('buggy')).toBe(before);expect(swapper.swap('buggy-syn3h')).toBe(before);expect(swapper.swap('buggy-classic')).toBe(before);expect(before.body.isValid()).toBe(true)

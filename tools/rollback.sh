@@ -7,6 +7,14 @@
 # Uses `wrangler rollback <version>`: Worker versions are immutable and include the static
 # assets, so this restores the exact client and server that release shipped. Releases are
 # listed in ../Syn3h-stable/releases.tsv (written by tools/release.sh).
+#
+# Frozen versions (?v=<version>) after a rollback: the Worker restored is the old one, with its
+# own code and its own carried copies under /v/. A Worker without the FROZEN binding (every
+# release before the R2 move) serves frozen versions from those carried copies only, so versions accepted after it
+# 404 until production moves forward again; their files are safe in R2 (bucket syn3h-versions).
+# A Worker with the FROZEN binding reads R2 first, then its carried copies, so every uploaded
+# version keeps working. Once deployments stop carrying (step two of the R2 move, see
+# tools/frozen-versions.mjs), R2 is the only place a frozen version is served from.
 set -eu
 cd "$(dirname "$0")/.."
 . tools/cloudflare-token.sh

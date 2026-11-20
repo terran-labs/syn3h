@@ -71,7 +71,24 @@ export interface BungeeHooks {
   send?(cord: CordWire): void
   /** A short cue for the sound lane to voice; optional. */
   cue?(name: 'bungeeLaunch' | 'bungeeAttach' | 'bungeeRelease', at: THREE.Vector3): void
+  /**
+   * The grabbed player asks the owner of a cord tied to them to let go (networking sends an
+   * 'unhook'): a press of their own Grapple, or a double tap of brake. Optional.
+   */
+  unhook?(owner: number): void
+  /** Whether breaking free is offered now (Explore only; see `unhook`). Without it, never. */
+  mayUnhook?(): boolean
 }
+
+/**
+ * Why a cord was let go, for its effect and the rules that hook in (see Bungee.letGo):
+ *   released  its owner let go (G, a double tap, the button, a bot finishing)
+ *   unhooked  the player it was tied to asked (their own Grapple, or a double tap of brake)
+ *   severed   the grappler was hit with another weapon (the weapons lane's rule)
+ *   snapped   stretched past its limit
+ *   timedOut  held longer than bungee.timeout
+ */
+export type CordRelease = 'released' | 'unhooked' | 'severed' | 'snapped' | 'timedOut'
 
 interface Hook {
   pos: THREE.Vector3
@@ -191,6 +208,8 @@ export class Bungee implements System {
 
   private fireWas = false
   private lastPress = -Infinity
+  private brakeWas = false
+  private lastBrake = -Infinity
   private readyAt = 0
   private wheel = 0
   private readonly keys = new Set<string>()
@@ -200,7 +219,7 @@ export class Bungee implements System {
   /** Reel held from a button (see setReel): -1 reels in, 1 lets out, 0 does neither. */
   reel: -1 | 0 | 1 = 0
   /** Counts for automated checks. */
-  stats = { launched: 0, attachedGround: 0, attachedVehicle: 0, released: 0, snapped: 0, timedOut: 0 }
+  stats = { launched: 0, attachedGround: 0, attachedVehicle: 0, released: 0, unhooked: 0, severed: 0, snapped: 0, timedOut: 0 }
 
   constructor(private readonly game: Game, private readonly hooks: BungeeHooks, target: Window = window) {
     this.shared = sharedLook(game, 'bungee', () => new TetherLook(game))
@@ -285,8 +304,11 @@ export class Bungee implements System {
     return true
   }
 
-  /** Let go of the local player's cord. */
-  letGo(why: 'released' | 'snapped' | 'timedOut' = 'released'): void {
+  /**
+   * Let go of this Bungee's own cord. The one place a cord is let go, whatever the reason:
+   * the release effect and any rule about why it went hook in here.
+   */
+  letGo(why: CordRelease = 'released'): void {
     const c = this.mine
     if (!c) return
     this.stats[why]++
@@ -389,6 +411,13 @@ export class Bungee implements System {
     return this.nearestTo(new THREE.Vector3(...wire.at), a).distanceTo(a) <= longest * bungeeSnap.value
   }
 
+  /** Owners of attached cords tied to the local player's vehicle (someone else's Grapple on us). */
+  hookedBy(): number[] {
+    const self = this.hooks.self(), out: number[] = []
+    for (const c of this.cords.values()) if (c.owner !== self && !c.hook && c.to === self) out.push(c.owner)
+    return out
+  }
+
   /** A player left: drop their cord, and any cord tied to them. */
   forget(id: number): void {
     this.remove(id)
@@ -444,6 +473,20 @@ export class Bungee implements System {
     const padRelease = Boolean(pad?.buttons[5]?.pressed)
     if (padRelease && !this.padWas.release) this.letGo('released')
     this.padWas.release = padRelease
+
+    // Tied to by someone else's cord: the grabbed player's ways out (the Foreman, 19 November
+    // 2026). A double tap of brake asks every such cord's owner to let go, and so does the first
+    // press of their own Grapple, instead of launching it. Never for a bot's Bungee (controlled).
+    if (!this.hooks.control && this.hooks.mayUnhook?.()) {
+      const on = this.hookedBy()
+      const brake = input.brakes
+      if (on.length && brake && !this.brakeWas) {
+        if (this.game.time - this.lastBrake < DOUBLE_TAP) { for (const owner of on) this.hooks.unhook?.(owner); this.lastBrake = -Infinity }
+        else this.lastBrake = this.game.time
+      }
+      this.brakeWas = brake
+      if (on.length && pressed && !this.mine) { for (const owner of on) this.hooks.unhook?.(owner); this.lastPress = this.game.time; return }
+    }
 
     const c = this.mine
     if (!c) {

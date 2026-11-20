@@ -53,5 +53,5 @@ describe('variety across seeds', () => {
     // The amount of land no longer varies with the seed: the land share slider sets it.
     expect(mountains.size).toBeGreaterThanOrEqual(6)
     expect(midpoints.size).toBeGreaterThan(8)
-  }, 40000)
+  })
 })

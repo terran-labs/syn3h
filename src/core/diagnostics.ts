@@ -1,6 +1,6 @@
 import type { Game } from './Game'
 import type { PerformanceEnvironment } from './performance'
-import { deviceLostMessage } from './renderOptions'
+import { deviceLostMessage, rendererBackendReason } from './renderOptions'
 import type { StartFailure } from './graphicsSupport'
 
 /**
@@ -12,6 +12,13 @@ import type { StartFailure } from './graphicsSupport'
 export interface StartupPhase { name: string; startMs: number; endMs: number; ms: number; detail?: string }
 export interface StartupTiming {
   phases: StartupPhase[]
+  initialTerrainMs?: number
+  firstLobbyFrameMs?: number
+  firstWorldFrameMs?: number
+  playRequestMs?: number
+  firstRevealMs?: number
+  firstPlayableFrameMs?: number
+  entryPrecompileMs?: number
   /** Navigation milestones read from the browser, filled in when the overlay or automation asks. */
   navigation?: { responseEndMs: number; domContentLoadedMs: number; loadEventMs: number; scripts: number; scriptBytes: number; lastScriptEndMs: number }
   backend?: string
@@ -37,6 +44,140 @@ export function recordStartupPhase(name: string, startMs: number, detail?: strin
 export async function timeStartup<T>(name: string, step: () => Promise<T> | T): Promise<T> {
   const start = performance.now()
   try { return await step() } finally { recordStartupPhase(name, start) }
+}
+
+/** First startup terrain generation, before any room or player world changes. */
+export function recordInitialTerrainGeneration(durationMs: number): void {
+  startupTiming.initialTerrainMs ??= durationMs
+}
+
+export function recordStartupLobbyFrame(): void {
+  startupTiming.firstLobbyFrameMs ??= performance.now()
+}
+
+export function recordStartupPlayRequest(): void {
+  startupTiming.playRequestMs ??= performance.now()
+}
+
+export function cancelStartupPlayRequest(): void {
+  if (startupTiming.firstRevealMs !== undefined) return
+  startupTiming.playRequestMs = undefined
+  startupTiming.entryPrecompileMs = undefined
+  coveredVehicleDraws.clear()
+}
+
+/** Returns true only at the first actual fade or immediate menu close into play. */
+export function recordStartupReveal(): boolean {
+  if (startupTiming.firstRevealMs !== undefined) return false
+  startupTiming.firstRevealMs = performance.now()
+  return true
+}
+
+export function recordStartupGameDraw(playing: boolean): void {
+  const now = performance.now()
+  startupTiming.firstWorldFrameMs ??= now
+  if (playing && startupTiming.playRequestMs !== undefined && startupTiming.firstRevealMs !== undefined) {
+    startupTiming.firstPlayableFrameMs ??= now
+  }
+}
+
+export function recordStartupPrecompile(durationMs: number): void {
+  if (startupTiming.playRequestMs === undefined || startupTiming.firstRevealMs !== undefined) return
+  startupTiming.entryPrecompileMs ??= durationMs
+}
+
+type WarmIssue = 'Pipeline compilation failed' | 'Entry warm-up timed out' | 'GPU completion timed out' | 'Entry warm-up failed' | 'GPU completion failed' | 'System warm-up failed' | 'Bot warm draw failed' | 'Player vehicle warm-up failed'
+const warmIssues = new Map<WarmIssue, { count: number; lastSystem?: number }>()
+
+/** Session totals use fixed labels. A thrown error can contain private URLs. */
+export function recordEntryWarmIssue(reason: WarmIssue, system?: number): void {
+  warmIssues.set(reason, { count: (warmIssues.get(reason)?.count ?? 0) + 1, lastSystem: system })
+}
+
+const coveredVehicleKinds = ['buggy', 'jet', 'hovercraft', 'tank'] as const
+type CoveredVehicleKind = typeof coveredVehicleKinds[number]
+const coveredVehicleDraws = new Map<CoveredVehicleKind, { count: number; ms: number }>()
+
+/** Record a real covered vehicle draw's synchronous duration for the first entry report. */
+export function recordCoveredVehicleDraw(kind: string, durationMs: number): void {
+  if (startupTiming.playRequestMs === undefined || startupTiming.firstRevealMs !== undefined) return
+  const vehicle = kind === 'buggy-syn3h' || kind === 'buggy-classic'
+    ? 'buggy' : coveredVehicleKinds.find(name => name === kind)
+  if (!vehicle || !Number.isFinite(durationMs) || durationMs < 0) return
+  const previous = coveredVehicleDraws.get(vehicle)
+  if (previous) { previous.count++; previous.ms += durationMs }
+  else coveredVehicleDraws.set(vehicle, { count: 1, ms: durationMs })
+}
+
+/** A fixed set of numeric timings for Copy diagnostics, with no free-form phase metadata. */
+export function startupReportLines(): string[] {
+  const t = startupTiming
+  const phase = (name: string) => t.phases.find(p => p.name === name)
+  const ms = (value: number | undefined) => value !== undefined && Number.isFinite(value) && value >= 0
+    ? `${value.toFixed(1)} ms` : 'unavailable'
+  const since = (at: number | undefined, start: number | undefined) =>
+    at === undefined || start === undefined ? undefined : at - start
+  const nav = typeof performance !== 'undefined'
+    ? performance.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined
+    : undefined
+  const response = nav && nav.responseEnd > 0 ? nav.responseEnd : undefined
+  const lines = [
+    'Startup and entry timings',
+    `Page response from navigation ${ms(response)}`,
+    `Entry module from navigation ${ms(phase('run remaining modules to main()')?.endMs)}`,
+    `Initial terrain generation ${ms(t.initialTerrainMs)}`,
+    `First world frame submitted from navigation ${ms(t.firstWorldFrameMs)}`,
+    `First lobby frame submitted from navigation ${ms(t.firstLobbyFrameMs)}`,
+    `Covered entry precompile (elapsed) ${ms(t.entryPrecompileMs)}`,
+  ]
+  for (const [reason, issue] of warmIssues) {
+    lines.push(`${reason} x${issue.count}${issue.lastSystem ? ` (last system ${issue.lastSystem})` : ''}`)
+  }
+  const vehicleLines = coveredVehicleKinds.flatMap(kind => {
+    const entry = coveredVehicleDraws.get(kind)
+    return entry ? [`${kind} ${ms(entry.ms)} (${entry.count} ${entry.count === 1 ? 'draw' : 'draws'})`] : []
+  })
+  lines.push(
+    `Covered vehicle draws (synchronous) ${vehicleLines.join(', ') || 'unavailable'}`,
+    `Play to first reveal ${ms(since(t.firstRevealMs, t.playRequestMs))}`,
+    `Play to first playable frame submitted ${ms(since(t.firstPlayableFrameMs, t.playRequestMs))}`,
+  )
+  const fixedPhases = new Map([
+    ['fetch and run modules up to Game.ts', 'Load modules through Game'],
+    ['run remaining modules to main()', 'Remaining modules'],
+    ['physics init (Rapier WASM), beside the probe and renderer', 'Physics init'],
+    ['quality initialise (WebGPU adapter probe)', 'Adapter probe'],
+    ['renderer.init (adapter, device, context)', 'Renderer init'],
+    ['wait for physics after the renderer', 'Physics wait'],
+    ['build until terrain attached to quality', 'Terrain setup'],
+    ['param panel and wiring to game.start', 'Final setup'],
+    ['game.start to first animation frame', 'Start to first animation frame'],
+    ['frame 1 render end to next animation frame', 'Frame 1 to next animation frame'],
+    ['frame 1 render end to GPU work done', 'Frame 1 to GPU completion'],
+    ['lobby wordmark field bake', 'Lobby wordmark bake'],
+  ])
+  const phaseEntries: string[] = []
+  let smallMs = 0, smallCount = 0
+  for (const entry of [...t.phases].sort((a, b) => a.startMs - b.startMs)) {
+    let label = fixedPhases.get(entry.name)
+    if (!label) {
+      // Only registered startup labels use this printable form.
+      const system = /^build until add [1-9]\d*: ([A-Za-z][A-Za-z -]{2,32})$/.exec(entry.name)
+      const frame = /^frame ([123]) (systems update|render call \(shader and pipeline compile\))$/.exec(entry.name)
+      if (system) label = system[1]
+      else if (frame) label = `Frame ${frame[1]} ${frame[2] === 'systems update' ? 'update' : 'render'}`
+    }
+    if (label && entry.ms < 1) { smallMs += entry.ms; smallCount++; continue }
+    if (label) phaseEntries.push(`${label} ${ms(entry.ms)}`)
+  }
+  if (smallCount) phaseEntries.push(`Others under 1 ms (${smallCount}) ${ms(smallMs)}`)
+  if (phaseEntries.length) {
+    lines.push('Startup phases in start order (may overlap)')
+    for (let i = 0; i < phaseEntries.length; i += 3) lines.push(phaseEntries.slice(i, i + 3).join(' | '))
+  } else {
+    lines.push('Startup phases unavailable')
+  }
+  return lines
 }
 
 /** Fill navigation milestones from the browser's own timing entries. */
@@ -142,27 +283,81 @@ export function showRendererLost(info?: { api?: string; message?: string; reason
   return true
 }
 
-/**
- * getParameter is a blocking round trip to the GPU process and snapshots are built about once a
- * second, so the WebGL limit is asked once per context. It cannot change while the context lives.
- */
-const glLimits=new WeakMap<object,number>()
-function glMaxTextureSize(gl: WebGL2RenderingContext): number {
-  let size=glLimits.get(gl)
-  if(size===undefined){size=gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;glLimits.set(gl,size)}
-  return size
+interface GLIdentity {
+  readonly vendor: string | null
+  readonly family: string | null
+  readonly maxTextureSize: number | null
 }
+
+// Query the existing context once. Keep only the recognized family and vendor, plus the limit.
+const glIdentities = new WeakMap<WebGL2RenderingContext, GLIdentity>()
+function glIdentity(gl: WebGL2RenderingContext): GLIdentity {
+  const cached = glIdentities.get(gl)
+  if (cached) return cached
+
+  let renderer = ''
+  try {
+    const debug = gl.getExtension('WEBGL_debug_renderer_info')
+    if (debug) {
+      const value: unknown = gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)
+      if (typeof value === 'string') renderer = value
+    }
+  } catch { /* Some browsers withhold the unmasked renderer. */ }
+  let maxTextureSize: number | null = null
+  try {
+    if (!renderer) {
+      const value: unknown = gl.getParameter(gl.RENDERER)
+      if (typeof value === 'string') renderer = value
+    }
+    const size: unknown = gl.getParameter(gl.MAX_TEXTURE_SIZE)
+    if (typeof size === 'number' && Number.isFinite(size) && size > 0) maxTextureSize = size
+  } catch { /* A lost context may withhold these values. */ }
+
+  // Fixed labels only. Give the software renderers priority over ANGLE's vendor prefix.
+  const families: readonly (readonly [RegExp, string, string | null])[] = [
+    [/\bswiftshader\b/i, 'google', 'swiftshader'],
+    [/\bllvmpipe\b/i, 'mesa', 'llvmpipe'],
+    [/\bsoftpipe\b/i, 'mesa', 'softpipe'],
+    [/\b(?:warp|microsoft basic render driver)\b/i, 'microsoft', 'warp'],
+    [/\bgeforce\b/i, 'nvidia', 'geforce'],
+    [/\bquadro\b/i, 'nvidia', 'quadro'],
+    [/\bradeon\b/i, 'amd', 'radeon'],
+    [/\bintel\b.*\barc\b/i, 'intel', 'arc'],
+    [/\biris\b/i, 'intel', 'iris'],
+    [/\buhd graphics\b/i, 'intel', 'uhd'],
+    [/\badreno\b/i, 'qualcomm', 'adreno'],
+    [/\bmali\b/i, 'arm', 'mali'],
+    [/\bpowervr\b/i, 'imagination', 'powervr'],
+    [/\bapple\b/i, 'apple', 'apple-gpu'],
+    [/\bnvidia\b/i, 'nvidia', null],
+    [/\b(?:amd|ati)\b/i, 'amd', null],
+    [/\bintel\b/i, 'intel', null],
+    [/\bqualcomm\b/i, 'qualcomm', null],
+  ]
+  const match = families.find(([pattern]) => pattern.test(renderer))
+  const identity = { vendor: match?.[1] ?? null, family: match?.[2] ?? null, maxTextureSize }
+  glIdentities.set(gl, identity)
+  return identity
+}
+
 /** Read the selected renderer and startup record. Never acquire a context or adapter. */
 export function readPerformanceEnvironment(game: Game): PerformanceEnvironment {
-  const backend=game.renderer?.backend as unknown as {device?: GPUDevice;gl?: WebGL2RenderingContext}|undefined
-  const device=backend?.device, info=device?.adapterInfo
-  const nav=typeof navigator==='undefined'?undefined:navigator as Navigator & {deviceMemory?:number}
+  const renderer = game.renderer
+  const backend = renderer?.backend as unknown as { device?: GPUDevice; gl?: WebGL2RenderingContext } | undefined
+  const device = backend?.device, info = device?.adapterInfo
+  const gl = !device && backend?.gl ? glIdentity(backend.gl) : null
+  const nav = typeof navigator === 'undefined' ? undefined : navigator as Navigator & { deviceMemory?: number }
   return {
-    backend:startupTiming.backend ?? (game.renderer?game.backend:'initializing'),
-    adapter:info?[info.vendor,info.architecture,info.device,info.description].filter(Boolean).join(' ')||null:null,
-    memoryGB:nav?.deviceMemory ?? null,
-    maxTextureSize:device?.limits.maxTextureDimension2D ?? (backend?.gl?glMaxTextureSize(backend.gl):null),
-    fallbackReason:startupTiming.fallbackReason??null,deviceLost:startupTiming.deviceLost??null,
+    backend: startupTiming.backend ?? (renderer ? game.backend : 'initializing'),
+    backendReason: renderer ? rendererBackendReason(renderer) : null,
+    adapter: info ? [info.vendor, info.architecture, info.device, info.description].filter(Boolean).join(' ') || null
+      : [gl?.vendor, gl?.family].filter(Boolean).join(' / ') || null,
+    adapterVendor: info?.vendor ?? gl?.vendor ?? null,
+    adapterArchitecture: info?.architecture ?? gl?.family ?? null,
+    memoryGB: nav?.deviceMemory ?? null,
+    maxTextureSize: device?.limits.maxTextureDimension2D ?? gl?.maxTextureSize ?? null,
+    fallbackReason: startupTiming.fallbackReason ?? null,
+    deviceLost: startupTiming.deviceLost ?? null,
   }
 }
 

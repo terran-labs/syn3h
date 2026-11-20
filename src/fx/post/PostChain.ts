@@ -1,3 +1,4 @@
+import { longFrames } from '../../core/longFrames'
 /**
  * The in-game post chain: what turns the rendered world into the picture.
  *
@@ -231,7 +232,11 @@ export class PostChain {
     const composeOn = effects && (motionOn || P.postHeat.value > 0)
     const historyKey = temporalOn ? ['world.curve', 'world.seed', 'terrain.kind', 'terrain.planetSize', 'camera.mode'].map(id => params.get(id)?.value).join('|') : ''
     const key = `${debug}|${tier}|${motionOn}|${composeOn}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${temporalOn}|${historyKey}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
-    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn)
+    if (this.built?.key !== key) {
+      const start = longFrames.start()
+      try { this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn) }
+      finally { longFrames.end('Post chain rebuild', start) }
+    }
 
     const u = this.u
     u.exposure.value = Math.max(1e-4, renderer.toneMappingExposure)

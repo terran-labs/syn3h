@@ -81,33 +81,13 @@ export const WELCOME_ICON = 'M12 6.6C10 5.3 7 4.9 3.6 5.3V18.4C7 18 10 18.4 12 1
 /** Updates: sparkles, for what is new. */
 export const UPDATES_ICON = 'M10 3.5C10.6 7.1 12.4 8.9 16 9.5C12.4 10.1 10.6 11.9 10 15.5C9.4 11.9 7.6 10.1 4 9.5C7.6 8.9 9.4 7.1 10 3.5ZM18 13.5C18.3 15.3 19.2 16.2 21 16.5C19.2 16.8 18.3 17.7 18 19.5C17.7 17.7 16.8 16.8 15 16.5C16.8 16.2 17.7 15.3 18 13.5ZM18.5 3V6.5M16.75 4.75H20.25'
 /**
- * One of the lobby's three holographic buttons: a small icon at its left edge and its word.
- * The frame, its light and its states are all CSS (lobby-settings.css, .lobby-control).
+ * One of the lobby's three buttons: a small icon at its left edge and its word, in the game's
+ * one glass button style (.liquid-glass, glass.css). Its layout is lobby-settings.css.
  */
-let frames = 0
 function controlButton(button: HTMLButtonElement, className: string, word: string, icon: string): void {
-  button.type = 'button'; button.className = `lobby-control ${className}`; button.title = word
-  // The edge is a vector outline of the cut plate, its stroke a gradient that drifts slowly from
-  // cool to warm. Not under reduced motion, and not on touch screens: on a 4x throttled phone the
-  // drift cost the galaxy about 7 percent of its frames (17 November 2026); see layoutFrame.
-  const id = `lobby-edge-${++frames}`
-  button.innerHTML = `<svg class="lobby-control-frame" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0" spreadMethod="reflect">`
-    + '<stop offset="0" stop-color="#cfe0ff"/><stop offset=".3" stop-color="#ffffff"/><stop offset=".55" stop-color="#ffd9ac"/><stop offset=".8" stop-color="#ffffff"/><stop offset="1" stop-color="#d6e2ff"/>'
-    + `<animateTransform attributeName="gradientTransform" type="translate" values="-.6 0;.6 0;-.6 0" dur="18s" repeatCount="indefinite"/></linearGradient></defs><polygon stroke="url(#${id})"/></svg>`
-    + `<svg class="lobby-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${icon}"/></svg><span class="lobby-control-word"></span><span class="lobby-control-glint" aria-hidden="true"></span>`
+  button.type = 'button'; button.className = `lobby-control liquid-glass ${className}`; button.title = word
+  button.innerHTML = `<svg class="lobby-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${icon}"/></svg><span class="lobby-control-word"></span>`
   button.querySelector('.lobby-control-word')!.textContent = word
-}
-/** The plate's corner cut, CSS pixels: must match --cut in lobby-settings.css. */
-const CUT = 9
-/** Draws each control's outline at its laid-out size: the cut corners stay 45 degrees at any width. */
-function layoutFrame(button: HTMLElement, reduced: boolean): void {
-  const svg = button.querySelector<SVGSVGElement>('.lobby-control-frame'), polygon = svg?.querySelector('polygon')
-  const w = button.offsetWidth, h = button.offsetHeight
-  if (!svg || !polygon || !w || !h) return
-  const i = 0.75, c = CUT
-  svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
-  if (reduced) svg.querySelector('animateTransform')?.remove()
-  polygon.setAttribute('points', `${c + i * 0.4},${i} ${w - i},${i} ${w - i},${h - c - i * 0.4} ${w - c - i * 0.4},${h - i} ${i},${h - i} ${i},${c + i * 0.4}`)
 }
 
 export interface LobbySettingsOptions {
@@ -167,10 +147,6 @@ export class LobbySettings {
     this.version.type = 'button'; this.version.className = 'lobby-version'; this.version.dataset.lobbyVersion = ''
     this.version.textContent = label; this.version.title = `Version ${label}`; this.version.setAttribute('aria-label', `Version ${label}`)
     this.dock.append(this.about, this.updates, this.gear)
-    // Outline each control at its laid-out size, and again whenever a breakpoint resizes it.
-    const reduced = matchMedia('(prefers-reduced-motion: reduce), (pointer: coarse)').matches
-    const frame = () => { for (const button of [this.about, this.updates, this.gear]) layoutFrame(button, reduced) }
-    const resized = new ResizeObserver(frame); resized.observe(this.dock); signal.addEventListener('abort', () => resized.disconnect())
     // The version sits apart, in the lower left (versionDock), small and quiet.
     this.versionDock.className = 'lobby-version-dock'; this.versionDock.append(this.version)
 

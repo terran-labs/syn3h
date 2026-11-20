@@ -34,6 +34,7 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
 const until = async (page, fn, arg, ms) => page.waitForFunction(fn, arg, { timeout: ms }).then(() => true, () => false)
 
 // Same page setup as the smoke: one browser each, Low pinned, 960x540.
+const entryReady = new Map()
 async function open(name) {
   // No credentials in a browser's environment: a crash dump would record them (lib/safe-env.mjs).
   const browser = await chromium.launch({ channel: 'chrome', headless: true, env: browserEnv(), args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'] })
@@ -57,12 +58,20 @@ async function open(name) {
   const old = name === 'Alice' && process.env.SYN3H_CHECK_OLD_VERSION ? `&v=${process.env.SYN3H_CHECK_OLD_VERSION}` : ''
   await page.goto(`${base}?room=${room}&name=${name}&autoplay=1${old}`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.syn3hNet?.id > 0 && window.syn3h?.player, null, { timeout: 60000 }).catch(async (error) => {
-    // Say what the page had got to, not only that it timed out.
-    const state = await page.evaluate(() => ({ boot: document.documentElement.dataset.boot ?? null, backend: window.syn3h?.game?.backend ?? null, net: window.syn3hNet?.id ?? null, player: !!window.syn3h?.player })).catch(() => null)
+    // Say what the page had got to, not only that it timed out. `fatal` is the start-failure
+    // notice's text, which carries a PhysicsLoadError's detail (timeout or HTTP status).
+    const state = await page.evaluate(() => ({ boot: document.documentElement.dataset.boot ?? null, backend: window.syn3h?.game?.backend ?? null, net: window.syn3hNet?.id ?? null, player: !!window.syn3h?.player, fatal: document.getElementById('fatal')?.textContent?.trim().slice(0, 600) || null })).catch(() => null)
     const recent = consoleLines.filter((l) => l.name === name).slice(-8).map((l) => `${l.type}: ${l.text}`)
     throw new Error(`${name} never became ready: ${error.message}; page ${JSON.stringify(state)}; console ${JSON.stringify(recent)}`)
   })
+  const start = Date.now()
   await page.evaluate(() => { window.syn3h.shell.play(); document.activeElement?.blur?.() })
+  // Room membership precedes playable entry. Observe each page independently while
+  // the other joins, and fail entry separately if its loading overlay never clears.
+  entryReady.set(page, until(page, () => {
+    const { shell, game } = window.syn3h
+    return shell.playing && !shell.transitioning && !game.holdDraws
+  }, null, 45000).then(ok => ({ name, ok, observedMs: Date.now() - start })))
   return page
 }
 
@@ -78,6 +87,9 @@ try {
   await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
 
   // 2. A moves 30 m along the ground; B's copy of A follows.
+  const entry = await Promise.all([entryReady.get(a), entryReady.get(b)])
+  console.log('Playable entry observed (ms since check requested play)', JSON.stringify(entry))
+  if (!entry.every(client => client.ok)) throw new Error('Playable entry failed before movement check')
   const target = await a.evaluate(() => {
     const s = window.syn3h.terrain.spawnPoint(0), x = s.position.x + 30, z = s.position.z
     s.position.set(x, window.syn3h.terrain.heightAt(x, z) + 1.5, z); window.syn3h.player.teleport(s.position, 0)

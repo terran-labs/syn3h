@@ -10,17 +10,15 @@
  *
  * - `sharedLook` gives every user of a gear item in one game the same materials and
  *   geometry, so a bot's Bungee costs nothing the player's has not already paid for.
- * - `warmGear` draws each geometry and material pair for a few frames while the world is
- *   still appearing, too small and too close to the camera to cover a pixel. The pipelines
- *   are then built along with the rest of the scene. It does so again after a graphics level
- *   change or a change to the post effects, either of which replaces the render targets and
- *   with them every pipeline.
+ * - `warmGear` draws the gear's geometry and material pairs and exposes its empty batches
+ *   during covered entry. A short run of proxy draws also handles graphics and post effects
+ *   changes during play, when the render chain and its pipelines can change.
  *
  * Measured by tests/weapons/browser-gear-hitch.mjs.
  */
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
-import type { Game, System } from '../core/Game'
+import type { CoveredWarm, Game, System } from '../core/Game'
 import { graphicsLevel } from '../core/quality'
 
 /** Drawn frames to stay visible at the start: the first frames compile everything in view. */
@@ -31,10 +29,29 @@ const CHANGE_FRAMES = 90
 const SCALE = 1e-3
 
 export type WarmPair = readonly [THREE.BufferGeometry, THREE.Material]
+type WarmBatches = () => Iterable<THREE.Mesh>
+
+/** Submit the live buffer layout even when its pool is empty. Only draw metadata changes. */
+function exposeBatch(mesh: THREE.Mesh): () => void {
+  const visible = mesh.visible
+  const geometry = mesh.geometry
+  const { start, count } = geometry.drawRange
+  const instanced = geometry instanceof THREE.InstancedBufferGeometry ? geometry : null
+  const empty = instanced?.instanceCount === 0
+  mesh.visible = true
+  if (count === 0) geometry.setDrawRange(0, 3)
+  if (instanced && empty) instanced.instanceCount = 1
+  return () => {
+    mesh.visible = visible
+    if (count === 0) geometry.setDrawRange(start, count)
+    if (instanced && empty) instanced.instanceCount = 0
+  }
+}
 
 class GearWarm implements System {
   readonly group = new THREE.Group()
   readonly each = new Set<() => void>()
+  readonly batches = new Set<WarmBatches>()
   /** Drawn frames still to go; 0 when the proxies are out of the scene. */
   left = 0
   private drawn = false
@@ -84,11 +101,37 @@ class GearWarm implements System {
     for (const f of this.each) f()
   }
 
+  async warmCovered(warm: CoveredWarm): Promise<void> {
+    if (!this.batches.size) return
+    await warm.yieldFrame('Preparing gear effects')
+    const restore: (() => void)[] = []
+    const wasAttached = this.group.parent === this.game.scene
+    const position = this.group.position.clone()
+    try {
+      if (!wasAttached) this.game.scene.add(this.group)
+      this.game.camera.getWorldPosition(this.group.position)
+      for (const batches of this.batches) {
+        for (const mesh of batches()) restore.push(exposeBatch(mesh))
+      }
+      warm.draw()
+    } finally {
+      for (let i = restore.length - 1; i >= 0; i--) restore[i]()
+      this.group.position.copy(position)
+      if (!wasAttached) this.group.removeFromParent()
+    }
+    this.level = graphicsLevel.value
+    this.drawn = false
+    this.left = 0
+    this.group.removeFromParent()
+    this.stats.frames++
+  }
+
   dispose(): void {
     this.unlisten()
     this.game.scene.remove(this.group)
     this.group.clear()
     this.each.clear()
+    this.batches.clear()
     this.left = 0
   }
 }
@@ -96,29 +139,30 @@ class GearWarm implements System {
 const warms = new WeakMap<Game, { system: GearWarm; users: number }>()
 
 /**
- * Compile these geometry and material pairs before they are needed. `each` runs on every
- * frame the proxies are out, for effects that can only be warmed by using them. Returns a
- * function that takes the proxies away again; it does not dispose what was passed in.
+ * Register gear pairs for proxy draws and live batches for covered entry. `each` runs with
+ * the proxy draws during play. The returned cleanup releases the registration.
  */
-export function warmGear(game: Game, pairs: readonly WarmPair[], each?: () => void): () => void {
+export function warmGear(game: Game, pairs: readonly WarmPair[], each?: () => void, batches?: WarmBatches): () => void {
   // Unit tests build gear on a bare object with no systems and no renderer: nothing to warm.
   if (typeof game.add !== 'function' || !game.camera) return () => {}
   let entry = warms.get(game)
   if (!entry) {
     entry = { system: new GearWarm(game), users: 0 }
     warms.set(game, entry)
-    game.add(entry.system)
+    game.add(entry.system, 'Gear warm-up')
   }
   const { system } = entry
   entry.users++
   const meshes = system.add(pairs)
   if (each) system.each.add(each)
+  if (batches) system.batches.add(batches)
   let done = false
   return () => {
     if (done) return
     done = true
     if (meshes.length) system.group.remove(...meshes)
     if (each) system.each.delete(each)
+    if (batches) system.batches.delete(batches)
     if (--entry.users === 0) { warms.delete(game); game.remove(system) }
   }
 }

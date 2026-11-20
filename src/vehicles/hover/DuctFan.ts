@@ -40,6 +40,11 @@ export class DuctFan {
     this.object.instanceMatrix.needsUpdate = true
   }
 
+  reset(): void {
+    this.phase = 0
+    this.writePose()
+  }
+
   update(dt: number, throttle: number, running: boolean): void {
     if (!running) return
     const speed = DUCT_FAN.idleSpeed + Math.max(0, Math.min(1, throttle)) * DUCT_FAN.throttleSpeed

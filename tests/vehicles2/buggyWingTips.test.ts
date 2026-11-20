@@ -81,16 +81,19 @@ it('writes ribbon endpoints at the real tips and resets history across unavailab
   const bed = await makeBed(), skin = new Syn3hBuggySkin()
   const buggy = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new T.Vector3(0, 30, 0), .7, 'buggy', () => skin))
   type EffectSystem = { update(dt: number): void; dispose(): void }
-  let effects!: EffectSystem
+  const systems = new Set<EffectSystem>()
   Object.assign(bed.game, {
     camera: new T.PerspectiveCamera(),
-    add: (system: EffectSystem) => { effects = system; return system },
-    remove: (system: EffectSystem) => system.dispose(),
+    add: (system: EffectSystem) => { systems.add(system); return system },
+    remove: (system: EffectSystem) => { systems.delete(system); system.dispose() },
   })
   const detach = attachVehicleEffects(bed.game, bed.terrain, buggy, { local: false })
   const trail = bed.game.scene.children.find(o => o instanceof T.Mesh && o.geometry.getAttribute('fxAge') && o.geometry.index?.count === 256 * 6) as T.Mesh
   const count = () => trail.geometry.drawRange.count
-  const tick = () => { buggy.update(.1, 1); effects.update(.1) }
+  const tick = () => {
+    buggy.update(.1, 1)
+    for (const system of systems) system.update(.1)
+  }
   const move = (z: number) => {
     buggy.teleport(new T.Vector3(0, 30, z), .7)
     buggy.wingsOpen = true; buggy.wingState = 1
