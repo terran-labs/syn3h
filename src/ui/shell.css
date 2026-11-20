@@ -50,142 +50,11 @@
 .syn3h-shell h1 { font-size: clamp(40px, 5.2vw, 64px); text-transform: uppercase; }
 .syn3h-shell p { margin: 12px 0 22px; }
 .lobby-links { display: flex; justify-content: center; gap: 12px 44px; flex-wrap: wrap; }
-/* Buttons. Every button is terranlabs.com's glass button; Shell.ts gives them the
+/* Buttons. Every button is the game's glass button (glass.css); Shell.ts gives them the
    .liquid-glass class. This rule only sets what is Syn3h's: type, size and touch. */
 .syn3h-shell button:not(.syn3h-advanced *), .syn3h-shell select:not(.syn3h-advanced *), .touch-actions button { font: 500 18px/1.3 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; padding: 11px 22px; cursor: pointer; min-height: 46px; touch-action: manipulation; }
 .syn3h-shell select:not(.syn3h-advanced *) { color: var(--s3-ink); background: rgb(255 255 255 / .06); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); }
-@property --rim-angle { syntax: "<angle>"; inherits: false; initial-value: 205deg; }
-
-/* ---- From terranlabs.com src/index.css, verbatim: the glass button. ---- */
-
-/* Liquid glass.
-   Three things make it read as glass and not as a tinted box:
-   1. Frost: what is behind it is heavily blurred, then lifted in saturation
-      and brightness, the way thick glass gathers light.
-   2. An edge that catches light: the border is a gradient, bright where
-      light would strike the rim (top left, bottom right) and nearly absent
-      between, and it turns slowly so the rim never looks painted on.
-   3. A restrained surface: one soft highlight near the top, no gloss stripe.
-   True refraction (bending the image at the rim) is not possible in CSS on
-   Safari, so this stops at frost, rim light and depth. */
-.liquid-glass {
-  --glass-tint: 255 255 255;
-  --glass-ink: #fff;
-  /* The glass itself. Variants change this, not `background`, so the
-     highlight below stays on top of whichever fill is in use. */
-  --glass-fill: linear-gradient(
-    180deg,
-    rgb(var(--glass-tint) / 0.13) 0%,
-    rgb(var(--glass-tint) / 0.06) 55%,
-    rgb(var(--glass-tint) / 0.1) 100%
-  );
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  isolation: isolate;
-  border-radius: 999px;
-  border: 0;
-  /* The fill is the whole surface. Nothing is drawn on it under the
-     pointer; only the rim answers (see ::before below). */
-  background: var(--glass-fill);
-  -webkit-backdrop-filter: blur(30px) saturate(190%) brightness(1.12);
-  backdrop-filter: blur(30px) saturate(190%) brightness(1.12);
-  box-shadow:
-    inset 0 0 0 0.5px rgb(var(--glass-tint) / 0.14),
-    inset 0 10px 18px -12px rgb(var(--glass-tint) / 0.5),
-    inset 0 -8px 14px -10px rgb(0 0 0 / 0.3),
-    0 14px 36px rgb(0 0 0 / 0.32);
-  color: var(--glass-ink);
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
-  transition: box-shadow 0.25s ease;
-}
-
-/* The rim. A conic gradient masked down to a one-pixel ring: brightest
-   where light would strike the edge (upper left, lower right). At rest it
-   is still. Pointed at, the bright edge turns to face the pointer and
-   settles back when the pointer leaves. It never turns by itself; an
-   earlier version did, and that read as a gimmick. */
-.liquid-glass::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: conic-gradient(
-    from var(--rim-angle),
-    rgb(var(--glass-tint) / 0.42),
-    rgb(var(--glass-tint) / 0.08) 18%,
-    rgb(var(--glass-tint) / 0.04) 38%,
-    rgb(var(--glass-tint) / 0.3) 52%,
-    rgb(var(--glass-tint) / 0.07) 70%,
-    rgb(var(--glass-tint) / 0.04) 88%,
-    rgb(var(--glass-tint) / 0.42)
-  );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  pointer-events: none;
-  transition: --rim-angle 0.35s ease-out;
-}
-
-/* Pointed at, the glass stays exactly where it is. It used to lift a pixel
-   and deepen its shadow, which read as the button rising off the page. Now
-   only the edge answers: the rim's bright side faces the pointer
-   (src/components/GlassShine.tsx sets --rim-angle) and the inner rim
-   brightens a little. Nothing moves across the face of the button. */
-.liquid-glass:hover {
-  box-shadow:
-    inset 0 0 0 0.5px rgb(var(--glass-tint) / 0.24),
-    inset 0 10px 18px -12px rgb(var(--glass-tint) / 0.62),
-    inset 0 -8px 14px -10px rgb(0 0 0 / 0.3),
-    0 14px 36px rgb(0 0 0 / 0.32);
-}
-
-.liquid-glass:focus-visible {
-  outline: 2px solid var(--theme-heading-accent);
-  outline-offset: 3px;
-}
-
-/* The primary action is the same glass with the theme's accent in it. */
-.liquid-glass-primary {
-  /* Nearly solid, on purpose. The frost behind glass comes from
-     backdrop-filter, and a browser drops that whenever an ancestor is even
-     slightly transparent, which every Planetfall section is while it fades
-     in and out. A thin tint then showed the scene straight through the
-     button. So the primary button carries its own body: the accent,
-     deepened so a white label passes contrast, with only a breath of the
-     scene left for the blur to soften when it is available. */
-  --glass-fill: linear-gradient(
-    180deg,
-    color-mix(in oklab, rgb(var(--theme-accent-primary-rgb)) 74%, #000) 0%,
-    color-mix(in oklab, rgb(var(--theme-accent-primary-rgb)) 52%, #000) 58%,
-    color-mix(in oklab, rgb(var(--theme-accent-primary-rgb)) 62%, #000) 100%
-  );
-}
-/* ---- End of the verbatim block. ---- */
-
-/* The action that leads on (the world in play, Enter World, Return to Game) is the same
-   glass with the accent in it, as .liquid-glass-primary above. */
-.liquid-glass.is-primary {
-  --glass-fill: linear-gradient(
-    180deg,
-    color-mix(in oklab, rgb(var(--theme-accent-primary-rgb)) 74%, #000) 0%,
-    color-mix(in oklab, rgb(var(--theme-accent-primary-rgb)) 52%, #000) 58%,
-    color-mix(in oklab, rgb(var(--theme-accent-primary-rgb)) 62%, #000) 100%
-  );
-}
-/* Frost is costly: it re-blurs whatever is behind every frame. In play, over the moving
-   world, the menu row and thumb buttons keep the glass's rim and light but not the blur,
-   and at the lowest graphics level nothing blurs. */
-.hud-navigation .liquid-glass, .touch-actions .liquid-glass, html[data-gfx="0"] .liquid-glass, html[data-gfx="0"] .lobby-panels { -webkit-backdrop-filter: none; backdrop-filter: none; }
-.hud-navigation .liquid-glass, .touch-actions .liquid-glass { --glass-fill: linear-gradient(180deg, rgb(30 34 44 / .72), rgb(16 18 24 / .72)); }
-.syn3h-shell .liquid-glass:disabled { opacity: .4; cursor: default; }
+/* The glass button itself (.liquid-glass, its rim and its tokens) is glass.css. */
 /* Text links: the quiet row under the panel, and Back. Not glass. */
 .syn3h-shell button.link-button, .syn3h-shell .lobby-links button { background: none; border: 0; box-shadow: none; padding: 0 4px; min-height: 40px; font-size: 16px; font-weight: 400; color: var(--s3-dim); transition: color .18s; }
 .syn3h-shell button.link-button:is(:hover, :focus-visible), .syn3h-shell .lobby-links button:is(:hover, :focus-visible) { color: var(--s3-ink); }
@@ -256,12 +125,11 @@
 .touch-knob { position: absolute; width: 52px; height: 52px; top: 43px; left: 43px; border-radius: 50%; background: #6799cf65; border: 1px solid #abcff7b0; }
 .touch-stick-label { position: absolute; bottom: 10px; width: 100%; text-align: center; font: 400 12px 'Barlow', sans-serif; letter-spacing: 2px; color: #e1e1e1; }
 /* The thumb grid's size, gaps and placement are the --thumb-* variables in touch-stick.css. */
-.touch-actions { position: absolute; right: max(var(--thumb-margin),env(safe-area-inset-right)); bottom: max(var(--thumb-bottom),env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(var(--thumb-columns, 2), var(--thumb-size)); grid-auto-rows: var(--thumb-size); gap: var(--thumb-gap); }
-.touch-actions button { border: 1px solid var(--s3-line); border-radius: 50%; width: var(--thumb-size); height: var(--thumb-size); color: var(--s3-ink); background: var(--s3-panel); font: 400 15px 'Barlow', sans-serif; pointer-events: auto; touch-action: none; }
-/* Colours from the theme tokens only: TAG a faint fill of the accent; held or on, the shared
-   "on" state (neutral white under ux/hud-neutral's --s3-on-*). */
-.touch-actions .touch-fire { background: color-mix(in srgb, var(--s3-accent) 24%, transparent); }
-.touch-actions button.held, .touch-actions button[aria-pressed=true] { background: var(--s3-on-fill, var(--s3-accent-2)); color: var(--s3-on-ink, #141416); box-shadow: var(--s3-on-glow, none); }
+.touch-actions { position: absolute; right: max(var(--thumb-margin),env(safe-area-inset-right)); bottom: var(--thumb-base); display: grid; grid-template-columns: repeat(var(--thumb-columns, 2), var(--thumb-size)); grid-auto-rows: var(--thumb-size); gap: var(--thumb-gap); }
+.touch-actions button { width: var(--thumb-size); height: var(--thumb-size); font: 400 15px 'Barlow', sans-serif; pointer-events: auto; touch-action: none; }
+/* The surface is the shared glass button's (.liquid-glass.glass-round, set in TouchControls), so
+   all thumb buttons look alike at rest, and so are their states: .held is the class's pressed
+   look, aria-pressed its "on" look (src/ui/glass.css). Nothing here paints over them. */
 @media (max-width: 700px) { .shell-overlay { padding: max(8px,env(safe-area-inset-top)) 16px max(8px,env(safe-area-inset-bottom)); } .lobby-brand { flex-basis: 120px; } .shell-logo { width: 290px; } .lobby-panels { max-height: none; width: 100%; } .lobby-panels > section { padding: 8px 4px 16px; } .lobby-links { margin: 6px 0; justify-content: center; } .lobby-footer { font-size: 11px; flex-basis: 30px; } .shell-hud { left: 12px; top: 12px; width: 180px; padding: 8px; } .shell-speed strong { font-size: 34px; } .hud-scoreboard { max-height: 95px; } .hud-scoreboard .score-detail { display: none; } .hud-navigation { right: 12px; top: 12px; flex-direction: column; gap: 5px; } .hud-navigation button { padding: 8px 12px; font-size: 14px; } .touch-stick { width: 124px; height: 124px; left: 18px; } .touch-knob { left: 35px; top: 35px; } .shell-vehicle-preview { height: 170px; } .shell-colors { gap: 20px; } }
 @media (max-height: 550px) { .lobby-brand { flex-basis: 66px; } .shell-logo { width: 190px; } .lobby-panels > section { padding-top: 14px; } .lobby-footer { flex-basis: 22px; } }
 @media (prefers-reduced-motion: reduce) { .shell-logo { animation: none; } .lobby-stage { transform: none; transition: none; } }
@@ -290,6 +158,13 @@
 /* Touch: one slim line between the vehicle and the thumb controls. */
 .has-touch .spawn-help { left: 50%; right: auto; bottom: calc(max(30px,env(safe-area-inset-bottom)) + 160px); transform: translateX(-50%); max-width: calc(100% - 24px); padding: 5px 12px; white-space: nowrap; }
 .syn3h-shell:not(.is-playing) .spawn-help { display: none; }
+:root .syn3h-shell .spawn-help.is-quiet {
+  /* The sunk buggy's Zorb line where no Zorb control shows (Shell.showHint): a few plain words
+     in the idle status line's style, no box (the owner, 19 November 2026: "minimal and classy"). */
+  background: none; border: 0; box-shadow: none; padding: 0; -webkit-backdrop-filter: none; backdrop-filter: none;
+  color: var(--s3-ink, #f4f4f4); font: 500 14px/1.35 'Barlow', 'Avenir Next', sans-serif; letter-spacing: .03em;
+  text-shadow: 0 1px 2px rgb(0 0 0 / .85), 0 0 12px rgb(0 0 0 / .6);
+}
 
 /* The loading veil is in index.html. LoadingScreen's polite live region: the plain loading phase, for screen readers only. */
 .syn3h-loading { position: fixed; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -495,9 +370,12 @@
 /* A hint for a player who seems stuck: the controls card with a lit edge, and on touch the
    button it names pulses. */
 .spawn-help.is-hint { border-color: var(--s3-accent); color: white; font-size: clamp(15px,1vw,19px); box-shadow: 0 0 22px color-mix(in srgb, var(--s3-accent) 30%, transparent); }
-.touch-actions button.is-hinted { animation: touch-hint 1s ease-in-out infinite; border-color: var(--s3-accent-2); }
-@keyframes touch-hint { 50% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--s3-accent) 28%, transparent); background: color-mix(in srgb, var(--s3-on-fill, var(--s3-accent-2)) 75%, transparent); color: var(--s3-on-ink, #141416); } }
-@media (prefers-reduced-motion: reduce) { .touch-actions button.is-hinted { animation: none; box-shadow: 0 0 0 5px color-mix(in srgb, var(--s3-accent) 40%, transparent); } }
+/* A hint that names a thumb button (Shell.showHint, TouchControls.highlight): the button's own
+   glass rim and sheen swell and settle (src/ui/glass.css tokens), never a fill painted over the
+   glass. Reduced motion holds the peak. */
+.touch-actions button.is-hinted { animation: touch-hint 1.4s ease-in-out infinite; }
+@keyframes touch-hint { 50% { --glass-rim: 1; --glass-sheen: 1; } }
+@media (prefers-reduced-motion: reduce) { .touch-actions button.is-hinted { animation: none; --glass-rim: 1; --glass-sheen: 1; } }
 /* Touch tablets (an iPad on its side is 1194 x 834): the screen is desktop sized but the
    thumb controls are on it, so the minimap goes to the top right, under the menu, where the
    action buttons are not, and announcements sit above the vehicle. Phones have their own
@@ -578,6 +456,11 @@
 .is-descending .lobby-stage, .is-descending .galaxy-ui { opacity: 0; transition: opacity .45s ease; pointer-events: none; }
 /* The galaxy blurs itself in its shader as it dives (Galaxy.ts, motion blur): no CSS filter here. */
 
+/* The Daydream status line (src/bots/Daydream.ts) while the bots drive for an idle player. Desktop:
+   a pill at the top centre, since the bottom edge belongs to the minimap, the controls and the
+   reload notice. Phones draw it as plain text low on the screen (touch-stick.css). */
+.daydream-pill { position: fixed; left: 50%; top: max(52px, calc(env(safe-area-inset-top) + 44px)); transform: translateX(-50%); z-index: 20; box-sizing: border-box; max-width: min(90vw, 440px); padding: 7px 16px; border-radius: 999px; background: rgb(8 12 20 / .55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: #dff6ff; font: 500 13px/1.3 system-ui, sans-serif; letter-spacing: .02em; text-align: center; pointer-events: none; transition: opacity .25s ease-out; }
+.daydream-pill[hidden] { display: none; }
 /* The Daydream slider in Settings (the control itself is src/bots/daydreamControl.ts). */
 .syn3h-shell .daydream-control { display: block; text-align: left; margin: 18px 0 4px; font-size: 17px; }
 .syn3h-shell .daydream-control output { float: right; color: var(--s3-accent-2); }

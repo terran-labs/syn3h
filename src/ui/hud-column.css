@@ -187,6 +187,26 @@
 :is(.hud-accessories, .hud-chat) .is-on .acc-pip { border-color: var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-node-lit); }
 /* Moving between states (wings unfolding): the node fills from its rim as they move. */
 .hud-accessories .is-moving .acc-pip { background: radial-gradient(closest-side, var(--s3-accent-2) calc(var(--acc-moving, 0) * 100%), transparent calc(var(--acc-moving, 0) * 100% + 1%)); animation: acc-breathe 1.2s ease-in-out infinite; }
+/* A sunk buggy's Zorb cue (Shell.cueZorb), while the column is held awake: once every 2.6 s the
+   whole Zorb row, node, name and key, lights to full brightness and one soft ring leaves its key
+   cap (X) and fades, then the row settles back. Reduced motion holds the lit row, without the
+   ring (below). */
+.hud-accessories button.acc-row.is-cued { animation: acc-cue-band 2.6s ease-in-out infinite; }
+.hud-accessories button.acc-row.is-cued .acc-pip { animation: acc-cue 2.6s ease-in-out infinite; }
+.hud-accessories button.acc-row.is-cued .acc-name { animation: acc-cue-ink 2.6s ease-in-out infinite; }
+.hud-accessories button.acc-row.is-cued kbd { position: relative; animation: acc-cue-ink 2.6s ease-in-out infinite; }
+/* The key is bare text in a wide column, so the ring is a small circle centred on its glyph. */
+.hud-accessories button.acc-row.is-cued kbd::after {
+  content: ''; position: absolute; left: calc(.35em - 11px); top: 50%; width: 22px; height: 22px; margin-top: -11px; box-sizing: border-box;
+  border: 1.5px solid rgb(255 255 255 / .85); border-radius: 50%; box-shadow: 0 0 0 1px rgb(0 0 0 / .3), inset 0 0 0 1px rgb(0 0 0 / .2); opacity: 0; pointer-events: none;
+  animation: acc-cue-ring 2.6s ease-out infinite;
+}
+@keyframes acc-cue { 50% { border-color: var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-node-lit); } }
+@keyframes acc-cue-ink { 50% { color: var(--s3-ink); text-shadow: var(--col-text-under), 0 0 10px color-mix(in srgb, var(--s3-ink) 50%, transparent); } }
+/* A smoked band behind the row at the peak, so it stands apart from its awake neighbours over
+   bright ground as well as dark: light ink on a dark band reads on both. */
+@keyframes acc-cue-band { 50% { background: linear-gradient(90deg, rgb(8 12 16 / .55), rgb(8 12 16 / .35) 70%, transparent); } }
+@keyframes acc-cue-ring { 0%, 38% { opacity: 0; transform: scale(.7); } 50% { opacity: 1; transform: scale(.9); } 92%, 100% { opacity: 0; transform: scale(2.4); } }
 @keyframes acc-breathe { 50% { box-shadow: var(--col-node-lit); } }
 /* Not usable now: dimmed, with the reason in its tooltip. */
 :root .syn3h-shell .hud-accessories button.acc-row[aria-disabled=true] { cursor: default; opacity: .48; }
@@ -198,6 +218,10 @@
 @media (prefers-reduced-motion: reduce) {
   :is(.hud-accessories, .hud-chat), :is(.hud-accessories, .hud-chat) .acc-pip, :root .syn3h-shell :is(.hud-accessories, .hud-chat) button.acc-row { transition: none; }
   .hud-accessories .is-moving .acc-pip { animation: none; }
+  .hud-accessories button.acc-row.is-cued .acc-pip { animation: none; border-color: var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-node-lit); }
+  :root .syn3h-shell.exploration-ui:not(.has-touch) .hud-accessories button.acc-row.is-cued :is(.acc-name, kbd) { animation: none; color: var(--s3-ink); }
+  :root .syn3h-shell.exploration-ui:not(.has-touch) .hud-accessories button.acc-row.is-cued { animation: none; background: linear-gradient(90deg, rgb(8 12 16 / .55), rgb(8 12 16 / .35) 70%, transparent); }
+  .hud-accessories button.acc-row.is-cued kbd::after { animation: none; display: none; }
 }
 
 /* ---------- Minimap: the foot of the column ---------- */

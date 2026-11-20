@@ -16,6 +16,7 @@ import * as THREE from 'three/webgpu'
 import { canCreateWebGL2, NoGraphicsError, webgpuUsable } from './graphicsSupport'
 import { installRenderDiagnostics, recordCoveredVehicleDraw, recordEntryWarmIssue, recordStartupGameDraw, recordStartupPhase, recordStartupPrecompile, showRendererLost, startupTiming, timeStartup } from './diagnostics'
 import { guardDevice, runGuarded, type GuardedRenderer } from './deviceLoss'
+import { snapshotPixelRatio } from './snapshotScale'
 import { drawFrame, gpuDeadlineMs, startRenderer, viewState, withDeadline, type PostChain } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
@@ -234,6 +235,56 @@ export class Game {
     this.last = performance.now()
     this.accumulator = 0
     this.renderer.setAnimationLoop(() => this.frame())
+  }
+
+  /**
+   * The view as it stands, for a screenshot (src/ui/screenshot.ts): draw it with the camera
+   * exactly where it is, through the same post chain, and copy the canvas into a new 2D canvas
+   * in the same task. Neither backend keeps a drawn frame readable once the task ends (WebGL
+   * without preserveDrawingBuffer, WebGPU once the frame is presented), so the copy is made
+   * before returning. Nothing steps: no physics, no system update, the clock untouched.
+   *
+   * `full` draws at the device's own pixel ratio whatever Auto resolution chose for play, the
+   * long side capped at `maxSide` so a phone is not asked for more memory than it has. The
+   * render scale goes back in a finally, and one frame is drawn at the old size so the paused
+   * view is not left blank. If the larger frame cannot be made, the frame is taken at the size
+   * play uses. Only for the pause screen, where the loop is stopped and nothing is on time.
+   * Null before the first frame or with a lost device.
+   */
+  snapshot(options: { full?: boolean; maxSide?: number } = {}): HTMLCanvasElement | null {
+    if (!this.started || (this.renderer as unknown as GuardedRenderer)._isDeviceLost) return null
+    const before = this.renderer.getPixelRatio()
+    const target = options.full ? snapshotPixelRatio(before, devicePixelRatio || 1, Math.max(innerWidth, innerHeight), options.maxSide ?? 3840) : before
+    if (target !== before) {
+      try {
+        this.renderer.setPixelRatio(target)
+        // Twice: anything that blends with the frame before it settles at the new size.
+        const copy = this.copyFrame(2, true)
+        if (copy) return copy
+      } catch (error) { console.warn('A full-size screenshot could not be made; taking it at the play size.', error) }
+      finally {
+        this.renderer.setPixelRatio(before)
+        // The resize cleared the canvas; the loop is stopped, so draw the paused view again.
+        try { runGuarded(this.renderer as unknown as GuardedRenderer, () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)) } catch { /* The copy below draws too. */ }
+      }
+    }
+    return this.copyFrame(1)
+  }
+  /**
+   * Draw `draws` frames and copy the last into a new 2D canvas, all in this task. `verify` reads
+   * one pixel back: a 2D canvas too large for the device draws nothing and says nothing.
+   */
+  private copyFrame(draws: number, verify = false): HTMLCanvasElement | null {
+    const { width, height } = this.canvas
+    if (!width || !height) return null
+    const copy = document.createElement('canvas'); copy.width = width; copy.height = height
+    const context = copy.getContext('2d'); if (!context) return null
+    let drawn = false
+    runGuarded(this.renderer as unknown as GuardedRenderer, () => { for (let i = 0; i < draws; i++) drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16); drawn = true })
+    if (!drawn) return null
+    context.drawImage(this.canvas, 0, 0)
+    if (verify && context.getImageData(width >> 1, height >> 1, 1, 1).data[3] === 0) return null
+    return copy
   }
 
   /** Frames the loop has run since start, drawn or not. Stands still while paused. */

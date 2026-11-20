@@ -1,0 +1,103 @@
+/* Phone panels (the owner, 19 November 2026): on a phone-sized touch screen the panels have
+   three states.
+     Play   panels hidden; Show panels stands on the thumb grid, over TAG and WINGS.
+     List   the card headers; Close panels at the foot, under the thumb. A tap in the empty
+            space below the last card closes too (Shell.ts).
+     Panel  one card alone, filling the stack, an x in its header back to the list
+            (.is-single, Inspector.ts). Close panels still goes straight back to driving.
+   The motion is in Inspector.ts (PHONE_PANEL_MS): transform, opacity and clip only, so the
+   compositor runs it and the game canvas is never laid out or resized. Surfaces are the shared
+   glass button (.liquid-glass, shell.css); this file sets size, place and state only.
+   Every rule starts with `html` so it outranks the tablet and theme rules it replaces, which
+   share its class count, whichever file loads first. Desktop and tablets are untouched. */
+
+/* Off everywhere but phones. */
+.syn3h-shell .world-inspector .panels-close, .syn3h-shell .hud-navigation .nav-chevrons, .syn3h-shell .world-inspector .wi-x { display: none; }
+/* The fading copies of the list while a panel opens (Inspector.ghostList). */
+.syn3h-shell .world-inspector .wi-ghosts { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.syn3h-shell .world-inspector .wi-ghost { box-sizing: border-box; overflow: hidden; }
+
+@media (max-width: 700px), (max-height: 500px) {
+  /* ---- Show panels: on the grid, as wide as TAG and WINGS, one gap above them. The shared
+     geometry (--thumb-*) is in touch-stick.css. ---- */
+  html .syn3h-shell.exploration-ui.has-touch .hud-navigation {
+    top: auto; left: auto; right: max(var(--thumb-margin), env(safe-area-inset-right));
+    bottom: calc(var(--thumb-top) + var(--thumb-gap)); width: var(--thumb-pair-width);
+    display: block; transform: none;
+    transition: opacity .14s ease-out .06s, visibility 0s linear 0s;
+  }
+  html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .hud-navigation { right: auto; left: max(var(--thumb-margin), env(safe-area-inset-left)); }
+  html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle {
+    writing-mode: horizontal-tb; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 7px;
+    width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 10px;
+    /* The tablet edge tab squares its right side and drops that border (exploration.css); a
+       pill on the grid is the glass's own shape. */
+    border-radius: var(--glass-radius, 999px); border-right-width: revert;
+    font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; white-space: nowrap;
+  }
+  /* The drawn pill is 36 px; the finger gets 44. */
+  html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle::after { content: ""; position: absolute; inset: -4px 0; }
+  html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-glyph { display: none; }
+  html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-label { display: inline; }
+  html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-chevrons { display: block; transition: translate .2s cubic-bezier(.2,.8,.2,1); }
+  /* The chevrons are a hairline with a soft halo of their own light. */
+  html .syn3h-shell.exploration-ui.has-touch :is(.hud-navigation, .world-inspector) .nav-chevrons {
+    width: 18px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+    filter: drop-shadow(0 0 3px rgb(205 205 205 / .45));
+  }
+  /* Panels showing: Show panels lifts its chevrons and fades out as the stack grows from it,
+     and comes back a beat into the stack's return. The class follows the real state (Shell
+     syncPanels); one more class than the tablet rule that kept the tab showing. */
+  html .syn3h-shell.exploration-ui.has-touch.is-playing.is-panels .hud-navigation { opacity: 0; visibility: hidden; z-index: 15; pointer-events: none; transition: opacity .12s ease-out, visibility 0s linear .12s; }
+  html .syn3h-shell.exploration-ui.has-touch.is-panels .hud-navigation .nav-chevrons { translate: 0 -6px; }
+  /* While Show panels stands on the grid, what else stacks above the grid (the portrait status
+     line, ux/phone-controls-1950) stands clear of it by this much: its height and its gap. */
+  html:has(> body .syn3h-shell.exploration-ui.has-touch.is-playing:not(.is-panels) > .hud-navigation:not([hidden])) { --thumb-above: calc(36px + var(--thumb-gap)); }
+
+  /* The thumb grid and the minimap step back while the panels show (inspector/motion rules in
+     inspector.css follow the stack's hidden attribute, which lands only when its close motion
+     ends). On phones they start back the moment Close panels is tapped, alongside the stack
+     leaving, rather than 160 ms later. Taps reach them once the stack is hidden. */
+  html:has(.syn3h-shell.exploration-ui.has-touch.is-playing:not(.is-panels) .world-inspector:not([hidden])) :is(.touch-controls, .shell-minimap) { opacity: 1; transition: opacity .2s ease-out; }
+
+  /* ---- The stack: full width between the shared edges, above the thumb grid while it shows,
+     growing out of Show panels and going back into it. ---- */
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector {
+    left: var(--edge-left); right: var(--edge-right); width: auto; z-index: 21;
+    transform-origin: calc(100% - var(--thumb-pair-width) / 2) calc(100% - var(--thumb-top) - var(--thumb-gap) - 18px + var(--edge-bottom));
+  }
+  html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .world-inspector { transform-origin: calc(var(--thumb-pair-width) / 2) calc(100% - var(--thumb-top) - var(--thumb-gap) - 18px + var(--edge-bottom)); }
+
+  /* Close panels: the foot of the stack, full width, under the thumb. */
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector .panels-close {
+    box-sizing: border-box; display: flex; flex: none; align-items: center; justify-content: center; gap: 9px;
+    width: 100%; height: 48px; min-height: 48px; margin: 0; padding: 0 16px;
+    font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; white-space: nowrap;
+  }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-chevrons { display: block; }
+
+  /* ---- One panel: the open card alone, the whole height of the stack. Its header still
+     sticks (inspector/motion.css), now with the x that goes back to the list. ---- */
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single :is(.rail-command, .rail-foot),
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > :not(.is-open) { display: none; }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open { min-height: 100%; }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head { grid-template-columns: auto minmax(0, 1fr) 32px; }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card[data-section="you"].is-open > .wi-head { grid-template-columns: auto minmax(0, 1fr) auto 32px; }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head .wi-chev { display: none; }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head .wi-x {
+    display: inline-flex; box-sizing: border-box; width: 32px; height: 32px; min-height: 0; padding: 0; justify-self: end; align-self: center;
+  }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector .wi-x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+}
+
+/* Phones on their side: the limit is height, not width. The stack is a right-hand column
+   (left-handed: left), Close panels at its foot by the thumb, and the game stays in view.
+   Full width here is one value: width: auto with both edges set. */
+@media (max-height: 500px) and (orientation: landscape) {
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector { left: auto; width: min(420px, calc(100vw - 2 * var(--edge))); }
+  html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .world-inspector { left: var(--edge-left); right: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html .syn3h-shell.exploration-ui.has-touch .hud-navigation, html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-chevrons { transition: none; }
+}
