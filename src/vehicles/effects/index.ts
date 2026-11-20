@@ -1,6 +1,6 @@
 import {hotExposureDim} from '../skins/hotExposure'
 import {headlightScale} from './headlights'
-import {type ConeHaze,MAX_CONES,coneShapeFor,createConeBatch,createConeHaze,headlightCones,hideUnusedCones,writeVehicleCones} from './cones'
+import {type ConeHaze,MAX_CONES,beamFactorFor,coneShapeFor,createConeBatch,createConeHaze,headlightCones,hideUnusedCones,writeVehicleCones} from './cones'
 import {hazeNow} from '../../world/weather/fog'
 import {activeFogBanks} from '../../world/weather/fogBanks'
 /** The beam's colour (the spot lights', effects/index.ts). */
@@ -254,8 +254,9 @@ class VehicleEffects {
     const shape=coneShapeFor(this.vehicle.kind)
     if(!shape||(!this.buggy&&!this.local))return index
     this.root.updateWorldMatrix(true,true)
-    // The lamps' brightness is unchanged: the buggy's follows its headlight setting, others' are 1.
-    return writeVehicleCones(batch,index,this.vehicle.object,this.lampPoints,CONE_COLOUR,night*(this.buggy?headlightScale().beam:1),this.lampMatrix,camera,shape)
+    // The beam follows its lamp (the buggy's headlight setting; others' lamps are 1) times the
+    // kind's beam-only factor (cones.ts beamFactorFor). The lamps themselves are untouched.
+    return writeVehicleCones(batch,index,this.vehicle.object,this.lampPoints,CONE_COLOUR,night*(this.buggy?headlightScale().beam:1)*beamFactorFor(this.vehicle.kind),this.lampMatrix,camera,shape)
   }
   writeLamps(batch:T.InstancedMesh,index:number):number {
     this.root.updateWorldMatrix(true,true)

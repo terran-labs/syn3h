@@ -29,6 +29,21 @@ type N = any // TSL node
 /** How bright the cones are, on top of the lamps' own brightness. 0 turns them off. */
 export const headlightCones = defineParam({ id: 'light.headlightCones', label: 'Headlight beams in mist', group: 'Light', scope: 'client', default: 1, min: 0, max: 3, step: 0.05 })
 
+/**
+ * How bright each kind's beam is in the air, on top of its lamp's brightness and leaving the
+ * lamps themselves alone. The buggy's lamps follow light.buggyHeadlights (0.4 since 18
+ * November) and its beam with them; the hovercraft's and jet's lamps are still at 1, so their
+ * beams start at 0.4 to match the buggy's. If the owner dims their lamps, set these to 1.
+ */
+export const buggyBeams = defineParam({ id: 'light.buggyBeams', label: 'Buggy beams in mist (lamps unchanged)', group: 'Light', scope: 'client', default: 1, min: 0, max: 2, step: 0.05 })
+export const hovercraftBeams = defineParam({ id: 'light.hovercraftBeams', label: 'Hovercraft beams in mist (lamps unchanged)', group: 'Light', scope: 'client', default: 0.4, min: 0, max: 2, step: 0.05 })
+export const jetBeams = defineParam({ id: 'light.jetBeams', label: 'Jet beams in mist (lamps unchanged)', group: 'Light', scope: 'client', default: 0.4, min: 0, max: 2, step: 0.05 })
+/** The beam-only factor for a vehicle kind (1 for kinds without one). */
+export function beamFactorFor(kind: string): number {
+  if (kind.startsWith('buggy')) return Number(buggyBeams.value)
+  return kind === 'hovercraft' ? Number(hovercraftBeams.value) : kind === 'jet' ? Number(jetBeams.value) : 1
+}
+
 /** Cone length (m) and half angle (radians) of the buggy's visible beam. */
 export const CONE_LENGTH = 18, CONE_HALF_ANGLE = (12 * Math.PI) / 180
 /** The real beam's tip below the lamp at 22 m ahead: the cone follows it (effects/index.ts spot target). */
@@ -90,7 +105,11 @@ function emptyMap(): T.DataTexture {
 
 /** The cone geometry: apex at the origin, opening along -Z, length 1 and end radius 1. */
 function coneGeometry(): T.BufferGeometry {
-  const g = new T.ConeGeometry(1, 1, 32, 1, true)
+  // A tip of a millimetre, not a point. three's cone has one triangle per side at a pointed tip,
+  // whose tip vertex carries that side's right-edge normal, so neighbouring sides meet with
+  // different normals and the beam, lit by its walls' angle to the view, showed one band per
+  // side up close. With a tip ring every side is a quad with shared, smooth normals.
+  const g = new T.CylinderGeometry(0.001, 1, 1, 32, 1, true)
   g.translate(0, -0.5, 0) // apex at the origin, base at y = -1
   g.rotateX(Math.PI / 2) // y -> z: base at z = -1
   return g
