@@ -1,4 +1,4 @@
-// The Me card in a real browser: name edit and reload, the vehicle picker by mouse and by
+// The Me card in a real browser: linked and saved names, the vehicle picker by mouse and by
 // keyboard, Randomize three times with frames across one change, and a second player seeing
 // the name and colours change. Run through tools/heavy.sh against a running dev server:
 //   tools/heavy.sh node tests/ui/me-card-browser.mjs http://127.0.0.1:5447 /tmp/me-card
@@ -20,6 +20,8 @@ const ready = async page => {
 }
 const meCard = '.wi-card[data-section="you"]'
 async function openMe(page) {
+  await page.waitForFunction(() => window.syn3h.shell.playing && !window.syn3h.shell.transitioning, null, { timeout: 90000 })
+  await page.evaluate(() => window.syn3h.shell.showCard('you'))
   const card = page.locator(meCard)
   // The panels appear once the arrival has finished, which a loaded machine can stretch.
   await card.waitFor({ state: 'visible', timeout: 90000 })
@@ -29,9 +31,17 @@ async function openMe(page) {
 try {
   browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
   const contextA = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  await contextA.addInitScript(() => {
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') return
+    if (localStorage.getItem('syn3h.playerName') === null) {
+      localStorage.setItem('syn3h.playerName', 'Captain Ozzie')
+      localStorage.setItem('syn3h.playerNameSource', 'typed')
+    }
+  })
   const a = await contextA.newPage()
   a.on('pageerror', e => report.errors.push(`A: ${e.message}`))
-  await a.goto(`${base}/?autoplay=1&room=${room}`, { waitUntil: 'load' })
+  const entry = `${base}/?autoplay=1&room=${room}`
+  await a.goto(`${entry}&name=${encodeURIComponent(' <Link>  Pilot ')}`, { waitUntil: 'load' })
   await ready(a)
   await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
   await openMe(a)
@@ -40,16 +50,26 @@ try {
   assert.deepEqual(await a.locator('.wi-vehicle-option').evaluateAll(b => b.map(x => x.textContent)), ['Buggy', 'Jet', 'Hovercraft'])
   await a.locator(meCard).screenshot({ path: `${out}/desktop-expanded.png` })
 
-  // Name: edit, Enter, reload, still there.
+  // The linked name is shared by the card, vehicle and room without saving it over the preference.
+  assert.equal(await a.locator('.wi-name-input').inputValue(), 'Link Pilot')
+  assert.deepEqual(await a.evaluate(() => [
+    window.syn3h.player.name,
+    window.syn3hNet.players.get(window.syn3hNet.id)?.name,
+    localStorage.getItem('syn3h.playerName'),
+  ]), ['Link Pilot', 'Link Pilot', 'Captain Ozzie'])
+
+  // Typing the already saved name must replace the link name locally and in the room.
   await a.locator('.wi-name-input').click()
   await a.keyboard.press('Meta+A'); await a.keyboard.type('Captain Ozzie'); await a.keyboard.press('Enter')
   step('saved name', await a.evaluate(() => localStorage.getItem('syn3h.playerName')))
   assert.equal(await a.evaluate(() => localStorage.getItem('syn3h.playerName')), 'Captain Ozzie')
+  assert.equal(await a.evaluate(() => window.syn3h.player.name), 'Captain Ozzie')
+  await a.waitForFunction(() => window.syn3hNet.players.get(window.syn3hNet.id)?.name === 'Captain Ozzie')
   // Escape cancels an edit.
   await a.locator('.wi-name-input').click(); await a.keyboard.type('xyz'); await a.keyboard.press('Escape')
   assert.equal(await a.locator('.wi-name-input').inputValue(), 'Captain Ozzie')
-  await a.reload({ waitUntil: 'load' }); await ready(a); await openMe(a)
-  step('name after reload', await a.locator('.wi-name-input').inputValue())
+  await a.goto(entry, { waitUntil: 'load' }); await ready(a); await openMe(a)
+  step('name after ordinary entry', await a.locator('.wi-name-input').inputValue())
   assert.equal(await a.locator('.wi-name-input').inputValue(), 'Captain Ozzie')
 
   // A second player in the same room sees the name, then a rename.

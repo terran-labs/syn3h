@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { PlayHints, liftOffHint, wingsHint, type HintState } from '../../src/ui/PlayHints'
+import { PlayHints, ZORB_CUE_SECONDS, liftOffHint, wingsHint, type HintState } from '../../src/ui/PlayHints'
 import { helpParts, quickHelp, touchHelp, vehicleHelp } from '../../src/ui/VehicleHelp'
 
-const parked: HintState = { kind: 'jet', touch: false, altitude: 0.8, speed: 0, steer: 0, pitch: 1, throttle: 0, hoverMode: true, canLiftOut: false }
+const parked: HintState = { kind: 'jet', touch: false, altitude: 0.8, speed: 0, steer: 0, pitch: 1, throttle: 0, hoverMode: true, canLiftOut: false, zorbed: false, zorbAvailable: true }
 const run = (hints: PlayHints, seconds: number, state: HintState) => { const out = []; for (let t = 0; t < seconds; t += 0.1) { const h = hints.update(0.1, state); if (h) out.push(h.text) } return out }
 
 describe('jet lift-off', () => {
@@ -33,18 +33,38 @@ describe('jet lift-off', () => {
   })
 })
 
-describe('wings out of lava or water', () => {
-  const sunk: HintState = { kind: 'buggy', touch: false, altitude: 0, speed: 1, steer: 0, pitch: 1, throttle: 0, hoverMode: true, canLiftOut: true }
-  it('names Space on a keyboard and the WINGS button on touch', () => {
-    expect(run(new PlayHints(), 2, sunk)).toEqual(['Space: wings to lift out'])
-    expect(run(new PlayHints(), 2, { ...sunk, touch: true })).toEqual(['WINGS: lift out'])
-    expect(wingsHint(true).touchAction).toBe('special')
-  })
-  it('ignores a splash, repeats while the buggy stays sunk and stops at five', () => {
+// Bug it catches: a sunk buggy told to open its wings (outdated), nagged over and over, or told
+// to use the Zorb in a world that has it off.
+describe('out of lava or water', () => {
+  const sunk: HintState = { kind: 'buggy', touch: false, altitude: 0, speed: 1, steer: 0, pitch: 1, throttle: 0, hoverMode: true, canLiftOut: true, zorbed: false, zorbAvailable: true }
+  it('points at the Zorb, once per sinking, after a splash has passed', () => {
     expect(run(new PlayHints(), 0.5, sunk)).toEqual([])
-    expect(run(new PlayHints(), 20, sunk)).toHaveLength(3)
-    expect(run(new PlayHints(), 200, sunk)).toHaveLength(5)
+    const hints = new PlayHints()
+    expect(run(hints, 60, sunk)).toEqual(['X: the Zorb floats you out'])
+    expect(hints.update(0.1, sunk)?.cue ?? 'none').toBe('none')
+    expect(run(new PlayHints(), 2, { ...sunk, touch: true })).toEqual(['The Zorb floats you out'])
     expect(run(new PlayHints(), 30, { ...sunk, canLiftOut: false })).toEqual([])
+  })
+  it('pulses the Zorb until it is on, the buggy is out, or time runs out', () => {
+    const cueAfter = (seconds: number, then: Partial<HintState> = {}) => { const h = new PlayHints(); run(h, 1, sunk); run(h, seconds, { ...sunk, ...then }); return h.zorbCue }
+    expect(cueAfter(1)).toBe(true)
+    expect(cueAfter(0.1, { zorbed: true, canLiftOut: false })).toBe(false)
+    expect(cueAfter(0.1, { canLiftOut: false })).toBe(false)
+    expect(cueAfter(ZORB_CUE_SECONDS + 1)).toBe(false)
+  })
+  it('does not restart for bobbing at the surface, but does for a new sinking', () => {
+    const hints = new PlayHints()
+    expect(run(hints, 2, sunk)).toHaveLength(1)
+    run(hints, 1, { ...sunk, canLiftOut: false })
+    expect(run(hints, 2, sunk)).toEqual([])
+    run(hints, 5, { ...sunk, canLiftOut: false })
+    expect(run(hints, 2, sunk)).toHaveLength(1)
+  })
+  it('names the wings only where the world has the Zorb off', () => {
+    const hints = new PlayHints()
+    expect(run(hints, 2, { ...sunk, zorbAvailable: false })).toEqual(['Space: wings to lift out'])
+    expect(hints.zorbCue).toBe(false)
+    expect(wingsHint(true).touchAction).toBe('special')
   })
   it('controls text mentions the zorb ball for every vehicle', () => {
     for (const kind of ['buggy', 'jet', 'hovercraft'] as const) { expect(vehicleHelp(kind).join(' ')).toContain('X: zorb ball'); expect(touchHelp(kind)).toContain('ZORB') }

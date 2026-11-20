@@ -11,6 +11,7 @@
  * filled from the opposite edge. A vehicle crossing the seam has ground under it until the
  * game moves it back into the tile; the margin is the same surface `heightAt` reports there.
  */
+import { longFrames } from '../../core/longFrames'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../core/physics'
 import type { TerrainData } from './generate'
 
@@ -59,7 +60,13 @@ export function heightfieldDesc(data: TerrainData, margin = COLLIDER_MARGIN, shi
 export function createTerrainCollider(
   world: RAPIER.World, data: TerrainData, centreX = 0, centreZ = 0,
 ): RAPIER.Collider {
-  const sx = Math.round(centreX / data.cell)
-  const sz = Math.round(centreZ / data.cell)
-  return world.createCollider(heightfieldDesc(data, COLLIDER_MARGIN, sx, sz).setTranslation(sx * data.cell, 0, sz * data.cell))
+  const spanStart = longFrames.start()
+  try {
+    longFrames.event('terrain.collider.create')
+    const sx = Math.round(centreX / data.cell)
+    const sz = Math.round(centreZ / data.cell)
+    return world.createCollider(heightfieldDesc(data, COLLIDER_MARGIN, sx, sz).setTranslation(sx * data.cell, 0, sz * data.cell))
+  } finally {
+    longFrames.end('terrain.collider.create', spanStart)
+  }
 }

@@ -380,6 +380,43 @@ export class Syn3hBuggy extends Vehicle {
     return this.skinReady
   }
 
+  /** Wait for the current real skin to finish attaching. Failed builds follow the normal retry path. */
+  async waitForCoveredBody(): Promise<boolean> {
+    const skin = this.skin
+    if (!skin || this.disposed) return false
+    try { await skin.ready } catch { return false }
+    return this.skin === skin && this.skinReady && !this.disposed
+  }
+
+  /** A freshly spawned buggy can draw its stand-in until its generated skin attaches. */
+  drawCoveredStandIn(draw: () => void): void {
+    const visible = this.fallback.visible
+    this.fallback.visible = true
+    try { draw() } finally { this.fallback.visible = visible }
+  }
+
+  drawCoveredMotorSparks(draw: () => void): void {
+    if (this.skin?.drawCoveredMotorSparks) this.skin.drawCoveredMotorSparks(draw)
+    else draw()
+  }
+
+  drawCoveredWings(deploy: boolean, draw: () => void): void {
+    const skin = this.skin
+    if (!this.skinReady || !skin) return
+    if (!deploy) {
+      if (skin.drawCoveredWings) skin.drawCoveredWings(draw)
+      else draw()
+      return
+    }
+    const [amount, steer, pitch] = this.lastWings
+    try {
+      skin.setWings(1, 0, 0)
+      draw()
+    } finally {
+      skin.setWings(amount, steer, pitch)
+    }
+  }
+
   /**
    * Build the skin and show it once it is ready. The skin is generated in code, so a rejection
    * here means building it failed: try a fresh skin after a growing delay, a few times, rather

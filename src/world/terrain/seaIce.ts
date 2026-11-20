@@ -11,6 +11,7 @@
 import * as THREE from 'three/webgpu'
 import { abs, cameraPosition, color, float, length, mix, mx_noise_float, positionWorld, smoothstep, vec3 } from 'three/tsl'
 import { params } from '../../../shared/params'
+import { longFrames } from '../../core/longFrames'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../core/physics'
 import { COLLIDER_MARGIN } from './collider'
 import type { TerrainData } from './generate'
@@ -33,13 +34,19 @@ export function seaFrozen(): boolean {
  * the heightfield is on top; where it lies below, the ice is.
  */
 export function createSeaIceCollider(world: RAPIER.World, data: TerrainData, centreX: number, centreZ: number, level: number): RAPIER.Collider {
-  const extent = (data.resolution - 1 + 2 * COLLIDER_MARGIN) * data.cell
-  return world.createCollider(
-    RAPIER.ColliderDesc.cuboid(extent / 2, SLAB, extent / 2)
-      .setTranslation(centreX, level - SLAB, centreZ)
-      .setCollisionGroups(groups(GROUP_TERRAIN, GROUP_ALL))
-      .setFriction(SEA_ICE_FRICTION),
-  )
+  const spanStart = longFrames.start()
+  try {
+    longFrames.event('terrain.collider.ice')
+    const extent = (data.resolution - 1 + 2 * COLLIDER_MARGIN) * data.cell
+    return world.createCollider(
+      RAPIER.ColliderDesc.cuboid(extent / 2, SLAB, extent / 2)
+        .setTranslation(centreX, level - SLAB, centreZ)
+        .setCollisionGroups(groups(GROUP_TERRAIN, GROUP_ALL))
+        .setFriction(SEA_ICE_FRICTION),
+    )
+  } finally {
+    longFrames.end('terrain.collider.ice', spanStart)
+  }
 }
 
 

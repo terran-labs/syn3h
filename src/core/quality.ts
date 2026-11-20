@@ -1,3 +1,4 @@
+import { longFrames } from './longFrames'
 /** Local rendering quality. World parameters and physics resolution are never changed here. */
 import { type AdapterProbe, gpuDeadlineMs, graphicsOverride, probeAdapter } from './renderOptions'
 import { defineParam, params, type ParamValue } from '../../shared/params'
@@ -726,6 +727,7 @@ export class QualityController implements QualitySource {
   private counting: { record: LevelChangeRecord; leftMs: number } | null = null
   /** Recent level changes, newest last, for diagnostics and browser checks. */
   readonly levelChanges: LevelChangeRecord[] = []
+  private levelChangeCount = 0
   readonly qualityLevels = Object.freeze(LEVELS.map((level, index) => Object.freeze({ index: index as QualityLevel, name: level.name })))
   private lastReason: GovernorReason | 'start' = 'start'
   readonly governor: QualityGovernor
@@ -745,7 +747,8 @@ export class QualityController implements QualitySource {
     const g = this.governor
     return Object.freeze({ visible: this.diagnosticsVisible,
       quality: Object.freeze({...g.settings,level:g.level,rung:g.rung,rungs:g.ladder.length,auto:g.auto,targetFps:Math.round(1000/g.targetMs)}),
-      levelPinned:g.levelPinned,history:this.history.history,recommendation:this.history.recommendation,
+      levelPinned:g.levelPinned,qualityReason:this.lastReason,qualityChanges:g.changes,qualityLevelChanges:this.levelChangeCount,
+      history:this.history.history,recommendation:this.history.recommendation,
       pipelines:this.history.pipelines,longFrames:this.history.longFrames,bots:this.botsNow(),
       environment:Object.freeze(this.environment?.() ?? {backend:'initializing',adapter:null,memoryGB:null,maxTextureSize:null,fallbackReason:null,deviceLost:null}) })
   }
@@ -941,6 +944,12 @@ export class QualityController implements QualitySource {
    * change, in which case they were cleared first.
    */
   private apply(by: 'player' | 'governor' | 'start' = 'governor', covered = by !== 'governor') {
+    const start = longFrames.start()
+    longFrames.event('Quality apply: ' + by)
+    try { this.applySettings(by, covered) } finally { longFrames.end('Quality apply', start) }
+  }
+
+  private applySettings(by: 'player' | 'governor' | 'start', covered: boolean) {
     this.history.resetEvidence()
     const g = this.governor, level = g.level, budget = LEVELS[level], s = g.settings
     const levelChanged = this.appliedLevel !== level || this.reapply
@@ -948,6 +957,7 @@ export class QualityController implements QualitySource {
     if (levelChanged) {
       if (by === 'player') this.overrides = {}
       if (this.appliedLevel >= 0 && this.appliedLevel !== level) {
+        this.levelChangeCount++
         const record: LevelChangeRecord = { from: this.appliedLevel as QualityLevel, to: level, by, covered, pipelinesCreated: null }
         this.levelChanges.push(record); if (this.levelChanges.length > 16) this.levelChanges.shift()
         this.counting = { record, leftMs: 2000 }

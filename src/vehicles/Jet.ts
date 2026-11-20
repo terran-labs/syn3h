@@ -58,8 +58,8 @@ export class Jet extends Vehicle {
   readonly ridePosition = new THREE.Object3D()
   private readonly model: GameJet
   private gearAmount = 0
-  /** The gear amount the collider was last shaped for; -1 forces the first update. */
-  private colliderGear = -1
+  /** The gear amount the collider was last synchronized to. It starts disabled. */
+  private colliderGear = 0
   /** Keep altitude hold off after materialization until gear contact or positive lift input. */
   private holdReleased = false
   private freshHoldRelease = false
@@ -257,6 +257,26 @@ export class Jet extends Vehicle {
     // A ball carries its vehicle; even idle thrust must stay dark inside it.
     this.model.plume.mesh.visible = !this.zorbed
   }
+  /** The existing gear batch and plume can be submitted even when gameplay hides them. */
+  drawCoveredGear(deploy: boolean, draw: () => void): void {
+    const near = this.model.near
+    const gear = near.gear, plume = this.model.plume.mesh
+    const bodyVisible = near.object.visible, gearVisible = gear.visible, plumeVisible = plume.visible
+    try {
+      if (deploy) near.setGear(1)
+      near.object.visible = gear.visible = plume.visible = true
+      draw()
+    } finally {
+      try {
+        if (deploy) near.setGear(this.gearAmount)
+      } finally {
+        near.object.visible = bodyVisible
+        gear.visible = gearVisible
+        plume.visible = plumeVisible
+      }
+    }
+  }
+
   protected override applyColors():void {
     this.model?.setColors(this.colors.body, this.colors.accent)
   }
@@ -264,8 +284,17 @@ export class Jet extends Vehicle {
   /** A fresh jet: gear as built and any altitude-hold release from an earlier arrival forgotten. */
   override resetForWorld():void {
     super.resetForWorld()
-    this.gearAmount=0;this.colliderGear=-1
-    this.holdReleased=this.freshHoldRelease=false
+    this.gearAmount = 0
+    this.gearCollider.setEnabled(false)
+    this.colliderGear = 0
+    this.holdReleased = this.freshHoldRelease = false
+    this.smoothed.set(0, 0, 0, 0)
+    this.controls.set(0, 0, 0)
+    this.vectorPitch = this.vectorYaw = 0
+    this.wingsOpen = false
+    this.atmosDensity = 1.225
+    this.stallFactor = 1
+    this.model.resetPose()
   }
   override dispose():void {
     this.model.dispose()

@@ -4,6 +4,7 @@
  * Owner: vehicle work.
  */
 import type * as THREE from 'three/webgpu'
+import { longFrames } from '../core/longFrames'
 import type { Game } from '../core/Game'
 import type { Terrain } from '../world/Terrain'
 import { Hovercraft } from './Hovercraft'
@@ -55,21 +56,27 @@ export function createVehicle(
   position: THREE.Vector3,
   heading = 0,
 ): Vehicle {
-  switch (kind) {
-    case 'jet':
-      return new Jet(game, terrain, position, heading)
-    // The Mars Explorer tank, while it is offered (src/vehicles/available.ts); a hidden tank
-    // is built as the buggy below, whoever asked for it.
-    case 'tank':
-      if (isVehicleAvailable(kind)) return new Tank(game, terrain, position, heading)
-      return new Syn3hBuggy(game, terrain, position, heading, 'buggy', hasDom ? () => new Syn3hBuggySkin() : undefined)
-    case 'hovercraft':
-      return new Hovercraft(game, terrain, position, heading)
-    // 'buggy-classic' and anything unknown land here too: see `canonicalVehicleKind`.
-    case 'buggy':
-    case 'buggy-syn3h':
-    default:
-      return new Syn3hBuggy(game, terrain, position, heading, kind === 'buggy-syn3h' ? kind : 'buggy',
-        hasDom ? () => new Syn3hBuggySkin() : undefined)
+  const spanStart = longFrames.start()
+  try {
+    longFrames.event('vehicle.create')
+    switch (kind) {
+      case 'jet':
+        return new Jet(game, terrain, position, heading)
+      // The Mars Explorer tank, while it is offered (src/vehicles/available.ts); a hidden tank
+      // is built as the buggy below, whoever asked for it.
+      case 'tank':
+        if (isVehicleAvailable(kind)) return new Tank(game, terrain, position, heading)
+        return new Syn3hBuggy(game, terrain, position, heading, 'buggy', hasDom ? () => new Syn3hBuggySkin() : undefined)
+      case 'hovercraft':
+        return new Hovercraft(game, terrain, position, heading)
+      // 'buggy-classic' and anything unknown land here too: see `canonicalVehicleKind`.
+      case 'buggy':
+      case 'buggy-syn3h':
+      default:
+        return new Syn3hBuggy(game, terrain, position, heading, kind === 'buggy-syn3h' ? kind : 'buggy',
+          hasDom ? () => new Syn3hBuggySkin() : undefined)
+    }
+  } finally {
+    longFrames.end('vehicle.create', spanStart)
   }
 }

@@ -1,0 +1,80 @@
+/* The pause screen (the owner, 19 November 2026): "When we're paused, you should fade out all
+   UX other than the minimap so it looks absolutely gorgeous next to the welcome button."
+   Paused (.is-paused on the shell): every piece of interface fades out but the minimap, the
+   veil that resumes, and the row of three buttons (Exit world, Welcome, Screenshot). No
+   full-screen dim: a soft shade sits behind PAUSED only while the words show. After a moment
+   with nothing moving (.is-whisper, Shell.whisper) the words and their shade fade too.
+   Buttons are the shared glass (.liquid-glass, shell.css); this file sets place and state. */
+
+/* ---- Everything else steps out. Opacity and visibility only: nothing is laid out again. ---- */
+.syn3h-shell.is-paused > :not(.shell-minimap, .pause-veil, .pause-actions, .exit-confirm, .in-play-about, .wi-tooltip),
+body:has(> .syn3h-shell.is-paused) > :is(.touch-controls, .syn3h-nametags, .daydream-pill),
+.syn3h-shell.is-paused .touch-controls {
+  opacity: 0 !important; visibility: hidden; pointer-events: none;
+  transition: opacity .35s ease-out, visibility 0s linear .35s !important;
+}
+
+/* ---- The veil: still the whole screen and still one click to resume, now clear glass. ---- */
+/* It is a button holding focus while paused, so general button styling (a border, a focus
+   ring, a glow) would draw a frame round the whole screen. None of that here. */
+html .syn3h-shell.exploration-ui .pause-veil, html .syn3h-shell.exploration-ui .pause-veil:is(:hover, :focus, :focus-visible) { background: transparent; border: 0; outline: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.syn3h-shell .pause-veil::before {
+  content: ""; position: absolute; left: 50%; top: 50%; z-index: -1; width: min(640px, 110vw); height: 300px; translate: -50% -50%;
+  background: radial-gradient(closest-side, rgb(2 8 14 / .42), rgb(2 8 14 / .2) 55%, transparent); pointer-events: none;
+  transition: opacity .6s ease;
+}
+.syn3h-shell .pause-veil > * { transition: opacity .6s ease; }
+.syn3h-shell.is-whisper .pause-veil::before, .syn3h-shell.is-whisper .pause-veil > * { opacity: 0; }
+/* "Leave this world?" is the only text while it asks: PAUSED steps out from behind it. */
+.syn3h-shell:has(.exit-confirm:not([hidden])) .pause-veil::before, .syn3h-shell:has(.exit-confirm:not([hidden])) .pause-veil > * { opacity: 0; }
+
+/* ---- Exit world, Welcome, Screenshot: one row at the bottom centre, above the veil. ---- */
+.syn3h-shell .pause-actions {
+  position: fixed; z-index: 61; left: 50%; bottom: var(--edge-bottom, max(24px, env(safe-area-inset-bottom))); translate: -50% 0;
+  display: flex; gap: 12px; max-width: calc(100vw - 2 * var(--edge, 16px)); animation: pause-actions-in .3s cubic-bezier(.2,.8,.2,1) both;
+}
+.syn3h-shell .pause-actions[hidden] { display: none; }
+@keyframes pause-actions-in { from { opacity: 0; translate: -50% 10px; } }
+html .syn3h-shell .pause-actions button {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 9px; box-sizing: border-box;
+  min-width: 0; min-height: 46px; height: 46px; padding: 0 20px; margin: 0;
+  font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; white-space: nowrap;
+}
+.syn3h-shell .pause-actions .pause-icon { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.syn3h-shell .pause-actions .pause-short { display: none; }
+/* No keyboard to press S on a touch screen. */
+.syn3h-shell.has-touch .pause-actions kbd { display: none; }
+.syn3h-shell .pause-actions kbd { margin-left: 6px; padding: 2px 5px; border: 1px solid currentColor; border-radius: 4px; font: inherit; font-size: 10px; letter-spacing: 0; opacity: .7; }
+.syn3h-shell .pause-actions button:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 4px; }
+/* Saved: the camera becomes a tick for a moment. */
+.syn3h-shell .pause-actions .pause-shot.is-saved .pause-icon { stroke: var(--s3-accent-2, currentColor); }
+/* The status line ("Saved", or what went wrong) and the keys hint sit just above the row. */
+.syn3h-shell .pause-actions :is(.pause-shot-hint, .pause-shot-keys) {
+  position: absolute; bottom: calc(100% + 10px); right: 0; padding: 5px 12px; border-radius: 999px;
+  background: rgb(2 8 14 / .55); color: var(--s3-ink, #eee); font: 400 12px/1.2 'Barlow', sans-serif; letter-spacing: .04em; text-transform: none; white-space: nowrap; pointer-events: none;
+}
+.syn3h-shell .pause-actions .pause-shot-hint[hidden] { display: none; }
+/* The keys hint, on hover or keyboard focus, where there is a keyboard to press S on. A span of
+   its own, so the glass class keeps both of the button's pseudo-elements. */
+.syn3h-shell .pause-actions .pause-shot-keys { opacity: 0; transition: opacity .15s ease; }
+@media (hover: hover) { .syn3h-shell .pause-actions .pause-shot:is(:hover, :focus-visible) ~ .pause-shot-keys { opacity: 1; } }
+.syn3h-shell .pause-actions .pause-shot:focus-visible ~ .pause-shot-keys { opacity: 1; }
+.syn3h-shell .pause-actions:has(.pause-shot-hint:not([hidden])) .pause-shot-keys,
+.syn3h-shell.has-touch .pause-actions .pause-shot-keys { display: none; }
+
+/* "Leave this world?" asked from the pause screen stands above the veil and its buttons. */
+.syn3h-shell.is-paused .exit-confirm { z-index: 62; }
+
+/* Phones: one row in portrait, icons with short words, standing above the minimap, which holds
+   the lower left corner and stays on screen while paused (--map-top, exploration.css). */
+@media (max-width: 520px) {
+  .syn3h-shell .pause-actions { gap: 8px; bottom: calc(var(--map-top, 160px) + 12px); }
+  html .syn3h-shell .pause-actions button { height: 44px; min-height: 44px; padding: 0 14px; gap: 7px; font-size: 11px; letter-spacing: .1em; }
+  .syn3h-shell .pause-actions .pause-long { display: none; }
+  .syn3h-shell .pause-actions .pause-short { display: inline; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .syn3h-shell .pause-actions { animation: none; }
+  .syn3h-shell .pause-veil::before, .syn3h-shell .pause-veil > *, .syn3h-shell .pause-actions .pause-shot-keys { transition: none; }
+}

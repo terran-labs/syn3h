@@ -1,0 +1,136 @@
+/*
+ * Liquid glass: the game's one button style (the owner, 19 November 2026: "classy and elegant
+ * and minimal. They should look like liquid holographic glass"). Every button that is not a
+ * text link carries .liquid-glass: the lobby's three, the panel buttons in play, the touch
+ * buttons and the phone's Show panels control. Loaded after the themes so it is the last word on
+ * a button's surface; size, padding and placement stay with each component.
+ *
+ * What it is, and nothing more:
+ *   - A clear body (the owner: glass, not smoked plastic): a breath of white over a light frost
+ *     of what is behind, so the button reads through to the scene and takes its colour. The rim,
+ *     the highlight and the frost make it glass; the label's own dark halo (--glass-under), not
+ *     a dark fill, keeps it legible over bright sky. Only the fallbacks without frost (lowest
+ *     graphics level, reduced transparency, more contrast) carry a dense body.
+ *   - One fine specular rim, 1 px, brightest where the light strikes (upper left at rest; it
+ *     turns toward the pointer, Shell.glass sets --rim-angle), with a faint spectral shift along
+ *     it: the holographic part. A press brings the spectrum up.
+ *   - One soft highlight across the top of the face. No glow halo, no thick border, no cut corners.
+ *
+ * What it cannot be: CSS cannot bend the pixels behind an element in Safari (every iPhone), so
+ * this is frost and rim light, a convincing imitation, not refraction. Refraction over our own
+ * canvases is a later shader (Route B, docs/research/liquid-glass.md on the research branch). It
+ * can take over the surface one button at a time without touching any markup: once its surface
+ * for a button is drawn and ready it sets data-glass-surface="shader" on that button, and the
+ * rule at the end clears that button's CSS body and frost. Removing the attribute (any frame)
+ * hands the surface back to CSS at once.
+ *
+ * Tokens (on :root, because the touch controls sit outside .syn3h-shell). Override them only in
+ * your own scope; never restyle the class's rules.
+ *   --glass-body     the body's tint
+ *   --glass-blur     the frost radius (0 for none)
+ *   --glass-frost    the whole backdrop filter; contexts set it to none to drop frost entirely
+ *   --glass-rim      the rim's brightest alpha, 0 to 1
+ *   --glass-sheen    the strength of the rim's spectral shift, 0 to 1
+ *   --glass-ink      label colour
+ *   --glass-under    the label's dark halo, for light type over a bright sky
+ *   --glass-radius   corner radius; a pill by default (.glass-round makes a circle)
+ */
+@property --rim-angle { syntax: "<angle>"; inherits: false; initial-value: 315deg; }
+:root {
+  /* Clear, matched to the shader's surface (its tint is capped at 6.5 %), so the hand-over
+     between the two does not jump. */
+  --glass-body: rgb(255 255 255 / .06);
+  --glass-body-hover: rgb(255 255 255 / .1);
+  --glass-body-on: rgb(255 255 255 / .18);
+  --glass-blur: 3px;
+  /* Light frost that lifts what is behind a touch, never darkens it. */
+  --glass-frost: blur(var(--glass-blur)) saturate(1.2) brightness(1.04);
+  --glass-rim: .85;
+  --glass-sheen: .5;
+  --glass-ink: #f4f4f4;
+  --glass-under: 0 0 1px rgb(0 0 0 / .9), 0 1px 3px rgb(0 0 0 / .7), 0 0 10px rgb(0 0 0 / .45);
+  --glass-radius: 999px;
+}
+
+.liquid-glass {
+  position: relative; isolation: isolate;
+  border: 0; border-radius: var(--glass-radius);
+  background: var(--glass-body); background-image: none;
+  -webkit-backdrop-filter: var(--glass-frost); backdrop-filter: var(--glass-frost);
+  /* Depth is the rim's (below); only a faint short shadow under the body, no dark fill or halo. */
+  box-shadow: 0 1px 4px rgb(0 0 0 / .12);
+  color: var(--glass-ink); text-shadow: var(--glass-under);
+  /* No transition on the body: the shader hand-over swaps it in one frame, both ways. */
+  transition: box-shadow .2s ease, transform .12s ease, --glass-rim .2s ease, --glass-sheen .3s ease;
+}
+/* The rim carries the weight, as the shader's does: a bright arc on the lit side, a faint dark
+   counter-arc opposite, both on a conic masked to a 1.5 px ring, and a faint spectrum (cool,
+   rose, warm) along it whose strength is --glass-sheen. */
+.liquid-glass::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; padding: 1.5px; pointer-events: none;
+  background:
+    conic-gradient(from var(--rim-angle),
+      rgb(255 255 255 / var(--glass-rim)),
+      rgb(255 255 255 / calc(var(--glass-rim) * .55)) 9%,
+      rgb(255 255 255 / calc(var(--glass-rim) * .14)) 20%,
+      rgb(0 0 0 / .08) 32%,
+      rgb(0 0 0 / .5) 50%,
+      rgb(0 0 0 / .08) 68%,
+      rgb(255 255 255 / calc(var(--glass-rim) * .14)) 80%,
+      rgb(255 255 255 / calc(var(--glass-rim) * .55)) 91%,
+      rgb(255 255 255 / var(--glass-rim))),
+    conic-gradient(from calc(var(--rim-angle) + 40deg),
+      rgb(150 220 255 / calc(var(--glass-sheen) * .32)),
+      rgb(255 170 220 / calc(var(--glass-sheen) * .26)) 18%,
+      rgb(255 220 150 / calc(var(--glass-sheen) * .3)) 34%,
+      transparent 50%,
+      rgb(150 220 255 / calc(var(--glass-sheen) * .22)) 70%,
+      rgb(255 220 150 / calc(var(--glass-sheen) * .2)) 86%,
+      rgb(150 220 255 / calc(var(--glass-sheen) * .32)));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
+  transition: --rim-angle .35s ease-out;
+}
+/* The one highlight: light gathered across the top of the face, gone by the middle. */
+.liquid-glass::after {
+  content: ''; position: absolute; inset: 1px; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(180deg, rgb(255 255 255 / .1), rgb(255 255 255 / .025) 45%, transparent 60%);
+}
+@property --glass-rim { syntax: "<number>"; inherits: true; initial-value: .85; }
+@property --glass-sheen { syntax: "<number>"; inherits: true; initial-value: .5; }
+
+.liquid-glass:hover { --glass-rim: .95; background-color: var(--glass-body-hover); }
+/* Pressed (and .held, the touch controls' finger-down state): the spectrum comes up and the
+   glass gives a little. On (aria-pressed, .is-current): a pale body, the rim at full. */
+.liquid-glass:active, .liquid-glass.held { --glass-sheen: 1; --glass-rim: 1; transform: scale(.97); background-color: var(--glass-body-on); }
+.liquid-glass:is([aria-pressed="true"], .is-current) { --glass-rim: 1; --glass-sheen: .75; background-color: var(--glass-body-on); }
+/* The action that leads on: the same glass, a little paler, so it is found first. */
+.liquid-glass.is-primary { --glass-body: rgb(255 255 255 / .1); --glass-body-hover: rgb(255 255 255 / .15); --glass-rim: 1; }
+.liquid-glass:focus-visible { outline: 1.5px solid rgb(244 244 244 / .92); outline-offset: 3px; }
+.liquid-glass:disabled { opacity: .42; cursor: default; transform: none; }
+.liquid-glass.glass-round { --glass-radius: 50%; }
+
+/* Glass on glass: inside a panel that already frosts what is behind it, a button keeps its rim
+   and highlight but does not frost again (Apple's rule, and half the cost). */
+:is(.world-inspector .wi-glass, .world-inspector .rail-players, .in-play-about, .exit-confirm-card, .join-card) .liquid-glass { --glass-frost: none; --glass-body: rgb(255 255 255 / .04); --glass-body-hover: rgb(255 255 255 / .08); }
+/* Over the moving world each frosted button re-blurs what is behind it every frame. The thumb
+   buttons and the menu row frost lightly; at the lowest graphics level, when the quality ladder
+   is shedding, or when the player asks for less transparency or more contrast, nothing frosts
+   and the body carries the contrast itself. Rim and highlight stay. */
+:is(.touch-controls, .hud-navigation) .liquid-glass { --glass-blur: 2px; }
+html[data-gfx="0"] .liquid-glass, [data-ui-frost="off"] .liquid-glass { --glass-frost: none; --glass-body: rgb(18 18 20 / .66); --glass-body-hover: rgb(40 40 44 / .7); }
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .liquid-glass { --glass-frost: none; --glass-body: rgb(14 14 16 / .86); --glass-body-hover: rgb(36 36 40 / .88); --glass-sheen: 0; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .liquid-glass { --glass-body: rgb(18 18 20 / .66); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .liquid-glass, .liquid-glass::before { transition: none; }
+  .liquid-glass:active, .liquid-glass.held { transform: none; }
+}
+/* A surface drawn by our own shader (Route B), per button: only this button's CSS body and frost
+   step aside; rim, highlight, label, focus and the pressed and on states stay CSS. The shader
+   draws its body in this button's computed --glass-body (the hover and on bodies likewise), so
+   the swap does not flash. */
+.liquid-glass[data-glass-surface="shader"] { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }

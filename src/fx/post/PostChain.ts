@@ -1,3 +1,5 @@
+import { registerCoveredComposite } from '../../core/coveredPipelines'
+import { longFrames } from '../../core/longFrames'
 /**
  * The in-game post chain: what turns the rendered world into the picture.
  *
@@ -239,7 +241,11 @@ export class PostChain {
     const historyKey = temporalOn ? ['world.curve', 'world.seed', 'terrain.kind', 'terrain.planetSize', 'camera.mode'].map(id => params.get(id)?.value).join('|') : ''
     const key = `${debug}|${tier}|${motionOn}|${composeOn}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${temporalOn}|${historyKey}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
     const warmGlass = this.covered && !debug && (this.glassMode === 'inline' || this.glassMode === 'target')
-    if (this.built?.key !== key || (warmGlass && !this.glassBuilt)) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn)
+    if (this.built?.key !== key || (warmGlass && !this.glassBuilt)) {
+      const start = longFrames.start()
+      try { this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn) }
+      finally { longFrames.end('Post chain rebuild', start) }
+    }
 
     const u = this.u
     u.exposure.value = Math.max(1e-4, renderer.toneMappingExposure)
@@ -714,6 +720,7 @@ export class PostChain {
     if (debug === 2 && contactTex) out = vec4(vec3(contactTex), 1)
     if (debug === 3 && raysRef) out = vec4(raysRef.sample(uv()).r, maskRef.sample(uv()).a, 0, 1)
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
+    if (this.glassBuilt) registerCoveredComposite(pipeline)
     pipeline.outputColorTransform = false
     this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
     this.builds++

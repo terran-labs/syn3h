@@ -18,8 +18,9 @@
  *   Landscape phones      level with each arc's upper tip, at 30% of the height (centred, a
  *                         thumb driving the stick lands on them), outside the centre third.
  *                         Toasts sit above them (touch-stick.css).
- *   Portrait phones       the arcs run off the sides, so the readouts sit at the screen edges,
- *                         at 30% of the height: clear of the top bar and of the controls below.
+ *   Portrait phones       the arcs run off the sides, so they are not drawn and the readouts
+ *                         sit alone at the screen edges, at 30% of the height: clear of the top
+ *                         bar and of the controls below.
  */
 .focus-hud { container-type: size; }
 .focus-hud .fh-left, .focus-hud .fh-right {
@@ -47,4 +48,7 @@
   .syn3h-shell .focus-hud :is(.fh-left, .fh-right) { --fh-number: 24px; top: calc(30% - 26px); }
   .syn3h-shell .focus-hud .fh-left { right: auto; left: var(--edge-left); text-align: left; justify-items: start; }
   .syn3h-shell .focus-hud .fh-right { left: auto; right: var(--edge-right); text-align: right; justify-items: end; }
+  /* Only the text: the two crescents and their fill bars run off the sides here and read as
+     stray curves, so portrait phones draw the readouts alone (the owner, 19 November 2026). */
+  .syn3h-shell .focus-hud svg g[data-style="0"] { display: none; }
 }

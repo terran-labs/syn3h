@@ -2,11 +2,13 @@ import { worldSeed } from '../../shared/params'
 import { uniqueBotName } from '../ui/data/names'
 import { attachVehicleEffects } from '../vehicles/effects'
 import { Vector3 } from 'three/webgpu'
-import type { Game, System } from '../core/Game'
+import { longFrames } from '../core/longFrames'
+import type { CoveredWarm, Game, System } from '../core/Game'
 import { qualityBudget } from '../core/quality'
-import { createVehicle } from '../vehicles'
+import type { VehicleKind } from '../vehicles'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { BotBrain, isSafeGround, type BotMatch, type BotTerrain } from './BotBrain'
+import { BotRenderWarm } from './BotRenderWarm'
 import { botCount, botsKeepCount, fleet, spawnRadius } from './params'
 import { Daydream } from './Daydream'
 import { curveFactor, overHorizon } from '../world/curve'
@@ -35,6 +37,7 @@ export type ArrivalGate = 'playing' | 'idle' | 'closed'
 
 export class BotManager implements System {
   private readonly bots: Vehicle[] = []
+  private readonly covered: BotRenderWarm
   private readonly brains: BotBrain[] = []
   private readonly effects = new Map<Vehicle, () => void>()
   private gearHooks: BotGearHooks | null = null
@@ -100,6 +103,7 @@ export class BotManager implements System {
   private readonly places = () => this.sights ??= pointsOfInterest(this.terrain)
   constructor(private readonly game: Game, private readonly terrain: BotTerrain, private player: Vehicle) {
     this.targets = [player]
+    this.covered = new BotRenderWarm(game, terrain)
     // Owned here so the composition root needs no extra wiring: this manager already holds
     // the player, the terrain and every vehicle a daydreaming driver might tail.
     // One route planner per terrain, shared by every mind: its caches are megabytes.
@@ -109,10 +113,24 @@ export class BotManager implements System {
       this.sights = null; this.races.cancel('world-changed')
       // A new world: the bots of the old one go (the world is rebuilt under cover), and the
       // new world's arrive one at a time near the player once they can drive.
+      this.covered.worldChanged()
       this.world++; this.clearBots(); this.pacer.restart()
     })
     this.daydream = new Daydream(game, terrain, player, { navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
   }
+  warmCovered(warm: CoveredWarm): Promise<void> { return this.covered.warm(warm) }
+  acquireBotVehicle(kind: VehicleKind, position: Vector3, heading: number): Vehicle {
+    return this.covered.acquire(kind, position, heading)
+  }
+
+  releaseBotVehicle(vehicle: Vehicle): boolean { return this.covered.release(vehicle) }
+
+  private removeBotVehicle(vehicle: Vehicle): void {
+    this.effect?.cancel(vehicle)
+    if (this.releaseBotVehicle(vehicle)) this.game.remove(vehicle, false)
+    else this.game.remove(vehicle)
+  }
+
   fixedUpdate(dt: number) {
     this.daydream.fixedUpdate(dt)
     if (!this.remote) {
@@ -165,7 +183,10 @@ export class BotManager implements System {
       // Everyone else goes for "it"; a bot that is "it" picks someone to score on.
       const itBrain = brains.find(b => b.vehicle === it)
       hunters = hunters.filter(b => b !== itBrain)
-      candidates = [candidate(it, 30)]
+      // At most PER_PERSON bots go after "it", a bot as much as a person: with bot-on-bot rams
+      // passing the role, three or four bots on a bot "it" would keep it among themselves and
+      // leave the person watching. The rest keep the person company, as in free play.
+      candidates = [{ ...candidate(it, 30), person: true }]
       if (itBrain) {
         const scoreOn = assignTargets([{ id: idOf.get(it)!, position: it.body.translation(), current: itBrain.gameTarget ? idOf.get(itBrain.gameTarget) : null }], everyone.filter(v => v !== it).map(v => candidate(v)), PER_PERSON - 1, flat)
         const pick = scoreOn.get(idOf.get(it)!)
@@ -228,33 +249,57 @@ export class BotManager implements System {
     for (const brain of this.brains) brain.match = match
   }
   private removeLast() {
-    const bot = this.bots.pop()!
-    this.effects.get(bot)?.(); this.effects.delete(bot)
-    this.game.remove(this.brains.pop()!); this.game.remove(bot)
-    for (const controller of this.brains) controller.setPeers(this.bots)
+    const spanStart = longFrames.start()
+    try {
+      longFrames.event('bot.remove')
+      const bot = this.bots.pop()!
+      this.effects.get(bot)?.(); this.effects.delete(bot)
+      this.game.remove(this.brains.pop()!); this.removeBotVehicle(bot)
+      for (const controller of this.brains) controller.setPeers(this.bots)
+    } finally {
+      longFrames.end('bot.remove', spanStart)
+    }
   }
   /** Send the newest bot away: it leaves in the departure cloud where it is, then goes. */
   private depart() {
     const bot = this.bots[this.bots.length - 1]
     if (!bot) return
     if (!this.effect) { this.removeLast(); return }
-    // Out of the count now, so the next decision sees one fewer; gone once its cloud has gathered.
-    const index = this.bots.length - 1
-    this.bots.splice(index, 1); const brain = this.brains.splice(index, 1)[0]
-    for (const controller of this.brains) controller.setPeers(this.bots)
-    this.leaving.set(bot, brain)
-    const gone = () => {
-      if (!this.leaving.delete(bot)) return
-      this.effects.get(bot)?.(); this.effects.delete(bot)
-      this.game.remove(brain); this.game.remove(bot)
+    const spanStart = longFrames.start()
+    try {
+      longFrames.event('bot.depart')
+      // Out of the count now, so the next decision sees one fewer; gone once its cloud has gathered.
+      const index = this.bots.length - 1
+      this.bots.splice(index, 1); const brain = this.brains.splice(index, 1)[0]
+      for (const controller of this.brains) controller.setPeers(this.bots)
+      this.leaving.set(bot, brain)
+      const gone = () => {
+        if (!this.leaving.delete(bot)) return
+        this.removeDeparting(bot, brain)
+      }
+      ;(this.effect.depart?.(bot) ?? this.effect.begin(bot, { hold: false, holdSeconds: 0.7 })).then(gone, gone)
+    } finally {
+      longFrames.end('bot.depart', spanStart)
     }
-    ;(this.effect.depart?.(bot) ?? this.effect.begin(bot, { hold: false, holdSeconds: 0.7 })).then(gone, gone)
+  }
+  private removeDeparting(bot: Vehicle, brain: BotBrain): void {
+    const spanStart = longFrames.start()
+    try {
+      longFrames.event('bot.remove')
+      this.effects.get(bot)?.(); this.effects.delete(bot)
+      this.game.remove(brain); this.removeBotVehicle(bot)
+    } finally {
+      longFrames.end('bot.remove', spanStart)
+    }
   }
   private clearBots() {
     while (this.bots.length) this.removeLast()
     // A bot still leaving goes with its brain: a brain left running would read a removed body,
     // which panics the physics engine for the rest of the session.
-    for (const [bot, brain] of [...this.leaving]) { this.effect?.cancel(bot); this.leaving.delete(bot); this.effects.get(bot)?.(); this.effects.delete(bot); this.game.remove(brain); this.game.remove(bot) }
+    for (const [bot, brain] of [...this.leaving]) {
+      this.leaving.delete(bot)
+      this.removeDeparting(bot, brain)
+    }
   }
   /**
    * A place for a new bot near the player, wherever they are: on ground its vehicle can use
@@ -295,42 +340,53 @@ export class BotManager implements System {
 
   /** Build the vehicle for bot `index` at a place near the player, or null when there is none. */
   private build(index: number): { bot: Vehicle; place: { position: Vector3; heading: number } } | null {
-    const kind = Math.round(fleet.value) === 1 ? MIXED_FLEET[index % MIXED_FLEET.length] : 'buggy'
-    const place = this.spot(index, kind)
-    if (!place) return null
-    const start = performance.now()
-    const bot = createVehicle(this.game, this.terrain, kind, place.position, place.heading)
-    bot.isLocal = false; bot.id = `bot-${this.nextBotId++}`; bot.name = uniqueBotName(`${worldSeed.value}:${bot.id}`, new Set([this.player.name, ...this.bots.map(other => other.name), ...[...this.leaving.keys()].map(other => other.name)].filter(Boolean).map(n => n!.toLowerCase())))
-    bot.setColors(`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff')
-    try { performance.measure('syn3h:bot build', { start, end: performance.now(), detail: kind }) } catch { /* Older engines. */ }
-    return { bot, place }
+    const spanStart = longFrames.start()
+    try {
+      const kind = Math.round(fleet.value) === 1 ? MIXED_FLEET[index % MIXED_FLEET.length] : 'buggy'
+      const place = this.spot(index, kind)
+      if (!place) return null
+      const start = performance.now()
+      const bot = this.acquireBotVehicle(kind, place.position, place.heading)
+      bot.isLocal = false; bot.id = `bot-${this.nextBotId++}`; bot.name = uniqueBotName(`${worldSeed.value}:${bot.id}`, new Set([this.player.name, ...this.bots.map(other => other.name), ...[...this.leaving.keys()].map(other => other.name)].filter(Boolean).map(n => n!.toLowerCase())))
+      bot.setColors(`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff')
+      try { performance.measure('syn3h:bot build', { start, end: performance.now(), detail: kind }) } catch { /* Older engines. */ }
+      return { bot, place }
+    } finally {
+      longFrames.end('bot.build', spanStart)
+    }
   }
 
   /** Put a built bot into play: its brain, mind, effects and the arrival cloud. */
   private enter(bot: Vehicle, place: { position: Vector3; heading: number }, index: number): void {
-    const brain = new BotBrain(this.game, this.terrain, bot, this.player, index)
-    brain.requestRecovery = () => {
-      // Reuse the same vehicle and stable identity when sticky terrain defeats it.
-      for (let attempt = 0; attempt < 16; attempt++) {
-        const spawn = this.terrain.spawnPoint(index + attempt + 1)
-        if (!isSafeGround(this.terrain, spawn.position.x, spawn.position.z)) continue
-        bot.teleport(spawn.position, spawn.heading); return true
+    const spanStart = longFrames.start()
+    try {
+      longFrames.event('bot.add')
+      const brain = new BotBrain(this.game, this.terrain, bot, this.player, index)
+      brain.requestRecovery = () => {
+        // Reuse the same vehicle and stable identity when sticky terrain defeats it.
+        for (let attempt = 0; attempt < 16; attempt++) {
+          const spawn = this.terrain.spawnPoint(index + attempt + 1)
+          if (!isSafeGround(this.terrain, spawn.position.x, spawn.position.z)) continue
+          bot.teleport(spawn.position, spawn.heading); return true
+        }
+        return false
       }
-      return false
+      // Each bot gets a character from the world seed and its own id, and a mind to act on it.
+      const pilot = createPilot(bot, this.terrain)
+      if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
+      brain.navigator = this.navigator
+      brain.setGear(this.gearHooks)
+      brain.match = this.match
+      brain.remote = this.remote
+      brain.setTargets(this.targets)
+      // Register brain first so its input reaches the vehicle in the same physics step.
+      this.game.add(brain); this.game.add(bot); this.brains.push(brain); this.bots.push(bot)
+      this.effects.set(bot, attachVehicleEffects(this.game, this.terrain, bot, { local: false }))
+      for (const controller of this.brains) controller.setPeers(this.bots)
+      void this.effect?.begin(bot, { at: place.position, heading: place.heading })
+    } finally {
+      longFrames.end('bot.add', spanStart)
     }
-    // Each bot gets a character from the world seed and its own id, and a mind to act on it.
-    const pilot = createPilot(bot, this.terrain)
-    if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
-    brain.navigator = this.navigator
-    brain.setGear(this.gearHooks)
-    brain.match = this.match
-    brain.remote = this.remote
-    brain.setTargets(this.targets)
-    // Register brain first so its input reaches the vehicle in the same physics step.
-    this.game.add(brain); this.game.add(bot); this.brains.push(brain); this.bots.push(bot)
-    this.effects.set(bot, attachVehicleEffects(this.game, this.terrain, bot, { local: false }))
-    for (const controller of this.brains) controller.setPeers(this.bots)
-    void this.effect?.begin(bot, { at: place.position, heading: place.heading })
   }
 
   /**
@@ -392,6 +448,7 @@ export class BotManager implements System {
   }
   dispose() {
     this.disposed = true
+    this.covered.dispose()
     this.races.setHooks(null)
     this.daydream.dispose(); this.navigator.dispose?.()
     this.clearBots()

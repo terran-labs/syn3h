@@ -58,6 +58,16 @@ export async function probeAdapter<A extends { isFallbackAdapter?: boolean }>(gp
 export interface StartableRenderer { init(): Promise<unknown>; backend: object; dispose?(): void }
 export interface RendererStart<R> { renderer: R; fallbackReason?: string }
 
+export type RendererBackendReason = 'forced-webgl2' | 'webgpu' | 'adapter-timeout' | 'adapter-missing'
+  | 'webgpu-unsupported' | 'webgpu-start-timeout' | 'webgpu-start-failed' | 'webgpu-device-failed'
+
+const rendererReasons = new WeakMap<object, RendererBackendReason>()
+
+/** Stable classification from the renderer's actual startup path. */
+export function rendererBackendReason(renderer: object): RendererBackendReason | null {
+  return rendererReasons.get(renderer) ?? null
+}
+
 /**
  * Start a renderer, never hanging on WebGPU.
  *
@@ -75,12 +85,18 @@ export async function startRenderer<R extends StartableRenderer>(make: (forceWeb
   if (options.forceWebGL || options.skipWebGPU) {
     const renderer = make(true, false)
     await renderer.init()
+    rendererReasons.set(renderer, options.forceWebGL ? 'forced-webgl2' : 'adapter-timeout')
     return { renderer, fallbackReason: options.forceWebGL ? undefined : options.skipWebGPU }
   }
   const first = make(false, false)
   const result = await withDeadline(first.init(), options.deadlineMs)
   if (result.ok) {
-    if ((first.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend) return { renderer: first }
+    if ((first.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend) {
+      rendererReasons.set(first, 'webgpu')
+      return { renderer: first }
+    }
+    rendererReasons.set(first, options.probe === 'missing' ? 'adapter-missing'
+      : options.probe === 'unsupported' ? 'webgpu-unsupported' : 'webgpu-device-failed')
     const why = options.probe === 'missing' ? 'no WebGPU adapter' : options.probe === 'unsupported' ? 'no WebGPU in this browser' : 'WebGPU device or context failed'
     return { renderer: first, fallbackReason: `${why}; three.js started WebGL 2` }
   }
@@ -92,6 +108,7 @@ export async function startRenderer<R extends StartableRenderer>(make: (forceWeb
   else first.dispose?.()
   const second = make(true, true)
   await second.init()
+  rendererReasons.set(second, result.reason === 'timeout' ? 'webgpu-start-timeout' : 'webgpu-start-failed')
   return { renderer: second, fallbackReason: `${reason}; started WebGL 2 instead` }
 }
 

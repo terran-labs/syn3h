@@ -7,7 +7,7 @@
  * flakes, a colour flip toward grazing angles, fresnel glass, knurled chrome and tyre tread.
  *
  * Cost is tiered through `gfx.vehicleShading` (see `core/quality.ts`):
- *   0  the plain materials the vehicle was built with, unchanged
+ *   0  plain materials without surface relief
  *   1  scales, knurl, tread and track lugs as lit bump detail on a standard material, and the
  *      cockpit canopy as a plain force field
  *   2  adds the clear coat and the lattice on the force field canopy
@@ -23,9 +23,9 @@ import {
   select, sign, sin, smoothstep, time, uniform, uv, vec2, vec3,
 } from 'three/tsl'
 import { defineParam, params } from '../../../shared/params'
-import { vehicleShading } from '../../core/quality'
+import { effectiveQuality, graphicsLevel, vehicleShading } from '../../core/quality'
 import { hotExposureNode } from './hotExposure'
-import { mergedSurfaces, registerVehicleDetail, standardEmission } from './mergeStatic'
+import { LOD_NEAR, mergedSurfaces, registerVehicleDetail, standardEmission } from './mergeStatic'
 import { heatOwner } from './lavaGlow'
 
 /**
@@ -63,7 +63,7 @@ export function setRole<M extends T.Material>(material: M, role: SurfaceRole): M
 }
 
 /** Remote vehicles beyond this drop to plain materials; the lower bound is the way back in. */
-const FAR_OUT = 30, FAR_IN = 25
+const FAR_OUT = LOD_NEAR, FAR_IN = LOD_NEAR - 5
 
 // ---------------------------------------------------------------------------------------
 // Warming a far vehicle's close-up materials
@@ -74,12 +74,12 @@ const FAR_OUT = 30, FAR_IN = 25
 // first time something wearing it is drawn, so the frame a bot first came within 25 m, or was
 // reeled in by a Yoink, used to stall while a dozen pipelines compiled.
 //
-// Now each far vehicle builds its close-up set ahead of need and draws it for a few frames on
+// A far vehicle builds any close-up variants still missing and draws them for a few frames on
 // proxies: copies of its own meshes, a thousandth of their size, at its own position. The
 // pipelines are built while the vehicle is a speck, and the crossing only swaps references.
 // The proxies hang from the scene, not from the model: a far vehicle hides its close-up model
 // (it shows a distance model instead), and anything under a hidden parent is never drawn.
-// They cast shadows, so the shadow pass meets the close-up geometry now as well.
+// A proxy only casts if its source was authored to cast at close range.
 //
 // The proxies are kept after warming, out of the scene and never drawn again. The renderer
 // counts the objects using each pipeline and frees a pipeline when the last one goes, so
@@ -102,9 +102,85 @@ const warmQueue: Warm[] = []
 /** Counts for automated checks: sets warmed, turns given up or cancelled, and proxies now in a scene. */
 export const showroomWarm = { warmed: 0, abandoned: 0, cancelled: 0, proxies: 0 }
 
+const reducedDetail = new WeakSet<T.Object3D>()
+
+/** Reduced models already drop to plain shading at their detail boundary. */
+export function markReducedShowroomDetail(root: T.Object3D): void {
+  root.traverse(object => reducedDetail.add(object))
+}
+
+type CoveredMesh = {
+  scene: T.Scene
+  geometry: T.BufferGeometry
+  material: T.Material
+  version: number
+  receiveShadow: boolean
+  shadowDrawn: boolean
+  quality: ReturnType<typeof effectiveQuality>
+  revision: number
+  level: number
+  environment: T.Texture | null
+}
+const coveredMeshes = new WeakMap<T.Mesh, CoveredMesh>()
+let coveredRevision = 0
+params.onChange(id => { if (id.startsWith('gfx.') || id.startsWith('post.')) coveredRevision++ })
+
+/** Record the real close-up draws while preserving the renderer objects that performed them. */
+export function drawCoveredShowroom(root: T.Object3D, scene: T.Scene, camera: T.Camera, draw: () => void): void {
+  const quality = effectiveQuality(), revision = coveredRevision, level = graphicsLevel.value, environment = scene.environment
+  const restore: (() => void)[] = [], submitted = new Map<T.Mesh, CoveredMesh>()
+  root.traverseVisible(object => {
+    if (!(object instanceof T.Mesh) || Array.isArray(object.material) || !paintOf.has(object)) return
+    const afterRender = object.onAfterRender, afterShadow = object.onAfterShadow
+    let shadowDrawn = false
+    object.onAfterShadow = function (...args) {
+      afterShadow.apply(object, args)
+      shadowDrawn = true
+      const state = submitted.get(object)
+      if (state) state.shadowDrawn = true
+    }
+    object.onAfterRender = function (...args) {
+      afterRender.apply(object, args)
+      const [, drawnScene, drawnCamera, geometry, material] = args
+      if (drawnScene === scene && drawnCamera === camera && material === object.material) {
+        submitted.set(object, { scene, geometry, material, version: material.version,
+          receiveShadow: object.receiveShadow, shadowDrawn, quality, revision, level, environment })
+      }
+    }
+    restore.push(() => { object.onAfterRender = afterRender; object.onAfterShadow = afterShadow })
+  })
+  try {
+    draw()
+    for (const [mesh, state] of submitted) {
+      const previous = coveredMeshes.get(mesh)
+      if (previous?.material === state.material && previous.version === state.version &&
+        previous.geometry === state.geometry && previous.scene === scene && previous.quality === quality &&
+        previous.revision === revision && previous.level === level && previous.environment === environment &&
+        previous.receiveShadow === state.receiveShadow && previous.shadowDrawn) state.shadowDrawn = true
+      coveredMeshes.set(mesh, state)
+    }
+  } finally {
+    for (const reset of restore) reset()
+  }
+}
+
 // TSL node types do not compose through arithmetic chains, so shader values stay loosely typed.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any
+
+type StatorEmission = { tip: number; glow: N; authored: N }
+const statorEmissions = new WeakMap<T.Material, StatorEmission>()
+
+/** Opt the packed buggy stator into sharing. Each mesh supplies its own four RGB values. */
+export function addStatorGlow(material: T.MeshStandardNodeMaterial, tip: number): void {
+  const base = material.emissiveNode
+  const glow = attribute<'vec3'>('statorGlow', 'vec3').mul(smoothstep(tip - .1, tip, abs(positionGeometry.z))).mul(2.5)
+  const authored = base ? (base as N).add(glow) : glow
+  material.emissiveNode = authored
+  if (base && standardEmission.has(base) && mergedSurfaces.has(material)) {
+    statorEmissions.set(material, { tip, glow, authored })
+  }
+}
 
 // ---------------------------------------------------------------------------------------
 // Materials shared between vehicles (perf/shared-showroom). Read this first.
@@ -136,17 +212,16 @@ type N = any
 // Invariants (tests/vehicles2/showroom.test.ts):
 //   - Two vehicles with equal signatures draw the same material, each in its own colours, and
 //     setColors on a source shows on the next draw.
-//   - Nothing differing per vehicle is baked into a shared graph: a surface whose emission the
-//     vehicle authored itself (any node not in standardEmission, the buggy's stators) is built
-//     for that vehicle alone.
+//   - Private authored emission stays private. Stators opt in with a named geometry attribute
+//     instead of a node that captures one vehicle's buffer.
 //   - A shared material is never disposed while a vehicle holds it. The disposer puts the
 //     vehicle's own plain set back on its meshes before returning, because every vehicle class
 //     then disposes whatever is still attached.
 //   - Heat is per vehicle: a shared material glows only on the vehicle in the lava.
 //   - Per-object data lives in WeakMaps keyed by mesh, never in userData: Object3D.clone (used
 //     for the warm-up proxies) copies userData through JSON. Proxies are given their mesh's paint.
-//   - Tier 0 (the plain materials the vehicle was built with) is untouched: it was always per
-//     vehicle, and still is.
+//   - Tier 0 retains the original materials except the stator, whose packed inputs can be
+//     read per mesh without changing the plain look.
 
 /** What a drawn mesh paints with: its own source materials (packed order) and its vehicle's accent. */
 interface Paint { sources: readonly Standard[]; accent: T.Color | null }
@@ -356,7 +431,7 @@ const hash3 = Fn(([c]: [N]) => fract(sin(vec3(dot(c, vec3(127.1, 311.7, 74.7)), 
  * emission node the mesh's material already had, if any: a skin may add its own glow to it after
  * merging (the Syn3h stator tips do), and every tier must keep that.
  */
-function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, meshName: string, authoredEmission: N | null, accent: T.Color | null, instancedScroll = false): T.Material {
+function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, meshName: string, authoredEmission: N | null, accent: T.Color | null, instancedScroll = false, stator?: StatorEmission): T.Material {
   const roles = sources.map(s => roleOf(s, meshName))
   // The cockpit canopy is its own draw (see `separate` in mergeStatic), so it can blend.
   if (!merged && (roles[0] === 'canopy' || (roles[0] === 'glass' && paintCanopy.value))) return buildCanopy(sources[0], tier, accent)
@@ -453,7 +528,7 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
   }
   if (track) color = color.mul(groove)
   material.colorNode = color
-  material.emissiveNode = authoredEmission ?? emission
+  material.emissiveNode = stator ? emission.add(stator.glow) : authoredEmission ?? emission
   material.roughnessNode = clamp(roughness, .04, 1)
   material.metalnessNode = metalness
   if (heights.size || tier === 3) material.normalNode = normal
@@ -592,14 +667,35 @@ function scrolls(mesh: T.Mesh, source: Standard): boolean {
   return source.userData.instancedScroll === true || mesh.geometry.hasAttribute('trackScroll')
 }
 
+/** Same packed inputs as mergeStatic, with colour and emission read from the drawn mesh. */
+function plainStator(source: T.Material, surfaces: readonly Standard[], stator: StatorEmission): T.Material {
+  // The stator registration is restricted to packed standard node materials.
+  if (!(source instanceof T.MeshStandardNodeMaterial)) throw new TypeError('Expected packed stator material')
+  const material = source.clone()
+  const id = attribute<'float'>('surfaceId', 'float').round()
+  let color: N = vec3(0), emission: N = vec3(0), roughness: N = float(0), metalness: N = float(0)
+  surfaces.forEach((surface, i) => {
+    const mask = id.equal(i).select(1, 0)
+    color = color.add(perObject(surface.color, paint => paint.sources[i]?.color).mul(mask))
+    emission = emission.add(perObject(surface.emissive, paint => paint.sources[i]?.emissive).mul(surface.emissiveIntensity).mul(mask))
+    roughness = roughness.add(mask.mul(surface.roughness))
+    metalness = metalness.add(mask.mul(surface.metalness))
+  })
+  material.colorNode = color
+  material.emissiveNode = emission.add(stator.glow)
+  material.roughnessNode = roughness
+  material.metalnessNode = metalness
+  return material
+}
+
 /**
  * What makes two vehicles' materials for a surface interchangeable: everything `build` and the
  * decoration bake into the graph (roles, authored responses, intensities, tier, flags), and
  * nothing that is read per object (colours, accent). Null when the surface carries emission of
  * its vehicle's own (see standardEmission): that one is built for its vehicle alone.
  */
-function signature(sources: readonly Standard[], merged: boolean, tier: number, meshName: string, authored: N | null, accent: T.Color | null, instanced: boolean, decorate: Decorate, heated: boolean): string | null {
-  if (authored && !standardEmission.has(authored)) return null
+function signature(sources: readonly Standard[], merged: boolean, tier: number, meshName: string, authored: N | null, accent: T.Color | null, instanced: boolean, decorate: Decorate, heated: boolean, stator?: StatorEmission): string | null {
+  if (authored && !stator && !standardEmission.has(authored)) return null
   const surfaces = sources.map(m => {
     // A single glow or canopy surface (the hovercraft sets its glow's intensity from the throttle
     // every frame) is built without its emissive intensity: leave it out, or craft share only at
@@ -610,7 +706,7 @@ function signature(sources: readonly Standard[], merged: boolean, tier: number, 
     m.userData.accentMask === true ? 'mask' : '', m.userData.trackWidth ?? '', m.side, m.transparent ? 't' : '', m.opacity, m.flatShading ? 'flat' : '',
   ].join(':')
   })
-  return [tier, merged ? 'merged' : '', instanced ? 'instanced' : '', accent ? 'accent' : '', paintCanopy.value ? 'field' : 'glass', heated ? 'heat' : '', meshName, decorationIdOf(decorate), ...surfaces].join('|')
+  return [tier, merged ? 'merged' : '', instanced ? 'instanced' : '', accent ? 'accent' : '', paintCanopy.value ? 'field' : 'glass', heated ? 'heat' : '', meshName, decorationIdOf(decorate), stator ? `stator:${stator.tip}` : '', ...surfaces].join('|')
 }
 
 /** Runs the shared night and lava passes over whatever materials the meshes currently hold. */
@@ -631,8 +727,8 @@ const decorationIdOf = (decorate: Decorate): string => decorate.decorationId ?? 
  * Returns a disposer for everything built here.
  */
 export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void {
-  const entries: { mesh: T.Mesh; source: Standard }[] = []
-  root.traverse(o => { if (o instanceof T.Mesh && !Array.isArray(o.material) && isStandard(o.material)) entries.push({ mesh: o, source: o.material }) })
+  const entries: { mesh: T.Mesh; source: Standard; castShadow: boolean }[] = []
+  root.traverse(o => { if (o instanceof T.Mesh && !Array.isArray(o.material) && isStandard(o.material)) entries.push({ mesh: o, source: o.material, castShadow: o.castShadow }) })
   // The owner vehicle publishes its live colours (see Vehicle.setColors); a viewer has none.
   let accent: T.Color | null = null
   for (let o: T.Object3D | null = root; o; o = o.parent) { const c = o.userData.vehicleColors as { accent?: T.Color } | undefined; if (c?.accent) { accent = c.accent; break } }
@@ -648,13 +744,13 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
   let current = -1, far = false, remote = false, distance = 0
   // Warming state (see the note beside WARM_FRAMES); declared here because `use` must know of the proxies.
   let warm: Warm | null = null, warmed = '', lastKey = '', level = -1
+  let warmQuality = effectiveQuality(), warmRevision = coveredRevision
   /** The scene this model is in, or null for a model that is not in one (a viewer mid-build). */
   const sceneOf = (): T.Scene | null => {
     let top: T.Object3D = root
     while (top.parent) top = top.parent
     return (top as Partial<T.Scene>).isScene ? top as T.Scene : null
   }
-  const environment = (): T.Texture | null => sceneOf()?.environment ?? null
   const use = (tier: ShadingTier): void => {
     if (tier === current) return
     let set = tiers[tier]
@@ -664,17 +760,25 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
       const cache = new Map<T.Material, T.Material>(), instancedCache = new Map<T.Material, T.Material>()
       // A set holds each shared material once, however many of its meshes wear it (see drop).
       const taken = new Set<T.Material>()
+      const sky = tier > 0 ? sceneOf()?.environment ?? null : null
       try {
       for (const e of entries) {
         const instanced = scrolls(e.mesh, e.source), shared = instanced ? instancedCache : cache
-        let variant = tier === 0 ? e.source : shared.get(e.source)
+        const own = authored.get(e.source) ?? null
+        const tagged = statorEmissions.get(e.source)
+        const stator = tagged?.authored === own ? tagged : undefined
+        let variant = tier === 0 && !stator ? e.source : shared.get(e.source)
         if (!variant) {
-          const packed = mergedSurfaces.get(e.source), sources = packed ?? [e.source], own = authored.get(e.source) ?? null
-          const key = signature(sources, Boolean(packed), tier, e.mesh.name, own, accent, instanced, decorate, heated)
+          const packed = mergedSurfaces.get(e.source), sources = packed ?? [e.source]
+          const key = signature(sources, Boolean(packed), tier, e.mesh.name, own, accent, instanced, decorate, heated, stator)
           const found = key === null ? undefined : pool.get(key)
           if (found) { variant = found.material; if (!taken.has(variant)) { taken.add(variant); found.users++; showroomShare.users++; showroomShare.reused++ } }
           else {
-            variant = build(sources, Boolean(packed), tier as 1 | 2 | 3, e.mesh.name, own && standardEmission.has(own) ? null : own, accent, instanced)
+            variant = tier === 0 && stator
+              ? plainStator(e.source, sources, stator)
+              : build(sources, Boolean(packed), tier as 1 | 2 | 3, e.mesh.name, own && standardEmission.has(own) ? null : own, accent, instanced, stator)
+            // Only initialize new showroom materials. Parked users must preserve a live sky binding.
+            if (tier > 0) (variant as Standard).envMap = sky
             if (key === null) showroomShare.unshared++
             else { variant.userData.sharedShowroom = true; pool.set(key, { material: variant, users: 1 }); pooled.set(variant, key); taken.add(variant); showroomShare.alive++; showroomShare.users++ }
           }
@@ -693,9 +797,6 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
       set = new Map(entries.map(e => [e.mesh, e.mesh.material as T.Material]))
       for (const m of set.values()) built.add(m)
       tiers[tier] = set
-      // Give a new set the sky map before it is first drawn. Setting it afterwards, as
-      // `refresh` must when the map itself is replaced, costs a second compile.
-      if (tier > 0) { const sky = environment(); for (const m of set.values()) (m as Standard).envMap = sky }
     }
     current = tier
   }
@@ -726,11 +827,16 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
     warm = null
   }
   const stepWarm = (): void => {
-    const tier = nearTier(), key = `${tier}:${level}`
-    if (warm && warm.key !== key) endWarm('cancelled')
-    // Any change of tier or graphics level, even away and back, replaces render targets and
-    // with them every pipeline: what was warmed before no longer counts.
-    if (key !== lastKey) { lastKey = key; warmed = '' }
+    if (reducedDetail.has(root)) return
+    const quality = effectiveQuality(), tier = nearTier(), key = `${tier}:${level}`
+    // A new quality state may replace attachments or pass variants, even within one legacy tier.
+    if (key !== lastKey || quality !== warmQuality || coveredRevision !== warmRevision) {
+      endWarm('cancelled')
+      lastKey = key
+      warmQuality = quality
+      warmRevision = coveredRevision
+      warmed = ''
+    }
     if (tier === 0 || warmed === key) return
     // Not in a scene (a viewer mid-build): nothing would draw the proxies, so do not take a turn.
     const scene = sceneOf()
@@ -747,19 +853,28 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
         }
         const set = tiers[tier]!, group = new T.Group(), seen = new Set<string>()
         group.name = 'Showroom warm'; group.scale.setScalar(WARM_SCALE)
+        const shadowsOn = params.get('gfx.shadowQuality')?.value !== 0
         for (const e of entries) {
+          if (reducedDetail.has(e.mesh)) continue
           const material = set.get(e.mesh)
-          // One proxy per distinct pipeline: the same geometry and material on the same kind of mesh.
-          const pair = `${e.mesh.geometry.uuid}:${material?.uuid}:${(e.mesh as Partial<T.InstancedMesh>).isInstancedMesh ? 'i' : 'm'}`
-          if (!material || seen.has(pair)) continue
+          if (!material) continue
+          const covered = coveredMeshes.get(e.mesh)
+          if (covered?.material === material && covered.version === material.version &&
+            covered.geometry === e.mesh.geometry && covered.scene === scene && covered.quality === quality &&
+            covered.revision === coveredRevision && covered.level === level && covered.environment === scene.environment &&
+            covered.receiveShadow === e.mesh.receiveShadow && (!e.castShadow || !shadowsOn || covered.shadowDrawn)) continue
+          // Keep real caster and receiver variants distinct where they share geometry and paint.
+          const pair = `${e.mesh.geometry.uuid}:${material.uuid}:${(e.mesh as Partial<T.InstancedMesh>).isInstancedMesh ? 'i' : 'm'}:${e.castShadow}:${e.mesh.receiveShadow}`
+          if (seen.has(pair)) continue
           seen.add(pair)
           const proxy = e.mesh.clone(false)
           const paint = paintOf.get(e.mesh); if (paint) paintOf.set(proxy, paint)
-          proxy.material = material; proxy.visible = true; proxy.frustumCulled = false; proxy.castShadow = true
+          proxy.material = material; proxy.visible = true; proxy.frustumCulled = false; proxy.castShadow = e.castShadow
           // Only frames that really draw count: the world is not rendered behind the lobby.
           proxy.onBeforeRender = () => { job.drawn = true }
           group.add(proxy); showroomWarm.proxies++
         }
+        if (!group.children.length) { endWarm('warmed'); return }
         job.group = group; root.getWorldPosition(group.position); scene.add(group)
       } catch (error) {
         // Warming is an optimisation. If a skin's meshes cannot be copied, the vehicle
@@ -808,10 +923,15 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
     // Reflect the scene's own sky map at paint strength. It appears a moment after start,
     // and a standalone viewer may have none. A set is given the map when it is built (`use`),
     // so this recompiles only when the map itself is a different texture.
-    const sky = environment()
+    const scene = sceneOf()
     for (const m of tiers[tier]!.values()) {
       const std = m as Standard
-      if (std.envMap !== sky) { std.envMap = sky; std.needsUpdate = true }
+      // A parked model can still borrow a material used in the scene. Keep its sky binding
+      // until an attached model refreshes it.
+      if (scene && std.envMap !== scene.environment) {
+        std.envMap = scene.environment
+        std.needsUpdate = true
+      }
       // The live sky map is captured for a subdued scene fill (0.15); paint reflects it at its own strength.
       std.envMapIntensity = paintGloss.value * (std.userData.glass ? 1.3 : 1)
     }
@@ -834,8 +954,13 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
     // Shared materials go back to the pool, and the vehicle's own plain set goes back on its
     // meshes: the owner disposes whatever is attached, and must never dispose a material other
     // vehicles are drawing.
-    for (const e of entries) if (pooled.has(e.mesh.material as T.Material)) e.mesh.material = tiers[0]?.get(e.mesh) ?? e.source
+    for (const e of entries) if (pooled.has(e.mesh.material as T.Material)) {
+      const plain = tiers[0]?.get(e.mesh)
+      e.mesh.material = plain && !pooled.has(plain) ? plain : e.source
+    }
     for (let tier = 1; tier < tiers.length; tier++) { drop(tiers[tier]); tiers[tier] = undefined }
+    // The plain stator is pooled too. All other plain materials stay with the owner.
+    for (const m of new Set(tiers[0]?.values() ?? [])) if (releaseShared(m)) built.delete(m)
     const live = new Set<T.Material>()
     root.traverse(o => { if (o instanceof T.Mesh) for (const m of Array.isArray(o.material) ? o.material : [o.material]) live.add(m) })
     // The owner releases whatever is still attached; drop the tiers that are not.

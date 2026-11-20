@@ -1,4 +1,4 @@
-import { execSync, spawn, type ChildProcess } from 'node:child_process'
+import { execFileSync, execSync, spawn, type ChildProcess } from 'node:child_process'
 import { type Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
 import { manualReload } from './tools/manual-reload.mjs'
@@ -61,8 +61,17 @@ function buildLabel(): string {
   try { return devLabel(execSync("git describe --tags --always --exclude 'archive/*'", { encoding: 'utf8' })) } catch { return 'dev' }
 }
 
+function sourceCommit(): string | null {
+  try { return execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() }
+  catch { return null }
+}
+
 export default defineConfig({
-  define: { __SYN3H_BUILD__: JSON.stringify(buildLabel()) },
+  define: {
+    __SYN3H_BUILD__: JSON.stringify(buildLabel()),
+    __SYN3H_FREEZE_ID__: JSON.stringify(process.env.SYN3H_FREEZE_ID || null),
+    __SYN3H_COMMIT__: JSON.stringify(sourceCommit()),
+  },
   // manualReload: a merge shows a "new build available" notice instead of resetting the page.
   // rapierWasmAsset: the physics engine's WebAssembly ships as its own hashed file, preloaded.
   plugins: [roomServer(), manualReload(), releaseFeed(), tweakpaneWithoutBitmap(), rapierWasmAsset()],
@@ -88,5 +97,13 @@ export default defineConfig({
     ] } } },
   },
   // tools/*.test.mjs use node:test and are run with `node --test`, not vitest.
-  test: { exclude: ['**/node_modules/**', '**/dist/**', 'tools/**'] },
+  test: {
+    exclude: ['**/node_modules/**', '**/dist/**', 'tools/**'],
+    // A timeout is there to stop a hung test, not to time one: vitest's 5 s default failed
+    // world generation tests at a machine load of 45 with nothing wrong (AGENTS.md, testing:
+    // a timing limit that fails on load must not block a release). A test that needs a real
+    // time limit sets its own.
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
+  },
 })

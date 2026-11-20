@@ -1,27 +1,31 @@
-/* Lobby sheets (LobbySheet.ts): Welcome, Updates and Settings, one flat frosted panel with
-   rounded corners under the name, the same for all three. No border and no nested cards or
-   rules inside. Selectors carry .exploration-ui to outrank the lobby's general button, heading
-   and dialog rules. */
+/* Lobby sheets (LobbySheet.ts): Welcome, Updates and Settings. No box (the owner, 19 November
+   2026): no fill, frost, border, radius or lit edge. The worlds fade out and the sky dims behind
+   (Galaxy), and the contents stand on the dark sky, under the risen name. Selectors carry
+   .exploration-ui to outrank the lobby's general button, heading and dialog rules. */
 
 .syn3h-shell.exploration-ui dialog.lobby-sheet {
   position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0;
   border: 0; background: none; box-shadow: none; overflow: hidden; color: var(--s3-ink);
 }
+/* Behind the column only, a soft shade with no edge: it darkens the sun's glare and a bright
+   patch of sky under the words a little more than the rest of the sky. Strength: --sheet-shade. */
 .syn3h-shell.exploration-ui dialog.lobby-sheet::backdrop { background: none; }
-.lobby-sheet-panel {
-  position: absolute; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden;
-  --sheet-fill: rgb(8 8 10 / .74); border-radius: var(--sheet-radius, 24px);
-  /* The lit top edge it shares with the name above, and a warm glow along it. */
-  box-shadow: inset 0 1px 0 rgb(255 238 214 / .55), 0 -3px 22px -8px rgb(255 226 190 / .45);
+.lobby-sheet { --sheet-shade: .45; }
+.lobby-sheet-panel { position: absolute; isolation: isolate; box-sizing: border-box; display: flex; flex-direction: column; overflow: visible; }
+.lobby-sheet-panel::before {
+  content: ''; position: absolute; inset: -8% -30%; z-index: -1; pointer-events: none;
+  background: radial-gradient(closest-side, rgb(0 0 0 / var(--sheet-shade)), rgb(0 0 0 / calc(var(--sheet-shade) * .55)) 55%, transparent);
 }
-/* Translucent black over a blur of what is behind, so the galaxy is a soft glow that nothing can
-   read through (the owner: a little more transparent and frosted). */
-.lobby-sheet-frost { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: var(--sheet-fill); -webkit-backdrop-filter: blur(18px) saturate(.85); backdrop-filter: blur(18px) saturate(.85); }
+/* Words straight on the sky: the HUD's dark falloff under them keeps light type legible. */
+.syn3h-shell.exploration-ui .lobby-sheet-body { text-shadow: 0 0 1px rgb(0 0 0 / .9), 0 1px 3px rgb(0 0 0 / .7), 0 0 12px rgb(0 0 0 / .5); }
 
 /* The content scrolls inside. */
 .lobby-sheet-body {
   position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #3a3a3c transparent;
-  margin: 6px 0; padding: 30px 56px 30px 44px; text-align: left;
+  margin: 0; padding: 30px 48px 40px 8px; text-align: left;
+  /* The scroll's top and bottom edges fade out instead of ending at a line. */
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 28px, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 28px, #000 calc(100% - 44px), transparent);
 }
 .syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-title { margin: 0 0 24px; padding-right: 32px; font: 500 13px/1.2 'Barlow', sans-serif; letter-spacing: .26em; text-indent: 0; text-transform: uppercase; color: var(--s3-accent); }
 
@@ -47,11 +51,19 @@
 .syn3h-shell.exploration-ui .lobby-sheet .about-updates .updates-pinned { border: 0; padding: 0; background: none; }
 
 @media (max-width: 600px), (max-height: 500px) {
-  .lobby-sheet-body { padding: 22px 52px 22px 20px; }
+  .lobby-sheet-body { padding: 22px 60px 32px 12px; }
   .syn3h-shell.exploration-ui .lobby-sheet .about-columns { grid-template-columns: 1fr; gap: 16px; }
 }
 
+/* Settings: its cards lose their bodies here, so there is no box in this sheet either. Headings
+   and rows stand on the sky like the other sheets' text; a hairline parts one card from the next.
+   Sliders and switches keep their own controls. */
+html .syn3h-shell.exploration-ui:is([data-glass], *) dialog.lobby-sheet .lobby-settings-host .world-inspector :is(.wi-glass, .rail-players) {
+  border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+html .syn3h-shell.exploration-ui:is([data-glass], *) dialog.lobby-sheet .lobby-settings-host .world-inspector .wi-card + .wi-card { border-top: 1px solid var(--s3-line-quiet); }
+
 /* Text behind the sheet would read through it and tangle with the sheet's own: the planet
    captions, the corner icons, the hint, the lobby's buttons and the update banner step aside
-   while one is open. Only the galaxy itself stays, faintly, behind the black. */
+   while one is open. Only the sun and the stars stay, dimmed. */
 .syn3h-shell.exploration-ui:has(dialog.lobby-sheet[open]) :is(.galaxy-labels, .lobby-version-dock, .galaxy-hint, .lobby-links, .update-banner) { visibility: hidden; }
