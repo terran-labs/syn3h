@@ -100,7 +100,8 @@ describe('water rivers: physics floats on the river that is drawn', () => {
       expect(compared, `${planet} ${seed}`).toBeGreaterThan(20)
       }
     }
-  })
+    // Six worlds, two at the larger planet size: 28 s seen at a load of 36. A hang limit, not a speed one.
+  }, 180_000)
 
   it('a floating hull carried over the steepest fall is tipped over it, never flung', () => {
     for (const [planet, seed] of WORLDS) {
