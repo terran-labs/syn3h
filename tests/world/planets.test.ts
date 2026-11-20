@@ -55,7 +55,7 @@ describe('planet recipes', () => {
       }
     }
     applyPlanet('volcanic', 1)
-  }, 60000)
+  })
 
   it('the Desert is a dry world: at least four fifths land on every seed, with somewhere to drive to', () => {
     const desert = PLANETS.find(p => p.id === 'desert')!
