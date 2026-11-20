@@ -57,8 +57,9 @@ async function open(name) {
   const old = name === 'Alice' && process.env.SYN3H_CHECK_OLD_VERSION ? `&v=${process.env.SYN3H_CHECK_OLD_VERSION}` : ''
   await page.goto(`${base}?room=${room}&name=${name}&autoplay=1${old}`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.syn3hNet?.id > 0 && window.syn3h?.player, null, { timeout: 60000 }).catch(async (error) => {
-    // Say what the page had got to, not only that it timed out.
-    const state = await page.evaluate(() => ({ boot: document.documentElement.dataset.boot ?? null, backend: window.syn3h?.game?.backend ?? null, net: window.syn3hNet?.id ?? null, player: !!window.syn3h?.player })).catch(() => null)
+    // Say what the page had got to, not only that it timed out. `fatal` is the start-failure
+    // notice's text, which carries a PhysicsLoadError's detail (timeout or HTTP status).
+    const state = await page.evaluate(() => ({ boot: document.documentElement.dataset.boot ?? null, backend: window.syn3h?.game?.backend ?? null, net: window.syn3hNet?.id ?? null, player: !!window.syn3h?.player, fatal: document.getElementById('fatal')?.textContent?.trim().slice(0, 600) || null })).catch(() => null)
     const recent = consoleLines.filter((l) => l.name === name).slice(-8).map((l) => `${l.type}: ${l.text}`)
     throw new Error(`${name} never became ready: ${error.message}; page ${JSON.stringify(state)}; console ${JSON.stringify(recent)}`)
   })
