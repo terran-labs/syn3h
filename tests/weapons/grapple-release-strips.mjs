@@ -16,20 +16,20 @@ if (!base) throw new Error('Set SYN3H_URL')
 const out = process.argv[2] ?? '/tmp/weapons-beauty/grapple-strips'
 await mkdir(`${out}/raw`, { recursive: true })
 const EFFECTS = {
-  released: [0, 0.08, 0.18, 0.3, 0.45, 0.65],
-  severed: [0, 0.08, 0.18, 0.3, 0.45, 0.65],
-  sail: [0, 0.2, 0.45, 0.7, 0.95, 1.2],
+  released: [0.03, 0.1, 0.2, 0.32, 0.47, 0.65],
+  severed: [0.03, 0.1, 0.2, 0.32, 0.47, 0.65],
+  sail: [0.03, 0.25, 0.5, 0.75, 1, 1.2],
 }
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const errors = [], report = []
 try {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
-  // Offline: no room, so nothing but this script lets a cord go.
-  await context.routeWebSocket(/\/ws(?:\?|$)/, socket => socket.close())
+  // A fresh room of its own, so this page is the host and runs the bot (offline, the bot's
+  // vehicle is not known to the network layer and a cord to it lets go at once).
   const page = await context.newPage()
   page.on('pageerror', e => errors.push(e.message))
   await page.goto(`${base}?planet=alpine&seed=7&autoplay=1&room=grapple-${Date.now()}`)
-  await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet?.bungee, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet?.connected && window.syn3hNet?.bungee, null, { timeout: 120000 })
   await page.evaluate(() => {
     document.exitPointerLock?.()
     const s = window.syn3h, p = s.params
@@ -40,6 +40,7 @@ try {
     for (const node of document.body.children) if (node.tagName !== 'CANVAS' && node.tagName !== 'SCRIPT') node.style.visibility = 'hidden'
     s.shell.closeMenu?.()
     const B = window.syn3hNet.bungee, update = B.update.bind(B)
+    const letGo = B.letGo.bind(B); B.letGo = why => { (window.__letGo ??= []).push(`${why} ${new Error().stack.split('\n').slice(2, 6).join(' | ')}`); return letGo(why) }
     window.__freeze = on => { B.update = on ? () => {} : update }
     window.__step = seconds => { for (let t = 0; t < seconds - 1e-6; t += 1 / 120) update(Math.min(1 / 120, seconds - t)) }
     s.game.add({ update() {
@@ -63,7 +64,7 @@ try {
       v.body.setGravityScale(0, true); v.body.setLinvel({ x: 0, y: 0, z: 0 }, true); v.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
     }
     const mx = (p.x + bx) / 2, mz = (p.z + bz) / 2, my = y + 5
-    window.__cam = { eye: [mx + fz * 26, my + 4, mz - fx * 26], look: [mx, my, mz] }
+    window.__cam = { eye: [mx + fz * 14, my + 2, mz - fx * 14], look: [mx, my, mz] }
   })
   for (const [effect, times] of Object.entries(EFFECTS)) {
     await page.evaluate(() => window.__freeze(false))
@@ -77,16 +78,27 @@ try {
         n.bungee.launch([-fx * 0.4, 0.9, -fz * 0.4])
       })
       await page.waitForFunction(() => window.syn3hNet.bungee.fading.includes('sail'), null, { timeout: 5000, polling: 'raf' })
-      await page.evaluate(() => window.__freeze(true))
+      await page.evaluate(() => {
+        window.__freeze(true)
+        // Frame the rope as it leaves: from the side, far enough back to follow it a while.
+        const rope = window.syn3hNet.bungee.loose[0].cord, [fx, fz] = window.__f, m = rope.pos[Math.floor(rope.pos.length / 2)]
+        window.__cam = { eye: [m.x + fz * 30, m.y + 4, m.z - fx * 30], look: [m.x, m.y + 6, m.z] }
+      })
     } else {
       await page.evaluate(() => {
         window.syn3h.params.set('bungee.length', 120)
         const s = window.syn3h, n = window.syn3hNet, a = s.player.body.translation(), b = s.bots.vehicles[0].body.translation()
         n.gear.select('bungee')
-        n.bungee.launch([b.x - a.x, b.y - a.y - 1.1, b.z - a.z])
+        return n.bungee.launch([b.x - a.x, b.y - a.y - 1.1, b.z - a.z])
+      }).then(ok => { if (!ok) throw new Error(`${effect}: the hook did not launch`) })
+      await page.waitForFunction(() => window.syn3hNet.bungee.attached, null, { timeout: 5000 }).catch(async e => {
+        throw new Error(`${effect}: no cord to the bot: ${JSON.stringify(await page.evaluate(() => {
+          const s = window.syn3h, n = window.syn3hNet
+          return { stats: n.bungee.stats, me: s.player.body.translation(), bot: s.bots.vehicles[0]?.body.translation(), allowed: s.params.get('bungee.allowed')?.value, vehicles: s.params.get('bungee.vehicles')?.value, gear: n.gear.current, letGo: window.__letGo }
+        }))}`)
       })
-      await page.waitForFunction(() => window.syn3hNet.bungee.attached, null, { timeout: 5000 })
       await page.waitForTimeout(1200)
+      await writeFile(`${out}/raw/${effect}-before.png`, await page.screenshot())
       await page.evaluate(effect => { window.__freeze(true); window.syn3hNet.bungee.letGo(effect) }, effect)
     }
     const started = await page.evaluate(() => window.syn3hNet.bungee.fading)
@@ -103,8 +115,9 @@ try {
   await page.evaluate(() => window.__freeze(false))
   // One sheet per effect: a row of frames.
   for (const [effect, times] of Object.entries(EFFECTS)) {
-    const imgs = await Promise.all(times.map(async (t, i) => `<figure><img src="data:image/png;base64,${(await readFile(`${out}/raw/${effect}-${i}.png`)).toString('base64')}"><figcaption>${t} s</figcaption></figure>`))
-    const sheet = await browser.newPage({ viewport: { width: 1900, height: 300 } })
+    const before = effect === 'sail' ? [] : [`<figure><img src="data:image/png;base64,${(await readFile(`${out}/raw/${effect}-before.png`)).toString('base64')}"><figcaption>attached</figcaption></figure>`]
+    const imgs = before.concat(await Promise.all(times.map(async (t, i) => `<figure><img src="data:image/png;base64,${(await readFile(`${out}/raw/${effect}-${i}.png`)).toString('base64')}"><figcaption>${t} s</figcaption></figure>`)))
+    const sheet = await browser.newPage({ viewport: { width: 2240, height: 300 } })
     await sheet.setContent(`<body style="margin:0;background:#111;color:#eee;font:14px system-ui"><h3 style="margin:8px">Grapple ${effect}</h3><div style="display:flex">${imgs.join('')}</div><style>figure{margin:3px}img{width:310px;display:block}figcaption{font-size:11px;text-align:center}</style></body>`)
     await sheet.screenshot({ path: `${out}/${effect}.png`, fullPage: true })
     await sheet.close()

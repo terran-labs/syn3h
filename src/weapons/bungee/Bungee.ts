@@ -891,11 +891,13 @@ export class Bungee implements System {
       if (size > 0) for (const p of [a, b]) if (p) { p.x = nearestImage(p.x, ref.x, size); p.z = nearestImage(p.z, ref.z, size) }
       const step = Math.min(dt, 1 / 30) / 2
       rope.step(step, a, b, ground); rope.step(step, a, b, ground)
-      look.writeCord(l.slot, rope.pos, 0, rope.phase, rope.rgb, undefined, rope.fade)
+      // Drawn as a cord still half under tension as it goes (wider and brighter than slack),
+      // easing to slack as it fades, so the whip reads at a distance.
+      look.writeCord(l.slot, rope.pos, 0.6 * rope.fade, rope.phase, rope.rgb, undefined, rope.fade)
       const star = look.cordSpark(l.slot, 0)
       if (rope.flash && rope.flashLevel > 0) {
         const f = rope.flashLevel
-        look.star(star, rope.flash, 0.5 + 0.9 * f, FLASH_RGB, 3 * f, 0.3)
+        look.star(star, rope.flash, 0.8 + 1.6 * f, FLASH_RGB, 4 * f, 0.3)
       } else if (rope.kind === 'sail') look.star(star, rope.pos[rope.pos.length - 1], 0.4, rope.rgb, 1.6 * rope.fade, 0.6)
       else look.hideSpark(star)
     }
