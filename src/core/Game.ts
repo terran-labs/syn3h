@@ -46,6 +46,8 @@ export interface System {
   update?(dt: number, alpha: number): void
   /** Existing hidden meshes that should participate in the covered precompile draw. */
   precompileMeshes?(): Iterable<THREE.Mesh>
+  /** Already-planted scenery a live quality change can reveal at this camera. */
+  precompileQualityMeshes?(): Iterable<THREE.Mesh>
   dispose?(): void
 }
 
@@ -447,8 +449,21 @@ export class Game {
     const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     const submit = () => {
       signal.throwIfAborted()
-      for (const system of this.systems) system.prepareWorldDraw?.()
-      drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+      const hidden: THREE.Object3D[] = []
+      try {
+        for (const system of this.systems) {
+          if (!system.precompileQualityMeshes) continue
+          for (const mesh of system.precompileQualityMeshes()) {
+            for (let o: THREE.Object3D | null = mesh; o && o !== this.scene; o = o.parent) {
+              if (!o.visible) { hidden.push(o); o.visible = true }
+            }
+          }
+        }
+        for (const system of this.systems) system.prepareWorldDraw?.()
+        drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+      } finally {
+        for (let i = hidden.length - 1; i >= 0; i--) hidden[i].visible = false
+      }
     }
     progress('Preparing visible surfaces')
     await frame()
