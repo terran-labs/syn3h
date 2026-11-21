@@ -78,6 +78,7 @@ export class GlassButton {
   private controls: HTMLElement[] = []
   private registryDirty = true
   private readonly membership = new MutationObserver(() => { this.registryDirty = true; this.invalidate() })
+  private readonly pendingGearInk = new Map<HTMLElement, 'black' | 'white'>()
   private readonly drawn = new Set<HTMLElement>()
   private readonly clock = new GlassMotionClock()
   private readonly pressed = new Map<number, Element>()
@@ -238,7 +239,9 @@ export class GlassButton {
       if (!rgba || !filter) continue
       const pressed = [...this.pressed.values()].includes(b) || b.matches(':active, .held')
       const i = this.drawn.size
-      ;(this.presentation.array[i] as Vector4).set(alpha, Number(isCard), 0, Number(!isCard && b.dataset.action !== 'brakes' && pressed))
+      const ink = this.pendingGearInk.get(b) ?? b.dataset.glassLabel ?? (this.dark.matches ? 'white' : 'black')
+      const gearInk = drum ? (ink === 'black' ? 1 : -1) : 0
+      ;(this.presentation.array[i] as Vector4).set(alpha, Number(isCard), gearInk, Number(!isCard && b.dataset.action !== 'brakes' && pressed))
       ;(this.clips.array[i] as Vector4).set(clip.left - c.left, clip.top - c.top, clip.right - c.left, clip.bottom - c.top)
       const half = Math.min(rect.width, rect.height) / 2
       const radius = (s: string) => Math.min(half, s.endsWith('%') ? parseFloat(s) * half / 50 : parseFloat(s) * sx)
@@ -291,6 +294,20 @@ export class GlassButton {
     }
   }
 
+  setLabelInk(element: HTMLElement, ink: 'black' | 'white') {
+    if (!element.parentElement?.classList.contains('gs-drum')) {
+      if (element.dataset.glassLabel !== ink) element.dataset.glassLabel = ink
+      return
+    }
+    if ((this.pendingGearInk.get(element) ?? element.dataset.glassLabel) === ink) return
+    const index = [...this.drawn].indexOf(element)
+    if (index < 0) return
+    // Apply the DOM colour only after the matching face is drawn.
+    this.pendingGearInk.set(element, ink)
+    ;(this.presentation.array[index] as Vector4).z = ink === 'black' ? 1 : -1
+    this.requestDraw()
+  }
+
   get animating(): boolean { return this.clock.active }
   get available(): boolean { return !this.reduced.matches && document.documentElement.dataset.gfx !== '0' && !this.canvas.closest('[data-ui-frost="off"]') }
   get visibleCount(): number {
@@ -302,6 +319,10 @@ export class GlassButton {
   get hasSurface(): boolean { return this.drawn.size > 0 }
 
   present(nativeInk = false): void {
+    for (const [b, ink] of this.pendingGearInk) {
+      if (this.drawn.has(b)) b.dataset.glassLabel = ink
+    }
+    this.pendingGearInk.clear()
     for (const b of this.controls) {
       if (nativeInk && this.drawn.has(b) && b.matches(card)) {
         if (!b.hasAttribute('data-glass-native-ink')) b.setAttribute('data-glass-native-ink', '')
