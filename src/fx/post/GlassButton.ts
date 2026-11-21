@@ -54,7 +54,7 @@ export class GlassButton {
   readonly pressState = this.brake?.state
   private readonly events = new AbortController()
   private dirty = true
-  private readonly invalidate = () => { this.dirty = true; this.requestDraw() }
+  readonly invalidate = () => { this.dirty = true; this.requestDraw() }
   private readonly resize = new ResizeObserver(this.invalidate)
   private readonly changes = new MutationObserver(records => {
     // TouchControls writes aria-pressed each tick, including when its value stays
@@ -195,7 +195,8 @@ export class GlassButton {
     const start = performance.now()
     this.dirty = false
     this.drawn.clear()
-    this.showTuning(this.available && !this.clearMaterial)
+    const available = this.available
+    this.showTuning(available && !this.clearMaterial)
     const c = this.canvas.getBoundingClientRect()
     const rects = this.controls.map(b => b.hidden ? null : b.getBoundingClientRect())
     this.lastBoundsMs = performance.now() - start
@@ -216,11 +217,11 @@ export class GlassButton {
       return style
     }
     for (const [index, b] of this.controls.entries()) {
-      if (this.drawn.size === this.capacity || this.reduced.matches || document.documentElement.dataset.gfx === '0') break
+      if (this.drawn.size === this.capacity || !available) break
       let rect = rects[index]
       if (!rect || !rect.width || !rect.height) continue
       const style = styleFor(b)
-      if (!b.checkVisibility({ visibilityProperty: true }) || b.closest('[data-ui-frost="off"]')) continue
+      if (!b.checkVisibility({ visibilityProperty: true }) || (document.documentElement.dataset.driveGlass !== 'on' && b.closest('[data-ui-frost="off"]'))) continue
       let alpha = 1
       for (let el: Element | null = b; el; el = el.parentElement) {
         if (!visited.has(el)) { this.clock.follow(el, poseTime); visited.add(el) }
@@ -322,7 +323,11 @@ export class GlassButton {
   }
 
   get animating(): boolean { return this.clock.active }
-  get available(): boolean { return !this.reduced.matches && document.documentElement.dataset.gfx !== '0' && !this.canvas.closest('[data-ui-frost="off"]') }
+  get reducedTransparency(): boolean { return this.reduced.matches }
+  get available(): boolean {
+    const { driveGlass, gfx } = document.documentElement.dataset
+    return !this.reduced.matches && (driveGlass ? driveGlass === 'on' : gfx !== '0' && !this.canvas.closest('[data-ui-frost="off"]'))
+  }
   get visibleCount(): number {
     let count = 0
     for (let i = 0; i < this.drawn.size; i++) if ((this.presentation.array[i] as Vector4).x > 0) count++

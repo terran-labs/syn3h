@@ -10,6 +10,7 @@ import { gameplayGlassSlots, GlassButton } from './GlassButton'
 import { GlassLabelInk } from './glassLabelInk'
 import { createLobbyGlass } from '../../liquid-glass/lobby'
 import { installGalaxyGlass } from '../../ui/galaxy/glassAdapter'
+import { GlassFrameBudget } from './glassFrameBudget'
 import { GlassTiming } from './glassTiming'
 import './shader-surface.css'
 
@@ -36,6 +37,7 @@ export class GlassPost {
   }
 
   setPausedDraw(draw?: () => void) {
+    this.budget.interrupt()
     cancelAnimationFrame(this.frame)
     this.frame = 0
     this.pausedDraw = draw
@@ -45,6 +47,57 @@ export class GlassPost {
   private readonly ink = new GlassLabelInk()
   readonly timing = new GlassTiming()
   private showing = false
+  private readonly budget = new GlassFrameBudget()
+  private drawPlain = false
+  private graphReady = false
+  private driving = false
+  private enteredAt = 0
+  private driveBlock = ''
+  private lastReason = 'waiting for playable glass'
+  private changedAt = 0
+
+  readonly driveFrame = (playing: boolean, eligible: boolean, frostAllowed: boolean) => {
+    const root = document.documentElement
+    if (!playing) {
+      if (this.driving) {
+        delete root.dataset.driveGlass
+        this.driveBlock = ''
+        this.controls?.invalidate()
+      }
+      this.driving = false
+      return
+    }
+    const now = performance.now()
+    if (!this.driving) {
+      this.driving = true
+      this.enteredAt = now
+      this.budget.enter()
+      this.lastReason = 'drive started'
+      this.changedAt = 0
+    }
+    const external = !frostAllowed ? 'graphics settings disable frost' :
+      this.controls?.reducedTransparency ? 'transparency preference' : ''
+    if (eligible && this.graphReady && !external && !this.covered) this.budget.sample(now)
+    else this.budget.interrupt()
+    this.driveBlock = external || (this.budget.enabled ? '' : this.budget.reason)
+    this.setDriveSurface(!this.driveBlock && this.graphReady)
+  }
+
+  private setDriveSurface(enabled: boolean) {
+    const root = document.documentElement
+    const state = enabled ? 'on' : 'shed'
+    if (root.dataset.driveGlass !== state) {
+      root.dataset.driveGlass = state
+      this.controls?.invalidate()
+    }
+  }
+
+  private record(showing: boolean, reason: string) {
+    if (this.showing === showing && this.lastReason === reason) return
+    this.showing = showing
+    this.lastReason = reason
+    this.changedAt = this.driving ? (performance.now() - this.enteredAt) / 1000 : 0
+  }
 
   diagnosticLine(): string {
     const count = this.showing ? this.controls?.visibleCount ?? 0 : 0
@@ -56,7 +109,7 @@ export class GlassPost {
     if (this.controls?.pressOnly) changes.push('glassMerge=zorb-brake-pressed')
     if (this.controls?.clearMaterial) changes.push('glassMaterial=clear')
     const overrides = changes.filter(Boolean).join(', ')
-    return `Glass: ${this.showing ? 'on' : 'shed'}, ${count} visible surfaces, blur and final composite GPU time ${cost}` + (overrides ? `\nGlass overrides: ${overrides}` : '')
+    return `Glass: ${this.showing ? 'on' : 'shed'} at ${this.changedAt.toFixed(1)} s (${this.lastReason}), ${count} visible surfaces, blur and final composite GPU time ${cost}` + (overrides ? `\nGlass overrides: ${overrides}` : '')
   }
 
   private controls?: GlassButton
@@ -160,6 +213,16 @@ export class GlassPost {
 
   render(graph: ReturnType<GlassPost['build']>, plain: THREE.RenderPipeline, covered = this.covered) {
     const controls = this.controls!
+    if (!this.graphReady && this.driving && !covered) this.setDriveSurface(!this.driveBlock)
+    this.graphReady = true
+    if (!covered && this.driving && this.driveBlock) {
+      if (!this.drawPlain) controls.hide()
+      this.drawPlain = true
+      this.record(false, this.driveBlock)
+      plain.render()
+      return
+    }
+    this.drawPlain = false
     this.sourceWidth.value = this.renderer!.getDrawingBufferSize(this.buffer).x
     this.material.value.set(glassThickness.value, glassBevel.value, glassIndex.value, glassDispersion.value)
     controls.update()
@@ -172,8 +235,15 @@ export class GlassPost {
       if (covered) pass.render()
       else this.timing.draw(this.renderer!, pass, graph.blur?.passes ?? [])
     }
-    this.showing = !covered && controls.available
     if (!covered) {
+      const on = controls.available
+      if (on && !this.showing) {
+        const reason = this.budget.reason === 'five calm seconds' && this.lastReason.includes('% of frames')
+          ? this.budget.reason : this.lastReason === 'drive started' ? 'drive started' : 'glass available'
+        this.record(true, reason)
+      } else if (!on) {
+        this.record(false, controls.reducedTransparency ? 'transparency preference' : 'interface frost disabled')
+      }
       controls.present(nativeInk.value)
       const target = graph.blur?.passes[1].renderTarget
       if (target && controls.hasSurface) this.ink.update(this.renderer!, controls, target, this.tuning.face.value, this.tuning.edges.value.z)
@@ -181,9 +251,15 @@ export class GlassPost {
     }
   }
 
-  release() { this.showing = false; this.controls?.hide() }
+  release(reason = 'post graph unavailable') {
+    if (this.graphReady) this.controls?.hide()
+    this.graphReady = false
+    if (this.driving) this.setDriveSurface(false)
+    this.record(false, reason)
+  }
 
   dispose() {
+    delete document.documentElement.dataset.driveGlass
     this.unsubscribe()
     this.deviceDark.removeEventListener('change', this.updateTuning)
     delete document.documentElement.dataset.glassAppearance
