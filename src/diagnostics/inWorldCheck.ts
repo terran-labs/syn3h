@@ -106,14 +106,16 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
     return '#' + worst.frame + ' ' + Math.round(worst.intervalMs) + ' ' +
       (work || 'no spans') + ', gap ' + Math.round(worst.unaccountedMs) + (batch.lost ? ' (partial)' : '')
   }
-  async function step(name: string, action: () => void | Promise<void>, ms = 800) {
+  async function step(name: string, action: () => void | Promise<void | string>, ms = 800) {
     signal.throwIfAborted()
     label.textContent = name
     samples = []; previous = performance.now()
     const from = level()
     draws.start()
+    let rowName = name
     try {
-      await action()
+      const detail = await action()
+      if (detail) rowName += ' (' + detail + ')'
       await wait(ms)
       // A timer can beat the next animation callback after a stall. Include its interval.
       await new Promise<void>((resolve, reject) => {
@@ -126,7 +128,7 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
     finally {
       const sorted = samples.sort((a,b) => a-b)
       const q = (fraction: number) => sorted.length ? sorted[Math.ceil(sorted.length * fraction)-1].toFixed(1) : '?'
-      rows.push([name, from === level() ? from : from+'>'+level(), samples.length, q(.5), q(.95), q(.99), q(1),
+      rows.push([rowName, from === level() ? from : from+'>'+level(), samples.length, q(.5), q(.95), q(.99), q(1),
         ...draws.result(), worstGameFrame()].join(' | '))
     }
   }
@@ -203,12 +205,22 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
       while (shell.element.querySelector('.quality-change-veil')) await wait(40)
     }, 650)
     const head = shell.element.querySelector<HTMLButtonElement>('.wi-card[data-section="performance"] .wi-head')
-    if (head && inspector) await step('Card close/open', async () => {
+    if (head && inspector) await step('Card frame window', async () => {
       inspector.style.visibility = visibility
-      head.click()
-      try { await wait(900) } finally { head.click(); inspector.style.visibility = 'hidden' }
+      const toggle = () => {
+        const action = head.getAttribute('aria-expanded') === 'true' ? 'close' : 'open'
+        const start = performance.now()
+        head.click()
+        return action + ' ' + (performance.now() - start).toFixed(1) + ' ms'
+      }
+      const first = toggle()
+      let second: string
+      try { await wait(900) } finally {
+        try { second = toggle() } finally { inspector.style.visibility = 'hidden' }
+      }
+      return 'click dispatch: ' + first + ', ' + second
     })
-    else rows.push('Card close/open | skipped: unavailable')
+    else rows.push('Card frame window | skipped: unavailable')
 
   } catch (error) {
     outcome = signal.aborted ? String(signal.reason) : 'Interrupted'
@@ -233,5 +245,5 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
   return ['Syn3h performance check | '+outcome+' | '+Math.round((performance.now()-started)/1000)+' s',
     ...header, `Quality at entry: ${game.entryQualityLevel ?? 'unavailable'}; at check start: ${startLevel}; room bots at start: ${roomBots}`, initialGlass,
     'Local step | level | frames | p50 | p95 | p99 | max ms | draw G/P | proxy | veil | unmatched | worst game frame',
-    ...rows, '', 'G/P = graph builds/pipeline requests. Draw = same-frame submission. Proxy = showroom warm. Unmatched = no same-frame draw identified. Steps force each boundary without the governor’s evidence delay or cold-climb gate. Worst game frame = interval over 33 ms ending in this step, two largest CPU spans and unaccounted gap (ms). A gap has no identified cause.', ...detail].join('\n')
+    ...rows, '', 'G/P = graph builds/pipeline requests. Draw = same-frame submission. Proxy = showroom warm. Unmatched = no same-frame draw identified. Steps force each boundary without the governor’s evidence delay or cold-climb gate. Worst game frame = interval over 33 ms ending in this step, two largest CPU spans and unaccounted gap (ms). Card window percentiles include waits between browser frames. Click dispatch measures synchronous handlers only. A gap has no identified cause.', ...detail].join('\n')
 }
