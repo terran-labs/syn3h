@@ -1,11 +1,12 @@
 // Run against a local release build before claiming an automatic quality step is free.
-// node tools/quality-drop-check.mjs ORIGIN webgpu|webgl 2|3|4|5 OUTPUT.json [desktop|phone]
+// node tools/quality-drop-check.mjs ORIGIN webgpu|webgl 2|3|4|5 OUTPUT.json [desktop|phone] [stock|empty]
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium } from 'playwright-core'
 
-const [origin, backend, entry, output, viewport = 'desktop'] = process.argv.slice(2)
+const [origin, backend, entry, output, viewport = 'desktop', fleet = 'stock'] = process.argv.slice(2)
+assert(['stock','empty'].includes(fleet))
 const url = new URL(origin), entryLevel = Number(entry)
 assert(['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
 assert(['webgpu','webgl'].includes(backend) && [2,3,4,5].includes(entryLevel) && output && ['desktop','phone'].includes(viewport))
@@ -21,17 +22,27 @@ try {
   page.on('pageerror', e => errors.push(e.message))
   await page.goto(url.href)
   await page.waitForFunction(() => window.syn3h?.game)
-  await page.evaluate(level => {
+  await page.evaluate(({level,fleet}) => {
     const {game, shell, params} = window.syn3h
-    params.set('bots.count',0)
+    if (fleet === 'empty') params.set('bots.count',0)
     game.quality.setLevel(level)
     game.quality.setAuto(true)
     void shell.play(true)
-  },entryLevel)
+  },{level:entryLevel,fleet})
   await page.waitForFunction(() => window.syn3hNet?.isHost && window.syn3h.shell.playing &&
     !window.syn3h.shell.transitioning, null, {timeout:90000})
+  if (fleet === 'stock') {
+    await page.waitForFunction(() => {
+      const {bots,materialize} = window.syn3h
+      const vehicles = bots.vehicles
+      return vehicles.length === 4 && ['buggy','hovercraft','jet'].every(kind => vehicles.some(v => v.kind === kind))
+        && vehicles.every(v => !materialize.isMaterializing(v))
+    }, null, {timeout:120000})
+  }
   const result = await page.evaluate(async () => {
     const {game} = window.syn3h, q = game.quality, governor = q.governor, b = game.renderer.backend
+    const roster = () => window.syn3h.bots.vehicles.map(v => ({kind:v.kind,id:v.object.id}))
+    const initialRoster = roster()
     const entered = governor.level, start = performance.now(), calls = [], changes = []
     function record(kind, source) {
       calls.push({kind, level:governor.level, frame:game.frames, ms:performance.now()-start,
@@ -44,7 +55,7 @@ try {
       return node
     }
     b.createRenderPipeline = function(ro,...args) { record('pipeline',ro); return pipeline.call(this,ro,...args) }
-    const unsubscribe = q.subscribeQuality(s => changes.push({ms:performance.now()-start,level:s.level,rung:s.rung}))
+    const unsubscribe = q.subscribeQuality(s => changes.push({ms:performance.now()-start,level:s.level,rung:s.rung,roster:roster()}))
     let accumulated = 0
     // The controller receives slow evidence at wall-clock pace. Every normal game draw,
     // settle period, rung, bot budget and level decision stays in the production loop.
@@ -59,10 +70,10 @@ try {
     try {
       while (governor.level && performance.now()-start < 150000) await new Promise(resolve=>setTimeout(resolve,100))
       await new Promise(resolve=>setTimeout(resolve,1500))
-      return {entered,backend:game.backend,final:governor.level,calls,changes}
+      return {entered,initialRoster,backend:game.backend,final:governor.level,calls,changes}
     } finally { governor.sample=sample; unsubscribe(); b.createNodeBuilder=make; b.createRenderPipeline=pipeline }
   })
-  await writeFile(output,JSON.stringify({...result,viewport,errors},null,2))
+  await writeFile(output,JSON.stringify({...result,viewport,fleet,errors},null,2))
   assert.deepEqual(errors,[])
   assert.equal(result.backend,backend)
   assert.equal(result.entered,entryLevel)
