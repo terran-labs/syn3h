@@ -3,7 +3,7 @@ import * as T from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
 import { params } from '../../shared/params'
 import { vehicleShading } from '../../src/core/quality'
-import { LOD_NEAR, mergedSurfaces } from '../../src/vehicles/skins/mergeStatic'
+import { LOD_NEAR } from '../../src/vehicles/skins/mergeStatic'
 import { Hovercraft, HOVER_DESIGN } from '../../src/vehicles/Hovercraft'
 import { GameHover } from '../../src/vehicles/hover/GameHover'
 import { R3_EYE } from '../../src/vehicles/hovergen/round3'
@@ -230,25 +230,19 @@ it('shares plain hovercraft graphs while keeping each craft’s paint, lamps and
     second.setColors(0x0000ff, 0xffffff)
     for (const level of [0, 1] as const) {
       const a = packedMesh(first, level), b = packedMesh(second, level)
-      expect(a.material).not.toBe(b.material)
-      expect(a.material.customProgramCacheKey()).toBe(b.material.customProgramCacheKey())
-      expect(a.material.colorNode).toBe(b.material.colorNode)
-      expect(a.material.emissiveNode).toBe(b.material.emissiveNode)
-      const aSources = mergedSurfaces.get(a.material)!, bSources = mergedSurfaces.get(b.material)!
-      const paintA = aSources.find(source => source.userData.showroom === 'paint')!
-      const paintB = bSources.find(source => source.userData.showroom === 'paint')!
-      expect(valuesFor(a, 'colorNode')).toContain(paintA.color)
-      expect(valuesFor(b, 'colorNode')).toContain(paintB.color)
-      expect(valuesFor(b, 'colorNode')).not.toContain(paintA.color)
+      expect(a.material).toBe(b.material)
+      const paintA = study(first).levels[level].object.userData.vehicleColors.body
+      const paintB = study(second).levels[level].object.userData.vehicleColors.body
+      expect(valuesFor(a, 'colorNode')).toContain(paintA)
+      expect(valuesFor(b, 'colorNode')).toContain(paintB)
+      expect(valuesFor(b, 'colorNode')).not.toContain(paintA)
 
       study(first).levels[level].setLights(true, true)
       study(second).levels[level].setLights(false, false)
-      const tailA = aSources.find(source => source.color.getHex() === 0x400808)!
-      const tailB = bSources.find(source => source.color.getHex() === 0x400808)!
-      expect(tailA.emissive).not.toEqual(tailB.emissive)
-      expect(valuesFor(a, 'emissiveNode')).toContain(tailA.emissive)
-      expect(valuesFor(b, 'emissiveNode')).toContain(tailB.emissive)
-      expect(valuesFor(b, 'emissiveNode')).not.toContain(tailA.emissive)
+      const tail = new T.Color(0xff1605)
+      expect(valuesFor(a, 'emissiveNode')).toContainEqual(tail.clone().multiplyScalar(1.5))
+      expect(valuesFor(b, 'emissiveNode')).toContainEqual(tail.clone().multiplyScalar(.08))
+      expect(valuesFor(b, 'emissiveNode')).not.toContainEqual(tail.clone().multiplyScalar(1.5))
     }
     const survivor = packedMesh(second, 0)
     let survivorDisposed = false
@@ -257,7 +251,7 @@ it('shares plain hovercraft graphs while keeping each craft’s paint, lamps and
     disposedFirst = true
     expect(survivorDisposed).toBe(false)
     expect(valuesFor(survivor, 'colorNode')).toContain(
-      mergedSurfaces.get(survivor.material)!.find(source => source.userData.showroom === 'paint')!.color,
+      study(second).levels[0].object.userData.vehicleColors.body,
     )
   } finally {
     if (!disposedFirst) first.dispose()

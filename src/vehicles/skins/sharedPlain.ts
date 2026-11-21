@@ -112,5 +112,5 @@ export function applySharedPlainShowroom(root: T.Object3D): () => void {
       material.emissiveNode = plainEmission ?? null
     }
   }, { decorationId: vehicleDecoration.decorationId })
-  return applyShowroom(root, decorate)
+  return applyShowroom(root, decorate, true)
 }
