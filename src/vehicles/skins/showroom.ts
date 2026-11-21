@@ -684,9 +684,9 @@ function scrolls(mesh: T.Mesh, source: Standard): boolean {
 }
 
 /** Same packed inputs as mergeStatic, with colour and emission read from the drawn mesh. */
-function plainStator(source: T.Material, surfaces: readonly Standard[], stator: StatorEmission): T.Material {
-  // The stator registration is restricted to packed standard node materials.
-  if (!(source instanceof T.MeshStandardNodeMaterial)) throw new TypeError('Expected packed stator material')
+function plainPacked(source: T.Material, surfaces: readonly Standard[], stator?: StatorEmission): T.Material {
+  // The plain batch reads the owning mesh’s surfaces even when another actor warmed it.
+  if (!(source instanceof T.MeshStandardNodeMaterial)) throw new TypeError('Expected packed surface material')
   const material = source.clone()
   const id = attribute<'float'>('surfaceId', 'float').round()
   let color: N = vec3(0), emission: N = vec3(0), roughness: N = float(0), metalness: N = float(0)
@@ -698,7 +698,7 @@ function plainStator(source: T.Material, surfaces: readonly Standard[], stator: 
     metalness = metalness.add(mask.mul(surface.metalness))
   })
   material.colorNode = color
-  material.emissiveNode = emission.add(stator.glow)
+  material.emissiveNode = stator ? emission.add(stator.glow) : emission
   material.roughnessNode = roughness
   material.metalnessNode = metalness
   return material
@@ -742,7 +742,7 @@ const decorationIdOf = (decorate: Decorate): string => decorate.decorationId ?? 
  * model is merged and attached. `decorate` is applied exactly once to each tier's materials.
  * Returns a disposer for everything built here.
  */
-export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void {
+export function applyShowroom(root: T.Object3D, decorate: Decorate, sharePlainPacked = false): () => void {
   const entries: { mesh: T.Mesh; source: Standard; castShadow: boolean }[] = []
   root.traverse(o => { if (o instanceof T.Mesh && !Array.isArray(o.material) && isStandard(o.material)) entries.push({ mesh: o, source: o.material, castShadow: o.castShadow }) })
   // The owner vehicle publishes its live colours (see Vehicle.setColors); a viewer has none.
@@ -783,15 +783,18 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
         const own = authored.get(e.source) ?? null
         const tagged = statorEmissions.get(e.source)
         const stator = tagged?.authored === own ? tagged : undefined
-        let variant = tier === 0 && !stator ? e.source : shared.get(e.source)
+        // Three caches a caster override per source material. Sharing just colorNode
+        // still creates a new shadow graph when a fresh human replica first casts.
+        const poolPlain = stator || (sharePlainPacked && mergedSurfaces.has(e.source) && standardEmission.has(own))
+        let variant = tier === 0 && !poolPlain ? e.source : shared.get(e.source)
         if (!variant) {
           const packed = mergedSurfaces.get(e.source), sources = packed ?? [e.source]
           const key = signature(sources, Boolean(packed), tier, e.mesh.name, own, accent, instanced, decorate, heated, stator)
           const found = key === null ? undefined : pool.get(key)
           if (found) { variant = found.material; if (!taken.has(variant)) { taken.add(variant); found.users++; showroomShare.users++; showroomShare.reused++ } }
           else {
-            variant = tier === 0 && stator
-              ? plainStator(e.source, sources, stator)
+            variant = tier === 0
+              ? plainPacked(e.source, sources, stator)
               : build(sources, Boolean(packed), tier as 1 | 2 | 3, e.mesh.name, own && standardEmission.has(own) ? null : own, accent, instanced, stator)
             // Only initialize new showroom materials. Parked users must preserve a live sky binding.
             if (tier > 0) (variant as Standard).envMap = sky
@@ -999,7 +1002,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
       e.mesh.material = plain && !pooled.has(plain) ? plain : e.source
     }
     for (let tier = 1; tier < tiers.length; tier++) { drop(tiers[tier]); tiers[tier] = undefined }
-    // The plain stator is pooled too. All other plain materials stay with the owner.
+    // Release this tier’s pooled packed materials before the owner releases its meshes.
     for (const m of new Set(tiers[0]?.values() ?? [])) if (releaseShared(m)) built.delete(m)
     const live = new Set<T.Material>()
     root.traverse(o => { if (o instanceof T.Mesh) for (const m of Array.isArray(o.material) ? o.material : [o.material]) live.add(m) })
