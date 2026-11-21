@@ -23,6 +23,8 @@
  * 11. King of the Hill: A switches the mode, the host's zone reaches everyone, A alone on the
  *     rim scores, B joins it and the hill is contested, B sinks into the lava lake and is
  *     stuck (still visible to A), then is lifted back to its pad
+ * 12. host away: Alice hosts with a bot and her tab is hidden; within 5 s Bob is host and the
+ *     bot moves on Bob's page; Alice comes back as a guest
  * Exits non zero on any failure or page error.
  */
 import { randomBytes } from 'node:crypto'
@@ -785,6 +787,45 @@ try {
     }
   }
   })
+
+  // 12. A host whose tab is hidden hands host on (server/room.ts, HOST_AWAY_MS): the host
+  // simulates the bots, so otherwise every guest watches them freeze. Alice hosts with a bot
+  // that drives; her tab is hidden; within 5 s Bob is host and the bot moves on Bob's page;
+  // Alice comes back as a guest. Last, because host does not come back to Alice.
+  await step('host away', async () => {
+  const hostAtStart = await a.evaluate(() => window.syn3hNet.game.host)
+  if (hostAtStart !== idA) throw new Error(`Alice is not host at the start (host ${hostAtStart}); rerun`)
+  await a.evaluate(() => {
+    const s = window.syn3h
+    s.params.set('bots.canDrive', true); s.params.set('bots.canFire', false)
+    if (s.params.get('bots.keepCount')) s.params.set('bots.keepCount', true)
+    s.params.set('bots.count', 1)
+  })
+  const hasBot = await a.waitForFunction(() => window.syn3h.bots.vehicles.length >= 1 && !window.syn3h.bots.remote, null, { timeout: 10000 }).then(() => true, () => false)
+  check('Alice hosts with a bot', hasBot, {})
+  const hiddenAt = Date.now()
+  await a.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  const took = await settle(() => b.evaluate(() => window.syn3hNet.isHost), (host) => host === true, 10000)
+  const tookMs = Date.now() - hiddenAt
+  check('Bob is host within 5 s of Alice\'s tab hiding', took.value === true && tookMs <= 5000, { tookMs, waitedMs: took.waitedMs })
+  // The bot is Bob's now: his manager simulates it, and it drives.
+  const botOnB = await b.waitForFunction(() => !window.syn3h.bots.remote && window.syn3h.bots.vehicles.length >= 1, null, { timeout: 8000 }).then(() => true, () => false)
+  const where = () => b.evaluate(() => { const v = window.syn3h.bots.vehicles[0]; if (!v) return null; const t = v.body.translation(); return [t.x, t.y, t.z] })
+  const p0 = botOnB ? await where() : null
+  await wait(3000)
+  const p1 = botOnB ? await where() : null
+  check('the bot moves on Bob\'s page, simulated there', botOnB && p0 && p1 && d2(p0, p1) > 1, { botOnB, p0, p1, moved: p0 && p1 ? +d2(p0, p1).toFixed(2) : null })
+  await a.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  const back = await settle(() => a.evaluate(() => ({ host: window.syn3hNet.game.host, isHost: window.syn3hNet.isHost, remote: window.syn3h.bots.remote, paused: window.syn3hNet.heartbeat?.paused ?? null })), (v) => v.isHost === false && v.remote === true && v.host !== 0)
+  check('Alice comes back as a guest, Bob still host', back.value.isHost === false && back.value.remote === true && back.value.host === idB, { ...back.value, idB, waitedMs: back.waitedMs })
+  await b.evaluate(() => window.syn3h.params.set('bots.count', 0))
+  }, { retryable: false })
 
   const hud = await b.evaluate(() => document.getElementById('hud').textContent)
   console.log('B HUD:\n' + hud)
