@@ -358,6 +358,12 @@ export class Shell implements System {
       return count > 1 ? `${count} players` : count ? 'Just you' : ''
     }, { after: 'game' })
     // Performance follows World; its controls remain part of the searchable card stack.
+    if (game.quality) game.quality.manualChange = (level, apply) => {
+      if (!this.playing || this.transitioning) { apply(); return }
+      if (!this.qualityVeil && game.manualQualityReady(level)) { apply(); return }
+      this.queuedQuality = apply
+      if (!this.qualityVeil) void this.applyQualityBehindVeil()
+    }
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
     // The lobby's settings: a gear in the lower right of the galaxy, with the running version
     // beside it, opening the sidebar's cards for sound, graphics, controls and the room. The
@@ -1163,6 +1169,27 @@ export class Shell implements System {
     this.element.querySelector<HTMLElement>('.hud-navigation')!.hidden = false
     this.touchPanels = false; this.syncPanels()
   }
+  private qualityVeil: HTMLDivElement | null = null
+  private queuedQuality?: () => void
+  private async applyQualityBehindVeil(): Promise<void> {
+    const veil = document.createElement('div')
+    veil.className = 'quality-change-veil'
+    veil.setAttribute('role', 'status')
+    veil.textContent = 'Applying graphics…'
+    this.qualityVeil = veil
+    this.element.append(veil)
+    try {
+      while (this.queuedQuality && !this.abort.signal.aborted) {
+        const apply = this.queuedQuality
+        this.queuedQuality = undefined
+        await this.game.prepareManualQuality(apply, this.abort.signal)
+      }
+    } finally {
+      veil.remove()
+      this.qualityVeil = null
+    }
+  }
+
   private performancePanel!: PerformancePanel
   configurePerformance(source: PerformanceSource): void { this.performancePanel.configure(source) }
   /** True from the click or key press that enters a world until play begins or the entry is abandoned. */

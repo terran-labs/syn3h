@@ -20,7 +20,7 @@ import { snapshotPixelRatio } from './snapshotScale'
 import { drawFrame, gpuDeadlineMs, startRenderer, viewState, withDeadline, type PostChain } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
-import { QualityController, reportLoading, vehicleShading, type AdjacentRenderPreset, type FrameMetrics } from './quality'
+import { QualityController, reportLoading, vehicleShading, type AdjacentRenderPreset, type QualityLevel, type FrameMetrics } from './quality'
 import { drawCoveredShowroomVariant } from '../vehicles/skins/showroom'
 import { PipelineCounter } from './performanceHistory'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
@@ -347,13 +347,14 @@ export class Game {
     const view = this.view()
     longFrames.renderContext(view, this.scene.userData.playerVehicleCache?.current)
     // A lost device draws nothing: no render, no buffer, no pipeline (see frame()).
-    const draw = !this.holdDraws && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
+    const draw = !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
     if (draw) {
       const watchingDraw = startupTiming.firstWorldFrameMs === undefined ||
         (view === 'playing' && startupTiming.playRequestMs !== undefined && startupTiming.firstPlayableFrameMs === undefined)
       const previousDraws = watchingDraw ? this.renderer.info.render.drawCalls : 0
       for (const system of this.systems) system.prepareWorldDraw?.()
       drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs)
+      if (view === 'playing') this.rememberVehicleLevel(this.quality.governor.level)
       longFrames.end('Render submission', renderStart)
       this.lastDraw = now
       // A render invocation without draw calls (or an earlier covered draw) is not this frame.
@@ -371,7 +372,7 @@ export class Game {
     metrics.pipelinesFresh = pipelines?.fresh ?? null
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
-    this.quality.frame(metrics, view === 'playing')
+    if (!this.applyingQuality) this.quality.frame(metrics, view === 'playing')
   }
 
   /**
@@ -380,6 +381,65 @@ export class Game {
    * whatever shader it met first, which is the stall precompile() exists to avoid.
    */
   holdDraws = false
+  private applyingQuality = false
+
+  private manualVehicleLevels = new WeakMap<object, number>()
+
+  private rememberVehicleLevel(level: QualityLevel): void {
+    const actor = this.scene.userData.playerVehicleCache?.active
+    if (!actor) return
+    const previous = this.manualVehicleLevels.get(actor) ?? 0
+    const levels = previous | (1 << level)
+    if (levels !== previous) this.manualVehicleLevels.set(actor, levels)
+  }
+
+  manualQualityReady(level: QualityLevel): boolean {
+    const current = this.quality.getQualityState()
+    if (Object.keys(current.overrides).length) return false
+    if (level === current.level && current.rung === 0) return true
+    // These neighbouring presets retain the shadow rig and the corresponding
+    // vehicle materials. Larger transitions can release one of those resources.
+    if (Math.min(level, current.level) < 1 || Math.max(level, current.level) > 3 ||
+        Math.abs(level - current.level) > 1) return false
+    const actor = this.scene.userData.playerVehicleCache?.active
+    if (actor && !((this.manualVehicleLevels.get(actor) ?? 0) & (1 << level))) return false
+    return !!this.postChain?.hasRenderPreset?.(this.quality.renderPreset(level, false))
+  }
+
+  /** The caller installs the opaque veil before starting this operation. */
+  async prepareManualQuality(apply: () => void, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return
+    const stop = new AbortController()
+    const cancel = () => stop.abort()
+    signal.addEventListener('abort', cancel, { once: true })
+    const deadline = performance.now() + 15_000
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    let applied = false
+    this.applyingQuality = true
+    try {
+      const prepare = async () => {
+        await frame()
+        await frame() // Give the browser a paint opportunity before changing the preset.
+        stop.signal.throwIfAborted()
+        applied = true
+        apply()
+        this.quality.settleCoveredPostBudget()
+        await frame()
+        await frame() // Let normal system updates adopt the new geometry and effects.
+        stop.signal.throwIfAborted()
+        await this.warmEntry(stop.signal, deadline)
+      }
+      const result = await withDeadline(prepare(), 15_000)
+      if (!result.ok && !signal.aborted) {
+        console.warn('Manual graphics preparation', result.reason)
+        if (!applied) apply()
+      }
+    } finally {
+      stop.abort()
+      signal.removeEventListener('abort', cancel)
+      this.applyingQuality = false
+    }
+  }
 
   /**
    * Build the shaders and pipelines for everything in the scene before play shows it, by
@@ -446,7 +506,7 @@ export class Game {
             }
           }
         }
-        this.postChain?.setCovered?.(this.holdDraws)
+        this.postChain?.setCovered?.(this.holdDraws || this.applyingQuality)
         const submit = () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
         runGuarded(this.renderer as unknown as GuardedRenderer, () => {
           if (batch) batch.run(discover, submit)
@@ -461,6 +521,7 @@ export class Game {
       }
     }
     const warm = { draw, yieldFrame }
+    let preparedNeighbour: QualityLevel | undefined
     const sweep = async () => {
       for (let i = 0; i < 2; i++) {
         await yieldFrame('Preparing world')
@@ -493,6 +554,7 @@ export class Game {
           if (key) seen.add(key)
           await chain.warmCovered({ yieldFrame, draw: submit }, target)
         }
+        preparedNeighbour = level
       }
     }
     await sweep()
@@ -531,6 +593,7 @@ export class Game {
         } finally { gl.deleteSync(fence) }
       }
     }
+    if (preparedNeighbour !== undefined) this.rememberVehicleLevel(preparedNeighbour)
   }
 
   private postChain: (PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> & {

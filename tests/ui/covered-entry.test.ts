@@ -89,3 +89,27 @@ it('ends covered entry and reports one loss when its pending pipelines reject', 
   expect(errors).not.toHaveBeenCalled()
   expect(warnings.mock.calls.filter(([line]) => String(line).includes('outstanding render pipelines'))).toHaveLength(1)
 })
+
+it('releases a cold manual change at its deadline and prevents a late preparation draw', async () => {
+  vi.useFakeTimers()
+  vi.stubGlobal('requestAnimationFrame', (frame: () => void) => setTimeout(frame, 1))
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  let resume!: () => void
+  const stalled = new Promise<void>(resolve => { resume = resolve })
+  const draw = vi.fn()
+  const game = Object.assign(Object.create(Game.prototype), {
+    quality: { settleCoveredPostBudget: vi.fn() },
+    warmEntry: async (signal: AbortSignal) => { await stalled; signal.throwIfAborted(); draw() },
+  })
+  const apply = vi.fn()
+  const change = game.prepareManualQuality(apply, new AbortController().signal)
+  expect(apply).not.toHaveBeenCalled()
+  expect(game.applyingQuality).toBe(true)
+  await vi.advanceTimersByTimeAsync(15001)
+  await change
+  expect(apply).toHaveBeenCalledOnce()
+  expect(game.applyingQuality).toBe(false)
+  resume()
+  await vi.advanceTimersByTimeAsync(1)
+  expect(draw).not.toHaveBeenCalled()
+})
