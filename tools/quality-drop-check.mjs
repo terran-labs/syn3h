@@ -41,6 +41,16 @@ try {
   },{level:entryLevel,fleet,multiplayer})
   await page.waitForFunction(() => window.syn3hNet?.isHost && window.syn3h.shell.playing &&
     !window.syn3h.shell.transitioning, null, {timeout:90000})
+  if (multiplayer === 'arrival') {
+    await page.waitForFunction(() => typeof window.releaseFourthBot === 'function',null,{timeout:120000})
+  } else if (fleet === 'stock') {
+    await page.waitForFunction(() => {
+      const {bots,materialize} = window.syn3h
+      const vehicles = bots.vehicles
+      return vehicles.length === 4 && ['buggy','hovercraft','jet'].every(kind => vehicles.some(v => v.kind === kind))
+        && vehicles.every(v => !materialize.isMaterializing(v))
+    }, null, {timeout:120000})
+  }
   let peerId = null
   if (multiplayer === 'peer') {
     const peer = await browser.newPage({viewport:{width:640,height:480}})
@@ -48,7 +58,7 @@ try {
     peerUrl.searchParams.set('vehicle','jet')
     await peer.goto(peerUrl.href)
     await peer.waitForFunction(() => window.syn3h?.shell)
-    await peer.evaluate(() => window.syn3h.shell.play(true))
+    await peer.evaluate(() => { window.syn3h.game.quality.setLevel(0); return window.syn3h.shell.play(true) })
     await peer.waitForFunction(() => window.syn3hNet?.id && window.syn3h.shell.playing && !window.syn3h.shell.transitioning)
     peerId = await peer.evaluate(() => window.syn3hNet.id)
     const at = await page.evaluate(() => {
@@ -62,16 +72,6 @@ try {
     },at)
     await page.bringToFront()
     await page.waitForFunction(id => window.syn3hNet?.remotes.get(id)?.vehicle,peerId)
-  }
-  if (multiplayer === 'arrival') {
-    await page.waitForFunction(() => typeof window.releaseFourthBot === 'function',null,{timeout:120000})
-  } else if (fleet === 'stock') {
-    await page.waitForFunction(() => {
-      const {bots,materialize} = window.syn3h
-      const vehicles = bots.vehicles
-      return vehicles.length === 4 && ['buggy','hovercraft','jet'].every(kind => vehicles.some(v => v.kind === kind))
-        && vehicles.every(v => !materialize.isMaterializing(v))
-    }, null, {timeout:120000})
   }
   const result = await page.evaluate(async ({peerId, multiplayer}) => {
     const {game} = window.syn3h, q = game.quality, governor = q.governor, b = game.renderer.backend
@@ -127,6 +127,7 @@ try {
   assert.deepEqual(errors,[])
   assert.equal(result.backend,backend)
   assert.equal(result.entered,entryLevel)
+  if (fleet === 'stock' && multiplayer !== 'arrival') assert.equal(result.initialRoster.length, 4, 'Full fleet required at measurement start')
   assert.equal(result.final,0)
   if (multiplayer === 'arrival') assert(result.changes.some(change => change.level === entryLevel-1 &&
     change.roster.some(v => v.kind === 'jet' && v.arriving)), 'Fourth bot must still be arriving when relief lands')
