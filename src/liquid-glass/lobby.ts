@@ -74,6 +74,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   const b = uniforms(blur, ['source','targetSize','axis'])
   const scene = texture(), horizontal = target(), vertical = target()
   const scope = canvas.closest('.syn3h-shell') ?? document.body
+  const captions = scope.querySelector<HTMLElement>('.galaxy-ui')
   const clock = new GlassMotionClock()
   const events = new AbortController()
   const opts = { signal: events.signal, capture: true }
@@ -139,6 +140,16 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
         radius:Math.min(half,r.endsWith('%') ? half*parseFloat(r)/50 : parseFloat(r)*box.width/(el.offsetWidth || box.width)),
         panel:el.id==='lobby-settings',alpha,pressed:el.matches(':active')})
     }
+    // Captions and dock labels are DOM siblings of the galaxy. Cut the panel's
+    // rounded outline out of that layer so it cannot write across the glass.
+    const card = shapes.find(s => s.panel)
+    if (captions && card) {
+      const box = captions.getBoundingClientRect()
+      const l = card.x - card.w + rect.left - box.left, t = card.y - card.h + rect.top - box.top
+      const r = l + card.w * 2, b = t + card.h * 2, k = card.radius
+      const corner = `a ${k} ${k} 0 0 1`
+      captions.style.clipPath = `path(evenodd, "M0 0H${box.width}V${box.height}H0Z M${l+k} ${t}H${r-k}${corner} ${k} ${k}V${b-k}${corner} ${-k} ${k}H${l+k}${corner} ${-k} ${-k}V${t+k}${corner} ${k} ${-k}Z")`
+    } else captions?.style.removeProperty('clip-path')
     changed = false
   }
   for (const type of ['scroll','resize','orientationchange']) window.addEventListener(type,dirty,opts)
@@ -159,11 +170,11 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   gl.uniform2f(u.pixels,width,height); gl.uniform2f(u.points,pw,ph); gl.drawArrays(gl.TRIANGLES,0,3)
   gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,width,height)
   return {
+    get available() { return !reduced.matches && document.documentElement.dataset.gfx !== '0' },
     get dirty() { return changed || clock.active || (active && shapes.length > 0 && revision !== tuning.revision()) },
     draw(enabled) {
-      enabled = enabled && !reduced.matches && document.documentElement.dataset.gfx !== '0'
       if (!enabled) {
-        if (active) { scope.removeAttribute('data-lobby-glass'); clock.release(); for (const el of registered) clear(el) }
+        if (active) { captions?.style.removeProperty('clip-path'); scope.removeAttribute('data-lobby-glass'); clock.release(); for (const el of registered) clear(el) }
         active = false; changed = false
         return
       }
@@ -218,6 +229,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       gl.disable(gl.SCISSOR_TEST); gl.disable(gl.BLEND)
     },
     dispose() {
+      captions?.style.removeProperty('clip-path')
       scope.removeAttribute('data-lobby-glass')
       clock.release(); size.disconnect(); membership.disconnect(); attributes.disconnect(); events.abort()
       for (const el of registered) clear(el)

@@ -130,6 +130,9 @@ export class LobbySettings {
   private readonly inspector: Inspector
   private readonly performance: PerformancePanel
   private readonly abort = new AbortController()
+  // The game inspector stays mounted in the lobby. Park its Me > Glass group
+  // while Settings owns those controls, then restore the same live rows.
+  private gameGlass?: { group: HTMLElement; slot: Comment }
   private shown = false
   private closing?: Animation
   private roomCard?: HTMLElement
@@ -242,6 +245,12 @@ export class LobbySettings {
     if (this.shown) return
     this.shown = true; this.closing?.cancel(); this.closing = undefined
     this.options.cue?.(); this.options.opening?.()
+    const group = this.parent.querySelector<HTMLElement>('.world-inspector:not(.lobby-settings) .wi-group[data-group="Glass"]')
+    if (group) {
+      const slot = document.createComment('Game glass settings')
+      group.replaceWith(slot)
+      this.gameGlass = { group, slot }
+    }
     this.parent.append(this.host)
     this.inspector.rebuild(); this.update()
     // Glass never nests: the card is the one glass surface, so the in-game cards' own glass
@@ -263,7 +272,7 @@ export class LobbySettings {
     this.inspector.hideTooltip()
     this.gear.setAttribute('aria-expanded', 'false'); this.gear.classList.remove('is-current'); this.dock.classList.remove('is-open')
     if (returnFocus) this.gear.focus({ preventScroll: true })
-    const detach = () => { if (!this.shown) this.host.remove() }
+    const detach = () => { if (!this.shown) this.detach() }
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { detach(); return }
     this.closing = this.inspector.element.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px) scale(.98)' }], { duration: 160, easing: 'ease-in' })
     this.closing.onfinish = detach
@@ -292,5 +301,13 @@ export class LobbySettings {
     this.inspector.update()
   }
 
-  dispose(): void { this.abort.abort(); this.performance.dispose(); this.inspector.dispose(); this.host.remove(); this.dock.remove() }
+  private detach(): void {
+    this.host.remove()
+    if (this.gameGlass) {
+      this.gameGlass.slot.replaceWith(this.gameGlass.group)
+      this.gameGlass = undefined
+    }
+  }
+
+  dispose(): void { this.abort.abort(); this.performance.dispose(); this.inspector.dispose(); this.detach(); this.dock.remove() }
 }
