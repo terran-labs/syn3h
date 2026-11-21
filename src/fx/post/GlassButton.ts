@@ -79,6 +79,7 @@ export class GlassButton {
   private registryDirty = true
   private readonly membership = new MutationObserver(() => { this.registryDirty = true; this.invalidate() })
   private readonly pendingGearInk = new Map<HTMLElement, 'black' | 'white'>()
+  private tuningVisible = false
   private readonly drawn = new Set<HTMLElement>()
   private readonly clock = new GlassMotionClock()
   private readonly pressed = new Map<number, Element>()
@@ -194,11 +195,12 @@ export class GlassButton {
     const start = performance.now()
     this.dirty = false
     this.drawn.clear()
+    this.showTuning(this.available && !this.clearMaterial)
     const c = this.canvas.getBoundingClientRect()
     const rects = this.controls.map(b => b.hidden ? null : b.getBoundingClientRect())
     this.lastBoundsMs = performance.now() - start
     longFrames.end('Glass DOM bounds', start)
-    this.viewport.value.set(c.width, c.height, Number(this.dark.matches), Number(this.clearMaterial))
+    this.viewport.value.set(c.width, c.height, Number(this.darkGlass), Number(this.clearMaterial))
     const boxes = this.boxes.array as Vector4[]
     for (const v of boxes) v.z = 0
     let brakeVisible = false
@@ -239,7 +241,7 @@ export class GlassButton {
       if (!rgba || !filter) continue
       const pressed = [...this.pressed.values()].includes(b) || b.matches(':active, .held')
       const i = this.drawn.size
-      const ink = this.pendingGearInk.get(b) ?? b.dataset.glassLabel ?? (this.dark.matches ? 'white' : 'black')
+      const ink = this.pendingGearInk.get(b) ?? b.dataset.glassLabel ?? (this.darkGlass ? 'white' : 'black')
       const gearInk = drum ? (ink === 'black' ? 1 : -1) : 0
       ;(this.presentation.array[i] as Vector4).set(alpha, Number(isCard), gearInk, Number(!isCard && b.dataset.action !== 'brakes' && pressed))
       ;(this.clips.array[i] as Vector4).set(clip.left - c.left, clip.top - c.top, clip.right - c.left, clip.bottom - c.top)
@@ -289,7 +291,7 @@ export class GlassButton {
       if (shape.x < .01 || shape.y) continue
       const box = this.boxes.array[index] as Vector4
       return { element: items[index], index, u: box.x / this.viewport.value.x,
-        v: box.y / this.viewport.value.y, dark: this.dark.matches, clear: this.clearMaterial,
+        v: box.y / this.viewport.value.y, dark: this.darkGlass, clear: this.clearMaterial,
         lift: shape.w || (this.pressState?.value.x === index ? this.pressState.value.y : 0) }
     }
   }
@@ -306,6 +308,17 @@ export class GlassButton {
     this.pendingGearInk.set(element, ink)
     ;(this.presentation.array[index] as Vector4).z = ink === 'black' ? 1 : -1
     this.requestDraw()
+  }
+
+  private appearance = 0
+  private pressGrowth = 0
+  private get darkGlass() { return this.appearance ? this.appearance === 2 : this.dark.matches }
+  tune(appearance: number, growth: number) {
+    if (appearance === this.appearance && growth === this.pressGrowth) return
+    this.appearance = appearance
+    this.pressGrowth = growth
+    this.brake?.setGrowth(growth)
+    this.invalidate()
   }
 
   get animating(): boolean { return this.clock.active }
@@ -338,7 +351,14 @@ export class GlassButton {
     }
   }
 
+  private showTuning(enabled: boolean) {
+    if (enabled === this.tuningVisible) return
+    this.tuningVisible = enabled
+    document.documentElement.toggleAttribute('data-game-glass', enabled)
+  }
+
   hide(): void {
+    this.showTuning(false)
     this.clock.release()
     this.pairSlots?.value.set(-1, -1, 0, 0)
     this.pairBrake = this.pairZorb = undefined

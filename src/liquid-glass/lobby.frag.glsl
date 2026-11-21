@@ -3,7 +3,9 @@
 precision highp float;
 uniform sampler2D scene, frost;
 uniform vec2 pixels, points;
-uniform vec4 box;
+uniform vec4 box, faceTransfer;
+uniform vec2 panelTransfer;
+uniform vec3 edgeStrength;
 uniform float radius, dark, panel, opacity, pressed, veil;
 out vec4 color;
 void main() {
@@ -23,7 +25,7 @@ void main() {
   float edge = clamp((.5 - max(dist, 0.0)) * pixels.x / points.x + .5, 0.0, 1.0);
   float hair = .90 - .59*l + dark * pow(max(l-.5, 0.0),2.0) * 1.22 / max(l,.001);
   float halo = .014 * max((n.y+.2)/1.2,0.0) * clamp(1.0-max(dist,0.0)/14.0,0.0,1.0);
-  float transmission = (1.0-halo) * (1.0-edge*hair*(1.0-n.y*n.y*mix(.69,1.0,dark)));
+  float transmission = (1.0-halo) * (1.0-min(1.0,edge*hair*(1.0-n.y*n.y*mix(.69,1.0,dark))*edgeStrength.y));
   vec3 surface = vec3(0);
   if (coverage > 0.0) {
     float r = max(1.0, mix(min(box.z, box.w), radius, panel));
@@ -34,8 +36,8 @@ void main() {
     vec3 wide = texture(frost,uv).rgb, delta = detail-wide;
     vec3 body = wide + delta*.275 + abs(delta)*mix(.22,-.22,dark);
     float y = dot(body,vec3(.2126,.7152,.0722));
-    float tone = mix(-.034*y*y+.506*y+133.0/255.0,-.39*y*y+.99*y+32.0/255.0,dark);
-    tone = mix(tone, mix((136.0+118.0*y)/255.0,(32.0+90.0*y)/255.0,dark),panel);
+    float tone = faceTransfer.x*y*y+faceTransfer.y*y+faceTransfer.z;
+    tone = mix(tone,panelTransfer.x*y+panelTransfer.y,panel);
     vec3 gain = mix(vec3(.988,.952,.979)+y*vec3(-.076,.028,-.045),
       vec3(1.317,1.256,1.314)+y*vec3(-.427,-.351,-.429),dark);
     float narrow = max(1.0-depth/1.17,0.0), pole = n.y*n.y;
@@ -44,8 +46,8 @@ void main() {
       + exp(-.5*depth)*pole*pole*mix(.101-.0911*tone,.0909-.0779*tone,dark)
       + exp(-.2*depth)*(1.0-pole)*mix(.0007-.028*tone,.0031-.0344*tone,dark)
       + max(1.0-depth/.48,0.0)*mix(-.1476+.0954*tone,-.0743+.0941*tone,dark);
-    vec3 face = clamp(vec3(tone+rim)+(body-y)*gain,0.0,1.0);
-    surface = mix(face,vec3(1),pressed*.405)*coverage;
+    vec3 face = clamp(vec3(tone+rim*edgeStrength.x)+(body-y)*gain*faceTransfer.w,0.0,1.0);
+    surface = mix(face,vec3(1),pressed*edgeStrength.z)*coverage;
   }
   color = opacity * vec4(surface,1.0-(1.0-coverage)*transmission);
 }

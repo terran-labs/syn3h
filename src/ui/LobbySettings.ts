@@ -184,6 +184,13 @@ export class LobbySettings {
     })
     // The browser holds sound until a first gesture; the summary says so quietly until it starts.
     window.addEventListener(SOUND_STARTED, () => this.inspector.update(), { signal })
+    const glass = params.all().filter(p => p.def.group === 'Glass')
+    if (glass.length) {
+      const body = document.createElement('div')
+      this.inspector.addCard('glass', 'Glass', body, () => 'Regular material', {
+        fill: () => body.replaceChildren(...glass.map(p => this.inspector.row(p.def as PropertyDef))),
+      })
+    }
     // Play: whether the bots may play with you, set before you join a world.
     const play = document.createElement('div')
     this.inspector.addCard('play', 'Play', play, () => `Bots may play with me: ${params.get(playWithMe.def.id)?.value ? 'yes' : 'no'}`, {

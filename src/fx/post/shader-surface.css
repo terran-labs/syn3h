@@ -36,22 +36,20 @@ html .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card[data-glas
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-@media (prefers-color-scheme: light) {
-  html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
-    --s3-ink: #101112;
-    --s3-dim: #18191a;
-    --s3-soft: #18191a;
-    --s3-accent-2: #17191b;
-    --halo-under: none;
-    color: var(--s3-ink);
-    text-shadow: none;
-  }
-  html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .wi-row output {
-    color: var(--s3-ink);
-  }
-  html .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card.is-open[data-glass-surface="shader"] > .wi-head {
-    background: rgb(233 233 235);
-  }
+html:where([data-glass-appearance="light"]) .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
+  --s3-ink: #101112;
+  --s3-dim: #18191a;
+  --s3-soft: #18191a;
+  --s3-accent-2: #17191b;
+  --halo-under: none;
+  color: var(--s3-ink);
+  text-shadow: none;
+}
+html:where([data-glass-appearance="light"]) .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .wi-row output {
+  color: var(--s3-ink);
+}
+html:where([data-glass-appearance="light"]) .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card.is-open[data-glass-surface="shader"] > .wi-head {
+  background: rgb(233 233 235);
 }
 
 /* The card supplies the one glass surface. Keep the real colour inputs,
@@ -61,7 +59,7 @@ html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="s
   --card-selection: #e8e8ea;
   --card-selection-ink: #161618;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] :is(.wi-vehicle-picker, .wi-seg, .wi-swatch, .wi-vehicle-option, .wi-seg button, .liquid-glass) {
+html[data-game-glass] .syn3h-shell.exploration-ui .world-inspector .wi-card :is(.wi-vehicle-picker, .wi-seg, .wi-swatch, .wi-vehicle-option, .wi-seg button, .liquid-glass) {
   box-shadow: none;
   text-shadow: none;
   backdrop-filter: none;
@@ -70,7 +68,7 @@ html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="s
   border-color: transparent;
   color: var(--s3-ink);
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] :is(.wi-vehicle-picker, .wi-seg) {
+html[data-game-glass] .syn3h-shell.exploration-ui .world-inspector .wi-card :is(.wi-vehicle-picker, .wi-seg) {
   border: 0;
   border-bottom: 1px solid currentColor;
   border-radius: 0;
@@ -95,19 +93,17 @@ html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="s
   opacity: 0;
 }
 
-@media (prefers-color-scheme: dark) {
-  html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
-    --s3-ink: #fff;
-    --s3-dim: #fafafa;
-    --s3-soft: #fafafa;
-    --halo-under: none;
-    color: var(--s3-ink);
-  }
+html:where([data-glass-appearance="dark"]) .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
+  --s3-ink: #fff;
+  --s3-dim: #fafafa;
+  --s3-soft: #fafafa;
+  --halo-under: none;
+  color: var(--s3-ink);
+}
   /* Native white ink on dark glass over a white field measured 4.29:1.
      This flat backing draws only under the rows that carry the labels. */
-  html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"]:not([data-glass-native-ink]) :is(.wi-row, .wi-group > summary, .wi-label, .wi-sum) {
-    background: rgb(0 0 0 / .065);
-  }
+html:where([data-glass-appearance="dark"]) .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"]:not([data-glass-native-ink]) :is(.wi-row, .wi-group > summary, .wi-label, .wi-sum) {
+  background: rgb(0 0 0 / .065);
 }
 
 /* Standalone HUD controls keep their own labels, cues and keyboard focus. */
@@ -130,16 +126,14 @@ html .syn3h-shell.exploration-ui .world-inspector [data-glass-native-ink] :is(.w
   color: #666;
   mix-blend-mode: difference;
 }
-@media (prefers-color-scheme: dark) {
-  html .syn3h-shell.exploration-ui .world-inspector [data-glass-surface="shader"][data-glass-native-ink] {
-    --s3-ink: white;
-    --card-selection: rgb(192 192 203 / .47);
-    --card-selection-ink: white;
-  }
-  html .syn3h-shell.exploration-ui .world-inspector [data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
-    color: #4d4d4d;
-    mix-blend-mode: plus-lighter;
-  }
+html:where([data-glass-appearance="dark"]) .syn3h-shell.exploration-ui .world-inspector [data-glass-surface="shader"][data-glass-native-ink] {
+  --s3-ink: white;
+  --card-selection: rgb(192 192 203 / .47);
+  --card-selection-ink: white;
+}
+html:where([data-glass-appearance="dark"]) .syn3h-shell.exploration-ui .world-inspector [data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
+  color: #4d4d4d;
+  mix-blend-mode: plus-lighter;
 }
 
 /* Body styles on the rail are more specific than the shared glass button. */
@@ -163,12 +157,8 @@ html .syn3h-shell .gear-selector .gs-drum:has(> [data-glass-surface="shader"]) {
 html .syn3h-shell .gs-drum .gs-item[data-glass-surface="shader"] { opacity: 1 !important; }
 html .syn3h-shell .gs-drum .gs-item.is-active[data-glass-surface="shader"] .gs-text { font-weight: 700; }
 
-@media (prefers-color-scheme: light) {
-  [data-glass-surface="shader"] { --button-glass-ink: black; }
-}
-@media (prefers-color-scheme: dark) {
-  [data-glass-surface="shader"] { --button-glass-ink: white; }
-}
+:where(html[data-glass-appearance="light"]) [data-glass-surface="shader"] { --button-glass-ink: black; }
+:where(html[data-glass-appearance="dark"]) [data-glass-surface="shader"] { --button-glass-ink: white; }
 [data-glass-surface="shader"][data-glass-label="black"] { --button-glass-ink: black; }
 [data-glass-surface="shader"][data-glass-label="white"] { --button-glass-ink: white; }
 :is(button, input)[data-glass-surface="shader"],
@@ -208,19 +198,15 @@ html #lobby-settings[data-glass-surface="shader"] button.is-on {
   color: #161618;
   background: #e8e8ea;
 }
-@media (prefers-color-scheme: dark) {
-  html #lobby-settings[data-glass-surface="shader"] { --s3-ink: white; --s3-dim: #fafafa; --s3-soft: #fafafa; }
-}
+html:where([data-glass-appearance="dark"]) #lobby-settings[data-glass-surface="shader"] { --s3-ink: white; --s3-dim: #fafafa; --s3-soft: #fafafa; }
 
 html #lobby-settings[data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
   color: #666;
   mix-blend-mode: difference;
 }
-@media (prefers-color-scheme: dark) {
-  html #lobby-settings[data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
-    color: #4d4d4d;
-    mix-blend-mode: plus-lighter;
-  }
+html:where([data-glass-appearance="dark"]) #lobby-settings[data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
+  color: #4d4d4d;
+  mix-blend-mode: plus-lighter;
 }
 
 @media (max-width: 700px), (max-height: 500px) and (pointer: coarse) {
@@ -228,4 +214,13 @@ html #lobby-settings[data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
   html .syn3h-shell:has(#lobby-settings[data-glass-surface="shader"]) .galaxy-ui {
     opacity: .22;
   }
+}
+
+/* An opted-in device can still shed the entire surface layer. */
+html:not([data-game-glass]) .wi-group[data-group="Glass"],
+.syn3h-shell:not([data-lobby-glass]) .lobby-settings .wi-card[data-section="glass"] { display: none; }
+[data-glass-surface="shader"]:is(button:active, button.held):not([data-glass-press="brake"]) { scale: var(--glass-extra-scale, none); }
+.syn3h-shell .wi-label .glass-setting-reset {
+  display: block; font: inherit; text-decoration: underline; color: inherit;
+  border: 0; background: transparent; cursor: pointer; padding: 2px 0;
 }

@@ -24,7 +24,10 @@ type Shape = { el: HTMLElement; x: number; y: number; w: number; h: number; radi
 
 /** Render after the galaxy and logo. The scene is already display-encoded.
  * Texture units 6 and 7 belong to this pass. The galaxy uses 0 through 3. */
-export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement, nativeInk: () => boolean): GalaxyGlass {
+export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement, nativeInk: () => boolean, tuning: {
+  face: { x: number; y: number; z: number; w: number }; panel: { x: number; y: number }; edges: { x: number; y: number; z: number }
+  width(): number; growth(): number; dark(): boolean; revision(): number
+}): GalaxyGlass {
   const dispose: (() => void)[] = []
   const program = (source: string) => {
     const p = gl.createProgram()!
@@ -67,7 +70,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   let blur: WebGLProgram, face: WebGLProgram
   try { blur = program(blurSource); face = program(faceSource) }
   catch (error) { for (const free of dispose) free(); throw error }
-  const u = uniforms(face, ['scene','frost','pixels','points','box','radius','dark','panel','opacity','pressed','veil'])
+  const u = uniforms(face, ['scene','frost','pixels','points','box','radius','dark','panel','opacity','pressed','veil','faceTransfer','panelTransfer','edgeStrength'])
   const b = uniforms(blur, ['source','targetSize','axis'])
   const scene = texture(), horizontal = target(), vertical = target()
   const scope = canvas.closest('.syn3h-shell') ?? document.body
@@ -75,7 +78,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   const events = new AbortController()
   const opts = { signal: events.signal, capture: true }
   const phone = matchMedia('(max-width: 700px), (max-height: 500px) and (pointer: coarse)')
-  const night = matchMedia('(prefers-color-scheme: dark)')
+  let revision = -1, growth = 0
   const reduced = matchMedia('(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)')
   let changed = true, registered: HTMLElement[] = [], shapes: Shape[] = []
   let width = 0, height = 0, pw = 1, ph = 1, tw = 1, th = 1, active = false
@@ -144,7 +147,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       if (event.target instanceof Element && (event.target.closest(surfaces) || registered.some(el=>event.target instanceof Element && event.target.contains(el)))) dirty()
     },opts)
   }
-  night.addEventListener('change',dirty,opts); reduced.addEventListener('change',dirty,opts)
+  reduced.addEventListener('change',dirty,opts)
   // Prime the actual programs behind the same cover as the galaxy shader.
   // Use the allocated blur framebuffer while warming, preserving the screen.
   resize()
@@ -156,17 +159,19 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   gl.uniform2f(u.pixels,width,height); gl.uniform2f(u.points,pw,ph); gl.drawArrays(gl.TRIANGLES,0,3)
   gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,width,height)
   return {
-    get dirty() { return changed || clock.active },
+    get dirty() { return changed || clock.active || (active && shapes.length > 0 && revision !== tuning.revision()) },
     draw(enabled) {
       enabled = enabled && !reduced.matches && document.documentElement.dataset.gfx !== '0'
       if (!enabled) {
-        if (active) { clock.release(); for (const el of registered) clear(el) }
+        if (active) { scope.removeAttribute('data-lobby-glass'); clock.release(); for (const el of registered) clear(el) }
         active = false; changed = false
         return
       }
       if (canvas.width !== width || canvas.height !== height) resize()
+      if (!active) scope.setAttribute('data-lobby-glass','')
       const now = performance.now()
-      if (clock.advance(now) || changed || !active) layout(now)
+      if (clock.advance(now) || changed || !active || growth !== tuning.growth()) layout(now)
+      growth = tuning.growth()
       active = true
       if (!shapes.length) return
       const sx = width/pw, sy = height/ph
@@ -177,21 +182,29 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
         gl.disable(gl.BLEND); gl.uniform1f(u.veil,0)
       }
       // Copy only the visible shapes plus their three-sigma sampling support.
-      const x0 = Math.max(0,Math.floor(Math.min(...shapes.map(s=>s.x-s.w-64))*sx))
-      const x1 = Math.min(width,Math.ceil(Math.max(...shapes.map(s=>s.x+s.w+64))*sx))
-      const y0 = Math.max(0,Math.floor(height-Math.max(...shapes.map(s=>s.y+s.h+64))*sy))
-      const y1 = Math.min(height,Math.ceil(height-Math.min(...shapes.map(s=>s.y-s.h-64))*sy))
+      const pad = Math.max(64, 4 + 48 * tuning.width())
+      const x0 = Math.max(0,Math.floor(Math.min(...shapes.map(s=>s.x-s.w-pad))*sx))
+      const x1 = Math.min(width,Math.ceil(Math.max(...shapes.map(s=>s.x+s.w+pad))*sx))
+      const y0 = Math.max(0,Math.floor(height-Math.max(...shapes.map(s=>s.y+s.h+pad))*sy))
+      const y1 = Math.min(height,Math.ceil(height-Math.min(...shapes.map(s=>s.y-s.h-pad))*sy))
       gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D,scene)
       gl.copyTexSubImage2D(gl.TEXTURE_2D,0,x0,y0,x0,y0,x1-x0,y1-y0)
       gl.useProgram(blur); gl.uniform2f(b.targetSize,tw,th)
       gl.viewport(0,0,tw,th); gl.bindFramebuffer(gl.FRAMEBUFFER,horizontal.fb)
-      gl.uniform2f(b.axis,1/pw,0); gl.drawArrays(gl.TRIANGLES,0,3)
+      gl.uniform2f(b.axis,tuning.width()/pw,0); gl.drawArrays(gl.TRIANGLES,0,3)
       gl.bindTexture(gl.TEXTURE_2D,horizontal.tex); gl.bindFramebuffer(gl.FRAMEBUFFER,vertical.fb)
-      gl.uniform2f(b.axis,0,1/ph); gl.drawArrays(gl.TRIANGLES,0,3)
+      gl.uniform2f(b.axis,0,tuning.width()/ph); gl.drawArrays(gl.TRIANGLES,0,3)
       gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,width,height)
       gl.useProgram(face); gl.bindTexture(gl.TEXTURE_2D,scene)
       gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D,vertical.tex)
-      gl.uniform2f(u.pixels,width,height); gl.uniform2f(u.points,pw,ph); gl.uniform1f(u.dark,Number(night.matches))
+      gl.uniform2f(u.pixels,width,height); gl.uniform2f(u.points,pw,ph); gl.uniform1f(u.dark,Number(tuning.dark()))
+      if (revision !== tuning.revision()) {
+        revision = tuning.revision()
+        const { face, panel, edges } = tuning
+        gl.uniform4f(u.faceTransfer,face.x,face.y,face.z,face.w)
+        gl.uniform2f(u.panelTransfer,panel.x,panel.y)
+        gl.uniform3f(u.edgeStrength,edges.x,edges.y,edges.z)
+      }
       gl.enable(gl.SCISSOR_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA)
       for (const s of shapes) {
         const x=Math.floor((s.x-s.w-14)*sx), y=Math.floor(height-(s.y+s.h+14)*sy)
@@ -205,6 +218,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       gl.disable(gl.SCISSOR_TEST); gl.disable(gl.BLEND)
     },
     dispose() {
+      scope.removeAttribute('data-lobby-glass')
       clock.release(); size.disconnect(); membership.disconnect(); attributes.disconnect(); events.abort()
       for (const el of registered) clear(el)
       for (const free of dispose) free()

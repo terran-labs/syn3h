@@ -612,6 +612,15 @@ export class Inspector {
       sync = value => { if (document.activeElement !== input) input.value = String(toShown(value)); display(shown(value)) }
       if (percent) number.dataset.percent = ''
     }
+    if (def.group === 'Glass') {
+      const reset = document.createElement('button')
+      reset.type = 'button'
+      reset.className = 'glass-setting-reset'
+      reset.textContent = 'Reset'
+      reset.setAttribute('aria-label', 'Reset ' + label.textContent + ' to Apple’s measured value')
+      reset.addEventListener('click', () => params.set(def.id, def.default))
+      label.append(reset)
+    }
     sync(param.value)
     row.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') this.detail(def) })
     row.addEventListener('focusin', () => this.detail(def))

@@ -6,8 +6,9 @@ type N = any
 
 /** Display-space backdrop. The host supplies the scene colour at a two-point
  * footprint. Both partial-resolution targets are reused until the viewport changes. */
-export function createGlassGaussian(source: (at: N) => N, viewport: N) {
-  const size = viewport.xy.max(vec2(1))
+export function createGlassGaussian(source: (at: N) => N, viewport: N, widthScale?: N) {
+  const points = viewport.xy.max(vec2(1))
+  const size = widthScale ? points.div(widthScale) : points
   function pass(sample: (at: N) => N, axis: N) {
     let value: N = vec3(0)
     for (const tap of glassBlurTaps) {
