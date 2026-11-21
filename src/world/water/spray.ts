@@ -157,7 +157,7 @@ function dropletMaterial(light: N, tint: N, lava = false) {
  * they drift apart as the strip spreads. A ring is a band of foam broken into arcs and
  * flecks. `octaves` 1 at the safe graphics level keeps it cheap.
  */
-function foamMaterial(light: N, tint: N, lava = false, octaves = 2) {
+function foamMaterial(light: N, tint: N, lava = false, octaves: N = 2) {
   const A = attribute('foamA', 'vec4'), B = attribute('foamB', 'vec4'), S = attribute('foamSide', 'vec4'), L = attribute('foamLook', 'vec4')
   const kindLength = S.xy.length()
   const ring = kindLength.lessThan(.5)
@@ -216,6 +216,7 @@ export class Spray {
   private sim: SpraySim | null = null
   private drops: { mesh: T.Mesh<T.InstancedBufferGeometry, T.MeshBasicNodeMaterial>; a: Float32Array; b: Float32Array; attributes: T.InstancedBufferAttribute[] } | null = null
   private foam: { mesh: T.Mesh<T.InstancedBufferGeometry, T.MeshBasicNodeMaterial>; arrays: Float32Array[]; attributes: T.InstancedBufferAttribute[] } | null = null
+  private readonly foamOctaves = uniform(2, 'int')
   private tier = -1
   private packed = -1
   /**
@@ -229,9 +230,7 @@ export class Spray {
   /** Live simulation, for tests and evidence tools. */
   get state() { return this.sim }
   private allocate(tier: number) {
-    const octaves = tier === 0 ? 1 : 2
-    // Only the safe tier changes the foam shader. The other budgets use the same draw objects.
-    if (this.tier >= 0 && (this.tier === 0) !== (tier === 0)) this.release()
+    this.foamOctaves.value = tier === 0 ? 1 : 2
     // Lava drops sink into the crust: no ripplets where they land.
     const cap = { ...sprayCapacity(tier), ...(this.liquid === 'lava' ? { ripplets: 0 } : {}) }
     this.sim = new SpraySim(cap, this.water); this.tier = tier; this.packed = -1
@@ -246,10 +245,11 @@ export class Spray {
       foamMesh.geometry = f.g
       oldDrops.dispose()
       oldFoam.dispose()
+      if (!dropMesh.parent) this.scene.add(dropMesh, foamMesh)
     } else {
       const light = sprayLight()
       dropMesh = new T.Mesh(d.g, dropletMaterial(light, waterTint(), lava))
-      foamMesh = new T.Mesh(f.g, foamMaterial(light, waterTint(), lava, octaves))
+      foamMesh = new T.Mesh(f.g, foamMaterial(light, waterTint(), lava, this.foamOctaves))
       dropMesh.name = `${this.liquid}-spray`; foamMesh.name = `${this.liquid}-foam`
       // After the water (transparent, no depth write) so foam lies on it; droplets after foam.
       foamMesh.renderOrder = 2; dropMesh.renderOrder = 3
@@ -275,7 +275,17 @@ export class Spray {
     for (const a of foam.attributes) { a.clearUpdateRanges(); if (m) { a.addUpdateRange(0, m * 4); a.needsUpdate = true } }
   }
   update(dt: number) {
-    if (!waterSpray.value) { this.dispose(); return }
+    if (!waterSpray.value) {
+      if (graphicsLevel.value !== 0) { this.dispose(); return }
+      // Minimal skips spray entirely. Keep its compiled draws for a return to Low.
+      if (this.sim) {
+        this.drops?.mesh.removeFromParent()
+        this.foam?.mesh.removeFromParent()
+        this.sim = null
+        this.tier = -1
+      }
+      return
+    }
     // Allocated up front, not on first contact, and drawn with no instances while idle so the
     // pipelines exist before any vehicle reaches the water.
     const tier = Math.max(0, Math.min(2, Math.round(graphicsLevel.value)))

@@ -148,7 +148,7 @@ const bodyTint=new T.Color(),accentTint=new T.Color()
 // TSL nodes are dynamically typed; sprites.ts uses the same alias.
 type N = any // eslint-disable-line @typescript-eslint/no-explicit-any
 /** A soft round puff, white in its body and pale blue at its frayed rim. */
-const cloudSprite:Sprite=(p:N,seed:N,age:N,octaves:number)=>{
+const cloudSprite:Sprite=(p:N,seed:N,age:N,octaves:N)=>{
   const n=mx_fractal_noise_float(vec3(p.mul(1.6).add(seed.mul(17)),age.mul(1.4)),octaves,2,.5)
   const r=p.length().add(n.mul(.25)).clamp(0,1)
   const body=float(1).sub(r).pow(2),core=float(1).sub(smoothstep(0,.5,r))
@@ -200,12 +200,14 @@ export class Materialize implements System {
   private build():void {
     const level=arrivalLevel()
     if(level===this.level)return
-    this.cloud?.dispose()
     this.level=level
-    this.cloud=new ParticleBatch(CLOUD_SLOTS[level],cloudSprite,true,level===0?1:2)
+    if (this.cloud) this.cloud.resetCapacity(CLOUD_SLOTS[level], level===0?1:2)
+    else {
+      this.cloud=new ParticleBatch(CLOUD_SLOTS[level],cloudSprite,true,level===0?1:2)
+      this.game.scene.add(this.cloud.mesh)
+    }
     this.cloud.clock.value=this.clock
     this.cloud.mesh.visible=this.clock<this.aliveUntil
-    this.game.scene.add(this.cloud.mesh)
     if(this.looks.length){
       for(const look of this.looks)look.setLevel(level)
     }else{

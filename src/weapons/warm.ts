@@ -104,6 +104,15 @@ class GearWarm implements System {
   async warmCovered(warm: CoveredWarm): Promise<void> {
     if (!this.batches.size) return
     await warm.yieldFrame('Preparing gear effects')
+    this.drawCoveredMinimal(warm.draw)
+    this.level = graphicsLevel.value
+    this.drawn = false
+    this.left = 0
+    this.group.removeFromParent()
+    this.stats.frames++
+  }
+
+  drawCoveredMinimal(draw: () => void): void {
     const restore: (() => void)[] = []
     const wasAttached = this.group.parent === this.game.scene
     const position = this.group.position.clone()
@@ -113,17 +122,12 @@ class GearWarm implements System {
       for (const batches of this.batches) {
         for (const mesh of batches()) restore.push(exposeBatch(mesh))
       }
-      warm.draw()
+      draw()
     } finally {
       for (let i = restore.length - 1; i >= 0; i--) restore[i]()
       this.group.position.copy(position)
       if (!wasAttached) this.group.removeFromParent()
     }
-    this.level = graphicsLevel.value
-    this.drawn = false
-    this.left = 0
-    this.group.removeFromParent()
-    this.stats.frames++
   }
 
   dispose(): void {

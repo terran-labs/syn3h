@@ -24,7 +24,7 @@ export interface SpriteLook { rgb: N; alpha: N }
  * Builds a sprite look. `seed` is a per particle vec2 in 0 to 1, `age` its age in seconds and
  * `octaves` the noise detail, 1 at the safe graphics level and 2 or 3 above it.
  */
-export type Sprite = (p: N, seed: N, age: N, octaves: number) => SpriteLook
+export type Sprite = (p: N, seed: N, age: N, octaves: N) => SpriteLook
 /**
  * Pattern over a ribbon quad, multiplied into its alpha: `u` 0 to 1 across the mark, `v` 0 to 1
  * along the quad, `tread` the per-quad surface response (0 a scuff, 1 a deep print).

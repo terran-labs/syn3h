@@ -31,6 +31,7 @@ export class ParticleBatch {
   readonly clock=uniform(0)
   /** Multiplies every particle's opacity, for an owner that fades a whole batch (fireworks smoke by daylight). */
   readonly opacity=uniform(1)
+  private readonly noiseOctaves = uniform(2, 'int')
   private next=0
   private buffers: ReturnType<typeof particleBuffers>
   private disposed = false
@@ -56,7 +57,8 @@ export class ParticleBatch {
     // ever larger, for as long as the batch lived.
     const size=cfg.z.add(cfg.w.mul(age.max(0))).max(0).mul(age.greaterThanEqual(0).and(age.lessThan(cfg.y)).select(1,0))
     m.scaleNode=vec2(size,size)
-    const look=sprite(uv().mul(2).sub(1),particleSeed(cfg.x,float(instanceIndex)),age.max(0),octaves)
+    this.noiseOctaves.value = octaves
+    const look=sprite(uv().mul(2).sub(1),particleSeed(cfg.x,float(instanceIndex)),age.max(0),this.noiseOctaves)
     m.colorNode=attribute('fxTint','vec3').mul(look.rgb)
     m.colorNode=m.colorNode.mul(additive?hotExposureNode():unlitShadeNode())
     // Original particle five-key alpha: near zero, .707, 1, .707, zero.
@@ -64,7 +66,8 @@ export class ParticleBatch {
     this.mesh=new T.Mesh(this.buffers.geometry,m);this.mesh.frustumCulled=false;this.mesh.renderOrder=additive?4:3
   }
   /** Reset the emission ring for a new budget, keeping the draw object and its shader. */
-  resetCapacity(capacity: number): void {
+  resetCapacity(capacity: number, octaves = this.noiseOctaves.value): void {
+    this.noiseOctaves.value = octaves
     const previous = this.buffers.geometry
     this.buffers = particleBuffers(capacity)
     this.mesh.geometry = this.buffers.geometry
