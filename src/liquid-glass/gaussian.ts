@@ -1,21 +1,8 @@
 import { clamp, rtt, uv, vec2, vec3, vec4 } from 'three/tsl'
 
-type N = any
+import { glassBlurTaps } from './gaussianKernel'
 
-// Truncate the measured 15.5-point Gaussian at three standard deviations.
-// Combine neighbouring taps using bilinear interpolation. The vertical
-// intermediate has one texel per four points. A two-point source footprint
-// keeps the fine grid from acquiring a left-to-right colour bias.
-const pitch = 4
-const sigma = 15.5
-const reach = Math.ceil(3 * sigma / pitch)
-const weights = Array.from({ length: 2 * reach + 1 }, (_, i) => Math.exp(-.5 * ((i - reach) * pitch / sigma) ** 2))
-const total = weights.reduce((a, b) => a + b, 0)
-const taps: { offset: number; weight: number }[] = []
-for (let i = 0; i < weights.length; i += 2) {
-  const a = weights[i], b = weights[i + 1] ?? 0
-  taps.push({ offset: (i - reach + b / (a + b)) * pitch, weight: (a + b) / total })
-}
+type N = any
 
 /** Display-space backdrop. The host supplies the scene colour at a two-point
  * footprint. Both partial-resolution targets are reused until the viewport changes. */
@@ -23,7 +10,7 @@ export function createGlassGaussian(source: (at: N) => N, viewport: N) {
   const size = viewport.xy.max(vec2(1))
   function pass(sample: (at: N) => N, axis: N) {
     let value: N = vec3(0)
-    for (const tap of taps) {
+    for (const tap of glassBlurTaps) {
       const at = clamp(uv().add(axis.mul(tap.offset).div(size)), 0, 1)
       value = value.add(sample(at).mul(tap.weight))
     }

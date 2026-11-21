@@ -53,7 +53,8 @@ export class GameHover {
   }
 
   resetMotion(): void {
-    this.setLevel(0)
+    // Geometry and showroom shading share distance hysteresis. Keep their last
+    // selections together when this parked model returns near the boundary.
     for (const h of this.levels) {
       h.setVector(0)
       h.setThrottle(0, true)

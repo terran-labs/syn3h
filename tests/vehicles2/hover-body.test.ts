@@ -3,7 +3,7 @@ import * as T from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
 import { params } from '../../shared/params'
 import { vehicleShading } from '../../src/core/quality'
-import { mergedSurfaces } from '../../src/vehicles/skins/mergeStatic'
+import { LOD_NEAR, mergedSurfaces } from '../../src/vehicles/skins/mergeStatic'
 import { Hovercraft, HOVER_DESIGN } from '../../src/vehicles/Hovercraft'
 import { GameHover } from '../../src/vehicles/hover/GameHover'
 import { R3_EYE } from '../../src/vehicles/hovergen/round3'
@@ -67,6 +67,25 @@ describe('the generated hovercraft body', () => {
     const children = v.object.children.length
     v.dispose(); h.world.free()
     expect(s.object.parent).toBeNull(); expect(children).toBe(2)
+  })
+
+  it('keeps remote geometry and shading on the same side of a detail boundary after parking', () => {
+    const h = harness(), position = new T.Vector3(0, 3, 0)
+    const camera = { position: position.clone() }
+    Object.assign(h.game, { camera })
+    const v = new Hovercraft(h.game, h.terrain, position)
+    v.isLocal = false
+    try {
+      camera.position.x = LOD_NEAR * 2
+      v.update(0, 1)
+      camera.position.x = LOD_NEAR - 1
+      v.update(0, 1)
+      const level = study(v).detail
+      expect(level).toBe(1)
+      v.resetForWorld()
+      v.update(0, 1)
+      expect(study(v).detail).toBe(level)
+    } finally { v.dispose(); h.world.free() }
   })
 
   it('rests its vanes and extinguishes drive glow in a zorb, then resumes on exit', () => {

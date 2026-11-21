@@ -813,6 +813,9 @@ export class Inspector {
     const box = card.getBoundingClientRect(), headBottom = head.getBoundingClientRect().bottom - box.top
     const below = Math.max(0, box.bottom - stack.getBoundingClientRect().bottom)
     const first = card.animate([{ clipPath: `inset(0 0 ${below}px 0 round ${r})` }, { clipPath: `inset(0 0 ${Math.max(below, box.height - headBottom)}px 0 round ${r})` }], { duration: fold, easing: 'cubic-bezier(.4,0,.6,1)', fill: 'forwards' })
+    // A scripted clip starts without a layout change or CSS transition event.
+    // Let an owned surface sample the very first fold on its next draw.
+    if (card.dataset.glassSurface === 'shader') card.dispatchEvent(new Event('glassgeometrychange', { bubbles: true }))
     let second: Animation[] = []
     let done = false
     const finish = () => { if (done) return; done = true; first.cancel(); for (const m of second) m.cancel(); if (card.classList.contains('is-open')) land(); this.panelMotion = undefined }
