@@ -15,6 +15,8 @@ try {
   await page.waitForFunction(() => window.syn3h?.shell.galaxy?.live)
   await page.evaluate(() => {
     window.syn3h.params.set('bots.count', 0)
+    window.syn3h.bots.daydream.setBlocker(() => true)
+    window.syn3h.game.quality.setAuto(false)
     window.syn3h.game.quality.setLevel(3)
     window.syn3h.shell.play(true)
   })
