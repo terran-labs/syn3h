@@ -61,6 +61,49 @@ The release record and `ops/STATE.md` identify the exact source and validation e
 - Smooth near-camera terrain remains deferred. Current vehicle feel and sound still need
   the owner's review; earlier buggy driving feedback was already addressed.
 
+## Automatic quality drops after entering at Ultra or Cinematic
+
+A returning WebGPU session can restore Ultra or Cinematic with Auto enabled and the
+level unpinned. If the governor then drops a level, the first visible frame can hitch.
+On v26.11.2113 with four bots present, Ultra to High built 84 shader graphs and
+requested 63 pipelines. Cinematic to Ultra built 90 graphs and requested 68 pipelines.
+Fresh Auto sessions start at High or below. Choosing a preset by hand pins the level
+until Auto is explicitly enabled again. Manual changes already use the quality veil.
+
+The released entry preview uses the entry level's shadows for the next level down.
+Giving just that neighbour its destination shadows still left 72 graphs and 54 pipeline
+requests on the first drop from Ultra, and 112 graphs and 64 requests from Cinematic.
+That ruled out the narrow change before timing it.
+
+Preparing every lower level during entry added a median 2.05 s from Play to the first
+playable frame at Ultra and 2.59 s at Cinematic on WebGPU (five quiet cold pairs each
+on the test Mac). The entry cost outweighed the benefit for this uncommon case.
+On WebGL 2 the prototype added a paired median 4.54 s at Ultra and hit the 15 s
+preparation cap in three of five entries. At Cinematic it hit the cap in all three.
+Its paired median of 1.72 s less time to play there includes abandoned preparation.
+Both approaches were set aside pending evidence from a player's session.
+
+## Slow WebGL 2 entry when a top level is selected before Play
+
+On released v26.11.2113, cold WebGL 2 entry took a median 9.02 s from Play to the
+first playable frame at Ultra and 18.94 s at Cinematic on the test Mac. The 15 s
+preparation cap fired in one of five Ultra runs and two of three Cinematic runs.
+The cap bounds covered preparation, which is only part of the Play interval.
+
+In one completed Ultra trace, the program-completion polls cleared at 3.06 s. A
+confirmation render took 4.62 s, followed by 4.52 s waiting for the first-frame
+callback before the final fence stage. That stage took 0.12 s. The capped Ultra run
+lacked stage timestamps, so its exact wait remains unknown. WebGL 2 starts at Medium
+or below on its own. Investigation of this manually selected entry path is deferred.
+
+## Vehicle shader builds at Low on WebGL 2
+
+Stepping down to Low while driving the hovercraft built three shader graphs for its
+two merged surfaces and duct fans. Switching to the jet at Low built seven graphs.
+WebGPU prepares those vehicle variants during entry. Doing the same on WebGL 2 added
+0.6 to 0.9 s to every entry, so that preparation ships only on WebGPU. No device
+report or measured hitch duration is available for either case.
+
 ## Historical record, not a current release checklist
 
 The following November 14 snapshot is retained for investigation. Its claims about defaults,
