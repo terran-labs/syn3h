@@ -1,20 +1,22 @@
 // Run against a local release build before claiming an automatic quality step is free.
-// node tools/quality-drop-check.mjs ORIGIN webgpu|webgl 3|4|5 OUTPUT.json
+// node tools/quality-drop-check.mjs ORIGIN webgpu|webgl 2|3|4|5 OUTPUT.json [desktop|phone]
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium } from 'playwright-core'
 
-const [origin, backend, entry, output] = process.argv.slice(2)
+const [origin, backend, entry, output, viewport = 'desktop'] = process.argv.slice(2)
 const url = new URL(origin), entryLevel = Number(entry)
 assert(['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
-assert(['webgpu','webgl'].includes(backend) && [3,4,5].includes(entryLevel) && output)
+assert(['webgpu','webgl'].includes(backend) && [2,3,4,5].includes(entryLevel) && output && ['desktop','phone'].includes(viewport))
 url.searchParams.set('seed','1')
 url.searchParams.set('room','quality-check-'+randomUUID().slice(0,8))
 if (backend === 'webgl') url.searchParams.set('webgl','1')
 const browser = await chromium.launch({channel:'chrome', headless:false})
 try {
-  const page = await browser.newPage({viewport:{width:1280,height:720}})
+  const phone = viewport === 'phone'
+  const page = await browser.newPage({viewport:phone ? {width:390,height:844} : {width:1280,height:720},
+    deviceScaleFactor:phone ? 2 : 1, isMobile:phone, hasTouch:phone})
   const errors = []
   page.on('pageerror', e => errors.push(e.message))
   await page.goto(url.href)
@@ -60,7 +62,7 @@ try {
       return {entered,backend:game.backend,final:governor.level,calls,changes}
     } finally { governor.sample=sample; unsubscribe(); b.createNodeBuilder=make; b.createRenderPipeline=pipeline }
   })
-  await writeFile(output,JSON.stringify({...result,errors},null,2))
+  await writeFile(output,JSON.stringify({...result,viewport,errors},null,2))
   assert.deepEqual(errors,[])
   assert.equal(result.backend,backend)
   assert.equal(result.entered,entryLevel)
