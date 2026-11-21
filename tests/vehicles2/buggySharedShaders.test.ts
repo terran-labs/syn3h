@@ -83,6 +83,17 @@ it('shares distance graphs without mixing buggy paint, wing geometry or wheel ma
     await Promise.all([a.skin.ready, b.skin.ready])
     a.skin.setColors(0x123456, 0xff4400)
     b.skin.setColors(0x654321, 0x44ff00)
+    params.set(vehicleShading.def.id, 0)
+    a.distance(8)
+    b.distance(8)
+    for (const name of ['Suspension arms', 'Shocks', 'Smooth tyres and chrome rings', 'Merged static surfaces']) {
+      const left = piece(a.skin, name), right = piece(b.skin, name)
+      expect(left.material.colorNode).toBe(right.material.colorNode)
+      expect(left.material.emissiveNode).toBe(right.material.emissiveNode)
+    }
+    expect(colorsFor(piece(a.skin, 'Merged static surfaces'))).toContain(0x123456)
+    expect(colorsFor(piece(b.skin, 'Merged static surfaces'))).toContain(0x654321)
+    params.set(vehicleShading.def.id, 2)
     a.distance(LOD_NEAR + 10)
     b.distance(LOD_NEAR + 10)
     for (const name of ['Box arm mid body', 'Mid suspension', 'Mid tyres']) {

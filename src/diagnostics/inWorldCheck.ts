@@ -61,6 +61,7 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
   const visibility = inspector?.style.visibility ?? ''
   if (inspector) inspector.style.visibility = 'hidden'
   const original = slot.current, input = game.input.suspended, pacing = bots.suspendDiagnosticPacing
+  const roomBots = bots.remote ? [...net!.players.values()].filter(player => player.bot).length : bots.vehicles.length
   const initialGlass = ctx.glass()
   const startLevel = game.quality.governor.level
   const quality = game.quality, sweep = quality.beginDiagnosticSweep()
@@ -230,7 +231,7 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
   const header = details.filter(line => /^(Device class:|Browser:|Renderer:|Screen:)/.test(line))
   const detail = details.filter(line => /^(Reported |Version:|Source commit:|OS:|Adapter:|Memory estimate:|Graphics quality:|World:|Play:|Room connection:|In play:|Last 60 s:|Before first overlay fade|After first overlay fade|Play to first playable|Covered entry precompile)/.test(line))
   return ['Syn3h performance check | '+outcome+' | '+Math.round((performance.now()-started)/1000)+' s',
-    ...header, `Quality at entry: ${game.entryQualityLevel ?? 'unavailable'}; at check start: ${startLevel}`, initialGlass,
+    ...header, `Quality at entry: ${game.entryQualityLevel ?? 'unavailable'}; at check start: ${startLevel}; room bots at start: ${roomBots}`, initialGlass,
     'Local step | level | frames | p50 | p95 | p99 | max ms | draw G/P | proxy | veil | unmatched | worst game frame',
     ...rows, '', 'G/P = graph builds/pipeline requests. Draw = same-frame submission. Proxy = showroom warm. Unmatched = no same-frame draw identified. Steps force each boundary without the governor’s evidence delay or cold-climb gate. Worst game frame = interval over 33 ms ending in this step, two largest CPU spans and unaccounted gap (ms). A gap has no identified cause.', ...detail].join('\n')
 }
