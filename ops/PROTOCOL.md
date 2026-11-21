@@ -42,7 +42,8 @@ current availability. Query one service when needed, not every reservation with 
 
 ## 4. Merge in batches, tag what is good
 
-The Orchestrator merges ready handoffs in a batch, runs the full suite and the smoke test
+The Orchestrator merges ready handoffs in a batch, runs the full suite (`tools/heavy.sh npx vitest run`
+and `tools/heavy.sh npm run test:tools`, the Node tooling tests vitest excludes) and the smoke test
 once, fixes seam breakage, tags a milestone, and updates the dashboard. A batch that cannot
 be made green in fifteen minutes is reverted and returned to its lane. Green means the
 suite exits zero: there is no list of accepted failures.

@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-20 06:50 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-20 22:50 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,9 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2010 (release-75), source 4a6c1477, frozen copy 20261120-063703-4a6c1477,
-Worker version 5931b73d, at https://www.syn3h.com/ since 20 November 06:41 PST.
+Live: v26.11.2011 (release-76), source d605daa9, frozen copy 20261120-223845-d605daa9,
+Worker version ec97541d, at https://www.syn3h.com/ since 20 November 22:43 PST.
+Since 2011 every release runs `npm run test:tools` (143 Node tests) as well as vitest.
 2010 carries an experimental glass shader, off by default (?glass=inline opts in; chunk GlassPost),
 with assets/liquid-glass/ serving the Apache-2.0 licence, the upstream NOTICE and our NOTICE.md.
 The hosted public check caps tolerated device-loss lines at 8 (tools/public-check.mjs) and prints
@@ -107,6 +108,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2008 | 73 | m-loss-2008 | Reload promptly when graphics fail during loading; re-entry reuses its preparation |
 | v26.11.2009 | 74 | m-quiet-2009 | after a lost graphics device, shader diagnostics stay quiet on the page |
 | v26.11.2010 | 75 | m-glass-2010 | experimental glass shader, off by default; Music line in Copy diagnostics |
+| v26.11.2011 | 76 | m-tools-2011 | release tooling tests fixed and run before every release; no game change |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
@@ -122,7 +124,8 @@ it, read from ~/.config/syn3h/cloudflare-token; never printed or copied.
 ## Release path as it works now
 
 On a train worktree (/Users/vtn/dev/Syn3h-wt/train-*), merge accepted tips, then:
-1. typecheck, full suite, production build, and the build again with
+1. typecheck, the full suite as two commands through tools/heavy.sh: `npx vitest run` and
+   `npm run test:tools` (tools/**, which vitest excludes; a failure blocks like any other), production build, and the build again with
    SYN3H_RELEASE_VERSION=<version> (it validates the player digest: summary under 70
    characters, two to five bullets);
 2. tools/runtime-assets-check.mjs (zero model requests; it went unrun once and failed for a
