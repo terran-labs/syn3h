@@ -220,3 +220,7 @@ html:not([data-game-glass]) .wi-group[data-group="Glass"],
   text-transform: none; letter-spacing: normal; text-decoration: underline;
 }
 .syn3h-shell .wi-row > .glass-setting-reset[hidden] { display: none; }
+html .syn3h-shell.exploration-ui dialog.lobby-sheet button[data-glass-surface="shader"] {
+  background: transparent; border-color: transparent; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none; color: var(--button-glass-ink);
+}
