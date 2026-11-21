@@ -112,7 +112,7 @@ export class GlassPost {
     if (this.controls?.pressOnly) changes.push('glassMerge=zorb-brake-pressed')
     if (this.controls?.clearMaterial) changes.push('glassMaterial=clear')
     const overrides = changes.filter(Boolean).join(', ')
-    return `Glass: ${this.showing ? 'on' : 'shed'} at ${this.changedAt.toFixed(1)} s (${this.lastReason}), ${count} visible surfaces, blur and final composite GPU time ${cost}` + (overrides ? `\nGlass overrides: ${overrides}` : '')
+    return `Glass: ${this.showing ? 'on' : 'shed'} at ${this.changedAt.toFixed(1)} s (${this.lastReason}), ${count} visible surfaces, glass-only GPU time (two blur passes) ${cost}` + (overrides ? `\nGlass overrides: ${overrides}` : '')
   }
 
   private controls?: GlassButton

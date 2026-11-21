@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GlassFrameBudget } from '../../src/fx/post/glassFrameBudget'
+import { GlassFrameBudget, glassBlurBudgetMs } from '../../src/fx/post/glassFrameBudget'
 import { allowsDriveFrost, qualityFrame, qualityLevel, setQualityChoice } from '../../src/ui/quality/ladder'
 
 function drive() {
@@ -78,7 +78,7 @@ describe('drive glass', () => {
     const { budget, frames, uneven } = drive()
     uneven(200, .4)
     expect(budget.enabled).toBe(true)
-    for (let i = 0; i < 140 && budget.enabled; i++) uneven(2, 2)
+    for (let i = 0; i < 140 && budget.enabled; i++) uneven(2, glassBlurBudgetMs + 1)
     expect(budget.reason).toContain('glass GPU')
     expect(budget.enabled).toBe(false)
     frames(400, 26)

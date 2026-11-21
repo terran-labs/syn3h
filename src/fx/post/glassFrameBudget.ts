@@ -3,7 +3,7 @@
 type Cause = 'GPU cost' | 'uneven frames'
 const windowMs = 2000
 const dwellMs = 5000
-const gpuBudgetMs = 1.5
+export const glassBlurBudgetMs = 5
 
 export class GlassFrameBudget {
   enabled = true
@@ -53,7 +53,7 @@ export class GlassFrameBudget {
       this.lastStamp = stamp
       this.gpuTotal += cost
       this.gpuSamples++
-      if (cost <= gpuBudgetMs) this.cheapSample = true
+      if (cost <= glassBlurBudgetMs) this.cheapSample = true
     }
 
     this.duration += dt
@@ -85,7 +85,7 @@ export class GlassFrameBudget {
       const cause = this.gpuSamples >= 2 && !this.cheapSample ? 'GPU cost' :
         !this.gpuSamples && now - this.lastStamp > windowMs && uneven ? 'uneven frames' : undefined
       if (cause && !this.ineffective.has(cause)) {
-        const trigger = cause === 'GPU cost' ? (this.gpuTotal / this.gpuSamples).toFixed(2) + ' ms glass GPU' : cause
+        const trigger = cause === 'GPU cost' ? (this.gpuTotal / this.gpuSamples).toFixed(2) + ' ms glass GPU (two blur passes)' : cause
         this.reason = trigger + '; trial from ' + mean.toFixed(1) + ' ms/frame'
         this.enabled = false
         this.trial = cause
