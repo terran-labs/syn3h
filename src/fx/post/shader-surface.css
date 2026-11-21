@@ -220,3 +220,9 @@ html:not([data-game-glass]) .wi-group[data-group="Glass"],
   text-transform: none; letter-spacing: normal; text-decoration: underline;
 }
 .syn3h-shell .wi-row > .glass-setting-reset[hidden] { display: none; }
+/* A rail theme can frost Search and the two icons at tablet widths.
+   Once their surfaces are in the framebuffer, there is no DOM blur to apply. */
+html .syn3h-shell.exploration-ui > .world-inspector .rail-command > [data-glass-surface="shader"],
+html .syn3h-shell.exploration-ui > .world-inspector > .panels-close[data-glass-surface="shader"] {
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
