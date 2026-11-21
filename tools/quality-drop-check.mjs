@@ -118,6 +118,20 @@ try {
     }
     b.createRenderPipeline = function(ro,...args) { record('pipeline',ro); return pipeline.call(this,ro,...args) }
     const unsubscribe = q.subscribeQuality(s => changes.push({ms:performance.now()-start,level:s.level,rung:s.rung,roster:roster()}))
+    // Bots keep driving during the governor's evidence windows. Stage the real actors
+    // in front of the current camera just before Minimal so an offscreen jet cannot
+    // turn an empty submission count into a passing unshed run.
+    function stageFleet() {
+      const { camera } = game
+      const forward = camera.getWorldDirection(camera.position.clone()).setY(0).normalize()
+      const right = forward.clone().cross(camera.up).normalize()
+      window.syn3h.bots.vehicles.forEach((vehicle, index) => {
+        const at = camera.position.clone().addScaledVector(forward, 22 + 4 * (index % 2))
+          .addScaledVector(right, (index - 1.5) * 4)
+        at.y = window.syn3h.terrain.heightAt(at.x,at.z) + 2
+        vehicle.teleport(at,0)
+      })
+    }
     let accumulated = 0
     // The controller receives slow evidence at wall-clock pace. Every normal game draw,
     // settle period, rung, bot budget and level decision stays in the production loop.
@@ -130,6 +144,8 @@ try {
           governor.slowMs + governor.windowMs + accumulated >= governor.shedTiming().shedMs) {
         window.releaseFourthBot()
       }
+      if (fleet === 'unshed' && governor.level === 1 && governor.rung + 1 === governor.ladder.length &&
+          governor.slowMs + governor.windowMs + accumulated >= governor.shedTiming().shedMs) stageFleet()
       const interval = accumulated
       accumulated = 0
       return sample.call(this,interval,true)
@@ -137,6 +153,7 @@ try {
     try {
       if (multiplayer === 'manual') {
         for (let target = entered - 1; target >= 0; target--) {
+          if (fleet === 'unshed' && target === 0) stageFleet()
           q.setLevel(target)
           const requested = performance.now()
           while (governor.level !== target || document.querySelector('.quality-change-veil')) {
