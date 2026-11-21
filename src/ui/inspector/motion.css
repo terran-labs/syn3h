@@ -81,7 +81,7 @@
     /* A light tint, not the old near-black (.94), which made the bar much darker than the card
        (the owner, 21 November 2026). Some tint is needed: with none, WebKit drew no blur and
        rows scrolling under the title read straight through it. */
-    background: rgb(12 12 13 / .35); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); backdrop-filter: blur(12px);
+    background: rgb(12 12 13 / .35); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
   }
 }
 
