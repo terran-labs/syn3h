@@ -87,8 +87,11 @@
 }
 .gear-selector .gs-meter > * { margin: 0; }
 .gear-selector .gs-status { color: var(--s3-accent-2); font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
-/* 2 px with a visible track, so it reads as a bar and not as the name's underline. */
-.gear-selector .gs-level { width: 64px; height: 2px; flex: none; border-radius: 1px; background: color-mix(in srgb, var(--s3-ink) 22%, transparent); box-shadow: 0 0 2px rgb(0 0 0 / .35); overflow: visible; }
+/* 2 px under the readouts' own line falloff (--hud-line-under, exploration.css), so it reads
+   as a bar and not as the name's underline over bright sky and snow as well as at night: the
+   track is a dark groove (it shows against sky) with a faint light hairline (it shows against
+   night), and the fill is the light that runs along it. */
+.gear-selector .gs-level { width: 64px; height: 2px; flex: none; border-radius: 1px; background: rgb(0 0 0 / .55); box-shadow: 0 0 0 1px rgb(255 255 255 / .34); filter: var(--hud-line-under, drop-shadow(0 0 1px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .45))); overflow: visible; }
 .gear-selector .gs-level i { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--s3-accent-2); box-shadow: var(--gs-glow); transform-origin: 0 50%; transition: transform .2s linear; }
 .gear-selector .gs-hints { list-style: none; margin: 9px 0 0; padding: 0; display: grid; gap: 5px; }
 .gear-selector .gs-hints li { display: flex; align-items: center; gap: 8px; min-height: 18px; }
@@ -133,6 +136,20 @@
   top: var(--gear-top, var(--edge-top)); transform: none;
 }
 .gear-selector[data-touch] .gs-desc { display: none; }
+/* Outdoors over bright sky and snow (the owner tests there): the neighbours above and below the
+   selected gear stay readable. The drum always runs at full strength on touch, the mask fades
+   only the drum's last few pixels rather than half of each neighbour, and the neighbours take
+   most of the ink, over the readouts' dark falloff (--hud-under) that every name carries. */
+:root .gear-selector[data-touch] { opacity: 1; }
+:root .gear-selector[data-touch] .gs-drum {
+  -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
+}
+:root .syn3h-shell.exploration-ui .gear-selector[data-touch] .gs-drum button.gs-item:not(.is-active) { color: var(--s3-ink); text-shadow: var(--hud-under); }
+/* Small type is thin type: the neighbours draw a little larger (at least 0.86 of the selected
+   name, not 0.76) and one weight heavier, so the falloff has strokes to hold. */
+.gear-selector[data-touch] .gs-item:not(.is-active) .gs-label { transform: scale(calc(max(var(--s, 1), .86) * var(--fit, 1))); }
+.gear-selector[data-touch] .gs-item:not(.is-active) .gs-text { font-weight: 600; }
 /* Left-handed play mirrors the touch layout (the stick, the thumb grid, the Panels control and
    the minimap swap sides), and the drum goes with it, to the top right: on a phone on its side
    the left column has no room for both it and the grid with the Panels control. */

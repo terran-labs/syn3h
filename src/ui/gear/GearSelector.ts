@@ -65,6 +65,9 @@ export function ringOffset(index: number, current: number, count: number): numbe
   return d > count / 2 ? d - count : d
 }
 
+/** How much brighter the drum's neighbours are drawn on touch screens. */
+const TOUCH_NEIGHBOUR_LIFT = 1.52
+
 /** How a slot looks by its distance from the centre. Its position is CSS: offset times pitch. */
 export function slotPose(offset: number): { scale: number; opacity: number } {
   const a = Math.abs(offset)
@@ -384,7 +387,9 @@ export class GearSelector {
     const s = item.button.style
     s.setProperty('--o', String(Math.max(-3, Math.min(3, offset))))
     s.setProperty('--s', String(p.scale))
-    s.opacity = String(p.opacity)
+    // Touch is used outdoors over bright sky and snow (the owner, 21 November 2026): the
+    // neighbours draw at full strength there (0.66 becomes 1); size and the window mark the selected one.
+    s.opacity = String(this.touch && p.opacity > 0 ? Math.min(1, p.opacity * TOUCH_NEIGHBOUR_LIFT) : p.opacity)
     s.visibility = p.opacity === 0 ? 'hidden' : ''
   }
 
