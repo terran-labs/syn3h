@@ -153,9 +153,12 @@ html .syn3h-shell .rail-command > [data-glass-surface="shader"] .rail-icon path 
 
 /* Selection is conveyed by size, weight and the filled node. The mask on
    the drum normally fades the label itself, including its centre strokes. */
+html .syn3h-shell .gear-selector:has(.gs-item[data-glass-surface="shader"]) {
+  opacity: 1 !important;
+}
 html .syn3h-shell .gear-selector .gs-drum:has(> [data-glass-surface="shader"]) {
-  mask-image: none;
-  -webkit-mask-image: none;
+  mask-image: none !important;
+  -webkit-mask-image: none !important;
 }
 html .syn3h-shell .gs-drum .gs-item[data-glass-surface="shader"] { opacity: 1 !important; }
 html .syn3h-shell .gs-drum .gs-item.is-active[data-glass-surface="shader"] .gs-text { font-weight: 700; }
