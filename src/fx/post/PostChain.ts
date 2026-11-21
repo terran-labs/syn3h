@@ -278,6 +278,16 @@ export class PostChain {
   attachGlass(glass: GlassPost) { this.glass = glass }
   get glassPrepared() { return !!this.built?.glass }
 
+  /** A post setting may select a parked graph, or a new one needing the Applying veil. */
+  get selectedGlassPrepared(): boolean {
+    if (!this.scope || !this.glass || !liquidSelected()) return false
+    const tier = P.postOn.value ? postTier({ on: true, tier: this.host.quality.postTier ?? 'full',
+      shed: 1 - Math.min(1, Math.max(0, this.host.quality.postBudget ?? 1)) }) : 'base'
+    if (tier === 'off') return false
+    const key = this.describeGraph(this.scope.renderer, this.scope.scene, tier).key
+    return !!(this.built?.key === key ? this.built : this.standby.get(key))?.glass
+  }
+
   /** Exact post context for covered draw deduplication. Also records equivalent preset levels. */
   coveredVariantKey(preset: PostGraphPreset): string | undefined {
     const scope = this.scope
