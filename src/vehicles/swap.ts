@@ -214,6 +214,13 @@ export function createVehicleSwapper(
     },
   }
   game.add({
+    drawCoveredMinimal(draw) {
+      // An idle buggy can have no sparks during entry. The first live emission
+      // must also have a pipeline for Minimal's direct-to-canvas target.
+      const player = slot.current
+      if (player instanceof Syn3hBuggy) player.drawCoveredMotorSparks(draw)
+      else draw()
+    },
     drawCoveredLowFleet(draw) {
       // Nest the synchronous attachment brackets so all parked models share one render.
       let submit = draw
