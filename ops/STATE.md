@@ -196,7 +196,7 @@ The room ticks hill and race time on its own Durable Object alarm (fix/koth-serv
 | veh/tank, veh/loft-editor | | | do not merge (Foreman) |
 | perf/smooth-entry | 702f9a8f, merging main | smooth-entry builder aa1e0a5e | its gate on main; accepted as the next release on its own. Host frame rate now limits room bots |
 | fix/lobby-wordmark-sun | f06dc96f | builder 900cc550 | captions commit 51b91265 waits for the owner; rewriting fixed waits in lobby checks |
-| build/weekend | | | delete after about 16:10 on 17 November if it is an ancestor of main |
+| build/weekend | | | in main; local branch deleted 21 November (tag archive/build-weekend); origin/build/weekend waits for the owner |
 
 tests/ui/phone-layout.mjs fails on main on two real overlaps (jet landscape throttle-down over
 .hud-navigation; iPad .hud-navigation over the hill-winner announcement) until ux/touch-aim
