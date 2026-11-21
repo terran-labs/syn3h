@@ -1,12 +1,12 @@
 import type { Node } from 'three/webgpu'
 import { Fn, If, abs, clamp, dot, float, length, max, min, mix, step, uv, vec2, vec3, vec4 } from 'three/tsl'
-import { regularGlass } from './regular'
+import { regularGlass, type RegularUniforms } from './regular'
 
 type N = any
 
 /** A horizontally aligned circle and capsule in one container, in CSS points. */
 export function mergedGlassPair(original: N, circle: Node<'vec4'>, pill: Node<'vec4'>, viewport: N, ratio: N,
-  sample: (p: N) => N, filtered: (p: N, width: N) => N, blurred: (p: N) => N, pressLift?: Node<'float'>, strength?: Node<'float'>) {
+  sample: (p: N) => N, filtered: (p: N, width: N) => N, blurred: (p: N) => N, pressLift?: Node<'float'>, strength?: Node<'float'>, tuning?: RegularUniforms) {
   return Fn(() => {
     const size = viewport.xy as Node<'vec2'>
     const point = uv().mul(size)
@@ -54,7 +54,7 @@ export function mergedGlassPair(original: N, circle: Node<'vec4'>, pill: Node<'v
       const direction = float(1).sub(gradient.y.abs().div(slope).pow(2).mul(mix(.69, 1, dark)))
       const halo = max(gradient.y.add(.2).div(1.2), 0).mul(.014)
         .mul(clamp(float(1).sub(exterior.div(14)), 0, 1))
-      bg.mulAssign(float(1).sub(halo).mul(float(1).sub(opacity.mul(hair).mul(direction))))
+      bg.mulAssign(float(1).sub(halo).mul(float(1).sub(opacity.mul(hair).mul(direction).mul(tuning?.edges.y ?? 1).min(1))))
       If(coverage.greaterThan(0), () => {
         const radius = mix(pill.w, circle.w, fraction)
         // A 32-point native phase grating measures a shallower fold in
@@ -79,8 +79,8 @@ export function mergedGlassPair(original: N, circle: Node<'vec4'>, pill: Node<'v
           const detail = filtered(ray, footprint)
           return detail.add(detail.sub(blurred(uv())).mul(neck.mul(.03)))
         }
-        const face = regularGlass(vec2(radius), distance, gradient, uv(), size, dark, sample, folded, blurred)
-        const lifted = pressLift ? mix(face, vec3(1), pressLift.mul(.405).mul(float(1).sub(fraction))) : face
+        const face = regularGlass(vec2(radius), distance, gradient, uv(), size, dark, sample, folded, blurred, undefined, tuning)
+        const lifted = pressLift ? mix(face, vec3(1), pressLift.mul(tuning?.edges.z ?? .405).mul(float(1).sub(fraction))) : face
         bg.assign(mix(bg, lifted, coverage))
       })
       result.assign(vec4(bg, 1))

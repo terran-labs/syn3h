@@ -1,8 +1,10 @@
 import * as THREE from 'three/webgpu'
 import { float, max, renderOutput, rtt, uniform, uv, vec3, vec4 } from 'three/tsl'
-import { defineParam } from '../../../shared/params'
+import { defineParam, params } from '../../../shared/params'
 import { registerCoveredComposite } from '../../core/coveredPipelines'
 import { composeGlass } from '../../liquid-glass/compose'
+import { regularSettings as settings, regularOverrides } from './regularSettings'
+import { regularTransfer } from '../../liquid-glass/regularTuning'
 import { createGlassGaussian } from '../../liquid-glass/gaussian'
 import { gameplayGlassSlots, GlassButton } from './GlassButton'
 import { GlassLabelInk } from './glassLabelInk'
@@ -13,12 +15,12 @@ import './shader-surface.css'
 
 type N = any // The post graph carries colour, texture and velocity nodes.
 const c = 'client'
-const nativeInk = defineParam({ id: 'glass.nativeInk', label: 'Native panel ink', group: 'Glass', scope: c,
+const nativeInk = defineParam({ id: 'glass.nativeInk', label: 'Native panel ink', group: 'Interface', scope: c,
   default: new URLSearchParams(location.search).get('glassInk') === 'native' })
-const glassThickness = defineParam({ id: 'glass.thickness', label: 'Glass thickness / radius', group: 'Glass', scope: c, default: 1.12, min: 0.05, max: 2, step: 0.01 })
-const glassBevel = defineParam({ id: 'glass.bevel', label: 'Bevel width / radius', group: 'Glass', scope: c, default: 0.53, min: 0.05, max: 1, step: 0.01 })
-const glassIndex = defineParam({ id: 'glass.index', label: 'Refractive index', group: 'Glass', scope: c, default: 1.5, min: 1.1, max: 2, step: 0.01 })
-const glassDispersion = defineParam({ id: 'glass.dispersion', label: 'Blue to red index difference', group: 'Glass', scope: c, default: 0.025, min: 0, max: 0.12, step: 0.001 })
+const glassThickness = defineParam({ id: 'glass.thickness', label: 'Glass thickness / radius', group: 'Clear lens', scope: c, default: 1.12, min: 0.05, max: 2, step: 0.01 })
+const glassBevel = defineParam({ id: 'glass.bevel', label: 'Bevel width / radius', group: 'Clear lens', scope: c, default: 0.53, min: 0.05, max: 1, step: 0.01 })
+const glassIndex = defineParam({ id: 'glass.index', label: 'Refractive index', group: 'Clear lens', scope: c, default: 1.5, min: 1.1, max: 2, step: 0.01 })
+const glassDispersion = defineParam({ id: 'glass.dispersion', label: 'Blue to red index difference', group: 'Clear lens', scope: c, default: 0.025, min: 0, max: 0.12, step: 0.001 })
 
 /** Loaded only by the two glass trials. All programs are built under covered entry. */
 export class GlassPost {
@@ -47,7 +49,14 @@ export class GlassPost {
   diagnosticLine(): string {
     const count = this.showing ? this.controls?.visibleCount ?? 0 : 0
     const cost = count && this.timing.ms !== null ? this.timing.ms.toFixed(2) + ' ms' : 'unavailable'
-    return `Glass: ${this.showing ? 'on' : 'shed'}, ${count} visible surfaces, blur and final composite GPU time ${cost}`
+    const changes = [regularOverrides()]
+    for (const p of [nativeInk, glassThickness, glassBevel, glassIndex, glassDispersion]) {
+      if (p.value !== p.def.default || (p === nativeInk && p.value === true)) changes.push(p.def.id + '=' + p.value)
+    }
+    if (this.controls?.pressOnly) changes.push('glassMerge=zorb-brake-pressed')
+    if (this.controls?.clearMaterial) changes.push('glassMaterial=clear')
+    const overrides = changes.filter(Boolean).join(', ')
+    return `Glass: ${this.showing ? 'on' : 'shed'}, ${count} visible surfaces, blur and final composite GPU time ${cost}` + (overrides ? `\nGlass overrides: ${overrides}` : '')
   }
 
   private controls?: GlassButton
@@ -56,8 +65,38 @@ export class GlassPost {
   private readonly buffer = new THREE.Vector2()
   private renderer?: THREE.WebGPURenderer
 
+  private readonly tuning = {
+    face: uniform(new THREE.Vector4()), panel: uniform(new THREE.Vector2()), edges: uniform(new THREE.Vector3()),
+  }
+  private readonly frost = uniform(1)
+  private readonly deviceDark = matchMedia('(prefers-color-scheme: dark)')
+  private readonly unsubscribe: () => void
+  private revision = 0
+  private updateTuning = () => {
+    const appearance = Math.round(settings.appearance.value)
+    const dark = appearance ? appearance === 2 : this.deviceDark.matches
+    const transfer = regularTransfer(dark, settings.tint.value, settings.brightness.value)
+    this.tuning.face.value.set(transfer.quadratic, transfer.slope, transfer.lift, settings.saturation.value)
+    this.tuning.panel.value.set(transfer.panelSlope, transfer.panelLift)
+    this.tuning.edges.value.set(settings.rim.value, settings.hair.value, .405 * settings.lift.value)
+    this.frost.value = settings.frost.value / settings.frost.def.default
+    const root = document.documentElement
+    root.dataset.glassAppearance = dark ? 'dark' : 'light'
+    if (settings.growth.value) root.style.setProperty('--glass-extra-scale', String(1 + settings.growth.value))
+    else root.style.removeProperty('--glass-extra-scale')
+    this.controls?.tune(appearance, settings.growth.value)
+    this.revision++
+    this.wake()
+  }
   constructor(private readonly mode: string) {
-    if (mode === 'inline') installGalaxyGlass((gl, canvas) => createLobbyGlass(gl, canvas, () => nativeInk.value))
+    this.updateTuning()
+    this.unsubscribe = params.onChange(id => { if (id.startsWith('glass.')) this.updateTuning() })
+    this.deviceDark.addEventListener('change', this.updateTuning)
+    if (mode === 'inline') installGalaxyGlass((gl, canvas) => createLobbyGlass(gl, canvas, () => nativeInk.value, {
+      face: this.tuning.face.value, panel: this.tuning.panel.value, edges: this.tuning.edges.value,
+      width: () => this.frost.value, growth: () => settings.growth.value, dark: () => document.documentElement.dataset.glassAppearance === 'dark',
+      revision: () => this.revision,
+    }))
   }
 
   build(out: N, color: N, renderer: THREE.WebGPURenderer, toneMap: THREE.ToneMapping, velocity: N,
@@ -65,7 +104,9 @@ export class GlassPost {
     let blur: ReturnType<typeof createGlassGaussian> | undefined
     let resting: THREE.RenderPipeline | undefined
     this.renderer = renderer
+    const first = !this.controls
     const glass = this.controls ??= new GlassButton(renderer.domElement, new URLSearchParams(location.search).get('glassSet') === 'one' ? 1 : gameplayGlassSlots, this.wake)
+    if (first) glass.tune(Math.round(settings.appearance.value), settings.growth.value)
     const finished: N = this.mode === 'target' ? rtt(out, null, null, { type: THREE.HalfFloatType }) : null
     if (finished) disposables.push(finished)
     const original = finished ? finished.sample(uv()) : out
@@ -92,7 +133,7 @@ export class GlassPost {
         }
         const correction = finished ? vec3(0) : original.rgb.sub(renderOutput(vec4(color.sample(uv()).rgb, 1), toneMap, renderer.outputColorSpace).rgb)
         if (blurMode !== 'mip' && !glass.clearMaterial) {
-          blur = createGlassGaussian(at => displaySample(at, float(2)), glass.viewport)
+          blur = createGlassGaussian(at => displaySample(at, float(2)), glass.viewport, this.frost)
           for (const pass of blur.passes) registerCoveredComposite(pass)
           const gaussian = blur
           blurred = at => gaussian.sample(at).add(correction)
@@ -101,14 +142,15 @@ export class GlassPost {
         filtered = (coord, footprint) => displaySample(coord, footprint).add(correction)
       }
     }
+    const regular = glass.clearMaterial ? undefined : this.tuning
     if (glass.pressOnly && glass.pairSlots && blurred) {
-      const rest = composeGlass(original, sample, glass, this.material, filtered, blurred, false)
+      const rest = composeGlass(original, sample, glass, this.material, filtered, blurred, false, regular)
       resting = new THREE.RenderPipeline(renderer, velocity ? rest.context({ velocity }) : rest)
       resting.outputColorTransform = false
       registerCoveredComposite(resting)
       disposables.push(resting)
     }
-    out = composeGlass(original, sample, glass, this.material, filtered, blurred)
+    out = composeGlass(original, sample, glass, this.material, filtered, blurred, true, regular)
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
     pipeline.outputColorTransform = false
     registerCoveredComposite(pipeline)
@@ -134,12 +176,19 @@ export class GlassPost {
     if (!covered) {
       controls.present(nativeInk.value)
       const target = graph.blur?.passes[1].renderTarget
-      if (target && controls.hasSurface) this.ink.update(this.renderer!, controls, target)
+      if (target && controls.hasSurface) this.ink.update(this.renderer!, controls, target, this.tuning.face.value, this.tuning.edges.value.z)
       if (controls.animating) this.wake()
     }
   }
 
   release() { this.showing = false; this.controls?.hide() }
 
-  dispose() { this.setPausedDraw(); this.controls?.dispose() }
+  dispose() {
+    this.unsubscribe()
+    this.deviceDark.removeEventListener('change', this.updateTuning)
+    delete document.documentElement.dataset.glassAppearance
+    document.documentElement.style.removeProperty('--glass-extra-scale')
+    this.setPausedDraw()
+    this.controls?.dispose()
+  }
 }

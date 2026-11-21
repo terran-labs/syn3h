@@ -1541,7 +1541,10 @@ export class Galaxy {
       gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
     }
     // The letters at full device resolution, in their own pass, when the screen is finer than the galaxy's canvas.
-    const crisp = this.markCrisp?.ok && mark.placement && wordmarkCrispPass.value && devicePixelRatio > this.canvas.width / Math.max(1, this.host.clientWidth) + 0.05 ? this.markCrisp : null
+    // Glass samples this framebuffer. A separate high-resolution logo plane would
+    // cover the finished material wherever a card or button overlaps the mark.
+    const glassBackdrop = !!this.glass?.available && qualityShed(2) < 1
+    const crisp = !glassBackdrop && this.markCrisp?.ok && mark.placement && wordmarkCrispPass.value && devicePixelRatio > this.canvas.width / Math.max(1, this.host.clientWidth) + 0.05 ? this.markCrisp : null
     setFrame(gl, u, this.canvas.width, this.canvas.height, () => { this.logo!.distanceField!.bind(name => u[name]); gl.useProgram(this.program) }, crisp ? 1 : 0)
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
     const smear = this.flight && this.blurProgram && this.blur > 0.003 && qualityShed(2) < 1
@@ -1568,13 +1571,13 @@ export class Galaxy {
       if (held || this.opening || this.returnTo || this.returning !== null) logo.skipIntro()
       // Behind the loading veil the logo waits at nothing: its fade starts as the veil lifts.
       else if (veiled()) logo.replayIntro()
-      logo.setLook({ particles: Math.round(budget.particles * (1 - qualityShed(1) * 0.65)), sway: held ? 0 : 0.07, opacity: (1 - this.dive) * reveal.mark })
+      logo.setLook({ drawMark: glassBackdrop, particles: Math.round(budget.particles * (1 - qualityShed(1) * 0.65)), sway: held ? 0 : 0.07, opacity: (1 - this.dive) * reveal.mark })
       const sx = this.canvas.width / this.host.clientWidth, sy = this.canvas.height / this.host.clientHeight, box = layout.box
       logo.draw(held ? STILL_SECONDS : time, { x: box.x * sx, y: box.y * sy, width: box.width * sx, height: box.height * sy })
-      this.markOverlay?.update(box, logo.markOpacity)
+      this.markOverlay?.update(box, glassBackdrop ? 0 : logo.markOpacity)
       this.logoSeen = true; this.options.onLogo?.(true)
     }
-    this.glass?.draw(qualityShed(2) < 1)
+    this.glass?.draw(glassBackdrop)
     this.frames++
     // Tell the labels where the worlds are, and notice arrival.
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]

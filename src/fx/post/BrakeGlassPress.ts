@@ -30,6 +30,12 @@ export class BrakeGlassPress {
   private initialLift = 0
   private target = 0
   private moving = false
+  private growth = 0
+  setGrowth(value: number) {
+    if (this.growth === value) return
+    this.growth = value
+    this.write(this.sizeProgress, this.state.value.y)
+  }
   private labelScale = 0
   private reduced = matchMedia('(prefers-reduced-motion: reduce)')
 
@@ -84,7 +90,7 @@ export class BrakeGlassPress {
 
   private write(sizeProgress: number, lift: number) {
     this.sizeProgress = sizeProgress
-    const scale = 1 + sizeProgress * (43.5 / 35 - 1)
+    const scale = 1 + sizeProgress * (43.5 / 35 - 1 + this.growth)
     this.state.value.y = lift
     if (this.box && this.radius) {
       this.box.z = this.rest.z * scale

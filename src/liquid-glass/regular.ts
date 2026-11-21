@@ -11,7 +11,13 @@ const wideOffsets = Array.from({ length: 32 }, (_, i) => {
   return [radius * Math.cos(angle), radius * Math.sin(angle)]
 })
 
-export function regularGlass(halfSize: N, distance: N, normal: N, screen: N, size: N, dark: N, sample: (uv: N) => N, filtered?: (uv: N, width: N) => N, blurred?: (uv: N) => N, panel?: N): N {
+export interface RegularUniforms {
+  face: N // Quadratic transfer, linear term, offset and saturation
+  panel: N // Panel slope and offset
+  edges: N // Rim, hairline and pressed brightness
+}
+
+export function regularGlass(halfSize: N, distance: N, normal: N, screen: N, size: N, dark: N, sample: (uv: N) => N, filtered?: (uv: N, width: N) => N, blurred?: (uv: N) => N, panel?: N, tuning?: RegularUniforms): N {
   const radius = min(halfSize.x, halfSize.y)
   const depth = max(distance.negate(), 0)
   // Phase of the 32-point native grating, unwrapped from the undistorted centre.
@@ -38,7 +44,7 @@ export function regularGlass(halfSize: N, distance: N, normal: N, screen: N, siz
     }
     wide.divAssign(wideOffsets.length)
   }
-  const { tone, chroma } = regularResponse(detail, wide, dark, panel)
+  const { tone, chroma } = regularResponse(detail, wide, dark, panel, tuning)
   const vertical = normal.y.abs()
   const narrow = max(float(1).sub(depth.div(1.17)), 0)
   const contour = max(float(1).sub(depth.div(.48)), 0)
@@ -51,20 +57,25 @@ export function regularGlass(halfSize: N, distance: N, normal: N, screen: N, siz
     .add(depth.mul(-.5).exp().mul(vertical.pow(4)).mul(response(.101, -.0911, .0909, -.0779)))
     .add(depth.mul(-.2).exp().mul(float(1).sub(vertical.pow(2))).mul(response(.0007, -.028, .0031, -.0344)))
     .add(contour.mul(response(-.1476, .0954, -.0743, .0941)))
-  return clamp(vec3(tone.add(rim)).add(chroma), 0, 1)
+  return clamp(vec3(tone.add(tuning ? rim.mul(tuning.edges.x) : rim)).add(chroma), 0, 1)
 }
 
 // Shared by the folded edge and the flat interior of a card.
-export function regularResponse(detail: N, wide: N, dark: N, panel?: N) {
+export function regularResponse(detail: N, wide: N, dark: N, panel?: N, tuning?: RegularUniforms): { tone: N; chroma: N } {
   const delta = detail.sub(wide)
   const body = wide.add(delta.mul(0.275)).add(delta.abs().mul(mix(0.22, -0.22, dark)))
   const luma = dot(body, vec3(.2126, .7152, .0722))
-  // Native neutral fields from RGB 0 to 255, captured in both appearances.
-  const lightTone = luma.mul(luma).mul(-.034).add(luma.mul(.506)).add(133 / 255)
-  const darkTone = luma.mul(luma).mul(-.39).add(luma.mul(.99)).add(32 / 255)
   const gain = mix(vec3(.988, .952, .979).add(vec3(-.076, .028, -.045).mul(luma)),
     vec3(1.317, 1.256, 1.314).add(vec3(-.427, -.351, -.429).mul(luma)), dark)
   const chroma = body.sub(luma).mul(gain)
+  if (tuning) {
+    const f = tuning.face
+    const button = luma.mul(luma).mul(f.x).add(luma.mul(f.y)).add(f.z)
+    return { tone: panel ? mix(button, luma.mul(tuning.panel.x).add(tuning.panel.y), panel) : button, chroma: chroma.mul(f.w) }
+  }
+  // Native neutral fields from RGB 0 to 255, captured in both appearances.
+  const lightTone = luma.mul(luma).mul(-.034).add(luma.mul(.506)).add(133 / 255)
+  const darkTone = luma.mul(luma).mul(-.39).add(luma.mul(.99)).add(32 / 255)
   const controlTone = mix(lightTone, darkTone, dark)
   // Large Regular panel over native black and white fields, in both appearances.
   const panelTone = mix(luma.mul(118 / 255).add(136 / 255), luma.mul(90 / 255).add(32 / 255), dark)
