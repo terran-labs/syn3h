@@ -39,3 +39,12 @@ Frost width changes sample spacing while keeping the tap count fixed. Showing mo
 At 390 × 844, the buggy travelled 432 metres during an 18-second drive with eight surfaces. Glass stayed on. The two passes took a median of 1.06 ms. At 32 occupied slots and maximum frost width they took 1.21 ms and also stayed on. The one-minute load was 8.6 at entry.
 
 For the overload check, the benchmark enlarged only the two real blur targets from 98 × 211 to 4096 × 4096. The guard saw 15.06 ms and shed at 37.2 seconds. It restored glass at 42.3 seconds after the before-and-after mean went from 72.4 to 83.4 ms per frame. All three phases recorded zero graph, node or pipeline builds. The larger targets are a diagnostic workload.
+
+## Relative-budget drive results
+
+Both ordinary WebGPU drives stayed on for the full 18 seconds. With 32 surfaces and maximum frost width, both stayed on again. Enlarging only the two blur targets to 4096 × 4096 triggered a trial at each viewport size. Both trials retired after 5.1 seconds because the mean frame interval increased while glass was off. Every phase recorded zero shader node, pipeline and post graph builds.
+
+| Mac buffer | Ordinary drive | Ordinary blur median | 32 surfaces, maximum frost | Overload trigger (blur / mean frame / p90 / target) | One-minute load at entry |
+| --- | --- | ---: | ---: | --- | ---: |
+| 390 × 844 | 447 m, 8 surfaces | 1.28 ms | 1.31 ms | 6.50 / 69.1 / 135.1 / 16.7 ms | 5.4 |
+| 1440 × 900 | 401 m, 6 surfaces | 2.77 ms | 2.26 ms | 9.47 / 22.0 / 28.7 / 16.7 ms | 5.9 |
