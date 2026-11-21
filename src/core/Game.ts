@@ -485,7 +485,7 @@ export class Game {
         const level = (governor.level - 1) as AdjacentRenderPreset['level']
         const preset = this.quality.renderPreset(level, true)
         const shade = Number(preset.value(vehicleShading.def.id))
-        const submit = () => shade === 1 || shade === 2 ? drawCoveredShowroomVariant(this.scene, shade, draw) : draw()
+        const submit = () => shade === 0 || shade === 1 || shade === 2 ? drawCoveredShowroomVariant(this.scene, shade, draw) : draw()
         const seen = new Set<string>()
         for (const target of [preset, { ...preset, shed: true }]) {
           const key = chain.coveredVariantKey?.(target)
@@ -549,8 +549,8 @@ export class Game {
       const last = this.quality.levelChanges.at(-1)
       if (last?.from !== level) return false
       const target = this.quality.renderPreset(level, true)
-      // Changing cascades replaces the scene light and invalidates the world shaders.
-      return target.value('gfx.shadowQuality') === params.get('gfx.shadowQuality')?.value &&
+      // Only a change in cascade count invalidates the shadow shader. Low keeps the two Medium cascades idle.
+      return Math.max(1, Number(target.value('gfx.shadowQuality'))) === Math.max(1, Number(params.get('gfx.shadowQuality')?.value)) &&
         !!chain?.hasRenderPreset?.(target)
     }
   }

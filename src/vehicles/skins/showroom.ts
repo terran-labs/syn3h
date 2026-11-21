@@ -102,10 +102,10 @@ const warmQueue: Warm[] = []
 /** Counts for automated checks: sets warmed, turns given up or cancelled, and proxies now in a scene. */
 export const showroomWarm = { warmed: 0, abandoned: 0, cancelled: 0, proxies: 0 }
 
-const coveredShading = new WeakMap<T.Object3D, (tier: 1 | 2) => (() => void) | undefined>()
+const coveredShading = new WeakMap<T.Object3D, (tier: 0 | 1 | 2) => (() => void) | undefined>()
 
-/** Draw standard or clearcoat on the real visible models for one synchronous covered draw. */
-export function drawCoveredShowroomVariant(root: T.Object3D, tier: 1 | 2, draw: () => void): void {
+/** Draw plain, standard or clearcoat on the real visible models for one synchronous covered draw. */
+export function drawCoveredShowroomVariant(root: T.Object3D, tier: 0 | 1 | 2, draw: () => void): void {
   const restore: (() => void)[] = []
   try {
     root.traverseVisible(object => {
@@ -925,30 +925,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
       std.envMapIntensity = paintGloss.value * (std.userData.glass ? 1.3 : 1)
     }
   }
-  const useCoveredVariant = (tier: 1 | 2): (() => void) | undefined => {
-    const scene = sceneOf()
-    if (!scene || far || reducedDetail.has(root) || current === tier) return
-    const displayed = entries.map(({ mesh }) => mesh.material), displayedTier = current
-    const restore = () => {
-      entries.forEach(({ mesh }, i) => { mesh.material = displayed[i] })
-      current = displayedTier
-    }
-    try {
-      use(tier)
-      bindSky(tier, scene)
-    } catch (error) {
-      restore()
-      throw error
-    }
-    return restore
-  }
-  const refresh = (): void => {
-    // The frame governor caps this by graphics level (safe 0, mobile 0, desktop 3) and sheds it
-    // under load. A value the player set by hand is honoured as it is.
-    let tier = Math.max(0, Math.min(3, Math.round(vehicleShading.value))) as ShadingTier
-    far = remote && distance > (far ? FAR_IN : FAR_OUT)
-    if (remote) tier = far ? 0 : Math.min(tier, 2) as ShadingTier
-    use(tier)
+  const bindLook = (tier: ShadingTier, scene: T.Scene | null): void => {
     if (tier === 0) {
       // Plain paint must not turn the cockpit into an opaque box. Keep the safe canopy
       // transparent without compiling the procedural rim, lattice or paint shaders.
@@ -969,7 +946,33 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
       }
       return
     }
-    bindSky(tier, sceneOf())
+    bindSky(tier, scene)
+  }
+  const useCoveredVariant = (tier: 0 | 1 | 2): (() => void) | undefined => {
+    const scene = sceneOf()
+    if (!scene || far || reducedDetail.has(root) || current === tier) return
+    const displayed = entries.map(({ mesh }) => mesh.material), displayedTier = current
+    const restore = () => {
+      entries.forEach(({ mesh }, i) => { mesh.material = displayed[i] })
+      current = displayedTier
+    }
+    try {
+      use(tier)
+      bindLook(tier, scene)
+    } catch (error) {
+      restore()
+      throw error
+    }
+    return restore
+  }
+  const refresh = (): void => {
+    // The frame governor caps this by graphics level (safe 0, mobile 0, desktop 3) and sheds it
+    // under load. A value the player set by hand is honoured as it is.
+    let tier = Math.max(0, Math.min(3, Math.round(vehicleShading.value))) as ShadingTier
+    far = remote && distance > (far ? FAR_IN : FAR_OUT)
+    if (remote) tier = far ? 0 : Math.min(tier, 2) as ShadingTier
+    use(tier)
+    bindLook(tier, sceneOf())
   }
   const detach = registerVehicleDetail(root, (d, isRemote, graphics) => { distance = d; remote = isRemote; level = graphics; refresh(); stepWarm() })
   const unsubscribe = params.onChange(id => {
