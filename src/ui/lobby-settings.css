@@ -51,8 +51,11 @@
    inside it from pressing the whole card. Nothing inside it is glass: the in-game cards it reuses
    are plain sections here, parted by a hairline. */
 .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
-  /* It stops above the three buttons in the lower right (3 x 44 px, two 8 px gaps, the edge). */
-  display: flex; z-index: 60; bottom: auto; height: auto; max-height: calc(100dvh - var(--edge-top, 28px) - 196px);
+  /* It stands on the button stack in the lower right (3 x 44 px, two 8 px gaps, the edge), right
+     edges aligned, and grows upward out of Settings. LobbySettings.fit caps its height below the
+     wordmark; this cap is the fallback. */
+  display: flex; z-index: 60; top: auto; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 160px); right: max(16px, env(safe-area-inset-right));
+  height: auto; max-height: calc(100dvh - var(--edge-top, 28px) - 196px); transform-origin: 100% 100%;
   padding: 10px 6px 12px;
   --glass-radius: var(--halo-r, 16px); --glass-body: rgb(12 12 14 / .62); --glass-body-hover: rgb(12 12 14 / .62); --glass-blur: 20px;
 }
@@ -72,7 +75,10 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-sett
 .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-label { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.2; }
 .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 4px 14px; flex: 0 0 auto; background: none; border: 0; }
 .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head h2 { margin: 0; padding: 0; font: 600 14px/1 'Barlow Condensed', sans-serif; letter-spacing: .22em; text-transform: uppercase; color: var(--s3-ink); }
-.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 12px; font: 500 13px 'Barlow', sans-serif; letter-spacing: .08em; }
+/* Close is plain text and a mark, no ring and no glass: the card is the one glass surface. */
+.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 12px; font: 500 13px 'Barlow', sans-serif; letter-spacing: .08em;
+  border: 0; border-radius: 8px; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; color: var(--s3-dim); }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close:is(:hover, :focus-visible) { color: #fff; background: rgb(255 255 255 / .06); border: 0; box-shadow: none; }
 .lobby-settings-close span[aria-hidden] { font-size: 18px; line-height: 1; }
 .world-inspector.lobby-settings .host-controls { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
 .world-inspector.lobby-settings .host-controls legend { display: none; }
@@ -82,7 +88,7 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-sett
 @media (max-width: 700px), (max-height: 500px) and (pointer: coarse) {
   .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
     left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); width: auto;
-    top: max(10px, env(safe-area-inset-top)); bottom: auto; height: auto; max-height: calc(100dvh - max(10px, env(safe-area-inset-top)) - max(10px, env(safe-area-inset-bottom)));
+    top: max(10px, env(safe-area-inset-top)); bottom: auto; height: auto; max-height: calc(100dvh - max(10px, env(safe-area-inset-top)) - max(10px, env(safe-area-inset-bottom))); transform-origin: 50% 0;
   }
   .lobby-gear-dock.is-open:not(.is-beside-sheet) { visibility: hidden; }
   /* The panel covers the lobby here, so the lobby behind it dims: a full-screen backdrop with

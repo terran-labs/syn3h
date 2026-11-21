@@ -155,6 +155,28 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
       console.log(`${tag}: open after each step ${JSON.stringify(history)}`)
     }
     if (mode === 'desktop') await page.setViewportSize({ width: 1440, height: 900 })
+    if (mode === 'desktop') {
+      // The card stands on the button stack and grows upward; with every section open it still
+      // stops short of the wordmark and above Settings, at both common laptop sizes.
+      for (const [width, height] of [[1440, 900], [1280, 800]]) {
+        await page.setViewportSize({ width, height })
+        if (await page.locator('#lobby-settings').count()) { await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('#lobby-settings')) }
+        await gear.click(); await panel.waitFor({ state: 'visible' })
+        for (const id of ['performance', 'sound', 'play']) await panel.locator(`.wi-card[data-section=${id}]`).evaluate((c) => c.classList.contains('is-open') || c.querySelector('.wi-head').click())
+        await page.waitForTimeout(700)
+        const fit = await page.evaluate(() => {
+          const card = document.querySelector('#lobby-settings').getBoundingClientRect(), dock = document.querySelector('.lobby-gear-dock').getBoundingClientRect()
+          const mark = window.syn3h.shell.galaxy?.wordmarkScreenBox?.() ?? null
+          return { card: card.toJSON(), dock: dock.toJSON(), mark }
+        })
+        assert.ok(fit.card.bottom <= fit.dock.top, `${width}x${height}: card above the buttons ${JSON.stringify(fit)}`)
+        assert.ok(Math.abs(fit.card.right - fit.dock.right) <= 1, `${width}x${height}: card's right edge on the buttons' ${JSON.stringify(fit)}`)
+        if (fit.mark && fit.mark.x + fit.mark.width > fit.card.left) assert.ok(fit.card.top >= fit.mark.y + fit.mark.height, `${width}x${height}: card clear of the wordmark ${JSON.stringify(fit)}`)
+        await page.screenshot({ path: `${out}/desktop-${width}x${height}-all-open.png` })
+        await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('#lobby-settings'))
+      }
+      await page.setViewportSize({ width: 1440, height: 900 })
+    }
 
     // Escape closes and focus returns to Settings (the close control does the same on phones).
     if (touch) await tap(panel.locator('.lobby-settings-close'))

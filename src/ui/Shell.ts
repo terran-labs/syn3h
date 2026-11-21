@@ -368,6 +368,13 @@ export class Shell implements System {
       quality: this.game.quality, host: this.hostControls, build,
       // The card and a sheet never show together: the card takes over from an open sheet.
       opening: () => { for (const sheet of this.lobbySheets) sheet.close(false) },
+      // The card never covers the wordmark: the one in space, else the flat logo standing in.
+      ceiling: () => {
+        const box = this.galaxy?.wordmarkScreenBox()
+        if (box) return { left: box.x, right: box.x + box.width, bottom: box.y + box.height }
+        const logo = this.element.querySelector('.shell-logo')?.getBoundingClientRect()
+        return logo && logo.height ? { left: logo.left, right: logo.right, bottom: logo.bottom } : null
+      },
       hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', inRoom: () => { const net = hostControls(); return !!net && (net.isHost || canEditWorld()) }, cue: () => this.audio.cue('click'),
     })
     this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock, this.lobbySettings.versionDock)

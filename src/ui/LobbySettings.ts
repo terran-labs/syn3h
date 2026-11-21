@@ -104,7 +104,12 @@ export interface LobbySettingsOptions {
   cue?(): void
   /** Called as the card opens: the shell closes any lobby sheet. */
   opening?(): void
+  /** Where the wordmark is on screen now, which the card must not cover, or null. */
+  ceiling?(): { left: number; right: number; bottom: number } | null
 }
+
+/** Phones: the card is one full-width card at the top (lobby-settings.css), not fitted here. */
+const PHONE = '(max-width: 700px), (max-height: 500px) and (pointer: coarse)'
 
 export class LobbySettings {
   /** Settings, Welcome and Updates, for the lobby to place in its lower right. */
@@ -146,7 +151,9 @@ export class LobbySettings {
     this.versionDock.className = 'lobby-version-dock'; this.versionDock.append(this.version)
 
     this.host.className = 'lobby-settings-host'
-    this.inspector = new Inspector(this.host, { summary: () => '', vehicles: () => ({ options: [], current: '' }), onVehicle() {}, sections: [], percent: isVolume })
+    // One section open at a time, and the card scrolls inside: it is capped below the wordmark,
+    // so Graphics alone may be taller than the card, and must not close itself to fit.
+    this.inspector = new Inspector(this.host, { summary: () => '', vehicles: () => ({ options: [], current: '' }), onVehicle() {}, sections: [], percent: isVolume, oneOpen: () => true })
     const panel = this.inspector.element
     // One card, one glass surface: the class is on the card and on nothing inside it.
     panel.classList.add('lobby-settings', 'liquid-glass'); panel.id = 'lobby-settings'
@@ -197,6 +204,7 @@ export class LobbySettings {
       if (event.type === 'pointerdown') this.close()
     }
     for (const type of ['pointerdown', 'click'] as const) window.addEventListener(type, outside, { capture: true, signal })
+    window.addEventListener('resize', () => { if (this.shown) this.fit() }, { signal })
     window.addEventListener('keydown', event => {
       if (!this.shown) return
       if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); this.close(); return }
@@ -232,9 +240,11 @@ export class LobbySettings {
     // Glass never nests: the card is the one glass surface, so the in-game cards' own glass
     // marks (the phone close x in each card head) are plain here.
     for (const el of this.inspector.element.querySelectorAll('.liquid-glass')) el.classList.remove('liquid-glass', 'glass-round')
+    this.fit()
     this.gear.setAttribute('aria-expanded', 'true'); this.gear.classList.add('is-current'); this.dock.classList.add('is-open')
+    // It rises out of Settings, below it (lobby-settings.css sets the origin at its foot).
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      this.inspector.element.animate([{ opacity: 0, transform: 'translateX(24px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' })
+      this.inspector.element.animate([{ opacity: 0, transform: 'translateY(10px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' })
     }
     this.inspector.element.querySelector<HTMLElement>('.lobby-settings-close')!.focus({ preventScroll: true })
   }
@@ -248,8 +258,23 @@ export class LobbySettings {
     if (returnFocus) this.gear.focus({ preventScroll: true })
     const detach = () => { if (!this.shown) this.host.remove() }
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { detach(); return }
-    this.closing = this.inspector.element.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(24px)' }], { duration: 160, easing: 'ease-in' })
+    this.closing = this.inspector.element.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px) scale(.98)' }], { duration: 160, easing: 'ease-in' })
     this.closing.onfinish = detach
+  }
+
+  /**
+   * Desktop: the card stands on Settings and grows upward as its sections open, so cap its height
+   * where it would reach the wordmark (the owner's logo stays whole); taller contents scroll
+   * inside. Where the wordmark does not reach over the card's column, the screen's top edge is
+   * the cap. Phones place the card themselves.
+   */
+  private fit(): void {
+    const card = this.inspector.element
+    if (matchMedia(PHONE).matches) { card.style.removeProperty('max-height'); return }
+    const box = card.getBoundingClientRect(), mark = this.options.ceiling?.() ?? null
+    const over = mark && mark.right > box.left - 8 && mark.left < box.right + 8
+    const top = over ? mark.bottom + 16 : parseFloat(getComputedStyle(card).getPropertyValue('--edge-top')) || 28
+    card.style.maxHeight = `${Math.max(180, Math.floor(box.bottom - top))}px`
   }
 
   /** Refresh summaries while open; call from the shell's update. */
