@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 06:40 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-21 07:05 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2111 (release-90, prepared-shader confirmation fix), source 517031f1, frozen copy
-20261121-062930-517031f1, Worker version 6b6fa292, at https://www.syn3h.com/ since 21 November 06:33 PST.
+Live: v26.11.2112 (release-91, glass retention for the opt-in demo), source 7b118387, frozen copy
+20261121-065458-7b118387, Worker version 20b7ca1e, at https://www.syn3h.com/ since 21 November 06:59 PST.
 Staging performance check with four bots read 0/0 for all three downward steps from the entry level,
 1>0 included, at desktop and phone size (/tmp/orch-perfcheck-2111).
 
@@ -131,6 +131,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2109 | 88 | m-budget-2109 | experimental glass remains off by default; drive budget for the opt-in demo |
 | v26.11.2110 | 89 | m-shadow-2110 | another player's jet or hovercraft appearing no longer hitches |
 | v26.11.2111 | 90 | m-unshed-2111 | stepping down to the lowest quality level no longer hitches with others in the room |
+| v26.11.2112 | 91 | m-retain-2112 | experimental glass remains off by default; it returns after quality recovery in the demo |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
