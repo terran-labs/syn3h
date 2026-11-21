@@ -21,6 +21,26 @@ describe('bounded vehicle effects',()=>{
   expect(p.mesh.geometry.instanceCount).toBe(8);expect(p.mesh.geometry.attributes.fxOrigin.count).toBe(8)
   expect(p.emitted).toBe(500);p.dispose()
  })
+ it('restores particle detail after a failed preview and reuses the prepared Minimal graph', () => {
+  const scene = new T.Scene()
+  const dust = new ParticleBatch(8, dustSprite)
+  scene.add(dust.mesh)
+  const material = dust.mesh.material
+  const low = material.opacityNode
+  let minimal: typeof low = null
+  try {
+   expect(() => ParticleBatch.drawCoveredMinimal(scene, () => {
+    minimal = material.opacityNode
+    throw new Error('Draw failed')
+   })).toThrow('Draw failed')
+   expect(material.opacityNode).toBe(low)
+   expect(minimal).not.toBe(low)
+   dust.resetCapacity(4, 1)
+   expect(material.opacityNode).toBe(minimal)
+   dust.resetCapacity(8, 2)
+   expect(material.opacityNode).toBe(low)
+  } finally { dust.dispose() }
+ })
  it('keeps each live effect material while resetting its quality-sized emission ring', () => {
   const graphics = graphicsLevel.value, quality = qualityLevel.value
   const scene = new T.Scene()

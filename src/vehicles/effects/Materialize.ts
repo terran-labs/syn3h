@@ -148,7 +148,7 @@ const bodyTint=new T.Color(),accentTint=new T.Color()
 // TSL nodes are dynamically typed; sprites.ts uses the same alias.
 type N = any // eslint-disable-line @typescript-eslint/no-explicit-any
 /** A soft round puff, white in its body and pale blue at its frayed rim. */
-const cloudSprite:Sprite=(p:N,seed:N,age:N,octaves:N)=>{
+const cloudSprite:Sprite=(p:N,seed:N,age:N,octaves:number)=>{
   const n=mx_fractal_noise_float(vec3(p.mul(1.6).add(seed.mul(17)),age.mul(1.4)),octaves,2,.5)
   const r=p.length().add(n.mul(.25)).clamp(0,1)
   const body=float(1).sub(r).pow(2),core=float(1).sub(smoothstep(0,.5,r))

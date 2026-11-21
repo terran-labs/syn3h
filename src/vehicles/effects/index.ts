@@ -98,6 +98,7 @@ class EffectWorld implements System {
   }
   retain(){this.references++}
   release(){if(--this.references===0){worlds.delete(this.game);this.game.remove(this)}}
+  drawCoveredMinimal(draw: () => void) { ParticleBatch.drawCoveredMinimal(this.game.scene, draw) }
   private rebudget(){
     this.level = graphicsLevel.value
     const octaves = this.level === 0 ? 1 : 2

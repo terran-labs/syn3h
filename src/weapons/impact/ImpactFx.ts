@@ -86,7 +86,7 @@ export class ImpactFx {
       this.debris.resetCapacity(Math.max(24, Math.floor(budget * 0.05)), this.level === 0 ? 1 : 2)
       return
     }
-    this.flash = new ParticleBatch(24, flashSprite, true, this.level === 0 ? 1 : 2)
+    this.flash = new ParticleBatch(24, flashSprite, true, 1)
     this.debris = new ParticleBatch(Math.max(24, Math.floor(budget * 0.05)), dustSprite, false, this.level === 0 ? 1 : 2)
     this.game.scene.add(this.flash.mesh, this.debris.mesh)
   }
