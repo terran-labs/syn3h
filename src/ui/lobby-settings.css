@@ -62,19 +62,22 @@
   display: flex; z-index: 60; top: auto; bottom: var(--card-foot); right: max(16px, env(safe-area-inset-right));
   height: auto; max-height: calc(100dvh - var(--edge-top, 28px) - var(--card-foot)); transform-origin: 100% 100%;
   padding: 10px 6px 12px;
-  --glass-radius: var(--halo-r, 16px); --glass-body: rgb(12 12 14 / .62); --glass-body-hover: rgb(12 12 14 / .62); --glass-blur: 20px;
+  /* The whole filter, not only --glass-blur: --glass-frost is resolved where it is defined (:root),
+     so a blur set here alone never reached it (the card frosted at 3 px and labels read through). */
+  --glass-radius: var(--halo-r, 16px); --glass-body: rgb(12 12 14 / .72); --glass-body-hover: rgb(12 12 14 / .72);
+  --glass-blur: 20px; --glass-frost: blur(20px) saturate(1.1) brightness(.92);
 }
 .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings.liquid-glass:is(:hover, :active) { transform: none; background-color: var(--glass-body); }
 /* Where nothing frosts (the lowest graphics level, the quality ladder shedding, a browser without
    backdrop blur, or a player asking for less transparency or more contrast) the card carries a
    near-opaque body of its own, so labels and planets behind it cannot read through the rows. */
 html[data-gfx="0"] .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings,
-.syn3h-shell.exploration-ui[data-ui-frost="off"]:not(.is-playing) .world-inspector.lobby-settings { --glass-body: rgb(12 12 14 / .92); --glass-body-hover: rgb(12 12 14 / .92); }
+.syn3h-shell.exploration-ui[data-ui-frost="off"]:not(.is-playing) .world-inspector.lobby-settings { --glass-frost: none; --glass-body: rgb(12 12 14 / .92); --glass-body-hover: rgb(12 12 14 / .92); }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { --glass-body: rgb(12 12 14 / .92); --glass-body-hover: rgb(12 12 14 / .92); }
+  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { --glass-frost: none; --glass-body: rgb(12 12 14 / .92); --glass-body-hover: rgb(12 12 14 / .92); }
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { --glass-body: rgb(12 12 14 / .94); --glass-body-hover: rgb(12 12 14 / .94); }
+  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { --glass-frost: none; --glass-body: rgb(12 12 14 / .94); --glass-body-hover: rgb(12 12 14 / .94); }
 }
 html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-settings :is(.wi-glass, .rail-players) {
   border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
