@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 02:00 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-21 02:50 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2104 (release-83, gameplay and lobby glass demo, default off), source f39f9124, frozen copy
-20261121-014946-f39f9124, Worker version e2579981, at https://www.syn3h.com/ since 21 November 01:54 PST.
+Live: v26.11.2105 (release-84, quality ladder prepared at entry), source fdd27633, frozen copy
+20261121-023835-fdd27633, Worker version 1d059609, at https://www.syn3h.com/ since 21 November 02:42 PST.
 The glass demo runs only with ?glass=inline. assets/liquid-glass/NOTICE.md and the two licences are
 fixed-address files archived versions also serve: keep them byte-identical; new attribution goes to a
 new content-hashed file (2104: NOTICE-091cc75f....md). The frozen-versions guard enforces this.
@@ -119,6 +119,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2102 | 81 | m-relief-2102 | the first automatic quality step down no longer hitches; Cinematic after entry; WebGPU vehicle change at Low |
 | v26.11.2103 | 82 | m-hover-2103 | a hovercraft arriving at middle distance no longer freezes the game |
 | v26.11.2104 | 83 | m-glass-2104 | experimental glass shader remains, off by default (gameplay and lobby demo behind ?glass=inline) |
+| v26.11.2105 | 84 | m-ladder-2105 | repeated automatic quality drops and far hovercraft arrivals no longer hitch; glass legibility |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
