@@ -14,7 +14,7 @@ const c = 'client' as const
 export const postOn = defineParam({ id: 'post.on', label: 'Post effects on', group: g, scope: c, default: true })
 export const postTemporal = defineParam({ id: 'post.temporal', label: 'Temporal antialiasing', group: g, scope: c, default: true })
 
-export const postBloom = defineParam({ id: 'post.bloom', label: 'Glow strength', group: g, scope: c, default: 0.5, min: 0, max: 1.5, step: 0.05 })
+export const postBloom = defineParam<number>({ id: 'post.bloom', label: 'Glow strength', group: g, scope: c, default: 0.5, min: 0, max: 1.5, step: 0.05 })
 export const postBloomThreshold = defineParam({ id: 'post.bloomThreshold', label: 'Glow threshold (on-screen brightness)', group: g, scope: c, default: 3, min: 0.5, max: 6, step: 0.05 })
 export const postBloomRadius = defineParam({ id: 'post.bloomRadius', label: 'Glow radius', group: g, scope: c, default: 0.4, min: 0, max: 1, step: 0.05 })
 

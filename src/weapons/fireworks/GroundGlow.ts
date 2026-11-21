@@ -40,12 +40,18 @@ export class GroundGlow {
   /** Make the pool for a graphics level (the owner calls it when the level changes). */
   build(level: number): void {
     if (level === this.level) return
-    this.dispose()
+    this.reset()
     this.level = level
     const cells = CELLS[Math.max(0, Math.min(2, level))]
     for (let i = 0; i < SLOTS; i++) {
       const geometry = new T.PlaneGeometry(2, 2, cells, cells)
       geometry.rotateX(-Math.PI / 2)
+      const existing = this.slots[i]
+      if (existing) {
+        existing.mesh.geometry.dispose()
+        existing.mesh.geometry = geometry
+        continue
+      }
       const fade = uniform(0), tint = uniform(new T.Color())
       const material = new T.MeshBasicNodeMaterial({ name: 'firework ground glow', transparent: true, depthWrite: false, blending: T.AdditiveBlending })
       const r: N = uv().mul(2).sub(1).length()

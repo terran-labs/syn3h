@@ -77,7 +77,8 @@ export const CLOUD_THIN = 0.12, CLOUD_SOLID = 0.55
 /** Distance (m) over which the haze in front of terrain reaches the full post.shaftHaze. */
 export const SHAFT_HAZE_DEPTH = 700
 
-const MAX_STANDBY_GRAPHS = 2
+// Two neighboring full graphs plus the governor’s shared colour-only graph.
+const MAX_STANDBY_GRAPHS = 3
 
 export interface PostChainHost {
   /**
@@ -110,6 +111,7 @@ const TONE_MAPS = [THREE.ACESFilmicToneMapping, THREE.AgXToneMapping, THREE.Neut
 
 /** Fully resolved preset values, including player overrides. Undefined falls back to the live value. */
 export interface PostGraphPreset {
+  shed?: boolean
   tier: PostTier
   level: QualityLevel
   value(id: string): ParamValue | undefined
@@ -165,6 +167,7 @@ interface Built {
 export class PostChain {
   private built: Built | null = null
   private readonly standby = new Map<string, Built>()
+  private shedKey: string | undefined
   private readonly presetKeys = new Map<QualityLevel, string>()
   private scope: GraphScope | null = null
   private generation = 0
@@ -265,8 +268,16 @@ export class PostChain {
     if (!scope) return undefined
     const tier = this.coveredTier(preset)
     const key = tier === 'off' ? 'off' : this.describeGraph(scope.renderer, scope.scene, tier, preset).key
-    this.rememberPreset(preset.level, key)
+    this.rememberPreset(preset.level, key, preset.shed)
     return key
+  }
+
+  hasRenderPreset(preset: PostGraphPreset): boolean {
+    const scope = this.scope
+    if (!scope) return false
+    const tier = this.coveredTier(preset)
+    const key = tier === 'off' ? 'off' : this.describeGraph(scope.renderer, scope.scene, tier, preset).key
+    return this.presetKeys.get(preset.level) === key && (key === 'off' || this.built?.key === key || this.standby.has(key))
   }
 
   /** Submit one production draw under the target post graph, including on a graph cache hit. */
@@ -350,7 +361,7 @@ export class PostChain {
     const spec = this.describeGraph(renderer, scene, tier)
     const { shaftsOn } = spec
     // A shed frame uses base temporarily. Keep the current level's full-budget graph eligible.
-    if (tier === qualityTier) this.rememberPreset(level, spec.key)
+    this.rememberPreset(level, spec.key, tier !== qualityTier)
     this.pruneStandby(level)
     const reusing = this.activateGraph(renderer, scene, camera, spec)
 
@@ -477,7 +488,7 @@ export class PostChain {
     }
 
     const spec = this.describeGraph(renderer, scene, tier, preset)
-    this.rememberPreset(preset.level, spec.key)
+    this.rememberPreset(preset.level, spec.key, preset.shed)
     this.pruneStandby()
     const active = this.built?.key === spec.key
     let graph = active ? this.built! : this.standby.get(spec.key)
@@ -532,11 +543,12 @@ export class PostChain {
   }
 
   private coveredTier(preset: PostGraphPreset): PostTier {
-    return postTier({ on: postValue(P.postOn, preset), tier: preset.tier, shed: 0 })
+    return postTier({ on: postValue(P.postOn, preset), tier: preset.tier, shed: preset.shed ? 1 : 0 })
   }
 
-  private rememberPreset(level: QualityLevel | undefined, key: string): void {
-    if (level !== undefined) this.presetKeys.set(level, key)
+  private rememberPreset(level: QualityLevel | undefined, key: string, shed = false): void {
+    if (shed) this.shedKey = key
+    else if (level !== undefined) this.presetKeys.set(level, key)
   }
 
   private pruneStandby(level = this.host.quality.getQualityState?.().level): void {
@@ -550,6 +562,7 @@ export class PostChain {
   }
 
   private isNeighborKey(key: string): boolean {
+    if (key === this.shedKey) return true
     for (const known of this.presetKeys.values()) if (known === key) return true
     return false
   }
@@ -603,6 +616,7 @@ export class PostChain {
     this.built = null
     this.standby.clear()
     this.presetKeys.clear()
+    this.shedKey = undefined
   }
 
   dispose(): void {

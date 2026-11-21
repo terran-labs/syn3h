@@ -140,9 +140,19 @@ export class Fireworks {
   get alive(): number { return this.ends.filter(e => e > this.clock).length }
 
   private rebuild(): void {
+    const previous = this.level
     this.level = Math.max(0, Math.min(2, Number(graphicsLevel.value)))
-    this.stars?.dispose()
     this.narrow = narrowScreen()
+    // Above Minimal only the particle budgets change. Preserve the compiled draw states.
+    if (previous > 0 && this.level > 0) {
+      this.stars.resetCapacity(MAX_BURSTS * (PER_BURST[this.starLevel] + GLITTER[this.starLevel]))
+      this.dayStars.resetCapacity(MAX_BURSTS * PER_BURST[this.starLevel])
+      this.flash.resetCapacity(MAX_BURSTS * 2)
+      this.smoke.resetCapacity(MAX_BURSTS * SMOKE[this.smokeLevel])
+      this.glow.build(this.level)
+      return
+    }
+    this.stars?.dispose()
     this.stars = new SparkBatch(MAX_BURSTS * (PER_BURST[this.starLevel] + GLITTER[this.starLevel]), 'thunder fireworks')
     this.stars.clock.value = this.clock
     // Long streaks for fast stars, and their own colour rather than an impact spark's white-hot.

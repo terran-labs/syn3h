@@ -1,7 +1,7 @@
 import { longFrames } from './longFrames'
 /** Local rendering quality. World parameters and physics resolution are never changed here. */
 import { type AdapterProbe, gpuDeadlineMs, graphicsOverride, probeAdapter } from './renderOptions'
-import { defineParam, params, type ParamValue } from '../../shared/params'
+import { defineParam, params, sanitize, type ParamValue } from '../../shared/params'
 import { PerformanceHistory, RECOMMENDATION_IGNORE_KEY } from './performanceHistory'
 import type { PerformanceBots, PerformanceEnvironment, PerformanceSnapshot } from './performance'
 import type { WebGPURenderer } from 'three/webgpu'
@@ -16,12 +16,20 @@ export type QualityLevel = 0 | 1 | 2 | 3 | 4 | 5
 export type GraphicsLevel = QualityLevel
 /** Which parts of the post chain a level may build. Strengths decide the individual effects. */
 export type PostTier = 'off' | 'base' | 'lite' | 'full'
-export const qualityLevel = defineParam({ id: 'gfx.quality', label: 'Quality level: 0 Minimal to 5 Cinematic', group: 'Graphics', scope: 'client', default: 3, min: 0, max: 5, step: 1 })
+/** Read-only render inputs for a real adjacent level choice, without applying that choice. */
+export interface AdjacentRenderPreset {
+  readonly level: QualityLevel
+  readonly tier: PostTier
+  readonly pixelRatio: number
+  readonly shed?: boolean
+  value(id: string): ParamValue | undefined
+}
+export const qualityLevel = defineParam<number>({ id: 'gfx.quality', label: 'Quality level: 0 Minimal to 5 Cinematic', group: 'Graphics', scope: 'client', default: 3, min: 0, max: 5, step: 1 })
 /**
  * The three-step value older consumers read (0, 1 or 2). It follows gfx.quality and is kept
  * only until those consumers read the level budget instead. Do not bind new code to it.
  */
-export const graphicsLevel = defineParam({ id: 'gfx.level', label: 'Older three-step level, follows the quality level', group: 'Graphics', scope: 'client', default: 2, min: 0, max: 2, step: 1 })
+export const graphicsLevel = defineParam<number>({ id: 'gfx.level', label: 'Older three-step level, follows the quality level', group: 'Graphics', scope: 'client', default: 2, min: 0, max: 2, step: 1 })
 export interface LevelBudget {
   name: string
   /** Upper bound on the renderer pixel ratio; the display's own ratio also bounds it. */
@@ -428,6 +436,7 @@ export class QualityGovernor {
   displayMs: number | null = null
   last: FrameWindow | null = null
   /** A level climb that has earned its headroom and waits for a covered moment. */
+  canClimbVisible?: (level: QualityLevel) => boolean
   pendingLevel: QualityLevel | null = null
   /** True until the first shed: climbs wait a quarter as long. */
   calibrating = true
@@ -606,7 +615,7 @@ export class QualityGovernor {
     if (this.rung > 0) return this.climb()
     // A level climb waits for a covered moment, or for the grace period with headroom unbroken.
     if (this.pendingLevel === null) { this.pendingLevel = (this.level + 1) as QualityLevel; this.pendingAt = this.clock; return null }
-    return this.clock - this.pendingAt >= GOVERNOR.climbGraceMs ? this.climb() : null
+    return this.clock - this.pendingAt >= GOVERNOR.climbGraceMs && (this.canClimbVisible?.(this.pendingLevel) ?? true) ? this.climb() : null
   }
   /** The controller reports a moment when a shader build will not be seen. Takes a pending level climb. */
   applyPendingClimb(): GovernorChange | null {
@@ -840,6 +849,20 @@ export class QualityController implements QualitySource {
   noteCovered() { const change = this.governor.applyPendingClimb(); if (change) { this.lastReason = change.reason; this.apply('governor', true) } }
   /** Which parts of the post chain the current level may build. */
   get postTier(): PostTier { return LEVELS[this.governor.level].postTier }
+
+  /** Resolve the render inputs without changing settings, including automatic overrides. */
+  renderPreset(level: QualityLevel, automatic: boolean, shed = false): AdjacentRenderPreset {
+    const values = params.snapshot('all')
+    for (const [id, value] of Object.entries(presetFor(level))) {
+      const param = params.get(id)
+      if (param) values[id] = sanitize(param.def, automatic ? this.overrides[id] ?? value : value)
+    }
+    values[qualityLevel.def.id] = level
+    values[graphicsLevel.def.id] = legacyTier(level)
+    return { level, tier: LEVELS[level].postTier, shed,
+      pixelRatio: buildLadder(level, this.governor.devicePixelRatio, false, this.governor.resolution)[0].pixelRatio,
+      value: id => values[id] }
+  }
 
   constructor() {
     if (typeof window === 'undefined') { this.governor = new QualityGovernor({ level: levelNumber(qualityLevel.value) }); return }

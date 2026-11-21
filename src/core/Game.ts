@@ -20,7 +20,8 @@ import { snapshotPixelRatio } from './snapshotScale'
 import { drawFrame, gpuDeadlineMs, startRenderer, viewState, withDeadline, type PostChain } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
-import { QualityController, reportLoading, type FrameMetrics } from './quality'
+import { QualityController, reportLoading, vehicleShading, type AdjacentRenderPreset, type FrameMetrics } from './quality'
+import { drawCoveredShowroomVariant } from '../vehicles/skins/showroom'
 import { PipelineCounter } from './performanceHistory'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
 
@@ -474,6 +475,23 @@ export class Game {
           console.warn('Covered system warm-up failed', systemName(system), error)
         }
       }
+      // Relief travels down one level. Only prepare the visible world and its post
+      // targets here. Replaying the parked vehicle fleet doubled entry time.
+      const chain = this.postChain
+      const governor = this.quality?.governor
+      if (chain?.warmCovered && governor?.auto && !governor.levelPinned && governor.level > 0) {
+        const level = (governor.level - 1) as AdjacentRenderPreset['level']
+        const preset = this.quality.renderPreset(level, true)
+        const shade = Number(preset.value(vehicleShading.def.id))
+        const submit = () => shade === 1 || shade === 2 ? drawCoveredShowroomVariant(this.scene, shade, draw) : draw()
+        const seen = new Set<string>()
+        for (const target of [preset, { ...preset, shed: true }]) {
+          const key = chain.coveredVariantKey?.(target)
+          if (key && seen.has(key)) continue
+          if (key) seen.add(key)
+          await chain.warmCovered({ yieldFrame, draw: submit }, target)
+        }
+      }
     }
     await sweep()
     if (batch) {
@@ -513,13 +531,23 @@ export class Game {
     }
   }
 
-  private postChain: PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> | null = null
+  private postChain: (PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> & {
+    warmCovered?(warm: CoveredWarm, preset: AdjacentRenderPreset): Promise<void>
+    coveredVariantKey?(preset: AdjacentRenderPreset): string | undefined
+    hasRenderPreset?(preset: AdjacentRenderPreset): boolean
+  }) | null = null
   /**
    * Hand every frame to a post-processing chain, or pass null to draw straight through the
    * renderer again. With no chain the frame is `renderer.render(scene, camera)`, unchanged.
    * The chain is not called on frames Game skips (the world hidden behind the galaxy lobby).
    */
-  setPostChain(chain: PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> | null): void { this.postChain = chain }
+  setPostChain(chain: Game['postChain']): void {
+    this.postChain = chain
+    this.quality.governor.canClimbVisible = level => {
+      const last = this.quality.levelChanges.at(-1)
+      return last?.from === level && !!chain?.hasRenderPreset?.(this.quality.renderPreset(level, true))
+    }
+  }
   private lastDraw = 0
   private shell: Element | null = null
   /** See viewState. The shell element is looked up until it exists, then kept. */
