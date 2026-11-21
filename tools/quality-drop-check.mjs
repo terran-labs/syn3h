@@ -77,6 +77,7 @@ try {
     const {game} = window.syn3h, q = game.quality, governor = q.governor, b = game.renderer.backend
     const roster = () => window.syn3h.bots.vehicles.map(v => ({kind:v.kind,id:v.object.id,arriving:window.syn3h.materialize.isMaterializing(v)}))
     const initialRoster = roster()
+    const peerVehicle = peerId === null ? undefined : window.syn3hNet.remotes.get(peerId)?.vehicle
     const peerDrawLevels = new Set()
     const draw = b.draw
     if (peerId !== null) b.draw = function(source,...args) {
@@ -91,7 +92,7 @@ try {
       const fx = window.syn3h.materialize
       const effect = source.object === fx.cloud.mesh ? 'arrival cloud' : fx.looks.flatMap((look,i) =>
         ['volume','ground','flash','beam'].filter(key=>look[key]===source.object).map(key=>key+' '+i))[0]
-      calls.push({effect,ghost:source.object?.userData.arrivalGhost,parent:source.object?.parent?.name,materialId:source.material?.id,kind, level:governor.level, frame:game.frames, ms:performance.now()-start,
+      calls.push({peer:!!peerVehicle?.object.getObjectById(source.object?.id),effect,ghost:source.object?.userData.arrivalGhost,parent:source.object?.parent?.name,materialId:source.material?.id,kind, level:governor.level, frame:game.frames, ms:performance.now()-start,
         bot:actor?.kind, botRoot:actor?.object.id, object:source.object?.name, material:source.material?.name || source.material?.type})
     }
     const make = b.createNodeBuilder, pipeline = b.createRenderPipeline, sample = governor.sample
@@ -120,7 +121,7 @@ try {
     try {
       while (governor.level && performance.now()-start < 150000) await new Promise(resolve=>setTimeout(resolve,100))
       await new Promise(resolve=>setTimeout(resolve,1500))
-      return {entered,initialRoster,peerDrawLevels:[...peerDrawLevels],backend:game.backend,final:governor.level,calls,changes}
+      return {entered,initialRoster,peerKind:peerVehicle?.kind,peerDrawLevels:[...peerDrawLevels],backend:game.backend,final:governor.level,calls,changes}
     } finally { governor.sample=sample; unsubscribe(); b.createNodeBuilder=make; b.createRenderPipeline=pipeline; b.draw=draw }
   },{peerId, multiplayer})
   await writeFile(output,JSON.stringify({...result,viewport,fleet,multiplayer,errors},null,2))
@@ -128,6 +129,7 @@ try {
   assert.equal(result.backend,backend)
   assert.equal(result.entered,entryLevel)
   if (fleet === 'stock' && multiplayer !== 'arrival') assert.equal(result.initialRoster.length, 4, 'Full fleet required at measurement start')
+  if (peerId !== null) assert.equal(result.peerKind,'jet')
   assert.equal(result.final,0)
   if (multiplayer === 'arrival') assert(result.changes.some(change => change.level === entryLevel-1 &&
     change.roster.some(v => v.kind === 'jet' && v.arriving)), 'Fourth bot must still be arriving when relief lands')
