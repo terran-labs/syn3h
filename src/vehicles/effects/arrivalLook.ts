@@ -153,6 +153,7 @@ function ghostMaterial(u: Uniforms): T.MeshBasicNodeMaterial {
 
 export class ArrivalLook {
   readonly object = new T.Group()
+  private readonly volumes = new Map<number, T.MeshBasicNodeMaterial>()
   readonly volume: T.Mesh
   readonly ground: T.Mesh
   readonly beam: T.Mesh
@@ -190,7 +191,7 @@ export class ArrivalLook {
     }
     // One octave and one noise layer below the full level (Medium and below, and every touch device).
     const octaves = level < 2 ? 1 : 2
-    this.volume = new T.Mesh(new T.IcosahedronGeometry(1, level === 0 ? 2 : 4), volumeMaterial(this.u, octaves))
+    this.volume = new T.Mesh(new T.IcosahedronGeometry(1, level === 0 ? 2 : 4), this.volumeFor(octaves))
     this.volume.renderOrder = 5
     const quad = new T.PlaneGeometry(2, 2).rotateX(-Math.PI / 2)
     this.ground = new T.Mesh(quad, groundMaterial(this.u))
@@ -213,6 +214,23 @@ export class ArrivalLook {
     this.object.visible = false
   }
 
+  private volumeFor(octaves: number): T.MeshBasicNodeMaterial {
+    let material = this.volumes.get(octaves)
+    if (!material) {
+      material = volumeMaterial(this.u, octaves)
+      this.volumes.set(octaves, material)
+    }
+    return material
+  }
+
+  drawCoveredVolume(level: number, draw: () => void): void {
+    const previous = this.volume.material
+    try {
+      this.volume.material = this.volumeFor(level < 2 ? 1 : 2)
+      draw()
+    } finally { this.volume.material = previous }
+  }
+
   setLevel(level: number): void {
     if (level === this.level) return
     if ((this.level === 0) !== (level === 0)) {
@@ -220,8 +238,7 @@ export class ArrivalLook {
       this.volume.geometry = new T.IcosahedronGeometry(1, level === 0 ? 2 : 4)
     }
     if ((this.level === 2) !== (level === 2)) {
-      ;(this.volume.material as T.Material).dispose()
-      this.volume.material = volumeMaterial(this.u, level === 2 ? 2 : 1)
+      this.volume.material = this.volumeFor(level === 2 ? 2 : 1)
     }
     this.level = level
     this.flash.visible = level === 2
@@ -417,7 +434,9 @@ export class ArrivalLook {
   dispose(): void {
     this.end()
     this.object.removeFromParent()
-    for (const m of [this.volume, this.ground, this.flash, this.beam]) { m.geometry.dispose(); (m.material as T.Material).dispose() }
+    this.volume.geometry.dispose()
+    for (const material of this.volumes.values()) material.dispose()
+    for (const m of [this.ground, this.flash, this.beam]) { m.geometry.dispose(); (m.material as T.Material).dispose() }
     for (const mesh of this.silhouetteWarmMeshes) {
       if (mesh instanceof T.InstancedMesh) mesh.dispose()
     }

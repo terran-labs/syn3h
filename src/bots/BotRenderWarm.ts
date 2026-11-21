@@ -35,7 +35,6 @@ export class BotRenderWarm {
   private readonly forward = new Vector3()
   private readonly detailPosition = new Vector3()
   private readonly drawPosition = new Vector3()
-  private readonly parkedPosition = new Vector3()
   private generation = 0
   private running = false
   private disposed = false
@@ -115,7 +114,7 @@ export class BotRenderWarm {
     vehicle.body.resetForces(false)
     vehicle.body.resetTorques(false)
     // Subclasses clear controller history in teleport. Leave the idle body at its last pose.
-    vehicle.teleport(this.parkedPosition.copy(vehicle.body.translation()))
+    vehicle.teleport(this.detailPosition.copy(vehicle.body.translation()))
     vehicle.wind.set(0, 0, 0)
     vehicle.zorbView = null
     vehicle.wheelsGrounded = 0
@@ -170,7 +169,7 @@ export class BotRenderWarm {
 
   private draw(vehicle: Vehicle, look: Look, warm: CoveredWarm): void {
     const camera = this.game.camera
-    this.parkedPosition.copy(vehicle.object.position)
+    const parkedPosition = vehicle.object.position.clone()
     camera.getWorldDirection(this.forward)
     this.detailPosition.copy(camera.position).addScaledVector(this.forward, look.distance)
     camera.getWorldPosition(this.drawPosition).addScaledVector(this.forward, 12)
@@ -219,9 +218,31 @@ export class BotRenderWarm {
     } finally {
       for (const mesh of hiddenWings) mesh.visible = false
       vehicle.object.removeFromParent()
-      vehicle.object.position.copy(this.parkedPosition)
+      vehicle.object.position.copy(parkedPosition)
       if (look.gearDown) vehicle.resetForWorld()
     }
+  }
+
+  /** The distant models always use plain shading. Their target changes only at Minimal. */
+  drawReliefFleet(minimal: boolean, submit: () => void): void {
+    const actors = [...this.parked.values()].flatMap(entries => entries.slice(0, 1).map(entry => entry.vehicle))
+    if (!actors.length) { submit(); return }
+    const drawPose = (index: number, pose: Look, jetOnly: boolean): void => {
+      if (index === actors.length) { submit(); return }
+      const vehicle = actors[index]
+      const next = () => drawPose(index + 1, pose, jetOnly)
+      if (jetOnly && !(vehicle instanceof Jet)) next()
+      else this.draw(vehicle, pose, { draw: next, yieldFrame: async () => {} })
+    }
+    try {
+      drawPose(0, near, false)
+      if (actors.some(v => v instanceof Jet)) drawPose(0, jetLooks[1], true)
+      if (minimal) {
+        drawPose(0, medium, false)
+        drawPose(0, jetLooks[2], true)
+        drawPose(0, far, false)
+      }
+    } finally { for (const vehicle of actors) this.reset(vehicle) }
   }
 
   dispose(): void {

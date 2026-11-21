@@ -414,6 +414,7 @@ export class Syn3hBuggySkin implements BuggySkin {
     for (const part of reduced) markReducedShowroomDetail(part)
     this.detachShowroom = applyShowroom(this.object, decorateBuggyDistance(
       reduced, { body: this.bodyColor, accent: this.accentColor },
+      [staticBody, this.tyreBatch, this.struts!, this.shocks!],
     ))
     this.object.visible = true
   }

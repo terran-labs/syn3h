@@ -26,6 +26,33 @@ const paint = { body: colorOf('body'), accent: colorOf('accent') }
 const distanceGraphs = new Map<string, DistanceGraph>()
 const rgb = (color: THREE.Color) => [color.r, color.g, color.b] as const
 
+const nearSources = new WeakMap<THREE.Material, readonly Standard[]>()
+const nearGraphs = new Map<string, DistanceGraph>()
+
+// The near hull includes live brake, headlamp and cockpit emission. Bind the source
+// colours on each draw so two buggies can share a program and still light independently.
+function nearGraph(material: StandardNode, sources: readonly Standard[]): DistanceGraph {
+  nearSources.set(material, sources)
+  const key = JSON.stringify(sources.map(s => [s.roughness, s.metalness, s.emissiveIntensity]))
+  const cached = nearGraphs.get(key)
+  if (cached) return cached
+  const index = attribute('surfaceId', 'float').round()
+  let color: Node<'vec3'> = vec3(0), emission: Node<'vec3'> = vec3(0)
+  let roughness: Node<'float'> = float(0), metalness: Node<'float'> = float(0)
+  for (const [i, surface] of sources.entries()) {
+    const read = (field: 'color' | 'emissive') => uniform(new THREE.Color()).onObjectUpdate(
+      ({material}) => (material && nearSources.get(material)?.[i]?.[field]) || fallback)
+    const mask = index.equal(i).select(1, 0)
+    color = color.add(read('color').mul(mask))
+    emission = emission.add(read('emissive').mul(surface.emissiveIntensity).mul(mask))
+    roughness = roughness.add(mask.mul(surface.roughness))
+    metalness = metalness.add(mask.mul(surface.metalness))
+  }
+  const graph = { color, emission, roughness, metalness }
+  nearGraphs.set(key, graph)
+  return graph
+}
+
 function distanceGraph(sources: readonly Standard[], colors: Paint): DistanceGraph {
   const layout = sources.map(source => ({
     color: source.color === colors.body ? 'body' as const
@@ -55,13 +82,15 @@ function distanceGraph(sources: readonly Standard[], colors: Paint): DistanceGra
   return graph
 }
 
-/** Only the buggy's four distance draws use these shared plain graphs. The showroom
+/** The buggy's packed surfaces share plain graphs. The showroom
  * still owns each material and its tier switches, and the skin owns all posed buffers. */
-export function decorateBuggyDistance(roots: readonly THREE.Object3D[], colors: Paint): Decorate {
+export function decorateBuggyDistance(roots: readonly THREE.Object3D[], colors: Paint, near: readonly THREE.Object3D[] = []): Decorate {
   const entries: { mesh: THREE.Mesh; plain: StandardNode; sources: readonly Standard[] }[] = []
-  for (const root of roots) root.traverse(mesh => {
+  const liveSources = new Set<StandardNode>()
+  for (const root of [...roots, ...near]) root.traverse(mesh => {
     if (!(mesh instanceof THREE.Mesh) || !(mesh.material instanceof THREE.MeshStandardNodeMaterial)) return
     const sources = mergedSurfaces.get(mesh.material)
+    if (near.includes(root)) liveSources.add(mesh.material)
     if (sources) entries.push({ mesh, plain: mesh.material, sources })
   })
 
@@ -70,7 +99,7 @@ export function decorateBuggyDistance(roots: readonly THREE.Object3D[], colors: 
     if (heatOwner(root)) {
       for (const { mesh, plain, sources } of entries) {
         if (mesh.material !== plain) continue
-        const graph = distanceGraph(sources, colors)
+        const graph = liveSources.has(plain) ? nearGraph(plain, sources) : distanceGraph(sources, colors)
         paintByMaterial.set(plain, colors)
         plain.colorNode = graph.color
         plain.roughnessNode = graph.roughness

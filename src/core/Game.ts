@@ -51,6 +51,8 @@ export interface System {
   /** Select or expose the draws the direct Minimal renderer will need, restoring them synchronously. */
   drawCoveredMinimal?(draw: () => void): void
   /** Attach retained player models for the existing Medium to Low preview draw. */
+  drawReliefEffects?(level: number, draw: () => void): void
+  drawReliefFleet?(minimal: boolean, draw: () => void): void
   drawCoveredLowFleet?(draw: () => void): void
   dispose?(): void
 }
@@ -612,7 +614,6 @@ export class Game {
       const chain = this.postChain
       const governor = this.quality?.governor
       if (!chain?.warmCovered || !governor?.auto || governor.levelPinned) return
-      const player = this.scene.userData.playerVehicleCache?.active?.object
       const entryLevel = governor.level
       // Ultra and Cinematic change cascade counts. Preview just their existing neighbour
       // until the renderer can retain the actual destination shadow state.
@@ -622,7 +623,7 @@ export class Game {
         const preset = this.quality.renderPreset(level, true)
         const shade = Number(preset.value(vehicleShading.def.id))
         const existingPreview = entryLevel > 3 || (entryLevel < 3 && lower === entryLevel - 1)
-        const root = existingPreview ? this.scene : player
+        const root = this.scene
         const drawView = () => draw(undefined, !existingPreview)
         const drawVariants = () => root && (shade === 0 || shade === 1 || shade === 2)
           ? drawCoveredShowroomVariant(root, shade, drawView) : drawView()
@@ -630,6 +631,20 @@ export class Game {
         const fleet = existingPreview && this.backend === 'webgpu' && level === 1 && shade === 0
           ? this.systems.find(system => system.drawCoveredLowFleet) : undefined
         let submit = () => fleet?.drawCoveredLowFleet ? fleet.drawCoveredLowFleet(drawVariants) : drawVariants()
+        const bots = entryLevel <= 3 && this.systems.find(system => system.drawReliefFleet)
+        if (bots && bots.drawReliefFleet) {
+          const playerDraw = submit
+          const effects = this.systems.find(system => system.drawReliefEffects)
+          submit = () => {
+            let firstPose = true
+            bots.drawReliefFleet!(level === 0, () => {
+              if (firstPose && effects?.drawReliefEffects) {
+                firstPose = false
+                effects.drawReliefEffects(Number(preset.value('gfx.level')), playerDraw)
+              } else playerDraw()
+            })
+          }
+        }
         if (level === 0) {
           for (const system of this.systems) {
             if (!system.drawCoveredMinimal) continue

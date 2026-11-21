@@ -219,6 +219,30 @@ export class Materialize implements System {
     }
   }
 
+  /** A governor drop may shed a bot immediately, while its departure still draws. */
+  drawReliefEffects(level: number, draw: () => void): void {
+    const changed = new Map<T.Object3D, [boolean, boolean]>()
+    try {
+      for (const mesh of this.precompileMeshes()) {
+        for (let node: T.Object3D | null = mesh; node && node !== this.game.scene; node = node.parent) {
+          if (!changed.has(node)) changed.set(node, [node.visible, node.frustumCulled])
+          node.visible = true
+          node.frustumCulled = false
+        }
+      }
+      const next = (index: number): void => {
+        if (index === this.looks.length) draw()
+        else this.looks[index].drawCoveredVolume(level, () => next(index + 1))
+      }
+      next(0)
+    } finally {
+      for (const [node, [visible, culled]] of changed) {
+        node.visible = visible
+        node.frustumCulled = culled
+      }
+    }
+  }
+
   prepareCoveredDraw():void {
     if(this.buggyStatorGeometry)return
     // A covered buggy draw can attach its finished skin after the first world draw.
