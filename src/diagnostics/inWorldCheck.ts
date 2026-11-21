@@ -91,6 +91,20 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
   })
   const level = () => quality.governor.level
   const draws = observeCheckDraws(game, () => Boolean(shell.element.querySelector('.quality-change-veil')))
+  // Each sealed game interval belongs to the step in which it ended. The separate
+  // animation callback above also sees gaps while the game loop is suspended.
+  let frameCursor = game.readLongFrames(Number.MAX_SAFE_INTEGER).cursor
+  function worstGameFrame() {
+    const batch = game.readLongFrames(frameCursor)
+    frameCursor = batch.cursor
+    const worst = batch.frames.reduce<(typeof batch.frames)[number] | undefined>((max, frame) =>
+      !max || frame.intervalMs > max.intervalMs ? frame : max, undefined)
+    if (!worst) return '·'
+    const spans = worst.spans.sort((a, b) => b.ms - a.ms).slice(0, 2)
+    const work = spans.map(span => span.name + ' ' + Math.round(span.ms)).join(', ')
+    return '#' + worst.frame + ' ' + Math.round(worst.intervalMs) + ' ' +
+      (work || 'no spans') + ', gap ' + Math.round(worst.unaccountedMs) + (batch.lost ? ' (partial)' : '')
+  }
   async function step(name: string, action: () => void | Promise<void>, ms = 800) {
     signal.throwIfAborted()
     label.textContent = name
@@ -112,7 +126,7 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
       const sorted = samples.sort((a,b) => a-b)
       const q = (fraction: number) => sorted.length ? sorted[Math.ceil(sorted.length * fraction)-1].toFixed(1) : '?'
       rows.push([name, from === level() ? from : from+'>'+level(), samples.length, q(.5), q(.95), q(.99), q(1),
-        ...draws.result()].join(' | '))
+        ...draws.result(), worstGameFrame()].join(' | '))
     }
   }
   function place(index = 0) {
@@ -180,7 +194,7 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
     for (const end of [0, 5, startingLevel]) {
       while (level() !== end) {
         const target = levelNumber(level() + Math.sign(end - level()))
-        await step((target < level() ? 'Step down ' : 'Step up ')+target, () => sweep.step(target), 650)
+        await step((target < level() ? 'Forced down ' : 'Forced up ')+target, () => sweep.step(target), 650)
       }
     }
     await step('Manual jump', async () => {
@@ -216,7 +230,7 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
   const header = details.filter(line => /^(Device class:|Browser:|Renderer:|Screen:)/.test(line))
   const detail = details.filter(line => /^(Reported |Version:|Source commit:|OS:|Adapter:|Memory estimate:|Graphics quality:|World:|Play:|Room connection:|In play:|Last 60 s:|Before first overlay fade|After first overlay fade|Play to first playable|Covered entry precompile)/.test(line))
   return ['Syn3h performance check | '+outcome+' | '+Math.round((performance.now()-started)/1000)+' s',
-    ...header, `Quality at entry: ${game.entryQualityLevel ?? 'unavailable'}; at check start: ${startLevel}`, 'Glass at start: '+initialGlass,
-    'Local step | level | frames | p50 | p95 | p99 | max ms | draw G/P | prep | veil | unmatched',
-    ...rows, '', 'G/P = graph builds/pipeline requests. Draw = same-frame submission, prep = showroom warm proxy. Unmatched = no same-frame draw identified. Steps force each boundary without the governor’s evidence delay or cold-climb gate. Frame intervals include GPU and scheduling waits.', ...detail].join('\n')
+    ...header, `Quality at entry: ${game.entryQualityLevel ?? 'unavailable'}; at check start: ${startLevel}`, initialGlass,
+    'Local step | level | frames | p50 | p95 | p99 | max ms | draw G/P | proxy | veil | unmatched | worst game frame',
+    ...rows, '', 'G/P = graph builds/pipeline requests. Draw = same-frame submission. Proxy = showroom warm. Unmatched = no same-frame draw identified. Steps force each boundary without the governor’s evidence delay or cold-climb gate. Worst game frame = interval over 33 ms ending in this step, two largest CPU spans and unaccounted gap (ms). A gap has no identified cause.', ...detail].join('\n')
 }
