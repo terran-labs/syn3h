@@ -188,8 +188,9 @@ describe('finding a device its level', () => {
   })
   it('holds a level climb as pending and takes it at a covered moment', () => {
     const g = new QualityGovernor({ level: 3, devicePixelRatio: 2 })
+    g.canClimbVisible = () => false
     expect(g.applyPendingClimb()).toBeNull()
-    const waited = run(g, GOVERNOR.warmupMs + RUNG_TIMING.level.climbMs * GOVERNOR.calibrationFactor + 2000, () => VSYNC)
+    const waited = run(g, GOVERNOR.warmupMs + RUNG_TIMING.level.climbMs * GOVERNOR.calibrationFactor + GOVERNOR.climbGraceMs + 2000, () => VSYNC)
     expect(waited.log).toEqual([]); expect(g.pendingLevel).toBe(4); expect(g.level).toBe(3)
     expect(g.applyPendingClimb()).toMatchObject({ level: 4, reason: 'level-climb' })
     expect(g.pendingLevel).toBeNull()
