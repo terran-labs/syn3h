@@ -420,4 +420,4 @@ if [ -f tools/dashboard-stats.mjs ]; then
 fi
 
 # Last, so every other step has run: a release whose archive failed ends in failure.
-[ -z "$ARCHIVE_FAILED" ] || { echo "release-$N is live but $CALVER is NOT stored in R2: run the archive command above before the next release." >&2; exit 1; }
+[ -z "${ARCHIVE_FAILED:-}" ] || { echo "release-$N is live but $CALVER is NOT stored in R2: run the archive command above before the next release." >&2; exit 1; }
