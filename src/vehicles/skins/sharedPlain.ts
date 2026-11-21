@@ -1,11 +1,11 @@
 import * as T from 'three/webgpu'
 import type Node from 'three/src/nodes/core/Node.js'
 import { attribute, float, materialEmissive, uniform, vec3 } from 'three/tsl'
-import { vehicleDecoration } from '../skins/decoration'
-import { addLavaGlow, heatOwner } from '../skins/lavaGlow'
-import { mergedSurfaces } from '../skins/mergeStatic'
-import { addNightReadability } from '../skins/nightReadability'
-import { applyShowroom, type Decorate } from '../skins/showroom'
+import { vehicleDecoration } from './decoration'
+import { addLavaGlow, heatOwner } from './lavaGlow'
+import { mergedSurfaces } from './mergeStatic'
+import { addNightReadability } from './nightReadability'
+import { applyShowroom, type Decorate } from './showroom'
 
 type Standard = T.MeshStandardMaterial
 type StandardNode = T.MeshStandardNodeMaterial
@@ -53,10 +53,10 @@ function packedGraph(sources: readonly Standard[]): PackedGraph {
 
 /**
  * The showroom owns the actual material instances and their tier switches. Share these
- * hovercraft's plain shader nodes without sharing that ownership or changing other vehicles.
+ * vehicles' plain shader nodes without sharing that ownership or changing other vehicles.
  * The regular showroom already shares the higher-tier graphs by their source signatures.
  */
-export function applyHoverShowroom(root: T.Object3D): () => void {
+export function applySharedPlainShowroom(root: T.Object3D): () => void {
   if (!heatOwner(root)) return applyShowroom(root, vehicleDecoration)
   const plain = new Set<T.Material>()
   root.traverse(object => {
