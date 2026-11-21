@@ -47,7 +47,7 @@ import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
 import { PLANETS } from '../world/planets'
-import { graphicsLevel, levelNumber, qualityBudget } from '../core/quality'
+import { graphicsLevel, levelNumber, qualityBudget, LEVELS, type QualityLevel } from '../core/quality'
 import { camDistance, camFov, camHeight, camOffset } from '../core/ChaseCamera'
 import { arrivalPath } from '../core/arrival'
 import { applyPlanet, biomeLine, currentPlanet, currentWorldName, encodeWorld, planetById, randomSeed } from '../world/planets'
@@ -358,6 +358,12 @@ export class Shell implements System {
       return count > 1 ? `${count} players` : count ? 'Just you' : ''
     }, { after: 'game' })
     // Performance follows World; its controls remain part of the searchable card stack.
+    if (game.quality) game.quality.manualChange = (level, apply) => {
+      if (!this.playing || this.transitioning) { apply(); return }
+      if (!this.qualityVeil && game.manualQualityReady(level)) { apply(); return }
+      this.queuedQuality = { level, apply }
+      if (!this.qualityVeil) void this.applyQualityBehindVeil()
+    }
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
     // The lobby's settings: Settings above Welcome and Updates in the lower right of the galaxy,
     // the running version in the lower left, and a right-hand card of what acts in the lobby
@@ -1165,6 +1171,37 @@ export class Shell implements System {
     this.element.querySelector<HTMLElement>('.hud-navigation')!.hidden = false
     this.touchPanels = false; this.syncPanels()
   }
+  private qualityVeil: HTMLDivElement | null = null
+  private queuedQuality?: { level: QualityLevel; apply: () => void }
+  private async applyQualityBehindVeil(): Promise<void> {
+    const veil = document.createElement('div')
+    veil.className = 'quality-change-veil'
+    const title = document.createElement('strong')
+    const status = document.createElement('span')
+    status.setAttribute('role', 'status')
+    const meter = document.createElement('div')
+    meter.className = 'quality-progress'
+    meter.setAttribute('role', 'progressbar')
+    meter.append(document.createElement('span'))
+    meter.setAttribute('aria-label', 'Graphics preparation')
+    veil.append(title, status, meter)
+    this.qualityVeil = veil
+    this.element.append(veil)
+    try {
+      while (this.queuedQuality && !this.abort.signal.aborted) {
+        const { level, apply } = this.queuedQuality
+        this.queuedQuality = undefined
+        title.textContent = 'Applying ' + LEVELS[level].name
+        status.textContent = 'Updating graphics settings'
+        await this.game.prepareManualQuality(apply, this.abort.signal,
+          phase => { status.textContent = phase })
+      }
+    } finally {
+      veil.remove()
+      this.qualityVeil = null
+    }
+  }
+
   private performancePanel!: PerformancePanel
   configurePerformance(source: PerformanceSource): void { this.performancePanel.configure(source) }
   /** True from the click or key press that enters a world until play begins or the entry is abandoned. */
