@@ -43,7 +43,7 @@
 .syn3h-shell.exploration-ui .hud-navigation { top: 50%; right: 0; transform: translateY(-50%); width: 34px; display: block; }
 .syn3h-shell.exploration-ui .hud-navigation .inspector-toggle { writing-mode: vertical-rl; min-width: 34px; min-height: 114px; padding: 12px 6px; border-right: 0; border-radius: 4px 0 0 4px; font-size: 12px; }
 .syn3h-shell.exploration-ui .hud-navigation .nav-label { display: inline; }
-.syn3h-shell.exploration-ui:has(.world-inspector:not([hidden])) .hud-navigation { visibility: hidden; }
+.syn3h-shell.exploration-ui:has(.world-inspector:not([hidden], .lobby-settings)) .hud-navigation { visibility: hidden; }
 
 /* The rail never scrolls as a whole. Headers stay visible; open bodies share its space. */
 .syn3h-shell.exploration-ui .world-inspector { top: var(--edge-top); bottom: var(--edge-bottom); right: var(--edge-right); width: min(352px, calc(100vw - 2 * var(--edge))); height: calc(100dvh - var(--edge-top) - var(--edge-bottom)); max-height: none; gap: 7px; }
@@ -100,7 +100,7 @@
 /* A map fading into the world, centred on the player, with no rectangular backing. */
 /* The minimap is placed by what is drawn, its ring (inset 11.5% of the box), so the ring sits
    on the shared edge (--edge). --map-size is its box; layouts below change only that. */
-.syn3h-shell.exploration-ui .shell-minimap, .syn3h-shell.exploration-ui:not(.has-touch):has(.world-inspector:not([hidden])) .shell-minimap { --map-size: 210px; --map-ring: calc(var(--map-size) * .115); left: calc(var(--edge-left) - var(--map-ring)); bottom: calc(var(--edge-bottom) - var(--map-ring)); top: auto; right: auto; width: var(--map-size); height: var(--map-size); border: 0; background: none; box-shadow: none; pointer-events: none; }
+.syn3h-shell.exploration-ui .shell-minimap, .syn3h-shell.exploration-ui:not(.has-touch):has(.world-inspector:not([hidden], .lobby-settings)) .shell-minimap { --map-size: 210px; --map-ring: calc(var(--map-size) * .115); left: calc(var(--edge-left) - var(--map-ring)); bottom: calc(var(--edge-bottom) - var(--map-ring)); top: auto; right: auto; width: var(--map-size); height: var(--map-size); border: 0; background: none; box-shadow: none; pointer-events: none; }
 /* The owner wants the map at least 80% opaque in the centre. Opacity, this feathering mask
    and the focus fade below multiply, so the product is what counts: .94 here, .94 x .92 = .86
    with the cursor captured. tests/ui/minimap-opacity.mjs measures it from pixels. */
@@ -136,8 +136,8 @@
 @supports (font: -apple-system-body) and (-webkit-appearance: none) { .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: rgb(18 18 18 / .86); } }
 html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: rgb(18 18 18 / .9); -webkit-backdrop-filter: none; backdrop-filter: none; }
 
-.syn3h-shell.exploration-ui:has(.world-inspector:not([hidden])) .shell-toast { opacity: 0; }
-.syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden])) .focus-hud { opacity: 0; }
+.syn3h-shell.exploration-ui:has(.world-inspector:not([hidden], .lobby-settings)) .shell-toast { opacity: 0; }
+.syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden], .lobby-settings)) .focus-hud { opacity: 0; }
 .syn3h-shell.exploration-ui[data-glass] .wi-tooltip { --body: rgb(15 15 15 / .96); }
 @media (max-height: 500px) {
   .syn3h-shell.exploration-ui .wi-top { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 2px 5px; }
@@ -206,7 +206,7 @@ body { --map-top: calc(var(--edge-touch-bottom) + 160px * .885); }
 @media (max-height: 500px) { .syn3h-shell.exploration-ui .performance-panel { max-height: 35%; min-height: 60px; } .syn3h-shell.exploration-ui .performance-recommendation { top: 12px; left: 16px; transform: none; max-width: 280px; } }
 .syn3h-shell.exploration-ui .performance-panel header button { width: 28px; height: 26px; min-height: 26px; padding: 0; font-size: 18px; }
 .syn3h-shell.exploration-ui .performance-controls label { display: flex; align-items: center; font-size: 12px; }
-.syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden])) .spawn-help { display: none; }
+.syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden], .lobby-settings)) .spawn-help { display: none; }
 @media (max-height: 500px) {
   .syn3h-shell.exploration-ui .performance-panel { min-height: 36px; }
   .syn3h-shell.exploration-ui .wi-cards { min-height: 132px; }
@@ -298,8 +298,8 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 /* Touch screens: the drum's place and size are in gear.css (one compact form, top left). */
 /* On a small screen the open panels cover the drum's place: one or the other. */
 @media (max-width: 700px), (max-height: 500px) {
-  .syn3h-shell.exploration-ui:has(.world-inspector:not([hidden])):not(.is-focus) .gear-selector,
-  .syn3h-shell.exploration-ui:has(.world-inspector:not([hidden])):not(.is-focus) .gear-actions { display: none !important; }
+  .syn3h-shell.exploration-ui:has(.world-inspector:not([hidden], .lobby-settings)):not(.is-focus) .gear-selector,
+  .syn3h-shell.exploration-ui:has(.world-inspector:not([hidden], .lobby-settings)):not(.is-focus) .gear-actions { display: none !important; }
 }
 
 /* Vehicle choice and colours are the first controls inside their dedicated card. */

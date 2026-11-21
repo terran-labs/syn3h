@@ -44,11 +44,58 @@
 .welcome-shot.is-loaded img { opacity: 1; }
 .welcome-shot.is-failed img { opacity: 1; }
 .welcome-shot figcaption { margin-top: 8px; font-size: 13px; line-height: 1.4; color: var(--w-soft); }
-.welcome-hero { margin-top: 4px; }
-.welcome-pair { display: grid; gap: 16px; }
-.welcome-pair .welcome-shot { margin: 0; }
-@container welcome (min-width: 520px) { .welcome-pair { grid-template-columns: 1fr 1fr; } }
 @media (prefers-reduced-motion: reduce) { .welcome-shot img { transition: none; } }
+
+/* The ring (ring.ts), after terranlabs.com's "Syn3h in Action": the six pictures as cards round a
+   ring in space, seen from in front, turning to bring the next to the front. --w is a card's width;
+   --r the ring's radius, half a card over tan(180 deg / 6), so six cards close the ring. The cards
+   either side reach past the column and are cut at its edges, so nothing scrolls sideways; the
+   perspective lives inside, on the stage, so the cut does not flatten the ring. */
+.welcome-body .welcome-ring {
+  --w: min(64cqi, 420px); --r: calc(var(--w) * .866);
+  display: flex; flex-direction: column; align-items: center; margin: 4px 0 26px; overflow: clip;
+}
+.welcome-ring-stage { width: 100%; padding: 22px 0 18px; perspective: 1500px; perspective-origin: 50% 40%; transform-style: preserve-3d; }
+.welcome-ring-track {
+  position: relative; width: var(--w); aspect-ratio: 16 / 9; margin: 0 auto; padding: 0; list-style: none;
+  transform-style: preserve-3d; transform: translateZ(calc(var(--r) * -1)) rotateY(var(--turn, 0deg)); transition: transform 1.4s cubic-bezier(.22, 1, .36, 1);
+}
+.welcome-ring-track[data-still] { transition: none; }
+.welcome-ring-card {
+  position: absolute; inset: 0; margin: 0; transform: rotateY(var(--at)) translateZ(var(--r)); backface-visibility: hidden;
+  /* Cards further round the ring dim away into the scene. */
+  opacity: max(0, calc(1 - var(--away, 0) * .42)); transition: opacity 1s;
+}
+.welcome-ring-card .welcome-shot { width: 100%; height: 100%; margin: 0; }
+.welcome-ring-card .welcome-shot img { height: 100%; border-radius: 10px; box-shadow: 0 18px 44px -14px rgb(0 0 0 / .75); cursor: pointer; }
+.welcome-ring-card[data-front] .welcome-shot img { cursor: default; }
+/* The caption under the ring speaks for the front card; each figure keeps its own for screen readers. */
+.welcome-ring-card figcaption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* The arrows and, between them, the front card's title and caption. The caption keeps room for its
+   title and two lines, so a long one grows into that room and nothing above it moves. */
+.welcome-ring-foot { display: flex; align-items: flex-start; gap: 12px; width: min(100%, 520px); perspective: 600px; }
+.syn3h-shell .welcome-body.welcome-body p.welcome-ring-caption, .welcome-body p.welcome-ring-caption {
+  display: grid; flex: 1; align-content: start; gap: 2px; margin: 0; max-width: none; text-align: center; transform-origin: 50% 0;
+  height: calc(16px * 1.5 + 2px + 14px * 1.4 * 2);
+}
+.welcome-ring-caption strong { font: 500 16px/1.5 'Barlow', sans-serif; color: var(--w-ink); }
+.welcome-ring-caption span { font-size: 14px; line-height: 1.4; color: var(--w-soft); }
+.syn3h-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow {
+  display: grid; place-items: center; flex: none; width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; margin: 0;
+  border: 1px solid var(--w-quiet); border-radius: 50%; background: rgb(255 255 255 / .05); box-shadow: none; color: var(--w-ink); cursor: pointer;
+  transition: background-color .18s, border-color .18s;
+}
+.syn3h-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow::before { content: none; }
+.syn3h-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow:is(:hover, :focus-visible) { background: rgb(255 255 255 / .12); border-color: var(--w-line); }
+.welcome-ring-arrow svg { width: 18px; height: 18px; }
+.welcome-ring-arrow path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* A narrow column: the cards take more of it, and the caption has room for four lines. */
+@container welcome (max-width: 520px) {
+  .welcome-body .welcome-ring { --w: 72cqi; }
+  .syn3h-shell .welcome-body.welcome-body p.welcome-ring-caption, .welcome-body p.welcome-ring-caption { height: calc(16px * 1.5 + 2px + 13.5px * 1.4 * 4); }
+  .welcome-ring-caption span { font-size: 13.5px; }
+}
+@media (prefers-reduced-motion: reduce) { .welcome-ring-track, .welcome-ring-card { transition: none; } }
 
 /* Lists */
 .welcome-body ol, .welcome-body ul { padding: 0; list-style: none; }

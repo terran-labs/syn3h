@@ -132,7 +132,7 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .syn3h-shell .world-inspector .wi-search { display: block; min-height: 36px; padding: 6px 12px; font: 400 15px 'Barlow', sans-serif; background: rgb(0 0 0 / .28); border: 1px solid rgb(255 255 255 / .14); border-radius: 10px; }
 .syn3h-shell .world-inspector input[type=number] { display: block; min-height: 26px; padding: 2px 6px; font: 400 13px 'Barlow', sans-serif; border-radius: 6px; }
 /* With the cards open on a wide screen the minimap steps left, out from under them. */
-@media (min-width: 901px) { .syn3h-shell:not(.has-touch):has(.world-inspector:not([hidden])) .shell-minimap { right: calc(min(350px, 100vw - 40px) + 36px); } }
+@media (min-width: 901px) { .syn3h-shell:not(.has-touch):has(.world-inspector:not([hidden], .lobby-settings)) .shell-minimap { right: calc(min(350px, 100vw - 40px) + 36px); } }
 /* The show rules above set display: block, which would flatten the stacked readouts. */
 .focus-hud[data-show-style="0"] div[data-style="0"], .focus-hud[data-show-style="1"] div[data-style="1"], .focus-hud[data-show-style="2"] div[data-style="2"] { display: grid; }
 .fh-read small span { font-size: inherit; }
@@ -145,10 +145,10 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 /* On touch the open cards are for editing, not driving: the minimap and the drive controls
    step aside until Create is tapped again, so nothing sits on top of a slider. */
 /* The chat button steps aside too: on a phone it floated over the open cards' controls. */
-:root:has(.syn3h-shell.has-touch .world-inspector:not([hidden])) :is(.touch-controls, .shell-minimap) { opacity: 0; pointer-events: none; transition: opacity .3s ease; }
+:root:has(.syn3h-shell.has-touch .world-inspector:not([hidden], .lobby-settings)) :is(.touch-controls, .shell-minimap) { opacity: 0; pointer-events: none; transition: opacity .3s ease; }
 /* The drive buttons set pointer-events: auto on themselves, so the faded buttons still took
    taps meant for the rail (BRAKE sat over the Sea choice on a phone held sideways). */
-:root:has(.syn3h-shell.has-touch .world-inspector:not([hidden])) .touch-controls * { pointer-events: none; }
+:root:has(.syn3h-shell.has-touch .world-inspector:not([hidden], .lobby-settings)) .touch-controls * { pointer-events: none; }
 @media (max-width: 700px), (max-height: 500px) { .syn3h-shell .world-inspector { top: 58px; right: max(10px, env(safe-area-inset-right)); width: min(340px, calc(100vw - 20px)); max-height: calc(100dvh - 68px); } }
 /* Day length (dayLength.ts): a log slider, the length in minutes, and a line under them saying
    whether the planet's orbit sets it, with a way back to that default. */

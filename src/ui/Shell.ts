@@ -377,13 +377,6 @@ export class Shell implements System {
       quality: this.game.quality, host: this.hostControls, build,
       // The card and a sheet never show together: the card takes over from an open sheet.
       opening: () => { for (const sheet of this.lobbySheets) sheet.close(false) },
-      // The card never covers the wordmark: the one in space, else the flat logo standing in.
-      ceiling: () => {
-        const box = this.galaxy?.wordmarkScreenBox()
-        if (box) return { left: box.x, right: box.x + box.width, bottom: box.y + box.height }
-        const logo = this.element.querySelector('.shell-logo')?.getBoundingClientRect()
-        return logo && logo.height ? { left: logo.left, right: logo.right, bottom: logo.bottom } : null
-      },
       hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', inRoom: () => { const net = hostControls(); return !!net && (net.isHost || canEditWorld()) }, cue: () => this.audio.cue('click'),
     })
     this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock, this.lobbySettings.versionDock)
@@ -399,7 +392,7 @@ export class Shell implements System {
       // The buttons go back to their corner of the lobby.
       const dock = this.lobbySettings.dock
       this.element.querySelector('.galaxy-ui')!.append(dock); dock.classList.remove('is-beside-sheet')
-      for (const button of [this.lobbySettings.about, this.lobbySettings.updates]) { button.classList.remove('is-current'); button.removeAttribute('aria-current') }
+      this.lobbySettings.about.classList.remove('is-current'); this.lobbySettings.about.removeAttribute('aria-current')
       if (this.galaxy) { this.galaxy.markLift = 0; this.galaxy.worlds = 1 }
       if (this.galaxy && this.panels.active === 'index' && !this.playing) this.galaxy.backdrop = 1
     }
@@ -408,11 +401,10 @@ export class Shell implements System {
     // The Welcome guide's content (src/ui/welcome): mounted on first open, its images loading on each.
     this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'Welcome', edges, following, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { this.lobbyWelcome = mountWelcome(body, { where: 'lobby' }) }, opened: () => this.lobbyWelcome?.opened() })
     this.updatesSheet = new LobbySheet(this.element, {
-      name: 'updates', title: 'Updates', edges, following, home: () => this.lobbySettings.updates, closed, cue: () => this.audio.cue('click'),
+      name: 'updates', title: 'Updates', edges, following, home: () => this.lobbySettings.version, closed, cue: () => this.audio.cue('click'),
       fill: body => body.insertAdjacentHTML('beforeend', updatesSheetHtml()), opened: body => { void fillUpdates(body.querySelector<HTMLElement>('.about-updates')!) },
     })
     this.lobbySettings.about.addEventListener('click', () => this.openLobbySheet(this.aboutSheet), { signal })
-    this.lobbySettings.updates.addEventListener('click', () => this.openLobbySheet(this.updatesSheet), { signal })
     // Settings opens its own right-hand card (LobbySettings handles its button).
     // The top row (the owner, 17 November 2026): exactly three controls, side by side with no
     // plate around them, sized like a card's title row so the row reads as the first of the
@@ -639,7 +631,7 @@ export class Shell implements System {
     if (this.playing) return
     // Its own button again: close it, as the gear always has.
     if (sheet.isOpen) { sheet.close(); return }
-    const home = sheet === this.aboutSheet ? this.lobbySettings.about : this.lobbySettings.updates
+    const home = sheet === this.aboutSheet ? this.lobbySettings.about : this.lobbySettings.version
     this.lobbySettings.close(false)
     const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body && !document.activeElement.closest('dialog.lobby-sheet') ? document.activeElement : home
     // Another sheet already up: it hands over and this one takes its place, so the panel stays
@@ -652,9 +644,8 @@ export class Shell implements System {
     // the open one is marked.
     const dock = this.lobbySettings.dock
     sheet.element.append(dock); dock.classList.add('is-beside-sheet')
-    for (const [button, owner] of [[this.lobbySettings.about, this.aboutSheet], [this.lobbySettings.updates, this.updatesSheet]] as const) {
-      button.classList.toggle('is-current', owner === sheet); if (owner === sheet) button.setAttribute('aria-current', 'true'); else button.removeAttribute('aria-current')
-    }
+    const about = this.lobbySettings.about, isAbout = sheet === this.aboutSheet
+    about.classList.toggle('is-current', isAbout); if (isAbout) about.setAttribute('aria-current', 'true'); else about.removeAttribute('aria-current')
     sheet.open(opener, !!current)
   }
   openAbout(tab?: AboutTab): void {
@@ -909,6 +900,9 @@ export class Shell implements System {
     this.releaseCursor()
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
+    // The in-play controls go with play: left attached, the Panels control rose over the lobby
+    // whenever the lobby's settings card (a .world-inspector too) opened on a touch screen.
+    for (const selector of ['.shell-hud', '.hud-navigation']) this.element.querySelector<HTMLElement>(selector)!.hidden = true
   }
   /** A room welcome may replace the selected planet. Compile against the settled world. */
   private async waitForEntryWorld() {
@@ -1928,7 +1922,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-close, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
     // In the panels, only the two plain actions are buttons in this sense; the rest are rows, switches and choices.
     for (const button of this.element.querySelectorAll<HTMLElement>('.rail-invite, .rail-about')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
