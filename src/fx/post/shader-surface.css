@@ -177,3 +177,55 @@ input[data-glass-surface="shader"]::placeholder {
   color: var(--button-glass-ink) !important;
   text-shadow: none !important;
 }
+
+/* On phones the galaxy supplies the dim field before shading the card. */
+html .lobby-settings-host:has(#lobby-settings[data-glass-surface="shader"])::before { display: none; }
+html #lobby-settings[data-glass-surface="shader"] {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  --s3-ink: #111;
+  --s3-dim: #18191a;
+  --s3-soft: #18191a;
+  --halo-under: none;
+  color: var(--s3-ink);
+  text-shadow: none;
+}
+html #lobby-settings[data-glass-surface="shader"] :is(.wi-head, .wi-head h3, .wi-sum, .wi-label, button, label, input, output, small) {
+  color: var(--s3-ink);
+  text-shadow: none;
+  box-shadow: none;
+}
+html #lobby-settings[data-glass-surface="shader"] :is(.wi-group, .wi-row, .wi-seg, .wi-card, .wi-glass) {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+html #lobby-settings[data-glass-surface="shader"] button.is-on {
+  color: #161618;
+  background: #e8e8ea;
+}
+@media (prefers-color-scheme: dark) {
+  html #lobby-settings[data-glass-surface="shader"] { --s3-ink: white; --s3-dim: #fafafa; --s3-soft: #fafafa; }
+}
+
+html #lobby-settings[data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
+  color: #666;
+  mix-blend-mode: difference;
+}
+@media (prefers-color-scheme: dark) {
+  html #lobby-settings[data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
+    color: #4d4d4d;
+    mix-blend-mode: plus-lighter;
+  }
+}
+
+@media (max-width: 700px), (max-height: 500px) and (pointer: coarse) {
+  /* World names and the version are DOM siblings above the galaxy canvas. */
+  html .syn3h-shell:has(#lobby-settings[data-glass-surface="shader"]) .galaxy-ui {
+    opacity: .22;
+  }
+}

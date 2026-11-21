@@ -74,7 +74,7 @@ function glassNotices(): Plugin {
     name: 'glass-distribution-notices',
     generateBundle(_options, bundle) {
       for (const chunk of Object.values(bundle)) {
-        if (chunk.type === 'chunk' && chunk.moduleIds.some(id => id.endsWith('/liquid-glass/regular.ts'))) {
+        if (chunk.type === 'chunk' && chunk.moduleIds.some(id => id.endsWith('/liquid-glass/regular.ts') || id.split('?')[0].endsWith('/liquid-glass/lobby.frag.glsl'))) {
           chunk.code += '\n/*! Adapted from liquidglass, Copyright 2026 Shayan, Apache-2.0. See liquid-glass/NOTICE.md and liquid-glass/licenses/ beside this file. */\n'
         }
       }

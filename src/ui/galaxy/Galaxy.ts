@@ -9,6 +9,7 @@
  * lobby graphics it draws at most thirty times a second, stops in a hidden tab, and gives
  * its WebGL context back when disabled.
  */
+import { createGalaxyGlass, type GalaxyGlass } from './glassAdapter'
 import { PresenceFeed, type Populations } from './presence'
 import { FIELD_UNIT, LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
@@ -860,6 +861,7 @@ export class Galaxy {
   private population: Populations = new Map()
   private logo: LogoRenderer | null = null
   private logoSeen = false
+  private glass?: GalaxyGlass
   private gl: WebGL2RenderingContext | null = null
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
   /** Painted maps keyed by world, recipe, seed, snapshot and size; kept across context loss. */
@@ -1201,6 +1203,7 @@ export class Galaxy {
     }, { capture: true, passive: true, signal })
     canvas.addEventListener('webglcontextlost', event => {
       if (this.canvas !== canvas || this.gl !== gl) return
+      this.glass?.dispose(); this.glass = undefined
       event.preventDefault(); cancelAnimationFrame(this.frame); this.options.onLogo?.(false); this.markOverlay?.hide()
       // Until the context comes back (then the name in the scene returns with it), the page's own SVG mark shows.
       startupTiming.wordmarkFallback = 'the lobby WebGL2 context was lost'
@@ -1231,9 +1234,13 @@ export class Galaxy {
       this.distance = this.reach = openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
       if (this.host.clientHeight > this.host.clientWidth * 1.2 && !this.reduced.matches) this.pitch = PORTRAIT_PITCH
     }
-    this.paintMaps(); this.resize(); this.loop(0)
+    this.paintMaps(); this.resize()
+    try { this.glass = createGalaxyGlass?.(gl, canvas) }
+    catch (error) { console.warn('Lobby glass unavailable; keeping CSS.', error) }
+    this.loop(0)
   }
   private release(): void {
+    this.glass?.dispose(); this.glass = undefined
     this.markStart = null; this.markRig.pose = null; this.leaving = null
     // An opening cut short here must not leave the lobby's controls held back.
     if (this.opening) { this.opening = null; this.chrome(null) }
@@ -1483,7 +1490,7 @@ export class Galaxy {
     this.markShown = mark.placement ? mark.opacity * reveal.mark * (1 - this.dive) : 0
     // Held still, draw only while something is moving; the last frame stays on the canvas.
     const moving = glowMoving || this.opening !== null || this.returning !== null || (this.leaving !== null && performance.now() - this.leaving < LEAVING_SECONDS * 1000 + 100) || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.worldsShown !== this.worlds || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
-    if (still && !moving && this.wake <= 0) { this.idle++; return }
+    if (still && !moving && !this.glass?.dirty && this.wake <= 0) { this.idle++; return }
     // A flight held before launch (leaving a world, waiting behind the game) shows one still
     // frame of the world's air: draw it, and the maps as they arrive, and nothing more.
     const held = this.flight?.start === Infinity
@@ -1567,6 +1574,7 @@ export class Galaxy {
       this.markOverlay?.update(box, logo.markOpacity)
       this.logoSeen = true; this.options.onLogo?.(true)
     }
+    this.glass?.draw(qualityShed(2) < 1)
     this.frames++
     // Tell the labels where the worlds are, and notice arrival.
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]

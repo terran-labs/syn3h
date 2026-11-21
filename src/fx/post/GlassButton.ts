@@ -1,4 +1,4 @@
-import { paintedInset, GlassMotionClock } from './paintedSurface'
+import { paintedInset, GlassMotionClock } from '../../liquid-glass/paintedSurface'
 import { BrakeGlassPress } from './BrakeGlassPress'
 import { longFrames } from '../../core/longFrames'
 import { Vector4 } from 'three/webgpu'

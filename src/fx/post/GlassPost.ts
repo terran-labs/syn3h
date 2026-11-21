@@ -6,6 +6,8 @@ import { composeGlass } from '../../liquid-glass/compose'
 import { createGlassGaussian } from '../../liquid-glass/gaussian'
 import { gameplayGlassSlots, GlassButton } from './GlassButton'
 import { GlassLabelInk } from './glassLabelInk'
+import { createLobbyGlass } from '../../liquid-glass/lobby'
+import { installGalaxyGlass } from '../../ui/galaxy/glassAdapter'
 import { GlassTiming } from './glassTiming'
 import './shader-surface.css'
 
@@ -54,7 +56,9 @@ export class GlassPost {
   private readonly buffer = new THREE.Vector2()
   private renderer?: THREE.WebGPURenderer
 
-  constructor(private readonly mode: string) {}
+  constructor(private readonly mode: string) {
+    if (mode === 'inline') installGalaxyGlass((gl, canvas) => createLobbyGlass(gl, canvas, () => nativeInk.value))
+  }
 
   build(out: N, color: N, renderer: THREE.WebGPURenderer, toneMap: THREE.ToneMapping, velocity: N,
     temporalNode: N, scenePass: N, disposables: { dispose?(): void }[]) {
