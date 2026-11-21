@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { type Peer, Room } from '../../server/room'
-import { BOT_ID_BASE, PROTOCOL_VERSION, type ServerMessage, type WireState, encodeState } from '../../shared/protocol'
+import { BOT_ID_BASE, FLAG_PAUSED, FLAG_USER_PAUSE, PROTOCOL_VERSION, type ServerMessage, type WireState, decodeState, encodeState } from '../../shared/protocol'
 import { emptyInputLike } from './helpers'
 
 class FakePeer implements Peer {
@@ -40,7 +40,7 @@ const send = (peer: Peer, msg: object) => room.receive(peer, JSON.stringify(msg)
 const hostNow = () => { const peer = new FakePeer(); room.connect(peer); room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name: 'Probe', params: {} })); const host = peer.last('welcome')!.game.host; room.disconnect(peer); return host }
 
 /** How each player behaves while time passes: playing, parked (a paused state each second) or silent. */
-type Mode = 'play' | 'park' | 'silent'
+type Mode = 'play' | 'park' | 'userpark' | 'silent'
 /** Advance time in quarter seconds; a playing player sends a state every step, a parked one every second. */
 function run(ms: number, players: [Joined, Mode][]) {
   for (let t = 0; t < ms; t += 250) {
@@ -48,6 +48,7 @@ function run(ms: number, players: [Joined, Mode][]) {
     for (const [p, mode] of players) {
       if (mode === 'play') room.receive(p.peer, state())
       else if (mode === 'park' && clock % 1000 === 0) room.receive(p.peer, state({ paused: true }))
+      else if (mode === 'userpark' && clock % 1000 === 0) room.receive(p.peer, state({ paused: true, userPaused: true }))
     }
     room.tick()
   }
@@ -238,5 +239,46 @@ describe('Room host handover while the host is away', () => {
     run(5000, [[{ peer: pa, id: a.id }, 'play'], [{ peer: pb, id: b.id }, 'play']])
     expect(pb.hosts()).toEqual([])
     expect(hostNow()).toBe(a.id)
+  })
+
+  it('gives a host\'s own pause 20 s before passing host on, a hidden page 3 s', () => {
+    // The player's own pause (a screenshot, the door): the room is still theirs at 19 s.
+    const { a, b } = two()
+    run(1000, [[a, 'userpark'], [b, 'play']])
+    run(19_000, [[a, 'userpark'], [b, 'play']])
+    expect(b.peer.hosts()).toEqual([])
+    run(1500, [[a, 'userpark'], [b, 'play']])
+    expect(b.peer.hosts()).toEqual([b.id])
+    // A hidden page, or a client too old to say which pause it is: 3 s, as before.
+    clock = 100_000
+    room = new Room('handover-hidden', { now: () => clock })
+    const c = join('C', { 'game.rejoin': false }), d = join('D')
+    run(1000, [[c, 'play'], [d, 'play']])
+    run(5000, [[c, 'park'], [d, 'play']])
+    expect(d.peer.hosts()).toEqual([d.id])
+  })
+
+  it('a host back from its own pause within the grace keeps host', () => {
+    const { a, b } = two()
+    run(15_000, [[a, 'userpark'], [b, 'play']])
+    run(30_000, [[a, 'play'], [b, 'play']])
+    expect(b.peer.hosts()).toEqual([])
+    expect(hostNow()).toBe(a.id)
+  })
+})
+
+describe('the paused heartbeat says which pause it is', () => {
+  const base = { id: 1, t: 0, p: [0, 0, 0] as [number, number, number], q: [0, 0, 0, 1] as [number, number, number, number], v: [0, 0, 0] as [number, number, number], w: [0, 0, 0] as [number, number, number], input: emptyInputLike() }
+  it('carries FLAG_USER_PAUSE only with FLAG_PAUSED, and an old client\'s pause reads as hidden', () => {
+    const user = decodeState(encodeState({ ...base, paused: true, userPaused: true }))!
+    expect(user.paused).toBe(true)
+    expect(user.userPaused).toBe(true)
+    const hidden = decodeState(encodeState({ ...base, paused: true }))!
+    expect(hidden.paused).toBe(true)
+    expect(hidden.userPaused).toBeUndefined()
+    // Not paused: the bit is never sent, so a running state never claims a pause.
+    const running = encodeState({ ...base, userPaused: true })
+    expect(decodeState(running)!.userPaused).toBeUndefined()
+    expect(FLAG_USER_PAUSE & FLAG_PAUSED).toBe(0)
   })
 })

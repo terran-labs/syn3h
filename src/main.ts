@@ -330,8 +330,8 @@ async function main(): Promise<void> {
     connection.onRoomClock((now) => { setWeatherClock(now); setDayClock(now) })
     // The room hears about a pause for either reason: the paused heartbeat (one message a
     // second) is the one thing that keeps running, so others see "paused", not a dropout.
-    pause.subscribe((paused) => connection.setPaused(paused))
-    connection.setPaused(pause.paused)
+    pause.subscribe((paused, reason) => connection.setPaused(paused, reason))
+    connection.setPaused(pause.paused, pause.reason)
     // Chat (src/ui/chat): the last card in the sidebar's stack, and a strip of new lines over
     // the game. Y, the card's header and the left column's Chat row open it.
     const chat = new ChatCard({

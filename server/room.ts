@@ -220,11 +220,18 @@ const BOT_EXPIRY_MS = 5000
  * to a guest who is playing; otherwise every guest watches the bots freeze, and the room only
  * notices when the connection goes silent (SILENT_MS, three minutes). Stopped means its states
  * are flagged paused (src/net/PausedHeartbeat.ts: the game loop is stopped by the player's own
- * pause or a hidden page) or it has sent no state at all (a frozen or stalled page). Opening
- * Settings or running the performance check keeps the loop and its states running, so they do
- * not count. Shorter than BOT_EXPIRY_MS, so the bots move to the new host before they expire.
+ * pause or a hidden page; see HOST_USER_PAUSE_MS for the former) or it has sent no state at all
+ * (a frozen or stalled page). Opening Settings or running the performance check keeps the loop
+ * and its states running, so they do not count. Shorter than BOT_EXPIRY_MS, so the bots move to
+ * the new host before they expire.
  */
 const HOST_AWAY_MS = 3000
+/**
+ * The same for a host stopped by its own pause (FLAG_USER_PAUSE): long enough to take a
+ * screenshot or answer the door without losing the room's lock, settings and mode. Its bots
+ * stand still meanwhile. Infinity would keep host through any user pause.
+ */
+const HOST_USER_PAUSE_MS = 20_000
 /**
  * In tag, "it" moves on when its holder has been away this long (phone locked, tab hidden,
  * connection gone quiet). Otherwise one person putting their phone down stops the game for
@@ -1782,14 +1789,16 @@ export class Room {
     let since: number
     if (st.paused) since = this.hostPausedSince ||= now
     else { this.hostPausedSince = 0; since = Math.max(host.lastStateAt, host.joinedAt, this.startedAt) }
-    if (now - since <= HOST_AWAY_MS) return
+    // The player's own pause gets the longer grace; a hidden page, silence, and an older client's
+    // pause (it does not say which) get the short one.
+    if (now - since <= (st.paused && st.userPaused ? HOST_USER_PAUSE_MS : HOST_AWAY_MS)) return
     let next: Player | undefined
     for (const p of this.players.values()) {
       if (p === host || p.heldUntil || p.info.bot || p.info.play === false) continue
       if (p.lastState && !p.lastState.paused && now - p.lastStateAt <= RESPONDING_MS) { next = p; break }
     }
     if (!next) return
-    logEvent('host_away', { room: this.tag, from: host.info.id, to: next.info.id, reason: st.paused ? 'paused' : 'silent', ms: now - since })
+    logEvent('host_away', { room: this.tag, from: host.info.id, to: next.info.id, reason: st.paused ? (st.userPaused ? 'user_pause' : 'hidden') : 'silent', ms: now - since })
     this.hostPausedSince = 0
     // As on leave: a race needs its host's simulation, and the bots belong to the old host.
     this.cancelRace('Host away')
