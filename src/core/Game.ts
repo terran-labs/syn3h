@@ -446,12 +446,14 @@ export class Game {
             }
           }
         }
+        this.postChain?.setCovered?.(this.holdDraws)
         const submit = () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
         runGuarded(this.renderer as unknown as GuardedRenderer, () => {
           if (batch) batch.run(discover, submit)
           else submit()
         })
       } finally {
+        this.postChain?.setCovered?.(false)
         for (let j = hidden.length - 1; j >= 0; j--) hidden[j].visible = false
         for (const o of culled) o.frustumCulled = true
         if (vehicleKind) recordCoveredVehicleDraw(vehicleKind, performance.now() - drawStart)

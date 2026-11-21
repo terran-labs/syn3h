@@ -27,6 +27,9 @@ const base = process.argv[2]
 const tolerateDeviceLoss = process.env.SYN3H_CHECK_TOLERATE_DEVICE_LOSS === '1'
 // The WebGPU device-loss family, as three and Chrome word it on a machine without a GPU.
 const DEVICE_LOSS = /WebGPU Device Lost|Instance dropped|A valid external Instance reference no longer exists/
+// Most device-loss lines a hosted run may tolerate. v26.11.2009's hosted run had 2 (one per page);
+// runs from 1707 to 1906 had 6. 8 leaves that margin; 2001 to 2008 had 204 to 406 before the fixes.
+const MAX_DEVICE_LOSS = 8
 if (!base) { console.error('usage: node tools/public-check.mjs <public url>'); process.exit(2) }
 const room = `check${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
 const results = [], errors = [], crashed = [], browsers = [], consoleLines = []
@@ -163,8 +166,17 @@ try {
 }
 const tolerated = tolerateDeviceLoss ? errors.filter((e) => DEVICE_LOSS.test(e)) : []
 const counted = errors.filter((e) => !tolerated.includes(e))
-if (tolerated.length) console.log(`TOLERATED ${tolerated.length} WebGPU device-loss page errors (SYN3H_CHECK_TOLERATE_DEVICE_LOSS): ${JSON.stringify(tolerated.slice(0, 5).map((e) => e.slice(0, 200)))}`)
-check('no page errors', counted.length === 0, { count: counted.length, tolerated: tolerated.length, first: counted.slice(0, 5).map((e) => e.slice(0, 300)) })
+// Group the tolerated lines by message (numbers stripped, first 160 characters) so a new kind of
+// device-loss line shows with its count instead of hiding past the first few samples.
+const groups = new Map()
+for (const e of tolerated) { const k = e.replace(/\d+/g, 'N').slice(0, 160); groups.set(k, (groups.get(k) ?? 0) + 1) }
+if (tolerated.length) {
+  console.log(`TOLERATED ${tolerated.length} WebGPU device-loss page errors (SYN3H_CHECK_TOLERATE_DEVICE_LOSS), by message:`)
+  for (const [k, n] of [...groups].sort((x, y) => y[1] - x[1])) console.log(`  ${n} x ${JSON.stringify(k)}`)
+}
+// Past the cap, device loss is no longer the runner's ordinary loss but something we added.
+const maxTolerated = Number(process.env.SYN3H_CHECK_MAX_DEVICE_LOSS ?? MAX_DEVICE_LOSS)
+check('no page errors', counted.length === 0 && tolerated.length <= maxTolerated, { count: counted.length, tolerated: tolerated.length, maxTolerated, first: counted.slice(0, 5).map((e) => e.slice(0, 300)) })
 await Promise.all(browsers.map((x) => x.close()))
 
 const crashedRun = crashed.length > 0

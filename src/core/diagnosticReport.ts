@@ -7,7 +7,7 @@ import type { VehicleKind } from '../vehicles'
 
 /** Read existing session state synchronously so copying also works offline. */
 export function diagnosticReport(snapshot: PerformanceSnapshot, vehicle: VehicleKind, bots: readonly string[], world: string, biome: string,
-  network: string | undefined, transitions: readonly { from: number; to: number; by: string }[]): string {
+  network: string | undefined, transitions: readonly { from: number; to: number; by: string }[], music?: string): string {
   const levels = transitions.filter(change => change.by === 'governor')
     .map(change => `${change.from}>${change.to}`).join(', ')
   const counts = new Map<string, number>()
@@ -25,5 +25,6 @@ export function diagnosticReport(snapshot: PerformanceSnapshot, vehicle: Vehicle
     '', ...startupReportLines(), '', ...shaderReportLines(),
     '', `World: ${world}, biome ${biome}`, `Play: ${vehicle}, ${bots.length} bots${fleet.length ? ' (' + fleet.join(', ') + ')' : ''}`, ...longFrames.playReportLines(),
     '', network ?? 'Room connection: not joined, drops 0, rejoins 0, RTT unavailable',
+    ...(music ? [music] : []),
   ].join('\n')
 }

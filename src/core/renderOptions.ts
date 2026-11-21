@@ -145,6 +145,8 @@ export function viewState(shell: { contains(name: string): boolean } | null | un
  * and puts the result on screen. Game knows nothing about any effect.
  */
 export interface PostChain<Renderer = unknown, Scene = unknown, Camera = unknown> {
+  /** Mark draws covered by the entry overlay, where optional effects can compile. */
+  setCovered?(covered: boolean): void
   /** Draw this frame to the screen. `frameMs` is the time since the previous frame. */
   render(renderer: Renderer, scene: Scene, camera: Camera, frameMs: number): void
 }

@@ -94,18 +94,24 @@ async function open(name, extra = '') {
   browsers.push(browser)
   const ctx = await browser.newContext({ viewport: SMOKE_VIEWPORT })
   await ctx.addInitScript((q) => localStorage.setItem('syn3h.quality.v2', JSON.stringify(q)), SMOKE_QUALITY)
-  // No score worklets on smoke pages (the Foreman, 20 November 2026). Headless Chrome 157 under a
-  // loaded release run kills the renderer now and then with a CHECK on its "Realtime AudioWorklet
-  // thread" (EXC_BREAKPOINT): 37 crash dumps from test browsers since 15 November, most at this
-  // smoke's ram step, cause unknown and not reproduced in 60 isolated rams. That thread exists
-  // only once a page asks for an AudioWorklet module, so the request is refused before it is made
-  // (refusing only the file would come after Chrome has started the thread). The score
-  // (src/audio/score) already plays on without its worklet voices when a module fails to load.
-  // The smoke checks networking and rules, not music. Evidence and how to read a dump:
-  // ops/KNOWN-ISSUES.md.
+  // No audio rendering on smoke pages (the Foreman, 20 November 2026). Headless Chrome 157 under a
+  // loaded release run kills a renderer now and then with a CHECK on whichever thread renders the
+  // page's Web Audio ("Realtime AudioWorklet thread" with worklets loaded, "AudioOutputDevice"
+  // without): 39 crash dumps from test browsers since 15 November, most at this smoke's ram step,
+  // cause unknown. Refusing only the worklets moved it to AudioOutputDevice. So every
+  // AudioContext is kept suspended, which stops Chrome's rendering callbacks (a probe: 46 a second
+  // running, none suspended), and the game, which builds its audio only once its context runs,
+  // never builds it. The smoke checks networking and rules, not sound: its audio checks record the
+  // game's calls through spyAudio below, which needs no running context. ops/KNOWN-ISSUES.md.
   await ctx.addInitScript(() => {
-    if (typeof AudioWorklet === 'undefined') return
-    AudioWorklet.prototype.addModule = () => Promise.reject(new DOMException('net-smoke: no AudioWorklet modules', 'AbortError'))
+    for (const name of ['AudioContext', 'webkitAudioContext']) {
+      const Native = window[name]
+      if (!Native) continue
+      window[name] = class extends Native {
+        constructor(...args) { super(...args); super.suspend().catch(() => {}) }
+        resume() { return Promise.resolve() }
+      }
+    }
   })
   // A memory sample every 5 s, for the crash report below (Chrome's performance.memory).
   await ctx.addInitScript(() => setInterval(() => { const m = performance.memory; if (m) console.debug(`SMOKE-MEM ${Math.round(m.usedJSHeapSize / 1048576)} MB of ${Math.round(m.jsHeapSizeLimit / 1048576)} MB`) }, 5000))

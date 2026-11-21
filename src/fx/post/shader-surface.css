@@ -1,0 +1,21 @@
+/* The renderer sets this only after submitting the surface. Keep the real
+   button for input, its label and its focus ring. Clearing the attribute
+   restores the complete CSS material in the same frame. */
+.liquid-glass[data-glass-surface="shader"] { background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+.liquid-glass[data-glass-surface="shader"]::before,
+.liquid-glass[data-glass-surface="shader"]::after { opacity: 0; }
+
+/* Keep the native input box fixed. Rasterize the label at its largest size
+   and scale it down around the centre with the same value as the lens. */
+.liquid-glass[data-glass-surface="shader"][data-glass-press="brake"] { transform: none; }
+.liquid-glass[data-glass-surface="shader"][data-glass-press="brake"] > .brake-glass-label {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  grid-template-columns: minmax(0, 1fr); white-space: nowrap;
+  font-size: 134.2857%; line-height: 1; text-shadow: none; pointer-events: none;
+}
+
+/* The sunk-buggy cue animates these two native DOM layers along with its
+   outline and shadow. Keep them visible while the pair supplies the body. */
+.liquid-glass[data-glass-paired].is-cued::before,
+.liquid-glass[data-glass-paired].is-cued::after { opacity: 1; }

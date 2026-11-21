@@ -1,6 +1,15 @@
 import type { WebGPURenderer } from 'three/webgpu'
 
-interface RenderObject { pipeline: object; geometry: object; scene: object }
+const composites = new WeakSet<object>()
+
+/** Three's final output mesh has its own scene. The terminal composite and its dedicated
+ * blur passes may join discovery together. Other texture generators still submit in order. */
+export function registerCoveredComposite(pipeline: object) {
+  const mesh = (pipeline as { _quadMesh?: object })._quadMesh
+  if (mesh) composites.add(mesh)
+}
+
+interface RenderObject { object: object; pipeline: object; geometry: object; scene: object }
 interface CoveredBackend {
   device?: GPUDevice
   parallel?: unknown
@@ -41,11 +50,11 @@ export class CoveredPipelines {
       backend.createRenderPipeline = function (object, promises) {
         // A one-shot texture generator can run inside the traversal. It needs its
         // pixels immediately. Only defer geometry from the world and its caster passes.
-        return create.call(this, object, object.scene === scene ? promises ?? requests : promises)
+        return create.call(this, object, object.scene === scene || composites.has(object.object) ? promises ?? requests : promises)
       }
       const batch = this
       backend.draw = function (object, ...args) {
-        if (object.scene !== scene) return submit.call(this, object, ...args)
+        if (object.scene !== scene && !composites.has(object.object)) return submit.call(this, object, ...args)
         const previous = batch.confirmed.get(object)
         if (!previous || previous.pipeline !== object.pipeline || previous.geometry !== object.geometry) batch.needsConfirmation = true
       }
@@ -54,7 +63,7 @@ export class CoveredPipelines {
       backend.draw = function (object, ...args) {
         // The first real submission of each object and pipeline still reaches the
         // driver. The unchanged world need not be rasterised once per parked pose.
-        if (object.scene !== scene) return submit.call(this, object, ...args)
+        if (object.scene !== scene && !composites.has(object.object)) return submit.call(this, object, ...args)
         const previous = seen.get(object)
         if (previous?.pipeline === object.pipeline && previous.geometry === object.geometry) return
         submit.call(this, object, ...args)

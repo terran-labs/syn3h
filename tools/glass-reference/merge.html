@@ -1,0 +1,16 @@
+<!doctype html>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Glass container comparison</title>
+<style>
+body { margin: 0; font: 16px system-ui }
+#chart { position: relative; width: 328px; height: 160px }
+#chart > canvas, #chart > .shape { position: absolute }
+.shape { padding: 0; border: 0; border-radius: 999px }
+#circle { width: 60px; height: 60px; top: 50px; left: 50px }
+#pill { width: 140px; height: 48px; top: 56px; left: 142px }
+label { display: block; padding: .4em }
+</style>
+<div id="chart" data-glass-container><canvas></canvas><button class="shape liquid-glass" id="circle" aria-label="Circle"></button><button class="shape liquid-glass" id="pill" aria-label="Pill"></button></div>
+<label>Gap in points <input type="number" id="gap" value="32" step=".1"></label>
+<label>Background <input type="file" id="image" accept="image/*"></label>
+<script type="module" src="./merge-demo.ts"></script>

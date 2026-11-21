@@ -1,3 +1,4 @@
+import type { GlassPost } from './GlassPost'
 import { longFrames } from '../../core/longFrames'
 /**
  * The in-game post chain: what turns the rendered world into the picture.
@@ -260,7 +261,8 @@ export class PostChain {
   private readonly burst = createBurstUniforms()
   private burstClock = 0
 
-  constructor(private readonly host: PostChainHost, private readonly sun: SunSource) {}
+  setCovered(covered: boolean): void { if (this.glass) this.glass.covered = covered }
+  constructor(private readonly host: PostChainHost, private readonly sun: SunSource, private readonly glass?: GlassPost) {}
 
   /** Exact post context for covered draw deduplication. Also records equivalent preset levels. */
   coveredVariantKey(preset: PostGraphPreset): string | undefined {
@@ -282,7 +284,8 @@ export class PostChain {
 
   /** Submit one production draw under the target post graph, including on a graph cache hit. */
   async warmCovered(warm: Pick<CoveredWarm, 'draw' | 'yieldFrame'>, preset: PostGraphPreset): Promise<void> {
-    if (this.disposed) return
+    // Experimental glass owns one active composite and cannot park its controls or blur passes.
+    if (this.disposed || this.glass) return
     if (this.warming) throw new Error('Post graph warm is already in progress')
     this.warming = true
     const generation = this.generation
@@ -407,7 +410,8 @@ export class PostChain {
     if (built.raysTex) built.raysTex.autoUpdate = sunLit && shaftAmount > 0
     this.setVolumetricCloudsActive(built.clouds)
     try {
-      built.pipeline.render()
+      if (this.glass?.built) this.glass.render(built.pipeline)
+      else built.pipeline.render()
       if (reusing) this.restoredTargets += built.targets.filter(target => target.width > 1 || target.height > 1).length
     } catch (error) {
       this.setVolumetricCloudsActive(false)
@@ -456,7 +460,7 @@ export class PostChain {
 
   /** Return whether this frame is reactivating previously parked targets. */
   private activateGraph(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, spec: GraphSpec): boolean {
-    if (this.built?.key === spec.key) return false
+    if (this.built?.key === spec.key && !(this.glass?.covered && !spec.debug && !this.glass.built)) return false
     const previous = this.built
     const hit = this.standby.get(spec.key)
     if (hit) {
@@ -568,6 +572,7 @@ export class PostChain {
   }
 
   private retire(graph: Built, nextTier?: PostTier): void {
+    if (this.glass) { this.glass.release(); this.disposeGraph(graph); return }
     const known = this.host.quality.getQualityState?.()
     if (known ? this.isNeighborKey(graph.key) : graph.tier === 'lite' && nextTier === 'lite') this.park(graph)
     else this.disposeGraph(graph)
@@ -610,6 +615,7 @@ export class PostChain {
   }
 
   private clearGraphs(): void {
+    this.glass?.release()
     this.setVolumetricCloudsActive(false)
     if (this.built) this.disposeGraph(this.built)
     for (const graph of this.standby.values()) this.disposeGraph(graph)
@@ -620,6 +626,7 @@ export class PostChain {
   }
 
   dispose(): void {
+    this.glass?.dispose()
     this.disposed = true
     this.release()
     this.scope = null
@@ -1011,11 +1018,15 @@ export class PostChain {
     })
 
     let out: N = graded()
+    if (this.glass?.covered && !debug) {
+      out = this.glass.build(out, color, renderer, toneMap, velocity, temporalNode, scenePass, disposables)
+    }
     // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
     if (debug === 1 && aoNode) out = vec4(vec3(aoNode.getTextureNode().sample(uv()).r), 1)
     if (debug === 2 && contactTex) out = vec4(vec3(contactTex), 1)
     if (debug === 3 && raysRef) out = vec4(raysRef.sample(uv()).r, maskRef.sample(uv()).a, 0, 1)
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
+    this.glass?.register(pipeline)
     pipeline.outputColorTransform = false
     this.builds++
     return { key, tier, pipeline, disposables, targets: ownedTargets(disposables), maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }

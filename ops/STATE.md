@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-20 04:45 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-20 06:50 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,15 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2007 (release-72, sparse room handshake), source 8b912d56, frozen copy
-20261120-043443-8b912d56, Worker version 5b1f70d2, at https://www.syn3h.com/ since 20 November 04:39 PST.
+Live: v26.11.2010 (release-75), source 4a6c1477, frozen copy 20261120-063703-4a6c1477,
+Worker version 5931b73d, at https://www.syn3h.com/ since 20 November 06:41 PST.
+2010 carries an experimental glass shader, off by default (?glass=inline opts in; chunk GlassPost),
+with assets/liquid-glass/ serving the Apache-2.0 licence, the upstream NOTICE and our NOTICE.md.
+The hosted public check caps tolerated device-loss lines at 8 (tools/public-check.mjs) and prints
+them grouped by message; 2009 and 2010 had 2.
+2009 counts shader-diagnostics rejections after a known loss into the one summary; the hosted check
+then tolerated 2 device-loss lines (204 on 2008). Smoke pages keep every AudioContext suspended since
+2009 (the renderer crash was Chrome's own audio rendering under load); crash budget still two.
 Hello and welcome carry only world settings that differ from their defaults. Staging: a late joiner
 after 4 bots took a 999-character welcome (a 2006 page 3,214); mixed room with 26.11.2006 7 of 7.
 Staging's mixed room with a frozen 26.11.2005 client passed 7 of 7.
@@ -97,6 +104,9 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2005 | 70 | m-bundle-2005 | held charges on time, matching beams in mist, sun rays through gaps, bounded missing-file search |
 | v26.11.2006 | 71 | m-grapple-2006 | strike your grappler to cut the cord; let-go cords whip back; missed hooks sail off |
 | v26.11.2007 | 72 | m-handshake-2007 | lighter joining: only non-default settings sent; oversized messages warn |
+| v26.11.2008 | 73 | m-loss-2008 | Reload promptly when graphics fail during loading; re-entry reuses its preparation |
+| v26.11.2009 | 74 | m-quiet-2009 | after a lost graphics device, shader diagnostics stay quiet on the page |
+| v26.11.2010 | 75 | m-glass-2010 | experimental glass shader, off by default; Music line in Copy diagnostics |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker

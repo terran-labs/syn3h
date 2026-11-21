@@ -47,6 +47,10 @@ export interface GuardedRenderer {
 }
 export interface DeviceLossInfo { api: string; message: string; reason: string | null; originalEvent?: unknown }
 
+interface ShaderDiagnostics {
+  _reportShaderDiagnostics(stages: unknown, label: string): Promise<void>
+}
+
 interface GuardableDevice {
   lost: Promise<{ reason?: string; message?: string }>
   popErrorScope: () => Promise<unknown>
@@ -58,7 +62,7 @@ interface GuardableDevice {
  * true when installed. Safe to call once per renderer; a second call is ignored.
  */
 export function guardDevice(renderer: GuardedRenderer): boolean {
-  const backend = renderer.backend as { device?: GuardableDevice; __syn3hGuarded?: boolean } | undefined
+  const backend = renderer.backend as { device?: GuardableDevice; pipelineUtils?: ShaderDiagnostics; __syn3hGuarded?: boolean } | undefined
   const device = backend?.device
   if (!backend || !device || backend.__syn3hGuarded) return false
   backend.__syn3hGuarded = true
@@ -70,9 +74,33 @@ export function guardDevice(renderer: GuardedRenderer): boolean {
     renderer._isDeviceLost = true
   }
 
+  const cancelled = { pipelines: 0, shaderDiagnostics: 0 }
+  let reported = false
+  let summaryTimer: ReturnType<typeof setTimeout> | undefined
+  const recordCancellation = (kind: keyof typeof cancelled) => {
+    cancelled[kind]++
+    if (reported) return
+    clearTimeout(summaryTimer)
+    summaryTimer = setTimeout(() => {
+      reported = true
+      console.warn('WebGPU device lost during pipeline preparation; outstanding render pipelines and shader diagnostics were cancelled.', cancelled)
+    }, 100)
+  }
+
+  // Three reads module diagnostics only after a pipeline error. Catch at that call site:
+  // it includes modules created before this guard and leaves normal compilation untouched.
+  const utils = backend.pipelineUtils
+  if (typeof utils?._reportShaderDiagnostics === 'function') {
+    const report = utils._reportShaderDiagnostics.bind(utils)
+    utils._reportShaderDiagnostics = async (stages, label) => {
+      try { await report(stages, label) } catch (error) {
+        if (!renderer._isDeviceLost || !/instance dropped|device (?:was )?(?:lost|destroyed)|valid external instance reference no longer exists/i.test(errorMessage(error))) throw error
+        recordCancellation('shaderDiagnostics')
+      }
+    }
+  }
   const create = device.createRenderPipelineAsync?.bind(device)
   if (create) {
-    let reported = false
     device.createRenderPipelineAsync = async descriptor => {
       try { return await create(descriptor) } catch (error) {
         const message = errorMessage(error)
@@ -80,11 +108,8 @@ export function guardDevice(renderer: GuardedRenderer): boolean {
           lose('unknown', message, error)
         }
         if (!renderer._isDeviceLost) throw error
-        if (!reported) {
-          reported = true
-          silenceLostPipelineDetails()
-          console.warn('WebGPU device lost during pipeline preparation; outstanding render pipelines were cancelled.')
-        }
+        silenceLostPipelineDetails()
+        recordCancellation('pipelines')
         throw new Error(LOST_PIPELINE, { cause: error })
       }
     }

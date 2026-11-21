@@ -24,20 +24,32 @@ The release record and `ops/STATE.md` identify the exact source and validation e
   and visible on A, but the room never counted B out of the hill (outB 0). The other
   four runs passed that step. Not yet investigated.
 - Headless Chrome 157 (157.0.8103.79, macOS arm64) sometimes kills a test page's renderer with
-  a CHECK on Chrome's "Realtime AudioWorklet thread" (EXC_BREAKPOINT). Recorded 20 November 2026.
-  - Established: all 37 such crash dumps on the release machine since 15 November come from
+  a CHECK (EXC_BREAKPOINT) on the thread that renders the page's Web Audio. Recorded 20 November
+  2026; revised the same day after v26.11.2008's dry run.
+  - Not our worklets: with AudioWorklet modules refused (the dump has no worklet thread at all),
+    v26.11.2008's dry run crashed the same way at the ram step (Bob, 04:56 PST) on Chrome's
+    "AudioOutputDevice" thread, which renders an ordinary Web Audio graph when no worklet is
+    loaded. With worklets loaded, the same graph renders on the "Realtime AudioWorklet thread",
+    which is why every earlier dump named that thread. The fault is in Web Audio rendering
+    under load, whatever thread does it.
+  - For players: a Chrome 157 renderer can crash while rendering this page's ordinary Web Audio
+    on a heavily loaded machine. Observed only in headless test browsers at load 12 and above;
+    never observed in a real session. No product avoidance is known.
+  - Established: all 39 such crash dumps on the release machine since 15 November come from
     Playwright test browsers (remote debugging, unsafe WebGPU), none from a real browser
     session. They cover several test scripts as well as the net smoke, where they land most
-    often at the ram step. Chrome renders a page's whole audio graph on that thread once the
-    page loads a worklet module (our score's pluck, choir, hall and shimmer).
+    often at the ram step.
   - Ruled out: the page's JS-heap memory (86 to 137 MB; this does not cover the worklet's own
     heap), the "index count of 0" draw warning (in every log), shader building at that moment,
     and the fireworks, freeze and bots work (crashes predate them). The ram's audio burst alone
     did not crash in 60 isolated rams with audio running.
   - Not established: which CHECK fires (no public symbols for this official Mac build; no
     matching Chromium issue found), what the loaded release runs add, and whether players hit it.
-  - Avoided in the net smoke only: its pages refuse AudioWorklet modules (tools/net-smoke.mjs).
-    No product change. A draft Chromium report awaits the owner's decision to file.
+  - Avoided in the net smoke only: its pages keep every AudioContext suspended
+    (tools/net-smoke.mjs), which stops Chrome's rendering callbacks (a probe counted 46 a second
+    running and none suspended); the game then never builds its audio graph. Refusing only the
+    worklet modules did not avoid it and was removed. No product change. A draft Chromium report
+    awaits the owner's decision to file.
   - Dumps: headless Chrome on macOS ignores `--crash-dumps-dir` and writes to
     `~/Library/Application Support/Google/Chrome/Crashpad/completed`. They hold environment
     variables: keep them on the machine. To print a dump's faulting thread and whether a test

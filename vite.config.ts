@@ -1,4 +1,5 @@
 import { execFileSync, execSync, spawn, type ChildProcess } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { type Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
 import { manualReload } from './tools/manual-reload.mjs'
@@ -66,6 +67,25 @@ function sourceCommit(): string | null {
   catch { return null }
 }
 
+// Frozen releases also distribute the optional shader. Keep its notices beside
+// the built assets without making the page fetch them on entry.
+function glassNotices(): Plugin {
+  return {
+    name: 'glass-distribution-notices',
+    generateBundle(_options, bundle) {
+      for (const chunk of Object.values(bundle)) {
+        if (chunk.type === 'chunk' && chunk.moduleIds.some(id => id.endsWith('/liquid-glass/regular.ts'))) {
+          chunk.code += '\n/*! Adapted from liquidglass, Copyright 2026 Shayan, Apache-2.0. See liquid-glass/NOTICE.md and liquid-glass/licenses/ beside this file. */\n'
+        }
+      }
+      for (const path of ['NOTICE.md', 'licenses/Apache-2.0.txt', 'licenses/Shayan-NOTICE.txt']) {
+        this.emitFile({ type: 'asset', fileName: 'assets/liquid-glass/' + path,
+          source: readFileSync(new URL('./src/liquid-glass/' + path, import.meta.url)) })
+      }
+    },
+  }
+}
+
 export default defineConfig({
   define: {
     __SYN3H_BUILD__: JSON.stringify(buildLabel()),
@@ -74,7 +94,7 @@ export default defineConfig({
   },
   // manualReload: a merge shows a "new build available" notice instead of resetting the page.
   // rapierWasmAsset: the physics engine's WebAssembly ships as its own hashed file, preloaded.
-  plugins: [roomServer(), manualReload(), releaseFeed(), tweakpaneWithoutBitmap(), rapierWasmAsset()],
+  plugins: [glassNotices(), roomServer(), manualReload(), releaseFeed(), tweakpaneWithoutBitmap(), rapierWasmAsset()],
   server: {
     host: '127.0.0.1',
     port: 5173,
