@@ -46,6 +46,12 @@ export interface System {
   update?(dt: number, alpha: number): void
   /** Existing hidden meshes that should participate in the covered precompile draw. */
   precompileMeshes?(): Iterable<THREE.Mesh>
+  /** Already-planted scenery a live quality change can reveal at this camera. */
+  precompileQualityMeshes?(): Iterable<THREE.Mesh>
+  /** Select or expose the draws the direct Minimal renderer will need, restoring them synchronously. */
+  drawCoveredMinimal?(draw: () => void): void
+  /** Attach retained player models for the existing Medium to Low preview draw. */
+  drawCoveredLowFleet?(draw: () => void): void
   dispose?(): void
 }
 
@@ -460,8 +466,21 @@ export class Game {
     const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     const submit = () => {
       signal.throwIfAborted()
-      for (const system of this.systems) system.prepareWorldDraw?.()
-      drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+      const hidden: THREE.Object3D[] = []
+      try {
+        for (const system of this.systems) {
+          if (!system.precompileQualityMeshes) continue
+          for (const mesh of system.precompileQualityMeshes()) {
+            for (let o: THREE.Object3D | null = mesh; o && o !== this.scene; o = o.parent) {
+              if (!o.visible) { hidden.push(o); o.visible = true }
+            }
+          }
+        }
+        for (const system of this.systems) system.prepareWorldDraw?.()
+        drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+      } finally {
+        for (let i = hidden.length - 1; i >= 0; i--) hidden[i].visible = false
+      }
     }
     progress('Preparing visible surfaces')
     await frame()
@@ -594,7 +613,16 @@ export class Game {
         const level = (governor.level - 1) as AdjacentRenderPreset['level']
         const preset = this.quality.renderPreset(level, true)
         const shade = Number(preset.value(vehicleShading.def.id))
-        const submit = () => shade === 0 || shade === 1 || shade === 2 ? drawCoveredShowroomVariant(this.scene, shade, draw) : draw()
+        const drawVariants = () => shade === 0 || shade === 1 || shade === 2 ? drawCoveredShowroomVariant(this.scene, shade, draw) : draw()
+        const fleet = this.backend === 'webgpu' && level === 1 && shade === 0 ? this.systems.find(s => s.drawCoveredLowFleet) : undefined
+        let submit = () => fleet?.drawCoveredLowFleet ? fleet.drawCoveredLowFleet(drawVariants) : drawVariants()
+        if (level === 0) {
+          for (const system of this.systems) {
+            if (!system.drawCoveredMinimal) continue
+            const inner = submit
+            submit = () => system.drawCoveredMinimal!(inner)
+          }
+        }
         const seen = new Set<string>()
         for (const target of [preset, { ...preset, shed: true }]) {
           const key = chain.coveredVariantKey?.(target)

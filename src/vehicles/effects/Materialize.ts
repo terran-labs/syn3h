@@ -200,12 +200,14 @@ export class Materialize implements System {
   private build():void {
     const level=arrivalLevel()
     if(level===this.level)return
-    this.cloud?.dispose()
     this.level=level
-    this.cloud=new ParticleBatch(CLOUD_SLOTS[level],cloudSprite,true,level===0?1:2)
+    if (this.cloud) this.cloud.resetCapacity(CLOUD_SLOTS[level], level===0?1:2)
+    else {
+      this.cloud=new ParticleBatch(CLOUD_SLOTS[level],cloudSprite,true,level===0?1:2)
+      this.game.scene.add(this.cloud.mesh)
+    }
     this.cloud.clock.value=this.clock
     this.cloud.mesh.visible=this.clock<this.aliveUntil
-    this.game.scene.add(this.cloud.mesh)
     if(this.looks.length){
       for(const look of this.looks)look.setLevel(level)
     }else{

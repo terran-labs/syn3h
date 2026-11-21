@@ -915,6 +915,8 @@ export class GroundCover implements System {
   }
 
   /** The sliders that decide what is planted, as one value to compare. */
+  precompileQualityMeshes(): Iterable<THREE.Mesh> { return this.precompileMeshes() }
+
   private sliders(): string {
     return `${groundCover.value} ${terrainRoadStyle.value} ${terrainFlowers.value} ${terrainNightLife.value} ${terrainFloraSeed.value}`
   }

@@ -214,6 +214,16 @@ export function createVehicleSwapper(
     },
   }
   game.add({
+    drawCoveredLowFleet(draw) {
+      // Nest the synchronous attachment brackets so all parked models share one render.
+      let submit = draw
+      for (const vehicle of cache.values()) {
+        if (vehicle === slot.current) continue
+        const next = submit
+        submit = () => drawPlayerVehicleWarm(game, slot.current, vehicle, { draw: next })
+      }
+      submit()
+    },
     warmCovered(warm: CoveredWarm): Promise<void> {
       if (disposed) return Promise.resolve()
       return warming ??= warmVehicles(warm).finally(() => { warming = null })

@@ -230,7 +230,6 @@ export class Spray {
   get state() { return this.sim }
   private allocate(tier: number) {
     const octaves = tier === 0 ? 1 : 2
-    // Only the safe tier changes the foam shader. The other budgets use the same draw objects.
     if (this.tier >= 0 && (this.tier === 0) !== (tier === 0)) this.release()
     // Lava drops sink into the crust: no ripplets where they land.
     const cap = { ...sprayCapacity(tier), ...(this.liquid === 'lava' ? { ripplets: 0 } : {}) }
@@ -246,6 +245,7 @@ export class Spray {
       foamMesh.geometry = f.g
       oldDrops.dispose()
       oldFoam.dispose()
+      if (!dropMesh.parent) this.scene.add(dropMesh, foamMesh)
     } else {
       const light = sprayLight()
       dropMesh = new T.Mesh(d.g, dropletMaterial(light, waterTint(), lava))
@@ -275,11 +275,20 @@ export class Spray {
     for (const a of foam.attributes) { a.clearUpdateRanges(); if (m) { a.addUpdateRange(0, m * 4); a.needsUpdate = true } }
   }
   update(dt: number) {
-    if (!waterSpray.value) { this.dispose(); return }
+    if (!waterSpray.value) {
+      if (graphicsLevel.value !== 0) { this.dispose(); return }
+      // Minimal skips spray entirely. Keep its compiled draws for a return to Low.
+      if (this.sim) {
+        this.drops?.mesh.removeFromParent()
+        this.foam?.mesh.removeFromParent()
+        this.sim = null
+      }
+      return
+    }
     // Allocated up front, not on first contact, and drawn with no instances while idle so the
     // pipelines exist before any vehicle reaches the water.
     const tier = Math.max(0, Math.min(2, Math.round(graphicsLevel.value)))
-    if (tier !== this.tier) this.allocate(tier)
+    if (!this.sim || tier !== this.tier) this.allocate(tier)
     this.sim!.step(dt)
   }
   /** One vehicle this frame; `shape` says what touches the liquid (spraySim.ts WakeShape). */

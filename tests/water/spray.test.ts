@@ -250,6 +250,17 @@ describe('spray render wrapper', () => {
       }
       expect(releasedGeometry).toBe(4)
       expect(releasedMaterials).toBe(0)
+      graphicsLevel.value = 0
+      waterSpray.value = false
+      tick()
+      expect(water.state).toBeNull()
+      expect(scene.children).toHaveLength(0)
+      expect(releasedMaterials).toBe(0)
+      graphicsLevel.value = 1
+      waterSpray.value = true
+      tick()
+      expect(scene.children).toEqual(meshes)
+      expect(meshes.map(mesh => mesh.material)).toEqual(materials)
       waterSpray.value = false
       tick()
       expect(releasedMaterials).toBe(4)

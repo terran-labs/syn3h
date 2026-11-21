@@ -3,6 +3,8 @@ import * as T from 'three/webgpu'
 import {attribute,float,instanceIndex,smoothstep,uniform,uv,vec2} from 'three/tsl'
 import {particleSeed,unlitShadeNode,type Sprite} from './sprites'
 
+const batches = new WeakMap<T.Object3D, ParticleBatch>()
+
 function particleBuffers(capacity: number) {
   const plane = new T.PlaneGeometry(1, 1)
   const geometry = new T.InstancedBufferGeometry().copy(plane as unknown as T.InstancedBufferGeometry)
@@ -31,6 +33,8 @@ export class ParticleBatch {
   readonly clock=uniform(0)
   /** Multiplies every particle's opacity, for an owner that fades a whole batch (fireworks smoke by daylight). */
   readonly opacity=uniform(1)
+  private octaves = 0
+  private readonly selectLook: (octaves: number) => void
   private next=0
   private buffers: ReturnType<typeof particleBuffers>
   private disposed = false
@@ -56,15 +60,46 @@ export class ParticleBatch {
     // ever larger, for as long as the batch lived.
     const size=cfg.z.add(cfg.w.mul(age.max(0))).max(0).mul(age.greaterThanEqual(0).and(age.lessThan(cfg.y)).select(1,0))
     m.scaleNode=vec2(size,size)
-    const look=sprite(uv().mul(2).sub(1),particleSeed(cfg.x,float(instanceIndex)),age.max(0),octaves)
-    m.colorNode=attribute('fxTint','vec3').mul(look.rgb)
-    m.colorNode=m.colorNode.mul(additive?hotExposureNode():unlitShadeNode())
-    // Original particle five-key alpha: near zero, .707, 1, .707, zero.
-    m.opacityNode=look.alpha.mul(this.opacity).mul(unit.mul(Math.PI).sin().max(0).mul(age.greaterThanEqual(0).select(1,0)).mul(age.lessThan(cfg.y).select(1,0)).mul(additive?.8:.4).mul(float(1).sub(smoothstep(.42,.5,uv().sub(.5).length()))))
+    // Keep both original graphs: the shader compiler sees a literal noise octave count at each level.
+    const looks = new Map<number, Pick<T.SpriteNodeMaterial, 'colorNode' | 'opacityNode'>>()
+    this.selectLook = count => {
+      if (this.octaves === count) return
+      let nodes = looks.get(count)
+      if (!nodes) {
+        const look=sprite(uv().mul(2).sub(1),particleSeed(cfg.x,float(instanceIndex)),age.max(0),count)
+        const colorNode=attribute('fxTint','vec3').mul(look.rgb).mul(additive?hotExposureNode():unlitShadeNode())
+        const opacityNode=look.alpha.mul(this.opacity).mul(unit.mul(Math.PI).sin().max(0).mul(age.greaterThanEqual(0).select(1,0)).mul(age.lessThan(cfg.y).select(1,0)).mul(additive?.8:.4).mul(float(1).sub(smoothstep(.42,.5,uv().sub(.5).length()))))
+        nodes = { colorNode, opacityNode }
+        looks.set(count, nodes)
+      }
+      m.colorNode = nodes.colorNode
+      m.opacityNode = nodes.opacityNode
+      m.needsUpdate = true
+      this.octaves = count
+    }
+    this.selectLook(octaves)
     this.mesh=new T.Mesh(this.buffers.geometry,m);this.mesh.frustumCulled=false;this.mesh.renderOrder=additive?4:3
+    batches.set(this.mesh, this)
+  }
+
+  static drawCoveredMinimal(scene: T.Scene, draw: () => void): void {
+    const changed = new Map<ParticleBatch, number>()
+    try {
+      scene.traverse(object => {
+        const batch = batches.get(object)
+        if (batch && batch.octaves !== 1) {
+          changed.set(batch, batch.octaves)
+          batch.selectLook(1)
+        }
+      })
+      draw()
+    } finally {
+      for (const [batch, count] of changed) batch.selectLook(count)
+    }
   }
   /** Reset the emission ring for a new budget, keeping the draw object and its shader. */
-  resetCapacity(capacity: number): void {
+  resetCapacity(capacity: number, octaves = this.octaves): void {
+    this.selectLook(octaves)
     const previous = this.buffers.geometry
     this.buffers = particleBuffers(capacity)
     this.mesh.geometry = this.buffers.geometry
@@ -103,6 +138,7 @@ export class ParticleBatch {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    batches.delete(this.mesh)
     this.mesh.removeFromParent()
     this.mesh.dispose()
     this.mesh.geometry.dispose()
