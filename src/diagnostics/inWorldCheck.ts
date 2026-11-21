@@ -62,6 +62,7 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
   if (inspector) inspector.style.visibility = 'hidden'
   const original = slot.current, input = game.input.suspended, pacing = bots.suspendDiagnosticPacing
   const initialGlass = ctx.glass()
+  const startLevel = game.quality.governor.level
   const quality = game.quality, sweep = quality.beginDiagnosticSweep()
   shell.qualityCheckSignal = signal
   game.input.suspended = true; bots.suspendDiagnosticPacing = true
@@ -215,7 +216,7 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
   const header = details.filter(line => /^(Device class:|Browser:|Renderer:|Screen:)/.test(line))
   const detail = details.filter(line => /^(Reported |Version:|Source commit:|OS:|Adapter:|Memory estimate:|Graphics quality:|World:|Play:|Room connection:|In play:|Last 60 s:|Before first overlay fade|After first overlay fade|Play to first playable|Covered entry precompile)/.test(line))
   return ['Syn3h performance check | '+outcome+' | '+Math.round((performance.now()-started)/1000)+' s',
-    ...header, 'Glass at start: '+initialGlass,
+    ...header, `Quality at entry: ${game.entryQualityLevel ?? 'unavailable'}; at check start: ${startLevel}`, 'Glass at start: '+initialGlass,
     'Local step | level | frames | p50 | p95 | p99 | max ms | draw G/P | prep | veil | unmatched',
     ...rows, '', 'G/P = graph builds/pipeline requests. Draw = same-frame submission, prep = showroom warm proxy. Unmatched = no same-frame draw identified. Steps force each boundary without the governor’s evidence delay or cold-climb gate. Frame intervals include GPU and scheduling waits.', ...detail].join('\n')
 }

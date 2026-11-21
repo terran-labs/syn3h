@@ -78,6 +78,7 @@ export class Game {
   fps = 0
 
   readonly quality = new QualityController()
+  entryQualityLevel?: QualityLevel
   vehicleKind = (): string => 'unknown'
   readLongFrames(after = 0) { return longFrames.read(after) }
   private readonly pipelineCounter = new PipelineCounter()
@@ -503,6 +504,7 @@ export class Game {
    * own render context, and materials it built read camera uniforms that never updated.
    */
   async precompile(progress?: (label: string) => void): Promise<void> {
+    this.entryQualityLevel = this.quality?.governor.level
     const start = performance.now()
     const stop = new AbortController()
     const limit = 15_000
