@@ -547,7 +547,11 @@ export class Game {
     this.postChain = chain
     this.quality.governor.canClimbVisible = level => {
       const last = this.quality.levelChanges.at(-1)
-      return last?.from === level && !!chain?.hasRenderPreset?.(this.quality.renderPreset(level, true))
+      if (last?.from !== level) return false
+      const target = this.quality.renderPreset(level, true)
+      // Changing cascades replaces the scene light and invalidates the world shaders.
+      return target.value('gfx.shadowQuality') === params.get('gfx.shadowQuality')?.value &&
+        !!chain?.hasRenderPreset?.(target)
     }
   }
   private lastDraw = 0
