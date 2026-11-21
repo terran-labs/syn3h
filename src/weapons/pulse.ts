@@ -83,7 +83,9 @@ export class ImpactPulses {
       const t = e.age / e.seconds
       this.transform.position.copy(e.at)
       this.transform.quaternion.copy(e.rotation)
-      this.transform.scale.setScalar(t < 1 ? e.radius * (this.kind === 'glow' ? 1 : 0.15 + 0.85 * t) : 0)
+      // A ring races out and slows (ease-out): most of its reach in the first third of its life,
+      // while it is still bright, so it reads at a glance; growing evenly, it was small while visible.
+      this.transform.scale.setScalar(t < 1 ? e.radius * (this.kind === 'glow' ? 1 : 0.15 + 0.85 * (1 - (1 - t) ** 3)) : 0)
       this.transform.updateMatrix()
       this.mesh.setMatrixAt(i, this.transform.matrix)
       this.mesh.setColorAt(i, this.color.copy(e.color).multiplyScalar(t < 1 ? (this.kind === 'glow' ? (1 - t) ** 1.6 : (1 - t) ** 2) : 0))

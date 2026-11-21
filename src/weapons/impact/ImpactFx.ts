@@ -60,6 +60,8 @@ export class ImpactFx {
   private readonly a = new T.Vector3()
   private readonly b = new T.Vector3()
   private readonly v = new T.Vector3()
+  private readonly right = new T.Vector3()
+  private readonly up = new T.Vector3()
   private readonly color = new T.Color()
   private readonly spec: SparkSpec = { life: 0.6, width: 0.05, drag: 2.5, gravity: 1, streak: 0.03, normal: { x: 0, y: 1, z: 0 }, bounce: 0 }
   readonly stats = { impacts: 0, sparks: 0, debris: 0, scorches: 0, last: '' as ImpactSurface | '' }
@@ -79,6 +81,9 @@ export class ImpactFx {
     if (this.sparks) this.sparks.resetCapacity(sparkCount)
     else {
       this.sparks = new SparkBatch(sparkCount, 'gear impact sparks')
+      // Never thinner than about two and a half pixels: at the default (about one and a half) a
+      // spark 20 m off was too faint to register from the chase camera.
+      this.sparks.minWidth.value = 0.0065
       this.game.scene.add(this.sparks.mesh)
     }
     if (this.flash) {
@@ -127,6 +132,7 @@ export class ImpactFx {
       // After the flash, a faint glow of plasma in the gear's colour that fades over about 0.3 s:
       // something for the eye to follow once the core has gone.
       this.flash.emit(lifted, this.v.set(0, 0.4, 0), thunder ? 0.4 : 0.32, impactFlash.value * scale * 1.1, impactFlash.value * scale * 1.2, this.color.copy(color).multiplyScalar(0.35))
+      this.glint(lifted, scale * (onVehicle ? 1.3 : 1), thunder, color)
     }
 
     // Sparks: a cone around the normal, two waves (the second slower and a touch later in life).
@@ -164,6 +170,26 @@ export class ImpactFx {
       this.stats.scorches++
     }
     return surface
+  }
+
+  /**
+   * A glint: four white-hot rays thrown out across the screen from the flash, gone in a fifth of
+   * a second. The flash alone is a round blob that sinks into a bright sky or your own headlight;
+   * a star of thin lines reads as "something hit there" at a glance. Drawn by the spark batch
+   * (no material of its own): rays with no gravity, heavy drag and a long streak.
+   */
+  private glint(at: T.Vector3, scale: number, thunder: boolean, color: T.Color): void {
+    const cam = this.game.camera, right = this.right.setFromMatrixColumn(cam.matrixWorld, 0), up = this.up.setFromMatrixColumn(cam.matrixWorld, 1)
+    const s = this.spec
+    s.normal.x = 0; s.normal.y = 1; s.normal.z = 0; s.bounce = -1
+    s.life = thunder ? 0.22 : 0.16; s.width = (thunder ? 0.07 : 0.05) * scale; s.drag = 12; s.gravity = 0; s.streak = 0.09
+    // A slight tilt off the screen's axes, different each time, so it never looks stamped.
+    const tilt = 0.35 + this.noise() * 0.3, speed = (thunder ? 20 : 15) * scale
+    for (let k = 0; k < 4; k++) {
+      const a = tilt + k * Math.PI / 2, long = k % 2 === 0 ? 1 : 0.7
+      const v = this.v.copy(right).multiplyScalar(Math.cos(a)).addScaledVector(up, Math.sin(a)).multiplyScalar(speed * long)
+      this.sparks.emit(at, v, s, this.color.copy(color))
+    }
   }
 
   private throwDebris(kind: NonNullable<(typeof RECIPES)[ImpactSurface]['debris']>, count: number, at: T.Vector3, n: T.Vector3, tangent: T.Vector3, bitangent: T.Vector3, surface: ImpactSurface, terrain: ImpactTerrain | undefined, scale: number): void {

@@ -41,6 +41,8 @@ assert.ok(process.env.SYN3H_URL, 'SYN3H_URL is required')
 await mkdir(out, { recursive: true })
 const phone = process.env.SYN3H_VIEW === 'phone', size = phone ? 'phone' : 'desktop'
 const AGES = [0.02, 0.08, 0.15, 0.22, 0.3, 0.4]
+// SYN3H_HOUR=22 for night (default noon); SYN3H_FULL=1 for the whole screen instead of a crop.
+const HOUR = Number(process.env.SYN3H_HOUR ?? 12), FULL = !!process.env.SYN3H_FULL
 // SYN3H_SURFACES=vehicle,grass for a few of them.
 const SURFACES = process.env.SYN3H_SURFACES ? process.env.SYN3H_SURFACES.split(',') : ['grass', 'sand', 'rock', 'water', 'vehicle']
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
@@ -50,6 +52,7 @@ try {
   // Offline: the room would set its own time of day (and other world settings) back over noon.
   await context.routeWebSocket(/\/ws(?:\?|$)/, socket => socket.close())
   const page = await context.newPage()
+  await page.addInitScript(hour => { window.__hour = hour }, HOUR)
   const errors = []; page.on('pageerror', e => errors.push(e.message))
   // The same world in every build (a fixed planet and seed), so both stand in the same places.
   await page.goto(`${base}?planet=alpine&seed=7&autoplay=1&room=strips-${Date.now()}`)
@@ -63,7 +66,7 @@ try {
     p.set('bots.count', 1); p.set('bots.canDrive', false); p.set('bots.canFire', false)
     p.set('bigRed.cooldown', 0.3)
     // Noon, held, in every build; no interface in the frames.
-    p.set('sun.dayLength', 0); p.set('sun.timeOfDay', 12)
+    p.set('sun.dayLength', 0); p.set('sun.timeOfDay', window.__hour)
     for (const node of document.body.children) if (node.tagName !== 'CANVAS' && node.tagName !== 'SCRIPT') node.style.visibility = 'hidden'
     s.shell.closeMenu?.()
     // The impact effects of either build: frozen while a strip is taken, stepped by hand.
@@ -121,7 +124,7 @@ try {
     }, surface)
     if (!placed) { report.push(`${surface}: no ground of that kind found`); continue }
     // Noon again: the clock is held, but the room's own setting can come back between strips.
-    await page.evaluate(() => { window.syn3h.params.set('sun.dayLength', 0); window.syn3h.params.set('sun.timeOfDay', 12) })
+    await page.evaluate(() => { window.syn3h.params.set('sun.dayLength', 0); window.syn3h.params.set('sun.timeOfDay', window.__hour) })
     await page.waitForTimeout(5000)
     // The target: where a ray from the camera, right of centre and low on the screen, meets the
     // ground or the water. In view by construction, beside the car rather than behind it.
@@ -171,7 +174,7 @@ try {
       for (const [i, age] of AGES.entries()) {
         await page.evaluate(dt => window.__step(dt), age - at); at = age
         await page.waitForTimeout(120)
-        await page.screenshot({ path: `${out}/${size}-${weapon}-${surface}-${label}-${i}.png`, clip })
+        await page.screenshot({ path: `${out}/${size}-${weapon}-${surface}-${label}-${i}.png`, ...(FULL ? {} : { clip }) })
       }
       await page.evaluate(() => { window.__step(1.5); window.__freeze(false) })
       report.push(`${surface} (${placed.found}) ${weapon}: ${landed ? 'landed' : 'no impact seen'}`)
