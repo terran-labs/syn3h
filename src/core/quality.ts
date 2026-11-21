@@ -788,7 +788,14 @@ export class QualityController implements QualitySource {
     const offer=this.history.recommendation,g=this.governor
     if(!offer || offer.level!==g.level || g.level===0 || this.disposed)return false
     // The player accepted a lower level: same authority as choosing it, without restoring cost already shed.
-    g.lowerManualLevel();this.lastReason='manual';this.apply('player');return true
+    const target = (g.level - 1) as QualityLevel
+    this.manualChange(target, () => {
+      if (this.disposed || g.level !== offer.level) return
+      g.lowerManualLevel()
+      this.lastReason = 'manual'
+      this.apply('player')
+    })
+    return true
   }
 
   // ---- Levels, overrides and the one change event -------------------------------------
@@ -816,11 +823,21 @@ export class QualityController implements QualitySource {
     const state = this.getQualityState()
     for (const listener of this.qualityListeners) listener(state)
   }
+  /** The shell can cover cold choices. Standalone viewers and startup apply immediately. */
+  manualChange: (level: QualityLevel, apply: () => void) => void = (_level, apply) => apply()
+
   /** The player chooses a level: its whole preset applies and every override is cleared. */
   setLevel(level: number) {
     if (this.disposed) return
-    this.transient = false
-    this.governor.setManualLevel(levelNumber(level)); this.lastReason = 'manual'; this.reapply = true; this.apply('player')
+    const target = levelNumber(level)
+    this.manualChange(target, () => {
+      if (this.disposed) return
+      this.transient = false
+      this.governor.setManualLevel(target)
+      this.lastReason = 'manual'
+      this.reapply = true
+      this.apply('player')
+    })
   }
   stepUp(): boolean { if (this.governor.level >= 5) return false; this.setLevel(this.governor.level + 1); return true }
   stepDown(): boolean { if (this.governor.level <= 0) return false; this.setLevel(this.governor.level - 1); return true }
@@ -1018,6 +1035,10 @@ export class QualityController implements QualitySource {
    * Which effects exist at all is the level's decision, through their strengths and postTier.
    */
   get postBudget() { return this.budget }
+  private get targetPostBudget() {
+    return this.governor.settings.kind === 'base' || this.governor.settings.post > 0 || !this.postOn() ? 1 : 0
+  }
+  settleCoveredPostBudget(): void { this.budget = this.targetPostBudget }
   /** Tell the governor a post chain is drawing effects (or has stopped), so it can fade them first. */
   setPostActive(on: boolean) { const change = this.governor.setPostActive(on); if (change) { this.lastReason = change.reason; this.apply() } }
   /** Older three-step reading of what the graphics stack can do. Use postTier and the level budget instead. */
@@ -1059,7 +1080,7 @@ export class QualityController implements QualitySource {
     if(this.history.sample(metrics,eligible,{...g.settings,level:g.level,rung:g.rung,rungs:g.ladder.length,auto:g.auto,targetFps:Math.round(1000/g.targetMs)},this.botsNow())||counted||botChanges!==this.botChangesSeen)this.publishPerformance()
     this.botChangesSeen=botChanges
     // Ease toward the rung's budget: full while effects are not faded (or none are active).
-    const wanted = this.governor.settings.kind === 'base' || this.governor.settings.post > 0 || !this.postOn() ? 1 : 0
+    const wanted = this.targetPostBudget
     const step = Math.min(1, Math.max(0, metrics.frameMs) / 500)
     this.budget += Math.max(-step, Math.min(step, wanted - this.budget))
     this.hudElapsed += metrics.frameMs

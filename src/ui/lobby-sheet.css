@@ -55,14 +55,6 @@
   .syn3h-shell.exploration-ui .lobby-sheet .about-columns { grid-template-columns: 1fr; gap: 16px; }
 }
 
-/* Settings: its cards lose their bodies here, so there is no box in this sheet either. Headings
-   and rows stand on the sky like the other sheets' text; a hairline parts one card from the next.
-   Sliders and switches keep their own controls. */
-html .syn3h-shell.exploration-ui:is([data-glass], *) dialog.lobby-sheet .lobby-settings-host .world-inspector :is(.wi-glass, .rail-players) {
-  border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
-}
-html .syn3h-shell.exploration-ui:is([data-glass], *) dialog.lobby-sheet .lobby-settings-host .world-inspector .wi-card + .wi-card { border-top: 1px solid var(--s3-line-quiet); }
-
 /* Text behind the sheet would read through it and tangle with the sheet's own: the planet
    captions, the corner icons, the hint, the lobby's buttons and the update banner step aside
    while one is open. Only the sun and the stars stay, dimmed. */

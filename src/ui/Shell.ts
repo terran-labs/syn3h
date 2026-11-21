@@ -47,7 +47,7 @@ import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
 import { PLANETS } from '../world/planets'
-import { graphicsLevel, levelNumber, qualityBudget } from '../core/quality'
+import { graphicsLevel, levelNumber, qualityBudget, LEVELS, type QualityLevel } from '../core/quality'
 import { camDistance, camFov, camHeight, camOffset } from '../core/ChaseCamera'
 import { arrivalPath } from '../core/arrival'
 import { applyPlanet, biomeLine, currentPlanet, currentWorldName, encodeWorld, planetById, randomSeed } from '../world/planets'
@@ -358,14 +358,29 @@ export class Shell implements System {
       return count > 1 ? `${count} players` : count ? 'Just you' : ''
     }, { after: 'game' })
     // Performance follows World; its controls remain part of the searchable card stack.
+    if (game.quality) game.quality.manualChange = (level, apply) => {
+      if (!this.playing || this.transitioning) { apply(); return }
+      if (!this.qualityVeil && game.manualQualityReady(level)) { apply(); return }
+      this.queuedQuality = { level, apply }
+      if (!this.qualityVeil) void this.applyQualityBehindVeil()
+    }
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
-    // The lobby's settings: a gear in the lower right of the galaxy, with the running version
-    // beside it, opening the sidebar's cards for sound, graphics, controls and the room. The
-    // presentation toggle and host controls are built here and wired below, as before.
+    // The lobby's settings: Settings above Welcome and Updates in the lower right of the galaxy,
+    // the running version in the lower left, and a right-hand card of what acts in the lobby
+    // (LobbySettings). The presentation toggle and host controls are built here and wired below.
     const holder = document.createElement('div'); holder.innerHTML = presentationHtml + hostHtml
     this.presentationToggle = holder.querySelector('.presentation-toggle')!; this.hostControls = holder.querySelector('.host-controls')!
     this.lobbySettings = new LobbySettings(this.element, {
-      quality: this.game.quality, presentation: this.presentationToggle, host: this.hostControls, build,
+      quality: this.game.quality, host: this.hostControls, build,
+      // The card and a sheet never show together: the card takes over from an open sheet.
+      opening: () => { for (const sheet of this.lobbySheets) sheet.close(false) },
+      // The card never covers the wordmark: the one in space, else the flat logo standing in.
+      ceiling: () => {
+        const box = this.galaxy?.wordmarkScreenBox()
+        if (box) return { left: box.x, right: box.x + box.width, bottom: box.y + box.height }
+        const logo = this.element.querySelector('.shell-logo')?.getBoundingClientRect()
+        return logo && logo.height ? { left: logo.left, right: logo.right, bottom: logo.bottom } : null
+      },
       hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', inRoom: () => { const net = hostControls(); return !!net && (net.isHost || canEditWorld()) }, cue: () => this.audio.cue('click'),
     })
     this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock, this.lobbySettings.versionDock)
@@ -381,7 +396,7 @@ export class Shell implements System {
       // The buttons go back to their corner of the lobby.
       const dock = this.lobbySettings.dock
       this.element.querySelector('.galaxy-ui')!.append(dock); dock.classList.remove('is-beside-sheet')
-      for (const button of [this.lobbySettings.about, this.lobbySettings.updates, this.lobbySettings.gear]) { button.classList.remove('is-current'); button.removeAttribute('aria-current') }
+      for (const button of [this.lobbySettings.about, this.lobbySettings.updates]) { button.classList.remove('is-current'); button.removeAttribute('aria-current') }
       if (this.galaxy) { this.galaxy.markLift = 0; this.galaxy.worlds = 1 }
       if (this.galaxy && this.panels.active === 'index' && !this.playing) this.galaxy.backdrop = 1
     }
@@ -395,14 +410,7 @@ export class Shell implements System {
     })
     this.lobbySettings.about.addEventListener('click', () => this.openLobbySheet(this.aboutSheet), { signal })
     this.lobbySettings.updates.addEventListener('click', () => this.openLobbySheet(this.updatesSheet), { signal })
-    // Settings is the third of the same sheets: the settings panel lives in its body.
-    this.settingsSheet = new LobbySheet(this.element, {
-      name: 'settings', title: 'Settings', edges, following, home: () => this.lobbySettings.gear, cue: () => this.audio.cue('click'),
-      fill: () => {}, opened: () => this.lobbySettings.open(), closed: () => { this.lobbySettings.close(); closed() },
-    })
-    // From the start, so the panel's own gear handling never opens it as a separate column.
-    this.lobbySettings.embedIn(this.settingsSheet.body)
-    this.lobbySettings.gear.addEventListener('click', () => { if (this.settingsSheet.isOpen) this.settingsSheet.close(); else this.openLobbySheet(this.settingsSheet) }, { signal })
+    // Settings opens its own right-hand card (LobbySettings handles its button).
     // The top row (the owner, 17 November 2026): exactly three controls, side by side with no
     // plate around them, sized like a card's title row so the row reads as the first of the
     // stack. Search takes the free width. The world's name is in the World card's summary.
@@ -622,26 +630,26 @@ export class Shell implements System {
   private lobbyWelcome?: Welcome
   private readonly playWelcome: Welcome
   private readonly updatesSheet: LobbySheet
-  private readonly settingsSheet: LobbySheet
-  private get lobbySheets(): LobbySheet[] { return [this.aboutSheet, this.updatesSheet, this.settingsSheet] }
-  /** One lobby sheet at a time, over the galaxy; settings close first. */
+  private get lobbySheets(): LobbySheet[] { return [this.aboutSheet, this.updatesSheet] }
+  /** One lobby sheet at a time, over the galaxy; the settings card closes first. */
   private openLobbySheet(sheet: LobbySheet): void {
     if (this.playing) return
     // Its own button again: close it, as the gear always has.
     if (sheet.isOpen) { sheet.close(); return }
-    const home = sheet === this.aboutSheet ? this.lobbySettings.about : sheet === this.updatesSheet ? this.lobbySettings.updates : this.lobbySettings.gear
+    const home = sheet === this.aboutSheet ? this.lobbySettings.about : this.lobbySettings.updates
+    this.lobbySettings.close(false)
     const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body && !document.activeElement.closest('dialog.lobby-sheet') ? document.activeElement : home
     // Another sheet already up: it hands over and this one takes its place, so the panel stays
     // and only its contents change (a morph, not a close and reopen).
     const current = this.lobbySheets.find(s => s.isOpen)
-    if (current) { if (current === this.settingsSheet) this.lobbySettings.close(); current.handOff() }
+    if (current) current.handOff()
     // The worlds fade out, the sky dims a little and the name rises over the contents (LobbySheet).
     if (this.galaxy) { this.galaxy.backdrop = SHEET_BACKDROP; this.galaxy.markLift = 1; this.galaxy.worlds = 0 }
     // The three buttons stay beside the open sheet, above its backdrop, to switch between them;
     // the open one is marked.
     const dock = this.lobbySettings.dock
     sheet.element.append(dock); dock.classList.add('is-beside-sheet')
-    for (const [button, owner] of [[this.lobbySettings.about, this.aboutSheet], [this.lobbySettings.updates, this.updatesSheet], [this.lobbySettings.gear, this.settingsSheet]] as const) {
+    for (const [button, owner] of [[this.lobbySettings.about, this.aboutSheet], [this.lobbySettings.updates, this.updatesSheet]] as const) {
       button.classList.toggle('is-current', owner === sheet); if (owner === sheet) button.setAttribute('aria-current', 'true'); else button.removeAttribute('aria-current')
     }
     sheet.open(opener, !!current)
@@ -1163,6 +1171,37 @@ export class Shell implements System {
     this.element.querySelector<HTMLElement>('.hud-navigation')!.hidden = false
     this.touchPanels = false; this.syncPanels()
   }
+  private qualityVeil: HTMLDivElement | null = null
+  private queuedQuality?: { level: QualityLevel; apply: () => void }
+  private async applyQualityBehindVeil(): Promise<void> {
+    const veil = document.createElement('div')
+    veil.className = 'quality-change-veil'
+    const title = document.createElement('strong')
+    const status = document.createElement('span')
+    status.setAttribute('role', 'status')
+    const meter = document.createElement('div')
+    meter.className = 'quality-progress'
+    meter.setAttribute('role', 'progressbar')
+    meter.append(document.createElement('span'))
+    meter.setAttribute('aria-label', 'Graphics preparation')
+    veil.append(title, status, meter)
+    this.qualityVeil = veil
+    this.element.append(veil)
+    try {
+      while (this.queuedQuality && !this.abort.signal.aborted) {
+        const { level, apply } = this.queuedQuality
+        this.queuedQuality = undefined
+        title.textContent = 'Applying ' + LEVELS[level].name
+        status.textContent = 'Updating graphics settings'
+        await this.game.prepareManualQuality(apply, this.abort.signal,
+          phase => { status.textContent = phase })
+      }
+    } finally {
+      veil.remove()
+      this.qualityVeil = null
+    }
+  }
+
   private performancePanel!: PerformancePanel
   configurePerformance(source: PerformanceSource): void { this.performancePanel.configure(source) }
   /** True from the click or key press that enters a world until play begins or the entry is abandoned. */
@@ -1862,7 +1901,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
     // In the panels, only the two plain actions are buttons in this sense; the rest are rows, switches and choices.
     for (const button of this.element.querySelectorAll<HTMLElement>('.rail-invite, .rail-about')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
@@ -2122,7 +2161,7 @@ export class Shell implements System {
     if (keep) { keepRow.querySelector<HTMLInputElement>('#bots-keep')!.checked = keep.value === true; }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.settingsSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }

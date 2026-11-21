@@ -100,7 +100,7 @@ export function createVehicleSwapper(
   let detach = attachEffects(slot.current)
   let disposed = false
   const kinds = (['jet', 'hovercraft', 'tank', 'buggy'] as const).filter(isVehicleAvailable)
-  const warmStats = { pending: true, current: null as string | null }
+  const warmStats = { pending: true, current: null as string | null, get active() { return slot.current } }
   game.scene.userData.playerVehicleCache = warmStats
   let warming: Promise<void> | null = null
 

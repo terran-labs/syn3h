@@ -49,6 +49,13 @@ function stats(): PhaseStats {
 }
 
 const phases = [stats(), stats()] as const
+/** Number of completed synchronous graph builds and pipeline requests since startup. */
+export function shaderWorkCount(): number {
+  let count = 0
+  for (const phase of phases) for (const kind of work) count += phase.totals[kind].calls
+  return count
+}
+
 let revealAt = Infinity
 let depth = 0
 

@@ -15,12 +15,13 @@ import { installLongFrameRenderer } from './longFrameRenderer'
 import * as THREE from 'three/webgpu'
 import { canCreateWebGL2, NoGraphicsError, webgpuUsable } from './graphicsSupport'
 import { installRenderDiagnostics, recordCoveredVehicleDraw, recordEntryWarmIssue, recordStartupGameDraw, recordStartupPhase, recordStartupPrecompile, showRendererLost, startupTiming, timeStartup } from './diagnostics'
+import { shaderWorkCount } from './diagnosticShaders'
 import { guardDevice, runGuarded, type GuardedRenderer } from './deviceLoss'
 import { snapshotPixelRatio } from './snapshotScale'
 import { drawFrame, gpuDeadlineMs, startRenderer, viewState, withDeadline, type PostChain } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
-import { QualityController, reportLoading, vehicleShading, type AdjacentRenderPreset, type FrameMetrics } from './quality'
+import { QualityController, reportLoading, vehicleShading, type AdjacentRenderPreset, type QualityLevel, type FrameMetrics } from './quality'
 import { drawCoveredShowroomVariant } from '../vehicles/skins/showroom'
 import { PipelineCounter } from './performanceHistory'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
@@ -360,13 +361,14 @@ export class Game {
     const view = this.view()
     longFrames.renderContext(view, this.scene.userData.playerVehicleCache?.current)
     // A lost device draws nothing: no render, no buffer, no pipeline (see frame()).
-    const draw = !this.holdDraws && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
+    const draw = !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
     if (draw) {
       const watchingDraw = startupTiming.firstWorldFrameMs === undefined ||
         (view === 'playing' && startupTiming.playRequestMs !== undefined && startupTiming.firstPlayableFrameMs === undefined)
       const previousDraws = watchingDraw ? this.renderer.info.render.drawCalls : 0
       for (const system of this.systems) system.prepareWorldDraw?.()
       drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs)
+      if (view === 'playing') this.rememberVehicleLevel(this.quality.governor.level)
       longFrames.end('Render submission', renderStart)
       this.lastDraw = now
       // A render invocation without draw calls (or an earlier covered draw) is not this frame.
@@ -384,7 +386,7 @@ export class Game {
     metrics.pipelinesFresh = pipelines?.fresh ?? null
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
-    this.quality.frame(metrics, view === 'playing')
+    if (!this.applyingQuality) this.quality.frame(metrics, view === 'playing')
   }
 
   /**
@@ -393,6 +395,99 @@ export class Game {
    * whatever shader it met first, which is the stall precompile() exists to avoid.
    */
   holdDraws = false
+  private applyingQuality = false
+
+  private manualVehicleLevels = new WeakMap<object, number>()
+
+  private rememberVehicleLevel(level: QualityLevel): void {
+    const actor = this.scene.userData.playerVehicleCache?.active
+    if (!actor) return
+    const previous = this.manualVehicleLevels.get(actor) ?? 0
+    const levels = previous | (1 << level)
+    if (levels !== previous) this.manualVehicleLevels.set(actor, levels)
+  }
+
+  manualQualityReady(level: QualityLevel): boolean {
+    const current = this.quality.getQualityState()
+    if (Object.keys(current.overrides).length) return false
+    if (level === current.level && current.rung === 0) return true
+    // These neighbouring presets retain the shadow rig and the corresponding
+    // vehicle materials. Larger transitions can release one of those resources.
+    if (Math.min(level, current.level) < 1 || Math.max(level, current.level) > 3 ||
+        Math.abs(level - current.level) > 1) return false
+    const actor = this.scene.userData.playerVehicleCache?.active
+    if (actor && !((this.manualVehicleLevels.get(actor) ?? 0) & (1 << level))) return false
+    return !!this.postChain?.hasRenderPreset?.(this.quality.renderPreset(level, false))
+  }
+
+  /** The caller installs the opaque veil before starting this operation. */
+  async prepareManualQuality(apply: () => void, signal: AbortSignal, progress: (phase: string) => void = () => {}): Promise<void> {
+    if (signal.aborted) return
+    const stop = new AbortController()
+    let release!: () => void
+    const cancelled = new Promise<void>(resolve => { release = resolve })
+    const cancel = () => { stop.abort(); release() }
+    signal.addEventListener('abort', cancel, { once: true })
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    let applied = false
+    this.applyingQuality = true
+    try {
+      const prepare = async () => {
+        await frame()
+        await frame() // Give the browser a paint opportunity before changing the preset.
+        stop.signal.throwIfAborted()
+        applied = true
+        apply()
+        this.quality.settleCoveredPostBudget()
+        await frame()
+        await frame() // Let normal system updates adopt the new geometry and effects.
+        stop.signal.throwIfAborted()
+        await this.warmVisibleQuality(stop.signal, progress)
+      }
+      const result = await withDeadline(Promise.race([prepare(), cancelled]), 15_000)
+      if (!result.ok && !signal.aborted) {
+        console.warn('Manual graphics preparation', result.reason)
+        if (!applied) apply()
+      }
+    } finally {
+      stop.abort()
+      signal.removeEventListener('abort', cancel)
+      this.applyingQuality = false
+    }
+  }
+
+  private async warmVisibleQuality(signal: AbortSignal, progress: (phase: string) => void): Promise<void> {
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    const submit = () => {
+      signal.throwIfAborted()
+      for (const system of this.systems) system.prepareWorldDraw?.()
+      drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+    }
+    progress('Preparing visible surfaces')
+    await frame()
+    signal.throwIfAborted()
+    const batch = CoveredPipelines.forRenderer(this.renderer, this.scene)
+    if (batch) {
+      batch.run(true, submit)
+      progress('Compiling graphics pipelines')
+      await batch.ready()
+    }
+    progress('Drawing the new level')
+    await frame()
+    submit()
+    await this.finishWorldFrame(signal, () => signal.throwIfAborted(), false)
+    signal.throwIfAborted()
+    // Let the ordinary camera, governor and post chain present both temporal targets
+    // behind the veil. A slow GPU drain can leave the camera far from its last draw.
+    this.applyingQuality = false
+    let clean = 0
+    for (let i = 0; i < 8 && clean < 2; i++) {
+      const before = shaderWorkCount()
+      await frame()
+      signal.throwIfAborted()
+      clean = shaderWorkCount() === before ? clean + 1 : 0
+    }
+  }
 
   /**
    * Build the shaders and pipelines for everything in the scene before play shows it, by
@@ -459,7 +554,7 @@ export class Game {
             }
           }
         }
-        this.postChain?.setCovered?.(this.holdDraws)
+        this.postChain?.setCovered?.(this.holdDraws || this.applyingQuality)
         const submit = () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
         runGuarded(this.renderer as unknown as GuardedRenderer, () => {
           if (batch) batch.run(discover, submit)
@@ -474,6 +569,7 @@ export class Game {
       }
     }
     const warm = { draw, yieldFrame }
+    let preparedNeighbour: QualityLevel | undefined
     const sweep = async () => {
       for (let i = 0; i < 2; i++) {
         await yieldFrame('Preparing world')
@@ -506,6 +602,7 @@ export class Game {
           if (key) seen.add(key)
           await chain.warmCovered({ yieldFrame, draw: submit }, target)
         }
+        preparedNeighbour = level
       }
     }
     await sweep()
@@ -524,11 +621,16 @@ export class Game {
     }
     // Submission can return before Metal finishes work for the first draw. Drain our
     // world queue while the cover is still opaque, independently of the galaxy renderer.
-    const backend = this.renderer.backend as { device?: GPUDevice; gl?: WebGL2RenderingContext }
     await yieldFrame('Finishing graphics')
+    await this.finishWorldFrame(signal, check, true)
+    if (preparedNeighbour !== undefined) this.rememberVehicleLevel(preparedNeighbour)
+  }
+
+  private async finishWorldFrame(signal: AbortSignal, check: () => void, entry: boolean): Promise<void> {
+    const backend = this.renderer.backend as { device?: GPUDevice; gl?: WebGL2RenderingContext }
     if (backend.device) {
       const result = await withDeadline(backend.device.queue.onSubmittedWorkDone(), 2_000)
-      if (!signal.aborted && !result.ok) recordEntryWarmIssue(result.reason === 'timeout' ? 'GPU completion timed out' : 'GPU completion failed')
+      if (entry && !signal.aborted && !result.ok) recordEntryWarmIssue(result.reason === 'timeout' ? 'GPU completion timed out' : 'GPU completion failed')
     } else if (backend.gl) {
       const gl = backend.gl
       const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
@@ -537,9 +639,12 @@ export class Game {
           gl.flush()
           const deadline = performance.now() + 2_000
           while (!gl.isContextLost() && gl.clientWaitSync(fence, 0, 0) === gl.TIMEOUT_EXPIRED) {
-            if (performance.now() >= deadline) { recordEntryWarmIssue('GPU completion timed out'); break }
+            if (performance.now() >= deadline) {
+              if (entry) recordEntryWarmIssue('GPU completion timed out')
+              break
+            }
             check()
-            await nextFrame()
+            await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
           }
         } finally { gl.deleteSync(fence) }
       }

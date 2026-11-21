@@ -1,8 +1,9 @@
-// The lobby's settings gear and panel on desktop, an iPhone 14, and an iPhone 14 on its side
-// at the screen's full 844 by 390 (the panel must show six rows there).
+// The lobby's Settings button and its right-hand card on desktop, an iPhone 14, and an iPhone 14
+// on its side at the screen's full 844 by 390. Bugs caught: Settings not above Welcome; the card
+// opening as a full-screen sheet; glass nested inside the card; world-only settings in the lobby;
+// a control that does not reach its setting; focus lost on close.
 //   SYN3H_URL=http://127.0.0.1:5173/ node tests/ui/lobby-settings.mjs
-// Screenshots go to tests/ui/artifacts/lobby-settings: the lobby with the gear, Sound open with
-// Advanced, and Graphics open.
+// Screenshots go to tests/ui/artifacts/lobby-settings: the lobby, Sound open, and Graphics open.
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
@@ -31,7 +32,11 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     const gearBox = await gear.boundingBox()
     assert.ok(gearBox.width >= 44 && gearBox.height >= 44, `${mode}: gear is a 44 px target`)
     assert.equal(await page.locator('.galaxy-links [data-goto=settings]').count(), 0, `${mode}: no SETTINGS text button`)
+    // Settings above Welcome (the owner, 20 November 2026), and Welcome above Updates.
+    assert.deepEqual(await page.$$eval('.lobby-gear-dock .lobby-control', (bs) => bs.map((b) => b.textContent.trim())), ['Settings', 'Welcome', 'Updates'], `${mode}: Settings on top`)
     const version = page.locator('[data-lobby-version]')
+    // The version is plain text: no card, no glass, no fill behind it.
+    assert.deepEqual(await version.evaluate((el) => ({ glass: el.classList.contains('liquid-glass'), fill: getComputedStyle(el).backgroundColor })), { glass: false, fill: 'rgba(0, 0, 0, 0)' }, `${mode}: version has no card`)
     assert.match(await version.textContent(), /\S/, `${mode}: version shown beside the gear`)
     const versionBox = await version.boundingBox()
     // Planet captions are not in this list: they are fixed to orbiting planets and may pass
@@ -47,44 +52,44 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     assert.match(await version.getAttribute('title'), /^Version \S/)
     await version.focus(); assert.ok(await version.evaluate((el) => el === document.activeElement), `${mode}: version focusable`)
 
-    // Open: focus moves into the panel; four cards, collapsed to one-line summaries.
+    // Open: a right-hand card, not a sheet; focus moves into it; its sections collapsed to summaries.
     await tap(gear)
-    const panel = page.locator('.world-inspector.lobby-settings')
+    const panel = page.locator('#lobby-settings')
     await panel.waitFor({ state: 'visible' })
-    // Settings is one of the lobby's sheets (LobbySheet): focus moves into it.
-    assert.ok(await page.evaluate(() => document.activeElement?.closest('dialog.lobby-sheet-settings') !== null), `${mode}: focus inside the panel`)
-    // Not in a room here, so the Room card (host lock and reset) has nothing to act on and hides.
-    assert.deepEqual(await panel.locator('.wi-card').evaluateAll((cards) => cards.filter((c) => c.getClientRects().length).map((c) => c.dataset.section)), ['sound', 'performance', 'controls'])
+    assert.equal(await page.locator('dialog.lobby-sheet[open]').count(), 0, `${mode}: no full-screen sheet`)
+    assert.ok(await page.evaluate(() => document.activeElement?.closest('#lobby-settings') !== null), `${mode}: focus inside the card`)
+    // One glass surface: the card, and nothing inside it.
+    assert.deepEqual(await panel.evaluate((el) => ({ card: el.classList.contains('liquid-glass'), inside: el.querySelectorAll('.liquid-glass').length })), { card: true, inside: 0 }, `${mode}: glass on the card only`)
+    if (mode === 'desktop') { const box = await panel.boundingBox(); assert.ok(box.x + box.width > 1440 - 60 && box.width < 420, `desktop: a right-hand card ${JSON.stringify(box)}`) }
+    // Only what acts in the lobby. Not in a room here, so the Room section hides.
+    assert.deepEqual(await panel.locator('.wi-card').evaluateAll((cards) => cards.filter((c) => c.getClientRects().length).map((c) => c.dataset.section)), ['performance', 'sound', 'play'])
     assert.match(await panel.locator('.wi-card[data-section=sound] .wi-sum').textContent(), /Music \d+% · Master \d+%/)
-    assert.match(await panel.locator('.lobby-settings-foot .build-line').textContent(), /Version \S/)
 
-    // Sound: music and master volume shown directly, the rest under Advanced.
+    // Sound: music and master volume and mute; the world's own sounds are not here.
     await tap(panel.locator('.wi-card[data-section=sound] .wi-head'))
     const sound = panel.locator('.wi-card[data-section=sound]')
     await sound.locator('.wi-row[data-id="audio.music"]').waitFor({ state: 'visible' })
     await sound.locator('.wi-row[data-id="audio.master"]').waitFor({ state: 'visible' })
-    assert.equal(await sound.locator(':scope .wi-body > .wi-row[data-id="audio.effects"]').count(), 0, `${mode}: effects is not up front`)
-    await tap(sound.locator('.lobby-advanced > summary'))
-    for (const id of ['audio.effects', 'audio.engine', 'audio.dirt', 'audio.wind', 'audio.world']) await sound.locator(`.lobby-advanced .wi-row[data-id="${id}"]`).waitFor({ state: 'visible' })
+    for (const id of ['audio.effects', 'audio.engine', 'audio.wind']) assert.equal(await sound.locator(`.wi-row[data-id="${id}"]`).count(), 0, `${mode}: ${id} is a world sound, not here`)
     // Moving the music slider sets the parameter.
     const before = await page.evaluate(() => window.syn3h.params.get('audio.music').value)
     const target = before > 0.5 ? 0.3 : 0.6
     await sound.locator('.wi-row[data-id="audio.music"] input[type=range]').evaluate((input, value) => { input.value = String(value); input.dispatchEvent(new Event('input', { bubbles: true })) }, target)
     assert.equal(await page.evaluate(() => window.syn3h.params.get('audio.music').value), target, `${mode}: music volume follows the slider`)
     // Every volume reads as a percentage, like the card's summary.
-    for (const id of ['audio.music', 'audio.master', 'audio.effects']) assert.match(await sound.locator(`.wi-row[data-id="${id}"] .wi-num`).textContent(), /^\d+%$/, `${mode}: ${id} as a percentage`)
+    for (const id of ['audio.music', 'audio.master']) assert.match(await sound.locator(`.wi-row[data-id="${id}"] .wi-num`).textContent(), /^\d+%$/, `${mode}: ${id} as a percentage`)
     assert.equal(await sound.locator('.wi-row[data-id="audio.music"] .wi-num').textContent(), `${Math.round(target * 100)}%`)
-    // Show the two volumes at the top of the card, with Advanced open beneath them. Wait for
-    // the cards to land first: a card mid-motion is pinned at its old height and cannot scroll.
-    await page.waitForFunction(() => !document.querySelector('.world-inspector.lobby-settings').getAnimations({ subtree: true }).some((a) => a.playState === 'running' && a.effect?.target?.classList?.contains('wi-card')))
+    // Show the sound rows at the top of the card. Wait for the cards to land first: a card
+    // mid-motion is pinned at its old height and cannot scroll.
+    await page.waitForFunction(() => !document.querySelector('#lobby-settings').getAnimations({ subtree: true }).some((a) => a.playState === 'running' && a.effect?.target?.classList?.contains('wi-card')))
     await sound.locator('.wi-row[data-id="audio.music"]').evaluate((row) => row.scrollIntoView({ block: 'start' }))
     await page.waitForTimeout(400)
-    // At least six rows show at once, whole, in the sheet (the owner's measure at 844 by 390).
+    // All three sound rows show at once, whole, at 844 by 390 too.
     const whole = await panel.evaluate((p) => {
       const view = p.querySelector('.wi-cards').getBoundingClientRect()
       return [...p.querySelectorAll('.wi-card[data-section=sound] .wi-row')].filter((row) => { const r = row.getBoundingClientRect(); return r.height > 0 && r.top >= view.top - 1 && r.bottom <= view.bottom + 1 }).length
     })
-    assert.ok(whole >= 6, `${mode}: ${whole} whole rows in view`)
+    assert.ok(whole >= 3, `${mode}: ${whole} whole rows in view`)
     await page.screenshot({ path: `${out}/${mode}-sound.png` })
     // Mute is the standard switch: role and aria-checked agree with the setting, Space and
     // Enter toggle it, and its label text toggles it too.
@@ -106,6 +111,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await tap(graphics.locator('.wi-head'))
     await graphics.locator('[data-quality=down]').waitFor({ state: 'visible' })
     assert.equal(await graphics.locator('.performance-diagnostics').count(), 0, `${mode}: no frame diagnostics in the lobby`)
+    assert.equal(await graphics.locator('.wi-fine').isVisible(), false, `${mode}: no world graphics detail in the lobby`)
     const level = () => page.evaluate(() => window.syn3h.game.quality.getQualityState().level)
     const start = await level()
     const down = graphics.locator('[data-quality=down]'), up = graphics.locator('[data-quality=up]')
@@ -129,45 +135,68 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await tap(graphics.locator('.wi-auto .s3-switch-text'))
     assert.equal(await autoOn(), autoBefore)
 
-    // Controls holds the personal control settings.
-    await tap(panel.locator('.wi-card[data-section=controls] .wi-head'))
-    for (const id of ['touch.leftHanded', 'camera.sensitivity', 'daydream.seconds']) await panel.locator(`.wi-row[data-id="${id}"]`).waitFor({ state: 'visible' })
-    assert.equal(await panel.getByRole('switch', { name: 'Presentation mode · P' }).count(), 1, `${mode}: presentation mode is a switch`)
-    await panel.locator('.wi-card[data-section=controls]').evaluate((c) => c.scrollIntoView({ block: 'start' }))
-    await page.waitForTimeout(400)
-    await page.screenshot({ path: `${out}/${mode}-controls.png` })
+    // Play: "Bots may play with me", the personal setting a room hears as you join.
+    await tap(panel.locator('.wi-card[data-section=play] .wi-head'))
+    const play = panel.getByRole('switch', { name: 'Bots may play with me' })
+    await play.waitFor({ state: 'visible' })
+    const playing = () => page.evaluate(() => window.syn3h.params.get('bots.playWithMe').value)
+    const wasPlaying = await playing()
+    await play.focus(); await page.keyboard.press('Space')
+    assert.equal(await playing(), !wasPlaying, `${mode}: the switch sets bots.playWithMe`)
+    await page.keyboard.press('Space'); assert.equal(await playing(), wasPlaying)
+    await page.screenshot({ path: `${out}/${mode}-play.png` })
 
-    // Opening the cards in turn, with Sound's Advanced fold open so it is tall: the card open
-    // longest closes when the next does not fit, and no open card is squeezed. Desktop is also
-    // checked at a short laptop height.
-    await panel.locator('.lobby-advanced').evaluate((fold) => { fold.open = true })
+    // Opening the sections in turn: the one open longest closes when the next does not fit, and
+    // no open section is squeezed. Desktop is also checked at a short laptop height.
     for (const height of mode === 'desktop' ? [900, 700] : [null]) {
       if (height) await page.setViewportSize({ width: 1440, height })
       const tag = height ? `${mode}-${height}` : mode
-      const history = await openInTurn(page, panel, ['sound', 'performance', 'controls', 'sound'], { tap: touch, prefix: `${out}/${tag}-stack`, label: tag })
+      const history = await openInTurn(page, panel, ['sound', 'performance', 'play', 'sound'], { tap: touch, prefix: `${out}/${tag}-stack`, label: tag })
       console.log(`${tag}: open after each step ${JSON.stringify(history)}`)
     }
     if (mode === 'desktop') await page.setViewportSize({ width: 1440, height: 900 })
+    if (mode === 'desktop') {
+      // The card stands on the button stack and grows upward; with every section open it still
+      // stops short of the wordmark and above Settings, at both common laptop sizes.
+      for (const [width, height] of [[1440, 900], [1280, 800]]) {
+        await page.setViewportSize({ width, height })
+        if (await page.locator('#lobby-settings').count()) { await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('#lobby-settings')) }
+        await gear.click(); await panel.waitFor({ state: 'visible' })
+        for (const id of ['performance', 'sound', 'play']) await panel.locator(`.wi-card[data-section=${id}]`).evaluate((c) => c.classList.contains('is-open') || c.querySelector('.wi-head').click())
+        await page.waitForTimeout(700)
+        const fit = await page.evaluate(() => {
+          const card = document.querySelector('#lobby-settings').getBoundingClientRect(), dock = document.querySelector('.lobby-gear-dock').getBoundingClientRect()
+          const mark = window.syn3h.shell.galaxy?.wordmarkScreenBox?.() ?? null
+          return { card: card.toJSON(), dock: dock.toJSON(), mark }
+        })
+        assert.ok(fit.card.bottom <= fit.dock.top, `${width}x${height}: card above the buttons ${JSON.stringify(fit)}`)
+        assert.ok(Math.abs(fit.card.right - fit.dock.right) <= 1, `${width}x${height}: card's right edge on the buttons' ${JSON.stringify(fit)}`)
+        if (fit.mark && fit.mark.x + fit.mark.width > fit.card.left) assert.ok(fit.card.top >= fit.mark.y + fit.mark.height, `${width}x${height}: card clear of the wordmark ${JSON.stringify(fit)}`)
+        await page.screenshot({ path: `${out}/desktop-${width}x${height}-all-open.png` })
+        await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('#lobby-settings'))
+      }
+      await page.setViewportSize({ width: 1440, height: 900 })
+    }
 
-    // Escape closes and focus returns to the gear (the close control does the same on phones).
-    if (touch) await tap(page.locator('dialog.lobby-sheet-settings .lobby-sheet-close'))
+    // Escape closes and focus returns to Settings (the close control does the same on phones).
+    if (touch) await tap(panel.locator('.lobby-settings-close'))
     else await page.keyboard.press('Escape')
-    await page.waitForFunction(() => !document.querySelector('dialog.lobby-sheet-settings[open]'))
+    await page.waitForFunction(() => !document.querySelector('#lobby-settings'))
     assert.ok(await page.evaluate(() => document.activeElement?.classList.contains('lobby-gear')), `${mode}: focus back on the gear`)
     if (!touch) {
       // Tab stays inside while open; a click outside closes without reaching the galaxy.
       await gear.click(); await panel.waitFor({ state: 'visible' })
       for (let i = 0; i < 30; i++) await page.keyboard.press('Tab')
-      assert.ok(await page.evaluate(() => document.activeElement?.closest('dialog.lobby-sheet-settings') !== null), 'desktop: focus trapped')
+      assert.ok(await page.evaluate(() => document.activeElement?.closest('#lobby-settings') !== null), 'desktop: focus trapped')
       await page.mouse.click(120, 450)
-      await page.waitForFunction(() => !document.querySelector('dialog.lobby-sheet-settings[open]'))
+      await page.waitForFunction(() => !document.querySelector('#lobby-settings'))
       assert.equal(await page.evaluate(() => document.querySelector('.shell-overlay .lobby-panels')?.hidden ?? true), true, 'desktop: outside click did not open a planet')
     }
     // The version beside the gear opens the Updates sheet.
     await tap(page.locator('[data-lobby-version]'))
     await page.locator('.lobby-sheet-updates .about-updates').waitFor({ state: 'visible', timeout: 10000 })
     await page.keyboard.press('Escape'); await page.locator('.lobby-sheet-updates').waitFor({ state: 'hidden' })
-    // Closed, no settings panel shows (it waits in its closed sheet).
+    // Closed, the card is gone from the page.
     assert.equal(await page.locator('.world-inspector.lobby-settings:visible').count(), 0)
     assert.deepEqual(errors, [], `${mode}: no page errors`)
     console.log(`${mode}: ok`)

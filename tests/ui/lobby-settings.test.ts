@@ -1,16 +1,14 @@
-/** The lobby settings panel's rules: what Sound shows up front, which version, where Tab goes. */
+/** The lobby settings card's rules: what Sound shows, which version, where Tab goes. */
 import { expect, it } from 'vitest'
 import { cycleFocus, gearPath, soundRows, versionLabel } from '../../src/ui/LobbySettings'
 import type { PropertyDef } from '../../src/ui/inspector/model'
 
 const def = (id: string, group = 'Audio'): PropertyDef => ({ id, label: id, group, scope: 'client', default: 0.5, min: 0, max: 1, step: 0.01 })
 
-it('shows music, master and mute up front and every other audio setting under Advanced', () => {
-  const defs = [def('audio.master'), def('audio.effects'), def('audio.music'), def('audio.muted'), def('audio.wind'), def('camera.sensitivity', 'Camera'), def('audio.newOne')]
-  const { main, advanced } = soundRows(defs)
-  expect(main.map(d => d.id)).toEqual(['audio.music', 'audio.master', 'audio.muted'])
-  // A later audio setting lands in Advanced without anyone listing it; other groups stay out.
-  expect(advanced.map(d => d.id)).toEqual(['audio.effects', 'audio.wind', 'audio.newOne'])
+it('shows music, master and mute, in that order, and no other audio setting', () => {
+  const defs = [def('audio.master'), def('audio.effects'), def('audio.music'), def('audio.muted'), def('audio.wind'), def('camera.sensitivity', 'Camera')]
+  // The other audio settings act only in a world; the in-game panel has them.
+  expect(soundRows(defs).map(d => d.id)).toEqual(['audio.music', 'audio.master', 'audio.muted'])
 })
 
 it('shows the pinned version on a pinned page, else the build label', () => {

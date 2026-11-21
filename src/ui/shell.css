@@ -527,3 +527,38 @@
 }
 
 .entry-warm-progress { position: fixed; z-index: 45; bottom: max(2rem, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); padding: .4rem .8rem; border-radius: .4rem; background: #111a24; color: white; font: inherit; pointer-events: none; white-space: nowrap; }
+
+.quality-change-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: .75rem;
+  background: #0a1019;
+  color: #fff;
+  pointer-events: auto;
+}
+
+.quality-progress {
+  width: min(12rem, 60vw);
+  height: .25rem;
+  overflow: hidden;
+  border-radius: 1rem;
+  background: #354152;
+}
+.quality-progress > span {
+  display: block;
+  width: 35%;
+  height: 100%;
+  background: currentColor;
+  animation: quality-progress 1s ease-in-out infinite alternate;
+}
+@keyframes quality-progress {
+  from { transform: translateX(0); }
+  to { transform: translateX(185%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quality-progress > span { animation: none; }
+}
