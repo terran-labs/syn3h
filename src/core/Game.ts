@@ -460,15 +460,20 @@ export class Game {
       await batch.ready()
     }
     progress('Drawing the new level')
-    // Temporal passes alternate targets. Confirm both sides after the last new graph.
+    await frame()
+    submit()
+    await this.finishWorldFrame(signal, () => signal.throwIfAborted(), false)
+    signal.throwIfAborted()
+    // Let the ordinary camera, governor and post chain present both temporal targets
+    // behind the veil. A slow GPU drain can leave the camera far from its last draw.
+    this.applyingQuality = false
     let clean = 0
     for (let i = 0; i < 8 && clean < 2; i++) {
-      await frame()
       const before = shaderWorkCount()
-      submit()
+      await frame()
+      signal.throwIfAborted()
       clean = shaderWorkCount() === before ? clean + 1 : 0
     }
-    await this.finishWorldFrame(signal, () => signal.throwIfAborted(), false)
   }
 
   /**
