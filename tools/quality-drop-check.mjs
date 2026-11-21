@@ -1,12 +1,12 @@
 // Run against a local release build before claiming an automatic quality step is free.
-// node tools/quality-drop-check.mjs ORIGIN webgpu|webgl 2|3|4|5 OUTPUT.json [desktop|phone] [stock|empty] [solo|peer|arrival]
+// node tools/quality-drop-check.mjs ORIGIN webgpu|webgl 2|3|4|5 OUTPUT.json [desktop|phone] [stock|unshed|empty] [solo|peer|arrival|manual]
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium } from 'playwright-core'
 
 const [origin, backend, entry, output, viewport = 'desktop', fleet = 'stock', multiplayer = 'solo'] = process.argv.slice(2)
-assert(['stock','empty'].includes(fleet) && ['solo','peer','arrival'].includes(multiplayer))
+assert(['stock','unshed','empty'].includes(fleet) && ['solo','peer','arrival','manual'].includes(multiplayer))
 const url = new URL(origin), entryLevel = Number(entry)
 assert(['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
 assert(['webgpu','webgl'].includes(backend) && [2,3,4,5].includes(entryLevel) && output && ['desktop','phone'].includes(viewport))
@@ -26,6 +26,7 @@ try {
   await page.evaluate(({level,fleet,multiplayer}) => {
     const {game, shell, params} = window.syn3h
     if (fleet === 'empty') params.set('bots.count',0)
+    if (fleet === 'unshed') params.set('bots.keepCount',true)
     if (multiplayer === 'arrival') {
       const bots = window.syn3h.bots, arrive = bots.arrive
       bots.arrive = function(index) {
@@ -48,7 +49,7 @@ try {
     !window.syn3h.shell.transitioning, null, {timeout:90000})
   if (multiplayer === 'arrival') {
     await page.waitForFunction(() => typeof window.releaseFourthBot === 'function',null,{timeout:120000})
-  } else if (fleet === 'stock') {
+  } else if (fleet !== 'empty') {
     await page.waitForFunction(() => {
       const {bots,materialize} = window.syn3h
       const vehicles = bots.vehicles
@@ -78,7 +79,7 @@ try {
     await page.bringToFront()
     await page.waitForFunction(id => window.syn3hNet?.remotes.get(id)?.vehicle,peerId)
   }
-  const result = await page.evaluate(async ({peerId, multiplayer}) => {
+  const result = await page.evaluate(async ({peerId, multiplayer, fleet}) => {
     const {game} = window.syn3h, q = game.quality, governor = q.governor, b = game.renderer.backend
     governor.sample = window.sampleBeforeRoster
     delete window.sampleBeforeRoster
@@ -86,10 +87,17 @@ try {
     const initialRoster = roster()
     const peerVehicle = peerId === null ? undefined : window.syn3hNet.remotes.get(peerId)?.vehicle
     const peerDrawLevels = new Set()
+    const minimalDraws = new Set()
+    const roots = new Set(initialRoster.map(v => v.id))
     const draw = b.draw
-    if (peerId !== null) b.draw = function(source,...args) {
+    if (peerId !== null || fleet === 'unshed') b.draw = function(source,...args) {
       const result = draw.call(this,source,...args)
-      if (window.syn3hNet.remotes.get(peerId)?.vehicle.object.getObjectById(source.object.id)) peerDrawLevels.add(governor.level)
+      if (fleet === 'unshed' && governor.level === 0) {
+        for (let o = source.object; o; o = o.parent) {
+          if (roots.has(o.id)) minimalDraws.add(o.id)
+        }
+      }
+      if (peerId !== null && window.syn3hNet.remotes.get(peerId)?.vehicle.object.getObjectById(source.object.id)) peerDrawLevels.add(governor.level)
       return result
     }
     const entered = governor.level, start = performance.now(), calls = [], changes = []
@@ -114,6 +122,7 @@ try {
     // The controller receives slow evidence at wall-clock pace. Every normal game draw,
     // settle period, rung, bot budget and level decision stays in the production loop.
     governor.sample = function(ms,visible) {
+      if (multiplayer === 'manual') return null
       if (!visible) return sample.call(this,ms,false)
       accumulated += ms
       if (accumulated < 75) return null
@@ -126,16 +135,34 @@ try {
       return sample.call(this,interval,true)
     }
     try {
+      if (multiplayer === 'manual') {
+        for (let target = entered - 1; target >= 0; target--) {
+          q.setLevel(target)
+          const requested = performance.now()
+          while (governor.level !== target || document.querySelector('.quality-change-veil')) {
+            if (performance.now() - requested > 20000) throw new Error('Manual quality change timed out at '+target)
+            await new Promise(resolve => setTimeout(resolve,50))
+          }
+          await new Promise(resolve => setTimeout(resolve,650))
+        }
+      }
       while (governor.level && performance.now()-start < 150000) await new Promise(resolve=>setTimeout(resolve,100))
       await new Promise(resolve=>setTimeout(resolve,1500))
-      return {entered,initialRoster,peerKind:peerVehicle?.kind,peerDrawLevels:[...peerDrawLevels],backend:game.backend,final:governor.level,calls,changes}
+      return {entered,initialRoster,finalRoster:roster(),minimalDraws:[...minimalDraws],peerKind:peerVehicle?.kind,peerDrawLevels:[...peerDrawLevels],backend:game.backend,final:governor.level,calls,changes}
     } finally { governor.sample=sample; unsubscribe(); b.createNodeBuilder=make; b.createRenderPipeline=pipeline; b.draw=draw }
-  },{peerId, multiplayer})
+  },{peerId, multiplayer, fleet})
   await writeFile(output,JSON.stringify({...result,viewport,fleet,multiplayer,errors},null,2))
   assert.deepEqual(errors,[])
   assert.equal(result.backend,backend)
   assert.equal(result.entered,entryLevel)
-  if (fleet === 'stock' && multiplayer !== 'arrival') assert.equal(result.initialRoster.length, 4, 'Full fleet required at measurement start')
+  if (fleet !== 'empty' && multiplayer !== 'arrival') assert.equal(result.initialRoster.length, 4, 'Full fleet required at measurement start')
+  if (fleet === 'unshed') {
+    const ids = roster => roster.map(v => v.id).sort((a,b) => a-b)
+    const expected = ids(result.initialRoster)
+    for (const row of result.changes) assert.deepEqual(ids(row.roster),expected,'The unshed fleet changed during relief')
+    assert.deepEqual(ids(result.finalRoster),expected)
+    assert.deepEqual(result.minimalDraws.sort((a,b) => a-b),expected,'Each retained bot must draw at Minimal')
+  }
   if (peerId !== null) assert.equal(result.peerKind,'jet')
   assert.equal(result.final,0)
   if (multiplayer === 'arrival') assert(result.changes.some(change => change.level === entryLevel-1 &&

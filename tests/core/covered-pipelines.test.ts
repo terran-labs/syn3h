@@ -79,3 +79,16 @@ it('reuses only previously submitted geometry and pipelines on the same backend'
   object.geometry = {}
   expect(visit().needsConfirmation).toBe(true)
 })
+
+it('confirms a cold scene even when Three skips every draw until its pipeline is ready', async () => {
+  const create = (_object: object, pending: Promise<void>[] | null) => pending?.push(Promise.resolve())
+  const backend = { device: {}, createRenderPipeline: create, draw: vi.fn() }
+  const renderer = { backend, _nodes: { nodeFrame: { frameId: 0 } } } as unknown as WebGPURenderer
+  const scene = {}, mesh = { scene, object: {}, geometry: {}, pipeline: {} }
+  const batch = CoveredPipelines.forRenderer(renderer, scene)!
+  batch.run(true, () => backend.createRenderPipeline(mesh, null))
+  expect(await batch.ready()).toBe(true)
+  expect(batch.needsConfirmation).toBe(true)
+  batch.run(false, () => backend.draw(mesh))
+  expect(backend.draw).toHaveBeenCalledWith(mesh)
+})

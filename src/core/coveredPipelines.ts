@@ -47,12 +47,16 @@ export class CoveredPipelines {
     // each distinct pose without advancing real time or stepping game physics.
     this.clock.frameId++
     if (discover) {
+      const batch = this
       backend.createRenderPipeline = function (object, promises) {
         // A one-shot texture generator can run inside the traversal. It needs its
         // pixels immediately. Only defer geometry from the world and its caster passes.
-        return create.call(this, object, object.scene === scene || composites.has(object.object) ? promises ?? requests : promises)
+        if (object.scene !== scene && !composites.has(object.object)) return create.call(this, object, promises)
+        // Three skips backend.draw while an asynchronous pipeline is pending. A cold
+        // entry can therefore request the entire scene without issuing a single draw.
+        batch.needsConfirmation = true
+        return create.call(this, object, promises ?? requests)
       }
-      const batch = this
       backend.draw = function (object, ...args) {
         if (object.scene !== scene && !composites.has(object.object)) return submit.call(this, object, ...args)
         const previous = batch.confirmed.get(object)
