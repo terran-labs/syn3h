@@ -1,3 +1,4 @@
+import { clipSearchResults } from './panelGlass'
 import { liquidSelected } from './glassMaterial'
 import { longFrames } from '../core/longFrames'
 import { cancelStartupPlayRequest, recordStartupPlayRequest, recordStartupReveal } from '../core/diagnostics'
@@ -349,6 +350,7 @@ export class Shell implements System {
     // display shows; with it free the panels are open. There is no stored open or closed
     // state: `syncPanels` derives it from the real lock, every frame and on every lock event.
     this.inspector.open = false
+    clipSearchResults(this.inspector.element, signal)
     const railTop = this.inspector.element.querySelector('.wi-top')!
     // Players & session is a card like the others: same header, chevron, easing and memory.
     const players = document.createElement('div')

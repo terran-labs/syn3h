@@ -1,7 +1,7 @@
 import { Fn, If, Loop, Continue, abs, dot, float, length, max, min, mix, clamp, screenSize, step, uv, vec2, vec3, vec4 } from 'three/tsl'
 import { mergedGlassPair } from './mergedPair'
 import { glassOptics } from './optics'
-import { regularGlass, regularResponse, type RegularUniforms } from './regular'
+import { regularGlass, type RegularUniforms } from './regular'
 
 type N = any // TSL expression with a shader-dependent node type.
 
@@ -45,16 +45,8 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
         const roundDistance = length(outer).add(min(max(q.x, q.y), 0)).sub(radius)
         const presentation = glass.presentation?.element(i)
         const opacity = presentation?.x ?? float(1)
-        if (presentation && blurred) {
-          // At this depth the 16 pt card corner has no displaced sample.
-          // The scene composite already contains the fine backdrop at this pixel.
-          If(presentation.y.greaterThan(.5).and(glass.viewport.w.lessThan(.5)).and(roundDistance.lessThan(-24)), () => {
-            const { tone, chroma } = regularResponse(original.rgb, blurred(uv()), glass.viewport.z, presentation.y, tuning)
-            const face = clamp(vec3(tone).add(chroma), 0, 1)
-            result.assign(vec4(mix(result.rgb, face, opacity), 1))
-            Continue()
-          })
-        }
+        // Keep the same filtered detail sample across the face. Switching to the
+        // unfiltered composite at a fixed inset left a rectangle in short cards.
         const side = step(q.y, q.x)
         const gradient = mix(vec2(side, float(1).sub(side)), outer.div(max(length(outer), 0.001)), step(0.001, length(outer))).mul(local.sign())
         const clear = glass.viewport.w.greaterThan(.5)
