@@ -588,7 +588,9 @@ export class PostChain {
         this.presetKeys.delete(candidate)
         continue
       }
-      if (candidate <= level + 1) continue
+      // Minimal bypasses post. Keep Low’s next graph parked across that bypass
+      // so the return through Low to Medium reuses its shafts and composite.
+      if (candidate <= Math.max(level, 1) + 1) continue
       // A covered glass graph can restore its surfaces when quality climbs.
       // Park it under the same target budget and context lifetime.
       const graph = this.built?.key === key ? this.built : this.standby.get(key)

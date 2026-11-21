@@ -201,26 +201,45 @@ for (const [name, codes, status] of [['passes', [0], 0], ['fails at once', [1, 0
 }
 
 
-test('the hosted check step cannot hold an accepted release open', () => {
-  // 18 Nov 2026: a hosted run stuck "in progress" and `gh run watch` waited 36 minutes.
+// The hosted check step, run as release.sh defines it, against a stand-in gh whose successive
+// answers to `run view` are listed in VIEWS (one "status conclusion" line each; the last repeats).
+function vantageRun(views, wait = '1') {
   const source = readFileSync(join(process.cwd(), 'tools', 'release.sh'), 'utf8')
   const start = source.indexOf('vantage() {'), end = source.indexOf('\n}\n', start)
   assert.ok(start >= 0 && end > start, 'release.sh defines vantage()')
   const dir = mkdtempSync(join(tmpdir(), 'syn3h-vantage-'))
   try {
-    // A stand-in gh: the dispatch works, the run appears, and it never finishes.
+    writeFileSync(join(dir, 'views'), views.join('\n') + '\n')
     writeFileSync(join(dir, 'gh'), `#!/bin/sh
 case "$1 $2" in
   "workflow run") exit 0 ;;
   "run list") echo 4242 ;;
-  "run view") echo in_progress ;;
+  "run view") v=$(head -1 "${dir}/views"); [ "$(wc -l < "${dir}/views")" -gt 1 ] && tail -n +2 "${dir}/views" > "${dir}/v2" && mv "${dir}/v2" "${dir}/views"; echo "$v" ;;
 esac
 `, { mode: 0o755 })
+    // A clock that moves 5 s a call, and a sleep that does not, so a deadline passes at once.
+    writeFileSync(join(dir, 'date'), `#!/bin/sh\ncase "$1" in -u) /bin/date "$@" ;; *) n=$(cat "${dir}/clock" 2>/dev/null || echo 1000); echo $((n + 5)) > "${dir}/clock"; echo $n ;; esac\n`, { mode: 0o755 })
     const script = `${source.slice(start, end + 2)}\nsleep() { :; }\nLOG="${dir}/log"; CALVER=v0.0.0; vantage`
     const started = Date.now()
-    const result = spawnSync('/bin/sh', ['-c', script], { encoding: 'utf8', timeout: 20000, env: { PATH: `${dir}:${process.env.PATH}`, SYN3H_VANTAGE_WAIT: '1' } })
+    const result = spawnSync('/bin/sh', ['-c', script], { encoding: 'utf8', timeout: 20000, env: { PATH: `${dir}:${process.env.PATH}`, SYN3H_VANTAGE_WAIT: wait } })
     assert.equal(result.status, 0, result.stderr)
-    assert.match(result.stdout, /VANTAGE: GitHub public check of v0\.0\.0 still in_progress after 1 s, not waited for/)
     assert.ok(Date.now() - started < 15000, 'the step returned promptly')
+    return result.stdout
   } finally { rmSync(dir, { recursive: true, force: true }) }
+}
+
+test('the hosted check step cannot hold an accepted release open', () => {
+  // 18 Nov 2026: a hosted run stuck "in progress" and `gh run watch` waited 36 minutes.
+  assert.match(vantageRun(['in_progress ']), /VANTAGE: GitHub public check of v0\.0\.0 still running \(in_progress\) after 1 s, not waited for; no result yet: https:\/\/github\.com\/.*\/runs\/4242/)
+})
+
+test('the hosted check reports a result only once GitHub gives one, never a blank', () => {
+  // release-91: GitHub said "completed" a moment before its conclusion, and the step printed
+  // an empty result. Now it waits for the conclusion itself.
+  assert.match(vantageRun(['in_progress ', 'completed ', 'completed success'], '60'), /from a hosted machine: success https:\/\/github\.com\/.*\/runs\/4242/)
+  assert.match(vantageRun(['completed failure'], '60'), /from a hosted machine: failure /)
+  // A conclusion that never comes is said plainly, not printed as an empty result.
+  const never = vantageRun(['completed '])
+  assert.match(never, /completed but GitHub reported no result within 1 s; no result yet:/)
+  assert.doesNotMatch(never, /from a hosted machine:/)
 })
