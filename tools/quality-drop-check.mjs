@@ -1,5 +1,5 @@
 // Run against a local release build before claiming an automatic quality step is free.
-// node tools/quality-drop-check.mjs ORIGIN webgpu|webgl 3|5 OUTPUT.json
+// node tools/quality-drop-check.mjs ORIGIN webgpu|webgl 3|4|5 OUTPUT.json
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -8,7 +8,7 @@ import { chromium } from 'playwright-core'
 const [origin, backend, entry, output] = process.argv.slice(2)
 const url = new URL(origin), entryLevel = Number(entry)
 assert(['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
-assert(['webgpu','webgl'].includes(backend) && [3,5].includes(entryLevel) && output)
+assert(['webgpu','webgl'].includes(backend) && [3,4,5].includes(entryLevel) && output)
 url.searchParams.set('seed','1')
 url.searchParams.set('room','quality-check-'+randomUUID().slice(0,8))
 if (backend === 'webgl') url.searchParams.set('webgl','1')

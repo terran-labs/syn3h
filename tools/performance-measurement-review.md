@@ -59,13 +59,15 @@ The inspected runtime source has no scene.backgroundNode or scene.environmentNod
 
 ## Automatic quality drops
 
-For a quality change claim, record the world entry level, backend, active vehicle and each transition in order. Run the entire descent in one session from High and again from Cinematic on each backend. The check feeds slow samples to the governor at wall-clock pace and records actual node builds and pipeline requests. It fails on a missed level, a browser error or any build during a drop.
+For a quality change claim, record the world entry level, backend, active vehicle and each transition in order. Run the entire descent in one session from High, Ultra and Cinematic on each backend. The check feeds slow samples to the governor at wall-clock pace and records actual node builds and pipeline requests. It fails on a missed level, a browser error or any build during a drop.
 
 Use a locally served production build with its room server. Run each cell through the shared heavy queue.
 
 ```sh
 tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgpu 3 high-webgpu.json
 tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgl 3 high-webgl.json
+tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgpu 4 ultra-webgpu.json
+tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgl 4 ultra-webgl.json
 tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgpu 5 cinematic-webgpu.json
 tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgl 5 cinematic-webgl.json
 ```
