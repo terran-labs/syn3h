@@ -35,6 +35,8 @@ export class GlassMotionClock {
     }
   }
 
+  get active(): boolean { return this.running.size > 0 }
+
   advance(now: number): boolean {
     const wasMoving = this.running.size > 0
     for (const [animation, state] of this.running) {

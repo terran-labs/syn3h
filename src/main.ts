@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   const environment = game.add(createEnvironment(game, terrain), 'Environment and sky')
   // Post effects follow the player's settings and the current rendering budget.
   const mode = query.get('glass')
-  let glass
+  let glass: import('./fx/post/GlassPost').GlassPost | undefined
   if (mode === 'inline' || mode === 'target') {
     try { const { GlassPost } = await import('./fx/post/GlassPost'); glass = new GlassPost(mode) }
     catch (error) { console.warn('Glass shader unavailable, using CSS', error) }
@@ -139,10 +139,15 @@ async function main(): Promise<void> {
         : bots.vehicles.map(bot => bot.kind)
       return diagnosticReport(game.quality.getPerformanceSnapshot(), slot.current.kind, botKinds, currentWorldName(), currentPlanet().label,
         sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine)
+        + '\n' + (glass?.diagnosticLine() ?? (mode === 'inline' || mode === 'target'
+          ? 'Glass: shed, shader unavailable, 0 surfaces' : 'Glass: off, 0 surfaces'))
     },
     getPerformanceSnapshot: () => game.quality.getPerformanceSnapshot(),
     subscribePerformance: listener => game.quality.subscribePerformance(listener),
-    setDiagnosticsVisible: visible => game.quality.setDiagnosticsVisible(visible),
+    setDiagnosticsVisible: visible => {
+      game.quality.setDiagnosticsVisible(visible)
+      if (glass) glass.timing.visible = visible
+    },
     ignoreRecommendation: () => game.quality.ignoreRecommendation(),
     lowerRecommendedTier: () => game.quality.lowerRecommendedTier(),
     fewerRecommendedBots: () => game.quality.fewerRecommendedBots(),
@@ -165,7 +170,11 @@ async function main(): Promise<void> {
   // Two triggers, one state (src/core/pause.ts): the page being hidden, and the player's own
   // pause from the shell. The loop stops while either holds.
   const pause = new PauseState()
-  pause.subscribe((paused) => { if (paused) game.pause(); else game.resume() })
+  pause.subscribe((paused, reason) => {
+    if (paused) game.pause()
+    else game.resume()
+    glass?.setPausedDraw(reason === 'user' ? () => game.redrawPaused() : undefined)
+  })
   const lifecycle = new PageLifecycle()
   lifecycle.onChange((state) => { if (state === 'hidden') pause.pause('hidden'); else pause.resume('hidden') })
   if (lifecycle.hidden) pause.pause('hidden')

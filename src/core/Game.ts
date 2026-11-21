@@ -283,11 +283,24 @@ export class Game {
     const copy = document.createElement('canvas'); copy.width = width; copy.height = height
     const context = copy.getContext('2d'); if (!context) return null
     let drawn = false
-    runGuarded(this.renderer as unknown as GuardedRenderer, () => { for (let i = 0; i < draws; i++) drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16); drawn = true })
+    const draw = () => runGuarded(this.renderer as unknown as GuardedRenderer, () => {
+      for (let i = 0; i < draws; i++) drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+      drawn = true
+    })
+    if (this.postChain?.withoutGlass) this.postChain.withoutGlass(draw)
+    else draw()
     if (!drawn) return null
     context.drawImage(this.canvas, 0, 0)
+    if (this.postChain?.withoutGlass && this.paused) this.redrawPaused()
     if (verify && context.getImageData(width >> 1, height >> 1, 1, 1).data[3] === 0) return null
     return copy
+  }
+
+  /** Repaint a user-paused interface after its layout or press changes.
+   * Physics and the simulation clock stay stopped. */
+  redrawPaused(): void {
+    if (!this.started || !this.paused || document.hidden) return
+    runGuarded(this.renderer as unknown as GuardedRenderer, () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16))
   }
 
   /** Frames the loop has run since start, drawn or not. Stands still while paused. */
@@ -534,6 +547,7 @@ export class Game {
   }
 
   private postChain: (PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> & {
+    withoutGlass?<T>(draw: () => T): T
     warmCovered?(warm: CoveredWarm, preset: AdjacentRenderPreset): Promise<void>
     coveredVariantKey?(preset: AdjacentRenderPreset): string | undefined
     hasRenderPreset?(preset: AdjacentRenderPreset): boolean

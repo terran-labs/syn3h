@@ -1,17 +1,18 @@
-import { Fn, If, Loop, abs, dot, float, length, max, min, mix, clamp, screenSize, step, uv, vec2, vec3, vec4 } from 'three/tsl'
+import { Fn, If, Loop, Continue, abs, dot, float, length, max, min, mix, clamp, screenSize, step, uv, vec2, vec3, vec4 } from 'three/tsl'
 import { mergedGlassPair } from './mergedPair'
 import { glassOptics } from './optics'
-import { regularGlass } from './regular'
+import { regularGlass, regularResponse } from './regular'
 
 type N = any // TSL expression with a shader-dependent node type.
 
 export interface GlassSurfaces {
   pairSlots?: N
   pressState?: N
+  surfaceCount?: N
   capacity: number
   viewport: N
   clips?: N // Visible scrollport in canvas coordinates.
-  opacity?: N // Effective DOM opacity, including animated ancestors.
+  presentation?: N // Effective DOM opacity and card flag.
   boxes: N // Centre and half-size in CSS pixels, origin at top left.
   radii: N // Top left, top right, bottom left, bottom right.
   filters: N
@@ -26,7 +27,7 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
     const pixel = uv().mul(size)
     const pixelsPerPoint = screenSize.x.div(size.x)
     const pair = mergePair && filtered && blurred ? glass.pairSlots : undefined
-    Loop(glass.capacity, ({ i }: { i: N }) => {
+    Loop(glass.surfaceCount ?? glass.capacity, ({ i }: { i: N }) => {
       const box: N = glass.boxes.element(i)
       const local = pixel.sub(box.xy)
       const visible = box.z.greaterThan(0)
@@ -42,6 +43,18 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
         const q = vec2(abs(local).sub(box.zw).add(radius) as N)
         const outer = max(q, vec2(0))
         const roundDistance = length(outer).add(min(max(q.x, q.y), 0)).sub(radius)
+        const presentation = glass.presentation?.element(i)
+        const opacity = presentation?.x ?? float(1)
+        if (presentation && blurred) {
+          // At this depth the 16 pt card corner has no displaced sample.
+          // The scene composite already contains the fine backdrop at this pixel.
+          If(presentation.y.greaterThan(.5).and(glass.viewport.w.lessThan(.5)).and(roundDistance.lessThan(-24)), () => {
+            const { tone, chroma } = regularResponse(original.rgb, blurred(uv()), glass.viewport.z, presentation.y)
+            const face = clamp(vec3(tone).add(chroma), 0, 1)
+            result.assign(vec4(mix(result.rgb, face, opacity), 1))
+            Continue()
+          })
+        }
         const side = step(q.y, q.x)
         const gradient = mix(vec2(side, float(1).sub(side)), outer.div(max(length(outer), 0.001)), step(0.001, length(outer))).mul(local.sign())
         const clear = glass.viewport.w.greaterThan(.5)
@@ -80,22 +93,26 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
           If(clear, () => {
             body.assign(glassOptics(box.zw, distance, gradient, uv(), size, material, glass.filters.element(i), glass.bodies.element(i), sample))
           }).Else(() => {
-            body.assign(regularGlass(box.zw, distance, gradient, uv(), size, dark, sample, filtered, blurred))
+            const opticalSize = presentation ? mix(box.zw, vec2(radius.max(1)), presentation.y) : box.zw
+            body.assign(regularGlass(opticalSize, distance, gradient, uv(), size, dark, sample, filtered, blurred, presentation?.y))
           })
           if (glass.pressState) {
             const lift = glass.pressState.y.mul(.405).mul(float(i.equal(glass.pressState.x)))
             body.assign(mix(body, vec3(1), lift))
           }
+          if (presentation) {
+            body.assign(mix(body, vec3(1), presentation.w.mul(.405)))
+          }
           under.assign(mix(under, body, coverage))
         })
-        result.assign(vec4(glass.opacity ? mix(result.rgb, under, glass.opacity.element(i)) : under, 1))
+        result.assign(vec4(mix(result.rgb, under, opacity) as N, 1))
       })
     })
     if (pair && filtered && blurred) {
       If(pair.z.greaterThan(0), () => {
         const merged = mergedGlassPair(result, glass.boxes.element(pair.x.toInt()), glass.boxes.element(pair.y.toInt()),
           glass.viewport, pixelsPerPoint, sample, filtered, blurred, glass.pressState?.y, pair.z)
-        result.assign(glass.opacity ? mix(result, merged, glass.opacity.element(pair.x.toInt())) : merged)
+        result.assign(glass.presentation ? mix(result, merged, glass.presentation.element(pair.x.toInt()).x) : merged)
       })
     }
     return result

@@ -50,12 +50,44 @@ import UIKit
             .onEnded { _ in contact = 0 })
     }
 
+    // A card-size neutral field separates ink, backdrop transmission and
+    // selection fill. A second capture without text gives the local background.
+    @ViewBuilder
+    func panelReference(_ glass: Glass) -> some View {
+        ZStack {
+            let field = option("-field", "white")
+            if let path = Bundle.main.url(forResource: field, withExtension: "png"), let source = UIImage(contentsOfFile: path.path) {
+                Image(uiImage: source).resizable().interpolation(.none).frame(width: 390, height: 844)
+            } else {
+                Color(white: field == "white" ? 1 : CGFloat(Double(field) ?? 0) / 255)
+            }
+            VStack(alignment: .leading, spacing: 24) {
+                if !args.contains("-bare-ink") {
+                    Text("Player name").foregroundStyle(.primary)
+                    Text("Focus display").foregroundStyle(.secondary)
+                    Picker("Units", selection: .constant(0)) {
+                        Text("Metric").tag(0)
+                        Text("Imperial").tag(1)
+                    }.pickerStyle(.segmented)
+                }
+                Spacer()
+            }
+            .font(.body)
+            .padding(20)
+            .frame(width: 342, height: 741, alignment: .topLeading)
+            .glassEffect(glass, in: .rect(cornerRadius: 16))
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             let name = option("-background", "grid")
             let shift = CGFloat(Double(option("-shift", "0")) ?? 0)
             let glass: Glass = option("-variant", "regular") == "clear" ? .clear : .regular
             ZStack {
+                if args.contains("-panel") {
+                    panelReference(glass)
+                } else {
                 Color(white: option("-theme", "light") == "dark" ? 0.08 : 0.94)
                 ZStack(alignment: .topLeading) {
                     if let file = Bundle.main.url(forResource: name, withExtension: "png"), let image = UIImage(contentsOfFile: file.path) {
@@ -107,6 +139,7 @@ import UIKit
                         }
                     }
                 }.frame(width: 328, height: 160, alignment: .topLeading).clipped()
+                }
             }
             .ignoresSafeArea()
             .statusBarHidden(true)

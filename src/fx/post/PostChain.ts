@@ -263,6 +263,13 @@ export class PostChain {
   private burstClock = 0
 
   setCovered(covered: boolean): void { if (this.glass) this.glass.covered = covered }
+  private cleanFrame = false
+  private cleanDraw = <T>(draw: () => T): T => {
+    this.cleanFrame = true
+    try { return draw() } finally { this.cleanFrame = false }
+  }
+  get withoutGlass() { return this.glass ? this.cleanDraw : undefined }
+
   constructor(private readonly host: PostChainHost, private readonly sun: SunSource, private readonly glass?: GlassPost) {}
 
   /** Exact post context for covered draw deduplication. Also records equivalent preset levels. */
@@ -411,9 +418,12 @@ export class PostChain {
     if (built.raysTex) built.raysTex.autoUpdate = sunLit && shaftAmount > 0
     this.setVolumetricCloudsActive(built.clouds)
     try {
-      if (this.glass?.covered || !built.glass) built.pipeline.render()
-      if (built.glass) this.glass!.render(built.glass, built.pipeline)
-      else this.glass?.release()
+      if (this.cleanFrame) built.pipeline.render()
+      else {
+        if (this.glass?.covered || !built.glass) built.pipeline.render()
+        if (built.glass) this.glass!.render(built.glass, built.pipeline)
+        else this.glass?.release()
+      }
       if (reusing) this.restoredTargets += built.targets.filter(target => target.width > 1 || target.height > 1).length
     } catch (error) {
       this.setVolumetricCloudsActive(false)

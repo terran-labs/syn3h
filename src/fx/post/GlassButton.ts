@@ -6,7 +6,12 @@ import { uniform, uniformArray } from 'three/tsl'
 
 const panel = '.hud-navigation .inspector-toggle.liquid-glass'
 const round = '.touch-actions .liquid-glass.glass-round'
-const card = '.syn3h-shell > .world-inspector:not(.lobby-settings) .wi-card[data-section="you"]'
+const inspector = '.syn3h-shell > .world-inspector:not(.lobby-settings)'
+const card = inspector + ' > .wi-cards > .wi-card, ' + inspector + ' > .wi-ghosts > .wi-ghost.wi-glass'
+const buttons = [panel, round, '.pause-actions > button', '.rail-command > button', '.rail-command > input.wi-search',
+  '.world-inspector > .panels-close', '.gear-actions > button', '.rail-foot > button',
+  '.hud-accessories > button', '.hud-chat > button', '.gs-drum > button'].join(',')
+export const gameplayGlassSlots = 32
 const vectors = (count: number) => Array.from({ length: count }, () => new Vector4())
 
 /** The authored RGB token and its production CSS equivalent use display RGB. */
@@ -24,18 +29,19 @@ export function readGlassTint(value: string): [number, number, number, number] |
 /** The opt-in uses one fixed buffer layout from covered entry to exit. Spare
  * slots cost a box test, but showing a control never changes the shader graph. */
 export class GlassButton {
-  readonly boxes = uniformArray(vectors(6), 'vec4')
-  readonly radii = uniformArray(vectors(6), 'vec4')
-  readonly bodies = uniformArray(vectors(6), 'vec4')
-  readonly filters = uniformArray(vectors(6), 'vec4')
-  readonly clips = uniformArray(vectors(6), 'vec4')
-  readonly opacity = uniformArray(Array<number>(6).fill(1), 'float')
+  readonly boxes = uniformArray(vectors(gameplayGlassSlots), 'vec4')
+  readonly radii = uniformArray(vectors(gameplayGlassSlots), 'vec4')
+  readonly bodies = uniformArray(vectors(gameplayGlassSlots), 'vec4')
+  readonly filters = uniformArray(vectors(gameplayGlassSlots), 'vec4')
+  readonly clips = uniformArray(vectors(gameplayGlassSlots), 'vec4')
+  readonly presentation = uniformArray(vectors(gameplayGlassSlots), 'vec4')
+  readonly surfaceCount = uniform(0, 'int')
   readonly viewport = uniform(new Vector4())
   private readonly query = new URLSearchParams(location.search)
-  private readonly brake = this.query.get('glass') === 'inline' && this.query.get('glassPress') === 'brake'
+  private readonly brake = this.query.get('glass') === 'inline' && this.query.get('glassPress') !== 'off'
     && this.query.get('glassMaterial') !== 'clear' ? new BrakeGlassPress() : null
   readonly pressOnly = this.query.get('glassMerge') === 'zorb-brake-pressed'
-  readonly pairSlots = this.brake && (this.pressOnly || this.query.get('glassMerge') === 'zorb-brake')
+  readonly pairSlots = this.brake && (this.pressOnly || (this.query.get('glassMerge') ?? 'zorb-brake') === 'zorb-brake')
     && !['direct', 'mip'].includes(this.query.get('glassBlur') ?? '')
     ? uniform(new Vector4(-1, -1, 0, 0)) : undefined
   private pairBrake?: HTMLElement
@@ -48,7 +54,7 @@ export class GlassButton {
   readonly pressState = this.brake?.state
   private readonly events = new AbortController()
   private dirty = true
-  private readonly invalidate = () => { this.dirty = true }
+  private readonly invalidate = () => { this.dirty = true; this.requestDraw() }
   private readonly resize = new ResizeObserver(this.invalidate)
   private readonly changes = new MutationObserver(records => {
     // TouchControls writes aria-pressed each tick, including when its value stays
@@ -71,14 +77,14 @@ export class GlassButton {
   private readonly reduced = matchMedia('(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)')
   private controls: HTMLElement[] = []
   private registryDirty = true
-  private readonly membership = new MutationObserver(() => { this.registryDirty = true })
+  private readonly membership = new MutationObserver(() => { this.registryDirty = true; this.invalidate() })
   private readonly drawn = new Set<HTMLElement>()
   private readonly clock = new GlassMotionClock()
-  private pressed: Element | null = null
+  private readonly pressed = new Map<number, Element>()
   lastBoundsMs = 0
   lastLayoutMs = 0
 
-  constructor(private canvas: HTMLCanvasElement, readonly capacity: number) {
+  constructor(private canvas: HTMLCanvasElement, readonly capacity: number, private requestDraw = () => {}) {
     const options = { signal: this.events.signal, capture: true }
     this.resize.observe(canvas)
     for (const event of ['scroll', 'resize', 'orientationchange', 'glassgeometrychange']) window.addEventListener(event, this.invalidate, options)
@@ -112,11 +118,13 @@ export class GlassButton {
     window.addEventListener('pointerdown', e => {
       const button = e.target instanceof Element ? e.target.closest('button') : null
       if (button?.dataset.glassPress === 'brake') return
-      this.pressed = button
+      if (button) this.pressed.set(e.pointerId, button)
       this.invalidate()
     }, options)
-    const release = () => { if (this.pressed) { this.pressed = null; this.invalidate() } }
-    for (const event of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(event, release, options)
+    const release = (event: PointerEvent) => { if (this.pressed.delete(event.pointerId)) this.invalidate() }
+    window.addEventListener('pointerup', release, options)
+    window.addEventListener('pointercancel', release, options)
+    window.addEventListener('blur', () => { this.pressed.clear(); this.invalidate() }, options)
     visualViewport?.addEventListener('resize', this.invalidate, options)
     visualViewport?.addEventListener('scroll', this.invalidate, options)
     this.dark.addEventListener('change', this.invalidate, options)
@@ -147,14 +155,20 @@ export class GlassButton {
   update(): void {
     if (this.registryDirty || !this.controls.length || !this.controls[0].isConnected) {
       this.registryDirty = false
-      const next = Array.from(document.querySelectorAll<HTMLElement>(this.capacity === 1 ? panel : [card, panel, round].join(',')))
-      for (const old of this.controls) if (!next.includes(old)) delete old.dataset.glassSurface
+      const next = Array.from(document.querySelectorAll<HTMLElement>(this.capacity === 1 ? panel : [buttons, card].join(',')))
+      for (const old of this.controls) if (!next.includes(old)) {
+        delete old.dataset.glassSurface
+        old.removeAttribute('data-glass-native-ink')
+        old.removeAttribute('data-glass-label')
+      }
       this.resize.disconnect()
       this.resize.observe(this.canvas)
       this.changes.disconnect()
       this.membership.disconnect()
-      const stack = document.querySelector('.syn3h-shell > .world-inspector .wi-cards')
-      if (stack) this.membership.observe(stack, { childList: true })
+      const stack = document.querySelector(inspector + ' > .wi-cards')
+      for (const host of [stack, stack?.parentElement, ...document.querySelectorAll('.gear-actions, .rail-foot, .hud-accessories, .gs-drum')]) {
+        if (host) this.membership.observe(host, { childList: true })
+      }
       this.controls = next
       for (const b of this.controls) {
         const actions = b.closest<HTMLElement>('.touch-actions')
@@ -213,7 +227,8 @@ export class GlassButton {
       const sx = isCard && parseFloat(style.width) ? rect.width / parseFloat(style.width) : 1
       const sy = isCard && parseFloat(style.height) ? rect.height / parseFloat(style.height) : sx
       rect = paintedInset(rect, style.clipPath, sx, sy)
-      const scrollport = isCard ? b.closest('.wi-cards')?.getBoundingClientRect() : undefined
+      const drum = b.parentElement?.classList.contains('gs-drum')
+      const scrollport = (isCard ? b.closest('.wi-cards') : drum ? b.parentElement : null)?.getBoundingClientRect()
       const clip = scrollport ?? c
       if (!rect.width || !rect.height || rect.bottom <= clip.top || rect.top >= clip.bottom ||
         rect.right <= clip.left || rect.left >= clip.right) continue
@@ -221,15 +236,16 @@ export class GlassButton {
       const rgba = isCard ? [1, 1, 1, .06] : readGlassTint(style.getPropertyValue(token).trim())
       const filter = isCard ? ['', '3', '1.2'] : /^blur\(([\d.]+)px\)\s+saturate\(([\d.]+)\)\s+brightness\(([\d.]+)\)$/.exec(style.getPropertyValue('--glass-frost').trim())
       if (!rgba || !filter) continue
+      const pressed = [...this.pressed.values()].includes(b) || b.matches(':active, .held')
       const i = this.drawn.size
-      this.opacity.array[i] = alpha
+      ;(this.presentation.array[i] as Vector4).set(alpha, Number(isCard), 0, Number(!isCard && b.dataset.action !== 'brakes' && pressed))
       ;(this.clips.array[i] as Vector4).set(clip.left - c.left, clip.top - c.top, clip.right - c.left, clip.bottom - c.top)
       const half = Math.min(rect.width, rect.height) / 2
       const radius = (s: string) => Math.min(half, s.endsWith('%') ? parseFloat(s) * half / 50 : parseFloat(s) * sx)
       boxes[i].set(rect.left - c.left + rect.width / 2, rect.top - c.top + rect.height / 2, rect.width / 2, rect.height / 2)
       ;(this.radii.array[i] as Vector4).set(radius(style.borderTopLeftRadius), radius(style.borderTopRightRadius), radius(style.borderBottomLeftRadius), radius(style.borderBottomRightRadius))
       ;(this.bodies.array[i] as Vector4).set(rgba[0], rgba[1], rgba[2], Math.min(rgba[3], 0.065))
-      ;(this.filters.array[i] as Vector4).set(+filter[1], +filter[2], Number(this.hover.matches && b.matches(':hover')), Number(this.pressed === b || b.matches(':active, .held')))
+      ;(this.filters.array[i] as Vector4).set(+filter[1], +filter[2], Number(this.hover.matches && b.matches(':hover')), Number(pressed))
       this.drawn.add(b)
       if (this.pairSlots && b.dataset.action === 'zorb') {
         this.pairZorb = b
@@ -256,18 +272,48 @@ export class GlassButton {
     if (brakeVisible) this.brake?.advance()
     else this.brake?.clear()
     this.updatePairStrength()
+    this.surfaceCount.value = this.drawn.size
     this.lastLayoutMs = performance.now() - start
+  }
+
+  /** Sample a different visible label on each read. Only the material's
+   * existing uniforms are consulted, so this never forces DOM layout. */
+  nextLabel(after: number) {
+    const items = [...this.drawn]
+    for (let step = 0; step < items.length; step++) {
+      const index = (after + step) % items.length
+      const shape = this.presentation.array[index] as Vector4
+      if (shape.x < .01 || shape.y) continue
+      const box = this.boxes.array[index] as Vector4
+      return { element: items[index], index, u: box.x / this.viewport.value.x,
+        v: box.y / this.viewport.value.y, dark: this.dark.matches, clear: this.clearMaterial,
+        lift: shape.w || (this.pressState?.value.x === index ? this.pressState.value.y : 0) }
+    }
+  }
+
+  get animating(): boolean { return this.clock.active }
+  get available(): boolean { return !this.reduced.matches && document.documentElement.dataset.gfx !== '0' && !this.canvas.closest('[data-ui-frost="off"]') }
+  get visibleCount(): number {
+    let count = 0
+    for (let i = 0; i < this.drawn.size; i++) if ((this.presentation.array[i] as Vector4).x > 0) count++
+    return count
   }
 
   get hasSurface(): boolean { return this.drawn.size > 0 }
 
-  present(): void {
+  present(nativeInk = false): void {
     for (const b of this.controls) {
+      if (nativeInk && this.drawn.has(b) && b.matches(card)) {
+        if (!b.hasAttribute('data-glass-native-ink')) b.setAttribute('data-glass-native-ink', '')
+      } else if (b.hasAttribute('data-glass-native-ink')) b.removeAttribute('data-glass-native-ink')
       if (this.pairSlots && b.dataset.action === 'zorb') {
         b.toggleAttribute('data-glass-paired', this.pairSlots.value.x >= 0)
       }
       if (this.drawn.has(b)) { if (b.dataset.glassSurface !== 'shader') b.dataset.glassSurface = 'shader' }
-      else if (b.dataset.glassSurface === 'shader') delete b.dataset.glassSurface
+      else if (b.dataset.glassSurface === 'shader') {
+        delete b.dataset.glassSurface
+        b.removeAttribute('data-glass-label')
+      }
     }
   }
 
@@ -278,6 +324,7 @@ export class GlassButton {
     this.zorbScaling = false
     this.brake?.clear()
     this.drawn.clear()
+    this.surfaceCount.value = 0
     this.present()
     this.dirty = true
   }

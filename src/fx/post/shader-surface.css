@@ -22,7 +22,7 @@
 
 /* Preserve border-box dimensions, clipping, label and input through the
    card's native Web Animations sequence. The canvas supplies its surface. */
-html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
+html .syn3h-shell.exploration-ui .world-inspector :is(.wi-card, .wi-ghost)[data-glass-surface="shader"] {
   background: transparent !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -39,8 +39,8 @@ html .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card[data-glas
 @media (prefers-color-scheme: light) {
   html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
     --s3-ink: #101112;
-    --s3-dim: #282a2d;
-    --s3-soft: #303236;
+    --s3-dim: #18191a;
+    --s3-soft: #18191a;
     --s3-accent-2: #17191b;
     --halo-under: none;
     color: var(--s3-ink);
@@ -52,4 +52,125 @@ html .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card[data-glas
   html .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card.is-open[data-glass-surface="shader"] > .wi-head {
     background: rgb(233 233 235);
   }
+}
+
+/* The card supplies the one glass surface. Keep the real colour inputs,
+   keyboard outlines and selected states inside it. */
+html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
+  --s3-on-glow: none;
+  --card-selection: #e8e8ea;
+  --card-selection-ink: #161618;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] :is(.wi-vehicle-picker, .wi-seg, .wi-swatch, .wi-vehicle-option, .wi-seg button, .liquid-glass) {
+  box-shadow: none;
+  text-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: transparent;
+  border-color: transparent;
+  color: var(--s3-ink);
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] :is(.wi-vehicle-picker, .wi-seg) {
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  border-radius: 0;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] :is(.wi-vehicle-option[aria-checked="true"], .wi-seg button.is-on, .wi-switch button.is-on) {
+  background: var(--card-selection);
+  color: var(--card-selection-ink);
+  border-radius: 4px;
+  box-shadow: none;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] > .wi-head :is(h3, .wi-sum, .wi-x) {
+  color: var(--s3-ink);
+  text-shadow: none;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .wi-x {
+  box-shadow: none;
+  background: transparent;
+  border-color: transparent;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .liquid-glass::before,
+html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .liquid-glass::after {
+  opacity: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
+    --s3-ink: #fff;
+    --s3-dim: #fafafa;
+    --s3-soft: #fafafa;
+    --halo-under: none;
+    color: var(--s3-ink);
+  }
+  /* Native white ink on dark glass over a white field measured 4.29:1.
+     This flat backing draws only under the rows that carry the labels. */
+  html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"]:not([data-glass-native-ink]) :is(.wi-row, .wi-group > summary, .wi-label, .wi-sum) {
+    background: rgb(0 0 0 / .065);
+  }
+}
+
+/* Standalone HUD controls keep their own labels, cues and keyboard focus. */
+html .syn3h-shell.exploration-ui button[data-glass-surface="shader"] {
+  background: transparent;
+  box-shadow: none;
+  border-color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* The native secondary glyph cores subtract 102 display levels in light
+   appearance and add 77 in dark appearance on both calibration fields. */
+html .syn3h-shell.exploration-ui .world-inspector [data-glass-surface="shader"][data-glass-native-ink] {
+  --s3-ink: black;
+  --card-selection: white;
+  --card-selection-ink: black;
+}
+html .syn3h-shell.exploration-ui .world-inspector [data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
+  color: #666;
+  mix-blend-mode: difference;
+}
+@media (prefers-color-scheme: dark) {
+  html .syn3h-shell.exploration-ui .world-inspector [data-glass-surface="shader"][data-glass-native-ink] {
+    --s3-ink: white;
+    --card-selection: rgb(192 192 203 / .47);
+    --card-selection-ink: white;
+  }
+  html .syn3h-shell.exploration-ui .world-inspector [data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
+    color: #4d4d4d;
+    mix-blend-mode: plus-lighter;
+  }
+}
+
+/* Body styles on the rail are more specific than the shared glass button. */
+html .syn3h-shell.exploration-ui .world-inspector .rail-command > [data-glass-surface="shader"] {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  transition-property: color;
+}
+html .syn3h-shell .rail-command > [data-glass-surface="shader"] .rail-icon path { filter: none; }
+
+/* Selection is conveyed by size, weight and the filled node. The mask on
+   the drum normally fades the label itself, including its centre strokes. */
+html .syn3h-shell .gear-selector .gs-drum:has(> [data-glass-surface="shader"]) {
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+html .syn3h-shell .gs-drum .gs-item[data-glass-surface="shader"] { opacity: 1 !important; }
+html .syn3h-shell .gs-drum .gs-item.is-active[data-glass-surface="shader"] .gs-text { font-weight: 700; }
+
+@media (prefers-color-scheme: light) {
+  [data-glass-surface="shader"] { --button-glass-ink: black; }
+}
+@media (prefers-color-scheme: dark) {
+  [data-glass-surface="shader"] { --button-glass-ink: white; }
+}
+[data-glass-surface="shader"][data-glass-label="black"] { --button-glass-ink: black; }
+[data-glass-surface="shader"][data-glass-label="white"] { --button-glass-ink: white; }
+:is(button, input)[data-glass-surface="shader"],
+:is(button, input)[data-glass-surface="shader"] :is(span, kbd),
+input[data-glass-surface="shader"]::placeholder {
+  color: var(--button-glass-ink) !important;
+  text-shadow: none !important;
 }
