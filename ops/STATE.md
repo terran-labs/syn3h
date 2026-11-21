@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 07:30 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-21 08:00 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,11 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2113 (release-92, Medium's post effects kept), source a0952aa8, frozen copy
-20261121-072025-a0952aa8, Worker version a015ac11, at https://www.syn3h.com/ since 21 November 07:24 PST.
+Live: v26.11.2114 (release-93), source 33bc34ee, frozen copy 20261121-074618-33bc34ee,
+Worker version 428a4f63, at https://www.syn3h.com/ since 21 November 07:50 PST.
+Releases start detached (own session) so the tool runner cannot end them: /tmp/orch-ship-detached.sh
+<n> <version> "<note>" via nohup python3 os.setsid; outcome in /tmp/orch-dry-<v>.rc,
+/tmp/orch-release-<n>.rc and /tmp/orch-ship-<v>.done. The script holds heavy jobs from the gate wait on.
 Staging performance check with four bots read 0/0 on all six forced steps, down to the lowest level and
 back up to the entry level, at desktop and phone size (/tmp/orch-perfcheck-2113).
 Staging performance check with four bots read 0/0 for all three downward steps from the entry level,
@@ -135,6 +138,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2111 | 90 | m-unshed-2111 | stepping down to the lowest quality level no longer hitches with others in the room |
 | v26.11.2112 | 91 | m-retain-2112 | experimental glass remains off by default; it returns after quality recovery in the demo |
 | v26.11.2113 | 92 | m-medium-2113 | stepping quality down and back up no longer hitches when entering at High or below |
+| v26.11.2114 | 93 | m-tools-2114 | performance check labels its card row clearly; release tooling waits for the hosted result |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
