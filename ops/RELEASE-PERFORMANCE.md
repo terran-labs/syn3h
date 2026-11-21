@@ -7,6 +7,18 @@ regressions, and include a designated Performance section with a simple graphic 
 future production release note and release pull request description. Applies after
 v26.11.1518. Historic releases do not acquire invented retrospective measurements.
 
+## Six-level table for release notes
+
+Run `tools/heavy.sh node tools/quality-frame-cost.mjs <frozen-checkout>` in a quiet
+slot and paste its table into the release notes. It serves the frozen build locally.
+Desktop Chrome measures Minimal through Cinematic at 1280 × 720, DPR 1, on Alpine
+seed 4 at 11:00 with the clock stopped. The same four mixed bots stay in view.
+
+The median and 95th percentile use 240 consecutive game-frame intervals after each
+preset settles. GPU samples time the render passes separately when the backend exposes
+usable queries. Keep the browser, load and timing labels with the table. These
+figures describe this fixture and machine. They carry no release threshold.
+
 ## Comparison contract
 
 Use the previous accepted production build and the exact frozen candidate. Establish the
