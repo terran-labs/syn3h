@@ -81,7 +81,7 @@ export class GlassButton {
   constructor(private canvas: HTMLCanvasElement, readonly capacity: number) {
     const options = { signal: this.events.signal, capture: true }
     this.resize.observe(canvas)
-    for (const event of ['scroll', 'resize', 'orientationchange']) window.addEventListener(event, this.invalidate, options)
+    for (const event of ['scroll', 'resize', 'orientationchange', 'glassgeometrychange']) window.addEventListener(event, this.invalidate, options)
     // A newly started transition may have no accompanying resize or mutation.
     // Wake the registry so the next draw adopts its timeline.
     for (const type of ['transitionrun', 'transitionend', 'transitioncancel', 'animationstart', 'animationend', 'animationcancel']) {
