@@ -5,10 +5,10 @@
  * scattering the sky shader draws at a handful of directions (zenith, horizon toward and
  * away from the sun, along the sun ray) and those few numbers colour the sunlight, the
  * hemisphere ambient and the fog. Sliders write uniforms and plain fields only, so dragging
- * one never recompiles a shader. The one exception is shadow quality, which rebuilds the light.
+ * one never replaces a scene light. Higher cascade counts require a different shadow graph.
  */
 import * as THREE from 'three/webgpu'
-import { cameraPosition, dot, float, max, mix, normalWorld, normalize, positionWorld, pow, renderGroup, smoothstep as smoothNode, uniform, vec2, vec3 } from 'three/tsl'
+import { Fn, If, vec4, cameraPosition, dot, float, max, mix, normalWorld, normalize, positionWorld, pow, renderGroup, smoothstep as smoothNode, uniform, vec2, vec3 } from 'three/tsl'
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js'
 import { params } from '../../shared/params'
 import type { Game, System } from '../core/Game'
@@ -64,6 +64,24 @@ type N = any // TSL node
 
 /** Shadow settings per quality level: [cascades, map size]. Level 0 has no shadows. */
 const QUALITY: Record<number, [number, number]> = { 1: [2, 1024], 2: [3, 2048], 3: [4, 2048] }
+/** A sleeping cascade keeps its shader and bindings but samples and draws no shadows. */
+class QualitySunShadow extends CSMShadowNode {
+  readonly enabled = uniform(true)
+
+  override setup(builder: THREE.NodeBuilder) {
+    const sampled = super.setup(builder) as N
+    return Fn(() => {
+      const value = vec4(1).toVar()
+      If(this.enabled, () => { value.assign(sampled) })
+      return value
+    })()
+  }
+
+  override updateBefore(frame: THREE.NodeFrame) {
+    if (this.enabled.value) return super.updateBefore(frame)
+  }
+}
+
 /** Shadows reach this far from the camera, in metres. */
 const SHADOW_FAR = 1000
 /** Moonlight is sunlight off grey rock; it reads as blue to dark adapted eyes. */
@@ -105,47 +123,55 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   const reflections = new SkyEnvironmentMap(scene, game.renderer, sky)
 
   // Sun or moon: one directional light with cascaded shadows -----------------------------
-  let light!: THREE.DirectionalLight
-  let csm: CSMShadowNode | null = null
+  const light = new THREE.DirectionalLight(0xffffff, 1)
+  scene.add(light, light.target)
+  let csm: QualitySunShadow | null = null
   let csmAspect = 0
   let csmFov = 0
+  let cascadeCount = 0
   const buildLight = (quality: number) => {
-    if (light) {
-      scene.remove(light, light.target)
-      csm?.dispose()
-      light.dispose()
+    const enabled = quality > 0
+    const [cascades, size] = QUALITY[Math.max(1, Math.round(quality))]
+    const setMap = (shadow: THREE.DirectionalLightShadow) => {
+      shadow.autoUpdate = enabled
+      shadow.needsUpdate = enabled
+      const side = enabled ? size : 1
+      shadow.mapSize.set(side, side)
+      shadow.map?.setSize(side, side)
     }
-    csm = null
-    light = new THREE.DirectionalLight(0xffffff, 1)
-    const q = QUALITY[Math.round(quality)]
-    if (q) {
-      const [cascades, size] = q
-      light.castShadow = true
-      light.shadow.mapSize.set(size, size)
-      light.shadow.camera.near = 1
-      light.shadow.camera.far = 3000
-      // Bias is in normalised depth over the 3 km shadow range, so this is about 6 cm.
-      // CSM multiplies it by the cascade number, matching the coarser far texels.
-      light.shadow.bias = -0.00002
-      light.shadow.normalBias = 0.06
-      csm = new CSMShadowNode(light, {
-        cascades, maxFar: SHADOW_FAR, lightMargin: 600, mode: 'custom',
-        // Practical split leaning hard toward logarithmic: a near cascade of about 20 m
-        // gives centimetre texels around the vehicle, the last one reaches a kilometre.
-        customSplitsCallback(n, near, far, breaks) {
-          for (let i = 1; i < n; i++) {
-            const log = near * (far / near) ** (i / n)
-            const lin = near + ((far - near) * i) / n
-            breaks.push((0.93 * log + 0.07 * lin) / far)
-          }
-          breaks.push(1)
-        },
-      })
-      csm.fade = true
-      ;(light.shadow as unknown as { shadowNode: unknown }).shadowNode = csm
-    }
-    scene.add(light, light.target)
+    setMap(light.shadow)
     csmAspect = 0
+    if (csm && cascades === cascadeCount) {
+      csm.enabled.value = enabled
+      for (const cascade of csm.lights) if (cascade.shadow) setMap(cascade.shadow)
+      return
+    }
+    // Three listens for disposal on this light to invalidate its old shadow node.
+    if (csm) light.dispose()
+    cascadeCount = cascades
+    light.castShadow = true
+    light.shadow.camera.near = 1
+    light.shadow.camera.far = 3000
+    // Bias is in normalised depth over the 3 km shadow range, so this is about 6 cm.
+    // CSM multiplies it by the cascade number, matching the coarser far texels.
+    light.shadow.bias = -0.00002
+    light.shadow.normalBias = 0.06
+    csm = new QualitySunShadow(light, {
+      cascades, maxFar: SHADOW_FAR, lightMargin: 600, mode: 'custom',
+      // Practical split leaning hard toward logarithmic: a near cascade of about 20 m
+      // gives centimetre texels around the vehicle, the last one reaches a kilometre.
+      customSplitsCallback(n, near, far, breaks) {
+        for (let i = 1; i < n; i++) {
+          const log = near * (far / near) ** (i / n)
+          const lin = near + ((far - near) * i) / n
+          breaks.push((0.93 * log + 0.07 * lin) / far)
+        }
+        breaks.push(1)
+      },
+    })
+    csm.enabled.value = enabled
+    csm.fade = true
+    ;(light.shadow as unknown as { shadowNode: unknown }).shadowNode = csm
   }
   buildLight(P.shadowQuality.value)
 
@@ -369,7 +395,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
 
     // Cascades are computed from the camera projection; redo them when it changes.
     const cam = game.camera
-    if (csm && csm.camera && (cam.aspect !== csmAspect || cam.fov !== csmFov)) {
+    if (csm?.enabled.value && csm.camera && (cam.aspect !== csmAspect || cam.fov !== csmFov)) {
       csmAspect = cam.aspect
       csmFov = cam.fov
       csm.updateFrustums()

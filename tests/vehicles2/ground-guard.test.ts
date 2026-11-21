@@ -9,7 +9,7 @@ import type {Terrain} from '../../src/world/Terrain'
 import {createVehicle,type VehicleKind} from '../../src/vehicles'
 import {Vehicle} from '../../src/vehicles/Vehicle'
 import {params} from '../../shared/params'
-import {WeatherSystem,storminess,type WindVehicle} from '../../src/world/weather'
+import {WeatherSystem,storminess,setWeatherClock,type WindVehicle} from '../../src/world/weather'
 beforeAll(initPhysics)
 afterEach(()=>{Vehicle.groundGuard=true})
 const N=257,CELL=4,SIZE=(N-1)*CELL
@@ -143,12 +143,14 @@ describe('vehicles and the ground at speed',()=>{
  })
  it('holds in a gale: no vehicle is blown through the ground, and one put under it still comes back',()=>{
   // Wind is on by default in play, and pushes hardest on a zorb ball.
+  let seconds=0
+  setWeatherClock(()=>seconds)
   params.set(storminess.def.id,1)
   try{
    for(const zorb of [false,true]){
     const l=land(),v=createVehicle(l.game,l.terrain,'buggy',new T.Vector3(3,l.heightAt(3,100)+2,100),0);v.isLocal=false;v.input.zorb=zorb
     const weather=new WeatherSystem(()=>l.terrain,()=>[v as unknown as WindVehicle])
-    let strongest=0;const blow=()=>{weather.fixedUpdate();strongest=Math.max(strongest,v.wind.length())}
+    let strongest=0;const blow=()=>{seconds+=FIXED_DT;weather.fixedUpdate();strongest=Math.max(strongest,v.wind.length())}
     expect(fly(l,v,400,blow),`blown about${zorb?' in a ball':''}`).toBeGreaterThan(-.3)
     expect(strongest,'the gale reached the vehicle').toBeGreaterThan(.002);expect(v.groundGuardHits).toBe(0)
     const p=v.body.translation();v.body.setTranslation({x:p.x,y:l.heightAt(p.x,p.z)-2.5,z:p.z},true);v.body.setLinvel({x:0,y:-6,z:-30},true)
@@ -157,6 +159,6 @@ describe('vehicles and the ground at speed',()=>{
     expect(fly(l,v,150,blow),'afterwards').toBeGreaterThan(-.3)
     v.dispose();l.world.free()
    }
-  }finally{params.set(storminess.def.id,storminess.def.default)}
+  }finally{setWeatherClock(()=>Date.now()/1000);params.set(storminess.def.id,storminess.def.default)}
  })
 })
