@@ -149,6 +149,7 @@ interface GraphScope {
 }
 
 interface Built {
+  glass?: ReturnType<GlassPost['build']>
   key: string
   tier: PostTier
   targets: THREE.RenderTarget[]
@@ -284,8 +285,7 @@ export class PostChain {
 
   /** Submit one production draw under the target post graph, including on a graph cache hit. */
   async warmCovered(warm: Pick<CoveredWarm, 'draw' | 'yieldFrame'>, preset: PostGraphPreset): Promise<void> {
-    // Experimental glass owns one active composite and cannot park its controls or blur passes.
-    if (this.disposed || this.glass) return
+    if (this.disposed) return
     if (this.warming) throw new Error('Post graph warm is already in progress')
     this.warming = true
     const generation = this.generation
@@ -348,6 +348,7 @@ export class PostChain {
     const shaftShare = effects && P.postShafts.value > 0 ? fade * this.screenFade * smooth01(0.001, 0.05, sunVis) : 0
     this.updateBurst(camera, P.postShafts.value * (1 - shaftShare) * dry)
     if (tier === 'off') {
+      this.glass?.release()
       if (qualityTier === 'off' && level !== undefined) {
         this.rememberPreset(level, 'off')
         this.pruneStandby(level)
@@ -410,8 +411,9 @@ export class PostChain {
     if (built.raysTex) built.raysTex.autoUpdate = sunLit && shaftAmount > 0
     this.setVolumetricCloudsActive(built.clouds)
     try {
-      if (this.glass?.built) this.glass.render(built.pipeline)
-      else built.pipeline.render()
+      if (this.glass?.covered || !built.glass) built.pipeline.render()
+      if (built.glass) this.glass!.render(built.glass, built.pipeline)
+      else this.glass?.release()
       if (reusing) this.restoredTargets += built.targets.filter(target => target.width > 1 || target.height > 1).length
     } catch (error) {
       this.setVolumetricCloudsActive(false)
@@ -460,7 +462,7 @@ export class PostChain {
 
   /** Return whether this frame is reactivating previously parked targets. */
   private activateGraph(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, spec: GraphSpec): boolean {
-    if (this.built?.key === spec.key && !(this.glass?.covered && !spec.debug && !this.glass.built)) return false
+    if (this.built?.key === spec.key && !(this.glass?.covered && !spec.debug && !this.built.glass)) return false
     const previous = this.built
     const hit = this.standby.get(spec.key)
     if (hit) {
@@ -471,7 +473,8 @@ export class PostChain {
       return true
     }
     this.built = null
-    if (previous) this.retire(previous, spec.tier)
+    if (previous?.key === spec.key) this.disposeGraph(previous)
+    else if (previous) this.retire(previous, spec.tier)
     this.built = this.build(renderer, scene, camera, spec)
     return false
   }
@@ -517,6 +520,7 @@ export class PostChain {
     try {
       this.setVolumetricCloudsActive(graph.clouds)
       graph.pipeline.render()
+      if (graph.glass) this.glass!.render(graph.glass, graph.pipeline, true)
       this.coveredDraws++
       drew = true
     } finally {
@@ -572,7 +576,6 @@ export class PostChain {
   }
 
   private retire(graph: Built, nextTier?: PostTier): void {
-    if (this.glass) { this.glass.release(); this.disposeGraph(graph); return }
     const known = this.host.quality.getQualityState?.()
     if (known ? this.isNeighborKey(graph.key) : graph.tier === 'lite' && nextTier === 'lite') this.park(graph)
     else this.disposeGraph(graph)
@@ -592,6 +595,7 @@ export class PostChain {
   private park(graph: Built): void {
     // Three's render context keys include attachment formats and MRT identity, not dimensions.
     // Shrinking releases full-size backing storage and makes TRAA seed fresh on the next draw.
+    graph.glass?.blur?.update(1, 1, false)
     for (const target of graph.targets) target.setSize(1, 1)
     this.standby.delete(graph.key)
     this.makeStandbyRoom()
@@ -1018,18 +1022,16 @@ export class PostChain {
     })
 
     let out: N = graded()
-    if (this.glass?.covered && !debug) {
-      out = this.glass.build(out, color, renderer, toneMap, velocity, temporalNode, scenePass, disposables)
-    }
+    const glass = (this.glass?.covered || this.warmPreset) && this.glass && !debug
+      ? this.glass.build(out, color, renderer, toneMap, velocity, temporalNode, scenePass, disposables) : undefined
     // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
     if (debug === 1 && aoNode) out = vec4(vec3(aoNode.getTextureNode().sample(uv()).r), 1)
     if (debug === 2 && contactTex) out = vec4(vec3(contactTex), 1)
     if (debug === 3 && raysRef) out = vec4(raysRef.sample(uv()).r, maskRef.sample(uv()).a, 0, 1)
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
-    this.glass?.register(pipeline)
     pipeline.outputColorTransform = false
     this.builds++
-    return { key, tier, pipeline, disposables, targets: ownedTargets(disposables), maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
+    return { key, tier, pipeline, glass, disposables, targets: ownedTargets(disposables), maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
   }
 }
 

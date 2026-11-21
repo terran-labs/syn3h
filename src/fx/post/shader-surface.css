@@ -19,3 +19,37 @@
    outline and shadow. Keep them visible while the pair supplies the body. */
 .liquid-glass[data-glass-paired].is-cued::before,
 .liquid-glass[data-glass-paired].is-cued::after { opacity: 1; }
+
+/* Preserve border-box dimensions, clipping, label and input through the
+   card's native Web Animations sequence. The canvas supplies its surface. */
+html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* The pinned header covers the rows passing beneath it. Use a plain
+   sticky backing without another backdrop filter inside the card. */
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card[data-glass-surface="shader"] > .wi-head {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@media (prefers-color-scheme: light) {
+  html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
+    --s3-ink: #101112;
+    --s3-dim: #282a2d;
+    --s3-soft: #303236;
+    --s3-accent-2: #17191b;
+    --halo-under: none;
+    color: var(--s3-ink);
+    text-shadow: none;
+  }
+  html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .wi-row output {
+    color: var(--s3-ink);
+  }
+  html .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card.is-open[data-glass-surface="shader"] > .wi-head {
+    background: rgb(233 233 235);
+  }
+}

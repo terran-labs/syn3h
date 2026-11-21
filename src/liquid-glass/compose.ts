@@ -10,6 +10,8 @@ export interface GlassSurfaces {
   pressState?: N
   capacity: number
   viewport: N
+  clips?: N // Visible scrollport in canvas coordinates.
+  opacity?: N // Effective DOM opacity, including animated ancestors.
   boxes: N // Centre and half-size in CSS pixels, origin at top left.
   radii: N // Top left, top right, bottom left, bottom right.
   filters: N
@@ -29,7 +31,10 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
       const local = pixel.sub(box.xy)
       const visible = box.z.greaterThan(0)
       const single = pair ? visible.and(pair.z.lessThanEqual(0).or(i.notEqual(pair.x).and(i.notEqual(pair.y)))) : visible
-      If(single.and(abs(local.x).lessThanEqual(box.z.add(14))).and(abs(local.y).lessThanEqual(box.w.add(14))), () => {
+      const clip = glass.clips?.element(i)
+      const inside = clip ? single.and(pixel.x.greaterThanEqual(clip.x)).and(pixel.y.greaterThanEqual(clip.y))
+        .and(pixel.x.lessThan(clip.z)).and(pixel.y.lessThan(clip.w)) : single
+      If(inside.and(abs(local.x).lessThanEqual(box.z.add(14))).and(abs(local.y).lessThanEqual(box.w.add(14))), () => {
         const corners: N = glass.radii.element(i)
         const top = mix(corners.x, corners.y, step(0, local.x))
         const bottom = mix(corners.z, corners.w, step(0, local.x))
@@ -83,13 +88,14 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
           }
           under.assign(mix(under, body, coverage))
         })
-        result.assign(vec4(under, 1))
+        result.assign(vec4(glass.opacity ? mix(result.rgb, under, glass.opacity.element(i)) : under, 1))
       })
     })
     if (pair && filtered && blurred) {
       If(pair.z.greaterThan(0), () => {
-        result.assign(mergedGlassPair(result, glass.boxes.element(pair.x.toInt()), glass.boxes.element(pair.y.toInt()),
-          glass.viewport, pixelsPerPoint, sample, filtered, blurred, glass.pressState?.y, pair.z))
+        const merged = mergedGlassPair(result, glass.boxes.element(pair.x.toInt()), glass.boxes.element(pair.y.toInt()),
+          glass.viewport, pixelsPerPoint, sample, filtered, blurred, glass.pressState?.y, pair.z)
+        result.assign(glass.opacity ? mix(result, merged, glass.opacity.element(pair.x.toInt())) : merged)
       })
     }
     return result

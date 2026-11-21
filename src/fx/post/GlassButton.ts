@@ -1,3 +1,4 @@
+import { paintedInset, GlassMotionClock } from './paintedSurface'
 import { BrakeGlassPress } from './BrakeGlassPress'
 import { longFrames } from '../../core/longFrames'
 import { Vector4 } from 'three/webgpu'
@@ -5,6 +6,7 @@ import { uniform, uniformArray } from 'three/tsl'
 
 const panel = '.hud-navigation .inspector-toggle.liquid-glass'
 const round = '.touch-actions .liquid-glass.glass-round'
+const card = '.syn3h-shell > .world-inspector:not(.lobby-settings) .wi-card[data-section="you"]'
 const vectors = (count: number) => Array.from({ length: count }, () => new Vector4())
 
 /** The authored RGB token and its production CSS equivalent use display RGB. */
@@ -26,6 +28,8 @@ export class GlassButton {
   readonly radii = uniformArray(vectors(6), 'vec4')
   readonly bodies = uniformArray(vectors(6), 'vec4')
   readonly filters = uniformArray(vectors(6), 'vec4')
+  readonly clips = uniformArray(vectors(6), 'vec4')
+  readonly opacity = uniformArray(Array<number>(6).fill(1), 'float')
   readonly viewport = uniform(new Vector4())
   private readonly query = new URLSearchParams(location.search)
   private readonly brake = this.query.get('glass') === 'inline' && this.query.get('glassPress') === 'brake'
@@ -66,8 +70,10 @@ export class GlassButton {
   private readonly hover = matchMedia('(hover: hover)')
   private readonly reduced = matchMedia('(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)')
   private controls: HTMLElement[] = []
+  private registryDirty = true
+  private readonly membership = new MutationObserver(() => { this.registryDirty = true })
   private readonly drawn = new Set<HTMLElement>()
-  private readonly motion = new Map<Element, Set<string>>()
+  private readonly clock = new GlassMotionClock()
   private pressed: Element | null = null
   lastBoundsMs = 0
   lastLayoutMs = 0
@@ -76,9 +82,8 @@ export class GlassButton {
     const options = { signal: this.events.signal, capture: true }
     this.resize.observe(canvas)
     for (const event of ['scroll', 'resize', 'orientationchange']) window.addEventListener(event, this.invalidate, options)
-    // Compositor geometry can move independently of the render callback. Keep
-    // CSS in charge until every moving property on the control or its ancestor
-    // settles. Tracking lifecycle events avoids querying animations during draw.
+    // A newly started transition may have no accompanying resize or mutation.
+    // Wake the registry so the next draw adopts its timeline.
     for (const type of ['transitionrun', 'transitionend', 'transitioncancel', 'animationstart', 'animationend', 'animationcancel']) {
       window.addEventListener(type, event => {
         const target = event.target
@@ -96,14 +101,6 @@ export class GlassButton {
         // The cue only paints outline, colour and shadow. Its DOM animation
         // can keep running over the glass without invalidating its geometry.
         if (this.pairSlots && !transition && name === 'zorb-cue' && target.matches('[data-action="zorb"]')) return
-        let active = this.motion.get(target)
-        if (type === 'transitionrun' || type === 'animationstart') {
-          if (!active) this.motion.set(target, active = new Set())
-          active.add(name)
-        } else {
-          active?.delete(name)
-          if (!active?.size) this.motion.delete(target)
-        }
         this.invalidate()
       }, options)
     }
@@ -148,8 +145,17 @@ export class GlassButton {
   }
 
   update(): void {
-    if (!this.controls.length || !this.controls[0].isConnected) {
-      this.controls = Array.from(document.querySelectorAll<HTMLElement>(this.capacity === 1 ? panel : panel + ',' + round))
+    if (this.registryDirty || !this.controls.length || !this.controls[0].isConnected) {
+      this.registryDirty = false
+      const next = Array.from(document.querySelectorAll<HTMLElement>(this.capacity === 1 ? panel : [card, panel, round].join(',')))
+      for (const old of this.controls) if (!next.includes(old)) delete old.dataset.glassSurface
+      this.resize.disconnect()
+      this.resize.observe(this.canvas)
+      this.changes.disconnect()
+      this.membership.disconnect()
+      const stack = document.querySelector('.syn3h-shell > .world-inspector .wi-cards')
+      if (stack) this.membership.observe(stack, { childList: true })
+      this.controls = next
       for (const b of this.controls) {
         const actions = b.closest<HTMLElement>('.touch-actions')
         if (this.pairSlots && actions) actions.dataset.glassContainer = 'thumb-actions'
@@ -167,6 +173,8 @@ export class GlassButton {
       this.dirty = true
     }
     if (this.pairBrake?.hidden || this.pairZorb?.hidden) this.dirty = true
+    const poseTime = performance.now()
+    if (this.clock.advance(poseTime)) this.dirty = true
     if (!this.dirty) { this.brake?.advance(); this.followZorbScale(); this.updatePairStrength(); return }
     const start = performance.now()
     this.dirty = false
@@ -183,20 +191,41 @@ export class GlassButton {
     let zorbGroup: Element | null = null, brakeGroup: Element | null = null
     this.pairBrake = this.pairZorb = undefined
     if (this.pairSlots) this.pairSlots.value.set(-1, -1, 0, 0)
+    const visited = new Set<Element>()
+    const styles = new Map<Element, CSSStyleDeclaration>()
+    const styleFor = (el: Element) => {
+      let style = styles.get(el)
+      if (!style) { style = getComputedStyle(el); styles.set(el, style) }
+      return style
+    }
     for (const [index, b] of this.controls.entries()) {
       if (this.drawn.size === this.capacity || this.reduced.matches || document.documentElement.dataset.gfx === '0') break
-      const rect = rects[index]
-      if (!rect || !rect.width || !rect.height || rect.left < c.left || rect.right > c.right || rect.top < c.top || rect.bottom > c.bottom) continue
-      const style = getComputedStyle(b)
-      if (!b.checkVisibility({ opacityProperty: true, visibilityProperty: true }) || b.closest('[data-ui-frost="off"]')) continue
-      if (this.motion.size && Array.from(this.motion.keys()).some(el => el.contains(b))) continue
+      let rect = rects[index]
+      if (!rect || !rect.width || !rect.height) continue
+      const style = styleFor(b)
+      if (!b.checkVisibility({ visibilityProperty: true }) || b.closest('[data-ui-frost="off"]')) continue
+      let alpha = 1
+      for (let el: Element | null = b; el; el = el.parentElement) {
+        if (!visited.has(el)) { this.clock.follow(el, poseTime); visited.add(el) }
+        alpha *= Number(styleFor(el).opacity)
+      }
+      const isCard = b.matches(card)
+      const sx = isCard && parseFloat(style.width) ? rect.width / parseFloat(style.width) : 1
+      const sy = isCard && parseFloat(style.height) ? rect.height / parseFloat(style.height) : sx
+      rect = paintedInset(rect, style.clipPath, sx, sy)
+      const scrollport = isCard ? b.closest('.wi-cards')?.getBoundingClientRect() : undefined
+      const clip = scrollport ?? c
+      if (!rect.width || !rect.height || rect.bottom <= clip.top || rect.top >= clip.bottom ||
+        rect.right <= clip.left || rect.left >= clip.right) continue
       const token = b.matches('[aria-pressed="true"], .is-current, :active, .held') ? '--glass-body-on' : b.matches(':hover') ? '--glass-body-hover' : '--glass-body'
-      const rgba = readGlassTint(style.getPropertyValue(token).trim())
-      const filter = /^blur\(([\d.]+)px\)\s+saturate\(([\d.]+)\)\s+brightness\(([\d.]+)\)$/.exec(style.getPropertyValue('--glass-frost').trim())
+      const rgba = isCard ? [1, 1, 1, .06] : readGlassTint(style.getPropertyValue(token).trim())
+      const filter = isCard ? ['', '3', '1.2'] : /^blur\(([\d.]+)px\)\s+saturate\(([\d.]+)\)\s+brightness\(([\d.]+)\)$/.exec(style.getPropertyValue('--glass-frost').trim())
       if (!rgba || !filter) continue
       const i = this.drawn.size
+      this.opacity.array[i] = alpha
+      ;(this.clips.array[i] as Vector4).set(clip.left - c.left, clip.top - c.top, clip.right - c.left, clip.bottom - c.top)
       const half = Math.min(rect.width, rect.height) / 2
-      const radius = (s: string) => Math.min(half, s.endsWith('%') ? parseFloat(s) * half / 50 : parseFloat(s))
+      const radius = (s: string) => Math.min(half, s.endsWith('%') ? parseFloat(s) * half / 50 : parseFloat(s) * sx)
       boxes[i].set(rect.left - c.left + rect.width / 2, rect.top - c.top + rect.height / 2, rect.width / 2, rect.height / 2)
       ;(this.radii.array[i] as Vector4).set(radius(style.borderTopLeftRadius), radius(style.borderTopRightRadius), radius(style.borderBottomLeftRadius), radius(style.borderBottomRightRadius))
       ;(this.bodies.array[i] as Vector4).set(rgba[0], rgba[1], rgba[2], Math.min(rgba[3], 0.065))
@@ -243,6 +272,7 @@ export class GlassButton {
   }
 
   hide(): void {
+    this.clock.release()
     this.pairSlots?.value.set(-1, -1, 0, 0)
     this.pairBrake = this.pairZorb = undefined
     this.zorbScaling = false
@@ -251,5 +281,5 @@ export class GlassButton {
     this.present()
     this.dirty = true
   }
-  dispose(): void { this.hide(); this.events.abort(); this.resize.disconnect(); this.changes.disconnect() }
+  dispose(): void { this.hide(); this.events.abort(); this.resize.disconnect(); this.changes.disconnect(); this.membership.disconnect() }
 }
