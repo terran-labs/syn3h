@@ -1,4 +1,5 @@
-// Phone panels on an iPhone 14, portrait and landscape, in WebKit: what must stay true.
+// The panels on touch screens, in WebKit: an iPhone 14 portrait and landscape and an iPad mini
+// (744 by 1133) both ways up. What must stay true.
 //   SYN3H_URL=http://127.0.0.1:5213/ node tests/ui/phone-panels.mjs
 // Replaces phone-polish.mjs, which checked a toast against the old top-right Panels tab.
 // - Show panels stands over the thumb grid, never under a toast, and clear of the grid.
@@ -6,6 +7,9 @@
 //   list; Close panels goes back to driving. A player can always get back to driving.
 // - A toast never sits under the open panels.
 // - Opening and closing never resizes the game canvas.
+// - Every touch screen: no rotated edge tab; Close panels at the foot of the open stack, visible
+//   and tappable, and it closes; one margin on the right, top and bottom; one corner radius for
+//   the rows, the open panel, the search field, the buttons above and Close panels.
 import { webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 
@@ -13,8 +17,9 @@ const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5213/'
 const overlaps = (a, b) => !!a && !!b && a.x < b.x + b.width - 1 && a.x + a.width > b.x + 1 && a.y < b.y + b.height - 1 && a.y + a.height > b.y + 1
 const browser = await webkit.launch()
 try {
-  for (const [name, device] of [['portrait', 'iPhone 14'], ['landscape', 'iPhone 14 landscape']]) {
-    const context = await browser.newContext({ ...devices[device] })
+  const ipad = (width, height) => ({ viewport: { width, height }, screen: { width, height }, deviceScaleFactor: 2, isMobile: true, hasTouch: true })
+  for (const [name, options, phone] of [['portrait', devices['iPhone 14'], true], ['landscape', devices['iPhone 14 landscape'], true], ['ipad-portrait', ipad(744, 1133), false], ['ipad-landscape', ipad(1133, 744), false]]) {
+    const context = await browser.newContext({ ...options })
     const page = await context.newPage()
     const errors = []; page.on('pageerror', error => errors.push(error.message))
     await page.goto(`${base}?autoplay=1&room=phone-panels-${name}-${Date.now()}`)
@@ -37,6 +42,18 @@ try {
     const panels = page.locator('.world-inspector')
     await panels.waitFor({ state: 'visible' })
     assert.equal(await page.locator('.world-inspector .wi-card.is-open').count(), 0, `${name}: Show panels opens the list`)
+    assert.equal(await show.evaluate(el => getComputedStyle(el).writingMode), 'horizontal-tb', `${name}: no rotated edge tab`)
+    await page.waitForTimeout(300)
+    const shape = await page.evaluate(() => {
+      const stack = document.querySelector('.world-inspector'), box = stack.getBoundingClientRect()
+      const radius = el => parseFloat(getComputedStyle(el).borderTopLeftRadius)
+      const items = [...stack.querySelectorAll('.rail-command > *, .wi-cards > .wi-card, .panels-close')].filter(el => el.getClientRects().length)
+      return { top: Math.round(box.top), right: Math.round(innerWidth - box.right), bottom: Math.round(innerHeight - box.bottom), radii: [...new Set(items.map(radius))] }
+    })
+    assert.ok(Math.abs(shape.right - shape.top) <= 1 && Math.abs(shape.bottom - shape.top) <= 1, `${name}: one margin right, top and bottom ${JSON.stringify(shape)}`)
+    assert.equal(shape.radii.length, 1, `${name}: one corner radius across the stack ${JSON.stringify(shape.radii)}`)
+    const close = page.locator('.panels-close'), closeBox = await close.boundingBox(), stackBox = await panels.boundingBox()
+    assert.ok(closeBox && closeBox.height >= 44 && closeBox.y + closeBox.height <= stackBox.y + stackBox.height + 1, `${name}: Close panels at the foot of the stack, a finger high ${JSON.stringify([closeBox, stackBox])}`)
     await page.evaluate(() => window.syn3h.shell.toast('A toast while the panels are open'))
     await page.waitForTimeout(150)
     const toast = page.locator('.shell-toast')
@@ -46,10 +63,15 @@ try {
 
     const head = page.locator('.world-inspector .wi-card .wi-head').first()
     await head.tap(); await page.waitForTimeout(400)
-    assert.equal(await page.locator('.world-inspector.is-single').count(), 1, `${name}: a header opens one panel`)
-    assert.equal(await page.locator('.world-inspector .wi-cards > .wi-card:visible').count(), 1, `${name}: the open panel is alone`)
+    const openRadius = await page.locator('.world-inspector .wi-card.is-open').first().evaluate(el => parseFloat(getComputedStyle(el).borderTopLeftRadius))
+    assert.equal(openRadius, shape.radii[0], `${name}: an open panel has the same corners as the rows`)
+    if (phone) {
+      assert.equal(await page.locator('.world-inspector.is-single').count(), 1, `${name}: a header opens one panel`)
+      assert.equal(await page.locator('.world-inspector .wi-cards > .wi-card:visible').count(), 1, `${name}: the open panel is alone`)
+    }
+    assert.ok(await page.locator('.panels-close').isVisible(), `${name}: Close panels shows with a panel open`)
     await head.tap(); await page.waitForTimeout(400)
-    assert.equal(await page.locator('.world-inspector.is-single').count(), 0, `${name}: the panel's header goes back to the list`)
+    assert.equal(await page.locator('.world-inspector .wi-card.is-open').count(), 0, `${name}: the panel's header closes it again`)
 
     await page.locator('.panels-close').tap()
     await panels.waitFor({ state: 'hidden' })
@@ -58,5 +80,5 @@ try {
     assert.deepEqual(errors, [], `${name}: no page errors`)
     await context.close()
   }
-  console.log('Phone panels: placement, states, toasts and canvas size passed in portrait and landscape')
+  console.log('Touch panels: placement, states, margins, corners, Close panels, toasts and canvas size passed on iPhone and iPad, both ways up')
 } finally { await browser.close() }
