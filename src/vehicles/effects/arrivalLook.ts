@@ -159,6 +159,7 @@ export class ArrivalLook {
   private readonly u: Uniforms
   private readonly ghostMat: T.MeshBasicNodeMaterial
   private readonly silhouetteWarmMeshes: T.Mesh[] = []
+  private farWarmGeometry?: T.BufferGeometry
   private mergedWarmGeometry?: T.BufferGeometry
   private readonly ghosts: T.Mesh[] = []
   /** Where the cloud is (the hold point, or a moving remote copy's position). */
@@ -235,6 +236,11 @@ export class ArrivalLook {
     const plain = this.ground.geometry
     const merged = plain.clone()
     merged.setAttribute('surfaceId', new T.Float32BufferAttribute(new Float32Array(plain.attributes.position.count), 1))
+    // The distant hovercraft hull has positions and normals, with no UVs or index.
+    // Its arrival ghost uses that vertex layout on the first frame beyond 120 metres.
+    const far = this.farWarmGeometry = plain.toNonIndexed()
+    far.deleteAttribute('uv')
+    this.addSilhouetteWarmMesh(new T.Mesh(far, this.ghostMat))
     this.mergedWarmGeometry = merged
     for (const geometry of [plain, merged]) {
       this.addSilhouetteWarmMesh(new T.Mesh(geometry, this.ghostMat))
@@ -415,6 +421,7 @@ export class ArrivalLook {
     for (const mesh of this.silhouetteWarmMeshes) {
       if (mesh instanceof T.InstancedMesh) mesh.dispose()
     }
+    this.farWarmGeometry?.dispose()
     this.mergedWarmGeometry?.dispose()
     this.ghostMat.dispose()
   }
