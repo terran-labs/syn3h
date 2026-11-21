@@ -571,8 +571,16 @@ export class PostChain {
 
   private pruneStandby(level = this.host.quality.getQualityState?.().level): void {
     if (level === undefined) return
-    for (const candidate of this.presetKeys.keys()) {
-      if (candidate > level + 1 || (level > 3 && candidate < level - 1)) this.presetKeys.delete(candidate)
+    for (const [candidate, key] of this.presetKeys) {
+      if (level > 3 && candidate < level - 1) {
+        this.presetKeys.delete(candidate)
+        continue
+      }
+      if (candidate <= level + 1) continue
+      // A covered glass graph can restore its surfaces when quality climbs.
+      // Park it under the same target budget and context lifetime.
+      const graph = this.built?.key === key ? this.built : this.standby.get(key)
+      if (!graph?.glass) this.presetKeys.delete(candidate)
     }
     for (const graph of this.standby.values()) {
       if (!this.isNeighborKey(graph.key)) this.evict(graph)
@@ -1041,7 +1049,7 @@ export class PostChain {
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
     pipeline.outputColorTransform = false
     this.builds++
-    return { key, tier, pipeline, glass, disposables, targets: ownedTargets(disposables), maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
+    return { key, tier, pipeline, glass, disposables, targets: ownedTargets([...disposables, ...(glass?.blur?.passes ?? [])]), maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
   }
 }
 
