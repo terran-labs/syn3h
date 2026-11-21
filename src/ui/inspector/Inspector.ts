@@ -1,3 +1,4 @@
+import { glassLabels, liquidEligible, liquidQualityHint } from '../glassMaterial'
 import { modeChoices } from '../modeAvailability'
 /**
  * The world inspector: every property of the world and of your own settings, in play, as a
@@ -209,6 +210,7 @@ export class Inspector {
     this.build()
     this.unsubscribe = params.onChange((id, value) => {
       this.rows.get(id)?.sync(value)
+      if (id === 'gfx.quality') this.rows.get('hud.glass')?.sync(params.get('hud.glass')!.value)
       // The orbit default is the planet's: a new planet changes what the day length shows.
       if (id === 'terrain.look') this.rows.get(sunDayLength.def.id)?.sync(params.get(sunDayLength.def.id)!.value)
       for (const sync of this.presetSyncs) sync()
@@ -564,7 +566,38 @@ export class Inspector {
     const output = document.createElement('output')
     const param = params.get(def.id)!, choices = choicesOf(def)
     let sync: (value: ParamValue) => void
-    if (def.id === sunDayLength.def.id) {
+    if (def.id === 'hud.glass') {
+      label.textContent = def.label
+      const input = document.createElement('input')
+      input.type = 'range'; input.min = '0'; input.max = '3'; input.step = '1'
+      input.setAttribute('aria-label', def.label)
+      const hint = document.createElement('small')
+      hint.textContent = liquidQualityHint
+      const ticks = document.createElement('div')
+      ticks.className = 'glass-stops'
+      const stops = glassLabels.map((name, index) => {
+        const button = document.createElement('button')
+        button.type = 'button'; button.textContent = name
+        button.onclick = () => params.set(def.id, index)
+        ticks.append(button)
+        return button
+      })
+      row.classList.add('glass-material-row')
+      row.append(label, input, output, ticks, hint)
+      sync = value => {
+        const index = Number(value)
+        input.value = String(index)
+        stops[0].disabled = !liquidEligible()
+        hint.hidden = liquidEligible()
+        output.textContent = glassLabels[index]
+        input.setAttribute('aria-valuetext', glassLabels[index] + (!liquidEligible() ? '. ' + liquidQualityHint : ''))
+        stops.forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)))
+      }
+      input.oninput = () => {
+        if (input.valueAsNumber || liquidEligible()) params.set(def.id, input.valueAsNumber)
+        sync(param.value)
+      }
+    } else if (def.id === sunDayLength.def.id) {
       // Seconds stored, minutes shown, a log slider and the orbit default: its own control.
       def = { ...def, label: 'Day length', limitsText: '20 s to 60 min on the slider, or stopped · default: the orbit' }
       const day = fillDayLengthRow(row, def.id); sync = () => day()

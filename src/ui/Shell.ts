@@ -1,3 +1,4 @@
+import { liquidSelected } from './glassMaterial'
 import { longFrames } from '../core/longFrames'
 import { cancelStartupPlayRequest, recordStartupPlayRequest, recordStartupReveal } from '../core/diagnostics'
 import { markShaderReveal } from '../core/diagnosticShaders'
@@ -41,10 +42,10 @@ import { FocusHud } from './inspector/FocusHud'
 import { bindSwitch, switchWord } from './inspector/switch'
 import { RaceHud, type RaceRole } from './RaceHud'
 import { MAX_NAME_LENGTH, type RaceState } from '../../shared/protocol'
-import { glassStyle, diagnostics, interfaceMode, mapNorthUp } from './inspector/params'
+import { diagnostics, interfaceMode, mapNorthUp } from './inspector/params'
 import { InterfaceVeil, INTERFACE_KEY, nextInterfaceMode, setInterfaceMode } from './interfaceMode'
 import { RESUME_KEY } from '../core/resume'
-import { allowsDriveFrost, qualityLevel } from './quality/ladder'
+import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
 import { PLANETS } from '../world/planets'
 import { graphicsLevel, levelNumber, qualityBudget, LEVELS, type QualityLevel } from '../core/quality'
@@ -1171,6 +1172,15 @@ export class Shell implements System {
     this.element.querySelector<HTMLElement>('.hud-navigation')!.hidden = false
     this.touchPanels = false; this.syncPanels()
   }
+  get lobbyGlassContextLost() { return this.galaxy?.glassContextLost === true }
+  refreshLobbyGlass() { this.galaxy?.refreshGlass() }
+
+  private queuedGlass?: () => Promise<void>
+  applyGlassMaterial(load: () => Promise<void>) {
+    this.queuedGlass = load
+    if (!this.qualityVeil) void this.applyQualityBehindVeil()
+  }
+
   private qualityVeil: HTMLDivElement | null = null
   private queuedQuality?: { level: QualityLevel; apply: () => void }
   qualityCheckSignal?: AbortSignal
@@ -1189,7 +1199,21 @@ export class Shell implements System {
     this.qualityVeil = veil
     this.element.append(veil)
     try {
-      while (this.queuedQuality && !this.abort.signal.aborted) {
+      while ((this.queuedQuality || this.queuedGlass) && !this.abort.signal.aborted) {
+        if (!this.queuedQuality && this.queuedGlass) {
+          const load = this.queuedGlass
+          this.queuedGlass = undefined
+          title.textContent = 'Applying Liquid glass'
+          status.textContent = 'Preparing glass surfaces'
+          await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+          try {
+            await load()
+            if (this.playing && liquidSelected()) await this.game.prepareManualQuality(() => {}, this.abort.signal,
+              phase => { status.textContent = phase }, true)
+          } catch (error) { console.warn('Glass preparation failed', error) }
+          continue
+        }
+        if (!this.queuedQuality) break
         const { level, apply } = this.queuedQuality
         this.queuedQuality = undefined
         title.textContent = 'Applying ' + LEVELS[level].name
@@ -2092,7 +2116,7 @@ export class Shell implements System {
   }
   // Installed only by the opt-in renderer. Eligibility belongs to the shell
   // because it owns both the entry transition and the manual quality veil.
-  driveGlassFrame?: (playing: boolean, eligible: boolean, frostAllowed: boolean, targetMs: number) => void
+  driveGlassFrame?: (playing: boolean, eligible: boolean) => void
 
   update(dt = 0): void {
     if (this.tintTransition.update(dt)) this.onTint?.(this.tintTransition.current.body, this.tintTransition.current.accent, false)
@@ -2122,13 +2146,13 @@ export class Shell implements System {
       if (!focus && this.inspector.open) this.inspector.update()
       const world = `${currentWorldName()} · ${currentPlanet().label}`
       this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.seaAltitude, thrust: this.telemetry.thrust, heading: this.compassHeading(), world, hour: currentHour() })
-      const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
+      if (this.element.dataset.glass !== '1') this.element.dataset.glass = '1'
     }
     // The stylesheet drops frost at the lowest graphics level.
     // Frost goes at the lowest graphics level, and when the quality ladder is shedding post effects.
     this.driveGlassFrame?.(this.playing, !this.transitioning && !this.qualityVeil && !this.userPaused &&
       !this.game.holdDraws && !this.game.quality.isLoading && !document.hidden &&
-      !document.documentElement.matches('[data-boot=loading], [data-boot=ready]'), qualityBudget().uiFrost && allowsDriveFrost(), this.game.quality.governor.targetMs)
+      !document.documentElement.matches('[data-boot=loading], [data-boot=ready]'))
     const gfx = qualityLevel() >= 2 ? '0' : String(levelNumber(graphicsLevel.value))
     const frost = qualityBudget().uiFrost && qualityLevel() < 2 ? 'on' : 'off'
     if (this.element.dataset.uiFrost !== frost) this.element.dataset.uiFrost = frost

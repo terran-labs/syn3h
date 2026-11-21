@@ -1,3 +1,5 @@
+import { glassStyle } from '../../ui/inspector/params'
+import { liquidSelected } from '../../ui/glassMaterial'
 import type { GlassPost } from './GlassPost'
 import { longFrames } from '../../core/longFrames'
 /**
@@ -119,6 +121,7 @@ export interface PostGraphPreset {
 }
 
 interface GraphSpec {
+  glassOnly: boolean
   key: string
   tier: PostTier
   glowOn: boolean
@@ -270,7 +273,10 @@ export class PostChain {
   }
   get withoutGlass() { return this.glass ? this.cleanDraw : undefined }
 
-  constructor(private readonly host: PostChainHost, private readonly sun: SunSource, private readonly glass?: GlassPost) {}
+  constructor(private readonly host: PostChainHost, private readonly sun: SunSource, private glass?: GlassPost) {}
+
+  attachGlass(glass: GlassPost) { this.glass = glass }
+  get glassPrepared() { return !!this.built?.glass }
 
   /** Exact post context for covered draw deduplication. Also records equivalent preset levels. */
   coveredVariantKey(preset: PostGraphPreset): string | undefined {
@@ -287,7 +293,10 @@ export class PostChain {
     if (!scope) return false
     const tier = this.coveredTier(preset)
     const key = tier === 'off' ? 'off' : this.describeGraph(scope.renderer, scope.scene, tier, preset).key
-    return this.presetKeys.get(preset.level) === key && (key === 'off' || this.built?.key === key || this.standby.has(key))
+    if (this.presetKeys.get(preset.level) !== key) return false
+    if (key === 'off') return true
+    const graph = this.built?.key === key ? this.built : this.standby.get(key)
+    return !!graph && (!this.glass || glassStyle.value !== 0 || preset.level < 2 || !!graph.glass)
   }
 
   /** Submit one production draw under the target post graph, including on a graph cache hit. */
@@ -316,6 +325,7 @@ export class PostChain {
       if (this.scope) {
         this.release()
         this.scope = null
+        this.glass?.release('graphics context lost; using Glass')
       }
       return
     }
@@ -328,7 +338,8 @@ export class PostChain {
     const shed = 1 - Math.min(1, Math.max(0, budget ?? 1))
     const level = this.host.quality.getQualityState?.().level
     const qualityTier = this.host.quality.postTier ?? 'full'
-    const tier = postTier({ on: P.postOn.value, tier: qualityTier, shed })
+    const glassOnly = !P.postOn.value && !!this.glass && liquidSelected()
+    const tier = glassOnly ? 'base' : postTier({ on: P.postOn.value, tier: qualityTier, shed })
     // The quality level owns which effects exist, through their strengths. Tier only
     // separates the look alone (base) from a chain that draws effects (lite, full).
     const effects = drawsEffects(tier)
@@ -418,7 +429,7 @@ export class PostChain {
     if (built.raysTex) built.raysTex.autoUpdate = sunLit && shaftAmount > 0
     this.setVolumetricCloudsActive(built.clouds)
     try {
-      if (this.cleanFrame) built.pipeline.render()
+      if (this.cleanFrame || (built.glass && (!liquidSelected() || (level ?? 0) < 2))) built.pipeline.render()
       else {
         if (this.glass?.covered || !built.glass) built.pipeline.render()
         if (built.glass) this.glass!.render(built.glass, built.pipeline)
@@ -459,20 +470,26 @@ export class PostChain {
     const clouds = this.sun.clouds
     const cloudsOn = effects && value(P.postClouds) > 0 && !!clouds && clouds.coverage > 0 && clouds.density > 0 && clouds.atmosphere > 0
     const light = effects && value(P.postContact) > 0 ? findSun(scene) : null
-    const toneMap = TONE_MAPS[Math.round(value(P.postToneMap))] ?? renderer.toneMapping
+    const glassOnly = !value(P.postOn) && !!this.glass && glassStyle.value === 0 && (preset?.level ?? this.host.quality.getQualityState?.().level ?? 0) >= 2
+    const toneMap = glassOnly ? renderer.toneMapping : TONE_MAPS[Math.round(value(P.postToneMap))] ?? renderer.toneMapping
     const debug = Math.round(value(P.postDebug))
     const temporalOn = effects && value(P.postTemporal) && debug === 0
     // Motion blur and heat shimmer share one composite, built only if one is wanted.
     const motionOn = effects && value(P.postMotionBlur) > 0
     const composeOn = effects && (motionOn || value(P.postHeat) > 0)
     const historyKey = temporalOn ? ['world.curve', 'world.seed', 'terrain.kind', 'terrain.planetSize', 'camera.mode'].map(id => preset?.value(id) ?? params.get(id)?.value).join('|') : ''
-    const key = `${debug}|${tier}|${motionOn}|${composeOn}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${temporalOn}|${historyKey}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
-    return { key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn }
+    const key = `${glassOnly ? 'glass-only|' : ''}${debug}|${tier}|${motionOn}|${composeOn}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${temporalOn}|${historyKey}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
+    return { glassOnly, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn }
   }
 
   /** The lobby may have drawn this preset before the covered glass warm-up. */
+  private preparesGlass(): boolean {
+    const level = this.warmPreset?.level ?? this.host.quality.getQualityState?.().level
+    return !!this.glass && glassStyle.value === 0 && (level ?? 2) >= 2 && (!!this.warmPreset || this.glass.covered)
+  }
+
   private needsCoveredGlass(graph: Built, spec: GraphSpec): boolean {
-    return !!this.glass && (this.glass.covered || !!this.warmPreset) && !spec.debug && !graph.glass
+    return this.preparesGlass() && !spec.debug && !graph.glass
   }
 
   /** Return whether this frame is reactivating previously parked targets. */
@@ -573,6 +590,7 @@ export class PostChain {
   }
 
   private coveredTier(preset: PostGraphPreset): PostTier {
+    if (this.glass && glassStyle.value === 0 && preset.level >= 2 && !postValue(P.postOn, preset)) return 'base'
     return postTier({ on: postValue(P.postOn, preset), tier: preset.tier, shed: preset.shed ? 1 : 0 })
   }
 
@@ -1053,8 +1071,8 @@ export class PostChain {
       return vec4(c, 1)
     })
 
-    let out: N = graded()
-    const glass = (this.glass?.covered || this.warmPreset) && this.glass && !debug
+    let out: N = spec.glassOnly ? mapped : graded()
+    const glass = this.glass && this.preparesGlass() && !debug
       ? this.glass.build(out, color, renderer, toneMap, velocity, temporalNode, scenePass, disposables) : undefined
     // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
     if (debug === 1 && aoNode) out = vec4(vec3(aoNode.getTextureNode().sample(uv()).r), 1)
