@@ -59,6 +59,7 @@ export class GlassPost {
   readonly driveFrame = (playing: boolean, eligible: boolean, frostAllowed: boolean) => {
     const root = document.documentElement
     if (!playing) {
+      this.timing.monitoring = false
       if (this.driving) {
         delete root.dataset.driveGlass
         this.driveBlock = ''
@@ -77,8 +78,10 @@ export class GlassPost {
     }
     const external = !frostAllowed ? 'graphics settings disable frost' :
       this.controls?.reducedTransparency ? 'transparency preference' : ''
-    if (eligible && this.graphReady && !external && !this.covered) this.budget.sample(now)
-    else this.budget.interrupt()
+    this.timing.monitoring = eligible && this.graphReady && !external && !this.covered
+    if (this.timing.monitoring && (!this.budget.enabled || this.controls?.hasSurface)) {
+      this.budget.sample(now, this.timing.ms, this.timing.sampledAt)
+    } else this.budget.interrupt()
     this.driveBlock = external || (this.budget.enabled ? '' : this.budget.reason)
     this.setDriveSurface(!this.driveBlock && this.graphReady)
   }
@@ -238,8 +241,8 @@ export class GlassPost {
     if (!covered) {
       const on = controls.available
       if (on && !this.showing) {
-        const reason = this.budget.reason === 'five calm seconds' && this.lastReason.includes('% of frames')
-          ? this.budget.reason : this.lastReason === 'drive started' ? 'drive started' : 'glass available'
+        const reason = this.driving && (this.budget.reason !== 'drive started' || this.lastReason === 'drive started')
+          ? this.budget.reason : 'glass available'
         this.record(true, reason)
       } else if (!on) {
         this.record(false, controls.reducedTransparency ? 'transparency preference' : 'interface frost disabled')

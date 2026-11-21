@@ -32,10 +32,14 @@ try {
       const original = backend[key]
       backend[key] = function (...args) { counters[key]++; return original.apply(this, args) }
     }
-    let clock = performance.now(), interval = 50
+    let clock = performance.now(), frames = 0
     const sample = glass.budget.sample.bind(glass.budget)
     glass.budget.interrupt()
-    glass.budget.sample = () => sample(clock += interval)
+    glass.budget.sample = () => {
+      clock += ++frames % 2 ? 20 : 50
+      const timed = game.backend === 'webgpu'
+      sample(clock, timed ? 2 : null, timed ? Math.floor(clock / 600) * 600 : -Infinity)
+    }
     async function until(state) {
       const deadline = performance.now() + 60000
       while (document.documentElement.dataset.driveGlass !== state || glass.showing !== (state === 'on')) {
@@ -45,14 +49,20 @@ try {
       return { line: glass.diagnosticLine(), owned: !!document.querySelector('.gs-item[data-glass-surface="shader"]') }
     }
     const shed = await until('shed')
-    interval = 16
+    const shedAt = clock
     const recovered = await until('on')
-    return { shed, recovered, backend: game.backend, graphs: chain.builds - before, ...counters }
+    const dwell = clock - shedAt
+    const stop = clock + 6500
+    while (clock < stop) {
+      if (!glass.budget.enabled) throw Error('Repeated an ineffective trial')
+      await new Promise(requestAnimationFrame)
+    }
+    return { shed, recovered, dwell, backend: game.backend, graphs: chain.builds - before, ...counters }
   })
   console.log(JSON.stringify(result))
   assert.match(result.backend.toLowerCase(), backend === 'webgpu' ? /webgpu/ : /webgl/)
-  assert.match(result.shed.line, /% of frames over 20.5 ms/)
-  assert.match(result.recovered.line, /five calm seconds/)
+  assert.match(result.shed.line, /trial from/)
+  assert.match(result.recovered.line, /under 8% gain/); assert(result.dwell >= 5000)
   assert.equal(result.shed.owned, false)
   assert.equal(result.recovered.owned, true)
   assert.deepEqual([result.graphs, result.createRenderPipeline, result.createNodeBuilder], [0, 0, 0])
