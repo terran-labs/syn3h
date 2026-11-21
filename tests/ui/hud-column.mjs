@@ -39,7 +39,8 @@ const measure = (page) => page.evaluate(() => {
     panel: box('.world-inspector'), // Rows showing only: Flip upright is in the column only while it can act, and takes no row while hidden.
     keys: [...document.querySelectorAll('.hud-accessories .acc-row:not([hidden]) kbd, .hud-chat kbd')].map((k) => k.checkVisibility() && k.textContent),
     accessories: box('.hud-accessories'), chat: box('.hud-chat'),
-    detail: detail ? ink(detail).map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom })) : [],
+    // The detail beside the gear and the meter (status and bar) under its name.
+    detail: [detail, document.querySelector('.gear-selector .gs-meter')].filter(Boolean).flatMap((e) => ink(e)).map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom })),
     readouts: [...document.querySelectorAll('.focus-hud .fh-read')].filter((e) => getComputedStyle(e).opacity !== '0').flatMap((e) => ink(e)).map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom })),
     w: innerWidth, h: innerHeight,
   }

@@ -51,4 +51,14 @@
   /* Only the text: the two crescents and their fill bars run off the sides here and read as
      stray curves, so portrait phones draw the readouts alone (the owner, 19 November 2026). */
   .syn3h-shell .focus-hud svg g[data-style="0"] { display: none; }
+  /* The world and heading line: centred it runs into the gear drum's top slot, which holds
+     the top left on touch (gear.css), so it takes the top right, free since the Panels control
+     moved to the thumb grid. It wraps rather than reach the drum (about 196 px wide). */
+  .syn3h-shell.has-touch .focus-hud .fh-top {
+    left: auto; right: var(--edge-right); top: var(--edge-top); translate: none;
+    text-align: right; justify-items: end; max-width: calc(100% - var(--edge-right) - 196px);
+  }
+  .syn3h-shell.has-touch .focus-hud .fh-top small { white-space: normal; }
+  /* Left-handed, the drum holds the top right (gear.css): the line takes the top left. */
+  html[data-touch-hand="left"] .syn3h-shell.has-touch .focus-hud .fh-top { right: auto; left: var(--edge-left); text-align: left; justify-items: start; }
 }

@@ -110,6 +110,8 @@
 /* The column's placement, desktop only: the drum spans the column from its left edge. */
 :root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum { left: 0; width: var(--col-w); }
 :root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum button.gs-item { padding-left: var(--col-inset); }
+/* The meter (status and bar) starts under the name, which starts at the column's inset. */
+:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector { --gs-meter-left: var(--col-inset); }
 :root .syn3h-shell.exploration-ui.has-touch .gear-selector { --gs-drum-left: 8px; --gear-left: calc(var(--edge-left) - var(--col-spine)); }
 /* Its detail (what the gear does, what to press) sits beside the selected gear: its first line
    level with the selected name (the owner, 18 November 2026). It never runs into the speed

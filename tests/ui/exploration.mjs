@@ -129,7 +129,8 @@ for (const mode of modes) {
       await page.locator('.world-inspector').waitFor({ state: 'visible' })
     }
     if (touch) {
-      await page.locator('.inspector-toggle').tap(); await page.locator('.world-inspector').waitFor({ state: 'hidden' })
+      // Touch closes with the stack's own Close panels: the Panels control fades out while the panels show.
+      await page.locator('.world-inspector .panels-close').tap(); await page.locator('.world-inspector').waitFor({ state: 'hidden' })
       assert.equal(await page.locator('.world-inspector').isHidden(), true, 'returning to driving hides the panels')
       await page.locator('.inspector-toggle').tap()
       await page.locator('.world-inspector').waitFor({ state: 'visible' })

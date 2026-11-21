@@ -127,6 +127,8 @@ export class GearSelector {
   private readonly drum = document.createElement('div')
   private readonly detail = document.createElement('div')
   private readonly descEl = document.createElement('p')
+  /** Under the selected gear's name: its status and its charge or recharge bar. */
+  private readonly meter = document.createElement('div')
   private readonly statusEl = document.createElement('p')
   private readonly levelEl = document.createElement('div')
   private readonly levelFill = document.createElement('i')
@@ -193,9 +195,13 @@ export class GearSelector {
     this.hintsEl.setAttribute('aria-label', 'Controls')
     this.keyHintEl.className = 'gs-keyhint'
     this.keyHintEl.setAttribute('aria-hidden', 'true')
-    this.detail.append(this.descEl, this.statusEl, this.levelEl, this.hintsEl, this.keyHintEl)
+    // The status and the charge or recharge bar sit directly under the selected gear's name
+    // (the owner, 21 November 2026), not out in the detail beside it.
+    this.meter.className = 'gs-meter'
+    this.meter.append(this.levelEl, this.statusEl)
+    this.detail.append(this.descEl, this.hintsEl, this.keyHintEl)
 
-    root.append(spine, window_, this.drum, this.detail)
+    root.append(spine, window_, this.drum, this.meter, this.detail)
     parent.append(root)
 
     // A sibling, not a child: the selector is transformed, which would trap position: fixed.
