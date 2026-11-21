@@ -599,7 +599,7 @@ export class Game {
         const preset = this.quality.renderPreset(level, true)
         const shade = Number(preset.value(vehicleShading.def.id))
         const drawVariants = () => shade === 0 || shade === 1 || shade === 2 ? drawCoveredShowroomVariant(this.scene, shade, draw) : draw()
-        const fleet = level === 1 && shade === 0 ? this.systems.find(s => s.drawCoveredLowFleet) : undefined
+        const fleet = this.backend === 'webgpu' && level === 1 && shade === 0 ? this.systems.find(s => s.drawCoveredLowFleet) : undefined
         const submit = () => fleet?.drawCoveredLowFleet ? fleet.drawCoveredLowFleet(drawVariants) : drawVariants()
         const seen = new Set<string>()
         for (const target of [preset, { ...preset, shed: true }]) {
