@@ -1177,7 +1177,10 @@ export class Shell implements System {
     const title = document.createElement('strong')
     const status = document.createElement('span')
     status.setAttribute('role', 'status')
-    const meter = document.createElement('progress')
+    const meter = document.createElement('div')
+    meter.className = 'quality-progress'
+    meter.setAttribute('role', 'progressbar')
+    meter.append(document.createElement('span'))
     meter.setAttribute('aria-label', 'Graphics preparation')
     veil.append(title, status, meter)
     this.qualityVeil = veil

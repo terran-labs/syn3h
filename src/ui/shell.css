@@ -540,3 +540,25 @@
   color: #fff;
   pointer-events: auto;
 }
+
+.quality-progress {
+  width: min(12rem, 60vw);
+  height: .25rem;
+  overflow: hidden;
+  border-radius: 1rem;
+  background: #354152;
+}
+.quality-progress > span {
+  display: block;
+  width: 35%;
+  height: 100%;
+  background: currentColor;
+  animation: quality-progress 1s ease-in-out infinite alternate;
+}
+@keyframes quality-progress {
+  from { transform: translateX(0); }
+  to { transform: translateX(185%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quality-progress > span { animation: none; }
+}
