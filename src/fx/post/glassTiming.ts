@@ -22,7 +22,7 @@ export class GlassTiming {
   private pending = false
 
   draw(renderer: WebGPURenderer, pipeline: { render(): void }, blurPasses: readonly object[]) {
-    if ((!this.visible && !this.monitoring) || this.pending || performance.now() < this.next) {
+    if (blurPasses.length === 0 || (!this.visible && !this.monitoring) || this.pending || performance.now() < this.next) {
       pipeline.render()
       return
     }
@@ -33,7 +33,8 @@ export class GlassTiming {
       pipeline.render()
       return
     }
-    const quads = [...blurPasses, pipeline].map(pass => (pass as TimedQuad)._quadMesh)
+    // Only these draws disappear with glass. The game renders its final composite either way.
+    const quads = blurPasses.map(pass => (pass as TimedQuad)._quadMesh)
     if (quads.some(q => !q)) { pipeline.render(); return }
     const ids = new Set<string>()
     const tracking = backend.trackTimestamp

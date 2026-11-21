@@ -7,10 +7,10 @@ function drive() {
   let now = 0
   budget.enter()
   budget.sample(now)
-  function frames(count: number, interval: number) {
+  function frames(count: number, interval: number, cost: number | null = null, targetMs = 1000 / 60) {
     for (let i = 0; i < count; i++) {
       now += interval
-      budget.sample(now)
+      budget.sample(now, cost, Math.floor(now / 600) * 600, targetMs)
     }
   }
   function uneven(count: number, cost?: number) {
@@ -74,12 +74,41 @@ describe('drive glass', () => {
     expect(budget.enabled).toBe(false)
   })
 
+  it('keeps costly glass when pacing meets the current target', () => {
+    for (const target of [1000 / 60, 1000 / 30]) {
+      const { budget, frames } = drive()
+      frames(600, target, 8, target)
+      expect(budget.reason).toBe('drive started')
+    }
+  })
+
+  it('keeps glass under pressure when blur misses either cost threshold', () => {
+    for (const [interval, cost] of [[24, 1.9], [50, 3.9]]) {
+      const { budget, frames } = drive()
+      frames(500, interval, cost)
+      expect(budget.reason).toBe('drive started')
+    }
+  })
+
+  it('trials costly blur under pressure and retires a trial that gained nothing', () => {
+    const { budget, frames } = drive()
+    frames(200, 25, 2)
+    expect(budget.enabled).toBe(false)
+    expect(budget.reason).toContain('p90 25.0 ms against 16.7 ms target')
+    frames(240, 25)
+    expect(budget.enabled).toBe(true)
+    expect(budget.reason).toContain('under 8% gain')
+    const retired = budget.reason
+    frames(500, 25, 5)
+    expect(budget.reason).toBe(retired)
+  })
+
   it('uses distinct GPU measurements and keeps a useful shed until frame time recovers', () => {
     const { budget, frames, uneven } = drive()
     uneven(200, .4)
     expect(budget.enabled).toBe(true)
-    for (let i = 0; i < 140 && budget.enabled; i++) uneven(2, 2)
-    expect(budget.reason).toContain('glass GPU')
+    for (let i = 0; i < 140 && budget.enabled; i++) uneven(2, 4)
+    expect(budget.reason).toContain('two blur passes')
     expect(budget.enabled).toBe(false)
     frames(400, 26)
     expect(budget.reason).toContain('remains shed')

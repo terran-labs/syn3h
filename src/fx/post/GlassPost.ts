@@ -56,7 +56,7 @@ export class GlassPost {
   private lastReason = 'waiting for playable glass'
   private changedAt = 0
 
-  readonly driveFrame = (playing: boolean, eligible: boolean, frostAllowed: boolean) => {
+  readonly driveFrame = (playing: boolean, eligible: boolean, frostAllowed: boolean, targetMs: number) => {
     const root = document.documentElement
     if (!playing) {
       this.timing.monitoring = false
@@ -80,7 +80,7 @@ export class GlassPost {
       this.controls?.reducedTransparency ? 'transparency preference' : ''
     this.timing.monitoring = eligible && this.graphReady && !external && !this.covered
     if (this.timing.monitoring && (!this.budget.enabled || this.controls?.hasSurface)) {
-      this.budget.sample(now, this.timing.ms, this.timing.sampledAt)
+      this.budget.sample(now, this.timing.ms, this.timing.sampledAt, targetMs)
     } else this.budget.interrupt()
     this.driveBlock = external || (this.budget.enabled ? '' : this.budget.reason)
     this.setDriveSurface(!this.driveBlock && this.graphReady)
@@ -112,7 +112,7 @@ export class GlassPost {
     if (this.controls?.pressOnly) changes.push('glassMerge=zorb-brake-pressed')
     if (this.controls?.clearMaterial) changes.push('glassMaterial=clear')
     const overrides = changes.filter(Boolean).join(', ')
-    return `Glass: ${this.showing ? 'on' : 'shed'} at ${this.changedAt.toFixed(1)} s (${this.lastReason}), ${count} visible surfaces, blur and final composite GPU time ${cost}` + (overrides ? `\nGlass overrides: ${overrides}` : '')
+    return `Glass: ${this.showing ? 'on' : 'shed'} at ${this.changedAt.toFixed(1)} s (${this.lastReason}), ${count} visible surfaces, glass-only GPU time (two blur passes) ${cost}` + (overrides ? `\nGlass overrides: ${overrides}` : '')
   }
 
   private controls?: GlassButton

@@ -3,7 +3,8 @@
 type Cause = 'GPU cost' | 'uneven frames'
 const windowMs = 2000
 const dwellMs = 5000
-const gpuBudgetMs = 1.5
+const minimumGain = .08
+const minimumBlurMs = 2
 
 export class GlassFrameBudget {
   enabled = true
@@ -17,7 +18,8 @@ export class GlassFrameBudget {
   private jumps = 0
   private gpuTotal = 0
   private gpuSamples = 0
-  private cheapSample = false
+  private leastBlurMs = Infinity
+  private readonly intervals: number[] = []
   private lastStamp = -Infinity
   private trial?: Cause
   private before = 0
@@ -42,7 +44,7 @@ export class GlassFrameBudget {
     this.clearWindow()
   }
 
-  sample(now: number, cost: number | null = null, stamp = -Infinity) {
+  sample(now: number, cost: number | null = null, stamp = -Infinity, targetMs = 1000 / 60) {
     const dt = now - this.last
     if (dt <= 0 || dt > 250) this.interrupt()
     this.last = now
@@ -53,16 +55,17 @@ export class GlassFrameBudget {
       this.lastStamp = stamp
       this.gpuTotal += cost
       this.gpuSamples++
-      if (cost <= gpuBudgetMs) this.cheapSample = true
+      this.leastBlurMs = Math.min(this.leastBlurMs, cost)
     }
 
+    this.intervals.push(dt)
     this.duration += dt
     this.frames++
     if (dt > this.previous * 1.35 && dt - this.previous > 5) this.jumps++
     this.previous = dt
 
     if (this.trial && this.sinceChange >= dwellMs && this.after !== undefined &&
-        (this.invalidTrial || this.after > this.before * .92)) {
+        (this.invalidTrial || this.after > this.before * (1 - minimumGain))) {
       this.ineffective.add(this.trial)
       this.restore(this.invalidTrial ? 'trial interrupted; glass restored' :
         this.comparison() + '; under 8% gain, trial retired for this drive')
@@ -74,19 +77,23 @@ export class GlassFrameBudget {
     if (this.trial) {
       if (this.after === undefined) {
         this.after = mean
-        if (!this.invalidTrial && mean <= this.before * .92) this.reason = this.comparison() + '; glass remains shed'
-      } else if (this.after <= this.before * .92 && !this.invalidTrial) {
+        if (!this.invalidTrial && mean <= this.before * (1 - minimumGain)) this.reason = this.comparison() + '; glass remains shed'
+      } else if (this.after <= this.before * (1 - minimumGain) && !this.invalidTrial) {
         // A useful shed can reverse when the scene becomes cheaper than the
         // already improved CSS baseline, including on a 30 Hz display.
         this.calmMs = !uneven && mean < this.after * .92 ? this.calmMs + this.duration : 0
         if (this.calmMs >= dwellMs) this.restore('frame time recovered after a useful shed')
       }
     } else if (this.sinceChange >= dwellMs) {
-      const cause = this.gpuSamples >= 2 && !this.cheapSample ? 'GPU cost' :
+      // Calculate the nearest-rank p90 only for a window with sustained costly blur.
+      const costly = this.gpuSamples >= 2 && this.leastBlurMs >= Math.max(minimumBlurMs, minimumGain * mean)
+      const p90 = costly ? this.intervals.sort((a, b) => a - b)[Math.ceil(.9 * this.frames) - 1] : 0
+      const cause = costly && p90 > 1.25 * targetMs ? 'GPU cost' :
         !this.gpuSamples && now - this.lastStamp > windowMs && uneven ? 'uneven frames' : undefined
       if (cause && !this.ineffective.has(cause)) {
-        const trigger = cause === 'GPU cost' ? (this.gpuTotal / this.gpuSamples).toFixed(2) + ' ms glass GPU' : cause
-        this.reason = trigger + '; trial from ' + mean.toFixed(1) + ' ms/frame'
+        this.reason = cause === 'GPU cost' ?
+          `glass ${(this.gpuTotal / this.gpuSamples).toFixed(2)} ms (two blur passes) of ${mean.toFixed(1)} ms mean frame; p90 ${p90.toFixed(1)} ms against ${targetMs.toFixed(1)} ms target` :
+          cause + '; trial from ' + mean.toFixed(1) + ' ms/frame'
         this.enabled = false
         this.trial = cause
         this.before = mean
@@ -113,6 +120,7 @@ export class GlassFrameBudget {
 
   private clearWindow() {
     this.duration = this.frames = this.jumps = this.gpuTotal = this.gpuSamples = 0
-    this.cheapSample = false
+    this.leastBlurMs = Infinity
+    this.intervals.length = 0
   }
 }
