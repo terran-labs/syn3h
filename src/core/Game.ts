@@ -609,7 +609,7 @@ export class Game {
           console.warn('Covered system warm-up failed', systemName(system), error)
         }
       }
-      // Only the current view and player need the cheaper programs at a relief boundary.
+      // Match the destination pass for the visible room, reserved bots and departures.
       // Use exact destination targets, including the direct-to-canvas Minimal path.
       const chain = this.postChain
       const governor = this.quality?.governor
@@ -623,10 +623,9 @@ export class Game {
         const preset = this.quality.renderPreset(level, true)
         const shade = Number(preset.value(vehicleShading.def.id))
         const existingPreview = entryLevel > 3 || (entryLevel < 3 && lower === entryLevel - 1)
-        const root = this.scene
         const drawView = () => draw(undefined, !existingPreview)
-        const drawVariants = () => root && (shade === 0 || shade === 1 || shade === 2)
-          ? drawCoveredShowroomVariant(root, shade, drawView) : drawView()
+        const drawVariants = () => (shade === 0 || shade === 1 || shade === 2)
+          ? drawCoveredShowroomVariant(this.scene, shade, drawView) : drawView()
         // Medium entry already warms the parked Low models on WebGPU for later swaps.
         const fleet = existingPreview && this.backend === 'webgpu' && level === 1 && shade === 0
           ? this.systems.find(system => system.drawCoveredLowFleet) : undefined
@@ -637,7 +636,7 @@ export class Game {
           const effects = this.systems.find(system => system.drawReliefEffects)
           submit = () => {
             let firstPose = true
-            bots.drawReliefFleet!(level === 0, () => {
+            bots.drawReliefFleet!(level === 0 && this.backend === 'webgpu', () => {
               if (firstPose && effects?.drawReliefEffects) {
                 firstPose = false
                 effects.drawReliefEffects(Number(preset.value('gfx.level')), playerDraw)
