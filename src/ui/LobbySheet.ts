@@ -55,7 +55,7 @@ export class LobbySheet {
     this.element.setAttribute('aria-labelledby', `${id}-title`)
     this.panel.className = 'lobby-sheet-panel'
     const title = document.createElement('h2'); title.id = `${id}-title`; title.className = 'lobby-sheet-title'; title.textContent = options.title
-    this.close_.type = 'button'; this.close_.className = 'lobby-sheet-close lobby-close'; this.close_.setAttribute('aria-label', `Close ${options.title}`)
+    this.close_.type = 'button'; this.close_.className = 'lobby-sheet-close lobby-close liquid-glass'; this.close_.setAttribute('aria-label', `Close ${options.title}`)
     // The lobby's one close control, the same in Welcome, Updates and Settings (lobby-sheet.css).
     this.close_.innerHTML = LOBBY_CLOSE
     this.body.className = 'lobby-sheet-body'
