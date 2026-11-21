@@ -295,17 +295,7 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
   .syn3h-shell.exploration-ui .world-inspector .wi-top .rail-navigation .rail-pause { grid-column: 2; grid-row: 1; }
   .syn3h-shell.exploration-ui .world-inspector .wi-top .rail-navigation .rail-close { grid-column: 3; grid-row: 1; }
 }
-/* Touch screens: the drum moves to the top left, above the speed readout and clear of the
-   minimap and the drive stick, three slots tall with thumb-sized slots. The description is
-   dropped; the gear's name, status and level stay. */
-@media (max-width: 700px) {
-  .syn3h-shell .gear-selector[data-touch] { --gs-slots: 3; --gs-pitch: 44px; top: var(--gear-top, calc(env(safe-area-inset-top) + 98px)); }
-  .syn3h-shell .gear-selector[data-touch] .gs-desc { display: none; }
-}
-@media (max-height: 500px) {
-  .syn3h-shell .gear-selector[data-touch] { --gs-slots: 1.5; --gs-pitch: 44px; top: var(--gear-top, calc(env(safe-area-inset-top) + 44px)); }
-  .syn3h-shell .gear-selector[data-touch] .gs-desc { display: none; }
-}
+/* Touch screens: the drum's place and size are in gear.css (one compact form, top left). */
 /* On a small screen the open panels cover the drum's place: one or the other. */
 @media (max-width: 700px), (max-height: 500px) {
   .syn3h-shell.exploration-ui:has(.world-inspector:not([hidden])):not(.is-focus) .gear-selector,
