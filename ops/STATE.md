@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 05:30 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-21 06:00 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2109 (release-88, glass drive budget for the opt-in demo), source b7344f28, frozen copy
-20261121-051916-b7344f28, Worker version 72fa940b, at https://www.syn3h.com/ since 21 November 05:23 PST.
+Live: v26.11.2110 (release-89, shared shadow pool for other players' jet and hovercraft), source 7dae04bd,
+frozen copy 20261121-054615-7dae04bd, Worker version ac137175, at https://www.syn3h.com/ since 21 November 05:50 PST.
 Staging performance check with four bots (2108 and 2109): High to Medium and Medium to Low read 0/0;
 Low to the lowest level still 5 graphs and 3 pipelines (the check forces the step without the
 governor shedding bots). Reports in /tmp/orch-perfcheck-2108 and /tmp/orch-perfcheck-2109.
@@ -129,6 +129,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2107 | 86 | m-tuning-2107 | experimental glass remains off by default; nine tuning settings for the opt-in demo |
 | v26.11.2108 | 87 | m-stock-2108 | with others present, quality drops between High, Medium and Low no longer hitch |
 | v26.11.2109 | 88 | m-budget-2109 | experimental glass remains off by default; drive budget for the opt-in demo |
+| v26.11.2110 | 89 | m-shadow-2110 | another player's jet or hovercraft appearing no longer hitches |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
