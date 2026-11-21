@@ -20,6 +20,7 @@ try {
     deviceScaleFactor:phone ? 2 : 1, isMobile:phone, hasTouch:phone})
   const errors = []
   page.on('pageerror', e => errors.push(e.message))
+  page.on('console', msg => { if (msg.type()==='error') console.error(msg.text()) })
   await page.goto(url.href)
   await page.waitForFunction(() => window.syn3h?.game)
   await page.evaluate(({level,fleet,multiplayer}) => {
@@ -37,6 +38,10 @@ try {
     }
     game.quality.setLevel(level)
     game.quality.setAuto(true)
+    // Stage the requested entry level until the test subjects exist. Stock bot pacing
+    // keeps measuring real frames. The descent itself uses the production governor.
+    window.sampleBeforeRoster = game.quality.governor.sample
+    game.quality.governor.sample = () => null
     void shell.play(true)
   },{level:entryLevel,fleet,multiplayer})
   await page.waitForFunction(() => window.syn3hNet?.isHost && window.syn3h.shell.playing &&
@@ -75,6 +80,8 @@ try {
   }
   const result = await page.evaluate(async ({peerId, multiplayer}) => {
     const {game} = window.syn3h, q = game.quality, governor = q.governor, b = game.renderer.backend
+    governor.sample = window.sampleBeforeRoster
+    delete window.sampleBeforeRoster
     const roster = () => window.syn3h.bots.vehicles.map(v => ({kind:v.kind,id:v.object.id,arriving:window.syn3h.materialize.isMaterializing(v)}))
     const initialRoster = roster()
     const peerVehicle = peerId === null ? undefined : window.syn3hNet.remotes.get(peerId)?.vehicle
