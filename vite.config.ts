@@ -116,7 +116,7 @@ export default defineConfig({
       { name: 'vendor', test: /node_modules[\\/]/, maxSize: 480_000 },
     ] } } },
   },
-  // tools/*.test.mjs use node:test and are run with `node --test`, not vitest.
+  // tools/*.test.mjs use node:test and run with `npm run test:tools`, not vitest; `npm test` runs both.
   test: {
     exclude: ['**/node_modules/**', '**/dist/**', 'tools/**'],
     // A timeout is there to stop a hung test, not to time one: vitest's 5 s default failed
