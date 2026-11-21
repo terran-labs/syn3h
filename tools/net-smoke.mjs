@@ -634,9 +634,12 @@ try {
     ], ([view, real]) => view && d2(view, real) < 2)
     const [botView, botReal] = seen.value
     check('B sees the host\'s bot where it is', botView && d2(botView, botReal) < 2, { botView, botReal, waitedMs: seen.waitedMs })
-    // Audio hears the other player and the bot on both sides (replica on B, own bot on A).
-    const audible = await both(() => window.syn3hNet.audibleVehicles().length)
-    check('audio gets the other player and the bot', audible[0] === 2 && audible[1] === 2, { audible })
+    // Audio hears the other player and the bot on both sides (replica on B, own bot on A). B has
+    // the bot's state from its first message, but shows it (and so hears it) only when its turn
+    // in the arrival queue comes (src/net/arrivals.ts), so wait for that on both pages.
+    const heard = await settle(() => both(() => [window.syn3hNet.audibleVehicles().length, window.syn3hNet.arrivals?.pending ?? 0]), (v) => v[0][0] === 2 && v[1][0] === 2)
+    const audible = heard.value.map(([n]) => n), waitingToShow = heard.value.map(([, w]) => w)
+    check('audio gets the other player and the bot', audible[0] === 2 && audible[1] === 2, { audible, waitingToShow, waitedMs: heard.waitedMs })
     const judgedBefore = await a.evaluate(({shooter,victim}) => { window.__shotEvidence?.begin('bot',shooter,victim); return window.syn3hNet.stats.hitsJudged }, {shooter:idB,victim:BOT})
     for (let i = 0; i < 6; i++) {
       // Since v26.11.1708 the host's pacer or the quality governor can send a bot away when frames
