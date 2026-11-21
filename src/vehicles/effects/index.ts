@@ -98,17 +98,16 @@ class EffectWorld implements System {
   }
   retain(){this.references++}
   release(){if(--this.references===0){worlds.delete(this.game);this.game.remove(this)}}
+  drawCoveredMinimal(draw: () => void) { ParticleBatch.drawCoveredMinimal(this.game.scene, draw) }
   private rebudget(){
-    const previousOctaves = this.level === 0 ? 1 : 2
     this.level = graphicsLevel.value
     const octaves = this.level === 0 ? 1 : 2
     const budget = Math.floor(qualityBudget().particles * .25)
     const batch = (current: ParticleBatch | undefined, capacity: number, sprite: typeof dustSprite, additive: boolean) => {
-      if (current && previousOctaves === octaves) {
-        current.resetCapacity(capacity)
+      if (current) {
+        current.resetCapacity(capacity, octaves)
         return current
       }
-      current?.dispose()
       const next = new ParticleBatch(capacity, sprite, additive, octaves)
       this.game.scene.add(next.mesh)
       return next

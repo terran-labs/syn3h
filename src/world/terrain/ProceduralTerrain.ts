@@ -120,6 +120,7 @@ export class ProceduralTerrain implements Terrain {
     this.syncIce()
     // Level of detail follows the camera once per frame, after the camera has moved.
     this.lodSystem = game.add({
+      drawCoveredMinimal: draw => this.look.drawCoveredMinimal(draw),
       // Bots and their LOD materials may arrive after the camera update in the same frame.
       prepareWorldDraw: () => this.syncSceneCurve(),
       // Before each physics step, and before the vehicles' own steps: carry things across

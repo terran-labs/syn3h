@@ -70,6 +70,7 @@ export interface TerrainMaterial {
    * replace them: a player's own settings come back when the level rises again.
    */
   setDetail(share: number): void
+  drawCoveredMinimal(draw: () => void): void
 }
 
 /**
@@ -341,7 +342,7 @@ export function createTerrainMaterial(): TerrainMaterial {
   // bumpMap() only perturbs textures (it re-samples at offset UVs), so this is Mikkelsen's
   // surface gradient method written out, with unnormalised screen derivatives so the
   // relief is in real metres. It fades with distance, where the fine noise would shimmer.
-  const buildNormal = () => Fn(() => {
+  const buildNormal = (richSurface: boolean) => Fn(() => {
     const dist = camDist.toVar()
     const fade = smoothstep(220, 40, dist)
     // Suppress frequencies smaller than a pixel, especially across the long footprint
@@ -349,7 +350,7 @@ export function createTerrainMaterial(): TerrainMaterial {
     const footprint = max(p.dFdx().length(), p.dFdy().length()).toVar()
     const resolved = (frequency: number) => float(1).sub(smoothstep(0.25, 0.75, footprint.mul(frequency)))
     const height = mid.mul(0.5).add(fine.mul(0.1).mul(resolved(0.7))).mul(fade).toVar()
-    if (rich) {
+    if (richSurface) {
       const mid10 = mid.toVar()
       // Loose sand that ripples: not cliff, not dark rock, not road.
       const sandy = accentMode.z.mul(float(1).sub(cliff)).mul(float(1).sub(rockAmount)).mul(float(1).sub(paved)).toVar()
@@ -376,7 +377,7 @@ export function createTerrainMaterial(): TerrainMaterial {
     const det = sx.dot(r1)
     const grad = det.sign().mul(r1.mul(dH.x).add(r2.mul(dH.y)))
     const out = det.abs().mul(n).sub(grad).normalize().toVar()
-    if (!rich) return out
+    if (!richSurface) return out
     // Only a glittering grain is tilted; every other pixel skips the two noises.
     const glint = spark.toVar()
     const cellAt = grain.toVar()
@@ -387,13 +388,24 @@ export function createTerrainMaterial(): TerrainMaterial {
     return out
   })()
   material.roughnessNode = buildRoughness()
-  material.normalNode = buildNormal()
-  /** Rebuild every node that differs between the plain and the rich surface. */
+  material.normalNode = buildNormal(rich)
+  const snapshot = () => ({ base, colorNode: material.colorNode, normalNode: material.normalNode, roughnessNode: material.roughnessNode })
+  const surfaces = new Map([[rich, snapshot()]])
+  /** Keep each surface graph so reversing a quality step also restores its compiled program. */
   const rebuild = () => {
-    base = ground(p, normalGeometry.y, volcanic)
-    material.colorNode = buildColour()
-    material.roughnessNode = buildRoughness()
-    material.normalNode = buildNormal()
+    const saved = surfaces.get(rich)
+    if (saved) {
+      base = saved.base
+      material.colorNode = saved.colorNode
+      material.roughnessNode = saved.roughnessNode
+      material.normalNode = saved.normalNode
+    } else {
+      base = ground(p, normalGeometry.y, volcanic)
+      material.colorNode = buildColour()
+      material.roughnessNode = buildRoughness()
+      material.normalNode = buildNormal(rich)
+      surfaces.set(rich, snapshot())
+    }
     material.needsUpdate = true
   }
   params.onChange((id) => {
@@ -457,9 +469,17 @@ export function createTerrainMaterial(): TerrainMaterial {
       tier = next
       applyRich()
     },
+    drawCoveredMinimal(draw) {
+      const previous = tier
+      tier = 0
+      try { applyRich(); draw() }
+      finally { tier = previous; applyRich() }
+    },
     setCoverShade(fn) {
       coverShade = fn
+      surfaces.clear()
       material.colorNode = buildColour()
+      surfaces.set(rich, snapshot())
       material.needsUpdate = true
     },
     setLake(x, z, radius, surface) {
