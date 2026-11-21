@@ -76,7 +76,14 @@ html .syn3h-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-c
      sticks (inspector/motion.css), now with the x that goes back to the list. ---- */
   html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single :is(.rail-command, .rail-foot),
   html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > :not(.is-open) { display: none; }
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open { min-height: 100%; }
+  /* The open card fills the stack exactly and its body is the one scroller, below the title, so
+     nothing ever passes under the title and it needs no fill of its own: it is the card's own
+     glass, no darker (the owner, 21 November 2026: "much darker bars than they should"). The
+     stack itself has nothing left to scroll, so there is still one scrolling box on screen. */
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards { overflow: hidden; }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open { min-height: 0; height: 100%; flex: 1 1 auto; display: flex; flex-direction: column; overflow: clip; }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open > .wi-body { flex: 1 1 auto; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open > .wi-head { position: static; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; border-bottom: 1px solid var(--s3-line-quiet, rgb(255 255 255 / .08)); }
   html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head { grid-template-columns: auto minmax(0, 1fr) 32px; }
   html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card[data-section="you"].is-open > .wi-head { grid-template-columns: auto minmax(0, 1fr) auto 32px; }
   html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head .wi-chev { display: none; }
