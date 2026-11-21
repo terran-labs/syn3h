@@ -32,27 +32,37 @@
   background: var(--s3-accent-2, #f7f7f7); box-shadow: 0 0 6px rgb(255 255 255 / .8);
 }
 
-/* The version: the lower left corner, small and quiet; a hook for the Updates view (data-lobby-version). */
+/* The version: the lower left corner, small and quiet, plain text with no card behind it (the
+   owner, 20 November 2026), held legible over the galaxy by the HUD's dark falloff under it, as the
+   idle status line is. A hook for the Updates view (data-lobby-version). */
 .lobby-version-dock { position: fixed; z-index: 30; left: max(14px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); pointer-events: none; }
 .lobby-version-dock > * { pointer-events: auto; }
 .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version {
-  min-height: 24px; min-width: 0; padding: 4px 6px; border: 0; border-radius: 4px; background: none; box-shadow: none;
-  font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .12em; text-transform: none; color: rgb(224 224 224 / .62);
-  text-shadow: 0 1px 3px rgb(0 8 14 / .8); cursor: pointer; white-space: nowrap;
+  min-height: 24px; min-width: 0; padding: 4px 6px; border: 0; border-radius: 0; background: none; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .12em; text-transform: none; color: rgb(232 232 232 / .78);
+  text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8)); cursor: pointer; white-space: nowrap;
 }
 .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version:hover, .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version:focus-visible { color: rgb(237 237 237 / .9); background: none; }
 
-/* The panel: the sidebar's right-edge column, shown in the lobby above the galaxy's labels, on a
-   darker ground than in play so labels behind it do not read through. It stops above the gear. */
+/* The card: the sidebar's right-edge place, one card (#lobby-settings) and one glass surface. It
+   carries .liquid-glass (glass.css, or the glass shader where it draws); these rules only give it
+   a card's shape and a body dense enough for small type over a bright planet, and keep a press
+   inside it from pressing the whole card. Nothing inside it is glass: the in-game cards it reuses
+   are plain sections here, parted by a hairline. */
 .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
-  display: flex; z-index: 60; bottom: auto; height: auto; max-height: calc(100dvh - 32px - 60px);
-  padding: 8px; border-radius: 0; background: none; box-shadow: none;
+  /* It stops above the three buttons in the lower right (3 x 44 px, two 8 px gaps, the edge). */
+  display: flex; z-index: 60; bottom: auto; height: auto; max-height: calc(100dvh - var(--edge-top, 28px) - 196px);
+  padding: 10px 6px 12px;
+  --glass-radius: var(--halo-r, 16px); --glass-body: rgb(12 12 14 / .62); --glass-body-hover: rgb(12 12 14 / .62); --glass-blur: 20px;
 }
-/* One level of card: the panel is a column, not a sheet behind the cards (the owner, 16
-   November 2026: no card regions nested inside each other). The cards carry the darker body
-   the sheet used to give, so the galaxy's labels still do not read through them. */
-.syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings .wi-glass { --body: rgb(12 12 13 / .84); }
-.syn3h-shell.exploration-ui .lobby-settings-foot .build-line { text-shadow: 0 1px 3px rgb(0 8 14 / .9), 0 0 8px rgb(0 8 14 / .6); }
+.syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings.liquid-glass:is(:hover, :active) { transform: none; background-color: var(--glass-body); }
+html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-settings :is(.wi-glass, .rail-players) {
+  border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+/* The world's own graphics detail (grass, plants, fog, shadows) acts only in a world: not here. */
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings .lobby-graphics .wi-fine { display: none; }
+html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-settings .wi-card + .wi-card:not([hidden]) { border-top: 1px solid var(--s3-line-quiet); }
 .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { overflow-y: auto; min-height: 0; flex: 1 1 auto; overscroll-behavior: contain; }
 /* Unlike the in-game rail, whose cards share its height, here every card takes its natural
    height and the whole stack scrolls: an open card shows all its rows, on short screens too. */
@@ -60,57 +70,40 @@
 .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-body { flex: none; overflow: visible; }
 /* A long label wraps to a second line rather than ending in an ellipsis. */
 .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-label { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.2; }
-.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px 2px 14px; flex: 0 0 auto; }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 4px 14px; flex: 0 0 auto; background: none; border: 0; }
 .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head h2 { margin: 0; padding: 0; font: 600 14px/1 'Barlow Condensed', sans-serif; letter-spacing: .22em; text-transform: uppercase; color: var(--s3-ink); }
 .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 12px; font: 500 13px 'Barlow', sans-serif; letter-spacing: .08em; }
 .lobby-settings-close span[aria-hidden] { font-size: 18px; line-height: 1; }
-.lobby-settings-foot { flex: 0 0 auto; padding: 2px 8px 0; text-align: right; }
-.syn3h-shell.exploration-ui .lobby-settings-foot .build-line { font: 400 11px 'Barlow', sans-serif; letter-spacing: .1em; color: rgb(224 224 224 / .55); }
-.syn3h-shell.exploration-ui .world-inspector.lobby-settings .presentation-toggle { width: 100%; margin-top: 6px; padding: 0 6px 0 16px; }
 .world-inspector.lobby-settings .host-controls { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
 .world-inspector.lobby-settings .host-controls legend { display: none; }
 
-/* Phones: a sheet over most of the screen with its own close control; the gear steps aside. */
+/* Phones: one full-width card with its own close control, as the in-game panels are; the buttons
+   step aside while it is open. It takes the height its rows need, up to the whole screen. */
 @media (max-width: 700px), (max-height: 500px) and (pointer: coarse) {
   .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
     left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); width: auto;
-    top: max(10px, env(safe-area-inset-top)); bottom: max(10px, env(safe-area-inset-bottom)); height: auto; max-height: none;
+    top: max(10px, env(safe-area-inset-top)); bottom: auto; height: auto; max-height: calc(100dvh - max(10px, env(safe-area-inset-top)) - max(10px, env(safe-area-inset-bottom)));
   }
   .lobby-gear-dock.is-open:not(.is-beside-sheet) { visibility: hidden; }
   /* The panel covers the lobby here, so the lobby behind it dims: a full-screen backdrop with
      no edge, not a sheet round the cards. Taps pass through it to the close-on-outside rule. */
   .syn3h-shell.exploration-ui:not(.is-playing) .lobby-settings-host::before { content: ''; position: fixed; inset: 0; z-index: 59; background: rgb(2 8 14 / .78); pointer-events: none; }
-  /* The stack takes only the height it needs, so the version line follows the last card
-     instead of sitting at the foot of the screen. */
+  /* The stack takes only the height it needs. */
   .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { flex: 0 1 auto; }
   /* The same stack as on a desktop, narrower and tighter to the corner. */
   .lobby-gear-dock { width: 128px; gap: 6px; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); }
   .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version { min-height: 0; padding: 1px 2px; font-size: 10px; letter-spacing: .04em; }
 }
 @media (max-height: 500px) and (pointer: coarse) and (orientation: landscape) {
-  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { left: auto; width: min(560px, calc(100vw - 20px)); top: 6px; bottom: 6px; padding: 6px; gap: 4px; }
+  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { left: auto; width: min(560px, calc(100vw - 20px)); top: 6px; max-height: calc(100dvh - 12px); padding: 6px; gap: 4px; }
   .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { padding-block: 0; }
   .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close { min-height: 40px; min-width: 44px; }
-  /* The version line joins the header row, beside Close, to give the rows its height. */
-  .syn3h-shell.exploration-ui .world-inspector.lobby-settings .lobby-settings-foot { position: absolute; top: 20px; right: 130px; padding: 0; }
   .lobby-gear-dock { gap: 5px; right: max(12px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
 }
 /* Touch: every control a full 44 px target. */
 @media (pointer: coarse) {
   .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control { height: 44px; min-height: 44px; font-size: 11px; letter-spacing: .18em; gap: 8px; padding: 0 12px 0 12px; }
 }
-
-/* In the lobby's sheet (LobbySheet, is-embedded): the panel is the sheet's contents, not a
-   column of its own. The sheet gives the title, the close control and the frosted ground, so
-   the panel's own header, backdrop and placement step aside and its cards fill the width. */
-.lobby-settings-host.is-embedded::before { display: none; }
-.syn3h-shell.exploration-ui:not(.is-playing) dialog.lobby-sheet .lobby-settings-host.is-embedded .world-inspector.lobby-settings {
-  position: static; inset: auto; width: auto; height: auto; max-height: none; margin: 0; padding: 0; transform: none;
-  display: flex; flex-direction: column; gap: 8px; background: none; box-shadow: none; border: 0;
-}
-.syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-settings-host.is-embedded .lobby-settings-head { display: none; }
-.syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-settings-host.is-embedded .world-inspector.lobby-settings .wi-cards { overflow: visible; flex: 0 0 auto; }
-.syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-settings-host.is-embedded .lobby-settings-foot { position: static; padding: 4px 8px 0; }
 
 /* Beside an open sheet (Shell moves the dock into the sheet's dialog): the open one shows as
    pressed (.is-current, glass.css), the others switch to theirs. A phone held upright has no room
