@@ -45,8 +45,10 @@ try {
     const initialRoster = roster()
     const entered = governor.level, start = performance.now(), calls = [], changes = []
     function record(kind, source) {
+      const actor = window.syn3h.bots.vehicles.find(vehicle => vehicle.object.getObjectById(source.object?.id))
+
       calls.push({kind, level:governor.level, frame:game.frames, ms:performance.now()-start,
-        object:source.object?.name, material:source.material?.name || source.material?.type})
+        bot:actor?.kind, botRoot:actor?.object.id, object:source.object?.name, material:source.material?.name || source.material?.type})
     }
     const make = b.createNodeBuilder, pipeline = b.createRenderPipeline, sample = governor.sample
     b.createNodeBuilder = function(...args) {
