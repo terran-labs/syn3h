@@ -96,6 +96,14 @@ callback before the final fence stage. That stage took 0.12 s. The capped Ultra 
 lacked stage timestamps, so its exact wait remains unknown. WebGL 2 starts at Medium
 or below on its own. Investigation of this manually selected entry path is deferred.
 
+## Vehicle shader builds at Low on WebGL 2
+
+Stepping down to Low while driving the hovercraft built three shader graphs for its
+two merged surfaces and duct fans. Switching to the jet at Low built seven graphs.
+WebGPU prepares those vehicle variants during entry. Doing the same on WebGL 2 added
+0.6 to 0.9 s to every entry, so that preparation ships only on WebGPU. No device
+report or measured hitch duration is available for either case.
+
 ## Historical record, not a current release checklist
 
 The following November 14 snapshot is retained for investigation. Its claims about defaults,
