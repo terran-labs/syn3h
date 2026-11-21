@@ -1179,33 +1179,19 @@ export class Shell implements System {
     status.setAttribute('role', 'status')
     const meter = document.createElement('progress')
     meter.setAttribute('aria-label', 'Graphics preparation')
-    const button = document.createElement('button')
-    button.textContent = 'Cancel'
-    veil.append(title, status, meter, button)
+    veil.append(title, status, meter)
     this.qualityVeil = veil
-    const controller = new AbortController()
-    const cancel = () => controller.abort()
-    this.abort.signal.addEventListener('abort', cancel, { once: true })
-    const restore = this.game.quality.manualRollback()
-    let changed = false
-    button.onclick = () => {
-      this.queuedQuality = undefined
-      cancel()
-      if (changed) restore()
-      veil.remove()
-    }
     this.element.append(veil)
     try {
-      while (this.queuedQuality && !controller.signal.aborted) {
+      while (this.queuedQuality && !this.abort.signal.aborted) {
         const { level, apply } = this.queuedQuality
         this.queuedQuality = undefined
         title.textContent = 'Applying ' + LEVELS[level].name
         status.textContent = 'Updating graphics settings'
-        await this.game.prepareManualQuality(() => { changed = true; apply() }, controller.signal,
+        await this.game.prepareManualQuality(apply, this.abort.signal,
           phase => { status.textContent = phase })
       }
     } finally {
-      this.abort.signal.removeEventListener('abort', cancel)
       veil.remove()
       this.qualityVeil = null
     }

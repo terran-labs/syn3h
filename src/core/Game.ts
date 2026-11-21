@@ -15,6 +15,7 @@ import { installLongFrameRenderer } from './longFrameRenderer'
 import * as THREE from 'three/webgpu'
 import { canCreateWebGL2, NoGraphicsError, webgpuUsable } from './graphicsSupport'
 import { installRenderDiagnostics, recordCoveredVehicleDraw, recordEntryWarmIssue, recordStartupGameDraw, recordStartupPhase, recordStartupPrecompile, showRendererLost, startupTiming, timeStartup } from './diagnostics'
+import { shaderWorkCount } from './diagnosticShaders'
 import { guardDevice, runGuarded, type GuardedRenderer } from './deviceLoss'
 import { snapshotPixelRatio } from './snapshotScale'
 import { drawFrame, gpuDeadlineMs, startRenderer, viewState, withDeadline, type PostChain } from './renderOptions'
@@ -459,8 +460,14 @@ export class Game {
       await batch.ready()
     }
     progress('Drawing the new level')
-    await frame()
-    submit()
+    // Temporal passes alternate targets. Confirm both sides after the last new graph.
+    let clean = 0
+    for (let i = 0; i < 8 && clean < 2; i++) {
+      await frame()
+      const before = shaderWorkCount()
+      submit()
+      clean = shaderWorkCount() === before ? clean + 1 : 0
+    }
     await this.finishWorldFrame(signal, () => signal.throwIfAborted(), false)
   }
 

@@ -90,7 +90,7 @@ it('ends covered entry and reports one loss when its pending pipelines reject', 
   expect(warnings.mock.calls.filter(([line]) => String(line).includes('outstanding render pipelines'))).toHaveLength(1)
 })
 
-it.each(['cancel', 'deadline'])('releases a cold manual change on %s and prevents a late draw', async reason => {
+it.each(['dispose', 'deadline'])('releases a cold manual change on %s and prevents a late draw', async reason => {
   vi.useFakeTimers()
   vi.stubGlobal('requestAnimationFrame', (frame: () => void) => setTimeout(frame, 1))
   vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -107,7 +107,7 @@ it.each(['cancel', 'deadline'])('releases a cold manual change on %s and prevent
   expect(apply).not.toHaveBeenCalled()
   expect(game.applyingQuality).toBe(true)
   await vi.advanceTimersByTimeAsync(10)
-  if (reason === 'cancel') stop.abort()
+  if (reason === 'dispose') stop.abort()
   else await vi.advanceTimersByTimeAsync(15000)
   await change
   expect(apply).toHaveBeenCalledOnce()

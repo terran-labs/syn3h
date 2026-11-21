@@ -826,24 +826,6 @@ export class QualityController implements QualitySource {
   /** The shell can cover cold choices. Standalone viewers and startup apply immediately. */
   manualChange: (level: QualityLevel, apply: () => void) => void = (_level, apply) => apply()
 
-  /** Cancel restores the previous effective level, including relief and player overrides. */
-  manualRollback(): () => void {
-    const before = this.getQualityState()
-    const { transient, budget, lastReason } = this
-    return () => {
-      const g = this.governor
-      g.reset(before.level)
-      g.levelPinned = before.pinned
-      g.rung = Math.min(before.rung, g.ladder.length - 1)
-      this.overrides = { ...before.overrides }
-      this.transient = transient
-      this.lastReason = lastReason
-      this.budget = budget
-      this.reapply = true
-      this.apply('governor', true)
-    }
-  }
-
   /** The player chooses a level: its whole preset applies and every override is cleared. */
   setLevel(level: number) {
     if (this.disposed) return
