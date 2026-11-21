@@ -55,6 +55,27 @@ describe('level presets', () => {
 })
 
 describe('choosing the starting level', () => {
+  it('restores the saved level, fine tuning and governor after a diagnostic sweep', async () => {
+    const { c, local } = await boot({ adapter: 'available' })
+    play(c, 100)
+    c.setLevel(2)
+    params.set('post.heat', 0.17)
+    const previous = c.getQualityState(), settings = local.getItem(STATE_KEY)
+    const governor = c.governor, transitions = [...c.levelChanges]
+    const sweep = c.beginDiagnosticSweep()
+    try {
+      sweep.step(0)
+      c.setLevel(5)
+      expect(local.getItem(STATE_KEY)).toBe(settings)
+    } finally { sweep.restore() }
+    expect(c.governor).toBe(governor)
+    expect(c.getQualityState()).toEqual(previous)
+    expect(c.levelChanges).toEqual(transitions)
+    expect(params.get('post.heat')!.value).toBe(previous.overrides['post.heat'])
+    expect(local.getItem(STATE_KEY)).toBe(settings)
+    c.dispose()
+  })
+
   it('caps the actual WebGL renderer after an available GPU probe without raising crash caps', async () => {
     for (const gpu of [true, false]) {
       const { c } = await boot({ adapter: 'available' })

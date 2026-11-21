@@ -80,6 +80,7 @@ export class BotManager implements System {
     // race bridge installs in the same frame, before networking flips this) take effect now.
     else if (was) this.races.setHooks(this.raceHooks)
   }
+  suspendDiagnosticPacing = false
   get vehicles(): readonly Vehicle[] { return this.bots }
   /** What the host asked for, within the quality level's budget: never exceeded. */
   get requested(): number {
@@ -411,7 +412,7 @@ export class BotManager implements System {
   update(dt = 0) {
     if (this.disposed) return
     this.daydream.update(dt)
-    if (this.remote) return
+    if (this.remote || this.suspendDiagnosticPacing) return
     // The host's count is an upper bound; the level's budget and what this device was measured
     // to carry come under it. One arrival or departure at a time, an interval apart.
     const wanted = this.requested
