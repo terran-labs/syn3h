@@ -2092,7 +2092,7 @@ export class Shell implements System {
   }
   // Installed only by the opt-in renderer. Eligibility belongs to the shell
   // because it owns both the entry transition and the manual quality veil.
-  driveGlassFrame?: (playing: boolean, eligible: boolean, frostAllowed: boolean) => void
+  driveGlassFrame?: (playing: boolean, eligible: boolean, frostAllowed: boolean, targetMs: number) => void
 
   update(dt = 0): void {
     if (this.tintTransition.update(dt)) this.onTint?.(this.tintTransition.current.body, this.tintTransition.current.accent, false)
@@ -2128,7 +2128,7 @@ export class Shell implements System {
     // Frost goes at the lowest graphics level, and when the quality ladder is shedding post effects.
     this.driveGlassFrame?.(this.playing, !this.transitioning && !this.qualityVeil && !this.userPaused &&
       !this.game.holdDraws && !this.game.quality.isLoading && !document.hidden &&
-      !document.documentElement.matches('[data-boot=loading], [data-boot=ready]'), qualityBudget().uiFrost && allowsDriveFrost())
+      !document.documentElement.matches('[data-boot=loading], [data-boot=ready]'), qualityBudget().uiFrost && allowsDriveFrost(), this.game.quality.governor.targetMs)
     const gfx = qualityLevel() >= 2 ? '0' : String(levelNumber(graphicsLevel.value))
     const frost = qualityBudget().uiFrost && qualityLevel() < 2 ? 'on' : 'off'
     if (this.element.dataset.uiFrost !== frost) this.element.dataset.uiFrost = frost

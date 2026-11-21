@@ -2,7 +2,14 @@
 
 The timestamp guard measures the horizontal and vertical blur draws. Both disappear when glass sheds. The final composite runs in both modes. Copy diagnostics reports the measured pair as “glass-only GPU time (two blur passes)”.
 
-The proposed trial threshold is **5 ms sustained**. In the Mac series below, the highest median for the blur pair was 3.20 ms and the highest block median was 4.21 ms. An isolated spike cannot start a trial. A two-second window needs two or more fresh samples, all above budget. After shedding, the guard measures whether frame time actually improved. A gain below 8% restores glass after the five-second minimum and retires that trigger for the drive. Devices without usable timestamps retain the uneven-frame trial.
+A two-second eligible window must meet both conditions before it can start a GPU trial:
+
+1. The 90th percentile frame interval exceeds 1.25 times the quality governor’s current target interval.
+2. At least two fresh blur readings arrived, and each reached the greater of 2.0 ms and 8% of the actual mean frame interval.
+
+The earlier 5 ms threshold was chosen to clear the desktop calibration spread. It would also suppress a trial for a struggling phone spending 4 ms on blur. The relative threshold uses the 8% improvement required to keep glass shed. The 2 ms floor is provisional. A gain below 8% restores glass after the five-second minimum and retires that trigger for the drive. Devices without usable timestamps retain the uneven-frame trial.
+
+For a 60 FPS quality target, the twelve medians below predict these decisions if those costs persist through the window. At steady 60 FPS none qualifies. At steady 40 FPS, all six desktop cells and none of the six phone cells qualify. At steady 30 FPS the threshold is 2.67 ms: only the desktop WebGPU card and the desktop WebGL 2 sixteen-button and card cases qualify. With a 30 FPS target, steady 30 FPS qualifies in none of the twelve cases. The calibration used a paused scene and did not measure live frame pacing for each cell.
 
 ## Mac calibration
 
@@ -27,7 +34,7 @@ The composite increase is the difference between the glass and plain final draws
 
 Frost width changes sample spacing while keeping the tap count fixed. Showing more buttons adds work to the final composite. Neither adjustment increases the number of blur draws or the dimensions of their targets.
 
-## Drive verification
+## Earlier drive verification with the fixed threshold
 
 At 390 × 844, the buggy travelled 432 metres during an 18-second drive with eight surfaces. Glass stayed on. The two passes took a median of 1.06 ms. At 32 occupied slots and maximum frost width they took 1.21 ms and also stayed on. The one-minute load was 8.6 at entry.
 
