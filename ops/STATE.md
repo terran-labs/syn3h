@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 03:15 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-21 04:00 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,10 +11,10 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2106 (release-85, in-world performance check), source 6dc2569b, frozen copy
-20261121-030400-6dc2569b, Worker version e3ca5c7b, at https://www.syn3h.com/ since 21 November 03:08 PST.
-Its first reports (/tmp/orch-perfcheck-2106) showed automatic drops still build shaders for other
-vehicles present; 2105's "repeated drops build nothing" held only in an empty room (notes corrected).
+Live: v26.11.2107 (release-86, glass tuning settings for the opt-in demo), source 07b1ae94, frozen copy
+20261121-034852-07b1ae94, Worker version 29090eb0, at https://www.syn3h.com/ since 21 November 03:53 PST.
+2106's first reports showed automatic drops still build shaders for other vehicles present; 2105's
+"repeated drops build nothing" held only in an empty room (notes corrected, feed corrected with 2107).
 The glass demo runs only with ?glass=inline. assets/liquid-glass/NOTICE.md and the two licences are
 fixed-address files archived versions also serve: keep them byte-identical; new attribution goes to a
 new content-hashed file (2104: NOTICE-091cc75f....md). The frozen-versions guard enforces this.
@@ -123,6 +123,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2104 | 83 | m-glass-2104 | experimental glass shader remains, off by default (gameplay and lobby demo behind ?glass=inline) |
 | v26.11.2105 | 84 | m-ladder-2105 | repeated automatic quality drops and far hovercraft arrivals no longer hitch; glass legibility |
 | v26.11.2106 | 85 | m-perfcheck-2106 | one-tap Run performance check under Performance, Diagnostics |
+| v26.11.2107 | 86 | m-tuning-2107 | experimental glass remains off by default; nine tuning settings for the opt-in demo |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
