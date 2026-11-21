@@ -558,7 +558,7 @@ export class PostChain {
   private pruneStandby(level = this.host.quality.getQualityState?.().level): void {
     if (level === undefined) return
     for (const candidate of this.presetKeys.keys()) {
-      if (candidate > level + 1) this.presetKeys.delete(candidate)
+      if (candidate > level + 1 || (level > 3 && candidate < level - 1)) this.presetKeys.delete(candidate)
     }
     for (const graph of this.standby.values()) {
       if (!this.isNeighborKey(graph.key)) this.evict(graph)

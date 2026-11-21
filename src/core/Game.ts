@@ -598,13 +598,23 @@ export class Game {
       const governor = this.quality?.governor
       if (!chain?.warmCovered || !governor?.auto || governor.levelPinned) return
       const player = this.scene.userData.playerVehicleCache?.active?.object
-      for (let lower = governor.level - 1; lower >= 0; lower--) {
+      const entryLevel = governor.level
+      // Ultra and Cinematic change cascade counts. Preview just their existing neighbour
+      // until the renderer can retain the actual destination shadow state.
+      const lowest = entryLevel > 3 ? entryLevel - 1 : 0
+      for (let lower = entryLevel - 1; lower >= lowest; lower--) {
         const level = lower as QualityLevel
         const preset = this.quality.renderPreset(level, true)
         const shade = Number(preset.value(vehicleShading.def.id))
-        const drawView = () => draw(undefined, true)
-        let submit = () => player && (shade === 0 || shade === 1 || shade === 2)
-          ? drawCoveredShowroomVariant(player, shade, drawView) : drawView()
+        const existingPreview = entryLevel > 3 || (entryLevel < 3 && lower === entryLevel - 1)
+        const root = existingPreview ? this.scene : player
+        const drawView = () => draw(undefined, !existingPreview)
+        const drawVariants = () => root && (shade === 0 || shade === 1 || shade === 2)
+          ? drawCoveredShowroomVariant(root, shade, drawView) : drawView()
+        // Medium entry already warms the parked Low models on WebGPU for later swaps.
+        const fleet = existingPreview && this.backend === 'webgpu' && level === 1 && shade === 0
+          ? this.systems.find(system => system.drawCoveredLowFleet) : undefined
+        let submit = () => fleet?.drawCoveredLowFleet ? fleet.drawCoveredLowFleet(drawVariants) : drawVariants()
         if (level === 0) {
           for (const system of this.systems) {
             if (!system.drawCoveredMinimal) continue
