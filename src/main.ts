@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   const environment = game.add(createEnvironment(game, terrain), 'Environment and sky')
   // Post effects follow the player's settings and the current rendering budget.
   const mode = query.get('glass')
-  let glass
+  let glass: import('./fx/post/GlassPost').GlassPost | undefined
   if (mode === 'inline' || mode === 'target') {
     try { const { GlassPost } = await import('./fx/post/GlassPost'); glass = new GlassPost(mode) }
     catch (error) { console.warn('Glass shader unavailable, using CSS', error) }
@@ -132,14 +132,20 @@ async function main(): Promise<void> {
   const offZorbPulse = onZorbPulse((_ball, centre) => audio.zorbPulse(centre))
   game.add({ dispose: offZorbPulse }, 'Zorb audio')
   let sessionNetwork: ReturnType<typeof startNetworking> | undefined
+  const copyDiagnostics = () => {
+    const botKinds = bots.remote && sessionNetwork
+      ? Array.from(sessionNetwork.players.values()).filter(player => player.bot).map(player => player.kind)
+      : bots.vehicles.map(bot => bot.kind)
+    return diagnosticReport(game.quality.getPerformanceSnapshot(), slot.current.kind, botKinds, currentWorldName(), currentPlanet().label,
+      sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine)
+  }
   shell.configurePerformance({
-    diagnosticReport: () => {
-      const botKinds = bots.remote && sessionNetwork
-        ? Array.from(sessionNetwork.players.values()).filter(player => player.bot).map(player => player.kind)
-        : bots.vehicles.map(bot => bot.kind)
-      return diagnosticReport(game.quality.getPerformanceSnapshot(), slot.current.kind, botKinds, currentWorldName(), currentPlanet().label,
-        sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine)
-    },
+    runPerformanceCheck: async signal => (await import('./diagnostics/inWorldCheck')).runInWorldCheck({
+      game, terrain, shell, bots, camera, slot, materialize, swapper, net: sessionNetwork,
+      glass: () => !glass ? 'absent' : glass.built ? 'on' : 'shed',
+      diagnostics: copyDiagnostics,
+    }, signal),
+    diagnosticReport: copyDiagnostics,
     getPerformanceSnapshot: () => game.quality.getPerformanceSnapshot(),
     subscribePerformance: listener => game.quality.subscribePerformance(listener),
     setDiagnosticsVisible: visible => game.quality.setDiagnosticsVisible(visible),

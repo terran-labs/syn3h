@@ -78,6 +78,7 @@ export interface VehicleSwapper {
    * Put the player in a `kind` vehicle where they are now. Returns the vehicle now being
    * driven: a new one, or the current one untouched when it is already that kind.
    */
+  cached(kind: VehicleKind): Vehicle | undefined
   swap(kind: VehicleKind): Vehicle
   /** Release cached vehicles and effects. The active vehicle stays with the game. */
   dispose(): void
@@ -150,6 +151,7 @@ export function createVehicleSwapper(
   }
 
   const swapper: VehicleSwapper = {
+    cached: kind => cache.get(canonicalVehicleKind(kind)),
     swap(kind) {
       if (disposed) throw new Error('Vehicle swapper disposed')
       const previous = slot.current

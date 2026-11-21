@@ -622,6 +622,11 @@ export class QualityGovernor {
     if (this.pendingLevel === null || !this.auto || this.rung > 0 || !this.climbTarget()) { this.pendingLevel = null; return null }
     return this.climb()
   }
+  /** Replay an adjacent boundary at the rung from which the automatic governor takes it. */
+  replayLevelBoundary(up: boolean): GovernorChange {
+    this.rung = up ? 0 : this.ladder.length - 1
+    return up ? this.climb() : this.shed()
+  }
   private shed(): GovernorChange {
     if (this.probe && this.clock < this.probe.until) {
       this.backoff.set(this.probe.key, Math.min(GOVERNOR.maxBackoff, (this.backoff.get(this.probe.key) ?? 1) * 2))
@@ -739,7 +744,7 @@ export class QualityController implements QualitySource {
   private levelChangeCount = 0
   readonly qualityLevels = Object.freeze(LEVELS.map((level, index) => Object.freeze({ index: index as QualityLevel, name: level.name })))
   private lastReason: GovernorReason | 'start' = 'start'
-  readonly governor: QualityGovernor
+  governor: QualityGovernor
   private readonly history = new PerformanceHistory()
   private readonly performanceListeners = new Set<(snapshot: PerformanceSnapshot) => void>()
   private diagnosticsVisible = false
@@ -822,6 +827,42 @@ export class QualityController implements QualitySource {
     if (!this.transient) saveQuality(this.store, { level: g.level, auto: g.auto, pinned: g.levelPinned, overrides: this.overrides })
     const state = this.getQualityState()
     for (const listener of this.qualityListeners) listener(state)
+  }
+  /** Isolate a scripted quality sweep from saved settings and the live governor’s recovery evidence. */
+  beginDiagnosticSweep() {
+    const original = this.governor, store = this.store, transient = this.transient
+    const overrides = this.overrides, reason = this.lastReason, budget = this.budget
+    const changes = [...this.levelChanges], changeCount = this.levelChangeCount, counting = this.counting
+    this.counting = null
+    this.store = null
+    this.overrides = { ...overrides }
+    this.governor = new QualityGovernor({ level: original.level, auto: false, levelPinned: false,
+      resolution: original.resolution, ceiling: 5, devicePixelRatio: original.devicePixelRatio })
+    this.governor.ladder = original.ladder.slice()
+    this.governor.rung = original.rung
+    this.governor.displayMs = original.displayMs
+    return {
+      step: (level: QualityLevel) => {
+        while (level !== this.governor.level) {
+          this.lastReason = this.governor.replayLevelBoundary(level > this.governor.level).reason
+          this.apply('governor', false)
+        }
+      },
+      restore: () => {
+        this.governor = original
+        this.overrides = overrides
+        this.lastReason = reason
+        this.transient = true
+        this.budget = budget
+        this.reapply = true
+        try { this.apply('start') } finally {
+          this.levelChanges.splice(0, this.levelChanges.length, ...changes)
+          this.levelChangeCount = changeCount
+          this.counting = counting
+          this.store = store; this.transient = transient
+        }
+      },
+    }
   }
   /** The shell can cover cold choices. Standalone viewers and startup apply immediately. */
   manualChange: (level: QualityLevel, apply: () => void) => void = (_level, apply) => apply()
