@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 06:00 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-21 06:40 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,11 +11,11 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2110 (release-89, shared shadow pool for other players' jet and hovercraft), source 7dae04bd,
-frozen copy 20261121-054615-7dae04bd, Worker version ac137175, at https://www.syn3h.com/ since 21 November 05:50 PST.
-Staging performance check with four bots (2108 and 2109): High to Medium and Medium to Low read 0/0;
-Low to the lowest level still 5 graphs and 3 pipelines (the check forces the step without the
-governor shedding bots). Reports in /tmp/orch-perfcheck-2108 and /tmp/orch-perfcheck-2109.
+Live: v26.11.2111 (release-90, prepared-shader confirmation fix), source 517031f1, frozen copy
+20261121-062930-517031f1, Worker version 6b6fa292, at https://www.syn3h.com/ since 21 November 06:33 PST.
+Staging performance check with four bots read 0/0 for all three downward steps from the entry level,
+1>0 included, at desktop and phone size (/tmp/orch-perfcheck-2111).
+
 2106's first reports showed automatic drops still build shaders for other vehicles present; 2105's
 "repeated drops build nothing" held only in an empty room (notes corrected, feed corrected with 2107).
 The glass demo runs only with ?glass=inline. assets/liquid-glass/NOTICE.md and the two licences are
@@ -130,6 +130,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2108 | 87 | m-stock-2108 | with others present, quality drops between High, Medium and Low no longer hitch |
 | v26.11.2109 | 88 | m-budget-2109 | experimental glass remains off by default; drive budget for the opt-in demo |
 | v26.11.2110 | 89 | m-shadow-2110 | another player's jet or hovercraft appearing no longer hitches |
+| v26.11.2111 | 90 | m-unshed-2111 | stepping down to the lowest quality level no longer hitches with others in the room |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
