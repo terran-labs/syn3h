@@ -555,17 +555,17 @@ export class Game {
       check()
     }
     let discover = !!batch
-    const draw = (vehicleKind?: string) => {
+    const draw = (vehicleKind?: string, visibleOnly = false) => {
       check()
       const drawStart = longFrames.start()
       longFrames.event('Covered precompile')
       for (const system of this.systems) system.prepareCoveredDraw?.()
       for (const system of this.systems) system.prepareWorldDraw?.()
       const culled: THREE.Object3D[] = []
-      this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
+      if (!visibleOnly) this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
       const hidden: THREE.Object3D[] = []
       try {
-        for (const system of this.systems) {
+        if (!visibleOnly) for (const system of this.systems) {
           if (!system.precompileMeshes) continue
           for (const mesh of system.precompileMeshes()) {
             for (let object: THREE.Object3D | null = mesh; object && object !== this.scene; object = object.parent) {
@@ -588,7 +588,7 @@ export class Game {
       }
     }
     const warm = { draw, yieldFrame }
-    let preparedNeighbour: QualityLevel | undefined
+    const preparedLevels = new Set<QualityLevel>()
     const sweep = async () => {
       for (let i = 0; i < 2; i++) {
         await yieldFrame('Preparing world')
@@ -605,16 +605,28 @@ export class Game {
           console.warn('Covered system warm-up failed', systemName(system), error)
         }
       }
-      // Relief travels down one level. Only prepare the visible world and its post
-      // targets here. Replaying the parked vehicle fleet doubled entry time.
+      // Only the current view and player need the cheaper programs at a relief boundary.
+      // Use exact destination targets, including the direct-to-canvas Minimal path.
       const chain = this.postChain
       const governor = this.quality?.governor
-      if (chain?.warmCovered && governor?.auto && !governor.levelPinned && governor.level > 0) {
-        const level = (governor.level - 1) as AdjacentRenderPreset['level']
+      if (!chain?.warmCovered || !governor?.auto || governor.levelPinned) return
+      const player = this.scene.userData.playerVehicleCache?.active?.object
+      const entryLevel = governor.level
+      // Ultra and Cinematic change cascade counts. Preview just their existing neighbour
+      // until the renderer can retain the actual destination shadow state.
+      const lowest = entryLevel > 3 ? entryLevel - 1 : 0
+      for (let lower = entryLevel - 1; lower >= lowest; lower--) {
+        const level = lower as QualityLevel
         const preset = this.quality.renderPreset(level, true)
         const shade = Number(preset.value(vehicleShading.def.id))
-        const drawVariants = () => shade === 0 || shade === 1 || shade === 2 ? drawCoveredShowroomVariant(this.scene, shade, draw) : draw()
-        const fleet = this.backend === 'webgpu' && level === 1 && shade === 0 ? this.systems.find(s => s.drawCoveredLowFleet) : undefined
+        const existingPreview = entryLevel > 3 || (entryLevel < 3 && lower === entryLevel - 1)
+        const root = existingPreview ? this.scene : player
+        const drawView = () => draw(undefined, !existingPreview)
+        const drawVariants = () => root && (shade === 0 || shade === 1 || shade === 2)
+          ? drawCoveredShowroomVariant(root, shade, drawView) : drawView()
+        // Medium entry already warms the parked Low models on WebGPU for later swaps.
+        const fleet = existingPreview && this.backend === 'webgpu' && level === 1 && shade === 0
+          ? this.systems.find(system => system.drawCoveredLowFleet) : undefined
         let submit = () => fleet?.drawCoveredLowFleet ? fleet.drawCoveredLowFleet(drawVariants) : drawVariants()
         if (level === 0) {
           for (const system of this.systems) {
@@ -630,7 +642,7 @@ export class Game {
           if (key) seen.add(key)
           await chain.warmCovered({ yieldFrame, draw: submit }, target)
         }
-        preparedNeighbour = level
+        preparedLevels.add(level)
       }
     }
     await sweep()
@@ -651,7 +663,7 @@ export class Game {
     // world queue while the cover is still opaque, independently of the galaxy renderer.
     await yieldFrame('Finishing graphics')
     await this.finishWorldFrame(signal, check, true)
-    if (preparedNeighbour !== undefined) this.rememberVehicleLevel(preparedNeighbour)
+    for (const level of preparedLevels) this.rememberVehicleLevel(level)
   }
 
   private async finishWorldFrame(signal: AbortSignal, check: () => void, entry: boolean): Promise<void> {
