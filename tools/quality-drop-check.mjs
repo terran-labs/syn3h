@@ -26,7 +26,9 @@ try {
   await page.evaluate(({level,fleet,multiplayer}) => {
     const {game, shell, params} = window.syn3h
     if (fleet === 'empty') params.set('bots.count',0)
-    if (fleet === 'unshed') params.set('bots.keepCount',true)
+    // The stock pacer can reduce the fleet before measurement on a busy host.
+    // Keep the requested count during setup, then restore stock shedding at the start.
+    if (fleet === 'unshed' || (fleet === 'stock' && multiplayer === 'solo')) params.set('bots.keepCount',true)
     if (multiplayer === 'arrival') {
       const bots = window.syn3h.bots, arrive = bots.arrive
       bots.arrive = function(index) {
@@ -85,6 +87,7 @@ try {
     delete window.sampleBeforeRoster
     const roster = () => window.syn3h.bots.vehicles.map(v => ({kind:v.kind,id:v.object.id,arriving:window.syn3h.materialize.isMaterializing(v)}))
     const initialRoster = roster()
+    if (fleet === 'stock' && multiplayer === 'solo') window.syn3h.params.set('bots.keepCount',false)
     const peerVehicle = peerId === null ? undefined : window.syn3hNet.remotes.get(peerId)?.vehicle
     const peerDrawLevels = new Set()
     const minimalDraws = new Set()
