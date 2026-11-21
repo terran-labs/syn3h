@@ -619,7 +619,12 @@ export class Inspector {
       reset.textContent = 'Reset'
       reset.setAttribute('aria-label', 'Reset ' + label.textContent + ' to Apple’s measured value')
       reset.addEventListener('click', () => params.set(def.id, def.default))
-      label.append(reset)
+      row.append(reset)
+      const syncControl = sync
+      sync = value => {
+        syncControl(value)
+        reset.hidden = value === def.default
+      }
     }
     sync(param.value)
     row.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') this.detail(def) })

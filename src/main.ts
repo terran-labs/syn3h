@@ -119,6 +119,7 @@ async function main(): Promise<void> {
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
   const { shell, audio, setPlayer } = initGameShell(game, player, terrain, query.get('name'))
+  if (glass) shell.driveGlassFrame = glass.driveFrame
   bots.daydream.setBlocker(() => shell.daydreamBlocked)
   // The HUD bridge, hints and the engine voice follow the slot.
   slot.onChange(setPlayer)

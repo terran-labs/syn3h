@@ -15,16 +15,19 @@ interface TimedQuad { _quadMesh?: Object3D }
 
 export class GlassTiming {
   visible = false
+  monitoring = false
+  sampledAt = -Infinity
   ms: number | null = null
   private next = 0
   private pending = false
 
   draw(renderer: WebGPURenderer, pipeline: { render(): void }, blurPasses: readonly object[]) {
-    if (!this.visible || this.pending || performance.now() < this.next) {
+    if ((!this.visible && !this.monitoring) || this.pending || performance.now() < this.next) {
       pipeline.render()
       return
     }
-    this.next = performance.now() + 1000
+    const started = performance.now()
+    this.next = started + 600
     const backend = renderer.backend as unknown as TimestampBackend
     if (!backend.trackTimestamp && !backend.device?.features.has('timestamp-query') && !backend.disjoint) {
       pipeline.render()
@@ -61,6 +64,7 @@ export class GlassTiming {
           sum += value
         }
         this.ms = sum
+        this.sampledAt = started
       }).catch(() => {}).finally(() => { this.pending = false })
     } finally {
       for (const undo of restore) undo()

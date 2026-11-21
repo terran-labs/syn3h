@@ -54,11 +54,17 @@ try {
     await page.waitForTimeout(600)
     assert.equal(await card.locator('.wi-cards > .wi-card.is-open:visible').count(), await heads.count())
     const frost = card.locator('.wi-row[data-id="glass.frostWidth"]')
+    const reset = frost.locator('.glass-setting-reset')
+    assert.equal(await card.locator('.glass-setting-reset:visible').count(), 0)
     await frost.locator('input[type=range]').tap()
+    assert.equal(await card.locator('.glass-setting-reset:visible').count(), 1)
+    const [numberBox, resetBox] = await Promise.all([frost.locator('.wi-num').boundingBox(), reset.boundingBox()])
+    assert(resetBox.x >= numberBox.x + numberBox.width - 1 && Math.abs(resetBox.y + resetBox.height/2 - numberBox.y - numberBox.height/2) < 1)
     const value = () => page.evaluate(() => window.syn3h.params.get('glass.frostWidth').value)
     const measured = await page.evaluate(() => window.syn3h.params.get('glass.frostWidth').def.default)
     assert.notEqual(await value(), measured)
-    await frost.locator('.glass-setting-reset').tap()
+    await reset.tap()
+    assert.equal(await reset.isVisible(), false)
     assert.equal(await value(), measured)
     const layers = await page.evaluate(() => {
       const galaxy = window.syn3h.shell.galaxy

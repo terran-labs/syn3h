@@ -861,6 +861,7 @@ export class Galaxy {
   private population: Populations = new Map()
   private logo: LogoRenderer | null = null
   private logoSeen = false
+  private drewGlassBackdrop = false
   private glass?: GalaxyGlass
   private gl: WebGL2RenderingContext | null = null
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
@@ -1490,11 +1491,13 @@ export class Galaxy {
     this.markShown = mark.placement ? mark.opacity * reveal.mark * (1 - this.dive) : 0
     // Held still, draw only while something is moving; the last frame stays on the canvas.
     const moving = glowMoving || this.opening !== null || this.returning !== null || (this.leaving !== null && performance.now() - this.leaving < LEAVING_SECONDS * 1000 + 100) || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.worldsShown !== this.worlds || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
-    if (still && !moving && !this.glass?.dirty && this.wake <= 0) { this.idle++; return }
+    const glassBackdrop = !!this.glass?.available && qualityShed(2) < 1
+    const glassChanged = glassBackdrop !== this.drewGlassBackdrop
+    if (still && !moving && !glassChanged && !this.glass?.dirty && this.wake <= 0) { this.idle++; return }
     // A flight held before launch (leaving a world, waiting behind the game) shows one still
     // frame of the world's air: draw it, and the maps as they arrive, and nothing more.
     const held = this.flight?.start === Infinity
-    if (held && this.wake <= 0 && this.shownHeld) { if (this.upload(gl)) this.wake = 1; this.idle++; return }
+    if (held && !glassChanged && this.wake <= 0 && this.shownHeld) { if (this.upload(gl)) this.wake = 1; this.idle++; return }
     this.shownHeld = held
     this.wake = Math.max(0, this.wake - 1)
     // The wordmark's field is baked (first, and if drawn much larger) before the frame starts.
@@ -1543,7 +1546,6 @@ export class Galaxy {
     // The letters at full device resolution, in their own pass, when the screen is finer than the galaxy's canvas.
     // Glass samples this framebuffer. A separate high-resolution logo plane would
     // cover the finished material wherever a card or button overlaps the mark.
-    const glassBackdrop = !!this.glass?.available && qualityShed(2) < 1
     const crisp = !glassBackdrop && this.markCrisp?.ok && mark.placement && wordmarkCrispPass.value && devicePixelRatio > this.canvas.width / Math.max(1, this.host.clientWidth) + 0.05 ? this.markCrisp : null
     setFrame(gl, u, this.canvas.width, this.canvas.height, () => { this.logo!.distanceField!.bind(name => u[name]); gl.useProgram(this.program) }, crisp ? 1 : 0)
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
@@ -1578,6 +1580,7 @@ export class Galaxy {
       this.logoSeen = true; this.options.onLogo?.(true)
     }
     this.glass?.draw(glassBackdrop)
+    this.drewGlassBackdrop = glassBackdrop
     this.frames++
     // Tell the labels where the worlds are, and notice arrival.
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]

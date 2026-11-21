@@ -44,7 +44,7 @@ import { MAX_NAME_LENGTH, type RaceState } from '../../shared/protocol'
 import { glassStyle, diagnostics, interfaceMode, mapNorthUp } from './inspector/params'
 import { InterfaceVeil, INTERFACE_KEY, nextInterfaceMode, setInterfaceMode } from './interfaceMode'
 import { RESUME_KEY } from '../core/resume'
-import { qualityLevel } from './quality/ladder'
+import { allowsDriveFrost, qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
 import { PLANETS } from '../world/planets'
 import { graphicsLevel, levelNumber, qualityBudget, LEVELS, type QualityLevel } from '../core/quality'
@@ -2090,6 +2090,10 @@ export class Shell implements System {
     this.speed.textContent = String(Math.round(speedValue(metresPerSecond)))
     const unit = this.speed.nextElementSibling!, text = speedUnit().toUpperCase(); if (unit.textContent !== text) unit.textContent = text
   }
+  // Installed only by the opt-in renderer. Eligibility belongs to the shell
+  // because it owns both the entry transition and the manual quality veil.
+  driveGlassFrame?: (playing: boolean, eligible: boolean, frostAllowed: boolean) => void
+
   update(dt = 0): void {
     if (this.tintTransition.update(dt)) this.onTint?.(this.tintTransition.current.body, this.tintTransition.current.accent, false)
     this.touch.update()
@@ -2122,6 +2126,9 @@ export class Shell implements System {
     }
     // The stylesheet drops frost at the lowest graphics level.
     // Frost goes at the lowest graphics level, and when the quality ladder is shedding post effects.
+    this.driveGlassFrame?.(this.playing, !this.transitioning && !this.qualityVeil && !this.userPaused &&
+      !this.game.holdDraws && !this.game.quality.isLoading && !document.hidden &&
+      !document.documentElement.matches('[data-boot=loading], [data-boot=ready]'), qualityBudget().uiFrost && allowsDriveFrost())
     const gfx = qualityLevel() >= 2 ? '0' : String(levelNumber(graphicsLevel.value))
     const frost = qualityBudget().uiFrost && qualityLevel() < 2 ? 'on' : 'off'
     if (this.element.dataset.uiFrost !== frost) this.element.dataset.uiFrost = frost

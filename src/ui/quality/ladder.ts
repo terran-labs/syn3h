@@ -220,6 +220,11 @@ export function setQualityChoice(choice: string) {
   state.choice = choice === "full" || choice === "reduced" || choice === "minimal" ? choice : "auto";
 }
 
+/** An explicit reduced interface applies in play. Automatic lobby history stays in the lobby. */
+export function allowsDriveFrost(): boolean {
+  return state.choice === "auto" || state.choice === "full";
+}
+
 /** The level in effect, 0 (full) to 5. */
 export function qualityLevel(): number {
   return levelOf(state);
