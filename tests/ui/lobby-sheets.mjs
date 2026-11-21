@@ -22,25 +22,29 @@ try {
   await waitForState(page, 'the Welcome sheet open with the name risen', () => !!document.querySelector('dialog.lobby-sheet-about[open]') && window.syn3h.shell.galaxy.liftShown === 1, undefined, 30)
   await waitForState(page, 'the worlds faded out', () => window.syn3h.shell.galaxy.worldsShown === 0, undefined, 30)
   assert.match((await active()).dialog ?? '', /lobby-sheet-about/, 'focus inside the Welcome sheet')
-  // Tab reaches the buttons beside the sheet; Settings from there morphs: one sheet open throughout.
-  let reached = false
-  for (let i = 0; i < 80 && !reached; i++) { await page.keyboard.press('Tab'); reached = (await active()).button === 'Settings' }
-  assert.ok(reached, 'Tab reaches the Settings button beside the sheet')
+  // Tab reaches the buttons beside the sheet; Updates from there morphs: one sheet open throughout.
+  const reach = async (word) => { for (let i = 0; i < 80; i++) { await page.keyboard.press('Tab'); if ((await active()).button === word) return true } return false }
+  assert.ok(await reach('Updates'), 'Tab reaches the Updates button beside the sheet')
   await page.keyboard.press('Enter')
-  await waitForState(page, 'the Settings sheet in place of Welcome', () => !!document.querySelector('dialog.lobby-sheet-settings[open]') && !document.querySelector('dialog.lobby-sheet-about[open]'), undefined, 30)
+  await waitForState(page, 'the Updates sheet in place of Welcome', () => !!document.querySelector('dialog.lobby-sheet-updates[open]') && !document.querySelector('dialog.lobby-sheet-about[open]'), undefined, 30)
   assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.liftShown), 1, 'the name stays risen through the switch')
-  // A key reaches a control inside the sheet: Enter toggles mute.
-  const sound = page.locator('dialog.lobby-sheet-settings .wi-card[data-section=sound]')
+  // Settings from beside the sheet: the sheet goes and the right-hand card takes over, with focus.
+  assert.ok(await reach('Settings'), 'Tab reaches the Settings button beside the sheet')
+  await page.keyboard.press('Enter')
+  await waitForState(page, 'the settings card in place of the sheet, the name back down', () => !!document.querySelector('#lobby-settings') && !document.querySelector('dialog.lobby-sheet[open]') && window.syn3h.shell.galaxy.liftShown === 0, undefined, 30)
+  assert.ok(await page.evaluate(() => document.activeElement?.closest('#lobby-settings') !== null), 'focus inside the settings card')
+  // A key reaches a control inside the card: Enter toggles mute.
+  const sound = page.locator('#lobby-settings .wi-card[data-section=sound]')
   await sound.locator('.wi-head').click()
   const mute = sound.getByRole('switch', { name: 'Mute audio' })
   await mute.waitFor({ state: 'visible', timeout: 10000 })
   const before = await page.evaluate(() => window.syn3h.params.get('audio.muted').value)
   await mute.focus(); await page.keyboard.press('Enter')
-  assert.equal(await page.evaluate(() => window.syn3h.params.get('audio.muted').value), !before, 'Enter reaches the mute switch inside the sheet')
+  assert.equal(await page.evaluate(() => window.syn3h.params.get('audio.muted').value), !before, 'Enter reaches the mute switch inside the card')
   await page.keyboard.press('Enter')
-  // Escape closes; focus returns to the button that opened this sheet, back in its corner, and the name comes down.
+  // Escape closes; focus returns to Settings, in its corner.
   await page.keyboard.press('Escape')
-  await waitForState(page, 'every sheet closed and the name back down', () => !document.querySelector('dialog.lobby-sheet[open]') && window.syn3h.shell.galaxy.liftShown === 0, undefined, 30)
+  await waitForState(page, 'the card closed', () => !document.querySelector('#lobby-settings'), undefined, 30)
   assert.deepEqual(await active(), { dialog: null, button: 'Settings' }, 'focus back on the Settings button')
   await waitForState(page, 'the worlds back', () => window.syn3h.shell.galaxy.worldsShown === 1, undefined, 30)
   assert.equal(await page.evaluate(() => window.__links), links, 'no shader built while sheets opened and closed')

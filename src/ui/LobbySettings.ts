@@ -1,22 +1,26 @@
 /**
- * The lobby's settings: a floating holographic gear in a lower corner of the galaxy, with the
- * running version beside it and the About and Updates icons stacked above it (the shell opens
- * their sheets), that slides a settings panel in from that edge. The panel is the
- * in-game sidebar's own component (an Inspector showing only the cards added here), so the
- * cards, rows, accordion motion and glass are the same and cannot drift:
+ * The lobby's settings: Settings, Welcome and Updates stacked in the lower right of the galaxy
+ * (Settings on top, the owner, 20 November 2026), the running version as plain text in the lower
+ * left, and a right-hand settings card that Settings opens. The card is the in-game sidebar's own
+ * component (an Inspector showing only the sections added here), so its rows, switches, sliders
+ * and quality controls are the in-game ones and cannot drift. It holds only what acts in the
+ * lobby, or what a player sets before entering a world:
  *
- *   Sound     music and master volume and mute, then an Advanced fold with every other audio
- *             setting (effects, engine, ground rumble, wind, ambience, other vehicles, cues and
- *             whatever audio setting is defined later).
- *   Graphics  the in-game Performance card's quality controls (a second PerformancePanel on the
- *             same quality controller), without the in-world frame diagnostics.
- *   Controls  left-handed touch, look sensitivity, daydream, units (metric or imperial), and
- *             presentation mode.
- *   Room      the host's lock and reset, when the shell supplies them.
+ *   Graphics  the quality level, Auto and the render resolution (pixel density): the galaxy is
+ *             drawn at this level, so a change shows at once. Frame diagnostics describe a world
+ *             in play and are left out.
+ *   Sound     music and master volume and mute: the lobby has its own music and click cues. The
+ *             other audio settings (engines, wind, ground, other vehicles) act only in a world.
+ *   Play      "Bots may play with me": personal, and sent to a room as you join it.
+ *   Room      the host's lock and reset, only while there is a room to act on.
  *
- * Tap outside or Escape closes it; focus stays inside while it is open and returns to the gear.
- * Closed, the panel is detached from the page, so the in-game rail stays the only
- * `.world-inspector` element there.
+ * Left out, because they act only in a world and the in-game panel has them: touch hand, look
+ * sensitivity, daydream, units, presentation mode, the advanced audio mix, name and colours.
+ *
+ * The card is one glass surface: `#lobby-settings` carries .liquid-glass and nothing inside it
+ * does; its sections are plain rows. Tap outside or Escape closes it; focus stays inside while it
+ * is open and returns to Settings. Closed, it is detached from the page, so the in-game rail stays
+ * the only `.world-inspector` element there.
  */
 import { params } from '../../shared/params'
 import type { QualitySource } from '../core/quality'
@@ -24,19 +28,16 @@ import { createFrozenResourceResolver } from '../core/frozenResources'
 import { Inspector } from './inspector/Inspector'
 import type { PropertyDef } from './inspector/model'
 import { PerformancePanel } from './PerformancePanel'
+import { playWithMe } from '../bots/play/PlayDirector'
 import { SOUND_STARTED, soundWaiting } from '../audio/unlock'
 import './lobby-settings.css'
 
 /** Sound settings shown before the Advanced fold, in this order. */
 export const SOUND_MAIN = ['audio.music', 'audio.master', 'audio.muted'] as const
-/** Personal control settings, in this order. Missing ones are skipped. */
-export const CONTROL_IDS = ['touch.leftHanded', 'camera.sensitivity', 'daydream.seconds', 'hud.units'] as const
-
-/** Split the Audio group: the main rows, and everything else for the Advanced fold. */
-export function soundRows(defs: readonly PropertyDef[]): { main: PropertyDef[]; advanced: PropertyDef[] } {
+/** The lobby's sound rows: music, master and mute, in that order, from the Audio group. */
+export function soundRows(defs: readonly PropertyDef[]): PropertyDef[] {
   const audio = defs.filter(def => def.group === 'Audio')
-  const main = SOUND_MAIN.map(id => audio.find(def => def.id === id)).filter((def): def is PropertyDef => !!def)
-  return { main, advanced: audio.filter(def => !main.includes(def)) }
+  return SOUND_MAIN.map(id => audio.find(def => def.id === id)).filter((def): def is PropertyDef => !!def)
 }
 
 /**
@@ -92,8 +93,7 @@ function controlButton(button: HTMLButtonElement, className: string, word: strin
 
 export interface LobbySettingsOptions {
   quality?: QualitySource
-  /** Elements the shell already wires, moved into cards: presentation toggle and host fieldset. */
-  presentation?: HTMLElement
+  /** The host fieldset the shell already wires, moved into the Room section. */
   host?: HTMLElement
   hostSummary?(): string
   /** Whether there is a room with something to act on (host, or open sliders); the Room card shows only then. */
@@ -102,20 +102,27 @@ export interface LobbySettingsOptions {
   build?: string
   /** A click cue. */
   cue?(): void
+  /** Called as the card opens: the shell closes any lobby sheet. */
+  opening?(): void
+  /** Where the wordmark is on screen now, which the card must not cover, or null. */
+  ceiling?(): { left: number; right: number; bottom: number } | null
 }
 
+/** Phones: the card is one full-width card at the top (lobby-settings.css), not fitted here. */
+const PHONE = '(max-width: 700px), (max-height: 500px) and (pointer: coarse)'
+
 export class LobbySettings {
-  /** The gear and the version beside it, for the lobby to place. */
+  /** Settings, Welcome and Updates, for the lobby to place in its lower right. */
   readonly dock = document.createElement('div')
   readonly gear = document.createElement('button')
   /** The version's own corner, the lower left, for the lobby to place beside the dock. */
   readonly versionDock = document.createElement('div')
   /**
-   * The running version beside the gear. A stable hook for the Updates view in About: find it
-   * by `[data-lobby-version]` and listen for its click. It does nothing until something does.
+   * The running version, plain text in the lower left. A stable hook for the Updates view: find
+   * it by `[data-lobby-version]` and listen for its click. It does nothing until something does.
    */
   readonly version = document.createElement('button')
-  /** About and Updates, stacked above the gear. The shell wires their clicks to its sheets. */
+  /** Welcome and Updates, under Settings. The shell wires their clicks to its sheets. */
   readonly about = document.createElement('button')
   readonly updates = document.createElement('button')
   /** Holds the panel and its tooltip; attached to the page only while open. */
@@ -125,63 +132,40 @@ export class LobbySettings {
   private readonly abort = new AbortController()
   private shown = false
   private closing?: Animation
-  /**
-   * The lobby sheet the panel lives in, when it is one of the lobby's sheets (LobbySheet): then
-   * the sheet owns the title, the close control, Escape, a tap outside and the focus trap, and
-   * the gear opens the sheet instead of this panel.
-   */
-  private embedded?: HTMLElement
-  private readonly advancedOpen = { value: false }
   private roomCard?: HTMLElement
 
   constructor(private readonly parent: HTMLElement, private readonly options: LobbySettingsOptions = {}) {
     const signal = this.abort.signal
     const label = versionLabel(options.build, location.href)
     this.dock.className = 'lobby-gear-dock'
-    // Welcome, Updates and Settings, top to bottom, each a labelled holographic button.
+    // Settings, Welcome and Updates, top to bottom, each a labelled glass button.
+    controlButton(this.gear, 'lobby-gear', 'Settings', gearPath())
     controlButton(this.about, 'lobby-about', 'Welcome', WELCOME_ICON)
     controlButton(this.updates, 'lobby-updates', 'Updates', UPDATES_ICON)
-    controlButton(this.gear, 'lobby-gear', 'Settings', gearPath())
     for (const button of [this.about, this.updates]) button.setAttribute('aria-haspopup', 'dialog')
     this.gear.setAttribute('aria-expanded', 'false'); this.gear.setAttribute('aria-controls', 'lobby-settings')
     this.version.type = 'button'; this.version.className = 'lobby-version'; this.version.dataset.lobbyVersion = ''
     this.version.textContent = label; this.version.title = `Version ${label}`; this.version.setAttribute('aria-label', `Version ${label}`)
-    this.dock.append(this.about, this.updates, this.gear)
-    // The version sits apart, in the lower left (versionDock), small and quiet.
+    this.dock.append(this.gear, this.about, this.updates)
+    // The version sits apart, in the lower left (versionDock): plain shadowed text, no card.
     this.versionDock.className = 'lobby-version-dock'; this.versionDock.append(this.version)
 
     this.host.className = 'lobby-settings-host'
-    this.inspector = new Inspector(this.host, { summary: () => '', vehicles: () => ({ options: [], current: '' }), onVehicle() {}, sections: [], percent: isVolume })
+    // One section open at a time, and the card scrolls inside: it is capped below the wordmark,
+    // so Graphics alone may be taller than the card, and must not close itself to fit.
+    this.inspector = new Inspector(this.host, { summary: () => '', vehicles: () => ({ options: [], current: '' }), onVehicle() {}, sections: [], percent: isVolume, oneOpen: () => true })
     const panel = this.inspector.element
-    panel.classList.add('lobby-settings'); panel.id = 'lobby-settings'
+    // One card, one glass surface: the class is on the card and on nothing inside it.
+    panel.classList.add('lobby-settings', 'liquid-glass'); panel.id = 'lobby-settings'
     panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Settings')
-    const head = document.createElement('header'); head.className = 'lobby-settings-head wi-glass'
+    const head = document.createElement('header'); head.className = 'lobby-settings-head'
     head.innerHTML = '<h2>Settings</h2><button type="button" class="lobby-settings-close" aria-label="Close settings"><span aria-hidden="true">×</span><span class="lobby-settings-close-text">Close</span></button>'
     // The world tools (search, copy, paste, reset world) belong to a world, not the lobby.
     panel.querySelector('.wi-top')?.remove()
     panel.querySelector('.wi-cards')!.before(head)
-    const foot = document.createElement('footer'); foot.className = 'lobby-settings-foot'
-    const build = document.createElement('span'); build.className = 'build-line'; build.textContent = `Version ${label}`
-    foot.append(build); panel.append(foot)
     head.querySelector('.lobby-settings-close')!.addEventListener('click', () => this.close(), { signal })
 
-    // Sound: the two volumes and mute up front, every other audio setting in Advanced.
-    const sound = document.createElement('div')
-    this.inspector.addCard('sound', 'Sound', sound, () => `Music ${percent('audio.music')} · Master ${percent('audio.master')}${params.get('audio.muted')?.value ? ' · Muted' : ''}${soundWaiting() ? ' · Tap to start sound' : ''}`, {
-      fill: () => {
-        const { main, advanced } = soundRows(params.all().map(p => p.def as PropertyDef))
-        const fold = document.createElement('details'); fold.className = 'wi-group lobby-advanced'; fold.open = this.advancedOpen.value
-        fold.innerHTML = '<summary><span>Advanced</span><small></small></summary>'; fold.querySelector('small')!.textContent = String(advanced.length)
-        fold.addEventListener('toggle', () => { this.advancedOpen.value = fold.open })
-        for (const def of advanced) fold.append(this.inspector.row(def))
-        const note = document.createElement('p'); note.className = 'wi-blurb'
-        note.textContent = 'The music is generated as you play and follows what you do. It starts with your first click or key press.'
-        sound.replaceChildren(...main.map(def => this.inspector.row(def)), fold, note)
-      },
-    })
-    // The browser holds sound until a first gesture; the summary says so quietly until it starts.
-    window.addEventListener(SOUND_STARTED, () => this.inspector.update(), { signal })
-    // Graphics: the in-game Performance card on the same quality controller.
+    // Graphics first: the in-game Performance card on the same quality controller.
     this.performance = new PerformancePanel(this.host, () => {}, options.quality, this.inspector)
     const graphics = panel.querySelector<HTMLElement>(`.wi-card[data-section="${PerformancePanel.CARD}"]`)
     if (graphics) {
@@ -189,36 +173,40 @@ export class LobbySettings {
       // Frame history and renderer diagnostics describe a world in play: not shown here.
       graphics.querySelector('.performance-diagnostics')?.remove()
     }
-    // Controls: personal control settings, then presentation mode.
-    const controls = document.createElement('div')
-    this.inspector.addCard('controls', 'Controls', controls, () => {
-      const parts = [params.get('touch.leftHanded')?.value ? 'Left-handed' : 'Right-handed']
-      const sensitivity = params.get('camera.sensitivity'); if (sensitivity) parts.push(`Look ${sensitivity.value}`)
-      const units = params.get('hud.units'); if (units) parts.push(Math.round(Number(units.value)) === 1 ? 'Imperial' : 'Metric')
-      return parts.join(' · ')
-    }, {
+    // Sound: the two volumes and mute; the world's own sounds are set in a world.
+    const sound = document.createElement('div')
+    this.inspector.addCard('sound', 'Sound', sound, () => `Music ${percent('audio.music')} · Master ${percent('audio.master')}${params.get('audio.muted')?.value ? ' · Muted' : ''}${soundWaiting() ? ' · Tap to start sound' : ''}`, {
       fill: () => {
-        const rows = CONTROL_IDS.map(id => params.get(id)).filter(p => !!p).map(p => this.inspector.row(p!.def as PropertyDef))
-        controls.replaceChildren(...rows, ...(options.presentation ? [options.presentation] : []))
+        const note = document.createElement('p'); note.className = 'wi-blurb'
+        note.textContent = 'The music is generated as you play and follows what you do. It starts with your first click or key press.'
+        sound.replaceChildren(...soundRows(params.all().map(p => p.def as PropertyDef)).map(def => this.inspector.row(def)), note)
       },
+    })
+    // The browser holds sound until a first gesture; the summary says so quietly until it starts.
+    window.addEventListener(SOUND_STARTED, () => this.inspector.update(), { signal })
+    // Play: whether the bots may play with you, set before you join a world.
+    const play = document.createElement('div')
+    this.inspector.addCard('play', 'Play', play, () => `Bots may play with me: ${params.get(playWithMe.def.id)?.value ? 'yes' : 'no'}`, {
+      fill: () => { play.replaceChildren(this.inspector.row(playWithMe.def as PropertyDef)) },
     })
     if (options.host) {
       const room = document.createElement('div'); room.append(options.host)
       this.roomCard = this.inspector.addCard('room', 'Room', room, () => options.hostSummary?.() ?? '')
     }
 
-    this.gear.addEventListener('click', () => { if (this.embedded) return; if (this.shown) this.close(); else this.open() }, { signal })
+    this.gear.addEventListener('click', () => { if (this.shown) this.close(); else this.open() }, { signal })
     // Tap outside closes; that tap does nothing else (it does not also pick a planet).
     const outside = (event: Event) => {
-      if (!this.shown || this.embedded) return
+      if (!this.shown) return
       const target = event.target as Node
       if (this.host.contains(target) || this.dock.contains(target)) return
       event.preventDefault(); event.stopPropagation()
       if (event.type === 'pointerdown') this.close()
     }
     for (const type of ['pointerdown', 'click'] as const) window.addEventListener(type, outside, { capture: true, signal })
+    window.addEventListener('resize', () => { if (this.shown) this.fit() }, { signal })
     window.addEventListener('keydown', event => {
-      if (!this.shown || this.embedded) return
+      if (!this.shown) return
       if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); this.close(); return }
       if (event.key === 'Tab') {
         // The panel owns Tab while open; the lobby's own trap would pull focus back to the galaxy.
@@ -243,41 +231,50 @@ export class LobbySettings {
       .filter(el => !(el as HTMLButtonElement).disabled && !el.closest('[hidden], [inert]') && el.getClientRects().length > 0)
   }
 
-  /** Live inside a lobby sheet's body from now on (see `embedded`). */
-  embedIn(container: HTMLElement): void { this.embedded = container; this.host.classList.add('is-embedded') }
-
   open(): void {
     if (this.shown) return
     this.shown = true; this.closing?.cancel(); this.closing = undefined
-    if (this.embedded) {
-      // The sheet fades itself in and owns the cue and focus.
-      this.embedded.append(this.host)
-      this.inspector.rebuild(); this.update()
-      this.gear.setAttribute('aria-expanded', 'true'); this.dock.classList.add('is-open')
-      return
-    }
-    this.options.cue?.()
+    this.options.cue?.(); this.options.opening?.()
     this.parent.append(this.host)
     this.inspector.rebuild(); this.update()
-    this.gear.setAttribute('aria-expanded', 'true'); this.dock.classList.add('is-open')
+    // Glass never nests: the card is the one glass surface, so the in-game cards' own glass
+    // marks (the phone close x in each card head) are plain here.
+    for (const el of this.inspector.element.querySelectorAll('.liquid-glass')) el.classList.remove('liquid-glass', 'glass-round')
+    this.fit()
+    this.gear.setAttribute('aria-expanded', 'true'); this.gear.classList.add('is-current'); this.dock.classList.add('is-open')
+    // It rises out of Settings, below it (lobby-settings.css sets the origin at its foot).
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      this.inspector.element.animate([{ opacity: 0, transform: 'translateX(24px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' })
+      this.inspector.element.animate([{ opacity: 0, transform: 'translateY(10px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' })
     }
     this.inspector.element.querySelector<HTMLElement>('.lobby-settings-close')!.focus({ preventScroll: true })
   }
 
-  close(): void {
+  /** `returnFocus` false: something else is taking over (a sheet opening) and owns focus. */
+  close(returnFocus = true): void {
     if (!this.shown) return
     this.shown = false
     this.inspector.hideTooltip()
-    this.gear.setAttribute('aria-expanded', 'false'); this.dock.classList.remove('is-open')
-    // In a sheet, the sheet returns focus to whatever opened it, and fades itself out.
-    if (this.embedded) return
-    this.gear.focus({ preventScroll: true })
+    this.gear.setAttribute('aria-expanded', 'false'); this.gear.classList.remove('is-current'); this.dock.classList.remove('is-open')
+    if (returnFocus) this.gear.focus({ preventScroll: true })
     const detach = () => { if (!this.shown) this.host.remove() }
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { detach(); return }
-    this.closing = this.inspector.element.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(24px)' }], { duration: 160, easing: 'ease-in' })
+    this.closing = this.inspector.element.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px) scale(.98)' }], { duration: 160, easing: 'ease-in' })
     this.closing.onfinish = detach
+  }
+
+  /**
+   * Desktop: the card stands on Settings and grows upward as its sections open, so cap its height
+   * where it would reach the wordmark (the owner's logo stays whole); taller contents scroll
+   * inside. Where the wordmark does not reach over the card's column, the screen's top edge is
+   * the cap. Phones place the card themselves.
+   */
+  private fit(): void {
+    const card = this.inspector.element
+    if (matchMedia(PHONE).matches) { card.style.removeProperty('max-height'); return }
+    const box = card.getBoundingClientRect(), mark = this.options.ceiling?.() ?? null
+    const over = mark && mark.right > box.left - 8 && mark.left < box.right + 8
+    const top = over ? mark.bottom + 16 : parseFloat(getComputedStyle(card).getPropertyValue('--edge-top')) || 28
+    card.style.maxHeight = `${Math.max(180, Math.floor(box.bottom - top))}px`
   }
 
   /** Refresh summaries while open; call from the shell's update. */
