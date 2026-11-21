@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-20 23:20 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-20 23:50 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2012 (release-77), source 92d90198, frozen copy 20261120-230848-92d90198,
-Worker version 3d856508, at https://www.syn3h.com/ since 20 November 23:13 PST.
+Live: v26.11.2013 (release-78), source 35b1ab5c, frozen copy 20261120-233536-35b1ab5c,
+Worker version 45326a0f, at https://www.syn3h.com/ since 20 November 23:40 PST.
 Since 2011 every release runs `npm run test:tools` (143 Node tests) as well as vitest.
 2010 carries an experimental glass shader, off by default (?glass=inline opts in; chunk GlassPost),
 with assets/liquid-glass/ serving the Apache-2.0 licence, the upstream NOTICE and our NOTICE.md.
@@ -110,6 +110,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2010 | 75 | m-glass-2010 | experimental glass shader, off by default; Music line in Copy diagnostics |
 | v26.11.2011 | 76 | m-tools-2011 | release tooling tests fixed and run before every release; no game change |
 | v26.11.2012 | 77 | m-quality-2012 | stepping quality between High and Medium no longer hitches |
+| v26.11.2013 | 78 | m-lowshadow-2013 | stepping quality between Medium and Low no longer hitches |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
