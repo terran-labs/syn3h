@@ -407,12 +407,13 @@ export class Game {
   }
 
   /** The caller installs the opaque veil before starting this operation. */
-  async prepareManualQuality(apply: () => void, signal: AbortSignal): Promise<void> {
+  async prepareManualQuality(apply: () => void, signal: AbortSignal, progress: (phase: string) => void = () => {}): Promise<void> {
     if (signal.aborted) return
     const stop = new AbortController()
-    const cancel = () => stop.abort()
+    let release!: () => void
+    const cancelled = new Promise<void>(resolve => { release = resolve })
+    const cancel = () => { stop.abort(); release() }
     signal.addEventListener('abort', cancel, { once: true })
-    const deadline = performance.now() + 15_000
     const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     let applied = false
     this.applyingQuality = true
@@ -427,9 +428,9 @@ export class Game {
         await frame()
         await frame() // Let normal system updates adopt the new geometry and effects.
         stop.signal.throwIfAborted()
-        await this.warmEntry(stop.signal, deadline)
+        await this.warmVisibleQuality(stop.signal, progress)
       }
-      const result = await withDeadline(prepare(), 15_000)
+      const result = await withDeadline(Promise.race([prepare(), cancelled]), 15_000)
       if (!result.ok && !signal.aborted) {
         console.warn('Manual graphics preparation', result.reason)
         if (!applied) apply()
@@ -439,6 +440,28 @@ export class Game {
       signal.removeEventListener('abort', cancel)
       this.applyingQuality = false
     }
+  }
+
+  private async warmVisibleQuality(signal: AbortSignal, progress: (phase: string) => void): Promise<void> {
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    const submit = () => {
+      signal.throwIfAborted()
+      for (const system of this.systems) system.prepareWorldDraw?.()
+      drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+    }
+    progress('Preparing visible surfaces')
+    await frame()
+    signal.throwIfAborted()
+    const batch = CoveredPipelines.forRenderer(this.renderer, this.scene)
+    if (batch) {
+      batch.run(true, submit)
+      progress('Compiling graphics pipelines')
+      await batch.ready()
+    }
+    progress('Drawing the new level')
+    await frame()
+    submit()
+    await this.finishWorldFrame(signal, () => signal.throwIfAborted(), false)
   }
 
   /**
@@ -573,11 +596,16 @@ export class Game {
     }
     // Submission can return before Metal finishes work for the first draw. Drain our
     // world queue while the cover is still opaque, independently of the galaxy renderer.
-    const backend = this.renderer.backend as { device?: GPUDevice; gl?: WebGL2RenderingContext }
     await yieldFrame('Finishing graphics')
+    await this.finishWorldFrame(signal, check, true)
+    if (preparedNeighbour !== undefined) this.rememberVehicleLevel(preparedNeighbour)
+  }
+
+  private async finishWorldFrame(signal: AbortSignal, check: () => void, entry: boolean): Promise<void> {
+    const backend = this.renderer.backend as { device?: GPUDevice; gl?: WebGL2RenderingContext }
     if (backend.device) {
       const result = await withDeadline(backend.device.queue.onSubmittedWorkDone(), 2_000)
-      if (!signal.aborted && !result.ok) recordEntryWarmIssue(result.reason === 'timeout' ? 'GPU completion timed out' : 'GPU completion failed')
+      if (entry && !signal.aborted && !result.ok) recordEntryWarmIssue(result.reason === 'timeout' ? 'GPU completion timed out' : 'GPU completion failed')
     } else if (backend.gl) {
       const gl = backend.gl
       const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
@@ -586,14 +614,16 @@ export class Game {
           gl.flush()
           const deadline = performance.now() + 2_000
           while (!gl.isContextLost() && gl.clientWaitSync(fence, 0, 0) === gl.TIMEOUT_EXPIRED) {
-            if (performance.now() >= deadline) { recordEntryWarmIssue('GPU completion timed out'); break }
+            if (performance.now() >= deadline) {
+              if (entry) recordEntryWarmIssue('GPU completion timed out')
+              break
+            }
             check()
-            await nextFrame()
+            await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
           }
         } finally { gl.deleteSync(fence) }
       }
     }
-    if (preparedNeighbour !== undefined) this.rememberVehicleLevel(preparedNeighbour)
   }
 
   private postChain: (PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> & {

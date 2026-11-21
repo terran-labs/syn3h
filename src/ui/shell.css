@@ -533,7 +533,9 @@
   inset: 0;
   z-index: 10000;
   display: grid;
-  place-items: center;
+  place-content: center;
+  justify-items: center;
+  gap: .75rem;
   background: #0a1019;
   color: #fff;
   pointer-events: auto;

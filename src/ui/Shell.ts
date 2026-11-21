@@ -47,7 +47,7 @@ import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
 import { PLANETS } from '../world/planets'
-import { graphicsLevel, levelNumber, qualityBudget } from '../core/quality'
+import { graphicsLevel, levelNumber, qualityBudget, LEVELS, type QualityLevel } from '../core/quality'
 import { camDistance, camFov, camHeight, camOffset } from '../core/ChaseCamera'
 import { arrivalPath } from '../core/arrival'
 import { applyPlanet, biomeLine, currentPlanet, currentWorldName, encodeWorld, planetById, randomSeed } from '../world/planets'
@@ -361,7 +361,7 @@ export class Shell implements System {
     if (game.quality) game.quality.manualChange = (level, apply) => {
       if (!this.playing || this.transitioning) { apply(); return }
       if (!this.qualityVeil && game.manualQualityReady(level)) { apply(); return }
-      this.queuedQuality = apply
+      this.queuedQuality = { level, apply }
       if (!this.qualityVeil) void this.applyQualityBehindVeil()
     }
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
@@ -1170,21 +1170,42 @@ export class Shell implements System {
     this.touchPanels = false; this.syncPanels()
   }
   private qualityVeil: HTMLDivElement | null = null
-  private queuedQuality?: () => void
+  private queuedQuality?: { level: QualityLevel; apply: () => void }
   private async applyQualityBehindVeil(): Promise<void> {
     const veil = document.createElement('div')
     veil.className = 'quality-change-veil'
-    veil.setAttribute('role', 'status')
-    veil.textContent = 'Applying graphics…'
+    const title = document.createElement('strong')
+    const status = document.createElement('span')
+    status.setAttribute('role', 'status')
+    const meter = document.createElement('progress')
+    meter.setAttribute('aria-label', 'Graphics preparation')
+    const button = document.createElement('button')
+    button.textContent = 'Cancel'
+    veil.append(title, status, meter, button)
     this.qualityVeil = veil
+    const controller = new AbortController()
+    const cancel = () => controller.abort()
+    this.abort.signal.addEventListener('abort', cancel, { once: true })
+    const restore = this.game.quality.manualRollback()
+    let changed = false
+    button.onclick = () => {
+      this.queuedQuality = undefined
+      cancel()
+      if (changed) restore()
+      veil.remove()
+    }
     this.element.append(veil)
     try {
-      while (this.queuedQuality && !this.abort.signal.aborted) {
-        const apply = this.queuedQuality
+      while (this.queuedQuality && !controller.signal.aborted) {
+        const { level, apply } = this.queuedQuality
         this.queuedQuality = undefined
-        await this.game.prepareManualQuality(apply, this.abort.signal)
+        title.textContent = 'Applying ' + LEVELS[level].name
+        status.textContent = 'Updating graphics settings'
+        await this.game.prepareManualQuality(() => { changed = true; apply() }, controller.signal,
+          phase => { status.textContent = phase })
       }
     } finally {
+      this.abort.signal.removeEventListener('abort', cancel)
       veil.remove()
       this.qualityVeil = null
     }
