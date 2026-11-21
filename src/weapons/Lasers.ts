@@ -646,11 +646,17 @@ export class Lasers implements System {
     return best
   }
 
+  private lookShot = 0
+  /** Draw a hit's look with no shot behind it and no push, for the in-game performance check: Tag, or Thunder when `red`. */
+  showImpact(at: THREE.Vector3, normal: THREE.Vector3, red: boolean, onVehicle: boolean): void {
+    this.impact(-1, ++this.lookShot, at, normal, red, onVehicle, undefined, false)
+  }
+
   /**
    * The look of where a shot ended, once per shot. `onVehicle` for a vehicle (or anything else
    * that moves); `dir` the shot's own direction where known, else straight into the surface.
    */
-  private impact(shooter: number, shot: number, at: THREE.Vector3, normal?: THREE.Vector3, red = false, onVehicle = false, dir?: THREE.Vector3): void {
+  private impact(shooter: number, shot: number, at: THREE.Vector3, normal?: THREE.Vector3, red = false, onVehicle = false, dir?: THREE.Vector3, push = true): void {
     const key = `${shooter}:${shot}`
     if (this.impacted.has(key)) return
     this.impacted.add(key)
@@ -667,7 +673,7 @@ export class Lasers implements System {
       this.pulses.emit(at, n, { radius: 2.2 * far, seconds: 0.42, color: TAG_SHOCK })
     }
     // Plasma Thunder's push comes with its burst (burst), once, where the room says.
-    if (!red) this.hooks.onImpact?.(at, red)
+    if (!red && push) this.hooks.onImpact?.(at, red)
   }
 
   private kill(i: number): void {
