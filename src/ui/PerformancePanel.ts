@@ -89,7 +89,7 @@ export class PerformancePanel {
       <details class="wi-group performance-diagnostics"><summary><span>Diagnostics</span><small></small></summary>
       <div class="performance-body">
       <svg class="performance-chart" viewBox="0 0 288 64" role="img" aria-label="Frame time history"><path d="M0 63H288"/><polyline fill="none"/></svg>
-      <p class="performance-history"></p><p class="performance-long-frames" style="user-select:text"></p><button type="button" data-performance="copy-report">Copy diagnostics</button>
+      <p class="performance-history"></p><p class="performance-long-frames" style="user-select:text"></p><button type="button" data-performance="copy-report">Copy diagnostics</button> <button type="button" data-performance="run-check">Run performance check</button>
       <span data-performance="copy-status" role="status"></span>
       <textarea data-performance="copy-text" aria-label="Diagnostics report" rows="8" readonly hidden></textarea><dl></dl><p class="performance-recovery" role="status"></p>
       <button type="button" data-performance="reload" hidden>Reload to recover</button></div></details>`
@@ -133,6 +133,32 @@ export class PerformancePanel {
         fallback.select()
         status.textContent = 'Select and copy the report below.'
       }
+    }, { signal })
+    const check = this.element.querySelector<HTMLButtonElement>('[data-performance=run-check]')!
+    check.addEventListener('click', async () => {
+      if (!this.source?.runPerformanceCheck || check.disabled) return
+      check.disabled = true
+      const status = this.element.querySelector<HTMLElement>('[data-performance=copy-status]')!
+      const field = this.element.querySelector<HTMLTextAreaElement>('[data-performance=copy-text]')!
+      field.hidden = true
+      status.textContent = 'Starting performance check…'
+      const result = this.source.runPerformanceCheck(signal)
+      try {
+        // WebKit requires the clipboard request in this tap, even when its text arrives later.
+        let copied: Promise<boolean> = Promise.resolve(false)
+        if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
+          const blob = result.then(text => new Blob([text], { type: 'text/plain' }))
+          void blob.catch(() => {})
+          try { copied = navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(() => true, () => false) } catch { /* Show selectable text. */ }
+        }
+        const text = await result
+        if (await copied) status.textContent = 'Copied'
+        else {
+          field.value = text; field.hidden = false; field.focus(); field.select()
+          status.textContent = 'Select and copy the performance report below.'
+        }
+      } catch (error) { status.textContent = error instanceof Error ? error.message : 'Performance check interrupted.' }
+      finally { check.disabled = false }
     }, { signal })
     if (quality) this.configureQuality(quality)
     inspector?.addCard(PerformancePanel.CARD, 'Performance', this.element, () => this.state ? `${this.state.name} · Auto ${this.state.auto ? 'on' : 'off'}${this.snapshot?.recommendation ? ' · Running slow' : ''}` : '',

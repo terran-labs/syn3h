@@ -74,6 +74,7 @@ export interface PerformanceSnapshot {
 }
 /** Bind methods to their controller before passing this interface to presentation code. */
 export interface PerformanceSource {
+  runPerformanceCheck?(signal: AbortSignal): Promise<string>
   diagnosticReport?(): string
   getPerformanceSnapshot(): PerformanceSnapshot
   subscribePerformance(listener: (snapshot: PerformanceSnapshot) => void): () => void

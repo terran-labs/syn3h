@@ -1173,6 +1173,7 @@ export class Shell implements System {
   }
   private qualityVeil: HTMLDivElement | null = null
   private queuedQuality?: { level: QualityLevel; apply: () => void }
+  qualityCheckSignal?: AbortSignal
   private async applyQualityBehindVeil(): Promise<void> {
     const veil = document.createElement('div')
     veil.className = 'quality-change-veil'
@@ -1193,7 +1194,7 @@ export class Shell implements System {
         this.queuedQuality = undefined
         title.textContent = 'Applying ' + LEVELS[level].name
         status.textContent = 'Updating graphics settings'
-        await this.game.prepareManualQuality(apply, this.abort.signal,
+        await this.game.prepareManualQuality(apply, this.qualityCheckSignal ?? this.abort.signal,
           phase => { status.textContent = phase })
       }
     } finally {

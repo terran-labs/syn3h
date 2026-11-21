@@ -133,16 +133,22 @@ async function main(): Promise<void> {
   const offZorbPulse = onZorbPulse((_ball, centre) => audio.zorbPulse(centre))
   game.add({ dispose: offZorbPulse }, 'Zorb audio')
   let sessionNetwork: ReturnType<typeof startNetworking> | undefined
+  const glassDiagnostics = () => glass?.diagnosticLine() ?? (mode === 'inline' || mode === 'target'
+    ? 'Glass: shed, shader unavailable, 0 surfaces' : 'Glass: off, 0 surfaces')
+  const copyDiagnostics = () => {
+    const botKinds = bots.remote && sessionNetwork
+      ? Array.from(sessionNetwork.players.values()).filter(player => player.bot).map(player => player.kind)
+      : bots.vehicles.map(bot => bot.kind)
+    return diagnosticReport(game.quality.getPerformanceSnapshot(), slot.current.kind, botKinds, currentWorldName(), currentPlanet().label,
+      sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine) + '\n' + glassDiagnostics()
+  }
   shell.configurePerformance({
-    diagnosticReport: () => {
-      const botKinds = bots.remote && sessionNetwork
-        ? Array.from(sessionNetwork.players.values()).filter(player => player.bot).map(player => player.kind)
-        : bots.vehicles.map(bot => bot.kind)
-      return diagnosticReport(game.quality.getPerformanceSnapshot(), slot.current.kind, botKinds, currentWorldName(), currentPlanet().label,
-        sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine)
-        + '\n' + (glass?.diagnosticLine() ?? (mode === 'inline' || mode === 'target'
-          ? 'Glass: shed, shader unavailable, 0 surfaces' : 'Glass: off, 0 surfaces'))
-    },
+    runPerformanceCheck: async signal => (await import('./diagnostics/inWorldCheck')).runInWorldCheck({
+      game, terrain, shell, bots, camera, slot, materialize, swapper, net: sessionNetwork,
+      glass: glassDiagnostics,
+      diagnostics: copyDiagnostics,
+    }, signal),
+    diagnosticReport: copyDiagnostics,
     getPerformanceSnapshot: () => game.quality.getPerformanceSnapshot(),
     subscribePerformance: listener => game.quality.subscribePerformance(listener),
     setDiagnosticsVisible: visible => {

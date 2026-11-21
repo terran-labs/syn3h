@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 00:45 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-21 04:00 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,13 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2101 (release-80, lobby settings card), source 23f25ae4, frozen copy
-20261121-003209-23f25ae4, Worker version 6eb30375, at https://www.syn3h.com/ since 21 November 00:36 PST.
+Live: v26.11.2107 (release-86, glass tuning settings for the opt-in demo), source 07b1ae94, frozen copy
+20261121-034852-07b1ae94, Worker version 29090eb0, at https://www.syn3h.com/ since 21 November 03:53 PST.
+2106's first reports showed automatic drops still build shaders for other vehicles present; 2105's
+"repeated drops build nothing" held only in an empty room (notes corrected, feed corrected with 2107).
+The glass demo runs only with ?glass=inline. assets/liquid-glass/NOTICE.md and the two licences are
+fixed-address files archived versions also serve: keep them byte-identical; new attribution goes to a
+new content-hashed file (2104: NOTICE-091cc75f....md). The frozen-versions guard enforces this.
 Since 2011 every release runs `npm run test:tools` (143 Node tests) as well as vitest.
 2010 carries an experimental glass shader, off by default (?glass=inline opts in; chunk GlassPost),
 with assets/liquid-glass/ serving the Apache-2.0 licence, the upstream NOTICE and our NOTICE.md.
@@ -113,6 +118,12 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2013 | 78 | m-lowshadow-2013 | stepping quality between Medium and Low no longer hitches |
 | v26.11.2100 | 79 | m-veil-2100 | changing quality by hand shows a short Applying cover instead of a freeze |
 | v26.11.2101 | 80 | m-settings-2101 | lobby Settings opens as a card above the buttons; version as plain text |
+| v26.11.2102 | 81 | m-relief-2102 | the first automatic quality step down no longer hitches; Cinematic after entry; WebGPU vehicle change at Low |
+| v26.11.2103 | 82 | m-hover-2103 | a hovercraft arriving at middle distance no longer freezes the game |
+| v26.11.2104 | 83 | m-glass-2104 | experimental glass shader remains, off by default (gameplay and lobby demo behind ?glass=inline) |
+| v26.11.2105 | 84 | m-ladder-2105 | repeated automatic quality drops and far hovercraft arrivals no longer hitch; glass legibility |
+| v26.11.2106 | 85 | m-perfcheck-2106 | one-tap Run performance check under Performance, Diagnostics |
+| v26.11.2107 | 86 | m-tuning-2107 | experimental glass remains off by default; nine tuning settings for the opt-in demo |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker

@@ -79,7 +79,7 @@ export const CLOUD_THIN = 0.12, CLOUD_SOLID = 0.55
 export const SHAFT_HAZE_DEPTH = 700
 
 // Two neighboring full graphs plus the governor’s shared colour-only graph.
-const MAX_STANDBY_GRAPHS = 3
+const MAX_STANDBY_GRAPHS = 6
 
 export interface PostChainHost {
   /**
@@ -572,7 +572,7 @@ export class PostChain {
   private pruneStandby(level = this.host.quality.getQualityState?.().level): void {
     if (level === undefined) return
     for (const candidate of this.presetKeys.keys()) {
-      if (Math.abs(candidate - level) > 1) this.presetKeys.delete(candidate)
+      if (candidate > level + 1 || (level > 3 && candidate < level - 1)) this.presetKeys.delete(candidate)
     }
     for (const graph of this.standby.values()) {
       if (!this.isNeighborKey(graph.key)) this.evict(graph)
