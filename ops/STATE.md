@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 02:50 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-21 05:00 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,13 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2105 (release-84, quality ladder prepared at entry), source fdd27633, frozen copy
-20261121-023835-fdd27633, Worker version 1d059609, at https://www.syn3h.com/ since 21 November 02:42 PST.
+Live: v26.11.2108 (release-87, stock-relief replay), source 09c5e9b8, frozen copy
+20261121-044914-09c5e9b8, Worker version 9a7a0e86, at https://www.syn3h.com/ since 21 November 04:53 PST.
+Staging performance check with four bots: High to Medium and Medium to Low read 0/0; Low to the lowest
+level still 5 graphs and 3 pipelines (the check forces the step without the governor shedding bots).
+Reports in /tmp/orch-perfcheck-2108.
+2106's first reports showed automatic drops still build shaders for other vehicles present; 2105's
+"repeated drops build nothing" held only in an empty room (notes corrected, feed corrected with 2107).
 The glass demo runs only with ?glass=inline. assets/liquid-glass/NOTICE.md and the two licences are
 fixed-address files archived versions also serve: keep them byte-identical; new attribution goes to a
 new content-hashed file (2104: NOTICE-091cc75f....md). The frozen-versions guard enforces this.
@@ -120,6 +125,9 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2103 | 82 | m-hover-2103 | a hovercraft arriving at middle distance no longer freezes the game |
 | v26.11.2104 | 83 | m-glass-2104 | experimental glass shader remains, off by default (gameplay and lobby demo behind ?glass=inline) |
 | v26.11.2105 | 84 | m-ladder-2105 | repeated automatic quality drops and far hovercraft arrivals no longer hitch; glass legibility |
+| v26.11.2106 | 85 | m-perfcheck-2106 | one-tap Run performance check under Performance, Diagnostics |
+| v26.11.2107 | 86 | m-tuning-2107 | experimental glass remains off by default; nine tuning settings for the opt-in demo |
+| v26.11.2108 | 87 | m-stock-2108 | with others present, quality drops between High, Medium and Low no longer hitch |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker

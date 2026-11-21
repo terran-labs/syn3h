@@ -355,7 +355,7 @@ export class PostChain {
     const shaftShare = effects && P.postShafts.value > 0 ? fade * this.screenFade * smooth01(0.001, 0.05, sunVis) : 0
     this.updateBurst(camera, P.postShafts.value * (1 - shaftShare) * dry)
     if (tier === 'off') {
-      this.glass?.release()
+      this.glass?.release(level === 0 ? 'Minimal quality' : !P.postOn.value ? 'post effects off' : 'post budget shed')
       if (qualityTier === 'off' && level !== undefined) {
         this.rememberPreset(level, 'off')
         this.pruneStandby(level)
@@ -422,7 +422,7 @@ export class PostChain {
       else {
         if (this.glass?.covered || !built.glass) built.pipeline.render()
         if (built.glass) this.glass!.render(built.glass, built.pipeline)
-        else this.glass?.release()
+        else this.glass?.release('glass graph not prepared')
       }
       if (reusing) this.restoredTargets += built.targets.filter(target => target.width > 1 || target.height > 1).length
     } catch (error) {

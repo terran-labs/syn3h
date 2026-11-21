@@ -118,7 +118,7 @@
    is shedding, or when the player asks for less transparency or more contrast, nothing frosts
    and the body carries the contrast itself. Rim and highlight stay. */
 :is(.touch-controls, .hud-navigation) .liquid-glass { --glass-blur: 2px; }
-html[data-gfx="0"] .liquid-glass, [data-ui-frost="off"] .liquid-glass { --glass-frost: none; --glass-body: rgb(18 18 20 / .66); --glass-body-hover: rgb(40 40 44 / .7); }
+html[data-gfx="0"]:where(:not([data-drive-glass="on"])) .liquid-glass, :where(html:not([data-drive-glass="on"])) [data-ui-frost="off"] .liquid-glass, html[data-drive-glass="shed"] .liquid-glass { --glass-frost: none; --glass-body: rgb(18 18 20 / .66); --glass-body-hover: rgb(40 40 44 / .7); }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
   .liquid-glass { --glass-frost: none; --glass-body: rgb(14 14 16 / .86); --glass-body-hover: rgb(36 36 40 / .88); --glass-sheen: 0; }
 }

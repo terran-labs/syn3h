@@ -861,6 +861,7 @@ export class Galaxy {
   private population: Populations = new Map()
   private logo: LogoRenderer | null = null
   private logoSeen = false
+  private drewGlassBackdrop = false
   private glass?: GalaxyGlass
   private gl: WebGL2RenderingContext | null = null
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
@@ -1490,11 +1491,13 @@ export class Galaxy {
     this.markShown = mark.placement ? mark.opacity * reveal.mark * (1 - this.dive) : 0
     // Held still, draw only while something is moving; the last frame stays on the canvas.
     const moving = glowMoving || this.opening !== null || this.returning !== null || (this.leaving !== null && performance.now() - this.leaving < LEAVING_SECONDS * 1000 + 100) || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.worldsShown !== this.worlds || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
-    if (still && !moving && !this.glass?.dirty && this.wake <= 0) { this.idle++; return }
+    const glassBackdrop = !!this.glass?.available && qualityShed(2) < 1
+    const glassChanged = glassBackdrop !== this.drewGlassBackdrop
+    if (still && !moving && !glassChanged && !this.glass?.dirty && this.wake <= 0) { this.idle++; return }
     // A flight held before launch (leaving a world, waiting behind the game) shows one still
     // frame of the world's air: draw it, and the maps as they arrive, and nothing more.
     const held = this.flight?.start === Infinity
-    if (held && this.wake <= 0 && this.shownHeld) { if (this.upload(gl)) this.wake = 1; this.idle++; return }
+    if (held && !glassChanged && this.wake <= 0 && this.shownHeld) { if (this.upload(gl)) this.wake = 1; this.idle++; return }
     this.shownHeld = held
     this.wake = Math.max(0, this.wake - 1)
     // The wordmark's field is baked (first, and if drawn much larger) before the frame starts.
@@ -1541,7 +1544,9 @@ export class Galaxy {
       gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
     }
     // The letters at full device resolution, in their own pass, when the screen is finer than the galaxy's canvas.
-    const crisp = this.markCrisp?.ok && mark.placement && wordmarkCrispPass.value && devicePixelRatio > this.canvas.width / Math.max(1, this.host.clientWidth) + 0.05 ? this.markCrisp : null
+    // Glass samples this framebuffer. A separate high-resolution logo plane would
+    // cover the finished material wherever a card or button overlaps the mark.
+    const crisp = !glassBackdrop && this.markCrisp?.ok && mark.placement && wordmarkCrispPass.value && devicePixelRatio > this.canvas.width / Math.max(1, this.host.clientWidth) + 0.05 ? this.markCrisp : null
     setFrame(gl, u, this.canvas.width, this.canvas.height, () => { this.logo!.distanceField!.bind(name => u[name]); gl.useProgram(this.program) }, crisp ? 1 : 0)
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
     const smear = this.flight && this.blurProgram && this.blur > 0.003 && qualityShed(2) < 1
@@ -1568,13 +1573,14 @@ export class Galaxy {
       if (held || this.opening || this.returnTo || this.returning !== null) logo.skipIntro()
       // Behind the loading veil the logo waits at nothing: its fade starts as the veil lifts.
       else if (veiled()) logo.replayIntro()
-      logo.setLook({ particles: Math.round(budget.particles * (1 - qualityShed(1) * 0.65)), sway: held ? 0 : 0.07, opacity: (1 - this.dive) * reveal.mark })
+      logo.setLook({ drawMark: glassBackdrop, particles: Math.round(budget.particles * (1 - qualityShed(1) * 0.65)), sway: held ? 0 : 0.07, opacity: (1 - this.dive) * reveal.mark })
       const sx = this.canvas.width / this.host.clientWidth, sy = this.canvas.height / this.host.clientHeight, box = layout.box
       logo.draw(held ? STILL_SECONDS : time, { x: box.x * sx, y: box.y * sy, width: box.width * sx, height: box.height * sy })
-      this.markOverlay?.update(box, logo.markOpacity)
+      this.markOverlay?.update(box, glassBackdrop ? 0 : logo.markOpacity)
       this.logoSeen = true; this.options.onLogo?.(true)
     }
-    this.glass?.draw(qualityShed(2) < 1)
+    this.glass?.draw(glassBackdrop)
+    this.drewGlassBackdrop = glassBackdrop
     this.frames++
     // Tell the labels where the worlds are, and notice arrival.
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]

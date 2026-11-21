@@ -10,7 +10,7 @@ export class GlassLabelInk {
   private index = 0
   private pending = false
 
-  update(renderer: WebGPURenderer, controls: GlassButton, target: RenderTarget) {
+  update(renderer: WebGPURenderer, controls: GlassButton, target: RenderTarget, transfer: { x: number; y: number; z: number; w: number }, pressBrightness: number) {
     if (this.pending || performance.now() < this.next) return
     const label = controls.nextLabel(this.index)
     if (!label) return
@@ -27,10 +27,10 @@ export class GlassLabelInk {
       if (rgb.some(c => !Number.isFinite(c))) return
       const luma = (c: number[]) => .2126 * c[0] + .7152 * c[1] + .0722 * c[2]
       const l = luma(rgb)
-      const tone = label.dark ? -.39 * l * l + .99 * l + 32 / 255 : -.034 * l * l + .506 * l + 133 / 255
+      const tone = transfer.x * l * l + transfer.y * l + transfer.z
       const face = rgb.map(c => {
-        const value = label.clear ? c : tone + c - l
-        return linear(Math.min(1, Math.max(0, value + (1 - value) * .405 * label.lift)))
+        const value = label.clear ? c : tone + (c - l) * transfer.w
+        return linear(Math.min(1, Math.max(0, value + (1 - value) * pressBrightness * label.lift)))
       })
       // Black and white give equal WCAG contrast at this luminance.
       const ink = luma(face) >= Math.sqrt(.0525) - .05 ? 'black' : 'white'

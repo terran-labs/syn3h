@@ -1,5 +1,6 @@
 /** Optional surface compositor on the galaxy's existing WebGL canvas. */
 export interface GalaxyGlass {
+  readonly available: boolean
   dirty: boolean
   draw(enabled: boolean): void
   dispose(): void
