@@ -129,7 +129,21 @@ async function main(): Promise<void> {
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
   const { shell, audio, setPlayer } = initGameShell(game, player, terrain, query.get('name'))
   if (glass) shell.driveGlassFrame = glass.driveFrame
+  let postCheckQueued = false
   const materialChanged = params.onChange((id) => {
+    if (id.startsWith('post.') && glass && shell.playing && liquidSelected()) {
+      // A preset writes several parameters synchronously. Inspect the final graph before the next draw.
+      if (!postCheckQueued) {
+        postCheckQueued = true
+        queueMicrotask(() => {
+          postCheckQueued = false
+          if (shell.playing && liquidSelected() && !post.selectedGlassPrepared && !shell.transitioning) {
+            shell.applyGlassMaterial(async () => {})
+          }
+        })
+      }
+      return
+    }
     if (id !== glassStyle.def.id && id !== 'gfx.quality') return
     if (!liquidSelected()) {
       shell.driveGlassFrame = undefined
