@@ -470,12 +470,18 @@ export class PostChain {
     return { key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn }
   }
 
+  /** The lobby may have drawn this preset before the covered glass warm-up. */
+  private needsCoveredGlass(graph: Built, spec: GraphSpec): boolean {
+    return !!this.glass && (this.glass.covered || !!this.warmPreset) && !spec.debug && !graph.glass
+  }
+
   /** Return whether this frame is reactivating previously parked targets. */
   private activateGraph(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, spec: GraphSpec): boolean {
-    if (this.built?.key === spec.key && !(this.glass?.covered && !spec.debug && !this.built.glass)) return false
+    if (this.built?.key === spec.key && !this.needsCoveredGlass(this.built, spec)) return false
     const previous = this.built
     const hit = this.standby.get(spec.key)
-    if (hit) {
+    if (hit && this.needsCoveredGlass(hit, spec)) this.evict(hit)
+    else if (hit) {
       this.standby.delete(spec.key)
       this.built = hit
       this.activations++
@@ -509,7 +515,13 @@ export class PostChain {
     this.pruneStandby()
     const active = this.built?.key === spec.key
     let graph = active ? this.built! : this.standby.get(spec.key)
-    if (!graph) {
+    if (graph && this.needsCoveredGlass(graph, spec)) {
+      const previous = graph
+      graph = this.build(renderer, scene, camera, spec)
+      if (active) this.built = graph
+      else this.standby.delete(previous.key)
+      this.disposeGraph(previous)
+    } else if (!graph) {
       this.makeStandbyRoom()
       graph = this.build(renderer, scene, camera, spec)
     }
