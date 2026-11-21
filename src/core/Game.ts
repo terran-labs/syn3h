@@ -48,6 +48,8 @@ export interface System {
   precompileMeshes?(): Iterable<THREE.Mesh>
   /** Already-planted scenery a live quality change can reveal at this camera. */
   precompileQualityMeshes?(): Iterable<THREE.Mesh>
+  /** Attach retained player models for the existing Medium to Low preview draw. */
+  drawCoveredLowFleet?(draw: () => void): void
   dispose?(): void
 }
 
@@ -596,7 +598,9 @@ export class Game {
         const level = (governor.level - 1) as AdjacentRenderPreset['level']
         const preset = this.quality.renderPreset(level, true)
         const shade = Number(preset.value(vehicleShading.def.id))
-        const submit = () => shade === 0 || shade === 1 || shade === 2 ? drawCoveredShowroomVariant(this.scene, shade, draw) : draw()
+        const drawVariants = () => shade === 0 || shade === 1 || shade === 2 ? drawCoveredShowroomVariant(this.scene, shade, draw) : draw()
+        const fleet = level === 1 && shade === 0 ? this.systems.find(s => s.drawCoveredLowFleet) : undefined
+        const submit = () => fleet?.drawCoveredLowFleet ? fleet.drawCoveredLowFleet(drawVariants) : drawVariants()
         const seen = new Set<string>()
         for (const target of [preset, { ...preset, shed: true }]) {
           const key = chain.coveredVariantKey?.(target)

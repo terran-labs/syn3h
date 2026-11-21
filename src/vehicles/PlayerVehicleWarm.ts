@@ -5,7 +5,7 @@ import { Syn3hBuggy } from './Syn3hBuggy'
 import type { Vehicle } from './Vehicle'
 
 /** Draw the actual cached local model at full size in the covered camera's view. */
-export function drawPlayerVehicleWarm(game: Game, player: Vehicle, vehicle: Vehicle, warm: CoveredWarm): void {
+export function drawPlayerVehicleWarm(game: Game, player: Vehicle, vehicle: Vehicle, warm: Pick<CoveredWarm, 'draw'>): void {
   const parked = vehicle !== player
   const draw = () => warm.draw(vehicle.kind)
   const bodyDraw = () => {
