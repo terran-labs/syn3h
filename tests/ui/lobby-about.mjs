@@ -40,10 +40,11 @@ async function measureBack(locator, mode, id) {
  await writeFile(`${out}/${mode}-back-${id}.json`, JSON.stringify(diagnostic, null, 2))
  return diagnostic.projected
 }
-for(const mode of ['desktop','phone','short-phone']){
+const IPAD = { 'ipad-portrait': { viewport: { width: 744, height: 1133 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }, 'ipad-landscape': { viewport: { width: 1133, height: 744 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } }
+for(const mode of ['desktop','phone','short-phone','ipad-portrait','ipad-landscape']){
  const browser=await(mode==='desktop'?chromium.launch({channel:'chrome',headless:true}):webkit.launch())
  try{
-  const context=await browser.newContext(mode==='desktop'?{viewport:{width:1440,height:1000}}:{...devices['iPhone 14'],...(mode==='short-phone'?{viewport:{width:390,height:560}}:{})})
+  const context=await browser.newContext(IPAD[mode]??(mode==='desktop'?{viewport:{width:1440,height:1000}}:{...devices['iPhone 14'],...(mode==='short-phone'?{viewport:{width:390,height:560}}:{})}))
   const page=await context.newPage(), errors=[]; page.on('pageerror',e=>errors.push(e.message))
   await page.goto(`${process.env.SYN3H_URL}?room=about-${mode}-${Date.now()}`)
   await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
@@ -82,7 +83,7 @@ for(const mode of ['desktop','phone','short-phone']){
   console.log(JSON.stringify({mode,geometry}))
   assert.ok(geometry.rect.x>=0&&geometry.rect.right<=geometry.viewportWidth&&geometry.rect.bottom<=geometry.viewportHeight,'the sheet fits the viewport')
   // A phone held upright gives it the width; on its side the buttons keep their column beside it.
-  if(mode!=='desktop')assert.ok(geometry.rect.width>=(geometry.viewportHeight>geometry.viewportWidth?geometry.viewportWidth-24:geometry.viewportWidth*0.6),'on a phone the sheet takes the width it can')
+  if(mode==='phone'||mode==='short-phone')assert.ok(geometry.rect.width>=(geometry.viewportHeight>geometry.viewportWidth?geometry.viewportWidth-24:geometry.viewportWidth*0.6),'on a phone the sheet takes the width it can')
   assert.ok(geometry.scrollWidth<=geometry.viewportWidth,'no horizontal document overflow')
   assert.equal(await about.getByRole('tab').count(),0,'no tabs')
   assert.equal(await about.locator('.panel-back').count(),0,'no Back button')

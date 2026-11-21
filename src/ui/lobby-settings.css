@@ -26,24 +26,27 @@
 @media (prefers-reduced-motion: reduce) {
   .lobby-gear path { animation: none; }
 }
-/* A newer version is out: a small steady dot at the Updates button's top right. */
-.lobby-updates.has-update .lobby-control-word::after {
-  content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 8px; vertical-align: 2px; border-radius: 50%;
-  background: var(--s3-accent-2, #f7f7f7); box-shadow: 0 0 6px rgb(255 255 255 / .8);
-}
-
 /* The version: the lower left corner, small and quiet, plain text with no card behind it (the
    owner, 20 November 2026), held legible over the galaxy by the HUD's dark falloff under it, as the
-   idle status line is. A hook for the Updates view (data-lobby-version). */
-.lobby-version-dock { position: fixed; z-index: 30; left: max(14px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); pointer-events: none; }
+   idle status line is. It opens Updates (the owner, 21 November 2026: no Updates button besides),
+   so it reads as a link: a fine underline, a small arrow after it, brighter under the pointer, and
+   a 44 px target round the small type. A hook for the Updates view (data-lobby-version). */
+.lobby-version-dock { position: fixed; z-index: 30; left: max(6px, calc(env(safe-area-inset-left) - 8px)); bottom: max(2px, calc(env(safe-area-inset-bottom) - 10px)); pointer-events: none; }
 .lobby-version-dock > * { pointer-events: auto; }
 .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version {
-  min-height: 24px; min-width: 0; padding: 4px 6px; border: 0; border-radius: 0; background: none; box-shadow: none;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 14px; border: 0; border-radius: 0; background: none; box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none;
-  font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .12em; text-transform: none; color: rgb(232 232 232 / .78);
-  text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8)); cursor: pointer; white-space: nowrap;
+  font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .1em; text-transform: none; color: rgb(236 236 236 / .84);
+  text-decoration: underline; text-decoration-color: rgb(236 236 236 / .4); text-decoration-thickness: 1px; text-underline-offset: 4px;
+  text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8)); cursor: pointer; white-space: nowrap; transition: color .18s, text-decoration-color .18s;
 }
-.syn3h-shell.exploration-ui .lobby-version-dock .lobby-version:hover, .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version:focus-visible { color: rgb(237 237 237 / .9); background: none; }
+.syn3h-shell.exploration-ui .lobby-version-dock .lobby-version::after { content: '\203A'; text-decoration: none; display: inline-block; font-size: 15px; line-height: 1; opacity: .8; transform: translateY(-1px); }
+.syn3h-shell.exploration-ui .lobby-version-dock .lobby-version:is(:hover, :focus-visible) { color: #fff; text-decoration-color: rgb(255 255 255 / .85); background: none; }
+.syn3h-shell.exploration-ui .lobby-version-dock .lobby-version:focus-visible { outline: 1.5px solid rgb(244 244 244 / .9); outline-offset: -6px; }
+/* A newer version is out: a small steady dot before the version. */
+.syn3h-shell.exploration-ui .lobby-version-dock .lobby-version.has-update::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--s3-accent-2, #f7f7f7); box-shadow: 0 0 6px rgb(255 255 255 / .8);
+}
 
 /* The card: the sidebar's right-edge place, one card (#lobby-settings) and one glass surface. It
    carries .liquid-glass (glass.css, or the glass shader where it draws); these rules only give it
@@ -51,15 +54,28 @@
    inside it from pressing the whole card. Nothing inside it is glass: the in-game cards it reuses
    are plain sections here, parted by a hairline. */
 .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
-  /* It stands on the button stack in the lower right (3 x 44 px, two 8 px gaps, the edge), right
-     edges aligned, and grows upward out of Settings. LobbySettings.fit caps its height below the
-     wordmark; this cap is the fallback. */
-  display: flex; z-index: 60; top: auto; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 160px); right: max(16px, env(safe-area-inset-right));
-  height: auto; max-height: calc(100dvh - var(--edge-top, 28px) - 196px); transform-origin: 100% 100%;
+  /* It stands on the button stack in the lower right (Settings and Welcome, 2 x 44 px, an 8 px
+     gap, the edge), right edges aligned, and grows upward out of Settings as far as the top safe
+     area on any screen (the owner, 21 November 2026: "the full remaining height above the
+     button"); taller contents scroll inside. The wordmark may show through the glass. */
+  --card-foot: calc(max(16px, env(safe-area-inset-bottom)) + 108px);
+  display: flex; z-index: 60; top: auto; bottom: var(--card-foot); right: max(16px, env(safe-area-inset-right));
+  height: auto; max-height: calc(100dvh - var(--edge-top, 28px) - var(--card-foot)); transform-origin: 100% 100%;
   padding: 10px 6px 12px;
   --glass-radius: var(--halo-r, 16px); --glass-body: rgb(12 12 14 / .62); --glass-body-hover: rgb(12 12 14 / .62); --glass-blur: 20px;
 }
 .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings.liquid-glass:is(:hover, :active) { transform: none; background-color: var(--glass-body); }
+/* Where nothing frosts (the lowest graphics level, the quality ladder shedding, a browser without
+   backdrop blur, or a player asking for less transparency or more contrast) the card carries a
+   near-opaque body of its own, so labels and planets behind it cannot read through the rows. */
+html[data-gfx="0"] .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings,
+.syn3h-shell.exploration-ui[data-ui-frost="off"]:not(.is-playing) .world-inspector.lobby-settings { --glass-body: rgb(12 12 14 / .92); --glass-body-hover: rgb(12 12 14 / .92); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { --glass-body: rgb(12 12 14 / .92); --glass-body-hover: rgb(12 12 14 / .92); }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { --glass-body: rgb(12 12 14 / .94); --glass-body-hover: rgb(12 12 14 / .94); }
+}
 html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-settings :is(.wi-glass, .rail-players) {
   border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
 }
@@ -75,11 +91,7 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-sett
 .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-label { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.2; }
 .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 4px 14px; flex: 0 0 auto; background: none; border: 0; }
 .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head h2 { margin: 0; padding: 0; font: 600 14px/1 'Barlow Condensed', sans-serif; letter-spacing: .22em; text-transform: uppercase; color: var(--s3-ink); }
-/* Close is plain text and a mark, no ring and no glass: the card is the one glass surface. */
-.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 12px; font: 500 13px 'Barlow', sans-serif; letter-spacing: .08em;
-  border: 0; border-radius: 8px; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; color: var(--s3-dim); }
-.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close:is(:hover, :focus-visible) { color: #fff; background: rgb(255 255 255 / .06); border: 0; box-shadow: none; }
-.lobby-settings-close span[aria-hidden] { font-size: 18px; line-height: 1; }
+/* Close is the lobby's one close control (.lobby-close, lobby-sheet.css). */
 .world-inspector.lobby-settings .host-controls { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
 .world-inspector.lobby-settings .host-controls legend { display: none; }
 
@@ -98,12 +110,11 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-sett
   .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { flex: 0 1 auto; }
   /* The same stack as on a desktop, narrower and tighter to the corner. */
   .lobby-gear-dock { width: 128px; gap: 6px; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); }
-  .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version { min-height: 0; padding: 1px 2px; font-size: 10px; letter-spacing: .04em; }
+  .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version { padding: 0 12px; font-size: 11px; letter-spacing: .06em; }
 }
 @media (max-height: 500px) and (pointer: coarse) and (orientation: landscape) {
   .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { left: auto; width: min(560px, calc(100vw - 20px)); top: 6px; max-height: calc(100dvh - 12px); padding: 6px; gap: 4px; }
   .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { padding-block: 0; }
-  .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close { min-height: 40px; min-width: 44px; }
   .lobby-gear-dock { gap: 5px; right: max(12px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
 }
 /* Touch: every control a full 44 px target. */

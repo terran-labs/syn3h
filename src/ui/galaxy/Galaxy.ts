@@ -697,7 +697,10 @@ void main() {
       }
     }
   }
-  c += sunLight + sunHaze + sunShafts + flare * (found >= 0 ? mix(1.0, 0.2, uWorlds) : 1.0);
+  // Behind a lobby sheet the sun and its rays fade with the worlds, to a fifth (the owner,
+  // 21 November 2026: "fade the background sun and god rays out substantially more").
+  float sunShown = mix(0.2, 1.0, uWorlds);
+  c += (sunLight + sunHaze + sunShafts + flare * (found >= 0 ? mix(1.0, 0.2, uWorlds) : 1.0)) * sunShown;
   // The dive: streaks rushing outward, then the brightness of air as the world fills the view.
   if (uDive > 0.0) {
     float rush = pow(noise(vec3(normalize(q + 0.0001) * 11.0, uTime * 3.2)), 3.0) * smoothstep(0.15, 1.3, length(q));

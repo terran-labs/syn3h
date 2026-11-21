@@ -1,7 +1,6 @@
 /**
- * The lobby's settings: Settings, Welcome and Updates stacked in the lower right of the galaxy
- * (Settings on top, the owner, 20 November 2026), the running version as plain text in the lower
- * left, and a right-hand settings card that Settings opens. The card is the in-game sidebar's own
+ * The lobby's settings: Settings above Welcome in the lower right of the galaxy (the owner, 20
+ * November 2026), the running version in the lower left (it opens Updates), and a right-hand settings card that Settings opens. The card is the in-game sidebar's own
  * component (an Inspector showing only the sections added here), so its rows, switches, sliders
  * and quality controls are the in-game ones and cannot drift. It holds only what acts in the
  * lobby, or what a player sets before entering a world:
@@ -60,6 +59,9 @@ export function cycleFocus<T>(focusable: readonly T[], current: T | null, back: 
   return focusable[(at + (back ? -1 : 1) + focusable.length) % focusable.length]!
 }
 
+/** The lobby's close control: a drawn x and the word, the same in every lobby panel (.lobby-close). */
+export const LOBBY_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6L18 18M18 6L6 18"/></svg><span>Close</span>'
+
 /** A volume: an audio setting from 0 to 1, shown as a percentage like the card's summary. */
 export const isVolume = (def: PropertyDef) => def.group === 'Audio' && def.min === 0 && def.max === 1
 
@@ -79,8 +81,6 @@ export function gearPath(teeth = 8, outer = 10.5, inner = 8, hub = 3.4): string 
 
 /** Welcome: an open book, a guide to the game. */
 export const WELCOME_ICON = 'M12 6.6C10 5.3 7 4.9 3.6 5.3V18.4C7 18 10 18.4 12 19.7C14 18.4 17 18 20.4 18.4V5.3C17 4.9 14 5.3 12 6.6ZM12 6.6V19.7'
-/** Updates: sparkles, for what is new. */
-export const UPDATES_ICON = 'M10 3.5C10.6 7.1 12.4 8.9 16 9.5C12.4 10.1 10.6 11.9 10 15.5C9.4 11.9 7.6 10.1 4 9.5C7.6 8.9 9.4 7.1 10 3.5ZM18 13.5C18.3 15.3 19.2 16.2 21 16.5C19.2 16.8 18.3 17.7 18 19.5C17.7 17.7 16.8 16.8 15 16.5C16.8 16.2 17.7 15.3 18 13.5ZM18.5 3V6.5M16.75 4.75H20.25'
 /**
  * One of the lobby's three buttons: a small icon at its left edge and its word, in the game's
  * one glass button style (.liquid-glass, glass.css). Its layout is lobby-settings.css.
@@ -104,12 +104,8 @@ export interface LobbySettingsOptions {
   cue?(): void
   /** Called as the card opens: the shell closes any lobby sheet. */
   opening?(): void
-  /** Where the wordmark is on screen now, which the card must not cover, or null. */
-  ceiling?(): { left: number; right: number; bottom: number } | null
 }
 
-/** Phones: the card is one full-width card at the top (lobby-settings.css), not fitted here. */
-const PHONE = '(max-width: 700px), (max-height: 500px) and (pointer: coarse)'
 
 export class LobbySettings {
   /** Settings, Welcome and Updates, for the lobby to place in its lower right. */
@@ -122,9 +118,8 @@ export class LobbySettings {
    * it by `[data-lobby-version]` and listen for its click. It does nothing until something does.
    */
   readonly version = document.createElement('button')
-  /** Welcome and Updates, under Settings. The shell wires their clicks to its sheets. */
+  /** Welcome, under Settings. The shell wires its click to its sheet. */
   readonly about = document.createElement('button')
-  readonly updates = document.createElement('button')
   /** Holds the panel and its tooltip; attached to the page only while open. */
   private readonly host = document.createElement('div')
   private readonly inspector: Inspector
@@ -141,28 +136,28 @@ export class LobbySettings {
     const signal = this.abort.signal
     const label = versionLabel(options.build, location.href)
     this.dock.className = 'lobby-gear-dock'
-    // Settings, Welcome and Updates, top to bottom, each a labelled glass button.
+    // Settings above Welcome, each a labelled glass button. Updates opens from the version in the
+    // lower left (the owner, 21 November 2026: a button for it only duplicated the version).
     controlButton(this.gear, 'lobby-gear', 'Settings', gearPath())
     controlButton(this.about, 'lobby-about', 'Welcome', WELCOME_ICON)
-    controlButton(this.updates, 'lobby-updates', 'Updates', UPDATES_ICON)
-    for (const button of [this.about, this.updates]) button.setAttribute('aria-haspopup', 'dialog')
+    this.about.setAttribute('aria-haspopup', 'dialog')
     this.gear.setAttribute('aria-expanded', 'false'); this.gear.setAttribute('aria-controls', 'lobby-settings')
     this.version.type = 'button'; this.version.className = 'lobby-version'; this.version.dataset.lobbyVersion = ''
-    this.version.textContent = label; this.version.title = `Version ${label}`; this.version.setAttribute('aria-label', `Version ${label}`)
-    this.dock.append(this.gear, this.about, this.updates)
+    this.version.textContent = label; this.version.title = `Version ${label}: what is new`; this.version.setAttribute('aria-label', `Version ${label}, open Updates`); this.version.setAttribute('aria-haspopup', 'dialog')
+    this.dock.append(this.gear, this.about)
     // The version sits apart, in the lower left (versionDock): plain shadowed text, no card.
     this.versionDock.className = 'lobby-version-dock'; this.versionDock.append(this.version)
 
     this.host.className = 'lobby-settings-host'
-    // One section open at a time, and the card scrolls inside: it is capped below the wordmark,
-    // so Graphics alone may be taller than the card, and must not close itself to fit.
+    // One section open at a time, and the card scrolls inside: on a short screen Graphics alone
+    // may be taller than the card, and must not close itself to fit.
     this.inspector = new Inspector(this.host, { summary: () => '', vehicles: () => ({ options: [], current: '' }), onVehicle() {}, sections: [], percent: isVolume, oneOpen: () => true })
     const panel = this.inspector.element
     // One card, one glass surface: the class is on the card and on nothing inside it.
     panel.classList.add('lobby-settings', 'liquid-glass'); panel.id = 'lobby-settings'
     panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Settings')
     const head = document.createElement('header'); head.className = 'lobby-settings-head'
-    head.innerHTML = '<h2>Settings</h2><button type="button" class="lobby-settings-close" aria-label="Close settings"><span aria-hidden="true">×</span><span class="lobby-settings-close-text">Close</span></button>'
+    head.innerHTML = `<h2>Settings</h2><button type="button" class="lobby-settings-close lobby-close" aria-label="Close settings">${LOBBY_CLOSE}</button>`
     // The world tools (search, copy, paste, reset world) belong to a world, not the lobby.
     panel.querySelector('.wi-top')?.remove()
     panel.querySelector('.wi-cards')!.before(head)
@@ -214,7 +209,6 @@ export class LobbySettings {
       if (event.type === 'pointerdown') this.close()
     }
     for (const type of ['pointerdown', 'click'] as const) window.addEventListener(type, outside, { capture: true, signal })
-    window.addEventListener('resize', () => { if (this.shown) this.fit() }, { signal })
     window.addEventListener('keydown', event => {
       if (!this.shown) return
       if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); this.close(); return }
@@ -228,12 +222,12 @@ export class LobbySettings {
 
   get isOpen(): boolean { return this.shown }
 
-  /** A quiet mark on the Updates icon while a newer version is out. */
+  /** A quiet mark beside the version while a newer version is out. */
   markUpdate(version: string | null): void {
-    const on = version !== null
-    this.updates.classList.toggle('has-update', on)
-    this.updates.setAttribute('aria-label', on ? 'Updates, a newer version is out' : 'Updates')
-    this.updates.title = on ? 'Updates: a newer version is out' : 'Updates'
+    const on = version !== null, label = this.version.textContent ?? ''
+    this.version.classList.toggle('has-update', on)
+    this.version.setAttribute('aria-label', on ? `Version ${label}, a newer version is out: open Updates` : `Version ${label}, open Updates`)
+    this.version.title = on ? `Version ${label}: a newer version is out` : `Version ${label}: what is new`
   }
 
   private focusable(): HTMLElement[] {
@@ -256,7 +250,6 @@ export class LobbySettings {
     // Glass never nests: the card is the one glass surface, so the in-game cards' own glass
     // marks (the phone close x in each card head) are plain here.
     for (const el of this.inspector.element.querySelectorAll('.liquid-glass')) el.classList.remove('liquid-glass', 'glass-round')
-    this.fit()
     this.gear.setAttribute('aria-expanded', 'true'); this.gear.classList.add('is-current'); this.dock.classList.add('is-open')
     // It rises out of Settings, below it (lobby-settings.css sets the origin at its foot).
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -276,21 +269,6 @@ export class LobbySettings {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { detach(); return }
     this.closing = this.inspector.element.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px) scale(.98)' }], { duration: 160, easing: 'ease-in' })
     this.closing.onfinish = detach
-  }
-
-  /**
-   * Desktop: the card stands on Settings and grows upward as its sections open, so cap its height
-   * where it would reach the wordmark (the owner's logo stays whole); taller contents scroll
-   * inside. Where the wordmark does not reach over the card's column, the screen's top edge is
-   * the cap. Phones place the card themselves.
-   */
-  private fit(): void {
-    const card = this.inspector.element
-    if (matchMedia(PHONE).matches) { card.style.removeProperty('max-height'); return }
-    const box = card.getBoundingClientRect(), mark = this.options.ceiling?.() ?? null
-    const over = mark && mark.right > box.left - 8 && mark.left < box.right + 8
-    const top = over ? mark.bottom + 16 : parseFloat(getComputedStyle(card).getPropertyValue('--edge-top')) || 28
-    card.style.maxHeight = `${Math.max(180, Math.floor(box.bottom - top))}px`
   }
 
   /** Refresh summaries while open; call from the shell's update. */
