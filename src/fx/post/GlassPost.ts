@@ -1,3 +1,4 @@
+import { liquidSelected, respectReducedTransparency } from '../../ui/glassMaterial'
 import * as THREE from 'three/webgpu'
 import { float, max, renderOutput, rtt, uniform, uv, vec3, vec4 } from 'three/tsl'
 import { defineParam, params } from '../../../shared/params'
@@ -10,7 +11,6 @@ import { gameplayGlassSlots, GlassButton } from './GlassButton'
 import { GlassLabelInk } from './glassLabelInk'
 import { createLobbyGlass } from '../../liquid-glass/lobby'
 import { installGalaxyGlass } from '../../ui/galaxy/glassAdapter'
-import { GlassFrameBudget } from './glassFrameBudget'
 import { GlassTiming } from './glassTiming'
 import './shader-surface.css'
 
@@ -37,7 +37,6 @@ export class GlassPost {
   }
 
   setPausedDraw(draw?: () => void) {
-    this.budget.interrupt()
     cancelAnimationFrame(this.frame)
     this.frame = 0
     this.pausedDraw = draw
@@ -47,7 +46,6 @@ export class GlassPost {
   private readonly ink = new GlassLabelInk()
   readonly timing = new GlassTiming()
   private showing = false
-  private readonly budget = new GlassFrameBudget()
   private drawPlain = false
   private graphReady = false
   private driving = false
@@ -56,7 +54,7 @@ export class GlassPost {
   private lastReason = 'waiting for playable glass'
   private changedAt = 0
 
-  readonly driveFrame = (playing: boolean, eligible: boolean, frostAllowed: boolean, targetMs: number) => {
+  readonly driveFrame = (playing: boolean, eligible: boolean) => {
     const root = document.documentElement
     if (!playing) {
       this.timing.monitoring = false
@@ -72,17 +70,16 @@ export class GlassPost {
     if (!this.driving) {
       this.driving = true
       this.enteredAt = now
-      this.budget.enter()
       this.lastReason = 'drive started'
       this.changedAt = 0
     }
-    const external = !frostAllowed ? 'graphics settings disable frost' :
-      this.controls?.reducedTransparency ? 'transparency preference' : ''
-    this.timing.monitoring = eligible && this.graphReady && !external && !this.covered
-    if (this.timing.monitoring && (!this.budget.enabled || this.controls?.hasSurface)) {
-      this.budget.sample(now, this.timing.ms, this.timing.sampledAt, targetMs)
-    } else this.budget.interrupt()
-    this.driveBlock = external || (this.budget.enabled ? '' : this.budget.reason)
+    if (!liquidSelected()) {
+      this.timing.monitoring = false
+      delete root.dataset.driveGlass
+      return
+    }
+    this.driveBlock = this.controls?.reducedTransparency ? 'transparency preference' : ''
+    this.timing.monitoring = eligible && this.graphReady && !this.driveBlock && !this.covered
     this.setDriveSurface(!this.driveBlock && this.graphReady)
   }
 
@@ -151,7 +148,7 @@ export class GlassPost {
     if (mode === 'inline') installGalaxyGlass((gl, canvas) => createLobbyGlass(gl, canvas, () => nativeInk.value, {
       face: this.tuning.face.value, panel: this.tuning.panel.value, edges: this.tuning.edges.value,
       width: () => this.frost.value, growth: () => settings.growth.value, dark: () => document.documentElement.dataset.glassAppearance === 'dark',
-      revision: () => this.revision,
+      revision: () => this.revision, respectReducedTransparency,
     }))
   }
 
@@ -241,9 +238,7 @@ export class GlassPost {
     if (!covered) {
       const on = controls.available
       if (on && !this.showing) {
-        const reason = this.driving && (this.budget.reason !== 'drive started' || this.lastReason === 'drive started')
-          ? this.budget.reason : 'glass available'
-        this.record(true, reason)
+        this.record(true, 'Liquid selected')
       } else if (!on) {
         this.record(false, controls.reducedTransparency ? 'transparency preference' : 'interface frost disabled')
       }
@@ -257,7 +252,8 @@ export class GlassPost {
   release(reason = 'post graph unavailable') {
     if (this.graphReady) this.controls?.hide()
     this.graphReady = false
-    if (this.driving) this.setDriveSurface(false)
+    if (this.driving && liquidSelected()) this.setDriveSurface(false)
+    else delete document.documentElement.dataset.driveGlass
     this.record(false, reason)
   }
 

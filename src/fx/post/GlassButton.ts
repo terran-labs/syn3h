@@ -1,3 +1,4 @@
+import { respectReducedTransparency } from '../../ui/glassMaterial'
 import { paintedInset, GlassMotionClock } from '../../liquid-glass/paintedSurface'
 import { BrakeGlassPress } from './BrakeGlassPress'
 import { longFrames } from '../../core/longFrames'
@@ -38,7 +39,7 @@ export class GlassButton {
   readonly surfaceCount = uniform(0, 'int')
   readonly viewport = uniform(new Vector4())
   private readonly query = new URLSearchParams(location.search)
-  private readonly brake = this.query.get('glass') === 'inline' && this.query.get('glassPress') !== 'off'
+  private readonly brake = this.query.get('glass') !== 'target' && this.query.get('glassPress') !== 'off'
     && this.query.get('glassMaterial') !== 'clear' ? new BrakeGlassPress() : null
   readonly pressOnly = this.query.get('glassMerge') === 'zorb-brake-pressed'
   readonly pairSlots = this.brake && (this.pressOnly || (this.query.get('glassMerge') ?? 'zorb-brake') === 'zorb-brake')
@@ -238,7 +239,8 @@ export class GlassButton {
         rect.right <= clip.left || rect.left >= clip.right) continue
       const token = b.matches('[aria-pressed="true"], .is-current, :active, .held') ? '--glass-body-on' : b.matches(':hover') ? '--glass-body-hover' : '--glass-body'
       const rgba = isCard ? [1, 1, 1, .06] : readGlassTint(style.getPropertyValue(token).trim())
-      const filter = isCard ? ['', '3', '1.2'] : /^blur\(([\d.]+)px\)\s+saturate\(([\d.]+)\)\s+brightness\(([\d.]+)\)$/.exec(style.getPropertyValue('--glass-frost').trim())
+      const useDefaults = isCard || (!respectReducedTransparency && this.reduced.matches)
+      const filter = useDefaults ? ['', '3', '1.2'] : /^blur\(([\d.]+)px\)\s+saturate\(([\d.]+)\)\s+brightness\(([\d.]+)\)$/.exec(style.getPropertyValue('--glass-frost').trim())
       if (!rgba || !filter) continue
       const pressed = [...this.pressed.values()].includes(b) || b.matches(':active, .held')
       const i = this.drawn.size
@@ -323,10 +325,10 @@ export class GlassButton {
   }
 
   get animating(): boolean { return this.clock.active }
-  get reducedTransparency(): boolean { return this.reduced.matches }
+  get reducedTransparency(): boolean { return respectReducedTransparency && this.reduced.matches }
   get available(): boolean {
     const { driveGlass, gfx } = document.documentElement.dataset
-    return !this.reduced.matches && (driveGlass ? driveGlass === 'on' : gfx !== '0' && !this.canvas.closest('[data-ui-frost="off"]'))
+    return !this.reducedTransparency && (driveGlass ? driveGlass === 'on' : gfx !== '0' && !this.canvas.closest('[data-ui-frost="off"]'))
   }
   get visibleCount(): number {
     let count = 0

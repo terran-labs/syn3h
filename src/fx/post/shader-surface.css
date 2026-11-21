@@ -218,7 +218,7 @@ html:where([data-glass-appearance="dark"]) #lobby-settings[data-glass-native-ink
 
 /* An opted-in device can still shed the entire surface layer. */
 html:not([data-game-glass]) .wi-group[data-group="Glass"],
-.syn3h-shell:not([data-lobby-glass]) .lobby-settings .wi-card[data-section="glass"] { display: none; }
+.syn3h-shell:not([data-lobby-glass]) .lobby-settings .wi-card[data-section="glass"] .wi-row:not(.glass-material-row) { display: none; }
 [data-glass-surface="shader"]:is(button:active, button.held):not([data-glass-press="brake"]) { scale: var(--glass-extra-scale, none); }
 /* Keep the extra action in a trailing column only while the row is edited. */
 .syn3h-shell .wi-row:has(> .glass-setting-reset) { grid-auto-flow: column; grid-auto-columns: max-content; }
