@@ -154,19 +154,24 @@ export class LobbySheet {
     this.element.close()
   }
 
-  close(): void {
+  /** `returnFocus` false: something else is taking over (the settings card) and owns focus. */
+  close(returnFocus = true): void {
     if (!this.shown) return
     this.shown = false
-    const opener = this.opener; this.opener = undefined
+    const opener = returnFocus ? this.opener : undefined; this.opener = undefined
     const done = () => {
       if (this.shown) return
       this.element.close()
       this.options.closed?.()
       // Back to whatever opened it; if that cannot take focus now (a banner that stepped
       // aside), to the sheet's own icon.
+      if (!returnFocus) return
       opener?.focus({ preventScroll: true })
       if (document.activeElement !== opener) this.options.home?.()?.focus({ preventScroll: true })
     }
+    // Taken over (the settings card opening): gone at once, so the dialog's own return of focus
+    // happens now, before the card takes focus, and not at the end of a fade.
+    if (!returnFocus) { done(); return }
     // The contents go first; then (closed, in Shell) the worlds come back and the name settles.
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches
     this.fading = this.panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration: still ? 120 : 150, easing: 'ease-in' })
