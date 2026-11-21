@@ -1,16 +1,18 @@
 // Run against a local release build before claiming an automatic quality step is free.
-// node tools/quality-drop-check.mjs ORIGIN webgpu|webgl 2|3|4|5 OUTPUT.json [desktop|phone] [stock|unshed|empty] [solo|peer|arrival|manual]
+// node tools/quality-drop-check.mjs ORIGIN webgpu|webgl 2|3|4|5 OUTPUT.json [desktop|phone] [stock|unshed|empty] [solo|peer|arrival|manual] [waterfall|volcanic]
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium } from 'playwright-core'
 
-const [origin, backend, entry, output, viewport = 'desktop', fleet = 'stock', multiplayer = 'solo'] = process.argv.slice(2)
+const [origin, backend, entry, output, viewport = 'desktop', fleet = 'stock', multiplayer = 'solo', world] = process.argv.slice(2)
 assert(['stock','unshed','empty'].includes(fleet) && ['solo','peer','arrival','manual'].includes(multiplayer))
 const url = new URL(origin), entryLevel = Number(entry)
 assert(['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
 assert(['webgpu','webgl'].includes(backend) && [2,3,4,5].includes(entryLevel) && output && ['desktop','phone'].includes(viewport))
-url.searchParams.set('seed','1')
+assert(!world || ['waterfall','volcanic'].includes(world))
+if (world) url.searchParams.set('planet', world === 'waterfall' ? 'alpine' : 'volcanic')
+url.searchParams.set('seed', world === 'waterfall' ? '4' : '1')
 url.searchParams.set('room','quality-check-'+randomUUID().slice(0,8))
 if (backend === 'webgl') url.searchParams.set('webgl','1')
 const browser = await chromium.launch({channel:'chrome', headless:false})
@@ -81,6 +83,14 @@ try {
     await page.bringToFront()
     await page.waitForFunction(id => window.syn3hNet?.remotes.get(id)?.vehicle,peerId)
   }
+  if (world === 'waterfall') await page.evaluate(() => {
+    const { game, camera, player } = window.syn3h
+    const origins = game.scene.getObjectByName('waterfall-mist')?.geometry.getAttribute('mistOrigin')
+    if (!origins?.count) throw Error('Waterfall fixture has no plunge pool')
+    const foot = game.camera.position.clone().fromBufferAttribute(origins,0)
+    player.teleport(foot.clone().addScalar(3),0)
+    camera.setCinematicPose(foot.clone().add({x:8,y:5,z:12}),foot)
+  })
   const result = await page.evaluate(async ({peerId, multiplayer, fleet}) => {
     const {game} = window.syn3h, q = game.quality, governor = q.governor, b = game.renderer.backend
     governor.sample = window.sampleBeforeRoster
@@ -171,7 +181,51 @@ try {
       return {entered,initialRoster,finalRoster:roster(),minimalDraws:[...minimalDraws],peerKind:peerVehicle?.kind,peerDrawLevels:[...peerDrawLevels],backend:game.backend,final:governor.level,calls,changes}
     } finally { governor.sample=sample; unsubscribe(); b.createNodeBuilder=make; b.createRenderPipeline=pipeline; b.draw=draw }
   },{peerId, multiplayer, fleet})
+  if (world) {
+    result.effectReturn = await page.evaluate(async ({world,entryLevel}) => {
+      const {game} = window.syn3h, backend = game.renderer.backend
+      const effect = world === 'waterfall' ? 'waterfall-mist' : 'lava-flames'
+      const sweep = game.quality.beginDiagnosticSweep(), steps = []
+      const draw = backend.draw, build = backend.createNodeBuilder, pipeline = backend.createRenderPipeline
+      let row
+      backend.draw = function(source,...args) {
+        if (source.object?.name === effect) row.draws++
+        return draw.call(this,source,...args)
+      }
+      backend.createNodeBuilder = function(...args) {
+        const builder = build.apply(this,args), original = builder.build
+        builder.build = function(...args) {
+          row.graphs.push(this.object?.name || this.material?.type)
+          return original.apply(this,args)
+        }
+        return builder
+      }
+      backend.createRenderPipeline = function(source,...args) {
+        row.pipelines.push(source.object?.name || source.material?.type)
+        return pipeline.call(this,source,...args)
+      }
+      try {
+        for (let level=1; level<=entryLevel; level++) {
+          row = { level, effect, draws:0, graphs:[], pipelines:[] }
+          sweep.step(level)
+          for (let i=0;i<42;i++) await new Promise(requestAnimationFrame)
+          steps.push(row)
+        }
+      } finally {
+        backend.draw = draw
+        backend.createNodeBuilder = build
+        backend.createRenderPipeline = pipeline
+        sweep.restore()
+      }
+      return steps
+    },{world,entryLevel})
+  }
   await writeFile(output,JSON.stringify({...result,viewport,fleet,multiplayer,errors},null,2))
+  for (const row of result.effectReturn ?? []) {
+    assert(row.draws > 0, row.effect+' must draw on the forced return to '+row.level)
+    assert(!row.graphs.includes(row.effect) && !row.pipelines.includes(row.effect),
+      row.effect+' built on the forced return to '+row.level)
+  }
   assert.deepEqual(errors,[])
   assert.equal(result.backend,backend)
   assert.equal(result.entered,entryLevel)

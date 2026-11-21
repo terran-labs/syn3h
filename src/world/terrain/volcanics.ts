@@ -351,6 +351,7 @@ export class Volcanics implements System {
       this.place()
       return
     }
+    this.mist.clear()
     const still = (hot ? this.lavaStill : this.waterStill).material
     // Lava lakes and pools use the same rings as water, so they can carry a slow swell too.
     if (lava.lake) add(buildStillSurface(ground, lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius, stillSpacing * 1.5), still, true, stillSpacing * 1.5)
@@ -506,12 +507,11 @@ export class Volcanics implements System {
     }
     this.meshes.length = 0
     this.emitters.clear()
-    this.mist.clear()
   }
 
   dispose(): void {
     this.clear()
-    this.emitters.dispose()
+    this.mist.clear()
     this.fallMaterial.dispose()
     this.bed?.texture.dispose()
     this.emitters.dispose()

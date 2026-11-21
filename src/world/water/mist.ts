@@ -31,6 +31,7 @@ const LIFETIME = 5
 
 export class WaterfallMist {
   private mesh: THREE.Mesh | null = null
+  private falls: readonly Fall[] = []
   private readonly clock = uniform(0)
   private readonly wind = uniform(new THREE.Vector2())
   private readonly camera = uniform(new THREE.Vector2())
@@ -40,8 +41,15 @@ export class WaterfallMist {
 
   /** Replace the falls. `tileSize` is the world's wrap width. */
   set(falls: readonly Fall[], tileSize: number): void {
-    this.clear()
     this.tile.value = tileSize
+    // A quality change retessellates the river but usually leaves its plunge pools
+    // exactly where they were. Keep their submitted mesh and material on that path.
+    if (falls.length === this.falls.length && falls.every((fall, i) => {
+      const old = this.falls[i]
+      return fall.x === old.x && fall.y === old.y && fall.z === old.z && fall.height === old.height
+    })) return
+    this.clear()
+    this.falls = falls.map(fall => ({ ...fall }))
     const origins: number[] = []
     const settings: number[] = []
     const seeds: number[] = []
@@ -105,6 +113,7 @@ export class WaterfallMist {
   }
 
   clear(): void {
+    this.falls = []
     if (!this.mesh) return
     this.parent.remove(this.mesh)
     this.mesh.geometry.dispose()
