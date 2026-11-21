@@ -88,9 +88,9 @@ html .syn3h-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-c
   html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card[data-section="you"].is-open > .wi-head { grid-template-columns: auto minmax(0, 1fr) auto 32px; }
   html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head .wi-chev { display: none; }
   html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head .wi-x {
-    display: inline-flex; box-sizing: border-box; width: 32px; height: 32px; min-height: 0; padding: 0; justify-self: end; align-self: center;
+    display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 32px; height: 32px; min-height: 0; padding: 0; justify-self: end; align-self: center;
   }
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector .wi-x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector .wi-x svg { display: block; flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 }
 
 /* Phones on their side: the limit is height, not width. The stack is a right-hand column
