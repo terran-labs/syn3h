@@ -25,6 +25,9 @@ try {
     await page.goto(`${base}?autoplay=1&room=phone-panels-${name}-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
+    // ?autoplay enters play through the drop, which takes longer than the first ticks.
+    await page.waitForFunction(() => document.querySelector('.syn3h-shell')?.classList.contains('is-playing') && !document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 120000 })
+    await page.waitForTimeout(800)
     if (await page.locator('.world-inspector').isVisible()) await page.locator('.panels-close').tap()
     await page.locator('.world-inspector').waitFor({ state: 'hidden' })
     // Any resize of the canvas from here on is counted.
