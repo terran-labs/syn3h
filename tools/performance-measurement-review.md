@@ -59,13 +59,15 @@ The inspected runtime source has no scene.backgroundNode or scene.environmentNod
 
 ## Automatic quality drops
 
-For a quality change claim, record the world entry level, backend, active vehicle and each transition in order. Run the entire descent in one session from Medium, High, Ultra and Cinematic on each backend. Start the measurements after all four stock bots have materialised. Record the roster at each transition because the governor can shed bots. The optional empty-room control measures the same route with no bots. The check feeds slow samples to the governor at wall-clock pace and records actual node builds and pipeline requests. It fails on a missed level, a browser error or any build during a drop.
+For a quality change claim, record the world entry level, backend, active vehicle and each transition in order. Run the entire descent in one session from Medium, High, Ultra and Cinematic on each backend. Start the measurements after all four stock bots have materialised. Record the roster at each transition because the governor can shed bots. Repeat the Low to Minimal boundary with the world’s keep-bot-count setting on. Check both a governor drop and a manual choice on desktop and phone-sized viewports. The unshed replay requires all four original actors to remain and submit draws at Minimal. The optional empty-room control measures the same route with no bots. The check feeds slow samples to the governor at wall-clock pace and records actual node builds and pipeline requests. It fails on a missed level, a browser error or any build during a drop.
 
 Use a locally served production build with its room server. Run each cell through the shared heavy queue.
 
 ```sh
 tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgpu 3 high-webgpu.json
 tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgl 3 high-webgl.json
+tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgpu 3 high-unshed.json desktop unshed
+tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgpu 3 high-manual.json desktop unshed manual
 tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgpu 4 ultra-webgpu.json
 tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgl 4 ultra-webgl.json
 tools/heavy.sh node tools/quality-drop-check.mjs "$origin" webgpu 5 cinematic-webgpu.json
