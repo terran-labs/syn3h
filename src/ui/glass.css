@@ -216,3 +216,6 @@ html[data-glass-material] .syn3h-shell.exploration-ui > .world-inspector:not(.lo
 }
 html[data-glass-material] .world-inspector .wi-card .liquid-glass::before,
 html[data-glass-material] .world-inspector .wi-card .liquid-glass::after { content: none; }
+html[data-glass-material] .world-inspector.is-searching .wi-card.is-open > :is(.wi-body, .wi-foot) {
+  clip-path: inset(var(--glass-title-overlap, 0px) 0 0);
+}
