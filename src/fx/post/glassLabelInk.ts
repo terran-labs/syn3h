@@ -34,7 +34,7 @@ export class GlassLabelInk {
       })
       // Black and white give equal WCAG contrast at this luminance.
       const ink = luma(face) >= Math.sqrt(.0525) - .05 ? 'black' : 'white'
-      if (label.element.dataset.glassLabel !== ink) label.element.dataset.glassLabel = ink
+      controls.setLabelInk(label.element, ink)
     }).catch(() => { this.next = performance.now() + 1000 }).finally(() => { this.pending = false })
   }
 }
