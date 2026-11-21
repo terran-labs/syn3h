@@ -246,7 +246,10 @@ export class GlassButton {
       const i = this.drawn.size
       const ink = this.pendingGearInk.get(b) ?? b.dataset.glassLabel ?? (this.darkGlass ? 'white' : 'black')
       const gearInk = drum ? (ink === 'black' ? 1 : -1) : 0
-      ;(this.presentation.array[i] as Vector4).set(alpha, Number(isCard), gearInk, Number(!isCard && b.dataset.action !== 'brakes' && pressed))
+      // A collapsed row is a button-sized lens. Blend toward the measured
+      // large-panel transfer as its painted outline opens.
+      const panelWeight = isCard ? Math.max(0, Math.min(1, (rect.height - 52) / 64)) : 0
+      ;(this.presentation.array[i] as Vector4).set(alpha, panelWeight, gearInk, Number(!isCard && b.dataset.action !== 'brakes' && pressed))
       ;(this.clips.array[i] as Vector4).set(clip.left - c.left, clip.top - c.top, clip.right - c.left, clip.bottom - c.top)
       const half = Math.min(rect.width, rect.height) / 2
       const radius = (s: string) => Math.min(half, s.endsWith('%') ? parseFloat(s) * half / 50 : parseFloat(s) * sx)
