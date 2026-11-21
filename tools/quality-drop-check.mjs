@@ -1,12 +1,12 @@
 // Run against a local release build before claiming an automatic quality step is free.
-// node tools/quality-drop-check.mjs ORIGIN webgpu|webgl 2|3|4|5 OUTPUT.json [desktop|phone] [stock|empty]
+// node tools/quality-drop-check.mjs ORIGIN webgpu|webgl 2|3|4|5 OUTPUT.json [desktop|phone] [stock|empty] [solo|peer]
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium } from 'playwright-core'
 
-const [origin, backend, entry, output, viewport = 'desktop', fleet = 'stock'] = process.argv.slice(2)
-assert(['stock','empty'].includes(fleet))
+const [origin, backend, entry, output, viewport = 'desktop', fleet = 'stock', multiplayer = 'solo'] = process.argv.slice(2)
+assert(['stock','empty'].includes(fleet) && ['solo','peer'].includes(multiplayer))
 const url = new URL(origin), entryLevel = Number(entry)
 assert(['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
 assert(['webgpu','webgl'].includes(backend) && [2,3,4,5].includes(entryLevel) && output && ['desktop','phone'].includes(viewport))
@@ -31,6 +31,28 @@ try {
   },{level:entryLevel,fleet})
   await page.waitForFunction(() => window.syn3hNet?.isHost && window.syn3h.shell.playing &&
     !window.syn3h.shell.transitioning, null, {timeout:90000})
+  let peerId = null
+  if (multiplayer === 'peer') {
+    const peer = await browser.newPage({viewport:{width:640,height:480}})
+    const peerUrl = new URL(url)
+    peerUrl.searchParams.set('vehicle','jet')
+    await peer.goto(peerUrl.href)
+    await peer.waitForFunction(() => window.syn3h?.shell)
+    await peer.evaluate(() => window.syn3h.shell.play(true))
+    await peer.waitForFunction(() => window.syn3hNet?.id && window.syn3h.shell.playing && !window.syn3h.shell.transitioning)
+    peerId = await peer.evaluate(() => window.syn3hNet.id)
+    const at = await page.evaluate(() => {
+      const {game,player,terrain} = window.syn3h
+      const point = game.camera.getWorldDirection(player.object.position.clone()).multiplyScalar(12).add(game.camera.position)
+      return [point.x, terrain.heightAt(point.x,point.z)+2, point.z]
+    })
+    await peer.evaluate(at => {
+      const {player} = window.syn3h
+      player.teleport(player.object.position.clone().fromArray(at),0)
+    },at)
+    await page.bringToFront()
+    await page.waitForFunction(id => window.syn3hNet?.remotes.get(id)?.vehicle,peerId)
+  }
   if (fleet === 'stock') {
     await page.waitForFunction(() => {
       const {bots,materialize} = window.syn3h
@@ -39,10 +61,17 @@ try {
         && vehicles.every(v => !materialize.isMaterializing(v))
     }, null, {timeout:120000})
   }
-  const result = await page.evaluate(async () => {
+  const result = await page.evaluate(async peerId => {
     const {game} = window.syn3h, q = game.quality, governor = q.governor, b = game.renderer.backend
     const roster = () => window.syn3h.bots.vehicles.map(v => ({kind:v.kind,id:v.object.id}))
     const initialRoster = roster()
+    const peerDrawLevels = new Set()
+    const draw = b.draw
+    if (peerId !== null) b.draw = function(source,...args) {
+      const result = draw.call(this,source,...args)
+      if (window.syn3hNet.remotes.get(peerId)?.vehicle.object.getObjectById(source.object.id)) peerDrawLevels.add(governor.level)
+      return result
+    }
     const entered = governor.level, start = performance.now(), calls = [], changes = []
     function record(kind, source) {
       const actor = window.syn3h.bots.vehicles.find(vehicle => vehicle.object.getObjectById(source.object?.id))
@@ -72,15 +101,16 @@ try {
     try {
       while (governor.level && performance.now()-start < 150000) await new Promise(resolve=>setTimeout(resolve,100))
       await new Promise(resolve=>setTimeout(resolve,1500))
-      return {entered,initialRoster,backend:game.backend,final:governor.level,calls,changes}
-    } finally { governor.sample=sample; unsubscribe(); b.createNodeBuilder=make; b.createRenderPipeline=pipeline }
-  })
-  await writeFile(output,JSON.stringify({...result,viewport,fleet,errors},null,2))
+      return {entered,initialRoster,peerDrawLevels:[...peerDrawLevels],backend:game.backend,final:governor.level,calls,changes}
+    } finally { governor.sample=sample; unsubscribe(); b.createNodeBuilder=make; b.createRenderPipeline=pipeline; b.draw=draw }
+  },peerId)
+  await writeFile(output,JSON.stringify({...result,viewport,fleet,multiplayer,errors},null,2))
   assert.deepEqual(errors,[])
   assert.equal(result.backend,backend)
   assert.equal(result.entered,entryLevel)
   assert.equal(result.final,0)
   for(let level=entryLevel-1;level>=0;level--){
+    if (peerId !== null) assert(result.peerDrawLevels.includes(level), 'No remote human draw at level '+level)
     const calls=result.calls.filter(call=>call.level===level)
     console.log({entryLevel,backend,level,graphs:calls.filter(c=>c.kind==='graph').length,pipelines:calls.filter(c=>c.kind==='pipeline').length})
     if(calls.length)process.exitCode=1
