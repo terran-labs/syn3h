@@ -162,7 +162,18 @@ export class TouchControls {
     // Reused for every event: the move handler allocates nothing but the transform strings.
     const origin: StickPoint = { x: 0, y: 0 }, down: StickPoint = { x: 0, y: 0 }, vector: StickPoint = { x: 0, y: 0 }
     let pending: number | null = null, pointer: number | null = null, radius = 0, half = 0
-    const place = () => { base.style.transform = `translate3d(${origin.x - half}px,${origin.y - half}px,0)` }
+    const place = () => {
+      base.style.transform = `translate3d(${origin.x - half}px,${origin.y - half}px,0)`
+      // A driving notice's face may be drawn by the glass shader into the canvas, under every
+      // element, so no stacking order keeps the ring off it: the ring and knob are cut where a
+      // shown notice is instead (an even-odd hole). Once per drag: the base stays put.
+      const notice = document.querySelector<HTMLElement>('.syn3h-shell > .drive-notices > :not([hidden])')
+      const r = notice?.getBoundingClientRect()
+      const l = r ? r.left - (origin.x - half) : 0, t = r ? r.top - (origin.y - half) : 0, w = half * 2
+      base.style.clipPath = r && r.width && l < w && t < w && l + r.width > 0 && t + r.height > 0
+        ? `polygon(evenodd, 0 0, ${w}px 0, ${w}px ${w}px, 0 ${w}px, 0 0, ${l}px ${t}px, ${l + r.width}px ${t}px, ${l + r.width}px ${t + r.height}px, ${l}px ${t + r.height}px, ${l}px ${t}px)`
+        : ''
+    }
     const release = () => {
       if (pointer !== null && base.hasPointerCapture?.(pointer)) try { base.releasePointerCapture(pointer) } catch { /* Already gone. */ }
       pending = null; pointer = null; input.external.x = 0; input.external.y = 0; base.classList.remove('is-active')
@@ -207,14 +218,21 @@ export class TouchControls {
       const r = el.getBoundingClientRect()
       return r.width > 0 && event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom
     }
-    return touchRole({
+    // A driving notice (the slow-frames offer, race status) shows exactly while someone drives,
+    // where the steering thumb rests. Its body lets touches through (touch-stick.css); a touch
+    // that lands on one of its buttons may still become the stick if it drags, which captures
+    // the pointer so the button is never pressed. A tap that does not drag presses it as before.
+    // On the aiming side such a button stays a plain button.
+    const onNotice = target instanceof Element && !!target.closest('.drive-notices button')
+    const role = touchRole({
       x: event.clientX, width: innerWidth, leftHanded: touchLeftHanded.value,
-      onGameView: target === document.body || target === document.documentElement || (target instanceof HTMLCanvasElement && !target.closest('.syn3h-shell, .touch-controls')),
+      onGameView: onNotice || target === document.body || target === document.documentElement || (target instanceof HTMLCanvasElement && !target.closest('.syn3h-shell, .touch-controls')),
       // The minimap lets touches through to the canvas, and the gaps between action buttons are
       // canvas too, so both are tested by position.
       onMinimap: inside(document.querySelector('.shell-minimap')),
       onActions: inside(this.element.querySelector('.touch-actions')),
     })
+    return onNotice && role !== 'drive' ? null : role
   }
 
   /**

@@ -263,3 +263,17 @@ html:has(> body .syn3h-shell.exploration-ui.has-touch.is-playing:not(.is-panels)
 @media (prefers-reduced-motion: reduce) {
   .touch-controls .touch-actions button.is-cued { animation: none; outline: 0; --glass-rim: 1; --glass-sheen: 1; background-color: var(--glass-body-on, rgb(255 255 255 / .18)); filter: drop-shadow(0 0 9px rgb(255 255 255 / .55)) drop-shadow(0 0 2px rgb(0 0 0 / .35)); }
 }
+
+/* Driving notices (the slow-frames offer, race status: .drive-notices, glass.css) on touch. They
+   show exactly while someone drives, and on a phone they sit where the steering thumb works.
+   - Their body never takes a steering drag: it lets touches through to the game view, and only
+     their buttons take taps (TouchControls.role also lets a drag that starts on a button steer).
+   - They draw above the stick: its ring passes under a notice, never through it, and the
+     first-run stick hint steps aside while one shows.
+   Every rule starts with `html` to outrank glass.css, which places them and loads later.
+   Buttons take no browser panning (touch-action), so a thumb that lands on one and drags is
+   not cancelled by the browser before the stick can take it. */
+html .syn3h-shell.exploration-ui.has-touch > .drive-notices { z-index: 21; }
+html .syn3h-shell.exploration-ui.has-touch > .drive-notices > * { pointer-events: none; }
+html .syn3h-shell.exploration-ui.has-touch > .drive-notices > * :is(button, a, input, select, [role="button"]) { pointer-events: auto; touch-action: none; }
+body:has(.syn3h-shell.has-touch > .drive-notices > :not([hidden])) .touch-controls .touch-stick-hint { opacity: 0; visibility: hidden; }
