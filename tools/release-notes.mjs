@@ -12,15 +12,18 @@
 // to run without --yes-publish, and --dry-run prints every command it would run instead.
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { compareVersions, isVersion, kindLine, matchReleases, nextVersion, parseHistory, parseVersion, releasesFromTsv } from './lib/release-version.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const NOTES_DIR = join(REPO, 'release-notes', 'releases')
-const HISTORY = join(REPO, 'release-notes', 'history.tsv')
+// SYN3H_RELEASE_NOTES_DIR: another release-notes folder (releases/, player/, history.tsv), for tests.
+const NOTES_ROOT = process.env.SYN3H_RELEASE_NOTES_DIR || join(REPO, 'release-notes')
+const NOTES_DIR = join(NOTES_ROOT, 'releases')
+const PLAYER_DIR = join(NOTES_ROOT, 'player')
+const HISTORY = join(NOTES_ROOT, 'history.tsv')
 const GITHUB_REPO = process.env.SYN3H_GITHUB_REPO || 'terran-labs/syn3h'
 const PLAY_URL = 'https://www.syn3h.com/'
 /** The address that serves one frozen release for good (tools/frozen-versions.mjs). */
@@ -161,6 +164,75 @@ export function referencedAssets(body, tag, repo = GITHUB_REPO) {
     if (match[1].startsWith(prefix)) names.add(match[1].slice(prefix.length))
   }
   return [...names]
+}
+
+/**
+ * Where a version can stand in a notes file and must be the release's own: the heading, the
+ * frozen link (`?v=`) and GitHub release links (`/releases/tag/` and `/releases/download/`).
+ * Prose may name other versions ("before v26.11.2118"); links and the heading may not.
+ */
+const LINKED_VERSION = [/[?&]v=v?(\d+\.\d+\.\d+)/g, /\/releases\/(?:tag|download)\/v?(\d+\.\d+\.\d+)/g]
+export function linkedVersions(text) {
+  return LINKED_VERSION.flatMap((re) => [...text.matchAll(re)].map((m) => m[1]))
+}
+
+/**
+ * What stops these notes from shipping as `version`: the heading, every version-bearing link
+ * and the player digest must all name it. `notes` or `digest` null: the file is missing. An
+ * empty list is a pass. On 22 November a file renamed from v26.11.2121 to v26.11.2200 kept the
+ * old heading and frozen link, and only the publish step, after the release, noticed.
+ */
+export function versionProblems(version, notes, digest) {
+  const tag = parseVersion(version).tag, bare = tag.slice(1), problems = []
+  if (notes === null) problems.push(`no release notes at release-notes/releases/${tag}.md`)
+  else {
+    const heading = notes.replace(/^\(AI Generated\)\r?\n\r?\n/, '').split('\n')[0]
+    if (heading !== `## Syn3h ${tag}`) problems.push(`the notes' heading is "${heading}", not "## Syn3h ${tag}"`)
+    for (const v of linkedVersions(notes)) if (v !== bare) problems.push(`the notes link version ${v}, not ${bare}`)
+  }
+  if (digest === null) problems.push(`no player digest at release-notes/player/${tag}.md`)
+  else for (const v of linkedVersions(digest)) if (v !== bare) problems.push(`the player digest links version ${v}, not ${bare}`)
+  return problems
+}
+
+/**
+ * A train's notes: files for versions not yet used (not in history.tsv or a tag) and newer than
+ * every version that is, so an old file that never shipped is not taken for one.
+ */
+export function unshippedNotes(known, dir = NOTES_DIR) {
+  const used = new Set(known), newest = [...known].sort(compareVersions).at(-1)
+  return existsSync(dir) ? readdirSync(dir).map((f) => f.replace(/\.md$/, '')).filter((v) => isVersion(v))
+    .map((v) => parseVersion(v).tag).filter((v) => !used.has(v) && (!newest || compareVersions(v, newest) > 0)).sort(compareVersions) : []
+}
+
+/**
+ * Move a train's notes to another version: both files renamed, and the heading and every
+ * version-bearing link rewritten. For a train prepared before midnight Pacific that ships with
+ * the next day's number. Refuses a version already used, or a target that exists. Returns the
+ * lines still naming the old version (in prose), for the caller to read.
+ */
+export function renameNotes(from, to, { known = [], releases = NOTES_DIR, player = PLAYER_DIR } = {}) {
+  const a = parseVersion(from).tag, b = parseVersion(to).tag
+  if (a === b) throw new Error(`${a} is already the version`)
+  if (known.includes(a)) throw new Error(`${a} is a version already used (history.tsv or a tag); notes for it are not a train's to rename`)
+  if (known.includes(b)) throw new Error(`${b} is a version already used; pick the version release.sh will ship (node tools/release-notes.mjs next)`)
+  const moves = [[join(releases, `${a}.md`), join(releases, `${b}.md`)], [join(player, `${a}.md`), join(player, `${b}.md`)]]
+  for (const [src, dst] of moves) {
+    if (!existsSync(src)) throw new Error(`${src} does not exist`)
+    if (existsSync(dst)) throw new Error(`${dst} already exists`)
+  }
+  const swap = (text) => text
+    .replace(new RegExp(`^## Syn3h ${a.replace(/\./g, '\\.')}$`, 'm'), `## Syn3h ${b}`)
+    .replace(/([?&]v=v?)(\d+\.\d+\.\d+)/g, (m, pre, v) => (v === a.slice(1) ? pre + b.slice(1) : m))
+    .replace(/(\/releases\/(?:tag|download)\/v?)(\d+\.\d+\.\d+)/g, (m, pre, v) => (v === a.slice(1) ? pre + b.slice(1) : m))
+  const leftover = []
+  for (const [src, dst] of moves) {
+    const text = swap(readFileSync(src, 'utf8'))
+    writeFileSync(src, text)
+    renameSync(src, dst)
+    text.split('\n').forEach((line, i) => { if (line.includes(a.slice(1))) leftover.push(`${dst}:${i + 1}: ${line.trim()}`) })
+  }
+  return leftover
 }
 
 function notesPath(tag) {
@@ -327,6 +399,28 @@ async function main(argv) {
       console.log(nextVersion(when ? new Date(when) : new Date(), knownVersions()))
       return 0
     }
+    case 'check': {
+      // release.sh, before anything is built: do these notes name the version it will ship?
+      const tag = parseVersion(positional[0] ?? '').tag
+      const read = (path) => (existsSync(path) ? readFileSync(path, 'utf8') : null)
+      const problems = versionProblems(tag, read(notesPath(tag)), read(join(PLAYER_DIR, `${tag}.md`)))
+      if (!problems.length) { console.log(`Notes and player digest name ${tag}`); return 0 }
+      for (const p of problems) console.error(`  ${p}`)
+      const other = unshippedNotes(knownVersions()).filter((v) => v !== tag)
+      if (other.length === 1 && !existsSync(notesPath(tag))) {
+        console.error(`The notes were written for ${other[0]}, but this release ships as ${tag} (versions are named by the Pacific date). Fix: node tools/release-notes.mjs rename ${other[0]} ${tag}, then commit.`)
+      } else if (!existsSync(notesPath(tag))) console.error(`Write and commit release-notes/releases/${tag}.md and release-notes/player/${tag}.md (this release ships as ${tag}).`)
+      else console.error(`Fix the notes so the heading, every ?v= and release link, and the player digest name ${tag}, then commit.`)
+      return 1
+    }
+    case 'rename': {
+      const [from, to] = positional
+      if (!from || !to) throw new Error('usage: rename <from-version> <to-version>')
+      const leftover = renameNotes(from, to, { known: knownVersions() })
+      console.log(`Renamed the notes and player digest from ${parseVersion(from).tag} to ${parseVersion(to).tag}; heading and links rewritten. Review and commit.`)
+      for (const line of leftover) console.log(`  still names the old version (prose, left as written): ${line}`)
+      return 0
+    }
     case 'versions': {
       const releases = recordedReleases()
       const pairs = releases ? matchReleases(history(), releases) : { pairs: [], problems: [] }
@@ -363,7 +457,7 @@ async function main(argv) {
       })
     }
     default:
-      console.error('usage: node tools/release-notes.mjs <next | versions | draft | render | publish> ...')
+      console.error('usage: node tools/release-notes.mjs <next | check | rename | versions | draft | render | publish> ...')
       return 2
   }
 }

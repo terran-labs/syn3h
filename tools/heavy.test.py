@@ -161,6 +161,7 @@ runpy.run_path({script!r}, run_name='__main__')
 
 
 SHIP = Path(__file__).with_name('ship.sh').resolve()
+NOTES_TOOL = Path(__file__).with_name('release-notes.mjs').resolve()
 RELEASE = Path(__file__).with_name('release.sh').resolve()
 
 
@@ -204,13 +205,26 @@ class PhaseTests(unittest.TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual((self.slots / 'hold').read_text().split(), [out.stdout.strip(), 'running'])
 
+    def notes(self, version=None):
+        # Release notes for the version ship.sh will compute, in a folder of their own
+        # (SYN3H_RELEASE_NOTES_DIR), so the check it runs first passes; or for `version`.
+        root = self.root / 'notes'
+        (root / 'releases').mkdir(parents=True, exist_ok=True); (root / 'player').mkdir(exist_ok=True)
+        (root / 'history.tsv').write_text('')
+        env = {**self.env, 'SYN3H_RELEASE_NOTES_DIR': str(root)}
+        version = version or subprocess.run(['node', str(NOTES_TOOL), 'next'], env=env, capture_output=True, text=True, check=True).stdout.strip()
+        (root / 'releases' / f'{version}.md').write_text(f'## Syn3h {version}\n\nDeck.\n\nhttps://www.syn3h.com/?v={version[1:]}\n')
+        (root / 'player' / f'{version}.md').write_text('Deck\n')
+        return root
+
     def ship(self, load_file, release, extra=None):
+        notes = self.notes() if not (extra or {}).get('SYN3H_RELEASE_NOTES_DIR') else None
         bin_dir = self.root / 'bin'; bin_dir.mkdir(exist_ok=True)
         (bin_dir / 'sysctl').write_text(f'#!/bin/sh\necho "{{ $(cat {load_file}) 1.00 1.00 }}"\n'); (bin_dir / 'sysctl').chmod(0o755)
         env = {**self.env, 'PATH': f'{bin_dir}:{os.environ["PATH"]}', 'SYN3H_SHIP_GAP_S': '0', 'SYN3H_SHIP_DRY': '0',
                'SYN3H_GATE_LOAD': '12', 'SYN3H_GATE_HOLD_S': '1', 'SYN3H_GATE_POLL_S': '1', 'SYN3H_GATE_TIMEOUT_S': '60',
                'SYN3H_SHIP_RELEASE': str(release), 'SYN3H_SHIP_OUT': str(self.root), 'SYN3H_SHIP_STABLE': str(self.root / 'stable'),
-               **(extra or {})}
+               **({'SYN3H_RELEASE_NOTES_DIR': str(notes)} if notes else {}), **(extra or {})}
         return subprocess.Popen(['sh', str(SHIP), '7', 'test release'], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
     def fake_release(self, secs):
@@ -247,6 +261,18 @@ class PhaseTests(unittest.TestCase):
         self.assertIn('gate timeout', (self.root / 'syn3h-ship-7.done').read_text())
         self.assertFalse((self.root / 'release-ran').exists())
         self.assertFalse((self.slots / 'hold').exists(), 'its own hold is lifted')
+
+    def test_ship_stops_first_when_the_notes_are_for_another_version(self):
+        # A train prepared before midnight Pacific ships with the next day's number: notes for
+        # another version stop ship.sh before the gap, the dry run, the hold or the release.
+        load = self.root / 'load'; load.write_text('1.00')
+        notes = self.notes('v27.1.121')
+        ship = self.ship(load, self.fake_release(0), {'SYN3H_RELEASE_NOTES_DIR': str(notes), 'SYN3H_SHIP_GAP_S': '3600'})
+        out, _ = ship.communicate(timeout=30)
+        self.assertIn('Version: v', out)
+        self.assertIn('the release notes are not for', (self.root / 'syn3h-ship-7.done').read_text())
+        self.assertFalse((self.root / 'release-ran').exists())
+        self.assertFalse((self.slots / 'hold').exists(), 'nothing was held')
 
 
 if __name__ == '__main__':
