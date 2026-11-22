@@ -586,7 +586,11 @@ export class Game {
       progress('Updating graphics settings')
       await frame(); await frame(); check() // systems adopt the new level in their own updates
       const batch = CoveredPipelines.forRenderer(this.renderer, this.scene)
-      const hold = this.climbHold ??= new THREE.RenderTarget(4, 4)
+      // The hold target carries the renderer's own MSAA sample count: with a render target set, three
+      // takes the sample count from it (Renderer.currentSamples), so a target without samples made
+      // the climb prepare 1-sample pipelines for levels that draw with 4 (Ultra, Cinematic).
+      if (this.climbHold && this.climbHold.samples !== this.renderer.samples) { this.climbHold.dispose(); this.climbHold = null }
+      const hold = this.climbHold ??= new THREE.RenderTarget(4, 4, { samples: this.renderer.samples })
       const run = (discover: boolean) => (draw: () => void) => runGuarded(this.renderer as unknown as GuardedRenderer, () => {
         const target = this.renderer.getRenderTarget()
         this.renderer.setRenderTarget(hold)
