@@ -6,7 +6,7 @@
 // facing it, freezes the impact effects' clocks, fires, and from the moment the shot lands steps
 // those clocks through the six ages, one still each, while the world goes on around them.
 //
-//   SYN3H_URL=http://127.0.0.1:<port>/ [SYN3H_VIEW=phone] tools/heavy.sh node tests/weapons/impact-strips.mjs <label> [out dir]
+//   SYN3H_URL=http://127.0.0.1:<port>/ [SYN3H_VIEW=phone] [SYN3H_HOUR=22] [SYN3H_FULL=1] [SYN3H_BOT_AHEAD=30] tools/heavy.sh node tests/weapons/impact-strips.mjs <label> [out dir]
 //   then: node tests/weapons/impact-strips.mjs --compose <out dir> <old label> <new label>   (one image per strip, old above new)
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
@@ -41,6 +41,10 @@ assert.ok(process.env.SYN3H_URL, 'SYN3H_URL is required')
 await mkdir(out, { recursive: true })
 const phone = process.env.SYN3H_VIEW === 'phone', size = phone ? 'phone' : 'desktop'
 const AGES = [0.02, 0.08, 0.15, 0.22, 0.3, 0.4]
+// SYN3H_HOUR=22 for night (default noon); SYN3H_FULL=1 for the whole screen instead of a crop.
+const HOUR = Number(process.env.SYN3H_HOUR ?? 12), FULL = !!process.env.SYN3H_FULL
+// SYN3H_BOT_AHEAD: metres from the car to the bot it shoots (default 12; the camera is 6 m further back).
+const AHEAD = Number(process.env.SYN3H_BOT_AHEAD ?? 12)
 // SYN3H_SURFACES=vehicle,grass for a few of them.
 const SURFACES = process.env.SYN3H_SURFACES ? process.env.SYN3H_SURFACES.split(',') : ['grass', 'sand', 'rock', 'water', 'vehicle']
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
@@ -50,6 +54,7 @@ try {
   // Offline: the room would set its own time of day (and other world settings) back over noon.
   await context.routeWebSocket(/\/ws(?:\?|$)/, socket => socket.close())
   const page = await context.newPage()
+  await page.addInitScript(([hour, ahead]) => { window.__hour = hour; window.__ahead = ahead }, [HOUR, AHEAD])
   const errors = []; page.on('pageerror', e => errors.push(e.message))
   // The same world in every build (a fixed planet and seed), so both stand in the same places.
   await page.goto(`${base}?planet=alpine&seed=7&autoplay=1&room=strips-${Date.now()}`)
@@ -63,7 +68,7 @@ try {
     p.set('bots.count', 1); p.set('bots.canDrive', false); p.set('bots.canFire', false)
     p.set('bigRed.cooldown', 0.3)
     // Noon, held, in every build; no interface in the frames.
-    p.set('sun.dayLength', 0); p.set('sun.timeOfDay', 12)
+    p.set('sun.dayLength', 0); p.set('sun.timeOfDay', window.__hour)
     for (const node of document.body.children) if (node.tagName !== 'CANVAS' && node.tagName !== 'SCRIPT') node.style.visibility = 'hidden'
     s.shell.closeMenu?.()
     // The impact effects of either build: frozen while a strip is taken, stepped by hand.
@@ -121,7 +126,7 @@ try {
     }, surface)
     if (!placed) { report.push(`${surface}: no ground of that kind found`); continue }
     // Noon again: the clock is held, but the room's own setting can come back between strips.
-    await page.evaluate(() => { window.syn3h.params.set('sun.dayLength', 0); window.syn3h.params.set('sun.timeOfDay', 12) })
+    await page.evaluate(() => { window.syn3h.params.set('sun.dayLength', 0); window.syn3h.params.set('sun.timeOfDay', window.__hour) })
     await page.waitForTimeout(5000)
     // The target: where a ray from the camera, right of centre and low on the screen, meets the
     // ground or the water. In view by construction, beside the car rather than behind it.
@@ -139,7 +144,7 @@ try {
         // The bot 12 m ahead of the car and 3 m right; the camera behind the car's left
         // shoulder, as a chase camera would sit, so the bot shows clear of the car on any screen.
         const f = o.clone().set(0, 0, -1).applyQuaternion(s.player.object.quaternion).setY(0).normalize(), right = o.clone().set(-f.z, 0, f.x)
-        p.copy(o).addScaledVector(f, 12).addScaledVector(right, 3)
+        p.copy(o).addScaledVector(f, window.__ahead).addScaledVector(right, 3)
         p.y = t.heightAt(p.x, p.z) + 1
         const eye = o.clone().addScaledVector(f, -6).addScaledVector(right, phone ? -1 : -2.5).setY(o.y + 2.6)
         const look = o.clone().lerp(p, 0.7)
@@ -171,7 +176,7 @@ try {
       for (const [i, age] of AGES.entries()) {
         await page.evaluate(dt => window.__step(dt), age - at); at = age
         await page.waitForTimeout(120)
-        await page.screenshot({ path: `${out}/${size}-${weapon}-${surface}-${label}-${i}.png`, clip })
+        await page.screenshot({ path: `${out}/${size}-${weapon}-${surface}-${label}-${i}.png`, ...(FULL ? {} : { clip }) })
       }
       await page.evaluate(() => { window.__step(1.5); window.__freeze(false) })
       report.push(`${surface} (${placed.found}) ${weapon}: ${landed ? 'landed' : 'no impact seen'}`)

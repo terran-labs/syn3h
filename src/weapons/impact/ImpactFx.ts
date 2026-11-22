@@ -43,6 +43,14 @@ const TONES: Record<'dust' | 'clods' | 'powder', Tone> = {
   powder: { shade: 1.35, sat: 0.15, frost: 0.85 },
 }
 const STEAM = new T.Color(0.85, 0.88, 0.9)
+/**
+ * The height in metres the camera's view spans at `distance`: a size of `share * viewHeight` draws
+ * `share` of the screen's height. For effects that must keep a size on screen however far off.
+ */
+export function viewHeight(camera: T.Camera, distance: number): number {
+  const fov = (camera as T.PerspectiveCamera).fov ?? 60
+  return 2 * distance * Math.tan(fov * Math.PI / 360)
+}
 const EMBER = new T.Color(3.2, 0.9, 0.12)
 
 export class ImpactFx {
@@ -60,6 +68,8 @@ export class ImpactFx {
   private readonly a = new T.Vector3()
   private readonly b = new T.Vector3()
   private readonly v = new T.Vector3()
+  private readonly right = new T.Vector3()
+  private readonly up = new T.Vector3()
   private readonly color = new T.Color()
   private readonly spec: SparkSpec = { life: 0.6, width: 0.05, drag: 2.5, gravity: 1, streak: 0.03, normal: { x: 0, y: 1, z: 0 }, bounce: 0 }
   readonly stats = { impacts: 0, sparks: 0, debris: 0, scorches: 0, last: '' as ImpactSurface | '' }
@@ -79,6 +89,9 @@ export class ImpactFx {
     if (this.sparks) this.sparks.resetCapacity(sparkCount)
     else {
       this.sparks = new SparkBatch(sparkCount, 'gear impact sparks')
+      // Never thinner than about two and a half pixels: at the default (about one and a half) a
+      // spark 20 m off was too faint to register from the chase camera.
+      this.sparks.minWidth.value = 0.0065
       this.game.scene.add(this.sparks.mesh)
     }
     if (this.flash) {
@@ -112,8 +125,13 @@ export class ImpactFx {
     const counts = impactCounts(recipe, impactSparks.value, this.level, thunder)
     // Seen from the chase camera, 15 to 25 m off, an impact at its true size is a speck: the
     // flash and the light grow with distance from the camera (from 12 m, up to 2.5 times).
-    const far = Math.min(2.5, Math.max(1, this.game.camera.position.distanceTo(at) / 12))
-    const scale = (thunder ? 1.8 : 1) * far
+    const distance = this.game.camera.position.distanceTo(at)
+    const far = Math.min(2.5, Math.max(1, distance / 12))
+    // A hit on a vehicle is the one a player most needs to see, and it is often 15 to 40 m off,
+    // where it was a few bright pixels by the roof. Its glint lasts longer and is brighter, and
+    // its flash and glint keep a size on screen: shares of `view`, the height in metres the
+    // screen spans at the hit (0 for a hit on the ground).
+    const scale = (thunder ? 1.8 : 1) * far, view = onVehicle ? viewHeight(this.game.camera, distance) : 0
     this.stats.impacts++; this.stats.last = surface
 
     // Flash: one or two hot cores, briefly very bright.
@@ -122,11 +140,12 @@ export class ImpactFx {
       // Lifted off the surface by a third of its size: through the ground, a camera-facing flash
       // was cut in half by it; lifted further, it floated free of the hit.
       const lifted = this.b.copy(at).addScaledVector(n, impactFlash.value * scale * 0.3)
-      this.flash.emit(lifted, this.v.set(0, 0, 0), thunder ? 0.12 : 0.09, impactFlash.value * scale, impactFlash.value * scale * 3, this.color)
+      this.flash.emit(lifted, this.v.set(0, 0, 0), thunder ? 0.12 : 0.09, Math.max(impactFlash.value * scale, view * 0.12), Math.max(impactFlash.value * scale, view * 0.12) * 3, this.color)
       if (thunder) this.flash.emit(lifted, this.v.set(0, 0, 0), 0.2, impactFlash.value * 2, impactFlash.value * 4, this.color.copy(color).multiplyScalar(0.9))
       // After the flash, a faint glow of plasma in the gear's colour that fades over about 0.3 s:
       // something for the eye to follow once the core has gone.
       this.flash.emit(lifted, this.v.set(0, 0.4, 0), thunder ? 0.4 : 0.32, impactFlash.value * scale * 1.1, impactFlash.value * scale * 1.2, this.color.copy(color).multiplyScalar(0.35))
+      this.glint(lifted, scale, thunder, color, view)
     }
 
     // Sparks: a cone around the normal, two waves (the second slower and a touch later in life).
@@ -164,6 +183,56 @@ export class ImpactFx {
       this.stats.scorches++
     }
     return surface
+  }
+
+  /**
+   * The muzzle flash where a shot leaves the vehicle, along unit `dir`: a hot core for a few
+   * frames and a short cone of streaks thrown forward. The vehicle's own glow (Lasers.addGlow)
+   * swells around it; this is the bright moment that says "that one fired". Same batches as an
+   * impact, so no material of its own.
+   */
+  muzzle(at: T.Vector3, dir: T.Vector3, color: T.Color, thunder: boolean): void {
+    const distance = this.game.camera.position.distanceTo(at)
+    const size = Math.max(thunder ? 1.4 : 0.9, viewHeight(this.game.camera, distance) * 0.04)
+    const lifted = this.b.copy(at).addScaledVector(dir, size * 0.3)
+    this.flash.emit(lifted, this.v.set(0, 0, 0), thunder ? 0.09 : 0.06, size, size * 1.6, this.color.copy(color).multiplyScalar(1.5).addScalar(2))
+    const s = this.spec
+    s.normal.x = 0; s.normal.y = 1; s.normal.z = 0; s.bounce = -1
+    s.drag = 9; s.gravity = 0; s.streak = 0.05
+    const side = this.right.copy(Math.abs(dir.y) < 0.9 ? T.Object3D.DEFAULT_UP : this.up.set(1, 0, 0)).cross(dir).normalize()
+    const up = this.up.crossVectors(dir, side)
+    const count = this.level <= 0 ? 3 : thunder ? 9 : 6
+    for (let i = 0; i < count; i++) {
+      const a = this.noise() * Math.PI * 2, spread = 0.12 + this.noise() * 0.22
+      const v = this.v.copy(dir).addScaledVector(side, Math.cos(a) * spread).addScaledVector(up, Math.sin(a) * spread).normalize()
+        .multiplyScalar((thunder ? 34 : 26) * (0.6 + this.noise() * 0.6) * Math.max(1, size / 0.9))
+      s.life = 0.1 + this.noise() * 0.08; s.width = (thunder ? 0.05 : 0.035) * Math.max(1, size / 0.9)
+      this.sparks.emit(lifted, v, s, this.color.copy(color))
+    }
+  }
+
+  /**
+   * A glint: four white-hot rays thrown out across the screen from the flash, gone in a fifth of
+   * a second. The flash alone is a round blob that sinks into a bright sky or your own headlight;
+   * a star of thin lines reads as "something hit there" at a glance. Drawn by the spark batch
+   * (no material of its own): rays with no gravity, heavy drag and a long streak.
+   */
+  private glint(at: T.Vector3, scale: number, thunder: boolean, color: T.Color, view = 0): void {
+    // On a vehicle (`view` > 0, the screen's height in metres there): half as long again, wider,
+    // and reaching at least a tenth of the screen's height out.
+    const vehicle = view > 0
+    const cam = this.game.camera, right = this.right.setFromMatrixColumn(cam.matrixWorld, 0), up = this.up.setFromMatrixColumn(cam.matrixWorld, 1)
+    const s = this.spec
+    s.normal.x = 0; s.normal.y = 1; s.normal.z = 0; s.bounce = -1
+    s.life = (thunder ? 0.22 : 0.16) * (vehicle ? 1.6 : 1); s.width = (thunder ? 0.07 : 0.05) * scale * (vehicle ? 1.5 : 1); s.drag = 12; s.gravity = 0; s.streak = 0.09
+    // A slight tilt off the screen's axes, different each time, so it never looks stamped.
+    // A ray travels about speed / drag before it stops.
+    const tilt = 0.35 + this.noise() * 0.3, speed = Math.max((thunder ? 20 : 15) * scale, view * 0.1 * 12)
+    for (let k = 0; k < 4; k++) {
+      const a = tilt + k * Math.PI / 2, long = k % 2 === 0 ? 1 : 0.7
+      const v = this.v.copy(right).multiplyScalar(Math.cos(a)).addScaledVector(up, Math.sin(a)).multiplyScalar(speed * long)
+      this.sparks.emit(at, v, s, this.color.copy(color).multiplyScalar(vehicle ? 1.6 : 1))
+    }
   }
 
   private throwDebris(kind: NonNullable<(typeof RECIPES)[ImpactSurface]['debris']>, count: number, at: T.Vector3, n: T.Vector3, tangent: T.Vector3, bitangent: T.Vector3, surface: ImpactSurface, terrain: ImpactTerrain | undefined, scale: number): void {

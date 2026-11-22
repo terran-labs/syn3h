@@ -38,6 +38,7 @@ import { warmGear } from '../warm'
 import { CORD_CLEARANCE, drapeCord, type CordSurface } from './drape'
 import { MAX_BOTS } from '../../../shared/protocol'
 import { hexToOklab } from '../../vehicles/tints'
+import { vehicleNightAmount } from '../../vehicles/skins/nightReadability'
 
 // TSL nodes are dynamically typed; the effect sprites use the same alias.
 type N = any // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -81,6 +82,8 @@ const TAUT_SCREEN = 0.03
 const TAUT_FILAMENT = 0.003
 /** Sheath and tint fade in over this many metres at each end, so the ribbon has no cut edge. */
 const END_FADE = 0.45
+/** By day, how much the cord darkens what is behind its centre (see cordMaterial). */
+const DAY_DARKEN = 0.85
 /** Deeper shade of the cord's own colour that tints what is behind it. */
 const TINT = 0.14
 
@@ -141,6 +144,8 @@ export class TetherLook {
   readonly cord: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicNodeMaterial>
   readonly sparks: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.MeshBasicNodeMaterial>
   private readonly clock: N = uniform(0)
+  /** 1 by day, 0 at night (vehicleNightAmount): how much of the daytime darkening the cord draws. */
+  private readonly day: N = uniform(1)
   /** Sheath brightness: 0 at level 0. */
   private readonly sheath: N = uniform(1)
   /** Core half width as a fraction of the ribbon's half width. */
@@ -239,8 +244,16 @@ export class TetherLook {
     const bead = along1.mul(along1).mul(wide.mul(wide)).mul(mix(0.35, 2.4, tension)).mul(ends)
     const hot: N = hotExposureNode()
     const light = col.xyz.mul(filament.mul(pulse.mul(0.8).add(0.9)).add(sheath).add(bead))
-    const tintA = soft.pow(2).mul(0.42).mul(ends).clamp(0, 1).mul(fade)
-    m.colorNode = light.mul(fade).add(col.xyz.mul(TINT).mul(tintA)).mul(hot)
+    // What the cord darkens behind it. At night, as it always was: a soft shade over the whole
+    // sheath, with a deeper shade of its own colour added back. By day that could not show: the
+    // post chain gives back about half of any darkening over a bright sky (tone mapping and
+    // bloom), and the added tint undid the rest, so a taut cord 30 m off was a faint pale line
+    // against the sky. By day it darkens far more, but only near its centre (a thin dark edge
+    // around the bright filament, not a dark rope), and adds no tint back.
+    const nightA = soft.pow(2).mul(0.42)
+    const dayA = soft.pow(4).mul(DAY_DARKEN)
+    const tintA = mix(nightA, dayA, this.day).mul(ends).clamp(0, 1).mul(fade)
+    m.colorNode = light.mul(fade).add(col.xyz.mul(TINT).mul(tintA).mul(float(1).sub(this.day))).mul(hot)
     m.opacityNode = tintA
     return m
   }
@@ -443,6 +456,7 @@ export class TetherLook {
     // Reduced motion: the slack shimmer holds still (the bead and pulse phase is held by the
     // caller, see reducedMotion).
     if (!reducedMotion()) this.clock.value = time
+    this.day.value = 1 - vehicleNightAmount(this.game.scene)
     camera.updateMatrixWorld()
     const e = camera.matrixWorld.elements
     this.camRight.set(e[0], e[1], e[2]).normalize()
