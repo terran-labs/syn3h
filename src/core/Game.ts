@@ -425,7 +425,7 @@ export class Game {
    * positive scale keeps the face winding). A mesh whose ancestor is hidden is left alone, so no
    * sibling is ever shown.
    */
-  private prepareClimbedLevel(parts: { systems: boolean; fleet: boolean }, wrap: (draw: () => void) => void): void {
+  private prepareClimbedLevel(parts: { systems: boolean; fleet: boolean; standIns?: THREE.Mesh[] }, wrap: (draw: () => void) => void): void {
     const start = longFrames.start()
     longFrames.event('Climbed level preparation')
     const camera = this.camera
@@ -457,7 +457,7 @@ export class Game {
       const standIns = new THREE.Group()
       standIns.position.copy(behind); standIns.scale.setScalar(1e-6)
       const submit = () => {
-        for (const proxy of climbShowroomStandIns(this.scene)) standIns.add(proxy)
+        for (const proxy of parts.standIns ?? climbShowroomStandIns(this.scene)) standIns.add(proxy)
         if (standIns.children.length) this.scene.add(standIns)
         try { wrap(() => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)) }
         finally { standIns.removeFromParent(); standIns.clear() }
@@ -534,8 +534,15 @@ export class Game {
         try { if (batch) batch.run(discover, draw); else draw() }
         finally { this.postChain?.setCovered?.(false); this.renderer.setRenderTarget(target) }
       })
+      // One part per frame: the systems' own level changes, the bots' other shading sets (built
+      // as stand-ins), then the draw that requests every pipeline.
       progress('Preparing visible surfaces')
-      slice(() => this.prepareClimbedLevel({ systems: true, fleet: false }, run(true)))
+      slice(() => { for (const system of this.systems) system.prepareClimb?.() })
+      await frame(); check()
+      let standIns: THREE.Mesh[] = []
+      slice(() => { standIns = climbShowroomStandIns(this.scene) })
+      await frame(); check()
+      slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns }, run(true)))
       await frame(); check()
       progress('Preparing vehicles')
       slice(() => this.prepareClimbedLevel({ systems: false, fleet: true }, run(true)))
