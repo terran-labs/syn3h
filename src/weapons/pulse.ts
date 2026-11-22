@@ -5,13 +5,16 @@
  * procedural material per pool, no image assets.
  */
 import * as THREE from 'three/webgpu'
-import { float, max, uv } from 'three/tsl'
+import { abs, attribute, float, max, uniform, uv, vec3 } from 'three/tsl'
+import { vehicleNightAmount } from '../vehicles/skins/nightReadability'
 import type { Game } from '../core/Game'
 import { hotExposureNode } from '../vehicles/skins/hotExposure'
 import { warmGear } from './warm'
 
 type N = any // TSL's arithmetic nodes are dynamically typed.
 const CAPACITY = 16
+/** The ring's dark edge: where it lies (the bright band ends at 0.94 of the quad), how wide, how dark. */
+const EDGE_AT = 0.965, EDGE_HALF = 0.035, EDGE_ALPHA = 0.85
 const UP = new THREE.Vector3(0, 0, 1)
 
 export interface PulseOptions {
@@ -31,6 +34,16 @@ export class ImpactPulses {
   private readonly transform = new THREE.Object3D()
   private readonly color = new THREE.Color()
   private readonly unwarm: () => void
+  /**
+   * Rings only: a thin dark band just outside each ring's bright one, by day, so a ring holds
+   * over a bright sky or snow where additive light alone washes out. Its own small batch with the
+   * plain premultiplied blend the Grapple's cord uses (which darkens what is behind it), sharing
+   * each ring's transform and fade; nothing at night. The post chain gives back about half of any
+   * darkening, so the band is drawn strong (EDGE_ALPHA).
+   */
+  private readonly edge: THREE.InstancedMesh | null = null
+  private readonly edgeFade: THREE.InstancedBufferAttribute | null = null
+  private readonly day = uniform(1)
 
   constructor(private readonly game: Game, private readonly kind: 'ring' | 'glow' = 'ring') {
     if (kind === 'glow') this.material.name = 'gear impact light'
@@ -55,7 +68,28 @@ export class ImpactPulses {
     }
     this.mesh.instanceColor!.setUsage(THREE.DynamicDrawUsage)
     game.scene.add(this.mesh)
-    this.unwarm = warmGear(game, [], () => { this.warming = 2 }, () => [this.mesh])
+    if (kind === 'ring') {
+      const geometry = new THREE.PlaneGeometry(2, 2)
+      this.edgeFade = new THREE.InstancedBufferAttribute(new Float32Array(CAPACITY), 1).setUsage(THREE.DynamicDrawUsage)
+      geometry.setAttribute('edgeFade', this.edgeFade)
+      const m = new THREE.MeshBasicNodeMaterial({ name: 'gear impact ring edge', transparent: true, depthWrite: false, side: THREE.DoubleSide })
+      m.blending = THREE.CustomBlending
+      m.blendSrc = THREE.OneFactor; m.blendDst = THREE.OneMinusSrcAlphaFactor
+      m.blendSrcAlpha = THREE.OneFactor; m.blendDstAlpha = THREE.OneMinusSrcAlphaFactor
+      m.fog = false
+      const edge: N = max(float(0), float(1).sub(abs(r.sub(EDGE_AT)).div(EDGE_HALF))).pow(0.7)
+      m.colorNode = vec3(0, 0, 0)
+      m.opacityNode = edge.mul(attribute('edgeFade', 'float')).mul(this.day).mul(EDGE_ALPHA)
+      this.edge = new THREE.InstancedMesh(geometry, m, CAPACITY)
+      this.edge.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      this.edge.frustumCulled = false
+      this.edge.visible = false
+      // Darken first, then the ring's light on top.
+      this.edge.renderOrder = 3
+      for (let i = 0; i < CAPACITY; i++) this.edge.setMatrixAt(i, hidden)
+      game.scene.add(this.edge)
+    }
+    this.unwarm = warmGear(game, [], () => { this.warming = 2 }, () => this.edge ? [this.mesh, this.edge] : [this.mesh])
   }
 
   get active(): number { return this.entries.filter(e => e.age < e.seconds).length }
@@ -75,7 +109,7 @@ export class ImpactPulses {
 
   update(dt: number): void {
     // Nothing alive and the last zeros written: skip the loop and the uploads entirely.
-    if (this.settle === 0 && this.warming === 0 && !this.entries.some(e => e.age < e.seconds)) { this.mesh.visible = false; return }
+    if (this.settle === 0 && this.warming === 0 && !this.entries.some(e => e.age < e.seconds)) { this.mesh.visible = false; if (this.edge) this.edge.visible = false; return }
     let active = false
     for (let i = 0; i < CAPACITY; i++) {
       const e = this.entries[i]
@@ -89,6 +123,7 @@ export class ImpactPulses {
       this.transform.updateMatrix()
       this.mesh.setMatrixAt(i, this.transform.matrix)
       this.mesh.setColorAt(i, this.color.copy(e.color).multiplyScalar(t < 1 ? (this.kind === 'glow' ? (1 - t) ** 1.6 : (1 - t) ** 2) : 0))
+      if (this.edge) { this.edge.setMatrixAt(i, this.transform.matrix); this.edgeFade!.setX(i, t < 1 ? (1 - t) ** 2 : 0) }
       active ||= t < 1
     }
     this.settle = active ? 1 : Math.max(0, this.settle - 1)
@@ -96,10 +131,19 @@ export class ImpactPulses {
     if (this.warming > 0) this.warming--
     this.mesh.instanceMatrix.needsUpdate = true
     this.mesh.instanceColor!.needsUpdate = true
+    if (this.edge) {
+      this.edge.visible = this.mesh.visible
+      this.edge.instanceMatrix.needsUpdate = true
+      this.edgeFade!.needsUpdate = true
+      this.day.value = 1 - vehicleNightAmount(this.game.scene)
+    }
   }
 
-  reset(): void { for (const e of this.entries) e.age = Infinity; this.mesh.visible = false }
+  reset(): void { for (const e of this.entries) e.age = Infinity; this.mesh.visible = false; if (this.edge) this.edge.visible = false }
   /** Carry the rings and lights across a world seam with the local player. */
   shift(dx: number, dz: number): void { for (const e of this.entries) { e.at.x += dx; e.at.z += dz } }
-  dispose(): void { this.unwarm(); this.mesh.removeFromParent(); this.mesh.dispose(); this.geometry.dispose(); this.material.dispose() }
+  dispose(): void {
+    this.unwarm(); this.mesh.removeFromParent(); this.mesh.dispose(); this.geometry.dispose(); this.material.dispose()
+    if (this.edge) { this.edge.removeFromParent(); this.edge.dispose(); this.edge.geometry.dispose(); (this.edge.material as THREE.Material).dispose() }
+  }
 }
