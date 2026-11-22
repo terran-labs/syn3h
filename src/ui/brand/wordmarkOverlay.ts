@@ -10,7 +10,7 @@
  * its inner half shows. Static: the caller moves it and sets its opacity (the fade in) only
  * when they change, so an idle lobby does no work for it.
  */
-import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './wordmarkPath'
+import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './activeWordmark'
 import type { PixelRect } from './logoRenderer'
 
 const SVG = 'http://www.w3.org/2000/svg'

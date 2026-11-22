@@ -9,7 +9,7 @@
  * the origin at the centre of the 962 by 226 box. The face covers exactly the box the SVG
  * wordmark covers.
  */
-import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './wordmarkPath'
+import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './activeWordmark'
 
 export type Point = [number, number]
 export interface Contour {

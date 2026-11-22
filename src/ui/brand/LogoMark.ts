@@ -15,7 +15,7 @@
  */
 import { ASPECT } from './wordmarkMesh'
 import { DEFAULT_LOGO_LOOK, INTRO_SECONDS, type LogoLook, LogoRenderer, type PixelRect } from './logoRenderer'
-import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './wordmarkPath'
+import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './activeWordmark'
 
 export { DEFAULT_LOGO_LOOK, INTRO_SECONDS, LogoRenderer, type LogoLook, type PixelRect } from './logoRenderer'
 
