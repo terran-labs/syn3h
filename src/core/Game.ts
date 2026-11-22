@@ -48,6 +48,8 @@ export interface System {
   precompileMeshes?(): Iterable<THREE.Mesh>
   /** Already-planted scenery a live quality change can reveal at this camera. */
   precompileQualityMeshes?(): Iterable<THREE.Mesh>
+  /** The governor has just climbed a level outside play: adopt the new level's looks now, before its preparation draw. */
+  prepareClimb?(): void
   /** Select or expose the draws the direct Minimal renderer will need, restoring them synchronously. */
   drawCoveredMinimal?(draw: () => void): void
   /** Attach retained player models for the existing Medium to Low preview draw. */
@@ -420,6 +422,8 @@ export class Game {
     const behind = camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(-1000).add(camera.position)
     const moved: { mesh: THREE.Mesh; position: THREE.Vector3; scale: THREE.Vector3; culled: boolean }[] = []
     try {
+      // Systems whose look depends on the level (particle octaves) switch now, not next update.
+      for (const system of this.systems) system.prepareClimb?.()
       for (const system of this.systems) {
         for (const mesh of system.precompileQualityMeshes?.() ?? []) {
           if (mesh.visible) continue

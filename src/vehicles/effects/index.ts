@@ -99,6 +99,8 @@ class EffectWorld implements System {
   retain(){this.references++}
   release(){if(--this.references===0){worlds.delete(this.game);this.game.remove(this)}}
   drawCoveredMinimal(draw: () => void) { ParticleBatch.drawCoveredMinimal(this.game.scene, draw) }
+  /** A climbed level: take its particle budget and look now, so the preparation draw builds them (every batch draws its full capacity). */
+  prepareClimb(){if(this.level!==graphicsLevel.value)this.rebudget()}
   private rebudget(){
     this.level = graphicsLevel.value
     const octaves = this.level === 0 ? 1 : 2
