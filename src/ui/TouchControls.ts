@@ -83,6 +83,8 @@ export class TouchControls {
   private lastFrame = 0
   private fadeTimer = 0
   private cancelRing?: HTMLElement
+  /** Shows Tag's held state and the Cancel ring; run on every Tag event and every held frame. */
+  private syncTag = (): void => {}
 
   constructor(private readonly input: Input, parent: HTMLElement = document.body) {
     this.element.className = 'touch-controls'
@@ -271,7 +273,7 @@ export class TouchControls {
     const button = this.element.querySelector<HTMLButtonElement>('[data-action="fire"]')!
     const stick = this.tagStick
     const ring = this.cancelRing!
-    const sync = () => {
+    const sync = this.syncTag = () => {
       button.classList.toggle('held', stick.held)
       ring.classList.toggle('is-shown', stick.cancellable)
       ring.classList.toggle('is-armed', stick.overCancel)
@@ -360,6 +362,8 @@ export class TouchControls {
       const now = performance.now()
       this.tagStick.frame((now - this.lastFrame) / 1000)
       this.lastFrame = now
+      // Held still, the Cancel ring appears after a moment (TagStick.cancellable).
+      this.syncTag()
     }
     const cord = Boolean(this.gear?.attached())
     for (const action of ['letOut', 'letGo']) { const button = this.element.querySelector<HTMLElement>(`[data-action="${action}"]`); if (button && button.hidden === cord) button.hidden = !cord }

@@ -86,6 +86,23 @@ describe('Tag with gear that sends on the lift', () => {
     expect(r.presses()).toBe(1)
   })
 
+  it('Cancel shows while Tag is held still, and lifting on it after a drag sends nothing', () => {
+    // Bug: a held charge or an aimed shot with no Cancel target on screen (the owner, 22 November 2026).
+    for (const mode of ['hold', 'release'] as const) {
+      const r = rig(mode)
+      r.down()
+      expect(r.stick.cancellable).toBe(false)
+      for (let i = 0; i < 30; i++) r.stick.frame(1 / 60)
+      expect(r.stick.cancellable).toBe(true)
+      r.stick.move(1, r.zone.x, r.zone.y)
+      expect(r.stick.overCancel).toBe(true)
+      expect(r.stick.up(1)).toBe('cancelled')
+      r.step(10)
+      expect(r.presses()).toBe(0)
+      expect(r.log.cancels).toBe(mode === 'hold' ? 1 : 0)
+    }
+  })
+
   it('a system pointercancel sends nothing', () => {
     const r = rig('release')
     r.down(); r.stick.move(1, 240, 160)
