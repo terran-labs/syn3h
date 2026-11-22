@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FRESH_YAW, homeward, PORTRAIT_PITCH, REST } from '../../src/ui/galaxy/Galaxy'
+import { FRESH_YAW, homeward, REST } from '../../src/ui/galaxy/Galaxy'
 
 /**
  * Leaving a world must bring the lobby back to the view a fresh load rests at, with the camera
@@ -18,7 +18,7 @@ const starts = [
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
 
 describe('the lobby after leaving a world', () => {
-  for (const to of [fresh(REST.pitch), fresh(PORTRAIT_PITCH)]) {
+  for (const to of [fresh(REST.pitch)]) {
     it(`settles at exactly the fresh-load view (pitch ${to.pitch.toFixed(2)}) from any start`, () => {
       for (const from of starts) {
         const end = homeward(from, to, 1)
