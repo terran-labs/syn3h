@@ -43,6 +43,13 @@ trap unhold EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# The version this ships as, and whether the notes are for it, before any waiting: a train
+# prepared before midnight Pacific ships with the next day's number (release.sh checks again
+# when it starts, in case midnight passes during the gap or the gate).
+VERSION="$(node tools/release-notes.mjs next)" || finish "could not compute the version"
+echo "Version: $VERSION"
+node tools/release-notes.mjs check "$VERSION" || finish "the release notes are not for $VERSION; nothing released (see the fix above)"
+
 # The gap after the last release, so queued builder jobs can run between releases.
 LAST="$STABLE/releases.tsv"
 if [ "$GAP" -gt 0 ] && [ -f "$LAST" ]; then
