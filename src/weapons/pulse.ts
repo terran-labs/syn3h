@@ -15,6 +15,18 @@ type N = any // TSL's arithmetic nodes are dynamically typed.
 const CAPACITY = 16
 /** The ring's dark edge: where it lies (the bright band ends at 0.94 of the quad), how wide, how dark. */
 const EDGE_AT = 0.965, EDGE_HALF = 0.035, EDGE_ALPHA = 0.85
+/** The half-width of an impact ring's edge band on screen, pixels: at least, and at most. */
+const EDGE_MIN_PX = 1.5, EDGE_MAX_PX = 3
+
+/** Metres one pixel spans at `at`, from the camera's field of view and the canvas height. */
+function metresPerPixel(game: Game, at: THREE.Vector3): number {
+  const cam = game.camera as THREE.PerspectiveCamera | undefined
+  // No camera (a unit test): no floor or cap; the band keeps its share of the ring.
+  if (!cam) return 0
+  const distance = Math.max(0.1, cam.position.distanceTo(at))
+  const height = (game.renderer as unknown as { domElement?: HTMLCanvasElement })?.domElement?.clientHeight || 800
+  return 2 * distance * Math.tan(((cam.fov ?? 60) * Math.PI) / 360) / height
+}
 const UP = new THREE.Vector3(0, 0, 1)
 
 export interface PulseOptions {
@@ -178,7 +190,21 @@ export class ImpactPulses {
       this.transform.updateMatrix()
       this.mesh.setMatrixAt(i, this.transform.matrix)
       this.mesh.setColorAt(i, this.color.copy(e.color).multiplyScalar(t < 1 ? (this.kind === 'glow' ? (1 - t) ** 1.6 : (1 - t) ** 2) : 0))
-      this.edges?.look.set(this.edgeFirst + i, this.transform.matrix, t < 1 ? (1 - t) ** 2 : 0)
+      if (this.edges) {
+        // The band's width on screen: never thinner than EDGE_MIN_PX (at 40 m it was about two
+        // pixels and barely read) nor thicker than EDGE_MAX_PX (a ring bursting on your own car,
+        // metres from the lens, would grow a thick black hoop). In quad radii, just outside the
+        // bright band, which ends at 0.94.
+        const scale = this.transform.scale.x
+        let half = EDGE_HALF, at = EDGE_AT
+        const mPerPx = scale > 0 ? metresPerPixel(this.game, this.transform.position) : 0
+        if (mPerPx > 0) {
+          const px = Math.min(EDGE_MAX_PX, Math.max(EDGE_MIN_PX, EDGE_HALF * scale / mPerPx))
+          half = px * mPerPx / scale
+          at = 0.94 + half
+        }
+        this.edges.look.set(this.edgeFirst + i, this.transform.matrix, t < 1 ? (1 - t) ** 2 : 0, at, half)
+      }
       active ||= t < 1
     }
     this.settle = active ? 1 : Math.max(0, this.settle - 1)
