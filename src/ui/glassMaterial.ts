@@ -9,8 +9,11 @@ export const liquidSelected = () => glassStyle.value === 0 && liquidEligible()
 
 // An explicit Liquid selection currently wins over the system preference.
 export const respectReducedTransparency = false
-// Defaults come from the bright-patch audit. Player-selected values can cover the entire range.
-const defaults = [25, 55, 55] as const
+// Defaults come from the bright-patch audit, Frost and Flat raised to the worst case measured on
+// 22 November 2026 (every rail label, icon and notice at 4.5:1 or better over Alpine noon, ice
+// noon and Mire day at 1440 and 744, Chromium and WebKit): Frost 70, Flat 65. Liquid stays at the
+// owner's 25. Player-selected values can cover the entire range.
+const defaults = [25, 70, 65] as const
 export const defaultTint = (style = glassStyle.value) => defaults[Math.round(style)] ?? defaults[1]
 let paintedTint = defaultTint() as number
 export const currentTint = () => paintedTint
