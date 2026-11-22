@@ -46,6 +46,9 @@ export class FocusHud {
   private readonly text = new Map<string, HTMLElement[]>()
   /** The THRUST lines, cached so the per-frame update neither queries nor allocates. */
   private thrustRows: HTMLElement[] = []
+  private speedArc!: SVGPathElement
+  private altitudeArc!: SVGPathElement
+  private tape!: SVGGElement
   private thrustShown = false
   constructor(parent: HTMLElement) {
     this.element.className = 'focus-hud'; this.element.setAttribute('aria-hidden', 'true')
@@ -67,6 +70,10 @@ export class FocusHud {
     <div class="fh-read fh-corner fh-br" data-style="2"><small>HEADING</small><b data-t="heading"></b><small>ALT <span data-t="altitude4"></span> <span data-t="heightUnit"></span></small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>`
     for (const node of this.element.querySelectorAll<HTMLElement>('[data-t]')) { const key = node.dataset.t!; this.text.set(key, [...(this.text.get(key) ?? []), node]) }
     this.thrustRows = [...this.element.querySelectorAll<HTMLElement>('[data-thrust]')]
+    // Drawn every frame: held once, as the markup above is built once.
+    this.speedArc = this.element.querySelector<SVGPathElement>('[data-arc=speed]')!
+    this.altitudeArc = this.element.querySelector<SVGPathElement>('[data-arc=altitude]')!
+    this.tape = this.element.querySelector<SVGGElement>('[data-tape]')!
     parent.append(this.element)
   }
   private set(key: string, value: string): void { for (const node of this.text.get(key) ?? []) if (node.textContent !== value) node.textContent = value }
@@ -88,11 +95,11 @@ export class FocusHud {
     this.set('heading', `${pad(Math.round(degrees) % 360, 3)}° ${compassPoint(degrees)}`); this.set('world', t.world); this.set('clock', clock(t.hour))
     this.set('elapsed', `${pad(Math.floor(seconds / 60), 2)}:${pad(seconds % 60, 2)}`)
     if (style === '0') {
-      this.element.querySelector<SVGPathElement>('[data-arc=speed]')!.style.strokeDashoffset = String(100 - Math.min(100, (mph / 140) * 100))
-      this.element.querySelector<SVGPathElement>('[data-arc=altitude]')!.style.strokeDashoffset = String(100 - Math.min(100, (Math.max(0, t.altitude) / 600) * 100))
+      this.speedArc.style.strokeDashoffset = String(100 - Math.min(100, (mph / 140) * 100))
+      this.altitudeArc.style.strokeDashoffset = String(100 - Math.min(100, (Math.max(0, t.altitude) / 600) * 100))
     } else if (style === '1') {
       // The tape is marked every 5 degrees (30 units); slide it so the bearing sits at the pointer.
-      this.element.querySelector<SVGGElement>('[data-tape]')!.setAttribute('transform', `translate(${(-(degrees % 15) * 6).toFixed(1)} 0)`)
+      this.tape.setAttribute('transform', `translate(${(-(degrees % 15) * 6).toFixed(1)} 0)`)
     }
   }
   dispose(): void { this.element.remove() }
