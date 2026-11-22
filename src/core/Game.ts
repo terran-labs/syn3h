@@ -376,7 +376,25 @@ export class Game {
         (view === 'playing' && startupTiming.playRequestMs !== undefined && startupTiming.firstPlayableFrameMs === undefined)
       const previousDraws = watchingDraw ? this.renderer.info.render.drawCalls : 0
       for (const system of this.systems) system.prepareWorldDraw?.()
-      drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs)
+      // The governor changes level only on frames outside play (a pending climb). The draws after
+      // it build the new level's pipelines for what is visible; meshes hidden until something
+      // happens in play (the waterline under a surface) would build then, mid-dive, on a backend
+      // whose pipelines are keyed on the render target. Draw them once here, as a manual change does.
+      const level = this.quality.governor.level
+      const shown: THREE.Object3D[] = []
+      if (view !== 'playing' && this.hiddenPreparedLevel !== undefined && this.hiddenPreparedLevel !== level) {
+        for (const system of this.systems) {
+          for (const mesh of system.precompileQualityMeshes?.() ?? []) {
+            for (let o: THREE.Object3D | null = mesh; o && o !== this.scene; o = o.parent) if (!o.visible) { shown.push(o); o.visible = true }
+          }
+        }
+      }
+      try {
+        drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs)
+      } finally {
+        for (let i = shown.length - 1; i >= 0; i--) shown[i].visible = false
+      }
+      if (view !== 'playing' || this.hiddenPreparedLevel === undefined) this.hiddenPreparedLevel = level
       if (view === 'playing') this.rememberVehicleLevel(this.quality.governor.level)
       longFrames.end('Render submission', renderStart)
       this.lastDraw = now
@@ -405,6 +423,8 @@ export class Game {
    */
   holdDraws = false
   private applyingQuality = false
+  /** The level whose hidden quality meshes were last drawn (see the draw in frame()). */
+  private hiddenPreparedLevel: QualityLevel | undefined
 
   private manualVehicleLevels = new WeakMap<object, number>()
 
