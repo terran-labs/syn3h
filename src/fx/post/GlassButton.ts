@@ -10,8 +10,9 @@ const round = '.touch-actions .liquid-glass.glass-round'
 const inspector = '.syn3h-shell > .world-inspector:not(.lobby-settings)'
 const card = inspector + ' > .wi-cards > .wi-card, ' + inspector + ' > .wi-ghosts > .wi-ghost.wi-glass, .drive-notices > .performance-recommendation'
 const buttons = [panel, round, '.pause-actions > button', '.rail-command > button', '.rail-command > input.wi-search',
-  '.world-inspector > .panels-close', '.gear-actions > button', '.rail-foot > button',
-  '.hud-accessories > button', '.hud-chat > button', '.gs-drum > button'].join(',')
+  '.world-inspector > .panels-close', '.gear-actions > button', '.rail-foot > button'].join(',')
+// The gear drum and the desktop left column (Wings, Zorb, Chat...) are floating text, not glass
+// (the owner, 21 November 2026), so they are not registered here at any material stop.
 export const gameplayGlassSlots = 32
 const vectors = (count: number) => Array.from({ length: count }, () => new Vector4())
 
@@ -164,7 +165,7 @@ export class GlassButton {
       this.changes.disconnect()
       this.membership.disconnect()
       const stack = document.querySelector(inspector + ' > .wi-cards')
-      for (const host of [stack, stack?.parentElement, ...document.querySelectorAll('.gear-actions, .rail-foot, .hud-accessories, .gs-drum')]) {
+      for (const host of [stack, stack?.parentElement, ...document.querySelectorAll('.gear-actions, .rail-foot')]) {
         if (host) this.membership.observe(host, { childList: true })
       }
       this.controls = next

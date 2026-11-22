@@ -1,6 +1,8 @@
-/* The HUD's left column: one instrument, drawn by light. From the top: the gear selector, the
-   driven vehicle's accessories (AccessoryControls.ts), the Chat row (ChatRow.ts) and the minimap.
-   All four share the minimap's box: one left edge and one width. Inside it they share one
+/* The HUD's left column: one instrument, drawn by light. At the top left (the owner, 21 November
+   2026: "move the weapon/gear selector back up to the top left on the desktop"): the gear
+   selector, then directly below it the driven vehicle's accessories (AccessoryControls.ts) and
+   the Chat row (ChatRow.ts); the minimap keeps the lower left corner. All share one left edge
+   and one width. Inside it they share one
    content line, the minimap ring's left edge (24 px in), and one spine, the gear selector's
    hairline (4 px in), which runs down through the accessories, where a node on it lights
    for each switch that is on, and ends at chat, whose glyph is its last node.
@@ -29,18 +31,18 @@
      panel from the right. */
   --col-spine: 4px;
   --col-left: calc(var(--edge-left) - var(--col-spine));
-  --col-bottom: var(--edge-bottom);
   --col-w: 210px;
-  --col-row: 30px;
-  --col-gap: 10px;
+  /* One row height for the gear drum and the rows below it: compact (it was 36 px for the gear
+     and 30 px for the rows). */
+  --col-row: 28px;
+  --col-gap: 8px;
   /* The content line and the spine, from the column's left edge. */
   --col-inset: 24px;
-  /* Bottom edges, stacked up from the minimap: its ring sits on the edge, and its box (210 px)
-     reaches 88.5% of its size above that; chat clears the box by 4 px. */
-  --col-chat-bottom: calc(var(--col-bottom) + 210px * .885 + 4px);
-  --col-acc-bottom: calc(var(--col-chat-bottom) + var(--col-row) + var(--col-gap));
-  --col-gear-bottom: calc(var(--col-acc-bottom) + var(--acc-rows, 1) * var(--col-row) + var(--col-gap));
-  --col-rest: .72;
+  /* Top edges, stacked down from the shared top edge: the drum (three rows), then the
+     accessories, then Chat. */
+  --col-gear-top: var(--edge-top);
+  --col-acc-top: calc(var(--col-gear-top) + 3 * var(--col-row) + var(--col-gap));
+  --col-chat-top: calc(var(--col-acc-top) + var(--acc-rows, 1) * var(--col-row) + var(--col-gap));
   /* One type scale. */
   --col-type: 500 11px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif;
   --col-track: .16em;
@@ -49,8 +51,11 @@
 /* The column's look, from the shared tokens. Declared on the column's own parts so they read
    the tokens as set there. */
 .syn3h-shell.exploration-ui :is(.gear-selector, .hud-accessories, .hud-chat, .shell-minimap) {
-  /* One shadow under all text, one under all lines. */
-  --col-text-under: var(--hud-under);
+  /* One shadow under all text, one under all lines. The column's type is small (11 to 14 px),
+     so its falloff is denser and tighter than the readouts' (--hud-under, made for 24 px
+     digits): it is still only a shadow under the letters, no plate, but it holds the names
+     and keys over noon sky and snow (the owner, 21 November 2026). */
+  --col-text-under: 0 0 1px rgb(0 0 0 / .95), 0 0 2px rgb(0 0 0 / .9), 0 0 4px rgb(0 0 0 / .8), 0 0 7px rgb(0 0 0 / .6), 0 0 12px rgb(0 0 0 / .45), 0 0 20px rgb(0 0 0 / .3);
   --col-line-under: var(--hud-line-under);
   /* One stroke: the minimap ring's, for the ring and the hollow nodes. Derived from the shared
      tokens (exploration.css) at the strength the owner approved on the preview: the shared
@@ -62,18 +67,13 @@
   --col-node-off: color-mix(in srgb, var(--s3-panel) 45%, transparent);
   --col-node-lit: 0 0 6px color-mix(in srgb, var(--s3-accent-2) 80%, transparent);
 }
-.syn3h-shell.exploration-ui.is-focus { --col-rest: .84; }
 
 /* ---------- Gear selector: the top of the column ---------- */
 :root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector {
-  left: var(--col-left); top: auto; bottom: var(--col-gear-bottom); transform: none;
+  left: var(--col-left); top: var(--col-gear-top); bottom: auto; transform: none;
   /* Three rows, the selected gear and one either side (the owner, 18 November 2026), at one
      spacing whether the cursor is free or captured: unlocking only reveals the number glyphs. */
-  --gs-width: var(--col-w); --gs-pitch: 36px; --gs-slots: 3;
-}
-:root .syn3h-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum {
-  -webkit-mask-image: linear-gradient(transparent, #000 24%, #000 76%, transparent);
-  mask-image: linear-gradient(transparent, #000 24%, #000 76%, transparent);
+  --gs-width: var(--col-w); --gs-pitch: var(--col-row); --gs-slots: 3;
 }
 /* The drum's look, on every device (touch keeps its own placement and sizes, gear.css):
    no dark falloff behind it, legibility from the one text shadow alone; no pill around the
@@ -123,19 +123,21 @@
 
 /* ---------- Accessories, then the Chat row: one row form ---------- */
 .hud-accessories {
-  position: fixed; z-index: var(--gear-z, 12); left: var(--col-left, 16px); bottom: var(--col-acc-bottom, 260px);
+  position: fixed; z-index: var(--gear-z, 12); left: var(--col-left, 16px); top: var(--col-acc-top, 128px);
   width: var(--col-w, 210px); display: grid; grid-auto-rows: var(--col-row, 30px);
-  opacity: var(--col-rest, .72); transition: opacity .45s ease; pointer-events: auto;
+  /* Quiet at rest by its names' dim ink (.acc-row below), not by opacity, so the dark falloff
+     under every name and key stays whole over bright sky. */
+  pointer-events: auto;
 }
-.hud-accessories.is-awake { opacity: 1; transition-duration: .2s; }
+/* Awake (a change, or pointed at): the names come up to full white, over .2 s. */
+:root .syn3h-shell :is(.hud-accessories.is-awake, .hud-chat:is(:hover, :has(.is-on))) button.acc-row { color: var(--s3-ink); }
 /* The Chat row (ChatRow.ts) opens chat and shows its unread count through chatLink. Awake
    while something is unread. */
 .hud-chat {
-  position: fixed; z-index: var(--gear-z, 12); left: var(--col-left, 16px); bottom: var(--col-chat-bottom, 230px);
+  position: fixed; z-index: var(--gear-z, 12); left: var(--col-left, 16px); top: var(--col-chat-top, 200px);
   width: var(--col-w, 210px); height: var(--col-row, 30px); display: grid;
-  opacity: var(--col-rest, .72); transition: opacity .45s ease; pointer-events: auto;
+  pointer-events: auto;
 }
-.hud-chat:is(:hover, :has(.is-on)) { opacity: 1; transition-duration: .2s; }
 .syn3h-shell.has-touch :is(.hud-accessories, .hud-chat) { display: none; }
 .syn3h-shell.is-focus :is(.hud-accessories, .hud-chat) { pointer-events: none; }
 /* The spine continues from the drum: a hairline down the rows' left side to Chat's node. */

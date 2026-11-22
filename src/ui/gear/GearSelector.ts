@@ -65,8 +65,10 @@ export function ringOffset(index: number, current: number, count: number): numbe
   return d > count / 2 ? d - count : d
 }
 
-/** How much brighter the drum's neighbours are drawn on touch screens. */
-const TOUCH_NEIGHBOUR_LIFT = 1.52
+/** The ink of the selected gear's neighbours, a share of full white. */
+const NEIGHBOUR_INK = 0.66
+/** How long the meter takes to fade in and out on a change of gear (gear.css, .gs-meter). */
+const METER_FADE_MS = 220
 
 /** How a slot looks by its distance from the centre. Its position is CSS: offset times pitch. */
 export function slotPose(offset: number): { scale: number; opacity: number } {
@@ -198,13 +200,15 @@ export class GearSelector {
     this.hintsEl.setAttribute('aria-label', 'Controls')
     this.keyHintEl.className = 'gs-keyhint'
     this.keyHintEl.setAttribute('aria-hidden', 'true')
-    // The status and the charge or recharge bar sit directly under the selected gear's name
-    // (the owner, 21 November 2026), not out in the detail beside it.
+    // The status and the charge or recharge bar sit under the selected gear's name (the owner,
+    // 21 November 2026), inside its row, so they travel with the name as the drum turns
+    // (placeMeter). Screen readers get the status as the row's description instead.
     this.meter.className = 'gs-meter'
+    this.meter.setAttribute('aria-hidden', 'true')
     this.meter.append(this.levelEl, this.statusEl)
     this.detail.append(this.descEl, this.hintsEl, this.keyHintEl)
 
-    root.append(spine, window_, this.drum, this.meter, this.detail)
+    root.append(spine, window_, this.drum, this.detail)
     parent.append(root)
 
     // A sibling, not a child: the selector is transformed, which would trap position: fixed.
@@ -377,9 +381,30 @@ export class GearSelector {
     for (const item of this.items) this.pose(item, item.offset)
     if (instant) { void this.drum.offsetHeight; for (const item of this.items) item.button.classList.remove('gs-snap') }
     const active = this.items[now]
+    this.placeMeter(active.button)
     this.drum.setAttribute('aria-activedescendant', active.button.id)
     if (this.drum.contains(document.activeElement) && document.activeElement !== active.button) active.button.focus({ preventScroll: true })
     this.element.dataset.gear = current
+  }
+
+  /**
+   * The meter rides in the selected row. On a change of gear the row leaving keeps a copy that
+   * fades out as it scrolls away, and the meter fades in on the row arriving: both move with
+   * their names, and nothing appears or vanishes in one frame.
+   */
+  private placeMeter(row: HTMLElement): void {
+    const from = this.meter.parentElement
+    if (from === row) return
+    if (from) {
+      const leaving = this.meter.cloneNode(true) as HTMLElement
+      leaving.classList.remove('is-arriving'); leaving.classList.add('is-leaving')
+      from.append(leaving)
+      setTimeout(() => leaving.remove(), METER_FADE_MS + 60)
+      from.removeAttribute('aria-description')
+    }
+    this.meter.classList.remove('is-arriving'); void this.meter.offsetWidth; this.meter.classList.add('is-arriving')
+    row.append(this.meter)
+    if (this.status) row.setAttribute('aria-description', this.status)
   }
 
   private pose(item: Item, offset: number): void {
@@ -387,9 +412,12 @@ export class GearSelector {
     const s = item.button.style
     s.setProperty('--o', String(Math.max(-3, Math.min(3, offset))))
     s.setProperty('--s', String(p.scale))
-    // Touch is used outdoors over bright sky and snow (the owner, 21 November 2026): the
-    // neighbours draw at full strength there (0.66 becomes 1); size and the window mark the selected one.
-    s.opacity = String(this.touch && p.opacity > 0 ? Math.min(1, p.opacity * TOUCH_NEIGHBOUR_LIFT) : p.opacity)
+    // The neighbours fade by their ink (--a, gear.css), not by opacity, so the dark falloff
+    // under their letters stays whole and holds them over bright sky (the owner, 21 November
+    // 2026: "faded text above and below"). Rows further out fade as a whole.
+    const ink = p.opacity > 0 ? Math.max(NEIGHBOUR_INK, p.opacity) : 1
+    s.setProperty('--a', String(ink))
+    s.opacity = String(p.opacity / ink)
     s.visibility = p.opacity === 0 ? 'hidden' : ''
   }
 
@@ -410,7 +438,11 @@ export class GearSelector {
     const description = own?.description ?? ''
     if (description !== this.description) { this.description = description; this.descEl.textContent = description; this.descEl.hidden = !description; this.fitDetail() }
     const status = own?.status ?? ''
-    if (status !== this.status) { this.status = status; this.statusEl.textContent = status; this.statusEl.hidden = !status }
+    if (status !== this.status) {
+      this.status = status; this.statusEl.textContent = status; this.statusEl.hidden = !status
+      const row = this.meter.parentElement
+      if (row && row !== this.element) { if (status) row.setAttribute('aria-description', status); else row.removeAttribute('aria-description') }
+    }
     this.own = own
     this.showLevel(own)
     const hints = hintModel(own)
