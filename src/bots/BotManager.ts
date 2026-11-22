@@ -455,8 +455,19 @@ export class BotManager implements System {
    * draws them too, so a level's new vehicle and shadow materials are built before they come back
    * into view in play.
    */
+  /**
+   * A hidden bot, and inside a shown bot every hidden mesh: its other distance looks are hidden
+   * siblings (the reduced and merged models). Medium is the first level with shadows, so a bot that
+   * later drives into another look built that look's shadow pipeline in play. The climb
+   * preparation draws each unseen; one whose ancestor is hidden is left alone there.
+   */
   *precompileQualityMeshes(): Iterable<Mesh> {
-    for (const bot of this.bots) if (!bot.object.visible) yield bot.object as unknown as Mesh
+    for (const bot of this.bots) {
+      if (!bot.object.visible) { yield bot.object as unknown as Mesh; continue }
+      const hidden: Mesh[] = []
+      bot.object.traverse(o => { if ((o as Mesh).isMesh && !o.visible) hidden.push(o as Mesh) })
+      yield* hidden
+    }
   }
   dispose() {
     this.disposed = true
