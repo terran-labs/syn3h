@@ -795,10 +795,9 @@ try {
   await step('host away', async () => {
   const hostAtStart = await a.evaluate(() => window.syn3hNet.game.host)
   if (hostAtStart !== idA) throw new Error(`Alice is not host at the start (host ${hostAtStart}); rerun`)
-  // Step 11 leaves Bob in the caldera's lava, where a host's bots find nowhere to arrive (bots
-  // spawn on safe ground near their host): put him back on his pad, so this step tests the
-  // handover and not that.
-  await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, s.heading) })
+  // Step 11 leaves Bob in the caldera's lava, where no ground near him can take a bot: his bots
+  // arrive at a spawn point instead (BotManager.spot) and drive over, so this step covers a
+  // host in lava too.
   await a.evaluate(() => {
     const s = window.syn3h
     s.params.set('bots.canDrive', true); s.params.set('bots.canFire', false)
@@ -818,10 +817,12 @@ try {
   // The bot is Bob's now: his manager simulates it, and it drives.
   const botOnB = await b.waitForFunction(() => !window.syn3h.bots.remote && window.syn3h.bots.vehicles.length >= 1, null, { timeout: 8000 }).then(() => true, () => false)
   const where = () => b.evaluate(() => { const v = window.syn3h.bots.vehicles[0]; if (!v) return null; const t = v.body.translation(); return [t.x, t.y, t.z] })
+  // A bot that has just arrived settles out of its arrival before it drives (one arriving at a
+  // spawn point far from a host in lava first finds its way): wait for it to move, up to 10 s.
   const p0 = botOnB ? await where() : null
-  await wait(3000)
-  const p1 = botOnB ? await where() : null
-  check('the bot moves on Bob\'s page, simulated there', botOnB && p0 && p1 && d2(p0, p1) > 1, { botOnB, p0, p1, moved: p0 && p1 ? +d2(p0, p1).toFixed(2) : null })
+  const drove = botOnB ? await settle(where, (p) => p && p0 && d2(p0, p) > 1, 10000) : { value: null, waitedMs: 0 }
+  const p1 = drove.value
+  check('the bot moves on Bob\'s page, simulated there', botOnB && p0 && p1 && d2(p0, p1) > 1, { botOnB, p0, p1, moved: p0 && p1 ? +d2(p0, p1).toFixed(2) : null, waitedMs: drove.waitedMs })
   await a.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
     document.dispatchEvent(new Event('visibilitychange'))
