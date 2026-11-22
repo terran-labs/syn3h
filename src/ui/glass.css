@@ -336,6 +336,16 @@ html[data-glass-material] .syn3h-shell.exploration-ui button.panel-action:not([h
   font: 400 12px/1.3 'Barlow', sans-serif; letter-spacing: .03em;
   text-shadow: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
 }
+/* On touch, a finger gets at least 44 px (the owner's 30 px look stays exactly as drawn): an
+   invisible hit area centred on the button, 46 px tall and at least 44 px wide, so a point 22 px
+   above or below its centre still lands on it. Nothing moves; buttons wider than 44 px gain no
+   width, so actions side by side do not overlap, and stacked ones keep at least 16 px apart in
+   every panel that has them (checked in lobby-about.mjs). */
+html[data-glass-material] .syn3h-shell.exploration-ui.has-touch button.panel-action:not([hidden]) { position: relative; }
+html[data-glass-material] .syn3h-shell.exploration-ui.has-touch button.panel-action:not([hidden])::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 46px);
+  transform: translate(-50%, -50%); background: none; pointer-events: auto;
+}
 html[data-glass-material] .syn3h-shell.exploration-ui button.panel-action:hover {
   border-color: var(--s3-line);
 }
