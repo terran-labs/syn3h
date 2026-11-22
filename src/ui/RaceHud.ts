@@ -29,7 +29,7 @@ export class RaceHud {
     this.arrow.className = 'race-arrow'; this.arrow.textContent = '↑'; this.arrow.setAttribute('aria-hidden', 'true')
     this.controls.className = 'race-controls'
     this.leave.textContent = 'Leave race'; this.cancel.textContent = 'Cancel race'; this.hide.textContent = 'Hide'
-    for (const button of [this.leave, this.cancel, this.hide]) button.type = 'button'
+    for (const button of [this.leave, this.cancel, this.hide]) { button.type = 'button'; button.className = 'panel-action' }
     const signal = this.abort.signal
     this.leave.addEventListener('click', () => { if (this.view()?.leave) actions.leave() }, { signal })
     this.cancel.addEventListener('click', () => { if (this.view()?.cancel) actions.cancel() }, { signal })

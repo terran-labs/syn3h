@@ -89,15 +89,15 @@ export class PerformancePanel {
       <details class="wi-group performance-diagnostics"><summary><span>Diagnostics</span><small></small></summary>
       <div class="performance-body">
       <svg class="performance-chart" viewBox="0 0 288 64" role="img" aria-label="Frame time history"><path d="M0 63H288"/><polyline fill="none"/></svg>
-      <p class="performance-history"></p><p class="performance-long-frames" style="user-select:text"></p><button type="button" data-performance="copy-report">Copy diagnostics</button> <button type="button" data-performance="run-check">Run performance check</button>
+      <p class="performance-history"></p><p class="performance-long-frames" style="user-select:text"></p><button type="button" class="panel-action" data-performance="copy-report">Copy diagnostics</button> <button type="button" class="panel-action" data-performance="run-check">Run performance check</button>
       <span data-performance="copy-status" role="status"></span>
       <textarea data-performance="copy-text" aria-label="Diagnostics report" rows="8" readonly hidden></textarea><dl></dl><p class="performance-recovery" role="status"></p>
-      <button type="button" data-performance="reload" hidden>Reload to recover</button></div></details>`
+      <button type="button" class="panel-action" data-performance="reload" hidden>Reload to recover</button></div></details>`
     this.select = this.element.querySelector('select')!
     this.diagnostics = this.element.querySelector('details')!
     this.recommendation.className = 'performance-recommendation liquid-glass'; this.recommendation.hidden = true
     this.recommendation.setAttribute('role', 'status')
-    this.recommendation.innerHTML = '<p></p><button type="button" data-performance="ignore">Ignore</button><button type="button" data-performance="bots" hidden>Fewer bots</button><button type="button" data-performance="lower">Lower level</button><small class="performance-unlock" hidden>Esc for options</small>'
+    this.recommendation.innerHTML = '<p></p><button type="button" class="panel-action" data-performance="ignore">Ignore</button><button type="button" class="panel-action" data-performance="bots" hidden>Fewer bots</button><button type="button" class="panel-action" data-performance="lower">Lower level</button><small class="performance-unlock" hidden>Esc for options</small>'
     parent.append(this.recommendation)
     this.recommendationSize = new ResizeObserver(([entry]) => {
       const height = entry.borderBoxSize[0]?.blockSize ?? this.recommendation.offsetHeight
