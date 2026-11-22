@@ -89,7 +89,7 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .syn3h-shell .wi-sheet strong { font: 600 16px 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; }
 .syn3h-shell .world-inspector .wi-sheet textarea { width: 100%; height: 130px; resize: vertical; border-radius: 10px; border: 1px solid rgb(255 255 255 / .16); background: rgb(0 0 0 / .4); color: #e2e2e2; font: 12px/1.5 ui-monospace, Menlo, monospace; padding: 8px 10px; }
 .syn3h-shell .wi-sheet.is-copy [data-wi="apply"] { display: none; }
-.syn3h-shell .wi-status { margin: 0 4px; min-height: 18px; font-size: 12.5px; color: var(--s3-accent-2); text-shadow: 0 1px 4px #000; text-align: right; }
+.syn3h-shell .wi-status { margin: 0 4px; min-height: 18px; font-size: 12.5px; color: var(--s3-accent-2); text-shadow: var(--float-under); text-align: right; }
 @media (max-width: 700px), (max-height: 500px) { .world-inspector { top: 58px; right: 10px; width: min(330px, calc(100vw - 20px)); max-height: calc(100vh - 70px); } }
 
 /* ---------------------------------------------------------------------------------------
@@ -115,6 +115,8 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .fh-read b { font-weight: 600; font-size: 26px; letter-spacing: .04em; color: #fff; }
 .fh-read small { font-size: 11px; color: rgb(200 200 200 / .8); }
 .fh-top { left: 50%; top: 34px; translate: -50% 0; text-align: center; justify-items: center; }
+/* The planet and heading float over the sky with only the light shared shadow: full white ink. */
+.focus-hud .fh-top { color: #fff; }
 .fh-corner { padding: 14px 16px; gap: 7px; }
 .fh-corner::before { content: ""; position: absolute; width: 26px; height: 26px; border: 1.2px solid rgb(236 236 236 / .7); filter: var(--hud-line-under); }
 .fh-tl { left: 28px; top: 28px; } .fh-tl::before { left: 0; top: 0; border-right: 0; border-bottom: 0; }

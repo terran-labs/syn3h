@@ -51,11 +51,9 @@
 /* The column's look, from the shared tokens. Declared on the column's own parts so they read
    the tokens as set there. */
 .syn3h-shell.exploration-ui :is(.gear-selector, .hud-accessories, .hud-chat, .shell-minimap) {
-  /* One shadow under all text, one under all lines. The column's type is small (11 to 14 px),
-     so its falloff is denser and tighter than the readouts' (--hud-under, made for 24 px
-     digits): it is still only a shadow under the letters, no plate, but it holds the names
-     and keys over noon sky and snow (the owner, 21 November 2026). */
-  --col-text-under: 0 0 1px rgb(0 0 0 / .95), 0 0 2px rgb(0 0 0 / .9), 0 0 4px rgb(0 0 0 / .8), 0 0 7px rgb(0 0 0 / .6), 0 0 12px rgb(0 0 0 / .45), 0 0 20px rgb(0 0 0 / .3);
+  /* One shadow under all text, one under all lines. The text's is the shared floating-text
+     shadow (--float-under, exploration.css), the same as the readouts'. */
+  --col-text-under: var(--float-under);
   --col-line-under: var(--hud-line-under);
   /* One stroke: the minimap ring's, for the ring and the hollow nodes. Derived from the shared
      tokens (exploration.css) at the strength the owner approved on the preview: the shared

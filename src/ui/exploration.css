@@ -2,10 +2,12 @@
 /* Neutral (the owner, 16 November 2026): black and grey glass, grey-white type, no blue cast.
    Colour is kept for information only: paint, biomes, chat names, warnings. */
 :root { --s3-ink: #efefef; --s3-dim: #c4c4c4; --s3-soft: #a2a2a2; --s3-accent: #e4e4e4; --s3-accent-2: #f7f7f7; --s3-line: rgb(225 225 225 / .28); --s3-line-quiet: rgb(225 225 225 / .15); --s3-panel: rgb(12 12 13 / .83); --s3-on-fill: #ececec; --s3-on-ink: #141416; --s3-on-glow: 0 0 10px rgb(255 255 255 / .22); --s3-radius: 5px; --s3-radius-small: 3px;
-  /* HUD over the world: a crisp dark edge and a soft dark falloff under text and lines. Over a
-     dark scene it is dark on dark and all but disappears; over a pale sky, ice or lava it is
-     what keeps light type readable. Not an outline and not a box. */
-  --hud-under: 0 0 1px rgb(0 0 0 / .95), 0 0 3px rgb(0 0 0 / .8), 0 0 6px rgb(0 0 0 / .6), 0 0 6px rgb(0 0 0 / .45), 0 0 16px rgb(0 0 0 / .35);
+  /* The one shadow under text that floats over the world with no plate (the owner, 22 November
+     2026: the old stack of tight dark rings read as a smudged outline on a pale sky). Soft, wide
+     and low: a faint lift just under the letters and a broad falloff around them, no hard ring.
+     Over a dark scene it vanishes; over a pale sky it is a haze the white type stands in. */
+  --float-under: 0 1px 3px rgb(0 0 0 / .38), 0 0 9px rgb(0 0 0 / .34), 0 0 22px rgb(0 0 0 / .3);
+  --hud-under: var(--float-under);
   --hud-line-under: drop-shadow(0 0 1px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .45));
   /* One edge distance for everything pinned to a screen edge (the owner, 18 November 2026: "make
      it uniform"): the left column's line, the minimap's ring, the right panel and its top row,
@@ -117,7 +119,7 @@
 /* Touch draws the reticle only while TAG is held: see touch-stick.css. */
 .syn3h-shell.exploration-ui:not(.is-focus, .has-touch) .focus-hud [data-reticle] { display: none; }
 .syn3h-shell.exploration-ui.is-focus .shell-minimap { opacity: .92; }
-.syn3h-shell.exploration-ui .spawn-help { left: 240px; bottom: 20px; background: none; border: 0; font-size: 12px; text-shadow: 0 1px 5px #0c0c0c; }
+.syn3h-shell.exploration-ui .spawn-help { left: 240px; bottom: 20px; background: none; border: 0; font-size: 12px; text-shadow: var(--float-under); }
 .syn3h-shell.exploration-ui :is(.shell-toast, .match-hud, .race-hud, .join-card) { border-radius: 3px; background: rgb(17 17 17 / .8); border: 1px solid var(--s3-line); box-shadow: 0 0 18px rgb(176 176 176 / .05); font-weight: 400; }
 .touch-controls .touch-stick { background: radial-gradient(circle,transparent 58%,rgb(201 201 201 / .09) 69%,transparent 71%); border: 1px solid rgb(213 213 213 / .25); box-shadow: none; }
 .touch-controls .touch-knob { background: rgb(194 194 194 / .08); border: 1px solid rgb(213 213 213 / .42); box-shadow: 0 0 14px rgb(194 194 194 / .06); }

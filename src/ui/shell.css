@@ -163,7 +163,7 @@
      in the idle status line's style, no box (the owner, 19 November 2026: "minimal and classy"). */
   background: none; border: 0; box-shadow: none; padding: 0; -webkit-backdrop-filter: none; backdrop-filter: none;
   color: var(--s3-ink, #f4f4f4); font: 500 14px/1.35 'Barlow', 'Avenir Next', sans-serif; letter-spacing: .03em;
-  text-shadow: 0 1px 2px rgb(0 0 0 / .85), 0 0 12px rgb(0 0 0 / .6);
+  text-shadow: var(--float-under);
 }
 
 /* The loading veil is in index.html. LoadingScreen's polite live region: the plain loading phase, for screen readers only. */
@@ -418,7 +418,7 @@
   border: 0; border-radius: 0; outline: 0; background: none; background-image: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
   pointer-events: none; cursor: default; white-space: nowrap; text-align: center;
   color: color-mix(in srgb, #f6f9fc 94%, var(--caption-tint));
-  text-shadow: 0 0 3px rgb(0 6 12 / .8), 0 1px 6px rgb(0 6 12 / .5);
+  text-shadow: var(--float-under);
   --caption-pulse: 0;
   /* At rest, toward the hovered strength by the planet's pulse (0 to its peak share); hidden stays hidden. */
   opacity: calc(var(--caption-base) * var(--caption-strength) + (min(1, calc(var(--caption-strength) * 100)) - var(--caption-base) * var(--caption-strength)) * var(--caption-pulse));
