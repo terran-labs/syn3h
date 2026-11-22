@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 21:55 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-22 03:40 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,9 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2120 (release-99, lobby camera frames the name, calmer close Thunder), source f47ff0e1,
-frozen copy 20261121-214420-f47ff0e1, Worker version 7674ccd4, at https://www.syn3h.com/ since 21 November 21:48 PST.
+Live: v26.11.2200 (release-100, three glass styles with Tint, desktop left rail, Welcome on a phone), source 2d055f6a,
+frozen copy 20261122-032840-2d055f6a, Worker version 5f706acf, at https://www.syn3h.com/ since 22 November 03:33 PST.
+Version numbers follow the Pacific date (release.sh): a release planned on the 21st and shipped after midnight is 22NN.
 Releases now ship through tools/ship.sh (first used for 2120); outcomes in /tmp/syn3h-ship-N*.
 Protocol (since 2118): FLAG_USER_PAUSE = 32 (ignored by older receivers; an older host's pause counts as hidden).
 Browser suites: tests/ui/about-updates.mjs needs a second server reporting an older release version beside
@@ -150,6 +151,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2118 | 97 | m-handover-2118 | host role passes on when the host's game stops; bots spawn for a host in lava |
 | v26.11.2119 | 98 | m-polish-2119 | brighter Plasma Tag strikes, Grapple cord visible by day, no stall diving under water |
 | v26.11.2120 | 99 | m-camera-2120 | every lobby arrival frames the Syn3h name; Thunder on your own car clears in a tenth of a second |
+| v26.11.2200 | 100 | m-glass-2200 | glass styles Liquid, Frost, Flat with a Tint slider; desktop left rail as floating text; Welcome fits a phone |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
