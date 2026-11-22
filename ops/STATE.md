@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 16:10 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-21 18:20 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,10 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2116 (release-95, Glass setting with four looks), source 41b98d04, frozen copy
-20261121-155706-41b98d04, Worker version 66f9ff46, at https://www.syn3h.com/ since 21 November 16:01 PST.
+Live: v26.11.2117 (release-96, iPad and phone interface: HUD, panels, gear selector, lobby, glass), source
+59bdb05b, frozen copy 20261121-180537-59bdb05b, Worker version 64bb631e, at https://www.syn3h.com/ since 21 November 18:10 PST.
+Browser suites: tests/ui/about-updates.mjs needs a second server reporting an older release version beside
+vite (waived for 2117 on plain vite).
 Staging looks now include iPad mini (744x1133 and 1133x744, touch) with phone and desktop.
 Releases start detached (own session) so the tool runner cannot end them: /tmp/orch-ship-detached.sh
 <n> <version> "<note>" via nohup python3 os.setsid; outcome in /tmp/orch-dry-<v>.rc,
@@ -142,6 +144,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2114 | 93 | m-tools-2114 | performance check labels its card row clearly; release tooling waits for the hosted result |
 | v26.11.2115 | 94 | m-glassgate-2115 | experimental glass remains off by default; new load gate for the demo; known issues aligned |
 | v26.11.2116 | 95 | m-slider-2116 | Glass setting in Settings: Liquid, Glass, Frost, Flat (Liquid needs Medium or higher) |
+| v26.11.2117 | 96 | m-ipad-2117 | Panels above Tag and Wings, compact gear selector, even panels, Welcome carousel, Liquid on every button |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker

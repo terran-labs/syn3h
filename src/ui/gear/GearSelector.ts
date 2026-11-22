@@ -65,6 +65,9 @@ export function ringOffset(index: number, current: number, count: number): numbe
   return d > count / 2 ? d - count : d
 }
 
+/** How much brighter the drum's neighbours are drawn on touch screens. */
+const TOUCH_NEIGHBOUR_LIFT = 1.52
+
 /** How a slot looks by its distance from the centre. Its position is CSS: offset times pitch. */
 export function slotPose(offset: number): { scale: number; opacity: number } {
   const a = Math.abs(offset)
@@ -127,6 +130,8 @@ export class GearSelector {
   private readonly drum = document.createElement('div')
   private readonly detail = document.createElement('div')
   private readonly descEl = document.createElement('p')
+  /** Under the selected gear's name: its status and its charge or recharge bar. */
+  private readonly meter = document.createElement('div')
   private readonly statusEl = document.createElement('p')
   private readonly levelEl = document.createElement('div')
   private readonly levelFill = document.createElement('i')
@@ -193,9 +198,13 @@ export class GearSelector {
     this.hintsEl.setAttribute('aria-label', 'Controls')
     this.keyHintEl.className = 'gs-keyhint'
     this.keyHintEl.setAttribute('aria-hidden', 'true')
-    this.detail.append(this.descEl, this.statusEl, this.levelEl, this.hintsEl, this.keyHintEl)
+    // The status and the charge or recharge bar sit directly under the selected gear's name
+    // (the owner, 21 November 2026), not out in the detail beside it.
+    this.meter.className = 'gs-meter'
+    this.meter.append(this.levelEl, this.statusEl)
+    this.detail.append(this.descEl, this.hintsEl, this.keyHintEl)
 
-    root.append(spine, window_, this.drum, this.detail)
+    root.append(spine, window_, this.drum, this.meter, this.detail)
     parent.append(root)
 
     // A sibling, not a child: the selector is transformed, which would trap position: fixed.
@@ -378,7 +387,9 @@ export class GearSelector {
     const s = item.button.style
     s.setProperty('--o', String(Math.max(-3, Math.min(3, offset))))
     s.setProperty('--s', String(p.scale))
-    s.opacity = String(p.opacity)
+    // Touch is used outdoors over bright sky and snow (the owner, 21 November 2026): the
+    // neighbours draw at full strength there (0.66 becomes 1); size and the window mark the selected one.
+    s.opacity = String(this.touch && p.opacity > 0 ? Math.min(1, p.opacity * TOUCH_NEIGHBOUR_LIFT) : p.opacity)
     s.visibility = p.opacity === 0 ? 'hidden' : ''
   }
 

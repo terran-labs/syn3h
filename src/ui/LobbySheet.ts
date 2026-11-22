@@ -9,8 +9,9 @@
  * sheet's handOff); the buttons stay beside it. Escape, a tap outside and the one X close it;
  * focus stays inside while it is open and returns to whatever opened it.
  */
-import { cycleFocus } from './LobbySettings'
+import { cycleFocus, LOBBY_CLOSE } from './LobbySettings'
 import './lobby-sheet.css'
+
 
 export type Point = readonly [number, number]
 /** The wordmark's lines on screen, as Galaxy.wordmarkEdges returns them. */
@@ -54,8 +55,9 @@ export class LobbySheet {
     this.element.setAttribute('aria-labelledby', `${id}-title`)
     this.panel.className = 'lobby-sheet-panel'
     const title = document.createElement('h2'); title.id = `${id}-title`; title.className = 'lobby-sheet-title'; title.textContent = options.title
-    this.close_.type = 'button'; this.close_.className = 'lobby-sheet-close'; this.close_.setAttribute('aria-label', `Close ${options.title}`); this.close_.title = 'Close'
-    this.close_.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6L18 18M18 6L6 18"/></svg>'
+    this.close_.type = 'button'; this.close_.className = 'lobby-sheet-close lobby-close liquid-glass'; this.close_.setAttribute('aria-label', `Close ${options.title}`)
+    // The lobby's one close control, the same in Welcome, Updates and Settings (lobby-sheet.css).
+    this.close_.innerHTML = LOBBY_CLOSE
     this.body.className = 'lobby-sheet-body'
     this.body.append(title)
     this.panel.append(this.body, this.close_)
@@ -106,9 +108,11 @@ export class LobbySheet {
     const frame = { left: (w - width) / 2, top, width, height: bottom - top }
     // The lobby's buttons stand beside an open sheet (Shell moves them into it): keep clear of
     // them, above a row of them on a phone held upright, left of their column otherwise.
-    const dock = this.element.querySelector('.lobby-gear-dock')?.getBoundingClientRect()
-    if (dock && dock.width && dock.left < frame.left + frame.width && dock.top < frame.top + frame.height) {
-      if (dock.width > dock.height) frame.height = Math.max(120, dock.top - 8 - frame.top)
+    const dockEl = this.element.querySelector<HTMLElement>('.lobby-gear-dock'), dock = dockEl?.getBoundingClientRect()
+    if (dockEl && dock && dock.width && dock.left < frame.left + frame.width && dock.top < frame.top + frame.height) {
+      // A row (an upright phone lays the buttons side by side) by its layout, not its shape: two
+      // stacked buttons are wider than they are tall.
+      if (getComputedStyle(dockEl).gridAutoFlow.startsWith('column')) frame.height = Math.max(120, dock.top - 8 - frame.top)
       else frame.width = Math.max(240, dock.left - 12 - frame.left)
     }
     return frame

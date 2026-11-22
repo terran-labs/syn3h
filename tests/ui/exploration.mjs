@@ -1,3 +1,4 @@
+import { waitForPanelMotion } from './panel-motion.mjs'
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
@@ -12,6 +13,7 @@ for (const mode of modes) {
     await page.goto(`${process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'}?autoplay=1&room=exploration-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 90000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 90000 })
+    await page.waitForFunction(() => window.syn3h.shell.playing && !window.syn3h.shell.transitioning, null, { timeout: 90000 })
     // ALT is height above the sea at rest (src/ui/altitude.ts): a parked buggy reads its
     // ground's height, a whole number with a real minus sign below the sea, labelled ALT, in
     // the units the setting chooses. Raising the sea to the buggy's wheels reads 0.
@@ -59,15 +61,22 @@ for (const mode of modes) {
     if (touch && await page.locator('.world-inspector').isHidden()) await page.locator('.inspector-toggle').tap()
     else if (!touch && await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
     await page.locator('.world-inspector').waitFor({ state: 'visible' })
-    for (const head of await page.locator('.wi-head').all()) await head.click()
-    await page.waitForFunction(() => !document.querySelector('.wi-cards').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
+    await waitForPanelMotion(page)
+    // Touch presents the headers together in the collapsed list. An open phone card hides its peers.
+    if (touch) {
+      const open = page.locator('.world-inspector .wi-card.is-open > .wi-head')
+      while (await open.count()) await open.first().tap()
+    } else {
+      for (const head of await page.locator('.wi-head').all()) await head.click()
+    }
+    await waitForPanelMotion(page)
     // Headers are finger-sized (44 px, 48 on touch). On a short screen the stack may scroll
     // vertically to fit them, so each must be reachable by scrolling, and nothing scrolls sideways.
     const layout = await page.evaluate(minimum => {
       const rail = document.querySelector('.world-inspector').getBoundingClientRect(), stack = document.querySelector('.wi-cards')
       const heads = [...document.querySelectorAll('.wi-head')].map(el => { el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(), s = stack.getBoundingClientRect(); return r.top >= Math.max(rail.top, s.top) - 1 && r.bottom <= Math.min(rail.bottom, s.bottom) + 1 && r.height >= minimum - .5 })
       stack.scrollTop = 0
-      return { heads, sideways: stack.scrollWidth > stack.clientWidth + 1 || document.querySelector('.world-inspector').scrollWidth > rail.width + 1 }
+      return { heads, sideways: stack.scrollWidth > stack.clientWidth + 1 || stack.closest('.world-inspector').scrollWidth > stack.closest('.world-inspector').clientWidth + 1 }
     }, touch ? 48 : 44)
     assert.ok(layout.heads.every(Boolean), 'every section header is full size and reachable')
     assert.equal(layout.sideways, false, 'stack never scrolls sideways')
@@ -75,13 +84,14 @@ for (const mode of modes) {
     // Sky and weather now live in the World card: close the others, open World and its Sun fold.
     const others = page.locator('.wi-card.is-open:not([data-section=world]) .wi-head')
     while (await others.count()) await others.first().click()
-    if (!(await page.locator('.wi-card[data-section=world]').evaluate(el => el.classList.contains('is-open')))) await page.locator('.wi-card[data-section=world] .wi-head').click()
-    await page.waitForFunction(() => !document.querySelector('.wi-cards').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
-    // Wait for the opened state itself: under load the opening animation may not have started
-    // when the check above runs, so measuring at once read a still-closed card (failed twice
-    // on 18 Nov at load 9 to 22, landscape and phone; passed on other runs).
-    await page.waitForFunction(() => (document.querySelector('.wi-card[data-section=world] .wi-body')?.clientHeight ?? 0) > 60, null, { timeout: 10000 }).catch(() => {})
-    assert.ok(await page.locator('.wi-card[data-section=world] .wi-body').evaluate(el => el.clientHeight > 60), 'selected panel has usable internal space')
+    const world = page.locator('.wi-cards > .wi-card[data-section=world]')
+    const header = world.locator(':scope > .wi-head')
+    if (await header.getAttribute('aria-expanded') !== 'true') {
+      if (touch) await header.tap(); else await header.click()
+    }
+    await page.waitForFunction(() => document.querySelector('.wi-cards > [data-section=world] > .wi-head').getAttribute('aria-expanded') === 'true')
+    await waitForPanelMotion(page)
+    assert.ok(await world.locator(':scope > .wi-body').evaluate(el => el.clientHeight > 60), 'selected panel has usable internal space')
     const row = page.locator('.wi-row[data-id="sun.timeOfDay"]')
     await row.evaluate(el => { el.closest('details').open = true })
     await row.scrollIntoViewIfNeeded()
@@ -91,6 +101,8 @@ for (const mode of modes) {
     assert.ok(tip.x >= 0 && tip.y >= 0 && tip.x + tip.width <= page.viewportSize().width && tip.y + tip.height <= page.viewportSize().height)
     if (!touch) assert.ok(tip.x + tip.width < control.x, 'description floats left of control')
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-tooltip.png` })
+    const back = page.locator('.world-inspector.is-single .wi-card.is-open .wi-head .wi-x')
+    if (await back.isVisible()) await back.tap()
     await page.locator('[data-section=players] > .wi-head').click()
     assert.equal(await page.locator('.rail-diagnostics input').isChecked(), false)
     await page.locator('.rail-diagnostics input').check()
@@ -129,7 +141,8 @@ for (const mode of modes) {
       await page.locator('.world-inspector').waitFor({ state: 'visible' })
     }
     if (touch) {
-      await page.locator('.inspector-toggle').tap(); await page.locator('.world-inspector').waitFor({ state: 'hidden' })
+      // Touch closes with the stack's own Close panels: the Panels control fades out while the panels show.
+      await page.locator('.world-inspector .panels-close').tap(); await page.locator('.world-inspector').waitFor({ state: 'hidden' })
       assert.equal(await page.locator('.world-inspector').isHidden(), true, 'returning to driving hides the panels')
       await page.locator('.inspector-toggle').tap()
       await page.locator('.world-inspector').waitFor({ state: 'visible' })

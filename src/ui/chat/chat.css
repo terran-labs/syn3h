@@ -37,7 +37,7 @@
   .syn3h-shell.has-touch .chat-strip.is-left-hand { left: max(76px, calc(env(safe-area-inset-left) + 64px)); }
 }
 /* While the sidebar is open the strip is not needed: the card is there. */
-.syn3h-shell:has(.world-inspector:not([hidden]) .wi-card[data-section="chat"].is-open) .chat-strip { display: none; }
+.syn3h-shell:has(.world-inspector:not([hidden], .lobby-settings) .wi-card[data-section="chat"].is-open) .chat-strip { display: none; }
 
 /* "Show chat" off: no card. */
 .syn3h-shell .world-inspector .wi-card[data-section="chat"].is-off { display: none; }

@@ -72,8 +72,8 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await page.waitForTimeout(3000)
     assert.equal(loads, 1, 'nothing reloads by itself')
 
-    // The Updates icon above the gear carries a quiet mark while a newer version is out.
-    assert.equal(await page.locator('.lobby-updates.has-update').count(), 1, `${mode}: the Updates icon is marked`)
+    // The version in the lower left (which opens Updates) carries a quiet mark while a newer version is out.
+    assert.equal(await page.locator('.lobby-version.has-update').count(), 1, `${mode}: the version is marked`)
     // What's new opens the Updates sheet: newest first, the newest open with its notes, no tabs.
     await banner.getByRole('button', { name: 'What’s new' }).click()
     const about = page.locator('.lobby-sheet-updates')

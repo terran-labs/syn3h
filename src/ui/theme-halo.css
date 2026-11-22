@@ -244,10 +244,12 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(230
 .syn3h-shell.exploration-ui .world-inspector .rail-foot .rail-update { margin: 0; }
 /* Players & session is a card (Shell.ts); its body sits in the card's own padding. */
 .syn3h-shell.exploration-ui .world-inspector .wi-card[data-section="players"] .rail-player-body { padding: 6px 0 0; }
-.syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden])) .hud-navigation { visibility: visible; z-index: 65; }
+.syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden], .lobby-settings)) .hud-navigation { visibility: visible; z-index: 65; }
 /* Leave the existing edge toggle outside the touch panel's hit area. */
-/* Beside the Panels tab (about 34 px wide, on the shared edge), one 6 px gap clear of it. */
-.syn3h-shell.exploration-ui.has-touch .world-inspector { right: calc(var(--edge-right) + 40px); width: min(352px, calc(100vw - var(--edge) * 2 - 40px)); }
+/* Touch screens open the panels from the trigger over TAG and WINGS (touch-stick.css), not from
+   an edge tab, so the stack keeps the one shared edge on the right as at the top and bottom
+   (the owner, 21 November 2026). */
+.syn3h-shell.exploration-ui.has-touch .world-inspector { right: var(--edge-right); width: min(352px, calc(100vw - var(--edge) * 2)); }
 
 /* Lobby navigation stays available while one requested panel opens directly. */
 .syn3h-shell.exploration-ui .lobby-panels { animation: none; width: min(520px, 100%); margin-bottom: 118px; }

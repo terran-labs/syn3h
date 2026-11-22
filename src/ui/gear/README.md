@@ -57,9 +57,9 @@ Set on `.syn3h-shell` (or any ancestor) to fit the shell's layout:
 | Property | Default | Meaning |
 | --- | --- | --- |
 | `--gear-left` | `max(20px, safe-area + 14px)`; phone `max(12px, safe-area + 10px)` | Margin from the left edge |
-| `--gear-top` | `50%` (`40%` under 500 px tall) | Vertical centre of the drum |
+| `--gear-top` | `50%` (`40%` under 500 px tall); touch: the shared top edge | Vertical centre of the drum; on touch, its top edge |
 | `--gear-z` | `12` | Drum stacking; the settings rail is 13 |
-| `--gear-detail-width` | `220px` (`190px` touch, `170px` phone) | Column beside the drum |
+| `--gear-detail-width` | `220px` (`170px` phone, `0` touch) | Column beside the drum; on touch the description sits under the drum, only while the panels show |
 | `--gear-actions-right` | the next column out from the thumb grid | Touch action column, from the right (right-handed) |
 | `--gear-actions-left` | the same, mirrored | Touch action column, from the left (left-handed) |
 | `--gear-actions-bottom` | the thumb grid's bottom | Touch action column, from the bottom |
@@ -82,13 +82,8 @@ actions; remove them once `controls()` lands.
 
 ## Known layout limits
 
-- Phone portrait (iPhone 14, 664 px tall viewport): the minimap starts about 338 px down in the
-  left column and the speed readout sits at 30%; the drum's faded lower end reaches the
-  minimap. Move the minimap or set `--gear-top`.
-- Short landscape phones (under 500 px tall): the minimap is in the left column (about 138 to
-  234 px from the top) where the drum sits. Same choice.
+- Touch, every size and orientation: the drum is three 44 px slots in the top left, its top edge
+  on the shared top edge. The status and charge bar sit under the selected name (`.gs-meter`).
+  On portrait phones the world and heading line moves to the top right to clear it
+  (inspector/focus-readouts.css).
 - Desktop: the drum runs from 20 px to about 208 px and the detail column to about 428 px.
-  The focus display's speed readout (`.fh-left`) is right-aligned to 250 px left of centre at
-  mid-height: 470 px on a 1440 px screen, 390 px on 1280. On screens narrower than about
-  1360 px the detail column meets the readout while the focus display shows. Narrow
-  `--gear-detail-width`, move the readout, or hide one of them in focus.

@@ -9,7 +9,9 @@ import assert from 'node:assert/strict'
 import { waitForState } from './stateWait.mjs'
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 try {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+ // Desktop, an iPad mini upright and on its side (the owner's device, 21 November 2026), and a phone.
+ for (const [width, height] of [[1440, 900], [744, 1133], [1133, 744], [390, 844]]) {
+  const page = await browser.newPage({ viewport: { width, height } })
   const errors = []; page.on('pageerror', e => errors.push(e.message))
   // Every WebGL program link, counted.
   await page.addInitScript(() => { const link = WebGL2RenderingContext.prototype.linkProgram; window.__links = 0; WebGL2RenderingContext.prototype.linkProgram = function (p) { window.__links++; return link.call(this, p) } })
@@ -22,16 +24,11 @@ try {
   await waitForState(page, 'the Welcome sheet open with the name risen', () => !!document.querySelector('dialog.lobby-sheet-about[open]') && window.syn3h.shell.galaxy.liftShown === 1, undefined, 30)
   await waitForState(page, 'the worlds faded out', () => window.syn3h.shell.galaxy.worldsShown === 0, undefined, 30)
   assert.match((await active()).dialog ?? '', /lobby-sheet-about/, 'focus inside the Welcome sheet')
-  // Tab reaches the buttons beside the sheet; Updates from there morphs: one sheet open throughout.
   const reach = async (word) => { for (let i = 0; i < 80; i++) { await page.keyboard.press('Tab'); if ((await active()).button === word) return true } return false }
-  assert.ok(await reach('Updates'), 'Tab reaches the Updates button beside the sheet')
-  await page.keyboard.press('Enter')
-  await waitForState(page, 'the Updates sheet in place of Welcome', () => !!document.querySelector('dialog.lobby-sheet-updates[open]') && !document.querySelector('dialog.lobby-sheet-about[open]'), undefined, 30)
-  assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.liftShown), 1, 'the name stays risen through the switch')
   // Settings from beside the sheet: the sheet goes and the right-hand card takes over, with focus.
   assert.ok(await reach('Settings'), 'Tab reaches the Settings button beside the sheet')
   await page.keyboard.press('Enter')
-  await waitForState(page, 'the settings card in place of the sheet, the name back down', () => !!document.querySelector('#lobby-settings') && !document.querySelector('dialog.lobby-sheet[open]') && window.syn3h.shell.galaxy.liftShown === 0, undefined, 30)
+  await waitForState(page, 'the settings card in place of Welcome, the name back down', () => !!document.querySelector('#lobby-settings') && !document.querySelector('dialog.lobby-sheet[open]') && window.syn3h.shell.galaxy.liftShown === 0, undefined, 30)
   assert.ok(await page.evaluate(() => document.activeElement?.closest('#lobby-settings') !== null), 'focus inside the settings card')
   // A key reaches a control inside the card: Enter toggles mute.
   const sound = page.locator('#lobby-settings .wi-card[data-section=sound]')
@@ -50,5 +47,8 @@ try {
   assert.equal(await page.evaluate(() => window.__links), links, 'no shader built while sheets opened and closed')
   assert.ok(await page.evaluate(() => !!document.querySelector('.galaxy-ui > .lobby-gear-dock') && !document.querySelector('.lobby-gear-dock.is-beside-sheet')), 'the buttons back in their corner')
   assert.deepEqual(errors, [])
-  console.log('LOBBY SHEETS OK')
+  console.log(`${width}x${height}: ok`)
+  await page.close()
+ }
+ console.log('LOBBY SHEETS OK')
 } finally { await browser.close() }

@@ -14,11 +14,13 @@ const out = 'tests/ui/artifacts/lobby-settings'
 await mkdir(out, { recursive: true })
 const overlaps = (a, b) => a.x < b.x + b.width - 1 && a.x + a.width > b.x + 1 && a.y < b.y + b.height - 1 && a.y + a.height > b.y + 1
 
-for (const mode of ['desktop', 'phone', 'landscape']) {
+const IPAD = { 'ipad-portrait': { viewport: { width: 744, height: 1133 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }, 'ipad-landscape': { viewport: { width: 1133, height: 744 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } }
+// The iPad mini sizes the owner previews on (21 November 2026), upright and on its side.
+for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-landscape']) {
   const touch = mode !== 'desktop'
   const browser = await (touch ? webkit.launch() : chromium.launch({ channel: 'chrome', headless: true }))
   try {
-    const page = await browser.newPage(mode === 'landscape' ? { ...devices['iPhone 14 landscape'], viewport: { width: 844, height: 390 } } : touch ? devices['iPhone 14'] : { viewport: { width: 1440, height: 900 } })
+    const page = await browser.newPage(IPAD[mode] ?? (mode === 'landscape' ? { ...devices['iPhone 14 landscape'], viewport: { width: 844, height: 390 } } : touch ? devices['iPhone 14'] : { viewport: { width: 1440, height: 900 } }))
     const errors = []; page.on('pageerror', (e) => errors.push(e.message))
     await page.goto(`${base}?room=lobby-settings-${mode}-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
@@ -32,11 +34,14 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     const gearBox = await gear.boundingBox()
     assert.ok(gearBox.width >= 44 && gearBox.height >= 44, `${mode}: gear is a 44 px target`)
     assert.equal(await page.locator('.galaxy-links [data-goto=settings]').count(), 0, `${mode}: no SETTINGS text button`)
-    // Settings above Welcome (the owner, 20 November 2026), and Welcome above Updates.
-    assert.deepEqual(await page.$$eval('.lobby-gear-dock .lobby-control', (bs) => bs.map((b) => b.textContent.trim())), ['Settings', 'Welcome', 'Updates'], `${mode}: Settings on top`)
+    // Settings above Welcome (the owner, 20 November 2026), and no Updates button: the version opens it.
+    assert.deepEqual(await page.$$eval('.lobby-gear-dock .lobby-control', (bs) => bs.map((b) => b.textContent.trim())), ['Settings', 'Welcome'], `${mode}: Settings above Welcome, no Updates button`)
     const version = page.locator('[data-lobby-version]')
     // The version is plain text: no card, no glass, no fill behind it.
     assert.deepEqual(await version.evaluate((el) => ({ glass: el.classList.contains('liquid-glass'), fill: getComputedStyle(el).backgroundColor })), { glass: false, fill: 'rgba(0, 0, 0, 0)' }, `${mode}: version has no card`)
+    // It reads as a link and is a full touch target.
+    assert.equal(await version.evaluate((el) => getComputedStyle(el).textDecorationLine), 'underline', `${mode}: version underlined`)
+    assert.ok((await version.boundingBox()).height >= 44, `${mode}: version is a 44 px target`)
     assert.match(await version.textContent(), /\S/, `${mode}: version shown beside the gear`)
     const versionBox = await version.boundingBox()
     // Planet captions are not in this list: they are fixed to orbiting planets and may pass
@@ -62,7 +67,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     assert.deepEqual(await panel.evaluate((el) => ({ card: el.classList.contains('liquid-glass'), inside: el.querySelectorAll('.liquid-glass').length })), { card: true, inside: 0 }, `${mode}: glass on the card only`)
     if (mode === 'desktop') { const box = await panel.boundingBox(); assert.ok(box.x + box.width > 1440 - 60 && box.width < 420, `desktop: a right-hand card ${JSON.stringify(box)}`) }
     // Only what acts in the lobby. Not in a room here, so the Room section hides.
-    assert.deepEqual(await panel.locator('.wi-card').evaluateAll((cards) => cards.filter((c) => c.getClientRects().length).map((c) => c.dataset.section)), ['performance', 'sound', 'play'])
+    assert.deepEqual(await panel.locator('.wi-card').evaluateAll((cards) => cards.filter((c) => c.getClientRects().length).map((c) => c.dataset.section)), ['performance', 'sound', 'glass', 'play'])
     assert.match(await panel.locator('.wi-card[data-section=sound] .wi-sum').textContent(), /Music \d+% · Master \d+%/)
 
     // Sound: music and master volume and mute; the world's own sounds are not here.
@@ -156,13 +161,13 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     }
     if (mode === 'desktop') await page.setViewportSize({ width: 1440, height: 900 })
     if (mode === 'desktop') {
-      // The card stands on the button stack and grows upward; with every section open it still
-      // stops short of the wordmark and above Settings, at both common laptop sizes.
+      // The card stands on the button stack and grows upward; with a section open it stays above
+      // Settings and on screen, at both common laptop sizes.
       for (const [width, height] of [[1440, 900], [1280, 800]]) {
         await page.setViewportSize({ width, height })
         if (await page.locator('#lobby-settings').count()) { await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('#lobby-settings')) }
         await gear.click(); await panel.waitFor({ state: 'visible' })
-        for (const id of ['performance', 'sound', 'play']) await panel.locator(`.wi-card[data-section=${id}]`).evaluate((c) => c.classList.contains('is-open') || c.querySelector('.wi-head').click())
+        for (const id of ['performance', 'sound', 'glass', 'play']) await panel.locator(`.wi-card[data-section=${id}]`).evaluate((c) => c.classList.contains('is-open') || c.querySelector('.wi-head').click())
         await page.waitForTimeout(700)
         const fit = await page.evaluate(() => {
           const card = document.querySelector('#lobby-settings').getBoundingClientRect(), dock = document.querySelector('.lobby-gear-dock').getBoundingClientRect()
@@ -171,7 +176,8 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
         })
         assert.ok(fit.card.bottom <= fit.dock.top, `${width}x${height}: card above the buttons ${JSON.stringify(fit)}`)
         assert.ok(Math.abs(fit.card.right - fit.dock.right) <= 1, `${width}x${height}: card's right edge on the buttons' ${JSON.stringify(fit)}`)
-        if (fit.mark && fit.mark.x + fit.mark.width > fit.card.left) assert.ok(fit.card.top >= fit.mark.y + fit.mark.height, `${width}x${height}: card clear of the wordmark ${JSON.stringify(fit)}`)
+        // It may grow to the top safe area (the owner, 21 November 2026), never past it.
+        assert.ok(fit.card.top >= 0, `${width}x${height}: card inside the screen ${JSON.stringify(fit)}`)
         await page.screenshot({ path: `${out}/desktop-${width}x${height}-all-open.png` })
         await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('#lobby-settings'))
       }

@@ -77,7 +77,7 @@ body:has(.syn3h-shell.is-playing .spawn-help:not([hidden])) .touch-controls .tou
 .touch-controls[data-hand="left"] .touch-stick-ghost > span { animation-name: touch-stick-ghost-left; }
 @keyframes touch-stick-ghost-left { 0%, 15%, 100% { transform: none; } 45%, 65% { transform: translate(-14px, -16px); } }
 /* The minimap goes with the stick, to the lower right corner, so it is not under the action
-   buttons. The Panels tab on the right edge sits higher, clear of it. */
+   buttons. The Panels trigger goes with the buttons, above them. */
 html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minimap { left: auto; right: calc(var(--edge-right) - var(--map-ring)); }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .touch-controls[data-hand="left"] .touch-stick-hint { right: var(--edge-right); }
@@ -203,17 +203,47 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
 .syn3h-shell.has-touch .focus-hud svg [data-reticle] { opacity: 0; transition: opacity .15s ease-out; }
 html[data-touch-aim="on"] .syn3h-shell.has-touch .focus-hud svg [data-reticle] { opacity: 1; transition-duration: .05s; }
 
-/* Landscape phones: the Panels tab (.hud-navigation), centred on the right edge, would end
-   exactly where the thumb grid's top row starts. Stand it on the grid instead, one gap clear,
-   so the two never touch for any vehicle or hand. */
-@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .syn3h-shell.exploration-ui.has-touch .hud-navigation {
-    top: auto; transform: none;
-    bottom: calc(var(--thumb-top) + 12px);
-  }
+/* ---------------------------------------------------------------------------------------
+   The Panels trigger on every touch screen, phone or tablet, either way up (the owner, 21
+   November 2026: "I should never see the Panels button rotated 90 degrees on the right edge of
+   the screen"). It stands on the thumb grid, one gap above TAG and WINGS and as wide as the two
+   (the --thumb-* geometry above), a glass pill with its chevrons and the word Panels. While the
+   panels show it fades out as they grow from it; the stack's own Close panels, at its foot,
+   brings play back (phone-panels.css). Touch is .has-touch (TouchControls.available), with no
+   size query, so no touch screen shows the rotated edge tab (exploration.css). A desktop
+   without touch has no Panels control at all: its panels follow the cursor lock.
+   Every rule starts with `html` to outrank the edge tab's and the themes' rules.
+   --------------------------------------------------------------------------------------- */
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation {
+  top: auto; left: auto; right: max(var(--thumb-margin), env(safe-area-inset-right));
+  bottom: calc(var(--thumb-top) + var(--thumb-gap)); width: var(--thumb-pair-width);
+  display: block; transform: none;
+  transition: opacity .14s ease-out .06s, visibility 0s linear 0s;
+}
+html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .hud-navigation { right: auto; left: max(var(--thumb-margin), env(safe-area-inset-left)); }
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle {
+  writing-mode: horizontal-tb; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 10px;
+  border-radius: var(--glass-radius, 999px); border-right-width: revert;
+  font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; white-space: nowrap;
+}
+/* The drawn pill is 36 px; the finger gets 44. */
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle::after { content: ""; position: absolute; inset: -4px 0; }
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-glyph { display: none; }
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-label { display: inline; }
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-chevrons {
+  display: block; width: 18px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 0 3px rgb(205 205 205 / .45)); transition: translate .2s cubic-bezier(.2,.8,.2,1);
+}
+html .syn3h-shell.exploration-ui.has-touch.is-playing.is-panels .hud-navigation { opacity: 0; visibility: hidden; z-index: 15; pointer-events: none; transition: opacity .12s ease-out, visibility 0s linear .12s; }
+html .syn3h-shell.exploration-ui.has-touch.is-panels .hud-navigation .nav-chevrons { translate: 0 -6px; }
+/* What else stacks above the grid (the portrait status line) stands clear of the trigger. */
+html:has(> body .syn3h-shell.exploration-ui.has-touch.is-playing:not(.is-panels) > .hud-navigation:not([hidden])) { --thumb-above: calc(36px + var(--thumb-gap)); }
+@media (prefers-reduced-motion: reduce) {
+  html .syn3h-shell.exploration-ui.has-touch .hud-navigation, html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-chevrons { transition: none; }
 }
 /* A match announcement (a hill taken, a round won) is the text that matters while it shows:
-   the Panels tab steps out of its way and comes back when it goes. */
+   the Panels trigger steps out of its way and comes back when it goes. */
 .syn3h-shell.has-touch:has(.match-announcement:not([hidden])) .hud-navigation {
   opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s ease-out, visibility 0s linear .2s;
 }

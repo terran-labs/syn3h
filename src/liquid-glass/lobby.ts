@@ -19,8 +19,10 @@ void main() {
   ${glassBlurTaps.map(t => `sum += texture(source, uv + axis * ${t.offset.toFixed(8)}).rgb * ${t.weight.toFixed(10)};`).join('\n')}
   color = vec4(sum, 1);
 }`
-const surfaces = '.galaxy-ui > .lobby-gear-dock > .liquid-glass, #lobby-settings'
-type Shape = { el: HTMLElement; x: number; y: number; w: number; h: number; radius: number; alpha: number; panel: boolean; pressed: boolean }
+// Settings owns one surface. The other sheets are text directly over the galaxy.
+const surfaces = '.lobby-gear-dock > button, .lobby-sheet[open] button, #lobby-settings'
+const plain = '.lobby-version, .galaxy-label, .saved-world-moon, #lobby-settings button, .lobby-sheet button:has(img, video)'
+type Shape = { el: HTMLElement; x: number; y: number; w: number; h: number; radius: number; alpha: number; clip?: DOMRect; panel: boolean; pressed: boolean }
 
 /** Render after the galaxy and logo. The scene is already display-encoded.
  * Texture units 6 and 7 belong to this pass. The galaxy uses 0 through 3. */
@@ -92,6 +94,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   membership.observe(scope, { childList: true })
   const galaxyUI = scope.querySelector('.galaxy-ui')
   if (galaxyUI) membership.observe(galaxyUI, { childList: true })
+  for (const dialog of scope.querySelectorAll('.lobby-sheet')) membership.observe(dialog, { childList: true, subtree: true })
   const resize = () => {
     width = canvas.width; height = canvas.height
     pw = Math.max(1, canvas.clientWidth); ph = Math.max(1, canvas.clientHeight)
@@ -110,7 +113,9 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
     el.removeAttribute('data-glass-native-ink')
   }
   const layout = (now: number) => {
-    const next = [...scope.querySelectorAll<HTMLElement>(surfaces)]
+    const modal = scope.querySelector('dialog[open]')
+    const next = [...(modal ?? scope).querySelectorAll<HTMLElement>(surfaces)]
+      .filter(el => !el.matches(plain))
     if (next.length !== registered.length || next.some((el,i) => el !== registered[i])) {
       for (const old of registered) if (!next.includes(old)) clear(old)
       size.disconnect(); size.observe(canvas); attributes.disconnect()
@@ -121,6 +126,9 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       }
       for (const el of ancestors) attributes.observe(el, { attributes:true, attributeOldValue:true,
         attributeFilter:['class','style','hidden','aria-expanded','data-gfx','data-ui-frost'] })
+      for (const dialog of scope.querySelectorAll('dialog.lobby-sheet')) attributes.observe(dialog, {
+        attributes: true, attributeOldValue: true, attributeFilter: ['open'],
+      })
       registered = next
     }
     const rect = canvas.getBoundingClientRect()
@@ -134,11 +142,16 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       }
       const box = el.getBoundingClientRect(), style = getComputedStyle(el)
       if (!box.width || !box.height || box.right <= rect.left || box.left >= rect.right || box.bottom <= rect.top || box.top >= rect.bottom) { clear(el); continue }
+      const clip = el.closest('.lobby-sheet-body')?.getBoundingClientRect()
+      if (clip && (box.bottom <= clip.top || box.top >= clip.bottom || box.right <= clip.left || box.left >= clip.right)) {
+        clear(el)
+        continue
+      }
       const half = Math.min(box.width,box.height)/2
       const r = style.borderTopLeftRadius
       shapes.push({el,x:box.x-rect.x+box.width/2,y:box.y-rect.y+box.height/2,w:box.width/2,h:box.height/2,
         radius:Math.min(half,r.endsWith('%') ? half*parseFloat(r)/50 : parseFloat(r)*box.width/(el.offsetWidth || box.width)),
-        panel:el.id==='lobby-settings',alpha,pressed:el.matches(':active')})
+        panel:el.id==='lobby-settings',clip:clip && new DOMRect(clip.x-rect.x,clip.y-rect.y,clip.width,clip.height),alpha,pressed:el.matches(':active')})
     }
     // Captions and dock labels are DOM siblings of the galaxy. Cut the panel's
     // rounded outline out of that layer so it cannot write across the glass.
@@ -219,7 +232,12 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       gl.enable(gl.SCISSOR_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA)
       for (const s of shapes) {
         const x=Math.floor((s.x-s.w-14)*sx), y=Math.floor(height-(s.y+s.h+14)*sy)
-        gl.scissor(x,y,Math.ceil((s.w*2+28)*sx)+1,Math.ceil((s.h*2+28)*sy)+1)
+        const right = x + Math.ceil((s.w*2+28)*sx)+1, top = y + Math.ceil((s.h*2+28)*sy)+1
+        if (s.clip) {
+          const left = Math.max(x,Math.floor(s.clip.left*sx)), bottom = Math.max(y,Math.floor(height-s.clip.bottom*sy))
+          gl.scissor(left,bottom,Math.max(0,Math.min(right,Math.ceil(s.clip.right*sx))-left),
+            Math.max(0,Math.min(top,Math.ceil(height-s.clip.top*sy))-bottom))
+        } else gl.scissor(x,y,right-x,top-y)
         gl.uniform4f(u.box,s.x,s.y,s.w,s.h); gl.uniform1f(u.radius,s.radius)
         gl.uniform1f(u.panel,Number(s.panel)); gl.uniform1f(u.opacity,s.alpha); gl.uniform1f(u.pressed,Number(s.pressed))
         gl.drawArrays(gl.TRIANGLES,0,3)

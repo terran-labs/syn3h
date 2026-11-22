@@ -30,12 +30,6 @@ html .syn3h-shell.exploration-ui .world-inspector :is(.wi-card, .wi-ghost)[data-
   box-shadow: none !important;
 }
 
-/* The pinned header covers the rows passing beneath it. Use a plain
-   sticky backing without another backdrop filter inside the card. */
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card[data-glass-surface="shader"] > .wi-head {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
 html:where([data-glass-appearance="light"]) .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
   --s3-ink: #101112;
   --s3-dim: #18191a;
@@ -48,9 +42,7 @@ html:where([data-glass-appearance="light"]) .syn3h-shell.exploration-ui .world-i
 html:where([data-glass-appearance="light"]) .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .wi-row output {
   color: var(--s3-ink);
 }
-html:where([data-glass-appearance="light"]) .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card.is-open[data-glass-surface="shader"] > .wi-head {
-  background: rgb(233 233 235);
-}
+
 
 /* The card supplies the one glass surface. Keep the real colour inputs,
    keyboard outlines and selected states inside it. */
@@ -228,3 +220,13 @@ html:not([data-game-glass]) .wi-group[data-group="Glass"],
   text-transform: none; letter-spacing: normal; text-decoration: underline;
 }
 .syn3h-shell .wi-row > .glass-setting-reset[hidden] { display: none; }
+/* A rail theme can frost Search and the two icons at tablet widths.
+   Once their surfaces are in the framebuffer, there is no DOM blur to apply. */
+html .syn3h-shell.exploration-ui > .world-inspector .rail-command > [data-glass-surface="shader"],
+html .syn3h-shell.exploration-ui > .world-inspector > .panels-close[data-glass-surface="shader"] {
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
+html .syn3h-shell.exploration-ui dialog.lobby-sheet button[data-glass-surface="shader"] {
+  background: transparent; border-color: transparent; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none; color: var(--button-glass-ink);
+}
