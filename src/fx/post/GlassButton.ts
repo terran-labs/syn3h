@@ -262,7 +262,11 @@ export class GlassButton {
       ;(this.radii.array[i] as Vector4).set(radius(style.borderTopLeftRadius), radius(style.borderTopRightRadius), radius(style.borderBottomLeftRadius), radius(style.borderBottomRightRadius))
       ;(this.bodies.array[i] as Vector4).set(rgba[0], rgba[1], rgba[2], Math.min(rgba[3], 0.065))
       ;(this.filters.array[i] as Vector4).set(+filter[1], +filter[2], Number(this.hover.matches && b.matches(':hover')), Number(pressed))
-      if (press) { press.bind(boxes[i], this.radii.array[i] as Vector4, this.presentation.array[i] as Vector4); this.syncPress(press) }
+      if (press) {
+        press.bind(boxes[i], this.radii.array[i] as Vector4, this.presentation.array[i] as Vector4)
+        press.on = b.getAttribute('aria-pressed') === 'true'
+        this.syncPress(press)
+      }
       this.drawn.add(b)
       if (this.pairSlots && b.dataset.action === 'zorb') {
         this.pairZorb = b

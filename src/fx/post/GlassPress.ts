@@ -14,6 +14,8 @@ const releaseCurve = [
   [410, 0, .204], [550, 0, .192], [580, 0, 0],
 ]
 
+/** The face lift a switched-on button keeps (aria-pressed): the pale, white-grey face a press shows, a shade under it. */
+export const ON_LIFT = .8
 /** The native press grows a 35-point circle to 43.5 points across. */
 export const PRESS_GROWTH = 43.5 / 35 - 1
 /** Round labels are rasterised this much larger and scaled down at rest, so they stay crisp as they grow (shader-surface.css). */
@@ -81,6 +83,8 @@ export class GlassPress {
   private moving = false
   private extra = 0
   private labelScale = 0
+  /** Switched on (Wings open, Zorb on): the face holds most of the press's lift. */
+  on = false
   private readonly reduced = matchMedia('(prefers-reduced-motion: reduce)')
 
   constructor(readonly button: HTMLElement) {
@@ -165,7 +169,7 @@ export class GlassPress {
     box.z = this.rest.z + growth
     box.w = this.rest.w + growth
     radius.set(this.corners.x * scale, this.corners.y * scale, this.corners.z * scale, this.corners.w * scale)
-    face.w = this.lift
+    face.w = Math.max(this.lift, this.on ? ON_LIFT : 0)
     if (this.label?.parentNode !== this.button) this.wrapLabel()
     const labelScale = this.round ? scale / ROUND_LABEL_RASTER : scale
     if (this.label && this.labelScale !== labelScale) {

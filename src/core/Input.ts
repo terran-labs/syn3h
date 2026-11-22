@@ -141,9 +141,18 @@ export class Input {
   }
   private flipRequested = false
 
-  /** Switch zorb mode. For the X key and a future touch button. */
+  /**
+   * Switch zorb mode: the X key, the touch ZORB button and the left column's Zorb all come here.
+   * Turning it on also turns the wings (or the jet's flight mode, `special`) off at once (the
+   * owner, 22 November 2026: "if I have wings on, then tap zorb, wings should turn off as the
+   * zorb turns on"). The ball already stowed them for the ride and cleared `special` when it
+   * ended (src/vehicles/zorb.ts, `hold`); clearing it here too makes the Wings button go dark
+   * with the press, and the same state message carries both changes to other players. Inside
+   * the ball Space still hops: a hop is any change of `special`, from either value.
+   */
   toggleZorb(): void {
     this.state.zorb = !this.state.zorb
+    if (this.state.zorb) this.state.special = false
   }
 
   /** Set by the game when the pointer is held on the canvas. */

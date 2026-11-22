@@ -371,7 +371,8 @@ export class TouchControls {
     }
     const cord = Boolean(this.gear?.attached())
     for (const action of ['letOut', 'letGo']) { const button = this.element.querySelector<HTMLElement>(`[data-action="${action}"]`); if (button && button.hidden === cord) button.hidden = !cord }
-    this.element.querySelector('[data-action="special"]')?.setAttribute('aria-pressed', String(this.input.state.special))
+    // Inside the Zorb, Space and WINGS hop and the wings stay stowed: the button shows them off.
+    this.element.querySelector('[data-action="special"]')?.setAttribute('aria-pressed', String(this.input.state.special && !this.input.state.zorb))
     this.element.querySelector('[data-action="zorb"]')?.setAttribute('aria-pressed', String(this.input.state.zorb))
   }
   private flipReady = false
