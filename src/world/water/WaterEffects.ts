@@ -153,6 +153,8 @@ export class WaterEffects implements System {
   }
   async warmCovered(){this.ripples.prepareCovered()}
   /** The meniscus, split view and droplets share this normally hidden lens mesh. */
+  /** A climbed level: water and lava spray allocate for it before the preparation draw (spray.ts prepareClimb). */
+  prepareClimb(){this.spray.prepareClimb();this.lavaSpray.prepareClimb()}
   *precompileMeshes(){yield this.waterline.mesh}
   precompileQualityMeshes(){return this.precompileMeshes()}
   dispose(){this.unfollow();this.listen(this.player,false);this.motes.dispose();this.waterline.dispose();this.underwater.dispose();this.bubbles.dispose();this.spray.dispose();this.lavaSpray.dispose();setLavaSunk(null);this.ripples.dispose()}

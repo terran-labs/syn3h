@@ -291,6 +291,16 @@ export class Spray {
     if (!this.sim || tier !== this.tier) this.allocate(tier)
     this.sim!.step(dt)
   }
+  /**
+   * A climbed level (Game.prepareClimbedLevel): allocate for it now, as update would on the next
+   * frame, so the preparation draw submits the batches (drawn with no instances while idle) and
+   * their pipelines exist before play. Leaving Minimal, they were not in the scene at all.
+   */
+  prepareClimb() {
+    if (!waterSpray.value) return
+    const tier = Math.max(0, Math.min(2, Math.round(graphicsLevel.value)))
+    if (!this.sim || tier !== this.tier) this.allocate(tier)
+  }
   /** One vehicle this frame; `shape` says what touches the liquid (spraySim.ts WakeShape). */
   vehicle(id: string, position: T.Vector3, velocity: T.Vector3, submergedFraction: number, dt: number, shape?: WakeShape) {
     if (!waterSpray.value) return
