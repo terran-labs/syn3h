@@ -33,7 +33,8 @@ void main() {
     float shift = r * mix(.743,.832+abs(n.y)*.044,small)
       * pow(clamp(1.0-depth/(r*mix(.767,1.4,small)),0.0,1.0),mix(4.28,8.75-abs(n.y)*.34,small));
     vec3 detail = texture(scene, uv - vec2(n.x,-n.y)*shift/points).rgb;
-    vec3 wide = texture(frost,uv).rgb, delta = detail-wide;
+    vec4 blurred = texture(frost,uv);
+    vec3 wide = blurred.rgb, delta = detail-wide;
     vec3 body = wide + delta*.275 + abs(delta)*mix(.22,-.22,dark);
     float y = dot(body,vec3(.2126,.7152,.0722));
     float tone = faceTransfer.x*y*y+faceTransfer.y*y+faceTransfer.z;
@@ -50,7 +51,11 @@ void main() {
     face = mix(face, vec3(1), pressed*edgeStrength.z);
     // Match the gameplay white-ink transfer, leaving the outer rim intact.
     vec3 linear = mix(pow((face+.055)/1.055,vec3(2.4)),face/12.92,lessThanEqual(face,vec3(.04045)));
-    float luminance = dot(linear, vec3(.2126,.7152,.0722)), limit = mix(.296,.16,panel);
+    float current = dot(wide, vec3(.2126,.7152,.0722));
+    float slope = mix((blurred.a+current)*faceTransfer.x+faceTransfer.y,panelTransfer.x,panel);
+    vec3 adapted = clamp(face+(blurred.a-current)*slope,0.,1.);
+    vec3 exposure = mix(pow((adapted+.055)/1.055,vec3(2.4)),adapted/12.92,lessThanEqual(adapted,vec3(.04045)));
+    float luminance = dot(exposure, vec3(.2126,.7152,.0722)), limit = mix(.296,.16,panel);
     if (luminance > limit) {
       linear *= limit/luminance;
       vec3 safe = mix(1.055*pow(linear,vec3(1./2.4))-.055,12.92*linear,lessThanEqual(linear,vec3(.0031308)));

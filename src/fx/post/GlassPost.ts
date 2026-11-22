@@ -186,7 +186,7 @@ export class GlassPost {
         filtered = (coord, footprint) => displaySample(coord, footprint).add(correction)
       }
     }
-    const regular = glass.clearMaterial ? undefined : this.tuning
+    const regular = glass.clearMaterial ? undefined : { ...this.tuning, exposure: blur?.exposure }
     if (glass.pressOnly && glass.pairSlots && blurred) {
       const rest = composeGlass(original, sample, glass, this.material, filtered, blurred, false, regular)
       resting = new THREE.RenderPipeline(renderer, velocity ? rest.context({ velocity }) : rest)

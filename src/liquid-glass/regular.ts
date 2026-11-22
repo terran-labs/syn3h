@@ -14,15 +14,24 @@ const wideOffsets = Array.from({ length: 32 }, (_, i) => {
 // White labels on small lenses need 3:1. Card text needs 4.5:1. Leave
 // quantization headroom, and a little more for controls inside large panels.
 // Scale in linear light so bright saturated backdrops retain their hue.
-export function whiteInkFace(rgb: N, panel: N, distance: N, smallControl: N): N {
+export function whiteInkFace(rgb: N, distance: N, smallControl: N, tuning: RegularUniforms, at: N): N {
   const linear = sRGBTransferEOTF(rgb)
-  const luminance = dot(linear, vec3(.2126, .7152, .0722))
-  const limit = mix(mix(.18, .16, panel), .296, smallControl)
+  let adapted = linear
+  if (tuning.exposure) {
+    const pair = tuning.exposure(at)
+    const delta = pair.x.sub(pair.y)
+    // f(history) - f(now) for the measured quadratic button transfer.
+    const slope = pair.x.add(pair.y).mul(tuning.face.x).add(tuning.face.y)
+    adapted = sRGBTransferEOTF(clamp(rgb.add(delta.mul(slope)), 0, 1))
+  }
+  const luminance = dot(adapted, vec3(.2126, .7152, .0722))
+  const limit = mix(.18, .296, smallControl)
   const safe = sRGBTransferOETF(linear.mul(limit.div(max(limit, luminance))))
   return mix(rgb, safe, clamp(distance.negate().sub(1), 0, 1).mul(float(luminance.greaterThan(limit))))
 }
 
 export interface RegularUniforms {
+  exposure?: (at: N) => N // Smoothed and current backdrop luminance
   face: N // Quadratic transfer, linear term, offset and saturation
   panel: N // Panel slope and offset
   edges: N // Rim, hairline and pressed brightness

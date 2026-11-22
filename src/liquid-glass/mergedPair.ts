@@ -81,7 +81,7 @@ export function mergedGlassPair(original: N, circle: Node<'vec4'>, pill: Node<'v
         }
         const face = regularGlass(vec2(radius), distance, gradient, uv(), size, dark, sample, folded, blurred, undefined, tuning)
         const lifted = pressLift ? mix(face, vec3(1), pressLift.mul(tuning?.edges.z ?? .405).mul(float(1).sub(fraction))) : face
-        bg.assign(mix(bg, tuning ? whiteInkFace(lifted, float(0), distance, float(1)) : lifted, coverage))
+        bg.assign(mix(bg, tuning ? whiteInkFace(lifted, distance, float(1), tuning, uv()) : lifted, coverage))
       })
       result.assign(vec4(bg, 1))
     })

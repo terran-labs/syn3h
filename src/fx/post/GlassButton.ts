@@ -239,8 +239,7 @@ export class GlassButton {
       if (!rgba || !filter) continue
       const pressed = [...this.pressed.values()].includes(b) || b.matches(':active, .held')
       const i = this.drawn.size
-      // A collapsed row is a button-sized lens. Blend toward the measured
-      // large-panel transfer as its painted outline opens.
+      // Keep the bevel local to the corners as the card opens. Its face transfer stays the same.
       const panelWeight = isCard ? Math.max(0, Math.min(1, (rect.height - 52) / 64)) : 0
       ;(this.presentation.array[i] as Vector4).set(alpha, panelWeight, Number(!isCard), Number(!isCard && b.dataset.action !== 'brakes' && pressed))
       ;(this.clips.array[i] as Vector4).set(clip.left - c.left, clip.top - c.top, clip.right - c.left, clip.bottom - c.top)

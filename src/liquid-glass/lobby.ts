@@ -1,3 +1,4 @@
+import { tintAdaptation } from './tintAdaptation'
 import faceSource from './lobby.frag.glsl?raw'
 import { glassBlurTaps } from './gaussianKernel'
 import { GlassMotionClock } from './paintedSurface'
@@ -10,14 +11,21 @@ void main() {
 }`
 const blurSource = `#version 300 es
 precision highp float;
-uniform sampler2D source;
+uniform sampler2D source, history;
+uniform float response;
+uniform bool horizontalPass;
 uniform vec2 targetSize, axis;
 out vec4 color;
 void main() {
   vec2 uv = gl_FragCoord.xy / targetSize;
   vec3 sum = vec3(0);
   ${glassBlurTaps.map(t => `sum += texture(source, uv + axis * ${t.offset.toFixed(8)}).rgb * ${t.weight.toFixed(10)};`).join('\n')}
-  color = vec4(sum, 1);
+  float previous = texture(history, uv).a;
+  float current = dot(sum, vec3(.2126, .7152, .0722));
+  // One code value is the smallest update representable in this RGBA8 target.
+  float difference = current - previous;
+  float increment = min(abs(difference), max(abs(difference)*response, 1./255.));
+  color = vec4(sum, horizontalPass ? previous : previous + sign(difference)*increment);
 }`
 // Settings owns one surface. The other sheets are text directly over the galaxy.
 const surfaces = '.lobby-gear-dock > button, .lobby-sheet[open] button, #lobby-settings'
@@ -73,7 +81,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   try { blur = program(blurSource); face = program(faceSource) }
   catch (error) { for (const free of dispose) free(); throw error }
   const u = uniforms(face, ['scene','frost','pixels','points','box','radius','dark','panel','opacity','pressed','veil','faceTransfer','panelTransfer','edgeStrength'])
-  const b = uniforms(blur, ['source','targetSize','axis'])
+  const b = uniforms(blur, ['source','history','targetSize','axis','response','horizontalPass'])
   const scene = texture(), horizontal = target(), vertical = target()
   const scope = canvas.closest('.syn3h-shell') ?? document.body
   const captions = scope.querySelector<HTMLElement>('.galaxy-ui')
@@ -95,7 +103,9 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   const galaxyUI = scope.querySelector('.galaxy-ui')
   if (galaxyUI) membership.observe(galaxyUI, { childList: true })
   for (const dialog of scope.querySelectorAll('.lobby-sheet')) membership.observe(dialog, { childList: true, subtree: true })
+  let lastBlur = 0
   const resize = () => {
+    lastBlur = 0
     width = canvas.width; height = canvas.height
     pw = Math.max(1, canvas.clientWidth); ph = Math.max(1, canvas.clientHeight)
     tw = Math.max(1, Math.ceil(pw/4)); th = Math.max(1, Math.ceil(ph/4))
@@ -174,7 +184,8 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   // Prime the actual programs behind the same cover as the galaxy shader.
   // Use the allocated blur framebuffer while warming, preserving the screen.
   resize()
-  gl.useProgram(blur); gl.uniform1i(b.source,6); gl.uniform2f(b.targetSize,tw,th)
+  gl.useProgram(blur); gl.uniform1i(b.source,6); gl.uniform1i(b.history,7);
+  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D,vertical.tex); gl.uniform2f(b.targetSize,tw,th)
   gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D,scene)
   gl.bindFramebuffer(gl.FRAMEBUFFER,horizontal.fb); gl.viewport(0,0,1,1); gl.drawArrays(gl.TRIANGLES,0,3)
   gl.useProgram(face); gl.uniform1i(u.scene,6); gl.uniform1i(u.frost,7)
@@ -187,6 +198,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
     draw(enabled) {
       if (!enabled) {
         if (active) { captions?.style.removeProperty('clip-path'); scope.removeAttribute('data-lobby-glass'); clock.release(); for (const el of registered) clear(el) }
+        lastBlur = 0
         active = false; changed = false
         return
       }
@@ -213,8 +225,14 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D,scene)
       gl.copyTexSubImage2D(gl.TEXTURE_2D,0,x0,y0,x0,y0,x1-x0,y1-y0)
       gl.useProgram(blur); gl.uniform2f(b.targetSize,tw,th)
+      gl.uniform1f(b.response,lastBlur ? tintAdaptation(now-lastBlur) : 1)
+      lastBlur = now
+      gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D,vertical.tex)
+      gl.activeTexture(gl.TEXTURE6); gl.uniform1i(b.horizontalPass,1)
       gl.viewport(0,0,tw,th); gl.bindFramebuffer(gl.FRAMEBUFFER,horizontal.fb)
       gl.uniform2f(b.axis,tuning.width()/pw,0); gl.drawArrays(gl.TRIANGLES,0,3)
+      gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D,horizontal.tex)
+      gl.activeTexture(gl.TEXTURE6); gl.uniform1i(b.horizontalPass,0)
       gl.bindTexture(gl.TEXTURE_2D,horizontal.tex); gl.bindFramebuffer(gl.FRAMEBUFFER,vertical.fb)
       gl.uniform2f(b.axis,0,tuning.width()/ph); gl.drawArrays(gl.TRIANGLES,0,3)
       gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,width,height)

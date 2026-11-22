@@ -86,7 +86,7 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
             body.assign(glassOptics(box.zw, distance, gradient, uv(), size, material, glass.filters.element(i), glass.bodies.element(i), sample))
           }).Else(() => {
             const opticalSize = presentation ? mix(box.zw, vec2(radius.max(1)), presentation.y) : box.zw
-            body.assign(regularGlass(opticalSize, distance, gradient, uv(), size, dark, sample, filtered, blurred, presentation?.y, tuning))
+            body.assign(regularGlass(opticalSize, distance, gradient, uv(), size, dark, sample, filtered, blurred, tuning ? undefined : presentation?.y, tuning))
           })
           if (glass.pressState) {
             const lift = glass.pressState.y.mul(tuning?.edges.z ?? .405).mul(float(i.equal(glass.pressState.x)))
@@ -95,7 +95,7 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
           if (presentation) {
             body.assign(mix(body, vec3(1), presentation.w.mul(tuning?.edges.z ?? .405)))
           }
-          if (tuning) body.assign(whiteInkFace(body, presentation?.y ?? float(0), distance, presentation?.z ?? float(1)))
+          if (tuning) body.assign(whiteInkFace(body, distance, presentation?.z ?? float(1), tuning, uv()))
           under.assign(mix(under, body, coverage))
         })
         result.assign(vec4(mix(result.rgb, under, opacity) as N, 1))
