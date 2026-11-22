@@ -132,9 +132,16 @@ const climbSets = new WeakMap<T.Object3D, () => T.Mesh[]>()
  * the scene, so their pipelines stay built (the renderer frees a pipeline with its last user), and
  * are let go at the next climb or when the vehicle is released.
  */
-export function climbShowroomStandIns(scene: T.Object3D): T.Mesh[] {
+export function climbShowroomStandIns(scene: T.Object3D, done?: WeakSet<T.Object3D>): T.Mesh[] {
   const out: T.Mesh[] = []
-  scene.traverse(object => { const make = climbSets.get(object); if (make) out.push(...make()) })
+  // `done`: vehicles already given stand-ins in this climb. Making them again would release the
+  // first set, and with it pipelines nothing else holds (a jet's instanced batches), before play.
+  scene.traverse(object => {
+    const make = climbSets.get(object)
+    if (!make || done?.has(object)) return
+    done?.add(object)
+    out.push(...make())
+  })
   return out
 }
 

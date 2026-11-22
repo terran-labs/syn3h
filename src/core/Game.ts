@@ -161,10 +161,11 @@ export class Game {
       else fit.measure(window.innerWidth, window.innerHeight)
     }
     // Resize events come before the frame is drawn, so sizing here never shows a cleared canvas.
-    // While draws are held (a quality change behind the menu or a veil), no draw follows in this
-    // frame and a resize would leave the canvas cleared until it ends: only measure then; the next
-    // drawn frame applies the size just before it draws.
-    window.addEventListener('resize', () => { measure(); if (!this.holdDraws && !this.applyingQuality) fit.fit() })
+    // Only in play does a draw follow in this frame. While draws are held (a quality change behind
+    // the menu or a veil) or thinned (the world behind the galaxy menu, twice a second), a resize
+    // here would leave the canvas cleared until the next draw: only measure then; every drawn frame
+    // applies the size just before it draws. A stopped loop applies and redraws at once.
+    window.addEventListener('resize', () => { measure(); if (!this.holdDraws && !this.applyingQuality && this.view() === 'playing') fit.fit(); else if (this.paused && fit.fit()) this.redrawPaused() })
     if (typeof ResizeObserver !== 'undefined') {
       // Reported after layout, once the rotation has settled. Only recorded while the loop runs:
       // the next frame applies it just before it draws. A stopped loop applies and redraws here.
@@ -449,7 +450,11 @@ export class Game {
    * positive scale keeps the face winding). A mesh whose ancestor is hidden is left alone, so no
    * sibling is ever shown.
    */
-  private prepareClimbedLevel(parts: { systems: boolean; fleet: boolean; standIns?: THREE.Mesh[]; only?: Set<THREE.Object3D>; units?: THREE.Object3D[] }, wrap: (draw: () => void) => void): void {
+  private prepareClimbedLevel(parts: {
+    systems: boolean; fleet: boolean; standIns?: THREE.Mesh[]; only?: Set<THREE.Object3D>; units?: THREE.Object3D[]
+    /** Vehicles already given stand-ins in this climb, and where newly made ones are collected. */
+    done?: WeakSet<THREE.Object3D>; collect?: THREE.Mesh[]
+  }, wrap: (draw: () => void) => void): void {
     const start = longFrames.start()
     longFrames.event('Climbed level preparation')
     const camera = this.camera
@@ -484,7 +489,9 @@ export class Game {
       const standIns = new THREE.Group()
       standIns.position.copy(behind); standIns.scale.setScalar(1e-6)
       const submit = () => {
-        for (const proxy of parts.standIns ?? climbShowroomStandIns(this.scene)) standIns.add(proxy)
+        const made = parts.standIns ?? climbShowroomStandIns(this.scene, parts.done)
+        if (!parts.standIns) parts.collect?.push(...made)
+        for (const proxy of made) standIns.add(proxy)
         if (standIns.children.length) this.scene.add(standIns)
         try { wrap(() => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)) }
         finally { standIns.removeFromParent(); standIns.clear() }
@@ -592,8 +599,11 @@ export class Game {
       progress('Preparing visible surfaces')
       slice(() => { for (const system of this.systems) system.prepareClimb?.() })
       await frame(); check()
+      // Each vehicle's stand-ins are made once per climb and drawn again by the confirmation: made a
+      // second time, the first set would be released with pipelines nothing else holds.
+      const standInsDone = new WeakSet<THREE.Object3D>()
       let standIns: THREE.Mesh[] = []
-      slice(() => { standIns = climbShowroomStandIns(this.scene) })
+      slice(() => { standIns = climbShowroomStandIns(this.scene, standInsDone) })
       await frame(); check()
       // The scene in shares, one draw per frame, then the stand-ins on their own.
       const { units, shares } = this.climbShares(CLIMB_SHARES)
@@ -612,13 +622,14 @@ export class Game {
         await frame(); check()
       }
       progress('Preparing vehicles')
-      slice(() => this.prepareClimbedLevel({ systems: false, fleet: true }, run(true)))
+      const fleetStandIns: THREE.Mesh[] = []
+      slice(() => this.prepareClimbedLevel({ systems: false, fleet: true, done: standInsDone, collect: fleetStandIns }, run(true)))
       await frame(); check()
       progress('Compiling graphics pipelines')
       if (batch && !await batch.ready()) console.warn('Covered climb: a graphics pipeline failed')
       check()
       progress('Drawing the new level')
-      if (batch) slice(() => this.prepareClimbedLevel({ systems: false, fleet: true }, run(false)))
+      if (batch) slice(() => this.prepareClimbedLevel({ systems: false, fleet: true, standIns: [...standIns, ...fleetStandIns] }, run(false)))
       await frame(); check()
       // The first presented frame at the new level: its render scale is applied with it (deferPixelRatio).
       slice(() => { this.quality.takePixelRatio(); this.viewFit?.fit(); drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16) })
