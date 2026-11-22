@@ -59,7 +59,11 @@ for (const mode of modes) {
     if (touch && await page.locator('.world-inspector').isHidden()) await page.locator('.inspector-toggle').tap()
     else if (!touch && await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
     await page.locator('.world-inspector').waitFor({ state: 'visible' })
-    for (const head of await page.locator('.wi-head').all()) await head.click()
+    for (const head of await page.locator('.wi-head').all()) {
+      await head.click()
+      // On a phone the open card occupies the rail. Return to the list to reach the next header.
+      if (await page.locator('.world-inspector.is-single').count()) await head.click()
+    }
     await page.waitForFunction(() => !document.querySelector('.wi-cards').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
     // Headers are finger-sized (44 px, 48 on touch). On a short screen the stack may scroll
     // vertically to fit them, so each must be reachable by scrolling, and nothing scrolls sideways.
