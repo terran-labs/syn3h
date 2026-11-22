@@ -32,6 +32,7 @@ import { bentGrazing, curveInverseRadius } from '../curve'
 import { NO_BED, type WaterBed } from './bed'
 import { cameraInWaterNode, liquidDaylightNode } from './daylight'
 import { airFogOf } from './underwater'
+import { refractThrough } from './refraction'
 export { buildBedTexture, type WaterBed } from './bed'
 import { prevailingWindStrength } from '../weather'
 import { fogLayersOf } from '../weather/fog'
@@ -503,6 +504,8 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   material.aoNode = mix(float(0.1), float(1), faceDirection.mul(0.5).add(0.5))
 
   hazeCurve(material)
+  // From Medium up, what lies under the surface wobbles with it (refraction.ts).
+  refractThrough(material, { x: sx, z: sz }, depth)
 
   return {
     material,
