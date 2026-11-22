@@ -344,6 +344,10 @@ export const GOVERNOR = {
   maxBackoff: 32,
   /** No climb waits longer than this, however often it failed. */
   maxClimbWaitMs: 600000,
+  /** A covered climb abandoned with the Applying veil up (it did not finish in time) multiplies the wait for that level by this. */
+  climbAbandonBackoff: 4,
+  /** After this many such abandons at a level, the governor does not climb to it again this session. */
+  climbAbandonLimit: 2,
   /** Until the first shed of a session, climb waits are multiplied by this. */
   calibrationFactor: 0.25,
   /** A level climb waits this long for a covered moment before it is taken during play. */
@@ -567,6 +571,7 @@ export class QualityGovernor {
     if (this.rung > 0) return { level: this.level, rung: this.rung - 1, timing: RUNG_TIMING[this.ladder[this.rung].kind as RungKind] }
     if (this.levelPinned || this.level >= this.ceiling) return null
     const level = (this.level + 1) as QualityLevel
+    if ((this.abandons.get(level) ?? 0) >= GOVERNOR.climbAbandonLimit) return null
     return { level, rung: this.ladderFor(level).length - 1, timing: RUNG_TIMING.level }
   }
   private shedTiming() {
@@ -617,6 +622,21 @@ export class QualityGovernor {
     if (this.pendingLevel === null) { this.pendingLevel = (this.level + 1) as QualityLevel; this.pendingAt = this.clock; return null }
     return this.clock - this.pendingAt >= GOVERNOR.climbGraceMs && (this.canClimbVisible?.(this.pendingLevel) ?? true) ? this.climb() : null
   }
+  /** Covered climbs to each level abandoned with the veil up, this session (noteAbandon). */
+  private readonly abandons = new Map<QualityLevel, number>()
+  /**
+   * A covered climb to `level` did not finish while the Applying veil stood: wait longer before
+   * the next try (climbAbandonBackoff, within maxClimbWaitMs), and after climbAbandonLimit such
+   * abandons stop climbing to it this session. A device too slow to prepare a level must not pay
+   * the preparation behind every menu, about once a minute, and never get there.
+   */
+  noteAbandon(level: QualityLevel): void {
+    this.abandons.set(level, (this.abandons.get(level) ?? 0) + 1)
+    const key = `${level}:${this.ladderFor(level).length - 1}`, most = GOVERNOR.maxClimbWaitMs / RUNG_TIMING.level.climbMs
+    this.backoff.set(key, Math.min(most, (this.backoff.get(key) ?? 1) * GOVERNOR.climbAbandonBackoff))
+  }
+  /** Abandons counted for a level this session (tests, diagnostics). */
+  abandonsAt(level: QualityLevel): number { return this.abandons.get(level) ?? 0 }
   /** Whether applyPendingClimb would take a climb now, without taking it. */
   pendingClimbReady(): boolean { return this.pendingLevel !== null && this.auto && this.rung === 0 && !!this.climbTarget() }
   /** The controller reports a moment when a shader build will not be seen. Takes a pending level climb. */
@@ -649,7 +669,7 @@ export class QualityGovernor {
   }
 }
 
-export interface QualityTerrain { setRenderQuality?(options: { level: 0 | 1 | 2; quality: QualityLevel; drawDistance: number; detail: number; groundCover: boolean }): void }
+export interface QualityTerrain { setRenderQuality?(options: { level: 0 | 1 | 2; quality: QualityLevel; drawDistance: number; detail: number; groundCover: boolean }): void; onRegenerate?(listener: () => void): () => void }
 export interface FrameMetrics { fps: number; frameMs: number; physicsMs: number; drawCalls: number; triangles: number; firstFrameMs: number | null
   /** Renderer pipeline cache this frame: live size and objects not seen before. Absent or null where unreadable. */
   pipelinesLive?: number | null; pipelinesFresh?: number | null }
@@ -919,8 +939,13 @@ export class QualityController implements QualitySource {
     if (change) { this.lastReason = change.reason; this.apply('governor', true) }
     return change
   }
-  /** A covered climb that could not finish in time: back to the level it left, whose pipelines are alive. */
-  abandonClimb(level: QualityLevel): void {
+  /**
+   * A covered climb that did not finish: back to the level it left, whose pipelines are alive.
+   * `counted` when it ran out of time behind the veil (the device is too slow for `to`); not when
+   * the world went away under it.
+   */
+  abandonClimb(level: QualityLevel, to: QualityLevel, counted: boolean): void {
+    if (counted) this.governor.noteAbandon(to)
     const change = this.governor.reset(level, 'climb-abandoned')
     this.lastReason = change.reason
     this.apply('governor', true)
@@ -1051,9 +1076,9 @@ export class QualityController implements QualitySource {
     if (!b || this.disposed || !b.shed(true)) return false
     this.history.resetEvidence(); this.publishPerformance(); return true
   }
-  attachTerrain(terrain: QualityTerrain) { this.terrain = terrain; this.terrainWritten = false; this.onTerrain?.(); this.apply('start') }
+  attachTerrain(terrain: QualityTerrain) { this.terrain = terrain; this.terrainWritten = false; this.onTerrain?.(terrain); this.apply('start') }
   /** Startup timing hook: main calls attachTerrain right after building the terrain. */
-  onTerrain: (() => void) | null = null
+  onTerrain: ((terrain: QualityTerrain) => void) | null = null
   /**
    * Make the world match the governor. On a level change the whole preset is written in one
    * tick, so a post chain rebuilds once. Overrides are skipped unless the player made the
