@@ -583,8 +583,13 @@ export class Game {
         slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns: [], only: share, units }, run(true)))
         await frame(); check()
       }
-      slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns, only: new Set(), units }, run(true)))
-      await frame(); check()
+      // The stand-ins in groups too: a fleet's showroom sets are many new materials at once.
+      const groups = Math.max(1, Math.min(CLIMB_SHARES, Math.ceil(standIns.length / 12)))
+      for (let g = 0; g < groups; g++) {
+        const part = standIns.filter((_, i) => i % groups === g)
+        slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns: part, only: new Set(), units }, run(true)))
+        await frame(); check()
+      }
       progress('Preparing vehicles')
       slice(() => this.prepareClimbedLevel({ systems: false, fleet: true }, run(true)))
       await frame(); check()
