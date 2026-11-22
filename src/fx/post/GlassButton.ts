@@ -43,7 +43,10 @@ export class GlassButton {
   private readonly brake = this.query.get('glass') !== 'target' && this.query.get('glassPress') !== 'off'
     && this.query.get('glassMaterial') !== 'clear' ? new BrakeGlassPress() : null
   readonly pressOnly = this.query.get('glassMerge') === 'zorb-brake-pressed'
-  readonly pairSlots = this.brake && (this.pressOnly || (this.query.get('glassMerge') ?? 'zorb-brake') === 'zorb-brake')
+  // Thumb buttons never fuse (the owner, 22 November 2026: Zorb and Brake "distorting towards
+  // each other"). Each keeps its own outline at rest and pressed. The smooth-union pilot stays
+  // reachable for the glass lab only, through ?glassMerge=zorb-brake or zorb-brake-pressed.
+  readonly pairSlots = this.brake && (this.pressOnly || this.query.get('glassMerge') === 'zorb-brake')
     && !['direct', 'mip'].includes(this.query.get('glassBlur') ?? '')
     ? uniform(new Vector4(-1, -1, 0, 0)) : undefined
   private pairBrake?: HTMLElement
