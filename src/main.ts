@@ -43,6 +43,7 @@ import { WaterEffects } from './world/water/WaterEffects'
 import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weather'
 import { applyWordmarkQuery } from './ui/brand/wordmarkFlags'
 import { setDayClock } from './world/sky/dayCycle'
+import { screenEdgesLine } from './ui/screenEdges'
 
 async function main(): Promise<void> {
   initializeFrozenResources(location.href)
@@ -188,7 +189,7 @@ async function main(): Promise<void> {
       ? Array.from(sessionNetwork.players.values()).filter(player => player.bot).map(player => player.kind)
       : bots.vehicles.map(bot => bot.kind)
     return diagnosticReport(game.quality.getPerformanceSnapshot(), slot.current.kind, botKinds, currentWorldName(), currentPlanet().label,
-      sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine) + '\n' + glassDiagnostics()
+      sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine) + '\n' + glassDiagnostics() + '\n' + screenEdgesLine()
   }
   shell.configurePerformance({
     runPerformanceCheck: async signal => (await import('./diagnostics/inWorldCheck')).runInWorldCheck({

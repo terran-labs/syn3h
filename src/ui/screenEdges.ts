@@ -30,6 +30,28 @@ function screenAngle(): number | null {
   return typeof legacy === 'number' ? legacy : null
 }
 
+/** The four reported safe-area insets, CSS px, read through a throwaway element. */
+function readInsets(): { top: number; right: number; bottom: number; left: number } {
+  const probe = document.createElement('div')
+  probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)'
+  document.body.append(probe)
+  const style = getComputedStyle(probe)
+  const px = (v: string) => Math.round((parseFloat(v) || 0) * 10) / 10
+  const insets = { top: px(style.paddingTop), right: px(style.paddingRight), bottom: px(style.paddingBottom), left: px(style.paddingLeft) }
+  probe.remove()
+  return insets
+}
+
+/**
+ * One line for the copied diagnostics: the insets the browser reports, the screen angle and the
+ * side the HUD treats as the cutout's, so a player can check both landscape directions at once.
+ */
+export function screenEdgesLine(): string {
+  const i = readInsets(), angle = screenAngle(), landscape = innerWidth > innerHeight
+  const side = document.documentElement.dataset.cutoutSide ?? cutoutSide(i.left, i.right, landscape, angle) ?? 'none'
+  return `Screen edges: insets top ${i.top}, right ${i.right}, bottom ${i.bottom}, left ${i.left} px; ${landscape ? 'landscape' : 'portrait'} ${innerWidth}x${innerHeight}, screen angle ${angle ?? 'unknown'}; cutout side ${side}`
+}
+
 export function watchScreenEdges(root: HTMLElement = document.documentElement): () => void {
   // One invisible probe reads the reported insets as lengths.
   const probe = document.createElement('div')
