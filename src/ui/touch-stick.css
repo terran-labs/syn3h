@@ -182,6 +182,26 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
 /* Labels stay in one type style and wrap inside the circle rather than resize it. */
 .touch-controls .touch-actions button { min-height: 0; padding: 0 4px; line-height: 1.1; white-space: normal; overflow-wrap: anywhere; }
 
+/* Press: every thumb button, the gear's thumb buttons and the Panels control swell under the
+   finger (the owner, 22 November 2026: "make this a consistent behavior everywhere"). At Liquid
+   the shader draws it (src/fx/post/GlassPress.ts) and the button itself stays put. Without the
+   shader (Frost, Flat, or Liquid shed on slow frames) the CSS does the same with a slight
+   overshoot, to 1.14 across: two held neighbours then just meet at the narrowest gap (56 px
+   buttons 8 px apart), so neither covers the other's label. */
+:root { --thumb-press-scale: 1.14; }
+:is(.touch-controls .touch-actions .liquid-glass, .gear-actions > button.liquid-glass):not([data-glass-surface="shader"]),
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle.liquid-glass:not([data-glass-surface="shader"]) {
+  transition: transform .32s cubic-bezier(.3, 1.6, .5, 1), background-color .12s ease-out;
+}
+:is(.touch-controls .touch-actions .liquid-glass, .gear-actions > button.liquid-glass):is(.held, :active):not([data-glass-surface="shader"], :disabled),
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle.liquid-glass:active:not([data-glass-surface="shader"]) {
+  transform: scale(var(--thumb-press-scale)); transition: transform .2s cubic-bezier(.3, 1.6, .5, 1), background-color .06s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.touch-controls .touch-actions .liquid-glass, .gear-actions > button.liquid-glass):is(.held, :active),
+  html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle.liquid-glass:active { transform: none; }
+}
+
 /* The Cancel ring for a held Tag shot: diagonally above the cluster, placed by
    TouchControls.cancelZone. Shown only while Tag is dragged with gear that sends on release;
    lit while the thumb is on it, when lifting sends nothing. */

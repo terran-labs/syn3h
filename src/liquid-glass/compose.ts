@@ -7,7 +7,6 @@ type N = any // TSL expression with a shader-dependent node type.
 
 export interface GlassSurfaces {
   pairSlots?: N
-  pressState?: N
   surfaceCount?: N
   capacity: number
   viewport: N
@@ -88,10 +87,6 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
             const opticalSize = presentation ? mix(box.zw, vec2(radius.max(1)), presentation.y) : box.zw
             body.assign(regularGlass(opticalSize, distance, gradient, uv(), size, dark, sample, filtered, blurred, tuning ? undefined : presentation?.y, tuning))
           })
-          if (glass.pressState) {
-            const lift = glass.pressState.y.mul(tuning?.edges.z ?? .405).mul(float(i.equal(glass.pressState.x)))
-            body.assign(mix(body, vec3(1), lift))
-          }
           if (presentation) {
             body.assign(mix(body, vec3(1), presentation.w.mul(tuning?.edges.z ?? .405)))
           }
@@ -104,7 +99,7 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
     if (pair && filtered && blurred) {
       If(pair.z.greaterThan(0), () => {
         const merged = mergedGlassPair(result, glass.boxes.element(pair.x.toInt()), glass.boxes.element(pair.y.toInt()),
-          glass.viewport, pixelsPerPoint, sample, filtered, blurred, glass.pressState?.y, pair.z, tuning)
+          glass.viewport, pixelsPerPoint, sample, filtered, blurred, glass.presentation?.element(pair.y.toInt()).w, pair.z, tuning)
         result.assign(glass.presentation ? mix(result, merged, glass.presentation.element(pair.x.toInt()).x) : merged)
       })
     }

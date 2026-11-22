@@ -1,6 +1,6 @@
 import { respectReducedTransparency } from '../../ui/glassMaterial'
 import { paintedInset, GlassMotionClock } from '../../liquid-glass/paintedSurface'
-import { BrakeGlassPress } from './BrakeGlassPress'
+import { GlassPress, pressAllowances } from './GlassPress'
 import { longFrames } from '../../core/longFrames'
 import { Vector4 } from 'three/webgpu'
 import { uniform, uniformArray } from 'three/tsl'
@@ -11,6 +11,12 @@ const inspector = '.syn3h-shell > .world-inspector:not(.lobby-settings)'
 const card = inspector + ' > .wi-cards > .wi-card, ' + inspector + ' > .wi-ghosts > .wi-ghost.wi-glass, .drive-notices > .performance-recommendation'
 const buttons = [panel, round, '.pause-actions > button', '.rail-command > button', '.rail-command > input.wi-search',
   '.world-inspector > .panels-close', '.gear-actions > button', '.rail-foot > button'].join(',')
+/** Buttons that swell when pressed (GlassPress): every thumb button, the gear's thumb buttons and
+ * the touch Panels control (the owner, 22 November 2026: "we should make this a consistent
+ * behavior everywhere"). Panel interiors, the rail and cards keep their CSS press. */
+const pressable = '.touch-actions .liquid-glass.glass-round, .gear-actions > button, .syn3h-shell.has-touch ' + panel
+/** CSS px of air kept between two swelling neighbours' outlines. */
+const PRESS_AIR = 1
 // The gear drum and the desktop left column (Wings, Zorb, Chat...) are floating text, not glass
 // (the owner, 21 November 2026), so they are not registered here at any material stop.
 export const gameplayGlassSlots = 32
@@ -40,13 +46,15 @@ export class GlassButton {
   readonly surfaceCount = uniform(0, 'int')
   readonly viewport = uniform(new Vector4())
   private readonly query = new URLSearchParams(location.search)
-  private readonly brake = this.query.get('glass') !== 'target' && this.query.get('glassPress') !== 'off'
-    && this.query.get('glassMaterial') !== 'clear' ? new BrakeGlassPress() : null
+  /** Press expansion is on unless the address turns it off (?glassPress=off) or the material cannot draw it. */
+  private readonly pressEnabled = this.query.get('glass') !== 'target' && this.query.get('glassPress') !== 'off'
+    && this.query.get('glassMaterial') !== 'clear'
+  private readonly presses = new Map<HTMLElement, GlassPress>()
   readonly pressOnly = this.query.get('glassMerge') === 'zorb-brake-pressed'
   // Thumb buttons never fuse (the owner, 22 November 2026: Zorb and Brake "distorting towards
   // each other"). Each keeps its own outline at rest and pressed. The smooth-union pilot stays
   // reachable for the glass lab only, through ?glassMerge=zorb-brake or zorb-brake-pressed.
-  readonly pairSlots = this.brake && (this.pressOnly || this.query.get('glassMerge') === 'zorb-brake')
+  readonly pairSlots = this.pressEnabled && (this.pressOnly || this.query.get('glassMerge') === 'zorb-brake')
     && !['direct', 'mip'].includes(this.query.get('glassBlur') ?? '')
     ? uniform(new Vector4(-1, -1, 0, 0)) : undefined
   private pairBrake?: HTMLElement
@@ -56,7 +64,6 @@ export class GlassButton {
   private zorbStrength = 0
   private readonly reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
-  readonly pressState = this.brake?.state
   private readonly events = new AbortController()
   private dirty = true
   readonly invalidate = () => { this.dirty = true; this.requestDraw() }
@@ -67,8 +74,9 @@ export class GlassButton {
     for (const record of records) {
       const el = record.target as Element
       if (record.oldValue === el.getAttribute(record.attributeName!)) continue
-      if (el.matches('[data-glass-press="brake"]') && record.attributeName === 'class') {
-        this.brake?.sync()
+      const press = this.presses.get(el as HTMLElement)
+      if (press && record.attributeName === 'class') {
+        this.syncPress(press)
         const prior = (record.oldValue ?? '').split(/\s+/).filter(c => c && c !== 'held')
         const next = Array.from(el.classList).filter(c => c !== 'held')
         if (prior.length === next.length && prior.every(c => next.includes(c))) continue
@@ -122,11 +130,18 @@ export class GlassButton {
     }
     window.addEventListener('pointerdown', e => {
       const button = e.target instanceof Element ? e.target.closest('button') : null
-      if (button?.dataset.glassPress === 'brake') return
       if (button) this.pressed.set(e.pointerId, button)
+      // A swelling button needs no layout read: its press only moves its painted outline.
+      const press = button && this.presses.get(button)
+      if (press) { this.syncPress(press); this.requestDraw(); return }
       this.invalidate()
     }, options)
-    const release = (event: PointerEvent) => { if (this.pressed.delete(event.pointerId)) this.invalidate() }
+    const release = (event: PointerEvent) => {
+      const button = this.pressed.get(event.pointerId)
+      if (!this.pressed.delete(event.pointerId)) return
+      const press = button && this.presses.get(button as HTMLElement)
+      if (press) { this.syncPress(press); this.requestDraw() } else this.invalidate()
+    }
     window.addEventListener('pointerup', release, options)
     window.addEventListener('pointercancel', release, options)
     window.addEventListener('blur', () => { this.pressed.clear(); this.invalidate() }, options)
@@ -152,7 +167,7 @@ export class GlassButton {
   private updatePairStrength(): void {
     const slots = this.pairSlots?.value
     if (slots && slots.x >= 0) {
-      slots.z = this.pressOnly ? Math.max(this.brake!.expansion, this.zorbStrength) : 1
+      slots.z = this.pressOnly ? Math.max(this.pairBrake ? this.presses.get(this.pairBrake)?.expansion ?? 0 : 0, this.zorbStrength) : 1
     }
   }
 
@@ -175,12 +190,6 @@ export class GlassButton {
       for (const b of this.controls) {
         const actions = b.closest<HTMLElement>('.touch-actions')
         if (this.pairSlots && actions) actions.dataset.glassContainer = 'thumb-actions'
-        if (this.brake && b.dataset.action === 'brakes' && !b.querySelector('.brake-glass-label')) {
-          const label = document.createElement('span')
-          label.className = 'brake-glass-label'
-          label.textContent = b.textContent
-          b.replaceChildren(label)
-        }
         this.resize.observe(b)
         for (let el: HTMLElement | null = b; el; el = el.parentElement) {
           this.changes.observe(el, { attributes: true, attributeOldValue: true, attributeFilter: ['class', 'hidden', 'style', 'data-hand', 'data-ui-frost', 'data-gfx', 'aria-pressed'] })
@@ -191,7 +200,7 @@ export class GlassButton {
     if (this.pairBrake?.hidden || this.pairZorb?.hidden) this.dirty = true
     const poseTime = performance.now()
     if (this.clock.advance(poseTime)) this.dirty = true
-    if (!this.dirty) { this.brake?.advance(); this.followZorbScale(); this.updatePairStrength(); return }
+    if (!this.dirty) { this.advancePresses(); this.followZorbScale(); this.updatePairStrength(); return }
     const start = performance.now()
     this.dirty = false
     this.drawn.clear()
@@ -204,7 +213,6 @@ export class GlassButton {
     this.viewport.value.set(c.width, c.height, 1, Number(this.clearMaterial))
     const boxes = this.boxes.array as Vector4[]
     for (const v of boxes) v.z = 0
-    let brakeVisible = false
     let zorbSlot = -1, brakeSlot = -1
     let zorbGroup: Element | null = null, brakeGroup: Element | null = null
     this.pairBrake = this.pairZorb = undefined
@@ -245,7 +253,8 @@ export class GlassButton {
       const i = this.drawn.size
       // Keep the bevel local to the corners as the card opens. Its face transfer stays the same.
       const panelWeight = isCard ? Math.max(0, Math.min(1, (rect.height - 52) / 64)) : 0
-      ;(this.presentation.array[i] as Vector4).set(alpha, panelWeight, Number(!isCard), Number(!isCard && b.dataset.action !== 'brakes' && pressed))
+      const press = this.pressEnabled && b.matches(pressable) ? this.pressFor(b) : undefined
+      ;(this.presentation.array[i] as Vector4).set(alpha, panelWeight, Number(!isCard), press ? 0 : Number(!isCard && pressed))
       ;(this.clips.array[i] as Vector4).set(clip.left - c.left, clip.top - c.top, clip.right - c.left, clip.bottom - c.top)
       const half = Math.min(rect.width, rect.height) / 2
       const radius = (s: string) => Math.min(half, s.endsWith('%') ? parseFloat(s) * half / 50 : parseFloat(s) * sx)
@@ -253,6 +262,7 @@ export class GlassButton {
       ;(this.radii.array[i] as Vector4).set(radius(style.borderTopLeftRadius), radius(style.borderTopRightRadius), radius(style.borderBottomLeftRadius), radius(style.borderBottomRightRadius))
       ;(this.bodies.array[i] as Vector4).set(rgba[0], rgba[1], rgba[2], Math.min(rgba[3], 0.065))
       ;(this.filters.array[i] as Vector4).set(+filter[1], +filter[2], Number(this.hover.matches && b.matches(':hover')), Number(pressed))
+      if (press) { press.bind(boxes[i], this.radii.array[i] as Vector4, this.presentation.array[i] as Vector4); this.syncPress(press) }
       this.drawn.add(b)
       if (this.pairSlots && b.dataset.action === 'zorb') {
         this.pairZorb = b
@@ -262,9 +272,7 @@ export class GlassButton {
         zorbSlot = i
         zorbGroup = b.closest('[data-glass-container]')
       }
-      if (this.brake && b.dataset.action === 'brakes') {
-        this.brake.bind(b, i, boxes[i], this.radii.array[i] as Vector4)
-        brakeVisible = true
+      if (b.dataset.action === 'brakes') {
         if (this.pairSlots) {
           brakeSlot = i
           brakeGroup = b.closest('[data-glass-container]')
@@ -276,8 +284,8 @@ export class GlassButton {
       this.pairSlots.value.set(zorbSlot, brakeSlot, 0, 0)
     }
     if (!this.pairZorb) this.zorbScaling = false
-    if (brakeVisible) this.brake?.advance()
-    else this.brake?.clear()
+    for (const [b, press] of this.presses) if (!this.drawn.has(b)) { press.clear(); this.presses.delete(b) }
+    this.advancePresses(true)
     this.updatePairStrength()
     this.surfaceCount.value = this.drawn.size
     this.lastLayoutMs = performance.now() - start
@@ -287,11 +295,43 @@ export class GlassButton {
   tune(growth: number) {
     if (growth === this.pressGrowth) return
     this.pressGrowth = growth
-    this.brake?.setGrowth(growth)
+    for (const press of this.presses.values()) press.setExtra(growth)
     this.invalidate()
   }
 
-  get animating(): boolean { return this.clock.active }
+  private pressFor(b: HTMLElement): GlassPress {
+    let press = this.presses.get(b)
+    if (!press) { press = new GlassPress(b); press.setExtra(this.pressGrowth); this.presses.set(b, press) }
+    return press
+  }
+
+  /** Pressed is the touch controls' finger-down class, or a pointer that went down on it (Panels). */
+  private syncPress(press: GlassPress) {
+    const b = press.button
+    press.sync(b.classList.contains('held') || [...this.pressed.values()].includes(b))
+  }
+
+  private readonly wants: number[] = []
+  private readonly allowed: number[] = []
+  /** Step every press, then let neighbours share the space between them (pressAllowances). */
+  private pressesSettled = false
+  private advancePresses(rebound = false) {
+    if (!this.presses.size) return
+    // At rest nothing moves: skip the per-frame work until a press starts (or layout rebinds).
+    if (rebound) this.pressesSettled = false
+    let moving = false
+    for (const press of this.presses.values()) if (press.active) { moving = true; break }
+    if (!moving && this.pressesSettled) return
+    this.pressesSettled = !moving
+    const now = performance.now()
+    const list = [...this.presses.values()]
+    this.wants.length = list.length
+    for (let i = 0; i < list.length; i++) this.wants[i] = list[i].advance(now)
+    pressAllowances(list.map(p => p.centre), this.wants, PRESS_AIR, this.allowed)
+    for (let i = 0; i < list.length; i++) list[i].apply(this.allowed[i])
+  }
+
+  get animating(): boolean { return this.clock.active || [...this.presses.values()].some(p => p.active) }
   get reducedTransparency(): boolean { return respectReducedTransparency && this.reduced.matches }
   get available(): boolean {
     const { driveGlass, gfx } = document.documentElement.dataset
@@ -329,7 +369,8 @@ export class GlassButton {
     this.pairSlots?.value.set(-1, -1, 0, 0)
     this.pairBrake = this.pairZorb = undefined
     this.zorbScaling = false
-    this.brake?.clear()
+    for (const press of this.presses.values()) press.clear()
+    this.presses.clear()
     this.drawn.clear()
     this.surfaceCount.value = 0
     this.present()

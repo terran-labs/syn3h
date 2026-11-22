@@ -345,7 +345,11 @@ export class TouchControls {
     document.documentElement.style.setProperty('--thumb-columns', kind === 'jet' ? '3' : '2')
     for (const button of this.element.querySelectorAll<HTMLElement>('[data-action^="throttle"]')) button.hidden = kind !== 'jet'
     const special = this.element.querySelector<HTMLButtonElement>('[data-action="special"]')
-    if (special) { special.textContent = kind === 'jet' ? 'MODE' : 'WINGS'; special.hidden = kind === 'hovercraft' }
+    if (special) {
+      // The Liquid Glass press gathers a button's text into one label (src/fx/post/GlassPress.ts): write into it when it is there.
+      (special.querySelector('.glass-press-label') ?? special).textContent = kind === 'jet' ? 'MODE' : 'WINGS'
+      special.hidden = kind === 'hovercraft'
+    }
   }
   set enabled(value: boolean) {
     this.active = value; this.element.hidden = !value || !this.available
