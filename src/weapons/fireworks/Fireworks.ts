@@ -22,6 +22,7 @@
  * At most MAX_BURSTS are alive at once: the batch holds exactly that many bursts' worth, and a
  * new burst reuses the oldest one's slots. Five hundred stars per burst at High at most.
  */
+import { warmGear } from '../warm'
 import * as T from 'three/webgpu'
 import type { Game } from '../../core/Game'
 import { graphicsLevel } from '../../core/quality'
@@ -137,7 +138,11 @@ export class Fireworks {
   constructor(private readonly game: Game) {
     this.glow = new GroundGlow(game)
     this.rebuild()
+    // Prepared again for each new graphics level, by hand or automatic, not only at entry: a
+    // first burst after a climb from Minimal built its batches in play (warm.ts).
+    this.unwarm = warmGear(game, [], undefined, () => this.precompileMeshes())
   }
+  private readonly unwarm: () => void
 
   /** Bursts alive now (at most MAX_BURSTS). */
   get alive(): number { return this.ends.filter(e => e > this.clock).length }
@@ -376,5 +381,5 @@ export class Fireworks {
     yield this.stars.mesh; yield this.dayStars.mesh; yield this.flash.mesh; yield this.smoke.mesh
     yield* this.glow.precompileMeshes()
   }
-  dispose(): void { this.stars.dispose(); this.dayStars.dispose(); this.flash.dispose(); this.smoke.dispose(); this.glow.dispose() }
+  dispose(): void { this.unwarm(); this.stars.dispose(); this.dayStars.dispose(); this.flash.dispose(); this.smoke.dispose(); this.glow.dispose() }
 }

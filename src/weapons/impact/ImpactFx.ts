@@ -23,6 +23,7 @@
 import * as T from 'three/webgpu'
 import type { Game } from '../../core/Game'
 import { graphicsLevel, qualityBudget } from '../../core/quality'
+import { warmGear } from '../warm'
 import { ParticleBatch } from '../../vehicles/effects/ParticleBatch'
 import { dustSprite } from '../../vehicles/effects/sprites'
 import { flashSprite } from './flashSprite'
@@ -60,6 +61,7 @@ export class ImpactFx {
   private debris!: ParticleBatch
   private readonly light: ImpactPulses
   private readonly scorch = new ScorchMarks()
+  private readonly unwarm: () => void
   private level = -1
   private clock = 0
   private serial = 0
@@ -80,6 +82,8 @@ export class ImpactFx {
     this.light = new ImpactPulses(game, 'glow')
     game.scene.add(this.scorch.mesh)
     this.rebuild()
+    // Prepared again for each new graphics level, by hand or automatic (warm.ts).
+    this.unwarm = warmGear(game, [], undefined, () => [this.sparks.mesh, this.flash.mesh, this.debris.mesh, this.scorch.mesh])
   }
 
   /** Pools for the current quality level. Sparks and debris are a share of the particle budget. */
@@ -283,6 +287,7 @@ export class ImpactFx {
   reset(): void { this.light.reset() }
 
   dispose(): void {
+    this.unwarm()
     this.sparks.dispose(); this.flash.dispose(); this.debris.dispose(); this.scorch.dispose(); this.light.dispose()
   }
 }

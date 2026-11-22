@@ -59,6 +59,8 @@ class GearWarm implements System {
   private readonly unlisten: () => void
   /** Counts for automated checks. */
   stats = { armed: 0, frames: 0 }
+  /** Undo for the batches exposed this frame (exposeBatches), run at the next update. */
+  private exposed: (() => void)[] = []
 
   constructor(private readonly game: Game) {
     this.group.scale.setScalar(SCALE)
@@ -87,16 +89,58 @@ class GearWarm implements System {
   }
 
   update(): void {
+    this.restoreBatches()
     if (this.level !== graphicsLevel.value) {
       this.level = graphicsLevel.value
       this.arm(CHANGE_FRAMES)
     }
     if (this.left === 0) return
+    // While armed after a change, the live batches draw too, not only the proxy pairs: a level
+    // change can move the scene to another render target (Minimal draws straight to the canvas,
+    // Low into the post chain's multisampled scene pass), and a batch with nothing in it (no
+    // firework alive, no Chaser out) would otherwise build its pipeline for it on first use.
+    this.exposeBatches()
     if (this.drawn) {
       this.drawn = false
       this.stats.frames++
       if (--this.left === 0) { this.game.scene.remove(this.group); return }
     }
+    this.game.camera.getWorldPosition(this.group.position)
+    for (const f of this.each) f()
+  }
+
+  /** Expose every registered batch for this frame's draw; undone at the next update. */
+  private exposeBatches(): void {
+    this.restoreBatches()
+    for (const batches of this.batches) for (const mesh of batches()) this.exposed.push(exposeBatch(mesh))
+  }
+
+  private restoreBatches(): void {
+    for (let i = this.exposed.length - 1; i >= 0; i--) this.exposed[i]()
+    this.exposed = []
+  }
+
+  /**
+   * A player's change of level, under its veil (Game's quality warm-up draws these hidden meshes
+   * once for the new level): every registered batch, exposed so an empty one still draws.
+   * Undone at the next update.
+   */
+  *precompileQualityMeshes(): Iterable<THREE.Mesh> {
+    this.exposeBatches()
+    this.level = graphicsLevel.value
+    this.arm(CHANGE_FRAMES)
+    for (const batches of this.batches) yield* batches()
+    yield* this.group.children as THREE.Mesh[]
+  }
+
+  /**
+   * The governor has just climbed, outside play, and the scene is about to be drawn once at the
+   * new level (Game.prepareClimbedLevel): the batches and the proxies draw in it.
+   */
+  prepareClimb(): void {
+    this.level = graphicsLevel.value
+    this.arm(CHANGE_FRAMES)
+    this.exposeBatches()
     this.game.camera.getWorldPosition(this.group.position)
     for (const f of this.each) f()
   }
@@ -131,6 +175,7 @@ class GearWarm implements System {
   }
 
   dispose(): void {
+    this.restoreBatches()
     this.unlisten()
     this.game.scene.remove(this.group)
     this.group.clear()
