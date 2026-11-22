@@ -26,7 +26,7 @@ type Shape = { el: HTMLElement; x: number; y: number; w: number; h: number; radi
  * Texture units 6 and 7 belong to this pass. The galaxy uses 0 through 3. */
 export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement, nativeInk: () => boolean, tuning: {
   face: { x: number; y: number; z: number; w: number }; panel: { x: number; y: number }; edges: { x: number; y: number; z: number }
-  width(): number; growth(): number; dark(): boolean; revision(): number
+  respectReducedTransparency?: boolean; width(): number; growth(): number; dark(): boolean; revision(): number
 }): GalaxyGlass {
   const dispose: (() => void)[] = []
   const program = (source: string) => {
@@ -170,7 +170,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   gl.uniform2f(u.pixels,width,height); gl.uniform2f(u.points,pw,ph); gl.drawArrays(gl.TRIANGLES,0,3)
   gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,width,height)
   return {
-    get available() { return !reduced.matches && document.documentElement.dataset.gfx !== '0' },
+    get available() { return !(tuning.respectReducedTransparency && reduced.matches) },
     get dirty() { return changed || clock.active || (active && shapes.length > 0 && revision !== tuning.revision()) },
     draw(enabled) {
       if (!enabled) {

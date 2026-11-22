@@ -430,7 +430,7 @@ export class Game {
   }
 
   /** The caller installs the opaque veil before starting this operation. */
-  async prepareManualQuality(apply: () => void, signal: AbortSignal, progress: (phase: string) => void = () => {}): Promise<void> {
+  async prepareManualQuality(apply: () => void, signal: AbortSignal, progress: (phase: string) => void = () => {}, prepareGlass = false): Promise<void> {
     if (signal.aborted) return
     const stop = new AbortController()
     let release!: () => void
@@ -451,7 +451,7 @@ export class Game {
         await frame()
         await frame() // Let normal system updates adopt the new geometry and effects.
         stop.signal.throwIfAborted()
-        await this.warmVisibleQuality(stop.signal, progress)
+        await this.warmVisibleQuality(stop.signal, progress, prepareGlass)
       }
       const result = await withDeadline(Promise.race([prepare(), cancelled]), 15_000)
       if (!result.ok && !signal.aborted) {
@@ -465,7 +465,7 @@ export class Game {
     }
   }
 
-  private async warmVisibleQuality(signal: AbortSignal, progress: (phase: string) => void): Promise<void> {
+  private async warmVisibleQuality(signal: AbortSignal, progress: (phase: string) => void, prepareGlass: boolean): Promise<void> {
     const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     const submit = () => {
       signal.throwIfAborted()
@@ -480,8 +480,10 @@ export class Game {
           }
         }
         for (const system of this.systems) system.prepareWorldDraw?.()
+        this.postChain?.setCovered?.(true)
         drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
       } finally {
+        this.postChain?.setCovered?.(false)
         for (let i = hidden.length - 1; i >= 0; i--) hidden[i].visible = false
       }
     }
@@ -493,6 +495,20 @@ export class Game {
       batch.run(true, submit)
       progress('Compiling graphics pipelines')
       await batch.ready()
+    }
+    // A player enabling Liquid mid-drive missed entry's covered preset sweep.
+    // Reserve the lower eligible presets before any automatic quality change can reveal them.
+    const chain = this.postChain
+    if (prepareGlass && chain?.warmCovered) {
+      for (let level = this.quality.governor.level - 1; level >= 2; level--) {
+        const preset = this.quality.renderPreset(level as QualityLevel, true)
+        for (const target of [preset, { ...preset, shed: true }]) {
+          signal.throwIfAborted()
+          await chain.warmCovered({ yieldFrame: async () => { await frame(); signal.throwIfAborted() },
+            draw: () => { if (batch) batch.run(true, submit); else submit() } }, target)
+        }
+      }
+      if (batch) await batch.ready()
     }
     progress('Drawing the new level')
     await frame()

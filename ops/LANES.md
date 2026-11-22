@@ -24,8 +24,6 @@ Retired branches, fully merged and far behind: `feat/sky`, `feat/terrain`, `feat
 
 ## Notes
 
-- The five vehicle branches and `feat/net` were each 9 to 23 commits behind `build/weekend`
-  at 4:30pm. Each must merge `build/weekend` before its first change.
 - A vehicle lead and the Vehicles lane both touch `src/vehicles/`. The fence between them is
   in each `VEHICLE-BRIEF.md`: per vehicle files to the lead, shared files to Vehicles.
 - Accounts: Claude 1 and Codex 1, 2 and 3. The owner has since moved the UX, Multiplayer

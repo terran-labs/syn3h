@@ -9,6 +9,8 @@ import { createWorldEntry, freshVehicle, seatAfterRebuild } from './core/worldEn
 import { currentPlanet, currentWorldName, randomSeed } from './world/planets'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
+import { liquidEligible, liquidSelected, restoreGlassMaterial, liquidQualityHint } from './ui/glassMaterial'
+import { glassStyle } from './ui/inspector/params'
 import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { botsKeepCount } from './bots/params'
@@ -62,12 +64,19 @@ async function main(): Promise<void> {
   const environment = game.add(createEnvironment(game, terrain), 'Environment and sky')
   // Post effects follow the player's settings and the current rendering budget.
   const mode = query.get('glass')
+  const stopMaterial = restoreGlassMaterial(mode === 'inline' || mode === 'target')
+  game.add({ dispose: stopMaterial }, 'Interface material preference')
   let glass: import('./fx/post/GlassPost').GlassPost | undefined
-  if (mode === 'inline' || mode === 'target') {
-    try { const { GlassPost } = await import('./fx/post/GlassPost'); glass = new GlassPost(mode) }
-    catch (error) { console.warn('Glass shader unavailable, using CSS', error) }
+  let loading: Promise<void> | undefined
+  const post = new PostChain(game, environment)
+  const loadGlass = () => loading ??= import('./fx/post/GlassPost').then(({ GlassPost }) => {
+    glass = new GlassPost(mode === 'target' ? 'target' : 'inline')
+    post.attachGlass(glass)
+  }).finally(() => { loading = undefined })
+  if (liquidSelected()) {
+    try { await loadGlass() } catch (error) { console.warn('Glass shader unavailable, using CSS', error) }
   }
-  game.setPostChain(new PostChain(game, environment, glass))
+  game.setPostChain(post)
 
   const spawn = terrain.spawnPoint(0)
   // The vehicle comes from ?vehicle=..., else the choice saved by the lobby, else the Syn3h buggy.
@@ -120,6 +129,27 @@ async function main(): Promise<void> {
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
   const { shell, audio, setPlayer } = initGameShell(game, player, terrain, query.get('name'))
   if (glass) shell.driveGlassFrame = glass.driveFrame
+  const materialChanged = params.onChange((id) => {
+    if (id !== glassStyle.def.id && id !== 'gfx.quality') return
+    if (!liquidSelected()) {
+      shell.driveGlassFrame = undefined
+      glass?.release(glassStyle.value === 0 ? liquidQualityHint : 'CSS material selected')
+      shell.refreshLobbyGlass()
+      return
+    }
+    if (glass && (id === 'gfx.quality' || post.glassPrepared)) {
+      shell.driveGlassFrame = glass.driveFrame
+      shell.refreshLobbyGlass()
+      return
+    }
+    void shell.applyGlassMaterial(async () => {
+      if (!glass) await loadGlass()
+      if (!liquidSelected()) return
+      shell.driveGlassFrame = glass!.driveFrame
+      shell.refreshLobbyGlass()
+    })
+  })
+  game.add({ dispose: materialChanged }, 'Interface material changes')
   bots.daydream.setBlocker(() => shell.daydreamBlocked)
   // The HUD bridge, hints and the engine voice follow the slot.
   slot.onChange(setPlayer)
@@ -133,8 +163,12 @@ async function main(): Promise<void> {
   const offZorbPulse = onZorbPulse((_ball, centre) => audio.zorbPulse(centre))
   game.add({ dispose: offZorbPulse }, 'Zorb audio')
   let sessionNetwork: ReturnType<typeof startNetworking> | undefined
-  const glassDiagnostics = () => glass?.diagnosticLine() ?? (mode === 'inline' || mode === 'target'
-    ? 'Glass: shed, shader unavailable, 0 surfaces' : 'Glass: off, 0 surfaces')
+  const glassDiagnostics = () => {
+    if (glassStyle.value !== 0) return 'Glass: off, 0 surfaces'
+    if (!liquidEligible()) return 'Glass: ' + liquidQualityHint
+    if (!shell.playing && shell.lobbyGlassContextLost) return 'Glass: lobby graphics context lost, using Glass'
+    return glass?.diagnosticLine() ?? 'Glass: shader unavailable, using Glass'
+  }
   const copyDiagnostics = () => {
     const botKinds = bots.remote && sessionNetwork
       ? Array.from(sessionNetwork.players.values()).filter(player => player.bot).map(player => player.kind)

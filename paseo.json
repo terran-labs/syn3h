@@ -36,14 +36,6 @@
       "type": "service",
       "command": "cd /Users/vtn/dev/Syn3h-wt/audio && SYN3H_NO_ROOM_SERVER=1 npx vite --host 127.0.0.1 --port $PASEO_PORT --strictPort"
     },
-    "water-transparency": {
-      "type": "service",
-      "command": "cd /Users/vtn/dev/Syn3h-wt/water-transparency && SYN3H_ROOM_PORT=18841 npx vite --host 127.0.0.1 --port $PASEO_PORT --strictPort"
-    },
-    "next": {
-      "type": "service",
-      "command": "cd /Users/vtn/dev/Syn3h-wt/follow-on && SYN3H_ROOM_PORT=18861 npx vite --host 127.0.0.1 --port $PASEO_PORT --strictPort"
-    },
     "integration": {
       "type": "service",
       "command": "cd /Users/vtn/dev/Syn3h && npx vite --host 127.0.0.1 --port $PASEO_PORT --strictPort"

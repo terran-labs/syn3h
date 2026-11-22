@@ -9,6 +9,7 @@
  * lobby graphics it draws at most thirty times a second, stops in a hidden tab, and gives
  * its WebGL context back when disabled.
  */
+import { liquidSelected } from '../glassMaterial'
 import { createGalaxyGlass, type GalaxyGlass } from './glassAdapter'
 import { PresenceFeed, type Populations } from './presence'
 import { FIELD_UNIT, LogoRenderer, type PixelRect } from '../brand/logoRenderer'
@@ -955,6 +956,7 @@ export class Galaxy {
   }
   /** False when WebGL 2 is not available: the caller keeps the ordinary lobby. */
   static supported(): boolean { try { return Boolean(document.createElement('canvas').getContext('webgl2')) } catch { return false } }
+  get glassContextLost(): boolean { return this.gl?.isContextLost() ?? false }
   get live(): boolean { return this.gl !== null && !this.gl.isContextLost() }
   /** Worlds whose painted maps have arrived. */
   get painted(): number { return this.options.worlds.filter(world => this.maps.has(this.mapKey(world, SMALL))).length }
@@ -1236,9 +1238,15 @@ export class Galaxy {
       if (this.host.clientHeight > this.host.clientWidth * 1.2 && !this.reduced.matches) this.pitch = PORTRAIT_PITCH
     }
     this.paintMaps(); this.resize()
-    try { this.glass = createGalaxyGlass?.(gl, canvas) }
-    catch (error) { console.warn('Lobby glass unavailable; keeping CSS.', error) }
+    this.refreshGlass()
     this.loop(0)
+  }
+  refreshGlass() {
+    this.wake = 2
+    if (!liquidSelected()) { this.glass?.draw(false); return }
+    if (!this.gl || this.gl.isContextLost() || this.glass) return
+    try { this.glass = createGalaxyGlass?.(this.gl, this.canvas) }
+    catch (error) { console.warn('Lobby glass unavailable; keeping CSS.', error) }
   }
   private release(): void {
     this.glass?.dispose(); this.glass = undefined
@@ -1491,7 +1499,7 @@ export class Galaxy {
     this.markShown = mark.placement ? mark.opacity * reveal.mark * (1 - this.dive) : 0
     // Held still, draw only while something is moving; the last frame stays on the canvas.
     const moving = glowMoving || this.opening !== null || this.returning !== null || (this.leaving !== null && performance.now() - this.leaving < LEAVING_SECONDS * 1000 + 100) || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.worldsShown !== this.worlds || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
-    const glassBackdrop = !!this.glass?.available && qualityShed(2) < 1
+    const glassBackdrop = !!this.glass?.available && liquidSelected()
     const glassChanged = glassBackdrop !== this.drewGlassBackdrop
     if (still && !moving && !glassChanged && !this.glass?.dirty && this.wake <= 0) { this.idle++; return }
     // A flight held before launch (leaving a world, waiting behind the game) shows one still
