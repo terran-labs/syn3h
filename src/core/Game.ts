@@ -389,7 +389,9 @@ export class Game {
     // A lost device draws nothing: no render, no buffer, no pipeline (see frame()).
     const draw = !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
     if (draw) {
-      // Before drawing: a size that changed without a usable resize event is applied here.
+      // Before drawing: a size that changed without a usable resize event is applied here, and a
+      // render scale the governor chose last frame (QualityController.deferPixelRatio).
+      this.quality.takePixelRatio()
       this.viewFit?.fit()
       const watchingDraw = startupTiming.firstWorldFrameMs === undefined ||
         (view === 'playing' && startupTiming.playRequestMs !== undefined && startupTiming.firstPlayableFrameMs === undefined)
@@ -415,6 +417,7 @@ export class Game {
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
     if (!this.applyingQuality) {
+      this.quality.deferPixelRatio = true
       const before = this.quality.governor.level
       this.quality.frame(metrics, view === 'playing')
       // A pending climb applies only on a frame outside play, and the next frame may already be
@@ -433,6 +436,8 @@ export class Game {
    * sibling is ever shown.
    */
   private prepareClimbedLevel(): void {
+    // This draw is the frame's last: the new level's render scale is applied with it, in the same task.
+    this.quality.takePixelRatio()
     const start = longFrames.start()
     longFrames.event('Climbed level preparation')
     const camera = this.camera
@@ -517,6 +522,7 @@ export class Game {
         stop.signal.throwIfAborted()
         applied = true
         apply()
+        this.quality.takePixelRatio() // under the veil: the new scale at once
         this.quality.settleCoveredPostBudget()
         await frame()
         await frame() // Let normal system updates adopt the new geometry and effects.
