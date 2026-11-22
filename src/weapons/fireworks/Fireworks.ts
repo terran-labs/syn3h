@@ -132,6 +132,8 @@ export class Fireworks {
   private readonly c = new T.Color()
   private readonly c3 = new T.Color()
   private readonly c3pos = new T.Vector3()
+  private readonly nearSpec: SparkSpec = { life: 1, width: 0, drag: 0, gravity: 0, streak: 0, normal: { x: 0, y: 1, z: 0 }, bounce: -1 }
+  private readonly nearGlitter: SparkSpec = { life: 1, width: 0, drag: 0, gravity: 0, streak: 0, normal: { x: 0, y: 1, z: 0 }, bounce: -1 }
   private readonly palette = [new T.Color(), new T.Color(), new T.Color()]
   readonly stats = { bursts: 0, stars: 0, last: '' as FireworkShape | '' }
 
@@ -199,8 +201,13 @@ export class Fireworks {
     // Close to the camera (a burst on your own car), its light is drawn down (nearLens). Measured
     // to where it bursts: a shell from the ground climbs spec.climb before it does.
     const near = nearLens(this.game.camera.position.distanceTo(this.c3pos.copy(spec.at).setY(spec.at.y + Math.max(0, spec.climb))))
-    const emit = (at: T.Vector3, v: T.Vector3, s: SparkSpec, color: T.Color, delay: number) => {
+    // And narrower, with shorter streaks: launched from a few metres in front of the lens, a star
+    // drawn at its full width and as long as its speed made a pale curtain across the whole view
+    // for the first tenth of a second (v26.11.2120 staging, night).
+    const narrow = (s: SparkSpec, into = this.nearSpec): SparkSpec => near < 1 ? Object.assign(into, s, { width: s.width * near, streak: s.streak * near }) : s
+    const emit = (at: T.Vector3, v: T.Vector3, s0: SparkSpec, color: T.Color, delay: number) => {
       if (used >= budget) return
+      const s = narrow(s0)
       this.stars.emit(at, v, s, near < 1 ? this.c3.copy(color).multiplyScalar(near) : color, delay); used++
       // Its daytime twin: the same path, in the colour brought down to a plain, saturated paint.
       const top = Math.max(color.r, color.g, color.b, 1e-3)
@@ -211,7 +218,7 @@ export class Fireworks {
         for (const t of [0.2, 0.45, 0.75]) {
           if (glitter >= glitterCap || t > s.life * 0.7) break
           glitterSpec.life = 1.2 + this.next() * 0.6
-          this.stars.emit(travel(at, v, s.drag, s.gravity, t, this.g), this.v2.set(0, -1.5, 0), glitterSpec, this.c2.copy(color).multiplyScalar(0.6), delay + t); glitter++
+          this.stars.emit(travel(at, v, s.drag, s.gravity, t, this.g), this.v2.set(0, -1.5, 0), narrow(glitterSpec, this.nearGlitter), this.c2.copy(color).multiplyScalar(0.6 * near), delay + t); glitter++
         }
       }
       if (used % SMOKE_EVERY[sl] !== 0) return
