@@ -1,7 +1,7 @@
 import { worldSeed } from '../../shared/params'
 import { uniqueBotName } from '../ui/data/names'
 import { attachVehicleEffects } from '../vehicles/effects'
-import { Vector3, type Mesh } from 'three/webgpu'
+import { Vector3, type Mesh, type Object3D } from 'three/webgpu'
 import { longFrames } from '../core/longFrames'
 import type { CoveredWarm, Game, System } from '../core/Game'
 import { qualityBudget } from '../core/quality'
@@ -451,23 +451,18 @@ export class BotManager implements System {
     }
   }
   /**
-   * Bots hidden this frame (behind the camera or over the horizon, see update): a quality change
-   * draws them too, so a level's new vehicle and shadow materials are built before they come back
-   * into view in play.
-   */
-  /**
-   * A hidden bot, and inside a shown bot every hidden mesh: its other distance looks are hidden
-   * siblings (the reduced and merged models). Medium is the first level with shadows, so a bot that
-   * later drives into another look built that look's shadow pipeline in play. The climb
-   * preparation draws each unseen; one whose ancestor is hidden is left alone there.
+   * Bots hidden this frame (behind the camera or over the horizon, see update), and inside a shown
+   * bot the top-most hidden node of each branch: a quality change draws them too, so a level's new
+   * vehicle and shadow materials are built before they come into view in play. A bot's other distance
+   * looks are hidden groups (Box arm mid body, silhouette) around visible merged models. Medium is
+   * the first level with shadows, so a bot that later drove into another look built that look's
+   * shadow pipeline in play. The climb preparation draws each node unseen with all it holds.
    */
   *precompileQualityMeshes(): Iterable<Mesh> {
-    for (const bot of this.bots) {
-      if (!bot.object.visible) { yield bot.object as unknown as Mesh; continue }
-      const hidden: Mesh[] = []
-      bot.object.traverse(o => { if ((o as Mesh).isMesh && !o.visible) hidden.push(o as Mesh) })
-      yield* hidden
-    }
+    const hidden: Object3D[] = []
+    const visit = (o: Object3D) => { if (!o.visible) { hidden.push(o); return } for (const c of o.children) visit(c) }
+    for (const bot of this.bots) visit(bot.object as unknown as Object3D)
+    yield* hidden as unknown as Mesh[]
   }
   dispose() {
     this.disposed = true
