@@ -12,6 +12,9 @@
  * Positions are re-imaged near the local player every step, so Pesters survive the seam of
  * the wrapping world.
  */
+import { EDGE_MAX_PX, EDGE_MIN_PX, metresPerPixel, ringEdges, type RingEdges } from '../pulse'
+import { vehicleNightAmount } from '../../vehicles/skins/nightReadability'
+import { pesterSize } from './params'
 import * as THREE from 'three/webgpu'
 import type { ShotInfo } from '../../../shared/protocol'
 import { nearestImage, wrapDelta } from '../../../shared/wrap'
@@ -62,6 +65,8 @@ interface Orb {
 const HOVER = 1.4
 /** The cone, degrees, in which an aimed-at vehicle is preferred over the nearest one. */
 const PICK_CONE = 30
+/** Chasers given a dark outline at once (the first this many slots of the cloud). */
+const OUTLINES = 16
 const POP_TIME = 0.3
 const MAX_CATCH_UP = 2
 /** Lift and lean of a launch: up and ahead from the roof. */
@@ -82,7 +87,19 @@ export class Pesters implements System {
   constructor(private readonly game: Game, private readonly hooks: PesterHooks) {
     game.scene.add(this.cloud.haze, this.cloud.light)
     this.unwarm = warmGear(game, [], () => this.cloud.warm(), () => [this.cloud.haze, this.cloud.light])
+    this.edges = ringEdges(game)
+    this.edgeFirst = this.edges.look.take(OUTLINES)
   }
+  /**
+   * By day, a thin dark outline round each Chaser's core (pulse.ts RingEdges), facing the camera:
+   * over a bright sky its additive glow alone washed out to a pale smudge. Kept 1.5 to 3 pixels
+   * wide on screen, as the rings' edges are; nothing at night.
+   */
+  private readonly edges: { look: RingEdges; release(): void }
+  private readonly edgeFirst: number
+  private readonly edgeMatrix = new THREE.Matrix4()
+  private readonly edgeAt = new THREE.Vector3()
+  private readonly edgeScale = new THREE.Vector3()
 
   /** Pesters the local player has out. */
   get mine(): number {
@@ -203,7 +220,9 @@ export class Pesters implements System {
   }
 
   update(dt: number, alpha: number): void {
-    const size = this.hooks.wrapSize()
+    const size = this.hooks.wrapSize(), day = 1 - vehicleNightAmount(this.game.scene)
+    // Slots whose Chaser ended last frame are cleared here; live ones are written below.
+    for (let i = 0; i < OUTLINES; i++) this.edges.look.set(this.edgeFirst + i, null, 0)
     for (let i = this.orbs.length - 1; i >= 0; i--) {
       const o = this.orbs[i]
       const x = o.prev.x + (o.pos.x - o.prev.x) * alpha, y = o.prev.y + (o.pos.y - o.prev.y) * alpha, z = o.prev.z + (o.pos.z - o.prev.z) * alpha
@@ -217,6 +236,7 @@ export class Pesters implements System {
           continue
         }
         this.cloud.set(o.slot, x, y, z, 0, 0, 0, 1, k)
+        this.outline(o.slot, x, y, z, k, day)
         continue
       }
       // Brighter and tighter the closer it is to catching its target.
@@ -227,12 +247,27 @@ export class Pesters implements System {
         energy = Math.max(0.3, 1 - Math.hypot(dx, t.y - y, dz) / FAR)
       }
       this.cloud.set(o.slot, x, y, z, o.vel[0], o.vel[1], o.vel[2], energy, 0)
+      this.outline(o.slot, x, y, z, 0, day)
     }
     this.cloud.update(this.game.time)
+    this.edges.look.commit()
+  }
+
+  /** Chaser `slot`'s outline this frame, at its centre, as it scatters (`k`) and by daylight. */
+  private outline(slot: number, x: number, y: number, z: number, k: number, day: number): void {
+    if (slot < 0 || slot >= OUTLINES) return
+    const cam = this.game.camera
+    // Just outside the core's visible glow: about three quarters of its sprite's half width.
+    const radius = pesterSize.value * 2.6 * 0.5 * 0.78 * (1 + k * 1.5)
+    const at = this.edgeAt.set(x, y, z), mPerPx = metresPerPixel(this.game, at)
+    const half = mPerPx > 0 ? Math.min(EDGE_MAX_PX, Math.max(EDGE_MIN_PX, 0.035 * radius / mPerPx)) * mPerPx / radius : 0.035
+    this.edgeMatrix.compose(at, cam.quaternion, this.edgeScale.setScalar(radius))
+    this.edges.look.set(this.edgeFirst + slot, this.edgeMatrix, (1 - k) * day, 0.94 + half, half)
   }
 
   dispose(): void {
     this.orbs.length = 0
+    this.edges.release()
     this.unwarm()
     this.cloud.dispose()
   }

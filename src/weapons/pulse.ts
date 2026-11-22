@@ -16,12 +16,12 @@ const CAPACITY = 16
 /** The ring's dark edge: where it lies (the bright band ends at 0.94 of the quad), how wide, how dark. */
 const EDGE_AT = 0.965, EDGE_HALF = 0.035, EDGE_ALPHA = 0.85
 /** The half-width of an impact ring's edge band on screen, pixels: at least, and at most. */
-const EDGE_MIN_PX = 1.5, EDGE_MAX_PX = 3
+export const EDGE_MIN_PX = 1.5, EDGE_MAX_PX = 3
 /** At night, inside your beam: the edge at this share of its daytime strength (and 0.6 of its width). */
 const EDGE_NIGHT_ALPHA = 0.7
 
 /** Metres one pixel spans at `at`, from the camera's field of view and the canvas height. */
-function metresPerPixel(game: Game, at: THREE.Vector3): number {
+export function metresPerPixel(game: Game, at: THREE.Vector3): number {
   const cam = game.camera as THREE.PerspectiveCamera | undefined
   // No camera (a unit test): no floor or cap; the band keeps its share of the ring.
   if (!cam) return 0
@@ -39,8 +39,8 @@ export interface PulseOptions {
   beam?: number
 }
 
-/** Ring edges drawn at once for the whole game: the impact rings' and the Yoink's gust rings'. */
-export const EDGE_SLOTS = 32
+/** Ring edges drawn at once for the whole game: the impact rings', the Yoink's gust rings' and the Chasers' outlines. */
+export const EDGE_SLOTS = 48
 
 /**
  * Every ring's dark edge in the game, by day: one small instanced batch and one material, so a
