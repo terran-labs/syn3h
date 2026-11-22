@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { captionHidden, captionMask, covered, type LabelPlace } from '../../src/ui/galaxy/labels'
+import { captionBlocked, captionHidden, captionMask, covered, type LabelPlace } from '../../src/ui/galaxy/labels'
 
 const place = (id: string, x: number, y: number, radius: number, depth: number): LabelPlace => ({ id, x, y, radius, visible: true, depth })
 
@@ -32,5 +32,18 @@ describe('planet captions: occlusion', () => {
     expect(captionMask(near, [far, near], undefined, 358)).toBe('none')
     // The sun cuts what is behind it.
     expect(captionMask(far, [far], { x: 300, y: 330, radius: 12, depth: 5 }, 325)).not.toBe('none')
+  })
+})
+
+describe('captions and the lobby controls', () => {
+  // Bug caught: a caption over the Settings button or reading through the settings card.
+  const dock = { left: 600, top: 1000, right: 728, bottom: 1100 }
+  it('blocks a caption that touches a control or comes within the margin of one', () => {
+    expect(captionBlocked({ left: 560, top: 980, right: 640, bottom: 1010 }, [dock])).toBe(true)
+    expect(captionBlocked({ left: 500, top: 960, right: 596, bottom: 995 }, [dock])).toBe(true)
+  })
+  it('leaves a caption clear of every control alone', () => {
+    expect(captionBlocked({ left: 100, top: 400, right: 220, bottom: 440 }, [dock])).toBe(false)
+    expect(captionBlocked({ left: 100, top: 400, right: 220, bottom: 440 }, [])).toBe(false)
   })
 })
