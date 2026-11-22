@@ -408,6 +408,12 @@ export class Game {
       if (view !== 'playing' && !this.climbJob && this.quality.pendingClimbReady() && !this.holdDraws &&
         !(this.renderer as unknown as GuardedRenderer)._isDeviceLost) this.climbJob = this.takeCoveredClimb()
     }
+    // Play asked for before the covered climb is done (Resume pressed early): the shell's veil
+    // stands until it is, so the wait is a wait and never a frozen frame in play.
+    if (this.climbJob && view === 'playing' && !this.climbVeiled) {
+      this.climbVeiled = true
+      this.onCoveredClimb?.(this.climbLevel, this.climbJob)
+    }
   }
 
   /**
@@ -467,28 +473,36 @@ export class Game {
 
   /** The covered climb in progress, if any (takeCoveredClimb). */
   private climbJob: Promise<void> | null = null
-  /** The shell shows its "Applying <level>" veil for a covered climb; set by the shell. */
+  /** The shell shows its "Applying <level>" veil when play resumes before a covered climb is done; set by the shell. */
   onCoveredClimb?: (level: QualityLevel, job: Promise<void>) => void
+  private climbLevel: QualityLevel = 0
+  private climbVeiled = false
+  /** Where a covered climb's preparation draws its final composite, so the canvas keeps the last presented frame. */
+  private climbHold: THREE.RenderTarget | null = null
   /** The veil's status line while a covered climb runs; set by the shell. */
   climbStatus?: (phase: string) => void
   /** Covered climbs taken and abandoned, the last one's time behind the veil and its longest slice (tools read these). */
   readonly climbStats = { taken: 0, abandoned: 0, lastMs: 0, longestSliceMs: 0, slices: [] as number[] }
 
   private takeCoveredClimb(): Promise<void> {
-    const to = this.quality.governor.pendingLevel as QualityLevel
-    const job = this.runCoveredClimb().catch(error => console.warn('Covered climb failed', error)).finally(() => { this.climbJob = null })
-    this.onCoveredClimb?.(to, job)
-    return job
+    this.climbLevel = this.quality.governor.pendingLevel as QualityLevel
+    this.climbVeiled = false
+    return this.runCoveredClimb().catch(error => console.warn('Covered climb failed', error))
+      .finally(() => { this.climbJob = null; this.climbVeiled = false })
   }
 
   /**
-   * A level climb taken outside play, behind the "Applying" veil, in slices: the veil is shown
-   * first, the climb applied, then the new level prepared as a manual change prepares it, through
-   * covered draws whose pipelines are requested asynchronously (CoveredPipelines), one part per
-   * frame, so no single frame carries all of it. It is done only when the pipelines are compiled
-   * (batch.ready()), a confirmation draw has submitted them, and the GPU has finished that work
-   * (finishWorldFrame: onSubmittedWorkDone, or a WebGL 2 sync object); play resumes, or the veil
-   * lifts, only then. One climb taken on a single out-of-play frame used to cost a frame of up to
+   * A level climb taken outside play (the menu open), in slices: the climb is applied, then the new
+   * level is prepared as a manual change prepares it, through covered draws whose pipelines are
+   * requested asynchronously (CoveredPipelines), one part per frame, so no single frame carries all
+   * of it. The menu stays usable: the preparation draws send their final composite to a small
+   * target off screen, so the canvas keeps the last frame it presented and the world behind the
+   * menu is a still picture for the length of the job (the scene, shadow and effect passes draw
+   * into their own targets as always, so their pipelines are the real ones; only the composite to
+   * the canvas is built at the end, by one complete frame). It is done only when the pipelines are
+   * compiled (batch.ready()), a confirmation draw has submitted them, and the GPU has finished that
+   * work (finishWorldFrame: onSubmittedWorkDone, or a WebGL 2 sync object). Play asked for sooner
+   * waits behind the shell's "Applying" veil until then. One climb taken on a single out-of-play frame used to cost a frame of up to
    * half a second and, on WebGPU, a first frame in play of over a second waiting on the GPU.
    * A climb not done in 8 s is abandoned: the level goes back to the one it left, whose pipelines
    * are alive, and the abandonment is logged.
@@ -503,8 +517,7 @@ export class Game {
     const slice = (work: () => void) => { const t = performance.now(); try { work() } finally { slices.push(performance.now() - t) } }
     let climbed = false
     const work = async () => {
-      // The veil paints before anything changes underneath it.
-      await frame(); await frame(); check()
+      await frame(); check()
       if (!q.pendingClimbReady()) return
       this.applyingQuality = true
       slice(() => { climbed = q.takePendingClimb() !== null })
@@ -513,7 +526,14 @@ export class Game {
       progress('Updating graphics settings')
       await frame(); await frame(); check() // systems adopt the new level in their own updates
       const batch = CoveredPipelines.forRenderer(this.renderer, this.scene)
-      const run = (discover: boolean) => (draw: () => void) => runGuarded(this.renderer as unknown as GuardedRenderer, () => { if (batch) batch.run(discover, draw); else draw() })
+      const hold = this.climbHold ??= new THREE.RenderTarget(4, 4)
+      const run = (discover: boolean) => (draw: () => void) => runGuarded(this.renderer as unknown as GuardedRenderer, () => {
+        const target = this.renderer.getRenderTarget()
+        this.renderer.setRenderTarget(hold)
+        this.postChain?.setCovered?.(true)
+        try { if (batch) batch.run(discover, draw); else draw() }
+        finally { this.postChain?.setCovered?.(false); this.renderer.setRenderTarget(target) }
+      })
       progress('Preparing visible surfaces')
       slice(() => this.prepareClimbedLevel({ systems: true, fleet: false }, run(true)))
       await frame(); check()
