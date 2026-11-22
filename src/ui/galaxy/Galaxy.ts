@@ -798,6 +798,8 @@ export function arrivalPose(bodies: readonly OrbitBody[], width: number, height:
 }
 /** Milliseconds returnHome takes back to the fresh-load view. */
 const RETURN_MS = RETURN_VIEW_SECONDS * 1000
+/** Milliseconds frameName takes to bring the name into view behind a lobby sheet. */
+const FRAME_MS = 900
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -1071,7 +1073,25 @@ export class Galaxy {
    * own the centre eases per frame, and on a slow device it was still sliding back to the sun
    * when the name began to fade in.
    */
-  private returnTo: { start: number; from: { yaw: number; pitch: number; distance: number }; to: { yaw: number; pitch: number; distance: number }; target: Vec; reach: number } | null = null
+  private returnTo: { start: number; from: { yaw: number; pitch: number; distance: number }; to: { yaw: number; pitch: number; distance: number }; target: Vec; reach: number; framing?: true } | null = null
+  /**
+   * Bring the name into view behind a lobby sheet (Welcome, Updates): the view eases to the
+   * arrival tilt and distance (arrivalPose) from wherever the player had swiped, keeping their
+   * heading, so the name stands over the sheet while it is open and is already in place when it
+   * closes. The owner, on an iPhone, 22 November 2026: swiped above the galaxy, the name was
+   * off the top of the screen behind Updates and still gone after closing it. Unlike a return
+   * from a world the name stays lit throughout. Reduced motion: it jumps there.
+   */
+  frameName(): void {
+    if (this.chosen >= 0 || this.flight || this.opening !== null || this.returnTo) return
+    const to = { ...this.freshPose(), yaw: this.yaw }
+    if (Math.abs(to.pitch - this.pitch) < 1e-3 && Math.abs(to.distance / this.distance - 1) < 1e-3 && Math.hypot(...this.target) < 1e-3) return
+    this.handled = performance.now(); this.wake = 2
+    if (this.reduced?.matches) { this.applyPose(to); this.target = [0, 0, 0]; this.reach = to.distance; this.markRig.pose = null; return }
+    this.returnTo = { start: performance.now(), from: { yaw: this.yaw, pitch: this.pitch, distance: this.distance }, to, target: [...this.target], reach: this.reach, framing: true }
+  }
+  /** True while frameName's ease runs: a sheet over the galaxy follows the name until it ends. */
+  get framingName(): boolean { return !!this.returnTo?.framing }
   private applyPose(p: { yaw: number; pitch: number; distance: number }): void {
     this.yaw = p.yaw; this.pitch = p.pitch; this.distance = p.distance
     this.swingYaw = { aim: p.yaw, aimSpeed: 0, view: p.yaw, viewSpeed: 0 }
@@ -1084,7 +1104,7 @@ export class Galaxy {
     const r = this.returnTo
     if (!r) return false
     if (this.drag || this.pointers.size > 0) { this.endReturn(); return false }
-    const t = Math.min(1, (performance.now() - r.start) / RETURN_MS)
+    const t = Math.min(1, (performance.now() - r.start) / (r.framing ? FRAME_MS : RETURN_MS))
     const pose = homeward(r.from, r.to, t), e = t >= 1 ? 1 : smootherstep(t)
     this.applyPose(pose)
     this.target = [r.target[0] * (1 - e), r.target[1] * (1 - e), r.target[2] * (1 - e)]
@@ -1098,12 +1118,14 @@ export class Galaxy {
    * (returningMark), carries on from where it is; its rig trails the view again.
    */
   private endReturn(): void {
+    // frameName's ease kept the name lit: nothing to fade in.
+    if (this.returnTo?.framing) { this.returnTo = null; this.markRig.pose = null; return }
     const from = this.returnTo ? this.returnTo.start + RETURN_MARK_FROM * RETURN_MS : performance.now()
     this.returnTo = null; this.markRig.pose = null
     this.returning = this.reduced?.matches ? null : Math.min(performance.now(), from)
   }
   /** For tests: true while returnHome's ease runs. */
-  get returningHome(): boolean { return this.returnTo !== null }
+  get returningHome(): boolean { return this.returnTo !== null && !this.returnTo.framing }
   home(): void { this.handled = performance.now(); this.wake = 2; this.chosen = -1
     // Back in the lobby with the name gone (a choice cancelled, or the reverse flight out of a
     // world landing, perf/smooth-entry's ascend): it kindles again, once, from here.
@@ -1477,7 +1499,7 @@ export class Galaxy {
     if (this.leaving !== null) reveal = { ...reveal, ...leavingMark(this.reduced.matches ? 1e3 : (performance.now() - this.leaving) / 1000) }
     // While returnHome eases the view the name stays dark until the swing's last tenth, where
     // it is within a few pixels of its place, then fades in as the view lands (returningMark).
-    else if (this.returnTo) reveal = { ...reveal, ...returningMark((performance.now() - this.returnTo.start - RETURN_MARK_FROM * RETURN_MS) / 1000) }
+    else if (this.returnTo && !this.returnTo.framing) reveal = { ...reveal, ...returningMark((performance.now() - this.returnTo.start - RETURN_MARK_FROM * RETURN_MS) / 1000) }
     else if (this.returning !== null) {
       const t = (performance.now() - this.returning) / 1000
       if (t > RETURN_SECONDS) this.returning = null; else reveal = { ...reveal, ...returningMark(t) }
@@ -1742,6 +1764,7 @@ export class Galaxy {
     if (Math.abs(this.liftShown - liftGoal) < 0.002) this.liftShown = liftGoal
     const lift = this.liftShown * this.liftShown * (3 - 2 * this.liftShown)
     const placement = liftPlacement(placeWordmark(mode, poseView(this.markRig.pose!, VIEW_TAN), screen, system), lift)
+    this.markFrame = { mode, screen, system }
     if (!this.markCrisp && wordmarkCrispPass.value && this.canvas) {
       this.markCrisp = new WordmarkCrisp(VERTEX, FRAGMENT, UNIFORMS)
       this.canvas.after(this.markCrisp.canvas)
@@ -1750,7 +1773,7 @@ export class Galaxy {
     if (this.markStart === null) this.markStart = held ? now - 1e6 : now
     // The opening and a return carry their own fade (opening.ts); otherwise (a placement
     // changed, the context restored) the same curve runs from the first frame here.
-    const opacity = this.opening || this.returnTo || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
+    const opacity = this.opening || (this.returnTo && !this.returnTo.framing) || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
     return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 || this.liftShown !== liftGoal }
   }
   /** For checks: the in-space wordmark's opacity as last drawn (0 when hidden). */
@@ -1758,13 +1781,15 @@ export class Galaxy {
   /** For tests and screenshots: the in-space wordmark's state. */
   private markView: { eye: Vec; forward: Vec; right: Vec; up: Vec; tan: number } | null = null
   private markPlaced: ReturnType<typeof placeWordmark> | null = null
+  /** The inputs stepMark last placed the name from, for wordmarkEdges' prediction. */
+  private markFrame: { mode: number; screen: { x: number; y: number; unit: number }; system: number } | null = null
   /** 1 while a lobby panel is open: the name moves up and a little smaller to stand over it (LobbySheet). */
   markLift = 0
   /** The eased lift drawn this frame, 0 to 1; 1 when the name has finished moving. */
   liftShown = 0
   /** Where the in-space wordmark is on screen now, in CSS pixels of the host (its bounding box), or null. */
   wordmarkScreenBox(): { x: number; y: number; width: number; height: number } | null {
-    const edges = this.wordmarkEdges(8)
+    const edges = this.wordmarkEdges(8, true)
     if (!edges) return null
     const all = [...edges.top, ...edges.middle, ...edges.bottom], xs = all.map(p => p[0]), ys = all.map(p => p[1])
     const x0 = Math.min(...xs), y0 = Math.min(...ys)
@@ -1774,11 +1799,19 @@ export class Galaxy {
    * The in-space wordmark's top, middle and bottom lines on screen, left to right, `steps` + 1
    * points each, in CSS pixels of the host. The wordmark stands on a cylinder round the sun, so
    * these are arcs: the lobby's panels bend on the same cylinder (LobbySheet.ts). Null when
-   * the name is not in space.
+   * the name is not in space. While frameName's ease runs these are where the name will land,
+   * unless `now`.
    */
-  wordmarkEdges(steps = 8): { top: [number, number][]; middle: [number, number][]; bottom: [number, number][] } | null {
-    const p = this.markPlaced, v = this.markView
+  wordmarkEdges(steps = 8, now = false): { top: [number, number][]; middle: [number, number][]; bottom: [number, number][] } | null {
+    let p = this.markPlaced, v = this.markView
     if (!p || !v) return null
+    // While frameName eases the view, where the name will stand when it lands: a sheet opened
+    // from far above is laid out once under the name's place, not dragged down after it.
+    const r = this.returnTo, f = this.markFrame
+    if (r?.framing && f && !now) {
+      v = poseView({ yaw: r.to.yaw, pitch: r.to.pitch, reach: r.to.distance, target: [0, 0, 0] }, VIEW_TAN)
+      p = liftPlacement(placeWordmark(f.mode, v, f.screen, f.system), this.markLift > 0 ? 1 : 0)
+    }
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
     const line = (along: number) => Array.from({ length: steps + 1 }, (_, i): [number, number] => {
       const w = surfacePoint(p, (i / steps - 0.5) * ASPECT, along), d = sub(w, v.eye), z = Math.max(0.001, dot(d, v.forward))

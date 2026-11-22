@@ -400,6 +400,8 @@ export class Shell implements System {
       if (this.galaxy && this.panels.active === 'index' && !this.playing) this.galaxy.backdrop = 1
     }
     // While the name rises to stand over an open sheet, the sheet follows it (LobbySheet).
+    // (While the view eases to bring the name into view, Galaxy.frameName, the edges are where
+    // it will land, so the sheet holds still.)
     const following = () => !!this.galaxy && this.galaxy.liftShown !== (this.galaxy.markLift > 0 ? 1 : 0)
     // The Welcome guide's content (src/ui/welcome): mounted on first open, its images loading on each.
     this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'Welcome', edges, following, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { this.lobbyWelcome = mountWelcome(body, { where: 'lobby' }) }, opened: () => this.lobbyWelcome?.opened() })
@@ -643,7 +645,9 @@ export class Shell implements System {
     const current = this.lobbySheets.find(s => s.isOpen)
     if (current) current.handOff()
     // The worlds fade out, the sky dims a little and the name rises over the contents (LobbySheet).
-    if (this.galaxy) { this.galaxy.backdrop = SHEET_BACKDROP; this.galaxy.markLift = 1; this.galaxy.worlds = 0 }
+    // Wherever the player had swiped, the view eases to where the name reads well, so it stands
+    // over the sheet and is already in place when the sheet closes (Galaxy.frameName).
+    if (this.galaxy) { this.galaxy.backdrop = SHEET_BACKDROP; this.galaxy.markLift = 1; this.galaxy.worlds = 0; this.galaxy.frameName() }
     // The three buttons stay beside the open sheet, above its backdrop, to switch between them;
     // the open one is marked.
     const dock = this.lobbySettings.dock
