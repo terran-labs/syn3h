@@ -428,7 +428,7 @@ export class Game {
    * positive scale keeps the face winding). A mesh whose ancestor is hidden is left alone, so no
    * sibling is ever shown.
    */
-  private prepareClimbedLevel(parts: { systems: boolean; fleet: boolean; standIns?: THREE.Mesh[]; only?: Set<THREE.Object3D> }, wrap: (draw: () => void) => void): void {
+  private prepareClimbedLevel(parts: { systems: boolean; fleet: boolean; standIns?: THREE.Mesh[]; only?: Set<THREE.Object3D>; units?: THREE.Object3D[] }, wrap: (draw: () => void) => void): void {
     const start = longFrames.start()
     longFrames.event('Climbed level preparation')
     const camera = this.camera
@@ -437,7 +437,7 @@ export class Game {
     const culled: THREE.Object3D[] = []
     // A share of the scene for this draw (see climbShares): the rest is hidden for its length.
     const unshared: THREE.Object3D[] = []
-    if (parts.only) for (const child of this.scene.children) if (child.visible && !parts.only.has(child)) { child.visible = false; unshared.push(child) }
+    if (parts.only) for (const unit of parts.units ?? this.scene.children) if (unit.visible && !parts.only.has(unit)) { unit.visible = false; unshared.push(unit) }
     try {
       // Systems whose look depends on the level (particle octaves) switch now, not next update.
       if (parts.systems) for (const system of this.systems) system.prepareClimb?.()
@@ -492,27 +492,28 @@ export class Game {
   readonly climbStats = { taken: 0, abandoned: 0, lastMs: 0, longestSliceMs: 0, slices: [] as number[] }
 
   /**
-   * The scene's top-level objects in shares of about equal mesh count, for a covered climb's draws:
-   * one draw per share and frame spreads the node builds, object setup and pipeline requests. A
-   * top-level object that carries a light is in every share, since the lights are part of every
-   * material's build key.
+   * The scene in shares of about equal mesh count, for a covered climb's draws: one draw per share
+   * and frame spreads the node builds, object setup and pipeline requests. The units shared out are
+   * the top-level objects and, inside one that carries a light, its children without lights (lights
+   * are part of every material's build key, so whatever holds one is drawn in every share).
    */
-  private climbShares(count: number): Set<THREE.Object3D>[] {
-    const lit: THREE.Object3D[] = [], weighed: { child: THREE.Object3D; meshes: number }[] = []
+  private climbShares(count: number): { units: THREE.Object3D[]; shares: Set<THREE.Object3D>[] } {
+    const holdsLight = (o: THREE.Object3D) => { let light = false; o.traverse(x => { light ||= (x as THREE.Light).isLight === true }); return light }
+    const meshes = (o: THREE.Object3D) => { let n = 0; o.traverse(x => { if ((x as THREE.Mesh).isMesh) n++ }); return n }
+    const units: { unit: THREE.Object3D; weight: number }[] = []
     for (const child of this.scene.children) {
-      let meshes = 0, light = false
-      child.traverse(o => { if ((o as THREE.Mesh).isMesh) meshes++; if ((o as THREE.Light).isLight) light = true })
-      if (light) lit.push(child); else weighed.push({ child, meshes })
+      if (!holdsLight(child)) { units.push({ unit: child, weight: meshes(child) }); continue }
+      for (const inner of child.children) if (!holdsLight(inner)) units.push({ unit: inner, weight: meshes(inner) })
     }
-    const total = weighed.reduce((n, w) => n + w.meshes, 0), target = Math.max(1, total / count)
+    const total = units.reduce((n, u) => n + u.weight, 0), target = Math.max(1, total / count)
     const shares: Set<THREE.Object3D>[] = []
-    let share = new Set<THREE.Object3D>(lit), weight = 0
-    for (const { child, meshes } of weighed) {
-      if (weight > 0 && weight + meshes > target && shares.length < count - 1) { shares.push(share); share = new Set(lit); weight = 0 }
-      share.add(child); weight += meshes
+    let share = new Set<THREE.Object3D>(), weight = 0
+    for (const { unit, weight: w } of units) {
+      if (weight > 0 && weight + w > target && shares.length < count - 1) { shares.push(share); share = new Set(); weight = 0 }
+      share.add(unit); weight += w
     }
     shares.push(share)
-    return shares
+    return { units: units.map(u => u.unit), shares }
   }
 
   private takeCoveredClimb(): Promise<void> {
@@ -574,13 +575,15 @@ export class Game {
       slice(() => { standIns = climbShowroomStandIns(this.scene) })
       await frame(); check()
       // The scene in shares, one draw per frame, then the stand-ins on their own.
-      for (const share of this.climbShares(CLIMB_SHARES)) {
-        slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns: [], only: share }, run(true)))
+      const { units, shares } = this.climbShares(CLIMB_SHARES)
+      // First an empty share: the post chain builds the new level's graph on its first draw.
+      slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns: [], only: new Set(), units }, run(true)))
+      await frame(); check()
+      for (const share of shares) {
+        slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns: [], only: share, units }, run(true)))
         await frame(); check()
       }
-      const lightsOnly = new Set<THREE.Object3D>()
-      for (const child of this.scene.children) { let light = false; child.traverse(o => { light ||= (o as THREE.Light).isLight === true }); if (light) lightsOnly.add(child) }
-      slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns, only: lightsOnly }, run(true)))
+      slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns, only: new Set(), units }, run(true)))
       await frame(); check()
       progress('Preparing vehicles')
       slice(() => this.prepareClimbedLevel({ systems: false, fleet: true }, run(true)))
