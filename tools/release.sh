@@ -40,10 +40,12 @@ cd "$(dirname "$0")/.."
 . tools/cloudflare-token.sh
 . tools/smoke-run.sh
 # A release builds, runs wrangler and two Chromes: hold one machine-wide heavy slot throughout.
-# It also holds new heavy jobs back until it exits: the hold names this PID, which exec keeps
-# through heavy.sh, so the hold lifts by itself when the release ends or dies (tools/heavy.py).
+# It also holds the machine until it exits: the hold names this PID, which exec keeps through
+# heavy.sh, so the hold lifts by itself when the release ends or dies, and says 'running', so
+# heavy.py lets one other job share a slot beside it (tools/heavy.py; tools/ship.sh holds it
+# fully, 'gate', while it waits for the load to fall before starting this).
 if [ -z "${SYN3H_RELEASE_SLOT:-}" ] && [ -x tools/heavy.sh ]; then
-  _hold_root="${SYN3H_HEAVY_ROOT:-/tmp/syn3h-heavy-v2}"; mkdir -p "$_hold_root" && echo "$$" >"$_hold_root/hold"
+  _hold_root="${SYN3H_HEAVY_ROOT:-/tmp/syn3h-heavy-v2}"; mkdir -p "$_hold_root" && printf '%s\nrunning\n' "$$" >"$_hold_root/hold"
   SYN3H_HEAVY_RELEASE=1 SYN3H_RELEASE_SLOT=1 exec tools/heavy.sh env SYN3H_RELEASE_SLOT=1 "$(pwd)/tools/release.sh" "$@"
 fi
 REPO="$(pwd)"

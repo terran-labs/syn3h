@@ -18,42 +18,56 @@ hold = root / 'hold'
 HOLD_MAX_AGE = 3 * 3600
 
 
-def held():
-    """A release waiting at the load gate or running holds new jobs back (see release.sh).
+def hold_phase():
+    """The phase of a release holding the machine, or None when nothing holds it.
 
-    The hold file names the release's PID. It holds only while that process lives, so a
-    crashed release cannot block anyone, and never once it is three hours old, so a dead PID
-    recycled by some long-lived process cannot either. The release's own jobs set
-    SYN3H_HEAVY_RELEASE."""
+    The hold file names the release's PID on its first line and, from tools/ship.sh and
+    release.sh, its phase on the second: 'gate' while it waits for the load to fall before
+    starting, 'running' once release.sh runs. A hold without a phase (an older writer) is ''.
+    It holds only while that process lives, so a crashed release cannot block anyone, and
+    never once it is three hours old, so a dead PID recycled by some long-lived process cannot
+    either. The release's own jobs set SYN3H_HEAVY_RELEASE and are never held."""
     if os.environ.get('SYN3H_HEAVY_RELEASE'):
-        return False
+        return None
     try:
         if time.time() - hold.stat().st_mtime > HOLD_MAX_AGE:
-            return False
-        pid = int(hold.read_text().split()[0])
+            return None
+        parts = hold.read_text().split()
+        pid = int(parts[0])
         os.kill(pid, 0)
     except (FileNotFoundError, ValueError, IndexError, ProcessLookupError):
-        return False
+        return None
     except PermissionError:
         pass
-    return True
+    return parts[1] if len(parts) > 1 and parts[1] in ('gate', 'running') else ''
 
 
-# While a release holds the machine (from the start of its load-gate wait until it exits), no
-# other job starts; a job already running finishes. On 17 November a shared slot was tried
-# instead (SYN3H_HEAVY_HELD_SLOTS=1, so builders were not idle for a whole release), but on
-# 21 November release-97 waited at its gate for over 20 minutes at load 16 to 27 while
-# builders' browser jobs kept starting in that slot, and the gate needs the load low. The
-# setting stays: 1 or more lets that many other jobs share the last slots during a hold.
-HELD_SLOTS = int(os.environ.get('SYN3H_HEAVY_HELD_SLOTS', '0'))
+def env_slots(name, default):
+    return int(os.environ.get(name, default))
+
+
+# How many other jobs may share the last slots while a release holds the machine, by phase:
+#   gate     0: it waits for the load to fall, and any new job keeps it up (release-97, 21 Nov,
+#              waited over 20 minutes at load 16 to 27 while jobs kept starting);
+#   running  1: past the gate, one builder job beside it keeps work moving without taking the
+#              load near the release's own limits (the 17 November reason for sharing);
+#   ''       0: a hold without a phase, from a wrapper that does not say, is a full hold.
+# A job already running is never stopped; only new ones wait.
+HELD_SLOTS = {
+    'gate': env_slots('SYN3H_HEAVY_GATE_SLOTS', '0'),
+    'running': env_slots('SYN3H_HEAVY_RUNNING_SLOTS', '1'),
+    '': env_slots('SYN3H_HEAVY_HELD_SLOTS', '0'),
+}
 
 while True:
     usable = range(1, slots + 1)
-    if held():
-        if HELD_SLOTS < 1:
+    phase = hold_phase()
+    if phase is not None:
+        shared = HELD_SLOTS[phase]
+        if shared < 1:
             time.sleep(2)
             continue
-        usable = range(max(1, slots - HELD_SLOTS + 1), slots + 1)
+        usable = range(max(1, slots - shared + 1), slots + 1)
     for i in usable:
         lock = open(root / f'slot-{i}.lock', 'a+')
         try:
