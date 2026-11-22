@@ -5,6 +5,7 @@ import './touch-stick.css'
 import { persistHandedness, touchAimCurve, touchAimRadius, touchAimSpeed, touchLeftHanded, touchPinchSpeed, touchRole } from './TouchPreferences'
 import { AimTouches, TagStick, type TagMode, type Zone } from './tagStick'
 import { setTouchAiming } from '../core/touchAim'
+import { watchScreenEdges } from './screenEdges'
 
 /*
  * The floating thumb stick: pure maths, exported for tests/ui/touch-stick.test.ts.
@@ -99,6 +100,8 @@ export class TouchControls {
     this.hint = this.element.querySelector<HTMLElement>('.touch-stick-hint')!
     this.cancelRing = this.element.querySelector<HTMLElement>('.touch-cancel')!
     signal.addEventListener('abort', persistHandedness())
+    // The side edges keep clear of the camera cutout only on the side that has one (screenEdges.ts).
+    signal.addEventListener('abort', watchScreenEdges())
     const unwatch = params.onChange((id) => { if (id === touchLeftHanded.def.id) { this.reset(); this.syncHandedness() } })
     signal.addEventListener('abort', unwatch)
     this.syncHandedness()

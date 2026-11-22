@@ -71,7 +71,7 @@ body:has(.syn3h-shell.is-playing .spawn-help:not([hidden])) .touch-controls .tou
 /* Left-handed play (touch.leftHanded): the stick side, the action buttons, the first-run hint
    and the minimap that sits above the stick all swap sides. Buttons keep their own text
    direction; the grid's columns mirror, so every button keeps its distance from the edge. */
-.touch-controls[data-hand="left"] .touch-actions { right: auto; left: max(var(--thumb-margin), env(safe-area-inset-left)); direction: rtl; }
+.touch-controls[data-hand="left"] .touch-actions { right: auto; left: max(var(--thumb-margin), var(--safe-left)); direction: rtl; }
 .touch-controls[data-hand="left"] .touch-actions button { direction: ltr; }
 .touch-controls[data-hand="left"] .touch-stick-hint { left: auto; right: var(--edge-right); align-items: flex-end; }
 .touch-controls[data-hand="left"] .touch-stick-ghost > span { animation-name: touch-stick-ghost-left; }
@@ -130,7 +130,7 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
     bottom: var(--thumb-base);
     /* Centred, so clear of the grid on both sides: the vehicle's columns (--thumb-columns, set
        by TouchControls) plus one for the gear's extra buttons. */
-    max-width: calc(100% - 2 * (max(var(--thumb-margin), env(safe-area-inset-right)) + (var(--thumb-columns, 2) + 1) * (var(--thumb-size) + var(--thumb-gap)) + 12px));
+    max-width: calc(100% - 2 * (max(var(--thumb-margin), var(--safe-right)) + (var(--thumb-columns, 2) + 1) * (var(--thumb-size) + var(--thumb-gap)) + 12px));
   }
 }
 
@@ -235,12 +235,12 @@ html[data-touch-aim="on"] .syn3h-shell.has-touch .focus-hud svg [data-reticle] {
    Every rule starts with `html` to outrank the edge tab's and the themes' rules.
    --------------------------------------------------------------------------------------- */
 html .syn3h-shell.exploration-ui.has-touch .hud-navigation {
-  top: auto; left: auto; right: max(var(--thumb-margin), env(safe-area-inset-right));
+  top: auto; left: auto; right: max(var(--thumb-margin), var(--safe-right));
   bottom: calc(var(--thumb-top) + var(--thumb-gap)); width: var(--thumb-pair-width);
   display: block; transform: none;
   transition: opacity .14s ease-out .06s, visibility 0s linear 0s;
 }
-html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .hud-navigation { right: auto; left: max(var(--thumb-margin), env(safe-area-inset-left)); }
+html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .hud-navigation { right: auto; left: max(var(--thumb-margin), var(--safe-left)); }
 html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle {
   writing-mode: horizontal-tb; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 7px;
   width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 10px;

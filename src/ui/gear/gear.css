@@ -12,7 +12,7 @@
   --gs-glow: var(--halo-glow, 0 0 6px color-mix(in srgb, var(--s3-accent) 14%, transparent));
   --gs-under: var(--hud-under, var(--halo-under, 0 0 2px var(--s3-panel), 0 1px 7px var(--s3-panel), 0 0 18px var(--s3-panel)));
   position: fixed; z-index: var(--gear-z, 12);
-  left: var(--gear-left, max(20px, calc(env(safe-area-inset-left) + 14px))); top: var(--gear-top, 50%);
+  left: var(--gear-left, max(20px, calc(var(--safe-left) + 14px))); top: var(--gear-top, 50%);
   width: calc(var(--gs-width) + var(--gear-detail-width, 220px)); height: calc(var(--gs-pitch) * var(--gs-slots));
   transform: translateY(-50%); box-sizing: border-box; pointer-events: none;
   color: var(--s3-ink); font: 400 13.5px/1.4 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif;
@@ -126,7 +126,7 @@
 /* Touch has no keys: no number caps and no key hints. */
 .gear-selector[data-touch] :is(.gs-hints, .gs-keyhint, .gs-index) { display: none; }
 @media (max-width: 700px) {
-  .gear-selector { --gs-slots: 3; --gs-width: 164px; --gear-detail-width: 170px; left: var(--gear-left, max(12px, calc(env(safe-area-inset-left) + 10px))); }
+  .gear-selector { --gs-slots: 3; --gs-width: 164px; --gear-detail-width: 170px; left: var(--gear-left, max(12px, calc(var(--safe-left) + 10px))); }
   .gear-selector .gs-desc { font-size: 12px; }
 }
 @media (max-height: 500px) {
@@ -162,12 +162,12 @@ html[data-touch-hand="left"] .syn3h-shell.is-panels .gear-selector[data-touch] .
   /* Above the minimap (z 12, later in the page): on a narrow phone the Grapple's column can
      reach the map in the lower left, and a button must never be drawn under it. */
   position: fixed; z-index: var(--gear-actions-z, 13);
-  right: var(--gear-actions-right, calc(max(var(--thumb-margin, 24px), env(safe-area-inset-right)) + var(--gear-thumb-offset)));
+  right: var(--gear-actions-right, calc(max(var(--thumb-margin, 24px), var(--safe-right)) + var(--gear-thumb-offset)));
   bottom: var(--gear-actions-bottom, var(--thumb-base, 30px));
   display: flex; flex-direction: column-reverse; gap: var(--thumb-gap, 12px); pointer-events: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
-html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actions-left, calc(max(var(--thumb-margin, 24px), env(safe-area-inset-left)) + var(--gear-thumb-offset))); }
+html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actions-left, calc(max(var(--thumb-margin, 24px), var(--safe-left)) + var(--gear-thumb-offset))); }
 :root .gear-actions button.gs-action {
   /* Size and type only: the surface is the shared glass button's (.liquid-glass.glass-round). */
   width: var(--thumb-size, 62px); height: var(--thumb-size, 62px); min-height: 0; padding: 0 4px; margin: 0; border-radius: 50%;

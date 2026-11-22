@@ -12,13 +12,21 @@
      the readouts on phones, the touch controls. A little larger than any inset before it (16 to
      24 px). The per-side forms keep clear of a phone's safe areas. */
   --edge: 28px;
-  --edge-left: max(var(--edge), env(safe-area-inset-left)); --edge-right: max(var(--edge), env(safe-area-inset-right));
+  /* The side insets the HUD keeps clear of. In landscape an iPhone reports the same inset on
+     both long sides, though only one has the Dynamic Island or notch; src/ui/screenEdges.ts
+     works out which side that is and marks it (html[data-cutout-side]), and the other side's
+     inset goes to zero so the controls there sit at the normal edge (the owner, 22 November
+     2026). Anything placed from a side edge reads these, never env(safe-area-inset-left/right). */
+  --safe-left: env(safe-area-inset-left, 0px); --safe-right: env(safe-area-inset-right, 0px);
+  --edge-left: max(var(--edge), var(--safe-left)); --edge-right: max(var(--edge), var(--safe-right));
   --edge-top: max(var(--edge), env(safe-area-inset-top)); --edge-bottom: max(var(--edge), env(safe-area-inset-bottom));
   /* The bottom edge for touch controls and the touch minimap. An iPhone's 34 px bottom inset
      reserves the whole home-indicator strip, but the indicator is a 5 px bar about 8 px up, so
      the full inset left these controls 10 px further from the bottom than from the side (the
      owner, 19 November 2026). 10 px less than the inset still clears the bar by about 11 px. */
   --edge-touch-bottom: max(var(--edge), calc(env(safe-area-inset-bottom) - 10px)); }
+html[data-cutout-side="left"] { --safe-right: 0px; }
+html[data-cutout-side="right"] { --safe-left: 0px; }
 /* Phones: the same rule at a phone's scale. */
 @media (max-width: 700px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { :root { --edge: 24px; } }
 /* Buttons that are not glass (glass.css owns the surface of those). */
