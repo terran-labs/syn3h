@@ -1,4 +1,4 @@
-import { Mesh, Vector3 } from 'three/webgpu'
+import { Mesh, type Object3D, Vector3 } from 'three/webgpu'
 import type { CoveredWarm, Game } from '../core/Game'
 import { recordEntryWarmIssue } from '../core/diagnostics'
 import { RAPIER } from '../core/physics'
@@ -36,6 +36,8 @@ export class BotRenderWarm {
   private readonly detailPosition = new Vector3()
   private readonly drawPosition = new Vector3()
   private generation = 0
+  /** Set while the climb fleet draws: each pose is drawn shrunk and behind the camera. */
+  private unseen = false
   private running = false
   private disposed = false
 
@@ -169,7 +171,7 @@ export class BotRenderWarm {
 
   private draw(vehicle: Vehicle, look: Look, warm: CoveredWarm): void {
     const camera = this.game.camera
-    const parkedPosition = vehicle.object.position.clone()
+    const parkedPosition = vehicle.object.position.clone(), parkedScale = vehicle.object.scale.clone()
     camera.getWorldDirection(this.forward)
     this.detailPosition.copy(camera.position).addScaledVector(this.forward, look.distance)
     camera.getWorldPosition(this.drawPosition).addScaledVector(this.forward, 12)
@@ -178,6 +180,7 @@ export class BotRenderWarm {
     Vehicle.prototype.teleport.call(vehicle, this.detailPosition, 0)
     const holdNear = vehicleDetail.holdNear
     const hiddenWings: Mesh[] = []
+    const unculled: Object3D[] = []
     try {
       if (look.gearDown) {
         // The real jet controller extends its visual gear even on a kinematic proxy.
@@ -201,6 +204,13 @@ export class BotRenderWarm {
 
       if (!vehicle.object.parent) this.game.scene.add(vehicle.object)
       vehicle.object.position.copy(this.drawPosition)
+      if (this.unseen) {
+        // No veil covers a climb: clip every triangle (a micrometre, a kilometre behind the
+        // camera) while the colour and shadow pipelines still build. Culling would skip it.
+        vehicle.object.position.copy(camera.position).addScaledVector(this.forward, -1000)
+        vehicle.object.scale.setScalar(1e-6)
+        vehicle.object.traverse(object => { if (object.frustumCulled) { object.frustumCulled = false; unculled.push(object) } })
+      }
       if (look === near && vehicle instanceof Syn3hBuggy) {
         vehicle.object.traverse(object => {
           if (object instanceof Mesh && object.geometry.hasAttribute('wingPlan') && !object.visible) {
@@ -217,6 +227,8 @@ export class BotRenderWarm {
       } else warm.draw(vehicle.kind)
     } finally {
       for (const mesh of hiddenWings) mesh.visible = false
+      for (const object of unculled) object.frustumCulled = true
+      vehicle.object.scale.copy(parkedScale)
       vehicle.object.removeFromParent()
       vehicle.object.position.copy(parkedPosition)
       if (look.gearDown) vehicle.resetForWorld()
@@ -243,6 +255,16 @@ export class BotRenderWarm {
         drawPose(0, far, false)
       }
     } finally { for (const vehicle of actors) this.reset(vehicle) }
+  }
+
+  /**
+   * After a climb outside play: every distance look of the parked models at the new level, so a
+   * bot that later drives into another look (the merged mid-distance model casting its first
+   * shadow at Medium) builds nothing in play. Drawn unseen, since no veil covers a climb.
+   */
+  drawClimbFleet(submit: () => void): void {
+    this.unseen = true
+    try { this.drawReliefFleet(true, submit) } finally { this.unseen = false }
   }
 
   dispose(): void {

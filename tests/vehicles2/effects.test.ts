@@ -25,20 +25,20 @@ describe('bounded vehicle effects',()=>{
   const scene = new T.Scene()
   const dust = new ParticleBatch(8, dustSprite)
   scene.add(dust.mesh)
-  const material = dust.mesh.material
-  const low = material.opacityNode
-  let minimal: typeof low = null
+  // Each look is its own material, so neither pipeline is released while the other draws.
+  const low = dust.mesh.material
+  let minimal: typeof low | null = null
   try {
    expect(() => ParticleBatch.drawCoveredMinimal(scene, () => {
-    minimal = material.opacityNode
+    minimal = dust.mesh.material
     throw new Error('Draw failed')
    })).toThrow('Draw failed')
-   expect(material.opacityNode).toBe(low)
+   expect(dust.mesh.material).toBe(low)
    expect(minimal).not.toBe(low)
    dust.resetCapacity(4, 1)
-   expect(material.opacityNode).toBe(minimal)
+   expect(dust.mesh.material).toBe(minimal)
    dust.resetCapacity(8, 2)
-   expect(material.opacityNode).toBe(low)
+   expect(dust.mesh.material).toBe(low)
   } finally { dust.dispose() }
  })
  it('keeps each live effect material while resetting its quality-sized emission ring', () => {

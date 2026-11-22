@@ -35,7 +35,7 @@ const transitions: Record<string, (h: ReturnType<typeof harness>) => void> = {
 describe('ripple buffer lifecycle', () => {
   it('keeps the prepared solver asleep until the first wake and reuses it for that wake', () => {
     const enabled = waterRipples.value
-    waterRipples.value = true
+    waterRipples.value = false
     const h = harness()
     try {
       h.field.prepareCovered()
@@ -43,6 +43,7 @@ describe('ripple buffer lifecycle', () => {
       h.field.update(1 / 60, 0, 0)
       expect(h.draws).toEqual([false])
       expect(h.field.stats.passes).toBe(0)
+      waterRipples.value = true
       h.step(1)
       expect(h.field.stats.passes).toBeGreaterThan(0)
       expect(new Set(h.materials).size).toBe(1)

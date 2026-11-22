@@ -48,11 +48,15 @@ export interface System {
   precompileMeshes?(): Iterable<THREE.Mesh>
   /** Already-planted scenery a live quality change can reveal at this camera. */
   precompileQualityMeshes?(): Iterable<THREE.Mesh>
+  /** The governor has just climbed a level outside play: adopt the new level's looks now, before its preparation draw. */
+  prepareClimb?(): void
   /** Select or expose the draws the direct Minimal renderer will need, restoring them synchronously. */
   drawCoveredMinimal?(draw: () => void): void
   /** Attach retained player models for the existing Medium to Low preview draw. */
   drawReliefEffects?(level: number, draw: () => void): void
   drawReliefFleet?(minimal: boolean, draw: () => void): void
+  /** After a climb outside play: draw every distance look of the parked bot models, unseen, around `draw`. */
+  drawClimbFleet?(draw: () => void): void
   drawCoveredLowFleet?(draw: () => void): void
   dispose?(): void
 }
@@ -395,7 +399,58 @@ export class Game {
     metrics.pipelinesFresh = pipelines?.fresh ?? null
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
-    if (!this.applyingQuality) this.quality.frame(metrics, view === 'playing')
+    if (!this.applyingQuality) {
+      const before = this.quality.governor.level
+      this.quality.frame(metrics, view === 'playing')
+      // A pending climb applies only on a frame outside play, and the next frame may already be
+      // play. Build the new level's pipelines now, in this frame, hidden meshes included.
+      if (view !== 'playing' && this.quality.governor.level !== before && !this.holdDraws && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost) this.prepareClimbedLevel()
+    }
+  }
+
+  /**
+   * One extra draw of the scene at a level the governor has just climbed to, outside play. Meshes
+   * hidden until something happens in play (the waterline under a surface) are drawn too, as a
+   * manual change draws them under its veil: here there is no veil, so each is drawn shrunk to a
+   * micrometre and placed behind the camera. Every triangle is clipped and no pixel is written,
+   * while the pipeline is built for the real target (scale and position are not part of it; a
+   * positive scale keeps the face winding). A mesh whose ancestor is hidden is left alone, so no
+   * sibling is ever shown.
+   */
+  private prepareClimbedLevel(): void {
+    const start = longFrames.start()
+    longFrames.event('Climbed level preparation')
+    const camera = this.camera
+    const behind = camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(-1000).add(camera.position)
+    const moved: { mesh: THREE.Object3D; position: THREE.Vector3; scale: THREE.Vector3; culled: boolean }[] = []
+    const culled: THREE.Object3D[] = []
+    try {
+      // Systems whose look depends on the level (particle octaves) switch now, not next update.
+      for (const system of this.systems) system.prepareClimb?.()
+      for (const system of this.systems) {
+        for (const mesh of system.precompileQualityMeshes?.() ?? []) {
+          if (mesh.visible) continue
+          let shown = true
+          for (let o = mesh.parent; o && o !== this.scene; o = o.parent) if (!o.visible) { shown = false; break }
+          if (!shown) continue
+          moved.push({ mesh, position: mesh.position.clone(), scale: mesh.scale.clone(), culled: mesh.frustumCulled })
+          mesh.visible = true; mesh.frustumCulled = false
+          mesh.scale.setScalar(1e-6)
+          if (mesh.parent) mesh.position.copy(mesh.parent.worldToLocal(behind.clone())); else mesh.position.copy(behind)
+        }
+      }
+      for (const system of this.systems) system.prepareWorldDraw?.()
+      // Culling off for this draw, as the covered entry draws: a caster outside every cascade (a bot
+      // far away) would otherwise get its shadow pipeline only when it moves into one, in play.
+      this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
+      const submit = () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+      const fleet = this.systems.find(system => system.drawClimbFleet)
+      if (fleet) fleet.drawClimbFleet!(submit); else submit()
+    } finally {
+      for (const o of culled) o.frustumCulled = true
+      for (const m of moved) { m.mesh.visible = false; m.mesh.frustumCulled = m.culled; m.mesh.position.copy(m.position); m.mesh.scale.copy(m.scale) }
+      longFrames.end('Climbed level preparation', start)
+    }
   }
 
   /**
@@ -630,8 +685,17 @@ export class Game {
       // Use exact destination targets, including the direct-to-canvas Minimal path.
       const chain = this.postChain
       const governor = this.quality?.governor
-      if (!chain?.warmCovered || !governor?.auto || governor.levelPinned) return
+      if (!chain?.warmCovered || !governor?.auto) return
       const entryLevel = governor.level
+      if (governor.levelPinned) {
+        // Pinning the level still lets the governor shed post effects within it.
+        const full = this.quality.renderPreset(entryLevel, true)
+        const shed = this.quality.renderPreset(entryLevel, true, true)
+        if (chain.coveredVariantKey?.(full) !== chain.coveredVariantKey?.(shed)) {
+          await chain.warmCovered({ yieldFrame, draw: () => draw(undefined, true) }, shed)
+        }
+        return
+      }
       // Ultra and Cinematic change cascade counts. Preview just their existing neighbour
       // until the renderer can retain the actual destination shadow state.
       const lowest = entryLevel > 3 ? entryLevel - 1 : 0

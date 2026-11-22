@@ -23,6 +23,7 @@
 import * as T from 'three/webgpu'
 import type { Game } from '../../core/Game'
 import { graphicsLevel, qualityBudget } from '../../core/quality'
+import { warmGear } from '../warm'
 import { ParticleBatch } from '../../vehicles/effects/ParticleBatch'
 import { dustSprite } from '../../vehicles/effects/sprites'
 import { flashSprite } from './flashSprite'
@@ -32,6 +33,7 @@ import { ImpactPulses } from '../pulse'
 import { classifyImpact, impactCounts, RECIPES, type ImpactSurface, type SurfaceSource } from './recipes'
 import { impactFlash, impactLight, impactLightRadius, impactScorch, impactSparks, impactSparkSpeed } from './params'
 import { SparkBatch, type SparkSpec } from './SparkBatch'
+import { splash } from '../../world/water/splash'
 import { NEAR_HIT, nearLens } from './nearLens'
 import { ScorchMarks, SCORCH_CAPACITY } from './ScorchMarks'
 
@@ -44,6 +46,8 @@ const TONES: Record<'dust' | 'clods' | 'powder', Tone> = {
   powder: { shade: 1.35, sat: 0.15, frost: 0.85 },
 }
 const STEAM = new T.Color(0.85, 0.88, 0.9)
+/** The entry speed (m/s) a shot's splash is drawn as: Tag a slosh with a small crown, Thunder a full splash with its column. */
+const SPLASH_TAG = 8, SPLASH_THUNDER = 22
 /**
  * The height in metres the camera's view spans at `distance`: a size of `share * viewHeight` draws
  * `share` of the screen's height. For effects that must keep a size on screen however far off.
@@ -60,6 +64,7 @@ export class ImpactFx {
   private debris!: ParticleBatch
   private readonly light: ImpactPulses
   private readonly scorch = new ScorchMarks()
+  private readonly unwarm: () => void
   private level = -1
   private clock = 0
   private serial = 0
@@ -80,6 +85,8 @@ export class ImpactFx {
     this.light = new ImpactPulses(game, 'glow')
     game.scene.add(this.scorch.mesh)
     this.rebuild()
+    // Prepared again for each new graphics level, by hand or automatic (warm.ts).
+    this.unwarm = warmGear(game, [], undefined, () => [this.sparks.mesh, this.flash.mesh, this.debris.mesh, this.scorch.mesh])
   }
 
   /** Pools for the current quality level. Sparks and debris are a share of the particle budget. */
@@ -175,6 +182,10 @@ export class ImpactFx {
       this.color.copy(color).multiplyScalar(0.5 * impactLight.value)
       this.light.emit(at, n, { radius: impactLightRadius.value * (thunder ? 2.5 : 1) * Math.sqrt(far), seconds: thunder ? 0.45 : 0.25, color: this.color })
     }
+
+    // On water or lava, the same splash a vehicle's entry makes (WaterEffects' spray), as a hit
+    // at about the speed a car drops in at: a crown, a column for Thunder, and a foam ring.
+    if (surface === 'water' || surface === 'lava') splash(this.game, at, surface, thunder ? SPLASH_THUNDER : SPLASH_TAG)
 
     // What the surface throws up.
     if (recipe.debris && counts.debris > 0) this.throwDebris(recipe.debris, counts.debris, at, n, tangent, bitangent, surface, terrain, scale)
@@ -283,6 +294,7 @@ export class ImpactFx {
   reset(): void { this.light.reset() }
 
   dispose(): void {
+    this.unwarm()
     this.sparks.dispose(); this.flash.dispose(); this.debris.dispose(); this.scorch.dispose(); this.light.dispose()
   }
 }

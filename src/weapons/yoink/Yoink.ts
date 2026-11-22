@@ -21,6 +21,7 @@ import { LiftFieldLook } from './field'
 import { hotExposureDim } from '../../vehicles/skins/hotExposure'
 import { aimFrom, type GearControl } from '../aim'
 import { sharedLook, warmGear } from '../warm'
+import { ringEdges, type RingEdges } from '../pulse'
 import { gustPush, holdAccel, type V3 } from './hold'
 import { HeldFire } from '../heldFire'
 import {
@@ -80,8 +81,10 @@ const OWN_SPEED = 60
 const BEAM_RGB = [3, 1.5, 0.25] as const
 /** Gust rings ready to show at once, for the whole game. A gust lasts a third of a second. */
 const WAVES = 6
+/** A gust ring's edge quad, a tenth larger than the ring so the band lies just outside it. */
+const EDGE_GROW = new THREE.Matrix4().makeScale(1.1, 1.1, 1.1)
 
-interface Wave { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; age: number; busy: boolean }
+interface Wave { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; age: number; busy: boolean; slot: number }
 
 /**
  * Everything a Yoink draws with. One per game, shared by the player's Yoink and every bot's,
@@ -90,18 +93,22 @@ interface Wave { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; age: number; bu
  */
 class YoinkLook {
   readonly field: LiftFieldLook
+  /** The game's ring edges (pulse.ts RingEdges): each gust ring's dark edge by day. */
+  readonly edges: { look: RingEdges; release(): void }
   private readonly waveGeo = new THREE.RingGeometry(0.6, 1, 40)
   private readonly waves: Wave[] = []
   private readonly unwarm: () => void
 
   constructor(game: Game) {
     this.field = new LiftFieldLook(game)
+    this.edges = ringEdges(game)
+    const first = this.edges.look.take(WAVES)
     for (let i = 0; i < WAVES; i++) {
       const mat = new THREE.MeshBasicMaterial({
         name: 'gear yoink wave', color: new THREE.Color(...BEAM_RGB), transparent: true, opacity: 0.8, side: THREE.DoubleSide,
         blending: THREE.AdditiveBlending, depthWrite: false,
       })
-      this.waves.push({ mesh: new THREE.Mesh(this.waveGeo, mat), mat, age: 0, busy: false })
+      this.waves.push({ mesh: new THREE.Mesh(this.waveGeo, mat), mat, age: 0, busy: false, slot: first + i })
     }
     this.unwarm = warmGear(game, [
       ...this.waves.map((w) => [this.waveGeo, w.mat] as const),
@@ -120,6 +127,7 @@ class YoinkLook {
   dispose(): void {
     this.unwarm()
     this.field.dispose()
+    this.edges.release()
     for (const w of this.waves) { w.mesh.removeFromParent(); w.mat.dispose() }
     this.waveGeo.dispose()
   }
@@ -131,6 +139,7 @@ export class Yoink implements System {
   private readonly shared: { look: YoinkLook; release(): void }
   private readonly look: YoinkLook
   private readonly waves: Wave[] = []
+  private readonly edgeMatrix = new THREE.Matrix4()
   private fireWas = false
   /**
    * The player's press, held (heldFire.ts): one refused while the Yoink recharges goes as soon as
@@ -234,6 +243,7 @@ export class Yoink implements System {
     for (const w of this.waves) {
       this.game.scene.remove(w.mesh)
       w.busy = false
+      this.look.edges.look.set(w.slot, null, 0)
     }
     this.waves.length = 0
     this.fireWas = false
@@ -291,12 +301,18 @@ export class Yoink implements System {
       w.mesh.scale.setScalar(1 + k * yoinkPuntRange.value * 0.35)
       w.mat.opacity = 0.8 * Math.max(0, 1 - k)
       w.mat.color.setRGB(BEAM_RGB[0] * dim, BEAM_RGB[1] * dim, BEAM_RGB[2] * dim)
+      // Its dark edge by day, just outside the band (the ring is 0.6 to 1 of its radius; the edge
+      // quad is drawn a tenth larger, so the band at 1.035 is 0.94 of it).
+      w.mesh.updateMatrix()
+      this.edgeMatrix.copy(w.mesh.matrix).multiply(EDGE_GROW)
+      this.look.edges.look.set(w.slot, k < 1 ? this.edgeMatrix : null, Math.max(0, 1 - k), 1.035 / 1.1, 0.035 / 1.1)
       if (k >= 1) {
         this.game.scene.remove(w.mesh)
         w.busy = false
         this.waves.splice(i, 1)
       }
     }
+    this.look.edges.look.commit()
   }
 
   dispose(): void {
@@ -304,6 +320,7 @@ export class Yoink implements System {
     for (const w of this.waves) {
       this.game.scene.remove(w.mesh)
       w.busy = false
+      this.look.edges.look.set(w.slot, null, 0)
     }
     this.waves.length = 0
     this.shared.release()

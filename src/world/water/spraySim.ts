@@ -387,6 +387,9 @@ export class SpraySim {
   /** Impact speed for an entry: all of the vertical speed and part of the horizontal. */
   static impact(vx: number, vy: number, vz: number): number { return Math.hypot(vy, .45 * Math.hypot(vx, vz)) }
 
+  /** A splash with no vehicle behind it (a shot hitting the surface): as an entry at that velocity. */
+  impact(x: number, y: number, z: number, vx: number, vy: number, vz: number, scale: number): void { this.splash(x, y, z, vx, vy, vz, scale) }
+
   private splash(x: number, y: number, z: number, vx: number, vy: number, vz: number, scale: number, ball = 0) {
     const impact = SpraySim.impact(vx, vy, vz)
     const k = splashShape(impact)

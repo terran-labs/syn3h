@@ -35,6 +35,7 @@ export class ParticleBatch {
   readonly opacity=uniform(1)
   private octaves = 0
   private readonly selectLook: (octaves: number) => void
+  private readonly looks: Map<number, T.SpriteNodeMaterial>
   private next=0
   private buffers: ReturnType<typeof particleBuffers>
   private disposed = false
@@ -53,32 +54,37 @@ export class ParticleBatch {
   constructor(capacity:number,sprite:Sprite,additive=false,octaves=2){
     this.buffers = particleBuffers(capacity)
     const cfg=attribute('fxSettings','vec4'),age=this.clock.sub(cfg.x),unit=age.div(cfg.y).clamp(0,1)
-    const m=new T.SpriteNodeMaterial({transparent:true,depthWrite:false,blending:additive?T.AdditiveBlending:T.NormalBlending})
-    m.positionNode=attribute('fxOrigin','vec3').add(attribute('fxVelocity','vec3').mul(age.max(0)))
     // Nothing once its life is over (or before it starts): a zero-size quad is never rasterised.
     // The size grew with age without end, so every dead slot was still drawn, transparent and
     // ever larger, for as long as the batch lived.
     const size=cfg.z.add(cfg.w.mul(age.max(0))).max(0).mul(age.greaterThanEqual(0).and(age.lessThan(cfg.y)).select(1,0))
-    m.scaleNode=vec2(size,size)
-    // Keep both original graphs: the shader compiler sees a literal noise octave count at each level.
-    const looks = new Map<number, Pick<T.SpriteNodeMaterial, 'colorNode' | 'opacityNode'>>()
+    const positionNode=attribute('fxOrigin','vec3').add(attribute('fxVelocity','vec3').mul(age.max(0)))
+    // One material per noise octave count, so the shader compiler sees a literal count at each
+    // level. The mesh swaps materials rather than one material swapping graphs: three releases a
+    // pipeline when its last material moves to another graph, so switching back (a drop to Minimal
+    // in play, or a covered Minimal draw) built it again, in play. Each material keeps its own.
+    const looks = new Map<number, T.SpriteNodeMaterial>()
+    const lookMaterial = (count: number, like?: T.Material): T.SpriteNodeMaterial => {
+      let m = looks.get(count)
+      if (m) return m
+      m=new T.SpriteNodeMaterial({transparent:true,depthWrite:false,blending:additive?T.AdditiveBlending:T.NormalBlending})
+      if (like && "fog" in like) m.fog = (like as T.SpriteNodeMaterial).fog
+      m.positionNode=positionNode
+      m.scaleNode=vec2(size,size)
+      const look=sprite(uv().mul(2).sub(1),particleSeed(cfg.x,float(instanceIndex)),age.max(0),count)
+      m.colorNode=attribute('fxTint','vec3').mul(look.rgb).mul(additive?hotExposureNode():unlitShadeNode())
+      m.opacityNode=look.alpha.mul(this.opacity).mul(unit.mul(Math.PI).sin().max(0).mul(age.greaterThanEqual(0).select(1,0)).mul(age.lessThan(cfg.y).select(1,0)).mul(additive?.8:.4).mul(float(1).sub(smoothstep(.42,.5,uv().sub(.5).length()))))
+      looks.set(count, m)
+      return m
+    }
+    this.looks = looks
+    this.mesh=new T.Mesh(this.buffers.geometry,lookMaterial(octaves));this.mesh.frustumCulled=false;this.mesh.renderOrder=additive?4:3
+    this.octaves = octaves
     this.selectLook = count => {
       if (this.octaves === count) return
-      let nodes = looks.get(count)
-      if (!nodes) {
-        const look=sprite(uv().mul(2).sub(1),particleSeed(cfg.x,float(instanceIndex)),age.max(0),count)
-        const colorNode=attribute('fxTint','vec3').mul(look.rgb).mul(additive?hotExposureNode():unlitShadeNode())
-        const opacityNode=look.alpha.mul(this.opacity).mul(unit.mul(Math.PI).sin().max(0).mul(age.greaterThanEqual(0).select(1,0)).mul(age.lessThan(cfg.y).select(1,0)).mul(additive?.8:.4).mul(float(1).sub(smoothstep(.42,.5,uv().sub(.5).length()))))
-        nodes = { colorNode, opacityNode }
-        looks.set(count, nodes)
-      }
-      m.colorNode = nodes.colorNode
-      m.opacityNode = nodes.opacityNode
-      m.needsUpdate = true
+      this.mesh.material = lookMaterial(count, this.mesh.material)
       this.octaves = count
     }
-    this.selectLook(octaves)
-    this.mesh=new T.Mesh(this.buffers.geometry,m);this.mesh.frustumCulled=false;this.mesh.renderOrder=additive?4:3
     batches.set(this.mesh, this)
   }
 
@@ -142,6 +148,6 @@ export class ParticleBatch {
     this.mesh.removeFromParent()
     this.mesh.dispose()
     this.mesh.geometry.dispose()
-    this.mesh.material.dispose()
+    for (const m of this.looks.values()) m.dispose()
   }
 }

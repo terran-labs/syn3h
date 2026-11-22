@@ -9,6 +9,7 @@ import { net } from '../../net'
 import { nearestImage } from '../../../shared/wrap'
 import { Ripples, rippleField, waterRipples } from './ripples'
 import { Spray, waterSpray } from './spray'
+import { setSplash } from './splash'
 import { Underwater, cameraMedium, waterUnderwater } from './underwater'
 import { Motes } from './motes'
 import { setLavaSunk } from '../../fx/material'
@@ -45,6 +46,8 @@ export class WaterEffects implements System {
     this.listen(slot.current,true)
     // The player changed vehicle: follow the seam shifts of the new one.
     this.unfollow=slot.onChange((next,previous)=>{this.listen(previous,false);this.listen(next,true)})
+    // A shot hitting the surface splashes through the same sprays (splash.ts).
+    setSplash(game,(at,kind,speed)=>(kind==='lava'?this.lavaSpray:this.spray).impact(at,speed))
   }
   private onTileShift=({dx,dz}:{dx:number;dz:number})=>{this.spray.shift(dx,dz);this.lavaSpray.shift(dx,dz)}
   /** `?water=1` preview switch: applied once play has begun, after any room state lands. */
@@ -153,7 +156,9 @@ export class WaterEffects implements System {
   }
   async warmCovered(){this.ripples.prepareCovered()}
   /** The meniscus, split view and droplets share this normally hidden lens mesh. */
+  /** A climbed level: water and lava spray allocate for it before the preparation draw (spray.ts prepareClimb). */
+  prepareClimb(){this.spray.prepareClimb();this.lavaSpray.prepareClimb()}
   *precompileMeshes(){yield this.waterline.mesh}
   precompileQualityMeshes(){return this.precompileMeshes()}
-  dispose(){this.unfollow();this.listen(this.player,false);this.motes.dispose();this.waterline.dispose();this.underwater.dispose();this.bubbles.dispose();this.spray.dispose();this.lavaSpray.dispose();setLavaSunk(null);this.ripples.dispose()}
+  dispose(){setSplash(this.game,null);this.unfollow();this.listen(this.player,false);this.motes.dispose();this.waterline.dispose();this.underwater.dispose();this.bubbles.dispose();this.spray.dispose();this.lavaSpray.dispose();setLavaSunk(null);this.ripples.dispose()}
 }

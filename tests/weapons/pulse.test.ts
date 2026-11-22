@@ -11,12 +11,13 @@ describe('impact light rings', () => {
     const options = { radius: 4, seconds: 0.5, color: new THREE.Color(0, 2, 1) }
     for (let i = 0; i < 100; i++) pulses.emit(at, normal, options)
     expect(pulses.active).toBe(16)
-    expect(scene.children).toHaveLength(1)
+    // The ring and its dark edge (drawn by day, its own small batch): two meshes, shown and hidden together.
+    expect(scene.children).toHaveLength(2)
     pulses.update(0.2)
-    expect(scene.children[0].visible).toBe(true)
+    expect(scene.children.every(c => c.visible)).toBe(true)
     pulses.update(0.4)
     expect(pulses.active).toBe(0)
-    expect(scene.children[0].visible).toBe(false)
+    expect(scene.children.some(c => c.visible)).toBe(false)
     pulses.emit(at, normal, options)
     pulses.reset()
     expect(pulses.active).toBe(0)

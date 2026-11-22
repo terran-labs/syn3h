@@ -291,6 +291,16 @@ export class Spray {
     if (!this.sim || tier !== this.tier) this.allocate(tier)
     this.sim!.step(dt)
   }
+  /**
+   * A climbed level (Game.prepareClimbedLevel): allocate for it now, as update would on the next
+   * frame, so the preparation draw submits the batches (drawn with no instances while idle) and
+   * their pipelines exist before play. Leaving Minimal, they were not in the scene at all.
+   */
+  prepareClimb() {
+    if (!waterSpray.value) return
+    const tier = Math.max(0, Math.min(2, Math.round(graphicsLevel.value)))
+    if (!this.sim || tier !== this.tier) this.allocate(tier)
+  }
   /** One vehicle this frame; `shape` says what touches the liquid (spraySim.ts WakeShape). */
   vehicle(id: string, position: T.Vector3, velocity: T.Vector3, submergedFraction: number, dt: number, shape?: WakeShape) {
     if (!waterSpray.value) return
@@ -306,6 +316,16 @@ export class Spray {
     // Rings of ripples spreading from the hole, wider and stronger for a harder hit.
     if (entering) { const impact = this.sim!.lastSplash; this.ripples.disturb(position.x, position.z, 2 + Math.min(4, impact * .12), Math.min(.6, impact * .04 + .1)) }
     return entering
+  }
+  /**
+   * A splash where something that is not a vehicle hits the surface (a shot): the same crown,
+   * column and foam ring as an entry at `speed` m/s straight down, with ripples on water.
+   */
+  impact(position: T.Vector3, speed: number) {
+    if (!waterSpray.value) return
+    if (!this.sim) this.allocate(Math.max(0, Math.min(2, Math.round(graphicsLevel.value))))
+    this.sim!.impact(position.x, position.y, position.z, 0, -Math.max(0, speed), 0, waterSprayScale.value * (this.liquid === 'lava' ? .7 : 1))
+    if (this.liquid !== 'lava') this.ripples.disturb(position.x, position.z, 2 + Math.min(4, speed * .12), Math.min(.6, speed * .04 + .1))
   }
   /** The world moved by a whole tile under the player: move what spray has left behind with it. */
   shift(dx: number, dz: number) { this.sim?.shift(dx, dz) }

@@ -1,7 +1,7 @@
 import { worldSeed } from '../../shared/params'
 import { uniqueBotName } from '../ui/data/names'
 import { attachVehicleEffects } from '../vehicles/effects'
-import { Vector3 } from 'three/webgpu'
+import { Vector3, type Mesh } from 'three/webgpu'
 import { longFrames } from '../core/longFrames'
 import type { CoveredWarm, Game, System } from '../core/Game'
 import { qualityBudget } from '../core/quality'
@@ -120,6 +120,7 @@ export class BotManager implements System {
     this.daydream = new Daydream(game, terrain, player, { navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
   }
   drawReliefFleet(minimal: boolean, draw: () => void): void { this.covered.drawReliefFleet(minimal, draw) }
+  drawClimbFleet(draw: () => void): void { this.covered.drawClimbFleet(draw) }
 
   warmCovered(warm: CoveredWarm): Promise<void> { return this.covered.warm(warm) }
   acquireBotVehicle(kind: VehicleKind, position: Vector3, heading: number): Vehicle {
@@ -458,6 +459,25 @@ export class BotManager implements System {
       const p = bot.body.translation()
       const behind = round && (p.x - camera.position.x) * this.look.x + (p.y - camera.position.y) * this.look.y + (p.z - camera.position.z) * this.look.z < -8
       bot.object.visible = !behind && !overHorizon(p.x, p.z, 4, p.y + 3)
+    }
+  }
+  /**
+   * Bots hidden this frame (behind the camera or over the horizon, see update): a quality change
+   * draws them too, so a level's new vehicle and shadow materials are built before they come back
+   * into view in play.
+   */
+  /**
+   * A hidden bot, and inside a shown bot every hidden mesh: its other distance looks are hidden
+   * siblings (the reduced and merged models). Medium is the first level with shadows, so a bot that
+   * later drives into another look built that look's shadow pipeline in play. The climb
+   * preparation draws each unseen; one whose ancestor is hidden is left alone there.
+   */
+  *precompileQualityMeshes(): Iterable<Mesh> {
+    for (const bot of this.bots) {
+      if (!bot.object.visible) { yield bot.object as unknown as Mesh; continue }
+      const hidden: Mesh[] = []
+      bot.object.traverse(o => { if ((o as Mesh).isMesh && !o.visible) hidden.push(o as Mesh) })
+      yield* hidden
     }
   }
   dispose() {
