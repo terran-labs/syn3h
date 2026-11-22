@@ -132,10 +132,10 @@ interface ExtraCard extends ExtraCardOptions { id: string; card: HTMLElement; su
 
 /**
  * A card's header. The x (phones only, src/ui/phone-panels.css) shows while the card is the
- * one panel on screen. The whole header is the button, so the x wears the shared glass
- * (liquid-glass) but is drawn, not a separate target.
+ * one panel on screen. The whole header is the button, so the x is the shared bare X
+ * (card-chrome.css), drawn, not a separate target.
  */
-const CARD_HEAD = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span><span class="wi-x liquid-glass glass-round" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>'
+const CARD_HEAD = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span><span class="wi-x" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M6 6L18 18M18 6L6 18"/></svg></span>'
 /** Phone panels: how long each change between the three states takes (ms). Shorten, never lengthen: this is mid-game. */
 export const PHONE_PANEL_MS = { show: 220, hide: 160, open: 240, back: 200, stagger: 15, staggerCap: 6, ghost: 140, ghostOut: 90 } as const
 
@@ -567,14 +567,15 @@ export class Inspector {
     const param = params.get(def.id)!, choices = choicesOf(def)
     let sync: (value: ParamValue) => void
     if (def.id === 'hud.glass') {
+      // Style: the label at the left and the three named options beside it on the same line
+      // (the owner, 22 November 2026). The pressed option's outline is its only mark, and its own
+      // name the only text tied to it: no slider, no readout repeating it at the row's end.
       label.textContent = def.label
-      const input = document.createElement('input')
-      input.type = 'range'; input.min = '0'; input.max = String(glassLabels.length - 1); input.step = '1'
-      input.setAttribute('aria-label', def.label)
       const hint = document.createElement('small')
       hint.textContent = liquidQualityHint
       const ticks = document.createElement('div')
       ticks.className = 'glass-stops'
+      ticks.setAttribute('role', 'group'); ticks.setAttribute('aria-label', def.label)
       const stops = glassLabels.map((name, index) => {
         const button = document.createElement('button')
         button.type = 'button'; button.textContent = name
@@ -582,21 +583,13 @@ export class Inspector {
         ticks.append(button)
         return button
       })
-      row.classList.add('glass-material-row')
-      row.append(label, input, output, ticks, hint)
+      row.classList.add('glass-material-row', 'glass-style-row')
+      row.append(label, ticks, hint)
       sync = value => {
         const index = Number(value)
-        input.value = String(index)
         stops[0].disabled = !liquidEligible()
         hint.hidden = liquidEligible()
-        output.textContent = glassLabels[index]
-        input.setAttribute('aria-valuetext', glassLabels[index] + (!liquidEligible() ? '. ' + liquidQualityHint : ''))
         stops.forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)))
-      }
-      // Keep the current material throughout a drag, including while crossing Liquid.
-      input.onchange = () => {
-        if (input.valueAsNumber || liquidEligible()) params.set(def.id, input.valueAsNumber)
-        sync(param.value)
       }
     } else if (def.id === 'hud.surfaceCoverage') {
       row.classList.add('glass-material-row', 'tint-row')

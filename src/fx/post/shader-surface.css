@@ -47,14 +47,13 @@ html[data-game-glass] .syn3h-shell.exploration-ui .world-inspector .wi-card :is(
   color: var(--s3-ink);
 }
 html[data-game-glass] .syn3h-shell.exploration-ui .world-inspector .wi-card :is(.wi-vehicle-picker, .wi-seg) {
-  border: 0;
-  border-bottom: 1px solid currentColor;
-  border-radius: 0;
+  border: 1px solid var(--s3-line-quiet);
+  border-radius: var(--glass-control-radius, 24px);
 }
 html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] :is(.wi-vehicle-option[aria-checked="true"], .wi-seg button.is-on, .wi-switch button.is-on) {
   background: var(--card-selection);
   color: var(--card-selection-ink);
-  border-radius: 4px;
+  border-radius: var(--glass-control-radius, 24px);
   box-shadow: none;
 }
 html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] > .wi-head :is(h3, .wi-sum, .wi-x) {
@@ -159,9 +158,9 @@ html:not([data-game-glass]) .wi-group[data-group="Glass"],
 /* Keep the extra action in a trailing column only while the row is edited. */
 .syn3h-shell .wi-row:has(> .glass-setting-reset) { grid-auto-flow: column; grid-auto-columns: max-content; }
 .syn3h-shell.exploration-ui .world-inspector .wi-row > button.glass-setting-reset {
-  appearance: none; border: 0; border-radius: 0; background: transparent; box-shadow: none;
-  min-width: 0; min-height: 24px; padding: 0 2px; font: inherit; color: inherit;
-  text-transform: none; letter-spacing: normal; text-decoration: underline;
+  appearance: none; border: 0; border-radius: var(--glass-control-radius, 24px); background: transparent; box-shadow: none;
+  min-width: 0; min-height: 28px; padding: 0 10px; font: inherit; color: inherit;
+  text-transform: none; letter-spacing: normal; text-decoration: none;
 }
 .syn3h-shell .wi-row > .glass-setting-reset[hidden] { display: none; }
 /* A rail theme can frost Search and the two icons at tablet widths.

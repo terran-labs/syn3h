@@ -60,8 +60,12 @@ export function cycleFocus<T>(focusable: readonly T[], current: T | null, back: 
   return focusable[(at + (back ? -1 : 1) + focusable.length) % focusable.length]!
 }
 
-/** The lobby's close control: a drawn x and the word, the same in every lobby panel (.lobby-close). */
-export const LOBBY_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6L18 18M18 6L6 18"/></svg><span>Close</span>'
+/**
+ * Every card's close control: a bare, drawn X, no word and no pill (the owner, 22 November 2026:
+ * "the close button should also just be a larger X"). One vector path, the same in the lobby's
+ * Settings card, Welcome and Updates and the in-play guide. Styled by .card-close (card-chrome.css).
+ */
+export const CARD_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6L18 18M18 6L6 18"/></svg>'
 
 /** A volume: an audio setting from 0 to 1, shown as a percentage like the card's summary. */
 export const isVolume = (def: PropertyDef) => def.group === 'Audio' && def.min === 0 && def.max === 1
@@ -158,7 +162,7 @@ export class LobbySettings {
     panel.classList.add('lobby-settings', 'liquid-glass'); panel.id = 'lobby-settings'
     panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Settings')
     const head = document.createElement('header'); head.className = 'lobby-settings-head'
-    head.innerHTML = `<h2>Settings</h2><button type="button" class="lobby-settings-close lobby-close" aria-label="Close settings">${LOBBY_CLOSE}</button>`
+    head.innerHTML = `<h2>Settings</h2><button type="button" class="lobby-settings-close lobby-close card-close" aria-label="Close">${CARD_CLOSE}</button>`
     // The world tools (search, copy, paste, reset world) belong to a world, not the lobby.
     panel.querySelector('.wi-top')?.remove()
     panel.querySelector('.wi-cards')!.before(head)

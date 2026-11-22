@@ -109,7 +109,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
 
     assert.ok(await banner.isHidden(), 'an open sheet hides the banner')
     // Closed with its X, the galaxy and the banner return; dismissed, it stays away for the session.
-    await about.getByRole('button', { name: 'Close Updates' }).click()
+    await about.getByRole('button', { name: 'Close', exact: true }).click()
     await about.waitFor({ state: 'hidden' })
     await banner.waitFor({ state: 'visible' })
     await banner.getByRole('button', { name: 'Dismiss for now' }).click()

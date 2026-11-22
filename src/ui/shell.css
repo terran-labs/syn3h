@@ -102,7 +102,7 @@
 .bots-keep input { width: 20px; height: 20px; vertical-align: -4px; margin-right: 6px; }
 .bots-keep small { display: block; margin-left: 28px; color: var(--s3-dim); font-size: 13px; }
 .settings-links { display: grid; gap: 12px; }
-.score-row { display: grid; grid-template-columns: minmax(0,1fr) auto 35px; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border-bottom: 1px solid rgb(84 84 88 / .4); font-size: 17px; }
+.score-row { display: grid; grid-template-columns: minmax(0,1fr) auto 35px; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; font-size: 17px; }
 .score-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .score-row small { color: var(--s3-dim); font-size: 10px; }
 .score-row strong { text-align: right; font-weight: 600; color: white; }
@@ -494,7 +494,7 @@
 .race-arrow { display: inline-block; position: absolute; left: 10px; top: 12px; font-size: 22px; }
 .race-hud:has(.race-arrow:not([hidden])) { padding-inline: 34px; }
 .race-controls { display: flex; gap: 4px; justify-content: center; margin-top: 6px; }
-.syn3h-shell .race-controls button { font: inherit; font-size: 12px; min-height: 32px; padding: 4px 9px; border-radius: 8px; }
+.syn3h-shell .race-controls button { font: inherit; font-size: 12px; min-height: 32px; padding: 4px 9px; border-radius: var(--glass-control-radius, 24px); }
 .race-hud.is-captured { background: rgb(19 19 19 / .5); border-color: rgb(218 218 218 / .18); pointer-events: none; }
 .race-hud.is-captured .race-controls { display: none; }
 .race-hud.is-collapsed .race-destination, .race-hud.is-collapsed .race-detail, .race-hud.is-collapsed .race-arrow { display: none; }

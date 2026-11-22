@@ -1,0 +1,89 @@
+/*
+ * Card chrome shared by every card and panel (the owner, 22 November 2026): one rule, one close
+ * control, one control radius, one hover outline. Loaded after the themes (Shell.ts).
+ *
+ *   --rule                    the only horizontal rule: a hairline that fades out at both ends.
+ *                             Use it as `border-top: 1px solid transparent; border-image: var(--rule) 1`
+ *                             (or as a 1 px background where a border cannot carry it, e.g. a table row).
+ *   --glass-control-radius    the one radius for controls (glass.css). 24 px is a full pill for
+ *                             anything up to 48 px tall, which is every control in a card.
+ *   --control-hover-outline   the outline a control shows under the pointer; a selected option in
+ *                             a segmented choice wears the same one (glass.css), nothing more.
+ * Card and panel corners keep their own radius (--halo-r, --panels-radius); cards are not pills.
+ */
+:root {
+  --rule-line: rgb(232 232 232 / .22);
+  --rule: linear-gradient(90deg, transparent, var(--rule-line) 20%, var(--rule-line) 80%, transparent);
+  --control-hover-outline: 1px solid rgb(255 255 255 / .68);
+}
+
+/* ---- Close: a bare, larger X (.card-close; markup CARD_CLOSE in LobbySettings.ts) ----
+   White, no fill and no edge at rest, a 44 px target, the shared hover outline and the shared
+   keyboard ring. A soft shadow under the strokes keeps it legible over a bright sky. */
+html .syn3h-shell.exploration-ui button.card-close {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box;
+  width: 44px; height: 44px; min-width: 44px; min-height: 44px; margin: 0; padding: 0;
+  border: 0; border-radius: var(--glass-control-radius, 24px); background: transparent; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none;
+  color: #fff; cursor: pointer; outline: 1px solid transparent; outline-offset: -1px;
+  transition: outline-color .18s, background-color .18s;
+}
+html .syn3h-shell.exploration-ui button.card-close::before, html .syn3h-shell.exploration-ui button.card-close::after { content: none; }
+html .syn3h-shell.exploration-ui button.card-close svg { width: 22px; height: 22px; flex: none; overflow: visible; filter: drop-shadow(0 0 3px rgb(0 0 0 / .45)); }
+html .syn3h-shell.exploration-ui button.card-close path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+html .syn3h-shell.exploration-ui button.card-close:hover { outline: var(--control-hover-outline); outline-offset: -1px; background: transparent; }
+html .syn3h-shell.exploration-ui button.card-close:active { background: rgb(255 255 255 / .1); }
+html .syn3h-shell.exploration-ui button.card-close:focus-visible { outline: 2px solid white; outline-offset: 1px; }
+/* The in-play guide's header: the X at the right of the title row. */
+html .syn3h-shell.exploration-ui .in-play-about > header .card-close { margin: -4px -12px -4px 0; }
+/* The lobby Settings card: the X sits in the header's right corner, level with the title. */
+html .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head .card-close { margin: -4px -2px -4px 0; }
+
+/* On a phone the open card's header shows the same X (Inspector CARD_HEAD). The whole header is
+   the button there, so this is drawn, not a second target. */
+@media (max-width: 700px), (max-height: 500px) {
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head { grid-template-columns: auto minmax(0, 1fr) 36px; }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card[data-section="you"].is-open > .wi-head { grid-template-columns: auto minmax(0, 1fr) auto 36px; }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head .wi-x {
+    width: 36px; height: 36px; border: 0; background: transparent; box-shadow: none; color: #fff;
+  }
+  html .syn3h-shell.exploration-ui.has-touch .world-inspector .wi-x svg { width: 20px; height: 20px; stroke-width: 2; filter: drop-shadow(0 0 3px rgb(0 0 0 / .45)); }
+}
+
+/* ---- The Glass section: Style and Tint, each label at the left and its control beside it ---- */
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.glass-style-row, html .syn3h-shell .world-inspector .wi-row.glass-style-row {
+  grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px;
+}
+html .syn3h-shell .world-inspector .wi-row.glass-style-row > small { grid-column: 1 / -1; }
+.glass-stops { display: inline-flex; gap: 2px; justify-self: end; }
+html .syn3h-shell .world-inspector .glass-stops > button {
+  position: relative; box-sizing: border-box; min-width: 0; min-height: 30px; height: 30px; margin: 0; padding: 0 11px;
+  font: inherit; color: inherit; text-decoration: none; background: transparent; box-shadow: none;
+  border: 0; border-radius: var(--glass-control-radius, 24px); outline: 1px solid transparent; outline-offset: -1px;
+  transition: outline-color .18s;
+}
+/* The pointer's outline, and the same outline on the chosen one: no underline, no fill. */
+html .syn3h-shell .world-inspector .glass-stops > button:hover:not(:disabled),
+html .syn3h-shell .world-inspector .glass-stops > button[aria-pressed="true"] { outline: var(--control-hover-outline); outline-offset: -1px; }
+html .syn3h-shell .world-inspector .glass-stops > button:focus-visible { outline: 2px solid white; outline-offset: 1px; }
+.glass-stops button:disabled { opacity: .5; }
+/* A thumb gets 44 px without the row growing. */
+html .syn3h-shell.has-touch .world-inspector .glass-stops > button::after { content: ''; position: absolute; inset: -7px 0; }
+
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.tint-row, html .syn3h-shell .world-inspector .wi-row.tint-row { grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 10px; }
+html .syn3h-shell .world-inspector .wi-row.tint-row > input[type=range] { width: 100%; min-width: 0; }
+html .syn3h-shell .world-inspector .wi-row.tint-row > output { min-width: 3.2ch; text-align: right; font-variant-numeric: tabular-nums; }
+html .syn3h-shell .world-inspector .wi-row.tint-row > .tint-default {
+  position: relative; box-sizing: border-box; min-width: 0; min-height: 28px; height: 28px; margin: 0; padding: 0 10px;
+  font: inherit; font-size: 12px; color: white; background: transparent; box-shadow: none;
+  border: 1px solid var(--s3-line-quiet); border-radius: var(--glass-control-radius, 24px);
+}
+html .syn3h-shell .world-inspector .wi-row.tint-row > .tint-default:hover { border-color: transparent; outline: var(--control-hover-outline); outline-offset: -1px; }
+html .syn3h-shell.has-touch .world-inspector .wi-row.tint-row > .tint-default::after { content: ''; position: absolute; inset: -8px 0; }
+
+/* ---- One radius for the in-card controls the themes had left square or nearly so ---- */
+/* Segmented choices (vehicle, interface mode, every .wi-seg) and their chosen segment. */
+html .syn3h-shell.exploration-ui .world-inspector :is(.wi-seg, .wi-vehicle-picker),
+html .syn3h-shell.exploration-ui .world-inspector :is(.wi-seg button, .wi-vehicle-option) { border-radius: var(--glass-control-radius, 24px); }
+/* The hover outline on any segment, matching the chosen segment's outline (glass.css). */
+html[data-glass-material] .syn3h-shell.exploration-ui .world-inspector :is(.wi-seg button, .wi-vehicle-option):hover:not(.is-on, [aria-checked="true"], :disabled, [aria-disabled="true"]) { outline: var(--control-hover-outline); outline-offset: -1px; border-color: transparent; }

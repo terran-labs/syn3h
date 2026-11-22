@@ -99,10 +99,10 @@
 .syn3h-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover { background: none; box-shadow: none; }
 .syn3h-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover h3 { color: #fff; }
 /* A divider that fades at both ends instead of a full-width rule. */
-.syn3h-shell.exploration-ui .world-inspector .wi-body { border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, var(--s3-line-quiet) 20%, var(--s3-line-quiet) 80%, transparent) 1; scrollbar-color: rgb(231 231 231 / .25) transparent; }
+.syn3h-shell.exploration-ui .world-inspector .wi-body { border-top: 1px solid transparent; border-image: var(--rule) 1; scrollbar-color: rgb(231 231 231 / .25) transparent; }
 .syn3h-shell.exploration-ui .world-inspector .wi-blurb { font-size: 13px; color: var(--s3-dim); }
 .syn3h-shell.exploration-ui .world-inspector .wi-group { border-top: 0; }
-.syn3h-shell.exploration-ui .world-inspector .wi-group + .wi-group { border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, rgb(231 231 231 / .12) 25%, rgb(231 231 231 / .12) 75%, transparent) 1; }
+.syn3h-shell.exploration-ui .world-inspector .wi-group + .wi-group { border-top: 1px solid transparent; border-image: var(--rule) 1; }
 .syn3h-shell.exploration-ui .world-inspector .wi-group summary { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--s3-dim); }
 .syn3h-shell.exploration-ui .world-inspector .wi-group[open] summary { color: var(--s3-ink); }
 .syn3h-shell.exploration-ui .world-inspector .wi-group summary::before { border-left-color: var(--s3-soft); }
@@ -135,9 +135,9 @@
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { color: var(--s3-accent-2); font: 500 13.5px 'Barlow', sans-serif; font-variant-numeric: tabular-nums; text-decoration-color: rgb(230 230 230 / .4); text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:is(:hover, :focus-visible) { text-decoration-color: var(--s3-accent-2); }
 /* The focus ring follows a rounded edge rather than drawing a square box. */
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { border-radius: 8px; }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { border-radius: var(--glass-control-radius, 24px); }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:focus-visible { outline: 1px solid rgb(230 230 230 / .7); outline-offset: -4px; }
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit { border: 1px solid rgb(230 230 230 / .9); border-radius: 8px; background: rgb(2 9 15 / .55); color: #fff; box-shadow: 0 0 0 3px rgb(205 205 205 / .14), var(--halo-glow); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit { border: 1px solid rgb(230 230 230 / .9); border-radius: var(--glass-control-radius, 24px); background: rgb(2 9 15 / .55); color: #fff; box-shadow: 0 0 0 3px rgb(205 205 205 / .14), var(--halo-glow); }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit:focus { outline: none; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit.is-invalid { border-color: var(--s3-warn); box-shadow: 0 0 0 3px rgb(255 176 138 / .16); }
 
@@ -157,7 +157,7 @@
 /* ---------- Players, music, diagnostics ---------- */
 .syn3h-shell.exploration-ui .rail-players > summary { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); }
 .syn3h-shell.exploration-ui .rail-players summary span { color: var(--s3-soft); }
-.syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 13px; border-bottom: 1px solid transparent; border-image: linear-gradient(90deg, transparent, var(--s3-line-quiet) 20%, var(--s3-line-quiet) 80%, transparent) 1; }
+.syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 13px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
 .syn3h-shell.exploration-ui :is(.rail-diagnostics, .rail-music) { font-size: 12px; color: var(--s3-dim); }
 
 /* ---------- Performance ---------- */
@@ -296,14 +296,14 @@ html .syn3h-shell.exploration-ui[data-ui-frost="off"] :is(.lobby-panels, .in-pla
 .syn3h-shell .world-inspector [data-search][hidden] { display: none; }
 /* The galaxy reaches every edge. The footer keeps its spacing, without masking stars. */
 .syn3h-shell.exploration-ui .in-play-about h2 { margin: 0 0 24px; color: var(--s3-accent); text-indent: 0; }
-.syn3h-shell.exploration-ui .about-intro { padding-bottom: 24px; border-bottom: 1px solid var(--s3-line); }
+.syn3h-shell.exploration-ui .about-intro { padding-bottom: 24px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
 .syn3h-shell.exploration-ui .about-intro .about-title { margin: 0 0 16px; max-width: 20ch; font: 400 clamp(26px, 4vw, 42px)/1.12 'Barlow', sans-serif; letter-spacing: -.02em; color: #fff3df; }
 .syn3h-shell.exploration-ui .about-intro p { max-width: 65ch; margin: 0; }
 .syn3h-shell.exploration-ui .about-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin: 24px 0; }
 .syn3h-shell.exploration-ui .about-columns h3 { font: 500 12px/1.4 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--s3-accent-2); margin: 0 0 12px; }
 .syn3h-shell.exploration-ui .about-columns p { margin: 0 0 12px; }
 .syn3h-shell.exploration-ui .in-play-about p { font-size: 16px; line-height: 1.6; color: var(--s3-dim); }
-.syn3h-shell.exploration-ui .about-links { display: flex; flex-wrap: wrap; gap: 8px 24px; border-block: 1px solid var(--s3-line); padding: 12px 0; }
+.syn3h-shell.exploration-ui .about-links { display: flex; flex-wrap: wrap; gap: 8px 24px; border-block: 1px solid transparent; border-image: var(--rule) 1; padding: 12px 0; }
 .syn3h-shell.exploration-ui .about-links a { display: inline-flex; align-items: center; min-height: 44px; color: var(--s3-accent-2); text-underline-offset: 5px; }
 .syn3h-shell.exploration-ui .in-play-about .shell-credits { margin: 16px 0 24px; text-align: left; }
 .syn3h-shell.exploration-ui .in-play-about .shell-credits summary { min-height: 44px; align-content: center; color: var(--s3-accent-2); cursor: pointer; }
@@ -312,22 +312,19 @@ html .syn3h-shell.exploration-ui[data-ui-frost="off"] :is(.lobby-panels, .in-pla
 .syn3h-shell.exploration-ui button.panel-back:not(.liquid-glass) { border: 1px solid var(--s3-line); border-radius: 999px; color: var(--s3-accent-2); background: rgb(205 205 205 / .06); }
 .syn3h-shell.exploration-ui button.panel-back:not(.liquid-glass)::before { content: none; }
 /* The in-play guide: the lobby About (same glass, content and rules above) as a modal over
- * the world. Only its frame is its own: a sticky header with Back, and a scrolling body. */
+ * the world. Only its frame is its own: a sticky header with the X, and a scrolling body. */
 .syn3h-shell.exploration-ui .in-play-about { box-sizing: border-box; width: min(900px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; color: var(--s3-ink); overflow: auto; overscroll-behavior: contain; }
 .syn3h-shell.exploration-ui .in-play-about::backdrop { background: rgb(0 4 10 / .55); }
-.syn3h-shell.exploration-ui .in-play-about > header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 36px; background: rgb(3 6 10 / .96); border-bottom: 1px solid var(--s3-line); }
+.syn3h-shell.exploration-ui .in-play-about > header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 36px; background: rgb(3 6 10 / .96); border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
 /* By id: the shared About heading rule above sets a bottom margin with higher specificity. */
 .syn3h-shell #in-play-about-title { margin: 0; outline: none; }
-.syn3h-shell.exploration-ui .in-play-about .panel-back { margin: 0; }
 /* Over a busy world and the open sidebar, the glass needs more body than the lobby's. */
 html .syn3h-shell.exploration-ui:is([data-glass], *) .in-play-about { background: rgb(3 7 12 / .95); }
 .syn3h-shell.exploration-ui .in-play-about-body { padding: 24px 36px; text-align: left; }
 /* While paused, Welcome sits in the pause screen's row of three: pause-screen.css. */
-/* Phones, portrait and landscape: one header row of 56px, title left and a compact Back. */
+/* Phones, portrait and landscape: one header row of 56px, title left and the X right. */
 @media (max-width: 600px), (max-height: 550px) {
   .syn3h-shell.exploration-ui .in-play-about > header { flex-wrap: nowrap; box-sizing: border-box; height: 56px; padding: 6px 8px 6px 18px; }
-  .syn3h-shell.exploration-ui .in-play-about button.panel-back { width: auto; min-width: 0; min-height: 44px; padding: 0 16px; gap: 10px; }
-  .syn3h-shell.exploration-ui .in-play-about .about-back-long { display: none; }
   .syn3h-shell.exploration-ui .in-play-about-body { padding: 16px 18px 20px; }
 }
 .syn3h-shell.exploration-ui button.panel-back:focus-visible,

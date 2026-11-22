@@ -34,7 +34,7 @@
 .lobby-version-dock { position: fixed; z-index: 30; left: max(6px, calc(env(safe-area-inset-left) - 8px)); bottom: max(2px, calc(env(safe-area-inset-bottom) - 10px)); pointer-events: none; }
 .lobby-version-dock > * { pointer-events: auto; }
 .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 14px; border: 0; border-radius: 0; background: none; box-shadow: none;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 14px; border: 0; border-radius: var(--glass-control-radius, 24px); background: none; box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none;
   font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .1em; text-transform: none; color: rgb(236 236 236 / .84);
   text-decoration: underline; text-decoration-color: rgb(236 236 236 / .4); text-decoration-thickness: 1px; text-underline-offset: 4px;
@@ -42,6 +42,7 @@
 }
 .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version::after { content: '\203A'; text-decoration: none; display: inline-block; font-size: 15px; line-height: 1; opacity: .8; transform: translateY(-1px); }
 .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version:is(:hover, :focus-visible) { color: #fff; text-decoration-color: rgb(255 255 255 / .85); background: none; }
+.syn3h-shell.exploration-ui .lobby-version-dock .lobby-version:hover { outline: var(--control-hover-outline); outline-offset: -6px; }
 .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version:focus-visible { outline: 1.5px solid rgb(244 244 244 / .9); outline-offset: -6px; }
 /* A newer version is out: a small steady dot before the version. */
 .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version.has-update::before {
@@ -84,7 +85,11 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-sett
 }
 /* The world's own graphics detail (grass, plants, fog, shadows) acts only in a world: not here. */
 .syn3h-shell.exploration-ui .world-inspector.lobby-settings .lobby-graphics .wi-fine { display: none; }
-html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-settings .wi-card + .wi-card:not([hidden]) { border-top: 1px solid var(--s3-line-quiet); }
+html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-settings .wi-card + .wi-card:not([hidden]) { border-top: 1px solid transparent; border-image: var(--rule) 1; }
+/* The stack scrolls under the fixed header, so the header carries the rule; a card's body does
+   not scroll under its own heading here, so it has none (the owner, 22 November 2026: no rule
+   under the Glass heading). */
+html .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-card > .wi-body { border-top: 0; border-image: none; }
 .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { overflow-y: auto; min-height: 0; flex: 1 1 auto; overscroll-behavior: contain; }
 /* Unlike the in-game rail, whose cards share its height, here every card takes its natural
    height and the whole stack scrolls: an open card shows all its rows, on short screens too. */
@@ -92,9 +97,9 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-sett
 .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-body { flex: none; overflow: visible; }
 /* A long label wraps to a second line rather than ending in an ellipsis. */
 .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-label { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.2; }
-.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 4px 14px; flex: 0 0 auto; background: none; border: 0; }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 6px 14px; flex: 0 0 auto; background: none; border: 0; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
 .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head h2 { margin: 0; padding: 0; font: 600 14px/1 'Barlow Condensed', sans-serif; letter-spacing: .22em; text-transform: uppercase; color: var(--s3-ink); }
-/* Close is the lobby's one close control (.lobby-close, lobby-sheet.css). */
+/* Close is the shared bare X (.card-close, card-chrome.css). */
 .world-inspector.lobby-settings .host-controls { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
 .world-inspector.lobby-settings .host-controls legend { display: none; }
 

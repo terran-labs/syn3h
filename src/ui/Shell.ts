@@ -37,7 +37,7 @@ import { captionBlocked, captionHidden, captionMask, type ScreenBox } from './ga
 import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
-import { LobbySettings } from './LobbySettings'
+import { CARD_CLOSE, LobbySettings } from './LobbySettings'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
 import { bindSwitch, switchWord } from './inspector/switch'
@@ -86,6 +86,7 @@ import './hud-column.css'
 import './glass.css'
 import './phone-panels.css'
 import './pause-screen.css'
+import './card-chrome.css'
 import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shareShot, shotFileName } from './screenshot'
 
 /**
@@ -269,7 +270,7 @@ export class Shell implements System {
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels" role="group" aria-label="Worlds. Drag to look around; choose a world to go there."></div><nav class="lobby-links galaxy-links" aria-label="Lobby"${LOBBY_LINKS ? '' : ' hidden'}>${LOBBY_LINKS}</nav></div>
     </section>
-    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">Welcome</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
+    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">Welcome</h2><button type="button" class="about-back card-close" aria-label="Close">${CARD_CLOSE}</button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span class="nav-glyph" aria-hidden="true">≡</span>${PANELS_CHEVRONS_UP}<span class="nav-label"> Panels</span></button></nav>
     <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="panel-action exit-stay">Stay</button><button type="button" class="panel-action exit-leave">Leave world</button></div></div></div>
@@ -1943,7 +1944,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-close, .lobby-links *, .syn3h-advanced *, .world-inspector *, .performance-recommendation *, .race-controls *, .update-banner-actions *, .exit-confirm-actions *, .join-view *, .gear-selector *, .hud-accessories *, .hud-chat *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-close, .card-close, .about-tabs *, .lobby-links *, .syn3h-advanced *, .world-inspector *, .performance-recommendation *, .race-controls *, .update-banner-actions *, .exit-confirm-actions *, .join-view *, .gear-selector *, .hud-accessories *, .hud-chat *')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
     // Upper left, where the light strikes at rest (glass.css).
