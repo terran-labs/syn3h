@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-22 06:30 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-22 12:35 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,13 +11,13 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2201 (release-101, quality climbs prepared before play, splashes, ring edges, notice lets steering through),
-source a9945545, frozen copy 20261122-062002-a9945545, Worker version 29f2ba86, at https://www.syn3h.com/ since 22 November 06:24 PST.
+Live: v26.11.2202 (release-102, water draw order, iPhone black flashes, card consistency, touch buttons), source 55561155,
+frozen copy 20261122-122454-55561155, Worker version 83dba942, at https://www.syn3h.com/ since 22 November 12:29 PST.
+Browser suites: tests/ui/about-updates.mjs needs its dev server started with SYN3H_RELEASE_VERSION set to the second-newest
+production release (its header says how; 313e9488).
 Version numbers follow the Pacific date (release.sh): a release planned on the 21st and shipped after midnight is 22NN.
 Releases now ship through tools/ship.sh (first used for 2120); outcomes in /tmp/syn3h-ship-N*.
 Protocol (since 2118): FLAG_USER_PAUSE = 32 (ignored by older receivers; an older host's pause counts as hidden).
-Browser suites: tests/ui/about-updates.mjs needs a second server reporting an older release version beside
-vite (waived for 2117 on plain vite).
 Staging looks now include iPad mini (744x1133 and 1133x744, touch) with phone and desktop.
 Releases start detached (own session) so the tool runner cannot end them: /tmp/orch-ship-detached.sh
 <n> <version> "<note>" via nohup python3 os.setsid; outcome in /tmp/orch-dry-<v>.rc,
@@ -153,6 +153,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2120 | 99 | m-camera-2120 | every lobby arrival frames the Syn3h name; Thunder on your own car clears in a tenth of a second |
 | v26.11.2200 | 100 | m-glass-2200 | glass styles Liquid, Frost, Flat with a Tint slider; desktop left rail as floating text; Welcome fits a phone |
 | v26.11.2201 | 101 | m-climb-2201 | quality climbs prepared before play; Tag and Thunder splash on water; ring edges by day; phone notice lets steering through |
+| v26.11.2202 | 102 | m-polish-2202 | no black flashes on iPhone; vehicle parts behind the water; cards one style; touch buttons grow when pressed |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
