@@ -318,6 +318,17 @@ export class Pesters implements System {
       : new THREE.Vector3(p.x - from.x, p.y - from.y, p.z - from.z)
   }
 
+  /**
+   * A Chaser's look with no target and no network behind it, flying `seconds` from `o` along `d`
+   * and then ending, for the in-game performance check.
+   */
+  showLook(o: THREE.Vector3, d: THREE.Vector3, seconds: number): void {
+    this.spawn(-1, { id: ++this.lookShot, o: [o.x, o.y, o.z], d: [d.x, d.y, d.z], boost: 0, t: 0, k: 'pester' })
+    const orb = this.orbs[this.orbs.length - 1]
+    if (orb) orb.life = seconds
+  }
+  private lookShot = 1e6
+
   private pop(o: Orb): void {
     if (o.popped >= 0) return
     o.popped = 0

@@ -497,6 +497,9 @@ export class Yoink implements System {
     c.field.visible = true
   }
 
+  /** A gust's look (its ring and edge) with no push, for the in-game performance check. */
+  showGust(o: THREE.Vector3, d: THREE.Vector3): void { this.addWave(o, d) }
+
   private addWave(o: THREE.Vector3, d: THREE.Vector3): void {
     const w = this.look.takeWave()
     if (!w) return

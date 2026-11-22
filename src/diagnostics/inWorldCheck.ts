@@ -195,6 +195,18 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
         await wait(150)
       }
     }, 1200)
+    await step('Chaser', async () => {
+      // A Chaser's look (core, motes, haze and its daytime outline) flying ahead, then ending.
+      const front = game.camera.getWorldDirection(new Vector3()); front.y = 0.15; front.normalize()
+      net!.pesters.showLook(original.object.position.clone().add(new Vector3(0, 1.5, 0)), front, 1.2)
+    }, 1800)
+    await step('Yoink gust', async () => {
+      // Two gust rings and their daytime edges, with no push.
+      const front = game.camera.getWorldDirection(new Vector3()); front.y = 0; front.normalize()
+      net!.yoink.showGust(original.object.position.clone().add(new Vector3(0, 1, 0)), front)
+      await wait(400)
+      net!.yoink.showGust(original.object.position.clone().add(new Vector3(0, 1, 0)), front)
+    }, 900)
     await step('Grapple', async () => {
       const cord = game.add(new Bungee(game, { self: () => 1, vehicleOf: () => original,
         idOfBody: () => null, owns: () => false, lagOf: () => 0, wrapSize: () => 0, now: () => game.time,
