@@ -32,6 +32,7 @@ import { ImpactPulses } from '../pulse'
 import { classifyImpact, impactCounts, RECIPES, type ImpactSurface, type SurfaceSource } from './recipes'
 import { impactFlash, impactLight, impactLightRadius, impactScorch, impactSparks, impactSparkSpeed } from './params'
 import { SparkBatch, type SparkSpec } from './SparkBatch'
+import { NEAR_HIT, nearLens } from './nearLens'
 import { ScorchMarks, SCORCH_CAPACITY } from './ScorchMarks'
 
 /** The terrain as the impacts read it. */
@@ -69,6 +70,7 @@ export class ImpactFx {
   private readonly b = new T.Vector3()
   private readonly v = new T.Vector3()
   private readonly right = new T.Vector3()
+  private readonly c4 = new T.Color()
   private readonly up = new T.Vector3()
   private readonly color = new T.Color()
   private readonly spec: SparkSpec = { life: 0.6, width: 0.05, drag: 2.5, gravity: 1, streak: 0.03, normal: { x: 0, y: 1, z: 0 }, bounce: 0 }
@@ -134,18 +136,21 @@ export class ImpactFx {
     const scale = (thunder ? 1.8 : 1) * far, view = onVehicle ? viewHeight(this.game.camera, distance) : 0
     this.stats.impacts++; this.stats.last = surface
 
-    // Flash: one or two hot cores, briefly very bright.
+    // Flash: one or two hot cores, briefly very bright; smaller and dimmer right by the camera
+    // (a hit on your own car), where at full size it filled the view.
+    const near = nearLens(distance, NEAR_HIT)
     if (impactFlash.value > 0) {
-      this.color.copy(color).multiplyScalar(2).addScalar(2.5)
+      this.color.copy(color).multiplyScalar(2).addScalar(2.5).multiplyScalar(near)
       // Lifted off the surface by a third of its size: through the ground, a camera-facing flash
       // was cut in half by it; lifted further, it floated free of the hit.
       const lifted = this.b.copy(at).addScaledVector(n, impactFlash.value * scale * 0.3)
-      this.flash.emit(lifted, this.v.set(0, 0, 0), thunder ? 0.12 : 0.09, Math.max(impactFlash.value * scale, view * 0.12), Math.max(impactFlash.value * scale, view * 0.12) * 3, this.color)
-      if (thunder) this.flash.emit(lifted, this.v.set(0, 0, 0), 0.2, impactFlash.value * 2, impactFlash.value * 4, this.color.copy(color).multiplyScalar(0.9))
+      const core = Math.max(impactFlash.value * scale, view * 0.12) * near
+      this.flash.emit(lifted, this.v.set(0, 0, 0), thunder ? 0.12 : 0.09, core, core * 3, this.color)
+      if (thunder) this.flash.emit(lifted, this.v.set(0, 0, 0), 0.2, impactFlash.value * 2 * near, impactFlash.value * 4 * near, this.color.copy(color).multiplyScalar(0.9 * near))
       // After the flash, a faint glow of plasma in the gear's colour that fades over about 0.3 s:
       // something for the eye to follow once the core has gone.
-      this.flash.emit(lifted, this.v.set(0, 0.4, 0), thunder ? 0.4 : 0.32, impactFlash.value * scale * 1.1, impactFlash.value * scale * 1.2, this.color.copy(color).multiplyScalar(0.35))
-      this.glint(lifted, scale, thunder, color, view)
+      this.flash.emit(lifted, this.v.set(0, 0.4, 0), thunder ? 0.4 : 0.32, impactFlash.value * scale * 1.1 * near, impactFlash.value * scale * 1.2 * near, this.color.copy(color).multiplyScalar(0.35 * near))
+      this.glint(lifted, scale * near, thunder, this.c4.copy(color).multiplyScalar(near), view * near)
     }
 
     // Sparks: a cone around the normal, two waves (the second slower and a touch later in life).
