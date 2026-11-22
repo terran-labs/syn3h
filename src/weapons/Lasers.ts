@@ -26,7 +26,7 @@ import { laserGravity, laserLifetime, laserRicochet, laserSpeed } from './params
 import { bigRedRadius, bigRedSpeed } from './bigRedParams'
 import { warmGear } from './warm'
 import { ImpactPulses } from './pulse'
-import { ImpactFx, type ImpactTerrain } from './impact/ImpactFx'
+import { ImpactFx, viewHeight, type ImpactTerrain } from './impact/ImpactFx'
 import { CLIMB_SECONDS, Fireworks } from './fireworks/Fireworks'
 import { thunderFlareHeight, thunderFuseAir, thunderFuseAirHeight, thunderFuseArm, thunderFuseGround, thunderSkipAngle, thunderSkipBounce, thunderSkipGravity, thunderSkipKeep, thunderSkipPush, thunderSkips } from './thunderParams'
 import { fireworkSeed, fuseArmed, fuseRadius, nearestOnSegment, skipOff, type ThunderCause, type V3 } from './thunderRules'
@@ -120,6 +120,7 @@ const END_WAIT = 1.5
 const RED_FALLBACK = new THREE.Color(0.9, 0.08, 0.05)
 const GOLD_FALLBACK = new THREE.Color(1, 0.75, 0.3)
 const TAG_SHOCK = new THREE.Color(0.9, 4, 1.4).multiplyScalar(0.85)
+const TAG_HIT_SHOCK = new THREE.Color(0.9, 4, 1.4).multiplyScalar(1.3)
 const RED_CORE_RGB = [4, 0.55, 0.35] as const
 const RED_HALO_RGB = [1.8, 0.18, 0.1] as const
 const RED_TINT_RGB = [0.8, 0.05, 0.03] as const
@@ -284,6 +285,7 @@ export class Lasers implements System {
       // old sparks at the muzzle stand in.
       if (this.hooks.centreOf) this.addGlow(shooter, red)
       else this.effects?.muzzle(p.pos.clone(), new THREE.Vector3(...shot.d).normalize(), red)
+      this.fx.muzzle(p.pos, this.tmp.set(...shot.d).normalize(), red ? RED_IMPACT : TAG_IMPACT, red)
     }
     p.mesh.position.copy(p.pos)
     p.mesh.visible = false
@@ -665,12 +667,20 @@ export class Lasers implements System {
     this.fx.impact(at, n, dir ?? n.clone().negate(), onVehicle, red ? RED_IMPACT : TAG_IMPACT, red)
     // A shock ring: Thunder's the size of its push; Plasma Tag's small and quick, which is what
     // reads at a distance.
-    if (red) this.pulses.emit(at, n, { radius: Math.max(1.5, thunderBlastRadius.value), seconds: 0.9, color: RED_SHOCK })
+    if (red) {
+      this.pulses.emit(at, n, { radius: Math.max(1.5, thunderBlastRadius.value), seconds: 0.9, color: RED_SHOCK })
+      // On a vehicle, a second ring that keeps its size on screen as Tag's does: the push ring
+      // above means the push's reach, so it stays that size and is small far off.
+      if (onVehicle) this.pulses.emit(at, n, { radius: viewHeight(this.game.camera, this.game.camera.position.distanceTo(at)) * 0.23, seconds: 0.55, color: RED_IMPACT })
+    }
     else {
       // Tag's grows with distance from the camera like the flash (from 12 m, up to 2.5 times),
       // or at 20 m it is a few pixels across and reads as nothing.
-      const far = Math.min(2.5, Math.max(1, this.game.camera.position.distanceTo(at) / 12))
-      this.pulses.emit(at, n, { radius: 2.2 * far, seconds: 0.42, color: TAG_SHOCK })
+      const distance = this.game.camera.position.distanceTo(at), far = Math.min(2.5, Math.max(1, distance / 12))
+      // On a vehicle: brighter, a little longer, and never smaller on screen than a set share of
+      // its height (the band reaches about a third of the screen's height across, about half
+      // of that a tenth of a second in, as it races out).
+      this.pulses.emit(at, n, { radius: Math.max(2.2 * far, onVehicle ? viewHeight(this.game.camera, distance) * 0.23 : 0), seconds: onVehicle ? 0.55 : 0.42, color: onVehicle ? TAG_HIT_SHOCK : TAG_SHOCK })
     }
     // Plasma Thunder's push comes with its burst (burst), once, where the room says.
     if (!red && push) this.hooks.onImpact?.(at, red)
