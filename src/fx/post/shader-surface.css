@@ -7,12 +7,20 @@
 .liquid-glass[data-glass-surface="shader"]::after { opacity: 0; }
 
 /* Keep the native input box fixed. Rasterize the label at its largest size
-   and scale it down around the centre with the same value as the lens. */
-.liquid-glass[data-glass-surface="shader"][data-glass-press="brake"] { transform: none; }
-.liquid-glass[data-glass-surface="shader"][data-glass-press="brake"] > .brake-glass-label {
-  position: absolute; inset: 0; display: grid; place-items: center;
-  grid-template-columns: minmax(0, 1fr); white-space: nowrap;
-  font-size: 134.2857%; line-height: 1; text-shadow: none; pointer-events: none;
+   and scale it down around the centre with the same value as the lens.
+   Every swelling button (GlassPress) gathers its contents into one label, which scales as one. */
+.glass-press-label { display: inline-flex; align-items: center; justify-content: center; gap: inherit; pointer-events: none; }
+.liquid-glass[data-glass-surface="shader"][data-glass-press] { transform: none; }
+/* A round label is rasterised 47/35 larger (134.2857%) and scaled back down by GlassPress, so
+   its box is drawn 47/35 larger too: the button's content box (its width less 4 px padding a
+   side) times 47/35, centred, and its height likewise. Text then wraps at exactly the width it
+   has in plain CSS, so a label lays out the same at rest, pressed, beside a pressed neighbour
+   and in every material; only its scale changes. Left and right: -17.1429% of the button's
+   width plus 4 px x 47/35. Words never break inside (overflow-wrap: normal) as a guard. */
+.liquid-glass.glass-round[data-glass-surface="shader"][data-glass-press] > .glass-press-label {
+  position: absolute; inset: -17.1429% calc(5.3714px - 17.1429%); display: grid; place-items: center;
+  grid-template-columns: minmax(0, 1fr); white-space: normal; overflow-wrap: normal; text-align: center;
+  font-size: 134.2857%; line-height: 1.1; text-shadow: none;
 }
 
 /* The sunk-buggy cue animates these two native DOM layers along with its
@@ -153,7 +161,7 @@ html #lobby-settings[data-glass-surface="shader"] button.is-on {
 /* An opted-in device can still shed the entire surface layer. */
 html:not([data-game-glass]) .wi-group[data-group="Glass"],
 .syn3h-shell:not([data-lobby-glass]) .lobby-settings .wi-card[data-section="glass"] .wi-row:not(.glass-material-row) { display: none; }
-[data-glass-surface="shader"]:is(button:active, button.held):not([data-glass-press="brake"]) { scale: var(--glass-extra-scale, none); }
+[data-glass-surface="shader"]:is(button:active, button.held):not([data-glass-press]) { scale: var(--glass-extra-scale, none); }
 /* Keep the extra action in a trailing column only while the row is edited. */
 .syn3h-shell .wi-row:has(> .glass-setting-reset) { grid-auto-flow: column; grid-auto-columns: max-content; }
 .syn3h-shell.exploration-ui .world-inspector .wi-row > button.glass-setting-reset {

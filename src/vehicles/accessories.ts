@@ -73,9 +73,10 @@ export const WINGS: Accessory = {
   id: 'wings', name: 'Wings', cap: 'Space', code: 'Space', title: 'Wings: open them to glide and fly. Space switches them.', reasons: { 'In Zorb': 'Inside the Zorb, Space hops and the wings stay stowed.' },
   read(vehicle, input, out) {
     const state = vehicle.wingState ?? (input.special ? 1 : 0)
-    out.on = input.special
+    // Inside the Zorb, Space hops and flips `special` with each hop; the wings stay stowed and read off.
+    out.on = input.special && !input.zorb
     out.moving = state > 0 && state < 1 ? state : -1
-    out.value = out.moving >= 0 ? (input.special ? 'Opening' : 'Folding') : input.special ? 'Open' : 'Folded'
+    out.value = out.moving >= 0 ? (input.special ? 'Opening' : 'Folding') : out.on ? 'Open' : 'Folded'
     // Inside the Zorb, Space is a hop and the wings stay stowed (zorb.ts, `hold`).
     out.unavailable = vehicle.zorbed ? 'In Zorb' : ''
     return out
@@ -87,7 +88,7 @@ export const WINGS: Accessory = {
 export const FLIGHT: Accessory = {
   id: 'flight', name: 'Flight', cap: 'Space', code: 'Space', title: 'Jet mode: hover in place or fly forward. Space switches it.', reasons: { 'In Zorb': 'Inside the Zorb, Space hops and the jet holds its mode.' },
   read(vehicle, input, out) {
-    out.on = input.special; out.value = input.special ? 'Flight' : 'Hover'; out.moving = -1
+    out.on = input.special && !input.zorb; out.value = out.on ? 'Flight' : 'Hover'; out.moving = -1
     out.unavailable = vehicle.zorbed ? 'In Zorb' : ''
     return out
   },

@@ -58,8 +58,9 @@ describe('proportional camera zoom', () => {
   it('stops at each vehicle\'s near and far limits, and remembers the distance for the session', () => {
     const { chase } = harness()
     const set = (kind: string) => (chase as unknown as { vehicle: { kind: string } | null }).vehicle = { kind }
-    set('buggy'); params.set('camera.distance', 13.9)
-    for (let i = 0; i < 10; i++) chase.zoom(100)
+    set('buggy')
+    // Enough notches to pass any far limit camera.zoomFar allows.
+    for (let i = 0; i < 80; i++) chase.zoom(100)
     expect(params.get('camera.distance')!.value).toBeCloseTo(zoomLimits('buggy')[1])
     set('jet')
     for (let i = 0; i < 40; i++) chase.zoom(100)

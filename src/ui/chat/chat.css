@@ -34,7 +34,7 @@
 .syn3h-shell.has-touch .chat-strip { left: var(--edge-left); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 250px); width: calc(100% - 84px); font-size: 12.5px; }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .syn3h-shell.has-touch .chat-strip { left: var(--edge-left); top: 150px; bottom: auto; width: min(280px, 33vw); }
-  .syn3h-shell.has-touch .chat-strip.is-left-hand { left: max(76px, calc(env(safe-area-inset-left) + 64px)); }
+  .syn3h-shell.has-touch .chat-strip.is-left-hand { left: max(76px, calc(var(--safe-left) + 64px)); }
 }
 /* While the sidebar is open the strip is not needed: the card is there. */
 .syn3h-shell:has(.world-inspector:not([hidden], .lobby-settings) .wi-card[data-section="chat"].is-open) .chat-strip { display: none; }
