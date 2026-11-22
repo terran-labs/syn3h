@@ -66,7 +66,7 @@ export function ringOffset(index: number, current: number, count: number): numbe
 }
 
 /** The ink of the selected gear's neighbours, a share of full white. */
-const NEIGHBOUR_INK = 0.66
+const NEIGHBOUR_INK = 0.8
 /** How long the meter takes to fade in and out on a change of gear (gear.css, .gs-meter). */
 const METER_FADE_MS = 220
 
