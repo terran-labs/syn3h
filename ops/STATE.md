@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 20:40 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-21 21:55 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,10 +11,10 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2118 (release-97, host handover and bot spawn fallback), source cc4b77d3, frozen copy
-20261121-201221-cc4b77d3, Worker version 031f9aec, at https://www.syn3h.com/ since 21 November 20:17 PST.
-Protocol: FLAG_USER_PAUSE = 32 (ignored by older receivers; an older host's pause counts as hidden). Staging
-mixed rooms with 26.11.2117: an older guest saw the host change in 3.6 s; an older host was replaced in 3.3 s.
+Live: v26.11.2120 (release-99, lobby camera frames the name, calmer close Thunder), source f47ff0e1,
+frozen copy 20261121-214420-f47ff0e1, Worker version 7674ccd4, at https://www.syn3h.com/ since 21 November 21:48 PST.
+Releases now ship through tools/ship.sh (first used for 2120); outcomes in /tmp/syn3h-ship-N*.
+Protocol (since 2118): FLAG_USER_PAUSE = 32 (ignored by older receivers; an older host's pause counts as hidden).
 Browser suites: tests/ui/about-updates.mjs needs a second server reporting an older release version beside
 vite (waived for 2117 on plain vite).
 Staging looks now include iPad mini (744x1133 and 1133x744, touch) with phone and desktop.
@@ -148,6 +148,8 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2116 | 95 | m-slider-2116 | Glass setting in Settings: Liquid, Glass, Frost, Flat (Liquid needs Medium or higher) |
 | v26.11.2117 | 96 | m-ipad-2117 | Panels above Tag and Wings, compact gear selector, even panels, Welcome carousel, Liquid on every button |
 | v26.11.2118 | 97 | m-handover-2118 | host role passes on when the host's game stops; bots spawn for a host in lava |
+| v26.11.2119 | 98 | m-polish-2119 | brighter Plasma Tag strikes, Grapple cord visible by day, no stall diving under water |
+| v26.11.2120 | 99 | m-camera-2120 | every lobby arrival frames the Syn3h name; Thunder on your own car clears in a tenth of a second |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker

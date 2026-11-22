@@ -782,8 +782,20 @@ void main() {
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
 const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uWorlds', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uPulse', 'uPulseColour', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays', 'uBurst', 'uSpread', 'uTrail', 'uNight'] as const
-/** The fresh-load heading and the tall-phone tilt (see the first framing in acquire). */
-export const FRESH_YAW = 0.6, PORTRAIT_PITCH = 0.85
+/** The fresh-load heading. */
+export const FRESH_YAW = 0.6
+/**
+ * The one view every arrival in the lobby settles on, for a viewport: the first load, the end of
+ * the opening, and every return from a world. The heading is the fresh-load heading, the tilt
+ * the resting tilt, the distance the opening distance for this screen. It is also exactly where
+ * the slow idle rest settles, so once arrived nothing moves but the slow drift round.
+ * (Tall screens used to arrive steeper, 0.85 rad, then sink to the resting tilt over half a
+ * minute: the owner's iPad mini, 21 November 2026, "sometimes ... the camera is too high", and
+ * the steep view pushed the name off the top and sides of the screen.)
+ */
+export function arrivalPose(bodies: readonly OrbitBody[], width: number, height: number): { yaw: number; pitch: number; distance: number } {
+  return { yaw: FRESH_YAW, pitch: REST.pitch, distance: openingDistance(bodies, width, height) }
+}
 /** Milliseconds returnHome takes back to the fresh-load view. */
 const RETURN_MS = RETURN_VIEW_SECONDS * 1000
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
@@ -1029,13 +1041,9 @@ export class Galaxy {
     if (value) { this.logoSeen = false; this.handled = performance.now(); this.acquire() } else this.release()
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
-  /**
-   * The view a fresh load rests at: the first heading, the resting tilt above the orbital plane
-   * (steeper on a tall phone), the opening distance. Leaving a world returns here every time.
-   */
+  /** The view every arrival settles on, for the screen as it is now (arrivalPose). */
   freshPose(): { yaw: number; pitch: number; distance: number } {
-    const portrait = this.host.clientHeight > this.host.clientWidth * 1.2 && !this.reduced?.matches
-    return { yaw: FRESH_YAW, pitch: portrait ? PORTRAIT_PITCH : REST.pitch, distance: openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight) }
+    return arrivalPose(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
   }
   /**
    * Back to the lobby after leaving a world: home(), then an eased return to the fresh-load
@@ -1233,12 +1241,10 @@ export class Galaxy {
     this.host.addEventListener('focusout', () => this.wantGlow('focusId', null), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
     canvas.addEventListener('wheel', event => { event.preventDefault(); this.handled = performance.now(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(this.farthest, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
-    // Held upright, a phone has height to spare and no width: look down more steeply so the
-    // orbits open out into the height. Only for the first view; after that the player's stands.
+    // The first view is the arrival view for this screen (arrivalPose).
     if (!this.framed) {
       this.framed = true
-      this.distance = this.reach = openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
-      if (this.host.clientHeight > this.host.clientWidth * 1.2 && !this.reduced.matches) this.pitch = PORTRAIT_PITCH
+      this.applyPose(this.freshPose()); this.reach = this.distance
     }
     this.paintMaps(); this.resize()
     this.refreshGlass()
@@ -1840,10 +1846,11 @@ export class Galaxy {
     this.resting = false
     const idle = (performance.now() - this.handled) / 1000
     if (!this.reduced.matches && this.chosen < 0 && !this.flight && !held && this.pointers.size === 0 && this.backdrop === 1 && this.swingResting && this.opening === null) {
-      const home = openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
+      // It settles on the arrival view (arrivalPose): the same tilt and distance every arrival lands on.
+      const rest = this.freshPose(), home = rest.distance
       if (this.options.still?.()) {
         // Low-end devices: the quick exponential settle, snapping the last step, so they can idle.
-        const tilt = restStep(this.swingPitch.view, idle, restElapsed, REST_LOW)
+        const tilt = restStep(this.swingPitch.view, idle, restElapsed, { ...REST_LOW, pitch: rest.pitch })
         if (tilt !== this.swingPitch.view) { this.swingPitch.aim = this.swingPitch.view = tilt; this.resting = true }
         const far = restStep(Math.log(this.distance), idle, restElapsed, { ...REST_LOW, pitch: Math.log(home), snap: 1e-3 })
         if (far !== Math.log(this.distance)) { this.distance = Math.exp(far); this.resting = true }
@@ -1851,10 +1858,10 @@ export class Galaxy {
         // The slow return (cameraRest.ts): tilt and zoom on one critically damped spring rate,
         // from rest, no overshoot; the heading is left where the player put it.
         const omega = returnOmega(returnTime.value), dt = Math.min(0.25, restElapsed)
-        const [pitch, pitchSpeed] = springStep(this.swingPitch.view, this.restSpeed.pitch, REST.pitch, omega, dt)
+        const [pitch, pitchSpeed] = springStep(this.swingPitch.view, this.restSpeed.pitch, rest.pitch, omega, dt)
         const [far, farSpeed] = springStep(Math.log(this.distance), this.restSpeed.zoom, Math.log(home), omega, dt)
-        const done = Math.abs(pitch - REST.pitch) < 2e-4 && Math.abs(pitchSpeed) < 1e-4 && Math.abs(far - Math.log(home)) < 5e-4 && Math.abs(farSpeed) < 1e-4
-        this.swingPitch.aim = this.swingPitch.view = done ? REST.pitch : pitch
+        const done = Math.abs(pitch - rest.pitch) < 2e-4 && Math.abs(pitchSpeed) < 1e-4 && Math.abs(far - Math.log(home)) < 5e-4 && Math.abs(farSpeed) < 1e-4
+        this.swingPitch.aim = this.swingPitch.view = done ? rest.pitch : pitch
         this.distance = done ? home : Math.exp(far)
         this.restSpeed = done ? { pitch: 0, zoom: 0 } : { pitch: pitchSpeed, zoom: farSpeed }
         this.resting = !done
