@@ -84,6 +84,9 @@ export class TouchControls {
   private lastFrame = 0
   private fadeTimer = 0
   private cancelRing?: HTMLElement
+  private cordButtons: HTMLElement[] = []
+  private specialButton?: HTMLElement
+  private zorbButton?: HTMLElement
   /** Shows Tag's held state and the Cancel ring; run on every Tag event and every held frame. */
   private syncTag = (): void => {}
 
@@ -96,6 +99,10 @@ export class TouchControls {
     // and touch-stick.css set only its size, place and states.
     this.element.innerHTML = `<div class="touch-stick touch-float" aria-hidden="true"><span class="touch-knob"></span></div><div class="touch-stick-hint" hidden><span class="touch-stick-ghost"><span></span></span><span class="touch-stick-label">Drag on the left to drive</span></div><div class="touch-actions"><button type="button" class="liquid-glass glass-round" data-action="throttleUp" hidden>THR +</button><button type="button" class="liquid-glass glass-round" data-action="throttleDown" hidden>THR −</button><button type="button" class="liquid-glass glass-round" data-action="special" aria-pressed="false">WINGS</button><button type="button" class="liquid-glass glass-round" data-action="brakes">BRAKE</button><button type="button" class="liquid-glass glass-round" data-action="flip" aria-label="Flip upright" hidden>FLIP</button><button type="button" class="liquid-glass glass-round" data-action="zorb" aria-pressed="false">ZORB</button><button type="button" class="liquid-glass glass-round" data-action="letOut" hidden>LET OUT</button><button type="button" class="liquid-glass glass-round" data-action="letGo" hidden>LET GO</button><button type="button" class="liquid-glass glass-round touch-fire" data-action="fire">TAG</button></div><div class="touch-cancel" aria-hidden="true"><span>Cancel</span></div>`
     parent.append(this.element)
+    // Read every frame by update(): held once, as the markup above is built once.
+    this.cordButtons = [...this.element.querySelectorAll<HTMLElement>('[data-action="letOut"], [data-action="letGo"]')]
+    this.specialButton = this.element.querySelector<HTMLElement>('[data-action="special"]') ?? undefined
+    this.zorbButton = this.element.querySelector<HTMLElement>('[data-action="zorb"]') ?? undefined
     const signal = this.abort.signal
     this.hint = this.element.querySelector<HTMLElement>('.touch-stick-hint')!
     this.cancelRing = this.element.querySelector<HTMLElement>('.touch-cancel')!
@@ -373,10 +380,10 @@ export class TouchControls {
       this.syncTag()
     }
     const cord = Boolean(this.gear?.attached())
-    for (const action of ['letOut', 'letGo']) { const button = this.element.querySelector<HTMLElement>(`[data-action="${action}"]`); if (button && button.hidden === cord) button.hidden = !cord }
+    for (const button of this.cordButtons) if (button.hidden === cord) button.hidden = !cord
     // Inside the Zorb, Space and WINGS hop and the wings stay stowed: the button shows them off.
-    this.element.querySelector('[data-action="special"]')?.setAttribute('aria-pressed', String(this.input.state.special && !this.input.state.zorb))
-    this.element.querySelector('[data-action="zorb"]')?.setAttribute('aria-pressed', String(this.input.state.zorb))
+    this.specialButton?.setAttribute('aria-pressed', String(this.input.state.special && !this.input.state.zorb))
+    this.zorbButton?.setAttribute('aria-pressed', String(this.input.state.zorb))
   }
   private flipReady = false
   /**

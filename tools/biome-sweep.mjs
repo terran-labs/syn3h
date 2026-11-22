@@ -30,7 +30,8 @@
  *   SYN3H_URL=http://127.0.0.1:5491/ node tools/biome-sweep.mjs OUT.json [planet:seed,...] [webgpu,webgl2] [3,0]
  *
  * Defaults: archipelago:1, alpine:4, volcanic:1, ice:1, moon:1, swamp:1, desert:1, badlands:1,
- * obsidian:1 on both backends from both entries (36 runs, about 1.5 hours). Exits 0; the last
+ * obsidian:1 on both backends from both entries (36 runs, about 1.5 hours). Entries 1 and 2 (Low,
+ * Medium) step across their boundary both ways. Exits 0; the last
  * line says whether any run was dirty or failed, and OUT.json holds every build.
  */
 import { writeFile } from 'node:fs/promises'
@@ -41,7 +42,9 @@ const out = process.argv[2]
 const WORLDS = (process.argv[3] ?? 'archipelago:1,alpine:4,volcanic:1,ice:1,moon:1,swamp:1,desert:1,badlands:1,obsidian:1').split(',')
 const BACKENDS = (process.argv[4] ?? 'webgpu,webgl2').split(',')
 const ENTRIES = (process.argv[5] ?? '3,0').split(',').map(Number)
-const STEPS = { 3: [2, 1, 0, 1, 2, 3, 4, 5], 0: [1, 2, 3, 4, 5] }
+// From Low (1) and Medium (2): across the Low and Medium boundary both ways, where the water's
+// refraction turns on and off (src/world/water/refraction.ts).
+const STEPS = { 3: [2, 1, 0, 1, 2, 3, 4, 5], 0: [1, 2, 3, 4, 5], 1: [0, 1, 2, 3, 2, 1], 2: [1, 0, 1, 2, 3, 2] }
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const runs = []
 const save = () => writeFile(out, JSON.stringify(runs, null, 1))

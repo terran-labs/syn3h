@@ -16,6 +16,7 @@ import { BotManager } from './bots/BotManager'
 import { botsKeepCount } from './bots/params'
 import { ChaseCamera } from './core/ChaseCamera'
 import { diagnosticReport } from './core/diagnosticReport'
+import { refractionState } from './world/water/refraction'
 import { Game } from './core/Game'
 import { showStartFailure, startupTiming } from './core/diagnostics'
 import { canCreateWebGL2, startFailure } from './core/graphicsSupport'
@@ -189,7 +190,9 @@ async function main(): Promise<void> {
       ? Array.from(sessionNetwork.players.values()).filter(player => player.bot).map(player => player.kind)
       : bots.vehicles.map(bot => bot.kind)
     return diagnosticReport(game.quality.getPerformanceSnapshot(), slot.current.kind, botKinds, currentWorldName(), currentPlanet().label,
-      sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine) + '\n' + glassDiagnostics() + '\n' + screenEdgesLine()
+      sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine) + '\n' + glassDiagnostics() + '\n' + screenEdgesLine() +
+      // Refraction copies the frame mid-pass; not yet measured on a phone (world/water/refraction.ts).
+      '\nWater refraction: ' + refractionState(game.renderer)
   }
   shell.configurePerformance({
     runPerformanceCheck: async signal => (await import('./diagnostics/inWorldCheck')).runInWorldCheck({

@@ -365,8 +365,10 @@ export class Shell implements System {
     const players = document.createElement('div')
     players.innerHTML = `<div class="rail-player-body" data-search="players session room invite welcome about how to play help connection diagnostics mute audio sound"><button type="button" class="panel-action rail-invite">Invite players</button><button type="button" class="panel-action rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
+    // The summary is read every frame while the panels show: a live collection, not a query.
+    const scoreRows = players.querySelector('.hud-scoreboard')!.getElementsByClassName('score-row')
     this.inspector.addCard('players', 'Players & session', players, () => {
-      const count = this.element.querySelectorAll('.hud-scoreboard .score-row').length
+      const count = scoreRows.length
       return count > 1 ? `${count} players` : count ? 'Just you' : ''
     }, { after: 'game' })
     // Performance follows World; its controls remain part of the searchable card stack.
