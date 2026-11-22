@@ -47,10 +47,9 @@ html[data-game-glass] .syn3h-shell.exploration-ui .world-inspector .wi-card :is(
   color: var(--s3-ink);
 }
 html[data-game-glass] .syn3h-shell.exploration-ui .world-inspector .wi-card :is(.wi-vehicle-picker, .wi-seg) {
-  border: 1px solid var(--s3-line-quiet);
-  border-radius: var(--glass-control-radius, 24px);
+  border: 0;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] :is(.wi-vehicle-option[aria-checked="true"], .wi-seg button.is-on, .wi-switch button.is-on) {
+html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .wi-switch button.is-on {
   background: var(--card-selection);
   color: var(--card-selection-ink);
   border-radius: var(--glass-control-radius, 24px);
