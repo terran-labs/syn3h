@@ -1,3 +1,4 @@
+import { waitForPanelMotion } from './panel-motion.mjs'
 // The HUD's left column (src/ui/hud-column.css): what must stay true.
 //   SYN3H_URL=http://127.0.0.1:5213/ node tests/ui/hud-column.mjs
 // 1. One edge distance: the column's line (the gear's spine) sits as far from the left as the
@@ -23,6 +24,7 @@ async function open(options) {
   await page.goto(`${base}?autoplay=1&room=hud-column-${Date.now()}`)
   await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 180000 })
   await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 180000 })
+  await page.waitForFunction(() => window.syn3h.shell.playing && !window.syn3h.shell.transitioning, null, { timeout: 90000 })
   await page.evaluate(() => window.syn3h.params.set('bots.count', 0))
   return { context, page }
 }
@@ -53,7 +55,7 @@ try {
     let drumFree = null
     for (const mode of ['free', 'focus']) {
       if (mode === 'focus') { await page.mouse.click(w / 2, h * .3); await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-focus'), null, { timeout: 5000 }) }
-      await page.waitForTimeout(500)
+      await waitForPanelMotion(page)
       const m = await measure(page), at = `${w}x${h} ${mode}`
       // 1. One edge distance, one left edge, in order.
       const ring = m.minimap.left + (m.minimap.right - m.minimap.left) * .115

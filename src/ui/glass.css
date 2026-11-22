@@ -253,7 +253,7 @@ html:is([data-glass-material="glass"], [data-glass-material="frost"]) .syn3h-she
   color: var(--s3-soft); opacity: 1;
 }
 html:is([data-glass-material="glass"], [data-glass-material="frost"]) .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings) :is(button:disabled, [aria-disabled="true"]) {
-  color: var(--s3-soft); opacity: 1; border-style: dashed;
+  color: var(--s3-soft); opacity: 1; outline: 1px dashed currentColor; outline-offset: -1px;
 }
 
 /* Keep the existing dense accessibility and frost-off fallbacks. */
