@@ -113,6 +113,7 @@ const TINT_RGB = [0.1, 0.75, 0.25] as const
 const TAG_IMPACT = new THREE.Color(0.9, 4, 1.4)
 const RED_IMPACT = new THREE.Color(4, 0.55, 0.35)
 const RED_SHOCK = new THREE.Color(4, 0.55, 0.35).multiplyScalar(0.6)
+const RED_HIT_SHOCK = new THREE.Color(4, 0.55, 0.35).multiplyScalar(1.2)
 /** Up, for a detonation with no surface (in the air). */
 const UP_NORMAL = new THREE.Vector3(0, 1, 0)
 /** Seconds a client waits for the room to say where a shot it did not fire went off. */
@@ -667,12 +668,9 @@ export class Lasers implements System {
     this.fx.impact(at, n, dir ?? n.clone().negate(), onVehicle, red ? RED_IMPACT : TAG_IMPACT, red)
     // A shock ring: Thunder's the size of its push; Plasma Tag's small and quick, which is what
     // reads at a distance.
-    if (red) {
-      this.pulses.emit(at, n, { radius: Math.max(1.5, thunderBlastRadius.value), seconds: 0.9, color: RED_SHOCK })
-      // On a vehicle, a second ring that keeps its size on screen as Tag's does: the push ring
-      // above means the push's reach, so it stays that size and is small far off.
-      if (onVehicle) this.pulses.emit(at, n, { radius: viewHeight(this.game.camera, this.game.camera.position.distanceTo(at)) * 0.23, seconds: 0.55, color: RED_IMPACT })
-    }
+    // Thunder's is its push's reach (14 m by default: already large on screen at 40 m), so it
+    // keeps that size; on a vehicle (or in the air) it is drawn brighter, to read by day.
+    if (red) this.pulses.emit(at, n, { radius: Math.max(1.5, thunderBlastRadius.value), seconds: 0.9, color: onVehicle ? RED_HIT_SHOCK : RED_SHOCK })
     else {
       // Tag's grows with distance from the camera like the flash (from 12 m, up to 2.5 times),
       // or at 20 m it is a few pixels across and reads as nothing.
