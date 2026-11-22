@@ -585,9 +585,10 @@ export class Game {
       if (!visibleOnly) this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
       const hidden: THREE.Object3D[] = []
       try {
-        if (!visibleOnly) for (const system of this.systems) {
-          if (!system.precompileMeshes) continue
-          for (const mesh of system.precompileMeshes()) {
+        for (const system of this.systems) {
+          const meshes = visibleOnly ? system.precompileQualityMeshes?.() : system.precompileMeshes?.()
+          if (!meshes) continue
+          for (const mesh of meshes) {
             for (let object: THREE.Object3D | null = mesh; object && object !== this.scene; object = object.parent) {
               if (!object.visible) { hidden.push(object); object.visible = true }
             }

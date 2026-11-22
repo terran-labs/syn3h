@@ -33,6 +33,22 @@ const transitions: Record<string, (h: ReturnType<typeof harness>) => void> = {
 }
 
 describe('ripple buffer lifecycle', () => {
+  it('keeps the prepared solver asleep until the first wake and reuses it for that wake', () => {
+    const enabled = waterRipples.value
+    waterRipples.value = true
+    const h = harness()
+    try {
+      h.field.prepareCovered()
+      h.field.prepareCovered()
+      h.field.update(1 / 60, 0, 0)
+      expect(h.draws).toEqual([false])
+      expect(h.field.stats.passes).toBe(0)
+      h.step(1)
+      expect(h.field.stats.passes).toBeGreaterThan(0)
+      expect(new Set(h.materials).size).toBe(1)
+      expect(h.draws).not.toContain(true)
+    } finally { h.field.dispose(); waterRipples.value = enabled }
+  })
   for (const [name, change] of Object.entries(transitions)) for (const prior of [0, 1, 2, 3]) {
     it(`never samples its own render target after ${name}, ${prior} prior steps`, () => {
       const enabled = waterRipples.value, size = waterRippleSize.value

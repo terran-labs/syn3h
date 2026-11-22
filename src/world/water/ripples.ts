@@ -79,6 +79,16 @@ export class Ripples {
     this.quad=new T.QuadMesh(material)
     this.quad.name='water-ripple-simulation'
   }
+  /** Submit the first flat field under cover. Its target format is independent of the scene pass. */
+  prepareCovered() {
+    if(!waterRipples.value||this.quad)return
+    this.allocate()
+    const saved=this.renderer.getRenderTarget()
+    try {
+      this.renderer.setRenderTarget(this.targets[1])
+      this.quad!.render(this.renderer)
+    } finally {this.renderer.setRenderTarget(saved)}
+  }
   /** Zero both height buffers: a fresh field, and one waking after its window moved unseen. */
   private flatten() {
     const saved=this.renderer.getRenderTarget(), clear=this.renderer.getClearColor(new T.Color()), alpha=this.renderer.getClearAlpha()
