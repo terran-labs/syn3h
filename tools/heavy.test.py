@@ -31,7 +31,6 @@ class HeavyTests(unittest.TestCase):
         self.assertLessEqual(maximum, 2)
         self.assertEqual(self.run_job('raise SystemExit(7)').wait(timeout=5), 7)
     def test_hold_waits_for_a_live_release_and_ignores_a_dead_one(self):
-        self.env['SYN3H_HEAVY_HELD_SLOTS'] = '0'  # a full hold, to see waiting at all
         slots = self.root / 'slots'; slots.mkdir(parents=True, exist_ok=True)
         holder = subprocess.Popen(['sleep', '30'])
         try:
@@ -48,7 +47,36 @@ class HeavyTests(unittest.TestCase):
         # A hold naming a process that no longer exists holds nothing.
         self.assertEqual(self.run_job('pass').wait(timeout=5), 0)
 
-    def test_held_machine_lets_other_jobs_share_one_slot(self):
+    def test_a_hold_starts_no_new_job_but_lets_a_running_one_finish(self):
+        # release-97, 21 Nov: a release waiting at its load gate holds the machine from that
+        # moment. A job already running finishes; no queued job starts until the hold lifts;
+        # the release's own jobs (SYN3H_HEAVY_RELEASE) are never held.
+        slots = self.root / 'slots'; slots.mkdir(parents=True, exist_ok=True)
+        log = self.root / 'events'
+        mark = lambda name, secs: f"import time; p={str(log)!r}; open(p,'a').write({name!r} + ' start\\n'); time.sleep({secs}); open(p,'a').write({name!r} + ' end\\n')"
+        running = self.run_job(mark('running', 1.5))
+        deadline = time.time() + 5
+        while not (log.exists() and 'running start' in log.read_text()) and time.time() < deadline: time.sleep(.05)
+        holder = subprocess.Popen(['sleep', '30'])
+        try:
+            (slots / 'hold').write_text(f'{holder.pid}\n')
+            queued = self.run_job(mark('queued', 0))
+            release = subprocess.Popen(['sh', str(SCRIPT), 'python3', '-c', mark('release', 0)], env={**self.env, 'SYN3H_HEAVY_RELEASE': '1'})
+            self.assertEqual(release.wait(timeout=10), 0)
+            self.assertEqual(running.wait(timeout=10), 0)
+            time.sleep(2.5)  # several of heavy.py's polls after the running job has gone
+            self.assertNotIn('queued start', log.read_text())
+            self.assertIsNone(queued.poll())
+            holder.kill(); holder.wait()  # the release exits
+            self.assertEqual(queued.wait(timeout=10), 0)
+            events = log.read_text().splitlines()
+            self.assertLess(events.index('running end'), events.index('queued start'))
+            self.assertLess(events.index('release end'), events.index('queued start'))
+        finally:
+            if holder.poll() is None: holder.kill(); holder.wait()
+
+    def test_held_slots_setting_lets_other_jobs_share_one_slot(self):
+        self.env['SYN3H_HEAVY_HELD_SLOTS'] = '1'
         slots = self.root / 'slots'; slots.mkdir(parents=True, exist_ok=True)
         holder = subprocess.Popen(['sleep', '30'])
         log = self.root / 'events'
