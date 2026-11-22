@@ -159,5 +159,95 @@ runpy.run_path({script!r}, run_name='__main__')
             if wrapper.poll() is None:
                 wrapper.kill(); wrapper.wait()
 
+
+SHIP = Path(__file__).with_name('ship.sh').resolve()
+RELEASE = Path(__file__).with_name('release.sh').resolve()
+
+
+class PhaseTests(unittest.TestCase):
+    """The hold's phase (tools/ship.sh writes 'gate', release.sh 'running') decides how many
+    other jobs may start: none at the gate, one while running, none for a hold without one."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.slots = self.root / 'slots'; self.slots.mkdir()
+        self.env = {**os.environ, 'SYN3H_HEAVY_ROOT': str(self.slots), 'SYN3H_HEAVY_SLOTS': '2'}
+        for k in ('SYN3H_HEAVY_BYPASS', 'SYN3H_HEAVY_RELEASE', 'SYN3H_HEAVY_HELD_SLOTS', 'SYN3H_HEAVY_GATE_SLOTS', 'SYN3H_HEAVY_RUNNING_SLOTS'): self.env.pop(k, None)
+        self.log = self.root / 'events'
+    def tearDown(self):
+        self.temp.cleanup()
+    def job(self, name, secs=0.6):
+        code = f"import time; p={str(self.log)!r}; open(p,'a').write({name!r} + ' +\\n'); time.sleep({secs}); open(p,'a').write({name!r} + ' -\\n')"
+        return subprocess.Popen(['sh', str(SCRIPT), 'python3', '-c', code], env=self.env)
+    def most_at_once(self):
+        count = most = 0
+        for line in self.log.read_text().splitlines():
+            count += 1 if line.endswith('+') else -1; most = max(most, count)
+        return most
+
+    def test_gate_starts_nothing_and_running_shares_one_slot(self):
+        holder = subprocess.Popen(['sleep', '60'])
+        try:
+            (self.slots / 'hold').write_text(f'{holder.pid}\ngate\n')
+            jobs = [self.job(f'j{i}') for i in range(3)]
+            time.sleep(3)
+            self.assertFalse(self.log.exists(), 'a job started while the release waits at its gate')
+            (self.slots / 'hold').write_text(f'{holder.pid}\nrunning\n')
+            for j in jobs: self.assertEqual(j.wait(timeout=20), 0)
+            self.assertEqual(self.most_at_once(), 1, 'past the gate, other jobs share one slot')
+        finally:
+            holder.kill(); holder.wait()
+
+    def test_release_sh_holds_the_machine_as_running(self):
+        line = next(l for l in RELEASE.read_text().splitlines() if '_hold_root=' in l and '/hold' in l)
+        out = subprocess.run(['sh', '-c', line + '\necho $$'], env={**self.env, 'SYN3H_HEAVY_ROOT': str(self.slots)}, capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual((self.slots / 'hold').read_text().split(), [out.stdout.strip(), 'running'])
+
+    def ship(self, load_file, release, extra=None):
+        bin_dir = self.root / 'bin'; bin_dir.mkdir(exist_ok=True)
+        (bin_dir / 'sysctl').write_text(f'#!/bin/sh\necho "{{ $(cat {load_file}) 1.00 1.00 }}"\n'); (bin_dir / 'sysctl').chmod(0o755)
+        env = {**self.env, 'PATH': f'{bin_dir}:{os.environ["PATH"]}', 'SYN3H_SHIP_GAP_S': '0', 'SYN3H_SHIP_DRY': '0',
+               'SYN3H_GATE_LOAD': '12', 'SYN3H_GATE_HOLD_S': '1', 'SYN3H_GATE_POLL_S': '1', 'SYN3H_GATE_TIMEOUT_S': '60',
+               'SYN3H_SHIP_RELEASE': str(release), 'SYN3H_SHIP_OUT': str(self.root), 'SYN3H_SHIP_STABLE': str(self.root / 'stable'),
+               **(extra or {})}
+        return subprocess.Popen(['sh', str(SHIP), '7', 'test release'], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+    def fake_release(self, secs):
+        # Stands in for release.sh: takes the hold over as 'running', as the real one does.
+        path = self.root / 'release'
+        path.write_text(f'#!/bin/sh\nprintf "%s\\nrunning\\n" $$ > "$SYN3H_HEAVY_ROOT/hold"\necho started >> {self.root}/release-ran\nsleep {secs}\n')
+        path.chmod(0o755)
+        return path
+
+    def test_ship_holds_fully_at_the_gate_then_shares_once_the_release_runs(self):
+        load = self.root / 'load'; load.write_text('20.00')
+        ship = self.ship(load, self.fake_release(4))
+        try:
+            deadline = time.time() + 10
+            while not (self.slots / 'hold').exists() and time.time() < deadline: time.sleep(.1)
+            self.assertEqual((self.slots / 'hold').read_text().split(), [str(ship.pid), 'gate'])
+            queued = self.job('builder', 0.2)
+            time.sleep(3)
+            self.assertFalse(self.log.exists(), 'a builder job started during the gate wait')
+            load.write_text('3.00')  # the load falls: the gate passes, release.sh takes over
+            self.assertEqual(queued.wait(timeout=20), 0)
+            self.assertTrue((self.root / 'release-ran').exists(), 'the builder job started before the release')
+            self.assertEqual((self.slots / 'hold').read_text().split()[1], 'running')
+            out, _ = ship.communicate(timeout=20)
+            self.assertIn('GATE WAIT', out); self.assertIn('GATE PASSED', out)
+            self.assertEqual((self.root / 'syn3h-ship-7.done').read_text().strip(), 'release rc=0')
+        finally:
+            if ship.poll() is None: ship.kill()
+
+    def test_ship_gives_up_at_the_gate_timeout_and_lifts_its_hold(self):
+        load = self.root / 'load'; load.write_text('20.00')
+        ship = self.ship(load, self.fake_release(0), {'SYN3H_GATE_TIMEOUT_S': '2'})
+        out, _ = ship.communicate(timeout=20)
+        self.assertIn('gate timeout', (self.root / 'syn3h-ship-7.done').read_text())
+        self.assertFalse((self.root / 'release-ran').exists())
+        self.assertFalse((self.slots / 'hold').exists(), 'its own hold is lifted')
+
+
 if __name__ == '__main__':
     unittest.main()
