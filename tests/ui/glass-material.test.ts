@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { params, surfaceCoverage } from '../../shared/params'
 import { qualityLevel } from '../../src/core/quality'
 import { glassStyle } from '../../src/ui/inspector/params'
-import { glassLabels, liquidSelected, restoreGlassMaterial } from '../../src/ui/glassMaterial'
+import { defaultTint, glassLabels, liquidSelected, restoreGlassMaterial } from '../../src/ui/glassMaterial'
 
 describe('the saved interface material', () => {
   let stop: () => void
@@ -45,10 +45,13 @@ describe('the saved interface material', () => {
     expect(liquidSelected()).toBe(true)
     expect(document.documentElement.dataset.glassMaterial).toBe('liquid')
   })
-  it('restores the same tint when the player changes materials or reloads', () => {
+  it('sets the style default on a change and restores a custom tint on reload', () => {
     stop = restoreGlassMaterial(false)
-    params.set(surfaceCoverage.def.id, 72)
+    params.set(surfaceCoverage.def.id, 18)
     params.set(glassStyle.def.id, 2)
+    expect(surfaceCoverage.value).toBe(defaultTint(2))
+    params.set(surfaceCoverage.def.id, 72)
+    expect(glassStyle.value).toBe(2)
     stop()
     params.set(surfaceCoverage.def.id, surfaceCoverage.def.default)
     stop = restoreGlassMaterial(false)

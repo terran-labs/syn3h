@@ -27,10 +27,11 @@ export function whiteInkFace(rgb: N, distance: N, smallControl: N, tuning: Regul
   const luminance = dot(adapted, vec3(.2126, .7152, .0722))
   const limit = mix(.18, .296, smallControl)
   const safe: N = sRGBTransferOETF(linear.mul(limit.div(max(limit, luminance))))
-  return mix(rgb, safe, clamp(distance.negate().sub(1), 0, 1).mul(float(luminance.greaterThan(limit))))
+  return mix(rgb, safe, clamp(distance.negate().sub(1), 0, 1).mul(float(luminance.greaterThan(limit))).mul(tuning.inkResponse ?? 1))
 }
 
 export interface RegularUniforms {
+  inkResponse?: N
   exposure?: (at: N) => N // Smoothed and current backdrop luminance
   face: N // Quadratic transfer, linear term, offset and saturation
   panel: N // Panel slope and offset

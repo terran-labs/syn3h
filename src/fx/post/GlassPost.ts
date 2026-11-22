@@ -1,7 +1,7 @@
-import { liquidSelected, respectReducedTransparency } from '../../ui/glassMaterial'
+import { currentTint, onPaintedTint, liquidSelected, respectReducedTransparency } from '../../ui/glassMaterial'
 import * as THREE from 'three/webgpu'
 import { float, max, renderOutput, rtt, uniform, uv, vec3, vec4 } from 'three/tsl'
-import { defineParam, params, surfaceCoverage } from '../../../shared/params'
+import { defineParam, params } from '../../../shared/params'
 import { registerCoveredComposite } from '../../core/coveredPipelines'
 import { composeGlass } from '../../liquid-glass/compose'
 import { regularSettings as settings, regularOverrides } from './regularSettings'
@@ -115,13 +115,14 @@ export class GlassPost {
   private renderer?: THREE.WebGPURenderer
 
   private readonly tuning = {
-    face: uniform(new THREE.Vector4()), panel: uniform(new THREE.Vector2()), edges: uniform(new THREE.Vector3()),
+    inkResponse: uniform(1), face: uniform(new THREE.Vector4()), panel: uniform(new THREE.Vector2()), edges: uniform(new THREE.Vector3()),
   }
   private readonly frost = uniform(1)
   private readonly unsubscribe: () => void
   private revision = 0
   private updateTuning = () => {
-    const coverage = surfaceCoverage.value / 100
+    const coverage = currentTint() / 100
+    this.tuning.inkResponse.value = Math.min(1, coverage * 4)
     const opacity = Math.max(0, (coverage - .25) / .75) * .97
     const transfer = regularTransfer(true, settings.tint.value * Math.min(1, coverage * 4), settings.brightness.value)
     transfer.quadratic *= 1 - opacity
@@ -142,10 +143,12 @@ export class GlassPost {
   }
   constructor(private readonly mode: string) {
     this.updateTuning()
-    this.unsubscribe = params.onChange(id => { if (id.startsWith('glass.') || id === surfaceCoverage.def.id) this.updateTuning() })
+    const stopSettings = params.onChange(id => { if (id.startsWith('glass.')) this.updateTuning() })
+    const stopTint = onPaintedTint(this.updateTuning)
+    this.unsubscribe = () => { stopSettings(); stopTint() }
     if (mode === 'inline') installGalaxyGlass((gl, canvas) => createLobbyGlass(gl, canvas, {
       face: this.tuning.face.value, panel: this.tuning.panel.value, edges: this.tuning.edges.value,
-      width: () => this.frost.value, growth: () => settings.growth.value,
+      inkResponse: () => this.tuning.inkResponse.value, width: () => this.frost.value, growth: () => settings.growth.value,
       revision: () => this.revision, respectReducedTransparency,
     }))
   }

@@ -36,7 +36,7 @@ type Shape = { el: HTMLElement; x: number; y: number; w: number; h: number; radi
  * Texture units 6 and 7 belong to this pass. The galaxy uses 0 through 3. */
 export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement, tuning: {
   face: { x: number; y: number; z: number; w: number }; panel: { x: number; y: number }; edges: { x: number; y: number; z: number }
-  respectReducedTransparency?: boolean; width(): number; growth(): number; revision(): number
+  inkResponse(): number; respectReducedTransparency?: boolean; width(): number; growth(): number; revision(): number
 }): GalaxyGlass {
   const dispose: (() => void)[] = []
   const program = (source: string) => {
@@ -80,7 +80,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   let blur: WebGLProgram, face: WebGLProgram
   try { blur = program(blurSource); face = program(faceSource) }
   catch (error) { for (const free of dispose) free(); throw error }
-  const u = uniforms(face, ['scene','frost','pixels','points','box','radius','dark','panel','opacity','pressed','veil','faceTransfer','panelTransfer','edgeStrength'])
+  const u = uniforms(face, ['scene','frost','pixels','points','box','radius','dark','panel','opacity','pressed','veil','faceTransfer','panelTransfer','edgeStrength','inkResponse'])
   const b = uniforms(blur, ['source','history','targetSize','axis','response','horizontalPass'])
   const scene = texture(), horizontal = target(), vertical = target()
   const scope = canvas.closest('.syn3h-shell') ?? document.body
@@ -244,6 +244,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
         const { face, panel, edges } = tuning
         gl.uniform4f(u.faceTransfer,face.x,face.y,face.z,face.w)
         gl.uniform2f(u.panelTransfer,panel.x,panel.y)
+        gl.uniform1f(u.inkResponse,tuning.inkResponse())
         gl.uniform3f(u.edgeStrength,edges.x,edges.y,edges.z)
       }
       gl.enable(gl.SCISSOR_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA)

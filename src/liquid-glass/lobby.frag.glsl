@@ -6,6 +6,7 @@ uniform vec2 pixels, points;
 uniform vec4 box, faceTransfer;
 uniform vec2 panelTransfer;
 uniform vec3 edgeStrength;
+uniform float inkResponse;
 uniform float radius, dark, panel, opacity, pressed, veil;
 out vec4 color;
 void main() {
@@ -59,7 +60,7 @@ void main() {
     if (luminance > limit) {
       linear *= limit/luminance;
       vec3 safe = mix(1.055*pow(linear,vec3(1./2.4))-.055,12.92*linear,lessThanEqual(linear,vec3(.0031308)));
-      face = mix(face,safe,clamp(depth-1.,0.,1.));
+      face = mix(face,safe,inkResponse*clamp(depth-1.,0.,1.));
     }
     surface = face*coverage;
   }

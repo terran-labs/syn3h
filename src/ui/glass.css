@@ -342,3 +342,11 @@ html[data-glass-material] .syn3h-shell.exploration-ui button.panel-action:hover 
 html[data-glass-material] .syn3h-shell.exploration-ui button.panel-action:focus-visible {
   outline: 2px solid white; outline-offset: 1px;
 }
+
+.syn3h-shell .glass-material-row .tint-default {
+  grid-column: 2; grid-row: 1; justify-self: end; font: inherit; color: white;
+  border: 0; padding: 2px 4px; background: transparent; box-shadow: none;
+}
+.syn3h-shell.exploration-ui:not(.has-touch):has(> .drive-notices > :not([hidden])) .spawn-help {
+  visibility: hidden;
+}

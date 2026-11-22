@@ -1,4 +1,4 @@
-import { glassLabels, liquidEligible, liquidQualityHint } from '../glassMaterial'
+import { defaultTint, glassLabels, liquidEligible, liquidQualityHint } from '../glassMaterial'
 import { modeChoices } from '../modeAvailability'
 /**
  * The world inspector: every property of the world and of your own settings, in play, as a
@@ -599,13 +599,17 @@ export class Inspector {
         sync(param.value)
       }
     } else if (def.id === 'hud.surfaceCoverage') {
-      row.classList.add('glass-material-row')
+      row.classList.add('glass-material-row', 'tint-row')
       const input = document.createElement('input')
       input.type = 'range'; input.min = '0'; input.max = '100'; input.step = '1'
       input.setAttribute('aria-label', def.label)
       label.textContent = def.label
       input.oninput = () => params.set(def.id, input.valueAsNumber)
-      row.append(label, input, output)
+      const reset = document.createElement('button')
+      reset.type = 'button'; reset.className = 'tint-default'; reset.textContent = 'Default'
+      reset.setAttribute('aria-label', 'Restore default tint')
+      reset.onclick = () => params.set(def.id, defaultTint())
+      row.append(label, input, output, reset)
       sync = value => {
         input.value = String(value); output.textContent = value + '%'
         input.setAttribute('aria-valuetext', output.textContent)
