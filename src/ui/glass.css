@@ -219,3 +219,8 @@ html[data-glass-material] .world-inspector .wi-card .liquid-glass::after { conte
 html[data-glass-material] .world-inspector.is-searching .wi-card.is-open > :is(.wi-body, .wi-foot) {
   clip-path: inset(var(--glass-title-overlap, 0px) 0 0);
 }
+
+/* A caption behind a flat card would stay sharp through a translucent fill.
+   Frost retains the dense card backing beneath its surface gradient. */
+html[data-glass-material="flat"] #lobby-settings.liquid-glass { background: rgb(22 23 26); }
+html[data-glass-material="frost"] #lobby-settings.liquid-glass { background-color: var(--glass-body); }

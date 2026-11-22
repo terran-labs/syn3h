@@ -67,7 +67,7 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     assert.deepEqual(await panel.evaluate((el) => ({ card: el.classList.contains('liquid-glass'), inside: el.querySelectorAll('.liquid-glass').length })), { card: true, inside: 0 }, `${mode}: glass on the card only`)
     if (mode === 'desktop') { const box = await panel.boundingBox(); assert.ok(box.x + box.width > 1440 - 60 && box.width < 420, `desktop: a right-hand card ${JSON.stringify(box)}`) }
     // Only what acts in the lobby. Not in a room here, so the Room section hides.
-    assert.deepEqual(await panel.locator('.wi-card').evaluateAll((cards) => cards.filter((c) => c.getClientRects().length).map((c) => c.dataset.section)), ['performance', 'sound', 'play'])
+    assert.deepEqual(await panel.locator('.wi-card').evaluateAll((cards) => cards.filter((c) => c.getClientRects().length).map((c) => c.dataset.section)), ['performance', 'sound', 'glass', 'play'])
     assert.match(await panel.locator('.wi-card[data-section=sound] .wi-sum').textContent(), /Music \d+% · Master \d+%/)
 
     // Sound: music and master volume and mute; the world's own sounds are not here.
@@ -167,7 +167,7 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
         await page.setViewportSize({ width, height })
         if (await page.locator('#lobby-settings').count()) { await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('#lobby-settings')) }
         await gear.click(); await panel.waitFor({ state: 'visible' })
-        for (const id of ['performance', 'sound', 'play']) await panel.locator(`.wi-card[data-section=${id}]`).evaluate((c) => c.classList.contains('is-open') || c.querySelector('.wi-head').click())
+        for (const id of ['performance', 'sound', 'glass', 'play']) await panel.locator(`.wi-card[data-section=${id}]`).evaluate((c) => c.classList.contains('is-open') || c.querySelector('.wi-head').click())
         await page.waitForTimeout(700)
         const fit = await page.evaluate(() => {
           const card = document.querySelector('#lobby-settings').getBoundingClientRect(), dock = document.querySelector('.lobby-gear-dock').getBoundingClientRect()
