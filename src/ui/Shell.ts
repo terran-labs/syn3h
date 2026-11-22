@@ -37,7 +37,8 @@ import { captionBlocked, captionHidden, captionMask, type ScreenBox } from './ga
 import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
-import { CARD_CLOSE, LobbySettings } from './LobbySettings'
+import { LobbySettings } from './LobbySettings'
+import { CARD_CLOSE } from './cardClose'
 import { installTooltips } from './tooltip'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
@@ -348,6 +349,7 @@ export class Shell implements System {
       oneOpen: () => matchMedia(PHONE_SIDEBAR).matches,
       // Phone-sized touch screens: one panel at a time, alone (phone-panels.css). Tablets and
       // desktops keep the stack as it was.
+      closePanels: () => this.returnToDriving(),
       phonePanels: () => this.touch.available && matchMedia(PHONE_SIDEBAR).matches,
       rememberOpen: 'syn3h.sidebar.open',
     })

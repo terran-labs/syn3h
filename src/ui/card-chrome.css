@@ -39,15 +39,14 @@ html .syn3h-shell.exploration-ui .in-play-about > header .card-close { margin: -
 /* The lobby Settings card: the X sits in the header's right corner, level with the title. */
 html .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head .card-close { margin: -4px -2px -4px 0; }
 
-/* On a phone the open card's header shows the same X (Inspector CARD_HEAD). The whole header is
-   the button there, so this is drawn, not a second target. */
-@media (max-width: 700px), (max-height: 500px) {
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head { grid-template-columns: auto minmax(0, 1fr) 36px; }
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card[data-section="you"].is-open > .wi-head { grid-template-columns: auto minmax(0, 1fr) auto 36px; }
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head .wi-x {
-    width: 36px; height: 36px; border: 0; background: transparent; box-shadow: none; color: #fff;
-  }
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector .wi-x svg { width: 20px; height: 20px; stroke-width: 2; filter: drop-shadow(0 0 3px rgb(0 0 0 / .45)); }
+/* A panel's own X shows only on a phone with that panel alone on screen (phone-panels.css). */
+html .syn3h-shell.exploration-ui .world-inspector .wi-card > button.wi-card-close { display: none; }
+/* Touch screens: a bigger X and a 48 px target (the owner, 22 November 2026). */
+html .syn3h-shell.exploration-ui.has-touch button.card-close { width: 48px; height: 48px; min-width: 48px; min-height: 48px; }
+html .syn3h-shell.exploration-ui.has-touch button.card-close svg { width: 28px; height: 28px; }
+@media (pointer: coarse) {
+  html .syn3h-shell.exploration-ui button.card-close { width: 48px; height: 48px; min-width: 48px; min-height: 48px; }
+  html .syn3h-shell.exploration-ui button.card-close svg { width: 28px; height: 28px; }
 }
 
 /* ---- The Glass section: Style and Tint, each label at the left and its control beside it ---- */

@@ -9,7 +9,8 @@
  * sheet's handOff); the buttons stay beside it. Escape, a tap outside and the one X close it;
  * focus stays inside while it is open and returns to whatever opened it.
  */
-import { cycleFocus, CARD_CLOSE } from './LobbySettings'
+import { cycleFocus } from './LobbySettings'
+import { CARD_CLOSE } from './cardClose'
 import './lobby-sheet.css'
 
 

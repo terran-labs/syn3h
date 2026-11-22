@@ -101,7 +101,8 @@ for (const mode of modes) {
     assert.ok(tip.x >= 0 && tip.y >= 0 && tip.x + tip.width <= page.viewportSize().width && tip.y + tip.height <= page.viewportSize().height)
     if (!touch) assert.ok(tip.x + tip.width < control.x, 'description floats left of control')
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-tooltip.png` })
-    const back = page.locator('.world-inspector.is-single .wi-card.is-open .wi-head .wi-x')
+    // A phone shows one panel at a time: its title goes back to the list (its X would close the panels).
+    const back = page.locator('.world-inspector.is-single .wi-card.is-open > .wi-head h3')
     if (await back.isVisible()) await back.tap()
     await page.locator('[data-section=players] > .wi-head').click()
     assert.equal(await page.locator('.rail-diagnostics input').isChecked(), false)
@@ -141,8 +142,10 @@ for (const mode of modes) {
       await page.locator('.world-inspector').waitFor({ state: 'visible' })
     }
     if (touch) {
-      // Touch closes with the stack's own Close panels: the Panels control fades out while the panels show.
-      await page.locator('.world-inspector .panels-close').tap(); await page.locator('.world-inspector').waitFor({ state: 'hidden' })
+      // Touch closes with the stack's own Close panels, or on a phone with one panel open, that
+      // panel's X: the Panels control fades out while the panels show.
+      const single = await page.locator('.world-inspector.is-single').count()
+      await page.locator(single ? '.world-inspector .wi-card.is-open > .wi-card-close' : '.world-inspector .panels-close').tap(); await page.locator('.world-inspector').waitFor({ state: 'hidden' })
       assert.equal(await page.locator('.world-inspector').isHidden(), true, 'returning to driving hides the panels')
       await page.locator('.inspector-toggle').tap()
       await page.locator('.world-inspector').waitFor({ state: 'visible' })

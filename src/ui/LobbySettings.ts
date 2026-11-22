@@ -31,6 +31,7 @@ import { PerformancePanel } from './PerformancePanel'
 import { playWithMe } from '../bots/play/PlayDirector'
 import { SOUND_STARTED, soundWaiting } from '../audio/unlock'
 import './lobby-settings.css'
+import { CARD_CLOSE } from './cardClose'
 
 /** Sound settings shown before the Advanced fold, in this order. */
 export const SOUND_MAIN = ['audio.music', 'audio.master', 'audio.muted'] as const
@@ -60,12 +61,6 @@ export function cycleFocus<T>(focusable: readonly T[], current: T | null, back: 
   return focusable[(at + (back ? -1 : 1) + focusable.length) % focusable.length]!
 }
 
-/**
- * Every card's close control: a bare, drawn X, no word and no pill (the owner, 22 November 2026:
- * "the close button should also just be a larger X"). One vector path, the same in the lobby's
- * Settings card, Welcome and Updates and the in-play guide. Styled by .card-close (card-chrome.css).
- */
-export const CARD_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6L18 18M18 6L6 18"/></svg>'
 
 /** A volume: an audio setting from 0 to 1, shown as a percentage like the card's summary. */
 export const isVolume = (def: PropertyDef) => def.group === 'Audio' && def.min === 0 && def.max === 1
