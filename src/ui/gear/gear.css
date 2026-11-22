@@ -51,7 +51,7 @@
   position: absolute; left: 0; top: 50%; width: 100%; height: var(--gs-pitch); min-height: 0; margin: calc(var(--gs-pitch) / -2) 0 0;
   padding: 0 0 0 18px; display: flex; align-items: center;
   transform: translate3d(0, calc(var(--o, 0) * var(--gs-pitch)), 0);
-  transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .22s cubic-bezier(.2,.8,.2,1), color .22s cubic-bezier(.2,.8,.2,1);
+  transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .22s cubic-bezier(.2,.8,.2,1), color .22s cubic-bezier(.2,.8,.2,1), text-shadow .22s cubic-bezier(.2,.8,.2,1);
   color: var(--s3-dim); background: none; border: 0; border-radius: 999px; box-shadow: none; outline: none;
   font: inherit; letter-spacing: 0; text-align: left; text-shadow: var(--gs-under);
   cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent;
@@ -191,4 +191,13 @@ html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actio
 }
 :root .syn3h-shell .gear-selector .gs-drum button.gs-item:not(.is-active) {
   color: color-mix(in srgb, var(--s3-ink) calc(var(--a, .66) * 100%), transparent); text-shadow: var(--col-text-under, var(--hud-under));
+}
+
+/* The selected gear's name carries a deeper falloff than the rest (the Foreman, 22 November
+   2026: at least 3.5:1 over noon sky): the same shadow under the letters, with a wider soft
+   reach. Still no plate. Captured, the selector no longer dims as a whole (it did to 84%), which
+   thinned that falloff: the neighbours are already faded by their ink. */
+:root .syn3h-shell.exploration-ui .gear-selector[data-mode=locked] { opacity: 1; }
+:root .syn3h-shell.exploration-ui .gear-selector .gs-drum button.gs-item.is-active {
+  text-shadow: 0 0 1px rgb(0 0 0 / 1), 0 0 2px rgb(0 0 0 / .95), 0 0 4px rgb(0 0 0 / .9), 0 0 8px rgb(0 0 0 / .75), 0 0 14px rgb(0 0 0 / .6), 0 0 24px rgb(0 0 0 / .45);
 }
