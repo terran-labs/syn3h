@@ -161,7 +161,10 @@ export class Game {
       else fit.measure(window.innerWidth, window.innerHeight)
     }
     // Resize events come before the frame is drawn, so sizing here never shows a cleared canvas.
-    window.addEventListener('resize', () => { measure(); fit.fit() })
+    // While draws are held (a quality change behind the menu or a veil), no draw follows in this
+    // frame and a resize would leave the canvas cleared until it ends: only measure then; the next
+    // drawn frame applies the size just before it draws.
+    window.addEventListener('resize', () => { measure(); if (!this.holdDraws && !this.applyingQuality) fit.fit() })
     if (typeof ResizeObserver !== 'undefined') {
       // Reported after layout, once the rotation has settled. Only recorded while the loop runs:
       // the next frame applies it just before it draws. A stopped loop applies and redraws here.
@@ -618,7 +621,7 @@ export class Game {
       if (batch) slice(() => this.prepareClimbedLevel({ systems: false, fleet: true }, run(false)))
       await frame(); check()
       // The first presented frame at the new level: its render scale is applied with it (deferPixelRatio).
-      slice(() => { this.quality.takePixelRatio(); drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16) })
+      slice(() => { this.quality.takePixelRatio(); this.viewFit?.fit(); drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16) })
       await this.finishWorldFrame(stop.signal, check, false)
       check()
       // Ordinary frames behind the veil until no shader work is left, as a manual change ends.
