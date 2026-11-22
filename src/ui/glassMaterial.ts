@@ -30,13 +30,24 @@ export function restoreGlassMaterial(shortcut: boolean) {
   const paint = () => {
     const stop = glassStyle.value === 0 && !liquidEligible() ? glassStyle.def.default : glassStyle.value
     const amount = surfaceCoverage.value / 100
-    // At the reference setting the neutral face lifts black and attenuates
-    // daylight. The opaque end returns to the older smoky Flat fill.
-    const blend = Math.max(0, (amount - .25) / .75)
-    const alpha = amount < .25 ? amount * 1.6 : .4 + .58 * blend
-    const grey = Math.round(80 - 58 * blend)
+    // Fit the endpoints of a translucent CSS fill to the Regular transfer.
+    // Black determines the lift. White determines the minimum backing a CSS
+    // surface needs without sampling the game or adding a filter to Flat.
+    const tint = Math.min(1, amount * 4)
+    const opacity = Math.max(0, (amount - .25) / .75) * .97
+    const black = (32 / 255) * tint * (1 - opacity) + opacity * 22 / 255
+    const white = (1 + (.6 + 32 / 255 - 1) * tint) * (1 - opacity) + opacity * 22 / 255
+    const paintFill = (cap: number, transmission: number) => {
+      const maxWhite = Math.min(cap, white)
+      const alpha = 1 - (maxWhite - black) / transmission
+      const grey = Math.round(255 * black / alpha)
+      return `rgb(${grey} ${grey} ${grey} / ${alpha})`
+    }
     const root = document.documentElement
-    root.style.setProperty('--interface-tint', `rgb(${grey} ${grey} ${grey} / ${alpha})`)
+    root.style.setProperty('--interface-tint', paintFill(.452, 1))
+    // Frost's backdrop has already passed through brightness(.84), and its
+    // broadest highlight mixes another four percent white over the fill.
+    root.style.setProperty('--interface-frost-tint', paintFill((.452 - .04) / .96, .84))
     document.documentElement.dataset.glassMaterial = glassLabels[Math.round(stop)].toLowerCase()
   }
   paint()
