@@ -13,6 +13,7 @@ import { WebSocketServer } from 'ws'
 import { chromium } from 'playwright-core'
 import { createServer as createVite } from 'vite'
 import assert from 'node:assert/strict'
+import { legacyPageNames } from './lib/legacy-page-names.mjs'
 const root = resolve(process.argv[2])
 const output = process.argv[3] ?? '/tmp/syn3h-mixed-version.json'
 const { Room } = await tsImport(pathToFileURL(resolve('server/room.ts')).href, import.meta.url)
@@ -62,6 +63,7 @@ async function open(kind,room) {
   const browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-webgpu','--use-angle=metal','--ignore-gpu-blocklist','--disable-background-timer-throttling','--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows']})
   browsers.push(browser)
   const page=await browser.newPage({viewport:{width:640,height:360}})
+  await page.addInitScript(legacyPageNames) // the frozen page may predate window.mira
   let navigations=0
   // Play uses history.replaceState; count document requests, not same-document URL changes.
   page.on('request',req=>{if(req.isNavigationRequest() && req.frame()===page.mainFrame())navigations++})

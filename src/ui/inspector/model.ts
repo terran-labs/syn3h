@@ -150,9 +150,11 @@ export function parseWorld(text: string, defs: readonly PropertyDef[], options: 
   try { data = JSON.parse(text) } catch { return { ok: false, why: 'That is not JSON.' } }
   if (!data || typeof data !== 'object' || Array.isArray(data)) return { ok: false, why: 'That JSON is not a world.' }
   const record = data as Record<string, unknown>
-  const kind = record.mira === 'section' ? 'section' : 'world'
+  // Copies made before the rename to Mira carry the old tag; they still paste. rename-keep
+  const tag = record.mira ?? record.syn3h // rename-keep
+  const kind = tag === 'section' ? 'section' : 'world'
   // Accept the wrapped form and a bare { id: value } object.
-  const values = record.values && typeof record.values === 'object' && !Array.isArray(record.values) ? record.values as Record<string, unknown> : record.mira === undefined ? record : null
+  const values = record.values && typeof record.values === 'object' && !Array.isArray(record.values) ? record.values as Record<string, unknown> : tag === undefined ? record : null
   if (!values) return { ok: false, why: 'That JSON has no values in it.' }
   const byId = new Map(defs.map(def => [def.id, def]))
   const entries: PasteEntry[] = [], skipped: { id: string; why: string }[] = []

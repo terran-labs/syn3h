@@ -35,6 +35,19 @@ export const LAST_OLD_ADDRESS_VERSION = 'v26.11.2204'
 const OLD_PLAY_URL = 'https://www.syn3h.com/' // rename-keep
 /** Where a version was live when it was released. */
 export const playUrl = (tag) => (compareVersions(tag, LAST_OLD_ADDRESS_VERSION) <= 0 ? OLD_PLAY_URL : PLAY_URL)
+
+/**
+ * The game was called Syn3h through this version and Mira after it (docs/NAMES.md). Notes of
+ * those versions keep their "## Syn3h vX" heading and GitHub title; every later version must
+ * use "## Mira vX". `node tools/rename-to-mira.mjs --check` fails if a published notes file
+ * newer than this still says Syn3h, which is the cue to move this line. rename-keep
+ */
+export const LAST_SYN3H_VERSION = 'v26.11.2206'
+const LEGACY_NAME = 'Syn3h' // rename-keep
+/** The game's name as published for `tag`. */
+export const productName = (tag) => (compareVersions(tag, LAST_SYN3H_VERSION) <= 0 ? LEGACY_NAME : 'Mira')
+/** Mira is always accepted; the old name only for versions that shipped under it. */
+const isHeading = (line, tag) => line === `## Mira ${tag}` || (productName(tag) === LEGACY_NAME && line === `## ${LEGACY_NAME} ${tag}`)
 /** The address that serves one frozen release for good (tools/frozen-versions.mjs). */
 export function frozenUrl(version) {
   return `${PLAY_URL}?v=${String(version).replace(/^v/, '')}`
@@ -143,7 +156,7 @@ export function renderNotes(text, row, manifest = { images: [], gif: null }) {
   const lines = notes.split('\n')
   const problems = []
   // Accept historical heading-first sources; all rendered external bodies carry attribution.
-  if (lines[0] !== `## Mira ${tag}`) problems.push(`the first line must be the heading "## Mira ${tag}"`)
+  if (!isHeading(lines[0], tag)) problems.push(`the first line must be the heading "## Mira ${tag}"`)
   if (lines[1] !== '' || !lines[2] || lines[2].startsWith('#')) problems.push('a one line deck must follow the heading after a blank line')
   const kind = kindLine(row, playUrl(tag))
   if (lines[4] !== kind) problems.push(`the line under the deck must be "${kind}"`)
@@ -197,7 +210,7 @@ export function versionProblems(version, notes, digest) {
   if (notes === null) problems.push(`no release notes at release-notes/releases/${tag}.md`)
   else {
     const heading = notes.replace(/^\(AI Generated\)\r?\n\r?\n/, '').split('\n')[0]
-    if (heading !== `## Mira ${tag}`) problems.push(`the notes' heading is "${heading}", not "## Mira ${tag}"`)
+    if (!isHeading(heading, tag)) problems.push(`the notes' heading is "${heading}", not "## Mira ${tag}"`)
     for (const v of linkedVersions(notes)) if (v !== bare) problems.push(`the notes link version ${v}, not ${bare}`)
   }
   if (digest === null) problems.push(`no player digest at release-notes/player/${tag}.md`)
@@ -232,7 +245,7 @@ export function renameNotes(from, to, { known = [], releases = NOTES_DIR, player
     if (existsSync(dst)) throw new Error(`${dst} already exists`)
   }
   const swap = (text) => text
-    .replace(new RegExp(`^## Mira ${a.replace(/\./g, '\\.')}$`, 'm'), `## Mira ${b}`)
+    .replace(new RegExp(`^## (Mira|${LEGACY_NAME}) ${a.replace(/\./g, '\\.')}$`, 'm'), `## Mira ${b}`)
     .replace(/([?&]v=v?)(\d+\.\d+\.\d+)/g, (m, pre, v) => (v === a.slice(1) ? pre + b.slice(1) : m))
     .replace(/(\/releases\/(?:tag|download)\/v?)(\d+\.\d+\.\d+)/g, (m, pre, v) => (v === a.slice(1) ? pre + b.slice(1) : m))
   const leftover = []
@@ -341,15 +354,15 @@ async function publish(tag, { assetsDir, dryRun, yes, latest }) {
   const notesFile = dryRun ? '<temporary file holding the body below>' : join(mkdtempSync(join(tmpdir(), 'mira-notes-')), 'body.md')
   const steps = []
   if (!tagCommit && commit) {
-    const message = `Mira ${tag} (${row.milestone}${release ? `, ${release.release}` : ''})`
+    const message = `${productName(tag)} ${tag} (${row.milestone}${release ? `, ${release.release}` : ''})`
     steps.push(['git', 'tag', '-a', tag, commit, '-m', message])
   }
   steps.push(['git', 'push', 'origin', `refs/tags/${tag}`])
-  steps.push(['gh', 'release', 'create', tag, '--repo', GITHUB_REPO, '--verify-tag', '--title', `Mira ${tag}`,
+  steps.push(['gh', 'release', 'create', tag, '--repo', GITHUB_REPO, '--verify-tag', '--title', `${productName(tag)} ${tag}`,
     '--notes-file', notesFile, latest ? '--latest' : '--latest=false', ...assets.map((name) => join(dir, name))])
 
   const print = (line) => process.stdout.write(`${line}\n`)
-  print(`${dryRun ? 'DRY RUN: ' : ''}publish Mira ${tag} to https://github.com/${GITHUB_REPO}/releases/tag/${tag}`)
+  print(`${dryRun ? 'DRY RUN: ' : ''}publish ${productName(tag)} ${tag} to https://github.com/${GITHUB_REPO}/releases/tag/${tag}`)
   print(`Commit: ${commit ?? row.commit} (${row.milestone}, ${row.channel}, ${row.time}${release ? `, ${release.release}` : ''})`)
   print(`Marked Latest: ${latest ? 'yes' : 'no'}`)
   print(`Notes: ${notesPath(tag)}`)

@@ -87,6 +87,8 @@ async function fixtureChild(scenario) {
     } } }),
     './shot-evidence.mjs': new vm.SourceTextModule(readFileSync(path.join(here, 'shot-evidence.mjs'), 'utf8'), { context }),
     './lib/safe-env.mjs': moduleFrom({ browserEnv: () => ({}) }),
+    './lib/legacy-env.mjs': moduleFrom({}),
+    './lib/legacy-page-names.mjs': moduleFrom({ legacyPageNames() {} }),
     './lib/chrome-log.mjs': moduleFrom({ prepareChromeLogs: () => '/tmp/fixture-chrome-logs', nameNextLaunch() {}, chromeTail: () => [] }),
     './lib/smoke-retry.mjs': new vm.SourceTextModule(readFileSync(path.join(here, 'lib', 'smoke-retry.mjs'), 'utf8'), { context }),
   }

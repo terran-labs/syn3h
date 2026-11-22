@@ -1,5 +1,7 @@
 # Mira
 
+Mira was called Syn3h until the release that renamed it, after v26.11.2206. Older release notes keep the old name; [docs/NAMES.md](docs/NAMES.md) lists the few names that still use the old one and why.
+
 Drive to the rim of a volcano. Unfold your buggy's force-field wings and leave the road
 behind. Bring a friend, pick a distant ridge, and see what happens on the way there.
 

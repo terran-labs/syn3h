@@ -10,11 +10,18 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { linkedVersions, renameNotes, unshippedNotes, versionProblems } from './release-notes.mjs'
+import { LAST_SYN3H_VERSION, linkedVersions, renameNotes, unshippedNotes, versionProblems } from './release-notes.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const notesFor = (v, link = v) => `## Mira v${v}\n\nA deck line.\n\nReleased at 6:00am Pacific.\n\n### Play\n\nThis exact version stays playable at https://mira.cc/?v=${link}, whatever ships after it.\nSee https://github.com/terran-labs/syn3h/releases/tag/v${link}.\n\n### Known issues\n\n- A player on a version before v26.11.2118 is treated as hidden.\n`
 const digestFor = () => 'A deck\n\n- A point.\n'
+
+test('versions released as Syn3h keep their heading; later versions must say Mira', () => { // rename-keep
+  const old = LAST_SYN3H_VERSION.slice(1), legacy = (v) => notesFor(v).replace('## Mira', '## Syn3h') // rename-keep
+  assert.deepEqual(versionProblems(old, legacy(old), digestFor()), [])
+  assert.deepEqual(versionProblems(old, notesFor(old), digestFor()), [])
+  assert.equal(versionProblems('27.1.100', legacy('27.1.100'), digestFor()).length, 1)
+})
 
 test('heading, every version-bearing link and the player digest must name the version', () => {
   assert.deepEqual(versionProblems('v26.11.2200', notesFor('26.11.2200'), digestFor()), [])

@@ -23,6 +23,7 @@ import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { browserEnv } from './lib/safe-env.mjs'
 import { isBrowserCrash, isTransportConsoleError } from './lib/smoke-retry.mjs'
+import { legacyPageNames } from './lib/legacy-page-names.mjs'
 
 const base = process.argv[2]
 const tolerateDeviceLoss = process.env.MIRA_CHECK_TOLERATE_DEVICE_LOSS === '1'
@@ -44,7 +45,9 @@ async function open(name) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true, env: browserEnv(), args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'] })
   browsers.push(browser)
   const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
-  await ctx.addInitScript(() => localStorage.setItem('mira.quality.v2', JSON.stringify({ level: 1, auto: false, pinned: true, overrides: {} })))
+  // A build from before the rename (a rollback target) reads the old key and hook names.
+  await ctx.addInitScript(legacyPageNames)
+  await ctx.addInitScript(() => { for (const key of ['mira.quality.v2', 'syn3h.quality.v2']) localStorage.setItem(key, JSON.stringify({ level: 1, auto: false, pinned: true, overrides: {} })) }) // rename-keep
   const page = await ctx.newPage()
   page.on('crash', () => crashed.push(name))
   page.on('pageerror', (e) => errors.push(`${name} pageerror: ${e.message}`))

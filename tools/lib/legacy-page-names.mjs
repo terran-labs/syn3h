@@ -1,5 +1,5 @@
 /**
- * Pages built before the rename to Mira (v26.11.2203 and earlier) expose their test hooks as
+ * Pages built before the rename to Mira (v26.11.2206 and earlier) expose their test hooks as
  * window.syn3h, window.syn3hNet and window.syn3hStartup; renamed builds use window.mira,
  * window.miraNet and window.miraStartup. Checks that can drive an older build (the rollback
  * check, the public check, the mixed-version check) add this as an init script, so `window.mira`

@@ -2,6 +2,7 @@
  * Composition root. Builds the world from the four seams and starts the loop.
  * Keep this file small: features belong behind the seams, not here.
  */
+import './core/legacyWindowNames'
 import { initializeFrozenResources } from './core/frozenResources'
 import { ResumeSession, RESUME_KEY } from './core/resume'
 import { applyStartWorld } from './core/startWorld'

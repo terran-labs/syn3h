@@ -37,6 +37,7 @@ import { chromeTail, nameNextLaunch, prepareChromeLogs } from './lib/chrome-log.
 import { chromium } from 'playwright-core'
 import { browserEnv } from './lib/safe-env.mjs'
 import { createShotEvidence, createShotDecision } from './shot-evidence.mjs'
+import { legacyPageNames } from './lib/legacy-page-names.mjs'
 
 // Opt-in only. Reserve a caller-owned fresh directory before opening a browser.
 const evidenceDir = process.env.MIRA_SHOT_EVIDENCE_DIR
@@ -96,7 +97,9 @@ async function open(name, extra = '') {
   const browser = await launch(name)
   browsers.push(browser)
   const ctx = await browser.newContext({ viewport: SMOKE_VIEWPORT })
-  await ctx.addInitScript((q) => localStorage.setItem('mira.quality.v2', JSON.stringify(q)), SMOKE_QUALITY)
+  // A build from before the rename (the rollback check drives one) reads the old key and hook names.
+  await ctx.addInitScript(legacyPageNames)
+  await ctx.addInitScript((q) => { for (const key of ['mira.quality.v2', 'syn3h.quality.v2']) localStorage.setItem(key, JSON.stringify(q)) }, SMOKE_QUALITY) // rename-keep
   // No audio rendering on smoke pages (the Foreman, 20 November 2026). Headless Chrome 157 under a
   // loaded release run kills a renderer now and then with a CHECK on whichever thread renders the
   // page's Web Audio ("Realtime AudioWorklet thread" with worklets loaded, "AudioOutputDevice"

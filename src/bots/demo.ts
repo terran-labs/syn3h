@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu'
+import '../core/legacyWindowNames'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Game } from '../core/Game'
 import { RAPIER } from '../core/physics'

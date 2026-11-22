@@ -50,6 +50,10 @@ describe('a world as JSON', () => {
     expect(result.ok && result.entries).toEqual([{ id: 'sun.timeOfDay', value: 24, adjusted: true }, { id: 'bots.count', value: 0, adjusted: true }, { id: 'world.seed', value: 7, adjusted: false }])
     expect(result.ok && pasteSummary(result)).toBe('3 properties pasted, 2 pulled inside limits.')
   })
+  it('still pastes a world copied before the rename', () => {
+    const result = parseWorld('{"syn3h":"world","version":1,"values":{"bots.count":2}}', DEFS) // rename-keep
+    expect(result.ok && result.entries).toEqual([{ id: 'bots.count', value: 2, adjusted: false }])
+  })
   it('leaves out what it does not know, wrong kinds, and personal settings in a world', () => {
     const result = parseWorld('{"values":{"made.up":1,"sky.sunDisc":"yes","sun.timeOfDay":"noon","camera.sensitivity":3,"bots.count":2}}', DEFS)
     expect(result.ok && result.entries).toEqual([{ id: 'bots.count', value: 2, adjusted: false }])

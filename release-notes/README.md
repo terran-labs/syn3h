@@ -1,5 +1,7 @@
 # Release notes
 
+Mira was called Syn3h until the release that renamed it, after v26.11.2206. Notes for versions released as Syn3h keep that name in their heading and GitHub title (`LAST_SYN3H_VERSION` in `tools/release-notes.mjs`); every later version is headed "## Mira vX".
+
 Mira uses the calendar versions, release notes and GitHub releases of the owner's Freed and
 Vorteo projects (decided 14 November 2026, `ops/DECISIONS.md`). The GitHub releases tell the
 story of the build: one release per chapter, from the first plan to the latest public
