@@ -6,7 +6,7 @@
      2026: the old stack of tight dark rings read as a smudged outline on a pale sky). Soft, wide
      and low: a faint lift just under the letters and a broad falloff around them, no hard ring.
      Over a dark scene it vanishes; over a pale sky it is a haze the white type stands in. */
-  --float-under: 0 1px 3px rgb(0 0 0 / .38), 0 0 9px rgb(0 0 0 / .34), 0 0 22px rgb(0 0 0 / .3);
+  --float-under: 0 1px 3px rgb(0 0 0 / .4), 0 0 8px rgb(0 0 0 / .4), 0 0 18px rgb(0 0 0 / .36), 0 0 34px rgb(0 0 0 / .28);
   --hud-under: var(--float-under);
   --hud-line-under: drop-shadow(0 0 1px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .45));
   /* One edge distance for everything pinned to a screen edge (the owner, 18 November 2026: "make
@@ -114,7 +114,9 @@
 .syn3h-shell.exploration-ui .shell-minimap::after { content: ''; position: absolute; inset: 11.5%; border: 1px solid rgb(175 225 250 / .2); border-radius: 50%; box-shadow: 0 0 14px rgb(100 200 250 / .06); }
 .syn3h-shell.exploration-ui .shell-minimap span { top: 13px; left: 50%; right: auto; color: #b1eaff; font: 10px 'Barlow',sans-serif; letter-spacing: .15em; text-shadow: 0 0 8px #6bc5f1; }
 /* Quieter while the panels are up, but not so faint that the dark falloff under the text fades with it. */
-.syn3h-shell.exploration-ui.is-playing .focus-hud { opacity: .85; }
+/* Full strength in play: the readouts must read at a glance on the brightest world (the owner,
+   22 November 2026). What should be quiet carries its own lower alpha (the faint track). */
+.syn3h-shell.exploration-ui.is-playing .focus-hud { opacity: 1; }
 .syn3h-shell.exploration-ui.is-focus .focus-hud { opacity: 1; }
 /* Touch draws the reticle only while TAG is held: see touch-stick.css. */
 .syn3h-shell.exploration-ui:not(.is-focus, .has-touch) .focus-hud [data-reticle] { display: none; }

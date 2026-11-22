@@ -119,7 +119,7 @@
    hint show only while the cursor is free (the owner, 17 November 2026). */
 .gear-selector[data-mode=locked] :is(.gs-desc, .gs-index, .gs-hints, .gs-keyhint) { display: none; }
 .gear-selector[data-mode=locked]::before { opacity: .7; }
-.gear-selector[data-mode=free] .gs-keyhint { opacity: .6; }
+.gear-selector[data-mode=free] .gs-keyhint { opacity: .8; }
 
 /* Touch: bigger targets; the action buttons replace key hints. */
 .gear-selector[data-touch] { --gs-pitch: 52px; --gs-width: 180px; --gear-detail-width: 190px; }
