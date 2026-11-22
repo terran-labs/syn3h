@@ -118,6 +118,26 @@ export function drawCoveredShowroomVariant(root: T.Object3D, tier: 0 | 1 | 2, dr
   }
 }
 
+/** Per vehicle: stand-ins in each set the current level can put on it but it is not wearing (see climbShowroomStandIns). */
+const climbSets = new WeakMap<T.Object3D, () => T.Mesh[]>()
+
+/**
+ * For a climb's one preparation render: stand-ins for every remote vehicle under `scene` (a bot,
+ * live or parked, near or far) in each set the new level can put on it but it is not wearing now.
+ * A remote vehicle wears the plain set beyond 30 m and the level's near tier inside it, and the
+ * renderer draws the scene and each shadow map once per animation frame, so one render can show a
+ * real mesh in one set only: the other sets need other objects. Each stand-in is a copy of a real
+ * mesh in that set (the plain cockpit force field included) with the mesh's shadow casting. The
+ * caller adds them to the scene, out of sight, for the one render. They are kept afterwards, out of
+ * the scene, so their pipelines stay built (the renderer frees a pipeline with its last user), and
+ * are let go at the next climb or when the vehicle is released.
+ */
+export function climbShowroomStandIns(scene: T.Object3D): T.Mesh[] {
+  const out: T.Mesh[] = []
+  scene.traverse(object => { const make = climbSets.get(object); if (make) out.push(...make()) })
+  return out
+}
+
 const reducedDetail = new WeakSet<T.Object3D>()
 
 /** Reduced models already drop to plain shading at their detail boundary. */
@@ -968,6 +988,44 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate, sharePlainPa
     }
     return restore
   }
+  // Stand-ins for a climb's preparation render (see climbShowroomStandIns).
+  let climbKept: T.Mesh[] = []
+  const releaseClimbKept = (list: T.Mesh[]): void => { for (const proxy of list) (proxy as Partial<T.InstancedMesh>).dispose?.() }
+  const climbStandIns = (): T.Mesh[] => {
+    const scene = sceneOf()
+    if (!scene || !remote || reducedDetail.has(root)) return []
+    const shade = Math.max(0, Math.min(2, Math.round(vehicleShading.value))) as 0 | 1 | 2
+    const wanted = [...new Set<0 | 1 | 2>([0, shade])].filter(tier => tier !== current)
+    if (!wanted.length) return []
+    const displayed = entries.map(({ mesh }) => mesh.material), displayedTier = current
+    const made: T.Mesh[] = [], seen = new Set<string>()
+    try {
+      for (const tier of wanted) {
+        // Wear the set as refresh() would (bindLook gives the plain set its force-field canopy), copy, and move on.
+        use(tier)
+        bindLook(tier, scene)
+        for (const e of entries) {
+          if (reducedDetail.has(e.mesh)) continue
+          const material = e.mesh.material as T.Material
+          const pair = `${e.mesh.geometry.uuid}:${material.uuid}:${(e.mesh as Partial<T.InstancedMesh>).isInstancedMesh ? 'i' : 'm'}:${e.castShadow}:${e.mesh.receiveShadow}`
+          if (seen.has(pair)) continue
+          seen.add(pair)
+          const proxy = e.mesh.clone(false)
+          const paint = paintOf.get(e.mesh); if (paint) paintOf.set(proxy, paint)
+          proxy.material = material; proxy.visible = true; proxy.frustumCulled = false; proxy.castShadow = e.castShadow
+          made.push(proxy)
+        }
+      }
+    } finally {
+      entries.forEach(({ mesh }, i) => { mesh.material = displayed[i] })
+      current = displayedTier
+    }
+    // The previous climb's stand-ins go once this render has drawn the new ones.
+    const previous = climbKept
+    climbKept = made
+    queueMicrotask(() => releaseClimbKept(previous))
+    return made
+  }
   const refresh = (): void => {
     // The frame governor caps this by graphics level (safe 0, mobile 0, desktop 3) and sheds it
     // under load. A value the player set by hand is honoured as it is.
@@ -991,8 +1049,10 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate, sharePlainPa
   // vehicle whose caller never got the disposer (use() has already given back what it took).
   try { refresh() } catch (error) { detach(); unsubscribe(); throw error }
   coveredShading.set(root, useCoveredVariant)
+  climbSets.set(root, climbStandIns)
   return () => {
     coveredShading.delete(root)
+    climbSets.delete(root); releaseClimbKept(climbKept); climbKept = []
     detach(); unsubscribe(); endWarm('cancelled'); releaseKept()
     // Shared materials go back to the pool, and the vehicle's own plain set goes back on its
     // meshes: the owner disposes whatever is attached, and must never dispose a material other

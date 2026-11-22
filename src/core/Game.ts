@@ -22,7 +22,7 @@ import { drawFrame, gpuDeadlineMs, startRenderer, viewState, withDeadline, type 
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
 import { QualityController, reportLoading, vehicleShading, type AdjacentRenderPreset, type QualityLevel, type FrameMetrics } from './quality'
-import { drawCoveredShowroomVariant } from '../vehicles/skins/showroom'
+import { climbShowroomStandIns, drawCoveredShowroomVariant } from '../vehicles/skins/showroom'
 import { PipelineCounter } from './performanceHistory'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
 
@@ -443,7 +443,17 @@ export class Game {
       // Culling off for this draw, as the covered entry draws: a caster outside every cascade (a bot
       // far away) would otherwise get its shadow pipeline only when it moves into one, in play.
       this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
-      const submit = () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+      // Every bot's other shading sets, as stand-ins in this one render: the scene and shadow passes
+      // draw once per animation frame, so a second draw for them would draw nothing new. Taken at
+      // draw time, so the parked fleet (in the scene only inside its own draw) is included.
+      const standIns = new THREE.Group()
+      standIns.position.copy(behind); standIns.scale.setScalar(1e-6)
+      const submit = () => {
+        for (const proxy of climbShowroomStandIns(this.scene)) standIns.add(proxy)
+        if (standIns.children.length) this.scene.add(standIns)
+        try { drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16) }
+        finally { standIns.removeFromParent(); standIns.clear() }
+      }
       const fleet = this.systems.find(system => system.drawClimbFleet)
       if (fleet) fleet.drawClimbFleet!(submit); else submit()
     } finally {
