@@ -10,7 +10,7 @@ export const impactSparks = defineParam({ id: 'fx.impact.sparks', label: 'Impact
 /** Spark speed off the surface, m/s. */
 export const impactSparkSpeed = defineParam({ id: 'fx.impact.sparkSpeed', label: 'Impact spark speed (m/s)', group, scope, default: 22, min: 1, max: 40, step: 0.5 })
 /** Size of the flash at the point of impact, m. */
-export const impactFlash = defineParam({ id: 'fx.impact.flash', label: 'Impact flash size (m)', group, scope, default: 1.5, min: 0, max: 6, step: 0.05 })
+export const impactFlash = defineParam({ id: 'fx.impact.flash', label: 'Impact flash size (m)', group, scope, default: 2, min: 0, max: 6, step: 0.05 })
 /** Strength of the light thrown on the ground around an impact; 0 for none. */
 export const impactLight = defineParam({ id: 'fx.impact.light', label: 'Impact ground light', group, scope, default: 1, min: 0, max: 3, step: 0.05 })
 /** Radius of that light for Plasma Tag, m; Thunder's is three times it. */

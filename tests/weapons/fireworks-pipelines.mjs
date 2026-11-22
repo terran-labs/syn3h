@@ -5,7 +5,8 @@
  * timings, read from the renderer's own counter (src/core/longFrameRenderer.ts, totals in
  * diagnosticShaders.ts), which covers the whole scene on WebGPU and WebGL 2; the probe checks the
  * counter is live by seeing a graphics level change's rebuild. At night and at noon (the daytime
- * stars and smoke are drawn only by day), with the ground glow, on both backends.
+ * stars and smoke are drawn only by day), with the ground glow, on both backends. Also laser hits
+ * (Tag and Thunder, on the ground and on a vehicle), which share the warmed impact batches.
  *
  *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/fireworks-pipelines.mjs
  *
@@ -66,6 +67,19 @@ try {
     })
     await page.waitForTimeout(5000)
     marks.more = await totals()
+    // Laser hits (src/weapons/impact): a Tag and a Thunder hit on the ground and on a vehicle,
+    // with their glint, sparks, flash, light, scorch and shock ring.
+    await page.evaluate(() => {
+      window.__phase = 'hits'
+      const s = window.syn3h, c = s.game.camera, L = window.syn3hNet.lasers
+      const d = c.getWorldDirection(c.position.clone()); d.y = 0; d.normalize()
+      for (const [k, red, onVehicle] of [[0, false, false], [1, true, false], [2, false, true], [3, true, true]]) {
+        const at = c.position.clone().addScaledVector(d, 20 + 6 * k); at.y = s.terrain.heightAt(at.x, at.z) + (onVehicle ? 1 : 0)
+        L.showImpact(at, at.clone().set(0, 1, 0), red, onVehicle)
+      }
+    })
+    await page.waitForTimeout(3000)
+    marks.hits = await totals()
     if (when === 'night') {
       await page.evaluate(() => { window.__phase = 'day comes'; window.syn3h.params.set('sun.timeOfDay', 12) })
       await page.waitForTimeout(3000)
@@ -85,11 +99,12 @@ try {
     const live = await totals()
     const delta = (a, b) => ({ builds: b.builds - a.builds, pipelines: b.pipelines - a.pipelines })
     const idle = delta(marks.start, marks.idle), burst = delta(marks.idle, marks.burst), more = delta(marks.burst, marks.more)
-    const day = marks.day ? delta(marks.more, marks.day) : undefined
+    const hits = delta(marks.more, marks.hits)
+    const day = marks.day ? delta(marks.hits, marks.day) : undefined
     const levelChange = delta(marks.day ?? marks.more, live)
-    for (const w of [burst, more, day]) if (w) built += w.builds + w.pipelines
+    for (const w of [burst, more, hits, day]) if (w) built += w.builds + w.pipelines
     if (!(levelChange.builds + levelChange.pipelines > 0)) { built += 1000; errors.push('the counter saw no build on a level change: not live') }
-    report.push({ when, backend, idle, burst, more, ...(day ? { dayComes: day } : {}), levelChange, errors: errors.slice(0, 3) })
+    report.push({ when, backend, idle, burst, more, hits, ...(day ? { dayComes: day } : {}), levelChange, errors: errors.slice(0, 3) })
     await page.close()
   }
 } finally { await browser.close() }

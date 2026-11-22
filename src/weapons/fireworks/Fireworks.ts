@@ -22,6 +22,7 @@
  * At most MAX_BURSTS are alive at once: the batch holds exactly that many bursts' worth, and a
  * new burst reuses the oldest one's slots. Five hundred stars per burst at High at most.
  */
+import { warmGear } from '../warm'
 import * as T from 'three/webgpu'
 import type { Game } from '../../core/Game'
 import { graphicsLevel } from '../../core/quality'
@@ -33,6 +34,7 @@ import { ParticleBatch } from '../../vehicles/effects/ParticleBatch'
 import { dustSprite } from '../../vehicles/effects/sprites'
 import { vehicleNightAmount } from '../../vehicles/skins/nightReadability'
 import { fireworkShape, type FireworkShape } from '../thunderRules'
+import { nearLens } from '../impact/nearLens'
 
 export const MAX_BURSTS = 6
 /** Stars of the main burst, by graphics level (0 Minimal, 1 Low and Medium, 2 High and up). */
@@ -128,13 +130,19 @@ export class Fireworks {
   private readonly trails: { at: T.Vector3; size: number; delay: number }[] = []
   private readonly p = new T.Vector3()
   private readonly c = new T.Color()
+  private readonly c3 = new T.Color()
+  private readonly c3pos = new T.Vector3()
   private readonly palette = [new T.Color(), new T.Color(), new T.Color()]
   readonly stats = { bursts: 0, stars: 0, last: '' as FireworkShape | '' }
 
   constructor(private readonly game: Game) {
     this.glow = new GroundGlow(game)
     this.rebuild()
+    // Prepared again for each new graphics level, by hand or automatic, not only at entry: a
+    // first burst after a climb from Minimal built its batches in play (warm.ts).
+    this.unwarm = warmGear(game, [], undefined, () => this.precompileMeshes())
   }
+  private readonly unwarm: () => void
 
   /** Bursts alive now (at most MAX_BURSTS). */
   get alive(): number { return this.ends.filter(e => e > this.clock).length }
@@ -188,9 +196,12 @@ export class Fireworks {
     const glitterSpec: SparkSpec = { life: 1.4, width: 0.25 * WIDTH, drag: 3, gravity: 0.15, streak: 0.02, normal: { x: 0, y: 1, z: 0 }, bounce: -1 }
     // While `trailing`, every SMOKE_EVERY-th star also leaves smoke along its path (made below).
     let trailing = false, trailSize = 0
+    // Close to the camera (a burst on your own car), its light is drawn down (nearLens). Measured
+    // to where it bursts: a shell from the ground climbs spec.climb before it does.
+    const near = nearLens(this.game.camera.position.distanceTo(this.c3pos.copy(spec.at).setY(spec.at.y + Math.max(0, spec.climb))))
     const emit = (at: T.Vector3, v: T.Vector3, s: SparkSpec, color: T.Color, delay: number) => {
       if (used >= budget) return
-      this.stars.emit(at, v, s, color, delay); used++
+      this.stars.emit(at, v, s, near < 1 ? this.c3.copy(color).multiplyScalar(near) : color, delay); used++
       // Its daytime twin: the same path, in the colour brought down to a plain, saturated paint.
       const top = Math.max(color.r, color.g, color.b, 1e-3)
       this.dayStars.emit(at, v, s, this.dayColor.setRGB(color.r / top * 0.8, color.g / top * 0.8, color.b / top * 0.8), delay)
@@ -310,8 +321,10 @@ export class Fireworks {
     trailing = false
     const radius = speed / (1.25 * SNAP)
     // The pop: a small sun at the moment of the burst, then a softer bloom the size of the burst.
-    this.flash.emit(top, this.v2.set(0, 0, 0), 0.35, radius * 0.45, radius * 0.6, this.c.setRGB(8, 7.5, 6.8), delay)
-    this.flash.emit(top, this.v2.set(0, 0, 0), 0.6, radius * 0.6, radius * 0.9, this.c.copy(a).multiplyScalar(0.5), delay)
+    // Near the camera the pop is smaller and dimmer too: at full size it was a white disc wider
+    // than the view.
+    this.flash.emit(top, this.v2.set(0, 0, 0), 0.35, radius * 0.45 * near, radius * 0.6 * near, this.c.setRGB(8, 7.5, 6.8).multiplyScalar(near), delay)
+    this.flash.emit(top, this.v2.set(0, 0, 0), 0.6, radius * 0.6 * near, radius * 0.9 * near, this.c.copy(a).multiplyScalar(0.5 * near), delay)
     // Smoke: a soft cloud where it burst, and trails where some of the stars went.
     const cloud = level === 0 ? 8 : 14
     for (let i = 0; i < cloud; i++) puff(this.p.copy(top).add(sphere(i, cloud).multiplyScalar(radius * (0.15 + this.next() * 0.25))), 6 + this.next() * 2, radius * 0.35, radius * 0.05, delay + 0.05)
@@ -368,5 +381,5 @@ export class Fireworks {
     yield this.stars.mesh; yield this.dayStars.mesh; yield this.flash.mesh; yield this.smoke.mesh
     yield* this.glow.precompileMeshes()
   }
-  dispose(): void { this.stars.dispose(); this.dayStars.dispose(); this.flash.dispose(); this.smoke.dispose(); this.glow.dispose() }
+  dispose(): void { this.unwarm(); this.stars.dispose(); this.dayStars.dispose(); this.flash.dispose(); this.smoke.dispose(); this.glow.dispose() }
 }

@@ -181,6 +181,20 @@ export async function runInWorldCheck(ctx: Context, panel: AbortSignal): Promise
       net!.lasers.fireworks.burst({ at, ground: terrain.heightAt(at.x, at.z), climb: 0,
         colors: [new Color(0xff8844), new Color(0x66ccff)], seed: 47 })
     }, 2500)
+    await step('Laser hits', async () => {
+      // A Tag and a Thunder hit on the ground, then on a vehicle (the player's own): every part of
+      // a hit's look (src/weapons/impact), which must build nothing in play.
+      const up = new Vector3(0, 1, 0)
+      for (const red of [false, true]) {
+        const at = place(red ? 1 : 0); at.y -= 2
+        net!.lasers.showImpact(at, up, red, false)
+        await wait(150)
+      }
+      for (const red of [false, true]) {
+        net!.lasers.showImpact(original.object.position.clone().add(new Vector3(0, 1, 0)), up, red, true)
+        await wait(150)
+      }
+    }, 1200)
     await step('Grapple', async () => {
       const cord = game.add(new Bungee(game, { self: () => 1, vehicleOf: () => original,
         idOfBody: () => null, owns: () => false, lagOf: () => 0, wrapSize: () => 0, now: () => game.time,
