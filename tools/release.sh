@@ -40,10 +40,12 @@ cd "$(dirname "$0")/.."
 . tools/cloudflare-token.sh
 . tools/smoke-run.sh
 # A release builds, runs wrangler and two Chromes: hold one machine-wide heavy slot throughout.
-# It also holds new heavy jobs back until it exits: the hold names this PID, which exec keeps
-# through heavy.sh, so the hold lifts by itself when the release ends or dies (tools/heavy.py).
+# It also holds the machine until it exits: the hold names this PID, which exec keeps through
+# heavy.sh, so the hold lifts by itself when the release ends or dies, and says 'running', so
+# heavy.py lets one other job share a slot beside it (tools/heavy.py; tools/ship.sh holds it
+# fully, 'gate', while it waits for the load to fall before starting this).
 if [ -z "${SYN3H_RELEASE_SLOT:-}" ] && [ -x tools/heavy.sh ]; then
-  _hold_root="${SYN3H_HEAVY_ROOT:-/tmp/syn3h-heavy-v2}"; mkdir -p "$_hold_root" && echo "$$" >"$_hold_root/hold"
+  _hold_root="${SYN3H_HEAVY_ROOT:-/tmp/syn3h-heavy-v2}"; mkdir -p "$_hold_root" && printf '%s\nrunning\n' "$$" >"$_hold_root/hold"
   SYN3H_HEAVY_RELEASE=1 SYN3H_RELEASE_SLOT=1 exec tools/heavy.sh env SYN3H_RELEASE_SLOT=1 "$(pwd)/tools/release.sh" "$@"
 fi
 REPO="$(pwd)"
@@ -69,6 +71,21 @@ if ! MILESTONE="$(git describe --exact-match --tags HEAD 2>/dev/null)"; then
   echo "Warning: HEAD is not on a tag (allowed for a dry run only)."
 fi
 COMMIT="$(git rev-parse --short HEAD)"
+# The version this release ships as, first: it is named by the Pacific date, so a train
+# prepared before midnight ships with the next day's number. Resolved before building, so the
+# UI and frozen metadata agree; the dry run, staging and the release all check it here.
+CALVER="$(node tools/release-notes.mjs next)" || fail "could not compute the calendar version"
+export SYN3H_RELEASE_VERSION="$CALVER"
+echo "Version: $CALVER"
+# The notes are published after the release is live, so check now, before anything is built,
+# that the publish tool will accept them: their name, heading, every version-bearing link and
+# the player digest name $CALVER (on 22 November a renamed file still said the day before), and
+# every required section is there. release-notes.mjs check names the fix when they do not.
+node tools/release-notes.mjs check "$CALVER" || fail "the release notes are not for $CALVER (see above); nothing was built"
+NOTES="release-notes/releases/$CALVER.md"
+for _section in Features Fixes Handling Play Performance "Known issues"; do
+  grep -q "^### $_section\$" "$NOTES" || fail "$NOTES has no '### $_section' section"
+done
 if [ -z "$DRY" ] && git rev-parse -q --verify "refs/tags/release-$N" >/dev/null; then
   fail "tag release-$N already exists"
 fi
@@ -89,17 +106,6 @@ if [ -z "$DRY" ] && [ -z "$STUB" ]; then
   tail -1 "/tmp/syn3h-release-$N-r2-preflight.log"
 fi
 
-# Resolve the calendar label before building, so the UI and frozen metadata agree.
-CALVER="$(node tools/release-notes.mjs next)" || fail "could not compute the calendar version"
-export SYN3H_RELEASE_VERSION="$CALVER"
-# The notes are published after the release is live, so check now that the publish tool will
-# accept them: every required section, and the player digest beside them.
-NOTES="release-notes/releases/$CALVER.md"
-[ -f "$NOTES" ] || fail "no release notes at $NOTES; write and commit them before tagging"
-for _section in Features Fixes Handling Play Performance "Known issues"; do
-  grep -q "^### $_section\$" "$NOTES" || fail "$NOTES has no '### $_section' section"
-done
-[ -f "release-notes/player/$CALVER.md" ] || fail "no player digest at release-notes/player/$CALVER.md"
 # Attempt records include rolled-back deployments. Draft against the last accepted
 # production milestone, not the latest attempted release tag.
 PREV="$(awk -F '\t' '$5 == "production" { previous = $2 } END { print previous }' release-notes/history.tsv)"

@@ -1791,9 +1791,14 @@ export class NetClient implements System {
    * estimates start afresh. Once this has been called, the page's visibility alone no
    * longer starts or stops the heartbeat.
    */
-  setPaused(paused: boolean): void {
+  setPaused(paused: boolean, reason: 'user' | 'hidden' | null = null): void {
+    // The room passes host on sooner for a hidden page than for the player's own pause; the
+    // heartbeat says which (FLAG_USER_PAUSE).
+    this.pauseReason = paused ? reason : null
     this.heartbeat.setPaused(paused)
   }
+  /** Why the game is paused, as the pause state reports it; null while running or unknown. */
+  private pauseReason: 'user' | 'hidden' | null = null
 
   /** Fallback for a page that never calls setPaused: a hidden page counts as paused. */
   private onVisibility(): void {
@@ -1803,7 +1808,7 @@ export class NetClient implements System {
   private sendHeartbeat(): void {
     if (!this.connected) return
     const s = this.ctx.player.getState()
-    this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, p: this.canonical(s.p), v: [0, 0, 0], w: [0, 0, 0], paused: true }) as Uint8Array<ArrayBuffer>)
+    this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, p: this.canonical(s.p), v: [0, 0, 0], w: [0, 0, 0], paused: true, userPaused: this.pauseReason === 'user' }) as Uint8Array<ArrayBuffer>)
     this.stats.heartbeats++
   }
 

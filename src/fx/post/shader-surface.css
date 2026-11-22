@@ -7,12 +7,20 @@
 .liquid-glass[data-glass-surface="shader"]::after { opacity: 0; }
 
 /* Keep the native input box fixed. Rasterize the label at its largest size
-   and scale it down around the centre with the same value as the lens. */
-.liquid-glass[data-glass-surface="shader"][data-glass-press="brake"] { transform: none; }
-.liquid-glass[data-glass-surface="shader"][data-glass-press="brake"] > .brake-glass-label {
-  position: absolute; inset: 0; display: grid; place-items: center;
-  grid-template-columns: minmax(0, 1fr); white-space: nowrap;
-  font-size: 134.2857%; line-height: 1; text-shadow: none; pointer-events: none;
+   and scale it down around the centre with the same value as the lens.
+   Every swelling button (GlassPress) gathers its contents into one label, which scales as one. */
+.glass-press-label { display: inline-flex; align-items: center; justify-content: center; gap: inherit; pointer-events: none; }
+.liquid-glass[data-glass-surface="shader"][data-glass-press] { transform: none; }
+/* A round label is rasterised 47/35 larger (134.2857%) and scaled back down by GlassPress, so
+   its box is drawn 47/35 larger too: the button's content box (its width less 4 px padding a
+   side) times 47/35, centred, and its height likewise. Text then wraps at exactly the width it
+   has in plain CSS, so a label lays out the same at rest, pressed, beside a pressed neighbour
+   and in every material; only its scale changes. Left and right: -17.1429% of the button's
+   width plus 4 px x 47/35. Words never break inside (overflow-wrap: normal) as a guard. */
+.liquid-glass.glass-round[data-glass-surface="shader"][data-glass-press] > .glass-press-label {
+  position: absolute; inset: -17.1429% calc(5.3714px - 17.1429%); display: grid; place-items: center;
+  grid-template-columns: minmax(0, 1fr); white-space: normal; overflow-wrap: normal; text-align: center;
+  font-size: 134.2857%; line-height: 1.1; text-shadow: none;
 }
 
 /* The sunk-buggy cue animates these two native DOM layers along with its
@@ -30,34 +38,12 @@ html .syn3h-shell.exploration-ui .world-inspector :is(.wi-card, .wi-ghost)[data-
   box-shadow: none !important;
 }
 
-/* The pinned header covers the rows passing beneath it. Use a plain
-   sticky backing without another backdrop filter inside the card. */
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card[data-glass-surface="shader"] > .wi-head {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-html:where([data-glass-appearance="light"]) .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
-  --s3-ink: #101112;
-  --s3-dim: #18191a;
-  --s3-soft: #18191a;
-  --s3-accent-2: #17191b;
-  --halo-under: none;
-  color: var(--s3-ink);
-  text-shadow: none;
-}
-html:where([data-glass-appearance="light"]) .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .wi-row output {
-  color: var(--s3-ink);
-}
-html:where([data-glass-appearance="light"]) .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card.is-open[data-glass-surface="shader"] > .wi-head {
-  background: rgb(233 233 235);
-}
-
 /* The card supplies the one glass surface. Keep the real colour inputs,
    keyboard outlines and selected states inside it. */
 html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
   --s3-on-glow: none;
-  --card-selection: #e8e8ea;
-  --card-selection-ink: #161618;
+  --card-selection: #44484d;
+  --card-selection-ink: white;
 }
 html[data-game-glass] .syn3h-shell.exploration-ui .world-inspector .wi-card :is(.wi-vehicle-picker, .wi-seg, .wi-swatch, .wi-vehicle-option, .wi-seg button, .liquid-glass) {
   box-shadow: none;
@@ -70,13 +56,11 @@ html[data-game-glass] .syn3h-shell.exploration-ui .world-inspector .wi-card :is(
 }
 html[data-game-glass] .syn3h-shell.exploration-ui .world-inspector .wi-card :is(.wi-vehicle-picker, .wi-seg) {
   border: 0;
-  border-bottom: 1px solid currentColor;
-  border-radius: 0;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] :is(.wi-vehicle-option[aria-checked="true"], .wi-seg button.is-on, .wi-switch button.is-on) {
+html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .wi-switch button.is-on {
   background: var(--card-selection);
   color: var(--card-selection-ink);
-  border-radius: 4px;
+  border-radius: var(--glass-control-radius, 24px);
   box-shadow: none;
 }
 html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] > .wi-head :is(h3, .wi-sum, .wi-x) {
@@ -93,19 +77,13 @@ html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="s
   opacity: 0;
 }
 
-html:where([data-glass-appearance="dark"]) .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
+html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
   --s3-ink: #fff;
-  --s3-dim: #fafafa;
-  --s3-soft: #fafafa;
+  --s3-dim: white;
+  --s3-soft: white;
   --halo-under: none;
   color: var(--s3-ink);
 }
-  /* Native white ink on dark glass over a white field measured 4.29:1.
-     This flat backing draws only under the rows that carry the labels. */
-html:where([data-glass-appearance="dark"]) .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"]:not([data-glass-native-ink]) :is(.wi-row, .wi-group > summary, .wi-label, .wi-sum) {
-  background: rgb(0 0 0 / .065);
-}
-
 /* Standalone HUD controls keep their own labels, cues and keyboard focus. */
 html .syn3h-shell.exploration-ui button[data-glass-surface="shader"] {
   background: transparent;
@@ -113,27 +91,6 @@ html .syn3h-shell.exploration-ui button[data-glass-surface="shader"] {
   border-color: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-}
-
-/* The native secondary glyph cores subtract 102 display levels in light
-   appearance and add 77 in dark appearance on both calibration fields. */
-html .syn3h-shell.exploration-ui .world-inspector [data-glass-surface="shader"][data-glass-native-ink] {
-  --s3-ink: black;
-  --card-selection: white;
-  --card-selection-ink: black;
-}
-html .syn3h-shell.exploration-ui .world-inspector [data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
-  color: #666;
-  mix-blend-mode: difference;
-}
-html:where([data-glass-appearance="dark"]) .syn3h-shell.exploration-ui .world-inspector [data-glass-surface="shader"][data-glass-native-ink] {
-  --s3-ink: white;
-  --card-selection: rgb(192 192 203 / .47);
-  --card-selection-ink: white;
-}
-html:where([data-glass-appearance="dark"]) .syn3h-shell.exploration-ui .world-inspector [data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
-  color: #4d4d4d;
-  mix-blend-mode: plus-lighter;
 }
 
 /* Body styles on the rail are more specific than the shared glass button. */
@@ -157,14 +114,10 @@ html .syn3h-shell .gear-selector .gs-drum:has(> [data-glass-surface="shader"]) {
 html .syn3h-shell .gs-drum .gs-item[data-glass-surface="shader"] { opacity: 1 !important; }
 html .syn3h-shell .gs-drum .gs-item.is-active[data-glass-surface="shader"] .gs-text { font-weight: 700; }
 
-:where(html[data-glass-appearance="light"]) [data-glass-surface="shader"] { --button-glass-ink: black; }
-:where(html[data-glass-appearance="dark"]) [data-glass-surface="shader"] { --button-glass-ink: white; }
-[data-glass-surface="shader"][data-glass-label="black"] { --button-glass-ink: black; }
-[data-glass-surface="shader"][data-glass-label="white"] { --button-glass-ink: white; }
 :is(button, input)[data-glass-surface="shader"],
 :is(button, input)[data-glass-surface="shader"] :is(span, kbd),
 input[data-glass-surface="shader"]::placeholder {
-  color: var(--button-glass-ink) !important;
+  color: white !important;
   text-shadow: none !important;
 }
 
@@ -176,9 +129,9 @@ html #lobby-settings[data-glass-surface="shader"] {
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  --s3-ink: #111;
-  --s3-dim: #18191a;
-  --s3-soft: #18191a;
+  --s3-ink: white;
+  --s3-dim: white;
+  --s3-soft: white;
   --halo-under: none;
   color: var(--s3-ink);
   text-shadow: none;
@@ -195,20 +148,9 @@ html #lobby-settings[data-glass-surface="shader"] :is(.wi-group, .wi-row, .wi-se
   box-shadow: none;
 }
 html #lobby-settings[data-glass-surface="shader"] button.is-on {
-  color: #161618;
-  background: #e8e8ea;
+  color: white;
+  background: #44484d;
 }
-html:where([data-glass-appearance="dark"]) #lobby-settings[data-glass-surface="shader"] { --s3-ink: white; --s3-dim: #fafafa; --s3-soft: #fafafa; }
-
-html #lobby-settings[data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
-  color: #666;
-  mix-blend-mode: difference;
-}
-html:where([data-glass-appearance="dark"]) #lobby-settings[data-glass-native-ink] :is(.wi-label, .wi-sum, small) {
-  color: #4d4d4d;
-  mix-blend-mode: plus-lighter;
-}
-
 @media (max-width: 700px), (max-height: 500px) and (pointer: coarse) {
   /* World names and the version are DOM siblings above the galaxy canvas. */
   html .syn3h-shell:has(#lobby-settings[data-glass-surface="shader"]) .galaxy-ui {
@@ -219,12 +161,22 @@ html:where([data-glass-appearance="dark"]) #lobby-settings[data-glass-native-ink
 /* An opted-in device can still shed the entire surface layer. */
 html:not([data-game-glass]) .wi-group[data-group="Glass"],
 .syn3h-shell:not([data-lobby-glass]) .lobby-settings .wi-card[data-section="glass"] .wi-row:not(.glass-material-row) { display: none; }
-[data-glass-surface="shader"]:is(button:active, button.held):not([data-glass-press="brake"]) { scale: var(--glass-extra-scale, none); }
+[data-glass-surface="shader"]:is(button:active, button.held):not([data-glass-press]) { scale: var(--glass-extra-scale, none); }
 /* Keep the extra action in a trailing column only while the row is edited. */
 .syn3h-shell .wi-row:has(> .glass-setting-reset) { grid-auto-flow: column; grid-auto-columns: max-content; }
 .syn3h-shell.exploration-ui .world-inspector .wi-row > button.glass-setting-reset {
-  appearance: none; border: 0; border-radius: 0; background: transparent; box-shadow: none;
-  min-width: 0; min-height: 24px; padding: 0 2px; font: inherit; color: inherit;
-  text-transform: none; letter-spacing: normal; text-decoration: underline;
+  appearance: none; border: 0; border-radius: var(--glass-control-radius, 24px); background: transparent; box-shadow: none;
+  min-width: 0; min-height: 28px; padding: 0 10px; font: inherit; color: inherit;
+  text-transform: none; letter-spacing: normal; text-decoration: none;
 }
 .syn3h-shell .wi-row > .glass-setting-reset[hidden] { display: none; }
+/* A rail theme can frost Search and the two icons at tablet widths.
+   Once their surfaces are in the framebuffer, there is no DOM blur to apply. */
+html .syn3h-shell.exploration-ui > .world-inspector .rail-command > [data-glass-surface="shader"],
+html .syn3h-shell.exploration-ui > .world-inspector > .panels-close[data-glass-surface="shader"] {
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
+html .syn3h-shell.exploration-ui dialog.lobby-sheet button[data-glass-surface="shader"] {
+  background: transparent; border-color: transparent; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none; color: white;
+}

@@ -10,7 +10,13 @@ import { waterUnderwater } from '../world/water/underwater'
 const number = (id: string, label: string, value: number, min: number, max: number, step = 0.1) => defineParam({ id: `camera.${id}`, label, group: 'Camera', scope: 'client', default: value, min, max, step })
 const boolean = (id: string, label: string, value: boolean) => defineParam({ id: `camera.${id}`, label, group: 'Camera', scope: 'client', default: value })
 // _Runtime.prefab:8755-8795, terra.buggy.prefab:586, CoreCamera.cs:177.
-export const camDistance = number('distance', 'Orbit distance', 6.25, 0, 25, 0.25)
+export const camDistance = number('distance', 'Orbit distance', 6.25, 0, 32, 0.25)
+/**
+ * The farthest the wheel or a pinch takes the chase and orbit cameras from a ground vehicle
+ * (zoomLimits): 14 until 22 November 2026, when the owner asked to pinch "a bit further" away.
+ * The tank's limit is 2 m further and the jet's 8 m, as before.
+ */
+export const camZoomFar = number('zoomFar', 'Farthest zoom', 18, 8, 24, 0.5)
 export const camZoomSpeed = number('zoomSpeed', 'Zoom speed', 0.4, 0.05, 2, 0.05)
 /** One notch is 100 CSS pixels or one line/page; cap large wheel events. */
 export function cameraWheelNotches(deltaY: number, deltaMode: number): number {
@@ -64,9 +70,10 @@ export interface CameraVehicle extends Vehicle {
  * read within the next one's limits.
  */
 export function zoomLimits(kind: string | undefined): readonly [number, number] {
-  if (kind === 'jet') return [3, 22]
-  if (kind === 'tank') return [2.5, 16]
-  return [1.5, 14]
+  const far = camZoomFar.value
+  if (kind === 'jet') return [3, far + 8]
+  if (kind === 'tank') return [2.5, far + 2]
+  return [1.5, far]
 }
 /** The distance chosen this session: kept across reloads in this tab (sessionStorage), not for good. */
 const DISTANCE_KEY = 'syn3h.cameraDistance'

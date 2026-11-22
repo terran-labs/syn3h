@@ -34,10 +34,10 @@
 .syn3h-shell.has-touch .chat-strip { left: var(--edge-left); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 250px); width: calc(100% - 84px); font-size: 12.5px; }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .syn3h-shell.has-touch .chat-strip { left: var(--edge-left); top: 150px; bottom: auto; width: min(280px, 33vw); }
-  .syn3h-shell.has-touch .chat-strip.is-left-hand { left: max(76px, calc(env(safe-area-inset-left) + 64px)); }
+  .syn3h-shell.has-touch .chat-strip.is-left-hand { left: max(76px, calc(var(--safe-left) + 64px)); }
 }
 /* While the sidebar is open the strip is not needed: the card is there. */
-.syn3h-shell:has(.world-inspector:not([hidden]) .wi-card[data-section="chat"].is-open) .chat-strip { display: none; }
+.syn3h-shell:has(.world-inspector:not([hidden], .lobby-settings) .wi-card[data-section="chat"].is-open) .chat-strip { display: none; }
 
 /* "Show chat" off: no card. */
 .syn3h-shell .world-inspector .wi-card[data-section="chat"].is-off { display: none; }
@@ -69,14 +69,14 @@
 .chat-log .chat-line:hover .chat-time, .chat-log .chat-line:focus-within .chat-time, .chat-log .chat-line.show-time .chat-time { display: inline; }
 .chat-status { margin: 0; padding: 4px 2px; color: var(--s3-dim, #e2e2e2); font-size: 12px; }
 .chat-status[hidden] { display: none; }
-.chat-form { display: flex; align-items: center; gap: 6px; padding: 6px 0 4px; border-top: 1px solid var(--s3-line-quiet, rgb(232 232 232 / .18)); }
+.chat-form { display: flex; align-items: center; gap: 6px; padding: 6px 0 4px; border-top: 1px solid transparent; border-image: var(--rule) 1; }
 :root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-field { flex: 1; min-width: 0; min-height: 40px; padding: 4px 2px; font: 400 14px 'Barlow', sans-serif; }
 :root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-send { min-height: 40px; padding: 0 16px; font: 500 12px 'Barlow', sans-serif; letter-spacing: .06em; cursor: pointer; }
 /* A finger: 44 px targets, and 16 px text, below which Safari zooms the page into the field. */
 :root .syn3h-shell.exploration-ui.has-touch .world-inspector .chat-form :is(.chat-field, .chat-send) { min-height: 44px; }
 :root .syn3h-shell.exploration-ui.has-touch .world-inspector .chat-form .chat-field { font-size: 16px; }
 @media (pointer: coarse) { :root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-field { font-size: 16px; } }
-.chat-people { padding: 4px 2px 6px; border-bottom: 1px solid var(--s3-line-quiet, rgb(232 232 232 / .18)); max-height: 160px; overflow-y: auto; }
+.chat-people { padding: 4px 2px 6px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; max-height: 160px; overflow-y: auto; }
 .chat-people[hidden] { display: none; }
 .chat-people ul { list-style: none; margin: 0; padding: 0; }
 .chat-people li { display: flex; align-items: center; gap: 4px; padding: 3px 0; }
@@ -84,7 +84,7 @@
 .chat-people-note { margin: 0 0 4px; color: var(--s3-soft, #cfcfcf); font-size: 11.5px; }
 .syn3h-shell .chat-people .chat-mute[aria-pressed=true] { border-color: var(--s3-accent-2, #fbfbfb); color: var(--s3-accent-2, #fbfbfb); }
 /* The overlay switch: "Show new chat over the game" (overlayPreference.ts). */
-.chat-foot { padding: 4px 0 2px; border-top: 1px solid var(--s3-line-quiet, rgb(232 232 232 / .18)); font-size: 12px; color: var(--s3-dim, #e2e2e2); }
+.chat-foot { padding: 4px 0 2px; border-top: 1px solid transparent; border-image: var(--rule) 1; font-size: 12px; color: var(--s3-dim, #e2e2e2); }
 
 /* A name's mute menu, beside the name, over the panel. */
 .chat-menu { position: fixed; z-index: 70; padding: 4px; border: 1px solid var(--s3-line, rgb(232 232 232 / .42)); border-radius: 8px; background: rgb(12 12 13 / .96); pointer-events: auto; }

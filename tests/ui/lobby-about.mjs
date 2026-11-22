@@ -40,10 +40,22 @@ async function measureBack(locator, mode, id) {
  await writeFile(`${out}/${mode}-back-${id}.json`, JSON.stringify(diagnostic, null, 2))
  return diagnostic.projected
 }
-for(const mode of ['desktop','phone','short-phone']){
+// What a finger gets: points 22 px above and below the button's centre (and beside it, when it is
+// narrower than 44 px) must land on the button itself, not on whatever is painted around it.
+async function tappable(locator, id) {
+ const hits = await locator.evaluate((el) => {
+  const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2
+  const points = [[cx, cy - 22], [cx, cy + 22], [cx, cy], ...(r.width < 44 ? [[cx - 22, cy], [cx + 22, cy]] : [])]
+  // A finger cannot press beyond the screen: a target at an edge runs to it.
+  return points.map(([x, y]) => [Math.min(innerWidth - 1, Math.max(0, x)), Math.min(innerHeight - 1, Math.max(0, y))]).map(([x, y]) => { const hit = document.elementFromPoint(x, y); return { x: Math.round(x), y: Math.round(y), ok: !!hit && (hit === el || el.contains(hit)), hit: hit ? hit.tagName + '.' + [...hit.classList].join('.') : null } })
+ })
+ assert.ok(hits.every((h) => h.ok), `${id}: a finger gets 44 px ${JSON.stringify(hits)}`)
+}
+const IPAD = { 'ipad-portrait': { viewport: { width: 744, height: 1133 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }, 'ipad-landscape': { viewport: { width: 1133, height: 744 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } }
+for(const mode of ['desktop','phone','short-phone','ipad-portrait','ipad-landscape']){
  const browser=await(mode==='desktop'?chromium.launch({channel:'chrome',headless:true}):webkit.launch())
  try{
-  const context=await browser.newContext(mode==='desktop'?{viewport:{width:1440,height:1000}}:{...devices['iPhone 14'],...(mode==='short-phone'?{viewport:{width:390,height:560}}:{})})
+  const context=await browser.newContext(IPAD[mode]??(mode==='desktop'?{viewport:{width:1440,height:1000}}:{...devices['iPhone 14'],...(mode==='short-phone'?{viewport:{width:390,height:560}}:{})}))
   const page=await context.newPage(), errors=[]; page.on('pageerror',e=>errors.push(e.message))
   await page.goto(`${process.env.SYN3H_URL}?room=about-${mode}-${Date.now()}`)
   await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
@@ -82,7 +94,7 @@ for(const mode of ['desktop','phone','short-phone']){
   console.log(JSON.stringify({mode,geometry}))
   assert.ok(geometry.rect.x>=0&&geometry.rect.right<=geometry.viewportWidth&&geometry.rect.bottom<=geometry.viewportHeight,'the sheet fits the viewport')
   // A phone held upright gives it the width; on its side the buttons keep their column beside it.
-  if(mode!=='desktop')assert.ok(geometry.rect.width>=(geometry.viewportHeight>geometry.viewportWidth?geometry.viewportWidth-24:geometry.viewportWidth*0.6),'on a phone the sheet takes the width it can')
+  if(mode==='phone'||mode==='short-phone')assert.ok(geometry.rect.width>=(geometry.viewportHeight>geometry.viewportWidth?geometry.viewportWidth-24:geometry.viewportWidth*0.6),'on a phone the sheet takes the width it can')
   assert.ok(geometry.scrollWidth<=geometry.viewportWidth,'no horizontal document overflow')
   assert.equal(await about.getByRole('tab').count(),0,'no tabs')
   assert.equal(await about.locator('.panel-back').count(),0,'no Back button')
@@ -127,11 +139,37 @@ for(const mode of ['desktop','phone','short-phone']){
   await page.evaluate(()=>document.activeElement?.blur());await page.keyboard.press('j')
   const invite=page.locator('.join-view'), back=invite.locator('.join-close');await invite.waitFor({state:'visible'})
   assert.equal(await back.evaluate(el=>el===document.activeElement),true)
-  const r=await measureBack(back,mode,'invite');assert.ok(r.height>=44,'invite: projected height >=44');if(mode==='desktop')assert.ok(r.width>=160,'invite: projected width >=160')
+  // Invite's Back is an inner action (.panel-action, the owner's 30 px look): on touch a finger gets
+  // 44 px around it; with a mouse it is the painted button, which must be shown and clickable.
+  const r=await measureBack(back,mode,'invite')
+  if(mode==='desktop')assert.ok(r.width>0&&r.height>0&&await back.evaluate(el=>{const b=el.getBoundingClientRect();return document.elementFromPoint(b.left+b.width/2,b.top+b.height/2)?.closest('button')===el}),'invite: Back shown and clickable')
+  else await tappable(back,`${mode} invite Back`)
   await page.screenshot({path:`${out}/${mode}-invite.png`});await page.keyboard.press('Enter');await invite.waitFor({state:'hidden'})
   backPaths.push({id:'invite',width:r.width,height:r.height})
   await page.keyboard.press('Escape');await page.locator('.lobby-panels').waitFor({state:'hidden'})
   assert.deepEqual(errors,[]);report.push({mode,canvas,geometry,backPaths,errors});console.log(JSON.stringify(report.at(-1)))
+ }finally{await browser.close()}
+}
+// The driving notice's two actions on a 390 x 844 phone: a slow-frames offer, raised in place.
+{
+ const browser=await webkit.launch()
+ try{
+  const page=await(await browser.newContext({...devices['iPhone 14'],viewport:{width:390,height:844}})).newPage(), errors=[]; page.on('pageerror',e=>errors.push(e.message))
+  await page.goto(`${process.env.SYN3H_URL}?room=about-notice-${Date.now()}`)
+  await page.waitForFunction(()=>window.syn3h?.shell&&document.documentElement.dataset.boot==='done',null,{timeout:150000})
+  await page.evaluate(()=>{syn3h.params.set('bots.count',0);syn3h.shell.play(true)})
+  await page.waitForFunction(()=>syn3h.shell.playing&&!syn3h.shell.transitioning,null,{timeout:150000})
+  await page.evaluate(()=>{const panel=syn3h.shell.performancePanel,render=panel.render.bind(panel),offer={level:3,targetLevel:2,observedFps:34,fewerBots:false,bots:0};panel.render=s=>render({...s,recommendation:offer});render({...(panel.snapshot??{visible:false}),recommendation:offer})})
+  const actions=page.locator('.drive-notices .performance-recommendation button.panel-action:visible')
+  await actions.first().waitFor({state:'visible',timeout:10000})
+  const n=await actions.count(); assert.ok(n>=2,`notice: two actions shown (${n})`)
+  for(let i=0;i<n;i++) await tappable(actions.nth(i),`notice ${await actions.nth(i).innerText()}`)
+  // Each action's hit area (46 px tall, at least 44 px wide, centred) stays clear of its neighbours'.
+  const areas=await actions.evaluateAll(els=>els.map(el=>{const r=el.getBoundingClientRect(),w=Math.max(r.width,44),h=Math.max(r.height,46),cx=r.left+r.width/2,cy=r.top+r.height/2;return{l:cx-w/2,r:cx+w/2,t:cy-h/2,b:cy+h/2,painted:Math.round(r.height)}}))
+  for(const a of areas)assert.ok(a.painted<=32,`notice: the painted action keeps its look (${a.painted} px)`)
+  for(let i=0;i<areas.length;i++)for(let j=i+1;j<areas.length;j++){const a=areas[i],b=areas[j];assert.ok(!(a.l<b.r&&a.r>b.l&&a.t<b.b&&a.b>b.t),`notice: hit areas ${i} and ${j} do not overlap ${JSON.stringify([a,b])}`)}
+  await page.screenshot({path:`${out}/phone-notice.png`})
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({notice:'ok',actions:n}))
  }finally{await browser.close()}
 }
 await writeFile(`${out}/report.json`,JSON.stringify(report,null,2))

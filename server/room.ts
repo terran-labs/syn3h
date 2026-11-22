@@ -216,6 +216,23 @@ const BOT_CONTEST_SPEED = 2
 /** A bot the host has not updated for this long is gone (bot count lowered, or no host). */
 const BOT_EXPIRY_MS = 5000
 /**
+ * The host simulates the bots, so a host whose simulation has stopped this long passes host
+ * to a guest who is playing; otherwise every guest watches the bots freeze, and the room only
+ * notices when the connection goes silent (SILENT_MS, three minutes). Stopped means its states
+ * are flagged paused (src/net/PausedHeartbeat.ts: the game loop is stopped by the player's own
+ * pause or a hidden page; see HOST_USER_PAUSE_MS for the former) or it has sent no state at all
+ * (a frozen or stalled page). Opening Settings or running the performance check keeps the loop
+ * and its states running, so they do not count. Shorter than BOT_EXPIRY_MS, so the bots move to
+ * the new host before they expire.
+ */
+const HOST_AWAY_MS = 3000
+/**
+ * The same for a host stopped by its own pause (FLAG_USER_PAUSE): long enough to take a
+ * screenshot or answer the door without losing the room's lock, settings and mode. Its bots
+ * stand still meanwhile. Infinity would keep host through any user pause.
+ */
+const HOST_USER_PAUSE_MS = 20_000
+/**
  * In tag, "it" moves on when its holder has been away this long (phone locked, tab hidden,
  * connection gone quiet). Otherwise one person putting their phone down stops the game for
  * the whole room: a parked player cannot be rammed, and never reports being tagged.
@@ -326,6 +343,7 @@ export class Room {
     this.onPersist = opts.onPersist
     this.setDefaults()
     this.activeAt = this.now()
+    this.startedAt = this.now()
   }
 
   /** Advance time based rules. Called on every message; transports may also call it on a timer. */
@@ -342,6 +360,7 @@ export class Room {
     this.tickHeld(this.now())
     this.tickIdle(this.now())
     this.tickTag(this.now())
+    this.tickHost(this.now())
     this.tickKoth(this.now())
     this.tickRace()
   }
@@ -1745,6 +1764,48 @@ export class Room {
 
   /** Server ms since which the player who is "it" has been away, or 0 while present. */
   private itAwaySince = 0
+
+  /** Server ms since which the current host's states have been flagged paused, or 0. */
+  private hostPausedSince = 0
+  /** Server ms this room object started (a wake from hibernation starts a new one). */
+  private startedAt = 0
+
+  /**
+   * Pass host on from a host whose simulation has stopped for HOST_AWAY_MS (see there): flagged
+   * paused since then, or no state for that long. A held host is hold()'s business, a host that
+   * has never sent a state (still in the lobby) keeps host, and with nobody playing to take
+   * over the host stays host, also once it is back. The new host is chosen and treated as when
+   * a host leaves (see leave()): the first playing player in join order, the race is cancelled,
+   * the old host's bots go and everyone hears 'host'; the lock, the hill zone and the scores
+   * stand. The old host stays in the room as a guest.
+   */
+  private tickHost(now: number): void {
+    const host = this.host ? this.byId(this.host) : undefined
+    const st = host?.lastState
+    if (!host || !st || host.heldUntil || host.info.bot) { this.hostPausedSince = 0; return }
+    // Paused: from the first paused state seen, so heartbeats arriving paused do not restart
+    // the clock. Otherwise silence: from the last state, the connection's start, or this room
+    // object's start (after a wake from hibernation nobody's last state is known yet).
+    let since: number
+    if (st.paused) since = this.hostPausedSince ||= now
+    else { this.hostPausedSince = 0; since = Math.max(host.lastStateAt, host.joinedAt, this.startedAt) }
+    // The player's own pause gets the longer grace; a hidden page, silence, and an older client's
+    // pause (it does not say which) get the short one.
+    if (now - since <= (st.paused && st.userPaused ? HOST_USER_PAUSE_MS : HOST_AWAY_MS)) return
+    let next: Player | undefined
+    for (const p of this.players.values()) {
+      if (p === host || p.heldUntil || p.info.bot || p.info.play === false) continue
+      if (p.lastState && !p.lastState.paused && now - p.lastStateAt <= RESPONDING_MS) { next = p; break }
+    }
+    if (!next) return
+    logEvent('host_away', { room: this.tag, from: host.info.id, to: next.info.id, reason: st.paused ? (st.userPaused ? 'user_pause' : 'hidden') : 'silent', ms: now - since })
+    this.hostPausedSince = 0
+    // As on leave: a race needs its host's simulation, and the bots belong to the old host.
+    this.cancelRace('Host away')
+    this.host = next.info.id
+    this.clearBots()
+    this.broadcastGame('host', next.info.id)
+  }
 
   /** In tag, pass "it" on from a holder who has been away too long; see IT_ABSENT_MS. */
   private tickTag(now: number): void {

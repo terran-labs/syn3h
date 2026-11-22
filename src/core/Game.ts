@@ -18,6 +18,7 @@ import { installRenderDiagnostics, recordCoveredVehicleDraw, recordEntryWarmIssu
 import { shaderWorkCount } from './diagnosticShaders'
 import { guardDevice, runGuarded, type GuardedRenderer } from './deviceLoss'
 import { snapshotPixelRatio } from './snapshotScale'
+import { ViewFit } from './viewFit'
 import { drawFrame, gpuDeadlineMs, startRenderer, viewState, withDeadline, type PostChain } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
@@ -151,15 +152,26 @@ export class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.shadowMap.enabled = true
 
-    const resize = () => {
-      const w = window.innerWidth
-      const h = window.innerHeight
-      this.renderer.setSize(w, h, false)
-      this.camera.aspect = w / h
-      this.camera.updateProjectionMatrix()
+    // The view follows the canvas's own laid-out size (viewFit.ts): measured on resize and by a
+    // ResizeObserver, and checked before every drawn frame, so a stale size cannot stick.
+    const fit = this.viewFit = new ViewFit(this.renderer, this.camera, new THREE.Vector2())
+    const measure = () => {
+      const { clientWidth, clientHeight } = this.canvas
+      if (clientWidth > 0 && clientHeight > 0) fit.measure(clientWidth, clientHeight)
+      else fit.measure(window.innerWidth, window.innerHeight)
     }
-    window.addEventListener('resize', resize)
-    resize()
+    // Resize events come before the frame is drawn, so sizing here never shows a cleared canvas.
+    window.addEventListener('resize', () => { measure(); fit.fit() })
+    if (typeof ResizeObserver !== 'undefined') {
+      // Reported after layout, once the rotation has settled. Only recorded while the loop runs:
+      // the next frame applies it just before it draws. A stopped loop applies and redraws here.
+      new ResizeObserver(entries => {
+        const box = entries[entries.length - 1]?.contentRect
+        if (box) fit.measure(box.width, box.height)
+        if (this.paused && fit.fit()) this.redrawPaused()
+      }).observe(this.canvas)
+    }
+    measure(); fit.fit()
     // Without physics there is no game: stop the one loop already running (the display probe)
     // and let the failure reach the page, which asks for a reload. Nothing else has started.
     try { await timeStartup('wait for physics after the renderer', () => physics) } catch (error) { this.quality.dispose(); throw error }
@@ -223,6 +235,7 @@ export class Game {
 
   private started = false
   private paused = false
+  private viewFit?: ViewFit
   /** True while the loop is stopped because nobody can see the page. */
   get isPaused(): boolean { return this.paused }
 
@@ -379,6 +392,10 @@ export class Game {
     // A lost device draws nothing: no render, no buffer, no pipeline (see frame()).
     const draw = !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
     if (draw) {
+      // Before drawing: a size that changed without a usable resize event is applied here, and a
+      // render scale the governor chose last frame (QualityController.deferPixelRatio).
+      this.quality.takePixelRatio()
+      this.viewFit?.fit()
       const watchingDraw = startupTiming.firstWorldFrameMs === undefined ||
         (view === 'playing' && startupTiming.playRequestMs !== undefined && startupTiming.firstPlayableFrameMs === undefined)
       const previousDraws = watchingDraw ? this.renderer.info.render.drawCalls : 0
@@ -407,6 +424,7 @@ export class Game {
       // "Applying" veil (takeCoveredClimb). The climb back in play to a level just dropped from
       // (canClimbVisible) still happens inside frame(): its pipelines are alive.
       this.quality.holdPendingClimb = true
+      this.quality.deferPixelRatio = true
       this.quality.frame(metrics, view === 'playing')
       if (view !== 'playing' && !this.climbJob && this.quality.pendingClimbReady() && !this.holdDraws &&
         !(this.renderer as unknown as GuardedRenderer)._isDeviceLost) this.climbJob = this.takeCoveredClimb()
@@ -599,7 +617,8 @@ export class Game {
       progress('Drawing the new level')
       if (batch) slice(() => this.prepareClimbedLevel({ systems: false, fleet: true }, run(false)))
       await frame(); check()
-      slice(() => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16))
+      // The first presented frame at the new level: its render scale is applied with it (deferPixelRatio).
+      slice(() => { this.quality.takePixelRatio(); drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16) })
       await this.finishWorldFrame(stop.signal, check, false)
       check()
       // Ordinary frames behind the veil until no shader work is left, as a manual change ends.
@@ -679,6 +698,7 @@ export class Game {
         stop.signal.throwIfAborted()
         applied = true
         apply()
+        this.quality.takePixelRatio() // under the veil: the new scale at once
         this.quality.settleCoveredPostBudget()
         await frame()
         await frame() // Let normal system updates adopt the new geometry and effects.

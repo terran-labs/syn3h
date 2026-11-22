@@ -15,7 +15,7 @@
 .welcome-body > * { margin: 0 0 16px; max-width: 100%; }
 .welcome-body > :last-child { margin-bottom: 0; }
 .welcome-body h3 {
-  margin: 40px 0 14px; padding-top: 18px; border-top: 1px solid var(--w-quiet);
+  margin: 40px 0 14px; padding-top: 18px; border-top: 1px solid transparent; border-image: var(--rule) 1;
   font: 600 14px/1.2 'Barlow', sans-serif; letter-spacing: .24em; text-transform: uppercase; color: var(--w-ink);
 }
 .welcome-body p { max-width: 62ch; }
@@ -44,11 +44,58 @@
 .welcome-shot.is-loaded img { opacity: 1; }
 .welcome-shot.is-failed img { opacity: 1; }
 .welcome-shot figcaption { margin-top: 8px; font-size: 13px; line-height: 1.4; color: var(--w-soft); }
-.welcome-hero { margin-top: 4px; }
-.welcome-pair { display: grid; gap: 16px; }
-.welcome-pair .welcome-shot { margin: 0; }
-@container welcome (min-width: 520px) { .welcome-pair { grid-template-columns: 1fr 1fr; } }
 @media (prefers-reduced-motion: reduce) { .welcome-shot img { transition: none; } }
+
+/* The ring (ring.ts), after terranlabs.com's "Syn3h in Action": the front card faces you, one card
+   either side stands half a card back and 0.45 of a card out, turned 40 degrees away, and the rest
+   wait further back, unseen; a turn moves every card one place and each glides there. --w is a
+   card's width. The side cards' outer edges reach about 0.84 w from the centre, so --w is capped
+   at 58 % of the column and everything the ring draws stays inside it, on a phone too; nothing
+   intersects, so no card ever shows through another. The column still cuts at its edges as a
+   backstop; the perspective lives inside, on the stage, so that cut does not flatten it. */
+.welcome-body .welcome-ring {
+  --w: min(58cqi, 420px);
+  display: flex; flex-direction: column; align-items: center; margin: 4px 0 26px; overflow: clip;
+}
+.welcome-ring-stage { width: 100%; padding: 22px 0 18px; perspective: 1500px; perspective-origin: 50% 40%; }
+.welcome-ring-track { position: relative; width: var(--w); aspect-ratio: 16 / 9; margin: 0 auto; padding: 0; list-style: none; transform-style: preserve-3d; }
+.welcome-ring-card {
+  position: absolute; inset: 0; margin: 0;
+  transform: translateX(calc(var(--x, 0) * var(--w))) translateZ(calc(var(--z, 0) * var(--w))) rotateY(var(--ry, 0deg));
+  /* The side cards dim a little; the ones behind them are not seen at all. */
+  opacity: calc(1 - min(1, var(--away, 0) * .42) - max(0, var(--away, 0) - 1) * .16);
+  transition: transform 1.2s cubic-bezier(.22, 1, .36, 1), opacity .8s;
+}
+.welcome-ring-track[data-still] .welcome-ring-card { transition: none; }
+.welcome-ring-card .welcome-shot { width: 100%; height: 100%; margin: 0; }
+.welcome-ring-card .welcome-shot img { height: 100%; border-radius: 10px; box-shadow: 0 18px 44px -14px rgb(0 0 0 / .75); cursor: pointer; }
+.welcome-ring-card[data-front] .welcome-shot img { cursor: default; }
+/* The caption under the ring speaks for the front card; each figure keeps its own for screen readers. */
+.welcome-ring-card figcaption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* The arrows and, between them, the front card's title and caption. The caption keeps room for its
+   title and two lines, so a long one grows into that room and nothing above it moves. */
+.welcome-ring-foot { display: flex; align-items: flex-start; gap: 12px; width: min(100%, 520px); perspective: 600px; }
+.syn3h-shell .welcome-body.welcome-body p.welcome-ring-caption, .welcome-body p.welcome-ring-caption {
+  display: grid; flex: 1; align-content: start; gap: 2px; margin: 0; max-width: none; text-align: center; transform-origin: 50% 0;
+  height: calc(16px * 1.5 + 2px + 14px * 1.4 * 2);
+}
+.welcome-ring-caption strong { font: 500 16px/1.5 'Barlow', sans-serif; color: var(--w-ink); }
+.welcome-ring-caption span { font-size: 14px; line-height: 1.4; color: var(--w-soft); }
+.syn3h-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow {
+  display: grid; place-items: center; flex: none; width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; margin: 0;
+  border: 1px solid var(--w-quiet); border-radius: 50%; background: rgb(255 255 255 / .05); box-shadow: none; color: var(--w-ink); cursor: pointer;
+  transition: background-color .18s, border-color .18s;
+}
+.syn3h-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow::before { content: none; }
+.syn3h-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow:is(:hover, :focus-visible) { background: rgb(255 255 255 / .12); border-color: var(--w-line); }
+.welcome-ring-arrow svg { width: 18px; height: 18px; }
+.welcome-ring-arrow path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* A narrow column: the cards take more of it, and the caption has room for four lines. */
+@container welcome (max-width: 520px) {
+  .syn3h-shell .welcome-body.welcome-body p.welcome-ring-caption, .welcome-body p.welcome-ring-caption { height: calc(16px * 1.5 + 2px + 13.5px * 1.4 * 4); }
+  .welcome-ring-caption span { font-size: 13.5px; }
+}
+@media (prefers-reduced-motion: reduce) { .welcome-ring-track, .welcome-ring-card { transition: none; } }
 
 /* Lists */
 .welcome-body ol, .welcome-body ul { padding: 0; list-style: none; }
@@ -70,7 +117,7 @@
 
 .welcome-gear { display: grid; gap: 4px; }
 @container welcome (min-width: 560px) { .welcome-gear { grid-template-columns: 1fr 1fr; column-gap: 20px; } }
-.welcome-gear li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--w-quiet); }
+.welcome-gear li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start; padding: 10px 0; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
 .welcome-gear svg { width: 26px; height: 26px; margin-top: 1px; fill: none; stroke: var(--w-ink); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .welcome-gear strong { display: block; font-weight: 500; }
 .welcome-gear span { display: block; font-size: 14px; line-height: 1.45; }
@@ -83,7 +130,7 @@
 .welcome-wasd { display: grid; grid-template-columns: repeat(3, 34px); gap: 5px; flex: none; }
 .welcome-wasd kbd { display: grid; place-items: center; height: 30px; margin: 0; padding: 0; min-width: 0; border-radius: 9px; font-size: 12.5px; }
 .welcome-keys { display: grid; gap: 2px; }
-.welcome-keys li { display: grid; grid-template-columns: minmax(96px, auto) 1fr; gap: 12px; align-items: center; padding: 5px 0; font-size: 14px; line-height: 1.4; border-bottom: 1px solid var(--w-quiet); }
+.welcome-keys li { display: grid; grid-template-columns: minmax(96px, auto) 1fr; gap: 12px; align-items: center; padding: 5px 0; font-size: 14px; line-height: 1.4; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
 .welcome-keys li > span { white-space: nowrap; color: var(--w-ink); font-size: 13px; }
 .welcome-keys li > span i { font-style: normal; color: var(--w-soft); font-size: 11px; margin: 0 2px; }
 .welcome-keys kbd:first-child { margin-left: 0; }
@@ -105,7 +152,7 @@
 .welcome-settings li::before { content: ""; position: absolute; left: 0; top: .72em; width: 6px; height: 1px; background: var(--w-line); }
 
 /* The outside links and the licences, carried over from About. */
-.welcome-body .about-links { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--w-quiet); }
+.welcome-body .about-links { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 36px; padding-top: 18px; border-top: 1px solid transparent; border-image: var(--rule) 1; }
 .welcome-body .about-links a { color: var(--w-ink); font-size: 14px; text-decoration: none; border-bottom: 1px solid var(--w-line); }
 .welcome-body .about-links a:hover, .welcome-body .about-links a:focus-visible { border-bottom-color: var(--w-ink); }
 .welcome-body .shell-credits { font-size: 13px; color: var(--w-soft); }

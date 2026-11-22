@@ -6,14 +6,14 @@
 .syn3h-shell .world-inspector .wi-vehicle { display: block; padding: 8px 2px 4px; }
 .syn3h-shell .world-inspector .wi-vehicle-picker {
   display: flex; width: 100%; padding: 3px; gap: 3px; box-sizing: border-box;
-  border: 1px solid var(--s3-line, rgb(211 211 211 / .28)); border-radius: 10px; background: rgb(4 14 24 / .45);
+  border: 1px solid var(--s3-line, rgb(211 211 211 / .28)); border-radius: var(--glass-control-radius, 24px); background: rgb(4 14 24 / .45);
 }
 .syn3h-shell .world-inspector .wi-vehicle-option {
   /* Sized by content, so the longest name (Hovercraft) gets the room it needs. */
   flex: 1 1 auto; min-width: 0; min-height: 44px; margin: 0; padding: 4px 8px; box-sizing: border-box;
   display: flex; align-items: center; justify-content: center; gap: 5px;
   font: inherit; font-size: 13px; letter-spacing: .02em; color: var(--s3-dim, #bababa);
-  background: transparent; border: 1px solid transparent; border-radius: 7px; cursor: pointer;
+  background: transparent; border: 1px solid transparent; border-radius: var(--glass-control-radius, 24px); cursor: pointer;
   transition: background-color .22s ease, color .22s ease, border-color .22s ease, box-shadow .22s ease;
 }
 .syn3h-shell .world-inspector .wi-vehicle-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -36,7 +36,7 @@
 .syn3h-shell .world-inspector .wi-tint { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: nowrap; }
 .syn3h-shell .world-inspector label.wi-swatch {
   display: flex; align-items: center; gap: 8px; width: auto; height: 44px; margin: 0; padding: 0 10px 0 6px;
-  border: 1px solid var(--s3-line-quiet, rgb(211 211 211 / .15)); border-radius: 22px; cursor: pointer;
+  border: 1px solid var(--s3-line-quiet, rgb(211 211 211 / .15)); border-radius: var(--glass-control-radius, 24px); cursor: pointer;
   font-size: 13px; color: var(--s3-dim, #bababa);
 }
 .syn3h-shell .world-inspector label.wi-swatch:hover { border-color: var(--s3-line, rgb(211 211 211 / .28)); color: var(--s3-ink, #efefef); }
@@ -44,7 +44,7 @@
 .syn3h-shell .world-inspector .wi-randomize, .syn3h-shell .world-inspector .wi-name-roll {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; margin: 0 0 0 auto; padding: 0 12px;
   font: inherit; font-size: 13px; color: var(--s3-ink, #efefef); background: rgb(194 194 194 / .08);
-  border: 1px solid var(--s3-line, rgb(211 211 211 / .28)); border-radius: 22px; cursor: pointer;
+  border: 1px solid var(--s3-line, rgb(211 211 211 / .28)); border-radius: var(--glass-control-radius, 24px); cursor: pointer;
 }
 .syn3h-shell .world-inspector .wi-randomize:hover, .syn3h-shell .world-inspector .wi-name-roll:hover { border-color: var(--s3-accent, #c2c2c2); background: rgb(194 194 194 / .16); }
 .syn3h-shell .world-inspector .wi-randomize:active .wi-dice, .syn3h-shell .world-inspector .wi-name-roll:active .wi-dice { transform: rotate(90deg); }
@@ -57,7 +57,7 @@
 .syn3h-shell .world-inspector .wi-name-input {
   flex: 1 1 auto; min-width: 0; height: 40px; margin: 0; padding: 0 10px; box-sizing: border-box; text-align: right;
   font: inherit; font-size: 16px; color: var(--s3-ink, #efefef); background: transparent;
-  border: 1px solid transparent; border-radius: 6px; cursor: text; text-overflow: ellipsis;
+  border: 1px solid transparent; border-radius: var(--glass-control-radius, 24px); cursor: text; text-overflow: ellipsis;
 }
 .syn3h-shell .world-inspector .wi-name-input:hover { border-color: var(--s3-line-quiet, rgb(211 211 211 / .15)); }
 .syn3h-shell .world-inspector .wi-name-input:focus { outline: none; text-align: left; border-color: var(--s3-accent, #c2c2c2); background: rgb(4 14 24 / .55); }

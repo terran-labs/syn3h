@@ -27,17 +27,13 @@
   -webkit-mask-image: linear-gradient(180deg, transparent, #000 28px, #000 calc(100% - 44px), transparent);
   mask-image: linear-gradient(180deg, transparent, #000 28px, #000 calc(100% - 44px), transparent);
 }
-.syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-title { margin: 0 0 24px; padding-right: 32px; font: 500 13px/1.2 'Barlow', sans-serif; letter-spacing: .26em; text-indent: 0; text-transform: uppercase; color: var(--s3-accent); }
+/* The title row is as tall as the X beside it, so the text below starts clear of both. */
+.syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-title { display: flex; align-items: center; min-height: 48px; margin: 0 0 16px; padding-right: 64px; font: 500 13px/1.2 'Barlow', sans-serif; letter-spacing: .26em; text-indent: 0; text-transform: uppercase; color: var(--s3-accent); }
 
-/* One clean X in the upper right corner, and nothing else for closing. */
-.syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-close {
-  position: absolute; right: 12px; top: 10px; width: 48px; height: 48px; min-width: 48px; min-height: 48px; padding: 0;
-  display: grid; place-items: center; border: 0; border-radius: 50%; background: none; box-shadow: none; color: rgb(236 236 236 / .78); cursor: pointer;
-}
-.lobby-sheet-close svg { width: 22px; height: 22px; }
-.lobby-sheet-close path { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
-.syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-close:hover { color: #fff; background: rgb(255 255 255 / .06); }
-.syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-close:focus-visible { color: #fff; outline: 2px solid var(--s3-accent); outline-offset: -4px; }
+/* Close is the shared bare X (.card-close, card-chrome.css). A tap outside and Escape close as well. */
+/* In a sheet it stands in the column's upper right, level with the title (the body's top padding). */
+.syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-close { position: absolute; right: 8px; top: 30px; }
+@media (max-width: 600px), (max-height: 500px) { .syn3h-shell.exploration-ui .lobby-sheet .lobby-sheet-close { top: 22px; } }
 
 /* About's text, as in the in-play guide, without its rules between sections. */
 .syn3h-shell.exploration-ui .lobby-sheet-body:not(.welcome-body) p { font-size: 16px; line-height: 1.6; color: var(--s3-dim); }

@@ -20,8 +20,10 @@
  *     release  (Chaser, Grapple launch, Grapple let go) does nothing while held and presses
  *              the tag control once, for one physics step, on the lift. A tap is a press and a
  *              lift, so it still fires at once.
- * - Cancel: while dragging with any gear but the quick-fire one, a Cancel ring shows diagonally
- *   above Tag, one slot up and one slot toward the middle of the screen. Lifting on it sends nothing: a held charge or carry is dropped through
+ * - Cancel: with any gear but the quick-fire one, a Cancel ring shows diagonally above Tag, one
+ *   slot up and one slot toward the middle of the screen, as soon as the thumb drags or has held
+ *   Tag for CANCEL_SHOW_S (a Thunder charge is often held still; a quick tap shows nothing).
+ *   Lifting on it sends nothing: a held charge or carry is dropped through
  *   the same cancellation the in-play guide uses, and a release shot is never pressed. While the
  *   thumb is on the ring the view stops turning. A system pointercancel cancels the same way.
  */
@@ -30,6 +32,9 @@
 export const TAG_DRAG_THRESHOLD = 8
 /** Share of full tilt, measured radially, that turns nothing. */
 export const TAG_DEAD_ZONE = 0.1
+/** How long Tag is held, seconds, before the Cancel ring shows without a drag. Short enough to
+ * be there by the time a held charge is worth cancelling; long enough that a tap never flashes it. */
+export const CANCEL_SHOW_S = 0.18
 
 export type TagMode = 'stream' | 'hold' | 'release'
 export interface Point { x: number; y: number }
@@ -81,6 +86,8 @@ export class TagStick {
   pointer: number | null = null
   mode: TagMode = 'stream'
   dragged = false
+  /** Seconds Tag has been held, advanced by `frame`. */
+  heldFor = 0
   /** True while the thumb is on the Cancel ring. */
   overCancel = false
   private readonly origin: Point = { x: 0, y: 0 }
@@ -91,13 +98,13 @@ export class TagStick {
   constructor(private readonly effects: TagEffects, private readonly tuning: () => TagTuning) {}
 
   get held(): boolean { return this.pointer !== null }
-  /** The Cancel ring shows while dragging with any gear but the quick-fire one. */
-  get cancellable(): boolean { return this.held && this.dragged && this.mode !== 'stream' }
+  /** The Cancel ring shows, with any gear but the quick-fire one, once Tag is dragged or held a moment. */
+  get cancellable(): boolean { return this.held && this.mode !== 'stream' && (this.dragged || this.heldFor >= CANCEL_SHOW_S) }
 
   /** A touch went down on Tag. `zone` is the Cancel ring, in the same coordinates. */
   down(id: number, x: number, y: number, mode: TagMode, zone: Zone | null): boolean {
     if (this.pointer !== null) return false
-    this.pointer = id; this.mode = mode; this.dragged = false; this.overCancel = false; this.zone = zone
+    this.pointer = id; this.mode = mode; this.dragged = false; this.heldFor = 0; this.overCancel = false; this.zone = zone
     this.origin.x = this.finger.x = x; this.origin.y = this.finger.y = y
     if (mode !== 'release') this.effects.fire(true)
     return true
@@ -107,13 +114,18 @@ export class TagStick {
     if (id !== this.pointer) return
     this.finger.x = x; this.finger.y = y
     if (!this.dragged && Math.hypot(x - this.origin.x, y - this.origin.y) >= TAG_DRAG_THRESHOLD) this.dragged = true
+    this.aimCancel()
+  }
+
+  private aimCancel(): void {
     const z = this.zone
-    this.overCancel = this.cancellable && z !== null && Math.hypot(x - z.x, y - z.y) <= z.r
+    this.overCancel = this.cancellable && z !== null && Math.hypot(this.finger.x - z.x, this.finger.y - z.y) <= z.r
   }
 
   /** Once per rendered frame: turn the view by the stick's rate for `dt` seconds. */
   frame(dt: number): void {
     if (this.pointer === null) return
+    if (dt > 0) { this.heldFor += dt; this.aimCancel() }
     const t = this.tuning()
     if (!this.dragged || this.overCancel || !(dt > 0)) { this.effects.look(0, 0); return }
     aimRate(this.finger.x - this.origin.x, this.finger.y - this.origin.y, t.radius, t.curve, this.rate)
@@ -126,7 +138,7 @@ export class TagStick {
     if (id !== this.pointer) return null
     const cancelled = how === 'cancel' || this.overCancel
     const mode = this.mode
-    this.pointer = null; this.dragged = false; this.overCancel = false; this.zone = null
+    this.pointer = null; this.dragged = false; this.heldFor = 0; this.overCancel = false; this.zone = null
     if (cancelled) {
       if (mode === 'hold') this.effects.cancel()
       else if (mode === 'stream') this.effects.fire(false)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyInput } from '../../src/core/Input'
+import { Input, emptyInput } from '../../src/core/Input'
 import { ACCESSORIES, FLIGHT, FLIP, WINGS, ZORB, accessoriesOf, newAccessoryState } from '../../src/vehicles/accessories'
 import { zorbSpeed } from '../../src/vehicles/zorb'
 
@@ -54,5 +54,20 @@ describe('vehicle accessories', () => {
       (zorbSpeed as { value: number }).value = 0
       expect(ZORB.read({ kind: 'buggy' }, input.state, out).unavailable).not.toBe('')
     } finally { (zorbSpeed as { value: number }).value = before }
+  })
+  it('Zorb on turns the wings off, by key, button or left column, and they read off inside the ball', () => {
+    // Bug: with the wings open, switching Zorb on left WINGS lit (the owner, 22 November 2026).
+    const input = new Input(new EventTarget() as unknown as Window), out = newAccessoryState()
+    input.state.special = true
+    ZORB.toggle(input)
+    expect(input.state.zorb).toBe(true)
+    expect(input.state.special).toBe(false)
+    // A hop inside the ball flips special; the wings still read off.
+    input.state.special = true
+    expect(WINGS.read({ kind: 'buggy', zorbed: true }, input.state, out).on).toBe(false)
+    expect(FLIGHT.read({ kind: 'jet', zorbed: true }, input.state, out).on).toBe(false)
+    // Switching Zorb off leaves the wings as they are; the ball itself clears them (zorb.ts).
+    input.toggleZorb()
+    expect(input.state.zorb).toBe(false)
   })
 })

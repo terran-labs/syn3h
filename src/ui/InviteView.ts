@@ -11,7 +11,7 @@ export class InviteView {
   private count=-1
   constructor(parent:HTMLElement, close:()=>void, copy:()=>void) {
     this.element.className='join-view';this.element.hidden=true;this.element.setAttribute('role','dialog');this.element.setAttribute('aria-modal','true');this.element.setAttribute('aria-label','Join this room')
-    this.element.innerHTML=wordmarkSvg()+'<h1>Join this room</h1><p class="join-room"></p><div class="invite-qr"></div><p class="invite-link"></p><p class="join-count"></p><div><button class="join-copy">Copy invite</button><button class="join-close panel-back" type="button"><span aria-hidden="true">←</span><span>Back · J</span></button></div>'
+    this.element.innerHTML=wordmarkSvg()+'<h1>Join this room</h1><p class="join-room"></p><div class="invite-qr"></div><p class="invite-link"></p><p class="join-count"></p><div><button class="panel-action join-copy">Copy invite</button><button class="panel-action join-close panel-back" type="button"><span aria-hidden="true">←</span><span>Back · J</span></button></div>'
     this.element.querySelector('.join-close')!.addEventListener('click',close);this.element.querySelector('.join-copy')!.addEventListener('click',copy);parent.append(this.element)
   }
   update(url:string,room:string,count:number):void {

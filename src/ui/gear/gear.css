@@ -12,7 +12,7 @@
   --gs-glow: var(--halo-glow, 0 0 6px color-mix(in srgb, var(--s3-accent) 14%, transparent));
   --gs-under: var(--hud-under, var(--halo-under, 0 0 2px var(--s3-panel), 0 1px 7px var(--s3-panel), 0 0 18px var(--s3-panel)));
   position: fixed; z-index: var(--gear-z, 12);
-  left: var(--gear-left, max(20px, calc(env(safe-area-inset-left) + 14px))); top: var(--gear-top, 50%);
+  left: var(--gear-left, max(20px, calc(var(--safe-left) + 14px))); top: var(--gear-top, 50%);
   width: calc(var(--gs-width) + var(--gear-detail-width, 220px)); height: calc(var(--gs-pitch) * var(--gs-slots));
   transform: translateY(-50%); box-sizing: border-box; pointer-events: none;
   color: var(--s3-ink); font: 400 13.5px/1.4 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif;
@@ -51,7 +51,7 @@
   position: absolute; left: 0; top: 50%; width: 100%; height: var(--gs-pitch); min-height: 0; margin: calc(var(--gs-pitch) / -2) 0 0;
   padding: 0 0 0 18px; display: flex; align-items: center;
   transform: translate3d(0, calc(var(--o, 0) * var(--gs-pitch)), 0);
-  transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .22s cubic-bezier(.2,.8,.2,1);
+  transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .22s cubic-bezier(.2,.8,.2,1), color .22s cubic-bezier(.2,.8,.2,1), text-shadow .22s cubic-bezier(.2,.8,.2,1);
   color: var(--s3-dim); background: none; border: 0; border-radius: 999px; box-shadow: none; outline: none;
   font: inherit; letter-spacing: 0; text-align: left; text-shadow: var(--gs-under);
   cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent;
@@ -79,12 +79,28 @@
 }
 .gear-selector .gs-detail > * { margin: 0; }
 .gear-selector .gs-desc { color: var(--s3-dim); font-size: 13px; line-height: 1.4; max-width: 30ch; }
-.gear-selector .gs-status { margin-top: 5px; color: var(--s3-accent-2); font: 500 11px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
-.gear-selector .gs-desc + .gs-status { margin-top: 7px; }
-.gear-selector .gs-level { margin-top: 7px; width: 128px; height: 1px; background: var(--s3-line-quiet); overflow: visible; }
-.gear-selector .gs-level i { display: block; width: 100%; height: 100%; background: var(--s3-accent-2); box-shadow: var(--gs-glow); transform-origin: 0 50%; transition: transform .2s linear; }
+/* Under the selected gear's name (the owner, 21 November 2026): its charge or recharge bar,
+   then its status, on one line that starts where the name starts, a little below it. The meter
+   rides inside the selected row (GearSelector.placeMeter), so it moves with the name as the
+   drum turns; on a change of gear it fades out on the row leaving and in on the row arriving. */
+.gear-selector .gs-meter {
+  position: absolute; left: var(--gs-meter-left, 18px); top: calc(50% + 12px); z-index: 1;
+  display: flex; align-items: center; gap: 8px; white-space: nowrap; pointer-events: none; text-shadow: var(--gs-under);
+}
+.gear-selector .gs-meter.is-arriving { animation: gs-meter-in .22s cubic-bezier(.2,.8,.2,1) both; }
+.gear-selector .gs-meter.is-leaving { animation: gs-meter-out .22s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes gs-meter-in { from { opacity: 0; } }
+@keyframes gs-meter-out { to { opacity: 0; } }
+.gear-selector .gs-meter > * { margin: 0; }
+.gear-selector .gs-status { color: var(--s3-accent-2); font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+/* 2 px under the readouts' own line falloff (--hud-line-under, exploration.css), so it reads
+   as a bar and not as the name's underline over bright sky and snow as well as at night: the
+   track is a dark groove (it shows against sky) with a faint light hairline (it shows against
+   night), and the fill is the light that runs along it. */
+.gear-selector .gs-level { width: 64px; height: 2px; flex: none; border-radius: 1px; background: rgb(0 0 0 / .55); box-shadow: 0 0 0 1px rgb(255 255 255 / .34); filter: var(--hud-line-under, drop-shadow(0 0 1px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .45))); overflow: visible; }
+.gear-selector .gs-level i { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--s3-accent-2); box-shadow: var(--gs-glow); transform-origin: 0 50%; transition: transform .2s linear; }
 .gear-selector .gs-hints { list-style: none; margin: 9px 0 0; padding: 0; display: grid; gap: 5px; }
-.gear-selector .gs-hints li { display: flex; align-items: center; gap: 8px; min-height: 18px; }
+.gear-selector .gs-hints li { display: flex; align-items: center; gap: 8px; min-height: 18px; white-space: nowrap; }
 .gear-selector .gs-keys { display: inline-flex; align-items: center; gap: 3px; }
 .gear-selector kbd {
   display: inline-block; padding: 3px 8px 2px; min-width: 22px; text-align: center;
@@ -103,19 +119,40 @@
    hint show only while the cursor is free (the owner, 17 November 2026). */
 .gear-selector[data-mode=locked] :is(.gs-desc, .gs-index, .gs-hints, .gs-keyhint) { display: none; }
 .gear-selector[data-mode=locked]::before { opacity: .7; }
-.gear-selector[data-mode=free] .gs-keyhint { opacity: .6; }
+.gear-selector[data-mode=free] .gs-keyhint { opacity: .8; }
 
 /* Touch: bigger targets; the action buttons replace key hints. */
 .gear-selector[data-touch] { --gs-pitch: 52px; --gs-width: 180px; --gear-detail-width: 190px; }
 /* Touch has no keys: no number caps and no key hints. */
 .gear-selector[data-touch] :is(.gs-hints, .gs-keyhint, .gs-index) { display: none; }
 @media (max-width: 700px) {
-  .gear-selector { --gs-slots: 3; --gs-width: 164px; --gear-detail-width: 170px; left: var(--gear-left, max(12px, calc(env(safe-area-inset-left) + 10px))); }
+  .gear-selector { --gs-slots: 3; --gs-width: 164px; --gear-detail-width: 170px; left: var(--gear-left, max(12px, calc(var(--safe-left) + 10px))); }
   .gear-selector .gs-desc { font-size: 12px; }
 }
 @media (max-height: 500px) {
   .gear-selector { --gs-slots: 3; top: var(--gear-top, 40%); }
 }
+/* Every touch screen, phone or tablet, either way up (the owner, 21 November 2026: "always
+   appear as it does on iPhone portrait, visually compacted in the upper left"): three thumb
+   sized slots, the drum alone, its top edge on the shared top edge inside the safe area.
+   The description shows only while the panels do (Shell's .is-panels); phones hide the drum
+   then (exploration.css), so on a phone it never shows. It sits under the drum. */
+:root .gear-selector[data-touch] {
+  --gs-slots: 3; --gs-pitch: 38px; --gs-width: 164px; --gear-detail-width: 0px;
+  top: var(--gear-top, var(--edge-top)); transform: none;
+}
+.gear-selector[data-touch] .gs-desc { display: none; }
+/* On touch the drum runs at full strength (outdoors over sky and snow), and small type is thin
+   type: the neighbours draw at least 0.86 of the selected name's size, not 0.76. */
+:root .gear-selector[data-touch] { opacity: 1; }
+.gear-selector[data-touch] .gs-item:not(.is-active) .gs-label { transform: scale(calc(max(var(--s, 1), .86) * var(--fit, 1))); }
+/* Left-handed play mirrors the touch layout (the stick, the thumb grid, the Panels control and
+   the minimap swap sides), and the drum goes with it, to the top right: on a phone on its side
+   the left column has no room for both it and the grid with the Panels control. */
+html[data-touch-hand="left"] .gear-selector[data-touch] { left: auto; right: var(--edge-right); }
+html[data-touch-hand="left"] .syn3h-shell.is-panels .gear-selector[data-touch] .gs-detail { left: auto; right: 0; text-align: right; }
+.syn3h-shell.is-panels .gear-selector[data-touch] .gs-detail { left: calc(var(--gs-drum-left, 8px) + 18px); top: calc(100% + 6px); width: min(30ch, calc(100vw - 2 * var(--edge))); padding: 0; }
+.syn3h-shell.is-panels .gear-selector[data-touch] .gs-desc:not([hidden]) { display: block; font-size: 12.5px; }
 
 /* Extra gear actions on touch: the next column out from the shell's own thumb buttons, the
    same size and on the same two rows (the --thumb-* grid in src/ui/touch-stick.css). The first
@@ -125,12 +162,12 @@
   /* Above the minimap (z 12, later in the page): on a narrow phone the Grapple's column can
      reach the map in the lower left, and a button must never be drawn under it. */
   position: fixed; z-index: var(--gear-actions-z, 13);
-  right: var(--gear-actions-right, calc(max(var(--thumb-margin, 24px), env(safe-area-inset-right)) + var(--gear-thumb-offset)));
+  right: var(--gear-actions-right, calc(max(var(--thumb-margin, 24px), var(--safe-right)) + var(--gear-thumb-offset)));
   bottom: var(--gear-actions-bottom, var(--thumb-base, 30px));
   display: flex; flex-direction: column-reverse; gap: var(--thumb-gap, 12px); pointer-events: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
-html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actions-left, calc(max(var(--thumb-margin, 24px), env(safe-area-inset-left)) + var(--gear-thumb-offset))); }
+html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actions-left, calc(max(var(--thumb-margin, 24px), var(--safe-left)) + var(--gear-thumb-offset))); }
 :root .gear-actions button.gs-action {
   /* Size and type only: the surface is the shared glass button's (.liquid-glass.glass-round). */
   width: var(--thumb-size, 62px); height: var(--thumb-size, 62px); min-height: 0; padding: 0 4px; margin: 0; border-radius: 50%;
@@ -141,4 +178,25 @@ html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actio
 
 @media (prefers-reduced-motion: reduce) {
   .gear-selector, .gear-selector .gs-window, :root .gear-selector .gs-drum button.gs-item, .gear-selector .gs-label, .gear-selector .gs-level i { transition: none; }
+}
+
+/* Every screen, every material stop (the owner, 21 November 2026): floating white text, no pill
+   or button behind any row. The selected gear in full white; the neighbours above and below
+   faded by their ink (--a, GearSelector.pose), not by their opacity, so the dark falloff under
+   their letters (--hud-under, the readouts' own) stays whole and holds them over bright sky.
+   The mask fades only the drum's last few pixels, not half of each neighbour. */
+:root .syn3h-shell .gear-selector .gs-drum {
+  -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
+}
+:root .syn3h-shell .gear-selector .gs-drum button.gs-item:not(.is-active) {
+  color: color-mix(in srgb, var(--s3-ink) calc(var(--a, .66) * 100%), transparent); text-shadow: var(--col-text-under, var(--hud-under));
+}
+
+/* The selected gear's name stands out by its size and full ink; its shadow is the shared
+   floating-text one (--float-under), so it never reads heavier than the rest. Still no plate. Captured, the selector no longer dims as a whole (it did to 84%), which
+   thinned that falloff: the neighbours are already faded by their ink. */
+:root .syn3h-shell.exploration-ui .gear-selector[data-mode=locked] { opacity: 1; }
+:root .syn3h-shell.exploration-ui .gear-selector .gs-drum button.gs-item.is-active {
+  text-shadow: var(--float-under);
 }

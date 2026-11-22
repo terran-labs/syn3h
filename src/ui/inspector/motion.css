@@ -78,14 +78,17 @@
   .syn3h-shell.exploration-ui .world-inspector:not(.lobby-settings) .wi-cards > .wi-card.is-open > .wi-body { flex: none; overflow: visible; }
   .syn3h-shell.exploration-ui .world-inspector:not(.lobby-settings) .wi-cards > .wi-card.is-open > .wi-head {
     position: sticky; top: 0; z-index: 2; border-radius: var(--halo-r, 16px) var(--halo-r, 16px) 0 0;
-    background: rgb(12 12 13 / .94); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    /* A light tint, not the old near-black (.94), which made the bar much darker than the card
+       (the owner, 21 November 2026). Some tint is needed: with none, WebKit drew no blur and
+       rows scrolling under the title read straight through it. */
+    background: rgb(12 12 13 / .35); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
   }
 }
 
 /* The Performance card: [lower] [level, centred] [raise], then Auto and "Reset all", the
    level's preferences to fine-tune, and diagnostics. Hairlines and tokens only, no fills. */
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-level { display: grid; grid-template-columns: var(--wi-hit) minmax(0,1fr) var(--wi-hit); align-items: center; gap: 8px; margin: 10px 0 4px; }
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-level .wi-step { display: grid; place-items: center; width: var(--wi-hit); height: var(--wi-hit); min-height: 0; padding: 0; color: var(--s3-accent-2); background: none; border: 1px solid var(--s3-line); border-radius: var(--s3-radius); box-shadow: none; }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-level .wi-step { display: grid; place-items: center; width: var(--wi-hit); height: var(--wi-hit); min-height: 0; padding: 0; color: var(--s3-accent-2); background: none; border: 1px solid var(--s3-line); border-radius: var(--glass-control-radius, 24px); box-shadow: none; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-level .wi-step:hover:not(:disabled) { border-color: var(--s3-accent-2); background: none; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-level .wi-step:disabled { color: var(--s3-soft); border-color: var(--s3-line-quiet); opacity: .45; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-level .wi-step svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
@@ -94,7 +97,7 @@
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-level-of { color: var(--s3-soft); font-size: 11px; letter-spacing: .06em; }
 /* Auto quality sits on its own line below the stepper, set off by a hairline, so it reads as a
    setting of its own and not as part of choosing the level. */
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-level-tools { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; min-height: var(--wi-hit); margin-top: 8px; padding-top: 4px; border-top: 1px solid var(--s3-line-quiet); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-level-tools { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; min-height: var(--wi-hit); margin-top: 8px; padding-top: 4px; border-top: 1px solid transparent; border-image: var(--rule) 1; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-auto { min-height: var(--wi-hit); padding-right: 4px; font-size: 13.5px; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .performance-quality-detail { margin: -4px 2px 8px; color: var(--s3-soft); font-size: 11px; line-height: 1.35; opacity: .85; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-level-tools button { position: relative; min-height: 30px; padding: 4px 10px; font-size: 11.5px; background: none; border: 1px solid var(--s3-line); box-shadow: none; }

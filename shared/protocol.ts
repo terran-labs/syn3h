@@ -62,6 +62,13 @@ export const FLAG_PAUSED = 8
  * does not draw or collide with the ball.
  */
 export const FLAG_ZORB = 16
+/**
+ * Set with FLAG_PAUSED when the sender's game is stopped by the player's own pause, not by a
+ * hidden page. The room gives a host's own pause a longer grace before passing host on
+ * (server/room.ts, HOST_USER_PAUSE_MS). Older clients never set it, so their paused states
+ * read as a hidden page; older receivers ignore the bit.
+ */
+export const FLAG_USER_PAUSE = 32
 
 /**
  * Layout of a state record. The player id slot is written as 0 by the sender and
@@ -103,6 +110,8 @@ export interface WireState {
   input: WireInput
   /** Heartbeat from a hidden tab: hold still, do not extrapolate. */
   paused?: boolean
+  /** With `paused`: stopped by the player's own pause rather than a hidden page. */
+  userPaused?: boolean
   /** True for a bot state (kind BIN_BOT_STATE). */
   bot?: boolean
 }
@@ -123,7 +132,7 @@ export function encodeState(s: WireState, out?: Uint8Array): Uint8Array {
   dv.setInt8(O_IN + 1, clampAxis(s.input.y))
   dv.setInt8(O_IN + 2, clampAxis(s.input.z))
   dv.setInt8(O_IN + 3, clampAxis(s.input.w))
-  dv.setUint8(O_FLAGS, (s.input.brakes ? FLAG_BRAKES : 0) | (s.input.special ? FLAG_SPECIAL : 0) | (s.input.fire ? FLAG_FIRE : 0) | (s.paused ? FLAG_PAUSED : 0) | (s.input.zorb ? FLAG_ZORB : 0))
+  dv.setUint8(O_FLAGS, (s.input.brakes ? FLAG_BRAKES : 0) | (s.input.special ? FLAG_SPECIAL : 0) | (s.input.fire ? FLAG_FIRE : 0) | (s.paused ? FLAG_PAUSED : 0) | (s.paused && s.userPaused ? FLAG_USER_PAUSE : 0) | (s.input.zorb ? FLAG_ZORB : 0))
   return buf
 }
 
@@ -156,6 +165,7 @@ export function decodeState(data: ArrayBuffer | Uint8Array): WireState | null {
       zorb: (flags & FLAG_ZORB) !== 0,
     },
     paused: (flags & FLAG_PAUSED) !== 0,
+    ...((flags & FLAG_PAUSED) !== 0 && (flags & FLAG_USER_PAUSE) !== 0 ? { userPaused: true } : {}),
     bot: kind === BIN_BOT_STATE,
   }
 }

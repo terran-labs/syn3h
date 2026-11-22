@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run && npm run test:tools",
-    "test:tools": "node --test tools/*.test.mjs tools/*/*.test.mjs",
+    "test:tools": "node --test tools/*.test.mjs tools/*/*.test.mjs && python3 tools/heavy.test.py",
     "server": "tsx server/dev.ts"
   },
   "dependencies": {

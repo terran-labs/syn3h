@@ -71,7 +71,11 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     const recommendationCard=page.locator('.wi-card[data-section=performance]')
     if(!await recommendationCard.evaluate(el=>el.classList.contains('is-open')))await recommendationCard.locator('.wi-head').click()
     await page.locator('.performance-recommendation').scrollIntoViewIfNeeded()
-    assert.equal(await page.locator('.performance-recommendation').evaluate(el=>getComputedStyle(el).position),'static','recommendation occupies its own space in the pinned footer')
+    const centered = await page.locator('.performance-recommendation').evaluate(el => {
+      const r = el.getBoundingClientRect()
+      return !el.closest('.world-inspector') && Math.abs(r.left + r.width / 2 - innerWidth / 2) <= 1
+    })
+    assert.ok(centered, 'the offer floats in the centre independently of the open card')
     await page.screenshot({path:`tests/ui/artifacts/follow-on/${mode}-recommendation.png`})
     assert.match(await page.locator('.performance-recommendation').innerText(),/Running slow at Medium \(20 fps\). Switch to Low\?/)
     assert.match(await page.locator('[data-performance=lower]').innerText(),/^Switch to Low$/)

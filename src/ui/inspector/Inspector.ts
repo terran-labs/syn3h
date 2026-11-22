@@ -1,4 +1,5 @@
-import { glassLabels, liquidEligible, liquidQualityHint } from '../glassMaterial'
+import { defaultTint, glassLabels, liquidEligible, liquidQualityHint } from '../glassMaterial'
+import { CARD_CLOSE } from '../cardClose'
 import { modeChoices } from '../modeAvailability'
 /**
  * The world inspector: every property of the world and of your own settings, in play, as a
@@ -32,8 +33,8 @@ const DICE_GLYPH = '<svg class="wi-dice" viewBox="0 0 16 16" aria-hidden="true" 
  */
 const GLYPH = (d: string) => `<svg class="wi-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`
 const WORLD_ACTIONS = `<div class="wi-world-actions" role="group" aria-label="World actions">`
-  + `<button type="button" data-wi="copy-world" aria-label="Copy world">${GLYPH('M5.5 5.5V3a1 1 0 0 1 1-1H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-2.5M3 5.5h6.5a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z')}<span>Copy</span></button>`
-  + `<button type="button" data-wi="paste-world" aria-label="Paste world">${GLYPH('M5.5 3H4a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1h-1.5M6 2h4v2H6ZM8 6.5v5M5.8 9.4 8 11.6l2.2-2.2')}<span>Paste</span></button>`
+  + `<button type="button" class="panel-action" data-wi="copy-world" aria-label="Copy world">${GLYPH('M5.5 5.5V3a1 1 0 0 1 1-1H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-2.5M3 5.5h6.5a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z')}<span>Copy</span></button>`
+  + `<button type="button" class="panel-action" data-wi="paste-world" aria-label="Paste world">${GLYPH('M5.5 3H4a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1h-1.5M6 2h4v2H6ZM8 6.5v5M5.8 9.4 8 11.6l2.2-2.2')}<span>Paste</span></button>`
   + `<button type="button" data-wi="reset" class="wi-reset" aria-label="Reset world to defaults">${GLYPH('M3 8a5 5 0 1 0 1.5-3.6M3 2.5V5h2.5')}<span>Reset</span></button></div>`
 
 export interface InspectorOptions {
@@ -78,6 +79,8 @@ export interface InspectorOptions {
    * Asked at every change, so turning the phone counts.
    */
   phonePanels?(): boolean
+  /** Phones: the open panel's X closes the panels and goes back to driving, as Close panels did. */
+  closePanels?(): void
   /** A localStorage key: which cards are open is kept there and restored on the next visit. */
   rememberOpen?: string
 }
@@ -131,11 +134,11 @@ export interface ExtraCardOptions {
 interface ExtraCard extends ExtraCardOptions { id: string; card: HTMLElement; summary(): string }
 
 /**
- * A card's header. The x (phones only, src/ui/phone-panels.css) shows while the card is the
- * one panel on screen. The whole header is the button, so the x wears the shared glass
- * (liquid-glass) but is drawn, not a separate target.
+ * A card's header. The whole header is the button that opens and closes the card. On a phone,
+ * while the card is the one panel on screen, the shared X (cardClose.ts) stands at the header's
+ * right as a button of its own and closes the panels (phone-panels.css).
  */
-const CARD_HEAD = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span><span class="wi-x liquid-glass glass-round" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>'
+const CARD_HEAD = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span>'
 /** Phone panels: how long each change between the three states takes (ms). Shorten, never lengthen: this is mid-game. */
 export const PHONE_PANEL_MS = { show: 220, hide: 160, open: 240, back: 200, stagger: 15, staggerCap: 6, ghost: 140, ghostOut: 90 } as const
 
@@ -187,7 +190,7 @@ export class Inspector {
       </div>
       <div class="wi-cards"></div>
       <div class="wi-detail wi-glass" hidden></div>
-      <div class="wi-sheet wi-glass" hidden><strong></strong><textarea spellcheck="false" aria-label="World as JSON"></textarea><div class="wi-actions"><button type="button" data-wi="apply">Paste it in</button><button type="button" data-wi="close">Close</button></div></div>
+      <div class="wi-sheet wi-glass" hidden><strong></strong><textarea spellcheck="false" aria-label="World as JSON"></textarea><div class="wi-actions"><button type="button" class="panel-action" data-wi="apply">Paste it in</button><button type="button" class="panel-action" data-wi="close">Close</button></div></div>
       <p class="wi-status" role="status" aria-live="polite"></p>`
     parent.append(this.element)
     this.tooltip = this.element.querySelector<HTMLElement>('.wi-detail')!
@@ -339,16 +342,16 @@ export class Inspector {
       const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot'
       // The World card copies and pastes the whole world from its action row above; a second,
       // section-only pair here would only be the same thing smaller.
-      if (section.id !== 'world') foot.innerHTML = '<button type="button" data-wi="copy-section">Copy JSON</button><button type="button" data-wi="paste-section">Paste</button>'
+      if (section.id !== 'world') foot.innerHTML = '<button type="button" class="panel-action" data-wi="copy-section">Copy JSON</button><button type="button" class="panel-action" data-wi="paste-section">Paste</button>'
       if (section.id === 'world' && this.options.onSaveWorld) {
-        const save = document.createElement('button'); save.type = 'button'; save.dataset.wi = 'save-world'; save.textContent = 'Save current world'
+        const save = document.createElement('button'); save.type = 'button'; save.className = 'panel-action'; save.dataset.wi = 'save-world'; save.textContent = 'Save current world'
         // Saving a local copy does not edit the shared world, even for a locked guest.
         // Keep native keyboard activation, but do not send Enter/Space to driving input.
         // Keyup still bubbles so a previously held driving key can be released here.
         save.addEventListener('keydown', event => event.stopPropagation())
         foot.append(save)
       }
-      body.append(foot); card.append(head, body); cards.append(card)
+      body.append(foot); card.append(head, this.panelClose(), body); cards.append(card)
       if (open.has(section.id)) this.toggle(card, true)
     }
     // Extra cards are the same elements across rebuilds, so they keep their open state.
@@ -378,7 +381,7 @@ export class Inspector {
     const head = document.createElement('button'); head.type = 'button'; head.className = 'wi-head'; head.dataset.wi = 'toggle'; head.setAttribute('aria-expanded', 'false')
     head.innerHTML = CARD_HEAD; head.querySelector('h3')!.textContent = title
     body.classList.add('wi-body'); body.hidden = true; body.inert = true
-    card.append(head, body)
+    card.append(head, this.panelClose(), body)
     this.extras.set(id, { ...options, id, card, summary })
     // Rebuild so the ids it owns leave their old cards, then place and fill it.
     this.build()
@@ -486,7 +489,7 @@ export class Inspector {
     row.append(label, input)
     if (this.options.rollName && this.options.onRename) {
       const dice = document.createElement('button'); dice.type = 'button'; dice.className = 'wi-name-roll'; dice.innerHTML = DICE_GLYPH
-      dice.setAttribute('aria-label', 'Roll a new name'); dice.title = 'Roll a new name'
+      dice.setAttribute('aria-label', 'Roll a new name'); dice.dataset.tip = 'Roll a new name'
       dice.addEventListener('click', () => { const name = this.options.rollName!(); this.options.onRename!(name); input.value = this.options.playerName?.() ?? name }, { signal: this.abort.signal })
       row.append(dice)
     }
@@ -567,14 +570,15 @@ export class Inspector {
     const param = params.get(def.id)!, choices = choicesOf(def)
     let sync: (value: ParamValue) => void
     if (def.id === 'hud.glass') {
+      // Style: the label at the left and the three named options beside it on the same line
+      // (the owner, 22 November 2026). The pressed option's outline is its only mark, and its own
+      // name the only text tied to it: no slider, no readout repeating it at the row's end.
       label.textContent = def.label
-      const input = document.createElement('input')
-      input.type = 'range'; input.min = '0'; input.max = '3'; input.step = '1'
-      input.setAttribute('aria-label', def.label)
       const hint = document.createElement('small')
       hint.textContent = liquidQualityHint
       const ticks = document.createElement('div')
       ticks.className = 'glass-stops'
+      ticks.setAttribute('role', 'group'); ticks.setAttribute('aria-label', def.label)
       const stops = glassLabels.map((name, index) => {
         const button = document.createElement('button')
         button.type = 'button'; button.textContent = name
@@ -582,20 +586,29 @@ export class Inspector {
         ticks.append(button)
         return button
       })
-      row.classList.add('glass-material-row')
-      row.append(label, input, output, ticks, hint)
+      row.classList.add('glass-material-row', 'glass-style-row')
+      row.append(label, ticks, hint)
       sync = value => {
         const index = Number(value)
-        input.value = String(index)
         stops[0].disabled = !liquidEligible()
         hint.hidden = liquidEligible()
-        output.textContent = glassLabels[index]
-        input.setAttribute('aria-valuetext', glassLabels[index] + (!liquidEligible() ? '. ' + liquidQualityHint : ''))
         stops.forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)))
       }
-      input.oninput = () => {
-        if (input.valueAsNumber || liquidEligible()) params.set(def.id, input.valueAsNumber)
-        sync(param.value)
+    } else if (def.id === 'hud.surfaceCoverage') {
+      row.classList.add('glass-material-row', 'tint-row')
+      const input = document.createElement('input')
+      input.type = 'range'; input.min = '0'; input.max = '100'; input.step = '1'
+      input.setAttribute('aria-label', def.label)
+      label.textContent = def.label
+      input.oninput = () => params.set(def.id, input.valueAsNumber)
+      const reset = document.createElement('button')
+      reset.type = 'button'; reset.className = 'tint-default'; reset.textContent = 'Default'
+      reset.setAttribute('aria-label', 'Restore default tint')
+      reset.onclick = () => params.set(def.id, defaultTint())
+      row.append(label, input, output, reset)
+      sync = value => {
+        input.value = String(value); output.textContent = value + '%'
+        input.setAttribute('aria-valuetext', output.textContent)
       }
     } else if (def.id === sunDayLength.def.id) {
       // Seconds stored, minutes shown, a log slider and the orbit default: its own control.
@@ -795,6 +808,13 @@ export class Inspector {
       else { hold(end); this.glideStop?.() }
     }
     frame = requestAnimationFrame(step)
+  }
+  /** The X an open panel shows on a phone (hidden elsewhere by phone-panels.css). */
+  private panelClose(): HTMLButtonElement {
+    const close = document.createElement('button'); close.type = 'button'; close.className = 'wi-card-close card-close'
+    close.setAttribute('aria-label', 'Close panels'); close.dataset.tip = 'Close panels'; close.innerHTML = CARD_CLOSE
+    close.addEventListener('click', () => this.options.closePanels?.(), { signal: this.abort.signal })
+    return close
   }
   /** Phone panels are on: one card at a time, alone on screen. Not while searching, which opens every card with a match. */
   private get single(): boolean { return !!this.options.phonePanels?.() && !this.element.classList.contains('is-searching') }

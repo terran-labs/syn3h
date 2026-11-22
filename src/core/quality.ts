@@ -1011,6 +1011,21 @@ export class QualityController implements QualitySource {
     if (level !== this.governor.level) { this.governor.reset(level, 'level-drop'); this.lastReason = 'level-drop' }
     this.apply('start')
   }
+  /**
+   * Set by Game. A new render scale resizes the canvas, and a resize clears it: applied here, after
+   * the frame was drawn, Safari showed that cleared canvas for a frame (black flashes on iPhone in
+   * busy scenes, where the governor steps resolution most). The scale waits for the next drawn
+   * frame instead (takePixelRatio), so the resize and the draw happen in the same task.
+   */
+  deferPixelRatio = false
+  private pendingPixelRatio: number | null = null
+  /** Apply a render scale left by apply(); Game calls it just before it draws. */
+  takePixelRatio(): void {
+    if (this.pendingPixelRatio === null) return
+    const ratio = this.pendingPixelRatio
+    this.pendingPixelRatio = null
+    this.renderer?.setPixelRatio(ratio)
+  }
   attachRenderer(renderer: WebGPURenderer) {
     this.renderer = renderer
     // The renderer may fall back after a successful adapter probe, or be forced to WebGL.
@@ -1069,7 +1084,8 @@ export class QualityController implements QualitySource {
     if (qualityLevel.value !== level) this.write(qualityLevel.def.id, level)
     if (this.loading) storageWrite(this.session, LOAD_KEY, String(level))
     this.writePreset()
-    this.renderer?.setPixelRatio(s.pixelRatio)
+    if (this.deferPixelRatio) this.pendingPixelRatio = s.pixelRatio
+    else this.renderer?.setPixelRatio(s.pixelRatio)
     if (this.terrain && (levelChanged || !this.terrainWritten)) { this.terrain.setRenderQuality?.({ level: legacyTier(level), quality: level, drawDistance: budget.drawDistance, detail: budget.detail, groundCover: budget.groundCover }); this.terrainWritten = true }
     effective = { ...s, level, rung: g.rung, rungs: g.ladder.length, auto: g.auto, targetFps: Math.round(1000 / g.targetMs) }
     if(typeof window !== 'undefined')window.dispatchEvent(new CustomEvent('syn3h:quality', { detail: { ...budget, ...effective, budget, reason: this.lastReason } }))

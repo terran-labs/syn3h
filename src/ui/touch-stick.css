@@ -55,7 +55,7 @@ body:has(.syn3h-shell.is-playing .spawn-help:not([hidden])) .touch-controls .tou
 .touch-controls .touch-stick-hint .touch-stick-label {
   position: static; width: auto; text-align: left; white-space: nowrap;
   font: 400 13px/1.2 'Barlow', 'Avenir Next', sans-serif; letter-spacing: .06em;
-  color: color-mix(in srgb, var(--s3-ink) 78%, transparent); text-shadow: 0 1px 3px rgb(0 0 0 / .6);
+  color: color-mix(in srgb, var(--s3-ink) 78%, transparent); text-shadow: var(--float-under, 0 1px 3px rgb(0 0 0 / .6));
 }
 /* Portrait phones: the thumb grid (three columns on the jet) reaches the hint's line, so the
    hint stands above the grid's top row as well as above the map. */
@@ -71,13 +71,13 @@ body:has(.syn3h-shell.is-playing .spawn-help:not([hidden])) .touch-controls .tou
 /* Left-handed play (touch.leftHanded): the stick side, the action buttons, the first-run hint
    and the minimap that sits above the stick all swap sides. Buttons keep their own text
    direction; the grid's columns mirror, so every button keeps its distance from the edge. */
-.touch-controls[data-hand="left"] .touch-actions { right: auto; left: max(var(--thumb-margin), env(safe-area-inset-left)); direction: rtl; }
+.touch-controls[data-hand="left"] .touch-actions { right: auto; left: max(var(--thumb-margin), var(--safe-left)); direction: rtl; }
 .touch-controls[data-hand="left"] .touch-actions button { direction: ltr; }
 .touch-controls[data-hand="left"] .touch-stick-hint { left: auto; right: var(--edge-right); align-items: flex-end; }
 .touch-controls[data-hand="left"] .touch-stick-ghost > span { animation-name: touch-stick-ghost-left; }
 @keyframes touch-stick-ghost-left { 0%, 15%, 100% { transform: none; } 45%, 65% { transform: translate(-14px, -16px); } }
 /* The minimap goes with the stick, to the lower right corner, so it is not under the action
-   buttons. The Panels tab on the right edge sits higher, clear of it. */
+   buttons. The Panels trigger goes with the buttons, above them. */
 html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minimap { left: auto; right: calc(var(--edge-right) - var(--map-ring)); }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .touch-controls[data-hand="left"] .touch-stick-hint { right: var(--edge-right); }
@@ -118,7 +118,7 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
     width: max-content; max-width: calc(100% - var(--edge-left) - var(--edge-right)); padding: 0; text-wrap: balance;
     border-radius: 0; background: none; -webkit-backdrop-filter: none; backdrop-filter: none;
     color: var(--s3-ink, #f4f4f4); font: 500 14px/1.35 'Barlow', 'Avenir Next', sans-serif; letter-spacing: .03em;
-    text-shadow: 0 1px 2px rgb(0 0 0 / .85), 0 0 12px rgb(0 0 0 / .6);
+    text-shadow: var(--float-under, 0 1px 2px rgb(0 0 0 / .85), 0 0 12px rgb(0 0 0 / .6));
   }
   html[data-touch-hand] body:has(.chat-strip > .chat-line:not(.is-leaving), .match-announcement:not([hidden])) .daydream-pill { opacity: 0; }
   /* While the bots drive, the first-run "Drag on the left to drive" hint shares this band and
@@ -130,7 +130,7 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
     bottom: var(--thumb-base);
     /* Centred, so clear of the grid on both sides: the vehicle's columns (--thumb-columns, set
        by TouchControls) plus one for the gear's extra buttons. */
-    max-width: calc(100% - 2 * (max(var(--thumb-margin), env(safe-area-inset-right)) + (var(--thumb-columns, 2) + 1) * (var(--thumb-size) + var(--thumb-gap)) + 12px));
+    max-width: calc(100% - 2 * (max(var(--thumb-margin), var(--safe-right)) + (var(--thumb-columns, 2) + 1) * (var(--thumb-size) + var(--thumb-gap)) + 12px));
   }
 }
 
@@ -182,6 +182,26 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
 /* Labels stay in one type style and wrap inside the circle rather than resize it. */
 .touch-controls .touch-actions button { min-height: 0; padding: 0 4px; line-height: 1.1; white-space: normal; overflow-wrap: anywhere; }
 
+/* Press: every thumb button, the gear's thumb buttons and the Panels control swell under the
+   finger (the owner, 22 November 2026: "make this a consistent behavior everywhere"). At Liquid
+   the shader draws it (src/fx/post/GlassPress.ts) and the button itself stays put. Without the
+   shader (Frost, Flat, or Liquid shed on slow frames) the CSS does the same with a slight
+   overshoot, to 1.14 across: two held neighbours then just meet at the narrowest gap (56 px
+   buttons 8 px apart), so neither covers the other's label. */
+:root { --thumb-press-scale: 1.14; }
+:is(.touch-controls .touch-actions .liquid-glass, .gear-actions > button.liquid-glass):not([data-glass-surface="shader"]),
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle.liquid-glass:not([data-glass-surface="shader"]) {
+  transition: transform .32s cubic-bezier(.3, 1.6, .5, 1), background-color .12s ease-out;
+}
+:is(.touch-controls .touch-actions .liquid-glass, .gear-actions > button.liquid-glass):is(.held, :active):not([data-glass-surface="shader"], :disabled),
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle.liquid-glass:active:not([data-glass-surface="shader"]) {
+  transform: scale(var(--thumb-press-scale)); transition: transform .2s cubic-bezier(.3, 1.6, .5, 1), background-color .06s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.touch-controls .touch-actions .liquid-glass, .gear-actions > button.liquid-glass):is(.held, :active),
+  html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle.liquid-glass:active { transform: none; }
+}
+
 /* The Cancel ring for a held Tag shot: diagonally above the cluster, placed by
    TouchControls.cancelZone. Shown only while Tag is dragged with gear that sends on release;
    lit while the thumb is on it, when lifting sends nothing. */
@@ -203,17 +223,47 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
 .syn3h-shell.has-touch .focus-hud svg [data-reticle] { opacity: 0; transition: opacity .15s ease-out; }
 html[data-touch-aim="on"] .syn3h-shell.has-touch .focus-hud svg [data-reticle] { opacity: 1; transition-duration: .05s; }
 
-/* Landscape phones: the Panels tab (.hud-navigation), centred on the right edge, would end
-   exactly where the thumb grid's top row starts. Stand it on the grid instead, one gap clear,
-   so the two never touch for any vehicle or hand. */
-@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .syn3h-shell.exploration-ui.has-touch .hud-navigation {
-    top: auto; transform: none;
-    bottom: calc(var(--thumb-top) + 12px);
-  }
+/* ---------------------------------------------------------------------------------------
+   The Panels trigger on every touch screen, phone or tablet, either way up (the owner, 21
+   November 2026: "I should never see the Panels button rotated 90 degrees on the right edge of
+   the screen"). It stands on the thumb grid, one gap above TAG and WINGS and as wide as the two
+   (the --thumb-* geometry above), a glass pill with its chevrons and the word Panels. While the
+   panels show it fades out as they grow from it; the stack's own Close panels, at its foot,
+   brings play back (phone-panels.css). Touch is .has-touch (TouchControls.available), with no
+   size query, so no touch screen shows the rotated edge tab (exploration.css). A desktop
+   without touch has no Panels control at all: its panels follow the cursor lock.
+   Every rule starts with `html` to outrank the edge tab's and the themes' rules.
+   --------------------------------------------------------------------------------------- */
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation {
+  top: auto; left: auto; right: max(var(--thumb-margin), var(--safe-right));
+  bottom: calc(var(--thumb-top) + var(--thumb-gap)); width: var(--thumb-pair-width);
+  display: block; transform: none;
+  transition: opacity .14s ease-out .06s, visibility 0s linear 0s;
+}
+html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .hud-navigation { right: auto; left: max(var(--thumb-margin), var(--safe-left)); }
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle {
+  writing-mode: horizontal-tb; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 10px;
+  border-radius: var(--glass-radius, 999px); border-right-width: revert;
+  font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; white-space: nowrap;
+}
+/* The drawn pill is 36 px; the finger gets 44. */
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle::after { content: ""; position: absolute; inset: -4px 0; }
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-glyph { display: none; }
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-label { display: inline; }
+html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-chevrons {
+  display: block; width: 18px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 0 3px rgb(205 205 205 / .45)); transition: translate .2s cubic-bezier(.2,.8,.2,1);
+}
+html .syn3h-shell.exploration-ui.has-touch.is-playing.is-panels .hud-navigation { opacity: 0; visibility: hidden; z-index: 15; pointer-events: none; transition: opacity .12s ease-out, visibility 0s linear .12s; }
+html .syn3h-shell.exploration-ui.has-touch.is-panels .hud-navigation .nav-chevrons { translate: 0 -6px; }
+/* What else stacks above the grid (the portrait status line) stands clear of the trigger. */
+html:has(> body .syn3h-shell.exploration-ui.has-touch.is-playing:not(.is-panels) > .hud-navigation:not([hidden])) { --thumb-above: calc(36px + var(--thumb-gap)); }
+@media (prefers-reduced-motion: reduce) {
+  html .syn3h-shell.exploration-ui.has-touch .hud-navigation, html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-chevrons { transition: none; }
 }
 /* A match announcement (a hill taken, a round won) is the text that matters while it shows:
-   the Panels tab steps out of its way and comes back when it goes. */
+   the Panels trigger steps out of its way and comes back when it goes. */
 .syn3h-shell.has-touch:has(.match-announcement:not([hidden])) .hud-navigation {
   opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s ease-out, visibility 0s linear .2s;
 }
@@ -233,3 +283,17 @@ html[data-touch-aim="on"] .syn3h-shell.has-touch .focus-hud svg [data-reticle] {
 @media (prefers-reduced-motion: reduce) {
   .touch-controls .touch-actions button.is-cued { animation: none; outline: 0; --glass-rim: 1; --glass-sheen: 1; background-color: var(--glass-body-on, rgb(255 255 255 / .18)); filter: drop-shadow(0 0 9px rgb(255 255 255 / .55)) drop-shadow(0 0 2px rgb(0 0 0 / .35)); }
 }
+
+/* Driving notices (the slow-frames offer, race status: .drive-notices, glass.css) on touch. They
+   show exactly while someone drives, and on a phone they sit where the steering thumb works.
+   - Their body never takes a steering drag: it lets touches through to the game view, and only
+     their buttons take taps (TouchControls.role also lets a drag that starts on a button steer).
+   - They draw above the stick: its ring passes under a notice, never through it, and the
+     first-run stick hint steps aside while one shows.
+   Every rule starts with `html` to outrank glass.css, which places them and loads later.
+   Buttons take no browser panning (touch-action), so a thumb that lands on one and drags is
+   not cancelled by the browser before the stick can take it. */
+html .syn3h-shell.exploration-ui.has-touch > .drive-notices { z-index: 21; }
+html .syn3h-shell.exploration-ui.has-touch > .drive-notices > * { pointer-events: none; }
+html .syn3h-shell.exploration-ui.has-touch > .drive-notices > * :is(button, a, input, select, [role="button"]) { pointer-events: auto; touch-action: none; }
+body:has(.syn3h-shell.has-touch > .drive-notices > :not([hidden])) .touch-controls .touch-stick-hint { opacity: 0; visibility: hidden; }

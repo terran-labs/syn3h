@@ -56,7 +56,7 @@ export class PerformancePanel {
   private snapshot?: PerformanceSnapshot
   private playing = false
   private captured = false
-  private panelsOpen = false
+  private readonly recommendationSize?: ResizeObserver
   private wasVisible = false
   /** The "changed" mark beside each fine-tune row, by property id. */
   private readonly marks = new Map<string, HTMLButtonElement>()
@@ -70,13 +70,13 @@ export class PerformancePanel {
   /** Auto quality: the standard switch, apart from the level stepper. */
   private readonly auto: Switch
 
-  constructor(private readonly parent: HTMLElement, private readonly openRail: () => void, quality?: QualitySource, private readonly inspector?: Inspector) {
+  constructor(parent: HTMLElement, private readonly openRail: () => void, quality?: QualitySource, private readonly inspector?: Inspector, noticeStack?: HTMLElement) {
     const signal = this.abort.signal
     this.element.className = 'performance-card'
     this.element.innerHTML = `<div class="wi-level" role="group" aria-label="Quality level">
-        <button type="button" class="wi-step" data-quality="down" aria-label="Lower quality level">${CHEVRONS(false)}</button>
+        <button type="button" class="wi-step" data-quality="down" aria-label="Lower quality level" data-tip="Lower quality">${CHEVRONS(false)}</button>
         <div class="wi-level-pick"><select class="wi-level-select" aria-label="Quality level" disabled></select><small class="wi-level-of"></small></div>
-        <button type="button" class="wi-step" data-quality="up" aria-label="Raise quality level">${CHEVRONS(true)}</button></div>
+        <button type="button" class="wi-step" data-quality="up" aria-label="Raise quality level" data-tip="Raise quality">${CHEVRONS(true)}</button></div>
       <div class="wi-level-tools"><button type="button" data-quality="reset-all" disabled>Reset all to this level</button></div>
       <div class="wi-resolution" role="group" aria-label="Render resolution">
         <span class="wi-label">Render resolution</span>
@@ -89,16 +89,23 @@ export class PerformancePanel {
       <details class="wi-group performance-diagnostics"><summary><span>Diagnostics</span><small></small></summary>
       <div class="performance-body">
       <svg class="performance-chart" viewBox="0 0 288 64" role="img" aria-label="Frame time history"><path d="M0 63H288"/><polyline fill="none"/></svg>
-      <p class="performance-history"></p><p class="performance-long-frames" style="user-select:text"></p><button type="button" data-performance="copy-report">Copy diagnostics</button> <button type="button" data-performance="run-check">Run performance check</button>
+      <p class="performance-history"></p><p class="performance-long-frames" style="user-select:text"></p><button type="button" class="panel-action" data-performance="copy-report">Copy diagnostics</button> <button type="button" class="panel-action" data-performance="run-check">Run performance check</button>
       <span data-performance="copy-status" role="status"></span>
       <textarea data-performance="copy-text" aria-label="Diagnostics report" rows="8" readonly hidden></textarea><dl></dl><p class="performance-recovery" role="status"></p>
-      <button type="button" data-performance="reload" hidden>Reload to recover</button></div></details>`
+      <button type="button" class="panel-action" data-performance="reload" hidden>Reload to recover</button></div></details>`
     this.select = this.element.querySelector('select')!
     this.diagnostics = this.element.querySelector('details')!
-    this.recommendation.className = 'performance-recommendation'; this.recommendation.hidden = true
+    this.recommendation.className = 'performance-recommendation liquid-glass'; this.recommendation.hidden = true
     this.recommendation.setAttribute('role', 'status')
-    this.recommendation.innerHTML = '<p></p><button type="button" data-performance="ignore">Ignore</button><button type="button" data-performance="bots" hidden>Fewer bots</button><button type="button" data-performance="lower">Lower level</button><small class="performance-unlock" hidden>Esc for options</small>'
-    parent.append(this.recommendation)
+    this.recommendation.innerHTML = '<p></p><button type="button" class="panel-action" data-performance="ignore">Ignore</button><button type="button" class="panel-action" data-performance="bots" hidden>Fewer bots</button><button type="button" class="panel-action" data-performance="lower">Lower level</button><small class="performance-unlock" hidden>Esc for options</small>'
+    ;(noticeStack ?? parent).append(this.recommendation)
+    if (noticeStack) {
+      this.recommendationSize = new ResizeObserver(([entry]) => {
+        const height = entry.borderBoxSize[0]?.blockSize ?? noticeStack.offsetHeight
+        parent.style.setProperty('--notice-stack-height', height + 'px')
+      })
+      this.recommendationSize.observe(noticeStack)
+    }
     this.select.addEventListener('change', () => this.quality?.setLevel(Number(this.select.value)), { signal })
     this.auto = createSwitch('Auto quality', { className: 'wi-auto', signal, onChange: on => this.quality?.setAuto(on) })
     this.auto.input.disabled = true
@@ -187,9 +194,7 @@ export class PerformancePanel {
 
   /** Called from Shell's existing update, only to gate presentation. No sampling or timing. */
   setContext(playing: boolean, captured: boolean): void {
-    const panelsOpen = this.inspector?.open ?? false
-    if (playing === this.playing && captured === this.captured && panelsOpen === this.panelsOpen) return
-    this.panelsOpen = panelsOpen
+    if (playing === this.playing && captured === this.captured) return
     this.playing = playing; this.captured = captured; this.showRecommendation()
   }
 
@@ -298,12 +303,6 @@ export class PerformancePanel {
 
   private showRecommendation(): void {
     this.recommendation.hidden = !this.snapshot?.recommendation || !this.playing
-    const footer = this.panelsOpen ? this.inspector?.element.querySelector('.rail-foot') : null
-    const host = footer ?? this.parent
-    if (this.recommendation.parentElement !== host) {
-      if (footer) footer.prepend(this.recommendation); else this.parent.append(this.recommendation)
-    }
-    this.recommendation.toggleAttribute('data-docked', !!footer)
     // The notice remains visible while driving. Escape exposes its choices without firing.
     const offer = this.snapshot?.recommendation
     for (const button of this.recommendation.querySelectorAll<HTMLButtonElement>('button')) {
@@ -364,6 +363,6 @@ export class PerformancePanel {
   dispose(): void {
     this.unsubscribe?.(); this.unsubscribe = undefined; this.source = undefined
     this.qualityUnsubscribe?.(); this.qualityUnsubscribe = undefined; this.quality = undefined
-    this.abort.abort(); this.inspector?.removeCard(PerformancePanel.CARD); this.element.remove(); this.recommendation.remove()
+    this.recommendationSize?.disconnect(); this.abort.abort(); this.inspector?.removeCard(PerformancePanel.CARD); this.element.remove(); this.recommendation.remove()
   }
 }

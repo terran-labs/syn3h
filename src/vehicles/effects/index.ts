@@ -7,7 +7,7 @@ import {activeFogBanks} from '../../world/weather/fogBanks'
 const CONE_COLOUR=new T.Color(1,.9965517,.875)
 import * as T from 'three/webgpu'
 import type {Game,System} from '../../core/Game'
-import {qualityBudget,graphicsLevel} from '../../core/quality'
+import {qualityBudget,graphicsLevel,qualityLevel} from '../../core/quality'
 import type {Terrain} from '../../world/Terrain'
 import type {TileShiftEvent,Vehicle,VehicleObjectEvents} from '../Vehicle'
 import {ParticleBatch} from './ParticleBatch'
@@ -259,11 +259,11 @@ class VehicleEffects {
   private get events(){return this.vehicle.object as T.Object3D<VehicleObjectEvents>}
   /** This vehicle's headlight cones (cones.ts) at `night` (the beam ramp times the cone setting). */
   writeCones(batch:T.InstancedMesh,index:number,night:number,camera:T.Vector3):number {
-    // Each kind's beam has its own shape (cones.ts CONE_SHAPES). Every buggy draws one; the
-    // hovercraft and jet only for the player's own vehicle, since bots' lamps belong to the
-    // headlights lane, which can enable them per kind through the same shapes and batch.
+    // Each kind's beam has its own shape (cones.ts CONE_SHAPES). Every buggy draws one; a
+    // hovercraft or jet always for the player's own vehicle, and for bots and other players from
+    // High up (qualityLevel 3). Same batch and material: nothing is built when one appears.
     const shape=coneShapeFor(this.vehicle.kind)
-    if(!shape||(!this.buggy&&!this.local))return index
+    if(!shape||(!this.buggy&&!this.local&&Number(qualityLevel.value)<3))return index
     this.root.updateWorldMatrix(true,true)
     // The beam follows its lamp (the buggy's headlight setting; others' lamps are 1) times the
     // kind's beam-only factor (cones.ts beamFactorFor). The lamps themselves are untouched.

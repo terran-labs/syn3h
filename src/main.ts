@@ -43,6 +43,7 @@ import { WaterEffects } from './world/water/WaterEffects'
 import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weather'
 import { applyWordmarkQuery } from './ui/brand/wordmarkFlags'
 import { setDayClock } from './world/sky/dayCycle'
+import { screenEdgesLine } from './ui/screenEdges'
 
 async function main(): Promise<void> {
   initializeFrozenResources(location.href)
@@ -129,7 +130,21 @@ async function main(): Promise<void> {
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
   const { shell, audio, setPlayer } = initGameShell(game, player, terrain, query.get('name'))
   if (glass) shell.driveGlassFrame = glass.driveFrame
+  let postCheckQueued = false
   const materialChanged = params.onChange((id) => {
+    if (id.startsWith('post.') && glass && shell.playing && liquidSelected()) {
+      // A preset writes several parameters synchronously. Inspect the final graph before the next draw.
+      if (!postCheckQueued) {
+        postCheckQueued = true
+        queueMicrotask(() => {
+          postCheckQueued = false
+          if (shell.playing && liquidSelected() && !post.selectedGlassPrepared && !shell.transitioning) {
+            shell.applyGlassMaterial(async () => {})
+          }
+        })
+      }
+      return
+    }
     if (id !== glassStyle.def.id && id !== 'gfx.quality') return
     if (!liquidSelected()) {
       shell.driveGlassFrame = undefined
@@ -174,7 +189,7 @@ async function main(): Promise<void> {
       ? Array.from(sessionNetwork.players.values()).filter(player => player.bot).map(player => player.kind)
       : bots.vehicles.map(bot => bot.kind)
     return diagnosticReport(game.quality.getPerformanceSnapshot(), slot.current.kind, botKinds, currentWorldName(), currentPlanet().label,
-      sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine) + '\n' + glassDiagnostics()
+      sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine) + '\n' + glassDiagnostics() + '\n' + screenEdgesLine()
   }
   shell.configurePerformance({
     runPerformanceCheck: async signal => (await import('./diagnostics/inWorldCheck')).runInWorldCheck({
@@ -330,8 +345,8 @@ async function main(): Promise<void> {
     connection.onRoomClock((now) => { setWeatherClock(now); setDayClock(now) })
     // The room hears about a pause for either reason: the paused heartbeat (one message a
     // second) is the one thing that keeps running, so others see "paused", not a dropout.
-    pause.subscribe((paused) => connection.setPaused(paused))
-    connection.setPaused(pause.paused)
+    pause.subscribe((paused, reason) => connection.setPaused(paused, reason))
+    connection.setPaused(pause.paused, pause.reason)
     // Chat (src/ui/chat): the last card in the sidebar's stack, and a strip of new lines over
     // the game. Y, the card's header and the left column's Chat row open it.
     const chat = new ChatCard({

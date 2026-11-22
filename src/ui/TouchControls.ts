@@ -5,6 +5,7 @@ import './touch-stick.css'
 import { persistHandedness, touchAimCurve, touchAimRadius, touchAimSpeed, touchLeftHanded, touchPinchSpeed, touchRole } from './TouchPreferences'
 import { AimTouches, TagStick, type TagMode, type Zone } from './tagStick'
 import { setTouchAiming } from '../core/touchAim'
+import { watchScreenEdges } from './screenEdges'
 
 /*
  * The floating thumb stick: pure maths, exported for tests/ui/touch-stick.test.ts.
@@ -83,6 +84,8 @@ export class TouchControls {
   private lastFrame = 0
   private fadeTimer = 0
   private cancelRing?: HTMLElement
+  /** Shows Tag's held state and the Cancel ring; run on every Tag event and every held frame. */
+  private syncTag = (): void => {}
 
   constructor(private readonly input: Input, parent: HTMLElement = document.body) {
     this.element.className = 'touch-controls'
@@ -97,6 +100,8 @@ export class TouchControls {
     this.hint = this.element.querySelector<HTMLElement>('.touch-stick-hint')!
     this.cancelRing = this.element.querySelector<HTMLElement>('.touch-cancel')!
     signal.addEventListener('abort', persistHandedness())
+    // The side edges keep clear of the camera cutout only on the side that has one (screenEdges.ts).
+    signal.addEventListener('abort', watchScreenEdges())
     const unwatch = params.onChange((id) => { if (id === touchLeftHanded.def.id) { this.reset(); this.syncHandedness() } })
     signal.addEventListener('abort', unwatch)
     this.syncHandedness()
@@ -162,7 +167,18 @@ export class TouchControls {
     // Reused for every event: the move handler allocates nothing but the transform strings.
     const origin: StickPoint = { x: 0, y: 0 }, down: StickPoint = { x: 0, y: 0 }, vector: StickPoint = { x: 0, y: 0 }
     let pending: number | null = null, pointer: number | null = null, radius = 0, half = 0
-    const place = () => { base.style.transform = `translate3d(${origin.x - half}px,${origin.y - half}px,0)` }
+    const place = () => {
+      base.style.transform = `translate3d(${origin.x - half}px,${origin.y - half}px,0)`
+      // A driving notice's face may be drawn by the glass shader into the canvas, under every
+      // element, so no stacking order keeps the ring off it: the ring and knob are cut where a
+      // shown notice is instead (an even-odd hole). Once per drag: the base stays put.
+      const notice = document.querySelector<HTMLElement>('.syn3h-shell > .drive-notices > :not([hidden])')
+      const r = notice?.getBoundingClientRect()
+      const l = r ? r.left - (origin.x - half) : 0, t = r ? r.top - (origin.y - half) : 0, w = half * 2
+      base.style.clipPath = r && r.width && l < w && t < w && l + r.width > 0 && t + r.height > 0
+        ? `polygon(evenodd, 0 0, ${w}px 0, ${w}px ${w}px, 0 ${w}px, 0 0, ${l}px ${t}px, ${l + r.width}px ${t}px, ${l + r.width}px ${t + r.height}px, ${l}px ${t + r.height}px, ${l}px ${t}px)`
+        : ''
+    }
     const release = () => {
       if (pointer !== null && base.hasPointerCapture?.(pointer)) try { base.releasePointerCapture(pointer) } catch { /* Already gone. */ }
       pending = null; pointer = null; input.external.x = 0; input.external.y = 0; base.classList.remove('is-active')
@@ -207,14 +223,21 @@ export class TouchControls {
       const r = el.getBoundingClientRect()
       return r.width > 0 && event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom
     }
-    return touchRole({
+    // A driving notice (the slow-frames offer, race status) shows exactly while someone drives,
+    // where the steering thumb rests. Its body lets touches through (touch-stick.css); a touch
+    // that lands on one of its buttons may still become the stick if it drags, which captures
+    // the pointer so the button is never pressed. A tap that does not drag presses it as before.
+    // On the aiming side such a button stays a plain button.
+    const onNotice = target instanceof Element && !!target.closest('.drive-notices button')
+    const role = touchRole({
       x: event.clientX, width: innerWidth, leftHanded: touchLeftHanded.value,
-      onGameView: target === document.body || target === document.documentElement || (target instanceof HTMLCanvasElement && !target.closest('.syn3h-shell, .touch-controls')),
+      onGameView: onNotice || target === document.body || target === document.documentElement || (target instanceof HTMLCanvasElement && !target.closest('.syn3h-shell, .touch-controls')),
       // The minimap lets touches through to the canvas, and the gaps between action buttons are
       // canvas too, so both are tested by position.
       onMinimap: inside(document.querySelector('.shell-minimap')),
       onActions: inside(this.element.querySelector('.touch-actions')),
     })
+    return onNotice && role !== 'drive' ? null : role
   }
 
   /**
@@ -253,7 +276,7 @@ export class TouchControls {
     const button = this.element.querySelector<HTMLButtonElement>('[data-action="fire"]')!
     const stick = this.tagStick
     const ring = this.cancelRing!
-    const sync = () => {
+    const sync = this.syncTag = () => {
       button.classList.toggle('held', stick.held)
       ring.classList.toggle('is-shown', stick.cancellable)
       ring.classList.toggle('is-armed', stick.overCancel)
@@ -325,7 +348,11 @@ export class TouchControls {
     document.documentElement.style.setProperty('--thumb-columns', kind === 'jet' ? '3' : '2')
     for (const button of this.element.querySelectorAll<HTMLElement>('[data-action^="throttle"]')) button.hidden = kind !== 'jet'
     const special = this.element.querySelector<HTMLButtonElement>('[data-action="special"]')
-    if (special) { special.textContent = kind === 'jet' ? 'MODE' : 'WINGS'; special.hidden = kind === 'hovercraft' }
+    if (special) {
+      // The Liquid Glass press gathers a button's text into one label (src/fx/post/GlassPress.ts): write into it when it is there.
+      (special.querySelector('.glass-press-label') ?? special).textContent = kind === 'jet' ? 'MODE' : 'WINGS'
+      special.hidden = kind === 'hovercraft'
+    }
   }
   set enabled(value: boolean) {
     this.active = value; this.element.hidden = !value || !this.available
@@ -342,10 +369,13 @@ export class TouchControls {
       const now = performance.now()
       this.tagStick.frame((now - this.lastFrame) / 1000)
       this.lastFrame = now
+      // Held still, the Cancel ring appears after a moment (TagStick.cancellable).
+      this.syncTag()
     }
     const cord = Boolean(this.gear?.attached())
     for (const action of ['letOut', 'letGo']) { const button = this.element.querySelector<HTMLElement>(`[data-action="${action}"]`); if (button && button.hidden === cord) button.hidden = !cord }
-    this.element.querySelector('[data-action="special"]')?.setAttribute('aria-pressed', String(this.input.state.special))
+    // Inside the Zorb, Space and WINGS hop and the wings stay stowed: the button shows them off.
+    this.element.querySelector('[data-action="special"]')?.setAttribute('aria-pressed', String(this.input.state.special && !this.input.state.zorb))
     this.element.querySelector('[data-action="zorb"]')?.setAttribute('aria-pressed', String(this.input.state.zorb))
   }
   private flipReady = false

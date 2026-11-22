@@ -698,7 +698,10 @@ void main() {
       }
     }
   }
-  c += sunLight + sunHaze + sunShafts + flare * (found >= 0 ? mix(1.0, 0.2, uWorlds) : 1.0);
+  // Behind a lobby sheet the sun and its rays fade with the worlds, to a fifth (the owner,
+  // 21 November 2026: "fade the background sun and god rays out substantially more").
+  float sunShown = mix(0.2, 1.0, uWorlds);
+  c += (sunLight + sunHaze + sunShafts + flare * (found >= 0 ? mix(1.0, 0.2, uWorlds) : 1.0)) * sunShown;
   // The dive: streaks rushing outward, then the brightness of air as the world fills the view.
   if (uDive > 0.0) {
     float rush = pow(noise(vec3(normalize(q + 0.0001) * 11.0, uTime * 3.2)), 3.0) * smoothstep(0.15, 1.3, length(q));
@@ -779,10 +782,24 @@ void main() {
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
 const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uWorlds', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uPulse', 'uPulseColour', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays', 'uBurst', 'uSpread', 'uTrail', 'uNight'] as const
-/** The fresh-load heading and the tall-phone tilt (see the first framing in acquire). */
-export const FRESH_YAW = 0.6, PORTRAIT_PITCH = 0.85
+/** The fresh-load heading. */
+export const FRESH_YAW = 0.6
+/**
+ * The one view every arrival in the lobby settles on, for a viewport: the first load, the end of
+ * the opening, and every return from a world. The heading is the fresh-load heading, the tilt
+ * the resting tilt, the distance the opening distance for this screen. It is also exactly where
+ * the slow idle rest settles, so once arrived nothing moves but the slow drift round.
+ * (Tall screens used to arrive steeper, 0.85 rad, then sink to the resting tilt over half a
+ * minute: the owner's iPad mini, 21 November 2026, "sometimes ... the camera is too high", and
+ * the steep view pushed the name off the top and sides of the screen.)
+ */
+export function arrivalPose(bodies: readonly OrbitBody[], width: number, height: number): { yaw: number; pitch: number; distance: number } {
+  return { yaw: FRESH_YAW, pitch: REST.pitch, distance: openingDistance(bodies, width, height) }
+}
 /** Milliseconds returnHome takes back to the fresh-load view. */
 const RETURN_MS = RETURN_VIEW_SECONDS * 1000
+/** Milliseconds frameName takes to bring the name into view behind a lobby sheet. */
+const FRAME_MS = 900
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -951,7 +968,11 @@ export class Galaxy {
     // Any input ends the lobby's rest at once (idlePulse.ts).
     const input = () => { this.lastInput = performance.now() }
     for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart'] as const) addEventListener(type, input, { signal: this.abort.signal, passive: true, capture: true })
-    this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(host)
+    // Setting a canvas's size clears it at once, and the observer runs after this frame's
+    // animation callbacks: left for the next frame, the cleared (black) canvas is what the
+    // screen shows for one frame. So the new size is drawn now. On an iPhone this fires each time
+    // the address bar shows or hides; it was a black flash in the lobby, 22 November 2026.
+    this.resizeObserver = new ResizeObserver(() => { if (this.resize() && this.active && !document.hidden) { cancelAnimationFrame(this.frame); this.loop(performance.now(), true) } }); this.resizeObserver.observe(host)
     document.addEventListener('visibilitychange', () => { this.syncPresence(); cancelAnimationFrame(this.frame); if (this.active && !document.hidden) this.loop(0) }, { signal: this.abort.signal })
   }
   /** False when WebGL 2 is not available: the caller keeps the ordinary lobby. */
@@ -1026,13 +1047,9 @@ export class Galaxy {
     if (value) { this.logoSeen = false; this.handled = performance.now(); this.acquire() } else this.release()
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
-  /**
-   * The view a fresh load rests at: the first heading, the resting tilt above the orbital plane
-   * (steeper on a tall phone), the opening distance. Leaving a world returns here every time.
-   */
+  /** The view every arrival settles on, for the screen as it is now (arrivalPose). */
   freshPose(): { yaw: number; pitch: number; distance: number } {
-    const portrait = this.host.clientHeight > this.host.clientWidth * 1.2 && !this.reduced?.matches
-    return { yaw: FRESH_YAW, pitch: portrait ? PORTRAIT_PITCH : REST.pitch, distance: openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight) }
+    return arrivalPose(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
   }
   /**
    * Back to the lobby after leaving a world: home(), then an eased return to the fresh-load
@@ -1060,7 +1077,25 @@ export class Galaxy {
    * own the centre eases per frame, and on a slow device it was still sliding back to the sun
    * when the name began to fade in.
    */
-  private returnTo: { start: number; from: { yaw: number; pitch: number; distance: number }; to: { yaw: number; pitch: number; distance: number }; target: Vec; reach: number } | null = null
+  private returnTo: { start: number; from: { yaw: number; pitch: number; distance: number }; to: { yaw: number; pitch: number; distance: number }; target: Vec; reach: number; framing?: true } | null = null
+  /**
+   * Bring the name into view behind a lobby sheet (Welcome, Updates): the view eases to the
+   * arrival tilt and distance (arrivalPose) from wherever the player had swiped, keeping their
+   * heading, so the name stands over the sheet while it is open and is already in place when it
+   * closes. The owner, on an iPhone, 22 November 2026: swiped above the galaxy, the name was
+   * off the top of the screen behind Updates and still gone after closing it. Unlike a return
+   * from a world the name stays lit throughout. Reduced motion: it jumps there.
+   */
+  frameName(): void {
+    if (this.chosen >= 0 || this.flight || this.opening !== null || this.returnTo) return
+    const to = { ...this.freshPose(), yaw: this.yaw }
+    if (Math.abs(to.pitch - this.pitch) < 1e-3 && Math.abs(to.distance / this.distance - 1) < 1e-3 && Math.hypot(...this.target) < 1e-3) return
+    this.handled = performance.now(); this.wake = 2
+    if (this.reduced?.matches) { this.applyPose(to); this.target = [0, 0, 0]; this.reach = to.distance; this.markRig.pose = null; return }
+    this.returnTo = { start: performance.now(), from: { yaw: this.yaw, pitch: this.pitch, distance: this.distance }, to, target: [...this.target], reach: this.reach, framing: true }
+  }
+  /** True while frameName's ease runs: a sheet over the galaxy follows the name until it ends. */
+  get framingName(): boolean { return !!this.returnTo?.framing }
   private applyPose(p: { yaw: number; pitch: number; distance: number }): void {
     this.yaw = p.yaw; this.pitch = p.pitch; this.distance = p.distance
     this.swingYaw = { aim: p.yaw, aimSpeed: 0, view: p.yaw, viewSpeed: 0 }
@@ -1073,7 +1108,7 @@ export class Galaxy {
     const r = this.returnTo
     if (!r) return false
     if (this.drag || this.pointers.size > 0) { this.endReturn(); return false }
-    const t = Math.min(1, (performance.now() - r.start) / RETURN_MS)
+    const t = Math.min(1, (performance.now() - r.start) / (r.framing ? FRAME_MS : RETURN_MS))
     const pose = homeward(r.from, r.to, t), e = t >= 1 ? 1 : smootherstep(t)
     this.applyPose(pose)
     this.target = [r.target[0] * (1 - e), r.target[1] * (1 - e), r.target[2] * (1 - e)]
@@ -1087,12 +1122,14 @@ export class Galaxy {
    * (returningMark), carries on from where it is; its rig trails the view again.
    */
   private endReturn(): void {
+    // frameName's ease kept the name lit: nothing to fade in.
+    if (this.returnTo?.framing) { this.returnTo = null; this.markRig.pose = null; return }
     const from = this.returnTo ? this.returnTo.start + RETURN_MARK_FROM * RETURN_MS : performance.now()
     this.returnTo = null; this.markRig.pose = null
     this.returning = this.reduced?.matches ? null : Math.min(performance.now(), from)
   }
   /** For tests: true while returnHome's ease runs. */
-  get returningHome(): boolean { return this.returnTo !== null }
+  get returningHome(): boolean { return this.returnTo !== null && !this.returnTo.framing }
   home(): void { this.handled = performance.now(); this.wake = 2; this.chosen = -1
     // Back in the lobby with the name gone (a choice cancelled, or the reverse flight out of a
     // world landing, perf/smooth-entry's ascend): it kindles again, once, from here.
@@ -1171,7 +1208,7 @@ export class Galaxy {
     if (gl.getProgramParameter(blur, gl.LINK_STATUS)) {
       this.blurProgram = blur
       for (const name of ['uScene', 'uBlur', 'uSize']) this.blurUniforms[name] = gl.getUniformLocation(blur, name)
-      this.target2 = gl.createTexture(); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2)
+      this.target2 = gl.createTexture(); this.target2Size = ''; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
       this.fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.target2, 0); gl.bindFramebuffer(gl.FRAMEBUFFER, null)
@@ -1230,12 +1267,10 @@ export class Galaxy {
     this.host.addEventListener('focusout', () => this.wantGlow('focusId', null), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
     canvas.addEventListener('wheel', event => { event.preventDefault(); this.handled = performance.now(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(this.farthest, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
-    // Held upright, a phone has height to spare and no width: look down more steeply so the
-    // orbits open out into the height. Only for the first view; after that the player's stands.
+    // The first view is the arrival view for this screen (arrivalPose).
     if (!this.framed) {
       this.framed = true
-      this.distance = this.reach = openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
-      if (this.host.clientHeight > this.host.clientWidth * 1.2 && !this.reduced.matches) this.pitch = PORTRAIT_PITCH
+      this.applyPose(this.freshPose()); this.reach = this.distance
     }
     this.paintMaps(); this.resize()
     this.refreshGlass()
@@ -1259,7 +1294,7 @@ export class Galaxy {
     this.markOverlay?.remove(); this.markOverlay = null
     this.markCrisp?.dispose(); this.markCrisp = null
     cancelAnimationFrame(this.frame); this.worker?.terminate(); this.worker = null; this.queue.length = 0; this.painting = false
-    this.array = this.close = null; this.fbo = null; this.target2 = null; this.program = null; this.blurProgram = null
+    this.array = this.close = null; this.fbo = null; this.target2 = null; this.target2Size = ''; this.program = null; this.blurProgram = null
     this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null; this.canvas.remove(); this.pointers.clear(); this.drag = null
   }
   /** Each world's small map, painted off the main thread, one after another. */
@@ -1325,14 +1360,25 @@ export class Galaxy {
     }
     return false
   }
-  private resize(): void {
-    if (!this.gl) return
+  /** Sizes the canvas to the host; true when its size changed (which clears it). */
+  private resize(): boolean {
+    if (!this.gl) return false
     // The ladder's render scale: whole steps, applied with the redraw so no blank frame shows.
     const scale = Math.min(devicePixelRatio || 1, 1.5) * qualityScale()
     this.shownScale = qualityScale(); this.wake = 2
-    this.canvas.width = Math.max(1, Math.round(this.host.clientWidth * scale)); this.canvas.height = Math.max(1, Math.round(this.host.clientHeight * scale))
-    if (this.target2) { const gl = this.gl; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null) }
+    const width = Math.max(1, Math.round(this.host.clientWidth * scale)), height = Math.max(1, Math.round(this.host.clientHeight * scale))
+    // Setting even the same size clears the canvas: only when it changes.
+    const changed = width !== this.canvas.width || height !== this.canvas.height
+    if (changed) { this.canvas.width = width; this.canvas.height = height }
+    // The blur's target is made 1 by 1 with the context (a restore too): sized here.
+    const sized = `${width}x${height}`
+    if (this.target2 && this.target2Size !== sized) {
+      this.target2Size = sized
+      const gl = this.gl; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+    }
+    return changed
   }
+  private target2Size = ''
   /** How each world looks from space besides its map, by recipe, seed and snapshot. */
   private readonly looks = new Map<string, LobbyLook>()
   private lookOf(world: GalaxyWorld): LobbyLook {
@@ -1415,13 +1461,14 @@ export class Galaxy {
     if (!this.drag && !this.flight) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * share; this.pitch += p * share; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 }
     return latitude
   }
-  private loop = (now: number): void => {
+  /** One animation frame; `now` draws it even inside the frame budget (a resize, see the constructor). */
+  private loop = (now: number, force = false): void => {
     this.syncPresence()
     if (!this.active || document.hidden) return
     this.frame = requestAnimationFrame(this.loop)
     qualityFrame(now)
     const busy = this.opening !== null || !!this.flight || this.drag !== null || this.pointers.size > 0 || !this.swingResting || (this.chosen >= 0 && !this.arrived)
-    if (!frameDue(now - this.last, busy)) return
+    if (!force && !frameDue(now - this.last, busy)) return
     const elapsed = Math.min(0.1, Math.max(0, (now - this.last) / 1000))
     this.last = now; this.step = elapsed
     this.controller(elapsed)
@@ -1468,7 +1515,7 @@ export class Galaxy {
     if (this.leaving !== null) reveal = { ...reveal, ...leavingMark(this.reduced.matches ? 1e3 : (performance.now() - this.leaving) / 1000) }
     // While returnHome eases the view the name stays dark until the swing's last tenth, where
     // it is within a few pixels of its place, then fades in as the view lands (returningMark).
-    else if (this.returnTo) reveal = { ...reveal, ...returningMark((performance.now() - this.returnTo.start - RETURN_MARK_FROM * RETURN_MS) / 1000) }
+    else if (this.returnTo && !this.returnTo.framing) reveal = { ...reveal, ...returningMark((performance.now() - this.returnTo.start - RETURN_MARK_FROM * RETURN_MS) / 1000) }
     else if (this.returning !== null) {
       const t = (performance.now() - this.returning) / 1000
       if (t > RETURN_SECONDS) this.returning = null; else reveal = { ...reveal, ...returningMark(t) }
@@ -1733,6 +1780,7 @@ export class Galaxy {
     if (Math.abs(this.liftShown - liftGoal) < 0.002) this.liftShown = liftGoal
     const lift = this.liftShown * this.liftShown * (3 - 2 * this.liftShown)
     const placement = liftPlacement(placeWordmark(mode, poseView(this.markRig.pose!, VIEW_TAN), screen, system), lift)
+    this.markFrame = { mode, screen, system }
     if (!this.markCrisp && wordmarkCrispPass.value && this.canvas) {
       this.markCrisp = new WordmarkCrisp(VERTEX, FRAGMENT, UNIFORMS)
       this.canvas.after(this.markCrisp.canvas)
@@ -1741,7 +1789,7 @@ export class Galaxy {
     if (this.markStart === null) this.markStart = held ? now - 1e6 : now
     // The opening and a return carry their own fade (opening.ts); otherwise (a placement
     // changed, the context restored) the same curve runs from the first frame here.
-    const opacity = this.opening || this.returnTo || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
+    const opacity = this.opening || (this.returnTo && !this.returnTo.framing) || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
     return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 || this.liftShown !== liftGoal }
   }
   /** For checks: the in-space wordmark's opacity as last drawn (0 when hidden). */
@@ -1749,13 +1797,15 @@ export class Galaxy {
   /** For tests and screenshots: the in-space wordmark's state. */
   private markView: { eye: Vec; forward: Vec; right: Vec; up: Vec; tan: number } | null = null
   private markPlaced: ReturnType<typeof placeWordmark> | null = null
+  /** The inputs stepMark last placed the name from, for wordmarkEdges' prediction. */
+  private markFrame: { mode: number; screen: { x: number; y: number; unit: number }; system: number } | null = null
   /** 1 while a lobby panel is open: the name moves up and a little smaller to stand over it (LobbySheet). */
   markLift = 0
   /** The eased lift drawn this frame, 0 to 1; 1 when the name has finished moving. */
   liftShown = 0
   /** Where the in-space wordmark is on screen now, in CSS pixels of the host (its bounding box), or null. */
   wordmarkScreenBox(): { x: number; y: number; width: number; height: number } | null {
-    const edges = this.wordmarkEdges(8)
+    const edges = this.wordmarkEdges(8, true)
     if (!edges) return null
     const all = [...edges.top, ...edges.middle, ...edges.bottom], xs = all.map(p => p[0]), ys = all.map(p => p[1])
     const x0 = Math.min(...xs), y0 = Math.min(...ys)
@@ -1765,11 +1815,19 @@ export class Galaxy {
    * The in-space wordmark's top, middle and bottom lines on screen, left to right, `steps` + 1
    * points each, in CSS pixels of the host. The wordmark stands on a cylinder round the sun, so
    * these are arcs: the lobby's panels bend on the same cylinder (LobbySheet.ts). Null when
-   * the name is not in space.
+   * the name is not in space. While frameName's ease runs these are where the name will land,
+   * unless `now`.
    */
-  wordmarkEdges(steps = 8): { top: [number, number][]; middle: [number, number][]; bottom: [number, number][] } | null {
-    const p = this.markPlaced, v = this.markView
+  wordmarkEdges(steps = 8, now = false): { top: [number, number][]; middle: [number, number][]; bottom: [number, number][] } | null {
+    let p = this.markPlaced, v = this.markView
     if (!p || !v) return null
+    // While frameName eases the view, where the name will stand when it lands: a sheet opened
+    // from far above is laid out once under the name's place, not dragged down after it.
+    const r = this.returnTo, f = this.markFrame
+    if (r?.framing && f && !now) {
+      v = poseView({ yaw: r.to.yaw, pitch: r.to.pitch, reach: r.to.distance, target: [0, 0, 0] }, VIEW_TAN)
+      p = liftPlacement(placeWordmark(f.mode, v, f.screen, f.system), this.markLift > 0 ? 1 : 0)
+    }
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
     const line = (along: number) => Array.from({ length: steps + 1 }, (_, i): [number, number] => {
       const w = surfacePoint(p, (i / steps - 0.5) * ASPECT, along), d = sub(w, v.eye), z = Math.max(0.001, dot(d, v.forward))
@@ -1837,10 +1895,11 @@ export class Galaxy {
     this.resting = false
     const idle = (performance.now() - this.handled) / 1000
     if (!this.reduced.matches && this.chosen < 0 && !this.flight && !held && this.pointers.size === 0 && this.backdrop === 1 && this.swingResting && this.opening === null) {
-      const home = openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
+      // It settles on the arrival view (arrivalPose): the same tilt and distance every arrival lands on.
+      const rest = this.freshPose(), home = rest.distance
       if (this.options.still?.()) {
         // Low-end devices: the quick exponential settle, snapping the last step, so they can idle.
-        const tilt = restStep(this.swingPitch.view, idle, restElapsed, REST_LOW)
+        const tilt = restStep(this.swingPitch.view, idle, restElapsed, { ...REST_LOW, pitch: rest.pitch })
         if (tilt !== this.swingPitch.view) { this.swingPitch.aim = this.swingPitch.view = tilt; this.resting = true }
         const far = restStep(Math.log(this.distance), idle, restElapsed, { ...REST_LOW, pitch: Math.log(home), snap: 1e-3 })
         if (far !== Math.log(this.distance)) { this.distance = Math.exp(far); this.resting = true }
@@ -1848,10 +1907,10 @@ export class Galaxy {
         // The slow return (cameraRest.ts): tilt and zoom on one critically damped spring rate,
         // from rest, no overshoot; the heading is left where the player put it.
         const omega = returnOmega(returnTime.value), dt = Math.min(0.25, restElapsed)
-        const [pitch, pitchSpeed] = springStep(this.swingPitch.view, this.restSpeed.pitch, REST.pitch, omega, dt)
+        const [pitch, pitchSpeed] = springStep(this.swingPitch.view, this.restSpeed.pitch, rest.pitch, omega, dt)
         const [far, farSpeed] = springStep(Math.log(this.distance), this.restSpeed.zoom, Math.log(home), omega, dt)
-        const done = Math.abs(pitch - REST.pitch) < 2e-4 && Math.abs(pitchSpeed) < 1e-4 && Math.abs(far - Math.log(home)) < 5e-4 && Math.abs(farSpeed) < 1e-4
-        this.swingPitch.aim = this.swingPitch.view = done ? REST.pitch : pitch
+        const done = Math.abs(pitch - rest.pitch) < 2e-4 && Math.abs(pitchSpeed) < 1e-4 && Math.abs(far - Math.log(home)) < 5e-4 && Math.abs(farSpeed) < 1e-4
+        this.swingPitch.aim = this.swingPitch.view = done ? rest.pitch : pitch
         this.distance = done ? home : Math.exp(far)
         this.restSpeed = done ? { pitch: 0, zoom: 0 } : { pitch: pitchSpeed, zoom: farSpeed }
         this.resting = !done

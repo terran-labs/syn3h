@@ -47,11 +47,11 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .syn3h-shell .wi-sum { text-align: right; color: var(--s3-dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .syn3h-shell .wi-chev { width: 7px; height: 7px; border-right: 1.5px solid var(--s3-dim); border-bottom: 1.5px solid var(--s3-dim); rotate: -45deg; transition: rotate .2s; align-self: center; }
 .syn3h-shell .wi-card.is-open .wi-chev { rotate: 45deg; }
-.syn3h-shell .wi-body { padding: 0 12px 12px; border-top: 1px solid rgb(255 255 255 / .1); }
+.syn3h-shell .wi-body { padding: 0 12px 12px; border-top: 1px solid transparent; border-image: var(--rule) 1; }
 .syn3h-shell .wi-blurb { margin: 8px 2px 6px; color: var(--s3-dim); font-size: 13px; }
 .syn3h-shell .wi-switch { display: flex; gap: 5px; flex-wrap: wrap; margin: 2px 0 8px; }
 /* Accordion: one fold per group. */
-.syn3h-shell .wi-group { border-top: 1px solid rgb(255 255 255 / .07); }
+.syn3h-shell .wi-group { border-top: 1px solid transparent; border-image: var(--rule) 1; }
 .syn3h-shell .wi-group:first-of-type { border-top: 0; }
 .syn3h-shell .wi-group summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 7px 2px; font-weight: 500; }
 .syn3h-shell .wi-group summary::-webkit-details-marker { display: none; }
@@ -89,7 +89,7 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .syn3h-shell .wi-sheet strong { font: 600 16px 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; }
 .syn3h-shell .world-inspector .wi-sheet textarea { width: 100%; height: 130px; resize: vertical; border-radius: 10px; border: 1px solid rgb(255 255 255 / .16); background: rgb(0 0 0 / .4); color: #e2e2e2; font: 12px/1.5 ui-monospace, Menlo, monospace; padding: 8px 10px; }
 .syn3h-shell .wi-sheet.is-copy [data-wi="apply"] { display: none; }
-.syn3h-shell .wi-status { margin: 0 4px; min-height: 18px; font-size: 12.5px; color: var(--s3-accent-2); text-shadow: 0 1px 4px #000; text-align: right; }
+.syn3h-shell .wi-status { margin: 0 4px; min-height: 18px; font-size: 12.5px; color: var(--s3-accent-2); text-shadow: var(--float-under); text-align: right; }
 @media (max-width: 700px), (max-height: 500px) { .world-inspector { top: 58px; right: 10px; width: min(330px, calc(100vw - 20px)); max-height: calc(100vh - 70px); } }
 
 /* ---------------------------------------------------------------------------------------
@@ -100,12 +100,12 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .syn3h-shell.is-focus .world-inspector { opacity: 0; translate: 24px 0; pointer-events: none; }
 .is-focus .shell-hud, .is-focus .hud-navigation, .is-focus .shell-minimap { opacity: 0; pointer-events: none; }
 
-.focus-hud { position: fixed; inset: 0; z-index: 12; pointer-events: none; opacity: 0; transition: opacity .55s ease; color: rgb(236 236 236 / .86); font: 600 13px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .14em; text-transform: uppercase; font-variant-numeric: tabular-nums; text-shadow: var(--hud-under, 0 0 1px rgb(0 8 14 / .9), 0 1px 10px rgb(0 8 14 / .4)); }
+.focus-hud { position: fixed; inset: 0; z-index: 12; pointer-events: none; opacity: 0; transition: opacity .55s ease; color: #fff; font: 600 13px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .14em; text-transform: uppercase; font-variant-numeric: tabular-nums; text-shadow: var(--hud-under, 0 0 1px rgb(0 8 14 / .9), 0 1px 10px rgb(0 8 14 / .4)); }
 .is-focus.is-playing .focus-hud { opacity: 1; }
 .syn3h-shell:not(.is-playing) .focus-hud { display: none; }
 .focus-hud svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.focus-hud .fh-line { fill: none; stroke: rgb(236 236 236 / .7); stroke-width: 1.2; vector-effect: non-scaling-stroke; filter: var(--hud-line-under); }
-.focus-hud .fh-faint { fill: none; stroke: rgb(236 236 236 / .26); stroke-width: 1; vector-effect: non-scaling-stroke; filter: var(--hud-line-under); }
+.focus-hud .fh-line { fill: none; stroke: rgb(255 255 255 / .95); stroke-width: 1.2; vector-effect: non-scaling-stroke; filter: var(--hud-line-under); }
+.focus-hud .fh-faint { fill: none; stroke: rgb(255 255 255 / .4); stroke-width: 1; vector-effect: non-scaling-stroke; filter: var(--hud-line-under); }
 .focus-hud .fh-accent { fill: none; stroke: var(--s3-accent-2); stroke-width: 2; stroke-linecap: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgb(0 8 14 / .75)) drop-shadow(0 0 4px rgb(141 141 141 / .9)); }
 .focus-hud .fh-dot { fill: #fff; filter: drop-shadow(0 0 4px rgb(176 176 176 / .95)); }
 .focus-hud [data-style], .focus-hud [data-reticle] { display: none; }
@@ -113,10 +113,10 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .focus-hud[data-show-reticle="0"] [data-reticle="0"], .focus-hud[data-show-reticle="1"] [data-reticle~="1"], .focus-hud[data-show-reticle="2"] [data-reticle~="2"] { display: block; }
 .fh-read { position: absolute; display: grid; gap: 5px; }
 .fh-read b { font-weight: 600; font-size: 26px; letter-spacing: .04em; color: #fff; }
-.fh-read small { font-size: 11px; color: rgb(200 200 200 / .8); }
+.fh-read small { font-size: 11px; color: #fff; }
 .fh-top { left: 50%; top: 34px; translate: -50% 0; text-align: center; justify-items: center; }
 .fh-corner { padding: 14px 16px; gap: 7px; }
-.fh-corner::before { content: ""; position: absolute; width: 26px; height: 26px; border: 1.2px solid rgb(236 236 236 / .7); filter: var(--hud-line-under); }
+.fh-corner::before { content: ""; position: absolute; width: 26px; height: 26px; border: 1.2px solid rgb(255 255 255 / .95); filter: var(--hud-line-under); }
 .fh-tl { left: 28px; top: 28px; } .fh-tl::before { left: 0; top: 0; border-right: 0; border-bottom: 0; }
 .fh-tr { right: 28px; top: 28px; text-align: right; } .fh-tr::before { right: 0; top: 0; border-left: 0; border-bottom: 0; }
 .fh-bl { left: 28px; bottom: 28px; } .fh-bl::before { left: 0; bottom: 0; border-right: 0; border-top: 0; }
@@ -132,7 +132,7 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .syn3h-shell .world-inspector .wi-search { display: block; min-height: 36px; padding: 6px 12px; font: 400 15px 'Barlow', sans-serif; background: rgb(0 0 0 / .28); border: 1px solid rgb(255 255 255 / .14); border-radius: 10px; }
 .syn3h-shell .world-inspector input[type=number] { display: block; min-height: 26px; padding: 2px 6px; font: 400 13px 'Barlow', sans-serif; border-radius: 6px; }
 /* With the cards open on a wide screen the minimap steps left, out from under them. */
-@media (min-width: 901px) { .syn3h-shell:not(.has-touch):has(.world-inspector:not([hidden])) .shell-minimap { right: calc(min(350px, 100vw - 40px) + 36px); } }
+@media (min-width: 901px) { .syn3h-shell:not(.has-touch):has(.world-inspector:not([hidden], .lobby-settings)) .shell-minimap { right: calc(min(350px, 100vw - 40px) + 36px); } }
 /* The show rules above set display: block, which would flatten the stacked readouts. */
 .focus-hud[data-show-style="0"] div[data-style="0"], .focus-hud[data-show-style="1"] div[data-style="1"], .focus-hud[data-show-style="2"] div[data-style="2"] { display: grid; }
 .fh-read small span { font-size: inherit; }
@@ -140,15 +140,15 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .syn3h-shell .world-inspector .wi-row input[type=range] { height: 22px; min-height: 0; margin: 0; }
 .syn3h-shell .world-inspector .wi-row output { display: block; margin: 0; padding: 0; min-width: 0; opacity: 1; color: #e2e2e2; font: 500 13px 'Barlow', sans-serif; text-align: right; white-space: nowrap; }
 .syn3h-shell .world-inspector .wi-search::placeholder { color: rgb(255 255 255 / .55); }
-/* Small labels sit over bright sky as often as dark ground: a dark halo keeps them readable. */
-.focus-hud .fh-read small { color: rgb(224 224 224 / .95); text-shadow: var(--hud-under, 0 0 3px rgb(9 9 9 / .9), 0 1px 6px rgb(9 9 9 / .7)); }
+/* Small labels sit over bright sky as often as dark ground: white ink and the shared shadow. */
+.focus-hud .fh-read small { color: #fff; text-shadow: var(--hud-under, 0 0 3px rgb(9 9 9 / .9), 0 1px 6px rgb(9 9 9 / .7)); }
 /* On touch the open cards are for editing, not driving: the minimap and the drive controls
    step aside until Create is tapped again, so nothing sits on top of a slider. */
 /* The chat button steps aside too: on a phone it floated over the open cards' controls. */
-:root:has(.syn3h-shell.has-touch .world-inspector:not([hidden])) :is(.touch-controls, .shell-minimap) { opacity: 0; pointer-events: none; transition: opacity .3s ease; }
+:root:has(.syn3h-shell.has-touch .world-inspector:not([hidden], .lobby-settings)) :is(.touch-controls, .shell-minimap) { opacity: 0; pointer-events: none; transition: opacity .3s ease; }
 /* The drive buttons set pointer-events: auto on themselves, so the faded buttons still took
    taps meant for the rail (BRAKE sat over the Sea choice on a phone held sideways). */
-:root:has(.syn3h-shell.has-touch .world-inspector:not([hidden])) .touch-controls * { pointer-events: none; }
+:root:has(.syn3h-shell.has-touch .world-inspector:not([hidden], .lobby-settings)) .touch-controls * { pointer-events: none; }
 @media (max-width: 700px), (max-height: 500px) { .syn3h-shell .world-inspector { top: 58px; right: max(10px, env(safe-area-inset-right)); width: min(340px, calc(100vw - 20px)); max-height: calc(100dvh - 68px); } }
 /* Day length (dayLength.ts): a log slider, the length in minutes, and a line under them saying
    whether the planet's orbit sets it, with a way back to that default. */
@@ -159,7 +159,7 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .syn3h-shell .world-inspector .wi-row.wi-day .wi-day-reset[hidden] { display: none; }
 .syn3h-shell .world-inspector .wi-row.wi-day .wi-day-reset:disabled { cursor: default; opacity: .5; }
 /* The Handling dropdown at the top of a vehicle's settings (Inspector.presetRow). */
-.syn3h-shell .world-inspector .wi-preset { display: grid; gap: 4px; margin: 6px 0 8px; padding: 0 6px 8px; border-bottom: 1px solid rgb(255 255 255 / .08); }
+.syn3h-shell .world-inspector .wi-preset { display: grid; gap: 4px; margin: 6px 0 8px; padding: 0 6px 8px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
 .syn3h-shell .world-inspector .wi-preset-pick { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; }
 .syn3h-shell .world-inspector .wi-preset select { width: 100%; height: 44px; min-height: 44px; font-size: 15px; }
 .syn3h-shell .world-inspector .wi-preset-about { margin: 0; font-size: 12px; line-height: 1.35; opacity: .85; }

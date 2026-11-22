@@ -102,30 +102,30 @@
 .bots-keep input { width: 20px; height: 20px; vertical-align: -4px; margin-right: 6px; }
 .bots-keep small { display: block; margin-left: 28px; color: var(--s3-dim); font-size: 13px; }
 .settings-links { display: grid; gap: 12px; }
-.score-row { display: grid; grid-template-columns: minmax(0,1fr) auto 35px; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border-bottom: 1px solid rgb(84 84 88 / .4); font-size: 17px; }
+.score-row { display: grid; grid-template-columns: minmax(0,1fr) auto 35px; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; font-size: 17px; }
 .score-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .score-row small { color: var(--s3-dim); font-size: 10px; }
 .score-row strong { text-align: right; font-weight: 600; color: white; }
 .score-row.is-it { background: #6c361f80; border-left: 2px solid #edac73; }
 .score-row.is-self { box-shadow: inset 0 -1px var(--s3-accent); }
 .score-detail { color: var(--s3-dim); font-size: 12px; padding: 3px 0; overflow-wrap: anywhere; }
-.shell-hud { position: fixed; left: max(20px,env(safe-area-inset-left)); top: max(20px,env(safe-area-inset-top)); z-index: 12; width: 235px; padding: 12px; pointer-events: none; color: white; background: rgb(22 23 28 / .62); border: 1px solid rgb(84 84 88 / .48); }
+.shell-hud { position: fixed; left: max(20px,var(--safe-left)); top: max(20px,env(safe-area-inset-top)); z-index: 12; width: 235px; padding: 12px; pointer-events: none; color: white; background: rgb(22 23 28 / .62); border: 1px solid rgb(84 84 88 / .48); }
 .shell-speed { display: flex; align-items: baseline; gap: 8px; padding-bottom: 6px; }
 .shell-speed strong { font: 600 44px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; }
 .shell-speed span { font-size: 13px; color: var(--s3-dim); }
 .hud-scoreboard { max-height: 180px; overflow: hidden; }
 .hud-scoreboard .score-row { font-size: 14px; padding: 4px; }
 .hud-scoreboard .score-detail { font-size: 10px; }
-.hud-navigation { position: fixed; top: max(20px,env(safe-area-inset-top)); right: max(20px,env(safe-area-inset-right)); z-index: 15; display: flex; gap: 8px; }
+.hud-navigation { position: fixed; top: max(20px,env(safe-area-inset-top)); right: max(20px,var(--safe-right)); z-index: 15; display: flex; gap: 8px; }
 .syn3h-shell .hud-navigation button { font-size: 16px; min-height: 44px; }
 .shell-toast { position: fixed; z-index: 50; left: 50%; top: max(20px,env(safe-area-inset-top)); transform: translateX(-50%); max-width: min(90vw,500px); padding: 10px 18px; background: rgb(28 28 30 / .92); border: 1px solid rgb(84 84 88 / .72); color: white; font-size: 16px; pointer-events: none; text-align: center; }
 .syn3h-advanced { width: 100%; --tp-base-background-color: #222222; --tp-base-shadow-color: transparent; --tp-base-border-radius: 2px; --tp-container-background-color: #333333; --tp-container-foreground-color: #e2e2e2; --tp-label-foreground-color: #d5d5d5; --tp-input-background-color: #434343; --tp-input-foreground-color: #f0f0f0; --tp-button-background-color: #646464; --tp-button-foreground-color: white; }
 .touch-controls { position: fixed; inset: 0; z-index: 20; pointer-events: none; user-select: none; -webkit-user-select: none; touch-action: none; }
-.touch-stick { position: absolute; left: max(24px,env(safe-area-inset-left)); bottom: max(28px,env(safe-area-inset-bottom)); width: 140px; height: 140px; border: 1px solid #9ebee37a; border-radius: 50%; background: #15203570; pointer-events: auto; touch-action: none; }
+.touch-stick { position: absolute; left: max(24px,var(--safe-left)); bottom: max(28px,env(safe-area-inset-bottom)); width: 140px; height: 140px; border: 1px solid #9ebee37a; border-radius: 50%; background: #15203570; pointer-events: auto; touch-action: none; }
 .touch-knob { position: absolute; width: 52px; height: 52px; top: 43px; left: 43px; border-radius: 50%; background: #6799cf65; border: 1px solid #abcff7b0; }
 .touch-stick-label { position: absolute; bottom: 10px; width: 100%; text-align: center; font: 400 12px 'Barlow', sans-serif; letter-spacing: 2px; color: #e1e1e1; }
 /* The thumb grid's size, gaps and placement are the --thumb-* variables in touch-stick.css. */
-.touch-actions { position: absolute; right: max(var(--thumb-margin),env(safe-area-inset-right)); bottom: var(--thumb-base); display: grid; grid-template-columns: repeat(var(--thumb-columns, 2), var(--thumb-size)); grid-auto-rows: var(--thumb-size); gap: var(--thumb-gap); }
+.touch-actions { position: absolute; right: max(var(--thumb-margin),var(--safe-right)); bottom: var(--thumb-base); display: grid; grid-template-columns: repeat(var(--thumb-columns, 2), var(--thumb-size)); grid-auto-rows: var(--thumb-size); gap: var(--thumb-gap); }
 .touch-actions button { width: var(--thumb-size); height: var(--thumb-size); font: 400 15px 'Barlow', sans-serif; pointer-events: auto; touch-action: none; }
 /* The surface is the shared glass button's (.liquid-glass.glass-round, set in TouchControls), so
    all thumb buttons look alike at rest, and so are their states: .held is the class's pressed
@@ -149,7 +149,7 @@
 .shell-vehicle-options { flex-wrap: wrap; gap: 10px 18px; }
 .vehicle-help { text-align: left; font-size: 14px; line-height: 1.7; color: var(--s3-ink); }
 /* Controls card: lower left, clear of the vehicle in the chase camera at every screen size. */
-.spawn-help { position: fixed; z-index: 14; left: max(20px,env(safe-area-inset-left)); bottom: max(20px,env(safe-area-inset-bottom)); max-width: 26em; padding: 8px 14px; background: rgb(28 28 30 / .82); border: 1px solid rgb(84 84 88 / .72); font-size: clamp(13px,0.9vw,18px); line-height: 1.55; pointer-events: none; }
+.spawn-help { position: fixed; z-index: 14; left: max(20px,var(--safe-left)); bottom: max(20px,env(safe-area-inset-bottom)); max-width: 26em; padding: 8px 14px; background: rgb(28 28 30 / .82); border: 1px solid rgb(84 84 88 / .72); font-size: clamp(13px,0.9vw,18px); line-height: 1.55; pointer-events: none; }
 .spawn-help strong { font-weight: 600; color: white; display: none; }
 .spawn-help.is-full { max-width: 28em; padding: 12px 16px; font-size: clamp(14px,0.95vw,19px); }
 .spawn-help.is-full strong { display: block; }
@@ -163,7 +163,7 @@
      in the idle status line's style, no box (the owner, 19 November 2026: "minimal and classy"). */
   background: none; border: 0; box-shadow: none; padding: 0; -webkit-backdrop-filter: none; backdrop-filter: none;
   color: var(--s3-ink, #f4f4f4); font: 500 14px/1.35 'Barlow', 'Avenir Next', sans-serif; letter-spacing: .03em;
-  text-shadow: 0 1px 2px rgb(0 0 0 / .85), 0 0 12px rgb(0 0 0 / .6);
+  text-shadow: var(--float-under);
 }
 
 /* The loading veil is in index.html. LoadingScreen's polite live region: the plain loading phase, for screen readers only. */
@@ -314,16 +314,16 @@
 /* Landscape: HUD top left above the stick, strip top centre, menu row and minimap top
    right above the action buttons, messages along the bottom between the thumbs. */
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .shell-hud { left: max(12px,env(safe-area-inset-left)); top: 10px; width: 170px; padding: 6px 8px; }
+  .shell-hud { left: max(12px,var(--safe-left)); top: 10px; width: 170px; padding: 6px 8px; }
   .shell-speed { padding-bottom: 2px; }
   .shell-speed strong { font-size: 28px; }
   .hud-scoreboard { max-height: 72px; }
   .hud-scoreboard .score-detail { display: none; }
   .hud-scoreboard .score-row { font-size: 12px; padding: 2px 4px; }
-  .hud-navigation { right: max(12px,env(safe-area-inset-right)); top: 10px; }
+  .hud-navigation { right: max(12px,var(--safe-right)); top: 10px; }
   .syn3h-shell .hud-navigation button { min-height: 36px; }
-  .shell-minimap { right: max(12px,env(safe-area-inset-right)); top: 54px; bottom: auto; width: 92px; height: 92px; }
-  .touch-stick { width: 124px; height: 124px; left: max(18px,env(safe-area-inset-left)); bottom: max(18px,env(safe-area-inset-bottom)); }
+  .shell-minimap { right: max(12px,var(--safe-right)); top: 54px; bottom: auto; width: 92px; height: 92px; }
+  .touch-stick { width: 124px; height: 124px; left: max(18px,var(--safe-left)); bottom: max(18px,env(safe-area-inset-bottom)); }
   .touch-knob { left: 35px; top: 35px; }
   .touch-actions button { font-size: 13px; }
   .match-hud { top: 10px; left: 50%; transform: translateX(-50%); width: min(300px, calc(100% - 420px)); }
@@ -418,7 +418,7 @@
   border: 0; border-radius: 0; outline: 0; background: none; background-image: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
   pointer-events: none; cursor: default; white-space: nowrap; text-align: center;
   color: color-mix(in srgb, #f6f9fc 94%, var(--caption-tint));
-  text-shadow: 0 0 3px rgb(0 6 12 / .8), 0 1px 6px rgb(0 6 12 / .5);
+  text-shadow: var(--float-under);
   --caption-pulse: 0;
   /* At rest, toward the hovered strength by the planet's pulse (0 to its peak share); hidden stays hidden. */
   opacity: calc(var(--caption-base) * var(--caption-strength) + (min(1, calc(var(--caption-strength) * 100)) - var(--caption-base) * var(--caption-strength)) * var(--caption-pulse));
@@ -449,6 +449,9 @@
 /* The galaxy would not start: its labels become a row of buttons above the help line. */
 .galaxy-flat .galaxy-labels { position: static; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin-bottom: 14px; pointer-events: auto; overflow: visible; }
 .syn3h-shell.galaxy-flat .galaxy-label { position: static; translate: none; transform: none; }
+/* A caption that would touch the lobby's own controls (Shell, captionBlocked) has faded to nothing
+   through --caption-strength; it takes no taps either, so a tap there reaches the control. */
+.syn3h-shell button.galaxy-label.is-blocked { pointer-events: none; }
 .galaxy-links { padding: 6px 18px; border-radius: 999px; background: rgb(10 12 18 / .5); }
 
 /* The descent: the lobby's words and glass fall away, the galaxy blurs as it dives, and the
@@ -491,7 +494,7 @@
 .race-arrow { display: inline-block; position: absolute; left: 10px; top: 12px; font-size: 22px; }
 .race-hud:has(.race-arrow:not([hidden])) { padding-inline: 34px; }
 .race-controls { display: flex; gap: 4px; justify-content: center; margin-top: 6px; }
-.syn3h-shell .race-controls button { font: inherit; font-size: 12px; min-height: 32px; padding: 4px 9px; border-radius: 8px; }
+.syn3h-shell .race-controls button { font: inherit; font-size: 12px; min-height: 32px; padding: 4px 9px; border-radius: var(--glass-control-radius, 24px); }
 .race-hud.is-captured { background: rgb(19 19 19 / .5); border-color: rgb(218 218 218 / .18); pointer-events: none; }
 .race-hud.is-captured .race-controls { display: none; }
 .race-hud.is-collapsed .race-destination, .race-hud.is-collapsed .race-detail, .race-hud.is-collapsed .race-arrow { display: none; }

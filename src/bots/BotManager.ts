@@ -309,7 +309,8 @@ export class BotManager implements System {
    * A place for a new bot near the player, wherever they are: on ground its vehicle can use
    * (water only for a hovercraft or a jet, never lava), clear of every other vehicle, out of
    * the player's way ahead, and close enough to be seen arriving: off to one side and a little
-   * ahead first, where the chase camera looks, then further round. Null when there is none.
+   * ahead first, where the chase camera looks, then further round. Failing all of those, a
+   * spawn point. Null when there is none.
    */
   private spot(index: number, kind: string): { position: Vector3; heading: number } | null {
     const p = this.player.body.translation(), v = this.player.body.linvel()
@@ -338,6 +339,16 @@ export class BotManager implements System {
         const surface = floats ? Math.max(ground, this.terrain.liquidHeightAt?.(x, z) ?? -Infinity) : ground
         return { position: new Vector3(x, surface + 2, z), heading: facing }
       }
+    }
+    // Nowhere near the player can take it: a player sitting in a lava lake, or hemmed in by
+    // slopes. Then a spawn point, as a stuck bot's recovery uses (see enter), held to the same
+    // ground rules, so a host there still gets its bots. It is a far bot from the start and
+    // drives over like any other.
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const spawn = this.terrain.spawnPoint(index + attempt + 1), { x, z } = spawn.position
+      if (!isSafeGround(this.terrain, x, z) || this.terrain.normalAt(x, z, new Vector3()).y < 0.65) continue
+      if (others.some(o => { const q = o.body.translation(); return Math.hypot(q.x - x, q.z - z) < 7 })) continue
+      return { position: spawn.position.clone(), heading: spawn.heading }
     }
     return null
   }

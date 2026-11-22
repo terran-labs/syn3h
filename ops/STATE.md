@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 16:10 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-22 12:35 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,13 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2116 (release-95, Glass setting with four looks), source 41b98d04, frozen copy
-20261121-155706-41b98d04, Worker version 66f9ff46, at https://www.syn3h.com/ since 21 November 16:01 PST.
+Live: v26.11.2202 (release-102, water draw order, iPhone black flashes, card consistency, touch buttons), source 55561155,
+frozen copy 20261122-122454-55561155, Worker version 83dba942, at https://www.syn3h.com/ since 22 November 12:29 PST.
+Browser suites: tests/ui/about-updates.mjs needs its dev server started with SYN3H_RELEASE_VERSION set to the second-newest
+production release (its header says how; 313e9488).
+Version numbers follow the Pacific date (release.sh): a release planned on the 21st and shipped after midnight is 22NN.
+Releases now ship through tools/ship.sh (first used for 2120); outcomes in /tmp/syn3h-ship-N*.
+Protocol (since 2118): FLAG_USER_PAUSE = 32 (ignored by older receivers; an older host's pause counts as hidden).
 Staging looks now include iPad mini (744x1133 and 1133x744, touch) with phone and desktop.
 Releases start detached (own session) so the tool runner cannot end them: /tmp/orch-ship-detached.sh
 <n> <version> "<note>" via nohup python3 os.setsid; outcome in /tmp/orch-dry-<v>.rc,
@@ -142,6 +147,13 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2114 | 93 | m-tools-2114 | performance check labels its card row clearly; release tooling waits for the hosted result |
 | v26.11.2115 | 94 | m-glassgate-2115 | experimental glass remains off by default; new load gate for the demo; known issues aligned |
 | v26.11.2116 | 95 | m-slider-2116 | Glass setting in Settings: Liquid, Glass, Frost, Flat (Liquid needs Medium or higher) |
+| v26.11.2117 | 96 | m-ipad-2117 | Panels above Tag and Wings, compact gear selector, even panels, Welcome carousel, Liquid on every button |
+| v26.11.2118 | 97 | m-handover-2118 | host role passes on when the host's game stops; bots spawn for a host in lava |
+| v26.11.2119 | 98 | m-polish-2119 | brighter Plasma Tag strikes, Grapple cord visible by day, no stall diving under water |
+| v26.11.2120 | 99 | m-camera-2120 | every lobby arrival frames the Syn3h name; Thunder on your own car clears in a tenth of a second |
+| v26.11.2200 | 100 | m-glass-2200 | glass styles Liquid, Frost, Flat with a Tint slider; desktop left rail as floating text; Welcome fits a phone |
+| v26.11.2201 | 101 | m-climb-2201 | quality climbs prepared before play; Tag and Thunder splash on water; ring edges by day; phone notice lets steering through |
+| v26.11.2202 | 102 | m-polish-2202 | no black flashes on iPhone; vehicle parts behind the water; cards one style; touch buttons grow when pressed |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker

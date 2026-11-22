@@ -13,7 +13,6 @@ export const regularSettings = {
   saturation: knob('saturation', 'Backdrop saturation', 1, 0, 2, .01),
   growth: knob('pressGrowth', 'Press growth offset', 0, -.12, .2, .01),
   lift: knob('pressBrightness', 'Press brightness', 1, 0, 2, .01),
-  appearance: knob('appearance', 'Appearance (0 follow device, 1 light, 2 dark)', 0, 0, 2, 1),
 }
 
 export function regularOverrides() {

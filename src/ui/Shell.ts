@@ -1,3 +1,4 @@
+import { clipSearchResults } from './panelGlass'
 import { liquidSelected } from './glassMaterial'
 import { longFrames } from '../core/longFrames'
 import { cancelStartupPlayRequest, recordStartupPlayRequest, recordStartupReveal } from '../core/diagnostics'
@@ -32,11 +33,13 @@ import { SlidingPanels } from './SlidingPanels'
 import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
-import { captionHidden, captionMask } from './galaxy/labels'
+import { captionBlocked, captionHidden, captionMask, type ScreenBox } from './galaxy/labels'
 import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
 import { LobbySettings } from './LobbySettings'
+import { CARD_CLOSE } from './cardClose'
+import { installTooltips } from './tooltip'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
 import { bindSwitch, switchWord } from './inspector/switch'
@@ -85,6 +88,7 @@ import './hud-column.css'
 import './glass.css'
 import './phone-panels.css'
 import './pause-screen.css'
+import './card-chrome.css'
 import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shareShot, shotFileName } from './screenshot'
 
 /**
@@ -160,12 +164,16 @@ const build = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? __SYN3H_B
 // On/off settings are the standard switch (inspector/switch.ts); bindSwitch gives them role and state.
 /**
  * The top row's icons, drawn as strokes on a 24 unit grid like the lobby's gear, About and
- * Updates icons (no image files). Leave world is a door with an arrow going out. An arrow
- * leaving a planet's rim was tried beside it and read as the male symbol at button size.
+ * Updates icons (no image files). Leave world is a gravitational slingshot (the owner,
+ * 22 November 2026: "a planet with an arrow away from it or some kind of gravitational
+ * slingshot"): a small planet and a path that swings round it and flies off. A plain arrow
+ * leaving a planet's rim read as the male symbol at button size.
  */
 export const PAUSE_ICON = 'M9.2 6.8v10.4M14.8 6.8v10.4'
 export const PLAY_ICON = 'M9 6.4v11.2l8.6-5.6Z'
-export const LEAVE_WORLD_ICON = 'M13 4.8H7.2A1.2 1.2 0 0 0 6 6v12a1.2 1.2 0 0 0 1.2 1.2H13M10.5 12h9M16.6 9l3 3-3 3'
+export const LEAVE_WORLD_ICON = 'M7.6 13.6a2.9 2.9 0 1 0 5.8 0a2.9 2.9 0 1 0-5.8 0M18.6 20.6C10.6 21.8 3.6 17 4.5 11.2C5.4 5.6 12.4 4 20.2 4.6M16.9 2.4l3.3 2.2-2.9 2.7'
+/** The search field's magnifier, drawn at the start of the field. */
+const SEARCH_ICON = 'M10.5 16.5a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM15 15l4.8 4.8'
 /** How long PAUSED and its resume line stay before fading, with nothing moving (ms). */
 const PAUSE_WHISPER_MS = 2500
 /** The pause screen's three buttons, drawn in the rail icons' line (24 px box, stroked). */
@@ -269,10 +277,10 @@ export class Shell implements System {
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels" role="group" aria-label="Worlds. Drag to look around; choose a world to go there."></div><nav class="lobby-links galaxy-links" aria-label="Lobby"${LOBBY_LINKS ? '' : ' hidden'}>${LOBBY_LINKS}</nav></div>
     </section>
-    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">Welcome</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
+    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">Welcome</h2><button type="button" class="about-back card-close" aria-label="Close" data-tip="Close">${CARD_CLOSE}</button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span class="nav-glyph" aria-hidden="true">≡</span>${PANELS_CHEVRONS_UP}<span class="nav-label"> Panels</span></button></nav>
-    <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="exit-stay">Stay</button><button type="button" class="exit-leave">Leave world</button></div></div></div>
+    <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="panel-action exit-stay">Stay</button><button type="button" class="panel-action exit-leave">Leave world</button></div></div></div>
     <div class="pause-actions" role="group" aria-label="Paused" hidden><button type="button" class="pause-exit liquid-glass" aria-haspopup="dialog" aria-label="Leave world">${pauseIcon(LEAVE_WORLD_ICON)}<span class="pause-word"><span class="pause-long">Exit world</span><span class="pause-short">Exit</span></span></button><button type="button" class="pause-about liquid-glass" aria-haspopup="dialog" aria-label="Welcome and how to play">${pauseIcon(WELCOME_ICON)}<span class="pause-word">Welcome</span></button><button type="button" class="pause-shot liquid-glass" aria-label="Save a screenshot" aria-describedby="pause-shot-keys">${pauseIcon(SHOT_ICON)}<span class="pause-word"><span class="pause-long">Screenshot <kbd>S</kbd></span><span class="pause-short">Photo</span></span></button><span class="pause-shot-hint" role="status" aria-live="polite" hidden></span><span class="pause-shot-keys" id="pause-shot-keys" aria-hidden="true">S saves a screenshot. W, A, D or the arrows resume.</span></div>
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
@@ -342,6 +350,7 @@ export class Shell implements System {
       oneOpen: () => matchMedia(PHONE_SIDEBAR).matches,
       // Phone-sized touch screens: one panel at a time, alone (phone-panels.css). Tablets and
       // desktops keep the stack as it was.
+      closePanels: () => this.returnToDriving(),
       phonePanels: () => this.touch.available && matchMedia(PHONE_SIDEBAR).matches,
       rememberOpen: 'syn3h.sidebar.open',
     })
@@ -350,10 +359,11 @@ export class Shell implements System {
     // display shows; with it free the panels are open. There is no stored open or closed
     // state: `syncPanels` derives it from the real lock, every frame and on every lock event.
     this.inspector.open = false
+    clipSearchResults(this.inspector.element, signal)
     const railTop = this.inspector.element.querySelector('.wi-top')!
     // Players & session is a card like the others: same header, chevron, easing and memory.
     const players = document.createElement('div')
-    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite welcome about how to play help connection diagnostics mute audio sound"><button type="button" class="rail-invite">Invite players</button><button type="button" class="rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
+    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite welcome about how to play help connection diagnostics mute audio sound"><button type="button" class="panel-action rail-invite">Invite players</button><button type="button" class="panel-action rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     this.inspector.addCard('players', 'Players & session', players, () => {
       const count = this.element.querySelectorAll('.hud-scoreboard .score-row').length
@@ -366,7 +376,10 @@ export class Shell implements System {
       this.queuedQuality = { level, apply }
       if (!this.qualityVeil) void this.applyQualityBehindVeil()
     }
-    this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
+    const noticeStack = document.createElement('div')
+    noticeStack.className = 'drive-notices'
+    this.element.append(noticeStack)
+    this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector, noticeStack)
     // The lobby's settings: Settings above Welcome and Updates in the lower right of the galaxy,
     // the running version in the lower left, and a right-hand card of what acts in the lobby
     // (LobbySettings). The presentation toggle and host controls are built here and wired below.
@@ -376,13 +389,6 @@ export class Shell implements System {
       quality: this.game.quality, host: this.hostControls, build,
       // The card and a sheet never show together: the card takes over from an open sheet.
       opening: () => { for (const sheet of this.lobbySheets) sheet.close(false) },
-      // The card never covers the wordmark: the one in space, else the flat logo standing in.
-      ceiling: () => {
-        const box = this.galaxy?.wordmarkScreenBox()
-        if (box) return { left: box.x, right: box.x + box.width, bottom: box.y + box.height }
-        const logo = this.element.querySelector('.shell-logo')?.getBoundingClientRect()
-        return logo && logo.height ? { left: logo.left, right: logo.right, bottom: logo.bottom } : null
-      },
       hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', inRoom: () => { const net = hostControls(); return !!net && (net.isHost || canEditWorld()) }, cue: () => this.audio.cue('click'),
     })
     this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock, this.lobbySettings.versionDock)
@@ -398,20 +404,21 @@ export class Shell implements System {
       // The buttons go back to their corner of the lobby.
       const dock = this.lobbySettings.dock
       this.element.querySelector('.galaxy-ui')!.append(dock); dock.classList.remove('is-beside-sheet')
-      for (const button of [this.lobbySettings.about, this.lobbySettings.updates]) { button.classList.remove('is-current'); button.removeAttribute('aria-current') }
+      this.lobbySettings.about.classList.remove('is-current'); this.lobbySettings.about.removeAttribute('aria-current')
       if (this.galaxy) { this.galaxy.markLift = 0; this.galaxy.worlds = 1 }
       if (this.galaxy && this.panels.active === 'index' && !this.playing) this.galaxy.backdrop = 1
     }
     // While the name rises to stand over an open sheet, the sheet follows it (LobbySheet).
+    // (While the view eases to bring the name into view, Galaxy.frameName, the edges are where
+    // it will land, so the sheet holds still.)
     const following = () => !!this.galaxy && this.galaxy.liftShown !== (this.galaxy.markLift > 0 ? 1 : 0)
     // The Welcome guide's content (src/ui/welcome): mounted on first open, its images loading on each.
     this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'Welcome', edges, following, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { this.lobbyWelcome = mountWelcome(body, { where: 'lobby' }) }, opened: () => this.lobbyWelcome?.opened() })
     this.updatesSheet = new LobbySheet(this.element, {
-      name: 'updates', title: 'Updates', edges, following, home: () => this.lobbySettings.updates, closed, cue: () => this.audio.cue('click'),
+      name: 'updates', title: 'Updates', edges, following, home: () => this.lobbySettings.version, closed, cue: () => this.audio.cue('click'),
       fill: body => body.insertAdjacentHTML('beforeend', updatesSheetHtml()), opened: body => { void fillUpdates(body.querySelector<HTMLElement>('.about-updates')!) },
     })
     this.lobbySettings.about.addEventListener('click', () => this.openLobbySheet(this.aboutSheet), { signal })
-    this.lobbySettings.updates.addEventListener('click', () => this.openLobbySheet(this.updatesSheet), { signal })
     // Settings opens its own right-hand card (LobbySettings handles its button).
     // The top row (the owner, 17 November 2026): exactly three controls, side by side with no
     // plate around them, sized like a card's title row so the row reads as the first of the
@@ -419,6 +426,8 @@ export class Shell implements System {
     const command = document.createElement('div'); command.className = 'rail-command'
     command.innerHTML = `<button type="button" class="rail-pause wi-glass" aria-label="Pause" data-tip="Pause">${railIcon(PAUSE_ICON)}</button><button type="button" class="exit-world wi-glass" aria-label="Leave world" data-tip="Leave world">${railIcon(LEAVE_WORLD_ICON)}</button>`
     const search = railTop.querySelector<HTMLInputElement>('.wi-search')!; search.classList.add('wi-glass'); command.prepend(search)
+    // The magnifier stands over the start of the field; the text starts after it (card-chrome.css).
+    search.insertAdjacentHTML('afterend', `<svg class="rail-search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${SEARCH_ICON}"/></svg>`)
     // Under the stack, only what docks there now and then: the update chip and a slow-frames
     // recommendation (PerformancePanel). Empty, it takes no space.
     const foot = document.createElement('div'); foot.className = 'rail-foot'
@@ -481,6 +490,7 @@ export class Shell implements System {
     music.querySelector('input')!.addEventListener('change', event => this.audio.setMuted((event.target as HTMLInputElement).checked), { signal })
     this.focusHud = new FocusHud(this.element)
     this.raceHud = new RaceHud(this.element, { leave: () => this.onRaceLeave?.(), cancel: () => this.onRaceCancel?.() })
+    noticeStack.prepend(this.raceHud.element)
     // Touch has no cursor to capture, so one control switches between driving and the panels.
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
     toggle.addEventListener('click', () => { this.touchPanels = !this.touchPanels; this.syncPanels() }, { signal })
@@ -494,6 +504,7 @@ export class Shell implements System {
     const unsubscribeInterface = params.onChange(id => { if (id === interfaceMode.def.id) this.syncPanels() })
     signal.addEventListener('abort', () => { unsubscribeInterface(); this.interfaceVeil.dispose() })
     this.glass(signal)
+    installTooltips(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
     this.mountSavedWorlds()
@@ -638,7 +649,7 @@ export class Shell implements System {
     if (this.playing) return
     // Its own button again: close it, as the gear always has.
     if (sheet.isOpen) { sheet.close(); return }
-    const home = sheet === this.aboutSheet ? this.lobbySettings.about : this.lobbySettings.updates
+    const home = sheet === this.aboutSheet ? this.lobbySettings.about : this.lobbySettings.version
     this.lobbySettings.close(false)
     const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body && !document.activeElement.closest('dialog.lobby-sheet') ? document.activeElement : home
     // Another sheet already up: it hands over and this one takes its place, so the panel stays
@@ -646,14 +657,15 @@ export class Shell implements System {
     const current = this.lobbySheets.find(s => s.isOpen)
     if (current) current.handOff()
     // The worlds fade out, the sky dims a little and the name rises over the contents (LobbySheet).
-    if (this.galaxy) { this.galaxy.backdrop = SHEET_BACKDROP; this.galaxy.markLift = 1; this.galaxy.worlds = 0 }
+    // Wherever the player had swiped, the view eases to where the name reads well, so it stands
+    // over the sheet and is already in place when the sheet closes (Galaxy.frameName).
+    if (this.galaxy) { this.galaxy.backdrop = SHEET_BACKDROP; this.galaxy.markLift = 1; this.galaxy.worlds = 0; this.galaxy.frameName() }
     // The three buttons stay beside the open sheet, above its backdrop, to switch between them;
     // the open one is marked.
     const dock = this.lobbySettings.dock
     sheet.element.append(dock); dock.classList.add('is-beside-sheet')
-    for (const [button, owner] of [[this.lobbySettings.about, this.aboutSheet], [this.lobbySettings.updates, this.updatesSheet]] as const) {
-      button.classList.toggle('is-current', owner === sheet); if (owner === sheet) button.setAttribute('aria-current', 'true'); else button.removeAttribute('aria-current')
-    }
+    const about = this.lobbySettings.about, isAbout = sheet === this.aboutSheet
+    about.classList.toggle('is-current', isAbout); if (isAbout) about.setAttribute('aria-current', 'true'); else about.removeAttribute('aria-current')
     sheet.open(opener, !!current)
   }
   openAbout(tab?: AboutTab): void {
@@ -908,6 +920,9 @@ export class Shell implements System {
     this.releaseCursor()
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
+    // The in-play controls go with play: left attached, the Panels control rose over the lobby
+    // whenever the lobby's settings card (a .world-inspector too) opened on a touch screen.
+    for (const selector of ['.shell-hud', '.hud-navigation']) this.element.querySelector<HTMLElement>(selector)!.hidden = true
   }
   /** A room welcome may replace the selected planet. Compile against the settled world. */
   private async waitForEntryWorld() {
@@ -1741,6 +1756,7 @@ export class Shell implements System {
       // picture): the world's name, its biome in small lower case under it, then how many are
       // online. Set under its planet; the planet takes the taps, the caption takes focus.
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
+      this.chipSizes.observe(chip)
       chip.innerHTML = '<strong></strong><small class="galaxy-biome"></small>'
       const text = planetLabelText(world)
       chip.querySelector('strong')!.textContent = text.name; chip.querySelector('small')!.textContent = text.biome
@@ -1841,6 +1857,12 @@ export class Shell implements System {
         const current = currentPlanet().id, near = Math.min(...places.filter(p => p.visible).map(p => p.depth)), far = Math.max(...places.filter(p => p.visible).map(p => p.depth))
         // Nearer, larger planets get larger captions (captionScale.ts); the gap below the limb grows with them.
         const short = Math.min(innerWidth, innerHeight)
+        // The lobby's own controls, read once before this frame's writes: a caption that would
+        // touch one fades out (captionBlocked). Captions are placed in the label layer's space.
+        const layer = chips.values().next().value?.parentElement?.getBoundingClientRect()
+        const blockers: ScreenBox[] = [this.lobbySettings.dock, this.lobbySettings.version, document.getElementById('lobby-settings')]
+          .map(el => el?.getBoundingClientRect()).filter((r): r is DOMRect => !!r && r.width > 0 && r.height > 0)
+          .map(r => ({ left: r.left - (layer?.left ?? 0), right: r.right - (layer?.left ?? 0), top: r.top - (layer?.top ?? 0), bottom: r.bottom - (layer?.top ?? 0) }))
         for (const place of places) {
           const chip = chips.get(place.id)!
           chip.hidden = !place.visible
@@ -1849,7 +1871,11 @@ export class Shell implements System {
           const scaleText = scale.toFixed(2)
           if (chip.style.getPropertyValue('--caption-scale') !== scaleText) chip.style.setProperty('--caption-scale', scaleText)
           this.placeChip(chip, place.x, place.y + place.radius + gap)
-          const away = (!!chosen && place.id !== chosen) || place.labelled === false || captionHidden(place, places, this.galaxy?.sunScreen)
+          // The caption's box: centred under its planet, its size as last laid out (chipSizes).
+          const size = this.chipSize.get(chip), top = place.y + place.radius + gap
+          const blocked = !!size && captionBlocked({ left: place.x - size.width / 2, right: place.x + size.width / 2, top, bottom: top + size.height }, blockers)
+          if (chip.classList.contains('is-blocked') !== blocked) { chip.classList.toggle('is-blocked', blocked); chip.tabIndex = blocked ? -1 : 0 }
+          const away = blocked || (!!chosen && place.id !== chosen) || place.labelled === false || captionHidden(place, places, this.galaxy?.sunScreen)
           const depth = far > near ? (place.depth - near) / (far - near) : 0
           // Pointing and focus lift it in the stylesheet (.is-pointed, :focus), at once, even
           // while the galaxy is holding still and not drawing.
@@ -1881,6 +1907,11 @@ export class Shell implements System {
     this.chipDrawn.set(chip, last)
     if (!(Math.abs(x - last.x) <= .5 && Math.abs(y - last.y) <= .5)) { last.x = x; last.y = y; chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` }
   }
+  /** Each caption's laid-out size, kept by a ResizeObserver so the per-frame pass never measures. */
+  private readonly chipSize = new WeakMap<Element, { width: number; height: number }>()
+  private readonly chipSizes = new ResizeObserver(entries => {
+    for (const entry of entries) { const box = entry.borderBoxSize?.[0]; this.chipSize.set(entry.target, box ? { width: box.inlineSize, height: box.blockSize } : { width: entry.contentRect.width, height: entry.contentRect.height }) }
+  })
   /** Each caption's last mask, so it is written only when it changes. */
   private readonly chipMask = new WeakMap<HTMLButtonElement, string>()
   private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
@@ -1936,15 +1967,14 @@ export class Shell implements System {
   }
   /**
    * Every button is the game's glass button (.liquid-glass in glass.css), except the quiet text
-   * links, the Paused veil (a full-screen button) and the panels' rows and switches. This also carries that site's GlassShine: while the pointer is over a
+   * links, the Paused veil (a full-screen button), the panels' rows and switches, and the gear
+   * drum and left column, which are floating text. This also carries that site's GlassShine: while the pointer is over a
    * glass button, the bright side of its one-pixel rim turns to face the pointer, and settles
    * back when the pointer leaves. Nothing is drawn on the face of the button.
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
-    // In the panels, only the two plain actions are buttons in this sense; the rest are rows, switches and choices.
-    for (const button of this.element.querySelectorAll<HTMLElement>('.rail-invite, .rail-about')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-close, .card-close, .about-tabs *, .lobby-links *, .syn3h-advanced *, .world-inspector *, .performance-recommendation *, .race-controls *, .update-banner-actions *, .exit-confirm-actions *, .join-view *, .gear-selector *, .hud-accessories *, .hud-chat *')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
     // Upper left, where the light strikes at rest (glass.css).
@@ -2209,7 +2239,7 @@ export class Shell implements System {
     if (keep) { keepRow.querySelector<HTMLInputElement>('#bots-keep')!.checked = keep.value === true; }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.chipSizes.disconnect(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
