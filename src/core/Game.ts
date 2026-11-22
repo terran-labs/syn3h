@@ -420,7 +420,8 @@ export class Game {
     longFrames.event('Climbed level preparation')
     const camera = this.camera
     const behind = camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(-1000).add(camera.position)
-    const moved: { mesh: THREE.Mesh; position: THREE.Vector3; scale: THREE.Vector3; culled: boolean }[] = []
+    const moved: { mesh: THREE.Object3D; position: THREE.Vector3; scale: THREE.Vector3; culled: boolean }[] = []
+    const culled: THREE.Object3D[] = []
     try {
       // Systems whose look depends on the level (particle octaves) switch now, not next update.
       for (const system of this.systems) system.prepareClimb?.()
@@ -437,8 +438,12 @@ export class Game {
         }
       }
       for (const system of this.systems) system.prepareWorldDraw?.()
+      // Culling off for this draw, as the covered entry draws: a caster outside every cascade (a bot
+      // far away) would otherwise get its shadow pipeline only when it moves into one, in play.
+      this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
       drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
     } finally {
+      for (const o of culled) o.frustumCulled = true
       for (const m of moved) { m.mesh.visible = false; m.mesh.frustumCulled = m.culled; m.mesh.position.copy(m.position); m.mesh.scale.copy(m.scale) }
       longFrames.end('Climbed level preparation', start)
     }

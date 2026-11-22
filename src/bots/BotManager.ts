@@ -1,7 +1,7 @@
 import { worldSeed } from '../../shared/params'
 import { uniqueBotName } from '../ui/data/names'
 import { attachVehicleEffects } from '../vehicles/effects'
-import { Vector3 } from 'three/webgpu'
+import { Vector3, type Mesh } from 'three/webgpu'
 import { longFrames } from '../core/longFrames'
 import type { CoveredWarm, Game, System } from '../core/Game'
 import { qualityBudget } from '../core/quality'
@@ -448,6 +448,14 @@ export class BotManager implements System {
       const behind = round && (p.x - camera.position.x) * this.look.x + (p.y - camera.position.y) * this.look.y + (p.z - camera.position.z) * this.look.z < -8
       bot.object.visible = !behind && !overHorizon(p.x, p.z, 4, p.y + 3)
     }
+  }
+  /**
+   * Bots hidden this frame (behind the camera or over the horizon, see update): a quality change
+   * draws them too, so a level's new vehicle and shadow materials are built before they come back
+   * into view in play.
+   */
+  *precompileQualityMeshes(): Iterable<Mesh> {
+    for (const bot of this.bots) if (!bot.object.visible) yield bot.object as unknown as Mesh
   }
   dispose() {
     this.disposed = true
