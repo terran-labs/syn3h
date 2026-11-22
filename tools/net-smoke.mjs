@@ -795,6 +795,10 @@ try {
   await step('host away', async () => {
   const hostAtStart = await a.evaluate(() => window.syn3hNet.game.host)
   if (hostAtStart !== idA) throw new Error(`Alice is not host at the start (host ${hostAtStart}); rerun`)
+  // Step 11 leaves Bob in the caldera's lava, where a host's bots find nowhere to arrive (bots
+  // spawn on safe ground near their host): put him back on his pad, so this step tests the
+  // handover and not that.
+  await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, s.heading) })
   await a.evaluate(() => {
     const s = window.syn3h
     s.params.set('bots.canDrive', true); s.params.set('bots.canFire', false)
