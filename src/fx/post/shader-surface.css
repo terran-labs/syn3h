@@ -11,10 +11,16 @@
    Every swelling button (GlassPress) gathers its contents into one label, which scales as one. */
 .glass-press-label { display: inline-flex; align-items: center; justify-content: center; gap: inherit; pointer-events: none; }
 .liquid-glass[data-glass-surface="shader"][data-glass-press] { transform: none; }
+/* A round label is rasterised 47/35 larger (134.2857%) and scaled back down by GlassPress, so
+   its box is drawn 47/35 larger too: the button's content box (its width less 4 px padding a
+   side) times 47/35, centred, and its height likewise. Text then wraps at exactly the width it
+   has in plain CSS, so a label lays out the same at rest, pressed, beside a pressed neighbour
+   and in every material; only its scale changes. Left and right: -17.1429% of the button's
+   width plus 4 px x 47/35. Words never break inside (overflow-wrap: normal) as a guard. */
 .liquid-glass.glass-round[data-glass-surface="shader"][data-glass-press] > .glass-press-label {
-  position: absolute; inset: 0; display: grid; place-items: center;
+  position: absolute; inset: -17.1429% calc(5.3714px - 17.1429%); display: grid; place-items: center;
   grid-template-columns: minmax(0, 1fr); white-space: normal; overflow-wrap: normal; text-align: center;
-  font-size: 134.2857%; line-height: 1; text-shadow: none;
+  font-size: 134.2857%; line-height: 1.1; text-shadow: none;
 }
 
 /* The sunk-buggy cue animates these two native DOM layers along with its
