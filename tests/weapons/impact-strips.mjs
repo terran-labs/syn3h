@@ -57,7 +57,7 @@ try {
   await page.addInitScript(([hour, ahead]) => { window.__hour = hour; window.__ahead = ahead }, [HOUR, AHEAD])
   const errors = []; page.on('pageerror', e => errors.push(e.message))
   // The same world in every build (a fixed planet and seed), so both stand in the same places.
-  await page.goto(`${base}?planet=alpine&seed=7&autoplay=1&room=strips-${Date.now()}`)
+  await page.goto(`${base}?planet=${process.env.SYN3H_PLANET ?? "alpine"}&seed=7&autoplay=1&room=strips-${Date.now()}`)
   await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet?.lasers, null, { timeout: 120000 })
   await page.evaluate(() => {
     document.exitPointerLock?.()
