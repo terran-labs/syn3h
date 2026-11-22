@@ -830,6 +830,9 @@ export class GroundCover implements System {
     this.applyBudget()
   }
 
+  /** A climbed level (Game.prepareClimbedLevel): take its cover budget now, so the preparation draw builds what it plants. */
+  prepareClimb(): void { this.applyBudget() }
+
   /** Take up the cover.* settings if any changed. */
   private applyBudget(): void {
     const was = this.budget
