@@ -5,7 +5,7 @@
  * procedural material per pool, no image assets.
  */
 import * as THREE from 'three/webgpu'
-import { abs, attribute, float, max, uniform, uv, vec3 } from 'three/tsl'
+import { abs, attribute, float, max, uv, vec3 } from 'three/tsl'
 import { vehicleNightAmount } from '../vehicles/skins/nightReadability'
 import type { Game } from '../core/Game'
 import { hotExposureNode } from '../vehicles/skins/hotExposure'
@@ -15,16 +15,32 @@ type N = any // TSL's arithmetic nodes are dynamically typed.
 const CAPACITY = 16
 /** The ring's dark edge: where it lies (the bright band ends at 0.94 of the quad), how wide, how dark. */
 const EDGE_AT = 0.965, EDGE_HALF = 0.035, EDGE_ALPHA = 0.85
+/** The half-width of an impact ring's edge band on screen, pixels: at least, and at most. */
+export const EDGE_MIN_PX = 1.5, EDGE_MAX_PX = 3
+/** At night, inside your beam: the edge at this share of its daytime strength (and 0.6 of its width). */
+const EDGE_NIGHT_ALPHA = 0.7
+
+/** Metres one pixel spans at `at`, from the camera's field of view and the canvas height. */
+export function metresPerPixel(game: Game, at: THREE.Vector3): number {
+  const cam = game.camera as THREE.PerspectiveCamera | undefined
+  // No camera (a unit test): no floor or cap; the band keeps its share of the ring.
+  if (!cam) return 0
+  const distance = Math.max(0.1, cam.position.distanceTo(at))
+  const height = (game.renderer as unknown as { domElement?: HTMLCanvasElement })?.domElement?.clientHeight || 800
+  return 2 * distance * Math.tan(((cam.fov ?? 60) * Math.PI) / 360) / height
+}
 const UP = new THREE.Vector3(0, 0, 1)
 
 export interface PulseOptions {
   radius: number
   seconds: number
   color: THREE.Color
+  /** 0 to 1: how far inside the local player's headlight beam it is (an edge is drawn there at night). */
+  beam?: number
 }
 
-/** Ring edges drawn at once for the whole game: the impact rings' and the Yoink's gust rings'. */
-export const EDGE_SLOTS = 32
+/** Ring edges drawn at once for the whole game: the impact rings', the Yoink's gust rings' and the Chasers' outlines. */
+export const EDGE_SLOTS = 48
 
 /**
  * Every ring's dark edge in the game, by day: one small instanced batch and one material, so a
@@ -38,7 +54,6 @@ export const EDGE_SLOTS = 32
 export class RingEdges {
   readonly mesh: THREE.InstancedMesh
   private readonly look: THREE.InstancedBufferAttribute
-  private readonly day = uniform(1)
   private next = 0
   private warming = 0
   private readonly unwarm: () => void
@@ -56,7 +71,7 @@ export class RingEdges {
     const look: N = attribute('edgeLook', 'vec4'), r: N = uv().mul(2).sub(1).length()
     const band: N = max(float(0), float(1).sub(abs(r.sub(look.y)).div(look.z.max(1e-3)))).pow(0.7)
     m.colorNode = vec3(0, 0, 0)
-    m.opacityNode = band.mul(look.x).mul(this.day).mul(EDGE_ALPHA)
+    m.opacityNode = band.mul(look.x).mul(EDGE_ALPHA)
     this.mesh = new THREE.InstancedMesh(geometry, m, EDGE_SLOTS)
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
     this.mesh.frustumCulled = false
@@ -89,7 +104,6 @@ export class RingEdges {
     for (let i = 0; i < EDGE_SLOTS && !live; i++) live = arr[i * 4] > 0
     this.mesh.visible = live
     if (this.warming > 0) this.warming--
-    this.day.value = 1 - vehicleNightAmount(this.game.scene)
     this.mesh.instanceMatrix.needsUpdate = true
     this.look.needsUpdate = true
   }
@@ -107,7 +121,7 @@ export class ImpactPulses {
   private readonly geometry = new THREE.PlaneGeometry(2, 2)
   private readonly material = new THREE.MeshBasicNodeMaterial({ name: 'gear impact ring', transparent: true, depthWrite: false, side: THREE.DoubleSide })
   private readonly mesh: THREE.InstancedMesh
-  private readonly entries = Array.from({ length: CAPACITY }, () => ({ age: Infinity, seconds: 1, radius: 1, at: new THREE.Vector3(), rotation: new THREE.Quaternion(), color: new THREE.Color() }))
+  private readonly entries = Array.from({ length: CAPACITY }, () => ({ age: Infinity, seconds: 1, radius: 1, at: new THREE.Vector3(), rotation: new THREE.Quaternion(), color: new THREE.Color(), beam: 0 }))
   private cursor = 0
   private warming = 0
   private readonly transform = new THREE.Object3D()
@@ -157,6 +171,7 @@ export class ImpactPulses {
     e.at.copy(at).addScaledVector(normal, 0.09)
     e.rotation.setFromUnitVectors(UP, normal.clone().normalize())
     e.color.copy(options.color)
+    e.beam = Math.max(0, Math.min(1, options.beam ?? 0))
   }
 
   /** Frames left to write zeros after the last entry ended; then the pool sits idle. */
@@ -166,6 +181,7 @@ export class ImpactPulses {
     // Nothing alive and the last zeros written: skip the loop and the uploads entirely.
     if (this.settle === 0 && this.warming === 0 && !this.entries.some(e => e.age < e.seconds)) { this.mesh.visible = false; return }
     let active = false
+    const day = this.edges ? 1 - vehicleNightAmount(this.game.scene) : 1
     for (let i = 0; i < CAPACITY; i++) {
       const e = this.entries[i]
       e.age += dt
@@ -178,7 +194,26 @@ export class ImpactPulses {
       this.transform.updateMatrix()
       this.mesh.setMatrixAt(i, this.transform.matrix)
       this.mesh.setColorAt(i, this.color.copy(e.color).multiplyScalar(t < 1 ? (this.kind === 'glow' ? (1 - t) ** 1.6 : (1 - t) ** 2) : 0))
-      this.edges?.look.set(this.edgeFirst + i, this.transform.matrix, t < 1 ? (1 - t) ** 2 : 0)
+      if (this.edges) {
+        // The band's width on screen: never thinner than EDGE_MIN_PX (at 40 m it was about two
+        // pixels and barely read) nor thicker than EDGE_MAX_PX (a ring bursting on your own car,
+        // metres from the lens, would grow a thick black hoop). In quad radii, just outside the
+        // bright band, which ends at 0.94.
+        const scale = this.transform.scale.x
+        let half = EDGE_HALF, at = EDGE_AT
+        const mPerPx = scale > 0 ? metresPerPixel(this.game, this.transform.position) : 0
+        if (mPerPx > 0) {
+          const px = Math.min(EDGE_MAX_PX, Math.max(EDGE_MIN_PX, EDGE_HALF * scale / mPerPx))
+          half = px * mPerPx / scale
+          at = 0.94 + half
+        }
+        // By day it is drawn for every ring; at night only for one inside your own headlight beam,
+        // where the hit's light washes into the beam's glare, and thinner (EDGE_NIGHT), since a
+        // strong black band against dark ground would look cut out.
+        const lit = Math.max(day, e.beam * EDGE_NIGHT_ALPHA)
+        if (day < 1 && e.beam > day) { half *= 0.6 + 0.4 * day; at = 0.94 + half }
+        this.edges.look.set(this.edgeFirst + i, this.transform.matrix, t < 1 ? (1 - t) ** 2 * lit : 0, at, half)
+      }
       active ||= t < 1
     }
     this.settle = active ? 1 : Math.max(0, this.settle - 1)

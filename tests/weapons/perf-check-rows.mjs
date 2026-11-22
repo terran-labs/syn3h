@@ -24,7 +24,7 @@ try {
   await page.waitForTimeout(5000)
   const text = await page.evaluate(() => window.syn3h.shell.performancePanel.source.runPerformanceCheck(new AbortController().signal))
   await writeFile(out, text)
-  console.log(text.split('\n').filter(l => /^(Syn3h performance check|Local step|Thunder burst|Laser hits|Grapple|Quality at entry)/.test(l)).join('\n'))
+  console.log(text.split('\n').filter(l => /^(Syn3h performance check|Local step|Thunder burst|Laser hits|Chaser|Yoink gust|Grapple|Quality at entry)/.test(l)).join('\n'))
   if (errors.length) console.log('page errors:', errors.slice(0, 3))
   if (!/\| Complete \|/.test(text.split('\n')[0])) process.exit(1)
 } finally { await browser.close() }

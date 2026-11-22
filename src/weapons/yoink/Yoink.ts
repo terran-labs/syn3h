@@ -22,6 +22,7 @@ import { hotExposureDim } from '../../vehicles/skins/hotExposure'
 import { aimFrom, type GearControl } from '../aim'
 import { sharedLook, warmGear } from '../warm'
 import { ringEdges, type RingEdges } from '../pulse'
+import { vehicleNightAmount } from '../../vehicles/skins/nightReadability'
 import { gustPush, holdAccel, type V3 } from './hold'
 import { HeldFire } from '../heldFire'
 import {
@@ -294,6 +295,7 @@ export class Yoink implements System {
     const dim = hotExposureDim(this.game.renderer.toneMappingExposure)
     this.look.field.update(this.game.time)
     for (const [to, c] of this.carries) this.drawField(to, c)
+    const day = 1 - vehicleNightAmount(this.game.scene)
     for (let i = this.waves.length - 1; i >= 0; i--) {
       const w = this.waves[i]
       w.age += dt
@@ -305,7 +307,8 @@ export class Yoink implements System {
       // quad is drawn a tenth larger, so the band at 1.035 is 0.94 of it).
       w.mesh.updateMatrix()
       this.edgeMatrix.copy(w.mesh.matrix).multiply(EDGE_GROW)
-      this.look.edges.look.set(w.slot, k < 1 ? this.edgeMatrix : null, Math.max(0, 1 - k), 1.035 / 1.1, 0.035 / 1.1)
+      // By day only (the gust ring is never in your own headlight: it starts at your nose).
+      this.look.edges.look.set(w.slot, k < 1 ? this.edgeMatrix : null, Math.max(0, 1 - k) * day, 1.035 / 1.1, 0.035 / 1.1)
       if (k >= 1) {
         this.game.scene.remove(w.mesh)
         w.busy = false
@@ -493,6 +496,9 @@ export class Yoink implements System {
     c.field.position.y -= 0.3
     c.field.visible = true
   }
+
+  /** A gust's look (its ring and edge) with no push, for the in-game performance check. */
+  showGust(o: THREE.Vector3, d: THREE.Vector3): void { this.addWave(o, d) }
 
   private addWave(o: THREE.Vector3, d: THREE.Vector3): void {
     const w = this.look.takeWave()

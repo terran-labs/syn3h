@@ -649,6 +649,22 @@ export class Lasers implements System {
     return best
   }
 
+  /**
+   * How far `at` is inside the local player's headlight beam, 0 to 1, from the chase camera that
+   * sits behind the car and looks where it does: full within about 18 degrees of straight ahead
+   * and 30 m, easing to nothing by 28 degrees and 45 m, so a hit at the beam's edge never flicks
+   * its ring's edge on or off.
+   */
+  private inBeam(at: THREE.Vector3): number {
+    const cam = this.game.camera
+    if (!cam) return 0
+    const to = this.look.subVectors(at, cam.position), distance = to.length()
+    if (distance < 1e-3) return 1
+    const ahead = to.dot(cam.getWorldDirection(this.axis)) / distance
+    const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+    return smooth(Math.cos(28 * Math.PI / 180), Math.cos(18 * Math.PI / 180), ahead) * (1 - smooth(30, 45, distance))
+  }
+
   private lookShot = 0
   /** Draw a hit's look with no shot behind it and no push, for the in-game performance check: Tag, or Thunder when `red`. */
   showImpact(at: THREE.Vector3, normal: THREE.Vector3, red: boolean, onVehicle: boolean): void {
@@ -670,7 +686,8 @@ export class Lasers implements System {
     // reads at a distance.
     // Thunder's is its push's reach (14 m by default: already large on screen at 40 m), so it
     // keeps that size; on a vehicle (or in the air) it is drawn brighter, to read by day.
-    if (red) this.pulses.emit(at, n, { radius: Math.max(1.5, thunderBlastRadius.value), seconds: 0.9, color: onVehicle ? RED_HIT_SHOCK : RED_SHOCK })
+    const beam = this.inBeam(at)
+    if (red) this.pulses.emit(at, n, { radius: Math.max(1.5, thunderBlastRadius.value), seconds: 0.9, color: onVehicle ? RED_HIT_SHOCK : RED_SHOCK, beam })
     else {
       // Tag's grows with distance from the camera like the flash (from 12 m, up to 2.5 times),
       // or at 20 m it is a few pixels across and reads as nothing.
@@ -678,7 +695,7 @@ export class Lasers implements System {
       // On a vehicle: brighter, a little longer, and never smaller on screen than a set share of
       // its height (the band reaches about a third of the screen's height across, about half
       // of that a tenth of a second in, as it races out).
-      this.pulses.emit(at, n, { radius: Math.max(2.2 * far, onVehicle ? viewHeight(this.game.camera, distance) * 0.23 : 0), seconds: onVehicle ? 0.55 : 0.42, color: onVehicle ? TAG_HIT_SHOCK : TAG_SHOCK })
+      this.pulses.emit(at, n, { radius: Math.max(2.2 * far, onVehicle ? viewHeight(this.game.camera, distance) * 0.23 : 0), seconds: onVehicle ? 0.55 : 0.42, color: onVehicle ? TAG_HIT_SHOCK : TAG_SHOCK, beam })
     }
     // Plasma Thunder's push comes with its burst (burst), once, where the room says.
     if (!red && push) this.hooks.onImpact?.(at, red)
