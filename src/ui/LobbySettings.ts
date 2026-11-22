@@ -162,7 +162,7 @@ export class LobbySettings {
     panel.classList.add('lobby-settings', 'liquid-glass'); panel.id = 'lobby-settings'
     panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Settings')
     const head = document.createElement('header'); head.className = 'lobby-settings-head'
-    head.innerHTML = `<h2>Settings</h2><button type="button" class="lobby-settings-close lobby-close card-close" aria-label="Close">${CARD_CLOSE}</button>`
+    head.innerHTML = `<h2>Settings</h2><button type="button" class="lobby-settings-close lobby-close card-close" aria-label="Close" data-tip="Close">${CARD_CLOSE}</button>`
     // The world tools (search, copy, paste, reset world) belong to a world, not the lobby.
     panel.querySelector('.wi-top')?.remove()
     panel.querySelector('.wi-cards')!.before(head)

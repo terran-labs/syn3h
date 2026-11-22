@@ -87,3 +87,21 @@ html .syn3h-shell.exploration-ui .world-inspector :is(.wi-seg, .wi-vehicle-picke
 html .syn3h-shell.exploration-ui .world-inspector :is(.wi-seg button, .wi-vehicle-option) { border-radius: var(--glass-control-radius, 24px); }
 /* The hover outline on any segment, matching the chosen segment's outline (glass.css). */
 html[data-glass-material] .syn3h-shell.exploration-ui .world-inspector :is(.wi-seg button, .wi-vehicle-option):hover:not(.is-on, [aria-checked="true"], :disabled, [aria-disabled="true"]) { outline: var(--control-hover-outline); outline-offset: -1px; border-color: transparent; }
+
+/* ---- The search field's magnifier (Shell.ts SEARCH_ICON): over the start of the field ---- */
+:root .syn3h-shell.exploration-ui .world-inspector .rail-command { position: relative; }
+.syn3h-shell.exploration-ui .world-inspector .rail-command > .rail-search-icon {
+  position: absolute; z-index: 1; left: 15px; top: 50%; width: 18px; height: 18px; translate: 0 -50%; pointer-events: none;
+  fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; color: var(--s3-dim);
+}
+:root .syn3h-shell.exploration-ui .world-inspector .rail-command > input.wi-search.wi-search[type=search] { padding-left: 42px; }
+
+/* ---- The shared tooltip (tooltip.ts): a small pill under an icon-only button, fade only ---- */
+.ui-tip {
+  position: fixed; z-index: 200; left: 0; top: 0; max-width: min(260px, calc(100vw - 16px)); padding: 5px 11px; box-sizing: border-box;
+  border: 1px solid rgb(232 232 232 / .42); border-radius: var(--glass-control-radius, 24px); background: rgb(12 12 13 / .92);
+  color: #f4f4f4; font: 500 11px/1.2 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap;
+  pointer-events: none; opacity: 0; transition: opacity .15s ease;
+}
+.ui-tip.is-shown { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .ui-tip { transition: none; } }

@@ -486,7 +486,7 @@ export class Inspector {
     row.append(label, input)
     if (this.options.rollName && this.options.onRename) {
       const dice = document.createElement('button'); dice.type = 'button'; dice.className = 'wi-name-roll'; dice.innerHTML = DICE_GLYPH
-      dice.setAttribute('aria-label', 'Roll a new name'); dice.title = 'Roll a new name'
+      dice.setAttribute('aria-label', 'Roll a new name'); dice.dataset.tip = 'Roll a new name'
       dice.addEventListener('click', () => { const name = this.options.rollName!(); this.options.onRename!(name); input.value = this.options.playerName?.() ?? name }, { signal: this.abort.signal })
       row.append(dice)
     }

@@ -26,9 +26,9 @@ export function ringHtml(cards: readonly string[]): string {
   return `<section class="welcome-ring" aria-roledescription="carousel" aria-label="Syn3h in pictures" style="--count:${cards.length}">
   <div class="welcome-ring-stage"><ol class="welcome-ring-track">${cards.map((card, i) => `<li class="welcome-ring-card" aria-label="${i + 1} of ${cards.length}">${card}</li>`).join('')}</ol></div>
   <div class="welcome-ring-foot">
-    <button type="button" class="welcome-ring-arrow" data-ring="prev" aria-label="Previous picture">${arrow('M15 6l-6 6 6 6')}</button>
+    <button type="button" class="welcome-ring-arrow" data-ring="prev" aria-label="Previous picture" data-tip="Previous picture">${arrow('M15 6l-6 6 6 6')}</button>
     <p class="welcome-ring-caption" aria-hidden="true"><strong></strong><span></span></p>
-    <button type="button" class="welcome-ring-arrow" data-ring="next" aria-label="Next picture">${arrow('M9 6l6 6-6 6')}</button>
+    <button type="button" class="welcome-ring-arrow" data-ring="next" aria-label="Next picture" data-tip="Next picture">${arrow('M9 6l6 6-6 6')}</button>
   </div>
 </section>`
 }

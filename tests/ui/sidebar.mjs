@@ -27,8 +27,8 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
     const header = rail.locator('.rail-command')
     const pause = header.locator('.rail-pause'), search = header.locator('.wi-search'), leave = header.getByRole('button', { name: 'Leave world', exact: true })
     assert.ok(await header.evaluate(el => el.nextElementSibling.classList.contains('wi-cards')))
-    // The top row is the search, Pause and Leave world, nothing else (the owner, 17 November 2026).
-    assert.deepEqual(await header.locator(':scope > *').evaluateAll(es => es.map(e => e.className.split(' ')[0])), ['wi-search', 'rail-pause', 'exit-world'], 'the top row holds search, Pause and Leave world')
+    // The top row's controls are the search, Pause and Leave world, nothing else (the owner, 17 November 2026; the magnifier is a drawing in the field).
+    assert.deepEqual(await header.locator(':scope > :is(input, button)').evaluateAll(es => es.map(e => e.className.split(' ')[0])), ['wi-search', 'rail-pause', 'exit-world'], 'the top row holds search, Pause and Leave world')
     assert.equal(await leave.count(), 1, 'Leave world has its name')
     for (const control of [search, pause, leave]) assert.ok((await control.boundingBox()).height >= 44 - .5, 'top row controls are full touch targets')
     assert.ok((await pause.boundingBox()).width >= 44 - .5 && (await leave.boundingBox()).width >= 44 - .5, 'icon buttons are full touch targets')

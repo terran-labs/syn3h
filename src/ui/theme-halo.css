@@ -384,15 +384,7 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .in-play-about { background
 .syn3h-shell.exploration-ui .world-inspector .rail-command > button:active .rail-icon path {
   filter: drop-shadow(0 0 1px rgb(0 0 0 / .8)) drop-shadow(0 0 4px rgb(255 255 255 / 1)) drop-shadow(0 0 14px rgb(255 255 255 / 1));
 }
-/* The name under the button on hover and keyboard focus (a finger gets the accessible name). */
-.syn3h-shell.exploration-ui .world-inspector .rail-command > button::after {
-  content: attr(data-tip); position: absolute; z-index: 5; top: calc(100% + 6px); right: 0; padding: 5px 10px; border: 1px solid var(--s3-line); border-radius: 999px;
-  background: rgb(12 12 13 / .92); color: var(--s3-ink); font: 500 11px/1.2 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap;
-  opacity: 0; translate: 0 -2px; pointer-events: none; transition: opacity .15s ease, translate .15s ease;
-}
-.syn3h-shell.exploration-ui:not(.has-touch) .world-inspector .rail-command > button:hover::after,
-.syn3h-shell.exploration-ui .world-inspector .rail-command > button:focus-visible::after { opacity: 1; translate: 0 0; transition-delay: .25s; }
-@media (prefers-reduced-motion: reduce) { .syn3h-shell.exploration-ui .world-inspector .rail-command > button::after { transition: none; } }
+/* The name under the button on hover and keyboard focus: the shared tooltip (tooltip.ts). */
 @media (max-height: 500px) { .syn3h-shell.exploration-ui .world-inspector .rail-command { gap: 3px; } }
 
 .syn3h-shell .world-inspector .wi-glyph { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
