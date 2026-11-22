@@ -145,3 +145,11 @@ export const worldNameSeed = defineParam({
   id: 'world.nameSeed', label: 'Name', group: 'World', scope: 'world',
   default: 0, min: -999999, max: 999999999, step: 1,
 })
+
+/** Personal interface materials, in the order shown in both Settings views. */
+export const glassStyle = defineParam<number>({
+  id: 'hud.glass', label: 'Style', group: 'Interface', scope: 'client', default: 1, min: 0, max: 2, step: 1,
+})
+export const surfaceCoverage = defineParam<number>({
+  id: 'hud.surfaceCoverage', label: 'Tint', group: 'Interface', scope: 'client', default: 25, min: 0, max: 100, step: 1,
+})

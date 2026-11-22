@@ -1,3 +1,4 @@
+import { tintAdaptation } from './tintAdaptation'
 import faceSource from './lobby.frag.glsl?raw'
 import { glassBlurTaps } from './gaussianKernel'
 import { GlassMotionClock } from './paintedSurface'
@@ -10,14 +11,21 @@ void main() {
 }`
 const blurSource = `#version 300 es
 precision highp float;
-uniform sampler2D source;
+uniform sampler2D source, history;
+uniform float response;
+uniform bool horizontalPass;
 uniform vec2 targetSize, axis;
 out vec4 color;
 void main() {
   vec2 uv = gl_FragCoord.xy / targetSize;
   vec3 sum = vec3(0);
   ${glassBlurTaps.map(t => `sum += texture(source, uv + axis * ${t.offset.toFixed(8)}).rgb * ${t.weight.toFixed(10)};`).join('\n')}
-  color = vec4(sum, 1);
+  float previous = texture(history, uv).a;
+  float current = dot(sum, vec3(.2126, .7152, .0722));
+  // One code value is the smallest update representable in this RGBA8 target.
+  float difference = current - previous;
+  float increment = min(abs(difference), max(abs(difference)*response, 1./255.));
+  color = vec4(sum, horizontalPass ? previous : previous + sign(difference)*increment);
 }`
 // Settings owns one surface. The other sheets are text directly over the galaxy.
 const surfaces = '.lobby-gear-dock > button, .lobby-sheet[open] button, #lobby-settings'
@@ -26,9 +34,9 @@ type Shape = { el: HTMLElement; x: number; y: number; w: number; h: number; radi
 
 /** Render after the galaxy and logo. The scene is already display-encoded.
  * Texture units 6 and 7 belong to this pass. The galaxy uses 0 through 3. */
-export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement, nativeInk: () => boolean, tuning: {
+export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement, tuning: {
   face: { x: number; y: number; z: number; w: number }; panel: { x: number; y: number }; edges: { x: number; y: number; z: number }
-  respectReducedTransparency?: boolean; width(): number; growth(): number; dark(): boolean; revision(): number
+  inkResponse(): number; respectReducedTransparency?: boolean; width(): number; growth(): number; revision(): number
 }): GalaxyGlass {
   const dispose: (() => void)[] = []
   const program = (source: string) => {
@@ -72,8 +80,8 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   let blur: WebGLProgram, face: WebGLProgram
   try { blur = program(blurSource); face = program(faceSource) }
   catch (error) { for (const free of dispose) free(); throw error }
-  const u = uniforms(face, ['scene','frost','pixels','points','box','radius','dark','panel','opacity','pressed','veil','faceTransfer','panelTransfer','edgeStrength'])
-  const b = uniforms(blur, ['source','targetSize','axis'])
+  const u = uniforms(face, ['scene','frost','pixels','points','box','radius','dark','panel','opacity','pressed','veil','faceTransfer','panelTransfer','edgeStrength','inkResponse'])
+  const b = uniforms(blur, ['source','history','targetSize','axis','response','horizontalPass'])
   const scene = texture(), horizontal = target(), vertical = target()
   const scope = canvas.closest('.syn3h-shell') ?? document.body
   const captions = scope.querySelector<HTMLElement>('.galaxy-ui')
@@ -95,7 +103,9 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   const galaxyUI = scope.querySelector('.galaxy-ui')
   if (galaxyUI) membership.observe(galaxyUI, { childList: true })
   for (const dialog of scope.querySelectorAll('.lobby-sheet')) membership.observe(dialog, { childList: true, subtree: true })
+  let lastBlur = 0
   const resize = () => {
+    lastBlur = 0
     width = canvas.width; height = canvas.height
     pw = Math.max(1, canvas.clientWidth); ph = Math.max(1, canvas.clientHeight)
     tw = Math.max(1, Math.ceil(pw/4)); th = Math.max(1, Math.ceil(ph/4))
@@ -110,7 +120,6 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   }
   const clear = (el: HTMLElement) => {
     delete el.dataset.glassSurface
-    el.removeAttribute('data-glass-native-ink')
   }
   const layout = (now: number) => {
     const modal = scope.querySelector('dialog[open]')
@@ -151,7 +160,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       const r = style.borderTopLeftRadius
       shapes.push({el,x:box.x-rect.x+box.width/2,y:box.y-rect.y+box.height/2,w:box.width/2,h:box.height/2,
         radius:Math.min(half,r.endsWith('%') ? half*parseFloat(r)/50 : parseFloat(r)*box.width/(el.offsetWidth || box.width)),
-        panel:el.id==='lobby-settings',clip:clip && new DOMRect(clip.x-rect.x,clip.y-rect.y,clip.width,clip.height),alpha,pressed:el.matches(':active')})
+        panel:el.id==='lobby-settings',clip:clip && new DOMRect(clip.x-rect.x,clip.y-rect.y,clip.width,clip.height),alpha,pressed:el.matches('button:active')})
     }
     // Captions and dock labels are DOM siblings of the galaxy. Cut the panel's
     // rounded outline out of that layer so it cannot write across the glass.
@@ -175,7 +184,8 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   // Prime the actual programs behind the same cover as the galaxy shader.
   // Use the allocated blur framebuffer while warming, preserving the screen.
   resize()
-  gl.useProgram(blur); gl.uniform1i(b.source,6); gl.uniform2f(b.targetSize,tw,th)
+  gl.useProgram(blur); gl.uniform1i(b.source,6); gl.uniform1i(b.history,7);
+  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D,vertical.tex); gl.uniform2f(b.targetSize,tw,th)
   gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D,scene)
   gl.bindFramebuffer(gl.FRAMEBUFFER,horizontal.fb); gl.viewport(0,0,1,1); gl.drawArrays(gl.TRIANGLES,0,3)
   gl.useProgram(face); gl.uniform1i(u.scene,6); gl.uniform1i(u.frost,7)
@@ -188,6 +198,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
     draw(enabled) {
       if (!enabled) {
         if (active) { captions?.style.removeProperty('clip-path'); scope.removeAttribute('data-lobby-glass'); clock.release(); for (const el of registered) clear(el) }
+        lastBlur = 0
         active = false; changed = false
         return
       }
@@ -214,19 +225,26 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D,scene)
       gl.copyTexSubImage2D(gl.TEXTURE_2D,0,x0,y0,x0,y0,x1-x0,y1-y0)
       gl.useProgram(blur); gl.uniform2f(b.targetSize,tw,th)
+      gl.uniform1f(b.response,lastBlur ? tintAdaptation(now-lastBlur) : 1)
+      lastBlur = now
+      gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D,vertical.tex)
+      gl.activeTexture(gl.TEXTURE6); gl.uniform1i(b.horizontalPass,1)
       gl.viewport(0,0,tw,th); gl.bindFramebuffer(gl.FRAMEBUFFER,horizontal.fb)
       gl.uniform2f(b.axis,tuning.width()/pw,0); gl.drawArrays(gl.TRIANGLES,0,3)
+      gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D,horizontal.tex)
+      gl.activeTexture(gl.TEXTURE6); gl.uniform1i(b.horizontalPass,0)
       gl.bindTexture(gl.TEXTURE_2D,horizontal.tex); gl.bindFramebuffer(gl.FRAMEBUFFER,vertical.fb)
       gl.uniform2f(b.axis,0,tuning.width()/ph); gl.drawArrays(gl.TRIANGLES,0,3)
       gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,width,height)
       gl.useProgram(face); gl.bindTexture(gl.TEXTURE_2D,scene)
       gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D,vertical.tex)
-      gl.uniform2f(u.pixels,width,height); gl.uniform2f(u.points,pw,ph); gl.uniform1f(u.dark,Number(tuning.dark()))
+      gl.uniform2f(u.pixels,width,height); gl.uniform2f(u.points,pw,ph); gl.uniform1f(u.dark,1)
       if (revision !== tuning.revision()) {
         revision = tuning.revision()
         const { face, panel, edges } = tuning
         gl.uniform4f(u.faceTransfer,face.x,face.y,face.z,face.w)
         gl.uniform2f(u.panelTransfer,panel.x,panel.y)
+        gl.uniform1f(u.inkResponse,tuning.inkResponse())
         gl.uniform3f(u.edgeStrength,edges.x,edges.y,edges.z)
       }
       gl.enable(gl.SCISSOR_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA)
@@ -242,7 +260,6 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
         gl.uniform1f(u.panel,Number(s.panel)); gl.uniform1f(u.opacity,s.alpha); gl.uniform1f(u.pressed,Number(s.pressed))
         gl.drawArrays(gl.TRIANGLES,0,3)
         if (s.el.dataset.glassSurface!=='shader') s.el.dataset.glassSurface='shader'
-        if (s.panel) s.el.toggleAttribute('data-glass-native-ink',nativeInk())
       }
       gl.disable(gl.SCISSOR_TEST); gl.disable(gl.BLEND)
     },

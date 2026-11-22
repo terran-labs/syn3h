@@ -1,6 +1,6 @@
 // Adapted from Shayan's liquidglass (Apache-2.0). See NOTICE.md for provenance.
 // This TSL implementation and its control-size calibration differ from the SkSL original.
-import { clamp, dot, float, max, min, mix, vec2, vec3 } from 'three/tsl'
+import { sRGBTransferEOTF, sRGBTransferOETF, clamp, dot, float, max, min, mix, vec2, vec3 } from 'three/tsl'
 
 type N = any
 
@@ -11,7 +11,28 @@ const wideOffsets = Array.from({ length: 32 }, (_, i) => {
   return [radius * Math.cos(angle), radius * Math.sin(angle)]
 })
 
+// White labels on small lenses need 3:1. Card text needs 4.5:1. Leave
+// quantization headroom, and a little more for controls inside large panels.
+// Scale in linear light so bright saturated backdrops retain their hue.
+export function whiteInkFace(rgb: N, distance: N, smallControl: N, tuning: RegularUniforms, at: N): N {
+  const linear: N = sRGBTransferEOTF(rgb)
+  let adapted: N = linear
+  if (tuning.exposure) {
+    const pair = tuning.exposure(at)
+    const delta = pair.x.sub(pair.y)
+    // f(history) - f(now) for the measured quadratic button transfer.
+    const slope = pair.x.add(pair.y).mul(tuning.face.x).add(tuning.face.y)
+    adapted = sRGBTransferEOTF(clamp(rgb.add(delta.mul(slope)), 0, 1))
+  }
+  const luminance = dot(adapted, vec3(.2126, .7152, .0722))
+  const limit = mix(.18, .296, smallControl)
+  const safe: N = sRGBTransferOETF(linear.mul(limit.div(max(limit, luminance))))
+  return mix(rgb, safe, clamp(distance.negate().sub(1), 0, 1).mul(float(luminance.greaterThan(limit))).mul(tuning.inkResponse ?? 1))
+}
+
 export interface RegularUniforms {
+  inkResponse?: N
+  exposure?: (at: N) => N // Smoothed and current backdrop luminance
   face: N // Quadratic transfer, linear term, offset and saturation
   panel: N // Panel slope and offset
   edges: N // Rim, hairline and pressed brightness

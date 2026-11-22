@@ -37,6 +37,8 @@ const measure = (page) => page.evaluate(() => {
   const ink = (root) => [...root.querySelectorAll('*')].filter((e) => !e.children.length && e.textContent.trim() && e.checkVisibility?.({ opacityProperty: true })).map((e) => e.getBoundingClientRect()).filter((r) => r.width)
   const detail = document.querySelector('.gear-selector .gs-detail')
   return {
+    pitch: parseFloat(getComputedStyle(document.querySelector('.gear-selector')).getPropertyValue('--gs-pitch')),
+    edgeTop: parseFloat(getComputedStyle(document.querySelector('.syn3h-shell')).getPropertyValue('--edge')),
     minimap: box('.shell-minimap'), gear: box('.gear-selector'), drum: box('.gear-selector .gs-drum'), spine: box('.gear-selector .gs-spine'),
     panel: box('.world-inspector'), // Rows showing only: Flip upright is in the column only while it can act, and takes no row while hidden.
     keys: [...document.querySelectorAll('.hud-accessories .acc-row:not([hidden]) kbd, .hud-chat kbd')].map((k) => k.checkVisibility() && k.textContent),
@@ -65,7 +67,9 @@ try {
         assert.ok(part, `${at}: ${name} shown`)
         assert.ok(Math.abs(part.left - m.gear.left) <= 1, `${at}: ${name} shares the gear's left edge ${JSON.stringify([part, m.gear])}`)
       }
-      assert.ok(Math.abs((m.drum.bottom - m.drum.top) - 3 * 36) <= 1, `${at}: the drum is three rows ${JSON.stringify(m.drum)}`)
+      assert.ok(m.pitch > 0 && Math.abs((m.drum.bottom - m.drum.top) - 3 * m.pitch) <= 1, `${at}: the drum is three rows ${JSON.stringify([m.drum, m.pitch])}`)
+      // The column starts at the top left, on the shared top edge (the owner, 21 November 2026).
+      assert.ok(Math.abs(m.drum.top - m.edgeTop) <= 1, `${at}: the gear sits at the top left ${JSON.stringify([m.drum, m.edgeTop])}`)
       if (mode === 'free') drumFree = m.drum
       else assert.ok(Math.abs(m.drum.top - drumFree.top) <= 1 && Math.abs(m.drum.bottom - drumFree.bottom) <= 1, `${at}: capturing the cursor moves nothing in the drum ${JSON.stringify([drumFree, m.drum])}`)
       assert.ok(m.keys.length >= 3 && m.keys.every(Boolean), `${at}: the Wings, Zorb and Chat keys show ${JSON.stringify(m.keys)}`)
