@@ -29,6 +29,7 @@ try {
       await page.waitForFunction(sel => document.querySelector(sel)?.dataset.glassSurface === 'shader', card)
       const rect = await slider.boundingBox()
       const thumb = await slider.evaluate(el => (el.valueAsNumber - Number(el.min)) / (Number(el.max) - Number(el.min)))
+      const destination = id === 'hud.glass' ? .5 : thumb < .5 ? .8 : .2
       const point = x => [{ x: rect.x + 10 + (rect.width - 20) * x, y: rect.y + rect.height / 2 }]
       await page.evaluate(sel => {
         const el = document.querySelector(sel)
@@ -41,7 +42,7 @@ try {
       }, card)
       await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: point(thumb) })
       for (let step = 1; step <= 5; step++) {
-        await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: point(thumb + (.55 - thumb) * step / 5) })
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: point(thumb + (destination - thumb) * step / 5) })
         await page.evaluate(() => new Promise(requestAnimationFrame))
       }
       const held = await page.evaluate(() => { cancelAnimationFrame(window.dragFrame); return window.dragFrames })
