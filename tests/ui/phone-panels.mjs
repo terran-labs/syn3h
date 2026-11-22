@@ -4,7 +4,7 @@
 // Replaces phone-polish.mjs, which checked a toast against the old top-right Panels tab.
 // - Show panels stands over the thumb grid, never under a toast, and clear of the grid.
 // - Show panels opens the list; a header opens that card alone; its header goes back to the
-//   list; Close panels goes back to driving. A player can always get back to driving.
+//   list; Close panels (or, on a phone, the open panel's X) goes back to driving. A player can always get back to driving.
 // - A toast never sits under the open panels.
 // - Opening and closing never resizes the game canvas.
 // - Every touch screen: no rotated edge tab; Close panels at the foot of the open stack, visible
@@ -50,7 +50,7 @@ try {
     const shape = await page.evaluate(() => {
       const stack = document.querySelector('.world-inspector'), box = stack.getBoundingClientRect()
       const radius = el => parseFloat(getComputedStyle(el).borderTopLeftRadius)
-      const items = [...stack.querySelectorAll('.rail-command > *, .wi-cards > .wi-card, .panels-close')].filter(el => el.getClientRects().length)
+      const items = [...stack.querySelectorAll('.rail-command > :is(input, button), .wi-cards > .wi-card, .panels-close')].filter(el => el.getClientRects().length)
       return { top: Math.round(box.top), right: Math.round(innerWidth - box.right), bottom: Math.round(innerHeight - box.bottom), radii: [...new Set(items.map(radius))] }
     })
     assert.ok(Math.abs(shape.right - shape.top) <= 1 && Math.abs(shape.bottom - shape.top) <= 1, `${name}: one margin right, top and bottom ${JSON.stringify(shape)}`)
@@ -72,7 +72,18 @@ try {
       assert.equal(await page.locator('.world-inspector.is-single').count(), 1, `${name}: a header opens one panel`)
       assert.equal(await page.locator('.world-inspector .wi-cards > .wi-card:visible').count(), 1, `${name}: the open panel is alone`)
     }
-    assert.ok(await page.locator('.panels-close').isVisible(), `${name}: Close panels shows with a panel open`)
+    if (phone) {
+      // One panel on a phone: its own X is the way back to driving, and Close panels steps aside.
+      assert.ok(!(await page.locator('.panels-close').isVisible()), `${name}: Close panels hides while one panel is open`)
+      const x = page.locator('.world-inspector .wi-card.is-open > .wi-card-close'), xBox = await x.boundingBox(), cardBox = await page.locator('.world-inspector .wi-card.is-open').boundingBox()
+      assert.ok(xBox.width >= 48 && xBox.height >= 48, `${name}: the panel's X is a 48 px target ${JSON.stringify(xBox)}`)
+      assert.ok(xBox.x + xBox.width > cardBox.x + cardBox.width - 16 && xBox.y < cardBox.y + 16, `${name}: the X stands in the panel's upper right`)
+      await x.tap()
+      await panels.waitFor({ state: 'hidden' })
+      assert.ok(await show.isVisible(), `${name}: the panel's X returns to driving with Show panels back`)
+      await show.tap(); await panels.waitFor({ state: 'visible' }); await page.waitForTimeout(300)
+      await head.tap(); await page.waitForTimeout(400)
+    } else assert.ok(await page.locator('.panels-close').isVisible(), `${name}: Close panels shows with a panel open`)
     await head.tap(); await page.waitForTimeout(400)
     assert.equal(await page.locator('.world-inspector .wi-card.is-open').count(), 0, `${name}: the panel's header closes it again`)
 

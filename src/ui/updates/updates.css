@@ -1,8 +1,11 @@
 /* About's tabs and the Updates list, in the lobby About's look (theme-halo.css tokens). */
-.syn3h-shell.exploration-ui .about-tabs { display: flex; gap: 8px; margin: 0 0 20px; border-bottom: 1px solid var(--s3-line); }
-.syn3h-shell.exploration-ui .about-tabs [role="tab"] { min-height: 44px; margin: 0 0 -1px; padding: 8px 18px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--s3-dim); font: 500 12px/1.4 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; cursor: pointer; }
-.syn3h-shell.exploration-ui .about-tabs [role="tab"][aria-selected="true"] { color: var(--s3-accent-2); border-bottom-color: var(--s3-accent-2); }
-.syn3h-shell.exploration-ui .about-tabs [role="tab"]:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: -2px; }
+.syn3h-shell.exploration-ui .about-tabs { display: flex; gap: 8px; margin: 0 0 20px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
+/* Tabs are pills like every control: the chosen one wears the shared outline (card-chrome.css), nothing more. */
+.syn3h-shell.exploration-ui .about-tabs { padding-bottom: 8px; }
+.syn3h-shell.exploration-ui .about-tabs [role="tab"] { min-height: 44px; margin: 0; padding: 8px 18px; border: 0; border-radius: var(--glass-control-radius, 24px); background: none; box-shadow: none; color: var(--s3-dim); font: 500 12px/1.4 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; cursor: pointer; outline: 1px solid transparent; outline-offset: -1px; }
+.syn3h-shell.exploration-ui .about-tabs [role="tab"]:is(:hover, [aria-selected="true"]) { outline: var(--control-hover-outline); outline-offset: -1px; }
+.syn3h-shell.exploration-ui .about-tabs [role="tab"][aria-selected="true"] { color: var(--s3-accent-2); }
+.syn3h-shell.exploration-ui .about-tabs [role="tab"]:focus-visible { outline: 2px solid white; outline-offset: 1px; }
 .syn3h-shell.exploration-ui .about-pane[hidden] { display: none; }
 
 .syn3h-shell.exploration-ui .about-updates .updates-status { color: var(--s3-dim); }
@@ -23,7 +26,7 @@
 .syn3h-shell.exploration-ui .update-badge.is-new { color: #0f0f0f; background: var(--s3-accent-2); }
 .syn3h-shell.exploration-ui .update-badge.is-running { color: var(--s3-accent-2); border: 1px solid var(--s3-line); }
 .syn3h-shell.exploration-ui .update-summary { color: var(--s3-ink); font-size: 15px; line-height: 1.5; }
-.syn3h-shell.exploration-ui .update-notes { padding: 0 16px 12px; border-top: 1px solid var(--s3-line); overflow-wrap: anywhere; }
+.syn3h-shell.exploration-ui .update-notes { padding: 0 16px 12px; border-top: 1px solid transparent; border-image: var(--rule) 1; overflow-wrap: anywhere; }
 .syn3h-shell.exploration-ui .update-notes :is(h4, h5) { margin: 18px 0 8px; font: 500 12px/1.4 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--s3-accent-2); }
 .syn3h-shell.exploration-ui .update-notes :is(p, li) { font-size: 15px; line-height: 1.6; color: var(--s3-dim); }
 .syn3h-shell.exploration-ui .update-notes p { margin: 0 0 10px; }
@@ -33,7 +36,9 @@
 .syn3h-shell.exploration-ui .update-notes strong { color: var(--s3-ink); font-weight: 500; }
 .syn3h-shell.exploration-ui .update-table { overflow-x: auto; margin: 0 0 10px; }
 .syn3h-shell.exploration-ui .update-table table { border-collapse: collapse; font-size: 14px; color: var(--s3-dim); }
-.syn3h-shell.exploration-ui .update-table :is(th, td) { padding: 6px 10px; border-bottom: 1px solid var(--s3-line); text-align: left; vertical-align: top; }
+.syn3h-shell.exploration-ui /* Row rules: one gradient per row, drawn on the row so it does not break at each cell. */
+.syn3h-shell.exploration-ui .update-table tr { background: var(--rule) bottom / 100% 1px no-repeat; }
+.syn3h-shell.exploration-ui .update-table :is(th, td) { padding: 6px 10px; text-align: left; vertical-align: top; }
 .syn3h-shell.exploration-ui .update-table th { color: var(--s3-ink); font-weight: 500; }
 
 /* The lobby banner: one slim line in the build banner's glass, just under the wordmark. Shell

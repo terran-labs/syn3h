@@ -15,7 +15,7 @@
 .welcome-body > * { margin: 0 0 16px; max-width: 100%; }
 .welcome-body > :last-child { margin-bottom: 0; }
 .welcome-body h3 {
-  margin: 40px 0 14px; padding-top: 18px; border-top: 1px solid var(--w-quiet);
+  margin: 40px 0 14px; padding-top: 18px; border-top: 1px solid transparent; border-image: var(--rule) 1;
   font: 600 14px/1.2 'Barlow', sans-serif; letter-spacing: .24em; text-transform: uppercase; color: var(--w-ink);
 }
 .welcome-body p { max-width: 62ch; }
@@ -117,7 +117,7 @@
 
 .welcome-gear { display: grid; gap: 4px; }
 @container welcome (min-width: 560px) { .welcome-gear { grid-template-columns: 1fr 1fr; column-gap: 20px; } }
-.welcome-gear li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--w-quiet); }
+.welcome-gear li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start; padding: 10px 0; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
 .welcome-gear svg { width: 26px; height: 26px; margin-top: 1px; fill: none; stroke: var(--w-ink); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .welcome-gear strong { display: block; font-weight: 500; }
 .welcome-gear span { display: block; font-size: 14px; line-height: 1.45; }
@@ -130,7 +130,7 @@
 .welcome-wasd { display: grid; grid-template-columns: repeat(3, 34px); gap: 5px; flex: none; }
 .welcome-wasd kbd { display: grid; place-items: center; height: 30px; margin: 0; padding: 0; min-width: 0; border-radius: 9px; font-size: 12.5px; }
 .welcome-keys { display: grid; gap: 2px; }
-.welcome-keys li { display: grid; grid-template-columns: minmax(96px, auto) 1fr; gap: 12px; align-items: center; padding: 5px 0; font-size: 14px; line-height: 1.4; border-bottom: 1px solid var(--w-quiet); }
+.welcome-keys li { display: grid; grid-template-columns: minmax(96px, auto) 1fr; gap: 12px; align-items: center; padding: 5px 0; font-size: 14px; line-height: 1.4; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
 .welcome-keys li > span { white-space: nowrap; color: var(--w-ink); font-size: 13px; }
 .welcome-keys li > span i { font-style: normal; color: var(--w-soft); font-size: 11px; margin: 0 2px; }
 .welcome-keys kbd:first-child { margin-left: 0; }
@@ -152,7 +152,7 @@
 .welcome-settings li::before { content: ""; position: absolute; left: 0; top: .72em; width: 6px; height: 1px; background: var(--w-line); }
 
 /* The outside links and the licences, carried over from About. */
-.welcome-body .about-links { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--w-quiet); }
+.welcome-body .about-links { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 36px; padding-top: 18px; border-top: 1px solid transparent; border-image: var(--rule) 1; }
 .welcome-body .about-links a { color: var(--w-ink); font-size: 14px; text-decoration: none; border-bottom: 1px solid var(--w-line); }
 .welcome-body .about-links a:hover, .welcome-body .about-links a:focus-visible { border-bottom-color: var(--w-ink); }
 .welcome-body .shell-credits { font-size: 13px; color: var(--w-soft); }

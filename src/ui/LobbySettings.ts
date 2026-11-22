@@ -31,6 +31,7 @@ import { PerformancePanel } from './PerformancePanel'
 import { playWithMe } from '../bots/play/PlayDirector'
 import { SOUND_STARTED, soundWaiting } from '../audio/unlock'
 import './lobby-settings.css'
+import { CARD_CLOSE } from './cardClose'
 
 /** Sound settings shown before the Advanced fold, in this order. */
 export const SOUND_MAIN = ['audio.music', 'audio.master', 'audio.muted'] as const
@@ -60,8 +61,6 @@ export function cycleFocus<T>(focusable: readonly T[], current: T | null, back: 
   return focusable[(at + (back ? -1 : 1) + focusable.length) % focusable.length]!
 }
 
-/** The lobby's close control: a drawn x and the word, the same in every lobby panel (.lobby-close). */
-export const LOBBY_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6L18 18M18 6L6 18"/></svg><span>Close</span>'
 
 /** A volume: an audio setting from 0 to 1, shown as a percentage like the card's summary. */
 export const isVolume = (def: PropertyDef) => def.group === 'Audio' && def.min === 0 && def.max === 1
@@ -158,7 +157,7 @@ export class LobbySettings {
     panel.classList.add('lobby-settings', 'liquid-glass'); panel.id = 'lobby-settings'
     panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Settings')
     const head = document.createElement('header'); head.className = 'lobby-settings-head'
-    head.innerHTML = `<h2>Settings</h2><button type="button" class="lobby-settings-close lobby-close" aria-label="Close settings">${LOBBY_CLOSE}</button>`
+    head.innerHTML = `<h2>Settings</h2><button type="button" class="lobby-settings-close lobby-close card-close" aria-label="Close" data-tip="Close">${CARD_CLOSE}</button>`
     // The world tools (search, copy, paste, reset world) belong to a world, not the lobby.
     panel.querySelector('.wi-top')?.remove()
     panel.querySelector('.wi-cards')!.before(head)

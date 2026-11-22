@@ -29,7 +29,7 @@ void main() {
 }`
 // Settings owns one surface. The other sheets are text directly over the galaxy.
 const surfaces = '.lobby-gear-dock > button, .lobby-sheet[open] button, #lobby-settings'
-const plain = '.lobby-version, .galaxy-label, .saved-world-moon, #lobby-settings button, .lobby-sheet button:has(img, video)'
+const plain = '.lobby-version, .card-close, .galaxy-label, .saved-world-moon, #lobby-settings button, .lobby-sheet button:has(img, video)'
 type Shape = { el: HTMLElement; x: number; y: number; w: number; h: number; radius: number; alpha: number; clip?: DOMRect; panel: boolean; pressed: boolean }
 
 /** Render after the galaxy and logo. The scene is already display-encoded.

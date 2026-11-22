@@ -1,0 +1,129 @@
+/*
+ * Card chrome shared by every card and panel (the owner, 22 November 2026): one rule, one close
+ * control, one control radius, one hover outline. Loaded after the themes (Shell.ts).
+ *
+ *   --rule                    the only horizontal rule: a hairline that fades out at both ends.
+ *                             Use it as `border-top: 1px solid transparent; border-image: var(--rule) 1`
+ *                             (or as a 1 px background where a border cannot carry it, e.g. a table row).
+ *   --glass-control-radius    the one radius for controls (glass.css). 24 px is a full pill for
+ *                             anything up to 48 px tall, which is every control in a card.
+ *   --control-hover-outline   the outline a control shows under the pointer; a selected option in
+ *                             a segmented choice wears the same one (glass.css), nothing more.
+ * Card and panel corners keep their own radius (--halo-r, --panels-radius); cards are not pills.
+ */
+:root {
+  --rule-line: rgb(232 232 232 / .22);
+  --rule: linear-gradient(90deg, transparent, var(--rule-line) 20%, var(--rule-line) 80%, transparent);
+  --control-hover-outline: 1px solid rgb(255 255 255 / .68);
+}
+
+/* ---- Close: a bare, larger X (.card-close; markup CARD_CLOSE in LobbySettings.ts) ----
+   White, no fill and no edge at rest, a 44 px target, the shared hover outline and the shared
+   keyboard ring. A soft shadow under the strokes keeps it legible over a bright sky. */
+html .syn3h-shell.exploration-ui button.card-close {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box;
+  width: 44px; height: 44px; min-width: 44px; min-height: 44px; margin: 0; padding: 0;
+  border: 0; border-radius: var(--glass-control-radius, 24px); background: transparent; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none;
+  color: #fff; cursor: pointer; outline: 1px solid transparent; outline-offset: -1px;
+  transition: outline-color .18s, background-color .18s;
+}
+html .syn3h-shell.exploration-ui button.card-close::before, html .syn3h-shell.exploration-ui button.card-close::after { content: none; }
+html .syn3h-shell.exploration-ui button.card-close svg { width: 22px; height: 22px; flex: none; overflow: visible; filter: drop-shadow(0 0 3px rgb(0 0 0 / .45)); }
+html .syn3h-shell.exploration-ui button.card-close path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+html .syn3h-shell.exploration-ui button.card-close:hover { outline: var(--control-hover-outline); outline-offset: -1px; background: transparent; }
+html .syn3h-shell.exploration-ui button.card-close:active { background: rgb(255 255 255 / .1); }
+html .syn3h-shell.exploration-ui button.card-close:focus-visible { outline: 2px solid white; outline-offset: 1px; }
+/* The in-play guide's header: the X at the right of the title row. */
+html .syn3h-shell.exploration-ui .in-play-about > header .card-close { margin: -4px -12px -4px 0; }
+/* The lobby Settings card: the X sits in the header's right corner, level with the title. */
+html .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head .card-close { margin: -4px -2px -4px 0; }
+
+/* A panel's own X shows only on a phone with that panel alone on screen (phone-panels.css). */
+html .syn3h-shell.exploration-ui .world-inspector .wi-card > button.wi-card-close { display: none; }
+/* Touch screens: a bigger X and a 48 px target (the owner, 22 November 2026). */
+html .syn3h-shell.exploration-ui.has-touch button.card-close { width: 48px; height: 48px; min-width: 48px; min-height: 48px; }
+html .syn3h-shell.exploration-ui.has-touch button.card-close svg { width: 28px; height: 28px; }
+@media (pointer: coarse) {
+  html .syn3h-shell.exploration-ui button.card-close { width: 48px; height: 48px; min-width: 48px; min-height: 48px; }
+  html .syn3h-shell.exploration-ui button.card-close svg { width: 28px; height: 28px; }
+}
+
+/* ---- The Glass section: Style and Tint, each label at the left and its control beside it ---- */
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.glass-style-row, html .syn3h-shell .world-inspector .wi-row.glass-style-row {
+  grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px;
+}
+html .syn3h-shell .world-inspector .wi-row.glass-style-row > small { grid-column: 1 / -1; }
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.tint-row, html .syn3h-shell .world-inspector .wi-row.tint-row { grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 10px; }
+html .syn3h-shell .world-inspector .wi-row.tint-row > input[type=range] { width: 100%; min-width: 0; }
+html .syn3h-shell .world-inspector .wi-row.tint-row > output { min-width: 3.2ch; text-align: right; font-variant-numeric: tabular-nums; }
+/* ---- Segmented choices: one rule for all of them (the owner, 22 November 2026: "make
+   everything consistent") ----
+   Style, Focus display, Reticle, Interface, Units, every other .wi-seg, the vehicle picker and the
+   guide's tabs (updates.css). Content-width pills with no fill and no edge at rest; the pointer's
+   outline and the chosen one's outline are the same and are the only mark (no fill, underline or
+   weight change, so nothing shifts). The keyboard ring is thicker and set off, so focus and
+   chosen read apart. The state stays in aria-pressed, aria-checked or the button's .is-on. */
+html .syn3h-shell.exploration-ui .world-inspector :is(.wi-seg, .wi-vehicle-picker, .glass-stops) {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; width: auto; margin: 0; padding: 0;
+  border: 0; border-radius: 0; background: none; box-shadow: none;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-vehicle-picker { justify-content: flex-start; }
+html .syn3h-shell.exploration-ui .world-inspector :is(.wi-seg, .glass-stops) { justify-content: flex-end; }
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button) {
+  position: relative; flex: 0 0 auto; box-sizing: border-box; min-width: 0; width: auto; height: 32px; min-height: 32px; margin: 0; padding: 0 12px;
+  font: 400 13px/1 'Barlow', sans-serif; letter-spacing: .02em; color: var(--s3-ink); text-decoration: none; white-space: nowrap;
+  background: transparent; box-shadow: none; border: 0; border-radius: var(--glass-control-radius, 24px);
+  outline: 1px solid transparent; outline-offset: -1px; transition: outline-color .18s;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button):is(:hover, .is-on, [aria-checked="true"], [aria-pressed="true"]) {
+  outline: var(--control-hover-outline); outline-offset: -1px; background: transparent; color: var(--s3-ink); font-weight: 400; box-shadow: none; text-shadow: inherit;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button):focus-visible { outline: 2px solid white; outline-offset: 2px; }
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button):is(:disabled, [aria-disabled="true"]) { opacity: .45; outline-color: transparent; }
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-vehicle-option svg { opacity: .9; }
+/* A finger gets 44 px without the row growing. */
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button)::after { content: ''; position: absolute; inset: -6px 0; }
+
+/* A choice row: the label at the left and its segments to the right on the same line; the group
+   wraps under the label only when the two cannot share the line (the label gives way to about 7em
+   first). */
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-choice {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-choice > .wi-label { flex: 1 1 7em; min-width: 0; }
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-choice > .wi-seg { flex: 0 1 auto; margin-left: auto; }
+
+/* ---- Actions (Default, Randomize, Roll a name, Reset, Reset all, the quality steps, Auto when
+   off): one resting look, a solid hairline pill with no fill; the shared outline under the pointer.
+   Auto when on is a state, filled like a switch that is on (motion.css). ---- */
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step, .wi-res-auto:not(.is-on)) {
+  position: relative; box-sizing: border-box; background: transparent; box-shadow: none; text-shadow: inherit;
+  border: 1px solid var(--s3-line-quiet); border-radius: var(--glass-control-radius, 24px); outline: 1px solid transparent; outline-offset: -1px;
+  color: var(--s3-ink); text-decoration: none;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step, .wi-res-auto:not(.is-on)):hover:not(:disabled) {
+  border-color: transparent; background: transparent; outline: var(--control-hover-outline); outline-offset: -1px;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step, .wi-res-auto):focus-visible { outline: 2px solid white; outline-offset: 2px; }
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step):disabled { opacity: .45; }
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.tint-row > .tint-default { min-width: 0; min-height: 28px; height: 28px; margin: 0; padding: 0 10px; font: inherit; font-size: 12px; }
+html .syn3h-shell.has-touch .world-inspector .wi-row.tint-row > .tint-default::after { content: ''; position: absolute; inset: -8px 0; }
+
+/* ---- The search field's magnifier (Shell.ts SEARCH_ICON): over the start of the field ---- */
+:root .syn3h-shell.exploration-ui .world-inspector .rail-command { position: relative; }
+.syn3h-shell.exploration-ui .world-inspector .rail-command > .rail-search-icon {
+  position: absolute; z-index: 1; left: 15px; top: 50%; width: 18px; height: 18px; translate: 0 -50%; pointer-events: none;
+  fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; color: var(--s3-dim);
+}
+:root .syn3h-shell.exploration-ui .world-inspector .rail-command > input.wi-search.wi-search[type=search] { padding-left: 42px; }
+
+/* ---- The shared tooltip (tooltip.ts): a small pill under an icon-only button, fade only ---- */
+.ui-tip {
+  position: fixed; z-index: 200; left: 0; top: 0; max-width: min(260px, calc(100vw - 16px)); padding: 5px 11px; box-sizing: border-box;
+  border: 1px solid rgb(232 232 232 / .42); border-radius: var(--glass-control-radius, 24px); background: rgb(12 12 13 / .92);
+  color: #f4f4f4; font: 500 11px/1.2 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap;
+  pointer-events: none; opacity: 0; transition: opacity .15s ease;
+}
+.ui-tip.is-shown { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .ui-tip { transition: none; } }

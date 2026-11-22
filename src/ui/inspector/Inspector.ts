@@ -1,4 +1,5 @@
 import { defaultTint, glassLabels, liquidEligible, liquidQualityHint } from '../glassMaterial'
+import { CARD_CLOSE } from '../cardClose'
 import { modeChoices } from '../modeAvailability'
 /**
  * The world inspector: every property of the world and of your own settings, in play, as a
@@ -78,6 +79,8 @@ export interface InspectorOptions {
    * Asked at every change, so turning the phone counts.
    */
   phonePanels?(): boolean
+  /** Phones: the open panel's X closes the panels and goes back to driving, as Close panels did. */
+  closePanels?(): void
   /** A localStorage key: which cards are open is kept there and restored on the next visit. */
   rememberOpen?: string
 }
@@ -131,11 +134,11 @@ export interface ExtraCardOptions {
 interface ExtraCard extends ExtraCardOptions { id: string; card: HTMLElement; summary(): string }
 
 /**
- * A card's header. The x (phones only, src/ui/phone-panels.css) shows while the card is the
- * one panel on screen. The whole header is the button, so the x wears the shared glass
- * (liquid-glass) but is drawn, not a separate target.
+ * A card's header. The whole header is the button that opens and closes the card. On a phone,
+ * while the card is the one panel on screen, the shared X (cardClose.ts) stands at the header's
+ * right as a button of its own and closes the panels (phone-panels.css).
  */
-const CARD_HEAD = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span><span class="wi-x liquid-glass glass-round" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>'
+const CARD_HEAD = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span>'
 /** Phone panels: how long each change between the three states takes (ms). Shorten, never lengthen: this is mid-game. */
 export const PHONE_PANEL_MS = { show: 220, hide: 160, open: 240, back: 200, stagger: 15, staggerCap: 6, ghost: 140, ghostOut: 90 } as const
 
@@ -348,7 +351,7 @@ export class Inspector {
         save.addEventListener('keydown', event => event.stopPropagation())
         foot.append(save)
       }
-      body.append(foot); card.append(head, body); cards.append(card)
+      body.append(foot); card.append(head, this.panelClose(), body); cards.append(card)
       if (open.has(section.id)) this.toggle(card, true)
     }
     // Extra cards are the same elements across rebuilds, so they keep their open state.
@@ -378,7 +381,7 @@ export class Inspector {
     const head = document.createElement('button'); head.type = 'button'; head.className = 'wi-head'; head.dataset.wi = 'toggle'; head.setAttribute('aria-expanded', 'false')
     head.innerHTML = CARD_HEAD; head.querySelector('h3')!.textContent = title
     body.classList.add('wi-body'); body.hidden = true; body.inert = true
-    card.append(head, body)
+    card.append(head, this.panelClose(), body)
     this.extras.set(id, { ...options, id, card, summary })
     // Rebuild so the ids it owns leave their old cards, then place and fill it.
     this.build()
@@ -486,7 +489,7 @@ export class Inspector {
     row.append(label, input)
     if (this.options.rollName && this.options.onRename) {
       const dice = document.createElement('button'); dice.type = 'button'; dice.className = 'wi-name-roll'; dice.innerHTML = DICE_GLYPH
-      dice.setAttribute('aria-label', 'Roll a new name'); dice.title = 'Roll a new name'
+      dice.setAttribute('aria-label', 'Roll a new name'); dice.dataset.tip = 'Roll a new name'
       dice.addEventListener('click', () => { const name = this.options.rollName!(); this.options.onRename!(name); input.value = this.options.playerName?.() ?? name }, { signal: this.abort.signal })
       row.append(dice)
     }
@@ -567,14 +570,15 @@ export class Inspector {
     const param = params.get(def.id)!, choices = choicesOf(def)
     let sync: (value: ParamValue) => void
     if (def.id === 'hud.glass') {
+      // Style: the label at the left and the three named options beside it on the same line
+      // (the owner, 22 November 2026). The pressed option's outline is its only mark, and its own
+      // name the only text tied to it: no slider, no readout repeating it at the row's end.
       label.textContent = def.label
-      const input = document.createElement('input')
-      input.type = 'range'; input.min = '0'; input.max = String(glassLabels.length - 1); input.step = '1'
-      input.setAttribute('aria-label', def.label)
       const hint = document.createElement('small')
       hint.textContent = liquidQualityHint
       const ticks = document.createElement('div')
       ticks.className = 'glass-stops'
+      ticks.setAttribute('role', 'group'); ticks.setAttribute('aria-label', def.label)
       const stops = glassLabels.map((name, index) => {
         const button = document.createElement('button')
         button.type = 'button'; button.textContent = name
@@ -582,21 +586,13 @@ export class Inspector {
         ticks.append(button)
         return button
       })
-      row.classList.add('glass-material-row')
-      row.append(label, input, output, ticks, hint)
+      row.classList.add('glass-material-row', 'glass-style-row')
+      row.append(label, ticks, hint)
       sync = value => {
         const index = Number(value)
-        input.value = String(index)
         stops[0].disabled = !liquidEligible()
         hint.hidden = liquidEligible()
-        output.textContent = glassLabels[index]
-        input.setAttribute('aria-valuetext', glassLabels[index] + (!liquidEligible() ? '. ' + liquidQualityHint : ''))
         stops.forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)))
-      }
-      // Keep the current material throughout a drag, including while crossing Liquid.
-      input.onchange = () => {
-        if (input.valueAsNumber || liquidEligible()) params.set(def.id, input.valueAsNumber)
-        sync(param.value)
       }
     } else if (def.id === 'hud.surfaceCoverage') {
       row.classList.add('glass-material-row', 'tint-row')
@@ -812,6 +808,13 @@ export class Inspector {
       else { hold(end); this.glideStop?.() }
     }
     frame = requestAnimationFrame(step)
+  }
+  /** The X an open panel shows on a phone (hidden elsewhere by phone-panels.css). */
+  private panelClose(): HTMLButtonElement {
+    const close = document.createElement('button'); close.type = 'button'; close.className = 'wi-card-close card-close'
+    close.setAttribute('aria-label', 'Close panels'); close.dataset.tip = 'Close panels'; close.innerHTML = CARD_CLOSE
+    close.addEventListener('click', () => this.options.closePanels?.(), { signal: this.abort.signal })
+    return close
   }
   /** Phone panels are on: one card at a time, alone on screen. Not while searching, which opens every card with a match. */
   private get single(): boolean { return !!this.options.phonePanels?.() && !this.element.classList.contains('is-searching') }

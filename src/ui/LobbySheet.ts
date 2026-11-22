@@ -9,7 +9,8 @@
  * sheet's handOff); the buttons stay beside it. Escape, a tap outside and the one X close it;
  * focus stays inside while it is open and returns to whatever opened it.
  */
-import { cycleFocus, LOBBY_CLOSE } from './LobbySettings'
+import { cycleFocus } from './LobbySettings'
+import { CARD_CLOSE } from './cardClose'
 import './lobby-sheet.css'
 
 
@@ -55,9 +56,9 @@ export class LobbySheet {
     this.element.setAttribute('aria-labelledby', `${id}-title`)
     this.panel.className = 'lobby-sheet-panel'
     const title = document.createElement('h2'); title.id = `${id}-title`; title.className = 'lobby-sheet-title'; title.textContent = options.title
-    this.close_.type = 'button'; this.close_.className = 'lobby-sheet-close lobby-close liquid-glass'; this.close_.setAttribute('aria-label', `Close ${options.title}`)
+    this.close_.type = 'button'; this.close_.className = 'lobby-sheet-close lobby-close card-close'; this.close_.setAttribute('aria-label', 'Close'); this.close_.dataset.tip = 'Close'
     // The lobby's one close control, the same in Welcome, Updates and Settings (lobby-sheet.css).
-    this.close_.innerHTML = LOBBY_CLOSE
+    this.close_.innerHTML = CARD_CLOSE
     this.body.className = 'lobby-sheet-body'
     this.body.append(title)
     this.panel.append(this.body, this.close_)

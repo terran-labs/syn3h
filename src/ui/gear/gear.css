@@ -193,11 +193,10 @@ html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actio
   color: color-mix(in srgb, var(--s3-ink) calc(var(--a, .66) * 100%), transparent); text-shadow: var(--col-text-under, var(--hud-under));
 }
 
-/* The selected gear's name carries a deeper falloff than the rest (the Foreman, 22 November
-   2026: at least 3.5:1 over noon sky): the same shadow under the letters, with a wider soft
-   reach. Still no plate. Captured, the selector no longer dims as a whole (it did to 84%), which
+/* The selected gear's name stands out by its size and full ink; its shadow is the shared
+   floating-text one (--float-under), so it never reads heavier than the rest. Still no plate. Captured, the selector no longer dims as a whole (it did to 84%), which
    thinned that falloff: the neighbours are already faded by their ink. */
 :root .syn3h-shell.exploration-ui .gear-selector[data-mode=locked] { opacity: 1; }
 :root .syn3h-shell.exploration-ui .gear-selector .gs-drum button.gs-item.is-active {
-  text-shadow: 0 0 1px rgb(0 0 0 / 1), 0 0 2px rgb(0 0 0 / .95), 0 0 4px rgb(0 0 0 / .9), 0 0 8px rgb(0 0 0 / .75), 0 0 14px rgb(0 0 0 / .6), 0 0 24px rgb(0 0 0 / .45);
+  text-shadow: var(--float-under);
 }

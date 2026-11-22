@@ -74,9 +74,9 @@ export class PerformancePanel {
     const signal = this.abort.signal
     this.element.className = 'performance-card'
     this.element.innerHTML = `<div class="wi-level" role="group" aria-label="Quality level">
-        <button type="button" class="wi-step" data-quality="down" aria-label="Lower quality level">${CHEVRONS(false)}</button>
+        <button type="button" class="wi-step" data-quality="down" aria-label="Lower quality level" data-tip="Lower quality">${CHEVRONS(false)}</button>
         <div class="wi-level-pick"><select class="wi-level-select" aria-label="Quality level" disabled></select><small class="wi-level-of"></small></div>
-        <button type="button" class="wi-step" data-quality="up" aria-label="Raise quality level">${CHEVRONS(true)}</button></div>
+        <button type="button" class="wi-step" data-quality="up" aria-label="Raise quality level" data-tip="Raise quality">${CHEVRONS(true)}</button></div>
       <div class="wi-level-tools"><button type="button" data-quality="reset-all" disabled>Reset all to this level</button></div>
       <div class="wi-resolution" role="group" aria-label="Render resolution">
         <span class="wi-label">Render resolution</span>

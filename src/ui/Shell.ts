@@ -38,6 +38,8 @@ import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
 import { LobbySettings } from './LobbySettings'
+import { CARD_CLOSE } from './cardClose'
+import { installTooltips } from './tooltip'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
 import { bindSwitch, switchWord } from './inspector/switch'
@@ -86,6 +88,7 @@ import './hud-column.css'
 import './glass.css'
 import './phone-panels.css'
 import './pause-screen.css'
+import './card-chrome.css'
 import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shareShot, shotFileName } from './screenshot'
 
 /**
@@ -161,12 +164,16 @@ const build = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? __SYN3H_B
 // On/off settings are the standard switch (inspector/switch.ts); bindSwitch gives them role and state.
 /**
  * The top row's icons, drawn as strokes on a 24 unit grid like the lobby's gear, About and
- * Updates icons (no image files). Leave world is a door with an arrow going out. An arrow
- * leaving a planet's rim was tried beside it and read as the male symbol at button size.
+ * Updates icons (no image files). Leave world is a gravitational slingshot (the owner,
+ * 22 November 2026: "a planet with an arrow away from it or some kind of gravitational
+ * slingshot"): a small planet and a path that swings round it and flies off. A plain arrow
+ * leaving a planet's rim read as the male symbol at button size.
  */
 export const PAUSE_ICON = 'M9.2 6.8v10.4M14.8 6.8v10.4'
 export const PLAY_ICON = 'M9 6.4v11.2l8.6-5.6Z'
-export const LEAVE_WORLD_ICON = 'M13 4.8H7.2A1.2 1.2 0 0 0 6 6v12a1.2 1.2 0 0 0 1.2 1.2H13M10.5 12h9M16.6 9l3 3-3 3'
+export const LEAVE_WORLD_ICON = 'M7.6 13.6a2.9 2.9 0 1 0 5.8 0a2.9 2.9 0 1 0-5.8 0M18.6 20.6C10.6 21.8 3.6 17 4.5 11.2C5.4 5.6 12.4 4 20.2 4.6M16.9 2.4l3.3 2.2-2.9 2.7'
+/** The search field's magnifier, drawn at the start of the field. */
+const SEARCH_ICON = 'M10.5 16.5a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM15 15l4.8 4.8'
 /** How long PAUSED and its resume line stay before fading, with nothing moving (ms). */
 const PAUSE_WHISPER_MS = 2500
 /** The pause screen's three buttons, drawn in the rail icons' line (24 px box, stroked). */
@@ -269,7 +276,7 @@ export class Shell implements System {
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels" role="group" aria-label="Worlds. Drag to look around; choose a world to go there."></div><nav class="lobby-links galaxy-links" aria-label="Lobby"${LOBBY_LINKS ? '' : ' hidden'}>${LOBBY_LINKS}</nav></div>
     </section>
-    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">Welcome</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
+    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">Welcome</h2><button type="button" class="about-back card-close" aria-label="Close" data-tip="Close">${CARD_CLOSE}</button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span class="nav-glyph" aria-hidden="true">≡</span>${PANELS_CHEVRONS_UP}<span class="nav-label"> Panels</span></button></nav>
     <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="panel-action exit-stay">Stay</button><button type="button" class="panel-action exit-leave">Leave world</button></div></div></div>
@@ -342,6 +349,7 @@ export class Shell implements System {
       oneOpen: () => matchMedia(PHONE_SIDEBAR).matches,
       // Phone-sized touch screens: one panel at a time, alone (phone-panels.css). Tablets and
       // desktops keep the stack as it was.
+      closePanels: () => this.returnToDriving(),
       phonePanels: () => this.touch.available && matchMedia(PHONE_SIDEBAR).matches,
       rememberOpen: 'syn3h.sidebar.open',
     })
@@ -417,6 +425,8 @@ export class Shell implements System {
     const command = document.createElement('div'); command.className = 'rail-command'
     command.innerHTML = `<button type="button" class="rail-pause wi-glass" aria-label="Pause" data-tip="Pause">${railIcon(PAUSE_ICON)}</button><button type="button" class="exit-world wi-glass" aria-label="Leave world" data-tip="Leave world">${railIcon(LEAVE_WORLD_ICON)}</button>`
     const search = railTop.querySelector<HTMLInputElement>('.wi-search')!; search.classList.add('wi-glass'); command.prepend(search)
+    // The magnifier stands over the start of the field; the text starts after it (card-chrome.css).
+    search.insertAdjacentHTML('afterend', `<svg class="rail-search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${SEARCH_ICON}"/></svg>`)
     // Under the stack, only what docks there now and then: the update chip and a slow-frames
     // recommendation (PerformancePanel). Empty, it takes no space.
     const foot = document.createElement('div'); foot.className = 'rail-foot'
@@ -493,6 +503,7 @@ export class Shell implements System {
     const unsubscribeInterface = params.onChange(id => { if (id === interfaceMode.def.id) this.syncPanels() })
     signal.addEventListener('abort', () => { unsubscribeInterface(); this.interfaceVeil.dispose() })
     this.glass(signal)
+    installTooltips(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
     this.mountSavedWorlds()
@@ -1947,7 +1958,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-close, .lobby-links *, .syn3h-advanced *, .world-inspector *, .performance-recommendation *, .race-controls *, .update-banner-actions *, .exit-confirm-actions *, .join-view *, .gear-selector *, .hud-accessories *, .hud-chat *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-close, .card-close, .about-tabs *, .lobby-links *, .syn3h-advanced *, .world-inspector *, .performance-recommendation *, .race-controls *, .update-banner-actions *, .exit-confirm-actions *, .join-view *, .gear-selector *, .hud-accessories *, .hud-chat *')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
     // Upper left, where the light strikes at rest (glass.css).

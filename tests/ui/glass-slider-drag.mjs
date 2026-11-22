@@ -1,5 +1,5 @@
-// A descendant range must not press the entire glass card. Dragging the material
-// selector also keeps the applied material until the player releases the thumb.
+// A descendant range must not press the entire glass card. (The material is chosen with three
+// buttons beside its label since 22 November 2026; it has no slider to drag.)
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 
@@ -22,14 +22,14 @@ try {
       await page.evaluate(() => { syn3h.shell.showPanels(); syn3h.shell.showCard('you') })
     }
     const card = view === 'lobby' ? '#lobby-settings' : '.syn3h-shell > .world-inspector:not(.lobby-settings) .wi-card.is-open'
-    for (const id of ['glass.frostWidth', 'hud.glass']) {
+    for (const id of ['glass.frostWidth']) {
       const slider = page.locator(card).locator(`[data-id="${id}"] input[type=range]`)
       await slider.evaluate(el => { const group = el.closest('details'); if (group) group.open = true })
       await slider.scrollIntoViewIfNeeded()
       await page.waitForFunction(sel => document.querySelector(sel)?.dataset.glassSurface === 'shader', card)
       const rect = await slider.boundingBox()
       const thumb = await slider.evaluate(el => (el.valueAsNumber - Number(el.min)) / (Number(el.max) - Number(el.min)))
-      const destination = id === 'hud.glass' ? .5 : thumb < .5 ? .8 : .2
+      const destination = thumb < .5 ? .8 : .2
       const point = x => [{ x: rect.x + 10 + (rect.width - 20) * x, y: rect.y + rect.height / 2 }]
       await page.evaluate(sel => {
         const el = document.querySelector(sel)
@@ -48,12 +48,7 @@ try {
       const held = await page.evaluate(() => { cancelAnimationFrame(window.dragFrame); return window.dragFrames })
       await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
       assert.ok(held.length >= 5 && held.every(([surface, bg]) => surface === 'shader' && bg === 'rgba(0, 0, 0, 0)'), `${view} ${id}: ${JSON.stringify(held)}`)
-      if (id === 'hud.glass') {
-        await page.waitForFunction(() => document.documentElement.dataset.glassMaterial === 'frost')
-        await page.locator(card).getByRole('button', { name: 'Liquid', exact: true }).tap()
-      } else {
-        assert.notEqual(await slider.evaluate(el => (el.valueAsNumber - Number(el.min)) / (Number(el.max) - Number(el.min))), thumb)
-      }
+      assert.notEqual(await slider.evaluate(el => (el.valueAsNumber - Number(el.min)) / (Number(el.max) - Number(el.min))), thumb)
     }
   }
 } finally { await browser.close() }
