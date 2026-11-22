@@ -55,6 +55,8 @@ export interface System {
   /** Attach retained player models for the existing Medium to Low preview draw. */
   drawReliefEffects?(level: number, draw: () => void): void
   drawReliefFleet?(minimal: boolean, draw: () => void): void
+  /** After a climb outside play: draw every distance look of the parked bot models, unseen, around `draw`. */
+  drawClimbFleet?(draw: () => void): void
   drawCoveredLowFleet?(draw: () => void): void
   dispose?(): void
 }
@@ -441,7 +443,9 @@ export class Game {
       // Culling off for this draw, as the covered entry draws: a caster outside every cascade (a bot
       // far away) would otherwise get its shadow pipeline only when it moves into one, in play.
       this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
-      drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+      const submit = () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+      const fleet = this.systems.find(system => system.drawClimbFleet)
+      if (fleet) fleet.drawClimbFleet!(submit); else submit()
     } finally {
       for (const o of culled) o.frustumCulled = true
       for (const m of moved) { m.mesh.visible = false; m.mesh.frustumCulled = m.culled; m.mesh.position.copy(m.position); m.mesh.scale.copy(m.scale) }

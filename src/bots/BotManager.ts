@@ -120,6 +120,7 @@ export class BotManager implements System {
     this.daydream = new Daydream(game, terrain, player, { navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
   }
   drawReliefFleet(minimal: boolean, draw: () => void): void { this.covered.drawReliefFleet(minimal, draw) }
+  drawClimbFleet(draw: () => void): void { this.covered.drawClimbFleet(draw) }
 
   warmCovered(warm: CoveredWarm): Promise<void> { return this.covered.warm(warm) }
   acquireBotVehicle(kind: VehicleKind, position: Vector3, heading: number): Vehicle {
