@@ -47,3 +47,16 @@ export function captionMask(place: LabelPlace, places: readonly LabelPlace[], su
     return `radial-gradient(circle at calc(50% + ${dx}px) ${dy}px, transparent ${Math.max(0, r - 0.5).toFixed(1)}px, #000 ${(r + 0.5).toFixed(1)}px)`
   }).join(', ')
 }
+
+/** A rectangle on screen, in CSS pixels. */
+export interface ScreenBox { left: number; top: number; right: number; bottom: number }
+
+/**
+ * Whether a caption's box comes within `margin` of any of the lobby's own controls (the buttons
+ * in the lower right, the settings card, the version): such a caption fades out and takes no
+ * taps, so it never draws over a control or reads through the card (the owner's iPad mini, 21
+ * November 2026). The planet itself stays.
+ */
+export function captionBlocked(box: ScreenBox, blockers: readonly ScreenBox[], margin = 8): boolean {
+  return blockers.some(b => box.left < b.right + margin && box.right > b.left - margin && box.top < b.bottom + margin && box.bottom > b.top - margin)
+}

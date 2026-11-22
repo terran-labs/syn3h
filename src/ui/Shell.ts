@@ -33,7 +33,7 @@ import { SlidingPanels } from './SlidingPanels'
 import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
-import { captionHidden, captionMask } from './galaxy/labels'
+import { captionBlocked, captionHidden, captionMask, type ScreenBox } from './galaxy/labels'
 import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
@@ -1721,6 +1721,7 @@ export class Shell implements System {
       // picture): the world's name, its biome in small lower case under it, then how many are
       // online. Set under its planet; the planet takes the taps, the caption takes focus.
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
+      this.chipSizes.observe(chip)
       chip.innerHTML = '<strong></strong><small class="galaxy-biome"></small>'
       const text = planetLabelText(world)
       chip.querySelector('strong')!.textContent = text.name; chip.querySelector('small')!.textContent = text.biome
@@ -1821,6 +1822,12 @@ export class Shell implements System {
         const current = currentPlanet().id, near = Math.min(...places.filter(p => p.visible).map(p => p.depth)), far = Math.max(...places.filter(p => p.visible).map(p => p.depth))
         // Nearer, larger planets get larger captions (captionScale.ts); the gap below the limb grows with them.
         const short = Math.min(innerWidth, innerHeight)
+        // The lobby's own controls, read once before this frame's writes: a caption that would
+        // touch one fades out (captionBlocked). Captions are placed in the label layer's space.
+        const layer = chips.values().next().value?.parentElement?.getBoundingClientRect()
+        const blockers: ScreenBox[] = [this.lobbySettings.dock, this.lobbySettings.version, document.getElementById('lobby-settings')]
+          .map(el => el?.getBoundingClientRect()).filter((r): r is DOMRect => !!r && r.width > 0 && r.height > 0)
+          .map(r => ({ left: r.left - (layer?.left ?? 0), right: r.right - (layer?.left ?? 0), top: r.top - (layer?.top ?? 0), bottom: r.bottom - (layer?.top ?? 0) }))
         for (const place of places) {
           const chip = chips.get(place.id)!
           chip.hidden = !place.visible
@@ -1829,7 +1836,11 @@ export class Shell implements System {
           const scaleText = scale.toFixed(2)
           if (chip.style.getPropertyValue('--caption-scale') !== scaleText) chip.style.setProperty('--caption-scale', scaleText)
           this.placeChip(chip, place.x, place.y + place.radius + gap)
-          const away = (!!chosen && place.id !== chosen) || place.labelled === false || captionHidden(place, places, this.galaxy?.sunScreen)
+          // The caption's box: centred under its planet, its size as last laid out (chipSizes).
+          const size = this.chipSize.get(chip), top = place.y + place.radius + gap
+          const blocked = !!size && captionBlocked({ left: place.x - size.width / 2, right: place.x + size.width / 2, top, bottom: top + size.height }, blockers)
+          if (chip.classList.contains('is-blocked') !== blocked) { chip.classList.toggle('is-blocked', blocked); chip.tabIndex = blocked ? -1 : 0 }
+          const away = blocked || (!!chosen && place.id !== chosen) || place.labelled === false || captionHidden(place, places, this.galaxy?.sunScreen)
           const depth = far > near ? (place.depth - near) / (far - near) : 0
           // Pointing and focus lift it in the stylesheet (.is-pointed, :focus), at once, even
           // while the galaxy is holding still and not drawing.
@@ -1861,6 +1872,11 @@ export class Shell implements System {
     this.chipDrawn.set(chip, last)
     if (!(Math.abs(x - last.x) <= .5 && Math.abs(y - last.y) <= .5)) { last.x = x; last.y = y; chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` }
   }
+  /** Each caption's laid-out size, kept by a ResizeObserver so the per-frame pass never measures. */
+  private readonly chipSize = new WeakMap<Element, { width: number; height: number }>()
+  private readonly chipSizes = new ResizeObserver(entries => {
+    for (const entry of entries) { const box = entry.borderBoxSize?.[0]; this.chipSize.set(entry.target, box ? { width: box.inlineSize, height: box.blockSize } : { width: entry.contentRect.width, height: entry.contentRect.height }) }
+  })
   /** Each caption's last mask, so it is written only when it changes. */
   private readonly chipMask = new WeakMap<HTMLButtonElement, string>()
   private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
@@ -2189,7 +2205,7 @@ export class Shell implements System {
     if (keep) { keepRow.querySelector<HTMLInputElement>('#bots-keep')!.checked = keep.value === true; }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.chipSizes.disconnect(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }

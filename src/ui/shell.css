@@ -449,6 +449,9 @@
 /* The galaxy would not start: its labels become a row of buttons above the help line. */
 .galaxy-flat .galaxy-labels { position: static; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin-bottom: 14px; pointer-events: auto; overflow: visible; }
 .syn3h-shell.galaxy-flat .galaxy-label { position: static; translate: none; transform: none; }
+/* A caption that would touch the lobby's own controls (Shell, captionBlocked) has faded to nothing
+   through --caption-strength; it takes no taps either, so a tap there reaches the control. */
+.syn3h-shell button.galaxy-label.is-blocked { pointer-events: none; }
 .galaxy-links { padding: 6px 18px; border-radius: 999px; background: rgb(10 12 18 / .5); }
 
 /* The descent: the lobby's words and glass fall away, the galaxy blurs as it dives, and the
