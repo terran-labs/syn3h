@@ -315,11 +315,14 @@ html .syn3h-shell.exploration-ui .drive-notices > .performance-recommendation[da
   position: relative; inset: auto; transform: none; margin: 0; pointer-events: auto; max-width: 100%;
 }
 @media (max-width: 800px) {
-  .syn3h-shell.exploration-ui.has-touch:not(.is-panels) > .drive-notices {
-    bottom: max(calc(var(--map-top, 180px) + 10px), calc(var(--thumb-top) + var(--thumb-above, 0px) + 10px));
+  .syn3h-shell.exploration-ui.has-touch {
+    --notice-bottom: max(calc(var(--map-top, 180px) + 10px), calc(var(--thumb-top) + var(--thumb-above, 0px) + 10px));
+  }
+  .syn3h-shell.exploration-ui.has-touch > .drive-notices {
+    bottom: var(--notice-bottom);
   }
   .syn3h-shell.exploration-ui.has-touch:has(> .drive-notices > :not([hidden])) > .world-inspector {
-    max-height: calc(100dvh - var(--edge-top) - var(--edge-bottom) - var(--notice-stack-height) - var(--edge));
+    max-height: calc(100dvh - var(--edge-top) - var(--notice-bottom) - var(--notice-stack-height) - var(--edge));
   }
 }
 
