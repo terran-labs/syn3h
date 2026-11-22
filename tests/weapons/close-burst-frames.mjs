@@ -5,7 +5,8 @@
  * bursts' clock is held and stepped by hand, so each still is at a known age.
  *
  *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/close-burst-frames.mjs <label> [out dir]
- *   then: python3 tools-or-tmp/sat.py <out dir>   (share of near-white pixels per frame)
+ *   then: python3 <sat.py> <out dir>   (per frame: share near white, share veiled, and share brighter
+ *   than the same view just before the burst by 40 or more, which counts pale coverage too)
  */
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright-core'
@@ -47,6 +48,9 @@ try {
     for (const scene of ['one', 'three', 'far']) {
       await page.evaluate(() => window.__freeze(true))
       if (scene === 'far') await page.evaluate(() => { const [fx, fz] = window.__f, e = window.__eye; window.__look = e.clone().set(e.x + fx * 800, e.y + 60, e.z + fz * 800) })
+      // The same view just before the burst: the baseline for counting what the burst brightens.
+      await page.waitForTimeout(150)
+      await writeFile(`${out}/${scene}-${hour}-${label}-pre.png`, await page.screenshot())
       await page.evaluate(scene => {
         const o = window.syn3h.player.object.position, [fx, fz] = window.__f
         if (scene === 'far') window.__burst(o.x + fx * 800, window.syn3h.terrain.heightAt(o.x + fx * 800, o.z + fz * 800) + 60, o.z + fz * 800)
