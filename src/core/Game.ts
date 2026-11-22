@@ -68,6 +68,9 @@ const MAX_STEPS_PER_FRAME = 5
 // start to here is mostly module requests.
 recordStartupPhase('fetch and run modules up to Game.ts', 0)
 
+/** Draws a covered climb divides the scene into, one per frame (Game.climbShares). */
+const CLIMB_SHARES = 6
+
 export class Game {
   readonly scene = new THREE.Scene()
   readonly camera = new THREE.PerspectiveCamera(60, 1, 0.1, 20000)
@@ -425,13 +428,16 @@ export class Game {
    * positive scale keeps the face winding). A mesh whose ancestor is hidden is left alone, so no
    * sibling is ever shown.
    */
-  private prepareClimbedLevel(parts: { systems: boolean; fleet: boolean; standIns?: THREE.Mesh[] }, wrap: (draw: () => void) => void): void {
+  private prepareClimbedLevel(parts: { systems: boolean; fleet: boolean; standIns?: THREE.Mesh[]; only?: Set<THREE.Object3D> }, wrap: (draw: () => void) => void): void {
     const start = longFrames.start()
     longFrames.event('Climbed level preparation')
     const camera = this.camera
     const behind = camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(-1000).add(camera.position)
     const moved: { mesh: THREE.Object3D; position: THREE.Vector3; scale: THREE.Vector3; culled: boolean }[] = []
     const culled: THREE.Object3D[] = []
+    // A share of the scene for this draw (see climbShares): the rest is hidden for its length.
+    const unshared: THREE.Object3D[] = []
+    if (parts.only) for (const child of this.scene.children) if (child.visible && !parts.only.has(child)) { child.visible = false; unshared.push(child) }
     try {
       // Systems whose look depends on the level (particle octaves) switch now, not next update.
       if (parts.systems) for (const system of this.systems) system.prepareClimb?.()
@@ -467,6 +473,7 @@ export class Game {
     } finally {
       for (const o of culled) o.frustumCulled = true
       for (const m of moved) { m.mesh.visible = false; m.mesh.frustumCulled = m.culled; m.mesh.position.copy(m.position); m.mesh.scale.copy(m.scale) }
+      for (const child of unshared) child.visible = true
       longFrames.end('Climbed level preparation', start)
     }
   }
@@ -483,6 +490,30 @@ export class Game {
   climbStatus?: (phase: string) => void
   /** Covered climbs taken and abandoned, the last one's time behind the veil and its longest slice (tools read these). */
   readonly climbStats = { taken: 0, abandoned: 0, lastMs: 0, longestSliceMs: 0, slices: [] as number[] }
+
+  /**
+   * The scene's top-level objects in shares of about equal mesh count, for a covered climb's draws:
+   * one draw per share and frame spreads the node builds, object setup and pipeline requests. A
+   * top-level object that carries a light is in every share, since the lights are part of every
+   * material's build key.
+   */
+  private climbShares(count: number): Set<THREE.Object3D>[] {
+    const lit: THREE.Object3D[] = [], weighed: { child: THREE.Object3D; meshes: number }[] = []
+    for (const child of this.scene.children) {
+      let meshes = 0, light = false
+      child.traverse(o => { if ((o as THREE.Mesh).isMesh) meshes++; if ((o as THREE.Light).isLight) light = true })
+      if (light) lit.push(child); else weighed.push({ child, meshes })
+    }
+    const total = weighed.reduce((n, w) => n + w.meshes, 0), target = Math.max(1, total / count)
+    const shares: Set<THREE.Object3D>[] = []
+    let share = new Set<THREE.Object3D>(lit), weight = 0
+    for (const { child, meshes } of weighed) {
+      if (weight > 0 && weight + meshes > target && shares.length < count - 1) { shares.push(share); share = new Set(lit); weight = 0 }
+      share.add(child); weight += meshes
+    }
+    shares.push(share)
+    return shares
+  }
 
   private takeCoveredClimb(): Promise<void> {
     this.climbLevel = this.quality.governor.pendingLevel as QualityLevel
@@ -542,7 +573,14 @@ export class Game {
       let standIns: THREE.Mesh[] = []
       slice(() => { standIns = climbShowroomStandIns(this.scene) })
       await frame(); check()
-      slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns }, run(true)))
+      // The scene in shares, one draw per frame, then the stand-ins on their own.
+      for (const share of this.climbShares(CLIMB_SHARES)) {
+        slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns: [], only: share }, run(true)))
+        await frame(); check()
+      }
+      const lightsOnly = new Set<THREE.Object3D>()
+      for (const child of this.scene.children) { let light = false; child.traverse(o => { light ||= (o as THREE.Light).isLight === true }); if (light) lightsOnly.add(child) }
+      slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns, only: lightsOnly }, run(true)))
       await frame(); check()
       progress('Preparing vehicles')
       slice(() => this.prepareClimbedLevel({ systems: false, fleet: true }, run(true)))
