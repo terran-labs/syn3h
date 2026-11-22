@@ -56,7 +56,7 @@ export class PerformancePanel {
   private snapshot?: PerformanceSnapshot
   private playing = false
   private captured = false
-  private readonly recommendationSize: ResizeObserver
+  private readonly recommendationSize?: ResizeObserver
   private wasVisible = false
   /** The "changed" mark beside each fine-tune row, by property id. */
   private readonly marks = new Map<string, HTMLButtonElement>()
@@ -70,7 +70,7 @@ export class PerformancePanel {
   /** Auto quality: the standard switch, apart from the level stepper. */
   private readonly auto: Switch
 
-  constructor(parent: HTMLElement, private readonly openRail: () => void, quality?: QualitySource, private readonly inspector?: Inspector) {
+  constructor(parent: HTMLElement, private readonly openRail: () => void, quality?: QualitySource, private readonly inspector?: Inspector, noticeStack?: HTMLElement) {
     const signal = this.abort.signal
     this.element.className = 'performance-card'
     this.element.innerHTML = `<div class="wi-level" role="group" aria-label="Quality level">
@@ -98,12 +98,14 @@ export class PerformancePanel {
     this.recommendation.className = 'performance-recommendation liquid-glass'; this.recommendation.hidden = true
     this.recommendation.setAttribute('role', 'status')
     this.recommendation.innerHTML = '<p></p><button type="button" class="panel-action" data-performance="ignore">Ignore</button><button type="button" class="panel-action" data-performance="bots" hidden>Fewer bots</button><button type="button" class="panel-action" data-performance="lower">Lower level</button><small class="performance-unlock" hidden>Esc for options</small>'
-    parent.append(this.recommendation)
-    this.recommendationSize = new ResizeObserver(([entry]) => {
-      const height = entry.borderBoxSize[0]?.blockSize ?? this.recommendation.offsetHeight
-      parent.style.setProperty('--recommendation-height', height + 'px')
-    })
-    this.recommendationSize.observe(this.recommendation)
+    ;(noticeStack ?? parent).append(this.recommendation)
+    if (noticeStack) {
+      this.recommendationSize = new ResizeObserver(([entry]) => {
+        const height = entry.borderBoxSize[0]?.blockSize ?? noticeStack.offsetHeight
+        parent.style.setProperty('--notice-stack-height', height + 'px')
+      })
+      this.recommendationSize.observe(noticeStack)
+    }
     this.select.addEventListener('change', () => this.quality?.setLevel(Number(this.select.value)), { signal })
     this.auto = createSwitch('Auto quality', { className: 'wi-auto', signal, onChange: on => this.quality?.setAuto(on) })
     this.auto.input.disabled = true
@@ -361,6 +363,6 @@ export class PerformancePanel {
   dispose(): void {
     this.unsubscribe?.(); this.unsubscribe = undefined; this.source = undefined
     this.qualityUnsubscribe?.(); this.qualityUnsubscribe = undefined; this.quality = undefined
-    this.recommendationSize.disconnect(); this.abort.abort(); this.inspector?.removeCard(PerformancePanel.CARD); this.element.remove(); this.recommendation.remove()
+    this.recommendationSize?.disconnect(); this.abort.abort(); this.inspector?.removeCard(PerformancePanel.CARD); this.element.remove(); this.recommendation.remove()
   }
 }

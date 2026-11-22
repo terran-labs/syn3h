@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { params } from '../../shared/params'
+import { params, surfaceCoverage } from '../../shared/params'
 import { qualityLevel } from '../../src/core/quality'
 import { glassStyle } from '../../src/ui/inspector/params'
 import { glassLabels, liquidSelected, restoreGlassMaterial } from '../../src/ui/glassMaterial'
@@ -9,8 +9,9 @@ describe('the saved interface material', () => {
   const storage = new Map<string, string>()
   beforeEach(() => {
     storage.clear()
+    params.set(surfaceCoverage.def.id, surfaceCoverage.def.default)
     vi.stubGlobal('localStorage', { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) })
-    vi.stubGlobal('document', { documentElement: { dataset: {} } })
+    vi.stubGlobal('document', { documentElement: { dataset: {}, style: { setProperty: vi.fn() } } })
     params.set(glassStyle.def.id, glassStyle.def.default)
     params.set(qualityLevel.def.id, 2)
   })
@@ -43,6 +44,16 @@ describe('the saved interface material', () => {
     params.set(qualityLevel.def.id, 2)
     expect(liquidSelected()).toBe(true)
     expect(document.documentElement.dataset.glassMaterial).toBe('liquid')
+  })
+  it('restores the same tint when the player changes materials or reloads', () => {
+    stop = restoreGlassMaterial(false)
+    params.set(surfaceCoverage.def.id, 72)
+    params.set(glassStyle.def.id, 2)
+    stop()
+    params.set(surfaceCoverage.def.id, surfaceCoverage.def.default)
+    stop = restoreGlassMaterial(false)
+    expect(surfaceCoverage.value).toBe(72)
+    expect(document.documentElement.dataset.glassMaterial).toBe('flat')
   })
   it('opens a Liquid shortcut without overwriting the saved material', () => {
     stop = restoreGlassMaterial(false)

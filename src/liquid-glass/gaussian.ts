@@ -34,7 +34,9 @@ export function createGlassGaussian(source: (at: N) => N, viewport: N, widthScal
   let width = 0, height = 0
   return {
     passes: [horizontal, vertical],
-    sample: (at: N) => vertical.sample(at).rgb,
+    // Schedule the horizontal draw on the composite before the vertical
+    // target is bound and cleared. Its alpha reads the previous vertical draw.
+    sample: (at: N): N => mix(horizontal.sample(at).rgb, vertical.sample(at).rgb, 1),
     exposure(at: N) {
       const sample = vertical.sample(at)
       return vec2(sample.a, dot(sample.rgb, luma))

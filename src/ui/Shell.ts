@@ -367,7 +367,10 @@ export class Shell implements System {
       this.queuedQuality = { level, apply }
       if (!this.qualityVeil) void this.applyQualityBehindVeil()
     }
-    this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
+    const noticeStack = document.createElement('div')
+    noticeStack.className = 'drive-notices'
+    this.element.append(noticeStack)
+    this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector, noticeStack)
     // The lobby's settings: Settings above Welcome and Updates in the lower right of the galaxy,
     // the running version in the lower left, and a right-hand card of what acts in the lobby
     // (LobbySettings). The presentation toggle and host controls are built here and wired below.
@@ -474,6 +477,7 @@ export class Shell implements System {
     music.querySelector('input')!.addEventListener('change', event => this.audio.setMuted((event.target as HTMLInputElement).checked), { signal })
     this.focusHud = new FocusHud(this.element)
     this.raceHud = new RaceHud(this.element, { leave: () => this.onRaceLeave?.(), cancel: () => this.onRaceCancel?.() })
+    noticeStack.prepend(this.raceHud.element)
     // Touch has no cursor to capture, so one control switches between driving and the panels.
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
     toggle.addEventListener('click', () => { this.touchPanels = !this.touchPanels; this.syncPanels() }, { signal })

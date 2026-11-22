@@ -186,7 +186,7 @@ export class LobbySettings {
     const material = params.get('hud.glass')!
     const body = document.createElement('div')
     this.inspector.addCard('glass', 'Glass', body, () => glassLabels[Number(material.value)], {
-      fill: () => body.replaceChildren(this.inspector.row(material.def as PropertyDef),
+      fill: () => body.replaceChildren(this.inspector.row(material.def as PropertyDef), this.inspector.row(params.get('hud.surfaceCoverage')!.def as PropertyDef),
         ...params.all().filter(p => p.def.group === 'Glass').map(p => this.inspector.row(p.def as PropertyDef))),
     })
     // Play: whether the bots may play with you, set before you join a world.

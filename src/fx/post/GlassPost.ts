@@ -1,7 +1,7 @@
 import { liquidSelected, respectReducedTransparency } from '../../ui/glassMaterial'
 import * as THREE from 'three/webgpu'
 import { float, max, renderOutput, rtt, uniform, uv, vec3, vec4 } from 'three/tsl'
-import { defineParam, params } from '../../../shared/params'
+import { defineParam, params, surfaceCoverage } from '../../../shared/params'
 import { registerCoveredComposite } from '../../core/coveredPipelines'
 import { composeGlass } from '../../liquid-glass/compose'
 import { regularSettings as settings, regularOverrides } from './regularSettings'
@@ -121,8 +121,15 @@ export class GlassPost {
   private readonly unsubscribe: () => void
   private revision = 0
   private updateTuning = () => {
-    const transfer = regularTransfer(true, settings.tint.value, settings.brightness.value)
-    this.tuning.face.value.set(transfer.quadratic, transfer.slope, transfer.lift, settings.saturation.value)
+    const coverage = surfaceCoverage.value / 100
+    const opacity = Math.max(0, (coverage - .25) / .75) * .97
+    const transfer = regularTransfer(true, settings.tint.value * Math.min(1, coverage * 4), settings.brightness.value)
+    transfer.quadratic *= 1 - opacity
+    transfer.slope *= 1 - opacity
+    transfer.panelSlope *= 1 - opacity
+    transfer.lift = transfer.lift * (1 - opacity) + opacity * 22 / 255
+    transfer.panelLift = transfer.panelLift * (1 - opacity) + opacity * 22 / 255
+    this.tuning.face.value.set(transfer.quadratic, transfer.slope, transfer.lift, settings.saturation.value * (1 - opacity))
     this.tuning.panel.value.set(transfer.panelSlope, transfer.panelLift)
     this.tuning.edges.value.set(settings.rim.value, settings.hair.value, .405 * settings.lift.value)
     this.frost.value = settings.frost.value / settings.frost.def.default
@@ -135,7 +142,7 @@ export class GlassPost {
   }
   constructor(private readonly mode: string) {
     this.updateTuning()
-    this.unsubscribe = params.onChange(id => { if (id.startsWith('glass.')) this.updateTuning() })
+    this.unsubscribe = params.onChange(id => { if (id.startsWith('glass.') || id === surfaceCoverage.def.id) this.updateTuning() })
     if (mode === 'inline') installGalaxyGlass((gl, canvas) => createLobbyGlass(gl, canvas, {
       face: this.tuning.face.value, panel: this.tuning.panel.value, edges: this.tuning.edges.value,
       width: () => this.frost.value, growth: () => settings.growth.value,

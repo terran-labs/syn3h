@@ -8,7 +8,7 @@ import { uniform, uniformArray } from 'three/tsl'
 const panel = '.hud-navigation .inspector-toggle.liquid-glass'
 const round = '.touch-actions .liquid-glass.glass-round'
 const inspector = '.syn3h-shell > .world-inspector:not(.lobby-settings)'
-const card = inspector + ' > .wi-cards > .wi-card, ' + inspector + ' > .wi-ghosts > .wi-ghost.wi-glass, .syn3h-shell > .performance-recommendation'
+const card = inspector + ' > .wi-cards > .wi-card, ' + inspector + ' > .wi-ghosts > .wi-ghost.wi-glass, .drive-notices > .performance-recommendation'
 const buttons = [panel, round, '.pause-actions > button', '.rail-command > button', '.rail-command > input.wi-search',
   '.world-inspector > .panels-close', '.gear-actions > button', '.rail-foot > button',
   '.hud-accessories > button', '.hud-chat > button', '.gs-drum > button'].join(',')

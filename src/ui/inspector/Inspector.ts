@@ -598,6 +598,18 @@ export class Inspector {
         if (input.valueAsNumber || liquidEligible()) params.set(def.id, input.valueAsNumber)
         sync(param.value)
       }
+    } else if (def.id === 'hud.surfaceCoverage') {
+      row.classList.add('glass-material-row')
+      const input = document.createElement('input')
+      input.type = 'range'; input.min = '0'; input.max = '100'; input.step = '1'
+      input.setAttribute('aria-label', def.label)
+      label.textContent = def.label
+      input.oninput = () => params.set(def.id, input.valueAsNumber)
+      row.append(label, input, output)
+      sync = value => {
+        input.value = String(value); output.textContent = value + '%'
+        input.setAttribute('aria-valuetext', output.textContent)
+      }
     } else if (def.id === sunDayLength.def.id) {
       // Seconds stored, minutes shown, a log slider and the orbit default: its own control.
       def = { ...def, label: 'Day length', limitsText: '20 s to 60 min on the slider, or stopped · default: the orbit' }

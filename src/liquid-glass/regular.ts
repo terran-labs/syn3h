@@ -15,8 +15,8 @@ const wideOffsets = Array.from({ length: 32 }, (_, i) => {
 // quantization headroom, and a little more for controls inside large panels.
 // Scale in linear light so bright saturated backdrops retain their hue.
 export function whiteInkFace(rgb: N, distance: N, smallControl: N, tuning: RegularUniforms, at: N): N {
-  const linear = sRGBTransferEOTF(rgb)
-  let adapted = linear
+  const linear: N = sRGBTransferEOTF(rgb)
+  let adapted: N = linear
   if (tuning.exposure) {
     const pair = tuning.exposure(at)
     const delta = pair.x.sub(pair.y)
@@ -26,7 +26,7 @@ export function whiteInkFace(rgb: N, distance: N, smallControl: N, tuning: Regul
   }
   const luminance = dot(adapted, vec3(.2126, .7152, .0722))
   const limit = mix(.18, .296, smallControl)
-  const safe = sRGBTransferOETF(linear.mul(limit.div(max(limit, luminance))))
+  const safe: N = sRGBTransferOETF(linear.mul(limit.div(max(limit, luminance))))
   return mix(rgb, safe, clamp(distance.negate().sub(1), 0, 1).mul(float(luminance.greaterThan(limit))))
 }
 

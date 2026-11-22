@@ -6,7 +6,7 @@ import { defineParam } from '../../../shared/params'
 
 export const focusStyle = defineParam<number>({ id: 'hud.focusStyle', label: 'Focus display: 0 Arc, 1 Horizon, 2 Telemetry', group: 'Interface', scope: 'client', default: 0, min: 0, max: 2, step: 1 })
 export const reticleStyle = defineParam<number>({ id: 'hud.reticle', label: 'Reticle: 0 Dot, 1 Ring, 2 Bracket', group: 'Interface', scope: 'client', default: 1, min: 0, max: 2, step: 1 })
-export const glassStyle = defineParam<number>({ id: 'hud.glass', label: 'Glass', group: 'Interface', scope: 'client', default: 1, min: 0, max: 2, step: 1 })
+export { glassStyle } from '../../../shared/params'
 
 /**
  * How much interface shows over the world while playing on a desktop. Full is the normal
