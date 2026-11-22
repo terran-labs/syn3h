@@ -1938,9 +1938,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-close, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
-    // In the panels, only the two plain actions are buttons in this sense; the rest are rows, switches and choices.
-    for (const button of this.element.querySelectorAll<HTMLElement>('.rail-invite, .rail-about')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-close, .lobby-links *, .syn3h-advanced *, .world-inspector *, .performance-recommendation *, .race-controls *, .update-banner-actions *, .exit-confirm-actions *, .join-view *')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
     // Upper left, where the light strikes at rest (glass.css).
