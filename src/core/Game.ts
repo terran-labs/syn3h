@@ -444,11 +444,6 @@ export class Game {
       // far away) would otherwise get its shadow pipeline only when it moves into one, in play.
       this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
       const submit = () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
-      // A remote vehicle wears plain materials beyond 30 m and the level's shading tier inside it.
-      // Below Medium there are no shadows, so after the climb a near bot's plain set had no shadow
-      // pipeline until the bot drove out past 30 m, in play. One draw with near vehicles in that set
-      // builds it; it goes first, so the frame left on screen is the normal one.
-      if (Math.round(Number(vehicleShading.value)) > 0) drawCoveredShowroomVariant(this.scene, 0, submit)
       const fleet = this.systems.find(system => system.drawClimbFleet)
       if (fleet) fleet.drawClimbFleet!(submit); else submit()
     } finally {
