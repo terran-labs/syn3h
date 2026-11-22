@@ -317,6 +317,16 @@ export class Spray {
     if (entering) { const impact = this.sim!.lastSplash; this.ripples.disturb(position.x, position.z, 2 + Math.min(4, impact * .12), Math.min(.6, impact * .04 + .1)) }
     return entering
   }
+  /**
+   * A splash where something that is not a vehicle hits the surface (a shot): the same crown,
+   * column and foam ring as an entry at `speed` m/s straight down, with ripples on water.
+   */
+  impact(position: T.Vector3, speed: number) {
+    if (!waterSpray.value) return
+    if (!this.sim) this.allocate(Math.max(0, Math.min(2, Math.round(graphicsLevel.value))))
+    this.sim!.impact(position.x, position.y, position.z, 0, -Math.max(0, speed), 0, waterSprayScale.value * (this.liquid === 'lava' ? .7 : 1))
+    if (this.liquid !== 'lava') this.ripples.disturb(position.x, position.z, 2 + Math.min(4, speed * .12), Math.min(.6, speed * .04 + .1))
+  }
   /** The world moved by a whole tile under the player: move what spray has left behind with it. */
   shift(dx: number, dz: number) { this.sim?.shift(dx, dz) }
   private release() {
