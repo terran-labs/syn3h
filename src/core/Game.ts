@@ -630,8 +630,17 @@ export class Game {
       // Use exact destination targets, including the direct-to-canvas Minimal path.
       const chain = this.postChain
       const governor = this.quality?.governor
-      if (!chain?.warmCovered || !governor?.auto || governor.levelPinned) return
+      if (!chain?.warmCovered || !governor?.auto) return
       const entryLevel = governor.level
+      if (governor.levelPinned) {
+        // Pinning the level still lets the governor shed post effects within it.
+        const full = this.quality.renderPreset(entryLevel, true)
+        const shed = this.quality.renderPreset(entryLevel, true, true)
+        if (chain.coveredVariantKey?.(full) !== chain.coveredVariantKey?.(shed)) {
+          await chain.warmCovered({ yieldFrame, draw: () => draw(undefined, true) }, shed)
+        }
+        return
+      }
       // Ultra and Cinematic change cascade counts. Preview just their existing neighbour
       // until the renderer can retain the actual destination shadow state.
       const lowest = entryLevel > 3 ? entryLevel - 1 : 0

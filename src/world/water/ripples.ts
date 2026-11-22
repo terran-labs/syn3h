@@ -81,7 +81,7 @@ export class Ripples {
   }
   /** Submit the first flat field under cover. Its target format is independent of the scene pass. */
   prepareCovered() {
-    if(!waterRipples.value||this.quad)return
+    if(this.quad)return
     this.allocate()
     const saved=this.renderer.getRenderTarget()
     try {
