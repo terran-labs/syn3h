@@ -288,3 +288,43 @@ html[data-glass-material] .syn3h-shell.exploration-ui .world-inspector
 :is(.wi-seg button.is-on, .wi-vehicle-option[aria-checked="true"], .glass-stops button[aria-pressed="true"]):focus-visible {
   outline: 2px solid white; outline-offset: 1px;
 }
+
+/* Keep the offer out of the rail. On a narrow touch screen the thumb controls
+   need the bottom corners while driving. An open rail leaves room below itself. */
+html[data-glass-material] .syn3h-shell.exploration-ui > .performance-recommendation {
+  position: fixed; left: 50%; right: auto; top: auto; bottom: var(--edge-bottom);
+  width: min(360px, calc(100% - var(--edge-left) - var(--edge-right)));
+  transform: translateX(-50%); border-radius: var(--glass-control-radius);
+  padding: 12px 16px; color: white; border: 0; box-shadow: none; text-shadow: none;
+}
+html[data-glass-material] .syn3h-shell.exploration-ui > .performance-recommendation::before,
+html[data-glass-material] .syn3h-shell.exploration-ui > .performance-recommendation::after { content: none; }
+html[data-glass-material] .syn3h-shell.exploration-ui > .performance-recommendation:not([data-glass-surface="shader"]) {
+  background: var(--panel-material-fill, rgb(22 23 26 / .75));
+  -webkit-backdrop-filter: var(--panel-material-filter, none); backdrop-filter: var(--panel-material-filter, none);
+}
+html .syn3h-shell.exploration-ui > .performance-recommendation[data-glass-surface="shader"] {
+  background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+@media (max-width: 800px) {
+  html[data-glass-material] .syn3h-shell.exploration-ui.has-touch:not(.is-panels) > .performance-recommendation {
+    bottom: max(calc(var(--map-top, 180px) + 10px), calc(var(--thumb-top) + var(--thumb-above, 0px) + 10px));
+  }
+  html[data-glass-material] .syn3h-shell.exploration-ui.has-touch:has(> .performance-recommendation:not([hidden])) > .world-inspector {
+    max-height: calc(100dvh - var(--edge-top) - var(--edge-bottom) - var(--recommendation-height) - 12px);
+  }
+}
+
+/* Plain panel actions share the Me footer's thin border and hover state.
+   The enclosing card supplies the material and its depth. */
+html[data-glass-material] .syn3h-shell.exploration-ui
+:is(.world-inspector .wi-actions, .performance-recommendation, .race-controls, .update-banner-actions, .exit-confirm-actions, .join-view) button {
+  appearance: none; box-sizing: border-box; border: 1px solid var(--s3-line-quiet); border-radius: 999px;
+  padding: 5px 12px; background: transparent; color: white;
+  font: 400 12px/1.3 'Barlow', sans-serif; letter-spacing: .03em;
+  text-shadow: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+html[data-glass-material] .syn3h-shell.exploration-ui
+:is(.world-inspector .wi-actions, .performance-recommendation, .race-controls, .update-banner-actions, .exit-confirm-actions, .join-view) button:is(:hover, :focus-visible) {
+  border-color: var(--s3-line); background-color: rgb(205 205 205 / .06);
+}
