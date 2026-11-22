@@ -33,7 +33,7 @@ export class Ripples {
     this.renderer=renderer
   }
   /** Set the wrapping world width; zero is an unbounded flat lab. */
-  configure(tileSize:number) { this.dispose();this.tileSize.value=Math.max(0,tileSize) }
+  configure(tileSize:number) { this.resetField();this.tileSize.value=Math.max(0,tileSize) }
   disturb(x:number,z:number,radius:number,strength:number) {
     if(!waterRipples.value)return
     const tile=this.tileSize.value
@@ -77,6 +77,7 @@ export class Ripples {
     const material=new T.MeshBasicNodeMaterial()
     material.fragmentNode=vec4(inside.select(this.stepWave.greaterThan(0).select(next,h),0).add(impulse).mul(edge),inside.select(this.stepWave.greaterThan(0).select(h,previous),0).add(impulse).mul(edge),0,1)
     this.quad=new T.QuadMesh(material)
+    this.quad.name='water-ripple-simulation'
   }
   /** Zero both height buffers: a fresh field, and one waking after its window moved unseen. */
   private flatten() {
@@ -85,18 +86,35 @@ export class Ripples {
     for(const target of this.targets){this.renderer.setRenderTarget(target);this.renderer.clear()}
     this.renderer.setRenderTarget(saved);this.renderer.setClearColor(clear,alpha)
   }
+  private resetField() {
+    this.active.value=0
+    this.positioned=false
+    this.accumulator=0
+    this.queue.drain()
+    this.sleep.reset()
+  }
   update(dt:number,cameraX:number,cameraZ:number) {
-    if(!waterRipples.value||!this.renderer){this.dispose();return}
+    if(!this.renderer)return
+    if(!waterRipples.value){
+      if(this.positioned||this.queue.events.length)this.resetField()
+      return
+    }
     // Asleep until something disturbs the water: no passes, no uploads, and the sea shader
     // reads a flat field through `active`. The targets and pipeline stay, so waking is free.
     if(!this.sleep.step(this.queue.events.length,dt)){
       if(this.active.value){this.active.value=0;this.positioned=false;this.accumulator=0}
       return
     }
+    const size=waterRippleSize.value
+    if(size!==this.extent.value){
+      // Old texels represent different world positions at the new extent. Start flat
+      // at the camera, then apply this frame's disturbances in world coordinates.
+      this.extent.value=size
+      this.positioned=false
+      this.accumulator=0
+    }
     if(!this.quad)this.allocate()
     else if(!this.positioned)this.flatten()
-    const size=waterRippleSize.value
-    if(size!==this.extent.value){this.dispose();this.extent.value=size;this.allocate()}
     const tile=this.tileSize.value
     if(tile>0&&this.positioned){cameraX+=Math.round((this.origin.value.x+size/2-cameraX)/tile)*tile;cameraZ+=Math.round((this.origin.value.y+size/2-cameraZ)/tile)*tile}
     const next=snappedOrigin(cameraX,cameraZ,this.cells,size)
@@ -116,7 +134,7 @@ export class Ripples {
       }
     } finally {this.renderer.setRenderTarget(saved)}
   }
-  dispose(){for(const t of this.targets)t.dispose();this.targets=[];(this.quad?.material as T.Material | undefined)?.dispose();this.quad=null;this.active.value=0;this.positioned=false;this.accumulator=0;this.queue.drain();this.sleep.reset()}
+  dispose(){for(const t of this.targets)t.dispose();this.targets=[];(this.quad?.material as T.Material | undefined)?.dispose();this.quad=null;this.resetField()}
 }
 
 /** Shared by the sea shader and the game effects system; no GPU targets until enabled. */

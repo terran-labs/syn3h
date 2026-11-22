@@ -13,6 +13,7 @@ assert(['webgpu','webgl'].includes(backend) && [2,3,4,5].includes(entryLevel) &&
 assert(!world || ['waterfall','volcanic'].includes(world))
 if (world) url.searchParams.set('planet', world === 'waterfall' ? 'alpine' : 'volcanic')
 url.searchParams.set('seed', world === 'waterfall' ? '4' : '1')
+if (world === 'waterfall') url.searchParams.set('vehicle','hovercraft')
 url.searchParams.set('room','quality-check-'+randomUUID().slice(0,8))
 if (backend === 'webgl') url.searchParams.set('webgl','1')
 const browser = await chromium.launch({channel:'chrome', headless:false})
@@ -83,13 +84,22 @@ try {
     await page.bringToFront()
     await page.waitForFunction(id => window.syn3hNet?.remotes.get(id)?.vehicle,peerId)
   }
-  if (world === 'waterfall') await page.evaluate(() => {
-    const { game, camera, player } = window.syn3h
+  if (world === 'waterfall') await page.evaluate(async () => {
+    const { game, camera, player, terrain } = window.syn3h
     const origins = game.scene.getObjectByName('waterfall-mist')?.geometry.getAttribute('mistOrigin')
     if (!origins?.count) throw Error('Waterfall fixture has no plunge pool')
     const foot = game.camera.position.clone().fromBufferAttribute(origins,0)
-    player.teleport(foot.clone().addScalar(3),0)
+    // Stage a real hovercraft over water. Its cushion disturbs the field through WaterEffects.
+    const height = terrain.liquidHeightAt(foot.x,foot.z)
+    if (terrain.liquidKindAt(foot.x,foot.z) !== 'water' || !Number.isFinite(height)) throw Error('Expected water at the plunge pool')
+    player.teleport(foot.clone().setY(height+1),0)
     camera.setCinematicPose(foot.clone().add({x:8,y:5,z:12}),foot)
+    const field = game.systems.find(system => system.ripples && system.spray).ripples
+    const start = performance.now(), passes = field.stats.passes
+    while (field.stats.passes === passes) {
+      if (performance.now()-start>8000) throw Error('The hovercraft did not disturb the water during setup')
+      await new Promise(requestAnimationFrame)
+    }
   })
   const result = await page.evaluate(async ({peerId, multiplayer, fleet}) => {
     const {game} = window.syn3h, q = game.quality, governor = q.governor, b = game.renderer.backend
@@ -190,6 +200,7 @@ try {
       let row
       backend.draw = function(source,...args) {
         if (source.object?.name === effect) row.draws++
+        if (source.object?.name === 'water-ripple-simulation') row.wakeDraws++
         return draw.call(this,source,...args)
       }
       backend.createNodeBuilder = function(...args) {
@@ -206,7 +217,7 @@ try {
       }
       try {
         for (let level=1; level<=entryLevel; level++) {
-          row = { level, effect, draws:0, graphs:[], pipelines:[] }
+          row = { level, effect, draws:0, wakeDraws:0, graphs:[], pipelines:[] }
           sweep.step(level)
           for (let i=0;i<42;i++) await new Promise(requestAnimationFrame)
           steps.push(row)
@@ -225,6 +236,12 @@ try {
     assert(row.draws > 0, row.effect+' must draw on the forced return to '+row.level)
     assert(!row.graphs.includes(row.effect) && !row.pipelines.includes(row.effect),
       row.effect+' built on the forced return to '+row.level)
+  }
+  if (world === 'waterfall') {
+    for (const row of result.effectReturn) {
+      assert(row.wakeDraws>0, 'The vehicle wake must run on the return to '+row.level)
+      assert.deepEqual([row.graphs,row.pipelines],[[],[]], 'Cold draws on Alpine return to '+row.level)
+    }
   }
   assert.deepEqual(errors,[])
   assert.equal(result.backend,backend)
