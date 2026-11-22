@@ -400,11 +400,13 @@ export class Game {
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
     if (!this.applyingQuality) {
-      const before = this.quality.governor.level
+      // A pending climb is not applied on one covered frame: Game takes it as a job behind the
+      // "Applying" veil (takeCoveredClimb). The climb back in play to a level just dropped from
+      // (canClimbVisible) still happens inside frame(): its pipelines are alive.
+      this.quality.holdPendingClimb = true
       this.quality.frame(metrics, view === 'playing')
-      // A pending climb applies only on a frame outside play, and the next frame may already be
-      // play. Build the new level's pipelines now, in this frame, hidden meshes included.
-      if (view !== 'playing' && this.quality.governor.level !== before && !this.holdDraws && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost) this.prepareClimbedLevel()
+      if (view !== 'playing' && !this.climbJob && this.quality.pendingClimbReady() && !this.holdDraws &&
+        !(this.renderer as unknown as GuardedRenderer)._isDeviceLost) this.climbJob = this.takeCoveredClimb()
     }
   }
 
@@ -417,7 +419,7 @@ export class Game {
    * positive scale keeps the face winding). A mesh whose ancestor is hidden is left alone, so no
    * sibling is ever shown.
    */
-  private prepareClimbedLevel(): void {
+  private prepareClimbedLevel(parts: { systems: boolean; fleet: boolean }, wrap: (draw: () => void) => void): void {
     const start = longFrames.start()
     longFrames.event('Climbed level preparation')
     const camera = this.camera
@@ -426,7 +428,7 @@ export class Game {
     const culled: THREE.Object3D[] = []
     try {
       // Systems whose look depends on the level (particle octaves) switch now, not next update.
-      for (const system of this.systems) system.prepareClimb?.()
+      if (parts.systems) for (const system of this.systems) system.prepareClimb?.()
       for (const system of this.systems) {
         for (const mesh of system.precompileQualityMeshes?.() ?? []) {
           if (mesh.visible) continue
@@ -451,15 +453,107 @@ export class Game {
       const submit = () => {
         for (const proxy of climbShowroomStandIns(this.scene)) standIns.add(proxy)
         if (standIns.children.length) this.scene.add(standIns)
-        try { drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16) }
+        try { wrap(() => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)) }
         finally { standIns.removeFromParent(); standIns.clear() }
       }
-      const fleet = this.systems.find(system => system.drawClimbFleet)
+      const fleet = parts.fleet ? this.systems.find(system => system.drawClimbFleet) : undefined
       if (fleet) fleet.drawClimbFleet!(submit); else submit()
     } finally {
       for (const o of culled) o.frustumCulled = true
       for (const m of moved) { m.mesh.visible = false; m.mesh.frustumCulled = m.culled; m.mesh.position.copy(m.position); m.mesh.scale.copy(m.scale) }
       longFrames.end('Climbed level preparation', start)
+    }
+  }
+
+  /** The covered climb in progress, if any (takeCoveredClimb). */
+  private climbJob: Promise<void> | null = null
+  /** The shell shows its "Applying <level>" veil for a covered climb; set by the shell. */
+  onCoveredClimb?: (level: QualityLevel, job: Promise<void>) => void
+  /** The veil's status line while a covered climb runs; set by the shell. */
+  climbStatus?: (phase: string) => void
+  /** Covered climbs taken and abandoned, the last one's time behind the veil and its longest slice (tools read these). */
+  readonly climbStats = { taken: 0, abandoned: 0, lastMs: 0, longestSliceMs: 0, slices: [] as number[] }
+
+  private takeCoveredClimb(): Promise<void> {
+    const to = this.quality.governor.pendingLevel as QualityLevel
+    const job = this.runCoveredClimb().catch(error => console.warn('Covered climb failed', error)).finally(() => { this.climbJob = null })
+    this.onCoveredClimb?.(to, job)
+    return job
+  }
+
+  /**
+   * A level climb taken outside play, behind the "Applying" veil, in slices: the veil is shown
+   * first, the climb applied, then the new level prepared as a manual change prepares it, through
+   * covered draws whose pipelines are requested asynchronously (CoveredPipelines), one part per
+   * frame, so no single frame carries all of it. It is done only when the pipelines are compiled
+   * (batch.ready()), a confirmation draw has submitted them, and the GPU has finished that work
+   * (finishWorldFrame: onSubmittedWorkDone, or a WebGL 2 sync object); play resumes, or the veil
+   * lifts, only then. One climb taken on a single out-of-play frame used to cost a frame of up to
+   * half a second and, on WebGPU, a first frame in play of over a second waiting on the GPU.
+   * A climb not done in 8 s is abandoned: the level goes back to the one it left, whose pipelines
+   * are alive, and the abandonment is logged.
+   */
+  private async runCoveredClimb(): Promise<void> {
+    const q = this.quality, from = q.governor.level, start = performance.now()
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    const stop = new AbortController()
+    const check = () => stop.signal.throwIfAborted()
+    const progress = (phase: string) => this.climbStatus?.(phase)
+    const slices: number[] = []
+    const slice = (work: () => void) => { const t = performance.now(); try { work() } finally { slices.push(performance.now() - t) } }
+    let climbed = false
+    const work = async () => {
+      // The veil paints before anything changes underneath it.
+      await frame(); await frame(); check()
+      if (!q.pendingClimbReady()) return
+      this.applyingQuality = true
+      slice(() => { climbed = q.takePendingClimb() !== null })
+      if (!climbed) return
+      longFrames.event('Covered climb')
+      progress('Updating graphics settings')
+      await frame(); await frame(); check() // systems adopt the new level in their own updates
+      const batch = CoveredPipelines.forRenderer(this.renderer, this.scene)
+      const run = (discover: boolean) => (draw: () => void) => runGuarded(this.renderer as unknown as GuardedRenderer, () => { if (batch) batch.run(discover, draw); else draw() })
+      progress('Preparing visible surfaces')
+      slice(() => this.prepareClimbedLevel({ systems: true, fleet: false }, run(true)))
+      await frame(); check()
+      progress('Preparing vehicles')
+      slice(() => this.prepareClimbedLevel({ systems: false, fleet: true }, run(true)))
+      await frame(); check()
+      progress('Compiling graphics pipelines')
+      if (batch && !await batch.ready()) console.warn('Covered climb: a graphics pipeline failed')
+      check()
+      progress('Drawing the new level')
+      if (batch) slice(() => this.prepareClimbedLevel({ systems: false, fleet: true }, run(false)))
+      await frame(); check()
+      slice(() => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16))
+      await this.finishWorldFrame(stop.signal, check, false)
+      check()
+      // Ordinary frames behind the veil until no shader work is left, as a manual change ends.
+      this.applyingQuality = false
+      let clean = 0
+      for (let i = 0; i < 8 && clean < 2; i++) {
+        const before = shaderWorkCount()
+        await frame(); check()
+        clean = shaderWorkCount() === before ? clean + 1 : 0
+      }
+    }
+    try {
+      const result = await withDeadline(work(), 8_000)
+      if (result.ok) { if (climbed) this.climbStats.taken++ }
+      else {
+        stop.abort()
+        if (climbed) {
+          q.abandonClimb(from)
+          this.climbStats.abandoned++
+          longFrames.event('Covered climb abandoned')
+          console.warn('Covered climb abandoned', result.reason === 'timeout' ? 'after 8 s' : result.reason)
+        }
+      }
+    } finally {
+      stop.abort()
+      this.applyingQuality = false
+      Object.assign(this.climbStats, { lastMs: Math.round(performance.now() - start), slices: slices.map(Math.round), longestSliceMs: Math.round(Math.max(0, ...slices)) })
     }
   }
 

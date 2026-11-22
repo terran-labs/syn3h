@@ -379,7 +379,7 @@ export function buildLadder(level: QualityLevel, devicePixelRatio = 1, postActiv
 }
 
 export interface FrameWindow { frames: number; durationMs: number; p10: number; p90: number; p95: number }
-export type GovernorReason = 'shed' | 'climb' | 'level-drop' | 'level-climb' | 'manual' | 'auto-off' | 'auto-on' | 'display'
+export type GovernorReason = 'shed' | 'climb' | 'level-drop' | 'level-climb' | 'climb-abandoned' | 'manual' | 'auto-off' | 'auto-on' | 'display'
 export interface GovernorChange { level: QualityLevel; rung: number; reason: GovernorReason; settings: RungSettings }
 export interface GovernorOptions {
   level: QualityLevel
@@ -617,6 +617,8 @@ export class QualityGovernor {
     if (this.pendingLevel === null) { this.pendingLevel = (this.level + 1) as QualityLevel; this.pendingAt = this.clock; return null }
     return this.clock - this.pendingAt >= GOVERNOR.climbGraceMs && (this.canClimbVisible?.(this.pendingLevel) ?? true) ? this.climb() : null
   }
+  /** Whether applyPendingClimb would take a climb now, without taking it. */
+  pendingClimbReady(): boolean { return this.pendingLevel !== null && this.auto && this.rung === 0 && !!this.climbTarget() }
   /** The controller reports a moment when a shader build will not be seen. Takes a pending level climb. */
   applyPendingClimb(): GovernorChange | null {
     if (this.pendingLevel === null || !this.auto || this.rung > 0 || !this.climbTarget()) { this.pendingLevel = null; return null }
@@ -905,6 +907,24 @@ export class QualityController implements QualitySource {
   clearOverrides() { for (const id of Object.keys(this.overrides)) { delete this.overrides[id]; const value = presetFor(this.governor.level)[id]; if (value !== undefined) this.write(id, value) } this.publishQuality() }
   /** A covered moment outside the lobby and menus, such as a respawn: a pending level climb may build its shaders now. */
   noteCovered() { const change = this.governor.applyPendingClimb(); if (change) { this.lastReason = change.reason; this.apply('governor', true) } }
+  /**
+   * Set by Game, which takes a covered climb itself as a job in slices (Game.takeCoveredClimb):
+   * frame() then leaves a pending climb pending instead of applying it on one covered frame.
+   */
+  holdPendingClimb = false
+  pendingClimbReady(): boolean { return this.governor.pendingClimbReady() }
+  /** Take the pending climb now, as frame() takes it at a covered moment. */
+  takePendingClimb(): GovernorChange | null {
+    const change = this.governor.applyPendingClimb()
+    if (change) { this.lastReason = change.reason; this.apply('governor', true) }
+    return change
+  }
+  /** A covered climb that could not finish in time: back to the level it left, whose pipelines are alive. */
+  abandonClimb(level: QualityLevel): void {
+    const change = this.governor.reset(level, 'climb-abandoned')
+    this.lastReason = change.reason
+    this.apply('governor', true)
+  }
   /** Which parts of the post chain the current level may build. */
   get postTier(): PostTier { return LEVELS[this.governor.level].postTier }
 
@@ -1112,7 +1132,7 @@ export class QualityController implements QualitySource {
       const moved = this.governor.setDevicePixelRatio(window.devicePixelRatio || 1)
       let change = this.governor.sample(metrics.frameMs, judge && !document.hidden) ?? moved
       const covered = !change && !judge
-      if (covered) change = this.governor.applyPendingClimb()
+      if (covered && !this.holdPendingClimb) change = this.governor.applyPendingClimb()
       if (change) { this.lastReason = change.reason; this.apply('governor', covered) }
     }
     const g=this.governor
