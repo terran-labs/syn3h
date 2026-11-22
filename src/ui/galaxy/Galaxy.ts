@@ -968,7 +968,11 @@ export class Galaxy {
     // Any input ends the lobby's rest at once (idlePulse.ts).
     const input = () => { this.lastInput = performance.now() }
     for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart'] as const) addEventListener(type, input, { signal: this.abort.signal, passive: true, capture: true })
-    this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(host)
+    // Setting a canvas's size clears it at once, and the observer runs after this frame's
+    // animation callbacks: left for the next frame, the cleared (black) canvas is what the
+    // screen shows for one frame. So the new size is drawn now. On an iPhone this fires each time
+    // the address bar shows or hides; it was a black flash in the lobby, 22 November 2026.
+    this.resizeObserver = new ResizeObserver(() => { if (this.resize() && this.active && !document.hidden) { cancelAnimationFrame(this.frame); this.loop(performance.now(), true) } }); this.resizeObserver.observe(host)
     document.addEventListener('visibilitychange', () => { this.syncPresence(); cancelAnimationFrame(this.frame); if (this.active && !document.hidden) this.loop(0) }, { signal: this.abort.signal })
   }
   /** False when WebGL 2 is not available: the caller keeps the ordinary lobby. */
@@ -1204,7 +1208,7 @@ export class Galaxy {
     if (gl.getProgramParameter(blur, gl.LINK_STATUS)) {
       this.blurProgram = blur
       for (const name of ['uScene', 'uBlur', 'uSize']) this.blurUniforms[name] = gl.getUniformLocation(blur, name)
-      this.target2 = gl.createTexture(); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2)
+      this.target2 = gl.createTexture(); this.target2Size = ''; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
       this.fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.target2, 0); gl.bindFramebuffer(gl.FRAMEBUFFER, null)
@@ -1290,7 +1294,7 @@ export class Galaxy {
     this.markOverlay?.remove(); this.markOverlay = null
     this.markCrisp?.dispose(); this.markCrisp = null
     cancelAnimationFrame(this.frame); this.worker?.terminate(); this.worker = null; this.queue.length = 0; this.painting = false
-    this.array = this.close = null; this.fbo = null; this.target2 = null; this.program = null; this.blurProgram = null
+    this.array = this.close = null; this.fbo = null; this.target2 = null; this.target2Size = ''; this.program = null; this.blurProgram = null
     this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null; this.canvas.remove(); this.pointers.clear(); this.drag = null
   }
   /** Each world's small map, painted off the main thread, one after another. */
@@ -1356,14 +1360,25 @@ export class Galaxy {
     }
     return false
   }
-  private resize(): void {
-    if (!this.gl) return
+  /** Sizes the canvas to the host; true when its size changed (which clears it). */
+  private resize(): boolean {
+    if (!this.gl) return false
     // The ladder's render scale: whole steps, applied with the redraw so no blank frame shows.
     const scale = Math.min(devicePixelRatio || 1, 1.5) * qualityScale()
     this.shownScale = qualityScale(); this.wake = 2
-    this.canvas.width = Math.max(1, Math.round(this.host.clientWidth * scale)); this.canvas.height = Math.max(1, Math.round(this.host.clientHeight * scale))
-    if (this.target2) { const gl = this.gl; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null) }
+    const width = Math.max(1, Math.round(this.host.clientWidth * scale)), height = Math.max(1, Math.round(this.host.clientHeight * scale))
+    // Setting even the same size clears the canvas: only when it changes.
+    const changed = width !== this.canvas.width || height !== this.canvas.height
+    if (changed) { this.canvas.width = width; this.canvas.height = height }
+    // The blur's target is made 1 by 1 with the context (a restore too): sized here.
+    const sized = `${width}x${height}`
+    if (this.target2 && this.target2Size !== sized) {
+      this.target2Size = sized
+      const gl = this.gl; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+    }
+    return changed
   }
+  private target2Size = ''
   /** How each world looks from space besides its map, by recipe, seed and snapshot. */
   private readonly looks = new Map<string, LobbyLook>()
   private lookOf(world: GalaxyWorld): LobbyLook {
@@ -1446,13 +1461,14 @@ export class Galaxy {
     if (!this.drag && !this.flight) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * share; this.pitch += p * share; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 }
     return latitude
   }
-  private loop = (now: number): void => {
+  /** One animation frame; `now` draws it even inside the frame budget (a resize, see the constructor). */
+  private loop = (now: number, force = false): void => {
     this.syncPresence()
     if (!this.active || document.hidden) return
     this.frame = requestAnimationFrame(this.loop)
     qualityFrame(now)
     const busy = this.opening !== null || !!this.flight || this.drag !== null || this.pointers.size > 0 || !this.swingResting || (this.chosen >= 0 && !this.arrived)
-    if (!frameDue(now - this.last, busy)) return
+    if (!force && !frameDue(now - this.last, busy)) return
     const elapsed = Math.min(0.1, Math.max(0, (now - this.last) / 1000))
     this.last = now; this.step = elapsed
     this.controller(elapsed)
