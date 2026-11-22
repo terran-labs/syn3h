@@ -43,6 +43,10 @@ try {
       window.__S = { car: [sx, t.heightAt(sx, sz) + 1, sz], target: [tx, t.liquidHeightAt(tx, tz), tz], f: [fx, fz] }
       const hold = () => { const v = s.player, [cx, cy, cz] = window.__S.car; v.teleport(v.object.position.clone().set(cx, cy, cz), Math.atan2(-fx, -fz)); v.body.setLinvel({ x: 0, y: 0, z: 0 }, true); v.body.setAngvel({ x: 0, y: 0, z: 0 }, true) }
       window.__hold = hold; hold()
+      // Held on the shore every frame for the hits (a hit's push, or a slope, used to move it into
+      // the side view); released for the drop.
+      window.__holdOn = true
+      s.game.add({ update() { if (window.__holdOn) hold() } })
       s.game.add({ update() { const c = window.__cam; if (!c) return; s.game.camera.position.set(...c.eye); s.game.camera.lookAt(...c.look); s.game.camera.updateMatrixWorld() } })
       return true
     }, [hour, kind])
@@ -61,6 +65,7 @@ try {
       const t0 = Date.now()
       await page.evaluate(ev => {
         const s = window.syn3h, n = window.syn3hNet, { target } = window.__S, o = s.player.object.position
+        window.__holdOn = ev !== 'drop'
         if (ev === 'drop') {
           const v = s.player, [tx, ty, tz] = target, [fx, fz] = window.__S.f
           v.teleport(o.clone().set(tx - fx * 2, ty + 4, tz - fz * 2), Math.atan2(-fx, -fz)); v.body.setLinvel({ x: fx * 4, y: 0, z: fz * 4 }, true)
@@ -74,6 +79,7 @@ try {
       while (Date.now() - t0 < 2200) shots.push({ t: Date.now() - t0, buf: await page.screenshot() })
       const keep = 5, pick = shots.length <= keep ? shots : Array.from({ length: keep }, (_, i) => shots[Math.round(i * (shots.length - 1) / (keep - 1))])
       for (const s of pick) await writeFile(`${out}/${kind}-${hour}-${view}-${ev}-${label}-${String(s.t).padStart(4, '0')}ms.png`, s.buf)
+      await page.evaluate(() => { window.__holdOn = true })
       await page.waitForTimeout(2500)
     }
     report.push(`${planet} ${hour}: done${errors.length ? ', errors: ' + errors.slice(0, 2).join(' | ') : ''}`)

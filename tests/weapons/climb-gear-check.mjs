@@ -10,7 +10,8 @@
  *
  *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/climb-gear-check.mjs [paths] [hours] [backends]
  *   e.g. ... climb-gear-check.mjs manual 12 webgpu; hours 'default' keeps the world's own hour;
- *   SYN3H_WORLD=archipelago:4 for another planet and seed
+ *   SYN3H_WORLD=archipelago:4 for another planet and seed; SYN3H_LIQUID=water (or lava) to also
+ *   fire Tag and Thunder into the nearest liquid at each rung
  */
 import { chromium } from 'playwright-core'
 
@@ -20,7 +21,10 @@ const PATHS = (process.argv[2] ?? 'manual,auto').split(','), HOURS = (process.ar
 // SYN3H_WORLD: planet and seed, e.g. archipelago:4 (default alpine:7).
 const [PLANET, SEED] = (process.env.SYN3H_WORLD ?? 'alpine:7').split(':')
 const BACKENDS = (process.argv[4] ?? 'webgpu,webgl2').split(',')
-const GEAR = /gear |firework|pester|bungee|tether|impact|yoink|spark|flash|dust/i
+// The water and lava spray (WaterEffects' Spray) counts: a shot into a liquid splashes through it.
+const GEAR = /gear |firework|pester|bungee|tether|impact|yoink|spark|flash|dust|spray|foam/i
+// SYN3H_LIQUID=water|lava: the player is placed at a shore and every use also fires Tag and Thunder into the liquid.
+const LIQUID = process.env.SYN3H_LIQUID ?? ''
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const rows = []
 let bad = 0
@@ -42,8 +46,32 @@ try {
       const name = src => `${src?.material?.name || src?.material?.type || '?'} | ${src?.object?.name || src?.object?.type || '?'}`
       b.createNodeBuilder = function (object, renderer) { const x = nb.call(this, object, renderer), build = x.build; x.build = function (...a) { try { return build.apply(this, a) } finally { window.__builds.push([window.__window, 'node', name(this)]); x.build = build } }; return x }
       b.createRenderPipeline = function (source, ...a) { try { return rp.call(this, source, ...a) } finally { window.__builds.push([window.__window, 'pipeline', name(source)]) } }
+      // Every hit's surface, so a row shows the liquid was really hit.
+      const fx = window.syn3hNet.lasers.fx, impact = fx.impact.bind(fx)
+      window.__surfaces = []; fx.impact = (...args) => { const r = impact(...args); window.__surfaces.push([window.__window, r]); return r }
     }, hour)
     await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 4, null, { timeout: 90000 }).catch(() => {})
+    if (LIQUID) {
+      const placed = await page.evaluate(kind => {
+        const s = window.syn3h, t = s.terrain, p = s.player.body.translation()
+        let best = null
+        for (let r = 20; r < 1500 && !best; r += 20) for (let k = 0; k < 48; k++) {
+          const a = k / 48 * Math.PI * 2, x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r
+          if (t.liquidKindAt?.(x, z) === kind && (t.liquidHeightAt?.(x, z) ?? -Infinity) > t.heightAt(x, z) + 3) { best = { x, z, a }; break }
+        }
+        if (!best) return false
+        let x = best.x, z = best.z
+        for (let i = 0; i < 400; i++) { x -= Math.cos(best.a) * 0.5; z -= Math.sin(best.a) * 0.5; if ((t.liquidHeightAt?.(x, z) ?? -Infinity) < t.heightAt(x, z)) break }
+        const fx = Math.cos(best.a), fz = Math.sin(best.a), sx = x - fx * 10, sz = z - fz * 10, tx = x + fx * 10, tz = z + fz * 10
+        window.__liquid = [tx, t.liquidHeightAt(tx, tz), tz]
+        const v = s.player
+        window.__shore = () => { v.teleport(v.object.position.clone().set(sx, t.heightAt(sx, sz) + 1, sz), Math.atan2(-fx, -fz)); v.body.setLinvel({ x: 0, y: 0, z: 0 }, true); v.body.setAngvel({ x: 0, y: 0, z: 0 }, true) }
+        window.__shore()
+        return true
+      }, LIQUID)
+      if (!placed) rows.push(`${backend} ${hour} ${path}: no ${LIQUID} found`)
+      await page.waitForTimeout(2000)
+    }
     await page.waitForTimeout(4000)
     const sweep = path === 'auto' ? 'window.__sweep ??= window.syn3h.game.quality.beginDiagnosticSweep()' : ''
     for (const rung of [1, 2, 3]) {
@@ -66,12 +94,18 @@ try {
         setTimeout(() => { n.gear.select?.('bungee'); n.bungee.launch([f.x, -0.35, f.z]) }, 800)
         setTimeout(() => { n.bungee.letGo?.('released'); n.gear.select?.('pester'); n.launchPester(0xff01) }, 1800)
         setTimeout(() => { n.gear.select?.('yoink'); n.yoink.press() }, 2600)
+        // Into the liquid, when there is one: a Tag and a Thunder hit on its surface.
+        if (window.__liquid) {
+          setTimeout(() => { window.__shore(); const o = s.player.object.position, from = o.clone().setY(o.y + 1), d = o.clone().set(...window.__liquid).sub(from).normalize(); n.gear.select?.('beam'); n.fire([d.x, d.y, d.z]) }, 3200)
+          setTimeout(() => { const o = s.player.object.position, from = o.clone().setY(o.y + 1), d = o.clone().set(...window.__liquid).sub(from).normalize(); n.fire([d.x, d.y, d.z], undefined, 'red') }, 3700)
+        }
       }, rung)
-      await page.waitForTimeout(5500)
+      await page.waitForTimeout(7000)
       const built = await page.evaluate(rung => window.__builds.filter(([w]) => w === `use at ${rung}`), rung)
+      const surfaces = await page.evaluate(rung => window.__surfaces.filter(([w]) => w === `use at ${rung}`).map(([, k]) => k), rung)
       const gear = built.filter(([, , n]) => GEAR.test(n))
       if (gear.length) bad += gear.length
-      rows.push(`${backend} ${hour} ${path} rung ${rung} (level ${level}): ${built.length} built in use, ${gear.length} gear${gear.length ? ': ' + [...new Set(gear.map(g => g.slice(1).join(' ')))].join('; ') : ''}${built.length > gear.length ? ' | other: ' + [...new Set(built.filter(g => !GEAR.test(g[2])).map(g => g[2]))].slice(0, 4).join('; ') : ''}`)
+      rows.push(`${backend} ${hour} ${path} rung ${rung} (level ${level}) hits [${surfaces.join(',')}]: ${built.length} built in use, ${gear.length} gear${gear.length ? ': ' + [...new Set(gear.map(g => g.slice(1).join(' ')))].join('; ') : ''}${built.length > gear.length ? ' | other: ' + [...new Set(built.filter(g => !GEAR.test(g[2])).map(g => g[2]))].slice(0, 4).join('; ') : ''}`)
     }
     if (errors.length) rows.push(`${backend} ${hour} ${path} page errors: ${errors.slice(0, 2).join(' | ')}`)
     await page.context().close()
