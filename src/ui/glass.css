@@ -278,3 +278,13 @@ html[data-glass-material] .liquid-glass {
 html[data-glass-material] .liquid-glass :is(.gs-name, .lobby-control-word, .lobby-control-icon) {
   color: white;
 }
+
+/* Keep selection visible against both bright and dark material without changing the ink. */
+html[data-glass-material] .syn3h-shell.exploration-ui .world-inspector
+:is(.wi-seg button.is-on, .wi-vehicle-option[aria-checked="true"], .glass-stops button[aria-pressed="true"]) {
+  outline: 1px solid rgb(255 255 255 / .68); outline-offset: -1px;
+}
+html[data-glass-material] .syn3h-shell.exploration-ui .world-inspector
+:is(.wi-seg button.is-on, .wi-vehicle-option[aria-checked="true"], .glass-stops button[aria-pressed="true"]):focus-visible {
+  outline: 2px solid white; outline-offset: 1px;
+}

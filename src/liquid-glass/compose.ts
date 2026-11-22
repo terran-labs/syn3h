@@ -95,7 +95,7 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
           if (presentation) {
             body.assign(mix(body, vec3(1), presentation.w.mul(tuning?.edges.z ?? .405)))
           }
-          if (tuning) body.assign(whiteInkFace(body, presentation?.y ?? float(0), distance))
+          if (tuning) body.assign(whiteInkFace(body, presentation?.y ?? float(0), distance, presentation?.z ?? float(1)))
           under.assign(mix(under, body, coverage))
         })
         result.assign(vec4(mix(result.rgb, under, opacity) as N, 1))
