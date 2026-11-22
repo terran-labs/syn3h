@@ -39,9 +39,13 @@ def held():
     return True
 
 
-# While a release holds the machine, other jobs share one slot (the last) instead of none:
-# a single builder job keeps the load far under the gate's limit and keeps work moving.
-HELD_SLOTS = int(os.environ.get('SYN3H_HEAVY_HELD_SLOTS', '1'))
+# While a release holds the machine (from the start of its load-gate wait until it exits), no
+# other job starts; a job already running finishes. On 17 November a shared slot was tried
+# instead (SYN3H_HEAVY_HELD_SLOTS=1, so builders were not idle for a whole release), but on
+# 21 November release-97 waited at its gate for over 20 minutes at load 16 to 27 while
+# builders' browser jobs kept starting in that slot, and the gate needs the load low. The
+# setting stays: 1 or more lets that many other jobs share the last slots during a hold.
+HELD_SLOTS = int(os.environ.get('SYN3H_HEAVY_HELD_SLOTS', '0'))
 
 while True:
     usable = range(1, slots + 1)
