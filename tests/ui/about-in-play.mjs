@@ -23,7 +23,7 @@ for (const mode of process.env.MODES ? process.env.MODES.split(',') : ['desktop'
     await page.goto(`${process.env.SYN3H_URL}?autoplay=1&room=about-${mode}-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
-    const url = page.url(), room = await page.evaluate(() => syn3h.shell.room)
+    await page.waitForFunction(() => window.syn3h.shell.playing && !window.syn3h.shell.transitioning)
     if (touch) await page.locator('.inspector-toggle').tap()
     else if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
     await page.locator('.world-inspector').waitFor({ state: 'visible' })
@@ -33,6 +33,7 @@ for (const mode of process.env.MODES ? process.env.MODES.split(',') : ['desktop'
     await page.keyboard.down('l')
     await page.waitForFunction(() => syn3h.game.input.state.fire)
     assert.deepEqual(images, [], 'no image request before the guide opens')
+    const { url, room } = await page.evaluate(() => ({ url: location.href, room: syn3h.shell.room }))
     opened = true
     await page.locator('.rail-about').click()
     const guide = page.locator('.in-play-about')
