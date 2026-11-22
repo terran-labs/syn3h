@@ -9,13 +9,16 @@
  * and WebGL 2. Exits 1 if any gear material was built in a window.
  *
  *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/climb-gear-check.mjs [paths] [hours] [backends]
- *   e.g. ... climb-gear-check.mjs manual 12 webgpu
+ *   e.g. ... climb-gear-check.mjs manual 12 webgpu; hours 'default' keeps the world's own hour;
+ *   SYN3H_WORLD=archipelago:4 for another planet and seed
  */
 import { chromium } from 'playwright-core'
 
 const base = (process.env.SYN3H_URL ?? '').replace(/\/+$/, '') + '/'
 if (!process.env.SYN3H_URL) throw new Error('Set SYN3H_URL')
-const PATHS = (process.argv[2] ?? 'manual,auto').split(','), HOURS = (process.argv[3] ?? '12,22').split(',').map(Number)
+const PATHS = (process.argv[2] ?? 'manual,auto').split(','), HOURS = (process.argv[3] ?? '12,22').split(',').map(h => h === 'default' ? null : Number(h))
+// SYN3H_WORLD: planet and seed, e.g. archipelago:4 (default alpine:7).
+const [PLANET, SEED] = (process.env.SYN3H_WORLD ?? 'alpine:7').split(':')
 const BACKENDS = (process.argv[4] ?? 'webgpu,webgl2').split(',')
 const GEAR = /gear |firework|pester|bungee|tether|impact|yoink|spark|flash|dust/i
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
@@ -25,13 +28,13 @@ try {
   for (const backend of BACKENDS) for (const hour of HOURS) for (const path of PATHS) {
     const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage()
     const errors = []; page.on('pageerror', e => errors.push(e.message))
-    await page.goto(`${base}?gfx=0&planet=alpine&seed=7&autoplay=1&room=climb-${Date.now()}${backend === 'webgl2' ? '&webgl=1' : ''}`)
+    await page.goto(`${base}?gfx=0&planet=${PLANET}&seed=${SEED}&autoplay=1&room=climb-${Date.now()}${backend === 'webgl2' ? '&webgl=1' : ''}`)
     await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet?.connected && !window.syn3h.game.input.suspended && window.syn3h.game.tick > 60, null, { timeout: 180000 })
     await page.evaluate(hour => {
       document.exitPointerLock?.()
       const s = window.syn3h, q = s.params
       q.set('bots.canDrive', false); q.set('bots.canFire', false); if (q.get('bots.keepCount')) q.set('bots.keepCount', true); q.set('bots.count', 4)
-      q.set('sun.dayLength', 0); q.set('sun.timeOfDay', hour); q.set('daydream.seconds', 0)
+      if (hour !== null) { q.set('sun.dayLength', 0); q.set('sun.timeOfDay', hour) }; q.set('daydream.seconds', 0)
       q.set('bigRed.cooldown', 0.1); q.set('bungee.cooldown', 0); q.set('yoink.cooldown', 0)
       // Every build the backend makes, by material and object name, with the window it fell in.
       const b = s.game.renderer.backend, nb = b.createNodeBuilder, rp = b.createRenderPipeline

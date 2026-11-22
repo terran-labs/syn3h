@@ -95,11 +95,6 @@ class GearWarm implements System {
       this.arm(CHANGE_FRAMES)
     }
     if (this.left === 0) return
-    // While armed after a change, the live batches draw too, not only the proxy pairs: a level
-    // change can move the scene to another render target (Minimal draws straight to the canvas,
-    // Low into the post chain's multisampled scene pass), and a batch with nothing in it (no
-    // firework alive, no Chaser out) would otherwise build its pipeline for it on first use.
-    this.exposeBatches()
     if (this.drawn) {
       this.drawn = false
       this.stats.frames++
@@ -107,6 +102,18 @@ class GearWarm implements System {
     }
     this.game.camera.getWorldPosition(this.group.position)
     for (const f of this.each) f()
+  }
+
+  /**
+   * While armed after a change, the live batches draw too, not only the proxy pairs: a level
+   * change can move the scene to another render target (Minimal draws straight to the canvas,
+   * Low into the post chain's multisampled scene pass), and a batch with nothing in it (no
+   * firework alive, no Chaser out) would otherwise build its pipeline for it on first use.
+   * Here, after every system's update and just before the draw, so no owner's own update (the
+   * ground glow hiding its idle slots) can hide them again first.
+   */
+  prepareWorldDraw(): void {
+    if (this.left > 0) this.exposeBatches()
   }
 
   /** Expose every registered batch for this frame's draw; undone at the next update. */
