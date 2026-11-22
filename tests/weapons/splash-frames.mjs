@@ -2,8 +2,8 @@
  * Splashes on water (Archipelago) and lava (Volcanic), as a player sees them (evidence, not a
  * test): a Plasma Tag hit, a Plasma Thunder hit and the car dropping in from 4 m, each once from
  * the side (camera 10 m off and 3 m up, looking at the splash, so the car cannot hide it) and
- * once from the chase pose (6 m behind the car, 2.6 m up). Noon and night. Stills in real time
- * (the spray runs its own simulation), stamped with the time since the trigger.
+ * once from the chase pose (6 m behind the car, 2.6 m up). Noon and night. For a hit, the shot
+ * and the spray are held and stepped by hand (stills at 0.1 to 1.2 s); the drop runs in real time.
  *
  *   SYN3H_URL=http://127.0.0.1:<port>/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/weapons/splash-frames.mjs <label> [out dir]
  */
@@ -43,6 +43,10 @@ try {
       window.__S = { car: [sx, t.heightAt(sx, sz) + 1, sz], target: [tx, t.liquidHeightAt(tx, tz), tz], f: [fx, fz] }
       const hold = () => { const v = s.player, [cx, cy, cz] = window.__S.car; v.teleport(v.object.position.clone().set(cx, cy, cz), Math.atan2(-fx, -fz)); v.body.setLinvel({ x: 0, y: 0, z: 0 }, true); v.body.setAngvel({ x: 0, y: 0, z: 0 }, true) }
       window.__hold = hold; hold()
+      const L = window.syn3hNet.lasers, W = s.game.systems.find(x => x.constructor?.name === 'WaterEffects')
+      const lu = L.update.bind(L), wu = W.update.bind(W)
+      window.__freeze = on => { L.update = on ? () => {} : lu; W.update = on ? () => {} : wu }
+      window.__step = dt => { for (let t = 0; t < dt - 1e-6; t += 1 / 120) { const k = Math.min(1 / 120, dt - t); lu(k, 1); wu(k) } }
       // Held on the shore every frame for the hits (a hit's push, or a slope, used to move it into
       // the side view); released for the drop.
       window.__holdOn = true
@@ -71,14 +75,28 @@ try {
           v.teleport(o.clone().set(tx - fx * 2, ty + 4, tz - fz * 2), Math.atan2(-fx, -fz)); v.body.setLinvel({ x: fx * 4, y: 0, z: fz * 4 }, true)
           if (window.__cam && window.__cam.eye && window.__chase) {}
         } else {
+          window.__freeze(true)
           const from = o.clone().setY(o.y + 1), d = o.clone().set(...target).sub(from).normalize()
           n.fire([d.x, d.y, d.z], undefined, ev === 'thunder' ? 'red' : undefined)
         }
       }, ev)
-      const shots = []
-      while (Date.now() - t0 < 2200) shots.push({ t: Date.now() - t0, buf: await page.screenshot() })
-      const keep = 5, pick = shots.length <= keep ? shots : Array.from({ length: keep }, (_, i) => shots[Math.round(i * (shots.length - 1) / (keep - 1))])
-      for (const s of pick) await writeFile(`${out}/${kind}-${hour}-${view}-${ev}-${label}-${String(s.t).padStart(4, '0')}ms.png`, s.buf)
+      if (ev === 'drop') {
+        // Physics carries the car in: real time, stills as fast as they come.
+        const shots = []
+        while (Date.now() - t0 < 2200) shots.push({ t: Date.now() - t0, buf: await page.screenshot() })
+        const keep = 5, pick = shots.length <= keep ? shots : Array.from({ length: keep }, (_, i) => shots[Math.round(i * (shots.length - 1) / (keep - 1))])
+        for (const s of pick) await writeFile(`${out}/${kind}-${hour}-${view}-${ev}-${label}-${String(s.t).padStart(4, '0')}ms.png`, s.buf)
+      } else {
+        // A hit: the shot, its impact and the spray are held and stepped by hand from the trigger,
+        // so every still is at a known age however slow the screenshots are.
+        let at = 0
+        for (const age of [0.1, 0.25, 0.5, 0.8, 1.2]) {
+          await page.evaluate(dt => window.__step(dt), age - at); at = age
+          await page.waitForTimeout(100)
+          await writeFile(`${out}/${kind}-${hour}-${view}-${ev}-${label}-${String(Math.round(age * 1000)).padStart(4, '0')}ms.png`, await page.screenshot())
+        }
+        await page.evaluate(() => window.__freeze(false))
+      }
       await page.evaluate(() => { window.__holdOn = true })
       await page.waitForTimeout(2500)
     }
