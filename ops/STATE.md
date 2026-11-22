@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-21 08:25 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-21 16:10 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,9 +11,9 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2115 (release-94, glass load gate for the opt-in demo; known issues aligned with
-ops/KNOWN-ISSUES.md), source cef05adb, frozen copy 20261121-081133-cef05adb, Worker version 20b43b37,
-at https://www.syn3h.com/ since 21 November 08:15 PST.
+Live: v26.11.2116 (release-95, Glass setting with four looks), source 41b98d04, frozen copy
+20261121-155706-41b98d04, Worker version 66f9ff46, at https://www.syn3h.com/ since 21 November 16:01 PST.
+Staging looks now include iPad mini (744x1133 and 1133x744, touch) with phone and desktop.
 Releases start detached (own session) so the tool runner cannot end them: /tmp/orch-ship-detached.sh
 <n> <version> "<note>" via nohup python3 os.setsid; outcome in /tmp/orch-dry-<v>.rc,
 /tmp/orch-release-<n>.rc and /tmp/orch-ship-<v>.done. The script holds heavy jobs from the gate wait on.
@@ -141,6 +141,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2113 | 92 | m-medium-2113 | stepping quality down and back up no longer hitches when entering at High or below |
 | v26.11.2114 | 93 | m-tools-2114 | performance check labels its card row clearly; release tooling waits for the hosted result |
 | v26.11.2115 | 94 | m-glassgate-2115 | experimental glass remains off by default; new load gate for the demo; known issues aligned |
+| v26.11.2116 | 95 | m-slider-2116 | Glass setting in Settings: Liquid, Glass, Frost, Flat (Liquid needs Medium or higher) |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
@@ -196,7 +197,7 @@ The room ticks hill and race time on its own Durable Object alarm (fix/koth-serv
 | veh/tank, veh/loft-editor | | | do not merge (Foreman) |
 | perf/smooth-entry | 702f9a8f, merging main | smooth-entry builder aa1e0a5e | its gate on main; accepted as the next release on its own. Host frame rate now limits room bots |
 | fix/lobby-wordmark-sun | f06dc96f | builder 900cc550 | captions commit 51b91265 waits for the owner; rewriting fixed waits in lobby checks |
-| build/weekend | | | in main; local branch deleted 21 November (tag archive/build-weekend); origin/build/weekend waits for the owner |
+| build/weekend | | | archived on the remote 21 November 2026: tag archive/build-weekend (a8aaac04) pushed with the other archive/* tags, origin/build/weekend deleted |
 
 tests/ui/phone-layout.mjs fails on main on two real overlaps (jet landscape throttle-down over
 .hud-navigation; iPad .hud-navigation over the hill-winner announcement) until ux/touch-aim
