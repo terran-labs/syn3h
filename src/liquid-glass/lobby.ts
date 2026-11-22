@@ -26,9 +26,9 @@ type Shape = { el: HTMLElement; x: number; y: number; w: number; h: number; radi
 
 /** Render after the galaxy and logo. The scene is already display-encoded.
  * Texture units 6 and 7 belong to this pass. The galaxy uses 0 through 3. */
-export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement, nativeInk: () => boolean, tuning: {
+export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement, tuning: {
   face: { x: number; y: number; z: number; w: number }; panel: { x: number; y: number }; edges: { x: number; y: number; z: number }
-  respectReducedTransparency?: boolean; width(): number; growth(): number; dark(): boolean; revision(): number
+  respectReducedTransparency?: boolean; width(): number; growth(): number; revision(): number
 }): GalaxyGlass {
   const dispose: (() => void)[] = []
   const program = (source: string) => {
@@ -110,7 +110,6 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   }
   const clear = (el: HTMLElement) => {
     delete el.dataset.glassSurface
-    el.removeAttribute('data-glass-native-ink')
   }
   const layout = (now: number) => {
     const modal = scope.querySelector('dialog[open]')
@@ -151,7 +150,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       const r = style.borderTopLeftRadius
       shapes.push({el,x:box.x-rect.x+box.width/2,y:box.y-rect.y+box.height/2,w:box.width/2,h:box.height/2,
         radius:Math.min(half,r.endsWith('%') ? half*parseFloat(r)/50 : parseFloat(r)*box.width/(el.offsetWidth || box.width)),
-        panel:el.id==='lobby-settings',clip:clip && new DOMRect(clip.x-rect.x,clip.y-rect.y,clip.width,clip.height),alpha,pressed:el.matches(':active')})
+        panel:el.id==='lobby-settings',clip:clip && new DOMRect(clip.x-rect.x,clip.y-rect.y,clip.width,clip.height),alpha,pressed:el.matches('button:active')})
     }
     // Captions and dock labels are DOM siblings of the galaxy. Cut the panel's
     // rounded outline out of that layer so it cannot write across the glass.
@@ -221,7 +220,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,width,height)
       gl.useProgram(face); gl.bindTexture(gl.TEXTURE_2D,scene)
       gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D,vertical.tex)
-      gl.uniform2f(u.pixels,width,height); gl.uniform2f(u.points,pw,ph); gl.uniform1f(u.dark,Number(tuning.dark()))
+      gl.uniform2f(u.pixels,width,height); gl.uniform2f(u.points,pw,ph); gl.uniform1f(u.dark,1)
       if (revision !== tuning.revision()) {
         revision = tuning.revision()
         const { face, panel, edges } = tuning
@@ -242,7 +241,6 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
         gl.uniform1f(u.panel,Number(s.panel)); gl.uniform1f(u.opacity,s.alpha); gl.uniform1f(u.pressed,Number(s.pressed))
         gl.drawArrays(gl.TRIANGLES,0,3)
         if (s.el.dataset.glassSurface!=='shader') s.el.dataset.glassSurface='shader'
-        if (s.panel) s.el.toggleAttribute('data-glass-native-ink',nativeInk())
       }
       gl.disable(gl.SCISSOR_TEST); gl.disable(gl.BLEND)
     },

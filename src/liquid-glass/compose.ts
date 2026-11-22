@@ -1,7 +1,7 @@
 import { Fn, If, Loop, Continue, abs, dot, float, length, max, min, mix, clamp, screenSize, step, uv, vec2, vec3, vec4 } from 'three/tsl'
 import { mergedGlassPair } from './mergedPair'
 import { glassOptics } from './optics'
-import { regularGlass, type RegularUniforms } from './regular'
+import { whiteInkFace, regularGlass, type RegularUniforms } from './regular'
 
 type N = any // TSL expression with a shader-dependent node type.
 
@@ -94,20 +94,8 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
           }
           if (presentation) {
             body.assign(mix(body, vec3(1), presentation.w.mul(tuning?.edges.z ?? .405)))
-            // A single delayed frost sample cannot predict every pixel under a
-            // gear label during a burst. Bound the face for the ink being painted.
-            If(presentation.z.greaterThan(0), () => {
-              const mean = dot(body, vec3(.2126, .7152, .0722))
-              // Convex sRGB decoding makes decoded mean a lower bound on luminance.
-              const lift = max(float(.47).sub(mean), 0).div(max(float(1).sub(mean), .001))
-              body.assign(mix(body, vec3(1), lift))
-            }).ElseIf(presentation.z.lessThan(0), () => {
-              // Squared display RGB bounds linear light to within .002. Leave
-              // room for output quantization and preserve the hue of bright pixels.
-              const energy = dot(body.mul(body), vec3(.2126, .7152, .0722))
-              body.mulAssign(float(.174).div(max(energy, .174)).sqrt())
-            })
           }
+          if (tuning) body.assign(whiteInkFace(body, presentation?.y ?? float(0), distance))
           under.assign(mix(under, body, coverage))
         })
         result.assign(vec4(mix(result.rgb, under, opacity) as N, 1))

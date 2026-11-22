@@ -1,6 +1,6 @@
 // Adapted from Shayan's liquidglass (Apache-2.0). See NOTICE.md for provenance.
 // This TSL implementation and its control-size calibration differ from the SkSL original.
-import { clamp, dot, float, max, min, mix, vec2, vec3 } from 'three/tsl'
+import { sRGBTransferEOTF, sRGBTransferOETF, clamp, dot, float, max, min, mix, vec2, vec3 } from 'three/tsl'
 
 type N = any
 
@@ -10,6 +10,17 @@ const wideOffsets = Array.from({ length: 32 }, (_, i) => {
   const angle = i * Math.PI * (3 - Math.sqrt(5))
   return [radius * Math.cos(angle), radius * Math.sin(angle)]
 })
+
+// White ink permits a relative luminance of 1.05 / 4.5 - .05. Leave
+// quantization headroom, and a little more for controls inside large panels.
+// Scale in linear light so bright saturated backdrops retain their hue.
+export function whiteInkFace(rgb: N, panel: N, distance: N): N {
+  const linear = sRGBTransferEOTF(rgb)
+  const luminance = dot(linear, vec3(.2126, .7152, .0722))
+  const limit = mix(.18, .16, panel)
+  const safe = sRGBTransferOETF(linear.mul(limit.div(max(limit, luminance))))
+  return mix(rgb, safe, clamp(distance.negate().sub(1), 0, 1).mul(float(luminance.greaterThan(limit))))
+}
 
 export interface RegularUniforms {
   face: N // Quadratic transfer, linear term, offset and saturation

@@ -72,14 +72,12 @@ export class GlassButton {
       this.invalidate()
     }
   })
-  private readonly dark = matchMedia('(prefers-color-scheme: dark)')
   readonly clearMaterial = this.query.get('glassMaterial') === 'clear'
   private readonly hover = matchMedia('(hover: hover)')
   private readonly reduced = matchMedia('(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)')
   private controls: HTMLElement[] = []
   private registryDirty = true
   private readonly membership = new MutationObserver(() => { this.registryDirty = true; this.invalidate() })
-  private readonly pendingGearInk = new Map<HTMLElement, 'black' | 'white'>()
   private tuningVisible = false
   private readonly drawn = new Set<HTMLElement>()
   private readonly clock = new GlassMotionClock()
@@ -130,7 +128,6 @@ export class GlassButton {
     window.addEventListener('blur', () => { this.pressed.clear(); this.invalidate() }, options)
     visualViewport?.addEventListener('resize', this.invalidate, options)
     visualViewport?.addEventListener('scroll', this.invalidate, options)
-    this.dark.addEventListener('change', this.invalidate, options)
     this.reduced.addEventListener('change', this.invalidate, options)
   }
 
@@ -161,8 +158,6 @@ export class GlassButton {
       const next = Array.from(document.querySelectorAll<HTMLElement>(this.capacity === 1 ? panel : [buttons, card].join(',')))
       for (const old of this.controls) if (!next.includes(old)) {
         delete old.dataset.glassSurface
-        old.removeAttribute('data-glass-native-ink')
-        old.removeAttribute('data-glass-label')
       }
       this.resize.disconnect()
       this.resize.observe(this.canvas)
@@ -202,7 +197,7 @@ export class GlassButton {
     const rects = this.controls.map(b => b.hidden ? null : b.getBoundingClientRect())
     this.lastBoundsMs = performance.now() - start
     longFrames.end('Glass DOM bounds', start)
-    this.viewport.value.set(c.width, c.height, Number(this.darkGlass), Number(this.clearMaterial))
+    this.viewport.value.set(c.width, c.height, 1, Number(this.clearMaterial))
     const boxes = this.boxes.array as Vector4[]
     for (const v of boxes) v.z = 0
     let brakeVisible = false
@@ -244,12 +239,10 @@ export class GlassButton {
       if (!rgba || !filter) continue
       const pressed = [...this.pressed.values()].includes(b) || b.matches(':active, .held')
       const i = this.drawn.size
-      const ink = this.pendingGearInk.get(b) ?? b.dataset.glassLabel ?? (this.darkGlass ? 'white' : 'black')
-      const gearInk = drum ? (ink === 'black' ? 1 : -1) : 0
       // A collapsed row is a button-sized lens. Blend toward the measured
       // large-panel transfer as its painted outline opens.
       const panelWeight = isCard ? Math.max(0, Math.min(1, (rect.height - 52) / 64)) : 0
-      ;(this.presentation.array[i] as Vector4).set(alpha, panelWeight, gearInk, Number(!isCard && b.dataset.action !== 'brakes' && pressed))
+      ;(this.presentation.array[i] as Vector4).set(alpha, panelWeight, 0, Number(!isCard && b.dataset.action !== 'brakes' && pressed))
       ;(this.clips.array[i] as Vector4).set(clip.left - c.left, clip.top - c.top, clip.right - c.left, clip.bottom - c.top)
       const half = Math.min(rect.width, rect.height) / 2
       const radius = (s: string) => Math.min(half, s.endsWith('%') ? parseFloat(s) * half / 50 : parseFloat(s) * sx)
@@ -287,41 +280,9 @@ export class GlassButton {
     this.lastLayoutMs = performance.now() - start
   }
 
-  /** Sample a different visible label on each read. Only the material's
-   * existing uniforms are consulted, so this never forces DOM layout. */
-  nextLabel(after: number) {
-    const items = [...this.drawn]
-    for (let step = 0; step < items.length; step++) {
-      const index = (after + step) % items.length
-      const shape = this.presentation.array[index] as Vector4
-      if (shape.x < .01 || shape.y) continue
-      const box = this.boxes.array[index] as Vector4
-      return { element: items[index], index, u: box.x / this.viewport.value.x,
-        v: box.y / this.viewport.value.y, dark: this.darkGlass, clear: this.clearMaterial,
-        lift: shape.w || (this.pressState?.value.x === index ? this.pressState.value.y : 0) }
-    }
-  }
-
-  setLabelInk(element: HTMLElement, ink: 'black' | 'white') {
-    if (!element.parentElement?.classList.contains('gs-drum')) {
-      if (element.dataset.glassLabel !== ink) element.dataset.glassLabel = ink
-      return
-    }
-    if ((this.pendingGearInk.get(element) ?? element.dataset.glassLabel) === ink) return
-    const index = [...this.drawn].indexOf(element)
-    if (index < 0) return
-    // Apply the DOM colour only after the matching face is drawn.
-    this.pendingGearInk.set(element, ink)
-    ;(this.presentation.array[index] as Vector4).z = ink === 'black' ? 1 : -1
-    this.requestDraw()
-  }
-
-  private appearance = 0
   private pressGrowth = 0
-  private get darkGlass() { return this.appearance ? this.appearance === 2 : this.dark.matches }
-  tune(appearance: number, growth: number) {
-    if (appearance === this.appearance && growth === this.pressGrowth) return
-    this.appearance = appearance
+  tune(growth: number) {
+    if (growth === this.pressGrowth) return
     this.pressGrowth = growth
     this.brake?.setGrowth(growth)
     this.invalidate()
@@ -341,22 +302,14 @@ export class GlassButton {
 
   get hasSurface(): boolean { return this.drawn.size > 0 }
 
-  present(nativeInk = false): void {
-    for (const [b, ink] of this.pendingGearInk) {
-      if (this.drawn.has(b)) b.dataset.glassLabel = ink
-    }
-    this.pendingGearInk.clear()
+  present(): void {
     for (const b of this.controls) {
-      if (nativeInk && this.drawn.has(b) && b.matches(card)) {
-        if (!b.hasAttribute('data-glass-native-ink')) b.setAttribute('data-glass-native-ink', '')
-      } else if (b.hasAttribute('data-glass-native-ink')) b.removeAttribute('data-glass-native-ink')
       if (this.pairSlots && b.dataset.action === 'zorb') {
         b.toggleAttribute('data-glass-paired', this.pairSlots.value.x >= 0)
       }
       if (this.drawn.has(b)) { if (b.dataset.glassSurface !== 'shader') b.dataset.glassSurface = 'shader' }
       else if (b.dataset.glassSurface === 'shader') {
         delete b.dataset.glassSurface
-        b.removeAttribute('data-glass-label')
       }
     }
   }

@@ -18,9 +18,11 @@ try {
   for (const [name, options] of sizes) {
     const page = await browser.newPage(options)
     const errors = []; page.on('pageerror', e => errors.push(e.message))
-    await page.goto(`${base}?room=lobby-captions-${name}-${Date.now()}`)
+    await page.goto(`${base}?glass=inline&gfx=3&room=lobby-captions-${name}-${Date.now()}`)
     await page.waitForFunction(() => document.documentElement.dataset.boot === 'done' && !window.syn3h?.shell?.galaxy?.opening && !document.documentElement.dataset.opening, null, { timeout: 180000 })
     await page.waitForTimeout(1500)
+    await page.waitForSelector('.lobby-gear[data-glass-surface="shader"]')
+    await page.waitForSelector('.lobby-about[data-glass-surface="shader"]')
     // Captions that can be seen, and any that touch a control (2 px of slack for rounding).
     const touching = () => page.evaluate(() => {
       const controls = ['.lobby-gear-dock', '.lobby-version-dock .lobby-version', '#lobby-settings'].map(s => document.querySelector(s)).filter(Boolean)

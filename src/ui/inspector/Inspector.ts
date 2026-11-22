@@ -569,7 +569,7 @@ export class Inspector {
     if (def.id === 'hud.glass') {
       label.textContent = def.label
       const input = document.createElement('input')
-      input.type = 'range'; input.min = '0'; input.max = '3'; input.step = '1'
+      input.type = 'range'; input.min = '0'; input.max = String(glassLabels.length - 1); input.step = '1'
       input.setAttribute('aria-label', def.label)
       const hint = document.createElement('small')
       hint.textContent = liquidQualityHint
@@ -593,7 +593,8 @@ export class Inspector {
         input.setAttribute('aria-valuetext', glassLabels[index] + (!liquidEligible() ? '. ' + liquidQualityHint : ''))
         stops.forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)))
       }
-      input.oninput = () => {
+      // Keep the current material throughout a drag, including while crossing Liquid.
+      input.onchange = () => {
         if (input.valueAsNumber || liquidEligible()) params.set(def.id, input.valueAsNumber)
         sync(param.value)
       }

@@ -8,7 +8,6 @@ import { regularSettings as settings, regularOverrides } from './regularSettings
 import { regularTransfer } from '../../liquid-glass/regularTuning'
 import { createGlassGaussian } from '../../liquid-glass/gaussian'
 import { gameplayGlassSlots, GlassButton } from './GlassButton'
-import { GlassLabelInk } from './glassLabelInk'
 import { createLobbyGlass } from '../../liquid-glass/lobby'
 import { installGalaxyGlass } from '../../ui/galaxy/glassAdapter'
 import { GlassTiming } from './glassTiming'
@@ -16,8 +15,6 @@ import './shader-surface.css'
 
 type N = any // The post graph carries colour, texture and velocity nodes.
 const c = 'client'
-const nativeInk = defineParam({ id: 'glass.nativeInk', label: 'Native panel ink', group: 'Interface', scope: c,
-  default: new URLSearchParams(location.search).get('glassInk') === 'native' })
 const glassThickness = defineParam({ id: 'glass.thickness', label: 'Glass thickness / radius', group: 'Clear lens', scope: c, default: 1.12, min: 0.05, max: 2, step: 0.01 })
 const glassBevel = defineParam({ id: 'glass.bevel', label: 'Bevel width / radius', group: 'Clear lens', scope: c, default: 0.53, min: 0.05, max: 1, step: 0.01 })
 const glassIndex = defineParam({ id: 'glass.index', label: 'Refractive index', group: 'Clear lens', scope: c, default: 1.5, min: 1.1, max: 2, step: 0.01 })
@@ -43,7 +40,6 @@ export class GlassPost {
     this.wake()
   }
 
-  private readonly ink = new GlassLabelInk()
   readonly timing = new GlassTiming()
   private showing = false
   private drawPlain = false
@@ -103,8 +99,8 @@ export class GlassPost {
     const count = this.showing ? this.controls?.visibleCount ?? 0 : 0
     const cost = count && this.timing.ms !== null ? this.timing.ms.toFixed(2) + ' ms' : 'unavailable'
     const changes = [regularOverrides()]
-    for (const p of [nativeInk, glassThickness, glassBevel, glassIndex, glassDispersion]) {
-      if (p.value !== p.def.default || (p === nativeInk && p.value === true)) changes.push(p.def.id + '=' + p.value)
+    for (const p of [glassThickness, glassBevel, glassIndex, glassDispersion]) {
+      if (p.value !== p.def.default) changes.push(p.def.id + '=' + p.value)
     }
     if (this.controls?.pressOnly) changes.push('glassMerge=zorb-brake-pressed')
     if (this.controls?.clearMaterial) changes.push('glassMaterial=clear')
@@ -122,32 +118,27 @@ export class GlassPost {
     face: uniform(new THREE.Vector4()), panel: uniform(new THREE.Vector2()), edges: uniform(new THREE.Vector3()),
   }
   private readonly frost = uniform(1)
-  private readonly deviceDark = matchMedia('(prefers-color-scheme: dark)')
   private readonly unsubscribe: () => void
   private revision = 0
   private updateTuning = () => {
-    const appearance = Math.round(settings.appearance.value)
-    const dark = appearance ? appearance === 2 : this.deviceDark.matches
-    const transfer = regularTransfer(dark, settings.tint.value, settings.brightness.value)
+    const transfer = regularTransfer(true, settings.tint.value, settings.brightness.value)
     this.tuning.face.value.set(transfer.quadratic, transfer.slope, transfer.lift, settings.saturation.value)
     this.tuning.panel.value.set(transfer.panelSlope, transfer.panelLift)
     this.tuning.edges.value.set(settings.rim.value, settings.hair.value, .405 * settings.lift.value)
     this.frost.value = settings.frost.value / settings.frost.def.default
     const root = document.documentElement
-    root.dataset.glassAppearance = dark ? 'dark' : 'light'
     if (settings.growth.value) root.style.setProperty('--glass-extra-scale', String(1 + settings.growth.value))
     else root.style.removeProperty('--glass-extra-scale')
-    this.controls?.tune(appearance, settings.growth.value)
+    this.controls?.tune(settings.growth.value)
     this.revision++
     this.wake()
   }
   constructor(private readonly mode: string) {
     this.updateTuning()
     this.unsubscribe = params.onChange(id => { if (id.startsWith('glass.')) this.updateTuning() })
-    this.deviceDark.addEventListener('change', this.updateTuning)
-    if (mode === 'inline') installGalaxyGlass((gl, canvas) => createLobbyGlass(gl, canvas, () => nativeInk.value, {
+    if (mode === 'inline') installGalaxyGlass((gl, canvas) => createLobbyGlass(gl, canvas, {
       face: this.tuning.face.value, panel: this.tuning.panel.value, edges: this.tuning.edges.value,
-      width: () => this.frost.value, growth: () => settings.growth.value, dark: () => document.documentElement.dataset.glassAppearance === 'dark',
+      width: () => this.frost.value, growth: () => settings.growth.value,
       revision: () => this.revision, respectReducedTransparency,
     }))
   }
@@ -159,7 +150,7 @@ export class GlassPost {
     this.renderer = renderer
     const first = !this.controls
     const glass = this.controls ??= new GlassButton(renderer.domElement, new URLSearchParams(location.search).get('glassSet') === 'one' ? 1 : gameplayGlassSlots, this.wake)
-    if (first) glass.tune(Math.round(settings.appearance.value), settings.growth.value)
+    if (first) glass.tune(settings.growth.value)
     const finished: N = this.mode === 'target' ? rtt(out, null, null, { type: THREE.HalfFloatType }) : null
     if (finished) disposables.push(finished)
     const original = finished ? finished.sample(uv()) : out
@@ -242,9 +233,7 @@ export class GlassPost {
       } else if (!on) {
         this.record(false, controls.reducedTransparency ? 'transparency preference' : 'interface frost disabled')
       }
-      controls.present(nativeInk.value)
-      const target = graph.blur?.passes[1].renderTarget
-      if (target && controls.hasSurface) this.ink.update(this.renderer!, controls, target, this.tuning.face.value, this.tuning.edges.value.z)
+      controls.present()
       if (controls.animating) this.wake()
     }
   }
@@ -260,8 +249,6 @@ export class GlassPost {
   dispose() {
     delete document.documentElement.dataset.driveGlass
     this.unsubscribe()
-    this.deviceDark.removeEventListener('change', this.updateTuning)
-    delete document.documentElement.dataset.glassAppearance
     document.documentElement.style.removeProperty('--glass-extra-scale')
     this.setPausedDraw()
     this.controls?.dispose()

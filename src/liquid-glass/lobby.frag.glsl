@@ -47,7 +47,16 @@ void main() {
       + exp(-.2*depth)*(1.0-pole)*mix(.0007-.028*tone,.0031-.0344*tone,dark)
       + max(1.0-depth/.48,0.0)*mix(-.1476+.0954*tone,-.0743+.0941*tone,dark);
     vec3 face = clamp(vec3(tone+rim*edgeStrength.x)+(body-y)*gain*faceTransfer.w,0.0,1.0);
-    surface = mix(face,vec3(1),pressed*edgeStrength.z)*coverage;
+    face = mix(face, vec3(1), pressed*edgeStrength.z);
+    // Match the gameplay white-ink transfer, leaving the outer rim intact.
+    vec3 linear = mix(pow((face+.055)/1.055,vec3(2.4)),face/12.92,lessThanEqual(face,vec3(.04045)));
+    float luminance = dot(linear, vec3(.2126,.7152,.0722)), limit = mix(.18,.16,panel);
+    if (luminance > limit) {
+      linear *= limit/luminance;
+      vec3 safe = mix(1.055*pow(linear,vec3(1./2.4))-.055,12.92*linear,lessThanEqual(linear,vec3(.0031308)));
+      face = mix(face,safe,clamp(depth-1.,0.,1.));
+    }
+    surface = face*coverage;
   }
   color = opacity * vec4(surface,1.0-(1.0-coverage)*transmission);
 }

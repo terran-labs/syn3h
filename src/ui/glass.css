@@ -136,17 +136,17 @@ html[data-gfx="0"]:where(:not([data-drive-glass="on"])) .liquid-glass, :where(ht
 .liquid-glass[data-glass-surface="shader"] { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
 
 :root { --glass-control-radius: 24px; }
-/* Centre the named stops under the four positions of a single range. */
+/* Centre the named stops under the three positions of a single range. */
 .syn3h-shell .world-inspector .wi-row.glass-material-row {
   grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px 0;
 }
 .glass-material-row > .wi-label { grid-column: 1 / 3; grid-row: 1; }
 .glass-material-row > output { grid-column: 3 / 5; grid-row: 1; }
 .syn3h-shell .glass-material-row > input[type=range] {
-  grid-column: 1 / -1; width: calc(75% + 16px); justify-self: center;
+  grid-column: 1 / -1; width: calc(66.6667% + 16px); justify-self: center;
 }
 .glass-material-row .glass-stops, .glass-material-row small { grid-column: 1 / -1; }
-.glass-stops { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); }
+.glass-stops { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); }
 .syn3h-shell .world-inspector .glass-stops > button {
   font: inherit; background: transparent; color: inherit; border: 0; box-shadow: none;
   min-width: 0; min-height: 24px; margin: 0; padding: 0 2px;
@@ -166,9 +166,9 @@ html[data-glass-material="frost"] .liquid-glass::after { content: none; }
 /* Frost uses the original shell gradient, corner light and masked conic rim. */
 html[data-glass-material="frost"] .liquid-glass {
   --glass-tint: 255 255 255;
-  background: linear-gradient(180deg, rgb(255 255 255 / .13), rgb(255 255 255 / .06) 55%, rgb(255 255 255 / .1));
-  -webkit-backdrop-filter: blur(30px) saturate(190%) brightness(1.12);
-  backdrop-filter: blur(30px) saturate(190%) brightness(1.12);
+  background: var(--panel-material-fill);
+  -webkit-backdrop-filter: var(--panel-material-filter);
+  backdrop-filter: var(--panel-material-filter);
   box-shadow: inset 0 0 0 .5px rgb(255 255 255 / .14), inset 0 10px 18px -12px rgb(255 255 255 / .5),
     inset 0 -8px 14px -10px rgb(0 0 0 / .3), 0 14px 36px rgb(0 0 0 / .32);
 }
@@ -202,9 +202,7 @@ html[data-glass-material] .syn3h-shell.exploration-ui > .world-inspector:not(.lo
   backdrop-filter: var(--panel-material-filter, blur(3px) saturate(1.2) brightness(1.04));
 }
 html[data-glass-material="frost"] {
-  --panel-material-fill: linear-gradient(180deg, rgb(255 255 255 / .13), rgb(255 255 255 / .06) 55%, rgb(255 255 255 / .1));
   --panel-material-edge: rgb(255 255 255 / .32);
-  --panel-material-filter: blur(30px) saturate(190%) brightness(1.12);
 }
 html[data-glass-material="flat"] {
   --panel-material-fill: rgb(22 23 26 / .87); --panel-material-filter: none;
@@ -227,39 +225,31 @@ html[data-glass-material="frost"] #lobby-settings.liquid-glass { background-colo
 
 /* Keep small rail labels readable when the scene behind the frost turns white.
    The same smoked backing sits below the lobby dock and standalone sheet Close. */
-html:is([data-glass-material="glass"], [data-glass-material="frost"]) {
-  --panel-smoke: rgb(0 0 0 / .52);
-  --panel-material-fill: var(--panel-smoke);
-  --panel-material-filter: blur(20px) saturate(1.6) brightness(.84);
-}
 html[data-glass-material="frost"] {
-  --panel-smoke: rgb(0 0 0 / .55);
+  --panel-smoke: rgb(0 0 0 / .50);
   --panel-material-fill: linear-gradient(180deg, rgb(255 255 255 / .04), transparent 55%, rgb(255 255 255 / .02)), var(--panel-smoke);
   --panel-material-filter: blur(30px) saturate(1.9) brightness(.84);
 }
-html:is([data-glass-material="glass"], [data-glass-material="frost"]) .syn3h-shell.exploration-ui
+html[data-glass-material="frost"] .syn3h-shell.exploration-ui
 :is(.lobby-gear-dock > .lobby-control, dialog.lobby-sheet .lobby-sheet-close) {
   background: var(--panel-material-fill);
   -webkit-backdrop-filter: var(--panel-material-filter); backdrop-filter: var(--panel-material-filter);
-  color: #fafafa;
+  color: white;
 }
-html:is([data-glass-material="glass"], [data-glass-material="frost"]) .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings) {
-  --s3-ink: #fff; --s3-dim: #fafafa; --s3-soft: #f4f4f4;
-}
-html:is([data-glass-material="glass"], [data-glass-material="frost"]) .syn3h-shell.exploration-ui > .world-inspector :is(.rail-command > button .rail-icon path, .panels-close .nav-chevrons) {
+html[data-glass-material="frost"] .syn3h-shell.exploration-ui > .world-inspector :is(.rail-command > button .rail-icon path, .panels-close .nav-chevrons) {
   filter: none;
 }
-html:is([data-glass-material="glass"], [data-glass-material="frost"]) .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings) input::placeholder {
+html[data-glass-material="frost"] .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings) input::placeholder {
   color: var(--s3-soft); opacity: 1;
 }
-html:is([data-glass-material="glass"], [data-glass-material="frost"]) .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings) :is(button:disabled, [aria-disabled="true"]) {
+html[data-glass-material="frost"] .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings) :is(button:disabled, [aria-disabled="true"]) {
   color: var(--s3-soft); opacity: 1; outline: 1px dashed currentColor; outline-offset: -1px;
 }
 
 /* Keep the existing dense accessibility and frost-off fallbacks. */
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   @media (prefers-reduced-transparency: no-preference) and (prefers-contrast: no-preference) {
-    html:is([data-glass-material="glass"], [data-glass-material="frost"]):not([data-gfx="0"])
+    html[data-glass-material="frost"]:not([data-gfx="0"])
     .syn3h-shell.exploration-ui:not([data-ui-frost="off"]) #lobby-settings.liquid-glass {
       --glass-body: var(--panel-smoke); --glass-body-hover: var(--panel-smoke);
       --glass-frost: var(--panel-material-filter);
@@ -268,6 +258,23 @@ html:is([data-glass-material="glass"], [data-glass-material="frost"]) .syn3h-she
     }
   }
 }
-html:is([data-glass-material="glass"], [data-glass-material="frost"]) .lobby-gear-dock .lobby-control-icon { opacity: 1; }
+html[data-glass-material="frost"] .lobby-gear-dock .lobby-control-icon { opacity: 1; }
 
-html:is([data-glass-material="glass"], [data-glass-material="frost"]) .syn3h-shell.exploration-ui > .world-inspector .wi-row.wi-day .wi-day-note { color: var(--s3-soft); }
+html[data-glass-material="frost"] .syn3h-shell.exploration-ui > .world-inspector .wi-row.wi-day .wi-day-note { color: var(--s3-soft); }
+
+html[data-glass-material] .syn3h-shell.exploration-ui .world-inspector {
+  --s3-ink: white; --s3-dim: white; --s3-soft: white; --s3-accent-2: white;
+  --s3-on-ink: white; --s3-on-fill: #44484d;
+}
+html[data-glass-material] .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-resolution .wi-res-auto.is-on {
+  color: white; background: var(--s3-on-fill);
+}
+
+html[data-glass-material] .liquid-glass {
+  --s3-ink: white; --s3-soft: white; --s3-dim: white; --s3-accent-2: white;
+  --glass-ink: white;
+  color: white;
+}
+html[data-glass-material] .liquid-glass :is(.gs-name, .lobby-control-word, .lobby-control-icon) {
+  color: white;
+}
