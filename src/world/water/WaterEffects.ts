@@ -18,9 +18,12 @@ import { UnderwaterBubbles } from './bubbles'
 import { lensWash, newLensState, stepLens } from './underwaterCamera'
 import { camMode } from '../../core/ChaseCamera'
 import { submergedFraction, verticalHalfExtent } from './waterEffectsMath'
+import { AcrossSurface } from './acrossSurface'
 
 /** Heights (m) of a hovercraft's hull and of a jet above the liquid where they stop disturbing it. */
 const HOVER_REACH=6,JET_REACH=5
+/** Metres from the camera within which transparent vehicle parts are sorted against the water. */
+const SORT_REACH=400
 
 /** Register after Environment and ChaseCamera. The live net binding includes later joins. */
 export class WaterEffects implements System {
@@ -116,6 +119,29 @@ export class WaterEffects implements System {
     this.trailBubbles(dt)
     this.sinkInLava()
     this.bubbles.update(dt,waterUnderwater.value)
+    this.sortAcrossSurface()
+  }
+  /**
+   * Transparent parts on the far side of the water from the camera draw before it
+   * (acrossSurface.ts): vehicles' canopies, wings and glows, zorb shields, and the
+   * underwater bubbles, which are always below it.
+   */
+  private readonly across=new AcrossSurface()
+  private readonly waterAt=(x:number,z:number)=>this.terrain.liquidKindAt?.(x,z)==='water'?this.terrain.liquidHeightAt?.(x,z)??-Infinity:-Infinity
+  private sortAcrossSurface(){
+    const {game,across}=this,c=game.camera.position
+    across.begin(c.y<this.waterAt(c.x,c.z),this.waterAt)
+    // Vehicles near enough to see; one further off keeps its last order until it comes back.
+    if(this.near(this.player.object))across.tree(this.player.object)
+    for(const v of net?net.audibleVehicles():this.bots.vehicles)if(v!==this.player&&this.near(v.object))across.tree(v.object)
+    for(const o of game.scene.children)if(o.userData.zorbShield&&this.near(o))across.visit(o)
+    // Bubbles live under the surface (a metre under a surface at 0 says so): drawn before it
+    // whenever the camera is above it.
+    across.place(this.bubbles.mesh,-1,0)
+  }
+  private near(o:THREE.Object3D){
+    const c=this.game.camera.position,size=this.terrain.wrapSize??this.terrain.size
+    return Math.hypot(nearestImage(o.position.x,c.x,size)-c.x,nearestImage(o.position.z,c.z,size)-c.z)<SORT_REACH
   }
   /** Water-owned lens rule, applied after the chase camera has placed the lens. */
   readonly lens=newLensState()
