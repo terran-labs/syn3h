@@ -14,7 +14,12 @@ export function legacyPageNames() {
     if (Object.prototype.hasOwnProperty.call(window, name)) continue
     Object.defineProperty(window, name, {
       configurable: true,
-      get() { return window[old] },
+      // Only an assigned value: a renamed build defines the old name as an accessor that reads
+      // this one (src/core/legacyWindowNames.ts), and the two must not read each other.
+      get() {
+        const own = Object.getOwnPropertyDescriptor(window, old)
+        return own && 'value' in own ? own.value : undefined
+      },
       // A renamed build assigns its own hook: that replaces this accessor with a plain value.
       set(value) { Object.defineProperty(window, name, { value, writable: true, configurable: true, enumerable: true }) },
     })

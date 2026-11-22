@@ -13,7 +13,13 @@ if (typeof window !== 'undefined') {
     if (Object.prototype.hasOwnProperty.call(window, legacy)) continue
     Object.defineProperty(window, legacy, {
       configurable: true,
-      get: () => (window as unknown as Record<string, unknown>)[current],
+      // Only an assigned value, never another accessor: a check's init script may have put a
+      // read-through accessor on the new name (tools/lib/legacy-page-names.mjs), and two
+      // accessors reading each other would recurse until the stack overflows.
+      get: () => {
+        const own = Object.getOwnPropertyDescriptor(window, current)
+        return own && 'value' in own ? own.value : undefined
+      },
     })
   }
 }
