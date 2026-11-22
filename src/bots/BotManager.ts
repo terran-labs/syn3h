@@ -451,16 +451,16 @@ export class BotManager implements System {
     }
   }
   /**
-   * Bots hidden this frame (behind the camera or over the horizon, see update), and inside a shown
-   * bot the top-most hidden node of each branch: a quality change draws them too, so a level's new
-   * vehicle and shadow materials are built before they come into view in play. A bot's other distance
-   * looks are hidden groups (Box arm mid body, silhouette) around visible merged models. Medium is
-   * the first level with shadows, so a bot that later drove into another look built that look's
-   * shadow pipeline in play. The climb preparation draws each node unseen with all it holds.
+   * Every hidden node of every bot: a bot hidden this frame (behind the camera or over the horizon,
+   * see update) and, inside any bot, its other distance looks (hidden groups such as Box arm mid
+   * body and the silhouette, around visible merged models). A quality change draws them too, so a
+   * level's vehicle and shadow materials are built before they come into view in play: Medium is the
+   * first level with shadows, and a bot that later drove into another look built that look in play.
    */
   *precompileQualityMeshes(): Iterable<Mesh> {
     const hidden: Object3D[] = []
-    const visit = (o: Object3D) => { if (!o.visible) { hidden.push(o); return } for (const c of o.children) visit(c) }
+    // Parents first: the preparation shows a node only once its ancestors are shown.
+    const visit = (o: Object3D) => { if (!o.visible) hidden.push(o); for (const c of o.children) visit(c) }
     for (const bot of this.bots) visit(bot.object as unknown as Object3D)
     yield* hidden as unknown as Mesh[]
   }
