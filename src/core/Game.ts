@@ -376,25 +376,7 @@ export class Game {
         (view === 'playing' && startupTiming.playRequestMs !== undefined && startupTiming.firstPlayableFrameMs === undefined)
       const previousDraws = watchingDraw ? this.renderer.info.render.drawCalls : 0
       for (const system of this.systems) system.prepareWorldDraw?.()
-      // The governor changes level only on frames outside play (a pending climb). The draws after
-      // it build the new level's pipelines for what is visible; meshes hidden until something
-      // happens in play (the waterline under a surface) would build then, mid-dive, on a backend
-      // whose pipelines are keyed on the render target. Draw them once here, as a manual change does.
-      const level = this.quality.governor.level
-      const shown: THREE.Object3D[] = []
-      if (view !== 'playing' && this.hiddenPreparedLevel !== undefined && this.hiddenPreparedLevel !== level) {
-        for (const system of this.systems) {
-          for (const mesh of system.precompileQualityMeshes?.() ?? []) {
-            for (let o: THREE.Object3D | null = mesh; o && o !== this.scene; o = o.parent) if (!o.visible) { shown.push(o); o.visible = true }
-          }
-        }
-      }
-      try {
-        drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs)
-      } finally {
-        for (let i = shown.length - 1; i >= 0; i--) shown[i].visible = false
-      }
-      if (view !== 'playing' || this.hiddenPreparedLevel === undefined) this.hiddenPreparedLevel = level
+      drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs)
       if (view === 'playing') this.rememberVehicleLevel(this.quality.governor.level)
       longFrames.end('Render submission', renderStart)
       this.lastDraw = now
@@ -413,7 +395,49 @@ export class Game {
     metrics.pipelinesFresh = pipelines?.fresh ?? null
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
-    if (!this.applyingQuality) this.quality.frame(metrics, view === 'playing')
+    if (!this.applyingQuality) {
+      const before = this.quality.governor.level
+      this.quality.frame(metrics, view === 'playing')
+      // A pending climb applies only on a frame outside play, and the next frame may already be
+      // play. Build the new level's pipelines now, in this frame, hidden meshes included.
+      if (view !== 'playing' && this.quality.governor.level !== before && !this.holdDraws && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost) this.prepareClimbedLevel()
+    }
+  }
+
+  /**
+   * One extra draw of the scene at a level the governor has just climbed to, outside play. Meshes
+   * hidden until something happens in play (the waterline under a surface) are drawn too, as a
+   * manual change draws them under its veil: here there is no veil, so each is drawn shrunk to a
+   * micrometre and placed behind the camera. Every triangle is clipped and no pixel is written,
+   * while the pipeline is built for the real target (scale and position are not part of it; a
+   * positive scale keeps the face winding). A mesh whose ancestor is hidden is left alone, so no
+   * sibling is ever shown.
+   */
+  private prepareClimbedLevel(): void {
+    const start = longFrames.start()
+    longFrames.event('Climbed level preparation')
+    const camera = this.camera
+    const behind = camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(-1000).add(camera.position)
+    const moved: { mesh: THREE.Mesh; position: THREE.Vector3; scale: THREE.Vector3; culled: boolean }[] = []
+    try {
+      for (const system of this.systems) {
+        for (const mesh of system.precompileQualityMeshes?.() ?? []) {
+          if (mesh.visible) continue
+          let shown = true
+          for (let o = mesh.parent; o && o !== this.scene; o = o.parent) if (!o.visible) { shown = false; break }
+          if (!shown) continue
+          moved.push({ mesh, position: mesh.position.clone(), scale: mesh.scale.clone(), culled: mesh.frustumCulled })
+          mesh.visible = true; mesh.frustumCulled = false
+          mesh.scale.setScalar(1e-6)
+          if (mesh.parent) mesh.position.copy(mesh.parent.worldToLocal(behind.clone())); else mesh.position.copy(behind)
+        }
+      }
+      for (const system of this.systems) system.prepareWorldDraw?.()
+      drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+    } finally {
+      for (const m of moved) { m.mesh.visible = false; m.mesh.frustumCulled = m.culled; m.mesh.position.copy(m.position); m.mesh.scale.copy(m.scale) }
+      longFrames.end('Climbed level preparation', start)
+    }
   }
 
   /**
@@ -423,8 +447,6 @@ export class Game {
    */
   holdDraws = false
   private applyingQuality = false
-  /** The level whose hidden quality meshes were last drawn (see the draw in frame()). */
-  private hiddenPreparedLevel: QualityLevel | undefined
 
   private manualVehicleLevels = new WeakMap<object, number>()
 
