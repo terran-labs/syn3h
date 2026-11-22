@@ -148,7 +148,8 @@ for (const mode of modes) {
       await page.locator('.world-inspector').waitFor({ state: 'visible' })
     } else {
       // Returning to driving captures the cursor, and the panels go with it.
-      await page.mouse.click(100, 150); await page.locator('.world-inspector').waitFor({ state: 'hidden' })
+      // Open game view: the top left holds the gear selector and its rows (hud-column.css).
+      await page.mouse.click(720, 350); await page.locator('.world-inspector').waitFor({ state: 'hidden' })
       await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas)
       assert.equal(await page.locator('.world-inspector').isHidden(), true, 'panels are closed while the cursor is captured')
       // Escape frees the cursor: panels. Escape again: paused. Never back to the solar system.
