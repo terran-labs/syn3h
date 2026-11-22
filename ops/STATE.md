@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-22 12:35 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-22 13:20 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2202 (release-102, water draw order, iPhone black flashes, card consistency, touch buttons), source 55561155,
-frozen copy 20261122-122454-55561155, Worker version 83dba942, at https://www.syn3h.com/ since 22 November 12:29 PST.
+Live: v26.11.2203 (release-103, under-water ripple on WebGPU from Medium up), source a01f3660,
+frozen copy 20261122-130913-a01f3660, Worker version 24c9d80d, at https://www.syn3h.com/ since 22 November 13:13 PST.
 Browser suites: tests/ui/about-updates.mjs needs its dev server started with SYN3H_RELEASE_VERSION set to the second-newest
 production release (its header says how; 313e9488).
 Version numbers follow the Pacific date (release.sh): a release planned on the 21st and shipped after midnight is 22NN.
@@ -154,6 +154,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2200 | 100 | m-glass-2200 | glass styles Liquid, Frost, Flat with a Tint slider; desktop left rail as floating text; Welcome fits a phone |
 | v26.11.2201 | 101 | m-climb-2201 | quality climbs prepared before play; Tag and Thunder splash on water; ring edges by day; phone notice lets steering through |
 | v26.11.2202 | 102 | m-polish-2202 | no black flashes on iPhone; vehicle parts behind the water; cards one style; touch buttons grow when pressed |
+| v26.11.2203 | 103 | m-water-2203 | the sea bed and vehicles under the water ripple with the waves (WebGPU, Medium and up) |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
