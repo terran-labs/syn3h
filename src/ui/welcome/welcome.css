@@ -46,26 +46,27 @@
 .welcome-shot figcaption { margin-top: 8px; font-size: 13px; line-height: 1.4; color: var(--w-soft); }
 @media (prefers-reduced-motion: reduce) { .welcome-shot img { transition: none; } }
 
-/* The ring (ring.ts), after terranlabs.com's "Syn3h in Action": the six pictures as cards round a
-   ring in space, seen from in front, turning to bring the next to the front. --w is a card's width;
-   --r the ring's radius, half a card over tan(180 deg / 6), so six cards close the ring. The cards
-   either side reach past the column and are cut at its edges, so nothing scrolls sideways; the
-   perspective lives inside, on the stage, so the cut does not flatten the ring. */
+/* The ring (ring.ts), after terranlabs.com's "Syn3h in Action": the front card faces you, one card
+   either side stands half a card back and 0.45 of a card out, turned 40 degrees away, and the rest
+   wait further back, unseen; a turn moves every card one place and each glides there. --w is a
+   card's width. The side cards' outer edges reach about 0.84 w from the centre, so --w is capped
+   at 58 % of the column and everything the ring draws stays inside it, on a phone too; nothing
+   intersects, so no card ever shows through another. The column still cuts at its edges as a
+   backstop; the perspective lives inside, on the stage, so that cut does not flatten it. */
 .welcome-body .welcome-ring {
-  --w: min(64cqi, 420px); --r: calc(var(--w) * .866);
+  --w: min(58cqi, 420px);
   display: flex; flex-direction: column; align-items: center; margin: 4px 0 26px; overflow: clip;
 }
-.welcome-ring-stage { width: 100%; padding: 22px 0 18px; perspective: 1500px; perspective-origin: 50% 40%; transform-style: preserve-3d; }
-.welcome-ring-track {
-  position: relative; width: var(--w); aspect-ratio: 16 / 9; margin: 0 auto; padding: 0; list-style: none;
-  transform-style: preserve-3d; transform: translateZ(calc(var(--r) * -1)) rotateY(var(--turn, 0deg)); transition: transform 1.4s cubic-bezier(.22, 1, .36, 1);
-}
-.welcome-ring-track[data-still] { transition: none; }
+.welcome-ring-stage { width: 100%; padding: 22px 0 18px; perspective: 1500px; perspective-origin: 50% 40%; }
+.welcome-ring-track { position: relative; width: var(--w); aspect-ratio: 16 / 9; margin: 0 auto; padding: 0; list-style: none; transform-style: preserve-3d; }
 .welcome-ring-card {
-  position: absolute; inset: 0; margin: 0; transform: rotateY(var(--at)) translateZ(var(--r)); backface-visibility: hidden;
-  /* Cards further round the ring dim away into the scene. */
-  opacity: max(0, calc(1 - var(--away, 0) * .42)); transition: opacity 1s;
+  position: absolute; inset: 0; margin: 0;
+  transform: translateX(calc(var(--x, 0) * var(--w))) translateZ(calc(var(--z, 0) * var(--w))) rotateY(var(--ry, 0deg));
+  /* The side cards dim a little; the ones behind them are not seen at all. */
+  opacity: calc(1 - min(1, var(--away, 0) * .42) - max(0, var(--away, 0) - 1) * .16);
+  transition: transform 1.2s cubic-bezier(.22, 1, .36, 1), opacity .8s;
 }
+.welcome-ring-track[data-still] .welcome-ring-card { transition: none; }
 .welcome-ring-card .welcome-shot { width: 100%; height: 100%; margin: 0; }
 .welcome-ring-card .welcome-shot img { height: 100%; border-radius: 10px; box-shadow: 0 18px 44px -14px rgb(0 0 0 / .75); cursor: pointer; }
 .welcome-ring-card[data-front] .welcome-shot img { cursor: default; }
@@ -91,7 +92,6 @@
 .welcome-ring-arrow path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* A narrow column: the cards take more of it, and the caption has room for four lines. */
 @container welcome (max-width: 520px) {
-  .welcome-body .welcome-ring { --w: 72cqi; }
   .syn3h-shell .welcome-body.welcome-body p.welcome-ring-caption, .welcome-body p.welcome-ring-caption { height: calc(16px * 1.5 + 2px + 13.5px * 1.4 * 4); }
   .welcome-ring-caption span { font-size: 13.5px; }
 }

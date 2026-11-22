@@ -1,10 +1,11 @@
 /**
- * Welcome's pictures on a slowly turning ring in space, ported from the "Syn3h in Action" panel on
- * terranlabs.com (src/concepts/descent/rows/syn3h/ScreensPanel.tsx there; the owner, 21 November
- * 2026: "Pull in the carousel from our Terran Labs media previewer instead"). Plain DOM and CSS
- * (welcome.css): each picture is a card at its own angle round the ring, the ring turns to bring
- * the next one to the front every few seconds, cards further round dim into the scene, and the
- * front one's title and caption show beneath it. The arrows, or a tap on a card, take over, and
+ * Welcome's pictures turning in space, after the "Syn3h in Action" panel on terranlabs.com
+ * (src/concepts/descent/rows/syn3h/ScreensPanel.tsx there; the owner, 21 November 2026: "Pull in
+ * the carousel from our Terran Labs media previewer instead"). Plain DOM and CSS (welcome.css):
+ * the front picture faces you, one either side stands back and turns away, the rest wait behind
+ * them unseen; every few seconds they move round one place, and the front one's title and caption
+ * show beneath it. (A true ring, as on terranlabs.com, reaches past a phone's column; drawn tighter
+ * its cards cut through each other: the phone layout check, 22 November 2026.) The arrows, or a tap on a card, take over, and
  * the ring stops turning by itself from then on. Under reduced motion it never turns by itself
  * and moves without a glide.
  *
@@ -14,15 +15,16 @@
 
 export interface RingShot { title: string; caption: string }
 
+/** How far either side of the front its neighbours stand, in card widths. */
+export const RING_SIDE_X = 0.45
 /** Seconds between turns while nobody has touched the ring, as on terranlabs.com. */
 export const RING_TURN_MS = 5200
 
 /** The ring's markup round `cards` (each a picture's own <figure> html), with its captions. */
 export function ringHtml(cards: readonly string[]): string {
-  const step = 360 / cards.length
   const arrow = (d: string) => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`
   return `<section class="welcome-ring" aria-roledescription="carousel" aria-label="Syn3h in pictures" style="--count:${cards.length}">
-  <div class="welcome-ring-stage"><ol class="welcome-ring-track">${cards.map((card, i) => `<li class="welcome-ring-card" style="--at:${(i * step).toFixed(3)}deg" aria-label="${i + 1} of ${cards.length}">${card}</li>`).join('')}</ol></div>
+  <div class="welcome-ring-stage"><ol class="welcome-ring-track">${cards.map((card, i) => `<li class="welcome-ring-card" aria-label="${i + 1} of ${cards.length}">${card}</li>`).join('')}</ol></div>
   <div class="welcome-ring-foot">
     <button type="button" class="welcome-ring-arrow" data-ring="prev" aria-label="Previous picture">${arrow('M15 6l-6 6 6 6')}</button>
     <p class="welcome-ring-caption" aria-hidden="true"><strong></strong><span></span></p>
@@ -38,17 +40,27 @@ export function wireRing(root: HTMLElement, shots: readonly RingShot[], signal?:
   const track = root.querySelector<HTMLElement>('.welcome-ring-track')!
   const cards = [...root.querySelectorAll<HTMLElement>('.welcome-ring-card')]
   const caption = root.querySelector<HTMLElement>('.welcome-ring-caption')!
-  const count = cards.length, step = 360 / count
+  const count = cards.length
   const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches
   // `position` is unwrapped, so the ring always turns the short way and never spins back round.
   let position = 0, touched = false, timer = 0
   const show = (): void => {
     const current = wrap(position, count)
-    track.style.setProperty('--turn', `${(-position * step).toFixed(3)}deg`)
     track.toggleAttribute('data-still', still())
     cards.forEach((card, i) => {
-      const away = Math.min(Math.abs(i - current), count - Math.abs(i - current))
+      // Where the card stands from the front, signed: 0 the front, -1 and 1 either side, the rest
+      // behind them. Its place, depth and angle follow from this alone (welcome.css).
+      const off = ((i - current) % count + count + Math.floor(count / 2)) % count - Math.floor(count / 2)
+      const away = Math.abs(off), side = Math.sign(off)
+      card.style.setProperty('--x', String(side * RING_SIDE_X))
+      card.style.setProperty('--z', String(away === 0 ? 0 : away === 1 ? -0.5 : -0.9))
+      card.style.setProperty('--ry', `${-side * 40}deg`)
       card.style.setProperty('--away', String(away))
+      // The unseen ones behind take no taps.
+      card.style.pointerEvents = away >= 2 ? 'none' : ''
+      // Nearer cards paint over farther ones even where a browser does not sort the 3D scene
+      // (WebKit drew the side cards over the front one in document order).
+      card.style.zIndex = String(10 - away)
       card.toggleAttribute('data-front', i === current)
       card.setAttribute('aria-hidden', String(i !== current))
     })
