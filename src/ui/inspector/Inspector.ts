@@ -293,8 +293,10 @@ export class Inspector {
     if (params.all().length !== this.known) this.build()
     const editable = canEditWorld()
     if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; for (const select of this.element.querySelectorAll<HTMLSelectElement>('.wi-preset select')) select.disabled = !editable; this.markLocks(); this.element.classList.toggle('is-locked', !editable) }
-    for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) {
-      const id = card.dataset.section!, extra = this.extras.get(id), sum = card.querySelector('.wi-sum')!
+    // Live collections, held once: the browser keeps them current as cards are built, so the
+    // per-frame refresh below queries nothing.
+    for (const card of this.live.cards) {
+      const id = card.dataset.section!, extra = this.extras.get(id), sum = card.getElementsByClassName('wi-sum')[0]
       const text = extra ? extra.summary() : this.options.summary(id) || `${this.tree.find(s => s.id === id)?.count ?? 0} properties`
       if (sum.textContent !== text) sum.textContent = text
     }
@@ -305,7 +307,7 @@ export class Inspector {
     const name = this.options.playerName?.() ?? ''
     if (this.nameInput && document.activeElement !== this.nameInput && this.nameInput.value !== name) this.nameInput.value = name
     const colors = this.options.colors?.()
-    if (colors) for (const dot of this.element.querySelectorAll<HTMLElement>('[data-colour]')) dot.style.backgroundColor = colors[dot.dataset.colour as 'body' | 'accent']
+    if (colors) for (const dots of this.live.colourDots) for (const dot of dots.children as HTMLCollectionOf<HTMLElement>) dot.style.backgroundColor = colors[dot.dataset.colour as 'body' | 'accent']
     if (colors) for (const input of this.tintInputs) { const value = colors[input.dataset.tint as 'body' | 'accent']; if (input.value !== value && document.activeElement !== input) input.value = value }
   }
   private build(): void {
@@ -452,7 +454,7 @@ export class Inspector {
   /** Keep the picker's checked, pending and unavailable states in step with the game. */
   private syncVehicles(): void {
     const vehicles = this.options.vehicles()
-    for (const button of this.vehicleControl.querySelectorAll<HTMLElement>('.wi-vehicle-option')) {
+    for (const button of this.live.vehicleOptions) {
       const id = button.dataset.segVehicle!, checked = id === vehicles.current, pending = id === vehicles.pending
       if (button.getAttribute('aria-checked') !== String(checked)) button.setAttribute('aria-checked', String(checked))
       // Roving focus: the checked segment is the one Tab reaches.
@@ -463,7 +465,7 @@ export class Inspector {
       const blocked = Boolean(vehicles.note) && !checked
       if (button.matches('[aria-disabled=true]') !== blocked) { if (blocked) button.setAttribute('aria-disabled', 'true'); else button.removeAttribute('aria-disabled') }
     }
-    const note = this.vehicleControl.querySelector('.wi-vehicle-note')!, text = vehicles.pending ? 'Switching…' : vehicles.note ?? ''
+    const note = this.live.vehicleNotes[0], text = vehicles.pending ? 'Switching…' : vehicles.note ?? ''
     if (note.textContent !== text) note.textContent = text
   }
   /**
@@ -498,6 +500,16 @@ export class Inspector {
   private nameControl!: HTMLElement
   private nameInput!: HTMLInputElement
   private vehicleControl!: HTMLElement
+  private liveSets?: { cards: HTMLCollectionOf<HTMLElement>; colourDots: HTMLCollectionOf<HTMLElement>; vehicleOptions: HTMLCollectionOf<HTMLElement>; vehicleNotes: HTMLCollectionOf<HTMLElement> }
+  /** What update() walks every frame, as live collections the browser keeps current. */
+  private get live() {
+    return this.liveSets ??= {
+      cards: this.element.getElementsByClassName('wi-card') as HTMLCollectionOf<HTMLElement>,
+      colourDots: this.element.getElementsByClassName('wi-colour-dots') as HTMLCollectionOf<HTMLElement>,
+      vehicleOptions: this.vehicleControl.getElementsByClassName('wi-vehicle-option') as HTMLCollectionOf<HTMLElement>,
+      vehicleNotes: this.vehicleControl.getElementsByClassName('wi-vehicle-note') as HTMLCollectionOf<HTMLElement>,
+    }
+  }
   private readonly tintInputs: HTMLInputElement[] = []
   /** Opens the existing registered GI slider, rather than creating a second control. */
   private showGI(): void {
@@ -512,9 +524,14 @@ export class Inspector {
     const input = row.querySelector<HTMLInputElement>('input')!
     if (!input.disabled) input.focus({ preventScroll: true })
   }
+  private giShown?: { row: HTMLElement; message: string; eligible: boolean }
   setGIStatus(message: string, eligible: boolean): void {
     const row = this.rows.get('post.gi')?.row
     if (!row) return
+    // Called every frame: nothing to do unless the row was rebuilt or the status changed.
+    const shown = this.giShown
+    if (shown && shown.row === row && shown.message === message && shown.eligible === eligible) return
+    this.giShown = { row, message, eligible }
     let note = row.querySelector<HTMLElement>('.wi-gi-status')
     if (!note) { note = document.createElement('small'); note.className = 'wi-gi-status'; note.id = 'gi-status'; row.append(note) }
     if (note.textContent !== message) note.textContent = message

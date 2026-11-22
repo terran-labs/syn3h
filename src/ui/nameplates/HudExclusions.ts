@@ -32,8 +32,22 @@ export class HudExclusions {
   private readonly onResize = () => { this.stale = true }
   constructor(private readonly root: HTMLElement) {
     const outside = (r: MutationRecord) => !(r.target instanceof Element ? r.target : r.target.parentElement)?.closest('.vehicle-nameplates')
+    // Only an element that is, or holds, one of SELECTORS arriving or leaving changes the list.
+    // Text written into the HUD every frame (speed, height, heading) is a childList change of text
+    // nodes, and the scoreboard swaps its own lines; either may move a box, so they mark the
+    // rectangles stale, but they never re-query the list.
+    const hasElement = (nodes: NodeList) => {
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i]
+        if (node instanceof Element && (node.matches(SELECTORS) || node.querySelector(SELECTORS))) return true
+      }
+      return false
+    }
     this.observer = new MutationObserver(records => {
-      for (const r of records) if (outside(r)) { this.stale = true; if (r.type === 'childList') this.listDirty = true }
+      for (const r of records) if (outside(r)) {
+        this.stale = true
+        if (r.type === 'childList' && (hasElement(r.addedNodes) || hasElement(r.removedNodes))) this.listDirty = true
+      }
     })
     this.observer.observe(root.ownerDocument.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'hidden'] })
     root.ownerDocument.defaultView?.addEventListener('resize', this.onResize)
