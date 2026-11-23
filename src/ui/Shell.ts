@@ -172,7 +172,12 @@ const build = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? __SYN3H_B
  */
 export const PAUSE_ICON = 'M9.2 6.8v10.4M14.8 6.8v10.4'
 export const PLAY_ICON = 'M9 6.4v11.2l8.6-5.6Z'
-export const LEAVE_WORLD_ICON = 'M7.6 13.6a2.9 2.9 0 1 0 5.8 0a2.9 2.9 0 1 0-5.8 0M18.6 20.6C10.6 21.8 3.6 17 4.5 11.2C5.4 5.6 12.4 4 20.2 4.6M16.9 2.4l3.3 2.2-2.9 2.7'
+/**
+ * The planet sits towards the path's open side, a little smaller, and the path swings wider
+ * round it, so the two do not crowd (the owner, 22 November 2026: "the outer curve a bit
+ * further from the inner circle"): about 4 units clear at the sides, 5 over the top.
+ */
+export const LEAVE_WORLD_ICON = 'M8.4 13.4a2.6 2.6 0 1 0 5.2 0a2.6 2.6 0 1 0-5.2 0M18.6 20.9C10.2 22.2 2.6 17.2 3.6 11.2C4.6 5.4 12.2 3.7 20.2 4.6M16.9 2.4l3.3 2.2-2.9 2.7'
 /** The search field's magnifier, drawn at the start of the field. */
 const SEARCH_ICON = 'M10.5 16.5a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM15 15l4.8 4.8'
 /** How long PAUSED and its resume line stay before fading, with nothing moving (ms). */
