@@ -16,7 +16,7 @@ Done by the Orchestrator with `tools/domain.sh`, 23 November:
   (302, path and query kept). It never serves the game: a second origin would have its own
   storage and invites.
 - The old addresses: a Single Redirect rule on the syn3h.com zone sends syn3h.com and
-  www.syn3h.com to mira.cc, being applied now (see "The old-address rule").
+  www.syn3h.com to mira.cc, live since 23 November (see "The old-address rule").
 
 Facts about the old zone (Orchestrator, 23 November): the apex record is
 `A syn3h.com -> 199.34.228.77`, proxied, the old Weebly site, whose Apache answered the earlier 301
@@ -38,12 +38,30 @@ A page already open on www.syn3h.com keeps using its own origin after the rule g
   and the redirected response on mira.cc carries no `Access-Control-Allow-Origin`.
 
 So the rule redirects **navigations only**: a page opened at an old address moves to mira.cc, and
-everything an already open page fetches is answered where it is. The Orchestrator is writing the
-exact expression; it goes here when it reports. Both hosts reach the same Worker and Durable Object
-namespace, so a player on the old address and one on mira.cc share rooms until the old page
-reloads.
+everything an already open page fetches is answered where it is. Both hosts reach the same Worker
+and Durable Object namespace, so a player on the old address and one on mira.cc share rooms until
+the old page reloads.
 
-**Proposed, not built: CORS as a second line of defence.** If any non-navigation request were
+The rule as live (Orchestrator, 23 November; ruleset `3fa1fb90`, rule `5c0f5d88`, "Old addresses
+to mira.cc"), expression:
+
+    (http.host in {"syn3h.com" "www.syn3h.com"}) and not (http.request.uri.path in {"/ws" "/status" "/presence"}) and (any(http.request.headers["sec-fetch-mode"][*] eq "navigate") or (not (len(http.request.headers["sec-fetch-mode"]) >= 0) and (http.request.uri.path eq "/" or ends_with(http.request.uri.path, "/") or ends_with(http.request.uri.path, ".html"))))
+
+Target `concat("https://mira.cc", http.request.uri.path)`, status 302, query string kept. In
+words: a navigation always redirects. A request with no `Sec-Fetch-Mode` header, as from an older
+browser or a script, redirects only for document paths (`/`, a path ending in `/`, or `.html`).
+`cors`, `no-cors` and `same-origin` requests never redirect, so an open page's chunks and fetches
+keep working. The checks `tools/release.sh` runs after acceptance send the headers of a
+navigation and of an open page's fetch, matching this rule.
+
+**The bare syn3h.com.** At first the rule did not fire on syn3h.com: the request reached the old
+Weebly origin, whose own 301 sent it to www.syn3h.com, where the rule then sent it to mira.cc. The
+cause is not known. The owner has approved replacing the apex record with a proxied placeholder,
+which the Orchestrator is doing. Until that is done, the release's apex check reports a two-hop
+redirect loudly. That is expected and does not fail the release.
+
+**Considered and not built: CORS as a second line of defence** (the Foreman, 23 November: the rule
+redirects navigations only, so nothing a page fetches is redirected). If any non-navigation request were
 redirected anyway, the mira.cc answer would need `Access-Control-Allow-Origin`. Two places would
 add it:
 
