@@ -6,8 +6,8 @@
  *
  * With "Record blank frames" on (Performance, Diagnostics; off by default), after each drawn frame
  * the game canvas is copied into a 16 by 8 2D canvas and its 128 pixels are classified: a frame
- * whose pixels are nearly all black or transparent is blank, one with a large share of them is
- * partly blank, when the frame before was not. Each such frame is logged with what happened in it
+ * whose pixels are nearly all black or transparent is blank, unless the frame before was nearly all
+ * black too; one where a large share turned black at once is partly blank (classifyFrame). Each such frame is logged with what happened in it
  * and in the frame before: frame copies (renderer.copyFramebufferToTexture: refraction's colour and
  * depth at Medium and up on WebGPU, and three's viewport depth copy for the force field glow and the
  * headlight cones, each of which ends the multisampled scene pass and reopens it), a resize that
@@ -34,8 +34,15 @@ export const BLANK_ALPHA = 16
 /** Share of blank pixels at which a frame is blank, and partly blank. */
 export const BLANK_SHARE = 0.97
 export const PARTLY_SHARE = 0.4
-/** A frame is only reported when the frame before had at most this share (a dark night is not a flash). */
-export const QUIET_SHARE = 0.25
+/**
+ * A blank frame counts unless the frame before was already this dark: a scene that is itself
+ * nearly all black (or a run of blank frames, counted once). Set high on purpose: in ordinary
+ * driving a quarter of the probe's pixels can be near black from frame to frame, and an earlier
+ * limit of 0.25 made the recorder blind in such a scene (23 November 2026).
+ */
+export const DARK_SCENE_SHARE = 0.9
+/** A partly blank frame must also be this much darker than the frame before: a sudden change. */
+export const PARTLY_JUMP = 0.3
 
 export type FrameClass = 'blank' | 'partly' | 'normal'
 
@@ -50,11 +57,15 @@ export function blankShare(rgba: ArrayLike<number>): number {
   return n ? blank / n : 0
 }
 
-/** Classify a frame by its blank share, against the frame before (a sudden change only). */
+/**
+ * Classify a frame by its blank share against the frame before. Blank: nearly every pixel black or
+ * transparent, after a frame that was not. Partly blank: a large share, and a sudden rise from the
+ * frame before. What it cannot see: a flash in a scene that is already nearly all black, and a
+ * partly black frame that comes on gradually.
+ */
 export function classifyFrame(share: number, previousShare: number): FrameClass {
-  if (previousShare > QUIET_SHARE) return 'normal'
-  if (share >= BLANK_SHARE) return 'blank'
-  if (share >= PARTLY_SHARE) return 'partly'
+  if (share >= BLANK_SHARE) return previousShare < DARK_SCENE_SHARE ? 'blank' : 'normal'
+  if (share >= PARTLY_SHARE && share - previousShare >= PARTLY_JUMP) return 'partly'
   return 'normal'
 }
 

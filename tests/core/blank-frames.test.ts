@@ -30,6 +30,14 @@ describe('blank frame classifier', () => {
   it('a dark scene that stays dark is not a flash', () => {
     expect(classifyFrame(1, 1)).toBe('normal')
     expect(classifyFrame(0.6, 0.6)).toBe('normal')
+    expect(classifyFrame(0.55, 0.3)).toBe('normal')
+  })
+
+  it('a flash in a moderately dark scene is still seen', () => {
+    // Ordinary driving reads up to about 28% near-black; the first classifier went blind above 25%.
+    expect(classifyFrame(1, 0.28)).toBe('blank')
+    expect(classifyFrame(1, 0.6)).toBe('blank')
+    expect(classifyFrame(0.7, 0.28)).toBe('partly')
   })
 })
 
