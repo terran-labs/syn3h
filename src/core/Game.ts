@@ -1,5 +1,5 @@
 import { CoveredPipelines } from './coveredPipelines'
-import { CoveredClimbRun } from './coveredClimb'
+import { CoveredClimbRun, SLICED_CLIMB_TOP, slicedClimbTo } from './coveredClimb'
 import { longFrames } from './longFrames'
 import { installLongFrameRenderer } from './longFrameRenderer'
 /**
@@ -431,14 +431,24 @@ export class Game {
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
     if (!this.applyingQuality) {
-      // A pending climb is not applied on one covered frame: Game takes it as a job behind the
-      // "Applying" veil (takeCoveredClimb). The climb back in play to a level just dropped from
-      // (canClimbVisible) still happens inside frame(): its pipelines are alive.
-      this.quality.holdPendingClimb = true
+      // A pending climb to High or below is not applied on one covered frame: Game takes it as a job
+      // in slices (takeCoveredClimb). A climb to Ultra or Cinematic is applied on the covered frame
+      // by frame() and prepared in one draw just after, as in v26.11.2204 (see SLICED_CLIMB_TOP for
+      // why). The climb back in play to a level just dropped from (canClimbVisible) still happens
+      // inside frame(): its pipelines are alive.
+      const sliced = slicedClimbTo(this.quality.governor.pendingLevel)
+      const before = this.quality.governor.level
+      this.quality.holdPendingClimb = sliced
       this.quality.deferPixelRatio = true
       this.quality.frame(metrics, view === 'playing')
-      if (view !== 'playing' && !this.climbJob && this.quality.pendingClimbReady() && !this.holdDraws &&
-        !(this.renderer as unknown as GuardedRenderer)._isDeviceLost) this.climbJob = this.takeCoveredClimb()
+      const lost = (this.renderer as unknown as GuardedRenderer)._isDeviceLost
+      if (view !== 'playing' && sliced && !this.climbJob && this.quality.pendingClimbReady() && !this.holdDraws && !lost) this.climbJob = this.takeCoveredClimb()
+      else if (view !== 'playing' && !this.climbJob && this.quality.governor.level > before && this.quality.governor.level > SLICED_CLIMB_TOP && !this.holdDraws && !lost) {
+        // Ultra or Cinematic, just applied on this covered frame: its pipelines are built now, in
+        // this frame, with the render scale it brings (the frame's last draw).
+        this.quality.takePixelRatio(); this.viewFit?.fit()
+        this.prepareClimbedLevel({ systems: true, fleet: true }, draw => draw())
+      }
     }
     // Play asked for before the covered climb is done (Resume pressed early): the shell's veil
     // stands until it is, so the wait is a wait and never a frozen frame in play.
