@@ -334,6 +334,7 @@ async function main(): Promise<void> {
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name,
       room: shell.room || roomFromQuery(query),
+      voiceRequested: query.get('voice') === '1',
       setStatus: (lines) => { netStatus = lines; shell.setStatus(lines) },
       setMapEntities: (e) => shell.setMapEntities(e),
       setMatchState: (m) => shell.setMatchState(m),

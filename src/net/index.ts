@@ -144,6 +144,8 @@ export interface NetContext {
   name?: string
   /** Room name from the URL (?room=name). No parameter is the public room, internally 'lobby'. */
   room: string
+  /** Entry-link intent survives the lobby temporarily clearing the address bar. */
+  voiceRequested?: boolean
   /** Visible notice when a full room falls back to local play. */
   onJoinStatus?(message: string): void
   /** Vehicle kind chosen on the start screen. Falls back to `player.kind`, then 'buggy'. */
@@ -275,7 +277,7 @@ export class NetClient implements System {
   private async enterVoiceRoom(room: string, id: number) {
     const epoch = ++this.voiceRoom
     const audio = this.ctx.audio
-    if (new URLSearchParams(location.search).get('voice') !== '1' || !audio?.attachSpeech || !audio.unlock) return
+    if (!this.ctx.voiceRequested || !audio?.attachSpeech || !audio.unlock) return
     const { voiceEligible } = await import('../../shared/voice')
     if (!voiceEligible(room)) return
     const { VoiceControl } = await import('../voice/VoiceControl')
