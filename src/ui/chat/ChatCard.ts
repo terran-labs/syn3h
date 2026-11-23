@@ -123,7 +123,15 @@ export class ChatCard {
       e.stopPropagation()
       if (e.key === 'Escape') { e.preventDefault(); this.leave() }
     }, { signal })
-    this.log.addEventListener('scroll', () => { this.pinned = this.atBottom(); this.readIfSeen() }, { signal, passive: true })
+    // Pinned to the newest line until the player scrolls away from it themselves: a scroll the
+    // card's own resizing causes (the stack easing its height) must not unpin it.
+    let handled = 0
+    for (const type of ['wheel', 'touchmove', 'pointerdown', 'keydown'] as const) this.log.addEventListener(type, () => { handled = performance.now() }, { signal, passive: true })
+    this.log.addEventListener('scroll', () => {
+      if (this.atBottom()) this.pinned = true
+      else if (performance.now() - handled < 1000) this.pinned = false
+      this.readIfSeen()
+    }, { signal, passive: true })
     // The card grows and shrinks with the room the stack gives it (inspector/cardFit.ts): a log
     // that was showing its newest line keeps showing it.
     if (typeof ResizeObserver !== 'undefined') {
