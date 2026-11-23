@@ -96,6 +96,34 @@ describe('room voice', () => {
     expect(a.all('voice-ready').at(-1)).toEqual({ type: 'voice-ready', from: c.id, enabled: true })
   })
 
+  it('keeps readiness and signals inside each named room even when player ids match', () => {
+    const first = fixture('voice-first'), second = fixture('voice-second')
+    const a = first.join(), b = first.join()
+    const c = second.join(), d = second.join()
+    expect([a.id, b.id]).toEqual([c.id, d.id])
+
+    first.ready(a)
+    second.ready(d)
+    first.offer(a, d.id)
+    second.offer(d, a.id)
+    for (const peer of [a, b, c, d]) {
+      expect(peer.all('voice-ready')).toHaveLength(0)
+      expect(peer.all('voice-signal')).toHaveLength(0)
+    }
+
+    first.ready(b)
+    second.ready(c)
+    first.offer(a, b.id)
+    expect(b.all('voice-signal')).toEqual([{ type: 'voice-signal', from: a.id, signal: first.signal }])
+    for (const peer of [c, d]) expect(peer.all('voice-signal')).toHaveLength(0)
+
+    first.ready(a, false)
+    expect(d.all('voice-ready')).toEqual([{ type: 'voice-ready', from: c.id, enabled: true }])
+    second.offer(d, c.id)
+    expect(c.all('voice-signal')).toEqual([{ type: 'voice-signal', from: d.id, signal: second.signal }])
+    expect(a.all('voice-signal')).toHaveLength(0)
+  })
+
   it('drops malformed and oversized signals while accepting browser ICE fields', () => {
     const f = fixture()
     const a = f.join(), b = f.join()

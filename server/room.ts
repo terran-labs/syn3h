@@ -71,7 +71,8 @@ import {
 import {
   BOT_CHAT_BURST, BOT_CHAT_REFILL_S, CHAT_BURST, CHAT_REFILL_S, ChatBucket, HOST_ONLY_PARAMS, botChatter, chatOn, cleanChatText, filterChat,
 } from '../shared/chat'
-import { cleanVoiceSignal, voiceEligible, voiceOn } from '../shared/voice'
+import { voiceEligible, voiceOn } from '../shared/voice'
+import { RoomVoice } from './voice'
 
 /** One connection, as the room sees it. */
 export interface Peer {
@@ -190,10 +191,6 @@ const ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/
 
 const MAX_STATES_PER_SECOND = 70
 const MAX_JSON_PER_SECOND = 40
-// Allow trickled candidates to arrive in a burst, with a separate sustained voice limit.
-const VOICE_PARTICIPANTS = 2
-const VOICE_BURST = 32
-const VOICE_REFILL_S = 0.1
 /** A player whose state is older than this cannot ram or be rammed (the original's isResponding). */
 const RESPONDING_MS = 1500
 /** Seconds a `held` stuck report keeps a player off the hill if its `freed` never arrives. */
@@ -314,6 +311,7 @@ export class Room {
   /** Connected peers that have not said hello yet. */
   private readonly pending = new Set<Peer>()
   private readonly players = new Map<Peer, Player>()
+  private readonly voice: RoomVoice
   /** Vehicles the host simulates, by bot id. */
   private readonly bots = new Map<number, Player>()
   private readonly values = new Map<string, ParamWireValue>()
@@ -348,6 +346,7 @@ export class Room {
     this.name = name
     this.tag = roomTag(name)
     this.now = opts.now ?? Date.now
+    this.voice = new RoomVoice(this.players, () => voiceEligible(this.name) && this.paramBool(voiceOn.def), this.now)
     this.maxPlayers = opts.maxPlayers ?? MAX_ROOM_PLAYERS
     this.onPersist = opts.onPersist
     this.setDefaults()
@@ -436,7 +435,7 @@ export class Room {
     }
     // A saturated signaling or JSON budget must never delay withdrawing consent.
     if (msg.type === 'voice-ready' && msg.enabled === false) {
-      this.setVoiceReady(peer, player, false)
+      this.voice.disable(peer, player)
       return
     }
     if (!this.budget(player, 'json')) return
@@ -527,14 +526,10 @@ export class Room {
         break
       }
       case 'voice-ready':
-        if (msg.enabled === true && !player.voiceReady && this.voiceAllowed() && this.takeVoiceBudget(player)) {
-          const readyCount = [...this.players.values()].filter(member => member.voiceReady).length
-          if (readyCount < VOICE_PARTICIPANTS) this.setVoiceReady(peer, player, true)
-          else this.sendTo(peer, { type: 'voice-full' })
-        }
+        if (msg.enabled === true) this.voice.enable(peer, player)
         break
       case 'voice-signal':
-        this.relayVoice(player, msg.to, msg.signal)
+        this.voice.relay(player, msg.to, msg.signal)
         break
       case 'chat':
         this.onChat(peer, player, msg.text, msg.bot)
@@ -578,7 +573,7 @@ export class Room {
     this.pending.delete(peer)
     const player = this.players.get(peer)
     if (!player) return
-    this.setVoiceReady(peer, player, false)
+    this.voice.disable(peer, player)
     if (this.rejoinOn() && player.token && !player.heldUntil) {
       this.hold(peer, player)
       return
@@ -788,7 +783,6 @@ export class Room {
 
   /** Re-attach a peer that was already joined before the process hibernated. No broadcast. */
   adopt(peer: Peer, info: PlayerInfo, token?: string | null, voiceReady = false): void {
-    const optedIn = voiceReady && this.voiceAllowed()
     // After hibernation the room is restored from storage first, which holds a place for
     // everyone on its roster, and then the sockets that are still connected are adopted. A
     // connected player is not absent: it takes its held place, it is not added beside it.
@@ -797,7 +791,7 @@ export class Room {
       this.rekey(key, peer, held)
       held.heldUntil = 0
       held.lastHeardAt = this.now()
-      held.voiceReady = optedIn
+      this.voice.restoreReady(held, voiceReady)
       if (isToken(token)) held.token = token
       return
     }
@@ -808,7 +802,7 @@ export class Room {
     const player = this.newPlayer(full)
     // Not a new arrival: waking from hibernation must not make a parked room look active.
     player.joinedAt = 0
-    player.voiceReady = optedIn
+    this.voice.restoreReady(player, voiceReady)
     player.token = isToken(token) ? token : null
     this.players.set(peer, player)
     this.nextId = Math.max(this.nextId, info.id + 1)
@@ -838,7 +832,7 @@ export class Room {
     if (held) {
       const [key, player] = held
       this.pending.delete(peer)
-      this.setVoiceReady(key, player, false)
+      this.voice.disable(key, player)
       this.rekey(key, peer, player)
       // The replaced connection, if it was still open, is closed. Its close arrives with a
       // peer that no longer has a place, so it does nothing: no hold, no leave, no new host.
@@ -1161,39 +1155,6 @@ export class Room {
     return name
   }
 
-  private voiceAllowed(): boolean {
-    return voiceEligible(this.name) && this.paramBool(voiceOn.def)
-  }
-
-  private takeVoiceBudget(player: Player): boolean {
-    const now = this.now()
-    player.voiceBudget ??= new ChatBucket(VOICE_BURST, VOICE_REFILL_S, now)
-    return player.voiceBudget.take(now)
-  }
-
-  private setVoiceReady(peer: Peer, player: Player, enabled: boolean): void {
-    if (player.voiceReady === enabled) return
-    player.voiceReady = enabled
-    peer.setVoiceReady?.(enabled)
-    for (const [otherPeer, other] of this.players) {
-      if (other === player || !other.voiceReady) continue
-      this.sendTo(otherPeer, { type: 'voice-ready', from: player.info.id, enabled })
-      if (enabled) this.sendTo(peer, { type: 'voice-ready', from: other.info.id, enabled: true })
-    }
-  }
-
-  private relayVoice(player: Player, to: unknown, raw: unknown): void {
-    if (!player.voiceReady || !this.voiceAllowed() || !this.takeVoiceBudget(player) || !Number.isInteger(to)) return
-    for (const [peer, recipient] of this.players) {
-      if (recipient.info.id !== to || recipient === player || !recipient.voiceReady || recipient.heldUntil) continue
-      const signal = cleanVoiceSignal(raw)
-      if (!signal) return
-      const frame = JSON.stringify({ type: 'voice-signal', from: player.info.id, signal } satisfies ServerMessage)
-      if (frame.length <= MAX_JSON_BYTES) peer.send(frame)
-      return
-    }
-  }
-
   private onParam(player: Player, id: unknown, raw: unknown): void {
     if (typeof id !== 'string') return
     const hostOnly = id === voiceOn.def.id || HOST_ONLY_PARAMS.has(id)
@@ -1211,9 +1172,7 @@ export class Room {
     // Everyone, including the sender, gets the stored value: if the server clamped it, the
     // sender's slider snaps to what the room actually uses.
     this.broadcast({ type: 'param', id, value, from: player.info.id })
-    if (id === voiceOn.def.id && value === false) {
-      for (const [peer, member] of this.players) this.setVoiceReady(peer, member, false)
-    }
+    if (id === voiceOn.def.id && value === false) this.voice.disableAll()
     this.persist()
     if (id === raceAuto.def.id && value === false) this.cancelRace('Automatic races disabled')
     if (id === gameMode.def.id && value !== this.mode) {
