@@ -4,7 +4,11 @@
  * activeWordmark.ts). Not part of the game bundle. Everything is drawn from the candidates'
  * paths: no images, no fonts.
  */
-import { allCandidates, type Candidate, type MarkPath } from './candidates'
+import { allCandidates, type MarkPath } from './candidates'
+import { M_LIBRARY, ROUND2 } from './round2'
+
+interface Shown { id: number; name: string; note: string; word: MarkPath; mono: MarkPath; tag?: string }
+type Candidate = Shown
 
 const root = document.getElementById('sheet')!
 const query = new URLSearchParams(location.search)
@@ -66,14 +70,14 @@ async function pixels(svg: string, size: number, zoom: number): Promise<HTMLCanv
 function card(c: Candidate): HTMLElement {
   const el = document.createElement('section'); el.className = 'card'; el.id = `c${c.id}`
   const W = 1200, H = 520
-  el.innerHTML = `<h2><span class="n">${c.id}</span>${c.name}</h2><p>${c.note}</p>
+  el.innerHTML = `<h2><span class="n">${c.id}</span>${c.name}${c.tag ? `<span class="tag">${c.tag}</span>` : ''}</h2><p>${c.note}</p>
 <svg class="hero" viewBox="0 0 ${W} ${H}" role="img" aria-label="Candidate ${c.id}, ${c.name}, in the lobby's glow">${sky(W, H, c.id)}${mark(c.word, { x: W * 0.14, y: H * 0.14, w: W * 0.72, h: H * 0.4 }, 'glow', `g${c.id}`)}</svg>
 <div class="row">
   <figure><svg class="white" viewBox="0 0 600 300">${sky(600, 300, c.id + 50, false)}${mark(c.word, { x: 70, y: 80, w: 460, h: 140 }, 'white', `w${c.id}`)}</svg><figcaption>White on the galaxy</figcaption></figure>
   <figure class="icon">${appIcon(c, 180, `a${c.id}`).replace('<svg ', '<svg class="app" ')}<figcaption>App icon</figcaption></figure>
   <figure class="favs"><div class="actual"></div><div class="zoom"></div><figcaption>Favicon at 32 and 16 px, actual and enlarged</figcaption></figure>
 </div>
-<p class="links"><a href="/?mark=${c.id}">See it in the lobby</a><a href="/logo.html?mark=${c.id}">Plasma lab</a></p>`
+<p class="links"><a href="/?mark=${round === 1 ? 'r1-' : ''}${c.id}">See it in the lobby</a><a href="/logo.html?mark=${round === 1 ? 'r1-' : ''}${c.id}">Plasma lab</a></p>`
   const actual = el.querySelector('.actual')!, zoom = el.querySelector('.zoom')!
   for (const size of [32, 16]) {
     const svg = faviconSvg(c, size)
@@ -83,8 +87,16 @@ function card(c: Candidate): HTMLElement {
   return el
 }
 
-const list = allCandidates().filter(c => !only || only.includes(c.id))
+const round = query.get('round') === '1' ? 1 : 2
+const names = Object.fromEntries(M_LIBRARY.map(m => [m.key, m.name]))
+const list: (Shown & { problems?: string[] })[] = (round === 1 ? allCandidates() : ROUND2.map(c => ({ ...c, tag: `${c.family} · M-${c.m}${names[c.m] ? ' ' + names[c.m] : ' from 9'}` }))).filter(c => !only || only.includes(c.id))
+if (round === 2) {
+  // The M library first, so the owner can name an M and a layout separately.
+  const lib = document.createElement('section'); lib.className = 'card library'
+  lib.innerHTML = `<h2>The M’s</h2><p>Seven M’s, each tried in one or more layouts below. The tag on each candidate names its M. “From 9” is candidate 9’s own m from round 1.</p><div class="ms">${M_LIBRARY.map(m => `<figure><svg viewBox="0 0 ${m.path.width + 40} ${m.path.height + 40}"><path transform="translate(20 20)" fill="#fff" fill-rule="evenodd" d="${m.path.d}"/></svg><figcaption><b>M-${m.key} ${m.name}</b><br>${m.note}</figcaption></figure>`).join('')}</div>`
+  root.append(lib)
+}
 for (const c of list) root.append(card(c))
-const bad = list.filter(c => c.problems.length)
-if (bad.length) console.warn('Contours cross:', bad.map(c => `${c.id}: ${c.problems.join(' ')}`))
+const bad = list.filter(c => c.problems?.length)
+if (bad.length) console.warn('Contours cross:', bad.map(c => `${c.id}: ${c.problems!.join(' ')}`))
 document.body.dataset.ready = '1'
