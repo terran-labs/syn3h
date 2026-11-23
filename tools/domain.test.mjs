@@ -28,11 +28,16 @@ try { fs.readFileSync(0) } catch {}
 const method = args.includes('-X') ? args[args.indexOf('-X') + 1] : 'GET'
 const url = new URL(args.find(a => a.startsWith('https://')))
 if (url.host !== 'api.cloudflare.com') {
-  // A check of a public address: www.mira.cc redirects once its rule exists; nothing else answers.
+  // A public address. www.mira.cc redirects once its rule exists; other hosts answer as
+  // state.public says: { status, location, ws } (ws: the /ws upgrade answers 101).
   const rule = Object.values(s.rulesets).some(rs => rs.rules.some(r => r.description === 'www.mira.cc to mira.cc'))
-  if (url.host === 'www.mira.cc' && rule) { process.stdout.write('302 https://mira.cc' + url.pathname + url.search); process.exit(0) }
-  process.stdout.write('000 '); process.exit(7)
+  const pub = url.host === 'www.mira.cc' && rule ? { status: 302, location: 'https://mira.cc' + url.pathname + url.search } : s.public[url.host]
+  if (args.includes('Upgrade: websocket')) { process.stdout.write(pub?.ws ? '101' : '000'); process.exit(pub?.ws ? 28 : 7) }
+  if (!pub) { process.stdout.write('000 '); process.exit(6) }
+  process.stdout.write(pub.status + ' ' + (pub.location ?? '')); process.exit(0)
 }
+// A transient failure of the route to the API: no answer at all.
+if ((s.failApi ?? []).some(prefix => url.pathname.replace('/client/v4', '').startsWith(prefix))) process.exit(7)
 const body = args.includes('--data') ? JSON.parse(args[args.indexOf('--data') + 1]) : undefined
 const path = url.pathname.replace('/client/v4', '')
 s.log.push([method, path + url.search, body ?? null])
@@ -61,30 +66,31 @@ fs.writeFileSync(file, JSON.stringify(s))
 process.stdout.write(JSON.stringify(out))
 `
 
-function world(fn, { dropOnAttach = null } = {}) {
+function world(fn, { dropOnAttach = null, extraDomains = [], publicHosts = {}, failApi = [] } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'syn3h-domain-test-'))
   try {
     const store = join(dir, 'store'), bin = join(dir, 'bin'), state = join(dir, 'state.json')
     mkdirSync(store); mkdirSync(bin)
     const rec = (id, type, name, content, zone = 'zone-mira', zone_name = 'mira.cc') => ({ id, zone_id: zone, zone_name, type, name, content, proxied: true, ttl: 1 })
     writeFileSync(state, JSON.stringify({
-      log: [], rulesets: {}, dropOnAttach,
+      log: [], rulesets: {}, dropOnAttach, public: publicHosts, failApi,
       zones: [{ id: 'zone-mira', name: 'mira.cc' }, { id: 'zone-syn', name: 'syn3h.com' }],
       // The registrar's imported parking records, as the Orchestrator found them, plus mail.
       records: [rec('r-apex', 'A', 'mira.cc', '192.64.119.207'), rec('r-www', 'A', 'www.mira.cc', '192.64.119.207'),
         rec('r-star', 'A', '*.mira.cc', '192.64.119.207'), { ...rec('r-mx', 'MX', 'mira.cc', 'mail.example'), proxied: false },
         rec('r-syn-www', 'A', 'www.syn3h.com', '104.21.92.125', 'zone-syn', 'syn3h.com')],
-      domains: [{ id: 'dom-live', hostname: 'www.syn3h.com', service: 'syn3h', zone_id: 'zone-syn' }],
+      domains: [{ id: 'dom-live', hostname: 'www.syn3h.com', service: 'syn3h', zone_id: 'zone-syn' }, ...extraDomains],
     }))
     writeFileSync(join(bin, 'curl'), FAKE_CURL, { mode: 0o755 })
-    const run = (args, { token = true } = {}) => spawnSync('/bin/sh', [script, ...args], {
+    const run = (args, { token = true, env = {} } = {}) => spawnSync('/bin/sh', [script, ...args], {
       encoding: 'utf8',
       env: { PATH: `${bin}:${process.env.PATH}`, HOME: dir, FAKE_CF_STATE: state, SYN3H_DOMAIN_STORE: store,
-        SYN3H_CLOUDFLARE_TOKEN_FILE: join(dir, 'no-token-file'), ...(token ? { CLOUDFLARE_API_TOKEN: TOKEN } : {}) },
+        SYN3H_CLOUDFLARE_TOKEN_FILE: join(dir, 'no-token-file'), ...(token ? { CLOUDFLARE_API_TOKEN: TOKEN } : {}), ...env },
     })
     const read = () => JSON.parse(readFileSync(state, 'utf8'))
     const exportDir = (zone) => { const d = readdirSync(join(store, 'dns')).filter(n => n.endsWith('-' + zone)).sort().at(-1); return d && join(store, 'dns', d) }
-    fn({ run, read, exportDir, changes: () => read().log.filter(([method]) => method !== 'GET') })
+    const setState = (patch) => writeFileSync(state, JSON.stringify({ ...read(), ...patch }))
+    fn({ run, read, setState, exportDir, changes: () => read().log.filter(([method]) => method !== 'GET') })
   } finally { rmSync(dir, { recursive: true, force: true }) }
 }
 const ok = (r) => assert.equal(r.status, 0, r.stdout + r.stderr)
@@ -186,3 +192,49 @@ test('a dry run without a token prints every change and makes no call', () => wo
   assert.equal(read().log.length, calls, 'a dry run without a token called the API')
   assert.ok(!existsSync(join(exportDir('mira.cc'), 'attached-mira.cc.json')))
 }))
+
+// After the switch (docs/MIRA-CUTOVER.md, step 7): www.syn3h.com redirects to mira.cc and stays
+// attached only for its socket; mira.cc serves the game.
+const switched = {
+  extraDomains: [{ id: 'dom-mira', hostname: 'mira.cc', service: 'syn3h', zone_id: 'zone-mira' }],
+  publicHosts: {
+    'www.syn3h.com': { status: 302, location: 'https://mira.cc/', ws: true },
+    'mira.cc': { status: 200, ws: true },
+  },
+}
+
+test('after the switch, check www.syn3h.com reports the redirect and the socket instead of failing', () => world(({ run }) => {
+  ok(run(['export', '--zone', 'syn3h.com']))
+  const out = run(['check', 'www.syn3h.com'], { env: { SYN3H_SHORT_CHECK: '1' } })
+  ok(out)
+  assert.match(out.stdout, /Redirect ok, certificate verified: https:\/\/www\.syn3h\.com\/ -> https:\/\/mira\.cc\//)
+  assert.match(out.stdout, /WSS ok: upgrade to \/ws on www\.syn3h\.com/)
+  assert.match(out.stdout, /Still attached: mira\.cc www\.syn3h\.com/)
+  assert.match(out.stdout, /Still serving: https:\/\/mira\.cc\//)
+  assert.match(out.stdout, /CHECK OK: www\.syn3h\.com redirects to mira\.cc and keeps its socket/)
+}, switched))
+
+test('a previously attached host may redirect to mira.cc only if its socket still upgrades', () => world(({ run, setState }) => {
+  ok(run(['export', '--zone', 'mira.cc']))
+  setState({ public: { 'www.syn3h.com': { status: 302, location: 'https://mira.cc/', ws: false }, 'mira.cc': { status: 302, location: 'https://mira.cc/', ws: true } } })
+  fails(run(['check', 'mira.cc']), /https:\/\/www\.syn3h\.com\/ redirects to mira\.cc but wss:\/\/www\.syn3h\.com\/ws did not upgrade/)
+  setState({ public: { 'www.syn3h.com': { status: 301, location: 'https://elsewhere.example/', ws: true }, 'mira.cc': { status: 302, location: 'https://mira.cc/', ws: true } } })
+  fails(run(['check', 'mira.cc']), /https:\/\/www\.syn3h\.com\/, attached before, answered "301 https:\/\/elsewhere\.example\/"/)
+  setState({ public: { 'www.syn3h.com': { status: 302, location: 'https://mira.cc/', ws: true }, 'mira.cc': { status: 302, location: 'https://mira.cc/', ws: true } } })
+  assert.match(run(['check', 'mira.cc']).stdout, /Still attached for its socket: https:\/\/www\.syn3h\.com\/ redirects to mira\.cc, wss:\/\/www\.syn3h\.com\/ws upgrades/)
+}, switched))
+
+test("release.sh's short check survives a failed API read, but never a host missing from a list it read", () => world(({ run, setState }) => {
+  ok(run(['export', '--zone', 'syn3h.com']))
+  setState({ failApi: ['/zones', '/accounts'] })
+  const short = run(['check', 'www.syn3h.com'], { env: { SYN3H_SHORT_CHECK: '1' } })
+  ok(short)
+  assert.match(short.stderr, /WARNING: could not read the account from the API; attachment of mira\.cc www\.syn3h\.com not verified/)
+  fails(run(['check', 'www.syn3h.com']), /could not read the account from the API/)
+  setState({ failApi: ['/accounts'] })
+  const listFails = run(['check', 'www.syn3h.com'], { env: { SYN3H_SHORT_CHECK: '1' } })
+  ok(listFails)
+  assert.match(listFails.stderr, /WARNING: could not read the Worker's domains from the API/)
+  setState({ failApi: [], domains: [{ id: 'dom-live', hostname: 'www.syn3h.com', service: 'syn3h', zone_id: 'zone-syn' }] })
+  fails(run(['check', 'www.syn3h.com'], { env: { SYN3H_SHORT_CHECK: '1' } }), /LOST: mira\.cc is no longer attached/)
+}, switched))

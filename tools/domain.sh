@@ -71,6 +71,16 @@ change() {
 }
 # Reads need the token; a dry run without one reads the export instead.
 live() { [ -z "$DRY" ] || cf_has_token; }
+# answer <host>: "<status> <redirect address>" for https://<host>/, or failure (certificate or
+# connection).
+answer() { curl -sS -o /dev/null --max-time 20 -w '%{http_code} %{redirect_url}' "https://$1/" 2>/dev/null; }
+# ws_upgrade <host>: the room server accepts a WebSocket at /ws (101). curl then waits for frames
+# until --max-time, so its exit status is ignored and only the status line counts.
+ws_upgrade() {
+  code="$(curl -s -o /dev/null --http1.1 --max-time 5 -w '%{http_code}' -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+    -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "https://$1/ws?room=cutover-check" 2>/dev/null || true)"
+  [ "$code" = 101 ]
+}
 web_records() { jq -c --arg h "$1" '[.result[] | select(.name == $h and (.type == "A" or .type == "AAAA" or .type == "CNAME"))]' "$2"; }
 record_body() { jq -c '{type, name, content, proxied, ttl, comment}'; }
 
@@ -120,14 +130,18 @@ given_export() {
   z="$(jq -r '.result[0].zone_name // empty' "$EXPORT/records.json")"
   [ -z "$z" ] || [ "$z" = "$ZONE_NAME" ] || die "$EXPORT holds $z, not $ZONE_NAME"
 }
+# Each read fails (status 1) when the API call fails, never by answering with nothing.
 zone_id() {
-  if live; then cf GET "/zones?name=$ZONE_NAME" | jq -r '.result[0].id'
+  if live; then j="$(cf GET "/zones?name=$ZONE_NAME")" || return 1; printf '%s' "$j" | jq -er '.result[0].id'
   else jq -r '.result[0].zone_id // "{zone_id}"' "$EXPORT/records.json" 2>/dev/null || echo '{zone_id}'; fi
 }
-account_id() { if live; then cf GET "/zones?name=$ZONE_NAME" | jq -r '.result[0].account.id'; else echo '{account_id}'; fi; }
+account_id() {
+  if live; then j="$(cf GET "/zones?name=$ZONE_NAME")" || return 1; printf '%s' "$j" | jq -er '.result[0].account.id'
+  else echo '{account_id}'; fi
+}
 # Hostnames attached to the Worker: live, or as exported.
 attached() {
-  if live; then cf GET "/accounts/$A/workers/domains?service=$WORKER" | jq -r '.result[].hostname' | sort
+  if live; then j="$(cf GET "/accounts/$A/workers/domains?service=$WORKER")" || return 1; printf '%s' "$j" | jq -r '.result[].hostname' | sort
   else jq -r --arg s "$WORKER" '.result[] | select(.service == $s) | .hostname' "$EXPORT/worker-domains.json" | sort; fi
 }
 exported_attached() { jq -r --arg s "$WORKER" '.result[] | select(.service == $s) | .hostname' "$1/worker-domains.json" | sort; }
@@ -135,9 +149,15 @@ exported_attached() { jq -r --arg s "$WORKER" '.result[] | select(.service == $s
 current_records() {
   if live; then cf GET "/zones/$Z/dns_records?per_page=5000" > "$1"; else cp "$EXPORT/records.json" "$1"; fi
 }
-# Fail loudly if any host in $1 (a newline list) is no longer attached.
+# Fail loudly if any host in $1 (a list) is no longer attached. With a second argument, a failed
+# read of the list only warns: release.sh's short check must not fail a release on a transient API
+# error. A list that was read and lacks a host is always fatal.
 still_attached() {
-  now="$(attached)"
+  if ! now="$(attached)"; then
+    [ -n "${2:-}" ] || die "could not read the Worker's domains from the API"
+    echo "WARNING: could not read the Worker's domains from the API; attachment of $(printf '%s ' $1)not verified" >&2
+    return 0
+  fi
   for h in $1; do
     printf '%s\n' "$now" | grep -qx "$h" || die "LOST: $h is no longer attached to $WORKER. Re-attach it now: tools/domain.sh attach $h --owner-approved"
   done
@@ -157,8 +177,8 @@ restore_records() { # <export> <name>...
 case "$cmd" in
 export)
   if [ -n "$DRY" ]; then echo "DRY RUN: export only reads; it would save $ZONE_NAME's records, rules and the Worker's domains under $STORE/dns/<time>-$ZONE_NAME"; exit 0; fi
-  Z="$(zone_id)"; [ -n "$Z" ] && [ "$Z" != null ] || die "zone $ZONE_NAME not visible to this token"
-  A="$(account_id)"
+  Z="$(zone_id)" && [ "$Z" != null ] || die "zone $ZONE_NAME not visible to this token"
+  A="$(account_id)" || die "could not read the account from the API"
   DIR="$STORE/dns/$(date +%Y%m%d-%H%M%S)-$ZONE_NAME"
   mkdir -p "$DIR"
   cf GET "/zones/$Z/dns_records?per_page=5000" > "$DIR/records.json"
@@ -180,9 +200,9 @@ attach)
   [ "$H" != "$REDIRECT_ONLY" ] || die "refusing $H: it must only redirect to $CANONICAL (tools/domain.sh redirect-www), never serve the game"
   [ -n "$APPROVED" ] || die "attaching a domain needs the owner's explicit word; then pass --owner-approved"
   fresh_export
-  Z="$(zone_id)"; A="$(account_id)"
+  Z="$(zone_id)" || die "could not read zone $ZONE_NAME from the API"; A="$(account_id)" || die "could not read the account from the API"
   echo "Zone $ZONE_NAME ($Z), export $EXPORT"
-  BEFORE="$(attached)"
+  BEFORE="$(attached)" || die "could not read the Worker's domains from the API"
   echo "Attached before: $(printf '%s ' $BEFORE)"
   if printf '%s\n' "$BEFORE" | grep -qx "$H"; then echo "$H is already attached; nothing to do."; exit 0; fi
   # Only records that were exported may be removed, and only if they are still as exported.
@@ -211,6 +231,7 @@ attach)
 
 check)
   H="${1:-}"; need_host_in_zone "$H"
+  SHORT="${SYN3H_SHORT_CHECK:-}"
   if [ "$H" = "$REDIRECT_ONLY" ]; then
     PROBE="/?room=redirect-check&v=26.11.1503"
     got="$(curl -sS -o /dev/null --max-time 20 -w '%{http_code} %{redirect_url}' "https://$H$PROBE")" || die "https://$H/ failed (certificate or connection)"
@@ -218,32 +239,41 @@ check)
     echo "Redirect ok, certificate verified: https://$H$PROBE -> $got"
     exit 0
   fi
-  # curl verifies the certificate: a bad one fails the request rather than answering.
+  # A host serves the game (200), or, once its zone sends players to mira.cc (docs/MIRA-CUTOVER.md),
+  # redirects there and stays attached only for its socket. curl verifies the certificate: a bad
+  # one fails the request rather than answering.
   i=0
-  until code="$(curl -s -o /dev/null -w '%{http_code}' "https://$H/")" && [ "$code" = 200 ]; do
-    i=$((i + 1)); [ "$i" -le 60 ] || die "https://$H/ answered $code"; sleep 5
+  until got="$(answer "$H")" && case "$got" in "200 "*|30[12]" https://$CANONICAL/"*) true ;; *) false ;; esac; do
+    i=$((i + 1)); [ "$i" -le 60 ] || die "https://$H/ answered \"$got\""; sleep 5
   done
-  echo "HTTPS ok, certificate verified: https://$H/"
-  node -e '
-    const WebSocket = require(process.argv[2] + "/node_modules/ws")
-    const ws = new WebSocket("wss://" + process.argv[1] + "/ws?room=cutover-check")
-    const t = setTimeout(() => { console.error("WSS: no upgrade in 10 s"); process.exit(1) }, 10000)
-    ws.on("open", () => { clearTimeout(t); console.log("WSS ok: upgrade to /ws"); ws.close(); process.exit(0) })
-    ws.on("error", (e) => { console.error("WSS failed: " + e.message); process.exit(1) })
-  ' "$H" "$REPO"
-  # Every host attached in the newest export of either zone must still be attached and serving.
+  case "$got" in
+    "200 "*) echo "HTTPS ok, certificate verified: https://$H/" ;;
+    *) echo "Redirect ok, certificate verified: https://$H/ -> ${got#* }" ;;
+  esac
+  ws_upgrade "$H" || die "wss://$H/ws did not upgrade"
+  echo "WSS ok: upgrade to /ws on $H"
+  # Every host attached in the newest export of either zone must still be attached, and must
+  # serve the game or redirect to mira.cc with its socket still answering.
   PREV=""
   for z in $ZONES; do e="$(ls -d "$STORE"/dns/*-"$z" 2>/dev/null | tail -1)"; [ -z "$e" ] || [ ! -f "$e/worker-domains.json" ] || PREV="$PREV $(exported_attached "$e" | tr '\n' ' ')"; done
   PREV="$(printf '%s\n' $PREV | sort -u)"
   if [ -n "$PREV" ]; then
-    if cf_has_token; then A="$(account_id)"; still_attached "$PREV"; else echo "(no token: attachment of $(printf '%s ' $PREV)not verified, only that they serve)"; fi
+    if ! cf_has_token; then echo "(no token: attachment of $(printf '%s ' $PREV)not verified, only that they answer)"
+    elif A="$(account_id)"; then still_attached "$PREV" ${SHORT:+lenient}
+    elif [ -n "$SHORT" ]; then echo "WARNING: could not read the account from the API; attachment of $(printf '%s ' $PREV)not verified" >&2
+    else die "could not read the account from the API"; fi
     for p in $PREV; do
       [ "$p" = "$H" ] && continue
-      c="$(curl -s -o /dev/null --max-time 20 -w '%{http_code}' "https://$p/")" || true
-      [ "$c" = 200 ] || die "https://$p/, attached before, answered $c"
-      echo "Still serving: https://$p/"
+      c="$(answer "$p")" || true
+      case "$c" in
+        "200 "*) echo "Still serving: https://$p/" ;;
+        30[12]" https://$CANONICAL/"*) ws_upgrade "$p" || die "https://$p/ redirects to $CANONICAL but wss://$p/ws did not upgrade: pages left open there would lose their room"
+          echo "Still attached for its socket: https://$p/ redirects to $CANONICAL, wss://$p/ws upgrades" ;;
+        *) die "https://$p/, attached before, answered \"$c\"" ;;
+      esac
     done
   fi
+  case "$got" in "200 "*) ;; *) echo "CHECK OK: $H redirects to $CANONICAL and keeps its socket; no game to smoke-test there."; exit 0 ;; esac
   if [ -n "${SYN3H_SHORT_CHECK:-}" ]; then
     # After a release's production deploy: the short public check (tools/public-check.mjs).
     run_public_check "https://$H/" /tmp/syn3h-domain-check.log || die "public check failed on $H"
@@ -262,7 +292,7 @@ rollback)
   for h in "$@"; do
     printf '%s\n' "$KEEP" | grep -qx "$h" && die "refusing to detach $h: it was attached before $EXPORT; rollback only undoes attach"
   done
-  Z="$(zone_id)"; A="$(account_id)"
+  Z="$(zone_id)" || die "could not read zone $ZONE_NAME from the API"; A="$(account_id)" || die "could not read the account from the API"
   for h in "$@"; do
     if live; then IDS="$(cf GET "/accounts/$A/workers/domains?hostname=$h" | jq -r --arg s "$WORKER" '.result[] | select(.service == $s) | .id')"
     else IDS="$(jq -r '.result.id // empty' "$EXPORT/attached-$h.json" 2>/dev/null || true)"; IDS="${IDS:-{domain_id}}"; fi
@@ -280,7 +310,7 @@ redirect-www)
   mira_only
   [ -n "$APPROVED" ] || die "redirect-www changes the mira.cc zone; pass --owner-approved"
   fresh_export
-  Z="$(zone_id)"
+  Z="$(zone_id)" || die "could not read zone $ZONE_NAME from the API"
   NOW_FILE="$(mktemp)"; current_records "$NOW_FILE"
   WWW="$(web_records "$REDIRECT_ONLY" "$NOW_FILE")"; rm -f "$NOW_FILE"
   STATE="$EXPORT/redirect-www.json"; [ -f "$STATE" ] || echo '{}' > "$STATE"
@@ -329,7 +359,7 @@ redirect-www-rollback)
   mira_only
   given_export "${1:-}"
   STATE="$EXPORT/redirect-www.json"
-  Z="$(zone_id)"
+  Z="$(zone_id)" || die "could not read zone $ZONE_NAME from the API"
   RID="$(jq -r '.ruleset_id // empty' "$STATE" 2>/dev/null || true)"; RULE_ID="$(jq -r '.rule_id // empty' "$STATE" 2>/dev/null || true)"
   REC_ID="$(jq -r '.record_id // empty' "$STATE" 2>/dev/null || true)"
   [ -n "$RID$REC_ID" ] || [ -n "$DRY" ] || die "$STATE records nothing that redirect-www created"
@@ -342,7 +372,7 @@ redirect-www-rollback)
 clean-parking)
   mira_only
   fresh_export
-  Z="$(zone_id)"
+  Z="$(zone_id)" || die "could not read zone $ZONE_NAME from the API"
   TARGETS="$(jq -c --arg p "$PLACEHOLDER" '[.result[] | select((.name == "*.mira.cc" or .name == "www.mira.cc") and (.type == "A" or .type == "AAAA" or .type == "CNAME") and .content != $p)]' "$EXPORT/records.json")"
   [ "$(printf '%s' "$TARGETS" | jq 'length')" -gt 0 ] || { echo "No parking records at *.mira.cc or www.mira.cc in $EXPORT."; exit 0; }
   echo "Parking records to delete (saved in $EXPORT/records.json):"
@@ -361,7 +391,7 @@ restore)
   given_export "${1:-}"; shift
   [ $# -gt 0 ] || die "name at least one record name"
   for n in "$@"; do case "$n" in "$ZONE_NAME"|*".$ZONE_NAME") ;; *) die "refusing $n: not in $ZONE_NAME" ;; esac; done
-  Z="$(zone_id)"
+  Z="$(zone_id)" || die "could not read zone $ZONE_NAME from the API"
   restore_records "$EXPORT" "$@"
   ;;
 

@@ -33,6 +33,28 @@ production back. Now:
 
 Tests: `tools/domain.test.mjs`, against a stand-in API.
 
+## Where to run it
+
+From the main checkout (`/Users/vtn/dev/Syn3h`), or set `SYN3H_DOMAIN_STORE`. The exports live in
+`../Syn3h-stable/dns/`, computed from the repository's parent: from a worktree under
+`Syn3h-wt` that would be `Syn3h-wt/Syn3h-stable`, the wrong directory.
+
+## What check accepts
+
+- The host itself must serve the game (200 with a valid certificate), or, once its zone sends
+  players to mira.cc, answer 301 or 302 to `https://mira.cc/...`. Either way `wss://<host>/ws` must
+  upgrade. So after the old-address rule is live (`docs/MIRA-CUTOVER.md`, step 7),
+  `check www.syn3h.com` reports the redirect and the socket and stops there, instead of waiting
+  five minutes for a 200 that will not come.
+- Every host attached in the newest export of either zone must still be attached, and must
+  serve the game or redirect to mira.cc with its socket still upgrading: www.syn3h.com stays
+  attached after the switch only so that pages left open there keep their room.
+- `tools/release.sh` runs `SYN3H_SHORT_CHECK=1 tools/domain.sh check ...` after every production
+  deploy. There, a failed API read (the route to Cloudflare's API has failed transiently before)
+  only warns. A list that was read and lacks a host fails the check, as every API failure does
+  outside the short check.
+- The socket is checked with curl: a 101 answer to an upgrade request at `/ws`.
+
 ## mira.cc, step by step
 
 Run each changing step with `--dry-run` first and read what it prints.
