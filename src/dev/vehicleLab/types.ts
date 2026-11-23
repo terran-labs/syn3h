@@ -43,7 +43,7 @@ export interface LabExhibit {
   build(design: LabDesignInfo, ctx: LabContext): Promise<LabModel>
   /** Word for a group in buttons, for example 'Round'. Defaults to 'Group'. */
   groupLabel?: string
-  /** Heading for a group, for example 'Syn3h buggy: round 2, built on Wide body'. Defaults to title. */
+  /** Heading for a group, for example 'Mira buggy: round 2, built on Wide body'. Defaults to title. */
   heading?(group: string | undefined): string
   /** Design shown when the page opens, by id, or 'all' to open side by side. Defaults to the first design of the group. */
   defaultDesign?(group: string | undefined): string | undefined

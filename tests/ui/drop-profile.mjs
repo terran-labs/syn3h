@@ -4,29 +4,30 @@
  * inclusive time, the long tasks and the drop's phases, and saves the profile for DevTools.
  * Unlike frame gaps, this stays meaningful on a loaded machine (see frame-pacing-control.mjs).
  *
- *   SYN3H_URL=http://127.0.0.1:5193/ LEVEL=1 /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/drop-profile.mjs
+ *   MIRA_URL=http://127.0.0.1:5193/ LEVEL=1 /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/drop-profile.mjs
  *
  * PATCH=1 caches the logo renderer's saved GL state, the experiment that showed its
  * per-draw gl.getParameter calls were the stall.
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
-const level = Number(process.env.LEVEL ?? 1), base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5193/', out = 'tests/ui/artifacts/drop-profile'
+const level = Number(process.env.LEVEL ?? 1), base = process.env.MIRA_URL ?? 'http://127.0.0.1:5193/', out = 'tests/ui/artifacts/drop-profile'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
 await page.goto(`${base}?room=prof-${Date.now()}`, { waitUntil: 'load' })
-await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
-await page.evaluate(l => { window.__pin = setInterval(() => { if (window.syn3h.params.get('gfx.level')?.value !== l) window.syn3h.params.set('gfx.level', l) }, 400); window.syn3h.params.set('gfx.level', l) }, level)
-await page.waitForFunction(() => window.syn3h.shell.graphics.planetMaps >= window.syn3h.planets.PLANETS.length, null, { timeout: 60000 })
+await page.waitForFunction(() => window.mira?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+await page.evaluate(l => { window.__pin = setInterval(() => { if (window.mira.params.get('gfx.level')?.value !== l) window.mira.params.set('gfx.level', l) }, 400); window.mira.params.set('gfx.level', l) }, level)
+await page.waitForFunction(() => window.mira.shell.graphics.planetMaps >= window.mira.planets.PLANETS.length, null, { timeout: 60000 })
 await page.waitForTimeout(2500)
-if (process.env.PATCH) console.log('patched:', await page.evaluate(() => { const logo = window.syn3h.shell.galaxy.logo; if (!logo?.save) return 'no logo.save'; const first = logo.save(); logo.save = () => first; return 'logo.save cached' }))
+if (process.env.PATCH) console.log('patched:', await page.evaluate(() => { const logo = window.mira.shell.galaxy.logo; if (!logo?.save) return 'no logo.save'; const first = logo.save(); logo.save = () => first; return 'logo.save cached' }))
 const cdp = await page.context().newCDPSession(page)
 await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 500 }); await cdp.send('Profiler.start')
-await page.evaluate(() => { window.__long = []; new PerformanceObserver(list => { for (const e of list.getEntries()) window.__long.push([e.startTime, e.duration]) }).observe({ entryTypes: ['longtask'] }); window.__marks = []; const shell = document.querySelector('.syn3h-shell'), overlay = document.querySelector('.shell-overlay'); let was = ''; const tick = () => { const g = window.syn3h.shell.galaxy; const d = shell.classList.contains('is-descending'); const p = !d ? (shell.classList.contains('is-playing') ? 'ground' : 'before') : overlay.style.opacity === '0' ? 'air' : g?.flightDone ? 'light' : 'flight'; if (p !== was) { window.__marks.push([p, performance.now()]); was = p } if (!window.__done) requestAnimationFrame(tick) }; tick() })
-const where = await page.evaluate(() => window.syn3h.shell.galaxy.screen.find(s => s.id === 'alpine'))
+await page.evaluate(() => { window.__long = []; new PerformanceObserver(list => { for (const e of list.getEntries()) window.__long.push([e.startTime, e.duration]) }).observe({ entryTypes: ['longtask'] }); window.__marks = []; const shell = document.querySelector('.mira-shell'), overlay = document.querySelector('.shell-overlay'); let was = ''; const tick = () => { const g = window.mira.shell.galaxy; const d = shell.classList.contains('is-descending'); const p = !d ? (shell.classList.contains('is-playing') ? 'ground' : 'before') : overlay.style.opacity === '0' ? 'air' : g?.flightDone ? 'light' : 'flight'; if (p !== was) { window.__marks.push([p, performance.now()]); was = p } if (!window.__done) requestAnimationFrame(tick) }; tick() })
+const where = await page.evaluate(() => window.mira.shell.galaxy.screen.find(s => s.id === 'alpine'))
 await page.mouse.click(where.x, where.y)
-await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 40000 })
+await page.waitForFunction(() => { const s = document.querySelector('.mira-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 40000 })
 await page.waitForTimeout(1000)
 const { profile } = await cdp.send('Profiler.stop')
 const info = await page.evaluate(() => { window.__done = true; return { long: window.__long, marks: window.__marks, origin: performance.timeOrigin } })

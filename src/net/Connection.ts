@@ -52,7 +52,7 @@ export class Connection {
 
   close(): void {
     // Closing our own socket is rare and deliberate; say where from, for the drop diagnostics.
-    if (this.ws) console.info('Syn3h: closing the room connection', new Error().stack?.split('\n').slice(2, 5).join(' | '))
+    if (this.ws) console.info('Mira: closing the room connection', new Error().stack?.split('\n').slice(2, 5).join(' | '))
     this.stopped = true
     this.clearTimer()
     const ws = this.ws
@@ -89,7 +89,7 @@ export class Connection {
     const previous = this.ws
     this.ws = null
     if (previous) {
-      console.info('Syn3h: replacing the room connection', new Error().stack?.split('\n').slice(2, 5).join(' | '))
+      console.info('Mira: replacing the room connection', new Error().stack?.split('\n').slice(2, 5).join(' | '))
       try { previous.close() } catch { /* already closing */ }
     }
     this.state = 'connecting'

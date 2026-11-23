@@ -21,11 +21,11 @@ page.on('pageerror', (e) => errors.push(e.message))
 for (const world of worlds) {
   const name = world.split('.')[0]
   await page.goto(`${base}?autoplay=1&world=${world}&room=cover${Date.now().toString(36)}`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 90, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 90, null, { timeout: 90000 })
   await page.keyboard.press('KeyH').catch(() => {})
   // Park 45 m to the side of pad 2, off the road, facing the centre.
   await page.evaluate(([PAD, SIDE]) => {
-    const s = window.syn3h, t = s.terrain, pad = t.data.layout.spawns[PAD]
+    const s = window.mira, t = s.terrain, pad = t.data.layout.spawns[PAD]
     const x = pad.x - pad.dirZ * SIDE, z = pad.z + pad.dirX * SIDE
     const heading = Math.atan2(x, z)
     s.player.body.setTranslation({ x, y: t.heightAt(x, z) + 1.2, z }, true)
@@ -43,14 +43,14 @@ for (const world of worlds) {
   })
   await page.waitForTimeout(3500)
   await page.screenshot({ path: `${out}/${name}-day.png` })
-  await page.evaluate(() => window.syn3h.params.set('sun.timeOfDay', 22.5))
+  await page.evaluate(() => window.mira.params.set('sun.timeOfDay', 22.5))
   await page.waitForTimeout(3500)
   await page.screenshot({ path: `${out}/${name}-night.png` })
   // A close look by day, with the camera pulled in low behind the vehicle.
-  await page.evaluate(() => { window.syn3h.params.set('sun.timeOfDay', 15); window.syn3h.params.set('camera.distance', 2.2) })
+  await page.evaluate(() => { window.mira.params.set('sun.timeOfDay', 15); window.mira.params.set('camera.distance', 2.2) })
   await page.waitForTimeout(3000)
   await page.screenshot({ path: `${out}/${name}-close.png` })
-  await page.evaluate(() => window.syn3h.params.set('camera.distance', 6.25))
+  await page.evaluate(() => window.mira.params.set('camera.distance', 6.25))
 }
 await browser.close()
 console.log(JSON.stringify({ out, errors }))

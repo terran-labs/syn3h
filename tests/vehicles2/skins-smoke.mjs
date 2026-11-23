@@ -21,7 +21,7 @@ try {
  await page.screenshot({path:out+'/classic.png'})
  await page.evaluate(()=>window.skinViewer.focus(1))
  await page.waitForTimeout(300)
- await page.screenshot({path:out+'/syn3h.png'})
+ await page.screenshot({path:out+'/mira.png'})
  console.log(JSON.stringify({errors, screenshots:[out+'/skins-closed.png',out+'/skins-open.png'],backend:await page.evaluate(()=>window.skinViewer.renderer.backend.isWebGPUBackend?'WebGPU':'WebGL')}))
  if(errors.length) process.exitCode=1
 } finally {await browser.close()}

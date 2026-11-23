@@ -68,7 +68,7 @@ test('malformed versions are rejected', () => {
     'v2026.11.1400', 'V26.11.1400', 'v26.11.1400-dev', ' v26 .11.1400', 'vv26.11.1400',
   ]) {
     assert.equal(isVersion(bad), false, bad)
-    assert.throws(() => parseVersion(bad), /Not a Syn3h version/, bad)
+    assert.throws(() => parseVersion(bad), /Not a Mira version/, bad)
   }
   assert.equal(isVersion('v28.2.2900'), true, 'leap day')
   assert.throws(() => parseVersion(undefined), /Not a version/)
@@ -151,14 +151,14 @@ test('releases.tsv with a malformed row is rejected', () => {
 const MILESTONE = HISTORY[2]
 const PRODUCTION = HISTORY[12]
 const notesFor = (row, { play = row.channel === 'production', extra = '' } = {}) => [
-  `## Syn3h ${row.version}`, '', 'A deck', '', kindLine(row, playUrl(row.version)), '', '<!-- a comment -->', '',
+  `## Mira ${row.version}`, '', 'A deck', '', kindLine(row, playUrl(row.version)), '', '<!-- a comment -->', '',
   '### The story so far', '', 'It happened.', '', '### Features', '', '- a', '', '### Fixes', '', '- b', '',
   ...(play ? ['### Play', '', 'p', ''] : []), '### Known issues', '', '- k', '', extra,
 ].join('\n')
 
 test('a draft cannot render until it is written', () => {
   const draft = draftNotes(MILESTONE, 'm01-foundation', 'm02-first-playable', ['abc1234 Buggy: a -- b'])
-  assert.match(draft, /^## Syn3h v26\.11\.1402\n/)
+  assert.match(draft, /^## Mira v26\.11\.1402\n/)
   assert.doesNotMatch(draft, /AI Generated/)
   assert.doesNotMatch(draft, /### Play/)
   assert.match(draftNotes(PRODUCTION, 'a', 'b', []), /### Play/)
@@ -171,9 +171,9 @@ test('render checks the shape for the channel', () => {
   assert.ok(renderNotes(notesFor(PRODUCTION), PRODUCTION).includes('### Play'))
   assert.throws(() => renderNotes(notesFor(MILESTONE, { play: true }), MILESTONE), /Play" belongs only in production/)
   assert.throws(() => renderNotes(notesFor(PRODUCTION, { play: false }), PRODUCTION), /production notes need/)
-  assert.throws(() => renderNotes(notesFor(MILESTONE), HISTORY[3]), /must be the heading "## Syn3h v26.11.1403"/)
+  assert.throws(() => renderNotes(notesFor(MILESTONE), HISTORY[3]), /must be the heading "## Mira v26.11.1403"/)
   assert.throws(() => renderNotes(notesFor(MILESTONE).replace(kindLine(MILESTONE), kindLine(PRODUCTION)), MILESTONE), /line under the deck/)
-  assert.match(body, /^## Syn3h /)
+  assert.match(body, /^## Mira /)
   assert.doesNotMatch(body, /AI Generated/)
   assert.equal(renderNotes(`(AI Generated)\n\n${notesFor(MILESTONE)}`, MILESTONE), body)
   assert.throws(() => renderNotes(`Unexpected preface\n\n${notesFor(MILESTONE)}`, MILESTONE), /first line must be the heading/)
@@ -193,16 +193,16 @@ test('performance disclosure is retained before known issues without relaxing ot
 })
 
 test('screenshots come from the manifest, the GIF first', () => {
-  const manifest = parseManifest(JSON.stringify({ images: [{ file: '01-lobby.png', caption: 'The lobby' }, { file: '02-hill.png', caption: 'King of the Hill' }], gif: 'syn3h-showcase.gif' }))
+  const manifest = parseManifest(JSON.stringify({ images: [{ file: '01-lobby.png', caption: 'The lobby' }, { file: '02-hill.png', caption: 'King of the Hill' }], gif: 'mira-showcase.gif' }))
   const body = renderNotes(notesFor(MILESTONE), MILESTONE, manifest)
   const section = body.slice(body.indexOf('### Screenshots'))
   assert.equal(section, [
     '### Screenshots', '',
-    '![Syn3h showcase](https://github.com/terran-labs/syn3h/releases/download/v26.11.1402/syn3h-showcase.gif)', '',
+    '![Mira showcase](https://github.com/terran-labs/syn3h/releases/download/v26.11.1402/mira-showcase.gif)', '',
     '![The lobby](https://github.com/terran-labs/syn3h/releases/download/v26.11.1402/01-lobby.png)', '_The lobby_', '',
     '![King of the Hill](https://github.com/terran-labs/syn3h/releases/download/v26.11.1402/02-hill.png)', '_King of the Hill_', '',
   ].join('\n'))
-  assert.deepEqual(referencedAssets(body, 'v26.11.1402'), ['syn3h-showcase.gif', '01-lobby.png', '02-hill.png'])
+  assert.deepEqual(referencedAssets(body, 'v26.11.1402'), ['mira-showcase.gif', '01-lobby.png', '02-hill.png'])
   // No GIF, and no images at all.
   assert.doesNotMatch(screenshotSection('v26.11.1402', parseManifest('{"images":[{"file":"a.png","caption":"A"}],"gif":null}')), /showcase/)
   assert.equal(screenshotSection('v26.11.1400', parseManifest('{"images":[],"gif":null}')), '')

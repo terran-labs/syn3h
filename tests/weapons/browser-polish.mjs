@@ -1,9 +1,10 @@
 /** In-use captures of Tag, Yoink and Thunder. Transient rings pause only for the camera. */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright-core'
-const base = process.env.SYN3H_URL, out = process.env.SYN3H_OUT ?? '/tmp/syn3h-gear-polish'
-assert.ok(base, 'SYN3H_URL is required')
+const base = process.env.MIRA_URL, out = process.env.MIRA_OUT ?? '/tmp/syn3h-gear-polish'
+assert.ok(base, 'MIRA_URL is required')
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const errors = [], report = []
@@ -11,15 +12,15 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   page.on('pageerror', e => errors.push(e.message))
   await page.goto(base)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 120000 })
   await page.evaluate(room => { const input = document.querySelector('#shell-room'); input.value = room; input.dispatchEvent(new Event('input', { bubbles: true })) }, `polish-${Date.now()}`)
   await page.locator('.galaxy-label[data-world="volcanic"]').dispatchEvent('click')
-  await page.waitForFunction(() => window.syn3h?.shell.playing && !window.syn3h.game.input.suspended && window.syn3hNet?.connected, null, { timeout: 60000 })
+  await page.waitForFunction(() => window.mira?.shell.playing && !window.mira.game.input.suspended && window.miraNet?.connected, null, { timeout: 60000 })
   // This fixture arranges vehicles along their heading; use the matching unlocked aim.
   await page.evaluate(() => document.exitPointerLock())
   await page.waitForFunction(() => !document.pointerLockElement)
   await page.evaluate(() => {
-    const s = window.syn3h, n = window.syn3hNet, p = s.params
+    const s = window.mira, n = window.miraNet, p = s.params
     p.set('gfx.auto', false); p.set('bots.canDrive', false); p.set('bots.canFire', false); p.set('bots.count', 1)
     p.set('yoink.cooldown', 0); p.set('yoink.holdTime', 0)
     // Capture a ring made by a real collision, holding its visual age once it has expanded.
@@ -45,13 +46,13 @@ try {
       s.game.camera.updateMatrixWorld()
     } })
   })
-  await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 1)
+  await page.waitForFunction(() => window.mira.bots.vehicles.length === 1)
   const warm = () => page.waitForFunction(() => {
-    const system = window.syn3h.game.systems.find(s => s.stats && 'armed' in s.stats && 'left' in s)
+    const system = window.mira.game.systems.find(s => s.stats && 'armed' in s.stats && 'left' in s)
     return Boolean(system && system.left === 0)
   }, null, { timeout: 120000, polling: 500 })
   const place = () => page.evaluate(() => {
-    const s = window.syn3h, n = window.syn3hNet, a = s.player.body.translation()
+    const s = window.mira, n = window.miraNet, a = s.player.body.translation()
     n.yoink.reset(); n.bigRed.reset(); n.lasers.reset()
     window.__view = null; window.__holdRing = false; window.__ring = null
     const z = a.z, x = a.x, y = Math.max(s.terrain.heightAt(x, z), s.terrain.heightAt(x, z - 8)) + 6
@@ -65,7 +66,7 @@ try {
     await page.evaluate(target => { window.__view = target }, target)
     await page.waitForTimeout(250)
     const seen = await page.evaluate(target => {
-      const s = window.syn3h, p = s.player.object.position.clone().set(...target).project(s.game.camera)
+      const s = window.mira, p = s.player.object.position.clone().set(...target).project(s.game.camera)
       return Math.abs(p.x) < .95 && Math.abs(p.y) < .95 && p.z > -1 && p.z < 1
     }, target)
     assert.ok(seen, `${name} subject in frame`)
@@ -74,43 +75,43 @@ try {
     await page.evaluate(() => { window.__view = null })
   }
   for (const [tag, level, post] of [['high', 2, true], ['low', 0, false]]) {
-    await page.evaluate(({ level, post }) => { window.syn3h.params.set('gfx.level', level); window.syn3h.params.set('post.on', post) }, { level, post })
+    await page.evaluate(({ level, post }) => { window.mira.params.set('gfx.level', level); window.mira.params.set('post.on', post) }, { level, post })
     await warm()
     // Let asynchronous render-chain replacement settle before measuring first use.
     await page.waitForTimeout(3000)
     await warm()
-    console.log(JSON.stringify({ tag, warm: await page.evaluate(() => { const s = window.syn3h.game.systems.find(s => s.stats && 'armed' in s.stats && 'left' in s); return { ...s.stats, left: s.left } }), warmPipelines: await page.evaluate(() => window.__labels) }))
+    console.log(JSON.stringify({ tag, warm: await page.evaluate(() => { const s = window.mira.game.systems.find(s => s.stats && 'armed' in s.stats && 'left' in s); return { ...s.stats, left: s.left } }), warmPipelines: await page.evaluate(() => window.__labels) }))
     await page.evaluate(() => { window.__labels = [] })
     const centre = await place()
     await page.waitForTimeout(1000)
     // The player faces -Z, with the parked bot directly ahead inside the grab cone.
-    await page.evaluate(() => { window.syn3hNet.gear.select('yoink'); window.syn3hNet.yoink.press() })
-    await page.waitForFunction(() => window.syn3hNet.yoink.holding !== null, null, { timeout: 10000 })
+    await page.evaluate(() => { window.miraNet.gear.select('yoink'); window.miraNet.yoink.press() })
+    await page.waitForFunction(() => window.miraNet.yoink.holding !== null, null, { timeout: 10000 })
     await page.waitForTimeout(1000)
-    const load = await page.evaluate(() => window.syn3h.bots.vehicles[0].object.position.toArray())
+    const load = await page.evaluate(() => window.mira.bots.vehicles[0].object.position.toArray())
     await shot(`${tag}-yoink-field`, load)
-    await page.evaluate(() => window.syn3hNet.yoink.drop())
+    await page.evaluate(() => window.miraNet.yoink.drop())
     await place(); await page.waitForTimeout(500)
-    await page.evaluate(() => window.syn3hNet.gear.select('red'))
+    await page.evaluate(() => window.miraNet.gear.select('red'))
     await page.keyboard.down('KeyL')
-    await page.waitForFunction(() => window.syn3hNet.bigRed.charge > .65, null, { timeout: 10000 })
-    const muzzle = await page.evaluate(() => window.syn3hNet.bigRed.glow.position.toArray())
+    await page.waitForFunction(() => window.miraNet.bigRed.charge > .65, null, { timeout: 10000 })
+    const muzzle = await page.evaluate(() => window.miraNet.bigRed.glow.position.toArray())
     await shot(`${tag}-thunder-charge`, muzzle)
     await page.keyboard.up('KeyL')
     await place(); await page.waitForTimeout(500)
     await page.evaluate(() => {
-      window.syn3h.params.set('laser.speed', 20)
-      window.syn3hNet.fire([1, .1, 0])
+      window.mira.params.set('laser.speed', 20)
+      window.miraNet.fire([1, .1, 0])
     })
-    await page.waitForFunction(() => window.syn3hNet.lasers.shots.length > 0)
-    await shot(`${tag}-tag-thread`, await page.evaluate(() => window.syn3hNet.lasers.shots.at(-1).pos.toArray()))
-    await page.evaluate(() => window.syn3h.params.set('laser.speed', 180))
+    await page.waitForFunction(() => window.miraNet.lasers.shots.length > 0)
+    await shot(`${tag}-tag-thread`, await page.evaluate(() => window.miraNet.lasers.shots.at(-1).pos.toArray()))
+    await page.evaluate(() => window.mira.params.set('laser.speed', 180))
     for (const red of [false, true]) {
       await place(); await page.waitForTimeout(500)
-      await page.evaluate(red => { window.__holdRing = true; window.syn3hNet.fire([.7, -1, 0], undefined, red ? 'red' : undefined) }, red)
+      await page.evaluate(red => { window.__holdRing = true; window.miraNet.fire([.7, -1, 0], undefined, red ? 'red' : undefined) }, red)
       await page.waitForFunction(() => Boolean(window.__ring), null, { timeout: 15000 })
       await shot(`${tag}-${red ? 'thunder' : 'tag'}-impact`, await page.evaluate(() => window.__ring))
-      await page.evaluate(() => { window.__holdRing = false; window.syn3hNet.lasers.pulses.reset() })
+      await page.evaluate(() => { window.__holdRing = false; window.miraNet.lasers.pulses.reset() })
     }
     const gearPipelines = await page.evaluate(() => window.__labels.filter(label => /gear /.test(label)))
     console.log(JSON.stringify({ tag, gearPipelines }))

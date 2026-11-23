@@ -1,13 +1,14 @@
 // The Handling dropdown in the sidebar's Vehicles card, on desktop and an iPhone 14.
-//   SYN3H_URL=http://127.0.0.1:5173/ node tests/ui/handling-presets.mjs
+//   MIRA_URL=http://127.0.0.1:5173/ node tests/ui/handling-presets.mjs
 // Choosing a preset sets its settings; moving a slider shows Custom. Screenshots go to
 // tests/ui/artifacts/handling-presets. A native dropdown cannot be captured open in a headless
 // browser, so for the screenshot the list is shown in place (size = number of options).
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5173/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5173/'
 const out = 'tests/ui/artifacts/handling-presets'
 await mkdir(out, { recursive: true })
 
@@ -18,7 +19,7 @@ for (const mode of ['desktop', 'phone']) {
     const page = await browser.newPage(touch ? devices['iPhone 14'] : { viewport: { width: 1440, height: 900 } })
     const errors = []; page.on('pageerror', (e) => errors.push(e.message))
     await page.goto(`${base}?autoplay=1&room=handling-${mode}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     const rail = page.locator('.world-inspector')
     if (!(await rail.isVisible())) {
@@ -36,10 +37,10 @@ for (const mode of ['desktop', 'phone']) {
 
     // Choosing a preset sets its settings and its description.
     await select.selectOption({ label: 'Planted' })
-    assert.equal(await page.evaluate(() => window.syn3h.params.get('buggy.fin').value), 0.4, `${mode}: Planted sets the fin`)
+    assert.equal(await page.evaluate(() => window.mira.params.get('buggy.fin').value), 0.4, `${mode}: Planted sets the fin`)
     assert.match(await fold.locator('.wi-preset-about').textContent(), /never steer themselves/)
     // A slider moved off every preset shows Custom.
-    await page.evaluate(() => window.syn3h.params.set('buggy.fin', 0.45))
+    await page.evaluate(() => window.mira.params.set('buggy.fin', 0.45))
     assert.equal(await select.locator('option:checked').textContent(), 'Custom', `${mode}: a changed slider shows Custom`)
     await select.selectOption({ label: 'Balanced' })
     assert.equal(await select.locator('option:checked').textContent(), 'Balanced')

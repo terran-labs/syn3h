@@ -26,6 +26,6 @@ Jet.ts also owns an additive nozzle material with colour (3, 3, 4); its lead can
 helper. The shared exhaust particles are compensated; the nozzle itself is outside this fence.
 
 Gate: typecheck passed; 148 lane tests passed, including exposure compensation and gentle
-water beach checks. Three additional lava-to-ground handover tests pass for Syn3h buggy,
+water beach checks. Three additional lava-to-ground handover tests pass for Mira buggy,
 classic buggy and tank. Smoke passed at 44 mph with zero errors. Heavy jobs used the shared
 gate and ran at most one Chrome in this lane.

@@ -14,6 +14,7 @@
  * Owner's instruction, 14 November 2026: "I just want the vehicle preview system to update live
  * the moment a new vehicle is ready without waiting for anything from the Orchestrator."
  */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -87,7 +88,7 @@ function sync() {
 ensureCheckout()
 sync()
 const vite = spawn('npx', ['vite', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
-  cwd: live, stdio: 'inherit', env: { ...process.env, SYN3H_NO_ROOM_SERVER: '1' },
+  cwd: live, stdio: 'inherit', env: { ...process.env, MIRA_NO_ROOM_SERVER: '1' },
 })
 const timer = setInterval(() => { try { sync() } catch (e) { console.error('[lab-live] sync failed:', e.message) } }, POLL_MS)
 const stop = () => { clearInterval(timer); vite.kill('SIGTERM') }

@@ -6,16 +6,16 @@ const browser=await chromium.launch({channel:'chrome',headless:true,args:['--ena
 try{
  const page=await browser.newPage({viewport:{width:1600,height:900}}),errors=[]
  page.on('pageerror',e=>errors.push(e.message));await page.routeWebSocket(/\/ws/,s=>s.close())
- await page.goto(`http://localhost:${process.env.PORT??'5185'}/?autoplay=1&vehicle=buggy&planet=alpine&seed=1`);await page.waitForFunction(()=>window.syn3h?.game.tick>10,null,{timeout:90000})
- await page.evaluate(()=>{const s=window.syn3h;s.params.set('gfx.auto',false);s.params.set('bots.count',0);s.params.set('sun.dayLength',0);s.params.set('sun.timeOfDay',12);s.game.input.external.brakes=true
+ await page.goto(`http://localhost:${process.env.PORT??'5185'}/?autoplay=1&vehicle=buggy&planet=alpine&seed=1`);await page.waitForFunction(()=>window.mira?.game.tick>10,null,{timeout:90000})
+ await page.evaluate(()=>{const s=window.mira;s.params.set('gfx.auto',false);s.params.set('bots.count',0);s.params.set('sun.dayLength',0);s.params.set('sun.timeOfDay',12);s.game.input.external.brakes=true
   const o=s.player.object,T=o.position.constructor,fw=new T(0,0,-1).applyQuaternion(o.quaternion),rt=new T(1,0,0).applyQuaternion(o.quaternion)
   s.camera.setCinematicPose(o.position.clone().addScaledVector(fw,1.6).addScaledVector(rt,1.3).add(new T(0,1.3,0)),o.position.clone().addScaledVector(fw,.4).add(new T(0,.4,0)))})
  await page.waitForTimeout(6000)
  const rows=[]
  for(let round=0;round<3;round++)for(const tier of [0,1,2,3]){
-  await page.evaluate(t=>window.syn3h.params.set('gfx.vehicleShading',t),tier);await page.waitForTimeout(1500)
+  await page.evaluate(t=>window.mira.params.set('gfx.vehicleShading',t),tier);await page.waitForTimeout(1500)
   // Wait for the GPU to finish each frame, at a high pixel ratio, so fragment cost is what is timed.
-  rows.push(await page.evaluate(async tier=>{const s=window.syn3h,r=s.game.renderer,device=r.backend.device;r.setPixelRatio(3)
+  rows.push(await page.evaluate(async tier=>{const s=window.mira,r=s.game.renderer,device=r.backend.device;r.setPixelRatio(3)
    const frame=()=>new Promise(done=>requestAnimationFrame(()=>device.queue.onSubmittedWorkDone().then(done)))
    for(let i=0;i<20;i++)await frame()
    const times=[];for(let i=0;i<150;i++){const t=performance.now();await frame();times.push(performance.now()-t)}

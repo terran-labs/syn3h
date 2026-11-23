@@ -23,11 +23,11 @@ try {
     const result = { kind, seed, quality, url: url.href, errors }
     try {
       await page.goto(url.href)
-      await page.waitForFunction(() => window.syn3h?.game?.tick > 10, null, { timeout: 60000 })
-      await page.evaluate(q => { const s = window.syn3h; s.shell.play(); s.params.set('gfx.level', q); s.params.set('bots.count', 0); document.activeElement?.blur?.() }, quality)
+      await page.waitForFunction(() => window.mira?.game?.tick > 10, null, { timeout: 60000 })
+      await page.evaluate(q => { const s = window.mira; s.shell.play(); s.params.set('gfx.level', q); s.params.set('bots.count', 0); document.activeElement?.blur?.() }, quality)
       await page.waitForTimeout(1500)
       await page.evaluate(kind => {
-        const s = window.syn3h, samples = []
+        const s = window.mira, samples = []
         const start = performance.now(), simStart = s.game.time
         const sample = () => {
           const p = s.player.body.translation(), v = s.player.body.linvel()

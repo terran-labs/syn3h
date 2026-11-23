@@ -27,9 +27,9 @@ page.on('pageerror', (e) => errors.push(e.message))
 for (const world of worlds) {
   const name = world.split('.')[0]
   await page.goto(`${base}?autoplay=1&world=${world}&room=plants${Date.now().toString(36)}`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 90, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 90, null, { timeout: 90000 })
   await page.evaluate(() => {
-    const s = window.syn3h
+    const s = window.mira
     s.params.set('sun.dayLength', 0)
     s.params.set('daydream.seconds', 0)
     s.params.set('camera.distance', 1.6)
@@ -41,7 +41,7 @@ for (const world of worlds) {
   // Start beside pad 2, or with LAVA=1 beside the middle of the longest river, so the
   // treadmills fill round there. By a river, first take a wide look along its bank.
   const byRiver = await page.evaluate((lava) => {
-    const s = window.syn3h, t = s.terrain
+    const s = window.mira, t = s.terrain
     let x, z, look = null
     const rivers = [...t.data.lava.rivers].sort((a, b) => b.points.length - a.points.length)
     if (lava && rivers.length) {
@@ -63,20 +63,20 @@ for (const world of worlds) {
   }, process.env.LAVA === '1')
   await page.waitForTimeout(3500)
   if (byRiver) {
-    await page.evaluate(() => window.syn3h.params.set('sun.timeOfDay', 11))
+    await page.evaluate(() => window.mira.params.set('sun.timeOfDay', 11))
     await page.waitForTimeout(2500)
     await page.screenshot({ path: `${out}/${name}-river-day.png` })
     if (nights) {
-      await page.evaluate(() => window.syn3h.params.set('sun.timeOfDay', 22.5))
+      await page.evaluate(() => window.mira.params.set('sun.timeOfDay', 22.5))
       await page.waitForTimeout(2500)
       await page.screenshot({ path: `${out}/${name}-river-night.png` })
     }
   }
-  const count = await page.evaluate(() => window.syn3h.terrain.cover.layers.length)
+  const count = await page.evaluate(() => window.mira.terrain.cover.layers.length)
   for (let li = 0; li < count; li++) {
     if (only && !only.includes(li)) continue
     const found = await page.evaluate((li) => {
-      const s = window.syn3h, t = s.terrain, layer = t.cover.layers[li]
+      const s = window.mira, t = s.terrain, layer = t.cover.layers[li]
       const g = layer.mesh.geometry
       const O = g.getAttribute('aOrigin').array, P = g.getAttribute('aParam').array
       const p = s.player.body.translation()
@@ -101,11 +101,11 @@ for (const world of worlds) {
       return { li, at: [px, pz] }
     }, li)
     if (!found) { console.log(`${name} layer ${li}: nothing planted nearby`); continue }
-    await page.evaluate(() => window.syn3h.params.set('sun.timeOfDay', 11))
+    await page.evaluate(() => window.mira.params.set('sun.timeOfDay', 11))
     await page.waitForTimeout(3500)
     await page.screenshot({ path: `${out}/${name}-${li}-day.png` })
     if (nights) {
-      await page.evaluate(() => window.syn3h.params.set('sun.timeOfDay', 22.5))
+      await page.evaluate(() => window.mira.params.set('sun.timeOfDay', 22.5))
       await page.waitForTimeout(2200)
       await page.screenshot({ path: `${out}/${name}-${li}-night.png` })
     }

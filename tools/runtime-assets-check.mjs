@@ -29,6 +29,7 @@
  * Exit codes: 0 clean, 1 forbidden assets loaded, 2 the session could not run.
  * Run it through tools/heavy.sh: it builds and drives a browser.
  */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -267,8 +268,8 @@ async function main() {
     if (!existsSync(join(root, 'dist/index.html'))) throw new Error(`no build at ${root}/dist`)
     const roomPort = await freePort(), webPort = await freePort()
     start(tsx, ['server/dev.ts'], { PORT: String(roomPort) }, 'room')
-    // vite preview inherits server.proxy, which sends /ws and /presence to SYN3H_ROOM_PORT.
-    start(vite, ['preview', '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], { SYN3H_ROOM_PORT: String(roomPort), SYN3H_NO_ROOM_SERVER: '1' }, 'preview')
+    // vite preview inherits server.proxy, which sends /ws and /presence to MIRA_ROOM_PORT.
+    start(vite, ['preview', '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], { MIRA_ROOM_PORT: String(roomPort), MIRA_NO_ROOM_SERVER: '1' }, 'preview')
     const base = `http://127.0.0.1:${webPort}/`
     await waitFor(`http://127.0.0.1:${roomPort}/status`, 30000)
     await waitFor(base, 30000)
@@ -306,11 +307,11 @@ async function main() {
 
       await step('load and reach the lobby', async () => {
         await page.goto(`${base}?room=asset-gate-${Date.now()}`, { waitUntil: 'load', timeout: 60000 })
-        await page.waitForFunction(() => window.syn3h?.shell && window.syn3h.game?.tick > 25 && (document.documentElement.dataset.boot ?? 'done') === 'done', null, { timeout: 120000 })
+        await page.waitForFunction(() => window.mira?.shell && window.mira.game?.tick > 25 && (document.documentElement.dataset.boot ?? 'done') === 'done', null, { timeout: 120000 })
         await page.waitForTimeout(4000)
       })
       await step('open the vehicle panel and preview every vehicle', async () => {
-        await evaluate(() => window.syn3h.shell.showPanel('vehicle'))
+        await evaluate(() => window.mira.shell.showPanel('vehicle'))
         await page.waitForTimeout(2500)
         const kinds = await evaluate(() => [...document.querySelectorAll('[name="vehicle"]')].map((r) => ({ value: r.value, checked: r.checked })))
         for (const k of kinds) {
@@ -323,30 +324,30 @@ async function main() {
       })
       await step('drop into the world', async () => {
         await page.mouse.click(5, 5) // a real gesture, so audio unlocks the way it does for a player
-        await evaluate(() => window.syn3h.shell.play())
-        await page.waitForFunction(() => document.querySelector('.syn3h-shell')?.classList.contains('is-playing') && !window.syn3h.shell.dropping, null, { timeout: 60000 })
-        await page.waitForFunction(() => window.syn3hNet?.connected, null, { timeout: 30000 }).catch(() => {})
+        await evaluate(() => window.mira.shell.play())
+        await page.waitForFunction(() => document.querySelector('.mira-shell')?.classList.contains('is-playing') && !window.mira.shell.dropping, null, { timeout: 60000 })
+        await page.waitForFunction(() => window.miraNet?.connected, null, { timeout: 30000 }).catch(() => {})
         await page.waitForTimeout(1500)
-        return { connected: await evaluate(() => Boolean(window.syn3hNet?.connected)) }
+        return { connected: await evaluate(() => Boolean(window.miraNet?.connected)) }
       })
       await step('drive', async () => {
-        const t0 = await evaluate(() => window.syn3h.game.tick)
+        const t0 = await evaluate(() => window.mira.game.tick)
         await page.keyboard.down('KeyW')
         await page.waitForTimeout(driveSeconds * 500)
         await page.keyboard.down('KeyA'); await page.waitForTimeout(1000); await page.keyboard.up('KeyA')
         await page.keyboard.down('KeyD'); await page.waitForTimeout(1000); await page.keyboard.up('KeyD')
         await page.waitForTimeout(Math.max(0, driveSeconds * 500 - 2000))
         await page.keyboard.up('KeyW')
-        return { ticks: (await evaluate(() => window.syn3h.game.tick)) - t0 }
+        return { ticks: (await evaluate(() => window.mira.game.tick)) - t0 }
       })
       await step('change gear and use each tool', async () => {
         const list = await evaluate(() => {
-          for (const id of ['laser.allowed', 'bungee.allowed', 'yoink.allowed', 'bigRed.allowed', 'pester.allowed']) if (window.syn3h.params.get(id)) window.syn3h.params.set(id, true)
-          return window.syn3hNet?.gear?.list?.() ?? []
+          for (const id of ['laser.allowed', 'bungee.allowed', 'yoink.allowed', 'bigRed.allowed', 'pester.allowed']) if (window.mira.params.get(id)) window.mira.params.set(id, true)
+          return window.miraNet?.gear?.list?.() ?? []
         })
-        if (!list.length) throw new Error('no gear rack on window.syn3hNet.gear')
+        if (!list.length) throw new Error('no gear rack on window.miraNet.gear')
         for (const id of list) {
-          await evaluate((g) => window.syn3hNet.gear.select(g), id)
+          await evaluate((g) => window.miraNet.gear.select(g), id)
           await page.waitForTimeout(300)
           await page.keyboard.down('KeyL'); await page.waitForTimeout(1200); await page.keyboard.up('KeyL')
           await page.keyboard.down('KeyV'); await page.waitForTimeout(400); await page.keyboard.up('KeyV')
@@ -356,11 +357,11 @@ async function main() {
         return list.join(', ')
       })
       await step('return to the lobby and visit each panel', async () => {
-        await evaluate(() => window.syn3h.shell.openMenu())
+        await evaluate(() => window.mira.shell.openMenu())
         await page.waitForTimeout(2500)
         const panels = await evaluate(() => [...document.querySelectorAll('.lobby-panels [data-panel]')].map((s) => s.dataset.panel))
-        for (const id of panels) { await evaluate((p) => window.syn3h.shell.showPanel(p), id); await page.waitForTimeout(900) }
-        await evaluate(() => window.syn3h.shell.showPanel('index'))
+        for (const id of panels) { await evaluate((p) => window.mira.shell.showPanel(p), id); await page.waitForTimeout(900) }
+        await evaluate(() => window.mira.shell.showPanel('index'))
         await page.waitForTimeout(1500)
         return panels.join(', ')
       })

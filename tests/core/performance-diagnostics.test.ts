@@ -21,5 +21,5 @@ it('publishes the final outer loss detail without another frame or timer',async(
  renderer.onDeviceLost({api:'WebGL',message:'inner message'})
  await Promise.resolve()
  expect(snapshots.at(-1)).toMatchObject({deviceLost:'WebGL: final outer detail'})
- expect((window as unknown as {syn3hDiagnostics:{deviceLost:string}}).syn3hDiagnostics.deviceLost).toBe('WebGL: final outer detail')
+ expect((window as unknown as {miraDiagnostics:{deviceLost:string}}).miraDiagnostics.deviceLost).toBe('WebGL: final outer detail')
 })

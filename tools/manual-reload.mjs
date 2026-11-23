@@ -10,13 +10,13 @@
 export function patchReloads(code) {
   const calls = code.match(/\blocation\.reload\(\)/g) ?? [];
   if (calls.length !== 3) throw new Error(`Vite client changed: expected 3 automatic reload sites, found ${calls.length}. Review manual-reload.mjs before serving live demos.`);
-  return code.replace(/\blocation\.reload\(\)/g, 'window.dispatchEvent(new CustomEvent("syn3h:new-build"))');
+  return code.replace(/\blocation\.reload\(\)/g, 'window.dispatchEvent(new CustomEvent("mira:new-build"))');
 }
 const notice = `
-window.addEventListener('syn3h:new-build', () => {
-  if (document.getElementById('syn3h-build-notice')) return;
+window.addEventListener('mira:new-build', () => {
+  if (document.getElementById('mira-build-notice')) return;
   const button = document.createElement('button');
-  button.id = 'syn3h-build-notice';
+  button.id = 'mira-build-notice';
   // A floating banner at the bottom centre of the page. The shell styles .build-banner; it must
   // not adopt this button into a panel.
   button.className = 'build-banner';
@@ -24,9 +24,9 @@ window.addEventListener('syn3h:new-build', () => {
   button.textContent = 'New build available. Press to reload';
   // Fallback look with zero specificity (:where), so the shell's own .build-banner rule wins
   // without !important and pages that have no shell stylesheet still get a usable banner.
-  if (!document.getElementById('syn3h-build-notice-style')) {
+  if (!document.getElementById('mira-build-notice-style')) {
     const style = document.createElement('style');
-    style.id = 'syn3h-build-notice-style';
+    style.id = 'mira-build-notice-style';
     style.textContent = ':where(.build-banner){position:fixed;bottom:max(12px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);z-index:10000;background:#172633;color:#fff;border:1px solid #49e6ff;border-radius:8px;padding:10px 16px;font:14px system-ui;cursor:pointer}';
     document.head.append(style);
   }
@@ -35,7 +35,7 @@ window.addEventListener('syn3h:new-build', () => {
 });`;
 export function manualReload() {
   return {
-    name: 'syn3h-manual-reload', apply: 'serve', enforce: 'post',
+    name: 'mira-manual-reload', apply: 'serve', enforce: 'post',
     transform(code, id) {
       if (/\/vite\/dist\/client\/client\.m?js(?:\?|$)/.test(id.replaceAll('\\', '/'))) return { code: patchReloads(code), map: null };
     },

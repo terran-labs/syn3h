@@ -2,13 +2,13 @@ import {chromium} from 'playwright-core'
 import {mkdir,writeFile} from 'node:fs/promises'
 import assert from 'node:assert/strict'
 await mkdir('tests/audio/artifacts',{recursive:true})
-await writeFile('tests/audio/artifacts/listen.html',`<!doctype html><meta charset="utf-8"><title>Syn3h sound audition</title><style>body{background:#101722;color:white;font:18px sans-serif;max-width:720px;margin:40px auto}audio{width:100%}</style><h1>Syn3h sound audition</h1><p>Vehicle clips: idle, load and slip, flight, idle, fade out. Unmastered voices.</p>${['buggy-syn3h','buggy-classic','jet','hovercraft','tank','game-cues'].map(name=>`<h2>${name}</h2><audio controls preload="none" src="${name}.wav"></audio>`).join('')}<p>Cues, two seconds apart: capture, contested, lost, win, tick, tag, join, leave, click, deploy, retract, lava.</p>`)
+await writeFile('tests/audio/artifacts/listen.html',`<!doctype html><meta charset="utf-8"><title>Mira sound audition</title><style>body{background:#101722;color:white;font:18px sans-serif;max-width:720px;margin:40px auto}audio{width:100%}</style><h1>Mira sound audition</h1><p>Vehicle clips: idle, load and slip, flight, idle, fade out. Unmastered voices.</p>${['buggy-syn3h','buggy-classic','jet','hovercraft','tank','game-cues'].map(name=>`<h2>${name}</h2><audio controls preload="none" src="${name}.wav"></audio>`).join('')}<p>Cues, two seconds apart: capture, contested, lost, win, tick, tag, join, leave, click, deploy, retract, lava.</p>`)
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-webgpu','--use-angle=metal','--ignore-gpu-blocklist','--js-flags=--expose-gc']})
 try{
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message))
- await page.goto('http://127.0.0.1:5187/');await page.waitForFunction(()=>window.syn3h?.audio)
- assert.ok(['locked','running'].includes(await page.evaluate(()=>syn3h.audio.state))) // running where the browser allows sound without a gesture
- await page.keyboard.press('h');await page.evaluate(()=>syn3h.audio.ready())
+ await page.goto('http://127.0.0.1:5187/');await page.waitForFunction(()=>window.mira?.audio)
+ assert.ok(['locked','running'].includes(await page.evaluate(()=>mira.audio.state))) // running where the browser allows sound without a gesture
+ await page.keyboard.press('h');await page.evaluate(()=>mira.audio.ready())
  const results=[]
  for(const kind of ['buggy-syn3h','buggy-classic','jet','hovercraft','tank']){
   const result=await page.evaluate(async kind=>{

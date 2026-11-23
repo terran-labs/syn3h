@@ -5,12 +5,12 @@
  * Dismissing hides both for this version for the rest of the session.
  *
  * On the dev server the existing detector (tools/manual-reload.mjs) announces a rebuilt
- * bundle with a "syn3h:new-build" event; that shows the same banner without a version, and
+ * bundle with a "mira:new-build" event; that shows the same banner without a version, and
  * the stylesheet hides the detector's own pill in the lobby so only this banner shows there.
  */
 import { loadFeed, watchForUpdates } from './feed'
 
-const DISMISSED = 'syn3h.update.dismissed'
+const DISMISSED = 'mira.update.dismissed'
 
 export class UpdateNotice {
   readonly banner = document.createElement('div')
@@ -29,7 +29,7 @@ export class UpdateNotice {
     this.chip.type = 'button'; this.chip.className = 'rail-update'; this.chip.hidden = true
     this.chip.addEventListener('click', () => this.whatsNew(), { signal })
     watchForUpdates(version => { void this.show(version) }, signal)
-    window.addEventListener('syn3h:new-build', () => { if (!this.version) void this.show('') }, { signal })
+    window.addEventListener('mira:new-build', () => { if (!this.version) void this.show('') }, { signal })
   }
 
   /** Show the notice for `version`. Public so a check can drive it without a live site. */

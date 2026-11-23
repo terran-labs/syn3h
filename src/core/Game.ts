@@ -143,7 +143,7 @@ export class Game {
       return this.renderer
     }, { forceWebGL, deadlineMs: gpuDeadlineMs(location.search), probe, skipWebGPU: probe === 'timeout' ? 'the WebGPU adapter probe stalled; started WebGL 2' : undefined }))
     this.renderer = started.renderer
-    if (started.fallbackReason) { startupTiming.fallbackReason = started.fallbackReason; console.warn(`Syn3h: ${started.fallbackReason}`) }
+    if (started.fallbackReason) { startupTiming.fallbackReason = started.fallbackReason; console.warn(`Mira: ${started.fallbackReason}`) }
     this.backend = (this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl'
     startupTiming.backend = this.backend
     // Device or context loss leaves a frozen canvas; tell the player and offer a reload. Once:
@@ -863,7 +863,7 @@ export class Game {
       stop.abort()
       const end = performance.now()
       recordStartupPrecompile(end - start)
-      try { performance.measure('syn3h:precompile', { start, end }) } catch { /* Older engines. */ }
+      try { performance.measure('mira:precompile', { start, end }) } catch { /* Older engines. */ }
     }
   }
 
@@ -1070,7 +1070,7 @@ export class Game {
   /** See viewState. The shell element is looked up until it exists, then kept. */
   private view() {
     if (typeof document === 'undefined') return 'playing' as const
-    this.shell ??= document.querySelector('.syn3h-shell')
+    this.shell ??= document.querySelector('.mira-shell')
     return viewState(this.shell?.classList)
   }
 

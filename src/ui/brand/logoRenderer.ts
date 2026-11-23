@@ -1,5 +1,5 @@
 /**
- * The animated Syn3h logo, drawn with raw WebGL 2 into any context it is handed: its own
+ * The animated Mira logo, drawn with raw WebGL 2 into any context it is handed: its own
  * canvas (LogoMark) or someone else's, inside their frame (the lobby galaxy). Three draw
  * calls (four over space), no image textures, no depth buffer:
  *
@@ -239,7 +239,7 @@ function compile(gl: WebGL2RenderingContext, vertex: string, fragment: string): 
   gl.linkProgram(program)
   for (const shader of shaders) gl.deleteShader(shader)
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.warn('Syn3h logo shader failed; the SVG wordmark stays.', gl.getProgramInfoLog(program))
+    console.warn('Mira logo shader failed; the SVG wordmark stays.', gl.getProgramInfoLog(program))
     gl.deleteProgram(program); return null
   }
   return program
@@ -306,7 +306,7 @@ export class LogoRenderer {
     const band = buildGlowBand()
     this.triangles = 2 + band.triangles
     let ok = false
-    try { ok = this.build(band.vertices) } catch (error) { console.warn('Syn3h logo could not start; the SVG wordmark stays.', error) }
+    try { ok = this.build(band.vertices) } catch (error) { console.warn('Mira logo could not start; the SVG wordmark stays.', error) }
     this.ok = ok
   }
 

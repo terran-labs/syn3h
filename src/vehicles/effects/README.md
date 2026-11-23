@@ -23,7 +23,7 @@ Marks are one draw call in one 1,024 quad ring. Per vertex: tone relative to the
 
 ## World seams
 
-Every world wraps. When the local player crosses a tile edge, `Vehicle.shiftBy` moves it a whole tile and dispatches `{ type: 'tileshift', dx, dz }` on `vehicle.object`. The effects attached with `local: true` then call `shift(dx, dz)` on every shared batch (tyre marks, trails, dust, exhaust, weapon sparks) and move that vehicle's own mark and trail history by the same vector, so everything behind the player stays behind it and its marks carry on unbroken. A shift rewrites the stored world positions in place and uploads each buffer once; frames without a shift cost nothing. A uniform offset was rejected: it would add work to every vertex on every frame, and every later emit would have to subtract the running offset. Any other vehicle the terrain re-images near the player leaves its marks where they are and starts its history again. The Syn3h buggy's motor sparks are emitted in the vehicle's own frame and need nothing.
+Every world wraps. When the local player crosses a tile edge, `Vehicle.shiftBy` moves it a whole tile and dispatches `{ type: 'tileshift', dx, dz }` on `vehicle.object`. The effects attached with `local: true` then call `shift(dx, dz)` on every shared batch (tyre marks, trails, dust, exhaust, weapon sparks) and move that vehicle's own mark and trail history by the same vector, so everything behind the player stays behind it and its marks carry on unbroken. A shift rewrites the stored world positions in place and uploads each buffer once; frames without a shift cost nothing. A uniform offset was rejected: it would add work to every vertex on every frame, and every later emit would have to subtract the running offset. Any other vehicle the terrain re-images near the player leaves its marks where they are and starts its history again. The Mira buggy's motor sparks are emitted in the vehicle's own frame and need nothing.
 
 ## Generated looks
 
@@ -68,7 +68,7 @@ Call muzzle only for fresh shots, including fresh replicated shots, rather than 
 
 ## Verification
 
-Use `SYN3H_TEST_EFFECTS=1 npx vite --port 5185 --strictPort --config tests/vehicles2/vite.config.ts`. The test plugin adds effects without editing the coordinator's main entry. Run `node tests/vehicles2/effects-browser.mjs` for local/remote light ownership, weapon rendering, quality reduction and disposal checks. Six `tools/scenarios/effects-*` scenarios run through `tools/drive-capture.mjs` for noon/night motion.
+Use `MIRA_TEST_EFFECTS=1 npx vite --port 5185 --strictPort --config tests/vehicles2/vite.config.ts`. The test plugin adds effects without editing the coordinator's main entry. Run `node tests/vehicles2/effects-browser.mjs` for local/remote light ownership, weapon rendering, quality reduction and disposal checks. Six `tools/scenarios/effects-*` scenarios run through `tools/drive-capture.mjs` for noon/night motion.
 
 Verified handoff locations at this branch's integration baseline: local player `src/main.ts:38`; remote creation `src/net/index.ts:439`, replacement `:467`, removal `:352`, `:452`, `:464`; bot creation `src/bots/BotManager.ts:43`, removal `:53`, `:58`. Store disposers beside each actor, including replacement paths.
 

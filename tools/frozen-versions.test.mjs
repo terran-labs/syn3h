@@ -42,7 +42,7 @@ function released(root) {
 }
 
 test('a release lists every version but carries none, and only acceptance archives', () => {
-  const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-'))
+  const root = mkdtempSync(join(tmpdir(), 'mira-frozen-'))
   try {
     const store = join(root, 'versions')
     const first = build(root, 'first', 'one', '26.11.1503')
@@ -72,7 +72,7 @@ test('a release lists every version but carries none, and only acceptance archiv
 })
 
 test('prepare refuses a build that changes a root file a frozen version also serves', () => {
-  const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-'))
+  const root = mkdtempSync(join(tmpdir(), 'mira-frozen-'))
   try {
     const { store } = released(root)
     const next = build(root, 'next', 'three', '26.11.1800')
@@ -188,7 +188,7 @@ async function site(copy, store, faults = {}) {
 }
 
 test('the frozen check passes: every file of the new release, and every old version\'s page', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-check-'))
+  const root = mkdtempSync(join(tmpdir(), 'mira-frozen-check-'))
   const { copy, store } = released(root)
   const s = await site(copy, store)
   try {
@@ -209,7 +209,7 @@ test('the frozen check passes: every file of the new release, and every old vers
 })
 
 test('the frozen check fails loudly on a missing or wrong file of the new release or an old page', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-check-'))
+  const root = mkdtempSync(join(tmpdir(), 'mira-frozen-check-'))
   const { copy, store } = released(root)
   const fails = async (faults, pattern, count = 1) => {
     const s = await site(copy, store, faults)
@@ -232,7 +232,7 @@ test('the frozen check fails loudly on a missing or wrong file of the new releas
 })
 
 test('a 429 holds the check for its Retry-After, and then it passes', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'syn3h-frozen-check-'))
+  const root = mkdtempSync(join(tmpdir(), 'mira-frozen-check-'))
   const { copy, store } = released(root)
   const s = await site(copy, store, { limitOnce: true })
   try {
@@ -255,7 +255,7 @@ function memoryStore(objects = new Map(), { corrupt, failPut } = {}) {
 }
 
 test('R2 upload stores each archived file once, with its type, verifies it, and records the version', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'syn3h-r2-'))
+  const root = mkdtempSync(join(tmpdir(), 'mira-r2-'))
   try {
     const { store: dir } = released(root)
     const store = memoryStore()
@@ -283,7 +283,7 @@ test('R2 upload stores each archived file once, with its type, verifies it, and 
 })
 
 test('R2 upload refuses to overwrite other bytes, catches a bad read-back, and records neither', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'syn3h-r2-'))
+  const root = mkdtempSync(join(tmpdir(), 'mira-r2-'))
   try {
     const { store: dir } = released(root)
     const objects = new Map([['v/26.11.1503/build.json', { bytes: Buffer.from('{"mark":"xxx"}'), type: 'application/json' }]])
@@ -299,7 +299,7 @@ test('R2 upload refuses to overwrite other bytes, catches a bad read-back, and r
 })
 
 test('the release preflight uploads what is not yet verified, and stops when it cannot', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'syn3h-r2-'))
+  const root = mkdtempSync(join(tmpdir(), 'mira-r2-'))
   try {
     const { store: dir } = released(root)
     const store = memoryStore()

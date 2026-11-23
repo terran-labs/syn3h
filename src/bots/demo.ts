@@ -47,5 +47,5 @@ game.add({
 })
 document.getElementById('add')!.onclick = () => params.set('bots.count', botCount.value + 1)
 document.getElementById('clear')!.onclick = () => params.set('bots.count', 0)
-Object.assign(window, { syn3h: { game, terrain, player, params, bots: manager, metrics } })
+Object.assign(window, { mira: { game, terrain, player, params, bots: manager, metrics } })
 game.start()

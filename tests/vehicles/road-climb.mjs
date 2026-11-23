@@ -29,11 +29,11 @@ const page = await browser.newPage({ viewport: { width: 960, height: 540 } })
 const errors = []
 page.on('pageerror', (e) => errors.push(e.message))
 await page.goto(url.href)
-await page.waitForFunction(() => window.syn3h?.game?.tick > 10, null, { timeout: 90000 })
+await page.waitForFunction(() => window.mira?.game?.tick > 10, null, { timeout: 90000 })
 await page.waitForTimeout(1500)
 
 const info = await page.evaluate(() => {
-  const s = window.syn3h
+  const s = window.mira
   s.params.set('bots.count', 0)
   const road = s.terrain.data.roads.find((r) => r.kind === 'volcano')
   const pts = road.points
@@ -84,7 +84,7 @@ const t0 = Date.now()
 for (let i = 0; (Date.now() - t0) / 1000 < seconds; i++) {
   await page.waitForTimeout(2000)
   const t = await page.evaluate(() => {
-    const s = window.syn3h, b = s.player.body, p = b.translation(), v = b.linvel(), r = b.rotation()
+    const s = window.mira, b = s.player.body, p = b.translation(), v = b.linvel(), r = b.rotation()
     const st = window.roadDriver.st
     return {
       idx: st.idx, done: st.done, offRoad: +st.offRoad.toFixed(1), y: +p.y.toFixed(1),

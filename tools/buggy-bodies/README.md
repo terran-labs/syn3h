@@ -1,7 +1,7 @@
 # Buggy body variations
 
 `build.py` builds the body variations listed in `variants.py` from the owner's original
-`Buggy.blend` (Syn3h client, `Assets/_Actors/Packages/Buggy/Components/Meshes/`) and writes them
+`Buggy.blend` (Mira client, `Assets/_Actors/Packages/Buggy/Components/Meshes/`) and writes them
 to `labs/buggy-bodies/` with an `index.json` the gallery reads. `labs/` is served by the dev
 server from the repository root but is not copied into the production build, so review models
 do not ship with the game.

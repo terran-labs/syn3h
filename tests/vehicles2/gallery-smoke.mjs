@@ -1,6 +1,6 @@
 import {chromium} from 'playwright-core'
 import fs from 'node:fs'
-const name=process.argv[2]??'jet',out='/tmp/syn3h-vehicles2',reference=name==='tank'?'legacy':'syn3h'
+const name=process.argv[2]??'jet',out='/tmp/syn3h-vehicles2',reference=name==='tank'?'legacy':'mira'
 fs.mkdirSync(out,{recursive:true})
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=metal','--ignore-gpu-blocklist']})
 try{

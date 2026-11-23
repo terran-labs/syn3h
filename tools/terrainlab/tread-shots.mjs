@@ -24,10 +24,10 @@ try {
     page.on('pageerror', (e) => errors.push(e.message))
     await page.routeWebSocket(/\/ws/, (s) => s.close())
     await page.goto(`${base}?autoplay=1&vehicle=buggy&world=${world}`, { waitUntil: 'load' })
-    await page.waitForFunction(() => window.syn3h?.game?.tick > 60, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game?.tick > 60, null, { timeout: 120000 })
     await page.exposeFunction('treadShot', (name) => page.screenshot({ path: `${out}/${world}-${name}.png` }))
     const seen = await page.evaluate(async () => {
-      const s = window.syn3h
+      const s = window.mira
       s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 11); s.params.set('sun.dayLength', 0)
       const kinds = {}
       // Straight, then a hard turn under throttle so the wheels slide, then straighten.

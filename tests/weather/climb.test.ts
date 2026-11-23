@@ -8,7 +8,7 @@ import type { Game } from '../../src/core/Game'
 import { emptyInput } from '../../src/core/Input'
 import { FIXED_DT, createWorld, initPhysics } from '../../src/core/physics'
 import { createPilot } from '../../src/bots/pilot'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { params } from '../../shared/params'
 import { RECOMMENDED_STORMINESS, WeatherSystem, setWeatherClock, storminess } from '../../src/world/weather'
 import { island } from '../bots/island'
@@ -27,7 +27,7 @@ function climb(storm: number, seconds: number) {
   const pts = road.points
   const a = pts[2], b = pts[4]
   const game = { world, scene: new Scene(), tick: 0, input: { state: emptyInput() } } as unknown as Game
-  const v = new Syn3hBuggy(game, terrain, new Vector3(a.x, a.y + 1.5, a.z), Math.atan2(-(b.x - a.x), -(b.z - a.z)))
+  const v = new MiraBuggy(game, terrain, new Vector3(a.x, a.y + 1.5, a.z), Math.atan2(-(b.x - a.x), -(b.z - a.z)))
   v.isLocal = false
   const pilot = createPilot(v, terrain)!
   const weather = new WeatherSystem(() => terrain, () => [v])

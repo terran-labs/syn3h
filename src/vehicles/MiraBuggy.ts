@@ -1,10 +1,10 @@
 /**
- * The Syn3h buggy (kinds 'buggy' and 'buggy-syn3h', the default), ported from the Syn3h Unity
+ * The Mira buggy (kinds 'buggy' and 'buggy-syn3h', the default), ported from the Syn3h Unity
  * client: `_Actors/Packages/Buggy/Components/Scripts/VhiclBuggy.cs` (cited "VB NNN"), with the
  * shared behaviour of `_Core/Scripts/Vhicl.cs` ("Vhicl NNN") and `VhiclMe.cs` ("Me NNN"), and
  * the serialized values of `_Actors/terra.buggy.prefab` ("prefab").
  *
- * Syn3h grew out of the Mars Explorer buggy (see ClassicBuggy.ts) but is a different machine:
+ * Mira grew out of the Mars Explorer buggy (see ClassicBuggy.ts) but is a different machine:
  * 0.5 m wheels on a 2.6 x 2.6 m footprint, smoothed input, friction 13, softer shocks, a lerped
  * wing state, brakes that only bite when the wheels are loaded, auto brake at rest, and a
  * dedicated low friction skid plate instead of friction switching.
@@ -91,7 +91,7 @@ const INPUT_SMOOTHING = 10
 const AUTO_BRAKE_V2 = 1
 
 /**
- * Convex hull of the "Collider" mesh of Syn3h Buggy.blend (the prefab's convex MeshCollider,
+ * Convex hull of the "Collider" mesh of Mira Buggy.blend (the prefab's convex MeshCollider,
  * scale 1), read once from the original buggy.glb (now source material in tools/models) whose
  * frame matches Unity's (its wheel nodes sit at WheelPos). Turned 180 degrees about Y into our frame: nose at -Z.
  */
@@ -107,7 +107,7 @@ const SKID_HALF = { x: 1.25, y: 0.225, z: 1.740579 }
 const SKID_CENTER = { x: 0, y: 0.13976786, z: -0.090771556 }
 
 /**
- * Next-gen tyre contact (not from Syn3h). Each wheel is a brush: while it holds, slip winds up a
+ * Next-gen tyre contact (not from Mira). Each wheel is a brush: while it holds, slip winds up a
  * stiff spring-damper in the wheel plane, so the buggy truly parks on a slope and corners
  * without sideslip. The force is capped at mu x load, where mu goes from buggy.grip at rest to
  * buggy.slide (grip at speed) by the grip fade speed, and drops to SLIDE_RATIO of that as the
@@ -200,7 +200,7 @@ function moveToward(v: number, target: number, step: number): number {
 }
 
 const UP = new THREE.Vector3(0, 1, 0)
-/** Float points over the Syn3h hull footprint (half width 1.37, half length 2.1). */
+/** Float points over the Mira hull footprint (half width 1.37, half length 2.1). */
 const FLOAT_POINTS = floatPoints(1.37, 2.1, 0, 0.5)
 /** Wheel rays hit TerrainMask 257 only (Vhicl 21: layers Default and 8): never vehicles. */
 const RAY_GROUPS = groups(GROUP_ALL, GROUP_TERRAIN)
@@ -227,7 +227,7 @@ export interface SkinFactory {
   (): BuggySkin
 }
 
-export class Syn3hBuggy extends Vehicle {
+export class MiraBuggy extends Vehicle {
   readonly kind: 'buggy' | 'buggy-syn3h'
   readonly hull: RAPIER.Collider
   readonly skid: RAPIER.Collider
@@ -565,7 +565,7 @@ export class Syn3hBuggy extends Vehicle {
     let wheelsAreTouchingGround = false
     this.totalSuspensionCompression = 0
 
-    // Smart suspension, VB 160-176. Always on in Syn3h, driven by body speed, lerp rate 1.
+    // Smart suspension, VB 160-176. Always on in Mira, driven by body speed, lerp rate 1.
     let desired = 0.5
     if (this.areWingsOpen) {
       if (!this.raycast(pos, this.v1.set(0, -1, 0), 5)) desired = 0
@@ -984,7 +984,7 @@ export class Syn3hBuggy extends Vehicle {
   }
 
   /**
-   * Next-gen aerodynamics with the wings shut (not from Syn3h), all growing with speed:
+   * Next-gen aerodynamics with the wings shut (not from Mira), all growing with speed:
    * - downforce (buggy.downforce) along the body's down axis, only in proportion to the wheels
    *   on the ground, so it adds grip at speed without shortening a jump;
    * - a tail fin (buggy.fin): a side force at the tail against its sideways motion, which
@@ -1052,7 +1052,7 @@ export class Syn3hBuggy extends Vehicle {
   }
 
   /** Which drivetrain state throttle `y` asks for at forward speed `vf` (see drivetrain()). */
-  private driveMode(y: number, vf: number): Syn3hBuggy['drive'] {
+  private driveMode(y: number, vf: number): MiraBuggy['drive'] {
     if (this.brakes) return 'hold'
     if (Math.abs(y) <= THROTTLE_DEADZONE) {
       return buggyIdleHold.value && Math.abs(vf) < HOLD_SPEED && this.wheelsGrounded > 0 ? 'hold' : 'coast'

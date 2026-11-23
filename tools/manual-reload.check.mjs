@@ -9,7 +9,7 @@ test('installed Vite reload paths become notices; unknown clients fail closed', 
   const root = dirname(require.resolve('vite/package.json'));
   const code = await readFile(join(root, 'dist/client/client.mjs'), 'utf8');
   const patched = patchReloads(code);
-  assert.equal((patched.match(/new CustomEvent\("syn3h:new-build"\)/g) ?? []).length, 3);
+  assert.equal((patched.match(/new CustomEvent\("mira:new-build"\)/g) ?? []).length, 3);
   assert.equal(patched.includes('location.reload()'), false);
   assert.ok(patched.includes('hmrClient.queueUpdate(update)'));
   assert.throws(() => patchReloads('changed client'), /Vite client changed/);

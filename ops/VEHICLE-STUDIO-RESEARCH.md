@@ -7,10 +7,10 @@ have been purchased for this research.
 
 ## Owner's direction
 
-Players should create their own vehicles inside Syn3h: distinctive bodies, mechanical
+Players should create their own vehicles inside Mira: distinctive bodies, mechanical
 systems and handling with an understandable engineering rationale. A simple shape editor
 could capture the silhouette, then frontier models could propose fins, wings, chrome,
-lights and other details in the established Syn3h style. Random generation should produce
+lights and other details in the established Mira style. Random generation should produce
 fresh designs, while extensive customization lets people develop a favorite.
 
 The owner wants to build another community of hundreds of thousands of players, drawing
@@ -48,7 +48,7 @@ ownership, saved garages and debugging.
 <details>
 <summary>Generate bodies from a shape language, then expose an editor</summary>
 
-Syn3h already contains useful foundations. The jet's GameJet constructs close, medium
+Mira already contains useful foundations. The jet's GameJet constructs close, medium
 and far models from a shared design; HoverBody accepts a design builder, material roles
 and detail budgets. These are authored procedural designs, not a general player studio.
 Unique designs also reduce the benefit of caches currently shared by matching craft.
@@ -208,7 +208,7 @@ fixes and their validation no longer consume the available capacity.
 ## Evidence and limitations
 
 Source inspection: src/vehicles/jetgen/GameJet.ts, src/vehicles/hover/HoverBody.ts and
-src/vehicles/Syn3hBuggy.ts in the current integration checkout. Existing lazy model levels,
+src/vehicles/MiraBuggy.ts in the current integration checkout. Existing lazy model levels,
 shared geometry caches, material roles and explicit suspension/drive behavior provide
 starting points; they do not prove arbitrary generated designs will work.
 

@@ -1,7 +1,7 @@
 import { beforeAll, afterEach, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics, RAPIER } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { Tank } from '../../src/vehicles/Tank'
 import { Hovercraft } from '../../src/vehicles/Hovercraft'
 import { Jet } from '../../src/vehicles/Jet'
@@ -15,8 +15,8 @@ function setup(){
  const h=harness();h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=> 'water'
  return h
 }
-it('syn3h stays up while it paddles and sinks to the bed when it stops',()=>{
- const h=setup(),v=new Syn3hBuggy(h.game,h.terrain,new THREE.Vector3(0,10.2,0));v.isLocal=false
+it('mira stays up while it paddles and sinks to the bed when it stops',()=>{
+ const h=setup(),v=new MiraBuggy(h.game,h.terrain,new THREE.Vector3(0,10.2,0));v.isLocal=false
  try{
   v.input.y=1;const z=v.body.translation().z;h.step(v,300)
   expect(Math.abs(v.body.translation().y-10)).toBeLessThan(1)
@@ -28,7 +28,7 @@ it('syn3h stays up while it paddles and sinks to the bed when it stops',()=>{
 })
 it('switch off retains the legacy float',()=>{
  const h=setup();waterSinking.value=false
- const v=new Syn3hBuggy(h.game,h.terrain,new THREE.Vector3(0,9,0));v.isLocal=false
+ const v=new MiraBuggy(h.game,h.terrain,new THREE.Vector3(0,9,0));v.isLocal=false
  try{h.step(v,900);expect(v.body.translation().y).toBeGreaterThan(9)}finally{v.dispose();h.world.free()}
 })
 // Isolated rigid bodies distinguish hydrodynamic forces from each vehicle controller.
@@ -67,7 +67,7 @@ it.each([['tank',Tank],['hovercraft',Hovercraft],['jet',Jet]] as const)('%s cont
 
 it('actual zorbed buggy floats in the shared model and follows current',()=>{
  const h=setup();h.terrain.liquidFlowAt=(_x,_z,out)=>{out.x=3;out.z=0;return out}
- const v=new Syn3hBuggy(h.game,h.terrain,new THREE.Vector3(0,6,0));v.isLocal=false;v.input.zorb=true
+ const v=new MiraBuggy(h.game,h.terrain,new THREE.Vector3(0,6,0));v.isLocal=false;v.input.zorb=true
  try{
   h.step(v,1800)
   expect(v.zorb.active).toBe(true)

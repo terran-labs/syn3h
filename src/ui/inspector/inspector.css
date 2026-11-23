@@ -5,104 +5,104 @@
 /* Frosted glass. Three weights, chosen with the Glass setting (data-glass on the shell):
    what is behind is blurred and lifted, a hairline rim catches light at the top left and
    bottom right, and one soft highlight sits near the top edge. */
-.syn3h-shell .wi-glass {
+.mira-shell .wi-glass {
   --frost: 26px; --body: rgb(24 24 26 / .58);
   position: relative; border-radius: 16px; isolation: isolate;
   background: linear-gradient(180deg, rgb(235 235 235 / .16), rgb(219 219 219 / .035) 38%, rgb(219 219 219 / .07)), var(--body);
   -webkit-backdrop-filter: blur(var(--frost)) saturate(115%) brightness(1.08); backdrop-filter: blur(var(--frost)) saturate(115%) brightness(1.08);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / .16), inset 0 12px 20px -14px rgb(255 255 255 / .28), inset 0 -10px 16px -12px rgb(0 0 0 / .35), 0 14px 36px rgb(0 0 0 / .34);
 }
-.syn3h-shell .wi-glass::before {
+.mira-shell .wi-glass::before {
   content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
   background: conic-gradient(from 205deg, rgb(255 255 255 / .5), rgb(255 255 255 / .08) 18%, rgb(255 255 255 / .04) 38%, rgb(255 255 255 / .32) 52%, rgb(255 255 255 / .07) 70%, rgb(255 255 255 / .04) 88%, rgb(255 255 255 / .5));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
 }
-.syn3h-shell[data-glass="0"] .wi-glass { --frost: 8px; --body: rgb(24 24 26 / .32); }
-.syn3h-shell[data-glass="2"] .wi-glass { --frost: 44px; --body: rgb(16 16 18 / .76); }
+.mira-shell[data-glass="0"] .wi-glass { --frost: 8px; --body: rgb(24 24 26 / .32); }
+.mira-shell[data-glass="2"] .wi-glass { --frost: 44px; --body: rgb(16 16 18 / .76); }
 /* Safari frosts weakly over a canvas, and the ladder or the lowest graphics level turns
    frost off: in both cases the glass carries a darker body so text stays readable. */
-@supports (font: -apple-system-body) and (-webkit-appearance: none) { .syn3h-shell[data-glass] .wi-glass { --body: rgb(20 20 22 / .86); } }
-html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter: none; backdrop-filter: none; --body: rgb(15 15 16 / .88); }
+@supports (font: -apple-system-body) and (-webkit-appearance: none) { .mira-shell[data-glass] .wi-glass { --body: rgb(20 20 22 / .86); } }
+html[data-gfx="0"] .mira-shell[data-glass] .wi-glass { -webkit-backdrop-filter: none; backdrop-filter: none; --body: rgb(15 15 16 / .88); }
 
-.syn3h-shell .world-inspector { position: fixed; z-index: 13; top: 76px; right: max(20px, env(safe-area-inset-right)); width: min(350px, calc(100vw - 40px)); max-height: calc(100vh - 96px); display: flex; flex-direction: column; gap: 8px; color: var(--s3-ink); font: 400 14px/1.45 'Barlow', sans-serif; transition: opacity .45s ease, translate .45s cubic-bezier(.2,.7,.2,1); }
-.syn3h-shell .world-inspector[hidden] { display: none; }
-.syn3h-shell:not(.is-playing) .world-inspector { display: none; }
-.syn3h-shell .world-inspector * { box-sizing: border-box; }
-.syn3h-shell .wi-top { padding: 10px; display: grid; gap: 8px; flex: none; }
-.syn3h-shell .world-inspector .wi-search { width: 100%; min-height: 36px; padding: 6px 12px; border-radius: 10px; border: 1px solid rgb(255 255 255 / .14); background: rgb(0 0 0 / .28); color: var(--s3-ink); font: 400 15px 'Barlow', sans-serif; }
-.syn3h-shell .world-inspector .wi-search:focus { outline: none; border-color: var(--s3-accent-2); box-shadow: 0 0 0 3px rgb(130 130 130 / .25); }
-.syn3h-shell .wi-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.mira-shell .world-inspector { position: fixed; z-index: 13; top: 76px; right: max(20px, env(safe-area-inset-right)); width: min(350px, calc(100vw - 40px)); max-height: calc(100vh - 96px); display: flex; flex-direction: column; gap: 8px; color: var(--s3-ink); font: 400 14px/1.45 'Barlow', sans-serif; transition: opacity .45s ease, translate .45s cubic-bezier(.2,.7,.2,1); }
+.mira-shell .world-inspector[hidden] { display: none; }
+.mira-shell:not(.is-playing) .world-inspector { display: none; }
+.mira-shell .world-inspector * { box-sizing: border-box; }
+.mira-shell .wi-top { padding: 10px; display: grid; gap: 8px; flex: none; }
+.mira-shell .world-inspector .wi-search { width: 100%; min-height: 36px; padding: 6px 12px; border-radius: 10px; border: 1px solid rgb(255 255 255 / .14); background: rgb(0 0 0 / .28); color: var(--s3-ink); font: 400 15px 'Barlow', sans-serif; }
+.mira-shell .world-inspector .wi-search:focus { outline: none; border-color: var(--s3-accent-2); box-shadow: 0 0 0 3px rgb(130 130 130 / .25); }
+.mira-shell .wi-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 /* The inspector's own small buttons: quieter than the lobby's glass buttons. */
-.syn3h-shell .world-inspector .wi-actions button, .syn3h-shell .world-inspector .wi-switch button, .syn3h-shell .world-inspector .wi-seg button { all: unset; box-sizing: border-box; cursor: pointer; padding: 5px 12px; border-radius: 999px; font: 500 13px/1.3 'Barlow', sans-serif; color: var(--s3-ink); background: rgb(255 255 255 / .1); box-shadow: inset 0 0 0 .5px rgb(255 255 255 / .22); transition: background .15s, color .15s; }
-.syn3h-shell .world-inspector .wi-actions button:is(:hover, .syn3h-shell :focus-visible), .syn3h-shell .world-inspector .wi-switch button:is(:hover, .syn3h-shell :focus-visible), .syn3h-shell .world-inspector .wi-seg button:is(:hover, .syn3h-shell :focus-visible) { background: rgb(255 255 255 / .2); }
-.syn3h-shell .world-inspector button:focus-visible, .syn3h-shell .world-inspector summary:focus-visible, .syn3h-shell .world-inspector input:focus-visible { outline: 2px solid var(--s3-accent-2); outline-offset: 2px; }
-.syn3h-shell .world-inspector .wi-actions [data-wi="copy-world"], .syn3h-shell .world-inspector .is-on { background: linear-gradient(#696969, #4a4a4a); box-shadow: inset 0 0 0 .5px rgb(200 200 200 / .5); color: #fff; }
-.syn3h-shell .world-inspector .is-warning { background: rgb(255 170 90 / .28); color: #ffd9b0; }
-.syn3h-shell .world-inspector button:disabled { opacity: .4; cursor: default; }
+.mira-shell .world-inspector .wi-actions button, .mira-shell .world-inspector .wi-switch button, .mira-shell .world-inspector .wi-seg button { all: unset; box-sizing: border-box; cursor: pointer; padding: 5px 12px; border-radius: 999px; font: 500 13px/1.3 'Barlow', sans-serif; color: var(--s3-ink); background: rgb(255 255 255 / .1); box-shadow: inset 0 0 0 .5px rgb(255 255 255 / .22); transition: background .15s, color .15s; }
+.mira-shell .world-inspector .wi-actions button:is(:hover, .mira-shell :focus-visible), .mira-shell .world-inspector .wi-switch button:is(:hover, .mira-shell :focus-visible), .mira-shell .world-inspector .wi-seg button:is(:hover, .mira-shell :focus-visible) { background: rgb(255 255 255 / .2); }
+.mira-shell .world-inspector button:focus-visible, .mira-shell .world-inspector summary:focus-visible, .mira-shell .world-inspector input:focus-visible { outline: 2px solid var(--s3-accent-2); outline-offset: 2px; }
+.mira-shell .world-inspector .wi-actions [data-wi="copy-world"], .mira-shell .world-inspector .is-on { background: linear-gradient(#696969, #4a4a4a); box-shadow: inset 0 0 0 .5px rgb(200 200 200 / .5); color: #fff; }
+.mira-shell .world-inspector .is-warning { background: rgb(255 170 90 / .28); color: #ffd9b0; }
+.mira-shell .world-inspector button:disabled { opacity: .4; cursor: default; }
 
-.syn3h-shell .wi-cards { display: grid; gap: 8px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / .25) transparent; padding: 1px; margin: -1px; flex: 0 1 auto; min-height: 0; }
-.syn3h-shell .wi-card { flex: none; }
-.syn3h-shell .world-inspector .wi-head { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: auto 1fr 14px; align-items: baseline; gap: 10px; width: 100%; padding: 10px 14px; }
-.syn3h-shell .wi-head h3 { margin: 0; font: 600 18px/1.2 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; color: #fff; }
-.syn3h-shell .wi-sum { text-align: right; color: var(--s3-dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.syn3h-shell .wi-chev { width: 7px; height: 7px; border-right: 1.5px solid var(--s3-dim); border-bottom: 1.5px solid var(--s3-dim); rotate: -45deg; transition: rotate .2s; align-self: center; }
-.syn3h-shell .wi-card.is-open .wi-chev { rotate: 45deg; }
-.syn3h-shell .wi-body { padding: 0 12px 12px; border-top: 1px solid transparent; border-image: var(--rule) 1; }
-.syn3h-shell .wi-blurb { margin: 8px 2px 6px; color: var(--s3-dim); font-size: 13px; }
-.syn3h-shell .wi-switch { display: flex; gap: 5px; flex-wrap: wrap; margin: 2px 0 8px; }
+.mira-shell .wi-cards { display: grid; gap: 8px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / .25) transparent; padding: 1px; margin: -1px; flex: 0 1 auto; min-height: 0; }
+.mira-shell .wi-card { flex: none; }
+.mira-shell .world-inspector .wi-head { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: auto 1fr 14px; align-items: baseline; gap: 10px; width: 100%; padding: 10px 14px; }
+.mira-shell .wi-head h3 { margin: 0; font: 600 18px/1.2 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; color: #fff; }
+.mira-shell .wi-sum { text-align: right; color: var(--s3-dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mira-shell .wi-chev { width: 7px; height: 7px; border-right: 1.5px solid var(--s3-dim); border-bottom: 1.5px solid var(--s3-dim); rotate: -45deg; transition: rotate .2s; align-self: center; }
+.mira-shell .wi-card.is-open .wi-chev { rotate: 45deg; }
+.mira-shell .wi-body { padding: 0 12px 12px; border-top: 1px solid transparent; border-image: var(--rule) 1; }
+.mira-shell .wi-blurb { margin: 8px 2px 6px; color: var(--s3-dim); font-size: 13px; }
+.mira-shell .wi-switch { display: flex; gap: 5px; flex-wrap: wrap; margin: 2px 0 8px; }
 /* Accordion: one fold per group. */
-.syn3h-shell .wi-group { border-top: 1px solid transparent; border-image: var(--rule) 1; }
-.syn3h-shell .wi-group:first-of-type { border-top: 0; }
-.syn3h-shell .wi-group summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 7px 2px; font-weight: 500; }
-.syn3h-shell .wi-group summary::-webkit-details-marker { display: none; }
-.syn3h-shell .wi-group summary::before { content: ""; width: 0; height: 0; border: 4px solid transparent; border-left: 6px solid var(--s3-dim); transition: rotate .2s; transform-origin: 3px 50%; }
-.syn3h-shell .wi-group[open] summary::before { rotate: 90deg; }
-.syn3h-shell .wi-group summary small { margin-left: auto; color: var(--s3-soft); font-size: 12px; }
-.syn3h-shell .wi-row { display: grid; grid-template-columns: minmax(0, 1fr) 118px 50px; align-items: center; gap: 8px; padding: 3px 6px 3px 16px; border-radius: 8px; }
-.syn3h-shell .wi-row[hidden] { display: none; }
-.syn3h-shell .wi-row.is-selected { background: linear-gradient(90deg, transparent, rgb(130 130 130 / .12) 22%, rgb(130 130 130 / .12) 78%, transparent); }
-.syn3h-shell .wi-row.is-choice { grid-template-columns: minmax(0, 88px) 1fr; }
-.syn3h-shell .wi-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.syn3h-shell .wi-row output { float: none; text-align: right; color: var(--s3-accent-2); font-variant-numeric: tabular-nums; font-size: 13px; }
-.syn3h-shell .world-inspector input[type=range] { display: block; width: 100%; height: 22px; min-height: 0; margin: 0; accent-color: var(--s3-accent); background: none; }
-.syn3h-shell .world-inspector input[type=number] { width: 100%; min-height: 26px; padding: 2px 6px; border-radius: 6px; border: 1px solid rgb(255 255 255 / .16); background: rgb(0 0 0 / .28); color: var(--s3-ink); font: 400 13px 'Barlow', sans-serif; }
-.syn3h-shell .wi-seg { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
-.syn3h-shell .world-inspector .wi-seg button { padding: 3px 9px; font-size: 12.5px; }
-.syn3h-shell .wi-foot { margin-top: 10px; }
-.syn3h-shell.is-locked .wi-card[data-section]:not([data-section="you"]) .wi-row { opacity: .6; }
+.mira-shell .wi-group { border-top: 1px solid transparent; border-image: var(--rule) 1; }
+.mira-shell .wi-group:first-of-type { border-top: 0; }
+.mira-shell .wi-group summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 7px 2px; font-weight: 500; }
+.mira-shell .wi-group summary::-webkit-details-marker { display: none; }
+.mira-shell .wi-group summary::before { content: ""; width: 0; height: 0; border: 4px solid transparent; border-left: 6px solid var(--s3-dim); transition: rotate .2s; transform-origin: 3px 50%; }
+.mira-shell .wi-group[open] summary::before { rotate: 90deg; }
+.mira-shell .wi-group summary small { margin-left: auto; color: var(--s3-soft); font-size: 12px; }
+.mira-shell .wi-row { display: grid; grid-template-columns: minmax(0, 1fr) 118px 50px; align-items: center; gap: 8px; padding: 3px 6px 3px 16px; border-radius: 8px; }
+.mira-shell .wi-row[hidden] { display: none; }
+.mira-shell .wi-row.is-selected { background: linear-gradient(90deg, transparent, rgb(130 130 130 / .12) 22%, rgb(130 130 130 / .12) 78%, transparent); }
+.mira-shell .wi-row.is-choice { grid-template-columns: minmax(0, 88px) 1fr; }
+.mira-shell .wi-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mira-shell .wi-row output { float: none; text-align: right; color: var(--s3-accent-2); font-variant-numeric: tabular-nums; font-size: 13px; }
+.mira-shell .world-inspector input[type=range] { display: block; width: 100%; height: 22px; min-height: 0; margin: 0; accent-color: var(--s3-accent); background: none; }
+.mira-shell .world-inspector input[type=number] { width: 100%; min-height: 26px; padding: 2px 6px; border-radius: 6px; border: 1px solid rgb(255 255 255 / .16); background: rgb(0 0 0 / .28); color: var(--s3-ink); font: 400 13px 'Barlow', sans-serif; }
+.mira-shell .wi-seg { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.mira-shell .world-inspector .wi-seg button { padding: 3px 9px; font-size: 12.5px; }
+.mira-shell .wi-foot { margin-top: 10px; }
+.mira-shell.is-locked .wi-card[data-section]:not([data-section="you"]) .wi-row { opacity: .6; }
 
 /* The detail pane: what the property under the pointer is for, and its limits. */
-.syn3h-shell .wi-detail { flex: none; padding: 11px 14px 12px; }
-.syn3h-shell .wi-detail[hidden], .syn3h-shell .wi-sheet[hidden] { display: none; }
-.syn3h-shell .wi-detail-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.syn3h-shell .wi-detail strong { font: 600 17px/1.2 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; }
-.syn3h-shell .wi-chip { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid rgb(255 255 255 / .2); color: var(--s3-dim); }
-.syn3h-shell .wi-chip.is-shared { border-color: rgb(130 130 130 / .55); color: var(--s3-accent-2); }
-.syn3h-shell .wi-detail code { margin-left: auto; font: 11px ui-monospace, Menlo, monospace; color: var(--s3-soft); }
-.syn3h-shell .world-inspector .wi-detail p { margin: 6px 0 0; font-size: 13.5px; color: #e4e4e8; }
-.syn3h-shell .wi-guard { position: relative; height: 6px; border-radius: 3px; background: rgb(255 255 255 / .13); margin: 12px 0 6px; }
-.syn3h-shell .wi-guard i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: linear-gradient(90deg, rgb(130 130 130 / .35), var(--s3-accent)); }
-.syn3h-shell .wi-guard b { position: absolute; top: -4px; width: 3px; height: 14px; margin-left: -1.5px; border-radius: 2px; background: #fff; }
-.syn3h-shell .wi-guard u { position: absolute; top: -2px; width: 2px; height: 10px; margin-left: -1px; background: var(--s3-dim); }
-.syn3h-shell .wi-detail small { color: var(--s3-dim); font-size: 12px; }
-.syn3h-shell .wi-sheet { flex: none; padding: 11px 12px; display: grid; gap: 8px; }
-.syn3h-shell .wi-sheet strong { font: 600 16px 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; }
-.syn3h-shell .world-inspector .wi-sheet textarea { width: 100%; height: 130px; resize: vertical; border-radius: 10px; border: 1px solid rgb(255 255 255 / .16); background: rgb(0 0 0 / .4); color: #e2e2e2; font: 12px/1.5 ui-monospace, Menlo, monospace; padding: 8px 10px; }
-.syn3h-shell .wi-sheet.is-copy [data-wi="apply"] { display: none; }
-.syn3h-shell .wi-status { margin: 0 4px; min-height: 18px; font-size: 12.5px; color: var(--s3-accent-2); text-shadow: var(--float-under); text-align: right; }
+.mira-shell .wi-detail { flex: none; padding: 11px 14px 12px; }
+.mira-shell .wi-detail[hidden], .mira-shell .wi-sheet[hidden] { display: none; }
+.mira-shell .wi-detail-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mira-shell .wi-detail strong { font: 600 17px/1.2 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; }
+.mira-shell .wi-chip { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid rgb(255 255 255 / .2); color: var(--s3-dim); }
+.mira-shell .wi-chip.is-shared { border-color: rgb(130 130 130 / .55); color: var(--s3-accent-2); }
+.mira-shell .wi-detail code { margin-left: auto; font: 11px ui-monospace, Menlo, monospace; color: var(--s3-soft); }
+.mira-shell .world-inspector .wi-detail p { margin: 6px 0 0; font-size: 13.5px; color: #e4e4e8; }
+.mira-shell .wi-guard { position: relative; height: 6px; border-radius: 3px; background: rgb(255 255 255 / .13); margin: 12px 0 6px; }
+.mira-shell .wi-guard i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: linear-gradient(90deg, rgb(130 130 130 / .35), var(--s3-accent)); }
+.mira-shell .wi-guard b { position: absolute; top: -4px; width: 3px; height: 14px; margin-left: -1.5px; border-radius: 2px; background: #fff; }
+.mira-shell .wi-guard u { position: absolute; top: -2px; width: 2px; height: 10px; margin-left: -1px; background: var(--s3-dim); }
+.mira-shell .wi-detail small { color: var(--s3-dim); font-size: 12px; }
+.mira-shell .wi-sheet { flex: none; padding: 11px 12px; display: grid; gap: 8px; }
+.mira-shell .wi-sheet strong { font: 600 16px 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; }
+.mira-shell .world-inspector .wi-sheet textarea { width: 100%; height: 130px; resize: vertical; border-radius: 10px; border: 1px solid rgb(255 255 255 / .16); background: rgb(0 0 0 / .4); color: #e2e2e2; font: 12px/1.5 ui-monospace, Menlo, monospace; padding: 8px 10px; }
+.mira-shell .wi-sheet.is-copy [data-wi="apply"] { display: none; }
+.mira-shell .wi-status { margin: 0 4px; min-height: 18px; font-size: 12.5px; color: var(--s3-accent-2); text-shadow: var(--float-under); text-align: right; }
 @media (max-width: 700px), (max-height: 500px) { .world-inspector { top: 58px; right: 10px; width: min(330px, calc(100vw - 20px)); max-height: calc(100vh - 70px); } }
 
 /* ---------------------------------------------------------------------------------------
    Focus: the cursor is captured and the player is driving. The inspector, the score panel,
    the menu row and the minimap fade away, and a minimal exploration display fades in.
    --------------------------------------------------------------------------------------- */
-.syn3h-shell .shell-hud, .syn3h-shell .hud-navigation, .syn3h-shell .shell-minimap { transition: opacity .45s ease; }
-.syn3h-shell.is-focus .world-inspector { opacity: 0; translate: 24px 0; pointer-events: none; }
+.mira-shell .shell-hud, .mira-shell .hud-navigation, .mira-shell .shell-minimap { transition: opacity .45s ease; }
+.mira-shell.is-focus .world-inspector { opacity: 0; translate: 24px 0; pointer-events: none; }
 .is-focus .shell-hud, .is-focus .hud-navigation, .is-focus .shell-minimap { opacity: 0; pointer-events: none; }
 
 .focus-hud { position: fixed; inset: 0; z-index: 12; pointer-events: none; opacity: 0; transition: opacity .55s ease; color: #fff; font: 600 13px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .14em; text-transform: uppercase; font-variant-numeric: tabular-nums; text-shadow: var(--hud-under, 0 0 1px rgb(0 8 14 / .9), 0 1px 10px rgb(0 8 14 / .4)); }
 .is-focus.is-playing .focus-hud { opacity: 1; }
-.syn3h-shell:not(.is-playing) .focus-hud { display: none; }
+.mira-shell:not(.is-playing) .focus-hud { display: none; }
 .focus-hud svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .focus-hud .fh-line { fill: none; stroke: rgb(255 255 255 / .95); stroke-width: 1.2; vector-effect: non-scaling-stroke; filter: var(--hud-line-under); }
 .focus-hud .fh-faint { fill: none; stroke: rgb(255 255 255 / .4); stroke-width: 1; vector-effect: non-scaling-stroke; filter: var(--hud-line-under); }
@@ -121,57 +121,57 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .fh-tr { right: 28px; top: 28px; text-align: right; } .fh-tr::before { right: 0; top: 0; border-left: 0; border-bottom: 0; }
 .fh-bl { left: 28px; bottom: 28px; } .fh-bl::before { left: 0; bottom: 0; border-right: 0; border-top: 0; }
 .fh-br { right: 28px; bottom: 28px; text-align: right; } .fh-br::before { right: 0; bottom: 0; border-left: 0; border-top: 0; }
-@media (prefers-reduced-motion: reduce) { .world-inspector, .focus-hud, .syn3h-shell .shell-hud, .syn3h-shell .hud-navigation, .syn3h-shell .shell-minimap { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .world-inspector, .focus-hud, .mira-shell .shell-hud, .mira-shell .hud-navigation, .mira-shell .shell-minimap { transition: none; } }
 
 /* Shell rules for paragraphs, fields and outputs are written for the lobby's large type;
    inside the inspector everything is compact. */
-.syn3h-shell .world-inspector p { margin: 0; }
-.syn3h-shell .world-inspector .wi-blurb { margin: 8px 2px 6px; }
-.syn3h-shell .world-inspector .wi-detail p { margin: 6px 0 0; }
-.syn3h-shell .world-inspector .wi-status { margin: 0 4px; }
-.syn3h-shell .world-inspector .wi-search { display: block; min-height: 36px; padding: 6px 12px; font: 400 15px 'Barlow', sans-serif; background: rgb(0 0 0 / .28); border: 1px solid rgb(255 255 255 / .14); border-radius: 10px; }
-.syn3h-shell .world-inspector input[type=number] { display: block; min-height: 26px; padding: 2px 6px; font: 400 13px 'Barlow', sans-serif; border-radius: 6px; }
+.mira-shell .world-inspector p { margin: 0; }
+.mira-shell .world-inspector .wi-blurb { margin: 8px 2px 6px; }
+.mira-shell .world-inspector .wi-detail p { margin: 6px 0 0; }
+.mira-shell .world-inspector .wi-status { margin: 0 4px; }
+.mira-shell .world-inspector .wi-search { display: block; min-height: 36px; padding: 6px 12px; font: 400 15px 'Barlow', sans-serif; background: rgb(0 0 0 / .28); border: 1px solid rgb(255 255 255 / .14); border-radius: 10px; }
+.mira-shell .world-inspector input[type=number] { display: block; min-height: 26px; padding: 2px 6px; font: 400 13px 'Barlow', sans-serif; border-radius: 6px; }
 /* With the cards open on a wide screen the minimap steps left, out from under them. */
-@media (min-width: 901px) { .syn3h-shell:not(.has-touch):has(.world-inspector:not([hidden], .lobby-settings)) .shell-minimap { right: calc(min(350px, 100vw - 40px) + 36px); } }
+@media (min-width: 901px) { .mira-shell:not(.has-touch):has(.world-inspector:not([hidden], .lobby-settings)) .shell-minimap { right: calc(min(350px, 100vw - 40px) + 36px); } }
 /* The show rules above set display: block, which would flatten the stacked readouts. */
 .focus-hud[data-show-style="0"] div[data-style="0"], .focus-hud[data-show-style="1"] div[data-style="1"], .focus-hud[data-show-style="2"] div[data-style="2"] { display: grid; }
 .fh-read small span { font-size: inherit; }
 /* Shell sliders carry lobby-sized margins; rows here are one compact line each. */
-.syn3h-shell .world-inspector .wi-row input[type=range] { height: 22px; min-height: 0; margin: 0; }
-.syn3h-shell .world-inspector .wi-row output { display: block; margin: 0; padding: 0; min-width: 0; opacity: 1; color: #e2e2e2; font: 500 13px 'Barlow', sans-serif; text-align: right; white-space: nowrap; }
-.syn3h-shell .world-inspector .wi-search::placeholder { color: rgb(255 255 255 / .55); }
+.mira-shell .world-inspector .wi-row input[type=range] { height: 22px; min-height: 0; margin: 0; }
+.mira-shell .world-inspector .wi-row output { display: block; margin: 0; padding: 0; min-width: 0; opacity: 1; color: #e2e2e2; font: 500 13px 'Barlow', sans-serif; text-align: right; white-space: nowrap; }
+.mira-shell .world-inspector .wi-search::placeholder { color: rgb(255 255 255 / .55); }
 /* Small labels sit over bright sky as often as dark ground: white ink and the shared shadow. */
 .focus-hud .fh-read small { color: #fff; text-shadow: var(--hud-under, 0 0 3px rgb(9 9 9 / .9), 0 1px 6px rgb(9 9 9 / .7)); }
 /* On touch the open cards are for editing, not driving: the minimap and the drive controls
    step aside until Create is tapped again, so nothing sits on top of a slider. */
 /* The chat button steps aside too: on a phone it floated over the open cards' controls. */
-:root:has(.syn3h-shell.has-touch .world-inspector:not([hidden], .lobby-settings)) :is(.touch-controls, .shell-minimap) { opacity: 0; pointer-events: none; transition: opacity .3s ease; }
+:root:has(.mira-shell.has-touch .world-inspector:not([hidden], .lobby-settings)) :is(.touch-controls, .shell-minimap) { opacity: 0; pointer-events: none; transition: opacity .3s ease; }
 /* The drive buttons set pointer-events: auto on themselves, so the faded buttons still took
    taps meant for the rail (BRAKE sat over the Sea choice on a phone held sideways). */
-:root:has(.syn3h-shell.has-touch .world-inspector:not([hidden], .lobby-settings)) .touch-controls * { pointer-events: none; }
-@media (max-width: 700px), (max-height: 500px) { .syn3h-shell .world-inspector { top: 58px; right: max(10px, env(safe-area-inset-right)); width: min(340px, calc(100vw - 20px)); max-height: calc(100dvh - 68px); } }
+:root:has(.mira-shell.has-touch .world-inspector:not([hidden], .lobby-settings)) .touch-controls * { pointer-events: none; }
+@media (max-width: 700px), (max-height: 500px) { .mira-shell .world-inspector { top: 58px; right: max(10px, env(safe-area-inset-right)); width: min(340px, calc(100vw - 20px)); max-height: calc(100dvh - 68px); } }
 /* Day length (dayLength.ts): a log slider, the length in minutes, and a line under them saying
    whether the planet's orbit sets it, with a way back to that default. */
-.syn3h-shell .world-inspector .wi-row.wi-day .wi-day-note { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -2px 0 2px; font: 400 11.5px/1.3 'Barlow', sans-serif; color: rgb(226 226 226 / .72); }
-.syn3h-shell .world-inspector .wi-row.wi-day.is-orbit .wi-day-note span::before { content: '◉ '; color: var(--s3-accent-2); }
-.syn3h-shell .world-inspector .wi-row.wi-day .wi-day-reset { all: unset; box-sizing: border-box; cursor: pointer; flex: none; padding: 2px 10px; border-radius: 999px; font: 500 12px/1.3 'Barlow', sans-serif; color: var(--s3-ink); background: rgb(255 255 255 / .1); box-shadow: inset 0 0 0 .5px rgb(255 255 255 / .22); }
-.syn3h-shell .world-inspector .wi-row.wi-day .wi-day-reset:is(:hover, :focus-visible) { background: rgb(255 255 255 / .2); }
-.syn3h-shell .world-inspector .wi-row.wi-day .wi-day-reset[hidden] { display: none; }
-.syn3h-shell .world-inspector .wi-row.wi-day .wi-day-reset:disabled { cursor: default; opacity: .5; }
+.mira-shell .world-inspector .wi-row.wi-day .wi-day-note { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -2px 0 2px; font: 400 11.5px/1.3 'Barlow', sans-serif; color: rgb(226 226 226 / .72); }
+.mira-shell .world-inspector .wi-row.wi-day.is-orbit .wi-day-note span::before { content: '◉ '; color: var(--s3-accent-2); }
+.mira-shell .world-inspector .wi-row.wi-day .wi-day-reset { all: unset; box-sizing: border-box; cursor: pointer; flex: none; padding: 2px 10px; border-radius: 999px; font: 500 12px/1.3 'Barlow', sans-serif; color: var(--s3-ink); background: rgb(255 255 255 / .1); box-shadow: inset 0 0 0 .5px rgb(255 255 255 / .22); }
+.mira-shell .world-inspector .wi-row.wi-day .wi-day-reset:is(:hover, :focus-visible) { background: rgb(255 255 255 / .2); }
+.mira-shell .world-inspector .wi-row.wi-day .wi-day-reset[hidden] { display: none; }
+.mira-shell .world-inspector .wi-row.wi-day .wi-day-reset:disabled { cursor: default; opacity: .5; }
 /* The Handling dropdown at the top of a vehicle's settings (Inspector.presetRow). */
-.syn3h-shell .world-inspector .wi-preset { display: grid; gap: 4px; margin: 6px 0 8px; padding: 0 6px 8px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
-.syn3h-shell .world-inspector .wi-preset-pick { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; }
-.syn3h-shell .world-inspector .wi-preset select { width: 100%; height: 44px; min-height: 44px; font-size: 15px; }
-.syn3h-shell .world-inspector .wi-preset-about { margin: 0; font-size: 12px; line-height: 1.35; opacity: .85; }
+.mira-shell .world-inspector .wi-preset { display: grid; gap: 4px; margin: 6px 0 8px; padding: 0 6px 8px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
+.mira-shell .world-inspector .wi-preset-pick { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; }
+.mira-shell .world-inspector .wi-preset select { width: 100%; height: 44px; min-height: 44px; font-size: 15px; }
+.mira-shell .world-inspector .wi-preset-about { margin: 0; font-size: 12px; line-height: 1.35; opacity: .85; }
 
 /* Liquid glass, the Liquid style's tuning, folded inside Interface under Style and Tint
    (Inspector.liquidFold). Absent, not disabled, at Frost or Flat. */
-.syn3h-shell .world-inspector .wi-group.wi-liquid-group.is-absent { display: none; }
-.syn3h-shell .world-inspector .wi-group.wi-subgroup { margin: 0; }
+.mira-shell .world-inspector .wi-group.wi-liquid-group.is-absent { display: none; }
+.mira-shell .world-inspector .wi-group.wi-subgroup { margin: 0; }
 
 /* A card held shorter than its content (Inspector.fit): its body fades out over its last 28 px
    while there is more below, so a row cut at the edge reads as "scroll for more". */
-.syn3h-shell .world-inspector .wi-card.is-clipped:not(.is-at-end) > .wi-body {
+.mira-shell .world-inspector .wi-card.is-clipped:not(.is-at-end) > .wi-body {
   -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
   mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
 }

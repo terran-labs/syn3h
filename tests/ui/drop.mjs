@@ -6,31 +6,32 @@
  * longest, and when), and stills along the way. Desktop and phone. The tap lands while the
  * opening is still throwing the world out to its orbit, and must enter that world.
  *
- *   SYN3H_URL=http://127.0.0.1:5193/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/drop.mjs
+ *   MIRA_URL=http://127.0.0.1:5193/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/drop.mjs
  *
  * Headless frame gaps are this Mac's, not a phone's: they find hitches (a main-thread stall
  * shows as one long gap), they do not prove smoothness on a device.
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5187/'
 const out = 'tests/ui/artifacts/drop'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const errors = [], report = []
-const ready = page => page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+const ready = page => page.waitForFunction(() => window.mira?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
 try {
   for (const view of [{ name: 'desktop', viewport: { width: 1440, height: 900 } }, { name: 'phone', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }]) {
     const page = await browser.newPage(view)
     page.on('pageerror', e => errors.push(`${view.name}: ${e.message}`)); page.on('console', m => { if (m.type() === 'error') errors.push(`${view.name}: ${m.text()}`) })
     await page.goto(`${base}?room=drop-${view.name}-${Date.now()}`, { waitUntil: 'load' }); await ready(page)
-    await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
-    await page.waitForFunction(() => window.syn3h.shell.graphics.planetMaps >= window.syn3h.planets.PLANETS.length, null, { timeout: 60000 })
+    await page.evaluate(() => { window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400) })
+    await page.waitForFunction(() => window.mira.shell.graphics.planetMaps >= window.mira.planets.PLANETS.length, null, { timeout: 60000 })
     // Watch from the tap: every frame gap, and whether any panel other than the index opened.
     await page.evaluate(() => {
       const w = window; w.__gaps = []; w.__panels = new Set(); let last = performance.now()
-      const tick = now => { w.__gaps.push([now - w.__t0, now - last]); last = now; const p = document.querySelector('.lobby-panels').dataset.activePanel; if (p && p !== 'index' && !document.querySelector('.syn3h-shell').classList.contains('is-playing')) w.__panels.add(p); if (!w.__done) requestAnimationFrame(tick) }
+      const tick = now => { w.__gaps.push([now - w.__t0, now - last]); last = now; const p = document.querySelector('.lobby-panels').dataset.activePanel; if (p && p !== 'index' && !document.querySelector('.mira-shell').classList.contains('is-playing')) w.__panels.add(p); if (!w.__done) requestAnimationFrame(tick) }
       w.__t0 = performance.now(); requestAnimationFrame(tick)
     })
     // Click the world while the opening is still throwing it out to its orbit, where it is drawn
@@ -40,7 +41,7 @@ try {
     // person holds it about a tenth of a second), so the worlds are back on their orbits by then.
     const target = 'alpine'
     const where = await page.evaluate(id => {
-      const g = window.syn3h.shell.galaxy, mode = window.syn3h.params.get('lobby.intro').value
+      const g = window.mira.shell.galaxy, mode = window.mira.params.get('lobby.intro').value
       const draw = at => { g.replayOpening(mode); g.openingAt = at; g.wake = 2; g.last = 0; g.loop(performance.now()); return g.screen.find(s => s.id === id) }
       const home = draw(100)
       for (let at = 0.5; at < 12; at += 0.05) {
@@ -52,31 +53,31 @@ try {
     assert.ok(where, `${view.name}: ${target} is never seen in flight away from its orbit`)
     const t0 = Date.now()
     await page.mouse.move(where.x, where.y); await page.mouse.down()
-    await page.evaluate(() => { const g = window.syn3h.shell.galaxy; g.openingAt = null; g.wake = 2; g.last = 0; g.loop(performance.now()) })
+    await page.evaluate(() => { const g = window.mira.shell.galaxy; g.openingAt = null; g.wake = 2; g.last = 0; g.loop(performance.now()) })
     await page.mouse.up()
     console.log(`${view.name}: clicked ${target} in flight at ${where.at} s (opening playing: ${where.playing}) at ${Math.round(where.x)},${Math.round(where.y)}; it rests at ${Math.round(where.home.x)},${Math.round(where.home.y)}`)
-    await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 1000 })
+    await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 1000 })
     for (const at of [300, 900, 1600, 2300, 3000, 3800, 4600, 5400]) { await page.waitForTimeout(Math.max(0, at - (Date.now() - t0))); await page.screenshot({ path: `${out}/${view.name}-${String(at).padStart(4, '0')}.png` }) }
-    await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 20000 })
+    await page.waitForFunction(() => { const s = document.querySelector('.mira-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 20000 })
     const took = Date.now() - t0
     await page.waitForTimeout(800); await page.screenshot({ path: `${out}/${view.name}-landed.png` })
     const watch = await page.evaluate(() => { window.__done = true; const g = window.__gaps.slice(1); const worst = g.reduce((a, b) => (b[1] > a[1] ? b : a), [0, 0]); return { panels: [...window.__panels], frames: g.length, worst: worst.map(v => Math.round(v)), over50: g.filter(x => x[1] > 50).map(x => `${Math.round(x[1])}ms@${Math.round(x[0])}`) } })
     assert.deepEqual(watch.panels, [], `${view.name}: a panel opened during the drop`)
-    assert.equal(await page.evaluate(() => window.syn3h.planets.currentPlanet().id), target)
+    assert.equal(await page.evaluate(() => window.mira.planets.currentPlanet().id), target)
     assert.ok(took < 11000, `${view.name}: the drop took ${took} ms`)
-    assert.equal(await page.evaluate(() => window.syn3h.game.input.suspended), false, 'and the game takes input')
+    assert.equal(await page.evaluate(() => window.mira.game.input.suspended), false, 'and the game takes input')
     if (view.name === 'desktop') {
       // Back in the menu on another panel: the finished drop does not linger as a wash behind it.
-      await page.evaluate(() => window.syn3h.shell.openMenu('worlds'))
+      await page.evaluate(() => window.mira.shell.openMenu('worlds'))
       await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.activePanel === 'worlds' && document.querySelector('.lobby-panels').dataset.busy === 'false', null, { timeout: 15000 })
-      assert.deepEqual(await page.evaluate(() => { const g = window.syn3h.shell.galaxy; return [g.flight ?? null, g.flightDone, g.dive] }), [null, false, 0], 'a finished drop is cleared when the galaxy comes back')
+      assert.deepEqual(await page.evaluate(() => { const g = window.mira.shell.galaxy; return [g.flight ?? null, g.flightDone, g.dive] }), [null, false, 0], 'a finished drop is cleared when the galaxy comes back')
       // A second drop from the reopened menu runs its whole course; it does not end at once.
-      await page.evaluate(() => window.syn3h.shell.showPanel('index'))
+      await page.evaluate(() => window.mira.shell.showPanel('index'))
       await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.activePanel === 'index' && document.querySelector('.lobby-panels').dataset.busy === 'false', null, { timeout: 15000 })
       const again = Date.now()
       await page.locator('.galaxy-label[data-world="desert"]').dispatchEvent('click')
-      await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 1000 })
-      await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 20000 })
+      await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 1000 })
+      await page.waitForFunction(() => { const s = document.querySelector('.mira-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 20000 })
       assert.ok(Date.now() - again > 2500, `the second drop ended after ${Date.now() - again} ms`)
     }
     report.push({ view: view.name, ms: took, frames: watch.frames, worstGap: `${watch.worst[1]} ms at ${watch.worst[0]} ms`, over50: watch.over50.slice(0, 8).join(' ') })
@@ -93,14 +94,14 @@ try {
     page.on('pageerror', e => { if (!/drop test failure/.test(e.message)) errors.push(`failure: ${e.message}`) })
     await page.goto(`${base}?room=drop-failure-${Date.now()}`, { waitUntil: 'load' }); await ready(page)
     await page.evaluate(failAt => {
-      window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400)
-      const s = window.syn3h.shell, real = s.descentPose.bind(s); let calls = 0
+      window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400)
+      const s = window.mira.shell, real = s.descentPose.bind(s); let calls = 0
       const fail = () => { window.__dropFailed = true; window.__startedAtFailure = s.started; throw new Error('drop test failure') }
       s.descentPose = () => { if (++calls === failAt) fail(); const pose = real(); return t => { if (failAt === 3 && t > 0) fail(); pose(t) } }
     }, failAt)
     await page.locator('.galaxy-label[data-world="desert"]').dispatchEvent('click')
-    await page.waitForFunction(() => window.__dropFailed && !document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 20000 })
-    const after = await page.evaluate(() => ({ started: window.__startedAtFailure, dropping: window.syn3h.shell.dropping, inert: document.querySelector('.shell-overlay').inert, hidden: document.querySelector('.shell-overlay').hidden, opacity: document.querySelector('.shell-overlay').style.opacity, filter: document.getElementById('game').style.filter, suspended: window.syn3h.game.input.suspended }))
+    await page.waitForFunction(() => window.__dropFailed && !document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 20000 })
+    const after = await page.evaluate(() => ({ started: window.__startedAtFailure, dropping: window.mira.shell.dropping, inert: document.querySelector('.shell-overlay').inert, hidden: document.querySelector('.shell-overlay').hidden, opacity: document.querySelector('.shell-overlay').style.opacity, filter: document.getElementById('game').style.filter, suspended: window.mira.game.input.suspended }))
     const label = `${view.name}, failure at use ${failAt} (${after.started ? 'in play' : 'before play'})`
     console.log(`${label}: ${JSON.stringify(after)}`)
     assert.deepEqual({ dropping: after.dropping, opacity: after.opacity, filter: after.filter }, { dropping: false, opacity: '', filter: '' }, `${label}: no drop, fade or blur left behind`)
@@ -110,7 +111,7 @@ try {
       assert.deepEqual({ inert: after.inert, hidden: after.hidden }, { inert: false, hidden: false }, `${label}: the lobby is shown and clickable`)
       // And usable: choosing a world again starts a new drop (the injected failure is spent).
       await page.locator('.galaxy-label[data-world="alpine"]').dispatchEvent('click')
-      await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 5000 })
+      await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 5000 })
     }
     await page.close()
   }
@@ -120,12 +121,12 @@ try {
     const page = await safari.newPage({ viewport: { width: 1024, height: 1366 }, deviceScaleFactor: 2 })
     page.on('pageerror', e => errors.push(`webkit: ${e.message}`))
     await page.goto(`${base}?room=drop-webkit-${Date.now()}`, { waitUntil: 'load' })
-    await page.waitForFunction(() => window.syn3h?.shell?.graphics.planetMaps >= window.syn3h.planets.PLANETS.length, null, { timeout: 120000 })
-    await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
+    await page.waitForFunction(() => window.mira?.shell?.graphics.planetMaps >= window.mira.planets.PLANETS.length, null, { timeout: 120000 })
+    await page.evaluate(() => { window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400) })
     const t0 = Date.now()
     await page.locator('.galaxy-label[data-world="desert"]').dispatchEvent('click')
     await page.waitForTimeout(900); await page.screenshot({ path: `${out}/webkit-0900.png` })
-    await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 30000 })
+    await page.waitForFunction(() => { const s = document.querySelector('.mira-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 30000 })
     report.push({ view: 'webkit ipad', ms: Date.now() - t0 })
     await page.waitForTimeout(800); await page.screenshot({ path: `${out}/webkit-landed.png` })
   } finally { await safari.close() }

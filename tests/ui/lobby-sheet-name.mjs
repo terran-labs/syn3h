@@ -3,11 +3,12 @@
 // caught (the owner, on an iPhone, 22 November 2026): swiped above the galaxy, the name was off
 // the top of the screen behind Updates and still gone after closing it.
 // Checked on a phone upright and on its side and a desktop, with motion and with reduced motion.
-//   SYN3H_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/lobby-sheet-name.mjs
+//   MIRA_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/lobby-sheet-name.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5173/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5173/'
 const sizes = [
   ['phone', webkit, { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }],
   ['phone-landscape', webkit, { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }],
@@ -15,11 +16,11 @@ const sizes = [
   ['desktop, reduced motion', chromium, { viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' }],
 ]
 const arrived = page => page.waitForFunction(() => {
-  const g = window.syn3h?.shell?.galaxy
+  const g = window.mira?.shell?.galaxy
   return document.documentElement.dataset.boot === 'done' && g && !g.opening && !g.returningHome && !document.documentElement.dataset.opening
 }, null, { timeout: 180000 })
 const view = page => page.evaluate(() => {
-  const g = window.syn3h.shell.galaxy, panel = document.querySelector('dialog.lobby-sheet[open] .lobby-sheet-panel')?.getBoundingClientRect()
+  const g = window.mira.shell.galaxy, panel = document.querySelector('dialog.lobby-sheet[open] .lobby-sheet-panel')?.getBoundingClientRect()
   return { pitch: g.pitch, distance: g.distance, want: g.freshPose(), box: g.wordmarkScreenBox(), shown: g.markShown, panelTop: panel?.top ?? null, w: innerWidth, h: innerHeight }
 })
 function whole(v, what) {
@@ -42,7 +43,7 @@ try {
       await page.mouse.move(c.x + c.width * 0.5, c.y + c.height * 0.2); await page.mouse.down()
       await page.mouse.move(c.x + c.width * 0.5, c.y + c.height * 0.95, { steps: 12 }); await page.mouse.up()
       await page.waitForTimeout(800)
-      await page.evaluate(s => window.syn3h.shell.openLobbySheet(window.syn3h.shell[s]), sheet)
+      await page.evaluate(s => window.mira.shell.openLobbySheet(window.mira.shell[s]), sheet)
       await page.waitForTimeout(1600)
       const open = await view(page)
       whole(open, `${name}, ${sheet} open`)

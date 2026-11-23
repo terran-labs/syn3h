@@ -27,30 +27,30 @@ const results = []
 for (const viewport of [{ width: 1280, height: 720 }, { width: 844, height: 390 }]) {
   const page = await (await browser.newContext({ viewport })).newPage()
   await page.goto(`http://127.0.0.1:${port}/?autoplay=1&vehicle=buggy&planet=alpine&seed=4&room=sc${Date.now().toString(36)}&daydream=0${webgl ? '&webgl=1' : ''}`)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 30 && window.syn3h.shell.playing, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game.tick > 30 && window.mira.shell.playing, null, { timeout: 120000 })
   await page.evaluate(() => {
-    const s = window.syn3h
+    const s = window.mira
     s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 11); s.params.set('sun.dayLength', 0); s.params.set('gfx.quality', 3)
     const canvas = s.game.canvas ?? document.querySelector('canvas')
     for (const el of document.body.querySelectorAll('*')) if (el !== canvas && !el.contains(canvas)) el.style.visibility = 'hidden'
   })
   await page.waitForTimeout(5000)
   const timer = await page.evaluate(() => {
-    const b = window.syn3h.game.renderer.backend
+    const b = window.mira.game.renderer.backend
     if (b.device?.features?.has('timestamp-query')) { b.trackTimestamp = true; return 'webgpu timestamp-query' }
     if (b.gl) { const ext = b.gl.getExtension('EXT_disjoint_timer_query_webgl2'); if (ext) { b.trackTimestamp = true; b.disjoint = ext; return 'webgl EXT_disjoint_timer_query_webgl2' } }
     return null
   })
   for (const [view, height, down] of [['sea level', 1.2, 0.06], ['looking down', 4, 0.5]]) {
     await page.evaluate(({ p, height, down }) => {
-      const s = window.syn3h, t = s.terrain, V = s.game.camera.position.constructor, y = t.liquidHeightAt(p.x, p.z) + height
+      const s = window.mira, t = s.terrain, V = s.game.camera.position.constructor, y = t.liquidHeightAt(p.x, p.z) + height
       s.player.teleport({ x: p.x + 400, y: t.heightAt(p.x + 400, p.z) + 2, z: p.z }, 0)
       s.camera.setCinematicPose(new V(p.x, y, p.z), new V(p.x - Math.sin(p.heading) * 100, y - 100 * down, p.z - Math.cos(p.heading) * 100), 60)
     }, { p: spot, height, down })
-    await page.waitForFunction(() => { const s = window.syn3h, c = s.camera.cinematic, cam = s.game.camera; return !c || (Math.hypot(cam.position.x - c.position.x, cam.position.z - c.position.z) < 0.05 && c.look.distanceTo(c.target) < 0.1) }, null, { timeout: 30000, polling: 200 }).catch(() => {})
+    await page.waitForFunction(() => { const s = window.mira, c = s.camera.cinematic, cam = s.game.camera; return !c || (Math.hypot(cam.position.x - c.position.x, cam.position.z - c.position.z) < 0.05 && c.look.distanceTo(c.target) < 0.1) }, null, { timeout: 30000, polling: 200 }).catch(() => {})
     await page.waitForTimeout(1000)
     const ms = timer ? await page.evaluate(async () => {
-      const r = window.syn3h.game.renderer, ms = []
+      const r = window.mira.game.renderer, ms = []
       for (let i = 0; i < 140; i++) {
         await new Promise((ok) => requestAnimationFrame(ok))
         const d = await r.resolveTimestampsAsync('render')

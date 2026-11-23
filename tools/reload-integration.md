@@ -72,7 +72,7 @@ Validation
 
 ```sh
 node --test tools/serve-stable.check.mjs tools/manual-reload.check.mjs
-SYN3H_NO_ROOM_SERVER=1 npx vitest run tests/core/resume.test.ts
+MIRA_NO_ROOM_SERVER=1 npx vitest run tests/core/resume.test.ts
 node tools/reload-smoke.mjs /tmp/syn3h-stable-verify
 node tools/manual-reload-smoke.mjs
 npx tsc --noEmit

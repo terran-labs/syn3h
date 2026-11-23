@@ -1,6 +1,7 @@
 /** tools/heavy.sh node tools/camera-liquid-smoke.mjs [output directory]
  * Exact seed-1 shoreline repro from the Vehicles lane. One browser and owned Vite server.
  */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { createServer } from 'vite'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -10,7 +11,7 @@ import { promisify } from 'node:util'
 import { serveStable } from './serve-stable.mjs'
 const out = process.argv[2] ?? '/tmp/syn3h-camera-liquid'
 await mkdir(out, { recursive: true })
-process.env.SYN3H_NO_ROOM_SERVER = '1'
+process.env.MIRA_NO_ROOM_SERVER = '1'
 const room = await serveStable({dir:process.cwd(),port:0})
 const server = await createServer({define:{'import.meta.env.VITE_SERVER_URL':JSON.stringify('ws://127.0.0.1:5186')},server:{host:'127.0.0.1',port:5186,strictPort:true,proxy:{'/ws':{target:`ws://127.0.0.1:${room.server.address().port}`,ws:true}}}})
 let browser
@@ -22,9 +23,9 @@ try {
   page.on('console', m => { if(m.type()==='error')errors.push(m.text()) })
   await page.routeWebSocket(/\/ws/, socket=>socket.close())
   await page.goto('http://127.0.0.1:5186/?autoplay=1&vehicle=buggy&planet=volcanic&seed=1')
-  await page.waitForFunction(()=>window.syn3h?.game.tick>10,null,{timeout:90000})
+  await page.waitForFunction(()=>window.mira?.game.tick>10,null,{timeout:90000})
   const start = await page.evaluate(()=>{
-    const s=window.syn3h
+    const s=window.mira
     s.params.set('bots.count',0);s.params.set('sun.timeOfDay',12);s.params.set('sun.dayLength',0)
     s.player.teleport({x:-508.902333,y:-0.4,z:-761.626165},3.730641276)
     s.player.body.setLinvel({x:0,y:0,z:0},true)
@@ -38,10 +39,10 @@ try {
     return s.game.tick
   })
   for(const ticks of [250,500,1000]){
-    await page.waitForFunction(t=>window.syn3h.game.tick>=t,start+ticks,{timeout:120000})
+    await page.waitForFunction(t=>window.mira.game.tick>=t,start+ticks,{timeout:120000})
     await page.screenshot({path:`${out}/shore-${ticks}.png`})
   }
-  const trace=await page.evaluate(()=>{window.syn3h.game.remove(window.shoreProbe);return window.shoreTrace})
+  const trace=await page.evaluate(()=>{window.mira.game.remove(window.shoreProbe);return window.shoreTrace})
   const belowLiquid=trace.filter(s=>Number.isFinite(s.cameraLiquid)&&s.camera[1]<s.cameraLiquid).length
   const belowClearance=trace.filter(s=>s.camera[1]<Math.max(s.cameraGround,Number.isFinite(s.cameraLiquid)?s.cameraLiquid:-Infinity)+0.5-1e-7).length
   const result={samples:trace.length,belowLiquid,belowClearance,exited:trace.some(s=>s.exited),errors,trace}

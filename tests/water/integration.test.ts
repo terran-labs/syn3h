@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { createVehicle } from '../../src/vehicles'
 import { waterSinking } from '../../src/vehicles/buoyancy'
 import { ZORB_FLOAT_DEPTH } from '../../src/vehicles/zorb'
@@ -12,7 +12,7 @@ afterEach(() => { waterSinking.value = waterSinking.def.default })
 
 for (const sinking of [true, false]) {
   // The retained legacy float has no winged skim; the default model skims on its hull.
-  for (const [name, Kind] of sinking ? [['syn3h', Syn3hBuggy]] as const : []) {
+  for (const [name, Kind] of sinking ? [['mira', MiraBuggy]] as const : []) {
     it(`${name} preserves wing skim speed and support with sinking=${sinking}`, () => {
       waterSinking.value = sinking
       const h = harness()
@@ -59,7 +59,7 @@ it('hydrodynamic contact couples the motor while submerged and clears above wate
   const h = harness(9.81, false)
   h.terrain.liquidHeightAt = () => 10
   h.terrain.liquidKindAt = () => 'water'
-  const v = new Syn3hBuggy(h.game, h.terrain, new THREE.Vector3(0, 5, 0))
+  const v = new MiraBuggy(h.game, h.terrain, new THREE.Vector3(0, 5, 0))
   v.isLocal = false
   try {
     h.step(v, 150)

@@ -67,7 +67,7 @@ describe('proportional camera zoom', () => {
     expect(params.get('camera.distance')!.value).toBeCloseTo(zoomLimits('jet')[1])
     for (let i = 0; i < 80; i++) chase.zoom(-100)
     expect(params.get('camera.distance')!.value).toBeCloseTo(zoomLimits('jet')[0])
-    if (typeof sessionStorage !== 'undefined') expect(Number(sessionStorage.getItem('syn3h.cameraDistance'))).toBeCloseTo(zoomLimits('jet')[0])
+    if (typeof sessionStorage !== 'undefined') expect(Number(sessionStorage.getItem('mira.cameraDistance'))).toBeCloseTo(zoomLimits('jet')[0])
     chase.dispose()
   })
   it('keeps scope and roam units while scaling their fractional deltas', () => {

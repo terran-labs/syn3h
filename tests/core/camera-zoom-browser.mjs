@@ -1,5 +1,6 @@
 // SOURCE ONLY, UNRUN. Dedicated launcher allocation required. Chrome native pixel
 // wheels are not physical trackpad evidence; synthetic modes are reported separately.
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright-core'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
@@ -7,7 +8,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../../', import.meta.url))
-const origin = process.env.SYN3H_URL, expected = process.env.UX_SOURCE_SHA, out = process.env.UX_EVIDENCE_DIR
+const origin = process.env.MIRA_URL, expected = process.env.UX_SOURCE_SHA, out = process.env.UX_EVIDENCE_DIR
 assert.ok(origin && expected && out && process.env.UX_LAUNCH_MANIFEST)
 const deadline = Date.now() + 480000
 const budget = cap => { const n = Math.min(cap, deadline - Date.now()); assert.ok(n > 0, 'fixture deadline'); return n }
@@ -57,11 +58,11 @@ async function provenance() {
 const evaluate = (fn, arg) => bounded(page.evaluate(fn, arg))
 const ready = (fn, arg) => page.waitForFunction(fn, arg, { timeout: budget(15000) })
 const read = () => evaluate(() => {
-  const p = id => syn3h.params.get(`camera.${id}`).value, b = syn3hNet.bungee, c = b.mine
+  const p = id => mira.params.get(`camera.${id}`).value, b = miraNet.bungee, c = b.mine
   return { distance: p('distance'), speed: p('zoomSpeed'), scope: p('scope'), roam: p('roamSpeed'), mode: p('mode'),
-    tick: syn3h.game.tick, suspended: syn3h.game.input.suspended, locked: document.pointerLockElement === syn3h.game.canvas,
-    gear: syn3hNet.gear.current, attached: b.attached, cord: c ? { owner: c.owner, rest: c.rest, to: c.to, at: c.at, flying: !!c.hook } : null,
-    stats: { ...b.stats }, connected: syn3hNet.connected }
+    tick: mira.game.tick, suspended: mira.game.input.suspended, locked: document.pointerLockElement === mira.game.canvas,
+    gear: miraNet.gear.current, attached: b.attached, cord: c ? { owner: c.owner, rest: c.rest, to: c.to, at: c.at, flying: !!c.hook } : null,
+    stats: { ...b.stats }, connected: miraNet.connected }
 })
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-7, `${actual} != ${expected}`)
 const vector = state => [state.distance, state.scope, state.roam]
@@ -78,11 +79,11 @@ async function setNumber(id, value) {
   await row.locator('.wi-num').click()
   await row.locator('.wi-num-edit').fill(String(value)); await row.locator('.wi-num-edit').press('Enter')
   await search.fill(''); await search.press('Tab')
-  near(await evaluate(id => syn3h.params.get(id).value, id), value)
+  near(await evaluate(id => mira.params.get(id).value, id), value)
 }
 async function canvasPoint() {
   const point = await evaluate(() => {
-    for (const [x, y] of [[640, 420], [500, 600], [700, 600], [600, 300]]) if (document.elementFromPoint(x, y) === syn3h.game.canvas) return { x, y }
+    for (const [x, y] of [[640, 420], [500, 600], [700, 600], [600, 300]]) if (document.elementFromPoint(x, y) === mira.game.canvas) return { x, y }
     throw Error('No exposed canvas point; do not bypass overlay')
   })
   await bounded(page.mouse.move(point.x, point.y)); return point
@@ -91,7 +92,7 @@ async function wheel(delta, { syntheticMode } = {}) {
   if (syntheticMode === undefined) await canvasPoint()
   const count = await evaluate(() => zoomEvidence.events.length)
   if (syntheticMode === undefined) await bounded(page.mouse.wheel(0, delta))
-  else await evaluate(({ delta, mode }) => syn3h.game.canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: delta, deltaMode: mode, bubbles: true, cancelable: true })), { delta, mode: syntheticMode })
+  else await evaluate(({ delta, mode }) => mira.game.canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: delta, deltaMode: mode, bubbles: true, cancelable: true })), { delta, mode: syntheticMode })
   await ready(n => zoomEvidence.events.length === n + 1, count)
   const event = await evaluate(n => zoomEvidence.events[n], count)
   assert.equal(event.canvas, true); assert.equal(event.deltaY, delta)
@@ -101,7 +102,7 @@ async function wheel(delta, { syntheticMode } = {}) {
 try {
   const launch = JSON.parse(await readFile(process.env.UX_LAUNCH_MANIFEST, 'utf8'))
   assert.equal(launch.head, expected); assert.equal(launch.origin, origin)
-  assert.equal(launch.env.SYN3H_NO_ROOM_SERVER, '1'); assert.ok(launch.roomPort !== 8787 && launch.roomPid && launch.vitePid)
+  assert.equal(launch.env.MIRA_NO_ROOM_SERVER, '1'); assert.ok(launch.roomPort !== 8787 && launch.roomPid && launch.vitePid)
   report.launch = launch; report.rawInventory = await provenance()
   browser = await chromium.launch({ channel: 'chrome', headless: true, timeout: budget(30000) })
   page = await bounded(browser.newPage({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' })); page.setDefaultTimeout(10000)
@@ -132,36 +133,36 @@ try {
   const url = new URL(origin); url.searchParams.set('room', `ux-zoom-${Date.now()}`); url.searchParams.set('world', 'alpine.1~bots.count=0')
   report.entry = url.href; await save()
   await page.goto(url.href, { timeout: budget(60000) })
-  await ready(() => window.syn3h?.shell?.galaxy?.live)
+  await ready(() => window.mira?.shell?.galaxy?.live)
   await page.locator('.galaxy-label.is-current').focus(); await bounded(page.keyboard.press('Enter'))
-  await ready(() => window.syn3hNet?.connected && syn3h.shell.playing && !syn3h.shell.dropping)
+  await ready(() => window.miraNet?.connected && mira.shell.playing && !mira.shell.dropping)
   if ((await read()).locked) await bounded(page.keyboard.press('Escape'))
   await drain(); assert.deepEqual(report.errors, [])
   assert.ok(report.responses.some(r => r.kind === 'browser-response' && r.type === 'document' && r.url === url.href && r.verified))
   for (const path of modulePaths) assert.ok(report.responses.some(r => r.path === path && r.sourceSha256 && r.verified), `executed module ${path}`)
-  report.instances = await evaluate(() => ({ camera: syn3h.camera.constructor.name, grapple: syn3hNet.bungee.constructor.name }))
+  report.instances = await evaluate(() => ({ camera: mira.camera.constructor.name, grapple: miraNet.bungee.constructor.name }))
   assert.deepEqual(report.instances, { camera: 'ChaseCamera', grapple: 'Bungee' })
   // Observe ordinary zoom after the canvas handler, and intercepted wheel after the
   // Bungee window handler. No control method is replaced or invoked here.
   await evaluate(() => {
     const events = []
     const handler = event => {
-      if (event.target !== syn3h.game.canvas) return
+      if (event.target !== mira.game.canvas) return
       const item = { canvas: true, trusted: event.isTrusted, deltaY: event.deltaY, deltaMode: event.deltaMode }
       queueMicrotask(() => {
-        item.parameters = ['distance', 'scope', 'roamSpeed'].map(id => syn3h.params.get(`camera.${id}`).value)
+        item.parameters = ['distance', 'scope', 'roamSpeed'].map(id => mira.params.get(`camera.${id}`).value)
         events.push(item)
       })
     }
     const intercepted = event => {
-      const cord = syn3hNet.bungee.mine
-      if ((cord?.at || cord?.to) && syn3hNet.gear.current === 'bungee') handler(event)
+      const cord = miraNet.bungee.mine
+      if ((cord?.at || cord?.to) && miraNet.gear.current === 'bungee') handler(event)
     }
     window.addEventListener('wheel', intercepted, { capture: true })
-    syn3h.game.canvas.addEventListener('wheel', handler)
+    mira.game.canvas.addEventListener('wheel', handler)
     window.zoomEvidence = { events, restore() {
       window.removeEventListener('wheel', intercepted, { capture: true })
-      syn3h.game.canvas.removeEventListener('wheel', handler)
+      mira.game.canvas.removeEventListener('wheel', handler)
     } }
   })
   await caseRun('native pixel wheel and Inspector speed', async record => {
@@ -198,7 +199,7 @@ try {
     // existing lack of a suspension guard, not native reachability through the veil.
     const pausedWheel = await wheel(100, { syntheticMode: 0 }); near(pausedWheel.state.distance, before.distance + .8)
     await page.locator('.pause-veil').click()
-    await ready(() => !syn3h.game.input.suspended)
+    await ready(() => !mira.game.input.suspended)
     if ((await read()).locked) await bounded(page.keyboard.press('Escape'))
     record.observations.push({ before, line, paged, pausedWheel })
   })
@@ -207,21 +208,21 @@ try {
     await bounded(page.keyboard.press('KeyC')); await bounded(page.keyboard.press('KeyC')); assert.equal((await read()).mode, 2)
     const point = await canvasPoint()
     // Primary click captures cursor before selecting Grapple, avoiding a launch on capture.
-    await bounded(page.mouse.click(point.x, point.y)); await ready(() => document.pointerLockElement === syn3h.game.canvas)
-    const digit = await evaluate(() => syn3hNet.gear.list().indexOf('bungee') + 1)
+    await bounded(page.mouse.click(point.x, point.y)); await ready(() => document.pointerLockElement === mira.game.canvas)
+    const digit = await evaluate(() => miraNet.gear.list().indexOf('bungee') + 1)
     assert.ok(digit > 0); await bounded(page.keyboard.press(`Digit${digit}`)); assert.equal((await read()).gear, 'bungee')
     await bounded(page.mouse.move(point.x, point.y + 100, { steps: 10 }))
-    await ready(() => syn3h.game.camera.getWorldDirection(syn3h.game.camera.position.clone()).y < -.3)
+    await ready(() => mira.game.camera.getWorldDirection(mira.game.camera.position.clone()).y < -.3)
     record.beforeLaunch = await read(); await save()
-    await bounded(page.keyboard.down('KeyL')); await ready(n => syn3hNet.bungee.stats.launched === n + 1, record.beforeLaunch.stats.launched); await bounded(page.keyboard.up('KeyL'))
-    await ready(() => syn3hNet.bungee.attached && !!(syn3hNet.bungee.mine?.at || syn3hNet.bungee.mine?.to))
+    await bounded(page.keyboard.down('KeyL')); await ready(n => miraNet.bungee.stats.launched === n + 1, record.beforeLaunch.stats.launched); await bounded(page.keyboard.up('KeyL'))
+    await ready(() => miraNet.bungee.attached && !!(miraNet.bungee.mine?.at || miraNet.bungee.mine?.to))
     const attached = await read(); record.attached = attached; await save()
     assert.ok(attached.locked && !attached.suspended && attached.gear === 'bungee' && !attached.cord.flying)
-    const paid = await wheel(100); await ready(rest => syn3hNet.bungee.cordLength > rest, attached.cord.rest)
+    const paid = await wheel(100); await ready(rest => miraNet.bungee.cordLength > rest, attached.cord.rest)
     const afterOut = await read(); assert.deepEqual(vector(afterOut), vector(attached)); assert.deepEqual(paid.event.parameters, vector(attached))
-    const reeled = await wheel(-100); await ready(rest => syn3hNet.bungee.cordLength < rest, afterOut.cord.rest)
+    const reeled = await wheel(-100); await ready(rest => miraNet.bungee.cordLength < rest, afterOut.cord.rest)
     const afterIn = await read(); assert.deepEqual(vector(afterIn), vector(attached)); assert.deepEqual(reeled.event.parameters, vector(attached))
-    await bounded(page.keyboard.press('KeyG')); await ready(() => !syn3hNet.bungee.mine)
+    await bounded(page.keyboard.press('KeyG')); await ready(() => !miraNet.bungee.mine)
     const released = await read(); assert.equal(released.stats.released, attached.stats.released + 1)
     const positive = await wheel(100); near(positive.state.distance, released.distance + released.speed)
     record.observations.push({ attached, paid, afterOut, reeled, afterIn, released, positive })

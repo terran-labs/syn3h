@@ -59,7 +59,7 @@ const ZERO={x:0,y:0,z:0},RECOVERY_LIFT={x:0,y:5000,z:0},WORLD_UP=new THREE.Vecto
 
 /**
  * The tank: the Mars Explorer controller (six tracks, each a shape cast with a spring) under a
- * generated exploration body. No tank exists in the supplied Syn3h snapshots.
+ * generated exploration body. No tank exists in the supplied Mira snapshots.
  */
 export class Tank extends Vehicle {
   readonly kind = 'tank' as const

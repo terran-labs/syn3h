@@ -2,7 +2,7 @@
 import { afterEach, beforeAll, expect, it } from 'vitest'
 import { initPhysics } from '../../src/core/physics'
 import { surfaceGrip } from '../../src/vehicles/surfaceGrip'
-import { courseChange, ground, resetParams, speed, spawn } from './syn3hScenarios'
+import { courseChange, ground, resetParams, speed, spawn } from './miraScenarios'
 
 beforeAll(initPhysics)
 afterEach(() => { ground.surface = undefined; resetParams() })

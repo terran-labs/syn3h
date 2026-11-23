@@ -28,11 +28,12 @@
 #   tools/domain.sh restore <export-dir> <name>... [--dry-run]
 #       recreate the exported A, AAAA and CNAME records at those names (undoes clean-parking).
 #
-# Zones: syn3h.com (the default) and mira.cc, picked by --zone or SYN3H_DOMAIN_ZONE, or else the
+# Zones: syn3h.com (the default) and mira.cc, picked by --zone or MIRA_DOMAIN_ZONE, or else the
 # zone of the host named. --dry-run prints each changing API call instead of making it; reads
 # still happen when a token is present, and come from the export when it is not. The token is
 # never printed. Only A, AAAA and CNAME records at the named hosts are ever removed or restored:
 # MX, TXT and every other record are never touched.
+. "$(dirname "$0")/lib/legacy-env.sh" # legacy environment names, see docs/NAMES.md
 set -eu
 cd "$(dirname "$0")/.."
 . tools/cloudflare-token.sh
@@ -47,7 +48,7 @@ CANONICAL=mira.cc
 # Cloudflare's documented address for a proxied hostname with no origin ("originless setups").
 PLACEHOLDER=100::
 RULE_DESC="www.mira.cc to mira.cc"
-STORE="${SYN3H_DOMAIN_STORE:-$(cd .. && pwd)/Syn3h-stable}"
+STORE="${MIRA_DOMAIN_STORE:-$(cd .. && pwd)/Syn3h-stable}"
 
 die() { printf '\nDOMAIN FAILED: %s\n' "$*" >&2; exit 1; }
 command -v jq >/dev/null || die "jq is required"
@@ -101,10 +102,10 @@ web_records() { jq -c --arg h "$1" '[.result[] | select(.name == $h and (.type =
 record_body() { jq -c '{type, name, content, proxied, ttl, comment}'; }
 
 # Tests source the functions above without running a command (tools/secret-env.test.mjs).
-[ -z "${SYN3H_DOMAIN_LIB:-}" ] || return 0
+[ -z "${MIRA_DOMAIN_LIB:-}" ] || return 0
 
 cmd="${1:-}"; [ $# -gt 0 ] && shift
-ZONE_NAME="${SYN3H_DOMAIN_ZONE:-}"; APPROVED=""; CONFIRMED=""; REST=""
+ZONE_NAME="${MIRA_DOMAIN_ZONE:-}"; APPROVED=""; CONFIRMED=""; REST=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --zone) [ $# -ge 2 ] || die "--zone needs a zone"; ZONE_NAME="$2"; shift 2 ;;
@@ -129,7 +130,7 @@ if [ -z "$ZONE_NAME" ]; then
 fi
 ZONE_NAME="${ZONE_NAME:-syn3h.com}"
 case " $ZONES " in *" $ZONE_NAME "*) ;; *) die "refusing zone $ZONE_NAME: only $ZONES" ;; esac
-case "$cmd" in check|'') ;; *) [ -n "$DRY" ] || cf_has_token || die "no Cloudflare token: put it in $SYN3H_CLOUDFLARE_TOKEN_FILE or set CLOUDFLARE_API_TOKEN" ;; esac
+case "$cmd" in check|'') ;; *) [ -n "$DRY" ] || cf_has_token || die "no Cloudflare token: put it in $MIRA_CLOUDFLARE_TOKEN_FILE or set CLOUDFLARE_API_TOKEN" ;; esac
 
 in_zone() { case "$1" in "$ZONE_NAME"|"www.$ZONE_NAME") return 0 ;; esac; return 1; }
 need_host_in_zone() { in_zone "$1" || die "refusing host $1: only $ZONE_NAME and www.$ZONE_NAME"; }
@@ -247,7 +248,7 @@ attach)
 
 check)
   H="${1:-}"; need_host_in_zone "$H"
-  SHORT="${SYN3H_SHORT_CHECK:-}"
+  SHORT="${MIRA_SHORT_CHECK:-}"
   if [ "$H" = "$REDIRECT_ONLY" ]; then
     PROBE="/?room=redirect-check&v=26.11.1503"
     resolver_note "$H"
@@ -291,7 +292,7 @@ check)
     done
   fi
   case "$got" in "200 "*) ;; *) echo "CHECK OK: $H redirects to $CANONICAL and keeps its socket; no game to smoke-test there."; exit 0 ;; esac
-  if [ -n "${SYN3H_SHORT_CHECK:-}" ]; then
+  if [ -n "${MIRA_SHORT_CHECK:-}" ]; then
     # After a release's production deploy: the short public check (tools/public-check.mjs).
     run_public_check "https://$H/" /tmp/syn3h-domain-check.log || die "public check failed on $H"
   else

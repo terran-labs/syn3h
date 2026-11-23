@@ -12,7 +12,7 @@ import { afterAll, expect, it } from 'vitest'
 // @ts-expect-error A plain Node script, shared with the release gate.
 import { AUDIO, findForbidden } from '../../tools/check-shipped-assets.mjs'
 
-const dir = mkdtempSync(join(tmpdir(), 'syn3h-shipped-'))
+const dir = mkdtempSync(join(tmpdir(), 'mira-shipped-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
 const put = (path: string) => { mkdirSync(join(dir, path, '..'), { recursive: true }); writeFileSync(join(dir, path), 'x') }
 const run = (...args: string[]) => spawnSync(process.execPath, ['tools/check-shipped-assets.mjs', ...args], { encoding: 'utf8' })
@@ -34,7 +34,7 @@ it('fails on any audio file and any bitmap no platform requires, and names them'
 })
 
 it('lets the Welcome pictures through, and nothing else in their folder', () => {
-  const pictures = mkdtempSync(join(tmpdir(), 'syn3h-welcome-'))
+  const pictures = mkdtempSync(join(tmpdir(), 'mira-welcome-'))
   try {
     for (const path of ['welcome/lava-night-640.webp', 'welcome/lava-night-1280.webp', 'welcome/lava-night.jpg', 'welcome/big-3840.webp', 'other/lava-night-640.webp']) {
       mkdirSync(join(pictures, path, '..'), { recursive: true }); writeFileSync(join(pictures, path), 'x')

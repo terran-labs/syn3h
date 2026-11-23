@@ -12,7 +12,7 @@ const mode = process.argv[2] ?? 'worker'
 assert.ok(['worker', 'dev'].includes(mode))
 const port = mode === 'worker' ? 18097 : 18098
 const origin = `http://127.0.0.1:${port}`
-const persist = await mkdtemp(join(tmpdir(), 'syn3h-presence-'))
+const persist = await mkdtemp(join(tmpdir(), 'mira-presence-'))
 const version = Number((await readFile('shared/protocol.ts', 'utf8')).match(/PROTOCOL_VERSION = (\d+)/)[1])
 const wait = ms => new Promise(r => setTimeout(r, ms))
 let logs = '', child

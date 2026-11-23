@@ -13,10 +13,10 @@
    on every touch screen; the one-panel layout is for phones; desktop has none of it. */
 
 /* Off unless a rule below turns them on. */
-.syn3h-shell .world-inspector .panels-close, .syn3h-shell .hud-navigation .nav-chevrons, .syn3h-shell .world-inspector .wi-card-close { display: none; }
+.mira-shell .world-inspector .panels-close, .mira-shell .hud-navigation .nav-chevrons, .mira-shell .world-inspector .wi-card-close { display: none; }
 /* The fading copies of the list while a panel opens (Inspector.ghostList). */
-.syn3h-shell .world-inspector .wi-ghosts { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
-.syn3h-shell .world-inspector .wi-ghost { box-sizing: border-box; overflow: hidden; }
+.mira-shell .world-inspector .wi-ghosts { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.mira-shell .world-inspector .wi-ghost { box-sizing: border-box; overflow: hidden; }
 
 /* ---- Every touch screen, phone or tablet (.has-touch, the HUD's own test, Shell.ts) ---- */
 /* One shape for the whole stack (the owner, 21 November 2026: "All panels, regardless of
@@ -26,82 +26,82 @@
    as its pill today. A pill radius such as 999px must not be used here: on an open panel it
    would round its ends into semicircles across the whole width. Every corner in the stack reads
    --halo-r (theme-halo.css), so setting it here moves them all, the sticky open header too. */
-.syn3h-shell.exploration-ui .world-inspector { --panels-radius: var(--glass-control-radius, 24px); --halo-r: var(--panels-radius); }
-html .syn3h-shell.exploration-ui .world-inspector :is(.wi-glass, .panels-close) { border-radius: var(--panels-radius); }
+.mira-shell.exploration-ui .world-inspector { --panels-radius: var(--glass-control-radius, 24px); --halo-r: var(--panels-radius); }
+html .mira-shell.exploration-ui .world-inspector :is(.wi-glass, .panels-close) { border-radius: var(--panels-radius); }
 
 /* The trigger's place and pill shape are the HUD's (touch-stick.css). What it shows and how it
    steps aside while the stack is open stay here, for every touch screen. */
-html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-glyph { display: none; }
-html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-label { display: inline; }
-html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-chevrons { display: block; transition: translate .2s cubic-bezier(.2,.8,.2,1); }
+html .mira-shell.exploration-ui.has-touch .hud-navigation .nav-glyph { display: none; }
+html .mira-shell.exploration-ui.has-touch .hud-navigation .nav-label { display: inline; }
+html .mira-shell.exploration-ui.has-touch .hud-navigation .nav-chevrons { display: block; transition: translate .2s cubic-bezier(.2,.8,.2,1); }
 /* The chevrons are a hairline with a soft halo of their own light. */
-html .syn3h-shell.exploration-ui.has-touch :is(.hud-navigation, .world-inspector) .nav-chevrons {
+html .mira-shell.exploration-ui.has-touch :is(.hud-navigation, .world-inspector) .nav-chevrons {
   width: 18px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
   filter: drop-shadow(0 0 3px rgb(205 205 205 / .45));
 }
 /* Panels showing: the trigger lifts its chevrons and fades out as the stack grows from it, and
    comes back a beat into the stack's return. The class follows the real state (Shell
    syncPanels). */
-html .syn3h-shell.exploration-ui.has-touch.is-playing.is-panels .hud-navigation { opacity: 0; visibility: hidden; z-index: 15; pointer-events: none; transition: opacity .12s ease-out, visibility 0s linear .12s; }
-html .syn3h-shell.exploration-ui.has-touch.is-panels .hud-navigation .nav-chevrons { translate: 0 -6px; }
+html .mira-shell.exploration-ui.has-touch.is-playing.is-panels .hud-navigation { opacity: 0; visibility: hidden; z-index: 15; pointer-events: none; transition: opacity .12s ease-out, visibility 0s linear .12s; }
+html .mira-shell.exploration-ui.has-touch.is-panels .hud-navigation .nav-chevrons { translate: 0 -6px; }
 /* While the trigger stands on the grid, what else stacks above the grid (the portrait status
    line) stands clear of it by this much: its height and its gap. */
-html:has(> body .syn3h-shell.exploration-ui.has-touch.is-playing:not(.is-panels) > .hud-navigation:not([hidden])) { --thumb-above: calc(36px + var(--thumb-gap)); }
+html:has(> body .mira-shell.exploration-ui.has-touch.is-playing:not(.is-panels) > .hud-navigation:not([hidden])) { --thumb-above: calc(36px + var(--thumb-gap)); }
 /* The thumb grid and the minimap step back while the panels show (inspector.css follows the
    stack's hidden attribute, which lands only when its close motion ends). They start back the
    moment Close panels is tapped, alongside the stack leaving. Taps reach them once it is hidden. */
-html:has(.syn3h-shell.exploration-ui.has-touch.is-playing:not(.is-panels) .world-inspector:not([hidden])) :is(.touch-controls, .shell-minimap) { opacity: 1; transition: opacity .2s ease-out; }
+html:has(.mira-shell.exploration-ui.has-touch.is-playing:not(.is-panels) .world-inspector:not([hidden])) :is(.touch-controls, .shell-minimap) { opacity: 1; transition: opacity .2s ease-out; }
 
 /* The stack sits above the thumb grid while it shows, and the trigger that opened it is under
    it, so Close panels is the way back on every touch screen: at the foot of the stack, its
    full width, under the thumb. The stack's own gap separates it from the last card. */
-html .syn3h-shell.exploration-ui.has-touch .world-inspector { z-index: 21; }
-html .syn3h-shell.exploration-ui.has-touch .world-inspector .panels-close {
+html .mira-shell.exploration-ui.has-touch .world-inspector { z-index: 21; }
+html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close {
   box-sizing: border-box; display: flex; flex: none; align-items: center; justify-content: center; gap: 9px;
   width: 100%; height: 48px; min-height: 48px; margin: 0; padding: 0 16px;
   font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; white-space: nowrap;
 }
-html .syn3h-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-chevrons { display: block; }
+html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-chevrons { display: block; }
 
 @media (max-width: 700px), (max-height: 500px) {
   /* ---- The stack: full width between the shared edges, above the thumb grid while it shows,
      growing out of Show panels and going back into it. ---- */
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector {
+  html .mira-shell.exploration-ui.has-touch .world-inspector {
     left: var(--edge-left); right: var(--edge-right); width: auto; z-index: 21;
     transform-origin: calc(100% - var(--thumb-pair-width) / 2) calc(100% - var(--thumb-top) - var(--thumb-gap) - 18px + var(--edge-bottom));
   }
-  html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .world-inspector { transform-origin: calc(var(--thumb-pair-width) / 2) calc(100% - var(--thumb-top) - var(--thumb-gap) - 18px + var(--edge-bottom)); }
+  html[data-touch-hand="left"] .mira-shell.exploration-ui.has-touch .world-inspector { transform-origin: calc(var(--thumb-pair-width) / 2) calc(100% - var(--thumb-top) - var(--thumb-gap) - 18px + var(--edge-bottom)); }
 
   /* ---- One panel: the open card alone, the whole height of the stack. Its header still
      sticks (inspector/motion.css), now with the x that goes back to the list. ---- */
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single :is(.rail-command, .rail-foot),
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > :not(.is-open) { display: none; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single :is(.rail-command, .rail-foot),
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > :not(.is-open) { display: none; }
   /* The open card fills the stack exactly and its body is the one scroller, below the title, so
      nothing ever passes under the title and it needs no fill of its own: it is the card's own
      glass, no darker (the owner, 21 November 2026: "much darker bars than they should"). The
      stack itself has nothing left to scroll, so there is still one scrolling box on screen. */
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards { overflow: hidden; }
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open { min-height: 0; height: 100%; flex: 1 1 auto; display: flex; flex-direction: column; overflow: clip; }
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open > .wi-body { flex: 1 1 auto; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; }
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open > .wi-head { position: static; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; border-bottom: 0; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards { overflow: hidden; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open { min-height: 0; height: 100%; flex: 1 1 auto; display: flex; flex-direction: column; overflow: clip; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open > .wi-body { flex: 1 1 auto; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open > .wi-head { position: static; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; border-bottom: 0; }
   /* The open panel's own X (Inspector.panelClose, the shared .card-close) in its upper right is
      the way back to driving (the owner, 22 November 2026), so Close panels steps aside and its
      row's height goes to the panel. Tapping the title still goes back to the list. */
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single > .panels-close { display: none; }
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open { position: relative; }
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-card-close { display: inline-flex; position: absolute; z-index: 3; top: max(0px, calc((var(--wi-head, 48px) - 48px) / 2)); right: 4px; }
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head { padding-right: 56px; }
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head .wi-chev { display: none; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single > .panels-close { display: none; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-cards > .wi-card.is-open { position: relative; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-card-close { display: inline-flex; position: absolute; z-index: 3; top: max(0px, calc((var(--wi-head, 48px) - 48px) / 2)); right: 4px; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head { padding-right: 56px; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .wi-head .wi-chev { display: none; }
 }
 
 /* Phones on their side: the limit is height, not width. The stack is a right-hand column
    (left-handed: left), Close panels at its foot by the thumb, and the game stays in view.
    Full width here is one value: width: auto with both edges set. */
 @media (max-height: 500px) and (orientation: landscape) {
-  html .syn3h-shell.exploration-ui.has-touch .world-inspector { left: auto; width: min(420px, calc(100vw - 2 * var(--edge))); }
-  html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .world-inspector { left: var(--edge-left); right: auto; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector { left: auto; width: min(420px, calc(100vw - 2 * var(--edge))); }
+  html[data-touch-hand="left"] .mira-shell.exploration-ui.has-touch .world-inspector { left: var(--edge-left); right: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html .syn3h-shell.exploration-ui.has-touch .hud-navigation, html .syn3h-shell.exploration-ui.has-touch .hud-navigation .nav-chevrons { transition: none; }
+  html .mira-shell.exploration-ui.has-touch .hud-navigation, html .mira-shell.exploration-ui.has-touch .hud-navigation .nav-chevrons { transition: none; }
 }

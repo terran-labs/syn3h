@@ -1,11 +1,11 @@
 /**
- * How hard each Syn3h hub motor is working, for the rotor/stator glow and sparks. Visual only:
+ * How hard each Mira hub motor is working, for the rotor/stator glow and sparks. Visual only:
  * it reads the buggy's public state and never feeds back into the physics.
  */
 import { defineParam } from '../../../shared/params'
 
 export interface MotorDriveInput {
-  /** Smoothed throttle, -1..1 (Syn3hBuggy.inputSmoothed.y). */
+  /** Smoothed throttle, -1..1 (MiraBuggy.inputSmoothed.y). */
   throttle: number
   /** Body speed along the nose, m/s, Unity sign (positive forward). */
   forwardSpeed: number
@@ -27,7 +27,7 @@ export interface MotorDrive {
   regen: boolean
 }
 
-/** Below this throttle the motor is idle, as Syn3hBuggy's THROTTLE_DEADZONE. */
+/** Below this throttle the motor is idle, as MiraBuggy's THROTTLE_DEADZONE. */
 const DEADZONE = 0.05
 /** Throttle against motion only counts as regeneration above walking pace (REVERSE_SPEED). */
 const REGEN_SPEED = 0.5

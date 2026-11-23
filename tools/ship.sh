@@ -18,23 +18,24 @@
 # and .rc (the release); /tmp/syn3h-ship-N.done is written last with the final status.
 #
 # Settings (environment; defaults are the Foreman's rules of 21 November 2026):
-#   SYN3H_SHIP_GAP_S      900   seconds after the last recorded release before starting
-#   SYN3H_GATE_LOAD       12    the one-minute load average must stay below this...
-#   SYN3H_GATE_HOLD_S     120   ...for this long without a break
-#   SYN3H_GATE_TIMEOUT_S  3600  give up (no release) if the gate has not passed by then
-#   SYN3H_GATE_POLL_S     10    how often to read the load
-#   SYN3H_SHIP_DRY        1     0 skips the dry run
-#   SYN3H_SHIP_RELEASE    tools/release.sh, SYN3H_SHIP_OUT /tmp, SYN3H_SHIP_STABLE ../Syn3h-stable: for tests
+#   MIRA_SHIP_GAP_S      900   seconds after the last recorded release before starting
+#   MIRA_GATE_LOAD       12    the one-minute load average must stay below this...
+#   MIRA_GATE_HOLD_S     120   ...for this long without a break
+#   MIRA_GATE_TIMEOUT_S  3600  give up (no release) if the gate has not passed by then
+#   MIRA_GATE_POLL_S     10    how often to read the load
+#   MIRA_SHIP_DRY        1     0 skips the dry run
+#   MIRA_SHIP_RELEASE    tools/release.sh, MIRA_SHIP_OUT /tmp, MIRA_SHIP_STABLE ../Syn3h-stable: for tests
+. "$(dirname "$0")/lib/legacy-env.sh" # legacy environment names, see docs/NAMES.md
 set -u
 cd "$(dirname "$0")/.."
 N="${1:-}"; NOTE="${2:-}"
 case "$N" in ''|*[!0-9]*) echo "usage: tools/ship.sh <n> \"note\"" >&2; exit 2 ;; esac
 [ -n "$NOTE" ] || { echo "ship.sh: give a note" >&2; exit 2; }
-GAP="${SYN3H_SHIP_GAP_S:-900}"; LIMIT="${SYN3H_GATE_LOAD:-12}"; HOLD_S="${SYN3H_GATE_HOLD_S:-120}"
-TIMEOUT="${SYN3H_GATE_TIMEOUT_S:-3600}"; POLL="${SYN3H_GATE_POLL_S:-10}"
-RELEASE="${SYN3H_SHIP_RELEASE:-tools/release.sh}"; OUT="${SYN3H_SHIP_OUT:-/tmp}/syn3h-ship-$N"
-STABLE="${SYN3H_SHIP_STABLE:-../Syn3h-stable}"
-HOLD_ROOT="${SYN3H_HEAVY_ROOT:-/tmp/syn3h-heavy-v2}"; HOLD="$HOLD_ROOT/hold"
+GAP="${MIRA_SHIP_GAP_S:-900}"; LIMIT="${MIRA_GATE_LOAD:-12}"; HOLD_S="${MIRA_GATE_HOLD_S:-120}"
+TIMEOUT="${MIRA_GATE_TIMEOUT_S:-3600}"; POLL="${MIRA_GATE_POLL_S:-10}"
+RELEASE="${MIRA_SHIP_RELEASE:-tools/release.sh}"; OUT="${MIRA_SHIP_OUT:-/tmp}/mira-ship-$N"
+STABLE="${MIRA_SHIP_STABLE:-../Syn3h-stable}"
+HOLD_ROOT="${MIRA_HEAVY_ROOT:-/tmp/syn3h-heavy-v2}"; HOLD="$HOLD_ROOT/hold"
 rm -f "$OUT-dry.rc" "$OUT-release.rc" "$OUT.done"
 finish() { echo "$1" > "$OUT.done"; echo "DONE: $1"; exit 0; }
 # Our own hold only: never remove one naming another process (release.sh's, or another ship).
@@ -59,7 +60,7 @@ if [ "$GAP" -gt 0 ] && [ -f "$LAST" ]; then
 fi
 
 # The dry run (a release.sh run of its own: it holds the machine 'running' while it lasts).
-if [ "${SYN3H_SHIP_DRY:-1}" != 0 ]; then
+if [ "${MIRA_SHIP_DRY:-1}" != 0 ]; then
   PREV="$(readlink "$STABLE/current" 2>/dev/null || true)"
   "$RELEASE" "$N" "$NOTE" --dry-run > "$OUT-dry.log" 2>&1; rc=$?; echo "$rc" > "$OUT-dry.rc"
   # A dry run repoints the stable channel at its own copy; put it back.

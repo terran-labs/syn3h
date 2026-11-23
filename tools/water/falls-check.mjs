@@ -27,9 +27,9 @@ try {
   const url = new URL(base)
   for (const [k, v] of Object.entries({ autoplay: '1', world: 'ice.1', vehicle: 'buggy' })) url.searchParams.set(k, v)
   await page.goto(url.href, { waitUntil: 'load', timeout: 120000 })
-  await page.waitForFunction(() => window.syn3h?.game.time > 3, null, { timeout: 180000 })
+  await page.waitForFunction(() => window.mira?.game.time > 3, null, { timeout: 180000 })
   await page.evaluate(() => {
-    const s = window.syn3h
+    const s = window.mira
     for (const [id, value] of Object.entries({ 'bots.count': 0, 'sun.timeOfDay': 12, 'sun.dayLength': 0, 'world.curve': 0, 'weather.storminess': 0 })) s.params.set(id, value, 'local')
     const held = { update() {
       const v = window.fallsView; if (!v) return
@@ -48,12 +48,12 @@ try {
     await page.waitForTimeout(2500)
     await page.screenshot({ path: `${out}/${label}-${name}.png` })
     report.views[name] = await page.evaluate(() => {
-      const s = window.syn3h, info = s.game.renderer.info
+      const s = window.mira, info = s.game.renderer.info
       return { calls: info.render?.drawCalls ?? info.render?.calls, triangles: info.render?.triangles, camera: s.game.camera.position.toArray() }
     })
   }
   report.water = await page.evaluate(() => {
-    const v = window.syn3h.terrain.volcanics
+    const v = window.mira.terrain.volcanics
     const by = {}
     for (const { mesh } of v.meshes) {
       const n = mesh.geometry.name || 'unnamed'

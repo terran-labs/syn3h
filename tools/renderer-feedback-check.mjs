@@ -1,4 +1,5 @@
 /** One ordinary-entry archipelago reproduction. Observes bindings; never repairs them. */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { createServer as createVite } from 'vite'
 import { createServer } from 'node:net'
@@ -18,7 +19,7 @@ const freePort = () => new Promise((resolve, reject) => {
   server.listen(0, '127.0.0.1', () => { const port = server.address().port; server.close(() => resolve(port)) })
 })
 const roomPort = await freePort(), port = await freePort()
-process.env.SYN3H_NO_ROOM_SERVER = '1'
+process.env.MIRA_NO_ROOM_SERVER = '1'
 process.env.VITE_SERVER_URL = `ws://127.0.0.1:${port}`
 const room = spawn(process.execPath, ['--import', 'tsx', 'server/dev.ts'], { env: { ...process.env, PORT: String(roomPort) }, stdio: ['ignore', 'pipe', 'pipe'] })
 let roomLog = '', browser, vite, evidence, failure
@@ -83,10 +84,10 @@ try {
   page.on('console', m => { if (m.type() === 'error' && errors.length < 40) errors.push({ at: Date.now(), kind: 'console', text: m.text() }) })
   page.on('websocket', ws => { if (ws.url().includes('/ws?')) assert.ok(ws.url().startsWith(`ws://127.0.0.1:${port}/ws?`)) })
   await page.goto(`http://127.0.0.1:${port}/?room=feedback${Date.now()}&name=FeedbackHost${gl ? '&webgl=1' : ''}`)
-  await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira?.shell, null, { timeout: 90000 })
   await page.evaluate(async () => {
     const { rippleField: ripple } = await import('/src/world/water/ripples.ts')
-    const renderer = window.syn3h.game.renderer, trace = window.rendererFeedback
+    const renderer = window.mira.game.renderer, trace = window.rendererFeedback
     const state = () => ({ index: ripple.index, source: ripple.source.value.uuid, targets: ripple.targets.map(t => t.texture.uuid), cells: ripple.cells })
     for (const name of ['configure', 'allocate', 'dispose']) {
       const original = ripple[name]
@@ -112,16 +113,16 @@ try {
     }
   })
   await page.locator('.galaxy-label.is-current').press('Enter')
-  await page.waitForFunction(() => window.syn3h.shell.playing && window.syn3hNet?.connected, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira.shell.playing && window.miraNet?.connected, null, { timeout: 90000 })
   events.push({ event: 'applyPlanet archipelago', at: Date.now() })
   await page.evaluate(async () => {
     const { applyPlanet } = await import('/src/world/planets.ts')
     applyPlanet('archipelago', 49731)
-    window.syn3h.params.set('gfx.auto', false); window.syn3h.params.set('gfx.level', 2)
+    window.mira.params.set('gfx.auto', false); window.mira.params.set('gfx.level', 2)
   })
   await page.waitForTimeout(5000)
   const shore = await page.evaluate(() => {
-    const s = window.syn3h, t = s.terrain
+    const s = window.mira, t = s.terrain
     for (let z = -600; z <= 600; z += 20) for (let x = -600; x <= 600; x += 20) {
       if (t.liquidKindAt(x, z) !== null) continue
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -137,7 +138,7 @@ try {
   await page.waitForTimeout(3000)
   await page.screenshot({ path: `${out}/archipelago.png` })
   evidence = await page.evaluate(() => {
-    const s = window.syn3h, g = s.game
+    const s = window.mira, g = s.game
     return { trace: window.rendererFeedback, backend: g.backend, seed: s.params.get('world.seed').value, quality: { level: s.params.get('gfx.level').value, auto: s.params.get('gfx.auto').value, rung: g.quality.governor.rung, settings: g.quality.governor.settings }, buffer: [g.canvas.width, g.canvas.height], sky: g.scene.userData.skyEnvironment }
   })
   const selfFeedback = evidence.trace.draws.filter(d => d.selfFeedback).length

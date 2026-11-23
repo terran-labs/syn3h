@@ -24,14 +24,14 @@ const errors = []
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(`${m.type()}: ${m.text()}`) })
 await page.goto(url, { waitUntil: 'load' })
-await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 30000 })
+await page.waitForFunction(() => window.mira?.game?.tick > 25, null, { timeout: 30000 })
 // The start screen suspends input until Play, even with ?autoplay=1.
 await page.locator('.shell-play').click({ timeout: 3000 }).catch(() => {})
 await page.waitForTimeout(1000)
 
 if (kind !== 'buggy') {
   await page.evaluate(async (kind) => {
-    const s = window.syn3h
+    const s = window.mira
     const { createVehicle } = await import('/src/vehicles/index.ts')
     const p = s.player.body.translation()
     const r = s.player.body.rotation()
@@ -49,7 +49,7 @@ if (kind !== 'buggy') {
 }
 
 const telemetry = () => page.evaluate(() => {
-  const s = window.syn3h
+  const s = window.mira
   const b = s.player.body
   const p = b.translation(), v = b.linvel(), r = b.rotation()
   const upY = 1 - 2 * (r.x * r.x + r.z * r.z)

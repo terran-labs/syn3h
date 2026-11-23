@@ -27,16 +27,16 @@ page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`) })
 const room = `wrap${Math.floor(Math.random() * 1e9)}`
 await page.goto(`${base}?autoplay=1&room=${room}${process.env.QUERY ? `&${process.env.QUERY}` : ''}`, { waitUntil: 'load' })
-await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 60000 })
+await page.waitForFunction(() => window.mira?.game?.tick > 25, null, { timeout: 60000 })
 
 if (planet !== undefined) {
-  await page.evaluate((p) => window.syn3h.params.set('terrain.planetSize', p), Number(planet))
+  await page.evaluate((p) => window.mira.params.set('terrain.planetSize', p), Number(planet))
   await page.waitForTimeout(4000)
 }
 
 // Pin the camera: wrap render so the chase camera cannot move it back.
 await page.evaluate(() => {
-  const g = window.syn3h.game
+  const g = window.mira.game
   const orig = g.renderer.render.bind(g.renderer)
   window.__view = null
   g.renderer.render = (scene, cam) => {
@@ -50,13 +50,13 @@ await page.evaluate(() => {
   }
 })
 
-const gy = (x, z) => page.evaluate(([a, b]) => window.syn3h.terrain.heightAt(a, b), [x, z])
-const size = await page.evaluate(() => window.syn3h.terrain.size)
+const gy = (x, z) => page.evaluate(([a, b]) => window.mira.terrain.heightAt(a, b), [x, z])
+const size = await page.evaluate(() => window.mira.terrain.size)
 const half = size / 2
 
 /** Frame metrics averaged over about two seconds of the current view. */
 const sample = () => page.evaluate(async () => {
-  const g = window.syn3h.game
+  const g = window.mira.game
   const acc = { frameMs: 0, physicsMs: 0, drawCalls: 0, triangles: 0, n: 0 }
   const t = performance.now()
   while (performance.now() - t < 2000) {
@@ -64,7 +64,7 @@ const sample = () => page.evaluate(async () => {
     const m = g.performance
     acc.frameMs += m.frameMs; acc.physicsMs += m.physicsMs; acc.drawCalls += m.drawCalls; acc.triangles += m.triangles; acc.n++
   }
-  const stats = window.syn3h.terrain.triangleStats?.()
+  const stats = window.mira.terrain.triangleStats?.()
   const r = (v) => +(v / acc.n).toFixed(1)
   return { frameMs: r(acc.frameMs), physicsMs: r(acc.physicsMs), drawCalls: r(acc.drawCalls), triangles: Math.round(acc.triangles / acc.n), terrain: stats }
 })
@@ -84,7 +84,7 @@ for (let z = -half; z < half; z += 16) {
   const h = Math.min(await gy(half + 60, z), await gy(half - 20, z))
   if (h > best) { best = h; zLand = z }
 }
-const sea = await page.evaluate(() => window.syn3h.params.get('world.lavaAltitude')?.value ?? 0)
+const sea = await page.evaluate(() => window.mira.params.get('world.lavaAltitude')?.value ?? 0)
 const eyeY = (await gy(half - 20, zLand)) + 3
 const eyeYSea = Math.max(eyeY, sea + 3) + 25
 
@@ -107,7 +107,7 @@ await page.evaluate(() => { window.__view = null })
 /** Teleport the player to (x, z), wait, and report how far its body sits above the ground. */
 async function settle(label, x, z) {
   await page.evaluate(([a, b]) => {
-    const s = window.syn3h
+    const s = window.mira
     const ground = s.terrain.heightAt(a, b)
     const liquid = s.terrain.liquidHeightAt?.(a, b) ?? -Infinity
     // A Vector3 without importing three: clone one the page already has.
@@ -115,7 +115,7 @@ async function settle(label, x, z) {
   }, [x, z])
   await page.waitForTimeout(3500)
   return page.evaluate(([l]) => {
-    const s = window.syn3h
+    const s = window.mira
     const p = s.player.body.translation()
     const ground = s.terrain.heightAt(p.x, p.z)
     const liquid = s.terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity
@@ -126,8 +126,8 @@ async function settle(label, x, z) {
 // Find a fairly flat dry spot near the +x edge for the vehicle.
 let tz = zLand
 const flat = await page.evaluate(([h, s]) => {
-  const t = window.syn3h.terrain
-  const sea = window.syn3h.params.get('world.lavaAltitude')?.value ?? 0
+  const t = window.mira.terrain
+  const sea = window.mira.params.get('world.lavaAltitude')?.value ?? 0
   let bestZ = null, bestSlope = Infinity
   for (let z = -h; z < h; z += 8) {
     const a = t.heightAt(h - 15, z), b = t.heightAt(h - 25, z), c = t.heightAt(h - 15, z + 10)

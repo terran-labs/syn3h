@@ -150,9 +150,9 @@
    the minimap swap sides), and the drum goes with it, to the top right: on a phone on its side
    the left column has no room for both it and the grid with the Panels control. */
 html[data-touch-hand="left"] .gear-selector[data-touch] { left: auto; right: var(--edge-right); }
-html[data-touch-hand="left"] .syn3h-shell.is-panels .gear-selector[data-touch] .gs-detail { left: auto; right: 0; text-align: right; }
-.syn3h-shell.is-panels .gear-selector[data-touch] .gs-detail { left: calc(var(--gs-drum-left, 8px) + 18px); top: calc(100% + 6px); width: min(30ch, calc(100vw - 2 * var(--edge))); padding: 0; }
-.syn3h-shell.is-panels .gear-selector[data-touch] .gs-desc:not([hidden]) { display: block; font-size: 12.5px; }
+html[data-touch-hand="left"] .mira-shell.is-panels .gear-selector[data-touch] .gs-detail { left: auto; right: 0; text-align: right; }
+.mira-shell.is-panels .gear-selector[data-touch] .gs-detail { left: calc(var(--gs-drum-left, 8px) + 18px); top: calc(100% + 6px); width: min(30ch, calc(100vw - 2 * var(--edge))); padding: 0; }
+.mira-shell.is-panels .gear-selector[data-touch] .gs-desc:not([hidden]) { display: block; font-size: 12.5px; }
 
 /* Extra gear actions on touch: the next column out from the shell's own thumb buttons, the
    same size and on the same two rows (the --thumb-* grid in src/ui/touch-stick.css). The first
@@ -185,18 +185,18 @@ html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actio
    faded by their ink (--a, GearSelector.pose), not by their opacity, so the dark falloff under
    their letters (--hud-under, the readouts' own) stays whole and holds them over bright sky.
    The mask fades only the drum's last few pixels, not half of each neighbour. */
-:root .syn3h-shell .gear-selector .gs-drum {
+:root .mira-shell .gear-selector .gs-drum {
   -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
   mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
 }
-:root .syn3h-shell .gear-selector .gs-drum button.gs-item:not(.is-active) {
+:root .mira-shell .gear-selector .gs-drum button.gs-item:not(.is-active) {
   color: color-mix(in srgb, var(--s3-ink) calc(var(--a, .66) * 100%), transparent); text-shadow: var(--col-text-under, var(--hud-under));
 }
 
 /* The selected gear's name stands out by its size and full ink; its shadow is the shared
    floating-text one (--float-under), so it never reads heavier than the rest. Still no plate. Captured, the selector no longer dims as a whole (it did to 84%), which
    thinned that falloff: the neighbours are already faded by their ink. */
-:root .syn3h-shell.exploration-ui .gear-selector[data-mode=locked] { opacity: 1; }
-:root .syn3h-shell.exploration-ui .gear-selector .gs-drum button.gs-item.is-active {
+:root .mira-shell.exploration-ui .gear-selector[data-mode=locked] { opacity: 1; }
+:root .mira-shell.exploration-ui .gear-selector .gs-drum button.gs-item.is-active {
   text-shadow: var(--float-under);
 }

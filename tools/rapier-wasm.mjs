@@ -32,10 +32,10 @@ const LONG_BASE64 = /[A-Za-z0-9+/=]{100000,}/g
 export function externaliseRapierWasm(code, loader) {
   const found = [...code.matchAll(INLINED)]
   if (found.length !== 1) throw new Error(`Rapier changed: expected 1 inlined WebAssembly binary, found ${found.length}. Review tools/rapier-wasm.mjs before shipping.`)
-  const replaced = code.replace(INLINED, '__syn3hPhysicsWasm(__syn3hPhysicsWasmUrl)')
+  const replaced = code.replace(INLINED, '__miraPhysicsWasm(__miraPhysicsWasmUrl)')
   const left = replaced.match(LONG_BASE64)?.length ?? 0
   if (left !== 0) throw new Error(`Rapier changed: ${left} more inlined binary run(s) remain after removing the WebAssembly. Review tools/rapier-wasm.mjs before shipping.`)
-  return `import __syn3hPhysicsWasmUrl from './rapier_wasm3d_bg.wasm?url'\nimport { loadPhysicsWasm as __syn3hPhysicsWasm } from ${JSON.stringify(loader)}\n${replaced}`
+  return `import __miraPhysicsWasmUrl from './rapier_wasm3d_bg.wasm?url'\nimport { loadPhysicsWasm as __miraPhysicsWasm } from ${JSON.stringify(loader)}\n${replaced}`
 }
 
 /**
@@ -49,18 +49,18 @@ export function physicsEarlyFetchTag(fileNames, base = '/') {
   if (wasm.length !== 1) throw new Error(`Expected exactly 1 Rapier .wasm in the build, found ${wasm.length}: ${wasm.join(', ')}`)
   const url = JSON.stringify(base + wasm[0])
   // The body is passed through a counter on its way to the loader, so the loading view can
-  // show the bytes as they arrive (window.__syn3hPhysicsBytes, read by index.html's veil
+  // show the bytes as they arrive (window.__miraPhysicsBytes, read by index.html's veil
   // script): the engine is the largest file of a first visit. The loader takes the response
   // unchanged otherwise (same status and headers, so compileStreaming still streams it).
-  const count = `function(r){if(!r||!r.body||typeof TransformStream!=='function')return r;window.__syn3hPhysicsBytes=0;return new Response(r.body.pipeThrough(new TransformStream({transform:function(c,k){window.__syn3hPhysicsBytes+=c.byteLength;k.enqueue(c)}})),{status:r.status,statusText:r.statusText,headers:r.headers})}`
-  return { tag: 'script', children: `window.__syn3hPhysicsUrl=${url};window.__syn3hPhysicsWasm={url:${url},response:fetch(${url}).then(${count}).catch(function(e){return e})}`, injectTo: 'head-prepend' }
+  const count = `function(r){if(!r||!r.body||typeof TransformStream!=='function')return r;window.__miraPhysicsBytes=0;return new Response(r.body.pipeThrough(new TransformStream({transform:function(c,k){window.__miraPhysicsBytes+=c.byteLength;k.enqueue(c)}})),{status:r.status,statusText:r.statusText,headers:r.headers})}`
+  return { tag: 'script', children: `window.__miraPhysicsUrl=${url};window.__miraPhysicsWasm={url:${url},response:fetch(${url}).then(${count}).catch(function(e){return e})}`, injectTo: 'head-prepend' }
 }
 
 export function rapierWasmAsset() {
   const loader = fileURLToPath(new URL('../src/core/physicsWasm.ts', import.meta.url))
   let base = '/', seen = 0
   return {
-    name: 'syn3h-rapier-wasm-asset',
+    name: 'mira-rapier-wasm-asset',
     apply: 'build',
     configResolved(config) { base = config.base },
     buildStart() { seen = 0 },

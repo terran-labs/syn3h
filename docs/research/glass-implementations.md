@@ -1,6 +1,6 @@
 # Liquid Glass implementations, 19 November 2026
 
-**The first comparison candidate is Shayan’s measured Regular material.** Its web component distinguishes a corner sampling map measured from iOS from the Snell bevel it uses for Clear. That distinction matters for Syn3h, which currently uses one bevel for both. The second candidate is Flutter’s renderer, whose author reports size-dependent transmission, colour lift and rim intensity. Either could outperform ours. Neither has yet beaten the native Mac reference in a controlled comparison here. [Web component and limitations](https://raw.githubusercontent.com/shayann07/liquidglass/main/ports/npm/README.md) · [Flutter measurement changes](https://pub.dev/packages/liquid_glass_renderer/changelog)
+**The first comparison candidate is Shayan’s measured Regular material.** Its web component distinguishes a corner sampling map measured from iOS from the Snell bevel it uses for Clear. That distinction matters for Mira, which currently uses one bevel for both. The second candidate is Flutter’s renderer, whose author reports size-dependent transmission, colour lift and rim intensity. Either could outperform ours. Neither has yet beaten the native Mac reference in a controlled comparison here. [Web component and limitations](https://raw.githubusercontent.com/shayann07/liquidglass/main/ports/npm/README.md) · [Flutter measurement changes](https://pub.dev/packages/liquid_glass_renderer/changelog)
 
 ## What Apple establishes
 
@@ -27,9 +27,9 @@ The 3x iPhone simulator rendered SwiftUI Regular over five backgrounds in both a
 | --- | ---: | ---: |
 | Shayan Skia, in-app Regular | 5.07 | 4.19 |
 | Flutter Impeller, iOS 27 Regular preset | 38.88 | 39.12 |
-| Syn3h Snell prototype | 50.97 | 47.92 |
+| Mira Snell prototype | 50.97 | 47.92 |
 | liquidGL browser defaults | 56.27 | 56.14 |
 
 Flutter ran in the same simulator with Flutter GPU enabled and its GPU shape widget present. The browser trials used desktop Chromium at scale three. These results rank the tested configurations for resting Regular controls. Safari hardware performance, Clear, press and motion each need their own comparison.
 
-Shayan was closest in each appearance. Light yielded 6.73 and 5.54 for the circle and pill. Dark yielded 3.41 and 2.83. The upstream measured table combines landmark pairs on a Photos toolbar and a Safari lab pill. Syn3h instead measures the phase of a grating through each of its own control sizes. The first inline port using this field scored 8.32 and 8.05. The grid shows remaining wide-blur sampling error, rim differences and displacement at the circle edge. [Upstream measurement record](https://github.com/shayann07/liquidglass/blob/9effb52bcb9d36e8048666b935f9d4ac46b99b47/docs/research/measured-model.md)
+Shayan was closest in each appearance. Light yielded 6.73 and 5.54 for the circle and pill. Dark yielded 3.41 and 2.83. The upstream measured table combines landmark pairs on a Photos toolbar and a Safari lab pill. Mira instead measures the phase of a grating through each of its own control sizes. The first inline port using this field scored 8.32 and 8.05. The grid shows remaining wide-blur sampling error, rim differences and displacement at the circle edge. [Upstream measurement record](https://github.com/shayann07/liquidglass/blob/9effb52bcb9d36e8048666b935f9d4ac46b99b47/docs/research/measured-model.md)

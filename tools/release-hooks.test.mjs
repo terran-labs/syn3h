@@ -1,3 +1,4 @@
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
@@ -9,7 +10,7 @@ const release = readFileSync(new URL('./release.sh', import.meta.url), 'utf8')
 const hook = release.slice(release.indexOf('# These artifacts describe'))
 for (const failure of ['draft', 'tag']) {
   test(`a failed ${failure} preserves successful deployment status`, () => {
-    const dir = mkdtempSync(join(tmpdir(), 'syn3h-release-hook-'))
+    const dir = mkdtempSync(join(tmpdir(), 'mira-release-hook-'))
     try {
       mkdirSync(join(dir, 'bin')); mkdirSync(join(dir, 'release-notes'))
       writeFileSync(join(dir, 'bin/node'), '#!/bin/sh\necho "$*" >> "$CALLS"\ncase "$*" in *" draft "*) [ "$FAILURE" != draft ];; *showcase*) [ "$FAILURE" != capture ];; esac\n', { mode: 0o755 })
@@ -17,7 +18,7 @@ for (const failure of ['draft', 'tag']) {
       const calls = join(dir, 'calls')
       const result = spawnSync('/bin/sh', ['-eu', '-c', hook], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, FAILURE: failure, CALLS: calls, CALVER: 'v26.11.1500', MILESTONE: 'test', COMMIT: '1234567', WHEN: 'test time', N: '3', PREV: 'release-2', DEST: dir, LOG: join(dir, 'log'),
         // Never start the real GitHub check from a test.
-        SYN3H_SKIP_VANTAGE: '1' } })
+        MIRA_SKIP_VANTAGE: '1' } })
       assert.equal(result.status, 0, result.stderr)
       assert.match(result.stdout, /Warning: release is live/)
       // The showcase is its own step after the release: printed, never run or published here.
@@ -25,7 +26,7 @@ for (const failure of ['draft', 'tag']) {
       const ran = existsSync(calls) ? readFileSync(calls, 'utf8') : ''
       assert.doesNotMatch(ran, /showcase\.mjs/)
       assert.doesNotMatch(ran, /publish/)
-      assert.match(result.stdout, /VANTAGE: skipped \(SYN3H_SKIP_VANTAGE\)/)
+      assert.match(result.stdout, /VANTAGE: skipped \(MIRA_SKIP_VANTAGE\)/)
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 }
@@ -34,12 +35,12 @@ for (const failure of ['draft', 'tag']) {
 // (ARCHIVE_FAILED, set in the Record step) still lets every one of them run, then ends the
 // release in failure so it cannot pass unnoticed.
 test('a failed archive runs every later step, then ends the release with exit 1', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'syn3h-release-hook-'))
+  const dir = mkdtempSync(join(tmpdir(), 'mira-release-hook-'))
   try {
     mkdirSync(join(dir, 'bin')); mkdirSync(join(dir, 'release-notes'))
     writeFileSync(join(dir, 'bin/node'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
     writeFileSync(join(dir, 'bin/git'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
-    const result = spawnSync('/bin/sh', ['-eu', '-c', hook], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, ARCHIVE_FAILED: '1', CALVER: 'v26.11.1500', MILESTONE: 'test', COMMIT: '1234567', WHEN: 'test time', N: '3', PREV: 'release-2', DEST: dir, LOG: join(dir, 'log'), SYN3H_SKIP_VANTAGE: '1' } })
+    const result = spawnSync('/bin/sh', ['-eu', '-c', hook], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, ARCHIVE_FAILED: '1', CALVER: 'v26.11.1500', MILESTONE: 'test', COMMIT: '1234567', WHEN: 'test time', N: '3', PREV: 'release-2', DEST: dir, LOG: join(dir, 'log'), MIRA_SKIP_VANTAGE: '1' } })
     assert.equal(result.status, 1)
     assert.match(result.stdout, /VANTAGE: skipped/, 'the steps after the archive still ran')
     assert.match(result.stderr, /release-3 is live but v26\.11\.1500 is NOT stored in R2/)
@@ -61,7 +62,7 @@ const settleFn = release.slice(release.indexOf('settle() {'), release.indexOf('\
 const primaryCheck = settleFn + release.slice(release.indexOf('# --- Primary public acceptance'), release.indexOf('# --- Record'))
 for (const failure of ['none', 'assets', 'gameplay']) {
   test(`primary acceptance ${failure} failure cannot record a release`, () => {
-    const dir = mkdtempSync(join(tmpdir(), 'syn3h-primary-check-'))
+    const dir = mkdtempSync(join(tmpdir(), 'mira-primary-check-'))
     try {
       mkdirSync(join(dir, 'bin')); mkdirSync(join(dir, 'tools'))
       writeFileSync(join(dir, 'bin/node'), '#!/bin/sh\n[ "$FAILURE" != assets ]\n', { mode: 0o755 })
@@ -78,7 +79,7 @@ for (const failure of ['none', 'assets', 'gameplay']) {
 }
 
 test('notes compare with accepted history, not a later failed attempt', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'syn3h-notes-baseline-'))
+  const dir = mkdtempSync(join(tmpdir(), 'mira-notes-baseline-'))
   try {
     mkdirSync(join(dir, 'release-notes'))
     writeFileSync(join(dir, 'release-notes/history.tsv'), 'v1\taccepted-release\tgood\ttime\tproduction\nv2\tunshipped-milestone\tnew\ttime\tmilestone\n')
@@ -101,11 +102,11 @@ function section(source, start, end) {
 const smokeSections = {
   normal: section(release, 'SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.', '\n\nif [ -n "$DRY" ]'),
   latency: section(release, '  SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-latency.', '\n  echo\n'),
-  domain: section(domain, '  if [ -n "${SYN3H_SHORT_CHECK:-}" ]; then', '\n  ;;'),
+  domain: section(domain, '  if [ -n "${MIRA_SHORT_CHECK:-}" ]; then', '\n  ;;'),
   rollback: section(rollback, '# Preserve the check'),
 }
 function callerFixture(fn) {
-  const dir = mkdtempSync(join(tmpdir(), 'syn3h-smoke-callers-'))
+  const dir = mkdtempSync(join(tmpdir(), 'mira-smoke-callers-'))
   try {
     mkdirSync(join(dir, 'bin'))
     const calls = join(dir, 'calls')
@@ -121,11 +122,11 @@ exec /usr/bin/mktemp "$FIXTURE/\${1##*/}"
 `, { mode: 0o755 })
     writeFileSync(join(dir, 'bin/node'), `#!/bin/sh
 set -eu
-printf '%s\n' "$SYN3H_SHOT_EVIDENCE_DIR" >> "$CALLS"
-case "$SYN3H_SHOT_EVIDENCE_DIR" in "$FIXTURE"/*/evidence) ;; *) exit 91;; esac
-[ -d "\${SYN3H_SHOT_EVIDENCE_DIR%/*}" ] || exit 92
-[ ! -e "$SYN3H_SHOT_EVIDENCE_DIR" ] || exit 93
-mkdir "$SYN3H_SHOT_EVIDENCE_DIR"
+printf '%s\n' "$MIRA_SHOT_EVIDENCE_DIR" >> "$CALLS"
+case "$MIRA_SHOT_EVIDENCE_DIR" in "$FIXTURE"/*/evidence) ;; *) exit 91;; esac
+[ -d "\${MIRA_SHOT_EVIDENCE_DIR%/*}" ] || exit 92
+[ ! -e "$MIRA_SHOT_EVIDENCE_DIR" ] || exit 93
+mkdir "$MIRA_SHOT_EVIDENCE_DIR"
 case "$CASE" in
   success) echo 'NET SMOKE OK'; exit 0;;
   fail) echo 'FAIL original gameplay'; echo 'NET SMOKE FAILED'; exit 1;;
@@ -143,7 +144,7 @@ exit 94
         cwd: dir, encoding: 'utf8', timeout: 3000, maxBuffer: 1024 * 1024,
         env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH,
           FIXTURE: dir, CALLS: calls, CASE: scenario, H: host, URL: 'https://example.test/',
-          LOG: join(dir, 'same-log'), PROXY_PORT: '12345', SYN3H_SHOT_EVIDENCE_DIR: '/must-not-reuse/evidence',
+          LOG: join(dir, 'same-log'), PROXY_PORT: '12345', MIRA_SHOT_EVIDENCE_DIR: '/must-not-reuse/evidence',
           // The evidence-carrying smoke in the release section is the dry run's path now.
           DRY: '1' },
       })
@@ -189,7 +190,7 @@ for (const kind of ['normal', 'latency', 'domain']) {
 // The short public check after a production deploy: a crash is a fresh rerun, at most twice.
 for (const [name, codes, status] of [['passes', [0], 0], ['fails at once', [1, 0], 1], ['reruns after a crash', [3, 0], 0], ['gives up after three crashes', [3, 3, 3, 0], 1]]) {
   test(`run_public_check ${name}`, () => {
-    const dir = mkdtempSync(join(tmpdir(), 'syn3h-public-check-'))
+    const dir = mkdtempSync(join(tmpdir(), 'mira-public-check-'))
     try {
       mkdirSync(join(dir, 'bin'))
       writeFileSync(join(dir, 'codes'), codes.join('\n') + '\n')
@@ -207,7 +208,7 @@ function vantageRun(views, wait = '1') {
   const source = readFileSync(join(process.cwd(), 'tools', 'release.sh'), 'utf8')
   const start = source.indexOf('vantage() {'), end = source.indexOf('\n}\n', start)
   assert.ok(start >= 0 && end > start, 'release.sh defines vantage()')
-  const dir = mkdtempSync(join(tmpdir(), 'syn3h-vantage-'))
+  const dir = mkdtempSync(join(tmpdir(), 'mira-vantage-'))
   try {
     writeFileSync(join(dir, 'views'), views.join('\n') + '\n')
     writeFileSync(join(dir, 'gh'), `#!/bin/sh
@@ -221,7 +222,7 @@ esac
     writeFileSync(join(dir, 'date'), `#!/bin/sh\ncase "$1" in -u) /bin/date "$@" ;; *) n=$(cat "${dir}/clock" 2>/dev/null || echo 1000); echo $((n + 5)) > "${dir}/clock"; echo $n ;; esac\n`, { mode: 0o755 })
     const script = `${source.slice(start, end + 2)}\nsleep() { :; }\nLOG="${dir}/log"; CALVER=v0.0.0; vantage`
     const started = Date.now()
-    const result = spawnSync('/bin/sh', ['-c', script], { encoding: 'utf8', timeout: 20000, env: { PATH: `${dir}:${process.env.PATH}`, SYN3H_VANTAGE_WAIT: wait } })
+    const result = spawnSync('/bin/sh', ['-c', script], { encoding: 'utf8', timeout: 20000, env: { PATH: `${dir}:${process.env.PATH}`, MIRA_VANTAGE_WAIT: wait } })
     assert.equal(result.status, 0, result.stderr)
     assert.ok(Date.now() - started < 15000, 'the step returned promptly')
     return result.stdout

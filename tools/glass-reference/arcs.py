@@ -32,7 +32,7 @@ for i, (name, cx, spine, radius) in enumerate([("Circle", 80, 0, 30), ("Pill", 2
         ypos = round(scale * (80 + sign * radius / np.sqrt(2)))
         box = (xpos-half, ypos-half, xpos+half, ypos+half)
         top = (i*2+j)*(tile+26)
-        for k, (image, label) in enumerate([(native,"Apple"), (ours,"Syn3h"), (difference,"Difference ×4")]):
+        for k, (image, label) in enumerate([(native,"Apple"), (ours,"Mira"), (difference,"Difference ×4")]):
             draw.text((k*tile+4, top+5), f"{label}   {name}   {'upper left' if sign < 0 else 'lower right'}", fill="white")
             sheet.paste(image.crop(box).resize((tile,tile), Image.Resampling.NEAREST), (k*tile, top+26))
 sheet.save(args.output)

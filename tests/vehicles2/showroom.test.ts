@@ -258,7 +258,7 @@ describe('showroom vehicle shading',()=>{
   const root=new T.Group();root.add(new T.Mesh(box(),std('Body')),new T.Mesh(box(),std('Chrome')))
   mergeStatic(root,true)
   const mesh=root.children[0] as T.Mesh,merged=mesh.material as T.MeshStandardNodeMaterial
-  // As the Syn3h stators do: add a glow to the merged material after merging.
+  // As the Mira stators do: add a glow to the merged material after merging.
   const glow=uniform(new T.Color(1,0,0)),base=merged.emissiveNode!
   merged.emissiveNode=(base as unknown as {add(n:unknown):typeof base}).add(glow)
   // A decorator that wraps emission in place, as the night and lava passes do.

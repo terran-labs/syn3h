@@ -5,7 +5,7 @@
  * Two things make up what a player sees, and both follow this setting:
  *   - the beam: the two real spot lights a local buggy casts on the road (effects/index.ts),
  *     on from dusk to dawn;
- *   - the lamps: the glowing lens faces on the buggy's body (skins/Syn3hBuggySkin.ts), which
+ *   - the lamps: the glowing lens faces on the buggy's body (skins/MiraBuggySkin.ts), which
  *     everyone sees, day and night, and which bloom picks up.
  * 1 is the brightness before 18 November. The default, 0.4, halves what a player sees: measured
  * as the light the headlights add over the same frame with them off, at dusk and at night, from

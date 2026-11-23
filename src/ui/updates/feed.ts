@@ -1,8 +1,8 @@
 /**
  * Releases and update detection for About and the update banner.
  *
- * The running version is the build's calendar version (vite.config.ts defines __SYN3H_BUILD__
- * from SYN3H_RELEASE_VERSION, which tools/release.sh sets; a dev build carries a git label and
+ * The running version is the build's calendar version (vite.config.ts defines __MIRA_BUILD__
+ * from MIRA_RELEASE_VERSION, which tools/release.sh sets; a dev build carries a git label and
  * has no version, so it never prompts). The latest version is the newest entry in
  * /v/versions.json, which every production deploy writes with the release it ships
  * (tools/frozen-versions.mjs prepare). The notes come from /releases.json (tools/release-feed.mjs).
@@ -12,7 +12,7 @@
  */
 import { bareVersion, isNewer, latestVersion } from './version'
 
-declare const __SYN3H_BUILD__: string | undefined
+declare const __MIRA_BUILD__: string | undefined
 
 /** One release: its player digest ("- " bullets, '' when it has none) and its full notes on GitHub. */
 export interface Release { version: string; date: string; summary: string; digest: string; url: string }
@@ -22,7 +22,7 @@ export const VERSIONS_URL = '/v/versions.json'
 
 /** This build's version, or null for a dev build. */
 export function runningVersion(): string | null {
-  return bareVersion(typeof __SYN3H_BUILD__ === 'string' ? __SYN3H_BUILD__ : null)
+  return bareVersion(typeof __MIRA_BUILD__ === 'string' ? __MIRA_BUILD__ : null)
 }
 
 /** The address as the page was entered: the lobby cleans ?v= from the bar while it shows. */

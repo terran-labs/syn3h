@@ -437,9 +437,9 @@ export class ProceduralTerrain implements Terrain {
 
   private *rebuildSteps(token: number): Generator<SliceStep> {
     const superseded = () => token !== 0 && this.building !== token
-    // Each stage is a `syn3h:terrain ...` user-timing measure, so a frame profile can name it.
+    // Each stage is a `mira:terrain ...` user-timing measure, so a frame profile can name it.
     let mark = performance.now()
-    const stage = (name: string) => { const now = performance.now(); try { performance.measure(`syn3h:terrain ${name}`, { start: mark, end: now }) } catch { /* Older engines. */ } mark = now }
+    const stage = (name: string) => { const now = performance.now(); try { performance.measure(`mira:terrain ${name}`, { start: mark, end: now }) } catch { /* Older engines. */ } mark = now }
     const settings = currentTerrainSettings(), key = ProceduralTerrain.key(this.seed, settings)
     if (token !== 0 && !this.prepared.has(key)) {
       yield this.prepare(this.seed, settings)

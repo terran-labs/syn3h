@@ -5,10 +5,10 @@ const browser=await chromium.launch({channel:'chrome',headless:true,args:['--ena
 try{
  const page=await browser.newPage({viewport:{width:1280,height:720}}),errors=[]
  page.on('pageerror',e=>errors.push(e.stack));await page.routeWebSocket(/\/ws/,s=>s.close())
- await page.goto('http://localhost:5185/?autoplay=1&vehicle=buggy&seed=1');await page.waitForFunction(()=>window.syn3h?.game.tick>15)
+ await page.goto('http://localhost:5185/?autoplay=1&vehicle=buggy&seed=1');await page.waitForFunction(()=>window.mira?.game.tick>15)
  await page.exposeFunction('capturePhase',phase=>page.screenshot({path:out+'/'+phase+'.png'}))
  const samples=await page.evaluate(async()=>{
-  const s=window.syn3h;s.params.set('bots.count',0);s.params.set('sun.timeOfDay',12);s.params.set('sun.dayLength',0)
+  const s=window.mira;s.params.set('bots.count',0);s.params.set('sun.timeOfDay',12);s.params.set('sun.dayLength',0)
   const values=[]
   for(const phase of ['grip','turn']){
    s.game.input.external.y=.2;s.game.input.external.x=phase==='turn'?.3:0

@@ -6,7 +6,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { FIXED_DT } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import type { Vehicle } from '../../src/vehicles/Vehicle'
 import { basinBed, type Liquid } from '../vehicles/liquidScenarios'
 
@@ -31,7 +31,7 @@ const c = new THREE.Vector3()
 export function zorbLaunch(sea: ZorbSea, speed: number, angle: number, clearance = 0.05): ZorbRun {
   const length = 1600
   const { h, g, clock } = basinBed({ liquid: sea.liquid, length, depth: sea.depth, slope: 30, waves: sea.waves })
-  const v = new Syn3hBuggy(h.game, h.terrain, new THREE.Vector3(0, 60, -40))
+  const v = new MiraBuggy(h.game, h.terrain, new THREE.Vector3(0, 60, -40))
   v.isLocal = false
   v.input.zorb = true
   const gravity = h.world.gravity.y

@@ -2,7 +2,7 @@
  * Modelling kit for the next-gen tank design studies.
  *
  * Everything is procedural so a chosen design can be refined by editing numbers. The styling
- * follows the owner's Syn3h buggy and jet renders: candy paint over smooth lofted bodies,
+ * follows the owner's Mira buggy and jet renders: candy paint over smooth lofted bodies,
  * black glass with a chrome surround, chrome rimmed openings and exposed chrome running gear.
  * Convention: -Z is forward, +Y is up, the ground is y = 0, units are metres.
  */

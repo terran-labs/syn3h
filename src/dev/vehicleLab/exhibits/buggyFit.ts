@@ -16,7 +16,7 @@
  * from tools/models through the dev server; it is a measuring tool and does not ship, and the
  * production build neither copies nor references those files.
  *
- * The Skins group runs the game's skin class as the game drives it: Syn3hBuggySkin, with
+ * The Skins group runs the game's skin class as the game drives it: MiraBuggySkin, with
  * wheels, steering, wings, motor glow, brake lamps, paint and the game's three detail levels.
  *
  *   /vehicle-lab.html?vehicle=buggy-fit&group=Skins&design=generated  the game skin
@@ -33,7 +33,7 @@ import { applyShowroom, setRole, type SurfaceRole } from '../../../vehicles/skin
 import type { LabContext, LabDesignInfo, LabExhibit, LabModel } from '../types'
 import type { BuggySkin } from '../../../vehicles/skins/BuggySkin'
 import type { VehicleDetail } from '../../../vehicles/skins/mergeStatic'
-import type { BuggyBodySource } from '../../../vehicles/skins/Syn3hBuggySkin'
+import type { BuggyBodySource } from '../../../vehicles/skins/MiraBuggySkin'
 import { motorSparkLoad, sparkLevel } from '../../../vehicles/skins/motorDrive'
 import { vehicleDecoration } from '../../../vehicles/skins/decoration'
 
@@ -41,7 +41,7 @@ import { vehicleDecoration } from '../../../vehicles/skins/decoration'
 interface CandidatePart { part: PartName; role: string; geometry: THREE.BufferGeometry }
 interface Candidate { id: string; build(detail: 0 | 1 | 2): CandidatePart[]; numbers?: number }
 
-// Rest layout, as Syn3hBuggySkin: hubs at `rest` mirrored per wheel, struts to the AxelPos mounts.
+// Rest layout, as MiraBuggySkin: hubs at `rest` mirrored per wheel, struts to the AxelPos mounts.
 const HUBS = [0, 1, 2, 3].map(i => new THREE.Vector3(i % 2 ? 1.1 : -1.1, -.2, i < 2 ? -1.3 : 1.3))
 const MOUNTS = [0, 1, 2, 3].map(i => new THREE.Vector3(i % 2 ? .55 : -.55, .15, i < 2 ? -1.2 : 1.2))
 /** Shock anchors from the Shock node's extras in buggy-boxarm.glb, used for the candidate too. */
@@ -58,7 +58,7 @@ const placeholder = () => import('../../../../tools/buggy-fit/placeholder')
 /** Design id: the path under src/vehicles/buggygen without .ts, for example `parts/index`. */
 const moduleName = (path: string) => path.split('/buggygen/').pop()!.replace(/\.ts$/, '')
 
-/** Syn3hBuggySkin.strutMatrix at rest: span from hub to mount, thickness toward body up. */
+/** MiraBuggySkin.strutMatrix at rest: span from hub to mount, thickness toward body up. */
 function strutMatrix(hub: THREE.Vector3, mount: THREE.Vector3): THREE.Matrix4 {
   const span = mount.clone().sub(hub).normalize(), up = new THREE.Vector3(0, 1, 0)
   const thick = up.clone().addScaledVector(span, -up.dot(span)).normalize().negate()
@@ -160,12 +160,12 @@ export const buggyFit: LabExhibit = {
     }
     found.push({ id: 'placeholder', name: 'Placeholder boxes', group: 'Parts', notes: ['tools/buggy-fit/placeholder.ts: one box per part at the reference bounds.'] })
     found.push(
-      { id: 'generated', name: 'Game skin', group: 'Skins', notes: ['Syn3hBuggySkin, as the game builds it: every part generated, no model file.', 'Body from src/vehicles/buggygen/body.ts; &shape=<code> reshapes it.'] },
-      { id: 'generated-loft', name: 'Game skin, loft body', group: 'Skins', notes: ['Syn3hBuggySkin with the section loft body, for comparison.'] },
+      { id: 'generated', name: 'Game skin', group: 'Skins', notes: ['MiraBuggySkin, as the game builds it: every part generated, no model file.', 'Body from src/vehicles/buggygen/body.ts; &shape=<code> reshapes it.'] },
+      { id: 'generated-loft', name: 'Game skin, loft body', group: 'Skins', notes: ['MiraBuggySkin with the section loft body, for comparison.'] },
     )
     return found
   },
-  heading: group => group === 'Skins' ? 'Syn3h buggy: the game skin' : 'Generated buggy fit: parts',
+  heading: group => group === 'Skins' ? 'Mira buggy: the game skin' : 'Generated buggy fit: parts',
   async build(info, ctx) {
     if (info.id === 'generated' || info.id === 'generated-loft') return skinModel(info.id, ctx)
     ctx.status('Reading the reference model')
@@ -225,18 +225,18 @@ export const buggyFit: LabExhibit = {
   },
 }
 
-/** Wheel rest position as Syn3hBuggySkin's LAYOUT; driver's eye as Syn3hBuggy's RIDE_HEIGHT. */
+/** Wheel rest position as MiraBuggySkin's LAYOUT; driver's eye as MiraBuggy's RIDE_HEIGHT. */
 const REST = new THREE.Vector3(1.1, -.2, 1.3), RIDE_HEIGHT = .8
 /** Time from construction to ready, per skin, for scripts (tools/buggy-fit/browser-measure.mjs). */
 const timings: Record<string, number> = ((globalThis as { buggySkinReadyMs?: Record<string, number> }).buggySkinReadyMs ??= {})
 
-/** A real skin class in the lab, driven as Syn3hBuggy drives it. */
+/** A real skin class in the lab, driven as MiraBuggy drives it. */
 async function skinModel(id: 'generated' | 'generated-loft', ctx: LabContext): Promise<LabModel> {
   ctx.status('Generating the buggy')
   const object = new THREE.Group(), callbacks = new Set<VehicleDetail>()
   object.userData.registerVehicleDetail = (fn: VehicleDetail) => { callbacks.add(fn); return () => callbacks.delete(fn) }
   // Module loading is not part of construction: import first, then time construction to ready.
-  const { Syn3hBuggySkin } = await import('../../../vehicles/skins/Syn3hBuggySkin')
+  const { MiraBuggySkin } = await import('../../../vehicles/skins/MiraBuggySkin')
   // A shape code (from the buggy-shape exhibit) reshapes the generated body; parts follow it.
   const code = id === 'generated' ? new URLSearchParams(location.search).get('shape') : null
   const shaped = code ? await import('../../../vehicles/buggygen/shape') : undefined
@@ -247,7 +247,7 @@ async function skinModel(id: 'generated' | 'generated-loft', ctx: LabContext): P
     source = { build: detail => shaped.shapedBody(shape, detail) }
   }
   const started = performance.now()
-  const skin: BuggySkin = new Syn3hBuggySkin(source)
+  const skin: BuggySkin = new MiraBuggySkin(source)
   object.add(skin.object)
   await skin.ready
   timings[id] = performance.now() - started

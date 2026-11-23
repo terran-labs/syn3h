@@ -14,7 +14,7 @@ import type { Game } from '../../../src/core/Game'
 import { emptyInput } from '../../../src/core/Input'
 import { createWorld, FIXED_DT, initPhysics, RAPIER } from '../../../src/core/physics'
 import type { Vehicle } from '../../../src/vehicles/Vehicle'
-import { Syn3hBuggy } from '../../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../../src/vehicles/MiraBuggy'
 import { Hovercraft } from '../../../src/vehicles/Hovercraft'
 import { BotBrain } from '../../../src/bots/BotBrain'
 import { Mind } from '../../../src/bots/mind/Mind'
@@ -38,10 +38,10 @@ function pond(chaser: 'buggy' | 'hovercraft') {
   const terrain = terrainOf(world, (x) => height(x), liquid, 200)
   const game = { world, scene: new THREE.Scene(), tick: 0, time: 0, camera: new THREE.PerspectiveCamera(), canvas: {}, input: { state: emptyInput() } } as unknown as Game
   // The target sits out in the pond and stays there until moved.
-  const target = new Syn3hBuggy(game, terrain, new Vector3(-12, 0.3, 0)); target.isLocal = false
+  const target = new MiraBuggy(game, terrain, new Vector3(-12, 0.3, 0)); target.isLocal = false
   target.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
   const at = new Vector3(45, 1.4, 0)
-  const bot: Vehicle = chaser === 'hovercraft' ? new Hovercraft(game, terrain, at, -Math.PI / 2) : new Syn3hBuggy(game, terrain, at, -Math.PI / 2)
+  const bot: Vehicle = chaser === 'hovercraft' ? new Hovercraft(game, terrain, at, -Math.PI / 2) : new MiraBuggy(game, terrain, at, -Math.PI / 2)
   bot.isLocal = false
   params.set('bots.tagBeams', false); params.set('bots.freeSpirit', 0)
   const brain = new BotBrain(game, terrain, bot, target)

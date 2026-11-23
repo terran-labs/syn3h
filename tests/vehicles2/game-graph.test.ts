@@ -33,7 +33,7 @@ function reachable(entry:string){
 describe('what the game loads',()=>{
  const game=reachable('src/main.ts')
  it('is a real graph: the vehicles and their shared code are in it',()=>{
-  for(const f of ['src/vehicles/index.ts','src/vehicles/Vehicle.ts','src/vehicles/Syn3hBuggy.ts','src/vehicles/Jet.ts','src/vehicles/Hovercraft.ts','src/vehicles/Tank.ts','src/vehicles/jetgen/GameJet.ts','src/vehicles/effects/index.ts'])expect(game,f).toContain(f)
+  for(const f of ['src/vehicles/index.ts','src/vehicles/Vehicle.ts','src/vehicles/MiraBuggy.ts','src/vehicles/Jet.ts','src/vehicles/Hovercraft.ts','src/vehicles/Tank.ts','src/vehicles/jetgen/GameJet.ts','src/vehicles/effects/index.ts'])expect(game,f).toContain(f)
   expect(game.length).toBeGreaterThan(100)
  })
  it('contains no design study, lab or viewer',()=>{

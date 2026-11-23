@@ -1,6 +1,6 @@
 // Fog parity evidence: fixed views of the volcanic world with everything that moves held
 // still (clock, clouds, bots), for comparing the picture before and after a fog shader change.
-//   SYN3H_NO_ROOM_SERVER=1 npx vite --port 5317 --strictPort
+//   MIRA_NO_ROOM_SERVER=1 npx vite --port 5317 --strictPort
 //   node tests/weather/fog-parity-capture.mjs [url] [outdir]
 // Run once on each build into two folders, then compare the PNGs pixel by pixel.
 import { chromium } from 'playwright-core'
@@ -9,15 +9,15 @@ const base = process.argv[2] ?? 'http://localhost:5317/'
 const out = process.argv[3] ?? '/tmp/syn3h-weather/parity'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
-const ticks = (page, n) => page.evaluate((n) => new Promise((r) => { const s = window.syn3h, t = s.game.tick + n; const f = () => s.game.tick >= t ? r() : requestAnimationFrame(f); f() }), n)
+const ticks = (page, n) => page.evaluate((n) => new Promise((r) => { const s = window.mira, t = s.game.tick + n; const f = () => s.game.tick >= t ? r() : requestAnimationFrame(f); f() }), n)
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } }), errors = []
   page.on('pageerror', (e) => errors.push(e.message))
   await page.routeWebSocket(/\/ws/, (s) => s.close())
   await page.goto(`${base}?autoplay=1&vehicle=buggy`)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 10, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game.tick > 10, null, { timeout: 120000 })
   await page.evaluate(() => {
-    const s = window.syn3h
+    const s = window.mira
     for (const [id, v] of [['bots.count', 0], ['sun.dayLength', 0], ['weather.cloudSpeed', 0], ['weather.cloudCoverage', 0], ['weather.storminess', 0], ['fx.particleBudget', 0]]) { try { s.params.set(id, v) } catch { /* not on this build */ } }
     s.game.remove(s.camera); s.shell?.hidePanel?.()
     const style = document.createElement('style'); style.textContent = 'body > *:not(canvas) { display: none !important }'; document.head.append(style)
@@ -28,7 +28,7 @@ try {
   for (const hour of [12, 18.2]) {
     for (const [name, [dx, up, dz, lookUp, lookDz]] of Object.entries(views)) {
       await page.evaluate(([hour, dx, up, dz, lookUp, lookDz]) => {
-        const s = window.syn3h, v = s.terrain.summit(), cam = s.game.camera
+        const s = window.mira, v = s.terrain.summit(), cam = s.game.camera
         s.params.set('sun.timeOfDay', hour); s.params.set('weather.aerial', 1.5)
         const x = v.x + dx, z = v.z - v.rimRadius + dz
         const y = up < 0 ? Math.max(s.terrain.heightAt(x, z), s.params.get('world.lavaAltitude')?.value ?? 0) + 30 : v.rimHeight + up

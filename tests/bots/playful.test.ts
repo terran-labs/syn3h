@@ -9,7 +9,7 @@ import { Scene, Vector3 } from 'three/webgpu'
 import type { Game } from '../../src/core/Game'
 import { emptyInput } from '../../src/core/Input'
 import { createWorld, initPhysics, RAPIER } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import type { Vehicle } from '../../src/vehicles/Vehicle'
 import type { Terrain } from '../../src/world/Terrain'
 import { BotBrain, type BotMatch } from '../../src/bots/BotBrain'
@@ -47,7 +47,7 @@ function touching(a: Vehicle, b: Vehicle): boolean {
  */
 function session(mode: 'free' | 'tag-player-it' | 'tag-bot-it' | 'hill', seconds: number) {
   const game = { world, scene: new Scene(), tick: 0, input: { state: emptyInput() } } as unknown as Game
-  const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); player.id = 'player'; player.isLocal = false
+  const player = new MiraBuggy(game, terrain, new Vector3(0, 1, 0)); player.id = 'player'; player.isLocal = false
   const bots: Vehicle[] = [], brains: BotBrain[] = []
   let gearUses = 0, beams = 0, farthest = 0, travelled = 0
   // Gear the room would offer if it allowed: every kind, in range of anything.
@@ -57,7 +57,7 @@ function session(mode: 'free' | 'tag-player-it' | 'tag-bot-it' | 'hill', seconds
     act: (_vehicle, action) => { if (action.phase === 'press') gearUses++ },
   }
   for (let i = 0; i < 4; i++) {
-    const bot = new Syn3hBuggy(game, terrain, new Vector3(Math.cos(i * 1.6) * 30, 1, Math.sin(i * 1.6) * 30)); bot.id = `bot-${i}`
+    const bot = new MiraBuggy(game, terrain, new Vector3(Math.cos(i * 1.6) * 30, 1, Math.sin(i * 1.6) * 30)); bot.id = `bot-${i}`
     const brain = new BotBrain(game, terrain, bot, player, i)
     brain.setGear(hooks); brain.setTargets([player]); brain.setPeers(bots)
     bots.push(bot); brains.push(brain)

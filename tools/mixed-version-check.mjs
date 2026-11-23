@@ -1,6 +1,7 @@
 /** Run under tools/heavy.sh. Frozen files are served unchanged; both origins use this branch's Room.
  * node tools/mixed-version-check.mjs /path/to/frozen/version [report.json]
  */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { createServer } from 'node:http'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -49,8 +50,8 @@ server.on('upgrade',(req,socket,head) => {
 })
 await new Promise(r=>server.listen(0,'127.0.0.1',r))
 const port=server.address().port
-process.env.SYN3H_NO_ROOM_SERVER='1'
-process.env.SYN3H_ROOM_PORT=String(port)
+process.env.MIRA_NO_ROOM_SERVER='1'
+process.env.MIRA_ROOM_PORT=String(port)
 const vite=await createVite({server:{port:0,host:'127.0.0.1'}})
 await vite.listen()
 const origins={old:`http://127.0.0.1:${port}/`,new:`http://127.0.0.1:${vite.httpServer.address().port}/`}
@@ -67,22 +68,22 @@ async function open(kind,room) {
   page.on('pageerror',e=>errors.push(`${kind}: ${e.message}`))
   page.on('websocket',ws=>ws.on('framereceived',({payload})=>{if(typeof payload==='string'){try{const m=JSON.parse(payload);if(m.type==='error')errors.push(`${kind}: ${payload}`)}catch{}}}))
   await page.goto(`${origins[kind]}?room=${room}&name=${kind}&autoplay=1`,{waitUntil:'load'})
-  await page.waitForFunction(()=>window.syn3h?.shell,null,{timeout:60000})
-  await page.evaluate(()=>{const s=window.syn3h;s.params.set('gfx.auto',false);s.params.set('gfx.level',0);s.shell.play();document.activeElement?.blur?.()})
-  await page.waitForFunction(()=>window.syn3hNet?.connected,null,{timeout:60000})
-  return {page,kind,navigations:()=>navigations,id:await page.evaluate(()=>window.syn3hNet.id)}
+  await page.waitForFunction(()=>window.mira?.shell,null,{timeout:60000})
+  await page.evaluate(()=>{const s=window.mira;s.params.set('gfx.auto',false);s.params.set('gfx.level',0);s.shell.play();document.activeElement?.blur?.()})
+  await page.waitForFunction(()=>window.miraNet?.connected,null,{timeout:60000})
+  return {page,kind,navigations:()=>navigations,id:await page.evaluate(()=>window.miraNet.id)}
 }
 async function drive(a,b) {
-  const before=await a.page.evaluate(()=>{const p=window.syn3h.player.body.translation();return [p.x,p.y,p.z]})
-  const remoteBefore=await b.page.evaluate(id=>{const p=window.syn3hNet.remotes.get(id).vehicle.body.translation();return [p.x,p.y,p.z]},a.id)
+  const before=await a.page.evaluate(()=>{const p=window.mira.player.body.translation();return [p.x,p.y,p.z]})
+  const remoteBefore=await b.page.evaluate(id=>{const p=window.miraNet.remotes.get(id).vehicle.body.translation();return [p.x,p.y,p.z]},a.id)
   await a.page.keyboard.down('KeyW')
-  try {await a.page.waitForFunction(([x,z])=>{const p=window.syn3h.player.body.translation();return Math.hypot(p.x-x,p.z-z)>12},[before[0],before[2]],{timeout:20000})} finally {await a.page.keyboard.up('KeyW')}
+  try {await a.page.waitForFunction(([x,z])=>{const p=window.mira.player.body.translation();return Math.hypot(p.x-x,p.z-z)>12},[before[0],before[2]],{timeout:20000})} finally {await a.page.keyboard.up('KeyW')}
   await a.page.keyboard.down('ShiftLeft')
-  try {await a.page.waitForFunction(()=>{const v=window.syn3h.player.body.linvel();return Math.hypot(v.x,v.z)<0.3},null,{timeout:15000})} finally {await a.page.keyboard.up('ShiftLeft')}
+  try {await a.page.waitForFunction(()=>{const v=window.mira.player.body.linvel();return Math.hypot(v.x,v.z)<0.3},null,{timeout:15000})} finally {await a.page.keyboard.up('ShiftLeft')}
   let sample
   for(let i=0;i<60;i++) {
-    const real=await a.page.evaluate(()=>{const p=window.syn3h.player.body.translation();return [p.x,p.y,p.z]})
-    const remote=await b.page.evaluate(id=>{const p=window.syn3hNet.remotes.get(id).vehicle.body.translation();return [p.x,p.y,p.z]},a.id)
+    const real=await a.page.evaluate(()=>{const p=window.mira.player.body.translation();return [p.x,p.y,p.z]})
+    const remote=await b.page.evaluate(id=>{const p=window.miraNet.remotes.get(id).vehicle.body.translation();return [p.x,p.y,p.z]},a.id)
     sample={driver:a.kind,moved:distance(before,real),remoteMoved:distance(remoteBefore,remote),error:distance(real,remote),real,remote}
     if(sample.error<2 && sample.remoteMoved>3)break
     await wait(200)
@@ -94,18 +95,18 @@ try {
   for(const order of [['old','new'],['new','old']]) {
     const room=`mixed${Date.now()}`
     const a=await open(order[0],room),b=await open(order[1],room)
-    for(const [self,other] of [[a,b],[b,a]]) await self.page.waitForFunction(id=>window.syn3hNet.remotes.has(id),other.id,{timeout:30000})
-    const initial=await Promise.all([a,b].map(c=>c.page.evaluate(()=>({mode:window.syn3hNet.game.mode,it:window.syn3hNet.game.it,race:window.syn3hNet.race}))))
+    for(const [self,other] of [[a,b],[b,a]]) await self.page.waitForFunction(id=>window.miraNet.remotes.has(id),other.id,{timeout:30000})
+    const initial=await Promise.all([a,b].map(c=>c.page.evaluate(()=>({mode:window.miraNet.game.mode,it:window.miraNet.game.it,race:window.miraNet.race}))))
     assert(initial.every(g=>g.mode===2&&g.it===0&&!g.race),'Fresh mixed room must Explore')
     // Default startup is covered above. Remove bots to isolate human movement.
-    await a.page.evaluate(()=>window.syn3h.params.set('bots.count',0))
+    await a.page.evaluate(()=>window.mira.params.set('bots.count',0))
     await drive(a,b);await drive(b,a)
     const fresh= a.kind==='new'?a:b
     for(const mode of [0,1,2]) {
-      await fresh.page.evaluate(mode=>window.syn3h.params.set('game.mode',mode),mode)
-      for(const c of [a,b]) await c.page.waitForFunction(mode=>window.syn3hNet.game.mode===mode,mode,{timeout:10000})
+      await fresh.page.evaluate(mode=>window.mira.params.set('game.mode',mode),mode)
+      for(const c of [a,b]) await c.page.waitForFunction(mode=>window.miraNet.game.mode===mode,mode,{timeout:10000})
     }
-    const final=await Promise.all([a,b].map(c=>c.page.evaluate(()=>({connected:window.syn3hNet.connected,mode:window.syn3hNet.game.mode,it:window.syn3hNet.game.it,fps:window.syn3h.game.fps,race:window.syn3hNet.race}))))
+    const final=await Promise.all([a,b].map(c=>c.page.evaluate(()=>({connected:window.miraNet.connected,mode:window.miraNet.game.mode,it:window.miraNet.game.it,fps:window.mira.game.fps,race:window.miraNet.race}))))
     assert(final.every(g=>g.connected&&g.mode===2&&g.it===0&&!g.race))
     assert.equal(a.navigations(),1);assert.equal(b.navigations(),1)
     results.push({order,initial,final,navigations:[a.navigations(),b.navigations()]})

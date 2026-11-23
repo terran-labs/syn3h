@@ -111,16 +111,16 @@ function installClock() {
   // at a time, paced by measured frame times, which this clock makes 60 fps ones).
   const READY = {
     entered() {
-      const s = window.syn3h, p = s.player
+      const s = window.mira, p = s.player
       return s.shell.playing && !s.shell.dropping && s.terrain.ready !== false && !s.game.holdDraws
         && (p.kind === 'jet' || p.kind === 'hovercraft' || p.wheelsGrounded > 0)
     },
     bots() {
-      const s = window.syn3h, want = Math.min(4, s.params.get('bots.count')?.value ?? 4)
+      const s = window.mira, want = Math.min(4, s.params.get('bots.count')?.value ?? 4)
       return s.bots.vehicles.length >= want && !s.bots.arriving
     },
   }
-  const gpuIdle = () => window.syn3h?.game?.renderer?.backend?.device?.queue.onSubmittedWorkDone()
+  const gpuIdle = () => window.mira?.game?.renderer?.backend?.device?.queue.onSubmittedWorkDone()
   const clock = window.__showcaseClock = {
     get frames() { return st.frames },
     start() { if (!st.virtual) { st.now = realNow(); st.virtual = true } },
@@ -150,7 +150,7 @@ function installClock() {
       let calm = 0, i = 0
       for (; i < max; i++) {
         await clock.step(1)
-        const g = window.syn3h?.game, perf = g?.performance
+        const g = window.mira?.game, perf = g?.performance
         const busy = !g || (perf?.pipelinesFresh ?? 0) > 0 || g.quality?.isLoading
         calm = busy ? 0 : calm + 1
         if (i + 1 >= min && calm >= quiet) break
@@ -162,7 +162,7 @@ function installClock() {
 
 // --- in-page staging helpers, installed after load ---------------------------------------
 function pageHelpers() {
-  const s = window.syn3h
+  const s = window.mira
   const V = s.game.camera.position.constructor
   const h = {
     V,
@@ -254,7 +254,7 @@ const STAGES = {
   'canyon-convoy': {
     frames: 200,
     page() {
-      const s = window.syn3h, h = window.showcase, t = s.terrain
+      const s = window.mira, h = window.showcase, t = s.terrain
       // The sun behind and to the right: the haze glows less and the vehicles are lit.
       const spawn = s.terrain.spawnPoint(0), p = spawn.position
       const heading = h.sunHeading() + Math.PI * 0.8
@@ -268,7 +268,7 @@ const STAGES = {
   'volcano-fleet': {
     frames: 220,
     page() {
-      const s = window.syn3h, h = window.showcase
+      const s = window.mira, h = window.showcase
       // On the volcano's flank, the low sun behind and to the left, the cone in view.
       const at = window.resolveCaptureTeleport(s.terrain, { landmark: 'slope' })
       const summit = s.terrain.summit()
@@ -287,7 +287,7 @@ const STAGES = {
     // Clips start recording after this many staged frames: the camera has eased onto the car.
     preroll: 30,
     page() {
-      const s = window.syn3h, h = window.showcase, t = s.terrain
+      const s = window.mira, h = window.showcase, t = s.terrain
       // A crest with a long drop ahead: the glide has room to show.
       const sun = h.sunHeading()
       const best = h.search((x, z, heading) => {
@@ -317,13 +317,13 @@ const STAGES = {
       h.follow((p, f) => ({ from: { x: p.x - f.x * 10 + f.z * 6, y: p.y + 5, z: p.z - f.z * 10 - f.x * 6 }, to: { x: p.x + f.x * 16 - f.z * 3, y: p.y - 5, z: p.z + f.z * 16 + f.x * 3 } }), 60)
       return { note: `ridge ${best.x.toFixed(0)},${best.z.toFixed(0)}` }
     },
-    check() { const s = window.syn3h, h = window.showcase, p = h.pos(); const up = p.y - h.ground(p.x, p.z); return { ok: s.player.wingsOpen && up > 3, note: `wings ${s.player.wingsOpen ? 'open' : 'closed'}, ${up.toFixed(1)} m up` } },
+    check() { const s = window.mira, h = window.showcase, p = h.pos(); const up = p.y - h.ground(p.x, p.z); return { ok: s.player.wingsOpen && up > 3, note: `wings ${s.player.wingsOpen ? 'open' : 'closed'}, ${up.toFixed(1)} m up` } },
   },
 
   'jet-tiny-world': {
     frames: 240,
     page() {
-      const s = window.syn3h, h = window.showcase, t = s.terrain
+      const s = window.mira, h = window.showcase, t = s.terrain
       const summit = t.summit?.() ?? { x: 0, z: 0 }
       const x = summit.x + t.size * 0.22, z = summit.z + t.size * 0.1
       const heading = Math.atan2(x - summit.x, z - summit.z)
@@ -337,11 +337,11 @@ const STAGES = {
         h.key('KeyD', i > 60 && i < 100)
         // Look down past the jet, as a player does with the mouse: the game's own look input,
         // in CSS pixels per frame, then held so the chase camera keeps the manual view.
-        window.dispatchEvent(new CustomEvent('syn3h:look', { detail: { dx: 0, dy: i > 20 && i < 56 ? 4 : 0 } }))
+        window.dispatchEvent(new CustomEvent('mira:look', { detail: { dx: 0, dy: i > 20 && i < 56 ? 4 : 0 } }))
       }
     },
     check() {
-      const s = window.syn3h, h = window.showcase, p = h.pos(), c = s.game.camera.position, up = p.y - h.ground(p.x, p.z)
+      const s = window.mira, h = window.showcase, p = h.pos(), c = s.game.camera.position, up = p.y - h.ground(p.x, p.z)
       const seen = s.player.object.visible !== false
       return { ok: up > 200 && seen, note: `${up.toFixed(0)} m above ground; camera offset ${(c.x - p.x).toFixed(0)},${(c.y - p.y).toFixed(0)},${(c.z - p.z).toFixed(0)}; jet ${seen ? 'drawn' : 'hidden'}; v ${JSON.stringify(s.player.body.linvel(), (k, v) => typeof v === 'number' ? Math.round(v) : v)}` }
     },
@@ -350,7 +350,7 @@ const STAGES = {
   'headlights-night': {
     frames: 160,
     page() {
-      const s = window.syn3h, h = window.showcase, t = s.terrain
+      const s = window.mira, h = window.showcase, t = s.terrain
       const summit = t.summit?.() ?? { x: 0, z: 0 }
       const spawn = t.spawnPoint(0), p = spawn.position
       const heading = Math.atan2(p.x - summit.x, p.z - summit.z)
@@ -363,7 +363,7 @@ const STAGES = {
   'swamp-river': {
     frames: 140,
     page() {
-      const s = window.syn3h, h = window.showcase, t = s.terrain
+      const s = window.mira, h = window.showcase, t = s.terrain
       // A bank a few metres above a river: dry for 25 m ahead, water across the middle of the
       // view, a far shore beyond it, so the river reads as a river and leads the eye.
       const best = h.search((x, z, heading) => {
@@ -391,7 +391,7 @@ const STAGES = {
   'lava-night': {
     frames: 160,
     page() {
-      const s = window.syn3h, h = window.showcase, t = s.terrain
+      const s = window.mira, h = window.showcase, t = s.terrain
       const summit = t.summit()
       let best = null
       for (let i = 0; i < 96; i++) {
@@ -429,7 +429,7 @@ const STAGES = {
   'lagoon-hovercraft': {
     frames: 200,
     page() {
-      const s = window.syn3h, h = window.showcase
+      const s = window.mira, h = window.showcase
       const sea = window.resolveCaptureTeleport(s.terrain, { landmark: 'sea', clearance: 1.5 })
       const summit = s.terrain.summit?.() ?? { x: 0, z: 0 }
       // Toward the islands, unless that faces the sun; then along the coast.
@@ -446,7 +446,7 @@ const STAGES = {
 // --- browser work -----------------------------------------------------------------------
 async function features(page) {
   return page.evaluate(() => {
-    const s = window.syn3h
+    const s = window.mira
     return {
       params: s.params.all().map((p) => p.def?.id ?? p.id),
       vehicles: [s.player?.kind].filter(Boolean),
@@ -467,10 +467,10 @@ async function openShot(browser, shot) {
   errors.gpu = []
   page.on('console', (m) => { const t = m.text(); if (/GPUValidationError|pipeline creation failed|device (was )?lost/i.test(t)) errors.gpu.push(t.slice(0, 300)) })
   await page.goto(sceneUrl(base, shot, runTag), { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 30, null, { timeout: 180000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 30, null, { timeout: 180000 })
   // Cinematic, fixed: automatic relief off, the clock of the sky stopped, no idle autopilot.
   await page.evaluate((shot) => {
-    const s = window.syn3h
+    const s = window.mira
     const set = (id, v) => { if (s.params.get(id)) s.params.set(id, v) }
     set('gfx.auto', false); set('gfx.quality', 5); set('daydream.seconds', 0); set('sun.dayLength', 0)
     for (const [id, v] of Object.entries(shot.params ?? {})) set(id, v)
@@ -484,7 +484,7 @@ async function openShot(browser, shot) {
 async function enterWorld(page, shot) {
   const mode = hudModeOf(shot)
   await page.evaluate((mode) => {
-    const s = window.syn3h
+    const s = window.mira
     if (mode !== null && s.params.get('hud.mode')) s.params.set('hud.mode', mode)
     // From here the page runs on the frame clock, so everything the game measures in frames
     // (bot pacing, the descent, the staged world rebuild) sees a steady 60 fps.
@@ -494,7 +494,7 @@ async function enterWorld(page, shot) {
   const entered = await page.evaluate(() => window.__showcaseClock.until('entered', 3600))
   if (entered < 0) throw new Error('the world did not finish entering within 60 s of game time')
   const bots = await page.evaluate(() => window.__showcaseClock.until('bots', 2400))
-  if (bots < 0) console.log(`  bots: only ${await page.evaluate(() => window.syn3h.bots.vehicles.length)} arrived within 40 s of game time`)
+  if (bots < 0) console.log(`  bots: only ${await page.evaluate(() => window.mira.bots.vehicles.length)} arrived within 40 s of game time`)
   // The controls card shown on arrival is a passing notice; let it go as it would in play.
   await page.waitForFunction(() => { const c = document.querySelector('.spawn-help'); return !c || c.hidden || getComputedStyle(c).opacity === '0' }, null, { timeout: 15000 }).catch(() => {})
   await page.evaluate(() => document.fonts.ready)
@@ -502,7 +502,7 @@ async function enterWorld(page, shot) {
 
 async function waitLobby(page) {
   await page.waitForFunction(() => {
-    const galaxy = window.syn3h?.shell?.galaxy
+    const galaxy = window.mira?.shell?.galaxy
     if (!galaxy?.live || document.documentElement.dataset.boot !== 'done') return false
     return [...document.querySelectorAll('.galaxy-label')].filter((l) => { const b = l.getBoundingClientRect(); return b.width > 0 && Number(getComputedStyle(l).opacity) > 0 }).length >= 3
   }, null, { timeout: 60000 })
@@ -558,10 +558,10 @@ async function captureShot(browser, shot) {
     if (missing) return { skipped: missing }
     if (shot.hud !== 'lobby') {
       await enterWorld(page, shot)
-      const kind = await page.evaluate(() => window.syn3h.player.kind)
+      const kind = await page.evaluate(() => window.mira.player.kind)
       if (shot.vehicle && kind !== shot.vehicle) return { skipped: `build spawned ${kind}, not ${shot.vehicle}` }
     }
-    const build = await page.evaluate(() => ({ backend: window.syn3h.game.backend ?? null, quality: window.syn3h.game.quality.getQualityState?.()?.name ?? null, hudMode: window.syn3h.params.get('hud.mode')?.value ?? null, canvas: [window.syn3h.game.renderer.domElement.width, window.syn3h.game.renderer.domElement.height] }))
+    const build = await page.evaluate(() => ({ backend: window.mira.game.backend ?? null, quality: window.mira.game.quality.getQualityState?.()?.name ?? null, hudMode: window.mira.params.get('hud.mode')?.value ?? null, canvas: [window.mira.game.renderer.domElement.width, window.mira.game.renderer.domElement.height] }))
     const names = assetNames(shot)
     if (shot.kind === 'still') {
       const pose = await stage(page, shot)
@@ -578,7 +578,7 @@ async function captureShot(browser, shot) {
     await rm(frames, { recursive: true, force: true }); await mkdir(frames, { recursive: true })
     let pose = { note: null, ok: true }
     if (shot.hud === 'lobby') {
-      await page.evaluate(() => { const s = window.syn3h; if (s.params.get('hud.mode')) s.params.set('hud.mode', 1); s.params.set('gfx.auto', false); s.params.set('gfx.quality', 5) })
+      await page.evaluate(() => { const s = window.mira; if (s.params.get('hud.mode')) s.params.set('hud.mode', 1); s.params.set('gfx.auto', false); s.params.set('gfx.quality', 5) })
       await page.evaluate(() => window.__showcaseClock.start())
       await page.evaluate((o) => window.__showcaseClock.settle(o), SETTLE)
       await page.locator('.galaxy-label.is-current').focus()

@@ -33,9 +33,9 @@ async function open(planet, seed, set) {
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto(`http://127.0.0.1:${port}/?autoplay=1&vehicle=buggy&planet=${planet}&seed=${seed}&room=fb${Date.now().toString(36)}&daydream=0`)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 30 && window.syn3h.shell.playing, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game.tick > 30 && window.mira.shell.playing, null, { timeout: 120000 })
   await page.evaluate((set) => {
-    const s = window.syn3h
+    const s = window.mira
     s.params.set('bots.count', 0); s.params.set('sun.dayLength', 0); s.params.set('gfx.quality', 3)
     // Still: no swell, chop, wind or cloud, exposure fixed and the shaders' clock stopped, so two
     // builds draw the same pixels wherever they agree and a difference is the change itself.
@@ -52,22 +52,22 @@ async function open(planet, seed, set) {
 /** Lens at (x, z), `height` over the liquid there (negative is under it), looking along `heading`. */
 async function shoot(page, name, p, heading, height, down) {
   await page.evaluate(({ p, heading, height, down }) => {
-    const s = window.syn3h, t = s.terrain, V = s.game.camera.position.constructor
+    const s = window.mira, t = s.terrain, V = s.game.camera.position.constructor
     const y = t.liquidHeightAt(p.x, p.z) + height
     s.player.teleport({ x: p.x + 400, y: t.heightAt(p.x + 400, p.z) + 2, z: p.z }, 0)
     s.camera.setCinematicPose(new V(p.x, y, p.z), new V(p.x - Math.sin(heading) * 100, y - 100 * down, p.z - Math.cos(heading) * 100), 60)
   }, { p, heading, height, down })
   // The pose eases in: wait until the camera has arrived across the ground and in its aim.
   // Under the water the lens rule crosses over a second or more: wait for the height too.
-  await page.waitForFunction((under) => { const s = window.syn3h, c = s.camera.cinematic, cam = s.game.camera; return !c || (Math.hypot(cam.position.x - c.position.x, cam.position.z - c.position.z) < 0.05 && c.look.distanceTo(c.target) < 0.1 && (!under || Math.abs(cam.position.y - c.position.y) < 0.05)) }, height < 0, { timeout: 30000, polling: 200 }).catch(() => notes.push({ name, unsettled: true }))
+  await page.waitForFunction((under) => { const s = window.mira, c = s.camera.cinematic, cam = s.game.camera; return !c || (Math.hypot(cam.position.x - c.position.x, cam.position.z - c.position.z) < 0.05 && c.look.distanceTo(c.target) < 0.1 && (!under || Math.abs(cam.position.y - c.position.y) < 0.05)) }, height < 0, { timeout: 30000, polling: 200 }).catch(() => notes.push({ name, unsettled: true }))
   await page.waitForTimeout(800)
-  const cam = await page.evaluate(() => { const s = window.syn3h, c = s.game.camera.position; return { y: +(c.y - s.terrain.liquidHeightAt(c.x, c.z)).toFixed(2) } })
+  const cam = await page.evaluate(() => { const s = window.mira, c = s.game.camera.position; return { y: +(c.y - s.terrain.liquidHeightAt(c.x, c.z)).toFixed(2) } })
   notes.push({ name, x: +p.x.toFixed(1), z: +p.z.toFixed(1), heading: +heading.toFixed(3), lensOverWater: cam.y })
   await page.screenshot({ path: `${out}/${name}.png` })
 }
 /** Open sea: at least `depth` metres of water and no land within `clear` metres. */
 const openSea = (page, depth, clear) => page.evaluate(({ depth, clear }) => {
-  const t = window.syn3h.terrain, size = t.size
+  const t = window.mira.terrain, size = t.size
   for (let k = 0; k < 20000; k++) {
     const x = (Math.sin(k * 12.9898) * 0.5) * size * 0.9, z = (Math.cos(k * 78.233) * 0.5) * size * 0.9
     if (t.liquidKindAt(x, z) !== 'water' || t.liquidHeightAt(x, z) - t.heightAt(x, z) < depth) continue
@@ -83,7 +83,7 @@ const openSea = (page, depth, clear) => page.evaluate(({ depth, clear }) => {
   const sea = await openSea(page, 8, 120)
   if (sea) {
     await shoot(page, 'open-sea-curved', sea, 0.6, 1.5, 0.03)
-    await page.evaluate(() => window.syn3h.params.set('world.curve', 0)); await page.waitForTimeout(1500)
+    await page.evaluate(() => window.mira.params.set('world.curve', 0)); await page.waitForTimeout(1500)
     await shoot(page, 'open-sea-flat', sea, 0.6, 1.5, 0.03)
     await shoot(page, 'underwater', sea, 0.6, -3, 0)
   } else notes.push({ openSea: null })
@@ -92,11 +92,11 @@ const openSea = (page, depth, clear) => page.evaluate(({ depth, clear }) => {
 { // Archipelago at dawn with its own fog banks: a beach, and the sea off it from a jet.
   // FOG_SET (JSON) overrides the dawn settings, for a thicker bank while diagnosing.
   const { ctx, page } = await open('archipelago', 4, { 'sun.timeOfDay': 6.5, ...JSON.parse(process.env.FOG_SET ?? '{}') })
-  notes.push({ fogBanks: await page.evaluate(() => window.syn3h.params.get('weather.fogBanks').value) })
+  notes.push({ fogBanks: await page.evaluate(() => window.mira.params.get('weather.fogBanks').value) })
   // The beach where the coastal bank is thickest (the fog map's coast value), facing open water:
   // inside the bank, where land takes it in full and the water, before this change, did not.
   const beach = await page.evaluate(() => {
-    const s = window.syn3h, t = s.terrain, size = t.size, sea = s.params.get('world.lavaAltitude').value
+    const s = window.mira, t = s.terrain, size = t.size, sea = s.params.get('world.lavaAltitude').value
     const map = s.game.systems.find((q) => q.fogBanks)?.fogBanks.map
     const coast = (x, z) => { if (!map) return 0; const n = map.cells, i = ((Math.floor((x / map.size + 0.5) * n) % n) + n) % n, j = ((Math.floor((z / map.size + 0.5) * n) % n) + n) % n; return map.data[(j * n + i) * 4] }
     let best = null

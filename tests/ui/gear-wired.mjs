@@ -3,11 +3,12 @@
 // keys stepping through gear while driving, the Zorb row not following X or a click, and on
 // touch the Grapple's extra actions missing their buttons. Hidden in the lobby.
 //
-//   node tests/ui/gear-wired.mjs      (game on SYN3H_URL)
+//   node tests/ui/gear-wired.mjs      (game on MIRA_URL)
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5198/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5198/'
 const out = 'tests/ui/artifacts/gear-wired'
 await mkdir(out, { recursive: true })
 const watch = (page) => { const errors = []; page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) }); return errors }
@@ -26,11 +27,11 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     assert.equal(await page.locator('.hud-accessories [data-id=zorb]').isVisible(), false, 'no Zorb control in the lobby')
     // Into play the way the other checks go, then capture the cursor with a click on the view.
     await page.goto(`${base}?room=gear-wired-${Date.now()}&autoplay=1`)
-    await page.waitForFunction(() => window.syn3h?.shell.playing && !syn3h.shell.dropping && window.syn3hNet?.gear, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.shell.playing && !mira.shell.dropping && window.miraNet?.gear, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     if (await page.locator('.world-inspector').isVisible() && await page.locator('.inspector-toggle').isVisible()) await page.locator('.inspector-toggle').click()
     await page.mouse.click(720, 300)
-    await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas, null, { timeout: 10000 })
+    await page.waitForFunction(() => document.pointerLockElement === mira.game.canvas, null, { timeout: 10000 })
     await page.waitForFunction(() => !document.querySelector('.gear-selector').hidden && document.querySelector('.gear-selector').dataset.mode === 'locked')
     // Driving: the drum is display only, the pill is a reminder.
     assert.equal(await page.locator('.gear-selector').getAttribute('data-mode'), 'locked')
@@ -43,9 +44,9 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     assert.equal(await page.locator('.hud-accessories [data-id=zorb]').getAttribute('aria-pressed'), 'false')
     await page.screenshot({ path: `${out}/desktop-driving.png` })
     // The arrow keys drive, never step through gear, and X switches Zorb.
-    const before = await page.evaluate(() => syn3hNet.gear.current)
+    const before = await page.evaluate(() => miraNet.gear.current)
     await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowUp')
-    assert.equal(await page.evaluate(() => syn3hNet.gear.current), before, 'arrow keys leave the gear alone while driving')
+    assert.equal(await page.evaluate(() => miraNet.gear.current), before, 'arrow keys leave the gear alone while driving')
     await page.keyboard.press('KeyX')
     await page.waitForFunction(() => document.querySelector('.hud-accessories [data-id=zorb]').getAttribute('aria-pressed') === 'true')
     await page.keyboard.press('KeyX')
@@ -56,17 +57,17 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     await page.waitForFunction(() => document.querySelector('.gear-selector').dataset.mode === 'free')
     const names = await page.locator('.gear-selector .gs-item').allInnerTexts()
     assert.match(await page.locator('.hud-accessories [data-id=zorb]').innerText(), /ZORB\s*X/i, 'name, then key, with the cursor free')
-    const rack = await page.evaluate(() => syn3hNet.gear.list())
+    const rack = await page.evaluate(() => miraNet.gear.list())
     assert.equal(names.length, rack.length, `one slot per gear (${names.join(', ')})`)
     for (const name of ['Plasma Tag', 'Grapple']) assert.ok(names.some(n => n.toLowerCase().includes(name.toLowerCase())), `${name} is on the drum: ${names.join(', ').replace(/\n/g, ' ')}`)
     await page.screenshot({ path: `${out}/desktop-free.png` })
     // The drum shows the selected gear and one either side (the owner, 18 November 2026): a click
     // on a neighbour picks it; a gear further round is reached by its number key.
     await page.locator('.gear-selector .gs-item', { hasText: /plasma thunder/i }).click()
-    await page.waitForFunction(() => syn3hNet.gear.current === 'red')
-    const grapple = await page.evaluate(() => syn3hNet.gear.list().indexOf('bungee') + 1)
+    await page.waitForFunction(() => miraNet.gear.current === 'red')
+    const grapple = await page.evaluate(() => miraNet.gear.list().indexOf('bungee') + 1)
     await page.keyboard.press(`Digit${grapple}`)
-    await page.waitForFunction(() => syn3hNet.gear.current === 'bungee')
+    await page.waitForFunction(() => miraNet.gear.current === 'bungee')
     await page.waitForFunction(() => document.querySelectorAll('.gear-selector .gs-hints li').length > 0)
     const hints = await page.locator('.gear-selector .gs-hints').innerText()
     assert.ok(hints.trim().length > 0, 'the Grapple shows its controls')
@@ -75,10 +76,10 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     await page.screenshot({ path: `${out}/desktop-grapple.png` })
     // The pill is a real button with the cursor free.
     await page.locator('.hud-accessories [data-id=zorb]').click()
-    assert.equal(await page.evaluate(() => syn3h.game.input.state.zorb), true, 'the pill switches Zorb on')
+    assert.equal(await page.evaluate(() => mira.game.input.state.zorb), true, 'the pill switches Zorb on')
     await page.waitForFunction(() => document.querySelector('.hud-accessories [data-id=zorb]').getAttribute('aria-pressed') === 'true')
     await page.locator('.hud-accessories [data-id=zorb]').click()
-    assert.equal(await page.evaluate(() => syn3h.game.input.state.zorb), false, 'and off again')
+    assert.equal(await page.evaluate(() => mira.game.input.state.zorb), false, 'and off again')
     // Nothing the drum or the pill covers: the minimap and the speed readout.
     for (const other of ['.shell-minimap', '.fh-left']) {
       assert.ok(apart(await box(page, '.gs-drum'), await box(page, other)), `the drum clears ${other}`)
@@ -86,9 +87,9 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     }
     // A gear picked with the cursor leaves focus on the drum. Driving again: arrows drive.
     await page.keyboard.press('KeyW')
-    await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas, null, { timeout: 10000 })
+    await page.waitForFunction(() => document.pointerLockElement === mira.game.canvas, null, { timeout: 10000 })
     await page.keyboard.press('ArrowDown')
-    assert.equal(await page.evaluate(() => syn3hNet.gear.current), 'bungee', 'arrows drive after picking gear')
+    assert.equal(await page.evaluate(() => miraNet.gear.current), 'bungee', 'arrows drive after picking gear')
     assert.deepEqual(errors, [], `page errors: ${errors.join(' | ')}`)
     console.log('desktop: gear drum and Zorb row passed')
   } finally { await browser.close() }
@@ -100,10 +101,10 @@ for (const [name, device] of [['phone', devices['iPhone 14']], ['landscape', { .
     const page = await browser.newPage({ ...device })
     const errors = watch(page)
     await page.goto(`${base}?room=gear-wired-${name}-${Date.now()}&autoplay=1`)
-    await page.waitForFunction(() => window.syn3h?.shell.playing && !syn3h.shell.dropping && window.syn3hNet?.gear, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.shell.playing && !mira.shell.dropping && window.miraNet?.gear, null, { timeout: 120000 })
     await page.waitForFunction(() => !document.querySelector('.gear-selector').hidden)
-    await page.evaluate(() => syn3hNet.gear.select('bungee'))
-    await page.waitForFunction(() => syn3hNet.gear.current === 'bungee')
+    await page.evaluate(() => miraNet.gear.select('bungee'))
+    await page.waitForFunction(() => miraNet.gear.current === 'bungee')
     await page.waitForTimeout(500)
     await page.screenshot({ path: `${out}/${name}-grapple.png` })
     // The old LET OUT and LET GO stay hidden: the rack supplies the extra buttons now.

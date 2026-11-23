@@ -43,15 +43,15 @@ function fill(values: number[][], percent: number) {
   const channel = Math.round(255 * (grey + (nextGrey - grey) * fraction))
   return `rgb(${channel} ${channel} ${channel} / ${opacity})`
 }
-const key = 'syn3h.glassMaterial.v2'
+const key = 'mira.glassMaterial.v2'
 export function restoreGlassMaterial(shortcut: boolean) {
   let saved: string | null = null, savedTint: number | undefined
   try {
-    const coverage = localStorage.getItem('syn3h.surfaceCoverage')
+    const coverage = localStorage.getItem('mira.surfaceCoverage')
     if (coverage !== null && /^\d{1,3}$/.test(coverage)) savedTint = Number(coverage)
     saved = localStorage.getItem(key)
     if (saved === null) {
-      const legacy = localStorage.getItem('syn3h.glassMaterial.v1')
+      const legacy = localStorage.getItem('mira.glassMaterial.v1')
       if (legacy !== null && /^[0-3]$/.test(legacy)) {
         saved = ['Liquid', 'Frost', 'Frost', 'Flat'][Number(legacy)]
         localStorage.setItem(key, saved)
@@ -103,7 +103,7 @@ export function restoreGlassMaterial(shortcut: boolean) {
       try { localStorage.setItem(key, glassLabels[glassStyle.value]) } catch { /* Session only. */ }
     } else if (id === surfaceCoverage.def.id) {
       easeTint()
-      try { localStorage.setItem('syn3h.surfaceCoverage', String(surfaceCoverage.value)) } catch { /* Session only. */ }
+      try { localStorage.setItem('mira.surfaceCoverage', String(surfaceCoverage.value)) } catch { /* Session only. */ }
     } else if (id !== qualityLevel.def.id) return
     paintStyle()
   })

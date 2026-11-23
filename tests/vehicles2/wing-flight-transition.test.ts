@@ -1,10 +1,10 @@
 import {beforeAll,expect,it} from 'vitest'
 import * as T from 'three/webgpu'
 import {initPhysics} from '../../src/core/physics'
-import {Syn3hBuggy} from '../../src/vehicles/Syn3hBuggy'
+import {MiraBuggy} from '../../src/vehicles/MiraBuggy'
 import {harness} from './harness'
 beforeAll(initPhysics)
-for(const [name,Kind] of [['syn3h',Syn3hBuggy]] as const){
+for(const [name,Kind] of [['mira',MiraBuggy]] as const){
  it(`${name} retains speed on a fast wings-open water touch`,()=>{
   const h=harness();h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=> 'water'
   const v=new Kind(h.game,h.terrain,new T.Vector3(0,15,0));v.isLocal=false;v.input.special=true

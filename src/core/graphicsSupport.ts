@@ -1,5 +1,5 @@
 /**
- * Whether this browser can draw Syn3h at all, and what to tell a player when the game cannot
+ * Whether this browser can draw Mira at all, and what to tell a player when the game cannot
  * start. A device with neither a working WebGPU adapter nor a WebGL 2 context used to reach
  * three.js anyway and fail inside it ("Cannot read properties of null (reading
  * 'getSupportedExtensions')"), shown raw with a Reload button that could not help. Now the
@@ -48,9 +48,9 @@ export function startFailure(error: unknown, graphics: { rendererStarted: boolea
   if (error instanceof NoGraphicsError || (!graphics.rendererStarted && !graphics.webgl2)) {
     return {
       kind: 'no-graphics',
-      text: 'Syn3h can’t draw on this browser or device: it has no 3D graphics the game can use.',
+      text: 'Mira can’t draw on this browser or device: it has no 3D graphics the game can use.',
       steps: [
-        'Turn on hardware acceleration (sometimes called graphics acceleration) in your browser’s settings, then open Syn3h again.',
+        'Turn on hardware acceleration (sometimes called graphics acceleration) in your browser’s settings, then open Mira again.',
         'Or try a current version of Chrome, Edge, Safari or Firefox.',
         'Or play on another device.',
       ],
@@ -60,7 +60,7 @@ export function startFailure(error: unknown, graphics: { rendererStarted: boolea
   }
   // The physics engine's own failure is already written for the player (physicsWasm.ts).
   if (error instanceof PhysicsLoadError) return { kind: 'failed', text: error.message, steps: [], reload: true, details: `PhysicsLoadError: ${error.detail}` }
-  return { kind: 'failed', text: 'Syn3h couldn’t start. Reloading the page often fixes this.', steps: [], reload: true, details }
+  return { kind: 'failed', text: 'Mira couldn’t start. Reloading the page often fixes this.', steps: [], reload: true, details }
 }
 
 function describe(error: unknown): string {

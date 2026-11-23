@@ -22,6 +22,7 @@
  * Only `archive`, run after public acceptance, adds a version: a dry run or a rolled back release
  * leaves nothing behind, locally or in R2.
  */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { createHash } from 'node:crypto'
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -33,7 +34,7 @@ const VERSION = /^v?(\d+\.\d+\.\d+)$/
 
 /** Where accepted releases are kept. Tests point this somewhere temporary. */
 export function archiveDir() {
-  return process.env.SYN3H_VERSION_ARCHIVE || resolve(REPO, '..', 'Syn3h-stable', 'versions')
+  return process.env.MIRA_VERSION_ARCHIVE || resolve(REPO, '..', 'Syn3h-stable', 'versions')
 }
 
 /** "v26.11.1503" or "26.11.1503" to "26.11.1503"; anything else throws. */
@@ -241,7 +242,7 @@ export async function r2Upload(versions, { store, archive = archiveDir(), concur
 export async function r2WriteIndex(versions, { store }) {
   const listed = []
   for (const v of [...versions].sort(compare)) if (await store.get(`v/${v}/index.html`)) listed.push(v)
-  const dir = mkdtempSync(join(tmpdir(), 'syn3h-r2-index-'))
+  const dir = mkdtempSync(join(tmpdir(), 'mira-r2-index-'))
   const file = join(dir, 'versions.json')
   writeFileSync(file, JSON.stringify({ versions: listed, note: 'Open https://mira.cc/?v=<version> to play a frozen build.' }) + '\n')
   await store.put(INDEX_KEY, file, CONTENT_TYPES.json)

@@ -9,31 +9,32 @@
  *   - at every frame of the way back the wordmark is either fully transparent or within a few
  *     pixels of that resting place: it fades in where it belongs, never slides in.
  *
- *   SYN3H_URL=http://127.0.0.1:5187/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/lobby-return.mjs
+ *   MIRA_URL=http://127.0.0.1:5187/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/lobby-return.mjs
  *
- * Needs a dev server; SYN3H_URL picks it.
+ * Needs a dev server; MIRA_URL picks it.
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { waitForState } from './stateWait.mjs'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5187/'
 const out = 'tests/ui/artifacts/lobby-return'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const errors = [], report = []
-const ready = page => page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+const ready = page => page.waitForFunction(() => window.mira?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a))
 
 /** The galaxy's view and the wordmark's place, as drawn. */
 const look = page => page.evaluate(() => {
-  const g = window.syn3h.shell.galaxy, box = g.wordmarkScreenBox()
+  const g = window.mira.shell.galaxy, box = g.wordmarkScreenBox()
   return { logo: g.options.logo?.()?.box, target: g.target, reach: g.reach, framing: g.framing, yaw: g.yaw, pitch: g.pitch, distance: g.distance, fresh: g.freshPose(), shown: g.markShown, centre: box && [box.x + box.width / 2, box.y + box.height / 2], markY: g.markPlaced?.centre[1] ?? null, home: g.returningHome }
 })
 /** The lobby at rest: no opening, no return, the name fully shown and its rig still. */
 const rested = page => waitForState(page, 'the lobby at rest with the name shown', () => {
-  const g = window.syn3h.shell.galaxy
-  return !g.opening && !g.returningHome && g.returning === null && g.markShown > 0.999 && !document.querySelector('.syn3h-shell').classList.contains('is-descending')
+  const g = window.mira.shell.galaxy
+  return !g.opening && !g.returningHome && g.returning === null && g.markShown > 0.999 && !document.querySelector('.mira-shell').classList.contains('is-descending')
 }, undefined, 60)
 
 const views = [
@@ -49,7 +50,7 @@ try {
     // The idle drift back to the standard tilt (a tall phone opens steeper, then settles over
     // about 25 s) runs after any rest, fresh or returned: hold it off so both are compared at
     // the same moment of the same view.
-    await page.evaluate(() => { window.syn3h.params.set('lobby.returnDelay', 60); window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
+    await page.evaluate(() => { window.mira.params.set('lobby.returnDelay', 60); window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400) })
     await page.keyboard.press('Shift')
     await rested(page)
     const fresh = await look(page)
@@ -66,20 +67,20 @@ try {
         await page.mouse.move(at.x, at.y); await page.mouse.down(); await page.mouse.move(at.x + view.viewport.width * 0.35, at.y + view.viewport.height * 0.3, { steps: 10 }); await page.mouse.up()
         await page.waitForTimeout(400)
       }
-      const known = await page.evaluate(id => window.syn3h.planets.PLANETS.some(p => p.id === id), world)
+      const known = await page.evaluate(id => window.mira.planets.PLANETS.some(p => p.id === id), world)
       if (!known) continue
       await page.locator(`.galaxy-label[data-world="${world}"]`).dispatchEvent('click')
-      await waitForState(page, `playing on ${world}`, () => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, undefined, 40)
+      await waitForState(page, `playing on ${world}`, () => { const s = document.querySelector('.mira-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, undefined, 40)
       await page.waitForTimeout(1500)
       // Every frame from the exit until the lobby rests: the name's opacity and centre.
       await page.evaluate(() => {
         const w = window; w.__frames = []; w.__done = false
-        const tick = () => { const g = w.syn3h.shell.galaxy, b = g.wordmarkScreenBox(); w.__frames.push({ t: Math.round(performance.now()), shown: g.markShown, centre: b && [b.x + b.width / 2, b.y + b.height / 2], pitch: g.pitch, home: g.returningHome, reach: g.reach, target: g.target.map(v => +v.toFixed(3)), rig: g.markRig.pose && { yaw: g.markRig.pose.yaw, pitch: g.markRig.pose.pitch, reach: g.markRig.pose.reach } }); if (!w.__done) requestAnimationFrame(tick) }
+        const tick = () => { const g = w.mira.shell.galaxy, b = g.wordmarkScreenBox(); w.__frames.push({ t: Math.round(performance.now()), shown: g.markShown, centre: b && [b.x + b.width / 2, b.y + b.height / 2], pitch: g.pitch, home: g.returningHome, reach: g.reach, target: g.target.map(v => +v.toFixed(3)), rig: g.markRig.pose && { yaw: g.markRig.pose.yaw, pitch: g.markRig.pose.pitch, reach: g.markRig.pose.reach } }); if (!w.__done) requestAnimationFrame(tick) }
         requestAnimationFrame(tick)
-        const s = w.syn3h.shell; s.askExit(); s.answerExit(true)
+        const s = w.mira.shell; s.askExit(); s.answerExit(true)
       })
-      await waitForState(page, 'the return to start', () => window.syn3h.shell.galaxy.returningHome || !document.querySelector('.syn3h-shell').classList.contains('is-playing'), undefined, 20)
-      await waitForState(page, 'the return to end', () => !window.syn3h.shell.galaxy.returningHome && !document.querySelector('.syn3h-shell').classList.contains('is-descending'), undefined, 40)
+      await waitForState(page, 'the return to start', () => window.mira.shell.galaxy.returningHome || !document.querySelector('.mira-shell').classList.contains('is-playing'), undefined, 20)
+      await waitForState(page, 'the return to end', () => !window.mira.shell.galaxy.returningHome && !document.querySelector('.mira-shell').classList.contains('is-descending'), undefined, 40)
       const landed = await look(page)
       await rested(page)
       const after = await look(page)
@@ -106,9 +107,9 @@ try {
     // A panel opened from play and closed again returns home the same way (desktop only: the HUD's Worlds button).
     if (view.name === 'desktop' && !reduced) {
       await page.locator('.galaxy-label[data-world="alpine"]').dispatchEvent('click')
-      await waitForState(page, 'playing on alpine', () => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, undefined, 40)
-      await page.evaluate(() => window.syn3h.shell.openMenu('worlds'))
-      await page.evaluate(() => window.syn3h.shell.showPanel('index'))
+      await waitForState(page, 'playing on alpine', () => { const s = document.querySelector('.mira-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, undefined, 40)
+      await page.evaluate(() => window.mira.shell.openMenu('worlds'))
+      await page.evaluate(() => window.mira.shell.showPanel('index'))
       await rested(page)
       const after = await look(page)
       assert.ok(Math.abs(after.pitch - after.fresh.pitch) < 1e-3 && after.markY > 0, `${tag} via a panel: home and above the plane (${JSON.stringify(after)})`)

@@ -1,7 +1,7 @@
 /**
  * Chat in a real browser: two pages in one fresh room.
  *
- *   SYN3H_ROOM_PORT=<room> npx vite --host 127.0.0.1 --port <port> --strictPort
+ *   MIRA_ROOM_PORT=<room> npx vite --host 127.0.0.1 --port <port> --strictPort
  *   tools/heavy.sh node tools/chat-check.mjs http://127.0.0.1:<port>/ [/tmp/out-dir] [--bots]
  *
  * Chat is the last card in the sidebar's stack (src/ui/chat/ChatCard.ts). Checks, in order:
@@ -33,7 +33,7 @@ async function open(name, opts, extra = '') {
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`))
   await page.goto(`${base}?room=${room}&name=${name}&autoplay=1${extra}`)
-  await page.waitForFunction(() => document.querySelector('.syn3h-shell.is-playing .world-inspector .wi-card[data-section="chat"]'), null, { timeout: 60000 })
+  await page.waitForFunction(() => document.querySelector('.mira-shell.is-playing .world-inspector .wi-card[data-section="chat"]'), null, { timeout: 60000 })
   await page.waitForTimeout(2500)
   return { ctx, page }
 }
@@ -41,9 +41,9 @@ const desk = { viewport: { width: 1280, height: 800 } }
 const shot = (page, name) => page.screenshot({ path: `${out}/${name}.png` })
 const CHAT_HEAD = '.wi-card[data-section="chat"] > .wi-head'
 /** The Chat card is open with the panels showing. */
-const chatOpen = (page) => page.evaluate(() => window.syn3hChat.panel.isOpen)
+const chatOpen = (page) => page.evaluate(() => window.miraChat.panel.isOpen)
 /** Unread lines, as the card counts them (the same number the left column's row shows). */
-const unreadOn = (page) => page.evaluate(() => window.syn3hChat.panel.unreadCount)
+const unreadOn = (page) => page.evaluate(() => window.miraChat.panel.unreadCount)
 /** Show the panels as a player does: free the cursor if it is captured (Escape). */
 async function showPanels(page) {
   if (await page.evaluate(() => !!document.pointerLockElement)) { await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.pointerLockElement) }
@@ -55,14 +55,14 @@ async function clickPill(page, label, selector = CHAT_HEAD) {
     const b = document.querySelector(selector).getBoundingClientRect()
     const top = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)
     if (top?.closest(selector)) return null
-    return { top: `${top?.tagName}#${top?.id}.${top?.className}`, shell: document.querySelector('.syn3h-shell').className, body: document.body.className, pe: getComputedStyle(document.querySelector(selector)).pointerEvents, vis: getComputedStyle(document.querySelector(selector)).visibility }
+    return { top: `${top?.tagName}#${top?.id}.${top?.className}`, shell: document.querySelector('.mira-shell').className, body: document.body.className, pe: getComputedStyle(document.querySelector(selector)).pointerEvents, vis: getComputedStyle(document.querySelector(selector)).visibility }
   }, selector)
   if (blocked) { console.log(`BLOCKED ${selector} (${label})`, JSON.stringify(blocked)); failures.push(`${selector} not clickable: ${label}`) }
   await page.evaluate((selector) => document.querySelector(selector).click(), selector)
 }
 /** Lines in the open Chat card's log (opens the card first if it is closed). */
 async function linesOn(page) {
-  if (!(await chatOpen(page))) await page.evaluate(() => window.syn3hChat.panel.openAndFocus())
+  if (!(await chatOpen(page))) await page.evaluate(() => window.miraChat.panel.openAndFocus())
   await page.waitForTimeout(300)
   return page.evaluate(() => [...document.querySelectorAll('.wi-card[data-section="chat"] .chat-log .chat-line:not(.is-system)')].map((l) => l.textContent))
 }
@@ -72,7 +72,7 @@ try {
   const B = await open('Bea', desk)
   if (withBots) {
     // The host (A) turns chatter to chatty; guests cannot.
-    await A.page.evaluate(() => window.syn3h.params.set('bots.chatterLevel', 2))
+    await A.page.evaluate(() => window.mira.params.set('bots.chatterLevel', 2))
   }
   // The card is the last in the stack, titled Chat.
   const place = await A.page.evaluate(() => { const cards = [...document.querySelectorAll('.world-inspector .wi-cards > .wi-card')]; const chat = cards.at(-1); return { last: chat?.dataset.section, title: chat?.querySelector('h3')?.textContent } })
@@ -90,7 +90,7 @@ try {
   await A.page.waitForTimeout(1500)
   await A.page.keyboard.up('KeyW')
   const typing = await A.page.evaluate(() => {
-    const input = window.syn3h?.game?.input
+    const input = window.mira?.game?.input
     return input ? { typing: input.typing, y: input.state.y } : null
   })
   check(!!typing && (typing.typing === true && typing.y === 0), 'driving input is suspended while the field has focus')
@@ -125,7 +125,7 @@ try {
   check(await A.page.evaluate(() => !document.activeElement?.classList.contains('chat-field')), 'Escape leaves the field')
 
   // 4: B mutes A from A's row in the Players & session card (the menu the log's names open).
-  const playersCard = (open) => B.page.evaluate(async (open) => { if (open) window.syn3h.shell.inspector.revealCard('players'); await new Promise((r) => setTimeout(r, 400)) }, open)
+  const playersCard = (open) => B.page.evaluate(async (open) => { if (open) window.mira.shell.inspector.revealCard('players'); await new Promise((r) => setTimeout(r, 400)) }, open)
   const personMenu = async (label) => {
     await playersCard(true)
     await B.page.locator('.hud-scoreboard button.score-name').first().scrollIntoViewIfNeeded()
@@ -148,9 +148,9 @@ try {
   // typing does not drive; Enter sends; Enter on the empty field captures the cursor again and
   // drives, in the interface mode the player had; Y then Escape does the same.
   for (const mode of [0, 1]) {
-    await A.page.evaluate((m) => { document.activeElement?.blur?.(); window.syn3h.params.set('hud.mode', m) }, mode)
+    await A.page.evaluate((m) => { document.activeElement?.blur?.(); window.mira.params.set('hud.mode', m) }, mode)
     await A.page.mouse.click(640, 400); await A.page.waitForTimeout(700)
-    const st = () => A.page.evaluate(() => ({ lock: !!document.pointerLockElement, field: document.activeElement?.classList.contains('chat-field'), open: window.syn3hChat.panel.isOpen, y: window.syn3h.game.input.state.y, mode: window.syn3h.params.get('hud.mode')?.value }))
+    const st = () => A.page.evaluate(() => ({ lock: !!document.pointerLockElement, field: document.activeElement?.classList.contains('chat-field'), open: window.miraChat.panel.isOpen, y: window.mira.game.input.state.y, mode: window.mira.params.get('hud.mode')?.value }))
     const locked = (await st()).lock
     await A.page.keyboard.press('KeyY'); await A.page.waitForTimeout(500)
     const opened = await st()
@@ -160,28 +160,28 @@ try {
     await A.page.keyboard.press('Enter'); await A.page.waitForTimeout(700)
     const closed = await st()
     // The axis follows the key at the next rendered frame, which can take a while under load.
-    await A.page.keyboard.down('KeyW'); await A.page.waitForFunction(() => window.syn3h.game.input.state.y === 1, null, { timeout: 2000 }).catch(() => {}); const driving = await st(); await A.page.keyboard.up('KeyW')
+    await A.page.keyboard.down('KeyW'); await A.page.waitForFunction(() => window.mira.game.input.state.y === 1, null, { timeout: 2000 }).catch(() => {}); const driving = await st(); await A.page.keyboard.up('KeyW')
     await A.page.keyboard.press('KeyY'); await A.page.waitForTimeout(500)
     await A.page.keyboard.press('Escape'); await A.page.waitForTimeout(700)
     const esc = await st()
-    const sent = (await A.page.evaluate(() => window.syn3hChat.net.chat.visible().map((l) => l.text))).some((t) => t.includes(`locked line ${mode}`))
+    const sent = (await A.page.evaluate(() => window.miraChat.net.chat.visible().map((l) => l.text))).some((t) => t.includes(`locked line ${mode}`))
     check(locked && opened.open && opened.field && !opened.lock && typing.y === 0 && sent && !closed.open && closed.lock && closed.mode === mode && driving.y === 1 && !esc.field && esc.lock && esc.mode === mode,
       `cursor captured, interface mode ${mode}: Y opens the Chat card with the caret, typing does not drive, the line arrives, Enter on empty drives again in the same mode, Y then Escape too (${JSON.stringify({ locked, opened, typing, sent, closed, driving, esc })})`)
   }
-  await A.page.evaluate(() => window.syn3h.params.set('hud.mode', 0))
+  await A.page.evaluate(() => window.mira.params.set('hud.mode', 0))
 
   // Chat off for the room: the host turns it off, a guest's line is refused and not relayed.
-  await A.page.evaluate(() => window.syn3h.params.set('chat.on', false))
+  await A.page.evaluate(() => window.mira.params.set('chat.on', false))
   // The setting reaches the guest through the room: wait for it rather than a fixed time.
-  await B.page.waitForFunction(() => !window.syn3hChat.net.chat.canSend().ok, null, { timeout: 20000 }).catch(() => {})
+  await B.page.waitForFunction(() => !window.miraChat.net.chat.canSend().ok, null, { timeout: 20000 }).catch(() => {})
   // The guest's screen stops offering chat, and the room refuses even a line sent past that gate.
-  const gated = await B.page.evaluate(() => !window.syn3hChat.net.chat.canSend().ok)
-  await B.page.evaluate(() => window.syn3hChat.net.send({ type: 'chat', text: 'can anyone hear me' }))
+  const gated = await B.page.evaluate(() => !window.miraChat.net.chat.canSend().ok)
+  await B.page.evaluate(() => window.miraChat.net.send({ type: 'chat', text: 'can anyone hear me' }))
   await B.page.waitForTimeout(1500)
-  const refused = await B.page.evaluate(() => window.syn3hChat.net.chat.lines.some((l) => l.system && /turned chat off/i.test(l.text)))
-  const leaked = (await A.page.evaluate(() => window.syn3hChat.net.chat.visible().map((l) => l.text))).some((t) => t.includes('can anyone hear me'))
+  const refused = await B.page.evaluate(() => window.miraChat.net.chat.lines.some((l) => l.system && /turned chat off/i.test(l.text)))
+  const leaked = (await A.page.evaluate(() => window.miraChat.net.chat.visible().map((l) => l.text))).some((t) => t.includes('can anyone hear me'))
   check(gated && refused && !leaked, `chat off for the room: the guest cannot send (${gated}), the room refuses (${refused}), nothing relayed (${!leaked})`)
-  await A.page.evaluate(() => window.syn3h.params.set('chat.on', true))
+  await A.page.evaluate(() => window.mira.params.set('chat.on', true))
   await B.page.waitForTimeout(800)
 
   // 5: bots.
@@ -189,7 +189,7 @@ try {
     const t0 = Date.now()
     let spoke = false
     while (Date.now() - t0 < 120000) {
-      spoke = await B.page.evaluate(() => window.syn3hChat.net.chat.visible().some((l) => l.bot))
+      spoke = await B.page.evaluate(() => window.miraChat.net.chat.visible().some((l) => l.bot))
       if (spoke) break
       await B.page.waitForTimeout(2000)
     }
@@ -209,22 +209,22 @@ try {
   for (const [name, opts, hand] of layouts) {
     const touch = Boolean(opts.hasTouch)
     const P = await open(name.replace(/[^a-z]/g, '').slice(0, 10), opts)
-    if (hand) await P.page.evaluate(() => window.syn3h.params.set('touch.leftHanded', true))
+    if (hand) await P.page.evaluate(() => window.mira.params.set('touch.leftHanded', true))
     // "Show new chat over the game": on by default on desktop, off on touch-first devices.
     // Off, an arriving line puts nothing over the view, the unread count rises and the log has it.
-    const overlayDefault = await P.page.evaluate(() => window.syn3h.params.get('chat.overlay').value)
+    const overlayDefault = await P.page.evaluate(() => window.mira.params.get('chat.overlay').value)
     check(overlayDefault === !touch, `${name}: "Show new chat over the game" is ${touch ? 'off' : 'on'} by default (${overlayDefault})`)
-    const arrive = (text) => P.page.evaluate((text) => window.syn3hChat.net.chat.receive({ type: 'chat', from: 0xff00, text, t: 0 }), text)
+    const arrive = (text) => P.page.evaluate((text) => window.miraChat.net.chat.receive({ type: 'chat', from: 0xff00, text, t: 0 }), text)
     // The panels closed, as when driving.
     if (touch && await P.page.locator('.world-inspector').isVisible()) await P.page.locator('.inspector-toggle').tap()
-    await P.page.evaluate(() => window.syn3h.params.set('chat.overlay', false))
+    await P.page.evaluate(() => window.mira.params.set('chat.overlay', false))
     const unreadBefore = await unreadOn(P.page)
     await arrive('Overlay check: this line stays in the log.')
     await P.page.waitForTimeout(600)
-    const off = await P.page.evaluate(() => ({ strip: document.querySelectorAll('.chat-strip .chat-line').length, marks: document.querySelectorAll('.vehicle-nameplate.is-speaking').length, inLog: window.syn3hChat.net.chat.visible().some((l) => l.text.includes('stays in the log')) }))
+    const off = await P.page.evaluate(() => ({ strip: document.querySelectorAll('.chat-strip .chat-line').length, marks: document.querySelectorAll('.vehicle-nameplate.is-speaking').length, inLog: window.miraChat.net.chat.visible().some((l) => l.text.includes('stays in the log')) }))
     const unreadAfter = await unreadOn(P.page)
     check(off.strip === 0 && off.marks === 0 && off.inLog && unreadAfter > unreadBefore, `${name}: with the switch off a line arrives, nothing shows over the view, the unread count rises (${unreadBefore} to ${unreadAfter}) and the log has it`)
-    await P.page.evaluate(() => window.syn3h.params.set('chat.overlay', true))
+    await P.page.evaluate(() => window.mira.params.set('chat.overlay', true))
     await arrive('Overlay check: this line shows over the game.')
     await P.page.waitForTimeout(600)
     const on = await P.page.evaluate(() => [...document.querySelectorAll('.chat-strip .chat-line')].some((l) => l.textContent.includes('shows over the game')))
@@ -234,7 +234,7 @@ try {
       const hit = (a, b) => a.width > 0 && b.width > 0 && a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom
       const rects = (sel) => [...document.querySelectorAll(sel)].map((e) => [e.className?.baseVal ?? e.className, e.getBoundingClientRect()])
       const lines = [...document.querySelectorAll('.chat-strip .chat-line')].map((e) => e.getBoundingClientRect())
-      const avoid = rects('.touch-actions button, .hud-navigation, .shell-minimap, .gear-selector .gs-item.is-active, .fh-read, .shell-toast:not([hidden]), #syn3h-build-notice, .build-banner')
+      const avoid = rects('.touch-actions button, .hud-navigation, .shell-minimap, .gear-selector .gs-item.is-active, .fh-read, .shell-toast:not([hidden]), #mira-build-notice, .build-banner')
       const reticle = { left: innerWidth / 2 - 60, right: innerWidth / 2 + 60, top: innerHeight / 2 - 60, bottom: innerHeight / 2 + 60, width: 120 }
       return { clash: lines.flatMap((l) => [...avoid.filter(([, r]) => hit(l, r)).map(([c]) => c), ...(hit(l, reticle) ? ['reticle'] : [])]), lines: lines.length }
     })
@@ -249,7 +249,7 @@ try {
     const shown = await P.page.evaluate(() => {
       const log = document.querySelector('.wi-card[data-section="chat"] .chat-log'), field = document.querySelector('.wi-card[data-section="chat"] .chat-field').getBoundingClientRect()
       const stack = document.querySelector('.world-inspector .wi-cards').getBoundingClientRect()
-      return { open: window.syn3hChat.panel.isOpen, newest: log.scrollHeight - log.scrollTop - log.clientHeight < 24, field: field.top >= stack.top - 1 && field.bottom <= Math.min(stack.bottom, innerHeight) + 1, strip: document.querySelectorAll('.chat-strip .chat-line').length, fieldHeight: field.height }
+      return { open: window.miraChat.panel.isOpen, newest: log.scrollHeight - log.scrollTop - log.clientHeight < 24, field: field.top >= stack.top - 1 && field.bottom <= Math.min(stack.bottom, innerHeight) + 1, strip: document.querySelectorAll('.chat-strip .chat-line').length, fieldHeight: field.height }
     })
     check(shown.open && shown.newest && shown.field && shown.strip === 0 && shown.fieldHeight >= (touch ? 43.5 : 39.5), `${name}: open, the newest line and the field are in view, the strip gives way (${JSON.stringify(shown)})`)
     if (touch) {
@@ -271,7 +271,7 @@ try {
     }
     // Escape (on a phone, the keyboard's own close) leaves the field and returns to driving.
     await P.page.keyboard.press('Escape'); await P.page.waitForTimeout(600)
-    const after = await P.page.evaluate(() => ({ typing: window.syn3h.game.input.typing, field: document.activeElement?.classList.contains('chat-field'), maxHeight: document.querySelector('.world-inspector').style.maxHeight }))
+    const after = await P.page.evaluate(() => ({ typing: window.mira.game.input.typing, field: document.activeElement?.classList.contains('chat-field'), maxHeight: document.querySelector('.world-inspector').style.maxHeight }))
     check(after.typing === false && !after.field && after.maxHeight === '', `${name}: leaving the field restores driving and the panel's height (${JSON.stringify(after)})`)
     await P.ctx.close()
   }

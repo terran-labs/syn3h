@@ -23,9 +23,9 @@
 # that was live before, verifies both public addresses serve it, and says so. To roll back by
 # hand later, use tools/rollback.sh.
 #
-# SYN3H_RELEASE_STUB=1 proves that path without touching Cloudflare: the deploy and the
+# MIRA_RELEASE_STUB=1 proves that path without touching Cloudflare: the deploy and the
 # rollback are printed instead of run, the frozen copy is served locally as in a dry run, and
-# the run fails before the record step. SYN3H_RELEASE_FORCE_FAIL=smoke fails the smoke step
+# the run fails before the record step. MIRA_RELEASE_FORCE_FAIL=smoke fails the smoke step
 # without running it. The rollback's verification of the live addresses is real (read only).
 #
 # --immediate. By default Cloudflare defers the new room code for a room with players in it:
@@ -35,6 +35,7 @@
 # reset now, at a moment you chose, not five minutes later. Players reconnect within a second
 # and keep the world; scores and the round start again. Leave it off for a normal release
 # made while nobody is playing.
+. "$(dirname "$0")/lib/legacy-env.sh" # legacy environment names, see docs/NAMES.md
 set -eu
 cd "$(dirname "$0")/.."
 . tools/cloudflare-token.sh
@@ -44,9 +45,9 @@ cd "$(dirname "$0")/.."
 # heavy.sh, so the hold lifts by itself when the release ends or dies, and says 'running', so
 # heavy.py lets one other job share a slot beside it (tools/heavy.py; tools/ship.sh holds it
 # fully, 'gate', while it waits for the load to fall before starting this).
-if [ -z "${SYN3H_RELEASE_SLOT:-}" ] && [ -x tools/heavy.sh ]; then
-  _hold_root="${SYN3H_HEAVY_ROOT:-/tmp/syn3h-heavy-v2}"; mkdir -p "$_hold_root" && printf '%s\nrunning\n' "$$" >"$_hold_root/hold"
-  SYN3H_HEAVY_RELEASE=1 SYN3H_RELEASE_SLOT=1 exec tools/heavy.sh env SYN3H_RELEASE_SLOT=1 "$(pwd)/tools/release.sh" "$@"
+if [ -z "${MIRA_RELEASE_SLOT:-}" ] && [ -x tools/heavy.sh ]; then
+  _hold_root="${MIRA_HEAVY_ROOT:-/tmp/syn3h-heavy-v2}"; mkdir -p "$_hold_root" && printf '%s\nrunning\n' "$$" >"$_hold_root/hold"
+  MIRA_HEAVY_RELEASE=1 MIRA_RELEASE_SLOT=1 exec tools/heavy.sh env MIRA_RELEASE_SLOT=1 "$(pwd)/tools/release.sh" "$@"
 fi
 REPO="$(pwd)"
 N="${1:-}"
@@ -57,7 +58,7 @@ case "$N" in ''|*[!0-9]*) echo "usage: tools/release.sh <n> \"note\" [--dry-run 
 [ -z "$MODE" ] || [ "$MODE" = "--dry-run" ] || [ "$MODE" = "--immediate" ] || [ "$MODE" = "--staging" ] || { echo "release.sh: unknown option $MODE" >&2; exit 2; }
 DRY=""; [ "$MODE" = "--dry-run" ] && DRY=1
 STAGE_ONLY=""; [ "$MODE" = "--staging" ] && STAGE_ONLY=1
-STUB="${SYN3H_RELEASE_STUB:-}"; [ -z "$DRY" ] || STUB=""
+STUB="${MIRA_RELEASE_STUB:-}"; [ -z "$DRY" ] || STUB=""
 # Extra deploy arguments: empty for a normal release.
 UPDATE_MODE=""; [ "$MODE" = "--immediate" ] && UPDATE_MODE="--durable-objects-code-update-mode immediate"
 
@@ -75,7 +76,7 @@ COMMIT="$(git rev-parse --short HEAD)"
 # prepared before midnight ships with the next day's number. Resolved before building, so the
 # UI and frozen metadata agree; the dry run, staging and the release all check it here.
 CALVER="$(node tools/release-notes.mjs next)" || fail "could not compute the calendar version"
-export SYN3H_RELEASE_VERSION="$CALVER"
+export MIRA_RELEASE_VERSION="$CALVER"
 echo "Version: $CALVER"
 # The notes are published after the release is live, so check now, before anything is built,
 # that the publish tool will accept them: their name, heading, every version-bearing link and
@@ -93,7 +94,7 @@ WRANGLER="$REPO/node_modules/wrangler/bin/wrangler.js"
 [ -f "$WRANGLER" ] || fail "wrangler is not installed in node_modules"
 if [ -z "$DRY" ]; then
   if with_cf_token node "$WRANGLER" whoami 2>&1 | grep -qi "not authenticated"; then
-    fail "wrangler is not authenticated (put the token in $SYN3H_CLOUDFLARE_TOKEN_FILE, set CLOUDFLARE_API_TOKEN, or npx wrangler login)"
+    fail "wrangler is not authenticated (put the token in $MIRA_CLOUDFLARE_TOKEN_FILE, set CLOUDFLARE_API_TOKEN, or npx wrangler login)"
   fi
 fi
 # Every earlier release must be whole in R2 before anything is built: deploys no longer carry
@@ -252,9 +253,9 @@ else
     echo "Smoke testing staging, with shot evidence in $SHOT_PARENT/evidence ..."
     # Staging has its own crash budget, larger than production's: a crash is the machine, not
     # the game, so it is a rerun, up to four; a game failure stops the release at once.
-    _prod_crashes="${SYN3H_CRASH_COUNT:-}"; SYN3H_CRASH_COUNT="$(mktemp /tmp/syn3h-crash-count-staging.XXXXXX)"; SYN3H_CRASH_CAP=4
+    _prod_crashes="${MIRA_CRASH_COUNT:-}"; MIRA_CRASH_COUNT="$(mktemp /tmp/syn3h-crash-count-staging.XXXXXX)"; MIRA_CRASH_CAP=4
     _staging_ok=1; run_smoke "$STAGING_URL" "$LOG-staging-smoke.log" "$SHOT_PARENT/evidence" || _staging_ok=""
-    SYN3H_CRASH_CAP=2; if [ -n "$_prod_crashes" ]; then SYN3H_CRASH_COUNT="$_prod_crashes"; else unset SYN3H_CRASH_COUNT; fi
+    MIRA_CRASH_CAP=2; if [ -n "$_prod_crashes" ]; then MIRA_CRASH_COUNT="$_prod_crashes"; else unset MIRA_CRASH_COUNT; fi
     [ -n "$_staging_ok" ] || fail "net-smoke failed on staging (production untouched; see $LOG-staging-smoke.log)"
   fi
   if [ -n "$STAGE_ONLY" ]; then
@@ -308,7 +309,7 @@ tail -2 "$LOG-frozen.log"
 echo "Smoke testing $URL ..."
 SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.XXXXXX)" || fail "could not reserve smoke evidence directory"
 echo "Shot evidence: $SHOT_PARENT/evidence ($URL)"
-[ "${SYN3H_RELEASE_FORCE_FAIL:-}" != smoke ] || fail "net-smoke failed against $URL (forced by SYN3H_RELEASE_FORCE_FAIL=smoke)"
+[ "${MIRA_RELEASE_FORCE_FAIL:-}" != smoke ] || fail "net-smoke failed against $URL (forced by MIRA_RELEASE_FORCE_FAIL=smoke)"
 if [ -n "$DRY" ]; then
   run_smoke "$URL" "$LOG-smoke.log" "$SHOT_PARENT/evidence" || fail "net-smoke failed against $URL (see $LOG-smoke.log)"
   # Steps passed, connection drops ridden through and step retries, for the release ledger.
@@ -339,7 +340,7 @@ fi
 PRIMARY_URL="https://mira.cc/"
 settle "$PRIMARY_URL" "$DEST" "$LOG-primary-assets.log" --feed || { tail -20 "$LOG-primary-assets.log"; fail "primary entry bundle did not settle on the frozen build within three minutes"; }
 tail -1 "$LOG-primary-assets.log"
-if ! SYN3H_SHORT_CHECK=1 tools/domain.sh check mira.cc >"$LOG-primary.log" 2>&1; then
+if ! MIRA_SHORT_CHECK=1 tools/domain.sh check mira.cc >"$LOG-primary.log" 2>&1; then
   cat "$LOG-primary.log"
   fail "primary domain acceptance failed; roll back the deployment"
 fi
@@ -400,7 +401,7 @@ echo "- release-$N, $WHEN: $URL from $MILESTONE ($COMMIT), Worker version $VERSI
 # never turn a successful deploy into a failed release or trigger rollback.
 if ! (
   printf '%s\t%s\t%s\t%s\tproduction\n' "$CALVER" "$MILESTONE" "$COMMIT" "$WHEN" >> release-notes/history.tsv || exit 1
-  git tag -a "$CALVER" -m "Syn3h $CALVER ($MILESTONE, release-$N)" || exit 1
+  git tag -a "$CALVER" -m "Mira $CALVER ($MILESTONE, release-$N)" || exit 1
   # Notes are written and committed before the tag now; draft only when there are none.
   [ -f "release-notes/releases/$CALVER.md" ] || node tools/release-notes.mjs draft "$CALVER" "${PREV:-m00-proposal}" "release-$N"
 ); then
@@ -413,9 +414,9 @@ echo "Next, when no release is running: /Users/vtn/dev/Syn3h/tools/heavy.sh node
 # A second vantage point: the same short public check from a GitHub-hosted machine
 # (.github/workflows/public-check.yml). It reports only, for now: the release is already
 # accepted, and a failure there with a pass here is information about the route, not a
-# rollback. SYN3H_SKIP_VANTAGE=1 skips it.
+# rollback. MIRA_SKIP_VANTAGE=1 skips it.
 vantage() {
-  [ -z "${SYN3H_SKIP_VANTAGE:-}" ] || { echo "VANTAGE: skipped (SYN3H_SKIP_VANTAGE)"; return 0; }
+  [ -z "${MIRA_SKIP_VANTAGE:-}" ] || { echo "VANTAGE: skipped (MIRA_SKIP_VANTAGE)"; return 0; }
   command -v gh >/dev/null 2>&1 || { echo "VANTAGE: skipped (gh is not installed)"; return 0; }
   _since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   gh workflow run public-check.yml -f version="$CALVER" -f url=https://mira.cc/ >"$LOG-vantage.log" 2>&1 \
@@ -428,11 +429,11 @@ vantage() {
   done
   [ -n "$_run" ] || { echo "VANTAGE: skipped (the GitHub run did not appear within a minute)"; return 0; }
   # Polled, never watched: on 18 Nov 2026 a hosted run stuck "in progress" for 36 minutes and
-  # `gh run watch` held the accepted release open with it. At most SYN3H_VANTAGE_WAIT seconds
+  # `gh run watch` held the accepted release open with it. At most MIRA_VANTAGE_WAIT seconds
   # (default 1200); a run still going then is reported as such, and the release ends.
   # Done means a conclusion, not only "completed": GitHub can report a run completed a moment
   # before its conclusion, and release-91 printed that empty conclusion as if it were a result.
-  _deadline=$(( $(date +%s) + ${SYN3H_VANTAGE_WAIT:-1200} )); _status=""; _conclusion=""
+  _deadline=$(( $(date +%s) + ${MIRA_VANTAGE_WAIT:-1200} )); _status=""; _conclusion=""
   # Asked at least once, however short the wait.
   while :; do
     _state="$(gh run view "$_run" --json status,conclusion -q '.status + " " + .conclusion' 2>/dev/null || true)"
@@ -443,9 +444,9 @@ vantage() {
   done
   _url="https://github.com/terran-labs/syn3h/actions/runs/$_run"
   if [ "$_status" != completed ]; then
-    echo "VANTAGE: GitHub public check of $CALVER still running (${_status:-status unknown}) after ${SYN3H_VANTAGE_WAIT:-1200} s, not waited for; no result yet: $_url"
+    echo "VANTAGE: GitHub public check of $CALVER still running (${_status:-status unknown}) after ${MIRA_VANTAGE_WAIT:-1200} s, not waited for; no result yet: $_url"
   elif [ -z "$_conclusion" ]; then
-    echo "VANTAGE: GitHub public check of $CALVER completed but GitHub reported no result within ${SYN3H_VANTAGE_WAIT:-1200} s; no result yet: $_url"
+    echo "VANTAGE: GitHub public check of $CALVER completed but GitHub reported no result within ${MIRA_VANTAGE_WAIT:-1200} s; no result yet: $_url"
   else
     echo "VANTAGE: GitHub public check of $CALVER from a hosted machine: $_conclusion $_url"
   fi
@@ -453,7 +454,7 @@ vantage() {
 vantage || true
 
 # Refresh aggregate dashboard tiles after the release record exists. The host supplies
-# SYN3H_SESSION_STATE; never store its value in the repository or published dashboard.
+# MIRA_SESSION_STATE; never store its value in the repository or published dashboard.
 if [ -f tools/dashboard-stats.mjs ]; then
   if ! node tools/dashboard-stats.mjs >"$LOG-dashboard-stats.log" 2>&1; then
     echo "Warning: release is live; dashboard statistics need refresh. See $LOG-dashboard-stats.log."

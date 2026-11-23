@@ -8,7 +8,7 @@ import { Scene, Vector3 } from 'three/webgpu'
 import type { Game } from '../../src/core/Game'
 import { emptyInput } from '../../src/core/Input'
 import { createWorld, initPhysics, RAPIER } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import type { Vehicle } from '../../src/vehicles/Vehicle'
 import { BotBrain, type BotTerrain } from '../../src/bots/BotBrain'
 import { Mind } from '../../src/bots/mind/Mind'
@@ -45,10 +45,10 @@ function touching(a: Vehicle, b: Vehicle): boolean {
 /** The player (heading -z) drives `script`; bots start where `starts` puts them. */
 function outing(script: Script, seconds: number, starts: { x: number; z: number }[], sample: (t: number, you: Vehicle, bots: Vehicle[], brains: BotBrain[]) => void) {
   const game = { world, scene: new Scene(), tick: 0, input: { state: emptyInput() } } as unknown as Game
-  const you = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); you.id = 'player'; you.isLocal = false
+  const you = new MiraBuggy(game, terrain, new Vector3(0, 1, 0)); you.id = 'player'; you.isLocal = false
   const bots: Vehicle[] = [], brains: BotBrain[] = []
   starts.forEach((s, i) => {
-    const bot = new Syn3hBuggy(game, terrain, new Vector3(s.x, 1, s.z)); bot.id = `bot-${i}`; bot.isLocal = false
+    const bot = new MiraBuggy(game, terrain, new Vector3(s.x, 1, s.z)); bot.id = `bot-${i}`; bot.isLocal = false
     const brain = new BotBrain(game, terrain, bot, you, i)
     brain.mind = new Mind(bot, terrain, createPilot(bot, terrain)!, { seed: `duck:${i}`, others: () => [you, ...bots] })
     brain.setTargets([you]); brain.setPeers(bots)

@@ -6,7 +6,7 @@ import '../../src/vehicles/buggyParams'
 import '../../src/vehicles/Jet'
 import '../../src/vehicles/Hovercraft'
 import '../../src/vehicles/Tank'
-import { resetParams } from './syn3hScenarios'
+import { resetParams } from './miraScenarios'
 
 const GROUPS = ['Buggy', 'Jet', 'Hovercraft', 'Tank']
 const current = (id: string) => params.get(id)?.value

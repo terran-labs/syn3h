@@ -6,9 +6,9 @@ page.on('pageerror',e=>errors.push(e.message))
 await page.routeWebSocket(/\/ws/,s=>s.close())
 try{
  await page.goto('http://localhost:5185/?autoplay=1&vehicle=jet')
- await page.waitForFunction(()=>window.syn3h?.game.tick>10)
+ await page.waitForFunction(()=>window.mira?.game.tick>10)
  const result=await page.evaluate(async()=>{
-  const s=window.syn3h,{params}=await import('/shared/params.ts'),T=await import('/node_modules/.vite/deps/three_webgpu.js')
+  const s=window.mira,{params}=await import('/shared/params.ts'),T=await import('/node_modules/.vite/deps/three_webgpu.js')
   const {attachVehicleEffects,createWeaponEffects}=await import('/src/vehicles/effects/index.ts')
   const wait=ms=>new Promise(r=>setTimeout(r,ms))
   params.set('bots.count',0);params.set('sun.hour',0);params.set('gfx.level',2)

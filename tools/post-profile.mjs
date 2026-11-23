@@ -32,9 +32,9 @@ try {
       const errors = []
       page.on('pageerror', e => errors.push(e.message))
       await page.goto(`${url}${sep}autoplay=1&gfx=2&room=post-profile-${Date.now()}`)
-      await page.waitForFunction(() => window.syn3h?.game?.tick > 30, null, { timeout: 90000 })
+      await page.waitForFunction(() => window.mira?.game?.tick > 30, null, { timeout: 90000 })
       const setup = await page.evaluate(name => {
-        const s = window.syn3h, g = s.game, r = g.renderer
+        const s = window.mira, g = s.game, r = g.renderer
         s.params.set('bots.count', 0); s.params.set('sun.dayLength', 0); s.params.set('sun.timeOfDay', 17.6)
         g.quality.frame = () => {}; r.setPixelRatio(1)
         s.params.set('post.on', name !== 'off')
@@ -56,7 +56,7 @@ try {
       await page.evaluate(() => window.postProfile.start())
       await page.waitForTimeout(5000)
       const samples = await page.evaluate(() => window.postProfile.stop())
-      const tier = await page.evaluate(() => window.syn3h.game.postChain.tier)
+      const tier = await page.evaluate(() => window.mira.game.postChain.tier)
       const row = { width, height, case: name, tier, load: +loadavg()[0].toFixed(2), ...setup, frames: samples.length,
         frameMs: percentile(samples.map(s => s.frameMs), 0.5), p95Ms: percentile(samples.map(s => s.frameMs), 0.95),
         renderCpuMs: percentile(samples.map(s => s.drawMs), 0.5), drawCalls: percentile(samples.map(s => s.drawCalls), 0.5), errors }

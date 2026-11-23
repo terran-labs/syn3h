@@ -17,12 +17,12 @@ try {
   const url = new URL(base); url.searchParams.set('room', `water-look-${Date.now()}`); url.searchParams.set('name', 'Look')
   if (backend === 'webgl') url.searchParams.set('webgl', '1')
   await page.goto(url.href, { waitUntil: 'load', timeout: 120000 })
-  await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
-  await page.evaluate(() => window.syn3h.shell.play())
-  await page.waitForFunction(() => window.syn3hNet?.connected && window.syn3h.game.time > 3, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.shell, null, { timeout: 120000 })
+  await page.evaluate(() => window.mira.shell.play())
+  await page.waitForFunction(() => window.miraNet?.connected && window.mira.game.time > 3, null, { timeout: 120000 })
   const [planet, seed] = world.split('.')
   await page.evaluate(async ({ planet, seed }) => {
-    const s = window.syn3h
+    const s = window.mira
     const { applyPlanet } = await import('/src/world/planets.ts')
     applyPlanet(planet, Number(seed))
     for (const [id, value] of Object.entries({ 'bots.count': 0, 'gfx.auto': false, 'gfx.level': 2, 'sun.timeOfDay': 15.5, 'sun.dayLength': 0, 'weather.storminess': 0 })) s.params.set(id, value)
@@ -30,7 +30,7 @@ try {
   await page.waitForTimeout(3000)
   // A sea spot 6 to 14 m deep, and a camera system placed before the water effects.
   const spot = await page.evaluate(() => {
-    const s = window.syn3h, t = s.terrain, level = s.params.get('world.lavaAltitude').value, size = t.wrapSize
+    const s = window.mira, t = s.terrain, level = s.params.get('world.lavaAltitude').value, size = t.wrapSize
     let spot
     outer: for (let x = -size / 2 + 32; x < size / 2 - 32; x += 8) for (let z = -size / 2 + 32; z < size / 2 - 32; z += 8) {
       const d = level - t.heightAt(x, z)
@@ -60,11 +60,11 @@ try {
   report.spot = spot
   const shot = async name => {
     await page.waitForTimeout(1500)
-    const info = await page.evaluate(() => ({ calls: window.syn3h.game.renderer.info.render.drawCalls, triangles: window.syn3h.game.renderer.info.render.triangles, env: !!window.syn3h.game.scene.environment }))
+    const info = await page.evaluate(() => ({ calls: window.mira.game.renderer.info.render.drawCalls, triangles: window.mira.game.renderer.info.render.triangles, env: !!window.mira.game.scene.environment }))
     await page.screenshot({ path: `${out}/${name}.png` }); report.shots.push({ name, ...info })
   }
   for (const tier of tiers.split(',').map(Number)) {
-    await page.evaluate(t => window.syn3h.params.set('gfx.level', t), tier)
+    await page.evaluate(t => window.mira.params.set('gfx.level', t), tier)
     await page.waitForTimeout(2500)
     for (const view of ['drive', 'low', 'sun', 'shore', 'high']) {
       await page.evaluate(v => { window.waterLook.view = v }, view)
@@ -77,18 +77,18 @@ try {
     await page.evaluate(() => { window.waterLook.view = 'drive' })
     for (const [id, value] of Object.entries(set)) {
       if (id === 'hide') continue
-      before[id] ??= await page.evaluate(id => window.syn3h.params.get(id).value, id)
-      await page.evaluate(({ id, value }) => window.syn3h.params.set(id, value), { id, value })
+      before[id] ??= await page.evaluate(id => window.mira.params.get(id).value, id)
+      await page.evaluate(({ id, value }) => window.mira.params.set(id, value), { id, value })
     }
-    if (set.hide) await page.evaluate(h => { window.syn3h.terrain.volcanics.group.visible = h !== 'water' }, set.hide)
+    if (set.hide) await page.evaluate(h => { window.mira.terrain.volcanics.group.visible = h !== 'water' }, set.hide)
     await shot(`${planet}-variant-${name}`)
-    await page.evaluate(() => { window.syn3h.terrain.volcanics.group.visible = true })
-    for (const [id, value] of Object.entries(before)) await page.evaluate(({ id, value }) => window.syn3h.params.set(id, value), { id, value })
+    await page.evaluate(() => { window.mira.terrain.volcanics.group.visible = true })
+    for (const [id, value] of Object.entries(before)) await page.evaluate(({ id, value }) => window.mira.params.set(id, value), { id, value })
   }
   // A gale, a calm, and dusk from the driving camera.
-  await page.evaluate(() => { window.waterLook.view = 'drive'; window.syn3h.params.set('weather.storminess', 1) })
+  await page.evaluate(() => { window.waterLook.view = 'drive'; window.mira.params.set('weather.storminess', 1) })
   await shot(`${planet}-storm-drive`)
-  await page.evaluate(() => { window.syn3h.params.set('weather.storminess', 0); window.syn3h.params.set('sun.timeOfDay', 19.2) })
+  await page.evaluate(() => { window.mira.params.set('weather.storminess', 0); window.mira.params.set('sun.timeOfDay', 19.2) })
   await shot(`${planet}-dusk-drive`)
 } catch (e) { report.errors.push(String(e.stack || e)) } finally {
   writeFileSync(`${out}/report.json`, JSON.stringify(report, null, 2))

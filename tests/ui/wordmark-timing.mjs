@@ -9,8 +9,8 @@ const TIMING = () => {
   new MutationObserver(() => {
     if (document.documentElement?.dataset.boot !== 'done' || window.__timing.done) return
     window.__timing.done = performance.now()
-    const start = window.syn3h?.shell?.galaxy?.frames ?? 0
-    const watch = () => { const g = window.syn3h?.shell?.galaxy; if (g && g.frames > start) window.__timing.frame = performance.now(); else requestAnimationFrame(watch) }
+    const start = window.mira?.shell?.galaxy?.frames ?? 0
+    const watch = () => { const g = window.mira?.shell?.galaxy; if (g && g.frames > start) window.__timing.frame = performance.now(); else requestAnimationFrame(watch) }
     requestAnimationFrame(watch)
   }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-boot'] })
 }

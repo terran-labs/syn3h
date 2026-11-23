@@ -2,7 +2,7 @@ import type { EffectiveQuality, FrameMetrics, GraphicsLevel } from './quality'
 import type { PerformanceBots, PerformanceLongFrames, PerformancePipelines, PerformancePoint, PerformanceRecommendation } from './performance'
 
 export const PERFORMANCE_POLICY = Object.freeze({ historyPoints: 120, windowMs: 1000, warmupMs: 5000, slowMs: 10000, slowRatio: .8, interruptedMs: 1000, maxWindowFrames: 2048 })
-export const RECOMMENDATION_IGNORE_KEY = 'syn3h.performance.ignore'
+export const RECOMMENDATION_IGNORE_KEY = 'mira.performance.ignore'
 /**
  * Counts pipeline objects by identity from the renderer's own cache, read once per frame. A size
  * delta would miss a swap that releases and creates in the same frame, which is exactly how the

@@ -21,7 +21,7 @@ try {
     // Observe a real frame. The default framebuffer must contain the galaxy
     // when glass copies it; the galaxy must not overwrite the composite later.
     const order = await page.evaluate(async () => {
-      const galaxy = window.syn3h.shell.galaxy, gl = galaxy.gl
+      const galaxy = window.mira.shell.galaxy, gl = galaxy.gl
       const draw = gl.drawArrays, copy = gl.copyTexSubImage2D, events = []
       gl.drawArrays = function (...args) {
         if (!gl.getParameter(gl.FRAMEBUFFER_BINDING)) events.push(gl.getParameter(gl.CURRENT_PROGRAM) === galaxy.program ? 'galaxy' : 'layer')
@@ -42,7 +42,7 @@ try {
     // Normal Settings opens one section at a time. Exercise the same controls and
     // animations with every section expanded to stress clipping and scrolling.
     await page.evaluate(() => {
-      const inspector = window.syn3h.shell.lobbySettings.inspector
+      const inspector = window.mira.shell.lobbySettings.inspector
       inspector.options.oneOpen = () => false
       inspector.fit = () => {}
     })
@@ -60,14 +60,14 @@ try {
     assert.equal(await card.locator('.glass-setting-reset:visible').count(), 1)
     const [numberBox, resetBox] = await Promise.all([frost.locator('.wi-num').boundingBox(), reset.boundingBox()])
     assert(resetBox.x >= numberBox.x + numberBox.width - 1 && Math.abs(resetBox.y + resetBox.height/2 - numberBox.y - numberBox.height/2) < 1)
-    const value = () => page.evaluate(() => window.syn3h.params.get('glass.frostWidth').value)
-    const measured = await page.evaluate(() => window.syn3h.params.get('glass.frostWidth').def.default)
+    const value = () => page.evaluate(() => window.mira.params.get('glass.frostWidth').value)
+    const measured = await page.evaluate(() => window.mira.params.get('glass.frostWidth').def.default)
     assert.notEqual(await value(), measured)
     await reset.tap()
     assert.equal(await reset.isVisible(), false)
     assert.equal(await value(), measured)
     const layers = await page.evaluate(() => {
-      const galaxy = window.syn3h.shell.galaxy
+      const galaxy = window.mira.shell.galaxy
       const crisp = galaxy.markCrisp?.canvas, flat = galaxy.markOverlay?.element
       return {
         crisp: !!crisp && getComputedStyle(crisp).visibility !== 'hidden',

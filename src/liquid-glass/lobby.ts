@@ -84,7 +84,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   const u = uniforms(face, ['scene','frost','pixels','points','box','radius','dark','panel','opacity','pressed','veil','faceTransfer','panelTransfer','edgeStrength','inkResponse'])
   const b = uniforms(blur, ['source','history','targetSize','axis','response','horizontalPass'])
   const scene = texture(), horizontal = target(), vertical = target()
-  const scope = canvas.closest('.syn3h-shell') ?? document.body
+  const scope = canvas.closest('.mira-shell') ?? document.body
   const captions = scope.querySelector<HTMLElement>('.galaxy-ui')
   const clock = new GlassMotionClock()
   const events = new AbortController()

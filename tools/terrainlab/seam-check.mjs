@@ -17,12 +17,12 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors = []
 page.on('pageerror', (e) => errors.push(e.message))
 await page.goto(`${base}?autoplay=1&world=${world}&room=seam${Date.now().toString(36)}`, { waitUntil: 'load' })
-await page.waitForFunction(() => window.syn3h?.game?.tick > 60, null, { timeout: 90000 })
+await page.waitForFunction(() => window.mira?.game?.tick > 60, null, { timeout: 90000 })
 
 const results = []
 for (const [name, ax, az] of [['east', 1, 0], ['west', -1, 0], ['south', 0, 1], ['north', 0, -1]]) {
   const r = await page.evaluate(async ([ax, az]) => {
-    const s = window.syn3h, t = s.terrain, pl = s.player, cam = s.game.camera
+    const s = window.mira, t = s.terrain, pl = s.player, cam = s.game.camera
     const size = t.size, half = size / 2
     // A stretch of dry, gentle ground that runs across this edge, if there is one.
     let along = 0, best = -1

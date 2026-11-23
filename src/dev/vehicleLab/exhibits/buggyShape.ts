@@ -15,7 +15,7 @@ const BODY = 0xb3140f, ACCENT = 0xf0c020
 export const buggyShape: LabExhibit = {
   section: 'Design studies',
   id: 'buggy-shape',
-  title: 'Syn3h buggy shape editor',
+  title: 'Mira buggy shape editor',
   async designs() {
     return [{ id: 'editable', name: 'Editable body', notes: ['The cage body with 15 named handles', 'Drag a slider; the body regenerates', 'Seed picks a random buggy; the URL carries a share code', 'Body only: no wheels, arms or canopy'] }]
   },

@@ -8,7 +8,7 @@
  * surface, beside the real vehicle's own lowest clearance.
  *
  *   PORT=8791 npm run server
- *   SYN3H_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
+ *   MIRA_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
  *   node tools/ground-check.mjs
  */
 import { spawn } from 'node:child_process'
@@ -28,8 +28,8 @@ async function open(name) {
   const page = await (await br.newContext({ viewport: { width: 640, height: 360 } })).newPage()
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`))
   await page.goto(`http://localhost:5183/?room=${room}&name=${name}&autoplay=1`)
-  await page.waitForFunction(() => window.syn3h?.shell && window.syn3hNet?.connected, null, { timeout: 90000 })
-  await page.evaluate(() => { window.syn3h.shell.play(); window.syn3h.params.set('gfx.level', 0) })
+  await page.waitForFunction(() => window.mira?.shell && window.miraNet?.connected, null, { timeout: 90000 })
+  await page.evaluate(() => { window.mira.shell.play(); window.mira.params.set('gfx.level', 0) })
   return page
 }
 const round = (n, d = 2) => +n.toFixed(d)
@@ -37,16 +37,16 @@ let ok = false
 try {
   const a = await open('Alice')
   const b = await open('Bob')
-  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet.players.size === 2 && window.syn3hNet.remotes.size === 1, null, { timeout: 30000 })))
-  const idA = await a.evaluate(() => window.syn3hNet.id)
-  const original = await b.evaluate(() => { window.__groundAt = window.syn3hNet.groundAt; return typeof window.__groundAt })
+  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.miraNet.players.size === 2 && window.miraNet.remotes.size === 1, null, { timeout: 30000 })))
+  const idA = await a.evaluate(() => window.miraNet.id)
+  const original = await b.evaluate(() => { window.__groundAt = window.miraNet.groundAt; return typeof window.__groundAt })
 
   async function run(clamp) {
-    await b.evaluate((clamp) => { window.syn3hNet.groundAt = clamp ? window.__groundAt : null }, clamp)
+    await b.evaluate((clamp) => { window.miraNet.groundAt = clamp ? window.__groundAt : null }, clamp)
     // Start at the foot of the steepest dry ground within 400 m, facing up it: a copy that
     // carries on in a straight line during a gap then runs into the slope.
     await a.evaluate(() => {
-      const { terrain: t, player } = window.syn3h
+      const { terrain: t, player } = window.mira
       let best = null
       for (let r = 120; r <= 400; r += 40) for (let k = 0; k < 24; k++) {
         const x = Math.cos(k / 24 * Math.PI * 2) * r, z = Math.sin(k / 24 * Math.PI * 2) * r
@@ -65,27 +65,27 @@ try {
       window.__log = []
       clearInterval(window.__timer)
       window.__timer = setInterval(() => {
-        const r = window.syn3hNet.remotes.get(id)
+        const r = window.miraNet.remotes.get(id)
         if (!r) return
         const p = r.vehicle.body.translation()
-        window.__log.push({ above: p.y - window.syn3h.terrain.heightAt(p.x, p.z), mode: r.sample.mode, physical: r.physical })
+        window.__log.push({ above: p.y - window.mira.terrain.heightAt(p.x, p.z), mode: r.sample.mode, physical: r.physical })
       }, 10)
     }, idA)
     await a.evaluate(() => {
       window.__own = []
       clearInterval(window.__timer)
-      const e = window.syn3h.game.input.external
+      const e = window.mira.game.input.external
       let t = 0
       window.__timer = setInterval(() => {
         t += 0.02
         e.y = 1
         e.x = Math.sin(t * 0.9) * 0.35 // a weave, so it crosses slopes and crests
-        const p = window.syn3h.player.body.translation(), v = window.syn3h.player.body.linvel()
-        window.__own.push({ above: p.y - window.syn3h.terrain.heightAt(p.x, p.z), speed: Math.hypot(v.x, v.z) })
+        const p = window.mira.player.body.translation(), v = window.mira.player.body.linvel()
+        window.__own.push({ above: p.y - window.mira.terrain.heightAt(p.x, p.z), speed: Math.hypot(v.x, v.z) })
       }, 20)
     })
     await wait(25000)
-    const own = await a.evaluate(() => { clearInterval(window.__timer); const e = window.syn3h.game.input.external; e.y = 0; e.x = 0; return window.__own })
+    const own = await a.evaluate(() => { clearInterval(window.__timer); const e = window.mira.game.input.external; e.y = 0; e.x = 0; return window.__own })
     const log = await b.evaluate(() => { clearInterval(window.__timer); return window.__log })
     const under = log.filter((e) => e.above < 0)
     return {

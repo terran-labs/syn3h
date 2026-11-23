@@ -20,7 +20,7 @@ import { getConsoleFunction, setConsoleFunction } from 'three/webgpu'
 
 // Three catches the native rejection, then logs the reason once for each material.
 // Tag only rejections whose own device has been lost. Other renderers may be healthy.
-const LOST_PIPELINE = 'Syn3h covered pipeline rejected on a lost device'
+const LOST_PIPELINE = 'Mira covered pipeline rejected on a lost device'
 let filteringLostPipelines = false
 function silenceLostPipelineDetails(): void {
   if (filteringLostPipelines) return
@@ -62,10 +62,10 @@ interface GuardableDevice {
  * true when installed. Safe to call once per renderer; a second call is ignored.
  */
 export function guardDevice(renderer: GuardedRenderer): boolean {
-  const backend = renderer.backend as { device?: GuardableDevice; pipelineUtils?: ShaderDiagnostics; __syn3hGuarded?: boolean } | undefined
+  const backend = renderer.backend as { device?: GuardableDevice; pipelineUtils?: ShaderDiagnostics; __miraGuarded?: boolean } | undefined
   const device = backend?.device
-  if (!backend || !device || backend.__syn3hGuarded) return false
-  backend.__syn3hGuarded = true
+  if (!backend || !device || backend.__miraGuarded) return false
+  backend.__miraGuarded = true
   let disposing = false
   const lose = (reason: string | null, message: string, originalEvent?: unknown) => {
     if (renderer._isDeviceLost) return

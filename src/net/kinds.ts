@@ -2,7 +2,7 @@
  * Vehicle kinds as they cross the wire, against the vehicles this build really makes.
  * A kind's name can outlive its vehicle: the Mars Explorer buggy ('buggy-classic') was
  * retired, but a client from an earlier release still announces it, and this build draws the
- * Syn3h buggy for it. Networking must compare what is built, not what it is called.
+ * Mira buggy for it. Networking must compare what is built, not what it is called.
  */
 import { canonicalVehicleKind } from '../vehicles'
 

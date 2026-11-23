@@ -1,3 +1,4 @@
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist'] })
@@ -12,15 +13,15 @@ try {
     const now = Date.now(), byRecipe = mode === 'empty' ? [] : [{ recipeId: 'alpine', players: 3, rooms: 2, oldestReportAt: now - (mode === 'stale' ? 90001 : 0) }]
     return route.fulfill({ json: { version: 1, generatedAt: now, ttlMs: 90000, byRecipe } })
   })
-  await page.goto(process.env.SYN3H_URL ?? 'http://127.0.0.1:5193/')
-  console.log('loaded', await page.evaluate(() => ({ boot: document.documentElement.dataset.boot, shell: !!window.syn3h?.shell, labels: document.querySelectorAll('.galaxy-label').length })))
+  await page.goto(process.env.MIRA_URL ?? 'http://127.0.0.1:5193/')
+  console.log('loaded', await page.evaluate(() => ({ boot: document.documentElement.dataset.boot, shell: !!window.mira?.shell, labels: document.querySelectorAll('.galaxy-label').length })))
   const label = page.locator('.galaxy-label[data-world="alpine"] .galaxy-population')
-  await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population')?.textContent === '3 online', null, { timeout: 120000 }).catch(async error => { console.log('state', await page.evaluate(() => ({ boot: document.documentElement.dataset.boot, fatal: document.querySelector('#fatal')?.textContent, labels: document.querySelectorAll('.galaxy-label').length, hidden: document.hidden, galaxy: window.syn3h?.shell?.galaxy ? { active: window.syn3h.shell.galaxy.active, feed: window.syn3h.shell.galaxy.presence.active, menu: window.syn3h.shell.menuOpen, attract: window.syn3h.shell.attracting } : null }))); throw error })
-  assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.population.get('alpine').players), 3)
+  await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population')?.textContent === '3 online', null, { timeout: 120000 }).catch(async error => { console.log('state', await page.evaluate(() => ({ boot: document.documentElement.dataset.boot, fatal: document.querySelector('#fatal')?.textContent, labels: document.querySelectorAll('.galaxy-label').length, hidden: document.hidden, galaxy: window.mira?.shell?.galaxy ? { active: window.mira.shell.galaxy.active, feed: window.mira.shell.galaxy.presence.active, menu: window.mira.shell.menuOpen, attract: window.mira.shell.attracting } : null }))); throw error })
+  assert.equal(await page.evaluate(() => window.mira.shell.galaxy.population.get('alpine').players), 3)
   assert.equal(await page.locator('[data-world="custom"] .galaxy-population').count(), 0)
   const change = async value => {
     mode = value
-    await page.evaluate(() => { const g = window.syn3h.shell.galaxy; g.presence.setActive(false); g.syncPresence() })
+    await page.evaluate(() => { const g = window.mira.shell.galaxy; g.presence.setActive(false); g.syncPresence() })
   }
   await change('stale')
   await page.waitForTimeout(150)
@@ -35,18 +36,18 @@ try {
   await page.waitForTimeout(150)
   assert.equal(await label.textContent(), '')
   mode = 'populated'
-  await page.evaluate(() => window.syn3h.shell.play())
+  await page.evaluate(() => window.mira.shell.play())
   const inPlay = calls
   await page.waitForTimeout(500)
   assert.equal(calls, inPlay)
-  assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.presence.active), false)
-  await page.evaluate(() => window.syn3h.shell.openMenu())
+  assert.equal(await page.evaluate(() => window.mira.shell.galaxy.presence.active), false)
+  await page.evaluate(() => window.mira.shell.openMenu())
   await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population').textContent === '3 online')
   assert.match(await page.locator('[data-world="alpine"]').getAttribute('aria-label'), /Counts span separate rooms/)
   // Population display must not route planet taps into an enumerated room.
-  const room = await page.evaluate(() => window.syn3h.shell.roomInput.value)
+  const room = await page.evaluate(() => window.mira.shell.roomInput.value)
   await page.locator('[data-world="alpine"]').dispatchEvent('click')
-  await page.waitForFunction(() => window.syn3h.shell.dropping)
-  assert.equal(await page.evaluate(() => window.syn3h.shell.roomInput.value), room)
+  await page.waitForFunction(() => window.mira.shell.dropping)
+  assert.equal(await page.evaluate(() => window.mira.shell.roomInput.value), room)
   console.log('PRESENCE UI OK')
 } finally { await browser.close() }

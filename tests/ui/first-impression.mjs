@@ -7,6 +7,7 @@
  * Needs the lane dev server on 5187 (see tests/ui/README.md). Writes screenshots and
  * `<label>-report.json` to tests/ui/artifacts/first-impression/. One Chrome, run serially.
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
 import assert from 'node:assert/strict'
@@ -20,7 +21,7 @@ const only = flag('light-only') ?? flag('first-only') ?? ''
 /** Optional sun azimuth override in degrees, to compare sun placements: --az=335 */
 const azimuth = flag('az=') ? Number(flag('az=').slice(5)) : null
 const out = 'tests/ui/artifacts/first-impression'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5187/'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const report = { label, first: [], light: [], errors: [] }
@@ -31,7 +32,7 @@ const views = [
 ]
 /** Where the vehicle and the controls card are on screen, and whether they overlap. */
 const layout = page => page.evaluate(() => {
-  const s = window.syn3h, cam = s.game.camera, p = s.player.body.translation()
+  const s = window.mira, cam = s.game.camera, p = s.player.body.translation()
   const at = (dx, dy, dz) => { const v = cam.position.clone().set(p.x + dx, p.y + dy, p.z + dz).project(cam); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight] }
   // A 3 m cube round the body is a generous stand-in for the vehicle silhouette.
   const pts = [-1.5, 1.5].flatMap(x => [-1, 1.5].flatMap(y => [-1.5, 1.5].map(z => at(x, y, z))))
@@ -49,7 +50,7 @@ const open = async (view, room) => {
   page.on('pageerror', e => report.errors.push(`${view.name}: ${e.message}`))
   page.on('console', m => { if (m.type() === 'error') report.errors.push(`${view.name}: ${m.text()}`) })
   await page.goto(`${base}?room=${room}&autoplay=1`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 25, null, { timeout: 90000 })
   return { context, page }
 }
 try {
@@ -86,23 +87,23 @@ try {
   if (only !== '--first-only') {
     const { context, page } = await open(views[0], `fi-${label}-light`)
     await page.waitForTimeout(9500) // past the controls card
-    const info = await page.evaluate(() => { const s = window.syn3h, S = s.terrain.summit(); return { S, pad: s.terrain.spawnPoint(0) } })
+    const info = await page.evaluate(() => { const s = window.mira, S = s.terrain.summit(); return { S, pad: s.terrain.spawnPoint(0) } })
     for (const place of ['pad0', 'summit']) {
       if (place === 'summit') {
         // Where the spiral road meets the rim road, driving along the rim with the lava lake
         // on the left. King of the Hill is on so the hill marker is part of the picture.
         await page.evaluate(({ S }) => {
-          const s = window.syn3h, a = Math.atan2(38, 86), x = S.x + Math.cos(a) * S.rimRadius, z = S.z + Math.sin(a) * S.rimRadius
+          const s = window.mira, a = Math.atan2(38, 86), x = S.x + Math.cos(a) * S.rimRadius, z = S.z + Math.sin(a) * S.rimRadius
           s.params.set('game.mode', 1)
           s.player.teleport(s.game.camera.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), Math.PI - a)
         }, info)
         await page.waitForTimeout(4000)
       }
       for (const hour of hours) {
-        await page.evaluate(({ h, az }) => { const p = window.syn3h.params; p.set('sun.dayLength', 0); p.set('sun.timeOfDay', h); if (az !== null) p.set('sun.azimuth', az) }, { h: hour, az: azimuth })
+        await page.evaluate(({ h, az }) => { const p = window.mira.params; p.set('sun.dayLength', 0); p.set('sun.timeOfDay', h); if (az !== null) p.set('sun.azimuth', az) }, { h: hour, az: azimuth })
         await page.waitForTimeout(3000) // auto exposure settles
         await page.screenshot({ path: `${out}/${label}-light-${place}-h${hour}.png` })
-        report.light.push({ place, hour, sun: await page.evaluate(() => window.syn3h.game.systems.find(x => x.sunDirection).sunDirection.toArray().map(n => +n.toFixed(3))) })
+        report.light.push({ place, hour, sun: await page.evaluate(() => window.mira.game.systems.find(x => x.sunDirection).sunDirection.toArray().map(n => +n.toFixed(3))) })
       }
     }
     await context.close()

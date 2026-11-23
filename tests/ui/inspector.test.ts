@@ -41,12 +41,12 @@ describe('the inspector tree', () => {
 describe('a world as JSON', () => {
   it('writes out every shared property and no personal one, and reads itself back', () => {
     const json = exportWorld(DEFS, id => values.get(id))
-    expect(json.syn3h).toBe('world'); expect(Object.keys(json.values)).not.toContain('camera.sensitivity'); expect(json.values['sun.timeOfDay']).toBe(16.5)
+    expect(json.mira).toBe('world'); expect(Object.keys(json.values)).not.toContain('camera.sensitivity'); expect(json.values['sun.timeOfDay']).toBe(16.5)
     const back = parseWorld(JSON.stringify(json), DEFS)
     expect(back.ok && back.entries.length).toBe(6); expect(back.ok && back.skipped).toEqual([])
   })
   it('pulls numbers inside their limits and says so', () => {
-    const result = parseWorld('{"syn3h":"world","version":1,"values":{"sun.timeOfDay":99,"bots.count":-4,"world.seed":7}}', DEFS)
+    const result = parseWorld('{"mira":"world","version":1,"values":{"sun.timeOfDay":99,"bots.count":-4,"world.seed":7}}', DEFS)
     expect(result.ok && result.entries).toEqual([{ id: 'sun.timeOfDay', value: 24, adjusted: true }, { id: 'bots.count', value: 0, adjusted: true }, { id: 'world.seed', value: 7, adjusted: false }])
     expect(result.ok && pasteSummary(result)).toBe('3 properties pasted, 2 pulled inside limits.')
   })
@@ -62,7 +62,7 @@ describe('a world as JSON', () => {
     const allowed = parseWorld(json, DEFS, { personal: true }); expect(allowed.ok && allowed.entries.map(e => e.id)).toEqual(['camera.sensitivity', 'novel.mine'])
   })
   it('refuses what is not a world, without throwing', () => {
-    for (const text of ['', 'hello', '[]', '42', 'null', '{"syn3h":"world"}', '{"values":{}}']) expect(parseWorld(text, DEFS).ok).toBe(false)
+    for (const text of ['', 'hello', '[]', '42', 'null', '{"mira":"world"}', '{"values":{}}']) expect(parseWorld(text, DEFS).ok).toBe(false)
     expect(parseWorld('{"values":{"__proto__":{"x":1},"constructor":2}}', DEFS).ok).toBe(false)
   })
 })

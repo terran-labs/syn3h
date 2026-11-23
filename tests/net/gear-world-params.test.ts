@@ -78,7 +78,7 @@ describe('shared gear looks', () => {
     expect(json.values[impactSparks.def.id]).toBe(9)
     expect(json.values[grappleReleaseTime.def.id]).toBe(grappleReleaseTime.def.default)
     expect(json.values[fireworkHighDetail.def.id]).toBeUndefined()
-    const old = parseWorld(JSON.stringify({ syn3h: 'world', version: 1, values: { 'world.gravity': 9.81 } }), defs)
+    const old = parseWorld(JSON.stringify({ mira: 'world', version: 1, values: { 'world.gravity': 9.81 } }), defs)
     expect(old.ok && old.entries.some(e => e.id === impactSparks.def.id)).toBe(false)
   })
 })

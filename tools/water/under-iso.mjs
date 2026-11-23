@@ -13,18 +13,18 @@ try {
   page.on('pageerror', e => report.errors.push(e.message))
   const url = new URL(base); url.searchParams.set('room', `water-iso-${Date.now()}`); url.searchParams.set('name', 'Iso')
   await page.goto(url.href, { waitUntil: 'load', timeout: 120000 })
-  await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
-  await page.evaluate(() => window.syn3h.shell.play())
-  await page.waitForFunction(() => window.syn3hNet?.connected && window.syn3h.game.time > 3, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.shell, null, { timeout: 120000 })
+  await page.evaluate(() => window.mira.shell.play())
+  await page.waitForFunction(() => window.miraNet?.connected && window.mira.game.time > 3, null, { timeout: 120000 })
   await page.evaluate(async () => {
-    const s = window.syn3h
+    const s = window.mira
     const { applyPlanet } = await import('/src/world/planets.ts')
     applyPlanet('alpine', 7)
     for (const [id, value] of Object.entries({ 'bots.count': 0, 'gfx.auto': false, 'gfx.level': 2, 'sun.timeOfDay': 12, 'sun.dayLength': 0, 'weather.storminess': 0 })) s.params.set(id, value)
   })
   await page.waitForTimeout(3000)
   report.scene = await page.evaluate(() => {
-    const s = window.syn3h, t = s.terrain, level = s.params.get('world.lavaAltitude').value, size = t.wrapSize
+    const s = window.mira, t = s.terrain, level = s.params.get('world.lavaAltitude').value, size = t.wrapSize
     let spot
     outer: for (let x = -size / 2 + 32; x < size / 2 - 32; x += 8) for (let z = -size / 2 + 32; z < size / 2 - 32; z += 8) {
       const d = level - t.heightAt(x, z)
@@ -47,10 +47,10 @@ try {
     if (after) await page.evaluate(after)
   }
   await shot('a-normal')
-  await shot('b-water-hidden', () => { window.syn3h.terrain.volcanics.group.visible = false }, () => { window.syn3h.terrain.volcanics.group.visible = true })
-  await shot('c-no-reflection', () => window.syn3h.params.set('water.reflection', 0), () => window.syn3h.params.set('water.reflection', 1))
-  await shot('d-sky-hidden', () => { const sky = window.syn3h.game.scene.children.find(o => o.sunDirection && o.betaR); window.isoSky = sky; sky.visible = false }, () => { window.isoSky.visible = true })
-  await shot('e-underwater-off', () => window.syn3h.params.set('water.underwater', false), () => window.syn3h.params.set('water.underwater', true))
+  await shot('b-water-hidden', () => { window.mira.terrain.volcanics.group.visible = false }, () => { window.mira.terrain.volcanics.group.visible = true })
+  await shot('c-no-reflection', () => window.mira.params.set('water.reflection', 0), () => window.mira.params.set('water.reflection', 1))
+  await shot('d-sky-hidden', () => { const sky = window.mira.game.scene.children.find(o => o.sunDirection && o.betaR); window.isoSky = sky; sky.visible = false }, () => { window.isoSky.visible = true })
+  await shot('e-underwater-off', () => window.mira.params.set('water.underwater', false), () => window.mira.params.set('water.underwater', true))
   await shot('f-up', () => { window.iso.pitch = 40 })
 } catch (e) { report.errors.push(String(e.stack || e)) } finally {
   writeFileSync(`${out}/report.json`, JSON.stringify(report, null, 2)); await browser.close()

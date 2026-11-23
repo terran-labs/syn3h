@@ -23,10 +23,10 @@ const url = new URL(origin); url.searchParams.set('room', room)
 report.navigationURL = url.href
 await checkpoint('navigation starting')
 await page.goto(url.href, { waitUntil: 'load', timeout: remaining(120000) })
-await ready(() => window.syn3h?.game.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: remaining(120000) })
+await ready(() => window.mira?.game.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: remaining(120000) })
 await page.locator('.galaxy-label[data-world="volcanic"]').click({ timeout: remaining(30000) })
-await ready(room => window.syn3h?.shell.playing && window.syn3h.shell.room === room &&
-  window.syn3hNet?.connected && window.syn3hNet.isHost && !window.syn3h.game.input.suspended,
+await ready(room => window.mira?.shell.playing && window.mira.shell.room === room &&
+  window.miraNet?.connected && window.miraNet.isHost && !window.mira.game.input.suspended,
   room, { timeout: remaining(120000) })
 assert.deepEqual(await roomStatus(), { rooms: 1, players: 1 })
 const expectedSocket = new URL('/ws', origin); expectedSocket.protocol = 'ws:'; expectedSocket.searchParams.set('room', room)
@@ -39,17 +39,17 @@ await evaluate(async () => {
   const { Bungee } = await import('/src/weapons/bungee/Bungee.ts')
   const { Game } = await import('/src/core/Game.ts')
   const { NetClient } = await import('/src/net/index.ts')
-  if (!(window.syn3hNet.bungee instanceof Bungee) || !(window.syn3h.game instanceof Game) || !(window.syn3hNet instanceof NetClient))
+  if (!(window.miraNet.bungee instanceof Bungee) || !(window.mira.game instanceof Game) || !(window.miraNet instanceof NetClient))
     throw new Error('runtime objects do not match verified module classes')
   const { warmStats } = await import('/src/weapons/warm.ts')
-  window.__terrainWarm = () => warmStats(window.syn3h.game)
+  window.__terrainWarm = () => warmStats(window.mira.game)
 })
 report.parameterSetup = []
 for (const [id, requested] of Object.entries({ 'gfx.auto': false, 'bots.canDrive': false,
   'bots.tagBeams': false, 'bots.count': 0, 'bungee.allowed': true, 'bungee.timeout': 0, 'bungee.length': intendedReach })) {
   const receipt = await evaluate(async ({ id, requested }) => {
     const { sanitize } = await import('/shared/params.ts')
-    const p = window.syn3h.params, parameter = p.get(id)
+    const p = window.mira.params, parameter = p.get(id)
     const result = { id, requested, before: parameter?.value ?? null, expected: null,
       effective: parameter?.value ?? null, changed: null, error: null,
       domain: parameter ? { default: parameter.def.default, min: parameter.def.min ?? null, max: parameter.def.max ?? null } : null }
@@ -76,20 +76,20 @@ await verifyBrowserEvidence('entered real app before native gameplay')
 await checkpoint('joined exact room and verified actual app modules')
 const settle = async level => {
   await evaluate(level => {
-    const s = window.syn3h
-    if (s.game.isPaused) { window.syn3hNet.bungee.reset(); s.player.body.setGravityScale(1, true); s.game.resume() }
+    const s = window.mira
+    if (s.game.isPaused) { window.miraNet.bungee.reset(); s.player.body.setGravityScale(1, true); s.game.resume() }
     if (!s.params.get('gfx.quality')) throw new Error('unknown quality parameter')
     s.params.set('gfx.quality', level)
     window.__qualityStartFrame = s.game.frames
   }, level)
   await ready(level => {
-    const s = window.syn3h, warm = window.__terrainWarm()
+    const s = window.mira, warm = window.__terrainWarm()
     return s.params.get('gfx.quality')?.value === level && s.game.quality.appliedLevel === level &&
       !s.game.quality.isLoading && s.game.frames > window.__qualityStartFrame + 8 &&
-      warm?.left === 0 && warm.frames > 0 && window.syn3hNet.bungee.look.segments === (level === 0 ? 12 : 24)
+      warm?.left === 0 && warm.frames > 0 && window.miraNet.bungee.look.segments === (level === 0 ? 12 : 24)
   }, level, { timeout: remaining(120000) })
-  return evaluate(() => ({ quality: window.syn3h.params.get('gfx.quality').value,
-    applied: window.syn3h.game.quality.appliedLevel, frames: window.syn3h.game.frames, warm: window.__terrainWarm() }))
+  return evaluate(() => ({ quality: window.mira.params.get('gfx.quality').value,
+    applied: window.mira.game.quality.appliedLevel, frames: window.mira.game.frames, warm: window.__terrainWarm() }))
 }
 report.initialWarm = await settle(3)
 
@@ -97,7 +97,7 @@ report.initialWarm = await settle(3)
 // ticks, altered gravity or camera assignment. This is desktop automation only.
 await bounded(page.keyboard.press('Digit1'), 5000, 'native keyboard press')
 const canvasPoint = await evaluate(() => {
-  const canvas = window.syn3h.game.canvas, rect = canvas.getBoundingClientRect()
+  const canvas = window.mira.game.canvas, rect = canvas.getBoundingClientRect()
   for (const fy of [0.5, 0.65, 0.35, 0.8]) for (const fx of [0.5, 0.65, 0.35, 0.8]) {
     const x = rect.left + rect.width * fx, y = rect.top + rect.height * fy
     if (x > 0 && y > 0 && x < innerWidth && y < innerHeight && document.elementFromPoint(x, y) === canvas)
@@ -106,43 +106,43 @@ const canvasPoint = await evaluate(() => {
   throw new Error('no exposed game canvas point')
 })
 await checkpoint('exposed canvas point selected', { canvasPoint })
-assert.ok(await evaluate(({ x, y }) => document.elementFromPoint(x, y) === window.syn3h.game.canvas, canvasPoint), 'canvas must still own native click point')
+assert.ok(await evaluate(({ x, y }) => document.elementFromPoint(x, y) === window.mira.game.canvas, canvasPoint), 'canvas must still own native click point')
 await bounded(page.mouse.click(canvasPoint.x, canvasPoint.y), 5000, 'native exposed canvas click')
-await ready(() => document.pointerLockElement === window.syn3h.game.canvas)
+await ready(() => document.pointerLockElement === window.mira.game.canvas)
 await bounded(page.keyboard.press('Digit4'), 5000, 'native keyboard press')
 await bounded(page.mouse.move(canvasPoint.x, Math.min(780, canvasPoint.y + 320), { steps: 12 }), 5000, 'native aim movement')
 await ready(async intendedReach => {
   const { aimFrom } = await import('/src/weapons/aim.ts')
   const { BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD } = await import('/src/weapons/bungee/Bungee.ts')
-  const s = window.syn3h, effectiveReach = s.params.get('bungee.length')?.value
+  const s = window.mira, effectiveReach = s.params.get('bungee.length')?.value
   if (!Number.isFinite(effectiveReach) || effectiveReach !== intendedReach) throw new Error('native aim reach differs from declared setup')
   const aim = aimFrom(s.game, s.player.body, effectiveReach, BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD, 0.12)
-  return window.syn3hNet.gear.current === 'bungee' && aim.point && aim.handle === null && aim.o.distanceTo(aim.point) > 5
+  return window.miraNet.gear.current === 'bungee' && aim.point && aim.handle === null && aim.o.distanceTo(aim.point) > 5
 }, intendedReach, { timeout: remaining(30000) })
 await checkpoint('native aim ready')
-const nativeBefore = await evaluate(() => ({ tick: window.syn3h.game.tick, stats: { ...window.syn3hNet.bungee.stats } }))
+const nativeBefore = await evaluate(() => ({ tick: window.mira.game.tick, stats: { ...window.miraNet.bungee.stats } }))
 await held('KeyL', async () => {
-  await ready(() => window.syn3hNet.bungee.attached, null, { timeout: 15000 })
+  await ready(() => window.miraNet.bungee.attached, null, { timeout: 15000 })
 })
-const attached = await evaluate(() => ({ tick: window.syn3h.game.tick, stats: { ...window.syn3hNet.bungee.stats },
-  at: window.syn3hNet.bungee.mine?.at?.toArray(), rest: window.syn3hNet.bungee.mine?.rest }))
+const attached = await evaluate(() => ({ tick: window.mira.game.tick, stats: { ...window.miraNet.bungee.stats },
+  at: window.miraNet.bungee.mine?.at?.toArray(), rest: window.miraNet.bungee.mine?.rest }))
 await checkpoint('native attached', { nativeBefore, attached })
 assert.equal(attached.stats.launched, nativeBefore.stats.launched + 1, 'one native launch')
 assert.ok(attached.at && attached.tick > nativeBefore.tick, 'normal simulation attached to terrain')
 await page.screenshot({ timeout: remaining(10000), path: `${out}/native-attached.png` })
 await held('KeyV', async () => {
-  await ready(rest => window.syn3hNet.bungee.mine?.rest > rest + 3, attached.rest, { timeout: 10000 })
+  await ready(rest => window.miraNet.bungee.mine?.rest > rest + 3, attached.rest, { timeout: 10000 })
 })
-const extended = await evaluate(() => ({ rest: window.syn3hNet.bungee.mine.rest, time: window.syn3h.game.time }))
-await ready(time => window.syn3h.game.time > time + 0.6, extended.time)
+const extended = await evaluate(() => ({ rest: window.miraNet.bungee.mine.rest, time: window.mira.game.time }))
+await ready(time => window.mira.game.time > time + 0.6, extended.time)
 await held('KeyL', async () => {
-  await ready(rest => window.syn3hNet.bungee.mine?.rest < rest - 1, extended.rest, { timeout: 10000 })
+  await ready(rest => window.miraNet.bungee.mine?.rest < rest - 1, extended.rest, { timeout: 10000 })
   await page.screenshot({ timeout: remaining(10000), path: `${out}/native-reeling.png` })
 })
 report.native = { scope: 'trusted automated desktop input, normal loop and camera; not physical touch', before: nativeBefore, attached, extended,
-  after: await evaluate(() => ({ rest: window.syn3hNet.bungee.mine?.rest, stats: { ...window.syn3hNet.bungee.stats }, tick: window.syn3h.game.tick })) }
+  after: await evaluate(() => ({ rest: window.miraNet.bungee.mine?.rest, stats: { ...window.miraNet.bungee.stats }, tick: window.mira.game.tick })) }
 report.native.contact = await evaluate(() => {
-  const s = window.syn3h, b = window.syn3hNet.bungee, c = b.mine, t = s.terrain
+  const s = window.mira, b = window.miraNet.bungee, c = b.mine, t = s.terrain
   if (!c?.at) throw new Error('native terrain anchor missing')
   const V = s.player.object.position.constructor, n = b.look.segments
   const pos = b.look.cord.geometry.getAttribute('position'), base = c.slot * 50
@@ -176,11 +176,11 @@ for (const key of ['vehicleGap', 'anchorGap']) {
   if (report.native.contact[key] > 0.02) failures.push(`native: ${key} ${report.native.contact[key]} exceeds 0.02 m`)
 }
 await bounded(page.keyboard.press('KeyG'), 5000, 'native keyboard press')
-await ready(() => !window.syn3hNet.bungee.mine)
+await ready(() => !window.miraNet.bungee.mine)
 await evaluate(() => document.exitPointerLock())
 
 await evaluate(() => {
-  const s = window.syn3h, b = window.syn3hNet.bungee, t = s.terrain
+  const s = window.mira, b = window.miraNet.bungee, t = s.terrain
   // Discover diagnostic locations without stopping normal warm-up.
   window.__groundSurface = b.hooks.surface
   const ground = (x, z) => Math.max(t.heightAt(x, z), t.liquidHeightAt?.(x, z) ?? -Infinity)
@@ -209,7 +209,7 @@ const capture = async (name, fixture, level, fixed = true, contactMode = 'valid-
   await checkpoint('diagnostic intent before generation', { diagnosticIntent: { name, fixture, level, fixed, contactMode } })
   const warm = await settle(level)
   const prepared = await evaluate(async ({ fixture, level, fixed, contactMode }) => {
-    const s = window.syn3h, b = window.syn3hNet.bungee, t = s.terrain, f = window.__groundFixtures[fixture]
+    const s = window.mira, b = window.miraNet.bungee, t = s.terrain, f = window.__groundFixtures[fixture]
     s.game.pause() // diagnostic only; the effective quality and warm gate ran on normal frames
     const V = s.player.object.position.constructor
     if (!t.renderHeightAt) throw new Error('rendered terrain sampler required')
@@ -261,7 +261,7 @@ const capture = async (name, fixture, level, fixed = true, contactMode = 'valid-
   }, { fixture, level, fixed, contactMode })
   await checkpoint('diagnostic contacts before cord generation', { contactSetup: prepared })
   const result = await evaluate(async ({ fixture, level, fixed, contactMode }) => {
-    const s = window.syn3h, b = window.syn3hNet.bungee, t = s.terrain
+    const s = window.mira, b = window.miraNet.bungee, t = s.terrain
     const V = s.player.object.position.constructor, surface = window.__groundSurface
     const { a, end, midpoint, span, lodBefore, contactSetup, f } = window.__preparedContact
     if (contactSetup.mode !== contactMode || JSON.stringify(t.meshes.stats(s.game.camera)) !== JSON.stringify(lodBefore))
@@ -272,7 +272,7 @@ const capture = async (name, fixture, level, fixed = true, contactMode = 'valid-
     if (Math.abs(selectedHeight - contactSetup.anchor.surface) > 1e-8)
       throw new Error('contact surface changed before generation')
     b.reset()
-    const c = b.makeCord(window.syn3hNet.id)
+    const c = b.makeCord(window.miraNet.id)
     c.at = b.canonical3(end); c.rest = f.slack ? a.distanceTo(end) + 40 : Math.max(4, a.distanceTo(end) * 0.7)
     const unchangedAnchor = c.at.toArray()
     c.twang = 0; c.since = s.game.time - 5; c.pull = f.slack ? 0 : 10000; c.mass = 1

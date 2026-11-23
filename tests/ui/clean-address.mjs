@@ -1,11 +1,12 @@
 // The public room never appears as ?room= anywhere a person can see or copy.
-//   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/ui/clean-address.mjs
+//   MIRA_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/ui/clean-address.mjs
 // Needs the dev room server behind vite's /ws proxy. One browser, closed at the end.
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 
-const base = process.env.SYN3H_URL
-assert.ok(base, 'SYN3H_URL is required')
+const base = process.env.MIRA_URL
+assert.ok(base, 'MIRA_URL is required')
 const results = []
 const pass = name => { results.push(name); console.log(`ok  ${name}`) }
 const roomOf = href => new URL(href).searchParams.get('room')
@@ -24,12 +25,12 @@ try {
     }
   })
   const addresses = () => page.evaluate(() => window.__addresses)
-  const booted = () => page.waitForFunction(() => window.syn3h?.game.tick > 10 && window.syn3h.shell, null, { timeout: 120000 })
+  const booted = () => page.waitForFunction(() => window.mira?.game.tick > 10 && window.mira.shell, null, { timeout: 120000 })
   const enter = async () => {
-    await page.evaluate(() => syn3h.shell.play())
-    await page.waitForFunction(() => syn3h.shell.playing && window.syn3hNet?.connected, null, { timeout: 120000 })
+    await page.evaluate(() => mira.shell.play())
+    await page.waitForFunction(() => mira.shell.playing && window.miraNet?.connected, null, { timeout: 120000 })
   }
-  const world = () => page.evaluate(() => ({ seed: syn3h.params.get('world.seed').value, planet: syn3h.planets.currentPlanet().id }))
+  const world = () => page.evaluate(() => ({ seed: mira.params.get('world.seed').value, planet: mira.planets.currentPlanet().id }))
   /** The string the QR encodes: read the rendered modules and find the text whose encoding they are. */
   const qrText = () => page.evaluate(async () => {
     const svg = document.querySelector('.join-view .invite-qr svg'), d = svg.querySelector('path').getAttribute('d')
@@ -49,16 +50,16 @@ try {
   // 2. Entering a world in the public room adds no room parameter. Pick a world that is not the
   // default, so the reload below cannot pass by landing on the default world.
   const seed = 1000 + Math.floor(Math.random() * 90000)
-  await page.evaluate(seed => syn3h.planets.applyPlanet('alpine', seed), seed)
+  await page.evaluate(seed => mira.planets.applyPlanet('alpine', seed), seed)
   await enter()
   assert.deepEqual(await world(), { seed, planet: 'alpine' }, 'the empty public room took this world')
   assert.equal(roomOf(page.url()), null, page.url())
-  assert.equal(await page.evaluate(() => syn3hNet.ctx.room), 'lobby', 'still joins the public room internally')
+  assert.equal(await page.evaluate(() => miraNet.ctx.room), 'lobby', 'still joins the public room internally')
   const before = await world()
   pass(`entering a world in the public room leaves no room parameter (${page.url()})`)
 
   // 4. Invite: link and QR without a room parameter, described in words.
-  await page.evaluate(() => syn3h.shell.openJoin())
+  await page.evaluate(() => mira.shell.openJoin())
   const invite = await qrText()
   assert.equal(roomOf(invite.shown), null, invite.shown)
   assert.equal(invite.decoded, invite.shown, 'QR encodes exactly the shown link')
@@ -67,7 +68,7 @@ try {
   assert.equal(words.room, 'Public room'); assert.doesNotMatch(words.h1 + words.room, /lobby/i)
   pass(`invite link and decoded QR have no room parameter (${invite.decoded}; "${words.h1}", "${words.room}")`)
   await page.keyboard.press('Escape').catch(() => {})
-  await page.evaluate(() => syn3h.shell.invite?.hide?.())
+  await page.evaluate(() => mira.shell.invite?.hide?.())
 
   // 3. Reloading in the world returns to the same world (the tab's saved session).
   await page.waitForTimeout(2500)
@@ -83,7 +84,7 @@ try {
   await page.goto(`${base}?room=lobby&world=volcanic.1`); await booted()
   assert.equal(roomOf(page.url()), null, page.url())
   await enter()
-  assert.equal(await page.evaluate(() => syn3hNet.ctx.room), 'lobby')
+  assert.equal(await page.evaluate(() => miraNet.ctx.room), 'lobby')
   assert.equal(roomOf(page.url()), null, page.url())
   assert.equal((await addresses()).filter(href => roomOf(href) !== null).length, 1, 'only the typed entry address had it')
   pass('an old ?room=lobby link joins the public room and cleans the address')
@@ -91,10 +92,10 @@ try {
   // 6. Owner flags never bring room=lobby back, through play, invite, menu and back.
   await page.goto(`${base}?wordmark=7&intro=2`); await booted()
   await enter()
-  await page.evaluate(() => syn3h.shell.openJoin())
+  await page.evaluate(() => mira.shell.openJoin())
   const flagged = await qrText()
-  await page.evaluate(() => { syn3h.shell.invite?.hide?.(); syn3h.shell.openMenu() })
-  await page.evaluate(() => syn3h.shell.closeMenu())
+  await page.evaluate(() => { mira.shell.invite?.hide?.(); mira.shell.openMenu() })
+  await page.evaluate(() => mira.shell.closeMenu())
   const seen = await addresses()
   assert.ok(seen.every(href => roomOf(href) === null), seen.join('\n'))
   assert.equal(new URL(page.url()).searchParams.get('wordmark'), '7')
@@ -106,7 +107,7 @@ try {
   await page.goto(`${base}?room=${party}`); await booted()
   await enter()
   assert.equal(roomOf(page.url()), party)
-  await page.evaluate(() => syn3h.shell.openJoin())
+  await page.evaluate(() => mira.shell.openJoin())
   const privateInvite = await qrText()
   assert.equal(roomOf(privateInvite.decoded), party)
   assert.equal(await page.locator('.join-view .join-room').textContent(), party)
@@ -117,7 +118,7 @@ try {
   assert.equal(new URL(page.url()).search, '', 'lobby itself is clean')
   await enter()
   assert.equal(new URL(page.url()).searchParams.get('v'), '26.11.1605')
-  await page.evaluate(() => syn3h.shell.openJoin())
+  await page.evaluate(() => mira.shell.openJoin())
   const pinned = await qrText()
   assert.equal(new URL(pinned.decoded).searchParams.get('v'), '26.11.1605')
   assert.equal(roomOf(pinned.decoded), null)

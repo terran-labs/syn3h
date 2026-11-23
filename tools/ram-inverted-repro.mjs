@@ -18,12 +18,13 @@
  * reported as a miss, not a failure.
  *
  *   PORT=8791 npm run server
- *   SYN3H_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
+ *   MIRA_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
  *   node tools/ram-inverted-repro.mjs
  *
  * Each player gets its own browser process: two pages in one headless Chrome starve each
  * other's frame loop.
  */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright-core'
 
@@ -42,8 +43,8 @@ async function open(name) {
   const page = await (await br.newContext({ viewport: { width: 640, height: 360 } })).newPage()
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`))
   await page.goto(`http://localhost:5183/?room=${room}&name=${name}&autoplay=1`)
-  await page.waitForFunction(() => window.syn3h?.shell && window.syn3hNet?.connected, null, { timeout: 60000 })
-  await page.evaluate(() => { window.syn3h.shell.play(); window.syn3h.params.set('gfx.level', 0) })
+  await page.waitForFunction(() => window.mira?.shell && window.miraNet?.connected, null, { timeout: 60000 })
+  await page.evaluate(() => { window.mira.shell.play(); window.mira.params.set('gfx.level', 0) })
   return page
 }
 
@@ -53,10 +54,10 @@ const rows = []
 try {
   const a = await open('A')
   const b = await open('B')
-  await a.waitForFunction(() => window.syn3hNet.remotes.size === 1, null, { timeout: 20000 })
+  await a.waitForFunction(() => window.miraNet.remotes.size === 1, null, { timeout: 20000 })
   // The flattest dry 125 m line near the origin: 30 m/s needs a long run up.
   const runway = await a.evaluate(() => {
-    const t = window.syn3h.terrain
+    const t = window.mira.terrain
     let best = null
     for (let ox = -160; ox <= 160; ox += 40) for (let oz = -160; oz <= 160; oz += 40) for (let k = 0; k < 16; k++) {
       const h = (k / 16) * Math.PI * 2
@@ -73,7 +74,7 @@ try {
     return best
   })
   const place = (page, s, heading) => page.evaluate(({ runway, s, heading }) => {
-    const { terrain, player } = window.syn3h
+    const { terrain, player } = window.mira
     const f = [-Math.sin(runway.h), -Math.cos(runway.h)]
     const x = runway.ox + f[0] * s, z = runway.oz + f[1] * s
     player.teleport(player.object.position.clone().set(x, terrain.heightAt(x, z) + 1.2, z), runway.h + heading)
@@ -81,12 +82,12 @@ try {
   /** Hold A at `target` m/s, steering at the point `s` metres down the runway (0 lets go). */
   const cruise = (target, s = 0) => a.evaluate(({ target, s, runway }) => {
     clearInterval(window.__cruise)
-    const e = window.syn3h.game.input.external
+    const e = window.mira.game.input.external
     e.y = 0; e.x = 0
     if (!target) return
     const bx = runway.ox - Math.sin(runway.h) * s, bz = runway.oz - Math.cos(runway.h) * s
     window.__cruise = setInterval(() => {
-      const body = window.syn3h.player.body
+      const body = window.mira.player.body
       const v = body.linvel(), p = body.translation(), q = body.rotation()
       e.y = Math.hypot(v.x, v.z) < target ? 1 : 0
       // Forward is -Z. Steer by the cross product of forward and the bearing to the target;
@@ -97,7 +98,7 @@ try {
     }, 20)
   }, { target, s, runway })
   const state = () => a.evaluate(() => {
-    const { player, terrain } = window.syn3h
+    const { player, terrain } = window.mira
     const p = player.body.translation(), v = player.body.linvel(), q = player.body.rotation()
     return {
       t: Date.now(), inverted: player.isInverted, ride: +(p.y - terrain.heightAt(p.x, p.z)).toFixed(2), speed: +Math.hypot(v.x, v.z).toFixed(1),
@@ -105,17 +106,17 @@ try {
     }
   })
 
-  const kind = await a.evaluate(() => window.syn3h.player.kind)
+  const kind = await a.evaluate(() => window.mira.player.kind)
   console.log(`vehicle ${kind}, runway height range ${runway.range.toFixed(2)} m`)
   const speeds = (process.env.SPEEDS ?? '10,20,30').split(',').map(Number)
   const reps = Number(process.env.REPS ?? 2)
   for (const speed of speeds) for (const side of [false, true]) for (let rep = 0; rep < reps; rep++) {
     await cruise(0)
     const gap = speed > 22 ? 115 : 50
-    await place(a, 0, 0); await b.evaluate(() => { window.syn3h.game.input.external.y = 0 }); await place(b, gap, side ? Math.PI / 2 : 0)
+    await place(a, 0, 0); await b.evaluate(() => { window.mira.game.input.external.y = 0 }); await place(b, gap, side ? Math.PI / 2 : 0)
     await wait(3500)
     const rest = await state()
-    const before = await a.evaluate(() => window.syn3hNet.stats.rams)
+    const before = await a.evaluate(() => window.miraNet.stats.rams)
     await cruise(speed, gap)
     let impact = 0
     const deadline = Date.now() + 20000
@@ -123,7 +124,7 @@ try {
     while (Date.now() < deadline && !rammed) {
       const s = await state()
       impact = Math.max(impact, s.speed)
-      rammed = await a.evaluate((n) => window.syn3hNet.stats.rams > n, before)
+      rammed = await a.evaluate((n) => window.miraNet.stats.rams > n, before)
       if (!rammed) await wait(30)
     }
     await cruise(0)
@@ -140,10 +141,10 @@ try {
       await wait(100)
     }
     const go = async (y, ms) => {
-      await a.evaluate((y) => { window.syn3h.game.input.external.y = y }, y)
+      await a.evaluate((y) => { window.mira.game.input.external.y = y }, y)
       let top = 0
       for (const end = Date.now() + ms; Date.now() < end; await wait(100)) top = Math.max(top, (await state()).speed)
-      await a.evaluate(() => { window.syn3h.game.input.external.y = 0 })
+      await a.evaluate(() => { window.mira.game.input.external.y = 0 })
       return top
     }
     const forward = await go(1, 1500)

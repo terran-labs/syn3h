@@ -1,11 +1,11 @@
 /**
- * Traces the Syn3h wordmark out of the legacy logo bitmap into one SVG path, so the lobby
+ * Traces the Mira wordmark out of the legacy logo bitmap into one SVG path, so the lobby
  * can draw the logo as a vector and colour, light and animate it in CSS. Run once; the
  * output is committed. The legacy bitmap bakes in a 2010 star and glow, so the letters are
  * found as "opaque and dark", then contoured with marching squares at sub-pixel precision
  * and simplified.
  *
- *   node tools/brand/trace-logo.mjs /path/to/original-syn3h.png src/ui/brand/wordmarkPath.ts
+ *   node tools/brand/trace-logo.mjs /path/to/original-mira.png src/ui/brand/wordmarkPath.ts
  *
  * Needs ffmpeg to decode the PNG. No other dependencies.
  */
@@ -74,7 +74,7 @@ const n = v => String(Math.round(v * 10) / 10)
 const d = kept.map(loop => 'M' + loop.map(p => `${n(p[0] - x0)} ${n(p[1] - y0)}`).join('L') + 'Z').join('')
 const width = Math.ceil(x1 - x0), height = Math.ceil(y1 - y0)
 writeFileSync(output, `/**
- * The Syn3h wordmark as one vector path (fill-rule evenodd), traced from the legacy logo
+ * The Mira wordmark as one vector path (fill-rule evenodd), traced from the legacy logo
  * bitmap by tools/brand/trace-logo.mjs. Generated: edit the tool, not this file.
  */
 export const WORDMARK_WIDTH = ${width}

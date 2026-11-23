@@ -64,7 +64,7 @@ function placeOverlay(): void {
 }
 addEventListener('resize', placeOverlay); placeOverlay()
 toggle('SVG outline', false, on => { overlay.style.display = on ? '' : 'none' })
-button('Download SVG', () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([logoSvg({ ...mark.options, layout: 'card' })], { type: 'image/svg+xml' })); a.download = 'syn3h-logo.svg'; a.click() })
+button('Download SVG', () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([logoSvg({ ...mark.options, layout: 'card' })], { type: 'image/svg+xml' })); a.download = 'mira-logo.svg'; a.click() })
 
 const show = () => { const s = mark.stats; stats.textContent = `level ${level} · generated ${mark.generated} · particles ${s.particles} · triangles ${s.triangles} · draw calls ${s.drawCalls} · canvas ${mark.canvas.width}x${mark.canvas.height}` }
 show(); setInterval(show, 1000)

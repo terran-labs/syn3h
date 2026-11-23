@@ -54,7 +54,7 @@ const faceNormals = (t: Float32Array) => {
 const ref = loadReference(), shock = ref.shock.extras!.tops as number[]
 const tops = [0, 1, 2, 3].map(i => shock.slice(i * 3, i * 3 + 3))
 const sockets = ref.sockets.positions
-/** Wheels at rest (LoadedBuggySkin LAYOUT.rest) and the driver's eye (Syn3hBuggy RIDE_HEIGHT). */
+/** Wheels at rest (LoadedBuggySkin LAYOUT.rest) and the driver's eye (MiraBuggy RIDE_HEIGHT). */
 const WHEELS = [[1.1, -.2, -1.3], [1.1, -.2, 1.3]], EYE = [0, .8, 0]
 const base = soup(defaultShape()), baseN = faceNormals(base)
 

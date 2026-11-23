@@ -3,7 +3,7 @@ import { RECIPE_IDS, recipeIdForLook, type RecipeId } from '../../../shared/reci
 import { exportWorld, parseWorld, type WorldJson } from '../inspector/model'
 import { worldName } from '../../world/worldName'
 
-export const SAVED_WORLDS_KEY = 'syn3h.savedWorlds.v1'
+export const SAVED_WORLDS_KEY = 'mira.savedWorlds.v1'
 export const SAVED_WORLDS_MAX = 12
 const MAX_BYTES = 512 * 1024
 export interface SavedWorld { id: string; savedAt: number; recipeId: RecipeId; seed: number; world: WorldJson }
@@ -31,7 +31,7 @@ export function readSavedWorlds(raw: string | null, defs: readonly ParamDef[]): 
     seen.add(item.id)
     if (typeof item.savedAt !== 'number' || !Number.isSafeInteger(item.savedAt) || item.savedAt < 0 || !RECIPE_IDS.includes(item.recipeId as RecipeId) || typeof item.seed !== 'number' || !Number.isInteger(item.seed) || item.seed < 1 || item.seed > 999999) throw new Error('A saved world has invalid recipe or seed metadata.')
     const world = item.world
-    if (!object(world) || world.syn3h !== 'world' || world.version !== 1 || !object(world.values) || Object.keys(world.values).length > 2000) throw new Error('A saved world has an unsupported snapshot format.')
+    if (!object(world) || world.mira !== 'world' || world.version !== 1 || !object(world.values) || Object.keys(world.values).length > 2000) throw new Error('A saved world has an unsupported snapshot format.')
     for (const [id, value] of Object.entries(world.values)) {
       const def = byId.get(id)
       if (!def || def.scope !== 'world') continue
@@ -42,7 +42,7 @@ export function readSavedWorlds(raw: string | null, defs: readonly ParamDef[]): 
     if (!parsed.ok || parsed.kind !== 'world') throw new Error('The saved world cannot be read.')
     adjusted ||= parsed.skipped.length > 0 || parsed.entries.some(entry => entry.adjusted)
     const values = Object.fromEntries(parsed.entries.map(entry => [entry.id, entry.value]))
-    return { id: item.id, savedAt: item.savedAt, recipeId: item.recipeId as RecipeId, seed: item.seed, world: { syn3h: 'world', version: 1, values } }
+    return { id: item.id, savedAt: item.savedAt, recipeId: item.recipeId as RecipeId, seed: item.seed, world: { mira: 'world', version: 1, values } }
   })
   return { entries, notice: adjusted ? 'Saved worlds were adjusted to the available settings.' : undefined }
 }

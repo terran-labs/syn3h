@@ -6,7 +6,7 @@
  * Injects, right after main builds the shell, the three lines the Vehicles lane will add for
  * real: construct Materialize with the synthesized swoosh, materialize the player at spawn,
  * and expose it. Press M in game to materialize the player again where it stands.
- * `window.syn3hMaterialize` is the instance, for the console.
+ * `window.miraMaterialize` is the instance, for the console.
  */
 import {mergeConfig,type Plugin} from 'vite'
 import base from './vite.config'
@@ -20,7 +20,7 @@ const inject:Plugin={
       `const materialize = game.add(new Materialize(game, terrain, { onCue: (cue, position, hold) => { if (cue === 'materializeStart') audio.play('materialize', position, { seconds: hold }) } }))`,
       `void materialize.prewarm()`,
       `materialize.begin(player)`,
-      `Object.assign(window, { syn3hMaterialize: materialize })`,
+      `Object.assign(window, { miraMaterialize: materialize })`,
       `addEventListener('keydown', e => { if (e.code === 'KeyM' && !e.repeat) materialize.begin(player) })`,
     ]
     return {code:"import {Materialize} from './vehicles/effects/Materialize';\n"+code.replace(anchor,anchor+'\n  '+lines.join('\n  ')),map:null}

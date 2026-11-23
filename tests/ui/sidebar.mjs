@@ -5,7 +5,8 @@
 // Close panels, or on a phone with one panel open that panel's X, while they are open); motion
 // played under reduced motion. Layout (sizes, order, rows) is the owner's to tune and is not
 // pinned here; touch layout lives in phone-panels.mjs. Also: a bot's row without the bot mark.
-//   SYN3H_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/sidebar.mjs
+//   MIRA_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/sidebar.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 
@@ -19,10 +20,10 @@ for (const mode of ['desktop', 'phone']) {
   try {
     const page = await browser.newPage(touch ? devices['iPhone 14'] : { viewport: { width: 1440, height: 1000 } })
     const errors = []; page.on('pageerror', e => errors.push(e.message))
-    await page.goto(`${process.env.SYN3H_URL}?autoplay=1&room=sidebar-${mode}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.goto(`${process.env.MIRA_URL}?autoplay=1&room=sidebar-${mode}-${Date.now()}`)
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
-    await page.waitForFunction(() => document.querySelector('.syn3h-shell')?.classList.contains('is-playing') && !document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 120000 })
+    await page.waitForFunction(() => document.querySelector('.mira-shell')?.classList.contains('is-playing') && !document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 120000 })
     await page.waitForTimeout(800)
     const rail = page.locator('.world-inspector')
     const press = locator => touch ? locator.tap() : locator.click()
@@ -46,7 +47,7 @@ for (const mode of ['desktop', 'phone']) {
     // Every section is there, and survives a rebuild of the parameter registry.
     const present = () => page.locator('.wi-cards > [data-section]').evaluateAll(es => es.map(e => e.dataset.section).sort())
     assert.deepEqual(await present(), [...SECTIONS].sort(), `${mode}: every section is in the panels`)
-    await page.evaluate(() => syn3h.shell.inspector.rebuild())
+    await page.evaluate(() => mira.shell.inspector.rebuild())
     assert.deepEqual(await present(), [...SECTIONS].sort(), `${mode}: every section survives a registry rebuild`)
 
     // Search finds each section, and the vehicle controls by what a player would type.
@@ -65,10 +66,10 @@ for (const mode of ['desktop', 'phone']) {
     }
 
     // Reset world asks before it wipes anything.
-    const seedBefore = await page.evaluate(() => syn3h.params.get('world.seed').value)
-    await page.evaluate(() => { syn3h.params.set('world.seed', 4242, 'local'); document.querySelector('.wi-card[data-section=world] [data-wi=reset]').click() })
-    assert.equal(await page.evaluate(() => syn3h.params.get('world.seed').value), 4242, `${mode}: one press on Reset world only asks`)
-    await page.evaluate(seed => syn3h.params.set('world.seed', seed, 'local'), seedBefore)
+    const seedBefore = await page.evaluate(() => mira.params.get('world.seed').value)
+    await page.evaluate(() => { mira.params.set('world.seed', 4242, 'local'); document.querySelector('.wi-card[data-section=world] [data-wi=reset]').click() })
+    assert.equal(await page.evaluate(() => mira.params.get('world.seed').value), 4242, `${mode}: one press on Reset world only asks`)
+    await page.evaluate(seed => mira.params.set('world.seed', seed, 'local'), seedBefore)
 
     // A card opens from its header. On a desktop it is still open after the panels close and
     // reopen; on a phone Show panels always opens the list (the owner, 19 November 2026,
@@ -78,16 +79,16 @@ for (const mode of ['desktop', 'phone']) {
     assert.ok(open.includes('you'), `${mode}: a card opens from its header (${JSON.stringify(open)})`)
     if (touch) { await closePanels(); await openPanels() }
     else {
-      await page.evaluate(() => { const i = syn3h.shell.inspector; i.open = false; i.open = true }); await settled(page)
+      await page.evaluate(() => { const i = mira.shell.inspector; i.open = false; i.open = true }); await settled(page)
       assert.deepEqual(await openSections(page), open, `${mode}: open cards survive closing the panels`)
     }
 
     // A bot's row in Players & session carries the bot mark, and no row spells out "bot".
     if (!touch) {
-      await page.waitForFunction(() => [...(window.syn3hNet?.players?.values() ?? [])].some(p => p.bot), null, { timeout: 60000 })
-      await page.evaluate(() => syn3h.shell.inspector.revealCard('players')); await settled(page)
+      await page.waitForFunction(() => [...(window.miraNet?.players?.values() ?? [])].some(p => p.bot), null, { timeout: 60000 })
+      await page.evaluate(() => mira.shell.inspector.revealCard('players')); await settled(page)
       const rows = await page.evaluate(() => {
-        const bots = new Set([...syn3hNet.players.values()].filter(p => p.bot).map(p => syn3hNet.displayName(p.id)))
+        const bots = new Set([...miraNet.players.values()].filter(p => p.bot).map(p => miraNet.displayName(p.id)))
         return [...document.querySelectorAll('.wi-card[data-section=players] .score-row')].map(r => { const n = r.querySelector('.score-name'); return { bot: bots.has(n.dataset.name ?? n.title), mark: !!n.querySelector('svg.bot-mark[aria-label=Bot]'), text: r.textContent } })
       })
       assert.ok(rows.some(r => r.bot), `${mode}: a bot is listed in Players & session (${JSON.stringify(rows)})`)
@@ -97,15 +98,15 @@ for (const mode of ['desktop', 'phone']) {
 
     // Pause pauses, and the veil resumes.
     await press(header.locator('.rail-pause'))
-    await page.waitForFunction(() => syn3h.game.input.suspended)
+    await page.waitForFunction(() => mira.game.input.suspended)
     await page.locator('.pause-veil').click()
-    await page.waitForFunction(() => !syn3h.game.input.suspended)
+    await page.waitForFunction(() => !mira.game.input.suspended)
 
     // Reduced motion: the panels appear without animating. (On a phone Resume returns to
     // driving, closing the panels; they are opened again with the Panels button.)
     await page.emulateMedia({ reducedMotion: 'reduce' })
     if (touch) { await rail.waitFor({ state: 'hidden' }); await press(page.locator('.inspector-toggle')); await rail.waitFor({ state: 'visible' }) }
-    else await page.evaluate(() => { const i = syn3h.shell.inspector; i.open = false; i.open = true })
+    else await page.evaluate(() => { const i = mira.shell.inspector; i.open = false; i.open = true })
     assert.equal(await rail.evaluate(el => el.getAnimations().length), 0, `${mode}: reduced motion skips the panels' animation`)
     assert.deepEqual(errors, [], `${mode}: no page errors`)
     console.log(`${mode}: sidebar ok`)

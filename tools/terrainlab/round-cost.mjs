@@ -17,17 +17,17 @@ const errors = []
 page.on('pageerror', (e) => errors.push(e.message))
 for (const size of sizes) {
   await page.goto(`${base}?autoplay=1&world=volcanic.7~terrain.planetSize=${size}&room=cost${Date.now().toString(36)}`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 60, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 60, null, { timeout: 90000 })
   await page.evaluate(() => {
-    const g = window.syn3h.game
+    const g = window.mira.game
     const orig = g.renderer.render.bind(g.renderer)
     window.__lift = 0
     g.renderer.render = (scene, cam) => { if (window.__lift) { cam.position.y += window.__lift; cam.lookAt(cam.position.x + 1, cam.position.y - window.__lift * 0.8, cam.position.z); cam.updateMatrixWorld() } return orig(scene, cam) }
   })
   const read = async (curve, lift) => {
-    await page.evaluate(([c, l]) => { window.syn3h.params.set('world.curve', c); window.__lift = l }, [curve, lift])
+    await page.evaluate(([c, l]) => { window.mira.params.set('world.curve', c); window.__lift = l }, [curve, lift])
     await page.waitForTimeout(2500)
-    return page.evaluate(() => { const i = window.syn3h.game.renderer.info.render; return `${i.drawCalls} draws, ${Math.round(i.triangles / 1000)}k triangles` })
+    return page.evaluate(() => { const i = window.mira.game.renderer.info.render; return `${i.drawCalls} draws, ${Math.round(i.triangles / 1000)}k triangles` })
   }
   console.log(`planet size ${size}:`)
   console.log(`  driver's seat   flat ${await read(0, 0)}   round ${await read(1, 0)}`)

@@ -1,8 +1,9 @@
 /** Explicit brand export. Ordinary builds use the committed platform fallbacks.
  * Run: npx tsx tools/brand/generate.ts [output-directory]
- * Requires installed Chrome, or SYN3H_CHROME pointing to a Chromium executable.
+ * Requires installed Chrome, or MIRA_CHROME pointing to a Chromium executable.
  * No bitmap inputs, network requests or game server required.
  */
+import '../lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -11,7 +12,7 @@ import { logoSvg, LOGO_STILLS } from '../../src/ui/brand/LogoMark'
 const directory = resolve(process.argv[2] ?? 'public/brand')
 const font = (await readFile(new URL('../../public/fonts/barlow-condensed-600-latin.woff2', import.meta.url))).toString('base64')
 const browser = await chromium.launch({
-  ...(process.env.SYN3H_CHROME ? { executablePath: process.env.SYN3H_CHROME } : { channel: 'chrome' }),
+  ...(process.env.MIRA_CHROME ? { executablePath: process.env.MIRA_CHROME } : { channel: 'chrome' }),
   headless: true,
 })
 const files = new Map<string, Buffer>()
@@ -30,11 +31,11 @@ try {
       if (!ctx) throw new Error('Canvas unavailable')
       ctx.drawImage(image, 0, 0)
       if (card) {
-        const face = new FontFace('Syn3h', `url(data:font/woff2;base64,${font})`)
+        const face = new FontFace('Mira', `url(data:font/woff2;base64,${font})`)
         await face.load(); document.fonts.add(face)
-        ctx.textAlign = 'center'; ctx.fillStyle = '#edf3ff'; ctx.font = '38px Syn3h'
+        ctx.textAlign = 'center'; ctx.fillStyle = '#edf3ff'; ctx.font = '38px Mira'
         ctx.fillText('Your galaxy awaits.', width / 2, 492)
-        ctx.fillStyle = '#a9bed9'; ctx.font = '23px Syn3h'
+        ctx.fillStyle = '#a9bed9'; ctx.font = '23px Mira'
         ctx.fillText('From the creator of Mars Explorer', width / 2, 550)
       }
       return canvas.toDataURL('image/png').split(',')[1]

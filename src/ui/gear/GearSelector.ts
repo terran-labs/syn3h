@@ -3,7 +3,7 @@
  * hand in its middle, its neighbours above and below fading out through a mask, and beside
  * it the controls that apply right now.
  *
- * It reads a gear rack through a small duck-typed source (the rack on window.syn3hNet.gear
+ * It reads a gear rack through a small duck-typed source (the rack on window.miraNet.gear
  * fits it) and, when the rack offers controls(), the gear's state, status and actions. It
  * never handles gameplay keys itself: keyboard, mouse, wheel and gamepad for gear actions
  * belong to the gear lane. Here we only draw hints and, on touch, give the extra actions

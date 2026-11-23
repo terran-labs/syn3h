@@ -1,4 +1,5 @@
 """Unix job slots. Roll out only after all previous shell wrappers have drained."""
+import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__))); import legacy_env  # noqa: E401,E702,F401  legacy environment names, see docs/NAMES.md
 import fcntl
 import os
 from pathlib import Path
@@ -8,9 +9,9 @@ import sys
 import time
 import uuid
 
-root = Path(os.environ.get('SYN3H_HEAVY_ROOT', '/tmp/syn3h-heavy-v2'))
+root = Path(os.environ.get('MIRA_HEAVY_ROOT', '/tmp/syn3h-heavy-v2'))
 root.mkdir(parents=True, exist_ok=True)
-slots = int(os.environ.get('SYN3H_HEAVY_SLOTS', '3'))
+slots = int(os.environ.get('MIRA_HEAVY_SLOTS', '3'))
 if slots < 1 or not sys.argv[1:]:
     sys.exit('heavy: a positive slot count and a command are required')
 
@@ -26,8 +27,8 @@ def hold_phase():
     starting, 'running' once release.sh runs. A hold without a phase (an older writer) is ''.
     It holds only while that process lives, so a crashed release cannot block anyone, and
     never once it is three hours old, so a dead PID recycled by some long-lived process cannot
-    either. The release's own jobs set SYN3H_HEAVY_RELEASE and are never held."""
-    if os.environ.get('SYN3H_HEAVY_RELEASE'):
+    either. The release's own jobs set MIRA_HEAVY_RELEASE and are never held."""
+    if os.environ.get('MIRA_HEAVY_RELEASE'):
         return None
     try:
         if time.time() - hold.stat().st_mtime > HOLD_MAX_AGE:
@@ -54,9 +55,9 @@ def env_slots(name, default):
 #   ''       0: a hold without a phase, from a wrapper that does not say, is a full hold.
 # A job already running is never stopped; only new ones wait.
 HELD_SLOTS = {
-    'gate': env_slots('SYN3H_HEAVY_GATE_SLOTS', '0'),
-    'running': env_slots('SYN3H_HEAVY_RUNNING_SLOTS', '1'),
-    '': env_slots('SYN3H_HEAVY_HELD_SLOTS', '0'),
+    'gate': env_slots('MIRA_HEAVY_GATE_SLOTS', '0'),
+    'running': env_slots('MIRA_HEAVY_RUNNING_SLOTS', '1'),
+    '': env_slots('MIRA_HEAVY_HELD_SLOTS', '0'),
 }
 
 while True:

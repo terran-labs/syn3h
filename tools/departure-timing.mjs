@@ -15,7 +15,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true, args:
 
 // Installed in each page: records every vehicle a departure is played for, and samples lists.
 const install = () => {
-  const s = window.syn3h, n = window.syn3hNet, m = s.materialize
+  const s = window.mira, n = window.miraNet, m = s.materialize
   window.__gone = []
   if (m?.depart) { const depart = m.depart.bind(m); m.depart = (vehicle, ...rest) => { window.__gone.push(vehicle); return depart(vehicle, ...rest) } }
   window.__sample = (bots) => {
@@ -33,15 +33,15 @@ async function run(throttle) {
   const open = async (name) => {
     const page = await (await browser.newContext({ viewport: { width: 640, height: 360 } })).newPage()
     await page.goto(`${base}/?room=${room}&name=${name}&autoplay=1&vehicle=buggy`)
-    await page.waitForFunction(() => window.syn3hNet?.connected && window.syn3h?.game.tick > 60, null, { timeout: 120000 })
-    await page.evaluate(() => { window.syn3h.shell.play?.(); window.syn3h.bots.daydream?.setBlocker?.(() => true) })
+    await page.waitForFunction(() => window.miraNet?.connected && window.mira?.game.tick > 60, null, { timeout: 120000 })
+    await page.evaluate(() => { window.mira.shell.play?.(); window.mira.bots.daydream?.setBlocker?.(() => true) })
     if (throttle > 1) await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: throttle })
     await page.evaluate(install)
     return page
   }
   const host = await open('Host'), guest = await open('Guest')
-  await host.evaluate(() => window.syn3h.params.set('bots.count', 4))
-  await Promise.all([host, guest].map((p) => p.waitForFunction(() => [...window.syn3hNet.players.values()].filter((x) => x.bot).length >= 4 && (window.syn3hNet.isHost || window.syn3hNet.remotes.size >= 5), null, { timeout: 120000 })))
+  await host.evaluate(() => window.mira.params.set('bots.count', 4))
+  await Promise.all([host, guest].map((p) => p.waitForFunction(() => [...window.miraNet.players.values()].filter((x) => x.bot).length >= 4 && (window.miraNet.isHost || window.miraNet.remotes.size >= 5), null, { timeout: 120000 })))
   await wait(3000)
   const lists = ['players', 'remotes', 'markers', 'scene', 'physics']
   const timeLists = async (page, bots, since) => {
@@ -55,12 +55,12 @@ async function run(throttle) {
     return done
   }
   const t0 = Date.now()
-  await host.evaluate(() => window.syn3h.params.set('bots.count', 0))
+  await host.evaluate(() => window.mira.params.set('bots.count', 0))
   const [h, g] = await Promise.all([timeLists(host, true, t0), timeLists(guest, true, t0)])
   console.log(`throttle ${throttle}x, 4 bots removed: host ${JSON.stringify(h)}; guest ${JSON.stringify(g)}`)
   // The host leaves: time on the guest from processing the leave.
-  await guest.evaluate(() => { const n = window.syn3hNet, remove = n.removeRemote.bind(n); n.removeRemote = (...a) => { if (a[0] < 0xff00) window.__leftAt = Date.now(); return remove(...a) } })
-  await host.evaluate(() => window.syn3hNet.leave?.() ?? window.syn3hNet.close?.())
+  await guest.evaluate(() => { const n = window.miraNet, remove = n.removeRemote.bind(n); n.removeRemote = (...a) => { if (a[0] < 0xff00) window.__leftAt = Date.now(); return remove(...a) } })
+  await host.evaluate(() => window.miraNet.leave?.() ?? window.miraNet.close?.())
   await host.context().close()
   await guest.waitForFunction(() => window.__leftAt, null, { timeout: 90000 })
   const leftAt = await guest.evaluate(() => window.__leftAt)

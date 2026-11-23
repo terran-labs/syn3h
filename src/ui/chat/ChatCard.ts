@@ -363,7 +363,7 @@ export class ChatCard {
     if (this.isOpen || !this.strip.children.length) { this.strip.classList.remove('is-yielding'); return }
     // Step back when a vehicle's name label or a readout passes behind the strip.
     const box = this.strip.getBoundingClientRect()
-    const under = [...document.querySelectorAll<HTMLElement>('.syn3h-nametags > *, .fh-read')].some((el) => {
+    const under = [...document.querySelectorAll<HTMLElement>('.mira-nametags > *, .fh-read')].some((el) => {
       const r = el.getBoundingClientRect()
       return r.width > 0 && el.style.display !== 'none' && r.right > box.left && r.left < box.right && r.bottom > box.top && r.top < box.bottom
     })

@@ -1,9 +1,9 @@
-/** The Syn3h hub motor effort that drives the wheel glow and sparks (visual only). */
+/** The Mira hub motor effort that drives the wheel glow and sparks (visual only). */
 import { describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { type MotorDriveInput, type MotorLoadInput, motorDrive, motorLoad, motorSparkLoad, smoothEffort, sparkLevel } from '../../src/vehicles/skins/motorDrive'
 import { buggySpeed } from '../../src/vehicles/buggyParams'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import type { BuggySkin } from '../../src/vehicles/skins/BuggySkin'
 import { makeBed } from './harness'
 
@@ -76,7 +76,7 @@ describe('motor sparks follow load', () => {
   })
 })
 
-describe('Syn3hBuggy drive and lamp signals to the skin', () => {
+describe('MiraBuggy drive and lamp signals to the skin', () => {
   test('throws sparks at a launch and none once cruising or braking', async () => {
     const bed = await makeBed()
     const sparks = [0, 0, 0, 0]
@@ -85,7 +85,7 @@ describe('Syn3hBuggy drive and lamp signals to the skin', () => {
       setWheel() {}, setWings() {}, setColors() {}, dispose() {},
       setDrive(i, _e, _r, s) { sparks[i] = s ?? 0 },
     }
-    const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.5, 0), 0, 'buggy-syn3h', () => skin))
+    const b = bed.add(new MiraBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.5, 0), 0, 'buggy-syn3h', () => skin))
     b.isLocal = false
     await skin.ready
     const frame = () => b.update(1 / 50, 1)
@@ -114,7 +114,7 @@ describe('Syn3hBuggy drive and lamp signals to the skin', () => {
       setDrive(i, e) { calls.effort[i] = e },
       setLights(b) { calls.braking = b },
     }
-    const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.5, 0), 0, 'buggy-syn3h', () => skin))
+    const b = bed.add(new MiraBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.5, 0), 0, 'buggy-syn3h', () => skin))
     b.isLocal = false
     await skin.ready
     // The bed runs physics only; the skin is driven from the per-frame update.

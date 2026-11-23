@@ -114,7 +114,7 @@ export function fraction(def: PropertyDef, value: number | boolean): number | nu
 
 export interface WorldJson {
   /** Says what this is, so a paste of something else is refused politely. */
-  syn3h: 'world' | 'section'
+  mira: 'world' | 'section'
   version: 1
   /** For a section copy: which one. */
   section?: string
@@ -125,13 +125,13 @@ export interface WorldJson {
 export function exportWorld(defs: readonly PropertyDef[], valueOf: (id: string) => number | boolean | undefined): WorldJson {
   const values: Record<string, number | boolean> = {}
   for (const def of defs) { const value = valueOf(def.id); if (def.scope === 'world' && value !== undefined) values[def.id] = value }
-  return { syn3h: 'world', version: 1, values }
+  return { mira: 'world', version: 1, values }
 }
 /** Write out one section, shared or personal. */
 export function exportSection(section: SectionNode, valueOf: (id: string) => number | boolean | undefined): WorldJson {
   const values: Record<string, number | boolean> = {}
   for (const group of section.tree) for (const def of group.properties) { const value = valueOf(def.id); if (value !== undefined) values[def.id] = value }
-  return { syn3h: 'section', version: 1, section: section.id, values }
+  return { mira: 'section', version: 1, section: section.id, values }
 }
 export interface PasteEntry { id: string; value: number | boolean; adjusted: boolean }
 export type PasteResult =
@@ -150,9 +150,9 @@ export function parseWorld(text: string, defs: readonly PropertyDef[], options: 
   try { data = JSON.parse(text) } catch { return { ok: false, why: 'That is not JSON.' } }
   if (!data || typeof data !== 'object' || Array.isArray(data)) return { ok: false, why: 'That JSON is not a world.' }
   const record = data as Record<string, unknown>
-  const kind = record.syn3h === 'section' ? 'section' : 'world'
+  const kind = record.mira === 'section' ? 'section' : 'world'
   // Accept the wrapped form and a bare { id: value } object.
-  const values = record.values && typeof record.values === 'object' && !Array.isArray(record.values) ? record.values as Record<string, unknown> : record.syn3h === undefined ? record : null
+  const values = record.values && typeof record.values === 'object' && !Array.isArray(record.values) ? record.values as Record<string, unknown> : record.mira === undefined ? record : null
   if (!values) return { ok: false, why: 'That JSON has no values in it.' }
   const byId = new Map(defs.map(def => [def.id, def]))
   const entries: PasteEntry[] = [], skipped: { id: string; why: string }[] = []

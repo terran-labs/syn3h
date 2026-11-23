@@ -5,12 +5,13 @@
  *   busy: frame time with six impact rings re-emitted every 0.3 s (typical heavy use), the edge
  *   batch drawn and hidden in alternating 2 s windows, eight of each, median and p95 of each.
  *
- *   SYN3H_URL=http://127.0.0.1:<port>/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/weapons/edge-cost.mjs
+ *   MIRA_URL=http://127.0.0.1:<port>/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/weapons/edge-cost.mjs
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 
-const base = (process.env.SYN3H_URL ?? '').replace(/\/+$/, '') + '/'
-if (!process.env.SYN3H_URL) throw new Error('Set SYN3H_URL')
+const base = (process.env.MIRA_URL ?? '').replace(/\/+$/, '') + '/'
+if (!process.env.MIRA_URL) throw new Error('Set MIRA_URL')
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const out = []
 try {
@@ -19,9 +20,9 @@ try {
     await ctx.routeWebSocket(/\/ws(?:\?|$)/, socket => socket.close())
     const page = await ctx.newPage()
     await page.goto(`${base}?gfx=${level}&planet=alpine&seed=7&autoplay=1&room=edgecost-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet?.lasers && window.syn3h.game.tick > 60, null, { timeout: 180000 })
+    await page.waitForFunction(() => window.mira?.shell?.playing && window.miraNet?.lasers && window.mira.game.tick > 60, null, { timeout: 180000 })
     const r = await page.evaluate(async () => {
-      const s = window.syn3h, q = s.params, L = window.syn3hNet.lasers
+      const s = window.mira, q = s.params, L = window.miraNet.lasers
       q.set('bots.count', 0); q.set('sun.dayLength', 0); q.set('sun.timeOfDay', 12); q.set('daydream.seconds', 0)
       document.exitPointerLock?.()
       const edges = L.pulses.edges.look, frame = () => new Promise(r => requestAnimationFrame(() => r(performance.now())))

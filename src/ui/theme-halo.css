@@ -12,11 +12,11 @@
  *     file leaves alone.
  *   - Surfaces, strokes, type and colour only. Positions, sizes and the 44 px (48 px on touch)
  *     hit areas set by motion.css stay as they are; the visible ink inside them is finer.
- * Selectors start .syn3h-shell.exploration-ui and carry enough classes to beat the three
+ * Selectors start .mira-shell.exploration-ui and carry enough classes to beat the three
  * glass weights (data-glass 0, 1, 2) and html[data-gfx="0"], using !important only against an existing !important.
  */
 
-.syn3h-shell.exploration-ui {
+.mira-shell.exploration-ui {
   /* Neutral: grey-white type and hairlines, near-black smoked glass, a soft white glow. */
   --s3-ink: #f4f4f4; --s3-dim: #e2e2e2; --s3-soft: #cfcfcf; --s3-accent: #e8e8e8; --s3-accent-2: #fbfbfb;
   --s3-line: rgb(232 232 232 / .42); --s3-line-quiet: rgb(232 232 232 / .18); --s3-panel: rgb(10 10 11 / .3);
@@ -36,10 +36,10 @@
 }
 
 /* ---------- Panels ---------- */
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass,
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.rail-players, .performance-panel),
-.syn3h-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card),
-.syn3h-shell.exploration-ui:is([data-glass], *) .performance-recommendation {
+.mira-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass,
+.mira-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.rail-players, .performance-panel),
+.mira-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card),
+.mira-shell.exploration-ui:is([data-glass], *) .performance-recommendation {
   border: 1px solid var(--s3-line); border-radius: var(--halo-r);
   background: var(--halo-fill); background-image: none;
   box-shadow: var(--halo-glow), var(--halo-spread);
@@ -47,302 +47,302 @@
   color: var(--s3-ink); text-shadow: var(--halo-under);
 }
 /* Nothing from the old glass may add light: no rim layer, no top highlight, no lifted body. */
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass::after, .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector::before, .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector::after { display: none; }
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass { --body: transparent; filter: none; }
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-body, .wi-group, .wi-row:not(.is-selected), .rail-player-body) { background: none; }
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass::before { display: none; }
-.syn3h-shell.exploration-ui .world-inspector { font: 400 13.5px/1.4 'Barlow', sans-serif; color: var(--s3-ink); text-shadow: var(--halo-under); }
-.syn3h-shell.exploration-ui .world-inspector *, .syn3h-shell.exploration-ui .world-inspector :is(button, input, select) { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.mira-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass::after, .mira-shell.exploration-ui:is([data-glass], *) .world-inspector::before, .mira-shell.exploration-ui:is([data-glass], *) .world-inspector::after { display: none; }
+.mira-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass { --body: transparent; filter: none; }
+.mira-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-body, .wi-group, .wi-row:not(.is-selected), .rail-player-body) { background: none; }
+.mira-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass::before { display: none; }
+.mira-shell.exploration-ui .world-inspector { font: 400 13.5px/1.4 'Barlow', sans-serif; color: var(--s3-ink); text-shadow: var(--halo-under); }
+.mira-shell.exploration-ui .world-inspector *, .mira-shell.exploration-ui .world-inspector :is(button, input, select) { -webkit-backdrop-filter: none; backdrop-filter: none; }
 /* The quick selectors and the players list float as panels of their own. */
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players { border-bottom: 1px solid var(--s3-line); }
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players > summary { background: none; border-radius: var(--halo-r) var(--halo-r) 0 0; }
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players:not([open]) > summary { border-radius: var(--halo-r); background: none; }
+.mira-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players { border-bottom: 1px solid var(--s3-line); }
+.mira-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players > summary { background: none; border-radius: var(--halo-r) var(--halo-r) 0 0; }
+.mira-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players:not([open]) > summary { border-radius: var(--halo-r); background: none; }
 
 /* ---------- Generic buttons: hairline pills, no fill, no glowing text ---------- */
 /* Scoped to the in-game panels, so the lobby keeps its own buttons. Card headers and the
    editable numbers have their own rules below. :where keeps this just above exploration.css's
    all-buttons rule and below every specific rule here, such as .is-on. */
-.syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num, .liquid-glass)) { background: none; border: 1px solid var(--s3-line-quiet); border-radius: 999px; box-shadow: none; text-shadow: var(--halo-under); font-weight: 400; letter-spacing: .04em; -webkit-backdrop-filter: none; backdrop-filter: none; }
-.syn3h-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num, .liquid-glass)):hover { background: rgb(205 205 205 / .07); border-color: var(--s3-line); box-shadow: var(--halo-glow); }
-.syn3h-shell.exploration-ui button:focus-visible, .syn3h-shell.exploration-ui input:focus-visible, .syn3h-shell.exploration-ui select:focus-visible { outline: 1px solid var(--s3-accent-2); outline-offset: 3px; }
+.mira-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num, .liquid-glass)) { background: none; border: 1px solid var(--s3-line-quiet); border-radius: 999px; box-shadow: none; text-shadow: var(--halo-under); font-weight: 400; letter-spacing: .04em; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.mira-shell.exploration-ui.exploration-ui :where(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:where(:not(.wi-head, .wi-num, .liquid-glass)):hover { background: rgb(205 205 205 / .07); border-color: var(--s3-line); box-shadow: var(--halo-glow); }
+.mira-shell.exploration-ui button:focus-visible, .mira-shell.exploration-ui input:focus-visible, .mira-shell.exploration-ui select:focus-visible { outline: 1px solid var(--s3-accent-2); outline-offset: 3px; }
 /* Fields draw as an underline; the top row's search (.wi-glass) is drawn as a card instead. */
-.syn3h-shell.exploration-ui .world-inspector :is(input:not([type=range]):not([type=checkbox]):not([type=color]):not(.wi-glass), select, textarea) { color: var(--s3-ink); background: none; border: 0; border-bottom: 1px solid var(--s3-line-quiet); border-radius: 0; box-shadow: none; }
-.syn3h-shell.exploration-ui select option { background: #101010; color: #f3f3f3; }
+.mira-shell.exploration-ui .world-inspector :is(input:not([type=range]):not([type=checkbox]):not([type=color]):not(.wi-glass), select, textarea) { color: var(--s3-ink); background: none; border: 0; border-bottom: 1px solid var(--s3-line-quiet); border-radius: 0; box-shadow: none; }
+.mira-shell.exploration-ui select option { background: #101010; color: #f3f3f3; }
 
 /* ---------- Top block: navigation, search, actions ---------- */
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-top { border-bottom: 1px solid var(--s3-line); }
-.syn3h-shell.exploration-ui .rail-navigation button { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); }
-.syn3h-shell.exploration-ui .rail-navigation :is(.exit-world, .rail-pause, .rail-close) { border-color: transparent; background: none; }
-.syn3h-shell.exploration-ui .rail-navigation .rail-close { font: 300 22px/1 'Barlow', sans-serif; letter-spacing: 0; color: var(--s3-dim); }
-.syn3h-shell.exploration-ui .rail-navigation button:hover { border-color: var(--s3-line-quiet); }
-.syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search { font: 400 13px/1.2 'Barlow', sans-serif; letter-spacing: .04em; color: var(--s3-ink); border-bottom: 1px solid var(--s3-line-quiet); background: none; }
-.syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search:focus { border-bottom-color: var(--s3-accent-2); box-shadow: 0 1px 0 rgb(205 205 205 / .35); }
-.syn3h-shell.exploration-ui .world-inspector .wi-search::placeholder { color: var(--s3-soft); }
-.syn3h-shell.exploration-ui .world-inspector .wi-actions button, .syn3h-shell.exploration-ui .world-inspector .wi-switch button { border: 1px solid var(--s3-line-quiet); border-radius: 999px; background: none; color: var(--s3-dim); font: 400 12px/1.3 'Barlow', sans-serif; letter-spacing: .03em; text-shadow: var(--halo-under); }
-.syn3h-shell.exploration-ui .world-inspector .wi-actions button:hover, .syn3h-shell.exploration-ui .world-inspector .wi-switch button:hover { border-color: var(--s3-line); color: var(--s3-ink); background: rgb(205 205 205 / .06); }
+.mira-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-top { border-bottom: 1px solid var(--s3-line); }
+.mira-shell.exploration-ui .rail-navigation button { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); }
+.mira-shell.exploration-ui .rail-navigation :is(.exit-world, .rail-pause, .rail-close) { border-color: transparent; background: none; }
+.mira-shell.exploration-ui .rail-navigation .rail-close { font: 300 22px/1 'Barlow', sans-serif; letter-spacing: 0; color: var(--s3-dim); }
+.mira-shell.exploration-ui .rail-navigation button:hover { border-color: var(--s3-line-quiet); }
+.mira-shell.exploration-ui .world-inspector .wi-top .wi-search { font: 400 13px/1.2 'Barlow', sans-serif; letter-spacing: .04em; color: var(--s3-ink); border-bottom: 1px solid var(--s3-line-quiet); background: none; }
+.mira-shell.exploration-ui .world-inspector .wi-top .wi-search:focus { border-bottom-color: var(--s3-accent-2); box-shadow: 0 1px 0 rgb(205 205 205 / .35); }
+.mira-shell.exploration-ui .world-inspector .wi-search::placeholder { color: var(--s3-soft); }
+.mira-shell.exploration-ui .world-inspector .wi-actions button, .mira-shell.exploration-ui .world-inspector .wi-switch button { border: 1px solid var(--s3-line-quiet); border-radius: 999px; background: none; color: var(--s3-dim); font: 400 12px/1.3 'Barlow', sans-serif; letter-spacing: .03em; text-shadow: var(--halo-under); }
+.mira-shell.exploration-ui .world-inspector .wi-actions button:hover, .mira-shell.exploration-ui .world-inspector .wi-switch button:hover { border-color: var(--s3-line); color: var(--s3-ink); background: rgb(205 205 205 / .06); }
 /* Selected is light, not a filled blob: a bright rim, a faint inner glow, white text. */
-.syn3h-shell.exploration-ui .world-inspector .is-on, .syn3h-shell.exploration-ui .world-inspector .wi-actions [data-wi=copy-world] { color: #fff; background: rgb(205 205 205 / .08); border-color: rgb(230 230 230 / .85); box-shadow: inset 0 0 8px rgb(205 205 205 / .18), var(--halo-glow); }
-.syn3h-shell.exploration-ui .world-inspector .wi-actions [data-wi=copy-world]:not(.is-on) { color: var(--s3-dim); background: none; border-color: var(--s3-line-quiet); box-shadow: none; }
-.syn3h-shell.exploration-ui .world-inspector .is-warning { color: var(--s3-warn); background: none; border-color: rgb(255 176 138 / .6); }
-.syn3h-shell.exploration-ui .wi-top #syn3h-build-notice { border: 1px solid var(--s3-line) !important; border-radius: 999px !important; background: none !important; box-shadow: var(--halo-glow) !important; color: var(--s3-ink); text-shadow: var(--halo-under); }
+.mira-shell.exploration-ui .world-inspector .is-on, .mira-shell.exploration-ui .world-inspector .wi-actions [data-wi=copy-world] { color: #fff; background: rgb(205 205 205 / .08); border-color: rgb(230 230 230 / .85); box-shadow: inset 0 0 8px rgb(205 205 205 / .18), var(--halo-glow); }
+.mira-shell.exploration-ui .world-inspector .wi-actions [data-wi=copy-world]:not(.is-on) { color: var(--s3-dim); background: none; border-color: var(--s3-line-quiet); box-shadow: none; }
+.mira-shell.exploration-ui .world-inspector .is-warning { color: var(--s3-warn); background: none; border-color: rgb(255 176 138 / .6); }
+.mira-shell.exploration-ui .wi-top #mira-build-notice { border: 1px solid var(--s3-line) !important; border-radius: 999px !important; background: none !important; box-shadow: var(--halo-glow) !important; color: var(--s3-ink); text-shadow: var(--halo-under); }
 
 /* Quick selectors */
 /* Disabled stays dimmer than enabled but readable over the bright sky. */
-.syn3h-shell.exploration-ui .world-inspector button:disabled { opacity: .62; }
-.syn3h-shell.exploration-ui .wi-gi-status { color: var(--s3-dim); }
+.mira-shell.exploration-ui .world-inspector button:disabled { opacity: .62; }
+.mira-shell.exploration-ui .wi-gi-status { color: var(--s3-dim); }
 
 /* ---------- Cards ---------- */
-.syn3h-shell.exploration-ui :is(.world-inspector .wi-head h3) { font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); text-shadow: var(--halo-under); }
-.syn3h-shell.exploration-ui .world-inspector .wi-card.is-open > .wi-head h3 { color: #fff; text-shadow: var(--halo-under); }
-.syn3h-shell.exploration-ui .world-inspector .wi-sum { font-size: 13px; color: rgb(242 242 242 / .9); letter-spacing: 0; }
-.syn3h-shell.exploration-ui .world-inspector .wi-chev { width: 6px; height: 6px; border-right: 1px solid var(--s3-soft); border-bottom: 1px solid var(--s3-soft); }
-.syn3h-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover { background: none; box-shadow: none; }
-.syn3h-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover h3 { color: #fff; }
+.mira-shell.exploration-ui :is(.world-inspector .wi-head h3) { font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); text-shadow: var(--halo-under); }
+.mira-shell.exploration-ui .world-inspector .wi-card.is-open > .wi-head h3 { color: #fff; text-shadow: var(--halo-under); }
+.mira-shell.exploration-ui .world-inspector .wi-sum { font-size: 13px; color: rgb(242 242 242 / .9); letter-spacing: 0; }
+.mira-shell.exploration-ui .world-inspector .wi-chev { width: 6px; height: 6px; border-right: 1px solid var(--s3-soft); border-bottom: 1px solid var(--s3-soft); }
+.mira-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover { background: none; box-shadow: none; }
+.mira-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover h3 { color: #fff; }
 /* A divider that fades at both ends instead of a full-width rule. */
-.syn3h-shell.exploration-ui .world-inspector .wi-body { border-top: 1px solid transparent; border-image: var(--rule) 1; scrollbar-color: rgb(231 231 231 / .25) transparent; }
-.syn3h-shell.exploration-ui .world-inspector .wi-blurb { font-size: 13px; color: var(--s3-dim); }
-.syn3h-shell.exploration-ui .world-inspector .wi-group { border-top: 0; }
-.syn3h-shell.exploration-ui .world-inspector .wi-group + .wi-group { border-top: 1px solid transparent; border-image: var(--rule) 1; }
-.syn3h-shell.exploration-ui .world-inspector .wi-group summary { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--s3-dim); }
-.syn3h-shell.exploration-ui .world-inspector .wi-group[open] summary { color: var(--s3-ink); }
-.syn3h-shell.exploration-ui .world-inspector .wi-group summary::before { border-left-color: var(--s3-soft); }
-.syn3h-shell.exploration-ui .world-inspector .wi-group summary small { font: 400 12px 'Barlow', sans-serif; letter-spacing: 0; text-transform: none; color: var(--s3-soft); }
-.syn3h-shell.exploration-ui .world-inspector .wi-label { font-size: 13px; color: var(--s3-ink); }
-.syn3h-shell.exploration-ui .world-inspector .wi-row { border-radius: var(--s3-radius-small); }
+.mira-shell.exploration-ui .world-inspector .wi-body { border-top: 1px solid transparent; border-image: var(--rule) 1; scrollbar-color: rgb(231 231 231 / .25) transparent; }
+.mira-shell.exploration-ui .world-inspector .wi-blurb { font-size: 13px; color: var(--s3-dim); }
+.mira-shell.exploration-ui .world-inspector .wi-group { border-top: 0; }
+.mira-shell.exploration-ui .world-inspector .wi-group + .wi-group { border-top: 1px solid transparent; border-image: var(--rule) 1; }
+.mira-shell.exploration-ui .world-inspector .wi-group summary { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--s3-dim); }
+.mira-shell.exploration-ui .world-inspector .wi-group[open] summary { color: var(--s3-ink); }
+.mira-shell.exploration-ui .world-inspector .wi-group summary::before { border-left-color: var(--s3-soft); }
+.mira-shell.exploration-ui .world-inspector .wi-group summary small { font: 400 12px 'Barlow', sans-serif; letter-spacing: 0; text-transform: none; color: var(--s3-soft); }
+.mira-shell.exploration-ui .world-inspector .wi-label { font-size: 13px; color: var(--s3-ink); }
+.mira-shell.exploration-ui .world-inspector .wi-row { border-radius: var(--s3-radius-small); }
 /* The row being described (its tooltip showing) is not boxed: a tint that fades out at both
    ends and a brighter label. Keyboard focus keeps its ring, on the control itself. */
-.syn3h-shell.exploration-ui .world-inspector .wi-row.is-selected { background: linear-gradient(90deg, transparent, rgb(205 205 205 / .07) 22%, rgb(205 205 205 / .07) 78%, transparent); box-shadow: none; }
-.syn3h-shell.exploration-ui .world-inspector .wi-row.is-selected .wi-label { color: #fff; }
-.syn3h-shell.exploration-ui .world-inspector .wi-row output { color: var(--s3-accent-2); }
+.mira-shell.exploration-ui .world-inspector .wi-row.is-selected { background: linear-gradient(90deg, transparent, rgb(205 205 205 / .07) 22%, rgb(205 205 205 / .07) 78%, transparent); box-shadow: none; }
+.mira-shell.exploration-ui .world-inspector .wi-row.is-selected .wi-label { color: #fff; }
+.mira-shell.exploration-ui .world-inspector .wi-row output { color: var(--s3-accent-2); }
 
 /* Sliders: a 2 px track and a small bright thumb, drawn in the middle of the 44 px input. */
-.syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: rgb(231 231 231 / .32); }
-.syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -5px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgb(0 8 14 / .35), 0 0 5px rgb(205 205 205 / .6); }
-.syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-track { height: 2px; border-radius: 1px; background: rgb(231 231 231 / .32); }
-.syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-progress { height: 2px; border-radius: 1px; background: var(--s3-accent-2); }
-.syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgb(0 8 14 / .35), 0 0 5px rgb(205 205 205 / .6); }
+.mira-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: rgb(231 231 231 / .32); }
+.mira-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -5px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgb(0 8 14 / .35), 0 0 5px rgb(205 205 205 / .6); }
+.mira-shell.exploration-ui .world-inspector input[type=range]::-moz-range-track { height: 2px; border-radius: 1px; background: rgb(231 231 231 / .32); }
+.mira-shell.exploration-ui .world-inspector input[type=range]::-moz-range-progress { height: 2px; border-radius: 1px; background: var(--s3-accent-2); }
+.mira-shell.exploration-ui .world-inspector input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgb(0 8 14 / .35), 0 0 5px rgb(205 205 205 / .6); }
 
 /* On/off settings use the standard switch (inspector/switch.css). */
 
 /* Segmented choices: one rim around all the options, the chosen segment filled solid. Unlike a
    switch there is no knob and no on/off word, so a choice of one among several never reads as on/off. */
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg { gap: 2px 4px; padding: 0; border: 0; background: none; }
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg button { border: 1px solid transparent; border-radius: 999px; background: none; color: var(--s3-dim); font: 400 12.5px/1.3 'Barlow', sans-serif; letter-spacing: .02em; box-shadow: none; text-shadow: var(--halo-under); }
+.mira-shell.exploration-ui .world-inspector .wi-cards .wi-seg { gap: 2px 4px; padding: 0; border: 0; background: none; }
+.mira-shell.exploration-ui .world-inspector .wi-cards .wi-seg button { border: 1px solid transparent; border-radius: 999px; background: none; color: var(--s3-dim); font: 400 12.5px/1.3 'Barlow', sans-serif; letter-spacing: .02em; box-shadow: none; text-shadow: var(--halo-under); }
 /* Hover and the chosen segment: card-chrome.css (one outline, no fill). */
 
 /* Editable numbers: a faint dotted underline always says "you can type here". */
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { color: var(--s3-accent-2); font: 500 13.5px 'Barlow', sans-serif; font-variant-numeric: tabular-nums; text-decoration-color: rgb(230 230 230 / .4); text-shadow: var(--halo-under); }
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:is(:hover, :focus-visible) { text-decoration-color: var(--s3-accent-2); }
+.mira-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { color: var(--s3-accent-2); font: 500 13.5px 'Barlow', sans-serif; font-variant-numeric: tabular-nums; text-decoration-color: rgb(230 230 230 / .4); text-shadow: var(--halo-under); }
+.mira-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:is(:hover, :focus-visible) { text-decoration-color: var(--s3-accent-2); }
 /* The focus ring follows a rounded edge rather than drawing a square box. */
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { border-radius: var(--glass-control-radius, 24px); }
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:focus-visible { outline: 1px solid rgb(230 230 230 / .7); outline-offset: -4px; }
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit { border: 1px solid rgb(230 230 230 / .9); border-radius: var(--glass-control-radius, 24px); background: rgb(2 9 15 / .55); color: #fff; box-shadow: 0 0 0 3px rgb(205 205 205 / .14), var(--halo-glow); }
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit:focus { outline: none; }
-.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit.is-invalid { border-color: var(--s3-warn); box-shadow: 0 0 0 3px rgb(255 176 138 / .16); }
+.mira-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { border-radius: var(--glass-control-radius, 24px); }
+.mira-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:focus-visible { outline: 1px solid rgb(230 230 230 / .7); outline-offset: -4px; }
+.mira-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit { border: 1px solid rgb(230 230 230 / .9); border-radius: var(--glass-control-radius, 24px); background: rgb(2 9 15 / .55); color: #fff; box-shadow: 0 0 0 3px rgb(205 205 205 / .14), var(--halo-glow); }
+.mira-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit:focus { outline: none; }
+.mira-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit.is-invalid { border-color: var(--s3-warn); box-shadow: 0 0 0 3px rgb(255 176 138 / .16); }
 
 /* ---------- Tooltip, detail and sheet ---------- */
-.syn3h-shell.exploration-ui:is([data-glass], *) .wi-glass.wi-tooltip.wi-tooltip { --body: none; border: 1px solid var(--s3-line); border-left-color: var(--s3-line); border-radius: var(--halo-r); background: var(--halo-fill); padding: 12px 14px; font: 400 13px/1.45 'Barlow', sans-serif; }
-.syn3h-shell.exploration-ui .wi-tooltip strong, .syn3h-shell.exploration-ui .world-inspector .wi-detail strong { font: 500 11.5px/1.3 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: #fff; }
-.syn3h-shell.exploration-ui .world-inspector .wi-detail p { color: var(--s3-dim); font-size: 13px; }
-.syn3h-shell.exploration-ui .world-inspector .wi-detail small { color: var(--s3-soft); }
-.syn3h-shell.exploration-ui .world-inspector .wi-chip { border: 1px solid var(--s3-line-quiet); color: var(--s3-dim); }
-.syn3h-shell.exploration-ui .world-inspector .wi-chip.is-shared { border-color: var(--s3-line); color: var(--s3-accent-2); }
-.syn3h-shell.exploration-ui .world-inspector .wi-guard { height: 2px; border-radius: 1px; background: rgb(231 231 231 / .2); }
-.syn3h-shell.exploration-ui .world-inspector .wi-guard i { border-radius: 1px; background: linear-gradient(90deg, rgb(205 205 205 / .3), var(--s3-accent-2)); }
-.syn3h-shell.exploration-ui .world-inspector .wi-guard b { top: -3px; height: 8px; width: 2px; border-radius: 1px; background: #fff; }
-.syn3h-shell.exploration-ui .world-inspector .wi-sheet textarea { border: 1px solid var(--s3-line-quiet); border-radius: var(--s3-radius-small); background: rgb(2 9 15 / .5); color: var(--s3-ink); }
-.syn3h-shell.exploration-ui .world-inspector .wi-status { color: var(--s3-accent-2); text-shadow: var(--halo-under); }
+.mira-shell.exploration-ui:is([data-glass], *) .wi-glass.wi-tooltip.wi-tooltip { --body: none; border: 1px solid var(--s3-line); border-left-color: var(--s3-line); border-radius: var(--halo-r); background: var(--halo-fill); padding: 12px 14px; font: 400 13px/1.45 'Barlow', sans-serif; }
+.mira-shell.exploration-ui .wi-tooltip strong, .mira-shell.exploration-ui .world-inspector .wi-detail strong { font: 500 11.5px/1.3 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: #fff; }
+.mira-shell.exploration-ui .world-inspector .wi-detail p { color: var(--s3-dim); font-size: 13px; }
+.mira-shell.exploration-ui .world-inspector .wi-detail small { color: var(--s3-soft); }
+.mira-shell.exploration-ui .world-inspector .wi-chip { border: 1px solid var(--s3-line-quiet); color: var(--s3-dim); }
+.mira-shell.exploration-ui .world-inspector .wi-chip.is-shared { border-color: var(--s3-line); color: var(--s3-accent-2); }
+.mira-shell.exploration-ui .world-inspector .wi-guard { height: 2px; border-radius: 1px; background: rgb(231 231 231 / .2); }
+.mira-shell.exploration-ui .world-inspector .wi-guard i { border-radius: 1px; background: linear-gradient(90deg, rgb(205 205 205 / .3), var(--s3-accent-2)); }
+.mira-shell.exploration-ui .world-inspector .wi-guard b { top: -3px; height: 8px; width: 2px; border-radius: 1px; background: #fff; }
+.mira-shell.exploration-ui .world-inspector .wi-sheet textarea { border: 1px solid var(--s3-line-quiet); border-radius: var(--s3-radius-small); background: rgb(2 9 15 / .5); color: var(--s3-ink); }
+.mira-shell.exploration-ui .world-inspector .wi-status { color: var(--s3-accent-2); text-shadow: var(--halo-under); }
 
 /* ---------- Players, music, diagnostics ---------- */
-.syn3h-shell.exploration-ui .rail-players > summary { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); }
-.syn3h-shell.exploration-ui .rail-players summary span { color: var(--s3-soft); }
-.syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 13px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
-.syn3h-shell.exploration-ui .rail-diagnostics { font-size: 12px; color: var(--s3-dim); }
+.mira-shell.exploration-ui .rail-players > summary { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); }
+.mira-shell.exploration-ui .rail-players summary span { color: var(--s3-soft); }
+.mira-shell.exploration-ui .rail-player-body .score-row { font-size: 13px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
+.mira-shell.exploration-ui .rail-diagnostics { font-size: 12px; color: var(--s3-dim); }
 
 /* ---------- Performance ---------- */
-.syn3h-shell.exploration-ui .performance-panel header strong { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
-.syn3h-shell.exploration-ui .performance-panel header button { border-color: transparent; }
-.syn3h-shell.exploration-ui .performance-body { font-size: 12.5px; color: var(--s3-ink); }
-.syn3h-shell.exploration-ui .performance-body dt, .syn3h-shell.exploration-ui .performance-history { color: var(--s3-soft); }
-.syn3h-shell.exploration-ui .performance-chart path { stroke: rgb(238 238 238 / .3); stroke-dasharray: 2 4; }
-.syn3h-shell.exploration-ui .performance-chart polyline { stroke: var(--s3-accent-2); stroke-width: 1.25; filter: drop-shadow(0 0 3px rgb(205 205 205 / .35)); }
-.syn3h-shell.exploration-ui:is([data-glass], *) .performance-recommendation { border-radius: var(--halo-r); background: var(--halo-fill); font-size: 13px; }
+.mira-shell.exploration-ui .performance-panel header strong { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
+.mira-shell.exploration-ui .performance-panel header button { border-color: transparent; }
+.mira-shell.exploration-ui .performance-body { font-size: 12.5px; color: var(--s3-ink); }
+.mira-shell.exploration-ui .performance-body dt, .mira-shell.exploration-ui .performance-history { color: var(--s3-soft); }
+.mira-shell.exploration-ui .performance-chart path { stroke: rgb(238 238 238 / .3); stroke-dasharray: 2 4; }
+.mira-shell.exploration-ui .performance-chart polyline { stroke: var(--s3-accent-2); stroke-width: 1.25; filter: drop-shadow(0 0 3px rgb(205 205 205 / .35)); }
+.mira-shell.exploration-ui:is([data-glass], *) .performance-recommendation { border-radius: var(--halo-r); background: var(--halo-fill); font-size: 13px; }
 
 /* ---------- HUD pieces ---------- */
-.syn3h-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card) { background: var(--halo-fill); font-weight: 400; }
-.syn3h-shell.exploration-ui .spawn-help { font-size: 12.5px; color: var(--s3-ink); text-shadow: var(--hud-under); }
-.syn3h-shell.exploration-ui .spawn-help strong { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
+.mira-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card) { background: var(--halo-fill); font-weight: 400; }
+.mira-shell.exploration-ui .spawn-help { font-size: 12.5px; color: var(--s3-ink); text-shadow: var(--hud-under); }
+.mira-shell.exploration-ui .spawn-help strong { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
 /* The minimap ring and its N: hud-column.css, with the rest of the left column. */
 /* The touch panels switch: a floating pill, clear of the screen edge. */
-.syn3h-shell.exploration-ui .hud-navigation { right: var(--edge-right); }
-.syn3h-shell.exploration-ui .hud-navigation .inspector-toggle { font: 500 11px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
+.mira-shell.exploration-ui .hud-navigation { right: var(--edge-right); }
+.mira-shell.exploration-ui .hud-navigation .inspector-toggle { font: 500 11px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
 
 /* Touch controls: hairline rings, no fills to speak of, small letter-spaced captions. */
 /* Their surface is glass (glass.css); a button not yet given the class keeps the hairline ring. */
-.syn3h-shell.exploration-ui .touch-controls button, .touch-controls button { border-radius: 50%; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
-.syn3h-shell.exploration-ui .touch-controls button:not(.liquid-glass), .touch-controls button:not(.liquid-glass) { border: 1px solid var(--s3-line, rgb(231 231 231 / .5)); background: radial-gradient(closest-side, rgb(2 9 15 / .34), rgb(2 9 15 / .16)); box-shadow: 0 0 6px rgb(205 205 205 / .12); color: #f3fbff; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.mira-shell.exploration-ui .touch-controls button, .touch-controls button { border-radius: 50%; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
+.mira-shell.exploration-ui .touch-controls button:not(.liquid-glass), .touch-controls button:not(.liquid-glass) { border: 1px solid var(--s3-line, rgb(231 231 231 / .5)); background: radial-gradient(closest-side, rgb(2 9 15 / .34), rgb(2 9 15 / .16)); box-shadow: 0 0 6px rgb(205 205 205 / .12); color: #f3fbff; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .touch-controls button:not(.liquid-glass):active { background: rgb(205 205 205 / .1); border-color: rgb(230 230 230 / .9); box-shadow: inset 0 0 8px rgb(205 205 205 / .2), 0 0 6px rgb(205 205 205 / .2); }
 .touch-controls .touch-stick { border: 1px solid rgb(236 236 236 / .4); background: radial-gradient(circle, transparent 66%, rgb(205 205 205 / .06)); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .touch-controls .touch-knob { border: 1px solid rgb(255 255 255 / .85); background: radial-gradient(closest-side, rgb(255 255 255 / .14), rgb(255 255 255 / .03)); box-shadow: 0 0 6px rgb(205 205 205 / .25); }
 
 /* ---------- Pause ---------- */
-.syn3h-shell.exploration-ui .pause-veil { background: rgb(2 8 14 / .5); -webkit-backdrop-filter: none; backdrop-filter: none; border: 0; border-radius: 0; text-shadow: var(--halo-under); }
-.syn3h-shell.exploration-ui .pause-veil:hover { background: rgb(2 8 14 / .5); border: 0; box-shadow: none; }
-.syn3h-shell.exploration-ui .pause-veil strong { font-weight: 500; text-shadow: var(--halo-under); }
-.syn3h-shell.exploration-ui .pause-veil .pause-how { font: 500 12px 'Barlow', sans-serif; letter-spacing: .2em; color: var(--s3-accent-2); }
-.syn3h-shell.exploration-ui .pause-veil small { font-size: 13px; color: var(--s3-dim); }
+.mira-shell.exploration-ui .pause-veil { background: rgb(2 8 14 / .5); -webkit-backdrop-filter: none; backdrop-filter: none; border: 0; border-radius: 0; text-shadow: var(--halo-under); }
+.mira-shell.exploration-ui .pause-veil:hover { background: rgb(2 8 14 / .5); border: 0; box-shadow: none; }
+.mira-shell.exploration-ui .pause-veil strong { font-weight: 500; text-shadow: var(--halo-under); }
+.mira-shell.exploration-ui .pause-veil .pause-how { font: 500 12px 'Barlow', sans-serif; letter-spacing: .2em; color: var(--s3-accent-2); }
+.mira-shell.exploration-ui .pause-veil small { font-size: 13px; color: var(--s3-dim); }
 
 /* ---------- The reload notice: a slim capsule at the bottom centre ---------- */
-body #syn3h-build-notice, body .build-banner { border: 1px solid rgb(231 231 231 / .55); border-radius: 999px; background: rgb(3 11 19 / .34); box-shadow: 0 0 6px rgb(205 205 205 / .14), 0 0 34px rgb(0 6 12 / .22); color: #f3fbff; font: 400 13.5px/1.2 'Barlow', system-ui, sans-serif; letter-spacing: .03em; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
-body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(230 230 230 / .9); }
+body #mira-build-notice, body .build-banner { border: 1px solid rgb(231 231 231 / .55); border-radius: 999px; background: rgb(3 11 19 / .34); box-shadow: 0 0 6px rgb(205 205 205 / .14), 0 0 34px rgb(0 6 12 / .22); color: #f3fbff; font: 400 13.5px/1.2 'Barlow', system-ui, sans-serif; letter-spacing: .03em; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
+body #mira-build-notice:hover, body .build-banner:hover { border-color: rgb(230 230 230 / .9); }
 
 
 @media (prefers-reduced-motion: reduce) {
-  .syn3h-shell.exploration-ui .world-inspector,
-  .syn3h-shell.exploration-ui .world-inspector *, body #syn3h-build-notice { transition: none; }
+  .mira-shell.exploration-ui .world-inspector,
+  .mira-shell.exploration-ui .world-inspector *, body #mira-build-notice { transition: none; }
 }
 
 /* The lobby's three buttons and its panels, in the same light as the panels in play. Each
    button is a hairline pill over an even dark tint: thin spaced capitals, a rim that
    brightens under the pointer. No bar behind them and no arrow before them. */
-.syn3h-shell.exploration-ui .lobby-links.lobby-links { gap: 12px 14px; padding: 0; background: none; border-radius: 0; }
-.syn3h-shell.exploration-ui .lobby-links.lobby-links button {
+.mira-shell.exploration-ui .lobby-links.lobby-links { gap: 12px 14px; padding: 0; background: none; border-radius: 0; }
+.mira-shell.exploration-ui .lobby-links.lobby-links button {
   min-height: 46px; min-width: 132px; padding: 0 26px; border: 1px solid var(--s3-line); border-radius: 999px;
   background: var(--halo-fill); box-shadow: var(--halo-glow), inset 0 0 12px rgb(205 205 205 / .05);
   font: 500 12px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .22em; text-indent: .22em; text-transform: uppercase;
   color: var(--s3-ink); text-shadow: var(--halo-under); -webkit-backdrop-filter: none; backdrop-filter: none;
   transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease;
 }
-.syn3h-shell.exploration-ui .lobby-links.lobby-links button::before { content: none; }
-.syn3h-shell.exploration-ui .lobby-links.lobby-links button:is(:hover, :focus-visible) {
+.mira-shell.exploration-ui .lobby-links.lobby-links button::before { content: none; }
+.mira-shell.exploration-ui .lobby-links.lobby-links button:is(:hover, :focus-visible) {
   color: #fff; border-color: var(--s3-accent-2); background: rgb(205 205 205 / .07);
   box-shadow: 0 0 10px rgb(205 205 205 / .22), inset 0 0 14px rgb(205 205 205 / .1); outline: none;
 }
-.syn3h-shell.exploration-ui .lobby-links.lobby-links button:active { background: rgb(205 205 205 / .13); }
+.mira-shell.exploration-ui .lobby-links.lobby-links button:active { background: rgb(205 205 205 / .13); }
 @media (max-width: 700px), (max-height: 550px) {
-  .syn3h-shell.exploration-ui .lobby-links.lobby-links { gap: 8px; }
-  .syn3h-shell.exploration-ui .lobby-links.lobby-links button { min-height: 44px; min-width: 0; padding: 0 16px; font-size: 11px; letter-spacing: .16em; text-indent: .16em; }
+  .mira-shell.exploration-ui .lobby-links.lobby-links { gap: 8px; }
+  .mira-shell.exploration-ui .lobby-links.lobby-links button { min-height: 44px; min-width: 0; padding: 0 16px; font-size: 11px; letter-spacing: .16em; text-indent: .16em; }
 }
 /* Lobby panels (Multiplayer, Settings, About): smooth, nearly black glass with a hairline
    rim and one radius, light type, nothing else. */
-.syn3h-shell.exploration-ui:is([data-glass], *) :is(.lobby-panels, .in-play-about) {
+.mira-shell.exploration-ui:is([data-glass], *) :is(.lobby-panels, .in-play-about) {
   border: 1px solid var(--s3-line); border-radius: var(--halo-r, 16px);
   background: linear-gradient(180deg, rgb(4 8 13 / .86), rgb(1 3 6 / .9));
   box-shadow: var(--halo-glow), 0 18px 60px rgb(0 0 0 / .45), inset 0 1px 0 rgb(224 224 224 / .06);
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
-.syn3h-shell.exploration-ui .lobby-panels > section { max-width: 520px; }
-.syn3h-shell.exploration-ui :is(.lobby-panels > section, .in-play-about) h2 { font: 500 13px/1.2 'Barlow', sans-serif; letter-spacing: .26em; text-indent: .26em; text-transform: uppercase; color: var(--s3-ink); }
+.mira-shell.exploration-ui .lobby-panels > section { max-width: 520px; }
+.mira-shell.exploration-ui :is(.lobby-panels > section, .in-play-about) h2 { font: 500 13px/1.2 'Barlow', sans-serif; letter-spacing: .26em; text-indent: .26em; text-transform: uppercase; color: var(--s3-ink); }
 
 /* Header and footer remain reachable while the card stack scrolls on short screens. */
-.syn3h-shell.exploration-ui .world-inspector .wi-cards { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.mira-shell.exploration-ui .world-inspector .wi-cards { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 /* The foot only docks what comes and goes (the update chip, a slow-frames suggestion); empty, it
    takes no space. */
-.syn3h-shell.exploration-ui .world-inspector .rail-foot { display: flex; flex-direction: column; align-items: stretch; flex: 0 0 auto; gap: 5px; padding: 0; }
-.syn3h-shell.exploration-ui .world-inspector .rail-foot:not(:has(> :not([hidden]))) { display: none; }
-.syn3h-shell.exploration-ui .world-inspector .rail-foot .rail-update { margin: 0; }
+.mira-shell.exploration-ui .world-inspector .rail-foot { display: flex; flex-direction: column; align-items: stretch; flex: 0 0 auto; gap: 5px; padding: 0; }
+.mira-shell.exploration-ui .world-inspector .rail-foot:not(:has(> :not([hidden]))) { display: none; }
+.mira-shell.exploration-ui .world-inspector .rail-foot .rail-update { margin: 0; }
 /* Players & session is a card (Shell.ts); its body sits in the card's own padding. */
-.syn3h-shell.exploration-ui .world-inspector .wi-card[data-section="players"] .rail-player-body { padding: 6px 0 0; }
-.syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden], .lobby-settings)) .hud-navigation { visibility: visible; z-index: 65; }
+.mira-shell.exploration-ui .world-inspector .wi-card[data-section="players"] .rail-player-body { padding: 6px 0 0; }
+.mira-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden], .lobby-settings)) .hud-navigation { visibility: visible; z-index: 65; }
 /* Leave the existing edge toggle outside the touch panel's hit area. */
 /* Touch screens open the panels from the trigger over TAG and WINGS (touch-stick.css), not from
    an edge tab, so the stack keeps the one shared edge on the right as at the top and bottom
    (the owner, 21 November 2026). */
-.syn3h-shell.exploration-ui.has-touch .world-inspector { right: var(--edge-right); width: min(352px, calc(100vw - var(--edge) * 2)); }
+.mira-shell.exploration-ui.has-touch .world-inspector { right: var(--edge-right); width: min(352px, calc(100vw - var(--edge) * 2)); }
 
 /* Lobby navigation stays available while one requested panel opens directly. */
-.syn3h-shell.exploration-ui .lobby-panels { animation: none; width: min(520px, 100%); margin-bottom: 118px; }
-.syn3h-shell.exploration-ui .lobby-stage { pointer-events: none; }
-.syn3h-shell.exploration-ui .lobby-panels { pointer-events: auto; }
-.syn3h-shell.exploration-ui:not(.galaxy-open) .galaxy-labels { visibility: hidden; }
-.syn3h-shell.exploration-ui:not(.galaxy-open) .galaxy-canvas { pointer-events: none; }
-.syn3h-shell.exploration-ui .galaxy-links { margin: 0; }
+.mira-shell.exploration-ui .lobby-panels { animation: none; width: min(520px, 100%); margin-bottom: 118px; }
+.mira-shell.exploration-ui .lobby-stage { pointer-events: none; }
+.mira-shell.exploration-ui .lobby-panels { pointer-events: auto; }
+.mira-shell.exploration-ui:not(.galaxy-open) .galaxy-labels { visibility: hidden; }
+.mira-shell.exploration-ui:not(.galaxy-open) .galaxy-canvas { pointer-events: none; }
+.mira-shell.exploration-ui .galaxy-links { margin: 0; }
 @media (max-height: 550px) {
-  .syn3h-shell.exploration-ui .lobby-panels { margin-bottom: 78px; }
+  .mira-shell.exploration-ui .lobby-panels { margin-bottom: 78px; }
 }
 /* Keep release/status text between the panel and the persistent lobby pills. */
-.syn3h-shell.exploration-ui .lobby-footer { position: absolute; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 56px); height: auto; min-height: 22px; }
+.mira-shell.exploration-ui .lobby-footer { position: absolute; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 56px); height: auto; min-height: 22px; }
 @media (max-height: 550px) {
-  .syn3h-shell.exploration-ui .lobby-panels { margin-bottom: 110px; }
+  .mira-shell.exploration-ui .lobby-panels { margin-bottom: 110px; }
 }
 
 /* Readable cards over bright terrain. Inner controls stay unblurred; only card surfaces frost. */
-html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-glass, .rail-players),
-html .syn3h-shell.exploration-ui:is([data-glass], *) :is(.lobby-panels, .in-play-about) {
+html .mira-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-glass, .rail-players),
+html .mira-shell.exploration-ui:is([data-glass], *) :is(.lobby-panels, .in-play-about) {
   /* Dense enough that secondary text meets 4.5:1 over a white sky (measured, not guessed). */
   background: rgb(12 12 13 / .68); background-image: none;
   -webkit-backdrop-filter: blur(28px) saturate(.65); backdrop-filter: blur(28px) saturate(.65);
 }
-html .syn3h-shell.exploration-ui[data-ui-frost="off"] .world-inspector :is(.wi-glass, .rail-players),
-html .syn3h-shell.exploration-ui[data-ui-frost="off"] :is(.lobby-panels, .in-play-about) {
+html .mira-shell.exploration-ui[data-ui-frost="off"] .world-inspector :is(.wi-glass, .rail-players),
+html .mira-shell.exploration-ui[data-ui-frost="off"] :is(.lobby-panels, .in-play-about) {
   background: rgb(14 14 15 / .94); -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 /* The same at the cards' own material rule (glass.css, --panel-material-filter), which outranked
    the rule above: at the lowest quality levels the in-play cards and the top row drew a 30 px
    backdrop blur each on every frame. Off there, with the dense backing instead (22 November 2026). */
-html[data-glass-material]:not([data-glass-material="flat"]) .syn3h-shell.exploration-ui[data-ui-frost="off"] > .world-inspector:not(.lobby-settings)
+html[data-glass-material]:not([data-glass-material="flat"]) .mira-shell.exploration-ui[data-ui-frost="off"] > .world-inspector:not(.lobby-settings)
 :is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost, .rail-command > input, .rail-command > button, .panels-close):not([data-glass-surface="shader"]) {
   background: rgb(14 14 15 / .94);
 }
-html[data-glass-material] .syn3h-shell.exploration-ui[data-ui-frost="off"] > .world-inspector:not(.lobby-settings)
+html[data-glass-material] .mira-shell.exploration-ui[data-ui-frost="off"] > .world-inspector:not(.lobby-settings)
 :is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost, .rail-command > input, .rail-command > button, .panels-close):not([data-glass-surface="shader"]) {
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-glass, .rail-players),
-  html .syn3h-shell.exploration-ui:is([data-glass], *) :is(.lobby-panels, .in-play-about) { background: rgb(14 14 15 / .94); }
+  html .mira-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-glass, .rail-players),
+  html .mira-shell.exploration-ui:is([data-glass], *) :is(.lobby-panels, .in-play-about) { background: rgb(14 14 15 / .94); }
 }
-.syn3h-shell.exploration-ui .world-inspector [data-section="world"] .wi-sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mira-shell.exploration-ui .world-inspector [data-section="world"] .wi-sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Personal identity stays compact beside its two vehicle colour samples. */
-.syn3h-shell .wi-card[data-section="you"] .wi-head { grid-template-columns: auto minmax(0, 1fr) auto auto; }
-.syn3h-shell .wi-colour-dots { display: inline-flex; gap: 5px; align-items: center; }
-.syn3h-shell .wi-colour-dots i { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgb(242 242 242 / .65); }
+.mira-shell .wi-card[data-section="you"] .wi-head { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.mira-shell .wi-colour-dots { display: inline-flex; gap: 5px; align-items: center; }
+.mira-shell .wi-colour-dots i { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgb(242 242 242 / .65); }
 
-.syn3h-shell .world-inspector [data-search][hidden] { display: none; }
+.mira-shell .world-inspector [data-search][hidden] { display: none; }
 /* The galaxy reaches every edge. The footer keeps its spacing, without masking stars. */
-.syn3h-shell.exploration-ui .in-play-about h2 { margin: 0 0 24px; color: var(--s3-accent); text-indent: 0; }
-.syn3h-shell.exploration-ui .about-intro { padding-bottom: 24px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
-.syn3h-shell.exploration-ui .about-intro .about-title { margin: 0 0 16px; max-width: 20ch; font: 400 clamp(26px, 4vw, 42px)/1.12 'Barlow', sans-serif; letter-spacing: -.02em; color: #fff3df; }
-.syn3h-shell.exploration-ui .about-intro p { max-width: 65ch; margin: 0; }
-.syn3h-shell.exploration-ui .about-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin: 24px 0; }
-.syn3h-shell.exploration-ui .about-columns h3 { font: 500 12px/1.4 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--s3-accent-2); margin: 0 0 12px; }
-.syn3h-shell.exploration-ui .about-columns p { margin: 0 0 12px; }
-.syn3h-shell.exploration-ui .in-play-about p { font-size: 16px; line-height: 1.6; color: var(--s3-dim); }
-.syn3h-shell.exploration-ui .about-links { display: flex; flex-wrap: wrap; gap: 8px 24px; border-block: 1px solid transparent; border-image: var(--rule) 1; padding: 12px 0; }
-.syn3h-shell.exploration-ui .about-links a { display: inline-flex; align-items: center; min-height: 44px; color: var(--s3-accent-2); text-underline-offset: 5px; }
-.syn3h-shell.exploration-ui .in-play-about .shell-credits { margin: 16px 0 24px; text-align: left; }
-.syn3h-shell.exploration-ui .in-play-about .shell-credits summary { min-height: 44px; align-content: center; color: var(--s3-accent-2); cursor: pointer; }
-.syn3h-shell.exploration-ui .in-play-about .shell-credits li { margin: 8px 0; line-height: 1.5; }
-.syn3h-shell.exploration-ui button.panel-back { display: inline-flex; justify-content: center; align-items: center; gap: 16px; box-sizing: border-box; min-width: 164px; min-height: 48px; max-width: 100%; padding: 10px 24px; }
-.syn3h-shell.exploration-ui button.panel-back:not(.liquid-glass) { border: 1px solid var(--s3-line); border-radius: 999px; color: var(--s3-accent-2); background: rgb(205 205 205 / .06); }
-.syn3h-shell.exploration-ui button.panel-back:not(.liquid-glass)::before { content: none; }
+.mira-shell.exploration-ui .in-play-about h2 { margin: 0 0 24px; color: var(--s3-accent); text-indent: 0; }
+.mira-shell.exploration-ui .about-intro { padding-bottom: 24px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
+.mira-shell.exploration-ui .about-intro .about-title { margin: 0 0 16px; max-width: 20ch; font: 400 clamp(26px, 4vw, 42px)/1.12 'Barlow', sans-serif; letter-spacing: -.02em; color: #fff3df; }
+.mira-shell.exploration-ui .about-intro p { max-width: 65ch; margin: 0; }
+.mira-shell.exploration-ui .about-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin: 24px 0; }
+.mira-shell.exploration-ui .about-columns h3 { font: 500 12px/1.4 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--s3-accent-2); margin: 0 0 12px; }
+.mira-shell.exploration-ui .about-columns p { margin: 0 0 12px; }
+.mira-shell.exploration-ui .in-play-about p { font-size: 16px; line-height: 1.6; color: var(--s3-dim); }
+.mira-shell.exploration-ui .about-links { display: flex; flex-wrap: wrap; gap: 8px 24px; border-block: 1px solid transparent; border-image: var(--rule) 1; padding: 12px 0; }
+.mira-shell.exploration-ui .about-links a { display: inline-flex; align-items: center; min-height: 44px; color: var(--s3-accent-2); text-underline-offset: 5px; }
+.mira-shell.exploration-ui .in-play-about .shell-credits { margin: 16px 0 24px; text-align: left; }
+.mira-shell.exploration-ui .in-play-about .shell-credits summary { min-height: 44px; align-content: center; color: var(--s3-accent-2); cursor: pointer; }
+.mira-shell.exploration-ui .in-play-about .shell-credits li { margin: 8px 0; line-height: 1.5; }
+.mira-shell.exploration-ui button.panel-back { display: inline-flex; justify-content: center; align-items: center; gap: 16px; box-sizing: border-box; min-width: 164px; min-height: 48px; max-width: 100%; padding: 10px 24px; }
+.mira-shell.exploration-ui button.panel-back:not(.liquid-glass) { border: 1px solid var(--s3-line); border-radius: 999px; color: var(--s3-accent-2); background: rgb(205 205 205 / .06); }
+.mira-shell.exploration-ui button.panel-back:not(.liquid-glass)::before { content: none; }
 /* The in-play guide: the lobby About (same glass, content and rules above) as a modal over
  * the world. Only its frame is its own: a sticky header with the X, and a scrolling body. */
-.syn3h-shell.exploration-ui .in-play-about { box-sizing: border-box; width: min(900px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; color: var(--s3-ink); overflow: auto; overscroll-behavior: contain; }
-.syn3h-shell.exploration-ui .in-play-about::backdrop { background: rgb(0 4 10 / .55); }
-.syn3h-shell.exploration-ui .in-play-about > header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 36px; background: rgb(3 6 10 / .96); border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
+.mira-shell.exploration-ui .in-play-about { box-sizing: border-box; width: min(900px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; color: var(--s3-ink); overflow: auto; overscroll-behavior: contain; }
+.mira-shell.exploration-ui .in-play-about::backdrop { background: rgb(0 4 10 / .55); }
+.mira-shell.exploration-ui .in-play-about > header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 36px; background: rgb(3 6 10 / .96); border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
 /* By id: the shared About heading rule above sets a bottom margin with higher specificity. */
-.syn3h-shell #in-play-about-title { margin: 0; outline: none; }
+.mira-shell #in-play-about-title { margin: 0; outline: none; }
 /* Over a busy world and the open sidebar, the glass needs more body than the lobby's. */
-html .syn3h-shell.exploration-ui:is([data-glass], *) .in-play-about { background: rgb(3 7 12 / .95); }
-.syn3h-shell.exploration-ui .in-play-about-body { padding: 24px 36px; text-align: left; }
+html .mira-shell.exploration-ui:is([data-glass], *) .in-play-about { background: rgb(3 7 12 / .95); }
+.mira-shell.exploration-ui .in-play-about-body { padding: 24px 36px; text-align: left; }
 /* While paused, Welcome sits in the pause screen's row of three: pause-screen.css. */
 /* Phones, portrait and landscape: one header row of 56px, title left and the X right. */
 @media (max-width: 600px), (max-height: 550px) {
-  .syn3h-shell.exploration-ui .in-play-about > header { flex-wrap: nowrap; box-sizing: border-box; height: 56px; padding: 6px 8px 6px 18px; }
-  .syn3h-shell.exploration-ui .in-play-about-body { padding: 16px 18px 20px; }
+  .mira-shell.exploration-ui .in-play-about > header { flex-wrap: nowrap; box-sizing: border-box; height: 56px; padding: 6px 8px 6px 18px; }
+  .mira-shell.exploration-ui .in-play-about-body { padding: 16px 18px 20px; }
 }
-.syn3h-shell.exploration-ui button.panel-back:focus-visible,
-.syn3h-shell.exploration-ui .about-links a:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 4px; }
+.mira-shell.exploration-ui button.panel-back:focus-visible,
+.mira-shell.exploration-ui .about-links a:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 4px; }
 @media (max-width: 600px) {
-  .syn3h-shell.exploration-ui .in-play-about-body { padding: 16px 18px 20px; }
-  .syn3h-shell.exploration-ui .about-columns { grid-template-columns: 1fr; gap: 16px; }
-  .syn3h-shell.exploration-ui button.panel-back { width: 100%; min-width: 0; }
+  .mira-shell.exploration-ui .in-play-about-body { padding: 16px 18px 20px; }
+  .mira-shell.exploration-ui .about-columns { grid-template-columns: 1fr; gap: 16px; }
+  .mira-shell.exploration-ui button.panel-back { width: 100%; min-width: 0; }
 }
 
 /* Static first frame uses the same warm ray palette as the generated corona. */
-.syn3h-shell.exploration-ui .lobby-brand .wordmark {
+.mira-shell.exploration-ui .lobby-brand .wordmark {
   filter: drop-shadow(0 0 2px var(--s3-accent)) drop-shadow(0 0 9px rgb(100% 83.3% 61.2%)) drop-shadow(0 0 24px rgb(100% 77% 50% / .6));
 }
 
@@ -351,78 +351,78 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .in-play-about { background
    drawn like a card's title row (the card glass, height, radius and title type), so the row
    reads as the first of the stack. Search takes the free width; Pause and Leave world are
    square icon buttons with the lobby gear's line and glow. */
-.syn3h-shell.exploration-ui .world-inspector .rail-command { flex: 0 0 auto; display: flex; align-items: stretch; gap: 7px; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
-:root .syn3h-shell.exploration-ui .world-inspector .rail-command > :is(button, input) {
+.mira-shell.exploration-ui .world-inspector .rail-command { flex: 0 0 auto; display: flex; align-items: stretch; gap: 7px; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+:root .mira-shell.exploration-ui .world-inspector .rail-command > :is(button, input) {
   box-sizing: border-box; height: calc(var(--wi-head) + 2px); min-height: calc(var(--wi-head) + 2px); margin: 0;
   border: 1px solid var(--s3-line); border-radius: var(--halo-r); color: var(--s3-ink); text-shadow: var(--halo-under);
   transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease;
 }
 /* The field: the title type for its placeholder; typed text at 16 px on touch, below which
    Safari zooms the page. */
-:root .syn3h-shell.exploration-ui .world-inspector .rail-command > input.wi-search[type=search] {
+:root .mira-shell.exploration-ui .world-inspector .rail-command > input.wi-search[type=search] {
   flex: 1 1 auto; width: auto; min-width: 0; padding: 0 12px; font: 400 13px/1 'Barlow', sans-serif; letter-spacing: .04em;
 }
-:root .syn3h-shell.exploration-ui.has-touch .world-inspector .rail-command > input.wi-search[type=search] { font-size: 16px; }
-@media (pointer: coarse) { :root .syn3h-shell.exploration-ui .world-inspector .rail-command > input.wi-search[type=search] { font-size: 16px; } }
-.syn3h-shell.exploration-ui .world-inspector .rail-command > input.wi-search::placeholder { font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-dim); opacity: 1; }
-:root .syn3h-shell.exploration-ui .world-inspector .rail-command > input.wi-search[type=search]:focus { border-color: var(--s3-accent-2); outline: 1px solid var(--s3-accent-2); outline-offset: 1px; }
+:root .mira-shell.exploration-ui.has-touch .world-inspector .rail-command > input.wi-search[type=search] { font-size: 16px; }
+@media (pointer: coarse) { :root .mira-shell.exploration-ui .world-inspector .rail-command > input.wi-search[type=search] { font-size: 16px; } }
+.mira-shell.exploration-ui .world-inspector .rail-command > input.wi-search::placeholder { font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-dim); opacity: 1; }
+:root .mira-shell.exploration-ui .world-inspector .rail-command > input.wi-search[type=search]:focus { border-color: var(--s3-accent-2); outline: 1px solid var(--s3-accent-2); outline-offset: 1px; }
 /* The icon buttons: square, the card's height, the glyph glowing calmly at rest. A dark
    under-glow keeps the white line legible over a bright sky. At rest the glow matches the lobby
    gear's; hover and focus lift it, and a press lifts it most. */
-:root .syn3h-shell.exploration-ui .world-inspector .rail-command > button {
+:root .mira-shell.exploration-ui .world-inspector .rail-command > button {
   position: relative; flex: 0 0 auto; display: grid; place-items: center; width: calc(var(--wi-head) + 2px); padding: 0; cursor: pointer;
   box-shadow: 0 0 14px rgb(255 255 255 / .12), inset 0 0 10px rgb(255 255 255 / .08);
 }
-.syn3h-shell.exploration-ui .world-inspector .rail-command .rail-icon { width: 26px; height: 26px; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
-.syn3h-shell.exploration-ui .world-inspector .rail-command .rail-icon path {
+.mira-shell.exploration-ui .world-inspector .rail-command .rail-icon { width: 26px; height: 26px; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.mira-shell.exploration-ui .world-inspector .rail-command .rail-icon path {
   filter: drop-shadow(0 0 1px rgb(0 0 0 / .8)) drop-shadow(0 0 2.5px rgb(255 255 255 / .95)) drop-shadow(0 0 8px rgb(255 255 255 / .7));
   transition: opacity .2s ease, filter .2s ease;
 }
-:root .syn3h-shell.exploration-ui .world-inspector .rail-command > button:is(:hover, :focus-visible) {
+:root .mira-shell.exploration-ui .world-inspector .rail-command > button:is(:hover, :focus-visible) {
   color: #fff; border-color: rgb(255 255 255 / .8); box-shadow: 0 0 18px rgb(255 255 255 / .26), inset 0 0 12px rgb(255 255 255 / .16);
 }
-.syn3h-shell.exploration-ui .world-inspector .rail-command > button:is(:hover, :focus-visible) .rail-icon path {
+.mira-shell.exploration-ui .world-inspector .rail-command > button:is(:hover, :focus-visible) .rail-icon path {
   filter: drop-shadow(0 0 1px rgb(0 0 0 / .8)) drop-shadow(0 0 3px rgb(255 255 255 / 1)) drop-shadow(0 0 11px rgb(255 255 255 / .8));
 }
 /* Pressed: the rim and the glyph's glow at their brightest; the tile stays dark so the line
    keeps its contrast over a bright sky. */
-:root .syn3h-shell.exploration-ui .world-inspector .rail-command > button:active { color: #fff; border-color: #fff; background: rgb(0 0 0 / .3); box-shadow: 0 0 24px rgb(255 255 255 / .45), inset 0 0 14px rgb(255 255 255 / .2); }
-.syn3h-shell.exploration-ui .world-inspector .rail-command > button:active .rail-icon path {
+:root .mira-shell.exploration-ui .world-inspector .rail-command > button:active { color: #fff; border-color: #fff; background: rgb(0 0 0 / .3); box-shadow: 0 0 24px rgb(255 255 255 / .45), inset 0 0 14px rgb(255 255 255 / .2); }
+.mira-shell.exploration-ui .world-inspector .rail-command > button:active .rail-icon path {
   filter: drop-shadow(0 0 1px rgb(0 0 0 / .8)) drop-shadow(0 0 4px rgb(255 255 255 / 1)) drop-shadow(0 0 14px rgb(255 255 255 / 1));
 }
 /* The name under the button on hover and keyboard focus: the shared tooltip (tooltip.ts). */
-@media (max-height: 500px) { .syn3h-shell.exploration-ui .world-inspector .rail-command { gap: 3px; } }
+@media (max-height: 500px) { .mira-shell.exploration-ui .world-inspector .rail-command { gap: 3px; } }
 
-.syn3h-shell .world-inspector .wi-glyph { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.mira-shell .world-inspector .wi-glyph { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- The World card's actions ----------
    Copy and Paste, then a hairline, then Reset: three equal pills with a glyph and a short
    label, centred, at the top of the card. Reset is quieter until asked, and warm while it
    waits for the second press. */
-.syn3h-shell.exploration-ui .world-inspector .wi-world-actions {
+.mira-shell.exploration-ui .world-inspector .wi-world-actions {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 17px minmax(0, 1fr); align-items: center; column-gap: 6px;
   margin: 2px 0 10px;
 }
-.syn3h-shell.exploration-ui .world-inspector .wi-world-actions::after { content: ''; grid-column: 3; grid-row: 1; justify-self: center; width: 1px; height: 22px; background: var(--s3-line-quiet); }
-.syn3h-shell.exploration-ui .world-inspector .wi-world-actions .wi-reset { grid-column: 4; grid-row: 1; }
-:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button {
+.mira-shell.exploration-ui .world-inspector .wi-world-actions::after { content: ''; grid-column: 3; grid-row: 1; justify-self: center; width: 1px; height: 22px; background: var(--s3-line-quiet); }
+.mira-shell.exploration-ui .world-inspector .wi-world-actions .wi-reset { grid-column: 4; grid-row: 1; }
+:root .mira-shell.exploration-ui .world-inspector .wi-world-actions button {
   display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 0; min-height: 36px; margin: 0; padding: 0 8px;
   border: 1px solid var(--s3-line-quiet); border-radius: 999px; background: none; box-shadow: none;
   font: 500 11px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .14em; text-transform: uppercase;
   color: var(--s3-ink); text-shadow: var(--halo-under); white-space: nowrap;
   transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease;
 }
-:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button span { margin-right: -.14em; }
-:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button .wi-glyph { width: 14px; height: 14px; }
-:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button:is(:hover, :focus-visible) {
+:root .mira-shell.exploration-ui .world-inspector .wi-world-actions button span { margin-right: -.14em; }
+:root .mira-shell.exploration-ui .world-inspector .wi-world-actions button .wi-glyph { width: 14px; height: 14px; }
+:root .mira-shell.exploration-ui .world-inspector .wi-world-actions button:is(:hover, :focus-visible) {
   color: #fff; border-color: var(--s3-accent-2); background: rgb(205 205 205 / .07); box-shadow: 0 0 8px rgb(205 205 205 / .18);
 }
-:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button.wi-reset:not(.is-warning):not(:hover):not(:focus-visible) { color: var(--s3-dim); }
-:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button.wi-reset.is-warning { color: #ffd9b0; border-color: rgb(255 170 90 / .6); background: rgb(255 170 90 / .1); box-shadow: none; }
+:root .mira-shell.exploration-ui .world-inspector .wi-world-actions button.wi-reset:not(.is-warning):not(:hover):not(:focus-visible) { color: var(--s3-dim); }
+:root .mira-shell.exploration-ui .world-inspector .wi-world-actions button.wi-reset.is-warning { color: #ffd9b0; border-color: rgb(255 170 90 / .6); background: rgb(255 170 90 / .1); box-shadow: none; }
 /* A finger's target is 44 px; the pill stays slim and its hit area grows. */
-:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button { position: relative; }
-:root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button::after { content: ''; position: absolute; inset: -5px -3px; }
-@media (pointer: coarse) { :root .syn3h-shell.exploration-ui .world-inspector .wi-world-actions button { min-height: 44px; } }
+:root .mira-shell.exploration-ui .world-inspector .wi-world-actions button { position: relative; }
+:root .mira-shell.exploration-ui .world-inspector .wi-world-actions button::after { content: ''; position: absolute; inset: -5px -3px; }
+@media (pointer: coarse) { :root .mira-shell.exploration-ui .world-inspector .wi-world-actions button { min-height: 44px; } }
 
 /* ---------- Choices on touch layouts ----------
    On a phone a row's label sits above its segmented control, which then takes the row's full

@@ -28,7 +28,7 @@ describe('local saved worlds', () => {
   it('rejects malformed snapshots before the permissive clipboard parser can skip them', () => {
     const { store } = fixture(), entry = store.save(values).entry
     const read = (entry: unknown) => readSavedWorlds(JSON.stringify({ version: 1, entries: [entry] }), defs)
-    for (const world of [entry.world.values, { ...entry.world, syn3h: 'section' }, { ...entry.world, version: 2 }, { ...entry.world, values: { ...entry.world.values, 'terrain.height': 'broken' } }]) expect(() => read({ ...entry, world })).toThrow()
+    for (const world of [entry.world.values, { ...entry.world, mira: 'section' }, { ...entry.world, version: 2 }, { ...entry.world, values: { ...entry.world.values, 'terrain.height': 'broken' } }]) expect(() => read({ ...entry, world })).toThrow()
     expect(() => read({ ...entry, seed: 456 })).toThrow()
     expect(() => read({ ...entry, recipeId: 'desert' })).toThrow()
   })

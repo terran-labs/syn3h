@@ -10,9 +10,9 @@ try {
  page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())})
  const url=new URL(base);url.searchParams.set('autoplay','1');url.searchParams.set('room',`cloud-check-${Date.now()}`)
  if(process.argv.includes('--webgl'))url.searchParams.set('webgl','1')
- await page.goto(url.href,{timeout:120000});await page.waitForFunction(()=>window.syn3h?.game?.tick>120,null,{timeout:120000})
+ await page.goto(url.href,{timeout:120000});await page.waitForFunction(()=>window.mira?.game?.tick>120,null,{timeout:120000})
  await page.evaluate(async()=>{
-  const s=window.syn3h,g=s.game,p=s.params;g.renderer.setAnimationLoop(null)
+  const s=window.mira,g=s.game,p=s.params;g.renderer.setAnimationLoop(null)
   const moduleUrl=performance.getEntriesByType('resource').find(r=>r.name.includes('/three_webgpu.js'))?.name
   if(!moduleUrl)throw new Error('Game Three.js module unavailable')
   const T=await import(moduleUrl),env=g.systems.find(s=>s.clouds&&s.sunColor)
@@ -30,12 +30,12 @@ try {
  ]
  for(const c of cases){
   const state=await page.evaluate(async c=>{
-   const s=window.syn3h,g=s.game,p=s.params,{T,env,sky,initialCurve}=window.cloudCheck
+   const s=window.mira,g=s.game,p=s.params,{T,env,sky,initialCurve}=window.cloudCheck
    p.set('gfx.level',c.level??2);p.set('post.clouds',c.strength??1)
    p.set('world.atmosphere',c.air??1);p.set('weather.cloudCoverage',c.coverage??.65);p.set('weather.cloudDensity',c.density??.7)
    p.set('world.curve',c.curve??initialCurve);p.set('sun.timeOfDay',c.hour??12)
    g.camera.position.y=c.eye??50;g.camera.lookAt(g.camera.position.x,(c.eye??50)+(c.eye?0:c.horizon?30:250),g.camera.position.z+600)
-   g.camera.updateMatrixWorld();window.__syn3hCurve.updateCurve(g.camera.position,s.terrain.size)
+   g.camera.updateMatrixWorld();window.__miraCurve.updateCurve(g.camera.position,s.terrain.size)
    const hidden=[]
    if(c.horizon)for(const o of g.scene.children)if(o!==sky&&o.visible){hidden.push(o);o.visible=false}
    let wall
@@ -64,7 +64,7 @@ try {
   if(c.name==='moon')assert.ok(state.lightDot<-.99,'moonlight uses moon direction')
  }
  const lifecycle=await page.evaluate(()=>{
-  const {game:g}=window.syn3h,{env,sky}=window.cloudCheck
+  const {game:g}=window.mira,{env,sky}=window.cloudCheck
   const before=[env.clouds.offset.x,env.clouds.offset.y],captures=g.scene.userData.skyEnvironment.captures
   g.postChain.release();const after=[env.clouds.offset.x,env.clouds.offset.y]
   env.update(.6)

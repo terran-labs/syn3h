@@ -26,9 +26,9 @@
 .welcome-body strong { color: var(--w-ink); font-weight: 500; }
 .welcome-body em { font-style: normal; color: var(--w-ink); }
 /* The hosts' older About rules size every p (lobby-sheet.css, theme-halo.css); these two differ on purpose. */
-.syn3h-shell .welcome-body.welcome-body p.welcome-lede, .welcome-body .welcome-lede { margin-bottom: 22px; font: 300 clamp(19px, 2.6cqi + 11px, 26px)/1.35 'Barlow', sans-serif; letter-spacing: .005em; color: var(--w-ink); max-width: 30ch; }
-.syn3h-shell .welcome-body.welcome-body p.welcome-close, .welcome-body .welcome-close { margin-top: 28px; color: var(--w-ink); font: 300 18px/1.45 'Barlow', sans-serif; max-width: 34ch; }
-.syn3h-shell .welcome-body.welcome-body p.welcome-note, .welcome-body .welcome-note { color: var(--w-soft); font-size: 13.5px; }
+.mira-shell .welcome-body.welcome-body p.welcome-lede, .welcome-body .welcome-lede { margin-bottom: 22px; font: 300 clamp(19px, 2.6cqi + 11px, 26px)/1.35 'Barlow', sans-serif; letter-spacing: .005em; color: var(--w-ink); max-width: 30ch; }
+.mira-shell .welcome-body.welcome-body p.welcome-close, .welcome-body .welcome-close { margin-top: 28px; color: var(--w-ink); font: 300 18px/1.45 'Barlow', sans-serif; max-width: 34ch; }
+.mira-shell .welcome-body.welcome-body p.welcome-note, .welcome-body .welcome-note { color: var(--w-soft); font-size: 13.5px; }
 .welcome-body .welcome-kicker { margin: 0 0 14px; font: 500 11.5px/1.2 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; color: var(--w-soft); }
 
 /* Key caps: the left column's plain bright glyphs (gear.css), a hairline pill around the key. */
@@ -80,24 +80,24 @@
 /* The arrows and, between them, the front card's title and caption. The caption keeps room for its
    title and two lines, so a long one grows into that room and nothing above it moves. */
 .welcome-ring-foot { display: flex; align-items: flex-start; gap: 12px; width: min(100%, 520px); perspective: 600px; }
-.syn3h-shell .welcome-body.welcome-body p.welcome-ring-caption, .welcome-body p.welcome-ring-caption {
+.mira-shell .welcome-body.welcome-body p.welcome-ring-caption, .welcome-body p.welcome-ring-caption {
   display: grid; flex: 1; align-content: start; gap: 2px; margin: 0; max-width: none; text-align: center; transform-origin: 50% 0;
   height: calc(16px * 1.5 + 2px + 14px * 1.4 * 2);
 }
 .welcome-ring-caption strong { font: 500 16px/1.5 'Barlow', sans-serif; color: var(--w-ink); }
 .welcome-ring-caption span { font-size: 14px; line-height: 1.4; color: var(--w-soft); }
-.syn3h-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow {
+.mira-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow {
   display: grid; place-items: center; flex: none; width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; margin: 0;
   border: 1px solid var(--w-quiet); border-radius: 50%; background: rgb(255 255 255 / .05); box-shadow: none; color: var(--w-ink); cursor: pointer;
   transition: background-color .18s, border-color .18s;
 }
-.syn3h-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow::before { content: none; }
-.syn3h-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow:is(:hover, :focus-visible) { background: rgb(255 255 255 / .12); border-color: var(--w-line); }
+.mira-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow::before { content: none; }
+.mira-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow:is(:hover, :focus-visible) { background: rgb(255 255 255 / .12); border-color: var(--w-line); }
 .welcome-ring-arrow svg { width: 18px; height: 18px; }
 .welcome-ring-arrow path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* A narrow column: the cards take more of it, and the caption has room for four lines. */
 @container welcome (max-width: 520px) {
-  .syn3h-shell .welcome-body.welcome-body p.welcome-ring-caption, .welcome-body p.welcome-ring-caption { height: calc(16px * 1.5 + 2px + 13.5px * 1.4 * 4); }
+  .mira-shell .welcome-body.welcome-body p.welcome-ring-caption, .welcome-body p.welcome-ring-caption { height: calc(16px * 1.5 + 2px + 13.5px * 1.4 * 4); }
   .welcome-ring-caption span { font-size: 13.5px; }
 }
 @media (prefers-reduced-motion: reduce) { .welcome-ring-track, .welcome-ring-card { transition: none; } }
@@ -124,7 +124,7 @@
 .welcome-controls { display: grid; gap: 28px; }
 @container welcome (min-width: 620px) { .welcome-controls { grid-template-columns: 1.15fr 1fr; gap: 32px; } }
 .welcome-drive { display: flex; align-items: center; gap: 18px; margin: 0 0 14px; }
-.syn3h-shell .welcome-body.welcome-body .welcome-drive p { margin: 0; font-size: 14px; line-height: 1.4; }
+.mira-shell .welcome-body.welcome-body .welcome-drive p { margin: 0; font-size: 14px; line-height: 1.4; }
 .welcome-wasd { display: grid; grid-template-columns: repeat(3, 34px); gap: 5px; flex: none; }
 .welcome-wasd kbd { display: grid; place-items: center; height: 30px; margin: 0; padding: 0; min-width: 0; border-radius: 9px; font-size: 12.5px; }
 .welcome-keys { display: grid; gap: 2px; }

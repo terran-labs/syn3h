@@ -23,7 +23,7 @@ const errors = [], results = []
 
 /** In the page: find a straight run of open, deep liquid of `kind` and return its start and heading. */
 function findRun(kind) {
-  const t = window.syn3h.terrain, size = t.size ?? 2048
+  const t = window.mira.terrain, size = t.size ?? 2048
   const deep = (x, z) => t.liquidKindAt?.(x, z) === kind && Number.isFinite(t.liquidHeightAt(x, z)) && t.heightAt(x, z) < t.liquidHeightAt(x, z) - 12
   let best = null
   for (let x = -size / 2; x < size / 2; x += 32) for (let z = -size / 2; z < size / 2; z += 32) {
@@ -44,9 +44,9 @@ async function player(room, planet, name) {
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`))
   await page.goto(`${base}?autoplay=1&vehicle=buggy&planet=${planet}&seed=1&room=${room}&name=${name}`)
-  await page.waitForFunction(() => window.syn3hNet?.connected && window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.miraNet?.connected && window.mira?.game.tick > 30, null, { timeout: 120000 })
   await page.evaluate(() => {
-    const s = window.syn3h
+    const s = window.mira
     s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 12); s.params.set('sun.dayLength', 0)
     // Keep A's copy physical along the whole run, so its skims are simulated here, not placed.
     s.params.set('net.proxyRadius', 200)
@@ -57,15 +57,15 @@ async function player(room, planet, name) {
 for (const [planet, kind] of [['archipelago', 'water'], ['volcanic', 'lava']]) {
   const room = `zorbskip${Date.now().toString(36)}`
   const a = await player(room, planet, 'A'), b = await player(room, planet, 'B')
-  await Promise.all([a, b].map((p) => p.page.waitForFunction(() => window.syn3hNet.remotes.size === 1, null, { timeout: 30000 })))
+  await Promise.all([a, b].map((p) => p.page.waitForFunction(() => window.miraNet.remotes.size === 1, null, { timeout: 30000 })))
   const run = await a.page.evaluate(findRun, kind)
   if (!run || run.n < 150) { console.log(`SKIP ${planet}: no long run of open ${kind}`, run); await a.ctx.close(); await b.ctx.close(); continue }
   // Zorb on, grown, before anything is measured.
-  await a.page.evaluate(() => { window.syn3h.game.input.state.zorb = true })
-  await a.page.waitForFunction(() => { const z = window.syn3h.player.zorb; return z.target > 0 && z.radius === z.target }, null, { timeout: 30000 })
+  await a.page.evaluate(() => { window.mira.game.input.state.zorb = true })
+  await a.page.waitForFunction(() => { const z = window.mira.player.zorb; return z.target > 0 && z.radius === z.target }, null, { timeout: 30000 })
   // B floats nearby, out of the way, watching A.
   await b.page.evaluate(({ run }) => {
-    const s = window.syn3h, y = s.terrain.liquidHeightAt(run.x, run.z) + 8
+    const s = window.mira, y = s.terrain.liquidHeightAt(run.x, run.z) + 8
     s.player.teleport({ x: run.x + Math.cos(run.h) * 40, y, z: run.z - Math.sin(run.h) * 40 }, run.h)
   }, { run })
 
@@ -73,7 +73,7 @@ for (const [planet, kind] of [['archipelago', 'water'], ['volcanic', 'lava']]) {
     const dir = `${out}/${kind}-${label}`
     await mkdir(dir, { recursive: true })
     await a.page.evaluate(({ run, speed, angle, hopAt }) => {
-      const s = window.syn3h, p = s.player, z = p.zorb, sea = s.terrain.liquidHeightAt(run.x, run.z)
+      const s = window.mira, p = s.player, z = p.zorb, sea = s.terrain.liquidHeightAt(run.x, run.z)
       const a = (angle * Math.PI) / 180, dx = -Math.sin(run.h), dz = -Math.cos(run.h)
       // A real three.js vector from the page, for the ball's centre.
       const c = p.object.position.clone()
@@ -99,7 +99,7 @@ for (const [planet, kind] of [['archipelago', 'water'], ['volcanic', 'lava']]) {
     }, { run, speed, angle, hopAt })
     // B records its copy of A over the same time.
     await b.page.evaluate(() => {
-      const s = window.syn3h, r = [...window.syn3hNet.remotes.values()][0]
+      const s = window.mira, r = [...window.miraNet.remotes.values()][0]
       window.copyTrace = []
       window.copyProbe?.()
       const c = r.vehicle.object.position.clone()
@@ -115,7 +115,7 @@ for (const [planet, kind] of [['archipelago', 'water'], ['volcanic', 'lava']]) {
     const copy = await b.page.evaluate(() => window.copyTrace)
     // B's copy runs about a tenth of a second behind: compare each copy point to A's whole path.
     // The world wraps: each page draws the other at the image nearest itself.
-    const size = await a.page.evaluate(() => window.syn3h.terrain.size)
+    const size = await a.page.evaluate(() => window.mira.terrain.size)
     const wrap = (d) => d - size * Math.round(d / size)
     const near = (q) => Math.min(...own.map((o) => Math.hypot(wrap(o.p[0] - q.p[0]), o.p[1] - q.p[1], wrap(o.p[2] - q.p[2]))))
     const settledCopy = copy.slice(20).filter((q) => q.zorb)

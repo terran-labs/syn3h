@@ -30,7 +30,7 @@
 
 /* Preserve border-box dimensions, clipping, label and input through the
    card's native Web Animations sequence. The canvas supplies its surface. */
-html .syn3h-shell.exploration-ui .world-inspector :is(.wi-card, .wi-ghost)[data-glass-surface="shader"] {
+html .mira-shell.exploration-ui .world-inspector :is(.wi-card, .wi-ghost)[data-glass-surface="shader"] {
   background: transparent !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -40,12 +40,12 @@ html .syn3h-shell.exploration-ui .world-inspector :is(.wi-card, .wi-ghost)[data-
 
 /* The card supplies the one glass surface. Keep the real colour inputs,
    keyboard outlines and selected states inside it. */
-html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
+html .mira-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
   --s3-on-glow: none;
   --card-selection: #44484d;
   --card-selection-ink: white;
 }
-html[data-game-glass] .syn3h-shell.exploration-ui .world-inspector .wi-card :is(.wi-vehicle-picker, .wi-seg, .wi-swatch, .wi-vehicle-option, .wi-seg button, .liquid-glass) {
+html[data-game-glass] .mira-shell.exploration-ui .world-inspector .wi-card :is(.wi-vehicle-picker, .wi-seg, .wi-swatch, .wi-vehicle-option, .wi-seg button, .liquid-glass) {
   box-shadow: none;
   text-shadow: none;
   backdrop-filter: none;
@@ -54,30 +54,30 @@ html[data-game-glass] .syn3h-shell.exploration-ui .world-inspector .wi-card :is(
   border-color: transparent;
   color: var(--s3-ink);
 }
-html[data-game-glass] .syn3h-shell.exploration-ui .world-inspector .wi-card :is(.wi-vehicle-picker, .wi-seg) {
+html[data-game-glass] .mira-shell.exploration-ui .world-inspector .wi-card :is(.wi-vehicle-picker, .wi-seg) {
   border: 0;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .wi-switch button.is-on {
+html .mira-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .wi-switch button.is-on {
   background: var(--card-selection);
   color: var(--card-selection-ink);
   border-radius: var(--glass-control-radius, 24px);
   box-shadow: none;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] > .wi-head :is(h3, .wi-sum, .wi-x) {
+html .mira-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] > .wi-head :is(h3, .wi-sum, .wi-x) {
   color: var(--s3-ink);
   text-shadow: none;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .wi-x {
+html .mira-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .wi-x {
   box-shadow: none;
   background: transparent;
   border-color: transparent;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .liquid-glass::before,
-html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .liquid-glass::after {
+html .mira-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .liquid-glass::before,
+html .mira-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] .liquid-glass::after {
   opacity: 0;
 }
 
-html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
+html .mira-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="shader"] {
   --s3-ink: #fff;
   --s3-dim: white;
   --s3-soft: white;
@@ -85,7 +85,7 @@ html .syn3h-shell.exploration-ui .world-inspector .wi-card[data-glass-surface="s
   color: var(--s3-ink);
 }
 /* Standalone HUD controls keep their own labels, cues and keyboard focus. */
-html .syn3h-shell.exploration-ui button[data-glass-surface="shader"] {
+html .mira-shell.exploration-ui button[data-glass-surface="shader"] {
   background: transparent;
   box-shadow: none;
   border-color: transparent;
@@ -94,25 +94,25 @@ html .syn3h-shell.exploration-ui button[data-glass-surface="shader"] {
 }
 
 /* Body styles on the rail are more specific than the shared glass button. */
-html .syn3h-shell.exploration-ui .world-inspector .rail-command > [data-glass-surface="shader"] {
+html .mira-shell.exploration-ui .world-inspector .rail-command > [data-glass-surface="shader"] {
   background: transparent !important;
   border-color: transparent !important;
   box-shadow: none !important;
   transition-property: color;
 }
-html .syn3h-shell .rail-command > [data-glass-surface="shader"] .rail-icon path { filter: none; }
+html .mira-shell .rail-command > [data-glass-surface="shader"] .rail-icon path { filter: none; }
 
 /* Selection is conveyed by size, weight and the filled node. The mask on
    the drum normally fades the label itself, including its centre strokes. */
-html .syn3h-shell .gear-selector:has(.gs-item[data-glass-surface="shader"]) {
+html .mira-shell .gear-selector:has(.gs-item[data-glass-surface="shader"]) {
   opacity: 1 !important;
 }
-html .syn3h-shell .gear-selector .gs-drum:has(> [data-glass-surface="shader"]) {
+html .mira-shell .gear-selector .gs-drum:has(> [data-glass-surface="shader"]) {
   mask-image: none !important;
   -webkit-mask-image: none !important;
 }
-html .syn3h-shell .gs-drum .gs-item[data-glass-surface="shader"] { opacity: 1 !important; }
-html .syn3h-shell .gs-drum .gs-item.is-active[data-glass-surface="shader"] .gs-text { font-weight: 700; }
+html .mira-shell .gs-drum .gs-item[data-glass-surface="shader"] { opacity: 1 !important; }
+html .mira-shell .gs-drum .gs-item.is-active[data-glass-surface="shader"] .gs-text { font-weight: 700; }
 
 :is(button, input)[data-glass-surface="shader"],
 :is(button, input)[data-glass-surface="shader"] :is(span, kbd),
@@ -153,30 +153,30 @@ html #lobby-settings[data-glass-surface="shader"] button.is-on {
 }
 @media (max-width: 700px), (max-height: 500px) and (pointer: coarse) {
   /* World names and the version are DOM siblings above the galaxy canvas. */
-  html .syn3h-shell:has(#lobby-settings[data-glass-surface="shader"]) .galaxy-ui {
+  html .mira-shell:has(#lobby-settings[data-glass-surface="shader"]) .galaxy-ui {
     opacity: .22;
   }
 }
 
 /* An opted-in device can still shed the entire surface layer. */
 html:not([data-game-glass]) .wi-group[data-group="Glass"],
-.syn3h-shell:not([data-lobby-glass]) .lobby-settings .wi-card[data-section="glass"] .wi-row:not(.glass-material-row) { display: none; }
+.mira-shell:not([data-lobby-glass]) .lobby-settings .wi-card[data-section="glass"] .wi-row:not(.glass-material-row) { display: none; }
 [data-glass-surface="shader"]:is(button:active, button.held):not([data-glass-press]) { scale: var(--glass-extra-scale, none); }
 /* Keep the extra action in a trailing column only while the row is edited. */
-.syn3h-shell .wi-row:has(> .glass-setting-reset) { grid-auto-flow: column; grid-auto-columns: max-content; }
-.syn3h-shell.exploration-ui .world-inspector .wi-row > button.glass-setting-reset {
+.mira-shell .wi-row:has(> .glass-setting-reset) { grid-auto-flow: column; grid-auto-columns: max-content; }
+.mira-shell.exploration-ui .world-inspector .wi-row > button.glass-setting-reset {
   appearance: none; border: 0; border-radius: var(--glass-control-radius, 24px); background: transparent; box-shadow: none;
   min-width: 0; min-height: 28px; padding: 0 10px; font: inherit; color: inherit;
   text-transform: none; letter-spacing: normal; text-decoration: none;
 }
-.syn3h-shell .wi-row > .glass-setting-reset[hidden] { display: none; }
+.mira-shell .wi-row > .glass-setting-reset[hidden] { display: none; }
 /* A rail theme can frost Search and the two icons at tablet widths.
    Once their surfaces are in the framebuffer, there is no DOM blur to apply. */
-html .syn3h-shell.exploration-ui > .world-inspector .rail-command > [data-glass-surface="shader"],
-html .syn3h-shell.exploration-ui > .world-inspector > .panels-close[data-glass-surface="shader"] {
+html .mira-shell.exploration-ui > .world-inspector .rail-command > [data-glass-surface="shader"],
+html .mira-shell.exploration-ui > .world-inspector > .panels-close[data-glass-surface="shader"] {
   -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
 }
-html .syn3h-shell.exploration-ui dialog.lobby-sheet button[data-glass-surface="shader"] {
+html .mira-shell.exploration-ui dialog.lobby-sheet button[data-glass-surface="shader"] {
   background: transparent; border-color: transparent; box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none; color: white;
 }

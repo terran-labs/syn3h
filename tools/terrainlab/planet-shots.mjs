@@ -21,11 +21,11 @@ for (const id of ids) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
   page.on('pageerror', (e) => errors.push(`${id}: ${e.message}`))
   await page.goto(`${base}?autoplay=1&world=${id}.${seed}&room=p${id}${Date.now().toString(36)}`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 60, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 60, null, { timeout: 90000 })
   await page.waitForTimeout(3000)
   await page.screenshot({ path: `${out}/${id}-0-pad.png` })
   const spots = await page.evaluate(() => {
-    const t = window.syn3h.terrain
+    const t = window.mira.terrain
     const road = t.roadPaths().find((r) => r.kind === 'volcano').points
     const at = (f, back) => {
       const i = Math.floor(road.length * f), p = road[i], q = road[Math.min(road.length - 1, i + 3)]
@@ -37,7 +37,7 @@ for (const id of ids) {
   })
   for (const [name, s] of Object.entries(spots)) {
     await page.evaluate((p) => {
-      const pl = window.syn3h.player
+      const pl = window.mira.player
       pl.body.setTranslation({ x: p.x, y: p.y + 1.5, z: p.z }, true)
       pl.body.setRotation({ x: 0, y: Math.sin(p.heading / 2), z: 0, w: Math.cos(p.heading / 2) }, true)
       pl.body.setLinvel({ x: 0, y: 0, z: 0 }, true)

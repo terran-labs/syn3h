@@ -24,7 +24,7 @@ const errors = []
 page.on('pageerror', (e) => errors.push(e.message))
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
 await page.goto(`${base}?autoplay=1&world=${world}&room=water${Date.now().toString(36)}`, { waitUntil: 'load' })
-await page.waitForFunction(() => window.syn3h?.game?.tick > 60, null, { timeout: 120000 })
+await page.waitForFunction(() => window.mira?.game?.tick > 60, null, { timeout: 120000 })
 
 const setParams = (values) => page.evaluate(async (v) => {
   const { params } = await import('/shared/params.ts')
@@ -35,7 +35,7 @@ await setParams({ 'world.seaKind': 1, ...extra })
 await page.waitForTimeout(500)
 
 const spots = await page.evaluate(() => {
-  const t = window.syn3h.terrain
+  const t = window.mira.terrain
   const sea = t.liquidHeightAt(1e6 + 0.5, 0.5)
   const size = t.wrapSize
   // Walk out from the centre until the ground drops under the sea: the coast.
@@ -48,7 +48,7 @@ const spots = await page.evaluate(() => {
     if (coast) break
   }
   coast.y = t.heightAt(coast.x, coast.z)
-  const lava = window.syn3h.terrain.data?.lava
+  const lava = window.mira.terrain.data?.lava
   let river = null
   if (lava?.rivers?.length) {
     const r = lava.rivers.reduce((a, b) => (b.drops?.length ?? 0) > (a.drops?.length ?? 0) ? b : a, lava.rivers[0])
@@ -84,7 +84,7 @@ const spots = await page.evaluate(() => {
 })
 
 const place = (s) => page.evaluate((p) => {
-  const pl = window.syn3h.player
+  const pl = window.mira.player
   pl.body.setTranslation({ x: p.x, y: p.y + 1.5, z: p.z }, true)
   pl.body.setRotation({ x: 0, y: Math.sin(p.heading / 2), z: 0, w: Math.cos(p.heading / 2) }, true)
   pl.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
@@ -113,7 +113,7 @@ for (const [name, spot, values, speed] of shots) {
     const trace = []
     while (Date.now() < end) {
       trace.push(await page.evaluate(([v, h]) => {
-        const b = window.syn3h.player.body, l = b.linvel(), p = b.translation(), t = window.syn3h.terrain
+        const b = window.mira.player.body, l = b.linvel(), p = b.translation(), t = window.mira.terrain
         b.setLinvel({ x: -Math.sin(h) * v, y: l.y, z: -Math.cos(h) * v }, true)
         return [+(p.y - t.liquidHeightAt(p.x, p.z)).toFixed(2), +t.heightAt(p.x, p.z).toFixed(1), +l.y.toFixed(1)]
       }, [speed, spot.heading]))
@@ -124,7 +124,7 @@ for (const [name, spot, values, speed] of shots) {
     const trace = []
     for (let i = 0; i < 30; i++) {
       trace.push(await page.evaluate(() => {
-        const b = window.syn3h.player.body, l = b.linvel(), p = b.translation(), t = window.syn3h.terrain
+        const b = window.mira.player.body, l = b.linvel(), p = b.translation(), t = window.mira.terrain
         return [+(p.y - t.liquidHeightAt(p.x, p.z)).toFixed(2), +l.y.toFixed(2)]
       }))
       await page.waitForTimeout(500)
@@ -132,7 +132,7 @@ for (const [name, spot, values, speed] of shots) {
     report[name + 'Trace'] = trace
   } else await page.waitForTimeout(3500)
   const state = await page.evaluate(() => {
-    const b = window.syn3h.player.body.translation(), t = window.syn3h.terrain
+    const b = window.mira.player.body.translation(), t = window.mira.terrain
     return { y: b.y, surface: t.liquidHeightAt(b.x, b.z), ground: t.heightAt(b.x, b.z) }
   })
   report.shots.push({ name, state })

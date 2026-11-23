@@ -30,15 +30,15 @@ try {
     const look = PLANETS[planet]
     const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage()
     await page.goto(`${base}?room=rate${Date.now().toString(36)}&name=Sam&autoplay=1`)
-    await page.waitForFunction(() => window.syn3hChat?.net?.isHost && window.syn3hChat.banter?.director, null, { timeout: 90000 })
-    await page.evaluate((look) => { const p = window.syn3h.params; p.set('daydream.seconds', 0); p.set('gfx.auto', false); p.set('gfx.quality', 1); p.set('bots.count', 4); if (look.preset) window.syn3h.planets.applyPlanet(look.preset); else for (const [id, v] of Object.entries(look)) p.set(id, v) }, look)
+    await page.waitForFunction(() => window.miraChat?.net?.isHost && window.miraChat.banter?.director, null, { timeout: 90000 })
+    await page.evaluate((look) => { const p = window.mira.params; p.set('daydream.seconds', 0); p.set('gfx.auto', false); p.set('gfx.quality', 1); p.set('bots.count', 4); if (look.preset) window.mira.planets.applyPlanet(look.preset); else for (const [id, v] of Object.entries(look)) p.set(id, v) }, look)
     await page.waitForTimeout(5000)
-    const start = await page.evaluate(() => ({ ...window.syn3hChat.banter.director.counts }))
+    const start = await page.evaluate(() => ({ ...window.miraChat.banter.director.counts }))
     const end = Date.now() + minutes * 60_000
     let i = 0
     while (Date.now() < end) {
-      if (i === 6) await page.evaluate(() => window.syn3hChat.net.chat.send('hi bots'))
-      if (i === 30) await page.evaluate(() => window.syn3hChat.net.chat.send('what are you all doing'))
+      if (i === 6) await page.evaluate(() => window.miraChat.net.chat.send('hi bots'))
+      if (i === 30) await page.evaluate(() => window.miraChat.net.chat.send('what are you all doing'))
       // A sightseeing drive: throttle pulses, a turn now and then, parked one cycle in five.
       if (i % 5 !== 4) for (let k = 0; k < 6; k++) {
         await page.keyboard.down('KeyW'); if (i % 3 === 1) await page.keyboard.down('KeyD')
@@ -46,7 +46,7 @@ try {
       } else await page.waitForTimeout(6000)
       i++
     }
-    const now = await page.evaluate(() => ({ counts: { ...window.syn3hChat.banter.director.counts }, bots: window.syn3h.bots.vehicles.length }))
+    const now = await page.evaluate(() => ({ counts: { ...window.miraChat.banter.director.counts }, bots: window.mira.bots.vehicles.length }))
     const by = {}
     for (const [key, n] of Object.entries(now.counts)) { const d = n - (start[key] ?? 0); if (d > 0) by[kindOf(key)] = (by[kindOf(key)] ?? 0) + d }
     rows.push({ planet, bots: now.bots, by })

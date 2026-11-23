@@ -13,7 +13,7 @@ refreshes the thread column on each sweep.
 | Bots, Performance and QA (Codex 2) | `feat/fx` | Running: iPad black screen, graphics level switch, diagnostic overlay | Bots, camera (`ChaseCamera.ts`), graphics levels (`quality.ts`), `resume.ts`, QA sweeps, `tools/drive-capture.mjs`, `tools/serve-stable.mjs`, `tools/manual-reload.mjs` |
 | UX (thread named Codex 3) | `feat/audio` | Running, with the owner | Lobby, HUD, menus, demo features, `src/audio/**`, `src/ui/data/**`, sky colour and time of day defaults |
 | Multiplayer | `feat/net` | Not listed as running at 7:00pm; rear-end shove dispatched | Networking, room server, modes, release and domain tooling, `docs/CUTOVER.md` |
-| Syn3h buggy | `veh/buggy` | Running, with the owner, and one helper: wheel motors and wing struts | `Syn3hBuggy.ts`, its skin, model, test and `buggy.*` defaults |
+| Mira buggy | `veh/buggy` | Running, with the owner, and one helper: wheel motors and wing struts | `MiraBuggy.ts`, its skin, model, test and `buggy.*` defaults |
 | Jet | `veh/jet` | Running, with the owner | See its brief on `veh/jet` |
 | Hovercraft | `veh/hovercraft` | Not listed at 7:00pm | See its brief on `veh/hovercraft` |
 | Tank | `veh/tank` | Running, with the owner | See its brief on `veh/tank` |

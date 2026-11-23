@@ -1,3 +1,4 @@
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
@@ -9,14 +10,14 @@ for (const mode of ['desktop', 'phone']) {
  try {
   const page = await browser.newPage(mode === 'phone' ? devices['iPhone 14'] : { viewport: { width: 1440, height: 1000 } })
   const errors = []; page.on('pageerror', error => errors.push(error.message))
-  await page.goto(`${process.env.SYN3H_URL}?autoplay=1&room=frost-${phase}-${mode}-${Date.now()}`)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+  await page.goto(`${process.env.MIRA_URL}?autoplay=1&room=frost-${phase}-${mode}-${Date.now()}`)
+  await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
   await page.locator('.boot-veil').waitFor({ state: 'hidden' })
   const rail = page.locator('.world-inspector')
   if (mode === 'phone' && !await rail.isVisible()) await page.locator('.inspector-toggle').tap()
   else if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
   await rail.waitFor({ state: 'visible' })
-  await page.evaluate(async () => { (await import('/src/ui/quality/ladder.ts')).setQualityChoice('full'); syn3h.game.quality.setAuto(false); syn3h.game.quality.setLevel(3) })
+  await page.evaluate(async () => { (await import('/src/ui/quality/ladder.ts')).setQualityChoice('full'); mira.game.quality.setAuto(false); mira.game.quality.setLevel(3) })
   // The foot is no longer a glass surface: it holds one button, which carries its own backing.
   const surfaces = '.wi-cards > [data-section]'
   const readSurfaces = () => rail.locator(surfaces).evaluateAll(es => es.map(el => { const s = getComputedStyle(el); return { card: el.dataset.section || 'bottom', background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } }))
@@ -30,7 +31,7 @@ for (const mode of ['desktop', 'phone']) {
    await page.evaluate(async ({ planet, hour }) => {
     const { applyPlanet } = await import('/src/world/planets.ts'), { params } = await import('/shared/params.ts')
     applyPlanet(planet, 12345); params.set('sun.dayLength', 0); params.set('sun.timeOfDay', hour)
-    syn3h.shell.inspector.revealCard('game')
+    mira.shell.inspector.revealCard('game')
    }, { planet, hour })
    await page.waitForTimeout(1500)
    const game = rail.locator('[data-section=game]'), options = game.locator('[data-id="game.mode"] .wi-seg button')
@@ -54,7 +55,7 @@ for (const mode of ['desktop', 'phone']) {
      const fold = game.locator(`[data-group="${group}"]`)
      assert.equal(await fold.count(), 1); assert.equal(await fold.evaluate(el => el.open), false)
     }
-    await page.evaluate(() => syn3h.shell.inspector.revealCard('you'))
+    await page.evaluate(() => mira.shell.inspector.revealCard('you'))
     const me = rail.locator('[data-section=you]'); await me.locator('.wi-head').scrollIntoViewIfNeeded()
     assert.equal(await me.locator('h3').textContent(), 'Me')
     assert.equal(await me.locator('.wi-swatch').count(), 2)
@@ -62,15 +63,15 @@ for (const mode of ['desktop', 'phone']) {
     await page.screenshot({ path: `${out}/${mode}-${planet}-me.png` })
    }
    if (baseline) {
-    await page.evaluate(() => syn3h.shell.inspector.revealCard('vehicles'))
+    await page.evaluate(() => mira.shell.inspector.revealCard('vehicles'))
     await rail.locator('[data-section=vehicles] .wi-head').scrollIntoViewIfNeeded()
     await page.screenshot({ path: `${out}/${mode}-${planet}-vehicle.png` })
    }
    results.push({ planet, hour, bounds, frost })
   }
   if (!baseline) {
-   await page.evaluate(() => syn3h.game.quality.setLevel(0))
-   await page.waitForFunction(() => document.querySelector('.syn3h-shell').dataset.uiFrost === 'off')
+   await page.evaluate(() => mira.game.quality.setLevel(0))
+   await page.waitForFunction(() => document.querySelector('.mira-shell').dataset.uiFrost === 'off')
    const minimal = await rail.locator('[data-section=you]').evaluate(el => { const s = getComputedStyle(el); return { background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } })
    assert.equal(minimal.blur, 'none'); assert.match(minimal.background, /0\.94\)/)
    const cards = await readSurfaces(); console.log(JSON.stringify({ mode, minimalCards: cards })); checkSurfaces(cards, true)

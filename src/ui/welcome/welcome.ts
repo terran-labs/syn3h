@@ -102,7 +102,7 @@ const touchDiagram = `<svg class="welcome-touch" viewBox="0 0 844 390" role="img
 /** The page. Every top-level element is one row (see the contract above). */
 function html(): string {
   return `
-<p class="welcome-lede">Syn3h is a sci-fi wonderland of tiny worlds to explore with your friends.</p>
+<p class="welcome-lede">Mira is a sci-fi wonderland of tiny worlds to explore with your friends.</p>
 ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)))}
 <h3>Three machines</h3>
 <ul class="welcome-cards">
@@ -161,7 +161,7 @@ ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)))}
 <h3>Settings worth knowing</h3>
 <ul class="welcome-settings">
   <li><strong>Units.</strong> Metric or imperial, for speed, height and distance. Settings, then Controls.</li>
-  <li><strong>Sound on silent.</strong> Syn3h asks an iPhone to play its sound even with the silent switch on. To make it obey the switch: Settings, then Sound, then Advanced.</li>
+  <li><strong>Sound on silent.</strong> Mira asks an iPhone to play its sound even with the silent switch on. To make it obey the switch: Settings, then Sound, then Advanced.</li>
   <li><strong>Quality.</strong> The game picks a level for your device and adjusts as you play. Set it yourself in Settings, then Graphics.</li>
   <li><strong>Left-handed touch.</strong> Swaps the driving thumb to the right. Settings, then Controls.</li>
 </ul>

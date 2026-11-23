@@ -364,7 +364,7 @@ export class BotManager implements System {
       const bot = this.acquireBotVehicle(kind, place.position, place.heading)
       bot.isLocal = false; bot.id = `bot-${this.nextBotId++}`; bot.name = uniqueBotName(`${worldSeed.value}:${bot.id}`, new Set([this.player.name, ...this.bots.map(other => other.name), ...[...this.leaving.keys()].map(other => other.name)].filter(Boolean).map(n => n!.toLowerCase())))
       bot.setColors(`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff')
-      try { performance.measure('syn3h:bot build', { start, end: performance.now(), detail: kind }) } catch { /* Older engines. */ }
+      try { performance.measure('mira:bot build', { start, end: performance.now(), detail: kind }) } catch { /* Older engines. */ }
       return { bot, place }
     } finally {
       longFrames.end('bot.build', spanStart)

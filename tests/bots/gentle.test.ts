@@ -7,7 +7,7 @@ import { Scene, Vector3 } from 'three/webgpu'
 import type { Game } from '../../src/core/Game'
 import { emptyInput } from '../../src/core/Input'
 import { createWorld, initPhysics, RAPIER } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import type { Vehicle } from '../../src/vehicles/Vehicle'
 import type { Terrain } from '../../src/world/Terrain'
 import { BotBrain, type BotMatch } from '../../src/bots/BotBrain'
@@ -47,10 +47,10 @@ function touching(a: Vehicle, b: Vehicle): boolean {
  */
 function chase(player: 'still' | 'moving', seconds: number, match: (bots: Vehicle[], you: Vehicle) => BotMatch | null = () => null) {
   const game = { world, scene: new Scene(), tick: 0, input: { state: emptyInput() } } as unknown as Game
-  const you = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); you.id = 'player'; you.isLocal = false
-  const bots: Syn3hBuggy[] = [], brains: BotBrain[] = []
+  const you = new MiraBuggy(game, terrain, new Vector3(0, 1, 0)); you.id = 'player'; you.isLocal = false
+  const bots: MiraBuggy[] = [], brains: BotBrain[] = []
   for (let i = 0; i < 3; i++) {
-    const bot = new Syn3hBuggy(game, terrain, new Vector3(Math.cos(i * 2.1) * 40, 1, Math.sin(i * 2.1) * 40)); bot.id = `bot-${i}`
+    const bot = new MiraBuggy(game, terrain, new Vector3(Math.cos(i * 2.1) * 40, 1, Math.sin(i * 2.1) * 40)); bot.id = `bot-${i}`
     const brain = new BotBrain(game, terrain, bot, you, i)
     brain.setTargets([you]); brain.setPeers(bots)
     bots.push(bot); brains.push(brain)

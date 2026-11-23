@@ -4,7 +4,7 @@ import { Quaternion, Scene, Vector3 } from 'three/webgpu'
 import type { Game } from '../../src/core/Game'
 import { emptyInput } from '../../src/core/Input'
 import { createWorld, initPhysics } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { DAYDREAM_PERSONALITY } from '../../src/bots/Daydream'
 import { Mind } from '../../src/bots/mind/Mind'
 import { createPilot } from '../../src/bots/pilot'
@@ -32,7 +32,7 @@ export function drive(seed: string, seconds: number, verbose = false, vehicleKin
   if (planet) resetPlanet()
   const game = { world, scene: new Scene(), tick: 0, input: { state: emptyInput() } } as unknown as Game
   const spawn = terrain.spawnPoint(0), sights = pointsOfInterest(terrain), navigator = createNavigator(terrain)
-  const buggy = vehicleKind === 'jet' ? new Jet(game, terrain, spawn.position, spawn.heading) : vehicleKind === 'hovercraft' ? new Hovercraft(game, terrain, spawn.position, spawn.heading) : new Syn3hBuggy(game, terrain, spawn.position, spawn.heading); buggy.isLocal = false
+  const buggy = vehicleKind === 'jet' ? new Jet(game, terrain, spawn.position, spawn.heading) : vehicleKind === 'hovercraft' ? new Hovercraft(game, terrain, spawn.position, spawn.heading) : new MiraBuggy(game, terrain, spawn.position, spawn.heading); buggy.isLocal = false
   const mind = new Mind(buggy, terrain, createPilot(buggy, terrain)!, { seed, personality: DAYDREAM_PERSONALITY, navigator, places: () => sights })
   const kinds = new Set<string>(); let flight = 0, soaked = false, travel = 0, lastSteer = 0, side = 0, reversals = 0, crashed = false, low = Infinity, path = 0, wet = 0, flipped = 0, slow = 0, far = 0, kind = ''
   const last = spawn.position.clone(), cells = new Set<string>(), up = new Vector3(), q = new Quaternion()

@@ -13,7 +13,7 @@
  * - DESIGN BUILD (`build`): loads a body, picks its strut, adds lamps, beams and the cockpit.
  *
  * Draw calls here are higher than the game's: the game instances stators and struts and merges
- * static parts (Syn3hBuggySkin), while this gallery keeps every part a separate mesh so bodies
+ * static parts (MiraBuggySkin), while this gallery keeps every part a separate mesh so bodies
  * can be swapped freely. Triangle counts match what the parts would ship at.
  */
 import * as THREE from 'three/webgpu'
@@ -29,11 +29,11 @@ const WHEEL_INDEX = '/labs/buggy-wheels/index.json'
  */
 const LEGACY_PICK = 'v4-widebody'
 
-/** Wheel hubs at rest in the game frame (nose at -Z): Syn3hBuggy WHEEL_POS at ride height. */
+/** Wheel hubs at rest in the game frame (nose at -Z): MiraBuggy WHEEL_POS at ride height. */
 const HUBS = [[-1.1, -.19, -1.3], [1.1, -.19, -1.3], [-1.1, -.19, 1.3], [1.1, -.19, 1.3]].map(p => new THREE.Vector3(...p))
-/** Where each strut meets the body: the prefab's AxelPos, as Syn3hBuggySkin's mounts. */
+/** Where each strut meets the body: the prefab's AxelPos, as MiraBuggySkin's mounts. */
 const MOUNTS = [[-.55, .15, -1.2], [.55, .15, -1.2], [-.55, .15, 1.2], [.55, .15, 1.2]].map(p => new THREE.Vector3(...p))
-/** Length of the strut mesh along its span (glb +Y, narrow root at the origin), as Syn3hBuggySkin. */
+/** Length of the strut mesh along its span (glb +Y, narrow root at the origin), as MiraBuggySkin. */
 const STRUT_SPAN = .828
 const STRUT_REST = HUBS[3].distanceTo(MOUNTS[3])
 /** Tyre bottom: hub height less the original tyre's 0.52 m radius. */
@@ -209,7 +209,7 @@ const originalWheels = async () => {
   }
 }
 const ORIGINAL: WheelOption = {
-  id: 'original', name: 'Original', notes: ['Syn3h wheel template and hub stator from buggy.glb'],
+  id: 'original', name: 'Original', notes: ['Mira wheel template and hub stator from buggy.glb'],
   load: once(originalWheels),
 }
 
@@ -311,7 +311,7 @@ class WheelSet {
   }
 
   /**
-   * Syn3hBuggySkin.strutMatrix: the span runs from the hub to the body mount, the thickness
+   * MiraBuggySkin.strutMatrix: the span runs from the hub to the body mount, the thickness
    * points as near straight down as it can, so the chord lies fore and aft. The strut stretches
    * along its span only when the wheel droops past rest, so no gap opens at the body.
    */
@@ -375,7 +375,7 @@ function lampCentres(root: THREE.Object3D, materials: THREE.Material[]): THREE.V
 
 export const buggy: LabExhibit = {
   id: 'buggy',
-  title: 'Next Syn3h buggy',
+  title: 'Next Mira buggy',
   section: 'Design studies',
   order: 1,
   groupLabel: 'Round',
@@ -383,7 +383,7 @@ export const buggy: LabExhibit = {
   paramGroups: [],
   heading(group) {
     const basis = group === undefined ? undefined : plan?.basis.get(group)
-    return basis ? `Next Syn3h buggy: round ${group}, built on ${basis}` : `Next Syn3h buggy: round ${group ?? 1} body studies`
+    return basis ? `Next Mira buggy: round ${group}, built on ${basis}` : `Next Mira buggy: round ${group ?? 1} body studies`
   },
   // A round opens on its first new design, not on the pick carried into it.
   defaultDesign: group => plan?.entries.find(e => String(e.round) === group)?.id,

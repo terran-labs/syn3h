@@ -4,12 +4,13 @@
  * should start the moment the cooldown ends, with no second click. Writes a chart of the
  * charge, the button and each cooldown's end, and the numbers, to <out>.
  *
- *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/held-thunder-capture.mjs [out dir]
+ *   MIRA_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/held-thunder-capture.mjs [out dir]
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
 
-const base = (process.env.SYN3H_URL ?? 'http://127.0.0.1:5258/').replace(/\/+$/, '') + '/'
+const base = (process.env.MIRA_URL ?? 'http://127.0.0.1:5258/').replace(/\/+$/, '') + '/'
 const out = process.argv[2] ?? '/tmp/held-thunder'
 await mkdir(out, { recursive: true })
 const errors = []
@@ -20,9 +21,9 @@ try {
   const page = await context.newPage()
   page.on('pageerror', e => errors.push(e.message))
   await page.goto(`${base}?planet=alpine&seed=7&autoplay=1&room=held-thunder-${Date.now()}`)
-  await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet?.bigRed, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.shell?.playing && window.miraNet?.bigRed, null, { timeout: 120000 })
   const run = await page.evaluate(async () => {
-    const s = window.syn3h, n = window.syn3hNet, p = s.params, red = n.bigRed
+    const s = window.mira, n = window.miraNet, p = s.params, red = n.bigRed
     p.set('bots.count', 0); p.set('daydream.seconds', 0)
     n.gear.select('red')
     const charge = p.get('bigRed.charge').value, cooldown = p.get('bigRed.cooldown').value

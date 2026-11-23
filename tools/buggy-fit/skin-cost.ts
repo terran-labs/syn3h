@@ -13,19 +13,19 @@ import { gzipSync } from 'node:zlib'
 import * as esbuild from 'esbuild'
 import * as THREE from 'three/webgpu'
 import type { VehicleDetail } from '../../src/vehicles/skins/mergeStatic'
-import { Syn3hBuggySkin } from '../../src/vehicles/skins/Syn3hBuggySkin'
+import { MiraBuggySkin } from '../../src/vehicles/skins/MiraBuggySkin'
 
 const root = resolve(import.meta.dirname, '../..')
 async function gzip(contents: string): Promise<number> {
   const r = await esbuild.build({ stdin: { contents, resolveDir: root, loader: 'ts' }, bundle: true, minify: true, format: 'esm', platform: 'browser', write: false, external: ['three', 'three/*'], logLevel: 'silent' })
   return gzipSync(r.outputFiles[0].contents, { level: 9 }).length
 }
-const g = await gzip("export { Syn3hBuggySkin } from './src/vehicles/skins/Syn3hBuggySkin'")
+const g = await gzip("export { MiraBuggySkin } from './src/vehicles/skins/MiraBuggySkin'")
 
 const times: number[] = []
 for (let i = 0; i < 11; i++) {
   const t = performance.now()
-  const skin = new Syn3hBuggySkin()
+  const skin = new MiraBuggySkin()
   await skin.ready
   if (i >= 2) times.push(performance.now() - t)
   skin.dispose()
@@ -34,7 +34,7 @@ times.sort((a, b) => a - b)
 
 const scene = new THREE.Group(), callbacks = new Set<VehicleDetail>()
 scene.userData.registerVehicleDetail = (fn: VehicleDetail) => { callbacks.add(fn); return () => callbacks.delete(fn) }
-const skin = new Syn3hBuggySkin(); scene.add(skin.object)
+const skin = new MiraBuggySkin(); scene.add(skin.object)
 await skin.ready
 const counts: Record<string, { triangles: number; draws: number }> = {}
 for (const [name, distance] of [['near', 0], ['mid', 60], ['far', 300]] as const) {

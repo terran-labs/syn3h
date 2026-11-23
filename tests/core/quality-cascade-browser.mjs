@@ -13,26 +13,26 @@ try {
   const page = await context.newPage(), errors = []
   await page.routeWebSocket(/\/ws(?:\?|$)/, socket => socket.close())
   page.on('pageerror', e => errors.push(e.message))
-  await page.addInitScript(() => { window.qualityEvents = []; window.addEventListener('syn3h:quality', e => window.qualityEvents.push(e.detail)) })
+  await page.addInitScript(() => { window.qualityEvents = []; window.addEventListener('mira:quality', e => window.qualityEvents.push(e.detail)) })
   await page.goto(`${url}?autoplay=1`)
-  await page.waitForFunction(() => window.syn3h?.game.performance.firstFrameMs > 0, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira?.game.performance.firstFrameMs > 0, null, { timeout: 90000 })
   await page.waitForTimeout(3000)
   await page.keyboard.press('F3'); await page.waitForTimeout(400)
   out.hud = await page.locator('#frame-time-hud').textContent()
   if (!out.hud.includes('Rung') || !out.hud.includes('Pixel ratio')) throw new Error('HUD lacks the rung fields')
-  out.backend = await page.evaluate(() => window.syn3h.game.backend)
+  out.backend = await page.evaluate(() => window.mira.game.backend)
   out.start = await page.evaluate(() => window.qualityEvents.at(-1))
-  if (out.start.rung === undefined || out.start.pixelRatio === undefined || out.start.vehicleShading === undefined) throw new Error('syn3h:quality detail lacks rung values')
+  if (out.start.rung === undefined || out.start.pixelRatio === undefined || out.start.vehicleShading === undefined) throw new Error('mira:quality detail lacks rung values')
   // Automation off returns to the fixed budget.
-  out.autoOff = await page.evaluate(() => { window.syn3h.params.set('gfx.auto', false); const e = window.qualityEvents.at(-1); return { reason: e.reason, rung: e.rung, pixelRatio: window.syn3h.game.renderer.getPixelRatio() } })
+  out.autoOff = await page.evaluate(() => { window.mira.params.set('gfx.auto', false); const e = window.qualityEvents.at(-1); return { reason: e.reason, rung: e.rung, pixelRatio: window.mira.game.renderer.getPixelRatio() } })
   if (out.autoOff.reason !== 'auto-off' || out.autoOff.rung !== 0 || out.autoOff.pixelRatio !== 1.5) throw new Error('gfx.auto off did not restore the fixed budget')
   // A hand-set level is pinned and remembered for the session.
-  out.manual = await page.evaluate(() => { window.syn3h.params.set('gfx.level', 1); const e = window.qualityEvents.at(-1); return { reason: e.reason, level: e.level, pinned: sessionStorage.getItem('syn3h.graphics.manual') } })
+  out.manual = await page.evaluate(() => { window.mira.params.set('gfx.level', 1); const e = window.qualityEvents.at(-1); return { reason: e.reason, level: e.level, pinned: sessionStorage.getItem('mira.graphics.manual') } })
   if (out.manual.reason !== 'manual' || out.manual.pinned !== '1') throw new Error('Manual level was not pinned')
-  await page.evaluate(() => { window.syn3h.params.set('gfx.level', 2) })
+  await page.evaluate(() => { window.mira.params.set('gfx.level', 2) })
   await page.waitForTimeout(1500)
   out.cost = await page.evaluate(async () => {
-    const { game, params } = window.syn3h, r = game.renderer, device = r.backend.device
+    const { game, params } = window.mira, r = game.renderer, device = r.backend.device
     const wait = () => device ? device.queue.onSubmittedWorkDone() : Promise.resolve(r.backend.gl?.finish())
     r.setAnimationLoop(null)
     const frame = async () => { const t = performance.now(); r.render(game.scene, game.camera); await wait(); return performance.now() - t }

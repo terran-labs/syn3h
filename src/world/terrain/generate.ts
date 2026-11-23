@@ -6,7 +6,7 @@
  * liquid (lava or water) runs to the horizon in every direction, so the map pushes players
  * toward each other instead of letting them wander off across an endless plain.
  *
- * The recipe follows the MapMagic graphs shipped with Syn3h (Tholus and Xylia), which were
+ * The recipe follows the MapMagic graphs shipped with Mira (Tholus and Xylia), which were
  * built the same way: a radial form for the island, terraced noise for the ground, a chain
  * of cellular Voronoi for the mountains, and a shore at the waterline.
  *

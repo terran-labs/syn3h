@@ -1,4 +1,4 @@
-# Agent instructions for Syn3h
+# Agent instructions for Mira
 
 Engineering principles that apply to every lane. How the lanes work together is in `ops/`.
 
@@ -34,7 +34,7 @@ In practice:
 - Measure before claiming a win: bytes shipped, time to first frame, frame cost.
 
 Worked examples: the terrain and its roads, the sky and its scattering, vehicle engine
-voices (`src/audio/`), the lobby starfield and nebula (`src/ui/Starfield.ts`), the Syn3h
+voices (`src/audio/`), the lobby starfield and nebula (`src/ui/Starfield.ts`), the Mira
 wordmark as one vector path (`src/ui/brand/`), QR codes (`src/ui/QrCode.ts`).
 
 ## Testing principle: test what must stay true, report what is tuned

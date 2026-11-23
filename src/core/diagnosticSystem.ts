@@ -1,9 +1,9 @@
 import type { PerformanceSnapshot } from './performance'
 import { LEVELS, type GovernorReason } from './quality'
 
-declare const __SYN3H_BUILD__: string | undefined
-declare const __SYN3H_FREEZE_ID__: string | null | undefined
-declare const __SYN3H_COMMIT__: string | null | undefined
+declare const __MIRA_BUILD__: string | undefined
+declare const __MIRA_FREEZE_ID__: string | null | undefined
+declare const __MIRA_COMMIT__: string | null | undefined
 
 const backendReasons = {
   'forced-webgl2': 'WebGL 2 was explicitly requested',
@@ -125,9 +125,9 @@ export function systemReportLines(snapshot: PerformanceSnapshot | null): string[
   const height = amount(display?.height, 1, 32768)
   const dimensions = width !== unavailable && height !== unavailable ? `${width} × ${height} CSS px` : unavailable
   const dpr = amount(typeof devicePixelRatio === 'number' ? devicePixelRatio : undefined, 0.1, 16, 2)
-  const buildLabel = typeof __SYN3H_BUILD__ === 'string' ? __SYN3H_BUILD__.trim() : ''
-  const buildFreeze = typeof __SYN3H_FREEZE_ID__ === 'string' ? __SYN3H_FREEZE_ID__.trim() : ''
-  const buildCommit = typeof __SYN3H_COMMIT__ === 'string' ? __SYN3H_COMMIT__.trim() : ''
+  const buildLabel = typeof __MIRA_BUILD__ === 'string' ? __MIRA_BUILD__.trim() : ''
+  const buildFreeze = typeof __MIRA_FREEZE_ID__ === 'string' ? __MIRA_FREEZE_ID__.trim() : ''
+  const buildCommit = typeof __MIRA_COMMIT__ === 'string' ? __MIRA_COMMIT__.trim() : ''
   const version = /^v?\d{1,4}\.\d{1,4}\.\d{1,6}$/.test(buildLabel) ? buildLabel : unavailable
   const freezeId = /^\d{8}-\d{6}-[0-9a-f]{7,64}$/.test(buildFreeze) ? buildFreeze : unavailable
   const commit = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(buildCommit) ? buildCommit : unavailable

@@ -1,14 +1,14 @@
 /**
  * The Mars Explorer buggy ('buggy-classic') was retired on 15 November 2026. Its name is still
  * in saved lobby choices, shared links, resume snapshots and the hello of older clients, and
- * every one of those must come up as the Syn3h buggy: no crash, no blank vehicle.
+ * every one of those must come up as the Mira buggy: no crash, no blank vehicle.
  */
 import {existsSync,readFileSync,readdirSync} from 'node:fs'
 import {beforeAll,describe,expect,it} from 'vitest'
 import * as T from 'three/webgpu'
 import {initPhysics} from '../../src/core/physics'
 import {TANK_AVAILABLE,VEHICLE_KINDS,canonicalVehicleKind,createVehicle,type VehicleKind} from '../../src/vehicles'
-import {Syn3hBuggy} from '../../src/vehicles/Syn3hBuggy'
+import {MiraBuggy} from '../../src/vehicles/MiraBuggy'
 import {sanitizeVehicleChoice} from '../../src/ui/VehicleChoice'
 import {parseResume,prepareResume,type ResumeSnapshot} from '../../src/core/resume'
 import {VEHICLE_KINDS as WIRE_KINDS} from '../../shared/protocol'
@@ -23,11 +23,11 @@ describe('the retired classic buggy',()=>{
   // Bots are built by createVehicle, which cannot build one (next test); the pool does not name it either.
   expect(readFileSync(new URL('src/bots/BotManager.ts',root),'utf8')).not.toContain('classic')
  })
- it('builds the Syn3h buggy for an old link, an old client and an unknown kind',()=>{
+ it('builds the Mira buggy for an old link, an old client and an unknown kind',()=>{
   const h=harness()
   for(const kind of ['buggy-classic','some-future-kind',''] as unknown as VehicleKind[]){
    const v=createVehicle(h.game,h.terrain,kind,new T.Vector3(0,2,0),0)
-   expect(v,String(kind)).toBeInstanceOf(Syn3hBuggy);expect(v.kind).toBe('buggy')
+   expect(v,String(kind)).toBeInstanceOf(MiraBuggy);expect(v.kind).toBe('buggy')
    // It drives: nothing about the retired name leaves it inert.
    v.isLocal=false;v.input.y=1;h.step(v,240)
    expect(Math.hypot(v.body.linvel().x,v.body.linvel().z),String(kind)).toBeGreaterThan(3)
@@ -43,7 +43,7 @@ describe('the retired classic buggy',()=>{
  it('is still a legal kind on the wire, so a release 5 client in the room is not rejected',()=>{
   expect(WIRE_KINDS).toContain('buggy-classic')
  })
- it('turns a saved lobby choice into the Syn3h buggy and keeps the colours',()=>{
+ it('turns a saved lobby choice into the Mira buggy and keeps the colours',()=>{
   expect(sanitizeVehicleChoice({vehicleKind:'buggy-classic' as never,bodyColor:'#123456',accentColor:'#abcdef'})).toEqual({vehicleKind:'buggy-syn3h',bodyColor:'#123456',accentColor:'#abcdef'})
  })
  it('resumes a snapshot that names it, with or without the old vehicle in the link',()=>{

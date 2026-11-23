@@ -108,7 +108,7 @@ items require current evidence before being carried forward.
 
 Historical owner questions: reassess before asking.
 
-- Drive the Syn3h buggy by hand and say what is wrong.
+- Drive the Mira buggy by hand and say what is wrong.
 - Listen to the five vehicle voices on real speakers.
 - Cloudflare access.
 - Revoke the Google Maps, Bing and WRLD keys committed in the old public repositories.

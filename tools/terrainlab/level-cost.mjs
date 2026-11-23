@@ -29,9 +29,9 @@ try {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)) })
     await page.routeWebSocket(/\/ws/, (s) => s.close())
     await page.goto(`${base}?autoplay=1&vehicle=buggy&world=${world}${extra}`, { waitUntil: 'load' })
-    await page.waitForFunction(() => window.syn3h?.game?.tick > 60, null, { timeout: 180000 })
+    await page.waitForFunction(() => window.mira?.game?.tick > 60, null, { timeout: 180000 })
     const setup = await page.evaluate(async () => {
-      const s = window.syn3h, g = s.game, r = g.renderer
+      const s = window.mira, g = s.game, r = g.renderer
       s.params.set('gfx.auto', false); s.params.set('gfx.level', 2); s.params.set('bots.count', 0); s.params.set('sun.dayLength', 0); s.params.set('sun.timeOfDay', 11)
       r.setPixelRatio(1)
       r.backend.trackTimestamp = r.hasFeature?.('timestamp-query') ?? false

@@ -6,7 +6,7 @@
  * sees the other drive.
  *
  *   PORT=8791 npm run server
- *   SYN3H_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
+ *   MIRA_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
  *   node tools/reconnect-check.mjs
  *   node tools/reconnect-check.mjs --rejoin 8     the soak for `game.rejoin`
  *
@@ -35,12 +35,12 @@ async function open(name) {
   const page = await (await br.newContext({ viewport: { width: 640, height: 360 } })).newPage()
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`))
   await page.goto(`http://localhost:5183/?room=${room}&name=${name}&autoplay=1`)
-  await page.waitForFunction(() => window.syn3h?.shell && window.syn3hNet?.connected, null, { timeout: 60000 })
-  await page.evaluate(() => { window.syn3h.shell.play(); window.syn3h.params.set('gfx.level', 0) })
+  await page.waitForFunction(() => window.mira?.shell && window.miraNet?.connected, null, { timeout: 60000 })
+  await page.evaluate(() => { window.mira.shell.play(); window.mira.params.set('gfx.level', 0) })
   return page
 }
 const view = (page) => page.evaluate(() => {
-  const n = window.syn3hNet
+  const n = window.miraNet
   return {
     connected: n.connected, id: n.id, players: [...n.players.values()].map((p) => p.name).sort(), ids: [...n.players.keys()].sort(), remotes: n.remotes.size,
     host: n.game.host, locked: n.game.locked, scores: n.game.scores, comings: window.__comings ?? 0,
@@ -53,10 +53,10 @@ const check = (name, ok, detail) => { results.push(ok); console.log(`${ok ? 'PAS
 try {
   const a = await open('Alice')
   const b = await open('Bob')
-  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet.players.size === 2 && window.syn3hNet.remotes.size === 1, null, { timeout: 30000 })))
+  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.miraNet.players.size === 2 && window.miraNet.remotes.size === 1, null, { timeout: 30000 })))
   const before = [await view(a), await view(b)]
   check('both joined and see each other', before.every((v) => v.connected && v.players.length === 2), before)
-  const posBefore = await a.evaluate(() => { const p = window.syn3h.player.body.translation(); return [p.x, p.z] })
+  const posBefore = await a.evaluate(() => { const p = window.mira.player.body.translation(); return [p.x, p.z] })
 
   proxy.kill()
   await wait(3000)
@@ -65,32 +65,32 @@ try {
 
   proxy = startProxy()
   const t0 = Date.now()
-  const back = await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet.connected && window.syn3hNet.players.size === 2 && window.syn3hNet.remotes.size === 1, null, { timeout: 30000 }).then(() => true, () => false)))
+  const back = await Promise.all([a, b].map((p) => p.waitForFunction(() => window.miraNet.connected && window.miraNet.players.size === 2 && window.miraNet.remotes.size === 1, null, { timeout: 30000 }).then(() => true, () => false)))
   const after = [await view(a), await view(b)]
   check('both reconnect by themselves and the room has exactly two players', back.every(Boolean) && after.every((v) => v.players.length === 2 && v.remotes === 1), { seconds: +((Date.now() - t0) / 1000).toFixed(1), after })
-  const posAfter = await a.evaluate(() => { const p = window.syn3h.player.body.translation(); return [p.x, p.z] })
+  const posAfter = await a.evaluate(() => { const p = window.mira.player.body.translation(); return [p.x, p.z] })
   check('a reconnecting player stays where it was', Math.hypot(posAfter[0] - posBefore[0], posAfter[1] - posBefore[1]) < 3, { posBefore, posAfter })
 
   const idA = after[0].id
-  const copy = () => b.evaluate((id) => { const t = window.syn3hNet.remotes.get(id)?.vehicle.body.translation(); return t ? [t.x, t.z] : null }, idA)
+  const copy = () => b.evaluate((id) => { const t = window.miraNet.remotes.get(id)?.vehicle.body.translation(); return t ? [t.x, t.z] : null }, idA)
   const c0 = await copy()
-  await a.evaluate(() => { window.syn3h.game.input.external.y = 1 })
+  await a.evaluate(() => { window.mira.game.input.external.y = 1 })
   await wait(3000)
-  await a.evaluate(() => { window.syn3h.game.input.external.y = 0 })
+  await a.evaluate(() => { window.mira.game.input.external.y = 0 })
   const c1 = await copy()
   check('after reconnecting, one sees the other drive', c0 && c1 && Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) > 3, { c0, c1 })
   if (cycles > 0) {
     // The soak. Turn the rule on, lock the sliders and give the host a score to keep.
     // Count every "left" and "joined" line from here on (the event list itself is capped).
     for (const p of [a, b]) await p.evaluate(() => {
-      const n = window.syn3hNet, event = n.event.bind(n)
+      const n = window.miraNet, event = n.event.bind(n)
       window.__comings = 0
       n.event = (text) => { if (/ left$| joined/.test(text)) window.__comings++; event(text) }
     })
-    await a.evaluate(() => { window.syn3h.params.set('game.rejoin', true); window.syn3hNet.send({ type: 'lock', locked: true }); window.syn3h.params.set('game.mode', 1) })
-    await b.waitForFunction(() => window.syn3h.params.get('game.rejoin').value === true && window.syn3hNet.game.locked && window.syn3hNet.game.koth.zone, null, { timeout: 10000 })
+    await a.evaluate(() => { window.mira.params.set('game.rejoin', true); window.miraNet.send({ type: 'lock', locked: true }); window.mira.params.set('game.mode', 1) })
+    await b.waitForFunction(() => window.mira.params.get('game.rejoin').value === true && window.miraNet.game.locked && window.miraNet.game.koth.zone, null, { timeout: 10000 })
     await a.evaluate(() => {
-      const zone = window.syn3hNet.game.koth.zone, { terrain, player } = window.syn3h, r = (zone.inner + zone.outer) / 2
+      const zone = window.miraNet.game.koth.zone, { terrain, player } = window.mira, r = (zone.inner + zone.outer) / 2
       for (let k = 0; k < 64; k++) {
         const x = zone.x + Math.cos(k * 0.1) * r, z = zone.z + Math.sin(k * 0.1) * r, y = terrain.heightAt(x, z)
         if (y < zone.yMin + 1 || y > zone.yMax - 2 || (terrain.liquidHeightAt?.(x, z) ?? -Infinity) > y - 1) continue
@@ -98,8 +98,8 @@ try {
         return
       }
     })
-    await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, s.heading) })
-    await a.waitForFunction((id) => (window.syn3hNet.game.scores[id] ?? 0) >= 3, idA, { timeout: 20000 })
+    await b.evaluate(() => { const s = window.mira.terrain.spawnPoint(1); window.mira.player.teleport(s.position, s.heading) })
+    await a.waitForFunction((id) => (window.miraNet.game.scores[id] ?? 0) >= 3, idA, { timeout: 20000 })
     const start = [await view(a), await view(b)]
     let good = 0
     const rows = []
@@ -109,7 +109,7 @@ try {
       await wait(down)
       proxy = startProxy()
       const t = Date.now()
-      const up = await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet.connected && window.syn3hNet.players.size === 2 && window.syn3hNet.remotes.size === 1, null, { timeout: 30000 }).then(() => true, () => false)))
+      const up = await Promise.all([a, b].map((p) => p.waitForFunction(() => window.miraNet.connected && window.miraNet.players.size === 2 && window.miraNet.remotes.size === 1, null, { timeout: 30000 }).then(() => true, () => false)))
       await wait(1500)
       const now = [await view(a), await view(b)]
       const same = up.every(Boolean) && now.every((v, k) => v.id === start[k].id && v.host === start[0].id && v.locked === true && v.comings === start[k].comings && JSON.stringify(v.ids) === JSON.stringify(start[k].ids))
@@ -123,7 +123,7 @@ try {
     proxy.kill()
     await wait(35000)
     proxy = startProxy()
-    await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet.connected && window.syn3hNet.players.size === 2, null, { timeout: 30000 }).catch(() => {})))
+    await Promise.all([a, b].map((p) => p.waitForFunction(() => window.miraNet.connected && window.miraNet.players.size === 2, null, { timeout: 30000 }).catch(() => {})))
     await wait(1500)
     const late = [await view(a), await view(b)]
     check('rejoin soak: a dropout longer than the hold comes back as new players', late.every((v, k) => v.connected && v.id !== start[k].id), { before: start.map((v) => v.id), after: late.map((v) => v.id) })

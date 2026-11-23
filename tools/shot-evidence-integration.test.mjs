@@ -30,9 +30,9 @@ async function fixtureChild(scenario) {
     check('fixture original gameplay', ${scenario !== 'original-failure'})
   ` + source.slice(finish)
   const enabled = scenario !== 'default'
-  const env = enabled ? { SYN3H_SHOT_EVIDENCE_DIR: '/tmp/mock-fresh-shot-evidence' } : {}
-  if (scenario === 'relative') env.SYN3H_SHOT_EVIDENCE_DIR = 'relative'
-  if (scenario === 'empty') env.SYN3H_SHOT_EVIDENCE_DIR = ''
+  const env = enabled ? { MIRA_SHOT_EVIDENCE_DIR: '/tmp/mock-fresh-shot-evidence' } : {}
+  if (scenario === 'relative') env.MIRA_SHOT_EVIDENCE_DIR = 'relative'
+  if (scenario === 'empty') env.MIRA_SHOT_EVIDENCE_DIR = ''
   const exitSignal = Symbol('exit')
   let exitCode = null
   const sandbox = {
@@ -53,7 +53,7 @@ async function fixtureChild(scenario) {
         if (String(fn).includes('handlerErrors')) return {}
         evaluations++
         // Existing broad failure diagnostics are outside this focused acceptance test.
-        if (String(fn).includes('const s = window.syn3h')) return { fixture: true }
+        if (String(fn).includes('const s = window.mira')) return { fixture: true }
         if (scenario === 'capture-error') throw new Error('fixture capture error')
         if (scenario === 'timeout') return new Promise(() => {})
         sandbox.window = { __shotEvidence: { snapshot(label) {

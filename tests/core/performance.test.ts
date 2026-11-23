@@ -65,7 +65,7 @@ it('subscribes once, shares F3 state, lowers via the governor and disposes liste
  expect(c.getPerformanceSnapshot().recommendation?.targetLevel).toBe(2)
  expect(c.lowerRecommendedTier()).toBe(true);expect(c.governor.level).toBe(2);expect(c.governor.levelPinned).toBe(true);expect(c.governor.auto).toBe(false)
  expect(c.lowerRecommendedTier()).toBe(false)
- c.ignoreRecommendation();expect(entries.get('syn3h.performance.ignore')).toBe('1')
+ c.ignoreRecommendation();expect(entries.get('mira.performance.ignore')).toBe('1')
  unsub();const n=seen.length;c.toggleDiagnostics();expect(seen).toHaveLength(n)
  c.dispose();expect(remove).toHaveBeenCalled();expect(cancel).toHaveBeenCalledWith(1)
  const restored=new QualityController();expect(restored.governor.levelPinned).toBe(true)
@@ -88,7 +88,7 @@ it('Ignore has no cross-tab localStorage fallback',()=>{
  vi.stubGlobal('document',{hidden:false,addEventListener(){},removeEventListener(){}})
  vi.stubGlobal('navigator',{userAgent:'Desktop',maxTouchPoints:0});vi.stubGlobal('location',{search:''})
  const c=new QualityController();c.ignoreRecommendation()
- expect(entries.has('syn3h.performance.ignore')).toBe(false);c.dispose()
+ expect(entries.has('mira.performance.ignore')).toBe(false);c.dispose()
 })
 
 describe('device readback counters',()=>{

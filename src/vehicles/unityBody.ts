@@ -170,7 +170,7 @@ export class UnityBody {
       y: this.accF.y * kv + m * g.y * (kv - 1),
       z: this.accF.z * kv + m * g.z * (kv - 1),
     }, true)
-    // A zero cap means no rotation at all this step (Syn3h parks with maxAngularVelocity 0).
+    // A zero cap means no rotation at all this step (Mira parks with maxAngularVelocity 0).
     const tk = cap === 0 ? 0 : kw
     b.addTorque({ x: this.accT.x * tk, y: this.accT.y * tk, z: this.accT.z * tk }, true)
     this.accF.set(0, 0, 0)

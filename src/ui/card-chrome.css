@@ -23,7 +23,7 @@
    "a bolder or generally more prominent X on hover rather than actually circling the full
    button"): a heavier stroke, full white, a touch larger, eased over 120 ms. The button's box never
    changes, so nothing moves. A soft shadow under the strokes keeps it legible over a bright sky. */
-html .syn3h-shell.exploration-ui button.card-close {
+html .mira-shell.exploration-ui button.card-close {
   display: inline-flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box;
   width: 44px; height: 44px; min-width: 44px; min-height: 44px; margin: 0; padding: 0;
   border: 0; border-radius: var(--glass-control-radius, 24px); background: transparent; box-shadow: none;
@@ -31,43 +31,43 @@ html .syn3h-shell.exploration-ui button.card-close {
   color: #fff; cursor: pointer; outline: 1px solid transparent; outline-offset: -1px;
   transition: outline-color .12s ease;
 }
-html .syn3h-shell.exploration-ui button.card-close::before, html .syn3h-shell.exploration-ui button.card-close::after { content: none; }
-html .syn3h-shell.exploration-ui button.card-close svg { width: 22px; height: 22px; flex: none; overflow: visible; color: rgb(255 255 255 / .86); filter: drop-shadow(0 0 3px rgb(0 0 0 / .45)); transition: color .12s ease, scale .12s ease; }
-html .syn3h-shell.exploration-ui button.card-close path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; transition: stroke-width .12s ease; }
-html .syn3h-shell.exploration-ui button.card-close:is(:hover, :active) { outline-color: transparent; background: transparent; box-shadow: none; border-color: transparent; }
-html .syn3h-shell.exploration-ui button.card-close:is(:hover, :active) svg { color: #fff; scale: 1.08; }
-html .syn3h-shell.exploration-ui button.card-close:is(:hover, :active) path { stroke-width: 2.9; }
+html .mira-shell.exploration-ui button.card-close::before, html .mira-shell.exploration-ui button.card-close::after { content: none; }
+html .mira-shell.exploration-ui button.card-close svg { width: 22px; height: 22px; flex: none; overflow: visible; color: rgb(255 255 255 / .86); filter: drop-shadow(0 0 3px rgb(0 0 0 / .45)); transition: color .12s ease, scale .12s ease; }
+html .mira-shell.exploration-ui button.card-close path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; transition: stroke-width .12s ease; }
+html .mira-shell.exploration-ui button.card-close:is(:hover, :active) { outline-color: transparent; background: transparent; box-shadow: none; border-color: transparent; }
+html .mira-shell.exploration-ui button.card-close:is(:hover, :active) svg { color: #fff; scale: 1.08; }
+html .mira-shell.exploration-ui button.card-close:is(:hover, :active) path { stroke-width: 2.9; }
 @media (prefers-reduced-motion: reduce) {
-  html .syn3h-shell.exploration-ui button.card-close :is(svg, path) { transition: none; }
+  html .mira-shell.exploration-ui button.card-close :is(svg, path) { transition: none; }
 }
-html .syn3h-shell.exploration-ui button.card-close:focus-visible { outline: 2px solid white; outline-offset: 1px; }
+html .mira-shell.exploration-ui button.card-close:focus-visible { outline: 2px solid white; outline-offset: 1px; }
 /* Focus moved to the X by a sheet opening is keyboard focus only when the last input was a key
    (cardClose.ts trackFocusModality): after a click or tap, or before any input at all, no ring.
    Opened from the keyboard, or after any key, the ring shows. */
-html:not([data-focus-by="keyboard"]) .syn3h-shell.exploration-ui button.card-close:focus-visible { outline-color: transparent; }
+html:not([data-focus-by="keyboard"]) .mira-shell.exploration-ui button.card-close:focus-visible { outline-color: transparent; }
 /* The in-play guide's header: the X at the right of the title row. */
-html .syn3h-shell.exploration-ui .in-play-about > header .card-close { margin: -4px -12px -4px 0; }
+html .mira-shell.exploration-ui .in-play-about > header .card-close { margin: -4px -12px -4px 0; }
 /* The lobby Settings card: the X sits in the header's right corner, level with the title. */
-html .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head .card-close { margin: -4px -2px -4px 0; }
+html .mira-shell.exploration-ui .lobby-settings .lobby-settings-head .card-close { margin: -4px -2px -4px 0; }
 
 /* A panel's own X shows only on a phone with that panel alone on screen (phone-panels.css). */
-html .syn3h-shell.exploration-ui .world-inspector .wi-card > button.wi-card-close { display: none; }
+html .mira-shell.exploration-ui .world-inspector .wi-card > button.wi-card-close { display: none; }
 /* Touch screens: a bigger X and a 48 px target (the owner, 22 November 2026). */
-html .syn3h-shell.exploration-ui.has-touch button.card-close { width: 48px; height: 48px; min-width: 48px; min-height: 48px; }
-html .syn3h-shell.exploration-ui.has-touch button.card-close svg { width: 28px; height: 28px; }
+html .mira-shell.exploration-ui.has-touch button.card-close { width: 48px; height: 48px; min-width: 48px; min-height: 48px; }
+html .mira-shell.exploration-ui.has-touch button.card-close svg { width: 28px; height: 28px; }
 @media (pointer: coarse) {
-  html .syn3h-shell.exploration-ui button.card-close { width: 48px; height: 48px; min-width: 48px; min-height: 48px; }
-  html .syn3h-shell.exploration-ui button.card-close svg { width: 28px; height: 28px; }
+  html .mira-shell.exploration-ui button.card-close { width: 48px; height: 48px; min-width: 48px; min-height: 48px; }
+  html .mira-shell.exploration-ui button.card-close svg { width: 28px; height: 28px; }
 }
 
 /* ---- The Glass section: Style and Tint, each label at the left and its control beside it ---- */
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.glass-style-row, html .syn3h-shell .world-inspector .wi-row.glass-style-row {
+html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.glass-style-row, html .mira-shell .world-inspector .wi-row.glass-style-row {
   grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px;
 }
-html .syn3h-shell .world-inspector .wi-row.glass-style-row > small { grid-column: 1 / -1; }
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.tint-row, html .syn3h-shell .world-inspector .wi-row.tint-row { grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 10px; }
-html .syn3h-shell .world-inspector .wi-row.tint-row > input[type=range] { width: 100%; min-width: 0; }
-html .syn3h-shell .world-inspector .wi-row.tint-row > output { min-width: 3.2ch; text-align: right; font-variant-numeric: tabular-nums; }
+html .mira-shell .world-inspector .wi-row.glass-style-row > small { grid-column: 1 / -1; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.tint-row, html .mira-shell .world-inspector .wi-row.tint-row { grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 10px; }
+html .mira-shell .world-inspector .wi-row.tint-row > input[type=range] { width: 100%; min-width: 0; }
+html .mira-shell .world-inspector .wi-row.tint-row > output { min-width: 3.2ch; text-align: right; font-variant-numeric: tabular-nums; }
 /* ---- Segmented choices: one rule for all of them (the owner, 22 November 2026: "make
    everything consistent") ----
    Style, Focus display, Reticle, Interface, Units, every other .wi-seg, the vehicle picker and the
@@ -75,59 +75,59 @@ html .syn3h-shell .world-inspector .wi-row.tint-row > output { min-width: 3.2ch;
    outline and the chosen one's outline are the same and are the only mark (no fill, underline or
    weight change, so nothing shifts). The keyboard ring is thicker and set off, so focus and
    chosen read apart. The state stays in aria-pressed, aria-checked or the button's .is-on. */
-html .syn3h-shell.exploration-ui .world-inspector :is(.wi-seg, .wi-vehicle-picker, .glass-stops) {
+html .mira-shell.exploration-ui .world-inspector :is(.wi-seg, .wi-vehicle-picker, .glass-stops) {
   display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; width: auto; margin: 0; padding: 0;
   border: 0; border-radius: 0; background: none; box-shadow: none;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-vehicle-picker { justify-content: flex-start; }
-html .syn3h-shell.exploration-ui .world-inspector :is(.wi-seg, .glass-stops) { justify-content: flex-end; }
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button) {
+html .mira-shell.exploration-ui .world-inspector .wi-vehicle-picker { justify-content: flex-start; }
+html .mira-shell.exploration-ui .world-inspector :is(.wi-seg, .glass-stops) { justify-content: flex-end; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button) {
   position: relative; flex: 0 0 auto; box-sizing: border-box; min-width: 0; width: auto; height: 32px; min-height: 32px; margin: 0; padding: 0 12px;
   font: 400 13px/1 'Barlow', sans-serif; letter-spacing: .02em; color: var(--s3-ink); text-decoration: none; white-space: nowrap;
   background: transparent; box-shadow: none; border: 0; border-radius: var(--glass-control-radius, 24px);
   outline: 1px solid transparent; outline-offset: -1px; transition: outline-color .18s;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button):is(:hover, .is-on, [aria-checked="true"], [aria-pressed="true"]) {
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button):is(:hover, .is-on, [aria-checked="true"], [aria-pressed="true"]) {
   outline: var(--control-hover-outline); outline-offset: -1px; background: transparent; color: var(--s3-ink); font-weight: 400; box-shadow: none; text-shadow: inherit;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button):focus-visible { outline: 2px solid white; outline-offset: 2px; }
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button):is(:disabled, [aria-disabled="true"]) { opacity: .45; outline-color: transparent; }
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-vehicle-option svg { opacity: .9; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button):focus-visible { outline: 2px solid white; outline-offset: 2px; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button):is(:disabled, [aria-disabled="true"]) { opacity: .45; outline-color: transparent; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-vehicle-option svg { opacity: .9; }
 /* A finger gets 44 px without the row growing. */
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button)::after { content: ''; position: absolute; inset: -6px 0; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.wi-seg > button, .wi-vehicle-option, .glass-stops > button)::after { content: ''; position: absolute; inset: -6px 0; }
 
 /* A choice row: the label at the left and its segments to the right on the same line; the group
    wraps under the label only when the two cannot share the line (the label gives way to about 7em
    first). */
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-choice {
+html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-choice {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-choice > .wi-label { flex: 1 1 7em; min-width: 0; }
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-choice > .wi-seg { flex: 0 1 auto; margin-left: auto; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-choice > .wi-label { flex: 1 1 7em; min-width: 0; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-choice > .wi-seg { flex: 0 1 auto; margin-left: auto; }
 
 /* ---- Actions (Default, Randomize, Roll a name, Reset, Reset all, the quality steps, Auto when
    off): one resting look, a solid hairline pill with no fill; the shared outline under the pointer.
    Auto when on is a state, filled like a switch that is on (motion.css). ---- */
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step, .wi-res-auto:not(.is-on)) {
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step, .wi-res-auto:not(.is-on)) {
   position: relative; box-sizing: border-box; background: transparent; box-shadow: none; text-shadow: inherit;
   border: 1px solid var(--s3-line-quiet); border-radius: var(--glass-control-radius, 24px); outline: 1px solid transparent; outline-offset: -1px;
   color: var(--s3-ink); text-decoration: none;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step, .wi-res-auto:not(.is-on)):hover:not(:disabled) {
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step, .wi-res-auto:not(.is-on)):hover:not(:disabled) {
   border-color: transparent; background: transparent; outline: var(--control-hover-outline); outline-offset: -1px;
 }
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step, .wi-res-auto):focus-visible { outline: 2px solid white; outline-offset: 2px; }
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step):disabled { opacity: .45; }
-html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.tint-row > .tint-default { min-width: 0; min-height: 28px; height: 28px; margin: 0; padding: 0 10px; font: inherit; font-size: 12px; }
-html .syn3h-shell.has-touch .world-inspector .wi-row.tint-row > .tint-default::after { content: ''; position: absolute; inset: -8px 0; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step, .wi-res-auto):focus-visible { outline: 2px solid white; outline-offset: 2px; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step):disabled { opacity: .45; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.tint-row > .tint-default { min-width: 0; min-height: 28px; height: 28px; margin: 0; padding: 0 10px; font: inherit; font-size: 12px; }
+html .mira-shell.has-touch .world-inspector .wi-row.tint-row > .tint-default::after { content: ''; position: absolute; inset: -8px 0; }
 
 /* ---- The search field's magnifier (Shell.ts SEARCH_ICON): over the start of the field ---- */
-:root .syn3h-shell.exploration-ui .world-inspector .rail-command { position: relative; }
-.syn3h-shell.exploration-ui .world-inspector .rail-command > .rail-search-icon {
+:root .mira-shell.exploration-ui .world-inspector .rail-command { position: relative; }
+.mira-shell.exploration-ui .world-inspector .rail-command > .rail-search-icon {
   position: absolute; z-index: 1; left: 15px; top: 50%; width: 18px; height: 18px; translate: 0 -50%; pointer-events: none;
   fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; color: var(--s3-dim);
 }
-:root .syn3h-shell.exploration-ui .world-inspector .rail-command > input.wi-search.wi-search[type=search] { padding-left: 42px; }
+:root .mira-shell.exploration-ui .world-inspector .rail-command > input.wi-search.wi-search[type=search] { padding-left: 42px; }
 
 /* ---- The shared tooltip: moved to src/ui/tooltip.css (cards-round-3), which tooltip.ts loads. ---- */
 
@@ -136,7 +136,7 @@ html .syn3h-shell.has-touch .world-inspector .wi-row.tint-row > .tint-default::a
    Welcome, a card's Copy JSON and Paste, Performance's diagnostics actions) is centred, and
    wraps centred when it does not fit (the owner: "those should be centered rather than
    left-aligned"). Label-and-control rows and the full-width vehicle picker are not action rows. */
-html .syn3h-shell .world-inspector .card-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
+html .mira-shell .world-inspector .card-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
 
 /* ---- The accordion arrow (accordionArrow.ts): one chevron that turns as its section opens ----
    Right when closed, down when open, turned about its own centre so nothing slides sideways. */

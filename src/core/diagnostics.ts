@@ -5,7 +5,7 @@ import type { StartFailure } from './graphicsSupport'
 
 /**
  * Startup phase timing, always on. Each phase is a performance.measure named
- * `syn3h:<phase>` and a row in `window.syn3hStartup`, so the `?diag=1` overlay and automation
+ * `mira:<phase>` and a row in `window.miraStartup`, so the `?diag=1` overlay and automation
  * read the same numbers. Times are milliseconds since navigation start, the clock that
  * firstDrawSubmittedMs uses. Recording costs a few object writes per phase.
  */
@@ -30,13 +30,13 @@ export interface StartupTiming {
   pipelines?: { render: number; compute: number; vertexShaders: number; fragmentShaders: number }
 }
 export const startupTiming: StartupTiming = { phases: [] }
-if (typeof window !== 'undefined') (window as unknown as { syn3hStartup: StartupTiming }).syn3hStartup = startupTiming
+if (typeof window !== 'undefined') (window as unknown as { miraStartup: StartupTiming }).miraStartup = startupTiming
 
 /** Record a phase that ran from `startMs` until now. */
 export function recordStartupPhase(name: string, startMs: number, detail?: string, end?: number): number {
   const endMs = end ?? (typeof performance !== 'undefined' ? performance.now() : startMs)
   startupTiming.phases.push({ name, startMs, endMs, ms: endMs - startMs, detail })
-  try { performance.measure(`syn3h:${name}`, { start: startMs, end: endMs, detail }) } catch { /* Older engines lack measure options. */ }
+  try { performance.measure(`mira:${name}`, { start: startMs, end: endMs, detail }) } catch { /* Older engines lack measure options. */ }
   return endMs
 }
 
@@ -273,9 +273,9 @@ export function showStartFailure(failure: StartFailure, doc: NoticeDocument | un
  */
 export function showRendererLost(info?: { api?: string; message?: string; reason?: string | null }, doc: NoticeDocument | undefined = typeof document !== 'undefined' ? document as unknown as NoticeDocument : undefined, reload: () => void = () => location.reload()): boolean {
   startupTiming.deviceLost = [info?.api ?? 'GPU', info?.reason, info?.message].filter(Boolean).join(': ')
-  if (!doc || doc.getElementById('syn3h-device-lost')) return false
+  if (!doc || doc.getElementById('mira-device-lost')) return false
   const box = doc.createElement('div')
-  box.id = 'syn3h-device-lost'
+  box.id = 'mira-device-lost'
   box.setAttribute('role', 'alert')
   box.style.cssText = NOTICE_STYLE
   fillNotice(doc, box, { text: deviceLostMessage(info), action: { label: 'Reload', run: reload } })
@@ -371,7 +371,7 @@ export function installRenderDiagnostics(game: Game): () => void {
   const read=(): PerformanceEnvironment=>{
     const environment=readPerformanceEnvironment(game),r=game.renderer
     // Bounded compatibility data for existing capture tools; no global hooks or timer.
-    ;(window as unknown as {syn3hDiagnostics:unknown}).syn3hDiagnostics={
+    ;(window as unknown as {miraDiagnostics:unknown}).miraDiagnostics={
       ...environment,adapter:environment.adapter??'not exposed',maxTexture:environment.maxTextureSize,
       canvas:`${game.canvas.width} x ${game.canvas.height}`,pixelRatio:r?.getPixelRatio(),
       firstDrawSubmittedMs:game.performance.firstFrameMs,tick:game.tick,fps:game.fps,

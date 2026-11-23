@@ -10,15 +10,15 @@ try{
  page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())})
  const url=new URL(base);url.searchParams.set('autoplay','1');url.searchParams.set('room',`cloud-invariant-${Date.now()}`)
  if(process.argv.includes('--webgl'))url.searchParams.set('webgl','1')
- await page.goto(url.href,{timeout:120000});await page.waitForFunction(()=>window.syn3h?.game?.tick>120,null,{timeout:120000})
+ await page.goto(url.href,{timeout:120000});await page.waitForFunction(()=>window.mira?.game?.tick>120,null,{timeout:120000})
  await page.evaluate(async()=>{
-  const s=window.syn3h,g=s.game,p=s.params;g.renderer.setAnimationLoop(null)
+  const s=window.mira,g=s.game,p=s.params;g.renderer.setAnimationLoop(null)
   const T=await import(performance.getEntriesByType('resource').find(r=>r.name.includes('/three_webgpu.js')).name)
   const env=g.systems.find(x=>x.clouds&&x.sunColor),sky=g.scene.children.find(o=>'cloudLayerVisible' in o)
   for(const id of ['post.gi','post.bloom','post.shafts','post.flare','post.ao','post.contact','post.motionBlur','post.heat','post.look','post.vignette','post.grain'])p.set(id,0)
   for(const [id,value] of Object.entries({'gfx.level':2,'post.on':true,'post.clouds':1,'world.atmosphere':1,'weather.cloudCoverage':.5,'weather.cloudDensity':.7,'weather.cloudSpeed':0,'sun.dayLength':0,'sun.timeOfDay':12}))p.set(id,value)
   g.camera.position.y=50;g.camera.lookAt(g.camera.position.x,300,g.camera.position.z+600);g.camera.updateMatrixWorld()
-  window.__syn3hCurve.updateCurve(g.camera.position,s.terrain.size);env.update(0)
+  window.__miraCurve.updateCurve(g.camera.position,s.terrain.size);env.update(0)
   const draw=async()=>{for(let i=0;i<8;i++){g.postChain.render(g.renderer,g.scene,g.camera,16.667);await new Promise(requestAnimationFrame)}}
   const read=async target=>{const data=await g.renderer.readRenderTargetPixelsAsync(target,0,0,target.width,target.height);return Array.from(data,v=>data instanceof Uint16Array?T.DataUtils.fromHalfFloat(v):v)}
   const alpha=async()=>{await draw();const node=g.postChain.built.disposables.find(d=>d.renderTarget?.texture.name==='Cloud radiance and opacity');return (await read(node.renderTarget)).filter((_,i)=>i%4===3)}
@@ -27,9 +27,9 @@ try{
  })
  await page.screenshot({path:`${out}/wrap-before.png`})
  results.wrap=await page.evaluate(async()=>{
-  const s=window.syn3h,g=s.game,d=window.cloudInvariant,size=s.terrain.size
+  const s=window.mira,g=s.game,d=window.cloudInvariant,size=s.terrain.size
   for(const child of g.scene.children)if(child!==d.sky&&!child.isLight&&!child.isCamera){d.moved.push([child,child.position.x]);child.position.x+=size}
-  g.camera.position.x+=size;g.camera.updateMatrixWorld();window.__syn3hCurve.updateCurve(g.camera.position,size);d.env.update(0)
+  g.camera.position.x+=size;g.camera.updateMatrixWorld();window.__miraCurve.updateCurve(g.camera.position,size);d.env.update(0)
   const after=await d.alpha();let sum=0,max=0
   for(let i=0;i<after.length;i++){const delta=Math.abs(after[i]-d.before[i]);sum+=delta;max=Math.max(max,delta)}
   return {backend:g.backend,pixels:after.length,meanDifference:sum/after.length,maxDifference:max}
@@ -38,9 +38,9 @@ try{
  assert.ok(results.wrap.meanDifference<.002,'wrapped view preserves cloud density')
  assert.ok(results.wrap.maxDifference<.05,'wrap has no large opacity discontinuity')
  results.lifecycle=await page.evaluate(async()=>{
-  const s=window.syn3h,g=s.game,p=s.params,d=window.cloudInvariant
+  const s=window.mira,g=s.game,p=s.params,d=window.cloudInvariant
   for(const [child,x]of d.moved)child.position.x=x
-  g.camera.position.copy(d.position);g.camera.updateMatrixWorld();window.__syn3hCurve.updateCurve(g.camera.position,s.terrain.size)
+  g.camera.position.copy(d.position);g.camera.updateMatrixWorld();window.__miraCurve.updateCurve(g.camera.position,s.terrain.size)
   p.set('world.atmosphere',0);p.set('sky.preset',2)
   const vacuum={registered:p.get('weather.cloudCoverage').value,effective:d.env.clouds.coverage}
   p.set('world.atmosphere',1)
@@ -59,7 +59,7 @@ try{
  assert.deepEqual(l.before,l.released);assert.notDeepEqual(l.before,l.drifting);assert.deepEqual(l.drifting,l.restored)
  assert.equal(l.fallback,true);assert.equal(l.active,true)
  results.reflections=await page.evaluate(async()=>{
-  const g=window.syn3h.game,d=window.cloudInvariant
+  const g=window.mira.game,d=window.cloudInvariant
   const {SkyEnvironmentMap}=await import('/src/world/sky/SkyEnvironmentMap.ts')
   const map=new SkyEnvironmentMap(g.scene,g.renderer,d.sky),coverage=d.sky.cloudCoverage.value,original=d.sky.cloudLayerVisible
   const diff=(a,b)=>a.reduce((sum,v,i)=>sum+Math.abs(v-b[i]),0)/a.length

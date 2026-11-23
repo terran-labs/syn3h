@@ -7,7 +7,7 @@ lead's gentle-bank criterion of 0.3 rise/m. Terrain Lab owns any beach redesign.
 
 ## Lava returns control to the wheels
 
-Real-Rapier ramp tests pass for Syn3h buggy, classic buggy and tank: each starts in lava,
+Real-Rapier ramp tests pass for Mira buggy, classic buggy and tank: each starts in lava,
 crawls through a nine-degree shallows ramp, crosses the shoreline, and drives at least
 eight metres beyond it. The tests assert lavaDepth returns to zero and stuck becomes false.
 

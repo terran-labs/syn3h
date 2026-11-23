@@ -106,7 +106,7 @@ export const zorbPulseBrightness = defineParam({ id: 'zorb.pulseBrightness', lab
 export const ZORB_FRICTION = 0.1
 /** RamoSphere.ramColor alpha from ORB.prefab: the shield's resting brightness. */
 export const ZORB_REST_ALPHA = 0.2275
-/** Vehicle clearance used when a vehicle declares no `camOffset` (Syn3h buggy prefab CamOffset 3). */
+/** Vehicle clearance used when a vehicle declares no `camOffset` (Mira buggy prefab CamOffset 3). */
 export const ZORB_DEFAULT_CAM_OFFSET = 3
 /** How deep the base of a floating ball sits in water or lava, in metres. */
 export const ZORB_FLOAT_DEPTH = 0.4

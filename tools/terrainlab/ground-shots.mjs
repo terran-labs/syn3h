@@ -51,16 +51,16 @@ try {
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)) })
       await page.routeWebSocket(/\/ws/, (s) => s.close())
       await page.goto(`${base}?autoplay=1&vehicle=buggy&world=${world}${extra}`, { waitUntil: 'load' })
-      await page.waitForFunction(() => window.syn3h?.game?.tick > 60, null, { timeout: 120000 })
+      await page.waitForFunction(() => window.mira?.game?.tick > 60, null, { timeout: 120000 })
       await page.evaluate(() => {
-        const s = window.syn3h
+        const s = window.mira
         s.params.set('gfx.level', 2); s.params.set('bots.count', 0); s.params.set('sun.dayLength', 0); s.params.set('sun.timeOfDay', 10)
         s.params.set('terrain.groundCover', 0); s.params.set('weather.cloudCoverage', 0)
         s.game.quality.frame = () => {}
       })
       await page.waitForTimeout(6000)
       await page.screenshot({ path: `${out}/${world}.png` })
-      console.log(world, JSON.stringify({ backend: await page.evaluate(() => window.syn3h.game.backend), errors }))
+      console.log(world, JSON.stringify({ backend: await page.evaluate(() => window.mira.game.backend), errors }))
       await page.close()
     }
   }

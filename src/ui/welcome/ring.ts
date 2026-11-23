@@ -24,7 +24,7 @@ export const RING_TURN_MS = 5200
 /** The ring's markup round `cards` (each a picture's own <figure> html), with its captions. */
 export function ringHtml(cards: readonly string[]): string {
   const arrow = (d: string) => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`
-  return `<section class="welcome-ring" aria-roledescription="carousel" aria-label="Syn3h in pictures" style="--count:${cards.length}">
+  return `<section class="welcome-ring" aria-roledescription="carousel" aria-label="Mira in pictures" style="--count:${cards.length}">
   <div class="welcome-ring-stage"><ol class="welcome-ring-track">${cards.map((card, i) => `<li class="welcome-ring-card" aria-label="${i + 1} of ${cards.length}">${card}</li>`).join('')}</ol></div>
   <div class="welcome-ring-foot">
     <button type="button" class="welcome-ring-arrow" data-ring="prev" aria-label="Previous picture" data-tip="Previous picture">${arrow('M15 6l-6 6 6 6')}</button>

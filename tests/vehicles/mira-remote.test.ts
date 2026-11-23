@@ -7,13 +7,13 @@
 import { expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { FIXED_DT, RAPIER } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { makeBed } from './harness'
 
 /** A settled buggy turned kinematic, then carried along -Z (its nose) at `speed`. */
 async function carried(speed: number, lateral = 0) {
   const bed = await makeBed()
-  const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.5, 0), 0))
+  const b = bed.add(new MiraBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.5, 0), 0))
   b.isLocal = false
   bed.run(3)
   const at = b.body.translation()

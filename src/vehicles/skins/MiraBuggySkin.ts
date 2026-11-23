@@ -23,7 +23,7 @@ const axleMounts = (x: number, y: number, z: number) =>
   [new THREE.Vector3(-x, y, -z), new THREE.Vector3(x, y, -z), new THREE.Vector3(-x, y, z), new THREE.Vector3(x, y, z)]
 
 /**
- * Syn3h hub motor geometry, in the stator's own frame (wheel axle along X). The stator is a
+ * Mira hub motor geometry, in the stator's own frame (wheel axle along X). The stator is a
  * wing across the hub whose two tips (z = +-STATOR_TIP) nearly touch the inside of the rotor
  * ring (inner radius about 0.344 m). Those tips are the interface points.
  */
@@ -123,8 +123,8 @@ function release(root: THREE.Object3D): void {
   materials.forEach(m => m.dispose())
 }
 
-/** Syn3h VhiclBuggy.cs 112-128: scale during deployment, then flex the original vertices. */
-export function wingVertexSyn3h(x: number, y: number, z: number, open: number, steer: number, pitch: number): [number, number, number] {
+/** Mira VhiclBuggy.cs 112-128: scale during deployment, then flex the original vertices. */
+export function wingVertexMira(x: number, y: number, z: number, open: number, steer: number, pitch: number): [number, number, number] {
   open = THREE.MathUtils.clamp(open, 0, 1)
   if (open < 1) return [x * open, y * open, z]
   // Evaluate in Unity components (z forward, x mirrored by our 180 degree turn), as the original.
@@ -159,13 +159,13 @@ const scratch = {
 }
 
 /**
- * The Syn3h buggy: body, fittings, canopy, cockpit tub, suspension, hub stators and flight wings,
+ * The Mira buggy: body, fittings, canopy, cockpit tub, suspension, hub stators and flight wings,
  * all generated in code (src/vehicles/buggygen) with no model file. The body comes from
  * buggygen/body.ts (the control cage); the parts are fitted to that body and supply the shock
  * anchors. Built one microtask after construction so the vehicle has attached `object` first:
  * detail switching registers through its parent (registerVehicleDetail).
  */
-export class Syn3hBuggySkin implements BuggySkin {
+export class MiraBuggySkin implements BuggySkin {
   readonly object = new THREE.Group()
   readonly ready: Promise<void>
   /** The lamps are emissive faces of the body mesh (see build). */
@@ -179,7 +179,7 @@ export class Syn3hBuggySkin implements BuggySkin {
   private readonly distantBodies: THREE.Group[] = []
   /** Spinning part of each wheel (tyre and rotor ring). The wheel group itself only steers. */
   private readonly rollers = Array.from({length: 4}, () => new THREE.Group())
-  // Syn3h hub motors: wing struts, stators (near and far detail), glow and sparks.
+  // Mira hub motors: wing struts, stators (near and far detail), glow and sparks.
   private struts?: THREE.InstancedMesh
   /**
    * Shock absorbers, one per wheel: each runs from its foot on the swinging arm (`shockFoot`,
@@ -229,7 +229,7 @@ export class Syn3hBuggySkin implements BuggySkin {
 
   constructor(private readonly bodySource: BuggyBodySource = buggyBody) {
     // Scripts find the skin by this name (tools/velocity-isolate.mjs).
-    this.object.name = 'syn3h buggy skin'
+    this.object.name = 'mira buggy skin'
     const r0 = LAYOUT.rest, m0 = LAYOUT.mounts[3]
     this.strutRest = Math.hypot(r0.x - m0.x, r0.y - m0.y, r0.z - m0.z)
     this.wheels.forEach((w, i) => {
@@ -295,7 +295,7 @@ export class Syn3hBuggySkin implements BuggySkin {
     for (const p of of('canopy')) canopy.add(pieceMesh(p.geometry, glass))
     mergeStatic(staticBody, true)
     mergeStatic(canopy, true)
-    // The force field stays in view from the seat: Syn3hBuggy sets userData.cockpit on the
+    // The force field stays in view from the seat: MiraBuggy sets userData.cockpit on the
     // vehicle, which tells the ride camera to hide nothing.
     canopy.traverse(o => { if (o instanceof THREE.Mesh) o.name = 'Canopy' })
     canopy.name = 'Canopy'
@@ -327,7 +327,7 @@ export class Syn3hBuggySkin implements BuggySkin {
     for (const p of of('wings')) wingGroup.add(pieceMesh(p.geometry, new THREE.MeshStandardMaterial()))
     // Both flight wings deform by vertex position, so they can share one geometry and draw.
     mergeStatic(wingGroup, true)
-    // Force field material after Syn3h "Vehicle Wings" (an edge detecting, fresnel, panning
+    // Force field material after Mira "Vehicle Wings" (an edge detecting, fresnel, panning
     // texture shader: brightness 7, pan speed -0.5, texture V scale 0.1, solid colour tinted by
     // the vehicle). Our wing meshes are coarse shells with arbitrary UVs, so the edge glow is
     // computed per fragment as the distance to the wing's planform outline, measured on the
@@ -433,7 +433,7 @@ export class Syn3hBuggySkin implements BuggySkin {
     if (!wheel) throw new RangeError('Wheel index must be 0 to 3')
     wheel.position.copy(localPosition)
     wheel.scale.copy(this.tyreScale)
-    // Same transform as the former single 'YXZ' Euler (steer, then spin), split so the Syn3h
+    // Same transform as the former single 'YXZ' Euler (steer, then spin), split so the Mira
     // stator can steer and travel with the wheel without spinning: Unity's prefab spins only
     // the `Roll` child (tyre and rotor ring), while `Rim` (the stator) sits on the steered root.
     wheel.rotation.set(0, steerAngle, 0)
@@ -488,7 +488,7 @@ export class Syn3hBuggySkin implements BuggySkin {
     out.makeBasis(chord, span.multiplyScalar(stretch), thick).setPosition(hub)
   }
 
-  /** Syn3h only: the wing struts, the stators and the motor glow, from the generated parts. */
+  /** Mira only: the wing struts, the stators and the motor glow, from the generated parts. */
   private buildHubMotors(of: (part: string) => { role: string; geometry: THREE.BufferGeometry }[], shockTops: [number, number, number][]): void {
     // Chrome is a bright, fairly smooth metal; the game has no environment map, so keep some
     // diffuse colour or it renders near black away from the sun.
@@ -651,7 +651,7 @@ export class Syn3hBuggySkin implements BuggySkin {
     for (const {mesh, base} of this.wings) {
       mesh.visible = openAmount > 0
       const position = mesh.geometry.attributes.position
-      for (let i = 0; i < position.count; i++) position.setXYZ(i, ...wingVertexSyn3h(base[i*3], base[i*3+1], base[i*3+2], openAmount, steer, pitch))
+      for (let i = 0; i < position.count; i++) position.setXYZ(i, ...wingVertexMira(base[i*3], base[i*3+1], base[i*3+2], openAmount, steer, pitch))
       position.needsUpdate = true
       mesh.geometry.computeVertexNormals()
       mesh.geometry.computeBoundingSphere()

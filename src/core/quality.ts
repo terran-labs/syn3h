@@ -177,11 +177,11 @@ export function assessCapability(hints: CapabilityHints): Capability {
 }
 /** Three-step capability for the vehicle lab page. The game uses assessCapability. */
 export function classifyDevice(hints: CapabilityHints & { userAgent?: string; touchPoints?: number }): 0 | 1 | 2 { return legacyTier(assessCapability(hints).start) }
-export const LOAD_KEY = 'syn3h.loading.level'
+export const LOAD_KEY = 'mira.loading.level'
 /** Keys of the three-tier settings, read once for migration and then removed. */
-export const LEVEL_KEY = 'syn3h.graphics.level'
-export const MANUAL_KEY = 'syn3h.graphics.manual'
-export const STATE_KEY = 'syn3h.quality.v2'
+export const LEVEL_KEY = 'mira.graphics.level'
+export const MANUAL_KEY = 'mira.graphics.manual'
+export const STATE_KEY = 'mira.quality.v2'
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 function storageRead(storage: StorageLike | null, key: string): string | null { try { return storage?.getItem(key) ?? null } catch { return null } }
 function storageWrite(storage: StorageLike | null, key: string, value: string | null) { try { if (value === null) storage?.removeItem(key); else storage?.setItem(key, value) } catch { /* Private mode may reject storage writes. */ } }
@@ -253,7 +253,7 @@ export interface LoadProgress { phase: 'device' | 'physics' | 'renderer' | 'worl
 export let loadingProgress: LoadProgress = { phase: 'device', progress: 0, elapsedMs: 0 }
 export function reportLoading(phase: LoadProgress['phase'], progress: number) {
   loadingProgress = { phase, progress: Math.max(loadingProgress.progress, progress), elapsedMs: performance.now() }
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('syn3h:loading', { detail: loadingProgress }))
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira:loading', { detail: loadingProgress }))
 }
 // ---------------------------------------------------------------------------------------
 // Governor. Inside a level it sheds cost in steps that create no pipelines: the post
@@ -281,7 +281,7 @@ export const RESOLUTION_STEPS = [0.85, 0.7] as const
  * still go below it, never above.
  */
 export const RENDER_RESOLUTION = { min: 0.5, max: 1, step: 0.05 } as const
-export const RESOLUTION_KEY = 'syn3h.graphics.resolution'
+export const RESOLUTION_KEY = 'mira.graphics.resolution'
 /** A stored or chosen fraction, snapped to the steps and kept between 50% and 100%; anything else is Auto. */
 export function renderResolution(value: unknown): number | null {
   const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value
@@ -1113,7 +1113,7 @@ export class QualityController implements QualitySource {
     else this.renderer?.setPixelRatio(s.pixelRatio)
     if (this.terrain && (levelChanged || !this.terrainWritten)) { this.terrain.setRenderQuality?.({ level: legacyTier(level), quality: level, drawDistance: budget.drawDistance, detail: budget.detail, groundCover: budget.groundCover }); this.terrainWritten = true }
     effective = { ...s, level, rung: g.rung, rungs: g.ladder.length, auto: g.auto, targetFps: Math.round(1000 / g.targetMs) }
-    if(typeof window !== 'undefined')window.dispatchEvent(new CustomEvent('syn3h:quality', { detail: { ...budget, ...effective, budget, reason: this.lastReason } }))
+    if(typeof window !== 'undefined')window.dispatchEvent(new CustomEvent('mira:quality', { detail: { ...budget, ...effective, budget, reason: this.lastReason } }))
     this.publishQuality()
     this.publishPerformance()
   }

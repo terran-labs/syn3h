@@ -6,7 +6,7 @@ import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
 import assert from 'node:assert/strict';
 import { manualReload } from './manual-reload.mjs';
-const root=await mkdtemp(join(tmpdir(),'syn3h-hmr-'));
+const root=await mkdtemp(join(tmpdir(),'mira-hmr-'));
 const start=async()=>{const s=await createServer({root,configFile:false,plugins:[manualReload()],server:{host:'127.0.0.1',port:5186,strictPort:true}});await s.listen();return s;};
 let server,browser;
 try {
@@ -24,15 +24,15 @@ try {
   assert.equal(await page.evaluate(()=>window.pageIdentity),12345);
   console.log('PASS CSS and accepted JavaScript update without reload');
   await writeFile(join(root,'accepted.js'),js(3)+"\n// from 'three/tsl'");
-  await page.waitForSelector('#syn3h-build-notice');
+  await page.waitForSelector('#mira-build-notice');
   assert.equal(await page.evaluate(()=>window.hmrValue),2);
-  const bounds=await page.locator('#syn3h-build-notice').boundingBox();
+  const bounds=await page.locator('#mira-build-notice').boundingBox();
   assert.ok(bounds.y > 600 && bounds.x > 600, 'Notice stays in the bottom-right corner');
   await page.screenshot({path:'/tmp/syn3h-reload-bottom-corner.png'});
   console.log('PASS material source change requests manual reload');
-  await page.evaluate(()=>document.getElementById('syn3h-build-notice').remove());
+  await page.evaluate(()=>document.getElementById('mira-build-notice').remove());
   await server.close();server=await start();
-  await page.waitForSelector('#syn3h-build-notice',{timeout:30000});
+  await page.waitForSelector('#mira-build-notice',{timeout:30000});
   assert.equal(await page.evaluate(()=>window.pageIdentity),12345);
   assert.deepEqual(errors,[]);
   console.log('PASS server restart shows notice and preserves page; zero page errors');

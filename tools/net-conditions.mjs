@@ -7,7 +7,7 @@
  * Needs a room server and a dev server whose client talks to the proxy port:
  *
  *   PORT=8791 npm run server
- *   SYN3H_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
+ *   MIRA_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
  *   node tools/net-conditions.mjs --rtt 100 --loss 0.03 [--jitter 20] [--rto 200]
  *        [--stall 500 --stall-every 10] [--set net.proxyBlend=0.2] [--only cruise,parked]
  *        [--label venue] [--secure-off]
@@ -90,8 +90,8 @@ async function open(name) {
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`))
   await page.goto(`${base}?room=${room}&name=${name}&autoplay=1`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 60000 })
-  await page.evaluate(() => { window.syn3h.shell.play(); document.activeElement?.blur?.() })
+  await page.waitForFunction(() => window.mira?.shell, null, { timeout: 60000 })
+  await page.evaluate(() => { window.mira.shell.play(); document.activeElement?.blur?.() })
   return page
 }
 
@@ -101,9 +101,9 @@ const record = (page, other) => page.evaluate((other) => {
   window.__condLog = log
   clearInterval(window.__condTimer)
   window.__condTimer = setInterval(() => {
-    const net = window.syn3hNet
-    const p = window.syn3h.player.body.translation()
-    const v = window.syn3h.player.body.linvel()
+    const net = window.miraNet
+    const p = window.mira.player.body.translation()
+    const v = window.mira.player.body.linvel()
     const r = net.remotes.get(other)
     const rp = r?.vehicle.body.translation()
     log.push({
@@ -115,7 +115,7 @@ const record = (page, other) => page.evaluate((other) => {
 }, other)
 const stop = (page) => page.evaluate(() => { clearInterval(window.__condTimer); return window.__condLog })
 /** Drive without the keyboard, which only reaches whichever page has focus. */
-const drive = (page, y, x = 0) => page.evaluate(([y, x]) => { const e = window.syn3h.game.input.external; e.y = y; e.x = x }, [y, x])
+const drive = (page, y, x = 0) => page.evaluate(([y, x]) => { const e = window.mira.game.input.external; e.y = y; e.x = x }, [y, x])
 
 const d2 = (p, q) => Math.hypot(p[0] - q[0], p[2] - q[2])
 const at = (log, t) => log.reduce((best, e) => (Math.abs(e.t - t) < Math.abs(best.t - t) ? e : best), log[0])
@@ -199,15 +199,15 @@ let report
 try {
   const a = await open('Alice')
   const b = await open('Bob')
-  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet?.connected && [...window.syn3hNet.players.values()].filter(p => !p.bot).length === 2, null, { timeout: 60000 })))
-  await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
-  const [idA, idB] = await Promise.all([a, b].map((p) => p.evaluate(() => window.syn3hNet.id)))
-  await Promise.all([a.waitForFunction((id) => window.syn3hNet.remotes.has(id), idB, { timeout: 20000 }), b.waitForFunction((id) => window.syn3hNet.remotes.has(id), idA, { timeout: 20000 })])
-  for (const [id, value] of sets) await Promise.all([a, b].map((p) => p.evaluate(([id, value]) => window.syn3h.params.set(id, Number(value)), [id, value])))
+  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.miraNet?.connected && [...window.miraNet.players.values()].filter(p => !p.bot).length === 2, null, { timeout: 60000 })))
+  await a.evaluate(() => window.mira.params.set('game.mode', 0))
+  const [idA, idB] = await Promise.all([a, b].map((p) => p.evaluate(() => window.miraNet.id)))
+  await Promise.all([a.waitForFunction((id) => window.miraNet.remotes.has(id), idB, { timeout: 20000 }), b.waitForFunction((id) => window.miraNet.remotes.has(id), idA, { timeout: 20000 })])
+  for (const [id, value] of sets) await Promise.all([a, b].map((p) => p.evaluate(([id, value]) => window.mira.params.set(id, Number(value)), [id, value])))
 
   // The flattest dry 80 m line near the origin, so slopes do not decide the result.
   const runway = await a.evaluate(() => {
-    const t = window.syn3h.terrain
+    const t = window.mira.terrain
     let best = null
     for (let ox = -120; ox <= 120; ox += 40) for (let oz = -120; oz <= 120; oz += 40) for (let k = 0; k < 16; k++) {
       const h = (k / 16) * Math.PI * 2
@@ -224,13 +224,13 @@ try {
     return best
   })
   const teleport = (page, s, l, heading, lift) => page.evaluate(({ runway, s, l, heading, lift }) => {
-    const { terrain, player } = window.syn3h
+    const { terrain, player } = window.mira
     const f = [-Math.sin(runway.h), -Math.cos(runway.h)]
     const x = runway.ox + f[0] * s + f[1] * l, z = runway.oz + f[1] * s - f[0] * l
     const pos = player.object.position.clone().set(x, terrain.heightAt(x, z) + lift, z)
     player.teleport(pos, runway.h + heading)
   }, { runway, s, l, heading, lift })
-  const speed = (page) => page.evaluate(() => { const v = window.syn3h.player.body.linvel(); return Math.hypot(v.x, v.z) })
+  const speed = (page) => page.evaluate(() => { const v = window.mira.player.body.linvel(); return Math.hypot(v.x, v.z) })
   let replaced = 0
   /**
    * Put a vehicle on the runway and make sure it can drive: nudge it and, if it does not
@@ -240,7 +240,7 @@ try {
     for (const lift of [1.2, 2, 0.8, 2.5, 1.5]) {
       // Work around a buggy defect: a ram can leave `isInverted` latched, which turns the
       // suspension off for good (see tools/ram-inverted-repro.mjs).
-      await page.evaluate(() => { if ('isInverted' in window.syn3h.player) window.syn3h.player.isInverted = false })
+      await page.evaluate(() => { if ('isInverted' in window.mira.player) window.mira.player.isInverted = false })
       await teleport(page, s, l, heading, lift)
       await wait(1200)
       await drive(page, 1); await wait(500); await drive(page, 0)
@@ -250,20 +250,20 @@ try {
       replaced++
     }
     const diag = await page.evaluate(() => {
-      const { player, terrain, game } = window.syn3h
+      const { player, terrain, game } = window.mira
       const p = player.body.translation(), v = player.body.linvel(), q = player.body.rotation()
       return {
         y: +p.y.toFixed(2), ground: +terrain.heightAt(p.x, p.z).toFixed(2), speed: +Math.hypot(v.x, v.z).toFixed(2),
         upY: +(1 - 2 * (q.x * q.x + q.z * q.z)).toFixed(2), type: player.body.bodyType(), sleeping: player.body.isSleeping(),
         input: { ...player.input }, polled: { ...game.input.state }, suspended: game.input.suspended, ext: { ...game.input.external },
-        time: game.time, mode: window.syn3hNet.game.mode, hud: document.getElementById('hud')?.textContent.slice(0, 60),
+        time: game.time, mode: window.miraNet.game.mode, hud: document.getElementById('hud')?.textContent.slice(0, 60),
       }
     })
     throw new Error(`vehicle would not drive after five placements: ${JSON.stringify(diag)}`)
   }
-  const rammed = (page, n) => page.waitForFunction((n) => window.syn3hNet.stats.rams > n, n, { timeout: 9000 }).catch(() => {})
-  const rams = (page) => page.evaluate(() => window.syn3hNet.stats.rams)
-  const cooldown = await a.evaluate(() => window.syn3h.params.get('tag.cooldown')?.value ?? 3)
+  const rammed = (page, n) => page.waitForFunction((n) => window.miraNet.stats.rams > n, n, { timeout: 9000 }).catch(() => {})
+  const rams = (page) => page.evaluate(() => window.miraNet.stats.rams)
+  const cooldown = await a.evaluate(() => window.mira.params.get('tag.cooldown')?.value ?? 3)
   /** Let both settle where they were placed and the tag cooldown pass, then start logging. */
   async function begin() {
     await Promise.all([drive(a, 0), drive(b, 0)])
@@ -321,30 +321,30 @@ try {
       await place(a, 0, 0, 0); await place(b, 20, 0, 0)
       await begin()
       await stop(a); await stop(b)
-      const before = await b.evaluate(() => window.syn3hNet.stats.hitsTaken)
+      const before = await b.evaluate(() => window.miraNet.stats.hitsTaken)
       const t0 = Date.now()
       let sent = 0
       let tagged = false
       for (; sent < 8 && !tagged; sent++) {
-        await a.evaluate((id) => { const n = window.syn3hNet; n.fire(undefined, n.remotes.get(id).vehicle.body.translation()) }, idB)
-        tagged = await b.waitForFunction((n) => window.syn3hNet.stats.hitsTaken > n, before, { timeout: 1500 }).then(() => true, () => false)
+        await a.evaluate((id) => { const n = window.miraNet; n.fire(undefined, n.remotes.get(id).vehicle.body.translation()) }, idB)
+        tagged = await b.waitForFunction((n) => window.miraNet.stats.hitsTaken > n, before, { timeout: 1500 }).then(() => true, () => false)
       }
       return { tagged, beamsSent: sent, ms: tagged ? Date.now() - t0 : null }
     },
     async hill() {
       // B waits at its spawn pad, well away from the hill: the runway itself may lie inside
       // the zone, and two vehicles in it are a contest, not a capture.
-      await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, s.heading) })
-      await a.evaluate(() => window.syn3h.params.set('game.mode', 1))
+      await b.evaluate(() => { const s = window.mira.terrain.spawnPoint(1); window.mira.player.teleport(s.position, s.heading) })
+      await a.evaluate(() => window.mira.params.set('game.mode', 1))
       const t0 = Date.now()
-      const gotZone = await b.waitForFunction(() => window.syn3hNet.game.mode === 1 && window.syn3hNet.game.koth.zone, null, { timeout: 10000 }).then(() => true, () => false)
+      const gotZone = await b.waitForFunction(() => window.miraNet.game.mode === 1 && window.miraNet.game.koth.zone, null, { timeout: 10000 }).then(() => true, () => false)
       if (!gotZone) return { zoneOnB: false }
       const zoneMs = Date.now() - t0
       // A dry spot on the zone's mid line whose ground lies inside the zone's height band.
       const spot = await a.evaluate(() => {
-        const zone = window.syn3hNet.game.koth.zone
+        const zone = window.miraNet.game.koth.zone
         const r = (zone.inner + zone.outer) / 2
-        const { terrain, player } = window.syn3h
+        const { terrain, player } = window.mira
         for (let k = 0; k < 64; k++) {
           const x = zone.x + Math.cos(k * 0.1) * r, z = zone.z + Math.sin(k * 0.1) * r
           const y = terrain.heightAt(x, z)
@@ -356,13 +356,13 @@ try {
       })
       if (!spot) return { zoneOnB: true, zoneMs, spot: null }
       const t1 = Date.now()
-      const held = await b.waitForFunction((id) => window.syn3hNet.game.koth.holder === id, idA, { timeout: 10000 }).then(() => true, () => false)
+      const held = await b.waitForFunction((id) => window.miraNet.game.koth.holder === id, idA, { timeout: 10000 }).then(() => true, () => false)
       const captureMs = held ? Date.now() - t1 : null
       await wait(3000)
-      const score = await b.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, idA)
-      await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
+      const score = await b.evaluate((id) => window.miraNet.game.scores[id] ?? 0, idA)
+      await a.evaluate(() => window.mira.params.set('game.mode', 0))
       const seen = await a.evaluate(() => {
-        const p = window.syn3h.player.body.translation(), k = window.syn3hNet.game.koth
+        const p = window.mira.player.body.translation(), k = window.miraNet.game.koth
         return { p: [p.x, p.y, p.z].map((n) => +n.toFixed(1)), r: +Math.hypot(p.x - k.zone.x, p.z - k.zone.z).toFixed(1), zone: k.zone, holder: k.holder, contested: k.contested, stuck: k.out }
       })
       return { zoneOnB: true, zoneMs, captureSeenOnB: held, captureMs, scoreAfter3s: score, spot, seen }
@@ -376,7 +376,7 @@ try {
   }
   report.hud = await b.evaluate(() => document.getElementById('hud')?.textContent.match(/net:[^\n]*/)?.[0] ?? null)
   report.fps = await Promise.all([a, b].map((p) => p.evaluate(() => Number(document.getElementById('hud')?.textContent.match(/(\d+) fps/)?.[1] ?? 0))))
-  report.tickRate = await Promise.all([a, b].map(async (p) => { const t0 = await p.evaluate(() => window.syn3h.game.tick); await wait(1000); return (await p.evaluate(() => window.syn3h.game.tick)) - t0 }))
+  report.tickRate = await Promise.all([a, b].map(async (p) => { const t0 = await p.evaluate(() => window.mira.game.tick); await wait(1000); return (await p.evaluate(() => window.mira.game.tick)) - t0 }))
   report.errors = errors
   report.replaced = replaced
 } finally {

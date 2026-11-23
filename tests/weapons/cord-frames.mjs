@@ -7,13 +7,14 @@
  * At noon on alpine grass (sky behind), at noon on ice (snow), and at night on alpine. The camera
  * is held where the chase camera sits, 6 m behind and 2.6 m above the car.
  *
- *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/cord-frames.mjs <label> [out dir]
+ *   MIRA_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/cord-frames.mjs <label> [out dir]
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright-core'
 
-const base = (process.env.SYN3H_URL ?? '').replace(/\/+$/, '') + '/'
-if (!process.env.SYN3H_URL) throw new Error('Set SYN3H_URL')
+const base = (process.env.MIRA_URL ?? '').replace(/\/+$/, '') + '/'
+if (!process.env.MIRA_URL) throw new Error('Set MIRA_URL')
 const label = process.argv[2] ?? 'build', out = process.argv[3] ?? '/tmp/weapons-beauty/cord'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
@@ -23,13 +24,13 @@ try {
     const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage()
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     await page.goto(`${base}?planet=${planet}&seed=7&autoplay=1&room=cord-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet?.connected && window.syn3h.game.tick > 60, null, { timeout: 180000 })
-    await page.evaluate(hour => { document.exitPointerLock?.(); const s = window.syn3h, q = s.params; q.set('gfx.auto', false); q.set('gfx.level', 2); q.set('bots.canDrive', false); q.set('bots.canFire', false); q.set('bots.count', 3); q.set('bungee.cooldown', 0); q.set('sun.dayLength', 0); q.set('sun.timeOfDay', hour); q.set('daydream.seconds', 0); for (const n of document.body.children) if (n.tagName !== 'CANVAS' && n.tagName !== 'SCRIPT') n.style.visibility = 'hidden' }, hour)
-    await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 3, null, { timeout: 90000 })
+    await page.waitForFunction(() => window.mira?.shell?.playing && window.miraNet?.connected && window.mira.game.tick > 60, null, { timeout: 180000 })
+    await page.evaluate(hour => { document.exitPointerLock?.(); const s = window.mira, q = s.params; q.set('gfx.auto', false); q.set('gfx.level', 2); q.set('bots.canDrive', false); q.set('bots.canFire', false); q.set('bots.count', 3); q.set('bungee.cooldown', 0); q.set('sun.dayLength', 0); q.set('sun.timeOfDay', hour); q.set('daydream.seconds', 0); for (const n of document.body.children) if (n.tagName !== 'CANVAS' && n.tagName !== 'SCRIPT') n.style.visibility = 'hidden' }, hour)
+    await page.waitForFunction(() => window.mira.bots.vehicles.length === 3, null, { timeout: 90000 })
     await page.waitForTimeout(3000)
     // Player still; bots at (ahead, side): A (20, 7), B (30, -8), C (40, 2). All held in the air a little.
     const place = () => page.evaluate(() => {
-      const s = window.syn3h, v = s.player, a = v.body.translation()
+      const s = window.mira, v = s.player, a = v.body.translation()
       const f = s.game.camera.getWorldDirection(v.object.position.clone()); f.y = 0; f.normalize()
       window.__f ??= [f.x, f.z]; const [fx, fz] = window.__f, rx = -fz, rz = fx
       const hold = (veh, x, z, up) => { veh.teleport(v.object.position.clone().set(x, s.terrain.heightAt(x, z) + up, z), Math.atan2(-fx, -fz)); veh.body.setLinvel({ x: 0, y: 0, z: 0 }, true); veh.body.setAngvel({ x: 0, y: 0, z: 0 }, true); veh.body.setGravityScale(0, true) }
@@ -42,7 +43,7 @@ try {
     })
     await place(); await page.waitForTimeout(2500); await place(); await page.waitForTimeout(500)
     const launch = (from, to) => page.evaluate(([from, to]) => {
-      const s = window.syn3h, n = window.syn3hNet
+      const s = window.mira, n = window.miraNet
       const shooter = from < 0 ? s.player : s.bots.vehicles[from]
       // A bot's gear is made on its first gear action; make it here the same way.
       let gear = null
@@ -54,21 +55,21 @@ try {
       const t = to === 'ground' ? { x: a.x + window.__f[0] * 8, y: s.terrain.heightAt(a.x + window.__f[0] * 8, a.z + window.__f[1] * 8), z: a.z + window.__f[1] * 8 } : s.bots.vehicles[to].body.translation()
       return B.launch([t.x - a.x, t.y - a.y - (to === 'ground' ? 0 : 1.1), t.z - a.z])
     }, [from, to])
-    const attached = () => page.evaluate(() => [window.syn3hNet.bungee.attached, ...[0, 1].map(i => window.syn3hNet.botGear.get(0xff00 + i)?.bungee.attached)].map(Boolean))
+    const attached = () => page.evaluate(() => [window.miraNet.bungee.attached, ...[0, 1].map(i => window.miraNet.botGear.get(0xff00 + i)?.bungee.attached)].map(Boolean))
     const one = await launch(-1, 0)
     await page.waitForTimeout(900)
     await page.screenshot({ path: `${out}/one-${planet}-${hour}-${label}.png` })
     const oneAttached = await attached()
-    await page.evaluate(() => window.syn3hNet.bungee.letGo('released'))
+    await page.evaluate(() => window.miraNet.bungee.letGo('released'))
     // Against the sky: the same bot held 9 m up, so the cord rises across the sky.
     await page.waitForTimeout(1500); await place()
-    await page.evaluate(() => { const b = window.syn3h.bots.vehicles[0], p = b.object.position.clone(); p.y += 8; b.teleport(p, b.object.rotation.y); b.body.setLinvel({ x: 0, y: 0, z: 0 }, true) })
+    await page.evaluate(() => { const b = window.mira.bots.vehicles[0], p = b.object.position.clone(); p.y += 8; b.teleport(p, b.object.rotation.y); b.body.setLinvel({ x: 0, y: 0, z: 0 }, true) })
     await page.waitForTimeout(800)
     const sky = await launch(-1, 0)
     await page.waitForTimeout(900)
     await page.screenshot({ path: `${out}/sky-${planet}-${hour}-${label}.png` })
     report.push(`${planet} ${hour} sky: ${sky} ${JSON.stringify(await attached())}`)
-    await page.evaluate(() => window.syn3hNet.bungee.letGo('released'))
+    await page.evaluate(() => window.miraNet.bungee.letGo('released'))
     await page.waitForTimeout(1500); await place(); await page.waitForTimeout(800)
     const three = [await launch(-1, 2), await launch(0, 1), await launch(1, 'ground')]
     await page.waitForTimeout(900)

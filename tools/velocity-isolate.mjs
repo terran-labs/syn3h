@@ -15,14 +15,14 @@ try {
   url.searchParams.set('autoplay', '1'); url.searchParams.set('room', `velocity-isolate-${Date.now()}`)
   if (process.argv.includes('--webgl')) url.searchParams.set('webgl', '1')
   await page.goto(url.href, { timeout: 120000 })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 120, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 120, null, { timeout: 120000 })
   const results = await page.evaluate(async custom => {
-    const s = window.syn3h, g = s.game
+    const s = window.mira, g = s.game
     g.renderer.setAnimationLoop(null); g.postChain.release()
     const module = name => performance.getEntriesByType('resource').find(r => r.name.includes(`/${name}.js`))?.name
     const T = await import(module('three_webgpu')), N = await import(module('three_tsl'))
     const Velocity = custom ? (await import('/src/fx/post/CurvedVelocity.ts')).CurvedVelocity : T.VelocityNode
-    s.params.set('world.curve', 0); window.__syn3hCurve.updateCurve(g.camera.position, s.terrain.size)
+    s.params.set('world.curve', 0); window.__miraCurve.updateCurve(g.camera.position, s.terrain.size)
     const decode = data => Array.from(data, v => data instanceof Uint16Array ? T.DataUtils.fromHalfFloat(v) : v)
     const inspect = async (scene, camera, name) => {
       const ids = new Map(), objects = []
@@ -58,7 +58,7 @@ try {
       }
       let movingVehicle = null
       if (name === 'curved-game') {
-        const vehicle = scene.getObjectByName('syn3h buggy skin'), stators = scene.getObjectByName('Stators')
+        const vehicle = scene.getObjectByName('mira buggy skin'), stators = scene.getObjectByName('Stators')
         if (!vehicle || !stators?.isInstancedMesh) throw new Error('Actual buggy and instanced stators unavailable')
         const original = stators.instanceMatrix.array.slice(), matrix = new T.Matrix4()
         vehicle.position.x += .1
@@ -90,7 +90,7 @@ try {
     scene.add(new T.Mesh(new T.BoxGeometry(3, 3, 3), material))
     const simple = await inspect(scene, camera, 'stationary-box')
     const game = await inspect(g.scene, g.camera, 'flat-game')
-    s.params.set('world.curve', .71); window.__syn3hCurve.updateCurve(g.camera.position, s.terrain.size)
+    s.params.set('world.curve', .71); window.__miraCurve.updateCurve(g.camera.position, s.terrain.size)
     const curved = custom ? await inspect(g.scene, g.camera, 'curved-game') : null
     return { backend: g.backend, simple, game, curved }
   }, process.argv.includes('--custom'))

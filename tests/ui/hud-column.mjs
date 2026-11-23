@@ -1,6 +1,7 @@
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { waitForPanelMotion } from './panel-motion.mjs'
 // The HUD's left column (src/ui/hud-column.css): what must stay true.
-//   SYN3H_URL=http://127.0.0.1:5213/ node tests/ui/hud-column.mjs
+//   MIRA_URL=http://127.0.0.1:5213/ node tests/ui/hud-column.mjs
 // 1. One edge distance: the column's line (the gear's spine) sits as far from the left as the
 //    minimap's ring and the right panel from the right (1 px). Gear selector, accessories and
 //    chat share one left edge, stacked over the minimap in that order without overlapping, at
@@ -13,7 +14,7 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5213/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5213/'
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist'] })
 const errors = []
 
@@ -22,10 +23,10 @@ async function open(options) {
   const page = await context.newPage()
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`${base}?autoplay=1&room=hud-column-${Date.now()}`)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 180000 })
+  await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 180000 })
   await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 180000 })
-  await page.waitForFunction(() => window.syn3h.shell.playing && !window.syn3h.shell.transitioning, null, { timeout: 90000 })
-  await page.evaluate(() => window.syn3h.params.set('bots.count', 0))
+  await page.waitForFunction(() => window.mira.shell.playing && !window.mira.shell.transitioning, null, { timeout: 90000 })
+  await page.evaluate(() => window.mira.params.set('bots.count', 0))
   return { context, page }
 }
 
@@ -38,7 +39,7 @@ const measure = (page) => page.evaluate(() => {
   const detail = document.querySelector('.gear-selector .gs-detail')
   return {
     pitch: parseFloat(getComputedStyle(document.querySelector('.gear-selector')).getPropertyValue('--gs-pitch')),
-    edgeTop: parseFloat(getComputedStyle(document.querySelector('.syn3h-shell')).getPropertyValue('--edge')),
+    edgeTop: parseFloat(getComputedStyle(document.querySelector('.mira-shell')).getPropertyValue('--edge')),
     minimap: box('.shell-minimap'), gear: box('.gear-selector'), drum: box('.gear-selector .gs-drum'), spine: box('.gear-selector .gs-spine'),
     panel: box('.world-inspector'), // Rows showing only: Flip upright is in the column only while it can act, and takes no row while hidden.
     keys: [...document.querySelectorAll('.hud-accessories .acc-row:not([hidden]) kbd, .hud-chat kbd')].map((k) => k.checkVisibility() && k.textContent),
@@ -56,7 +57,7 @@ try {
     const { context, page } = await open({ viewport: { width: w, height: h } })
     let drumFree = null
     for (const mode of ['free', 'focus']) {
-      if (mode === 'focus') { await page.mouse.click(w / 2, h * .3); await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-focus'), null, { timeout: 5000 }) }
+      if (mode === 'focus') { await page.mouse.click(w / 2, h * .3); await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-focus'), null, { timeout: 5000 }) }
       await waitForPanelMotion(page)
       const m = await measure(page), at = `${w}x${h} ${mode}`
       // 1. One edge distance, one left edge, in order.
@@ -85,18 +86,18 @@ try {
     await page.keyboard.press('Escape'); await page.waitForTimeout(300)
     if (w === 1440) {
       for (const kind of ['buggy', 'jet', 'hovercraft']) {
-        await page.evaluate((k) => window.syn3h.swapVehicle(k), kind)
-        // Asking for the buggy keeps a Syn3h buggy: compare by family.
-        await page.waitForFunction((k) => window.syn3h.player.kind.startsWith(k) && document.querySelector('.hud-accessories').dataset.count, kind, { timeout: 30000 })
+        await page.evaluate((k) => window.mira.swapVehicle(k), kind)
+        // Asking for the buggy keeps a Mira buggy: compare by family.
+        await page.waitForFunction((k) => window.mira.player.kind.startsWith(k) && document.querySelector('.hud-accessories').dataset.count, kind, { timeout: 30000 })
         await page.waitForTimeout(300)
-        const seen = await page.evaluate(() => ({ rows: [...document.querySelectorAll('.hud-accessories .acc-row')].map((e) => e.dataset.id), wings: 'wingState' in window.syn3h.player, hover: 'hoverMode' in window.syn3h.player }))
+        const seen = await page.evaluate(() => ({ rows: [...document.querySelectorAll('.hud-accessories .acc-row')].map((e) => e.dataset.id), wings: 'wingState' in window.mira.player, hover: 'hoverMode' in window.mira.player }))
         assert.equal(seen.rows.includes('wings'), seen.wings, `${kind}: a Wings row exactly when it has wings ${JSON.stringify(seen)}`)
         assert.equal(seen.rows.includes('flight'), seen.hover, `${kind}: a Flight row exactly when it hovers ${JSON.stringify(seen)}`)
         assert.ok(seen.rows.includes('zorb'), `${kind}: Zorb`)
       }
-      await page.evaluate(() => window.syn3h.swapVehicle('buggy'))
+      await page.evaluate(() => window.mira.swapVehicle('buggy'))
       await page.waitForFunction(() => document.querySelector('.hud-accessories [data-id=wings]'), null, { timeout: 30000 })
-      const state = () => page.evaluate(() => ({ special: window.syn3h.game.input.state.special, zorb: window.syn3h.game.input.state.zorb, wings: document.querySelector('.hud-accessories [data-id=wings]').getAttribute('aria-pressed'), zorbRow: document.querySelector('.hud-accessories [data-id=zorb]').getAttribute('aria-pressed') }))
+      const state = () => page.evaluate(() => ({ special: window.mira.game.input.state.special, zorb: window.mira.game.input.state.zorb, wings: document.querySelector('.hud-accessories [data-id=wings]').getAttribute('aria-pressed'), zorbRow: document.querySelector('.hud-accessories [data-id=zorb]').getAttribute('aria-pressed') }))
       const before = await state()
       await page.keyboard.press('Space'); await page.waitForTimeout(200)
       let s = await state()

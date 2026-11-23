@@ -1,6 +1,6 @@
 # Adaptive score
 
-The default music of Syn3h. Nothing in it is a recording: a seeded composer writes the
+The default music of Mira. Nothing in it is a recording: a seeded composer writes the
 music one sixteenth note at a time and a fixed Web Audio graph plays it. It ships as code
 in the first bundle and costs no download.
 
@@ -136,7 +136,7 @@ the parameter registry under "Adaptive score". Layer thresholds are in `levels()
 
 ```sh
 npx vitest run tests/audio/score.test.ts          # composer: in key, deterministic, layers
-SYN3H_NO_ROOM_SERVER=1 npx vite --port 5188 &     # then, in real Chromium:
+MIRA_NO_ROOM_SERVER=1 npx vite --port 5188 &     # then, in real Chromium:
 node tests/audio/score-render.mjs                 # renders each scene offline, measures it,
                                                   # writes WAVs to tests/audio/artifacts
 node tests/audio/score-game.mjs                   # the score inside the game

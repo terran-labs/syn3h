@@ -18,12 +18,12 @@ for (const [engine, browser] of engines) for (const [size, device] of sizes) for
   try {
     await page.goto(`http://127.0.0.1:5187/?room=landing-${name}-${Date.now()}${path === 'autoplay' ? '&autoplay=1' : ''}`, { waitUntil: 'load' })
     if (path === 'lobby') {
-      await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
+      await page.waitForFunction(() => window.mira?.shell, null, { timeout: 120000 })
       await page.waitForTimeout(1500)
       // The ordinary way in: Play from the lobby, then the descent.
-      await page.evaluate(() => window.syn3h.shell.play())
+      await page.evaluate(() => window.mira.shell.play())
     }
-    await page.waitForFunction(() => document.querySelector('.syn3h-shell')?.classList.contains('is-playing') && window.syn3hNet?.connected, null, { timeout: 120000 })
+    await page.waitForFunction(() => document.querySelector('.mira-shell')?.classList.contains('is-playing') && window.miraNet?.connected, null, { timeout: 120000 })
     await page.waitForTimeout(4000)
     const seen = await page.evaluate(() => { const cards = document.querySelector('.world-inspector'), map = document.querySelector('.shell-minimap'), r = map?.getBoundingClientRect(); return { cards: !cards.hidden, map: r && r.width > 0 && getComputedStyle(map).opacity !== '0' ? Math.round(r.left) : null } })
     await page.screenshot({ path: `${out}${name}.png` })

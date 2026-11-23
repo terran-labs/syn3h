@@ -1,6 +1,6 @@
 /**
  * Planet curve screenshots: loads the running game, bends every drawn material at run time
- * (except the sky) with window.__syn3hCurve, and renders fixed views at several curve values.
+ * (except the sky) with window.__miraCurve, and renders fixed views at several curve values.
  *
  *   tools/heavy.sh node tools/terrainlab/curve-shots.mjs [baseUrl] [outDir] [curve,curve,...]
  */
@@ -23,13 +23,13 @@ page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`) })
 const room = `curve${Math.floor(Math.random() * 1e9)}`
 await page.goto(`${base}?autoplay=1&room=${room}${process.env.QUERY ? `&${process.env.QUERY}` : ''}`, { waitUntil: 'load' })
-await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && window.__syn3hCurve, null, { timeout: 60000 })
+await page.waitForFunction(() => window.mira?.game?.tick > 25 && window.__miraCurve, null, { timeout: 60000 })
 
 // Pin the camera and update the bend from it just before every render. With BEND unset the
 // pinned view is used without bending other lanes' materials (the terrain bends itself).
 await page.evaluate(() => {
-  const g = window.syn3h.game
-  const C = window.__syn3hCurve
+  const g = window.mira.game
+  const C = window.__miraCurve
   const orig = g.renderer.render.bind(g.renderer)
   window.__view = null
   g.renderer.render = (scene, cam) => {
@@ -41,7 +41,7 @@ await page.evaluate(() => {
       cam.lookAt(v.at[0], v.at[1], v.at[2])
       cam.updateMatrixWorld()
     }
-    C.updateCurve(cam.position, window.syn3h.terrain.data.size ?? 2048)
+    C.updateCurve(cam.position, window.mira.terrain.data.size ?? 2048)
     // Materials rebuilt mid-run (the vent emitters rebuild when the particle budget moves)
     // must be bent before they are drawn, so bend everything on every frame. Idempotent.
     if (window.__bendEveryFrame) {
@@ -59,9 +59,9 @@ await page.evaluate(() => {
 
 /** Bend every mesh and sprite in the scene except the sky. Returns what was bent. */
 const bendAll = () => page.evaluate(() => {
-  const C = window.__syn3hCurve
+  const C = window.__miraCurve
   const seen = new Map()
-  window.syn3h.game.scene.traverse((o) => {
+  window.mira.game.scene.traverse((o) => {
     if (!o.material) return
     if (o.constructor.name === 'AlienSkyMesh') return
     for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
@@ -74,7 +74,7 @@ const bendAll = () => page.evaluate(() => {
 })
 
 const info = () => page.evaluate(() => {
-  const s = window.syn3h
+  const s = window.mira
   const t = s.terrain
   const L = t.data.layout
   const v = L.volcano
@@ -96,7 +96,7 @@ async function shoot(name, eye, at) {
 }
 
 const i = await info()
-const gy = (x, z) => page.evaluate(([a, b]) => window.syn3h.terrain.heightAt(a, b), [x, z])
+const gy = (x, z) => page.evaluate(([a, b]) => window.mira.terrain.heightAt(a, b), [x, z])
 const { gx, gz } = i.volcano
 const S = i.summit
 const [px, pz] = [i.pads[0][0] * 1.02, i.pads[0][1] * 1.02]
@@ -108,7 +108,7 @@ const bent = process.env.BEND === '0' ? {} : await bendAll()
 if (process.env.BEND !== '0') await page.evaluate(() => { window.__bendEveryFrame = true })
 const frames = []
 for (const c of curves) {
-  await page.evaluate((v) => window.syn3h.params.set('world.curve', v), c)
+  await page.evaluate((v) => window.mira.params.set('world.curve', v), c)
   if (process.env.BEND !== '0') Object.assign(bent, await bendAll())
   const tag = `c${String(c).replace('.', '')}`
   await shoot(`${tag}-1-pad0-eye`, [px, padY + 3, pz], [0, 170, 0])
@@ -119,7 +119,7 @@ for (const c of curves) {
     const [vx, vy, vz] = i.player
     await shoot(`${tag}-4-vehicle`, [vx + 9, vy + 4, vz + 9], [vx, vy + 0.5, vz])
   }
-  frames.push({ curve: c, renderMs: await page.evaluate(() => +window.__renderMs.toFixed(2)), fps: await page.evaluate(() => Math.round(window.syn3h.game.fps)) })
+  frames.push({ curve: c, renderMs: await page.evaluate(() => +window.__renderMs.toFixed(2)), fps: await page.evaluate(() => Math.round(window.mira.game.fps)) })
 }
 await browser.close()
 console.log(JSON.stringify({ info: i, bent, frames, errors }, null, 2))

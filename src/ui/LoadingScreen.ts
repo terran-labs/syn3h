@@ -26,7 +26,7 @@ const LIMIT_MS = 45000
  * The loading veil's logic. The veil itself, its mark and the easing of its progress are in
  * index.html, brought over verbatim from terranlabs.com so they cover the first paint: a
  * dark world seen edge on, light travelling round its limb behind a small sun as things
- * arrive, a moon in a slow outer orbit. This module is that site's BootGate for Syn3h: it
+ * arrive, a moon in a slow outer orbit. This module is that site's BootGate for Mira: it
  * raises the mark's target as the game reports its phases, and when the world is ready it
  * lets the light finish its lap and lifts the veil.
  *
@@ -35,7 +35,7 @@ const LIMIT_MS = 45000
  * it fades in with index.html's second line (.boot-still), which is numbers only: the
  * seconds and the megabytes received. Both lines are aria-hidden: screen readers hear the
  * plain step once per phase (phaseSteps) from this module's polite live region,
- * .syn3h-loading, never the ticking numbers.
+ * .mira-loading, never the ticking numbers.
  */
 export class LoadingScreen {
   /** The visually hidden live region: the plain phase, once per phase. */
@@ -49,14 +49,14 @@ export class LoadingScreen {
   private readonly limit: ReturnType<typeof setTimeout>
   private readonly abort = new AbortController()
   constructor() {
-    this.element.className = 'syn3h-loading'
+    this.element.className = 'mira-loading'
     this.element.setAttribute('role', 'status')
     this.element.setAttribute('aria-live', 'polite')
     this.element.innerHTML = '<p class="loading-phase"></p>'
     document.body.append(this.element)
     // The bundle has arrived and is running. index.html's own rotation hands over here.
-    meter()?.set(0.45); this.announce('Loading Syn3h')
-    window.addEventListener('syn3h:loading', event => this.update((event as CustomEvent<LoadingDetail>).detail), { signal: this.abort.signal })
+    meter()?.set(0.45); this.announce('Loading Mira')
+    window.addEventListener('mira:loading', event => this.update((event as CustomEvent<LoadingDetail>).detail), { signal: this.abort.signal })
     this.limit = setTimeout(() => this.finish(), LIMIT_MS)
     // A startup failure must be seen, never hidden behind the veil: lift at once on a script
     // error, a rejected promise, or the moment the page's failure message is shown.

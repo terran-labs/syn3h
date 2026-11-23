@@ -37,9 +37,9 @@ try {
   url.searchParams.set('autoplay', '1'); url.searchParams.set('room', `post-levels-${Date.now()}`)
   if (webgl) url.searchParams.set('webgl', '1')
   await page.goto(url.href, { timeout: 120000 })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 150, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 150, null, { timeout: 120000 })
   const start = await page.evaluate(() => {
-    const s = window.syn3h, q = s.game.quality
+    const s = window.mira, q = s.game.quality
     s.params.set('bots.count', 0); s.params.set('sun.dayLength', 0); s.params.set('sun.timeOfDay', 15)
     q.setAuto(false)
     // A pinned level still lets the governor fade and shed the post budget when frames are
@@ -51,7 +51,7 @@ try {
   Object.assign(report, start)
   if (webgl) { assert.equal(report.backend, 'webgl'); assert.equal(report.ceiling, 2, 'WebGL automatic ceiling is Medium') }
   const read = () => page.evaluate(() => {
-    const s = window.syn3h, g = s.game, c = g.postChain, b = c.built
+    const s = window.mira, g = s.game, c = g.postChain, b = c.built
     const v = id => s.params.get(id)?.value
     const [, tier, motion, compose, glow, shafts, flare, ao, gi, clouds, temporal] = (b?.key ?? '').split('|')
     const on = x => x === 'true'
@@ -65,7 +65,7 @@ try {
   })
   for (let level = 0; level <= 5; level++) {
     const before = await read()
-    await page.evaluate(level => window.syn3h.game.quality.setLevel(level), level)
+    await page.evaluate(level => window.mira.game.quality.setLevel(level), level)
     await page.waitForTimeout(2500)
     const settled = await read()
     await page.waitForTimeout(2500)
@@ -91,10 +91,10 @@ try {
   // Budget: spend it, expect the look alone; return it, expect the level's tier back.
   const top = Math.min(report.ceiling, 4)
   if (TIER[top] === 'lite' || TIER[top] === 'full') {
-    await page.evaluate(top => { window.syn3h.game.quality.setLevel(top); window.__budget = 0 }, top)
+    await page.evaluate(top => { window.mira.game.quality.setLevel(top); window.__budget = 0 }, top)
     await page.waitForTimeout(1500); const spent = await read()
     await page.evaluate(() => { window.__budget = 1 })
-    await page.waitForFunction(tier => window.syn3h.game.postChain.tier === tier, TIER[top], { timeout: 30000 }); const back = await read()
+    await page.waitForFunction(tier => window.mira.game.postChain.tier === tier, TIER[top], { timeout: 30000 }); const back = await read()
     report.budget = { top, spent: spent.tier, back: back.tier }
     assert.equal(spent.tier, 'base', 'a spent budget leaves the look alone')
     assert.equal(back.tier, TIER[top], 'the tier returns with the budget')

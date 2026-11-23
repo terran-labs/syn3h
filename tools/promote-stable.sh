@@ -6,16 +6,17 @@
 # uses tools/serve-stable.mjs with the snapshot's own room code and never hot reloads.
 #
 #   tools/promote-stable.sh "short note about this build"
+. "$(dirname "$0")/lib/legacy-env.sh" # legacy environment names, see docs/NAMES.md
 set -eu
 cd "$(dirname "$0")/.."
 NOTE="${1:-}"
 ID="$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD)"
 DEST="../Syn3h-stable/$ID"
-SYN3H_FREEZE_ID="$ID" npm run build >/tmp/syn3h-stable-build.log 2>&1 || { tail -20 /tmp/syn3h-stable-build.log; exit 1; }
+MIRA_FREEZE_ID="$ID" npm run build >/tmp/syn3h-stable-build.log 2>&1 || { tail -20 /tmp/syn3h-stable-build.log; exit 1; }
 mkdir -p "$(dirname "$DEST")"
 mkdir "$DEST"
 cp -R dist wrangler.toml wrangler.staging.toml server shared src package.json tsconfig.json "$DEST/"
 ln -sfn "$(pwd)/node_modules" "$DEST/node_modules"
-node -e 'const fs = require("node:fs"); const [dest,id,commit,note] = process.argv.slice(1); fs.writeFileSync(dest + "/dist/build.json", JSON.stringify({id,commit,built:new Date().toISOString(),note,...(process.env.SYN3H_RELEASE_VERSION ? {version:process.env.SYN3H_RELEASE_VERSION} : {})}) + "\n")' "$DEST" "$ID" "$(git rev-parse HEAD)" "$NOTE"
+node -e 'const fs = require("node:fs"); const [dest,id,commit,note] = process.argv.slice(1); fs.writeFileSync(dest + "/dist/build.json", JSON.stringify({id,commit,built:new Date().toISOString(),note,...(process.env.MIRA_RELEASE_VERSION ? {version:process.env.MIRA_RELEASE_VERSION} : {})}) + "\n")' "$DEST" "$ID" "$(git rev-parse HEAD)" "$NOTE"
 ln -sfn "$ID" ../Syn3h-stable/current
 echo "$ID"

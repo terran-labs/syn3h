@@ -87,7 +87,7 @@ MB, three WebGPU 3.7 MB, three TSL 2.9 MB, three module 1.1 MB, Tweakpane 0.8 MB
 
 ### Phase tables
 
-Phase names are what `window.syn3hStartup` records. "Build until add N" is the time from the
+Phase names are what `window.miraStartup` records. "Build until add N" is the time from the
 previous mark to main's Nth `game.add`, so add 1 contains terrain generation (the terrain
 adds its first system before main attaches it to quality), add 9 is the Shell and lobby,
 and add 12 is the rest of the lobby wiring. Production names of classes are minified.
@@ -103,7 +103,7 @@ Dev, Chrome, CPU 6x, cold, median of 2 (load 15.3), first draw 3165:
 | renderer.init (adapter, device, context) | 680 | 7 | 0% |
 | build until add 1 (terrain generation) | 687 | 854 | 27% |
 | build until add 2: Volcanics | 1542 | 51 | 2% |
-| build until add 5: Syn3hBuggy | 1630 | 60 | 2% |
+| build until add 5: MiraBuggy | 1630 | 60 | 2% |
 | build until add 9: Shell (lobby) | 1712 | 156 | 5% |
 | build until add 12 (lobby wiring) | 1880 | 112 | 4% |
 | frame 1 systems update | 2301 | 200 | 6% |
@@ -157,8 +157,8 @@ it is intended, and it is part of why the owner sees 61 fps. Not a bug.
 ## Instrumentation added
 
 - `src/core/diagnostics.ts`: `recordStartupPhase`, `timeStartup`, `readNavigationTiming`
-  and `formatStartup`. Every phase is a `performance.measure` named `syn3h:<phase>` and a row
-  in `window.syn3hStartup`. Always on; a few object writes per phase. The `?diag=1` overlay
+  and `formatStartup`. Every phase is a `performance.measure` named `mira:<phase>` and a row
+  in `window.miraStartup`. Always on; a few object writes per phase. The `?diag=1` overlay
   shows a `startup` block.
 - `src/core/Game.ts`: brackets module loading, quality, physics, renderer init, each world
   build step (through `game.add` and `quality.attachTerrain`, so `main.ts` is unchanged),
@@ -190,7 +190,7 @@ deadline only fires on a stall. The slowest healthy renderer start I measured wa
   canvas, in case the stalled attempt already claimed the old one. If the stalled renderer
   finishes later, it is disposed. When there is no adapter or the device request rejects,
   three.js falls back by itself, as before; the reason is now recorded.
-- Each fallback writes its reason to `window.syn3hStartup.fallbackReason`, to a console
+- Each fallback writes its reason to `window.miraStartup.fallbackReason`, to a console
   warning and to the `?diag=1` overlay (`fallback:` line).
 - If the renderer's WebGPU device or WebGL context is lost, `showRendererLost` puts a
   full-screen notice over the game with the reason and a Reload button. This is plain DOM

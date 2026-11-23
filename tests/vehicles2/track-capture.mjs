@@ -22,10 +22,10 @@ const errors = []
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`) })
 await page.goto(`${base}?autoplay=1&world=alpine.7~terrain.planetSize=0&room=trackcap${Date.now().toString(36)}${extra}`, { waitUntil: 'load' })
-await page.waitForFunction(() => window.syn3h?.game?.tick > 60, null, { timeout: 90000 })
+await page.waitForFunction(() => window.mira?.game?.tick > 60, null, { timeout: 90000 })
 
 await page.evaluate(async () => {
-  const s = window.syn3h, game = s.game, pl = s.player
+  const s = window.mira, game = s.game, pl = s.player
   // The very module instance the game uses: the pre-bundled URL Vite gave showroom.ts.
   const served = await (await fetch('/src/vehicles/skins/showroom.ts')).text()
   const three = await import(served.match(/import \* as T from ["']([^"']*three_webgpu\.js[^"']*)["']/)[1])

@@ -1,14 +1,14 @@
 import * as T from 'three/webgpu'
 import { expect, it, vi } from 'vitest'
 import { RAPIER } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
-import { Syn3hBuggySkin } from '../../src/vehicles/skins/Syn3hBuggySkin'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
+import { MiraBuggySkin } from '../../src/vehicles/skins/MiraBuggySkin'
 import { mergedSurfaces } from '../../src/vehicles/skins/mergeStatic'
 import { WingTipAnchors } from '../../src/vehicles/skins/wingTips'
 import { makeBed } from '../vehicles/harness'
 
 /** Independently inspect the rendered field, excluding hull vertices in merged distant draws. */
-function renderedWingVertices(skin: Syn3hBuggySkin, vehicle: Syn3hBuggy): T.Vector3[] {
+function renderedWingVertices(skin: MiraBuggySkin, vehicle: MiraBuggy): T.Vector3[] {
   vehicle.object.updateWorldMatrix(true, true)
   const inverse = vehicle.object.matrixWorld.clone().invert(), points: T.Vector3[] = []
   skin.object.traverseVisible(object => {
@@ -28,8 +28,8 @@ function renderedWingVertices(skin: Syn3hBuggySkin, vehicle: Syn3hBuggy): T.Vect
 }
 
 it.each(['local', 'remote', 'bot'] as const)('%s buggy effects stay on drawn tips through deployment, flex and detail changes', async role => {
-  const bed = await makeBed(), skin = new Syn3hBuggySkin()
-  const buggy = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new T.Vector3(13, 30, -17), .7, 'buggy', () => skin))
+  const bed = await makeBed(), skin = new MiraBuggySkin()
+  const buggy = bed.add(new MiraBuggy(bed.game, bed.terrain, new T.Vector3(13, 30, -17), .7, 'buggy', () => skin))
   buggy.isLocal = role === 'local'
   if (role === 'remote') buggy.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true)
   Object.assign(bed.game, { camera: new T.PerspectiveCamera() })
@@ -78,8 +78,8 @@ it('writes ribbon endpoints at the real tips and resets history across unavailab
   const { params } = await import('../../shared/params')
   const previousLevel = graphicsLevel.value
   params.set(graphicsLevel.def.id, 2)
-  const bed = await makeBed(), skin = new Syn3hBuggySkin()
-  const buggy = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new T.Vector3(0, 30, 0), .7, 'buggy', () => skin))
+  const bed = await makeBed(), skin = new MiraBuggySkin()
+  const buggy = bed.add(new MiraBuggy(bed.game, bed.terrain, new T.Vector3(0, 30, 0), .7, 'buggy', () => skin))
   type EffectSystem = { update(dt: number): void; dispose(): void }
   const systems = new Set<EffectSystem>()
   Object.assign(bed.game, {

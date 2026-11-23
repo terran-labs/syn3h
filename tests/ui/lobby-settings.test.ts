@@ -12,12 +12,12 @@ it('shows music, master and mute, in that order, and no other audio setting', ()
 })
 
 it('shows the pinned version on a pinned page, else the build label', () => {
-  expect(versionLabel('26.11.1603', 'https://syn3h.example/')).toBe('v26.11.1603')
-  expect(versionLabel('v26.11.1603', 'https://syn3h.example/')).toBe('v26.11.1603')
-  expect(versionLabel('26.11.1604', 'https://syn3h.example/?v=26.11.1601')).toBe('v26.11.1601')
-  expect(versionLabel('26.11.1604', 'https://syn3h.example/v/26.11.1602/')).toBe('v26.11.1602')
-  expect(versionLabel(undefined, 'https://syn3h.example/')).toBe('browser edition')
-  expect(versionLabel('26.11.1604', 'https://syn3h.example/?v=nonsense')).toBe('v26.11.1604')
+  expect(versionLabel('26.11.1603', 'https://mira.example/')).toBe('v26.11.1603')
+  expect(versionLabel('v26.11.1603', 'https://mira.example/')).toBe('v26.11.1603')
+  expect(versionLabel('26.11.1604', 'https://mira.example/?v=26.11.1601')).toBe('v26.11.1601')
+  expect(versionLabel('26.11.1604', 'https://mira.example/v/26.11.1602/')).toBe('v26.11.1602')
+  expect(versionLabel(undefined, 'https://mira.example/')).toBe('browser edition')
+  expect(versionLabel('26.11.1604', 'https://mira.example/?v=nonsense')).toBe('v26.11.1604')
 })
 
 it('keeps Tab inside the panel, wrapping both ways', () => {

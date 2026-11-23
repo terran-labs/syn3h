@@ -1,4 +1,4 @@
-// Calendar versions for Syn3h production releases, as used by Freed and Vorteo.
+// Calendar versions for Mira production releases, as used by Freed and Vorteo.
 //
 //   v<YY>.<M>.<D><BB>     for example v26.11.1401
 //
@@ -23,17 +23,17 @@ function daysInMonth(year, month) {
 export function parseVersion(text) {
   if (typeof text !== 'string') throw new Error(`Not a version: ${String(text)}`)
   const match = text.trim().match(VERSION)
-  if (!match) throw new Error(`Not a Syn3h version: "${text}". Expected vYY.M.DDBB, for example v26.11.1401.`)
+  if (!match) throw new Error(`Not a Mira version: "${text}". Expected vYY.M.DDBB, for example v26.11.1401.`)
   const yy = Number(match[1])
   const month = Number(match[2])
   const day = Number(match[3])
   const build = Number(match[4])
-  if (day > daysInMonth(2000 + yy, month)) throw new Error(`Not a Syn3h version: "${text}". Day ${day} is not in month ${month}.`)
+  if (day > daysInMonth(2000 + yy, month)) throw new Error(`Not a Mira version: "${text}". Day ${day} is not in month ${month}.`)
   const version = formatVersion({ yy, month, day, build })
   return { version, tag: `v${version}`, yy, month, day, build }
 }
 
-/** True when `text` parses as a Syn3h version, with or without the "v". */
+/** True when `text` parses as a Mira version, with or without the "v". */
 export function isVersion(text) {
   try { parseVersion(text); return true } catch { return false }
 }
@@ -66,7 +66,7 @@ export function pacificDay(date) {
 
 /**
  * The version for a release made at `date`, given every existing tag or version string.
- * Tags that are not Syn3h versions (m13.1-steering, release-1) are ignored. Builds count
+ * Tags that are not Mira versions (m13.1-steering, release-1) are ignored. Builds count
  * from 00 on each Pacific day, one past the highest build already used that day.
  */
 export function nextVersion(date, existing = []) {

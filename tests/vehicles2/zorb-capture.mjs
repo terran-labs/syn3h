@@ -9,18 +9,18 @@ await mkdir(out,{recursive:true})
 const kinds=(process.env.KIND??'buggy').split(',')
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=metal','--ignore-gpu-blocklist']})
 const results=[],images=[]
-const ticks=(page,n)=>page.evaluate(n=>new Promise(r=>{const s=window.syn3h,t=s.game.tick+n;const f=()=>s.game.tick>=t?r():requestAnimationFrame(f);f()}),n)
+const ticks=(page,n)=>page.evaluate(n=>new Promise(r=>{const s=window.mira,t=s.game.tick+n;const f=()=>s.game.tick>=t?r():requestAnimationFrame(f);f()}),n)
 try{
  for(const kind of kinds)for(const [label,hour,level] of [['noon',12,2],['night',23,2],['noon-level0',12,0]].filter(([l])=>!process.env.LABELS||process.env.LABELS.split(',').includes(l))){
   const page=await browser.newPage({viewport:{width:960,height:540}}),errors=[]
   page.on('pageerror',e=>errors.push('pageerror: '+e.message))
   page.on('console',m=>{if(m.type()==='error')errors.push('console: '+m.text())})
   await page.routeWebSocket(/\/ws/,s=>s.close())
-  await page.goto(`${base}?autoplay=1&vehicle=${kind}&seed=3`);await page.waitForFunction(()=>window.syn3h?.game.tick>10,null,{timeout:120000})
-  await page.evaluate(([hour,level])=>{const s=window.syn3h;s.params.set('bots.count',0);s.params.set('sun.timeOfDay',hour);s.params.set('sun.dayLength',0);s.params.set('gfx.level',level)},[hour,level])
+  await page.goto(`${base}?autoplay=1&vehicle=${kind}&seed=3`);await page.waitForFunction(()=>window.mira?.game.tick>10,null,{timeout:120000})
+  await page.evaluate(([hour,level])=>{const s=window.mira;s.params.set('bots.count',0);s.params.set('sun.timeOfDay',hour);s.params.set('sun.dayLength',0);s.params.set('gfx.level',level)},[hour,level])
   // Find a gentle open patch near spawn so the ball can roll.
   const spot=await page.evaluate(()=>{
-   const s=window.syn3h,p=s.player.body.translation();let best=null
+   const s=window.mira,p=s.player.body.translation();let best=null
    for(let a=0;a<24;a++)for(let r=0;r<400;r+=20){const x=p.x+Math.sin(a/24*Math.PI*2)*r,z=p.z+Math.cos(a/24*Math.PI*2)*r
     const h=s.terrain.heightAt(x,z),liquid=s.terrain.liquidHeightAt?.(x,z)??-Infinity
     if(Number.isFinite(liquid)&&liquid>h-1)continue
@@ -30,29 +30,29 @@ try{
   })
   await ticks(page,60)
   // Draw calls and frame time without the ball, then with it (CPU side; no GPU timer here).
-  const sample=()=>page.evaluate(()=>new Promise(r=>{const g=window.syn3h.game,calls=[],ms=[];const f=()=>{calls.push(g.performance.drawCalls);ms.push(g.performance.frameMs);calls.length<30?requestAnimationFrame(f):r({drawCalls:Math.round(calls.reduce((a,b)=>a+b)/calls.length*10)/10,frameMs:Math.round(ms.reduce((a,b)=>a+b)/ms.length*10)/10})};f()}))
+  const sample=()=>page.evaluate(()=>new Promise(r=>{const g=window.mira.game,calls=[],ms=[];const f=()=>{calls.push(g.performance.drawCalls);ms.push(g.performance.frameMs);calls.length<30?requestAnimationFrame(f):r({drawCalls:Math.round(calls.reduce((a,b)=>a+b)/calls.length*10)/10,frameMs:Math.round(ms.reduce((a,b)=>a+b)/ms.length*10)/10})};f()}))
   const without=await sample()
   await page.keyboard.press('KeyX')
   await ticks(page,250)
-  const grown=await page.evaluate(()=>{const v=window.syn3h.player,c=window.syn3h.game.camera.position,p=v.object.position
-   return {zorb:v.input.zorb,radius:v.zorb.radius,y:v.body.translation().y,ground:window.syn3h.terrain.heightAt(p.x,p.z),cameraDistance:c.distanceTo(p),shield:window.syn3h.game.scene.getObjectByName('zorb-shield')?.material.name}})
+  const grown=await page.evaluate(()=>{const v=window.mira.player,c=window.mira.game.camera.position,p=v.object.position
+   return {zorb:v.input.zorb,radius:v.zorb.radius,y:v.body.translation().y,ground:window.mira.terrain.heightAt(p.x,p.z),cameraDistance:c.distanceTo(p),shield:window.mira.game.scene.getObjectByName('zorb-shield')?.material.name}})
   grown.cost={without,with:await sample()}
   await page.screenshot({path:`${out}/${kind}-${label}-grown.png`});images.push(`${kind}-${label}-grown.png`)
   await page.keyboard.down('KeyW');await ticks(page,120)
-  const rolling=await page.evaluate(()=>{const v=window.syn3h.player,l=v.body.linvel(),w=v.body.angvel();return {speed:Math.hypot(l.x,l.z),spin:Math.hypot(w.x,w.y,w.z),contact:v.zorb.contact}})
+  const rolling=await page.evaluate(()=>{const v=window.mira.player,l=v.body.linvel(),w=v.body.angvel();return {speed:Math.hypot(l.x,l.z),spin:Math.hypot(w.x,w.y,w.z),contact:v.zorb.contact}})
   await page.screenshot({path:`${out}/${kind}-${label}-rolling.png`});images.push(`${kind}-${label}-rolling.png`)
   await page.keyboard.up('KeyW');await ticks(page,100)
   // Drop from 18 m and photograph the frame after the first hard impact.
-  await page.evaluate(()=>{const s=window.syn3h,p=s.player.body.translation();s.player.teleport({x:p.x,y:s.terrain.heightAt(p.x,p.z)+s.player.zorb.radius+18,z:p.z},0)
+  await page.evaluate(()=>{const s=window.mira,p=s.player.body.translation();s.player.teleport({x:p.x,y:s.terrain.heightAt(p.x,p.z)+s.player.zorb.radius+18,z:p.z},0)
    window.zorbImpacts=s.player.zorb.impacts})
-  await page.waitForFunction(()=>window.syn3h.player.zorb.impacts>window.zorbImpacts,null,{timeout:30000})
+  await page.waitForFunction(()=>window.mira.player.zorb.impacts>window.zorbImpacts,null,{timeout:30000})
   await page.waitForTimeout(60)
-  const impact=await page.evaluate(()=>{const s=window.syn3h.game.scene.getObjectByName('zorb-shield');return {alpha:s?.userData.zorbShield.alpha,impacts:window.syn3h.player.zorb.impacts}})
+  const impact=await page.evaluate(()=>{const s=window.mira.game.scene.getObjectByName('zorb-shield');return {alpha:s?.userData.zorbShield.alpha,impacts:window.mira.player.zorb.impacts}})
   await page.screenshot({path:`${out}/${kind}-${label}-impact.png`});images.push(`${kind}-${label}-impact.png`)
   // Let the ball settle, as a player would, before switching off.
   await ticks(page,150);await page.keyboard.press('KeyX');await ticks(page,150)
-  const off=await page.evaluate(()=>{const v=window.syn3h.player,p=v.body.translation(),q=v.body.rotation(),l=v.body.linvel()
-   return {zorb:v.input.zorb,active:v.zorb.active,shield:!!window.syn3h.game.scene.getObjectByName('zorb-shield'),wheels:v.wheelsGrounded,height:p.y-window.syn3h.terrain.heightAt(p.x,p.z),upY:1-2*(q.x*q.x+q.z*q.z),speed:Math.hypot(l.x,l.y,l.z)}})
+  const off=await page.evaluate(()=>{const v=window.mira.player,p=v.body.translation(),q=v.body.rotation(),l=v.body.linvel()
+   return {zorb:v.input.zorb,active:v.zorb.active,shield:!!window.mira.game.scene.getObjectByName('zorb-shield'),wheels:v.wheelsGrounded,height:p.y-window.mira.terrain.heightAt(p.x,p.z),upY:1-2*(q.x*q.x+q.z*q.z),speed:Math.hypot(l.x,l.y,l.z)}})
   await page.screenshot({path:`${out}/${kind}-${label}-off.png`});images.push(`${kind}-${label}-off.png`)
   results.push({kind,label,hour,level,spot,grown,rolling,impact,off,errors})
   console.log(JSON.stringify(results.at(-1)))

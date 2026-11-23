@@ -1,14 +1,15 @@
 // A browser with no GPU at all: Chrome with --disable-gpu --disable-software-rasterizer has
-// neither WebGPU nor a WebGL 2 context. Bug caught: the player saw "Syn3h failed to start:
+// neither WebGPU nor a WebGL 2 context. Bug caught: the player saw "Mira failed to start:
 // Cannot read properties of null (reading 'getSupportedExtensions')" and a Reload that could
 // not help. They must see the plain message with steps they can take, and no raw error text.
 //
-//   SYN3H_URL=http://127.0.0.1:5187/ tools/heavy.sh node tests/ui/no-graphics.mjs
+//   MIRA_URL=http://127.0.0.1:5187/ tools/heavy.sh node tests/ui/no-graphics.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { waitForState } from './stateWait.mjs'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5187/'
 const out = 'tests/ui/artifacts/no-graphics'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--disable-gpu', '--disable-software-rasterizer'] })

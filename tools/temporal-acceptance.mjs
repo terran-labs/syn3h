@@ -15,9 +15,9 @@ try {
   url.searchParams.set('autoplay', '1'); url.searchParams.set('room', `temporal-accept-${Date.now()}`)
   if (process.argv.includes('--webgl')) url.searchParams.set('webgl', '1')
   await page.goto(url.href, { timeout: 120000 })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 120, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 120, null, { timeout: 120000 })
   await page.evaluate(async () => {
-    const s = window.syn3h, g = s.game, p = s.params
+    const s = window.mira, g = s.game, p = s.params
     g.renderer.setAnimationLoop(null); g.postChain.release()
     const moduleUrl = performance.getEntriesByType('resource').find(r => r.name.includes('/three_webgpu.js'))?.name
     const T = await import(moduleUrl)
@@ -32,7 +32,7 @@ try {
     plane.rotation.z = .37; scene.add(plane)
     const draw = async (frames = 1) => {
       for (let i = 0; i < frames; i++) {
-        window.__syn3hCurve.updateCurve(camera.position, s.terrain.size)
+        window.__miraCurve.updateCurve(camera.position, s.terrain.size)
         g.postChain.render(g.renderer, scene, camera, 16.667)
         await new Promise(requestAnimationFrame)
       }
@@ -45,7 +45,7 @@ try {
     window.temporalFixture = { T, scene, camera, plane, draw, read, budget: 1 }
   })
   const convergence = await page.evaluate(async () => {
-    const f = window.temporalFixture, g = window.syn3h.game
+    const f = window.temporalFixture, g = window.mira.game
     await f.draw(40); const first = await f.read()
     await f.draw(32); const second = await f.read()
     let difference = 0, fractional = 0
@@ -63,7 +63,7 @@ try {
   await page.screenshot({ path: `${out}/converged.png` })
 
   const motion = await page.evaluate(async () => {
-    const f = window.temporalFixture, g = window.syn3h.game
+    const f = window.temporalFixture, g = window.mira.game
     const velocityAtCentre = async () => {
       const target = g.postChain.built.disposables.find(x => x.getMRT?.()?.has('velocity')).renderTarget
       const data = await g.renderer.readRenderTargetPixelsAsync(target, target.width / 2, target.height / 2, 1, 1, 1)
@@ -88,7 +88,7 @@ try {
 
   for (const kind of ['wrap', 'teleport', 'rotation', 'resize']) {
     const result = await page.evaluate(async kind => {
-      const s = window.syn3h, g = s.game, f = window.temporalFixture
+      const s = window.mira, g = s.game, f = window.temporalFixture
       const before = g.postChain.historyResets
       if (kind === 'wrap') { f.camera.position.x += s.terrain.size; f.plane.position.x += s.terrain.size }
       if (kind === 'teleport') f.camera.position.x += 100
@@ -116,7 +116,7 @@ try {
     { name: 'shed', budget: 0 }, { name: 'full' },
   ]) {
     const result = await page.evaluate(async c => {
-      const s = window.syn3h, g = s.game, f = window.temporalFixture
+      const s = window.mira, g = s.game, f = window.temporalFixture
       s.params.set('post.temporal', c.temporal ?? true); s.params.set('gfx.level', c.level ?? 2); f.budget = c.budget ?? 1
       await f.draw(3)
       return { name: c.name, active: !!g.postChain.built?.temporalNode, tier: g.postChain.tier, jitterCleared: !f.camera.view?.enabled }

@@ -10,10 +10,10 @@
 import { MAX_NAME_LENGTH } from '../../shared/protocol'
 import { generateName, rollPlayerName } from './data/names'
 
-const NAME_KEY = 'syn3h.playerName'
+const NAME_KEY = 'mira.playerName'
 /** 'typed' or 'generated'. A name saved before this key existed counts as typed. */
-const SOURCE_KEY = 'syn3h.playerNameSource'
-const SEED_KEY = 'syn3h.nameSeed'
+const SOURCE_KEY = 'mira.playerNameSource'
+const SEED_KEY = 'mira.nameSeed'
 
 export type NameSource = 'typed' | 'generated'
 type Store = Pick<Storage, 'getItem' | 'setItem'>

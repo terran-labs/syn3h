@@ -1,11 +1,11 @@
 /**
- * Invariant tests for the Syn3h buggy: what a player would call a bug if it broke. Directions are
+ * Invariant tests for the Mira buggy: what a player would call a bug if it broke. Directions are
  * strict: forward is local -Z, positive yaw is a left turn, pitch and roll are checked by where
  * the nose and the right side point.
  *
  * Handling the owner tunes by feel (speeds, braking g, turn rates, hop heights, slide and recovery
  * times, wing swing times) is not pinned here. It is measured by tools/handling-report.ts from the
- * same scenarios (./syn3hScenarios.ts). Distances below are "it moved", not "it moved this far".
+ * same scenarios (./miraScenarios.ts). Distances below are "it moved", not "it moved this far".
  */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
@@ -14,25 +14,25 @@ import { createVehicle } from '../../src/vehicles'
 import { BUGGY_PRESETS, buggyIdleHold, buggyNextGen, buggyRegen } from '../../src/vehicles/buggyParams'
 import { applyPreset } from '../../shared/presets'
 import { waterSinking } from '../../src/vehicles/buoyancy'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../src/core/physics'
 import { type Bed, makeBed } from './harness'
 import {
   G, airStraighten, axis, bump, cruise, deploy, drop, flying, kick, lavaEscape, lavaPool, pitchedGlide, planted, pos, resetParams,
   sideways, slope, spawn, speed,
-} from './syn3hScenarios'
+} from './miraScenarios'
 
 /** Skid plate bottom, in body coordinates. */
 const SKID_BOTTOM = -0.085
 
 afterEach(resetParams)
 
-describe('Syn3hBuggy', () => {
-  test('is the default kind, with the prefab mass and the Syn3h centre of mass', async () => {
+describe('MiraBuggy', () => {
+  test('is the default kind, with the prefab mass and the Mira centre of mass', async () => {
     const bed = await makeBed()
     for (const kind of ['buggy', 'buggy-syn3h'] as const) {
       const v = createVehicle(bed.game, bed.terrain, kind, new THREE.Vector3(0, 2, 0))
-      expect(v).toBeInstanceOf(Syn3hBuggy)
+      expect(v).toBeInstanceOf(MiraBuggy)
       expect(v.kind).toBe(kind)
       expect(v.body.mass()).toBeCloseTo(30, 3)
       expect(v.body.localCom().z).toBeCloseTo(-0.2, 4)
@@ -237,7 +237,7 @@ describe('Syn3hBuggy', () => {
   const onMesh = async () => {
     const bed = await makeBed()
     meshGround(bed, 50)
-    const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 51.5, 0), 0))
+    const b = bed.add(new MiraBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 51.5, 0), 0))
     b.isLocal = false
     bed.run(3)
     return { bed, b }
@@ -338,7 +338,7 @@ describe('Syn3hBuggy', () => {
     const bed = await makeBed()
     bed.terrain.liquidHeightAt = () => 4
     bed.terrain.liquidKindAt = () => 'water'
-    const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 5, 0), 0))
+    const b = bed.add(new MiraBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 5, 0), 0))
     b.isLocal = false
     bed.run(3)
     expect(b.inLiquid).toBe(true)
@@ -353,7 +353,7 @@ describe('Syn3hBuggy', () => {
 
   test('a vehicle landing on its roof side does not flag an upright buggy as inverted', async () => {
     const { bed, b } = await onMesh()
-    const top = bed.add(new Syn3hBuggy(bed.game, bed.terrain, pos(b).add(new THREE.Vector3(0.4, 1.6, 0.3)), 0.5))
+    const top = bed.add(new MiraBuggy(bed.game, bed.terrain, pos(b).add(new THREE.Vector3(0.4, 1.6, 0.3)), 0.5))
     top.isLocal = false
     let flagged = 0, touched = false
     const w = bed.game.world
@@ -417,7 +417,7 @@ describe('Syn3hBuggy', () => {
   test('wheel rays ignore other vehicles', async () => {
     const { bed, b } = await spawn()
     bed.run(3)
-    const top = bed.add(new Syn3hBuggy(bed.game, bed.terrain, pos(b).add(new THREE.Vector3(0, 1.0, 0))))
+    const top = bed.add(new MiraBuggy(bed.game, bed.terrain, pos(b).add(new THREE.Vector3(0, 1.0, 0))))
     top.isLocal = false
     top.suspensionRange = 0.4
     bed.run(0.02)
@@ -522,7 +522,7 @@ describe('Syn3hBuggy', () => {
  * body, so the front wheels could not reach the direction of travel. How fast it recovers is in
  * the handling report; here it only has to recover, upright, within the five second window.
  */
-describe('Syn3hBuggy slide recovery', () => {
+describe('MiraBuggy slide recovery', () => {
   // Catching a slide by counter-steering is what Planted and Assisted promise; the default
   // (Balanced) puts turn-in first and is caught by letting go, as Classic was.
   const use = (name: string) => applyPreset(BUGGY_PRESETS.find(p => p.name === name)!)
@@ -542,7 +542,7 @@ describe('Syn3hBuggy slide recovery', () => {
   })
 })
 
-describe('Syn3hBuggy tail fin in the air', () => {
+describe('MiraBuggy tail fin in the air', () => {
   test('with "Tail fin in the air" off, a strong fin does not turn a buggy that has no wheel down', async () => {
     params.set('buggy.fin', 3); params.set('buggy.finAir', false)
     expect(Math.abs(await airStraighten())).toBeLessThan(0.5)
@@ -558,7 +558,7 @@ describe('Syn3hBuggy tail fin in the air', () => {
  * moving at 30 m/s toward +X (fully sideways), and the wings open. Each model's rule is checked;
  * how long the swing takes is in the handling report.
  */
-describe('Syn3hBuggy wing flight models', () => {
+describe('MiraBuggy wing flight models', () => {
   // Each model's own rule. Stall blending, when on, replaces the model while the motion is more
   // than 10 degrees off the nose, so it is off here.
   beforeEach(() => params.set('buggy.flightSlip', false))

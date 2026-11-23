@@ -2,7 +2,7 @@
  * How the lab names and orders its exhibits, in one place.
  *
  * Exhibits are written by several vehicle lanes, each in its own file, and their titles
- * drifted: "Next Syn3h buggy", "Syn3h hovercraft", "Syn3h next-gen tank". The owner's rules
+ * drifted: "Next Mira buggy", "Mira hovercraft", "Mira next-gen tank". The owner's rules
  * of 15 November 2026 are applied here, after collection, so a lane's file needs no edit and
  * a new round cannot drift again:
  *

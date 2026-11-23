@@ -21,11 +21,11 @@ try {
   const page = await context.newPage(), errors = []
   page.on('pageerror', e => errors.push(e.message))
   await page.goto(url.href)
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 10, null, { timeout: 90000 })
-  await page.evaluate(() => { window.syn3h.shell?.play(); document.activeElement?.blur?.() })
+  await page.waitForFunction(() => window.mira?.game?.tick > 10, null, { timeout: 90000 })
+  await page.evaluate(() => { window.mira.shell?.play(); document.activeElement?.blur?.() })
   const result = await page.evaluate(async () => {
-    const s = window.syn3h, curve = window.__syn3hCurve
-    if (!curve) throw new Error('window.__syn3hCurve is not exposed by this build')
+    const s = window.mira, curve = window.__miraCurve
+    if (!curve) throw new Error('window.__miraCurve is not exposed by this build')
     // Carry the jet along at a steady 60 m/s, 80 m up, through its physics body. How it
     // gets its speed does not matter here: only that the camera has to keep up with it.
     const p = s.player.body.translation()

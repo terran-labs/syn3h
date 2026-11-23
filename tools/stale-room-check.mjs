@@ -9,7 +9,7 @@
  * settings, and identical world values.
  *
  *   PORT=8791 npm run server
- *   SYN3H_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
+ *   MIRA_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
  *   node tools/stale-room-check.mjs
  */
 import { spawn } from 'node:child_process'
@@ -40,16 +40,16 @@ async function join(name, query) {
   browsers.push(br)
   const page = await (await br.newContext({ viewport: { width: 640, height: 360 } })).newPage()
   await page.goto(`http://localhost:5183/?room=${room}&name=${name}&autoplay=1&${query}`)
-  await page.waitForFunction(() => window.syn3h?.shell && window.syn3hNet?.connected, null, { timeout: 60000 })
+  await page.waitForFunction(() => window.mira?.shell && window.miraNet?.connected, null, { timeout: 60000 })
   return page
 }
 /** A page's world, read once everything has settled. */
 const worldOf = (page) => page.evaluate(() => {
-    const get = (id) => window.syn3h.params.get(id)?.value
+    const get = (id) => window.mira.params.get(id)?.value
     return {
       seed: get('world.seed'), kind: get('terrain.kind'), seaKind: get('world.seaKind'), treeCover: get('terrain.treeCover'),
-      encoded: window.syn3h.planets.encodeWorld?.() ?? null,
-      world: Object.fromEntries(Object.entries(window.syn3h.params.snapshot('world')).sort()),
+      encoded: window.mira.planets.encodeWorld?.() ?? null,
+      world: Object.fromEntries(Object.entries(window.mira.params.snapshot('world')).sort()),
     }
   })
 

@@ -3,8 +3,9 @@
  * fire, closes on Escape without firing, and leaves the address and the room alone. No image
  * loads before it opens; after, only the Welcome pictures (src/ui/welcome/welcome.ts).
  *
- *   SYN3H_URL=http://127.0.0.1:5187/ tools/heavy.sh node tests/ui/about-in-play.mjs
+ *   MIRA_URL=http://127.0.0.1:5187/ tools/heavy.sh node tests/ui/about-in-play.mjs
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
@@ -20,10 +21,10 @@ for (const mode of process.env.MODES ? process.env.MODES.split(',') : ['desktop'
     // exception, and only once the player opens the guide: none before, and only those after.
     const images = []; let opened = false
     page.on('request', r => { if (r.resourceType() === 'image') images.push({ url: new URL(r.url()).pathname, opened }) })
-    await page.goto(`${process.env.SYN3H_URL}?autoplay=1&room=about-${mode}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.goto(`${process.env.MIRA_URL}?autoplay=1&room=about-${mode}-${Date.now()}`)
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
-    await page.waitForFunction(() => window.syn3h.shell.playing && !window.syn3h.shell.transitioning)
+    await page.waitForFunction(() => window.mira.shell.playing && !window.mira.shell.transitioning)
     if (touch) await page.locator('.inspector-toggle').tap()
     else if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
     await page.locator('.world-inspector').waitFor({ state: 'visible' })
@@ -31,9 +32,9 @@ for (const mode of process.env.MODES ? process.env.MODES.split(',') : ['desktop'
 
     // Hold fire (L), then open the guide with it still down.
     await page.keyboard.down('l')
-    await page.waitForFunction(() => syn3h.game.input.state.fire)
+    await page.waitForFunction(() => mira.game.input.state.fire)
     assert.deepEqual(images, [], 'no image request before the guide opens')
-    const { url, room } = await page.evaluate(() => ({ url: location.href, room: syn3h.shell.room }))
+    const { url, room } = await page.evaluate(() => ({ url: location.href, room: mira.shell.room }))
     opened = true
     await page.locator('.rail-about').click()
     const guide = page.locator('.in-play-about')
@@ -45,7 +46,7 @@ for (const mode of process.env.MODES ? process.env.MODES.split(',') : ['desktop'
     assert.ok(outline.alts.length >= 5 && outline.alts.every(n => n > 20), 'every picture has alt text')
     assert.ok(await guide.evaluate(d => d.open && d.matches(':modal')), 'the guide is a modal')
     assert.match(await guide.locator('h2').innerText(), /Welcome/i)
-    assert.equal(await page.evaluate(() => syn3h.game.input.state.fire), false, 'held fire is cancelled on open')
+    assert.equal(await page.evaluate(() => mira.game.input.state.fire), false, 'held fire is cancelled on open')
     assert.ok(await page.evaluate(() => document.activeElement?.closest('.in-play-about') !== null), 'focus moves into the guide')
     await page.screenshot({ path: `${out}/${mode}.png` })
     if (touch) {
@@ -63,32 +64,32 @@ for (const mode of process.env.MODES ? process.env.MODES.split(',') : ['desktop'
     // Escape closes it and does nothing else; the still-held L does not fire.
     await page.keyboard.press('Escape')
     await guide.waitFor({ state: 'hidden' })
-    assert.equal(await page.evaluate(() => syn3h.game.input.suspended), false, 'play resumes')
-    const tick = await page.evaluate(() => syn3h.game.tick)
-    await page.waitForFunction(t => syn3h.game.tick > t + 10, tick)
-    assert.equal(await page.evaluate(() => syn3h.game.input.state.fire), false, 'nothing fires on close')
+    assert.equal(await page.evaluate(() => mira.game.input.suspended), false, 'play resumes')
+    const tick = await page.evaluate(() => mira.game.tick)
+    await page.waitForFunction(t => mira.game.tick > t + 10, tick)
+    assert.equal(await page.evaluate(() => mira.game.input.state.fire), false, 'nothing fires on close')
     await page.keyboard.up('l')
     // A fresh press fires again.
     await page.keyboard.down('l')
-    await page.waitForFunction(() => syn3h.game.input.state.fire)
+    await page.waitForFunction(() => mira.game.input.state.fire)
     await page.keyboard.up('l')
     if (!touch) {
       // From the Paused veil: the guide opens over it, and closing leaves the world paused.
       await page.locator('.rail-pause').click()
       // If the pause does not take, say what the page was doing instead of timing out on the button.
-      const pauseState = () => page.evaluate(() => ({ paused: document.querySelector('.syn3h-shell').classList.contains('is-paused'), lock: !!document.pointerLockElement, guide: document.querySelector('.in-play-about').open, suspended: syn3h.game.input.suspended, focus: document.activeElement?.className, buttonHidden: document.querySelector('.pause-about').hidden }))
-      await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-paused'), null, { timeout: 5000 }).catch(async () => { throw new Error(`Pause did not take: ${JSON.stringify(await pauseState())}`) })
+      const pauseState = () => page.evaluate(() => ({ paused: document.querySelector('.mira-shell').classList.contains('is-paused'), lock: !!document.pointerLockElement, guide: document.querySelector('.in-play-about').open, suspended: mira.game.input.suspended, focus: document.activeElement?.className, buttonHidden: document.querySelector('.pause-about').hidden }))
+      await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-paused'), null, { timeout: 5000 }).catch(async () => { throw new Error(`Pause did not take: ${JSON.stringify(await pauseState())}`) })
       await page.locator('.pause-about').click()
       await guide.waitFor({ state: 'visible' })
       await page.screenshot({ path: `${out}/desktop-paused.png` })
       await page.keyboard.press('Escape')
       await guide.waitFor({ state: 'hidden' })
-      assert.ok(await page.evaluate(() => syn3h.game.input.suspended), 'still paused after the guide closes')
+      assert.ok(await page.evaluate(() => mira.game.input.suspended), 'still paused after the guide closes')
       await page.locator('.pause-veil').click()
-      await page.waitForFunction(() => !syn3h.game.input.suspended)
+      await page.waitForFunction(() => !mira.game.input.suspended)
     }
     assert.equal(page.url(), url, 'the address is unchanged')
-    assert.equal(await page.evaluate(() => syn3h.shell.room), room, 'the room is unchanged')
+    assert.equal(await page.evaluate(() => mira.shell.room), room, 'the room is unchanged')
     const strays = images.filter(i => !/^\/welcome\/[\w-]+-(640|960|1280|1920)\.webp$/.test(i.url))
     assert.deepEqual(strays, [], 'after opening, only the Welcome pictures load')
     assert.ok(images.length > 0, 'the Welcome pictures load once the guide is open')

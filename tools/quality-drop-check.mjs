@@ -25,15 +25,15 @@ try {
   page.on('pageerror', e => errors.push(e.message))
   page.on('console', msg => { if (msg.type()==='error') console.error(msg.text()) })
   await page.goto(url.href)
-  await page.waitForFunction(() => window.syn3h?.game)
+  await page.waitForFunction(() => window.mira?.game)
   await page.evaluate(({level,fleet,multiplayer}) => {
-    const {game, shell, params} = window.syn3h
+    const {game, shell, params} = window.mira
     if (fleet === 'empty') params.set('bots.count',0)
     // The stock pacer can reduce the fleet before measurement on a busy host.
     // Keep the requested count during setup, then restore stock shedding at the start.
     if (fleet === 'unshed' || (fleet === 'stock' && multiplayer === 'solo')) params.set('bots.keepCount',true)
     if (multiplayer === 'arrival') {
-      const bots = window.syn3h.bots, arrive = bots.arrive
+      const bots = window.mira.bots, arrive = bots.arrive
       bots.arrive = function(index) {
         if (index !== 3) return arrive.call(this,index)
         bots.arrive = arrive
@@ -50,13 +50,13 @@ try {
     game.quality.governor.sample = () => null
     void shell.play(true)
   },{level:entryLevel,fleet,multiplayer})
-  await page.waitForFunction(() => window.syn3hNet?.isHost && window.syn3h.shell.playing &&
-    !window.syn3h.shell.transitioning, null, {timeout:90000})
+  await page.waitForFunction(() => window.miraNet?.isHost && window.mira.shell.playing &&
+    !window.mira.shell.transitioning, null, {timeout:90000})
   if (multiplayer === 'arrival') {
     await page.waitForFunction(() => typeof window.releaseFourthBot === 'function',null,{timeout:120000})
   } else if (fleet !== 'empty') {
     await page.waitForFunction(() => {
-      const {bots,materialize} = window.syn3h
+      const {bots,materialize} = window.mira
       const vehicles = bots.vehicles
       return vehicles.length === 4 && ['buggy','hovercraft','jet'].every(kind => vehicles.some(v => v.kind === kind))
         && vehicles.every(v => !materialize.isMaterializing(v))
@@ -68,24 +68,24 @@ try {
     const peerUrl = new URL(url)
     peerUrl.searchParams.set('vehicle','jet')
     await peer.goto(peerUrl.href)
-    await peer.waitForFunction(() => window.syn3h?.shell)
-    await peer.evaluate(() => { window.syn3h.game.quality.setLevel(0); return window.syn3h.shell.play(true) })
-    await peer.waitForFunction(() => window.syn3hNet?.id && window.syn3h.shell.playing && !window.syn3h.shell.transitioning)
-    peerId = await peer.evaluate(() => window.syn3hNet.id)
+    await peer.waitForFunction(() => window.mira?.shell)
+    await peer.evaluate(() => { window.mira.game.quality.setLevel(0); return window.mira.shell.play(true) })
+    await peer.waitForFunction(() => window.miraNet?.id && window.mira.shell.playing && !window.mira.shell.transitioning)
+    peerId = await peer.evaluate(() => window.miraNet.id)
     const at = await page.evaluate(() => {
-      const {game,player,terrain} = window.syn3h
+      const {game,player,terrain} = window.mira
       const point = game.camera.getWorldDirection(player.object.position.clone()).multiplyScalar(12).add(game.camera.position)
       return [point.x, terrain.heightAt(point.x,point.z)+2, point.z]
     })
     await peer.evaluate(at => {
-      const {player} = window.syn3h
+      const {player} = window.mira
       player.teleport(player.object.position.clone().fromArray(at),0)
     },at)
     await page.bringToFront()
-    await page.waitForFunction(id => window.syn3hNet?.remotes.get(id)?.vehicle,peerId)
+    await page.waitForFunction(id => window.miraNet?.remotes.get(id)?.vehicle,peerId)
   }
   if (world === 'waterfall') await page.evaluate(async () => {
-    const { game, camera, player, terrain } = window.syn3h
+    const { game, camera, player, terrain } = window.mira
     const origins = game.scene.getObjectByName('waterfall-mist')?.geometry.getAttribute('mistOrigin')
     if (!origins?.count) throw Error('Waterfall fixture has no plunge pool')
     const foot = game.camera.position.clone().fromBufferAttribute(origins,0)
@@ -102,13 +102,13 @@ try {
     }
   })
   const result = await page.evaluate(async ({peerId, multiplayer, fleet}) => {
-    const {game} = window.syn3h, q = game.quality, governor = q.governor, b = game.renderer.backend
+    const {game} = window.mira, q = game.quality, governor = q.governor, b = game.renderer.backend
     governor.sample = window.sampleBeforeRoster
     delete window.sampleBeforeRoster
-    const roster = () => window.syn3h.bots.vehicles.map(v => ({kind:v.kind,id:v.object.id,arriving:window.syn3h.materialize.isMaterializing(v)}))
+    const roster = () => window.mira.bots.vehicles.map(v => ({kind:v.kind,id:v.object.id,arriving:window.mira.materialize.isMaterializing(v)}))
     const initialRoster = roster()
-    if (fleet === 'stock' && multiplayer === 'solo') window.syn3h.params.set('bots.keepCount',false)
-    const peerVehicle = peerId === null ? undefined : window.syn3hNet.remotes.get(peerId)?.vehicle
+    if (fleet === 'stock' && multiplayer === 'solo') window.mira.params.set('bots.keepCount',false)
+    const peerVehicle = peerId === null ? undefined : window.miraNet.remotes.get(peerId)?.vehicle
     const peerDrawLevels = new Set()
     const minimalDraws = new Set()
     const roots = new Set(initialRoster.map(v => v.id))
@@ -120,14 +120,14 @@ try {
           if (roots.has(o.id)) minimalDraws.add(o.id)
         }
       }
-      if (peerId !== null && window.syn3hNet.remotes.get(peerId)?.vehicle.object.getObjectById(source.object.id)) peerDrawLevels.add(governor.level)
+      if (peerId !== null && window.miraNet.remotes.get(peerId)?.vehicle.object.getObjectById(source.object.id)) peerDrawLevels.add(governor.level)
       return result
     }
     const entered = governor.level, start = performance.now(), calls = [], changes = []
     function record(kind, source) {
-      const actor = window.syn3h.bots.vehicles.find(vehicle => vehicle.object.getObjectById(source.object?.id))
+      const actor = window.mira.bots.vehicles.find(vehicle => vehicle.object.getObjectById(source.object?.id))
 
-      const fx = window.syn3h.materialize
+      const fx = window.mira.materialize
       const effect = source.object === fx.cloud.mesh ? 'arrival cloud' : fx.looks.flatMap((look,i) =>
         ['volume','ground','flash','beam'].filter(key=>look[key]===source.object).map(key=>key+' '+i))[0]
       calls.push({peer:!!peerVehicle?.object.getObjectById(source.object?.id),effect,ghost:source.object?.userData.arrivalGhost,parent:source.object?.parent?.name,materialId:source.material?.id,kind, level:governor.level, frame:game.frames, ms:performance.now()-start,
@@ -148,10 +148,10 @@ try {
       const { camera } = game
       const forward = camera.getWorldDirection(camera.position.clone()).setY(0).normalize()
       const right = forward.clone().cross(camera.up).normalize()
-      window.syn3h.bots.vehicles.forEach((vehicle, index) => {
+      window.mira.bots.vehicles.forEach((vehicle, index) => {
         const at = camera.position.clone().addScaledVector(forward, 22 + 4 * (index % 2))
           .addScaledVector(right, (index - 1.5) * 4)
-        at.y = window.syn3h.terrain.heightAt(at.x,at.z) + 2
+        at.y = window.mira.terrain.heightAt(at.x,at.z) + 2
         vehicle.teleport(at,0)
       })
     }
@@ -193,7 +193,7 @@ try {
   },{peerId, multiplayer, fleet})
   if (world) {
     result.effectReturn = await page.evaluate(async ({world,entryLevel}) => {
-      const {game} = window.syn3h, backend = game.renderer.backend
+      const {game} = window.mira, backend = game.renderer.backend
       const effect = world === 'waterfall' ? 'waterfall-mist' : 'lava-flames'
       const sweep = game.quality.beginDiagnosticSweep(), steps = []
       const draw = backend.draw, build = backend.createNodeBuilder, pipeline = backend.createRenderPipeline

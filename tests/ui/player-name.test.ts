@@ -20,7 +20,7 @@ describe('the player name', () => {
     expect(loadPlayerName(store)).toEqual({ name: 'Captain Ozzie', source: 'typed' })
   })
   it('a name saved by an older version counts as typed', () => {
-    const store = memory(); store.setItem('syn3h.playerName', 'Tamatek')
+    const store = memory(); store.setItem('mira.playerName', 'Tamatek')
     expect(loadPlayerName(store)).toEqual({ name: 'Tamatek', source: 'typed' })
     expect(savePlayerName('Zibwick', 'generated', store)).toBe(false)
   })

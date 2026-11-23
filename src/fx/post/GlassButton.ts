@@ -8,14 +8,14 @@ import { uniform, uniformArray } from 'three/tsl'
 
 const panel = '.hud-navigation .inspector-toggle.liquid-glass'
 const round = '.touch-actions .liquid-glass.glass-round'
-const inspector = '.syn3h-shell > .world-inspector:not(.lobby-settings)'
+const inspector = '.mira-shell > .world-inspector:not(.lobby-settings)'
 const card = inspector + ' > .wi-cards > .wi-card, ' + inspector + ' > .wi-ghosts > .wi-ghost.wi-glass, .drive-notices > .performance-recommendation'
 const buttons = [panel, round, '.pause-actions > button', '.rail-command > button', '.rail-command > input.wi-search',
   '.world-inspector > .panels-close', '.gear-actions > button', '.rail-foot > button'].join(',')
 /** Buttons that swell when pressed (GlassPress): every thumb button, the gear's thumb buttons and
  * the touch Panels control (the owner, 22 November 2026: "we should make this a consistent
  * behavior everywhere"). Panel interiors, the rail and cards keep their CSS press. */
-const pressable = '.touch-actions .liquid-glass.glass-round, .gear-actions > button, .syn3h-shell.has-touch ' + panel
+const pressable = '.touch-actions .liquid-glass.glass-round, .gear-actions > button, .mira-shell.has-touch ' + panel
 /** CSS px of air kept between two swelling neighbours' outlines. */
 const PRESS_AIR = 1
 // The gear drum and the desktop left column (Wings, Zorb, Chat...) are floating text, not glass

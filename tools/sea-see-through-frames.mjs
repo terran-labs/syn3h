@@ -34,7 +34,7 @@ const errors = [], notes = []
  * planet, comes out of the curving surface and runs on to the hills.
  */
 function seaSpot() {
-  const t = window.syn3h.terrain, sea = window.syn3h.params.get('world.lavaAltitude').value, size = t.size
+  const t = window.mira.terrain, sea = window.mira.params.get('world.lavaAltitude').value, size = t.size
   let best = null
   for (let k = 0; k < 20000; k++) {
     const x = (Math.sin(k * 12.9898) * 0.5) * size * 0.95, z = (Math.cos(k * 78.233) * 0.5) * size * 0.95
@@ -53,7 +53,7 @@ function seaSpot() {
   return best
 }
 function shoreSpot() {
-  const t = window.syn3h.terrain, sea = window.syn3h.params.get('world.lavaAltitude').value, size = t.size
+  const t = window.mira.terrain, sea = window.mira.params.get('world.lavaAltitude').value, size = t.size
   for (let k = 0; k < 4000; k++) {
     const x = (Math.sin(k * 3.17) * 0.5) * size * 0.9, z = (Math.cos(k * 9.41) * 0.5) * size * 0.9
     const depth = sea - t.heightAt(x, z)
@@ -62,7 +62,7 @@ function shoreSpot() {
   return null
 }
 function mouthSpot() {
-  const t = window.syn3h.terrain, lava = t.data.lava
+  const t = window.mira.terrain, lava = t.data.lava
   for (const r of lava.rivers) { const p = r.points.at(-1), q = r.points.at(-6); if (p && q) return { x: q.x, z: q.z, tx: p.x, tz: p.z } }
   return null
 }
@@ -72,9 +72,9 @@ async function open(planet, seed, planetSize, curve, viewport, quality) {
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto(`http://127.0.0.1:${port}/?autoplay=1&vehicle=buggy&planet=${planet}&seed=${seed}&room=st${Date.now().toString(36)}&daydream=0${webgl ? '&webgl=1' : ''}`)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 30 && window.syn3h.shell.playing, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game.tick > 30 && window.mira.shell.playing, null, { timeout: 120000 })
   await page.evaluate(({ planetSize, curve, quality }) => {
-    const s = window.syn3h
+    const s = window.mira
     s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 11); s.params.set('sun.dayLength', 0); s.params.set('gfx.quality', quality)
     if (planetSize !== null) s.params.set('terrain.planetSize', planetSize)
     s.params.set('world.curve', curve)
@@ -86,7 +86,7 @@ async function open(planet, seed, planetSize, curve, viewport, quality) {
 }
 /** Lens at (x, z), `height` over the sea surface, looking along `heading`, a touch down. */
 const pose = (page, p, heading, height, down = 0.02) => page.evaluate(({ p, heading, height, down }) => {
-  const s = window.syn3h, t = s.terrain, V = s.game.camera.position.constructor
+  const s = window.mira, t = s.terrain, V = s.game.camera.position.constructor
   const y = t.liquidHeightAt(p.x, p.z) + height
   s.player.teleport({ x: p.x + 400, y: t.heightAt(p.x + 400, p.z) + 2, z: p.z }, 0)
   s.camera.setCinematicPose(new V(p.x, y, p.z), new V(p.x - Math.sin(heading) * 100, y - 100 * down, p.z - Math.cos(heading) * 100), 60)
@@ -97,7 +97,7 @@ const pose = (page, p, heading, height, down = 0.02) => page.evaluate(({ p, head
  * and its aim within 10 cm of the target, then a moment more for the water's own state.
  */
 const settle = (page) => page.waitForFunction(() => {
-  const s = window.syn3h, c = s.camera.cinematic, cam = s.game.camera
+  const s = window.mira, c = s.camera.cinematic, cam = s.game.camera
   // Height is compared loosely: the camera keeps itself clear of high ground.
   return !c || (Math.hypot(cam.position.x - c.position.x, cam.position.z - c.position.z) < 0.05 && c.look.distanceTo(c.target) < 0.1)
 }, null, { timeout: 30000, polling: 200 }).catch(() => notes.push({ unsettled: true })).then(() => page.waitForTimeout(800))
@@ -125,7 +125,7 @@ for (const [planet, seed, planetSize, curve] of cases) for (const [viewport, qua
   if (shore) {
     await pose(page, shore, 0, 1.5, 0.3); await page.screenshot({ path: `${out}/${tag}-shore.png` })
     // A far shallow beach at a grazing angle: 120 m out to sea from it, 1.5 m up, looking at it.
-    const far = await page.evaluate((b) => { const t = window.syn3h.terrain; for (let a = 0; a < 16; a++) { const h = (a / 16) * Math.PI * 2, x = b.x + Math.sin(h) * 120, z = b.z + Math.cos(h) * 120; if (t.liquidKindAt(x, z) === 'water' && t.liquidHeightAt(x, z) - t.heightAt(x, z) > 2) return { x, z, heading: h } } return null }, shore)
+    const far = await page.evaluate((b) => { const t = window.mira.terrain; for (let a = 0; a < 16; a++) { const h = (a / 16) * Math.PI * 2, x = b.x + Math.sin(h) * 120, z = b.z + Math.cos(h) * 120; if (t.liquidKindAt(x, z) === 'water' && t.liquidHeightAt(x, z) - t.heightAt(x, z) > 2) return { x, z, heading: h } } return null }, shore)
     if (far) { await pose(page, far, far.heading, 1.5, 0.01); await page.screenshot({ path: `${out}/${tag}-far-beach.png` }) }
   }
   const mouth = await page.evaluate(mouthSpot)

@@ -52,7 +52,7 @@ at 7 s, D at 12 s) threw no errors and showed:
 
 ### Rules when resuming
 
-- `src/vehicles/buggyParams.ts` is shared with the Syn3h buggy. Do not change its
+- `src/vehicles/buggyParams.ts` is shared with the Mira buggy. Do not change its
   `buggy.nextGen`, grip, slide, gripFade or steerLimit parameters, and tell the
   Orchestrator before adding new ones.
 - Run heavy jobs through `tools/heavy.sh`, keep one dev server, and stop it by PID.

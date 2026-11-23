@@ -22,11 +22,11 @@ const errors = []
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`) })
 await page.goto(`${base}?autoplay=1${process.env.QUERY ? `&${process.env.QUERY}` : ""}`, { waitUntil: "load" })
-await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 30000 })
+await page.waitForFunction(() => window.mira?.game?.tick > 25, null, { timeout: 30000 })
 
 // Pin the camera: wrap render so the chase camera cannot move it back.
 await page.evaluate(() => {
-  const g = window.syn3h.game
+  const g = window.mira.game
   const orig = g.renderer.render.bind(g.renderer)
   window.__view = null
   g.renderer.render = (scene, cam) => {
@@ -41,7 +41,7 @@ await page.evaluate(() => {
 })
 
 const info = () => page.evaluate(() => {
-  const s = window.syn3h
+  const s = window.mira
   const t = s.terrain
   const L = t.data.layout
   const v = L.volcano
@@ -63,7 +63,7 @@ async function shoot(name, eye, at) {
 
 async function views(tag) {
   const i = await info()
-  const gy = (px, pz) => page.evaluate(([a, b]) => window.syn3h.terrain.heightAt(a, b), [px, pz])
+  const gy = (px, pz) => page.evaluate(([a, b]) => window.mira.terrain.heightAt(a, b), [px, pz])
   const { gx, gz } = i.volcano
   const S = i.summit
   const eyeAt = async (x, z, up) => [x, (await gy(x, z)) + up, z]
@@ -87,7 +87,7 @@ async function views(tag) {
 
 const report = [await views('default')]
 for (const seed of seeds) {
-  await page.evaluate((s) => window.syn3h.params.set('world.seed', s), seed).catch((e) => errors.push(String(e)))
+  await page.evaluate((s) => window.mira.params.set('world.seed', s), seed).catch((e) => errors.push(String(e)))
   await page.waitForTimeout(1500)
   report.push(await views(`seed${seed}`))
 }

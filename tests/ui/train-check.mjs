@@ -1,3 +1,4 @@
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -6,8 +7,8 @@ await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
-  await page.goto(`${process.env.SYN3H_URL}?room=ux-train-${Date.now()}`)
-  await page.waitForFunction(() => window.syn3h?.audio, null, { timeout: 120000 })
+  await page.goto(`${process.env.MIRA_URL}?room=ux-train-${Date.now()}`)
+  await page.waitForFunction(() => window.mira?.audio, null, { timeout: 120000 })
   await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
   assert.deepEqual(await page.locator('#game-mode option').allTextContents(), ['Tag game', 'King of the Hill', 'Explore'])
   // The vehicle picker keeps its accessible name and role.
@@ -43,7 +44,7 @@ try {
       motorLevels.push({ airborne, wings, rms: Math.sqrt(sum / 44100) })
       engine.dispose(true)
     }
-    const audio = syn3h.audio, cues = [], impacts = []
+    const audio = mira.audio, cues = [], impacts = []
     const originalCue = audio.cue, originalImpact = audio.impact, enabled = audio.enabled, terrain = audio.terrain
     const vehicle = { object: {position: {x:0,y:0,z:0}}, wingsOpen:false, landedThisStep:false, landingImpact:12, zorbed:false }
     try {

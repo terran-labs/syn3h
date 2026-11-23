@@ -18,7 +18,7 @@ NAVY = (0.02, 0.035, 0.3)
 VARIANTS = [
     {
         'id': 'v1-heritage', 'name': 'Heritage',
-        'notes': ['Your original proportions, untouched', 'Surface smoothed one level', 'Translucent purple canopy as in the last Syn3h build', 'Dark centre stripe'],
+        'notes': ['Your original proportions, untouched', 'Surface smoothed one level', 'Translucent purple canopy as in the last Mira build', 'Dark centre stripe'],
         'refine': REFINE,
         'paint': {'body': NAVY, 'accent': (0.03, 0.03, 0.035), 'glass': (0.55, 0.3, 0.8), 'glassAlpha': 0.45},
     },

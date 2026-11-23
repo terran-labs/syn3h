@@ -23,19 +23,19 @@ try {
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto(url.href)
-  await page.waitForFunction(() => window.syn3h?.shell)
+  await page.waitForFunction(() => window.mira?.shell)
   await page.evaluate(() => {
-    const { game, shell, params } = window.syn3h
+    const { game, shell, params } = window.mira
     game.quality.setLevel(3)
     game.quality.setAuto(true)
     params.set('bots.count', 0)
     params.set('bots.fleet', 1)
     void shell.play(true)
   })
-  await page.waitForFunction(() => window.syn3hNet?.isHost && window.syn3h.shell.playing &&
-    !window.syn3h.shell.transitioning, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.miraNet?.isHost && window.mira.shell.playing &&
+    !window.mira.shell.transitioning, null, { timeout: 90000 })
   await page.evaluate(({ kind, distance }) => {
-    const { game, bots, materialize, params } = window.syn3h
+    const { game, bots, materialize, params } = window.mira
     const backend = game.renderer.backend, events = [], meshes = new Map()
     const build = bots.build, spot = bots.spot, begin = materialize.begin
     const builder = backend.createNodeBuilder, pipeline = backend.createRenderPipeline, draw = backend.draw

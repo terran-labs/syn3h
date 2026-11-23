@@ -5,11 +5,12 @@
 // then sank to the resting tilt over half a minute, so the height depended on when you looked.
 // Arrivals checked at an iPad mini upright and on its side, a phone and a desktop: a fresh load,
 // a return from a world after an orbit drag, and a return after turning the screen in a world.
-//   SYN3H_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/lobby-arrival.mjs
+//   MIRA_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/lobby-arrival.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5173/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5173/'
 const sizes = [
   ['ipad-portrait', webkit, { viewport: { width: 744, height: 1133 }, hasTouch: true, isMobile: true }],
   ['ipad-landscape', webkit, { viewport: { width: 1133, height: 744 }, hasTouch: true, isMobile: true }],
@@ -18,11 +19,11 @@ const sizes = [
 ]
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a))
 const arrived = page => page.waitForFunction(() => {
-  const g = window.syn3h?.shell?.galaxy
-  return document.documentElement.dataset.boot === 'done' && g && !g.opening && !g.returningHome && !document.documentElement.dataset.opening && !document.querySelector('.syn3h-shell').classList.contains('is-playing')
+  const g = window.mira?.shell?.galaxy
+  return document.documentElement.dataset.boot === 'done' && g && !g.opening && !g.returningHome && !document.documentElement.dataset.opening && !document.querySelector('.mira-shell').classList.contains('is-playing')
 }, null, { timeout: 180000 })
 const view = page => page.evaluate(() => {
-  const g = window.syn3h.shell.galaxy, box = g.wordmarkScreenBox()
+  const g = window.mira.shell.galaxy, box = g.wordmarkScreenBox()
   return { yaw: g.yaw, pitch: g.pitch, distance: g.distance, target: g.target, want: g.freshPose(), box, w: innerWidth, h: innerHeight }
 })
 /** The view is the arrival view for this screen, and the name is whole on it. */
@@ -45,13 +46,13 @@ try {
     await arrived(page); await page.waitForTimeout(1200)
     check(await view(page), `${name}, fresh load`)
     // The idle rest at once and quickly: an arrival view must have nothing left for it to move.
-    await page.evaluate(() => { window.syn3h.params.set('lobby.returnDelay', 0); window.syn3h.params.set('lobby.returnTime', 1) })
+    await page.evaluate(() => { window.mira.params.set('lobby.returnDelay', 0); window.mira.params.set('lobby.returnTime', 1) })
     await page.waitForTimeout(2500)
     check(await view(page), `${name}, after the idle rest`)
-    await page.evaluate(() => { window.syn3h.params.set('lobby.returnDelay', 4); window.syn3h.params.set('lobby.returnTime', 25) })
+    await page.evaluate(() => { window.mira.params.set('lobby.returnDelay', 4); window.mira.params.set('lobby.returnTime', 25) })
     const enter = async () => {
-      await page.evaluate(() => { const worlds = window.syn3h.shell.galaxyWorlds; window.syn3h.shell.galaxy.choose((worlds[1] ?? worlds[0]).id) })
-      await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-playing'), null, { timeout: 120000 })
+      await page.evaluate(() => { const worlds = window.mira.shell.galaxyWorlds; window.mira.shell.galaxy.choose((worlds[1] ?? worlds[0]).id) })
+      await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-playing'), null, { timeout: 120000 })
       await page.waitForTimeout(1500)
     }
     // A player's own orbit drag, then a world, then back: the drag does not survive the return.
@@ -59,13 +60,13 @@ try {
     await page.mouse.move(canvas.x + canvas.width * 0.5, canvas.y + canvas.height * 0.6); await page.mouse.down()
     await page.mouse.move(canvas.x + canvas.width * 0.65, canvas.y + canvas.height * 0.15, { steps: 8 }); await page.mouse.up()
     await page.waitForTimeout(500)
-    await enter(); await page.evaluate(() => window.syn3h.shell['ascent']())
+    await enter(); await page.evaluate(() => window.mira.shell['ascent']())
     await arrived(page); await page.waitForTimeout(1200)
     check(await view(page), `${name}, return after an orbit drag`)
     // The screen turned while in a world: the return frames the screen as it is now.
     const { width, height } = options.viewport
     await enter(); await page.setViewportSize({ width: height, height: width }); await page.waitForTimeout(1200)
-    await page.evaluate(() => window.syn3h.shell['ascent']())
+    await page.evaluate(() => window.mira.shell['ascent']())
     await arrived(page); await page.waitForTimeout(1200)
     check(await view(page), `${name}, return after turning the screen in a world`)
     assert.deepEqual(errors, [], `${name}: no page errors`)

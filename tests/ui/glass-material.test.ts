@@ -22,10 +22,10 @@ describe('the saved interface material', () => {
     vi.unstubAllGlobals()
   })
   it.each([[0, 'liquid'], [1, 'frost'], [2, 'frost'], [3, 'flat']] as const)('migrates old stop %i to %s', (old, expected) => {
-    storage.set('syn3h.glassMaterial.v1', String(old))
+    storage.set('mira.glassMaterial.v1', String(old))
     stop = restoreGlassMaterial(false)
     expect(document.documentElement.dataset.glassMaterial).toBe(expected)
-    expect(storage.get('syn3h.glassMaterial.v2')?.toLowerCase()).toBe(expected)
+    expect(storage.get('mira.glassMaterial.v2')?.toLowerCase()).toBe(expected)
   })
   it('preserves Liquid across a drop, reload and return to Medium', () => {
     stop = restoreGlassMaterial(false)

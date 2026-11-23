@@ -12,8 +12,8 @@ const errors=[]
 page.on('pageerror',e=>errors.push(`pageerror: ${e.message}`))
 page.on('console',m=>{if(m.type()==='error')errors.push(`console: ${m.text()}`)})
 await page.goto(base+(base.includes('?')?'&':'?')+'autoplay=1',{waitUntil:'load'})
-await page.waitForFunction(()=>window.syn3h?.game?.tick>200&&window.syn3hMaterialize,null,{timeout:60000})
-const read=()=>page.evaluate(()=>{const s=window.syn3h,m=window.syn3hMaterialize,p=s.player.body.translation();return {t:s.game.time.toFixed(2),y:+p.y.toFixed(3),held:m.isHeld(s.player),cloud:m.cloud.mesh.visible,draws:s.game.performance.drawCalls,backend:s.game.backend}})
+await page.waitForFunction(()=>window.mira?.game?.tick>200&&window.miraMaterialize,null,{timeout:60000})
+const read=()=>page.evaluate(()=>{const s=window.mira,m=window.miraMaterialize,p=s.player.body.translation();return {t:s.game.time.toFixed(2),y:+p.y.toFixed(3),held:m.isHeld(s.player),cloud:m.cloud.mesh.visible,draws:s.game.performance.drawCalls,backend:s.game.backend}})
 const log=[]
 log.push({at:'before',...await read()})
 await page.keyboard.press('KeyM')

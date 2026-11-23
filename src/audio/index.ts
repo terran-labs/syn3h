@@ -42,7 +42,7 @@ const IMPACT_SURFACE: Record<SurfaceKind, ImpactKind> = {
   glass: 'glass', regolith: 'dust', rock: 'rock', road: 'rock', track: 'soil',
 }
 /** Storage key of the retired track selector. Removed on start so old choices cannot linger. */
-const RETIRED_TRACK_KEY = 'syn3h.musicTrack'
+const RETIRED_TRACK_KEY = 'mira.musicTrack'
 
 export class GameAudio implements System {
   private context?: AudioContext

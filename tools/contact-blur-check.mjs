@@ -36,9 +36,9 @@ try {
     const page = await browser.newPage({ viewport: phone ? { width: 390, height: 844 } : { width: 1280, height: 720 }, deviceScaleFactor: phone ? 3 : 1 })
     await page.routeWebSocket(/\/ws/, socket => socket.close())
     await page.goto(`${base}?autoplay=1&vehicle=buggy&planet=archipelago&seed=1`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 10, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 10, null, { timeout: 120000 })
     const setup = await page.evaluate(quality => {
-      const s = window.syn3h, t = s.terrain
+      const s = window.mira, t = s.terrain
       s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 12); s.params.set('sun.dayLength', 0); s.params.set('gfx.quality', quality); s.params.set('gfx.auto', false)
       // Shallow water with dry land 25 m away along some heading.
       const p0 = s.player.body.translation()
@@ -60,7 +60,7 @@ try {
     if (!setup) { report[label] = { error: 'no shallow water' }; await page.close(); continue }
     // Try both heading conventions: keep the one whose first metres approach the water.
     await page.evaluate(({ lx, lz, heading, x, z }) => {
-      const s = window.syn3h, t = s.terrain
+      const s = window.mira, t = s.terrain
       const try1 = h => { s.player.teleport({ x: lx, y: t.heightAt(lx, lz) + 1.2, z: lz }, h); const q = s.player.body.rotation(); const fx = 2 * (q.x * q.z + q.w * q.y), fz = 1 - 2 * (q.x * q.x + q.y * q.y); return fx * (x - lx) + fz * (z - lz) }
       let h = heading
       if (try1(h) < 0) h = heading + Math.PI
@@ -77,7 +77,7 @@ try {
       for (const el of document.body.querySelectorAll('*')) if (!el.contains(canvas) && el !== canvas) el.style.visibility = 'hidden'
     }, setup)
     await page.waitForTimeout(1500)
-    await page.evaluate(() => { const i = window.syn3h.game.input.external; i.y = 1; i.x = 0; i.brakes = false })
+    await page.evaluate(() => { const i = window.mira.game.input.external; i.y = 1; i.x = 0; i.brakes = false })
     // Frame before contact: capture repeatedly, keeping the last one taken while still dry.
     const before = `${out}/${label}-before${phone ? '-phone' : ''}.png`
     let wet = false
@@ -89,7 +89,7 @@ try {
     const during = `${out}/${label}-during${phone ? '-phone' : ''}.png`
     await page.screenshot({ path: during })
     const state = await page.evaluate(() => {
-      const s = window.syn3h, c = s.game.camera.position
+      const s = window.mira, c = s.game.camera.position
       return { blurPeakAfterContact: +window.contact.peak.toFixed(3), wet: window.contact.wet, msSinceContact: Math.round(performance.now() - window.contact.at), cameraAboveSurface: +(c.y - (s.terrain.liquidHeightAt?.(c.x, c.z) ?? -Infinity)).toFixed(2), motionBlur: s.params.get('post.motionBlur')?.value, plunge: s.params.get('post.plunge')?.value ?? 'removed' }
     })
     report[label] = {

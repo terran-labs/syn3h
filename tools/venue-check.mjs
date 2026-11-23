@@ -23,8 +23,8 @@ async function open(name) {
   const page = await (await br.newContext({ viewport: { width: 800, height: 450 } })).newPage()
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`))
   await page.goto(`${base}?room=${room}&name=${name}&autoplay=1`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 90000 })
-  await page.evaluate(() => { window.syn3h.shell.play(); document.activeElement?.blur?.() })
+  await page.waitForFunction(() => window.mira?.shell, null, { timeout: 90000 })
+  await page.evaluate(() => { window.mira.shell.play(); document.activeElement?.blur?.() })
   return page
 }
 
@@ -32,25 +32,25 @@ let ok = false
 try {
   const a = await open('Alice')
   const b = await open('Bob')
-  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet?.connected && window.syn3hNet.players.size === 2, null, { timeout: 30000 })))
-  const idA = await a.evaluate(() => window.syn3hNet.id)
-  await b.waitForFunction((id) => window.syn3hNet.remotes.has(id), idA, { timeout: 15000 })
-  const copyOfA = () => b.evaluate((id) => { const t = window.syn3hNet.remotes.get(id).vehicle.body.translation(); return [t.x, t.z] }, idA)
+  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.miraNet?.connected && window.miraNet.players.size === 2, null, { timeout: 30000 })))
+  const idA = await a.evaluate(() => window.miraNet.id)
+  await b.waitForFunction((id) => window.miraNet.remotes.has(id), idA, { timeout: 15000 })
+  const copyOfA = () => b.evaluate((id) => { const t = window.miraNet.remotes.get(id).vehicle.body.translation(); return [t.x, t.z] }, idA)
   const before = await copyOfA()
-  await a.evaluate(() => { window.syn3h.game.input.external.y = 1 })
+  await a.evaluate(() => { window.mira.game.input.external.y = 1 })
   await wait(3000)
-  await a.evaluate(() => { window.syn3h.game.input.external.y = 0 })
+  await a.evaluate(() => { window.mira.game.input.external.y = 0 })
   const after = await copyOfA()
   const moved = Math.hypot(after[0] - before[0], after[1] - before[1])
   const browser = await a.evaluate(async () => ({
     secureContext: window.isSecureContext,
     webgpu: 'gpu' in navigator,
-    backend: window.syn3h.game.backend,
+    backend: window.mira.game.backend,
     clipboard: Boolean(navigator.clipboard),
     gamepads: typeof navigator.getGamepads === 'function',
     deviceOrientation: 'DeviceOrientationEvent' in window,
     wakeLock: 'wakeLock' in navigator,
-    socket: window.syn3hNet.conn?.url ?? null,
+    socket: window.miraNet.conn?.url ?? null,
     inviteOrigin: location.origin,
     hud: document.getElementById('hud')?.textContent.split('\n').slice(0, 2).join(' | '),
   }))

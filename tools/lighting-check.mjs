@@ -20,9 +20,9 @@ try {
   if (process.argv.includes('--webgl')) url.searchParams.set('webgl', '1')
   await page.goto(url.href, { waitUntil: 'load', timeout: 120000 })
   await page.locator('.shell-play').click({ timeout: 3000 }).catch(() => {})
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 120, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 120, null, { timeout: 90000 })
   await page.evaluate(() => {
-    const s = window.syn3h, g = s.game
+    const s = window.mira, g = s.game
     g.renderer.setAnimationLoop(null)
     const env = g.systems.find(system => system.sunDirection && system.sunColor)
     if (!env) throw new Error('Environment unavailable')
@@ -46,7 +46,7 @@ try {
   ]
   for (const test of cases) {
     const state = await page.evaluate(async test => {
-      const s = window.syn3h, g = s.game, d = window.lightingCheck
+      const s = window.mira, g = s.game, d = window.lightingCheck
       s.params.set('sun.timeOfDay', test.hour)
       s.params.set('post.on', !!test.ao)
       for (const receiver of d.receivers) receiver.receiveShadow = test.shadows !== false

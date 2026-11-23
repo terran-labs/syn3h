@@ -40,25 +40,25 @@
    (a sixth of the width out) and leave the middle to the vehicles ahead and their labels.
    They never rise above 104 px: a toast sits from 72 px, about 27 px tall (touch-stick.css). */
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .syn3h-shell.has-touch .focus-hud :is(.fh-left, .fh-right) { --fh-out: max(182 * var(--fh-u) + 12px, 100cqw / 6); --fh-number: 24px; top: max(30% - var(--fh-number) / 2, 104px); }
+  .mira-shell.has-touch .focus-hud :is(.fh-left, .fh-right) { --fh-out: max(182 * var(--fh-u) + 12px, 100cqw / 6); --fh-number: 24px; top: max(30% - var(--fh-number) / 2, 104px); }
 }
 /* Narrow portrait screens: the arcs leave the screen, so the readouts hold its edges. */
 @media (max-width: 700px) and (orientation: portrait) {
   /* The block ends just above the phone toast (30% + 30 px), the Jet's THRUST line included. */
-  .syn3h-shell .focus-hud :is(.fh-left, .fh-right) { --fh-number: 24px; top: calc(30% - 26px); }
-  .syn3h-shell .focus-hud .fh-left { right: auto; left: var(--edge-left); text-align: left; justify-items: start; }
-  .syn3h-shell .focus-hud .fh-right { left: auto; right: var(--edge-right); text-align: right; justify-items: end; }
+  .mira-shell .focus-hud :is(.fh-left, .fh-right) { --fh-number: 24px; top: calc(30% - 26px); }
+  .mira-shell .focus-hud .fh-left { right: auto; left: var(--edge-left); text-align: left; justify-items: start; }
+  .mira-shell .focus-hud .fh-right { left: auto; right: var(--edge-right); text-align: right; justify-items: end; }
   /* Only the text: the two crescents and their fill bars run off the sides here and read as
      stray curves, so portrait phones draw the readouts alone (the owner, 19 November 2026). */
-  .syn3h-shell .focus-hud svg g[data-style="0"] { display: none; }
+  .mira-shell .focus-hud svg g[data-style="0"] { display: none; }
   /* The world and heading line: centred it runs into the gear drum's top slot, which holds
      the top left on touch (gear.css), so it takes the top right, free since the Panels control
      moved to the thumb grid. It wraps rather than reach the drum (about 196 px wide). */
-  .syn3h-shell.has-touch .focus-hud .fh-top {
+  .mira-shell.has-touch .focus-hud .fh-top {
     left: auto; right: var(--edge-right); top: var(--edge-top); translate: none;
     text-align: right; justify-items: end; max-width: calc(100% - var(--edge-right) - 196px);
   }
-  .syn3h-shell.has-touch .focus-hud .fh-top small { white-space: normal; }
+  .mira-shell.has-touch .focus-hud .fh-top small { white-space: normal; }
   /* Left-handed, the drum holds the top right (gear.css): the line takes the top left. */
-  html[data-touch-hand="left"] .syn3h-shell.has-touch .focus-hud .fh-top { right: auto; left: var(--edge-left); text-align: left; justify-items: start; }
+  html[data-touch-hand="left"] .mira-shell.has-touch .focus-hud .fh-top { right: auto; left: var(--edge-left); text-align: left; justify-items: start; }
 }

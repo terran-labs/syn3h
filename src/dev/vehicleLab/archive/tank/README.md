@@ -2,7 +2,7 @@
 
 These are source snapshots, not new versions of the designs. Each round retains its own
 procedural kit so changes to the current tank cannot silently change an earlier study.
-They appear under **Syn3h tank: earlier studies** in the vehicle lab.
+They appear under **Mira tank: earlier studies** in the vehicle lab.
 
 | Round | Source commit | Source directory |
 | --- | --- | --- |

@@ -31,7 +31,7 @@ There are six levels for every device: Minimal, Low, Medium, High, Ultra and Cin
 
 **Level climbs and shader builds.** A level change rebuilds the post pipeline and may recompile lit materials (the 15 November matrix counted 44 to 195 pipelines for a tier change). The controller cannot prebuild pipelines for materials other modules own, so a climb is held as pending until a covered moment: a frame while a lobby or menu is on screen, or a call to `noteCovered()` (a respawn or teleport should call it). If no covered moment comes within 20 seconds of continued headroom, the climb is taken during play and costs one hitch. Each level change is recorded in `quality.levelChanges` with who made it, whether it was covered and the pipelines created in the following two seconds. Drops are immediate: the frames are already slow.
 
-**Saved state.** `localStorage` key `syn3h.quality.v2` holds `{ level, auto, pinned, overrides }`. The earlier `syn3h.graphics.level` and `syn3h.graphics.manual` are read once, mapped 0, 1, 2 to 0, 2, 4, and removed after the first finished load. `syn3h.loading.level` stays tab scoped as the crash marker. `?gfx=0` to `?gfx=5` chooses a level for one page load and is not saved.
+**Saved state.** `localStorage` key `mira.quality.v2` holds `{ level, auto, pinned, overrides }`. The earlier `mira.graphics.level` and `mira.graphics.manual` are read once, mapped 0, 1, 2 to 0, 2, 4, and removed after the first finished load. `mira.loading.level` stays tab scoped as the crash marker. `?gfx=0` to `?gfx=5` chooses a level for one page load and is not saved.
 
 **Interface.** `game.quality` implements `QualitySource`: `qualityLevels`, `getQualityState()` (the same frozen object until something changes), `setLevel`, `stepUp`, `stepDown`, `setAuto`, `clearOverride`, `clearOverrides` and `subscribeQuality` (called at once and after every change). State carries `easing` (`'post'`, `'resolution'` or null) so the card can say what is being eased.
 
@@ -39,11 +39,11 @@ There are six levels for every device: Minimal, Low, Medium, High, Ultra and Cin
 
 ## Recovery, loading and diagnostics
 
-Session storage records `syn3h.loading.level` when loading starts and clears it after a frame with draws. A surviving marker reduces the next attempt by one level, including repeated failures down to safe. A separate session value remembers a manually selected or automatically reduced level. Session storage avoids treating another tab's load as a crash; local storage is a fallback when session storage is unavailable. Storage denial does not prevent the game from starting.
+Session storage records `mira.loading.level` when loading starts and clears it after a frame with draws. A surviving marker reduces the next attempt by one level, including repeated failures down to safe. A separate session value remembers a manually selected or automatically reduced level. Session storage avoids treating another tab's load as a crash; local storage is a fallback when session storage is unavailable. Storage denial does not prevent the game from starting.
 
 Frame pressure is handled by the cascade described below. `FrameBudgetMonitor`, the original whole-level monitor (four consecutive two-second windows below 54 or 28 fps, 15 second cooldown), stays exported and tested but the controller no longer uses it.
 
-`window` emits `syn3h:loading` events with `{phase, progress, elapsedMs}`. Phases are device, physics, renderer, world and ready. Progress is an estimate, not download byte progress. Elapsed time is measured from navigation. `loadingProgress` exports the latest state for UI code that subscribes after initialization. `syn3h:quality` carries the selected level, the effective rung values (`rung`, `rungs`, `kind`, `pixelRatio`, `vehicleShading`, `particles`, `shadows`, `auto`, `targetFps`), the fixed level `budget` and the `reason` for the change. `effectiveQuality()` returns the same values for code that polls.
+`window` emits `mira:loading` events with `{phase, progress, elapsedMs}`. Phases are device, physics, renderer, world and ready. Progress is an estimate, not download byte progress. Elapsed time is measured from navigation. `loadingProgress` exports the latest state for UI code that subscribes after initialization. `mira:quality` carries the selected level, the effective rung values (`rung`, `rungs`, `kind`, `pixelRatio`, `vehicleShading`, `particles`, `shadows`, `auto`, `targetFps`), the fixed level `budget` and the `reason` for the change. `effectiveQuality()` returns the same values for code that polls.
 
 F3 toggles a small HUD with the level, target fps, rung, pixel ratio, vehicle shading tier, the last window's 90th percentile frame, smoothed fps, frame interval, physics-step CPU time, draw calls and triangles. `game.performance` exposes these values and first-frame submission time. Physics time includes fixed system updates and Rapier stepping. Neither CPU time nor frame interval is isolated GPU time. `Game` now smooths frame duration before computing fps, avoiding the previous bias from averaging reciprocal frame times.
 
@@ -75,7 +75,7 @@ A climb that has to be undone within 30 seconds doubles that rung's climb wait, 
 
 ### Manual and automatic
 
-- A hand-set `gfx.level` pins that level for the session (`syn3h.graphics.manual` in session storage). The ladder restarts at its top. The governor may still shed rungs inside it but never changes the level.
+- A hand-set `gfx.level` pins that level for the session (`mira.graphics.manual` in session storage). The ladder restarts at its top. The governor may still shed rungs inside it but never changes the level.
 - A hand-set `gfx.vehicleShading` pins shading at that value, even above the level cap. Shading rungs are skipped. The other rungs keep working.
 - `gfx.auto` (default on) off returns to the current level's fixed budget, rung 0, and makes no automatic changes. Only the load crash fallback still lowers the level. Switching it on clears both pins.
 - Automatic climbs never exceed the detected device level or the crash fallback level. An automatic drop is still saved as the next load's start level, but it does not cap later climbs.

@@ -10,7 +10,7 @@ It is styled in the Halo look (src/ui/theme-halo.css on feat/ux-theme): 1 px hai
 a tight faint halo, no fills or blur, pills fully round, Barlow with 11 px spaced capitals,
 selected as a brighter rim, a soft dark falloff behind text. Colours are the `--s3-*` tokens;
 `--halo-glow` and `--halo-under` are used when the theme defines them, with token-based
-fallbacks otherwise. Mount it inside `.syn3h-shell` so it inherits those properties.
+fallbacks otherwise. Mount it inside `.mira-shell` so it inherits those properties.
 
 ## Wiring in Shell.ts
 
@@ -20,7 +20,7 @@ import { GEAR_LABELS, type GearId } from '../weapons/Gear'
 
 // Constructor, after the shell element and touch controls exist:
 this.gearSelector = new GearSelector(this.element, () => {
-  const rack = (window as unknown as { syn3hNet?: { gear?: GearSource } }).syn3hNet?.gear
+  const rack = (window as unknown as { miraNet?: { gear?: GearSource } }).miraNet?.gear
   return rack
 }, { touch: this.touch.available, onSelect: () => this.audio.cue('click') })
 
@@ -31,7 +31,7 @@ this.gearSelector.update(this.isFocus)
 this.gearSelector.dispose()
 ```
 
-The rack on `window.syn3hNet.gear` (feat/weapons) fits `GearSource`: `list`, `current`,
+The rack on `window.miraNet.gear` (feat/weapons) fits `GearSource`: `list`, `current`,
 `select`, `next` and `controls()`, whose `GearControls` and `GearAction` match the shapes
 declared here. It has no `labelOf`, so only the current gear would get its real name (from
 `controls().name`) and the neighbours would fall back to their id. Wrap it with `GEAR_LABELS`:
@@ -52,7 +52,7 @@ the rack is missing or has fewer than two items).
 
 ## CSS custom properties
 
-Set on `.syn3h-shell` (or any ancestor) to fit the shell's layout:
+Set on `.mira-shell` (or any ancestor) to fit the shell's layout:
 
 | Property | Default | Meaning |
 | --- | --- | --- |

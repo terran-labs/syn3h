@@ -5,12 +5,13 @@
  * distances and a sweep of pitches; each frame shows the clear circle (hud.ownMarkerClear)
  * outlined in red round the centre, with the marker's lift and opacity under it.
  *
- *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/ui/own-marker-strip.mjs [out dir]
+ *   MIRA_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/ui/own-marker-strip.mjs [out dir]
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 
-const base = (process.env.SYN3H_URL ?? 'http://127.0.0.1:5258/').replace(/\/+$/, '') + '/'
+const base = (process.env.MIRA_URL ?? 'http://127.0.0.1:5258/').replace(/\/+$/, '') + '/'
 const out = process.argv[2] ?? '/tmp/own-marker'
 await mkdir(`${out}/raw`, { recursive: true })
 const PITCHES = [-25, -10, 0, 8, 16, 30]
@@ -24,10 +25,10 @@ try {
     const page = await context.newPage()
     page.on('pageerror', e => errors.push(`${device}: ${e.message}`))
     await page.goto(`${base}?planet=alpine&seed=7&autoplay=1&room=own-marker-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet?.marker, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.shell?.playing && window.miraNet?.marker, null, { timeout: 120000 })
     await page.evaluate(() => {
       document.exitPointerLock?.()
-      const s = window.syn3h, n = window.syn3hNet, p = s.params
+      const s = window.mira, n = window.miraNet, p = s.params
       p.set('gfx.auto', false); p.set('daydream.seconds', 0); p.set('bots.count', 0); p.set('sun.dayLength', 0); p.set('sun.timeOfDay', 14)
       for (const node of document.body.children) if (node.tagName !== 'CANVAS' && node.tagName !== 'SCRIPT') node.style.visibility = 'hidden'
       // The camera: behind the car at `back` metres, `up` above, looking `pitch` degrees above
@@ -56,12 +57,12 @@ try {
     for (const back of DISTANCES) for (const [i, pitch] of PITCHES.entries()) {
       await page.evaluate(([back, pitch]) => {
         window.__cam = { back, up: back * 0.35, pitch }
-        const r = window.syn3h.params.get('hud.ownMarkerClear').value * innerHeight * 2
+        const r = window.mira.params.get('hud.ownMarkerClear').value * innerHeight * 2
         window.__ring.style.width = window.__ring.style.height = `${r}px`
       }, [back, pitch])
       await page.waitForTimeout(600)
       const m = await page.evaluate(() => {
-        const n = window.syn3hNet, mk = n.marker, s = window.syn3h
+        const n = window.miraNet, mk = n.marker, s = window.mira
         const at = mk.mesh.position.clone().project(s.game.camera)
         return { lift: mk.mesh.position.y - s.player.object.position.y, opacity: mk.fade.value, beam: mk.beam.value, visible: mk.mesh.visible, screenY: at.y / 2 }
       })

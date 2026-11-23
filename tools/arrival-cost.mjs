@@ -19,10 +19,10 @@ try {
   await context.routeWebSocket(/\/ws/, (s) => s.close())
   const page = await context.newPage()
   await page.goto(`${base}/?autoplay=1&vehicle=buggy&seed=3`)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 200 && window.syn3h.materialize, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game.tick > 200 && window.mira.materialize, null, { timeout: 120000 })
   if (phone) await (await context.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 4 })
   await page.evaluate((HIDE) => {
-    const s = window.syn3h, g = s.game, r = g.renderer
+    const s = window.mira, g = s.game, r = g.renderer
     s.params.set('bots.count', 0); s.params.set('sun.dayLength', 0); s.params.set('sun.timeOfDay', 12)
     s.bots.daydream?.setBlocker?.(() => true); s.shell.closeMenu?.()
     g.quality.frame = () => {}
@@ -43,14 +43,14 @@ try {
   }, hide)
   const median = (a) => { const b = [...a].sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : NaN }
   const sample = async (on) => {
-    await page.evaluate((on) => { window.__cost.on = on; if (!on) window.syn3h.materialize.cancel(window.syn3h.player) }, on)
+    await page.evaluate((on) => { window.__cost.on = on; if (!on) window.mira.materialize.cancel(window.mira.player) }, on)
     await page.waitForTimeout(1500)
     await page.evaluate(() => { window.__cost.cpu = []; window.__cost.gpu = [] })
     await page.waitForTimeout(4000)
     return page.evaluate(() => ({ cpu: window.__cost.cpu, gpu: window.__cost.gpu }))
   }
   for (const level of levels) {
-    await page.evaluate((level) => window.syn3h.params.set('gfx.level', level), level)
+    await page.evaluate((level) => window.mira.params.set('gfx.level', level), level)
     await page.waitForTimeout(3000)
     const off = { cpu: [], gpu: [] }, on = { cpu: [], gpu: [] }
     // Alternate off and on three times to cancel drift.

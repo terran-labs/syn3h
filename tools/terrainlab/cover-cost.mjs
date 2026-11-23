@@ -24,16 +24,16 @@ page.on('pageerror', (e) => errors.push(e.message))
 const rows = []
 for (const world of worlds) {
   await page.goto(`${base}?autoplay=1&world=${world}&room=cost${Date.now().toString(36)}${gfx}`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 90, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 90, null, { timeout: 90000 })
   await page.evaluate(() => {
-    const s = window.syn3h, t = s.terrain, pad = t.data.layout.spawns[2]
+    const s = window.mira, t = s.terrain, pad = t.data.layout.spawns[2]
     s.params.set('daydream.seconds', 0)
     const x = pad.x - pad.dirZ * 45, z = pad.z + pad.dirX * 45
     s.player.body.setTranslation({ x, y: t.heightAt(x, z) + 1.2, z }, true)
     s.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
   })
   for (const cover of [1, 0]) {
-    await page.evaluate((c) => window.syn3h.params.set('terrain.groundCover', c), cover)
+    await page.evaluate((c) => window.mira.params.set('terrain.groundCover', c), cover)
     await page.waitForTimeout(2500)
     const r = await page.evaluate(() => new Promise((done) => {
       const times = []
@@ -44,7 +44,7 @@ for (const world of worlds) {
         if (times.length < 240) requestAnimationFrame(step)
         else {
           times.sort((a, b) => a - b)
-          const i = window.syn3h.game.renderer.info.render
+          const i = window.mira.game.renderer.info.render
           done({ median: times[120], p95: times[228], draws: i.drawCalls, tris: i.triangles })
         }
       }

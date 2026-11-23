@@ -1,11 +1,11 @@
 # Optional shot evidence in network smoke
 
-`SYN3H_SHOT_EVIDENCE_DIR` explicitly enables the additional collector. Unset preserves the original smoke checks, values, waits and output. Set it to a fresh absolute external directory whose parent exists. Empty, relative or existing paths fail before browser launch. The directory is exclusively created; evidence is written to `shot-evidence.json`.
+`MIRA_SHOT_EVIDENCE_DIR` explicitly enables the additional collector. Unset preserves the original smoke checks, values, waits and output. Set it to a fresh absolute external directory whose parent exists. Empty, relative or existing paths fail before browser launch. The directory is exclusively created; evidence is written to `shot-evidence.json`.
 
 Example opt-in invocation, only under an allocated bounded runtime slot:
 
 ```sh
-SYN3H_SHOT_EVIDENCE_DIR=/tmp/syn3h-shot-run-001 node tools/net-smoke.mjs https://mira.cc/
+MIRA_SHOT_EVIDENCE_DIR=/tmp/syn3h-shot-run-001 node tools/net-smoke.mjs https://mira.cc/
 ```
 
 Use the existing reviewed supervisor for runtime and observed-process cleanup. This option does not launch a server, retry a failure or deploy anything.

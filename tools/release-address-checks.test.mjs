@@ -18,7 +18,7 @@ const block = release.slice(start, end)
 
 /** answers: host -> { navigate, fetch, ws } as curl's -w output for that kind of request. */
 function run(answers) {
-  const dir = mkdtempSync(join(tmpdir(), 'syn3h-address-checks-'))
+  const dir = mkdtempSync(join(tmpdir(), 'mira-address-checks-'))
   try {
     writeFileSync(join(dir, 'answers.json'), JSON.stringify(answers))
     writeFileSync(join(dir, 'curl'), `#!/usr/bin/env node

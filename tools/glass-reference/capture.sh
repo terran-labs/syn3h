@@ -28,7 +28,7 @@ for file in "$images"/*.png; do
     for state in bare rest repeat; do
       set --
       if [ "$state" = bare ]; then set -- -bare; fi
-      xcrun simctl launch --terminate-running-process "$device" dev.syn3h.GlassTrial -background "$name" -variant "$material" -theme "$theme" "$@"
+      xcrun simctl launch --terminate-running-process "$device" dev.mira.GlassTrial -background "$name" -variant "$material" -theme "$theme" "$@"
       sleep 1.2
       xcrun simctl io "$device" screenshot "$output/full.png"
       width=$((328 * scale))

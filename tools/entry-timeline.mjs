@@ -17,7 +17,7 @@
  *
  * Uses the room server Vite starts. Prints one table per run; nothing is written to disk.
  * Long frames are attributed from Long Animation Frame entries (scripts that ran in them),
- * `syn3h:` user-timing measures overlapping them and, with --profile, the heaviest stacks.
+ * `mira:` user-timing measures overlapping them and, with --profile, the heaviest stacks.
  */
 import { chromium } from 'playwright-core'
 import { loadavg } from 'node:os'
@@ -36,18 +36,18 @@ function install() {
   const rec = window.__timeline = { frames: [], loaf: [], drivable: 0, settled: 0 }
   let last = 0
   const tick = now => {
-    if (last) { const g = window.syn3h.game, m = g.performance, c = g.renderer.domElement; rec.frames.push({ at: last, ms: now - last, draws: m.drawCalls, tris: m.triangles, size: `${c.width}x${c.height}`, pr: g.renderer.getPixelRatio?.(), fresh: m.pipelinesFresh, live: m.pipelinesLive }) }
+    if (last) { const g = window.mira.game, m = g.performance, c = g.renderer.domElement; rec.frames.push({ at: last, ms: now - last, draws: m.drawCalls, tris: m.triangles, size: `${c.width}x${c.height}`, pr: g.renderer.getPixelRatio?.(), fresh: m.pipelinesFresh, live: m.pipelinesLive }) }
     last = now
-    if (!rec.drivable && rec.clicked && window.syn3h.shell.playing) rec.drivable = now
+    if (!rec.drivable && rec.clicked && window.mira.shell.playing) rec.drivable = now
     // Post-processing rebuilds (new passes, targets and pipelines) are worth naming.
-    const chain = window.syn3h.game.postChain
+    const chain = window.mira.game.postChain
     if (chain && chain.builds !== rec.postBuilds) { if (rec.postBuilds !== undefined) (rec.postChanges ??= []).push({ at: now, tier: chain.tier }); rec.postBuilds = chain.builds }
     requestAnimationFrame(tick)
   }
   requestAnimationFrame(tick)
   // Which materials the renderer builds (node graph to shader) and when: the slow part of a
   // first draw. Wraps the renderer's own node manager for this page only.
-  const nodes = window.syn3h.game.renderer._nodes
+  const nodes = window.mira.game.renderer._nodes
   rec.builds = []
   for (const name of ['getForRender']) {
     const original = nodes[name].bind(nodes)
@@ -58,7 +58,7 @@ function install() {
         const o = renderObject.object, m = renderObject.material; let p = o, path = []; while (p && path.length < 4) { if (p.name) path.push(p.name); p = p.parent }
         // A bot's own build (its vehicle, or one leaving): arrivals are judged on these, not on
         // world content first drawn in the same seconds.
-        const bots = window.syn3h.bots, own = new Set([...(bots?.vehicles ?? []), ...(bots?.leaving?.keys?.() ?? [])].map(v => v.object))
+        const bots = window.mira.bots, own = new Set([...(bots?.vehicles ?? []), ...(bots?.leaving?.keys?.() ?? [])].map(v => v.object))
         let q = o, bot = false; while (q) { if (own.has(q)) { bot = true; break } q = q.parent }
         rec.builds.push({ at: t, ms, bot, what: `${m.type}${m.name ? ` "${m.name}"` : ''} on ${o.type}${path.length ? ` ${path.join('<')}` : ''}` })
       }
@@ -76,7 +76,7 @@ function install() {
 /** A named function the profile can find, to align its clock with performance.now(). */
 function anchor() {
   // eslint-disable-next-line no-unused-vars
-  return (function syn3hProfileAnchor() { const start = performance.now(); let x = 0; while (performance.now() - start < 6) x += Math.sqrt(x + 1); return start })()
+  return (function miraProfileAnchor() { const start = performance.now(); let x = 0; while (performance.now() - start < 6) x += Math.sqrt(x + 1); return start })()
 }
 
 const summarise = (frames, from, to) => {
@@ -122,7 +122,7 @@ async function run(index) {
     ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true }
     : { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 })
   const level = opt('level', null)
-  if (level !== null) await context.addInitScript(q => { try { localStorage.setItem('syn3h.quality.v2', JSON.stringify({ level: q, auto: false, pinned: true, overrides: {} })) } catch {} }, Number(level))
+  if (level !== null) await context.addInitScript(q => { try { localStorage.setItem('mira.quality.v2', JSON.stringify({ level: q, auto: false, pinned: true, overrides: {} })) } catch {} }, Number(level))
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', e => errors.push(String(e)))
@@ -134,13 +134,13 @@ async function run(index) {
   const cdp = await context.newCDPSession(page)
   const room = `entry-${Date.now()}-${index}`
   await page.goto(`${url}${url.includes('?') ? '&' : '?'}room=${room}`, { waitUntil: 'load', timeout: 180000 })
-  await page.waitForFunction(() => window.syn3h?.shell && document.documentElement.dataset.boot !== 'loading' && window.syn3h.shell.galaxy?.live, null, { timeout: 180000, polling: 100 })
+  await page.waitForFunction(() => window.mira?.shell && document.documentElement.dataset.boot !== 'loading' && window.mira.shell.galaxy?.live, null, { timeout: 180000, polling: 100 })
   await page.waitForTimeout(4000)
   const info = await page.evaluate(async () => {
     const adapter = await navigator.gpu?.requestAdapter?.().catch(() => null)
-    const current = window.syn3h.planets.currentPlanet().id
-    return { backend: window.syn3h.game.backend, adapter: adapter ? `${adapter.info?.vendor} ${adapter.info?.architecture} ${adapter.info?.description ?? ''}`.trim() : 'none', current,
-      worlds: [...document.querySelectorAll('.galaxy-label[data-world]')].map(c => c.dataset.world), quality: window.syn3h.game.quality?.getPerformanceSnapshot?.()?.level }
+    const current = window.mira.planets.currentPlanet().id
+    return { backend: window.mira.game.backend, adapter: adapter ? `${adapter.info?.vendor} ${adapter.info?.architecture} ${adapter.info?.description ?? ''}`.trim() : 'none', current,
+      worlds: [...document.querySelectorAll('.galaxy-label[data-world]')].map(c => c.dataset.world), quality: window.mira.game.quality?.getPerformanceSnapshot?.()?.level }
   })
   const target = opt('planet', info.worlds.find(w => w !== info.current && w !== 'custom' && !w.includes('~')))
   if (cpu > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu })
@@ -159,14 +159,14 @@ async function run(index) {
   await page.waitForTimeout(AFTER_DRIVE_MS)
   phase = 'exit'
   // Leaving: "Leave world", confirmed.
-  const left = await page.evaluate(() => { const r = window.__timeline, shell = window.syn3h.shell; r.left = performance.now(); shell.askExit(); shell.answerExit(true); return r.left })
-  const settled = await page.waitForFunction(() => !window.syn3h.shell.dropping && !window.syn3h.shell.playing, null, { timeout: 30000, polling: 50 }).then(() => page.evaluate(() => performance.now())).catch(() => NaN)
+  const left = await page.evaluate(() => { const r = window.__timeline, shell = window.mira.shell; r.left = performance.now(); shell.askExit(); shell.answerExit(true); return r.left })
+  const settled = await page.waitForFunction(() => !window.mira.shell.dropping && !window.mira.shell.playing, null, { timeout: 30000, polling: 50 }).then(() => page.evaluate(() => performance.now())).catch(() => NaN)
   await page.waitForTimeout(AFTER_EXIT_MS)
   const rec = await page.evaluate(() => {
     const r = window.__timeline
-    r.measures = performance.getEntriesByType('measure').filter(m => m.name.startsWith('syn3h:') && m.startTime >= r.clicked - 10).map(m => ({ name: m.name, start: m.startTime, duration: m.duration }))
-    r.stats = { bots: window.syn3h.bots.vehicles.length, backend: window.syn3h.game.backend }
-    r.pacing = (window.syn3h.bots.pacer?.log ?? []).filter(l => l.at >= r.clicked)
+    r.measures = performance.getEntriesByType('measure').filter(m => m.name.startsWith('mira:') && m.startTime >= r.clicked - 10).map(m => ({ name: m.name, start: m.startTime, duration: m.duration }))
+    r.stats = { bots: window.mira.bots.vehicles.length, backend: window.mira.game.backend }
+    r.pacing = (window.mira.bots.pacer?.log ?? []).filter(l => l.at >= r.clicked)
     return r
   })
   let index2 = null
@@ -174,7 +174,7 @@ async function run(index) {
     const { profile: prof } = await cdp.send('Profiler.stop')
     const byId = new Map(prof.nodes.map(n => [n.id, n]))
     let t = prof.startTime, hit = -1
-    for (let i = 0; i < prof.samples.length; i++) { t += prof.timeDeltas[i]; if (byId.get(prof.samples[i]).callFrame.functionName === 'syn3hProfileAnchor') { hit = t; break } }
+    for (let i = 0; i < prof.samples.length; i++) { t += prof.timeDeltas[i]; if (byId.get(prof.samples[i]).callFrame.functionName === 'miraProfileAnchor') { hit = t; break } }
     if (hit >= 0) { offset = anchorAt - hit / 1000; index2 = profileIndex(prof, offset) } else console.log('profile anchor not found: no stacks')
   }
   await context.close()

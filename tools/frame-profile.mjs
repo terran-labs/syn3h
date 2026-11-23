@@ -7,6 +7,7 @@
  * Otherwise host load is recorded and paired measurements run immediately.
  * CPU submission time, GPU timestamp time and RAF interval are separate measurements.
  */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { loadavg } from 'node:os'
 import { execFileSync } from 'node:child_process'
@@ -17,7 +18,7 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 while(loadavg()[0]>=3&&process.env.PROFILER_WAIT_QUIET==='1'){console.log('Waiting for quiet host',loadavg());await sleep(30000)}
 const startLoad=loadavg(), results=[]
 if(process.argv[5]!=='probe'&&process.env.PROFILER_WAIT_QUIET==='1'){
- const log=execFileSync('npx',['vitest','run','tests/world/terrain.test.ts','--maxWorkers=1'],{env:{...process.env,SYN3H_NO_ROOM_SERVER:'1'},encoding:'utf8'})
+ const log=execFileSync('npx',['vitest','run','tests/world/terrain.test.ts','--maxWorkers=1'],{env:{...process.env,MIRA_NO_ROOM_SERVER:'1'},encoding:'utf8'})
  await writeFile('/tmp/syn3h-quiet-terrain.log',log)
  console.log('Quiet terrain test complete',loadavg())
  while(loadavg()[0]>=3){console.log('Waiting after terrain check',loadavg());await sleep(30000)}
@@ -32,9 +33,9 @@ try {
    const page=await context.newPage(), errors=[]
    page.on('pageerror',e=>errors.push(e.message))
    page.on('console',m=>{if(m.type()==='error')errors.push(m.text())})
-   await page.goto(url);await page.waitForFunction(()=>window.syn3h?.game.tick>10,null,{timeout:90000})
+   await page.goto(url);await page.waitForFunction(()=>window.mira?.game.tick>10,null,{timeout:90000})
    const setup=await page.evaluate(async variant=>{
-    const s=window.syn3h,g=s.game,r=g.renderer;s.shell.play();s.bots.remote=false
+    const s=window.mira,g=s.game,r=g.renderer;s.shell.play();s.bots.remote=false
     s.params.set('gfx.level',2);s.params.set('bots.count',0);s.params.set('sun.dayLength',0)
     // Keep the requested quality throughout the experiment; no adaptive downgrade.
     g.quality.frame=()=>{};r.setPixelRatio(1)
@@ -67,11 +68,11 @@ try {
       const summit=s.terrain.summit(),x=summit.x+summit.rimRadius,z=summit.z
       s.player.teleport({x,y:s.terrain.heightAt(x,z)+2,z},Math.PI/2)
       if(variant==='koth4'||variant==='koth8')s.params.set('bots.count',Number(variant.slice(4)))
-      if(variant==='kothMarkerOff'){const hill=window.syn3hNet.hill;hill.setZone=()=>{};hill.group.visible=false}
+      if(variant==='kothMarkerOff'){const hill=window.miraNet.hill;hill.setZone=()=>{};hill.group.visible=false}
     }
     if(variant==='minimapOff'){s.shell.minimap.update=()=>{};s.shell.minimap.element.hidden=true}
     if(variant==='tags8'){
-      const tags=window.syn3hNet.tags, original=tags.update.bind(tags)
+      const tags=window.miraNet.tags, original=tags.update.bind(tags)
       const list=Array.from({length:8},(_,i)=>({vehicle:{object:{position:s.player.object.position.clone().add({x:(i-4)*3,y:0,z:-15})}},name:`Profile ${i}`,it:false}))
       tags.update=()=>original(list)
     }
@@ -81,7 +82,7 @@ try {
     if(variant.endsWith('Low'))s.params.set('gfx.level',1)
     if(variant.startsWith('fire8')){
       let n=0
-      setInterval(()=>{const net=window.syn3hNet;if(!net)return;for(let i=0;i<8;i++){const a=i/8*Math.PI*2+n*.3;net.fire([Math.cos(a)*.75,-.6,Math.sin(a)*.75])};if(++n%10===0)net.fire([0,-.45,-.9],undefined,'red')},250)
+      setInterval(()=>{const net=window.miraNet;if(!net)return;for(let i=0;i<8;i++){const a=i/8*Math.PI*2+n*.3;net.fire([Math.cos(a)*.75,-.6,Math.sin(a)*.75])};if(++n%10===0)net.fire([0,-.45,-.9],undefined,'red')},250)
     }
     // fireworks: Plasma Thunder's fireworks at the cap of six alive, by day (when the smoke is
     // drawn): a new burst every 0.75 s, 120 m along the camera's view so every one is on screen.
@@ -91,8 +92,8 @@ try {
       // A/B in one run: every second the fireworks are hidden or shown (camera layer), and each
       // sample says which, so a busy shared machine weighs on both halves alike.
       window.__fwOn=true
-      setInterval(()=>{const F=window.syn3hNet?.lasers?.fireworks;if(!F)return;window.__fwOn=!window.__fwOn;for(const k of ['stars','dayStars','smoke','flash'])F[k]?.mesh.layers.set(window.__fwOn?0:31);for(const g of F.glow?.slots??[])g.mesh.layers.set(window.__fwOn?0:31)},1000)
-      setInterval(()=>{const F=window.syn3hNet?.lasers?.fireworks;if(!F)return;const c=g.camera,d=c.getWorldDirection(c.position.clone()),at=c.position.clone().addScaledVector(d,120).add(d.clone().set(Math.sin(n)*25,Math.cos(n*1.3)*12,0));F.burst({at,climb:0,ground:-Infinity,colors:[{r:.9,g:.08,b:.05},{r:1,g:.75,b:.3}],seed:n++})},750)
+      setInterval(()=>{const F=window.miraNet?.lasers?.fireworks;if(!F)return;window.__fwOn=!window.__fwOn;for(const k of ['stars','dayStars','smoke','flash'])F[k]?.mesh.layers.set(window.__fwOn?0:31);for(const g of F.glow?.slots??[])g.mesh.layers.set(window.__fwOn?0:31)},1000)
+      setInterval(()=>{const F=window.miraNet?.lasers?.fireworks;if(!F)return;const c=g.camera,d=c.getWorldDirection(c.position.clone()),at=c.position.clone().addScaledVector(d,120).add(d.clone().set(Math.sin(n)*25,Math.cos(n*1.3)*12,0));F.burst({at,climb:0,ground:-Infinity,colors:[{r:.9,g:.08,b:.05},{r:1,g:.75,b:.3}],seed:n++})},750)
     }
     if(variant.startsWith('fwBaseline')){s.params.set('sun.dayLength',0);s.params.set('sun.timeOfDay',12)}
     if(variant==='domOff')for(const node of document.body.children)if(node.tagName!=='CANVAS'&&node.tagName!=='SCRIPT')node.style.display='none'

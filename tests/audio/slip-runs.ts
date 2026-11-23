@@ -10,7 +10,7 @@
  * wheel, in m/s, with the speed) and how much of the time each slip voice sounds.
  */
 import { initPhysics } from '../../src/core/physics'
-import * as buggy from '../vehicles/syn3hScenarios'
+import * as buggy from '../vehicles/miraScenarios'
 import { slipVoice, followSlide, LEGACY_SLIP } from '../../src/audio/Engine'
 import * as THREE from 'three/webgpu'
 

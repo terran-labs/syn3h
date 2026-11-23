@@ -2,14 +2,14 @@ import {beforeAll,expect,it} from 'vitest'
 import * as T from 'three/webgpu'
 import {initPhysics,FIXED_DT} from '../../src/core/physics'
 import {params} from '../../shared/params'
-import {Syn3hBuggy} from '../../src/vehicles/Syn3hBuggy'
+import {MiraBuggy} from '../../src/vehicles/MiraBuggy'
 import {registerVehicleDetail} from '../../src/vehicles/skins/mergeStatic'
 import {harness} from './harness'
 
 beforeAll(initPhysics)
 it('drops eight detail callbacks before removing their Rapier bodies in the same tick',()=>{
  const h=harness(),previous=params.get('gfx.level')!.value
- const vehicles=Array.from({length:8},(_,i)=>new Syn3hBuggy(h.game,h.terrain,new T.Vector3(i*6,2,0)))
+ const vehicles=Array.from({length:8},(_,i)=>new MiraBuggy(h.game,h.terrain,new T.Vector3(i*6,2,0)))
  let calls=0
  try{
   params.set('gfx.level',2)

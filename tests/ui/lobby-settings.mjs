@@ -2,14 +2,15 @@
 // on its side at the screen's full 844 by 390. Bugs caught: Settings not above Welcome; the card
 // opening as a full-screen sheet; glass nested inside the card; world-only settings in the lobby;
 // a control that does not reach its setting; focus lost on close.
-//   SYN3H_URL=http://127.0.0.1:5173/ node tests/ui/lobby-settings.mjs
+//   MIRA_URL=http://127.0.0.1:5173/ node tests/ui/lobby-settings.mjs
 // Screenshots go to tests/ui/artifacts/lobby-settings: the lobby, Sound open, and Graphics open.
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { openInTurn } from './lib/card-stack.mjs'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5173/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5173/'
 const out = 'tests/ui/artifacts/lobby-settings'
 await mkdir(out, { recursive: true })
 const overlaps = (a, b) => a.x < b.x + b.width - 1 && a.x + a.width > b.x + 1 && a.y < b.y + b.height - 1 && a.y + a.height > b.y + 1
@@ -23,7 +24,7 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     const page = await browser.newPage(IPAD[mode] ?? (mode === 'landscape' ? { ...devices['iPhone 14 landscape'], viewport: { width: 844, height: 390 } } : touch ? devices['iPhone 14'] : { viewport: { width: 1440, height: 900 } }))
     const errors = []; page.on('pageerror', (e) => errors.push(e.message))
     await page.goto(`${base}?room=lobby-settings-${mode}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     await page.waitForTimeout(2000)
     const tap = (locator) => touch ? locator.tap() : locator.click()
@@ -73,24 +74,24 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     // Glass: Style and Tint, and the Liquid style's tuning in one fold, closed at first, there only
     // at Liquid. Bug caught: Liquid's sliders shown at Frost or Flat, where they do nothing, or
     // missing at Liquid (the owner, 22 November 2026).
-    const glass = panel.locator('.wi-card[data-section=glass]'), style0 = await page.evaluate(() => window.syn3h.params.get('hud.glass').value)
+    const glass = panel.locator('.wi-card[data-section=glass]'), style0 = await page.evaluate(() => window.mira.params.get('hud.glass').value)
     await tap(glass.locator('.wi-head'))
     await glass.locator('.wi-row[data-id="hud.glass"]').waitFor({ state: 'visible' })
-    await page.evaluate(() => window.syn3h.params.set('hud.glass', 0)); await page.waitForTimeout(400)
+    await page.evaluate(() => window.mira.params.set('hud.glass', 0)); await page.waitForTimeout(400)
     const fold = glass.locator('details.lobby-liquid')
     assert.ok(await fold.isVisible(), `${mode}: Liquid glass is there at Liquid`)
     assert.equal(await fold.evaluate((d) => d.open), false, `${mode}: Liquid glass starts closed`)
     // Liquid's code (and most of its settings) loads once Liquid is chosen; then the fold opens.
-    await page.waitForFunction(() => window.syn3h.params.get('glass.thickness'), null, { timeout: 20000 })
+    await page.waitForFunction(() => window.mira.params.get('glass.thickness'), null, { timeout: 20000 })
     await tap(fold.locator('summary'))
-    const liquidIds = await page.evaluate(() => window.syn3h.params.all().filter((p) => ['Glass', 'Clear lens'].includes(p.def.group)).map((p) => p.def.id).sort())
+    const liquidIds = await page.evaluate(() => window.mira.params.all().filter((p) => ['Glass', 'Clear lens'].includes(p.def.group)).map((p) => p.def.id).sort())
     assert.ok(liquidIds.length > 0, `${mode}: the Glass and Clear lens settings are registered`)
     assert.deepEqual(await fold.locator('.wi-row').evaluateAll((rows) => rows.map((r) => r.dataset.id).sort()), liquidIds, `${mode}: Liquid glass holds the Glass and Clear lens settings`)
     await tap(fold.locator('summary'))
     assert.equal(await glass.locator(':scope > .wi-body > .wi-row').count(), 2, `${mode}: Style and Tint stand above the fold`)
-    await page.evaluate(() => window.syn3h.params.set('hud.glass', 1)); await page.waitForTimeout(500)
+    await page.evaluate(() => window.mira.params.set('hud.glass', 1)); await page.waitForTimeout(500)
     assert.ok(await fold.evaluate((d) => d.closest('.lobby-liquid-wrap').hidden && d.closest('.lobby-liquid-wrap').inert), `${mode}: at Frost Liquid glass is gone`)
-    await page.evaluate((v) => window.syn3h.params.set('hud.glass', v), style0); await page.waitForTimeout(400)
+    await page.evaluate((v) => window.mira.params.set('hud.glass', v), style0); await page.waitForTimeout(400)
     await tap(glass.locator('.wi-head'))
 
     // Sound: music and master volume and mute; the world's own sounds are not here.
@@ -100,10 +101,10 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     await sound.locator('.wi-row[data-id="audio.master"]').waitFor({ state: 'visible' })
     for (const id of ['audio.effects', 'audio.engine', 'audio.wind']) assert.equal(await sound.locator(`.wi-row[data-id="${id}"]`).count(), 0, `${mode}: ${id} is a world sound, not here`)
     // Moving the music slider sets the parameter.
-    const before = await page.evaluate(() => window.syn3h.params.get('audio.music').value)
+    const before = await page.evaluate(() => window.mira.params.get('audio.music').value)
     const target = before > 0.5 ? 0.3 : 0.6
     await sound.locator('.wi-row[data-id="audio.music"] input[type=range]').evaluate((input, value) => { input.value = String(value); input.dispatchEvent(new Event('input', { bubbles: true })) }, target)
-    assert.equal(await page.evaluate(() => window.syn3h.params.get('audio.music').value), target, `${mode}: music volume follows the slider`)
+    assert.equal(await page.evaluate(() => window.mira.params.get('audio.music').value), target, `${mode}: music volume follows the slider`)
     // Every volume reads as a percentage, like the card's summary.
     for (const id of ['audio.music', 'audio.master']) assert.match(await sound.locator(`.wi-row[data-id="${id}"] .wi-num`).textContent(), /^\d+%$/, `${mode}: ${id} as a percentage`)
     assert.equal(await sound.locator('.wi-row[data-id="audio.music"] .wi-num').textContent(), `${Math.round(target * 100)}%`)
@@ -122,16 +123,16 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     // Mute is the standard switch: role and aria-checked agree with the setting, Space and
     // Enter toggle it, and its label text toggles it too.
     const mute = sound.getByRole('switch', { name: 'Mute audio' })
-    const muted = () => page.evaluate(() => window.syn3h.params.get('audio.muted').value)
+    const muted = () => page.evaluate(() => window.mira.params.get('audio.muted').value)
     const wasMuted = await muted()
     assert.equal(await mute.getAttribute('aria-checked'), String(wasMuted), `${mode}: mute aria-checked`)
     await mute.focus(); await page.keyboard.press('Space')
     assert.equal(await muted(), !wasMuted, `${mode}: Space toggles`); assert.equal(await mute.getAttribute('aria-checked'), String(!wasMuted))
     await page.keyboard.press('Enter')
     assert.equal(await muted(), wasMuted, `${mode}: Enter toggles`); assert.equal(await mute.getAttribute('aria-checked'), String(wasMuted))
-    if (!touch) { await sound.locator('.wi-row[data-id="audio.muted"] .wi-label').click(); assert.equal(await muted(), !wasMuted, `${mode}: the label toggles`); await page.evaluate((v) => window.syn3h.params.set('audio.muted', v), wasMuted) }
+    if (!touch) { await sound.locator('.wi-row[data-id="audio.muted"] .wi-label').click(); assert.equal(await muted(), !wasMuted, `${mode}: the label toggles`); await page.evaluate((v) => window.mira.params.set('audio.muted', v), wasMuted) }
     assert.ok((await sound.locator('.wi-row[data-id="audio.muted"] .wi-hit').boundingBox()).height >= 44 - .5, `${mode}: the switch is a 44 px target`)
-    await page.evaluate((value) => window.syn3h.params.set('audio.music', value), before)
+    await page.evaluate((value) => window.mira.params.set('audio.music', value), before)
 
     // Graphics: the in-game quality stepper steps down and back up.
     await tap(sound.locator('.wi-head'))
@@ -140,7 +141,7 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     await graphics.locator('[data-quality=down]').waitFor({ state: 'visible' })
     assert.equal(await graphics.locator('.performance-diagnostics').count(), 0, `${mode}: no frame diagnostics in the lobby`)
     assert.equal(await graphics.locator('.wi-fine').isVisible(), false, `${mode}: no world graphics detail in the lobby`)
-    const level = () => page.evaluate(() => window.syn3h.game.quality.getQualityState().level)
+    const level = () => page.evaluate(() => window.mira.game.quality.getQualityState().level)
     const start = await level()
     const down = graphics.locator('[data-quality=down]'), up = graphics.locator('[data-quality=up]')
     if (await down.isDisabled()) { await tap(up); assert.equal(await level(), start + 1, `${mode}: steps up`); await tap(down); assert.equal(await level(), start, `${mode}: steps down`) }
@@ -152,7 +153,7 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     await page.screenshot({ path: `${out}/${mode}-graphics.png` })
     // Auto quality is a switch of its own, apart from the stepper, saying on or off beside it.
     const auto = graphics.getByRole('switch', { name: 'Auto quality' })
-    const autoOn = () => page.evaluate(() => window.syn3h.game.quality.getQualityState().auto)
+    const autoOn = () => page.evaluate(() => window.mira.game.quality.getQualityState().auto)
     const autoBefore = await autoOn()
     assert.equal(await auto.getAttribute('aria-checked'), String(autoBefore), `${mode}: Auto aria-checked`)
     assert.equal((await graphics.locator('.wi-auto .s3-switch-word').textContent()).trim(), autoBefore ? 'on' : 'off')
@@ -167,7 +168,7 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     await tap(panel.locator('.wi-card[data-section=play] .wi-head'))
     const play = panel.getByRole('switch', { name: 'Bots may play with me' })
     await play.waitFor({ state: 'visible' })
-    const playing = () => page.evaluate(() => window.syn3h.params.get('bots.playWithMe').value)
+    const playing = () => page.evaluate(() => window.mira.params.get('bots.playWithMe').value)
     const wasPlaying = await playing()
     await play.focus(); await page.keyboard.press('Space')
     assert.equal(await playing(), !wasPlaying, `${mode}: the switch sets bots.playWithMe`)
@@ -195,7 +196,7 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
         const fit = await page.evaluate(() => {
           const card = document.querySelector('#lobby-settings').getBoundingClientRect(), dock = document.querySelector('.lobby-gear-dock').getBoundingClientRect()
           const gear = document.querySelector('.lobby-gear-dock .lobby-gear').getBoundingClientRect(), welcome = document.querySelector('.lobby-gear-dock .lobby-about').getBoundingClientRect()
-          const mark = window.syn3h.shell.galaxy?.wordmarkScreenBox?.() ?? null
+          const mark = window.mira.shell.galaxy?.wordmarkScreenBox?.() ?? null
           return { card: card.toJSON(), dock: dock.toJSON(), gear: gear.toJSON(), welcome: welcome.toJSON(), mark }
         })
         // It grows out of Settings (the owner, 23 November 2026): its lower edge is the button, and

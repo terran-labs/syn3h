@@ -26,7 +26,7 @@
 export const SHOTS = Object.freeze([
   {
     id: 'lobby', kind: 'still', hud: 'lobby', seed: 7, reference: null,
-    title: 'The galaxy lobby: the Syn3h wordmark and the planets on their orbits',
+    title: 'The galaxy lobby: the Mira wordmark and the planets on their orbits',
     staging: 'None: the lobby as it opens.',
   },
   {

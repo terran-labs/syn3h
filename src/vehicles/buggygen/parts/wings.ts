@@ -3,7 +3,7 @@ import { Mesh, type V3 } from './kit'
 
 /**
  * The flight wings: a broad swept planform, nearly flat, that LoadedBuggySkin scales open and
- * flexes vertex by vertex (wingVertexSyn3h) and draws as a force field. Each half is a low
+ * flexes vertex by vertex (wingVertexMira) and draws as a force field. Each half is a low
  * faceted roof: a bevelled rim rising a few centimetres from the outline, then two roof
  * planes meeting along a ridge that runs from the root out toward the tip, with a spine down
  * the centre line ahead of it. Top surface only; the force field draws both sides.

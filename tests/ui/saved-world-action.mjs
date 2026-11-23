@@ -9,7 +9,7 @@ try {
     const { Inspector } = await import('/src/ui/inspector/Inspector.ts')
     const { defineParam } = await import('/shared/params.ts')
     defineParam({ id:'test.saved', group:'World', label:'Saved fixture', scope:'world', default:1, min:0, max:2 })
-    window.syn3hNet = { canEditWorld:false }
+    window.miraNet = { canEditWorld:false }
     let saves = 0
     const options = { summary:()=>'', vehicles:()=>({options:[],current:''}), onVehicle:()=>{} }
     const plain = new Inspector(document.body, options)

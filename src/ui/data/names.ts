@@ -1,6 +1,6 @@
 /**
  * Generated names for people, bots and worlds. New browser-edition vocabulary, not recovered
- * Syn3h names. Keep edits here.
+ * Mira names. Keep edits here.
  *
  * A given name is built from parts in one of several shapes, so names differ in length and
  * rhythm: a head and a tail ("Zibwick", "Quilara"), two or three spoken syllables ("Tobelin",

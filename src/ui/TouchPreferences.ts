@@ -9,7 +9,7 @@ export const touchLeftHanded = defineParam({
   id: 'touch.leftHanded', label: 'Left-handed touch: drive on the right', group: 'Input', scope: 'client', default: false,
 })
 
-const KEY = 'syn3h.touch.leftHanded'
+const KEY = 'mira.touch.leftHanded'
 /** Restore the saved hand, then keep saving it whenever it changes. Returns the unsubscribe. */
 export function persistHandedness(): () => void {
   try { const saved = localStorage.getItem(KEY); if (saved !== null) params.set(touchLeftHanded.def.id, saved === '1') } catch { /* Storage is optional. */ }

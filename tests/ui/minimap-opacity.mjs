@@ -8,11 +8,12 @@
 // White and black are the brightest and darkest scenes there can be. The vehicle is parked,
 // so the map does not change between the paired captures.
 //
-//   node tests/ui/minimap-opacity.mjs        (game on SYN3H_URL)
+//   node tests/ui/minimap-opacity.mjs        (game on MIRA_URL)
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5198/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5198/'
 const FLOOR = 0.8
 await mkdir('tests/ui/artifacts/minimap', { recursive: true })
 const report = {}
@@ -31,7 +32,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'i
       return Array.from(context.getImageData(0, 0, bitmap.width, bitmap.height).data)
     }, buffer.toString('base64'))
     await page.goto(`${base}?autoplay=1&room=minimap-${mode}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 60, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 60, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     await page.waitForTimeout(2500) // the vehicle settles on its pad
     const box = await page.locator('.shell-minimap').boundingBox()
@@ -62,7 +63,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'i
     if (!touch) {
       // Cursor captured: the map must not fade below the floor in the focus display either.
       await page.mouse.click(600, 420)
-      await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-focus'), null, { timeout: 5000 })
+      await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-focus'), null, { timeout: 5000 })
       await page.waitForTimeout(600)
       result.focus = await measure('focus')
     }

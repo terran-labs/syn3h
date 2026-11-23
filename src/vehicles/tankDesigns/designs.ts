@@ -1,5 +1,5 @@
 /**
- * Design studies for a next-gen Syn3h tank, round four. Syn3h never had one; the only tank is
+ * Design studies for a next-gen Mira tank, round four. Mira never had one; the only tank is
  * the Mars Explorer port in ../Tank.ts. Appearance only: no physics reads these.
  *
  * Owner's brief so far (14 November):

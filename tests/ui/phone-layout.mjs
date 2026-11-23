@@ -15,6 +15,7 @@
  * It then plays a guest's first run on a slow phone: see the section near the end. That part
  * joins a room, so it needs the lane room server as well as the dev server on 5187.
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, devices, webkit } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { thumbGrid } from './thumbGrid.mjs'
@@ -22,7 +23,7 @@ import { thumbGrid } from './thumbGrid.mjs'
 const label = process.argv[2] ?? 'run'
 const strict = !process.argv.includes('--record')
 const out = 'tests/ui/artifacts/phone-layout'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5187/'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const report = { label, states: [], errors: [] }
@@ -34,7 +35,7 @@ const koth = extra => ({ mode: 'koth', holderName: null, holderIsYou: false, con
 
 /** Rectangles of everything that must stay apart, and the pairs that touch. */
 const measure = page => page.evaluate(() => {
-  const s = window.syn3h, cam = s.game.camera, p = s.player.body.translation()
+  const s = window.mira, cam = s.game.camera, p = s.player.body.translation()
   const at = (dx, dy, dz) => { const v = cam.position.clone().set(p.x + dx, p.y + dy, p.z + dz).project(cam); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight] }
   const pts = [-1.4, 1.4].flatMap(x => [-0.8, 1.2].flatMap(y => [-1.4, 1.4].map(z => at(x, y, z))))
   const boxes = [{ name: 'vehicle', group: 'vehicle', left: Math.min(...pts.map(q => q[0])), right: Math.max(...pts.map(q => q[0])), top: Math.min(...pts.map(q => q[1])), bottom: Math.max(...pts.map(q => q[1])) }]
@@ -74,17 +75,17 @@ for (const view of layouts) {
     page.on('pageerror', e => report.errors.push(`${view.name} ${vehicle}: ${e.message}`))
     page.on('console', m => { if (m.type() === 'error') report.errors.push(`${view.name} ${vehicle}: ${m.text()}`) })
     await page.goto(`${base}?room=phone-${label}-${view.name}-${vehicle}&vehicle=${vehicle}`, { waitUntil: 'load' })
-    await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game?.tick > 25, null, { timeout: 120000 })
     // No daydream: this measures the layout, and the idle autopilot taking the wheel part way
     // through moved the vehicle (and the camera) under the stick hint, by timing and load.
-    await page.evaluate(() => window.syn3h.params.set('daydream.seconds', 0))
+    await page.evaluate(() => window.mira.params.set('daydream.seconds', 0))
     const shot = async (state, inGame = true) => {
       await page.screenshot({ path: `${out}/${label}-${view.name}-${vehicle}-${state}.png` })
       const m = inGame ? { ...await measure(page), grid: await page.evaluate(thumbGrid) } : { overlaps: [], offscreen: [], grid: [] }
       report.states.push({ view: view.name, vehicle, state, overlaps: m.overlaps, offscreen: m.offscreen, grid: m.grid, boxes: m.boxes })
     }
     const panel = async id => {
-      await page.evaluate(id => window.syn3h.shell.showPanel(id), id)
+      await page.evaluate(id => window.mira.shell.showPanel(id), id)
       await page.waitForFunction(id => { const p = document.querySelector('.lobby-panels'); return p.dataset.activePanel === id && p.dataset.busy === 'false' }, id)
       await page.waitForTimeout(300)
     }
@@ -95,8 +96,8 @@ for (const view of layouts) {
       await panel('index'); await shot('lobby', false)
     }
     // Fixtures stand in for the room server so every state is the same on every run.
-    await page.evaluate(() => { const s = window.syn3h.shell; s.onPlay = () => {}; s.play() })
-    await page.evaluate(lines => window.syn3h.shell.setStatus(lines), status(['Gevotek Spare Pilot joined']))
+    await page.evaluate(() => { const s = window.mira.shell; s.onPlay = () => {}; s.play() })
+    await page.evaluate(lines => window.mira.shell.setStatus(lines), status(['Gevotek Spare Pilot joined']))
     await page.waitForTimeout(1200)
     await shot('game')                                   // controls card and a toast on screen
     // Last of the measured states, so it cannot shift the others: on its roof and still, Flip
@@ -104,9 +105,9 @@ for (const view of layouts) {
     // keeps its place and heading, is held still (kinematic) through the measurement, with a
     // moment for the camera to settle, then is put back exactly as it was.
     const flipState = async () => {
-      const pose = await page.evaluate(() => { const v = window.syn3h.player, t = v.body.translation(), q = v.body.rotation(); return { t: { x: t.x, y: t.y, z: t.z }, q: { x: q.x, y: q.y, z: q.z, w: q.w } } })
+      const pose = await page.evaluate(() => { const v = window.mira.player, t = v.body.translation(), q = v.body.rotation(); return { t: { x: t.x, y: t.y, z: t.z }, q: { x: q.x, y: q.y, z: q.z, w: q.w } } })
       await page.evaluate(({ t, q }) => {
-        const v = window.syn3h.player, b = v.body
+        const v = window.mira.player, b = v.body
         // Rolled over about its own nose: the heading, and so the camera, stay as they were.
         const roll = { x: 0, y: 0, z: 1, w: 0 }
         const r = { w: q.w * roll.w - q.x * roll.x - q.y * roll.y - q.z * roll.z, x: q.w * roll.x + q.x * roll.w + q.y * roll.z - q.z * roll.y, y: q.w * roll.y - q.x * roll.z + q.y * roll.w + q.z * roll.x, z: q.w * roll.z + q.x * roll.y - q.y * roll.x + q.z * roll.w }
@@ -119,25 +120,25 @@ for (const view of layouts) {
       await page.waitForTimeout(1200); await shot('flip-offered')
       // The tap on FLIP is the player's activity: the idle autopilot's clock starts again.
       await page.evaluate(({ t, q }) => {
-        const v = window.syn3h.player, b = v.body
+        const v = window.mira.player, b = v.body
         b.setBodyType(0, true); b.setTranslation(t, true); b.setRotation(q, true); b.setLinvel({ x: 0, y: 0, z: 0 }, true); b.setAngvel({ x: 0, y: 0, z: 0 }, true)
-        window.syn3h.bots.daydream?.noteActivity()
+        window.mira.bots.daydream?.noteActivity()
       }, pose)
     }
     await page.waitForTimeout(5500)
-    await page.evaluate(m => window.syn3h.shell.setMatchState(m), koth({ holderName: 'Phone QA', holderIsYou: true }))
+    await page.evaluate(m => window.mira.shell.setMatchState(m), koth({ holderName: 'Phone QA', holderIsYou: true }))
     await page.waitForTimeout(400); await shot('hill-announce')
     await page.waitForTimeout(3200); await shot('hill-held')
     if (vehicle !== 'buggy') await flipState()
     if (vehicle === 'buggy') {
-      await page.evaluate(m => window.syn3h.shell.setMatchState(m), koth({ holderName: 'Phone QA', holderIsYou: true, contested: true }))
+      await page.evaluate(m => window.mira.shell.setMatchState(m), koth({ holderName: 'Phone QA', holderIsYou: true, contested: true }))
       await page.waitForTimeout(3200); await shot('hill-contested')
-      await page.evaluate(m => window.syn3h.shell.setMatchState(m), koth({ holderName: 'Phone QA', holderIsYou: true, winner: 'Phone QA', winnerColor: '#ff8844', nextRoundIn: 6 }))
+      await page.evaluate(m => window.mira.shell.setMatchState(m), koth({ holderName: 'Phone QA', holderIsYou: true, winner: 'Phone QA', winnerColor: '#ff8844', nextRoundIn: 6 }))
       await page.waitForTimeout(600); await shot('hill-winner')
       await flipState()
-      await page.evaluate(() => window.syn3h.shell.openJoin()); await page.waitForTimeout(500); await shot('join-qr', false)
-      await page.evaluate(() => window.syn3h.shell.closeJoin())
-      await page.evaluate(() => window.syn3h.shell.openMenu()); await page.waitForTimeout(2300); await shot('menu', false)
+      await page.evaluate(() => window.mira.shell.openJoin()); await page.waitForTimeout(500); await shot('join-qr', false)
+      await page.evaluate(() => window.mira.shell.closeJoin())
+      await page.evaluate(() => window.mira.shell.openMenu()); await page.waitForTimeout(2300); await shot('menu', false)
     }
     await context.close()
   }
@@ -157,13 +158,13 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
   const started = Date.now()
   await page.goto(`${base}?room=guest-${label}-${view.name}-${started}&world=alpine.90210`, { waitUntil: 'commit' })
-  const usable = () => page.waitForFunction(() => window.syn3h?.shell && !document.querySelector('.syn3h-loading:not([hidden])') && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 180000 })
+  const usable = () => page.waitForFunction(() => window.mira?.shell && !document.querySelector('.mira-loading:not([hidden])') && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 180000 })
   await usable()
   const usableMs = Date.now() - started
   // Hold the graphics level: a slow headless browser would otherwise step it down and retire the galaxy.
-  await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
-  const g = () => page.evaluate(() => window.syn3h.shell.graphics)
-  const world = () => page.evaluate(() => ({ planet: window.syn3h.planets.currentPlanet().id, seed: window.syn3h.params.get('world.seed').value }))
+  await page.evaluate(() => { window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400) })
+  const g = () => page.evaluate(() => window.mira.shell.graphics)
+  const world = () => page.evaluate(() => ({ planet: window.mira.planets.currentPlanet().id, seed: window.mira.params.get('world.seed').value }))
   const settle = id => page.waitForFunction(id => { const p = document.querySelector('.lobby-panels'); return p.dataset.activePanel === id && p.dataset.busy === 'false' }, id, { timeout: 30000 })
   // Bugs caught: the page, a panel or a sheet can be pushed sideways by a finger (anything a
   // player can scroll is wider than its box), or a control a player needs, or text they read, is
@@ -203,9 +204,9 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   // While the maps are painted: the galaxy keeps drawing and a tap is answered.
   // The galaxy's frame rate while the maps are painted, measured on the open galaxy (behind a
   // panel it stops on purpose); then a tap must be answered promptly.
-  const f0 = await page.evaluate(() => window.syn3h.shell.galaxy?.frames ?? 0), s0 = Date.now()
+  const f0 = await page.evaluate(() => window.mira.shell.galaxy?.frames ?? 0), s0 = Date.now()
   await page.waitForTimeout(3000)
-  const starFrames = (await page.evaluate(() => window.syn3h.shell.galaxy?.frames ?? 0)) - f0
+  const starFrames = (await page.evaluate(() => window.mira.shell.galaxy?.frames ?? 0)) - f0
   const starFps = starFrames / ((Date.now() - s0) / 1000)
   const t0 = Date.now()
   // About is an icon above the settings gear and opens its own sheet (LobbySheet).
@@ -224,12 +225,12 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   await fits('about'); await page.keyboard.press('Escape'); await page.locator('dialog.lobby-sheet-about').waitFor({ state: 'hidden' })
   // (The Worlds panel's re-roll and the Custom planet's lock were checked here; neither can be
   // reached from the lobby while the custom planet is not offered.)
-  await page.evaluate(() => window.syn3h.shell.openJoin()); await page.waitForTimeout(600)
+  await page.evaluate(() => window.mira.shell.openJoin()); await page.waitForTimeout(600)
   const qr = await page.evaluate(() => { const r = document.querySelector('.join-view .invite-qr').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: innerHeight } })
   check(qr.top >= 0 && qr.bottom <= qr.height, `${view.name}: the QR code does not fit the screen (${Math.round(qr.top)} to ${Math.round(qr.bottom)} of ${qr.height})`)
-  await fits('join-qr'); await page.evaluate(() => window.syn3h.shell.closeJoin())
+  await fits('join-qr'); await page.evaluate(() => window.mira.shell.closeJoin())
   // On to driving: a tap on the world's label drops straight in.
-  await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle('index'); await fits('index')
+  await page.evaluate(() => window.mira.shell.showPanel('index')); await settle('index'); await fits('index')
   // The index is the galaxy: every world's label and the links are on the screen.
   await page.waitForTimeout(1500)
   // The closer default view lets the outer orbit run off the edges, and captions never move, so
@@ -240,7 +241,7 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
     const onScreen = p => p.visible && p.x >= 0 && p.x <= innerWidth && p.y >= 0 && p.y <= innerHeight
     for (const chip of document.querySelectorAll('.galaxy-label:not([hidden])')) {
       if (Number(getComputedStyle(chip).opacity) < 0.05) continue
-      const p = window.syn3h.shell.galaxy.screen.find(s => s.id === chip.dataset.world), r = chip.getBoundingClientRect()
+      const p = window.mira.shell.galaxy.screen.find(s => s.id === chip.dataset.world), r = chip.getBoundingClientRect()
       if (!p || !onScreen(p)) { if (r.right > 0 && r.left < innerWidth && r.bottom > 0 && r.top < innerHeight) faults.push(`${chip.dataset.world}: a caption on screen without its planet`); continue }
       const dx = r.left + r.width / 2 - (host.left + p.x), top = host.top + p.y + p.radius + gap
       if (Math.abs(dx) > 2) faults.push(`${chip.dataset.world}: caption ${dx.toFixed(1)} px off its planet's centre`)
@@ -252,23 +253,23 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   check(captions.length === 0, `${view.name}: in the galaxy: ${captions.join('; ')}`)
   // A tap on the world is the whole way in: no form between the galaxy and the ground.
   await page.locator('.galaxy-label[data-world=alpine]').dispatchEvent('click')
-  await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-playing') && window.syn3hNet?.connected, null, { timeout: 60000 })
+  await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-playing') && window.miraNet?.connected, null, { timeout: 60000 })
   await page.waitForTimeout(2500)
   const playing = await g(), driving = await world()
   check(!playing.galaxyLive, `${view.name}: lobby graphics contexts still live while playing: ${JSON.stringify(playing)}`)
   check(driving.planet === 'alpine' && driving.seed === 90210, `${view.name}: driving on ${driving.planet}.${driving.seed}`)
   await page.screenshot({ path: `${out}/${label}-guest-${view.name}-driving.png` })
   // Back in the menu the sky returns; a hidden tab stops it; the lowest graphics level holds it still.
-  await page.evaluate(() => window.syn3h.shell.openMenu()); await page.waitForTimeout(2500)
+  await page.evaluate(() => window.mira.shell.openMenu()); await page.waitForTimeout(2500)
   const menu = await g()
   // (The Custom planet's sliders were checked here; it is not offered: OFFER_CUSTOM_PLANET.)
-  await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle('index')
-  check(await page.evaluate(() => window.syn3h.shell.graphics.galaxyLive), `${view.name}: the galaxy did not come back with the menu`)
+  await page.evaluate(() => window.mira.shell.showPanel('index')); await settle('index')
+  check(await page.evaluate(() => window.mira.shell.graphics.galaxyLive), `${view.name}: the galaxy did not come back with the menu`)
   await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange')) })
-  const frames = () => page.evaluate(() => (window.syn3h.shell.galaxy?.frames ?? 0))
+  const frames = () => page.evaluate(() => (window.mira.shell.galaxy?.frames ?? 0))
   const hidden0 = await frames(); await page.waitForTimeout(1500); const hidden1 = await frames()
   check(hidden1 === hidden0, `${view.name}: the galaxy drew ${hidden1 - hidden0} frames in a hidden tab`)
-  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: false, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); clearInterval(window.__pin); window.syn3h.params.set('gfx.level', 0); window.syn3h.shell.showPanel('index') })
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: false, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); clearInterval(window.__pin); window.mira.params.set('gfx.level', 0); window.mira.shell.showPanel('index') })
   await settle('index'); await page.waitForTimeout(3000)
   // Held still, it comes to rest once the view has settled and the maps are in.
   let low0 = await g(), low1 = low0

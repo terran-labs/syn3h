@@ -15,7 +15,7 @@ import { Scene, Vector3 } from 'three/webgpu'
 import type { Game } from '../../src/core/Game'
 import { emptyInput } from '../../src/core/Input'
 import { createWorld, initPhysics } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { Hovercraft } from '../../src/vehicles/Hovercraft'
 import { Jet } from '../../src/vehicles/Jet'
 import type { Vehicle } from '../../src/vehicles/Vehicle'
@@ -63,7 +63,7 @@ function fleetDrive(worldKind: number, bots: number, seconds: number, seed = 'bu
       if (isSafeGround(terrain, x, z) && !vehicles.some(v => Math.hypot(v.body.translation().x - x, v.body.translation().z - z) < 5)) break
     }
     const at = new Vector3(x, terrain.heightAt(x, z) + 2, z), kind = FLEET[i % FLEET.length]
-    const v = kind === 'jet' ? new Jet(game, terrain, at, 0) : kind === 'hovercraft' ? new Hovercraft(game, terrain, at, 0) : new Syn3hBuggy(game, terrain, at, 0)
+    const v = kind === 'jet' ? new Jet(game, terrain, at, 0) : kind === 'hovercraft' ? new Hovercraft(game, terrain, at, 0) : new MiraBuggy(game, terrain, at, 0)
     v.isLocal = false; v.id = `bot-${i}`
     vehicles.push(v)
     minds.push(new Mind(v, terrain, createPilot(v, terrain)!, { seed: `${seed}:${i}`, navigator, places: () => sights, others: () => vehicles }))

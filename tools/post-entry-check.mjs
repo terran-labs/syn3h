@@ -15,16 +15,16 @@ try {
   if (process.argv.includes('--webgl')) url.searchParams.set('webgl', '1')
   // No post/cinematic/quality opt-ins. Enter through the ordinary lobby button.
   await page.goto(url.href, { timeout: 120000 })
-  await page.waitForFunction(() => window.syn3h?.shell?.galaxy?.live && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.shell?.galaxy?.live && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
   await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 90000 })
-  const target = await page.evaluate(() => window.syn3h.shell.galaxy.screen.find(s => s.id === window.syn3h.planets.currentPlanet().id))
+  const target = await page.evaluate(() => window.mira.shell.galaxy.screen.find(s => s.id === window.mira.planets.currentPlanet().id))
   assert.ok(target, 'current planet has a normal lobby target')
   await page.mouse.click(target.x, target.y)
-  await page.waitForFunction(() => window.syn3h?.shell?.playing && !window.syn3h.shell.dropping, null, { timeout: 120000 })
-  const enteredAt = await page.evaluate(() => window.syn3h.game.tick)
-  await page.waitForFunction(tick => window.syn3h.game.tick > tick + 120, enteredAt, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.shell?.playing && !window.mira.shell.dropping, null, { timeout: 120000 })
+  const enteredAt = await page.evaluate(() => window.mira.game.tick)
+  await page.waitForFunction(tick => window.mira.game.tick > tick + 120, enteredAt, { timeout: 120000 })
   const entry = await page.evaluate(() => {
-    const s = window.syn3h, g = s.game
+    const s = window.mira, g = s.game
     const ids = ['post.on','post.gi','post.clouds','post.temporal','light.bounce','light.shadowSoftness','light.shadowStrength','terrain.relief','terrain.detailNormal','terrain.surfaceResponse','terrain.macroColour','terrain.accent','weather.aerial']
     return { name:'normal-entry', backend:g.backend, tier:g.postChain.tier, values:Object.fromEntries(ids.map(id=>[id,s.params.get(id)?.value])) }
   })
@@ -37,7 +37,7 @@ try {
   report.results.push(entry)
   await page.screenshot({path:`${out}/normal-entry.png`})
   await page.evaluate(() => {
-    const g = window.syn3h.game
+    const g = window.mira.game
     g.renderer.setAnimationLoop(null)
     window.entryEnvironment = g.systems.find(s=>s.sunDirection && s.sunColor)
   })
@@ -54,7 +54,7 @@ try {
   ]
   for (const c of cases) {
     const result = await page.evaluate(async c => {
-      const s=window.syn3h,g=s.game,p=s.params
+      const s=window.mira,g=s.game,p=s.params
       p.set('gfx.level',c.level);p.set('post.on',c.on??true)
       p.set('terrain.relief',c.relief??.2);p.set('post.ao',c.ao??1);p.set('post.contact',c.contact??1)
       p.set('sun.timeOfDay',c.hour)

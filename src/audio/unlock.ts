@@ -20,7 +20,7 @@ const GESTURES = ['pointerdown', 'pointerup', 'mousedown', 'touchend', 'keydown'
  * Fired on the window when sound starts, and whenever the context later stops or runs again,
  * so the "Tap to start sound" hint follows what is actually audible.
  */
-export const SOUND_STARTED = 'syn3h:sound-started'
+export const SOUND_STARTED = 'mira:sound-started'
 let started = false
 const announce = () => { if (typeof window !== 'undefined') window.dispatchEvent(new Event(SOUND_STARTED)) }
 /**

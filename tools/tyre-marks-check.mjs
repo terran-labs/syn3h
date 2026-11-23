@@ -34,13 +34,13 @@ async function open(world, vehicle, viewport, hour = 11) {
   page.on('pageerror', (e) => errors.push(e.message))
   await page.routeWebSocket(/\/ws/, (s) => s.close())
   await page.goto(`${base}?autoplay=1&vehicle=${vehicle}&world=${world}`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
-  await page.evaluate(() => window.syn3h.shell.play())
-  await page.waitForFunction(() => window.syn3h.game.tick > 60, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.shell, null, { timeout: 120000 })
+  await page.evaluate(() => window.mira.shell.play())
+  await page.waitForFunction(() => window.mira.game.tick > 60, null, { timeout: 120000 })
   // Only the world in the pictures.
   await page.addStyleTag({ content: 'body * { visibility: hidden !important } #game, #game * { visibility: visible !important }' })
   await page.evaluate((hour) => {
-    const s = window.syn3h
+    const s = window.mira
     s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', hour); s.params.set('sun.dayLength', 0)
     // Steady weather, so wind does not move the dust differently between runs.
     try { s.params.set('weather.storminess', 0) } catch { /* absent */ }
@@ -51,7 +51,7 @@ async function open(world, vehicle, viewport, hour = 11) {
 /** Drive: [steer, 50 ms steps] legs at up to `cap` m/s, counting the surfaces under the wheels. */
 function drive(page, legs, cap = 14) {
   return page.evaluate(async ({ legs, cap }) => {
-    const s = window.syn3h, kinds = {}
+    const s = window.mira, kinds = {}
     for (const [steer, steps] of legs) {
       s.game.input.external.y = 1; s.game.input.external.x = steer
       for (let i = 0; i < steps; i++) {
@@ -71,7 +71,7 @@ function drive(page, legs, cap = 14) {
 /** Move the player to a flat spot where the ground under it changes kind within a few metres ahead. */
 function toBoundary(page, want) {
   return page.evaluate((want) => {
-    const s = window.syn3h, t = s.terrain, sp = t.spawnPoint(0).position
+    const s = window.mira, t = s.terrain, sp = t.spawnPoint(0).position
     const n = { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; return this } }
     for (let r = 10; r < 600; r += 6) {
       for (let a = 0; a < 64; a++) {
@@ -96,7 +96,7 @@ function toBoundary(page, want) {
 /** Move the player to a flat open patch of `kind`, facing 40 m more of it. */
 function toSurface(page, kind) {
   return page.evaluate((kind) => {
-    const s = window.syn3h, t = s.terrain, sp = t.spawnPoint(0).position
+    const s = window.mira, t = s.terrain, sp = t.spawnPoint(0).position
     const n = { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; return this } }
     const good = (x, z) => t.surfaceAt(x, z) === kind && t.normalAt(x, z, n).y > 0.96 && (t.liquidHeightAt?.(x, z) ?? -Infinity) < t.heightAt(x, z) - 0.5
     for (let r = 0; r < 900; r += 8) {
@@ -143,7 +143,7 @@ if (what === 'shots' || what === 'all') {
       await drive(page, [[0, 10]])
       await page.waitForTimeout(700)
       await shot(page, name)
-      const marks = await page.evaluate(() => window.syn3h.game.scene.userData.vehicleEffects?.marks ?? 0)
+      const marks = await page.evaluate(() => window.mira.game.scene.userData.vehicleEffects?.marks ?? 0)
       results.push({ shot: name, world, vehicle, kinds, marks, errors })
       console.log(JSON.stringify(results.at(-1)))
     } finally { await page.close() }
@@ -170,10 +170,10 @@ if (what === 'look') {
   const { page } = await open(world, 'buggy', DESKTOP)
   await toSurface(page, kind)
   await page.waitForTimeout(1200)
-  if (strength) await page.evaluate((v) => window.syn3h.params.set('gfx.tyreMarks.strength', Number(v)), strength)
+  if (strength) await page.evaluate((v) => window.mira.params.set('gfx.tyreMarks.strength', Number(v)), strength)
   await drive(page, [[0.85, 160]], 16)
   await page.waitForTimeout(800)
-  console.log(JSON.stringify(await page.evaluate(() => ({ quality: window.syn3h.params.get('gfx.quality').value, strength: window.syn3h.params.get('gfx.tyreMarks.strength')?.value, life: window.syn3h.params.get('gfx.tyreMarks.life')?.value, marks: window.syn3h.game.scene.userData.vehicleEffects?.marks }))))
+  console.log(JSON.stringify(await page.evaluate(() => ({ quality: window.mira.params.get('gfx.quality').value, strength: window.mira.params.get('gfx.tyreMarks.strength')?.value, life: window.mira.params.get('gfx.tyreMarks.life')?.value, marks: window.mira.game.scene.userData.vehicleEffects?.marks }))))
   await shot(page, `look-${kind}-${strength ?? 'default'}`)
   await page.close()
 }
@@ -190,7 +190,7 @@ if (what === 'perf' || what === 'all') {
       const cdp = await page.context().newCDPSession(page)
       if (throttle > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle })
       const m = await page.evaluate(async () => {
-        const g = window.syn3h.game, fx = g.scene.userData.vehicleEffects
+        const g = window.mira.game, fx = g.scene.userData.vehicleEffects
         const frames = []
         let last = performance.now(), dc = 0, tri = 0, n = 0
         await new Promise((resolve) => {

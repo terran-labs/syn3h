@@ -1,6 +1,6 @@
 /**
- * Buggy parameters, shared by the Syn3h buggy and the classic Mars Explorer buggy. Both games
- * used the same settings names and defaults (Mars Explorer Settings.js 92-105, Syn3h
+ * Buggy parameters, shared by the Mira buggy and the classic Mars Explorer buggy. Both games
+ * used the same settings names and defaults (Mars Explorer Settings.js 92-105, Mira
  * CoreSettings.cs 38-50); slider ranges from Settings.js 926-991.
  */
 import { defineParam } from '../../shared/params'
@@ -58,7 +58,7 @@ export const buggyFlightAgility = defineParam({
 /**
  * How the wings turn the buggy's motion toward its nose (the label lists the choices; the
  * settings panel shows them as buttons).
- * 0 Classic: Syn3h. From the first instant the wings are open, all of the buggy's speed points
+ * 0 Classic: Mira. From the first instant the wings are open, all of the buggy's speed points
  *   along its nose, whichever way it was moving.
  * 1 Catch: for the first second and a half after the wings open, the motion swings round to
  *   the nose at a rate that starts gentle and builds, so a buggy that was falling or sliding
@@ -81,7 +81,7 @@ export const buggyFlightLooPower = defineParam({
   default: false,
 })
 /**
- * Syn3h VhiclMe.cs auto brake: with no input at all and speed under 1 m/s, brakes engage, which
+ * Mira VhiclMe.cs auto brake: with no input at all and speed under 1 m/s, brakes engage, which
  * parks the buggy through the brake drag state. Off gives Mars Explorer's free rolling.
  */
 export const buggyIdleHold = defineParam({
@@ -95,7 +95,7 @@ export const buggyIdleHold = defineParam({
  * rises with the tyres. Width grows at half the rate of the radius, and the wheels move out just
  * far enough that the tyres clear the body and each other. Ground speed and drive force do not
  * change: the hub motors are geared to the tread, so this changes ride and handling, not top
- * speed. It applies live, easing at TYRE_GROW_RATE (Syn3hBuggy.ts) and lifting the body from the
+ * speed. It applies live, easing at TYRE_GROW_RATE (MiraBuggy.ts) and lifting the body from the
  * ground contact so a change at speed does not launch it.
  */
 export const buggyTyreSize = defineParam({
@@ -103,11 +103,11 @@ export const buggyTyreSize = defineParam({
   default: 1, min: 0.6, max: 3, step: 0.05,
 })
 
-// ---- Next-gen tyre model (Syn3h buggy only; new, not from either original) ----------------
+// ---- Next-gen tyre model (Mira buggy only; new, not from either original) ----------------
 
 /**
  * Next-gen physics: each wheel holds with static friction up to grip x load, and gives up a
- * fifth of that once it is sliding. Off restores the classic Syn3h wheel equations
+ * fifth of that once it is sliding. Off restores the classic Mira wheel equations
  * (VhiclBuggy.cs 280-332), whose friction is a pure damper on slip speed.
  */
 export const buggyNextGen = defineParam({
@@ -120,7 +120,7 @@ export const buggyGrip = defineParam({
   default: 1.2, min: 0.3, max: 2, step: 0.01,
 })
 /**
- * Friction coefficient at the grip fade speed and above. Classic Syn3h friction had no ceiling,
+ * Friction coefficient at the grip fade speed and above. Classic Mira friction had no ceiling,
  * so it could change direction at speed far harder than a real tyre; this is what lets next-gen
  * do the same. (The id is from when this was the sliding coefficient.)
  */
@@ -137,7 +137,7 @@ export const buggyGripFade = defineParam({
  * Next-gen steering limit at speed, as a multiple of what the tyres can hold. Up to half the
  * grip fade speed full lock asks for 1.1 times the grip, so it corners without sliding. From
  * there to the fade speed that loosens to this value: 1 grips, higher breaks into a drift. The
- * classic Syn3h angles are always the ceiling.
+ * classic Mira angles are always the ceiling.
  */
 export const buggySteerLimit = defineParam({
   id: 'buggy.steerLimit', label: 'Steering at speed (x grip)', group: 'Buggy', scope: 'world',
@@ -155,11 +155,11 @@ export const buggyCoastDrag = defineParam({
 })
 /**
  * Next-gen ride height at speed: the suspension travel (m) the smart suspension lowers to at
- * buggy.speed. Syn3h used 0.1, which leaves little room before the body hits the ground.
+ * buggy.speed. Mira used 0.1, which leaves little room before the body hits the ground.
  */
 export const buggyRideHeight = defineParam({
   id: 'buggy.rideHeight', label: 'Ride height at speed', group: 'Buggy', scope: 'world',
-  // 0.1 is the Syn3h value: little travel at speed, so hills and bumps throw the buggy into the
+  // 0.1 is the Mira value: little travel at speed, so hills and bumps throw the buggy into the
   // air. The owner asked for that back on 14 November 2026; 0.25 soaks bumps up instead.
   default: 0.1, min: 0.1, max: 0.4, step: 0.01,
 })
@@ -174,11 +174,11 @@ export const buggyBumpStop = defineParam({
 })
 /**
  * Next-gen rebound damping, as a multiple of the compression damping set by Shocks. Higher
- * values stop the springs throwing the buggy upward after a bump; 1 is the Syn3h damper.
+ * values stop the springs throwing the buggy upward after a bump; 1 is the Mira damper.
  */
 export const buggyRebound = defineParam({
   id: 'buggy.rebound', label: 'Rebound damping', group: 'Buggy', scope: 'world',
-  // 1 lets the springs throw the buggy upward off a crest, as Syn3h did. 3 keeps it planted.
+  // 1 lets the springs throw the buggy upward off a crest, as Mira did. 3 keeps it planted.
   default: 1, min: 1, max: 4, step: 0.1,
 })
 /**
@@ -203,7 +203,7 @@ export const buggySteerFollow = defineParam({
   default: 0, min: 0, max: 1, step: 0.01,
 })
 /**
- * Next-gen rear steering at speed, as a fraction of the Syn3h rear angle. Syn3h steers the
+ * Next-gen rear steering at speed, as a fraction of the Mira rear angle. Mira steers the
  * rear wheels against the fronts at every speed (1), which tightens slow turns but makes the
  * tail step out at speed. 0 holds the rear wheels straight by the grip fade speed; negative
  * values steer them with the fronts there, as road cars with four wheel steering do.

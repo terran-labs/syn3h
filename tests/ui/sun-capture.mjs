@@ -1,5 +1,6 @@
 // The sky at chosen hours on chosen planets, camera toward and away from the sun, at Ultra.
-// SYN3H_URL=http://127.0.0.1:PORT/ OUT=dir PLANETS=ice,volcanic HOURS=6,18 node tests/ui/sun-capture.mjs
+// MIRA_URL=http://127.0.0.1:PORT/ OUT=dir PLANETS=ice,volcanic HOURS=6,18 node tests/ui/sun-capture.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir } from 'node:fs/promises'
 import sharp from 'sharp'
@@ -14,21 +15,21 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true, args:
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   const errors = []; page.on('pageerror', e => errors.push(e.message))
-  await page.goto(`${process.env.SYN3H_URL}?autoplay=1&room=sun-${Date.now()}`)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+  await page.goto(`${process.env.MIRA_URL}?autoplay=1&room=sun-${Date.now()}`)
+  await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
   await page.locator('.boot-veil').waitFor({ state: 'hidden' })
   await page.evaluate(async () => {
-    const s = window.syn3h; s.params.set('bots.count', 0); s.params.set('gfx.auto', false); s.params.set('gfx.quality', 4)
+    const s = window.mira; s.params.set('bots.count', 0); s.params.set('gfx.auto', false); s.params.set('gfx.quality', 4)
     try { (await import('/src/ui/quality/ladder.ts')).setQualityChoice('full') } catch {}
     s.game.input.external.brakes = true
     const style = document.createElement('style'); style.textContent = '.world-inspector,.shell-hud,.hud-navigation,.focus-hud,.gear-rail,.minimap,[class*=hint],[class*=toast]{visibility:hidden!important}'; document.head.append(style)
   })
   for (const planet of planets) {
-    await page.evaluate(async planet => { const { applyPlanet } = await import('/src/world/planets.ts'); applyPlanet(planet, 12345); window.syn3h.params.set('bots.count', 0) }, planet)
+    await page.evaluate(async planet => { const { applyPlanet } = await import('/src/world/planets.ts'); applyPlanet(planet, 12345); window.mira.params.set('bots.count', 0) }, planet)
     await page.waitForTimeout(5000)
     for (const hour of hours) for (const dir of dirs) {
       const info = await page.evaluate(async ({ hour, dir }) => {
-        const s = window.syn3h, { sunDirection } = await import('/src/world/sky/skyMath.ts')
+        const s = window.mira, { sunDirection } = await import('/src/world/sky/skyMath.ts')
         s.params.set('sun.dayLength', 0); s.params.set('sun.timeOfDay', hour)
         const f = s.game.camera.getWorldDirection(new s.game.camera.position.constructor())
         const tilt = s.params.get('sun.tilt').value

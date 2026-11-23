@@ -11,7 +11,7 @@ import type { Game } from '../../src/core/Game'
 import { emptyInput } from '../../src/core/Input'
 import { ChaseCamera } from '../../src/core/ChaseCamera'
 import { createWorld } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { DAYDREAM_PERSONALITY } from '../../src/bots/Daydream'
 import { Mind } from '../../src/bots/mind/Mind'
 import { createNavigator, pointsOfInterest } from '../../src/bots/nav'
@@ -25,7 +25,7 @@ export function ride(seed: string, seconds: number, kind = 0) {
   const camera = new PerspectiveCamera(60, 16 / 9, 0.1, 20000)
   const game = { world, scene: new Scene(), tick: 0, camera, input: { state: emptyInput(), suspended: false } } as unknown as Game
   const spawn = terrain.spawnPoint(0), sights = pointsOfInterest(terrain)
-  const buggy = new Syn3hBuggy(game, terrain, spawn.position, spawn.heading); buggy.isLocal = false
+  const buggy = new MiraBuggy(game, terrain, spawn.position, spawn.heading); buggy.isLocal = false
   const mind = new Mind(buggy, terrain, createPilot(buggy, terrain)!, { seed, personality: DAYDREAM_PERSONALITY, navigator: createNavigator(terrain), places: () => sights })
   const chase = new ChaseCamera(game, terrain); chase.setVehicle(buggy)
   const surface = (x: number, z: number) => Math.max(terrain.heightAt(x, z), terrain.liquidHeightAt?.(x, z) ?? -Infinity)

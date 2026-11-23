@@ -12,12 +12,12 @@ import { Jet } from './Jet'
 import { Tank } from './Tank'
 import { isVehicleAvailable } from './available'
 export { TANK_AVAILABLE, isVehicleAvailable } from './available'
-import { Syn3hBuggySkin } from './skins'
-import { Syn3hBuggy } from './Syn3hBuggy'
+import { MiraBuggySkin } from './skins'
+import { MiraBuggy } from './MiraBuggy'
 import type { Vehicle } from './Vehicle'
 
 /**
- * 'buggy' and 'buggy-syn3h' are the Syn3h buggy, the default. 'buggy-classic' was the Mars
+ * 'buggy' and 'buggy-syn3h' are the Mira buggy, the default. 'buggy-classic' was the Mars
  * Explorer buggy with its own physics and model.
  */
 export type VehicleKind = 'buggy' | 'buggy-classic' | 'buggy-syn3h' | 'jet' | 'hovercraft' | 'tank'
@@ -41,7 +41,7 @@ const hasDom = typeof document !== 'undefined'
  * The kind `createVehicle` really builds for a requested kind. The Mars Explorer buggy was
  * retired on 15 November 2026, but its name is still out there: in saved lobby choices, shared
  * links (?vehicle=buggy-classic), resume snapshots, and the hello of an older client in the
- * same room. Each of those gets the Syn3h buggy. So does any kind this build does not know,
+ * same room. Each of those gets the Mira buggy. So does any kind this build does not know,
  * so a newer client's vehicle is never drawn as nothing.
  */
 export function canonicalVehicleKind(kind: string | null | undefined): VehicleKind {
@@ -66,15 +66,15 @@ export function createVehicle(
       // is built as the buggy below, whoever asked for it.
       case 'tank':
         if (isVehicleAvailable(kind)) return new Tank(game, terrain, position, heading)
-        return new Syn3hBuggy(game, terrain, position, heading, 'buggy', hasDom ? () => new Syn3hBuggySkin() : undefined)
+        return new MiraBuggy(game, terrain, position, heading, 'buggy', hasDom ? () => new MiraBuggySkin() : undefined)
       case 'hovercraft':
         return new Hovercraft(game, terrain, position, heading)
       // 'buggy-classic' and anything unknown land here too: see `canonicalVehicleKind`.
       case 'buggy':
       case 'buggy-syn3h':
       default:
-        return new Syn3hBuggy(game, terrain, position, heading, kind === 'buggy-syn3h' ? kind : 'buggy',
-          hasDom ? () => new Syn3hBuggySkin() : undefined)
+        return new MiraBuggy(game, terrain, position, heading, kind === 'buggy-syn3h' ? kind : 'buggy',
+          hasDom ? () => new MiraBuggySkin() : undefined)
     }
   } finally {
     longFrames.end('vehicle.create', spanStart)

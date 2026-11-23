@@ -1,3 +1,4 @@
+import './tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { createHash } from 'node:crypto'
 import { execFileSync, execSync, spawn, type ChildProcess } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -14,18 +15,18 @@ const origin = process.env.PASEO_PREVIEW_ORIGIN ? new URL(process.env.PASEO_PREV
 
 /**
  * Starts the multiplayer room server beside the dev server, so one command gives a working
- * multiplayer game. Skipped when SYN3H_NO_ROOM_SERVER is set (tests that run their own).
+ * multiplayer game. Skipped when MIRA_NO_ROOM_SERVER is set (tests that run their own).
  */
-const roomPort = process.env.SYN3H_ROOM_PORT ?? '8787'
+const roomPort = process.env.MIRA_ROOM_PORT ?? '8787'
 
 function roomServer(): Plugin {
   let child: ChildProcess | null = null
   return {
-    name: 'syn3h-room-server',
+    name: 'mira-room-server',
     apply: 'serve',
     configureServer(server) {
       // Vitest starts a Vite server too; tests must not spawn (and fight over) a room server.
-      if (process.env.SYN3H_NO_ROOM_SERVER || process.env.VITEST) return
+      if (process.env.MIRA_NO_ROOM_SERVER || process.env.VITEST) return
       child = spawn('npx', ['tsx', 'server/dev.ts'], { stdio: 'inherit', env: { ...process.env, PORT: roomPort } })
       const stop = () => child?.kill()
       server.httpServer?.once('close', stop)
@@ -45,7 +46,7 @@ function tweakpaneWithoutBitmap(): Plugin {
   const image = /url\(data:image\/png;base64,[A-Za-z0-9+/=]+\)/g
   const hue = 'linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)'
   return {
-    name: 'syn3h-tweakpane-without-bitmap',
+    name: 'mira-tweakpane-without-bitmap',
     apply: 'build',
     transform(code, id) {
       if (!/node_modules\/tweakpane\/dist\/tweakpane\.js/.test(id.replaceAll('\\', '/'))) return
@@ -58,7 +59,7 @@ function tweakpaneWithoutBitmap(): Plugin {
 
 /** Shown in the lobby as the build version: the nearest tag and commit, read at build time. */
 function buildLabel(): string {
-  if (process.env.SYN3H_RELEASE_VERSION) return process.env.SYN3H_RELEASE_VERSION
+  if (process.env.MIRA_RELEASE_VERSION) return process.env.MIRA_RELEASE_VERSION
   // Development: "dev · <short commit>" (tools/build-label.mjs), never a long describe string.
   try { return devLabel(execSync("git describe --tags --always --exclude 'archive/*'", { encoding: 'utf8' })) } catch { return 'dev' }
 }
@@ -98,9 +99,9 @@ function glassNotices(): Plugin {
 
 export default defineConfig({
   define: {
-    __SYN3H_BUILD__: JSON.stringify(buildLabel()),
-    __SYN3H_FREEZE_ID__: JSON.stringify(process.env.SYN3H_FREEZE_ID || null),
-    __SYN3H_COMMIT__: JSON.stringify(sourceCommit()),
+    __MIRA_BUILD__: JSON.stringify(buildLabel()),
+    __MIRA_FREEZE_ID__: JSON.stringify(process.env.MIRA_FREEZE_ID || null),
+    __MIRA_COMMIT__: JSON.stringify(sourceCommit()),
   },
   // manualReload: a merge shows a "new build available" notice instead of resetting the page.
   // rapierWasmAsset: the physics engine's WebAssembly ships as its own hashed file, preloaded.

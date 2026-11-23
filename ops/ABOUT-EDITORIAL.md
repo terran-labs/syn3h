@@ -8,7 +8,7 @@ below are public copy; delivery notes at the end are not interface text.
 Drive to the rim of a volcano. Unfold your buggy's force-field wings and leave the road
 behind. Bring a friend, pick a distant ridge, and see what happens on the way there.
 
-Syn3h is a shared sci-fi playground for driving, flying and exploring strange worlds.
+Mira is a shared sci-fi playground for driving, flying and exploring strange worlds.
 Take a buggy, jet, hovercraft or tank into the landscape. Play Tag, hold a hill, experiment
 with gravity, or park together and watch the light change.
 
@@ -19,7 +19,7 @@ jump and enjoying someone's company are all good reasons to be here.
 
 Climb in a jet and watch the landscape curve away beneath you. The mountain that filled
 your windscreen becomes part of a small world, with water and distant ridges below.
-Syn3h's tiny-world engine makes that change of perspective part of exploring. Try the
+Mira's tiny-world engine makes that change of perspective part of exploring. Try the
 ascent on another planet, then return to the ground and choose somewhere you saw from
 above.
 
@@ -56,7 +56,7 @@ Choose the mode in the Game panel. You can return to Explore when the room wants
 
 Aubrey Falconer's Mars Explorer brought flying cars, volcanoes and vehicle tag together.
 People stayed to explore and create together, and a community grew around those shared
-worlds. Syn3h carries that invitation forward: arrive somewhere unfamiliar, learn what
+worlds. Mira carries that invitation forward: arrive somewhere unfamiliar, learn what
 your machine can do, and make your own reasons to stay.
 
 The vision is a place for unhurried exploration and playful engineering. A mountain can

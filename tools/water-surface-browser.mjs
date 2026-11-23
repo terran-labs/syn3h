@@ -34,15 +34,15 @@ async function open(planet, seed, { webgl = false, quality = 2, viewport = { wid
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto(`${base}?autoplay=1&vehicle=${vehicle}&planet=${planet}&seed=${seed}&room=ws${Date.now().toString(36)}${webgl ? '&webgl=1' : ''}`)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 30 && window.syn3h.shell.playing, null, { timeout: 120000 })
-  await page.evaluate((q) => { const s = window.syn3h; s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 12); s.params.set('sun.dayLength', 0); s.params.set('gfx.quality', q) }, quality)
+  await page.waitForFunction(() => window.mira?.game.tick > 30 && window.mira.shell.playing, null, { timeout: 120000 })
+  await page.evaluate((q) => { const s = window.mira; s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 12); s.params.set('sun.dayLength', 0); s.params.set('gfx.quality', q) }, quality)
   await page.waitForTimeout(3000)
   return { ctx, page }
 }
 
 /** In the page: physics against drawn at points of rivers, lakes or the sea. */
 function sample(which) {
-  const s = window.syn3h, t = s.terrain, lava = t.data.lava, out = []
+  const s = window.mira, t = s.terrain, lava = t.data.lava, out = []
   const meshes = []
   s.game.scene.traverse((o) => { if (o.isMesh && o.userData.spacing !== undefined && o.visible !== false) meshes.push(o) })
   const drawnRest = (x, z) => {
@@ -89,7 +89,7 @@ for (const config of [
 ]) {
   for (const [planet, seed, kinds] of [['desert', 4, ['river', 'lake']], ['archipelago', 4, ['sea', 'river']]]) {
     const { ctx, page } = await open(planet, seed, config)
-    const backend = await page.evaluate(() => window.syn3h.game.backend)
+    const backend = await page.evaluate(() => window.mira.game.backend)
     for (const which of kinds) {
       const points = await page.evaluate(sample, which)
       const row = { planet, which, backend, quality: config.quality, viewport: `${config.viewport.width}x${config.viewport.height}`, restGap_m: stats(points.map((p) => p.restGap)), waves_m: stats(points.map((p) => Math.abs(p.waves))) }
@@ -105,18 +105,18 @@ if (frames) {
   const shot = (name) => page.screenshot({ path: `${out}/${name}.png` })
   // A river stretch with water at least a metre deep.
   const spot = await page.evaluate(() => {
-    const t = window.syn3h.terrain
+    const t = window.mira.terrain
     for (const r of t.data.lava.rivers) for (let i = 3; i < r.points.length - 3; i++) {
       const p = r.points[i], q = r.points[i + 1]
       if (t.liquidKindAt(p.x, p.z) === 'water' && t.liquidHeightAt(p.x, p.z) - t.heightAt(p.x, p.z) > 1) return { x: p.x, z: p.z, h: Math.atan2(-(q.x - p.x), -(q.z - p.z)) }
     }
     return null
   })
-  const lake = await page.evaluate(() => { const l = window.syn3h.terrain.data.lava; const b = l.lake ?? l.pools[0]; return b ? { x: b.x, z: b.z } : null })
+  const lake = await page.evaluate(() => { const l = window.mira.terrain.data.lava; const b = l.lake ?? l.pools[0]; return b ? { x: b.x, z: b.z } : null })
   /** A side view of the player afloat at (x, z). */
   const sideView = async (name, kind) => {
     await page.evaluate(({ p, kind }) => {
-      const s = window.syn3h
+      const s = window.mira
       if (s.player.kind !== kind) s.swapVehicle(kind)
       const y = s.terrain.liquidHeightAt(p.x, p.z) + 1
       s.player.teleport({ x: p.x, y, z: p.z }, p.h)
@@ -124,46 +124,46 @@ if (frames) {
     }, { p: spot, kind })
     await page.waitForTimeout(4000)
     await page.evaluate(() => {
-      const s = window.syn3h, b = s.player.body.translation(), V = s.game.camera.position.constructor
+      const s = window.mira, b = s.player.body.translation(), V = s.game.camera.position.constructor
       const side = new V(Math.cos(s.player.object.rotation.y) * 7, 0.6, -Math.sin(s.player.object.rotation.y) * 7)
       s.camera.setCinematicPose(new V(b.x + side.x, s.terrain.liquidHeightAt(b.x, b.z) + 0.6, b.z + side.z), new V(b.x, b.y, b.z), 50)
     })
     await page.waitForTimeout(1500)
     await shot(`${name}-a`); await page.waitForTimeout(400); await shot(`${name}-b`)
-    const at = await page.evaluate(() => { const s = window.syn3h, b = s.player.body.translation(); return { body: b.y, surface: s.terrain.liquidHeightAt(b.x, b.z), kind: s.player.kind } })
-    await page.evaluate(() => { window.syn3h.game.input.external.y = 0; window.syn3h.camera.clearCinematicPose() })
+    const at = await page.evaluate(() => { const s = window.mira, b = s.player.body.translation(); return { body: b.y, surface: s.terrain.liquidHeightAt(b.x, b.z), kind: s.player.kind } })
+    await page.evaluate(() => { window.mira.game.input.external.y = 0; window.mira.camera.clearCinematicPose() })
     return at
   }
   /** The lens moving down through the surface at (x, z), frames on the way. */
   const crossing = async (name, p) => {
     await page.evaluate((p) => {
-      const s = window.syn3h, V = s.game.camera.position.constructor, start = performance.now()
+      const s = window.mira, V = s.game.camera.position.constructor, start = performance.now()
       const y0 = s.terrain.liquidHeightAt(p.x, p.z)
       window.lensMove = () => { const t = Math.min(1, (performance.now() - start) / 3000); const y = y0 + 0.9 - 1.8 * t; s.camera.setCinematicPose(new V(p.x, y, p.z), new V(p.x + 10, y - 0.6, p.z + 4), 60); if (t < 1) requestAnimationFrame(window.lensMove) }
       window.lensMove()
     }, p)
     for (let i = 0; i < 8; i++) { await page.waitForTimeout(330); await shot(`${name}-${i}`) }
-    await page.evaluate(() => window.syn3h.camera.clearCinematicPose())
+    await page.evaluate(() => window.mira.camera.clearCinematicPose())
   }
   const results = {}
   if (spot) {
     results.buggy = await sideView('river-buggy', 'buggy')
     results.hovercraft = await sideView('river-hovercraft', 'hovercraft')
-    await page.evaluate(() => window.syn3h.swapVehicle('buggy'))
+    await page.evaluate(() => window.mira.swapVehicle('buggy'))
     await crossing('lens-river', spot)
   }
   if (lake) await crossing('lens-lake', lake)
   // In a moving vehicle: drive into the lake with the chase camera low behind.
   if (lake) {
-    await page.evaluate((p) => { const s = window.syn3h; s.player.teleport({ x: p.x + 40, y: s.terrain.heightAt(p.x + 40, p.z) + 1.5, z: p.z }, Math.PI / 2); s.game.input.external.y = 1; s.params.set('camera.height', 0.05) }, lake)
+    await page.evaluate((p) => { const s = window.mira; s.player.teleport({ x: p.x + 40, y: s.terrain.heightAt(p.x + 40, p.z) + 1.5, z: p.z }, Math.PI / 2); s.game.input.external.y = 1; s.params.set('camera.height', 0.05) }, lake)
     for (let i = 0; i < 12; i++) { await page.waitForTimeout(400); await shot(`lens-moving-${i}`) }
-    await page.evaluate(() => { const s = window.syn3h; s.game.input.external.y = 0; s.params.set('camera.height', s.params.get('camera.height').def.default) })
+    await page.evaluate(() => { const s = window.mira; s.game.input.external.y = 0; s.params.set('camera.height', s.params.get('camera.height').def.default) })
   }
   await ctx.close()
   const sea = await open('archipelago', 4, { viewport: PHONE, quality: 2 })
-  const seaSpot = await sea.page.evaluate(() => { const t = window.syn3h.terrain; for (let k = 0; k < 400; k++) { const x = Math.sin(k * 12.9) * 0.4 * t.size, z = Math.cos(k * 7.3) * 0.4 * t.size; if (t.liquidKindAt(x, z) === 'water' && t.liquidHeightAt(x, z) - t.heightAt(x, z) > 8) return { x, z } } return null })
+  const seaSpot = await sea.page.evaluate(() => { const t = window.mira.terrain; for (let k = 0; k < 400; k++) { const x = Math.sin(k * 12.9) * 0.4 * t.size, z = Math.cos(k * 7.3) * 0.4 * t.size; if (t.liquidKindAt(x, z) === 'water' && t.liquidHeightAt(x, z) - t.heightAt(x, z) > 8) return { x, z } } return null })
   if (seaSpot) { const p2 = sea.page; const shot2 = (n) => p2.screenshot({ path: `${out}/${n}.png` });
-    await p2.evaluate((p) => { const s = window.syn3h, V = s.game.camera.position.constructor, start = performance.now(), y0 = s.terrain.liquidHeightAt(p.x, p.z); window.lensMove = () => { const t = Math.min(1, (performance.now() - start) / 3000); const y = y0 + 0.9 - 1.8 * t; s.camera.setCinematicPose(new V(p.x, y, p.z), new V(p.x + 10, y - 0.6, p.z + 4), 60); if (t < 1) requestAnimationFrame(window.lensMove) }; window.lensMove() }, seaSpot)
+    await p2.evaluate((p) => { const s = window.mira, V = s.game.camera.position.constructor, start = performance.now(), y0 = s.terrain.liquidHeightAt(p.x, p.z); window.lensMove = () => { const t = Math.min(1, (performance.now() - start) / 3000); const y = y0 + 0.9 - 1.8 * t; s.camera.setCinematicPose(new V(p.x, y, p.z), new V(p.x + 10, y - 0.6, p.z + 4), 60); if (t < 1) requestAnimationFrame(window.lensMove) }; window.lensMove() }, seaSpot)
     for (let i = 0; i < 8; i++) { await p2.waitForTimeout(330); await shot2(`lens-sea-${i}`) } }
   await sea.ctx.close()
   console.log(JSON.stringify({ frames: results }))

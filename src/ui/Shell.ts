@@ -158,9 +158,9 @@ const PANELS_CHEVRONS_DOWN = '<svg class="nav-chevrons" viewBox="0 0 20 16" aria
 const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
 const LOBBY_LINKS = OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''
 const back = '<button type="button" class="panel-back link-button" data-goto="index"><span aria-hidden="true">←</span><span>Back</span></button>'
-/** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
-declare const __SYN3H_BUILD__: string | undefined
-const build = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? __SYN3H_BUILD__ : undefined
+/** `__MIRA_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
+declare const __MIRA_BUILD__: string | undefined
+const build = typeof __MIRA_BUILD__ === 'string' && __MIRA_BUILD__ ? __MIRA_BUILD__ : undefined
 /** Controls the shell wires, shown in the lobby settings panel (LobbySettings). */
 // On/off settings are the standard switch (inspector/switch.ts); bindSwitch gives them role and state.
 /**
@@ -260,11 +260,11 @@ export class Shell implements System {
   constructor(private readonly game: Game, readonly audio: GameAudio, entryName?: string | null) {
     game.onCoveredClimb = (level, job) => this.showCoveredClimb(level, job)
     this.previousSuspended = game.input.suspended; game.input.suspended = true
-    this.element.className = 'syn3h-shell exploration-ui'
-    this.element.innerHTML = `<section class="shell-overlay" role="dialog" aria-modal="true" aria-label="Syn3h lobby">
+    this.element.className = 'mira-shell exploration-ui'
+    this.element.innerHTML = `<section class="shell-overlay" role="dialog" aria-modal="true" aria-label="Mira lobby">
       <div class="lobby-stage">
       <header class="lobby-brand">${wordmarkSvg('shell-logo')}</header>
-      <p class="lobby-unsupported" hidden>Syn3h needs WebGL 2. A current Safari, Chrome, Firefox or Edge will run it.</p>
+      <p class="lobby-unsupported" hidden>Mira needs WebGL 2. A current Safari, Chrome, Firefox or Edge will run it.</p>
       <div class="lobby-panels" hidden>
         <section data-panel="explore">${heading('Prepare to Explore')}
           <form class="shell-form"><label for="shell-name">Player name</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
@@ -314,13 +314,13 @@ export class Shell implements System {
     // and Cancel drops a charge or carry the way the in-play guide does (src/ui/tagStick.ts).
     this.touch.tag = {
       mode: () => {
-        const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+        const rack = (window as unknown as { miraNet?: { gear?: GearRack } }).miraNet?.gear
         if (!rack) return 'stream'
         const controls = rack.controls()
         return tagModeFor(controls.gear, controls.actions[0])
       },
       tap: () => {
-        const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+        const rack = (window as unknown as { miraNet?: { gear?: GearRack } }).miraNet?.gear
         if (rack) rack.tap(); else game.input.external.fire = true
       },
       cancel: () => { this.cancelActions?.(); game.input.external.fire = false },
@@ -358,7 +358,7 @@ export class Shell implements System {
       // desktops keep the stack as it was.
       closePanels: () => this.returnToDriving(),
       phonePanels: () => this.touch.available && matchMedia(PHONE_SIDEBAR).matches,
-      rememberOpen: 'syn3h.sidebar.open',
+      rememberOpen: 'mira.sidebar.open',
     })
     // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
     // function of cursor locking." With the cursor captured you are driving and only the
@@ -844,7 +844,7 @@ export class Shell implements System {
     if (id !== 'index') this.galaxyFor(id)
     if (id !== 'advanced') this.advancedGroups = undefined
     if (id === 'advanced') {
-      const panel = this.paramPanel ?? (window as unknown as { syn3h?: { panel?: ParamPanel } }).syn3h?.panel
+      const panel = this.paramPanel ?? (window as unknown as { mira?: { panel?: ParamPanel } }).mira?.panel
       panel?.show(this.element.querySelector('.advanced-host')!); panel?.setGroups(this.advancedGroups); this.paramPanel = panel
     } else this.paramPanel?.hide()
     void this.panels.show(id).then(() => {
@@ -932,7 +932,7 @@ export class Shell implements System {
   private async waitForEntryWorld() {
     const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     const joinBy = performance.now() + 5000
-    const net = () => (window as { syn3hNet?: { connected?: boolean } }).syn3hNet
+    const net = () => (window as { miraNet?: { connected?: boolean } }).miraNet
     while (net() && !net()!.connected && performance.now() < joinBy) await frame()
     await frame()
     while (this.ground?.ready === false) await this.ground.whenReady?.()
@@ -989,7 +989,7 @@ export class Shell implements System {
     let stopFollowingWorld: (() => void) | undefined
     try {
       let seen = 0
-      try { seen = Number(localStorage.getItem('syn3h.descents')) || 0; localStorage.setItem('syn3h.descents', String(seen + 1)) } catch { /* Storage is optional. */ }
+      try { seen = Number(localStorage.getItem('mira.descents')) || 0; localStorage.setItem('mira.descents', String(seen + 1)) } catch { /* Storage is optional. */ }
       let skip = false
       // Listen from the next frame, so the tap that started the drop does not also end it.
       requestAnimationFrame(() => { for (const type of ['pointerdown', 'keydown'] as const) addEventListener(type, () => { skip = true }, { signal: skipping.signal, capture: true }) })
@@ -1023,7 +1023,7 @@ export class Shell implements System {
       await Promise.all([graphics, (async () => {
         while (!dived && performance.now() < diveBy) { lift(); await frame() }
       })()])
-      try { performance.measure('syn3h:descent preparation', { start: prepareStart, end: performance.now() }) } catch { /* Older engines. */ }
+      try { performance.measure('mira:descent preparation', { start: prepareStart, end: performance.now() }) } catch { /* Older engines. */ }
       if (ground) ground.staged = false
       this.game.holdDraws = false
       lift(); stopFollowingWorld?.(); stopFollowingWorld = undefined
@@ -1078,7 +1078,7 @@ export class Shell implements System {
     const game = document.getElementById('game'), root = this.element, camera = this.cinematic
     this.dropping = true
     let quick = false
-    try { quick = (Number(localStorage.getItem('syn3h.descents')) || 0) > 1 } catch { /* Storage is optional. */ }
+    try { quick = (Number(localStorage.getItem('mira.descents')) || 0) > 1 } catch { /* Storage is optional. */ }
     const length = quick ? 1700 : 2400
     try {
       // Controls let go at once, as when the menu opens; the HUD fades with the lobby's rules.
@@ -1729,7 +1729,7 @@ export class Shell implements System {
   private savedOutcomeStop?: () => void
   private reportSavedOutcome(plan: Record<string, import('../../shared/params').ParamValue>): void {
     const report = () => {
-      const net = (window as { syn3hNet?: { connected?: boolean } }).syn3hNet
+      const net = (window as { miraNet?: { connected?: boolean } }).miraNet
       if (!net?.connected) return false
       this.say(worldIdentity(params.snapshot('world')) === worldIdentity(plan)
         ? 'Saved world settings applied.' : 'The current room’s settings replaced the saved world settings.')
@@ -1979,7 +1979,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-close, .card-close, .about-tabs *, .lobby-links *, .syn3h-advanced *, .world-inspector *, .performance-recommendation *, .race-controls *, .update-banner-actions *, .exit-confirm-actions *, .join-view *, .gear-selector *, .hud-accessories *, .hud-chat *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-close, .card-close, .about-tabs *, .lobby-links *, .mira-advanced *, .world-inspector *, .performance-recommendation *, .race-controls *, .update-banner-actions *, .exit-confirm-actions *, .join-view *, .gear-selector *, .hud-accessories *, .hud-chat *')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
     // Upper left, where the light strikes at rest (glass.css).
@@ -2042,7 +2042,7 @@ export class Shell implements System {
   private gearView?: GearSource
   /** The rack, wrapped once so the drum gets every gear's player-facing name. */
   private gearSource(): GearSource | undefined {
-    const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+    const rack = (window as unknown as { miraNet?: { gear?: GearRack } }).miraNet?.gear
     if (!rack) return undefined
     if (rack !== this.gearRack) {
       this.gearRack = rack
@@ -2058,7 +2058,7 @@ export class Shell implements System {
   }
   /** Gear selection and touch actions live in the HUD drum. */
   private updateGear(): void {
-    const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+    const rack = (window as unknown as { miraNet?: { gear?: GearRack } }).miraNet?.gear
     this.hasSeveralGear = (rack?.list().length ?? 0) > 1
   }
   private updateGI(): void {
@@ -2155,7 +2155,7 @@ export class Shell implements System {
   /** Who is in the room, as names are shown (main.ts): the rows, the match board and toasts mark bots from it. */
   setPlayerRoster(roster: PlayerRoster): void { this.roster = roster; this.hudBoard.setRoster(roster); this.matchHud.setRoster(roster) }
   private roster: PlayerRoster = () => []
-  setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {syn3hNet?:{players?:Map<number,{bot?:boolean}>}}).syn3hNet?.players; const count = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length
+  setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {miraNet?:{players?:Map<number,{bot?:boolean}>}}).miraNet?.players; const count = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length
     // The status arrives every frame; the invite only depends on it through the player count.
     if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }
   /**
@@ -2266,12 +2266,12 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain, ent
   shell.onTint = (body, accent, commit) => {
     // A commit only announces: the vehicle already shows these colours, or is easing to them.
     if (!commit) activePlayer.setColors(body, accent)
-    if (commit) (window as unknown as { syn3hNet?: { setProfile?(profile: { colors: { body: string; accent: string } }): void } }).syn3hNet?.setProfile?.({ colors: { body, accent } })
+    if (commit) (window as unknown as { miraNet?: { setProfile?(profile: { colors: { body: string; accent: string } }): void } }).miraNet?.setProfile?.({ colors: { body, accent } })
   }
   // A rename in the Me card: this vehicle's own label and the room follow at once.
   shell.onRename = name => {
     activePlayer.name = name
-    ;(window as unknown as { syn3hNet?: { setName?(name: string): void } }).syn3hNet?.setName?.(name)
+    ;(window as unknown as { miraNet?: { setName?(name: string): void } }).miraNet?.setName?.(name)
   }
   const bridge = game.add({ update(dt = 0) {
     const v = activePlayer.body.linvel(), p = activePlayer.body.translation(), speed = Math.hypot(v.x, v.y, v.z)

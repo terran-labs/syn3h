@@ -46,12 +46,12 @@ try {
     page.on('pageerror', (e) => errors.push(e.message))
     await page.routeWebSocket(/\/ws/, (s) => s.close())
     await page.goto(`${base}?autoplay=1&vehicle=buggy&world=${world}`, { waitUntil: 'load' })
-    await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
-    await page.evaluate(() => window.syn3h.shell.play())
-    await page.waitForFunction(() => window.syn3h.game.tick > 60, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.shell, null, { timeout: 120000 })
+    await page.evaluate(() => window.mira.shell.play())
+    await page.waitForFunction(() => window.mira.game.tick > 60, null, { timeout: 120000 })
     await page.addStyleTag({ content: 'body * { visibility: hidden !important } #game, #game * { visibility: visible !important }' })
     await page.evaluate(({ hour, tyre }) => {
-      const s = window.syn3h
+      const s = window.mira
       s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', hour); s.params.set('sun.dayLength', 0)
       if (tyre) s.params.set('buggy.tyreSize', tyre)
       // Settled strength: the frame is held right after a manoeuvre, so without this the last
@@ -61,7 +61,7 @@ try {
     for (const [move, { legs }] of Object.entries(MOVES)) {
       // A fresh flat patch of the surface, facing more of it, every time.
       const at = await page.evaluate((kind) => {
-        const s = window.syn3h, t = s.terrain, sp = t.spawnPoint(0).position
+        const s = window.mira, t = s.terrain, sp = t.spawnPoint(0).position
         const n = { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; return this } }
         const good = (x, z) => t.surfaceAt(x, z) === kind && t.normalAt(x, z, n).y > 0.97 && (t.liquidHeightAt?.(x, z) ?? -Infinity) < t.heightAt(x, z) - 0.5
         window.__tried = (window.__tried ?? 0) + 1
@@ -82,7 +82,7 @@ try {
       if (!at) { rows.push({ world, kind, hour, move, error: 'no flat patch' }); continue }
       await page.waitForTimeout(1500)
       const pts = await page.evaluate(async (legs) => {
-        const s = window.syn3h, rec = [[], []]
+        const s = window.mira, rec = [[], []]
         for (const [steer, brake, steps] of legs) {
           s.game.input.external.y = brake ? 0 : 1; s.game.input.external.x = steer; s.game.input.external.brakes = Boolean(brake)
           for (let i = 0; i < steps; i++) {
@@ -118,7 +118,7 @@ try {
       await page.waitForTimeout(150)
       const file = `${out}/${label}-${world}-${kind}-${hour}h-${move}${tyre ? `-tyre${tyre}` : ''}${phone ? '-phone' : ''}.png`
       const png = await page.screenshot({ path: file })
-      await page.evaluate(() => window.syn3h.game.resume())
+      await page.evaluate(() => window.mira.game.resume())
       const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true })
       const L = (nx, ny) => {
         const cx = Math.round((nx + 1) / 2 * info.width), cy = Math.round((1 - ny) / 2 * info.height)

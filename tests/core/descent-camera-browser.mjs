@@ -14,6 +14,7 @@
  * each director shot (orbit, fly-by, crane, low): the view must ease to the chase pose.
  * Headless frames here are slow and uneven, so bounds scale with each frame's own length.
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { spawn, execFile } from 'node:child_process'
@@ -26,7 +27,7 @@ const out = process.argv[2]; assert.ok(out, 'output directory required'); await 
 export const MAX_FALL_SPEED = 900, MAX_TURN_RATE = 200, AWAY_METRES = 80
 const freePort = () => new Promise((resolve, reject) => { const s = createServer(); s.on('error', reject); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)) }) })
 const port = await freePort(), roomPort = await freePort()
-const vite = spawn('npx', ['vite', '--port', String(port), '--strictPort', '--host', '127.0.0.1'], { env: { ...process.env, SYN3H_ROOM_PORT: String(roomPort) }, stdio: ['ignore', 'pipe', 'pipe'] })
+const vite = spawn('npx', ['vite', '--port', String(port), '--strictPort', '--host', '127.0.0.1'], { env: { ...process.env, MIRA_ROOM_PORT: String(roomPort) }, stdio: ['ignore', 'pipe', 'pipe'] })
 let log = ''; vite.stdout.on('data', d => log += d); vite.stderr.on('data', d => log += d)
 const base = `http://127.0.0.1:${port}/`
 for (let i = 0; ; i++) { try { if ((await fetch(base)).ok) break } catch {} if (i > 300) throw Error(`dev server did not start\n${log}`); await new Promise(r => setTimeout(r, 200)) }
@@ -34,13 +35,13 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true, args:
 const results = []
 /** Runs in the page: sample every animation frame until told to stop. */
 const record = () => {
-  const w = window, s = w.syn3h, T = []; w.__trace = T; w.__stop = false
+  const w = window, s = w.mira, T = []; w.__trace = T; w.__stop = false
   const dir = s.game.camera.position.clone()
   const sampler = { update() {
     // Camera motion uses the frame-start clock. Work before this sampler varies, so
     // timestamping here would invent short intervals after an expensive frame.
     const now = s.game.last
-    const cam = s.game.camera, c = s.camera, p = s.player.object.position, shell = document.querySelector('.syn3h-shell').classList
+    const cam = s.game.camera, c = s.camera, p = s.player.object.position, shell = document.querySelector('.mira-shell').classList
     cam.getWorldDirection(dir)
     const f = s.player.object.getWorldDirection(dir.clone())
     T.push({ at: now, cam: [cam.position.x, cam.position.y, cam.position.z], dir: [dir.x, dir.y, dir.z], fov: cam.fov, veh: [p.x, p.y, p.z], fwd: [-f.x, -f.y, -f.z],
@@ -59,23 +60,23 @@ try {
     page.on('pageerror', e => errors.push(e.message))
     try {
       await page.goto(`${base}?room=descent-${Date.now()}`, { waitUntil: 'load' })
-      await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
-      const known = await page.evaluate(() => window.syn3h.planets.PLANETS.map(p => p.id))
+      await page.waitForFunction(() => window.mira?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+      const known = await page.evaluate(() => window.mira.planets.PLANETS.map(p => p.id))
       if (!known.includes(planet)) { results.push({ id: planet, skipped: `no such planet; known: ${known.join(',')}` }); continue }
-      await page.waitForFunction(() => window.syn3h.shell.graphics.planetMaps >= window.syn3h.planets.PLANETS.length, null, { timeout: 90000 })
+      await page.waitForFunction(() => window.mira.shell.graphics.planetMaps >= window.mira.planets.PLANETS.length, null, { timeout: 90000 })
       // First from a fresh lobby, then again from the menu after playing, to a different world.
       const again = planets[(planets.indexOf(planet) + 1) % planets.length]
       for (const [id, world] of [[`${planet}-from-lobby`, planet], [`${again}-from-menu-after-${planet}`, again]]) {
         if (id.includes('from-menu')) {
-          await page.evaluate(() => window.syn3h.shell.openMenu('index'))
+          await page.evaluate(() => window.mira.shell.openMenu('index'))
           await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.activePanel === 'index' && document.querySelector('.lobby-panels').dataset.busy === 'false', null, { timeout: 15000 })
           await page.waitForTimeout(1500)
         }
         await page.evaluate(record)
         const tapAt = await page.evaluate(() => performance.now())
         await page.locator(`.galaxy-label[data-world="${world}"]`).dispatchEvent('click')
-        await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 5000 })
-        await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 60000 })
+        await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 5000 })
+        await page.waitForFunction(() => { const s = document.querySelector('.mira-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 60000 })
         const landedAt = await page.evaluate(() => performance.now())
         await page.waitForTimeout(10000)
         const trace = await page.evaluate(() => { window.__stop = true; return window.__trace })
@@ -92,10 +93,10 @@ try {
   page.on('pageerror', e => errors.push(e.message))
   try {
     await page.goto(`${base}?room=handback-${Date.now()}&autoplay=1&daydream=2`, { waitUntil: 'load' })
-    await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && window.syn3h.shell.playing, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game?.tick > 25 && window.mira.shell.playing, null, { timeout: 120000 })
     const selectedShots = process.env.DESCENT_SHOTS?.split(',')
     for (const shot of ['orbit', 'flyby', 'crane', 'low'].filter(s => !selectedShots || selectedShots.includes(s))) {
-      const reached = await page.waitForFunction(s => window.syn3h.camera.director.active && window.syn3h.camera.director.shot === s && window.syn3h.camera.directed, shot, { timeout: 90000 }).then(() => true, () => false)
+      const reached = await page.waitForFunction(s => window.mira.camera.director.active && window.mira.camera.director.shot === s && window.mira.camera.directed, shot, { timeout: 90000 }).then(() => true, () => false)
       if (!reached) { results.push({ id: `handback-${shot}`, skipped: 'the director did not reach this shot in 90 s (a fly-by needs speed)' }); await page.keyboard.press('KeyC'); await page.waitForTimeout(500); continue }
       await page.evaluate(record)
       await page.waitForFunction(() => window.__trace.length > 0)

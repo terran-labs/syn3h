@@ -5,8 +5,8 @@ This is source reachability and GLB inspection, not a fresh browser request trac
 
 | Loaded asset | Bytes | Reachable caller |
 | --- | ---: | --- |
-| buggy.glb | 348928 | LoadedBuggySkin Syn3h wheels and components; buggy lab |
-| buggy-boxarm.glb | 293012 | LoadedBuggySkin Syn3h body |
+| buggy.glb | 348928 | LoadedBuggySkin Mira wheels and components; buggy lab |
+| buggy-boxarm.glb | 293012 | LoadedBuggySkin Mira body |
 | buggy-classic.glb | 84644 | LoadedBuggySkin classic body |
 | buggy-classic-wheel.glb | 484624 | LoadedBuggySkin classic wheels |
 | tank.glb | 12556 | Tank game hull |
@@ -19,7 +19,7 @@ loads jet.glb through its dynamic vehicle-kind path. Classic remains in the supp
 factory, chooser, resume and wire kinds. Removing those selectors is a separate product
 change; neither classic GLB nor the chooser jet is dead.
 
-Syn3h buggy unique mesh bytes: 641940. Classic: 569268. Hovercraft: 38828.
+Mira buggy unique mesh bytes: 641940. Classic: 569268. Hovercraft: 38828.
 Tank: 127760, with the track file reused for multiple tracks. Game jet: zero GLB bytes;
 its physics still imports jet-collider.json. All eight shipped GLBs total 1713364 bytes.
 These are per-file totals, not a claim about browser caching or request multiplicity.

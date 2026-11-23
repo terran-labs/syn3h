@@ -19,7 +19,7 @@ const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } })
 const errors = []
 page.on('pageerror', (e) => errors.push(e.message))
 await page.goto(`${base}?autoplay=1&world=${world}&room=cost${Date.now().toString(36)}`, { waitUntil: 'load' })
-await page.waitForFunction(() => window.syn3h?.game?.tick > 60, null, { timeout: 120000 })
+await page.waitForFunction(() => window.mira?.game?.tick > 60, null, { timeout: 120000 })
 const set = (v) => page.evaluate(async (v) => {
   const { params } = await import('/shared/params.ts')
   for (const [id, value] of Object.entries(v)) params.set(id, value, 'local')
@@ -27,7 +27,7 @@ const set = (v) => page.evaluate(async (v) => {
 await set({ 'world.seaKind': 1 })
 // Park over deep water, as tools/water/shots.mjs finds it.
 await page.evaluate(() => {
-  const t = window.syn3h.terrain, size = t.wrapSize, sea = t.liquidHeightAt(1e6 + 0.5, 0.5)
+  const t = window.mira.terrain, size = t.wrapSize, sea = t.liquidHeightAt(1e6 + 0.5, 0.5)
   for (let gx = -size / 2; gx < size / 2; gx += 32) for (let gz = -size / 2; gz < size / 2; gz += 32) {
     let clear = true
     for (let k = 0; k <= 120 && clear; k += 8) clear = t.heightAt(gx + k, gz) < sea - 12
@@ -44,14 +44,14 @@ const results = []
 for (const [name, values] of cases) {
   await set(values)
   await page.evaluate(() => {
-    const d = window.__deep, b = window.syn3h.player.body
+    const d = window.__deep, b = window.mira.player.body
     b.setTranslation({ x: d.x, y: 1.5, z: d.z }, true)
     b.setRotation({ x: 0, y: Math.sin(-Math.PI / 4), z: 0, w: Math.cos(-Math.PI / 4) }, true)
     b.setLinvel({ x: 14, y: 0, z: 0 }, true)
   })
   await page.waitForTimeout(3000)
   results.push({ name, ...(await page.evaluate(async () => {
-    const g = window.syn3h.game, r = g.renderer, device = r.backend?.device
+    const g = window.mira.game, r = g.renderer, device = r.backend?.device
     const times = []
     const auto = r.info.autoReset
     r.info.autoReset = false

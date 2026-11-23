@@ -8,13 +8,14 @@
  *   archipelago and volcanic: a Tag and a Thunder hit on the water or lava, and the car dropping
  *           into it from 4 m.
  *
- *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/effects-audit.mjs [out dir] [hours, e.g. 12,22]
+ *   MIRA_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/effects-audit.mjs [out dir] [hours, e.g. 12,22]
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright-core'
 
-const base = (process.env.SYN3H_URL ?? '').replace(/\/+$/, '') + '/'
-if (!process.env.SYN3H_URL) throw new Error('Set SYN3H_URL')
+const base = (process.env.MIRA_URL ?? '').replace(/\/+$/, '') + '/'
+if (!process.env.MIRA_URL) throw new Error('Set MIRA_URL')
 const out = process.argv[2] ?? '/tmp/weapons-beauty/audit'
 const HOURS = (process.argv[3] ?? '12,22').split(',').map(Number)
 await mkdir(out, { recursive: true })
@@ -28,10 +29,10 @@ async function open(planet, hour, bot) {
   const page = await context.newPage()
   const errors = []; page.on('pageerror', e => errors.push(e.message))
   await page.goto(`${base}?planet=${planet}&seed=7&autoplay=1&room=audit-${Date.now()}`)
-  await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet && window.syn3h.game.tick > 60, null, { timeout: 180000 })
+  await page.waitForFunction(() => window.mira?.shell?.playing && window.miraNet && window.mira.game.tick > 60, null, { timeout: 180000 })
   await page.evaluate(([hour, bot]) => {
     document.exitPointerLock?.()
-    const s = window.syn3h, p = s.params
+    const s = window.mira, p = s.params
     p.set('gfx.auto', false); p.set('gfx.level', 2); p.set('daydream.seconds', 0)
     s.bots.remote = false
     p.set('bots.canDrive', false); p.set('bots.canFire', false); p.set('bots.count', bot ? 1 : 0)
@@ -39,7 +40,7 @@ async function open(planet, hour, bot) {
     p.set('sun.dayLength', 0); p.set('sun.timeOfDay', hour)
     for (const node of document.body.children) if (node.tagName !== 'CANVAS' && node.tagName !== 'SCRIPT') node.style.visibility = 'hidden'
   }, [hour, bot])
-  if (bot) await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 1, null, { timeout: 60000 })
+  if (bot) await page.waitForFunction(() => window.mira.bots.vehicles.length === 1, null, { timeout: 60000 })
   await page.waitForTimeout(3000)
   return { context, page, errors }
 }
@@ -57,7 +58,7 @@ async function moment(page, name, trigger, ms, keep = 6, arg) {
 
 /** The player still on the ground, facing along -z of its own heading; the bot `ahead` m in front, 1.5 m up. */
 const park = (page, ahead) => page.evaluate(ahead => {
-  const s = window.syn3h, v = s.player, a = v.body.translation()
+  const s = window.mira, v = s.player, a = v.body.translation()
   const f = s.game.camera.getWorldDirection(v.object.position.clone()); f.y = 0; f.normalize()
   window.__f = [f.x, f.z]
   const y = s.terrain.heightAt(a.x, a.z) + 1
@@ -78,22 +79,22 @@ try {
       const { context, page, errors } = await open('alpine', hour, true)
       const at = `${hour}`
       await park(page, 20); await page.waitForTimeout(2500)
-      await moment(page, `chaser-${at}`, () => window.syn3hNet.launchPester(0xff00), 2400, 8)
+      await moment(page, `chaser-${at}`, () => window.miraNet.launchPester(0xff00), 2400, 8)
       await page.waitForTimeout(2500); await park(page, 20); await page.waitForTimeout(2000)
-      await moment(page, `grapple-bot-${at}`, () => { const s = window.syn3h, n = window.syn3hNet; n.gear.select?.('bungee'); const a = s.player.body.translation(), t = s.bots.vehicles[0].body.translation(); return n.bungee.launch([t.x - a.x, t.y - a.y - 1.1, t.z - a.z]) }, 1800, 6)
-      await page.evaluate(() => window.syn3hNet.bungee.letGo?.('released'))
+      await moment(page, `grapple-bot-${at}`, () => { const s = window.mira, n = window.miraNet; n.gear.select?.('bungee'); const a = s.player.body.translation(), t = s.bots.vehicles[0].body.translation(); return n.bungee.launch([t.x - a.x, t.y - a.y - 1.1, t.z - a.z]) }, 1800, 6)
+      await page.evaluate(() => window.miraNet.bungee.letGo?.('released'))
       await page.waitForTimeout(2000); await park(page, 20); await page.waitForTimeout(2000)
-      await moment(page, `grapple-ground-${at}`, () => { const n = window.syn3hNet, [fx, fz] = window.__f; n.gear.select?.('bungee'); return n.bungee.launch([fx, -0.35, fz]) }, 1500, 5)
-      await page.evaluate(() => window.syn3hNet.bungee.letGo?.('released'))
+      await moment(page, `grapple-ground-${at}`, () => { const n = window.miraNet, [fx, fz] = window.__f; n.gear.select?.('bungee'); return n.bungee.launch([fx, -0.35, fz]) }, 1500, 5)
+      await page.evaluate(() => window.miraNet.bungee.letGo?.('released'))
       await page.waitForTimeout(2000)
       // The Yoink gust: the bot out of the cone first.
-      await page.evaluate(() => { const b = window.syn3h.bots.vehicles[0]; b.teleport(b.object.position.clone().setX(b.object.position.x + 60), 0) })
+      await page.evaluate(() => { const b = window.mira.bots.vehicles[0]; b.teleport(b.object.position.clone().setX(b.object.position.x + 60), 0) })
       await park(page, 0); await page.waitForTimeout(2000)
-      await moment(page, `yoink-gust-${at}`, () => { const n = window.syn3hNet; n.gear.select?.('yoink'); return n.yoink.press() !== null }, 900, 6)
+      await moment(page, `yoink-gust-${at}`, () => { const n = window.miraNet; n.gear.select?.('yoink'); return n.yoink.press() !== null }, 900, 6)
       await page.waitForTimeout(1500); await park(page, 0); await page.waitForTimeout(1500)
-      await moment(page, `tag-flight-${at}`, () => { const [fx, fz] = window.__f; window.syn3hNet.gear.select?.('beam'); window.syn3hNet.fire([fx, 0.03, fz]) }, 400, 6)
+      await moment(page, `tag-flight-${at}`, () => { const [fx, fz] = window.__f; window.miraNet.gear.select?.('beam'); window.miraNet.fire([fx, 0.03, fz]) }, 400, 6)
       await page.waitForTimeout(1500)
-      await moment(page, `thunder-flight-${at}`, () => { const [fx, fz] = window.__f; window.syn3hNet.fire([fx, 0.05, fz], undefined, 'red') }, 900, 6)
+      await moment(page, `thunder-flight-${at}`, () => { const [fx, fz] = window.__f; window.miraNet.fire([fx, 0.05, fz], undefined, 'red') }, 900, 6)
       if (errors.length) report.push(`alpine ${at} page errors: ${errors.slice(0, 2).join(' | ')}`)
       await context.close()
     }
@@ -103,7 +104,7 @@ try {
       const at = `${hour}`
       // The nearest patch of this liquid at least 3 m deep, and a dry spot 14 m back from it towards the player.
       const found = await page.evaluate(kind => {
-        const s = window.syn3h, t = s.terrain, p = s.player.body.translation()
+        const s = window.mira, t = s.terrain, p = s.player.body.translation()
         let best = null
         for (let r = 20; r < 1500 && !best; r += 20) for (let k = 0; k < 48; k++) {
           const a = k / 48 * Math.PI * 2, x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r
@@ -126,14 +127,14 @@ try {
       await page.waitForTimeout(3000)
       for (const red of [false, true]) {
         await moment(page, `${kind}-${red ? 'thunder' : 'tag'}-hit-${at}`, red => {
-          const s = window.syn3h, o = s.player.object.position, T = window.__splash
+          const s = window.mira, o = s.player.object.position, T = window.__splash
           const from = o.clone().setY(o.y + 1), d = o.clone().set(T.x, T.y, T.z).sub(from).normalize()
-          window.syn3hNet.fire([d.x, d.y, d.z], undefined, red ? 'red' : undefined)
+          window.miraNet.fire([d.x, d.y, d.z], undefined, red ? 'red' : undefined)
         }, red ? 1500 : 1200, 6, red)
         await page.waitForTimeout(2500)
       }
       await moment(page, `${kind}-drop-${at}`, () => {
-        const s = window.syn3h, v = s.player, T = window.__splash
+        const s = window.mira, v = s.player, T = window.__splash
         v.teleport(v.object.position.clone().set(T.x - Math.cos(T.a) * 4, T.y + 4, T.z - Math.sin(T.a) * 4), Math.atan2(-Math.cos(T.a), -Math.sin(T.a)))
         v.body.setLinvel({ x: Math.cos(T.a) * 6, y: 0, z: Math.sin(T.a) * 6 }, true)
       }, 1800, 6)

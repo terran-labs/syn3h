@@ -1,6 +1,6 @@
-# Syn3h UI integration
+# Mira UI integration
 
-The default lobby uses the Syn3h logo, Lato Thin and Roboto Thin, a slow starfield
+The default lobby uses the Mira logo, Lato Thin and Roboto Thin, a slow starfield
 and a two-second depth/fade screen transition. At idle the logo glow is settled, with
 no pulse. Title music fades over ten seconds when
 entering the world and returns when opening the menu.
@@ -27,10 +27,10 @@ The shell API now includes `vehicleKind`, `bodyColor`, `accentColor`, `openMenu(
 `closeMenu()`, `showPanel(id)`, `activePanel`, `menuOpen` and `setParamPanel(panel)`.
 It preserves `playerName`, `room`, `onPlay`, `play()`, `setStatus(lines)` and `setSpeed`.
 Room and name lock on entering the world so editing the form cannot silently diverge
-from the connected room. Selection defaults to the Syn3h buggy; Classic remains available.
+from the connected room. Selection defaults to the Mira buggy; Classic remains available.
 
 The coordinator has wired saved kinds and colours into the vehicle factory and networking.
-The chooser supports Syn3h Buggy, Classic, Hovercraft and Jet. `?vehicle=...` overrides
+The chooser supports Mira Buggy, Classic, Hovercraft and Jet. `?vehicle=...` overrides
 the spawned vehicle; help and touch controls follow the actual spawned kind.
 
 Vehicle controls appear in the lobby and for 8.5 seconds on spawn, H or ?. Jet touch
@@ -39,7 +39,7 @@ one preserves the other. The vehicle GLB previews for Jet and Hovercraft show th
 materials; the colour controls still save the colours applied by the actual vehicles.
 
 The loading cover mounts during module evaluation, before engine initialization. It
-listens for `syn3h:loading` with `{ phase, progress, elapsedMs }`, where progress is 0 to 1.
+listens for `mira:loading` with `{ phase, progress, elapsedMs }`, where progress is 0 to 1.
 The Shell constructor ends startup
 loading. `shell.setLoadingMessages(string[])` replaces the new browser-edition message list;
 for messages before Shell exists, use `bootLoading?.setMessages(messages)` from
@@ -75,7 +75,7 @@ only after that swap. An in-session swap additionally needs networking support f
 bounds guard, tag marker, laser owner and replicated kind; changing only `ctx.player`
 is insufficient. This branch leaves the coordinator's reload fallback intact.
 
-`Shell` reads host state from `window.syn3hNet`, guards world edits at the event handler,
+`Shell` reads host state from `window.miraNet`, guards world edits at the event handler,
 and disables advanced world bindings while locked. The bots control appears only when
 `params.get('bots.count')` exists. No networking or parameter data format changed.
 The host lock control changes server state only for a host. Score rows are parsed from
@@ -88,8 +88,8 @@ Run from this worktree:
 
 ```sh
 npx tsc --noEmit
-SYN3H_NO_ROOM_SERVER=1 npx vitest run
-SYN3H_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://127.0.0.1:8797 npx vite --port 5187 --strictPort
+MIRA_NO_ROOM_SERVER=1 npx vitest run
+MIRA_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://127.0.0.1:8797 npx vite --port 5187 --strictPort
 ```
 
 Start an isolated room server with `PORT=8797 npx tsx server/dev.ts` before running a
@@ -172,7 +172,7 @@ After `shell.setTerrain(terrain)`, wire the cinematic camera and bot list:
 shell.setAttractCamera(camera, () => bots.vehicles)
 ```
 
-The shell also discovers the existing `window.syn3h` camera as a fallback. Attract
+The shell also discovers the existing `window.mira` camera as a fallback. Attract
 mode starts after 20 seconds without lobby input, or immediately with `?attract=1`.
 It alternates volcano, road and bot shots. The first key or touch restores the
 lobby without activating its underlying controls. Camera parameters stay intact.
@@ -254,7 +254,7 @@ needs only the lane dev server.
 ## Art direction: Dark Star
 
 On 14 November 2026 the owner chose the Dark Star theme of the new terranlabs.com for
-Syn3h. Source: /Users/vtn/dev/terranlabs.com at 68c1e06.
+Mira. Source: /Users/vtn/dev/terranlabs.com at 68c1e06.
 
 - Colours and type: Dark Star's tokens (`--s3-*` and the few `--theme-*` names that site's
   CSS reads) and its two families, Barlow and Barlow Condensed, served from `public/fonts`
@@ -270,7 +270,7 @@ Syn3h. Source: /Users/vtn/dev/terranlabs.com at 68c1e06.
   panel lobby on 14 November.
 - Panel: a sheet of frosted glass with Dark Star's 18 px radius and hairline border.
 - Loading: that site's veil, see "The loading veil".
-- Logo: still the Syn3h wordmark as one vector path, lit in Dark Star's blue.
+- Logo: still the Mira wordmark as one vector path, lit in Dark Star's blue.
 
 `tools/heavy.sh node tests/ui/lobby-reference.mjs <label>` captures every lobby screen on
 a desktop and a phone. The owner's reference captures stay in the git-ignored
@@ -358,10 +358,10 @@ things arrive, a moon in a slow outer orbit. Its markup, styles and the script t
 `--boot-progress` are in `index.html`, not the bundle, so it is up from the first paint.
 The source is that site's `BootGate.tsx`, `lib/boot.ts`, the `.boot-*` rules in
 `src/index.css` and the bootstrap script in its layout. It reads three variables,
-`--theme-bg-root`, `--theme-text-primary` and `--theme-heading-accent`, set to Syn3h's
+`--theme-bg-root`, `--theme-text-primary` and `--theme-heading-accent`, set to Mira's
 space colour, ink and blue.
 
-`LoadingScreen.ts` is Syn3h's version of that site's BootGate: the bundle arriving takes
+`LoadingScreen.ts` is Mira's version of that site's BootGate: the bundle arriving takes
 the light to 45 percent, the game's loading phases take it to 92, and when the world is
 ready the lap completes and the veil lifts. Differences from the original, all for a game
 that takes longer to start than a web page: the veil may stay up to 45 seconds (not 8),
@@ -372,7 +372,7 @@ at once on a script error, a rejected promise or the page's failure message.
 The veil's status line shows dry loading lines, rotated by index.html from the first
 paint and then by LoadingScreen, which prefers a pool for the current phase when a phase
 lasts long enough to show one. That line is aria-hidden; screen readers hear the plain
-phase once per phase from the `.syn3h-loading` live region.
+phase once per phase from the `.mira-loading` live region.
 `tools/heavy.sh node tests/ui/boot-veil.mjs` checks the veil from first paint to lift, and
 that a startup failure is never hidden behind it. `tests/ui/loading-lines.mjs <url>` checks
 the rotation over a slow link and the longest line at 320 px.
@@ -433,7 +433,7 @@ asked for this to replace the panel lobby on 14 November 2026.
   to its world and opens its sliders. `drop.mjs` records every frame gap from tap to ground.
 - The descent holds in the light until the room has answered (up to 5 s), since a slow
   join can rebuild the world and move the spawn point; the camera path is taken after
-  that. A returning player (`localStorage` `syn3h.descents`) gets a quicker dive and a
+  that. A returning player (`localStorage` `mira.descents`) gets a quicker dive and a
   1.4 s fall; a tap, click or key during the descent lands at once.
 - The descent: Enter World from the name form dives toward the chosen world until its air
   fills the view, then the game's camera comes down from 520 m above the spawn point to its
@@ -448,7 +448,7 @@ asked for this to replace the panel lobby on 14 November 2026.
   0.6. It has no imports, so the game's renderer can call it and share the one state.
 - There is no other lobby (the owner's choice, 14 November). At `gfx.level` 0, and with
   reduced motion, the galaxy is held still and draws only while something moves. Without
-  WebGL 2 the index says the browser cannot run Syn3h; the game cannot draw there either.
+  WebGL 2 the index says the browser cannot run Mira; the game cannot draw there either.
   If WebGL 2 exists but the galaxy's shader will not start, its world names stay as a row
   of buttons (`.galaxy-flat`) so a visitor can still choose and play.
 
@@ -459,7 +459,7 @@ while the lobby is on screen, so a slow lobby can lower `gfx.level` before play 
 descent on desktop and phone, the still mode, the row of names and the missing-WebGL 2
 notice; `galaxy-crowd.mjs` rehearses ten
 worlds (`?worlds=10`, development builds only) at desktop, phone portrait and landscape and
-in WebKit at iPad size. All take `SYN3H_URL`. Its GPU timings on this Mac (median ms per
+in WebKit at iPad size. All take `MIRA_URL`. Its GPU timings on this Mac (median ms per
 frame, four worlds then ten): desktop 2.7 and 3.0, portrait 1.9 and 2.6, landscape 1.9 and
 2.0; labels shown with ten worlds: 10, 6 and 7. Comparisons, not a phone's figures.
 
@@ -500,7 +500,7 @@ Aiming a beam where the camera looks is the Weapons lane's.
 `src/ui/inspector/`: the Create button opens five frosted cards (World, Sky & weather, Game,
 Vehicles, You). Each card is an accordion of groups; every registered property is a row with
 its guardrails and a detail pane. Copy world and Paste world move the shared values as JSON
-(`{ "syn3h": "world", "version": 1, "values": { id: value } }`); pasted numbers are clamped
+(`{ "mira": "world", "version": 1, "values": { id: value } }`); pasted numbers are clamped
 to their limits and personal settings are left out unless the You section is pasted.
 
 While the cursor is captured the cards, HUD and minimap fade out and the focus display fades
@@ -527,7 +527,7 @@ Cues `bungeeLaunch`, `bungeeAttach` and `bungeeRelease` exist in `src/audio/Cues
 Bungee's `cue` hook in `src/net/index.ts` calls `audio.cue(name, at)`.
 
 The chip has since given way to the gear drum in the HUD's left column. Check:
-`SYN3H_URL=<game> node tests/ui/gear-wired.mjs` (the drum and the Zorb row, desktop and both
+`MIRA_URL=<game> node tests/ui/gear-wired.mjs` (the drum and the Zorb row, desktop and both
 phone orientations) and `node tests/ui/hud-column.mjs` (the column's layout and accessories).
 
 ## November 15 UX follow-up

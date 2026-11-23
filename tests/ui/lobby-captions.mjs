@@ -3,11 +3,12 @@
 // and another sat between the card's foot and the button. While the galaxy turns, at iPad mini
 // and phone sizes, with Settings closed and open, no caption that can be seen may come within a
 // few pixels of the buttons in the lower right, the settings card or the version text.
-//   SYN3H_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/lobby-captions.mjs
+//   MIRA_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/lobby-captions.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5173/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5173/'
 const sizes = [
   ['ipad-portrait', { viewport: { width: 744, height: 1133 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }],
   ['ipad-landscape', { viewport: { width: 1133, height: 744 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }],
@@ -19,7 +20,7 @@ try {
     const page = await browser.newPage(options)
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     await page.goto(`${base}?glass=inline&gfx=3&room=lobby-captions-${name}-${Date.now()}`)
-    await page.waitForFunction(() => document.documentElement.dataset.boot === 'done' && !window.syn3h?.shell?.galaxy?.opening && !document.documentElement.dataset.opening, null, { timeout: 180000 })
+    await page.waitForFunction(() => document.documentElement.dataset.boot === 'done' && !window.mira?.shell?.galaxy?.opening && !document.documentElement.dataset.opening, null, { timeout: 180000 })
     await page.waitForTimeout(1500)
     await page.waitForSelector('.lobby-gear[data-glass-surface="shader"]')
     await page.waitForSelector('.lobby-about[data-glass-surface="shader"]')

@@ -27,11 +27,11 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors = []
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 await page.goto(`${base}?autoplay=1${seed ? `&seed=${seed}` : ""}${process.env.QUERY ? `&${process.env.QUERY}` : ""}`, { waitUntil: "load" })
-await page.waitForFunction(() => window.syn3h?.game?.tick > 40, null, { timeout: 60000 })
+await page.waitForFunction(() => window.mira?.game?.tick > 40, null, { timeout: 60000 })
 await page.keyboard.press('KeyH').catch(() => {}) // dismiss the controls card if it is up
 
 const read = () => page.evaluate(() => {
-  const s = window.syn3h
+  const s = window.mira
   const t = s.terrain
   const road = t.roadPaths().find((r) => r.kind === 'volcano')
   const b = s.player.body

@@ -8,17 +8,17 @@ const exhibit = (id: string, title: string, extra: Partial<LabExhibit> = {}): La
 
 /** The exhibits as the lanes register them today, in collection order. */
 const lanes = () => [
-  exhibit('buggy', 'Next Syn3h buggy', { section: 'Design studies', order: 1 }),
+  exhibit('buggy', 'Next Mira buggy', { section: 'Design studies', order: 1 }),
   exhibit('lineup', 'Line-up: all vehicles to scale', { section: 'In the game', order: 1 }),
-  exhibit('game-buggy', 'Syn3h buggy', { section: 'In the game', family: 'buggy' }),
+  exhibit('game-buggy', 'Mira buggy', { section: 'In the game', family: 'buggy' }),
   exhibit('game-buggy-classic', 'Mars Explorer buggy', { section: 'In the game', family: 'buggy-classic' }),
   exhibit('game-jet', 'Jet', { section: 'In the game', family: 'jet' }),
   exhibit('game-hovercraft', 'Hovercraft', { section: 'In the game', family: 'hovercraft' }),
   exhibit('game-tank', 'Tank', { section: 'In the game', family: 'tank' }),
-  exhibit('hover', 'Syn3h hovercraft', { section: 'Design studies' }),
-  exhibit('jet', 'Syn3h jet', { section: 'Design studies' }),
-  exhibit('tank', 'Syn3h next-gen tank', { section: 'Design studies', family: 'tank' }),
-  exhibit('tank-archive', 'Syn3h tank: earlier studies', { section: 'Design studies' }),
+  exhibit('hover', 'Mira hovercraft', { section: 'Design studies' }),
+  exhibit('jet', 'Mira jet', { section: 'Design studies' }),
+  exhibit('tank', 'Mira next-gen tank', { section: 'Design studies', family: 'tank' }),
+  exhibit('tank-archive', 'Mira tank: earlier studies', { section: 'Design studies' }),
 ]
 
 describe('how the vehicle lab names and orders its exhibits', () => {
@@ -29,15 +29,15 @@ describe('how the vehicle lab names and orders its exhibits', () => {
       [FUTURE, ['Future buggies', 'Future hovercrafts', 'Future jets', 'Future tanks', 'Future tanks: earlier rounds']],
     ])
   })
-  it('hides the Mars Explorer buggy and says neither Syn3h nor classic anywhere', () => {
+  it('hides the Mars Explorer buggy and says neither Mira nor classic anywhere', () => {
     const shown = present(lanes())
     expect(shown.map(e => e.id)).not.toContain('game-buggy-classic')
-    for (const e of shown) expect(e.title).not.toMatch(/syn3h|classic|mars explorer|next|line-up/i)
+    for (const e of shown) expect(e.title).not.toMatch(/mira|classic|mars explorer|next|line-up/i)
   })
   it('names a study by its vehicle whatever the lane called it, including one it has not seen', () => {
     expect(futureTitle('buggy')).toBe('Future buggies'); expect(futureTitle('hover')).toBe('Future hovercrafts')
     expect(futureTitle('tank-archive')).toBe('Future tanks'); expect(futureTitle('glider')).toBe('Future gliders')
-    const [only] = present([exhibit('glider', 'Syn3h glider round 1')])
+    const [only] = present([exhibit('glider', 'Mira glider round 1')])
     expect([only.title, only.section]).toEqual(['Future gliders', FUTURE])
   })
   it('shows the comparison as a single line, and works when no lane provides one', () => {

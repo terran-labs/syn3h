@@ -1,13 +1,14 @@
 /**
  * Normal-entry gear smoke plus host-bot replication. Run through tools/heavy.sh.
  * For an isolated HTTP server, launch Vite with VITE_SERVER_URL as well as
- * SYN3H_ROOM_PORT. Set SYN3H_EXPECT_ROOM_URL here to verify the client endpoint.
+ * MIRA_ROOM_PORT. Set MIRA_EXPECT_ROOM_URL here to verify the client endpoint.
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright-core'
 import { mkdir } from 'node:fs/promises'
-const base = process.env.SYN3H_URL
-if (!base) throw new Error('Set SYN3H_URL to the isolated lane preview')
+const base = process.env.MIRA_URL
+if (!base) throw new Error('Set MIRA_URL to the isolated lane preview')
 const out = '/tmp/syn3h-weapons/current'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
@@ -24,14 +25,14 @@ try {
     }))
     // No autoplay, feature flag, or special room URL: enter from the ordinary galaxy.
     await page.goto(base, { waitUntil: 'load' })
-    await page.waitForFunction(() => window.syn3h?.game.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 120000 })
     await page.evaluate(room => { const input = document.querySelector('#shell-room'); input.value = room; input.dispatchEvent(new Event('input', { bubbles: true })) }, room)
     await page.locator('.galaxy-label[data-world="volcanic"]').dispatchEvent('click')
-    await page.waitForFunction(() => window.syn3h?.shell.playing && !window.syn3h.game.input.suspended && window.syn3hNet?.connected, null, { timeout: 60000 })
-    const endpoint = await page.evaluate(() => window.syn3hNet.conn.url)
+    await page.waitForFunction(() => window.mira?.shell.playing && !window.mira.game.input.suspended && window.miraNet?.connected, null, { timeout: 60000 })
+    const endpoint = await page.evaluate(() => window.miraNet.conn.url)
     console.log(`Room connection: ${endpoint}`)
-    if (process.env.SYN3H_EXPECT_ROOM_URL) {
-      const expected = new URL(process.env.SYN3H_EXPECT_ROOM_URL)
+    if (process.env.MIRA_EXPECT_ROOM_URL) {
+      const expected = new URL(process.env.MIRA_EXPECT_ROOM_URL)
       expected.pathname = '/ws'
       expected.search = new URLSearchParams({ room }).toString()
       assert.equal(endpoint, expected.href, 'Client must connect to the isolated room server')
@@ -42,31 +43,31 @@ try {
   hostPage = A
   console.log('Normal entry connected')
   const expected = ['beam', 'red', 'pester', 'bungee', 'yoink']
-  report.racks = await Promise.all([A, B].map(p => p.evaluate(() => window.syn3hNet.gear.list())))
+  report.racks = await Promise.all([A, B].map(p => p.evaluate(() => window.miraNet.gear.list())))
   report.racks.forEach(r => assert.deepEqual(r, expected))
   for (const page of [A, B]) {
     const seen = []
     for (let i = 0; i < 5; i++) {
-      seen.push(await page.evaluate(() => window.syn3hNet.gear.current))
+      seen.push(await page.evaluate(() => window.miraNet.gear.current))
       await page.locator('.gear-chip').click()
     }
     assert.deepEqual(seen, expected)
   }
   await A.keyboard.press('Digit2')
-  assert.equal(await A.evaluate(() => window.syn3hNet.gear.current), 'red')
+  assert.equal(await A.evaluate(() => window.miraNet.gear.current), 'red')
   await A.keyboard.press('Digit1')
-  assert.equal(await A.evaluate(() => window.syn3hNet.gear.current), 'beam')
+  assert.equal(await A.evaluate(() => window.miraNet.gear.current), 'beam')
   await A.evaluate(async () => {
     const { beamAimDirection } = await import('/src/weapons/aim.ts')
-    const n = window.syn3hNet, g = window.syn3h.game, old = n.lasers.spawn.bind(n.lasers)
+    const n = window.miraNet, g = window.mira.game, old = n.lasers.spawn.bind(n.lasers)
     window.__beamChecks = []
     n.lasers.spawn = (from, shot, age) => {
-      if (from === n.id && !shot.k) window.__beamChecks.push({ actual: shot.d, expected: beamAimDirection(g, window.syn3h.player.body) })
+      if (from === n.id && !shot.k) window.__beamChecks.push({ actual: shot.d, expected: beamAimDirection(g, window.mira.player.body) })
       return old(from, shot, age)
     }
   })
   await A.locator('#game').click({ position: { x: 640, y: 400 }, force: true })
-  await A.waitForFunction(() => document.pointerLockElement === window.syn3h.game.canvas)
+  await A.waitForFunction(() => document.pointerLockElement === window.mira.game.canvas)
   await A.mouse.move(850, 350)
   await A.waitForTimeout(700)
   await A.evaluate(() => { window.__beamChecks = [] })
@@ -83,65 +84,65 @@ try {
   report.cameraShots = aims.length
   console.log('Gear selection and camera aim passed')
   // Position a bot and the guest above terrain to exercise gear without navigation noise.
-  await A.evaluate(() => { const p = window.syn3h.params; p.set('bots.canDrive', false); p.set('bots.tagBeams', false); p.set('bots.count', 1) })
-  await A.waitForFunction(() => window.syn3h.bots.vehicles.length === 1)
-  const ids = await A.evaluate(() => ({ bot: window.syn3hNet.vehicleIdOfBody(window.syn3h.bots.vehicles[0].body.handle), host: window.syn3hNet.id }))
-  ids.guest = await B.evaluate(() => window.syn3hNet.id)
-  await B.waitForFunction(id => window.syn3hNet.players.has(id), ids.bot)
+  await A.evaluate(() => { const p = window.mira.params; p.set('bots.canDrive', false); p.set('bots.tagBeams', false); p.set('bots.count', 1) })
+  await A.waitForFunction(() => window.mira.bots.vehicles.length === 1)
+  const ids = await A.evaluate(() => ({ bot: window.miraNet.vehicleIdOfBody(window.mira.bots.vehicles[0].body.handle), host: window.miraNet.id }))
+  ids.guest = await B.evaluate(() => window.miraNet.id)
+  await B.waitForFunction(id => window.miraNet.players.has(id), ids.bot)
   async function place(distance) {
     const spot = await A.evaluate(d => {
-      const s = window.syn3h, bot = s.bots.vehicles[0], p = s.player.body.translation()
+      const s = window.mira, bot = s.bots.vehicles[0], p = s.player.body.translation()
       const x = p.x, z = p.z - 30, y = Math.max(s.terrain.heightAt(x, z), s.terrain.heightAt(x, z - d)) + 20
       bot.teleport(s.player.object.position.clone().set(x, y, z), 0)
       bot.body.setGravityScale(0, true); bot.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
       return { x, y, z: z - d }
     }, distance)
-    await B.evaluate(p => { const s = window.syn3h; s.player.teleport(s.player.object.position.clone().set(p.x, p.y, p.z), 0); s.player.body.setGravityScale(0, true); s.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true) }, spot)
+    await B.evaluate(p => { const s = window.mira; s.player.teleport(s.player.object.position.clone().set(p.x, p.y, p.z), 0); s.player.body.setGravityScale(0, true); s.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true) }, spot)
     await A.waitForTimeout(500)
   }
   const act = (gear, phase) => A.evaluate(({ gear, phase, guest }) => {
-    const n = window.syn3hNet
-    n.botDecisionHooks.act(window.syn3h.bots.vehicles[0], { gear, phase, target: n.vehicleOf(guest) })
+    const n = window.miraNet
+    n.botDecisionHooks.act(window.mira.bots.vehicles[0], { gear, phase, target: n.vehicleOf(guest) })
   }, { gear, phase, guest: ids.guest })
   await place(18)
   await act('yoink', 'press')
-  await B.waitForFunction(({ bot, guest }) => window.syn3hNet.yoink.holderOf(guest) === bot, ids)
+  await B.waitForFunction(({ bot, guest }) => window.miraNet.yoink.holderOf(guest) === bot, ids)
   await A.waitForTimeout(700)
   await act('yoink', 'release')
-  await B.waitForFunction(guest => window.syn3hNet.yoink.holderOf(guest) === null, ids.guest)
+  await B.waitForFunction(guest => window.miraNet.yoink.holderOf(guest) === null, ids.guest)
   assert.ok(received.some(m => m.type === 'yoink' && m.from === ids.bot && m.y.s === 'fling'))
   console.log('Bot Yoink passed')
   await place(35)
   await act('red', 'press')
-  await A.waitForFunction(bot => window.syn3hNet.botGear.get(bot)?.red.ready, ids.bot)
+  await A.waitForFunction(bot => window.miraNet.botGear.get(bot)?.red.ready, ids.bot)
   await act('red', 'release')
   await A.waitForTimeout(400)
   assert.ok(received.some(m => m.type === 'fire' && m.from === ids.bot && m.shot.k === 'red'))
   console.log('Bot Big Red passed')
   await place(35)
   await act('pester', 'press')
-  await B.waitForFunction(bot => window.syn3hNet.pesters.list().some(o => o.shooter === bot), ids.bot)
+  await B.waitForFunction(bot => window.miraNet.pesters.list().some(o => o.shooter === bot), ids.bot)
   await B.screenshot({ path: `${out}/bot-pester.png` })
   await act('pester', 'release')
   await A.waitForTimeout(2500)
   console.log('Bot Pester passed')
   await place(18)
   await act('bungee', 'press')
-  await A.waitForFunction(bot => window.syn3hNet.botGear.get(bot)?.bungee.attached, ids.bot)
-  await B.waitForFunction(bot => window.syn3hNet.bungee.cords.has(bot), ids.bot)
+  await A.waitForFunction(bot => window.miraNet.botGear.get(bot)?.bungee.attached, ids.bot)
+  await B.waitForFunction(bot => window.miraNet.bungee.cords.has(bot), ids.bot)
   await act('bungee', 'cancel')
-  await B.waitForFunction(bot => !window.syn3hNet.bungee.cords.has(bot), ids.bot)
+  await B.waitForFunction(bot => !window.miraNet.bungee.cords.has(bot), ids.bot)
   report.botRelays = received.filter(m => m.from === ids.bot && ['fire', 'cord', 'yoink'].includes(m.type)).map(m => [m.type, m.shot?.k ?? m.cord?.s ?? m.y?.s])
   assert.ok(report.botRelays.some(([type, state]) => type === 'cord' && state === 'off'))
   // The host can still opt out; the rack and guest follow its setting.
-  await A.evaluate(() => { for (const id of ['bungee.allowed', 'yoink.allowed', 'bigRed.allowed', 'pester.allowed']) window.syn3h.params.set(id, false) })
-  await B.waitForFunction(() => window.syn3hNet.gear.list().length === 1)
+  await A.evaluate(() => { for (const id of ['bungee.allowed', 'yoink.allowed', 'bigRed.allowed', 'pester.allowed']) window.mira.params.set(id, false) })
+  await B.waitForFunction(() => window.miraNet.gear.list().length === 1)
   await B.waitForFunction(() => document.querySelector('.gear-chip').hidden)
-  assert.deepEqual(await B.evaluate(() => window.syn3hNet.gear.list()), ['beam'])
+  assert.deepEqual(await B.evaluate(() => window.miraNet.gear.list()), ['beam'])
   // Let the real BotBrain choose and execute Yoink, with driving stopped for repeatability.
   const autoStart = received.length
   await A.evaluate(() => {
-    const s = window.syn3h, bot = s.bots.vehicles[0], p = bot.body.translation()
+    const s = window.mira, bot = s.bots.vehicles[0], p = bot.body.translation()
     bot.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
     bot.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
     s.player.teleport(s.player.object.position.clone().set(p.x, p.y, p.z - 18), 0)
@@ -150,8 +151,8 @@ try {
     s.params.set('bots.targetMode', 0)
     s.params.set('bots.tagBeams', true)
   })
-  await A.waitForFunction(bot => window.syn3hNet.botGear.get(bot)?.yoink.holding === window.syn3hNet.id, ids.bot)
-  await A.waitForFunction(bot => window.syn3hNet.botGear.get(bot)?.yoink.holding === null, ids.bot)
+  await A.waitForFunction(bot => window.miraNet.botGear.get(bot)?.yoink.holding === window.miraNet.id, ids.bot)
+  await A.waitForFunction(bot => window.miraNet.botGear.get(bot)?.yoink.holding === null, ids.bot)
   await A.waitForTimeout(300)
   report.autonomousYoink = received.slice(autoStart).filter(m => m.type === 'yoink' && m.from === ids.bot && m.y.to === ids.host).map(m => m.y.s)
   assert.ok(report.autonomousYoink.includes('grab'))
@@ -163,7 +164,7 @@ try {
 } catch (error) {
   console.log(JSON.stringify({ errors, relays: received.filter(m => m.from && ['fire', 'cord', 'yoink'].includes(m.type)) }, null, 2))
   if (hostPage) {
-    console.log(await hostPage.evaluate(() => [...window.syn3hNet.botGear].map(([id, g]) => ({ id, stats: g.bungee.stats, mine: g.bungee.mine ? { to: g.bungee.mine.to, at: g.bungee.mine.at, hook: g.bungee.mine.hook } : null, pos: g.vehicle.body.translation(), target: g.target?.body.translation() }))))
+    console.log(await hostPage.evaluate(() => [...window.miraNet.botGear].map(([id, g]) => ({ id, stats: g.bungee.stats, mine: g.bungee.mine ? { to: g.bungee.mine.to, at: g.bungee.mine.at, hook: g.bungee.mine.hook } : null, pos: g.vehicle.body.translation(), target: g.target?.body.translation() }))))
     await hostPage.screenshot({ path: `${out}/failure.png` })
   }
   throw error

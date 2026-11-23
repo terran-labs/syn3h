@@ -17,13 +17,13 @@ page.on('pageerror', e => report.errors.push(e.message))
 try {
   const url = new URL(base); url.searchParams.set('room', `spray-${Date.now()}`); url.searchParams.set('name', 'S'); url.searchParams.set('vehicle', process.env.SPRAY_VEHICLE ?? 'buggy')
   await page.goto(url.href, { waitUntil: 'load', timeout: 120000 })
-  await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
-  await page.evaluate(() => window.syn3h.shell.play())
-  await page.waitForFunction(() => window.syn3hNet?.connected && window.syn3h.game.time > 3, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.shell, null, { timeout: 120000 })
+  await page.evaluate(() => window.mira.shell.play())
+  await page.waitForFunction(() => window.miraNet?.connected && window.mira.game.time > 3, null, { timeout: 120000 })
   const planet = process.env.SPRAY_PLANET ?? 'alpine', seed = Number(process.env.SPRAY_SEED ?? 7)
   report.planet = { planet, seed }
   await page.evaluate(async ({ planet, seed }) => {
-    const s = window.syn3h
+    const s = window.mira
     const { applyPlanet } = await import('/src/world/planets.ts')
     applyPlanet(planet, seed)
     for (const [id, value] of Object.entries({ 'bots.count': 0, 'gfx.auto': false, 'gfx.level': 2, 'sun.timeOfDay': 12, 'sun.dayLength': 0, 'world.curve': 0, 'weather.storminess': 0 })) s.params.set(id, value)
@@ -31,7 +31,7 @@ try {
   await page.waitForTimeout(2500)
   // A straight run of open sea along -z (the vehicles' forward axis with no rotation).
   report.run = await page.evaluate(() => {
-    const s = window.syn3h, t = s.terrain, size = t.wrapSize, sea = s.params.get('world.lavaAltitude').value
+    const s = window.mira, t = s.terrain, size = t.wrapSize, sea = s.params.get('world.lavaAltitude').value
     const deep = (x, z) => t.liquidKindAt(x, z) === 'water' && sea - t.heightAt(x, z) > 4
     for (let x = -size / 2 + 40; x < size / 2 - 40; x += 10) for (let z = -size / 2 + 200; z < size / 2 - 40; z += 10) {
       let ok = true
@@ -43,7 +43,7 @@ try {
     throw Error('No open sea run')
   })
   await page.evaluate(() => {
-    const s = window.syn3h, e = s.game.systems.find(x => x.underwater && x.spray)
+    const s = window.mira, e = s.game.systems.find(x => x.underwater && x.spray)
     window.sprayEffects = e
     // Real wave heights for the wake if this build accepts them (WaterEffects passes nothing yet).
     e.spray.setWater?.(s.terrain)
@@ -73,7 +73,7 @@ try {
     s.game.systems.splice(s.game.systems.indexOf(e), 0, camera)
   })
   const start = async (speed, view, path = 'straight') => page.evaluate(({ speed, view, path }) => {
-    const s = window.syn3h, r = window.sprayRunInfo, run = window.sprayRun
+    const s = window.mira, r = window.sprayRunInfo, run = window.sprayRun
     // A circle of radius 12 m whose centre is 12 m to the right of the start, 30 m down the run.
     const x = path === 'circle' ? run.x - 12 : run.x, z = path === 'circle' ? run.z - 30 : run.z
     Object.assign(r, { mode: 'drive', speed, view, path, t0: s.game.time, cx: run.x, cy: run.sea, cz: run.z - 30 })
@@ -82,7 +82,7 @@ try {
   }, { speed, view, path })
   const shot = async (label, extra = {}) => {
     const state = await page.evaluate(() => {
-      const s = window.syn3h, sp = window.sprayEffects.spray, sim = sp.state ?? sp.sim, p = s.player.body.translation()
+      const s = window.mira, sp = window.sprayEffects.spray, sim = sp.state ?? sp.sim, p = s.player.body.translation()
       const meshes = s.game.scene.children.filter(o => /spray|foam|ribbon/.test(o.name ?? '') || o.geometry?.isInstancedBufferGeometry)
       return { player: [p.x, p.y, p.z], surface: s.terrain.liquidHeightAt(p.x, p.z), velocity: s.player.body.linvel(),
         sim: sim && { droplets: sim.dropletCount, wakePoints: sim.wakePoints, rings: sim.ringCount },
@@ -93,7 +93,7 @@ try {
   }
   if (mode === 'visual') {
     for (const [time, tag] of [[12, 'day'], [23.5, 'night']]) {
-      await page.evaluate(t => window.syn3h.params.set('sun.timeOfDay', t), time)
+      await page.evaluate(t => window.mira.params.set('sun.timeOfDay', t), time)
       await start(22, 'chase'); await page.waitForTimeout(3500); await shot(`${tag}-skim-chase`)
       await start(22, 'side'); await page.waitForTimeout(3500); await shot(`${tag}-skim-side`)
       if (tag === 'day') {
@@ -106,23 +106,23 @@ try {
       await start(0, 'chase'); await page.waitForTimeout(3000); await shot(`${tag}-stationary`)
       // Entry splash: drop from 9 m and capture just after contact.
       await page.evaluate(() => {
-        const s = window.syn3h, r = window.sprayRunInfo, run = window.sprayRun
+        const s = window.mira, r = window.sprayRunInfo, run = window.sprayRun
         Object.assign(r, { mode: 'drop', view: 'drop', x: run.x, y: run.sea, z: run.z - 60 })
         s.player.body.setTranslation({ x: run.x, y: run.sea + 9, z: run.z - 60 }, true); s.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
       })
-      await page.waitForFunction(() => { const p = window.syn3h.player.body.translation(); return p.y < window.sprayRun.sea + .8 }, null, { timeout: 10000, polling: 'raf' })
+      await page.waitForFunction(() => { const p = window.mira.player.body.translation(); return p.y < window.sprayRun.sea + .8 }, null, { timeout: 10000, polling: 'raf' })
       await page.waitForTimeout(60); await shot(`${tag}-splash`)
       await page.waitForTimeout(450); await shot(`${tag}-splash-late`)
     }
   }
   if (mode === 'cost') {
     for (const tier of [0, 1, 2]) {
-      await page.evaluate(t => window.syn3h.params.set('gfx.level', t), tier)
+      await page.evaluate(t => window.mira.params.set('gfx.level', t), tier)
       // Warm up dry: the spray allocates and draws empty.
-      await page.evaluate(() => { const s = window.syn3h, run = window.sprayRun; window.sprayRunInfo.mode = 'idle'; s.player.body.setTranslation({ x: run.x, y: run.sea + 30, z: run.z }, true) })
+      await page.evaluate(() => { const s = window.mira, run = window.sprayRun; window.sprayRunInfo.mode = 'idle'; s.player.body.setTranslation({ x: run.x, y: run.sea + 30, z: run.z }, true) })
       await page.waitForTimeout(3000)
       await page.evaluate(() => {
-        const b = window.syn3h.game.renderer.backend
+        const b = window.mira.game.renderer.backend
         window.sprayCounts = { pipelines: 0, stacks: [] }
         if (!window.sprayWrapped) {
           window.sprayWrapped = true
@@ -132,7 +132,7 @@ try {
       })
       await start(22, 'chase'); await page.waitForTimeout(3500)
       const cost = await page.evaluate(async () => {
-        const s = window.syn3h, sp = window.sprayEffects.spray, sim = sp.state
+        const s = window.mira, sp = window.sprayEffects.spray, sim = sp.state
         const meshes = s.game.scene.children.filter(o => o.name === 'water-spray' || o.name === 'water-foam')
         const sample = async () => { await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); return { ...s.game.renderer.info.render } }
         const on = await sample()

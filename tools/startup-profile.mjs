@@ -14,7 +14,7 @@
  *   --json FILE               write every run as JSON
  *   --label TEXT              a name for this configuration in the printed table
  *
- * Reads window.syn3hStartup (src/core/diagnostics.ts). It loads the lobby as a player would,
+ * Reads window.miraStartup (src/core/diagnostics.ts). It loads the lobby as a player would,
  * without ?autoplay, and closes the room socket so no room server is needed. The load
  * average is printed with every configuration because the machine is shared.
  */
@@ -56,7 +56,7 @@ async function measure(page, kind, index, shotDir) {
   const shotTimes = shotDir ? [500, 1000, 2000, 4000, 8000, 16000, 32000] : []
   const shotFiles = []
   let finished = false
-  const wait = page.waitForFunction(name => window.syn3hStartup ? window.syn3hStartup.phases.some(p => p.name === name) : window.syn3h?.game?.performance?.firstFrameMs > 0, DONE, { timeout: 180000, polling: 100 }).then(() => { finished = true })
+  const wait = page.waitForFunction(name => window.miraStartup ? window.miraStartup.phases.some(p => p.name === name) : window.mira?.game?.performance?.firstFrameMs > 0, DONE, { timeout: 180000, polling: 100 }).then(() => { finished = true })
   for (const t of shotTimes) {
     const delay = started + t - Date.now()
     if (delay > 0) await Promise.race([wait, new Promise(r => setTimeout(r, delay))])
@@ -74,9 +74,9 @@ async function measure(page, kind, index, shotDir) {
     const resources = performance.getEntriesByType('resource')
     const veil = document.documentElement.dataset.boot
     return {
-      timing: window.syn3hStartup,
-      firstDrawSubmittedMs: window.syn3h?.game?.performance?.firstFrameMs ?? null,
-      backend: window.syn3h?.game?.backend,
+      timing: window.miraStartup,
+      firstDrawSubmittedMs: window.mira?.game?.performance?.firstFrameMs ?? null,
+      backend: window.mira?.game?.backend,
       nav: nav ? { responseEnd: nav.responseEnd, domContentLoaded: nav.domContentLoadedEventEnd } : null,
       resources: resources.length,
       transfer: resources.reduce((s, r) => s + (r.transferSize || 0), 0),

@@ -4,11 +4,12 @@
 // sidebar component and the touch rule that lifts Panels over an open sidebar matched it.
 // Each size enters a world, returns to the lobby, opens Settings, and checks that no in-game
 // HUD control shows, with the lobby at rest and with the card open.
-//   SYN3H_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/lobby-no-hud.mjs
+//   MIRA_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/lobby-no-hud.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5173/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5173/'
 const HUD = '.hud-navigation, .shell-hud, .focus-hud, .touch-controls, .gear-selector, .gear-actions, .shell-minimap, .rail-command, .match-hud, .race-hud, .pause-veil, .pause-actions'
 const sizes = [
   ['ipad-portrait', webkit, { viewport: { width: 744, height: 1133 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }],
@@ -23,11 +24,11 @@ try {
     const page = await browsers.get(engine).newPage(options)
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     await page.goto(`${base}?autoplay=1&room=lobby-no-hud-${name}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30 && document.querySelector('.syn3h-shell')?.classList.contains('is-playing'), null, { timeout: 180000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30 && document.querySelector('.mira-shell')?.classList.contains('is-playing'), null, { timeout: 180000 })
     await page.waitForTimeout(2000)
     // Back to the lobby, as leaving a world does.
-    await page.evaluate(() => window.syn3h.shell.openMenu())
-    await page.waitForFunction(() => !document.querySelector('.syn3h-shell').classList.contains('is-playing') && !document.querySelector('.shell-overlay').hidden)
+    await page.evaluate(() => window.mira.shell.openMenu())
+    await page.waitForFunction(() => !document.querySelector('.mira-shell').classList.contains('is-playing') && !document.querySelector('.shell-overlay').hidden)
     await page.waitForTimeout(1500)
     const shown = () => page.evaluate((selector) => [...document.querySelectorAll(selector)].filter((el) => {
       const s = getComputedStyle(el)

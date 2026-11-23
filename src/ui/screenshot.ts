@@ -32,11 +32,11 @@ function slug(text: string): string {
   return text.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
-/** syn3h-zansaeth-badlands-20261119-2010.png: the world, its planet, and the local time to the minute. */
+/** mira-zansaeth-badlands-20261119-2010.png: the world, its planet, and the local time to the minute. */
 export function shotFileName(world: string, planet: string, at: Date): string {
   const two = (n: number) => String(n).padStart(2, '0')
   const stamp = `${at.getFullYear()}${two(at.getMonth() + 1)}${two(at.getDate())}-${two(at.getHours())}${two(at.getMinutes())}`
-  return `${['syn3h', slug(world), slug(planet)].filter(Boolean).join('-')}-${stamp}.png`
+  return `${['mira', slug(world), slug(planet)].filter(Boolean).join('-')}-${stamp}.png`
 }
 
 /**

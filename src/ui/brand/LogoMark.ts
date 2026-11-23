@@ -1,5 +1,5 @@
 /**
- * The animated Syn3h logo on its own canvas, for the lab page, for screens that have no GPU
+ * The animated Mira logo on its own canvas, for the lab page, for screens that have no GPU
  * picture of their own to share, and for rendering stills (share card, app icons). Inside
  * a screen that already runs a WebGL 2 picture, use LogoRenderer in that context instead:
  * phones allow only a few live contexts.
@@ -104,7 +104,7 @@ export class LogoMark {
       if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisibility)
       this.resize()
     } catch (error) {
-      console.warn('Syn3h logo could not start; the SVG wordmark stays.', error)
+      console.warn('Mira logo could not start; the SVG wordmark stays.', error)
       this.fail()
     }
   }
@@ -284,7 +284,7 @@ export function logoSvg(options: Partial<LogoLook> & { width?: number; height?: 
     for (let i = 0; i < Math.round(width * height / 9000); i++) stars += `<circle cx="${(rand() * width).toFixed(1)}" cy="${(rand() * height).toFixed(1)}" r="${(0.4 + rand() * Math.max(0.6, width / 900)).toFixed(2)}" fill="#c6d6ff" opacity="${(0.2 + rand() * 0.6).toFixed(2)}"/>`
   }
   const blur = box.height * 0.06
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Syn3h">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Mira">
 <defs>
 <radialGradient id="space" cx="50%" cy="${(100 * (box.y + box.height / 2) / height).toFixed(1)}%" r="75%"><stop offset="0" stop-color="#131f38"/><stop offset="1" stop-color="#03060b"/></radialGradient>
 <filter id="glow" x="-20%" y="-60%" width="140%" height="220%" color-interpolation-filters="sRGB">

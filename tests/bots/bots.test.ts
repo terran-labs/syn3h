@@ -3,7 +3,7 @@ import { Quaternion, Scene, Vector3 } from 'three/webgpu'
 import type { Game, System } from '../../src/core/Game'
 import { emptyInput } from '../../src/core/Input'
 import { createWorld, initPhysics, RAPIER } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { PlaceholderVehicle } from '../../src/vehicles/Vehicle'
 import type { Terrain } from '../../src/world/Terrain'
 import { BotBrain } from '../../src/bots/BotBrain'
@@ -47,10 +47,10 @@ function stationaryTarget(game: Game, position = new Vector3(0, 0.5, 0)) {
   return target
 }
 describe('bot pursuit', () => {
-  it.each(['placeholder', 'syn3h'])('%s closes distance and makes real Rapier contact with a stationary target when aggression allows ramming', kind => {
+  it.each(['placeholder', 'mira'])('%s closes distance and makes real Rapier contact with a stationary target when aggression allows ramming', kind => {
     params.set('bots.aggression', 2)
     const { game, step } = harness(), target = stationaryTarget(game)
-    const bot = kind === 'syn3h' ? new Syn3hBuggy(game, terrain, new Vector3(0, 1, 25)) : new PlaceholderVehicle(game, terrain, new Vector3(0, 0.5, 25))
+    const bot = kind === 'mira' ? new MiraBuggy(game, terrain, new Vector3(0, 1, 25)) : new PlaceholderVehicle(game, terrain, new Vector3(0, 0.5, 25))
     const brain = game.add(new BotBrain(game, terrain, bot, target)); game.add(bot)
     let contact = false, nearest = Infinity
     for (let i = 0; i < 750 && !contact; i++) {
@@ -96,7 +96,7 @@ describe('bot pursuit', () => {
   it('paddles toward dry ground when already floating and rescues a flipped bot', () => {
     const { game } = harness(), target = stationaryTarget(game, new Vector3(0, 0.5, -20))
     const wet = { ...terrain, liquidHeightAt: (_x: number, z: number) => z > -10 ? 2 : -2 }
-    const bot = new Syn3hBuggy(game, wet, new Vector3(0, 2, 0))
+    const bot = new MiraBuggy(game, wet, new Vector3(0, 2, 0))
     const brain = new BotBrain(game, wet, bot, target); brain.fixedUpdate(0.02)
     expect(bot.input.y).toBeGreaterThan(0)
     expect(Math.abs(bot.input.x)).toBeLessThan(0.2)
@@ -159,7 +159,7 @@ describe('bot population', () => {
 
   it('follows the player into a vehicle swapped in place: targets, spawn centre and daydream', () => {
     const { game, systems, step } = harness()
-    const old = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); game.add(old)
+    const old = new MiraBuggy(game, terrain, new Vector3(0, 1, 0)); game.add(old)
     const manager = game.add(new BotManager(game, terrain, old))
     try {
       params.set('bots.count', 2); params.set('daydream.seconds', 1); manager.update()
@@ -171,7 +171,7 @@ describe('bot population', () => {
       expect(brains.length).toBe(2)
       expect(brains.every(b => b.target === old)).toBe(true)
 
-      const next = new Syn3hBuggy(game, terrain, new Vector3(60, 1, 60)); game.add(next)
+      const next = new MiraBuggy(game, terrain, new Vector3(60, 1, 60)); game.add(next)
       manager.setPlayer(next)
       // At once: every bot chases the new vehicle, and the daydream built for the old one ends.
       expect(brains.every(b => b.target === next)).toBe(true)

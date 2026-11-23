@@ -3,27 +3,28 @@
  * Writes dashboard/stats.json, the numbers behind the dashboard's statistics panel.
  * Node only, no dependencies. Rerun it whenever the numbers should move:
  *
- *   SYN3H_SESSION_STATE=<host state directory> node tools/dashboard-stats.mjs
+ *   MIRA_SESSION_STATE=<host state directory> node tools/dashboard-stats.mjs
  *
  * Repository numbers (commits, releases, code) come from git and the files here. Pull
  * requests come from `gh`, when it is installed and signed in.
  *
  * Token numbers come from agent session logs that live OUTSIDE the repository. Their
- * location is read from SYN3H_SESSION_STATE, the directory holding `claude-accounts/` and
+ * location is read from MIRA_SESSION_STATE, the directory holding `claude-accounts/` and
  * `codex-accounts/`, and is never written anywhere. stats.json holds totals only: no path,
  * account id, user name or email. Without the variable, the previous token numbers are
  * kept and marked stale.
  *
  * Counting rules:
  * - Claude: every *.jsonl under claude-accounts/<account>/projects/<project>/ whose project
- *   directory name mentions syn3h or 2jg65r8u (the Syn3h workspace). message.usage is
+ *   directory name mentions mira or 2jg65r8u (the Mira workspace). message.usage is
  *   summed once per unique message id across all files, because resumed and forked
  *   sessions repeat earlier messages.
- * - Codex: every *.jsonl under codex-accounts/ whose first 6000 bytes mention syn3h or
+ * - Codex: every *.jsonl under codex-accounts/ whose first 6000 bytes mention mira or
  *   2jg65r8u and that was modified after PROJECT_WINDOW_START. The last total_token_usage
  *   in each file is that session's total. Codex counts cached input inside input_tokens,
  *   so uncached input is input minus cached reads and cache writes.
  */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { execFileSync } from 'node:child_process'
 import { createReadStream, existsSync, openSync, readFileSync, readSync, closeSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -32,7 +33,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const out = join(root, 'dashboard', 'stats.json')
-const MATCH = /syn3h|2jg65r8u/i
+const MATCH = /mira|2jg65r8u/i
 
 /**
  * List API prices in US dollars per million tokens, as of 3 November 2026. Cache writes
@@ -217,7 +218,7 @@ const stats = {
   code: code(),
 }
 
-const state = process.env.SYN3H_SESSION_STATE
+const state = process.env.MIRA_SESSION_STATE
 if (state && existsSync(join(state, 'claude-accounts'))) {
   const claude = await claudeTokens(state)
   const codex = await codexTokens(state)

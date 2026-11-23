@@ -20,7 +20,7 @@ const engines = [
   ['webkit', () => webkit.launch()],
 ]
 const audioState = page => page.evaluate(() => {
-  const a = window.syn3h?.audio
+  const a = window.mira?.audio
   return a ? { published: a.state, pending: a.pending?.state ?? null, master: a.master?.gain.value ?? null, waiting: a.waitingForGesture } : null
 })
 const failures = []
@@ -48,12 +48,12 @@ for (const [name, launch, enforce] of engines) {
           // As soon as the loading view has a body, before the world (and GameAudio) exist.
           await page.waitForFunction(() => document.body)
           await page.keyboard.press('KeyQ')
-          const late = await page.evaluate(() => Boolean(window.syn3h))
-          await page.waitForFunction(() => window.syn3h?.audio, null, { timeout: 90000 })
+          const late = await page.evaluate(() => Boolean(window.mira))
+          await page.waitForFunction(() => window.mira?.audio, null, { timeout: 90000 })
           console.log(`${name} | ${input}: game existed at the key press: ${late}`)
         } else {
           await page.goto(`${origin}/`)
-          await page.waitForFunction(() => window.syn3h?.audio, null, { timeout: 90000 })
+          await page.waitForFunction(() => window.mira?.audio, null, { timeout: 90000 })
           await page.waitForTimeout(1500) // idle time: the suspended mix is built ahead of the gesture
           const before = await audioState(page)
           console.log(`${name} | before input: ${JSON.stringify(before)}`)
@@ -69,12 +69,12 @@ for (const [name, launch, enforce] of engines) {
             await page.mouse.move(640, 120); await page.mouse.down()
           }
         }
-        await page.waitForFunction(() => window.syn3h.audio.state === 'running', null, { timeout: 8000 })
+        await page.waitForFunction(() => window.mira.audio.state === 'running', null, { timeout: 8000 })
         // What is heard, from the mix's own output meter every frame, not the master's reported
         // value: WebKit reports a gain's value a frame late, so it read 1 as the fade began.
         const levels = await page.evaluate(() => new Promise(resolve => {
           const rows = [], end = performance.now() + 1300
-          const step = () => { rows.push(window.syn3h.audio.outputLevel); if (performance.now() < end) requestAnimationFrame(step); else resolve(rows) }
+          const step = () => { rows.push(window.mira.audio.outputLevel); if (performance.now() < end) requestAnimationFrame(step); else resolve(rows) }
           requestAnimationFrame(step)
         }))
         const heard = levels.filter(Number.isFinite), first = heard[0] ?? -Infinity, last = heard.at(-1) ?? -Infinity

@@ -26,7 +26,7 @@ const errors = [], notes = []
 
 /** In the page: interesting river spots, from the planned lines and the live liquid surface. */
 function spots() {
-  const t = window.syn3h.terrain, lava = t.data.lava, found = {}
+  const t = window.mira.terrain, lava = t.data.lava, found = {}
   const wet = (p) => t.liquidKindAt(p.x, p.z) === 'water'
   const bodies = lava.lake ? [lava.lake, ...lava.pools] : lava.pools
   for (const [ri, r] of lava.rivers.entries()) {
@@ -55,9 +55,9 @@ async function open(planet, seed, viewport, quality) {
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto(`http://127.0.0.1:${port}/?autoplay=1&vehicle=buggy&planet=${planet}&seed=${seed}&room=rl${Date.now().toString(36)}&daydream=0`)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 30 && window.syn3h.shell.playing, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game.tick > 30 && window.mira.shell.playing, null, { timeout: 120000 })
   await page.evaluate((q) => {
-    const s = window.syn3h
+    const s = window.mira
     s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 11); s.params.set('sun.dayLength', 0); s.params.set('gfx.quality', q)
     const canvas = s.game.canvas ?? document.querySelector('canvas')
     for (const el of document.body.querySelectorAll('*')) if (el !== canvas && !el.contains(canvas)) el.style.visibility = 'hidden'
@@ -69,7 +69,7 @@ async function open(planet, seed, viewport, quality) {
 /** From above and upstream of `v`, looking down the river to its far point. */
 async function frame(page, name, v, height = 9, back = 10) {
   const cost = await page.evaluate(async ({ v, height, back }) => {
-    const s = window.syn3h, V = s.game.camera.position.constructor
+    const s = window.mira, V = s.game.camera.position.constructor
     const dx = v.tx - v.x, dz = v.tz - v.z, l = Math.hypot(dx, dz) || 1
     const cx = v.x - (dx / l) * back, cz = v.z - (dz / l) * back
     const y = Math.max(s.terrain.heightAt(cx, cz), s.terrain.liquidHeightAt(cx, cz)) + height

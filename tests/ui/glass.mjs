@@ -8,7 +8,7 @@ for (const [name, engine, options] of [['chrome', chromium, { channel: 'chrome' 
   const browser = await engine.launch({ headless: true, ...options })
   try {
     const page = await browser.newPage()
-    await page.setContent(`<style>${css}</style><main class="syn3h-shell exploration-ui" data-glass="0"><div class="wi-glass">Readable controls</div></main>`)
+    await page.setContent(`<style>${css}</style><main class="mira-shell exploration-ui" data-glass="0"><div class="wi-glass">Readable controls</div></main>`)
     for (const level of ['2', '0']) for (const glass of ['0', '1', '2']) {
       const result = await page.evaluate(({ level, glass }) => {
         document.documentElement.dataset.gfx = level

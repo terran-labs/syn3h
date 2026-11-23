@@ -8,8 +8,8 @@ import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import { FIXED_DT, RAPIER } from '../../src/core/physics'
 import { REST_HEIGHT } from '../../src/vehicles/Vehicle'
-import { arrive, axis, cruise, pos, resetParams, spawn, speed } from './syn3hScenarios'
-import type { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { arrive, axis, cruise, pos, resetParams, spawn, speed } from './miraScenarios'
+import type { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import type { Bed } from './harness'
 
 const SIZES = [0.6, 1, 2, 3]
@@ -18,20 +18,20 @@ const setSize = (k: number) => params.set('buggy.tyreSize', k)
 afterEach(resetParams)
 
 /** True when every number the body and the wheels expose is finite. */
-function finite(b: Syn3hBuggy): boolean {
+function finite(b: MiraBuggy): boolean {
   const t = b.body.translation(), r = b.body.rotation(), v = b.body.linvel(), w = b.body.angvel()
   return [t.x, t.y, t.z, r.x, r.y, r.z, r.w, v.x, v.y, v.z, w.x, w.y, w.z, b.motorSpeed, b.wheelRadius, ...b.hitCompress].every(Number.isFinite)
 }
 
 /** Whether the hull or skid plate is pressed on anything this step. */
-function bodyTouching(bed: Bed, b: Syn3hBuggy): boolean {
+function bodyTouching(bed: Bed, b: MiraBuggy): boolean {
   const w = bed.game.world
   let c = false
   for (const col of [b.hull, b.skid]) w.contactPairsWith(col, (o) => w.contactPair(col, o, (m) => { if (m.numSolverContacts() > 0) c = true }))
   return c
 }
 
-describe('Syn3hBuggy tyre size', () => {
+describe('MiraBuggy tyre size', () => {
   for (const k of SIZES) {
     test(`at tyre size ${k} it rests upright on its tyres, neither sunk nor hovering`, async () => {
       setSize(k)

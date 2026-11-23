@@ -12,13 +12,13 @@
 # so nothing else a release starts (Chrome, node checks, vite, wrangler dev --local) inherits it.
 # On 17 Nov 2026 smoke Chromes inherited the exported token and wrote it into crash dumps.
 # Never print the value. (tools/domain.sh has its own `cf`, an API helper built on cf_curl.)
-SYN3H_CLOUDFLARE_TOKEN_FILE="${SYN3H_CLOUDFLARE_TOKEN_FILE:-$HOME/.config/syn3h/cloudflare-token}"
-_syn3h_cf_token="${CLOUDFLARE_API_TOKEN:-}"
-if [ -z "$_syn3h_cf_token" ] && [ -r "$SYN3H_CLOUDFLARE_TOKEN_FILE" ]; then
-  _syn3h_cf_token="$(tr -d '\r\n' < "$SYN3H_CLOUDFLARE_TOKEN_FILE")"
+MIRA_CLOUDFLARE_TOKEN_FILE="${MIRA_CLOUDFLARE_TOKEN_FILE:-$HOME/.config/syn3h/cloudflare-token}"
+_mira_cf_token="${CLOUDFLARE_API_TOKEN:-}"
+if [ -z "$_mira_cf_token" ] && [ -r "$MIRA_CLOUDFLARE_TOKEN_FILE" ]; then
+  _mira_cf_token="$(tr -d '\r\n' < "$MIRA_CLOUDFLARE_TOKEN_FILE")"
 fi
 unset CLOUDFLARE_API_TOKEN
-cf_has_token() { [ -n "$_syn3h_cf_token" ]; }
-with_cf_token() { CLOUDFLARE_API_TOKEN="$_syn3h_cf_token" "$@"; }
+cf_has_token() { [ -n "$_mira_cf_token" ]; }
+with_cf_token() { CLOUDFLARE_API_TOKEN="$_mira_cf_token" "$@"; }
 # printf is a shell builtin: the header line goes down the pipe, never into a process's argv.
-cf_curl() { printf 'Authorization: Bearer %s\n' "$_syn3h_cf_token" | curl -H @- "$@"; }
+cf_curl() { printf 'Authorization: Bearer %s\n' "$_mira_cf_token" | curl -H @- "$@"; }

@@ -1,9 +1,9 @@
 /* hud.mode 2, Hidden: every overlay goes, the world stays. Visibility, not display, so no
    layout moves and the view returns exactly as it was. See src/ui/interfaceMode.ts. */
-body.is-bare-interface .syn3h-shell,
-body.is-bare-interface .syn3h-shell *,
-body.is-bare-interface .syn3h-nametags,
-body.is-bare-interface .syn3h-nametags * { visibility: hidden !important; }
+body.is-bare-interface .mira-shell,
+body.is-bare-interface .mira-shell *,
+body.is-bare-interface .mira-nametags,
+body.is-bare-interface .mira-nametags * { visibility: hidden !important; }
 body.is-bare-interface { cursor: none; }
 .interface-hint {
   position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%); z-index: 60;

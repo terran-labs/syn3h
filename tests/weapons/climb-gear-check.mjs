@@ -8,23 +8,24 @@
  * Connected to a room (this page is the host, with four bots), at noon and at night, on WebGPU
  * and WebGL 2. Exits 1 if any gear material was built in a window.
  *
- *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/climb-gear-check.mjs [paths] [hours] [backends]
+ *   MIRA_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/climb-gear-check.mjs [paths] [hours] [backends]
  *   e.g. ... climb-gear-check.mjs manual 12 webgpu; hours 'default' keeps the world's own hour;
- *   SYN3H_WORLD=archipelago:4 for another planet and seed; SYN3H_LIQUID=water (or lava) to also
+ *   MIRA_WORLD=archipelago:4 for another planet and seed; MIRA_LIQUID=water (or lava) to also
  *   fire Tag and Thunder into the nearest liquid at each rung
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 
-const base = (process.env.SYN3H_URL ?? '').replace(/\/+$/, '') + '/'
-if (!process.env.SYN3H_URL) throw new Error('Set SYN3H_URL')
+const base = (process.env.MIRA_URL ?? '').replace(/\/+$/, '') + '/'
+if (!process.env.MIRA_URL) throw new Error('Set MIRA_URL')
 const PATHS = (process.argv[2] ?? 'manual,auto').split(','), HOURS = (process.argv[3] ?? '12,22').split(',').map(h => h === 'default' ? null : Number(h))
-// SYN3H_WORLD: planet and seed, e.g. archipelago:4 (default alpine:7).
-const [PLANET, SEED] = (process.env.SYN3H_WORLD ?? 'alpine:7').split(':')
+// MIRA_WORLD: planet and seed, e.g. archipelago:4 (default alpine:7).
+const [PLANET, SEED] = (process.env.MIRA_WORLD ?? 'alpine:7').split(':')
 const BACKENDS = (process.argv[4] ?? 'webgpu,webgl2').split(',')
 // The water and lava spray (WaterEffects' Spray) counts: a shot into a liquid splashes through it.
 const GEAR = /gear |firework|pester|bungee|tether|impact|yoink|spark|flash|dust|spray|foam/i
-// SYN3H_LIQUID=water|lava: the player is placed at a shore and every use also fires Tag and Thunder into the liquid.
-const LIQUID = process.env.SYN3H_LIQUID ?? ''
+// MIRA_LIQUID=water|lava: the player is placed at a shore and every use also fires Tag and Thunder into the liquid.
+const LIQUID = process.env.MIRA_LIQUID ?? ''
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const rows = []
 let bad = 0
@@ -33,10 +34,10 @@ try {
     const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage()
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     await page.goto(`${base}?gfx=0&planet=${PLANET}&seed=${SEED}&autoplay=1&room=climb-${Date.now()}${backend === 'webgl2' ? '&webgl=1' : ''}`)
-    await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet?.connected && !window.syn3h.game.input.suspended && window.syn3h.game.tick > 60, null, { timeout: 180000 })
+    await page.waitForFunction(() => window.mira?.shell?.playing && window.miraNet?.connected && !window.mira.game.input.suspended && window.mira.game.tick > 60, null, { timeout: 180000 })
     await page.evaluate(hour => {
       document.exitPointerLock?.()
-      const s = window.syn3h, q = s.params
+      const s = window.mira, q = s.params
       q.set('bots.canDrive', false); q.set('bots.canFire', false); if (q.get('bots.keepCount')) q.set('bots.keepCount', true); q.set('bots.count', 4)
       if (hour !== null) { q.set('sun.dayLength', 0); q.set('sun.timeOfDay', hour) }; q.set('daydream.seconds', 0)
       q.set('bigRed.cooldown', 0.1); q.set('bungee.cooldown', 0); q.set('yoink.cooldown', 0)
@@ -47,13 +48,13 @@ try {
       b.createNodeBuilder = function (object, renderer) { const x = nb.call(this, object, renderer), build = x.build; x.build = function (...a) { try { return build.apply(this, a) } finally { window.__builds.push([window.__window, 'node', name(this)]); x.build = build } }; return x }
       b.createRenderPipeline = function (source, ...a) { try { return rp.call(this, source, ...a) } finally { window.__builds.push([window.__window, 'pipeline', name(source)]) } }
       // Every hit's surface, so a row shows the liquid was really hit.
-      const fx = window.syn3hNet.lasers.fx, impact = fx.impact.bind(fx)
+      const fx = window.miraNet.lasers.fx, impact = fx.impact.bind(fx)
       window.__surfaces = []; fx.impact = (...args) => { const r = impact(...args); window.__surfaces.push([window.__window, r]); return r }
     }, hour)
-    await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 4, null, { timeout: 90000 }).catch(() => {})
+    await page.waitForFunction(() => window.mira.bots.vehicles.length === 4, null, { timeout: 90000 }).catch(() => {})
     if (LIQUID) {
       const placed = await page.evaluate(kind => {
-        const s = window.syn3h, t = s.terrain, p = s.player.body.translation()
+        const s = window.mira, t = s.terrain, p = s.player.body.translation()
         let best = null
         for (let r = 20; r < 1500 && !best; r += 20) for (let k = 0; k < 48; k++) {
           const a = k / 48 * Math.PI * 2, x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r
@@ -73,19 +74,19 @@ try {
       await page.waitForTimeout(2000)
     }
     await page.waitForTimeout(4000)
-    const sweep = path === 'auto' ? 'window.__sweep ??= window.syn3h.game.quality.beginDiagnosticSweep()' : ''
+    const sweep = path === 'auto' ? 'window.__sweep ??= window.mira.game.quality.beginDiagnosticSweep()' : ''
     for (const rung of [1, 2, 3]) {
       await page.evaluate(([rung, path]) => {
         window.__window = `climb to ${rung}`
-        const q = window.syn3h.game.quality
+        const q = window.mira.game.quality
         if (path === 'auto') { window.__sweep ??= q.beginDiagnosticSweep(); window.__sweep.step(rung) } else q.setLevel(rung)
       }, [rung, path])
       // Settle: the veil (manual) or the change frames (automatic) and any warm-up they run.
       await page.waitForTimeout(6000)
-      const level = await page.evaluate(() => window.syn3h.game.quality.getPerformanceSnapshot?.().quality?.level ?? null)
+      const level = await page.evaluate(() => window.mira.game.quality.getPerformanceSnapshot?.().quality?.level ?? null)
       await page.evaluate(rung => {
         window.__window = `use at ${rung}`
-        const s = window.syn3h, n = window.syn3hNet, me = s.player.object.position, bot = s.bots.vehicles[0]
+        const s = window.mira, n = window.miraNet, me = s.player.object.position, bot = s.bots.vehicles[0]
         const f = s.game.camera.getWorldDirection(me.clone()); f.y = 0; f.normalize()
         // A bot's Thunder at the ground 15 m ahead of the player, and the player's at the ground 20 m ahead.
         if (bot) { const t = me.clone().addScaledVector(f, 15); t.y = s.terrain.heightAt(t.x, t.z); const d = t.sub(bot.object.position).normalize(); n.fireBot(0xff00, [d.x, d.y, d.z]) }

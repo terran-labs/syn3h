@@ -1,3 +1,4 @@
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { afterEach, beforeAll, expect, it, vi } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
@@ -175,7 +176,7 @@ it('bounds sampling for a 500 metre cord without adding segments or draws', asyn
     const start = performance.now()
     for (let i = 0; i < 100; i++) render()
     const report = { span: 500, segments: n, heightQueries: perCord, millisecondsPerCord: (performance.now() - start) / 100, iterations: 100, sampler: 'flat function, not procedural terrain' }
-    if (process.env.SYN3H_DRAPE_METRICS) (await import('node:fs')).writeFileSync(process.env.SYN3H_DRAPE_METRICS, JSON.stringify(report, null, 2))
+    if (process.env.MIRA_DRAPE_METRICS) (await import('node:fs')).writeFileSync(process.env.MIRA_DRAPE_METRICS, JSON.stringify(report, null, 2))
   } finally { look.dispose() }
 })
 

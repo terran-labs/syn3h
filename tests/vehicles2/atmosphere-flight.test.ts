@@ -7,7 +7,7 @@ import { params } from '../../shared/params'
 import { FIXED_DT, initPhysics } from '../../src/core/physics'
 import { worldAtmosphere } from '../../src/world/terrain/settings'
 import { jetSpeed, withJet } from './jetScenarios'
-import { deploy, resetParams } from '../vehicles/syn3hScenarios'
+import { deploy, resetParams } from '../vehicles/miraScenarios'
 
 beforeAll(initPhysics)
 afterEach(resetParams)

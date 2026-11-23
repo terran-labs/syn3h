@@ -4,7 +4,7 @@ import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import { buggyLavaFloat } from '../../src/vehicles/lava'
 import { waterSinking } from '../../src/vehicles/buoyancy'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { makeBed } from './harness'
 
 const LAVA = 4
@@ -12,7 +12,7 @@ async function inLava(y = LAVA + 1, vz = 0) {
   const bed = await makeBed()
   bed.terrain.liquidHeightAt = () => LAVA
   bed.terrain.liquidKindAt = () => 'water'
-  const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, y, 0)))
+  const b = bed.add(new MiraBuggy(bed.game, bed.terrain, new THREE.Vector3(0, y, 0)))
   b.isLocal = false
   b.body.setLinvel({ x: 0, y: 0, z: vz }, true)
   return { bed, b }

@@ -12,7 +12,7 @@
   display: grid; justify-items: stretch; gap: 8px; width: 148px; pointer-events: none;
 }
 .lobby-gear-dock > * { pointer-events: auto; }
-.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control {
+.mira-shell.exploration-ui .lobby-gear-dock .lobby-control {
   display: flex; align-items: center; justify-content: flex-start; gap: 10px; box-sizing: border-box;
   width: 100%; height: 44px; min-height: 44px; min-width: 0; margin: 0; padding: 0 16px 0 14px;
   font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; text-align: left;
@@ -33,19 +33,19 @@
    a 44 px target round the small type. A hook for the Updates view (data-lobby-version). */
 .lobby-version-dock { position: fixed; z-index: 30; left: max(6px, calc(env(safe-area-inset-left) - 8px)); bottom: max(2px, calc(env(safe-area-inset-bottom) - 10px)); pointer-events: none; }
 .lobby-version-dock > * { pointer-events: auto; }
-.syn3h-shell.exploration-ui .lobby-version-dock .lobby-version {
+.mira-shell.exploration-ui .lobby-version-dock .lobby-version {
   display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 14px; border: 0; border-radius: var(--glass-control-radius, 24px); background: none; box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none;
   font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .1em; text-transform: none; color: rgb(236 236 236 / .84);
   text-decoration: underline; text-decoration-color: rgb(236 236 236 / .4); text-decoration-thickness: 1px; text-underline-offset: 4px;
   text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8)); cursor: pointer; white-space: nowrap; transition: color .18s, text-decoration-color .18s;
 }
-.syn3h-shell.exploration-ui .lobby-version-dock .lobby-version::after { content: '\203A'; text-decoration: none; display: inline-block; font-size: 15px; line-height: 1; opacity: .8; transform: translateY(-1px); }
-.syn3h-shell.exploration-ui .lobby-version-dock .lobby-version:is(:hover, :focus-visible) { color: #fff; text-decoration-color: rgb(255 255 255 / .85); background: none; }
-.syn3h-shell.exploration-ui .lobby-version-dock .lobby-version:hover { outline: var(--control-hover-outline); outline-offset: -6px; }
-.syn3h-shell.exploration-ui .lobby-version-dock .lobby-version:focus-visible { outline: 1.5px solid rgb(244 244 244 / .9); outline-offset: -6px; }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-version::after { content: '\203A'; text-decoration: none; display: inline-block; font-size: 15px; line-height: 1; opacity: .8; transform: translateY(-1px); }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-version:is(:hover, :focus-visible) { color: #fff; text-decoration-color: rgb(255 255 255 / .85); background: none; }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-version:hover { outline: var(--control-hover-outline); outline-offset: -6px; }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-version:focus-visible { outline: 1.5px solid rgb(244 244 244 / .9); outline-offset: -6px; }
 /* A newer version is out: a small steady dot before the version. */
-.syn3h-shell.exploration-ui .lobby-version-dock .lobby-version.has-update::before {
+.mira-shell.exploration-ui .lobby-version-dock .lobby-version.has-update::before {
   content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--s3-accent-2, #f7f7f7); box-shadow: 0 0 6px rgb(255 255 255 / .8);
 }
 
@@ -54,7 +54,7 @@
    a card's shape and a body dense enough for small type over a bright planet, and keep a press
    inside it from pressing the whole card. Nothing inside it is glass: the in-game cards it reuses
    are plain sections here, parted by a hairline. */
-.syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
+.mira-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
   /* It grows out of Settings (the owner, 23 November 2026): its lower edge is the button, its foot
      standing exactly where the button stands (--gear-*, measured as it opens, LobbySettings.anchor),
      right edges aligned, and it reaches up as far as the top safe area (the owner, 21 November
@@ -70,52 +70,52 @@
   --glass-radius: var(--halo-r, 16px); --glass-body: rgb(12 12 14 / .72); --glass-body-hover: rgb(12 12 14 / .72);
   --glass-blur: 20px; --glass-frost: blur(20px) saturate(1.1) brightness(.92);
 }
-.syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings.liquid-glass:is(:hover, :active) { transform: none; background-color: var(--glass-body); }
+.mira-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings.liquid-glass:is(:hover, :active) { transform: none; background-color: var(--glass-body); }
 /* Where nothing frosts (the lowest graphics level, the quality ladder shedding, a browser without
    backdrop blur, or a player asking for less transparency or more contrast) the card carries a
    near-opaque body of its own, so labels and planets behind it cannot read through the rows. */
-html[data-gfx="0"] .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings,
-.syn3h-shell.exploration-ui[data-ui-frost="off"]:not(.is-playing) .world-inspector.lobby-settings { --glass-frost: none; --glass-body: rgb(12 12 14 / .92); --glass-body-hover: rgb(12 12 14 / .92); }
+html[data-gfx="0"] .mira-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings,
+.mira-shell.exploration-ui[data-ui-frost="off"]:not(.is-playing) .world-inspector.lobby-settings { --glass-frost: none; --glass-body: rgb(12 12 14 / .92); --glass-body-hover: rgb(12 12 14 / .92); }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { --glass-frost: none; --glass-body: rgb(12 12 14 / .92); --glass-body-hover: rgb(12 12 14 / .92); }
+  .mira-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { --glass-frost: none; --glass-body: rgb(12 12 14 / .92); --glass-body-hover: rgb(12 12 14 / .92); }
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { --glass-frost: none; --glass-body: rgb(12 12 14 / .94); --glass-body-hover: rgb(12 12 14 / .94); }
+  .mira-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { --glass-frost: none; --glass-body: rgb(12 12 14 / .94); --glass-body-hover: rgb(12 12 14 / .94); }
 }
-html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-settings :is(.wi-glass, .rail-players) {
+html .mira-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-settings :is(.wi-glass, .rail-players) {
   border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 /* The world's own graphics detail (grass, plants, fog, shadows) acts only in a world: not here. */
-.syn3h-shell.exploration-ui .world-inspector.lobby-settings .lobby-graphics .wi-fine { display: none; }
-html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-settings .wi-card + .wi-card:not([hidden]) { border-top: 1px solid transparent; border-image: var(--rule) 1; }
+.mira-shell.exploration-ui .world-inspector.lobby-settings .lobby-graphics .wi-fine { display: none; }
+html .mira-shell.exploration-ui:is([data-glass], *) .world-inspector.lobby-settings .wi-card + .wi-card:not([hidden]) { border-top: 1px solid transparent; border-image: var(--rule) 1; }
 /* The stack scrolls under the fixed header, so the header carries the rule; a card's body does
    not scroll under its own heading here, so it has none (the owner, 22 November 2026: no rule
    under the Glass heading). */
-html .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-card > .wi-body { border-top: 0; border-image: none; }
-.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { overflow-y: auto; min-height: 0; flex: 1 1 auto; overscroll-behavior: contain; }
+html .mira-shell.exploration-ui .world-inspector.lobby-settings .wi-card > .wi-body { border-top: 0; border-image: none; }
+.mira-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { overflow-y: auto; min-height: 0; flex: 1 1 auto; overscroll-behavior: contain; }
 /* Unlike the in-game rail, whose cards share its height, here every card takes its natural
    height and the whole stack scrolls: an open card shows all its rows, on short screens too. */
-.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-card, .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-card.is-open { flex: 0 0 auto; min-height: 0; }
-.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-body { flex: none; overflow: visible; }
+.mira-shell.exploration-ui .world-inspector.lobby-settings .wi-card, .mira-shell.exploration-ui .world-inspector.lobby-settings .wi-card.is-open { flex: 0 0 auto; min-height: 0; }
+.mira-shell.exploration-ui .world-inspector.lobby-settings .wi-body { flex: none; overflow: visible; }
 /* A long label wraps to a second line rather than ending in an ellipsis. */
-.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-label { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.2; }
-.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 6px 14px; flex: 0 0 auto; background: none; border: 0; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
-.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head h2 { margin: 0; padding: 0; font: 600 14px/1 'Barlow Condensed', sans-serif; letter-spacing: .22em; text-transform: uppercase; color: var(--s3-ink); }
+.mira-shell.exploration-ui .world-inspector.lobby-settings .wi-label { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.2; }
+.mira-shell.exploration-ui .lobby-settings .lobby-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 6px 14px; flex: 0 0 auto; background: none; border: 0; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
+.mira-shell.exploration-ui .lobby-settings .lobby-settings-head h2 { margin: 0; padding: 0; font: 600 14px/1 'Barlow Condensed', sans-serif; letter-spacing: .22em; text-transform: uppercase; color: var(--s3-ink); }
 /* Close is the shared bare X (.card-close, card-chrome.css). */
 .world-inspector.lobby-settings .host-controls { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
 .world-inspector.lobby-settings .host-controls legend { display: none; }
 
 /* The card's lower edge: Settings, drawn where the button stands, in the button's type. A press
    closes the card back into the button. The button itself hides under the card once it is open. */
-.syn3h-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot {
+.mira-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot {
   position: absolute; right: 0; bottom: 0; z-index: 1; box-sizing: border-box;
   display: flex; align-items: center; justify-content: flex-start; gap: 10px;
   width: var(--gear-width, 148px); height: var(--gear-height, 44px); min-height: 0; margin: 0; padding: 0 16px 0 14px;
   border: 0; border-radius: var(--glass-control-radius, 24px); background: transparent; box-shadow: none; text-shadow: none;
   color: #fff; font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; text-align: left; cursor: pointer;
 }
-.syn3h-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot:hover { background: transparent; box-shadow: none; }
-.syn3h-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot:focus-visible { outline: 2px solid white; outline-offset: -3px; }
+.mira-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot:hover { background: transparent; box-shadow: none; }
+.mira-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot:focus-visible { outline: 2px solid white; outline-offset: -3px; }
 .world-inspector.lobby-settings > .lobby-settings-foot .lobby-control-icon { width: 16px; height: 16px; flex: none; overflow: visible; }
 .world-inspector.lobby-settings > .lobby-settings-foot .lobby-control-icon path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .lobby-gear-dock .lobby-gear.is-under-card { visibility: hidden; }
@@ -124,29 +124,29 @@ html .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-card > .wi-
    step aside while it is open. It takes the height its rows need, up to the whole screen, and
    grows up out of Settings as on a desktop. */
 @media (max-width: 700px), (max-height: 500px) and (pointer: coarse) {
-  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
+  .mira-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
     left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); width: auto;
     top: auto; bottom: var(--card-foot); height: auto; max-height: calc(100dvh - max(10px, env(safe-area-inset-top)) - var(--card-foot));
   }
   .lobby-gear-dock.is-open:not(.is-beside-sheet) { visibility: hidden; }
   /* The panel covers the lobby here, so the lobby behind it dims: a full-screen backdrop with
      no edge, not a sheet round the cards. Taps pass through it to the close-on-outside rule. */
-  .syn3h-shell.exploration-ui:not(.is-playing) .lobby-settings-host::before { content: ''; position: fixed; inset: 0; z-index: 59; background: rgb(2 8 14 / .78); pointer-events: none; }
+  .mira-shell.exploration-ui:not(.is-playing) .lobby-settings-host::before { content: ''; position: fixed; inset: 0; z-index: 59; background: rgb(2 8 14 / .78); pointer-events: none; }
   /* The stack takes only the height it needs. */
-  .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { flex: 0 1 auto; }
+  .mira-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { flex: 0 1 auto; }
   /* The same stack as on a desktop, narrower and tighter to the corner. */
   .lobby-gear-dock { width: 128px; gap: 6px; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); }
-  .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version { padding: 0 12px; font-size: 11px; letter-spacing: .06em; }
+  .mira-shell.exploration-ui .lobby-version-dock .lobby-version { padding: 0 12px; font-size: 11px; letter-spacing: .06em; }
 }
 @media (max-height: 500px) and (pointer: coarse) and (orientation: landscape) {
-  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { left: auto; width: min(560px, calc(100vw - 20px)); top: auto; max-height: calc(100dvh - 6px - var(--card-foot)); padding: 6px 6px calc(var(--gear-height, 44px) + 4px); gap: 4px; }
-  .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { padding-block: 0; }
+  .mira-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { left: auto; width: min(560px, calc(100vw - 20px)); top: auto; max-height: calc(100dvh - 6px - var(--card-foot)); padding: 6px 6px calc(var(--gear-height, 44px) + 4px); gap: 4px; }
+  .mira-shell.exploration-ui .lobby-settings .lobby-settings-head { padding-block: 0; }
   .lobby-gear-dock { gap: 5px; right: max(12px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
 }
 /* Touch: every control a full 44 px target. */
 @media (pointer: coarse) {
-  .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control { height: 44px; min-height: 44px; font-size: 11px; letter-spacing: .18em; gap: 8px; padding: 0 12px 0 12px; }
-  .syn3h-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot { font-size: 11px; letter-spacing: .18em; gap: 8px; padding: 0 12px; }
+  .mira-shell.exploration-ui .lobby-gear-dock .lobby-control { height: 44px; min-height: 44px; font-size: 11px; letter-spacing: .18em; gap: 8px; padding: 0 12px 0 12px; }
+  .mira-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot { font-size: 11px; letter-spacing: .18em; gap: 8px; padding: 0 12px; }
 }
 
 /* Beside an open sheet (Shell moves the dock into the sheet's dialog): the open one shows as
@@ -155,19 +155,19 @@ html .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-card > .wi-
 dialog.lobby-sheet .lobby-gear-dock { z-index: 2; }
 @media (max-width: 600px) and (orientation: portrait) {
   dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet { left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); width: auto; grid-auto-flow: column; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  .syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet .lobby-control { justify-content: center; gap: 6px; padding: 0 8px; letter-spacing: .12em; font-size: 10.5px; }
+  .mira-shell.exploration-ui dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet .lobby-control { justify-content: center; gap: 6px; padding: 0 8px; letter-spacing: .12em; font-size: 10.5px; }
 }
 
 /* The Liquid style's tuning in the Glass card: one fold under Style and Tint, closed at first, there
    only at Liquid (LobbySettings.syncLiquid). Its frame opens from nothing to the fold's height, so
    the rows below move rather than jump; the shared accordion arrow turns as the fold opens. */
-.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid-wrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .24s cubic-bezier(.2, .8, .2, 1), opacity .2s; }
-.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid-wrap.is-present { grid-template-rows: 1fr; opacity: 1; }
-.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid { min-height: 0; overflow: hidden; }
-.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid > summary {
+.mira-shell.exploration-ui .lobby-settings .lobby-liquid-wrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .24s cubic-bezier(.2, .8, .2, 1), opacity .2s; }
+.mira-shell.exploration-ui .lobby-settings .lobby-liquid-wrap.is-present { grid-template-rows: 1fr; opacity: 1; }
+.mira-shell.exploration-ui .lobby-settings .lobby-liquid { min-height: 0; overflow: hidden; }
+.mira-shell.exploration-ui .lobby-settings .lobby-liquid > summary {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 6px; list-style: none; cursor: pointer;
   font: 500 11.5px/1.2 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; color: var(--s3-dim);
 }
-.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid > summary::-webkit-details-marker { display: none; }
-.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid > summary:focus-visible { outline: 2px solid var(--s3-ink); outline-offset: 2px; border-radius: 6px; }
-@media (prefers-reduced-motion: reduce) { .syn3h-shell.exploration-ui .lobby-settings .lobby-liquid-wrap { transition: none; } }
+.mira-shell.exploration-ui .lobby-settings .lobby-liquid > summary::-webkit-details-marker { display: none; }
+.mira-shell.exploration-ui .lobby-settings .lobby-liquid > summary:focus-visible { outline: 2px solid var(--s3-ink); outline-offset: 2px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .mira-shell.exploration-ui .lobby-settings .lobby-liquid-wrap { transition: none; } }

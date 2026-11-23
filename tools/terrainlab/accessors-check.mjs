@@ -16,9 +16,9 @@ const errors = []
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`) })
 await page.goto(`${base}?autoplay=1`, { waitUntil: 'load' })
-await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 40000 })
+await page.waitForFunction(() => window.mira?.game?.tick > 25, null, { timeout: 40000 })
 const out = await page.evaluate(() => {
-  const t = window.syn3h.terrain
+  const t = window.mira.terrain
   const roads = t.roadPaths()
   const summit = t.summit()
   const rim = roads.find((r) => r.kind === 'rim')

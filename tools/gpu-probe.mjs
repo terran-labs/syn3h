@@ -10,20 +10,20 @@ try {
   const page = await context.newPage(), errors=[]
   page.on('pageerror',e=>errors.push(e.message))
   await page.goto('http://127.0.0.1:5186/?autoplay=1&vehicle=buggy')
-  await page.waitForFunction(()=>window.syn3h?.game.tick>10,null,{timeout:90000})
+  await page.waitForFunction(()=>window.mira?.game.tick>10,null,{timeout:90000})
   const gpu = await page.evaluate(async()=>{
     const adapter = await navigator.gpu?.requestAdapter(), info=adapter?.info
-    return {backend:window.syn3h.game.backend,adapter:info?{vendor:info.vendor,architecture:info.architecture,device:info.device,description:info.description,isFallbackAdapter:info.isFallbackAdapter}:null,rendererDevice:window.syn3h.game.renderer.backend.device?.adapterInfo}
+    return {backend:window.mira.game.backend,adapter:info?{vendor:info.vendor,architecture:info.architecture,device:info.device,description:info.description,isFallbackAdapter:info.isFallbackAdapter}:null,rendererDevice:window.mira.game.renderer.backend.device?.adapterInfo}
   })
-  await page.evaluate(()=>{const s=window.syn3h;s.shell.play();s.bots.remote=false;s.params.set('bots.count',4)})
+  await page.evaluate(()=>{const s=window.mira;s.shell.play();s.bots.remote=false;s.params.set('bots.count',4)})
   await page.waitForTimeout(1500)
-  const before=await page.evaluate(()=>{const s=window.syn3h;return {bots:s.bots.vehicles.map(v=>({id:v.id,name:v.name})),effects:s.game.scene.userData.vehicleEffects?.vehicles}})
-  await page.evaluate(()=>window.syn3h.bots.remote=true)
+  const before=await page.evaluate(()=>{const s=window.mira;return {bots:s.bots.vehicles.map(v=>({id:v.id,name:v.name})),effects:s.game.scene.userData.vehicleEffects?.vehicles}})
+  await page.evaluate(()=>window.mira.bots.remote=true)
   await page.waitForTimeout(500)
-  const remote=await page.evaluate(()=>({count:window.syn3h.bots.vehicles.length,effects:window.syn3h.game.scene.userData.vehicleEffects?.vehicles}))
-  await page.evaluate(()=>window.syn3h.bots.remote=false)
+  const remote=await page.evaluate(()=>({count:window.mira.bots.vehicles.length,effects:window.mira.game.scene.userData.vehicleEffects?.vehicles}))
+  await page.evaluate(()=>window.mira.bots.remote=false)
   await page.waitForTimeout(500)
-  const takeover=await page.evaluate(()=>window.syn3h.bots.vehicles.map(v=>({id:v.id,name:v.name})))
+  const takeover=await page.evaluate(()=>window.mira.bots.vehicles.map(v=>({id:v.id,name:v.name})))
   const cdp=await browser.newBrowserCDPSession(), system=await cdp.send('SystemInfo.getInfo')
   const result={headless,load:loadavg(),gpu,devices:system.gpu.devices,featureStatus:system.gpu.featureStatus,before,remote,takeover,errors}
   await writeFile(`/tmp/syn3h-gpu-${headless?'headless':'headed'}.json`,JSON.stringify(result,null,2))

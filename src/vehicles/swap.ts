@@ -9,7 +9,7 @@ import { canonicalVehicleKind, createVehicle, isVehicleAvailable, type VehicleKi
 import type { PlayerSlot } from './PlayerSlot'
 import { REST_HEIGHT, type Vehicle } from './Vehicle'
 import { drawPlayerVehicleWarm } from './PlayerVehicleWarm'
-import { Syn3hBuggy } from './Syn3hBuggy'
+import { MiraBuggy } from './MiraBuggy'
 
 /** Metres of air left under the new vehicle's resting height when it has to be lifted clear. */
 export const SWAP_CLEARANCE = 0.3
@@ -133,7 +133,7 @@ export function createVehicleSwapper(
             }
           }
         }
-        if (vehicle instanceof Syn3hBuggy && !(await vehicle.waitForCoveredBody())) continue
+        if (vehicle instanceof MiraBuggy && !(await vehicle.waitForCoveredBody())) continue
         if (disposed) return
         await warm.yieldFrame(`Warming ${kind}`)
         if (disposed) return
@@ -220,7 +220,7 @@ export function createVehicleSwapper(
       // An idle buggy can have no sparks during entry. The first live emission
       // must also have a pipeline for Minimal's direct-to-canvas target.
       const player = slot.current
-      if (player instanceof Syn3hBuggy) player.drawCoveredMotorSparks(draw)
+      if (player instanceof MiraBuggy) player.drawCoveredMotorSparks(draw)
       else draw()
     },
     drawCoveredLowFleet(draw) {

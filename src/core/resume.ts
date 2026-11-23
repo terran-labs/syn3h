@@ -7,7 +7,7 @@ import type { VehicleKind } from '../vehicles'
 import type { Terrain } from '../world/Terrain'
 import { currentHour } from '../world/sky/dayCycle'
 
-export const RESUME_KEY = 'syn3h.resume.v1'
+export const RESUME_KEY = 'mira.resume.v1'
 export const RESUME_MAX_AGE = 10 * 60 * 1000
 export interface ResumeSnapshot {
   version: 1; savedAt: number; room: string; seed: number; wasHost: boolean
@@ -72,7 +72,7 @@ export function linkSeed(query: URLSearchParams): number | null {
   const world = /^[a-z]+\.(\d+)/.exec(query.get('world')?.trim() ?? '')
   return world ? Number(world[1]) : null
 }
-/** 'buggy-syn3h' is an alias, and the retired 'buggy-classic' now resumes as the Syn3h buggy. */
+/** 'buggy-syn3h' is an alias, and the retired 'buggy-classic' now resumes as the Mira buggy. */
 const normalizeKind = (kind: string) => kind === 'buggy-syn3h' || kind === 'buggy-classic' ? 'buggy' : kind
 
 /**

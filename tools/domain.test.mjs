@@ -7,6 +7,7 @@
 // that was not exported, a rollback that detaches a host attached before, parking cleanup
 // without confirmation, a redirect step that is not idempotent, and a dry run that changes
 // anything or prints the token.
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -68,7 +69,7 @@ process.stdout.write(JSON.stringify(out))
 `
 
 function world(fn, { dropOnAttach = null, extraDomains = [], publicHosts = {}, failApi = [], dns = {} } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'syn3h-domain-test-'))
+  const dir = mkdtempSync(join(tmpdir(), 'mira-domain-test-'))
   try {
     const store = join(dir, 'store'), bin = join(dir, 'bin'), state = join(dir, 'state.json')
     mkdirSync(store); mkdirSync(bin)
@@ -92,8 +93,8 @@ process.stdout.write(((args.some(a => a.startsWith('@')) ? entry.public : entry.
 `, { mode: 0o755 })
     const run = (args, { token = true, env = {} } = {}) => spawnSync('/bin/sh', [script, ...args], {
       encoding: 'utf8',
-      env: { PATH: `${bin}:${process.env.PATH}`, HOME: dir, FAKE_CF_STATE: state, SYN3H_DOMAIN_STORE: store,
-        SYN3H_CLOUDFLARE_TOKEN_FILE: join(dir, 'no-token-file'), ...(token ? { CLOUDFLARE_API_TOKEN: TOKEN } : {}), ...env },
+      env: { PATH: `${bin}:${process.env.PATH}`, HOME: dir, FAKE_CF_STATE: state, MIRA_DOMAIN_STORE: store,
+        MIRA_CLOUDFLARE_TOKEN_FILE: join(dir, 'no-token-file'), ...(token ? { CLOUDFLARE_API_TOKEN: TOKEN } : {}), ...env },
     })
     const read = () => JSON.parse(readFileSync(state, 'utf8'))
     const exportDir = (zone) => { const d = readdirSync(join(store, 'dns')).filter(n => n.endsWith('-' + zone)).sort().at(-1); return d && join(store, 'dns', d) }
@@ -237,7 +238,7 @@ const switched = {
 
 test('after the switch, check www.syn3h.com reports the redirect and the socket instead of failing', () => world(({ run }) => {
   ok(run(['export', '--zone', 'syn3h.com']))
-  const out = run(['check', 'www.syn3h.com'], { env: { SYN3H_SHORT_CHECK: '1' } })
+  const out = run(['check', 'www.syn3h.com'], { env: { MIRA_SHORT_CHECK: '1' } })
   ok(out)
   assert.match(out.stdout, /Redirect ok, certificate verified: https:\/\/www\.syn3h\.com\/ -> https:\/\/mira\.cc\//)
   assert.match(out.stdout, /WSS ok: upgrade to \/ws on www\.syn3h\.com/)
@@ -259,14 +260,14 @@ test('a previously attached host may redirect to mira.cc only if its socket stil
 test("release.sh's short check survives a failed API read, but never a host missing from a list it read", () => world(({ run, setState }) => {
   ok(run(['export', '--zone', 'syn3h.com']))
   setState({ failApi: ['/zones', '/accounts'] })
-  const short = run(['check', 'www.syn3h.com'], { env: { SYN3H_SHORT_CHECK: '1' } })
+  const short = run(['check', 'www.syn3h.com'], { env: { MIRA_SHORT_CHECK: '1' } })
   ok(short)
   assert.match(short.stderr, /WARNING: could not read the account from the API; attachment of mira\.cc www\.syn3h\.com not verified/)
   fails(run(['check', 'www.syn3h.com']), /could not read the account from the API/)
   setState({ failApi: ['/accounts'] })
-  const listFails = run(['check', 'www.syn3h.com'], { env: { SYN3H_SHORT_CHECK: '1' } })
+  const listFails = run(['check', 'www.syn3h.com'], { env: { MIRA_SHORT_CHECK: '1' } })
   ok(listFails)
   assert.match(listFails.stderr, /WARNING: could not read the Worker's domains from the API/)
   setState({ failApi: [], domains: [{ id: 'dom-live', hostname: 'www.syn3h.com', service: 'syn3h', zone_id: 'zone-syn' }] })
-  fails(run(['check', 'www.syn3h.com'], { env: { SYN3H_SHORT_CHECK: '1' } }), /LOST: mira\.cc is no longer attached/)
+  fails(run(['check', 'www.syn3h.com'], { env: { MIRA_SHORT_CHECK: '1' } }), /LOST: mira\.cc is no longer attached/)
 }, switched))

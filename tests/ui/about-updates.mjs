@@ -8,8 +8,9 @@
 // as the release before the newest production one (the second-last production row of
 // release-notes/history.tsv); this check then serves a /v/versions.json naming the newest:
 //
-//   SYN3H_RELEASE_VERSION=<second-newest, e.g. 26.11.2200> npx vite --port 5187
-//   SYN3H_URL=http://127.0.0.1:5187/ tools/heavy.sh node tests/ui/about-updates.mjs
+//   MIRA_RELEASE_VERSION=<second-newest, e.g. 26.11.2200> npx vite --port 5187
+//   MIRA_URL=http://127.0.0.1:5187/ tools/heavy.sh node tests/ui/about-updates.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -17,7 +18,7 @@ import { readFileSync } from 'node:fs'
 const PRODUCTION = readFileSync('release-notes/history.tsv', 'utf8').split('\n').map((l) => l.split('\t'))
   .filter(([v, , , , channel]) => /^v\d/.test(v ?? '') && channel?.trim() === 'production').map(([v]) => v.slice(1))
 const NEWEST = PRODUCTION.at(-1)
-const RUNNING = process.env.SYN3H_RELEASE_VERSION ?? PRODUCTION.at(-2), LIVE = NEWEST
+const RUNNING = process.env.MIRA_RELEASE_VERSION ?? PRODUCTION.at(-2), LIVE = NEWEST
 const live = route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ versions: [PRODUCTION.at(-3), RUNNING, LIVE] }) })
 
 for (const mode of ['desktop', 'phone']) {
@@ -29,12 +30,12 @@ for (const mode of ['desktop', 'phone']) {
     const page = await context.newPage()
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     let loads = 0; page.on('load', () => loads++)
-    await page.goto(`${process.env.SYN3H_URL}?room=updates-${mode}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
+    await page.goto(`${process.env.MIRA_URL}?room=updates-${mode}-${Date.now()}`)
+    await page.waitForFunction(() => window.mira?.shell, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     // Without a release version the watcher is off and nothing below can happen: say so.
     const build = await page.locator('.lobby-version').textContent()
-    assert.ok(/\d+\.\d+\.\d+/.test(build ?? ''), `the dev server is not a release build (shows "${build}"): start it with SYN3H_RELEASE_VERSION=${RUNNING}`)
+    assert.ok(/\d+\.\d+\.\d+/.test(build ?? ''), `the dev server is not a release build (shows "${build}"): start it with MIRA_RELEASE_VERSION=${RUNNING}`)
 
     // The lobby banner: the newer version, Reload and What's new.
     const banner = page.locator('.update-banner')
@@ -79,8 +80,8 @@ for (const mode of ['desktop', 'phone']) {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
     await context.route('**/v/versions.json', live)
     const page = await context.newPage()
-    await page.goto(`${process.env.SYN3H_URL}?autoplay=1&room=updates-play-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.goto(`${process.env.MIRA_URL}?autoplay=1&room=updates-play-${Date.now()}`)
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
     const chip = page.locator('.rail-update')
@@ -96,11 +97,11 @@ for (const mode of ['desktop', 'phone']) {
 
     // A pinned page never prompts, and Updates says it is pinned and links to the latest.
     const pinned = await context.newPage()
-    await pinned.goto(`${process.env.SYN3H_URL}?v=${RUNNING}&room=updates-pinned-${Date.now()}`)
-    await pinned.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
+    await pinned.goto(`${process.env.MIRA_URL}?v=${RUNNING}&room=updates-pinned-${Date.now()}`)
+    await pinned.waitForFunction(() => window.mira?.shell, null, { timeout: 120000 })
     await pinned.waitForTimeout(6000)
     assert.ok(await pinned.locator('.update-banner').isHidden(), 'no banner on a pinned page')
-    await pinned.evaluate(() => syn3h.shell.showUpdates())
+    await pinned.evaluate(() => mira.shell.showUpdates())
     const note = pinned.locator('.lobby-sheet-updates .updates-pinned')
     await note.waitFor({ timeout: 15000 })
     assert.match(await note.innerText(), new RegExp(`pinned version v${RUNNING.replaceAll('.', '\\.')}`))
@@ -109,13 +110,13 @@ for (const mode of ['desktop', 'phone']) {
 
     // The dev server's rebuild notice: in the lobby the banner replaces its pill.
     const dev = await browser.newPage({ viewport: { width: 1440, height: 900 } })
-    await dev.goto(`${process.env.SYN3H_URL}?room=updates-dev-${Date.now()}`)
-    await dev.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
+    await dev.goto(`${process.env.MIRA_URL}?room=updates-dev-${Date.now()}`)
+    await dev.waitForFunction(() => window.mira?.shell, null, { timeout: 120000 })
     await dev.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
-    await dev.evaluate(() => window.dispatchEvent(new CustomEvent('syn3h:new-build')))
+    await dev.evaluate(() => window.dispatchEvent(new CustomEvent('mira:new-build')))
     await dev.locator('.update-banner').waitFor({ state: 'visible' })
     assert.equal(await dev.locator('.update-banner strong').innerText(), 'New build available')
-    assert.ok(await dev.locator('#syn3h-build-notice').isHidden(), 'the old pill does not show in the lobby')
+    assert.ok(await dev.locator('#mira-build-notice').isHidden(), 'the old pill does not show in the lobby')
     console.log('dev rebuild ok')
   } finally { await browser.close() }
 }

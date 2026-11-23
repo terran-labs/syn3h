@@ -1,13 +1,14 @@
 // The inspector's editable numbers, eased card heights and finger-sized targets, in desktop
 // Chrome and iPhone WebKit. Run through tests/ui/run-inspector-edit.sh, which serves on 5211.
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5211/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5211/'
 const shots = 'tests/ui/artifacts/inspector-edit'
 await mkdir(shots, { recursive: true })
 
-const value = (page, id) => page.evaluate(id => syn3h.params.get(id).value, id)
+const value = (page, id) => page.evaluate(id => mira.params.get(id).value, id)
 /** Wait until no card is mid-animation. */
 const settled = page => page.waitForFunction(() => !document.querySelector('.wi-cards').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
 /** Open the card and the fold that hold a property, then bring its row into view. */
@@ -31,7 +32,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     const errors = []
     page.on('pageerror', error => errors.push(error.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
     await page.goto(`${base}?autoplay=1&room=inspector-edit-${mode}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     // Newer shells open the rail whenever the cursor is free and drop the desktop toggle.
     // Panels show when the cursor is free; touch has one switch for them.
@@ -105,13 +106,13 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     // Leaving the field commits what is in it.
     await press(number); await page.keyboard.type('4 m'); await press(gravity.locator('.wi-label'))
     assert.equal(await value(page, 'world.gravity'), 4, 'leaving the field commits')
-    await page.evaluate(v => syn3h.params.set('world.gravity', v, 'local'), before)
+    await page.evaluate(v => mira.params.set('world.gravity', v, 'local'), before)
 
     // ---- Keyboard isolation: nothing typed in the field reaches driving, and keyup still does. ----
     await press(number); await field.waitFor()
     for (const code of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyW', 'KeyX', 'Digit5', 'Enter']) {
       const result = await field.evaluate((el, code) => {
-        const input = window.syn3h.game.input, special = input.state.special
+        const input = window.mira.game.input, special = input.state.special
         const before = { ...input.poll() }
         el.dispatchEvent(new KeyboardEvent('keydown', { code, key: code === 'Space' ? ' ' : code.replace(/^(Key|Digit)/, ''), bubbles: true, cancelable: true }))
         const held = { ...input.poll() }
@@ -124,13 +125,13 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     }
     // Enter, last above, committed the field: open it again for real keys held across a poll.
     await press(number); await field.waitFor(); await page.keyboard.down('ArrowUp')
-    assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 0, 'a held arrow in the field does not drive')
+    assert.equal(await page.evaluate(() => mira.game.input.poll().y), 0, 'a held arrow in the field does not drive')
     await page.keyboard.up('ArrowUp')
     // A key held before the field took focus is still released inside it.
     await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp' })))
-    assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 1)
+    assert.equal(await page.evaluate(() => mira.game.input.poll().y), 1)
     await field.evaluate(el => el.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true })))
-    assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 0, 'keyup reaches Input from the field')
+    assert.equal(await page.evaluate(() => mira.game.input.poll().y), 0, 'keyup reaches Input from the field')
     await page.keyboard.press('Escape')
     // The arrow key above went to the window, outside any field, which means "drive": it may
     // have captured the cursor. Make sure the panels are showing again before going on.
@@ -139,7 +140,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
 
     // ---- A deferred row commits once, snapped to its step. ----
     const budget = await reveal(page, 'lava.particleBudget')
-    await page.evaluate(() => { window.budgetChanges = 0; syn3h.params.onChange(id => { if (id === 'lava.particleBudget') window.budgetChanges++ }) })
+    await page.evaluate(() => { window.budgetChanges = 0; mira.params.onChange(id => { if (id === 'lava.particleBudget') window.budgetChanges++ }) })
     await press(budget.locator('.wi-num')); await page.keyboard.type('1000'); await page.keyboard.press('Enter')
     assert.equal(await value(page, 'lava.particleBudget'), 1008, 'deferred value snapped to 48')
     assert.equal(await page.evaluate(() => window.budgetChanges), 1, 'deferred row committed once')
@@ -159,7 +160,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     // as the card opens under it and raise that row's tooltip, which a finger never does.
     // Move it off the rail and tap from here on.
     if (touch) await page.mouse.move(1, 1)
-    await page.evaluate(() => syn3h.shell.inspector.hideTooltip())
+    await page.evaluate(() => mira.shell.inspector.hideTooltip())
     const heights = () => page.evaluate(() => [...document.querySelectorAll('.wi-card')].map(c => c.getBoundingClientRect().height))
     await page.evaluate(() => { for (const card of document.querySelectorAll('.wi-card.is-open')) card.querySelector('.wi-head').click() })
     await settled(page)
@@ -175,7 +176,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     // If the card did not open, say what state it was in: this check has failed without a cause before.
     if (!(end > run.start + 100)) console.log('card state at failure', JSON.stringify(await page.evaluate(() => {
       const card = document.querySelector('.wi-card[data-section=game]'), body = card.querySelector('.wi-body'), stack = document.querySelector('.wi-cards')
-      return { cardClass: card.className, bodyHidden: body.hidden, bodyDisplay: getComputedStyle(body).display, bodyHeight: Math.round(body.getBoundingClientRect().height), bodyChildren: body.childElementCount, cardFlex: getComputedStyle(card).flex, cardMinHeight: getComputedStyle(card).minHeight, stack: [stack.clientHeight, stack.scrollHeight], rail: Math.round(document.querySelector('.world-inspector').getBoundingClientRect().height), railChildren: [...document.querySelector('.world-inspector').children].map(c => `${c.className.split(' ')[0]}:${Math.round(c.getBoundingClientRect().height)}`), cards: [...document.querySelectorAll('.wi-card')].map(c => `${c.dataset.section}:${Math.round(c.getBoundingClientRect().height)}:${c.classList.contains('is-open') ? 'open' : 'closed'}`), moving: document.querySelectorAll('.is-moving').length, animations: document.getAnimations().length, paused: syn3h.shell.userPaused, locked: !!document.pointerLockElement, viewport: [innerWidth, innerHeight] }
+      return { cardClass: card.className, bodyHidden: body.hidden, bodyDisplay: getComputedStyle(body).display, bodyHeight: Math.round(body.getBoundingClientRect().height), bodyChildren: body.childElementCount, cardFlex: getComputedStyle(card).flex, cardMinHeight: getComputedStyle(card).minHeight, stack: [stack.clientHeight, stack.scrollHeight], rail: Math.round(document.querySelector('.world-inspector').getBoundingClientRect().height), railChildren: [...document.querySelector('.world-inspector').children].map(c => `${c.className.split(' ')[0]}:${Math.round(c.getBoundingClientRect().height)}`), cards: [...document.querySelectorAll('.wi-card')].map(c => `${c.dataset.section}:${Math.round(c.getBoundingClientRect().height)}:${c.classList.contains('is-open') ? 'open' : 'closed'}`), moving: document.querySelectorAll('.is-moving').length, animations: document.getAnimations().length, paused: mira.shell.userPaused, locked: !!document.pointerLockElement, viewport: [innerWidth, innerHeight] }
     })))
     assert.ok(end > run.start + 100, `the card opened (${run.start} to ${end})`)
     assert.ok(run.samples.some(h => h > run.start + 5 && h < end - 5), `heights pass through intermediate values: ${run.samples.map(Math.round).join(',')}`)

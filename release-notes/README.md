@@ -1,6 +1,6 @@
 # Release notes
 
-Syn3h uses the calendar versions, release notes and GitHub releases of the owner's Freed and
+Mira uses the calendar versions, release notes and GitHub releases of the owner's Freed and
 Vorteo projects (decided 14 November 2026, `ops/DECISIONS.md`). The GitHub releases tell the
 story of the build: one release per chapter, from the first plan to the latest public
 release.
@@ -53,8 +53,8 @@ The fourteen chapters of 14 November 2026:
 | v26.11.1400 | m00-proposal | milestone, no preview |
 | v26.11.1401 | m01-foundation | milestone, no preview |
 | v26.11.1402 | m02-first-playable | milestone |
-| v26.11.1403 | m03-syn3h-buggy | milestone |
-| v26.11.1404 | m04-syn3h-lobby | milestone |
+| v26.11.1403 | m03-mira-buggy | milestone |
+| v26.11.1404 | m04-mira-lobby | milestone |
 | v26.11.1405 | m05-king-of-the-hill | milestone |
 | v26.11.1406 | m06-island | milestone |
 | v26.11.1407 | m07-demo-features | milestone |
@@ -83,7 +83,7 @@ notes files. After the fourteen above it prints v26.11.1414 for a build later on
 and v26.11.1500 for one on the 15th.
 
 `versions` reads `../Syn3h-stable/releases.tsv` to pair production rows with `release-N`; set
-`SYN3H_RELEASES_TSV` to read it from elsewhere, for example in a worktree.
+`MIRA_RELEASES_TSV` to read it from elsewhere, for example in a worktree.
 
 `draft` needs the version's row in `history.tsv` first. It writes
 `release-notes/releases/<version>.md` with the sections for its channel and the git log
@@ -103,7 +103,7 @@ publishing a run of versions in order leaves the one you choose on top. A real r
    anywhere but the history's commit, a production version does not match `releases.tsv`,
    or a GitHub release for the version already exists.
 2. Creates the annotated tag `v<version>` on the history's commit if it does not exist.
-3. Pushes that tag, then runs `gh release create` with the title `Syn3h v<version>`, the
+3. Pushes that tag, then runs `gh release create` with the title `Mira v<version>`, the
    rendered body, `--latest` or `--latest=false`, and the manifest's files.
 4. Checks that every uploaded file's public download URL answers 200.
 
@@ -114,7 +114,7 @@ publishing a run of versions in order leaves the one you choose on top. A real r
 older source file. Other prefaces remain invalid; the heading, deck and section checks are unchanged.
 
 ```markdown
-## Syn3h v26.11.1412
+## Mira v26.11.1412
 
 A one line deck naming the most meaningful outcomes, as X, Y and Z
 
@@ -156,7 +156,7 @@ Notes files do not list images. `render --assets <dir>` and `publish --assets <d
 `### Screenshots` section from `<dir>/manifest.json`, which the capture worker writes:
 
 ```json
-{ "images": [{ "file": "01-lobby.png", "caption": "The lobby" }], "gif": "syn3h-showcase.gif" }
+{ "images": [{ "file": "01-lobby.png", "caption": "The lobby" }], "gif": "mira-showcase.gif" }
 ```
 
 The GIF, when there is one, comes first. Each image is embedded with its caption as alt text
@@ -187,7 +187,7 @@ Grapple cords drape over hills instead of cutting through
 
 `tools/release-feed.mjs` builds `/releases.json` from the digests for the game, and each entry
 links its full notes on GitHub. A release without a digest shows its notes' summary line
-only, never the notes. A build with `SYN3H_RELEASE_VERSION` set (as `tools/release.sh` does)
+only, never the notes. A build with `MIRA_RELEASE_VERSION` set (as `tools/release.sh` does)
 fails unless that version has a digest in this shape, so write and commit the notes and the
 digest before tagging and building a release.
 

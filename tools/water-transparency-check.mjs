@@ -18,10 +18,10 @@ async function enter(name) {
   const url = new URL(base); url.searchParams.set('room', room); url.searchParams.set('name', name)
   if (backend === 'webgl') url.searchParams.set('webgl', '1')
   await page.goto(url.href, { waitUntil: 'load', timeout: 120000 })
-  await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
-  await page.evaluate(() => window.syn3h.shell.play())
-  await page.waitForFunction(() => window.syn3hNet?.connected && window.syn3h.game.time > 3, null, { timeout: 120000 })
-  const entry = await page.evaluate(() => ({ backend: window.syn3h.game.backend, waves: window.syn3h.params.get('water.waves').value, connected: window.syn3hNet.connected }))
+  await page.waitForFunction(() => window.mira?.shell, null, { timeout: 120000 })
+  await page.evaluate(() => window.mira.shell.play())
+  await page.waitForFunction(() => window.miraNet?.connected && window.mira.game.time > 3, null, { timeout: 120000 })
+  const entry = await page.evaluate(() => ({ backend: window.mira.game.backend, waves: window.mira.params.get('water.waves').value, connected: window.miraNet.connected }))
   assert.equal(entry.backend, backend); assert.equal(entry.waves, true)
   report.cases.push({ name, entry })
   await page.screenshot({ path: `${out}/${name}-ordinary-entry.png` })
@@ -29,7 +29,7 @@ async function enter(name) {
 }
 async function configure(page) {
   await page.evaluate(async () => {
-    const s = window.syn3h
+    const s = window.mira
     const { applyPlanet } = await import('/src/world/planets.ts')
     applyPlanet('alpine', 7)
     for (const [id, value] of Object.entries({ 'bots.count': 0, 'gfx.auto': false, 'gfx.level': 2, 'sun.timeOfDay': 12, 'sun.dayLength': 0, 'world.curve': 0, 'weather.storminess': 0 })) s.params.set(id, value)
@@ -38,7 +38,7 @@ async function configure(page) {
 }
 async function scene(page, kind) {
   return page.evaluate(async kind => {
-    const T = await import(performance.getEntriesByType('resource').find(r => r.name.includes('/three_webgpu.js')).name), s = window.syn3h, t = s.terrain, level = s.params.get('world.lavaAltitude').value
+    const T = await import(performance.getEntriesByType('resource').find(r => r.name.includes('/three_webgpu.js')).name), s = window.mira, t = s.terrain, level = s.params.get('world.lavaAltitude').value
     let spot
     const good = (x, z, surface, lo = 1.6, hi = 4.5) => {
       const bed = t.heightAt(x, z), actual = t.liquidHeightAt(x, z)
@@ -100,7 +100,7 @@ async function scene(page, kind) {
 async function shot(page, label) {
   await page.waitForTimeout(1200)
   const state = await page.evaluate(async () => {
-    const s = window.syn3h, v = s.terrain.volcanics
+    const s = window.mira, v = s.terrain.volcanics
     const T = await import(performance.getEntriesByType('resource').find(r => r.name.includes('/three_webgpu.js')).name)
     const markerProof = window.waterClear?.markers.children.map(o => {
       o.geometry.computeBoundingBox(); const b = o.geometry.boundingBox, corners = []
@@ -114,7 +114,7 @@ async function shot(page, label) {
     const rectangleHits = ray.intersectObjects(v.group.children,true).slice(0,3).map(h=>({point:h.point.toArray(), material:h.object.material.uuid, path:v.meshes.findIndex(m=>m.mesh===h.object), geometry:h.object.geometry.type, attributes:Object.keys(h.object.geometry.attributes), ground:s.terrain.heightAt(h.point.x,h.point.z), surface:s.terrain.liquidHeightAt(h.point.x,h.point.z)}))
     return { markerProof, rectangleHits, cameraAboveSpotSurface:window.waterClear ? s.game.camera.position.y-s.terrain.liquidHeightAt(window.waterClear.spot.x,window.waterClear.spot.z):null, waves: s.params.get('water.waves').value, quality: s.params.get('gfx.level').value, perf: s.game.performance,
       materials: ['newSea','newStill','newRiver','waterSea','waterStill'].map(k => ({ name: k, transparent: v[k].material.transparent, depthWrite: v[k].material.depthWrite, displaced: !!v[k].material.positionNode })),
-      bubbles: (()=>{const e=s.game.systems.find(system=>system.bubbles);return e&&{active:e.bubbles.field.particles.length,capacity:e.bubbles.capacity,visible:e.bubbles.mesh?.visible}})(), connected: window.syn3hNet.connected, camera: s.game.camera.position.toArray() }
+      bubbles: (()=>{const e=s.game.systems.find(system=>system.bubbles);return e&&{active:e.bubbles.field.particles.length,capacity:e.bubbles.capacity,visible:e.bubbles.mesh?.visible}})(), connected: window.miraNet.connected, camera: s.game.camera.position.toArray() }
   })
   await page.screenshot({ path: `${out}/${label}.png` }); report.cases.push({ label, ...state })
 }
@@ -122,14 +122,14 @@ try {
   const a = await enter('A'); await configure(a)
   if (mode === 'visual' || mode === 'proof') {
     for (const waves of [true, false]) {
-      await a.evaluate(v => window.syn3h.params.set('water.waves', v), waves)
+      await a.evaluate(v => window.mira.params.set('water.waves', v), waves)
       for (const kind of ['sea', 'pool', 'river', 'deep']) {
         report.cases.push(await scene(a, kind))
         await shot(a, `${kind}-${waves ? 'waves' : 'flat'}-above`)
         if (mode === 'proof') {
-          await a.evaluate(()=>{window.syn3h.terrain.volcanics.group.visible=false})
+          await a.evaluate(()=>{window.mira.terrain.volcanics.group.visible=false})
           await shot(a, `${kind}-${waves ? 'waves' : 'flat'}-reference`)
-          await a.evaluate(()=>{window.syn3h.terrain.volcanics.group.visible=true})
+          await a.evaluate(()=>{window.mira.terrain.volcanics.group.visible=true})
         }
         if (kind === 'sea') {
           await a.evaluate(() => { window.waterClear.below = true }); await shot(a, `sea-${waves ? 'waves' : 'flat'}-below`)
@@ -139,14 +139,14 @@ try {
     }
     await scene(a, 'sea')
     for (const waves of [true, false]) for (const tier of [0, 1, 2]) {
-      await a.evaluate(({t,w}) => { window.syn3h.params.set('gfx.level', t); window.syn3h.params.set('water.waves', w) }, {t:tier,w:waves})
+      await a.evaluate(({t,w}) => { window.mira.params.set('gfx.level', t); window.mira.params.set('water.waves', w) }, {t:tier,w:waves})
       await shot(a, `tier-${tier}-${waves ? 'waves' : 'flat'}`)
     }
     for (const world of ['volcanic', 'moon']) {
       await a.evaluate(async world => { window.waterClear = null; const { applyPlanet } = await import('/src/world/planets.ts'); applyPlanet(world, 7) }, world)
       await a.waitForTimeout(2000)
       report.cases.push(await a.evaluate(world => {
-        const v = window.syn3h.terrain.volcanics
+        const v = window.mira.terrain.volcanics
         return { world, seaCount: v.sea.length, lavaTransparent: v.lavaSea.material.transparent }
       }, world))
       await a.screenshot({ path: `${out}/${world}.png` })
@@ -162,21 +162,21 @@ try {
     report.cases.push(await scene(a,'submerged'))
     await a.evaluate(()=>{window.waterClear.horizon=true;window.waterClear.markers.visible=false})
     for(const waves of [true,false]) for(const tier of [0,2]) for(const depth of [1,7]) {
-      await a.evaluate(({waves,tier,depth})=>{const s=window.syn3h;s.params.set('water.waves',waves);s.params.set('gfx.level',tier);window.waterClear.depth=depth}, {waves,tier,depth})
+      await a.evaluate(({waves,tier,depth})=>{const s=window.mira;s.params.set('water.waves',waves);s.params.set('gfx.level',tier);window.waterClear.depth=depth}, {waves,tier,depth})
       await a.waitForTimeout(3000)
       const name=`swamp-${waves?'waves':'flat'}-tier${tier}-depth${depth}`
       await shot(a,name)
       if(depth===7&&tier===2&&waves){
         for(const layer of ['water','sky','post','vehicle']){
           await a.evaluate(layer=>{
-            const s=window.syn3h
+            const s=window.mira
             if(layer==='water')s.terrain.volcanics.group.visible=false
             if(layer==='sky'){const sky=s.game.scene.children.find(o=>o.sunDirection&&o.betaR);window.leakSky=sky;if(sky)sky.visible=false}
             if(layer==='post'){window.leakPost=s.game.postChain;s.game.setPostChain(null)}
             if(layer==='vehicle')s.player.object.visible=false
           },layer)
           await shot(a,`${name}-without-${layer}`)
-          await a.evaluate(layer=>{const s=window.syn3h;if(layer==='water')s.terrain.volcanics.group.visible=true;if(layer==='sky'&&window.leakSky)window.leakSky.visible=true;if(layer==='post')s.game.setPostChain(window.leakPost);if(layer==='vehicle')s.player.object.visible=true},layer)
+          await a.evaluate(layer=>{const s=window.mira;if(layer==='water')s.terrain.volcanics.group.visible=true;if(layer==='sky'&&window.leakSky)window.leakSky.visible=true;if(layer==='post')s.game.setPostChain(window.leakPost);if(layer==='vehicle')s.player.object.visible=true},layer)
         }
       }
     }
@@ -187,7 +187,7 @@ try {
   if (mode === 'crossing') {
     report.cases.push(await scene(a, 'submerged'))
     await a.evaluate(() => {
-      const g=window.syn3h.game,b=g.renderer.backend
+      const g=window.mira.game,b=g.renderer.backend
       window.crossCounts={pipelines:0,programs:0}
       for(const [method,key] of [['createRenderPipeline','pipelines'],['createProgram','programs']]){
         const original=b[method];b[method]=function(...args){window.crossCounts[key]++;return original.apply(this,args)}
@@ -196,10 +196,10 @@ try {
       window.waterClear.horizon=true;window.waterClear.depth=-2
     })
     for(const tier of [0,1,2]){
-      await a.evaluate(tier=>window.syn3h.params.set('gfx.level',tier),tier)
+      await a.evaluate(tier=>window.mira.params.set('gfx.level',tier),tier)
       await a.waitForTimeout(4000)
       const trace=await a.evaluate(async()=>{
-        const rows=[],g=window.syn3h.game
+        const rows=[],g=window.mira.game
         let last=performance.now()
         for(let phase=0;phase<21;phase++){
           const below=phase%2===1
@@ -209,7 +209,7 @@ try {
             await new Promise(requestAnimationFrame)
             const now=performance.now()
             const e=g.systems.find(x=>x.underwater),cp=g.camera.position
-            rows.push({lensDepth:+(window.syn3h.terrain.liquidHeightAt(cp.x,cp.z)-cp.y).toFixed(3),blend:+e.underwater.amount.toFixed(3),bubbles:e.bubbles.mesh.geometry.instanceCount,phase,below,frame,rafMs:now-last,gameMs:g.performance.frameMs,pipelines:window.crossCounts.pipelines-before.pipelines,programs:window.crossCounts.programs-before.programs,fogBefore:fog,fogAfter:g.scene.fogNode?.id})
+            rows.push({lensDepth:+(window.mira.terrain.liquidHeightAt(cp.x,cp.z)-cp.y).toFixed(3),blend:+e.underwater.amount.toFixed(3),bubbles:e.bubbles.mesh.geometry.instanceCount,phase,below,frame,rafMs:now-last,gameMs:g.performance.frameMs,pipelines:window.crossCounts.pipelines-before.pipelines,programs:window.crossCounts.programs-before.programs,fogBefore:fog,fogAfter:g.scene.fogNode?.id})
             last=now
           }
         }
@@ -224,10 +224,10 @@ try {
     // every screenshot is a known simulated time regardless of how slowly headless Chrome runs.
     if (mode === 'dive') {
       report.cases.push(await scene(a, 'submerged'))
-      await a.evaluate(() => { window.waterClear.markers.visible = false; window.waterClear.horizon = true; window.waterClear.depth = -1.2; window.syn3h.params.set('water.waves', true); window.syn3h.params.set('gfx.level', 2) })
+      await a.evaluate(() => { window.waterClear.markers.visible = false; window.waterClear.horizon = true; window.waterClear.depth = -1.2; window.mira.params.set('water.waves', true); window.mira.params.set('gfx.level', 2) })
       await a.waitForTimeout(4000)
-      await a.evaluate(() => window.syn3h.game.renderer.setAnimationLoop(null))
-      const step = () => a.evaluate(() => { const g = window.syn3h.game, e = g.systems.find(x => x.underwater), p = g.camera.position, t = window.syn3h.terrain
+      await a.evaluate(() => window.mira.game.renderer.setAnimationLoop(null))
+      const step = () => a.evaluate(() => { const g = window.mira.game, e = g.systems.find(x => x.underwater), p = g.camera.position, t = window.mira.terrain
         g.last = performance.now() - 1000 / 30; g.frame()
         return { time: +g.time.toFixed(3), lensY: +p.y.toFixed(3), surface: +t.liquidHeightAt(p.x, p.z).toFixed(3), lens: { ...e.lens }, blend: +e.underwater.amount.toFixed(3), bubbles: e.bubbles.mesh.geometry.instanceCount } })
       const rows = []
@@ -240,17 +240,17 @@ try {
         }
       }
       report.cases.push({ dive: rows })
-      await a.evaluate(() => window.syn3h.game.start())
+      await a.evaluate(() => window.mira.game.start())
     }
   if (mode === 'sky') {
     // Bright strip and reflection proof. The leak scene: swamp, horizontal view under water.
     await a.evaluate(async()=>{const {applyPlanet}=await import('/src/world/planets.ts');applyPlanet('swamp',7)})
     await a.waitForTimeout(2000)
     report.cases.push(await scene(a,'submerged'))
-    await a.evaluate(()=>{window.waterClear.horizon=true;window.waterClear.markers.visible=false;window.waterClear.depth=-3;window.syn3h.params.set('water.waves',true);window.syn3h.params.set('gfx.level',2)})
+    await a.evaluate(()=>{window.waterClear.horizon=true;window.waterClear.markers.visible=false;window.waterClear.depth=-3;window.mira.params.set('water.waves',true);window.mira.params.set('gfx.level',2)})
     const recapture = () => a.evaluate(async () => {
       // Force a sky-only reflection capture now, through the real schedule (param invalidation).
-      const s = window.syn3h, g = s.game, sky = g.scene.children.find(o => o.sunDirection && o.betaR), id = 'sky.turbidity', v = s.params.get(id).value
+      const s = window.mira, g = s.game, sky = g.scene.children.find(o => o.sunDirection && o.betaR), id = 'sky.turbidity', v = s.params.get(id).value
       if (!window.pmremHooked) { window.pmremHooked = true; const T = await import(performance.getEntriesByType('resource').find(r => r.name.includes('/three_webgpu.js')).name), original = T.PMREMGenerator.prototype.fromScene; T.PMREMGenerator.prototype.fromScene = function (...args) { const target = original.apply(this, args); window.lastPmrem = target; return target } }
       const log = window.skyMixLog ??= []
       if (!window.skyMixWrapped) { window.skyMixWrapped = true; const node = sky.underwaterMix, original = node.update; node.update = function (frame) { const r = original.call(this, frame); log.push({ player: frame.camera === g.camera, value: this.value }); return r } }
@@ -271,7 +271,7 @@ try {
       await a.waitForTimeout(3000)
       await shot(a, `sky-under-depth${depth}`)
       report.cases.push({ reflection: `under-${depth}`, ...(await recapture()) })
-      await a.evaluate(()=>{const sky=window.syn3h.game.scene.children.find(o=>o.sunDirection&&o.betaR);window.leakSky=sky;sky.visible=false})
+      await a.evaluate(()=>{const sky=window.mira.game.scene.children.find(o=>o.sunDirection&&o.betaR);window.leakSky=sky;sky.visible=false})
       await shot(a, `sky-under-depth${depth}-without-sky`)
       await a.evaluate(()=>{window.leakSky.visible=true})
     }
@@ -283,7 +283,7 @@ try {
     for (const kind of ['sea','pool','river']) {
       report.cases.push(await scene(a, kind))
       const rows = await a.evaluate(async () => {
-        const s = window.syn3h, g = s.game, r = g.renderer, v = s.terrain.volcanics
+        const s = window.mira, g = s.game, r = g.renderer, v = s.terrain.volcanics
         const N = await import(performance.getEntriesByType('resource').find(r=>r.name.includes('/three_tsl.js')).name)
         const materials = ['newSea','newStill','newRiver','waterSea','waterStill'].map(k=>v[k].material)
         const original = materials.map(m=>m.opacityNode)
@@ -309,15 +309,15 @@ try {
   }
   if (mode === 'sync') {
     const b = await enter('B')
-    await Promise.all([a, b].map(p => p.waitForFunction(() => window.syn3hNet.clock.synced && [...window.syn3hNet.players.values()].filter(v => !v.bot).length === 2, null, { timeout: 60000 })))
+    await Promise.all([a, b].map(p => p.waitForFunction(() => window.miraNet.clock.synced && [...window.miraNet.players.values()].filter(v => !v.bot).length === 2, null, { timeout: 60000 })))
     await a.waitForTimeout(3000)
     for (const page of [a, b]) {
       report.cases.push(await scene(page, 'deep'))
       await page.evaluate(() => {
-        const s = window.syn3h
+        const s = window.mira
         s.params.set('gfx.auto', false); s.params.set('gfx.level', 0)
         s.game.add({ update() {
-          const target = window.waterFreezeTarget, n = window.syn3hNet
+          const target = window.waterFreezeTarget, n = window.miraNet
           if (!target || n.seaTime < target) return
           const nodes = [], seen = new Set()
           s.terrain.volcanics.newSea.material.positionNode.traverse(node => {
@@ -329,12 +329,12 @@ try {
         } })
       })
     }
-    await a.evaluate(()=>{window.syn3h.params.set('water.waveHeight',2)})
+    await a.evaluate(()=>{window.mira.params.set('water.waveHeight',2)})
     await a.waitForTimeout(5000)
     for (let i = 0; i < 3; i++) {
-      const target = await a.evaluate(() => window.syn3hNet.seaTime + 4)
+      const target = await a.evaluate(() => window.miraNet.seaTime + 4)
       await Promise.all([a, b].map(p => p.evaluate(target => {
-        window.waterFrozen = null; window.waterFreezeTarget = target; window.syn3h.game.start()
+        window.waterFrozen = null; window.waterFreezeTarget = target; window.mira.game.start()
       }, target)))
       await Promise.all([a, b].map(p => p.waitForFunction(() => !!window.waterFrozen, null, { timeout: 30000 })))
       const states = await Promise.all([a, b].map(p => p.evaluate(() => window.waterFrozen)))

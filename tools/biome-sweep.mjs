@@ -27,17 +27,18 @@
  * builds after play resumes are in-play builds. Those under the group "Showroom warm" are the
  * vehicles' staged warm-up (inWorldCheck counts them as preparation); any other is a cold draw.
  *
- *   SYN3H_URL=http://127.0.0.1:5491/ node tools/biome-sweep.mjs OUT.json [planet:seed,...] [webgpu,webgl2] [3,0]
+ *   MIRA_URL=http://127.0.0.1:5491/ node tools/biome-sweep.mjs OUT.json [planet:seed,...] [webgpu,webgl2] [3,0]
  *
  * Defaults: archipelago:1, alpine:4, volcanic:1, ice:1, moon:1, swamp:1, desert:1, badlands:1,
  * obsidian:1 on both backends from both entries (36 runs, about 1.5 hours). Entries 1 and 2 (Low,
  * Medium) step across their boundary both ways. Exits 0; the last
  * line says whether any run was dirty or failed, and OUT.json holds every build.
  */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright-core'
 
-const base = (process.env.SYN3H_URL ?? '').replace(/\/+$/, '') + '/'
+const base = (process.env.MIRA_URL ?? '').replace(/\/+$/, '') + '/'
 const out = process.argv[2]
 const WORLDS = (process.argv[3] ?? 'archipelago:1,alpine:4,volcanic:1,ice:1,moon:1,swamp:1,desert:1,badlands:1,obsidian:1').split(',')
 const BACKENDS = (process.argv[4] ?? 'webgpu,webgl2').split(',')
@@ -58,9 +59,9 @@ try {
     page.on('pageerror', e => run.errors.push(e.message))
     try {
       await page.goto(`${base}?planet=${planet}&seed=${seed}&vehicle=hovercraft&room=sweep-${Date.now()}${backend === 'webgl2' ? '&webgl=1' : ''}`)
-      await page.waitForFunction(() => window.syn3h?.game, null, { timeout: 90000 })
+      await page.waitForFunction(() => window.mira?.game, null, { timeout: 90000 })
       await page.evaluate(level => {
-        const { game, shell, params } = window.syn3h
+        const { game, shell, params } = window.mira
         params.set('bots.keepCount', true)
         game.quality.setLevel(level)
         game.quality.setAuto(true)
@@ -68,10 +69,10 @@ try {
         game.quality.governor.sample = () => null
         void shell.play(true)
       }, entry)
-      await page.waitForFunction(() => window.syn3hNet?.isHost && window.syn3h.shell.playing && !window.syn3h.shell.transitioning, null, { timeout: 120000 })
-      await page.waitForFunction(() => { const { bots, materialize } = window.syn3h; return bots.vehicles.length === 4 && bots.vehicles.every(v => !materialize.isMaterializing(v)) }, null, { timeout: 150000 })
+      await page.waitForFunction(() => window.miraNet?.isHost && window.mira.shell.playing && !window.mira.shell.transitioning, null, { timeout: 120000 })
+      await page.waitForFunction(() => { const { bots, materialize } = window.mira; return bots.vehicles.length === 4 && bots.vehicles.every(v => !materialize.isMaterializing(v)) }, null, { timeout: 150000 })
       Object.assign(run, await page.evaluate(async () => {
-        const s = window.syn3h, { game, terrain, player, camera } = s, q = game.quality
+        const s = window.mira, { game, terrain, player, camera } = s, q = game.quality
         document.exitPointerLock?.()
         const state = q.state ?? {}
         // The nearest liquid to the player, searched on rings out to 2.4 km.
@@ -95,7 +96,7 @@ try {
         return { entered: q.governor.level, auto: state.auto, pinned: state.pinned, liquid: found && { kind: found.kind, depth: +(found.h - terrain.heightAt(found.x, found.z)).toFixed(1), playerInLiquid: terrain.liquidKindAt?.(after.x, after.z) ?? null, dy: +(after.y - found.h).toFixed(1) }, bots: s.bots.vehicles.map(v => v.kind) }
       }))
       await page.evaluate(() => {
-        const s = window.syn3h, b = s.game.renderer.backend, nb = b.createNodeBuilder, rp = b.createRenderPipeline
+        const s = window.mira, b = s.game.renderer.backend, nb = b.createNodeBuilder, rp = b.createRenderPipeline
         window.__builds = []; window.__window = 'staged'
         const owner = src => {
           const o = src?.object, chain = []
@@ -115,7 +116,7 @@ try {
         // How production takes this boundary: a drop in play; a climb in play only where the game
         // allows a visible climb (canClimbVisible); otherwise pending until a covered moment.
         const how = await page.evaluate(level => {
-          const s = window.syn3h, q = s.game.quality, g = q.governor
+          const s = window.mira, q = s.game.quality, g = q.governor
           window.__window = 'play ' + level
           if (level < g.level) { q.lastReason = g.replayLevelBoundary(false).reason; q.apply('governor', false); return 'drop in play' }
           if (g.rung > 0) { g.rung = 0; q.apply('governor', false) }
@@ -126,13 +127,13 @@ try {
           return 'climb at covered moment'
         }, level)
         if (how === 'climb at covered moment') {
-          await page.waitForFunction(level => window.syn3h.game.quality.governor.level === level, level, { timeout: 20000 }).catch(() => {})
+          await page.waitForFunction(level => window.mira.game.quality.governor.level === level, level, { timeout: 20000 }).catch(() => {})
           await page.waitForTimeout(600)
-          await page.evaluate(level => { window.__window = 'play ' + level; window.syn3h.shell.play() }, level)
-          await page.waitForFunction(() => window.syn3h.shell.playing && !window.syn3h.shell.transitioning, null, { timeout: 30000 })
+          await page.evaluate(level => { window.__window = 'play ' + level; window.mira.shell.play() }, level)
+          await page.waitForFunction(() => window.mira.shell.playing && !window.mira.shell.transitioning, null, { timeout: 30000 })
         }
         const row = await page.evaluate(async level => {
-          const q = window.syn3h.game.quality
+          const q = window.mira.game.quality
           document.exitPointerLock?.()
           for (let i = 0; i < 150; i++) await new Promise(requestAnimationFrame)
           await new Promise(r => setTimeout(r, 800))

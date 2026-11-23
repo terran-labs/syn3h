@@ -1,4 +1,4 @@
-/** Syn3h CoreCamera port. Source and deliberate extensions are documented in tests/core/camera.md. */
+/** Mira CoreCamera port. Source and deliberate extensions are documented in tests/core/camera.md. */
 import * as THREE from 'three/webgpu'
 import { defineParam, params } from '../../shared/params'
 import type { Terrain } from '../world/Terrain'
@@ -76,7 +76,7 @@ export function zoomLimits(kind: string | undefined): readonly [number, number] 
   return [1.5, far]
 }
 /** The distance chosen this session: kept across reloads in this tab (sessionStorage), not for good. */
-const DISTANCE_KEY = 'syn3h.cameraDistance'
+const DISTANCE_KEY = 'mira.cameraDistance'
 const ease = (dt: number, rate: number) => 1 - Math.exp(-Math.max(0, dt) * rate)
 const clamp = THREE.MathUtils.clamp
 
@@ -226,15 +226,15 @@ export class ChaseCamera implements System {
     }) as EventListener, { capture: true })
     listen(window, 'pointerup', () => { this.dragging = false })
     listen(game.canvas, 'contextmenu', event => event.preventDefault())
-    listen(window, 'syn3h:daydream', ((event: CustomEvent<{ active: boolean }>) => { if (event.detail?.active) this.director.start(); else this.director.stop() }) as EventListener)
+    listen(window, 'mira:daydream', ((event: CustomEvent<{ active: boolean }>) => { if (event.detail?.active) this.director.start(); else this.director.stop() }) as EventListener)
     listen(window, 'pointermove', ((event: PointerEvent) => {
       if ((!this.dragging && document.pointerLockElement !== game.canvas) || this.game.input.suspended) return
       this.look(event.movementX, event.movementY)
     }) as EventListener)
     // Touch aiming (src/ui/TouchControls.ts): finger travel in CSS px, treated as mouse travel.
-    listen(window, 'syn3h:look', ((event: CustomEvent<{ dx: number; dy: number }>) => this.look(event.detail.dx, event.detail.dy)) as EventListener)
+    listen(window, 'mira:look', ((event: CustomEvent<{ dx: number; dy: number }>) => this.look(event.detail.dx, event.detail.dy)) as EventListener)
     // Touch pinch in the orbit camera (src/ui/tagStick.ts AimTouches): wheel pixels, positive out.
-    listen(window, 'syn3h:zoom', ((event: CustomEvent<{ deltaY: number }>) => { if (!this.game.input.suspended) this.zoom(event.detail.deltaY, 0) }) as EventListener)
+    listen(window, 'mira:zoom', ((event: CustomEvent<{ deltaY: number }>) => { if (!this.game.input.suspended) this.zoom(event.detail.deltaY, 0) }) as EventListener)
     listen(game.canvas, 'wheel', ((event: WheelEvent) => {
       event.preventDefault()
       this.zoom(event.deltaY, event.deltaMode)

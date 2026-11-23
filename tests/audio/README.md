@@ -49,10 +49,10 @@ The engine bridge uses the player's speed and drive input. Airborne detection cu
 No audio file ships (owner's rule, 15 November 2026). The generated score starts with the
 first gesture, with tag notes, convoy, terrain and weather layers enabled by default; their
 switches and the lighter instrument mode remain independent. A choice saved by an older
-build under `syn3h.musicTrack` is removed on start. The lobby holds the score's quiet state
+build under `mira.musicTrack` is removed on start. The lobby holds the score's quiet state
 and is lifted 6 dB there. Wind uses the generated camera/weather voice only.
 
-`tests/audio/generated-only.mjs` (game on `SYN3H_URL`) is the browser proof: zero audio-file
+`tests/audio/generated-only.mjs` (game on `MIRA_URL`) is the browser proof: zero audio-file
 requests, audible lobby and play levels, the three synthesised sounds, cleanup, and stall
 behaviour. `tools/check-shipped-assets.mjs` is the release check for shipped audio and
 unrequired bitmaps; `tests/ops/shipped-assets.test.ts` covers it.
@@ -71,7 +71,7 @@ The engine graphs are synthesised; `provenance.md` records where the audio comes
 from. The tag beam, tagged, materialize and wind
 sounds are synthesised too; no recording and no package audio ships.
 
-- Syn3h buggy: a rising electric turbine tone over tyre roar. Since 16 November 2026 a
+- Mira buggy: a rising electric turbine tone over tyre roar. Since 16 November 2026 a
   slide is a low, gritty tyre scrub (filtered noise coloured by the ground) on its own
   Tyre slip volume, heard only when the body slides sideways; the pitched squeal is gone.
   `slip-runs.ts` and `vehicle-voices.mjs` measure it.
@@ -130,7 +130,7 @@ this order: capture, contested, lost, win, tick, tag, join, leave, click, deploy
 retract, lava. `vehicle-events.mjs` verifies a single deploy/retract, touchdown
 and lava-entry trigger despite repeated frames.
 
-Measured unmastered voice peaks: Syn3h buggy 0.272, classic buggy 0.366, jet 0.462,
+Measured unmastered voice peaks: Mira buggy 0.272, classic buggy 0.366, jet 0.462,
 hovercraft 0.457, tank 0.433. RMS spans 0.042 to 0.071. Each starts at zero and
 ends at zero; the generated noise loop boundary changes by at most 0.0053 between
 adjacent samples. The cue sampler peaks at 0.622. These figures check electrical

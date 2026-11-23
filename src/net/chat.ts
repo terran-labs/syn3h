@@ -160,4 +160,4 @@ export class ChatChannel {
 }
 
 /** Window event fired when a shown line is spoken; detail is `{ id, text, bot }`. */
-export const CHAT_SPEAK_EVENT = 'syn3h:chat-speak'
+export const CHAT_SPEAK_EVENT = 'mira:chat-speak'

@@ -14,13 +14,13 @@ try{
   await page.routeWebSocket(/\/ws/,s=>s.close())
   let started=true
   await page.goto(`http://localhost:${port}/?autoplay=1&vehicle=${kind}&planet=alpine&seed=1${forced?'&webgl=1':''}`,{waitUntil:'domcontentloaded',timeout:90000})
-  await page.waitForFunction(()=>window.syn3h?.game.tick>20,null,{timeout:150000}).catch(e=>{started=false;errors.push('did not start: '+e.message.slice(0,80))})
+  await page.waitForFunction(()=>window.mira?.game.tick>20,null,{timeout:150000}).catch(e=>{started=false;errors.push('did not start: '+e.message.slice(0,80))})
   let info={}
   if(started){
-   await page.evaluate(()=>{const s=window.syn3h;s.params.set('bots.count',0);s.params.set('gfx.auto',false);s.params.set('paint.forceFieldCanopy',true);s.game.input.external.y=1})
-   for(const tier of [0,3]){await page.evaluate(t=>window.syn3h.params.set('gfx.vehicleShading',t),tier);await page.waitForTimeout(3500);await page.screenshot({path:`${out}/${forced?'webgl':'default'}-${kind}-t${tier}.png`})}
+   await page.evaluate(()=>{const s=window.mira;s.params.set('bots.count',0);s.params.set('gfx.auto',false);s.params.set('paint.forceFieldCanopy',true);s.game.input.external.y=1})
+   for(const tier of [0,3]){await page.evaluate(t=>window.mira.params.set('gfx.vehicleShading',t),tier);await page.waitForTimeout(3500);await page.screenshot({path:`${out}/${forced?'webgl':'default'}-${kind}-t${tier}.png`})}
    await page.keyboard.press('KeyX');await page.waitForTimeout(3500);await page.screenshot({path:`${out}/${forced?'webgl':'default'}-${kind}-zorb.png`})
-   info=await page.evaluate(()=>{const s=window.syn3h;return {backend:s.game.backend,tick:s.game.tick,draws:s.game.renderer.info.render.drawCalls,speed:Math.round(Math.hypot(s.player.body.linvel().x,s.player.body.linvel().z)),zorbed:s.player.zorbed}})
+   info=await page.evaluate(()=>{const s=window.mira;return {backend:s.game.backend,tick:s.game.tick,draws:s.game.renderer.info.render.drawCalls,speed:Math.round(Math.hypot(s.player.body.linvel().x,s.player.body.linvel().z)),zorbed:s.player.zorbed}})
   }
   results.push({forced,kind,...info,images:[...new Set(images)],errors:[...new Set(errors)].map(e=>e.slice(0,160))});await page.close()
  }

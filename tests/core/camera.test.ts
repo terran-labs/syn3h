@@ -13,7 +13,7 @@ function harness(heightAt = (_x: number, _z: number) => 0, liquidHeightAt?: (x: 
   const chase = new ChaseCamera(game, terrain); chase.target = target
   return { camera, target, chase }
 }
-describe('Syn3h camera', () => {
+describe('Mira camera', () => {
   it('starts behind negative-Z forward with shipped distance, bump and FOV', () => {
     const { camera, chase } = harness(); chase.update(1 / 60)
     expect(camera.position.z).toBeCloseTo(9.25)

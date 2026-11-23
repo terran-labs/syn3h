@@ -90,7 +90,7 @@ A final current-island comparison after changing defaults recorded headed/headle
 
 Artifacts: `/tmp/syn3h-island-frame-profile.json` (full matrix), `/tmp/syn3h-quality-profile-after.json` (new budgets), `/tmp/syn3h-island-headed-final.json` and `/tmp/syn3h-island-headless-final.json` (final paired modes), `/tmp/syn3h-terrain-profile.log` (unchanged tests), and `/tmp/syn3h-profile-1280.png` and `/tmp/syn3h-profile-1920.png` (headed views).
 
-Validation after applying budgets: `npx tsc --noEmit` passed; `SYN3H_NO_ROOM_SERVER=1 npx vitest run --maxWorkers=2` passed all 219 tests across 33 files. The browser verification recorded the expected drawing buffer sizes and bot caps.
+Validation after applying budgets: `npx tsc --noEmit` passed; `MIRA_NO_ROOM_SERVER=1 npx vitest run --maxWorkers=2` passed all 219 tests across 33 files. The browser verification recorded the expected drawing buffer sizes and bot caps.
 
 ## Round planet against the same world drawn flat, 14 November, 8:55pm PST
 

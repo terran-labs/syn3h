@@ -9,16 +9,17 @@
  * capture of each. It asserts what can be measured: across such a world's disc, from its
  * centre to near its limb, brightness has no step (no neighbouring samples differ sharply).
  *
- *   SYN3H_URL=http://127.0.0.1:5193/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/galaxy-veil.mjs
+ *   MIRA_URL=http://127.0.0.1:5193/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/galaxy-veil.mjs
  *
  * The measure is coarse (a world's own surface varies too, and the forming world's magma is
  * left out of it): the captures are the evidence, the assertion only catches the old slice.
  * VEIL_TAG names the captures (default "after"); VEIL_ASSERT=0 only captures.
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5193/', tag = process.env.VEIL_TAG ?? 'after', out = 'tests/ui/artifacts/galaxy-veil'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5193/', tag = process.env.VEIL_TAG ?? 'after', out = 'tests/ui/artifacts/galaxy-veil'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist'] })
 const report = []
@@ -26,14 +27,14 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   const errors = []; page.on('pageerror', e => errors.push(e.message))
   await page.goto(`${base}?room=veil-${Date.now()}`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.shell?.galaxy?.live && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
-  await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400); window.syn3h.params.set('gfx.level', 2) })
-  await page.waitForFunction(() => window.syn3h.shell.graphics.planetMaps >= window.syn3h.planets.PLANETS.length, null, { timeout: 60000 })
+  await page.waitForFunction(() => window.mira?.shell?.galaxy?.live && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+  await page.evaluate(() => { window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400); window.mira.params.set('gfx.level', 2) })
+  await page.waitForFunction(() => window.mira.shell.graphics.planetMaps >= window.mira.planets.PLANETS.length, null, { timeout: 60000 })
   await page.waitForTimeout(4500) // past the logo's reveal
   // Hold the orbits, look along the plane from close in, and step the clock by hand.
   const at = (clock, yaw) => page.evaluate(async ([clock, yaw]) => {
-    const g = window.syn3h.shell.galaxy
-    window.syn3h.shell.stopAttract() // the idle tour would replace the galaxy after twenty seconds
+    const g = window.mira.shell.galaxy
+    window.mira.shell.stopAttract() // the idle tour would replace the galaxy after twenty seconds
     g.options.still = () => true; g.clock = clock; g.yaw = yaw; g.pitch = 0.1; g.distance = 9; g.reach = 9; g.wake = 3
     for (let i = 0; i < 4; i++) { g.wake = 3; await new Promise(r => requestAnimationFrame(r)) }
     return { reach: g.reach, screen: g.screen.map(s => ({ id: s.id, x: s.x, y: s.y, r: s.radius, depth: s.depth, visible: s.visible })) }

@@ -1,6 +1,6 @@
 // Renders the adaptive score offline in real Chromium for each lab scene and checks that it
 // is audible, unclipped and that the mood inputs change what comes out.
-// Run a dev server first: SYN3H_NO_ROOM_SERVER=1 npx vite --port 5188, then
+// Run a dev server first: MIRA_NO_ROOM_SERVER=1 npx vite --port 5188, then
 //   node tests/audio/score-render.mjs [http://127.0.0.1:5188]
 import { chromium } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'

@@ -1,6 +1,6 @@
 # Coordination protocol
 
-How the Syn3h lanes work together through the Sunday noon handoff. Updated by the
+How the Mira lanes work together through the Sunday noon handoff. Updated by the
 Foreman on 15 November 2026 to reflect the owner's overnight and default-on directions.
 Later explicit owner decisions take precedence over historical notes.
 

@@ -9,9 +9,9 @@ await page.routeWebSocket(/\/ws/,s=>s.close())
 await page.exposeFunction('saveVehicleShot',async kind=>{await page.screenshot({path:out+'/'+kind+'-close.png'})})
 try{
  await page.goto('http://localhost:5185/?autoplay=1&seed=1')
- await page.waitForFunction(()=>window.syn3h?.game.tick>10)
+ await page.waitForFunction(()=>window.mira?.game.tick>10)
  const results=await page.evaluate(async()=>{
-  const s=window.syn3h,g=s.game,r=g.renderer,{createVehicle}=await import('/src/vehicles/index.ts'),{attachVehicleEffects}=await import('/src/vehicles/effects/index.ts')
+  const s=window.mira,g=s.game,r=g.renderer,{createVehicle}=await import('/src/vehicles/index.ts'),{attachVehicleEffects}=await import('/src/vehicles/effects/index.ts')
   s.params.set('bots.count',0);s.params.set('gfx.level',2);await new Promise(a=>setTimeout(a,500));r.setAnimationLoop(null)
   s.player.object.visible=false;const center=s.terrain.spawnPoint(0).position.clone();center.y+=2
   const render=()=>{r.info.reset();r.render(g.scene,g.camera);return {draws:r.info.render.drawCalls,triangles:r.info.render.triangles}}
@@ -49,7 +49,7 @@ try{
  await page.evaluate(()=>{const a=window.skinViewer,render=a.renderer.render.bind(a.renderer);a.renderer.render=(s,c)=>{window.viewerScene=s;window.viewerCamera=c;return render(s,c)}});await page.waitForTimeout(100)
  await page.evaluate(()=>{const a=window.skinViewer;a.renderer.setAnimationLoop(null);a.setOpen(1);a.skins.forEach(s=>{for(let i=0;i<4;i++)s.setWheel(i,s.object.position.clone().set(i%2?.7:-.7,-.3,i<2?-.8:.8),0,0);s.setWings(1,0,0)});a.renderer.render(window.viewerScene,window.viewerCamera)})
  await page.screenshot({path:out+'/skins.png'})
- for(const [i,name] of [[0,'classic'],[1,'syn3h']]){await page.evaluate(i=>{window.skinViewer.focus(i);window.skinViewer.renderer.render(window.viewerScene,window.viewerCamera)},i);await page.screenshot({path:out+'/'+name+'-skin-close.png'})}
+ for(const [i,name] of [[0,'classic'],[1,'mira']]){await page.evaluate(i=>{window.skinViewer.focus(i);window.skinViewer.renderer.render(window.viewerScene,window.viewerCamera)},i);await page.screenshot({path:out+'/'+name+'-skin-close.png'})}
  await writeFile(out+'/profile.json',JSON.stringify({results,errors},null,2));console.log(JSON.stringify({results,errors}))
  if(errors.length)process.exitCode=1
 }finally{await browser.close()}

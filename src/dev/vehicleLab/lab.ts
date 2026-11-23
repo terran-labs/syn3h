@@ -381,7 +381,7 @@ async function main(): Promise<void> {
     info.append(stats)
     optionsBox.append(info)
     // On a phone the sheet's header names what is shown, so it reads even when closed.
-    $('brand').textContent = SHEET.matches ? `${s.exhibit.title}${side ? ': compare' : entries.length > 1 && e ? `: ${e.info.name}` : ''}` : 'Syn3h vehicle lab'
+    $('brand').textContent = SHEET.matches ? `${s.exhibit.title}${side ? ': compare' : entries.length > 1 && e ? `: ${e.info.name}` : ''}` : 'Mira vehicle lab'
 
     // View.
     const view = ui.section('opt:view', 'View')

@@ -1,4 +1,5 @@
 /** Raw acceptance matrix, separate from recommendation eligibility. Run through absolute heavy. */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import assert from 'node:assert/strict'
 import { pathToFileURL } from 'node:url'
 export const MATRIX_SCENES = ['lobby', 'spawn', 'water', 'mixedbots', 'twohumans']
@@ -45,18 +46,18 @@ export function judgePacing(gaps, expectedMs, durationMs = CONTROL_MS) {
   return {frames:sorted.length,p50,p95,max:sorted.at(-1)??null,expectedMs,valid:reasons.length===0,reasons,gaps}
 }
 
-/** Injected before application modules; Object.assign(window,{syn3h}) occurs before game.start. */
+/** Injected before application modules; Object.assign(window,{mira}) occurs before game.start. */
 export function installRawCollector() {
   const raw={frames:[],phase:'startup',events:[],initial:null,overflow:false}
   window.performanceMatrix=raw
   let value
-  Object.defineProperty(window,'syn3h',{configurable:true,get:()=>value,set:s=>{
+  Object.defineProperty(window,'mira',{configurable:true,get:()=>value,set:s=>{
     value=s
     const g=s.game,q=g.quality,r=g.renderer,b=r.backend,device=b.device,info=device?.adapterInfo
     const settings=()=>({level:q.governor.level,rung:q.governor.rung,auto:q.governor.auto,levelPinned:q.governor.levelPinned,settings:{...q.governor.settings},targetMs:q.governor.targetMs})
     raw.initial={at:performance.now(),firstFrameMs:g.performance.firstFrameMs,qualityState:q.getQualityState?.()??null,adapterProbe:q.adapterProbe,quality:settings(),backend:g.backend,
       hardware:{userAgent:navigator.userAgent,touchPoints:navigator.maxTouchPoints,memoryGB:navigator.deviceMemory??null,adapter:info?{vendor:info.vendor,architecture:info.architecture,description:info.description}:null,maxTextureSize:device?.limits.maxTextureDimension2D??null},
-      viewport:[innerWidth,innerHeight],buffer:[g.canvas.width,g.canvas.height],devicePixelRatio,storage:{quality:(()=>{try{return localStorage.getItem('syn3h.quality.v2')}catch{return null}})()}}
+      viewport:[innerWidth,innerHeight],buffer:[g.canvas.width,g.canvas.height],devicePixelRatio,storage:{quality:(()=>{try{return localStorage.getItem('mira.quality.v2')}catch{return null}})()}}
     let renderCpuMs=0,pipelineMs=0,pipelines=0,uploads=0,uploadCpuMs=0
     const wrap=(object,key,done)=>{if(typeof object?.[key]!=='function')return;const original=object[key].bind(object);object[key]=(...args)=>{const t=performance.now();try{return original(...args)}finally{done(performance.now()-t)}}}
     wrap(g.postChain??r,'render',ms=>renderCpuMs+=ms)
@@ -67,7 +68,7 @@ export function installRawCollector() {
     q.frame=(m,judge)=>{
       const before=performance.now(),effective=settings()
       const row={...m,at:before,phase:raw.phase,hidden:document.hidden,judge,quality:effective,targetBudgetMs:effective.targetMs,renderCpuMs,pipelineMs,pipelines,uploads,uploadCpuMs,
-        camera:{...g.camera.position},waterDepth:s.terrain.liquidKindAt?.(g.camera.position.x,g.camera.position.z)==='water'?s.terrain.liquidHeightAt(g.camera.position.x,g.camera.position.z)-g.camera.position.y:null,sceneNodes:{fog:g.scene.fogNode?.uuid??null,background:g.scene.backgroundNode?.uuid??null,environment:g.scene.environmentNode?.uuid??null},position:{...s.player.body.translation()},bots:s.bots.vehicles.length,remotes:window.syn3hNet?.remotes.size??0}
+        camera:{...g.camera.position},waterDepth:s.terrain.liquidKindAt?.(g.camera.position.x,g.camera.position.z)==='water'?s.terrain.liquidHeightAt(g.camera.position.x,g.camera.position.z)-g.camera.position.y:null,sceneNodes:{fog:g.scene.fogNode?.uuid??null,background:g.scene.backgroundNode?.uuid??null,environment:g.scene.environmentNode?.uuid??null},position:{...s.player.body.translation()},bots:s.bots.vehicles.length,remotes:window.miraNet?.remotes.size??0}
       original(m,judge);row.telemetryMs=performance.now()-before
       if(raw.frames.length<100000)raw.frames.push(row);else raw.overflow=true
       renderCpuMs=pipelineMs=pipelines=uploads=uploadCpuMs=0
@@ -99,7 +100,7 @@ async function main() {
   const expectedMs=1000/Number(process.env.PERFORMANCE_REFRESH_HZ??60);assert.ok(expectedMs>0&&Number.isFinite(expectedMs),'PERFORMANCE_REFRESH_HZ')
   const freePort=()=>new Promise((resolve,reject)=>{const s=createServer();s.on('error',reject);s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p))})})
   const roomPort=await freePort(),port=await freePort(),origin=`http://127.0.0.1:${port}`
-  process.env.SYN3H_NO_ROOM_SERVER='1';process.env.VITE_SERVER_URL=`ws://127.0.0.1:${port}`
+  process.env.MIRA_NO_ROOM_SERVER='1';process.env.VITE_SERVER_URL=`ws://127.0.0.1:${port}`
   const room=spawn(process.execPath,['--import','tsx','server/dev.ts'],{env:{...process.env,PORT:String(roomPort)},stdio:['ignore','pipe','pipe']})
   let roomLog='';room.stdout.on('data',x=>roomLog+=x);room.stderr.on('data',x=>roomLog+=x)
   let vite,browser;const results=[],errors=[]
@@ -126,16 +127,16 @@ async function main() {
           page.on('websocket',ws=>{if(ws.url().includes('/ws?'))assert.ok(ws.url().startsWith(`ws://127.0.0.1:${port}/ws?`),'isolated endpoint')})
           await page.addInitScript(installRawCollector)
           await page.goto(`${origin}/?room=${roomName}&name=${name}`)
-          await page.waitForFunction(()=>window.syn3h?.shell,null,{timeout:90000})
+          await page.waitForFunction(()=>window.mira?.shell,null,{timeout:90000})
         }
-        const play=async page=>{await page.locator('.galaxy-label.is-current').press('Enter');await page.waitForFunction(()=>window.syn3h.shell.playing&&window.syn3hNet?.connected,null,{timeout:90000})}
+        const play=async page=>{await page.locator('.galaxy-label.is-current').press('Enter');await page.waitForFunction(()=>window.mira.shell.playing&&window.miraNet?.connected,null,{timeout:90000})}
         await open(host,'PerfHost')
         // Every cell starts with fresh storage and automatic detection before explicit tier choice.
-        await host.evaluate(tier=>{const s=window.syn3h,p=window.performanceMatrix;p.phase='transition';p.events.push({at:performance.now(),type:'manual-tier',tier});s.game.quality.setAuto(false);s.game.quality.setLevel(tier)},tier)
+        await host.evaluate(tier=>{const s=window.mira,p=window.performanceMatrix;p.phase='transition';p.events.push({at:performance.now(),type:'manual-tier',tier});s.game.quality.setAuto(false);s.game.quality.setLevel(tier)},tier)
         if(scene!=='lobby'){
           await play(host)
           await host.evaluate(async scene=>{
-            const s=window.syn3h,p=window.performanceMatrix;p.events.push({at:performance.now(),type:'world-change',scene})
+            const s=window.mira,p=window.performanceMatrix;p.events.push({at:performance.now(),type:'world-change',scene})
             const {applyPlanet}=await import('/src/world/planets.ts');applyPlanet(scene==='water'?'archipelago':'volcanic',49731)
             s.params.set('bots.count',scene==='mixedbots'||scene==='twohumans'?4:0)
             if(scene==='water'){
@@ -151,15 +152,15 @@ async function main() {
               throw Error('No dry shore viewpoint')
             }
           },scene)
-          if(scene==='twohumans'){guest=await context.newPage();await open(guest,'PerfGuest');await guest.evaluate(tier=>{window.syn3h.game.quality.setAuto(false);window.syn3h.game.quality.setLevel(tier)},tier);await play(guest);await host.bringToFront()}
+          if(scene==='twohumans'){guest=await context.newPage();await open(guest,'PerfGuest');await guest.evaluate(tier=>{window.mira.game.quality.setAuto(false);window.mira.game.quality.setLevel(tier)},tier);await play(guest);await host.bringToFront()}
         }
         await host.evaluate(()=>window.performanceMatrix.phase='warmup');await host.waitForTimeout(5000)
         await host.evaluate(drive=>{const p=window.performanceMatrix;p.phase='measurement';p.drive=drive;p.driveStart=performance.now()},scene!=='lobby')
         await host.waitForTimeout(DRIVE_SECONDS*1000)
-        await host.evaluate(()=>{window.performanceMatrix.drive=false;window.performanceMatrix.phase='after';window.syn3h.game.input.external.y=0;window.syn3h.game.input.external.x=0})
+        await host.evaluate(()=>{window.performanceMatrix.drive=false;window.performanceMatrix.phase='after';window.mira.game.input.external.y=0;window.mira.game.input.external.x=0})
         if(scene==='water'){
           await host.evaluate(()=>{
-            const s=window.syn3h,t=s.terrain,p=window.performanceMatrix
+            const s=window.mira,t=s.terrain,p=window.performanceMatrix
             for(let z=-600;z<=600;z+=20)for(let x=-600;x<=600;x+=20){
               if(t.liquidKindAt(x,z)==='water'&&t.liquidHeightAt(x,z)-t.heightAt(x,z)>8){
                 p.crossing={x,z,start:performance.now(),index:-1};p.phase='crossings';return
@@ -168,12 +169,12 @@ async function main() {
             throw Error('No sufficiently deep water for camera crossing fixture')
           })
           await host.waitForTimeout(30000)
-          await host.evaluate(()=>{window.performanceMatrix.phase='after';window.syn3h.camera.clearCinematicPose()})
+          await host.evaluate(()=>{window.performanceMatrix.phase='after';window.mira.camera.clearCinematicPose()})
         }
         await host.screenshot({path:`${out}/${id}.png`})
       }catch(error){cellErrors.push({type:'harness',message:String(error)})}
       finally{
-        const raw=await host.evaluate(()=>{const s=window.syn3h,p=window.performanceMatrix;return p?{...p,settings:undefined,final:s?{quality:p.settings(),qualityState:s.game.quality.getQualityState(),levelChanges:s.game.quality.levelChanges,memory:{...s.game.renderer.info.memory},startup:window.syn3hStartup}:null}:null}).catch(()=>null)
+        const raw=await host.evaluate(()=>{const s=window.mira,p=window.performanceMatrix;return p?{...p,settings:undefined,final:s?{quality:p.settings(),qualityState:s.game.quality.getQualityState(),levelChanges:s.game.quality.levelChanges,memory:{...s.game.renderer.info.memory},startup:window.miraStartup}:null}:null}).catch(()=>null)
         const guestRaw=guest?await guest.evaluate(()=>{const p=window.performanceMatrix;return p?{...p,settings:undefined}:null}).catch(()=>null):null
         await writeFile(`${out}/${id}.raw.json`,JSON.stringify({raw,guestRaw},null,2))
         if(tracing){

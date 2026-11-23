@@ -31,7 +31,7 @@ export class WordmarkCrisp {
       for (const [type, source] of [[gl.VERTEX_SHADER, v], [gl.FRAGMENT_SHADER, f]] as const) { const shader = gl.createShader(type)!; gl.shaderSource(shader, source); gl.compileShader(shader); gl.attachShader(program, shader); gl.deleteShader(shader) }
       gl.linkProgram(program)
       if (gl.getProgramParameter(program, gl.LINK_STATUS)) return program
-      console.warn('Syn3h wordmark pass failed; the galaxy draws the letters.', gl.getProgramInfoLog(program)); gl.deleteProgram(program); return null
+      console.warn('Mira wordmark pass failed; the galaxy draws the letters.', gl.getProgramInfoLog(program)); gl.deleteProgram(program); return null
     }
     this.program = compile(vertex, fragment.replace('#version 300 es\n', '#version 300 es\n#define MARK_ONLY\n'))
     this.field = new WordmarkField(gl, compile, FIELD_UNIT)

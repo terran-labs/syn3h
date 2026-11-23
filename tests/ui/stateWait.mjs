@@ -4,7 +4,7 @@
  * measures the wrong moment and blames the wrong thing (galaxy.mjs at load 41 reported a moon
  * off screen when the lobby had simply not settled). Limits are generous for a loaded machine.
  *
- *   await waitForState(page, 'the settled lobby', () => !syn3h.shell.galaxy.opening, undefined, 60)
+ *   await waitForState(page, 'the settled lobby', () => !mira.shell.galaxy.opening, undefined, 60)
  */
 export async function waitForState(page, what, condition, arg, seconds) {
   try {

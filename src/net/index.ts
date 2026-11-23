@@ -2298,7 +2298,7 @@ export function botColors(index: number): [string, string] {
  * the server is the stale one.
  */
 function reloadForNewProtocol(): void {
-  const key = 'syn3h.protocolReload'
+  const key = 'mira.protocolReload'
   try {
     if (sessionStorage.getItem(key) === String(PROTOCOL_VERSION)) return
     sessionStorage.setItem(key, String(PROTOCOL_VERSION))
@@ -2330,7 +2330,7 @@ let chosenName = ''
 const PAGE_LOAD = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('')
 
 function rejoinSecret(room: string): string | undefined {
-  const key = `syn3h.rejoin.${room}`
+  const key = `mira.rejoin.${room}`
   try {
     let secret = sessionStorage.getItem(key)
     if (!secret) {
@@ -2351,7 +2351,7 @@ function playerName(): string {
   const q = new URLSearchParams(location.search).get('name')
   if (q) return q.slice(0, 24)
   if (preferredName) return preferredName.slice(0, 24)
-  const key = 'syn3h.name'
+  const key = 'mira.name'
   let name = ''
   try {
     name = sessionStorage.getItem(key) ?? ''
@@ -2372,8 +2372,8 @@ export function startNetworking(ctx: NetContext): NetClient {
   preferredName = ctx.name?.trim() ?? ''
   net = new NetClient(ctx)
   net.start()
-  const w = window as unknown as { syn3hNet?: NetClient }
-  w.syn3hNet = net
+  const w = window as unknown as { miraNet?: NetClient }
+  w.miraNet = net
   return net
 }
 

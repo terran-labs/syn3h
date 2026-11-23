@@ -29,9 +29,9 @@ for (const [planet, seed] of [['alpine', 4], ['desert', 4]]) {
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto(`http://127.0.0.1:${port}/?autoplay=1&vehicle=buggy&planet=${planet}&seed=${seed}&room=rb${Date.now().toString(36)}&daydream=0`)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 30 && window.syn3h.shell.playing, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game.tick > 30 && window.mira.shell.playing, null, { timeout: 120000 })
   await page.evaluate(() => {
-    const s = window.syn3h
+    const s = window.mira
     s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 11); s.params.set('sun.dayLength', 0); s.params.set('gfx.quality', 3)
     const canvas = s.game.canvas ?? document.querySelector('canvas')
     for (const el of document.body.querySelectorAll('*')) if (el !== canvas && !el.contains(canvas)) el.style.visibility = 'hidden'
@@ -40,7 +40,7 @@ for (const [planet, seed] of [['alpine', 4], ['desert', 4]]) {
   // A planned river point standing well over its bed, with a bank inside the planned width that
   // the water does not reach.
   const spot = await page.evaluate(() => {
-    const t = window.syn3h.terrain
+    const t = window.mira.terrain
     let best = null
     for (const r of t.data.lava.rivers) for (let i = 2; i + 2 < r.points.length; i++) {
       const p = r.points[i], q = r.points[i + 1], l = Math.hypot(q.x - p.x, q.z - p.z) || 1
@@ -56,7 +56,7 @@ for (const [planet, seed] of [['alpine', 4], ['desert', 4]]) {
   if (!spot) { notes.push({ planet, spot: null }); await ctx.close(); continue }
   // The baked map colours round the spot, 160 m across, one sample per metre.
   const png = await page.evaluate((spot) => {
-    const t = window.syn3h.terrain, n = 160, c = document.createElement('canvas'); c.width = c.height = n
+    const t = window.mira.terrain, n = 160, c = document.createElement('canvas'); c.width = c.height = n
     const g = c.getContext('2d'), img = g.createImageData(n, n)
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
       const v = t.mapColourAt(spot.x + i - n / 2, spot.z + j - n / 2), k = (j * n + i) * 4
@@ -68,7 +68,7 @@ for (const [planet, seed] of [['alpine', 4], ['desert', 4]]) {
   await writeFile(`${out}/${planet}-map.png`, Buffer.from(png, 'base64'))
   // The bank from the ground, looking across it to the river.
   await page.evaluate((spot) => {
-    const s = window.syn3h, t = s.terrain, V = s.game.camera.position.constructor
+    const s = window.mira, t = s.terrain, V = s.game.camera.position.constructor
     const cx = spot.bx + spot.nx * 9, cz = spot.bz + spot.nz * 9
     s.player.teleport({ x: cx + 300, y: t.heightAt(cx + 300, cz) + 2, z: cz }, 0)
     s.camera.setCinematicPose(new V(cx, t.heightAt(cx, cz) + 2.2, cz), new V(spot.x, t.heightAt(spot.x, spot.z) + 0.5, spot.z), 60)

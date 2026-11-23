@@ -15,7 +15,7 @@ const out = 'tests/ui/artifacts/loading-lines'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const errors = [], report = {}
-const read = page => page.evaluate(() => { const still = document.querySelector('.boot-still'); return { boot: document.documentElement.dataset.boot, line: document.querySelector('.boot-status').textContent, height: document.querySelector('.boot-status').getBoundingClientRect().height, still: still.getBoundingClientRect().top, second: document.documentElement.hasAttribute('data-boot-late') ? still.textContent : '', funShown: +getComputedStyle(document.querySelector('.boot-status')).opacity > 0.05, secondHidden: still.getAttribute('aria-hidden'), phase: document.querySelector('.syn3h-loading .loading-phase')?.textContent ?? null, at: performance.now() } })
+const read = page => page.evaluate(() => { const still = document.querySelector('.boot-still'); return { boot: document.documentElement.dataset.boot, line: document.querySelector('.boot-status').textContent, height: document.querySelector('.boot-status').getBoundingClientRect().height, still: still.getBoundingClientRect().top, second: document.documentElement.hasAttribute('data-boot-late') ? still.textContent : '', funShown: +getComputedStyle(document.querySelector('.boot-status')).opacity > 0.05, secondHidden: still.getAttribute('aria-hidden'), phase: document.querySelector('.mira-loading .loading-phase')?.textContent ?? null, at: performance.now() } })
 try {
   for (const view of [{ name: 'desktop', options: { viewport: { width: 1280, height: 720 } } }, { name: 'iphone14', options: { ...devices['iPhone 14'], defaultBrowserType: undefined } }]) {
     const context = await browser.newContext(view.options), page = await context.newPage(), cdp = await context.newCDPSession(page)
@@ -65,12 +65,12 @@ try {
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
     await page.route(/\.wasm(\?|$)/, async route => { await new Promise(r => setTimeout(r, 14000)); await route.continue() })
     await page.goto(`${base}?room=lines-markup-${Date.now()}`, { waitUntil: 'commit' })
-    await page.waitForFunction(() => document.querySelector('.syn3h-loading'), null, { timeout: 60000 })
+    await page.waitForFunction(() => document.querySelector('.mira-loading'), null, { timeout: 60000 })
     const markup = await page.evaluate(async () => {
       // The exact URL the app loaded, so this is the app's own instance, not a second one.
       const url = performance.getEntriesByType('resource').map(e => e.name).find(name => name.includes('/src/ui/LoadingScreen.ts'))
       const { bootLoading } = await import(url)
-      if (document.querySelectorAll('.syn3h-loading').length !== 1) return { instances: document.querySelectorAll('.syn3h-loading').length }
+      if (document.querySelectorAll('.mira-loading').length !== 1) return { instances: document.querySelectorAll('.mira-loading').length }
       if (document.documentElement.dataset.boot !== 'loading') return null
       if (bootLoading.done) return null
       // The line changes at once (no fade, no rotation), so it is read in the same task.

@@ -81,7 +81,7 @@ async function main(): Promise<void> {
   game.setPostChain(post)
 
   const spawn = terrain.spawnPoint(0)
-  // The vehicle comes from ?vehicle=..., else the choice saved by the lobby, else the Syn3h buggy.
+  // The vehicle comes from ?vehicle=..., else the choice saved by the lobby, else the Mira buggy.
   const choice = saved ? { vehicleKind: saved.kind, bodyColor: saved.colors.body, accentColor: saved.colors.accent } : readVehicleChoice()
   if (saved) saveVehicleChoice(choice)
   const kind = (query.get('vehicle') ?? choice.vehicleKind ?? 'buggy') as VehicleKind
@@ -371,8 +371,8 @@ async function main(): Promise<void> {
     })))
     // Bot banter (src/bots/banter): the host's bots talk, and answer people's requests.
     const banter = game.add(new HostBanter(game, terrain, connection, bots, environment), 'Host banter')
-    // For automated checks (tools/chat-check.mjs). Join can run before window.syn3h exists.
-    Object.assign(window, { syn3hChat: { net: connection, panel: chat, banter } })
+    // For automated checks (tools/chat-check.mjs). Join can run before window.mira exists.
+    Object.assign(window, { miraChat: { net: connection, panel: chat, banter } })
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
     game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || roomFromQuery(query), saved, network: connection, entrySearch: lobbyAddress.playURL().search }), 'Session resume')
@@ -398,7 +398,7 @@ async function main(): Promise<void> {
   // Handles for debugging and automated checks.
   // The game does not run in a background tab: one controller, obeyed by the loop here. Audio
   // and the lobby follow the same controller from their own modules.
-  Object.assign(window, { syn3h: { planets, game, terrain, get player() { return slot.current }, slot, swapVehicle, materialize, params, panel, shell, audio, bots, camera, lifecycle, pause } })
+  Object.assign(window, { mira: { planets, game, terrain, get player() { return slot.current }, slot, swapVehicle, materialize, params, panel, shell, audio, bots, camera, lifecycle, pause } })
   // Shell has captured invite/room state; quality, weather, resume and all other
   // startup URL readers have finished. Clean only the visible lobby, not a room
   // whose name happens to be "lobby". Autoplay is already in its intentional URL.

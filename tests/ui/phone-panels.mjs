@@ -1,6 +1,6 @@
 // The panels on touch screens, in WebKit: an iPhone 14 portrait and landscape and an iPad mini
 // (744 by 1133) both ways up. What must stay true.
-//   SYN3H_URL=http://127.0.0.1:5213/ node tests/ui/phone-panels.mjs
+//   MIRA_URL=http://127.0.0.1:5213/ node tests/ui/phone-panels.mjs
 // Replaces phone-polish.mjs, which checked a toast against the old top-right Panels tab.
 // - Show panels stands over the thumb grid, never under a toast, and clear of the grid.
 // - Show panels opens the list; a header opens that card alone; its header goes back to the
@@ -10,10 +10,11 @@
 // - Every touch screen: no rotated edge tab; Close panels at the foot of the open stack, visible
 //   and tappable, and it closes; one margin on the right, top and bottom; one corner radius for
 //   the rows, the open panel, the search field, the buttons above and Close panels.
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5213/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5213/'
 const overlaps = (a, b) => !!a && !!b && a.x < b.x + b.width - 1 && a.x + a.width > b.x + 1 && a.y < b.y + b.height - 1 && a.y + a.height > b.y + 1
 const browser = await webkit.launch()
 try {
@@ -23,21 +24,21 @@ try {
     const page = await context.newPage()
     const errors = []; page.on('pageerror', error => errors.push(error.message))
     await page.goto(`${base}?autoplay=1&room=phone-panels-${name}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     // ?autoplay enters play through the drop, which takes longer than the first ticks.
-    await page.waitForFunction(() => document.querySelector('.syn3h-shell')?.classList.contains('is-playing') && !document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 120000 })
+    await page.waitForFunction(() => document.querySelector('.mira-shell')?.classList.contains('is-playing') && !document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 120000 })
     await page.waitForTimeout(800)
     if (await page.locator('.world-inspector').isVisible()) await page.locator('.panels-close').tap()
     await page.locator('.world-inspector').waitFor({ state: 'hidden' })
     // Any resize of the canvas from here on is counted.
-    await page.evaluate(() => { const canvas = window.syn3h.game.canvas; window.__resizes = 0; const size = `${canvas.width}x${canvas.height}`; new ResizeObserver(() => { if (`${canvas.width}x${canvas.height}` !== size) window.__resizes++ }).observe(canvas); window.__size = size })
+    await page.evaluate(() => { const canvas = window.mira.game.canvas; window.__resizes = 0; const size = `${canvas.width}x${canvas.height}`; new ResizeObserver(() => { if (`${canvas.width}x${canvas.height}` !== size) window.__resizes++ }).observe(canvas); window.__size = size })
 
     const show = page.locator('.inspector-toggle'), grid = page.locator('.touch-actions')
     const showBox = await show.boundingBox(), gridBox = await grid.boundingBox()
     assert.ok(showBox && gridBox, `${name}: Show panels and the thumb grid are on screen`)
     assert.ok(showBox.y + showBox.height <= gridBox.y, `${name}: Show panels stands above the grid ${JSON.stringify([showBox, gridBox])}`)
-    await page.evaluate(() => window.syn3h.shell.toast('Joined room phone-panels as Bartholomew'))
+    await page.evaluate(() => window.mira.shell.toast('Joined room phone-panels as Bartholomew'))
     await page.waitForTimeout(150)
     assert.ok(!overlaps(await page.locator('.shell-toast').boundingBox(), showBox), `${name}: a toast clears Show panels`)
 
@@ -57,7 +58,7 @@ try {
     assert.equal(shape.radii.length, 1, `${name}: one corner radius across the stack ${JSON.stringify(shape.radii)}`)
     const close = page.locator('.panels-close'), closeBox = await close.boundingBox(), stackBox = await panels.boundingBox()
     assert.ok(closeBox && closeBox.height >= 44 && closeBox.y + closeBox.height <= stackBox.y + stackBox.height + 1, `${name}: Close panels at the foot of the stack, a finger high ${JSON.stringify([closeBox, stackBox])}`)
-    await page.evaluate(() => window.syn3h.shell.toast('A toast while the panels are open'))
+    await page.evaluate(() => window.mira.shell.toast('A toast while the panels are open'))
     await page.waitForTimeout(150)
     const toast = page.locator('.shell-toast')
     // The panels hide toasts by opacity (exploration.css), which Playwright still calls visible.

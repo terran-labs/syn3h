@@ -1,3 +1,4 @@
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { waitForPanelMotion } from './panel-motion.mjs'
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
@@ -10,14 +11,14 @@ for (const mode of modes) {
   try {
     const page = await browser.newPage(touch ? { ...devices[mode === 'ipad' ? 'iPad (gen 7)' : mode === 'landscape' ? 'iPhone 14 landscape' : 'iPhone 14'] } : { viewport: { width: 1440, height: 1000 } })
     const errors = []; page.on('pageerror', error => errors.push(error.message))
-    await page.goto(`${process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'}?autoplay=1&room=exploration-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 90000 })
+    await page.goto(`${process.env.MIRA_URL ?? 'http://127.0.0.1:5187/'}?autoplay=1&room=exploration-${Date.now()}`)
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 90000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 90000 })
-    await page.waitForFunction(() => window.syn3h.shell.playing && !window.syn3h.shell.transitioning, null, { timeout: 90000 })
+    await page.waitForFunction(() => window.mira.shell.playing && !window.mira.shell.transitioning, null, { timeout: 90000 })
     // ALT is height above the sea at rest (src/ui/altitude.ts): a parked buggy reads its
     // ground's height, a whole number with a real minus sign below the sea, labelled ALT, in
     // the units the setting chooses. Raising the sea to the buggy's wheels reads 0.
-    await page.waitForFunction(() => syn3h.player.wheelsGrounded > 0, null, { timeout: 30000 })
+    await page.waitForFunction(() => mira.player.wheelsGrounded > 0, null, { timeout: 30000 })
     const readout = () => page.evaluate(() => {
       const right = document.querySelector('.focus-hud .fh-right'), left = document.querySelector('.focus-hud .fh-left')
       const text = selector => right.querySelector(selector)?.textContent ?? ''
@@ -25,19 +26,19 @@ for (const mode of modes) {
     })
     const metres = n => Number(n.replace('\u2212', '-'))
     for (const [units, speed, height] of [[0, 'km/h', 'm'], [1, 'mph', 'ft']]) {
-      await page.evaluate(units => syn3h.params.set('hud.units', units), units)
+      await page.evaluate(units => mira.params.set('hud.units', units), units)
       await page.waitForFunction(unit => document.querySelector('.focus-hud [data-t="heightUnit"]')?.textContent === unit, height, { timeout: 5000 })
       const shown = await readout()
       assert.match(shown.alt, /^\u2212?\d+$/, `${mode}: ALT is a whole number ${JSON.stringify(shown)}`)
       assert.deepEqual([shown.unit, shown.speedUnit, shown.label], [height, speed, 'ALT'], `${mode}: ALT and speed follow the units setting`)
     }
-    await page.evaluate(() => syn3h.params.set('hud.units', 0))
-    const sea = await page.evaluate(() => syn3h.params.get('world.lavaAltitude').value)
-    await page.evaluate(() => syn3h.params.set('world.lavaAltitude', Math.round(syn3h.player.contactHeight() * 2) / 2))
+    await page.evaluate(() => mira.params.set('hud.units', 0))
+    const sea = await page.evaluate(() => mira.params.get('world.lavaAltitude').value)
+    await page.evaluate(() => mira.params.set('world.lavaAltitude', Math.round(mira.player.contactHeight() * 2) / 2))
     // The sea glides there over 1.5 s; the floating buggy reads 0, give or take a wave.
     await page.waitForFunction(() => Math.abs(Number(document.querySelector('.focus-hud [data-t="altitude"]').textContent.replace('\u2212', '-'))) <= 1, null, { timeout: 10000 })
     assert.ok(Math.abs(metres((await readout()).alt)) <= 1, `${mode}: ALT reads 0 at the sea surface`)
-    await page.evaluate(sea => syn3h.params.set('world.lavaAltitude', sea), sea)
+    await page.evaluate(sea => mira.params.set('world.lavaAltitude', sea), sea)
     assert.equal(await page.locator('.shell-hud').isVisible(), false)
     assert.equal(await page.locator('.hud-navigation button').count(), 1)
     const map = await page.locator('.shell-minimap').boundingBox()
@@ -107,7 +108,7 @@ for (const mode of modes) {
     await page.locator('[data-section=players] > .wi-head').click()
     assert.equal(await page.locator('.rail-diagnostics input').isChecked(), false)
     await page.locator('.rail-diagnostics input').check()
-    await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('show-diagnostics'))
+    await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('show-diagnostics'))
     await page.locator('.rail-diagnostics input').uncheck()
     if (!touch) {
       // Any native select will do; the synthetic keys below never change its value. The
@@ -119,7 +120,7 @@ for (const mode of modes) {
       // Check held keys before keyup: a leak can disappear before a frame assertion.
       for (const code of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Enter']) {
         const result = await select.evaluate((el, code) => {
-          const input = window.syn3h.game.input
+          const input = window.mira.game.input
           const before = { ...input.poll() }
           const event = new KeyboardEvent('keydown', { code, key: code === 'Space' ? ' ' : code, bubbles: true, cancelable: true })
           el.dispatchEvent(event)
@@ -133,9 +134,9 @@ for (const mode of modes) {
       }
       // A key begun outside the select must still be released inside it.
       await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', {code:'ArrowUp'})))
-      assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 1)
+      assert.equal(await page.evaluate(() => mira.game.input.poll().y), 1)
       await select.evaluate(el => el.dispatchEvent(new KeyboardEvent('keyup', {code:'ArrowUp',bubbles:true})))
-      assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 0)
+      assert.equal(await page.evaluate(() => mira.game.input.poll().y), 0)
       // That arrow key was pressed outside any field, which now means "drive": it may have
       // captured the cursor and closed the panels. Free it again before going on.
       if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
@@ -153,7 +154,7 @@ for (const mode of modes) {
       // Returning to driving captures the cursor, and the panels go with it.
       // Open game view: the top left holds the gear selector and its rows (hud-column.css).
       await page.mouse.click(720, 350); await page.locator('.world-inspector').waitFor({ state: 'hidden' })
-      await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas)
+      await page.waitForFunction(() => document.pointerLockElement === mira.game.canvas)
       assert.equal(await page.locator('.world-inspector').isHidden(), true, 'panels are closed while the cursor is captured')
       // Escape frees the cursor: panels. Escape again: paused. Never back to the solar system.
       await page.keyboard.press('Escape')
@@ -161,10 +162,10 @@ for (const mode of modes) {
       await page.locator('.world-inspector').waitFor({ state: 'visible' })
       await page.keyboard.press('Escape')
       await page.locator('.pause-veil').waitFor({ state: 'visible' })
-      assert.equal(await page.evaluate(() => syn3h.shell.menuOpen), false, 'Escape never returns to solar system')
+      assert.equal(await page.evaluate(() => mira.shell.menuOpen), false, 'Escape never returns to solar system')
       await page.keyboard.press('Escape')
       await page.locator('.pause-veil').waitFor({ state: 'hidden' })
-      await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas)
+      await page.waitForFunction(() => document.pointerLockElement === mira.game.canvas)
       await page.keyboard.press('Escape')
       await page.locator('.world-inspector').waitFor({ state: 'visible' })
     }
@@ -176,16 +177,16 @@ for (const mode of modes) {
     assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('exit-stay')), true, 'Stay has the focus')
     await page.keyboard.press('Escape')
     await asking.waitFor({ state: 'hidden' })
-    assert.equal(await page.evaluate(() => syn3h.shell.menuOpen), false, 'Escape stays in the world')
+    assert.equal(await page.evaluate(() => mira.shell.menuOpen), false, 'Escape stays in the world')
     assert.equal(await page.locator('.pause-veil').isHidden(), true, 'Escape on the question does not pause')
     await page.locator('.exit-world').click(); await asking.waitFor({ state: 'visible' })
     await asking.click({ position: { x: 8, y: 8 } })
     await asking.waitFor({ state: 'hidden' })
-    assert.equal(await page.evaluate(() => syn3h.shell.menuOpen), false, 'a click outside stays in the world')
+    assert.equal(await page.evaluate(() => mira.shell.menuOpen), false, 'a click outside stays in the world')
     await page.locator('.exit-world').click(); await asking.waitFor({ state: 'visible' })
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-exit-confirm.png` })
     await page.locator('.exit-leave').click()
-    await page.waitForFunction(() => syn3h.shell.menuOpen)
+    await page.waitForFunction(() => mira.shell.menuOpen)
     await page.waitForTimeout(700)
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-lobby.png` })
     assert.deepEqual(errors, [])

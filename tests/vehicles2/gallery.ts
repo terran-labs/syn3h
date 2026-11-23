@@ -24,7 +24,7 @@ async function main(){
  const fill=new THREE.DirectionalLight(0x8ccaff,2);fill.position.set(-6,4,3);scene.add(fill)
  const ground=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({color:0x38414b,roughness:.65}));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground)
  const kind=new URLSearchParams(location.search).get('vehicle'),hover=kind==='hovercraft',tank=kind==='tank'
- document.querySelector('#title')!.textContent=tank?'Mars Explorer Tank':hover?'Syn3h Hovercraft':'Syn3h Jet'
+ document.querySelector('#title')!.textContent=tank?'Mars Explorer Tank':hover?'Mira Hovercraft':'Mira Jet'
  if(tank)document.querySelector('#subtitle')?.replaceChildren(document.createTextNode('Original geometry · Legacy physics fallback'))
  const vehicle=tank?new Tank(h.game,h.terrain,new THREE.Vector3(0,1.65,0)):hover?new Hovercraft(h.game,h.terrain,new THREE.Vector3(0,1.65,0)):new Jet(h.game,h.terrain,new THREE.Vector3(0,1.65,0));vehicle.isLocal=false;vehicle.input.z=.7
  await vehicle.modelReady

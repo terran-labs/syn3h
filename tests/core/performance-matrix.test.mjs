@@ -27,7 +27,7 @@ it('captures the first callback and all stalls even when recommendation eligibil
  vi.stubGlobal('localStorage',{getItem:()=>null});vi.stubGlobal('innerWidth',1280);vi.stubGlobal('innerHeight',720);vi.stubGlobal('devicePixelRatio',1)
  installRawCollector()
  const original=vi.fn(),quality={frame:original,governor:{level:0,rung:0,auto:true,levelPinned:false,settings:{pixelRatio:1},targetMs:1000/30},getQualityState:()=>({level:0,ceiling:2}),adapterProbe:'fallback'}
- window.syn3h={game:{quality,renderer:{backend:{},render(){}},performance:{firstFrameMs:null},canvas:{width:1280,height:720},camera:{position:{x:0,y:0,z:0}},scene:{},backend:'webgl'},player:{body:{translation:()=>({x:0,y:0,z:0})}},bots:{vehicles:[]},terrain:{}}
+ window.mira={game:{quality,renderer:{backend:{},render(){}},performance:{firstFrameMs:null},canvas:{width:1280,height:720},camera:{position:{x:0,y:0,z:0}},scene:{},backend:'webgl'},player:{body:{translation:()=>({x:0,y:0,z:0})}},bots:{vehicles:[]},terrain:{}}
  expect(window.performanceMatrix.initial.firstFrameMs).toBeNull()
  expect(window.performanceMatrix.initial.qualityState).toEqual({level:0,ceiling:2})
  quality.frame({frameMs:1700},false)

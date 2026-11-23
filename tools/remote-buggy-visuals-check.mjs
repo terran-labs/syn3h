@@ -34,13 +34,13 @@ async function open(name) {
   url.searchParams.set('room', room); url.searchParams.set('name', name)
   url.searchParams.set('autoplay', '1'); url.searchParams.set('vehicle', 'buggy-syn3h')
   await page.goto(url.href)
-  await page.waitForFunction(() => window.syn3h?.shell && window.syn3hNet?.connected, null, { timeout: 60000 })
+  await page.waitForFunction(() => window.mira?.shell && window.miraNet?.connected, null, { timeout: 60000 })
   await page.evaluate(() => {
-    window.syn3h.shell.play()
-    window.syn3h.params.set('gfx.level', 0)
+    window.mira.shell.play()
+    window.mira.params.set('gfx.level', 0)
     // Daydream would take over an idle client after its timeout and drive it out of place.
-    window.syn3h.params.set('daydream.seconds', 0)
-    window.syn3h.params.set('bots.count', 0)
+    window.mira.params.set('daydream.seconds', 0)
+    window.mira.params.set('bots.count', 0)
   })
   return page
 }
@@ -49,11 +49,11 @@ const failures = []
 try {
   const a = await open('A')
   const b = await open('B')
-  const aId = await a.evaluate(() => window.syn3hNet.id)
-  await b.waitForFunction(() => window.syn3hNet.remotes.size === 1, null, { timeout: 20000 })
+  const aId = await a.evaluate(() => window.miraNet.id)
+  await b.waitForFunction(() => window.miraNet.remotes.size === 1, null, { timeout: 20000 })
   // The flattest dry spot for A within 300 m of the origin, and B 150 m from it.
   const spot = await a.evaluate(() => {
-    const t = window.syn3h.terrain
+    const t = window.mira.terrain
     let best = null
     for (let x = -300; x <= 300; x += 30) for (let z = -300; z <= 300; z += 30) {
       let lo = Infinity, hi = -Infinity, wet = false
@@ -67,16 +67,16 @@ try {
     return best
   })
   const place = (page, x, z) => page.evaluate(({ x, z }) => {
-    const { terrain, player } = window.syn3h
+    const { terrain, player } = window.mira
     player.teleport(player.object.position.clone().set(x, terrain.heightAt(x, z) + 1.2, z), 0)
   }, { x, z })
   await place(a, spot.x, spot.z)
   await place(b, spot.x + 150, spot.z)
   /** B's copy of A: is it kinematic, how far is it, and what does it show. */
   const seen = () => b.evaluate((id) => {
-    const r = window.syn3hNet.remotes.get(id)
+    const r = window.miraNet.remotes.get(id)
     if (!r) return null
-    const v = r.vehicle, p = v.body.translation(), me = window.syn3h.player.body.translation()
+    const v = r.vehicle, p = v.body.translation(), me = window.mira.player.body.translation()
     return {
       kinematic: v.body.isKinematic(), distance: Math.hypot(p.x - me.x, p.z - me.z),
       wingState: v.wingState, wingsOpen: v.wingsOpen, steer: v.steer[0], motorSpeed: v.motorSpeed,
@@ -93,23 +93,23 @@ try {
   await wait(4000)
   await reading('parked: wings shut, wheels straight and still', (s) => s.wingState === 0 && Math.abs(s.steer) < 0.02 && Math.abs(s.motorSpeed) < 1)
 
-  await a.evaluate(() => { window.syn3h.game.input.state.special = true })
+  await a.evaluate(() => { window.mira.game.input.state.special = true })
   await wait(3000)
   await reading('wings open on the distant copy', (s) => s.wingState === 1 && s.wingsOpen)
 
-  await a.evaluate(() => { window.syn3h.game.input.state.special = false })
+  await a.evaluate(() => { window.mira.game.input.state.special = false })
   await wait(3000)
   await reading('wings shut again', (s) => s.wingState === 0 && !s.wingsOpen)
 
   // Drive away from B (B is at +X; turning keeps A well outside the radius either way).
-  await a.evaluate(() => { const e = window.syn3h.game.input.external; e.y = 1; e.x = 0.6 })
+  await a.evaluate(() => { const e = window.mira.game.input.external; e.y = 1; e.x = 0.6 })
   await wait(2500)
-  const own = await a.evaluate(() => ({ steer: window.syn3h.player.steer[0], motorSpeed: window.syn3h.player.motorSpeed }))
+  const own = await a.evaluate(() => ({ steer: window.mira.player.steer[0], motorSpeed: window.mira.player.motorSpeed }))
   console.log(JSON.stringify({ label: "A's own buggy", ...own }))
   await reading('wheels turned and rolling while driving', (s) =>
     Math.abs(s.steer) > 0.03 && Math.sign(s.steer) === Math.sign(own.steer) && s.motorSpeed > 3 && s.drive === 'drive')
 
-  await a.evaluate(() => { const e = window.syn3h.game.input.external; e.y = 0; e.x = 0 })
+  await a.evaluate(() => { const e = window.mira.game.input.external; e.y = 0; e.x = 0 })
   console.log(`errors ${JSON.stringify(errors.slice(0, 5))}`)
 } finally {
   await Promise.all(browsers.map((b) => b.close()))

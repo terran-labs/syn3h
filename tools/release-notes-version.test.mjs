@@ -2,6 +2,7 @@
 // anything is built. On 22 November notes renamed from v26.11.2121 to v26.11.2200 (the Pacific
 // date rolled over) kept the old heading and frozen link; only publishing, after the release
 // went live, refused them. Run: node --test.
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -12,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { linkedVersions, renameNotes, unshippedNotes, versionProblems } from './release-notes.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const notesFor = (v, link = v) => `## Syn3h v${v}\n\nA deck line.\n\nReleased at 6:00am Pacific.\n\n### Play\n\nThis exact version stays playable at https://mira.cc/?v=${link}, whatever ships after it.\nSee https://github.com/terran-labs/syn3h/releases/tag/v${link}.\n\n### Known issues\n\n- A player on a version before v26.11.2118 is treated as hidden.\n`
+const notesFor = (v, link = v) => `## Mira v${v}\n\nA deck line.\n\nReleased at 6:00am Pacific.\n\n### Play\n\nThis exact version stays playable at https://mira.cc/?v=${link}, whatever ships after it.\nSee https://github.com/terran-labs/syn3h/releases/tag/v${link}.\n\n### Known issues\n\n- A player on a version before v26.11.2118 is treated as hidden.\n`
 const digestFor = () => 'A deck\n\n- A point.\n'
 
 test('heading, every version-bearing link and the player digest must name the version', () => {
@@ -21,10 +22,10 @@ test('heading, every version-bearing link and the player digest must name the ve
   assert.deepEqual(linkedVersions(notesFor('26.11.2200')), ['26.11.2200', '26.11.2200'])
   // The 22 November file: renamed, heading and link left behind.
   const stale = versionProblems('v26.11.2200', notesFor('26.11.2121'), digestFor())
-  assert.ok(stale.some((p) => p.includes('heading is "## Syn3h v26.11.2121"')), stale.join('; '))
+  assert.ok(stale.some((p) => p.includes('heading is "## Mira v26.11.2121"')), stale.join('; '))
   assert.equal(stale.filter((p) => p.includes('link version 26.11.2121')).length, 2)
-  const heading = notesFor('26.11.2200').replace('## Syn3h v26.11.2200', '## Syn3h v26.11.2121')
-  assert.deepEqual(versionProblems('26.11.2200', heading, digestFor()), ['the notes\' heading is "## Syn3h v26.11.2121", not "## Syn3h v26.11.2200"'])
+  const heading = notesFor('26.11.2200').replace('## Mira v26.11.2200', '## Mira v26.11.2121')
+  assert.deepEqual(versionProblems('26.11.2200', heading, digestFor()), ['the notes\' heading is "## Mira v26.11.2121", not "## Mira v26.11.2200"'])
   assert.deepEqual(versionProblems('v26.11.2200', notesFor('26.11.2200', '26.11.2121').replace('releases/tag/v26.11.2121', 'releases/tag/v26.11.2200'), digestFor()), ['the notes link version 26.11.2121, not 26.11.2200'])
   assert.deepEqual(versionProblems('v26.11.2200', notesFor('26.11.2200'), null), ['no player digest at release-notes/player/v26.11.2200.md'])
   assert.deepEqual(versionProblems('v26.11.2200', null, 'See https://mira.cc/?v=26.11.2121\n'), ['no release notes at release-notes/releases/v26.11.2200.md', 'the player digest links version 26.11.2121, not 26.11.2200'])
@@ -33,7 +34,7 @@ test('heading, every version-bearing link and the player digest must name the ve
 })
 
 function notesDir() {
-  const root = mkdtempSync(join(tmpdir(), 'syn3h-notes-'))
+  const root = mkdtempSync(join(tmpdir(), 'mira-notes-'))
   mkdirSync(join(root, 'releases')); mkdirSync(join(root, 'player'))
   writeFileSync(join(root, 'history.tsv'), '')
   return root
@@ -73,7 +74,7 @@ test('the check command fails with the fix named: rename a train\'s notes to the
     // A train's notes, far newer than any real tag, written for the day before.
     writeFileSync(join(root, 'releases', 'v27.1.121.md'), notesFor('27.1.121'))
     writeFileSync(join(root, 'player', 'v27.1.121.md'), digestFor())
-    const run = (v) => spawnSync(process.execPath, [join(here, 'release-notes.mjs'), 'check', v], { encoding: 'utf8', env: { ...process.env, SYN3H_RELEASE_NOTES_DIR: root } })
+    const run = (v) => spawnSync(process.execPath, [join(here, 'release-notes.mjs'), 'check', v], { encoding: 'utf8', env: { ...process.env, MIRA_RELEASE_NOTES_DIR: root } })
     const missing = run('v27.1.201')
     assert.equal(missing.status, 1)
     assert.match(missing.stderr, /Fix: node tools\/release-notes\.mjs rename v27\.1\.121 v27\.1\.201/)
@@ -83,7 +84,7 @@ test('the check command fails with the fix named: rename a train\'s notes to the
     writeFileSync(join(root, 'player', 'v27.1.201.md'), digestFor())
     const stale = run('v27.1.201')
     assert.equal(stale.status, 1)
-    assert.match(stale.stderr, /heading is "## Syn3h v27\.1\.121"/)
+    assert.match(stale.stderr, /heading is "## Mira v27\.1\.121"/)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 

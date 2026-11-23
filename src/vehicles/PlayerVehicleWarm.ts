@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import type { CoveredWarm, Game } from '../core/Game'
 import { Jet } from './Jet'
-import { Syn3hBuggy } from './Syn3hBuggy'
+import { MiraBuggy } from './MiraBuggy'
 import type { Vehicle } from './Vehicle'
 
 /** Draw the actual cached local model at full size in the covered camera's view. */
@@ -10,7 +10,7 @@ export function drawPlayerVehicleWarm(game: Game, player: Vehicle, vehicle: Vehi
   const draw = () => warm.draw(vehicle.kind)
   const bodyDraw = () => {
     if (vehicle instanceof Jet) vehicle.drawCoveredGear(parked, draw)
-    else if (vehicle instanceof Syn3hBuggy) vehicle.drawCoveredMotorSparks(() => vehicle.drawCoveredWings(parked, draw))
+    else if (vehicle instanceof MiraBuggy) vehicle.drawCoveredMotorSparks(() => vehicle.drawCoveredWings(parked, draw))
     else draw()
   }
   if (!parked) {

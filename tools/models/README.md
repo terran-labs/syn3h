@@ -11,8 +11,8 @@ The owner created these and has authorised their reuse.
 
 | File | Source | Meshes |
 | --- | --- | --- |
-| `buggy.glb` | Syn3h `Buggy.blend` | Body, Cockpit, Wings, Wheel Template, Wheel Template Simple, Rim, RimSimple, Axle, Collider |
-| `jet.glb` | Syn3h `Core Jet.blend` | Body_Main, Body_Chrome, Body_Cockpit, Landing Gear, Landing Gear Simple, Collider |
+| `buggy.glb` | Mira `Buggy.blend` | Body, Cockpit, Wings, Wheel Template, Wheel Template Simple, Rim, RimSimple, Axle, Collider |
+| `jet.glb` | Mira `Core Jet.blend` | Body_Main, Body_Chrome, Body_Cockpit, Landing Gear, Landing Gear Simple, Collider |
 | `tank.glb` | Mars Explorer `Tank.blend` | Three unnamed meshes, no materials |
 | `tanktread.glb` | Mars Explorer `TankTread.blend` | Two meshes at about 0.03 units: needs scaling |
 
@@ -38,7 +38,7 @@ materials for those colors, without the old cubemap shader.
 
 Historical: `src/vehicles/skins` once loaded both generations and baked their transforms. Both headlight
 meshes point along source +Z, so both bodies rotate 180 degrees about Y. Classic uses
-its prefab body scale of 2.15. Syn3h uses 0.5 to fit the shared classic suspension frame;
+its prefab body scale of 2.15. Mira uses 0.5 to fit the shared classic suspension frame;
 its cockpit and wings need a 90 degree X correction, and their missing opposite halves
 are mirrored. The source GLB remains unchanged. Wheels use a 0.30 m radius. Axles are
 simple connecting rods that follow the recovered mounts.
@@ -71,7 +71,7 @@ Verification: `npx tsc --noEmit`, `npx vitest run`, then run Vite with
 concurrent worktrees share node_modules. Screenshots are written under
 `/tmp/syn3h-vehicles2/` and the smoke check reports the rendering backend and errors.
 
-## Syn3h jet correction
+## Mira jet correction
 
 `jet.glb` is now exported in vehicle coordinates directly from the original Blender
 mesh data, with the `terra.jet.prefab` offsets. It is full size (about 7.7 m wide and
@@ -96,4 +96,4 @@ hull into Y-up, hides the duplicated hull mesh, and normalizes each of six tread
 segments to 1 x 0.9 x 2.2 m. The tread map is generated at run time
 (`createTreadMap` in `src/vehicles/effects/maps.ts`) after the original
 `Vehicles/Tank/Components/Materials/TankTrack.png`, which is no longer shipped; its UV
-offset follows contact speed. This is the legacy Mars Explorer tank, not a recovered Syn3h vehicle.
+offset follows contact speed. This is the legacy Mars Explorer tank, not a recovered Mira vehicle.

@@ -1,3 +1,4 @@
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
 import assert from 'node:assert/strict'
@@ -9,18 +10,18 @@ try {
   const device=phone?'narrow':'projector', context=await browser.newContext({viewport:phone?{width:320,height:844}:{width:1600,height:1000},hasTouch:phone,isMobile:phone,permissions:['clipboard-read','clipboard-write']})
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())})
   // The idle attract mode was removed (Shell.attracting is always false): open the lobby directly.
-  await page.goto(`${process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'}?room=jam-${device}`)
-  await page.waitForFunction(()=>window.syn3h?.shell?.galaxy,null,{timeout:60000})
-  const panel=async id=>{await page.evaluate(id=>syn3h.shell.showPanel(id),id);await page.waitForFunction(id=>document.querySelector('.lobby-panels').dataset.activePanel===id&&document.querySelector('.lobby-panels').dataset.busy==='false',id)}
+  await page.goto(`${process.env.MIRA_URL ?? 'http://127.0.0.1:5187/'}?room=jam-${device}`)
+  await page.waitForFunction(()=>window.mira?.shell?.galaxy,null,{timeout:60000})
+  const panel=async id=>{await page.evaluate(id=>mira.shell.showPanel(id),id);await page.waitForFunction(id=>document.querySelector('.lobby-panels').dataset.activePanel===id&&document.querySelector('.lobby-panels').dataset.busy==='false',id)}
   await panel('explore');await page.locator('#shell-name').fill('A Very Long Pilot Name 88');await page.locator('#shell-room').fill('The Very Long Game Jam Room Name With Plenty Of People')
   await page.keyboard.press('Tab')
   const rows=Array.from({length:16},(_,i)=>`${i===0?'>':' '} ${i<8?'Pilot':'Bot'} With A Very Long Name ${i}   ${100-i}  ${i===0?'[KING] (you) (host)':i===15?'(paused)':''}`)
   const lines=['net: room server text ping 100ms','host: test host',...rows]
-  await page.evaluate(lines=>syn3h.shell.setStatus(lines),lines);await page.evaluate(()=>syn3h.shell.setPlayerCount(8))
+  await page.evaluate(lines=>mira.shell.setStatus(lines),lines);await page.evaluate(()=>mira.shell.setPlayerCount(8))
   for(const id of ['index','worlds']) {await panel(id);await page.screenshot({path:`tests/ui/artifacts/${device}-${id}.png`})}
   // Isolate the presentation fixture from live network status replacement.
-  await page.evaluate(()=>{syn3h.shell.onPlay=()=>{};syn3h.shell.play()})
-  await page.evaluate(lines=>syn3h.shell.setStatus(lines),lines)
+  await page.evaluate(()=>{mira.shell.onPlay=()=>{};mira.shell.play()})
+  await page.evaluate(lines=>mira.shell.setStatus(lines),lines)
   // The invite view (J) lives in play since the lobby's Multiplayer panel went.
   await page.keyboard.press('j');await page.locator('.join-view').waitFor({state:'visible'})
   // In play the count follows the room's roster: the 16 rows set above.
@@ -33,22 +34,22 @@ try {
   await page.evaluate(()=>document.activeElement?.blur());await page.keyboard.press('j');await page.locator('.join-view').waitFor({state:'hidden',timeout:3000});assert.equal(await page.locator('.join-view').isVisible(),false)
   // Sixteen players with long names fill the in-play board (the lobby's copy went with the Multiplayer panel).
   assert.equal(await page.locator('.hud-scoreboard .score-row').count(),16)
-  await page.keyboard.press('p');assert.equal(await page.evaluate(()=>syn3h.shell.presentation),true)
+  await page.keyboard.press('p');assert.equal(await page.evaluate(()=>mira.shell.presentation),true)
   assert.equal(await page.locator('.hud-scoreboard .is-developer').first().isVisible(),false)
   const state={mode:'koth',holderName:'Pilot With A Very Long Name 0',holderIsYou:true,contested:false,scores:Array.from({length:16},(_,i)=>({name:`${i<8?'Pilot':'Bot'} With A Very Long Name ${i}`,score:100-i,you:i===0})),target:120,winner:null}
-  await page.evaluate(s=>syn3h.shell.setMatchState(s),state)
+  await page.evaluate(s=>mira.shell.setMatchState(s),state)
   await page.screenshot({path:`tests/ui/artifacts/${device}-presentation.png`})
   const winner={...state,winner:state.holderName,winnerColor:'#ff8844',nextRoundIn:6}
-  await page.evaluate(s=>syn3h.shell.setMatchState(s),winner);await page.screenshot({path:`tests/ui/artifacts/${device}-winner.png`})
+  await page.evaluate(s=>mira.shell.setMatchState(s),winner);await page.screenshot({path:`tests/ui/artifacts/${device}-winner.png`})
   assert.equal(await page.locator('.round-end').evaluate(el=>el.style.getPropertyValue('--winner-color')),'#ff8844')
-  await page.waitForTimeout(1100);await page.evaluate(s=>syn3h.shell.setMatchState(s),winner)
+  await page.waitForTimeout(1100);await page.evaluate(s=>mira.shell.setMatchState(s),winner)
   assert.match(await page.locator('.round-end small').textContent(),/5/)
   await page.waitForTimeout(3000);await page.screenshot({path:`tests/ui/artifacts/${device}-countdown.png`})
   // About four seconds in. A screenshot on a busy machine can cost most of a second, so 1 is allowed.
   assert.match(await page.locator('.round-end small').textContent(),/[12]/)
-  await page.evaluate(s=>syn3h.shell.setMatchState({...s,holderName:null}),state)
+  await page.evaluate(s=>mira.shell.setMatchState({...s,holderName:null}),state)
   assert.equal(await page.locator('.round-end').count(),0)
-  await page.keyboard.press('j');assert.equal(await page.locator('.touch-controls').isVisible(),false);await page.keyboard.press('j');assert.equal(await page.evaluate(()=>syn3h.shell.menuOpen),false)
+  await page.keyboard.press('j');assert.equal(await page.locator('.touch-controls').isVisible(),false);await page.keyboard.press('j');assert.equal(await page.evaluate(()=>mira.shell.menuOpen),false)
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
   assert.deepEqual(errors,[]);report.push({device,url,scores:16,countdown:true,errors});await context.close()
  }

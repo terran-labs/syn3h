@@ -10,7 +10,7 @@ Regenerate explicitly:
 tools/heavy.sh npx tsx tools/brand/generate.ts
 ```
 
-This command requires installed Chrome. Set `SYN3H_CHROME` to use another Chromium
+This command requires installed Chrome. Set `MIRA_CHROME` to use another Chromium
 executable. An optional output directory supports comparison without replacing fallbacks.
 All rendering completes before any existing image is replaced. Browser launch, font or
 render errors exit unsuccessfully and preserve the existing files. Each output is written

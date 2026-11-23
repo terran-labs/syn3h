@@ -62,7 +62,7 @@ try {
   for (const level of levels) {
     for (const path of (opt('paths') ?? 'descent,autoplay').split(',')) for (let run = 0; run < runs; run++) {
       const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
-      await context.addInitScript(q => { try { localStorage.setItem('syn3h.quality.v2', JSON.stringify({ level: q, auto: false, pinned: true, overrides: {} })) } catch {} }, level)
+      await context.addInitScript(q => { try { localStorage.setItem('mira.quality.v2', JSON.stringify({ level: q, auto: false, pinned: true, overrides: {} })) } catch {} }, level)
       const page = await context.newPage()
       let phase = 'load'
       const errors = []
@@ -71,11 +71,11 @@ try {
       const room = `validation-${level}-${path}-${Date.now()}`
       await page.goto(`${url}?room=${room}${path === 'autoplay' ? '&planet=badlands&seed=7&autoplay=1' : ''}`, { waitUntil: 'load', timeout: 180000 })
       if (path === 'descent') {
-        await page.waitForFunction(() => window.syn3h?.shell && document.documentElement.dataset.boot !== 'loading' && window.syn3h.shell.galaxy?.live, null, { timeout: 180000, polling: 100 })
+        await page.waitForFunction(() => window.mira?.shell && document.documentElement.dataset.boot !== 'loading' && window.mira.shell.galaxy?.live, null, { timeout: 180000, polling: 100 })
         await page.waitForTimeout(3000)
         phase = 'entry'
         await page.evaluate(world => {
-          const current = window.syn3h.planets.currentPlanet().id
+          const current = window.mira.planets.currentPlanet().id
           // Badlands, as autoplay uses: textured ground, so the picture-change test means
           // something (flat desert sand fills both frames and changed as little as 18%).
           const chips = [...document.querySelectorAll('.galaxy-label[data-world]')].filter(c => c.dataset.world !== current && !c.dataset.world.includes('~') && c.dataset.world !== 'custom')
@@ -83,18 +83,18 @@ try {
           chip.click()
         }, diveWorld)
       }
-      await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3h.game.tick > 30, null, { timeout: 120000, polling: 100 })
+      await page.waitForFunction(() => window.mira?.shell?.playing && window.mira.game.tick > 30, null, { timeout: 120000, polling: 100 })
       phase = 'play'
       // Midday, clock stopped: see the header.
-      await page.evaluate(() => { const p = window.syn3h.params; p.set('sun.dayLength', 0); p.set('sun.timeOfDay', 12) })
+      await page.evaluate(() => { const p = window.mira.params; p.set('sun.dayLength', 0); p.set('sun.timeOfDay', 12) })
       await page.waitForTimeout(PLAY_MS)
-      const hour = await page.evaluate(() => window.syn3h.params.get('sun.timeOfDay').value)
-      const state = await page.evaluate(() => ({ name: window.syn3h.game.quality.getQualityState().name, bots: window.syn3h.bots.vehicles.length }))
+      const hour = await page.evaluate(() => window.mira.params.get('sun.timeOfDay').value)
+      const state = await page.evaluate(() => ({ name: window.mira.game.quality.getQualityState().name, bots: window.mira.bots.vehicles.length }))
       // The picture must follow the camera: 200 m sideways and 40 m up must change it.
       const canvas = page.locator('#game')
       const before = await canvas.screenshot()
       await page.evaluate(() => {
-        const { player, terrain } = window.syn3h, p = player.body.translation(), V = player.object.position.constructor
+        const { player, terrain } = window.mira, p = player.body.translation(), V = player.object.position.constructor
         const x = p.x + 200, z = p.z
         player.teleport(new V(x, terrain.heightAt(x, z) + 40, z), 0)
       })
@@ -102,11 +102,11 @@ try {
       const after = await canvas.screenshot()
       const change = await changed(page, before, after)
       if (framesDir) { await mkdir(framesDir, { recursive: true }); for (const [name, png] of [['before', before], ['after', after]]) await writeFile(`${framesDir}/level${level}-${path}-${run}-${name}.png`, png) }
-      const chunks = await page.evaluate(() => window.syn3h.terrain.triangleStats?.().drawn ?? -1)
+      const chunks = await page.evaluate(() => window.mira.terrain.triangleStats?.().drawn ?? -1)
       const still = change < MIN_CHANGE || chunks === 0
       if (still) frozen++
       phase = 'exit'
-      await page.evaluate(() => { const shell = window.syn3h.shell; shell.askExit(); shell.answerExit(true) })
+      await page.evaluate(() => { const shell = window.mira.shell; shell.askExit(); shell.answerExit(true) })
       await page.waitForTimeout(6000)
       await context.close()
       total += errors.length

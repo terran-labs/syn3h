@@ -22,7 +22,7 @@ export class WordmarkOverlay {
   private shown = { x: NaN, y: NaN, width: NaN, height: NaN, opacity: NaN }
 
   constructor(face = '#02040a', edge = '#ffeed7') {
-    const id = `syn3h-wordmark-clip-${++ids}`
+    const id = `mira-wordmark-clip-${++ids}`
     const svg = this.element = document.createElementNS(SVG, 'svg')
     svg.setAttribute('viewBox', `0 0 ${WORDMARK_WIDTH} ${WORDMARK_HEIGHT}`)
     svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false')

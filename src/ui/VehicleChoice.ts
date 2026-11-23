@@ -27,8 +27,8 @@ export function sanitizeVehicleChoice(value: Partial<VehicleChoice> | null): Veh
   return { vehicleKind: kind, bodyColor: color(value?.bodyColor, defaults.bodyColor), accentColor: color(value?.accentColor, defaults.accentColor) }
 }
 export function readVehicleChoice(): VehicleChoice {
-  try { return sanitizeVehicleChoice(JSON.parse(localStorage.getItem('syn3h.vehicle') || 'null')) } catch { return { ...defaults } }
+  try { return sanitizeVehicleChoice(JSON.parse(localStorage.getItem('mira.vehicle') || 'null')) } catch { return { ...defaults } }
 }
 export function saveVehicleChoice(choice: VehicleChoice): void {
-  try { localStorage.setItem('syn3h.vehicle', JSON.stringify(choice)) } catch { /* Storage is optional. */ }
+  try { localStorage.setItem('mira.vehicle', JSON.stringify(choice)) } catch { /* Storage is optional. */ }
 }

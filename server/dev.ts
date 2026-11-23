@@ -74,7 +74,7 @@ const http = createServer((req, res) => {
   }
   res.writeHead(200, { 'content-type': 'text/plain' })
   const counts = [...rooms.values()].map((r) => `${r.name}: ${r.playerCount}`)
-  res.end(`Syn3h room server\n${counts.join('\n')}\n`)
+  res.end(`Mira room server\n${counts.join('\n')}\n`)
 })
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: maxClientFrameBytes() })
@@ -138,4 +138,4 @@ function attach(ws: WebSocket, name: string): void {
   })
 }
 
-http.listen(port, () => console.log(`Syn3h room server on ws://localhost:${port}/ws?room=<name>`))
+http.listen(port, () => console.log(`Mira room server on ws://localhost:${port}/ws?room=<name>`))

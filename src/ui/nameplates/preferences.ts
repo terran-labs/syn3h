@@ -1,7 +1,7 @@
 import { defineParam, params } from '../../../shared/params'
 
 export const nameplateMode = defineParam<number>({ id: 'hud.nameplates', label: 'Vehicle labels: 0 All, 1 People, 2 Off', group: 'Interface', scope: 'client', default: 0, min: 0, max: 2, step: 1 })
-export const PREFERENCE_KEY = 'syn3h.nameplates.preferences'
+export const PREFERENCE_KEY = 'mira.nameplates.preferences'
 export function validMode(value: unknown): value is 0 | 1 | 2 {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 2
 }

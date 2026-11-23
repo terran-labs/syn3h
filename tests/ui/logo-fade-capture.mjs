@@ -32,26 +32,26 @@ try {
     const page = await browser.newPage(view)
     page.on('pageerror', e => errors.push(e.message))
     await page.goto(`${base}/?room=fade-${Date.now()}`)
-    await page.waitForFunction(() => document.documentElement.dataset.boot === 'done' && window.syn3h?.shell?.galaxy?.logo?.ok, null, { timeout: 180000 })
-    const atLift = await page.evaluate(() => window.syn3h.shell.galaxy.logo.introTime)
-    await page.evaluate(() => window.syn3h.params.set('gfx.level', 2))
+    await page.waitForFunction(() => document.documentElement.dataset.boot === 'done' && window.mira?.shell?.galaxy?.logo?.ok, null, { timeout: 180000 })
+    const atLift = await page.evaluate(() => window.mira.shell.galaxy.logo.introTime)
+    await page.evaluate(() => window.mira.params.set('gfx.level', 2))
     const shots = []
     const capture = async label => {
       for (const t of [0.05, 0.75, 1.5, 2.5, 3.5, 5]) {
-        await page.waitForFunction(t => window.syn3h.shell.galaxy.logo.introTime >= t, t, { timeout: 20000 })
+        await page.waitForFunction(t => window.mira.shell.galaxy.logo.introTime >= t, t, { timeout: 20000 })
         const file = `${out}/${name}-lobby-${label}-${t.toFixed(2)}s.png`
         await page.screenshot({ path: file })
-        shots.push([file, await page.evaluate(() => +window.syn3h.shell.galaxy.logo.introTime.toFixed(2))])
+        shots.push([file, await page.evaluate(() => +window.mira.shell.galaxy.logo.introTime.toFixed(2))])
       }
     }
-    await page.evaluate(() => window.syn3h.shell.galaxy.logo.replayIntro())
+    await page.evaluate(() => window.mira.shell.galaxy.logo.replayIntro())
     await capture('first')
     // Into a world and back: a new showing of the lobby fades in again.
-    await page.evaluate(() => window.syn3h.shell.play())
+    await page.evaluate(() => window.mira.shell.play())
     await page.waitForTimeout(500)
-    await page.evaluate(() => window.syn3h.shell.openMenu())
-    await page.waitForFunction(() => window.syn3h.shell.galaxy.logo?.ok, null, { timeout: 30000 })
-    const onReturn = await page.evaluate(() => window.syn3h.shell.galaxy.logo.introTime)
+    await page.evaluate(() => window.mira.shell.openMenu())
+    await page.waitForFunction(() => window.mira.shell.galaxy.logo?.ok, null, { timeout: 30000 })
+    const onReturn = await page.evaluate(() => window.mira.shell.galaxy.logo.introTime)
     await capture('return')
     report[name] = { introTimeAsVeilLifted: +atLift.toFixed(2), introTimeOnReturn: +onReturn.toFixed(2), shots }
     assert.ok(onReturn < 1, `${name}: the lobby fades in again on return (introTime ${onReturn})`)

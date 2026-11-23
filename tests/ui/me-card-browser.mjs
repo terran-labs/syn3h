@@ -15,13 +15,13 @@ const step = (name, value) => { report.steps.push({ name, value }); console.log(
 let browser
 // Daydream (the idle autopilot) hides the panels; this check sits still for long stretches.
 const ready = async page => {
-  await page.waitForFunction(() => window.syn3h?.game.tick > 60 && window.syn3hNet?.connected, null, { timeout: 180000 })
-  await page.evaluate(() => window.syn3h.params.set('daydream.seconds', 0))
+  await page.waitForFunction(() => window.mira?.game.tick > 60 && window.miraNet?.connected, null, { timeout: 180000 })
+  await page.evaluate(() => window.mira.params.set('daydream.seconds', 0))
 }
 const meCard = '.wi-card[data-section="you"]'
 async function openMe(page) {
-  await page.waitForFunction(() => window.syn3h.shell.playing && !window.syn3h.shell.transitioning, null, { timeout: 90000 })
-  await page.evaluate(() => window.syn3h.shell.showCard('you'))
+  await page.waitForFunction(() => window.mira.shell.playing && !window.mira.shell.transitioning, null, { timeout: 90000 })
+  await page.evaluate(() => window.mira.shell.showCard('you'))
   const card = page.locator(meCard)
   // The panels appear once the arrival has finished, which a loaded machine can stretch.
   await card.waitFor({ state: 'visible', timeout: 90000 })
@@ -33,9 +33,9 @@ try {
   const contextA = await browser.newContext({ viewport: { width: 1280, height: 800 } })
   await contextA.addInitScript(() => {
     if (location.protocol !== 'http:' && location.protocol !== 'https:') return
-    if (localStorage.getItem('syn3h.playerName') === null) {
-      localStorage.setItem('syn3h.playerName', 'Captain Ozzie')
-      localStorage.setItem('syn3h.playerNameSource', 'typed')
+    if (localStorage.getItem('mira.playerName') === null) {
+      localStorage.setItem('mira.playerName', 'Captain Ozzie')
+      localStorage.setItem('mira.playerNameSource', 'typed')
     }
   })
   const a = await contextA.newPage()
@@ -43,7 +43,7 @@ try {
   const entry = `${base}/?autoplay=1&room=${room}`
   await a.goto(`${entry}&name=${encodeURIComponent(' <Link>  Pilot ')}`, { waitUntil: 'load' })
   await ready(a)
-  await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
+  await a.evaluate(() => window.mira.params.set('bots.count', 0))
   await openMe(a)
   // The tank is hidden: three segments.
   step('segments', await a.locator('.wi-vehicle-option').evaluateAll(b => b.map(x => x.textContent)))
@@ -53,18 +53,18 @@ try {
   // The linked name is shared by the card, vehicle and room without saving it over the preference.
   assert.equal(await a.locator('.wi-name-input').inputValue(), 'Link Pilot')
   assert.deepEqual(await a.evaluate(() => [
-    window.syn3h.player.name,
-    window.syn3hNet.players.get(window.syn3hNet.id)?.name,
-    localStorage.getItem('syn3h.playerName'),
+    window.mira.player.name,
+    window.miraNet.players.get(window.miraNet.id)?.name,
+    localStorage.getItem('mira.playerName'),
   ]), ['Link Pilot', 'Link Pilot', 'Captain Ozzie'])
 
   // Typing the already saved name must replace the link name locally and in the room.
   await a.locator('.wi-name-input').click()
   await a.keyboard.press('Meta+A'); await a.keyboard.type('Captain Ozzie'); await a.keyboard.press('Enter')
-  step('saved name', await a.evaluate(() => localStorage.getItem('syn3h.playerName')))
-  assert.equal(await a.evaluate(() => localStorage.getItem('syn3h.playerName')), 'Captain Ozzie')
-  assert.equal(await a.evaluate(() => window.syn3h.player.name), 'Captain Ozzie')
-  await a.waitForFunction(() => window.syn3hNet.players.get(window.syn3hNet.id)?.name === 'Captain Ozzie')
+  step('saved name', await a.evaluate(() => localStorage.getItem('mira.playerName')))
+  assert.equal(await a.evaluate(() => localStorage.getItem('mira.playerName')), 'Captain Ozzie')
+  assert.equal(await a.evaluate(() => window.mira.player.name), 'Captain Ozzie')
+  await a.waitForFunction(() => window.miraNet.players.get(window.miraNet.id)?.name === 'Captain Ozzie')
   // Escape cancels an edit.
   await a.locator('.wi-name-input').click(); await a.keyboard.type('xyz'); await a.keyboard.press('Escape')
   assert.equal(await a.locator('.wi-name-input').inputValue(), 'Captain Ozzie')
@@ -78,36 +78,36 @@ try {
   b.on('pageerror', e => report.errors.push(`B: ${e.message}`))
   await b.goto(`${base}/?autoplay=1&room=${room}`, { waitUntil: 'load' })
   await ready(b)
-  const idA = await a.evaluate(() => window.syn3hNet.id)
-  const nameOnB = () => b.evaluate(id => window.syn3hNet.players.get(id)?.name, idA)
-  await b.waitForFunction(id => window.syn3hNet.players.get(id)?.name === 'Captain Ozzie', idA, { timeout: 20000 })
+  const idA = await a.evaluate(() => window.miraNet.id)
+  const nameOnB = () => b.evaluate(id => window.miraNet.players.get(id)?.name, idA)
+  await b.waitForFunction(id => window.miraNet.players.get(id)?.name === 'Captain Ozzie', idA, { timeout: 20000 })
   step('B sees', await nameOnB())
   await a.waitForTimeout(2100)
   await a.locator('.wi-name-roll').click()
   const rolled = await a.locator('.wi-name-input').inputValue()
   const renamedAt = Date.now()
-  await b.waitForFunction(([id, name]) => window.syn3hNet.players.get(id)?.name === name, [idA, rolled], { timeout: 10000 })
+  await b.waitForFunction(([id, name]) => window.miraNet.players.get(id)?.name === name, [idA, rolled], { timeout: 10000 })
   step('rolled name reaches B (ms)', { rolled, ms: Date.now() - renamedAt })
 
   // Vehicle picker by mouse, then by keyboard.
   for (const label of ['Jet', 'Hovercraft', 'Buggy']) {
     await a.locator('.wi-vehicle-option', { hasText: label }).click(); await a.waitForTimeout(800)
-    step(`mouse ${label}`, await a.evaluate(() => [window.syn3h.player.kind, document.querySelector('.wi-vehicle-option[aria-checked=true]')?.textContent]))
+    step(`mouse ${label}`, await a.evaluate(() => [window.mira.player.kind, document.querySelector('.wi-vehicle-option[aria-checked=true]')?.textContent]))
   }
-  assert.match(await a.evaluate(() => window.syn3h.player.kind), /^buggy/)
+  assert.match(await a.evaluate(() => window.mira.player.kind), /^buggy/)
   await a.locator('.wi-vehicle-option[aria-checked=true]').focus()
   await a.keyboard.press('ArrowRight'); await a.waitForTimeout(800)
-  step('key right', await a.evaluate(() => [window.syn3h.player.kind, document.activeElement?.textContent]))
-  assert.equal(await a.evaluate(() => window.syn3h.player.kind), 'jet')
+  step('key right', await a.evaluate(() => [window.mira.player.kind, document.activeElement?.textContent]))
+  assert.equal(await a.evaluate(() => window.mira.player.kind), 'jet')
   await a.keyboard.press('End'); await a.waitForTimeout(800)
-  assert.equal(await a.evaluate(() => window.syn3h.player.kind), 'hovercraft')
+  assert.equal(await a.evaluate(() => window.mira.player.kind), 'hovercraft')
   await a.keyboard.press('ArrowRight'); await a.waitForTimeout(800)
-  step('key wraps', await a.evaluate(() => window.syn3h.player.kind))
-  assert.match(await a.evaluate(() => window.syn3h.player.kind), /^buggy/)
+  step('key wraps', await a.evaluate(() => window.mira.player.kind))
+  assert.match(await a.evaluate(() => window.mira.player.kind), /^buggy/)
 
   // Randomize three times; frames across the third change, locally and on B.
-  const sample = page => page.evaluate(() => ({ ...window.syn3h.player.colors }))
-  const remote = () => b.evaluate(id => ({ ...window.syn3hNet.remotes.get(id)?.vehicle.colors }), idA)
+  const sample = page => page.evaluate(() => ({ ...window.mira.player.colors }))
+  const remote = () => b.evaluate(id => ({ ...window.miraNet.remotes.get(id)?.vehicle.colors }), idA)
   for (let press = 1; press <= 3; press++) {
     await a.locator('.wi-randomize').click()
     const frames = []
@@ -121,8 +121,8 @@ try {
     step(`randomize ${press}`, frames)
   }
   const final = await sample(a)
-  await b.waitForFunction(([id, body]) => window.syn3hNet.remotes.get(id)?.vehicle.colors.body === body, [idA, final.body], { timeout: 5000 })
-  step('saved tint', await a.evaluate(() => localStorage.getItem('syn3h.vehicle')))
+  await b.waitForFunction(([id, body]) => window.miraNet.remotes.get(id)?.vehicle.colors.body === body, [idA, final.body], { timeout: 5000 })
+  step('saved tint', await a.evaluate(() => localStorage.getItem('mira.vehicle')))
 
   // Collapsed header.
   await a.locator(`${meCard} .wi-head`).click(); await a.waitForTimeout(600)

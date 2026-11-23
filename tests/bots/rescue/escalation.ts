@@ -18,7 +18,7 @@ import type { Game } from '../../../src/core/Game'
 import { emptyInput, type InputState } from '../../../src/core/Input'
 import { createWorld, FIXED_DT } from '../../../src/core/physics'
 import type { Vehicle } from '../../../src/vehicles/Vehicle'
-import { Syn3hBuggy } from '../../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../../src/vehicles/MiraBuggy'
 import { Hovercraft } from '../../../src/vehicles/Hovercraft'
 import { BotGear } from '../../../src/weapons/BotGear'
 import { createNavigator } from '../../../src/bots/nav'
@@ -100,11 +100,11 @@ export function escalationTrial(scenario: Hard, seed: number, limit = 600, log?:
   const terrain = terrainOf(world, height, liquid, 200)
   const game = { world, scene: new THREE.Scene(), tick: 0, time: 0, camera: new THREE.PerspectiveCamera(), canvas: {}, input: { state: emptyInput() } } as unknown as Game
   const place = (x: number, z: number) => new Vector3(x, terrain.heightAt(x, z) + 0.9, z)
-  const stuck = new Syn3hBuggy(game, terrain, place(stuckAt.x, stuckAt.z), heading)
+  const stuck = new MiraBuggy(game, terrain, place(stuckAt.x, stuckAt.z), heading)
   const vehicles: Vehicle[] = [stuck]
   for (const h of helpers) {
     const facing = Math.atan2(stuckAt.x - h.x, stuckAt.z - h.z)
-    vehicles.push(h.kind === 'hovercraft' ? new Hovercraft(game, terrain, place(h.x, h.z), facing) : new Syn3hBuggy(game, terrain, place(h.x, h.z), facing))
+    vehicles.push(h.kind === 'hovercraft' ? new Hovercraft(game, terrain, place(h.x, h.z), facing) : new MiraBuggy(game, terrain, place(h.x, h.z), facing))
   }
   for (const v of vehicles) v.isLocal = false
   if (extraMass) stuck.body.setAdditionalMass(extraMass, true)

@@ -1,5 +1,5 @@
 """
-Build the Syn3h buggy body variations from the original Buggy.blend.
+Build the Mira buggy body variations from the original Buggy.blend.
 
     tools/heavy.sh blender -b --python tools/buggy-bodies/build.py -- \
         <path to Buggy.blend> <out dir for .glb> [<dir for preview renders>] [variant ids...]

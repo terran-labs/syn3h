@@ -4,15 +4,16 @@
 // top sits CAPTION_GAP below the planet's limb, within a pixel. No plate or leader exists.
 // Pointing at a planet brings its caption to full opacity, never changing its place or size. Captions
 // may overlap each other; that is the design (the owner, 16 November 2026).
-//   SYN3H_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/lobby-labels.mjs
+//   MIRA_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/lobby-labels.mjs
 // Screenshots go to tests/ui/artifacts/lobby-labels/.
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { waitForState } from './stateWait.mjs'
 
-const url = process.env.SYN3H_URL
-assert.ok(url, 'SYN3H_URL is required')
+const url = process.env.MIRA_URL
+assert.ok(url, 'MIRA_URL is required')
 /** Must match CAPTION_GAP in src/ui/Shell.ts: the gap at the captions' smallest size; it grows with --caption-scale. */
 const GAP = 5
 const out = 'tests/ui/artifacts/lobby-labels'
@@ -24,15 +25,15 @@ try {
     const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2, isMobile: phone, hasTouch: phone }), page = await context.newPage()
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     await page.goto(`${url}?room=lobby-labels-${name}-${Date.now()}`, { waitUntil: 'load' })
-    await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
     // Hold the graphics level, as galaxy.mjs does: a slow headless browser would retire the galaxy.
-    await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
+    await page.evaluate(() => { window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400) })
     // Past the opening: the captions fade in once their worlds have arrived.
     await page.waitForTimeout(9000)
     // Each caption against its planet, read in one frame: horizontal offset of the centres, and
     // the gap from the limb to the caption's top, minus GAP.
     const measure = () => page.evaluate(() => {
-      const screen = window.syn3h.shell.galaxy.screen
+      const screen = window.mira.shell.galaxy.screen
       return [...document.querySelectorAll('.galaxy-label')].filter(c => !c.hidden).map(c => {
         const r = c.getBoundingClientRect(), p = screen.find(s => s.id === c.dataset.world)
         return { id: c.dataset.world, dx: r.left + r.width / 2 - p.x, dy: r.top - (p.y + p.radius), width: r.width, height: r.height, opacity: Number(getComputedStyle(c).opacity), scale: Number(c.style.getPropertyValue('--caption-scale') || 1) }
@@ -67,7 +68,7 @@ try {
     // target is a planet whose caption is below full at rest (not the world in play, which
     // rests at full), so the lift is measured, not assumed.
     const resting = await measure()
-    const target = await page.evaluate(ids => { const p = window.syn3h.shell.galaxy.screen.find(s => ids.includes(s.id) && s.visible && s.x > 0 && s.x < innerWidth && s.y > 0 && s.y < innerHeight && s.radius > 4); return p && { id: p.id, x: p.x, y: p.y } }, resting.filter(c => c.opacity > 0.3 && c.opacity < 0.95).map(c => c.id))
+    const target = await page.evaluate(ids => { const p = window.mira.shell.galaxy.screen.find(s => ids.includes(s.id) && s.visible && s.x > 0 && s.x < innerWidth && s.y > 0 && s.y < innerHeight && s.radius > 4); return p && { id: p.id, x: p.x, y: p.y } }, resting.filter(c => c.opacity > 0.3 && c.opacity < 0.95).map(c => c.id))
     assert.ok(target, `${name}: some planet on screen has a caption below full strength at rest`)
     if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: target.x, y: target.y }] })
     else await page.mouse.move(target.x, target.y)
@@ -95,7 +96,7 @@ try {
       // so only caption pixels show. Inside the nearer disc no caption pixel may show; outside
       // it the caption must; and the nearer caption is stacked above the farther one.
       const geometry = await page.evaluate(() => {
-        const g = window.syn3h.shell.galaxy, layout = g.options.onLayout
+        const g = window.mira.shell.galaxy, layout = g.options.onLayout
         g.options.onLayout = () => {}
         const chips = [...document.querySelectorAll('.galaxy-label')], [a, b] = chips.map(c => c.dataset.world)
         const far = { id: a, x: 400, y: 300, radius: 24, visible: true, depth: 20 }, near = { id: b, x: 400 - 60, y: 345, radius: 30, visible: true, depth: 10 }

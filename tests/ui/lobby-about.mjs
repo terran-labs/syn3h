@@ -1,3 +1,4 @@
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -57,7 +58,7 @@ for(const mode of ['desktop','phone','short-phone','ipad-portrait','ipad-landsca
  try{
   const context=await browser.newContext(IPAD[mode]??(mode==='desktop'?{viewport:{width:1440,height:1000}}:{...devices['iPhone 14'],...(mode==='short-phone'?{viewport:{width:390,height:560}}:{})}))
   const page=await context.newPage(), errors=[]; page.on('pageerror',e=>errors.push(e.message))
-  await page.goto(`${process.env.SYN3H_URL}?room=about-${mode}-${Date.now()}`)
+  await page.goto(`${process.env.MIRA_URL}?room=about-${mode}-${Date.now()}`)
   await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
   await page.waitForTimeout(5000)
   const canvas=await page.locator('.galaxy-canvas').evaluate(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return{x:r.x,y:r.y,w:r.width,h:r.height,mask:s.maskImage||s.webkitMaskImage,vw:innerWidth,vh:innerHeight}})
@@ -65,14 +66,14 @@ for(const mode of ['desktop','phone','short-phone','ipad-portrait','ipad-landsca
   await page.screenshot({path:`${out}/${mode}-animated.png`})
   // Detach only the test's logo renderer while the galaxy keeps drawing. This exercises
   // the existing SVG bridge without changing styling or racing onLogo each frame.
-  await page.evaluate(() => { const g=syn3h.shell.galaxy; window.__savedLogo=g.logo; g.logo=null; g.wake=2; document.querySelector('.syn3h-shell').classList.remove('has-animated-logo') })
+  await page.evaluate(() => { const g=mira.shell.galaxy; window.__savedLogo=g.logo; g.logo=null; g.wake=2; document.querySelector('.mira-shell').classList.remove('has-animated-logo') })
   try { await page.waitForFunction(()=>document.querySelector('.shell-logo').getAnimations().every(a=>a.playState!=='running'),null,{timeout:10000}) }
   catch(error){ console.log('SVG entrance timeout',await page.locator('.shell-logo').evaluate(el=>el.getAnimations().map(a=>({state:a.playState,time:a.currentTime,timing:a.effect.getComputedTiming()}))));throw error }
   assert.equal(await page.locator('.shell-logo').evaluate(el=>getComputedStyle(el).opacity),'1')
-  assert.equal(await page.evaluate(()=>syn3h.shell.galaxy.logo),null)
+  assert.equal(await page.evaluate(()=>mira.shell.galaxy.logo),null)
   await page.screenshot({path:`${out}/${mode}-static.png`})
-  await page.evaluate(()=>{ const g=syn3h.shell.galaxy;g.logo=window.__savedLogo;g.wake=2 })
-  await page.waitForFunction(()=>document.querySelector('.syn3h-shell').classList.contains('has-animated-logo'))
+  await page.evaluate(()=>{ const g=mira.shell.galaxy;g.logo=window.__savedLogo;g.wake=2 })
+  await page.waitForFunction(()=>document.querySelector('.mira-shell').classList.contains('has-animated-logo'))
   // Welcome is its own sheet from its button in the corner; its contents are the Welcome guide
   // (src/ui/welcome, checked in about-in-play). Bugs caught: the button missing or not opening;
   // the guide in the page, or images requested, before the player asks; tabs, a Back button or a
@@ -110,12 +111,12 @@ for(const mode of ['desktop','phone','short-phone','ipad-portrait','ipad-landsca
   const opened=images.length
   await icon.click();await about.locator('.welcome-body > h3').first().waitFor({state:'visible'})
   await page.mouse.click(4,4);await about.waitFor({state:'hidden'})
-  assert.equal(await page.evaluate(()=>syn3h.shell.playing),false,'a tap outside closes the sheet and does nothing else')
+  assert.equal(await page.evaluate(()=>mira.shell.playing),false,'a tap outside closes the sheet and does nothing else')
   // Images belong to the guide and load only once the player has opened it (the owner's exception).
   console.log(JSON.stringify({mode,imagesAfterOpening:opened}))
   const backPaths=[]
   for(const id of ['explore','worlds','advanced']){
-   await page.evaluate(id=>syn3h.shell.showPanel(id),id)
+   await page.evaluate(id=>mira.shell.showPanel(id),id)
    await page.waitForFunction(()=>document.querySelector('.lobby-panels').dataset.busy==='false')
    const back=page.locator(`[data-panel=${id}] .panel-back`);await back.scrollIntoViewIfNeeded();await back.focus()
    const r=await measureBack(back,mode,id)
@@ -155,11 +156,11 @@ for(const mode of ['desktop','phone','short-phone','ipad-portrait','ipad-landsca
  const browser=await webkit.launch()
  try{
   const page=await(await browser.newContext({...devices['iPhone 14'],viewport:{width:390,height:844}})).newPage(), errors=[]; page.on('pageerror',e=>errors.push(e.message))
-  await page.goto(`${process.env.SYN3H_URL}?room=about-notice-${Date.now()}`)
-  await page.waitForFunction(()=>window.syn3h?.shell&&document.documentElement.dataset.boot==='done',null,{timeout:150000})
-  await page.evaluate(()=>{syn3h.params.set('bots.count',0);syn3h.shell.play(true)})
-  await page.waitForFunction(()=>syn3h.shell.playing&&!syn3h.shell.transitioning,null,{timeout:150000})
-  await page.evaluate(()=>{const panel=syn3h.shell.performancePanel,render=panel.render.bind(panel),offer={level:3,targetLevel:2,observedFps:34,fewerBots:false,bots:0};panel.render=s=>render({...s,recommendation:offer});render({...(panel.snapshot??{visible:false}),recommendation:offer})})
+  await page.goto(`${process.env.MIRA_URL}?room=about-notice-${Date.now()}`)
+  await page.waitForFunction(()=>window.mira?.shell&&document.documentElement.dataset.boot==='done',null,{timeout:150000})
+  await page.evaluate(()=>{mira.params.set('bots.count',0);mira.shell.play(true)})
+  await page.waitForFunction(()=>mira.shell.playing&&!mira.shell.transitioning,null,{timeout:150000})
+  await page.evaluate(()=>{const panel=mira.shell.performancePanel,render=panel.render.bind(panel),offer={level:3,targetLevel:2,observedFps:34,fewerBots:false,bots:0};panel.render=s=>render({...s,recommendation:offer});render({...(panel.snapshot??{visible:false}),recommendation:offer})})
   const actions=page.locator('.drive-notices .performance-recommendation button.panel-action:visible')
   await actions.first().waitFor({state:'visible',timeout:10000})
   const n=await actions.count(); assert.ok(n>=2,`notice: two actions shown (${n})`)

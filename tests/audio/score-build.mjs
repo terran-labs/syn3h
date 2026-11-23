@@ -3,7 +3,7 @@
 // of the time it sounds, when the mix reaches its fullest layer count, and the mix's peak and
 // loudness. A report, not a gate: the invariants live in tests/audio/score.test.ts.
 //
-//   SYN3H_ROOM_PORT=<spare> npx vite --host 127.0.0.1 --port <spare> --strictPort &
+//   MIRA_ROOM_PORT=<spare> npx vite --host 127.0.0.1 --port <spare> --strictPort &
 //   tools/heavy.sh node tests/audio/score-build.mjs http://127.0.0.1:<spare> [seconds] [label]
 //
 // Each state renders twice with the same seed: the full mix, then the lead alone (every other

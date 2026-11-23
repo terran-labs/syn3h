@@ -17,9 +17,9 @@ export const jet: LabExhibit = {
   // Listed with the other design studies in the lab's sidebar.
   section: 'Design studies',
   id: 'jet',
-  title: 'Syn3h jet',
+  title: 'Mira jet',
   groupLabel: 'Round',
-  heading: group => `Syn3h jet: round ${group ?? 6}, ${ROUND_TITLES[Number(group ?? 6) - 1] ?? ''}`,
+  heading: group => `Mira jet: round ${group ?? 6}, ${ROUND_TITLES[Number(group ?? 6) - 1] ?? ''}`,
   async designs() {
     return JET_DESIGNS.map((d, i) => ({ id: d.id, name: d.name, notes: [d.blurb], group: ROUNDS[i < 20 ? Math.floor(i / 5) : i < 24 ? 4 : 5] }))
   },

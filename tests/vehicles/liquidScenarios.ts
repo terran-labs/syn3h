@@ -9,7 +9,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { FIXED_DT, GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { Jet } from '../../src/vehicles/Jet'
 import { Hovercraft } from '../../src/vehicles/Hovercraft'
 import type { Vehicle } from '../../src/vehicles/Vehicle'
@@ -80,7 +80,7 @@ export function basinBed(b: Basin) {
 }
 
 export function makeVehicle(kind: Kind, h: ReturnType<typeof harness>, p: THREE.Vector3, heading = 0): Vehicle {
-  const V = kind === 'buggy' ? Syn3hBuggy : kind === 'jet' ? Jet : Hovercraft
+  const V = kind === 'buggy' ? MiraBuggy : kind === 'jet' ? Jet : Hovercraft
   const v = new V(h.game, h.terrain, p, heading)
   v.isLocal = false
   return v
@@ -135,7 +135,7 @@ export function entry(kind: Kind, basin: Basin, speed: number, seconds = 40): Ru
   advance(run, 0.5)
   run.trace.length = 0
   v.body.setLinvel({ x: 0, y: 0, z: -speed }, true)
-  if (v instanceof Syn3hBuggy) v.motorSpeed = speed
+  if (v instanceof MiraBuggy) v.motorSpeed = speed
   throttle(v, kind)
   // Stop on dry land beyond either shore: a hard bank can turn it round.
   let wet = false
@@ -215,7 +215,7 @@ export function wingAscent(liquid: Liquid, depth = 3, pitch = 0, roll = 0, speed
   const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch * THREE.MathUtils.DEG2RAD, 0, roll * THREE.MathUtils.DEG2RAD, 'YXZ'))
   // Start clear of the bed whatever the attitude: a pitched or rolled hull reaches further down.
   const reach = 1.8 * Math.max(Math.abs(Math.sin(pitch * THREE.MathUtils.DEG2RAD)), Math.abs(Math.sin(roll * THREE.MathUtils.DEG2RAD)))
-  const v = makeVehicle('buggy', h, new THREE.Vector3(0, -depth + 1.1 + reach, -200)) as Syn3hBuggy
+  const v = makeVehicle('buggy', h, new THREE.Vector3(0, -depth + 1.1 + reach, -200)) as MiraBuggy
   v.body.setRotation(q, true)
   const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q).multiplyScalar(speed)
   v.body.setLinvel({ x: f.x, y: f.y, z: f.z }, true)
@@ -329,7 +329,7 @@ export function coast(liquid: Liquid, speed: number, seconds = 12, brakes = fals
   v.input.y = 1
   // Hold the speed on the run-up (6 m/s to paddle in), then let go at the waterline, or paddle on.
   const hold = speed || 6
-  if (v instanceof Syn3hBuggy) v.motorSpeed = hold
+  if (v instanceof MiraBuggy) v.motorSpeed = hold
   advance(run, 10, (s) => { const l = v.body.linvel(); v.body.setLinvel({ x: 0, y: l.y, z: -hold }, true); return s.z < 0 })
   if (!speed) advance(run, 6)
   v.input.y = 0

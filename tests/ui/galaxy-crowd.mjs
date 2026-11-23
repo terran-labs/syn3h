@@ -6,23 +6,24 @@
  * drop. Captions may overlap each other and clip at the screen's edge, and the closer default
  * view lets outer worlds run off the edges (the owner, 16 November 2026), so none is checked. It times the trace on this Mac's GPU for both systems.
  *
- *   SYN3H_URL=http://127.0.0.1:5193/ tools/heavy.sh node tests/ui/galaxy-crowd.mjs
+ *   MIRA_URL=http://127.0.0.1:5193/ tools/heavy.sh node tests/ui/galaxy-crowd.mjs
  *
  * Headless frame timings are this Mac's GPU through ANGLE, a comparison and not a phone's.
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { waitForState } from './stateWait.mjs'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5187/'
 const out = 'tests/ui/artifacts/galaxy-crowd'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist'] })
 const errors = [], report = []
-const ready = page => page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+const ready = page => page.waitForFunction(() => window.mira?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false' && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
 // Milliseconds of GPU work per galaxy frame: draw synchronously and wait for the GPU each time.
 const timing = page => page.evaluate(() => {
-  const g = window.syn3h.shell.galaxy, gl = g.gl, times = [], px = new Uint8Array(4)
+  const g = window.mira.shell.galaxy, gl = g.gl, times = [], px = new Uint8Array(4)
   for (let i = 0; i < 40; i++) { cancelAnimationFrame(g.frame); g.last = 0; g.wake = 2; gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const t = performance.now(); g.loop(performance.now()); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); times.push(performance.now() - t) }
   times.sort((a, b) => a - b); return { median: +times[20].toFixed(2), pixels: gl.drawingBufferWidth * gl.drawingBufferHeight }
 })
@@ -34,14 +35,14 @@ try {
       const context = await browser.newContext(view), page = await context.newPage()
       page.on('pageerror', e => errors.push(`${view.name} ${count}: ${e.message}`)); page.on('console', m => { if (m.type() === 'error') errors.push(`${view.name} ${count}: ${m.text()}`) })
       await page.goto(`${base}?room=crowd-${view.name}-${count}-${Date.now()}${count === 'default' ? '' : `&worlds=${count}`}`, { waitUntil: 'load' }); await ready(page)
-      await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
-      await page.waitForFunction(() => window.syn3h.shell.graphics.planetMaps >= window.syn3h.planets.PLANETS.length, null, { timeout: 60000 })
+      await page.evaluate(() => { window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400) })
+      await page.waitForFunction(() => window.mira.shell.graphics.planetMaps >= window.mira.planets.PLANETS.length, null, { timeout: 60000 })
       // Measured in the settled lobby: the opening over and a few frames drawn since.
-      const drawn = await page.evaluate(() => window.syn3h.shell.galaxy.frames)
-      await waitForState(page, 'the settled lobby (opening over, frames drawn)', drawn => !window.syn3h.shell.galaxy.opening && window.syn3h.shell.galaxy.frames > drawn + 3, drawn, 60)
+      const drawn = await page.evaluate(() => window.mira.shell.galaxy.frames)
+      await waitForState(page, 'the settled lobby (opening over, frames drawn)', drawn => !window.mira.shell.galaxy.opening && window.mira.shell.galaxy.frames > drawn + 3, drawn, 60)
       const state = await page.evaluate(() => {
         const labels = [...document.querySelectorAll('.galaxy-label')].map(l => { const r = l.getBoundingClientRect(); return { id: l.dataset.world, hidden: l.hidden, crowded: l.classList.contains('is-crowded'), left: r.left, top: r.top, right: r.right, bottom: r.bottom } })
-        return { labels, screen: window.syn3h.shell.galaxy.screen.map(s => ({ id: s.id, x: s.x, y: s.y, r: s.radius, visible: s.visible })) }
+        return { labels, screen: window.mira.shell.galaxy.screen.map(s => ({ id: s.id, x: s.x, y: s.y, r: s.radius, visible: s.visible })) }
       })
       assert.equal(state.screen.length, state.labels.length, `${view.name} ${count}: a traced world for every label`)
       // Twelve with the forming world, eleven while the lobby hides it.
@@ -60,10 +61,10 @@ try {
         // a moon a few pixels across on a phone, is still a working target.
         const small = state.screen.filter(s => onScreen.has(s.id)).sort((a, b) => a.r - b.r)[0]
         row.smallestWorld = `${small.id} ${Math.round(small.r)} px`
-        const now = await page.evaluate(id => window.syn3h.shell.galaxy.screen.find(s => s.id === id), small.id)
+        const now = await page.evaluate(id => window.mira.shell.galaxy.screen.find(s => s.id === id), small.id)
         await page.mouse.click(now.x, now.y)
-        await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 5000 })
-        assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.flight !== undefined || window.syn3h.shell.galaxy.flightDone), true, `${view.name}: the tap on ${small.id} began a drop`)
+        await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 5000 })
+        assert.equal(await page.evaluate(() => window.mira.shell.galaxy.flight !== undefined || window.mira.shell.galaxy.flightDone), true, `${view.name}: the tap on ${small.id} began a drop`)
       }
       await context.close()
     }
@@ -75,12 +76,12 @@ try {
     const page = await safari.newPage({ viewport: { width: 1024, height: 1366 }, deviceScaleFactor: 2 })
     page.on('pageerror', e => errors.push(`webkit: ${e.message}`))
     await page.goto(`${base}?room=crowd-webkit-${Date.now()}&worlds=10`, { waitUntil: 'load' })
-    await page.waitForFunction(() => window.syn3h?.shell?.graphics.planetMaps >= 9, null, { timeout: 120000 })
-    await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
-    assert.equal(await page.evaluate(() => window.syn3h.shell.graphics.galaxyLive), true, 'webkit: the galaxy runs')
+    await page.waitForFunction(() => window.mira?.shell?.graphics.planetMaps >= 9, null, { timeout: 120000 })
+    await page.evaluate(() => { window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400) })
+    assert.equal(await page.evaluate(() => window.mira.shell.graphics.galaxyLive), true, 'webkit: the galaxy runs')
     await page.waitForTimeout(1500); await page.screenshot({ path: `${out}/webkit-ipad-10.png` })
     await page.locator('.galaxy-label[data-world="desert"]').dispatchEvent('click')
-    await page.waitForFunction(() => window.syn3h.shell.galaxy.closeIndex >= 0, null, { timeout: 60000 })
+    await page.waitForFunction(() => window.mira.shell.galaxy.closeIndex >= 0, null, { timeout: 60000 })
     await page.waitForTimeout(1500); await page.screenshot({ path: `${out}/webkit-ipad-close.png` })
   } finally { await safari.close() }
   console.table(report)

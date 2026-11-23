@@ -47,5 +47,5 @@ jobs:
           URL: ${{ inputs.url }}
           # No GPU on hosted runners: WebGPU loses its device there and logs it. The check passes
           # over exactly those messages (and prints them); any other page error still fails.
-          SYN3H_CHECK_TOLERATE_DEVICE_LOSS: '1'
+          MIRA_CHECK_TOLERATE_DEVICE_LOSS: '1'
         run: node tools/public-check.mjs "$URL"

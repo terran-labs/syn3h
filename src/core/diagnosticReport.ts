@@ -18,7 +18,7 @@ export function diagnosticReport(snapshot: PerformanceSnapshot, vehicle: Vehicle
   const fleet = [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([kind, n]) => kind + ' ' + n)
   const local = (time: number) => new Date(time).toLocaleString('sv-SE', { timeZoneName: 'shortOffset' })
   return [
-    'Syn3h diagnostics v2',
+    'Mira diagnostics v2',
     `Reported ${local(Date.now())}; session started ${local(performance.timeOrigin)}`,
     ...systemReportLines(snapshot),
     'Automatic transitions in recent level history: ' + (levels || 'none'),

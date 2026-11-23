@@ -1,12 +1,12 @@
-/** Owner-side safety nets in the Vehicle base, exercised on the Syn3h buggy. */
+/** Owner-side safety nets in the Vehicle base, exercised on the Mira buggy. */
 import { describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { makeBed } from './harness'
 
 async function local() {
   const bed = await makeBed()
-  const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.5, 0)))
+  const b = bed.add(new MiraBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.5, 0)))
   b.isLocal = true
   return { bed, b }
 }
@@ -70,7 +70,7 @@ describe('vehicle safety', () => {
 
 describe('upright rescue', () => {
   const makers = [
-    ['Syn3h', (bed: Awaited<ReturnType<typeof makeBed>>) => new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.2, 0))],
+    ['Mira', (bed: Awaited<ReturnType<typeof makeBed>>) => new MiraBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.2, 0))],
   ] as const
 
   test.each(makers)('%s buggy stuck on its roof for 3 s is set upright in place, keeping its heading', async (_n, make) => {
@@ -108,7 +108,7 @@ describe('upright rescue', () => {
 
   test('a buggy sliding fast on its roof is not reset yet', async () => {
     const bed = await makeBed()
-    const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.2, 0)))
+    const b = bed.add(new MiraBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.2, 0)))
     b.isLocal = true
     b.body.setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI), true)
     bed.run(0.5)

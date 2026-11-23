@@ -1,9 +1,9 @@
-# Syn3h
+# Mira
 
 Drive to the rim of a volcano. Unfold your buggy's force-field wings and leave the road
 behind. Bring a friend, pick a distant ridge, and see what happens on the way there.
 
-Syn3h is a shared sci-fi playground for driving, flying and exploring strange worlds in
+Mira is a shared sci-fi playground for driving, flying and exploring strange worlds in
 your browser. Buggies, jets, hovercraft and tanks share the landscape. You can play Tag,
 hold a hill, experiment with gravity, or park together and watch the light change.
 
@@ -19,7 +19,7 @@ default, with no score to chase.
 
 <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/clip-dive.mp4"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/clip-dive.webp" alt="From the galaxy lobby down into a world" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/clip-wings.mp4"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/clip-wings.webp" alt="Off a ridge and into a glide on force-field wings" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/clip-jet.mp4"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/clip-jet.webp" alt="The jet banking over the curve of the world" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/clip-lava.mp4"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/clip-lava.webp" alt="Along the lava shore at night" width="420"></a>
 
-<a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/lobby.jpg"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/lobby-1600.webp" alt="The galaxy lobby: the Syn3h wordmark and the planets on their orbits" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/wings-glide.jpg"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/wings-glide-1600.webp" alt="Force-field wings open off a Badlands ridge in the late sun" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/jet-tiny-world.jpg"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/jet-tiny-world-1600.webp" alt="The jet banking high above the curve of a tiny world" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/headlights-night.jpg"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/headlights-night-1600.webp" alt="Headlights on rough ground at night, a hovercraft and a jet for company" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/swamp-river.jpg"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/swamp-river-1600.webp" alt="Tracks and a river on the green slopes of the Mire" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/lava-night.jpg"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/lava-night-1600.webp" alt="The lava sea at night under the buggy's headlights" width="420"></a>
+<a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/lobby.jpg"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/lobby-1600.webp" alt="The galaxy lobby: the Mira wordmark and the planets on their orbits" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/wings-glide.jpg"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/wings-glide-1600.webp" alt="Force-field wings open off a Badlands ridge in the late sun" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/jet-tiny-world.jpg"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/jet-tiny-world-1600.webp" alt="The jet banking high above the curve of a tiny world" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/headlights-night.jpg"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/headlights-night-1600.webp" alt="Headlights on rough ground at night, a hovercraft and a jet for company" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/swamp-river.jpg"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/swamp-river-1600.webp" alt="Tracks and a river on the green slopes of the Mire" width="420"></a> <a href="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/lava-night.jpg"><img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/lava-night-1600.webp" alt="The lava sea at night under the buggy's headlights" width="420"></a>
 
 Without the interface: [The jet above a tiny world, interface hidden (the game's Hidden interface, key I)](https://github.com/terran-labs/syn3h/releases/download/v26.11.1610/jet-tiny-world-clean.jpg).
 
@@ -29,7 +29,7 @@ Captured from v26.11.1610 on 2026-11-17 in Chrome on an Apple M2 Max at the Cine
 
 ## Find your own expedition
 
-Syn3h's tiny worlds make altitude part of the adventure. A mountain fills the windscreen
+Mira's tiny worlds make altitude part of the adventure. A mountain fills the windscreen
 on the ground; climb above it in a jet and the landscape curves away beneath you. Take
 time to look back at the place you were driving a few minutes ago. Try the same ascent
 on another planet and see how its terrain, water and atmosphere change the view.
@@ -208,11 +208,11 @@ playable link.
 **Can I use the code?** Yes, for anything noncommercial. The code and the creative work have
 separate licences; see [Licence](#licence).
 
-## Where Syn3h comes from
+## Where Mira comes from
 
 Aubrey Falconer's earlier Mars Explorer brought flying cars, volcanoes and laser tag
 together. People stayed to explore and create together, and a community grew around
-those shared worlds. Syn3h carries that invitation into a browser: arrive somewhere
+those shared worlds. Mira carries that invitation into a browser: arrive somewhere
 unfamiliar, learn what your machine can do, and make your own reasons to stay.
 
 This build gives that idea a procedural foundation. A seed shapes the terrain; live
@@ -317,14 +317,14 @@ The main tools are Three.js for rendering, Rapier for physics, TypeScript and Vi
 
 ## Licence
 
-Syn3h is source-available. The code is under the
+Mira is source-available. The code is under the
 [PolyForm Noncommercial License 1.0.0](LICENSE.md), and the creative work (writing, vehicle
 meshes, logo images, screenshots and videos) is under
 [Creative Commons Attribution-NonCommercial-ShareAlike 4.0](LICENSE-CC-BY-NC-SA.md),
-credited as "Syn3h by Terran Labs, https://mira.cc".
+credited as "Mira by Terran Labs, https://mira.cc".
 
 In practice, you may fork the game, change it and share what you make, for any
 noncommercial purpose; share screenshots and videos with that credit; and remix the
 creative work, provided the remix carries the same Creative Commons licence. Commercial use
-of either part needs a licence from Terran Labs. The Syn3h name and logo are not licensed.
+of either part needs a licence from Terran Labs. The Mira name and logo are not licensed.
 [NOTICE.md](NOTICE.md) has the details. Third-party components keep their own licences.

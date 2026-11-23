@@ -8,9 +8,9 @@ try{
  for(const hour of [12]){
   const page=await browser.newPage({viewport:{width:960,height:540}}),errors=[]
   page.on('pageerror',e=>errors.push(e.stack));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});await page.routeWebSocket(/\/ws/,s=>s.close())
-  await page.goto(`http://localhost:5185/?autoplay=1&vehicle=buggy&seed=${seed}&planet=${planet}`);await page.waitForFunction(()=>window.syn3h?.game.tick>10,null,{timeout:90000})
+  await page.goto(`http://localhost:5185/?autoplay=1&vehicle=buggy&seed=${seed}&planet=${planet}`);await page.waitForFunction(()=>window.mira?.game.tick>10,null,{timeout:90000})
   const route=await page.evaluate(hour=>{
-   const s=window.syn3h;s.params.set('bots.count',0);s.params.set('sun.timeOfDay',hour);s.params.set('sun.dayLength',0)
+   const s=window.mira;s.params.set('bots.count',0);s.params.set('sun.timeOfDay',hour);s.params.set('sun.dayLength',0)
    let best=null
    for(let a=0;a<32;a++){
     const angle=a*Math.PI/16,dx=Math.sin(angle),dz=Math.cos(angle)
@@ -27,18 +27,18 @@ try{
   const traces=[]
   for(const phase of phases){
    const start=await page.evaluate(p=>{
-    const s=window.syn3h;s.player.liquidState.heat=0;s.player.liquidState.heatHeight=-100;s.player.teleport({x:p.x,y:p.y??s.terrain.heightAt(p.x,p.z)+.8,z:p.z},p.heading)
+    const s=window.mira;s.player.liquidState.heat=0;s.player.liquidState.heatHeight=-100;s.player.teleport({x:p.x,y:p.y??s.terrain.heightAt(p.x,p.z)+.8,z:p.z},p.heading)
     s.player.body.setLinvel({x:-Math.sin(p.heading)*p.speed,y:0,z:-Math.cos(p.heading)*p.speed},true)
     s.game.input.external.y=1;s.game.input.external.x=0;s.game.input.external.brakes=false
     window.lavaTrace=[];window.lavaExit=false;window.lavaProbe={postPhysics(){const v=s.player,position=v.body.translation(),speed=v.body.linvel();if(p.name==='sea-exit'&&s.terrain.heightAt(position.x,position.z)>p.exitGround&&v.lavaDepth===0){window.lavaExit=true;s.game.input.external.y=0;s.game.input.external.brakes=true}const p1=position;window.lavaTrace.push({tick:s.game.tick,x:p1.x,y:p1.y,z:p1.z,speed:Math.hypot(speed.x,speed.y,speed.z),depth:v.lavaDepth,stuck:v.stuck,heat:v.liquidState.heat,rotation:{...v.body.rotation()},wheels:v.wheelsGrounded,input:{...v.input},camera:s.game.camera.position.toArray(),cameraGround:s.terrain.heightAt(s.game.camera.position.x,s.game.camera.position.z),cameraLiquid:s.terrain.liquidHeightAt?.(s.game.camera.position.x,s.game.camera.position.z),kind:s.terrain.liquidKindAt?.(p1.x,p1.z),ground:s.terrain.heightAt(p1.x,p1.z),exited:window.lavaExit})}};s.game.add(window.lavaProbe);return s.game.tick
    },phase)
    for(const fraction of [.1,.25,.5,1]){
-    await page.waitForFunction(t=>window.syn3h.game.tick>=t,start+Math.round(phase.ticks*fraction),{timeout:120000})
+    await page.waitForFunction(t=>window.mira.game.tick>=t,start+Math.round(phase.ticks*fraction),{timeout:120000})
     const file=`${hour}-${phase.name}-${fraction}.png`;await page.screenshot({path:out+'/'+file});images.push({file,label:`${hour}:00 ${phase.name} ${fraction===1?'end':'entry'}`})
    }
-   traces.push({phase,trace:await page.evaluate(()=>{window.syn3h.game.remove(window.lavaProbe);return window.lavaTrace})})
+   traces.push({phase,trace:await page.evaluate(()=>{window.mira.game.remove(window.lavaProbe);return window.lavaTrace})})
   }
-  const glowDraws=await page.evaluate(()=>{const s=window.syn3h,g=s.game;g.renderer.setAnimationLoop(null);const old=s.player.liquidState.heat;s.player.liquidState.heat=0;g.renderer.info.reset();g.renderer.render(g.scene,g.camera);g.renderer.info.reset();g.renderer.render(g.scene,g.camera);const cold=g.renderer.info.render.drawCalls;s.player.liquidState.heat=1;g.renderer.info.reset();g.renderer.render(g.scene,g.camera);g.renderer.info.reset();g.renderer.render(g.scene,g.camera);const hot=g.renderer.info.render.drawCalls;s.player.liquidState.heat=old;return {cold,hot}})
+  const glowDraws=await page.evaluate(()=>{const s=window.mira,g=s.game;g.renderer.setAnimationLoop(null);const old=s.player.liquidState.heat;s.player.liquidState.heat=0;g.renderer.info.reset();g.renderer.render(g.scene,g.camera);g.renderer.info.reset();g.renderer.render(g.scene,g.camera);const cold=g.renderer.info.render.drawCalls;s.player.liquidState.heat=1;g.renderer.info.reset();g.renderer.render(g.scene,g.camera);g.renderer.info.reset();g.renderer.render(g.scene,g.camera);const hot=g.renderer.info.render.drawCalls;s.player.liquidState.heat=old;return {cold,hot}})
   runs.push({hour,route,traces,glowDraws,errors});await writeFile(out+'/trace.json',JSON.stringify({planet,runs},null,2));await page.close();if(glowDraws.cold!==glowDraws.hot)throw new Error(JSON.stringify(glowDraws))
  }
  const page=await browser.newPage();const tiles=await Promise.all(images.map(async i=>({...i,data:(await readFile(out+'/'+i.file)).toString('base64')})))

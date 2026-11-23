@@ -44,18 +44,18 @@ for (const name of which === 'both' ? ['chrome', 'webkit'] : [which]) {
       if (c.init) await page.addInitScript(c.init)
       const started = Date.now()
       await page.goto(`${base}${sep}room=fallback-${Date.now()}${c.query ? `&${c.query}` : ''}`)
-      const ok = await page.waitForFunction(() => window.syn3h?.game?.tick > 5, null, { timeout: 60000 }).then(() => true, () => false)
+      const ok = await page.waitForFunction(() => window.mira?.game?.tick > 5, null, { timeout: 60000 }).then(() => true, () => false)
       const gpu = await page.evaluate(() => !!navigator.gpu)
       if (c.needsGpu && !gpu) { console.log(JSON.stringify({ browser: name, case: c.name, skipped: 'no navigator.gpu' })); await context.close(); continue }
-      if (c.lose === 'webgl') await page.evaluate(() => window.syn3h.game.renderer.backend.gl.getExtension('WEBGL_lose_context').loseContext())
-      if (c.lose === 'webgpu') await page.evaluate(() => window.syn3h.game.renderer.onDeviceLost({ api: 'WebGPU', message: 'simulated by startup-fallback-check', reason: 'unknown' }))
+      if (c.lose === 'webgl') await page.evaluate(() => window.mira.game.renderer.backend.gl.getExtension('WEBGL_lose_context').loseContext())
+      if (c.lose === 'webgpu') await page.evaluate(() => window.mira.game.renderer.onDeviceLost({ api: 'WebGPU', message: 'simulated by startup-fallback-check', reason: 'unknown' }))
       if (c.lose) await page.waitForTimeout(500)
       const s = await page.evaluate(() => ({
-        backend: window.syn3h?.game?.backend, gpu: !!navigator.gpu, fallbackReason: window.syn3hStartup?.fallbackReason,
-        deviceLost: window.syn3hStartup?.deviceLost, canvases: document.querySelectorAll('canvas#game').length,
-        notice: document.getElementById('syn3h-device-lost')?.textContent, reloadButton: !!document.querySelector('#syn3h-device-lost button'),
+        backend: window.mira?.game?.backend, gpu: !!navigator.gpu, fallbackReason: window.miraStartup?.fallbackReason,
+        deviceLost: window.miraStartup?.deviceLost, canvases: document.querySelectorAll('canvas#game').length,
+        notice: document.getElementById('mira-device-lost')?.textContent, reloadButton: !!document.querySelector('#mira-device-lost button'),
         overlay: document.querySelector('details pre')?.textContent?.slice(0, 4000) ?? '',
-        firstDraw: window.syn3h?.game?.performance?.firstFrameMs,
+        firstDraw: window.mira?.game?.performance?.firstFrameMs,
       }))
       const shot = `${shots}/${name}-${c.name.replace(/\W+/g, '-')}.png`
       await page.screenshot({ path: shot })

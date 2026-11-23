@@ -4,7 +4,7 @@
  * Brought over from terranlabs.com (src/concepts/descent/quality.ts there) at the owner's
  * request, logic unchanged. Every canvas loop calls `qualityFrame(now)` once per animation
  * frame. From the gaps between frames this picks a level, and each renderer reads it and
- * sheds work, cheapest visual loss first. For Syn3h's lobby:
+ * sheds work, cheapest visual loss first. For Mira's lobby:
  *
  *   0  Full: everything.
  *   1  Ambience goes: star twinkle, the far cloud band, drifting cloud on the worlds.

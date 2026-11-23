@@ -6,7 +6,7 @@ here ships in the game.
 ## Reference parts
 
 `reference.ts` reads `tools/models/buggy-boxarm.glb` and `tools/models/buggy.glb` with no
-dependencies and returns each part the game uses, in the frame the game's skin (`Syn3hBuggySkin`) uses it:
+dependencies and returns each part the game uses, in the frame the game's skin (`MiraBuggySkin`) uses it:
 
 | part | source node | frame |
 | --- | --- | --- |
@@ -115,7 +115,7 @@ tools/heavy.sh node tools/lab-shot.mjs http://127.0.0.1:5297/ /tmp/buggy-fit/lab
 
 ## The game's buggy skin
 
-`src/vehicles/skins/Syn3hBuggySkin.ts` is the game's buggy, every part generated: the body from
+`src/vehicles/skins/MiraBuggySkin.ts` is the game's buggy, every part generated: the body from
 `src/vehicles/buggygen/body.ts` (the 250 point control cage), then the parts fitted to it by
 `buildParts`, so the swellings fit it and the shock tops come from it. Only the shock foot in the
 arm's frame is a stored number. It makes no network request. The skin accepts another body

@@ -6,8 +6,9 @@
 // facing it, freezes the impact effects' clocks, fires, and from the moment the shot lands steps
 // those clocks through the six ages, one still each, while the world goes on around them.
 //
-//   SYN3H_URL=http://127.0.0.1:<port>/ [SYN3H_VIEW=phone] [SYN3H_HOUR=22] [SYN3H_FULL=1] [SYN3H_BOT_AHEAD=30] tools/heavy.sh node tests/weapons/impact-strips.mjs <label> [out dir]
+//   MIRA_URL=http://127.0.0.1:<port>/ [MIRA_VIEW=phone] [MIRA_HOUR=22] [MIRA_FULL=1] [MIRA_BOT_AHEAD=30] tools/heavy.sh node tests/weapons/impact-strips.mjs <label> [out dir]
 //   then: node tests/weapons/impact-strips.mjs --compose <out dir> <old label> <new label>   (one image per strip, old above new)
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright-core'
@@ -35,18 +36,18 @@ if (process.argv[2] === '--compose') {
   console.log(`${strips.length} strips in ${dir}/../strips`)
   process.exit(0)
 }
-const base = (process.env.SYN3H_URL ?? '').replace(/\/+$/, '') + '/'
+const base = (process.env.MIRA_URL ?? '').replace(/\/+$/, '') + '/'
 const label = process.argv[2] ?? 'build', out = process.argv[3] ?? '/tmp/weapons-beauty/strips/raw'
-assert.ok(process.env.SYN3H_URL, 'SYN3H_URL is required')
+assert.ok(process.env.MIRA_URL, 'MIRA_URL is required')
 await mkdir(out, { recursive: true })
-const phone = process.env.SYN3H_VIEW === 'phone', size = phone ? 'phone' : 'desktop'
+const phone = process.env.MIRA_VIEW === 'phone', size = phone ? 'phone' : 'desktop'
 const AGES = [0.02, 0.08, 0.15, 0.22, 0.3, 0.4]
-// SYN3H_HOUR=22 for night (default noon); SYN3H_FULL=1 for the whole screen instead of a crop.
-const HOUR = Number(process.env.SYN3H_HOUR ?? 12), FULL = !!process.env.SYN3H_FULL
-// SYN3H_BOT_AHEAD: metres from the car to the bot it shoots (default 12; the camera is 6 m further back).
-const AHEAD = Number(process.env.SYN3H_BOT_AHEAD ?? 12)
-// SYN3H_SURFACES=vehicle,grass for a few of them.
-const SURFACES = process.env.SYN3H_SURFACES ? process.env.SYN3H_SURFACES.split(',') : ['grass', 'sand', 'rock', 'water', 'vehicle']
+// MIRA_HOUR=22 for night (default noon); MIRA_FULL=1 for the whole screen instead of a crop.
+const HOUR = Number(process.env.MIRA_HOUR ?? 12), FULL = !!process.env.MIRA_FULL
+// MIRA_BOT_AHEAD: metres from the car to the bot it shoots (default 12; the camera is 6 m further back).
+const AHEAD = Number(process.env.MIRA_BOT_AHEAD ?? 12)
+// MIRA_SURFACES=vehicle,grass for a few of them.
+const SURFACES = process.env.MIRA_SURFACES ? process.env.MIRA_SURFACES.split(',') : ['grass', 'sand', 'rock', 'water', 'vehicle']
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const report = []
 try {
@@ -57,11 +58,11 @@ try {
   await page.addInitScript(([hour, ahead]) => { window.__hour = hour; window.__ahead = ahead }, [HOUR, AHEAD])
   const errors = []; page.on('pageerror', e => errors.push(e.message))
   // The same world in every build (a fixed planet and seed), so both stand in the same places.
-  await page.goto(`${base}?planet=${process.env.SYN3H_PLANET ?? "alpine"}&seed=7&autoplay=1&room=strips-${Date.now()}`)
-  await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet?.lasers, null, { timeout: 120000 })
+  await page.goto(`${base}?planet=${process.env.MIRA_PLANET ?? "alpine"}&seed=7&autoplay=1&room=strips-${Date.now()}`)
+  await page.waitForFunction(() => window.mira?.shell?.playing && window.miraNet?.lasers, null, { timeout: 120000 })
   await page.evaluate(() => {
     document.exitPointerLock?.()
-    const s = window.syn3h, p = s.params
+    const s = window.mira, p = s.params
     p.set('gfx.auto', false); p.set('gfx.level', 2); p.set('daydream.seconds', 0)
     // Offline, this client simulates the bots itself (as tools/frame-profile.mjs does).
     s.bots.remote = false
@@ -72,12 +73,12 @@ try {
     for (const node of document.body.children) if (node.tagName !== 'CANVAS' && node.tagName !== 'SCRIPT') node.style.visibility = 'hidden'
     s.shell.closeMenu?.()
     // The impact effects of either build: frozen while a strip is taken, stepped by hand.
-    const L = window.syn3hNet.lasers, world = s.game.systems.find(x => x.constructor?.name === 'EffectWorld')
+    const L = window.miraNet.lasers, world = s.game.systems.find(x => x.constructor?.name === 'EffectWorld')
     window.__fx = [L.fx, L.pulses, world].filter(Boolean).map(sys => ({ sys, update: sys.update.bind(sys) }))
     window.__freeze = on => {
       for (const f of window.__fx) f.sys.update = on ? () => {} : f.update
       // The player's car held still too, so a blast beside it cannot throw it (and the camera).
-      const b = window.syn3h.player.body; b.lockTranslations(on, true); b.lockRotations(on, true)
+      const b = window.mira.player.body; b.lockTranslations(on, true); b.lockRotations(on, true)
       if (on) { b.setLinvel({ x: 0, y: 0, z: 0 }, true); b.setAngvel({ x: 0, y: 0, z: 0 }, true) }
     }
     // For the vehicle strips, a camera this script places (absolute `__cam` eye and look): the
@@ -89,13 +90,13 @@ try {
     } })
     window.__step = seconds => { for (let t = 0; t < seconds - 1e-6; t += 1 / 120) for (const f of window.__fx) f.update(Math.min(1 / 120, seconds - t)) }
   })
-  await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 1, null, { timeout: 30000 })
+  await page.waitForFunction(() => window.mira.bots.vehicles.length === 1, null, { timeout: 30000 })
   await page.waitForTimeout(2000)
   for (const surface of SURFACES) {
-    if (surface === 'vehicle') await page.waitForFunction(() => window.syn3h.bots.vehicles.length > 0, null, { timeout: 30000 }).catch(() => {})
+    if (surface === 'vehicle') await page.waitForFunction(() => window.mira.bots.vehicles.length > 0, null, { timeout: 30000 }).catch(() => {})
     // Find the ground, park 12 m off it, facing it.
     const placed = await page.evaluate(surface => {
-      const s = window.syn3h, t = s.terrain, me = s.player.object.position, bot = s.bots.vehicles[0]
+      const s = window.mira, t = s.terrain, me = s.player.object.position, bot = s.bots.vehicles[0]
       const land = (x, z) => !((t.liquidHeightAt?.(x, z) ?? -Infinity) > t.heightAt(x, z) - 0.2)
       const flat = (x, z) => t.normalAt(x, z, me.clone()).y > 0.85
       const fits = (x, z) => surface === 'water' ? (t.liquidKindAt?.(x, z) === 'water' && (t.liquidHeightAt(x, z) - t.heightAt(x, z)) > 1)
@@ -126,12 +127,12 @@ try {
     }, surface)
     if (!placed) { report.push(`${surface}: no ground of that kind found`); continue }
     // Noon again: the clock is held, but the room's own setting can come back between strips.
-    await page.evaluate(() => { window.syn3h.params.set('sun.dayLength', 0); window.syn3h.params.set('sun.timeOfDay', window.__hour) })
+    await page.evaluate(() => { window.mira.params.set('sun.dayLength', 0); window.mira.params.set('sun.timeOfDay', window.__hour) })
     await page.waitForTimeout(5000)
     // The target: where a ray from the camera, right of centre and low on the screen, meets the
     // ground or the water. In view by construction, beside the car rather than behind it.
     const aimed = await page.evaluate(([surface, phone]) => {
-      const s = window.syn3h, t = s.terrain, cam = s.game.camera, o = s.player.object.position
+      const s = window.mira, t = s.terrain, cam = s.game.camera, o = s.player.object.position
       const dir = o.clone().set(0.35, -0.3, 0.5).unproject(cam).sub(cam.position).normalize()
       const p = cam.position.clone()
       for (let i = 0; i < 400; i++) {
@@ -159,17 +160,17 @@ try {
     placed.found = aimed
     if (surface === 'vehicle') await page.waitForTimeout(1200)
     for (const weapon of ['tag', 'thunder']) {
-      await page.evaluate(() => { window.__freeze(true); window.__shots = window.syn3hNet.lasers.impacted.size })
+      await page.evaluate(() => { window.__freeze(true); window.__shots = window.miraNet.lasers.impacted.size })
       await page.evaluate(weapon => {
-        const s = window.syn3h, o = s.player.object.position, T = window.__target
+        const s = window.mira, o = s.player.object.position, T = window.__target
         const from = o.clone().setY(o.y + 1), d = o.clone().set(T.x, T.y, T.z).sub(from).normalize()
-        window.syn3hNet.fire([d.x, d.y, d.z], undefined, weapon === 'thunder' ? 'red' : undefined)
+        window.miraNet.fire([d.x, d.y, d.z], undefined, weapon === 'thunder' ? 'red' : undefined)
       }, weapon)
-      const landed = await page.waitForFunction(() => window.syn3hNet.lasers.impacted.size > window.__shots, null, { timeout: 3000 }).then(() => true, () => false)
+      const landed = await page.waitForFunction(() => window.miraNet.lasers.impacted.size > window.__shots, null, { timeout: 3000 }).then(() => true, () => false)
       let at = 0
       // A crop around where the shot struck, the same size in every frame.
       const clip = await page.evaluate(phone => {
-        const s = window.syn3h, T = window.__target, v = s.player.object.position.clone().set(T.x, T.y, T.z).project(s.game.camera)
+        const s = window.mira, T = window.__target, v = s.player.object.position.clone().set(T.x, T.y, T.z).project(s.game.camera)
         const w = phone ? 300 : 560, h = phone ? 360 : 350, x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight
         return { x: Math.max(0, Math.min(innerWidth - w, x - w / 2)), y: Math.max(0, Math.min(innerHeight - h, y - h * 0.6)), width: w, height: h }
       }, phone)

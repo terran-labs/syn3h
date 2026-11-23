@@ -1,6 +1,6 @@
 /**
  * End-to-end multiplayer check. Needs the dev server, which also starts the room server on
- * 8787 (or run them apart: `SYN3H_NO_ROOM_SERVER=1 npx vite ...` plus `npm run server`):
+ * 8787 (or run them apart: `MIRA_NO_ROOM_SERVER=1 npx vite ...` plus `npm run server`):
  *
  *   npx vite --port 5183 --strictPort
  *   node tools/net-smoke.mjs [http://localhost:5183/]
@@ -27,6 +27,7 @@
  *     bot moves on Bob's page; Alice comes back as a guest
  * Exits non zero on any failure or page error.
  */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { randomBytes } from 'node:crypto'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
@@ -38,10 +39,10 @@ import { browserEnv } from './lib/safe-env.mjs'
 import { createShotEvidence, createShotDecision } from './shot-evidence.mjs'
 
 // Opt-in only. Reserve a caller-owned fresh directory before opening a browser.
-const evidenceDir = process.env.SYN3H_SHOT_EVIDENCE_DIR
+const evidenceDir = process.env.MIRA_SHOT_EVIDENCE_DIR
 const evidenceEnabled = evidenceDir !== undefined
 if (evidenceEnabled) {
-  if (!evidenceDir || !isAbsolute(evidenceDir)) throw new Error('SYN3H_SHOT_EVIDENCE_DIR must be an absolute fresh directory')
+  if (!evidenceDir || !isAbsolute(evidenceDir)) throw new Error('MIRA_SHOT_EVIDENCE_DIR must be an absolute fresh directory')
   mkdirSync(evidenceDir) // Non-recursive and exclusive: existing output is never reused.
 }
 const base = process.argv[2] ?? 'http://localhost:5183/'
@@ -63,10 +64,10 @@ const browsers = []
 /**
  * Why a page crashed, kept for the next crash anywhere in the release path: each page's Chrome
  * logs to stderr, kept per page in a capped file, with crash dumps beside it, outside the repo
- * (SYN3H_SMOKE_CHROME_LOGS, default /tmp/syn3h-smoke-chrome; the ten newest runs are kept). On a
+ * (MIRA_SMOKE_CHROME_LOGS, default /tmp/syn3h-smoke-chrome; the ten newest runs are kept). On a
  * crash the smoke prints that page's last stderr and console lines and its last memory sample.
  */
-const chromeLogRoot = process.env.SYN3H_SMOKE_CHROME_LOGS || '/tmp/syn3h-smoke-chrome'
+const chromeLogRoot = process.env.MIRA_SMOKE_CHROME_LOGS || '/tmp/syn3h-smoke-chrome'
 const chromeLogDir = prepareChromeLogs(chromeLogRoot, room)
 const pageTrace = new Map()
 const traceFor = (name) => { if (!pageTrace.has(name)) pageTrace.set(name, { console: [], memory: null }); return pageTrace.get(name) }
@@ -95,7 +96,7 @@ async function open(name, extra = '') {
   const browser = await launch(name)
   browsers.push(browser)
   const ctx = await browser.newContext({ viewport: SMOKE_VIEWPORT })
-  await ctx.addInitScript((q) => localStorage.setItem('syn3h.quality.v2', JSON.stringify(q)), SMOKE_QUALITY)
+  await ctx.addInitScript((q) => localStorage.setItem('mira.quality.v2', JSON.stringify(q)), SMOKE_QUALITY)
   // No audio rendering on smoke pages (the Foreman, 20 November 2026). Headless Chrome 157 under a
   // loaded release run kills a renderer now and then with a CHECK on whichever thread renders the
   // page's Web Audio ("Realtime AudioWorklet thread" with worklets loaded, "AudioOutputDevice"
@@ -158,8 +159,8 @@ async function open(name, extra = '') {
   }
   // ?autoplay=1 joins the room but leaves the start screen's input suspension on, so press
   // Play as a person would (it is idempotent with autoplay's join).
-  await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 30000 })
-  await page.evaluate(() => { window.syn3h.shell.play(); document.activeElement?.blur?.() })
+  await page.waitForFunction(() => window.mira?.shell, null, { timeout: 30000 })
+  await page.evaluate(() => { window.mira.shell.play(); document.activeElement?.blur?.() })
   return page
 }
 
@@ -170,7 +171,7 @@ async function captureFailure() {
     try {
       const snapshot = await Promise.race([
         page.evaluate(() => {
-          const s = window.syn3h, n = window.syn3hNet
+          const s = window.mira, n = window.miraNet
           const param = id => s?.params?.get(id)?.value ?? null
           const roster = n?.players ? [...n.players.values()].map(p => ({ id: p.id, name: p.name, kind: p.kind, bot: Boolean(p.bot) })) : []
           return {
@@ -190,7 +191,7 @@ async function captureFailure() {
               reconnects: n?.conn?.reconnects ?? null, closes: n?.conn?.closes ?? null, handlerErrors: n?.conn?.handlerErrors ?? null,
               clockSynced: n?.clock?.synced ?? null, rtt: n?.clock?.rtt ?? null, stats: n?.stats ?? null,
               remotes: n?.remotes ? [...n.remotes.entries()].map(([id, r]) => ({ id, responding: r.responding, paused: r.paused, mode: r.sample?.mode, newest: r.buffer?.newest?.t })) : [] },
-            startup: window.syn3hStartup ?? null,
+            startup: window.miraStartup ?? null,
           }
         }),
         new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Diagnostic snapshot timed out after 5s')), 5000) }),
@@ -209,14 +210,14 @@ async function captureFailure() {
 const spyAudio = (page) => page.evaluate((factorySource) => {
   const calls = []
   window.__audioCalls = calls
-  window.syn3hNet.ctx.audio = {
+  window.miraNet.ctx.audio = {
     play: (sound) => calls.push(sound),
     impact: (strength) => calls.push(`impact:${strength.toFixed(1)}`),
   }
   // Test-owned factory is identical to the one imported by the fake-clock tests.
   if (!factorySource) return
   const evidence = window.__shotEvidence = (0,eval)(`(${factorySource})`)()
-  const n=window.syn3hNet
+  const n=window.miraNet
   n.conn.onText=evidence.wrapText(n.conn.onText)
   n.conn.send=evidence.wrapSend(n.conn.send,()=>n.id)
   n.ctx.audio.play=evidence.wrapAudio(n.ctx.audio.play)
@@ -291,7 +292,7 @@ async function settle(read, done, ms = 10000) {
 // coverage of their own. No drop in the window, or a second failure, fails as before.
 /** Page name to player id, as first welcomed: a dropped page must come back as the same player. */
 const ids = new Map()
-const closesOf = (page) => page.evaluate(() => ({ now: performance.now(), closes: window.syn3hNet?.conn?.closes ?? null })).catch(() => ({ now: 0, closes: null }))
+const closesOf = (page) => page.evaluate(() => ({ now: performance.now(), closes: window.miraNet?.conn?.closes ?? null })).catch(() => ({ now: 0, closes: null }))
 const tally = { steps: 0, passed: 0, retries: 0, drops: [], legacy: false }
 async function step(name, fn, { retryable = true } = {}) {
   tally.steps++
@@ -299,7 +300,7 @@ async function step(name, fn, { retryable = true } = {}) {
     const marks = await Promise.all(clients.map((c) => closesOf(c.page)))
     const supported = marks.every((m) => Array.isArray(m.closes))
     if (!supported) tally.legacy = true
-    const hostBefore = await clients[0].page.evaluate(() => window.syn3hNet?.game?.host ?? null).catch(() => null)
+    const hostBefore = await clients[0].page.evaluate(() => window.miraNet?.game?.host ?? null).catch(() => null)
     current = []
     let error = null
     try { await fn({ retried }) } catch (e) { error = e }
@@ -327,35 +328,35 @@ async function step(name, fn, { retryable = true } = {}) {
 }
 /** After a drop: every page back as the same player, the host unchanged, nobody listed twice. */
 async function rejoined(hostBefore) {
-  await Promise.all(clients.map((c) => c.page.waitForFunction(() => window.syn3hNet?.connected && window.syn3hNet.welcomed, null, { timeout: 30000 }).catch(() => {})))
-  const views = await Promise.all(clients.map((c) => c.page.evaluate(() => ({ id: window.syn3hNet.id, host: window.syn3hNet.game.host, humans: [...window.syn3hNet.players.values()].filter((p) => !p.bot).map((p) => p.id) })).catch((e) => ({ error: String(e) }))))
+  await Promise.all(clients.map((c) => c.page.waitForFunction(() => window.miraNet?.connected && window.miraNet.welcomed, null, { timeout: 30000 }).catch(() => {})))
+  const views = await Promise.all(clients.map((c) => c.page.evaluate(() => ({ id: window.miraNet.id, host: window.miraNet.game.host, humans: [...window.miraNet.players.values()].filter((p) => !p.bot).map((p) => p.id) })).catch((e) => ({ error: String(e) }))))
   const ok = views.every((v, i) => !v.error && v.id === ids.get(clients[i].name) && v.host === hostBefore && v.humans.length === clients.length && new Set(v.humans).size === v.humans.length)
   commit({ name: 'after a dropped connection: same player ids, same host, nobody listed twice', ok, detail: { hostBefore, ids: Object.fromEntries(ids), views } })
 }
 
 try {
   const a = await open('Alice')
-  await a.waitForFunction(() => window.syn3hNet?.connected, null, { timeout: 30000 })
-  check('new room defaults to Explore', await a.evaluate(() => window.syn3hNet.game.mode === 2 && window.syn3hNet.game.it === 0))
-  await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
+  await a.waitForFunction(() => window.miraNet?.connected, null, { timeout: 30000 })
+  check('new room defaults to Explore', await a.evaluate(() => window.miraNet.game.mode === 2 && window.miraNet.game.it === 0))
+  await a.evaluate(() => window.mira.params.set('game.mode', 0))
   // The host keeps the bots it asked for whatever its frame rate (bots.keepCount, v26.11.1713):
   // on a loaded test machine the pacer otherwise judges the first bot costly and allows none
   // (v26.11.1803's dry run, 18 Nov: added at 8.5 s, removed at 12.6 s, allowed 0). The smoke
   // tests replication, not pacing, which has its own tests. Guarded for builds without it.
-  await a.evaluate(() => { const p = window.syn3h.params; if (p.get('bots.keepCount')) p.set('bots.keepCount', true) })
+  await a.evaluate(() => { const p = window.mira.params; if (p.get('bots.keepCount')) p.set('bots.keepCount', true) })
   await spyAudio(a)
-  const hadBots = await a.waitForFunction(() => [...window.syn3hNet.players.values()].some(p => p.bot), null, { timeout: 30000 })
+  const hadBots = await a.waitForFunction(() => [...window.miraNet.players.values()].some(p => p.bot), null, { timeout: 30000 })
     .then(() => true, error => { if (error.name === 'TimeoutError') return false; throw error })
   if (!hadBots) console.log('No host bot arrived before the late join. Checking human admission only.')
   const b = await open('Bob')
   const both = (fn, arg) => Promise.all([a.evaluate(fn, arg), b.evaluate(fn, arg)])
-  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet?.connected && [...window.syn3hNet.players.values()].filter(p => !p.bot).length === 2, null, { timeout: 30000 })))
-  const [idA, idB] = await both(() => window.syn3hNet.id)
+  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.miraNet?.connected && [...window.miraNet.players.values()].filter(p => !p.bot).length === 2, null, { timeout: 30000 })))
+  const [idA, idB] = await both(() => window.miraNet.id)
   ids.set('Alice', idA); ids.set('Bob', idB)
-  const humanViews = await both(() => [...window.syn3hNet.players.values()].filter(p => !p.bot))
+  const humanViews = await both(() => [...window.miraNet.players.values()].filter(p => !p.bot))
   check('both connected and see each other', idA && idB && idA !== idB && humanViews.every(ps => ps.length === 2 && ps.some(p => p.id === idA && p.name === 'Alice') && ps.some(p => p.id === idB && p.name === 'Bob')), { idA, idB, humanViews })
   if (hadBots) {
-    const readRosters = () => both(() => [...window.syn3hNet.players.values()].map(p => p.id).sort((a, b) => a - b))
+    const readRosters = () => both(() => [...window.miraNet.players.values()].map(p => p.id).sort((a, b) => a - b))
     let rosters = await readRosters()
     for (let i = 0; i < 50 && JSON.stringify(rosters[0]) !== JSON.stringify(rosters[1]); i++) {
       await wait(200)
@@ -365,18 +366,18 @@ try {
   }
   // Preserve normal-default coverage above, then isolate the two-human scoring fixture.
   // Section 9 separately exercises the real manager and bot hit authority.
-  await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
-  await Promise.all([a, b].map(p => p.waitForFunction(() => ![...window.syn3hNet.players.values()].some(p => p.bot), null, { timeout: 10000 })))
+  await a.evaluate(() => window.mira.params.set('bots.count', 0))
+  await Promise.all([a, b].map(p => p.waitForFunction(() => ![...window.miraNet.players.values()].some(p => p.bot), null, { timeout: 10000 })))
 
 
   // B needs a few snapshots of A before A's remote vehicle exists there.
-  await b.waitForFunction((id) => window.syn3hNet.remotes.has(id), idA, { timeout: 10000 })
+  await b.waitForFunction((id) => window.miraNet.remotes.has(id), idA, { timeout: 10000 })
   await spyAudio(b)
   const remoteOfA = () => b.evaluate((id) => {
-    const t = window.syn3hNet.remotes.get(id).vehicle.body.translation()
+    const t = window.miraNet.remotes.get(id).vehicle.body.translation()
     return [t.x, t.y, t.z]
   }, idA)
-  const realA = () => a.evaluate(() => { const t = window.syn3h.player.body.translation(); return [t.x, t.y, t.z] })
+  const realA = () => a.evaluate(() => { const t = window.mira.player.body.translation(); return [t.x, t.y, t.z] })
   const d2 = (p, q) => Math.hypot(p[0] - q[0], p[2] - q[2])
 
   // 2. Drive A forward and watch it on B.
@@ -384,14 +385,14 @@ try {
   // Both pages share one headless Chrome, and a page that is still loading starves the other
   // of frames: wait until B's game is running before asking A to drive, and drive until A
   // has covered ground (up to 10 s), not for a fixed time that a busy machine can eat.
-  await b.waitForFunction(() => window.syn3h.game.time > 1.5, null, { timeout: 30000 }).catch(() => {})
+  await b.waitForFunction(() => window.mira.game.time > 1.5, null, { timeout: 30000 }).catch(() => {})
   const before = await remoteOfA()
   const realBefore = await realA()
   const startA = realBefore
   // What the vehicle is doing as the drive starts and each second of it, so a failure says
   // whether it was held in its arrival, airborne, in liquid, braking or not getting throttle.
   const driveState = () => a.evaluate(() => {
-    const s = window.syn3h, v = s.player, p = v.body.translation(), l = v.body.linvel()
+    const s = window.mira, v = s.player, p = v.body.translation(), l = v.body.linvel()
     return {
       held: s.materialize?.isHeld?.(v) ?? null, arriving: s.materialize?.isMaterializing?.(v) ?? null,
       wheels: v.wheelsGrounded, speed: +Math.hypot(l.x, l.z).toFixed(1), vy: +l.y.toFixed(1),
@@ -404,8 +405,8 @@ try {
   // A vehicle can move under input from the moment the game says it is drivable: its arrival
   // finished and its wheels down. Wait for that state (up to 20 s, timed), then time the drive.
   const drivableT0 = Date.now()
-  const drivable = await a.waitForFunction(() => { const v = window.syn3h.player; return !window.syn3h.materialize?.isMaterializing?.(v) && v.wheelsGrounded > 0 }, null, { timeout: 20000 }).then(() => true, () => false)
-  const driveStart = { drivable, waitedForDrivableMs: Date.now() - drivableT0, ...(await driveState()), world: await a.evaluate(() => ({ planet: syn3h.planets.currentPlanet().id, seed: syn3h.params.get('world.seed').value, spawn: syn3h.player.spawnSlot })) }
+  const drivable = await a.waitForFunction(() => { const v = window.mira.player; return !window.mira.materialize?.isMaterializing?.(v) && v.wheelsGrounded > 0 }, null, { timeout: 20000 }).then(() => true, () => false)
+  const driveStart = { drivable, waitedForDrivableMs: Date.now() - drivableT0, ...(await driveState()), world: await a.evaluate(() => ({ planet: mira.planets.currentPlanet().id, seed: mira.params.get('world.seed').value, spawn: mira.player.spawnSlot })) }
   const drivePerSecond = []
   await a.bringToFront()
   await a.keyboard.down('KeyW')
@@ -419,7 +420,7 @@ try {
   await a.keyboard.up('KeyW')
   // The buggy coasts; compare once it has stopped and B's playback has caught up.
   await a.keyboard.down('ShiftLeft')
-  await a.waitForFunction(() => { const v = window.syn3h.player.body.linvel(); return Math.hypot(v.x, v.z) < 0.3 }, null, { timeout: 8000 }).catch(() => {})
+  await a.waitForFunction(() => { const v = window.mira.player.body.linvel(); return Math.hypot(v.x, v.z) < 0.3 }, null, { timeout: 8000 }).catch(() => {})
   await a.keyboard.up('ShiftLeft')
   // Two separate questions, so a slow buggy and a starved copy are told apart: did A itself
   // drive (read on A), and did B's copy of A follow (read on B). B's page is in the background
@@ -436,19 +437,19 @@ try {
   // Releases cut before the shared room clock existed have neither `seaTime` nor `onRoomClock`
   // on the network client: skip these two checks there instead of failing the release.
   await step('room clock', async () => {
-  const hasRoomClock = await a.evaluate(() => typeof window.syn3hNet?.onRoomClock === 'function' && window.syn3hNet.seaTime !== undefined)
+  const hasRoomClock = await a.evaluate(() => typeof window.miraNet?.onRoomClock === 'function' && window.miraNet.seaTime !== undefined)
   if (!hasRoomClock) console.log('SKIP shared room clock checks: this build predates them')
   else {
     // The sea runs on the room's clock, so both screens show the same wave at the same moment;
     // the wind is handed the same clock through the same hook. Read through the network client
     // (importing the modules by path can give a second copy of them on a dev server). The sea
     // takes the room clock a moment after it syncs, calming the swell across the change.
-    await Promise.all([a, b].map((p) => p.waitForFunction(() => Math.abs(window.syn3hNet.seaTime - window.syn3hNet.clock.now()) < 0.05, null, { timeout: 8000 }).catch(() => {})))
+    await Promise.all([a, b].map((p) => p.waitForFunction(() => Math.abs(window.miraNet.seaTime - window.miraNet.clock.now()) < 0.05, null, { timeout: 8000 }).catch(() => {})))
     const clocks = (page) => page.evaluate(() => {
-      const n = window.syn3hNet
+      const n = window.miraNet
       let handed = null
       n.onRoomClock((now) => { handed = now() })
-      return { sea: n.seaTime, room: n.clock.now(), game: window.syn3h.game.time, handed, at: Date.now() }
+      return { sea: n.seaTime, room: n.clock.now(), game: window.mira.game.time, handed, at: Date.now() }
     })
     const [seaA, seaB] = await Promise.all([clocks(a), clocks(b)])
     // Each was read at its own instant; compare after allowing for that.
@@ -463,16 +464,16 @@ try {
 
   // 3. Shared slider, clamped by the server.
   await step('shared sliders', async () => {
-  await a.evaluate(() => window.syn3h.params.set('laser.speed', 250))
-  await a.evaluate(() => window.syn3h.params.set('world.gravity', 500))
+  await a.evaluate(() => window.mira.params.set('laser.speed', 250))
+  await a.evaluate(() => window.mira.params.set('world.gravity', 500))
   // Wait for the values to arrive, up to 5 s: a fixed half second was sometimes too short on
   // a public address just after a deploy. The checks below still fail if they never do.
-  await b.waitForFunction(() => window.syn3h.params.get('laser.speed').value === 250 && window.syn3h.params.get('world.gravity').value === 18.81, null, { timeout: 5000 }).catch(() => {})
-  await a.waitForFunction(() => window.syn3h.params.get('world.gravity').value === 18.81, null, { timeout: 5000 }).catch(() => {})
-  const [speedB, gravB, gravA] = await b.evaluate(() => [window.syn3h.params.get('laser.speed').value, window.syn3h.params.get('world.gravity').value]).then(async (r) => [...r, await a.evaluate(() => window.syn3h.params.get('world.gravity').value)])
+  await b.waitForFunction(() => window.mira.params.get('laser.speed').value === 250 && window.mira.params.get('world.gravity').value === 18.81, null, { timeout: 5000 }).catch(() => {})
+  await a.waitForFunction(() => window.mira.params.get('world.gravity').value === 18.81, null, { timeout: 5000 }).catch(() => {})
+  const [speedB, gravB, gravA] = await b.evaluate(() => [window.mira.params.get('laser.speed').value, window.mira.params.get('world.gravity').value]).then(async (r) => [...r, await a.evaluate(() => window.mira.params.get('world.gravity').value)])
   check('shared slider reaches B', speedB === 250, { speedB })
   check('server clamps a shared slider for everyone', gravB === 18.81 && gravA === 18.81, { gravA, gravB })
-  await a.evaluate(() => window.syn3h.params.set('world.gravity', 9.81))
+  await a.evaluate(() => window.mira.params.set('world.gravity', 9.81))
   })
 
   // 4 to 6 run as one step: the laser tag needs the "it" the ram passed, and the sounds both.
@@ -482,34 +483,34 @@ try {
   // (after a dropped connection) starts from whoever the first run left as "it": that player
   // rams and the other tags back, the same rules with the roles taken from the room.
   // Reset scores after removing default bots, then verify Alice still holds it before the ram fixture.
-  await a.evaluate(() => window.syn3h.params.set('game.mode', 1))
-  await b.waitForFunction(() => window.syn3hNet.game.mode === 1)
-  await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
-  if (!retried) await Promise.all([a, b].map(p => p.waitForFunction(id => window.syn3hNet.game.mode === 0 && window.syn3hNet.game.it === id, idA)))
-  else await Promise.all([a, b].map(p => p.waitForFunction(ids => window.syn3hNet.game.mode === 0 && ids.includes(window.syn3hNet.game.it), [idA, idB])))
-  const itStart = await a.evaluate(() => window.syn3hNet.game.it)
+  await a.evaluate(() => window.mira.params.set('game.mode', 1))
+  await b.waitForFunction(() => window.miraNet.game.mode === 1)
+  await a.evaluate(() => window.mira.params.set('game.mode', 0))
+  if (!retried) await Promise.all([a, b].map(p => p.waitForFunction(id => window.miraNet.game.mode === 0 && window.miraNet.game.it === id, idA)))
+  else await Promise.all([a, b].map(p => p.waitForFunction(ids => window.miraNet.game.mode === 0 && ids.includes(window.miraNet.game.it), [idA, idB])))
+  const itStart = await a.evaluate(() => window.miraNet.game.it)
   const [H, V, idH, idV] = itStart === idB ? [b, a, idB, idA] : [a, b, idA, idB]
-  const ramsBase = await both(() => window.syn3hNet.stats.rams)
-  const hitsBase = await H.evaluate(() => window.syn3hNet.stats.hitsTaken)
+  const ramsBase = await both(() => window.miraNet.stats.rams)
+  const hitsBase = await H.evaluate(() => window.miraNet.stats.hitsTaken)
   const callsBase = await Promise.all([H, V].map((p) => p.evaluate(() => window.__audioCalls.length)))
   // 4. Ram. The hunter (A on the first run) starts as "it". Park the other just ahead, then drive into it.
   const itBefore = itStart
   await H.evaluate(() => {
-    const s = window.syn3h.terrain.spawnPoint(0)
-    window.syn3h.player.teleport(s.position, 0)
+    const s = window.mira.terrain.spawnPoint(0)
+    window.mira.player.teleport(s.position, 0)
   })
   await V.evaluate(() => {
-    const s = window.syn3h.terrain.spawnPoint(0)
+    const s = window.mira.terrain.spawnPoint(0)
     s.position.z -= 7
-    s.position.y = window.syn3h.terrain.heightAt(s.position.x, s.position.z) + 1.5
-    window.syn3h.player.teleport(s.position, 0)
+    s.position.y = window.mira.terrain.heightAt(s.position.x, s.position.z) + 1.5
+    window.mira.player.teleport(s.position, 0)
   })
   await wait(1500) // let both settle and the join cooldown expire
   await H.bringToFront()
   await H.keyboard.down('KeyW')
-  await H.waitForFunction((base) => window.syn3hNet.stats.rams > base, ramsBase[H === a ? 0 : 1], { timeout: 8000 }).catch(() => {})
+  await H.waitForFunction((base) => window.miraNet.stats.rams > base, ramsBase[H === a ? 0 : 1], { timeout: 8000 }).catch(() => {})
   await H.keyboard.up('KeyW')
-  const rammed = await settle(async () => [...await both(() => window.syn3hNet.stats.rams), ...await both(() => window.syn3hNet.game.it)],
+  const rammed = await settle(async () => [...await both(() => window.miraNet.stats.rams), ...await both(() => window.miraNet.game.it)],
     ([rA, rB, iA, iB]) => rA - ramsBase[0] + rB - ramsBase[1] > 0 && iA === idV && iB === idV)
   const [ramsA, ramsB, itA, itB] = rammed.value
   check('ram detected', ramsA - ramsBase[0] + ramsB - ramsBase[1] > 0, { ramsA, ramsB, ramsBase, waitedMs: rammed.waitedMs })
@@ -518,31 +519,31 @@ try {
   // 5. Laser tag. Separate the two so no further contact passes "it" back, wait out the tag
   // cooldown, then the new "it" shoots at where it sees the hunter.
   await V.evaluate(() => {
-    const a = window.syn3h.terrain.spawnPoint(0)
+    const a = window.mira.terrain.spawnPoint(0)
     const p = a.position.clone()
     p.z += 20
-    p.y = window.syn3h.terrain.heightAt(p.x, p.z) + 1.5
-    window.syn3h.player.teleport(p, 0)
+    p.y = window.mira.terrain.heightAt(p.x, p.z) + 1.5
+    window.mira.player.teleport(p, 0)
   })
   await wait(3300)
-  const scoreBefore = await H.evaluate((id) => { window.__shotEvidence?.begin('human',id,window.syn3hNet.id); return window.syn3hNet.game.scores[id] ?? 0 }, idV)
+  const scoreBefore = await H.evaluate((id) => { window.__shotEvidence?.begin('human',id,window.miraNet.id); return window.miraNet.game.scores[id] ?? 0 }, idV)
   for (let i = 0; i < 6; i++) {
     await V.evaluate((id) => {
-      const n = window.syn3hNet
+      const n = window.miraNet
       window.__shotEvidence?.begin('human',n.id,id)
       const target = n.remotes.get(id).vehicle.body.translation()
       n.fire(undefined, target)
     }, idH)
-    const hit = await H.waitForFunction((base) => window.syn3hNet.stats.hitsTaken > base, hitsBase, { timeout: 1500 }).then(() => true, () => false)
+    const hit = await H.waitForFunction((base) => window.miraNet.stats.hitsTaken > base, hitsBase, { timeout: 1500 }).then(() => true, () => false)
     if (hit) break
     await wait(400)
   }
-  const scored = await settle(() => H.evaluate((id) => [window.syn3hNet.stats.hitsTaken, window.syn3hNet.game.scores[id] ?? 0], idV), ([h, sc]) => h > hitsBase && sc === scoreBefore + 1)
+  const scored = await settle(() => H.evaluate((id) => [window.miraNet.stats.hitsTaken, window.miraNet.game.scores[id] ?? 0], idV), ([h, sc]) => h > hitsBase && sc === scoreBefore + 1)
   const hitsA = scored.value[0]
-  const scoreSample = evidenceEnabled ? await H.evaluate((id) => ({value:window.syn3hNet.game.scores[id] ?? 0, at:performance.now(), evidence:window.__shotEvidence.snapshot('human')}), idV) : null
-  const scoreAfter = evidenceEnabled ? scoreSample.value : await H.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, idV)
+  const scoreSample = evidenceEnabled ? await H.evaluate((id) => ({value:window.miraNet.game.scores[id] ?? 0, at:performance.now(), evidence:window.__shotEvidence.snapshot('human')}), idV) : null
+  const scoreAfter = evidenceEnabled ? scoreSample.value : await H.evaluate((id) => window.miraNet.game.scores[id] ?? 0, idV)
   check('victim detects the laser hit', hitsA > hitsBase, { hitsA, hitsBase, waitedMs: scored.waitedMs })
-  const itNow = await H.evaluate(() => window.syn3hNet.game.it)
+  const itNow = await H.evaluate(() => window.miraNet.game.it)
   check('"it" scores for a laser tag', scoreAfter === scoreBefore + 1, { scoreBefore, scoreAfter, it: itNow })
 
   // 6. Sounds. A heard B arrive at the start; the ram and the shot are heard in this run.
@@ -563,23 +564,23 @@ try {
 
   // 7. Identity and name tags.
   await step('identity', async () => {
-  await a.evaluate(() => window.syn3hNet.setProfile({ kind: 'buggy-syn3h', colors: { body: '#FF2200', accent: '#00ffcc' } }))
+  await a.evaluate(() => window.miraNet.setProfile({ kind: 'buggy-syn3h', colors: { body: '#FF2200', accent: '#00ffcc' } }))
   // Wait for the colour: the kind is already the default, so waiting on it alone returned at
   // once and read the old colours whenever the link had real latency.
-  await b.waitForFunction((id) => window.syn3hNet.players.get(id)?.colors[0] === '#ff2200', idA, { timeout: 5000 }).catch(() => {})
-  const infoA = await b.evaluate((id) => window.syn3hNet.players.get(id), idA)
+  await b.waitForFunction((id) => window.miraNet.players.get(id)?.colors[0] === '#ff2200', idA, { timeout: 5000 }).catch(() => {})
+  const infoA = await b.evaluate((id) => window.miraNet.players.get(id), idA)
   check('vehicle kind and colours reach B', infoA?.kind === 'buggy-syn3h' && infoA.colors[0] === '#ff2200' && infoA.colors[1] === '#00ffcc', infoA)
   // Put B behind A, looking at it, so A's tag is on B's screen. 24 m back: at 14 the tag stood
   // up by the heading line and the gear's explanation, which labels keep clear of by design
   // (the left column's hard areas), and hid or showed depending on where the camera settled.
-  await a.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(0); window.syn3h.player.teleport(s.position, 0) })
+  await a.evaluate(() => { const s = window.mira.terrain.spawnPoint(0); window.mira.player.teleport(s.position, 0) })
   await b.evaluate(() => {
-    const s = window.syn3h.terrain.spawnPoint(0)
+    const s = window.mira.terrain.spawnPoint(0)
     s.position.z += 24
-    s.position.y = window.syn3h.terrain.heightAt(s.position.x, s.position.z) + 1.5
-    window.syn3h.player.teleport(s.position, 0)
+    s.position.y = window.mira.terrain.heightAt(s.position.x, s.position.z) + 1.5
+    window.mira.player.teleport(s.position, 0)
   })
-  const tagged = await settle(() => b.evaluate(() => [...document.querySelectorAll('.syn3h-nametags div')].map((d) => ({ text: d.textContent, display: d.style.display, opacity: d.style.opacity }))),
+  const tagged = await settle(() => b.evaluate(() => [...document.querySelectorAll('.mira-nametags div')].map((d) => ({ text: d.textContent, display: d.style.display, opacity: d.style.opacity }))),
     (tags) => tags.some((t) => t.text.startsWith('Alice') && t.display === 'block' && Number(t.opacity) > 0.5))
   const tag = tagged.value
   check('B shows a name tag for A', tag.some((t) => t.text.startsWith('Alice') && t.display === 'block' && Number(t.opacity) > 0.5), { tag, waitedMs: tagged.waitedMs })
@@ -588,14 +589,14 @@ try {
 
   // 8. Hidden tab heartbeat.
   await step('hidden tab', async () => {
-  const beatsBase = await b.evaluate(() => window.syn3hNet.stats.heartbeats)
+  const beatsBase = await b.evaluate(() => window.miraNet.stats.heartbeats)
   await b.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
     document.dispatchEvent(new Event('visibilitychange'))
   })
   const hid = await settle(async () => ({
-    ...await a.evaluate((id) => { const r = window.syn3hNet.remotes.get(id); return { paused: r.paused, responding: r.responding } }, idB),
-    beats: await b.evaluate(() => window.syn3hNet.stats.heartbeats),
+    ...await a.evaluate((id) => { const r = window.miraNet.remotes.get(id); return { paused: r.paused, responding: r.responding } }, idB),
+    beats: await b.evaluate(() => window.miraNet.stats.heartbeats),
     hud: await a.evaluate(() => document.getElementById('hud').textContent),
   }), (v) => v.paused && v.responding && v.beats - beatsBase >= 2 && v.hud.includes('(paused)'))
   const { hud: hudPaused, ...hiddenView } = hid.value
@@ -604,7 +605,7 @@ try {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
     document.dispatchEvent(new Event('visibilitychange'))
   })
-  const resumed = await settle(() => a.evaluate((id) => window.syn3hNet.remotes.get(id).paused, idB), (paused) => paused === false)
+  const resumed = await settle(() => a.evaluate((id) => window.miraNet.remotes.get(id).paused, idB), (paused) => paused === false)
   check('returning tab resumes', resumed.value === false, { paused: resumed.value, waitedMs: resumed.waitedMs })
 
   })
@@ -612,10 +613,10 @@ try {
   // 9. Exercise the actual manager in both Vite and production, without module imports.
   await step('bots', async () => {
   // A second run starts with no bot, as the first does.
-  await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
-  await a.waitForFunction(() => window.syn3h.bots.vehicles.length === 0, null, { timeout: 8000 }).catch(() => {})
+  await a.evaluate(() => window.mira.params.set('bots.count', 0))
+  await a.waitForFunction(() => window.mira.bots.vehicles.length === 0, null, { timeout: 8000 }).catch(() => {})
   await a.evaluate(() => {
-    const s = window.syn3h
+    const s = window.mira
     s.params.set('bots.canDrive', false); s.params.set('bots.canFire', false)
     // This step tests networking, not the frame rate: keep the one bot whatever a loaded
     // headless page measures (bots.keepCount), or the pacer may judge it away mid-step.
@@ -623,15 +624,15 @@ try {
     s.params.set('bots.count', 1)
     window.__bots = s.bots
   })
-  const botMade = await a.waitForFunction(() => window.syn3h.bots.vehicles.length === 1, null, { timeout: 8000 }).then(() => true, () => false)
+  const botMade = await a.waitForFunction(() => window.mira.bots.vehicles.length === 1, null, { timeout: 8000 }).then(() => true, () => false)
   check('host manager spawns a bot', botMade, {})
-  const ownership = await both(() => window.syn3h.bots.remote)
+  const ownership = await both(() => window.mira.bots.remote)
   check('only the host bot manager drives', ownership[0] === false && ownership[1] === true, { ownership })
   if (botMade === true) {
     const BOT = 0xff00
-    await b.waitForFunction((id) => window.syn3hNet.remotes.has(id), BOT, { timeout: 8000 }).catch(() => {})
+    await b.waitForFunction((id) => window.miraNet.remotes.has(id), BOT, { timeout: 8000 }).catch(() => {})
     const seen = await settle(async () => [
-      await b.evaluate((id) => { const r = window.syn3hNet.remotes.get(id); if (!r) return null; const t = r.vehicle.body.translation(); return [t.x, t.y, t.z] }, BOT),
+      await b.evaluate((id) => { const r = window.miraNet.remotes.get(id); if (!r) return null; const t = r.vehicle.body.translation(); return [t.x, t.y, t.z] }, BOT),
       await a.evaluate(() => { const t = window.__bots.vehicles[0].body.translation(); return [t.x, t.y, t.z] }),
     ], ([view, real]) => view && d2(view, real) < 2)
     const [botView, botReal] = seen.value
@@ -639,53 +640,53 @@ try {
     // Audio hears the other player and the bot on both sides (replica on B, own bot on A). B has
     // the bot's state from its first message, but shows it (and so hears it) only when its turn
     // in the arrival queue comes (src/net/arrivals.ts), so wait for that on both pages.
-    const heard = await settle(() => both(() => [window.syn3hNet.audibleVehicles().length, window.syn3hNet.arrivals?.pending ?? 0]), (v) => v[0][0] === 2 && v[1][0] === 2)
+    const heard = await settle(() => both(() => [window.miraNet.audibleVehicles().length, window.miraNet.arrivals?.pending ?? 0]), (v) => v[0][0] === 2 && v[1][0] === 2)
     const audible = heard.value.map(([n]) => n), waitingToShow = heard.value.map(([, w]) => w)
     check('audio gets the other player and the bot', audible[0] === 2 && audible[1] === 2, { audible, waitingToShow, waitedMs: heard.waitedMs })
-    const judgedBefore = await a.evaluate(({shooter,victim}) => { window.__shotEvidence?.begin('bot',shooter,victim); return window.syn3hNet.stats.hitsJudged }, {shooter:idB,victim:BOT})
+    const judgedBefore = await a.evaluate(({shooter,victim}) => { window.__shotEvidence?.begin('bot',shooter,victim); return window.miraNet.stats.hitsJudged }, {shooter:idB,victim:BOT})
     for (let i = 0; i < 6; i++) {
       // Since v26.11.1708 the host's pacer or the quality governor can send a bot away when frames
       // look costly (a loaded test machine does). Wait for B to have it before each shot, and say
       // so plainly if it is gone, rather than reading a remote that is not there.
-      const present = await b.waitForFunction((id) => !!window.syn3hNet.remotes.get(id)?.vehicle, BOT, { timeout: 5000 }).then(() => true, () => false)
+      const present = await b.waitForFunction((id) => !!window.miraNet.remotes.get(id)?.vehicle, BOT, { timeout: 5000 }).then(() => true, () => false)
       if (!present) throw new Error('the bot left (pacer or relief) before B could tag it; rerun')
       await b.evaluate((id) => {
-        const n = window.syn3hNet
+        const n = window.miraNet
         window.__shotEvidence?.begin('bot',n.id,id)
         const target = n.remotes.get(id).vehicle.body.translation()
         n.fire(undefined, target)
       }, BOT)
-      const ok = await a.waitForFunction((j) => window.syn3hNet.stats.hitsJudged > j, judgedBefore, { timeout: 2000 }).then(() => true, () => false)
+      const ok = await a.waitForFunction((j) => window.miraNet.stats.hitsJudged > j, judgedBefore, { timeout: 2000 }).then(() => true, () => false)
       if (ok) break
       await wait(400)
     }
-    await settle(async () => [await a.evaluate(() => window.syn3hNet.stats.hitsJudged), await b.evaluate(() => window.__audioCalls.filter((c) => c === 'laserHit').length)],
+    await settle(async () => [await a.evaluate(() => window.miraNet.stats.hitsJudged), await b.evaluate(() => window.__audioCalls.filter((c) => c === 'laserHit').length)],
       ([judgedNow, hitsHeard]) => judgedNow > judgedBefore && hitsHeard >= 2)
-    const judgedSample = evidenceEnabled ? await a.evaluate(() => ({value:window.syn3hNet.stats.hitsJudged,at:performance.now(),evidence:window.__shotEvidence.snapshot('bot')})) : null
-    const judged = evidenceEnabled ? judgedSample.value : await a.evaluate(() => window.syn3hNet.stats.hitsJudged)
+    const judgedSample = evidenceEnabled ? await a.evaluate(() => ({value:window.miraNet.stats.hitsJudged,at:performance.now(),evidence:window.__shotEvidence.snapshot('bot')})) : null
+    const judged = evidenceEnabled ? judgedSample.value : await a.evaluate(() => window.miraNet.stats.hitsJudged)
     const botSoundSample = evidenceEnabled ? await b.evaluate(() => ({value:window.__audioCalls.filter((c) => c === 'laserHit').length,at:performance.now(),evidence:window.__shotEvidence.snapshot('bot')})) : null
     const hitSeen = evidenceEnabled ? botSoundSample.value : await b.evaluate(() => window.__audioCalls.filter((c) => c === 'laserHit').length)
-    const diag = { a: await a.evaluate(() => ({ lasers: window.syn3hNet.lasers.count, host: window.syn3hNet.isHost })), bFired: await b.evaluate(() => window.syn3hNet.stats.shotsFired) }
+    const diag = { a: await a.evaluate(() => ({ lasers: window.miraNet.lasers.count, host: window.miraNet.isHost })), bFired: await b.evaluate(() => window.miraNet.stats.shotsFired) }
     check('host judges a laser hit on its bot', judged > judgedBefore && hitSeen >= 2, { judgedBefore, judged, hitSoundsOnB: hitSeen, ...diag })
     if (evidenceEnabled) check('matched bot shot evidence at original samples',createShotDecision().seal({originals:[(current ?? results).at(-1).ok],local:judgedSample.evidence,remote:botSoundSample.evidence}).ok,{judgedSample,botSoundSample})
   }
-  await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
+  await a.evaluate(() => window.mira.params.set('bots.count', 0))
   })
 
   // 10. World seed, and a late joiner who arrives with a different one. Opening a page cannot
   // be repeated, so this step never runs twice.
   await step('seed and a late joiner', async () => {
-  await a.evaluate(() => window.syn3h.params.set('world.seed', 4242))
+  await a.evaluate(() => window.mira.params.set('world.seed', 4242))
   const onGround = (page) => page.evaluate(() => {
-    const p = window.syn3h.player.body.translation()
-    return { seed: window.syn3h.params.get('world.seed').value, y: +p.y.toFixed(2), ground: +window.syn3h.terrain.heightAt(p.x, p.z).toFixed(2) }
+    const p = window.mira.player.body.translation()
+    return { seed: window.mira.params.get('world.seed').value, y: +p.y.toFixed(2), ground: +window.mira.terrain.heightAt(p.x, p.z).toFixed(2) }
   })
   const landed = (v) => v.seed === 4242 && v.y > v.ground - 1 && v.y < v.ground + 6
   const seedB = (await settle(() => onGround(b), landed)).value
   check('seed reaches B and B stays on the new ground', seedB.seed === 4242 && seedB.y > seedB.ground - 1 && seedB.y < seedB.ground + 6, seedB)
   const c = await open('Carol', '&seed=777')
-  await c.waitForFunction(() => window.syn3hNet?.connected, null, { timeout: 30000 })
-  ids.set('Carol', await c.evaluate(() => window.syn3hNet.id))
+  await c.waitForFunction(() => window.miraNet?.connected, null, { timeout: 30000 })
+  ids.set('Carol', await c.evaluate(() => window.miraNet.id))
   const seedC = (await settle(() => onGround(c), landed)).value
   check('late joiner gets the room seed and lands on that ground', seedC.seed === 4242 && seedC.y > seedC.ground - 1 && seedC.y < seedC.ground + 6, seedC)
 
@@ -695,21 +696,21 @@ try {
   // main.ts would pass them.
   await step('king of the hill', async () => {
   // A second run starts a fresh round: King of the Hill is entered from another mode.
-  if (await a.evaluate(() => window.syn3hNet.game.mode === 1)) {
-    await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
-    await b.waitForFunction(() => window.syn3hNet.game.mode === 0, null, { timeout: 8000 }).catch(() => {})
+  if (await a.evaluate(() => window.miraNet.game.mode === 1)) {
+    await a.evaluate(() => window.mira.params.set('game.mode', 0))
+    await b.waitForFunction(() => window.miraNet.game.mode === 0, null, { timeout: 8000 }).catch(() => {})
   }
-  const stuckBase = await b.evaluate(() => window.syn3hNet.stats.stuck)
+  const stuckBase = await b.evaluate(() => window.miraNet.stats.stuck)
   await b.evaluate(() => {
     window.__match = []
-    window.syn3hNet.ctx.setMatchState = (m) => window.__match.push(m)
-    window.syn3hNet.ctx.names = (seed, kind) => `${kind}-${seed}`
+    window.miraNet.ctx.setMatchState = (m) => window.__match.push(m)
+    window.miraNet.ctx.names = (seed, kind) => `${kind}-${seed}`
   })
-  await a.evaluate(() => window.syn3h.params.set('game.mode', 1))
+  await a.evaluate(() => window.mira.params.set('game.mode', 1))
   // Network state can arrive between frames; the marker updates on the next game step.
-  await b.waitForFunction(() => window.syn3hNet.game.mode === 1 && window.syn3hNet.game.koth.zone && window.syn3hNet.hill.visible, null, { timeout: 8000 }).catch(() => {})
-  const zone = await b.evaluate(() => window.syn3hNet.game.koth.zone)
-  const markerShown = await b.evaluate(() => window.syn3hNet.hill.visible)
+  await b.waitForFunction(() => window.miraNet.game.mode === 1 && window.miraNet.game.koth.zone && window.miraNet.hill.visible, null, { timeout: 8000 }).catch(() => {})
+  const zone = await b.evaluate(() => window.miraNet.game.koth.zone)
+  const markerShown = await b.evaluate(() => window.miraNet.hill.visible)
   check('mode switch reaches B with the host\'s zone', zone && markerShown, { zone, markerShown })
   if (zone) {
     /** Park a page's vehicle on the zone's mid line at an angle, on the ground. */
@@ -717,20 +718,20 @@ try {
       const r = (zone.inner + zone.outer) / 2
       const x = zone.x + Math.cos(angle) * r
       const z = zone.z + Math.sin(angle) * r
-      const THREE_V = window.syn3h.player.object.position.clone()
-      THREE_V.set(x, window.syn3h.terrain.heightAt(x, z) + 1.2, z)
-      window.syn3h.player.teleport(THREE_V, 0)
-      const p = window.syn3h.player.body.translation()
-      return { p: [p.x, p.y, p.z], lava: window.syn3h.terrain.liquidHeightAt?.(x, z) }
+      const THREE_V = window.mira.player.object.position.clone()
+      THREE_V.set(x, window.mira.terrain.heightAt(x, z) + 1.2, z)
+      window.mira.player.teleport(THREE_V, 0)
+      const p = window.mira.player.body.translation()
+      return { p: [p.x, p.y, p.z], lava: window.mira.terrain.liquidHeightAt?.(x, z) }
     }, { zone, angle })
-    const score = (id) => a.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, id)
+    const score = (id) => a.evaluate((id) => window.miraNet.game.scores[id] ?? 0, id)
     const parkedA = await park(a, 0.3)
-    await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, 0) })
+    await b.evaluate(() => { const s = window.mira.terrain.spawnPoint(1); window.mira.player.teleport(s.position, 0) })
     // Wait for the server's result, rather than starting a four-second timer while a
     // loaded browser may still be delivering the teleport. Keep the scoring threshold.
     const scoringStart = Date.now()
-    await a.waitForFunction((id) => window.syn3hNet.game.koth.holder === id && (window.syn3hNet.game.scores[id] ?? 0) >= 2, idA, { timeout: 15000 }).catch(() => {})
-    const [holder, scoreA] = [await a.evaluate(() => window.syn3hNet.game.koth.holder), await score(idA)]
+    await a.waitForFunction((id) => window.miraNet.game.koth.holder === id && (window.miraNet.game.scores[id] ?? 0) >= 2, idA, { timeout: 15000 }).catch(() => {})
+    const [holder, scoreA] = [await a.evaluate(() => window.miraNet.game.koth.holder), await score(idA)]
     check('A alone on the hill holds it and scores', holder === idA && scoreA >= 2, { holder, scoreA, parkedA, elapsedMs: Date.now() - scoringStart })
     await b.waitForFunction(() => window.__match.at(-1)?.scores.some((x) => x.name === 'Alice' && x.score >= 2), null, { timeout: 5000 }).catch(() => {})
     const held = await b.evaluate(() => window.__match.at(-1))
@@ -743,44 +744,44 @@ try {
     // that shows "contested" has every earlier point. Waiting on B alone and reading the score on
     // A raced: on 20 November A's page, at 7 fps, had not yet applied the point scored just
     // before the contest (9 then 10) while B already showed it (10) and "contested".
-    await settle(() => Promise.all([a, b].map((p) => p.evaluate(() => window.syn3hNet.game.koth.contested))), (both) => both.every((c) => c === true))
+    await settle(() => Promise.all([a, b].map((p) => p.evaluate(() => window.miraNet.game.koth.contested))), (both) => both.every((c) => c === true))
     const s1 = await score(idA)
     // A measured window, not a wait for readiness: nobody may score while the hill is contested.
     await wait(2500)
     const s2 = await score(idA)
-    const contested = await b.evaluate(() => window.syn3hNet.game.koth.contested)
+    const contested = await b.evaluate(() => window.miraNet.game.koth.contested)
     const hudB = await b.evaluate(() => document.getElementById('hud').textContent)
     check('B joins and the hill is contested, nobody scores', contested && s2 === s1 && hudB.includes('CONTESTED'), { contested, s1, s2 })
-    const cont = await b.evaluate(() => ({ last: window.__match.at(-1), updates: window.__match.length, botName: window.syn3hNet.displayName(0xff00) }))
+    const cont = await b.evaluate(() => ({ last: window.__match.at(-1), updates: window.__match.length, botName: window.miraNet.displayName(0xff00) }))
     check('match display: contested, few updates, seeded bot name', cont.last?.contested === true && cont.last.holderName === null && cont.updates < 40 && cont.botName.startsWith('bot-4242:65280'), cont)
     await b.screenshot({ path: '/tmp/syn3h-koth.png' })
 
     // Into the lava lake, if this terrain has one under the zone's centre.
-    const lavaAt = await b.evaluate((zone) => window.syn3h.terrain.liquidHeightAt?.(zone.x, zone.z) ?? -Infinity, zone)
+    const lavaAt = await b.evaluate((zone) => window.mira.terrain.liquidHeightAt?.(zone.x, zone.z) ?? -Infinity, zone)
     if (Number.isFinite(lavaAt)) {
       await b.evaluate(({ zone, lavaAt }) => {
-        const v = window.syn3h.player.object.position.clone()
+        const v = window.mira.player.object.position.clone()
         v.set(zone.x, lavaAt - 0.5, zone.z)
-        window.syn3h.player.teleport(v, 0)
+        window.mira.player.teleport(v, 0)
       }, { zone, lavaAt })
       const sunk = await settle(async () => ({
-        outB: await a.evaluate((id) => window.syn3hNet.game.koth.out[id] ?? 0, idB),
+        outB: await a.evaluate((id) => window.miraNet.game.koth.out[id] ?? 0, idB),
         // B's own line, from its own physics (the room's echo is for everyone else).
-        stuck: await b.evaluate(() => ({ count: window.syn3hNet.stats.stuck, visible: window.syn3h.player.object.visible, hud: document.getElementById('hud').textContent.match(/in the lava: off the hill[^\n]*/i)?.[0] ?? null })),
-        visibleOnA: await a.evaluate((id) => window.syn3hNet.remotes.get(id)?.vehicle.object.visible === true, idB),
+        stuck: await b.evaluate(() => ({ count: window.miraNet.stats.stuck, visible: window.mira.player.object.visible, hud: document.getElementById('hud').textContent.match(/in the lava: off the hill[^\n]*/i)?.[0] ?? null })),
+        visibleOnA: await a.evaluate((id) => window.miraNet.remotes.get(id)?.vehicle.object.visible === true, idB),
       }), (v) => v.stuck.count === stuckBase + 1 && v.stuck.visible && v.stuck.hud && v.outB > 0 && v.visibleOnA)
       const { outB, stuck, visibleOnA } = sunk.value
       check('lava sticks B: it sits out of the hill count but stays in the world', stuck.count === stuckBase + 1 && stuck.visible && stuck.hud && outB > 0 && visibleOnA, { stuck, outB, visibleOnA, waitedMs: sunk.waitedMs })
       // Nothing but physics moves a player (AGENTS.md): after the old return delay and more, B is
       // still where it sank, still off the hill, and its line still says so: a steady line, not a
       // flicker. The pad is far from the lake, so a return would show as metres moved.
-      const sank = await b.evaluate(() => { const p = window.syn3h.player.body.translation(); return { x: p.x, z: p.z } })
+      const sank = await b.evaluate(() => { const p = window.mira.player.body.translation(); return { x: p.x, z: p.z } })
       await wait(4000)
       const after = await b.evaluate((sank) => {
-        const p = window.syn3h.player.body.translation()
-        return { moved: +Math.hypot(p.x - sank.x, p.z - sank.z).toFixed(1), visible: window.syn3h.player.object.visible, hud: document.getElementById('hud').textContent.match(/in the lava: off the hill[^\n]*/i)?.[0] ?? null }
+        const p = window.mira.player.body.translation()
+        return { moved: +Math.hypot(p.x - sank.x, p.z - sank.z).toFixed(1), visible: window.mira.player.object.visible, hud: document.getElementById('hud').textContent.match(/in the lava: off the hill[^\n]*/i)?.[0] ?? null }
       }, sank)
-      const stillOut = await a.evaluate((id) => window.syn3hNet.game.koth.out[id] ?? 0, idB)
+      const stillOut = await a.evaluate((id) => window.miraNet.game.koth.out[id] ?? 0, idB)
       check('B stays in the lava, never moved to its pad, off the hill with a steady line', after.visible && after.moved < 8 && after.hud && stillOut > 0, { ...after, stillOut })
     } else {
       console.log('SKIP lava: no lava under the zone centre on this terrain')
@@ -793,30 +794,30 @@ try {
   // that drives; her tab is hidden; within 5 s Bob is host and the bot moves on Bob's page;
   // Alice comes back as a guest. Last, because host does not come back to Alice.
   await step('host away', async () => {
-  const hostAtStart = await a.evaluate(() => window.syn3hNet.game.host)
+  const hostAtStart = await a.evaluate(() => window.miraNet.game.host)
   if (hostAtStart !== idA) throw new Error(`Alice is not host at the start (host ${hostAtStart}); rerun`)
   // Step 11 leaves Bob in the caldera's lava, where no ground near him can take a bot: his bots
   // arrive at a spawn point instead (BotManager.spot) and drive over, so this step covers a
   // host in lava too.
   await a.evaluate(() => {
-    const s = window.syn3h
+    const s = window.mira
     s.params.set('bots.canDrive', true); s.params.set('bots.canFire', false)
     if (s.params.get('bots.keepCount')) s.params.set('bots.keepCount', true)
     s.params.set('bots.count', 1)
   })
-  const hasBot = await a.waitForFunction(() => window.syn3h.bots.vehicles.length >= 1 && !window.syn3h.bots.remote, null, { timeout: 10000 }).then(() => true, () => false)
+  const hasBot = await a.waitForFunction(() => window.mira.bots.vehicles.length >= 1 && !window.mira.bots.remote, null, { timeout: 10000 }).then(() => true, () => false)
   check('Alice hosts with a bot', hasBot, {})
   const hiddenAt = Date.now()
   await a.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
     document.dispatchEvent(new Event('visibilitychange'))
   })
-  const took = await settle(() => b.evaluate(() => window.syn3hNet.isHost), (host) => host === true, 10000)
+  const took = await settle(() => b.evaluate(() => window.miraNet.isHost), (host) => host === true, 10000)
   const tookMs = Date.now() - hiddenAt
   check('Bob is host within 5 s of Alice\'s tab hiding', took.value === true && tookMs <= 5000, { tookMs, waitedMs: took.waitedMs })
   // The bot is Bob's now: his manager simulates it, and it drives.
-  const botOnB = await b.waitForFunction(() => !window.syn3h.bots.remote && window.syn3h.bots.vehicles.length >= 1, null, { timeout: 8000 }).then(() => true, () => false)
-  const where = () => b.evaluate(() => { const v = window.syn3h.bots.vehicles[0]; if (!v) return null; const t = v.body.translation(); return [t.x, t.y, t.z] })
+  const botOnB = await b.waitForFunction(() => !window.mira.bots.remote && window.mira.bots.vehicles.length >= 1, null, { timeout: 8000 }).then(() => true, () => false)
+  const where = () => b.evaluate(() => { const v = window.mira.bots.vehicles[0]; if (!v) return null; const t = v.body.translation(); return [t.x, t.y, t.z] })
   // A bot that has just arrived settles out of its arrival before it drives (one arriving at a
   // spawn point far from a host in lava first finds its way): wait for it to move, up to 10 s.
   const p0 = botOnB ? await where() : null
@@ -827,9 +828,9 @@ try {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
     document.dispatchEvent(new Event('visibilitychange'))
   })
-  const back = await settle(() => a.evaluate(() => ({ host: window.syn3hNet.game.host, isHost: window.syn3hNet.isHost, remote: window.syn3h.bots.remote, paused: window.syn3hNet.heartbeat?.paused ?? null })), (v) => v.isHost === false && v.remote === true && v.host !== 0)
+  const back = await settle(() => a.evaluate(() => ({ host: window.miraNet.game.host, isHost: window.miraNet.isHost, remote: window.mira.bots.remote, paused: window.miraNet.heartbeat?.paused ?? null })), (v) => v.isHost === false && v.remote === true && v.host !== 0)
   check('Alice comes back as a guest, Bob still host', back.value.isHost === false && back.value.remote === true && back.value.host === idB, { ...back.value, idB, waitedMs: back.waitedMs })
-  await b.evaluate(() => window.syn3h.params.set('bots.count', 0))
+  await b.evaluate(() => window.mira.params.set('bots.count', 0))
   }, { retryable: false })
 
   const hud = await b.evaluate(() => document.getElementById('hud').textContent)
@@ -864,7 +865,7 @@ try {
     // (Connection.handlerErrors): a caught throw would otherwise look like a missing effect, so any
     // count fails the run. Read while the pages are open; a page that cannot be read says so.
     for (const { name, page } of clients) {
-      const counts = await page.evaluate(() => window.syn3hNet?.conn?.handlerErrors ?? {}).catch((e) => ({ unreadable: String(e).slice(0, 120) }))
+      const counts = await page.evaluate(() => window.miraNet?.conn?.handlerErrors ?? {}).catch((e) => ({ unreadable: String(e).slice(0, 120) }))
       if (counts && (counts.unreadable || Object.values(counts).some((n) => n > 0))) handlerErrors.push({ name, counts })
     }
     if (errors.length || results.some(r => !r.ok)) await captureFailure().catch(e => console.error('Diagnostic capture failed', String(e)))

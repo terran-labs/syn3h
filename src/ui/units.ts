@@ -71,7 +71,7 @@ export function distanceText(metres: number, system?: number): string {
   return d < 1000 ? `${Math.round(d)} m` : `${(d / 1000).toFixed(1)} km`
 }
 
-const KEY = 'syn3h.units'
+const KEY = 'mira.units'
 /** Restore the player's own choice, then keep it whenever it changes. */
 function persist(): void {
   try {

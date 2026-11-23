@@ -1,11 +1,11 @@
 /**
- * Headless scenarios for the Syn3h buggy, shared by its invariant tests (tests/vehicles/syn3h.test.ts)
+ * Headless scenarios for the Mira buggy, shared by its invariant tests (tests/vehicles/mira.test.ts)
  * and the handling report (tools/handling-report.ts). The tests assert what must stay true; the
  * report prints the numbers the owner tunes by feel. Forward is local -Z.
  */
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { FIXED_DT, GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../src/core/physics'
 import { type Bed, makeBed } from './harness'
 import type { SurfaceKind } from '../../src/world/terrain/surface'
@@ -17,16 +17,16 @@ export const resetParams = () => {
   for (const p of params.all()) params.set(p.def.id, p.def.default)
 }
 
-export const speed = (b: Syn3hBuggy) => {
+export const speed = (b: MiraBuggy) => {
   const v = b.body.linvel()
   return Math.hypot(v.x, v.y, v.z)
 }
-export const rot = (b: Syn3hBuggy) => {
+export const rot = (b: MiraBuggy) => {
   const r = b.body.rotation()
   return new THREE.Quaternion(r.x, r.y, r.z, r.w)
 }
-export const axis = (b: Syn3hBuggy, x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(rot(b))
-export const pos = (b: Syn3hBuggy) => {
+export const axis = (b: MiraBuggy, x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(rot(b))
+export const pos = (b: MiraBuggy) => {
   const t = b.body.translation()
   return new THREE.Vector3(t.x, t.y, t.z)
 }
@@ -34,16 +34,16 @@ export const pos = (b: Syn3hBuggy) => {
 /** What the test bed's ground is made of (terrain.surfaceAt), or undefined for none. */
 export const ground: { surface?: SurfaceKind } = {}
 
-export async function spawn(heading = 0, y = 1.5): Promise<{ bed: Bed; b: Syn3hBuggy }> {
+export async function spawn(heading = 0, y = 1.5): Promise<{ bed: Bed; b: MiraBuggy }> {
   const bed = await makeBed()
   if (ground.surface) { const kind = ground.surface; bed.terrain.surfaceAt = () => kind }
-  const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, y, 0), heading))
+  const b = bed.add(new MiraBuggy(bed.game, bed.terrain, new THREE.Vector3(0, y, 0), heading))
   b.isLocal = false
   return { bed, b }
 }
 
 /** Put the buggy in the air at speed along its nose with wings already open. */
-export async function flying(altitude = 60, v = 35): Promise<{ bed: Bed; b: Syn3hBuggy }> {
+export async function flying(altitude = 60, v = 35): Promise<{ bed: Bed; b: MiraBuggy }> {
   const s = await spawn(0, altitude)
   s.b.input.special = true
   s.b.wingState = 1
@@ -72,7 +72,7 @@ export const cruise = async (v: number) => {
 }
 
 /** Half sine ridge, `height` by `length` m, across x0..x1, starting 6 m ahead of the buggy. */
-export const ridge = (bed: Bed, b: Syn3hBuggy, x0: number, x1: number, height: number, length: number) => {
+export const ridge = (bed: Bed, b: MiraBuggy, x0: number, x1: number, height: number, length: number) => {
   const z = pos(b).z - 6
   const pts: number[] = []
   for (let i = 0; i <= 16; i++) {
@@ -84,7 +84,7 @@ export const ridge = (bed: Bed, b: Syn3hBuggy, x0: number, x1: number, height: n
 }
 
 /** Run and report the highest hop above the starting height, the worst roll and body strikes. */
-export const ride = (bed: Bed, b: Syn3hBuggy, seconds: number) => {
+export const ride = (bed: Bed, b: MiraBuggy, seconds: number) => {
   const y0 = pos(b).y
   const w = bed.game.world
   let hop = 0, roll = 0, strikes = 0, touching = false
@@ -138,7 +138,7 @@ export const sideways = async () => {
 }
 
 /** Signed angle (degrees) from the nose to the velocity, positive when it is to the nose's right. */
-export const slip = (b: Syn3hBuggy) => {
+export const slip = (b: MiraBuggy) => {
   const f = axis(b, 0, 0, -1), v = b.body.linvel()
   return Math.atan2(f.z * v.x - f.x * v.z, f.x * v.x + f.z * v.z) * 180 / Math.PI
 }
@@ -222,7 +222,7 @@ export const lavaPool = async (depth: number) => {
   const bed = await makeBed()
   bed.terrain.liquidHeightAt = (_x, z) => (Math.abs(z) < 30 ? depth : -Infinity)
   bed.terrain.liquidKindAt = () => 'lava'
-  const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, depth + 1.5, 0), 0))
+  const b = bed.add(new MiraBuggy(bed.game, bed.terrain, new THREE.Vector3(0, depth + 1.5, 0), 0))
   b.isLocal = false
   bed.run(4)
   return { bed, b }
@@ -307,7 +307,7 @@ export const arrive = async (how: 'spawn' | 'respawn' | 'switch' | 'remote') => 
   const bed = await makeBed()
   const at = new THREE.Vector3(0, 2, 0)
   if (how === 'remote') at.y = 0
-  const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, at, 0))
+  const b = bed.add(new MiraBuggy(bed.game, bed.terrain, at, 0))
   b.isLocal = false
   if (how === 'remote') b.teleport(at.setY(b.restHeight()), 0)
   const m = new Materialize(bed.game, bed.terrain)

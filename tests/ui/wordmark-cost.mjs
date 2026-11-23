@@ -1,8 +1,9 @@
 // What the wordmark's distance field costs: the one-off GPU bake at the sizes the lobby asks
 // for, and a whole logo draw (glow, particles, mark) per frame, both timed to the GPU's finish.
-//   tools/heavy.sh node tests/ui/wordmark-cost.mjs   (SYN3H_URL, default http://127.0.0.1:5241/)
+//   tools/heavy.sh node tests/ui/wordmark-cost.mjs   (MIRA_URL, default http://127.0.0.1:5241/)
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5241/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5241/'
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
@@ -35,13 +36,13 @@ try {
     for (const view of [{ width: 1440, height: 900, deviceScaleFactor: 2 }, { width: 390, height: 844, deviceScaleFactor: 3 }]) {
       const page = await browser.newPage({ viewport: { width: view.width, height: view.height }, deviceScaleFactor: view.deviceScaleFactor })
       await page.goto(`${base}?room=wm-cost-${Date.now()}`)
-      await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+      await page.waitForFunction(() => window.mira?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
       const row = {}
       for (const [mode, crisp] of [[0, false], [3, false], [3, true], [4, true], [7, false], [7, true]]) {
         row[`${mode}${crisp ? '+crisp' : ''}`] = await page.evaluate(async ([mode, crisp]) => {
-          syn3h.params.set('gfx.level', 2); syn3h.params.set('lobby.wordmark', mode); syn3h.params.set('lobby.wordmarkCrisp', crisp)
+          mira.params.set('gfx.level', 2); mira.params.set('lobby.wordmark', mode); mira.params.set('lobby.wordmarkCrisp', crisp)
           await new Promise(r => setTimeout(r, 2500))
-          const g = syn3h.shell.galaxy, gl = g.gl, pixel = new Uint8Array(4), times = []
+          const g = mira.shell.galaxy, gl = g.gl, pixel = new Uint8Array(4), times = []
           const sync = () => { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel); const c = g.markCrisp?.gl; if (c) c.readPixels(0, 0, 1, 1, c.RGBA, c.UNSIGNED_BYTE, pixel) }
           for (let i = 0; i < 40; i++) { g.wake = 2; g.last = 0; sync(); const t = performance.now(); g.loop(performance.now()); sync(); times.push(performance.now() - t) }
           times.sort((a, b) => a - b)

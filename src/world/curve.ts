@@ -247,7 +247,7 @@ export function applyCurve(material: Material): void {
 // Debug handle for tools/terrainlab/curve-shots.mjs: bend materials owned by other lanes at
 // run time without editing them.
 if (typeof window !== 'undefined') {
-  Object.assign(window, { __syn3hCurve: { applyCurve, updateCurve, curveRadius, planetRadius, curveFactor, curveDrop, curveOffset, param: curveParam } })
+  Object.assign(window, { __miraCurve: { applyCurve, updateCurve, curveRadius, planetRadius, curveFactor, curveDrop, curveOffset, param: curveParam } })
 }
 
 /** The `world.curve` slider under the name the interface stub used. */

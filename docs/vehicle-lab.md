@@ -14,12 +14,12 @@ It is a developer tool. The production build has one entry, `index.html`, so nei
 Run the dev server and open `/vehicle-lab.html`. It opens on the first vehicle in the sidebar.
 Every selection rewrites the URL, so copying the address bar reproduces the view.
 
-- `?vehicle=buggy`: the next Syn3h buggy design studies, round by round.
+- `?vehicle=buggy`: the next Mira buggy design studies, round by round.
 - `?vehicle=game-buggy`, `game-buggy-classic`, `game-jet`, `game-hovercraft`, `game-tank`: the
   vehicles as the game builds them.
 
 Old links keep working. `/buggy-bodies.html?round=N` opens round N of the design studies.
-`?vehicle=game-skins` opens the in-game Syn3h buggy, and `&design=classic` opens the classic
+`?vehicle=game-skins` opens the in-game Mira buggy, and `&design=classic` opens the classic
 buggy instead.
 
 ## Every vehicle shows up by itself
@@ -213,7 +213,7 @@ import type { LabExhibit } from '../types'
 
 export const hover: LabExhibit = {
   id: 'hover',
-  title: 'Syn3h hovercraft',
+  title: 'Mira hovercraft',
   async designs() {
     return [{ id: 'base', name: 'Base hull', notes: ['First blockout'] }]
   },

@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { serveStable } from './serve-stable.mjs';
 
 test('pins snapshot, serves cache policy and rejects escaped files', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'syn3h-stable-test-'));
+  const root = await mkdtemp(join(tmpdir(), 'mira-stable-test-'));
   let app;
   try {
     for (const id of ['a', 'b']) {

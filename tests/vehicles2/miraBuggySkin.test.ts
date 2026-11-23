@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { afterEach, expect, it, vi } from 'vitest'
-import { Syn3hBuggySkin } from '../../src/vehicles/skins/Syn3hBuggySkin'
+import { MiraBuggySkin } from '../../src/vehicles/skins/MiraBuggySkin'
 import { buggyBody } from '../../src/vehicles/buggygen/body'
 import { buildParts } from '../../src/vehicles/buggygen/parts'
 import type { VehicleDetail } from '../../src/vehicles/skins/mergeStatic'
@@ -39,7 +39,7 @@ it('builds without any network request, with finite geometry, and moves its part
   const callbacks = new Set<VehicleDetail>()
   const detail: VehicleDetail = (distance, remote, level) => callbacks.forEach(fn => fn(distance, remote, level))
   root.userData.registerVehicleDetail = (fn: VehicleDetail) => { callbacks.add(fn); return () => callbacks.delete(fn) }
-  const skin = new Syn3hBuggySkin(); root.add(skin.object)
+  const skin = new MiraBuggySkin(); root.add(skin.object)
   try {
     await skin.ready
     expect(fetch).not.toHaveBeenCalled()

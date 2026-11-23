@@ -23,8 +23,8 @@ const shots = []
 
 /** Fixed scene around the player, in the map's own entity format. */
 function scene() {
-  const s = window.syn3h, m = s.shell.minimap, p = s.player.object.position, size = s.terrain.size
-  if (window.syn3hNet?.ctx) window.syn3hNet.ctx.setMapEntities = undefined
+  const s = window.mira, m = s.shell.minimap, p = s.player.object.position, size = s.terrain.size
+  if (window.miraNet?.ctx) window.miraNet.ctx.setMapEntities = undefined
   const rim = 0.77 * size / 2, far = size * Math.SQRT1_2, reach = (f) => rim + f * (far - rim)
   const at = (deg, d, more) => ({ x: p.x + Math.cos(deg * Math.PI / 180) * d, z: p.z + Math.sin(deg * Math.PI / 180) * d, heading: (deg * 7) % 6.28, ...more })
   const person = (color, accent) => ({ kind: 'person', color, accent }), bot = (color) => ({ kind: 'bot', color, accent: '#ffffff' })
@@ -48,17 +48,17 @@ try {
     const context = await browser.newContext(options)
     const page = await context.newPage()
     await page.goto(`${url}?autoplay=1&planet=${world}&room=sheet-${label}-${world}-${device}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 180000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 180000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 180000 })
-    await page.evaluate(() => { const p = window.syn3h.params; p.set('bots.count', 0); p.set('gfx.auto', false) })
+    await page.evaluate(() => { const p = window.mira.params; p.set('bots.count', 0); p.set('gfx.auto', false) })
     if (await page.locator('.world-inspector').isVisible() && await page.locator('.inspector-toggle').isVisible()) await page.locator('.inspector-toggle').click()
     const cdp = await context.newCDPSession(page)
-    const forms = await page.evaluate(() => 'markStyle' in window.syn3h.shell.minimap.constructor ? ['dart', 'kite'] : [''])
+    const forms = await page.evaluate(() => 'markStyle' in window.mira.shell.minimap.constructor ? ['dart', 'kite'] : [''])
     for (const ratio of [1, 3]) {
       await cdp.send('Emulation.setDeviceMetricsOverride', { ...options.viewport, deviceScaleFactor: ratio, mobile: Boolean(options.isMobile) })
       await page.waitForTimeout(600)
       for (const form of forms) {
-        if (form) await page.evaluate((f) => { window.syn3h.shell.minimap.constructor.markStyle = f }, form)
+        if (form) await page.evaluate((f) => { window.mira.shell.minimap.constructor.markStyle = f }, form)
         await page.evaluate(scene)
         await page.waitForTimeout(150)
         const box = await page.locator('.shell-minimap').boundingBox(), pad = 16

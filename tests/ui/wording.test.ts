@@ -26,7 +26,7 @@ const banned = (text: string) => WORDS.exec(text)?.[0] ?? STEMS.exec(text)?.[0] 
  * Chaser, Grapple and Yoink; the buggy is just "Buggy". Ids, parameter ids and saved keys
  * keep their old spellings and are not text a player reads.
  */
-const RETIRED = /Syn3h Buggy|\bClassic\b|\btag beams?\b|\bBig Red\b|\bPesters?\b|\bBungee\b/i
+const RETIRED = /Mira Buggy|\bClassic\b|\btag beams?\b|\bBig Red\b|\bPesters?\b|\bBungee\b/i
 /** The inspector still lists the gear lane's old parameter group until that lane renames it. */
 const RETIRED_ALLOWED = new Set(['Tag beams'])
 const retired = (text: string) => RETIRED_ALLOWED.has(text) ? null : RETIRED.exec(text)?.[0] ?? null

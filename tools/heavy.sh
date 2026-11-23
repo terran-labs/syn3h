@@ -13,7 +13,8 @@
 # the absolute trunk helper, so old worktrees cannot silently revive the old semaphore.
 # Kernel locks cannot expire beneath a live job. Children inherit the lock descriptor,
 # so killing a wrapper does not release a still-running command's slot.
+. "$(dirname "$0")/lib/legacy-env.sh" # legacy environment names, see docs/NAMES.md
 : "${VITEST_MAX_WORKERS:=2}"; : "${VITEST_MAX_THREADS:=2}"; : "${VITEST_MAX_FORKS:=2}"
 export VITEST_MAX_WORKERS VITEST_MAX_THREADS VITEST_MAX_FORKS
-[ -n "${SYN3H_HEAVY_BYPASS:-}" ] && exec nice -n 5 "$@"
+[ -n "${MIRA_HEAVY_BYPASS:-}" ] && exec nice -n 5 "$@"
 exec python3 "$(dirname "$0")/heavy.py" "$@"

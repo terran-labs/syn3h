@@ -4,9 +4,9 @@ import { announcedKind, needsRebuild } from '../../src/net/kinds'
 
 describe('vehicle kinds across releases', () => {
   it('does not rebuild the copy of an older client that announces the retired buggy', () => {
-    // The copy built for 'buggy-classic' is the Syn3h buggy and calls itself 'buggy'.
+    // The copy built for 'buggy-classic' is the Mira buggy and calls itself 'buggy'.
     expect(needsRebuild('buggy', 'buggy-classic')).toBe(false)
-    // Nor between the two names of the Syn3h buggy.
+    // Nor between the two names of the Mira buggy.
     expect(needsRebuild('buggy', 'buggy-syn3h')).toBe(false)
     expect(needsRebuild('buggy-syn3h', 'buggy')).toBe(false)
   })

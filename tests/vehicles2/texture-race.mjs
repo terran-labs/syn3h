@@ -15,10 +15,10 @@ try{
   let held=0
   await page.route(/\/models\/(textures|effects)\/.*\.(png|jpg|jpeg|webp)(\?.*)?$/,async route=>{held++;await new Promise(r=>setTimeout(r,3000));await route.continue()})
   await page.goto(`http://localhost:${port}/?autoplay=1&vehicle=${kind}&planet=alpine&seed=1${backend==='webgl'?'&webgl':''}`)
-  await page.waitForFunction(()=>window.syn3h?.game.tick>10,null,{timeout:90000})
+  await page.waitForFunction(()=>window.mira?.game.tick>10,null,{timeout:90000})
   // Tier 0 keeps the vehicle's own materials and maps; the showroom tiers replace them.
-  for(const tier of [0,3]){await page.evaluate(t=>window.syn3h.params.set('gfx.vehicleShading',t),tier);await page.waitForTimeout(tier===0?4500:2000)}
-  const actual=await page.evaluate(()=>window.syn3h.game.renderer.backend.isWebGPUBackend?'webgpu':'webgl')
+  for(const tier of [0,3]){await page.evaluate(t=>window.mira.params.set('gfx.vehicleShading',t),tier);await page.waitForTimeout(tier===0?4500:2000)}
+  const actual=await page.evaluate(()=>window.mira.game.renderer.backend.isWebGPUBackend?'webgpu':'webgl')
   results.push({backend:actual,kind,held,errors:[...new Set(errors)].map(e=>e.slice(0,120))});await page.close()
  }
  console.log(JSON.stringify(results,null,1))

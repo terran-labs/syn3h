@@ -6,9 +6,9 @@
 @font-face { font-family: 'Barlow Condensed'; src: url('/fonts/barlow-condensed-500-latin.woff2') format('woff2'); font-weight: 500; font-display: swap; }
 @font-face { font-family: 'Barlow Condensed'; src: url('/fonts/barlow-condensed-600-latin.woff2') format('woff2'); font-weight: 600; font-display: swap; }
 /* Art direction: terranlabs.com's Dark Star theme (the owner's choice, 14 November 2026,
-   replacing the 2017 Syn3h look): deep space, electric blue, Barlow type, frosted glass.
+   replacing the 2017 Mira look): deep space, electric blue, Barlow type, frosted glass.
    The --theme-* names are that site's, kept so its button CSS below can be used verbatim.
-   Tokens live on :root because the touch controls sit outside .syn3h-shell. */
+   Tokens live on :root because the touch controls sit outside .mira-shell. */
 :root {
   --s3-accent: #828282; --s3-accent-2: #b6b6b6; --s3-accent-3: #929292; --s3-glow: #5d5d5d;
   --s3-ink: #f5f5f7; --s3-dim: #aeaeb2; --s3-soft: #8e8e93; --s3-space: #01020a;
@@ -22,12 +22,12 @@
    at all, the panel carries a darker body of its own. Chrome and Firefox keep the lighter glass. */
 @supports (font: -apple-system-body) and (-webkit-appearance: none) { :root { --s3-panel: rgb(14 15 20 / .86); } }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { :root { --s3-panel: rgb(14 15 20 / .92); } }
-.syn3h-shell { --accent: var(--s3-accent); --panel: var(--s3-card); color: var(--s3-ink); font: 400 17px/1.5 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; }
+.mira-shell { --accent: var(--s3-accent); --panel: var(--s3-card); color: var(--s3-ink); font: 400 17px/1.5 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; }
 /* The wordmark is one vector path: black letters over a blue light that shows round the
    edges and through the gaps, as in the 2017 build. Change --s3-glow to relight it. */
 .wordmark { display: block; height: auto; overflow: visible; fill: #02040a; filter: drop-shadow(0 0 2px #b6b6b6) drop-shadow(0 0 9px var(--s3-accent)) drop-shadow(0 0 12px var(--s3-glow)) drop-shadow(0 0 42px color-mix(in srgb, var(--s3-glow) 75%, transparent)); }
-.syn3h-shell *, .touch-controls * { box-sizing: border-box; }
-.syn3h-shell [hidden], .touch-controls[hidden], .syn3h-advanced[hidden] { display: none !important; }
+.mira-shell *, .touch-controls * { box-sizing: border-box; }
+.mira-shell [hidden], .touch-controls[hidden], .mira-advanced[hidden] { display: none !important; }
 .has-game-shell { overscroll-behavior: none; }
 .has-game-shell #hud { display: none; }
 .shell-overlay { position: fixed; inset: 0; z-index: 30; display: flex; padding: max(12px, env(safe-area-inset-top)) 24px max(12px, env(safe-area-inset-bottom)); background: var(--s3-space); overflow: hidden; touch-action: pan-y; perspective: 1500px; }
@@ -46,32 +46,32 @@
 .lobby-panels { position: relative; perspective: 300px; width: min(1000px,100%); min-height: 0; flex: 1 1 600px; max-height: 760px; background: var(--s3-panel); border: 1px solid var(--s3-line-quiet); border-radius: var(--s3-radius); -webkit-backdrop-filter: blur(22px) saturate(150%); backdrop-filter: blur(22px) saturate(150%); box-shadow: 0 2px 4px rgb(0 0 0 / .2), 0 12px 32px rgb(0 0 0 / .16), 0 28px 58px rgb(0 0 0 / .1); }
 .lobby-panels > section { height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #383838 transparent; padding: 34px 30px 22px; max-width: 700px; margin: auto; text-align: center; touch-action: pan-y; }
 .lobby-links { grid-area: links; }
-.syn3h-shell h1, .syn3h-shell h2 { font: 600 38px/1.05 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: -0.01em; color: #fff; margin: 0 0 22px; text-wrap: balance; }
-.syn3h-shell h1 { font-size: clamp(40px, 5.2vw, 64px); text-transform: uppercase; }
-.syn3h-shell p { margin: 12px 0 22px; }
+.mira-shell h1, .mira-shell h2 { font: 600 38px/1.05 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: -0.01em; color: #fff; margin: 0 0 22px; text-wrap: balance; }
+.mira-shell h1 { font-size: clamp(40px, 5.2vw, 64px); text-transform: uppercase; }
+.mira-shell p { margin: 12px 0 22px; }
 .lobby-links { display: flex; justify-content: center; gap: 12px 44px; flex-wrap: wrap; }
 /* Buttons. Every button is the game's glass button (glass.css); Shell.ts gives them the
-   .liquid-glass class. This rule only sets what is Syn3h's: type, size and touch. */
-.syn3h-shell button:not(.syn3h-advanced *), .syn3h-shell select:not(.syn3h-advanced *), .touch-actions button { font: 500 18px/1.3 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; padding: 11px 22px; cursor: pointer; min-height: 46px; touch-action: manipulation; }
-.syn3h-shell select:not(.syn3h-advanced *) { color: var(--s3-ink); background: rgb(255 255 255 / .06); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); }
+   .liquid-glass class. This rule only sets what is Mira's: type, size and touch. */
+.mira-shell button:not(.mira-advanced *), .mira-shell select:not(.mira-advanced *), .touch-actions button { font: 500 18px/1.3 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; padding: 11px 22px; cursor: pointer; min-height: 46px; touch-action: manipulation; }
+.mira-shell select:not(.mira-advanced *) { color: var(--s3-ink); background: rgb(255 255 255 / .06); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); }
 /* The glass button itself (.liquid-glass, its rim and its tokens) is glass.css. */
 /* Text links: the quiet row under the panel, and Back. Not glass. */
-.syn3h-shell button.link-button, .syn3h-shell .lobby-links button { background: none; border: 0; box-shadow: none; padding: 0 4px; min-height: 40px; font-size: 16px; font-weight: 400; color: var(--s3-dim); transition: color .18s; }
-.syn3h-shell button.link-button:is(:hover, :focus-visible), .syn3h-shell .lobby-links button:is(:hover, :focus-visible) { color: var(--s3-ink); }
-.syn3h-shell button.link-button::before, .syn3h-shell .lobby-links button::before { content: '› '; color: var(--s3-accent); }
-.syn3h-shell button.panel-back::before { content: '‹ '; }
-.syn3h-shell :focus-visible { outline: 2px solid var(--theme-focus-ring); outline-offset: 3px; }
-.syn3h-shell h1:focus, .syn3h-shell h2:focus { outline: none; }
-.syn3h-shell .panel-back { display: block; margin: 26px auto 0; }
+.mira-shell button.link-button, .mira-shell .lobby-links button { background: none; border: 0; box-shadow: none; padding: 0 4px; min-height: 40px; font-size: 16px; font-weight: 400; color: var(--s3-dim); transition: color .18s; }
+.mira-shell button.link-button:is(:hover, :focus-visible), .mira-shell .lobby-links button:is(:hover, :focus-visible) { color: var(--s3-ink); }
+.mira-shell button.link-button::before, .mira-shell .lobby-links button::before { content: '› '; color: var(--s3-accent); }
+.mira-shell button.panel-back::before { content: '‹ '; }
+.mira-shell :focus-visible { outline: 2px solid var(--theme-focus-ring); outline-offset: 3px; }
+.mira-shell h1:focus, .mira-shell h2:focus { outline: none; }
+.mira-shell .panel-back { display: block; margin: 26px auto 0; }
 .lobby-footer { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; width: min(1000px,100%); flex: 0 0 38px; font-size: 12px; color: var(--s3-soft); }
 .shell-message { overflow-wrap: anywhere; font-size: 13px; }
-.syn3h-shell label:not(.syn3h-advanced *) { display: block; text-align: left; margin: 14px 0 6px; font-size: 17px; }
-.syn3h-shell input:where(:not(.syn3h-advanced *):not([type=radio]):not([type=checkbox]):not([type=color]):not([type=range])) { display: block; width: 100%; background: rgb(255 255 255 / .06); color: var(--s3-ink); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); font: 400 19px 'Barlow',sans-serif; padding: 11px 13px; min-height: 46px; transition: border-color .18s, box-shadow .18s; }
-.syn3h-shell input:not(.syn3h-advanced *):focus { outline: none; border-color: var(--theme-focus-ring); box-shadow: 0 0 0 3px rgb(130 130 130 / .25); }
-.syn3h-shell input:not(.syn3h-advanced *)[type=range] { display: block; width: 100%; accent-color: var(--s3-accent); min-height: 34px; margin: 5px 0 20px; }
-.syn3h-shell input:not(.syn3h-advanced *)[type=radio], .syn3h-shell input:not(.syn3h-advanced *)[type=checkbox] { accent-color: var(--s3-accent); width: 20px; height: 20px; margin: 0; vertical-align: middle; }
-.syn3h-shell select:not(.syn3h-advanced *) { width: 100%; }
-.syn3h-shell output:not(.syn3h-advanced *) { float: right; color: var(--s3-accent); }
+.mira-shell label:not(.mira-advanced *) { display: block; text-align: left; margin: 14px 0 6px; font-size: 17px; }
+.mira-shell input:where(:not(.mira-advanced *):not([type=radio]):not([type=checkbox]):not([type=color]):not([type=range])) { display: block; width: 100%; background: rgb(255 255 255 / .06); color: var(--s3-ink); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); font: 400 19px 'Barlow',sans-serif; padding: 11px 13px; min-height: 46px; transition: border-color .18s, box-shadow .18s; }
+.mira-shell input:not(.mira-advanced *):focus { outline: none; border-color: var(--theme-focus-ring); box-shadow: 0 0 0 3px rgb(130 130 130 / .25); }
+.mira-shell input:not(.mira-advanced *)[type=range] { display: block; width: 100%; accent-color: var(--s3-accent); min-height: 34px; margin: 5px 0 20px; }
+.mira-shell input:not(.mira-advanced *)[type=radio], .mira-shell input:not(.mira-advanced *)[type=checkbox] { accent-color: var(--s3-accent); width: 20px; height: 20px; margin: 0; vertical-align: middle; }
+.mira-shell select:not(.mira-advanced *) { width: 100%; }
+.mira-shell output:not(.mira-advanced *) { float: right; color: var(--s3-accent); }
 .shell-form { max-width: 450px; margin: 0 auto; }
 .input-action { display: flex; align-items: stretch; gap: 8px; }
 .input-action input { min-width: 0; }
@@ -91,7 +91,7 @@
 .shell-vehicle-preview[data-error]::after { content: attr(data-error); position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; }
 .shell-colors { display: flex; justify-content: center; gap: 30px; }
 .shell-colors label { display: flex; gap: 12px; align-items: center; margin: 0; }
-.syn3h-shell input:not(.syn3h-advanced *)[type=color] { width: 64px; height: 38px; background: rgb(255 255 255 / .06); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); padding: 3px; cursor: pointer; }
+.mira-shell input:not(.mira-advanced *)[type=color] { width: 64px; height: 38px; background: rgb(255 255 255 / .06); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); padding: 3px; cursor: pointer; }
 .vehicle-note, .panel-note { font-size: 15px; color: var(--s3-dim); }
 .world-controls, .host-controls, .paint-controls { text-align: left; border: 1px solid var(--s3-line-quiet); border-radius: var(--s3-radius); padding: 12px 16px; margin: 14px 0; }
 .world-controls legend, .host-controls legend, .paint-controls legend { padding: 0 8px; font-family: 'Barlow Condensed','Arial Narrow',sans-serif; font-weight: 600; color: #e8e8e8; }
@@ -116,9 +116,9 @@
 .hud-scoreboard .score-row { font-size: 14px; padding: 4px; }
 .hud-scoreboard .score-detail { font-size: 10px; }
 .hud-navigation { position: fixed; top: max(20px,env(safe-area-inset-top)); right: max(20px,var(--safe-right)); z-index: 15; display: flex; gap: 8px; }
-.syn3h-shell .hud-navigation button { font-size: 16px; min-height: 44px; }
+.mira-shell .hud-navigation button { font-size: 16px; min-height: 44px; }
 .shell-toast { position: fixed; z-index: 50; left: 50%; top: max(20px,env(safe-area-inset-top)); transform: translateX(-50%); max-width: min(90vw,500px); padding: 10px 18px; background: rgb(28 28 30 / .92); border: 1px solid rgb(84 84 88 / .72); color: white; font-size: 16px; pointer-events: none; text-align: center; }
-.syn3h-advanced { width: 100%; --tp-base-background-color: #222222; --tp-base-shadow-color: transparent; --tp-base-border-radius: 2px; --tp-container-background-color: #333333; --tp-container-foreground-color: #e2e2e2; --tp-label-foreground-color: #d5d5d5; --tp-input-background-color: #434343; --tp-input-foreground-color: #f0f0f0; --tp-button-background-color: #646464; --tp-button-foreground-color: white; }
+.mira-advanced { width: 100%; --tp-base-background-color: #222222; --tp-base-shadow-color: transparent; --tp-base-border-radius: 2px; --tp-container-background-color: #333333; --tp-container-foreground-color: #e2e2e2; --tp-label-foreground-color: #d5d5d5; --tp-input-background-color: #434343; --tp-input-foreground-color: #f0f0f0; --tp-button-background-color: #646464; --tp-button-foreground-color: white; }
 .touch-controls { position: fixed; inset: 0; z-index: 20; pointer-events: none; user-select: none; -webkit-user-select: none; touch-action: none; }
 .touch-stick { position: absolute; left: max(24px,var(--safe-left)); bottom: max(28px,env(safe-area-inset-bottom)); width: 140px; height: 140px; border: 1px solid #9ebee37a; border-radius: 50%; background: #15203570; pointer-events: auto; touch-action: none; }
 .touch-knob { position: absolute; width: 52px; height: 52px; top: 43px; left: 43px; border-radius: 50%; background: #6799cf65; border: 1px solid #abcff7b0; }
@@ -137,12 +137,12 @@
 .lobby-panels { animation: panel-arrival 1s cubic-bezier(.333,.667,.667,1) 1s backwards; }
 @media (prefers-reduced-motion: reduce) { .lobby-panels { animation: none; } }
 
-.syn3h-shell:not(.is-playing) .shell-toast { display: none; }
+.mira-shell:not(.is-playing) .shell-toast { display: none; }
 /* In play, below the focus HUD's heading line (34 px down, about 30 px tall), not over it.
    Touch, match and race layouts place their toasts themselves. */
-.syn3h-shell.is-playing:not(.has-touch, .has-match, .has-landmark-race) .shell-toast { top: max(72px, env(safe-area-inset-top)); }
+.mira-shell.is-playing:not(.has-touch, .has-match, .has-landmark-race) .shell-toast { top: max(72px, env(safe-area-inset-top)); }
 .shell-message { max-height: 40px; overflow: hidden; text-align: center; }
-@media (max-width: 700px) { .syn3h-shell.is-playing .shell-toast { top: 190px; width: calc(100% - 40px); max-width: none; } }
+@media (max-width: 700px) { .mira-shell.is-playing .shell-toast { top: 190px; width: calc(100% - 40px); max-width: none; } }
 
 .touch-controls [hidden] { display: none !important; }
 .shell-vehicle-options { flex-wrap: wrap; gap: 10px 18px; }
@@ -156,8 +156,8 @@
 .spawn-help small:empty { display: none; }
 /* Touch: one slim line between the vehicle and the thumb controls. */
 .has-touch .spawn-help { left: 50%; right: auto; bottom: calc(max(30px,env(safe-area-inset-bottom)) + 160px); transform: translateX(-50%); max-width: calc(100% - 24px); padding: 5px 12px; white-space: nowrap; }
-.syn3h-shell:not(.is-playing) .spawn-help { display: none; }
-:root .syn3h-shell .spawn-help.is-quiet {
+.mira-shell:not(.is-playing) .spawn-help { display: none; }
+:root .mira-shell .spawn-help.is-quiet {
   /* The sunk buggy's Zorb line where no Zorb control shows (Shell.showHint): a few plain words
      in the idle status line's style, no box (the owner, 19 November 2026: "minimal and classy"). */
   background: none; border: 0; box-shadow: none; padding: 0; -webkit-backdrop-filter: none; backdrop-filter: none;
@@ -166,8 +166,8 @@
 }
 
 /* The loading veil is in index.html. LoadingScreen's polite live region: the plain loading phase, for screen readers only. */
-.syn3h-loading { position: fixed; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.syn3h-loading[hidden] { display: none; }
+.mira-loading { position: fixed; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.mira-loading[hidden] { display: none; }
 #fatal { z-index: 100; }
 
 .shell-minimap { position: fixed; right: 20px; bottom: 20px; z-index: 12; width: 162px; height: 162px; border: 1px solid rgb(84 84 88 / .72); background: #101826; pointer-events: none; }
@@ -178,8 +178,8 @@
 .shell-minimap canvas:not(.shell-minimap-marks) { transform: rotate(var(--map-turn, 0rad)); will-change: transform; }
 .shell-minimap canvas.shell-minimap-marks { transform: rotate(var(--marks-turn, 0rad)); will-change: transform; }
 .shell-minimap span { position: absolute; top: 0; left: 5px; color: white; font-size: 12px; text-shadow: 0 1px 2px black; }
-.syn3h-shell:not(.is-playing) .shell-minimap { display: none; }
-@media (max-width: 700px) { .shell-minimap { right: 12px; top: 190px; bottom: auto; width: 110px; height: 110px; } .syn3h-shell.is-playing .shell-toast { left: 12px; top: 112px; transform: none; width: calc(100% - 146px); font-size: 13px; padding: 6px 10px; text-align: left; } }
+.mira-shell:not(.is-playing) .shell-minimap { display: none; }
+@media (max-width: 700px) { .shell-minimap { right: 12px; top: 190px; bottom: auto; width: 110px; height: 110px; } .mira-shell.is-playing .shell-toast { left: 12px; top: 112px; transform: none; width: calc(100% - 146px); font-size: 13px; padding: 6px 10px; text-align: left; } }
 
 .shell-credits { text-align: left; font-size: 15px; line-height: 1.6; }
 .shell-credits summary { cursor: pointer; color: var(--s3-ink); padding: 12px; border: 1px solid rgb(84 84 88 / .72); }
@@ -188,7 +188,7 @@
 
 .match-hud { position: fixed; z-index: 13; top: 85px; left: 50%; transform: translateX(-50%); width: 330px; padding: 12px; background: rgb(28 28 30 / .88); border: 1px solid rgb(84 84 88 / .72); pointer-events: none; }
 .match-hud > strong { font: 600 24px 'Barlow Condensed', 'Arial Narrow', sans-serif; color: white; }
-.syn3h-shell .hill-holder { margin: 4px 0; overflow-wrap: anywhere; line-height: 1.3; }
+.mira-shell .hill-holder { margin: 4px 0; overflow-wrap: anywhere; line-height: 1.3; }
 .match-hud > small { color: var(--s3-dim); }
 .match-hud.is-yours { border-color: var(--s3-accent-2); }
 .match-hud.is-contested { border-color: #e4b078; }
@@ -203,7 +203,7 @@
 .match-score.is-you progress::-webkit-progress-value { background: var(--s3-accent-2); }
 .match-score progress::-moz-progress-bar { background: var(--s3-accent); }
 .match-announcement { position: fixed; z-index: 16; left: 50%; top: 43%; transform: translateX(-50%); width: min(600px,85vw); padding: 16px; text-align: center; background: rgb(28 28 30 / .88); border: 1px solid var(--s3-accent); color: white; font: 600 36px/1.2 'Barlow Condensed', 'Arial Narrow', sans-serif; pointer-events: none; overflow-wrap: anywhere; }
-.syn3h-shell:not(.is-playing) .match-hud, .syn3h-shell:not(.is-playing) .match-announcement { display: none; }
+.mira-shell:not(.is-playing) .match-hud, .mira-shell:not(.is-playing) .match-announcement { display: none; }
 @media (max-width: 700px) {
   .match-hud { left: 12px; top: 190px; width: calc(100% - 146px); max-height: 205px; overflow: hidden; transform: none; padding: 8px; font-size: 13px; }
   .match-hud > strong { font-size: 19px; }
@@ -211,8 +211,8 @@
   .match-race { gap: 6px; margin-top: 6px; }
   .match-score { font-size: 11px; }
   .match-announcement { top: 405px; left: 12px; width: calc(100% - 24px); transform: none; font-size: 24px; padding: 10px; }
-  .syn3h-shell.has-match .shell-toast { top: 405px; }
-  .syn3h-shell.match-announcing .shell-toast { display: none; }
+  .mira-shell.has-match .shell-toast { top: 405px; }
+  .mira-shell.match-announcing .shell-toast { display: none; }
 }
 
 .invite-qr { width: min(240px,100%); margin: 12px auto; }
@@ -220,14 +220,14 @@
 .invite-link, .join-room { overflow-wrap: anywhere; font-size: 14px; }
 .join-view { position: fixed; inset: 0; z-index: 80; background: radial-gradient(ellipse at 50% 120%, #131313, var(--s3-space) 60%); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; overflow: auto; text-align: center; }
 .join-view > .wordmark { width: 240px; flex: none; margin-bottom: 14px; }
-.syn3h-shell .join-view h1 { margin: 0; font-size: 42px; }
-.syn3h-shell .join-view p { margin: 5px 0; max-width: 90vw; }
+.mira-shell .join-view h1 { margin: 0; font-size: 42px; }
+.mira-shell .join-view p { margin: 5px 0; max-width: 90vw; }
 .join-view .join-room { font-size: 26px; }
 .join-view .invite-qr { width: min(60vh,600px,85vw); margin: 12px 0; }
 .join-view .invite-link { font-size: 18px; }
 .join-view .join-count { font-size: 20px; }
 .join-view > div:last-child { display: flex; gap: 12px; margin-top: 12px; }
-@media(max-width:700px) { .join-view > .wordmark { width: 190px; } .syn3h-shell .join-view h1 { font-size: 30px; } .join-view .join-room { font-size: 20px; } .join-view .invite-link { font-size: 13px; } .join-view .invite-qr { width: min(42vh,85vw); } }
+@media(max-width:700px) { .join-view > .wordmark { width: 190px; } .mira-shell .join-view h1 { font-size: 30px; } .join-view .join-room { font-size: 20px; } .join-view .invite-link { font-size: 13px; } .join-view .invite-qr { width: min(42vh,85vw); } }
 
 
 .is-presentation .score-detail.is-developer { display: none; }
@@ -258,7 +258,7 @@
   .match-announcement.round-end { top: 400px; padding: 12px; }
   .round-end strong { font-size: 26px; }
   .round-end small { font-size: 18px; margin-top: 6px; }
-  .syn3h-shell:has(.round-end:not([hidden])) .spawn-help { display: none; }
+  .mira-shell:has(.round-end:not([hidden])) .spawn-help { display: none; }
 }
 @media(max-width:350px) {
   .shell-hud { width: 164px; }
@@ -266,7 +266,7 @@
   .shell-hud .score-row small { display: none; }
   .hud-navigation button { min-width: 0; padding: 8px; font-size: 13px; }
   .input-action { gap: 4px; }
-  .syn3h-shell .input-action button { padding: 8px; font-size: 14px; }
+  .mira-shell .input-action button { padding: 8px; font-size: 14px; }
   .shell-vehicle-options { gap: 6px 12px; }
   .shell-colors { gap: 10px; }
   .touch-stick { left: 12px; width: 110px; height: 110px; }
@@ -285,17 +285,17 @@
    --------------------------------------------------------------------------------------- */
 /* Both: in King of the Hill one strip replaces the score rows and the hill card. */
 @media (max-width: 700px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .syn3h-shell.has-match .hud-scoreboard { display: none; }
+  .mira-shell.has-match .hud-scoreboard { display: none; }
   .match-hud { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: baseline; gap: 0 8px; padding: 6px 8px; max-height: none; overflow: hidden; }
   .match-hud > strong { display: none; }
-  .syn3h-shell .match-hud .hill-holder { margin: 0; font-size: 13px; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mira-shell .match-hud .hill-holder { margin: 0; font-size: 13px; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .match-hud > small { font-size: 11px; white-space: nowrap; }
   .match-race { grid-column: 1 / -1; gap: 3px; margin-top: 4px; }
   .match-score { font-size: 11px; line-height: 1.25; }
   .match-score progress { height: 3px; }
   .hud-navigation .nav-label { display: none; }
   .hud-navigation { flex-direction: row; gap: 5px; }
-  .syn3h-shell .hud-navigation button { padding: 6px 9px; font-size: 13px; min-height: 38px; }
+  .mira-shell .hud-navigation button { padding: 6px 9px; font-size: 13px; min-height: 38px; }
 }
 /* Portrait: speed, then the strip, down the left; menu row and minimap in the top right,
    over sky, so the map no longer covers the volcano's flank. */
@@ -303,8 +303,8 @@
   .shell-hud { width: 176px; }
   .shell-minimap { right: 12px; top: 58px; bottom: auto; width: 96px; height: 96px; }
   .match-hud { left: 12px; top: 74px; width: calc(100% - 132px); transform: none; }
-  .syn3h-shell.is-playing .shell-toast { left: 12px; top: 176px; transform: none; width: auto; max-width: calc(100% - 24px); font-size: 13px; padding: 6px 10px; text-align: left; }
-  .syn3h-shell.has-match .shell-toast { top: 204px; }
+  .mira-shell.is-playing .shell-toast { left: 12px; top: 176px; transform: none; width: auto; max-width: calc(100% - 24px); font-size: 13px; padding: 6px 10px; text-align: left; }
+  .mira-shell.has-match .shell-toast { top: 204px; }
   .match-announcement, .match-announcement.round-end { top: 240px; }
   /* Above the thumb stick, left of the action buttons, which reach higher for the jet. */
   .has-touch .spawn-help { left: 12px; transform: none; bottom: calc(max(28px,env(safe-area-inset-bottom)) + 134px); }
@@ -320,13 +320,13 @@
   .hud-scoreboard .score-detail { display: none; }
   .hud-scoreboard .score-row { font-size: 12px; padding: 2px 4px; }
   .hud-navigation { right: max(12px,var(--safe-right)); top: 10px; }
-  .syn3h-shell .hud-navigation button { min-height: 36px; }
+  .mira-shell .hud-navigation button { min-height: 36px; }
   .shell-minimap { right: max(12px,var(--safe-right)); top: 54px; bottom: auto; width: 92px; height: 92px; }
   .touch-stick { width: 124px; height: 124px; left: max(18px,var(--safe-left)); bottom: max(18px,env(safe-area-inset-bottom)); }
   .touch-knob { left: 35px; top: 35px; }
   .touch-actions button { font-size: 13px; }
   .match-hud { top: 10px; left: 50%; transform: translateX(-50%); width: min(300px, calc(100% - 420px)); }
-  .syn3h-shell.is-playing .shell-toast { top: auto; bottom: 46px; max-width: calc(100% - 400px); font-size: 13px; padding: 5px 12px; }
+  .mira-shell.is-playing .shell-toast { top: auto; bottom: 46px; max-width: calc(100% - 400px); font-size: 13px; padding: 5px 12px; }
   .has-touch .spawn-help { bottom: var(--edge-bottom); }
   .match-announcement { top: 118px; width: min(420px, calc(100% - 400px)); font-size: 20px; padding: 6px 10px; }
   .match-announcement.round-end { top: 114px; left: 200px; width: calc(100% - 400px); transform: none; padding: 8px 12px; border-width: 2px; }
@@ -339,8 +339,8 @@
   .hud-scoreboard .score-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 /* Reset world: a second press confirms, and the label says who it affects. */
-.syn3h-shell .world-reset { display: block; width: 100%; margin-top: 12px; font-size: 17px; }
-.syn3h-shell .world-reset.is-confirming { color: #ffd19e; border-color: rgb(255 190 120 / .5); }
+.mira-shell .world-reset { display: block; width: 100%; margin-top: 12px; font-size: 17px; }
+.mira-shell .world-reset.is-confirming { color: #ffd19e; border-color: rgb(255 190 120 / .5); }
 
 /* The Worlds panel: the world's name and story, its seed and bots. Worlds are chosen in the galaxy. */
 .planet-current { color: var(--s3-dim); font-size: 15px; }
@@ -357,14 +357,14 @@
   .join-view > * { grid-column: 2; }
   .join-view .invite-qr { grid-column: 1; grid-row: 1 / span 6; width: min(82vh, 340px); margin: 0; align-self: center; }
   .join-view > .wordmark { width: 150px; margin-bottom: 6px; }
-  .syn3h-shell .join-view h1 { font-size: 26px; }
+  .mira-shell .join-view h1 { font-size: 26px; }
   .join-view .join-room { font-size: 18px; }
   .join-view .invite-link { font-size: 12px; }
   .join-view .join-count { font-size: 15px; }
 }
 /* Lobby index on a short screen: the planets and the links fit without scrolling. */
 @media (max-height: 550px) {
-  .syn3h-shell .lobby-links button { min-height: 32px; }
+  .mira-shell .lobby-links button { min-height: 32px; }
 }
 /* A hint for a player who seems stuck: the controls card with a lit edge, and on touch the
    button it names pulses. */
@@ -406,7 +406,7 @@
    planet takes taps; the caption is a focusable button for the keyboard and screen readers. */
 /* `:not(#galaxy-caption)` lifts these over the shell's and themes' generic button rules (a
    caption is a button), which would otherwise give it a rim and a fill; no element has that id. */
-.syn3h-shell button.galaxy-label:not(#galaxy-caption) {
+.mira-shell button.galaxy-label:not(#galaxy-caption) {
   --caption-strength: 1; --caption-tint: #f6f9fc; --caption-accent: #f6f9fc;
   /* Nearer, larger planets get larger captions (src/ui/galaxy/captionScale.ts): the name and the
      lines under it are sized in em of this, so one eased font-size scales them all, letter
@@ -427,30 +427,30 @@
 }
 /* .62 and .78 were tried first; the owner (17 November 2026) asked for "less transparent grey and
    more solid white", over the sun's shafts as well as dark space. */
-.syn3h-shell { --caption-base: .92; }
-.syn3h-shell button.galaxy-label > strong { font: 500 10.5em/1.3333 'Barlow', sans-serif; letter-spacing: .24em; text-transform: uppercase; margin-right: -.24em; }
-.syn3h-shell button.galaxy-label > small { font: 400 9.5em/1.2632 'Barlow', sans-serif; letter-spacing: .08em; text-transform: none; opacity: calc(.72 + .13 * var(--caption-pulse, 0)); transition: opacity .35s ease-out; }
-.syn3h-shell button.galaxy-label > small:empty { display: none; }
+.mira-shell { --caption-base: .92; }
+.mira-shell button.galaxy-label > strong { font: 500 10.5em/1.3333 'Barlow', sans-serif; letter-spacing: .24em; text-transform: uppercase; margin-right: -.24em; }
+.mira-shell button.galaxy-label > small { font: 400 9.5em/1.2632 'Barlow', sans-serif; letter-spacing: .08em; text-transform: none; opacity: calc(.72 + .13 * var(--caption-pulse, 0)); transition: opacity .35s ease-out; }
+.mira-shell button.galaxy-label > small:empty { display: none; }
 /* A planet hovered (or held under a finger, or its caption focused, or chosen and flown to)
    brings its caption to full strength in its corona's colour (--caption-accent, set by Shell from
    the glow the galaxy draws round it), easing in over 220 ms and out over the resting 350 ms. The
    biome and online lines rise with it and stay a step quieter. A caption at strength 0 (its planet hidden, or not yet arrived in the
    opening) stays hidden: min(1, strength x 100) is 0 there and 1 anywhere else. The occlusion
    mask is untouched, so letters behind a nearer planet stay cut. */
-.syn3h-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) { opacity: min(1, calc(var(--caption-strength) * 100)); color: var(--caption-accent); transition: opacity .22s ease-out, color .22s ease-out, font-size .35s ease-out; }
-.syn3h-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) > small { opacity: .85; transition: opacity .22s ease-out; }
+.mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) { opacity: min(1, calc(var(--caption-strength) * 100)); color: var(--caption-accent); transition: opacity .22s ease-out, color .22s ease-out, font-size .35s ease-out; }
+.mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) > small { opacity: .85; transition: opacity .22s ease-out; }
 @media (prefers-reduced-motion: reduce) {
-  .syn3h-shell button.galaxy-label:not(#galaxy-caption), .syn3h-shell button.galaxy-label:not(#galaxy-caption) > small { transition: none; }
+  .mira-shell button.galaxy-label:not(#galaxy-caption), .mira-shell button.galaxy-label:not(#galaxy-caption) > small { transition: none; }
 }
-.syn3h-shell button.galaxy-label:not(#galaxy-caption):focus-visible { outline: 1px solid rgb(238 244 248 / .5); outline-offset: 3px; }
-.syn3h-shell button.galaxy-label:not(#galaxy-caption)[hidden] { display: none; }
+.mira-shell button.galaxy-label:not(#galaxy-caption):focus-visible { outline: 1px solid rgb(238 244 248 / .5); outline-offset: 3px; }
+.mira-shell button.galaxy-label:not(#galaxy-caption)[hidden] { display: none; }
 .lobby-unsupported { max-width: 420px; margin: 0 auto; font-size: 17px; line-height: 1.4; text-align: center; color: var(--s3-ink); }
 /* The galaxy would not start: its labels become a row of buttons above the help line. */
 .galaxy-flat .galaxy-labels { position: static; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin-bottom: 14px; pointer-events: auto; overflow: visible; }
-.syn3h-shell.galaxy-flat .galaxy-label { position: static; translate: none; transform: none; }
+.mira-shell.galaxy-flat .galaxy-label { position: static; translate: none; transform: none; }
 /* A caption that would touch the lobby's own controls (Shell, captionBlocked) has faded to nothing
    through --caption-strength; it takes no taps either, so a tap there reaches the control. */
-.syn3h-shell button.galaxy-label.is-blocked { pointer-events: none; }
+.mira-shell button.galaxy-label.is-blocked { pointer-events: none; }
 .galaxy-links { padding: 6px 18px; border-radius: 999px; background: rgb(10 12 18 / .5); }
 
 /* The descent: the lobby's words and glass fall away, the galaxy blurs as it dives, and the
@@ -464,12 +464,12 @@
 .daydream-pill { position: fixed; left: 50%; top: max(52px, calc(env(safe-area-inset-top) + 44px)); transform: translateX(-50%); z-index: 20; box-sizing: border-box; max-width: min(90vw, 440px); padding: 7px 16px; border-radius: 999px; background: rgb(8 12 20 / .55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: #dff6ff; font: 500 13px/1.3 system-ui, sans-serif; letter-spacing: .02em; text-align: center; pointer-events: none; transition: opacity .25s ease-out; }
 .daydream-pill[hidden] { display: none; }
 /* The Daydream slider in Settings (the control itself is src/bots/daydreamControl.ts). */
-.syn3h-shell .daydream-control { display: block; text-align: left; margin: 18px 0 4px; font-size: 17px; }
-.syn3h-shell .daydream-control output { float: right; color: var(--s3-accent-2); }
+.mira-shell .daydream-control { display: block; text-align: left; margin: 18px 0 4px; font-size: 17px; }
+.mira-shell .daydream-control output { float: right; color: var(--s3-accent-2); }
 /* Gear chip: which gear is in hand, under the speed. Tap to switch. */
-.syn3h-shell .shell-hud .gear-chip { display: inline-flex; align-items: center; min-height: 30px; margin: 2px 0 6px; padding: 4px 12px; border-radius: 999px; border: 1px solid rgb(176 176 176 / .45); background: rgb(130 130 130 / .18); color: var(--s3-ink); font: 600 13px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .08em; text-transform: uppercase; pointer-events: auto; cursor: pointer; box-shadow: none; }
-.syn3h-shell .shell-hud .gear-chip[hidden] { display: none; }
-.syn3h-shell.has-touch .shell-hud .gear-chip { min-height: 40px; padding: 6px 16px; }
+.mira-shell .shell-hud .gear-chip { display: inline-flex; align-items: center; min-height: 30px; margin: 2px 0 6px; padding: 4px 12px; border-radius: 999px; border: 1px solid rgb(176 176 176 / .45); background: rgb(130 130 130 / .18); color: var(--s3-ink); font: 600 13px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .08em; text-transform: uppercase; pointer-events: auto; cursor: pointer; box-shadow: none; }
+.mira-shell .shell-hud .gear-chip[hidden] { display: none; }
+.mira-shell.has-touch .shell-hud .gear-chip { min-height: 40px; padding: 6px 16px; }
 
 
 /* Custom keeps its generated planet in view while the player shapes it. */
@@ -493,12 +493,12 @@
 .race-arrow { display: inline-block; position: absolute; left: 10px; top: 12px; font-size: 22px; }
 .race-hud:has(.race-arrow:not([hidden])) { padding-inline: 34px; }
 .race-controls { display: flex; gap: 4px; justify-content: center; margin-top: 6px; }
-.syn3h-shell .race-controls button { font: inherit; font-size: 12px; min-height: 32px; padding: 4px 9px; border-radius: var(--glass-control-radius, 24px); }
+.mira-shell .race-controls button { font: inherit; font-size: 12px; min-height: 32px; padding: 4px 9px; border-radius: var(--glass-control-radius, 24px); }
 .race-hud.is-captured { background: rgb(19 19 19 / .5); border-color: rgb(218 218 218 / .18); pointer-events: none; }
 .race-hud.is-captured .race-controls { display: none; }
 .race-hud.is-collapsed .race-destination, .race-hud.is-collapsed .race-detail, .race-hud.is-collapsed .race-arrow { display: none; }
 .has-touch .race-controls button { min-height: 44px; }
-@media (max-width: 700px) { .race-hud { top: 168px; bottom: auto; width: min(280px, calc(100vw - 32px)); } .syn3h-shell.is-playing.has-landmark-race .shell-toast { top: auto; bottom: 200px; } }
+@media (max-width: 700px) { .race-hud { top: 168px; bottom: auto; width: min(280px, calc(100vw - 32px)); } .mira-shell.is-playing.has-landmark-race .shell-toast { top: auto; bottom: 200px; } }
 @media (max-height: 500px) and (orientation: landscape) { .race-hud { top: 10px; bottom: auto; width: 250px; padding-block: 5px; } .has-match .race-hud { top: 110px; } }
 
 /* The SVG retains its box and accessible name while Galaxy draws the same mark. */
@@ -509,23 +509,23 @@
    the hint small above them, and the galaxy is framed into what is left (Shell measures it).
    Desktop, tablet and portrait are untouched. */
 @media (orientation: landscape) and (max-height: 480px) {
-  .syn3h-shell.exploration-ui.galaxy-open .galaxy-ui {
+  .mira-shell.exploration-ui.galaxy-open .galaxy-ui {
     justify-content: center; align-items: flex-end;
     padding: 0 max(12px, env(safe-area-inset-right)) 0 0;
   }
-  .syn3h-shell.exploration-ui.galaxy-open .galaxy-links {
+  .mira-shell.exploration-ui.galaxy-open .galaxy-links {
     display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px 6px; border-radius: 22px;
   }
-  .syn3h-shell.exploration-ui.galaxy-open .galaxy-links button { min-height: 44px; padding: 0 14px; font-size: 12px; }
+  .mira-shell.exploration-ui.galaxy-open .galaxy-links button { min-height: 44px; padding: 0 14px; font-size: 12px; }
   /* Smaller captions on a short phone; overlap is accepted. */
-  .syn3h-shell button.galaxy-label > strong { font-size: 9em; line-height: 1.3333; letter-spacing: .2em; margin-right: -.2em; }
-  .syn3h-shell button.galaxy-label > small { font-size: 8.5em; line-height: 1.1765; }
+  .mira-shell button.galaxy-label > strong { font-size: 9em; line-height: 1.3333; letter-spacing: .2em; margin-right: -.2em; }
+  .mira-shell button.galaxy-label > small { font-size: 8.5em; line-height: 1.1765; }
 }
 
 /* Narrow phones in portrait: the same smaller captions. */
 @media (orientation: portrait) and (max-width: 480px) {
-  .syn3h-shell button.galaxy-label > strong { font-size: 9em; line-height: 1.3333; letter-spacing: .2em; margin-right: -.2em; }
-  .syn3h-shell button.galaxy-label > small { font-size: 8.5em; line-height: 1.1765; }
+  .mira-shell button.galaxy-label > strong { font-size: 9em; line-height: 1.3333; letter-spacing: .2em; margin-right: -.2em; }
+  .mira-shell button.galaxy-label > small { font-size: 8.5em; line-height: 1.1765; }
 }
 
 .entry-warm-progress { position: fixed; z-index: 45; bottom: max(2rem, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); padding: .4rem .8rem; border-radius: .4rem; background: #111a24; color: white; font: inherit; pointer-events: none; white-space: nowrap; }

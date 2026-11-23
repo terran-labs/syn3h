@@ -5,7 +5,7 @@ import { RAPIER } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import { canonicalVehicleKind, createVehicle, VEHICLE_KINDS, type VehicleKind } from '../vehicles'
 import { Jet } from '../vehicles/Jet'
-import { Syn3hBuggy } from '../vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../vehicles/MiraBuggy'
 import { Vehicle, vehicleDetail } from '../vehicles/Vehicle'
 import { LOD_FAR, LOD_NEAR } from '../vehicles/skins/mergeStatic'
 import { drawCoveredShowroom } from '../vehicles/skins/showroom'
@@ -140,7 +140,7 @@ export class BotRenderWarm {
         vehicle.isLocal = false
         vehicle.setParked(true)
         try {
-          if (vehicle instanceof Syn3hBuggy && !(await vehicle.waitForCoveredBody())) continue
+          if (vehicle instanceof MiraBuggy && !(await vehicle.waitForCoveredBody())) continue
           for (const look of kind === 'jet' ? jetLooks : looks) {
             await warm.yieldFrame(`Bot ${kind} ${look.name}`)
             if (!current()) break
@@ -211,7 +211,7 @@ export class BotRenderWarm {
         vehicle.object.scale.setScalar(1e-6)
         vehicle.object.traverse(object => { if (object.frustumCulled) { object.frustumCulled = false; unculled.push(object) } })
       }
-      if (look === near && vehicle instanceof Syn3hBuggy) {
+      if (look === near && vehicle instanceof MiraBuggy) {
         vehicle.object.traverse(object => {
           if (object instanceof Mesh && object.geometry.hasAttribute('wingPlan') && !object.visible) {
             object.visible = true
@@ -221,7 +221,7 @@ export class BotRenderWarm {
       }
       if (look.distance === near.distance) {
         drawCoveredShowroom(vehicle.object, this.game.scene, camera, () => {
-          if (look === near && vehicle instanceof Syn3hBuggy) vehicle.drawCoveredStandIn(() => vehicle.drawCoveredMotorSparks(() => warm.draw(vehicle.kind)))
+          if (look === near && vehicle instanceof MiraBuggy) vehicle.drawCoveredStandIn(() => vehicle.drawCoveredMotorSparks(() => warm.draw(vehicle.kind)))
           else warm.draw(vehicle.kind)
         })
       } else warm.draw(vehicle.kind)

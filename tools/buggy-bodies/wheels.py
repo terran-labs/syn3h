@@ -1,5 +1,5 @@
 """
-Lower-cost tyre options for the Syn3h buggy, for review in the vehicle lab.
+Lower-cost tyre options for the Mira buggy, for review in the vehicle lab.
 
     tools/heavy.sh blender -b --python tools/buggy-bodies/wheels.py -- "$PWD/labs/buggy-wheels" [<preview dir>]
 

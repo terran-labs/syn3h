@@ -195,9 +195,9 @@ export class Daydream implements System {
     return pill
   }
 
-  /** `syn3h:daydream` on window, detail `{ active }`, for the camera, HUD or music to react. */
+  /** `mira:daydream` on window, detail `{ active }`, for the camera, HUD or music to react. */
   private announce(): void {
-    if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') window.dispatchEvent(new CustomEvent('syn3h:daydream', { detail: { active: this.active } }))
+    if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') window.dispatchEvent(new CustomEvent('mira:daydream', { detail: { active: this.active } }))
   }
 
   dispose(): void {

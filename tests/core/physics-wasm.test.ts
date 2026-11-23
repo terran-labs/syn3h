@@ -33,15 +33,15 @@ describe('physics WebAssembly loading', () => {
   it('takes over the download the page started, requesting the file once', async () => {
     let requests = 0
     vi.stubGlobal('fetch', async () => { requests++; return wasm() })
-    vi.stubGlobal('window', { __syn3hPhysicsWasm: { url: '/assets/x.wasm', response: Promise.resolve(wasm()) } })
+    vi.stubGlobal('window', { __miraPhysicsWasm: { url: '/assets/x.wasm', response: Promise.resolve(wasm()) } })
     expect(await loadPhysicsWasm('/assets/x.wasm')).toBeInstanceOf(WebAssembly.Module)
-    expect(requests).toBe(0); expect('__syn3hPhysicsWasm' in window).toBe(false)
+    expect(requests).toBe(0); expect('__miraPhysicsWasm' in window).toBe(false)
     // A download started for another address is not this file: request the right one.
-    vi.stubGlobal('window', { __syn3hPhysicsWasm: { url: '/assets/old.wasm', response: Promise.resolve(wasm()) } })
+    vi.stubGlobal('window', { __miraPhysicsWasm: { url: '/assets/old.wasm', response: Promise.resolve(wasm()) } })
     expect(await loadPhysicsWasm('/assets/x.wasm')).toBeInstanceOf(WebAssembly.Module)
     expect(requests).toBe(1)
     // An early request that failed asks for a reload like any other failure, with no second try.
-    vi.stubGlobal('window', { __syn3hPhysicsWasm: { url: '/assets/x.wasm', response: Promise.resolve(new TypeError('offline')) } })
+    vi.stubGlobal('window', { __miraPhysicsWasm: { url: '/assets/x.wasm', response: Promise.resolve(new TypeError('offline')) } })
     const error = await loadPhysicsWasm('/assets/x.wasm').catch(e => e)
     expect(error).toBeInstanceOf(PhysicsLoadError); expect(error.detail).toMatch(/offline/); expect(requests).toBe(1)
   })

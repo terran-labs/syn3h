@@ -7,7 +7,7 @@ import { checkPublicBuild } from './check-public-build.mjs'
 
 for (const failure of [null, 'identity', 'html', 'missing', 'asset']) {
   test(`public build integrity: ${failure ?? 'matching deployment'}`, async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'syn3h-public-integrity-'))
+    const dir = await mkdtemp(join(tmpdir(), 'mira-public-integrity-'))
     try {
       await mkdir(join(dir, 'dist/assets'), { recursive: true })
       const files = { '/build.json': JSON.stringify({ id: 'frozen', commit: 'abc' }), '/': '<script type="module" src="/assets/main-123.js"></script>', '/assets/main-123.js': 'console.log("ready")' }
@@ -29,7 +29,7 @@ for (const failure of [null, 'identity', 'html', 'missing', 'asset']) {
 
 for (const failure of [null, 'older-first', 'no-summary']) {
   test(`public Updates feed: ${failure ?? 'lists the deployed version first'}`, async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'syn3h-public-feed-'))
+    const dir = await mkdtemp(join(tmpdir(), 'mira-public-feed-'))
     try {
       await mkdir(join(dir, 'dist/assets'), { recursive: true })
       const feed = { releases: [{ version: failure === 'older-first' ? '26.11.1606' : '26.11.1607', summary: failure === 'no-summary' ? ' ' : 'Boxes become buggies again' }] }

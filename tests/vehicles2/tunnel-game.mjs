@@ -8,11 +8,11 @@ const browser=await chromium.launch({channel:'chrome',headless:true,args:['--ena
 const results=[]
 try{for(const kind of kinds){
  const page=await browser.newPage({viewport:{width:960,height:540}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.routeWebSocket(/\/ws/,s=>s.close())
- await page.goto(`http://localhost:${port}/?autoplay=1&vehicle=${kind}&${worldQuery}`);await page.waitForFunction(()=>window.syn3h?.game.tick>10,null,{timeout:120000})
- await page.evaluate(()=>{const s=window.syn3h;s.params.set('bots.count',0);s.params.set('gfx.auto',false);s.params.set('gfx.vehicleShading',0)})
+ await page.goto(`http://localhost:${port}/?autoplay=1&vehicle=${kind}&${worldQuery}`);await page.waitForFunction(()=>window.mira?.game.tick>10,null,{timeout:120000})
+ await page.evaluate(()=>{const s=window.mira;s.params.set('bots.count',0);s.params.set('gfx.auto',false);s.params.set('gfx.vehicleShading',0)})
  await page.waitForTimeout(2000)
  for(const speed of [60,120,250])for(const dive of [0,15,50])for(const site of [0,1,2]){
-  const r=await page.evaluate(async({speed,dive,site})=>{const s=window.syn3h,v=s.player,t=s.terrain
+  const r=await page.evaluate(async({speed,dive,site})=>{const s=window.mira,v=s.player,t=s.terrain
    // Find rising ground: walk outward from a per-site bearing until the slope ahead climbs.
    const bearing=site*2.1+.4,dx=Math.sin(bearing),dz=Math.cos(bearing);let d=60
    for(;d<700;d+=10){if(t.heightAt(dx*(d+40),dz*(d+40))-t.heightAt(dx*d,dz*d)>10&&t.heightAt(dx*d,dz*d)>1)break}

@@ -1,12 +1,13 @@
 // Screenshots of the standard switch in play: switch rows over a daylight and a night scene at
 // each glass setting, the Performance card with Auto quality on and off, and a switch locked by
 // the host. Desktop (Chrome) and an iPhone 14 (WebKit), one browser at a time.
-//   SYN3H_URL=http://127.0.0.1:5173/ node tests/ui/toggle-clarity.mjs
+//   MIRA_URL=http://127.0.0.1:5173/ node tests/ui/toggle-clarity.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5173/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5173/'
 const out = 'tests/ui/artifacts/toggle-clarity'
 await mkdir(out, { recursive: true })
 
@@ -17,7 +18,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'p
     const page = await browser.newPage(touch ? devices['iPhone 14'] : { viewport: { width: 1440, height: 900 } })
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     await page.goto(`${base}?autoplay=1&room=toggle-${mode}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     if (touch) await page.locator('.inspector-toggle').tap()
     else if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
@@ -27,7 +28,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'p
 
     // Every on/off row is a switch with aria-checked matching the registry.
     const mismatched = await page.evaluate(() => [...document.querySelectorAll('.world-inspector .wi-row.is-switch')].filter(row => {
-      const input = row.querySelector('input'); return input.getAttribute('role') !== 'switch' || input.getAttribute('aria-checked') !== String(!!window.syn3h.params.get(row.dataset.id).value)
+      const input = row.querySelector('input'); return input.getAttribute('role') !== 'switch' || input.getAttribute('aria-checked') !== String(!!window.mira.params.get(row.dataset.id).value)
     }).map(row => row.dataset.id))
     assert.deepEqual(mismatched, [], `${mode}: switches agree with their settings`)
     assert.equal(await page.locator('.world-inspector input[type=checkbox]:not([role=switch])').count(), 0, `${mode}: no plain checkboxes left in the sidebar`)
@@ -37,7 +38,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'p
       let best = null
       for (const group of document.querySelectorAll('.world-inspector .wi-cards details.wi-group')) {
         // Shared (world) switches, so the same rows can be shown locked by the host.
-        const n = [...group.querySelectorAll(':scope > .wi-row.is-switch:not([hidden])')].filter(row => window.syn3h.params.get(row.dataset.id).def.scope === 'world').length
+        const n = [...group.querySelectorAll(':scope > .wi-row.is-switch:not([hidden])')].filter(row => window.mira.params.get(row.dataset.id).def.scope === 'world').length
         if (n && (!best || n > best.n)) best = { n, card: group.closest('.wi-card').dataset.section, group: group.querySelector('summary span')?.textContent }
       }
       return best
@@ -48,38 +49,38 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'p
     const group = card.locator('details.wi-group').filter({ has: page.locator(`summary span:text-is("${target.group}")`) })
     await group.evaluate(g => { g.open = true })
     const ids = await group.locator(':scope > .wi-row.is-switch:not([hidden])').evaluateAll(rows => rows.slice(0, 3).map(r => r.dataset.id))
-    const saved = await page.evaluate(ids => ids.map(id => window.syn3h.params.get(id).value), ids)
+    const saved = await page.evaluate(ids => ids.map(id => window.mira.params.get(id).value), ids)
     // Alternate on and off so both states sit side by side.
-    await page.evaluate(ids => ids.forEach((id, i) => window.syn3h.params.set(id, i % 2 === 0)), ids)
-    await page.evaluate(() => window.syn3h.shell.inspector.update())
+    await page.evaluate(ids => ids.forEach((id, i) => window.mira.params.set(id, i % 2 === 0)), ids)
+    await page.evaluate(() => window.mira.shell.inspector.update())
     await group.locator(':scope > .wi-row.is-switch').first().scrollIntoViewIfNeeded()
     const shotRail = async name => { await settle(); await page.screenshot({ path: `${out}/${mode}-${name}.png` }) }
 
     for (const [scene, hour] of [['day', 12.5], ['night', 0.5]]) {
-      await page.evaluate(hour => window.syn3h.params.set('sun.timeOfDay', hour), hour)
+      await page.evaluate(hour => window.mira.params.set('sun.timeOfDay', hour), hour)
       for (const glass of [0, 1, 2]) {
-        await page.evaluate(glass => window.syn3h.params.set('hud.glass', glass), glass)
+        await page.evaluate(glass => window.mira.params.set('hud.glass', glass), glass)
         await page.waitForTimeout(400)
         await shotRail(`switches-${scene}-glass${glass}`)
       }
     }
-    await page.evaluate(() => window.syn3h.params.set('hud.glass', 1))
+    await page.evaluate(() => window.mira.params.set('hud.glass', 1))
 
     // Locked by the host: dimmed, a lock and "host", true state still shown.
     // A guest under the host's lock, as the room reports it: canEditWorld false.
     await page.evaluate(() => {
-      window.__realNet = window.syn3hNet
-      window.syn3hNet = Object.create(window.syn3hNet ?? {}, { canEditWorld: { value: false }, isHost: { value: false }, locked: { value: true } })
+      window.__realNet = window.miraNet
+      window.miraNet = Object.create(window.miraNet ?? {}, { canEditWorld: { value: false }, isHost: { value: false }, locked: { value: true } })
     })
     await page.waitForTimeout(300)
     const lockedWorld = await group.locator('.wi-row.is-locked-row').count()
     await shotRail('switches-locked')
     if (lockedWorld) assert.ok(await group.locator('.wi-row.is-locked-row .wi-lock').first().isVisible(), `${mode}: the lock shows`)
     console.log(`${mode}: ${lockedWorld} locked switch rows in ${target.group}`)
-    await page.evaluate(() => { window.syn3hNet = window.__realNet })
+    await page.evaluate(() => { window.miraNet = window.__realNet })
     await page.waitForTimeout(300)
     assert.equal(await group.locator('.wi-row.is-locked-row').count(), 0, `${mode}: unlocked again`)
-    await page.evaluate(([ids, saved]) => ids.forEach((id, i) => window.syn3h.params.set(id, saved[i])), [ids, saved])
+    await page.evaluate(([ids, saved]) => ids.forEach((id, i) => window.mira.params.set(id, saved[i])), [ids, saved])
 
     // Close the switch card so the next ones have room.
     await (touch ? card.locator('.wi-head').tap() : card.locator('.wi-head').click()); await settle()

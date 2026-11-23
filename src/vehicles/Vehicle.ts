@@ -282,10 +282,10 @@ export abstract class Vehicle implements System {
 
   /**
    * Owner-side safety nets, run only for the vehicle this client simulates:
-   *  - Fell off the world (Syn3h VhiclMe.cs 41-47, Mars Explorer VehicleMe.js 70-76): below
+   *  - Fell off the world (Mira VhiclMe.cs 41-47, Mars Explorer VehicleMe.js 70-76): below
    *    y -300, keep only the direction of travel and return to a spawn point. The originals
    *    used a fixed point; a spawn point works on any seed.
-   *  - Underground rescue (Syn3h VhiclLocal.cs, MapMagic block): under the ground surface with
+   *  - Underground rescue (Mira VhiclLocal.cs, MapMagic block): under the ground surface with
    *    no terrain beneath, put it back on the surface 3 m up (the prefab CamOffset).
    *  - Speed clamp (Mars Explorer VehicleMe.js 77): above 500 m/s, halve the velocity.
    */

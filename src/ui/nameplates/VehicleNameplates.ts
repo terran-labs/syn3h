@@ -152,7 +152,7 @@ export class VehicleNameplates {
   private readonly stacked = new Map<string, number>()
 
   constructor(private readonly currentCamera: () => THREE.PerspectiveCamera, private readonly options: NameplateOptions) {
-    this.root.className = 'vehicle-nameplates syn3h-nametags'
+    this.root.className = 'vehicle-nameplates mira-nametags'
     this.root.setAttribute('aria-hidden', 'true')
     options.shell.appendChild(this.root)
     this.hud = new HudExclusions(options.shell)

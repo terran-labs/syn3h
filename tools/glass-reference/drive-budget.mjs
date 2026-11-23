@@ -12,19 +12,19 @@ try {
   const url = new URL('/', origin)
   url.search = '?glass=inline&gfx=3&planet=alpine&seed=19' + (backend === 'webgl' ? '&webgl=1' : '')
   await page.goto(url.href)
-  await page.waitForFunction(() => window.syn3h?.shell.galaxy?.live)
+  await page.waitForFunction(() => window.mira?.shell.galaxy?.live)
   await page.evaluate(() => {
-    window.syn3h.params.set('bots.count', 0)
-    window.syn3h.bots.daydream.setBlocker(() => true)
-    window.syn3h.game.quality.setAuto(false)
-    window.syn3h.game.quality.setLevel(3)
-    window.syn3h.shell.play(true)
+    window.mira.params.set('bots.count', 0)
+    window.mira.bots.daydream.setBlocker(() => true)
+    window.mira.game.quality.setAuto(false)
+    window.mira.game.quality.setLevel(3)
+    window.mira.shell.play(true)
   })
   await page.waitForFunction(() => document.documentElement.dataset.driveGlass === 'on' &&
-    !window.syn3h.shell.transitioning && document.querySelector('.gs-item[data-glass-surface="shader"]'),
+    !window.mira.shell.transitioning && document.querySelector('.gs-item[data-glass-surface="shader"]'),
     undefined, { timeout: 90000 })
   const result = await page.evaluate(async () => {
-    const { game } = window.syn3h
+    const { game } = window.mira
     const chain = game.postChain, glass = chain.glass
     const backend = game.renderer.backend, before = chain.builds
     const counters = { createRenderPipeline: 0, createNodeBuilder: 0 }

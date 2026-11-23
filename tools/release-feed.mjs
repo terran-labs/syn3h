@@ -11,10 +11,11 @@
  * release-notes/history.tsv; only production releases with a notes file are listed.
  *
  * The feed is emitted into the build and served by the dev server; nothing loads it until a
- * player opens Updates or an update is found. A build for a release (SYN3H_RELEASE_VERSION
+ * player opens Updates or an update is found. A build for a release (MIRA_RELEASE_VERSION
  * set, as tools/release.sh does) fails unless that version has a valid digest, so a release
  * never ships without words for its own players.
  */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,10 +33,10 @@ const compare = (a, b) => {
 }
 const bare = version => String(version).replace(/^v/, '')
 
-/** The summary line of a published notes file: the first line after its "## Syn3h v…" title. */
+/** The summary line of a published notes file: the first line after its "## Mira v…" title. */
 export function notesSummary(text) {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
-  const title = lines.findIndex(line => /^#{1,3}\s+Syn3h\s+v?\d/.test(line))
+  const title = lines.findIndex(line => /^#{1,3}\s+Mira\s+v?\d/.test(line))
   const head = lines.slice(title + 1).map(line => line.trim())
   return head.find(line => line && !/^#/.test(line) && !/^Public release at\b/i.test(line)) ?? ''
 }
@@ -78,7 +79,7 @@ function readDigest(repo, version) {
 
 /** Throw a clear error unless the version being released has a valid player digest. */
 export function requireDigest(version, repo = REPO) {
-  if (!VERSION.test(String(version))) throw new Error(`SYN3H_RELEASE_VERSION "${version}" is not a version like v26.11.1604`)
+  if (!VERSION.test(String(version))) throw new Error(`MIRA_RELEASE_VERSION "${version}" is not a version like v26.11.1604`)
   if (!readDigest(repo, version)) {
     throw new Error(`No player digest for v${bare(version)}. Write ${digestPath(repo, version)} before building this release: ` +
       `a summary under ${SUMMARY_MAX} characters, then two to five "- " bullets of what players will notice (release-notes/README.md).`)
@@ -95,11 +96,11 @@ export function pacificStamp(when) {
 }
 
 /**
- * The feed. `building` is the version this build is for (SYN3H_RELEASE_VERSION): release.sh
+ * The feed. `building` is the version this build is for (MIRA_RELEASE_VERSION): release.sh
  * writes its history row only after the deploy, so without this a release's own Updates would
  * leave it out. It is listed first, dated now, with its digest, unless history already has it.
  */
-export function buildFeed(repo = REPO, limit = LIMIT, building = process.env.SYN3H_RELEASE_VERSION, now = new Date()) {
+export function buildFeed(repo = REPO, limit = LIMIT, building = process.env.MIRA_RELEASE_VERSION, now = new Date()) {
   const dir = join(repo, 'release-notes', 'releases'), history = join(repo, 'release-notes', 'history.tsv')
   const dates = existsSync(history) ? productionDates(readFileSync(history, 'utf8')) : new Map()
   const files = existsSync(dir) ? readdirSync(dir).filter(name => /^v\d+\.\d+\.\d+\.md$/.test(name)) : []
@@ -128,10 +129,10 @@ export function buildFeed(repo = REPO, limit = LIMIT, building = process.env.SYN
 export function releaseFeed() {
   let building = false
   return {
-    name: 'syn3h-release-feed',
+    name: 'mira-release-feed',
     configResolved(config) { building = config.command === 'build' },
     buildStart() {
-      const version = process.env.SYN3H_RELEASE_VERSION
+      const version = process.env.MIRA_RELEASE_VERSION
       if (building && version) requireDigest(version)
     },
     configureServer(server) {

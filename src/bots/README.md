@@ -20,7 +20,7 @@ see an ordinary player. It is idle in the lobby, in menus and in a hidden tab. T
 manager owns it (`bots.daydream`), so the composition root needs no wiring.
 
 - `?daydream=5` sets the idle time from the URL, for a quick look or an automated check.
-- A `syn3h:daydream` event on `window` (`detail.active`) announces each change. The chase
+- A `mira:daydream` event on `window` (`detail.active`) announces each change. The chase
   camera listens and runs `core/CameraDirector.ts`: chase, orbit, fly-by, crane and low
   tracking shots, cutting away when a hill hides the car. `camera.daydreamShots` turns the
   shots off.
@@ -46,7 +46,7 @@ const bots = game.add(new BotManager(game, terrain, player))
 bots.setTargets([player])
 ```
 
-Include `bots` in the `window.syn3h` debug handles if desired. The module registers the Bots parameters; `params.set('bots.count', 5)` spawns five bots on the next rendered frame. Count defaults to four, with a mixed fleet of buggies, a hovercraft and a jet. The slider accepts up to sixteen, while local graphics budgets cap active host bots at two, four or eight. Import `src/bots/params.ts` on a server that validates shared parameters, or move those declarations into shared code during integration.
+Include `bots` in the `window.mira` debug handles if desired. The module registers the Bots parameters; `params.set('bots.count', 5)` spawns five bots on the next rendered frame. Count defaults to four, with a mixed fleet of buggies, a hovercraft and a jet. The slider accepts up to sixteen, while local graphics budgets cap active host bots at two, four or eight. Import `src/bots/params.ts` on a server that validates shared parameters, or move those declarations into shared code during integration.
 
 Every client may create a manager. Networking must set `manager.remote = true` on non-hosts before simulation; this immediately disposes all managed effects, brains and vehicles. Remote managers never spawn bots. Networking owns its separate remote copies. Host takeover spawns fresh vehicles on the next update. `isLocal = false` prevents keyboard reads here; it does not prevent the vehicle's forces from running. Do not give a host-owned bot a remote interpolation controller on the same host.
 
@@ -70,7 +70,7 @@ The safety probe checks terrain bounds and optional `terrain.liquidHeightAt(x, z
 
 Road guidance uses the public `roadPaths()` or older `data.roads` seam. It connects nearby approach, foot-ring, spiral and summit nodes only when their heights agree. Replacing the road array on regeneration invalidates the graph. Roads farther than 70 metres from either endpoint are ignored. Route queries run every 0.4 seconds; `bots.roadSpeed` and `bots.roadCornerSpeed` govern braking, and lateral variation narrows on a road. Road pursuit stays on its route near a target and queues behind aligned traffic. The four-seed, three-speed summit sweep reaches the top with all 48 bots and no recorded falls. Alpine and desert roads are climbable, but traffic and recovery steering can still send a bot over an edge; see `tools/island-acceptance.md`.
 
-Spawns use deterministic index/tick offsets around the player, reject steep slopes and wet ground, and keep five metres between new bots. If no valid position is available, the manager leaves the count below the requested value and retries on subsequent frames. Bots use stable hue offsets, target velocity prediction, lateral approach offsets and nearby ally avoidance. Corner braking above `bots.cornerSpeed` reduces overshoot. Self-flying jets use forward flight on long, aligned, clear legs, and hover for turns and nearby destinations. Headless contact tests cover both the placeholder and Syn3h buggy.
+Spawns use deterministic index/tick offsets around the player, reject steep slopes and wet ground, and keep five metres between new bots. If no valid position is available, the manager leaves the count below the requested value and retries on subsequent frames. Bots use stable hue offsets, target velocity prediction, lateral approach offsets and nearby ally avoidance. Corner braking above `bots.cornerSpeed` reduces overshoot. Self-flying jets use forward flight on long, aligned, clear legs, and hover for turns and nearby destinations. Headless contact tests cover both the placeholder and Mira buggy.
 
 Run `tools/heavy.sh npx vitest run tests/bots --maxWorkers=2` for headless Rapier tests. With Vite on port 5186, `node src/bots/smoke.mjs` sets five bots through the public parameter API, waits for real contact, captures screenshots, then clears the population.
 

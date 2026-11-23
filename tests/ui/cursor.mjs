@@ -15,14 +15,14 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
   page.on('pageerror', e => errors.push(e.message))
   await page.goto(`http://127.0.0.1:5187/?room=cursor-${Date.now()}&autoplay=1`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 40, null, { timeout: 120000 })
-  const locked = () => page.evaluate(() => document.pointerLockElement === window.syn3h.game.canvas)
-  const eye = () => page.evaluate(() => { const s = window.syn3h, c = s.game.camera.position, p = s.player.body.translation(); return Math.atan2(c.x - p.x, c.z - p.z) })
+  await page.waitForFunction(() => window.mira?.game?.tick > 40, null, { timeout: 120000 })
+  const locked = () => page.evaluate(() => document.pointerLockElement === window.mira.game.canvas)
+  const eye = () => page.evaluate(() => { const s = window.mira, c = s.game.camera.position, p = s.player.body.translation(); return Math.atan2(c.x - p.x, c.z - p.z) })
   assert.equal(await locked(), false)
   // The first click captures and sends nothing.
   await page.mouse.move(640, 300); await page.mouse.down()
-  await page.waitForFunction(() => document.pointerLockElement === window.syn3h.game.canvas, null, { timeout: 5000 })
-  assert.equal(await page.evaluate(() => window.syn3h.game.input.mouseFire), false, 'the capturing click sends no beam')
+  await page.waitForFunction(() => document.pointerLockElement === window.mira.game.canvas, null, { timeout: 5000 })
+  assert.equal(await page.evaluate(() => window.mira.game.input.mouseFire), false, 'the capturing click sends no beam')
   await page.mouse.up()
   // Moving the mouse swings the camera round the vehicle.
   await page.waitForTimeout(600); const before = await eye()
@@ -30,14 +30,14 @@ try {
   await page.waitForTimeout(700); const after = await eye()
   assert.ok(Math.abs(after - before) > 0.15, `the camera swung (${before.toFixed(2)} to ${after.toFixed(2)})`)
   // A click now sends a beam for as long as it is held.
-  await page.mouse.down(); await page.waitForFunction(() => window.syn3h.game.input.mouseFire === true)
-  await page.mouse.up(); await page.waitForFunction(() => window.syn3h.game.input.mouseFire === false)
+  await page.mouse.down(); await page.waitForFunction(() => window.mira.game.input.mouseFire === true)
+  await page.mouse.up(); await page.waitForFunction(() => window.mira.game.input.mouseFire === false)
   // Right-click still switches to the cockpit and back.
-  const mode = () => page.evaluate(() => Math.round(window.syn3h.params.get('camera.mode').value))
+  const mode = () => page.evaluate(() => Math.round(window.mira.params.get('camera.mode').value))
   const chase = await mode(); await page.mouse.click(640, 300, { button: 'right' }); await page.waitForTimeout(200)
   assert.notEqual(await mode(), chase); await page.mouse.click(640, 300, { button: 'right' }); await page.waitForTimeout(200); assert.equal(await mode(), chase)
   // Opening the menu lets the cursor go.
-  await page.evaluate(() => window.syn3h.shell.openMenu()); await page.waitForFunction(() => document.pointerLockElement === null)
+  await page.evaluate(() => window.mira.shell.openMenu()); await page.waitForFunction(() => document.pointerLockElement === null)
   console.log(JSON.stringify({ ok: true, swing: +(after - before).toFixed(2), errors }))
 } finally { await browser.close() }
 if (errors.length) { console.log(errors); process.exitCode = 1 }

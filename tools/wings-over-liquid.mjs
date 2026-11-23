@@ -19,9 +19,9 @@ try {
     const page = await browser.newPage({ viewport: { width: 960, height: 540 } })
     await page.routeWebSocket(/\/ws/, s => s.close())
     await page.goto(`${base}?autoplay=1&vehicle=buggy&planet=${planet}&seed=1`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 10, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 10, null, { timeout: 120000 })
     await page.evaluate(kind => {
-      const s = window.syn3h, t = s.terrain
+      const s = window.mira, t = s.terrain
       s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 15); s.params.set('sun.dayLength', 0)
       const p0 = s.player.body.translation()
       let spot = null
@@ -38,7 +38,7 @@ try {
     const frames = []
     for (const [az, el] of ANGLES) {
       await page.evaluate(([az, el]) => {
-        const s = window.syn3h, V = s.game.camera.position.constructor, p = s.player.body.translation()
+        const s = window.mira, V = s.game.camera.position.constructor, p = s.player.body.translation()
         // Hold the buggy where it is while the camera moves round it.
         s.player.body.setTranslation({ x: window.wingSpot.x, y: window.wingSpot.y + 15, z: window.wingSpot.z }, true)
         s.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
@@ -50,7 +50,7 @@ try {
       await page.screenshot({ path })
       frames.push(path)
     }
-    const wingsOpen = await page.evaluate(() => window.syn3h.player.wingsOpen)
+    const wingsOpen = await page.evaluate(() => window.mira.player.wingsOpen)
     console.log(planet, 'wingsOpen', wingsOpen)
     await page.keyboard.up('Space')
     await page.close()

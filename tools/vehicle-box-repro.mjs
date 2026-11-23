@@ -8,7 +8,7 @@ const base = process.argv[3] ?? 'http://127.0.0.1:5419'
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const look = (page) => page.evaluate(() => {
-  const s = window.syn3h
+  const s = window.mira
   const describe = (v) => v && ({
     kind: v.kind,
     box: v.fallback ? v.fallback.visible || !v.skin || !v.skin.object.visible : false,
@@ -17,7 +17,7 @@ const look = (page) => page.evaluate(() => {
   return {
     player: describe(s.player),
     bots: (s.bots.vehicles ?? []).filter((v) => v.fallback).map(describe).map((d) => d.box),
-    remotes: window.syn3hNet ? [...window.syn3hNet.remotes.values()].map((r) => describe(r.vehicle)) : [],
+    remotes: window.miraNet ? [...window.miraNet.remotes.values()].map((r) => describe(r.vehicle)) : [],
   }
 })
 
@@ -36,20 +36,20 @@ try {
   })
   const vehicle = scenario === 'jet-warm' ? 'jet' : 'buggy'
   await page.goto(`${base}/?room=${room}&name=Box&autoplay=1&vehicle=${vehicle}`)
-  await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 60000 })
-  await page.evaluate(() => window.syn3h.shell.play?.())
+  await page.waitForFunction(() => window.mira?.shell, null, { timeout: 60000 })
+  await page.evaluate(() => window.mira.shell.play?.())
   await wait(scenario === 'jet-warm' ? 25000 : 15000)
   console.log('after load', JSON.stringify(await look(page)), 'model requests', modelHits)
   if (scenario === 'jet-warm' || scenario === 'switch' || scenario === 'fail-once') {
-    await page.evaluate(() => window.syn3h.swapVehicle(window.syn3h.player.kind === 'buggy' ? 'jet' : 'buggy'))
+    await page.evaluate(() => window.mira.swapVehicle(window.mira.player.kind === 'buggy' ? 'jet' : 'buggy'))
     await wait(3000)
-    if (scenario !== 'jet-warm') { await page.evaluate(() => window.syn3h.swapVehicle('buggy')); await wait(3000) }
+    if (scenario !== 'jet-warm') { await page.evaluate(() => window.mira.swapVehicle('buggy')); await wait(3000) }
     console.log('after switch', JSON.stringify(await look(page)))
   }
   if (scenario === 'two-pages') {
     const other = await context.newPage()
     await other.goto(`${base}/?room=${room}&name=Other&autoplay=1&vehicle=buggy`)
-    await other.waitForFunction(() => window.syn3hNet?.remotes?.size >= 1, null, { timeout: 60000 })
+    await other.waitForFunction(() => window.miraNet?.remotes?.size >= 1, null, { timeout: 60000 })
     await wait(10000)
     console.log('first sees', JSON.stringify(await look(page)))
     console.log('second sees', JSON.stringify(await look(other)))

@@ -1,13 +1,14 @@
 // Touch aiming and handedness on an iPhone 14, portrait and landscape, in WebKit.
-//   SYN3H_URL=http://127.0.0.1:5213/ node tests/ui/touch-aim.mjs
+//   MIRA_URL=http://127.0.0.1:5213/ node tests/ui/touch-aim.mjs
 // Serve the game first (see tests/ui/run-touch-stick.sh). Drags are synthetic PointerEvents sent
 // to the element under the point, as tests/ui/touch-stick.mjs does: WebKit automation has no
 // multi-touch drag. Screenshots of both hands in both orientations go to tests/ui/artifacts/touch-aim.
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5213/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5213/'
 const out = 'tests/ui/artifacts/touch-aim'
 await mkdir(out, { recursive: true })
 const browser = await webkit.launch()
@@ -21,7 +22,7 @@ try {
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.goto(`${base}?autoplay=1&room=touch-aim-${name}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     if (await page.locator('.world-inspector').isVisible()) await page.locator('.panels-close').tap()
     await page.locator('.world-inspector').waitFor({ state: 'hidden' })
@@ -36,14 +37,14 @@ try {
         target.setPointerCapture = function (id) { try { capture.call(this, id) } catch (error) { if (error.name !== 'NotFoundError') throw error } }
         try { target.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1, bubbles: true, cancelable: true, composed: true })) } finally { target.setPointerCapture = capture }
       }
-      window.__state = () => ({ yaw: window.syn3h.camera.yaw, x: window.syn3h.game.input.external.x ?? 0, y: window.syn3h.game.input.external.y ?? 0, brakes: window.syn3h.game.input.external.brakes ?? false })
+      window.__state = () => ({ yaw: window.mira.camera.yaw, x: window.mira.game.input.external.x ?? 0, y: window.mira.game.input.external.y ?? 0, brakes: window.mira.game.input.external.brakes ?? false })
     })
     const touch = (type, id, x, y) => page.evaluate((a) => window.__touch(...a), [type, id, x, y])
     const state = () => page.evaluate(() => window.__state())
     const { width, height } = page.viewportSize()
 
     for (const hand of ['right', 'left']) {
-      await page.evaluate((left) => window.syn3h.params.set('touch.leftHanded', left), hand === 'left')
+      await page.evaluate((left) => window.mira.params.set('touch.leftHanded', left), hand === 'left')
       assert.equal(await page.locator('.touch-controls').getAttribute('data-hand'), hand)
       await page.waitForTimeout(100)
       const box = (selector) => page.locator(selector).first().boundingBox()
@@ -62,7 +63,7 @@ try {
       // The stick may land on it.
       assert.ok(height - (map.y + map.height) <= 40 && (hand === 'right' ? map.x <= 40 : width - (map.x + map.width) <= 90), `${name} ${hand}: minimap in the lower ${hand === 'right' ? 'left' : 'right'} corner ${JSON.stringify(map)}`)
       const vehicle = await page.evaluate(() => {
-        const { camera } = window.syn3h.game, v = camera.position.clone().copy(window.syn3h.player.object.position).project(camera)
+        const { camera } = window.mira.game, v = camera.position.clone().copy(window.mira.player.object.position).project(camera)
         return { x: (v.x + 1) / 2 * innerWidth - 70, y: (1 - v.y) / 2 * innerHeight - 50, width: 140, height: 100 }
       })
       const clear = (other, what) => assert.ok(other && !overlaps(map, other), `${name} ${hand}: minimap clears ${what} ${JSON.stringify([map, other])}`)
@@ -97,7 +98,7 @@ try {
       assert.ok(turned * dir < -20, `${hand}: the camera turns with the drag (${turned.toFixed(1)} deg)`)
       // A toast as long as a real one gets (a cut room name and a long player name) shows in one
       // line and covers nothing the player reads or touches.
-      await page.evaluate(() => window.syn3h.shell.toast('Joined room touch-aim-…794854727 as Bartholomew'))
+      await page.evaluate(() => window.mira.shell.toast('Joined room touch-aim-…794854727 as Bartholomew'))
       await page.waitForTimeout(150)
       const toast = await box('.shell-toast')
       assert.ok(toast && toast.height < 32, `${name} ${hand}: toast is one line ${JSON.stringify(toast)}`)
@@ -128,14 +129,14 @@ try {
 
     // The hand persists on this device; the hint names the side to drive on.
     await page.reload()
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     assert.equal(await page.locator('.touch-controls').getAttribute('data-hand'), 'left', 'left hand survives a reload')
     assert.match(await page.locator('.touch-stick-label').textContent(), /Drag on the right to drive/)
     // It is a Me card setting in the sidebar.
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     if (!(await page.locator('.world-inspector').isVisible())) await page.locator('.inspector-toggle').tap()
     assert.ok(await page.locator('.wi-cards > [data-section=you]').getByText('Left-handed touch', { exact: false }).count() > 0, 'setting listed in the Me card')
-    await page.evaluate(() => window.syn3h.params.set('touch.leftHanded', false))
+    await page.evaluate(() => window.mira.params.set('touch.leftHanded', false))
 
     assert.deepEqual(errors, [], `${name}: no page errors`)
     await context.close()
@@ -146,11 +147,11 @@ try {
   try {
     const page = await desktop.newPage({ viewport: { width: 1440, height: 900 } })
     await page.goto(`${base}?autoplay=1&room=touch-aim-desktop-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     // Toasts are hidden while the sidebar is open (exploration.css); clicking into the game closes it.
     if (await page.locator('.world-inspector').isVisible()) { await page.mouse.click(720, 650); await page.locator('.world-inspector').waitFor({ state: 'hidden' }) }
-    await page.evaluate(() => window.syn3h.shell.toast('Joined room touch-aim-…794854727 as Bartholomew'))
+    await page.evaluate(() => window.mira.shell.toast('Joined room touch-aim-…794854727 as Bartholomew'))
     await page.waitForTimeout(400)
     const toast = await page.locator('.shell-toast').boundingBox()
     assert.ok(Number(await page.locator('.shell-toast').evaluate((e) => getComputedStyle(e).opacity)) > 0.5, 'desktop: toast visible')

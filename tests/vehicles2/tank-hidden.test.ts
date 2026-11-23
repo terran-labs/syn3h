@@ -7,7 +7,7 @@ import {beforeAll,describe,expect,it} from 'vitest'
 import * as T from 'three/webgpu'
 import {initPhysics} from '../../src/core/physics'
 import {TANK_AVAILABLE,VEHICLE_KINDS,canonicalVehicleKind,createVehicle} from '../../src/vehicles'
-import {Syn3hBuggy} from '../../src/vehicles/Syn3hBuggy'
+import {MiraBuggy} from '../../src/vehicles/MiraBuggy'
 import {PLAY_VEHICLES,sanitizeVehicleChoice} from '../../src/ui/VehicleChoice'
 import {buildTree,type PropertyDef} from '../../src/ui/inspector/model'
 import {needsRebuild} from '../../src/net/kinds'
@@ -32,7 +32,7 @@ describe.skipIf(TANK_AVAILABLE)('the hidden tank',()=>{
   // A remote tank and the buggy drawn for it are the same thing: no rebuild loop.
   expect(needsRebuild('buggy','tank')).toBe(false)
   const h=harness(),v=createVehicle(h.game,h.terrain,'tank',new T.Vector3(0,2,0),0)
-  expect(v).toBeInstanceOf(Syn3hBuggy)
+  expect(v).toBeInstanceOf(MiraBuggy)
   v.isLocal=false;v.input.y=1;h.step(v,240)
   expect(Math.hypot(v.body.linvel().x,v.body.linvel().z)).toBeGreaterThan(3)
   v.dispose();h.world.free()

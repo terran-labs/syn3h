@@ -27,9 +27,9 @@ describe('the pause screen keys', () => {
 
 describe('the screenshot file name', () => {
   it('names the world, its planet and the local minute', () => {
-    expect(shotFileName('Zansaeth', 'Badlands', new Date(2026, 10, 19, 20, 10))).toBe('syn3h-zansaeth-badlands-20261119-2010.png')
-    expect(shotFileName('Ōra Vé', 'Ice  shelf', new Date(2026, 0, 2, 3, 4))).toBe('syn3h-ora-ve-ice-shelf-20260102-0304.png')
-    expect(shotFileName('', '', new Date(2026, 0, 2, 3, 4))).toBe('syn3h-20260102-0304.png')
+    expect(shotFileName('Zansaeth', 'Badlands', new Date(2026, 10, 19, 20, 10))).toBe('mira-zansaeth-badlands-20261119-2010.png')
+    expect(shotFileName('Ōra Vé', 'Ice  shelf', new Date(2026, 0, 2, 3, 4))).toBe('mira-ora-ve-ice-shelf-20260102-0304.png')
+    expect(shotFileName('', '', new Date(2026, 0, 2, 3, 4))).toBe('mira-20260102-0304.png')
   })
 })
 

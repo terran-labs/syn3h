@@ -10,11 +10,12 @@
  * and dispatching visibilitychange; the report says which was used, since emulation proves
  * the game's own handling but not that the browser stopped anything by itself.
  *
- *   SYN3H_URL=http://127.0.0.1:5199/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/core/lifecycle-browser.mjs
+ *   MIRA_URL=http://127.0.0.1:5199/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/core/lifecycle-browser.mjs
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5187/'
 const HIDDEN_MS = 10000
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const report = {}
@@ -36,11 +37,11 @@ try {
   page.on('pageerror', e => errors.push(e.message))
   page.on('console', m => { if (m.type() === 'error' && !offline.test(m.text())) errors.push(m.text()) })
   await page.goto(`${base}?room=lifecycle-${Date.now()}&autoplay=1`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 100 && document.querySelector('.syn3h-shell')?.classList.contains('is-playing'), null, { timeout: 180000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 100 && document.querySelector('.mira-shell')?.classList.contains('is-playing'), null, { timeout: 180000 })
   const cdp = await context.newCDPSession(page)
   await cdp.send('Performance.enable')
   const cpu = async () => { const { metrics } = await cdp.send('Performance.getMetrics'); const get = n => metrics.find(m => m.name === n)?.value ?? 0; return { task: get('TaskDuration'), script: get('ScriptDuration') } }
-  const sample = () => page.evaluate(() => ({ tick: window.syn3h.game.tick, raf: window.__rafRuns, draws: window.syn3h.game.frames, paused: window.syn3h.game.isPaused, state: window.syn3h.lifecycle.state, hidden: document.hidden }))
+  const sample = () => page.evaluate(() => ({ tick: window.mira.game.tick, raf: window.__rafRuns, draws: window.mira.game.frames, paused: window.mira.game.isPaused, state: window.mira.lifecycle.state, hidden: document.hidden }))
 
   // Hide: a second tab in front.
   const other = await context.newPage(); await other.setContent('<title>elsewhere</title><p>elsewhere</p>'); await other.bringToFront()
@@ -67,7 +68,7 @@ try {
   // Show again.
   if (method === 'emulated document.hidden') await page.evaluate(() => { window.__hidden = false; document.dispatchEvent(new Event('visibilitychange')) })
   await other.close(); await page.bringToFront()
-  await page.waitForFunction(() => window.syn3h.lifecycle.state === 'active' && !window.syn3h.game.isPaused, null, { timeout: 5000 })
+  await page.waitForFunction(() => window.mira.lifecycle.state === 'active' && !window.mira.game.isPaused, null, { timeout: 5000 })
   const back = await sample()
   await page.waitForTimeout(100)
   const first = await sample()
@@ -84,13 +85,13 @@ try {
   // The player's own pause goes through the same state: it stops the loop, survives the page
   // being hidden and shown again, and only the player's resume ends it.
   const run = async () => { const a = await sample(); await page.waitForTimeout(1500); const b = await sample(); return { steps: b.tick - a.tick, frames: b.draws - a.draws, animationFrames: b.raf - a.raf } }
-  await page.evaluate(() => window.syn3h.pause.pause('user')); await page.waitForTimeout(300)
+  await page.evaluate(() => window.mira.pause.pause('user')); await page.waitForTimeout(300)
   report.userPause = await run()
   assert.deepEqual(report.userPause, { steps: 0, frames: 0, animationFrames: 0 }, 'the game ran while paused by the player')
-  await page.evaluate(() => { window.syn3h.pause.pause('hidden'); window.syn3h.pause.resume('hidden') }); await page.waitForTimeout(300)
+  await page.evaluate(() => { window.mira.pause.pause('hidden'); window.mira.pause.resume('hidden') }); await page.waitForTimeout(300)
   report.userPauseAfterHideAndShow = await run()
   assert.deepEqual(report.userPauseAfterHideAndShow, { steps: 0, frames: 0, animationFrames: 0 }, 'showing the page ended the player\'s pause')
-  await page.evaluate(() => window.syn3h.pause.resume('user')); await page.waitForTimeout(100)
+  await page.evaluate(() => window.mira.pause.resume('user')); await page.waitForTimeout(100)
   report.userResume = await run()
   assert.ok(report.userResume.steps > 15 && report.userResume.steps <= 85, `after the player's resume: ${report.userResume.steps} steps in 1.5 s`)
   report.errors = errors

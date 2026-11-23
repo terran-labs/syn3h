@@ -6,7 +6,7 @@
  * liquid (lava or water) runs to the horizon in every direction, so nobody wanders off into
  * an endless plain.
  *
- * The recipe follows the MapMagic graphs shipped with Syn3h (Tholus and Xylia), which were
+ * The recipe follows the MapMagic graphs shipped with Mira (Tholus and Xylia), which were
  * both built this way:
  *
  *   radial form + curve     island mask, falling to a sea floor

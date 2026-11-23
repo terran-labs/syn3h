@@ -8,16 +8,17 @@
 //  - Reduced motion, WebKit with Safari's gesture rule (the tap-to-begin path, ?tap=1): the
 //    prompt, then one tap starts the sound and shows the lobby, with no opening.
 //
-//   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/ui/opening-skip.mjs
+//   MIRA_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/ui/opening-skip.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 
-const base = (process.env.SYN3H_URL ?? 'http://127.0.0.1:5258/').replace(/\/+$/, '') + '/'
-const ready = page => page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.documentElement.dataset.boot === 'done' && window.syn3h.shell.galaxy, null, { timeout: 120000 })
+const base = (process.env.MIRA_URL ?? 'http://127.0.0.1:5258/').replace(/\/+$/, '') + '/'
+const ready = page => page.waitForFunction(() => window.mira?.game?.tick > 25 && document.documentElement.dataset.boot === 'done' && window.mira.shell.galaxy, null, { timeout: 120000 })
 /** The lobby as the player sees it: is the opening running, and is anything still held back? */
 const lobby = page => page.evaluate(() => {
-  const g = window.syn3h.shell.galaxy
-  return { opening: Boolean(g.opening), held: document.documentElement.dataset.opening ?? null, unrevealed: document.querySelectorAll('.galaxy-label.is-unrevealed').length, mark: g.markShown ?? 0, audio: window.syn3h.audio.state }
+  const g = window.mira.shell.galaxy
+  return { opening: Boolean(g.opening), held: document.documentElement.dataset.opening ?? null, unrevealed: document.querySelectorAll('.galaxy-label.is-unrevealed').length, mark: g.markShown ?? 0, audio: window.mira.audio.state }
 })
 const failures = []
 const check = async (name, run) => { try { await run(); console.log(`${name}: PASS`) } catch (error) { failures.push(`${name}: ${error.message.split('\n')[0]}`); console.log(`${name}: FAIL ${error.message.split('\n')[0]}`) } }
@@ -29,7 +30,7 @@ try {
     await page.goto(`${base}?room=opening-skip-${Date.now()}`); await ready(page)
     for (const at of [0.5, 1.5, 3, 6]) {
       await check(`${device}: a ${input} at ${at} s skips the opening`, async () => {
-        await page.evaluate(() => { const g = window.syn3h.shell.galaxy; g.replayOpening(window.syn3h.params.get('lobby.intro').value) })
+        await page.evaluate(() => { const g = window.mira.shell.galaxy; g.replayOpening(window.mira.params.get('lobby.intro').value) })
         await page.waitForTimeout(at * 1000)
         assert.equal((await lobby(page)).opening, true, 'the opening is playing before the input')
         // Empty sky near the top, away from every world and control.
@@ -39,7 +40,7 @@ try {
         // show on the first frame after the input. The name may still be on its own fade from
         // when it was first drawable (WORDMARK_FADE_SECONDS, the same everywhere it arrives),
         // which on a busy machine can begin after the skip: what must hold is that it arrives.
-        await page.waitForFunction(() => { const g = window.syn3h.shell.galaxy; return !g.opening && !document.documentElement.dataset.opening && !document.querySelector('.galaxy-label.is-unrevealed') && g.markShown > 0.5 }, null, { timeout: 5000, polling: 'raf' }).catch(() => {})
+        await page.waitForFunction(() => { const g = window.mira.shell.galaxy; return !g.opening && !document.documentElement.dataset.opening && !document.querySelector('.galaxy-label.is-unrevealed') && g.markShown > 0.5 }, null, { timeout: 5000, polling: 'raf' }).catch(() => {})
         const after = await lobby(page)
         assert.deepEqual({ opening: after.opening, held: after.held, unrevealed: after.unrevealed }, { opening: false, held: null, unrevealed: 0 }, `ended with nothing held back: ${JSON.stringify(after)}`)
         assert.ok(after.mark > 0.5, `the name arrives: ${after.mark}`)
@@ -49,7 +50,7 @@ try {
   }
   await check('reduced motion, sound allowed: no opening, everything at once, sound running', async () => {
     const page = await chrome.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, reducedMotion: 'reduce' })
-    await page.addInitScript(() => { window.__sawOpening = false; const watch = () => { if (window.syn3h?.shell?.galaxy?.opening) window.__sawOpening = true; requestAnimationFrame(watch) }; requestAnimationFrame(watch) })
+    await page.addInitScript(() => { window.__sawOpening = false; const watch = () => { if (window.mira?.shell?.galaxy?.opening) window.__sawOpening = true; requestAnimationFrame(watch) }; requestAnimationFrame(watch) })
     await page.goto(`${base}?room=opening-rm-${Date.now()}`); await ready(page)
     await page.waitForTimeout(1500)
     const state = await lobby(page)
@@ -76,9 +77,9 @@ try {
     })
     await page.goto(`${base}?tap=1&room=opening-rm-webkit-${Date.now()}`)
     await page.waitForFunction(() => document.querySelector('.tap-gate.is-shown'), null, { timeout: 120000 })
-    assert.notEqual(await page.evaluate(() => window.syn3h.audio.state), 'running', 'sound is held before the tap')
+    assert.notEqual(await page.evaluate(() => window.mira.audio.state), 'running', 'sound is held before the tap')
     await page.touchscreen.tap(201, 300)
-    await page.waitForFunction(() => document.documentElement.dataset.boot === 'done' && window.syn3h.audio.state === 'running', null, { timeout: 5000 })
+    await page.waitForFunction(() => document.documentElement.dataset.boot === 'done' && window.mira.audio.state === 'running', null, { timeout: 5000 })
     await page.waitForTimeout(800)
     const state = await lobby(page)
     assert.deepEqual({ opening: state.opening, held: state.held, unrevealed: state.unrevealed }, { opening: false, held: null, unrevealed: 0 }, JSON.stringify(state))

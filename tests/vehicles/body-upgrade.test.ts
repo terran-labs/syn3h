@@ -5,7 +5,7 @@
 import * as THREE from 'three/webgpu'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Game } from '../../src/core/Game'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import type { BuggySkin } from '../../src/vehicles/skins/BuggySkin'
 import { type Bed, makeBed } from './harness'
 
@@ -31,7 +31,7 @@ describe('buggy body', () => {
 
   it('is upgraded when a body that was not ready at construction arrives', async () => {
     const s = controlledSkin()
-    const buggy = new Syn3hBuggy(bed.game as Game, bed.terrain, new THREE.Vector3(0, 1, 0), 0, 'buggy', () => s.skin)
+    const buggy = new MiraBuggy(bed.game as Game, bed.terrain, new THREE.Vector3(0, 1, 0), 0, 'buggy', () => s.skin)
     buggy.update(1 / 60, 1)
     expect(buggy.bodyReady).toBe(false)
     s.resolve()
@@ -48,7 +48,7 @@ describe('buggy body', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const skins = [controlledSkin(), controlledSkin()]
     let n = 0
-    const buggy = new Syn3hBuggy(bed.game as Game, bed.terrain, new THREE.Vector3(0, 1, 0), 0, 'buggy', () => skins[n++].skin)
+    const buggy = new MiraBuggy(bed.game as Game, bed.terrain, new THREE.Vector3(0, 1, 0), 0, 'buggy', () => skins[n++].skin)
     skins[0].reject(new Error('broken'))
     await vi.runAllTimersAsync()
     expect(n).toBe(2)
@@ -62,7 +62,7 @@ describe('buggy body', () => {
 
   it('never brings the box back after the body loaded, even if stale visibility is restored', async () => {
     const s = controlledSkin()
-    const buggy = new Syn3hBuggy(bed.game as Game, bed.terrain, new THREE.Vector3(0, 1, 0), 0, 'buggy', () => s.skin)
+    const buggy = new MiraBuggy(bed.game as Game, bed.terrain, new THREE.Vector3(0, 1, 0), 0, 'buggy', () => s.skin)
     // A warm-up saved visibility before the load and puts it back after it.
     const saved = buggy.object.children.map(c => [c, c.visible] as const)
     s.resolve()

@@ -1,11 +1,12 @@
 // Screenshots of the lobby wordmark for review. Opens the lobby with ?wordmark=<placement>.
 //   tools/heavy.sh node tests/ui/wordmark-shots.mjs edges <prefix>   edge close-ups (flat mark) at pixel ratio 1, 2, 3, and 8x zooms
 //   tools/heavy.sh node tests/ui/wordmark-shots.mjs scene <prefix> 1,2,3   each placement on desktop and phone at its brightest and dimmest moment, and mid-drag
-// SYN3H_URL picks the dev server (default http://127.0.0.1:5241/).
+// MIRA_URL picks the dev server (default http://127.0.0.1:5241/).
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5241/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5241/'
 const [kind = 'edges', prefix = 'shot', list = '1,2,3'] = process.argv.slice(2)
 const out = 'tests/ui/artifacts/wordmark'
 await mkdir(out, { recursive: true })
@@ -17,8 +18,8 @@ async function open(view, dpr, placement) {
   const page = await context.newPage()
   page.on('pageerror', e => messages.push(`${view.name}: ${e.message}`)); page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') messages.push(`${view.name}: ${m.text()}`) })
   await page.goto(`${base}?room=wm-${Date.now()}&wordmark=${placement}`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
-  await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
+  await page.waitForFunction(() => window.mira?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+  await page.evaluate(() => { window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400) })
   await page.waitForTimeout(6000)
   return { context, page }
 }
@@ -57,8 +58,8 @@ try {
     for (const placement of list.split(',').map(Number)) for (const [view, dpr] of [[desktop, 2], [phone, 3]]) {
       const { context, page } = await open(view, dpr, placement)
       for (const on of [false, true]) {
-        await page.evaluate(on => { syn3h.params.set('lobby.wordmarkCrisp', on); const g = syn3h.shell.galaxy; g.clock = 216; g.wake = 2 }, on); await page.waitForTimeout(400)
-        const box = await page.evaluate(() => syn3h.shell.galaxy.wordmarkScreenBox())
+        await page.evaluate(on => { mira.params.set('lobby.wordmarkCrisp', on); const g = mira.shell.galaxy; g.clock = 216; g.wake = 2 }, on); await page.waitForTimeout(400)
+        const box = await page.evaluate(() => mira.shell.galaxy.wordmarkScreenBox())
         await zoom(page, { x: box.x + box.width * 0.62, y: box.y + box.height * 0.05, width: box.width * 0.2, height: box.height * 0.9 }, `${out}/${prefix}-${view.name}-dpr${dpr}-p${placement}-${on ? 'crisp' : 'galaxy'}-zoom8x.png`)
       }
       await context.close()
@@ -68,7 +69,7 @@ try {
       const { context, page } = await open(view, dpr, placement), tag = `${prefix}-${view.name}-p${placement}`
       // The shafts drift with the galaxy's clock: find the moments the name is lit most and least.
       const scan = await page.evaluate(() => {
-        const g = syn3h.shell.galaxy, gl = g.gl, host = g.host.getBoundingClientRect(), r = g.wordmarkScreenBox() ?? (() => { const b = document.querySelector('.shell-logo').getBoundingClientRect(); return { x: b.x - host.x, y: b.y - host.y, width: b.width, height: b.height } })()
+        const g = mira.shell.galaxy, gl = g.gl, host = g.host.getBoundingClientRect(), r = g.wordmarkScreenBox() ?? (() => { const b = document.querySelector('.shell-logo').getBoundingClientRect(); return { x: b.x - host.x, y: b.y - host.y, width: b.width, height: b.height } })()
         const sx = g.canvas.width / g.host.clientWidth, sy = g.canvas.height / g.host.clientHeight
         const x = Math.max(0, Math.round(r.x * sx)), w = Math.max(1, Math.min(g.canvas.width - x, Math.round(r.width * sx))), h = Math.max(1, Math.round(r.height * sy)), y = Math.max(0, Math.round(g.canvas.height - r.y * sy - h))
         const pixels = new Uint8Array(w * h * 4), rows = []
@@ -81,7 +82,7 @@ try {
         rows.sort((a, b) => a[1] - b[1]); return { dim: rows[0], bright: rows[rows.length - 1] }
       })
       for (const [moment, [t, level]] of Object.entries(scan)) {
-        await page.evaluate(t => { const g = syn3h.shell.galaxy; g.clock = t; g.wake = 2 }, t); await page.waitForTimeout(250)
+        await page.evaluate(t => { const g = mira.shell.galaxy; g.clock = t; g.wake = 2 }, t); await page.waitForTimeout(250)
         await page.screenshot({ path: `${out}/${tag}-${moment}.png` })
         console.log(tag, moment, `clock ${t}s, mean light over the logo box ${level.toFixed(1)}`)
       }
@@ -90,7 +91,7 @@ try {
         await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 220, y + 40, { steps: 10 })
         await page.screenshot({ path: `${out}/${tag}-drag.png` }); await page.mouse.up()
       }
-      console.log(tag, JSON.stringify(await page.evaluate(() => { const s = syn3h.shell.galaxy.wordmarkStats(); return { mode: s.mode, density: s.fieldDensity, bakeMs: +s.fieldBakeMs.toFixed(1) } })))
+      console.log(tag, JSON.stringify(await page.evaluate(() => { const s = mira.shell.galaxy.wordmarkStats(); return { mode: s.mode, density: s.fieldDensity, bakeMs: +s.fieldBakeMs.toFixed(1) } })))
       await context.close()
     }
   }

@@ -7,11 +7,12 @@
  *
  * Needs the lane dev server on 5187.
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, devices, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 /** The dev server to check (default the lane's old port). */
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5187/'
 const out = 'tests/ui/artifacts/boot-veil'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
@@ -25,7 +26,7 @@ try {
     await page.route(/\/src\/main\.ts/, async route => { await held; await route.continue() })
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
     await page.goto(`${base}?room=boot-${view.name}-${Date.now()}`, { waitUntil: 'commit' })
-    const state = () => page.evaluate(() => ({ boot: document.documentElement.dataset.boot, progress: Number(getComputedStyle(document.documentElement).getPropertyValue('--boot-progress')), veil: getComputedStyle(document.querySelector('.boot-veil')).opacity, game: Boolean(window.syn3h) }))
+    const state = () => page.evaluate(() => ({ boot: document.documentElement.dataset.boot, progress: Number(getComputedStyle(document.documentElement).getPropertyValue('--boot-progress')), veil: getComputedStyle(document.querySelector('.boot-veil')).opacity, game: Boolean(window.mira) }))
     await page.waitForFunction(() => document.documentElement.dataset.boot === 'loading' && document.querySelector('.boot-mark'))
     await page.waitForTimeout(1200)
     const early = await state()
@@ -56,7 +57,7 @@ try {
   }
   // Safari on a phone and a tablet over a slow link: the bundle is held back.
   // The veil must be unmistakably a loading screen the whole time, and never show the name
-  // (the first Syn3h logo a player sees is in the solar system): a point of light where the
+  // (the first Mira logo a player sees is in the solar system): a point of light where the
   // sun will be, one line of status beneath it, and after three seconds a quiet line that
   // counts the seconds and names the real step.
   const safari = await webkit.launch()
@@ -72,7 +73,7 @@ try {
     await page.waitForTimeout(1500)
     const seen = () => page.evaluate(() => {
       const box = selector => { const el = document.querySelector(selector), r = el.getBoundingClientRect(), style = getComputedStyle(el); return { width: r.width, height: r.height, top: r.top, bottom: r.bottom, opacity: Number(style.opacity), text: el.textContent.trim(), inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth } }
-      return { wordmark: document.querySelector('.boot-veil svg[aria-label="Syn3h"], .boot-wordmark') !== null, point: box('.boot-point'), status: box('.boot-status'), still: box('.boot-still'), game: Boolean(window.syn3h) }
+      return { wordmark: document.querySelector('.boot-veil svg[aria-label="Mira"], .boot-wordmark') !== null, point: box('.boot-point'), status: box('.boot-status'), still: box('.boot-still'), game: Boolean(window.mira) }
     })
     const first = await seen()
     assert.equal(first.game, false)

@@ -12,10 +12,11 @@
  *  4. beam     A sends a tag beam at B across the seam; B is tagged.
  *
  *   PORT=8791 npm run server
- *   SYN3H_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
+ *   MIRA_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
  *   node tools/wrap-check.mjs
  *   node tools/wrap-check.mjs https://mira.cc/ --direct
  */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { spawn } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { checkPublicBuild } from './check-public-build.mjs'
@@ -35,7 +36,7 @@ const raw = { world: WORLD, readiness: [], stages: [], errors: [] }
 const rawPath = process.env.WRAP_DIAGNOSTICS ?? '/tmp/syn3h-wrap-diagnostic.json'
 process.once('SIGTERM', async () => {
   raw.failure = 'External fixture deadline'
-  raw.clients = await Promise.all(pages.map(p => p.evaluate(() => ({ diagnostics: window.__wrapDiag, startup: window.syn3hStartup })).catch(() => null)))
+  raw.clients = await Promise.all(pages.map(p => p.evaluate(() => ({ diagnostics: window.__wrapDiag, startup: window.miraStartup })).catch(() => null)))
   writeFileSync(rawPath, JSON.stringify(raw))
   finished = true
   await Promise.all(browsers.map(b => b.close()))
@@ -50,8 +51,8 @@ async function open(name) {
   pages.push(page)
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`))
   await page.goto(`${base}?autoplay=1&world=${encodeURIComponent(WORLD)}&room=${room}&name=${name}`)
-  await page.waitForFunction(() => window.syn3h?.shell && window.syn3hNet?.connected, null, { timeout: 90000 })
-  await page.evaluate(() => { window.syn3h.shell.play(); window.syn3h.params.set('gfx.level', 0); window.syn3h.params.set('daydream.seconds', 0) })
+  await page.waitForFunction(() => window.mira?.shell && window.miraNet?.connected, null, { timeout: 90000 })
+  await page.evaluate(() => { window.mira.shell.play(); window.mira.params.set('gfx.level', 0); window.mira.params.set('daydream.seconds', 0) })
   return page
 }
 const results = []
@@ -64,12 +65,12 @@ try {
     console.log('PUBLIC BUILD OK', JSON.stringify(raw.identity))
   }
   const a = await open('Alice')
-  await a.evaluate(() => { window.syn3h.params.set('bots.count', 0); window.syn3h.params.set('game.mode', 0) })
+  await a.evaluate(() => { window.mira.params.set('bots.count', 0); window.mira.params.set('game.mode', 0) })
   const b = await open('Bob')
-  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet.players.size === 2 && window.syn3hNet.remotes.size === 1, null, { timeout: 30000 })))
-  const [idA, idB] = await Promise.all([a, b].map((p) => p.evaluate(() => window.syn3hNet.id)))
-  const size = await a.evaluate(() => window.syn3h.terrain.wrapSize ?? 0)
-  check('the world wraps and both players have the same tile', size > 0 && size === await b.evaluate(() => window.syn3h.terrain.wrapSize ?? 0), { size })
+  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.miraNet.players.size === 2 && window.miraNet.remotes.size === 1, null, { timeout: 30000 })))
+  const [idA, idB] = await Promise.all([a, b].map((p) => p.evaluate(() => window.miraNet.id)))
+  const size = await a.evaluate(() => window.mira.terrain.wrapSize ?? 0)
+  check('the world wraps and both players have the same tile', size > 0 && size === await b.evaluate(() => window.mira.terrain.wrapSize ?? 0), { size })
   const half = size / 2
 
   // Integrator-approved fixed lane. Grade cap 0.5 bounds sampled X/Z partial slopes,
@@ -77,7 +78,7 @@ try {
   // A dry corridor is a precondition, never a preference with a wet fallback. Include
   // both lanes and braking room, sampling both clients rather than trusting a shared seed.
   const corridor = async (page, zOnly = null) => page.evaluate(({ half, zOnly }) => {
-    const t = window.syn3h.terrain
+    const t = window.mira.terrain
     const candidates = [], rejected = []
     for (let z = zOnly ?? -half + 40; z < (zOnly === null ? half - 40 : zOnly + 1); z += 16) {
       let lo = Infinity, hi = -Infinity, wet = false, slope = 0, maxLiquid = -Infinity, nonfinite = 0, minClearance = Infinity
@@ -96,7 +97,7 @@ try {
       else rejected.push({ z, minGround: lo, maxGround: hi, maxLiquid, minClearance, maxSlope: slope, wet, nonfinite, steep: slope > 0.5 })
     }
     candidates.sort((a, b) => a.range - b.range)
-    return { lane: candidates[0] ?? null, validCount: candidates.length, rejected, params: window.syn3h.params.snapshot('world'), size: t.wrapSize }
+    return { lane: candidates[0] ?? null, validCount: candidates.length, rejected, params: window.mira.params.snapshot('world'), size: t.wrapSize }
   }, { half, zOnly })
   const first = await corridor(a, -296)
   raw.corridor = { first }
@@ -118,7 +119,7 @@ try {
   // Diagnostic wrappers preserve calls and arguments. Observe target arrivals and actual
   // ram target, not just aggregate counters which may include another actor.
   await Promise.all([[a, idB], [b, idA]].map(([page, other]) => page.evaluate(other => {
-    const s = window.syn3h, n = window.syn3hNet, r = n.remotes.get(other)
+    const s = window.mira, n = window.miraNet, r = n.remotes.get(other)
     const d = window.__wrapDiag = { arrivals: [], frames: [], samples: [], contacts: [], teleports: 0 }
     const push = r.push.bind(r)
     r.push = (...args) => { d.arrivals.push({ at: performance.now(), t: args[0].t }); return push(...args) }
@@ -144,7 +145,7 @@ try {
     const started = Date.now()
     try {
       await Promise.all([[a, idB], [b, idA]].map(([page, other]) => page.waitForFunction(({ other, placement }) => {
-        const s = window.syn3h, n = window.syn3hNet, d = window.__wrapDiag, now = performance.now()
+        const s = window.mira, n = window.miraNet, d = window.__wrapDiag, now = performance.now()
         const samples = d.samples.filter(e => e.at >= now - 2100)
         const arrivals = d.arrivals.filter(e => e.at >= now - 2000)
         const frames = d.frames.filter(t => t >= now - 2000)
@@ -167,17 +168,17 @@ try {
 
   /** Put a page's vehicle at world x (any image), on the lane, facing +X. */
   const place = (page, x, dz = 0) => page.evaluate(({ x, z }) => {
-    const { terrain, player } = window.syn3h
+    const { terrain, player } = window.mira
     player.teleport(player.object.position.clone().set(x, terrain.heightAt(x, z) + 1.2, z), -Math.PI / 2)
   }, { x, z: lane.z + dz })
   /** Drive along +X at up to `speed` m/s holding the lane (0 lets go). */
   const drive = (page, speed, dz = 0) => page.evaluate(({ speed, z }) => {
     clearInterval(window.__drive)
-    const e = window.syn3h.game.input.external
+    const e = window.mira.game.input.external
     e.y = 0; e.x = 0
     if (!speed) return
     window.__drive = setInterval(() => {
-      const body = window.syn3h.player.body
+      const body = window.mira.player.body
       const v = body.linvel(), p = body.translation(), q = body.rotation()
       e.y = Math.hypot(v.x, v.z) < speed ? 1 : 0
       const fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
@@ -192,9 +193,9 @@ try {
     window.__log = log
     clearInterval(window.__logTimer)
     window.__logTimer = setInterval(() => {
-      const n = window.syn3hNet, p = window.syn3h.player.body.translation(), v = window.syn3h.player.body.linvel()
+      const n = window.miraNet, p = window.mira.player.body.translation(), v = window.mira.player.body.linvel()
       const r = n.remotes.get(other), rp = r?.vehicle.body.translation()
-      log.push({ teleports: window.__wrapDiag.teleports, contacts: window.__wrapDiag.contacts.length, lastTarget: window.__wrapDiag.contacts.at(-1)?.target, y: p.y, ground: window.syn3h.terrain.heightAt(p.x, p.z), liquid: window.syn3h.terrain.liquidHeightAt(p.x, p.z), t: Date.now(), x: p.x, z: p.z, s: Math.hypot(v.x, v.z), rx: rp?.x ?? null, rz: rp?.z ?? null, mode: r?.sample.mode ?? 'none', visible: r?.vehicle.object.visible ?? false, rams: n.stats.rams, shoves: n.stats.shoves, it: n.game.it, up: n.connected, newest: r?.buffer.newest?.t ?? 0, got: n.stats.statesReceived, fps: Math.round(window.syn3h.game.fps ?? 0) })
+      log.push({ teleports: window.__wrapDiag.teleports, contacts: window.__wrapDiag.contacts.length, lastTarget: window.__wrapDiag.contacts.at(-1)?.target, y: p.y, ground: window.mira.terrain.heightAt(p.x, p.z), liquid: window.mira.terrain.liquidHeightAt(p.x, p.z), t: Date.now(), x: p.x, z: p.z, s: Math.hypot(v.x, v.z), rx: rp?.x ?? null, rz: rp?.z ?? null, mode: r?.sample.mode ?? 'none', visible: r?.vehicle.object.visible ?? false, rams: n.stats.rams, shoves: n.stats.shoves, it: n.game.it, up: n.connected, newest: r?.buffer.newest?.t ?? 0, got: n.stats.statesReceived, fps: Math.round(window.mira.game.fps ?? 0) })
     }, 10)
   }, other)
   const stop = (page) => page.evaluate(() => { clearInterval(window.__logTimer); return window.__log })
@@ -226,7 +227,7 @@ try {
   const crossed = (log) => ({ from: round(log[0].x), to: round(log.at(-1).x), top: round(Math.max(...log.map((e) => e.s))) })
   const settle = async () => {
     await Promise.all([drive(a, 0), drive(b, 0)]); await wait(1200)
-    const positions = await Promise.all([a, b].map(p => p.evaluate(() => ({ ...window.syn3h.player.body.translation() }))))
+    const positions = await Promise.all([a, b].map(p => p.evaluate(() => ({ ...window.mira.player.body.translation() }))))
     await Promise.all([a, b].map((p, i) => p.evaluate(expected => { window.__wrapOtherPlacement = expected }, positions[1 - i])))
     await ready('placement', true)
   }
@@ -244,7 +245,7 @@ try {
   // Until each is 60 m past the seam, measured round the wrap: its own position is kept
   // inside the tile, so it goes from +half to -half as it crosses.
   await Promise.all([a, b].map((p) => p.waitForFunction(({ half, size }) => {
-    let d = window.syn3h.player.body.translation().x - half
+    let d = window.mira.player.body.translation().x - half
     d -= size * Math.floor(d / size + 0.5)
     return d > 60 && d < 200
   }, { half, size }, { timeout: 40000 }).catch(() => {})))
@@ -252,7 +253,7 @@ try {
   await wait(1500)
   const [la, lb] = await Promise.all([stop(a), stop(b)])
   saveStage('cross', la, lb)
-  const canon = await a.evaluate((x) => window.syn3hNet.canonical([x, 0, 0])[0], half + 60)
+  const canon = await a.evaluate((x) => window.miraNet.canonical([x, 0, 0])[0], half + 60)
   const seenByA = seen(la, lb), seenByB = seen(lb, la)
   await b.screenshot({ path: '/tmp/syn3h-wrap-cross.png' })
   check('1. both crossed the seam', la.some((e) => wrapDelta(half, e.x) > 20) && lb.some((e) => wrapDelta(half, e.x) > 20), { alice: crossed(la), bob: crossed(lb) })
@@ -273,9 +274,9 @@ try {
   await place(a, half - 50); await place(b, half - 10)
   await settle()
   await Promise.all([record(a, idB), record(b, idA)])
-  const before2 = await a.evaluate(() => ({ rams: window.syn3hNet.stats.rams, it: window.syn3hNet.game.it }))
+  const before2 = await a.evaluate(() => ({ rams: window.miraNet.stats.rams, it: window.miraNet.game.it }))
   await Promise.all([drive(a, 22), drive(b, 7)])
-  await a.waitForFunction((n) => window.syn3hNet.stats.rams > n, before2.rams, { timeout: 20000 }).catch(() => {})
+  await a.waitForFunction((n) => window.miraNet.stats.rams > n, before2.rams, { timeout: 20000 }).catch(() => {})
   await Promise.all([drive(a, 0), drive(b, 0)])
   await wait(2500)
   const [ca, cb] = await Promise.all([stop(a), stop(b)])
@@ -292,9 +293,9 @@ try {
   await place(a, half - 50); await place(b, -half + 8)
   await settle()
   await Promise.all([record(a, idB), record(b, idA)])
-  const before3 = await a.evaluate(() => ({ rams: window.syn3hNet.stats.rams, it: window.syn3hNet.game.it }))
+  const before3 = await a.evaluate(() => ({ rams: window.miraNet.stats.rams, it: window.miraNet.game.it }))
   await drive(a, 20)
-  await a.waitForFunction((n) => window.syn3hNet.stats.rams > n, before3.rams, { timeout: 20000 }).catch(() => {})
+  await a.waitForFunction((n) => window.miraNet.stats.rams > n, before3.rams, { timeout: 20000 }).catch(() => {})
   await drive(a, 0)
   await wait(2500)
   const [ra, rb] = await Promise.all([stop(a), stop(b)])
@@ -308,14 +309,14 @@ try {
   await place(a, half - 12); await place(b, -half + 12)
   await settle()
   await Promise.all([record(a, idB), record(b, idA)])
-  const hitsBefore = await b.evaluate(() => window.syn3hNet.stats.hitsTaken)
+  const hitsBefore = await b.evaluate(() => window.miraNet.stats.hitsTaken)
   let beams = 0
   let tagged = false
   for (; beams < 6 && !tagged; beams++) {
-    await a.evaluate((id) => { const n = window.syn3hNet; n.fire(undefined, n.remotes.get(id).vehicle.body.translation()) }, idB)
-    tagged = await b.waitForFunction((n) => window.syn3hNet.stats.hitsTaken > n, hitsBefore, { timeout: 1500 }).then(() => true, () => false)
+    await a.evaluate((id) => { const n = window.miraNet; n.fire(undefined, n.remotes.get(id).vehicle.body.translation()) }, idB)
+    tagged = await b.waitForFunction((n) => window.miraNet.stats.hitsTaken > n, hitsBefore, { timeout: 1500 }).then(() => true, () => false)
   }
-  const sep = await Promise.all([a, b].map((p) => p.evaluate(() => window.syn3h.player.body.translation().x)))
+  const sep = await Promise.all([a, b].map((p) => p.evaluate(() => window.mira.player.body.translation().x)))
   const [ba, bb] = await Promise.all([stop(a), stop(b)])
   saveStage('beam', ba, bb)
   check('4. a tag beam sent across the seam tags the player on the other side', tagged, { beams, aliceX: round(sep[0]), bobX: round(sep[1]) })
@@ -326,7 +327,7 @@ try {
 } finally {
   raw.errors = errors
   raw.results = results
-  raw.clients = await Promise.all(pages.map(p => p.evaluate(() => ({ diagnostics: window.__wrapDiag, startup: window.syn3hStartup })).catch(e => ({ error: String(e) }))))
+  raw.clients = await Promise.all(pages.map(p => p.evaluate(() => ({ diagnostics: window.__wrapDiag, startup: window.miraStartup })).catch(e => ({ error: String(e) }))))
   writeFileSync(rawPath, JSON.stringify(raw))
   console.log('raw diagnostics saved', rawPath)
   finished = true

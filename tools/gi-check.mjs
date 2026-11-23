@@ -12,13 +12,13 @@ try {
  const url=new URL(base);url.searchParams.set('autoplay','1');url.searchParams.set('room',`gi-fixture-${Date.now()}`)
  if(process.argv.includes('--webgl'))url.searchParams.set('webgl','1')
  await page.goto(url.href,{timeout:120000})
- await page.waitForFunction(()=>window.syn3h?.game?.tick>90,null,{timeout:120000})
+ await page.waitForFunction(()=>window.mira?.game?.tick>90,null,{timeout:120000})
  await page.evaluate(async()=>{
   const threeUrl=performance.getEntriesByType('resource').find(r=>r.name.includes('/three_webgpu.js'))?.name
   if(!threeUrl)throw new Error('Game Three.js module URL unavailable')
   const T=await import(threeUrl)
   const {PostChain}=await import('/src/fx/post/PostChain.ts')
-  const s=window.syn3h,g=s.game;g.renderer.setAnimationLoop(null)
+  const s=window.mira,g=s.game;g.renderer.setAnimationLoop(null)
   g.postChain.release();s.params.set('gfx.level',2);s.params.set('post.on',true)
   for(const id of ['post.bloom','post.shafts','post.flare','post.ao','post.contact','post.motionBlur','post.heat','post.look','post.vignette','post.grain'])s.params.set(id,0)
   const scene=new T.Scene();scene.background=new T.Color(.01,.01,.01)
@@ -31,12 +31,12 @@ try {
   const sun=new T.DirectionalLight(0xffffff,2);sun.position.set(3,7,5);scene.add(sun)
   const chain=new PostChain({quality:{deviceLevel:2,postBudget:1}},{sunDirection:new T.Vector3(0,1,0)})
   g.renderer.toneMappingExposure=1
-  document.querySelector('.syn3h-shell')?.setAttribute('style','display:none')
+  document.querySelector('.mira-shell')?.setAttribute('style','display:none')
   window.giFixture={T,scene,camera,chain}
  })
  for(const strength of [0,1,0]) {
   const state=await page.evaluate(async strength=>{
-   const s=window.syn3h,g=s.game,{T,scene,camera,chain}=window.giFixture
+   const s=window.mira,g=s.game,{T,scene,camera,chain}=window.giFixture
    s.params.set('post.gi',strength)
    for(let i=0;i<12;i++){chain.render(g.renderer,scene,camera,16.667);await new Promise(requestAnimationFrame)}
    const pass=chain.built.disposables.find(d=>d.scene===scene&&d.contextNode?.value?.getGI)

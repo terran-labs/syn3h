@@ -1,9 +1,10 @@
 // A descendant range must not press the entire glass card. (The material is chosen with three
 // buttons beside its label since 22 November 2026; it has no slider to drag.)
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 
-const url = new URL(process.env.SYN3H_URL ?? 'http://127.0.0.1:5173/')
+const url = new URL(process.env.MIRA_URL ?? 'http://127.0.0.1:5173/')
 url.searchParams.set('gfx', '3')
 url.searchParams.set('glass', 'inline')
 url.searchParams.set('room', 'glass-drag-' + Date.now())
@@ -17,11 +18,11 @@ try {
   for (const view of ['lobby', 'play']) {
     if (view === 'play') {
       await page.keyboard.press('Escape')
-      await page.evaluate(() => { syn3h.params.set('bots.count', 0); syn3h.shell.play(true) })
-      await page.waitForFunction(() => syn3h.shell.playing && !syn3h.shell.transitioning, null, { timeout: 150000 })
-      await page.evaluate(() => { syn3h.shell.showPanels(); syn3h.shell.showCard('you') })
+      await page.evaluate(() => { mira.params.set('bots.count', 0); mira.shell.play(true) })
+      await page.waitForFunction(() => mira.shell.playing && !mira.shell.transitioning, null, { timeout: 150000 })
+      await page.evaluate(() => { mira.shell.showPanels(); mira.shell.showCard('you') })
     }
-    const card = view === 'lobby' ? '#lobby-settings' : '.syn3h-shell > .world-inspector:not(.lobby-settings) .wi-card.is-open'
+    const card = view === 'lobby' ? '#lobby-settings' : '.mira-shell > .world-inspector:not(.lobby-settings) .wi-card.is-open'
     for (const id of ['glass.frostWidth']) {
       const slider = page.locator(card).locator(`[data-id="${id}"] input[type=range]`)
       await slider.evaluate(el => { const group = el.closest('details'); if (group) group.open = true })

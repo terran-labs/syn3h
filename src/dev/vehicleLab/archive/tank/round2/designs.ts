@@ -1,6 +1,6 @@
 // Historical design snapshot. Keep this round unchanged; add later designs separately.
 /**
- * Five design studies for a next-gen Syn3h tank. Syn3h never had one; the only tank is the
+ * Five design studies for a next-gen Mira tank. Mira never had one; the only tank is the
  * Mars Explorer port in ../Tank.ts. These are appearance studies only: no physics reads them.
  *
  * Owner's brief (14 November): no visible weapons, this is an exploration vehicle. Six

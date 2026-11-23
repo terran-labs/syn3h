@@ -1,5 +1,6 @@
 // Screenshots of the World card's day length control (desktop and phone) and of the sky at four
-// hours on an inner and an outer planet. SYN3H_URL=http://127.0.0.1:PORT/ node tests/ui/day-length-capture.mjs
+// hours on an inner and an outer planet. MIRA_URL=http://127.0.0.1:PORT/ node tests/ui/day-length-capture.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import { mkdir } from 'node:fs/promises'
 const out = 'tests/ui/artifacts/day-length'
@@ -9,8 +10,8 @@ for (const mode of ['desktop', 'phone']) {
   try {
     const page = await browser.newPage(mode === 'phone' ? devices['iPhone 14'] : { viewport: { width: 1440, height: 1000 } })
     const errors = []; page.on('pageerror', e => errors.push(e.message))
-    await page.goto(`${process.env.SYN3H_URL}?autoplay=1&room=daylen-${mode}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.goto(`${process.env.MIRA_URL}?autoplay=1&room=daylen-${mode}-${Date.now()}`)
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden' })
     const live = await page.evaluate(async () => {
       const d = await import('/src/world/sky/dayCycle.ts'), { params } = await import('/shared/params.ts')
@@ -23,7 +24,7 @@ for (const mode of ['desktop', 'phone']) {
     else if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
     await rail.waitFor({ state: 'visible' })
     const shoot = async (name) => {
-      await page.evaluate(() => { syn3h.shell.inspector.revealCard('world'); const f = document.querySelector('.wi-card[data-section=world] [data-group="Sun"]'); if (f) f.open = true })
+      await page.evaluate(() => { mira.shell.inspector.revealCard('world'); const f = document.querySelector('.wi-card[data-section=world] [data-group="Sun"]'); if (f) f.open = true })
       const row = rail.locator('[data-id="sun.dayLength"]')
       await row.scrollIntoViewIfNeeded(); await page.waitForTimeout(400)
       await page.screenshot({ path: `${out}/${mode}-${name}.png` })

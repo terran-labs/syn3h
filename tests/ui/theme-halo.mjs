@@ -2,10 +2,11 @@
 // keep their 44 px hit height, and nothing in the rail uses backdrop-filter).
 // Run through tests/ui/run-theme-halo.sh, which serves on 5214. Images go to
 // tests/ui/artifacts/theme-halo/ (git-ignored).
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5214/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5214/'
 const shots = 'tests/ui/artifacts/theme-halo'
 await mkdir(shots, { recursive: true })
 
@@ -40,12 +41,12 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     if (!touch) {
       await page.locator('.galaxy-label.is-current').focus(); await page.keyboard.press('Enter')
-      await page.waitForFunction(() => syn3h.shell.playing && !syn3h.shell.dropping, null, { timeout: 120000 })
-      await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas, null, { timeout: 10000 }).catch(() => {})
+      await page.waitForFunction(() => mira.shell.playing && !mira.shell.dropping, null, { timeout: 120000 })
+      await page.waitForFunction(() => document.pointerLockElement === mira.game.canvas, null, { timeout: 10000 }).catch(() => {})
       if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
       await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden, null, { timeout: 15000 })
     } else {
-      await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+      await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     }
     await page.waitForTimeout(1500)
     const press = locator => touch ? locator.tap() : locator.click()
@@ -83,7 +84,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
       await page.screenshot({ path: `${shots}/desktop-day-tooltip.png` })
       await page.mouse.move(400, 500)
       // Night.
-      await page.evaluate(() => syn3h.params.set('sun.timeOfDay', 22.5))
+      await page.evaluate(() => mira.params.set('sun.timeOfDay', 22.5))
       await page.waitForTimeout(4000)
       await page.screenshot({ path: `${shots}/desktop-night.png` })
       // Paused: Escape once with the cursor free.

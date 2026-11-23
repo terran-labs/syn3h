@@ -1,5 +1,5 @@
 /**
- * Evidence for judging when the Syn3h name arrives (not a test): the owner, 19 November 2026,
+ * Evidence for judging when the Mira name arrives (not a test): the owner, 19 November 2026,
  * "it should be fading in while the planets are spinning in". For the opening and for a return
  * to the lobby, at phone and desktop size, every drawn frame's name opacity (galaxy.markShown)
  * against the worlds' progress, as a chart, with six frames along the way.
@@ -9,15 +9,16 @@
  *            world, then returnHome's ease, 1 once home), and the name's distance in pixels
  *            from where it rests (it must be dark until it is within a few).
  *
- *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/ui/logo-timing-strip.mjs [out dir]
+ *   MIRA_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/ui/logo-timing-strip.mjs [out dir]
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
 
-const base = (process.env.SYN3H_URL ?? 'http://127.0.0.1:5258/').replace(/\/+$/, '') + '/'
+const base = (process.env.MIRA_URL ?? 'http://127.0.0.1:5258/').replace(/\/+$/, '') + '/'
 const out = process.argv[2] ?? '/tmp/logo-timing'
 await mkdir(out, { recursive: true })
-const ready = page => page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.documentElement.dataset.boot === 'done' && window.syn3h.shell.galaxy, null, { timeout: 120000 })
+const ready = page => page.waitForFunction(() => window.mira?.game?.tick > 25 && document.documentElement.dataset.boot === 'done' && window.mira.shell.galaxy, null, { timeout: 120000 })
 const errors = []
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const summary = []
@@ -27,19 +28,19 @@ try {
     page.on('pageerror', e => errors.push(`${device}: ${e.message}`))
     await page.goto(`${base}?room=logo-timing-${Date.now()}`); await ready(page)
     await page.waitForTimeout(1500)
-    const rest = await page.evaluate(() => { const b = window.syn3h.shell.galaxy.wordmarkScreenBox(); return b && [b.x + b.width / 2, b.y + b.height / 2] })
+    const rest = await page.evaluate(() => { const b = window.mira.shell.galaxy.wordmarkScreenBox(); return b && [b.x + b.width / 2, b.y + b.height / 2] })
     for (const kind of ['opening', 'return']) {
       if (kind === 'return') {
         await page.locator('.galaxy-label[data-world="alpine"]').dispatchEvent('click')
-        await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 60000 })
+        await page.waitForFunction(() => { const s = document.querySelector('.mira-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 60000 })
         await page.waitForTimeout(1500)
       }
       // Record every frame: time, the name's opacity, the worlds' progress.
       await page.evaluate(async ([kind, rest]) => {
-        const g = window.syn3h.shell.galaxy, O = await import('/src/ui/galaxy/opening.ts')
+        const g = window.mira.shell.galaxy, O = await import('/src/ui/galaxy/opening.ts')
         window.__samples = []; window.__done = false
-        if (kind === 'opening') g.replayOpening(window.syn3h.params.get('lobby.intro').value)
-        else { const s = window.syn3h.shell; s.askExit(); s.answerExit(true) }
+        if (kind === 'opening') g.replayOpening(window.mira.params.get('lobby.intro').value)
+        else { const s = window.mira.shell; s.askExit(); s.answerExit(true) }
         const t0 = performance.now()
         let eased = false
         const tick = () => {
@@ -49,7 +50,7 @@ try {
             const t = g.opening.start === null ? -1 : (now - g.opening.start) / 1000, lanes = g.laneCache.length || 9
             const s = O.openingState(t, g.opening.mode, lanes); planets = s.arrive.reduce((a, b) => a + b, 0) / lanes
           } else if (kind === 'return') {
-            if (g.returnTo && document.querySelector('.syn3h-shell').classList.contains('is-playing') === false) eased = true
+            if (g.returnTo && document.querySelector('.mira-shell').classList.contains('is-playing') === false) eased = true
             planets = g.returnTo && eased ? Math.min(1, (now - g.returnTo.start) / 1000 / O.RETURN_VIEW_SECONDS) : eased ? 1 : 0
           }
           const b = g.wordmarkScreenBox(), off = b && rest ? Math.hypot(b.x + b.width / 2 - rest[0], b.y + b.height / 2 - rest[1]) : null
@@ -79,7 +80,7 @@ try {
       const W = 900, H = 220, x = t => 40 + t / length * (W - 60), y = v => H - 30 - v * (H - 50)
       const line = (key, colour) => `<polyline fill="none" stroke="${colour}" stroke-width="2.5" points="${samples.map(s => `${x(s.t).toFixed(1)},${y(s[key]).toFixed(1)}`).join(' ')}"/>`
       const ticks = Array.from({ length: length + 1 }, (_, t) => `<text x="${x(t)}" y="${H - 10}" fill="#aaa" font-size="12" text-anchor="middle">${t} s</text>`).join('')
-      const chart = `<svg width="${W}" height="${H}" style="background:#181818"><line x1="40" x2="${W - 20}" y1="${y(0)}" y2="${y(0)}" stroke="#444"/><line x1="40" x2="${W - 20}" y1="${y(1)}" y2="${y(1)}" stroke="#333"/>${ticks}${line('planets', '#6cb6ff')}${line('mark', '#f2c14e')}<text x="48" y="22" fill="#6cb6ff" font-size="13">${kind === 'opening' ? 'worlds arrived' : 'view back home'}</text><text x="220" y="22" fill="#f2c14e" font-size="13">Syn3h name opacity</text></svg>`
+      const chart = `<svg width="${W}" height="${H}" style="background:#181818"><line x1="40" x2="${W - 20}" y1="${y(0)}" y2="${y(0)}" stroke="#444"/><line x1="40" x2="${W - 20}" y1="${y(1)}" y2="${y(1)}" stroke="#333"/>${ticks}${line('planets', '#6cb6ff')}${line('mark', '#f2c14e')}<text x="48" y="22" fill="#6cb6ff" font-size="13">${kind === 'opening' ? 'worlds arrived' : 'view back home'}</text><text x="220" y="22" fill="#f2c14e" font-size="13">Mira name opacity</text></svg>`
       const { readFileSync } = await import('node:fs')
       const frames = shots.map(s => `<figure><img src="data:image/png;base64,${readFileSync(`${out}/${s.file}`).toString('base64')}"><figcaption>${s.t.toFixed(2)} s: ${kind === 'opening' ? 'worlds' : 'view home'} ${(s.planets * 100).toFixed(0)}%, name ${(s.mark * 100).toFixed(0)}%</figcaption></figure>`).join('')
       const sheet = await browser.newPage({ viewport: { width: 1900, height: 400 } })

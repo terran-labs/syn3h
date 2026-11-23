@@ -20,12 +20,12 @@ import '../src/world/terrain/settings'
 import { FIXED_DT, initPhysics } from '../src/core/physics'
 import { BUGGY_PRESETS } from '../src/vehicles/buggyParams'
 import { JET_PRESETS } from '../src/vehicles/Jet'
-import * as buggy from '../tests/vehicles/syn3hScenarios'
+import * as buggy from '../tests/vehicles/miraScenarios'
 import * as jet from '../tests/vehicles2/jetScenarios'
 import * as liquid from '../tests/vehicles/liquidScenarios'
 import * as zorb from '../tests/vehicles2/zorbSkipScenarios'
 import { harness } from '../tests/vehicles2/harness'
-import { Syn3hBuggy } from '../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../src/vehicles/MiraBuggy'
 
 /** One measured figure. `null` means the event never happened in the scenario's window. */
 interface Figure { label: string; unit: string; value: number | null }
@@ -54,7 +54,7 @@ async function at<T>(scenario: () => T | Promise<T>, setup?: () => void): Promis
   try { return await scenario() } finally { buggy.resetParams() }
 }
 
-// ---- Syn3h buggy -----------------------------------------------------------------------
+// ---- Mira buggy -----------------------------------------------------------------------
 
 /** Full throttle from rest on the flat for 90 s (it settles after about a minute). */
 const buggyTopSpeed = async () => {
@@ -128,7 +128,7 @@ const buggyGlideSink = async () => {
   return { sink: y0 - buggy.pos(b).y, speed: buggy.speed(b) }
 }
 
-async function syn3hBuggy(): Promise<VehicleReport> {
+async function miraBuggy(): Promise<VehicleReport> {
   const top = await at(buggyTopSpeed)
   const brake = await at(() => buggyBrake())
   const turn = await at(() => buggyTurn())
@@ -354,7 +354,7 @@ async function zorbLiquids(): Promise<Figure[]> {
   }
   out.push(fig('flat land: top speed in 20 s rolling forward from rest (uncapped)', 'm/s', await at(() => {
     const h = harness()
-    const v = new Syn3hBuggy(h.game, h.terrain, new THREE.Vector3(0, 2, 0))
+    const v = new MiraBuggy(h.game, h.terrain, new THREE.Vector3(0, 2, 0))
     try {
       v.isLocal = false; v.input.zorb = true
       h.step(v, 600)
@@ -372,7 +372,7 @@ async function zorbLiquids(): Promise<Figure[]> {
 /** Each vehicle, its presets (the default first), and how its summary columns were measured. */
 const vehicles: Record<string, { run: () => Promise<VehicleReport>; presets: readonly HandlingPreset[]; how: string }> = {
   buggy: {
-    run: syn3hBuggy, presets: BUGGY_PRESETS,
+    run: miraBuggy, presets: BUGGY_PRESETS,
     how: 'Top speed: full throttle on the flat. Braking: from 25 m/s. Turn radius: full lock at 15 m/s.',
   },
   'buggy liquids': {

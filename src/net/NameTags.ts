@@ -29,7 +29,7 @@ export class NameTags {
     Object.assign(this.root.style, {
       position: 'fixed', inset: '0', pointerEvents: 'none', overflow: 'hidden', zIndex: '5',
     })
-    this.root.className = 'syn3h-nametags'
+    this.root.className = 'mira-nametags'
     document.body.appendChild(this.root)
   }
 

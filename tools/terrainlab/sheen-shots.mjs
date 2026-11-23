@@ -26,9 +26,9 @@ try {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)) })
   await page.routeWebSocket(/\/ws/, (s) => s.close())
   await page.goto(`${base}?autoplay=1&vehicle=buggy&world=${world}`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 60, null, { timeout: 180000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 60, null, { timeout: 180000 })
   const sun = await page.evaluate((hour) => {
-    const s = window.syn3h
+    const s = window.mira
     s.params.set('gfx.level', 2); s.params.set('bots.count', 0); s.params.set('sun.dayLength', 0)
     if (hour) s.params.set('sun.timeOfDay', Number(hour))
     s.params.set('terrain.groundCover', 0)
@@ -45,7 +45,7 @@ try {
   for (const [name, set] of cases) {
     for (const view of ['toSun', 'fromSun']) {
       await page.evaluate(async ({ set, view }) => {
-        const s = window.syn3h, defaults = window.sheenDefaults ??= Object.fromEntries(['weather.hazeDensity', 'weather.aerial', 'post.on'].map((id) => [id, s.params.get(id).value])), unused = {}
+        const s = window.mira, defaults = window.sheenDefaults ??= Object.fromEntries(['weather.hazeDensity', 'weather.aerial', 'post.on'].map((id) => [id, s.params.get(id).value])), unused = {}
         for (const [id, v] of Object.entries({ ...unused, ...defaults, ...set })) s.params.set(id, v)
         const V = s.player.object.position.constructor, at = s.player.object.position
         const sky = s.game.scene.children.find((o) => 'sunDirection' in o), d = sky.sunDirection.value

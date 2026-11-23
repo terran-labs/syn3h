@@ -1,7 +1,7 @@
 /** Run one browser at a time against an isolated local server; invoke through heavy.sh. */
 import { createServer } from 'vite'
 import { spawn } from 'node:child_process'
-const server = await createServer({ configFile: false, define: { __SYN3H_BUILD__: JSON.stringify('safari-diagnostics') }, server: { host: '127.0.0.1', port: 5186, strictPort: true } })
+const server = await createServer({ configFile: false, define: { __MIRA_BUILD__: JSON.stringify('safari-diagnostics') }, server: { host: '127.0.0.1', port: 5186, strictPort: true } })
 const run = args => new Promise((resolve, reject) => { const child = spawn(process.execPath, args, { stdio: 'inherit' }); child.on('error', reject); child.on('exit', code => code === 0 ? resolve() : reject(new Error(`capture exited ${code}`))) })
 try {
   await server.listen()

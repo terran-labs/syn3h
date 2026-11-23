@@ -3,7 +3,7 @@ import { Quaternion, Scene, Vector3 } from 'three/webgpu'
 import type { Game, System } from '../../src/core/Game'
 import { emptyInput, type InputState } from '../../src/core/Input'
 import { createWorld, initPhysics, RAPIER } from '../../src/core/physics'
-import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import type { Terrain } from '../../src/world/Terrain'
 import { Daydream } from '../../src/bots/Daydream'
 import { DAYDREAM_OFF_POSITION, daydreamLabel, daydreamPositionFor, daydreamSecondsAt } from '../../src/bots/daydreamControl'
@@ -70,9 +70,9 @@ describe('personality', () => {
 })
 
 describe('ground pilot', () => {
-  it('drives the Syn3h buggy round a square and stops inside the radius', () => {
+  it('drives the Mira buggy round a square and stops inside the radius', () => {
     const { game, step } = harness(), terrain = flat(800)
-    const buggy = game.add(new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))); buggy.isLocal = false
+    const buggy = game.add(new MiraBuggy(game, terrain, new Vector3(0, 1, 0))); buggy.isLocal = false
     const pilot = createGroundPilot(buggy)
     const corners = [[0, -60], [60, -60], [60, 0], [0, 0]]
     let steps = 0
@@ -98,8 +98,8 @@ describe('ground pilot', () => {
 describe('mind', () => {
   it('abandons a removed leader before reading its physics body', () => {
     const { game } = harness(), terrain = flat(400)
-    const follower = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
-    const leader = new Syn3hBuggy(game, terrain, new Vector3(40, 1, 0))
+    const follower = new MiraBuggy(game, terrain, new Vector3(0, 1, 0))
+    const leader = new MiraBuggy(game, terrain, new Vector3(40, 1, 0))
     const mind = new Mind(follower, terrain, createGroundPilot(follower), { seed: 'removed-leader', others: () => [leader] })
     mind.pursue(leader, 30)
     world.removeRigidBody(leader.body)
@@ -114,7 +114,7 @@ describe('mind', () => {
   it.each(['a', 'b', 'c'])('explores for 90 seconds without entering liquid or leaving the world (seed %s)', seed => {
     const { game, step } = harness()
     const terrain = flat(400, { liquidHeightAt: (x: number) => x > 70 ? 2 : -Infinity })
-    const buggy = game.add(new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))); buggy.isLocal = false
+    const buggy = game.add(new MiraBuggy(game, terrain, new Vector3(0, 1, 0))); buggy.isLocal = false
     const mind = new Mind(buggy, terrain, createGroundPilot(buggy), { seed })
     let maxX = -Infinity, edge = 0, path = 0, last = new Vector3().copy(buggy.body.translation())
     const kinds = new Set<string>()
@@ -132,7 +132,7 @@ describe('mind', () => {
     const run = () => {
       const w = createWorld(9.81); w.createCollider(RAPIER.ColliderDesc.cuboid(600, 0.5, 600).setTranslation(0, -0.5, 0).setFriction(1))
       const game = { world: w, scene: new Scene(), tick: 0, input: { state: emptyInput() } } as unknown as Game
-      const terrain = flat(400), buggy = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); buggy.isLocal = false
+      const terrain = flat(400), buggy = new MiraBuggy(game, terrain, new Vector3(0, 1, 0)); buggy.isLocal = false
       const mind = new Mind(buggy, terrain, createGroundPilot(buggy), { seed: 'same' })
       for (let i = 0; i < 1000; i++) { mind.step(DT, buggy.input); buggy.fixedUpdate(DT); w.step(); buggy.postPhysics(DT) }
       const p = buggy.body.translation(), out = [p.x, p.z]; w.free(); return out
@@ -144,8 +144,8 @@ describe('mind', () => {
 describe('Daydream', () => {
   it('marks ownership only after setup and clears it on hand-back, swap and disposal', () => {
     const { game } = harness(), terrain = flat(800)
-    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
-    const next = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    const player = new MiraBuggy(game, terrain, new Vector3(0, 1, 0))
+    const next = new MiraBuggy(game, terrain, new Vector3(0, 1, 0))
     const pilot = createGroundPilot(player)
     const reset = vi.spyOn(pilot, 'reset')
     reset.mockImplementationOnce(() => { throw new Error('pilot setup failed') })
@@ -170,7 +170,7 @@ describe('Daydream', () => {
   })
   it.each(['disabled', 'suspended', 'blocked'])('clears ownership before physics when %s', reason => {
     const { game, input } = harness(), terrain = flat(800)
-    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    const player = new MiraBuggy(game, terrain, new Vector3(0, 1, 0))
     let blocked = false
     const daydream = new Daydream(game, terrain, player, { blocked: () => blocked })
     daydream.update(15)
@@ -188,7 +188,7 @@ describe('Daydream', () => {
     Object.assign(events, { location: { search: '' } })
     vi.stubGlobal('window', events)
     const { game } = harness(), terrain = flat(800)
-    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    const player = new MiraBuggy(game, terrain, new Vector3(0, 1, 0))
     const daydream = new Daydream(game, terrain, player)
     try {
       daydream.update(15)
@@ -202,7 +202,7 @@ describe('Daydream', () => {
   })
   it('waits fifteen fresh seconds after UI closes and releases before physics when UI opens', () => {
     const { game, input } = harness(), terrain = flat(800)
-    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    const player = new MiraBuggy(game, terrain, new Vector3(0, 1, 0))
     let blocked = true
     const daydream = new Daydream(game, terrain, player, { blocked: () => blocked })
     for (let i = 0; i < 1000; i++) daydream.update(DT)
@@ -222,7 +222,7 @@ describe('Daydream', () => {
   })
   it('defaults to fifteen idle seconds, drives, and hands back on input with the wings as they were', () => {
     const { game, input, step } = harness(), terrain = flat(800)
-    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    const player = new MiraBuggy(game, terrain, new Vector3(0, 1, 0))
     const daydream = game.add(new Daydream(game, terrain, player)); game.add(player)
     expect(params.get('daydream.seconds')!.value).toBe(15)
     const frame = () => { step(); daydream.update(DT) }
@@ -244,7 +244,7 @@ describe('Daydream', () => {
   })
   it('stays out of it while a key is held, in a menu, when switched off, and for a vehicle with no pilot', () => {
     const { game, input } = harness(), terrain = flat(800)
-    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    const player = new MiraBuggy(game, terrain, new Vector3(0, 1, 0))
     const daydream = new Daydream(game, terrain, player)
     params.set('daydream.seconds', 10)
     input.state.y = 1
@@ -271,7 +271,7 @@ describe('bots with a mind', () => {
   const run = async (free: number) => {
     const { BotManager } = await import('../../src/bots/BotManager')
     const { game, step } = harness(), terrain = flat(800)
-    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
+    const player = new MiraBuggy(game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
     player.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
     params.set('bots.freeSpirit', free); params.set('bots.count', 4); params.set('bots.tagBeams', false)
     const manager = game.add(new BotManager(game, terrain, player)); manager.update()
@@ -296,7 +296,7 @@ describe('mixed fleet', () => {
   it('spawns buggies, a hovercraft and a jet, and each drives with its own pilot', async () => {
     const { BotManager } = await import('../../src/bots/BotManager')
     const { game, step } = harness(), terrain = flat(800)
-    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
+    const player = new MiraBuggy(game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
     params.set('bots.fleet', 1); params.set('bots.count', 4); params.set('bots.tagBeams', false); params.set('bots.freeSpirit', 0.5)
     const manager = game.add(new BotManager(game, terrain, player)); manager.update()
     expect(manager.vehicles.map(v => v.kind)).toEqual(['buggy', 'hovercraft', 'buggy', 'jet'])
@@ -327,9 +327,9 @@ describe('chasing with the route planner', () => {
     const inside = (x: number, z: number) => Math.min(60 - Math.abs(x), -30 - z, z + 70)
     const depth = (x: number, z: number) => inside(x, z) > -2 ? Math.min(2, 0.25 * inside(x, z)) : -Infinity
     const terrain = flat(600, { liquidHeightAt: depth })
-    const target = new Syn3hBuggy(game, terrain, new Vector3(0, 1, -100)); target.isLocal = false
+    const target = new MiraBuggy(game, terrain, new Vector3(0, 1, -100)); target.isLocal = false
     target.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
-    const bot = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); bot.isLocal = false
+    const bot = new MiraBuggy(game, terrain, new Vector3(0, 1, 0)); bot.isLocal = false
     params.set('bots.tagBeams', false)
     const brain = game.add(new BotBrain(game, terrain, bot, target)); game.add(bot)
     brain.navigator = createNavigator(terrain)
@@ -351,14 +351,14 @@ describe('bots that know the game', () => {
   const setup = async (count: number) => {
     const { BotManager } = await import('../../src/bots/BotManager')
     const h = harness(), terrain = flat(800)
-    const player = new Syn3hBuggy(h.game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
+    const player = new MiraBuggy(h.game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
     player.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
     params.set('bots.count', count); params.set('bots.tagBeams', false)
     const manager = h.game.add(new BotManager(h.game, terrain, player)); manager.update()
     return { ...h, player, manager }
   }
   const far = (v: { body: RAPIER.RigidBody }, x = 0, z = 0) => { const p = v.body.translation(); return Math.hypot(p.x - x, p.z - z) }
-  // Syn3h's Tag (server/room.ts): "it" is the role everyone wants; ramming or beaming "it"
+  // Mira's Tag (server/room.ts): "it" is the role everyone wants; ramming or beaming "it"
   // takes it. Bugs caught: bots that ignore whoever is "it"; more than two bots on one person.
   it('tag, the player is it: at most two bots go after the player, and they reach them', async () => {
     const { step, player, manager } = await setup(3)

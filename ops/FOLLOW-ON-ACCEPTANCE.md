@@ -6,7 +6,7 @@ The acceptance checks below preserve lane ownership and existing release safegua
 
 ## Performance and adjustable tiers
 
-Reuse `QualityController`, its governor and `syn3h:quality` events. Do not introduce a
+Reuse `QualityController`, its governor and `mira:quality` events. Do not introduce a
 second controller that fights manual settings or the existing automatic ladder.
 Provide understandable tier controls on ordinary entry, including touch. Exercise
 moving up and down during play, automatic mode, manual choices, reload and recovery.

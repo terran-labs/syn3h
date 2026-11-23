@@ -20,20 +20,20 @@ try {
   const url = new URL(base)
   for (const [key, value] of Object.entries({ autoplay: '1', world: mode === 'wind' ? 'volcanic.7' : 'alpine.7', vehicle: kind })) url.searchParams.set(key, value)
   await page.goto(url.href, { waitUntil: 'load', timeout: 120000 })
-  await page.waitForFunction(() => window.syn3h?.game.time > 3, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game.time > 3, null, { timeout: 120000 })
   const set = values => page.evaluate(values => {
-    for (const [id, value] of Object.entries(values)) window.syn3h.params.set(id, value, 'local')
+    for (const [id, value] of Object.entries(values)) window.mira.params.set(id, value, 'local')
   }, values)
   const seconds = async n => {
-    const target = await page.evaluate(n => window.syn3h.game.time + n, n)
-    await page.waitForFunction(t => window.syn3h.game.time >= t, target, { timeout: 120000 })
+    const target = await page.evaluate(n => window.mira.game.time + n, n)
+    await page.waitForFunction(t => window.mira.game.time >= t, target, { timeout: 120000 })
   }
   await set({ 'bots.count': 0, 'sun.timeOfDay': 12, 'sun.dayLength': 0, 'world.curve': 0,
     'weather.storminess': 0, 'water.waves': true, 'water.sinking': true,
     'water.underwater': false, 'water.ripples': true, 'water.spray': true })
   await seconds(1)
   report.spot = await page.evaluate(mode => {
-    const s = window.syn3h, t = s.terrain
+    const s = window.mira, t = s.terrain
     let p
     if (mode === 'wind') {
       p = t.data.vents.filter(v => v.kind === 'smoke').sort((a, b) => b.size - a.size)[0]
@@ -79,7 +79,7 @@ try {
   }, mode)
   const sample = async label => {
     report.samples.push({ label, ...await page.evaluate(async () => {
-      const s = window.syn3h, p = s.player.body.translation(), v = s.player.body.linvel()
+      const s = window.mira, p = s.player.body.translation(), v = s.player.body.linvel()
       const w = await import('/src/world/weather/index.ts')
       const spot = window.waterAuditSpot, wind = w.windDrift(spot.x, spot.y, spot.z, { x: 0, y: 0, z: 0 })
       const effects = s.game.systems.find(system => system.spray)
@@ -110,8 +110,8 @@ try {
   }
   if (mode === 'falls') {
     report.cost = await page.evaluate(async () => {
-      const g = window.syn3h.game, r = g.renderer
-      const sheets = window.syn3h.terrain.volcanics.meshes.filter(m => m.mesh.geometry.name === 'waterfall-sheet').map(m => m.mesh)
+      const g = window.mira.game, r = g.renderer
+      const sheets = window.mira.terrain.volcanics.meshes.filter(m => m.mesh.geometry.name === 'waterfall-sheet').map(m => m.mesh)
       r.setAnimationLoop(null)
       r.info.autoReset = false
       const rows = []

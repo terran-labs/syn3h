@@ -21,7 +21,7 @@ import * as THREE from 'three/webgpu'
 import { params } from '../shared/params'
 import '../src/world/terrain/settings'
 import { FIXED_DT, initPhysics } from '../src/core/physics'
-import { Syn3hBuggy } from '../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../src/vehicles/MiraBuggy'
 import { advance, ashore, basinBed, coast, dispose, entry, exitTime, fromRest, makeVehicle, type Basin, type Run } from '../tests/vehicles/liquidScenarios'
 
 const args = process.argv.slice(2)
@@ -129,7 +129,7 @@ function climbOut() {
 
 async function main() {
   await initPhysics()
-  void Syn3hBuggy
+  void MiraBuggy
   const result = {
     sets,
     sink30: sink(30), sink4: sink(4), sink12: sink(12),

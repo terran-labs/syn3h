@@ -9,7 +9,7 @@ try{
  await page.evaluate(()=>window.skinViewer.setOpen(0))
  for(const tier of tiers){
   await page.evaluate(async t=>{const q=await import('/src/core/quality.ts');const {params}=await import('/shared/params.ts');params.set(q.vehicleShading.def.id,t)},tier)
-  for(const [i,name] of [[1,'syn3h'],[0,'classic']]){
+  for(const [i,name] of [[1,'mira'],[0,'classic']]){
    await page.evaluate(i=>{const v=window.skinViewer,p=v.skins[i].object.position;v.controls.target.set(p.x,p.y+.2,p.z);v.camera.position.set(p.x+2.3,p.y+1.7,p.z-3.1);v.controls.update()},i)
    await page.waitForTimeout(1200);await page.screenshot({path:`${out}/${tag}-${name}-t${tier}.png`})
    if(tier===tiers[0]){await page.evaluate(i=>{const v=window.skinViewer,p=v.skins[i].object.position;v.controls.target.set(p.x,p.y+.35,p.z-.3);v.camera.position.set(p.x+.9,p.y+1.05,p.z-1.5);v.controls.update()},i)

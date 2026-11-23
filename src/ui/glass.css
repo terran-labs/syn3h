@@ -24,7 +24,7 @@
  * rule at the end clears that button's CSS body and frost. Removing the attribute (any frame)
  * hands the surface back to CSS at once.
  *
- * Tokens (on :root, because the touch controls sit outside .syn3h-shell). Override them only in
+ * Tokens (on :root, because the touch controls sit outside .mira-shell). Override them only in
  * your own scope; never restyle the class's rules.
  *   --glass-body     the body's tint
  *   --glass-blur     the frost radius (0 for none)
@@ -168,16 +168,16 @@ html[data-glass-material="frost"] :is(.hud-navigation, .touch-actions) .liquid-g
 
 /* The top-level panel shapes follow the 48 px Close panels capsule.
    Scope this to the driving rail: settings rows inside the lobby card are content. */
-html[data-glass-material] .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings)
+html[data-glass-material] .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings)
 :is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost, .rail-command > input, .rail-command > button, .panels-close) {
   --halo-r: var(--glass-control-radius); border-radius: var(--glass-control-radius);
 }
-html[data-glass-material] .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings)
+html[data-glass-material] .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings)
 .wi-cards > .wi-card > .wi-head {
   background: transparent; border: 0; box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
-html[data-glass-material] .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings)
+html[data-glass-material] .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings)
 :is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost, .rail-command > input, .rail-command > button, .panels-close):not([data-glass-surface="shader"]) {
   background: var(--panel-material-fill, rgb(255 255 255 / .06));
   border: 1px solid var(--panel-material-edge, rgb(255 255 255 / .42));
@@ -192,7 +192,7 @@ html[data-glass-material="flat"] {
   --panel-material-fill: var(--interface-tint); --panel-material-filter: none;
   --panel-material-edge: transparent; --panel-material-shadow: none;
 }
-html[data-glass-material] .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings) .wi-card .liquid-glass {
+html[data-glass-material] .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings) .wi-card .liquid-glass {
   --glass-frost: none; background: transparent; box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
@@ -214,19 +214,19 @@ html[data-glass-material="frost"] {
   --panel-material-fill: linear-gradient(180deg, rgb(255 255 255 / .04), transparent 55%, rgb(255 255 255 / .02)), var(--panel-smoke);
   --panel-material-filter: blur(30px) saturate(1.9) brightness(.84);
 }
-html[data-glass-material="frost"] .syn3h-shell.exploration-ui
+html[data-glass-material="frost"] .mira-shell.exploration-ui
 .lobby-gear-dock > .lobby-control {
   background: var(--panel-material-fill);
   -webkit-backdrop-filter: var(--panel-material-filter); backdrop-filter: var(--panel-material-filter);
   color: white;
 }
-html[data-glass-material="frost"] .syn3h-shell.exploration-ui > .world-inspector :is(.rail-command > button .rail-icon path, .panels-close .nav-chevrons) {
+html[data-glass-material="frost"] .mira-shell.exploration-ui > .world-inspector :is(.rail-command > button .rail-icon path, .panels-close .nav-chevrons) {
   filter: none;
 }
-html[data-glass-material="frost"] .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings) input::placeholder {
+html[data-glass-material="frost"] .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings) input::placeholder {
   color: var(--s3-soft); opacity: 1;
 }
-html[data-glass-material="frost"] .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings) :is(button:disabled, [aria-disabled="true"]) {
+html[data-glass-material="frost"] .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings) :is(button:disabled, [aria-disabled="true"]) {
   color: var(--s3-soft); opacity: 1;
 }
 
@@ -234,7 +234,7 @@ html[data-glass-material="frost"] .syn3h-shell.exploration-ui > .world-inspector
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   @media (prefers-reduced-transparency: no-preference) and (prefers-contrast: no-preference) {
     html[data-glass-material="frost"]:not([data-gfx="0"])
-    .syn3h-shell.exploration-ui:not([data-ui-frost="off"]) #lobby-settings.liquid-glass {
+    .mira-shell.exploration-ui:not([data-ui-frost="off"]) #lobby-settings.liquid-glass {
       --glass-body: var(--panel-smoke); --glass-body-hover: var(--panel-smoke);
       --glass-frost: var(--panel-material-filter);
       background: var(--panel-material-fill);
@@ -244,13 +244,13 @@ html[data-glass-material="frost"] .syn3h-shell.exploration-ui > .world-inspector
 }
 html[data-glass-material="frost"] .lobby-gear-dock .lobby-control-icon { opacity: 1; }
 
-html[data-glass-material="frost"] .syn3h-shell.exploration-ui > .world-inspector .wi-row.wi-day .wi-day-note { color: var(--s3-soft); }
+html[data-glass-material="frost"] .mira-shell.exploration-ui > .world-inspector .wi-row.wi-day .wi-day-note { color: var(--s3-soft); }
 
-html[data-glass-material] .syn3h-shell.exploration-ui .world-inspector {
+html[data-glass-material] .mira-shell.exploration-ui .world-inspector {
   --s3-ink: white; --s3-dim: white; --s3-soft: white; --s3-accent-2: white;
   --s3-on-ink: white; --s3-on-fill: #44484d;
 }
-html[data-glass-material] .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-resolution .wi-res-auto.is-on {
+html[data-glass-material] .mira-shell.exploration-ui .world-inspector .wi-cards .wi-resolution .wi-res-auto.is-on {
   color: white; background: var(--s3-on-fill);
 }
 
@@ -264,55 +264,55 @@ html[data-glass-material] .liquid-glass :is(.gs-name, .lobby-control-word, .lobb
 }
 
 /* Keep selection visible against both bright and dark material without changing the ink. */
-html[data-glass-material] .syn3h-shell.exploration-ui .world-inspector
+html[data-glass-material] .mira-shell.exploration-ui .world-inspector
 :is(.wi-seg button.is-on, .wi-vehicle-option[aria-checked="true"], .glass-stops button[aria-pressed="true"]) {
   outline: 1px solid rgb(255 255 255 / .68); outline-offset: -1px;
 }
-html[data-glass-material] .syn3h-shell.exploration-ui .world-inspector
+html[data-glass-material] .mira-shell.exploration-ui .world-inspector
 :is(.wi-seg button.is-on, .wi-vehicle-option[aria-checked="true"], .glass-stops button[aria-pressed="true"]):focus-visible {
   outline: 2px solid white; outline-offset: 1px;
 }
 
 /* Keep the offer out of the rail. On a narrow touch screen the thumb controls
    need the bottom corners while driving. An open rail leaves room below itself. */
-html[data-glass-material] .syn3h-shell.exploration-ui .drive-notices > .performance-recommendation {
+html[data-glass-material] .mira-shell.exploration-ui .drive-notices > .performance-recommendation {
   width: 100%; transform: none; border-radius: var(--glass-control-radius);
   padding: 12px 16px; color: white; border: 0; box-shadow: none; text-shadow: none;
 }
-html[data-glass-material] .syn3h-shell.exploration-ui .drive-notices > .performance-recommendation::before,
-html[data-glass-material] .syn3h-shell.exploration-ui .drive-notices > .performance-recommendation::after { content: none; }
-html[data-glass-material] .syn3h-shell.exploration-ui .drive-notices > .performance-recommendation:not([data-glass-surface="shader"]) {
+html[data-glass-material] .mira-shell.exploration-ui .drive-notices > .performance-recommendation::before,
+html[data-glass-material] .mira-shell.exploration-ui .drive-notices > .performance-recommendation::after { content: none; }
+html[data-glass-material] .mira-shell.exploration-ui .drive-notices > .performance-recommendation:not([data-glass-surface="shader"]) {
   background: var(--panel-material-fill, rgb(22 23 26 / .75));
   -webkit-backdrop-filter: var(--panel-material-filter, none); backdrop-filter: var(--panel-material-filter, none);
 }
-html .syn3h-shell.exploration-ui .drive-notices > .performance-recommendation[data-glass-surface="shader"] {
+html .mira-shell.exploration-ui .drive-notices > .performance-recommendation[data-glass-surface="shader"] {
   background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 /* Race status sits above a performance offer. Confirmations suspend play and
    updates use the rail chip in play, leaving those actions in their own contexts. */
-.syn3h-shell.exploration-ui > .drive-notices {
+.mira-shell.exploration-ui > .drive-notices {
   position: fixed; z-index: 14; left: 50%; bottom: var(--edge-bottom); transform: translateX(-50%);
   width: min(360px, calc(100% - var(--edge-left) - var(--edge-right)));
   display: flex; flex-direction: column; align-items: center; gap: var(--edge); pointer-events: none;
 }
-.syn3h-shell.exploration-ui > .drive-notices > :is(.performance-recommendation, .race-hud) {
+.mira-shell.exploration-ui > .drive-notices > :is(.performance-recommendation, .race-hud) {
   position: relative; inset: auto; transform: none; margin: 0; pointer-events: auto; max-width: 100%;
 }
 @media (max-width: 800px) {
-  .syn3h-shell.exploration-ui.has-touch {
+  .mira-shell.exploration-ui.has-touch {
     --notice-bottom: max(calc(var(--map-top, 180px) + 10px), calc(var(--thumb-top) + var(--thumb-above, 0px) + 10px));
   }
-  .syn3h-shell.exploration-ui.has-touch > .drive-notices {
+  .mira-shell.exploration-ui.has-touch > .drive-notices {
     bottom: var(--notice-bottom);
   }
-  .syn3h-shell.exploration-ui.has-touch:has(> .drive-notices > :not([hidden])) > .world-inspector {
+  .mira-shell.exploration-ui.has-touch:has(> .drive-notices > :not([hidden])) > .world-inspector {
     max-height: calc(100dvh - var(--edge-top) - var(--notice-bottom) - var(--notice-stack-height) - var(--edge));
   }
 }
 
 /* Plain panel actions share the Me footer's thin border and hover state.
    The enclosing card supplies the material and its depth. */
-html[data-glass-material] .syn3h-shell.exploration-ui button.panel-action:not([hidden]) {
+html[data-glass-material] .mira-shell.exploration-ui button.panel-action:not([hidden]) {
   appearance: none; display: inline-flex; align-items: center; justify-content: center; flex: none;
   box-sizing: border-box; width: auto; min-width: 0; height: 30px; min-height: 30px;
   padding: 0 12px; border: 1px solid var(--s3-line-quiet); border-radius: 15px;
@@ -325,19 +325,19 @@ html[data-glass-material] .syn3h-shell.exploration-ui button.panel-action:not([h
    above or below its centre still lands on it. Nothing moves; buttons wider than 44 px gain no
    width, so actions side by side do not overlap, and stacked ones keep at least 16 px apart in
    every panel that has them (checked in lobby-about.mjs). */
-html[data-glass-material] .syn3h-shell.exploration-ui.has-touch button.panel-action:not([hidden]) { position: relative; }
-html[data-glass-material] .syn3h-shell.exploration-ui.has-touch button.panel-action:not([hidden])::after {
+html[data-glass-material] .mira-shell.exploration-ui.has-touch button.panel-action:not([hidden]) { position: relative; }
+html[data-glass-material] .mira-shell.exploration-ui.has-touch button.panel-action:not([hidden])::after {
   content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 46px);
   transform: translate(-50%, -50%); background: none; pointer-events: auto;
 }
-html[data-glass-material] .syn3h-shell.exploration-ui button.panel-action:hover {
+html[data-glass-material] .mira-shell.exploration-ui button.panel-action:hover {
   border-color: var(--s3-line);
 }
-html[data-glass-material] .syn3h-shell.exploration-ui button.panel-action:focus-visible {
+html[data-glass-material] .mira-shell.exploration-ui button.panel-action:focus-visible {
   outline: 2px solid white; outline-offset: 1px;
 }
 
-.syn3h-shell.exploration-ui:not(.has-touch):has(> .drive-notices > :not([hidden])) .spawn-help {
+.mira-shell.exploration-ui:not(.has-touch):has(> .drive-notices > :not([hidden])) .spawn-help {
   visibility: hidden;
 }
 
@@ -347,20 +347,20 @@ html[data-glass-material] .syn3h-shell.exploration-ui button.panel-action:focus-
    controls; ordinary text inside the cards is governed by the face. Eased when the style
    changes, like everything else. Measured 22 November 2026: Pause 2.2:1 and Close panels 3.0:1
    without it over Alpine noon. */
-:is(.syn3h-shell > .world-inspector, .drive-notices) svg { transition: filter .22s ease; }
-:is(.syn3h-shell > .world-inspector :is(.rail-command, .rail-foot) > :is(button, input), .syn3h-shell > .world-inspector > .panels-close, .drive-notices button) { transition: text-shadow .22s ease, filter .22s ease; }
-html[data-glass-material="liquid"] :is(.syn3h-shell > .world-inspector, .drive-notices) svg {
+:is(.mira-shell > .world-inspector, .drive-notices) svg { transition: filter .22s ease; }
+:is(.mira-shell > .world-inspector :is(.rail-command, .rail-foot) > :is(button, input), .mira-shell > .world-inspector > .panels-close, .drive-notices button) { transition: text-shadow .22s ease, filter .22s ease; }
+html[data-glass-material="liquid"] :is(.mira-shell > .world-inspector, .drive-notices) svg {
   filter: drop-shadow(0 0 .6px rgb(0 0 0 / .95)) drop-shadow(0 0 1.5px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .55)) drop-shadow(0 0 8px rgb(0 0 0 / .3));
 }
 /* A control the shader draws turns its own text-shadow off (shader-surface.css, !important);
    this falloff is the exception at Liquid, so it is !important too, on the label and its spans. */
-html[data-glass-material="liquid"] :is(.syn3h-shell > .world-inspector :is(.rail-command, .rail-foot) > :is(button, input), .syn3h-shell > .world-inspector > .panels-close, .drive-notices button),
-html[data-glass-material="liquid"] :is(.syn3h-shell > .world-inspector :is(.rail-command, .rail-foot) > button, .syn3h-shell > .world-inspector > .panels-close, .drive-notices button) :is(span, kbd) {
+html[data-glass-material="liquid"] :is(.mira-shell > .world-inspector :is(.rail-command, .rail-foot) > :is(button, input), .mira-shell > .world-inspector > .panels-close, .drive-notices button),
+html[data-glass-material="liquid"] :is(.mira-shell > .world-inspector :is(.rail-command, .rail-foot) > button, .mira-shell > .world-inspector > .panels-close, .drive-notices button) :is(span, kbd) {
   text-shadow: 0 0 1px rgb(0 0 0 / .95), 0 0 2px rgb(0 0 0 / .85), 0 0 4px rgb(0 0 0 / .7), 0 0 8px rgb(0 0 0 / .45), 0 0 14px rgb(0 0 0 / .3) !important;
 }
 /* Close panels' chevrons keep a light glow on phones (phone-panels.css); at Liquid they take the
    same dark falloff as the other icons. */
-html[data-glass-material="liquid"] .syn3h-shell.exploration-ui > .world-inspector > .panels-close .nav-chevrons {
+html[data-glass-material="liquid"] .mira-shell.exploration-ui > .world-inspector > .panels-close .nav-chevrons {
   filter: drop-shadow(0 0 .6px rgb(0 0 0 / .95)) drop-shadow(0 0 1.5px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .55)) drop-shadow(0 0 8px rgb(0 0 0 / .3));
 }
 
@@ -372,7 +372,7 @@ html[data-glass-material="liquid"] .syn3h-shell.exploration-ui > .world-inspecto
    ink, a thin lit rim and a dark hairline, so a scrolling card beside a shader-drawn control
    reads as the same material. Frost and Flat keep their own CSS. Not while Liquid is shed. */
 html[data-glass-material="liquid"]:not([data-drive-glass="shed"]) [data-glass-surface="scroll"],
-html[data-glass-material="liquid"]:not([data-drive-glass="shed"]) .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings)
+html[data-glass-material="liquid"]:not([data-drive-glass="shed"]) .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings)
 :is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost)[data-glass-surface="scroll"] {
   background: rgb(8 8 10 / .1);
   border: 1px solid rgb(255 255 255 / .16);

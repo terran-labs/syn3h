@@ -1,4 +1,4 @@
-# Syn3h camera
+# Mira camera
 
 `ChaseCamera.target` and `update` remain compatible. Prefer `camera.setVehicle(player)` so the camera can read rigid-body velocity, `wingOpen` or `wingsOpen`, optional `kind === 'jet'`, `camSmooth`, `camOffset`, and a world-space `ridePosition` or `ridePos` Object3D. Without this binding, chase derives velocity from interpolated target positions; cockpit uses a buggy ride height of 0.95 metres.
 
@@ -21,4 +21,4 @@ The camera aligns to the bound vehicle in flight when wings are open or kind is 
 
 Terrain avoidance samples the complete arm at intervals no larger than 0.25 metres for the default arm, then clamps the final point above terrain. This works with the shared height interface and requires no collider query. It cannot detect overhangs or arbitrary prop meshes. Lobby alignment, loading fades, underwater post-processing and a far-plane override remain with their owning systems.
 
-A closer reference capture sets `camera.distance` to 2; this is a comparison, not a claim about Syn3h defaults. The incoming larger Syn3h model should be judged with the default distance and 80-degree FOV first.
+A closer reference capture sets `camera.distance` to 2; this is a comparison, not a claim about Mira defaults. The incoming larger Mira model should be judged with the default distance and 80-degree FOV first.

@@ -5,24 +5,24 @@
     <!-- The page never zooms: it is a game with controls fixed to the screen edges, and a zoomed
          page puts them out of reach. See the "never zoom" script and styles below. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <title>Syn3h | Your galaxy awaits.</title>
-    <meta name="description" content="Drive, fly and explore alien worlds together in your browser. Syn3h, from the creator of Mars Explorer." />
+    <title>Mira | Your galaxy awaits.</title>
+    <meta name="description" content="Drive, fly and explore alien worlds together in your browser. Mira, from the creator of Mars Explorer." />
     <meta name="theme-color" content="#01020a" />
     <!-- Card crawlers do not run scripts and need full addresses: this is the public release address. -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Syn3h" />
-    <meta property="og:title" content="Syn3h | Your galaxy awaits." />
+    <meta property="og:site_name" content="Mira" />
+    <meta property="og:title" content="Mira | Your galaxy awaits." />
     <meta property="og:description" content="Drive, fly and explore alien worlds together. From the creator of Mars Explorer." />
     <meta property="og:url" content="https://mira.cc/" />
     <meta property="og:image" content="https://mira.cc/brand/share.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="The Syn3h logo over a dark starfield. Your galaxy awaits." />
+    <meta property="og:image:alt" content="The Mira logo over a dark starfield. Your galaxy awaits." />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Syn3h | Your galaxy awaits." />
+    <meta name="twitter:title" content="Mira | Your galaxy awaits." />
     <meta name="twitter:description" content="Drive, fly and explore alien worlds together. From the creator of Mars Explorer." />
     <meta name="twitter:image" content="https://mira.cc/brand/share.png" />
-    <meta name="twitter:image:alt" content="The Syn3h logo over a dark starfield." />
+    <meta name="twitter:image:alt" content="The Mira logo over a dark starfield." />
     <link rel="manifest" href="/brand/manifest.webmanifest" />
     <link rel="apple-touch-icon" sizes="180x180" href="/brand/apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" sizes="any" href="/brand/favicon.svg" />
@@ -182,7 +182,7 @@
         }
       }
 
-      /* ---- Syn3h's additions to the veil. The mark above is terranlabs.com's; on a phone,
+      /* ---- Mira's additions to the veil. The mark above is terranlabs.com's; on a phone,
          over a slow link, a small dim ring alone read as a blank screen (the owner's iPad,
          14 November 2026). So: the name, a larger and brighter mark, a word of status that
          changes with each loading phase, and after eight seconds a line that says it is
@@ -304,8 +304,8 @@
       html[data-opening="playing"] :is(.galaxy-hint, .galaxy-links, .lobby-gear-dock, .lobby-version-dock, .update-banner) { opacity: 0; visibility: hidden; }
       html[data-opening="settling"] :is(.galaxy-hint, .galaxy-links, .lobby-gear-dock, .lobby-version-dock, .update-banner) { transition: opacity 0.5s ease; }
       /* The planets' plates come in as the opening settles: faded in where they stand, slowly. */
-      html .syn3h-shell .galaxy-label.is-unrevealed { opacity: 0; pointer-events: none; }
-      html[data-opening] .syn3h-shell button.galaxy-label { transition: opacity 0.45s ease; }
+      html .mira-shell .galaxy-label.is-unrevealed { opacity: 0; pointer-events: none; }
+      html[data-opening] .mira-shell button.galaxy-label { transition: opacity 0.45s ease; }
     </style>
     <script>
       // Never select, part 2. Some engines start a selection or a drag in spite of the
@@ -389,7 +389,7 @@
   </head>
   <body>
     <div class="boot-veil">
-      <!-- Syn3h's additions to the veil: its name, a word of status and, after a while, a
+      <!-- Mira's additions to the veil: its name, a word of status and, after a while, a
            line saying it is still working. A slow first visit must never look like a blank
            page. The path is the wordmark from src/ui/brand/wordmarkPath.ts. -->
       <div class="boot-point" aria-hidden="true"></div>
@@ -425,14 +425,14 @@
           // until it finishes and its own entry takes over. Bodies as delivered (decoded), the same
           // measure for both, so the count only ever goes up.
           var received = function() {
-            var bytes = 0, engine = window.__syn3hPhysicsUrl, engineDone = false;
+            var bytes = 0, engine = window.__miraPhysicsUrl, engineDone = false;
             try {
               performance.getEntriesByType("navigation").concat(performance.getEntriesByType("resource")).forEach(function(e) {
                 bytes += e.decodedBodySize || e.encodedBodySize || e.transferSize || 0;
                 if (engine && e.name.indexOf(engine) >= 0) engineDone = true;
               });
             } catch (error) {}
-            if (!engineDone) bytes += window.__syn3hPhysicsBytes || 0;
+            if (!engineDone) bytes += window.__miraPhysicsBytes || 0;
             return bytes;
           };
           var draw = function() {

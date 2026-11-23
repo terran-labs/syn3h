@@ -19,7 +19,7 @@ const IMAGE = /\.(png|jpe?g|webp|gif|bmp|ico|avif|tga|tiff?|ktx2?|hdr|exr|dds|ba
 /** Each line: path, then who removes it. */
 const ALLOWED = new Map<string, string>([
   // Orchestrator: dashboard marks, to become the vector wordmark and traced marks.
-  ['dashboard/assets/syn3h-logo-sun-1024x512.png', 'Orchestrator'],
+  ['dashboard/assets/mira-logo-sun-1024x512.png', 'Orchestrator'],
   ['dashboard/assets/terran-labs-logo.png', 'Orchestrator'],
   ['dashboard/assets/terran-labs-wordmark.png', 'Orchestrator'],
   // UX: explicit vector exports retained as platform fallbacks. Ordinary builds

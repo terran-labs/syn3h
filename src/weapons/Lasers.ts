@@ -156,7 +156,7 @@ const RED_RING = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.
 
 export class Lasers implements System {
   private readonly shots: Projectile[] = []
-  // Syn3h's LaserAuto look: plasma green. +Z is the direction of travel after rotateX.
+  // Mira's LaserAuto look: plasma green. +Z is the direction of travel after rotateX.
   private readonly coreGeo = new THREE.CylinderGeometry(0.08, 0.08, LENGTH, 6, 1).rotateX(Math.PI / 2)
   /** Halo that tapers from 0.25 m at the head to 0.1 m at the tail, trailing behind. */
   private readonly haloGeo = new THREE.CylinderGeometry(0.25, 0.1, TRAIL, 8, 1).rotateX(Math.PI / 2).translate(0, 0, -TRAIL / 2 + LENGTH / 2)

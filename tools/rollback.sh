@@ -16,6 +16,7 @@
 #   - a Worker from before R2 (release-62 and earlier) has only the copies it carried, so
 #     versions accepted after it 404 until production moves forward; they are safe in R2.
 # The restored build's /v/versions.json (the Updates banner's newest release) is its own list.
+. "$(dirname "$0")/lib/legacy-env.sh" # legacy environment names, see docs/NAMES.md
 set -eu
 cd "$(dirname "$0")/.."
 . tools/cloudflare-token.sh
@@ -52,7 +53,7 @@ echo "Smoke testing $URL ..."
 LOG="$(mktemp /tmp/syn3h-rollback-check.XXXXXX)"
 SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-rollback.XXXXXX)" || { echo "Rollback deployed, but evidence directory allocation failed" >&2; exit 1; }
 echo "Shot evidence: $SHOT_PARENT/evidence ($URL)"
-if SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "$URL" >"$LOG" 2>&1; then
+if MIRA_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "$URL" >"$LOG" 2>&1; then
   grep -E "^(FAIL|NET SMOKE)" "$LOG" || true
 else
   cat "$LOG"

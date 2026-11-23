@@ -26,7 +26,7 @@ export const tapMessages = [
 ] as const
 
 /** Local storage key: the index of the next line to show. */
-export const TAP_MESSAGE_KEY = 'syn3h.tapMessage'
+export const TAP_MESSAGE_KEY = 'mira.tapMessage'
 
 /** Fill a line's `{Tap}` and `{tap}` for a touch screen or for a mouse and keyboard. */
 export function tapLine(template: string, touch: boolean): string {

@@ -35,8 +35,8 @@ export async function loadPhysicsWasm(url: string, options: PhysicsWasmOptions =
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => { abort.abort(); reject(new Error(`no answer within ${Math.round(timeoutMs / 1000)} seconds`)) }, timeoutMs) })
   const load = (async () => {
-    const early = typeof window === 'undefined' || options.fetch ? undefined : (window as unknown as { __syn3hPhysicsWasm?: { url: string; response: Promise<Response | Error> } }).__syn3hPhysicsWasm
-    if (early) delete (window as unknown as { __syn3hPhysicsWasm?: unknown }).__syn3hPhysicsWasm
+    const early = typeof window === 'undefined' || options.fetch ? undefined : (window as unknown as { __miraPhysicsWasm?: { url: string; response: Promise<Response | Error> } }).__miraPhysicsWasm
+    if (early) delete (window as unknown as { __miraPhysicsWasm?: unknown }).__miraPhysicsWasm
     const response = early?.url === url ? await early.response : await get(url, { signal: abort.signal })
     if (!(response instanceof Response)) throw response
     if (!response.ok) throw new Error(`HTTP ${response.status}`)

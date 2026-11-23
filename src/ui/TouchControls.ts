@@ -40,7 +40,7 @@ export function stickVector(origin: Readonly<StickPoint>, fingerX: number, finge
 /** True once a touch has moved far enough from where it went down to be a drag. */
 export const isDrag = (fromX: number, fromY: number, x: number, y: number): boolean => Math.hypot(x - fromX, y - fromY) >= DRAG_THRESHOLD
 
-const DRIVEN_KEY = 'syn3h.touch.driven'
+const DRIVEN_KEY = 'mira.touch.driven'
 function readDriven(): boolean { try { return localStorage.getItem(DRIVEN_KEY) === '1' } catch { return false } }
 function writeDriven(): void { try { localStorage.setItem(DRIVEN_KEY, '1') } catch { /* No storage: the hint returns next session. */ } }
 
@@ -69,10 +69,10 @@ export class TouchControls {
   private driven = readDriven()
   private hint?: HTMLElement
   private kind: VehicleKind = 'buggy'
-  /** Camera look in CSS px of finger travel, from the aiming hand. ChaseCamera listens for syn3h:look. */
-  onLook = (dx: number, dy: number): void => { window.dispatchEvent(new CustomEvent('syn3h:look', { detail: { dx, dy } })) }
-  /** Camera zoom in wheel pixels, positive out. ChaseCamera listens for syn3h:zoom. */
-  onZoom = (deltaY: number): void => { window.dispatchEvent(new CustomEvent('syn3h:zoom', { detail: { deltaY } })) }
+  /** Camera look in CSS px of finger travel, from the aiming hand. ChaseCamera listens for mira:look. */
+  onLook = (dx: number, dy: number): void => { window.dispatchEvent(new CustomEvent('mira:look', { detail: { dx, dy } })) }
+  /** Camera zoom in wheel pixels, positive out. ChaseCamera listens for mira:zoom. */
+  onZoom = (deltaY: number): void => { window.dispatchEvent(new CustomEvent('mira:zoom', { detail: { deltaY } })) }
   /** The gear behind the Tag button. Unbound, Tag holds the tag control as it always did. */
   tag?: TouchTag
   private readonly tagStick = new TagStick({
@@ -179,7 +179,7 @@ export class TouchControls {
       // A driving notice's face may be drawn by the glass shader into the canvas, under every
       // element, so no stacking order keeps the ring off it: the ring and knob are cut where a
       // shown notice is instead (an even-odd hole). Once per drag: the base stays put.
-      const notice = document.querySelector<HTMLElement>('.syn3h-shell > .drive-notices > :not([hidden])')
+      const notice = document.querySelector<HTMLElement>('.mira-shell > .drive-notices > :not([hidden])')
       const r = notice?.getBoundingClientRect()
       const l = r ? r.left - (origin.x - half) : 0, t = r ? r.top - (origin.y - half) : 0, w = half * 2
       base.style.clipPath = r && r.width && l < w && t < w && l + r.width > 0 && t + r.height > 0
@@ -238,7 +238,7 @@ export class TouchControls {
     const onNotice = target instanceof Element && !!target.closest('.drive-notices button')
     const role = touchRole({
       x: event.clientX, width: innerWidth, leftHanded: touchLeftHanded.value,
-      onGameView: onNotice || target === document.body || target === document.documentElement || (target instanceof HTMLCanvasElement && !target.closest('.syn3h-shell, .touch-controls')),
+      onGameView: onNotice || target === document.body || target === document.documentElement || (target instanceof HTMLCanvasElement && !target.closest('.mira-shell, .touch-controls')),
       // The minimap lets touches through to the canvas, and the gaps between action buttons are
       // canvas too, so both are tested by position.
       onMinimap: inside(document.querySelector('.shell-minimap')),

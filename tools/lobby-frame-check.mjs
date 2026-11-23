@@ -18,14 +18,14 @@ try {
   const page = await context.newPage(), errors = []
   page.on('pageerror', e => errors.push(e.message))
   await page.goto(url.href)
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 10, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 10, null, { timeout: 90000 })
   await page.waitForTimeout(3000)
   const measure = () => page.evaluate(async () => {
-    const s = window.syn3h, g = s.game.quality.governor, r = s.game.renderer
+    const s = window.mira, g = s.game.quality.governor, r = s.game.renderer
     // Count real render calls of the world by wrapping the renderer for the measurement.
     if (!r.__counted) { const render = r.render.bind(r); r.__counted = { n: 0 }; r.render = (...a) => { r.__counted.n++; return render(...a) } }
     const info = { get frame() { return r.__counted.n } }
-    const shell = document.querySelector('.syn3h-shell')
+    const shell = document.querySelector('.mira-shell')
     const before = { frame: info.frame, tick: s.game.tick, level: g.level, rung: g.rung }
     let rafs = 0; const start = performance.now()
     await new Promise(done => { const tick = () => { rafs++; performance.now() - start < 4000 ? requestAnimationFrame(tick) : done() }; requestAnimationFrame(tick) })
@@ -33,8 +33,8 @@ try {
     return { classes: shell?.className, worldRendersPerSecond: +((info.frame - before.frame) / seconds).toFixed(1), animationFramesPerSecond: +(rafs / seconds).toFixed(1), physicsStepsPerSecond: +((s.game.tick - before.tick) / seconds).toFixed(0), level: [before.level, g.level], rung: [before.rung, g.rung] }
   })
   const lobby = await measure()
-  await page.evaluate(() => window.syn3h.shell.play())
-  await page.waitForFunction(() => document.querySelector('.syn3h-shell')?.classList.contains('is-playing'), null, { timeout: 30000 })
+  await page.evaluate(() => window.mira.shell.play())
+  await page.waitForFunction(() => document.querySelector('.mira-shell')?.classList.contains('is-playing'), null, { timeout: 30000 })
   await page.waitForTimeout(1500)
   const playing = await measure()
   console.log(JSON.stringify({ lobby, playing, errors }, null, 1))

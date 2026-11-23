@@ -5,7 +5,7 @@
 	<key>CFBundleExecutable</key>
 	<string>GlassTrial</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.syn3h.GlassTrial</string>
+	<string>dev.mira.GlassTrial</string>
 	<key>CFBundleName</key>
 	<string>GlassTrial</string>
 	<key>CFBundlePackageType</key>

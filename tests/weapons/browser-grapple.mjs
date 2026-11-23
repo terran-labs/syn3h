@@ -12,12 +12,13 @@
  * diagnosticShaders.ts), which covers every object in the scene on either backend. Where the
  * camera stands and what a picture shows are not checked here: the look has its own strips.
  *
- *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/browser-grapple.mjs
+ *   MIRA_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/browser-grapple.mjs
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright-core'
 
-const base = (process.env.SYN3H_URL ?? 'http://127.0.0.1:5433/').replace(/\/+$/, '') + '/'
+const base = (process.env.MIRA_URL ?? 'http://127.0.0.1:5433/').replace(/\/+$/, '') + '/'
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const report = []
 try {
@@ -31,10 +32,10 @@ try {
     url.searchParams.set('room', `grapple-check-${webgl ? 'webgl' : 'webgpu'}-${Date.now()}`)
     if (webgl) url.searchParams.set('webgl', '1')
     await page.goto(url.href)
-    await page.waitForFunction(() => window.syn3h?.shell?.playing && !window.syn3h.game.input.suspended && window.syn3hNet?.bungee && window.syn3h.game.tick > 60, null, { timeout: 180000 })
-    const backend = await page.evaluate(() => window.syn3h.game.renderer.backend.isWebGPUBackend ? 'webgpu' : 'webgl2')
-    await page.evaluate(() => { const p = window.syn3h.params; p.set('gfx.auto', false); p.set('bots.canDrive', false); p.set('bots.canFire', false); p.set('bots.count', 1); p.set('daydream.seconds', 0); p.set('bungee.cooldown', 0); p.set('bungee.hookSpeed', 60) })
-    await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 1, null, { timeout: 60000 })
+    await page.waitForFunction(() => window.mira?.shell?.playing && !window.mira.game.input.suspended && window.miraNet?.bungee && window.mira.game.tick > 60, null, { timeout: 180000 })
+    const backend = await page.evaluate(() => window.mira.game.renderer.backend.isWebGPUBackend ? 'webgpu' : 'webgl2')
+    await page.evaluate(() => { const p = window.mira.params; p.set('gfx.auto', false); p.set('bots.canDrive', false); p.set('bots.canFire', false); p.set('bots.count', 1); p.set('daydream.seconds', 0); p.set('bungee.cooldown', 0); p.set('bungee.hookSpeed', 60) })
+    await page.waitForFunction(() => window.mira.bots.vehicles.length === 1, null, { timeout: 60000 })
     await page.waitForTimeout(3000)
     // The renderer's running totals of node builds and render pipelines, the whole scene.
     const totals = () => page.evaluate(async () => {
@@ -42,11 +43,11 @@ try {
       const n = kind => Number(line.match(new RegExp(`${kind} ×(\\d+)`))?.[1] ?? NaN)
       return { builds: n('Node build'), pipelines: n('Render pipeline') }
     })
-    const B = 'const s = window.syn3h, n = window.syn3hNet, b = n.bungee, [fx, fz] = window.__f;'
+    const B = 'const s = window.mira, n = window.miraNet, b = n.bungee, [fx, fz] = window.__f;'
     const act = fn => page.evaluate(fn => new Function(fn)(), fn)
     // The player and the bot held still, the bot 20 m ahead and 6 m up.
     const place = () => act(`
-      const s = window.syn3h, bot = s.bots.vehicles[0], p = s.player.body.translation()
+      const s = window.mira, bot = s.bots.vehicles[0], p = s.player.body.translation()
       const f = s.game.camera.getWorldDirection(s.player.object.position.clone()); f.y = 0; f.normalize()
       window.__f ??= [f.x, f.z]
       const [fx, fz] = window.__f, y = s.terrain.heightAt(p.x, p.z) + 1.5, bx = p.x + fx * 20, bz = p.z + fz * 20
@@ -54,8 +55,8 @@ try {
         v.teleport(s.player.object.position.clone().set(x, h, z), Math.atan2(-fx, -fz))
         v.body.setGravityScale(0, true); v.body.setLinvel({ x: 0, y: 0, z: 0 }, true); v.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
       }
-      window.syn3hNet.gear.select('bungee')`)
-    const attached = () => page.waitForFunction(() => window.syn3hNet.bungee.attached, null, { timeout: 5000 })
+      window.miraNet.gear.select('bungee')`)
+    const attached = () => page.waitForFunction(() => window.miraNet.bungee.attached, null, { timeout: 5000 })
     // One round of use: every window counted, labelled for the report.
     const round = async tag => {
       const windows = {}
@@ -71,28 +72,28 @@ try {
         await attached(); await page.waitForTimeout(1200)
       })
       await counted('severed', async () => { await act(`${B} b.letGo('severed')`); await page.waitForTimeout(1500) })
-      await counted('miss', async () => { await act(`${B} s.params.set('bungee.length', 25); b.launch([fz, 0.12, -fx])`); await page.waitForTimeout(2500); await act("window.syn3h.params.set('bungee.length', 120)") })
+      await counted('miss', async () => { await act(`${B} s.params.set('bungee.length', 25); b.launch([fz, 0.12, -fx])`); await page.waitForTimeout(2500); await act("window.mira.params.set('bungee.length', 120)") })
       // The landing marker while aiming: the aim follows the chase camera (as it does with the
       // cursor captured, or the touch aim stick held), which looks down past the car at the
       // ground; the marker must show where the hook would land.
       await counted('aiming', async () => {
         await page.evaluate(async () => (await import('/src/core/touchAim.ts')).setTouchAiming(true))
-        await page.waitForFunction(() => window.syn3hNet.bungee.look.markerShown.some(Boolean), null, { timeout: 10000 })
+        await page.waitForFunction(() => window.miraNet.bungee.look.markerShown.some(Boolean), null, { timeout: 10000 })
         await page.evaluate(async () => (await import('/src/core/touchAim.ts')).setTouchAiming(false))
       })
       return windows
     }
-    const warmed = () => page.waitForFunction(async () => (await import('/src/weapons/warm.ts')).warmStats(window.syn3h.game)?.left === 0, null, { timeout: 120000, polling: 500 })
+    const warmed = () => page.waitForFunction(async () => (await import('/src/weapons/warm.ts')).warmStats(window.mira.game)?.left === 0, null, { timeout: 120000, polling: 500 })
     const windows = { ...(await round('first use')) }
-    await page.evaluate(() => window.syn3h.params.set('post.on', false)); await warmed(); await page.waitForTimeout(1500)
+    await page.evaluate(() => window.mira.params.set('post.on', false)); await warmed(); await page.waitForTimeout(1500)
     Object.assign(windows, await round('post effects off'))
     // The counter is live: the warm-up after a graphics level change builds, and it counts that.
     const beforeLevel = await totals()
-    await page.evaluate(() => { window.syn3h.params.set('post.on', true); window.syn3h.params.set('gfx.level', 0) }); await warmed(); await page.waitForTimeout(3000)
+    await page.evaluate(() => { window.mira.params.set('post.on', true); window.mira.params.set('gfx.level', 0) }); await warmed(); await page.waitForTimeout(3000)
     const afterLevel = await totals()
     const levelWarm = { builds: afterLevel.builds - beforeLevel.builds, pipelines: afterLevel.pipelines - beforeLevel.pipelines }
     Object.assign(windows, await round('level 0'))
-    const stats = await page.evaluate(() => window.syn3hNet.bungee.stats)
+    const stats = await page.evaluate(() => window.miraNet.bungee.stats)
     report.push({ backend, windows, levelWarm, stats, errors })
     await page.close()
   }

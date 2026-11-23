@@ -14,7 +14,7 @@ try {
       // Observe the public renderer after main exposes its debug handle. The first
       // frame can be submitted before this rAF; record renderer's own timestamp if present.
       const watch = () => {
-        const game = window.syn3h?.game
+        const game = window.mira?.game
         if (game?.renderer?.info?.render?.calls > 0) {
           window.loadProbe.firstFrameMs = performance.now()
         } else requestAnimationFrame(watch)
@@ -23,7 +23,7 @@ try {
     })
     await page.goto(url + '?autoplay=1&room=load-benchmark-' + Date.now())
     await page.waitForFunction(() => window.loadProbe.firstFrameMs !== null, null, { timeout: 90000 })
-    results.push(await page.evaluate(() => ({ firstFrameMs: window.loadProbe.firstFrameMs, backend: window.syn3h.game.backend, terrainGenerationMs: window.syn3h.terrain.lastGenerateMs, resources: performance.getEntriesByType('resource').filter(r => /\.js/.test(r.name)).map(r => ({ name: r.name.split('/').pop(), transferSize: r.transferSize, decodedBodySize: r.decodedBodySize, duration: r.duration })) })))
+    results.push(await page.evaluate(() => ({ firstFrameMs: window.loadProbe.firstFrameMs, backend: window.mira.game.backend, terrainGenerationMs: window.mira.terrain.lastGenerateMs, resources: performance.getEntriesByType('resource').filter(r => /\.js/.test(r.name)).map(r => ({ name: r.name.split('/').pop(), transferSize: r.transferSize, decodedBodySize: r.decodedBodySize, duration: r.duration })) })))
     await context.close()
   }
 } finally { await browser.close() }

@@ -65,7 +65,7 @@ export class FocusHud {
     <div class="fh-read fh-right" data-style="0"><b><span data-t="altitude"></span><i data-t="heightUnit"></i></b><small>ALT</small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
     <div class="fh-read fh-top" data-style="0"><small data-t="world"></small></div>
     <div class="fh-read fh-top" data-style="1" style="top:104px"><b data-t="heading"></b><small><span data-t="speed"></span> <span data-t="speedUnit"></span> · ALT <span data-t="altitude"></span> <span data-t="heightUnit"></span> · <span data-t="clock"></span></small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
-    <div class="fh-read fh-corner fh-tl" data-style="2"><small>SYN3H // SURVEY</small><span data-t="world"></span></div>
+    <div class="fh-read fh-corner fh-tl" data-style="2"><small>MIRA // SURVEY</small><span data-t="world"></span></div>
     <div class="fh-read fh-corner fh-tr" data-style="2"><small>LOCAL TIME</small><span data-t="clock"></span><small>ELAPSED <span data-t="elapsed"></span></small></div>
     <div class="fh-read fh-corner fh-bl" data-style="2"><small>VELOCITY</small><b data-t="speed3"></b><small data-t="speedUnit"></small></div>
     <div class="fh-read fh-corner fh-br" data-style="2"><small>HEADING</small><b data-t="heading"></b><small>ALT <span data-t="altitude4"></span> <span data-t="heightUnit"></span></small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>`

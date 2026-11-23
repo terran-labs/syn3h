@@ -55,13 +55,13 @@ try {
     url.searchParams.set('room', `capture-${Date.now()}-${kind}`)
     if (kind !== 'current') url.searchParams.set('vehicle', kind)
     await page.goto(url.href)
-    await page.waitForFunction(() => window.syn3h?.game?.tick > 10, null, { timeout: 90000 })
-    await page.evaluate(() => { window.syn3h.shell?.play(); document.activeElement?.blur?.() })
-    if (options.network !== 'true') await page.evaluate(() => { window.syn3h.bots.remote = false })
+    await page.waitForFunction(() => window.mira?.game?.tick > 10, null, { timeout: 90000 })
+    await page.evaluate(() => { window.mira.shell?.play(); document.activeElement?.blur?.() })
+    if (options.network !== 'true') await page.evaluate(() => { window.mira.bots.remote = false })
     await page.waitForTimeout(scenario.settleMs ?? 1000)
     await page.addScriptTag({ content: `window.resolveCaptureTeleport = ${resolveCaptureTeleport.toString()}` })
     await page.evaluate(scenario => {
-      const s = window.syn3h
+      const s = window.mira
       const pressed = new Set(), applied = []
       const key = (code, down) => {
         window.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code, bubbles: true }))
@@ -111,7 +111,7 @@ try {
       const delay = await page.evaluate(t => Math.max(0, t - (performance.now() - window.driveCapture.start)), requestedMs)
       if (delay) await page.waitForTimeout(delay)
       const trace = await page.evaluate(() => {
-        const s = window.syn3h, p = s.player.body.translation(), q = s.player.body.rotation(), v = s.player.body.linvel()
+        const s = window.mira, p = s.player.body.translation(), q = s.player.body.rotation(), v = s.player.body.linvel()
         // Quaternion -> Euler YXZ, matching Three's usual yaw/pitch/roll convention.
         const m11 = 1 - 2 * (q.y * q.y + q.z * q.z), m13 = 2 * (q.x * q.z + q.y * q.w)
         const m21 = 2 * (q.x * q.y + q.z * q.w), m22 = 1 - 2 * (q.x * q.x + q.z * q.z)

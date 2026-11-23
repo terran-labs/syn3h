@@ -1,10 +1,11 @@
 /** Offline audio acceptance and an audition artifact. Run through the shared heavy queue. */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright-core'
-const base = process.env.SYN3H_URL
-assert.ok(base, 'SYN3H_URL is required')
-const out = process.env.SYN3H_OUT ?? '/tmp/syn3h-gear-audio'
+const base = process.env.MIRA_URL
+assert.ok(base, 'MIRA_URL is required')
+const out = process.env.MIRA_OUT ?? '/tmp/syn3h-gear-audio'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 try {

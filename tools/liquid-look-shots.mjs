@@ -17,7 +17,7 @@ await mkdir(out, { recursive: true })
 
 /** In-page helpers, installed once per page load. */
 const helpers = () => {
-  const s = window.syn3h
+  const s = window.mira
   /** Spiral out from (x0, z0) for a point of liquid `kind` with depth in [min, max]. */
   window.findLiquid = (kind, min, max, x0 = 0, z0 = 0) => {
     const t = s.terrain
@@ -126,10 +126,10 @@ try {
     await page.routeWebSocket(/\/ws/, socket => socket.close())
     if (phone) { const cdp = await page.context().newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 }) }
     await page.goto(`${base}?autoplay=1&vehicle=${sc.vehicle}&planet=${sc.planet}&seed=1`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 10, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 10, null, { timeout: 120000 })
     await page.evaluate(helpers)
     const spot = await page.evaluate(({ sc, quality }) => {
-      const s = window.syn3h
+      const s = window.mira
       s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', sc.hour); s.params.set('sun.dayLength', 0)
       s.params.set('gfx.quality', quality)
       // Provisional shared wave numbers from the liquid-feel builder (not the shipped defaults).
@@ -192,7 +192,7 @@ try {
     if (sc.mode === 'horizon') {
       // Over open water, looking toward the sun at the horizon.
       await page.evaluate(({ spot }) => {
-        const s = window.syn3h, V = s.game.camera.position.constructor
+        const s = window.mira, V = s.game.camera.position.constructor
         const sky = s.game.scene.children.find(o => 'sunDirection' in o)
         const d = sky?.sunDirection?.value ?? { x: 1, z: 0 }, len = Math.hypot(d.x, d.z) || 1
         s.camera.setCinematicPose(new V(spot.x, spot.surface + 6, spot.z), new V(spot.x + d.x / len * 400, spot.surface + 6, spot.z + d.z / len * 400))
@@ -200,7 +200,7 @@ try {
     }
     if (sc.mode === 'shore' || sc.mode === 'float') {
       await page.evaluate(({ sc, spot }) => {
-        const s = window.syn3h, V = s.game.camera.position.constructor
+        const s = window.mira, V = s.game.camera.position.constructor
         const back = sc.cam?.[0] ?? (sc.mode === 'shore' ? 22 : 16), a = spot.land
         const x = spot.x + Math.cos(a) * back, z = spot.z + Math.sin(a) * back
         const y = Math.max(s.terrain.heightAt(x, z), spot.surface) + (sc.cam?.[1] ?? (sc.mode === 'shore' ? 5 : 3.5))
@@ -210,7 +210,7 @@ try {
     }
     if (sc.mode === 'under' || sc.mode === 'cross') {
       await page.evaluate(({ sc, spot }) => {
-        const s = window.syn3h, p = s.player.body.translation()
+        const s = window.mira, p = s.player.body.translation()
         const V = s.game.camera.position.constructor
         const y = sc.mode === 'cross' ? spot.surface + 1.2 : Math.min(spot.surface - 2, p.y + 1.5)
         const pos = new V(p.x - Math.cos(spot.land) * 6, y, p.z - Math.sin(spot.land) * 6)
@@ -226,7 +226,7 @@ try {
       await page.keyboard.press('KeyX')
       await wait(page, 1800)
       await page.evaluate(() => {
-        const s = window.syn3h, a = window.zorbSpot, back = 30
+        const s = window.mira, a = window.zorbSpot, back = 30
         s.player.teleport({ x: a.x - Math.cos(a.h) * back, y: a.y + 8, z: a.z - Math.sin(a.h) * back }, a.h)
         s.player.body.setLinvel({ x: Math.cos(a.h) * 26, y: -9, z: Math.sin(a.h) * 26 }, true)
       })
@@ -234,7 +234,7 @@ try {
     if (sc.mode === 'splash') {
       await wait(page, 2500)
       await page.evaluate(([h, v]) => {
-        const s = window.syn3h, a = window.splashAt
+        const s = window.mira, a = window.splashAt
         const fx = s.game.systems.find(x => x.spray && x.underwater)
         const spray = window.splashLiquid === 'lava' ? fx.lavaSpray : fx.spray
         const P = s.game.camera.position.constructor
@@ -249,7 +249,7 @@ try {
       if (sc.mode === 'cross' && shot === sc.shots[1][0]) {
         // One move of the wanted lens from above the surface to well below it; the lens rule
         // carries the camera through the surface over about a second.
-        await page.evaluate(() => { const c = window.crossPose; c.pos.y -= 3; c.tgt.y -= 3; window.syn3h.camera.setCinematicPose(c.pos, c.tgt) })
+        await page.evaluate(() => { const c = window.crossPose; c.pos.y -= 3; c.tgt.y -= 3; window.mira.camera.setCinematicPose(c.pos, c.tgt) })
       }
       await page.evaluate(() => window.hideUi())
       const path = `${out}/${shot}${phone ? '-phone' : ''}.png`
@@ -258,7 +258,7 @@ try {
     }
     const timing = await page.evaluate(ms => window.frameStats(ms), Number(flags.find(f => f.startsWith('--ms='))?.split('=')[1] ?? 2000))
     const state = await page.evaluate(() => {
-      const s = window.syn3h, c = s.game.camera.position, p = s.player.body.translation()
+      const s = window.mira, c = s.game.camera.position, p = s.player.body.translation()
       return { camera: c.toArray().map(v => +v.toFixed(2)), vehicle: [p.x, p.y, p.z].map(v => +v.toFixed(2)), liquidAtCamera: +(s.terrain.liquidHeightAt?.(c.x, c.z) ?? NaN).toFixed(2), lavaDepth: s.player.lavaDepth, info: s.game.renderer.info?.render }
     })
     results[name] = { spot, timing, state, shots, errors: errors.slice(0, 5) }

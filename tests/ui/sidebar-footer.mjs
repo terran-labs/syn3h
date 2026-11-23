@@ -1,10 +1,11 @@
 // Screenshots of the sidebar's foot and the World card's actions, with the World card open and
 // closed: desktop 1440x900 (Chrome), iPhone 14 portrait and landscape (WebKit).
-//   SYN3H_URL=http://127.0.0.1:5173/ FOOT_OUT=tests/ui/artifacts/sidebar-footer/after node tests/ui/sidebar-footer.mjs
+//   MIRA_URL=http://127.0.0.1:5173/ FOOT_OUT=tests/ui/artifacts/sidebar-footer/after node tests/ui/sidebar-footer.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import { mkdir } from 'node:fs/promises'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5173/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5173/'
 const out = process.env.FOOT_OUT ?? 'tests/ui/artifacts/sidebar-footer/after'
 await mkdir(out, { recursive: true })
 const VIEWS = { desktop: { viewport: { width: 1440, height: 900 } }, phone: devices['iPhone 14'], landscape: devices['iPhone 14 landscape'] }
@@ -14,7 +15,7 @@ for (const [name, options] of Object.entries(VIEWS)) {
   try {
     const page = await browser.newPage(options)
     await page.goto(`${base}?autoplay=1&planet=badlands&seed=1&room=footer-${name}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30 && window.syn3h.shell.playing, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30 && window.mira.shell.playing, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     if (touch) await page.locator('.inspector-toggle').tap()
     else if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')

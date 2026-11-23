@@ -1,3 +1,4 @@
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
@@ -8,7 +9,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
   try {
     const page = await browser.newPage(mode === 'desktop' ? { viewport: { width: 1440, height: 1000 } } : devices[mode === 'phone' ? 'iPhone 14' : 'iPhone 14 landscape'])
     const errors = []; page.on('pageerror', e => errors.push(e.message))
-    await page.goto(`${process.env.SYN3H_URL}?room=lobby-direct-${Date.now()}`)
+    await page.goto(`${process.env.MIRA_URL}?room=lobby-direct-${Date.now()}`)
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     // The lobby's opening (about nine seconds) hides its controls; a key skips to the settled lobby.
     await page.keyboard.press('Shift'); await page.waitForTimeout(700)
@@ -26,22 +27,22 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     if (process.env.UX_LAYOUT_ONLY !== '1') {
     // Waiting in the lobby must never start a tour or enter a world.
     await page.waitForTimeout(22000)
-    assert.equal(await page.evaluate(() => syn3h.shell.activePanel), 'index')
-    assert.equal(await page.evaluate(() => syn3h.shell.playing), false)
+    assert.equal(await page.evaluate(() => mira.shell.activePanel), 'index')
+    assert.equal(await page.evaluate(() => mira.shell.playing), false)
     assert.equal(await page.locator('.attract-overlay').count(), 0)
     await page.screenshot({ path: `${out}/${mode}-resting.png` })
     // Minimal holds the generated galaxy still after its layout and maps settle.
-    const originalLevel = await page.evaluate(() => syn3h.game.quality.getQualityState().level)
-    await page.evaluate(() => syn3h.game.quality.setLevel(0))
+    const originalLevel = await page.evaluate(() => mira.game.quality.getQualityState().level)
+    await page.evaluate(() => mira.game.quality.setLevel(0))
     let resting = false
     for (let attempt = 0; attempt < 12; attempt++) {
-      const frames = await page.evaluate(() => syn3h.shell.graphics.galaxyFrames)
+      const frames = await page.evaluate(() => mira.shell.graphics.galaxyFrames)
       await page.waitForTimeout(2000)
-      if (frames === await page.evaluate(() => syn3h.shell.graphics.galaxyFrames)) { resting = true; break }
+      if (frames === await page.evaluate(() => mira.shell.graphics.galaxyFrames)) { resting = true; break }
     }
     assert.ok(resting, 'Minimal galaxy settles with zero idle redraws')
-    assert.ok(await page.evaluate(() => syn3h.shell.graphics.galaxyLive), 'resting galaxy remains visible')
-    await page.evaluate(level => syn3h.game.quality.setLevel(level), originalLevel)
+    assert.ok(await page.evaluate(() => mira.shell.graphics.galaxyLive), 'resting galaxy remains visible')
+    await page.evaluate(level => mira.game.quality.setLevel(level), originalLevel)
 
     }
     await page.waitForTimeout(600)

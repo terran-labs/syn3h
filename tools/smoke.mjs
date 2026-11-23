@@ -24,10 +24,10 @@ page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`) })
 
 await page.goto(url, { waitUntil: 'load' })
-await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 30000 }).catch(() => {})
+await page.waitForFunction(() => window.mira?.game?.tick > 25, null, { timeout: 30000 }).catch(() => {})
 
 const read = () => page.evaluate(() => {
-  const s = window.syn3h
+  const s = window.mira
   if (!s) return null
   const p = s.player.body.translation()
   return {
@@ -49,7 +49,7 @@ if (jet) await page.keyboard.down('KeyR')
 await page.keyboard.down('KeyW')
 // Shader compilation and shared host load can make three wall seconds only a few ticks.
 // Measure a real three seconds of physics while still bounding a stalled game.
-await page.waitForFunction(tick => window.syn3h?.game.tick >= tick + 150, before?.tick ?? 0, { timeout: 60000 })
+await page.waitForFunction(tick => window.mira?.game.tick >= tick + 150, before?.tick ?? 0, { timeout: 60000 })
 await page.keyboard.up('KeyW')
 if (jet) await page.keyboard.up('KeyR')
 const after = await read()

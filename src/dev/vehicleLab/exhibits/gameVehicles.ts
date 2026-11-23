@@ -89,7 +89,7 @@ function exhibitFor(entry: { kind: VehicleKind; name: string }, index: number): 
     section: 'In the game',
     order: 10 + index,
     family: kind,
-    // game-skins showed the Syn3h buggy by default.
+    // game-skins showed the Mira buggy by default.
     aliases: kind === 'buggy' ? ['game-skins'] : undefined,
 
     async designs() {

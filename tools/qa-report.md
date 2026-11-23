@@ -1,6 +1,6 @@
 # Real vehicle and local deployment QA
 
-The bot chase captures use the default Syn3h buggy with networking disabled. The capture tool now presses Play and gives its local bot manager ownership before sending input. Production networking checks exercise the real BotManager rather than importing Vite modules.
+The bot chase captures use the default Mira buggy with networking disabled. The capture tool now presses Play and gives its local bot manager ownership before sending input. Production networking checks exercise the real BotManager rather than importing Vite modules.
 
 Bot changes are covered by twelve tests: real buggy and placeholder contact, steering handedness, target selection, remote ownership, recovery, dry-shore steering, count changes, and optional road navigation. Uphill road guidance reads current road arrays rather than caching arrays across regeneration. Bots still use no wings.
 
@@ -22,7 +22,7 @@ Verified sweep output: `/tmp/syn3h-vehicle-qa/results.json`. Each row covers see
 
 | Vehicle | Clean load | Grounded spawn | Moves | Finite, no fall-through | Peak speed |
 | --- | --- | --- | --- | --- | --- |
-| Syn3h buggy | 6/6 | 6/6 | 6/6 | 6/6 | 47.3 m/s |
+| Mira buggy | 6/6 | 6/6 | 6/6 | 6/6 | 47.3 m/s |
 | Classic buggy | 6/6 | 6/6 | 6/6 | 6/6 | 47.7 m/s |
 | Jet | 6/6 | 6/6 | 6/6 | 6/6 | 31.3 m/s |
 | Hovercraft | 6/6 | 6/6 | 6/6 | 6/6 | 43.7 m/s |

@@ -5,13 +5,14 @@
  * once from the chase pose (6 m behind the car, 2.6 m up). Noon and night. For a hit, the shot
  * and the spray are held and stepped by hand (stills at 0.1 to 1.2 s); the drop runs in real time.
  *
- *   SYN3H_URL=http://127.0.0.1:<port>/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/weapons/splash-frames.mjs <label> [out dir]
+ *   MIRA_URL=http://127.0.0.1:<port>/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/weapons/splash-frames.mjs <label> [out dir]
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright-core'
 
-const base = (process.env.SYN3H_URL ?? '').replace(/\/+$/, '') + '/'
-if (!process.env.SYN3H_URL) throw new Error('Set SYN3H_URL')
+const base = (process.env.MIRA_URL ?? '').replace(/\/+$/, '') + '/'
+if (!process.env.MIRA_URL) throw new Error('Set MIRA_URL')
 const label = process.argv[2] ?? 'build', out = process.argv[3] ?? '/tmp/weapons-beauty/splash2'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
@@ -23,10 +24,10 @@ try {
     const page = await ctx.newPage()
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     await page.goto(`${base}?planet=${planet}&seed=7&autoplay=1&room=splash-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet?.lasers && window.syn3h.game.tick > 60, null, { timeout: 180000 })
+    await page.waitForFunction(() => window.mira?.shell?.playing && window.miraNet?.lasers && window.mira.game.tick > 60, null, { timeout: 180000 })
     const found = await page.evaluate(([hour, kind]) => {
       document.exitPointerLock?.()
-      const s = window.syn3h, q = s.params, t = s.terrain, p = s.player.body.translation()
+      const s = window.mira, q = s.params, t = s.terrain, p = s.player.body.translation()
       q.set('gfx.auto', false); q.set('gfx.level', 2); q.set('bots.count', 0); q.set('daydream.seconds', 0); q.set('sun.dayLength', 0); q.set('sun.timeOfDay', hour); q.set('bigRed.cooldown', 0.1)
       for (const n of document.body.children) if (n.tagName !== 'CANVAS' && n.tagName !== 'SCRIPT') n.style.visibility = 'hidden'
       let best = null
@@ -43,7 +44,7 @@ try {
       window.__S = { car: [sx, t.heightAt(sx, sz) + 1, sz], target: [tx, t.liquidHeightAt(tx, tz), tz], f: [fx, fz] }
       const hold = () => { const v = s.player, [cx, cy, cz] = window.__S.car; v.teleport(v.object.position.clone().set(cx, cy, cz), Math.atan2(-fx, -fz)); v.body.setLinvel({ x: 0, y: 0, z: 0 }, true); v.body.setAngvel({ x: 0, y: 0, z: 0 }, true) }
       window.__hold = hold; hold()
-      const L = window.syn3hNet.lasers, W = s.game.systems.find(x => x.constructor?.name === 'WaterEffects')
+      const L = window.miraNet.lasers, W = s.game.systems.find(x => x.constructor?.name === 'WaterEffects')
       const lu = L.update.bind(L), wu = W.update.bind(W)
       window.__freeze = on => { L.update = on ? () => {} : lu; W.update = on ? () => {} : wu }
       window.__step = dt => { for (let t = 0; t < dt - 1e-6; t += 1 / 120) { const k = Math.min(1 / 120, dt - t); lu(k, 1); wu(k) } }
@@ -68,7 +69,7 @@ try {
       await page.waitForTimeout(1500)
       const t0 = Date.now()
       await page.evaluate(ev => {
-        const s = window.syn3h, n = window.syn3hNet, { target } = window.__S, o = s.player.object.position
+        const s = window.mira, n = window.miraNet, { target } = window.__S, o = s.player.object.position
         window.__holdOn = ev !== 'drop'
         if (ev === 'drop') {
           const v = s.player, [tx, ty, tz] = target, [fx, fz] = window.__S.f

@@ -1,11 +1,12 @@
 /** Tests the live NetClient callback wiring. Audio waveforms are tested separately by Weapons. */
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import {createServer} from 'vite'
 import {spawn} from 'node:child_process'
 import {chromium} from 'playwright-core'
 import {writeFile} from 'node:fs/promises'
 import assert from 'node:assert/strict'
-process.env.SYN3H_NO_ROOM_SERVER='1'
-process.env.SYN3H_ROOM_PORT='18951'
+process.env.MIRA_NO_ROOM_SERVER='1'
+process.env.MIRA_ROOM_PORT='18951'
 const room=spawn(process.execPath,['node_modules/tsx/dist/cli.mjs','server/dev.ts'],{env:{...process.env,PORT:'18951'},stdio:'ignore'})
 const vite=await createServer({server:{host:'127.0.0.1',port:0}})
 const report={errors:[]};let browser
@@ -15,11 +16,11 @@ try{
  const page=await browser.newPage({viewport:{width:640,height:360}})
  page.on('pageerror',e=>report.errors.push(e.message))
  await page.goto(`http://127.0.0.1:${vite.httpServer.address().port}/?autoplay=1&room=cues${Date.now()}`)
- await page.waitForFunction(()=>window.syn3h?.shell&&window.syn3hNet?.connected,null,{timeout:60000})
- await page.evaluate(()=>{window.syn3h.shell.play();document.activeElement?.blur?.()})
- await page.waitForFunction(()=>!window.syn3h.player.object.userData.materializing,null,{timeout:15000})
+ await page.waitForFunction(()=>window.mira?.shell&&window.miraNet?.connected,null,{timeout:60000})
+ await page.evaluate(()=>{window.mira.shell.play();document.activeElement?.blur?.()})
+ await page.waitForFunction(()=>!window.mira.player.object.userData.materializing,null,{timeout:15000})
  report.mapping=await page.evaluate(()=>{
-  const n=window.syn3hNet,s=window.syn3h,a=n.ctx.audio,names=[],plays=[]
+  const n=window.miraNet,s=window.mira,a=n.ctx.audio,names=[],plays=[]
   const cue=a.cue.bind(a),play=a.play.bind(a)
   a.cue=(name,at)=>{names.push(name);return cue(name,at)}
   a.play=(name,at)=>{plays.push(name);return play(name,at)}

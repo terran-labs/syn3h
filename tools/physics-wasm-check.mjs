@@ -32,7 +32,7 @@ const wasm = assets.filter(f => f.endsWith('.wasm'))
 const wasmBytes = wasm.map(f => statSync(join(dist, 'assets', f)).size)
 const html = readFileSync(join(dist, 'index.html'), 'utf8')
 const head = html.slice(0, html.indexOf('</head>'))
-const preload = wasm.length === 1 && head.includes(`window.__syn3hPhysicsWasm={url:"/assets/${wasm[0]}",response:fetch("/assets/${wasm[0]}")`) && !/rel="preload"[^>]+\.wasm/.test(html)
+const preload = wasm.length === 1 && head.includes(`window.__miraPhysicsWasm={url:"/assets/${wasm[0]}",response:fetch("/assets/${wasm[0]}")`) && !/rel="preload"[^>]+\.wasm/.test(html)
 report({ case: 'build contents', scripts: scripts.map(s => ({ file: s.file, bytes: Buffer.byteLength(s.text) })), inlinedOver100KB: inlined, wasm, wasmBytes, earlyFetchInHead: preload },
   inlined.length === 0 && wasm.length === 1 && /^rapier_wasm3d_bg-[\w-]+\.wasm$/.test(wasm[0]) && wasmBytes[0] === 3082103 && preload)
 
@@ -64,10 +64,10 @@ for (const name of which === 'both' ? ['chrome', 'webkit'] : [which]) {
       const started = Date.now()
       await page.goto(`${base}${sep}room=physics-${Date.now()}`)
       if (!blocked) {
-        const ok = await page.waitForFunction(() => window.syn3h?.game?.tick > 5, null, { timeout: 90000 }).then(() => true, () => false)
-        const s = await page.evaluate(() => ({ wasm: window.__wasm, tick: window.syn3h?.game?.tick, backend: window.syn3h?.game?.backend, fatal: getComputedStyle(document.getElementById('fatal')).display,
-          phases: (window.syn3hStartup?.phases ?? []).filter(p => /physics|quality initialise|renderer\.init|fetch and run|game\.start/.test(p.name)).map(p => ({ name: p.name, startMs: Math.round(p.startMs), ms: Math.round(p.ms) })),
-          firstDrawMs: window.syn3h?.game?.performance?.firstFrameMs ?? null }))
+        const ok = await page.waitForFunction(() => window.mira?.game?.tick > 5, null, { timeout: 90000 }).then(() => true, () => false)
+        const s = await page.evaluate(() => ({ wasm: window.__wasm, tick: window.mira?.game?.tick, backend: window.mira?.game?.backend, fatal: getComputedStyle(document.getElementById('fatal')).display,
+          phases: (window.miraStartup?.phases ?? []).filter(p => /physics|quality initialise|renderer\.init|fetch and run|game\.start/.test(p.name)).map(p => ({ name: p.name, startMs: Math.round(p.startMs), ms: Math.round(p.ms) })),
+          firstDrawMs: window.mira?.game?.performance?.firstFrameMs ?? null }))
         await page.screenshot({ path: `${shots}/${name}-healthy.png` })
         const streamed = s.wasm.filter(c => c.api === 'compileStreaming' && c.from === 'response').length === 1
         const fromBytes = s.wasm.filter(c => c.from === 'bytes' && c.bytes > 100000)
@@ -78,12 +78,12 @@ for (const name of which === 'both' ? ['chrome', 'webkit'] : [which]) {
         await page.waitForTimeout(500)
         const before = await page.evaluate(() => window.__frames)
         await page.waitForTimeout(1500)
-        const s = await page.evaluate(() => ({ frames: window.__frames, text: document.getElementById('fatal').textContent, button: document.querySelector('#fatal button')?.textContent ?? null, game: typeof window.syn3h, shell: !!document.querySelector('.syn3h-shell') }))
+        const s = await page.evaluate(() => ({ frames: window.__frames, text: document.getElementById('fatal').textContent, button: document.querySelector('#fatal button')?.textContent ?? null, game: typeof window.mira, shell: !!document.querySelector('.mira-shell') }))
         await page.screenshot({ path: `${shots}/${name}-blocked.png` })
         // The only way on is the button: with the file reachable again it reloads into a running game.
         await page.unroute(/\.wasm(\?|$)/)
         await page.click('#fatal button')
-        const recovered = await page.waitForFunction(() => window.syn3h?.game?.tick > 5, null, { timeout: 90000 }).then(() => true, () => false)
+        const recovered = await page.waitForFunction(() => window.mira?.game?.tick > 5, null, { timeout: 90000 }).then(() => true, () => false)
         report({ browser: name, case: 'physics file blocked', message: s.text, button: s.button, framesDuring1500ms: s.frames - before, gameStarted: s.game !== 'undefined', lobbyBuilt: s.shell, reloadRecovered: recovered, errors },
           shown && /physics engine could not be loaded/i.test(s.text ?? '') && /reload/i.test(s.text ?? '') && s.button === 'Reload' && s.frames === before && s.game === 'undefined' && !s.shell && recovered)
       }

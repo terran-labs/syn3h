@@ -18,7 +18,7 @@ export class ParamPanel {
   private refreshing = false
 
   constructor() {
-    this.element.className = 'syn3h-advanced'; this.element.hidden = true; document.body.append(this.element)
+    this.element.className = 'mira-advanced'; this.element.hidden = true; document.body.append(this.element)
     this.pane = new Pane({ title: 'Advanced settings', expanded: false, container: this.element })
     this.sync()
     // Reflect remote and preset changes in the UI.

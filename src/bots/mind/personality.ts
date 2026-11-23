@@ -1,6 +1,6 @@
 /**
  * A driver's character: five traits in 0..1, generated from a seed like everything else in
- * Syn3h. The same seed always gives the same character, so a bot keeps its nature across
+ * Mira. The same seed always gives the same character, so a bot keeps its nature across
  * clients and reloads, and a player can be handed a seed to share.
  */
 import { hashString, seededRandom } from '../random'

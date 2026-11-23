@@ -24,9 +24,9 @@ async function host(name, look) {
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto(`${base}?room=banter${Date.now().toString(36)}&name=${name}&autoplay=1`)
-  await page.waitForFunction(() => window.syn3hChat?.net?.connected && window.syn3hChat.net.isHost, null, { timeout: 60000 })
+  await page.waitForFunction(() => window.miraChat?.net?.connected && window.miraChat.net.isHost, null, { timeout: 60000 })
   await page.evaluate((look) => {
-    const p = window.syn3h.params
+    const p = window.mira.params
     p.set('daydream.seconds', 0)
     p.set('bots.count', 4)
     if (look !== null) p.set('terrain.look', look)
@@ -36,7 +36,7 @@ async function host(name, look) {
 }
 
 /** Lines in the chat log since `since` (performance.now on the page), as "Name (job): text". */
-const lines = (page, since = 0) => page.evaluate((since) => window.syn3hChat.net.chat.lines
+const lines = (page, since = 0) => page.evaluate((since) => window.miraChat.net.chat.lines
   .filter((l) => !l.system && l.at >= since)
   .map((l) => ({ t: Math.round(l.at / 100) / 10, who: l.bot ? l.name : `${l.name} (player)`, text: l.text })), since)
 
@@ -45,7 +45,7 @@ try {
     for (const [planet, look] of [['volcanic', 0], ['icy', 4]]) {
       for (const [label, level] of [['normal', 1], ['chatty', 2]]) {
         const { ctx, page } = await host(`Sam`, look)
-        await page.evaluate((level) => window.syn3h.params.set('bots.chatterLevel', level), level)
+        await page.evaluate((level) => window.mira.params.set('bots.chatterLevel', level), level)
         // Drive about a little, as a player would, so there is something to remark on.
         const start = await page.evaluate(() => performance.now())
         for (let s = 0; s < 120; s += 10) {
@@ -66,10 +66,10 @@ try {
   } else if (mode === 'rescue' || mode === 'rescue-player') {
     // A water world; one bot (or the player) is put a few metres into the sea off a shore.
     const { ctx, page } = await host('Sam', 3)
-    await page.evaluate(() => { window.syn3h.params.set('world.seaKind', 1); window.syn3h.params.set('bots.chatterLevel', 1) })
+    await page.evaluate(() => { window.mira.params.set('world.seaKind', 1); window.mira.params.set('bots.chatterLevel', 1) })
     await page.waitForTimeout(8000)
     const placed = await page.evaluate((who) => {
-      const { terrain, bots, player } = window.syn3h
+      const { terrain, bots, player } = window.mira
       const v = who === 'player' ? player : bots.vehicles[0]
       // Search from the first bot, which spawns near the shore more often than the pad does.
       const p = bots.vehicles[0].body.translation()
@@ -91,18 +91,18 @@ try {
     console.log('placed in the sea at', JSON.stringify(placed))
     if (!placed) throw new Error('no shore found near the bot')
     const start = await page.evaluate(() => performance.now())
-    if (mode === 'rescue-player') { await page.waitForTimeout(4000); await page.evaluate(() => window.syn3hChat.net.chat.send('help, I am stuck')) }
+    if (mode === 'rescue-player') { await page.waitForTimeout(4000); await page.evaluate(() => window.miraChat.net.chat.send('help, I am stuck')) }
     const t0 = Date.now(), log = []
     let shot = 0, done = false
     for (let i = 0; i < 70 && !done; i++) {
       await page.waitForTimeout(2000)
       const s = await page.evaluate(() => {
-        const r = window.syn3hChat.banter.rescue
-        return { active: r?.active() ?? [], stats: r?.stats ?? null, cords: window.syn3hChat.net.bungee ? 0 : 0 }
+        const r = window.miraChat.banter.rescue
+        return { active: r?.active() ?? [], stats: r?.stats ?? null, cords: window.miraChat.net.bungee ? 0 : 0 }
       })
       log.push(`[${Math.round((Date.now() - t0) / 1000).toString().padStart(3)} s] ${JSON.stringify(s.active)} ${JSON.stringify(s.stats)}`)
       // Frames while the hook flies and the cord pulls: one every 0.6 s, up to eight.
-      while (shot < 8 && (await page.evaluate(() => (window.syn3hChat.banter.rescue?.active() ?? []).some((a) => a.phases.some((p) => p === 'fire' || p === 'tow' || p === 'ease'))))) {
+      while (shot < 8 && (await page.evaluate(() => (window.miraChat.banter.rescue?.active() ?? []).some((a) => a.phases.some((p) => p === 'fire' || p === 'tow' || p === 'ease'))))) {
         await page.screenshot({ path: `${out}/${mode}-frame-${shot++}.png` })
         await page.waitForTimeout(600)
       }
@@ -119,15 +119,15 @@ try {
   } else {
     const { ctx, page } = await host('Sam', null)
     const start = await page.evaluate(() => performance.now())
-    await page.evaluate(() => window.syn3hChat.net.chat.send('hey you guys follow me'))
+    await page.evaluate(() => window.miraChat.net.chat.send('hey you guys follow me'))
     const t0 = Date.now()
     const log = []
     const sample = async (phase) => {
       const s = await page.evaluate(() => {
-        const me = window.syn3h.player.body.translation()
-        const bots = window.syn3h.bots.vehicles.map((v, i) => {
-          const p = v.body.translation(), brain = window.syn3h.bots.brainList[i]
-          return { name: window.syn3hChat.net.displayName(0xff00 + i).split(' ')[0], d: Math.round(Math.hypot(p.x - me.x, p.z - me.z)), following: brain?.directive?.kind ?? '-' }
+        const me = window.mira.player.body.translation()
+        const bots = window.mira.bots.vehicles.map((v, i) => {
+          const p = v.body.translation(), brain = window.mira.bots.brainList[i]
+          return { name: window.miraChat.net.displayName(0xff00 + i).split(' ')[0], d: Math.round(Math.hypot(p.x - me.x, p.z - me.z)), following: brain?.directive?.kind ?? '-' }
         })
         return bots
       })
@@ -148,7 +148,7 @@ try {
     for (let i = 0; i < 48 && following; i++) {
       await page.waitForTimeout(5000)
       await sample('parked')
-      following = await page.evaluate(() => window.syn3h.bots.brainList.filter((b) => b.directive?.kind === 'follow').length)
+      following = await page.evaluate(() => window.mira.bots.brainList.filter((b) => b.directive?.kind === 'follow').length)
     }
     // The last goodbye is said a moment after the last bot peels off.
     await page.waitForTimeout(12000)

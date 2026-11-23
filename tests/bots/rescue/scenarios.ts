@@ -15,7 +15,7 @@ import type { Game } from '../../../src/core/Game'
 import { emptyInput } from '../../../src/core/Input'
 import { createWorld, FIXED_DT, GROUP_ALL, GROUP_TERRAIN, groups, RAPIER } from '../../../src/core/physics'
 import type { Vehicle } from '../../../src/vehicles/Vehicle'
-import { Syn3hBuggy } from '../../../src/vehicles/Syn3hBuggy'
+import { MiraBuggy } from '../../../src/vehicles/MiraBuggy'
 import { Hovercraft } from '../../../src/vehicles/Hovercraft'
 import { Jet } from '../../../src/vehicles/Jet'
 import { BotGear } from '../../../src/weapons/BotGear'
@@ -118,7 +118,7 @@ export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4,
   const terrain = terrainOf(world, height, liquid)
   const game = { world, scene: new THREE.Scene(), tick: 0, time: 0, camera: new THREE.PerspectiveCamera(), canvas: {}, input: { state: emptyInput() } } as unknown as Game
   const place = (p: Vector3, heading: number) => new Vector3(p.x, terrain.heightAt(p.x, p.z) + (flip ? 1.4 : 0.9), p.z)
-  const stuck = new Syn3hBuggy(game, terrain, place(stuckAt, stuckHeading), stuckHeading); stuck.isLocal = false
+  const stuck = new MiraBuggy(game, terrain, place(stuckAt, stuckHeading), stuckHeading); stuck.isLocal = false
   if (flip) {
     // Every vehicle sets itself upright after 3 s on its roof near the ground (Vehicle.uprightRescue),
     // so in play a flipped bot rarely waits for help. Switched off here to test the grapple's pull.
@@ -135,7 +135,7 @@ export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4,
   if (scenario === 'notch' && Math.abs(start.z) < 6) start.z = 10 * Math.sign(start.z || 1)
   const kindOf = opts.rescuer ?? 'buggy'
   const facing = Math.atan2(stuckAt.x - start.x, stuckAt.z - start.z)
-  const rescuer: Vehicle = kindOf === 'hovercraft' ? new Hovercraft(game, terrain, place(start, 0), facing) : kindOf === 'jet' ? new Jet(game, terrain, place(start, 0), facing) : new Syn3hBuggy(game, terrain, place(start, 0), facing)
+  const rescuer: Vehicle = kindOf === 'hovercraft' ? new Hovercraft(game, terrain, place(start, 0), facing) : kindOf === 'jet' ? new Jet(game, terrain, place(start, 0), facing) : new MiraBuggy(game, terrain, place(start, 0), facing)
   rescuer.isLocal = false
 
   const ids = new Map<number, Vehicle>([[0xff00, rescuer], [0xff01, stuck]])

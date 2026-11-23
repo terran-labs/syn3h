@@ -2,6 +2,7 @@
  * WebKit mouse gestures and Chromium browser touch protocol are automated checks,
  * not a physical iPad long-press acceptance. Runtime source stays unchanged.
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { devices, webkit, chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
@@ -21,9 +22,9 @@ for(const engine of ['webkit','chromium']) {
     window.selectionEvidence.events.push({active:node(document.activeElement),anchor:node(s.anchorNode),focus:node(s.focusNode),text:s.toString(),collapsed:s.isCollapsed})
    },true)
   })
-  await page.goto(`${process.env.SYN3H_URL??'http://127.0.0.1:5198/'}?room=no-select-${Date.now()}`)
+  await page.goto(`${process.env.MIRA_URL??'http://127.0.0.1:5198/'}?room=no-select-${Date.now()}`)
   await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
-  await page.evaluate(()=>syn3h.shell.showPanel('explore'))
+  await page.evaluate(()=>mira.shell.showPanel('explore'))
   await page.waitForFunction(()=>document.querySelector('.lobby-panels').dataset.activePanel==='explore'&&document.querySelector('.lobby-panels').dataset.busy==='false')
   const css=await page.evaluate(()=>{
    const select=el=>getComputedStyle(el).webkitUserSelect||getComputedStyle(el).userSelect

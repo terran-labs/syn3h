@@ -29,9 +29,9 @@ export const tank: LabExhibit = {
   // Listed with the other design studies in the lab's sidebar.
   section: 'Design studies',
   id: 'tank',
-  title: 'Syn3h next-gen tank',
+  title: 'Mira next-gen tank',
   groupLabel: 'Round',
-  heading: group => group === '10' ? 'Round 10: three variants of the Sherpa, smoothed, in the buggy and jet\'s styling' : group === '9' ? 'Round 9: five single-surface variations on the Fork and the Catamaran' : group === '8' ? 'Round 8: ten takes on the original tank, in the buggy and jet\'s styling' : group === '7' ? 'Round 7: rejected exploration bodies' : group === '6' ? 'Round 6: rejected body studies' : group === '4' ? 'Syn3h next-gen tank: round 4, aerospace bodies on trailing arm treads' : 'Syn3h next-gen tank: round 5, tall cockpits, big lamps, solid bumpers',
+  heading: group => group === '10' ? 'Round 10: three variants of the Sherpa, smoothed, in the buggy and jet\'s styling' : group === '9' ? 'Round 9: five single-surface variations on the Fork and the Catamaran' : group === '8' ? 'Round 8: ten takes on the original tank, in the buggy and jet\'s styling' : group === '7' ? 'Round 7: rejected exploration bodies' : group === '6' ? 'Round 6: rejected body studies' : group === '4' ? 'Mira next-gen tank: round 4, aerospace bodies on trailing arm treads' : 'Mira next-gen tank: round 5, tall cockpits, big lamps, solid bumpers',
   async designs() {
     return ROUNDS.flatMap(r => r.designs.map(d => ({ id: d.id, name: d.name, notes: [d.tagline, r.hinge], group: r.group })))
   },

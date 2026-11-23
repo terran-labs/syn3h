@@ -1,5 +1,6 @@
 /** Source-only adaptation of accepted d58ff55f fixture evidence handling.
  * No servers are started here. Requires the separately reviewed dedicated supervisor. */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
@@ -7,7 +8,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../../', import.meta.url))
-const origin = process.env.SYN3H_URL, expected = process.env.GRAPPLE_SOURCE_SHA
+const origin = process.env.MIRA_URL, expected = process.env.GRAPPLE_SOURCE_SHA
 const out = process.env.GRAPPLE_EVIDENCE_DIR
 const deadline = Date.now() + 480_000, workDeadline = deadline - 30_000
 let cleaningUp = false
@@ -217,8 +218,8 @@ try {
   const launch = JSON.parse(await bounded(readFile(process.env.GRAPPLE_LAUNCH_MANIFEST, 'utf8'), 3000, 'launch manifest'))
   report.launch = launch
   assert.equal(launch.head, expected); assert.equal(launch.origin, origin)
-  assert.equal(launch.env.SYN3H_NO_ROOM_SERVER, '1')
-  assert.equal(String(launch.env.SYN3H_ROOM_PORT), String(launch.roomPort))
+  assert.equal(launch.env.MIRA_NO_ROOM_SERVER, '1')
+  assert.equal(String(launch.env.MIRA_ROOM_PORT), String(launch.roomPort))
   assert.ok(Number.isInteger(launch.roomPort) && launch.roomPort !== 8787)
   assert.ok(launch.roomPid > 0 && launch.roomStart && launch.vitePid > 0 && launch.viteStart)
   assert.equal(launch.deadlineSeconds, 590); assert.equal(launch.fixtureWorkStopsAt, 510)

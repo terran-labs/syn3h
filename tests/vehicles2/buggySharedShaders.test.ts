@@ -5,13 +5,13 @@ import { vehicleShading } from '../../src/core/quality'
 import { createLiquidState } from '../../src/vehicles/lava'
 import { LOD_FAR, LOD_NEAR, type VehicleDetail } from '../../src/vehicles/skins/mergeStatic'
 import { MotorSparks } from '../../src/vehicles/skins/motorSparks'
-import { Syn3hBuggySkin } from '../../src/vehicles/skins/Syn3hBuggySkin'
+import { MiraBuggySkin } from '../../src/vehicles/skins/MiraBuggySkin'
 
 it('shares stator materials while each buggy keeps its own wheel glow and disposal', async () => {
   const previous = vehicleShading.value
   params.set(vehicleShading.def.id, 2)
-  const a = new Syn3hBuggySkin()
-  const b = new Syn3hBuggySkin()
+  const a = new MiraBuggySkin()
+  const b = new MiraBuggySkin()
   try {
     await Promise.all([a.ready, b.ready])
     const left = a.object.getObjectByName('Stators') as THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshStandardNodeMaterial>
@@ -59,13 +59,13 @@ it('shares distance graphs without mixing buggy paint, wing geometry or wheel ma
     const owner = new THREE.Group(), callbacks = new Set<VehicleDetail>()
     owner.userData.vehicleHeat = createLiquidState()
     owner.userData.registerVehicleDetail = (fn: VehicleDetail) => { callbacks.add(fn); return () => callbacks.delete(fn) }
-    const skin = new Syn3hBuggySkin()
+    const skin = new MiraBuggySkin()
     owner.add(skin.object)
     return { skin, distance: (meters: number) => callbacks.forEach(fn => fn(meters, true, 2)) }
   }
   const a = make(), b = make()
   type DistanceMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardNodeMaterial>
-  const piece = (skin: Syn3hBuggySkin, name: string) => {
+  const piece = (skin: MiraBuggySkin, name: string) => {
     const part = skin.object.getObjectByName(name)!
     return (part instanceof THREE.Mesh ? part : part.children[0]) as DistanceMesh
   }

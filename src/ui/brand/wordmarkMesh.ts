@@ -1,5 +1,5 @@
 /**
- * The Syn3h wordmark path turned into geometry the GPU can draw: closed contours sorted into
+ * The Mira wordmark path turned into geometry the GPU can draw: closed contours sorted into
  * filled shapes and holes by the even-odd rule, a wide band outward from the outline for the
  * plasma's glow, plus points spread along the outline by arc length for the plasma's
  * particles. The face itself is drawn from a distance field (wordmarkField.ts). Pure functions with no DOM, so the tests run

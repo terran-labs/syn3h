@@ -8,8 +8,8 @@ const out=process.argv[2]??'/tmp/syn3h-zorb-hop',base=process.argv[3]??'http://l
 await mkdir(out,{recursive:true})
 const kinds=(process.env.KIND??'buggy,jet').split(',')
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=metal','--ignore-gpu-blocklist']})
-const ticks=(page,n)=>page.evaluate(n=>new Promise(r=>{const s=window.syn3h,t=s.game.tick+n;const f=()=>s.game.tick>=t?r():requestAnimationFrame(f);f()}),n)
-const read=page=>page.evaluate(()=>{const s=window.syn3h,v=s.player,sh=s.game.scene.getObjectByName('zorb-shield'),c=v.zorb.centre(v.object.position.clone())
+const ticks=(page,n)=>page.evaluate(n=>new Promise(r=>{const s=window.mira,t=s.game.tick+n;const f=()=>s.game.tick>=t?r():requestAnimationFrame(f);f()}),n)
+const read=page=>page.evaluate(()=>{const s=window.mira,v=s.player,sh=s.game.scene.getObjectByName('zorb-shield'),c=v.zorb.centre(v.object.position.clone())
  return {hops:v.zorb.hops,vy:+v.body.linvel().y.toFixed(2),lift:+(c.y-v.zorb.radius-s.terrain.heightAt(c.x,c.z)).toFixed(2),alpha:+(sh?.userData.zorbShield.alpha??0).toFixed(3),swell:+(sh?(sh.scale.x/v.zorb.radius-1):0).toFixed(3),wingsOpen:v.wingsOpen,gear:v.gearAmount,special:v.input.special}})
 try{
  for(const kind of kinds){
@@ -17,10 +17,10 @@ try{
   page.on('pageerror',e=>errors.push('pageerror: '+e.message))
   page.on('console',m=>{if(m.type()==='error')errors.push('console: '+m.text())})
   await page.routeWebSocket(/\/ws/,s=>s.close())
-  await page.goto(`${base}?autoplay=1&vehicle=${kind}&seed=3`);await page.waitForFunction(()=>window.syn3h?.game.tick>10,null,{timeout:120000})
-  await page.evaluate(()=>{const s=window.syn3h;s.params.set('bots.count',0);s.params.set('sun.timeOfDay',12);s.params.set('sun.dayLength',0)})
+  await page.goto(`${base}?autoplay=1&vehicle=${kind}&seed=3`);await page.waitForFunction(()=>window.mira?.game.tick>10,null,{timeout:120000})
+  await page.evaluate(()=>{const s=window.mira;s.params.set('bots.count',0);s.params.set('sun.timeOfDay',12);s.params.set('sun.dayLength',0)})
   await page.evaluate(()=>{
-   const s=window.syn3h,p=s.player.body.translation();let best=null
+   const s=window.mira,p=s.player.body.translation();let best=null
    for(let a=0;a<24;a++)for(let r=0;r<400;r+=20){const x=p.x+Math.sin(a/24*Math.PI*2)*r,z=p.z+Math.cos(a/24*Math.PI*2)*r
     const h=s.terrain.heightAt(x,z),liquid=s.terrain.liquidHeightAt?.(x,z)??-Infinity
     if(Number.isFinite(liquid)&&liquid>h-1)continue

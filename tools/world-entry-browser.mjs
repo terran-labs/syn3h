@@ -27,13 +27,13 @@ async function player(room, name) {
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`))
   await page.goto(`${base}?autoplay=1&vehicle=buggy&planet=alpine&seed=4&room=${room}&name=${name}`)
-  await wait(page, () => window.syn3hNet?.connected && window.syn3h?.game.tick > 30 && window.syn3h.shell.playing, null, 120000)
-  await page.evaluate(() => window.syn3h.params.set('bots.count', 0))
+  await wait(page, () => window.miraNet?.connected && window.mira?.game.tick > 30 && window.mira.shell.playing, null, 120000)
+  await page.evaluate(() => window.mira.params.set('bots.count', 0))
   return { ctx, page }
 }
 /** What a page shows: its own vehicle and its copy of the other player. */
 const look = () => {
-  const s = window.syn3h, me = s.player, other = [...window.syn3hNet.remotes.values()][0]?.vehicle
+  const s = window.mira, me = s.player, other = [...window.miraNet.remotes.values()][0]?.vehicle
   return {
     planet: s.params.get('terrain.look').value, seed: s.params.get('world.seed').value, playing: s.shell.playing,
     own: { zorbKey: s.game.input.state.zorb, spaceKey: s.game.input.state.special, ball: me.zorb.active, radius: +me.zorb.radius.toFixed(2), wings: me.wingsOpen },
@@ -43,7 +43,7 @@ const look = () => {
 
 const room = `entry${Date.now().toString(36)}`
 const a = await player(room, 'A'), b = await player(room, 'B')
-await Promise.all([a, b].map((p) => wait(p.page, () => window.syn3hNet.remotes.size === 1)))
+await Promise.all([a, b].map((p) => wait(p.page, () => window.miraNet.remotes.size === 1)))
 
 for (const [label, on, shown, worlds] of [
   ['zorb', (st) => { st.zorb = true }, (v) => v.zorb.active && v.zorb.radius === v.zorb.target, ['volcanic', 'desert']],
@@ -52,22 +52,22 @@ for (const [label, on, shown, worlds] of [
   const dir = `${out}/${label}`
   await mkdir(dir, { recursive: true })
   // A turns the mode on and both sides see it.
-  await a.page.evaluate(`(${on})(window.syn3h.game.input.state)`)
-  await wait(a.page, `(${shown})(window.syn3h.player)`)
-  await wait(b.page, `(${shown})([...window.syn3hNet.remotes.values()][0].vehicle)`)
+  await a.page.evaluate(`(${on})(window.mira.game.input.state)`)
+  await wait(a.page, `(${shown})(window.mira.player)`)
+  await wait(b.page, `(${shown})([...window.miraNet.remotes.values()][0].vehicle)`)
   const before = { a: await a.page.evaluate(look), b: await b.page.evaluate(look) }
   await a.page.screenshot({ path: `${dir}/1-a-mode-on.png` })
   // Settings rebuild of the same world (sea level): the mode stays.
-  await a.page.evaluate(() => window.syn3h.params.set('world.lavaAltitude', window.syn3h.params.get('world.lavaAltitude').value + 2))
+  await a.page.evaluate(() => window.mira.params.set('world.lavaAltitude', window.mira.params.get('world.lavaAltitude').value + 2))
   await a.page.waitForTimeout(4000)
   const rebuilt = { a: await a.page.evaluate(look), b: await b.page.evaluate(look) }
   // A leaves to the lobby and picks another planet with the lobby's own handler.
   const target = worlds.find((w) => w !== before.a.planet) ?? worlds[0]
-  await a.page.evaluate(() => window.syn3h.shell.openMenu())
+  await a.page.evaluate(() => window.mira.shell.openMenu())
   await a.page.waitForTimeout(500)
-  await a.page.evaluate((id) => window.syn3h.shell.tapWorld(id), target)
-  await wait(a.page, (seed) => window.syn3h.params.get('world.seed').value !== seed && window.syn3h.shell.playing, before.a.seed, 60000)
-  await wait(b.page, (seed) => window.syn3h.params.get('world.seed').value !== seed, before.a.seed, 60000)
+  await a.page.evaluate((id) => window.mira.shell.tapWorld(id), target)
+  await wait(a.page, (seed) => window.mira.params.get('world.seed').value !== seed && window.mira.shell.playing, before.a.seed, 60000)
+  await wait(b.page, (seed) => window.mira.params.get('world.seed').value !== seed, before.a.seed, 60000)
   await a.page.waitForTimeout(4000)
   const after = { a: await a.page.evaluate(look), b: await b.page.evaluate(look) }
   await a.page.screenshot({ path: `${dir}/2-a-new-world.png` }); await b.page.screenshot({ path: `${dir}/2-b-new-world.png` })

@@ -8,7 +8,8 @@
 // PHASE names the files (base for a checkout without the burst). TURN=1 adds the world-anchoring
 // check: two frames with the camera turned 30 degrees between them, compared by the streak
 // profile round the sun.
-//   SYN3H_URL=http://127.0.0.1:PORT/ PHASE=new [NOON=1] [OPEN=1] [PHONE=1] [TURN=1] [QUALITY=4] [COVER=0.5] node tests/ui/sun-beams-capture.mjs
+//   MIRA_URL=http://127.0.0.1:PORT/ PHASE=new [NOON=1] [OPEN=1] [PHONE=1] [TURN=1] [QUALITY=4] [COVER=0.5] node tests/ui/sun-beams-capture.mjs
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, devices } from 'playwright-core'
 import { mkdir } from 'node:fs/promises'
 import sharp from 'sharp'
@@ -59,20 +60,20 @@ async function run(device, quality, cases, tag) {
   try {
     const page = await browser.newPage(device ?? { viewport: { width: 1440, height: 900 } })
     const errors = []; page.on('pageerror', e => errors.push(e.message))
-    await page.goto(`${process.env.SYN3H_URL}?autoplay=1&room=beams-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 180000 })
-    await page.evaluate(() => { const st = document.createElement('style'); st.textContent = '.world-inspector,.shell-hud,.hud-navigation,[class*=focus],[class*=gear],[class*=hint],[class*=toast],[class*=minimap],[class*=touch],[class*=zorb],[class*=nameplate],[class*=reload],[class*=build-notice],[class*=update]{visibility:hidden!important}[class*=update-banner]{display:none!important}'; document.head.append(st); window.syn3h.game.input.external.brakes = true })
+    await page.goto(`${process.env.MIRA_URL}?autoplay=1&room=beams-${Date.now()}`)
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 180000 })
+    await page.evaluate(() => { const st = document.createElement('style'); st.textContent = '.world-inspector,.shell-hud,.hud-navigation,[class*=focus],[class*=gear],[class*=hint],[class*=toast],[class*=minimap],[class*=touch],[class*=zorb],[class*=nameplate],[class*=reload],[class*=build-notice],[class*=update]{visibility:hidden!important}[class*=update-banner]{display:none!important}'; document.head.append(st); window.mira.game.input.external.brakes = true })
     const frames = async () => page.evaluate(() => new Promise(res => { const t = []; let last = performance.now(); const step = now => { t.push(now - last); last = now; if (t.length < 90) requestAnimationFrame(step); else res(t.sort((a, b) => a - b)[45]) }; requestAnimationFrame(step) }))
-    const set = (id, v) => page.evaluate(([id, v]) => window.syn3h.params.set(id, v), [id, v])
+    const set = (id, v) => page.evaluate(([id, v]) => window.mira.params.set(id, v), [id, v])
     const shot = async (name, mode) => {
-      await set('post.shafts', mode === 'off' ? 0 : await page.evaluate(() => window.syn3h.params.get('post.shafts').def.default))
+      await set('post.shafts', mode === 'off' ? 0 : await page.evaluate(() => window.mira.params.get('post.shafts').def.default))
       await page.waitForTimeout(2000)
       const ms = await frames(), file = `${out}/${name}-${mode === 'on' ? phase : mode}.png`
       await page.screenshot({ path: file })
       return { file, ms }
     }
     const aim = (planet, hour, coverage, pitch) => page.evaluate(async ({ planet, hour, quality, coverage, pitch }) => {
-      const s = window.syn3h, { applyPlanet } = await import('/src/world/planets.ts'), { sunDirection } = await import('/src/world/sky/skyMath.ts')
+      const s = window.mira, { applyPlanet } = await import('/src/world/planets.ts'), { sunDirection } = await import('/src/world/sky/skyMath.ts')
       applyPlanet(planet, 12345); s.params.set('bots.count', 0); s.params.set('gfx.auto', false); s.params.set('gfx.quality', quality)
       s.params.set('weather.cloudCoverage', coverage); s.params.set('weather.cloudSpeed', 0); s.params.set('sun.dayLength', 0); s.params.set('sun.timeOfDay', hour)
       await new Promise(r => setTimeout(r, 5000))
@@ -105,11 +106,11 @@ async function run(device, quality, cases, tag) {
       await aim(planet, hour, 0)
       await set('camera.autoDelay', 10)
       const sunNow = () => page.evaluate(async ({ hour }) => {
-        const s = window.syn3h, { sunDirection } = await import('/src/world/sky/skyMath.ts'), cam = s.game.camera
+        const s = window.mira, { sunDirection } = await import('/src/world/sky/skyMath.ts'), cam = s.game.camera
         const d = sunDirection(hour, s.params.get('sun.tilt').value, s.params.get('sun.azimuth').value), p = cam.position.clone().add(new cam.position.constructor(d[0], d[1], d[2]).multiplyScalar(1000)).project(cam)
         return { x: p.x * 0.5 + 0.5, y: 0.5 - p.y * 0.5, heading: Math.atan2(cam.getWorldDirection(new cam.position.constructor()).x, cam.getWorldDirection(new cam.position.constructor()).z) * 180 / Math.PI }
       }, { hour })
-      const turn = async dx => { await page.evaluate(dx => { for (let i = 0; i < 10; i++) window.dispatchEvent(new CustomEvent('syn3h:look', { detail: { dx: dx / 10, dy: 0 } })) }, dx); await page.waitForTimeout(600) }
+      const turn = async dx => { await page.evaluate(dx => { for (let i = 0; i < 10; i++) window.dispatchEvent(new CustomEvent('mira:look', { detail: { dx: dx / 10, dy: 0 } })) }, dx); await page.waitForTimeout(600) }
       const name = `turn-${planet}-${hour}-q${quality}${tag}`
       await turn(-90); const sunA = await sunNow()
       const offA = await shot(`${name}-a`, 'off'), onA = await shot(`${name}-a`, 'on')

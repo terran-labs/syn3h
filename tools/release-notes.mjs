@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Calendar versions, release notes and GitHub releases for Syn3h. See release-notes/README.md.
+// Calendar versions, release notes and GitHub releases for Mira. See release-notes/README.md.
 //
 //   node tools/release-notes.mjs next [--date <ISO time>]
 //   node tools/release-notes.mjs versions
@@ -11,6 +11,7 @@
 // `publish` is the only subcommand that changes anything outside this checkout. It refuses
 // to run without --yes-publish, and --dry-run prints every command it would run instead.
 
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -19,12 +20,12 @@ import { fileURLToPath } from 'node:url'
 import { compareVersions, isVersion, kindLine, matchReleases, nextVersion, parseHistory, parseVersion, releasesFromTsv } from './lib/release-version.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-// SYN3H_RELEASE_NOTES_DIR: another release-notes folder (releases/, player/, history.tsv), for tests.
-const NOTES_ROOT = process.env.SYN3H_RELEASE_NOTES_DIR || join(REPO, 'release-notes')
+// MIRA_RELEASE_NOTES_DIR: another release-notes folder (releases/, player/, history.tsv), for tests.
+const NOTES_ROOT = process.env.MIRA_RELEASE_NOTES_DIR || join(REPO, 'release-notes')
 const NOTES_DIR = join(NOTES_ROOT, 'releases')
 const PLAYER_DIR = join(NOTES_ROOT, 'player')
 const HISTORY = join(NOTES_ROOT, 'history.tsv')
-const GITHUB_REPO = process.env.SYN3H_GITHUB_REPO || 'terran-labs/syn3h'
+const GITHUB_REPO = process.env.MIRA_GITHUB_REPO || 'terran-labs/syn3h'
 const PLAY_URL = 'https://mira.cc/'
 /**
  * Versions up to this one were live at the old address, and their release line says so; later
@@ -50,7 +51,7 @@ export function assetUrl(tag, name, repo = GITHUB_REPO) {
 
 /**
  * Read an assets directory's manifest.json, written by the capture worker:
- * {"images":[{"file":"01-lobby.png","caption":"..."}], "gif":"syn3h-showcase.gif" or null}.
+ * {"images":[{"file":"01-lobby.png","caption":"..."}], "gif":"mira-showcase.gif" or null}.
  * No directory, or no manifest, means no screenshots.
  */
 export function readManifest(dir) {
@@ -80,7 +81,7 @@ export function parseManifest(text) {
 export function screenshotSection(tag, manifest, repo = GITHUB_REPO) {
   if (!manifest.gif && manifest.images.length === 0) return ''
   const lines = ['### Screenshots', '']
-  if (manifest.gif) lines.push(`![Syn3h showcase](${assetUrl(tag, manifest.gif, repo)})`, '')
+  if (manifest.gif) lines.push(`![Mira showcase](${assetUrl(tag, manifest.gif, repo)})`, '')
   for (const { file, caption } of manifest.images) lines.push(`![${caption}](${assetUrl(tag, file, repo)})`, `_${caption}_`, '')
   return lines.join('\n').trimEnd()
 }
@@ -98,7 +99,7 @@ function commitSubjects(from, to) {
 export function draftNotes(row, from, to, commits) {
   const production = row.channel === 'production'
   return [
-    `## Syn3h ${row.version}`,
+    `## Mira ${row.version}`,
     '',
     'TODO: one line deck, the most meaningful outcomes, as "X, Y and Z"',
     '',
@@ -142,7 +143,7 @@ export function renderNotes(text, row, manifest = { images: [], gif: null }) {
   const lines = notes.split('\n')
   const problems = []
   // Accept historical heading-first sources; all rendered external bodies carry attribution.
-  if (lines[0] !== `## Syn3h ${tag}`) problems.push(`the first line must be the heading "## Syn3h ${tag}"`)
+  if (lines[0] !== `## Mira ${tag}`) problems.push(`the first line must be the heading "## Mira ${tag}"`)
   if (lines[1] !== '' || !lines[2] || lines[2].startsWith('#')) problems.push('a one line deck must follow the heading after a blank line')
   const kind = kindLine(row, playUrl(tag))
   if (lines[4] !== kind) problems.push(`the line under the deck must be "${kind}"`)
@@ -196,7 +197,7 @@ export function versionProblems(version, notes, digest) {
   if (notes === null) problems.push(`no release notes at release-notes/releases/${tag}.md`)
   else {
     const heading = notes.replace(/^\(AI Generated\)\r?\n\r?\n/, '').split('\n')[0]
-    if (heading !== `## Syn3h ${tag}`) problems.push(`the notes' heading is "${heading}", not "## Syn3h ${tag}"`)
+    if (heading !== `## Mira ${tag}`) problems.push(`the notes' heading is "${heading}", not "## Mira ${tag}"`)
     for (const v of linkedVersions(notes)) if (v !== bare) problems.push(`the notes link version ${v}, not ${bare}`)
   }
   if (digest === null) problems.push(`no player digest at release-notes/player/${tag}.md`)
@@ -231,7 +232,7 @@ export function renameNotes(from, to, { known = [], releases = NOTES_DIR, player
     if (existsSync(dst)) throw new Error(`${dst} already exists`)
   }
   const swap = (text) => text
-    .replace(new RegExp(`^## Syn3h ${a.replace(/\./g, '\\.')}$`, 'm'), `## Syn3h ${b}`)
+    .replace(new RegExp(`^## Mira ${a.replace(/\./g, '\\.')}$`, 'm'), `## Mira ${b}`)
     .replace(/([?&]v=v?)(\d+\.\d+\.\d+)/g, (m, pre, v) => (v === a.slice(1) ? pre + b.slice(1) : m))
     .replace(/(\/releases\/(?:tag|download)\/v?)(\d+\.\d+\.\d+)/g, (m, pre, v) => (v === a.slice(1) ? pre + b.slice(1) : m))
   const leftover = []
@@ -259,7 +260,7 @@ function historyRow(tag) {
 }
 
 function releasesTsvPath() {
-  return process.env.SYN3H_RELEASES_TSV || resolve(REPO, '..', 'Syn3h-stable', 'releases.tsv')
+  return process.env.MIRA_RELEASES_TSV || resolve(REPO, '..', 'Syn3h-stable', 'releases.tsv')
 }
 
 /** releases.tsv rows, or null if this checkout has no record beside it. */
@@ -337,18 +338,18 @@ async function publish(tag, { assetsDir, dryRun, yes, latest }) {
     }
   }
 
-  const notesFile = dryRun ? '<temporary file holding the body below>' : join(mkdtempSync(join(tmpdir(), 'syn3h-notes-')), 'body.md')
+  const notesFile = dryRun ? '<temporary file holding the body below>' : join(mkdtempSync(join(tmpdir(), 'mira-notes-')), 'body.md')
   const steps = []
   if (!tagCommit && commit) {
-    const message = `Syn3h ${tag} (${row.milestone}${release ? `, ${release.release}` : ''})`
+    const message = `Mira ${tag} (${row.milestone}${release ? `, ${release.release}` : ''})`
     steps.push(['git', 'tag', '-a', tag, commit, '-m', message])
   }
   steps.push(['git', 'push', 'origin', `refs/tags/${tag}`])
-  steps.push(['gh', 'release', 'create', tag, '--repo', GITHUB_REPO, '--verify-tag', '--title', `Syn3h ${tag}`,
+  steps.push(['gh', 'release', 'create', tag, '--repo', GITHUB_REPO, '--verify-tag', '--title', `Mira ${tag}`,
     '--notes-file', notesFile, latest ? '--latest' : '--latest=false', ...assets.map((name) => join(dir, name))])
 
   const print = (line) => process.stdout.write(`${line}\n`)
-  print(`${dryRun ? 'DRY RUN: ' : ''}publish Syn3h ${tag} to https://github.com/${GITHUB_REPO}/releases/tag/${tag}`)
+  print(`${dryRun ? 'DRY RUN: ' : ''}publish Mira ${tag} to https://github.com/${GITHUB_REPO}/releases/tag/${tag}`)
   print(`Commit: ${commit ?? row.commit} (${row.milestone}, ${row.channel}, ${row.time}${release ? `, ${release.release}` : ''})`)
   print(`Marked Latest: ${latest ? 'yes' : 'no'}`)
   print(`Notes: ${notesPath(tag)}`)

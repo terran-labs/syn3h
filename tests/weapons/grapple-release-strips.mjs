@@ -3,16 +3,17 @@
  * to the bot let go (released), the same cord severed, and a hook that misses and sails away.
  * Time is held while each frame is taken: the Bungee's drawing is frozen and stepped by hand.
  *
- *   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/grapple-release-strips.mjs [out dir]
+ *   MIRA_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/weapons/grapple-release-strips.mjs [out dir]
  *
  * Writes <out>/<effect>.png, one row of frames each, and <out>/raw/. Fails on a page error, or
  * if an effect never started.
  */
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir, writeFile, readFile } from 'node:fs/promises'
 
-const base = process.env.SYN3H_URL
-if (!base) throw new Error('Set SYN3H_URL')
+const base = process.env.MIRA_URL
+if (!base) throw new Error('Set MIRA_URL')
 const out = process.argv[2] ?? '/tmp/weapons-beauty/grapple-strips'
 await mkdir(`${out}/raw`, { recursive: true })
 const EFFECTS = {
@@ -29,17 +30,17 @@ try {
   const page = await context.newPage()
   page.on('pageerror', e => errors.push(e.message))
   await page.goto(`${base}?planet=alpine&seed=7&autoplay=1&room=grapple-${Date.now()}`)
-  await page.waitForFunction(() => window.syn3h?.shell?.playing && window.syn3hNet?.connected && window.syn3hNet?.bungee, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.shell?.playing && window.miraNet?.connected && window.miraNet?.bungee, null, { timeout: 120000 })
   await page.evaluate(() => {
     document.exitPointerLock?.()
-    const s = window.syn3h, p = s.params
+    const s = window.mira, p = s.params
     p.set('gfx.auto', false); p.set('gfx.level', 2); p.set('daydream.seconds', 0)
     p.set('sun.dayLength', 0); p.set('sun.timeOfDay', 15)
     p.set('bots.canDrive', false); p.set('bots.canFire', false); p.set('bots.count', 1)
     p.set('bungee.hookSpeed', 40); p.set('bungee.cooldown', 0)
     for (const node of document.body.children) if (node.tagName !== 'CANVAS' && node.tagName !== 'SCRIPT') node.style.visibility = 'hidden'
     s.shell.closeMenu?.()
-    const B = window.syn3hNet.bungee, update = B.update.bind(B)
+    const B = window.miraNet.bungee, update = B.update.bind(B)
     const letGo = B.letGo.bind(B); B.letGo = why => { (window.__letGo ??= []).push(`${why} ${new Error().stack.split('\n').slice(2, 6).join(' | ')}`); return letGo(why) }
     window.__freeze = on => { B.update = on ? () => {} : update }
     window.__step = seconds => { for (let t = 0; t < seconds - 1e-6; t += 1 / 120) update(Math.min(1 / 120, seconds - t)) }
@@ -48,7 +49,7 @@ try {
       // then on the middle of the loose cord as it sails, 22 m back and a little above.
       const fol = window.__follow
       if (fol) {
-        const B = window.syn3hNet.bungee, rope = B.loose[0]?.cord, hook = B.mine?.hook
+        const B = window.miraNet.bungee, rope = B.loose[0]?.cord, hook = B.mine?.hook
         const at = rope ? rope.pos[Math.floor(rope.pos.length / 2)] : hook ? hook.pos.clone().lerp(s.player.object.position, 0.4) : null
         if (at) window.__cam = { eye: [at.x - fol[0] * 22, at.y + 4, at.z - fol[1] * 22], look: [at.x, at.y, at.z] }
       }
@@ -57,11 +58,11 @@ try {
       s.game.camera.position.set(...c.eye); s.game.camera.lookAt(...c.look); s.game.camera.updateMatrixWorld()
     } })
   })
-  await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 1, null, { timeout: 60000 })
+  await page.waitForFunction(() => window.mira.bots.vehicles.length === 1, null, { timeout: 60000 })
   // The player on the ground, the bot 24 m ahead and 8 m up, both held still; the camera off to
   // the side of the pair, looking at the middle.
   const place = () => page.evaluate(() => {
-    const s = window.syn3h, bot = s.bots.vehicles[0], p = s.player.body.translation()
+    const s = window.mira, bot = s.bots.vehicles[0], p = s.player.body.translation()
     const f = s.game.camera.getWorldDirection(s.player.object.position.clone()); f.y = 0; f.normalize()
     window.__f ??= [f.x, f.z]
     const [fx, fz] = window.__f, heading = Math.atan2(-fx, -fz)
@@ -82,35 +83,35 @@ try {
       // catch it), a little up: it reaches full length without catching. The camera follows it
       // from the side; one frame in flight, then the frames after it lets go.
       await page.evaluate(() => {
-        window.syn3h.params.set('bungee.length', 30)
-        const n = window.syn3hNet, [fx, fz] = window.__f
+        window.mira.params.set('bungee.length', 30)
+        const n = window.miraNet, [fx, fz] = window.__f
         window.__follow = [fx, fz]
         n.gear.select('bungee')
         n.bungee.launch([fz, 0.12, -fx])
       })
-      await page.waitForFunction(() => (window.syn3hNet.bungee.mine?.hook?.travelled ?? 0) >= 18, null, { timeout: 5000, polling: 'raf' })
+      await page.waitForFunction(() => (window.miraNet.bungee.mine?.hook?.travelled ?? 0) >= 18, null, { timeout: 5000, polling: 'raf' })
       await page.waitForTimeout(50)
       await writeFile(`${out}/raw/${effect}-before.png`, await page.screenshot())
-      await page.waitForFunction(() => window.syn3hNet.bungee.fading.includes('sail'), null, { timeout: 5000, polling: 'raf' })
+      await page.waitForFunction(() => window.miraNet.bungee.fading.includes('sail'), null, { timeout: 5000, polling: 'raf' })
       await page.evaluate(() => window.__freeze(true))
     } else {
       await page.evaluate(() => {
-        window.syn3h.params.set('bungee.length', 120)
-        const s = window.syn3h, n = window.syn3hNet, a = s.player.body.translation(), b = s.bots.vehicles[0].body.translation()
+        window.mira.params.set('bungee.length', 120)
+        const s = window.mira, n = window.miraNet, a = s.player.body.translation(), b = s.bots.vehicles[0].body.translation()
         n.gear.select('bungee')
         return n.bungee.launch([b.x - a.x, b.y - a.y - 1.1, b.z - a.z])
       }).then(ok => { if (!ok) throw new Error(`${effect}: the hook did not launch`) })
-      await page.waitForFunction(() => window.syn3hNet.bungee.attached, null, { timeout: 5000 }).catch(async e => {
+      await page.waitForFunction(() => window.miraNet.bungee.attached, null, { timeout: 5000 }).catch(async e => {
         throw new Error(`${effect}: no cord to the bot: ${JSON.stringify(await page.evaluate(() => {
-          const s = window.syn3h, n = window.syn3hNet
+          const s = window.mira, n = window.miraNet
           return { stats: n.bungee.stats, me: s.player.body.translation(), bot: s.bots.vehicles[0]?.body.translation(), allowed: s.params.get('bungee.allowed')?.value, vehicles: s.params.get('bungee.vehicles')?.value, gear: n.gear.current, letGo: window.__letGo }
         }))}`)
       })
       await page.waitForTimeout(1200)
       await writeFile(`${out}/raw/${effect}-before.png`, await page.screenshot())
-      await page.evaluate(effect => { window.__freeze(true); window.syn3hNet.bungee.letGo(effect) }, effect)
+      await page.evaluate(effect => { window.__freeze(true); window.miraNet.bungee.letGo(effect) }, effect)
     }
-    const started = await page.evaluate(() => window.syn3hNet.bungee.fading)
+    const started = await page.evaluate(() => window.miraNet.bungee.fading)
     if (!started.length) throw new Error(`${effect}: no release effect started`)
     let at = 0
     for (const [i, time] of times.entries()) {

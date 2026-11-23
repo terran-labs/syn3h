@@ -2,12 +2,13 @@
 // (waited for to the GPU's finish) at 60 points through the opening, and requestAnimationFrame
 // intervals through one real-time playthrough. Reported, not asserted: frame times depend on the
 // machine and its load, so compare a before and an after run made on the same machine.
-//   SYN3H_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/ui/opening-frames.mjs [out.json]
+//   MIRA_URL=http://127.0.0.1:<port>/ tools/heavy.sh node tests/ui/opening-frames.mjs [out.json]
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { writeFileSync } from 'node:fs'
 import { loadavg } from 'node:os'
 
-const base = (process.env.SYN3H_URL ?? 'http://127.0.0.1:5258/').replace(/\/+$/, '') + '/'
+const base = (process.env.MIRA_URL ?? 'http://127.0.0.1:5258/').replace(/\/+$/, '') + '/'
 const out = process.argv[2]
 const levels = { Low: 1, High: 3 }
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
@@ -16,11 +17,11 @@ try {
   for (const [name, level] of Object.entries(levels)) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
     await page.goto(`${base}?room=opening-frames-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
-    await page.evaluate(level => syn3h.game.quality.setLevel(level), level)
+    await page.waitForFunction(() => window.mira?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+    await page.evaluate(level => mira.game.quality.setLevel(level), level)
     await page.waitForTimeout(4000)
     report[name] = await page.evaluate(async () => {
-      const g = syn3h.shell.galaxy, gl = g.gl, px = new Uint8Array(4), mode = syn3h.params.get('lobby.intro').value
+      const g = mira.shell.galaxy, gl = g.gl, px = new Uint8Array(4), mode = mira.params.get('lobby.intro').value
       // The opening's length, read from the running code: play it held at growing times until it reports done.
       g.replayOpening(mode); let length = 0
       for (let t = 0; t < 20; t += 0.1) { g.openingAt = t; g.loop(performance.now()); if (!g.opening) { length = t; break } g.opening ??= { start: 0, mode } }
@@ -38,7 +39,7 @@ try {
         const f = now => { list.push(now - last); last = now; if (g.opening) requestAnimationFrame(f); else done(list) }
         requestAnimationFrame(f)
       })
-      return { level: syn3h.game.quality.governor?.level ?? null, openingSeconds: +length.toFixed(1), galaxyFrameMs: stats(costs), settledFrameMs: stats(settled), realTimeGapsMs: stats(gaps.slice(1)) }
+      return { level: mira.game.quality.governor?.level ?? null, openingSeconds: +length.toFixed(1), galaxyFrameMs: stats(costs), settledFrameMs: stats(settled), realTimeGapsMs: stats(gaps.slice(1)) }
     })
     await page.close()
   }

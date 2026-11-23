@@ -17,7 +17,7 @@ try {
   await page.addInitScript(() => {
     // Keep the lobby's background draws from compiling the graph before the test starts.
     let app
-    Object.defineProperty(window, 'syn3h', {
+    Object.defineProperty(window, 'mira', {
       configurable: true,
       get: () => app,
       set: value => {
@@ -28,12 +28,12 @@ try {
   })
   await page.goto(url.href)
   await page.waitForFunction(() => {
-    const s = window.syn3h
+    const s = window.mira
     return s?.terrain.ready && s.game.tick > 0
   }, null, { timeout: 90000 })
 
   const result = await page.evaluate(async () => {
-    const { game, params } = window.syn3h
+    const { game, params } = window.mira
     const { renderer, scene, camera, quality, postChain } = game
     if (game.backend !== 'webgl') throw Error('Expected the WebGL2 renderer')
     game.pause()

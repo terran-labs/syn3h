@@ -1,6 +1,7 @@
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import{chromium}from'playwright-core';import{writeFile}from'node:fs/promises'
 const browser=await chromium.launch({channel:'chrome',headless:true});try{
- const page=await browser.newPage();await page.goto(process.env.SYN3H_URL??'http://127.0.0.1:5187/');
+ const page=await browser.newPage();await page.goto(process.env.MIRA_URL??'http://127.0.0.1:5187/');
  const result=await page.evaluate(async()=>{
  const {synthCue}=await import('/src/audio/Cues.ts'),{noiseBuffer}=await import('/src/audio/Engine.ts'),names=['capture','contested','lost','win','tick','tag','join','leave','click','deploy','retract','lava','splash','beam','tagged','materialize'];const rate=44100,ctx=new OfflineAudioContext(1,rate*names.length*2,rate),noise=noiseBuffer(ctx)
  synthCue(ctx,ctx.destination,names[0],noise)

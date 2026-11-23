@@ -11,7 +11,7 @@ const listeners = new Set<(cause: RescueCause) => void>()
 
 /** A net just moved the local player's vehicle. */
 export function reportRescue(cause: RescueCause): void {
-  console.error('[syn3h] bug: a safety net moved the vehicle:', cause)
+  console.error('[mira] bug: a safety net moved the vehicle:', cause)
   for (const listener of listeners) listener(cause)
 }
 

@@ -8,11 +8,11 @@ import type { LabExhibit } from '../types'
 
 export const tankArchive: LabExhibit = {
   id: 'tank-archive',
-  title: 'Syn3h tank: earlier studies',
+  title: 'Mira tank: earlier studies',
   section: 'Design studies',
   groupLabel: 'Round',
   paramGroups: [],
-  heading: group => `Syn3h tank: archived round ${group ?? '3'}`,
+  heading: group => `Mira tank: archived round ${group ?? '3'}`,
   async designs() {
     return [round2, round3].flatMap((round, i) => round.map(d => ({
       id: `r${i + 2}-${d.id}`, name: d.name, notes: [d.tagline, 'Original procedural study, before the shared vehicle pattern'], group: String(i + 2),

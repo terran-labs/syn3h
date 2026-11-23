@@ -4,11 +4,12 @@
 // Drags are synthetic PointerEvents dispatched in the page (Playwright's WebKit has no touch
 // drag), sent to whatever element is under the point as a real touch would be. Taps are also
 // made with the real page.touchscreen, which goes through WebKit's own touch handling.
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5213/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5213/'
 const out = 'tests/ui/artifacts/touch-stick'
 await mkdir(out, { recursive: true })
 const views = [['phone', 'iPhone 14'], ['landscape', 'iPhone 14 landscape'], ['tablet', 'iPad (gen 7)']]
@@ -24,7 +25,7 @@ try {
     page.on('pageerror', error => errors.push(`page: ${error.message}`))
     page.on('console', message => { if (message.type() === 'error') errors.push(`console: ${message.text()}`) })
     await page.goto(`${base}?autoplay=1&room=touch-stick-${name}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 90000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 90000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 90000 })
     if (await page.locator('.world-inspector').isVisible()) await page.locator('.inspector-toggle').tap()
     await page.locator('.world-inspector').waitFor({ state: 'hidden' })
@@ -45,8 +46,8 @@ try {
         try { target.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' || type === 'pointercancel' ? 0 : 1, bubbles: true, cancelable: true, composed: true })) } finally { target.setPointerCapture = capture }
       }
       window.__stick = () => {
-        const el = document.querySelector('.touch-stick'), r = el.getBoundingClientRect(), s = window.syn3h.game.input.poll()
-        return { active: el.classList.contains('is-active'), visible: getComputedStyle(el).visibility === 'visible', cx: r.left + r.width / 2, cy: r.top + r.height / 2, radius: el.offsetWidth * 0.34, x: s.x, y: s.y, ex: window.syn3h.game.input.external.x ?? 0, ey: window.syn3h.game.input.external.y ?? 0, beam: window.syn3h.game.input.mouseFire }
+        const el = document.querySelector('.touch-stick'), r = el.getBoundingClientRect(), s = window.mira.game.input.poll()
+        return { active: el.classList.contains('is-active'), visible: getComputedStyle(el).visibility === 'visible', cx: r.left + r.width / 2, cy: r.top + r.height / 2, radius: el.offsetWidth * 0.34, x: s.x, y: s.y, ex: window.mira.game.input.external.x ?? 0, ey: window.mira.game.input.external.y ?? 0, beam: window.mira.game.input.mouseFire }
       }
     })
     const touch = (type, id, x, y) => page.evaluate(([type, id, x, y]) => window.__touch(type, id, x, y), [type, id, x, y])
@@ -83,7 +84,7 @@ try {
     near(state.x, 20 / radius, 0.01, 'steer is offset over radius'); near(state.y, 0, 0.001, 'no throttle on a sideways drag')
     assert.equal(state.beam, false, 'a drive drag does not hold the tag beam')
     assert.equal(await hint.isVisible(), false, 'hint goes after the first drag')
-    assert.equal(await page.evaluate(() => localStorage.getItem('syn3h.touch.driven')), '1')
+    assert.equal(await page.evaluate(() => localStorage.getItem('mira.touch.driven')), '1')
     // Up is forward; small offsets sit in the dead zone.
     await touch('pointermove', 1, ox + 2, oy - radius * 0.5)
     state = await stick(); near(state.y, 0.5, 0.01, 'half up is half forward'); assert.equal(state.x, 0, 'dead zone on x')
@@ -111,10 +112,10 @@ try {
     state = await stick(); near(state.x, 0, .001, 'return to original centre'); near(state.y, 0, .001, 'centre dead zone')
     const brake = await page.locator('[data-action=brakes]').boundingBox()
     await touch('pointermove', 1, brake.x + brake.width / 2, brake.y + brake.height / 2)
-    state = await stick(); near(state.cx, ox, 1, 'crossing a button keeps the base'); assert.equal(await page.evaluate(() => syn3h.game.input.external.brakes ?? false), false, 'sliding onto brake does not press it')
+    state = await stick(); near(state.cx, ox, 1, 'crossing a button keeps the base'); assert.equal(await page.evaluate(() => mira.game.input.external.brakes ?? false), false, 'sliding onto brake does not press it')
 
     await touch('pointerdown', 11, brake.x + brake.width / 2, brake.y + brake.height / 2)
-    assert.equal(await page.evaluate(() => syn3h.game.input.external.brakes), true, 'second finger can hold brake while steering')
+    assert.equal(await page.evaluate(() => mira.game.input.external.brakes), true, 'second finger can hold brake while steering')
     near((await stick()).cx, ox, 1, 'button finger cannot move anchor')
     await touch('pointerup', 11, brake.x + brake.width / 2, brake.y + brake.height / 2)
     assert.equal((await stick()).active, true, 'button release leaves driving finger active')
@@ -168,7 +169,7 @@ try {
     // Nor one that starts on the right side.
     await touch('pointerdown', 9, width * 0.7, oy); await touch('pointermove', 9, width * 0.7 - 40, oy)
     assert.equal((await stick()).active, false, 'no stick from the right side'); await touch('pointerup', 9, width * 0.7 - 40, oy)
-    await page.evaluate(() => { window.syn3h.game.input.mouseFire = false })
+    await page.evaluate(() => { window.mira.game.input.mouseFire = false })
 
     // Rotation ends the old gesture instead of relocating its base or leaving input held.
     await midDrag(10)
@@ -182,7 +183,7 @@ try {
 
     // Once driven, never again on this device.
     await page.reload()
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 90000 })
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 90000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 90000 })
     await page.locator('.touch-controls').waitFor({ state: 'visible' })
     assert.equal(await page.locator('.touch-stick-hint').isVisible(), false, 'hint stays away after a reload')

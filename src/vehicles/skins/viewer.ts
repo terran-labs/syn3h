@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { Syn3hBuggySkin } from './index'
+import { MiraBuggySkin } from './index'
 import { params } from '../../../shared/params'
 import { vehicleShading } from '../../core/quality'
 import { motorSparkLoad, sparkLevel } from './motorDrive'
@@ -38,7 +38,7 @@ async function main() {
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground)
   // The viewer has no frame governor, so ask for the full showroom shading here.
   params.set(vehicleShading.def.id, 3)
-  const skins = [new Syn3hBuggySkin()]
+  const skins = [new MiraBuggySkin()]
   // Camera faces +Z, so positive X appears on the left of the comparison.
   skins.forEach((skin, i) => { skin.object.position.set(0, .65, 0); skin.setColors(0xe96d26, 0xffb94a); scene.add(skin.object) })
   await Promise.all(skins.map(s => s.ready))
@@ -51,8 +51,8 @@ async function main() {
   // and brake lamps) and rests, on a 10 s loop. `drive` and `braking` override it for checks.
   let drive: number | null = null, braking: boolean | null = null
   const timer = new THREE.Timer()
-  // Wheel rest position: Syn3h WheelPos (1.1, 0.1, 1.3) with the
-  // tyre's 0.5 m radius under the ray, as Syn3hBuggy places them at rest.
+  // Wheel rest position: Mira WheelPos (1.1, 0.1, 1.3) with the
+  // tyre's 0.5 m radius under the ray, as MiraBuggy places them at rest.
   const rest = [new THREE.Vector3(1.1, -.2, 1.3)]
   const api = {skins, renderer, camera, controls, ready: true,
     focus(index: number) { const p = skins[index].object.position; controls.target.copy(p); camera.position.copy(p).add(new THREE.Vector3(3, 2.5, -4.5)); controls.update() },
@@ -73,7 +73,7 @@ async function main() {
     skins.forEach((skin, k) => {
       const r = rest[k]
       for (let i=0; i<4; i++) {
-        // Syn3h travel is larger (0.4 m suspension range), so it shows the struts working.
+        // Mira travel is larger (0.4 m suspension range), so it shows the struts working.
         const travel = k ? .12 : .035
         skin.setWheel(i, new THREE.Vector3(i%2 ? r.x : -r.x, r.y + Math.sin(elapsed*2+i)*travel, i<2 ? -r.z : r.z), i<2 ? Math.sin(elapsed)*.2 : 0, -elapsed*3)
         skin.setDrive?.(i, effort, regen, regen ? 0 : sparkLevel(effort, motorSparkLoad.value))

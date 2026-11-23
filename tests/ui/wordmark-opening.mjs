@@ -2,10 +2,11 @@
 // while loading, the end state after a skip and with reduced motion, and the time from page
 // start to loading's end and to the first lobby frame, with the opening off and on.
 //   tools/heavy.sh node tests/ui/wordmark-opening.mjs <prefix> [intro, default 1] [wordmark, default 3]
-// SYN3H_URL picks the dev server (default http://127.0.0.1:5241/).
+// MIRA_URL picks the dev server (default http://127.0.0.1:5241/).
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir } from 'node:fs/promises'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5241/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5241/'
 const [prefix = 'opening', intro = '1', wordmark = '3'] = process.argv.slice(2)
 const out = 'tests/ui/artifacts/wordmark'
 await mkdir(out, { recursive: true })
@@ -17,13 +18,13 @@ const TIMING = () => {
   new MutationObserver(() => {
     if (document.documentElement?.dataset.boot !== 'done' || window.__timing.done) return
     window.__timing.done = performance.now()
-    const start = window.syn3h?.shell?.galaxy?.frames ?? 0
-    const watch = () => { const g = window.syn3h?.shell?.galaxy; if (g && g.frames > start) window.__timing.frame = performance.now(); else requestAnimationFrame(watch) }
+    const start = window.mira?.shell?.galaxy?.frames ?? 0
+    const watch = () => { const g = window.mira?.shell?.galaxy; if (g && g.frames > start) window.__timing.frame = performance.now(); else requestAnimationFrame(watch) }
     requestAnimationFrame(watch)
   // The document element does not exist yet when this runs: watch the document's subtree.
   }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-boot'] })
 }
-const ready = page => page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.documentElement.dataset.boot === 'done' && window.__timing?.frame, null, { timeout: 120000 })
+const ready = page => page.waitForFunction(() => window.mira?.game?.tick > 25 && document.documentElement.dataset.boot === 'done' && window.__timing?.frame, null, { timeout: 120000 })
 try {
   for (const view of views) {
     const context = await browser.newContext(view), page = await context.newPage()
@@ -32,18 +33,18 @@ try {
     await page.waitForSelector('.boot-point', { state: 'attached' }); await page.waitForTimeout(400)
     await page.screenshot({ path: `${out}/${prefix}-${view.name}-0-veil.png` })
     await ready(page)
-    await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
+    await page.evaluate(() => { window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400) })
     await page.waitForTimeout(4000)
     // Replay the opening, held at each moment in turn.
     const times = [0.1, 0.4, 0.7, 1.2, 1.8, 2.2, 2.5, 2.9]
     for (const [i, t] of times.entries()) {
-      await page.evaluate(t => { const g = syn3h.shell.galaxy; g.replayOpening(syn3h.params.get('lobby.intro').value); g.openingAt = t; g.wake = 2 }, t)
+      await page.evaluate(t => { const g = mira.shell.galaxy; g.replayOpening(mira.params.get('lobby.intro').value); g.openingAt = t; g.wake = 2 }, t)
       await page.waitForTimeout(350)
       await page.screenshot({ path: `${out}/${prefix}-${view.name}-${i + 1}-t${t.toFixed(2)}.png` })
     }
-    await page.evaluate(() => { const g = syn3h.shell.galaxy; g.openingAt = null })
+    await page.evaluate(() => { const g = mira.shell.galaxy; g.openingAt = null })
     // Skipped: a tap a little way in goes straight to the settled lobby.
-    await page.evaluate(() => syn3h.shell.galaxy.replayOpening(syn3h.params.get('lobby.intro').value))
+    await page.evaluate(() => mira.shell.galaxy.replayOpening(mira.params.get('lobby.intro').value))
     await page.waitForTimeout(300); await page.keyboard.press('Shift'); await page.waitForTimeout(500)
     await page.screenshot({ path: `${out}/${prefix}-${view.name}-skipped.png` })
     await context.close()

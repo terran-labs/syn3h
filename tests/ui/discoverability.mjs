@@ -1,7 +1,8 @@
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
-const base=process.env.SYN3H_URL??'http://127.0.0.1:5198/'
+const base=process.env.MIRA_URL??'http://127.0.0.1:5198/'
 await mkdir('tests/ui/artifacts/discoverability',{recursive:true})
 for(const mode of ['desktop','phone']){
  const browser=await(mode==='desktop'?chromium.launch({channel:'chrome',headless:true}):webkit.launch())
@@ -32,11 +33,11 @@ for(const mode of ['desktop','phone']){
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-welcome.png`})
   await page.keyboard.press('Escape');await welcome.waitFor({state:'hidden'})
   // The lobby lists the planet recipes and nothing else: "Shape your own" is hidden for now.
-  const lobbyWorlds=await page.evaluate(()=>({labels:[...document.querySelectorAll('.galaxy-label')].map(chip=>chip.dataset.world),forming:syn3h.shell.galaxy.options.worlds.filter(world=>world.forming).length,text:document.querySelector('.galaxy-labels').textContent}))
+  const lobbyWorlds=await page.evaluate(()=>({labels:[...document.querySelectorAll('.galaxy-label')].map(chip=>chip.dataset.world),forming:mira.shell.galaxy.options.worlds.filter(world=>world.forming).length,text:document.querySelector('.galaxy-labels').textContent}))
   assert.ok(lobbyWorlds.labels.length>0&&!lobbyWorlds.labels.includes('custom')&&lobbyWorlds.forming===0,'the lobby lists only the planet recipes')
   assert.doesNotMatch(lobbyWorlds.text,/shape your own/i)
   await page.locator('.galaxy-label.is-current').focus();await page.keyboard.press('Enter')
-  await page.waitForFunction(()=>syn3h.shell.playing&&syn3hNet.connected&&!syn3h.shell.dropping,null,{timeout:120000})
+  await page.waitForFunction(()=>mira.shell.playing&&miraNet.connected&&!mira.shell.dropping,null,{timeout:120000})
   // The socket's host depends on the dev setup (VITE_SERVER_URL); what matters is that this page joined its own room.
   assert.ok(sockets.some(url=>url.endsWith(`/ws?room=${room}`)),'connected to its own room')
   if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
@@ -58,13 +59,13 @@ for(const mode of ['desktop','phone']){
   // no reload, and the choice is saved and announced to the room once the picker settles.
   if(mode==='desktop'||await page.locator('.wi-swatch input[data-tint=body]').isVisible()){
    const loadedAt=await page.evaluate(()=>performance.timeOrigin)
-   await page.evaluate(()=>{window.__profiles=[];const net=window.syn3hNet,announce=net.setProfile.bind(net);net.setProfile=profile=>{window.__profiles.push(profile);return announce(profile)}})
-   assert.equal(await page.locator('.wi-swatch input[data-tint=body]').inputValue(),await page.evaluate(()=>syn3h.player.colors.body),'the swatch shows the vehicle\'s colour')
+   await page.evaluate(()=>{window.__profiles=[];const net=window.miraNet,announce=net.setProfile.bind(net);net.setProfile=profile=>{window.__profiles.push(profile);return announce(profile)}})
+   assert.equal(await page.locator('.wi-swatch input[data-tint=body]').inputValue(),await page.evaluate(()=>mira.player.colors.body),'the swatch shows the vehicle\'s colour')
    await page.locator('.wi-swatch input[data-tint=body]').fill('#ff00aa')
-   await page.waitForFunction(()=>syn3h.player.colors.body==='#ff00aa',null,{timeout:5000})
+   await page.waitForFunction(()=>mira.player.colors.body==='#ff00aa',null,{timeout:5000})
    await page.locator('.wi-swatch input[data-tint=accent]').fill('#00ffcc')
-   await page.waitForFunction(()=>syn3h.player.colors.accent==='#00ffcc',null,{timeout:5000})
-   await page.waitForFunction(()=>window.__profiles.some(p=>p.colors?.body==='#ff00aa'&&p.colors?.accent==='#00ffcc')&&JSON.parse(localStorage.getItem('syn3h.vehicle')??'{}').accentColor==='#00ffcc',null,{timeout:5000})
+   await page.waitForFunction(()=>mira.player.colors.accent==='#00ffcc',null,{timeout:5000})
+   await page.waitForFunction(()=>window.__profiles.some(p=>p.colors?.body==='#ff00aa'&&p.colors?.accent==='#00ffcc')&&JSON.parse(localStorage.getItem('mira.vehicle')??'{}').accentColor==='#00ffcc',null,{timeout:5000})
    assert.ok(await page.evaluate(()=>window.__profiles.length)<=2,'the room is told once the picker settles, not on every step')
    assert.equal(await page.evaluate(()=>performance.timeOrigin),loadedAt,'changing colour does not reload the page')
    await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-tint.png`})
@@ -74,7 +75,7 @@ for(const mode of ['desktop','phone']){
   const loadedAt=await page.evaluate(()=>performance.timeOrigin)
   for(const kind of [...offered.map(v=>v.id).filter(id=>id!=='buggy-syn3h'),'buggy-syn3h']){
    await vehicle.locator(`[data-seg-vehicle="${kind}"]`).click()
-   await page.waitForFunction(kind=>syn3h.player.kind===kind||(kind==='buggy-syn3h'&&syn3h.player.kind==='buggy'),kind,{timeout:30000})
+   await page.waitForFunction(kind=>mira.player.kind===kind||(kind==='buggy-syn3h'&&mira.player.kind==='buggy'),kind,{timeout:30000})
    assert.equal(await page.evaluate(()=>performance.timeOrigin),loadedAt,'vehicle switch does not reload')
    assert.equal(new URL(page.url()).searchParams.get('room'),room)
   }
@@ -103,7 +104,7 @@ for(const mode of ['desktop','phone']){
    }
   }
   // Rebuilding the inspector moves the existing widget and keeps its listeners and colours.
-  await page.evaluate(()=>syn3h.shell.inspector.rebuild())
+  await page.evaluate(()=>mira.shell.inspector.rebuild())
   assert.equal(await page.locator('.wi-vehicle-picker').count(),1)
   assert.equal(await page.locator('.wi-swatch input').count(),2)
   await card.locator('.wi-head .wi-sum').evaluate(el=>el.scrollIntoView({block:'nearest'}))

@@ -23,13 +23,13 @@ const room = `beamorigin${Date.now() % 100000}`
 
 /** In the page: a probe measuring every fresh beam against a vehicle's drawn centre. */
 function installProbe() {
-  const { game } = window.syn3h
+  const { game } = window.mira
   window.__beam = { rows: [], vehicle: null, shooter: null }
   game.add({
     update() {
       const v = window.__beam.vehicle
       if (!v) return
-      const lasers = window.syn3hNet.lasers
+      const lasers = window.miraNet.lasers
       const c = v.object.position
       const q = v.object.quaternion
       // Nose is local -Z.
@@ -56,8 +56,8 @@ function installProbe() {
 
 /** In the page: hold the player at `speed` along its nose, `flight` metres up. */
 function drive({ speed, flight }) {
-  const { game } = window.syn3h
-  const v = window.syn3h.player
+  const { game } = window.mira
+  const v = window.mira.player
   if (flight) {
     const t = v.body.translation()
     v.body.setTranslation({ x: t.x, y: t.y + flight, z: t.z }, true)
@@ -65,7 +65,7 @@ function drive({ speed, flight }) {
   window.__drive?.()
   const sys = {
     fixedUpdate() {
-      const p = window.syn3h.player
+      const p = window.mira.player
       const r = p.body.rotation()
       const fx = -2 * (r.x * r.z + r.w * r.y), fz = -(1 - 2 * (r.x * r.x + r.y * r.y))
       const len = Math.hypot(fx, fz) || 1
@@ -82,12 +82,12 @@ async function startPage(browser, name) {
   const page = await (await browser.newContext({ viewport: { width: 960, height: 540 } })).newPage()
   page.on('pageerror', (e) => console.log(`[${name}] pageerror`, e.message))
   await page.goto(`${base}?room=${room}&name=${name}&autoplay=1`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.shell && window.syn3hNet, null, { timeout: 90000 })
-  await page.evaluate(() => window.syn3h.shell.play())
+  await page.waitForFunction(() => window.mira?.shell && window.miraNet, null, { timeout: 90000 })
+  await page.evaluate(() => window.mira.shell.play())
   await wait(500)
   // Only the game canvas in the pictures: the HUD and side panels hide the car.
   await page.addStyleTag({ content: 'body * { visibility: hidden !important } #game, #game * { visibility: visible !important }' })
-  await page.waitForFunction(() => window.syn3hNet.id !== undefined && window.syn3h.game.frames > 60, null, { timeout: 60000 })
+  await page.waitForFunction(() => window.miraNet.id !== undefined && window.mira.game.frames > 60, null, { timeout: 60000 })
   await page.evaluate(installProbe)
   return page
 }
@@ -96,13 +96,13 @@ async function localStrip(page, scenario, opts) {
   await page.evaluate(drive, opts)
   await wait(opts.speed ? 900 : 1500)
   await page.evaluate(() => {
-    window.__beam.vehicle = window.syn3h.player
-    window.__beam.shooter = window.syn3hNet.id
+    window.__beam.vehicle = window.mira.player
+    window.__beam.shooter = window.miraNet.id
     window.__beam.rows = []
-    window.syn3h.game.pause()
+    window.mira.game.pause()
   })
   const step = () => page.evaluate(() => {
-    const g = window.syn3h.game
+    const g = window.mira.game
     g.last = performance.now() - 1000 / 60
     g.frame()
   })
@@ -111,10 +111,10 @@ async function localStrip(page, scenario, opts) {
   await page.evaluate(() => {
   const aside = () => {
     // A little up and to the right of the nose, so the chase camera sees the beam over the car.
-    const q = window.syn3h.player.body.rotation()
+    const q = window.mira.player.body.rotation()
     const fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
     const len = Math.hypot(fx, fz) || 1
-    window.syn3hNet.fire([fx / len - 0.3 * fz / len, 0.1, fz / len + 0.3 * fx / len])
+    window.miraNet.fire([fx / len - 0.3 * fz / len, 0.1, fz / len + 0.3 * fx / len])
   }
     aside()
   })
@@ -123,7 +123,7 @@ async function localStrip(page, scenario, opts) {
     await page.screenshot({ path: `${out}/${label}-${scenario}-f${f}.png` })
   }
   const rows = await page.evaluate(() => window.__beam.rows)
-  await page.evaluate(() => { window.__drive?.(); window.__drive = null; window.syn3h.game.resume() })
+  await page.evaluate(() => { window.__drive?.(); window.__drive = null; window.mira.game.resume() })
   console.log(JSON.stringify({ scenario, rows }))
   return rows
 }
@@ -133,29 +133,29 @@ try {
   const a = await startPage(browser, 'Shooter')
   // Another player's view: B watches A's replica while A drives and fires.
   const b = await startPage(browser, 'Watcher')
-  await b.waitForFunction(() => window.syn3hNet.remotes.size > 0, null, { timeout: 30000 })
-  const shooterId = await a.evaluate(() => window.syn3hNet.id)
+  await b.waitForFunction(() => window.miraNet.remotes.size > 0, null, { timeout: 30000 })
+  const shooterId = await a.evaluate(() => window.miraNet.id)
   await a.evaluate(drive, { speed: 60, flight: 0 })
   await b.evaluate((id) => {
-    const r = window.syn3hNet.remotes.get(id)
+    const r = window.miraNet.remotes.get(id)
     window.__beam.vehicle = r.vehicle
     window.__beam.shooter = id
-    window.syn3h.camera.setVehicle(r.vehicle)
+    window.mira.camera.setVehicle(r.vehicle)
   }, shooterId)
   await wait(2500)
   await b.evaluate(() => { window.__beam.rows = [] })
   await a.evaluate(() => { for (let i = 0; i < 4; i++) setTimeout(() => {
     const aside = () => {
     // A little up and to the right of the nose, so the chase camera sees the beam over the car.
-    const q = window.syn3h.player.body.rotation()
+    const q = window.mira.player.body.rotation()
     const fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
     const len = Math.hypot(fx, fz) || 1
-    window.syn3hNet.fire([fx / len - 0.3 * fz / len, 0.1, fz / len + 0.3 * fx / len])
+    window.miraNet.fire([fx / len - 0.3 * fz / len, 0.1, fz / len + 0.3 * fx / len])
   }
     aside()
   }, i * 400) })
   for (let f = 0; f < 10; f++) {
-    const glows = await b.evaluate(() => window.syn3hNet.lasers.glows.length)
+    const glows = await b.evaluate(() => window.miraNet.lasers.glows.length)
     await b.screenshot({ path: `${out}/${label}-remote60-f${f}.png` })
     console.log(`remote60 f${f} glows ${glows}`)
     await wait(30)

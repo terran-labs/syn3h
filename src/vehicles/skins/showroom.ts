@@ -472,7 +472,7 @@ const hash3 = Fn(([c]: [N]) => fract(sin(vec3(dot(c, vec3(127.1, 311.7, 74.7)), 
  * vertex by `surfaceId`. Colours stay live because the uniforms hold the sources' own Color
  * objects, which is what the vehicle classes and `setColors` write to. `authoredEmission` is the
  * emission node the mesh's material already had, if any: a skin may add its own glow to it after
- * merging (the Syn3h stator tips do), and every tier must keep that.
+ * merging (the Mira stator tips do), and every tier must keep that.
  */
 function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, meshName: string, authoredEmission: N | null, accent: T.Color | null, instancedScroll = false, stator?: StatorEmission): T.Material {
   const roles = sources.map(s => roleOf(s, meshName))

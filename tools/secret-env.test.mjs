@@ -1,5 +1,6 @@
 // Credentials never reach a browser or any other child a release starts (17 Nov 2026: smoke
 // Chromes inherited the Cloudflare token and wrote it into crash dumps). Run: node --test.
+import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -35,11 +36,11 @@ test('the release scripts never export the Cloudflare token; only with_cf_token 
   for (const file of ['release.sh', 'rollback.sh', 'domain.sh', 'cloudflare-token.sh', 'smoke-run.sh']) {
     assert.doesNotMatch(readFileSync(join(here, file), 'utf8'), /export\s+CLOUDFLARE_API_TOKEN/, `${file} exports the token`)
   }
-  const dir = mkdtempSync(join(tmpdir(), 'syn3h-cf-'))
+  const dir = mkdtempSync(join(tmpdir(), 'mira-cf-'))
   try {
     const file = join(dir, 'token'); writeFileSync(file, FAKE + '\n', { mode: 0o600 })
     const script = `. "${join(here, 'cloudflare-token.sh')}"; printf 'plain:'; /usr/bin/env | grep -c "${FAKE}"; printf 'cf:'; with_cf_token /usr/bin/env | grep -c "${FAKE}"`
-    for (const env of [{ PATH: process.env.PATH, SYN3H_CLOUDFLARE_TOKEN_FILE: file }, { PATH: process.env.PATH, CLOUDFLARE_API_TOKEN: FAKE }]) {
+    for (const env of [{ PATH: process.env.PATH, MIRA_CLOUDFLARE_TOKEN_FILE: file }, { PATH: process.env.PATH, CLOUDFLARE_API_TOKEN: FAKE }]) {
       const out = spawnSync('/bin/sh', ['-c', script], { env, encoding: 'utf8' }).stdout
       assert.match(out, /plain:0/, 'a plain child saw the token')
       assert.match(out, /cf:1/, 'a with_cf_token child did not get the token')
@@ -48,7 +49,7 @@ test('the release scripts never export the Cloudflare token; only with_cf_token 
 })
 
 test('domain.sh: its API calls get the token on standard input, never on a command line', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'syn3h-domain-'))
+  const dir = mkdtempSync(join(tmpdir(), 'mira-domain-'))
   try {
     const file = join(dir, 'token'); writeFileSync(file, FAKE + '\n', { mode: 0o600 })
     // A stand-in curl: records its argv and standard input, answers success.
@@ -57,7 +58,7 @@ test('domain.sh: its API calls get the token on standard input, never on a comma
     // $0 names domain.sh, so its `cd "$(dirname "$0")/.."` lands in the repo as when run directly.
     const out = spawnSync('/bin/sh', ['-c', script, join(here, 'domain.sh')], {
       cwd: here, encoding: 'utf8',
-      env: { PATH: `${dir}:${process.env.PATH}`, HOME: process.env.HOME, SYN3H_DOMAIN_LIB: '1', SYN3H_CLOUDFLARE_TOKEN_FILE: file },
+      env: { PATH: `${dir}:${process.env.PATH}`, HOME: process.env.HOME, MIRA_DOMAIN_LIB: '1', MIRA_CLOUDFLARE_TOKEN_FILE: file },
     })
     assert.match(out.stdout, /api-ok/, `the API helper failed: ${out.stderr}`)
     assert.ok(!readFileSync(join(dir, 'curl.argv'), 'utf8').includes(FAKE), 'the token was on curl\'s command line')

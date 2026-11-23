@@ -23,13 +23,13 @@ try {
     const context = await browser.newContext(view.context), page = await context.newPage()
     page.on('pageerror', e => console.error(`${view.name}: ${e.message}`))
     await page.goto(`http://127.0.0.1:${port}/?room=jet-thrust-${view.name}-${Date.now()}&vehicle=${view.vehicle}&autoplay=1`, { waitUntil: 'load' })
-    await page.waitForFunction(() => window.syn3h?.game?.tick > 40, null, { timeout: 120000 })
+    await page.waitForFunction(() => window.mira?.game?.tick > 40, null, { timeout: 120000 })
     await page.waitForTimeout(7000) // let the controls card leave
     if (view.vehicle === 'jet') {
       // Lift off with E, then switch to flight with Space and let go: in flight the Jet rests at
       // its neutral throttle (half by default), which the line reports.
       await page.keyboard.down('e')
-      await page.waitForFunction(() => { const s = window.syn3h, p = s.player.body.translation(); return p.y - s.terrain.heightAt(p.x, p.z) > 8 }, null, { timeout: 20000 })
+      await page.waitForFunction(() => { const s = window.mira, p = s.player.body.translation(); return p.y - s.terrain.heightAt(p.x, p.z) > 8 }, null, { timeout: 20000 })
       await page.keyboard.up('e')
       await page.keyboard.press('Space')
       await page.waitForTimeout(1500)
@@ -38,7 +38,7 @@ try {
       assert.match(lines[0], /^THRUST -?\d+%$/)
       console.log(view.name, lines[0])
     } else {
-      assert.equal(await page.evaluate(() => syn3h.player.kind), 'buggy')
+      assert.equal(await page.evaluate(() => mira.player.kind), 'buggy')
       assert.deepEqual(await thrustLines(page), [], 'no THRUST line in the buggy')
     }
     await page.screenshot({ path: `${out}/${view.name}.png` })

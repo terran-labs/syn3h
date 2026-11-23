@@ -1,6 +1,6 @@
 // The touch thumb grid and the Tag aim stick on an iPhone 14, portrait and landscape, in WebKit.
 //
-//   SYN3H_URL=http://127.0.0.1:5291/ node tests/ui/thumb-grid.mjs <out dir> <label> [--layout-only]
+//   MIRA_URL=http://127.0.0.1:5291/ node tests/ui/thumb-grid.mjs <out dir> <label> [--layout-only]
 //
 // For every vehicle and both hands it captures the play screen and checks the thumb grid rule
 // (tests/ui/thumbGrid.mjs), with the Grapple's two extra buttons shown as well. Without
@@ -8,12 +8,13 @@
 // (WebKit automation has no multi-touch drag): the reticle, a held Chaser sent on the lift, a
 // cancelled one, Plasma Tag streaming, and a pinch in the orbit camera. `--layout-only` is for
 // capturing a build from before this change, whose Tag is a plain button.
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { thumbGrid } from './thumbGrid.mjs'
 
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5291/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5291/'
 const out = process.argv[2] ?? 'tests/ui/artifacts/thumb-grid'
 const label = process.argv[3] ?? 'new'
 const layoutOnly = process.argv.includes('--layout-only')
@@ -28,7 +29,7 @@ async function open(context, vehicle, orient) {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`${base}?autoplay=1&vehicle=${vehicle}&room=thumb-${label}-${orient}-${vehicle}-${Date.now()}`)
-  await page.waitForFunction(() => window.syn3h?.game.tick > 30 && window.syn3hNet?.gear, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.game.tick > 30 && window.miraNet?.gear, null, { timeout: 120000 })
   await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
   if (await page.locator('.world-inspector').isVisible()) await page.locator('.panels-close').tap()
   await page.locator('.world-inspector').waitFor({ state: 'hidden' })
@@ -49,7 +50,7 @@ async function open(context, vehicle, orient) {
       try { target.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1, bubbles: true, cancelable: true, composed: true })) } finally { target.setPointerCapture = capture }
     }
     // What the gear saw each frame: Input.poll's fire, recorded after every poll.
-    const input = window.syn3h.game.input, poll = input.poll.bind(input)
+    const input = window.mira.game.input, poll = input.poll.bind(input)
     window.__fires = []
     input.poll = () => { const s = poll(); window.__fires.push(s.fire ? 1 : 0); return s }
   })
@@ -58,7 +59,7 @@ async function open(context, vehicle, orient) {
 
 /** Show the Grapple with a cord attached, so its LET OUT and LET GO buttons are on screen. */
 const grappleAttached = (page) => page.evaluate(() => {
-  const rack = window.syn3hNet.gear
+  const rack = window.miraNet.gear
   rack.select('bungee')
   const real = rack.controls()
   const noop = () => {}
@@ -70,7 +71,7 @@ const grappleAttached = (page) => page.evaluate(() => {
   rack.__realControls = rack.controls
   rack.controls = () => fake
 })
-const grappleDetached = (page) => page.evaluate(() => { const rack = window.syn3hNet.gear; if (rack.__realControls) rack.controls = rack.__realControls; rack.select('beam') })
+const grappleDetached = (page) => page.evaluate(() => { const rack = window.miraNet.gear; if (rack.__realControls) rack.controls = rack.__realControls; rack.select('beam') })
 
 try {
   for (const [orient, device] of [['portrait', 'iPhone 14'], ['landscape', 'iPhone 14 landscape']]) {
@@ -78,7 +79,7 @@ try {
     for (const vehicle of ['buggy', 'tank', 'hovercraft', 'jet']) {
       const { page, errors } = await open(context, vehicle, orient)
       for (const hand of ['right', 'left']) {
-        await page.evaluate((left) => window.syn3h.params.set('touch.leftHanded', left), hand === 'left')
+        await page.evaluate((left) => window.mira.params.set('touch.leftHanded', left), hand === 'left')
         await page.waitForTimeout(200)
         await page.screenshot({ path: `${out}/${label}-${orient}-${vehicle}-${hand}.png` })
         if (!layoutOnly) { const grid = await page.evaluate(thumbGrid); check(grid.length === 0, `${orient} ${vehicle} ${hand}: ${grid.join('; ')}`) }
@@ -89,7 +90,7 @@ try {
           await grappleDetached(page); await page.waitForTimeout(150)
         }
       }
-      await page.evaluate(() => window.syn3h.params.set('touch.leftHanded', false))
+      await page.evaluate(() => window.mira.params.set('touch.leftHanded', false))
       if (!layoutOnly && vehicle === 'buggy') await play(page, orient)
       check(errors.length === 0, `${orient} ${vehicle}: page errors ${JSON.stringify(errors)}`)
       await page.close()
@@ -107,7 +108,7 @@ async function play(page, orient) {
     const g = [...document.querySelectorAll('.focus-hud svg [data-reticle]')].find((el) => getComputedStyle(el).display !== 'none')
     return g ? Number(getComputedStyle(g).opacity) : -1
   })
-  const yaw = () => page.evaluate(() => window.syn3h.camera.yaw)
+  const yaw = () => page.evaluate(() => window.mira.camera.yaw)
   const fires = () => page.evaluate(() => window.__fires.splice(0))
   const tag = centre(await page.locator('.touch-actions [data-action=fire]').boundingBox())
   const { width } = page.viewportSize()
@@ -116,7 +117,7 @@ async function play(page, orient) {
   check(await reticle() === 0, `${orient}: reticle hidden before Tag (${await reticle()})`)
 
   // Chaser: hold and drag aims, nothing is sent until the lift, then one press.
-  await page.evaluate(() => window.syn3hNet.gear.select('pester'))
+  await page.evaluate(() => window.miraNet.gear.select('pester'))
   await page.waitForTimeout(100); await fires()
   const yaw0 = await yaw()
   await touch('pointerdown', 7, tag.x, tag.y)
@@ -153,7 +154,7 @@ async function play(page, orient) {
   check((await fires()).every((f) => !f), `${orient}: a cancelled Chaser is not sent`)
 
   // Plasma Tag streams from the first touch, without dragging, and stops on the lift.
-  await page.evaluate(() => window.syn3hNet.gear.select('beam'))
+  await page.evaluate(() => window.miraNet.gear.select('beam'))
   await page.waitForTimeout(100); await fires()
   // Discard the frame polled before the synthetic press arrived, then sample while it is held.
   await touch('pointerdown', 9, tag.x, tag.y); await page.waitForTimeout(100); await fires(); await page.waitForTimeout(400)
@@ -170,14 +171,14 @@ async function play(page, orient) {
   await touch('pointerdown', 2, tag.x, tag.y); await touch('pointermove', 2, tag.x - 40, tag.y)
   const brake = centre(await page.locator('.touch-actions [data-action=brakes]').boundingBox())
   await touch('pointerdown', 3, brake.x, brake.y)
-  const both = await page.evaluate(() => ({ y: window.syn3h.game.input.external.y, brakes: window.syn3h.game.input.external.brakes, fire: window.syn3h.game.input.external.fire }))
+  const both = await page.evaluate(() => ({ y: window.mira.game.input.external.y, brakes: window.mira.game.input.external.brakes, fire: window.mira.game.input.external.fire }))
   check(both.y > 0.3 && both.brakes && both.fire, `${orient}: drive, Tag and Brake together ${JSON.stringify(both)}`)
   for (const [id, x, y] of [[3, brake.x, brake.y], [2, tag.x - 40, tag.y], [1, driveX, driveY]]) await touch('pointerup', id, x, y)
 
   // Pinch in the orbit camera, on the free right side: spreading zooms in, within the limits.
-  await page.evaluate(() => { window.syn3h.params.set('camera.mode', 2); window.syn3h.params.set('camera.distance', 10) })
+  await page.evaluate(() => { window.mira.params.set('camera.mode', 2); window.mira.params.set('camera.distance', 10) })
   const free = [width * 0.78, 120]
-  const dist = () => page.evaluate(() => window.syn3h.params.get('camera.distance').value)
+  const dist = () => page.evaluate(() => window.mira.params.get('camera.distance').value)
   await touch('pointerdown', 4, free[0] - 20, free[1]); await touch('pointerdown', 5, free[0] + 20, free[1])
   for (let i = 1; i <= 6; i++) { await touch('pointermove', 4, free[0] - 20 - i * 10, free[1]); await touch('pointermove', 5, free[0] + 20 + i * 10, free[1]) }
   const zoomedIn = await dist()
@@ -192,7 +193,7 @@ async function play(page, orient) {
   for (let i = 1; i <= 6; i++) { await touch('pointermove', 6, brake.x - i * 10, brake.y - i * 10); await touch('pointermove', 4, free[0] + i * 10, free[1]) }
   check(await dist() === before, `${orient}: no zoom when a button owns one finger`)
   await touch('pointerup', 6, 0, 0); await touch('pointerup', 4, 0, 0)
-  await page.evaluate(() => { window.syn3h.params.set('camera.mode', 0); window.syn3h.params.set('camera.distance', 6.25) })
+  await page.evaluate(() => { window.mira.params.set('camera.mode', 0); window.mira.params.set('camera.distance', 6.25) })
 }
 
 console.log(failures.length ? `${failures.length} failed` : 'thumb grid and Tag stick: ok')

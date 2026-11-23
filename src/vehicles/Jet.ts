@@ -21,11 +21,11 @@ const JET_THRUSTER_AUTHORITY=.85
 export const jetStall = defineParam({id:'jet.stall',label:'Stall speed',group:'Jet',scope:'world',default:20,min:1,max:39,step:1})
 // Digital keys otherwise demand a near-loop from a half-second tap in the full-size port.
 export const jetControlResponse = defineParam({id:'jet.controlResponse',label:'Control response',group:'Jet',scope:'world',default:.3,min:.1,max:1,step:.05})
-// Not in Syn3h: its Throttle axis was momentary (VhiclMe.cs 16), so keyboard hover was climb or fall.
+// Not in Mira: its Throttle axis was momentary (VhiclMe.cs 16), so keyboard hover was climb or fall.
 // 0 is the original; 1 holds altitude when no throttle key is down. On by default: the owner chose it for the demo.
 export const jetHoverHold = defineParam<number>({id:'jet.hoverHold',label:'Hover altitude hold',group:'Jet',scope:'world',default:1,min:0,max:1,step:.05})
 // terra.jet.prefab flightThrustFactor=2: full throttle pushes at twice the jet's weight, and
-// Syn3h's drag barely opposes it, so speed keeps building. Lower this for a slower jet.
+// Mira's drag barely opposes it, so speed keeps building. Lower this for a slower jet.
 export const jetFlightThrust = defineParam<number>({id:'jet.flightThrust',label:'Flight thrust',group:'Jet',scope:'world',default:2,min:.25,max:3,step:.05})
 export const jetNeutralThrottle = defineParam<number>({id:'jet.neutralThrottle',label:'Neutral flight throttle',group:'Jet',scope:'world',default:.5,min:0,max:1,step:.05})
 // How far the main nozzle swivels, as a share of VhiclJet.cs 161-162 (20 degrees of pitch at a
@@ -51,7 +51,7 @@ const lerp = (a:number,b:number,t:number)=>THREE.MathUtils.lerp(a,b,clamp(t,0,1)
 const hullVertices = new Float32Array([-1.086619, -0.316382, -1.978747, 0.0, 0.543169, -2.110775, 0.0, -0.324233, -3.398361, 0.0, 0.482615, 1.50864, -3.851598, 0.125607, 1.143191, 0.0, -0.589476, -2.522558, 0.0, -0.636839, 0.479384, 0.0, -0.166176, 2.98234, -2.551439, 0.855675, 3.431675, 1.086619, -0.316382, -1.978747, 3.851598, 0.125607, 1.143191, 2.551439, 0.855675, 3.431675])
 const nozzlePosition = new THREE.Vector3(0,0,2.971839)
 
-/** Syn3h VhiclJet.cs 84-211, terra.jet.prefab and CoreSettings.cs 52-56. */
+/** Mira VhiclJet.cs 84-211, terra.jet.prefab and CoreSettings.cs 52-56. */
 export class Jet extends Vehicle {
   readonly kind = 'jet' as const
   readonly camOffset = 5
@@ -93,7 +93,7 @@ export class Jet extends Vehicle {
     this.object.add(this.ridePosition)
     // Prefab MeshCollider uses the original convex Collider mesh at Y=-.1.
     const hull=RAPIER.ColliderDesc.convexHull(hullVertices)
-    if(!hull) throw new Error('Invalid Syn3h jet collider')
+    if(!hull) throw new Error('Invalid Mira jet collider')
     const collider=this.game.world.createCollider(hull.setMass(200).setCollisionGroups(Vehicle.chassisGroups()),this.body)
     this.body.recomputeMassPropertiesFromColliders()
     const inertia=new THREE.Vector3().copy(this.body.principalInertia()).multiplyScalar(.75)
@@ -244,7 +244,7 @@ export class Jet extends Vehicle {
         this.body.applyImpulse(dv.multiplyScalar(mass),true)
       }
     }
-    // Syn3h VhiclJet.cs 213-232 comments out the old liquid buoyancy block.
+    // Mira VhiclJet.cs 213-232 comments out the old liquid buoyancy block.
     this.body.setLinvel(new THREE.Vector3().copy(this.body.linvel()).multiplyScalar(Math.max(0,1-drag*dt)),true)
     this.body.setAngvel(new THREE.Vector3().copy(this.body.angvel()).multiplyScalar(Math.max(0,1-angularDrag*dt)),true)
   }

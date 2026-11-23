@@ -25,9 +25,9 @@ for (const mode of ['trunk', 'fix']) {
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`) })
   await page.goto(`${base}?autoplay=1&world=alpine.7~terrain.planetSize=0,world.wrap=true&room=follow${mode}${Date.now().toString(36)}${extra}`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.game?.tick > 60, null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira?.game?.tick > 60, null, { timeout: 90000 })
   const site = await page.evaluate((mode) => {
-    const s = window.syn3h, t = s.terrain, pl = s.player, game = s.game, cam = game.camera
+    const s = window.mira, t = s.terrain, pl = s.player, game = s.game, cam = game.camera
     const half = t.size / 2
     // Dry, gentle ground across the east edge, as tools/terrainlab/seam-check.mjs finds it.
     let along = 0, best = -1

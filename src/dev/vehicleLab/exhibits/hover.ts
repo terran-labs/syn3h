@@ -25,10 +25,10 @@ const BANK = 12 * Math.PI / 180
 
 export const hover: LabExhibit = {
   id: 'hover',
-  title: 'Syn3h hovercraft',
+  title: 'Mira hovercraft',
   section: 'Design studies',
   groupLabel: 'Round',
-  heading: group => group === '4' ? 'Syn3h hovercraft: round 4, five variations on the red one\'s duct and intakes with the silver one\'s wing' : group === '3' ? 'Syn3h hovercraft: round 3, ten explorations with every fitting built into the hull' : group === '2' ? 'Syn3h hovercraft: round 2, original proportions and buggy details' : 'Syn3h hovercraft: round 1, five bodies on the current hull\'s footprint',
+  heading: group => group === '4' ? 'Mira hovercraft: round 4, five variations on the red one\'s duct and intakes with the silver one\'s wing' : group === '3' ? 'Mira hovercraft: round 3, ten explorations with every fitting built into the hull' : group === '2' ? 'Mira hovercraft: round 2, original proportions and buggy details' : 'Mira hovercraft: round 1, five bodies on the current hull\'s footprint',
   async designs() {
     return [
       ...HOVER_DESIGNS.map(d => ({ id: d.id, name: d.name, notes: [d.blurb, 'Fits the current collision hull; four lift ports, one swivelling thruster, glass over the ride camera'], group: '1' })),

@@ -2,12 +2,13 @@
 // pulse, index.html): a strip of frames from the waiting point to the settled lobby, desktop and
 // phone, each stamped with its time; the frame times of the bang played in real time; and that
 // the waiting point pulses under reduced motion too.
-//   tools/heavy.sh node tests/ui/big-bang.mjs [out dir]   (SYN3H_URL, default http://127.0.0.1:5258/)
+//   tools/heavy.sh node tests/ui/big-bang.mjs [out dir]   (MIRA_URL, default http://127.0.0.1:5258/)
+import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { loadavg } from 'node:os'
-const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5258/'
+const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5258/'
 const out = process.argv[2] ?? 'tests/ui/artifacts/big-bang'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
@@ -29,22 +30,22 @@ try {
     }
     const context = await browser.newContext(view), page = await context.newPage()
     await page.goto(`${base}?room=bang-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
-    await page.evaluate(() => { window.__pin = setInterval(() => syn3h.params.set('gfx.level', 2), 400) })
+    await page.waitForFunction(() => window.mira?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+    await page.evaluate(() => { window.__pin = setInterval(() => mira.params.set('gfx.level', 2), 400) })
     await page.waitForTimeout(5000)
     const times = [0.4, 0.9, 1.15, 1.35, 1.7, 2.2, 3.0, 4.0, 5.0, 6.0, 7.0, 7.8, 8.6, 9.2]
     for (const [i, t] of times.entries()) {
-      await page.evaluate(t => { const g = syn3h.shell.galaxy; g.replayOpening(syn3h.params.get('lobby.intro').value); g.openingAt = t; g.wake = 2 }, t)
+      await page.evaluate(t => { const g = mira.shell.galaxy; g.replayOpening(mira.params.get('lobby.intro').value); g.openingAt = t; g.wake = 2 }, t)
       await page.waitForTimeout(350); await stamp(page, `bang t = ${t.toFixed(2)} s`)
       await page.screenshot({ path: `${out}/${name}-${String(i + 1).padStart(2, '0')}-t${t.toFixed(2)}.png` })
     }
-    await page.evaluate(() => { document.getElementById('strip-time')?.remove(); syn3h.shell.galaxy.openingAt = null })
+    await page.evaluate(() => { document.getElementById('strip-time')?.remove(); mira.shell.galaxy.openingAt = null })
     // The largest frame-to-frame change in the mean luminance of the whole galaxy canvas, at 30
     // frames a second through the bang: a flash would be a large jump.
     report[name] = { luminance: await page.evaluate(async ({ LENGTH }) => {
-      const g = syn3h.shell.galaxy, gl = g.gl, w = g.canvas.width, h = g.canvas.height, px = new Uint8Array(w * h * 4)
+      const g = mira.shell.galaxy, gl = g.gl, w = g.canvas.width, h = g.canvas.height, px = new Uint8Array(w * h * 4)
       let last = null, worst = 0, at = 0, peak = 0
-      g.replayOpening(syn3h.params.get('lobby.intro').value)
+      g.replayOpening(mira.params.get('lobby.intro').value)
       for (let t = 0; t <= LENGTH; t += 1 / 30) {
         g.openingAt = t; g.wake = 2; g.last = 0; g.loop(performance.now())
         gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px)
@@ -60,16 +61,16 @@ try {
     if (loadavg()[0] < 8) {
       report[name].load = +loadavg()[0].toFixed(1)
       report[name].cost = await page.evaluate(async ({ LENGTH, POP }) => {
-        const g = syn3h.shell.galaxy, gl = g.gl, px = new Uint8Array(4)
+        const g = mira.shell.galaxy, gl = g.gl, px = new Uint8Array(4)
         // The galaxy's own frame, waited for to the GPU's finish: median of 40.
         const timed = setup => { const out = []; for (let i = 0; i < 40; i++) { setup(i); g.wake = 2; g.last = 0; gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const t = performance.now(); g.loop(performance.now()); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); out.push(performance.now() - t) } out.sort((a, b) => a - b); return +out[20].toFixed(2) }
         const settledMs = timed(() => { g.opening = null; g.openingAt = null })
-        const bangMs = timed(i => { g.replayOpening(syn3h.params.get("lobby.intro").value); g.openingAt = POP + (LENGTH - POP) * i / 40 })
+        const bangMs = timed(i => { g.replayOpening(mira.params.get("lobby.intro").value); g.openingAt = POP + (LENGTH - POP) * i / 40 })
         g.opening = null; g.openingAt = null
         // And requestAnimationFrame intervals over 4.2 s of each, in real time.
         const intervals = () => new Promise(done => { const gaps = []; let last = performance.now(); const start = last; const f = now => { gaps.push(now - last); last = now; if (now - start < 4200) requestAnimationFrame(f); else { gaps.sort((a, b) => a - b); done({ median: +gaps[gaps.length >> 1].toFixed(1), p95: +gaps[Math.floor(gaps.length * 0.95)].toFixed(1) }) } }; requestAnimationFrame(f) })
         g.wake = 2; const settledRaf = await intervals()
-        g.replayOpening(syn3h.params.get('lobby.intro').value); const bangRaf = await intervals()
+        g.replayOpening(mira.params.get('lobby.intro').value); const bangRaf = await intervals()
         return { settledMs, bangMs, settledRaf, bangRaf }
       }, { LENGTH, POP })
     } else report[name].cost = `not measured: load ${loadavg()[0].toFixed(1)}`

@@ -1,4 +1,4 @@
-# Syn3h for the browser: proposal
+# Mira for the browser: proposal
 
 2026-11-14. Status: proposed, nothing built.
 

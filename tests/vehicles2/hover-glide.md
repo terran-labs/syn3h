@@ -10,7 +10,7 @@ It uses one world-down ray, body-up spring lift and a normal velocity change cap
 
 It always adds throttle pitch torque, with no angle limit. Above the 30 m probe range, angular drag falls from 4 to .5. Persistent pitch off jumps is therefore expected in this mode. An earlier version damped the old velocity before adding forces; drag now applies after force integration. The corrected unassisted mode uses the existing `UnityBody` helper without modifying it.
 
-The unassisted collider is 2 x 1 x 3 at y .4. The Syn3h GLB extends x +/-1.2593, y .0167..1.0196, z -1.6346..1.5155. The collider misses the spoiler edges and nose. Inertia 15 on every axis is a fixed override, not a shape-derived inertia tensor for this hull. A single global liquid plane was also wrong for the generated lake, rivers and sea.
+The unassisted collider is 2 x 1 x 3 at y .4. The Mira GLB extends x +/-1.2593, y .0167..1.0196, z -1.6346..1.5155. The collider misses the spoiler edges and nose. Inertia 15 on every axis is a fixed override, not a shape-derived inertia tensor for this hull. A single global liquid plane was also wrong for the generated lake, rivers and sea.
 
 ## Demo adaptation
 
@@ -18,7 +18,7 @@ The unassisted collider is 2 x 1 x 3 at y .4. The Syn3h GLB extends x +/-1.2593,
 * Forward thrust remains the 220 N default, projected onto the horizontal heading. Lateral damping and slight coast drag make the craft glide without unlimited acceleration.
 * Pitch follows gentle terrain slopes. Pitch and roll are damped in the air, with a 12-degree target bank into turns. `hover.stability = 8` controls this assistance.
 * `hover.brakeTime = 1` (the default is now 1.5) means 90% horizontal speed loss in one second. Brakes do not cancel falling velocity.
-* The assisted cuboid encloses the Syn3h mesh. Its inertia derives from that cuboid; the lower COM helps stability. Unassisted mode restores the 2 x 1 x 3 collider, COM and inertia when changed live.
+* The assisted cuboid encloses the Mira mesh. Its inertia derives from that cuboid; the lower COM helps stability. Unassisted mode restores the 2 x 1 x 3 collider, COM and inertia when changed live.
 * A conservative hull-envelope guard handles narrow crests missed between support points. Its .4 m safety margin covers spacing between samples. It corrects body penetration after physics and checks the interpolated rendered pose separately, since two clear poses can interpolate through a ridge. This is a restrained positional safety net. `clearanceCorrections` counts activations for diagnostics.
 * All support and safety samples use the larger of terrain and `terrain.liquidHeightAt`. Lava and water share support behavior. The island currently exposes lava only; water uses the same surface contract and is covered with a synthetic raised-liquid test.
 

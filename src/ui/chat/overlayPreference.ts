@@ -6,7 +6,7 @@
 import { params } from '../../../shared/params'
 import { chatOverlay } from '../../../shared/chat'
 
-const KEY = 'syn3h.chat.overlay'
+const KEY = 'mira.chat.overlay'
 
 /** Touch is the main pointer and there is no mouse or trackpad. */
 export function touchFirst(): boolean {
