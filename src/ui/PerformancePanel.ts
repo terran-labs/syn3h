@@ -5,6 +5,7 @@ import type { PerformanceSnapshot, PerformanceSource } from '../core/performance
 import type { Inspector } from './inspector/Inspector'
 import type { PropertyDef } from './inspector/model'
 import { createSwitch, type Switch } from './inspector/switch'
+import { recordBlankFrames } from '../core/blankFrames'
 
 const number = (value: number | undefined, digits = 1) => value !== undefined && Number.isFinite(value) ? value.toFixed(digits) : 'Unavailable'
 
@@ -69,6 +70,8 @@ export class PerformancePanel {
   private get resolutionRange(): HTMLInputElement { return this.element.querySelector<HTMLInputElement>('.wi-resolution input')! }
   /** Auto quality: the standard switch, apart from the level stepper. */
   private readonly auto: Switch
+  private readonly blankSwitch: Switch
+  private blankCount: HTMLElement | null = null
 
   constructor(parent: HTMLElement, private readonly openRail: () => void, quality?: QualitySource, private readonly inspector?: Inspector, noticeStack?: HTMLElement) {
     const signal = this.abort.signal
@@ -89,7 +92,7 @@ export class PerformancePanel {
       <details class="wi-group performance-diagnostics"><summary><span>Diagnostics</span><small></small></summary>
       <div class="performance-body">
       <svg class="performance-chart" viewBox="0 0 288 64" role="img" aria-label="Frame time history"><path d="M0 63H288"/><polyline fill="none"/></svg>
-      <p class="performance-history"></p><p class="performance-long-frames" style="user-select:text"></p><div class="card-actions"><button type="button" class="panel-action" data-performance="copy-report">Copy diagnostics</button><button type="button" class="panel-action" data-performance="run-check">Run performance check</button></div>
+      <p class="performance-history"></p><p class="performance-long-frames" style="user-select:text"></p><div class="performance-blank-frames"><small data-performance="blank-count"></small></div><div class="card-actions"><button type="button" class="panel-action" data-performance="copy-report">Copy diagnostics</button><button type="button" class="panel-action" data-performance="run-check">Run performance check</button></div>
       <span data-performance="copy-status" role="status"></span>
       <textarea data-performance="copy-text" aria-label="Diagnostics report" rows="8" readonly hidden></textarea><dl></dl><p class="performance-recovery" role="status"></p>
       <button type="button" class="panel-action" data-performance="reload" hidden>Reload to recover</button></div></details>`
@@ -109,6 +112,15 @@ export class PerformancePanel {
     this.select.addEventListener('change', () => this.quality?.setLevel(Number(this.select.value)), { signal })
     this.auto = createSwitch('Auto quality', { className: 'wi-auto', signal, onChange: on => this.quality?.setAuto(on) })
     this.auto.input.disabled = true
+    // Record blank frames: a 16 by 8 copy of each drawn frame, for black flashes (core/blankFrames.ts).
+    this.blankSwitch = createSwitch('Record blank frames', { className: 'wi-blank-frames', signal, onChange: on => { params.set(recordBlankFrames.def.id, on); this.renderBlankFrames() } })
+    this.blankSwitch.set(recordBlankFrames.value)
+    const blankRow = this.element.querySelector<HTMLElement>('.performance-blank-frames')!
+    blankRow.prepend(this.blankSwitch.element)
+    this.blankCount = blankRow.querySelector<HTMLElement>('[data-performance=blank-count]')
+    const offBlank = params.onChange(id => { if (id === recordBlankFrames.def.id) { this.blankSwitch.set(recordBlankFrames.value); this.renderBlankFrames() } })
+    signal.addEventListener('abort', offBlank, { once: true })
+    this.renderBlankFrames()
     this.element.querySelector('.wi-level-tools')!.prepend(this.auto.element)
     // Render resolution: dragging previews the number; the renderer resizes once, on release.
     const range = this.resolutionRange
@@ -119,7 +131,7 @@ export class PerformancePanel {
     this.element.querySelector('[data-quality=up]')!.addEventListener('click', () => this.quality?.stepUp(), { signal })
     this.element.querySelector('[data-quality=reset-all]')!.addEventListener('click', () => this.quality?.clearOverrides(), { signal })
     // Diagnostics sample only while their fold is open.
-    this.diagnostics.addEventListener('toggle', () => { if (this.snapshot && this.diagnostics.open !== this.snapshot.visible) this.source?.setDiagnosticsVisible(this.diagnostics.open) }, { signal })
+    this.diagnostics.addEventListener('toggle', () => { if (this.diagnostics.open) this.renderBlankFrames(); if (this.snapshot && this.diagnostics.open !== this.snapshot.visible) this.source?.setDiagnosticsVisible(this.diagnostics.open) }, { signal })
     this.recommendation.querySelector('[data-performance=ignore]')!.addEventListener('click', () => this.source?.ignoreRecommendation(), { signal })
     this.recommendation.querySelector('[data-performance=lower]')!.addEventListener('click', () => this.source?.lowerRecommendedTier(), { signal })
     this.recommendation.querySelector('[data-performance=bots]')!.addEventListener('click', () => this.source?.fewerRecommendedBots?.(), { signal })
@@ -313,8 +325,18 @@ export class PerformancePanel {
     this.recommendation.querySelector<HTMLElement>('.performance-unlock')!.hidden = !this.captured
   }
 
+  /** The running count beside "Record blank frames". */
+  private renderBlankFrames(): void {
+    const counts = this.source?.blankFrameCounts?.()
+    const text = !recordBlankFrames.value && !counts?.total ? 'Off'
+      : counts ? `${counts.lastMinute} in the last minute, ${counts.total} in total` : 'Starting'
+    const field = this.blankCount
+    if (field && field.textContent !== text) field.textContent = text
+  }
+
   private render(snapshot: PerformanceSnapshot): void {
     this.snapshot = snapshot
+    if (snapshot.visible) this.renderBlankFrames()
     if (this.diagnostics.open !== snapshot.visible) this.diagnostics.open = snapshot.visible
     // Diagnostics asked for from elsewhere (F3): bring the rail and this card up to show them.
     if (snapshot.visible && !this.wasVisible) { this.openRail(); this.inspector?.revealCard(PerformancePanel.CARD) }

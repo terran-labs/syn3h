@@ -196,7 +196,8 @@ async function main(): Promise<void> {
       // Refraction copies the frame mid-pass; not yet measured on a phone (world/water/refraction.ts).
       '\nWater refraction: ' + refractionState(game.renderer) +
       // Copies taken in the middle of the scene pass (core/midPassCopy.ts), off where not yet proven.
-      '\nForce field contact glow: ' + depthEffectsState() + '\nHeadlight beam soft edge: ' + depthEffectsState()
+      '\nForce field contact glow: ' + depthEffectsState() + '\nHeadlight beam soft edge: ' + depthEffectsState() +
+      (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '')
   }
   shell.configurePerformance({
     runPerformanceCheck: async signal => (await import('./diagnostics/inWorldCheck')).runInWorldCheck({
@@ -205,6 +206,7 @@ async function main(): Promise<void> {
       diagnostics: copyDiagnostics,
     }, signal),
     diagnosticReport: copyDiagnostics,
+    blankFrameCounts: () => game.blankFrames?.counts() ?? null,
     getPerformanceSnapshot: () => game.quality.getPerformanceSnapshot(),
     subscribePerformance: listener => game.quality.subscribePerformance(listener),
     setDiagnosticsVisible: visible => {

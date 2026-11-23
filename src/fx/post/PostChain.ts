@@ -165,6 +165,8 @@ interface Built {
   giNode: N | null
   temporalNode: N | null
   clouds: boolean
+  /** The scene pass, for its render target's sample count (blank frame report). */
+  scenePass: { renderTarget?: { samples?: number } } | null
   pipeline: THREE.RenderPipeline
   disposables: Array<{ dispose?(): void }>
 }
@@ -266,6 +268,8 @@ export class PostChain {
   private burstClock = 0
 
   setCovered(covered: boolean): void { if (this.glass) this.glass.covered = covered }
+  /** The drawn graph's scene pass sample count (0 under temporal AA), or null before one is built. */
+  sceneSamples(): number | null { return this.built?.scenePass?.renderTarget?.samples ?? null }
   private cleanFrame = false
   private cleanDraw = <T>(draw: () => T): T => {
     this.cleanFrame = true
@@ -1091,7 +1095,7 @@ export class PostChain {
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
     pipeline.outputColorTransform = false
     this.builds++
-    return { key, tier, pipeline, glass, disposables, targets: ownedTargets([...disposables, ...(glass?.blur?.passes ?? [])]), maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
+    return { key, tier, pipeline, glass, disposables, targets: ownedTargets([...disposables, ...(glass?.blur?.passes ?? [])]), maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn, scenePass: scenePass as never }
   }
 }
 
