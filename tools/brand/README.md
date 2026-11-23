@@ -32,3 +32,37 @@ establish a first-frame speed improvement because the unused source logos were n
 
 The original tracing command accepts an external source image. Its committed path remains
 the source of the wordmark; no original bitmap is needed for exports or builds.
+
+## Proposal: frozen pages take their brand files from the archive
+
+Not built. Today the deploy carries two sets of install files: the Syn3h icons at the old names
+(`favicon.svg`, `manifest.webmanifest`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`,
+`share.png`), which every frozen version loads from the same address, and the Mira ones at the
+`mira-` names. That is why the bitmap allow list holds ten files instead of six.
+
+**How.** Add `/brand/*` to `run_worker_first` in `wrangler.toml` and `wrangler.staging.toml`, so
+those requests reach the Worker. `serveVersioned` in `server/worker.ts` already chooses a frozen
+page's files by the `v` in its Referer for `build.json` and models; brand files would take the same
+path: a request whose Referer carries `?v=<frozen version>` is answered from R2
+(`v/<version>/brand/...`), every other request from this deployment's own assets. The old-name
+files then leave `public/brand`, the allow list returns to six, and `REQUIRED_BITMAPS` in
+`tools/check-shipped-assets.mjs` keeps only the `mira-` names. Every archived version already has
+its own brand files in R2, so nothing needs uploading. `tests/ops/frozen-r2-routing.test.ts` gains
+the cases, and `tools/frozen-versions.mjs check` must send the Referer when it fetches a frozen
+page's brand files.
+
+**What it costs.**
+- Every brand request becomes a Worker invocation: about three to five per page load (icon,
+  touch icon, manifest and its icons), on the Free plan's daily request allowance, and those
+  responses vary on Referer, so they cache per referring address.
+- A frozen page's brand files are R2 reads (Class B operations), a handful per frozen visit.
+- Requests without a usable Referer get the current files. Browsers send a Referer for page
+  subresources, but an installed home-screen icon refreshed later by the system, a crawler, or a
+  browser with a strict referrer policy would get the Mira icon even for a frozen page. The share
+  card is unaffected: frozen pages' `og:image` names an absolute address of their own.
+- One more Worker path to keep tested, for a saving of about 400 KB of deploy and four tracked
+  bitmaps.
+
+**Recommendation.** Worth doing only if the allow list's ceiling matters more than the extra
+Worker traffic; the current two-set arrangement costs nothing at run time.
+
