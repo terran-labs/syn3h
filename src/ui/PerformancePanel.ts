@@ -130,8 +130,9 @@ export class PerformancePanel {
     this.element.querySelector('[data-quality=down]')!.addEventListener('click', () => this.quality?.stepDown(), { signal })
     this.element.querySelector('[data-quality=up]')!.addEventListener('click', () => this.quality?.stepUp(), { signal })
     this.element.querySelector('[data-quality=reset-all]')!.addEventListener('click', () => this.quality?.clearOverrides(), { signal })
-    // Diagnostics sample only while their fold is open.
-    this.diagnostics.addEventListener('toggle', () => { if (this.diagnostics.open) this.renderBlankFrames(); if (this.snapshot && this.diagnostics.open !== this.snapshot.visible) this.source?.setDiagnosticsVisible(this.diagnostics.open) }, { signal })
+    // Diagnostics sample only while their fold is open. The fold is the player's: whatever they
+    // set, the source is told, even before its first snapshot has arrived.
+    this.diagnostics.addEventListener('toggle', () => { if (this.diagnostics.open) this.renderBlankFrames(); if (this.diagnostics.open !== (this.snapshot?.visible ?? false)) this.source?.setDiagnosticsVisible(this.diagnostics.open) }, { signal })
     this.recommendation.querySelector('[data-performance=ignore]')!.addEventListener('click', () => this.source?.ignoreRecommendation(), { signal })
     this.recommendation.querySelector('[data-performance=lower]')!.addEventListener('click', () => this.source?.lowerRecommendedTier(), { signal })
     this.recommendation.querySelector('[data-performance=bots]')!.addEventListener('click', () => this.source?.fewerRecommendedBots?.(), { signal })
@@ -337,7 +338,11 @@ export class PerformancePanel {
   private render(snapshot: PerformanceSnapshot): void {
     this.snapshot = snapshot
     if (snapshot.visible) this.renderBlankFrames()
-    if (this.diagnostics.open !== snapshot.visible) this.diagnostics.open = snapshot.visible
+    // The fold follows the source only when the source's state changes (F3, ?diag=1). A snapshot
+    // that merely repeats it must not undo the player: a fold opened by a click fires its toggle
+    // event a task later, and a snapshot published in between still says "not visible", which
+    // shut the fold under the player's pointer (blank-frames.mjs, under load, 23 November 2026).
+    if (snapshot.visible !== this.wasVisible && this.diagnostics.open !== snapshot.visible) this.diagnostics.open = snapshot.visible
     // Diagnostics asked for from elsewhere (F3): bring the rail and this card up to show them.
     if (snapshot.visible && !this.wasVisible) { this.openRail(); this.inspector?.revealCard(PerformancePanel.CARD) }
     this.wasVisible = snapshot.visible
