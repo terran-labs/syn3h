@@ -5,6 +5,7 @@ import {
 } from 'three/tsl'
 import { defineParam } from '../../../shared/params'
 import { levelNumber, qualityLevel } from '../../core/quality'
+import { copyDevice, GatedViewportDepthTexture, GatedViewportTexture, midPassCopyAllowed, type CopyDevice } from '../../core/midPassCopy'
 
 /**
  * Refraction: what lies under the water, seen from above, wobbles with the surface.
@@ -52,28 +53,28 @@ const LEAK_MARGIN = 0.05
 
 interface GateRenderer { getRenderTarget(): unknown; backend?: object }
 
-/** Whether refraction is on for this renderer at all, and if not, why. For diagnostics. */
-export function refractionState(renderer: GateRenderer | null | undefined): 'on' | 'off: WebGL 2' | 'off: below Medium' | 'off: turned off' | 'off: no renderer' {
+export type RefractionState = 'on' | 'off: WebGL 2' | 'off: below Medium' | 'off: turned off' | 'off: not yet proven on this device' | 'off: no renderer'
+
+/**
+ * Whether refraction is on for this renderer at all, and if not, why. For diagnostics. Not on a
+ * device where copies in the middle of the scene pass are not yet proven (core/midPassCopy.ts).
+ */
+export function refractionState(renderer: GateRenderer | null | undefined, d: CopyDevice = copyDevice()): RefractionState {
   if (!renderer) return 'off: no renderer'
   if ((renderer.backend as { isWebGPUBackend?: boolean } | undefined)?.isWebGPUBackend !== true) return 'off: WebGL 2'
   if (levelNumber(qualityLevel.value) < REFRACT_FROM_LEVEL) return 'off: below Medium'
   if (!(waterRefraction.value > 0)) return 'off: turned off'
+  if (!midPassCopyAllowed(d)) return 'off: not yet proven on this device'
   return 'on'
 }
 
 /** Whether this render call refracts: refraction is on and the call draws into a render target. */
-export function refractionOn(renderer: GateRenderer): boolean {
-  return refractionState(renderer) === 'on' && renderer.getRenderTarget() !== null
+export function refractionOn(renderer: GateRenderer, d: CopyDevice = copyDevice()): boolean {
+  return refractionState(renderer, d) === 'on' && renderer.getRenderTarget() !== null
 }
 
-/** The frame copy, made only when the render call refracts. */
-class GatedViewportTexture extends THREE.ViewportTextureNode {
-  updateBefore(frame: THREE.NodeFrame): boolean | undefined { return refractionOn(frame.renderer!) ? super.updateBefore(frame) : undefined }
-}
-/** The depth copy, likewise. */
-class GatedViewportDepthTexture extends THREE.ViewportDepthTextureNode {
-  updateBefore(frame: THREE.NodeFrame): boolean | undefined { return refractionOn(frame.renderer!) ? super.updateBefore(frame) : undefined }
-}
+/** The frame copies, made only when the render call refracts (shared nodes: core/midPassCopy.ts). */
+const refractGate = (renderer: THREE.Renderer) => refractionOn(renderer as never)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any
@@ -86,8 +87,8 @@ type N = any
 export function refractThrough(material: THREE.NodeMaterial, slope: { x: N; z: N }, depth: N): void {
   const on = uniform(0).setGroup(renderGroup).onRenderUpdate(({ renderer }) => refractionOn(renderer as never) ? 1 : 0)
   const strength = uniform(waterRefraction.value).setGroup(renderGroup).onRenderUpdate(() => waterRefraction.value)
-  const colour = new GatedViewportTexture()
-  const sceneDepth = new GatedViewportDepthTexture()
+  const colour = new GatedViewportTexture(); colour.gate = refractGate
+  const sceneDepth = new GatedViewportDepthTexture(); sceneDepth.gate = refractGate
 
   // The tilt of the surface, as seen on screen, smaller with distance; nothing at the shore.
   const tilt = cameraViewMatrix.transformDirection(vec3(slope.x.negate(), 0, slope.z.negate())).xy
