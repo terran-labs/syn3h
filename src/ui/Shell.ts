@@ -58,7 +58,7 @@ import { applyPlanet, biomeLine, currentPlanet, currentWorldName, encodeWorld, p
 import { nameSeedKeptAcross, randomNameSeed, worldName } from '../world/worldName'
 import { currentHour, formatDayLength, planetDayLength } from '../world/sky/dayCycle'
 import { InviteView, inviteUrl } from './InviteView'
-import { Scoreboard, parseScoreRow } from './Scoreboard'
+import { Scoreboard, parseScoreRow, type PlayerLookup } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
@@ -2134,6 +2134,8 @@ export class Shell implements System {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!
     if (!hint.hidden && hint.classList.contains('is-full')) this.hideHelp(); else this.showHelp()
   }
+  /** How the Players & session rows find who a name belongs to (main.ts, from the room's roster). */
+  setPlayerLookup(lookup: PlayerLookup | null): void { this.hudBoard.setLookup(lookup) }
   setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {syn3hNet?:{players?:Map<number,{bot?:boolean}>}}).syn3hNet?.players; const count = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length
     // The status arrives every frame; the invite only depends on it through the player count.
     if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }

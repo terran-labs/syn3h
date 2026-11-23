@@ -96,6 +96,9 @@ html[data-cutout-side="right"] { --safe-left: 0px; }
 .syn3h-shell.exploration-ui.show-diagnostics .rail-player-body .score-detail { display: block; font: 11px/1.5 ui-monospace,monospace; color: #bababa; overflow-wrap: anywhere; }
 .syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 12px; padding: 5px 0; background: none; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
 .syn3h-shell.exploration-ui .rail-player-body button { min-height: 30px; padding: 5px 8px; font-size: 11px; margin: 5px 5px 5px 0; }
+/* Another player's name in a row is a plain-text button: it opens Mute or Unmute (chatLink). */
+.syn3h-shell.exploration-ui .rail-player-body .score-row button.score-name { display: block; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.syn3h-shell.exploration-ui .rail-player-body .score-row button.score-name:hover { color: #fff; }
 .syn3h-shell.exploration-ui .rail-diagnostics, .syn3h-shell.exploration-ui .rail-music { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; }
 /* Tooltips sit outside the rail so internal scroll containers cannot clip them. */
 .syn3h-shell.exploration-ui .wi-tooltip { position: fixed; z-index: 60; max-height: calc(100dvh - 24px); overflow: auto; padding: 12px; font: 12px/1.5 'Barlow',sans-serif; border-left: 1px solid #dbdbdb; }

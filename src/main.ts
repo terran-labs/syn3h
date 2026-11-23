@@ -21,9 +21,9 @@ import { Game } from './core/Game'
 import { showStartFailure, startupTiming } from './core/diagnostics'
 import { canCreateWebGL2, startFailure } from './core/graphicsSupport'
 import { botColors, startNetworking } from './net'
+import { BOT_ID_BASE } from '../shared/protocol'
 import { ChatCard } from './ui/chat/ChatCard'
 import { HostBanter } from './bots/banter/HostBanter'
-import { BOT_ID_BASE } from '../shared/protocol'
 import { ParamPanel } from './ui/ParamPanel'
 import { LobbyAddress } from './ui/LobbyAddress'
 import { roomFromQuery } from './core/roomAddress'
@@ -362,10 +362,14 @@ async function main(): Promise<void> {
       channel: connection.chat,
       input: game.input,
       canOpen: () => shell.playing && !game.input.suspended,
-      roster: () => [...connection.players.values()].filter((p) => p.id !== connection.id).map((p) => ({
-        id: p.id, name: connection.displayName(p.id), bot: Boolean(p.bot),
-        color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0],
-      })),
+    })
+    // The Players & session rows: who each name is, for the per-player menu and the bot mark.
+    shell.setPlayerLookup((name) => {
+      for (const p of connection.players.values()) {
+        if (connection.displayName(p.id) !== name) continue
+        return { id: p.id, bot: Boolean(p.bot), color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0] }
+      }
+      return null
     })
     // Bot banter (src/bots/banter): the host's bots talk, and answer people's requests.
     const banter = game.add(new HostBanter(game, terrain, connection, bots, environment), 'Host banter')
