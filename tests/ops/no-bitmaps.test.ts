@@ -18,8 +18,8 @@ const IMAGE = /\.(png|jpe?g|webp|gif|bmp|ico|avif|tga|tiff?|ktx2?|hdr|exr|dds|ba
 
 /** Each line: path, then who removes it. */
 const ALLOWED = new Map<string, string>([
-  // Orchestrator: dashboard marks, to become the vector wordmark and traced marks.
-  ['dashboard/assets/mira-logo-sun-1024x512.png', 'Orchestrator'],
+  // Orchestrator: dashboard marks, to become traced vector marks. (The game's mark is
+  // dashboard/assets/mira-logo.svg since the rename, from tools/brand/generate.ts.)
   ['dashboard/assets/terran-labs-logo.png', 'Orchestrator'],
   ['dashboard/assets/terran-labs-wordmark.png', 'Orchestrator'],
   // UX: explicit vector exports retained as platform fallbacks. Ordinary builds
@@ -30,7 +30,7 @@ const ALLOWED = new Map<string, string>([
   ['public/brand/share.png', 'UX'],
 ])
 /** The list may never be longer than it was on the day it was written. */
-const CEILING = 7
+const CEILING = 6
 
 /**
  * Not part of the shrinking list: the owner's one content exception (AGENTS.md, "Curated About

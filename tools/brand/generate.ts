@@ -54,3 +54,7 @@ for (const [name, data] of files) {
   await rename(temporary, target)
   console.log(`${name}: ${data.length} bytes`)
 }
+// The build dashboard's header mark: the same wordmark as a vector file, no bitmap.
+const dashboard = new URL('../../dashboard/assets/mira-logo.svg', import.meta.url)
+await writeFile(dashboard, logoSvg({ width: 633, height: 224, layout: 'fit' }))
+console.log('dashboard/assets/mira-logo.svg written')

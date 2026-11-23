@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="633" height="224" viewBox="0 0 633 224" role="img" aria-label="Mira">
+<defs>
+<radialGradient id="space" cx="50%" cy="50.0%" r="75%"><stop offset="0" stop-color="#131f38"/><stop offset="1" stop-color="#03060b"/></radialGradient>
+<filter id="glow" x="-20%" y="-60%" width="140%" height="220%" color-interpolation-filters="sRGB">
+<feMorphology in="SourceAlpha" operator="dilate" radius="2.69" result="grown"/>
+<feGaussianBlur in="grown" stdDeviation="4.48" result="near"/>
+<feGaussianBlur in="grown" stdDeviation="13.44" result="far"/>
+<feFlood flood-color="#ffe5c4"/><feComposite in2="near" operator="in" result="nearLit"/>
+<feFlood flood-color="#ffc480"/><feComposite in2="far" operator="in" result="farLit"/>
+<feMerge><feMergeNode in="farLit"/><feMergeNode in="farLit"/><feMergeNode in="nearLit"/><feMergeNode in="SourceGraphic"/></feMerge>
+</filter>
+</defs>
+
+<g transform="translate(183.55 64.96) scale(0.42000)" filter="url(#glow)"><path fill-rule="evenodd" fill="#02040a" stroke="#ffeace" stroke-opacity="0.55" stroke-width="2.38" d="M88.8 0.1L89 0L119.6 0L119.9 0.3L155.6 41.8L155.9 41.9L191.9 0.1L192.2 0L222.5 0L222.8 0L222.9 0.1L253.7 35.8L253.8 36.1L253.8 177.7L253.7 178L173 178L172.8 177.7L216.4 64.3L216.2 64.1L205.4 59.9L205.1 60.1L159.8 177.9L159.5 178L152 178L151.8 177.7L106.4 59.9L106.1 60L95.6 64L95.3 64.3L138.9 177.7L138.8 178L0.2 178L0 177.7ZM296.8 0.1L296.9 0L311.6 0L311.8 0.1L311.8 0.4L311.8 177.7L311.6 178L266 178L265.8 177.7L265.8 36.1L266 35.8ZM323.8 0.1L323.9 0L451.7 0L452 0.2L482.7 35.8L482.8 36.1L411.8 178L411.5 178L398.9 178L398.6 177.8L369.5 102.2L369.2 101.9L358.6 106L358.4 106.1L358.3 106.3L385.7 177.7L385.4 178L323.9 178L323.8 177.7ZM514.2 0.1L514.4 0L544.1 0L544.3 0.1L633.1 177.7L632.9 178L581.9 178L581.7 177.7L529.4 73.3L529.1 73L476.6 178L425.6 178L425.4 177.7ZM369.8 46L422.6 46L422.9 46.1L428.8 52L422.9 57.9L422.6 58L369.8 58ZM529.1 100L529.1 99.9L529.4 100.1L568.2 177.7L568.1 178L490.4 178L490.2 177.7ZM1.4 190L632.6 190L632.9 190.3L599.3 223.9L599 224L34.1 224L33.8 224L33.7 223.9L0.1 190.3L0.2 190Z"/></g>
+</svg>
