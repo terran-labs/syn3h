@@ -193,7 +193,8 @@ async function main(): Promise<void> {
     return diagnosticReport(game.quality.getPerformanceSnapshot(), slot.current.kind, botKinds, currentWorldName(), currentPlanet().label,
       sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine) + '\n' + glassDiagnostics() + '\n' + screenEdgesLine() +
       // Refraction copies the frame mid-pass; not yet measured on a phone (world/water/refraction.ts).
-      '\nWater refraction: ' + refractionState(game.renderer)
+      '\nWater refraction: ' + refractionState(game.renderer) +
+      (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '')
   }
   shell.configurePerformance({
     runPerformanceCheck: async signal => (await import('./diagnostics/inWorldCheck')).runInWorldCheck({
@@ -202,6 +203,7 @@ async function main(): Promise<void> {
       diagnostics: copyDiagnostics,
     }, signal),
     diagnosticReport: copyDiagnostics,
+    blankFrameCounts: () => game.blankFrames?.counts() ?? null,
     getPerformanceSnapshot: () => game.quality.getPerformanceSnapshot(),
     subscribePerformance: listener => game.quality.subscribePerformance(listener),
     setDiagnosticsVisible: visible => {
