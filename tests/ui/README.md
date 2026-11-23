@@ -146,10 +146,10 @@ selector. The UI encoding is numeric `0 = Tag`, `1 = King of the Hill`, matching
 the current numeric parameter registry. Changes honor `canEditWorld` and host locks.
 The mode builder must register and sync that parameter; this UI does not create it.
 
-`index.html` includes metadata and points to `/brand/share.png` (1200 by 630), favicon,
-touch icons and `/brand/manifest.webmanifest`. No public deployment origin was supplied,
-so share image paths are root-relative. Before public announcement, replace both image
-meta values with the deployed absolute HTTPS URL and add `og:url` for that origin.
+`index.html` includes metadata and points to `/brand/mira-share.png` (1200 by 630), favicon,
+touch icons and `/brand/mira-manifest.webmanifest`, all on https://mira.cc. The files at the
+old names (`share.png`, `favicon.svg`, `manifest.webmanifest` and the icons) keep the
+Syn3h bytes that frozen versions load from the same address.
 Do this in served HTML, not a JavaScript update, because card crawlers may not run JS.
 The share card tags name the public release address, https://syn3h.af-4e7.workers.dev, because
 crawlers need full addresses; `tests/ui/share.test.ts` keeps them on one https origin. Change

@@ -4,6 +4,13 @@ The game uses the vector wordmark. `favicon.svg` and the four platform PNGs come
 `logoSvg` in `src/ui/brand/LogoMark.ts`, with no bitmap input. PNG fallbacks remain committed
 for social crawlers and home-screen icons, so ordinary builds need no browser.
 
+The current exports are named `mira-*` (`mira-favicon.svg`, `mira-share.png` and the icons;
+`public/brand/mira-manifest.webmanifest` lists the icons). The files at the old names keep the
+Syn3h bytes, because every frozen version loads them from the same address and
+`tools/frozen-versions.mjs prepare` refuses a release that changes them. A redrawn mark needs
+new names again: change the names in `LOGO_STILLS` and in `generate.ts`, never the bytes at an
+address a released version uses.
+
 Regenerate explicitly:
 
 ```sh

@@ -10,6 +10,6 @@ it('share card tags carry full https addresses on one origin', () => {
   for (const name of ['og:image', 'twitter:image']) {
     const image = new URL(tag(name))
     expect(image.origin, name).toBe(page.origin)
-    expect(image.pathname, name).toBe('/brand/share.png')
+    expect(image.pathname, name).toBe('/brand/mira-share.png')
   }
 })

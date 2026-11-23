@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img" aria-label="Mira">
+<defs>
+<radialGradient id="space" cx="50%" cy="50.0%" r="75%"><stop offset="0" stop-color="#131f38"/><stop offset="1" stop-color="#03060b"/></radialGradient>
+<filter id="glow" x="-20%" y="-60%" width="140%" height="220%" color-interpolation-filters="sRGB">
+<feMorphology in="SourceAlpha" operator="dilate" radius="2.69" result="grown"/>
+<feGaussianBlur in="grown" stdDeviation="4.48" result="near"/>
+<feGaussianBlur in="grown" stdDeviation="13.44" result="far"/>
+<feFlood flood-color="#ffe5c4"/><feComposite in2="near" operator="in" result="nearLit"/>
+<feFlood flood-color="#ffc480"/><feComposite in2="far" operator="in" result="farLit"/>
+<feMerge><feMergeNode in="farLit"/><feMergeNode in="farLit"/><feMergeNode in="nearLit"/><feMergeNode in="SourceGraphic"/></feMerge>
+</filter>
+</defs>
+<rect width="32" height="32" fill="url(#space)"/>
+<g transform="translate(4.16 7.91) scale(0.07226)" filter="url(#glow)"><path fill-rule="evenodd" fill="#02040a" stroke="#ffeace" stroke-opacity="0.55" stroke-width="13.84" d="M88.8 0.1L89 0L127.4 0L127.7 0.1L163.7 41.9L164 41.8L199.7 0.3L200 0L238.7 0L238.9 0.1L239 0.4L327.7 177.7L327.5 178L180.8 178L180.8 177.7L224.4 64.3L224 64L213.5 60L213.2 59.9L167.9 177.7L167.6 178L160.1 178L159.8 177.9L114.5 60.1L114.2 59.9L103.6 64L103.4 64.1L103.3 64.3L146.9 177.7L146.6 178L0.2 178L0 177.7ZM0.8 190L327.5 190L327.5 190.3L293.9 223.9L293.6 224L34.1 224L33.8 224L33.7 223.9L0.1 190.3L0.2 190Z"/></g>
+</svg>

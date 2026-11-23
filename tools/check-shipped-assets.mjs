@@ -18,7 +18,9 @@ import { fileURLToPath } from 'node:url'
 export const AUDIO = /\.(mp3|wav|ogg|oga|opus|m4a|aac|flac|aiff?|wma|mid|midi|weba)$/i
 export const IMAGE = /\.(png|jpe?g|webp|gif|bmp|ico|avif|tga|tiff?|ktx2?|hdr|exr|dds|basis)$/i
 /** Bitmaps a platform requires. Paths are relative to the checked folder. */
-export const REQUIRED_BITMAPS = ['brand/apple-touch-icon.png', 'brand/icon-192.png', 'brand/icon-512.png', 'brand/share.png']
+// The Syn3h icons stay at their old names for frozen versions; the current ones are mira-*.
+export const REQUIRED_BITMAPS = ['brand/apple-touch-icon.png', 'brand/icon-192.png', 'brand/icon-512.png', 'brand/share.png',
+  'brand/mira-apple-touch-icon.png', 'brand/mira-icon-192.png', 'brand/mira-icon-512.png', 'brand/mira-share.png']
 /**
  * The owner's one content exception (AGENTS.md): curated About pictures, the Welcome guide's
  * screenshots, fetched only after the player deliberately opens it. Only web-sized WebP made by

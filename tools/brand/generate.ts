@@ -44,7 +44,7 @@ try {
     if (data.readUInt32BE(16) !== still.width || data.readUInt32BE(20) !== still.height) throw new Error(`Wrong size: ${still.name}`)
     files.set(still.name, data)
   }
-  files.set('favicon.svg', Buffer.from(logoSvg({ width: 32, height: 32, layout: 'icon', space: true })))
+  files.set('mira-favicon.svg', Buffer.from(logoSvg({ width: 32, height: 32, layout: 'icon', space: true })))
 } finally { await browser.close() }
 // Rendering must finish before any existing fallback is replaced.
 await mkdir(directory, { recursive: true })

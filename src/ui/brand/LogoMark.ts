@@ -55,7 +55,7 @@ export function logoBudget(level: number): Pick<LogoOptions, 'particles' | 'stil
 export type LogoLayout = 'fit' | 'icon' | 'card'
 /**
  * Where the 962 by 226 wordmark box goes in a picture of the given size. `fit` leaves room
- * for the plasma all round; `icon` is the square app icon (as public/brand/icon-512.png);
+ * for the plasma all round; `icon` is the square app icon (as public/brand/mira-icon-512.png);
  * `card` is the 1200 by 630 share card, with the logo high and room below for a tagline.
  */
 export function logoBox(width: number, height: number, layout: LogoLayout = 'fit'): PixelRect {
@@ -230,11 +230,16 @@ export class LogoMark {
 }
 
 /** Sizes the platforms ask for: the share card and the square icons. */
+/**
+ * The exported stills. Named mira-* since the rename: the files at the old names keep the
+ * Syn3h bytes that every frozen version loads from the same address (tools/frozen-versions.mjs prepare
+ * refuses a build that changes them). A redrawn mark needs new names again, never the old ones.
+ */
 export const LOGO_STILLS = [
-  { name: 'share.png', width: 1200, height: 630, layout: 'card' },
-  { name: 'icon-512.png', width: 512, height: 512, layout: 'icon' },
-  { name: 'icon-192.png', width: 192, height: 192, layout: 'icon' },
-  { name: 'apple-touch-icon.png', width: 180, height: 180, layout: 'icon' },
+  { name: 'mira-share.png', width: 1200, height: 630, layout: 'card' },
+  { name: 'mira-icon-512.png', width: 512, height: 512, layout: 'icon' },
+  { name: 'mira-icon-192.png', width: 192, height: 192, layout: 'icon' },
+  { name: 'mira-apple-touch-icon.png', width: 180, height: 180, layout: 'icon' },
   { name: 'favicon-32.png', width: 32, height: 32, layout: 'icon' },
 ] as const
 
