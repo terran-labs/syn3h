@@ -107,12 +107,13 @@ export interface LobbySettingsOptions {
 }
 
 
-/** The card's one motion, shown to hidden reversed: a fade and a slight scale from its foot. */
-const CARD_HIDDEN_TO_SHOWN: Keyframe[] = [{ opacity: 0, transform: 'scale(.96)' }, { opacity: 1, transform: 'none' }]
+/** The card's one motion, shown to hidden reversed: a fade and a scale about the Settings button. */
+const CARD_HIDDEN_TO_SHOWN: Keyframe[] = [{ opacity: 0, transform: 'scale(.9)' }, { opacity: 1, transform: 'none' }]
 
 export class LobbySettings {
   /** Settings, Welcome and Updates, for the lobby to place in its lower right. */
   readonly dock = document.createElement('div')
+  private readonly foot = document.createElement('button')
   readonly gear = document.createElement('button')
   /** The version's own corner, the lower left, for the lobby to place beside the dock. */
   readonly versionDock = document.createElement('div')
@@ -165,6 +166,16 @@ export class LobbySettings {
     panel.querySelector('.wi-top')?.remove()
     panel.querySelector('.wi-cards')!.before(head)
     head.querySelector('.lobby-settings-close')!.addEventListener('click', () => this.close(), { signal })
+    // The card grows out of Settings (the owner, 23 November 2026): its lower edge is the button,
+    // drawn where the button stands, so the pointer that opened it is inside that edge. The real
+    // button hides under it while it is open (the space it holds keeps Welcome still), and a
+    // press on the edge closes the card back into the button.
+    this.foot.type = 'button'; this.foot.className = 'lobby-settings-foot'
+    this.foot.setAttribute('aria-label', 'Close settings'); this.foot.setAttribute('aria-controls', 'lobby-settings'); this.foot.setAttribute('aria-expanded', 'true')
+    this.foot.innerHTML = this.gear.innerHTML
+    panel.append(this.foot)
+    this.foot.addEventListener('click', () => this.close(), { signal })
+    addEventListener('resize', () => { if (this.shown) this.anchor() }, { signal })
 
     // Graphics first: the in-game Performance card on the same quality controller.
     this.performance = new PerformancePanel(this.host, () => {}, options.quality, this.inspector)
@@ -232,6 +243,13 @@ export class LobbySettings {
     this.version.title = on ? `Version ${label}: a newer version is out` : `Version ${label}: what is new`
   }
 
+  /** Where Settings stands, for the card's foot to sit on it (lobby-settings.css). */
+  private anchor(): void {
+    const r = this.gear.getBoundingClientRect(), root = document.documentElement, s = this.inspector.element.style
+    s.setProperty('--gear-bottom', `${root.clientHeight - r.bottom}px`); s.setProperty('--gear-right', `${root.clientWidth - r.right}px`)
+    s.setProperty('--gear-width', `${r.width}px`); s.setProperty('--gear-height', `${r.height}px`)
+  }
+
   private focusable(): HTMLElement[] {
     return [...this.inspector.element.querySelectorAll<HTMLElement>('button, input, select, summary, [tabindex]:not([tabindex="-1"])')]
       .filter(el => !(el as HTMLButtonElement).disabled && !el.closest('[hidden], [inert]') && el.getClientRects().length > 0)
@@ -247,6 +265,7 @@ export class LobbySettings {
       group.replaceWith(slot)
       this.gameGlass = { group, slot }
     }
+    this.anchor()
     this.parent.append(this.host)
     this.inspector.rebuild(); this.update()
     // Glass never nests: the card is the one glass surface, so the in-game cards' own glass
@@ -256,9 +275,12 @@ export class LobbySettings {
     // One eased fade and scale out of Settings (lobby-settings.css sets the origin at its foot), no
     // slide. In Liquid the lobby glass shader drives this animation's clock (GlassMotionClock), so
     // its panel and the card move in the same frame.
+    // The button hides once the card stands over it: until then the card's foot fades in on top of
+    // the button's own word, so nothing blinks.
+    const under = () => { if (this.shown) this.gear.classList.add('is-under-card') }
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      this.inspector.element.animate(CARD_HIDDEN_TO_SHOWN, { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' })
-    }
+      this.inspector.element.animate(CARD_HIDDEN_TO_SHOWN, { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' }).finished.then(under, () => {})
+    } else under()
     this.inspector.element.querySelector<HTMLElement>('.lobby-settings-close')!.focus({ preventScroll: true })
   }
 
@@ -267,7 +289,8 @@ export class LobbySettings {
     if (!this.shown) return
     this.shown = false
     this.inspector.hideTooltip()
-    this.gear.setAttribute('aria-expanded', 'false'); this.gear.classList.remove('is-current'); this.dock.classList.remove('is-open')
+    // The button is back under the card at once; the card shrinks and fades into it.
+    this.gear.setAttribute('aria-expanded', 'false'); this.gear.classList.remove('is-current', 'is-under-card'); this.dock.classList.remove('is-open')
     if (returnFocus) this.gear.focus({ preventScroll: true })
     const detach = () => { if (!this.shown) this.detach() }
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { detach(); return }

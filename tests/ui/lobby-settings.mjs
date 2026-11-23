@@ -171,10 +171,14 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
         await page.waitForTimeout(700)
         const fit = await page.evaluate(() => {
           const card = document.querySelector('#lobby-settings').getBoundingClientRect(), dock = document.querySelector('.lobby-gear-dock').getBoundingClientRect()
+          const gear = document.querySelector('.lobby-gear-dock .lobby-gear').getBoundingClientRect(), welcome = document.querySelector('.lobby-gear-dock .lobby-about').getBoundingClientRect()
           const mark = window.syn3h.shell.galaxy?.wordmarkScreenBox?.() ?? null
-          return { card: card.toJSON(), dock: dock.toJSON(), mark }
+          return { card: card.toJSON(), dock: dock.toJSON(), gear: gear.toJSON(), welcome: welcome.toJSON(), mark }
         })
-        assert.ok(fit.card.bottom <= fit.dock.top, `${width}x${height}: card above the buttons ${JSON.stringify(fit)}`)
+        // It grows out of Settings (the owner, 23 November 2026): its lower edge is the button, and
+        // Welcome below stays clear.
+        assert.ok(Math.abs(fit.card.bottom - fit.gear.bottom) <= 1, `${width}x${height}: card's foot on Settings ${JSON.stringify(fit)}`)
+        assert.ok(fit.card.bottom <= fit.welcome.top, `${width}x${height}: card clear of Welcome ${JSON.stringify(fit)}`)
         assert.ok(Math.abs(fit.card.right - fit.dock.right) <= 1, `${width}x${height}: card's right edge on the buttons' ${JSON.stringify(fit)}`)
         // It may grow to the top safe area (the owner, 21 November 2026), never past it.
         assert.ok(fit.card.top >= 0, `${width}x${height}: card inside the screen ${JSON.stringify(fit)}`)
