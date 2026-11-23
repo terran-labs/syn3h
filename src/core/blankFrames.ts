@@ -79,25 +79,31 @@ export interface BlankFrameEvent {
   rung: number
   reason: string
   samples: number | string
+  /** Frame copies in a normal frame just before (refraction and the depth copy draw them every frame). */
+  usualCopies: number
   pixelRatio: number
   canvas: [number, number]
 }
 
 export type Coincidence = 'frame copy' | 'resize' | 'quality step' | 'device error' | 'nothing'
 
-/** What a blank frame coincides with, in the frame itself or the one before, most specific first. */
-export function coincidence(event: Pick<BlankFrameEvent, 'frame' | 'before'>): Coincidence[] {
+/**
+ * What a blank frame coincides with, in the frame itself or the one before, most specific first.
+ * Refraction and the depth copy make frame copies in every frame from Medium up, so a frame copy
+ * counts only when the frame made a different number of them from the usual.
+ */
+export function coincidence(event: Pick<BlankFrameEvent, 'frame' | 'before' | 'usualCopies'>): Coincidence[] {
   const both = [event.frame, event.before]
   const found: Coincidence[] = []
   if (both.some(f => f.deviceErrors.length || f.deviceLost)) found.push('device error')
   if (both.some(f => f.resized)) found.push('resize')
   if (both.some(f => f.step)) found.push('quality step')
-  if (both.some(f => f.frameCopies > 0)) found.push('frame copy')
+  if (both.some(f => f.frameCopies !== event.usualCopies)) found.push('frame copy')
   return found.length ? found : ['nothing']
 }
 
 /** Count events by coincidence. An event with several counts under each. */
-export function tally(events: readonly Pick<BlankFrameEvent, 'frame' | 'before'>[]): Record<Coincidence, number> {
+export function tally(events: readonly Pick<BlankFrameEvent, 'frame' | 'before' | 'usualCopies'>[]): Record<Coincidence, number> {
   const out: Record<Coincidence, number> = { 'frame copy': 0, resize: 0, 'quality step': 0, 'device error': 0, nothing: 0 }
   for (const e of events) for (const c of coincidence(e)) out[c]++
   return out
@@ -136,6 +142,7 @@ export class BlankFrameRecorder {
   private current: FrameFacts = BlankFrameRecorder.empty()
   private previous: FrameFacts = BlankFrameRecorder.empty()
   private previousShare = 0
+  private usualCopies = 0
   private probe: CanvasRenderingContext2D | null = null
   private clearNext = false
   private hooked = false
@@ -221,14 +228,14 @@ export class BlankFrameRecorder {
     this.frames++
     const kind = classifyFrame(share, this.previousShare)
     this.previousShare = share
-    if (kind === 'normal') return
+    if (kind === 'normal') { if (share < PARTLY_SHARE) this.usualCopies = this.current.frameCopies; return }
     const now = performance.now()
     this.total++
     this.recent.push(now)
     if (this.events.length < EVENTS_KEPT) this.events.push({
       t: Math.round(now), kind, share: Math.round(share * 100) / 100, frame: this.current, before: this.previous,
       backend: this.renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL 2', level: this.context.level(), rung: this.context.rung(),
-      reason: this.context.reason(), samples: this.sampleCount(), pixelRatio: this.renderer.getPixelRatio(), canvas: [canvas.width, canvas.height],
+      reason: this.context.reason(), samples: this.sampleCount(), usualCopies: this.usualCopies, pixelRatio: this.renderer.getPixelRatio(), canvas: [canvas.width, canvas.height],
     })
   }
 
@@ -252,7 +259,7 @@ export class BlankFrameRecorder {
     if (!recordBlankFrames.value && !this.total) return [...lines, 'Blank frames: not recorded (Performance, Diagnostics, "Record blank frames")']
     const t = tally(this.events)
     lines.push(`Blank frames: ${this.total} in ${this.frames} frames recorded (${this.lastMinute()} in the last minute); probe ${this.frames ? (this.probeMs / this.frames).toFixed(2) : '0'} ms a frame`)
-    lines.push(`Blank frames by coincidence: ${Object.entries(t).map(([k, n]) => `${k} ${n}`).join(', ')}`)
+    lines.push(`Blank frames by coincidence (a frame copy counts when the number differs from the usual ${this.usualCopies}): ${Object.entries(t).map(([k, n]) => `${k} ${n}`).join(', ')}`)
     for (const e of this.events.slice(0, 20)) {
       const facts = (f: FrameFacts) => [f.frameCopies ? `${f.frameCopies} frame copies` : '', f.resized ?? '', f.step ?? '', f.deviceLost ? 'device lost' : '', ...f.deviceErrors.map(m => 'error ' + JSON.stringify(m))].filter(Boolean).join(', ') || 'nothing'
       lines.push(`  ${(e.t / 1000).toFixed(2)} s ${e.kind} (${Math.round(e.share * 100)}%), ${e.backend}, level ${e.level} rung ${e.rung} (${e.reason}), ratio ${e.pixelRatio}, ${e.canvas[0]}x${e.canvas[1]}, samples ${e.samples}; this frame: ${facts(e.frame)}; frame before: ${facts(e.before)}`)

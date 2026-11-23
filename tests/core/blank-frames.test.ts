@@ -35,18 +35,23 @@ describe('blank frame classifier', () => {
 
 describe('blank frame tally', () => {
   it('names what a blank frame coincides with, in its frame or the one before', () => {
-    expect(coincidence({ frame: facts(), before: facts() })).toEqual(['nothing'])
-    expect(coincidence({ frame: facts({ frameCopies: 6 }), before: facts() })).toEqual(['frame copy'])
-    expect(coincidence({ frame: facts(), before: facts({ resized: 'setPixelRatio 1170x2532 to 936x2026' }) })).toEqual(['resize'])
-    expect(coincidence({ frame: facts({ deviceErrors: ['copy out of range'], step: 'shed' }), before: facts() })).toEqual(['device error', 'quality step'])
+    expect(coincidence({ frame: facts(), before: facts(), usualCopies: 0 })).toEqual(['nothing'])
+    expect(coincidence({ frame: facts({ frameCopies: 6 }), before: facts(), usualCopies: 0 })).toEqual(['frame copy'])
+    expect(coincidence({ frame: facts(), before: facts({ resized: 'setPixelRatio 1170x2532 to 936x2026' }), usualCopies: 0 })).toEqual(['resize'])
+    expect(coincidence({ frame: facts({ deviceErrors: ['copy out of range'], step: 'shed' }), before: facts(), usualCopies: 0 })).toEqual(['device error', 'quality step'])
+  })
+
+  it('copies made in every frame are not a coincidence; a different number is', () => {
+    expect(coincidence({ frame: facts({ frameCopies: 7 }), before: facts({ frameCopies: 7 }), usualCopies: 7 })).toEqual(['nothing'])
+    expect(coincidence({ frame: facts({ frameCopies: 1 }), before: facts({ frameCopies: 7 }), usualCopies: 7 })).toEqual(['frame copy'])
   })
 
   it('counts each event under every coincidence it has', () => {
     const t = tally([
-      { frame: facts({ frameCopies: 1 }), before: facts() },
-      { frame: facts({ frameCopies: 7, resized: 'setSize' }), before: facts() },
-      { frame: facts(), before: facts({ deviceLost: true }) },
-      { frame: facts(), before: facts() },
+      { frame: facts({ frameCopies: 1 }), before: facts(), usualCopies: 0 },
+      { frame: facts({ frameCopies: 7, resized: 'setSize' }), before: facts(), usualCopies: 0 },
+      { frame: facts(), before: facts({ deviceLost: true }), usualCopies: 0 },
+      { frame: facts(), before: facts(), usualCopies: 0 },
     ])
     expect(t).toEqual({ 'frame copy': 2, resize: 1, 'quality step': 0, 'device error': 1, nothing: 1 })
   })

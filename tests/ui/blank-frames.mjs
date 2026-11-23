@@ -61,7 +61,7 @@ try {
   await page.waitForFunction(() => /^[1-9]\d* in the last minute, [1-9]\d* in total$/.test(document.querySelector('[data-performance=blank-count]')?.textContent ?? ''), null, { timeout: 10000 })
   const on = await copyReport()
   assert.match(on, /^Blank frames: [1-9]\d* in \d+ frames recorded/m, 'the report counts it')
-  assert.match(on, /^Blank frames by coincidence: frame copy \d+, resize \d+, quality step \d+, device error \d+, nothing \d+$/m)
+  assert.match(on, /^Blank frames by coincidence \(a frame copy counts when the number differs from the usual \d+\): frame copy \d+, resize \d+, quality step \d+, device error \d+, nothing \d+$/m)
   assert.match(on, /^ {2}[\d.]+ s blank \(100%\), (WebGPU|WebGL 2), level \d+ rung \d+ /m, 'the event in full')
 
   await toggle.click()
