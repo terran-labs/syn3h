@@ -31,7 +31,9 @@ const RETIRED = /Syn3h Buggy|\bClassic\b|\btag beams?\b|\bBig Red\b|\bPesters?\b
 const RETIRED_ALLOWED = new Set(['Tag beams'])
 const retired = (text: string) => RETIRED_ALLOWED.has(text) ? null : RETIRED.exec(text)?.[0] ?? null
 
-const files = (dir: string): string[] => readdirSync(dir).flatMap(name => {
+/** The logo lab's candidate notes (src/ui/brand/mira) are for the owner's choice, never bundled for players. */
+const NOT_PLAYER_FACING = new Set([join('src', 'ui', 'brand', 'mira')])
+const files = (dir: string): string[] => NOT_PLAYER_FACING.has(dir) ? [] : readdirSync(dir).flatMap(name => {
   const path = join(dir, name)
   return statSync(path).isDirectory() ? files(path) : /\.ts$/.test(name) ? [path] : []
 })
