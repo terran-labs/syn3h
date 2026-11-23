@@ -11,6 +11,10 @@
   --w-line: var(--s3-line, rgb(225 225 225 / .28)); --w-quiet: var(--s3-line-quiet, rgb(225 225 225 / .15));
   color: var(--w-dim); font: 400 15.5px/1.6 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .005em;
   text-align: left; overflow-wrap: break-word;
+  /* The carousel's side pictures stand past the column (ring below): never a sideways scroll.
+     As the lobby sheet's scroller this computes to hidden, which still shows its padding, where
+     the pictures are; in the in-play guide it cuts at the body's own padding. */
+  overflow-x: clip;
 }
 .welcome-body > * { margin: 0 0 16px; max-width: 100%; }
 .welcome-body > :last-child { margin-bottom: 0; }
