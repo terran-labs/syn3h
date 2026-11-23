@@ -91,6 +91,8 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     assert.equal(await glass.locator(':scope > .wi-body > .wi-row').count(), 2, `${mode}: Style and Tint stand above the fold`)
     await page.evaluate(() => window.mira.params.set('hud.glass', 1)); await page.waitForTimeout(500)
     assert.ok(await fold.evaluate((d) => d.closest('.lobby-liquid-wrap').hidden && d.closest('.lobby-liquid-wrap').inert), `${mode}: at Frost Liquid glass is gone`)
+    // A style change (which loads Liquid's settings the first time) leaves the card open.
+    assert.ok(await glass.evaluate((c) => c.classList.contains('is-open')), `${mode}: the Glass card stays open through style changes`)
     await page.evaluate((v) => window.mira.params.set('hud.glass', v), style0); await page.waitForTimeout(400)
     await tap(glass.locator('.wi-head'))
 
