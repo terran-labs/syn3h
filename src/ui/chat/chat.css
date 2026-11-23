@@ -90,9 +90,9 @@
 :root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-send:focus-visible { outline: 2px solid white; outline-offset: 1px; }
 :root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-send:disabled { background: rgb(255 255 255 / .1); }
 /* A finger: 44 px targets, and 16 px text, below which Safari zooms the page into the field. */
-:root .syn3h-shell.exploration-ui.has-touch .world-inspector .chat-form :is(.chat-field, .chat-send) { min-height: 44px; }
-:root .syn3h-shell.exploration-ui.has-touch .world-inspector .chat-form .chat-field { font-size: 16px; }
-@media (pointer: coarse) { :root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-field { font-size: 16px; } }
+:root .syn3h-shell.exploration-ui.has-touch .world-inspector .chat-body .chat-form :is(input.chat-field.chat-field, .chat-send) { min-height: 44px; }
+:root .syn3h-shell.exploration-ui.has-touch .world-inspector .chat-body .chat-form input.chat-field.chat-field { font-size: 16px; }
+@media (pointer: coarse) { :root .syn3h-shell.exploration-ui .world-inspector .chat-body .chat-form input.chat-field.chat-field { font-size: 16px; } }
 
 /* A name's mute menu, beside the name, over the panel. */
 .chat-menu { position: fixed; z-index: 70; padding: 4px; border: 1px solid var(--s3-line, rgb(232 232 232 / .42)); border-radius: 8px; background: rgb(12 12 13 / .96); pointer-events: auto; }
