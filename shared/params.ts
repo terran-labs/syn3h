@@ -75,6 +75,11 @@ export function defineParam<T extends ParamValue>(def: ParamDef<T>): Param<T> {
   return param
 }
 
+/** The voice spike exposes this room setting only through its gated controls. */
+export const voiceOn = defineParam({
+  id: 'voice.on', label: 'Room voice (host only)', group: 'Game', scope: 'world', default: true, hidden: true,
+})
+
 export const params = {
   get worldCount(): number { return worldParamCount },
   all(): Param<ParamValue>[] {

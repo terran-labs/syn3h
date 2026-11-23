@@ -11,6 +11,7 @@
  * No browser or Node dependencies: the client, the Node server and the Worker share it.
  */
 import { params } from './params'
+import type { VoiceSignal } from './voice'
 import { wrapDistance } from './wrap'
 
 export const PROTOCOL_VERSION = 2
@@ -374,6 +375,8 @@ export const RACE_RESULT_MS = 8000
 export const RACE_COOLDOWN_MS = 90000
 
 export type ClientMessage =
+  | { type: 'voice-ready'; enabled: boolean }
+  | { type: 'voice-signal'; to: number; signal: VoiceSignal }
   /**
    * `resume` is a random secret this tab keeps for this room. In a room with `game.rejoin`
    * on, a player who drops and says hello again with the same secret within the grace time
@@ -475,6 +478,9 @@ export type TagEvent =
   | 'mode' | 'capture' | 'contest' | 'free' | 'stuck' | 'dunk' | 'win' | 'reset'
 
 export type ServerMessage =
+  | { type: 'voice-full' }
+  | { type: 'voice-ready'; from: number; enabled: boolean }
+  | { type: 'voice-signal'; from: number; signal: VoiceSignal }
   | {
       type: 'welcome'
       v: number
@@ -488,6 +494,8 @@ export type ServerMessage =
       race?: RaceState | null
       /** This room understands a ram reported for a bot (`ram.bot`). Absent from older rooms. */
       botRams?: true
+      /** This named room supports opt-in voice signaling. */
+      voice?: true
     }
   | { type: 'pong'; t: number; serverTime: number }
   | { type: 'join'; player: PlayerInfo }
