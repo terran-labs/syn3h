@@ -32,6 +32,7 @@ if (url.host !== 'api.cloudflare.com') {
   // state.public says: { status, location, ws } (ws: the /ws upgrade answers 101).
   const rule = Object.values(s.rulesets).some(rs => rs.rules.some(r => r.description === 'www.mira.cc to mira.cc'))
   const pub = url.host === 'www.mira.cc' && rule ? { status: 302, location: 'https://mira.cc' + url.pathname + url.search } : s.public[url.host]
+  s.publicLog = [...(s.publicLog ?? []), args.join(' ')]; fs.writeFileSync(file, JSON.stringify(s))
   if (args.includes('Upgrade: websocket')) { process.stdout.write(pub?.ws ? '101' : '000'); process.exit(pub?.ws ? 28 : 7) }
   if (!pub) { process.stdout.write('000 '); process.exit(6) }
   process.stdout.write(pub.status + ' ' + (pub.location ?? '')); process.exit(0)
@@ -66,14 +67,14 @@ fs.writeFileSync(file, JSON.stringify(s))
 process.stdout.write(JSON.stringify(out))
 `
 
-function world(fn, { dropOnAttach = null, extraDomains = [], publicHosts = {}, failApi = [] } = {}) {
+function world(fn, { dropOnAttach = null, extraDomains = [], publicHosts = {}, failApi = [], dns = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'syn3h-domain-test-'))
   try {
     const store = join(dir, 'store'), bin = join(dir, 'bin'), state = join(dir, 'state.json')
     mkdirSync(store); mkdirSync(bin)
     const rec = (id, type, name, content, zone = 'zone-mira', zone_name = 'mira.cc') => ({ id, zone_id: zone, zone_name, type, name, content, proxied: true, ttl: 1 })
     writeFileSync(state, JSON.stringify({
-      log: [], rulesets: {}, dropOnAttach, public: publicHosts, failApi,
+      log: [], rulesets: {}, dropOnAttach, public: publicHosts, failApi, dns,
       zones: [{ id: 'zone-mira', name: 'mira.cc' }, { id: 'zone-syn', name: 'syn3h.com' }],
       // The registrar's imported parking records, as the Orchestrator found them, plus mail.
       records: [rec('r-apex', 'A', 'mira.cc', '192.64.119.207'), rec('r-www', 'A', 'www.mira.cc', '192.64.119.207'),
@@ -82,6 +83,13 @@ function world(fn, { dropOnAttach = null, extraDomains = [], publicHosts = {}, f
       domains: [{ id: 'dom-live', hostname: 'www.syn3h.com', service: 'syn3h', zone_id: 'zone-syn' }, ...extraDomains],
     }))
     writeFileSync(join(bin, 'curl'), FAKE_CURL, { mode: 0o755 })
+    // The stand-in dig: state.dns[host] = { public: [...], local: [...] }, by resolver.
+    writeFileSync(join(bin, 'dig'), `#!/usr/bin/env node
+const s = JSON.parse(require('fs').readFileSync(process.env.FAKE_CF_STATE, 'utf8'))
+const args = process.argv.slice(2), host = args.find(a => /^[a-z0-9*.-]+\\.[a-z]+$/.test(a))
+const entry = (s.dns ?? {})[host] ?? {}
+process.stdout.write(((args.some(a => a.startsWith('@')) ? entry.public : entry.local) ?? []).map(ip => ip + '\\n').join(''))
+`, { mode: 0o755 })
     const run = (args, { token = true, env = {} } = {}) => spawnSync('/bin/sh', [script, ...args], {
       encoding: 'utf8',
       env: { PATH: `${bin}:${process.env.PATH}`, HOME: dir, FAKE_CF_STATE: state, SYN3H_DOMAIN_STORE: store,
@@ -149,21 +157,37 @@ test('clean-parking lists exactly the parking records, needs confirmation, and r
   assert.match(listed.stdout, /A www\.mira\.cc -> 192\.64\.119\.207[\s\S]*A \*\.mira\.cc -> 192\.64\.119\.207/)
   assert.doesNotMatch(listed.stdout, /MX|A mira\.cc ->/)
   assert.equal(changes().length, 0)
+  const dry = run(['clean-parking', '--confirm-delete', '--dry-run'])
+  ok(dry)
+  assert.match(dry.stdout, /Would delete A www\.mira\.cc -> 192\.64\.119\.207 \(r-www\)/)
+  assert.doesNotMatch(dry.stdout, /Deleted/)
+  assert.equal(changes().length, 0)
   ok(run(['clean-parking', '--confirm-delete']))
   assert.deepEqual(changes().map(([m, p]) => `${m} ${p}`).sort(), ['DELETE /zones/zone-mira/dns_records/r-star', 'DELETE /zones/zone-mira/dns_records/r-www'])
   ok(run(['restore', exportDir('mira.cc'), '*.mira.cc', 'www.mira.cc']))
   assert.deepEqual(read().records.filter(r => r.name !== 'mira.cc' && r.zone_id === 'zone-mira').map(r => r.name).sort(), ['*.mira.cc', 'www.mira.cc'])
 }))
 
-test('redirect-www needs the parking record gone, then sets it up once', () => world(({ run, read, exportDir, changes }) => {
+test('redirect-www replaces the parking record without a gap and checks through the public answer', () => world(({ run, read, exportDir, changes }) => {
   ok(run(['export', '--zone', 'mira.cc']))
-  fails(run(['redirect-www', '--owner-approved']), /www\.mira\.cc still has other records \(A 192\.64\.119\.207\): run tools\/domain\.sh clean-parking first/)
-  ok(run(['clean-parking', '--confirm-delete']))
+  const before0 = changes().length
+  const replaced = run(['redirect-www', '--owner-approved'])
+  ok(replaced)
+  // The placeholder goes in before the parking A comes out: the name never stops resolving.
+  assert.deepEqual(changes().slice(before0).map(([m, p]) => `${m} ${p}`).slice(0, 2), ['POST /zones/zone-mira/dns_records', 'DELETE /zones/zone-mira/dns_records/r-www'])
+  assert.match(replaced.stdout, /Removing the parking record A www\.mira\.cc -> 192\.64\.119\.207/)
+  // This machine's resolver still says "no such name"; the public one has the address.
+  assert.match(replaced.stdout, /this machine's resolver has no address for www\.mira\.cc, the public resolver has 104\.16\.1\.1/)
+  assert.ok(read().publicLog.some(l => l.includes('--resolve www.mira.cc:443:104.16.1.1')), 'the wait did not connect through the public answer')
+  assert.match(replaced.stdout, /REDIRECT OK/)
+  assert.ok(changes().some(([m, p]) => m === 'POST' && p === '/zones/zone-mira/rulesets'), 'the first run did not create the redirect ruleset')
+  ok(run(['redirect-www-rollback', exportDir('mira.cc')]))
+  ok(run(['restore', exportDir('mira.cc'), 'www.mira.cc']))
   ok(run(['export', '--zone', 'mira.cc']))
   const out = run(['redirect-www', '--owner-approved', '--dry-run'])
   ok(out)
   assert.match(out.stderr, /DRY RUN: POST https:\/\/api\.cloudflare\.com\/client\/v4\/zones\/zone-mira\/dns_records \{"type":"AAAA","name":"www\.mira\.cc","content":"100::","proxied":true,"ttl":1/)
-  assert.match(out.stderr, /DRY RUN: POST .*\/zones\/zone-mira\/rulesets \{"name":"redirects","kind":"zone","phase":"http_request_dynamic_redirect","rules":\[\{"description":"www\.mira\.cc to mira\.cc","expression":"\(http\.host eq \\"www\.mira\.cc\\"\)","action":"redirect","action_parameters":\{"from_value":\{"status_code":302,"preserve_query_string":true,"target_url":\{"expression":"concat\(\\"https:\/\/mira\.cc\\", http\.request\.uri\.path\)"\}\}\}\}\]\}/)
+  assert.match(out.stderr, /DRY RUN: POST .*\/zones\/zone-mira\/rulesets\/rs-1\/rules \{"description":"www\.mira\.cc to mira\.cc","expression":"\(http\.host eq \\"www\.mira\.cc\\"\)","action":"redirect","action_parameters":\{"from_value":\{"status_code":302,"preserve_query_string":true,"target_url":\{"expression":"concat\(\\"https:\/\/mira\.cc\\", http\.request\.uri\.path\)"\}\}\}\}/)
   assert.ok(!out.stderr.includes(TOKEN) && !out.stdout.includes(TOKEN))
   const before = changes().length
   // The stand-in answers the closing check of https://www.mira.cc/ once the rule exists.
@@ -172,13 +196,21 @@ test('redirect-www needs the parking record gone, then sets it up once', () => w
   assert.ok(s.records.some(r => r.name === 'www.mira.cc' && r.type === 'AAAA' && r.content === '100::' && r.proxied))
   assert.deepEqual(s.rulesets['zone-mira'].rules.map(r => r.description), ['www.mira.cc to mira.cc'])
   const after = changes().length
-  assert.equal(after - before, 2)
+  assert.equal(after - before, 3, 'placeholder, the restored parking record removed, and the rule')
   ok(run(['redirect-www', '--owner-approved']))
   assert.equal(changes().length, after, 'a second redirect-www changed something')
   ok(run(['redirect-www-rollback', exportDir('mira.cc')]))
   const undone = read()
   assert.deepEqual(undone.rulesets['zone-mira'].rules, [])
-  assert.ok(!undone.records.some(r => r.name === 'www.mira.cc'))
+  assert.ok(!undone.records.some(r => r.name === 'www.mira.cc' && r.type === 'AAAA'))
+}, { dns: { 'www.mira.cc': { public: ['104.16.1.1'], local: [] } } }))
+
+test('redirect-www removes a parking CNAME before creating the placeholder, which cannot share its name', () => world(({ run, setState, read, changes }) => {
+  setState({ records: read().records.map(r => r.id === 'r-www' ? { ...r, type: 'CNAME', content: 'parkingpage.example' } : r) })
+  ok(run(['export', '--zone', 'mira.cc']))
+  const before = changes().length
+  ok(run(['redirect-www', '--owner-approved']))
+  assert.deepEqual(changes().slice(before).map(([m, p]) => `${m} ${p}`).slice(0, 2), ['DELETE /zones/zone-mira/dns_records/r-www', 'POST /zones/zone-mira/dns_records'])
 }))
 
 test('a dry run without a token prints every change and makes no call', () => world(({ run, read, exportDir }) => {

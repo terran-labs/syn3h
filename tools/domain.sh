@@ -71,6 +71,22 @@ change() {
 }
 # Reads need the token; a dry run without one reads the export instead.
 live() { [ -z "$DRY" ] || cf_has_token; }
+# A public resolver, for waits on a name that was just created: this machine's resolver may hold
+# a cached "no such name" from the minutes before (redirect-www's first run, 23 November 2026).
+PUBLIC_RESOLVER=1.1.1.1
+addresses() { dig +short +time=3 +tries=1 ${2:+@"$2"} "$1" A 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+){3}$' | sort || true; }
+# resolver_note <host>: say so when the local resolver and the public answer disagree.
+resolver_note() {
+  pub="$(addresses "$1" "$PUBLIC_RESOLVER")"; loc="$(addresses "$1")"
+  [ -n "$pub" ] || { echo "Note: the public resolver ($PUBLIC_RESOLVER) has no address for $1 yet."; return 0; }
+  if [ -z "$loc" ]; then echo "Note: this machine's resolver has no address for $1, the public resolver has $(echo $pub): probably a cached \"no such name\". Checking through the public answer."
+  elif [ -z "$(printf '%s\n%s\n' "$pub" "$loc" | sort | uniq -d)" ]; then echo "Note: this machine's resolver ($(echo $loc)) and the public resolver ($(echo $pub)) disagree about $1. Checking through the public answer."; fi
+}
+# public_answer <host> <path>: like answer, but connecting to the public resolver's address.
+public_answer() {
+  ip="$(addresses "$1" "$PUBLIC_RESOLVER" | head -1)"
+  curl -sS -o /dev/null --max-time 20 ${ip:+--resolve "$1:443:$ip"} -w '%{http_code} %{redirect_url}' "https://$1$2" 2>/dev/null
+}
 # answer <host>: "<status> <redirect address>" for https://<host>/, or failure (certificate or
 # connection).
 answer() { curl -sS -o /dev/null --max-time 20 -w '%{http_code} %{redirect_url}' "https://$1/" 2>/dev/null; }
@@ -234,7 +250,8 @@ check)
   SHORT="${SYN3H_SHORT_CHECK:-}"
   if [ "$H" = "$REDIRECT_ONLY" ]; then
     PROBE="/?room=redirect-check&v=26.11.1503"
-    got="$(curl -sS -o /dev/null --max-time 20 -w '%{http_code} %{redirect_url}' "https://$H$PROBE")" || die "https://$H/ failed (certificate or connection)"
+    resolver_note "$H"
+    got="$(public_answer "$H" "$PROBE")" || die "https://$H/ failed (certificate or connection)"
     [ "$got" = "302 https://$CANONICAL$PROBE" ] || [ "$got" = "301 https://$CANONICAL$PROBE" ] || die "https://$H$PROBE answered \"$got\", not a redirect to https://$CANONICAL$PROBE"
     echo "Redirect ok, certificate verified: https://$H$PROBE -> $got"
     exit 0
@@ -314,16 +331,31 @@ redirect-www)
   NOW_FILE="$(mktemp)"; current_records "$NOW_FILE"
   WWW="$(web_records "$REDIRECT_ONLY" "$NOW_FILE")"; rm -f "$NOW_FILE"
   STATE="$EXPORT/redirect-www.json"; [ -f "$STATE" ] || echo '{}' > "$STATE"
+  # The placeholder goes in before the parking record comes out, so the name never stops resolving:
+  # a gap lets resolvers cache "no such name" for minutes. A and AAAA records can share a name;
+  # only a CNAME must go first.
+  OLD="$(printf '%s' "$WWW" | jq -c --arg p "$PLACEHOLDER" '[.[] | select((.type == "AAAA" and .content == $p and .proxied == true) | not)]')"
+  for rid in $(printf '%s' "$OLD" | jq -r '.[].id'); do
+    jq -e --arg id "$rid" 'any(.result[]; .id == $id)' "$EXPORT/records.json" >/dev/null || die "a record at $REDIRECT_ONLY ($rid) is not in $EXPORT: export again"
+  done
+  remove_old() { # <jq filter on OLD>
+    printf '%s' "$OLD" | jq -r ".[] | select($1) | \"\\(.id) \\(.type) \\(.content)\"" | while read -r rid rtype rcontent; do
+      if [ -n "$DRY" ]; then verb="Would remove"; else verb="Removing"; fi
+      echo "$verb the parking record $rtype $REDIRECT_ONLY -> $rcontent (saved in $EXPORT/records.json)"
+      change DELETE "/zones/$Z/dns_records/$rid" >/dev/null
+    done
+  }
+  remove_old '.type == "CNAME"'
   if [ "$(printf '%s' "$WWW" | jq --arg p "$PLACEHOLDER" '[.[] | select(.type == "AAAA" and .content == $p and .proxied == true)] | length')" -gt 0 ]; then
     echo "Placeholder record at $REDIRECT_ONLY already there."
-  elif [ "$(printf '%s' "$WWW" | jq 'length')" -gt 0 ]; then
-    die "$REDIRECT_ONLY still has other records ($(printf '%s' "$WWW" | jq -r '[.[] | "\(.type) \(.content)"] | join(", ")')): run tools/domain.sh clean-parking first"
   else
     REC="$(jq -cn --arg n "$REDIRECT_ONLY" --arg c "$PLACEHOLDER" '{type: "AAAA", name: $n, content: $c, proxied: true, ttl: 1, comment: "No origin: redirects to mira.cc (tools/domain.sh redirect-www)"}')"
     echo "Creating proxied AAAA $REDIRECT_ONLY -> $PLACEHOLDER (no origin; Cloudflare answers it)"
     REC_OUT="$(change POST "/zones/$Z/dns_records" "$REC")"
     if [ -z "$DRY" ]; then jq --arg id "$(printf '%s' "$REC_OUT" | jq -r '.result.id')" '.record_id = $id' "$STATE" > "$STATE.tmp"; mv "$STATE.tmp" "$STATE"; fi
   fi
+  remove_old '.type != "CNAME"'
+  [ "$(printf '%s' "$OLD" | jq 'length')" -eq 0 ] || echo "To put the parking records back after a rollback: tools/domain.sh restore $EXPORT $REDIRECT_ONLY"
   RULE="$(jq -cn --arg host "$REDIRECT_ONLY" --arg to "https://$CANONICAL" --arg d "$RULE_DESC" '{
     description: $d,
     expression: ("(http.host eq \"" + $host + "\")"),
@@ -348,10 +380,12 @@ redirect-www)
   fi
   [ -z "$DRY" ] || { echo "DRY RUN: then expect https://$REDIRECT_ONLY/?room=x to answer 302 to https://$CANONICAL/?room=x"; exit 0; }
   i=0
-  until got="$(curl -s -o /dev/null --max-time 20 -w '%{http_code} %{redirect_url}' "https://$REDIRECT_ONLY/?room=redirect-check")" && [ "$got" = "302 https://$CANONICAL/?room=redirect-check" ]; do
-    i=$((i + 1)); [ "$i" -le 24 ] || die "https://$REDIRECT_ONLY/ answered \"$got\" after two minutes; undo with tools/domain.sh redirect-www-rollback $EXPORT"
+  until got="$(public_answer "$REDIRECT_ONLY" "/?room=redirect-check")" && [ "$got" = "302 https://$CANONICAL/?room=redirect-check" ]; do
+    i=$((i + 1))
+    [ "$i" -le 24 ] || { resolver_note "$REDIRECT_ONLY"; die "https://$REDIRECT_ONLY/ answered \"${got:-nothing}\" after two minutes; undo with tools/domain.sh redirect-www-rollback $EXPORT"; }
     sleep 5
   done
+  resolver_note "$REDIRECT_ONLY"
   echo "REDIRECT OK: https://$REDIRECT_ONLY/ -> https://$CANONICAL/ (302, path and query kept). Undo with: tools/domain.sh redirect-www-rollback $EXPORT"
   ;;
 
@@ -383,7 +417,11 @@ clean-parking)
     for rid in $(printf '%s' "$TARGETS" | jq -r '.[].id'); do jq -e --arg id "$rid" 'any(.result[]; .id == $id)' "$NOW_FILE" >/dev/null || die "record $rid is gone since $EXPORT: export again"; done
     rm -f "$NOW_FILE"
   fi
-  for rid in $(printf '%s' "$TARGETS" | jq -r '.[].id'); do change DELETE "/zones/$Z/dns_records/$rid" >/dev/null; echo "Deleted $rid"; done
+  printf '%s' "$TARGETS" | jq -r '.[] | "\(.id) \(.type) \(.name) \(.content)"' | while read -r rid rtype rname rcontent; do
+    change DELETE "/zones/$Z/dns_records/$rid" >/dev/null
+    if [ -n "$DRY" ]; then verb="Would delete"; else verb="Deleted"; fi
+    echo "$verb $rtype $rname -> $rcontent ($rid)"
+  done
   echo "CLEAN-PARKING DONE. Undo with: tools/domain.sh restore $EXPORT '*.mira.cc' www.mira.cc"
   ;;
 

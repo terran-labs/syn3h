@@ -35,9 +35,29 @@ Tests: `tools/domain.test.mjs`, against a stand-in API.
 
 ## Where to run it
 
-From the main checkout (`/Users/vtn/dev/Syn3h`), or set `SYN3H_DOMAIN_STORE`. The exports live in
-`../Syn3h-stable/dns/`, computed from the repository's parent: from a worktree under
-`Syn3h-wt` that would be `Syn3h-wt/Syn3h-stable`, the wrong directory.
+From a clean checkout of the reviewed commit: the main checkout (`/Users/vtn/dev/Syn3h`), or a
+worktree made for the run, with `SYN3H_DOMAIN_STORE` set. Never from a builder's worktree. A shell
+reads a script as it runs it, so an edit made there mid-run changes the rest of the run: on
+23 November a `check mira.cc` run from the builder's worktree ended in "unexpected EOF" when the
+builder edited `tools/domain.sh` underneath it. It could as easily have been mid-attach.
+Builders: once a tip is handed over to run, make further changes in another worktree.
+
+The exports live in `../Syn3h-stable/dns/`, computed from the repository's parent: from a
+worktree under `Syn3h-wt` that would be `Syn3h-wt/Syn3h-stable`, the wrong directory, hence
+`SYN3H_DOMAIN_STORE`.
+
+## New names and cached "no such name"
+
+On 23 November, `redirect-www` created www.mira.cc's placeholder a minute after `clean-parking`
+had deleted its parking record. In that minute the machine's resolver looked the name up, cached
+"no such name", and kept answering it from cache, so the two-minute wait for the redirect failed
+although the redirect worked. Now:
+
+- `redirect-www` replaces the parking record itself: the placeholder goes in first and the
+  parking A record comes out after, so the name never stops resolving (A and AAAA records may
+  share a name; a CNAME may not, so a parking CNAME is removed first).
+- Its wait, and `check www.mira.cc`, connect through the address a public resolver (1.1.1.1)
+  gives, not through this machine's resolver, and say so when the two disagree.
 
 ## What check accepts
 
@@ -62,11 +82,14 @@ Run each changing step with `--dry-run` first and read what it prints.
 | Step | Command | Undo |
 | --- | --- | --- |
 | Export the zone and the Worker's domains | `tools/domain.sh export --zone mira.cc` | nothing changed |
-| Delete the registrar's parking records at `*.mira.cc` and `www.mira.cc` (it lists them; the apex record stays for `attach`) | `tools/domain.sh clean-parking` to read the list, then `--confirm-delete` | `tools/domain.sh restore <export> '*.mira.cc' www.mira.cc` |
-| Export again, then attach the apex | `tools/domain.sh export --zone mira.cc`, `tools/domain.sh attach mira.cc --owner-approved` | `tools/domain.sh rollback <export> mira.cc` |
+| Attach the apex | `tools/domain.sh attach mira.cc --owner-approved` | `tools/domain.sh rollback <export> mira.cc` |
 | Check it: certificate, 200, `/ws`, www.syn3h.com still attached and serving, net-smoke | `tools/domain.sh check mira.cc` | |
-| Redirect www | `tools/domain.sh redirect-www --owner-approved` (it checks the 302 itself) | `tools/domain.sh redirect-www-rollback <export>` |
+| Redirect www, replacing its parking record in the same step (it checks the 302 itself) | `tools/domain.sh redirect-www --owner-approved` | `tools/domain.sh redirect-www-rollback <export>`, then `tools/domain.sh restore <export> www.mira.cc` |
 | Check www | `tools/domain.sh check www.mira.cc` | |
+| Export again, then delete the remaining parking record at `*.mira.cc` (it lists what it will delete) | `tools/domain.sh clean-parking` to read the list, then `--confirm-delete` | `tools/domain.sh restore <export> '*.mira.cc'` |
+
+This is the order for a fresh zone. mira.cc was done on 23 November in the earlier order
+(clean-parking before redirect-www), which is what met the cached "no such name" above.
 
 `rollback` refuses to detach any host that was attached when its export was taken, so it can
 never detach www.syn3h.com. Whether detaching also removes the DNS record Cloudflare made is not
