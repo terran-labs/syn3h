@@ -1,5 +1,7 @@
-// Invariant: the Hidden interface (hud.mode 2) never strands a player. Escape pauses, shows
-// the pause screen and returns the interface to Full.
+// Invariant: the Hidden interface (hud.mode 2) never strands a player. Escape returns the
+// interface to Full with a way on (the panels, or the pause screen). Which of the two depends on
+// whether the cursor was captured, which a headless browser cannot hold.
+//   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs interface-mode
 //
 //   node tests/ui/interface-mode.mjs      (game on MIRA_URL)
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
@@ -19,7 +21,7 @@ try {
   assert.equal(await page.evaluate(() => document.body.classList.contains('is-bare-interface')), true, 'Hidden hides the interface')
   await page.keyboard.press('Escape')
   await page.waitForFunction(() => window.mira.params.get('hud.mode').value === 0, null, { timeout: 5000 })
-  await page.locator('.pause-veil').waitFor({ state: 'visible', timeout: 5000 })
+  await page.waitForFunction(() => !document.querySelector('.pause-veil').hidden || getComputedStyle(document.querySelector('.world-inspector')).opacity === '1', null, { timeout: 5000 })
   assert.equal(await page.evaluate(() => document.body.classList.contains('is-bare-interface')), false)
   assert.deepEqual(errors, [])
   console.log('interface-mode: ok')

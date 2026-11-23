@@ -1,14 +1,17 @@
 /**
  * The Jet's THRUST line in the focus display: shown while flying the Jet, absent in the buggy.
  *
- *   tools/heavy.sh node tests/ui/jet-thrust.mjs [port]
+ * Bug caught: the Jet's thrust not shown while flying it, or shown in the buggy.
  *
- * Needs a dev server (default port 5187). Screenshots go to tests/ui/artifacts/jet-thrust.
+ *   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs jet-thrust
+ *
+ * Screenshots go to tests/ui/artifacts/jet-thrust.
  */
 import { chromium, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
-const port = process.argv[2] ?? '5187'
+import { serverUrl } from './lib/server.mjs'
+const base = serverUrl('jet-thrust')
 const out = 'tests/ui/artifacts/jet-thrust'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
@@ -22,7 +25,7 @@ try {
   for (const view of views) {
     const context = await browser.newContext(view.context), page = await context.newPage()
     page.on('pageerror', e => console.error(`${view.name}: ${e.message}`))
-    await page.goto(`http://127.0.0.1:${port}/?room=jet-thrust-${view.name}-${Date.now()}&vehicle=${view.vehicle}&autoplay=1`, { waitUntil: 'load' })
+    await page.goto(`${base}?room=jet-thrust-${view.name}-${Date.now()}&vehicle=${view.vehicle}&autoplay=1`, { waitUntil: 'load' })
     await page.waitForFunction(() => window.mira?.game?.tick > 40, null, { timeout: 120000 })
     await page.waitForTimeout(7000) // let the controls card leave
     if (view.vehicle === 'jet') {
