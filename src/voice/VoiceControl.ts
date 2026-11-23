@@ -3,6 +3,7 @@ import { params } from '../../shared/params'
 import { voiceOn } from '../../shared/voice'
 import type { GameAudio, Position } from '../audio'
 import { VoiceSession } from './VoiceSession'
+import { describeFailure, failureName } from './captureFailure'
 import { VoiceReadout } from './VoiceReadout'
 import { masterVolume, muted } from '../audio/params'
 
@@ -67,13 +68,11 @@ export class VoiceControl {
     this.error = ''
     this.mic.disabled = true
     try {
-      await this.host.audio.unlock()
-      if (epoch !== this.epoch) return
-      if (!this.host.audio.voiceContext) throw new Error('Game audio unavailable')
       this.session?.dispose()
       const session = this.session = new VoiceSession({
         localId: this.host.id,
         audioContext: this.host.audio.voiceContext,
+        sendReadiness: message => this.host.send(message),
         sendSignal: (to, signal) => this.host.send({ type: 'voice-signal', to, signal }),
         onRemoteAudio: (id, stream) => {
           this.speakers.get(id)?.dispose()
@@ -84,7 +83,8 @@ export class VoiceControl {
         onState: state => {
           if (state.status === 'error') {
             this.peers.clear()
-            this.host.send({ type: 'voice-ready', enabled: false })
+            this.error = describeFailure(state.failure ?? 'UnknownError')
+            this.readout.setFailure(this.error)
           }
           this.render()
         },
@@ -92,11 +92,28 @@ export class VoiceControl {
       this.readout.beforeCapture()
       if (await session.enable() && epoch === this.epoch) {
         this.readout.afterCapture(session)
+        try {
+          await this.host.audio.unlock()
+        } catch (error) {
+          if (epoch !== this.epoch || session.state.status !== 'live') return
+          this.error = `Game audio unavailable (${failureName(error)})`
+          this.readout.setFailure(this.error)
+          this.stop()
+          return
+        }
+        if (epoch !== this.epoch || session.state.status !== 'live') return
+        if (!this.host.audio.voiceContext) {
+          this.error = describeFailure('Game audio unavailable')
+          this.readout.setFailure(this.error)
+          this.stop()
+          return
+        }
         this.host.send({ type: 'voice-ready', enabled: true })
       }
-    } catch {
+    } catch (error) {
       if (epoch !== this.epoch) return
-      this.error = 'Audio unavailable. Retry voice'
+      this.error = describeFailure(failureName(error))
+      this.readout.setFailure(this.error)
       this.stop()
     } finally {
       if (epoch === this.epoch) { this.starting = false; this.render() }

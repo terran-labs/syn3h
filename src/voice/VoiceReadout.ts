@@ -73,6 +73,9 @@ function describeFrames(live: boolean, frames?: FrameSummary): string {
 export class VoiceReadout {
   readonly element = document.createElement('details')
   private readonly report = document.createElement('div')
+  private permission?: PermissionStatus
+  private failure = ''
+  private readonly refreshPermission = () => this.render()
   private before?: AudioSnapshot
   private after?: AudioSnapshot
   private mic?: VoiceMicSettings
@@ -91,16 +94,33 @@ export class VoiceReadout {
     summary.textContent = 'Voice diagnostics'
     this.element.style.cssText = 'box-sizing:border-box;width:max-content;max-width:100%;margin:4px auto 0;background:#171c23;color:white;padding:4px 8px;text-align:left;font:12px/1.4 system-ui,sans-serif;border-radius:4px'
     summary.style.cursor = 'pointer'
-    this.report.style.cssText = 'white-space:pre-line;overflow-wrap:anywhere;font-variant-numeric:tabular-nums'
+    this.report.style.cssText = 'max-height:65dvh;overflow:auto;white-space:pre-line;overflow-wrap:anywhere;font-variant-numeric:tabular-nums'
     this.element.append(summary, this.report)
     this.element.addEventListener('toggle', this.onToggle)
     document.addEventListener('visibilitychange', this.onVisibility)
+    this.render()
+    void this.observePermission()
+  }
+
+  private async observePermission() {
+    try {
+      const status = await navigator.permissions?.query({ name: 'microphone' as PermissionName })
+      if (!status || this.disposed) return
+      this.permission = status
+      status.addEventListener('change', this.refreshPermission)
+      this.render()
+    } catch { /* Some Safari versions do not expose the microphone permission state. */ }
+  }
+
+  setFailure(description: string) {
+    this.failure = description
     this.render()
   }
 
   beforeCapture(): void {
     if (this.disposed) return
     this.stopPolling()
+    this.failure = ''
     this.before = audioSnapshot(this.context())
     this.after = undefined
     this.mic = undefined
@@ -143,6 +163,7 @@ export class VoiceReadout {
 
   dispose(): void {
     this.disposed = true
+    this.permission?.removeEventListener('change', this.refreshPermission)
     this.stopPolling()
     this.active = undefined
     this.element.removeEventListener('toggle', this.onToggle)
@@ -186,7 +207,17 @@ export class VoiceReadout {
     const mic = this.mic
     const ice = [...new Set(this.pairs.map(({ local, remote }) =>
       `Local ${local ?? 'unavailable'} · remote ${remote ?? 'unavailable'}`))].join('\n')
+    const standalone = window.matchMedia('(display-mode: standalone)').matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true
+    const yesNo = (value: boolean) => value ? 'yes' : 'no'
     this.report.textContent = [
+      this.failure || undefined,
+      `Display · ${standalone ? 'standalone home-screen app' : 'browser tab'}
+Secure context · ${yesNo(window.isSecureContext)}
+mediaDevices · ${yesNo(!!navigator.mediaDevices)}
+getUserMedia · ${yesNo(typeof navigator.mediaDevices?.getUserMedia === 'function')}
+WebRTC · ${yesNo(typeof RTCPeerConnection === 'function')}
+Microphone permission · ${this.permission?.state ?? 'unavailable'}`,
       describeAudio('Before', this.before),
       describeAudio('After', this.after),
       mic
@@ -194,6 +225,6 @@ export class VoiceReadout {
         : 'Mic settings · unavailable',
       ice ? `Last selected ICE pair types\n${ice}` : 'Selected ICE pair types · unavailable',
       ['Driving frame intervals · last 10 seconds', describeFrames(false, frames(false)), describeFrames(true, frames(true))].join('\n'),
-    ].join('\n\n')
+    ].filter(Boolean).join('\n\n')
   }
 }

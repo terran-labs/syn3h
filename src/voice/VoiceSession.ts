@@ -1,7 +1,9 @@
+import { failureName, type CaptureFailure } from './captureFailure'
 import type { VoiceSignal } from '../../shared/voice'
 
 export interface VoiceState {
   readonly status: 'off' | 'requesting' | 'live' | 'error'
+  readonly failure?: CaptureFailure
   readonly muted: boolean
   readonly speaking: boolean
 }
@@ -10,6 +12,7 @@ export interface VoiceSessionOptions {
   localId: number
   sendSignal(peerId: number, signal: VoiceSignal): void
   onRemoteAudio(peerId: number, stream: MediaStream | null): void
+  sendReadiness?(message: { type: 'voice-ready'; enabled: false }): void
   onState(state: VoiceState): void
   audioContext?: AudioContext
 }
@@ -108,9 +111,10 @@ export class VoiceSession {
     if (this.pending) return this.pending
 
     const generation = ++this.generation
-    const request = Promise.resolve().then(() => this.capture(generation))
-    this.pending = request
-    this.update({ status: 'requesting' })
+    this.update({ status: 'requesting', failure: undefined })
+    // Invoke capture in the click handler's stack, before any promise continuation.
+    const request = this.capture(generation)
+    if (generation === this.generation) this.pending = request
     return request
   }
 
@@ -170,7 +174,8 @@ export class VoiceSession {
   private async capture(generation: number): Promise<boolean> {
     if (generation !== this.generation) return false
     try {
-      if (typeof RTCPeerConnection !== 'function') throw new Error('WebRTC unavailable')
+      if (typeof navigator.mediaDevices?.getUserMedia !== 'function') return this.fail('Capture API unavailable')
+      if (typeof RTCPeerConnection !== 'function') return this.fail('WebRTC unavailable')
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       })
@@ -181,12 +186,12 @@ export class VoiceSession {
 
       this.stream = stream
       const tracks = stream.getAudioTracks()
-      if (!tracks.some(track => track.readyState === 'live')) throw new Error('Microphone unavailable')
+      if (!tracks.some(track => track.readyState === 'live')) return this.fail('No live track')
       for (const track of tracks) {
         track.enabled = !this.current.muted
         track.addEventListener('ended', () => {
           if (this.stream === stream && tracks.every(track => track.readyState === 'ended')) {
-            this.reset('error')
+            this.fail('Track ended')
           }
         }, { once: true })
       }
@@ -196,13 +201,19 @@ export class VoiceSession {
       this.update({ status: 'live' })
       this.syncPeers()
       return generation === this.generation
-    } catch {
-      if (generation === this.generation) this.reset('error')
+    } catch (error) {
+      if (generation === this.generation) this.fail(failureName(error))
       return false
     }
   }
 
-  private reset(status: 'off' | 'error'): void {
+  private fail(failure: CaptureFailure): false {
+    this.reset('error', failure)
+    this.options.sendReadiness?.({ type: 'voice-ready', enabled: false })
+    return false
+  }
+
+  private reset(status: 'off' | 'error', failure?: CaptureFailure): void {
     ++this.generation
     this.pending = undefined
     const stream = this.stream
@@ -212,7 +223,7 @@ export class VoiceSession {
     this.stopMeter?.()
     this.stopMeter = undefined
     for (const id of this.peers.keys()) this.closePeer(id)
-    this.update({ status, speaking: false })
+    this.update({ status, failure, speaking: false })
   }
 
   private syncPeers(): void {
@@ -342,7 +353,7 @@ export class VoiceSession {
   private update(patch: Partial<VoiceState>): void {
     const next = { ...this.current, ...patch }
     if (next.status === this.current.status && next.muted === this.current.muted &&
-        next.speaking === this.current.speaking) return
+        next.speaking === this.current.speaking && next.failure === this.current.failure) return
     this.current = next
     this.options.onState(next)
   }

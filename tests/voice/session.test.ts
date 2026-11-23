@@ -129,11 +129,17 @@ describe('VoiceSession', () => {
   })
 
   it('retries a denied microphone request only on explicit enable', async () => {
-    const { session } = setup()
-    getUserMedia.mockRejectedValueOnce(new Error('denied'))
-    expect(await session.enable()).toBe(false)
-    expect(session.state.status).toBe('error')
+    const sendReadiness = vi.fn()
+    const { session } = setup(1, { sendReadiness })
+    session.setPeers([2])
+    getUserMedia.mockRejectedValueOnce(new DOMException('private device label', 'NotAllowedError'))
+    const attempt = session.enable()
+    expect(getUserMedia).toHaveBeenCalledOnce() // capture starts synchronously in the tap
+    expect(await attempt).toBe(false)
+    expect(session.state).toMatchObject({ status: 'error', speaking: false, failure: 'NotAllowedError' })
+    expect(session.micSettings()).toBeUndefined()
     expect(Peer.instances).toHaveLength(0)
+    expect(sendReadiness.mock.calls).toEqual([[{ type: 'voice-ready', enabled: false }]])
     expect(await session.enable()).toBe(true)
   })
 
