@@ -53,6 +53,7 @@ export const KEEP_TOKENS = [
   { pattern: /x-syn3h-version/g, reason: 'B: response header the Worker sets on frozen versions; tools/frozen-versions.mjs checks it' },
   { pattern: /syn3h-versions/g, reason: 'B: R2 bucket holding every frozen version' },
   { pattern: /syn3h(-staging)?\\?\.af-4e7\\?\.workers\\?\.dev/g, reason: 'B: workers.dev addresses of the production and staging Workers' },
+  { pattern: /WORKER=syn3h\b|service\\?["']?\s*:\s*\\?["']syn3h/g, reason: 'B: the Worker name, which the Custom Domains API addresses (tools/domain.sh)' },
   { pattern: /syn3h-staging/g, reason: 'B: the staging Worker name' },
   { pattern: /(https?:\/\/)?([a-z0-9-]+\\?\.)*syn3h\\?\.com\b/gi, reason: 'B: the live domain until the mira.cc switch' },
   { pattern: /terran-labs\/syn3h/g, reason: 'B: the GitHub repository, renamed by the owner later' },

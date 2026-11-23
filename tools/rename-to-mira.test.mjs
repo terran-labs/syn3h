@@ -31,3 +31,8 @@ test('scripts that read a MIRA_ variable load the legacy bridge first, once', ()
   assert.equal(sh.split('\n')[2], '. "$(dirname "$0")/../../tools/lib/legacy-env.sh" # legacy environment names, see docs/NAMES.md')
   assert.equal(addBridge('src/a.ts', 'const MIRA_X = 1\nprocess.env'), 'const MIRA_X = 1\nprocess.env')
 })
+
+test('the Worker name that tools/domain.sh sends to the Custom Domains API stays syn3h', () => {
+  for (const line of ['WORKER=syn3h', "{ hostname: 'mira.cc', service: 'syn3h', zone_id: 'z' }", '{"hostname":"mira.cc","service":"syn3h"}', '`service: "syn3h"`'])
+    assert.equal(renameText(line).text, line)
+})
