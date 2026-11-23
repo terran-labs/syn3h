@@ -1,5 +1,6 @@
 // Nearest-neighbour enlargements of part of a screenshot, so single pixels can be inspected.
 //   node tests/ui/wordmark-zoom.mjs <in.png> <out.png> <x0 y0 x1 y1 as fractions> <scale>
+// browser-checks: skip (an image tool that takes a screenshot to enlarge, not a check)
 import { chromium } from 'playwright-core'
 import { readFile } from 'node:fs/promises'
 const [input, output, frac, scale = '6'] = process.argv.slice(2)

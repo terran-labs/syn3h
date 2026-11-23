@@ -107,7 +107,9 @@ for (const view of ['desktop', 'portrait', 'landscape']) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   try {
     const { page, errors } = await open(browser, 'desktop', `nameplates-wings-${Date.now()}`)
-    // Far, first, on the ground: a bot 220 m ahead.
+    // Far, first, on the ground: a bot 220 m ahead. The bots join the room a moment after the
+    // player does: wait for one.
+    await page.waitForFunction(() => window.miraNet?.tagList?.some(t => t.bot && t.vehicle), null, { timeout: 60000 })
     await page.evaluate(() => { const s = window.mira.terrain.spawnPoint(0); window.mira.player.teleport(s.position, 0) })
     await page.waitForTimeout(1500)
     let far = false

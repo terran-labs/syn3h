@@ -1,6 +1,13 @@
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
+import { serverUrl } from './lib/server.mjs'
+import { waitForState } from './stateWait.mjs'
+// How many are playing each world, on its label in the lobby. Bugs caught: a count shown when it
+// is stale, empty or failed (it must vanish, and say so to screen readers); the lobby still
+// asking for counts while a player is in a world; the count not coming back on returning to the
+// lobby; a tap on a populated world joining someone else's room instead of the player's own.
+//   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs presence
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist'] })
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
@@ -13,7 +20,7 @@ try {
     const now = Date.now(), byRecipe = mode === 'empty' ? [] : [{ recipeId: 'alpine', players: 3, rooms: 2, oldestReportAt: now - (mode === 'stale' ? 90001 : 0) }]
     return route.fulfill({ json: { version: 1, generatedAt: now, ttlMs: 90000, byRecipe } })
   })
-  await page.goto(process.env.MIRA_URL ?? 'http://127.0.0.1:5193/')
+  await page.goto(serverUrl('presence'))
   console.log('loaded', await page.evaluate(() => ({ boot: document.documentElement.dataset.boot, shell: !!window.mira?.shell, labels: document.querySelectorAll('.galaxy-label').length })))
   const label = page.locator('.galaxy-label[data-world="alpine"] .galaxy-population')
   await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population')?.textContent === '3 online', null, { timeout: 120000 }).catch(async error => { console.log('state', await page.evaluate(() => ({ boot: document.documentElement.dataset.boot, fatal: document.querySelector('#fatal')?.textContent, labels: document.querySelectorAll('.galaxy-label').length, hidden: document.hidden, galaxy: window.mira?.shell?.galaxy ? { active: window.mira.shell.galaxy.active, feed: window.mira.shell.galaxy.presence.active, menu: window.mira.shell.menuOpen, attract: window.mira.shell.attracting } : null }))); throw error })
@@ -36,13 +43,15 @@ try {
   await page.waitForTimeout(150)
   assert.equal(await label.textContent(), '')
   mode = 'populated'
+  // Entering a world is asynchronous: count the requests from once the player is in it.
   await page.evaluate(() => window.mira.shell.play())
+  await waitForState(page, 'in the world', () => window.mira.shell.playing, undefined, 60)
   const inPlay = calls
   await page.waitForTimeout(500)
   assert.equal(calls, inPlay)
   assert.equal(await page.evaluate(() => window.mira.shell.galaxy.presence.active), false)
   await page.evaluate(() => window.mira.shell.openMenu())
-  await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population').textContent === '3 online')
+  await waitForState(page, 'the count back on the lobby', () => document.querySelector('[data-world="alpine"] .galaxy-population').textContent === '3 online', undefined, 60)
   assert.match(await page.locator('[data-world="alpine"]').getAttribute('aria-label'), /Counts span separate rooms/)
   // Population display must not route planet taps into an enumerated room.
   const room = await page.evaluate(() => window.mira.shell.roomInput.value)

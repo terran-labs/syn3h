@@ -2,13 +2,19 @@ import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NA
 import { devices, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { serverUrl } from './lib/server.mjs'
+import { settledLobby } from './stateWait.mjs'
+// Text selection on touch, in WebKit on an iPhone and an iPad. Bugs caught: the room and name
+// fields not selectable with the native keyboard; a drag on the galaxy selecting page text; a
+// tap on a world not entering it.
+//   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs selection-controls
 await mkdir('tests/ui/artifacts/selection-controls', {recursive:true})
 for(const device of ['iPhone 14','iPad Pro 11 landscape']) {
  const browser=await webkit.launch()
  try {
   const page=await browser.newPage({...devices[device]});const errors=[]
   page.on('pageerror',e=>errors.push(e.message))
-  await page.goto(`${process.env.MIRA_URL}?room=selection-controls-${Date.now()}`)
+  await page.goto(`${serverUrl('selection-controls')}?room=selection-controls-${Date.now()}`)
   await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
   await page.waitForFunction(()=>window.mira?.game.tick>25)
   const selectField=async(locator,value)=>{
@@ -22,13 +28,16 @@ for(const device of ['iPhone 14','iPad Pro 11 landscape']) {
   await selectField(page.locator('#shell-room'),'editable-room')
   await selectField(page.locator('#shell-name'),'Editable Pilot')
   await page.keyboard.press('Escape');await page.evaluate(()=>mira.shell.showPanel('index'))
-  await page.waitForTimeout(300)
+  await settledLobby(page)
   // Native mouse drag exercises the galaxy pointer path; mobile native taps follow below.
   const canvas=page.locator('canvas.galaxy-canvas');const galaxy=await page.locator('.galaxy').count()
   const box=await page.locator('#game').boundingBox()
   await page.mouse.move(box.width*.5,box.height*.25);await page.mouse.down();await page.mouse.move(box.width*.65,box.height*.3,{steps:12});await page.mouse.up()
   assert.equal(await page.evaluate(()=>getSelection().isCollapsed),true,'galaxy drag selects no text')
-  await page.locator('.galaxy-label.is-current').tap()
+  // A finger on the current world itself, where a player taps: the galaxy picks by the planet.
+  const world=await page.evaluate(()=>{const id=document.querySelector('.galaxy-label.is-current').dataset.world,p=mira.shell.galaxy.screen.find(s=>s.id===id&&s.visible),r=document.querySelector('.galaxy-canvas').getBoundingClientRect();return p&&{x:r.left+p.x,y:r.top+p.y}})
+  assert.ok(world,'the current world is on screen')
+  await page.touchscreen.tap(world.x,world.y)
   await page.waitForFunction(()=>mira.shell.playing&&!mira.shell.dropping,null,{timeout:120000})
   if(await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').tap()
   await page.locator('.world-inspector').waitFor({state:'visible'})
@@ -42,7 +51,9 @@ for(const device of ['iPhone 14','iPad Pro 11 landscape']) {
   assert.ok(await page.evaluate(()=>(visualViewport?.scale??1)<=1.01))
   await page.screenshot({path:`tests/ui/artifacts/selection-controls/${device.replaceAll(' ','-')}-editing.png`})
   await page.locator('.wi-search').fill('');await page.locator('.wi-search').blur()
-  await page.locator('.inspector-toggle').tap();await page.locator('.world-inspector').waitFor({state:'hidden'})
+  // Panels hides while they are open (v26.11.2117): close them with the control a player has.
+  await page.locator('.world-inspector .wi-card.is-open > .wi-card-close, .world-inspector .panels-close').filter({visible:true}).first().tap()
+  await page.locator('.world-inspector').waitFor({state:'hidden'})
   const gear=page.locator('.gear-selector button:visible').first()
   if(await gear.count())await gear.tap()
   const drag=await page.evaluate(()=>{

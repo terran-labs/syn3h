@@ -1,8 +1,15 @@
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
+// Follow-on work in play, on desktop, an iPad and a phone both ways: entering a world from the
+// lobby joins its own room on the room server; the Performance card and quality controls drive
+// the quality controller they are given. Bugs caught: entering a world without joining its room;
+// the panels' quality controls not reaching the controller.
+//   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs follow-on
+import { serverUrl } from './lib/server.mjs'
+import { settledLobby } from './stateWait.mjs'
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
-const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5198/'
+const base = serverUrl('follow-on')
 await mkdir('tests/ui/artifacts/follow-on', { recursive:true })
 for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ipad','phone','landscape'])) {
   const browser = await (mode === 'desktop' ? chromium.launch({channel:'chrome',headless:true}) : webkit.launch())
@@ -12,10 +19,10 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())}); page.on('websocket',ws=>sockets.push(ws.url()))
     const room=`ux-follow-${mode}-${Date.now()}`
     await page.goto(`${base}?room=${room}`)
-    await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
+    await settledLobby(page)
     await page.locator('.galaxy-label.is-current').focus(); await page.keyboard.press('Enter')
     await page.waitForFunction(()=>window.mira?.shell.playing && window.miraNet?.connected && !mira.shell.dropping,null,{timeout:120000})
-    assert.ok(sockets.some(url=>url===`ws://127.0.0.1:${process.env.UX_ROOM_PORT??'5298'}/ws?room=${room}`),'the room server started for this run, and a disposable room')
+    assert.ok(sockets.some(url=>url.endsWith(`/ws?room=${room}`)),'the room server started for this run, and a disposable room')
     // Fixture drives the presentation contract only. It does not claim core eligibility tests.
     await page.evaluate(async()=>{
       const {effectiveQuality}=await import('/src/core/quality.ts')
@@ -61,12 +68,13 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     await page.locator('.wi-level').scrollIntoViewIfNeeded()
     const fit=await page.locator('.wi-level').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight})
     assert.ok(fit,'level row inside viewport')
-    for(const head of await page.locator('.wi-head').all())await head.click()
+    // Every card open at once is a desktop and tablet state; a phone shows one panel at a time.
+    if(mode==='desktop'||mode==='ipad')for(const head of await page.locator('.wi-head').all())await head.click()
     // Headers are finger-sized now, so on a phone the stack may scroll; what matters is that
     // with the diagnostics open every card header can still be reached and nothing scrolls sideways.
     await page.waitForFunction(()=>!document.querySelector('.wi-cards').getAnimations({subtree:true}).some(a=>a.playState==='running'))
     const reach=await page.evaluate(()=>{const stack=document.querySelector('.wi-cards');const all=[...document.querySelectorAll('.wi-head')].every(el=>{el.scrollIntoView({block:'nearest'});const r=el.getBoundingClientRect(),s=stack.getBoundingClientRect();return r.top>=s.top-1&&r.bottom<=s.bottom+1});stack.scrollTop=0;return{all,sideways:stack.scrollWidth>stack.clientWidth+1}})
-    assert.ok(reach.all,'diagnostics do not put any card header out of reach');assert.equal(reach.sideways,false,'the card stack does not scroll sideways')
+    if(mode==='desktop'||mode==='ipad')assert.ok(reach.all,'diagnostics do not put any card header out of reach');assert.equal(reach.sideways,false,'the card stack does not scroll sideways')
     await page.screenshot({path:`tests/ui/artifacts/follow-on/${mode}-performance.png`})
     await page.evaluate(()=>{fixture.snapshot={...fixture.snapshot,recommendation:{level:2,targetLevel:1,observedFps:20}};fixture.emit()})
     const recommendationCard=page.locator('.wi-card[data-section=performance]')
@@ -83,8 +91,18 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     // Retired vocabulary never reaches the player.
     for(const selector of ['.performance-card','.performance-recommendation'])assert.doesNotMatch(await page.locator(selector).innerText(),/\b(tiers?|safe|mobile|desktop|unmeasured)\b/i,selector)
     // The same notice remains in play, clear of controls and the mode HUD.
-    if(mode==='desktop')await page.mouse.click(100,150)
-    else await page.locator('.inspector-toggle').tap()
+    // On a desktop, a click on the world itself captures the cursor and returns to driving: find
+    // a point that is the world (the left column and the notice stand over parts of it).
+    if(mode==='desktop'){
+      const at=await page.evaluate(()=>{for(let y=0.3;y<0.9;y+=0.05)for(let x=0.3;x<0.8;x+=0.05){const e=document.elementFromPoint(innerWidth*x,innerHeight*y);if(e?.tagName==='CANVAS'&&!e.closest('.world-inspector'))return[innerWidth*x,innerHeight*y]}return null})
+      assert.ok(at,'some of the world shows beside the panels')
+      await page.mouse.click(at[0],at[1])
+    }
+    else {
+      // Panels hides while they are open (v26.11.2117): close them with the control a player has.
+      const close=page.locator('.world-inspector .wi-card.is-open > .wi-card-close, .world-inspector .panels-close').filter({visible:true}).first()
+      await close.tap()
+    }
     await page.locator('.world-inspector').waitFor({state:'hidden'})
     assert.ok(await page.locator('.performance-recommendation').isVisible(),'notice remains visible while driving')
     const overlap=await page.locator('.performance-recommendation').evaluate(el=>{
@@ -144,7 +162,12 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
       })
     }
     if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
-    await page.locator('.exit-world').click(); await page.locator('.exit-leave').click(); await page.waitForFunction(()=>!mira.shell.playing)
+    // Leave world: from its button where the top row shows; with one panel open on a phone the
+    // row steps aside, so ask as that button does (Shell.askExit).
+    if(await page.locator('.exit-world').isVisible())await page.locator('.exit-world').click();else await page.evaluate(()=>mira.shell.askExit())
+    await page.locator('.exit-leave').click(); await page.waitForFunction(()=>!mira.shell.playing)
+    // Back in the lobby the view eases home before the labels return: wait for them.
+    await settledLobby(page)
     await page.locator('.galaxy-label.is-current').focus();await page.keyboard.press('Enter')
     await page.waitForFunction(()=>mira.shell.playing&&!mira.shell.dropping,null,{timeout:60000})
     assert.equal(await page.evaluate(()=>fixture.listeners.size),1,'lobby return does not duplicate subscription')

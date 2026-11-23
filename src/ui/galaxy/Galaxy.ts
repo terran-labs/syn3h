@@ -1489,10 +1489,18 @@ export class Galaxy {
     // Not during the opening: it lands on the fresh-load pose (freshPose), the pose a return
     // from a world eases to, and the drift and the resting tilt take over only once it has.
     this.swing(elapsed, !this.drag && this.chosen < 0 && !still && !this.clockHold && this.opening === null, wallElapsed)
+    // Behind the loading veil the frame is the veil's own, on every layout: no band for an update
+    // banner (it is under the veil, unseen), no short-landscape frame, and no easing (nothing drawn
+    // here is seen yet). The sun then lands exactly where the veil drew its point (index.html,
+    // --sun-y's default, FRAME_Y), so publishSun moves nothing on the veil. It had: a banner's
+    // band, or the frame easing in from the middle, moved the point and the lines under it 12 px
+    // late in a slow load (loading-lines.mjs, 23 November 2026). Once the veil lifts, the frame
+    // eases to its layout's place, in view.
+    const behindVeil = veiled()
     const inset = Math.min(0.3, Math.max(0, this.options.topInset?.() ?? 0) / Math.max(1, this.host.clientHeight))
     // The short landscape layout (Shell, SHORT_LANDSCAPE) supplies its own frame.
-    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, FRAME_Y - inset / 2, 1 - inset]
-    const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
+    const frameGoal: Vec = behindVeil ? [0.5, FRAME_Y, 1] : this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, FRAME_Y - inset / 2, 1 - inset]
+    const framingMoves = !behindVeil && this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
     // The continuous opening (opening.ts): held at the point of light while loading, then by the clock.

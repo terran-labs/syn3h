@@ -1,24 +1,24 @@
-/** Combined acceptance with an ephemeral Vite proxy and real room server. Run through heavy.sh. */
+// Saved worlds, against a real room server. Bugs caught: saving a world loses its seed or a
+// setting, or stores the player's own audio settings with it; a saved world missing from the
+// galaxy (its moon) after a reload; and the other checks below, through a room another player
+// joins.
+//   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs saved-worlds
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
-import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import assert from 'node:assert/strict'
 import { chromium, webkit } from 'playwright-core'
-const origin = 'http://127.0.0.1:18114'
-let logs = ''
-const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '18114', '--strictPort'], {
-  env: { ...process.env, MIRA_NO_ROOM_SERVER: '', MIRA_ROOM_PORT: '18113' }, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-})
-server.stdout.on('data', x => { logs += x }); server.stderr.on('data', x => { logs += x })
+import { serverUrl } from './lib/server.mjs'
+import { settledLobby, waitForState } from './stateWait.mjs'
+const origin = serverUrl('saved-worlds').replace(/\/$/, '')
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 try {
+  // The room server answers behind the dev server (its /presence), or there is nothing to test.
   let ready = false
-  for (let i = 0; i < 100; i++) {
-    if (server.exitCode !== null) throw new Error(logs)
-    try { const response = await fetch(`${origin}/presence`); if (response.ok && (await response.json()).version === 1) { ready = true; break } } catch {}
-    await wait(200)
+  for (let i = 0; i < 100 && !ready; i++) {
+    try { const response = await fetch(`${origin}/presence`); ready = response.ok && (await response.json()).version === 1 } catch {}
+    if (!ready) await wait(200)
   }
-  assert.ok(ready, logs)
+  assert.ok(ready, `no room server behind ${origin}: run it through tools/browser-checks.mjs saved-worlds`)
   await mkdir('tests/ui/artifacts/saved-worlds', { recursive: true })
   const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist'] })
   try {
@@ -37,8 +37,8 @@ try {
     assert.ok(!Object.keys(stored.world.values).some(key => key.startsWith('audio.')))
     await page.reload(); await readyPage(page)
     await page.waitForFunction(() => [...document.querySelectorAll('.saved-world-moon')].some(button => !button.hidden))
-    // The logo clock starts at its first draw and can advance slower than wall time.
-    await page.waitForFunction(() => window.mira.shell.galaxy.logo.introTime > 3.6, null, { timeout: 30000 })
+    // The settled lobby (the opening skipped), as a player sees it, for the screenshot.
+    await settledLobby(page)
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     await page.screenshot({ path: 'tests/ui/artifacts/saved-worlds/desktop.png' })
     assert.equal(await page.locator('.saved-world-moon').count(), 1)
@@ -52,16 +52,20 @@ try {
     await page.evaluate(() => { window.mira.shell.invited = false })
     const moonBox = await page.locator('.saved-world-moon').boundingBox()
     assert.ok(moonBox)
+    // The room the player is in (the public room shows as empty, 39f704a7): a drop keeps it.
+    const roomBefore = await page.evaluate(() => window.mira.shell.roomInput.value)
     await page.mouse.click(moonBox.x + moonBox.width / 2, moonBox.y + moonBox.height / 2)
     await page.waitForFunction(() => window.mira.shell.dropping)
     await page.waitForFunction(() => !window.mira.shell.dropping && window.mira.shell.started && window.miraNet?.connected, null, { timeout: 30000 })
     assert.equal(await page.evaluate(() => window.mira.params.get('world.seed').value), 777)
     assert.equal(await page.evaluate(() => window.mira.params.get('terrain.treeCover').value), 0)
-    assert.equal(await page.evaluate(() => window.mira.shell.roomInput.value), 'lobby')
+    assert.equal(await page.evaluate(() => window.mira.shell.roomInput.value), roomBefore, 'a saved world opens in the room the player was in')
     assert.equal(await page.evaluate(() => JSON.stringify(window.mira.shell.galaxy.options.worlds.find(world => world.id === 'custom'))), custom)
     assert.equal(await page.evaluate(() => window.mira.shell.galaxy.savedTarget), false)
     // Verify the real visible World footer, not merely a hidden callback fixture.
-    await page.evaluate(() => { window.mira.shell.inspector.open = true })
+    // The panels, as a player opens them on a desktop: Escape frees the cursor and shows them.
+    if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
+    await waitForState(page, 'the panels shown', () => getComputedStyle(document.querySelector('.world-inspector')).opacity === '1', undefined, 15)
     await page.locator('.wi-card[data-section="world"] .wi-head').click()
     const save = page.locator('[data-wi=save-world]')
     await save.scrollIntoViewIfNeeded(); await save.click()
@@ -132,29 +136,28 @@ try {
       await guest.locator(`.saved-world-moon[data-saved-world="${firstId}"]`).dispatchEvent('click')
       assert.equal(await guest.evaluate(() => window.mira.shell.dropping), false)
       assert.equal(await guest.evaluate(() => window.mira.params.get('world.seed').value), 777)
-      await guest.evaluate(() => window.mira.shell.showPanel('worlds'))
-      await guest.locator('.saved-worlds button[aria-label^="Delete"]').first().dispatchEvent('click')
-      assert.equal(await guest.evaluate(() => JSON.parse(localStorage.getItem('mira.savedWorlds.v1')).entries.length), 1)
-      assert.equal(await guest.evaluate(() => window.mira.params.get('world.seed').value), 777)
-      // The remaining bookmark matches the room and is safe to enter under its lock.
-      const entry = guest.locator('.saved-worlds button[data-saved-world]')
-      await entry.focus(); await guest.keyboard.press('Enter')
-      await guest.waitForFunction(() => !window.mira.shell.menuOpen)
-      assert.equal(await guest.evaluate(() => window.mira.params.get('world.seed').value), 777)
+      // (Deleting and entering a bookmark from the Worlds panel was checked here; that panel is
+      // not offered while OFFER_CUSTOM_PLANET is off, so no player can reach it.)
       await guest.evaluate(() => window.mira.shell.openMenu())
       assert.equal(await guest.locator('.galaxy-canvas').count(), 1)
-      console.log('WebKit: authoritative override message, reduced entry, locked guest save/restore and local delete OK')
+      console.log('WebKit: authoritative override message, reduced entry, locked guest save and restore OK')
     } finally { await safari.close() }
     await page.evaluate(() => window.miraNet.setLocked(false))
     // Throw during application and ensure the borrowed target and input lifecycle recover.
     await page.evaluate(() => {
       const { shell, params } = window.mira
-      shell.openMenu(); window.__apply = params.applySnapshot
+      // Away from the saved world first: a tap on the world a player is already in only returns
+      // to it (Shell.tapWorld), and this needs a drop.
+      shell.openMenu(); shell.stopAttract(); params.set('world.seed', 888); window.__apply = params.applySnapshot
       params.applySnapshot = () => { throw new Error('Saved restore test failure') }
     })
-    await page.locator('.saved-world-moon').dispatchEvent('click')
-    await page.waitForFunction(() => window.mira.shell.dropping)
-    await page.waitForFunction(() => !window.mira.shell.dropping && !window.mira.shell.savedEntering, null, { timeout: 30000 })
+    // Back in the lobby: a tap during its return flight is ignored, so wait for it to settle.
+    await settledLobby(page)
+    const moon = await page.locator('.saved-world-moon').boundingBox()
+    await page.mouse.click(moon.x + moon.width / 2, moon.y + moon.height / 2)
+    // The failed restore ends the drop at once (too quickly to catch it under way): the player is
+    // told, and nothing is left held.
+    await waitForState(page, 'the failed drop to recover and say so', () => !window.mira.shell.dropping && !window.mira.shell.savedEntering && /interrupted/.test(document.querySelector('.shell-toast')?.textContent ?? ''), undefined, 30)
     assert.equal(await page.evaluate(() => window.mira.shell.galaxy.savedTarget), false)
     assert.equal(await page.evaluate(() => window.mira.game.input.suspended), false)
     assert.equal(await page.evaluate(() => JSON.stringify(window.mira.shell.galaxy.options.worlds.find(world => world.id === 'custom'))), custom)
@@ -162,6 +165,4 @@ try {
     assert.deepEqual(errors, [])
     console.log('Chromium: save/reload, direct moon drop, snapshot restore, room route and failure recovery OK')
   } finally { await browser.close() }
-} finally {
-  if (server.exitCode === null) { const stopped = new Promise(resolve => server.once('exit', resolve)); process.kill(-server.pid, 'SIGTERM'); await stopped }
-}
+} finally { /* the runner stops its servers */ }

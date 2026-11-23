@@ -54,7 +54,8 @@ for (const [name, options] of Object.entries({ desktop: { viewport: { width: 144
     await press(page.locator('.rail-command .exit-world')); await page.waitForTimeout(500)
     await page.screenshot({ path: `${out}/${name}-leave-question.png` })
     await press(page.locator('.exit-stay')); await page.waitForTimeout(400)
-    if (touch) { if (await page.locator('.world-inspector').isVisible()) await page.locator('.inspector-toggle').tap(); await page.waitForTimeout(600); await page.screenshot({ path: `${out}/${name}-touch.png` }) }
+    // Panels hides while they are open (v26.11.2117): close them with the control a player has.
+    if (touch) { if (await page.locator('.world-inspector').isVisible()) await page.locator('.world-inspector .wi-card.is-open > .wi-card-close, .world-inspector .panels-close').filter({ visible: true }).first().tap(); await page.waitForTimeout(600); await page.screenshot({ path: `${out}/${name}-touch.png` }) }
     await page.evaluate(() => window.mira.shell.requestPause?.()); await page.waitForTimeout(700)
     await page.screenshot({ path: `${out}/${name}-pause.png` })
     console.log(`${name}: done`)

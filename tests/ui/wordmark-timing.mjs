@@ -1,6 +1,7 @@
 // Time from page start to loading's end and to the lobby's first frame after it, the median
 // of five loads, for each dev server given (to compare a branch with its base).
 //   tools/heavy.sh node tests/ui/wordmark-timing.mjs http://127.0.0.1:5241/ http://127.0.0.1:5243/
+// browser-checks: skip (a measurement across two builds, not a check)
 import { chromium } from 'playwright-core'
 const urls = process.argv.slice(2)
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })

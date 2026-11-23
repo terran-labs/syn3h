@@ -96,6 +96,23 @@ for (const mode of ['desktop', 'phone']) {
       assert.ok(rows.every(r => !/\bbot\b/i.test(r.text)), `${mode}: no row spells out "bot"`)
     }
 
+    // Changing the interface Style leaves every other card's groups as the player left them.
+    // Bug caught: the first style change loaded the glass code, its settings rebuilt the panels
+    // and every open group closed (the Game card's Bots, for one).
+    // Desktop: a phone shows one card alone, and the rebuild that closed the groups is the same code there.
+    if (!touch) {
+    await page.evaluate(() => mira.shell.inspector.revealCard('game')); await settled(page)
+    const bots = () => page.evaluate(() => { const g = document.querySelector('.wi-card[data-section=game]'); return { card: g.classList.contains('is-open'), group: g.querySelector('.wi-group[data-group=Bots]')?.open } })
+    await page.evaluate(() => { document.querySelector('.wi-card[data-section=game] .wi-group[data-group=Bots]').open = true })
+    const style = await page.evaluate(() => mira.params.get('hud.glass').value)
+    for (const value of [0, 1, 2, style]) {
+      await page.evaluate((v) => mira.params.set('hud.glass', v, 'local'), value)
+      await page.waitForFunction(() => mira.params.get('glass.thickness') !== undefined || mira.params.get('hud.glass').value !== 0, null, { timeout: 20000 })
+      await page.waitForTimeout(400)
+      assert.deepEqual(await bots(), { card: true, group: true }, `${mode}: the Game card and its Bots group stay open when Style becomes ${value}`)
+    }
+    }
+
     // Pause pauses, and the veil resumes.
     await press(header.locator('.rail-pause'))
     await page.waitForFunction(() => mira.game.input.suspended)
