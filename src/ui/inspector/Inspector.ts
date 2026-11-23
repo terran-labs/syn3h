@@ -341,7 +341,7 @@ export class Inspector {
         const handling = this.presetRow(group.name); if (handling) fold.append(handling)
         for (const def of group.properties) fold.append(this.row(def)); body.append(fold)
       })
-      const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot'
+      const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot card-actions'
       // The World card copies and pastes the whole world from its action row above; a second,
       // section-only pair here would only be the same thing smaller.
       if (section.id !== 'world') foot.innerHTML = '<button type="button" class="panel-action" data-wi="copy-section">Copy JSON</button><button type="button" class="panel-action" data-wi="paste-section">Paste</button>'

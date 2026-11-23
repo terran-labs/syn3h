@@ -363,7 +363,7 @@ export class Shell implements System {
     const railTop = this.inspector.element.querySelector('.wi-top')!
     // Players & session is a card like the others: same header, chevron, easing and memory.
     const players = document.createElement('div')
-    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite welcome about how to play help connection diagnostics mute audio sound"><button type="button" class="panel-action rail-invite">Invite players</button><button type="button" class="panel-action rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
+    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite welcome about how to play help connection diagnostics mute"><div class="card-actions rail-actions"><button type="button" class="panel-action rail-invite">Invite players</button><button type="button" class="panel-action rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button></div>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     // The summary is read every frame while the panels show: a live collection, not a query.
     const scoreRows = players.querySelector('.hud-scoreboard')!.getElementsByClassName('score-row')
@@ -483,13 +483,8 @@ export class Shell implements System {
     guide.addEventListener('close', () => this.closeAbout(), { signal })
     this.switches.set('diagnostics', this.bindField(players.querySelector('.rail-diagnostics')!, signal))
     players.querySelector('.rail-diagnostics input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
-    // Mute is a state, not an action: a switch that says whether sound is muted, not a button
-    // whose label names the opposite of the current state.
-    const music = document.createElement('div'); music.className = 'rail-music'
-    music.innerHTML = switchHtml('rail-mute', 'Mute audio')
-    players.querySelector('.rail-player-body')!.append(music)
-    this.switches.set('mute', this.bindField(music.querySelector('.rail-mute')!, signal))
-    music.querySelector('input')!.addEventListener('change', event => this.audio.setMuted((event.target as HTMLInputElement).checked), { signal })
+    // Mute audio is a personal setting: the Me card's Audio group has it (audio.muted, the first
+    // row there), not this card (the owner, 22 November 2026).
     this.focusHud = new FocusHud(this.element)
     this.raceHud = new RaceHud(this.element, { leave: () => this.onRaceLeave?.(), cancel: () => this.onRaceCancel?.() })
     noticeStack.prepend(this.raceHud.element)
@@ -2017,7 +2012,6 @@ export class Shell implements System {
     renderHelp(this.element.querySelector('.shell-controls')!, this.choice.vehicleKind)
   }
   /** Call after an actual spawn so query overrides and future respawns show the right controls. */
-  private muteShown: boolean | undefined
   private readonly gearSelector: GearSelector
   private readonly accessories: AccessoryControls
   /** The vehicle being driven, for the accessory controls; set every frame by the bridge. */
@@ -2171,8 +2165,6 @@ export class Shell implements System {
     this.raceHud.update(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'), this.self, this.ground?.size)
     this.element.classList.toggle('show-diagnostics', diagnostics.value)
     this.switches.get('diagnostics')!(diagnostics.value)
-    // Per-frame: touch the DOM only when the label changes.
-    if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.switches.get('mute')!(this.muteShown) }
     this.updateGear()
     this.gearSelector.update(this.element.classList.contains('is-focus'))
     this.accessories.update(this.drivenVehicle)

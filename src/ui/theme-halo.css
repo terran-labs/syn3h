@@ -157,7 +157,7 @@
 .syn3h-shell.exploration-ui .rail-players > summary { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); }
 .syn3h-shell.exploration-ui .rail-players summary span { color: var(--s3-soft); }
 .syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 13px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
-.syn3h-shell.exploration-ui :is(.rail-diagnostics, .rail-music) { font-size: 12px; color: var(--s3-dim); }
+.syn3h-shell.exploration-ui .rail-diagnostics { font-size: 12px; color: var(--s3-dim); }
 
 /* ---------- Performance ---------- */
 .syn3h-shell.exploration-ui .performance-panel header strong { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }

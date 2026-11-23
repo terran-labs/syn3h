@@ -127,3 +127,10 @@ html .syn3h-shell.has-touch .world-inspector .wi-row.tint-row > .tint-default::a
 }
 .ui-tip.is-shown { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .ui-tip { transition: none; } }
+
+/* ---- Action rows (cards-round-3, ui/cards-round-3, 22 November 2026) ----
+   A row of small action buttons inside a card (.card-actions: Players & session's Invite and
+   Welcome, a card's Copy JSON and Paste, Performance's diagnostics actions) is centred, and
+   wraps centred when it does not fit (the owner: "those should be centered rather than
+   left-aligned"). Label-and-control rows and the full-width vehicle picker are not action rows. */
+html .syn3h-shell .world-inspector .card-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
