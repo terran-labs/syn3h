@@ -68,9 +68,6 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'p
       }
     }
     await page.evaluate(() => window.mira.params.set('hud.glass', 1))
-    // Changing the style closes the open groups in other cards (reported 23 November 2026 as a
-    // product fault, not this check's subject): open this one again for the lock.
-    await group.evaluate(g => { g.open = true })
 
     // Locked by the host: dimmed, a lock and "host", true state still shown.
     // A guest under the host's lock, as the room reports it: canEditWorld false.
