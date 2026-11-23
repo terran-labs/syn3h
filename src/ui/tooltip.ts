@@ -49,11 +49,11 @@ export function installTooltips(signal: AbortSignal): void {
     if (!(to instanceof Node && el.contains(to))) hide(el)
   }, { signal, passive: true })
   // Keyboard focus only: WebKit counts focus a sheet moves to its X after a click as visible, so the
-  // last input decides (cardClose.ts trackFocusModality). The short wait lets an opening sheet
+  // last input decides, and with no input yet it is not a keyboard's (cardClose.ts trackFocusModality). The short wait lets an opening sheet
   // settle before the tip measures where its button is.
   document.addEventListener('focusin', event => {
     const el = target(event)
-    if (el?.matches(':focus-visible') && document.documentElement.dataset.focusBy !== 'pointer') show(el, FOCUS_DELAY_MS)
+    if (el?.matches(':focus-visible') && document.documentElement.dataset.focusBy === 'keyboard') show(el, FOCUS_DELAY_MS)
   }, { signal })
   document.addEventListener('focusout', event => { const el = target(event); if (el) hide(el) }, { signal })
   // A press acts on the button: the name has done its job.

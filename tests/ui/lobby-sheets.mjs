@@ -4,7 +4,7 @@
 // sheet; the name or the buttons left out of place after closing; a shader built when a sheet
 // opens or closes (the worlds' fade must be a uniform, a hitch otherwise).
 //   SYN3H_URL=http://127.0.0.1:5187/ tools/heavy.sh node tests/ui/lobby-sheets.mjs
-import { chromium } from 'playwright-core'
+import { chromium, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { waitForState } from './stateWait.mjs'
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
@@ -50,5 +50,36 @@ try {
   console.log(`${width}x${height}: ok`)
   await page.close()
  }
- console.log('LOBBY SHEETS OK')
+ // The ring on the X. Bug caught (the owner, 23 November 2026: "not have the X circled by default
+// ... it looks like it's receiving focus"): a sheet opened by a click or a tap moves focus to its X,
+// and WebKit (and Chromium with nothing focused before) drew the keyboard ring on it. Opened by
+// pointer, no ring; opened by keyboard, the ring; before any input at all, none. Chrome by mouse,
+// WebKit by touch; Welcome, Updates and the Settings card.
+for (const [engine, touch] of [[chromium, false], [webkit, true]]) {
+  const b = engine === chromium ? browser : await webkit.launch()
+  try {
+    const page = await b.newPage({ viewport: touch ? { width: 390, height: 844 } : { width: 1440, height: 900 }, hasTouch: touch })
+    await page.goto(`${process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'}?room=lobby-sheets-ring-${Date.now()}`)
+    await waitForState(page, 'the settled lobby', () => document.documentElement.dataset.boot === 'done' && !window.syn3h?.shell?.galaxy?.opening && !document.documentElement.dataset.opening, undefined, 120)
+    const sheets = [['Welcome', '.lobby-gear-dock .lobby-about', 'dialog.lobby-sheet-about .lobby-sheet-close'], ['Updates', '.lobby-version', 'dialog.lobby-sheet-updates .lobby-sheet-close'], ['Settings', '.lobby-gear', '.lobby-settings-close']]
+    const ringed = close => page.evaluate(sel => { const x = document.querySelector(sel), s = x && getComputedStyle(x); return { focused: document.activeElement === x, ring: !!x && x.matches(':focus-visible') && s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0 && s.outlineColor !== 'rgba(0, 0, 0, 0)' } }, close)
+    const closed = () => waitForState(page, 'nothing open', () => !document.querySelector('dialog.lobby-sheet[open]') && !document.querySelector('#lobby-settings:not([hidden])'), undefined, 10)
+    const tag = engine === chromium ? 'chrome, mouse' : 'webkit, touch'
+    // Before any input: opened by the game itself, no ring.
+    await page.evaluate(() => window.syn3h.shell.showLobbyAbout()); await page.waitForTimeout(600)
+    assert.deepEqual(await ringed(sheets[0][2]), { focused: true, ring: false }, `${tag}: opened before any input, Welcome's X has no ring`)
+    await page.evaluate(() => window.syn3h.shell['aboutSheet'].close()); await closed()
+    for (const [name, opener, close] of sheets) {
+      const button = page.locator(opener).first()
+      await (touch ? button.tap() : button.click()); await page.waitForTimeout(600)
+      assert.deepEqual(await ringed(close), { focused: true, ring: false }, `${tag}: ${name} opened by pointer, its X has no ring`)
+      await page.keyboard.press('Escape'); await closed()
+      await button.evaluate(el => el.focus()); await page.keyboard.press('Enter'); await page.waitForTimeout(600)
+      assert.deepEqual(await ringed(close), { focused: true, ring: true }, `${tag}: ${name} opened by keyboard, its X has the ring`)
+      await page.keyboard.press('Escape'); await closed()
+    }
+    console.log(`${tag}: the X's ring follows the input`)
+  } finally { if (b !== browser) await b.close() }
+}
+console.log('LOBBY SHEETS OK')
 } finally { await browser.close() }

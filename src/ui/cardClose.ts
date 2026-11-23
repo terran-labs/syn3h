@@ -12,8 +12,8 @@ export const CARD_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable
  * A sheet moves focus to its X as it opens, so keyboard and screen reader users start there. WebKit
  * (and Chromium when nothing had focus) treats that scripted focus as :focus-visible and draws the
  * keyboard ring, so a click or tap open showed a ringed X (the owner, 23 November 2026). The X
- * hides its ring while the last input was a pointer or touch (card-chrome.css); a keyboard open, or
- * any key after, shows it again.
+ * shows its ring only while the last input was a key (card-chrome.css): after a pointer or touch,
+ * or before any input (nothing says a keyboard is in use), it has none.
  */
 export function trackFocusModality(signal: AbortSignal): void {
   const root = document.documentElement
