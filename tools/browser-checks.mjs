@@ -16,6 +16,8 @@
  *  - A release build (MIRA_RELEASE_VERSION, the second newest production release in
  *    release-notes/history.tsv) when its header names MIRA_RELEASE_VERSION.
  *  - Files that start their own servers (they set MIRA_NO_ROOM_SERVER) are run with none.
+ *  - A file whose header says `browser-checks: skip (reason)` is listed, not run: a review tool
+ *    that compares two builds, say, rather than a check.
  * A file passes when it exits 0 within its time (10 minutes, --timeout=<s> to change). It runs in
  * the background of whatever else the machine does: run it through heavy.sh, which holds one slot.
  */
@@ -33,7 +35,10 @@ const logs = '/tmp/mira-browser-checks'
 mkdirSync(logs, { recursive: true })
 
 /** A browser check: an .mjs in tests/ui that drives Playwright. Helpers (stateWait, thumbGrid, lib/) are not. */
+/** A file can opt out with `// browser-checks: skip (reason)` in its header: a review tool, not a check. */
+const skipped = []
 const files = readdirSync(folder).filter(f => f.endsWith('.mjs') && /from 'playwright(-core)?'/.test(readFileSync(join(folder, f), 'utf8')))
+  .filter(f => { const why = readFileSync(join(folder, f), 'utf8').slice(0, 2000).match(/browser-checks: skip \(([^)]*)\)/); if (why) skipped.push(`${f.replace(/\.mjs$/, '')}: ${why[1]}`); return !why })
   .map(f => f.replace(/\.mjs$/, '')).filter(f => !wanted.length || wanted.includes(f)).sort()
 
 const freePort = () => new Promise((done, fail) => { const s = createServer(); s.on('error', fail); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => done(port)) }) })
@@ -67,6 +72,7 @@ const reason = out => {
   return (lines.find(l => /AssertionError|Error:|FAIL|Timeout/.test(l) && !/^at /.test(l)) ?? lines.at(-1) ?? '').slice(0, 220)
 }
 
+for (const line of skipped) if (!wanted.length || wanted.includes(line.split(':')[0])) console.log(`SKIP  ${line}`)
 const started = Date.now(), results = []
 for (const name of files) {
   const source = readFileSync(join(folder, `${name}.mjs`), 'utf8'), head = source.slice(0, 2000)

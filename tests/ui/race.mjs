@@ -1,6 +1,8 @@
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { serverUrl } from './lib/server.mjs'
+const base = serverUrl('race')
 await mkdir('tests/ui/artifacts/race', { recursive: true })
 for (const mode of (process.env.RACE_VIEW ? [process.env.RACE_VIEW] : ['desktop', 'phone', 'landscape'])) {
   const mobile = mode !== 'desktop'
@@ -8,7 +10,7 @@ for (const mode of (process.env.RACE_VIEW ? [process.env.RACE_VIEW] : ['desktop'
   try {
     const page = await browser.newPage(mobile ? { ...devices[mode === 'landscape' ? 'iPhone 14 landscape' : 'iPhone 14'] } : { viewport: { width: 1440, height: 900 } })
     const errors = []; page.on('pageerror', error => errors.push(error.message))
-    await page.goto(`http://127.0.0.1:5187/?room=race-ui-${Date.now()}&autoplay=1`)
+    await page.goto(`${base}?room=race-ui-${Date.now()}&autoplay=1`)
     await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 90000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 90000 })
     await page.evaluate(() => {

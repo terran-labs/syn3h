@@ -3,6 +3,7 @@
 // One fixed scene per world: you, people and bots on the map (one of them "it"), single
 // vehicles beyond the rim near, middle and far, and a crowd of twelve on the rim.
 //   SHEET=current=http://127.0.0.1:5395/,new=http://127.0.0.1:5393/ node tests/ui/minimap-sheet.mjs
+// browser-checks: skip (a comparison sheet of two builds for review, not a check)
 //   SHEET=new=http://127.0.0.1:5393/ SHEET_REUSE=current node tests/ui/minimap-sheet.mjs   (recapture one build only)
 // A build that knows Minimap.markStyle is also captured in its alternative form ('kite').
 // Writes tests/ui/artifacts/minimap-sheet/*.png and sheet.png. Look at it.

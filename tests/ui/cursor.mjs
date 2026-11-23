@@ -3,18 +3,18 @@
  * beam; after that moving the mouse swings the camera and a click sends a beam; opening the
  * menu, or Escape, lets the cursor go. Right-click still switches cockpit and chase.
  *
- *   tools/heavy.sh node tests/ui/cursor.mjs
- *
- * Needs the lane dev server on 5187.
+ *   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs cursor
  */
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
+import { serverUrl } from './lib/server.mjs'
+const base = serverUrl('cursor')
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const errors = []
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
   page.on('pageerror', e => errors.push(e.message))
-  await page.goto(`http://127.0.0.1:5187/?room=cursor-${Date.now()}&autoplay=1`, { waitUntil: 'load' })
+  await page.goto(`${base}?room=cursor-${Date.now()}&autoplay=1`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.mira?.game?.tick > 40, null, { timeout: 120000 })
   const locked = () => page.evaluate(() => document.pointerLockElement === window.mira.game.canvas)
   const eye = () => page.evaluate(() => { const s = window.mira, c = s.game.camera.position, p = s.player.body.translation(); return Math.atan2(c.x - p.x, c.z - p.z) })

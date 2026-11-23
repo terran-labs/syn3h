@@ -1,10 +1,11 @@
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
+import { serverUrl } from './lib/server.mjs'
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 try {
   const page = await browser.newPage()
   await page.route('**/saved-action-fixture', route => route.fulfill({ contentType: 'text/html', body: '<html><body></body></html>' }))
-  await page.goto('http://127.0.0.1:5187/saved-action-fixture')
+  await page.goto(`${serverUrl('saved-world-action')}saved-action-fixture`)
   const result = await page.evaluate(async () => {
     const { Inspector } = await import('/src/ui/inspector/Inspector.ts')
     const { defineParam } = await import('/shared/params.ts')
