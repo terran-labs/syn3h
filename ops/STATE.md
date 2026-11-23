@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-23 13:20 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-23 15:15 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2303 (release-110, Record blank frames in Diagnostics; Diagnostics no longer closes itself), source 3d00d7e9,
-frozen copy 20261123-130824-3d00d7e9, Worker version 0bffb602, at https://mira.cc/ since 23 November 13:14 PST.
+Live: v26.11.2304 (release-111, black-flash test links: ?blank=1 counter, ?shadows=0, ?post=base, ?samples=1, ?shading=0, ?lowrest=1, ?freeze=1), source 6f4c4c17,
+frozen copy 20261123-150616-6f4c4c17, Worker version 747deecb, at https://mira.cc/ since 23 November 15:11 PST.
 The game is Mira from v26.11.2300 (LAST_SYN3H_VERSION v26.11.2206; notes heading "## Mira vX"). Kept named syn3h on
 purpose: the Worker, its workers.dev addresses, the Durable Object, the R2 bucket, x-syn3h-version, the token path,
 'buggy-syn3h', local paths and /tmp names (ship.sh outcomes are now /tmp/mira-ship-N*), the repository (docs/NAMES.md).
@@ -175,6 +175,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2301 | 108 | m-veil-2301 | the loading screen holds still on a slow load; changing a setting keeps open groups open |
 | v26.11.2302 | 109 | m-flash-2302 | refraction, force-field glow and headlight soft edge off on iPhone, iPad and Safari (black flashes, cause unconfirmed); Panels leaves with you |
 | v26.11.2303 | 110 | m-recorder-2303 | Record blank frames in Performance, Diagnostics; the Diagnostics fold no longer closes under the pointer |
+| v26.11.2304 | 111 | m-switches-2304 | black-flash test links (?blank=1 counter and one-change switches); the browser-check runner stops its servers on a signal |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
