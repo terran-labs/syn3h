@@ -147,6 +147,8 @@ export function viewState(shell: { contains(name: string): boolean } | null | un
 export interface PostChain<Renderer = unknown, Scene = unknown, Camera = unknown> {
   /** Mark draws covered by the entry overlay, where optional effects can compile. */
   setCovered?(covered: boolean): void
+  /** The scene pass's sample count, for diagnostics; null before a graph is built. */
+  sceneSamples?(): number | null
   /** Draw this frame to the screen. `frameMs` is the time since the previous frame. */
   render(renderer: Renderer, scene: Scene, camera: Camera, frameMs: number): void
 }

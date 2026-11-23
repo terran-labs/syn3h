@@ -18,11 +18,12 @@
  *  - Files that start their own servers (they set MIRA_NO_ROOM_SERVER) are run with none.
  *  - A file whose header says `browser-checks: skip (reason)` is listed, not run: a review tool
  *    that compares two builds, say, rather than a check.
- * A file passes when it exits 0 within its time (10 minutes, --timeout=<s> to change). It runs in
+ * A failing file's log (and its server's) is also kept as <file>.failed-<time>.log, which no later
+ * run overwrites. A file passes when it exits 0 within its time (10 minutes, --timeout=<s> to change). It runs in
  * the background of whatever else the machine does: run it through heavy.sh, which holds one slot.
  */
 import { spawn } from 'node:child_process'
-import { readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { join, resolve } from 'node:path'
 
@@ -92,7 +93,17 @@ for (const name of files) {
   server?.stop()
   const seconds = Math.round((Date.now() - t0) / 1000), ok = result.code === 0
   results.push({ name, ok, seconds })
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name.padEnd(26)} ${String(seconds).padStart(4)} s${ok ? '' : `  (${result.code === 'timeout' ? 'timed out' : result.code === 'no server' ? 'no server' : `exit ${result.code}`}) ${reason(result.out)}`}`)
+  // A failure's logs are kept under the time it failed: the fixed paths are overwritten by the next
+  // run, which lost the evidence of two failures on 23 November 2026. Passing runs keep the fixed paths.
+  let kept = ''
+  if (!ok) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    kept = join(logs, `${name}.failed-${stamp}.log`)
+    writeFileSync(kept, Buffer.concat(result.out))
+    const serverLog = join(logs, `${name}.server.log`)
+    if (server && existsSync(serverLog)) copyFileSync(serverLog, join(logs, `${name}.failed-${stamp}.server.log`))
+  }
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name.padEnd(26)} ${String(seconds).padStart(4)} s${ok ? '' : `  (${result.code === 'timeout' ? 'timed out' : result.code === 'no server' ? 'no server' : `exit ${result.code}`}) ${reason(result.out)}\n      log kept: ${kept}`}`)
 }
 const failed = results.filter(r => !r.ok)
 console.log(`\n${results.length - failed.length} of ${results.length} passed in ${Math.round((Date.now() - started) / 60000)} min. Logs: ${logs}/<file>.log`)

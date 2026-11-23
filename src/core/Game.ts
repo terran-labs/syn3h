@@ -1,6 +1,8 @@
 import { CoveredPipelines } from './coveredPipelines'
 import { CoveredClimbRun, SLICED_CLIMB_TOP, slicedClimbTo } from './coveredClimb'
 import { longFrames } from './longFrames'
+import { BlankFrameRecorder } from './blankFrames'
+import { refractionState } from '../world/water/refraction'
 import { installLongFrameRenderer } from './longFrameRenderer'
 /**
  * Game: owns the renderer, scene, physics world and the fixed step loop.
@@ -94,6 +96,8 @@ export class Game {
   entryQualityLevel?: QualityLevel
   vehicleKind = (): string => 'unknown'
   readLongFrames(after = 0) { return longFrames.read(after) }
+  /** Blank and partly blank frames, with what coincided (blankFrames.ts). Set once the renderer starts. */
+  blankFrames: BlankFrameRecorder | null = null
   private readonly pipelineCounter = new PipelineCounter()
   readonly performance: FrameMetrics = { fps: 0, frameMs: 0, physicsMs: 0, drawCalls: 0, triangles: 0, firstFrameMs: null }
 
@@ -155,6 +159,14 @@ export class Game {
     // three's error scopes stop rejecting into the page (deviceLoss.ts).
     guardDevice(this.renderer as unknown as GuardedRenderer)
     installLongFrameRenderer(this.renderer)
+    this.blankFrames = new BlankFrameRecorder(this.renderer as never, {
+      level: () => this.quality.governor.level,
+      rung: () => this.quality.governor.rung,
+      reason: () => String(this.quality.getPerformanceSnapshot().qualityReason),
+      refraction: () => refractionState(this.renderer),
+      samples: () => this.postChain?.sceneSamples?.() ?? this.renderer.samples,
+    })
+    this.blankFrames.attach()
     this.quality.attachRenderer(this.renderer)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.shadowMap.enabled = true
@@ -412,6 +424,8 @@ export class Game {
       const previousDraws = watchingDraw ? this.renderer.info.render.drawCalls : 0
       for (const system of this.systems) system.prepareWorldDraw?.()
       drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs)
+      // In the same task as the draw, so the probe sees what is about to be presented.
+      this.blankFrames?.afterDraw()
       if (view === 'playing') this.rememberVehicleLevel(this.quality.governor.level)
       longFrames.end('Render submission', renderStart)
       this.lastDraw = now

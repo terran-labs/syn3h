@@ -76,6 +76,8 @@ export interface PerformanceSnapshot {
 export interface PerformanceSource {
   runPerformanceCheck?(signal: AbortSignal): Promise<string>
   diagnosticReport?(): string
+  /** Blank frames recorded (Performance, Diagnostics, "Record blank frames"). */
+  blankFrameCounts?(): { lastMinute: number; total: number } | null
   getPerformanceSnapshot(): PerformanceSnapshot
   subscribePerformance(listener: (snapshot: PerformanceSnapshot) => void): () => void
   setDiagnosticsVisible(visible: boolean): void

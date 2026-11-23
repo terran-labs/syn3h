@@ -222,6 +222,8 @@ body { --map-top: calc(var(--edge-touch-bottom) + 160px * .885); }
 .performance-chart path { stroke: #8dcce555; }
 .performance-chart polyline { stroke: #d3d3d3; stroke-width: 1; vector-effect: non-scaling-stroke; }
 .performance-history { color: #bfbfbf; font-size: 11px; }
+.performance-blank-frames { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; min-height: 36px; }
+.performance-blank-frames small { color: #bfbfbf; font-size: 11px; font-variant-numeric: tabular-nums; }
 .mira-shell.exploration-ui .performance-recommendation { position: fixed; left: 50%; top: 100px; transform: translateX(-50%); max-width: min(340px,calc(100vw - 32px)); padding: 10px 14px; background: rgb(18 18 18 / .96); border: 1px solid var(--s3-line); border-radius: 3px; pointer-events: auto; z-index: 40; font-size: 13px; }
 .performance-recommendation p { margin: 0 0 8px; }
 .performance-recommendation button + button { margin-left: 8px; }
