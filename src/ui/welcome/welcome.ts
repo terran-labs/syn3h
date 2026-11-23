@@ -48,13 +48,17 @@ function figure(id: string, caption: string, sizes: string, className = ''): str
   return `<figure class="welcome-shot${className ? ` ${className}` : ''}" style="--shot-colour:${s.colour}"><img alt="${escape(s.alt)}" width="${largest.width}" height="${Math.round(largest.width * s.height / s.width)}" decoding="async" loading="lazy" data-src="${fallback.url}" data-srcset="${srcset}" data-sizes="${sizes}"><figcaption>${caption}</figcaption></figure>`
 }
 
+/** The Welcome sheet's widest reading column, CSS px (LobbySheet width; it was 680). */
+export const WELCOME_WIDTH = 780
 /**
  * How wide each picture is drawn, so the browser fetches the right file (srcset in figure()): the
- * ring's cards are about 420 CSS px on an iPad or a computer, 62 vw on a phone. A phone or an iPad
- * fetches the 960 px files (about 180 KB for the six, inside the Foreman's 200 KB phone budget), a
- * computer at one device pixel per CSS pixel the 640 px ones.
+ * front picture is the column's full width, about 724 CSS px in the lobby on a computer (780 less
+ * the sheet's padding), up to 830 in the in-play guide, the screen less about 250 px on an iPad
+ * held upright (the lobby's buttons stand beside it) and less about 90 px on a phone. A 2x phone
+ * fetches the 640 or 960 px files, a 2x iPad upright the 1280 px ones, a 2x computer the 1920 px
+ * ones (the largest there is), a computer at one device pixel per CSS pixel the 960 px ones.
  */
-const RING = '(max-width: 699px) 62vw, 420px'
+const RING = '(max-width: 599px) calc(100vw - 88px), (max-width: 839px) calc(100vw - 250px), 760px'
 /** Welcome's six pictures, in the ring's order, each with a title and its caption. */
 const RING_SHOTS: (RingShot & { id: string })[] = [
   { id: 'wings-glide', title: 'Wings over the Badlands', caption: 'Off a Badlands ridge on the buggy’s force-field wings.' },

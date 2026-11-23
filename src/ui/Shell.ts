@@ -63,7 +63,7 @@ import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
 import { aboutHtml, fillUpdates, showAboutTab, updatesSheetHtml, wireAbout, type AboutTab } from './updates/about'
-import { mountWelcome, type Welcome } from './welcome/welcome'
+import { mountWelcome, WELCOME_WIDTH, type Welcome } from './welcome/welcome'
 import { LobbySheet } from './LobbySheet'
 import { UpdateNotice } from './updates/UpdateNotice'
 import { rollPlayerName } from './data/names'
@@ -414,7 +414,7 @@ export class Shell implements System {
     // it will land, so the sheet holds still.)
     const following = () => !!this.galaxy && this.galaxy.liftShown !== (this.galaxy.markLift > 0 ? 1 : 0)
     // The Welcome guide's content (src/ui/welcome): mounted on first open, its images loading on each.
-    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'Welcome', edges, following, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { this.lobbyWelcome = mountWelcome(body, { where: 'lobby' }) }, opened: () => this.lobbyWelcome?.opened() })
+    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'Welcome', width: WELCOME_WIDTH, bleed: true, edges, following, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { this.lobbyWelcome = mountWelcome(body, { where: 'lobby' }) }, opened: () => this.lobbyWelcome?.opened() })
     this.updatesSheet = new LobbySheet(this.element, {
       name: 'updates', title: 'Updates', edges, following, home: () => this.lobbySettings.version, closed, cue: () => this.audio.cue('click'),
       fill: body => body.insertAdjacentHTML('beforeend', updatesSheetHtml()), opened: body => { void fillUpdates(body.querySelector<HTMLElement>('.about-updates')!) },
