@@ -146,6 +146,7 @@ export interface NetContext {
   room: string
   /** Entry-link intent survives the lobby temporarily clearing the address bar. */
   voiceRequested?: boolean
+  elementVoice?: boolean
   /** Visible notice when a full room falls back to local play. */
   onJoinStatus?(message: string): void
   /** Vehicle kind chosen on the start screen. Falls back to `player.kind`, then 'buggy'. */
@@ -283,6 +284,7 @@ export class NetClient implements System {
     const { VoiceControl } = await import('../voice/VoiceControl')
     if (epoch !== this.voiceRoom || !this.connected) return
     this.voice = new VoiceControl({
+      elementVoice: this.ctx.elementVoice === true,
       id, audio: { get voiceContext() { return audio.voiceContext }, unlock: audio.unlock.bind(audio), attachSpeech: audio.attachSpeech.bind(audio) },
       send: msg => this.send(msg), isHost: () => this.isHost,
       muted: peer => this.chat.muted.has(peer),

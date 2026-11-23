@@ -3,8 +3,11 @@ import { params } from '../../shared/params'
 import { voiceOn } from '../../shared/voice'
 import type { GameAudio, Position } from '../audio'
 import { VoiceSession } from './VoiceSession'
+import { VoiceReadout } from './VoiceReadout'
+import { masterVolume, muted } from '../audio/params'
 
 interface Host {
+  elementVoice: boolean
   id: number
   audio: Pick<GameAudio, 'attachSpeech' | 'voiceContext' | 'unlock'>
   send(message: ClientMessage): void
@@ -31,8 +34,10 @@ export class VoiceControl {
   private error = ''
   private readonly unsubscribe: () => void
   private readonly pageExit = () => this.stop()
+  private readonly readout: VoiceReadout
 
   constructor(private readonly host: Host) {
+    this.readout = new VoiceReadout(() => host.audio.voiceContext)
     this.panel.setAttribute('role', 'group')
     this.panel.setAttribute('aria-label', 'Room voice')
     this.panel.style.cssText = 'position:fixed;top:max(env(safe-area-inset-top),8px);left:50%;transform:translateX(-50%);z-index:100;width:max-content;max-width:96vw;text-align:center'
@@ -41,6 +46,8 @@ export class VoiceControl {
     this.disclosure.textContent = 'Direct voice shares your network address with the other caller.'
     this.disclosure.style.cssText = 'display:block;white-space:normal;text-align:center;background:#171c23;color:white;padding:2px 5px'
     this.panel.append(this.disclosure)
+    this.readout.element.querySelector('summary')!.textContent = host.elementVoice ? 'Voice diagnostics · element' : 'Voice diagnostics · spatial'
+    this.panel.append(this.readout.element)
     this.leave.textContent = 'Leave voice'
     this.leave.onclick = () => this.stop()
     this.room.onclick = () => { if (host.isHost()) params.set(voiceOn.def.id, !voiceOn.value) }
@@ -71,7 +78,7 @@ export class VoiceControl {
         onRemoteAudio: (id, stream) => {
           this.speakers.get(id)?.dispose()
           this.speakers.delete(id)
-          const speaker = stream && this.host.audio.attachSpeech(stream)
+          const speaker = stream && (this.host.elementVoice ? this.elementSpeaker(id, stream) : this.host.audio.attachSpeech(stream))
           if (speaker) this.speakers.set(id, speaker)
         },
         onState: state => {
@@ -82,8 +89,11 @@ export class VoiceControl {
           this.render()
         },
       })
-      if (await session.enable() && epoch === this.epoch)
+      this.readout.beforeCapture()
+      if (await session.enable() && epoch === this.epoch) {
+        this.readout.afterCapture(session)
         this.host.send({ type: 'voice-ready', enabled: true })
+      }
     } catch {
       if (epoch !== this.epoch) return
       this.error = 'Audio unavailable. Retry voice'
@@ -108,6 +118,7 @@ export class VoiceControl {
   update(driving: boolean) {
     if ((!driving || !voiceOn.value) && (this.session || this.starting)) this.stop()
     this.active = driving
+    this.readout.frame(driving, this.session?.state.status === 'live')
     if (this.panel.hidden === driving) this.panel.hidden = !driving
     if (this.lastHost !== this.host.isHost() || this.lastAllowed !== voiceOn.value) this.render()
     this.positionSpeakers()
@@ -116,6 +127,33 @@ export class VoiceControl {
   private positionSpeakers() {
     for (const [id, speaker] of this.speakers)
       speaker.position(this.host.muted(id) ? undefined : this.host.position(id))
+  }
+
+  /** The comparison route plays the original received stream at a fixed distance. */
+  private elementSpeaker(id: number, stream: MediaStream) {
+    const element = new Audio()
+    let disposed = false
+    const position = () => {
+      const silent = this.host.muted(id) || muted.value || masterVolume.value === 0
+      if (element.muted !== silent) element.muted = silent
+      const volume = Math.min(1, Math.max(0, masterVolume.value))
+      if (element.volume !== volume) element.volume = volume
+    }
+    position()
+    element.srcObject = stream
+    void element.play().catch(() => {
+      if (!disposed) {
+        this.leave.textContent = 'Playback blocked · Leave voice'
+      }
+    })
+    return {
+      position,
+      dispose() {
+        disposed = true
+        element.pause()
+        element.srcObject = null
+      },
+    }
   }
 
   private render() {
@@ -141,6 +179,7 @@ export class VoiceControl {
     if (participating) this.host.send({ type: 'voice-ready', enabled: false })
     this.session?.dispose()
     this.session = undefined
+    this.leave.textContent = 'Leave voice'
     this.peers.clear()
     for (const speaker of this.speakers.values()) speaker.dispose()
     this.speakers.clear()
@@ -152,6 +191,7 @@ export class VoiceControl {
     this.unsubscribe()
     window.removeEventListener('pagehide', this.pageExit)
     this.stop()
+    this.readout.dispose()
     this.panel.remove()
   }
 }

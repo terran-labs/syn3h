@@ -86,6 +86,26 @@ describe('VoiceSession', () => {
     expect(sendSignal).not.toHaveBeenCalled()
   })
 
+  it('keeps device identifiers and network addresses out of the screenshot readout', async () => {
+    const { session } = setup()
+    Object.assign(track, { getSettings: () => ({
+      deviceId: 'private device', groupId: 'private group', echoCancellation: true,
+      noiseSuppression: false, autoGainControl: true, sampleRate: 48_000,
+    }) })
+    await session.enable()
+    session.setPeers([2])
+    Object.assign(Peer.instances[0], { getStats: async () => new Map<string, object>([
+      ['transport', { type: 'transport', selectedCandidatePairId: 'pair' }],
+      ['pair', { type: 'candidate-pair', localCandidateId: 'local', remoteCandidateId: 'remote' }],
+      ['local', { type: 'local-candidate', candidateType: 'host', address: '192.0.2.1' }],
+      ['remote', { type: 'remote-candidate', candidateType: 'relay', address: '192.0.2.2' }],
+    ]) })
+    expect(session.micSettings()).toEqual({
+      echoCancellation: true, noiseSuppression: false, autoGainControl: true, sampleRate: 48_000,
+    })
+    expect(await session.selectedCandidateTypes()).toEqual([{ local: 'host', remote: 'relay' }])
+  })
+
   it('stops a late capture after leaving without changing the new voice state', async () => {
     const { session, sendSignal } = setup()
     const first = deferred<Stream>()
