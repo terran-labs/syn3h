@@ -1,6 +1,4 @@
-export type VoiceSignal =
-  | { type: 'offer' | 'answer'; sdp: string }
-  | ({ type: 'candidate'; candidate: string } & RTCIceCandidateInit)
+import type { VoiceSignal } from '../../shared/voice'
 
 export interface VoiceState {
   readonly status: 'off' | 'requesting' | 'live' | 'error'
@@ -23,7 +21,7 @@ interface Peer {
   hasAudio: boolean
 }
 
-const stun = 'stun:stun.l.google.com:19302'
+const stun = 'stun:stun.cloudflare.com:3478'
 const maxPendingCandidates = 64
 
 /** One session per room connection. Only enable() requests microphone access. */

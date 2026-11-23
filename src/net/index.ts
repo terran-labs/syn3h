@@ -10,6 +10,8 @@ import { longFrames } from '../core/longFrames'
 import * as THREE from 'three/webgpu'
 import { joinedText } from '../ui/toastText'
 import { ChatChannel } from './chat'
+import type { VoiceControl } from '../voice/VoiceControl'
+import type { GameAudio } from '../audio'
 import { roomLabel } from '../core/roomAddress'
 import { type ParamValue, params, worldSeed } from '../../shared/params'
 import {
@@ -92,6 +94,9 @@ import { onRescue } from '../core/rescueLog'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
+  voiceContext?: AudioContext
+  unlock?: GameAudio['unlock']
+  attachSpeech?: GameAudio['attachSpeech']
   play(sound: 'laserShot' | 'laserHit' | 'materialize', position?: { x: number; y: number; z: number }): void
   impact(strength: number, position?: { x: number; y: number; z: number }): void
   /** Short synthesised cues (src/audio/Cues.ts); optional so older audio builds still fit. */
@@ -264,6 +269,31 @@ export class NetClient implements System {
   readonly events: NetEvent[] = []
   /** Chat lines, mutes and display rules (src/net/chat.ts). */
   readonly chat: ChatChannel
+  private voice?: VoiceControl
+  private voiceRoom = 0
+
+  private async enterVoiceRoom(room: string, id: number) {
+    const epoch = ++this.voiceRoom
+    const audio = this.ctx.audio
+    if (new URLSearchParams(location.search).get('voice') !== '1' || !audio?.attachSpeech || !audio.unlock) return
+    const { voiceEligible } = await import('../../shared/voice')
+    if (!voiceEligible(room)) return
+    const { VoiceControl } = await import('../voice/VoiceControl')
+    if (epoch !== this.voiceRoom || !this.connected) return
+    this.voice = new VoiceControl({
+      id, audio: { get voiceContext() { return audio.voiceContext }, unlock: audio.unlock.bind(audio), attachSpeech: audio.attachSpeech.bind(audio) },
+      send: msg => this.send(msg), isHost: () => this.isHost,
+      muted: peer => this.chat.muted.has(peer),
+      onMuteChange: callback => this.chat.onChange(callback),
+      position: peer => this.remotes.get(peer)?.vehicle.object.position,
+    })
+  }
+
+  private leaveVoiceRoom() {
+    this.voiceRoom++
+    this.voice?.dispose()
+    this.voice = undefined
+  }
   id = 0
   slot = 0
   game: GameState = {
@@ -878,6 +908,7 @@ export class NetClient implements System {
     this.raceBridge.update()
     // Exit world opens the lobby over a still running game: let go of everything on the way out.
     const driving = this.raceBridge.driving
+    this.voice?.update(driving)
     if (this.wasDriving && !driving) this.resetGear()
     this.wasDriving = driving
     for (const controller of this.botGear.values()) controller.update(dt)
@@ -1008,6 +1039,7 @@ export class NetClient implements System {
   }
 
   dispose(): void {
+    this.leaveVoiceRoom()
     this.disposed = true
     if (this.seamVehicle) (this.seamVehicle.object as THREE.Object3D<VehicleObjectEvents>).removeEventListener('tileshift', this.onTileShift)
     this.offRescue()
@@ -1844,6 +1876,11 @@ export class NetClient implements System {
     // Anything the room says may change what the status, scores or tags show.
     this.uiDirty = true
     switch (msg.type) {
+      case 'voice-full':
+      case 'voice-ready':
+      case 'voice-signal':
+        this.voice?.receive(msg)
+        break
       case 'race':
         this.raceBridge.receive(msg.race)
         break
@@ -1869,6 +1906,7 @@ export class NetClient implements System {
         applyRoomWorld(msg.params)
         if (this.everWelcomed && !this.welcomed) this.sessionRejoins++
         this.welcomed = true
+        if (msg.voice) void this.enterVoiceRoom(msg.room, msg.id)
         this.raceBridge.receive(msg.race ?? null)
         this.raceBridge.update()
         this.botKinds.clear()
@@ -2024,6 +2062,7 @@ export class NetClient implements System {
   }
 
   private onParamChange(id: string, value: ParamValue, source: string): void {
+    if (id === 'voice.on') this.voice?.update(this.raceBridge.driving)
     if (source === 'remote') return
     // "Bots may play with me" is personal: it goes to the room as part of who we are.
     if (id === playWithMe.def.id) { if (this.connected) this.send({ type: 'profile', play: value !== false }); return }
@@ -2058,6 +2097,7 @@ export class NetClient implements System {
   private hostThroughDrop = false
 
   private onDisconnect(retrying = true): void {
+    this.leaveVoiceRoom()
     if (this.welcomed && retrying) this.sessionDrops++
     this.hostThroughDrop = retrying && this.wasHost
     if (retrying) { try { this.noteDrop() } catch { /* diagnostics only */ } }

@@ -27,7 +27,7 @@ Set up first. Open the Foreman's verified HTTPS spike preview with `?voice=1` on
 | Time | Action |
 | --- | --- |
 | 0 to 10 s | Drive with voice off. Note which speaker plays, the engine and music level, and whether the sound is clean. |
-| 10 to 20 s | While the engine is audible, tap Enable voice and grant the mic. Check for a level drop, earpiece switch, ducking or crackles as capture starts. Note if the mic indicator appears. |
+| 10 to 20 s | While the engine is audible, tap Turn voice on and grant the mic. Check for a level drop, earpiece switch, ducking or crackles as capture starts. Note if the mic indicator appears. |
 | 20 to 35 s | Stay silent and drive. The partner counts aloud, pauses to listen for their own voice coming back, then listens for your engine during the pause. Say a short phrase together and check that both voices remain intelligible. |
 | 35 to 45 s | Have the partner speak while moving past your vehicle and away. Listen for left and right placement and fade with distance. |
 | 45 to 55 s | Tap mute and keep talking. The partner should stop hearing you. You should still hear them. Check the mute indicator. |
@@ -54,7 +54,7 @@ Keep the current spike at two. Four is a reasonable mesh profiling case. Move to
 
 ### D. NAT traversal and TURN
 
-Use public STUN only in the spike. The proposed endpoint is `stun:stun.cloudflare.com:3478`, which Cloudflare documents as free and unlimited. The integrated spike config still needs confirmation. STUN discovers a mapped address. ICE checks whether a path works. TURN carries media when direct paths fail. A same-Wi-Fi or same-host success says little about mobile carriers or restricted Wi-Fi. [Cloudflare TURN FAQ](https://developers.cloudflare.com/realtime/turn/faq/), [ICE RFC 8445](https://www.rfc-editor.org/rfc/rfc8445.html), [TURN RFC 8656](https://www.rfc-editor.org/rfc/rfc8656.html).
+Use public STUN only in the spike. The configured endpoint is `stun:stun.cloudflare.com:3478`, which Cloudflare documents as free and unlimited. STUN discovers a mapped address. ICE checks whether a path works. TURN carries media when direct paths fail. A same-Wi-Fi or same-host success says little about mobile carriers or restricted Wi-Fi. [Cloudflare TURN FAQ](https://developers.cloudflare.com/realtime/turn/faq/), [ICE RFC 8445](https://www.rfc-editor.org/rfc/rfc8445.html), [TURN RFC 8656](https://www.rfc-editor.org/rfc/rfc8656.html).
 
 Mira's relay share is unknown. An IETF ICE draft reported 5 to 10% of calls needing TURN in large consumer deployments at the time. Use 5%, 10% and 20% as sensitivity cases for direct peer calls, with 20% as a stress assumption. They do not forecast Mira's users or the fraction that will need TURN to reach a Cloudflare SFU. Public STUN alone can show failures but cannot tell us how many TURN would recover. [IETF ICE draft deployment observations](https://datatracker.ietf.org/meeting/94/agenda/ice-drafts.pdf).
 

@@ -341,6 +341,29 @@ export class GameAudio implements System {
     this.worldBus!.gain.setTargetAtTime(worldVolume.value,now,.03)
     this.remoteBus!.gain.setTargetAtTime(remoteVolume.value,now,.03)
   }
+  get voiceContext(): AudioContext | undefined { return this.context }
+
+  /** Remote speech follows the same listener and master volume as the vehicles. */
+  attachSpeech(stream: MediaStream) {
+    if (!this.context || !this.master) return
+    const source = this.context.createMediaStreamSource(stream)
+    const gain = this.context.createGain()
+    gain.gain.value = 0
+    const output = this.output({ x: 0, y: 0, z: 0 }, this.master)
+    const panner = output.node as PannerNode
+    source.connect(gain).connect(panner)
+    return {
+      position(point?: Position) {
+        gain.gain.value = point ? 1 : 0
+        if (!point) return
+        panner.positionX.value = point.x
+        panner.positionY.value = point.y
+        panner.positionZ.value = point.z
+      },
+      dispose() { source.disconnect(); gain.disconnect(); output.dispose() },
+    }
+  }
+
   private output(position?: Position, bus = this.effects!): { node: AudioNode; dispose: () => void } {
     if (!position) return { node: bus, dispose() {} }
     const panner = this.context!.createPanner()

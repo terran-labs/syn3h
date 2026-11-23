@@ -1,5 +1,15 @@
 # Coordination protocol
 
+## Proposed voice spike seams
+
+The room owns voice eligibility, consent and directed signalling. A welcome capability lets
+the client distinguish a voice-capable named room from an older server. The networking lane
+passes ready and signal messages over the existing socket and disposes the session when
+the connection ends. The audio lane attaches remote speech to the existing listener and
+master gain. The host's room switch uses the world parameter path. These seams are for
+Foreman review on the voice branch. The spike requires an explicit voice link and a local
+microphone action.
+
 How the Mira lanes work together through the Sunday noon handoff. Updated by the
 Foreman on 15 November 2026 to reflect the owner's overnight and default-on directions.
 Later explicit owner decisions take precedence over historical notes.
