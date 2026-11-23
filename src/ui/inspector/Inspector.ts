@@ -1,4 +1,4 @@
-import { defaultTint, glassLabels, liquidEligible, liquidQualityHint } from '../glassMaterial'
+import { defaultTint, glassLabels, LIQUID_TUNING_GROUPS, liquidEligible, liquidQualityHint } from '../glassMaterial'
 import { CARD_CLOSE } from '../cardClose'
 import { modeChoices } from '../modeAvailability'
 /**
@@ -40,8 +40,6 @@ function contentHeight(el: HTMLElement): number {
   if (!first || !last) return pad
   return Math.ceil(last.getBoundingClientRect().bottom - first.getBoundingClientRect().top + pad)
 }
-/** Registry groups that tune the Liquid style; shown inside Interface only at Liquid (liquidFold). */
-const LIQUID_GROUPS = ['Glass', 'Clear lens']
 const GLYPH = (d: string) => `<svg class="wi-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`
 const WORLD_ACTIONS = `<div class="wi-world-actions" role="group" aria-label="World actions">`
   + `<button type="button" class="panel-action" data-wi="copy-world" aria-label="Copy world">${GLYPH('M5.5 5.5V3a1 1 0 0 1 1-1H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-2.5M3 5.5h6.5a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z')}<span>Copy</span></button>`
@@ -359,8 +357,8 @@ export class Inspector {
 
       // The Liquid style's own tuning (the Glass and Clear lens groups) is not a section of its
       // own: it folds into Interface under Style and Tint, and only while Liquid is the style.
-      const liquid = section.tree.filter(group => LIQUID_GROUPS.includes(group.name)).flatMap(group => group.properties)
-      section.tree.filter(group => !LIQUID_GROUPS.includes(group.name)).forEach((group, index) => {
+      const liquid = section.tree.filter(group => LIQUID_TUNING_GROUPS.includes(group.name)).flatMap(group => group.properties)
+      section.tree.filter(group => !LIQUID_TUNING_GROUPS.includes(group.name)).forEach((group, index) => {
         const fold = this.fold(group.name, group.properties.length, index === 0 && !['Tag', 'Tag beams', 'Zorb', 'Sun', 'Sky', 'Weather'].includes(group.name))
         const handling = this.presetRow(group.name); if (handling) fold.append(handling)
         for (const def of group.properties) {
