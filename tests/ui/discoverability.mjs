@@ -17,9 +17,9 @@ for(const mode of ['desktop','phone']){
   await page.keyboard.press('Shift');await page.waitForTimeout(700)
   // The lobby offers planets, not vehicles: no vehicle control, panel or preview anywhere in it.
   assert.equal(await page.locator('[data-goto=vehicle], [data-panel=vehicle], [name=vehicle], .shell-vehicle, .shell-vehicle-preview, canvas[aria-label="Selected vehicle preview"]').count(),0,'the lobby shows no vehicle control')
-  // No bottom buttons (Multiplayer was removed); Settings, About and Updates are icons in the corner (LobbySettings).
+  // No bottom buttons (Multiplayer was removed); Settings and Welcome are in the corner, and the version opens Updates (LobbySettings).
   assert.equal(await page.locator('.galaxy-links button').count(),0,'the lobby has no bottom buttons')
-  for(const name of ['Settings','Welcome',/^Updates/]) assert.equal(await page.getByRole('button',{name,exact:typeof name==='string'}).count(),1,`the ${name} icon is there`)
+  for(const name of ['Settings','Welcome',/open Updates$/]) assert.equal(await page.getByRole('button',{name,exact:typeof name==='string'}).count(),1,`the ${name} icon is there`)
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-lobby.png`})
   // The Welcome guide: its sections are there, and its pictures load only now.
   assert.deepEqual(images,[],'no image request in the lobby before Welcome is opened')
