@@ -4,7 +4,8 @@
  * capitals, in the manner of a flight instrument. Three looks, chosen with the Focus
  * display setting, and three reticles:
  *
- *   Arc        speed and altitude as two arcs either side of the view, heading above.
+ *   Arc        speed and altitude as two arcs either side of the view, the planet and biome
+ *              above. No heading: the minimap shows direction (the owner, 22 November 2026).
  *   Horizon    a compass tape across the top that slides as you turn, readings beneath it.
  *   Telemetry  four corner brackets holding the readings, as on a mission display.
  *
@@ -62,7 +63,7 @@ export class FocusHud {
     </svg>
     <div class="fh-read fh-left" data-style="0"><b><span data-t="speed"></span><i data-t="speedUnit"></i></b><small>SPEED</small></div>
     <div class="fh-read fh-right" data-style="0"><b><span data-t="altitude"></span><i data-t="heightUnit"></i></b><small>ALT</small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
-    <div class="fh-read fh-top" data-style="0"><small data-t="world"></small><span data-t="heading"></span></div>
+    <div class="fh-read fh-top" data-style="0"><small data-t="world"></small></div>
     <div class="fh-read fh-top" data-style="1" style="top:104px"><b data-t="heading"></b><small><span data-t="speed"></span> <span data-t="speedUnit"></span> · ALT <span data-t="altitude"></span> <span data-t="heightUnit"></span> · <span data-t="clock"></span></small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
     <div class="fh-read fh-corner fh-tl" data-style="2"><small>SYN3H // SURVEY</small><span data-t="world"></span></div>
     <div class="fh-read fh-corner fh-tr" data-style="2"><small>LOCAL TIME</small><span data-t="clock"></span><small>ELAPSED <span data-t="elapsed"></span></small></div>

@@ -3,6 +3,8 @@ import { defineParam } from '../../shared/params'
 const mix = (id: string, label: string, value: number) => defineParam({
   id: `audio.${id}`, label, group: 'Audio', scope: 'client', default: value, min: 0, max: 1, step: 0.01,
 })
+/** First in the Me card's Audio group: the one sound switch a player reaches for (moved from Players & session, 22 November 2026). */
+export const muted = defineParam({ id: 'audio.muted', label: 'Mute audio', group: 'Audio', scope: 'client', default: false })
 export const masterVolume = mix('master', 'Master volume', 0.8)
 export const musicVolume = mix('music', 'Music volume', 0.22)
 export const effectsVolume = mix('effects', 'Effects volume', 0.7)
@@ -11,7 +13,6 @@ export const dirtVolume = mix('dirt', 'Ground rumble', 0.22)
 /** The tyres scrubbing in a real slide. Its own slider since 16 November 2026; it was under Engine volume as a pitched squeal. */
 export const slipVolume = mix('slip', 'Tyre slip volume', 0.3)
 export const windVolume = mix('wind', 'Wind volume', 0.4)
-export const muted = defineParam({ id: 'audio.muted', label: 'Mute audio', group: 'Audio', scope: 'client', default: false })
 /**
  * iPhone and iPad: a page's Web Audio is "ambient" by default and goes silent when the ring/silent
  * switch is on, with no sign of why. On, the game declares itself as playback (unlock.ts), so it

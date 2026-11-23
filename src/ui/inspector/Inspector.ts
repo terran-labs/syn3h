@@ -21,7 +21,7 @@ import { currentHour } from '../../world/sky/dayCycle'
 import './inspector.css'
 import './motion.css'
 import { bindSwitch } from './switch'
-import { cardsToClose, comfortable, type FitCard } from './cardFit'
+import { cardsToClose, shareHeights, type FitCard } from './cardFit'
 import './me-card.css'
 
 /** A die showing five, drawn as one path: the Randomize and roll-a-name buttons. */
@@ -31,6 +31,17 @@ const DICE_GLYPH = '<svg class="wi-dice" viewBox="0 0 16 16" aria-hidden="true" 
  * Small line glyphs for the World card's actions, 16 px, drawn in the text colour: copy (two
  * sheets), paste (a sheet with an arrow in), reset (an arrow turning back). One stroked path each.
  */
+/** The least a growing region (the chat log) is given when held at a height, px. */
+const GROW_MIN_PX = 72
+/** The height of what an element holds, from its first child's top to its last's bottom, with its padding. */
+function contentHeight(el: HTMLElement): number {
+  const style = getComputedStyle(el), pad = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+  const first = el.firstElementChild, last = el.lastElementChild
+  if (!first || !last) return pad
+  return Math.ceil(last.getBoundingClientRect().bottom - first.getBoundingClientRect().top + pad)
+}
+/** Registry groups that tune the Liquid style; shown inside Interface only at Liquid (liquidFold). */
+const LIQUID_GROUPS = ['Glass', 'Clear lens']
 const GLYPH = (d: string) => `<svg class="wi-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`
 const WORLD_ACTIONS = `<div class="wi-world-actions" role="group" aria-label="World actions">`
   + `<button type="button" class="panel-action" data-wi="copy-world" aria-label="Copy world">${GLYPH('M5.5 5.5V3a1 1 0 0 1 1-1H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-2.5M3 5.5h6.5a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z')}<span>Copy</span></button>`
@@ -183,6 +194,12 @@ export class Inspector {
   private fitQueued = false
   /** Card height animations in flight. A new toggle starts from wherever these have got to. */
   private readonly moving = new Map<HTMLElement, Animation>()
+  private readonly contentWatch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => this.queueFit(null)) : null
+  /** Refit when anything directly inside a card's body changes size. */
+  private watchContent(card: HTMLElement): void {
+    const body = card.querySelector(':scope > .wi-body')
+    if (this.contentWatch && body) for (const child of body.children) this.contentWatch.observe(child)
+  }
 
   constructor(parent: HTMLElement, private readonly options: InspectorOptions) {
     this.element.className = 'world-inspector'; this.element.setAttribute('aria-label', 'World inspector')
@@ -221,8 +238,15 @@ export class Inspector {
     // Space changes (a resize, a phone turning, a fold opening inside a card): refit once,
     // on the next frame, not every frame.
     window.addEventListener('resize', () => this.queueFit(null), { signal })
+    this.element.addEventListener('scroll', event => { const card = (event.target as Element).closest?.<HTMLElement>('.wi-card.is-clipped'); if (card) this.syncFade(card) }, { capture: true, passive: true, signal })
     this.element.addEventListener('toggle', event => { const card = (event.target as Element).closest<HTMLElement>('.wi-card'); this.queueFit(card) }, { capture: true, signal })
     if (typeof ResizeObserver !== 'undefined') { const watch = new ResizeObserver(() => this.queueFit(null)); watch.observe(this.element.querySelector('.wi-cards')!); signal.addEventListener('abort', () => watch.disconnect()) }
+    // A card's content changing size (diagnostics lines, a list growing), and a growing region
+    // gaining lines (the chat log, [data-card-grow]), change what the cards want: refit.
+    signal.addEventListener('abort', () => this.contentWatch?.disconnect())
+    const grown = new MutationObserver(records => { if (records.some(r => (r.target as Element).closest?.('[data-card-grow]'))) this.queueFit(null) })
+    grown.observe(this.element.querySelector('.wi-cards')!, { childList: true, subtree: true })
+    signal.addEventListener('abort', () => grown.disconnect())
     this.element.addEventListener('pointerdown', event => { this.pressed = (event.target as Element).closest<HTMLElement>('.wi-card') }, { signal })
     window.addEventListener('pointerup', () => { this.pressed = null }, { signal }); window.addEventListener('pointercancel', () => { this.pressed = null }, { signal })
     this.element.addEventListener('click', event => this.click(event))
@@ -333,15 +357,19 @@ export class Inspector {
       // apart, and asked twice) reset.
       if (section.id === 'world') body.insertAdjacentHTML('beforeend', WORLD_ACTIONS)
 
-      section.tree.forEach((group, index) => {
-        const fold = document.createElement('details'); fold.className = 'wi-group'; fold.dataset.group = group.name; fold.open = index === 0 && !['Tag', 'Tag beams', 'Zorb', 'Sun', 'Sky', 'Weather'].includes(group.name)
-        const summary = document.createElement('summary'); summary.innerHTML = '<span></span><small></small>'
-        summary.querySelector('span')!.textContent = group.name; summary.querySelector('small')!.textContent = String(group.properties.length)
-        fold.append(summary)
+      // The Liquid style's own tuning (the Glass and Clear lens groups) is not a section of its
+      // own: it folds into Interface under Style and Tint, and only while Liquid is the style.
+      const liquid = section.tree.filter(group => LIQUID_GROUPS.includes(group.name)).flatMap(group => group.properties)
+      section.tree.filter(group => !LIQUID_GROUPS.includes(group.name)).forEach((group, index) => {
+        const fold = this.fold(group.name, group.properties.length, index === 0 && !['Tag', 'Tag beams', 'Zorb', 'Sun', 'Sky', 'Weather'].includes(group.name))
         const handling = this.presetRow(group.name); if (handling) fold.append(handling)
-        for (const def of group.properties) fold.append(this.row(def)); body.append(fold)
+        for (const def of group.properties) {
+          fold.append(this.row(def))
+          if (def.id === 'hud.surfaceCoverage' && liquid.length) fold.append(this.liquidFold(liquid))
+        }
+        body.append(fold)
       })
-      const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot'
+      const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot card-actions'
       // The World card copies and pastes the whole world from its action row above; a second,
       // section-only pair here would only be the same thing smaller.
       if (section.id !== 'world') foot.innerHTML = '<button type="button" class="panel-action" data-wi="copy-section">Copy JSON</button><button type="button" class="panel-action" data-wi="paste-section">Paste</button>'
@@ -353,7 +381,7 @@ export class Inspector {
         save.addEventListener('keydown', event => event.stopPropagation())
         foot.append(save)
       }
-      body.append(foot); card.append(head, this.panelClose(), body); cards.append(card)
+      body.append(foot); card.append(head, this.panelClose(), body); cards.append(card); this.watchContent(card)
       if (open.has(section.id)) this.toggle(card, true)
     }
     // Extra cards are the same elements across rebuilds, so they keep their open state.
@@ -368,9 +396,33 @@ export class Inspector {
     for (let i = this.openOrder.length - 1; i >= 0; i--) if (!present.has(this.openOrder[i])) this.openOrder.splice(i, 1)
     this.editable = !canEditWorld(); this.update()
   }
+  /** A collapsible group: the shared accordion summary (name and count) over its rows. */
+  private fold(name: string, count: number, open: boolean): HTMLDetailsElement {
+    const fold = document.createElement('details'); fold.className = 'wi-group'; fold.dataset.group = name; fold.open = open
+    const summary = document.createElement('summary'); summary.innerHTML = '<span></span><small></small>'
+    summary.querySelector('span')!.textContent = name; summary.querySelector('small')!.textContent = String(count)
+    fold.append(summary)
+    return fold
+  }
+  /**
+   * The Liquid style's tuning (frost width, tint strength, the lens and the rest), as one
+   * group inside Interface, closed at first (the owner, 22 November 2026: "move the top-level
+   * glass section underneath me into an expanding portion of the interface section accessible
+   * only when the liquid style is applied"). At Frost or Flat it is not there at all; choosing
+   * Liquid brings it back, closed or open as it was.
+   */
+  private liquidFold(defs: readonly PropertyDef[]): HTMLDetailsElement {
+    const fold = this.fold('Liquid glass', defs.length, false)
+    fold.classList.add('wi-subgroup', 'wi-liquid-group')
+    for (const def of defs) fold.append(this.row(def))
+    const sync = () => fold.classList.toggle('is-absent', Number(params.get('hud.glass')?.value) !== 0)
+    sync(); this.presetSyncs.push(sync)
+    return fold
+  }
   private place(extra: ExtraCard): void {
     const cards = this.element.querySelector('.wi-cards')!, after = extra.after ? cards.querySelector(`:scope > [data-section="${extra.after}"]`) : null
     if (after) after.after(extra.card); else cards.append(extra.card)
+    this.watchContent(extra.card)
   }
   /**
    * Add a card built elsewhere, with the same header, summary, easing and targets as the
@@ -462,6 +514,9 @@ export class Inspector {
       if (button.tabIndex !== tab) button.tabIndex = tab
       button.classList.toggle('is-pending', pending)
       if (pending) button.setAttribute('aria-busy', 'true'); else button.removeAttribute('aria-busy')
+      // The shared tooltip (tooltip.ts) on each vehicle that is not the current one.
+      const tip = checked ? undefined : 'Switch to this vehicle'
+      if (button.dataset.tip !== tip) { if (tip) button.dataset.tip = tip; else delete button.dataset.tip }
       const blocked = Boolean(vehicles.note) && !checked
       if (button.matches('[aria-disabled=true]') !== blocked) { if (blocked) button.setAttribute('aria-disabled', 'true'); else button.removeAttribute('aria-disabled') }
     }
@@ -771,7 +826,7 @@ export class Inspector {
     const id = card.dataset.section!, at = this.openOrder.indexOf(id)
     if (open && at < 0) this.openOrder.push(id)
     if (!open && at >= 0) this.openOrder.splice(at, 1)
-    if (!open) card.style.removeProperty('min-height')
+    if (!open) { card.style.removeProperty('min-height'); card.style.removeProperty('flex'); card.classList.remove('is-sized', 'is-clipped') }
     // A tooltip never outlives its row: closing the card that holds it (by hand or to make
     // room for another) takes the tooltip with it.
     if (!open && this.selected && card.querySelector(`.wi-row[data-id="${CSS.escape(this.selected)}"]`)) this.hideTooltip()
@@ -989,16 +1044,24 @@ export class Inspector {
     this.fitQueued = true
     requestAnimationFrame(() => { this.fitQueued = false; if (this.moving.size) { this.queueFit(keep); return } this.reflow(() => this.fit(keep)) })
   }
-  /** A card the player is using: focus inside it, a pointer held in it, or a number being typed. */
+  /**
+   * A card the player is using, which is never the one closed: typing in it (a text field, the
+   * chat field, a number being edited) or holding the pointer down in it (dragging a slider).
+   * Focus merely left inside a card (a clicked fold, the chat log) does not count: it kept
+   * cards open for good, which let four stay open at laptop height (22 November 2026).
+   */
   private busy(card: HTMLElement): boolean {
-    return card === this.pressed || card.contains(document.activeElement) && document.activeElement !== card.querySelector('.wi-head') || !!this.editing && card.contains(this.editing.field)
+    const active = document.activeElement
+    const typing = active instanceof HTMLElement && card.contains(active) && (active.isContentEditable || active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement && !['checkbox', 'radio', 'range', 'button', 'color'].includes(active.type))
+    return card === this.pressed || typing || !!this.editing && card.contains(this.editing.field)
   }
   /**
-   * Close the cards open longest until every open card has a comfortable height (cardFit.ts),
-   * and hold each open card at that height so the stack never squeezes one into a sliver.
-   * `keep` is the card just opened, or the one whose content grew; `reveal` scrolls it into
-   * view when the motion lands. Not while searching, which
-   * opens every card with a match, nor while hidden, when nothing can be measured.
+   * Close the cards open longest until the open ones fit (cardFit.ts cardsToClose), then share
+   * the stack's height between them (shareHeights): a lone card with more content than room
+   * fills the sidebar, a short one keeps its own height, two share. `keep` is the card just
+   * opened, or the one whose content grew; `reveal` scrolls it into view when the motion
+   * lands. Not while searching, which opens every card with a match, nor while hidden, when
+   * nothing can be measured.
    */
   private fit(keep: HTMLElement | null, reveal = false): void {
     const stack = this.element.querySelector<HTMLElement>('.wi-cards')!
@@ -1007,6 +1070,11 @@ export class Inspector {
     if (this.options.oneOpen?.()) return
     if (!this.shown || this.element.classList.contains('is-searching') || !stack.clientHeight) return
     const cards = [...stack.children].filter((el): el is HTMLElement => el instanceof HTMLElement && !el.hidden && el.getClientRects().length > 0)
+    // A growing region (the chat log) keeps its distance from its end through the measuring
+    // below, which briefly gives it its default height and lets the browser clamp its scroll.
+    const grows = [...stack.querySelectorAll<HTMLElement>('.wi-card.is-open [data-card-grow]')].map(el => ({ el, fromEnd: el.scrollHeight - el.scrollTop - el.clientHeight }))
+    // Measure every card at its own height: last fit's sizes come off first.
+    for (const card of cards) if (card.classList.contains('is-sized')) { card.style.removeProperty('flex'); card.classList.remove('is-sized', 'is-clipped') }
     const measured = new Map<HTMLElement, FitCard>()
     for (const card of cards) {
       const height = card.getBoundingClientRect().height
@@ -1014,17 +1082,31 @@ export class Inspector {
       const head = card.querySelector<HTMLElement>(':scope > .wi-head'), body = card.querySelector<HTMLElement>(':scope > .wi-body')!
       const frame = card.offsetHeight - card.clientHeight, closed = (head?.offsetHeight ?? 44) + frame
       const open = card.classList.contains('is-open')
-      const natural = open ? height - body.clientHeight + body.scrollHeight : closed
+      // All of the content. A growing region (the chat log) counts what it actually holds, not
+      // the box it is drawn in: a chat with one line is a short card, one with a long history
+      // wants every line.
+      let natural = open ? height - body.clientHeight + body.scrollHeight : closed
+      if (open) for (const grow of body.querySelectorAll<HTMLElement>('[data-card-grow]')) natural += Math.max(GROW_MIN_PX, contentHeight(grow)) - grow.clientHeight
       measured.set(card, { id: card.dataset.section!, open, closed, natural, closable: !this.busy(card) })
     }
     const gap = parseFloat(getComputedStyle(stack).rowGap) || 0
     const order = this.openOrder.filter(id => cards.some(card => card.dataset.section === id))
     const close = new Set(cardsToClose([...measured.values()], order, stack.clientHeight, gap, keep?.dataset.section ?? null))
+    for (const [card, fit] of measured) if (close.has(fit.id)) { this.toggle(card, false); fit.open = false }
+    const heights = shareHeights([...measured.values()], stack.clientHeight, gap)
     for (const [card, fit] of measured) {
-      if (!card.classList.contains('wi-card')) continue
-      if (close.has(fit.id)) this.toggle(card, false)
-      else if (fit.open) card.style.minHeight = `${Math.round(comfortable(fit))}px`
+      const height = fit.open ? heights.get(fit.id) : undefined
+      if (height === undefined) continue
+      card.style.removeProperty('min-height')
+      // Held at its share. A card that wants no more than its share keeps its own height,
+      // unless it has a growing region, which then shows all its lines.
+      if (height < fit.natural - 0.5 || card.querySelector('[data-card-grow]')) { card.style.flex = `0 0 ${height}px`; card.classList.add('is-sized') }
+      // Held shorter than its content (a growing region scrolls on its own): the body fades out at
+      // its bottom edge until it is scrolled to the end, so a cut row reads as "more below".
+      card.classList.toggle('is-clipped', height < fit.natural - 0.5 && !card.querySelector('[data-card-grow]'))
+      this.syncFade(card)
     }
+    for (const { el, fromEnd } of grows) el.scrollTop = el.scrollHeight - el.clientHeight - fromEnd
     // Only a card the player has just opened is scrolled to; a fold opening inside a card
     // leaves the stack where the player put it.
     if (reveal && keep?.classList.contains('is-open') && keep.isConnected) this.revealAfterMotion(keep)
@@ -1057,6 +1139,11 @@ export class Inspector {
       })
     })
   }
+  /** A clipped card's body shows its bottom fade only while there is more below. */
+  private syncFade(card: HTMLElement): void {
+    const body = card.querySelector<HTMLElement>(':scope > .wi-body')
+    if (body) card.classList.toggle('is-at-end', body.scrollHeight - body.scrollTop - body.clientHeight < 2)
+  }
   /** Stop every card animation now and leave each card in its resting state. */
   private settle(): void {
     for (const [card, motion] of this.moving) { motion.cancel(); this.land(card) }
@@ -1079,14 +1166,17 @@ export class Inspector {
         control.hidden = words.length > 0 && !hit
         if (hit) cardHits++
       }
-      for (const fold of card.querySelectorAll<HTMLDetailsElement>('.wi-group')) {
+      for (const fold of card.querySelectorAll<HTMLDetailsElement>('.wi-group:not(.is-absent)')) {
         let hits = 0
+        // A group inside a group (Liquid glass in Interface) counts towards both; its rows are
+        // not searched while the group is absent.
         for (const row of fold.querySelectorAll<HTMLElement>('.wi-row')) {
+          if (row.closest('.wi-group.is-absent')) continue
           const def = this.rows.get(row.dataset.id!)!.def, hay = `${def.label} ${def.group} ${def.id} ${describe(def)}`.toLowerCase()
           const hit = headingHit || words.every(word => hay.includes(word)); row.hidden = words.length > 0 && !hit; if (hit) hits++
         }
         fold.hidden = words.length > 0 && hits === 0; if (words.length) fold.open = hits > 0
-        cardHits += hits
+        if (!fold.parentElement?.closest('.wi-group')) cardHits += hits
       }
       card.hidden = words.length > 0 && cardHits === 0
       if (words.length) this.toggle(card, cardHits > 0)

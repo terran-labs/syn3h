@@ -34,10 +34,12 @@ export const headlightCones = defineParam({ id: 'light.headlightCones', label: '
  * lamps themselves alone. The buggy's lamps follow light.buggyHeadlights (0.4 since 18
  * November) and its beam with them; the hovercraft's and jet's lamps are still at 1, so their
  * beams start at 0.4 to match the buggy's. If the owner dims their lamps, set these to 1.
+ * World settings since 22 November 2026 (how vehicles look to everyone). Whether beams are drawn
+ * at all stays each player's: headlightCones above, which their quality level sets (0 at Minimal).
  */
-export const buggyBeams = defineParam({ id: 'light.buggyBeams', label: 'Buggy beams in mist (lamps unchanged)', group: 'Light', scope: 'client', default: 1, min: 0, max: 2, step: 0.05 })
-export const hovercraftBeams = defineParam({ id: 'light.hovercraftBeams', label: 'Hovercraft beams in mist (lamps unchanged)', group: 'Light', scope: 'client', default: 0.4, min: 0, max: 2, step: 0.05 })
-export const jetBeams = defineParam({ id: 'light.jetBeams', label: 'Jet beams in mist (lamps unchanged)', group: 'Light', scope: 'client', default: 0.4, min: 0, max: 2, step: 0.05 })
+export const buggyBeams = defineParam({ id: 'light.buggyBeams', label: 'Buggy beams in mist (lamps unchanged)', group: 'Vehicle looks', scope: 'world', default: 1, min: 0, max: 2, step: 0.05 })
+export const hovercraftBeams = defineParam({ id: 'light.hovercraftBeams', label: 'Hovercraft beams in mist (lamps unchanged)', group: 'Vehicle looks', scope: 'world', default: 0.4, min: 0, max: 2, step: 0.05 })
+export const jetBeams = defineParam({ id: 'light.jetBeams', label: 'Jet beams in mist (lamps unchanged)', group: 'Vehicle looks', scope: 'world', default: 0.4, min: 0, max: 2, step: 0.05 })
 /** The beam-only factor for a vehicle kind (1 for kinds without one). */
 export function beamFactorFor(kind: string): number {
   if (kind.startsWith('buggy')) return Number(buggyBeams.value)

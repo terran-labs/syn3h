@@ -98,8 +98,8 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
 }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   html[data-touch-hand] .syn3h-shell.has-touch.is-playing:not(.has-match, .has-landmark-race) .shell-toast {
-    /* The heading line (.fh-top) starts 34 px down and is about 32 px tall. */
-    top: 72px; max-width: 290px;
+    /* The planet line (.fh-top) starts 34 px down and is one line, about 16 px tall. */
+    top: 56px; max-width: 290px;
   }
 }
 

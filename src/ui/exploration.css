@@ -90,13 +90,24 @@ html[data-cutout-side="right"] { --safe-left: 0px; }
 .syn3h-shell.exploration-ui .rail-players { flex: 0 1 auto; min-height: 32px; max-height: 30%; border-bottom: 1px solid var(--s3-line-quiet); background: rgb(18 18 18 / .7); overflow: auto; scrollbar-width: thin; }
 .syn3h-shell.exploration-ui .rail-players > summary { padding: 7px 11px; font-size: 12px; letter-spacing: .1em; cursor: pointer; list-style: none; }
 .syn3h-shell.exploration-ui .rail-players summary span { float: right; color: var(--s3-dim); }
-.syn3h-shell.exploration-ui .rail-player-body { padding: 5px 10px 10px; }
-.syn3h-shell.exploration-ui .rail-player-body .hud-scoreboard { max-height: none; overflow: visible; }
-.syn3h-shell.exploration-ui .rail-player-body .score-detail { display: none; }
-.syn3h-shell.exploration-ui.show-diagnostics .rail-player-body .score-detail { display: block; font: 11px/1.5 ui-monospace,monospace; color: #bababa; overflow-wrap: anywhere; }
+/* Players & session, top to bottom (the owner, 22 November 2026): the player rows, the centred
+   actions, the Connection diagnostics switch, then its lines while it is on. The scoreboard
+   writes its rows and its diagnostic lines in one list, so the board steps aside
+   (display: contents) and each kind takes its place by order: switching diagnostics on adds
+   lines at the bottom and moves nothing above them. */
+.syn3h-shell.exploration-ui .rail-player-body { display: flex; flex-direction: column; padding: 5px 10px 10px; }
+.syn3h-shell.exploration-ui .rail-player-body .hud-scoreboard { display: contents; }
+.syn3h-shell.exploration-ui .rail-player-body .score-row { order: 0; }
+.syn3h-shell.exploration-ui .rail-player-body .rail-actions { order: 1; margin: 10px 0 4px; }
+.syn3h-shell.exploration-ui .rail-player-body .rail-diagnostics { order: 2; }
+.syn3h-shell.exploration-ui .rail-player-body .score-detail { order: 3; display: none; }
+.syn3h-shell.exploration-ui.show-diagnostics .rail-player-body .score-detail { display: block; padding: 1px 0; font: 400 11px/1.5 ui-monospace, Menlo, 'SF Mono', monospace; color: var(--s3-soft, #cfcfcf); overflow-wrap: anywhere; }
 .syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 12px; padding: 5px 0; background: none; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
-.syn3h-shell.exploration-ui .rail-player-body button { min-height: 30px; padding: 5px 8px; font-size: 11px; margin: 5px 5px 5px 0; }
-.syn3h-shell.exploration-ui .rail-diagnostics, .syn3h-shell.exploration-ui .rail-music { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; }
+.syn3h-shell.exploration-ui .rail-player-body button { min-height: 30px; padding: 5px 8px; font-size: 11px; margin: 0; }
+/* Another player's name in a row is a plain-text button: it opens Mute or Unmute (chatLink). */
+.syn3h-shell.exploration-ui .rail-player-body .score-row button.score-name { display: block; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.syn3h-shell.exploration-ui .rail-player-body .score-row button.score-name:hover { color: #fff; }
+.syn3h-shell.exploration-ui .rail-diagnostics { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; }
 /* Tooltips sit outside the rail so internal scroll containers cannot clip them. */
 .syn3h-shell.exploration-ui .wi-tooltip { position: fixed; z-index: 60; max-height: calc(100dvh - 24px); overflow: auto; padding: 12px; font: 12px/1.5 'Barlow',sans-serif; border-left: 1px solid #dbdbdb; }
 .syn3h-shell.exploration-ui .wi-tooltip[hidden] { display: none; }
@@ -319,3 +330,12 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 .syn3h-shell.exploration-ui .performance-recommendation { top: auto; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; width: min(360px, calc(100vw - 32px)); max-width: none; transform: translateX(-50%); box-sizing: border-box; }
 .syn3h-shell.exploration-ui .performance-recommendation button { min-height: 44px; padding: 5px 8px; font-size: 12px; }
 .syn3h-shell.exploration-ui .performance-unlock { display: block; margin-top: 4px; color: var(--s3-dim); }
+
+/* Room under the top row (search, pause, leave world) equal to the room above it, so those
+   controls read as their own group above the cards (the owner, 22 November 2026). The
+   sidebar's own gap is 7 px; the cards start a further --edge-top less 7 below, so the two
+   spaces stay equal if the inset changes. Only with height to spare: taller than 700 px and
+   not the phone layout (Shell.ts PHONE_SIDEBAR: 700 px wide or 500 px tall and below). */
+@media (min-height: 701px) and (min-width: 701px) {
+  .syn3h-shell.exploration-ui .world-inspector:not(.lobby-settings) > .wi-cards { margin-top: calc(var(--edge-top) - 7px); }
+}

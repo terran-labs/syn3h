@@ -163,3 +163,15 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .syn3h-shell .world-inspector .wi-preset-pick { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; }
 .syn3h-shell .world-inspector .wi-preset select { width: 100%; height: 44px; min-height: 44px; font-size: 15px; }
 .syn3h-shell .world-inspector .wi-preset-about { margin: 0; font-size: 12px; line-height: 1.35; opacity: .85; }
+
+/* Liquid glass, the Liquid style's tuning, folded inside Interface under Style and Tint
+   (Inspector.liquidFold). Absent, not disabled, at Frost or Flat. */
+.syn3h-shell .world-inspector .wi-group.wi-liquid-group.is-absent { display: none; }
+.syn3h-shell .world-inspector .wi-group.wi-subgroup { margin: 0; }
+
+/* A card held shorter than its content (Inspector.fit): its body fades out over its last 28 px
+   while there is more below, so a row cut at the edge reads as "scroll for more". */
+.syn3h-shell .world-inspector .wi-card.is-clipped:not(.is-at-end) > .wi-body {
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
+}

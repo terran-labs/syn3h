@@ -58,7 +58,8 @@ import { applyPlanet, biomeLine, currentPlanet, currentWorldName, encodeWorld, p
 import { nameSeedKeptAcross, randomNameSeed, worldName } from '../world/worldName'
 import { currentHour, formatDayLength, planetDayLength } from '../world/sky/dayCycle'
 import { InviteView, inviteUrl } from './InviteView'
-import { Scoreboard, parseScoreRow } from './Scoreboard'
+import { Scoreboard, parseScoreRow, type PlayerRoster } from './Scoreboard'
+import { markedText } from './playerMarks'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
@@ -171,7 +172,12 @@ const build = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? __SYN3H_B
  */
 export const PAUSE_ICON = 'M9.2 6.8v10.4M14.8 6.8v10.4'
 export const PLAY_ICON = 'M9 6.4v11.2l8.6-5.6Z'
-export const LEAVE_WORLD_ICON = 'M7.6 13.6a2.9 2.9 0 1 0 5.8 0a2.9 2.9 0 1 0-5.8 0M18.6 20.6C10.6 21.8 3.6 17 4.5 11.2C5.4 5.6 12.4 4 20.2 4.6M16.9 2.4l3.3 2.2-2.9 2.7'
+/**
+ * The planet sits towards the path's open side, a little smaller, and the path swings wider
+ * round it, so the two do not crowd (the owner, 22 November 2026: "the outer curve a bit
+ * further from the inner circle"): about 4 units clear at the sides, 5 over the top.
+ */
+export const LEAVE_WORLD_ICON = 'M8.4 13.4a2.6 2.6 0 1 0 5.2 0a2.6 2.6 0 1 0-5.2 0M18.6 20.9C10.2 22.2 2.6 17.2 3.6 11.2C4.6 5.4 12.2 3.7 20.2 4.6M16.9 2.4l3.3 2.2-2.9 2.7'
 /** The search field's magnifier, drawn at the start of the field. */
 const SEARCH_ICON = 'M10.5 16.5a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM15 15l4.8 4.8'
 /** How long PAUSED and its resume line stay before fading, with nothing moving (ms). */
@@ -363,7 +369,7 @@ export class Shell implements System {
     const railTop = this.inspector.element.querySelector('.wi-top')!
     // Players & session is a card like the others: same header, chevron, easing and memory.
     const players = document.createElement('div')
-    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite welcome about how to play help connection diagnostics mute audio sound"><button type="button" class="panel-action rail-invite">Invite players</button><button type="button" class="panel-action rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
+    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite welcome about how to play help connection diagnostics mute"><div class="card-actions rail-actions"><button type="button" class="panel-action rail-invite">Invite players</button><button type="button" class="panel-action rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button></div>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     // The summary is read every frame while the panels show: a live collection, not a query.
     const scoreRows = players.querySelector('.hud-scoreboard')!.getElementsByClassName('score-row')
@@ -483,13 +489,8 @@ export class Shell implements System {
     guide.addEventListener('close', () => this.closeAbout(), { signal })
     this.switches.set('diagnostics', this.bindField(players.querySelector('.rail-diagnostics')!, signal))
     players.querySelector('.rail-diagnostics input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
-    // Mute is a state, not an action: a switch that says whether sound is muted, not a button
-    // whose label names the opposite of the current state.
-    const music = document.createElement('div'); music.className = 'rail-music'
-    music.innerHTML = switchHtml('rail-mute', 'Mute audio')
-    players.querySelector('.rail-player-body')!.append(music)
-    this.switches.set('mute', this.bindField(music.querySelector('.rail-mute')!, signal))
-    music.querySelector('input')!.addEventListener('change', event => this.audio.setMuted((event.target as HTMLInputElement).checked), { signal })
+    // Mute audio is a personal setting: the Me card's Audio group has it (audio.muted, the first
+    // row there), not this card (the owner, 22 November 2026).
     this.focusHud = new FocusHud(this.element)
     this.raceHud = new RaceHud(this.element, { leave: () => this.onRaceLeave?.(), cancel: () => this.onRaceCancel?.() })
     noticeStack.prepend(this.raceHud.element)
@@ -1580,7 +1581,8 @@ export class Shell implements System {
   }
   private toast(text: string): void {
     const element = this.element.querySelector<HTMLElement>('.shell-toast')!
-    element.textContent = text; element.hidden = false; clearTimeout(this.toastTimer)
+    // A bot named in the toast carries its mark, as everywhere else (playerMarks.ts).
+    element.replaceChildren(...markedText(text, this.roster())); element.hidden = false; clearTimeout(this.toastTimer)
     this.element.querySelector('.shell-message')!.textContent = text
     this.toastTimer = setTimeout(() => { element.hidden = true; this.element.querySelector('.shell-message')!.textContent = '' }, 4500)
   }
@@ -2031,7 +2033,6 @@ export class Shell implements System {
     renderHelp(this.element.querySelector('.shell-controls')!, this.choice.vehicleKind)
   }
   /** Call after an actual spawn so query overrides and future respawns show the right controls. */
-  private muteShown: boolean | undefined
   private readonly gearSelector: GearSelector
   private readonly accessories: AccessoryControls
   /** The vehicle being driven, for the accessory controls; set every frame by the bridge. */
@@ -2150,6 +2151,9 @@ export class Shell implements System {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!
     if (!hint.hidden && hint.classList.contains('is-full')) this.hideHelp(); else this.showHelp()
   }
+  /** Who is in the room, as names are shown (main.ts): the rows, the match board and toasts mark bots from it. */
+  setPlayerRoster(roster: PlayerRoster): void { this.roster = roster; this.hudBoard.setRoster(roster); this.matchHud.setRoster(roster) }
+  private roster: PlayerRoster = () => []
   setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {syn3hNet?:{players?:Map<number,{bot?:boolean}>}}).syn3hNet?.players; const count = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length
     // The status arrives every frame; the invite only depends on it through the player count.
     if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }
@@ -2182,8 +2186,6 @@ export class Shell implements System {
     this.raceHud.update(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'), this.self, this.ground?.size)
     this.element.classList.toggle('show-diagnostics', diagnostics.value)
     this.switches.get('diagnostics')!(diagnostics.value)
-    // Per-frame: touch the DOM only when the label changes.
-    if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.switches.get('mute')!(this.muteShown) }
     this.updateGear()
     this.gearSelector.update(this.element.classList.contains('is-focus'))
     this.accessories.update(this.drivenVehicle)

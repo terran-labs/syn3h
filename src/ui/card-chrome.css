@@ -118,12 +118,11 @@ html .syn3h-shell.has-touch .world-inspector .wi-row.tint-row > .tint-default::a
 }
 :root .syn3h-shell.exploration-ui .world-inspector .rail-command > input.wi-search.wi-search[type=search] { padding-left: 42px; }
 
-/* ---- The shared tooltip (tooltip.ts): a small pill under an icon-only button, fade only ---- */
-.ui-tip {
-  position: fixed; z-index: 200; left: 0; top: 0; max-width: min(260px, calc(100vw - 16px)); padding: 5px 11px; box-sizing: border-box;
-  border: 1px solid rgb(232 232 232 / .42); border-radius: var(--glass-control-radius, 24px); background: rgb(12 12 13 / .92);
-  color: #f4f4f4; font: 500 11px/1.2 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap;
-  pointer-events: none; opacity: 0; transition: opacity .15s ease;
-}
-.ui-tip.is-shown { opacity: 1; }
-@media (prefers-reduced-motion: reduce) { .ui-tip { transition: none; } }
+/* ---- The shared tooltip: moved to src/ui/tooltip.css (cards-round-3), which tooltip.ts loads. ---- */
+
+/* ---- Action rows (cards-round-3, ui/cards-round-3, 22 November 2026) ----
+   A row of small action buttons inside a card (.card-actions: Players & session's Invite and
+   Welcome, a card's Copy JSON and Paste, Performance's diagnostics actions) is centred, and
+   wraps centred when it does not fit (the owner: "those should be centered rather than
+   left-aligned"). Label-and-control rows and the full-width vehicle picker are not action rows. */
+html .syn3h-shell .world-inspector .card-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }

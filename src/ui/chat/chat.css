@@ -35,6 +35,10 @@
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .syn3h-shell.has-touch .chat-strip { left: var(--edge-left); top: 150px; bottom: auto; width: min(280px, 33vw); }
   .syn3h-shell.has-touch .chat-strip.is-left-hand { left: max(76px, calc(var(--safe-left) + 64px)); }
+  /* Left-handed, the Panels tab and the action buttons stand below the strip on this side
+     (from 52 px under its top at 390 px tall): only the newest line shows, so a second line
+     never covers the tab. */
+  .syn3h-shell.has-touch .chat-strip.is-left-hand .chat-line:not(:last-child) { display: none; }
 }
 /* While the sidebar is open the strip is not needed: the card is there. */
 .syn3h-shell:has(.world-inspector:not([hidden], .lobby-settings) .wi-card[data-section="chat"].is-open) .chat-strip { display: none; }
@@ -45,46 +49,54 @@
 .syn3h-shell.exploration-ui .world-inspector .wi-card[data-section="chat"].has-unread:not(.is-open) > .wi-head h3 { color: #fff; }
 .syn3h-shell.exploration-ui .world-inspector .wi-card[data-section="chat"].has-unread:not(.is-open) > .wi-head .wi-sum { color: #fff; font-weight: 500; }
 
-/* Inside the card: People, the log, the field, the overlay switch. The log keeps a steady
-   height and scrolls itself, newest at the bottom, so the field stays in place under it as
-   lines arrive and the card does not grow with every line. */
+/* Inside the card, top to bottom: the log, then the field (the owner, 22 November 2026: "The
+   'Say something nice' field should be the last thing in the chat dialog"). The log starts
+   right under the header's rule, with nothing over it, and keeps a steady height that scrolls
+   itself, newest at the bottom, so the field stays in place as lines arrive. One gradient rule
+   parts the log from the field; nothing is drawn under the field. */
 .chat-body:not([hidden]) { display: flex; flex-direction: column; color: var(--s3-ink, #f4f4f4); font: 400 13.5px/1.35 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; }
-/* Nothing inside shrinks: when the stack is short the card's body scrolls as a whole, like any
-   card's, rather than squeezing the People list into the log. */
+/* Nothing inside shrinks: when the stack is short the card's body scrolls as a whole. */
 .chat-body > * { flex: none; }
-.chat-tools { display: flex; justify-content: flex-end; padding: 6px 0 2px; }
-.syn3h-shell.exploration-ui .chat-tools .chat-people-toggle { min-height: 32px; padding: 0 12px; font-size: 12px; }
-.chat-log { flex: none; list-style: none; margin: 0; padding: 4px 2px; overflow-y: auto; height: clamp(120px, 34vh, 280px); overscroll-behavior: contain; scrollbar-width: thin; }
+/* The log reaches 6 px past the body's text edge on both sides (and gives it back as padding)
+   so a bot mark's shadow at the start of a line is not cut by the scroller's edge. */
+.chat-log { flex: none; list-style: none; margin: 0 -6px; padding: 6px 6px 4px; overflow-y: auto; height: clamp(120px, 34vh, 280px); overscroll-behavior: contain; scrollbar-width: thin; }
+/* Held at a height by the stack (cardFit.ts shareHeights; the owner: chat "should expand
+   vertically to occupy the remaining open space in the sidebar"), the log takes the room and
+   the field stays at the card's bottom edge. */
+.wi-card.is-sized > .chat-body > .chat-log { flex: 1 1 auto; height: auto; min-height: 72px; } /* 72: Inspector GROW_MIN_PX */
 .chat-line { position: relative; padding: 2px 0; overflow-wrap: anywhere; }
 .chat-line.is-new { animation: chat-in .35s ease-out 1; }
 @keyframes chat-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .chat-line.is-new { animation: none; } }
 .chat-line.is-system { color: var(--s3-dim, #e2e2e2); font-style: italic; }
 .chat-empty { color: var(--s3-soft, #cfcfcf); padding: 6px 0; }
-:root .syn3h-shell .chat-name, :root .syn3h-shell.exploration-ui .world-inspector .chat-name { display: inline; margin: 0 6px 0 0; padding: 0; min-height: 0; border: 0; border-radius: 0; background: none; box-shadow: none; font: 600 13.5px/1.35 'Barlow', sans-serif; letter-spacing: .01em; text-shadow: 0 1px 2px rgb(0 0 0 / .5); cursor: pointer; }
+/* A name on the card: the card's glass is dark enough that it needs only a whisper of shadow.
+   Over the game (the strip) the bubble's own --glass-under applies instead. */
+:root .syn3h-shell .chat-name, :root .syn3h-shell.exploration-ui .world-inspector .chat-name { display: inline; margin: 0 6px 0 0; padding: 0; min-height: 0; border: 0; border-radius: 0; background: none; box-shadow: none; font: 600 13.5px/1.35 'Barlow', sans-serif; letter-spacing: .01em; text-shadow: 0 1px 1px rgb(0 0 0 / .25); cursor: pointer; }
 :root .syn3h-shell .chat-name:disabled { cursor: default; opacity: 1; }
-/* A bot's mark (botIcon.ts): a small robot head before the name, in the name's colour. */
-.chat-name .chat-bot { display: inline-block; width: 1.1em; height: .95em; margin: 0 .3em 0 0; vertical-align: -.08em; overflow: visible; filter: drop-shadow(0 1px 1px rgb(0 0 0 / .5)); }
+:root .syn3h-shell .chat-strip .chat-name { text-shadow: 0 1px 2px rgb(0 0 0 / .5); }
+/* A bot's mark (playerMarks.ts) needs no shadow of its own on a card; over the game it gets one. */
+.chat-strip .chat-name .bot-mark { filter: drop-shadow(0 1px 1px rgb(0 0 0 / .5)); }
 .chat-time { display: none; margin-left: 8px; color: var(--s3-soft, #cfcfcf); font-size: 11px; }
 .chat-log .chat-line:hover .chat-time, .chat-log .chat-line:focus-within .chat-time, .chat-log .chat-line.show-time .chat-time { display: inline; }
 .chat-status { margin: 0; padding: 4px 2px; color: var(--s3-dim, #e2e2e2); font-size: 12px; }
 .chat-status[hidden] { display: none; }
-.chat-form { display: flex; align-items: center; gap: 6px; padding: 6px 0 4px; border-top: 1px solid transparent; border-image: var(--rule) 1; }
-:root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-field { flex: 1; min-width: 0; min-height: 40px; padding: 4px 2px; font: 400 14px 'Barlow', sans-serif; }
-:root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-send { min-height: 40px; padding: 0 16px; font: 500 12px 'Barlow', sans-serif; letter-spacing: .06em; cursor: pointer; }
+/* (The field's selectors carry .chat-body so they outrank theme-halo.css's underline on every
+   card input.) */
+/* The field and Send: one gradient rule above, nothing below, and no underline on the field
+   itself; it sits on the card. Send is the card's primary action, so it is filled. */
+.chat-form { display: flex; align-items: center; gap: 8px; padding: 8px 0 0; border-top: 1px solid transparent; border-image: var(--rule) 1; }
+:root .syn3h-shell.exploration-ui .world-inspector .chat-body .chat-form input.chat-field.chat-field { flex: 1; min-width: 0; min-height: 40px; padding: 4px 2px; border: 0; background: none; box-shadow: none; font: 400 14px 'Barlow', sans-serif; }
+:root .syn3h-shell.exploration-ui .world-inspector .chat-body .chat-form input.chat-field.chat-field:focus-visible { outline: none; border-radius: var(--glass-control-radius, 24px); background: rgb(255 255 255 / .06); }
+:root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-send { min-height: 40px; padding: 0 18px; border: 1px solid transparent; border-radius: var(--glass-control-radius, 24px); background: rgb(255 255 255 / .2); color: #fff; font: 600 12px 'Barlow', sans-serif; letter-spacing: .06em; cursor: pointer; outline: 1px solid transparent; outline-offset: -1px; transition: background-color .18s, outline-color .18s; }
+:root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-send:hover { background: rgb(255 255 255 / .28); outline: var(--control-hover-outline); }
+:root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-send:active { background: rgb(255 255 255 / .34); }
+:root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-send:focus-visible { outline: 2px solid white; outline-offset: 1px; }
+:root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-send:disabled { background: rgb(255 255 255 / .1); }
 /* A finger: 44 px targets, and 16 px text, below which Safari zooms the page into the field. */
-:root .syn3h-shell.exploration-ui.has-touch .world-inspector .chat-form :is(.chat-field, .chat-send) { min-height: 44px; }
-:root .syn3h-shell.exploration-ui.has-touch .world-inspector .chat-form .chat-field { font-size: 16px; }
-@media (pointer: coarse) { :root .syn3h-shell.exploration-ui .world-inspector .chat-form .chat-field { font-size: 16px; } }
-.chat-people { padding: 4px 2px 6px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; max-height: 160px; overflow-y: auto; }
-.chat-people[hidden] { display: none; }
-.chat-people ul { list-style: none; margin: 0; padding: 0; }
-.chat-people li { display: flex; align-items: center; gap: 4px; padding: 3px 0; }
-.chat-people li .chat-name { flex: 1; cursor: default; }
-.chat-people-note { margin: 0 0 4px; color: var(--s3-soft, #cfcfcf); font-size: 11.5px; }
-.syn3h-shell .chat-people .chat-mute[aria-pressed=true] { border-color: var(--s3-accent-2, #fbfbfb); color: var(--s3-accent-2, #fbfbfb); }
-/* The overlay switch: "Show new chat over the game" (overlayPreference.ts). */
-.chat-foot { padding: 4px 0 2px; border-top: 1px solid transparent; border-image: var(--rule) 1; font-size: 12px; color: var(--s3-dim, #e2e2e2); }
+:root .syn3h-shell.exploration-ui.has-touch .world-inspector .chat-body .chat-form :is(input.chat-field.chat-field, .chat-send) { min-height: 44px; }
+:root .syn3h-shell.exploration-ui.has-touch .world-inspector .chat-body .chat-form input.chat-field.chat-field { font-size: 16px; }
+@media (pointer: coarse) { :root .syn3h-shell.exploration-ui .world-inspector .chat-body .chat-form input.chat-field.chat-field { font-size: 16px; } }
 
 /* A name's mute menu, beside the name, over the panel. */
 .chat-menu { position: fixed; z-index: 70; padding: 4px; border: 1px solid var(--s3-line, rgb(232 232 232 / .42)); border-radius: 8px; background: rgb(12 12 13 / .96); pointer-events: auto; }

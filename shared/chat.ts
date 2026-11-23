@@ -52,8 +52,10 @@ export const chatShow = defineParam({ id: 'chat.show', label: 'Show chat', group
  * Arriving lines also appear over the play view (the recent-lines strip and a mark on the
  * speaker's vehicle label). Off: they go only into the chat log, and the chat button counts
  * them. Remembered per device; off by default on phones and tablets (src/ui/chat/overlayPreference.ts).
+ * Switched in the Me card's Interface group, among the interface controls (the owner, 22 November
+ * 2026), not in the Chat card.
  */
-export const chatOverlay = defineParam({ id: 'chat.overlay', label: 'Show new chat over the game', group: 'Chat', scope: 'client', default: true })
+export const chatOverlay = defineParam({ id: 'chat.overlay', label: 'Show new chat over the game', group: 'Interface', scope: 'client', default: true })
 /** Hide lines from bots on this screen only. */
 export const chatHideBots = defineParam({ id: 'chat.hideBots', label: 'Hide bot chatter', group: 'Chat', scope: 'client', default: false })
 

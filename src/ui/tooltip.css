@@ -1,0 +1,14 @@
+/* The shared tooltip (tooltip.ts): a small plate beside an icon-only button with a tail aimed at
+   it, fade only. The plate and tail are one SVG outline behind the words (.ui-tip-plate), so
+   they share one fill and one rim with no seam. Roomy inside (the owner, 22 November 2026:
+   tooltips "feel a little cramped. They should have more space inside"). */
+.ui-tip {
+  position: fixed; z-index: 200; left: 0; top: 0; max-width: min(280px, calc(100vw - 16px)); padding: 9px 16px; box-sizing: border-box;
+  color: #f4f4f4; font: 500 11px/1.45 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap;
+  pointer-events: none; opacity: 0; transition: opacity .15s ease;
+}
+.ui-tip.is-shown { opacity: 1; }
+.ui-tip-text { position: relative; display: block; overflow: hidden; text-overflow: ellipsis; }
+.ui-tip-plate { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.ui-tip-plate path { fill: rgb(12 12 13 / .92); stroke: rgb(232 232 232 / .42); stroke-width: 1; stroke-linejoin: round; }
+@media (prefers-reduced-motion: reduce) { .ui-tip { transition: none; } }

@@ -1,3 +1,4 @@
+import { markedName } from '../playerMarks'
 import * as THREE from 'three/webgpu'
 import { params } from '../../../shared/params'
 import type { Vehicle } from '../../vehicles/Vehicle'
@@ -29,6 +30,8 @@ const HEIGHT = { person: [42, 29], bot: [37, 25] } as const
 /** Must match label-plate.css: name and tag fonts, letter spacing in em, and padding plus border. */
 const PERSON_NAME = '600 14px Barlow', BOT_NAME = '500 12px Barlow', NAME_SPACING = .08, PERSON_TAG = '500 10px Barlow', BOT_TAG = '500 9px Barlow', TAG_SPACING = .16
 const PLATE_INSET = 30 // padding, border and 4 px for kerning
+/** The bot mark and its gap before a bot's name, px at the bot name's 12 px (player-marks.css: 1.1em + .3em). */
+const BOT_MARK_WIDTH = 17
 /** The stacked count ("+2"): its font (must match nameplates.css) and its gap from the name. */
 const MORE_FONT = '500 10px Barlow', MORE_GAP = 6
 /**
@@ -252,15 +255,17 @@ export class VehicleNameplates {
       const scale = Math.round(p.px * (presentation ? 1.25 : 1)) / base
       // Text is untrusted replicated data: use textContent and a bounded display length.
       // The tag stays written when compact: the plate folds it away (label-plate.css) as it fades.
-      const name = t.name.slice(0, 48), tag = [t.bot ? 'Bot' : 'Player', t.note].filter(Boolean).join(' · ')
+      // A bot is marked by the bot icon before its name (playerMarks.ts), never by the word: its
+      // second line is only its note, and without one the plate is a single line.
+      const name = t.name.slice(0, 48), tag = [t.bot ? '' : 'Player', t.note].filter(Boolean).join(' · ')
       // Room on the name line for the stacked count, if any: the plate grows by it.
       const moreWidth = p.moreCount ? Math.ceil(textWidth(`+${p.moreCount}`, MORE_FONT, NAME_SPACING, 10)) + MORE_GAP : 0
       // An even width, so centring by -50% lands on whole pixels and the text stays sharp.
       const width = 2 * Math.round(Math.min(PLATE_MAX, Math.max(PLATE_MIN, PLATE_INSET + moreWidth + Math.max(
-        textWidth(name, t.bot ? BOT_NAME : PERSON_NAME, NAME_SPACING, base), compact ? 0 : textWidth(tag, t.bot ? BOT_TAG : PERSON_TAG, TAG_SPACING, t.bot ? 9 : 10)))) / 2)
+        textWidth(name, t.bot ? BOT_NAME : PERSON_NAME, NAME_SPACING, base) + (t.bot ? BOT_MARK_WIDTH : 0), compact ? 0 : textWidth(tag, t.bot ? BOT_TAG : PERSON_TAG, TAG_SPACING, t.bot ? 9 : 10)))) / 2)
       const padding = moreWidth ? `${(t.bot ? 9 : 10) + moreWidth}px` : ''
       if (p.el.style.paddingRight !== padding) p.el.style.paddingRight = padding
-      const height = HEIGHT[t.bot ? 'bot' : 'person'][compact ? 1 : 0]
+      const height = HEIGHT[t.bot ? 'bot' : 'person'][compact || !tag ? 1 : 0]
       const c = p.candidate
       // The layout tests the plate where it is drawn: its centre, after keeping it on screen.
       c.bot = t.bot; c.x = plateLeft(x, width * scale, w) + width * scale / 2; c.y = y; c.distance = distance; c.width = width * scale; c.height = height * scale; c.compact = compact
@@ -275,7 +280,8 @@ export class VehicleNameplates {
         if (p.offered) this.candidates.push(c)
       }
       // Words and styles: written only when they change.
-      if (p.text !== name) { p.text = name; p.name.textContent = name }
+      const text = t.bot ? `bot:${name}` : name
+      if (p.text !== text || (t.bot && t.color !== p.color)) { p.text = text; p.name.replaceChildren(...markedName({ name, bot: t.bot, color: t.color })) }
       if (p.tag !== tag) { p.tag = tag; p.note.textContent = tag }
       p.el.classList.toggle('is-bot', t.bot); p.el.classList.toggle('is-person', !t.bot); p.el.classList.toggle('is-compact', compact)
       // --vehicle-tint is the same colour under the name chat's speaker mark reads (src/ui/chat).

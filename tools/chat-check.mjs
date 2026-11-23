@@ -9,7 +9,7 @@
  *     with Enter; B sees the line, as text not markup.
  *  2. While A's field has focus, driving keys do not move A's vehicle.
  *  3. B's closed Chat card counts the unread line; opening it clears the count.
- *  4. B mutes A; A's next line does not show on B.
+ *  4. B mutes A from A's row in Players & session; A's next line does not show on B; B unmutes A.
  *  5. With --bots: at "chatty", a bot speaks within two minutes (B, a guest, sees it).
  * Screenshots of the card closed and open, on desktop and phone (both orientations), and on a
  * phone with a stand-in on-screen keyboard (a shrunken visual viewport).
@@ -100,7 +100,7 @@ try {
   await shot(B.page, 'desktop-closed-unread')
   const unread = await unreadOn(B.page)
   const summary = await B.page.textContent(`${CHAT_HEAD} .wi-sum`)
-  check(unread >= 1 && /new/.test(summary) && !/…|\.\.\./.test(summary), `B's closed Chat card counts unread lines (${unread}, "${summary}")`)
+  check(unread >= 1 && /unread/.test(summary) && !/…|\.\.\./.test(summary), `B's closed Chat card counts unread lines (${unread}, "${summary}")`)
   // The left column's Chat row shows the same count, through chatLink.
   const rowCount = await B.page.evaluate(() => { const c = document.querySelector('.hud-chat .chat-count'); return c && !c.hidden ? Number(c.textContent.replace('+', '')) : 0 })
   check(rowCount === Math.min(unread, 9) || (unread > 9 && rowCount === 9), `the left column's Chat row shows the unread count (${rowCount} of ${unread})`)
@@ -114,6 +114,7 @@ try {
   await clickPill(B.page, 'guest desktop')
   await B.page.waitForTimeout(500)
   check(await unreadOn(B.page) === 0, 'opening the card clears the unread count')
+  check((await B.page.textContent(`${CHAT_HEAD} .wi-sum`)).trim() === 'All read', 'once read, the summary says All read')
   check(!(await B.page.$('.wi-card[data-section="chat"] .chat-log a')), 'links are not made clickable')
   const seen = await linesOn(B.page)
   check(seen.some((t) => t.includes('<b>bold</b> hello')), 'B sees A\'s line')
@@ -123,9 +124,15 @@ try {
   await A.page.keyboard.press('Escape')
   check(await A.page.evaluate(() => !document.activeElement?.classList.contains('chat-field')), 'Escape leaves the field')
 
-  // 4: B mutes A from the People list.
-  await clickPill(B.page, 'guest people', '.chat-people-toggle')
-  await clickPill(B.page, 'guest mute', '.chat-people .chat-mute')
+  // 4: B mutes A from A's row in the Players & session card (the menu the log's names open).
+  const playersCard = (open) => B.page.evaluate(async (open) => { if (open) window.syn3h.shell.inspector.revealCard('players'); await new Promise((r) => setTimeout(r, 400)) }, open)
+  const personMenu = async (label) => {
+    await playersCard(true)
+    await B.page.locator('.hud-scoreboard button.score-name').first().scrollIntoViewIfNeeded()
+    await clickPill(B.page, `${label} row`, '.hud-scoreboard button.score-name')
+    await clickPill(B.page, label, '.chat-menu:not([hidden]) button')
+  }
+  await personMenu('guest mute')
   await A.page.keyboard.press('KeyY'); await A.page.waitForTimeout(300)
   await A.page.keyboard.type('you cannot see this')
   await A.page.keyboard.press('Enter')
@@ -134,8 +141,7 @@ try {
   check(!afterMute.some((t) => t.includes('you cannot see this')), 'a muted player\'s line is not shown')
   const onA = await linesOn(A.page)
   check(onA.some((t) => t.includes('you cannot see this')), 'the line still reached the room (A sees its echo)')
-  await clickPill(B.page, 'guest mute', '.chat-people .chat-mute')
-  await clickPill(B.page, 'guest people', '.chat-people-toggle')
+  await personMenu('guest unmute')
 
   // Driving with the cursor captured (headless Chrome grants a real lock), in Full and Driving
   // modes: Y frees the cursor, shows the panels on the Chat card with the caret in the field;

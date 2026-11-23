@@ -4,7 +4,7 @@
 // to open or close with the controls a player has (the Panels button while they are closed;
 // Close panels, or on a phone with one panel open that panel's X, while they are open); motion
 // played under reduced motion. Layout (sizes, order, rows) is the owner's to tune and is not
-// pinned here; touch layout lives in phone-panels.mjs.
+// pinned here; touch layout lives in phone-panels.mjs. Also: a bot's row without the bot mark.
 //   SYN3H_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/sidebar.mjs
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
@@ -80,6 +80,19 @@ for (const mode of ['desktop', 'phone']) {
     else {
       await page.evaluate(() => { const i = syn3h.shell.inspector; i.open = false; i.open = true }); await settled(page)
       assert.deepEqual(await openSections(page), open, `${mode}: open cards survive closing the panels`)
+    }
+
+    // A bot's row in Players & session carries the bot mark, and no row spells out "bot".
+    if (!touch) {
+      await page.waitForFunction(() => [...(window.syn3hNet?.players?.values() ?? [])].some(p => p.bot), null, { timeout: 60000 })
+      await page.evaluate(() => syn3h.shell.inspector.revealCard('players')); await settled(page)
+      const rows = await page.evaluate(() => {
+        const bots = new Set([...syn3hNet.players.values()].filter(p => p.bot).map(p => syn3hNet.displayName(p.id)))
+        return [...document.querySelectorAll('.wi-card[data-section=players] .score-row')].map(r => { const n = r.querySelector('.score-name'); return { bot: bots.has(n.dataset.name ?? n.title), mark: !!n.querySelector('svg.bot-mark[aria-label=Bot]'), text: r.textContent } })
+      })
+      assert.ok(rows.some(r => r.bot), `${mode}: a bot is listed in Players & session (${JSON.stringify(rows)})`)
+      for (const r of rows) assert.equal(r.mark, r.bot, `${mode}: the bot mark is on bots' rows only (${JSON.stringify(r)})`)
+      assert.ok(rows.every(r => !/\bbot\b/i.test(r.text)), `${mode}: no row spells out "bot"`)
     }
 
     // Pause pauses, and the veil resumes.

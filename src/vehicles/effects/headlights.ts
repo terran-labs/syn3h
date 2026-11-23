@@ -17,7 +17,7 @@
 import { defineParam } from '../../../shared/params'
 
 export const buggyHeadlights = defineParam({
-  id: 'light.buggyHeadlights', label: 'Buggy headlights (1 is the old brightness)', group: 'Light', scope: 'client',
+  id: 'light.buggyHeadlights', label: 'Buggy headlights (1 is the old brightness)', group: 'Vehicle looks', scope: 'world',
   default: 0.4, min: 0, max: 2, step: 0.05,
 })
 

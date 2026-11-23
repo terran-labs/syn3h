@@ -1,8 +1,10 @@
 /**
  * Chat, as the last card in the sidebar's stack (the owner, 17 November 2026: "convert the
- * messaging panel to be a new card at the bottom of the card stack"). The card holds the log,
- * the People list and the field; over the game, a strip shows the newest lines for a few seconds
- * when "Show new chat over the game" is on.
+ * messaging panel to be a new card at the bottom of the card stack"). The card holds the log
+ * and, last, the field; over the game, a strip shows the newest lines for a few seconds when
+ * "Show new chat over the game" (a Me card setting, Interface group) is on. Who is in the room
+ * is the Players & session card's; a name in the log, or a player's row there, opens the
+ * mute menu (showMenu, offered to the Players card through chatLink).
  *
  * Opening: Y while driving, the left column's Chat row (through chatLink), or the card's own
  * header. Y and the row show the panels, open this card and put the caret in the field. Enter on
@@ -10,17 +12,16 @@
  *
  * Everything a player wrote is drawn with textContent, never as markup, and links are left as
  * plain text. Colour means identity in this game, so each name is drawn in its vehicle's tint,
- * lifted where a dark tint would vanish on the glass. Bots carry a small robot mark before
- * the name (botIcon.ts).
+ * lifted where a dark tint would vanish on the glass. Bots carry the bot mark before the name
+ * (playerMarks.ts, the same mark every surface uses).
  *
  * While the field has focus `input.typing` is set, which stops every driving key, the stick and
  * the gamepad (src/core/Input.ts). It is cleared on blur, however focus leaves.
  */
 import { CHAT_SPEAK_EVENT, type ChatChannel, type ChatLine } from '../../net/chat'
 import { chatHideBots, chatOn, chatOverlay, chatShow, MAX_CHAT_LENGTH } from '../../../shared/chat'
-import { createSwitch } from '../inspector/switch'
 import { restoreChatOverlay } from './overlayPreference'
-import { botIcon } from './botIcon'
+import { markedName, legibleTint } from '../playerMarks'
 import { chatLink } from './chatLink'
 import { params } from '../../../shared/params'
 import { touchLeftHanded as leftHanded } from '../TouchPreferences'
@@ -45,8 +46,6 @@ export interface ChatCardOptions {
   input: { typing: boolean }
   /** True while playing and not paused: Y opens chat only then. */
   canOpen(): boolean
-  /** Everyone in the room except this player, for the mute list. */
-  roster(): { id: number; name: string; color: string; bot: boolean }[]
 }
 
 /** The card's id in the stack. */
@@ -60,49 +59,18 @@ const SPEAKING_MS = 3500
 /** Key that opens chat: Y, the usual "say" key (Enter fires). */
 export const CHAT_KEY = 'KeyY'
 
-/**
- * The surface a name must read on: a chat bubble (chat.css) over a bright daytime sky, the
- * lightest place the bubble usually sits. The log's frosted card is darker, so a name that
- * passes here passes there too.
- */
-export const CHAT_NAME_SURFACE: readonly [number, number, number] = [66, 80, 95]
-/** WCAG AA for normal text. */
-export const CHAT_NAME_CONTRAST = 4.5
-
-const channel = (v: number) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }
-const luminance = ([r, g, b]: readonly number[]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-/** WCAG contrast ratio between two sRGB colours. */
-export function contrastRatio(a: readonly number[], b: readonly number[]): number {
-  const x = luminance(a), y = luminance(b)
-  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
-}
+// The name tint and its contrast rule live with the bot mark (playerMarks.ts); re-exported for
+// the tests and callers that know them as chat's.
+export { CHAT_NAME_CONTRAST, CHAT_NAME_SURFACE, contrastRatio, legibleTint } from '../playerMarks'
 
 /**
- * Make a player's tint readable as a name on a chat bubble: keep its hue and lift it towards
- * white just far enough to reach AA contrast on CHAT_NAME_SURFACE. Light tints pass unchanged.
+ * The card's summary, at the right of its header: how many lines wait unread, or "All read"
+ * (the owner, 22 November 2026: "it should simply show 0, 1, 2, etc., unread on the right.
+ * Rather than 0 unread, it should simply say all read"). A line is read once the card is open
+ * with the panels showing and the log scrolled to its end (readIfSeen).
  */
-export function legibleTint(color: string): string {
-  const m = /^#([0-9a-f]{6})$/i.exec(color.trim())
-  if (!m) return color
-  const n = parseInt(m[1], 16)
-  const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-  const mix = (t: number) => rgb.map((v) => Math.round(v + (255 - v) * t))
-  if (contrastRatio(rgb, CHAT_NAME_SURFACE) >= CHAT_NAME_CONTRAST) return color
-  // The least lift that passes, by bisection (white always passes, at about 8:1).
-  let lo = 0, hi = 1
-  for (let i = 0; i < 12; i++) { const t = (lo + hi) / 2; if (contrastRatio(mix(t), CHAT_NAME_SURFACE) >= CHAT_NAME_CONTRAST) hi = t; else lo = t }
-  const [r, g, b] = mix(hi)
-  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`
-}
-
-/**
- * The closed card's summary: the unread count and who wrote last, or who spoke last. Never a
- * line of chat cut short: a name or a count, whole.
- */
-export function chatSummary(unread: number, last: { name: string; mine: boolean } | null): string {
-  const who = last ? (last.mine ? 'you' : last.name) : ''
-  if (unread > 0) return `${unread > 99 ? '99+' : unread} new${who && !last?.mine ? ` · ${who}` : ''}`
-  return who ? `Last: ${who}` : 'Nothing said yet'
+export function chatSummary(unread: number): string {
+  return unread > 0 ? `${unread > 99 ? '99+' : unread} unread` : 'All read'
 }
 
 const timeOf = (wall: number) => new Date(wall).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -117,9 +85,10 @@ export class ChatCard {
   private readonly log: HTMLOListElement
   private readonly field: HTMLInputElement
   private readonly form: HTMLFormElement
-  private readonly people: HTMLElement
   private readonly status: HTMLElement
   private unread = 0
+  /** The log was scrolled to its newest line when last looked at. */
+  private pinned = true
   private unreadPerson: ChatLine | null = null
   private readonly unsubscribe: (() => void)[] = []
   private readonly abort = new AbortController()
@@ -130,18 +99,15 @@ export class ChatCard {
   constructor(private readonly host: ChatHost, private readonly options: ChatCardOptions) {
     this.body.className = 'chat-body'
     this.body.innerHTML = `
-      <div class="chat-tools"><button type="button" class="chat-people-toggle" aria-expanded="false">People</button></div>
-      <div class="chat-people" hidden><p class="chat-people-note">Muted players are hidden on your screen only, for this visit.</p><ul></ul></div>
-      <ol class="chat-log" tabindex="0" aria-label="Chat log"></ol>
+      <ol class="chat-log" tabindex="0" aria-label="Chat log" data-card-grow></ol>
       <p class="chat-status" hidden></p>
       <form class="chat-form" autocomplete="off">
         <input class="chat-field" type="text" enterkeyhint="send" autocomplete="off" autocorrect="on" spellcheck="true" aria-label="Chat" placeholder="Say something nice" maxlength="${MAX_CHAT_LENGTH}">
         <button type="submit" class="chat-send">Send</button>
-      </form>
-      <div class="chat-foot"></div>`
+      </form>`
     const q = <T extends HTMLElement>(s: string) => this.body.querySelector<T>(s)!
     this.log = q<HTMLOListElement>('.chat-log'); this.field = q<HTMLInputElement>('.chat-field'); this.form = q<HTMLFormElement>('.chat-form')
-    this.people = q('.chat-people'); this.status = q('.chat-status')
+    this.status = q('.chat-status')
     this.strip.className = 'chat-strip'; this.strip.setAttribute('aria-hidden', 'true')
     this.menu.className = 'chat-menu'; this.menu.setAttribute('role', 'menu'); this.menu.hidden = true
     this.live.className = 'chat-live'; this.live.setAttribute('aria-live', 'polite'); this.live.setAttribute('aria-atomic', 'false')
@@ -149,7 +115,6 @@ export class ChatCard {
     this.card = host.addCard(CHAT_CARD, 'Chat', this.body, () => this.summary())
 
     const signal = this.abort.signal
-    q('.chat-people-toggle').addEventListener('click', (e) => this.togglePeople(e.currentTarget as HTMLButtonElement), { signal })
     this.form.addEventListener('submit', (e) => { e.preventDefault(); this.submit() }, { signal })
     this.field.addEventListener('focus', () => { options.input.typing = true; this.followKeyboard(true) }, { signal })
     this.field.addEventListener('blur', () => { options.input.typing = false; this.followKeyboard(false) }, { signal })
@@ -158,7 +123,21 @@ export class ChatCard {
       e.stopPropagation()
       if (e.key === 'Escape') { e.preventDefault(); this.leave() }
     }, { signal })
-    this.log.addEventListener('scroll', () => this.readIfSeen(), { signal, passive: true })
+    // Pinned to the newest line until the player scrolls away from it themselves: a scroll the
+    // card's own resizing causes (the stack easing its height) must not unpin it.
+    let handled = 0
+    for (const type of ['wheel', 'touchmove', 'pointerdown', 'keydown'] as const) this.log.addEventListener(type, () => { handled = performance.now() }, { signal, passive: true })
+    this.log.addEventListener('scroll', () => {
+      if (this.atBottom()) this.pinned = true
+      else if (performance.now() - handled < 1000) this.pinned = false
+      this.readIfSeen()
+    }, { signal, passive: true })
+    // The card grows and shrinks with the room the stack gives it (inspector/cardFit.ts): a log
+    // that was showing its newest line keeps showing it.
+    if (typeof ResizeObserver !== 'undefined') {
+      const keep = new ResizeObserver(() => { if (this.pinned) this.log.scrollTop = this.log.scrollHeight; this.readIfSeen() })
+      keep.observe(this.log); signal.addEventListener('abort', () => keep.disconnect())
+    }
     this.log.addEventListener('click', (e) => this.onLogClick(e), { signal })
     window.addEventListener('keydown', (e) => this.onKey(e), { signal, capture: true })
     // The speaker's vehicle label (src/ui/nameplates) lights up for a moment with a speech mark.
@@ -174,18 +153,17 @@ export class ChatCard {
     const { channel } = options
     this.unsubscribe.push(channel.onShow((line) => this.onLine(line)))
     this.unsubscribe.push(channel.onChange(() => this.redraw()))
-    // "Show new chat over the game": one setting (shared/chat.ts), shown here and in the Me
-    // card's Chat group. Off, lines go only into the log and the unread count.
+    // "Show new chat over the game" (shared/chat.ts) is switched in the Me card's Interface
+    // group. Off, lines go only into the log and the unread count.
     this.unsubscribe.push(restoreChatOverlay())
-    const overlay = createSwitch(chatOverlay.def.label, { checked: Boolean(chatOverlay.value), className: 'chat-overlay-switch', signal, onChange: (on) => params.set(chatOverlay.def.id, on) })
-    q('.chat-foot').append(overlay.element)
     this.unsubscribe.push(params.onChange((id) => {
-      if (id === chatOverlay.def.id) { overlay.set(Boolean(chatOverlay.value)); this.renderStrip() }
+      if (id === chatOverlay.def.id) this.renderStrip()
       if (id === chatShow.def.id || id === chatHideBots.def.id || id === chatOn.def.id) this.redraw()
       if (id === leftHanded.def.id) this.syncHand()
     }))
     // The left column's Chat row, and anything else, opens chat through the link.
     chatLink.setOpener(() => this.openAndFocus())
+    chatLink.setPersonMenu((id, anchor, name) => this.showMenu(id, anchor, name))
     this.stripTimer = setInterval(() => this.fadeStrip(), 1000)
     this.syncHand()
     this.redraw()
@@ -214,6 +192,7 @@ export class ChatCard {
 
   dispose(): void {
     chatLink.setOpener(null)
+    chatLink.setPersonMenu(null)
     for (const t of this.speaking.values()) clearTimeout(t)
     this.keyboardOff?.()
     this.abort.abort()
@@ -230,8 +209,7 @@ export class ChatCard {
   }
 
   private summary(): string {
-    const last = this.options.channel.visible().filter((l) => !l.system).at(-1)
-    return chatSummary(this.unread, last ? { name: last.name, mine: last.mine } : null)
+    return chatSummary(this.unread)
   }
 
   private wasOpen = false
@@ -361,7 +339,6 @@ export class ChatCard {
     this.publishUnread()
     this.renderStrip()
     if (this.isOpen) { this.renderLog(); this.syncStatus() }
-    if (!this.people.hidden) this.renderPeople()
   }
 
   private renderLog(): void {
@@ -412,11 +389,10 @@ export class ChatCard {
       name.type = 'button'; name.title = line.mine ? '' : `Options for ${line.name}`
       if (line.mine) name.disabled = true
     }
-    name.className = 'chat-name'; name.dataset.from = String(line.from)
+    name.className = 'chat-name'; name.dataset.from = String(line.from); name.dataset.name = line.name
     name.style.color = legibleTint(line.color)
-    // A bot's name leads with the bot mark, in the same colour; screen readers hear "Bot".
-    if (line.bot) name.append(botIcon())
-    name.append(line.mine ? 'You' : line.name)
+    // A bot's name leads with the bot mark (playerMarks.ts), in the same colour; screen readers hear "Bot".
+    name.append(...markedName({ name: line.name, bot: line.bot, color: line.color }, line.mine ? 'You' : line.name))
     row.append(name)
     const text = document.createElement('span'); text.className = 'chat-text'; text.textContent = line.text
     const time = document.createElement('time'); time.className = 'chat-time'; time.dateTime = new Date(line.wall).toISOString(); time.textContent = timeOf(line.wall)
@@ -428,14 +404,14 @@ export class ChatCard {
   private onLogClick(e: MouseEvent): void {
     const target = e.target as HTMLElement
     const name = target.closest<HTMLButtonElement>('.chat-name')
-    if (name && !name.disabled) { this.showMenu(Number(name.dataset.from), name); return }
+    if (name && !name.disabled) { this.showMenu(Number(name.dataset.from), name, name.dataset.name ?? ''); return }
     // A tap on a line shows its time (hover does on a desktop).
     target.closest('.chat-line')?.classList.toggle('show-time')
   }
 
-  private showMenu(id: number, anchor: HTMLElement): void {
+  /** Mute or unmute one player's lines, on this screen only, for this visit. */
+  private showMenu(id: number, anchor: HTMLElement, label: string): void {
     const muted = this.options.channel.muted.has(id)
-    const label = anchor.textContent ?? ''
     const item = document.createElement('button'); item.type = 'button'; item.setAttribute('role', 'menuitem')
     item.textContent = muted ? `Unmute ${label}` : `Mute ${label}`
     item.addEventListener('click', () => { this.options.channel.mute(id, !muted); this.menu.hidden = true })
@@ -445,32 +421,6 @@ export class ChatCard {
     this.menu.style.top = `${box.bottom + 4}px`
     this.menu.hidden = false
     item.focus()
-  }
-
-  private togglePeople(button: HTMLButtonElement): void {
-    const show = this.people.hidden
-    this.people.hidden = !show
-    button.setAttribute('aria-expanded', String(show))
-    if (show) this.renderPeople()
-  }
-
-  private renderPeople(): void {
-    const list = this.people.querySelector('ul')!
-    const rows = this.options.roster().map((p) => {
-      const li = document.createElement('li')
-      const name = document.createElement('span'); name.className = 'chat-name'; name.style.color = legibleTint(p.color)
-      if (p.bot) name.append(botIcon())
-      name.append(p.name)
-      li.append(name)
-      const muted = this.options.channel.muted.has(p.id)
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'chat-mute'; b.setAttribute('aria-pressed', String(muted))
-      b.textContent = muted ? 'Muted' : 'Mute'; b.setAttribute('aria-label', `${muted ? 'Unmute' : 'Mute'} ${p.name}`)
-      b.addEventListener('click', () => this.options.channel.mute(p.id, !muted))
-      li.append(b)
-      return li
-    })
-    if (!rows.length) { const li = document.createElement('li'); li.textContent = 'Nobody else is here yet.'; rows.push(li) }
-    list.replaceChildren(...rows)
   }
 
   private syncStatus(): void {

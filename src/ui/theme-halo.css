@@ -157,7 +157,7 @@
 .syn3h-shell.exploration-ui .rail-players > summary { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); }
 .syn3h-shell.exploration-ui .rail-players summary span { color: var(--s3-soft); }
 .syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 13px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
-.syn3h-shell.exploration-ui :is(.rail-diagnostics, .rail-music) { font-size: 12px; color: var(--s3-dim); }
+.syn3h-shell.exploration-ui .rail-diagnostics { font-size: 12px; color: var(--s3-dim); }
 
 /* ---------- Performance ---------- */
 .syn3h-shell.exploration-ui .performance-panel header strong { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
@@ -276,6 +276,17 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) :is(.lobby-panels, .in-play
 html .syn3h-shell.exploration-ui[data-ui-frost="off"] .world-inspector :is(.wi-glass, .rail-players),
 html .syn3h-shell.exploration-ui[data-ui-frost="off"] :is(.lobby-panels, .in-play-about) {
   background: rgb(14 14 15 / .94); -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+/* The same at the cards' own material rule (glass.css, --panel-material-filter), which outranked
+   the rule above: at the lowest quality levels the in-play cards and the top row drew a 30 px
+   backdrop blur each on every frame. Off there, with the dense backing instead (22 November 2026). */
+html[data-glass-material]:not([data-glass-material="flat"]) .syn3h-shell.exploration-ui[data-ui-frost="off"] > .world-inspector:not(.lobby-settings)
+:is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost, .rail-command > input, .rail-command > button, .panels-close):not([data-glass-surface="shader"]) {
+  background: rgb(14 14 15 / .94);
+}
+html[data-glass-material] .syn3h-shell.exploration-ui[data-ui-frost="off"] > .world-inspector:not(.lobby-settings)
+:is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost, .rail-command > input, .rail-command > button, .panels-close):not([data-glass-surface="shader"]) {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-glass, .rail-players),

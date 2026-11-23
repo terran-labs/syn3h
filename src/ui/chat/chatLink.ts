@@ -4,12 +4,14 @@
  * markup: the chat surface registers how to open itself and publishes its unread count; a
  * control calls open() and subscribes to the count. No DOM here.
  *
- * Agreed between ux/hud-column and ux/chat-card on 17 November 2026; both branches carry this
- * file byte for byte, so change it in one place and tell the other.
+ * Agreed between ux/hud-column and ux/chat-card on 17 November 2026. The person menu was added
+ * on 22 November 2026 when the Chat card's People list was removed: muting now starts from a
+ * name in the log or a row in the Players & session card.
  */
 type UnreadListener = (count: number, fromPerson: boolean) => void
 
 let opener: (() => void) | null = null
+let personMenu: ((id: number, anchor: HTMLElement, name: string) => void) | null = null
 let unread = 0
 let fromPerson = false
 const listeners = new Set<UnreadListener>()
@@ -22,6 +24,19 @@ export const chatLink = {
   open(): boolean {
     if (!opener) return false
     opener()
+    return true
+  },
+
+  /**
+   * The chat surface registers its per-player menu (Mute or Unmute, on this screen only);
+   * the Players & session card's rows open it. Null to unregister.
+   */
+  setPersonMenu(fn: ((id: number, anchor: HTMLElement, name: string) => void) | null): void { personMenu = fn },
+
+  /** Open the menu for player `id` beside `anchor`. False when nothing has registered. */
+  openPersonMenu(id: number, anchor: HTMLElement, name: string): boolean {
+    if (!personMenu) return false
+    personMenu(id, anchor, name)
     return true
   },
 
