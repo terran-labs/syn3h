@@ -410,48 +410,11 @@ fi
 # The showcase is a separate step: a full-quality capture holds a heavy slot for about half an
 # hour, so it never runs inside a release. See docs/RELEASE-SHOWCASE.md.
 echo "Next, when no release is running: /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/showcase.mjs --version $CALVER --publish"
+echo "After pushing main and the tags: tools/vantage.sh $CALVER (the hosted check, with this release's own checker)"
 
-# A second vantage point: the same short public check from a GitHub-hosted machine
-# (.github/workflows/public-check.yml). It reports only, for now: the release is already
-# accepted, and a failure there with a pass here is information about the route, not a
-# rollback. MIRA_SKIP_VANTAGE=1 skips it.
-vantage() {
-  [ -z "${MIRA_SKIP_VANTAGE:-}" ] || { echo "VANTAGE: skipped (MIRA_SKIP_VANTAGE)"; return 0; }
-  command -v gh >/dev/null 2>&1 || { echo "VANTAGE: skipped (gh is not installed)"; return 0; }
-  _since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  gh workflow run public-check.yml -f version="$CALVER" -f url=https://mira.cc/ >"$LOG-vantage.log" 2>&1 \
-    || { echo "VANTAGE: skipped (could not start the GitHub check; see $LOG-vantage.log)"; return 0; }
-  _run=""; _tries=0
-  while [ -z "$_run" ] && [ "$_tries" -lt 12 ]; do
-    sleep 5; _tries=$((_tries + 1))
-    _run="$(gh run list --workflow public-check.yml --event workflow_dispatch --limit 5 --json databaseId,createdAt \
-      -q "[.[] | select(.createdAt >= \"$_since\")][0].databaseId" 2>/dev/null || true)"
-  done
-  [ -n "$_run" ] || { echo "VANTAGE: skipped (the GitHub run did not appear within a minute)"; return 0; }
-  # Polled, never watched: on 18 Nov 2026 a hosted run stuck "in progress" for 36 minutes and
-  # `gh run watch` held the accepted release open with it. At most MIRA_VANTAGE_WAIT seconds
-  # (default 1200); a run still going then is reported as such, and the release ends.
-  # Done means a conclusion, not only "completed": GitHub can report a run completed a moment
-  # before its conclusion, and release-91 printed that empty conclusion as if it were a result.
-  _deadline=$(( $(date +%s) + ${MIRA_VANTAGE_WAIT:-1200} )); _status=""; _conclusion=""
-  # Asked at least once, however short the wait.
-  while :; do
-    _state="$(gh run view "$_run" --json status,conclusion -q '.status + " " + .conclusion' 2>/dev/null || true)"
-    _status="${_state%% *}"; _conclusion="${_state#* }"; [ "$_conclusion" != "$_state" ] || _conclusion=""
-    [ "$_status" = completed ] && [ -n "$_conclusion" ] && break
-    [ "$(date +%s)" -lt "$_deadline" ] || break
-    sleep 15
-  done
-  _url="https://github.com/terran-labs/syn3h/actions/runs/$_run"
-  if [ "$_status" != completed ]; then
-    echo "VANTAGE: GitHub public check of $CALVER still running (${_status:-status unknown}) after ${MIRA_VANTAGE_WAIT:-1200} s, not waited for; no result yet: $_url"
-  elif [ -z "$_conclusion" ]; then
-    echo "VANTAGE: GitHub public check of $CALVER completed but GitHub reported no result within ${MIRA_VANTAGE_WAIT:-1200} s; no result yet: $_url"
-  else
-    echo "VANTAGE: GitHub public check of $CALVER from a hosted machine: $_conclusion $_url"
-  fi
-}
-vantage || true
+# The second vantage point (the same short public check from a GitHub-hosted machine) is no
+# longer started here: run tools/vantage.sh <version> after main and the tags are pushed, so the
+# hosted machine checks out this release's own checker (docs/NAMES.md).
 
 # Refresh aggregate dashboard tiles after the release record exists. The host supplies
 # MIRA_SESSION_STATE; never store its value in the repository or published dashboard.

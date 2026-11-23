@@ -41,13 +41,16 @@ version of this page. `node tools/rename-to-mira.mjs --check` lists every remain
 - **Window hooks.** `window.syn3h`, `window.syn3hNet` and `window.syn3hStartup` read through to
   `window.mira`, `window.miraNet` and `window.miraStartup`, assigned in one place,
   `src/core/legacyWindowNames.ts`.
-- **The hosted check runs the previous release's checker.** `tools/release.sh` starts
-  `.github/workflows/public-check.yml` with `gh workflow run` and no `--ref`, so GitHub runs the
-  workflow and `tools/public-check.mjs` from its default branch, which does not yet hold the
-  release being checked (main is pushed after RELEASE OK). Whenever a release changes the page
-  and its checker together, the hosted check reads the new page with the old checker. The Mira
+- **The hosted check ran the previous release's checker.** `tools/release.sh` started
+  `.github/workflows/public-check.yml` with `gh workflow run` and no `--ref`, so GitHub ran the
+  workflow and `tools/public-check.mjs` from its default branch, which did not yet hold the
+  release being checked (main is pushed after RELEASE OK). Whenever a release changed the page
+  and its checker together, the hosted check read the new page with the old checker. The Mira
   release met this: the old checker read `window.syn3hStartup`, found nothing, and reported no
-  tap-to-playable figure, until `syn3hStartup` joined the aliases below.
+  tap-to-playable figure, until `syn3hStartup` joined the aliases below. Since then the hosted
+  check is started by `tools/vantage.sh <version>` after main and the tags are pushed, passing the
+  version tag as the workflow's `ref`, so it runs the release's own checker; release.sh only
+  prints that command.
 - **Older pages driven by new tools.** The rollback, public and mixed-version checks can drive a
   build from before the rename, which has only `window.syn3h`. `tools/lib/legacy-page-names.mjs`
   makes `window.mira` read the old hook on such a page. Keep it while a pre-rename release can

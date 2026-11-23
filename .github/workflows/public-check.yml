@@ -2,9 +2,10 @@
 # from a GitHub-hosted machine against the public site, so a failure on the release machine's
 # own route to Cloudflare can be told apart from a failure of the site.
 #
-# Started by tools/release.sh after a release is accepted (gh workflow run), or by hand from the
-# Actions tab. It only loads the public site: no secrets, no write access, no push or pull
-# request triggers.
+# Started by tools/vantage.sh after a release's main and tags are pushed (gh workflow run, with
+# the release's tag as `ref`, so the checker checked out is that release's own), or by hand from
+# the Actions tab, where an empty `ref` checks out the branch the run was started on. It only
+# loads the public site: no secrets, no write access, no push or pull request triggers.
 name: Public check
 
 on:
@@ -18,6 +19,11 @@ on:
         description: Public address to check
         required: false
         default: https://mira.cc/
+        type: string
+      ref:
+        description: Tag or commit whose checker to run (for example v26.11.2300); empty for the branch the run started on
+        required: false
+        default: ''
         type: string
 
 permissions:
@@ -34,6 +40,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The release's own checker (tools/vantage.sh passes its tag); empty keeps the default.
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24

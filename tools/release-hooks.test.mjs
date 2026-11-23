@@ -17,7 +17,7 @@ for (const failure of ['draft', 'tag']) {
       writeFileSync(join(dir, 'bin/git'), '#!/bin/sh\n[ "$FAILURE" != tag ]\n', { mode: 0o755 })
       const calls = join(dir, 'calls')
       const result = spawnSync('/bin/sh', ['-eu', '-c', hook], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, FAILURE: failure, CALLS: calls, CALVER: 'v26.11.1500', MILESTONE: 'test', COMMIT: '1234567', WHEN: 'test time', N: '3', PREV: 'release-2', DEST: dir, LOG: join(dir, 'log'),
-        // Never start the real GitHub check from a test.
+        // Never start the real GitHub check from a test (release.sh no longer does; belt and braces).
         MIRA_SKIP_VANTAGE: '1' } })
       assert.equal(result.status, 0, result.stderr)
       assert.match(result.stdout, /Warning: release is live/)
@@ -26,7 +26,9 @@ for (const failure of ['draft', 'tag']) {
       const ran = existsSync(calls) ? readFileSync(calls, 'utf8') : ''
       assert.doesNotMatch(ran, /showcase\.mjs/)
       assert.doesNotMatch(ran, /publish/)
-      assert.match(result.stdout, /VANTAGE: skipped \(MIRA_SKIP_VANTAGE\)/)
+      // The hosted check runs after main and the tags are pushed (tools/vantage.sh), never here.
+      assert.doesNotMatch(result.stdout, /VANTAGE/)
+      assert.match(result.stdout, /After pushing main and the tags: tools\/vantage\.sh v26\.11\.1500/)
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 }
@@ -42,7 +44,7 @@ test('a failed archive runs every later step, then ends the release with exit 1'
     writeFileSync(join(dir, 'bin/git'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
     const result = spawnSync('/bin/sh', ['-eu', '-c', hook], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, ARCHIVE_FAILED: '1', CALVER: 'v26.11.1500', MILESTONE: 'test', COMMIT: '1234567', WHEN: 'test time', N: '3', PREV: 'release-2', DEST: dir, LOG: join(dir, 'log'), MIRA_SKIP_VANTAGE: '1' } })
     assert.equal(result.status, 1)
-    assert.match(result.stdout, /VANTAGE: skipped/, 'the steps after the archive still ran')
+    assert.match(result.stdout, /After pushing main and the tags: tools\/vantage\.sh/, 'the steps after the archive still ran')
     assert.match(result.stderr, /release-3 is live but v26\.11\.1500 is NOT stored in R2/)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
@@ -202,12 +204,12 @@ for (const [name, codes, status] of [['passes', [0], 0], ['fails at once', [1, 0
 }
 
 
-// The hosted check step, run as release.sh defines it, against a stand-in gh whose successive
+// The hosted check step, run as tools/vantage.sh defines it, against a stand-in gh whose successive
 // answers to `run view` are listed in VIEWS (one "status conclusion" line each; the last repeats).
 function vantageRun(views, wait = '1') {
-  const source = readFileSync(join(process.cwd(), 'tools', 'release.sh'), 'utf8')
+  const source = readFileSync(join(process.cwd(), 'tools', 'vantage.sh'), 'utf8')
   const start = source.indexOf('vantage() {'), end = source.indexOf('\n}\n', start)
-  assert.ok(start >= 0 && end > start, 'release.sh defines vantage()')
+  assert.ok(start >= 0 && end > start, 'tools/vantage.sh defines vantage()')
   const dir = mkdtempSync(join(tmpdir(), 'mira-vantage-'))
   try {
     writeFileSync(join(dir, 'views'), views.join('\n') + '\n')
@@ -243,4 +245,21 @@ test('the hosted check reports a result only once GitHub gives one, never a blan
   const never = vantageRun(['completed '])
   assert.match(never, /completed but GitHub reported no result within 1 s; no result yet:/)
   assert.doesNotMatch(never, /from a hosted machine:/)
+})
+
+test("the hosted check checks out the release's own checker, and never fails a release", () => {
+  // Started from release.sh before main was pushed, GitHub ran the previous release's checker
+  // against the new page (docs/NAMES.md). The version tag is passed as the workflow's ref.
+  const dir = mkdtempSync(join(tmpdir(), 'mira-vantage-ref-'))
+  try {
+    writeFileSync(join(dir, 'gh'), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${dir}/calls"\ncase "$1 $2" in "workflow run") exit 0 ;; "run list") echo 7 ;; "run view") echo "completed success" ;; esac\n`, { mode: 0o755 })
+    const run = (...args) => spawnSync('/bin/sh', [join(process.cwd(), 'tools', 'vantage.sh'), ...args], { encoding: 'utf8', timeout: 60000, env: { PATH: `${dir}:${process.env.PATH}`, HOME: dir, MIRA_VANTAGE_WAIT: '1' } })
+    const ok = run('v26.11.2300')
+    assert.equal(ok.status, 0, ok.stderr)
+    assert.match(ok.stdout, /VANTAGE: GitHub public check of v26\.11\.2300 from a hosted machine: success/)
+    assert.match(readFileSync(join(dir, 'calls'), 'utf8'), /^workflow run public-check\.yml -f version=v26\.11\.2300 -f url=https:\/\/mira\.cc\/ -f ref=v26\.11\.2300$/m)
+    const bad = run('26.11.2300')
+    assert.equal(bad.status, 2)
+    assert.match(bad.stderr, /usage: tools\/vantage\.sh <version tag/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
