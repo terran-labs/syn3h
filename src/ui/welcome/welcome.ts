@@ -97,7 +97,7 @@ const touchDiagram = `<svg class="welcome-touch" viewBox="0 0 844 390" role="img
 function html(where: WelcomeWhere): string {
   const enter = where === 'play' ? 'You are already on one. Back in the galaxy, each planet is its own world' : 'Tap a planet in the galaxy and you drop straight in'
   return `
-<p class="welcome-lede">Syn3h is a sci-fi playground of small worlds. Drive them, fly over them and wander them with friends, right here in the browser.</p>
+<p class="welcome-lede">Syn3h is a sci-fi wonderland of tiny worlds to explore with your friends.</p>
 ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)))}
 <h3>Start in three moves</h3>
 <ol class="welcome-steps">
