@@ -11,6 +11,7 @@ import { ROUND4 } from './round4'
 import { ROUND5 } from './round5'
 import { ROUND6 } from './round6'
 import { ROUND7 } from './round7'
+import { ROUND8 } from './round8'
 
 interface Shown { id: number; name: string; note: string; word: MarkPath; mono: MarkPath; tag?: string }
 type Candidate = Shown
@@ -92,13 +93,13 @@ function card(c: Candidate): HTMLElement {
   return el
 }
 
-const round = [1, 2, 3, 4, 5, 6].includes(Number(query.get('round'))) ? Number(query.get('round')) : 7
-// The lobby takes ?mark=N for the current round and ?mark=r1-N to r6-N for the earlier ones.
-const prefix = round === 7 ? '' : `r${round}-`
+const round = [1, 2, 3, 4, 5, 6, 7].includes(Number(query.get('round'))) ? Number(query.get('round')) : 8
+// The lobby takes ?mark=N for the current round and ?mark=r1-N to r7-N for the earlier ones.
+const prefix = round === 8 ? '' : `r${round}-`
 const names = Object.fromEntries(M_LIBRARY.map(m => [m.key, m.name]))
 const all: (Shown & { problems?: string[] })[] = round === 1 ? allCandidates()
   : round === 2 ? ROUND2.map(c => ({ ...c, tag: `${c.family} · M-${c.m}${names[c.m] ? ' ' + names[c.m] : ' from 9'}` }))
-  : (round === 3 ? ROUND3 : round === 4 ? ROUND4 : round === 5 ? ROUND5 : round === 6 ? ROUND6 : ROUND7).map(c => ({ ...c, tag: c.family }))
+  : (round === 3 ? ROUND3 : round === 4 ? ROUND4 : round === 5 ? ROUND5 : round === 6 ? ROUND6 : round === 7 ? ROUND7 : ROUND8).map(c => ({ ...c, tag: c.family }))
 const list = all.filter(c => !only || only.includes(c.id))
 const intro: Record<number, string> = {
   1: 'Nine candidates in Syn3h’s heavy cut-corner capitals.',
@@ -108,9 +109,10 @@ const intro: Record<number, string> = {
   5: 'Six variants of round 4’s Blade and Monoplate with the R and A brought together: their 45 degree edges parallel, one slit apart, the slit as wide as the gap between I and R.',
   6: 'Five variants from your notes on round 5: Blade with slit counters tightened (1 and 2), and Monoplate reworked from variant 5 with a narrower R and matching outer slopes on the M and the A (3 to 5).',
   7: 'Round 6’s variant 4 on the underline plate from variant 1, with the R at four narrower widths.',
+  8: 'Round 7’s variant 4 with the plate fitted to the slab and three new cuts: down the M’s upper right, up the I’s left, and down the R’s upper right. The icon now sits on the plate too.',
 }
 document.querySelector('header h1')!.textContent = `Mira logo, round ${round}`
-document.querySelector('header p')!.innerHTML = `${intro[round]} Each is one generated vector path. “See it in the lobby” opens the real lobby with that candidate in Syn3h’s place. ${[7, 6, 5, 4, 3, 2, 1].filter(r => r !== round).map(r => `<a href="?round=${r}">Round ${r}</a>`).join(' ')}`
+document.querySelector('header p')!.innerHTML = `${intro[round]} Each is one generated vector path. “See it in the lobby” opens the real lobby with that candidate in Syn3h’s place. ${[8, 7, 6, 5, 4, 3, 2, 1].filter(r => r !== round).map(r => `<a href="?round=${r}">Round ${r}</a>`).join(' ')}`
 if (round === 2) {
   // The M library first, so the owner can name an M and a layout separately.
   const lib = document.createElement('section'); lib.className = 'card library'
