@@ -26,7 +26,7 @@ for(const mode of ['desktop','phone']){
   await page.getByRole('button',{name:'Welcome',exact:true}).click()
   const welcome=page.locator('dialog.lobby-sheet .welcome-body')
   await welcome.waitFor({state:'visible'})
-  for(const heading of ['Start in three moves','Controls','Settings worth knowing'])assert.equal(await welcome.getByRole('heading',{name:heading}).count(),1,`Welcome has ${heading}`)
+  for(const heading of ['Controls','Settings worth knowing'])assert.equal(await welcome.getByRole('heading',{name:heading}).count(),1,`Welcome has ${heading}`)
   await page.waitForFunction(()=>[...document.querySelectorAll('dialog.lobby-sheet .welcome-shot')].some(f=>f.classList.contains('is-loaded')),null,{timeout:30000})
   assert.ok(images.length>0&&images.every(url=>/^\/welcome\/[\w-]+-(640|960|1280|1920)\.webp$/.test(url)),`only Welcome pictures load after opening ${JSON.stringify(images)}`)
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-welcome.png`})

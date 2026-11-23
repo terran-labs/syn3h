@@ -99,13 +99,6 @@
 
 /* Lists */
 .welcome-body ol, .welcome-body ul { padding: 0; list-style: none; }
-.welcome-steps { counter-reset: step; display: grid; gap: 12px; }
-.welcome-steps li { max-width: 68ch; counter-increment: step; position: relative; padding-left: 40px; min-height: 26px; }
-.welcome-steps li::before {
-  content: counter(step); position: absolute; left: 0; top: 0; width: 26px; height: 26px; box-sizing: border-box;
-  display: grid; place-items: center; border: 1px solid var(--w-line); border-radius: 50%;
-  font: 500 12px/1 'Barlow', sans-serif; color: var(--w-ink);
-}
 .welcome-cards { display: grid; gap: 10px; }
 @container welcome (min-width: 560px) { .welcome-cards { grid-template-columns: repeat(3, 1fr); } }
 .welcome-cards li, .welcome-modes > div { padding: 14px 16px; border: 1px solid var(--w-quiet); border-radius: 12px; }

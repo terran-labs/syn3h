@@ -26,6 +26,7 @@ import { ringHtml, wireRing, type RingShot } from './ring'
 import './welcome.css'
 
 export type WelcomeWhere = 'lobby' | 'play'
+/** `where`: the host (the lobby or play). Nothing in the guide differs by it now; kept so the hosts need not change. */
 export interface WelcomeOptions { signal?: AbortSignal; where?: WelcomeWhere; labelledBy?: string }
 export interface Welcome { opened(): void }
 
@@ -94,17 +95,10 @@ const touchDiagram = `<svg class="welcome-touch" viewBox="0 0 844 390" role="img
 </svg>`
 
 /** The page. Every top-level element is one row (see the contract above). */
-function html(where: WelcomeWhere): string {
-  const enter = where === 'play' ? 'You are already on one. Back in the galaxy, each planet is its own world' : 'Tap a planet in the galaxy and you drop straight in'
+function html(): string {
   return `
 <p class="welcome-lede">Syn3h is a sci-fi wonderland of tiny worlds to explore with your friends.</p>
 ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)))}
-<h3>Start in three moves</h3>
-<ol class="welcome-steps">
-  <li><strong>Pick a planet.</strong> ${enter}: volcanoes, lagoons, badlands, a mire and more.</li>
-  <li><strong>Drive.</strong> ${k('W')}${k('A')}${k('S')}${k('D')} or the arrow keys on a computer, your left thumb on a phone. Everything else can wait.</li>
-  <li><strong>Bring a friend.</strong> ${where === 'play' ? 'Press' : 'In a world, press'} ${k('J')} or <em>Invite players</em> for a link and a QR code. Whoever opens it lands in your world. No accounts.</li>
-</ol>
 <h3>Three machines</h3>
 <ul class="welcome-cards">
   <li><strong>Buggy</strong><span>Grips rough ground and climbs anything sensible. At a crest, ${k('Space')} unfolds force-field wings and the drop becomes a glide.</span></li>
@@ -192,7 +186,7 @@ function loadShots(root: HTMLElement): void {
 export function mountWelcome(body: HTMLElement, options: WelcomeOptions = {}): Welcome {
   body.classList.add('welcome-body')
   if (options.labelledBy) body.setAttribute('aria-labelledby', options.labelledBy)
-  body.insertAdjacentHTML('beforeend', html(options.where ?? 'lobby'))
+  body.insertAdjacentHTML('beforeend', html())
   // The licence files are frozen resources: a pinned build links its own release's copies.
   for (const anchor of body.querySelectorAll<HTMLAnchorElement>('a[href^="/brand/licenses/"]')) anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
   const ring = wireRing(body.querySelector<HTMLElement>('.welcome-ring')!, RING_SHOTS, options.signal)
