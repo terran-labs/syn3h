@@ -2289,17 +2289,37 @@ export function createLobby(game: Game, gate: EngineGate, entryName?: string | n
   retry.addEventListener('click', () => gate.retryNow())
   line.append(text, retry)
   let pending: (() => void) | undefined, countdown: ReturnType<typeof setInterval> | undefined
+  // Clear of the lobby's corner controls (the version on the left, Settings and Welcome on the
+  // right): between them when there is room (a wide screen, a phone on its side), above them when
+  // there is not (a phone held upright). The planets' captions are left to the galaxy.
+  const clearControls = () => {
+    for (const p of ['bottom', 'left', 'max-width']) line.style.removeProperty(p)
+    const box = line.getBoundingClientRect()
+    let top = innerHeight, from = 0, to = innerWidth, hit = false
+    for (const el of shell.element.querySelectorAll<HTMLElement>('.lobby-gear-dock, .lobby-version-dock')) {
+      const r = el.getBoundingClientRect()
+      if (!r.width || !r.height || r.top >= box.bottom || r.bottom <= box.top) continue
+      top = Math.min(top, r.top)
+      if (r.left < box.right && r.right > box.left) hit = true
+      if (r.left + r.width / 2 < innerWidth / 2) from = Math.max(from, r.right); else to = Math.min(to, r.left)
+    }
+    if (!hit) return
+    const room = to - from - 32
+    if (room >= 300) { line.style.left = `${Math.round(from + 16 + room / 2)}px`; line.style.maxWidth = `${Math.round(room)}px` }
+    else line.style.bottom = `${Math.round(innerHeight - top + 12)}px`
+  }
+  addEventListener('resize', () => { if (line.isConnected) clearControls() })
   const show = () => {
     clearInterval(countdown); countdown = undefined
     if (!pending) { line.remove(); return }
     if (!line.isConnected) shell.element.append(line)
     const waiting = gate.state === 'waiting'
     retry.hidden = !waiting
-    if (!waiting) { text.textContent = gate.attempts > 1 ? 'Fetching the physics engine again' : 'Preparing world'; return }
+    if (!waiting) { text.textContent = gate.attempts > 1 ? 'Fetching the physics engine again' : 'Preparing world'; clearControls(); return }
     // Seconds to the automatic retry, counted down so the wait is visibly going somewhere.
     const due = performance.now() + gate.nextDelayMs
     const say = () => { text.textContent = `The physics engine has not arrived. Trying again in ${Math.max(1, Math.ceil((due - performance.now()) / 1000))} s.` }
-    say(); countdown = setInterval(say, 500)
+    say(); clearControls(); countdown = setInterval(say, 500)
   }
   const stop = gate.onChange(show)
   shell.deferEntry = enter => {
