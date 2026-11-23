@@ -54,11 +54,19 @@ browser or a script, redirects only for document paths (`/`, a path ending in `/
 keep working. The checks `tools/release.sh` runs after acceptance send the headers of a
 navigation and of an open page's fetch, matching this rule.
 
-**The bare syn3h.com.** At first the rule did not fire on syn3h.com: the request reached the old
-Weebly origin, whose own 301 sent it to www.syn3h.com, where the rule then sent it to mira.cc. The
-cause is not known. The owner has approved replacing the apex record with a proxied placeholder,
-which the Orchestrator is doing. Until that is done, the release's apex check reports a two-hop
-redirect loudly. That is expected and does not fail the release.
+**The bare syn3h.com.** Since 22 November 2026, 5:29 pm PST, the apex record is a proxied
+placeholder (`AAAA 100::`) with no origin, and the Worker is not attached to it. The rule fires on
+it directly: every navigation to the bare domain is one 302 to mira.cc. Any other request there,
+such as a cors fetch of `/v/versions.json`, answers 522, because there is no origin behind the
+placeholder. That is acceptable: no page was ever open on the bare domain (it always redirected to
+www), so nothing fetches from it. `tools/release.sh` therefore checks only its navigation redirect;
+the open-page fetch and socket checks run on www.syn3h.com alone.
+
+The old Weebly record is exported under `Syn3h-stable/dns/20261122-172834-syn3h.com` and can be
+restored with `tools/domain.sh restore`. Before the placeholder, the rule did not fire on the apex:
+requests reached the Weebly origin, whose own 301 sent them to www.syn3h.com and only then to
+mira.cc. That went away with the placeholder, so it was tied to the Weebly origin; the mechanism is
+unexplained.
 
 **Considered and not built: CORS as a second line of defence** (the Foreman, 23 November: the rule
 redirects navigations only, so nothing a page fetches is redirected). If any non-navigation request were
@@ -89,7 +97,7 @@ made that precise, and it can be removed once no page from before the switch is 
 - `tools/release.sh` checks mira.cc as the primary address, with rollback on failure. After
   acceptance it checks, loudly but without undoing the release: a navigation to www.mira.cc,
   www.syn3h.com or syn3h.com redirects to mira.cc with its path and query; an open page's own fetch
-  of `/v/versions.json` on the old hosts answers 200; `wss://www.syn3h.com/ws` still upgrades.
+  of `/v/versions.json` on www.syn3h.com answers 200; `wss://www.syn3h.com/ws` still upgrades.
 - Release notes of versions up to v26.11.2204, the last one live at the old address, keep
   "live at https://www.syn3h.com/" in their release line (`playUrl` in `tools/release-notes.mjs`).
 - The client never named its address: invites and QR codes are built from `location.origin`, and

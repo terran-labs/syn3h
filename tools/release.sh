@@ -354,9 +354,12 @@ DEPLOYED=""
 
 # The other addresses send players to mira.cc by Single Redirect rules outside the release
 # (docs/MIRA-CUTOVER.md). A failure is reported loudly but does not undo the release, which cannot
-# have caused it. On the old hosts only navigations are redirected: a page left open there still
-# loads its lazy chunks and /v/versions.json from its own origin, and keeps its room socket.
+# have caused it. On the old hosts only navigations are redirected. A page left open on the old
+# www host still loads its lazy chunks and /v/versions.json from its own origin, and keeps its room
+# socket. The old bare domain has been a redirect-only placeholder with no origin since 22 November
+# 2026: no page was ever open there, so only its navigation redirect is checked.
 OLD_HOSTS="www.syn3h.com syn3h.com" # rename-keep: the old addresses themselves
+OPEN_PAGE_HOST="www.syn3h.com" # rename-keep: the old address pages may still be open on
 address_check() { # <what went wrong>: a loud failure that does not fail the release
   printf '\nADDRESS CHECK FAILED: %s The release stands; fix the redirect rule.\n' "$1" >&2
 }
@@ -367,7 +370,7 @@ for host in www.mira.cc $OLD_HOSTS; do
   case "$got" in 30[1278]" https://mira.cc$probe") echo "Redirect ok: a page opened at https://$host/ goes to mira.cc with its path and query" ;;
     *) address_check "a page opened at https://$host$probe answered \"$got\", not a redirect to https://mira.cc$probe." ;; esac
 done
-for host in $OLD_HOSTS; do
+for host in $OPEN_PAGE_HOST; do
   got="$(curl -s -o /dev/null --max-time 20 -w '%{http_code}' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Dest: empty' -H 'Accept: application/json' "https://$host/v/versions.json" || true)"
   [ "$got" = 200 ] && echo "No redirect for a page's own fetches: https://$host/v/versions.json answers 200" \
     || address_check "https://$host/v/versions.json, fetched as an open page would, answered $got, not 200: pages left open there cannot load."
