@@ -47,7 +47,8 @@ for(const mode of ['desktop','phone']){
   const vehicle=card.getByRole('radiogroup',{name:'Vehicle',exact:true})
   await vehicle.scrollIntoViewIfNeeded()
   assert.equal(await card.locator('.wi-body > :first-child').evaluate(el=>el.classList.contains('wi-vehicle')),true,'vehicle controls lead their panel')
-  for(const box of await vehicle.getByRole('radio').evaluateAll(es=>es.map(el=>el.getBoundingClientRect().height)))assert.ok(box>=44,'each vehicle choice is a full touch target')
+  // Each vehicle choice can be tapped: at least 44 px in both directions (the touch-target floor).
+  for(const box of await vehicle.getByRole('radio').evaluateAll(es=>es.map(el=>{const r=el.getBoundingClientRect();return{w:r.width,h:r.height}})))assert.ok(box.w>=44&&box.h>=44,`each vehicle choice is a full touch target (${box.w}x${box.h})`)
   assert.equal(await page.getByRole('combobox',{name:'Gear',exact:true}).count(),0)
   // Every vehicle the game offers (a hidden one, such as the tank, is not offered).
   const offered=await page.evaluate(async()=>(await import('/src/ui/VehicleChoice.ts')).PLAY_VEHICLES.map(v=>({id:v.id,label:v.label})))
