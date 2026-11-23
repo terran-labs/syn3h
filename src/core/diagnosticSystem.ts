@@ -18,7 +18,7 @@ const backendReasons = {
 
 const qualityReasons: Readonly<Record<GovernorReason | 'start', string>> = {
   start: 'Startup', shed: 'Reduced rendering cost', climb: 'Restored rendering quality',
-  'level-drop': 'Moved to a lower level', 'level-climb': 'Moved to a higher level',
+  'level-drop': 'Moved to a lower level', 'level-climb': 'Moved to a higher level', 'climb-abandoned': 'Higher level not ready in time',
   manual: 'Player selection', 'auto-off': 'Automatic quality disabled',
   'auto-on': 'Automatic quality enabled', display: 'Display budget changed',
 }

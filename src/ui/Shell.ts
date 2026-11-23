@@ -252,6 +252,7 @@ export class Shell implements System {
   private readonly hostControls: HTMLFieldSetElement
 
   constructor(private readonly game: Game, readonly audio: GameAudio, entryName?: string | null) {
+    game.onCoveredClimb = (level, job) => this.showCoveredClimb(level, job)
     this.previousSuspended = game.input.suspended; game.input.suspended = true
     this.element.className = 'syn3h-shell exploration-ui'
     this.element.innerHTML = `<section class="shell-overlay" role="dialog" aria-modal="true" aria-label="Syn3h lobby">
@@ -1200,6 +1201,12 @@ export class Shell implements System {
 
   private qualityVeil: HTMLDivElement | null = null
   private queuedQuality?: { level: QualityLevel; apply: () => void }
+  /** A level climb the game takes behind this veil (Game.takeCoveredClimb): shown until it is done. */
+  private queuedClimb?: { level: QualityLevel; job: Promise<void> }
+  private showCoveredClimb(level: QualityLevel, job: Promise<void>): void {
+    this.queuedClimb = { level, job }
+    if (!this.qualityVeil) void this.applyQualityBehindVeil()
+  }
   qualityCheckSignal?: AbortSignal
   private async applyQualityBehindVeil(): Promise<void> {
     const veil = document.createElement('div')
@@ -1216,7 +1223,16 @@ export class Shell implements System {
     this.qualityVeil = veil
     this.element.append(veil)
     try {
-      while ((this.queuedQuality || this.queuedGlass) && !this.abort.signal.aborted) {
+      while ((this.queuedQuality || this.queuedGlass || this.queuedClimb) && !this.abort.signal.aborted) {
+        if (this.queuedClimb) {
+          const { level, job } = this.queuedClimb
+          this.queuedClimb = undefined
+          title.textContent = 'Applying ' + LEVELS[level].name
+          status.textContent = 'Updating graphics settings'
+          this.game.climbStatus = phase => { status.textContent = phase }
+          try { await job } finally { this.game.climbStatus = undefined }
+          continue
+        }
         if (!this.queuedQuality && this.queuedGlass) {
           const load = this.queuedGlass
           this.queuedGlass = undefined

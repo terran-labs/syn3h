@@ -1,4 +1,5 @@
 import { CoveredPipelines } from './coveredPipelines'
+import { CoveredClimbRun, SLICED_CLIMB_TOP, slicedClimbTo } from './coveredClimb'
 import { longFrames } from './longFrames'
 import { installLongFrameRenderer } from './longFrameRenderer'
 /**
@@ -23,7 +24,7 @@ import { drawFrame, gpuDeadlineMs, startRenderer, viewState, withDeadline, type 
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
 import { QualityController, reportLoading, vehicleShading, type AdjacentRenderPreset, type QualityLevel, type FrameMetrics } from './quality'
-import { drawCoveredShowroomVariant } from '../vehicles/skins/showroom'
+import { climbShowroomStandIns, drawCoveredShowroomVariant } from '../vehicles/skins/showroom'
 import { PipelineCounter } from './performanceHistory'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
 
@@ -69,6 +70,11 @@ const MAX_STEPS_PER_FRAME = 5
 // start to here is mostly module requests.
 recordStartupPhase('fetch and run modules up to Game.ts', 0)
 
+/** Draws a covered climb divides the scene into, one per frame (Game.climbShares). */
+const CLIMB_SHARES = 6
+/** Longest the Applying veil stands for a covered climb before the climb is abandoned (CoveredClimbRun). */
+const CLIMB_VEIL_MS = 8_000
+
 export class Game {
   readonly scene = new THREE.Scene()
   readonly camera = new THREE.PerspectiveCamera(60, 1, 0.1, 20000)
@@ -105,7 +111,11 @@ export class Game {
     // From Game.ts running to here: the rest of the modules main.ts imports run.
     recordStartupPhase('run remaining modules to main()', startupTiming.phases.at(-1)?.endMs ?? 0)
     this.observeRenderer = installRenderDiagnostics(this)
-    this.quality.onTerrain = () => this.markTerrainBuilt()
+    this.quality.onTerrain = terrain => {
+      this.markTerrainBuilt()
+      // A world rebuilt mid-climb: stop the covered climb before it draws a disposed scene.
+      terrain.onRegenerate?.(() => this.abortCoveredClimb())
+    }
   }
 
   async init(): Promise<void> {
@@ -158,7 +168,11 @@ export class Game {
       else fit.measure(window.innerWidth, window.innerHeight)
     }
     // Resize events come before the frame is drawn, so sizing here never shows a cleared canvas.
-    window.addEventListener('resize', () => { measure(); fit.fit() })
+    // Only in play does a draw follow in this frame. While draws are held (a quality change behind
+    // the menu or a veil) or thinned (the world behind the galaxy menu, twice a second), a resize
+    // here would leave the canvas cleared until the next draw: only measure then; every drawn frame
+    // applies the size just before it draws. A stopped loop applies and redraws at once.
+    window.addEventListener('resize', () => { measure(); if (!this.holdDraws && !this.applyingQuality && this.view() === 'playing') fit.fit(); else if (this.paused && fit.fit()) this.redrawPaused() })
     if (typeof ResizeObserver !== 'undefined') {
       // Reported after layout, once the rotation has settled. Only recorded while the loop runs:
       // the next frame applies it just before it draws. A stopped loop applies and redraws here.
@@ -417,13 +431,34 @@ export class Game {
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
     if (!this.applyingQuality) {
-      this.quality.deferPixelRatio = true
+      // A pending climb to High or below is not applied on one covered frame: Game takes it as a job
+      // in slices (takeCoveredClimb). A climb to Ultra or Cinematic is applied on the covered frame
+      // by frame() and prepared in one draw just after, as in v26.11.2204 (see SLICED_CLIMB_TOP for
+      // why). The climb back in play to a level just dropped from (canClimbVisible) still happens
+      // inside frame(): its pipelines are alive.
+      const sliced = slicedClimbTo(this.quality.governor.pendingLevel)
       const before = this.quality.governor.level
+      this.quality.holdPendingClimb = sliced
+      this.quality.deferPixelRatio = true
       this.quality.frame(metrics, view === 'playing')
-      // A pending climb applies only on a frame outside play, and the next frame may already be
-      // play. Build the new level's pipelines now, in this frame, hidden meshes included.
-      if (view !== 'playing' && this.quality.governor.level !== before && !this.holdDraws && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost) this.prepareClimbedLevel()
+      const lost = (this.renderer as unknown as GuardedRenderer)._isDeviceLost
+      if (view !== 'playing' && sliced && !this.climbJob && this.quality.pendingClimbReady() && !this.holdDraws && !lost) this.climbJob = this.takeCoveredClimb()
+      else if (view !== 'playing' && !this.climbJob && this.quality.governor.level > before && this.quality.governor.level > SLICED_CLIMB_TOP && !this.holdDraws && !lost) {
+        // Ultra or Cinematic, just applied on this covered frame: its pipelines are built now, in
+        // this frame, with the render scale it brings (the frame's last draw).
+        this.quality.takePixelRatio(); this.viewFit?.fit()
+        this.prepareClimbedLevel({ systems: true, fleet: true }, draw => draw())
+      }
     }
+    // Play asked for before the covered climb is done (Resume pressed early): the shell's veil
+    // stands until it is, so the wait is a wait and never a frozen frame in play.
+    if (this.climbJob && view === 'playing' && !this.climbVeiled) {
+      this.climbVeiled = true
+      this.onCoveredClimb?.(this.climbLevel, this.climbJob)
+      this.climbRun?.veilShown()
+    }
+    // The shell holds draws while a world is prepared or left under cover: no climb continues then.
+    if (this.climbJob && this.holdDraws) this.abortCoveredClimb()
   }
 
   /**
@@ -435,18 +470,23 @@ export class Game {
    * positive scale keeps the face winding). A mesh whose ancestor is hidden is left alone, so no
    * sibling is ever shown.
    */
-  private prepareClimbedLevel(): void {
-    // This draw is the frame's last: the new level's render scale is applied with it, in the same task.
-    this.quality.takePixelRatio()
+  private prepareClimbedLevel(parts: {
+    systems: boolean; fleet: boolean; standIns?: THREE.Mesh[]; only?: Set<THREE.Object3D>; units?: THREE.Object3D[]
+    /** Vehicles already given stand-ins in this climb, and where newly made ones are collected. */
+    done?: WeakSet<THREE.Object3D>; collect?: THREE.Mesh[]
+  }, wrap: (draw: () => void) => void): void {
     const start = longFrames.start()
     longFrames.event('Climbed level preparation')
     const camera = this.camera
     const behind = camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(-1000).add(camera.position)
     const moved: { mesh: THREE.Object3D; position: THREE.Vector3; scale: THREE.Vector3; culled: boolean }[] = []
     const culled: THREE.Object3D[] = []
+    // A share of the scene for this draw (see climbShares): the rest is hidden for its length.
+    const unshared: THREE.Object3D[] = []
+    if (parts.only) for (const unit of parts.units ?? this.scene.children) if (unit.visible && !parts.only.has(unit)) { unit.visible = false; unshared.push(unit) }
     try {
       // Systems whose look depends on the level (particle octaves) switch now, not next update.
-      for (const system of this.systems) system.prepareClimb?.()
+      if (parts.systems) for (const system of this.systems) system.prepareClimb?.()
       for (const system of this.systems) {
         for (const mesh of system.precompileQualityMeshes?.() ?? []) {
           if (mesh.visible) continue
@@ -463,13 +503,207 @@ export class Game {
       // Culling off for this draw, as the covered entry draws: a caster outside every cascade (a bot
       // far away) would otherwise get its shadow pipeline only when it moves into one, in play.
       this.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
-      const submit = () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
-      const fleet = this.systems.find(system => system.drawClimbFleet)
+      // Every bot's other shading sets, as stand-ins in this one render: the scene and shadow passes
+      // draw once per animation frame, so a second draw for them would draw nothing new. Taken at
+      // draw time, so the parked fleet (in the scene only inside its own draw) is included.
+      const standIns = new THREE.Group()
+      standIns.position.copy(behind); standIns.scale.setScalar(1e-6)
+      const submit = () => {
+        const made = parts.standIns ?? climbShowroomStandIns(this.scene, parts.done)
+        if (!parts.standIns) parts.collect?.push(...made)
+        for (const proxy of made) standIns.add(proxy)
+        if (standIns.children.length) this.scene.add(standIns)
+        try { wrap(() => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)) }
+        finally { standIns.removeFromParent(); standIns.clear() }
+      }
+      const fleet = parts.fleet ? this.systems.find(system => system.drawClimbFleet) : undefined
       if (fleet) fleet.drawClimbFleet!(submit); else submit()
     } finally {
       for (const o of culled) o.frustumCulled = true
       for (const m of moved) { m.mesh.visible = false; m.mesh.frustumCulled = m.culled; m.mesh.position.copy(m.position); m.mesh.scale.copy(m.scale) }
+      for (const child of unshared) child.visible = true
       longFrames.end('Climbed level preparation', start)
+    }
+  }
+
+  /** The covered climb in progress, if any (takeCoveredClimb). */
+  private climbJob: Promise<void> | null = null
+  /** The shell shows its "Applying <level>" veil when play resumes before a covered climb is done; set by the shell. */
+  onCoveredClimb?: (level: QualityLevel, job: Promise<void>) => void
+  private climbLevel: QualityLevel = 0
+  private climbVeiled = false
+  /** Where a covered climb's preparation draws its final composite, so the canvas keeps the last presented frame. */
+  private climbHold: THREE.RenderTarget | null = null
+  /** The veil's status line while a covered climb runs; set by the shell. */
+  climbStatus?: (phase: string) => void
+  /** Covered climbs taken and abandoned, the last one's time behind the veil and its longest slice (tools read these). */
+  readonly climbStats = { taken: 0, abandoned: 0, lastMs: 0, longestSliceMs: 0, slices: [] as number[] }
+
+  /**
+   * The scene in shares of about equal mesh count, for a covered climb's draws: one draw per share
+   * and frame spreads the node builds, object setup and pipeline requests. The units shared out are
+   * the top-level objects and, inside one that carries a light, its children without lights (lights
+   * are part of every material's build key, so whatever holds one is drawn in every share).
+   */
+  private climbShares(count: number): { units: THREE.Object3D[]; shares: Set<THREE.Object3D>[] } {
+    const holdsLight = (o: THREE.Object3D) => { let light = false; o.traverse(x => { light ||= (x as THREE.Light).isLight === true }); return light }
+    const meshes = (o: THREE.Object3D) => { let n = 0; o.traverse(x => { if ((x as THREE.Mesh).isMesh) n++ }); return n }
+    const units: { unit: THREE.Object3D; weight: number }[] = []
+    for (const child of this.scene.children) {
+      if (!holdsLight(child)) { units.push({ unit: child, weight: meshes(child) }); continue }
+      for (const inner of child.children) if (!holdsLight(inner)) units.push({ unit: inner, weight: meshes(inner) })
+    }
+    const total = units.reduce((n, u) => n + u.weight, 0), target = Math.max(1, total / count)
+    const shares: Set<THREE.Object3D>[] = []
+    let share = new Set<THREE.Object3D>(), weight = 0
+    for (const { unit, weight: w } of units) {
+      if (weight > 0 && weight + w > target && shares.length < count - 1) { shares.push(share); share = new Set(); weight = 0 }
+      share.add(unit); weight += w
+    }
+    shares.push(share)
+    return { units: units.map(u => u.unit), shares }
+  }
+
+  private climbRun: CoveredClimbRun | null = null
+  /** Stop a covered climb in progress (the world is rebuilt or left); its level goes back. */
+  abortCoveredClimb(): void { this.climbRun?.abort() }
+
+  private takeCoveredClimb(): Promise<void> {
+    this.climbLevel = this.quality.governor.pendingLevel as QualityLevel
+    this.climbVeiled = false
+    return this.runCoveredClimb().catch(error => console.warn('Covered climb failed', error))
+      .finally(() => { this.climbJob = null; this.climbVeiled = false })
+  }
+
+  /**
+   * A level climb taken outside play (the menu open), in slices: the climb is applied, then the new
+   * level is prepared as a manual change prepares it, through covered draws whose pipelines are
+   * requested asynchronously (CoveredPipelines), one part per frame and, behind the menu, after
+   * input has had its turn, so no single frame carries all of it. It is done only when the
+   * pipelines are compiled (batch.ready()), a confirmation draw has submitted them, and the GPU has
+   * finished that work (finishWorldFrame: onSubmittedWorkDone, or a WebGL 2 sync object).
+   *
+   * Where the world is visible behind the menu, the preparation composites off screen so the menu
+   * shows a still picture; where the galaxy covers it, the preparation draws to the canvas. Play
+   * asked for sooner waits behind the shell's "Applying" veil, and only then does a ceiling apply
+   * (CoveredClimbRun): a climb not done CLIMB_VEIL_MS after the veil went up goes back to the level
+   * it left and counts against that level (QualityGovernor.noteAbandon). A world rebuilt or left
+   * mid-job stops it at its next step. One climb taken on a single out-of-play frame used to cost a
+   * frame of up to half a second and, on WebGPU, a first frame in play of over a second.
+   */
+  private async runCoveredClimb(): Promise<void> {
+    const q = this.quality, from = q.governor.level, start = performance.now()
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    const run = this.climbRun = new CoveredClimbRun(CLIMB_VEIL_MS)
+    const check = () => run.check()
+    // Between slices: behind an open menu, after input has had its turn (idle callback), then the
+    // next frame; behind the veil, the next frame.
+    const next = async () => {
+      if (!this.climbVeiled && typeof requestIdleCallback === 'function') await new Promise<void>(resolve => requestIdleCallback(() => resolve(), { timeout: 100 }))
+      await frame(); check()
+    }
+    const progress = (phase: string) => this.climbStatus?.(phase)
+    const slices: number[] = []
+    const slice = (work: () => void) => { const t = performance.now(); try { work() } finally { slices.push(performance.now() - t) } }
+    let climbed = false, to = from
+    const work = async () => {
+      await frame(); check()
+      if (!q.pendingClimbReady()) return
+      this.applyingQuality = true
+      slice(() => { climbed = q.takePendingClimb() !== null })
+      if (!climbed) return
+      to = q.governor.level
+      longFrames.event('Covered climb')
+      progress('Updating graphics settings')
+      await frame(); await frame(); check() // systems adopt the new level in their own updates
+      const batch = CoveredPipelines.forRenderer(this.renderer, this.scene)
+      // The hold target carries the renderer's own MSAA sample count: with a render target set, three
+      // takes the sample count from it (Renderer.currentSamples), so a target without samples made
+      // the climb prepare 1-sample pipelines for levels that draw with 4 (Ultra, Cinematic).
+      if (this.climbHold && this.climbHold.samples !== this.renderer.samples) { this.climbHold.dispose(); this.climbHold = null }
+      const holdTarget = this.climbHold ??= new THREE.RenderTarget(4, 4, { samples: this.renderer.samples })
+      // The last picture is held (the preparation draws composite off screen) only where the world
+      // is visible behind the menu. Where the galaxy covers it, or the veil does, the preparation
+      // draws to the canvas as a single-frame climb did, and the new render scale is applied now,
+      // so the preparation draws reach the resized targets and the job's last frame finds nothing
+      // new to set up (on WebGL 2 that last frame cost 1 to 2.5 s).
+      const holding = () => this.view() === 'lobby'
+      if (!holding()) { this.quality.takePixelRatio(); this.viewFit?.fit() }
+      const draws = (discover: boolean) => (draw: () => void) => runGuarded(this.renderer as unknown as GuardedRenderer, () => {
+        // Not marked covered: play draws through the glass graph at High and above, and a covered
+        // draw takes the plain one, whose scene pass has another sample count. The preparation must
+        // build the pipelines play will use.
+        const target = this.renderer.getRenderTarget(), hold = holding() ? holdTarget : null
+        if (hold) this.renderer.setRenderTarget(hold)
+        try { if (batch) batch.run(discover, draw); else draw() }
+        finally { if (hold) this.renderer.setRenderTarget(target) }
+      })
+      // One part per frame: the systems' own level changes, the bots' other shading sets (built
+      // as stand-ins), then the draw that requests every pipeline.
+      progress('Preparing visible surfaces')
+      slice(() => { for (const system of this.systems) system.prepareClimb?.() })
+      await next()
+      // Each vehicle's stand-ins are made once per climb and drawn again by the confirmation: made a
+      // second time, the first set would be released with pipelines nothing else holds.
+      const standInsDone = new WeakSet<THREE.Object3D>()
+      let standIns: THREE.Mesh[] = []
+      slice(() => { standIns = climbShowroomStandIns(this.scene, standInsDone) })
+      await next()
+      // The scene in shares, one draw per frame, then the stand-ins on their own.
+      const { units, shares } = this.climbShares(CLIMB_SHARES)
+      // First an empty share: the post chain builds the new level's graph on its first draw.
+      slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns: [], only: new Set(), units }, draws(true)))
+      await next()
+      for (const share of shares) {
+        slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns: [], only: share, units }, draws(true)))
+        await next()
+      }
+      // The stand-ins in groups too: a fleet's showroom sets are many new materials at once.
+      const groups = Math.max(1, Math.min(CLIMB_SHARES, Math.ceil(standIns.length / 12)))
+      for (let g = 0; g < groups; g++) {
+        const part = standIns.filter((_, i) => i % groups === g)
+        slice(() => this.prepareClimbedLevel({ systems: false, fleet: false, standIns: part, only: new Set(), units }, draws(true)))
+        await next()
+      }
+      progress('Preparing vehicles')
+      const fleetStandIns: THREE.Mesh[] = []
+      slice(() => this.prepareClimbedLevel({ systems: false, fleet: true, done: standInsDone, collect: fleetStandIns }, draws(true)))
+      await next()
+      progress('Compiling graphics pipelines')
+      if (batch && !await batch.ready()) console.warn('Covered climb: a graphics pipeline failed')
+      check()
+      progress('Drawing the new level')
+      if (batch) slice(() => this.prepareClimbedLevel({ systems: false, fleet: true, standIns: [...standIns, ...fleetStandIns] }, draws(false)))
+      await frame(); check()
+      // The first presented frame at the new level: its render scale is applied with it (deferPixelRatio).
+      slice(() => { this.quality.takePixelRatio(); this.viewFit?.fit(); drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16) })
+      await this.finishWorldFrame(run.signal, check, false)
+      check()
+      // Ordinary frames behind the veil until no shader work is left, as a manual change ends.
+      this.applyingQuality = false
+      let clean = 0
+      for (let i = 0; i < 8 && clean < 2; i++) {
+        const before = shaderWorkCount()
+        await frame(); check()
+        clean = shaderWorkCount() === before ? clean + 1 : 0
+      }
+    }
+    try {
+      const outcome = await run.run(work)
+      if (outcome === 'done') { if (climbed) this.climbStats.taken++ }
+      else if (climbed) {
+        // Out of time behind the veil counts against the level (backoff, then no more tries this
+        // session); a world that went away, or a failure, only puts the level back.
+        q.abandonClimb(from, to, outcome === 'veil')
+        this.climbStats.abandoned++
+        longFrames.event('Covered climb abandoned')
+        console.warn('Covered climb abandoned:', outcome === 'veil' ? `not done ${CLIMB_VEIL_MS / 1000} s after the veil went up` : outcome === 'aborted' ? 'the world changed' : 'it failed')
+      }
+    } finally {
+      run.abort()
+      if (this.climbRun === run) this.climbRun = null
+      this.applyingQuality = false
+      Object.assign(this.climbStats, { lastMs: Math.round(performance.now() - start), slices: slices.map(Math.round), longestSliceMs: Math.round(Math.max(0, ...slices)) })
     }
   }
 
