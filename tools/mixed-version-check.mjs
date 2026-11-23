@@ -108,6 +108,18 @@ try {
       await fresh.page.evaluate(mode=>window.mira.params.set('game.mode',mode),mode)
       for(const c of [a,b]) await c.page.waitForFunction(mode=>window.miraNet.game.mode===mode,mode,{timeout:10000})
     }
+    // A gear look the new build made world scope (53c8ef92: client to world, id unchanged), changed by
+    // the new page with the older page in the room: the room must keep both, the new page's value
+    // must hold, and what the older page does with it is recorded (it may treat the id as personal).
+    const gear=await fresh.page.evaluate(()=>{const p=window.mira.params.get('fx.impact.sparks');return {scope:p.def.scope,before:p.value}})
+    const want=gear.before===40?41:40
+    await fresh.page.evaluate(v=>window.mira.params.set('fx.impact.sparks',v),want)
+    await wait(2500)
+    const older=fresh===a?b:a
+    const seen=await Promise.all([fresh,older].map(c=>c.page.evaluate(()=>({value:window.mira.params.get('fx.impact.sparks')?.value,scope:window.mira.params.get('fx.impact.sparks')?.def.scope,connected:window.miraNet.connected}))))
+    results.push({worldGear:{id:'fx.impact.sparks',want,newPage:seen[0],olderPage:seen[1],olderKind:older.kind}});console.log('WORLD GEAR',JSON.stringify({want,newPage:seen[0],olderPage:seen[1],olderKind:older.kind}))
+    assert(seen.every(x=>x.connected),'Both pages stay connected after a world gear change')
+    assert.equal(seen[0].value,want,'The new page keeps its world gear value')
     const final=await Promise.all([a,b].map(c=>c.page.evaluate(()=>({connected:window.miraNet.connected,mode:window.miraNet.game.mode,it:window.miraNet.game.it,fps:window.mira.game.fps,race:window.miraNet.race}))))
     assert(final.every(g=>g.connected&&g.mode===2&&g.it===0&&!g.race))
     assert.equal(a.navigations(),1);assert.equal(b.navigations(),1)
