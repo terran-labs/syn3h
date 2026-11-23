@@ -15,13 +15,15 @@
  * would take to change it. A line containing the marker `rename-keep` is never changed.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** Whole files left as they are. Category B (outside systems) and C (history), plus the machinery. */
 export const KEEP_FILES = [
   { pattern: /^wrangler(\.staging)?\.toml$/, reason: 'B: Cloudflare Worker names, R2 bucket and routes; a renamed Worker is a new Worker with an empty Durable Object namespace' },
+  { pattern: /^public\/brand\/(favicon\.svg|manifest\.webmanifest|apple-touch-icon\.png|icon-192\.png|icon-512\.png|share\.png)$|^public\/assets\/liquid-glass\/NOTICE\.md$/, reason: 'B: the bytes every frozen version loads from this address; the current files have new names (tools/frozen-versions.mjs prepare refuses any change here)' },
   { pattern: /^paseo\.json$/, reason: 'B: Vorteo preview service definitions, edited by the Foreman; its SYN3H_* variables still work through the legacy environment bridge' },
   { pattern: /^ops\/STATE\.md$/, reason: 'C: the Orchestrator updates its prose itself after the rename release' },
   { pattern: /^ops\/(DECISIONS|MORNING-HANDOFF)\.md$/, reason: 'C: dated decision records and handoffs' },
@@ -68,6 +70,7 @@ export const KEEP_TOKENS = [
   { pattern: /Syn3h in Action/g, reason: "C: the name of a panel on terranlabs.com" },
   { pattern: /rows\/syn3h\//g, reason: 'C: a path in the terranlabs.com repository' },
   { pattern: /LAST_SYN3H_VERSION|"## Syn3h vX"/g, reason: 'C: the release-notes cutoff between the two names (tools/release-notes.mjs)' },
+  { pattern: /Syn3h (bytes|icons)/g, reason: 'C: names the old brand files frozen versions keep loading' },
   { pattern: /(called|named|formerly|was|released as) Syn3h/g, reason: 'C: says what the game used to be called' },
 ]
 
@@ -149,6 +152,8 @@ export function addBridge(path, text) {
   return text
 }
 
+const sha = buf => createHash('sha256').update(buf).digest('hex')
+const key = v => v.split('.').map(Number).reduce((k, n) => k * 10000 + n, 0)
 const isBinary = buf => buf.subarray(0, 8000).includes(0)
 const git = (root, ...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 1 << 28 })
 
@@ -232,6 +237,21 @@ function check(root) {
       if (/^## Syn3h /m.test(readFileSync(join(root, path), 'utf8'))) unexplained.push(`${path}: says Syn3h but is newer than LAST_SYN3H_VERSION in tools/release-notes.mjs; move that constant`)
     }
   }
+  // Files under public/ reach dist at the same address, which every frozen version also loads
+  // from (static assets are not routed through the Worker). A renamed or redrawn file there would
+  // give old pages new bytes; tools/frozen-versions.mjs prepare refuses such a release. Same rule
+  // here, without a build: any tracked public file whose bytes differ from an archived version's
+  // file at the same address needs a new name instead.
+  const archive = process.env.MIRA_VERSION_ARCHIVE || join(root, '..', 'Syn3h-stable', 'versions')
+  if (existsSync(archive)) {
+    const versions = readdirSync(archive).filter(v => /^\d+\.\d+\.\d+$/.test(v)).sort((a, b) => key(a) - key(b))
+    for (const path of files.filter(p => p.startsWith('public/'))) {
+      const served = path.slice('public/'.length)
+      const mine = existsSync(join(root, path)) ? sha(readFileSync(join(root, path))) : null
+      const differs = versions.filter(v => existsSync(join(archive, v, served)) && sha(readFileSync(join(archive, v, served))) !== mine)
+      if (differs.length) unexplained.push(`${path}: differs from the file ${differs.length} frozen versions serve at /${served} (newest ${differs.at(-1)}); give the new bytes a new name`)
+    }
+  } else unexplained.push(`frozen versions not found at ${archive}: set MIRA_VERSION_ARCHIVE to check public/ against them`)
   return { explained, unexplained }
 }
 
