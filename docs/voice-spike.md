@@ -1,6 +1,6 @@
 # Mira voice spike and production proposal
 
-Research checked 23 November 2026. The browser findings below come from vendor documentation and reports from other applications. Two-player browser validation, the preview link, real-device listening, phone CPU and frame timings, and Mira's TURN rate are pending. The bandwidth and billing tables are estimates.
+Research checked 23 November 2026. The browser findings below come from vendor documentation and reports from other applications. Two Chrome sessions in one named room received 3,329 and 3,322 audio bytes at the first connected sample. A generated test tone produced nonzero PCM samples at the input of each remote voice panner. The RTP energy counter read zero at that sample. Mute disabled the sending track and leaving closed both peer connections. Before opt-in, neither page requested a microphone or created a peer connection. Physical speaker routing, acoustic echo, phone performance and Mira’s TURN rate still need device measurements. The bandwidth and billing tables are estimates.
 
 Keep the two-player mesh in the spike. For production, use Cloudflare Realtime SFU with TURN fallback, subject to the owner's approval for account changes and usage charges. Validate iPhone speaker playback before committing to that rollout. An SFU changes where packets go. The iPhone still has to capture and play audio through the same Safari session.
 

@@ -347,6 +347,12 @@ export class GameAudio implements System {
   attachSpeech(stream: MediaStream) {
     if (!this.context || !this.master) return
     const source = this.context.createMediaStreamSource(stream)
+    // Chromium can leave a received track silent in Web Audio until a media element
+    // consumes it (crbug.com/933677). Only the panner should reach the speakers.
+    const playback = new Audio()
+    playback.muted = true
+    playback.srcObject = stream
+    void playback.play().catch(() => {})
     const gain = this.context.createGain()
     gain.gain.value = 0
     const output = this.output({ x: 0, y: 0, z: 0 }, this.master)
@@ -360,7 +366,13 @@ export class GameAudio implements System {
         panner.positionY.value = point.y
         panner.positionZ.value = point.z
       },
-      dispose() { source.disconnect(); gain.disconnect(); output.dispose() },
+      dispose() {
+        playback.pause()
+        playback.srcObject = null
+        source.disconnect()
+        gain.disconnect()
+        output.dispose()
+      },
     }
   }
 
