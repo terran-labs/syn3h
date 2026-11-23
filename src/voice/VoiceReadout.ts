@@ -1,0 +1,199 @@
+import type { VoiceCandidateTypes, VoiceMicSettings, VoiceSession } from './VoiceSession'
+
+interface AudioSnapshot {
+  sessionType: string
+  contextState: string
+  sampleRate?: number
+}
+
+interface FrameSample {
+  time: number
+  interval: number
+}
+
+interface FrameWindow {
+  live: boolean
+  previous: number
+  samples: FrameSample[]
+  start: number
+}
+
+interface FrameSummary {
+  median: number
+  worst: number
+  count: number
+}
+
+const frameWindowMs = 10_000
+const refreshMs = 1000
+const audioSessionTypes = new Set<unknown>([
+  'auto', 'playback', 'transient', 'transient-solo', 'ambient', 'play-and-record',
+])
+const audioContextStates = new Set<unknown>(['running', 'suspended', 'interrupted', 'closed'])
+
+function audioSnapshot(context?: AudioContext): AudioSnapshot {
+  const type = (navigator as Navigator & { audioSession?: { type?: string } }).audioSession?.type
+  const state = context?.state
+  return {
+    sessionType: type && audioSessionTypes.has(type) ? type : 'unavailable',
+    contextState: state && audioContextStates.has(state) ? state : 'unavailable',
+    sampleRate: context?.sampleRate,
+  }
+}
+
+function sampleRate(rate?: number): string {
+  return rate !== undefined && Number.isFinite(rate) && rate > 0 ? `${rate} Hz` : 'unavailable'
+}
+
+function describeAudio(label: string, snapshot?: AudioSnapshot): string {
+  if (!snapshot) return `${label} mic · no sample`
+  return `${label} mic · session ${snapshot.sessionType}\nContext · ${snapshot.contextState} · ${sampleRate(snapshot.sampleRate)}`
+}
+
+function setting(value?: boolean | string): string {
+  if (typeof value === 'boolean') return value ? 'on' : 'off'
+  return value ?? 'unavailable'
+}
+
+function summarize(window: FrameWindow): FrameSummary | undefined {
+  const intervals = window.samples.slice(window.start).map(sample => sample.interval).sort((a, b) => a - b)
+  const count = intervals.length
+  if (!count) return
+  const mid = Math.floor(count / 2)
+  const median = count % 2 ? intervals[mid] : (intervals[mid - 1] + intervals[mid]) / 2
+  return { median, worst: intervals[count - 1], count }
+}
+
+function describeFrames(live: boolean, frames?: FrameSummary): string {
+  const label = live ? 'Voice on' : 'Voice off'
+  if (!frames) return `${label} · no driving sample`
+  return `${label} · median ${frames.median.toFixed(1)} ms\nWorst ${frames.worst.toFixed(1)} ms · ${frames.count} frames`
+}
+
+export class VoiceReadout {
+  readonly element = document.createElement('details')
+  private readonly report = document.createElement('div')
+  private before?: AudioSnapshot
+  private after?: AudioSnapshot
+  private mic?: VoiceMicSettings
+  private pairs: VoiceCandidateTypes[] = []
+  private capture?: { session: VoiceSession }
+  private timer?: ReturnType<typeof setTimeout>
+  private active?: FrameWindow
+  private readonly completed = new Map<boolean, FrameSummary>()
+  private nextRenderAt = 0
+  private disposed = false
+  private readonly onToggle = () => { if (this.element.open) this.render() }
+  private readonly onVisibility = () => { if (document.hidden) this.finishWindow() }
+
+  constructor(private readonly context: () => AudioContext | undefined) {
+    const summary = document.createElement('summary')
+    summary.textContent = 'Voice diagnostics'
+    this.element.style.cssText = 'box-sizing:border-box;width:max-content;max-width:100%;margin:4px auto 0;background:#171c23;color:white;padding:4px 8px;text-align:left;font:12px/1.4 system-ui,sans-serif;border-radius:4px'
+    summary.style.cursor = 'pointer'
+    this.report.style.cssText = 'white-space:pre-line;overflow-wrap:anywhere;font-variant-numeric:tabular-nums'
+    this.element.append(summary, this.report)
+    this.element.addEventListener('toggle', this.onToggle)
+    document.addEventListener('visibilitychange', this.onVisibility)
+    this.render()
+  }
+
+  beforeCapture(): void {
+    if (this.disposed) return
+    this.stopPolling()
+    this.before = audioSnapshot(this.context())
+    this.after = undefined
+    this.mic = undefined
+    this.pairs = []
+    this.render()
+  }
+
+  afterCapture(session: VoiceSession): void {
+    if (this.disposed || session.state.status !== 'live') return
+    this.stopPolling()
+    this.after = audioSnapshot(this.context())
+    this.mic = session.micSettings()
+    const capture = this.capture = { session }
+    this.render()
+    void this.poll(capture)
+  }
+
+  frame(driving: boolean, live: boolean): void {
+    if (this.disposed) return
+    if (!driving || document.hidden) {
+      this.finishWindow()
+      return
+    }
+    const time = performance.now()
+    if (this.active?.live !== live) {
+      this.finishWindow()
+      this.active = { live, previous: time, samples: [], start: 0 }
+    } else if (time > this.active.previous) {
+      const window = this.active
+      window.samples.push({ time, interval: time - window.previous })
+      window.previous = time
+      while (window.samples[window.start].time < time - frameWindowMs) window.start++
+      if (window.start >= 256) {
+        window.samples.splice(0, window.start)
+        window.start = 0
+      }
+    }
+    if (this.element.open && time >= this.nextRenderAt) this.render()
+  }
+
+  dispose(): void {
+    this.disposed = true
+    this.stopPolling()
+    this.active = undefined
+    this.element.removeEventListener('toggle', this.onToggle)
+    document.removeEventListener('visibilitychange', this.onVisibility)
+    this.element.remove()
+  }
+
+  private finishWindow(): void {
+    if (!this.active) return
+    const window = this.active
+    this.active = undefined
+    const summary = summarize(window)
+    if (summary) this.completed.set(window.live, summary)
+    if (this.element.open) this.render()
+  }
+
+  private async poll(capture: { session: VoiceSession }): Promise<void> {
+    this.timer = undefined
+    const { session } = capture
+    if (this.capture !== capture || session.state.status !== 'live') return
+    const pairs = await session.selectedCandidateTypes()
+    if (this.capture !== capture || session.state.status !== 'live') return
+    if (pairs.length) {
+      this.pairs = pairs
+      if (this.element.open) this.render()
+    }
+    this.timer = setTimeout(() => void this.poll(capture), refreshMs)
+  }
+
+  private stopPolling(): void {
+    clearTimeout(this.timer)
+    this.timer = undefined
+    this.capture = undefined
+  }
+
+  private render(): void {
+    this.nextRenderAt = performance.now() + refreshMs
+    const current = this.active && summarize(this.active)
+    const frames = (live: boolean) =>
+      (this.active?.live === live ? current : undefined) ?? this.completed.get(live)
+    const mic = this.mic
+    const ice = [...new Set(this.pairs.map(({ local, remote }) =>
+      `Local ${local ?? 'unavailable'} · remote ${remote ?? 'unavailable'}`))].join('\n')
+    this.report.textContent = [
+      describeAudio('Before', this.before),
+      describeAudio('After', this.after),
+      mic
+        ? `Mic · ${sampleRate(mic.sampleRate)}\nEcho cancellation · ${setting(mic.echoCancellation)}\nNoise suppression · ${setting(mic.noiseSuppression)}\nAuto gain · ${setting(mic.autoGainControl)}`
+        : 'Mic settings · unavailable',
+      ice ? `Last selected ICE pair types\n${ice}` : 'Selected ICE pair types · unavailable',
+      ['Driving frame intervals · last 10 seconds', describeFrames(false, frames(false)), describeFrames(true, frames(true))].join('\n'),
+    ].join('\n\n')
+  }
+}

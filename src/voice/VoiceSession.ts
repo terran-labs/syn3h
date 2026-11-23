@@ -14,6 +14,24 @@ export interface VoiceSessionOptions {
   audioContext?: AudioContext
 }
 
+export interface VoiceMicSettings {
+  echoCancellation?: boolean | 'all' | 'remote-only'
+  noiseSuppression?: boolean
+  autoGainControl?: boolean
+  sampleRate?: number
+}
+
+type CandidateType = 'host' | 'srflx' | 'prflx' | 'relay'
+
+export interface VoiceCandidateTypes {
+  local?: CandidateType
+  remote?: CandidateType
+}
+
+function candidateType(value: unknown): CandidateType | undefined {
+  if (value === 'host' || value === 'srflx' || value === 'prflx' || value === 'relay') return value
+}
+
 interface Peer {
   connection: RTCPeerConnection
   signals: Promise<void>
@@ -38,6 +56,51 @@ export class VoiceSession {
   constructor(private readonly options: VoiceSessionOptions) {}
 
   get state(): VoiceState { return this.current }
+
+  micSettings(): VoiceMicSettings | undefined {
+    const settings = this.stream?.getAudioTracks().find(track => track.readyState === 'live')?.getSettings?.()
+    if (!settings) return
+    const { noiseSuppression, autoGainControl, sampleRate } = settings
+    const echoCancellation: unknown = settings.echoCancellation
+    return {
+      echoCancellation: typeof echoCancellation === 'boolean' ||
+        echoCancellation === 'all' || echoCancellation === 'remote-only' ? echoCancellation : undefined,
+      noiseSuppression: typeof noiseSuppression === 'boolean' ? noiseSuppression : undefined,
+      autoGainControl: typeof autoGainControl === 'boolean' ? autoGainControl : undefined,
+      sampleRate: typeof sampleRate === 'number' && Number.isFinite(sampleRate) && sampleRate > 0
+        ? sampleRate : undefined,
+    }
+  }
+
+  async selectedCandidateTypes(): Promise<VoiceCandidateTypes[]> {
+    const pairs = await Promise.all([...this.peers].map(async ([id, peer]) => {
+      try {
+        const stats = await peer.connection.getStats()
+        if (!this.isCurrent(id, peer)) return []
+        const selected: VoiceCandidateTypes[] = []
+        const addPair = (pair: { localCandidateId: string; remoteCandidateId: string }) => {
+          const local = candidateType(stats.get(pair.localCandidateId)?.candidateType)
+          const remote = candidateType(stats.get(pair.remoteCandidateId)?.candidateType)
+          if (local || remote) selected.push({ local, remote })
+        }
+        stats.forEach(report => {
+          if (report.type !== 'transport' || !report.selectedCandidatePairId) return
+          const pair = stats.get(report.selectedCandidatePairId)
+          if (pair?.type === 'candidate-pair') addPair(pair)
+        })
+        if (!selected.length) {
+          // Older implementations can mark the selected pair directly.
+          stats.forEach(pair => {
+            if (pair.type === 'candidate-pair' && pair.selected === true) addPair(pair)
+          })
+        }
+        return selected
+      } catch {
+        return []
+      }
+    }))
+    return pairs.flat()
+  }
 
   enable(): Promise<boolean> {
     if (this.disposed) return Promise.resolve(false)
