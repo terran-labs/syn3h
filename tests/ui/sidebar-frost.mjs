@@ -22,7 +22,8 @@ for (const mode of ['desktop', 'phone']) {
   const readSurfaces = () => rail.locator(surfaces).evaluateAll(es => es.map(el => { const s = getComputedStyle(el); return { card: el.dataset.section || 'bottom', background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } }))
   const checkSurfaces = (rows, off = false) => {
    assert.deepEqual(rows.map(r => r.card), ['you', 'game', 'players', 'vehicles', 'world', 'performance', 'chat'])
-   for (const r of rows) { if (off) assert.equal(r.blur, 'none', r.card); else assert.match(r.blur, /blur\(28px\)/, r.card); { const alpha = Number(/,\s*([\d.]+)\)$/.exec(r.background)?.[1] ?? 1); assert.ok(off ? alpha >= .9 : alpha >= .6, `${r.card}: the card body is dense enough to read over a bright world (${r.background})`) } }
+   // At Minimal no card pays for a backdrop blur; above it how much blur is the owner's to tune.
+   for (const r of rows) { if (off) assert.equal(r.blur, 'none', r.card); { const alpha = Number(/,\s*([\d.]+)\)$/.exec(r.background)?.[1] ?? 1); assert.ok(off ? alpha >= .9 : alpha >= .6, `${r.card}: the card body is dense enough to read over a bright world (${r.background})`) } }
   }
   const results = []
   for (const [planet, hour] of [['ice', 12], ['volcanic', 0], ['desert', 12]]) {
@@ -39,8 +40,13 @@ for (const mode of ['desktop', 'phone']) {
    const frost = await game.evaluate(el => { const s = getComputedStyle(el); return { background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } })
    if (!baseline) {
     assert.equal(bounds.length, 3)
-    assert.ok(bounds.every(b => Math.abs(b.y - bounds[0].y) < 1 && Math.abs(b.width - bounds[0].width) < 1 && b.height >= 44), 'mode segments share one equal row')
-    assert.match(frost.blur, /blur\(28px\)/)
+    // Each mode can be seen and chosen: inside the card, clear of the others, and a press at its
+    // centre lands on it. (Segments are content-width pills since v26.11.2202; equal widths and
+    // a 44 px drawn height are no longer the design, so they are not pinned.)
+    const card = await game.evaluate(el => el.getBoundingClientRect().toJSON())
+    assert.ok(bounds.every(b => b.width > 0 && b.x >= card.x - 1 && b.x + b.width <= card.x + card.width + 1), `each game mode option is inside the card (${JSON.stringify(bounds)})`)
+    assert.ok(bounds.every((b, i) => bounds.every((o, j) => i === j || b.x + b.width <= o.x + 0.5 || o.x + o.width <= b.x + 0.5 || b.y + b.height <= o.y + 0.5 || o.y + o.height <= b.y + 0.5)), 'game mode options do not overlap')
+    assert.ok(await options.evaluateAll(es => es.every(el => { const r = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)) })), 'a press at each game mode option lands on it')
     assert.ok(Number(/,\s*([\d.]+)\)$/.exec(frost.background)?.[1] ?? 1) >= .6, `card body dense enough to read over a bright world (${frost.background})`)
     const cards = await readSurfaces(); console.log(JSON.stringify({ mode, planet, cards })); checkSurfaces(cards)
     assert.equal(await rail.locator('[data-section=sky]').count(), 0)
