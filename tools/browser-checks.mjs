@@ -53,19 +53,41 @@ const ready = async (url, ms) => {
   }
   return false
 }
+/**
+ * The process groups this runner started and has not yet seen end: each file's check and its dev
+ * server (with the room server it starts) run detached, in groups of their own, so a signal to the
+ * runner does not reach them. On SIGTERM or SIGINT the runner signals exactly these groups, by the
+ * PIDs it started, never by name or port, then exits (128 + the signal's number). On 23 November 2026
+ * a stopped runner left a vite and its room server running, parented by launchd.
+ */
+const live = new Set()
+const stopGroup = (pid, signal) => { try { process.kill(-pid, signal) } catch { /* gone */ } }
+// Set by a signal: no further file starts, and the check it interrupted is not reported as a failure.
+let stopping = 0
+for (const [signal, number] of [['SIGTERM', 15], ['SIGINT', 2]]) {
+  process.on(signal, () => {
+    stopping = number
+    for (const pid of live) stopGroup(pid, 'SIGTERM')
+    // A group that ignores SIGTERM gets SIGKILL a moment later; the runner waits for that, then goes.
+    setTimeout(() => { for (const pid of live) stopGroup(pid, 'SIGKILL'); process.exit(128 + number) }, 1500)
+  })
+}
 /** Run a command in its own process group; resolves to its exit code (or 'timeout'). */
 const run = (command, argv, env, logFile, ms) => new Promise(done => {
   const out = []
   const child = spawn(command, argv, { cwd: root, env: { ...process.env, ...env }, detached: true })
+  live.add(child.pid)
   child.stdout.on('data', d => out.push(d)); child.stderr.on('data', d => out.push(d))
   const timer = ms ? setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL') } catch { /* gone */ } done({ code: 'timeout', out }) }, ms) : null
-  child.on('exit', code => { if (timer) clearTimeout(timer); writeFileSync(logFile, Buffer.concat(out)); done({ code, out }) })
+  child.on('exit', code => { live.delete(child.pid); if (timer) clearTimeout(timer); writeFileSync(logFile, Buffer.concat(out)); done({ code, out }) })
   return child
 })
 const startServer = (env, logFile) => {
   const child = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', env.port, '--strictPort'], { cwd: root, env: { ...process.env, ...env.vars }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
   const out = []; child.stdout.on('data', d => out.push(d)); child.stderr.on('data', d => out.push(d))
-  return { stop: () => { try { process.kill(-child.pid, 'SIGTERM') } catch { /* gone */ } writeFileSync(logFile, Buffer.concat(out)) } }
+  live.add(child.pid)
+  child.on('exit', () => live.delete(child.pid))
+  return { stop: () => { stopGroup(child.pid, 'SIGTERM'); live.delete(child.pid); writeFileSync(logFile, Buffer.concat(out)) } }
 }
 /** The last line that says why it failed: an assertion, an error, or the last line written. */
 const reason = out => {
@@ -76,6 +98,7 @@ const reason = out => {
 for (const line of skipped) if (!wanted.length || wanted.includes(line.split(':')[0])) console.log(`SKIP  ${line}`)
 const started = Date.now(), results = []
 for (const name of files) {
+  if (stopping) break
   const source = readFileSync(join(folder, `${name}.mjs`), 'utf8'), head = source.slice(0, 2000)
   const ownServers = /MIRA_NO_ROOM_SERVER/.test(source)
   const urlArgument = /process\.argv\[2\]\s*\?\?\s*'http/.test(source)
@@ -91,6 +114,7 @@ for (const name of files) {
   }
   result ??= await run(process.execPath, [`tests/ui/${name}.mjs`, ...(urlArgument ? [url] : [])], { MIRA_URL: url, SYN3H_URL: url, ...vars }, join(logs, `${name}.log`), timeout)
   server?.stop()
+  if (stopping) { console.log(`STOPPED  ${name} (signal; not counted)`); break }
   const seconds = Math.round((Date.now() - t0) / 1000), ok = result.code === 0
   results.push({ name, ok, seconds })
   // A failure's logs are kept under the time it failed: the fixed paths are overwritten by the next
@@ -105,6 +129,8 @@ for (const name of files) {
   }
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name.padEnd(26)} ${String(seconds).padStart(4)} s${ok ? '' : `  (${result.code === 'timeout' ? 'timed out' : result.code === 'no server' ? 'no server' : `exit ${result.code}`}) ${reason(result.out)}\n      log kept: ${kept}`}`)
 }
+// Stopped by a signal: leave the exit to the handler, after its groups are gone.
+if (stopping) await new Promise(() => {})
 const failed = results.filter(r => !r.ok)
 console.log(`\n${results.length - failed.length} of ${results.length} passed in ${Math.round((Date.now() - started) / 60000)} min. Logs: ${logs}/<file>.log`)
 process.exit(failed.length ? 1 : 0)
