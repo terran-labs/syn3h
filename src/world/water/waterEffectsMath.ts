@@ -58,3 +58,31 @@ export function underwaterRamp(depth:number):number {
   const t=Math.max(0,Math.min(1,depth/.45))
   return t*t*(3-2*t)
 }
+
+/**
+ * How much of its wake a vehicle makes, 0 to 1, from where its top is against the surface. The
+ * owner, on v26.11.2204: "The wake should, of course, only be generated when my vehicle is at
+ * the surface." A vehicle breaking the surface (top above it) makes its whole wake; one whose
+ * top has gone under fades it out over half its own height, so a buggy (about 0.7 m of hull)
+ * is wakeless by a third of a metre under, a tall hull a little deeper. The fade band is
+ * bounded so a sliver of a collider never cuts it and a tower never drags it out.
+ */
+export function wakePresence(top: number, height: number, surface: number): number {
+  if (![top, height, surface].every(Number.isFinite)) return 0
+  const fade = Math.max(WAKE_FADE_MIN, Math.min(WAKE_FADE_MAX, height * .5))
+  return Math.max(0, Math.min(1, 1 - (surface - top) / fade))
+}
+/** Bounds of the depth (m) over which a going-under wake fades. */
+export const WAKE_FADE_MIN = .2, WAKE_FADE_MAX = 1
+/**
+ * Seconds over which a vehicle's shown wake follows wakePresence: a buggy bobbing with its top
+ * at the surface, or a swell washing over it, eases its wake instead of flickering it.
+ */
+export const WAKE_EASE_SECONDS = .25
+/** One step of that easing, frame-rate independent. */
+export function easeWake(shown: number, target: number, dt: number): number {
+  const k = 1 - Math.exp(-Math.max(0, dt) / WAKE_EASE_SECONDS)
+  const next = shown + (target - shown) * k
+  // Settle at the ends: a sunk vehicle's wake is exactly none, not a vanishing trace of one.
+  return next < .01 ? 0 : next > .99 ? 1 : next
+}

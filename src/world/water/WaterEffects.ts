@@ -17,13 +17,40 @@ import { Waterline } from './waterline'
 import { UnderwaterBubbles } from './bubbles'
 import { lensWash, newLensState, stepLens } from './underwaterCamera'
 import { camMode } from '../../core/ChaseCamera'
-import { submergedFraction, verticalHalfExtent } from './waterEffectsMath'
+import { easeWake, submergedFraction, verticalHalfExtent, wakePresence } from './waterEffectsMath'
 import { AcrossSurface } from './acrossSurface'
 
 /** Heights (m) of a hovercraft's hull and of a jet above the liquid where they stop disturbing it. */
 const HOVER_REACH=6,JET_REACH=5
 /** Metres from the camera within which transparent vehicle parts are sorted against the water. */
 const SORT_REACH=400
+
+/**
+ * A collider's shape as a box in its own frame (centre and half extents), measured once: reading
+ * a shape back from Rapier builds it anew, so it is never read per frame. Null for shapes with
+ * no bounded extent here (a height field, a half space).
+ */
+type LocalBox={c:{x:number;y:number;z:number};h:{x:number;y:number;z:number}}
+const localBoxes=new WeakMap<object,LocalBox|null>()
+function localBox(c:{shape:unknown}):LocalBox|null{
+  let box=localBoxes.get(c)
+  if(box!==undefined)return box
+  const s=c.shape as {type:number;radius?:number;halfHeight?:number;halfExtents?:{x:number;y:number;z:number};vertices?:Float32Array;borderRadius?:number}
+  const r=s.borderRadius??0,at0={x:0,y:0,z:0}
+  box=null
+  if(s.halfExtents)box={c:at0,h:{x:s.halfExtents.x+r,y:s.halfExtents.y+r,z:s.halfExtents.z+r}}
+  else if(s.vertices&&s.vertices.length>=3){
+    const v=s.vertices,lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity]
+    for(let i=0;i<v.length;i++){const k=i%3;lo[k]=Math.min(lo[k],v[i]);hi[k]=Math.max(hi[k],v[i])}
+    box={c:{x:(lo[0]+hi[0])/2,y:(lo[1]+hi[1])/2,z:(lo[2]+hi[2])/2},h:{x:(hi[0]-lo[0])/2+r,y:(hi[1]-lo[1])/2+r,z:(hi[2]-lo[2])/2+r}}
+  }else if(s.radius!==undefined){
+    // A ball, or a capsule, cylinder or cone along its local y.
+    const hh=(s.halfHeight??0)+(s.type===2?s.radius:0)
+    box={c:at0,h:{x:s.radius+r,y:(s.halfHeight!==undefined?hh:s.radius)+r,z:s.radius+r}}
+  }
+  localBoxes.set(c,box)
+  return box
+}
 
 /** Register after Environment and ChaseCamera. The live net binding includes later joins. */
 export class WaterEffects implements System {
@@ -36,6 +63,8 @@ export class WaterEffects implements System {
   readonly motes:Motes
   readonly waterline:Waterline
   private size=-1
+  /** Each vehicle's shown wake, 0 to 1 (wakePresence, eased). */
+  private readonly wake=new WeakMap<Vehicle,number>()
   private ids=new WeakMap<Vehicle,string>()
   private serial=0
   private point=new Vector3()
@@ -80,6 +109,22 @@ export class WaterEffects implements System {
         }
         // How high the craft's own hull rides above the liquid, for a cushion or a downwash.
         const clearance=bottom-surface
+        // Its real top and height, the ball's included, before the envelope below: a vehicle
+        // whose top has gone under makes no wake, cushion or downwash (wakePresence), eased so
+        // bobbing at the surface does not flicker it. Bubbles (trailBubbles) are not touched.
+        // Every solid collider counts here, whatever its shape: the buggy's hull is a convex
+        // hull (no half extents) standing well above the thin plate the cuboids describe.
+        let realTop=top,realBottom=bottom
+        for(let i=0;i<v.body.numColliders();i++){
+          const c=v.body.collider(i);if(c.isSensor())continue
+          const box=localBox(c);if(!box)continue
+          const q=c.rotation(),t=c.translation()
+          // The box centre's height after the collider's rotation, and its half height.
+          const cy=t.y+2*(q.x*q.y+q.w*q.z)*box.c.x+(1-2*(q.x*q.x+q.z*q.z))*box.c.y+2*(q.y*q.z-q.w*q.x)*box.c.z,half=verticalHalfExtent(box.h,q)
+          realTop=Math.max(realTop,cy+half);realBottom=Math.min(realBottom,cy-half)
+        }
+        const presence=easeWake(this.wake.get(v)??1,wakePresence(realTop,realTop-realBottom,surface),dt)
+        this.wake.set(v,presence)
         // The shared water model displaces columns from body y-.5 to y+.5. A planing
         // buggy's thin skid plate can already be dry while those columns still lift it.
         // Include that same envelope so a supported skimming hull still makes spray.
@@ -95,9 +140,9 @@ export class WaterEffects implements System {
         // and only while the jet itself is clear of it.
         const hover=v.kind==='hovercraft'&&!v.zorbed,jet=v.kind==='jet'&&!v.zorbed
         this.shape.air=hover?'cushion':jet?'downwash':null
-        this.shape.near=hover?1-clearance/HOVER_REACH:jet?1-clearance/JET_REACH:0
+        this.shape.near=(hover?1-clearance/HOVER_REACH:jet?1-clearance/JET_REACH:0)*presence
         this.shape.beam=hover?1.6:1.2
-        const fraction=submergedFraction(bottom,top,surface)
+        const fraction=submergedFraction(bottom,top,surface)*presence
         let id=this.ids.get(v);if(!id){id=`water-${++this.serial}`;this.ids.set(v,id)}
         const velocity=v.body.linvel();this.point.set(x,surface,z);this.velocity.set(velocity.x,velocity.y,velocity.z)
         // Send dry intervals too, so re-entry splashes detect the transition.
