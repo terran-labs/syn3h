@@ -107,6 +107,9 @@ export interface LobbySettingsOptions {
 }
 
 
+/** The card's one motion, shown to hidden reversed: a fade and a slight scale from its foot. */
+const CARD_HIDDEN_TO_SHOWN: Keyframe[] = [{ opacity: 0, transform: 'scale(.96)' }, { opacity: 1, transform: 'none' }]
+
 export class LobbySettings {
   /** Settings, Welcome and Updates, for the lobby to place in its lower right. */
   readonly dock = document.createElement('div')
@@ -250,9 +253,11 @@ export class LobbySettings {
     // marks (the phone close x in each card head) are plain here.
     for (const el of this.inspector.element.querySelectorAll('.liquid-glass')) el.classList.remove('liquid-glass', 'glass-round')
     this.gear.setAttribute('aria-expanded', 'true'); this.gear.classList.add('is-current'); this.dock.classList.add('is-open')
-    // It rises out of Settings, below it (lobby-settings.css sets the origin at its foot).
+    // One eased fade and scale out of Settings (lobby-settings.css sets the origin at its foot), no
+    // slide. In Liquid the lobby glass shader drives this animation's clock (GlassMotionClock), so
+    // its panel and the card move in the same frame.
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      this.inspector.element.animate([{ opacity: 0, transform: 'translateY(10px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' })
+      this.inspector.element.animate(CARD_HIDDEN_TO_SHOWN, { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' })
     }
     this.inspector.element.querySelector<HTMLElement>('.lobby-settings-close')!.focus({ preventScroll: true })
   }
@@ -266,7 +271,10 @@ export class LobbySettings {
     if (returnFocus) this.gear.focus({ preventScroll: true })
     const detach = () => { if (!this.shown) this.detach() }
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { detach(); return }
-    this.closing = this.inspector.element.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px) scale(.98)' }], { duration: 160, easing: 'ease-in' })
+    // fill 'forwards': the shader's clock finishes the animation itself, and without a fill the
+    // card stood at full opacity again for the frame before it was detached (the owner, 23
+    // November 2026: "something of a double bounce effect ... almost like it's flickering").
+    this.closing = this.inspector.element.animate([...CARD_HIDDEN_TO_SHOWN].reverse(), { duration: 180, easing: 'cubic-bezier(.4,0,.8,.4)', fill: 'forwards' })
     this.closing.onfinish = detach
   }
 
