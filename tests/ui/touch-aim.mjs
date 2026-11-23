@@ -1,14 +1,15 @@
 // Touch aiming and handedness on an iPhone 14, portrait and landscape, in WebKit.
-//   MIRA_URL=http://127.0.0.1:5213/ node tests/ui/touch-aim.mjs
-// Serve the game first (see tests/ui/run-touch-stick.sh). Drags are synthetic PointerEvents sent
+//   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs touch-aim
+// Drags are synthetic PointerEvents sent
 // to the element under the point, as tests/ui/touch-stick.mjs does: WebKit automation has no
 // multi-touch drag. Screenshots of both hands in both orientations go to tests/ui/artifacts/touch-aim.
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { serverUrl } from './lib/server.mjs'
 
-const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5213/'
+const base = serverUrl('touch-aim')
 const out = 'tests/ui/artifacts/touch-aim'
 await mkdir(out, { recursive: true })
 const browser = await webkit.launch()

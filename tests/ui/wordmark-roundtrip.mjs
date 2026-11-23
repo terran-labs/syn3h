@@ -1,17 +1,21 @@
 // The name through a round trip, with perf/smooth-entry's dive and reverse exit: a world
 // clicked during the opening; entering a world and leaving it (the reverse flight, then the
-// name kindled once, controls shown); and the same with reduced motion.
-//   tools/heavy.sh node tests/ui/wordmark-roundtrip.mjs   (MIRA_URL, default http://127.0.0.1:5241/)
+// name kindled once, controls shown); and the same with reduced motion. Bugs caught: a click
+// during the opening that does not fly or leaves the controls held back; after leaving a world,
+// controls left held back or hidden, the name left hidden, kindled twice, or drawn under the
+// reverse flight rather than after it.
+//   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs wordmark-roundtrip
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { waitForState } from './stateWait.mjs'
-const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5241/'
+import { serverUrl } from './lib/server.mjs'
+const base = serverUrl('wordmark-roundtrip')
 const out = 'tests/ui/artifacts/wordmark'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
-const state = page => page.evaluate(() => { const g = mira.shell.galaxy, root = document.documentElement; return { opening: !!g.opening, leaving: g.leaving !== null, returning: g.returning !== null, flight: !!g.flight, reverse: !!g.flight?.reverse, chosen: g.chosen, held: root.dataset.opening ?? null, playing: document.querySelector('.mira-shell').classList.contains('is-playing'), menu: mira.shell.menuVisible, links: getComputedStyle(document.querySelector('.lobby-gear-dock')).visibility} })
+const state = page => page.evaluate(() => { const g = mira.shell.galaxy, root = document.documentElement; return { opening: !!g.opening, leaving: g.leaving !== null, returning: g.returning !== null, mark: g.markShown, flight: !!g.flight, reverse: !!g.flight?.reverse, chosen: g.chosen, held: root.dataset.opening ?? null, playing: document.querySelector('.mira-shell').classList.contains('is-playing'), menu: mira.shell.menuVisible, links: getComputedStyle(document.querySelector('.lobby-gear-dock')).visibility} })
 const report = {}
 try {
   for (const reduced of [false, true]) {
@@ -63,7 +67,9 @@ try {
     // The name is kindled once: the replay starts only after the reverse flight has landed.
     const replays = samples.filter((s, i) => s.returning && !(samples[i - 1]?.returning)).length
     assert.ok(replays <= 1, `${name}: the name replays at most once (${replays})`)
-    if (!reduced) { assert.equal(replays, 1, 'with motion it replays once'); const first = samples.find(s => s.returning); assert.equal(first.flight, false, 'after the flight, not under it') }
+    // The name as drawn (markShown), not the galaxy's internal flags: since the eased return home
+    // (Galaxy.returnHome) the replay flag is set as the flight lands while the name stays dark.
+    if (!reduced) { assert.equal(replays, 1, 'with motion it replays once'); const under = samples.filter(s => s.flight && s.mark > 0.05); assert.equal(under.length, 0, `the name kindles after the flight, not under it (${JSON.stringify(under.slice(0, 2))})`) }
     await page.screenshot({ path: `${out}/trip-${name}-back.png` })
     report[name] = { samples: samples.length, replays, errors }
     assert.deepEqual(errors, [])

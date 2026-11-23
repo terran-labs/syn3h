@@ -53,7 +53,8 @@ try {
     // Behind a panel the galaxy dims and stops drawing; back at the index it is bright again.
     // About is a sheet from its icon above the gear: behind it the galaxy dims and holds still too.
     await page.locator('.lobby-about').click()
-    await page.waitForFunction(() => window.mira.shell.galaxy.dim === 0.6, null, { timeout: 15000 })
+    // Dimmed to the sheet's level (tuning, Shell's SHEET_BACKDROP): below 1 and settled there.
+    await waitForState(page, 'the galaxy dimmed behind the sheet', () => { const g = window.mira.shell.galaxy; return g.backdrop < 1 && g.dim === g.backdrop }, undefined, 15)
     // A map arriving, or the camera still easing home, draws a frame; then it rests.
     let rests = false
     for (let i = 0; i < 20 && !rests; i++) { const f = (await state()).frames; await page.waitForTimeout(1200); rests = (await state()).frames === f }
@@ -106,13 +107,11 @@ try {
     await page.evaluate(() => { window.__pin = setInterval(() => { window.mira.shell.stopAttract(); window.mira.params.set('gfx.level', 0) }, 200) })
     // Every map painted first: each one arriving is a reason to draw.
     await page.waitForFunction(() => window.mira.shell.graphics.planetMaps >= window.mira.planets.PLANETS.length, null, { timeout: 60000 })
-    // Let the finite resting tilt finish; after that the low-end lobby must stop drawing.
-    await page.waitForFunction(() => {
-      const g = window.mira.shell.galaxy
-      return Math.abs(g.pitch - 20 * Math.PI / 180) < 1e-8 && !g.resting && g.swingResting
-    }, null, { timeout: 15000 })
-    await page.waitForTimeout(500)
+    // Once everything has settled (the resting tilt, the name's fade in, the last map), the
+    // low-end lobby stops drawing. Wait for that state, up to 20 s: a lobby that never stops is
+    // the bug (a low-end phone's battery), so it fails below, with the frames it drew.
     const g = () => page.evaluate(() => { const g = window.mira.shell.galaxy; return { live: g?.live, frames: g?.frames, idle: g?.idle } })
+    for (let i = 0, last = -1; i < 20; i++) { const now = (await g()).frames; if (now === last) break; last = now; await page.waitForTimeout(1000) }
     const a = await g(); await page.waitForTimeout(1500); const b = await g()
     assert.equal(b.live, true, 'level 0 keeps the galaxy')
     assert.equal(b.frames, a.frames, `held still it drew ${b.frames - a.frames} frames while idle`)

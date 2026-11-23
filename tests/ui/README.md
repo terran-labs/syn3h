@@ -272,9 +272,8 @@ Mira. Source: /Users/vtn/dev/terranlabs.com at 68c1e06.
 - Loading: that site's veil, see "The loading veil".
 - Logo: still the Mira wordmark as one vector path, lit in Dark Star's blue.
 
-`tools/heavy.sh node tests/ui/lobby-reference.mjs <label>` captures every lobby screen on
-a desktop and a phone. The owner's reference captures stay in the git-ignored
-`tests/ui/artifacts/reference/`.
+The owner's reference captures stay in the git-ignored `tests/ui/artifacts/reference/`. (The
+script that captured the old panel lobby beside them, lobby-reference.mjs, went with that lobby.)
 
 ## Wording
 
@@ -658,11 +657,8 @@ stay within the interface; key releases reach gameplay cleanup. Missing hardware
 say Unavailable and browser memory is labeled as an estimate. Recommendations show only
 during unlocked play so their actions cannot consume captured driving clicks.
 
-Run `/Users/vtn/dev/Syn3h/tools/heavy.sh sh tests/ui/run-follow-on.sh` for the isolated UI
-gate. It owns a temporary Vite process on 5198, uses the existing room backend on 54671,
-asserts that endpoint with disposable rooms, and stops only its own Vite process. It does
-not start a room server or restart a managed preview. Those ports must be available and
-the backend must be running; adapt the harness before using another environment.
+Run `/Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs follow-on` for this
+check. The runner starts a dev server and its room server on free ports for it, and stops them.
 
 The four-view browser fixture uses normal galaxy entry, then injects a controlled telemetry
 supplier to test layout, history bounds, visible labels, action delegation, subscription

@@ -1,13 +1,16 @@
 // Screenshots of the standard switch in play: switch rows over a daylight and a night scene at
 // each glass setting, the Performance card with Auto quality on and off, and a switch locked by
-// the host. Desktop (Chrome) and an iPhone 14 (WebKit), one browser at a time.
-//   MIRA_URL=http://127.0.0.1:5173/ node tests/ui/toggle-clarity.mjs
+// the host. Desktop (Chrome) and an iPhone 14 (WebKit), one browser at a time. Bugs caught: a
+// switch whose state disagrees with its setting; a plain checkbox left in the sidebar; a row
+// locked by the host that does not show its lock to a guest.
+//   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs toggle-clarity
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { serverUrl } from './lib/server.mjs'
 
-const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5173/'
+const base = serverUrl('toggle-clarity')
 const out = 'tests/ui/artifacts/toggle-clarity'
 await mkdir(out, { recursive: true })
 
@@ -65,6 +68,9 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'p
       }
     }
     await page.evaluate(() => window.mira.params.set('hud.glass', 1))
+    // Changing the style closes the open groups in other cards (reported 23 November 2026 as a
+    // product fault, not this check's subject): open this one again for the lock.
+    await group.evaluate(g => { g.open = true })
 
     // Locked by the host: dimmed, a lock and "host", true state still shown.
     // A guest under the host's lock, as the room reports it: canEditWorld false.
@@ -82,14 +88,17 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'p
     assert.equal(await group.locator('.wi-row.is-locked-row').count(), 0, `${mode}: unlocked again`)
     await page.evaluate(([ids, saved]) => ids.forEach((id, i) => window.mira.params.set(id, saved[i])), [ids, saved])
 
-    // Close the switch card so the next ones have room.
+    // Close the switch card so the next ones have room. A row's tip, raised by the pointer
+    // left over it, can stand over the header for a moment: dismiss it as moving away would.
+    await page.evaluate(() => window.mira.shell.inspector.hideTooltip()); if (!touch) await page.mouse.move(1, 1)
     await (touch ? card.locator('.wi-head').tap() : card.locator('.wi-head').click()); await settle()
     // Players & session: Connection diagnostics and Mute audio are switches too.
     const players = rail.locator('details.rail-players, [data-section=players]').first()
     if (await players.count()) {
       await players.evaluate(p => { if (p.tagName === 'DETAILS') p.open = true; else if (!p.classList.contains('is-open')) p.querySelector('.wi-head')?.click() })
       await shotRail('players-switches')
-      assert.equal(await rail.getByRole('switch', { name: 'Mute audio' }).count() > 0, true, `${mode}: rail mute is a switch`)
+      // Mute lives in the Me card since f1146c26, whether or not that card is open.
+      assert.equal(await rail.getByRole('switch', { name: 'Mute audio', includeHidden: true }).count() > 0, true, `${mode}: mute is a switch`)
       await players.evaluate(p => { if (p.tagName === 'DETAILS') p.open = false; else p.querySelector('.wi-head')?.click() }); await settle()
     }
     // The Performance card, Auto quality on and off.

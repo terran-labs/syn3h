@@ -1,5 +1,8 @@
-// The floating thumb stick, in WebKit on a phone, a phone on its side and a tablet.
-// Run through tests/ui/run-touch-stick.sh, which serves the game on 5213.
+// The floating thumb stick, in WebKit on a phone, a phone on its side and a tablet. Bugs caught:
+// the stick not appearing under the thumb, not driving, or the page or console erroring on a phone.
+//   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs touch-stick
+// (It needs a room server: without one the page logs failed WebSocket connections, which this
+// counts as errors. tests/ui/run-touch-stick.sh served it without one and ran the wrong file.)
 //
 // Drags are synthetic PointerEvents dispatched in the page (Playwright's WebKit has no touch
 // drag), sent to whatever element is under the point as a real touch would be. Taps are also
@@ -8,8 +11,9 @@ import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NA
 import { webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { serverUrl } from './lib/server.mjs'
 
-const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5213/'
+const base = serverUrl('touch-stick')
 const out = 'tests/ui/artifacts/touch-stick'
 await mkdir(out, { recursive: true })
 const views = [['phone', 'iPhone 14'], ['landscape', 'iPhone 14 landscape'], ['tablet', 'iPad (gen 7)']]

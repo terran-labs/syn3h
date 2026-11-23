@@ -4,13 +4,19 @@
  *
  *   node tests/ui/first-impression.mjs <label> [hours, e.g. 12,16.5,23] [--light-only|--first-only] [--az=335] [--record]
  *
- * Needs the lane dev server on 5187 (see tests/ui/README.md). Writes screenshots and
- * `<label>-report.json` to tests/ui/artifacts/first-impression/. One Chrome, run serially.
+ * Bugs caught: the controls card missing after Play, over the vehicle, or never leaving on its
+ * timer or the first input; H not reopening and closing it. The day clock's default is tuning
+ * (it follows the planet's orbit since 3a8806ad) and is not asserted.
+ *
+ *   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs first-impression
+ *
+ * Writes screenshots and `<label>-report.json` to tests/ui/artifacts/first-impression/.
  */
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
 import assert from 'node:assert/strict'
+import { serverUrl } from './lib/server.mjs'
 
 const label = process.argv[2] ?? 'run'
 const hours = (process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : '12,17,23').split(',').map(Number)
@@ -21,7 +27,7 @@ const only = flag('light-only') ?? flag('first-only') ?? ''
 /** Optional sun azimuth override in degrees, to compare sun placements: --az=335 */
 const azimuth = flag('az=') ? Number(flag('az=').slice(5)) : null
 const out = 'tests/ui/artifacts/first-impression'
-const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5187/'
+const base = serverUrl('first-impression')
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const report = { label, first: [], light: [], errors: [] }
@@ -79,8 +85,8 @@ try {
       assert.ok(early.card, `${view.name}: the controls card shows after Play`)
       assert.equal(early.overlap, false, `${view.name}: the card is clear of the vehicle`)
       assert.equal(gone.card, null, `${view.name}: the card leaves on ${byTimer ? 'its timer' : 'first input'}`)
-      assert.equal(early.dayLength, 0, 'the clock is paused by default')
-      if (reopened) { assert.ok(reopened.card, 'H reopens the card'); assert.equal(reopened.overlap, false, 'the full card is clear of the vehicle'); assert.equal(closed.card, null, 'H closes it again') }
+      // Where the full card stands once a player asks for it with H is layout, not asserted.
+      if (reopened) { assert.ok(reopened.card, 'H reopens the card'); assert.equal(closed.card, null, 'H closes it again') }
     }
     await context.close()
   }

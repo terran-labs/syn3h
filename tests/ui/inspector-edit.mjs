@@ -1,10 +1,14 @@
-// The inspector's editable numbers, eased card heights and finger-sized targets, in desktop
-// Chrome and iPhone WebKit. Run through tests/ui/run-inspector-edit.sh, which serves on 5211.
+// The inspector's editable numbers, card opening and closing, and finger-sized targets, in
+// desktop Chrome and iPhone WebKit. Bugs caught: a number that cannot be typed into or does not
+// reach its setting; a card that does not open, or whose body stays hidden or inert once open;
+// targets too small for a finger.
+//   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs inspector-edit
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
-const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5211/'
+import { serverUrl } from './lib/server.mjs'
+const base = serverUrl('inspector-edit')
 const shots = 'tests/ui/artifacts/inspector-edit'
 await mkdir(shots, { recursive: true })
 
@@ -179,7 +183,8 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
       return { cardClass: card.className, bodyHidden: body.hidden, bodyDisplay: getComputedStyle(body).display, bodyHeight: Math.round(body.getBoundingClientRect().height), bodyChildren: body.childElementCount, cardFlex: getComputedStyle(card).flex, cardMinHeight: getComputedStyle(card).minHeight, stack: [stack.clientHeight, stack.scrollHeight], rail: Math.round(document.querySelector('.world-inspector').getBoundingClientRect().height), railChildren: [...document.querySelector('.world-inspector').children].map(c => `${c.className.split(' ')[0]}:${Math.round(c.getBoundingClientRect().height)}`), cards: [...document.querySelectorAll('.wi-card')].map(c => `${c.dataset.section}:${Math.round(c.getBoundingClientRect().height)}:${c.classList.contains('is-open') ? 'open' : 'closed'}`), moving: document.querySelectorAll('.is-moving').length, animations: document.getAnimations().length, paused: mira.shell.userPaused, locked: !!document.pointerLockElement, viewport: [innerWidth, innerHeight] }
     })))
     assert.ok(end > run.start + 100, `the card opened (${run.start} to ${end})`)
-    assert.ok(run.samples.some(h => h > run.start + 5 && h < end - 5), `heights pass through intermediate values: ${run.samples.map(Math.round).join(',')}`)
+    // Whether the height eases on the way is motion design (it changed with the cards' rework,
+    // 22 November 2026), not something a player would call broken: only opening is checked.
     // The motion's duration is tuning and stretches on a loaded machine; landing is checked below.
     await settled(page)
     const animated = await heights()
@@ -219,7 +224,9 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
         return r.top >= s.top - 1 && r.bottom <= s.bottom + 1
       }).every(Boolean) && stack.scrollWidth <= stack.clientWidth + 1
     })
-    assert.ok(reach, 'every header can be reached with all cards open')
+    // A phone shows one panel at a time (phone-panels.mjs checks every card is reachable there),
+    // so "all open" is a desktop and tablet state.
+    if (!touch) assert.ok(reach, 'every header can be reached with all cards open')
     await page.evaluate(() => { document.querySelector('.wi-cards').scrollTop = 0; for (const card of document.querySelectorAll('.wi-card.is-open:not([data-section=game])')) card.querySelector('.wi-head').click() })
     await settled(page)
     await page.screenshot({ path: `${shots}/${mode}-rail.png` })

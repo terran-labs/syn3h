@@ -1,20 +1,20 @@
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
+// The vehicles' engine sound, in a real browser's audio graph. Bugs caught: an engine still
+// audible inside the Zorb ball, or silent after leaving it; the buggy's motor still running with
+// its wings open; landing and wing cues sounding while zorbed. (The lobby's mode list and vehicle
+// picker it once checked moved into play; discoverability.mjs checks the picker there.)
+//   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs train-check
+import { serverUrl } from './lib/server.mjs'
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
-const out = 'output/playwright/ux-train'
+const out = 'tests/ui/artifacts/train-check'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
-  await page.goto(`${process.env.MIRA_URL}?room=ux-train-${Date.now()}`)
+  await page.goto(`${serverUrl('train-check')}?room=ux-train-${Date.now()}`)
   await page.waitForFunction(() => window.mira?.audio, null, { timeout: 120000 })
-  await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
-  assert.deepEqual(await page.locator('#game-mode option').allTextContents(), ['Tag game', 'King of the Hill', 'Explore'])
-  // The vehicle picker keeps its accessible name and role.
-  assert.equal(await page.locator('.wi-vehicle-picker').getAttribute('aria-label'), 'Vehicle')
-  assert.equal(await page.locator('.wi-vehicle-picker').getAttribute('role'), 'radiogroup')
-  await page.screenshot({ path: `${out}/lobby-desktop.png` })
   const result = await page.evaluate(async () => {
     const { Engine } = await import('/src/audio/Engine.ts')
     const levels = []
@@ -63,5 +63,5 @@ try {
   assert.deepEqual(result.mutedEvents,{cues:[],impacts:[]})
   assert.deepEqual(result.cues,['retract'])
   await writeFile(`${out}/audio.json`,JSON.stringify(result,null,2))
-  console.log('Mode gating, label, four vehicle audio fades, cue suppression and resume passed',result)
+  console.log('train-check: four vehicle audio fades, the motor under wings, cue suppression and resume passed')
 } finally { await browser.close() }

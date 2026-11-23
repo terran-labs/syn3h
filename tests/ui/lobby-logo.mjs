@@ -1,4 +1,9 @@
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
+// The lobby's flat animated logo (the fallback when the name cannot stand in the scene). Bugs
+// caught: the logo drawing in its own GPU context beside the galaxy's; a lobby that stops
+// animating it; the old SVG drawing over it; the logo not coming back after a lost GPU context;
+// and the logo (and its GPU resources) held after leaving the lobby for a world.
+//   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs lobby-logo
 import { chromium, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
@@ -43,8 +48,10 @@ for (const engine of [chromium, webkit]) {
     await page.waitForFunction(() => !document.querySelector('.mira-shell').classList.contains('has-animated-logo'))
     await page.evaluate(() => window.__loss.restoreContext())
     await page.waitForFunction(() => { const g = window.mira.shell.galaxy; return g.logo?.ok && g.logo !== window.__oldLogo && document.querySelector('.mira-shell').classList.contains('has-animated-logo') }, null, { timeout: 30000 })
+    // Entering a world is asynchronous (Shell.enterWithoutFlight): once in it, the logo and its
+    // GPU resources are gone; a logo still held in play is the leak this catches.
     await page.evaluate(() => window.mira.shell.play())
-    assert.equal(await page.evaluate(() => window.mira.shell.galaxy.logo), null, 'leaving lobby disposes logo')
+    await waitForState(page, 'in the world with the lobby logo released', () => window.mira.shell.playing && window.mira.shell.galaxy.logo === null, undefined, 60)
     await page.evaluate(() => window.mira.shell.openMenu())
     await page.waitForFunction(() => window.mira.shell.galaxy.logo?.ok)
     assert.equal(await page.locator('.galaxy-canvas').count(), 1)
