@@ -14,6 +14,8 @@
  *     back to the level just left, with the same shadow cascades and a prepared post preset);
  *   - every other climb is left pending and taken at a covered moment: the menu opens, the game's
  *     own frame applies the pending climb and runs Game.prepareClimbedLevel, then play resumes.
+ *     Builds until the climb's job ends (behind the Applying veil, if Resume came first) count as
+ *     covered; only builds after it are in play. A job still running 30 s after Resume fails the row.
  * The forced diagnostic sweep applies any climb in the middle of play, which production never
  * does; forced from High to Ultra it builds about 150 shaders that no player can meet. Do not
  * read its climb numbers as freezes.
@@ -45,6 +47,8 @@ const BACKENDS = (process.argv[4] ?? 'webgpu,webgl2').split(',')
 const ENTRIES = (process.argv[5] ?? '3,0').split(',').map(Number)
 // From Low (1) and Medium (2): across the Low and Medium boundary both ways, where the water's
 // refraction turns on and off (src/world/water/refraction.ts).
+/** Longest a covered climb's job may run after Resume (its veil ceiling is 8 s, Game CLIMB_VEIL_MS). */
+const JOB_CEILING_MS = 30000
 const STEPS = { 3: [2, 1, 0, 1, 2, 3, 4, 5], 0: [1, 2, 3, 4, 5], 1: [0, 1, 2, 3, 2, 1], 2: [1, 0, 1, 2, 3, 2] }
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const runs = []
@@ -129,8 +133,16 @@ try {
         if (how === 'climb at covered moment') {
           await page.waitForFunction(level => window.mira.game.quality.governor.level === level, level, { timeout: 20000 }).catch(() => {})
           await page.waitForTimeout(600)
-          await page.evaluate(level => { window.__window = 'play ' + level; window.mira.shell.play() }, level)
+          // Resume while the climb's job may still run: its later slices draw behind the Applying veil.
+          await page.evaluate(() => window.mira.shell.play())
           await page.waitForFunction(() => window.mira.shell.playing && !window.mira.shell.transitioning, null, { timeout: 30000 })
+          // Builds count as play only once the job is over (Game.climbJob cleared, applyingQuality off).
+          // The job applies the level in its first slice and runs for several frames after, so the
+          // level alone does not say it is done: before this wait, its last stand-in draws were
+          // counted as in-play builds. A job still running after JOB_CEILING_MS fails the row.
+          const ended = await page.waitForFunction(() => { const g = window.mira.game; return !g.climbJob && !g.applyingQuality }, null, { timeout: JOB_CEILING_MS }).then(() => true, () => false)
+          if (!ended) throw new Error(`the covered climb to ${level} was still running ${JOB_CEILING_MS / 1000} s after Resume`)
+          await page.evaluate(level => { window.__window = 'play ' + level }, level)
         }
         const row = await page.evaluate(async level => {
           const q = window.mira.game.quality
@@ -143,7 +155,7 @@ try {
         }, level)
         row.how = how
         run.steps.push(row)
-        console.log(`${planet} ${backend} entry ${entry} -> ${level} (at ${row.reached}, ${how}${how.includes('covered') ? ', ' + row.coveredBuilds + ' built while covered' : ''}): ${row.graphs} graphs, ${row.pipelines} pipelines in play${row.builds.length ? ': ' + [...new Set(row.builds.map(x => `${x.material} | ${x.object}${x.chain ? ' < ' + x.chain : ''}${x.who ? ' [' + x.who + ']' : ''}`))].slice(0, 6).join('; ') : ''}`)
+        console.log(`${planet} ${backend} entry ${entry} -> ${level} (at ${row.reached}, ${how}${how.includes('covered') ? ', ' + row.coveredBuilds + ' built while covered or behind the veil' : ''}): ${row.graphs} graphs, ${row.pipelines} pipelines in play${row.builds.length ? ': ' + [...new Set(row.builds.map(x => `${x.material} | ${x.object}${x.chain ? ' < ' + x.chain : ''}${x.who ? ' [' + x.who + ']' : ''}`))].slice(0, 6).join('; ') : ''}`)
       }
     } catch (e) { run.failure = String(e.message ?? e).split('\n')[0]; console.log(`${planet} ${backend} entry ${entry} FAILED: ${run.failure}`) }
     if (run.errors.length) console.log(`${planet} ${backend} entry ${entry} page errors: ${run.errors.slice(0, 2).join(' | ')}`)
