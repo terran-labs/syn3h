@@ -924,8 +924,15 @@ export class Shell implements System {
     this.releaseCursor()
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
-    // The in-play controls go with play: left attached, the Panels control rose over the lobby
-    // whenever the lobby's settings card (a .world-inspector too) opened on a touch screen.
+    this.hidePlayControls()
+  }
+  /**
+   * The in-play controls go with play: left attached, the Panels control rose over the lobby
+   * whenever the lobby's settings card (a .world-inspector too) opened on a touch screen, and it
+   * stayed on screen, tappable, through the whole climb out of a world as the galaxy faded in
+   * (the owner, 23 November 2026, on an iPhone). The touch thumb controls go with touch.enabled.
+   */
+  private hidePlayControls(): void {
     for (const selector of ['.shell-hud', '.hud-navigation']) this.element.querySelector<HTMLElement>(selector)!.hidden = true
   }
   /** A room welcome may replace the selected planet. Compile against the settled world. */
@@ -1085,6 +1092,7 @@ export class Shell implements System {
       this.closeAbout(); this.lobbyAddress?.showLobby()
       this.releaseCursor()
       this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
+      this.hidePlayControls()
       this.audio.enabled = false; this.audio.setLobbyVisible(true)
       this.menuVisible = true
       root.classList.add('is-descending'); root.classList.remove('is-playing')
