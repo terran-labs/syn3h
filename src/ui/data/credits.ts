@@ -17,8 +17,7 @@ export const licencesHtml = `<details class="welcome-credits"><summary><span>Cre
 <li>Barlow Project Authors: bundled Barlow fonts, <a href="/brand/licenses/barlow.txt" target="_blank" rel="noopener">SIL OFL 1.1</a>.</li>
 <li>Marked contributors: dashboard Markdown, <a href="/brand/licenses/marked.txt" target="_blank" rel="noopener">MIT notices</a>.</li>
 <li>ws contributors: development room server, <a href="/brand/licenses/ws.txt" target="_blank" rel="noopener">MIT</a>.</li></ul>
-<p>Music and sound: all of it is synthesised in your browser as you play. The adaptive score, the vehicle voices, wind, Plasma Tag and every cue are generated; this edition ships no recordings.</p>
-<p>The generated names and loading jokes are new browser-edition writing. The original online message list was not recovered.</p></div></details>`
+<p>All the music and sound is synthesised in your browser as you play; there are no recordings.</p></div></details>`
 /** Everything About carried that the Welcome guide still shows: the links, then credits and licences. */
 export const creditsHtml = `${aboutLinksHtml}
 ${licencesHtml}`
