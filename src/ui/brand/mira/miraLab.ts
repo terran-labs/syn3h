@@ -6,6 +6,7 @@
  */
 import { allCandidates, type MarkPath } from './candidates'
 import { M_LIBRARY, ROUND2 } from './round2'
+import { ROUND3 } from './round3'
 
 interface Shown { id: number; name: string; note: string; word: MarkPath; mono: MarkPath; tag?: string }
 type Candidate = Shown
@@ -77,7 +78,7 @@ function card(c: Candidate): HTMLElement {
   <figure class="icon">${appIcon(c, 180, `a${c.id}`).replace('<svg ', '<svg class="app" ')}<figcaption>App icon</figcaption></figure>
   <figure class="favs"><div class="actual"></div><div class="zoom"></div><figcaption>Favicon at 32 and 16 px, actual and enlarged</figcaption></figure>
 </div>
-<p class="links"><a href="/?mark=${round === 1 ? 'r1-' : ''}${c.id}">See it in the lobby</a><a href="/logo.html?mark=${round === 1 ? 'r1-' : ''}${c.id}">Plasma lab</a></p>`
+<p class="links"><a href="/?mark=${prefix}${c.id}">See it in the lobby</a><a href="/logo.html?mark=${prefix}${c.id}">Plasma lab</a></p>`
   const actual = el.querySelector('.actual')!, zoom = el.querySelector('.zoom')!
   for (const size of [32, 16]) {
     const svg = faviconSvg(c, size)
@@ -87,9 +88,21 @@ function card(c: Candidate): HTMLElement {
   return el
 }
 
-const round = query.get('round') === '1' ? 1 : 2
+const round = query.get('round') === '1' ? 1 : query.get('round') === '2' ? 2 : 3
+// The lobby takes ?mark=N for the current round and ?mark=r1-N, r2-N for the earlier ones.
+const prefix = round === 3 ? '' : `r${round}-`
 const names = Object.fromEntries(M_LIBRARY.map(m => [m.key, m.name]))
-const list: (Shown & { problems?: string[] })[] = (round === 1 ? allCandidates() : ROUND2.map(c => ({ ...c, tag: `${c.family} · M-${c.m}${names[c.m] ? ' ' + names[c.m] : ' from 9'}` }))).filter(c => !only || only.includes(c.id))
+const all: (Shown & { problems?: string[] })[] = round === 1 ? allCandidates()
+  : round === 2 ? ROUND2.map(c => ({ ...c, tag: `${c.family} · M-${c.m}${names[c.m] ? ' ' + names[c.m] : ' from 9'}` }))
+  : ROUND3.map(c => ({ ...c, tag: c.family }))
+const list = all.filter(c => !only || only.includes(c.id))
+const intro: Record<number, string> = {
+  1: 'Nine candidates in Syn3h’s heavy cut-corner capitals.',
+  2: 'Eleven candidates in two families: Syn3h lineage capitals (1 to 5) and the lowercase planet family (6 to 11).',
+  3: 'Ten candidates, each built on one idea taken from a source: space agency marks, Soviet space hardware, alien signals, and the two you picked out of round 2.',
+}
+document.querySelector('header h1')!.textContent = `Mira logo, round ${round}`
+document.querySelector('header p')!.innerHTML = `${intro[round]} Each is one generated vector path. “See it in the lobby” opens the real lobby with that candidate in Syn3h’s place. ${[3, 2, 1].filter(r => r !== round).map(r => `<a href="?round=${r}">Round ${r}</a>`).join(' ')}`
 if (round === 2) {
   // The M library first, so the owner can name an M and a layout separately.
   const lib = document.createElement('section'); lib.className = 'card library'

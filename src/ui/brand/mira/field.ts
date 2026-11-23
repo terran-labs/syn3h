@@ -43,6 +43,8 @@ export class Field {
   cut(box: [number, number, number, number], d: (x: number, y: number) => number): this {
     this.each(...box, (x, y, k) => { const s = -d(x, y); if (s > this.v[k]) this.v[k] = s }); return this
   }
+  /** Removes another field's shape (grown by `grow`) from this one: a knock-out. */
+  subtract(other: Field, grow = 0): this { for (let k = 0; k < this.v.length; k++) { const s = grow - other.v[k]; if (s > this.v[k]) this.v[k] = s } return this }
   merge(other: Field): this { for (let k = 0; k < this.v.length; k++) if (other.v[k] < this.v[k]) this.v[k] = other.v[k]; return this }
 
   stroke(s: Stroke, grow = 0): this { forStroke(s, grow, (box, d) => this.add(box, d)); return this }
