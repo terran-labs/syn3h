@@ -172,13 +172,3 @@
 .welcome-body .welcome-credits a { color: var(--w-dim); }
 .welcome-body .welcome-credits ul { margin: 0 0 10px; list-style: disc; padding-left: 18px; }
 .welcome-body .welcome-credits li { margin: 4px 0; line-height: 1.5; }
-
-/* A copy of the shared accordion arrow (card-chrome.css on ui/card-round-2, not yet on main):
-   delete this block when it lands, along with the copy of ACCORDION_ARROW in welcome.ts. */
-.accordion-arrow {
-  display: inline-block; flex: none; width: 14px; height: 14px; vertical-align: -1px; overflow: visible;
-  fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
-  transition: rotate .18s cubic-bezier(.2, .8, .2, 1);
-}
-details[open] > summary .accordion-arrow, [aria-expanded="true"] .accordion-arrow { rotate: 90deg; }
-@media (prefers-reduced-motion: reduce) { .accordion-arrow { transition: none; } }

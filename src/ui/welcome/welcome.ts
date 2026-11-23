@@ -19,6 +19,7 @@
  * here in HTML, CSS and SVG.
  */
 import { aboutLinksHtml, licencesHtml } from '../data/credits'
+import { ACCORDION_ARROW } from '../accordionArrow'
 import { frozenResourceURL } from '../../core/frozenResources'
 import { GEAR_DESCRIPTIONS, GEAR_LABELS } from '../../weapons/Gear'
 import { WELCOME_SHOTS, type WelcomeShot } from './shots.generated'
@@ -68,12 +69,6 @@ const RING_SHOTS: (RingShot & { id: string })[] = [
   { id: 'lava-night', title: 'Night on the volcano', caption: 'Night on the volcanic world: the sea is lava.' },
   { id: 'swamp-river', title: 'Through the Mire', caption: 'A river through the Mire.' },
 ]
-/**
- * The shared accordion arrow, a copy of ACCORDION_ARROW from accordionArrow.ts on the cards
- * builder's branch (ui/card-round-2), not yet on main. Once it lands, import it from there and
- * delete this copy and the matching .accordion-arrow rules in welcome.css.
- */
-const ACCORDION_ARROW = '<svg class="accordion-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5L10.5 8L6 12.5"/></svg>'
 const k = (key: string, label = key) => `<kbd aria-label="${escape(label)}">${escape(key)}</kbd>`
 
 /** The five pieces of gear, each with a mark drawn in SVG. Order as the gear rack shows them. */
