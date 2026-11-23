@@ -1,4 +1,4 @@
-import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './wordmarkPath'
+import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './activeWordmark'
 
 /**
  * The Syn3h logo as inline SVG markup. One path, coloured and lit in CSS (`.wordmark`), so

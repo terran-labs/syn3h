@@ -3,7 +3,7 @@
  * preview. Not part of the game bundle.
  */
 import { DEFAULT_LOGO_OPTIONS, LogoMark, type LogoOptions, logoBox, logoBudget, logoSvg } from './LogoMark'
-import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './wordmarkPath'
+import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './activeWordmark'
 
 const stage = document.getElementById('stage')!, controls = document.getElementById('controls')!, stats = document.getElementById('stats')!
 const query = new URLSearchParams(location.search)

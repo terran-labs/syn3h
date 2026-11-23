@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildGlowBand, evenOddArea, GLOW_FLOATS_PER_VERTEX, insidePolygon, sampleOutline, wordmarkContours, type Contour, type Point } from '../../src/ui/brand/wordmarkMesh'
+import { ASPECT, buildGlowBand, evenOddArea, GLOW_FLOATS_PER_VERTEX, insidePolygon, sampleOutline, wordmarkContours, type Contour, type Point } from '../../src/ui/brand/wordmarkMesh'
 import { signedDistance, wordmarkSegments } from '../../src/ui/brand/wordmarkField'
 import { LogoMark, logoBox, logoBudget, logoSvg } from '../../src/ui/brand/LogoMark'
 import { INTRO_SECONDS, LogoRenderer } from '../../src/ui/brand/logoRenderer'
@@ -10,22 +10,24 @@ const filled = (p: Point, contours: Contour[]) => contours.filter(c => insidePol
 
 describe('wordmark geometry', () => {
   const contours = wordmarkContours()
-  it('parses the nine loops of the path into shapes, one hole and one island', () => {
-    expect(contours).toHaveLength(9)
-    // The small ringed H: a ring (filled loop with a hole) and the H inside the hole.
-    expect(contours.filter(c => c.depth === 1)).toHaveLength(1)
-    expect(contours.filter(c => c.depth === 2)).toHaveLength(1)
-    expect(contours.filter(c => c.depth === 0)).toHaveLength(7)
-    const hole = contours.find(c => c.depth === 1)!, island = contours.find(c => c.depth === 2)!
-    expect(contours[island.parent]).toBe(hole)
+  it('parses the path into filled shapes and the holes inside them', () => {
+    // Catches a parser that drops a loop or nests one wrongly: the plasma would then light the
+    // inside of a slit or leave a letter dark. The count itself is the design's, so it is not pinned.
+    expect(contours.length).toBeGreaterThan(1)
+    expect(contours.some(c => c.depth === 0)).toBe(true)
+    for (const c of contours) {
+      if (c.depth === 0) continue
+      expect(contours[c.parent].depth).toBe(c.depth - 1)
+      expect(insidePolygon(c.points[0], contours[c.parent].points)).toBe(true)
+    }
   })
   it('measures a signed distance field that is negative exactly where the path is filled', () => {
-    // Catches a field that fills the ring's hole, drops the island inside it, or flips sign.
-    expect(evenOddArea(contours)).toBeGreaterThan(2.5)
+    // Catches a field that fills a hole, drops a shape inside one, or flips sign.
+    expect(evenOddArea(contours)).toBeGreaterThan(0.5)
     const segments = wordmarkSegments(contours), random = (() => { let a = 7; return () => (a = (a * 16807) % 2147483647) / 2147483647 })()
     let disagree = 0
     for (let i = 0; i < 4000; i++) {
-      const p: Point = [(random() - 0.5) * 4.4, (random() - 0.5) * 1.2], d = signedDistance(segments, p[0], p[1])
+      const p: Point = [(random() - 0.5) * (ASPECT + 0.2), (random() - 0.5) * 1.2], d = signedDistance(segments, p[0], p[1])
       if (Math.abs(d) > 1e-4 && (d < 0) !== filled(p, contours)) disagree++
     }
     expect(disagree).toBe(0)
@@ -68,7 +70,8 @@ describe('wordmark geometry', () => {
   })
   it('spreads any prefix of the particles over the whole outline', () => {
     const samples = sampleOutline(8000, 1), xs = Array.from({ length: 400 }, (_, i) => samples.points[i * 4])
-    expect(Math.min(...xs)).toBeLessThan(-1.8); expect(Math.max(...xs)).toBeGreaterThan(1.8)
+    // The wordmark spans half its aspect either side of the centre.
+    expect(Math.min(...xs)).toBeLessThan(-0.42 * ASPECT); expect(Math.max(...xs)).toBeGreaterThan(0.42 * ASPECT)
   })
 })
 

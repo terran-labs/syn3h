@@ -15,7 +15,8 @@
  */
 import { ASPECT } from './wordmarkMesh'
 import { DEFAULT_LOGO_LOOK, INTRO_SECONDS, type LogoLook, LogoRenderer, type PixelRect } from './logoRenderer'
-import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './wordmarkPath'
+import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './activeWordmark'
+import { ICON_HEIGHT, ICON_PATH, ICON_WIDTH } from './wordmarkPath'
 
 export { DEFAULT_LOGO_LOOK, INTRO_SECONDS, LogoRenderer, type LogoLook, type PixelRect } from './logoRenderer'
 
@@ -265,11 +266,17 @@ const hex = (c: readonly number[]) => '#' + c.map(v => Math.round(Math.max(0, Ma
  * The logo as one self-contained SVG document: the flat wordmark path, a soft glow made by
  * an SVG filter from the path itself and, with `space`, the sky and a few seeded stars. No
  * images, no fonts. Static: the plasma is the GPU version's; this is for places that take
- * only a file.
+ * only a file. The `icon` layout draws the icon mark (the M on its plate, wordmarkPath.ts)
+ * in place of the whole word, which would be unreadable in a small square.
  */
 export function logoSvg(options: Partial<LogoLook> & { width?: number; height?: number; layout?: LogoLayout } = {}): string {
   const look = { ...DEFAULT_LOGO_LOOK, ...options }, width = options.width ?? 1200, height = options.height ?? 630
-  const box = logoBox(width, height, options.layout ?? 'fit'), unit = box.height / WORDMARK_HEIGHT
+  const icon = options.layout === 'icon'
+  const mark = icon ? { d: ICON_PATH, width: ICON_WIDTH, height: ICON_HEIGHT } : { d: WORDMARK_PATH, width: WORDMARK_WIDTH, height: WORDMARK_HEIGHT }
+  // The icon mark fills most of its square; the wordmark goes where its layout puts it.
+  const iconWidth = width * 0.74, iconHeight = iconWidth * mark.height / mark.width
+  const box = icon ? { x: (width - iconWidth) / 2, y: (height - iconHeight) / 2, width: iconWidth, height: iconHeight } : logoBox(width, height, options.layout ?? 'fit')
+  const unit = box.height / mark.height
   let stars = ''
   if (look.space) {
     let s = (Math.floor(look.seed * 7919) >>> 0) || 1
@@ -290,7 +297,7 @@ export function logoSvg(options: Partial<LogoLook> & { width?: number; height?: 
 </filter>
 </defs>
 ${look.space ? `<rect width="${width}" height="${height}" fill="url(#space)"/>${stars}` : ''}
-<g transform="translate(${box.x.toFixed(2)} ${box.y.toFixed(2)}) scale(${unit.toFixed(5)})" filter="url(#glow)"><path fill-rule="evenodd" fill="${hex(look.face)}" stroke="${hex(look.glow.map(v => v * 0.5 + 0.5))}" stroke-opacity="0.55" stroke-width="${(1 / unit).toFixed(2)}" d="${WORDMARK_PATH}"/></g>
+<g transform="translate(${box.x.toFixed(2)} ${box.y.toFixed(2)}) scale(${unit.toFixed(5)})" filter="url(#glow)"><path fill-rule="evenodd" fill="${hex(look.face)}" stroke="${hex(look.glow.map(v => v * 0.5 + 0.5))}" stroke-opacity="0.55" stroke-width="${(1 / unit).toFixed(2)}" d="${mark.d}"/></g>
 </svg>`
 }
 export { WORDMARK_WIDTH, WORDMARK_HEIGHT }
