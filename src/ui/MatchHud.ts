@@ -1,3 +1,4 @@
+import { markedName, markedText, type MarkedPlayer } from './playerMarks'
 export interface MatchScore { name: string; score: number; you?: boolean }
 export interface MatchState {
   mode: 'tag' | 'koth'
@@ -28,6 +29,9 @@ export function raceScores(scores: readonly MatchScore[]): MatchScore[] {
 }
 export class MatchHud {
   readonly element = document.createElement('aside')
+  private roster: () => readonly MarkedPlayer[] = () => []
+  /** Who is in the room, so a bot's name carries its mark (playerMarks.ts). */
+  setRoster(roster: () => readonly MarkedPlayer[]): void { this.roster = roster; this.signature = '' }
   private readonly announcement = document.createElement('div')
   private previous: MatchState | null = null
   private timer?: ReturnType<typeof setTimeout>
@@ -59,14 +63,16 @@ export class MatchHud {
     this.element.classList.toggle('is-contested', next.contested); this.element.classList.toggle('is-yours', next.holderIsYou && !next.contested)
     const title = document.createElement('strong'); title.textContent = 'King of the Hill'
     const holder = document.createElement('p'); holder.className = 'hill-holder'
-    holder.textContent = next.winner ? `${next.winner} wins` : next.contested ? 'Contested · scoring paused' : next.holderName ? next.holderIsYou ? 'You hold the hill' : `${next.holderName} holds the hill` : 'Hill unclaimed'
+    const roster = this.roster()
+    holder.append(...markedText(next.winner ? `${next.winner} wins` : next.contested ? 'Contested · scoring paused' : next.holderName ? next.holderIsYou ? 'You hold the hill' : `${next.holderName} holds the hill` : 'Hill unclaimed', roster))
     const timer = document.createElement('small')
     const holderScore = next.scores.find(row => next.holderIsYou ? row.you : row.name === next.holderName)?.score ?? 0
     timer.textContent = next.winner ? 'Round complete' : next.contested ? `First to ${next.target}s wins` : next.holderName ? `${Math.ceil(Math.max(0, next.target - holderScore))}s to win` : `Hold for ${next.target}s to win`
     const race = document.createElement('div'); race.className = 'match-race'
     for (const row of raceScores(next.scores)) {
       const entry = document.createElement('div'); entry.className = 'match-score'; entry.classList.toggle('is-you', Boolean(row.you))
-      const name = document.createElement('span'); name.textContent = `${row.name}${row.you ? ' (you)' : ''}`; name.title = name.textContent
+      const name = document.createElement('span'); name.title = `${row.name}${row.you ? ' (you)' : ''}`
+      name.append(...markedName(roster.find(p => p.name === row.name) ?? { name: row.name, bot: false }, name.title))
       const score = document.createElement('span'); score.textContent = `${Math.floor(row.score)} / ${next.target}s`
       const bar = document.createElement('progress'); bar.max = next.target; bar.value = Math.min(row.score, next.target); bar.setAttribute('aria-label', `${row.name}: ${score.textContent}`)
       entry.append(name, score, bar); race.append(entry)
@@ -76,7 +82,7 @@ export class MatchHud {
     if (next.winner) {
       clearTimeout(this.timer); this.announcement.classList.add('round-end'); this.announcement.hidden = false; this.parent.classList.add('match-announcing')
       this.announcement.style.setProperty('--winner-color', CSS.supports('color', next.winnerColor ?? '') ? next.winnerColor! : '#d2d2d2')
-      const title = document.createElement('strong'); title.textContent = `${next.winner} wins!`
+      const title = document.createElement('strong'); title.append(...markedText(`${next.winner} wins!`, this.roster()))
       const count = document.createElement('small'); this.announcement.replaceChildren(title, count)
       const tick = () => { const seconds = Math.max(0, Math.ceil((this.roundEnds - performance.now()) / 1000)); if(seconds>0&&seconds<=5&&seconds!==this.lastTick){this.lastTick=seconds;this.countdownTick()} count.textContent = seconds ? `Next round in ${seconds}` : 'Waiting for the next round' }
       clearInterval(this.roundTimer); tick(); this.roundTimer = setInterval(tick, 100)

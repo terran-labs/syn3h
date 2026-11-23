@@ -12,8 +12,8 @@
  *
  * Everything a player wrote is drawn with textContent, never as markup, and links are left as
  * plain text. Colour means identity in this game, so each name is drawn in its vehicle's tint,
- * lifted where a dark tint would vanish on the glass. Bots carry a small robot mark before
- * the name (botIcon.ts).
+ * lifted where a dark tint would vanish on the glass. Bots carry the bot mark before the name
+ * (playerMarks.ts, the same mark every surface uses).
  *
  * While the field has focus `input.typing` is set, which stops every driving key, the stick and
  * the gamepad (src/core/Input.ts). It is cleared on blur, however focus leaves.
@@ -21,7 +21,7 @@
 import { CHAT_SPEAK_EVENT, type ChatChannel, type ChatLine } from '../../net/chat'
 import { chatHideBots, chatOn, chatOverlay, chatShow, MAX_CHAT_LENGTH } from '../../../shared/chat'
 import { restoreChatOverlay } from './overlayPreference'
-import { botIcon } from './botIcon'
+import { markedName, legibleTint } from '../playerMarks'
 import { chatLink } from './chatLink'
 import { params } from '../../../shared/params'
 import { touchLeftHanded as leftHanded } from '../TouchPreferences'
@@ -59,40 +59,9 @@ const SPEAKING_MS = 3500
 /** Key that opens chat: Y, the usual "say" key (Enter fires). */
 export const CHAT_KEY = 'KeyY'
 
-/**
- * The surface a name must read on: a chat bubble (chat.css) over a bright daytime sky, the
- * lightest place the bubble usually sits. The log's frosted card is darker, so a name that
- * passes here passes there too.
- */
-export const CHAT_NAME_SURFACE: readonly [number, number, number] = [66, 80, 95]
-/** WCAG AA for normal text. */
-export const CHAT_NAME_CONTRAST = 4.5
-
-const channel = (v: number) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }
-const luminance = ([r, g, b]: readonly number[]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-/** WCAG contrast ratio between two sRGB colours. */
-export function contrastRatio(a: readonly number[], b: readonly number[]): number {
-  const x = luminance(a), y = luminance(b)
-  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
-}
-
-/**
- * Make a player's tint readable as a name on a chat bubble: keep its hue and lift it towards
- * white just far enough to reach AA contrast on CHAT_NAME_SURFACE. Light tints pass unchanged.
- */
-export function legibleTint(color: string): string {
-  const m = /^#([0-9a-f]{6})$/i.exec(color.trim())
-  if (!m) return color
-  const n = parseInt(m[1], 16)
-  const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-  const mix = (t: number) => rgb.map((v) => Math.round(v + (255 - v) * t))
-  if (contrastRatio(rgb, CHAT_NAME_SURFACE) >= CHAT_NAME_CONTRAST) return color
-  // The least lift that passes, by bisection (white always passes, at about 8:1).
-  let lo = 0, hi = 1
-  for (let i = 0; i < 12; i++) { const t = (lo + hi) / 2; if (contrastRatio(mix(t), CHAT_NAME_SURFACE) >= CHAT_NAME_CONTRAST) hi = t; else lo = t }
-  const [r, g, b] = mix(hi)
-  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`
-}
+// The name tint and its contrast rule live with the bot mark (playerMarks.ts); re-exported for
+// the tests and callers that know them as chat's.
+export { CHAT_NAME_CONTRAST, CHAT_NAME_SURFACE, contrastRatio, legibleTint } from '../playerMarks'
 
 /**
  * The card's summary, at the right of its header: how many lines wait unread, or "All read"
@@ -406,9 +375,8 @@ export class ChatCard {
     }
     name.className = 'chat-name'; name.dataset.from = String(line.from); name.dataset.name = line.name
     name.style.color = legibleTint(line.color)
-    // A bot's name leads with the bot mark, in the same colour; screen readers hear "Bot".
-    if (line.bot) name.append(botIcon())
-    name.append(line.mine ? 'You' : line.name)
+    // A bot's name leads with the bot mark (playerMarks.ts), in the same colour; screen readers hear "Bot".
+    name.append(...markedName({ name: line.name, bot: line.bot, color: line.color }, line.mine ? 'You' : line.name))
     row.append(name)
     const text = document.createElement('span'); text.className = 'chat-text'; text.textContent = line.text
     const time = document.createElement('time'); time.className = 'chat-time'; time.dateTime = new Date(line.wall).toISOString(); time.textContent = timeOf(line.wall)

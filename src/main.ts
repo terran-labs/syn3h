@@ -363,14 +363,12 @@ async function main(): Promise<void> {
       input: game.input,
       canOpen: () => shell.playing && !game.input.suspended,
     })
-    // The Players & session rows: who each name is, for the per-player menu and the bot mark.
-    shell.setPlayerLookup((name) => {
-      for (const p of connection.players.values()) {
-        if (connection.displayName(p.id) !== name) continue
-        return { id: p.id, bot: Boolean(p.bot), color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0] }
-      }
-      return null
-    })
+    // Who is in the room as names are shown: the Players & session rows, the match board and
+    // toasts mark each bot with the bot icon in its colour (src/ui/playerMarks.ts).
+    shell.setPlayerRoster(() => [...connection.players.values()].map((p) => ({
+      id: p.id, name: connection.displayName(p.id), bot: Boolean(p.bot),
+      color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0],
+    })))
     // Bot banter (src/bots/banter): the host's bots talk, and answer people's requests.
     const banter = game.add(new HostBanter(game, terrain, connection, bots, environment), 'Host banter')
     // For automated checks (tools/chat-check.mjs). Join can run before window.syn3h exists.

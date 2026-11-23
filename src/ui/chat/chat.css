@@ -67,9 +67,8 @@
 :root .syn3h-shell .chat-name, :root .syn3h-shell.exploration-ui .world-inspector .chat-name { display: inline; margin: 0 6px 0 0; padding: 0; min-height: 0; border: 0; border-radius: 0; background: none; box-shadow: none; font: 600 13.5px/1.35 'Barlow', sans-serif; letter-spacing: .01em; text-shadow: 0 1px 1px rgb(0 0 0 / .25); cursor: pointer; }
 :root .syn3h-shell .chat-name:disabled { cursor: default; opacity: 1; }
 :root .syn3h-shell .chat-strip .chat-name { text-shadow: 0 1px 2px rgb(0 0 0 / .5); }
-/* A bot's mark (botIcon.ts) before its name, in the name's colour: no shadow of its own on a card. */
-.chat-name .chat-bot { display: inline-block; width: 1.1em; height: .95em; margin: 0 .3em 0 0; vertical-align: -.08em; overflow: visible; filter: none; }
-.chat-strip .chat-name .chat-bot { filter: drop-shadow(0 1px 1px rgb(0 0 0 / .5)); }
+/* A bot's mark (playerMarks.ts) needs no shadow of its own on a card; over the game it gets one. */
+.chat-strip .chat-name .bot-mark { filter: drop-shadow(0 1px 1px rgb(0 0 0 / .5)); }
 .chat-time { display: none; margin-left: 8px; color: var(--s3-soft, #cfcfcf); font-size: 11px; }
 .chat-log .chat-line:hover .chat-time, .chat-log .chat-line:focus-within .chat-time, .chat-log .chat-line.show-time .chat-time { display: inline; }
 .chat-status { margin: 0; padding: 4px 2px; color: var(--s3-dim, #e2e2e2); font-size: 12px; }
