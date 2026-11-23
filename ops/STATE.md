@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-22 18:25 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-22 20:25 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,10 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2205 (release-105, the game's address is now mira.cc), source 835c929f,
-frozen copy 20261122-181028-835c929f, Worker version 53e2ee3f, at https://mira.cc/ since 22 November 18:15 PST.
+Live: v26.11.2206 (release-106, sliced covered quality climbs, no wake under water), source fbecebdc,
+frozen copy 20261122-201359-fbecebdc, Worker version bcdd1f87, at https://mira.cc/ since 22 November 20:18 PST.
+Next: the Mira release (rename, logo, tagline and the interface branches), assembled by the rename builder as
+ops/mira-release; LAST_SYN3H_VERSION = v26.11.2206. Its check: a frozen v26.11.2206 page in a room on the renamed build.
 Primary address: https://mira.cc/ (release.sh PRIMARY_URL; record checks: feed on mira.cc and workers.dev).
 Domains (22 November): syn3h.com and www.syn3h.com send navigations to https://mira.cc (one Single Redirect
 rule, 302, path and query kept; an open page's fetches, /ws, /status and /presence are left alone; rollback:
@@ -166,6 +168,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2203 | 103 | m-water-2203 | the sea bed and vehicles under the water ripple with the waves (WebGPU, Medium and up) |
 | v26.11.2204 | 104 | m-hud-2204 | the HUD no longer searches the page every frame (about 2% of the main thread) |
 | v26.11.2205 | 105 | m-domain-2205 | the game's address is now https://mira.cc; old addresses redirect there |
+| v26.11.2206 | 106 | m-climb-2206 | automatic quality climbs prepared in slices behind the menu; no wake from under the water |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
