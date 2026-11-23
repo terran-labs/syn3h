@@ -88,7 +88,7 @@ for (const mode of ['desktop', 'phone']) {
       await page.evaluate(() => syn3h.shell.inspector.revealCard('players')); await settled(page)
       const rows = await page.evaluate(() => {
         const bots = new Set([...syn3hNet.players.values()].filter(p => p.bot).map(p => syn3hNet.displayName(p.id)))
-        return [...document.querySelectorAll('.wi-card[data-section=players] .score-row')].map(r => { const n = r.querySelector('.score-name'); return { bot: bots.has(n.title), mark: !!n.querySelector('svg.bot-mark[aria-label=Bot]'), text: r.textContent } })
+        return [...document.querySelectorAll('.wi-card[data-section=players] .score-row')].map(r => { const n = r.querySelector('.score-name'); return { bot: bots.has(n.dataset.name ?? n.title), mark: !!n.querySelector('svg.bot-mark[aria-label=Bot]'), text: r.textContent } })
       })
       assert.ok(rows.some(r => r.bot), `${mode}: a bot is listed in Players & session (${JSON.stringify(rows)})`)
       for (const r of rows) assert.equal(r.mark, r.bot, `${mode}: the bot mark is on bots' rows only (${JSON.stringify(r)})`)
