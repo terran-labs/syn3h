@@ -161,7 +161,7 @@ ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)))}
   <li><strong>Left-handed touch.</strong> Swaps the driving thumb to the right. Settings, then Controls.</li>
 </ul>
 <h3>Made, not shipped</h3>
-<p>Almost nothing you see or hear is a file. The terrain grows from a seed and wraps around a small planet. The sky is computed from how light scatters. The vehicles are built in code, the engines are synthesised, and the music is composed while you play. The pictures on this page are the exception: they load only when you open it.</p>
+<p>Almost nothing you see or hear is a file. The terrain grows from a seed and wraps around a small planet. The sky is computed from how light scatters. The vehicles are built in code, the engines are synthesised, and the music is composed while you play.</p>
 <p class="welcome-close">Land somewhere unfamiliar, learn what your machine can do, and find your own reasons to stay.</p>
 ${aboutLinksHtml}
 ${licencesHtml}
