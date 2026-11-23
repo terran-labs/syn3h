@@ -330,3 +330,12 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 .syn3h-shell.exploration-ui .performance-recommendation { top: auto; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; width: min(360px, calc(100vw - 32px)); max-width: none; transform: translateX(-50%); box-sizing: border-box; }
 .syn3h-shell.exploration-ui .performance-recommendation button { min-height: 44px; padding: 5px 8px; font-size: 12px; }
 .syn3h-shell.exploration-ui .performance-unlock { display: block; margin-top: 4px; color: var(--s3-dim); }
+
+/* Room under the top row (search, pause, leave world) equal to the room above it, so those
+   controls read as their own group above the cards (the owner, 22 November 2026). The
+   sidebar's own gap is 7 px; the cards start a further --edge-top less 7 below, so the two
+   spaces stay equal if the inset changes. Only with height to spare: taller than 700 px and
+   not the phone layout (Shell.ts PHONE_SIDEBAR: 700 px wide or 500 px tall and below). */
+@media (min-height: 701px) and (min-width: 701px) {
+  .syn3h-shell.exploration-ui .world-inspector:not(.lobby-settings) > .wi-cards { margin-top: calc(var(--edge-top) - 7px); }
+}
