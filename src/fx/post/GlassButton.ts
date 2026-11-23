@@ -1,6 +1,7 @@
 import { respectReducedTransparency } from '../../ui/glassMaterial'
 import { paintedInset, GlassMotionClock } from '../../liquid-glass/paintedSurface'
 import { GlassPress, pressAllowances } from './GlassPress'
+import { insideScroller } from '../../liquid-glass/scrolling'
 import { longFrames } from '../../core/longFrames'
 import { Vector4 } from 'three/webgpu'
 import { uniform, uniformArray } from 'three/tsl'
@@ -81,6 +82,9 @@ export class GlassButton {
         const next = Array.from(el.classList).filter(c => c !== 'held')
         if (prior.length === next.length && prior.every(c => next.includes(c))) continue
       }
+      // A container's class may turn its overflow on or off (the phone's single card):
+      // re-sort the controls into shader and CSS (insideScroller) at the next update.
+      if (record.attributeName === 'class' && !this.controls.includes(el as HTMLElement)) this.registryDirty = true
       this.invalidate()
     }
   })
@@ -101,6 +105,8 @@ export class GlassButton {
     const options = { signal: this.events.signal, capture: true }
     this.resize.observe(canvas)
     for (const event of ['scroll', 'resize', 'orientationchange', 'glassgeometrychange']) window.addEventListener(event, this.invalidate, options)
+    // A layout change may make a region scroll or stop scrolling: re-sort the controls.
+    for (const event of ['resize', 'orientationchange']) window.addEventListener(event, () => { this.registryDirty = true }, options)
     // A newly started transition may have no accompanying resize or mutation.
     // Wake the registry so the next draw adopts its timeline.
     for (const type of ['transitionrun', 'transitionend', 'transitioncancel', 'animationstart', 'animationend', 'animationcancel']) {
@@ -174,8 +180,16 @@ export class GlassButton {
   update(): void {
     if (this.registryDirty || !this.controls.length || !this.controls[0].isConnected) {
       this.registryDirty = false
-      const next = Array.from(document.querySelectorAll<HTMLElement>(this.capacity === 1 ? panel : [buttons, card].join(',')))
-      for (const old of this.controls) if (!next.includes(old)) {
+      // Inside a scrolling region (the panel stack, a scrolling card) the CSS glass scrolls with
+      // the content; the shader cannot keep up (src/liquid-glass/scrolling.ts).
+      // Those take data-glass-surface="scroll", which glass.css gives Liquid's CSS look.
+      const candidates = Array.from(document.querySelectorAll<HTMLElement>(this.capacity === 1 ? panel : [buttons, card].join(',')))
+      const next: HTMLElement[] = []
+      for (const b of candidates) {
+        if (!insideScroller(b)) { if (b.dataset.glassSurface === 'scroll') delete b.dataset.glassSurface; next.push(b) }
+        else if (b.dataset.glassSurface !== 'scroll') b.dataset.glassSurface = 'scroll'
+      }
+      for (const old of this.controls) if (!next.includes(old) && old.dataset.glassSurface === 'shader') {
         delete old.dataset.glassSurface
       }
       this.resize.disconnect()

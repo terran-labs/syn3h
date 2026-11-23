@@ -1,3 +1,4 @@
+import { insideScroller } from './scrolling'
 import { tintAdaptation } from './tintAdaptation'
 import faceSource from './lobby.frag.glsl?raw'
 import { glassBlurTaps } from './gaussianKernel'
@@ -94,6 +95,9 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   let changed = true, registered: HTMLElement[] = [], shapes: Shape[] = []
   let width = 0, height = 0, pw = 1, ph = 1, tw = 1, th = 1, active = false
   const dirty = () => { changed = true }
+  // Whether a control sits in a scrolling region, kept per element; a resize may change the layout's overflow.
+  let scrolling = new WeakMap<Element, boolean>()
+  const scrolls = (el: Element) => { let v = scrolling.get(el); if (v === undefined) scrolling.set(el, v = insideScroller(el)); return v }
   const size = new ResizeObserver(dirty)
   const attributes = new MutationObserver(records => {
     if (records.some(r => r.oldValue !== (r.target as Element).getAttribute(r.attributeName!))) dirty()
@@ -123,8 +127,10 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   }
   const layout = (now: number) => {
     const modal = scope.querySelector('dialog[open]')
-    const next = [...(modal ?? scope).querySelectorAll<HTMLElement>(surfaces)]
-      .filter(el => !el.matches(plain))
+    // Inside a scrolling region the CSS glass scrolls with the content; the shader cannot keep up (scrolling.ts).
+    const candidates = [...(modal ?? scope).querySelectorAll<HTMLElement>(surfaces)].filter(el => !el.matches(plain))
+    for (const el of candidates) if (scrolls(el) && el.dataset.glassSurface !== 'scroll') el.dataset.glassSurface = 'scroll'
+    const next = candidates.filter(el => !scrolls(el))
     if (next.length !== registered.length || next.some((el,i) => el !== registered[i])) {
       for (const old of registered) if (!next.includes(old)) clear(old)
       size.disconnect(); size.observe(canvas); attributes.disconnect()
@@ -175,6 +181,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
     changed = false
   }
   for (const type of ['scroll','resize','orientationchange']) window.addEventListener(type,dirty,opts)
+  for (const type of ['resize','orientationchange']) window.addEventListener(type,() => { scrolling = new WeakMap() },opts)
   for (const type of ['pointerdown','pointerup','pointercancel','transitionrun','animationstart']) {
     scope.addEventListener(type,event=>{
       if (event.target instanceof Element && (event.target.closest(surfaces) || registered.some(el=>event.target instanceof Element && event.target.contains(el)))) dirty()
@@ -197,7 +204,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
     get dirty() { return changed || clock.active || (active && shapes.length > 0 && revision !== tuning.revision()) },
     draw(enabled) {
       if (!enabled) {
-        if (active) { captions?.style.removeProperty('clip-path'); scope.removeAttribute('data-lobby-glass'); clock.release(); for (const el of registered) clear(el) }
+        if (active) { captions?.style.removeProperty('clip-path'); scope.removeAttribute('data-lobby-glass'); clock.release(); for (const el of registered) clear(el); for (const el of scope.querySelectorAll<HTMLElement>('[data-glass-surface="scroll"]')) clear(el) }
         lastBlur = 0
         active = false; changed = false
         return
@@ -268,6 +275,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       scope.removeAttribute('data-lobby-glass')
       clock.release(); size.disconnect(); membership.disconnect(); attributes.disconnect(); events.abort()
       for (const el of registered) clear(el)
+      for (const el of scope.querySelectorAll<HTMLElement>('[data-glass-surface="scroll"]')) clear(el)
       for (const free of dispose) free()
     }
   }

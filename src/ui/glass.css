@@ -363,3 +363,20 @@ html[data-glass-material="liquid"] :is(.syn3h-shell > .world-inspector :is(.rail
 html[data-glass-material="liquid"] .syn3h-shell.exploration-ui > .world-inspector > .panels-close .nav-chevrons {
   filter: drop-shadow(0 0 .6px rgb(0 0 0 / .95)) drop-shadow(0 0 1.5px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .55)) drop-shadow(0 0 8px rgb(0 0 0 / .3));
 }
+
+/* Liquid inside a scrolling region (src/liquid-glass/scrolling.ts). The shader draws a glass face
+   from positions read on the main thread, and the browser scrolls a region's contents without
+   waiting for it, so there the face trails its control by a few frames. Controls in a scroller
+   are marked data-glass-surface="scroll" and drawn by CSS, which scrolls with them. At Liquid
+   this approximates the shader's face: the backdrop lightly blurred and darkened under white
+   ink, a thin lit rim and a dark hairline, so a scrolling card beside a shader-drawn control
+   reads as the same material. Frost and Flat keep their own CSS. Not while Liquid is shed. */
+html[data-glass-material="liquid"]:not([data-drive-glass="shed"]) [data-glass-surface="scroll"],
+html[data-glass-material="liquid"]:not([data-drive-glass="shed"]) .syn3h-shell.exploration-ui > .world-inspector:not(.lobby-settings)
+:is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost)[data-glass-surface="scroll"] {
+  background: rgb(8 8 10 / .1);
+  border: 1px solid rgb(255 255 255 / .16);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .22), inset 0 -1px 0 rgb(0 0 0 / .14), 0 0 0 .5px rgb(0 0 0 / .3);
+  -webkit-backdrop-filter: blur(3px) brightness(.74) saturate(1.4);
+  backdrop-filter: blur(3px) brightness(.74) saturate(1.4);
+}
