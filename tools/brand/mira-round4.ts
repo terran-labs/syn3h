@@ -1,5 +1,5 @@
 /**
- * Generates the round 4 and round 5 Mira candidates into src/ui/brand/mira/round4.ts and round5.ts.
+ * Generates the round 4, 5 and 6 Mira candidates into src/ui/brand/mira/round4.ts, round5.ts and round6.ts.
  *   npx tsx tools/brand/mira-round4.ts
  *
  * Round 4 is drawn in the Syn3h wordmark's own grammar, read off its path: slabs about a
@@ -78,7 +78,7 @@ function bladeA(f: Field, x: number): number {
 }
 const spikeL = (x: number): Contour => [[x + 1, CAP], [x - 44, CAP], [x + 1, CAP - 45]]
 const spikeR = (x: number): Contour => [[x - 1, CAP], [x + 44, CAP], [x - 1, CAP - 45]]
-const plate = (x0: number, x1: number): Contour => [[x0, CAP + 14], [x1, CAP + 14], [x1 - 34, CAP + 48], [x0 + 34, CAP + 48]]
+const plate = (x0: number, x1: number, gap = 14): Contour => [[x0, CAP + gap], [x1, CAP + gap], [x1 - 34, CAP + gap + 34], [x0 + 34, CAP + gap + 34]]
 
 function blade(f: Field, o: { plate?: boolean; emblem?: boolean } = {}): number {
   let x = 0
@@ -254,4 +254,89 @@ writeFileSync(new URL('../../src/ui/brand/mira/round5.ts', import.meta.url), `/*
 import type { Round3Candidate } from './round3'
 
 export const ROUND5: Round3Candidate[] = ${JSON.stringify(data5)}
+`)
+
+// ---- Round 6 ------------------------------------------------------------------------------
+// The owner's notes on round 5. Blade with slit counters: the R was much too wide, so it is
+// narrowed, its counter shortened to match, the A moved in, and the plate raised so that every
+// gap (letter to letter, letters to plate) is the same 12. Monoplate, from variant 5: a
+// narrower R, the M's and A's outer slopes made equal, and a symmetrical M for the icon.
+
+/** The winged R at a chosen body width; the wing overhangs by the height of the A's eave. */
+function wingR2(f: Field, x: number, body: number, slitFrom: P): void {
+  letter(f, g => {
+    add(g, [[x, 0], [x + body + 90, 0], [x + body, 90], [x + body, CAP], [x, CAP]])
+    cutP(g, [[x + S, 46], [x + body - 14, 46], [x + body - 8, 52], [x + body - 14, 58], [x + S, 58]])
+    cutP(g, thick([[x + slitFrom[0], slitFrom[1]], [x + slitFrom[0] + 192 - slitFrom[1], 192]], GAP))
+    cutTL(g, x, 0, 34)
+  })
+}
+function bladeSlits(f: Field, body: number, slitFrom: P): void {
+  let x = 0
+  x += slitM(f, x) + GAP
+  x += bladeI(f, x) + GAP
+  wingR2(f, x, body, slitFrom)
+  x += body + GAP
+  x += slitA(f, x)
+  add(f, spikeL(0), spikeR(x), plate(-44, x + 44, GAP))
+}
+
+interface Mono { /** Outer slope of the M and the A, and of the slit between R and A: sideways run per unit of height. */ k: number; arrow: boolean }
+const MCORE = 150
+/** The M's cuts, for a core starting at x: the notch from the top and the V of slits under it. */
+function monoMCuts(f: Field, x: number): void {
+  cutP(f, [[x + 38, -1], [x + 75, 42], [x + 112, -1]])
+  cutP(f, thick([[x + 20, 62], [x + 70, 192]], GAP)); cutP(f, thick([[x + 130, 62], [x + 80, 192]], GAP))
+}
+function mono6(f: Field, o: Mono): void {
+  const { k } = o, t = GAP, run = k * CAP, across = t * Math.hypot(1, k)
+  const xm = run, xr = xm + MCORE + t + S + t, foot = xr + 150, xa = foot + across
+  const flat = 30, aTop = xa + run, end = aTop + flat + run
+  add(f, [[0, CAP], [run, 0], [aTop + flat, 0], [end, CAP]])
+  monoMCuts(f, xm)
+  cutP(f, rect(xm + MCORE, -1, xm + MCORE + t, CAP + 1)); cutP(f, rect(xr - t, -1, xr, CAP + 1))
+  // R: its trailing edge rises from the foot at the same slope as the A; with `arrow` it turns back at half height, an arrowhead.
+  const ya = 89, edge = (y: number) => foot + k * (CAP - y), apex = edge(ya)
+  const widthAt52 = o.arrow ? apex - k * (ya - 52) : edge(52)
+  cutP(f, [[xr + S, 46], [widthAt52 - 52, 46], [widthAt52 - 46, 52], [widthAt52 - 52, 58], [xr + S, 58]])
+  cutP(f, thick([[xr + 48, 104], [xr + 134, 190]], t))
+  const mid = (y: number) => edge(y) + across / 2
+  cutP(f, thick([[mid(-14), -14], [mid(192), 192]], t))
+  if (o.arrow) cutP(f, [[apex - k * (ya + 2), -2], [apex, ya], [edge(-2) + 1, -2]])
+  // A: a chevron slit, each arm one slab in from its edge.
+  const cx = aTop + flat / 2, inset = (S + t / 2) * Math.hypot(1, k), apexY = (inset - flat / 2) / k
+  cutP(f, thick([[xa + inset - 14 * k, 192], [cx, apexY], [2 * cx - (xa + inset - 14 * k), 192]], t))
+  capClip(f)
+}
+/** The M on its own for the icon: the same slope on both sides. */
+function monoM(f: Field, k: number): void {
+  const run = k * CAP
+  add(f, [[0, CAP], [run, 0], [run + MCORE, 0], [2 * run + MCORE, CAP]])
+  monoMCuts(f, run); capClip(f)
+}
+
+const r6: Built[] = []
+r6.push({ id: 1, name: 'Blade, slit counters, tightened', note: 'Your notes applied. The R’s body is 150 wide, down from 203, its counter is shorter to match and as thin as the other slits, and the A has moved in with it. The plate is raised: every gap, letter to letter and letters to plate, is now the same 12. The M is untouched.',
+  word: trace([-70, -20, 800, 250], f => bladeSlits(f, 150, [40, 100])), mono: slitMonoC })
+r6.push({ id: 2, name: 'Blade, slit counters, narrowest R', note: 'The same with the R narrower again, 136 wide, about as far as it goes before its foot becomes a sliver.',
+  word: trace([-70, -20, 800, 250], f => bladeSlits(f, 136, [32, 96])), mono: slitMonoC })
+const monos: { name: string; note: string; o: Mono }[] = [
+  { name: 'Monoplate, 45 degrees, arrowhead R', o: { k: 1, arrow: true }, note: 'From variant 5. The M’s outer edge now slopes at 45 degrees like the A’s, so the slab is symmetrical. The R is narrowed by turning its trailing edge back at half height into an arrowhead, which leaves a V notch between R and A that answers the M’s.' },
+  { name: 'Monoplate, steeper, plain R', o: { k: 0.5, arrow: false }, note: 'From variant 5, with every slope steepened to two up for one across: the M’s edge, the A’s edge and the slit between R and A. That alone narrows the R by a quarter and makes the whole slab more compact.' },
+  { name: 'Monoplate, steeper, arrowhead R', o: { k: 0.5, arrow: true }, note: 'The steeper slopes and the arrowhead together: the narrowest R of the three.' },
+]
+monos.forEach(({ name, note, o }, i) => {
+  const run = o.k * CAP
+  r6.push({ id: 3 + i, name, note, word: trace([-20, -20, 1000, 200], f => mono6(f, o)), mono: trace([-20, -20, 2 * run + MCORE + 20, 200], f => monoM(f, o.k)) })
+})
+
+const data6 = r6.map(c => ({ id: c.id, family: c.id < 3 ? 'Blade, slit counters' : 'Monoplate', name: c.name, note: c.note, word: toPath(c.word), mono: toPath(c.mono) }))
+for (const c of data6) console.log('r6', c.id, c.name, c.word.width, c.word.height, c.word.d.length)
+writeFileSync(new URL('../../src/ui/brand/mira/round6.ts', import.meta.url), `/**
+ * Round 6 Mira candidates, generated by tools/brand/mira-round4.ts.
+ * Generated: edit the tool, not this file.
+ */
+import type { Round3Candidate } from './round3'
+
+export const ROUND6: Round3Candidate[] = ${JSON.stringify(data6)}
 `)
