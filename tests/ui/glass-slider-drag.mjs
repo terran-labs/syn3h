@@ -1,5 +1,7 @@
-// A descendant range must not press the entire glass card. (The material is chosen with three
-// buttons beside its label since 22 November 2026; it has no slider to drag.)
+// A descendant range must not press the entire glass card, and a drag across it must move it.
+// (The material is chosen with three buttons beside its label since 22 November 2026; it has no
+// slider to drag.) The card keeps whichever surface it has: the shader, or in a scrolling panel
+// stack the CSS glass that scrolls with it (src/liquid-glass/scrolling.ts).
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
@@ -27,7 +29,16 @@ try {
       const slider = page.locator(card).locator(`[data-id="${id}"] input[type=range]`)
       await slider.evaluate(el => { const group = el.closest('details'); if (group) group.open = true })
       await slider.scrollIntoViewIfNeeded()
-      await page.waitForFunction(sel => document.querySelector(sel)?.dataset.glassSurface === 'shader', card)
+      await page.waitForFunction(sel => ['shader', 'scroll'].includes(document.querySelector(sel)?.dataset.glassSurface), card)
+      // The card's opening motion and the stack's reveal move the slider for a few hundred ms after
+      // the tap; a rect read while it moves sends the touch to whatever arrives there (another slider).
+      await slider.evaluate(el => new Promise(done => {
+        let last = '', still = 0
+        const frame = () => { const r = el.getBoundingClientRect(), at = `${r.x},${r.y}`; still = at === last ? still + 1 : 0; last = at; if (still >= 5) done(); else requestAnimationFrame(frame) }
+        requestAnimationFrame(frame)
+      }))
+      const surface = await page.evaluate(sel => document.querySelector(sel).dataset.glassSurface, card)
+      const resting = await page.evaluate(sel => getComputedStyle(document.querySelector(sel)).backgroundColor, card)
       const rect = await slider.boundingBox()
       const thumb = await slider.evaluate(el => (el.valueAsNumber - Number(el.min)) / (Number(el.max) - Number(el.min)))
       const destination = thumb < .5 ? .8 : .2
@@ -48,7 +59,8 @@ try {
       }
       const held = await page.evaluate(() => { cancelAnimationFrame(window.dragFrame); return window.dragFrames })
       await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-      assert.ok(held.length >= 5 && held.every(([surface, bg]) => surface === 'shader' && bg === 'rgba(0, 0, 0, 0)'), `${view} ${id}: ${JSON.stringify(held)}`)
+      // Unpressed throughout: the same surface and the same body as at rest (transparent when the shader draws it).
+      assert.ok(held.length >= 5 && held.every(([s, bg]) => s === surface && bg === resting) && (surface !== 'shader' || resting === 'rgba(0, 0, 0, 0)'), `${view} ${id}: ${surface} ${resting} ${JSON.stringify(held)}`)
       assert.notEqual(await slider.evaluate(el => (el.valueAsNumber - Number(el.min)) / (Number(el.max) - Number(el.min))), thumb)
     }
   }
