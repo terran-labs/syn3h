@@ -138,4 +138,5 @@ function attach(ws: WebSocket, name: string): void {
   })
 }
 
-http.listen(port, () => console.log(`Mira room server on ws://localhost:${port}/ws?room=<name>`))
+http.listen({ port, host: process.env.PASEO_PREVIEW_ORIGIN ? '127.0.0.1' : undefined }, () =>
+  console.log(`Mira room server on ws://localhost:${port}/ws?room=<name>`))
