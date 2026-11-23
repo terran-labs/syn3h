@@ -21,7 +21,8 @@
  * is open and returns to Settings. Closed, it is detached from the page, so the in-game rail stays
  * the only `.world-inspector` element there.
  */
-import { glassLabels } from './glassMaterial'
+import { glassLabels, LIQUID_TUNING_GROUPS } from './glassMaterial'
+import { ACCORDION_ARROW } from './accordionArrow'
 import { params } from '../../shared/params'
 import type { QualitySource } from '../core/quality'
 import { createFrozenResourceResolver } from '../core/frozenResources'
@@ -196,12 +197,31 @@ export class LobbySettings {
     })
     // The browser holds sound until a first gesture; the summary says so quietly until it starts.
     window.addEventListener(SOUND_STARTED, () => this.inspector.update(), { signal })
+    // Glass: Style and Tint, and under them the Liquid style's own tuning in one fold, closed at
+    // first, there only while Liquid is the style (the owner, 22 November 2026: "move the
+    // top-level glass section ... into an expanding portion ... accessible only when the liquid
+    // style is applied"). The fold's rows are every parameter in LIQUID_TUNING_GROUPS.
     const material = params.get('hud.glass')!
     const body = document.createElement('div')
     this.inspector.addCard('glass', 'Glass', body, () => glassLabels[Number(material.value)], {
-      fill: () => body.replaceChildren(this.inspector.row(material.def as PropertyDef), this.inspector.row(params.get('hud.surfaceCoverage')!.def as PropertyDef),
-        ...params.all().filter(p => p.def.group === 'Glass').map(p => this.inspector.row(p.def as PropertyDef))),
+      fill: () => {
+        const fold = document.createElement('details'); fold.className = 'lobby-liquid'
+        const summary = document.createElement('summary'); summary.innerHTML = `<span>Liquid glass</span>${ACCORDION_ARROW}`
+        fold.append(summary)
+        // Its rows come from the registry as the fold opens: the Liquid style's code, which
+        // defines most of them (fx/post/GlassPost.ts), loads only once Liquid is chosen.
+        const rows = () => {
+          const defs = params.all().filter(p => LIQUID_TUNING_GROUPS.includes(p.def.group)).map(p => p.def as PropertyDef)
+          const shown = [...fold.querySelectorAll<HTMLElement>(':scope > .wi-row')].map(row => row.dataset.id).join()
+          if (shown !== defs.map(def => def.id).join()) fold.replaceChildren(summary, ...defs.map(def => this.inspector.row(def)))
+        }
+        rows(); fold.addEventListener('toggle', () => { if (fold.open) rows() }, { signal })
+        this.liquid.className = 'lobby-liquid-wrap'; this.liquid.replaceChildren(fold)
+        body.replaceChildren(this.inspector.row(material.def as PropertyDef), this.inspector.row(params.get('hud.surfaceCoverage')!.def as PropertyDef), this.liquid)
+        this.syncLiquid(false)
+      },
     })
+    signal.addEventListener('abort', params.onChange(id => { if (id === material.def.id) this.syncLiquid(true) }))
     // Play: whether the bots may play with you, set before you join a world.
     const play = document.createElement('div')
     this.inspector.addCard('play', 'Play', play, () => `Bots may play with me: ${params.get(playWithMe.def.id)?.value ? 'yes' : 'no'}`, {
@@ -234,6 +254,29 @@ export class LobbySettings {
   }
 
   get isOpen(): boolean { return this.shown }
+
+  /** The Liquid glass fold's frame: it opens out under Style and Tint at Liquid (lobby-settings.css). */
+  private readonly liquid = document.createElement('div')
+  private liquidGone = 0
+  /**
+   * Liquid glass is there only at Liquid. Choosing Liquid opens its frame from nothing to the
+   * fold's height, so the rows below move down smoothly rather than jump; leaving Liquid closes
+   * it and then removes it (hidden), so it is out of the tab order, search and screen readers.
+   */
+  private syncLiquid(animate: boolean): void {
+    const on = Number(params.get('hud.glass')?.value) === 0, frame = this.liquid
+    clearTimeout(this.liquidGone)
+    frame.inert = !on
+    if (on) {
+      frame.hidden = false
+      if (animate && !matchMedia('(prefers-reduced-motion: reduce)').matches) { void frame.offsetHeight }
+      frame.classList.add('is-present')
+      return
+    }
+    frame.classList.remove('is-present')
+    if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches) frame.hidden = true
+    else this.liquidGone = window.setTimeout(() => { if (!frame.classList.contains('is-present')) frame.hidden = true }, 260)
+  }
 
   /** A quiet mark beside the version while a newer version is out. */
   markUpdate(version: string | null): void {

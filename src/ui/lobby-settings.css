@@ -157,3 +157,17 @@ dialog.lobby-sheet .lobby-gear-dock { z-index: 2; }
   dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet { left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); width: auto; grid-auto-flow: column; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet .lobby-control { justify-content: center; gap: 6px; padding: 0 8px; letter-spacing: .12em; font-size: 10.5px; }
 }
+
+/* The Liquid style's tuning in the Glass card: one fold under Style and Tint, closed at first, there
+   only at Liquid (LobbySettings.syncLiquid). Its frame opens from nothing to the fold's height, so
+   the rows below move rather than jump; the shared accordion arrow turns as the fold opens. */
+.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid-wrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .24s cubic-bezier(.2, .8, .2, 1), opacity .2s; }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid-wrap.is-present { grid-template-rows: 1fr; opacity: 1; }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid { min-height: 0; overflow: hidden; }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 6px; list-style: none; cursor: pointer;
+  font: 500 11.5px/1.2 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; color: var(--s3-dim);
+}
+.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid > summary::-webkit-details-marker { display: none; }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid > summary:focus-visible { outline: 2px solid var(--s3-ink); outline-offset: 2px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .syn3h-shell.exploration-ui .lobby-settings .lobby-liquid-wrap { transition: none; } }
