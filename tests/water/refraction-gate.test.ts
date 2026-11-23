@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { qualityLevel } from '../../src/core/quality'
-import { refractionOn, refractionState, waterRefraction, waterRefractionUnproven } from '../../src/world/water/refraction'
+import { refractionOn, refractionState, waterRefraction } from '../../src/world/water/refraction'
+import { depthEffectsState, depthEffectsUnproven as waterRefractionUnproven, midPassCopyAllowed } from '../../src/core/midPassCopy'
 
 /**
  * Refraction copies the frame in the middle of the scene pass. On WebGL 2 that measured 1.5 ms a
@@ -47,5 +48,18 @@ describe('refraction gate', () => {
     expect(refractionOn(webgpu(), { webkit: true, touch: true })).toBe(true)
     waterRefraction.value = 0
     expect(refractionOn(webgpu(), { webkit: true, touch: true })).toBe(false)
+  })
+
+  // The owner's first black flashes came with bots and lasers on screen: force fields and
+  // headlight cones, whose depth reads are the same copy. One gate covers all three.
+  it('makes no vehicle depth copy where unproven, unless the player turns it on', () => {
+    waterRefractionUnproven.value = false
+    for (const device of [{ webkit: true, touch: true }, { webkit: true, touch: false }, { webkit: false, touch: true }]) {
+      expect(midPassCopyAllowed(device)).toBe(false)
+      expect(depthEffectsState(device)).toBe('off: not yet proven on this device')
+    }
+    expect(midPassCopyAllowed({ webkit: false, touch: false })).toBe(true)
+    waterRefractionUnproven.value = true
+    expect(midPassCopyAllowed({ webkit: true, touch: true })).toBe(true)
   })
 })

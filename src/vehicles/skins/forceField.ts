@@ -19,8 +19,9 @@
 import * as T from 'three/webgpu'
 import {
   abs, cameraFar, cameraNear, clamp, dot, exp, float, fwidth, length, normalLocal, normalView, perspectiveDepthToViewZ,
-  positionLocal, positionView, positionViewDirection, renderGroup, smoothstep, uniform, uniformArray, viewportDepthTexture,
+  positionLocal, positionView, positionViewDirection, renderGroup, smoothstep, uniform, uniformArray,
 } from 'three/tsl'
+import { GatedViewportDepthTexture, midPassCopyNode } from '../../core/midPassCopy'
 import type Node from 'three/src/nodes/core/Node.js'
 import { hexCell } from './showroom'
 
@@ -83,11 +84,13 @@ export function forceField(options: ForceFieldOptions = {}): ForceField {
 
   let contact: N = float(0)
   if (options.contact) {
-    // Distance along the view from this fragment to whatever solid lies behind it.
-    const behind = perspectiveDepthToViewZ(viewportDepthTexture(), cameraNear, cameraFar).negate().sub(positionView.z.negate())
+    // Distance along the view from this fragment to whatever solid lies behind it. The depth is
+    // a copy taken in the middle of the scene pass: not made where that is not yet proven (phones,
+    // tablets, Safari: core/midPassCopy.ts), and the glow is zeroed there, in the same graph.
+    const behind = perspectiveDepthToViewZ(new GatedViewportDepthTexture(), cameraNear, cameraFar).negate().sub(positionView.z.negate())
     const near: N = float(1).sub(smoothstep(0, CONTACT_DEPTH, behind))
     // Nothing in front of the field counts (that part of it is hidden anyway).
-    contact = near.mul(near).mul(smoothstep(-.05, 0, behind))
+    contact = near.mul(near).mul(smoothstep(-.05, 0, behind)).mul(midPassCopyNode)
   }
 
   // Each impact: xyz the point, w when it happened; strength alongside. Far past, so idle.

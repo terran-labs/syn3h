@@ -5,6 +5,7 @@ import {
 } from 'three/tsl'
 import { defineParam } from '../../../shared/params'
 import { levelNumber, qualityLevel } from '../../core/quality'
+import { copyDevice, GatedViewportDepthTexture, GatedViewportTexture, midPassCopyAllowed, type CopyDevice } from '../../core/midPassCopy'
 
 /**
  * Refraction: what lies under the water, seen from above, wobbles with the surface.
@@ -50,74 +51,30 @@ const REFRACT_SCALE = 0.25
 /** A sample point counts as under the water only this far (m) below the surface pixel. */
 const LEAK_MARGIN = 0.05
 
-/**
- * Refraction on a device where it has not been proven, by the player's own choice. Off by
- * default. The owner saw dozens of black frames a minute on an iPhone on v26.11.2301 (WebGPU,
- * Mire, all water), and refraction's two copies break the multisampled scene pass in the
- * middle (see above), a path only ever measured in Chrome on a Mac. Client settings are not
- * kept between visits, so no earlier visit's value can turn this on.
- */
-export const waterRefractionUnproven = defineParam<boolean>({
-  id: 'water.refractionUnproven', label: 'Refraction where not yet proven (phones, tablets, Safari)', group: 'Water', scope: 'client', default: false,
-})
-
-/** What decides whether refraction is proven here. */
-export interface RefractionDevice { webkit: boolean; touch: boolean }
-
-/**
- * The device, read once. Engine and capability tests, not the user agent string:
- * - WebKit: `GestureEvent` is a WebKit interface, present in Safari on macOS and in every
- *   browser on iOS and iPadOS (all WebKit), absent from Chromium and Gecko.
- * - Touch: the primary pointer is coarse (`(pointer: coarse)`): phones and tablets of any
- *   vendor. A touchscreen laptop keeps a fine primary pointer and counts as desktop.
- */
-let device: RefractionDevice | undefined
-export function refractionDevice(): RefractionDevice {
-  if (device) return device
-  const w = typeof window === 'undefined' ? undefined : window
-  return device = {
-    webkit: !!w && 'GestureEvent' in w,
-    touch: !!w && typeof w.matchMedia === 'function' && w.matchMedia('(pointer: coarse)').matches,
-  }
-}
-
-/**
- * Whether refraction is proven on this kind of device: desktop Chromium-family WebGPU, where it
- * was measured (22 November 2026: no blank frames, cost within noise). Lifting this for WebKit or
- * for touch devices needs a run on a real such device with the blank-frame probe showing no
- * blank frames over minutes of Mire, and its frame cost measured there.
- */
-export function refractionProven(d: RefractionDevice = refractionDevice()): boolean {
-  return !d.webkit && !d.touch
-}
-
 interface GateRenderer { getRenderTarget(): unknown; backend?: object }
 
 export type RefractionState = 'on' | 'off: WebGL 2' | 'off: below Medium' | 'off: turned off' | 'off: not yet proven on this device' | 'off: no renderer'
 
-/** Whether refraction is on for this renderer at all, and if not, why. For diagnostics. */
-export function refractionState(renderer: GateRenderer | null | undefined, d: RefractionDevice = refractionDevice()): RefractionState {
+/**
+ * Whether refraction is on for this renderer at all, and if not, why. For diagnostics. Not on a
+ * device where copies in the middle of the scene pass are not yet proven (core/midPassCopy.ts).
+ */
+export function refractionState(renderer: GateRenderer | null | undefined, d: CopyDevice = copyDevice()): RefractionState {
   if (!renderer) return 'off: no renderer'
   if ((renderer.backend as { isWebGPUBackend?: boolean } | undefined)?.isWebGPUBackend !== true) return 'off: WebGL 2'
   if (levelNumber(qualityLevel.value) < REFRACT_FROM_LEVEL) return 'off: below Medium'
   if (!(waterRefraction.value > 0)) return 'off: turned off'
-  if (!refractionProven(d) && !waterRefractionUnproven.value) return 'off: not yet proven on this device'
+  if (!midPassCopyAllowed(d)) return 'off: not yet proven on this device'
   return 'on'
 }
 
 /** Whether this render call refracts: refraction is on and the call draws into a render target. */
-export function refractionOn(renderer: GateRenderer, d: RefractionDevice = refractionDevice()): boolean {
+export function refractionOn(renderer: GateRenderer, d: CopyDevice = copyDevice()): boolean {
   return refractionState(renderer, d) === 'on' && renderer.getRenderTarget() !== null
 }
 
-/** The frame copy, made only when the render call refracts. */
-class GatedViewportTexture extends THREE.ViewportTextureNode {
-  updateBefore(frame: THREE.NodeFrame): boolean | undefined { return refractionOn(frame.renderer!) ? super.updateBefore(frame) : undefined }
-}
-/** The depth copy, likewise. */
-class GatedViewportDepthTexture extends THREE.ViewportDepthTextureNode {
-  updateBefore(frame: THREE.NodeFrame): boolean | undefined { return refractionOn(frame.renderer!) ? super.updateBefore(frame) : undefined }
-}
+/** The frame copies, made only when the render call refracts (shared nodes: core/midPassCopy.ts). */
+const refractGate = (renderer: THREE.Renderer) => refractionOn(renderer as never)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any
@@ -130,8 +87,8 @@ type N = any
 export function refractThrough(material: THREE.NodeMaterial, slope: { x: N; z: N }, depth: N): void {
   const on = uniform(0).setGroup(renderGroup).onRenderUpdate(({ renderer }) => refractionOn(renderer as never) ? 1 : 0)
   const strength = uniform(waterRefraction.value).setGroup(renderGroup).onRenderUpdate(() => waterRefraction.value)
-  const colour = new GatedViewportTexture()
-  const sceneDepth = new GatedViewportDepthTexture()
+  const colour = new GatedViewportTexture(); colour.gate = refractGate
+  const sceneDepth = new GatedViewportDepthTexture(); sceneDepth.gate = refractGate
 
   // The tilt of the surface, as seen on screen, smaller with distance; nothing at the shore.
   const tilt = cameraViewMatrix.transformDirection(vec3(slope.x.negate(), 0, slope.z.negate())).xy

@@ -18,9 +18,10 @@
  */
 import * as T from 'three/webgpu'
 import {
-  abs, cameraFar, cameraNear, clamp, dot, exp, float, instanceColor, max, normalView, normalize, perspectiveDepthToViewZ,
-  positionGeometry, positionView, positionWorld, pow, smoothstep, texture, uniform, vec2, vec3, viewportDepthTexture,
+  abs, cameraFar, cameraNear, clamp, dot, exp, float, instanceColor, max, mix, normalView, normalize, perspectiveDepthToViewZ,
+  positionGeometry, positionView, positionWorld, pow, smoothstep, texture, uniform, vec2, vec3,
 } from 'three/tsl'
+import { GatedViewportDepthTexture, midPassCopyNode } from '../../core/midPassCopy'
 import { applyCurve } from '../../world/curve'
 import { defineParam } from '../../../shared/params'
 
@@ -128,9 +129,11 @@ export function createConeBatch(haze: ConeHaze): T.InstancedMesh {
   // Brighter near the lamp, gone at the end; and not a hard ring at the lamp itself.
   // Bright at the lamp, thinning toward the beam's reach: most of it in the first third.
   const fall = pow(float(1).sub(along), float(2.6)).mul(smoothstep(0.0, 0.06, along))
-  // Where it meets the world behind it: the scene's depth at this pixel against the cone's.
-  const sceneZ = perspectiveDepthToViewZ(viewportDepthTexture().x, cameraNear, cameraFar) as N
-  const soft = smoothstep(0.0, CONE_SOFT_DEPTH, positionView.z.sub(sceneZ))
+  // Where it meets the world behind it: the scene's depth at this pixel against the cone's. That
+  // depth is a copy taken in the middle of the scene pass: not made where that is not yet proven
+  // (phones, tablets, Safari: core/midPassCopy.ts), and the beam keeps a hard edge there.
+  const sceneZ = perspectiveDepthToViewZ(new GatedViewportDepthTexture().x, cameraNear, cameraFar) as N
+  const soft = mix(float(1), smoothstep(0.0, CONE_SOFT_DEPTH, positionView.z.sub(sceneZ)), midPassCopyNode)
   // The haze here: height haze, plus the fog banks from the map at this place.
   const y = positionWorld.y as N
   const height = (haze.hazeD as N).mul(exp(y.sub(haze.sea).div(haze.hazeH).negate()))

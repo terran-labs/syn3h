@@ -18,6 +18,7 @@ import { botsKeepCount } from './bots/params'
 import { ChaseCamera } from './core/ChaseCamera'
 import { diagnosticReport } from './core/diagnosticReport'
 import { refractionState } from './world/water/refraction'
+import { depthEffectsState } from './core/midPassCopy'
 import { Game } from './core/Game'
 import { showStartFailure, startupTiming } from './core/diagnostics'
 import { canCreateWebGL2, startFailure } from './core/graphicsSupport'
@@ -193,7 +194,9 @@ async function main(): Promise<void> {
     return diagnosticReport(game.quality.getPerformanceSnapshot(), slot.current.kind, botKinds, currentWorldName(), currentPlanet().label,
       sessionNetwork?.diagnosticLine(), game.quality.levelChanges, audio.musicReportLine) + '\n' + glassDiagnostics() + '\n' + screenEdgesLine() +
       // Refraction copies the frame mid-pass; not yet measured on a phone (world/water/refraction.ts).
-      '\nWater refraction: ' + refractionState(game.renderer)
+      '\nWater refraction: ' + refractionState(game.renderer) +
+      // Copies taken in the middle of the scene pass (core/midPassCopy.ts), off where not yet proven.
+      '\nForce field contact glow: ' + depthEffectsState() + '\nHeadlight beam soft edge: ' + depthEffectsState()
   }
   shell.configurePerformance({
     runPerformanceCheck: async signal => (await import('./diagnostics/inWorldCheck')).runInWorldCheck({
