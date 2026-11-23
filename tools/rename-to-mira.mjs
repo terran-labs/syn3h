@@ -35,7 +35,7 @@ export const KEEP_FILES = [
   { pattern: /^docs\/MIRA-CUTOVER\.md$|^tools\/switch-domain(\.test)?\.mjs$/, reason: 'C: the address move, made while the game was still called Syn3h' },
   { pattern: /^tools\/rename-to-mira(\.test)?\.mjs$/, reason: 'the rename tool and its test name the old spelling on purpose' },
   { pattern: /^docs\/NAMES\.md$/, reason: 'the keep-list document names the old spelling on purpose' },
-  { pattern: /^tools\/lib\/legacy-env\.(mjs|sh)$|^tools\/legacy_env\.py$|^tools\/lib\/legacy-page-names\.mjs$|^src\/core\/legacyWindowNames\.ts$/, reason: 'legacy-name bridges (environment variables, window hooks); remove after 22 December 2026' },
+  { pattern: /^tools\/lib\/legacy-env\.(mjs|sh)$|^tools\/legacy_env\.py$|^tools\/lib\/legacy-page-names\.mjs$|^src\/core\/legacyWindowNames\.ts$|^tests\/core\/legacyWindowNames\.test\.ts$/, reason: 'legacy-name bridges (environment variables, window hooks); remove after 22 December 2026' },
 ]
 
 /** Release notes of published versions are history (C). Read from release-notes/history.tsv. */
