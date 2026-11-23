@@ -29,7 +29,9 @@ import { ParamPanel } from './ui/ParamPanel'
 import { LobbyAddress } from './ui/LobbyAddress'
 import { roomFromQuery } from './core/roomAddress'
 import { botIdentity, generateName } from './ui/data/names'
-import { initGameShell } from './ui/Shell'
+import { attachGameShell, createLobby } from './ui/Shell'
+import { PhysicsGate } from './core/physicsGate'
+import { initPhysics } from './core/physics'
 import { readVehicleChoice, saveVehicleChoice } from './ui/VehicleChoice'
 import { type VehicleKind, createVehicle } from './vehicles'
 import { PlayerSlot } from './vehicles/PlayerSlot'
@@ -58,16 +60,40 @@ async function main(): Promise<void> {
   const { saved } = applyStartWorld(query, sessionStorage, navigator.webdriver ? () => 1 : randomSeed)
   // Keep the original entry/resume URL until all startup consumers have read it.
   const lobbyAddress = new LobbyAddress(location, history)
+  // The physics engine (a 3 MB WebAssembly file, its download started by index.html) is needed
+  // only to enter a world. It is retried in place if it fails (physicsGate.ts), and the lobby
+  // is built first, so it is drawn and usable while the engine, the renderer and the first
+  // world arrive; an entry asked for meanwhile waits for them (createLobby).
+  const physics = new PhysicsGate(async () => {
+    // Development only: rehearse a slow, failing or blocked download for the browser checks
+    // (tests/ui/lobby-before-physics.mjs), which run on the dev server, where the engine is
+    // part of a script and cannot be blocked as a file. Production builds drop this.
+    if (import.meta.env.DEV) {
+      const rehearse = (window as { __miraRehearsePhysics?: { delayMs?: number; failures?: number; blocked?: boolean } }).__miraRehearsePhysics
+      if (rehearse?.delayMs) await new Promise(resolve => setTimeout(resolve, rehearse.delayMs))
+      if (rehearse?.blocked) throw new Error('rehearsed: download blocked')
+      if (rehearse?.failures && rehearse.failures-- > 0) throw new Error('rehearsed: download failed')
+    }
+    await initPhysics()
+  })
+  void physics.start()
   const game = new Game(canvas)
-  await game.init()
+  // ?wordmark= and ?intro=: silent developer overrides for the lobby's name and opening.
+  applyWordmarkQuery(location.search)
+  // The interface material (and ?glass=) before the lobby: the galaxy draws the lobby's glass
+  // and reads the material when it is built.
+  const mode = query.get('glass')
+  const stopMaterial = restoreGlassMaterial(mode === 'inline' || mode === 'target')
+  const lobby = createLobby(game, physics, query.get('name'))
+  // What exists in the lobby, for checks; replaced by the full set once the world is built.
+  Object.assign(window, { mira: { planets, game, params, shell: lobby.shell, audio: lobby.audio, physics } })
+  await game.init(() => physics.ready)
 
   const terrain = createTerrain(game, worldSeed.value)
   // Graphics levels thin out distant terrain on weaker devices.
   game.quality.attachTerrain(terrain)
   const environment = game.add(createEnvironment(game, terrain), 'Environment and sky')
   // Post effects follow the player's settings and the current rendering budget.
-  const mode = query.get('glass')
-  const stopMaterial = restoreGlassMaterial(mode === 'inline' || mode === 'target')
   game.add({ dispose: stopMaterial }, 'Interface material preference')
   let glass: import('./fx/post/GlassPost').GlassPost | undefined
   let loading: Promise<void> | undefined
@@ -75,6 +101,9 @@ async function main(): Promise<void> {
   const loadGlass = () => loading ??= import('./fx/post/GlassPost').then(({ GlassPost }) => {
     glass = new GlassPost(mode === 'target' ? 'target' : 'inline')
     post.attachGlass(glass)
+    // The lobby was built before the glass existed: its galaxy draws the lobby's glass, so it
+    // takes the glass up now (the factory GlassPost installs).
+    lobby.shell.refreshLobbyGlass()
   }).finally(() => { loading = undefined })
   if (liquidSelected()) {
     try { await loadGlass() } catch (error) { console.warn('Glass shader unavailable, using CSS', error) }
@@ -123,14 +152,12 @@ async function main(): Promise<void> {
   // copies, whose owners apply it themselves. `?weather=0.5` sets the storminess for a look.
   game.add(new WeatherSystem(() => terrain, () => [slot.current, ...bots.vehicles]), 'Weather')
   applyWeatherQuery(location.search)
-  // ?wordmark= and ?intro=: silent developer overrides for the lobby's name and opening.
-  applyWordmarkQuery(location.search)
   // The round planet is drawn relative to the camera: place it after the camera has moved.
   game.add({ update: () => (terrain as { afterCamera?: () => void }).afterCamera?.() }, 'Terrain after camera')
 
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
-  const { shell, audio, setPlayer } = initGameShell(game, player, terrain, query.get('name'))
+  const { shell, audio, setPlayer } = attachGameShell(game, player, terrain, lobby.shell, lobby.audio)
   if (glass) shell.driveGlassFrame = glass.driveFrame
   let postCheckQueued = false
   const materialChanged = params.onChange((id) => {
@@ -381,7 +408,10 @@ async function main(): Promise<void> {
   shell.onPlay = join
   // The in-play vehicle selector calls this; the shell takes it if it has the hook.
   ;(shell as unknown as { setVehicleSwap?: (swap: (kind: VehicleKind) => Vehicle | null) => void }).setVehicleSwap?.(swapVehicle)
-  if (query.has('autoplay')) shell.play()
+  // The world can be entered now: an entry asked for while it was being built is made here, at
+  // the point where ?autoplay=1 has always started (its timing unchanged).
+  lobby.ready()
+  if (query.has('autoplay') && !shell.playing && !shell.transitioning) shell.play(false, true)
 
   const panel = new ParamPanel()
   shell.setParamPanel(panel)
@@ -399,7 +429,7 @@ async function main(): Promise<void> {
   // Handles for debugging and automated checks.
   // The game does not run in a background tab: one controller, obeyed by the loop here. Audio
   // and the lobby follow the same controller from their own modules.
-  Object.assign(window, { mira: { planets, game, terrain, get player() { return slot.current }, slot, swapVehicle, materialize, params, panel, shell, audio, bots, camera, lifecycle, pause } })
+  Object.assign(window, { mira: { planets, game, terrain, get player() { return slot.current }, slot, swapVehicle, materialize, params, panel, shell, audio, bots, camera, lifecycle, pause, physics } })
   // Shell has captured invite/room state; quality, weather, resume and all other
   // startup URL readers have finished. Clean only the visible lobby, not a room
   // whose name happens to be "lobby". Autoplay is already in its intentional URL.

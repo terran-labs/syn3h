@@ -49,7 +49,21 @@ describe('physics WebAssembly loading', () => {
     let aborted = false
     const never = (_url: string, init: { signal: AbortSignal }) => new Promise<Response>(() => { init.signal.addEventListener('abort', () => { aborted = true }) })
     const error = await loadPhysicsWasm('/x.wasm', { fetch: never, timeoutMs: 20 }).catch(e => e)
-    expect(error).toBeInstanceOf(PhysicsLoadError); expect(error.detail).toMatch(/no answer within 0 seconds/); expect(aborted).toBe(true)
+    expect(error).toBeInstanceOf(PhysicsLoadError); expect(error.detail).toMatch(/nothing arrived for 0 seconds/); expect(aborted).toBe(true)
+  })
+  // A player on a slow connection: the download takes longer than the timeout but never stops.
+  // It must finish, not be cut off and restarted from nothing forever.
+  it('lets a slow download that keeps arriving finish past the timeout', async () => {
+    const bytes = new Uint8Array(readFileSync(new URL('../../node_modules/@dimforge/rapier3d-compat/dist/rapier_wasm3d_bg.wasm', import.meta.url)))
+    const step = Math.ceil(bytes.length / 8)
+    const slow = async () => new Response(new ReadableStream<Uint8Array>({ async start(c) { for (let i = 0; i < bytes.length; i += step) { await new Promise(r => setTimeout(r, 15)); c.enqueue(bytes.subarray(i, i + step)) } c.close() } }), { headers: { 'content-type': 'application/wasm' } })
+    const module = await loadPhysicsWasm('/x.wasm', { fetch: slow, timeoutMs: 40 })
+    expect(WebAssembly.Module.exports(module).length).toBeGreaterThan(100)
+  })
+  it('gives up on a download that stops arriving part way', async () => {
+    const stalls = async () => new Response(new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new Uint8Array([0, 97, 115, 109])) } }), { headers: { 'content-type': 'application/wasm' } })
+    const error = await loadPhysicsWasm('/x.wasm', { fetch: stalls, timeoutMs: 30 }).catch(e => e)
+    expect(error).toBeInstanceOf(PhysicsLoadError); expect(error.detail).toMatch(/nothing arrived/)
   })
   it('compiles the binary the package ships, the file the build emits', async () => {
     const bytes = readFileSync(new URL('../../node_modules/@dimforge/rapier3d-compat/dist/rapier_wasm3d_bg.wasm', import.meta.url))

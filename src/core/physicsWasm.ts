@@ -6,15 +6,18 @@
  *
  * There is one way to load it: the file is compiled while it downloads and the compiled module
  * is handed to Rapier's unchanged initialiser. That needs the server to send it as
- * application/wasm. There is no second path and no retry (the owner's ruling of 15 November
- * 2026): if the download or compile fails, or takes longer than the timeout, the error
- * reaches Game.init, the game does not start, and the page asks the player to reload.
+ * application/wasm. There is no second path (the owner's ruling of 15 November 2026). A failed
+ * download, or one with nothing arriving for the timeout, rejects; since 23 November 2026 the
+ * lobby opens without the engine and src/core/physicsGate.ts tries again in place, so a slow
+ * or broken connection never leaves the page needing a reload. A slow download that keeps
+ * arriving is never cut off: the timeout counts silence, not the whole download.
  *
  * The download is started by a line in index.html (written by the build plugin) while the
  * page is still being parsed, so it runs beside the main script. This module takes that
  * response over when its address matches; otherwise it makes the request itself. Either way
  * the file is requested once.
  */
+/** Give up when nothing has arrived for this long (no answer, or a download that stopped). */
 export const PHYSICS_LOAD_TIMEOUT_MS = 30000
 /** Thrown when the physics engine cannot be loaded. The start-failure notice shows `message` with a reload button, `detail` behind Details (graphicsSupport.ts). */
 export class PhysicsLoadError extends Error {
@@ -32,15 +35,20 @@ export async function loadPhysicsWasm(url: string, options: PhysicsWasmOptions =
   const timeoutMs = options.timeoutMs ?? PHYSICS_LOAD_TIMEOUT_MS
   const abort = new AbortController(), start = performance.now()
   physicsWasmLoad.url = url; physicsWasmLoad.ms = null; physicsWasmLoad.error = null
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => { abort.abort(); reject(new Error(`no answer within ${Math.round(timeoutMs / 1000)} seconds`)) }, timeoutMs) })
+  // The timer restarts whenever bytes arrive: it measures silence, so a slow but live download
+  // finishes however long it takes.
+  let timer: ReturnType<typeof setTimeout> | undefined, fail: (error: Error) => void = () => {}
+  const timeout = new Promise<never>((_, reject) => { fail = reject })
+  const arm = () => { clearTimeout(timer); timer = setTimeout(() => { abort.abort(); fail(new Error(`nothing arrived for ${Math.round(timeoutMs / 1000)} seconds`)) }, timeoutMs) }
+  arm()
   const load = (async () => {
     const early = typeof window === 'undefined' || options.fetch ? undefined : (window as unknown as { __miraPhysicsWasm?: { url: string; response: Promise<Response | Error> } }).__miraPhysicsWasm
     if (early) delete (window as unknown as { __miraPhysicsWasm?: unknown }).__miraPhysicsWasm
     const response = early?.url === url ? await early.response : await get(url, { signal: abort.signal })
     if (!(response instanceof Response)) throw response
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    return WebAssembly.compileStreaming(response)
+    arm()
+    return WebAssembly.compileStreaming(watched(response, arm))
   })()
   load.catch(() => { /* Reported through the race below. */ })
   try {
@@ -52,4 +60,11 @@ export async function loadPhysicsWasm(url: string, options: PhysicsWasmOptions =
     physicsWasmLoad.error = detail
     throw new PhysicsLoadError(detail)
   } finally { clearTimeout(timer) }
+}
+
+/** The same response, calling `progress` as each chunk of its body arrives. Status and headers are kept, so it still streams. */
+function watched(response: Response, progress: () => void): Response {
+  if (!response.body || typeof TransformStream !== 'function') return response
+  const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({ transform(chunk, out) { progress(); out.enqueue(chunk) } }))
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers })
 }

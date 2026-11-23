@@ -43,9 +43,15 @@ export function unityTorque(x: number, y: number, z: number): { x: number; y: nu
 
 let ready: Promise<void> | null = null
 
-/** Load the Rapier WASM module once. */
+/**
+ * Load the Rapier WASM module once. A failed load is forgotten, so the next call tries again
+ * (physicsGate.ts): Rapier keeps nothing from a failed initialisation.
+ */
 export function initPhysics(): Promise<void> {
-  if (!ready) ready = RAPIER.init()
+  if (!ready) ready = RAPIER.init().catch(error => {
+    ready = null
+    throw error
+  })
   return ready
 }
 

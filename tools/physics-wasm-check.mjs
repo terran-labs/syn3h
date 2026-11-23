@@ -8,9 +8,11 @@
  * more, there is exactly one Rapier .wasm of the package's size, and index.html starts its
  * download from the head.
  * In each browser: a healthy start fetches that file once, served as application/wasm, and
- * compiles it by streaming, never from bytes decoded in the page; with the file blocked the
- * page shows the reload message and button, the game is never started and no animation frame
- * loop is left running, and the button reloads into a working game.
+ * compiles it by streaming, never from bytes decoded in the page. With the file blocked the
+ * lobby still opens and works (Settings opens and closes), no world is built, the page shows
+ * no failure notice, and a planet chosen meanwhile waits with a plain message and a Try again
+ * button (src/core/physicsGate.ts, createLobby in src/ui/Shell.ts); with the file reachable
+ * again, Try again enters the world in the same page, without a reload.
  * Prints one JSON line per case and exits non zero if anything fails.
  */
 import { chromium, webkit } from 'playwright-core'
@@ -37,7 +39,7 @@ report({ case: 'build contents', scripts: scripts.map(s => ({ file: s.file, byte
   inlined.length === 0 && wasm.length === 1 && /^rapier_wasm3d_bg-[\w-]+\.wasm$/.test(wasm[0]) && wasmBytes[0] === 3082103 && preload)
 
 // ---- In the browser ----
-/** Records how WebAssembly is compiled and how many animation frame callbacks run. */
+/** Records how WebAssembly is compiled. */
 const watch = () => {
   const w = window; w.__wasm = []; w.__frames = 0
   const size = x => x instanceof ArrayBuffer || ArrayBuffer.isView(x) ? x.byteLength : 0
@@ -74,18 +76,26 @@ for (const name of which === 'both' ? ['chrome', 'webkit'] : [which]) {
         report({ browser: name, case: 'healthy start', loadMs: Date.now() - started, responses, compiles: s.wasm, backend: s.backend, phases: s.phases, firstDrawMs: s.firstDrawMs, errors },
           ok && streamed && fromBytes.length === 0 && responses.length === 1 && responses[0].status === 200 && /^application\/wasm\b/.test(responses[0].type) && s.fatal === 'none' && !errors.length)
       } else {
-        const shown = await page.waitForFunction(() => getComputedStyle(document.getElementById('fatal')).display !== 'none', null, { timeout: 90000 }).then(() => true, () => false)
-        await page.waitForTimeout(500)
-        const before = await page.evaluate(() => window.__frames)
-        await page.waitForTimeout(1500)
-        const s = await page.evaluate(() => ({ frames: window.__frames, text: document.getElementById('fatal').textContent, button: document.querySelector('#fatal button')?.textContent ?? null, game: typeof window.mira, shell: !!document.querySelector('.mira-shell') }))
+        // The lobby opens without the engine, and works.
+        const lobby = await page.waitForFunction(() => document.documentElement.dataset.boot === 'done' && !!window.mira?.shell?.galaxy, null, { timeout: 90000 }).then(() => true, () => false)
+        await page.keyboard.press('Shift')
+        await page.waitForFunction(() => !!document.querySelector('.galaxy-label.is-current') && !window.mira.shell.galaxy.opening, null, { timeout: 60000 }).catch(() => {})
+        await page.locator('.lobby-gear').first().click()
+        const settings = await page.waitForFunction(() => !!document.querySelector('#lobby-settings:not([hidden])'), null, { timeout: 20000 }).then(() => true, () => false)
+        await page.locator('.lobby-settings-close').first().click()
+        const noWorld = await page.evaluate(() => !window.mira.player && window.mira.physics?.state !== 'ready')
+        // A planet chosen now waits, says plainly why, and offers to try again.
+        await page.locator('.galaxy-label.is-current').focus(); await page.keyboard.press('Enter')
+        const offered = await page.getByRole('button', { name: 'Try again now', exact: true }).waitFor({ timeout: 60000 }).then(() => true, () => false)
+        const s = await page.evaluate(() => ({ message: document.querySelector('.entry-wait span')?.textContent ?? null, fatal: getComputedStyle(document.getElementById('fatal')).display, playing: window.mira.shell.playing, origin: performance.timeOrigin }))
         await page.screenshot({ path: `${shots}/${name}-blocked.png` })
-        // The only way on is the button: with the file reachable again it reloads into a running game.
+        // Reachable again: Try again gets in, in the same page.
         await page.unroute(/\.wasm(\?|$)/)
-        await page.click('#fatal button')
-        const recovered = await page.waitForFunction(() => window.mira?.game?.tick > 5, null, { timeout: 90000 }).then(() => true, () => false)
-        report({ browser: name, case: 'physics file blocked', message: s.text, button: s.button, framesDuring1500ms: s.frames - before, gameStarted: s.game !== 'undefined', lobbyBuilt: s.shell, reloadRecovered: recovered, errors },
-          shown && /physics engine could not be loaded/i.test(s.text ?? '') && /reload/i.test(s.text ?? '') && s.button === 'Reload' && s.frames === before && s.game === 'undefined' && !s.shell && recovered)
+        await page.getByRole('button', { name: 'Try again now', exact: true }).click().catch(() => {})
+        const entered = await page.waitForFunction(() => window.mira?.shell?.playing && !window.mira.shell.transitioning && window.mira.game.tick > 5, null, { timeout: 120000 }).then(() => true, () => false)
+        const samePage = await page.evaluate(() => performance.timeOrigin) === s.origin
+        report({ browser: name, case: 'physics file blocked, then reachable', lobbyOpened: lobby, settingsOpened: settings, noWorldWithoutEngine: noWorld, retryOffered: offered, message: s.message, fatalShown: s.fatal !== 'none', playingWhileBlocked: s.playing, enteredAfterRetry: entered, samePage, responses, errors },
+          lobby && settings && noWorld && offered && /physics engine has not arrived/.test(s.message ?? '') && s.fatal === 'none' && !s.playing && entered && samePage && !errors.length)
       }
       await context.close()
     }

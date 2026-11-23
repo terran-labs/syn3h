@@ -862,11 +862,20 @@ export class Shell implements System {
    * the wait is spent falling. Called from code (tests, autoplay, Return to Game) it is
    * shown without a flight, as it is for reduced motion. Entry still waits for graphics.
    */
-  play(descend = false): void {
+  /**
+   * Set while the world cannot be entered yet (the physics engine is still arriving, or the
+   * first world is still being built: createLobby). An entry asked for meanwhile is handed here
+   * and made again once it can be; returns true when it took the entry.
+   */
+  deferEntry?: (enter: () => void) => boolean
+
+  play(descend = false, automatic = false): void {
+    if (this.deferEntry?.(() => this.play(descend, automatic))) return
     if (!this.started) recordStartupPlayRequest()
     this.stopAttract()
     if (this.started) { this.closeMenu(); return }
-    this.requestEntryCursor()
+    // An automatic start (?autoplay=1) is nobody's gesture: it never asks for the cursor.
+    if (!automatic) this.requestEntryCursor()
     this.unlockAudio(); this.begin()
     if (descend && this.galaxy?.live && this.menuVisible && !matchMedia('(prefers-reduced-motion: reduce)').matches) { this.onPlay?.(); void this.descent(currentPlanet().id); return }
     this.onPlay?.(); void this.enterWithoutFlight()
@@ -893,6 +902,7 @@ export class Shell implements System {
     const id = galaxyId.split('~')[0], current = currentPlanet().id
     if (this.dropping) return true
     if (id === 'custom') return false
+    if (this.deferEntry?.(() => { this.tapWorld(galaxyId) })) return true
     if (this.invited && !this.started && id !== current) { this.say('You were invited to another world. You can change it once you are in, if the host allows.'); return true }
     if (!canEditWorld() && id !== current) { this.say('The host has locked this world.'); return true }
     if (!this.started) recordStartupPlayRequest()
@@ -1691,6 +1701,7 @@ export class Shell implements System {
   private savedEntering = false
   private async enterSavedWorld(entry: SavedWorld): Promise<void> {
     if (this.dropping || this.savedEntering) return
+    if (this.deferEntry?.(() => void this.enterSavedWorld(entry))) return
     this.savedEntering = true
     this.savedOutcomeStop?.()
     let applied = false, release: (() => void) | undefined
@@ -2249,9 +2260,70 @@ export class Shell implements System {
   }
 }
 
-/** Call after creating the player, before constructing ParamPanel. */
-export function initGameShell(game: Game, player: Vehicle, terrain: Terrain, entryName?: string | null): { shell: Shell; audio: GameAudio; setPlayer: (player: Vehicle) => void; dispose: () => void } {
-  const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio, entryName), 'Shell and lobby')
+/** What the lobby needs to know about the physics engine's download (src/core/physicsGate.ts). */
+export interface EngineGate {
+  readonly state: 'loading' | 'waiting' | 'ready'
+  readonly attempts: number
+  readonly nextDelayMs: number
+  retryNow(): void
+  onChange(listener: () => void): () => void
+}
+
+/**
+ * The lobby, built before the game has its renderer, physics engine or world, so it is drawn
+ * and usable while they arrive (the veil lifts when the Shell is built). Entering a world
+ * before they are ready waits: the request is kept, the same "Preparing world" line a normal
+ * entry shows says so, and the entry is made the moment `ready` is called. If the physics
+ * download fails, the line says so calmly, counts down to the automatic retry, and offers to
+ * try at once. Nothing is lost and the page never needs a reload.
+ */
+export function createLobby(game: Game, gate: EngineGate, entryName?: string | null): { shell: Shell; audio: GameAudio; ready(): void } {
+  const audio = new GameAudio(game.camera)
+  const shell = new Shell(game, audio, entryName)
+  const line = document.createElement('div')
+  line.className = 'entry-warm-progress entry-wait'
+  line.setAttribute('role', 'status')
+  const text = document.createElement('span')
+  const retry = document.createElement('button')
+  retry.type = 'button'; retry.className = 'entry-wait-retry'; retry.textContent = 'Try again now'; retry.hidden = true
+  retry.addEventListener('click', () => gate.retryNow())
+  line.append(text, retry)
+  let pending: (() => void) | undefined, countdown: ReturnType<typeof setInterval> | undefined
+  const show = () => {
+    clearInterval(countdown); countdown = undefined
+    if (!pending) { line.remove(); return }
+    if (!line.isConnected) shell.element.append(line)
+    const waiting = gate.state === 'waiting'
+    retry.hidden = !waiting
+    if (!waiting) { text.textContent = gate.attempts > 1 ? 'Fetching the physics engine again' : 'Preparing world'; return }
+    // Seconds to the automatic retry, counted down so the wait is visibly going somewhere.
+    const due = performance.now() + gate.nextDelayMs
+    const say = () => { text.textContent = `The physics engine has not arrived. Trying again in ${Math.max(1, Math.ceil((due - performance.now()) / 1000))} s.` }
+    say(); countdown = setInterval(say, 500)
+  }
+  const stop = gate.onChange(show)
+  shell.deferEntry = enter => {
+    // Kept as asked inside the tap or key press: audio may only start there.
+    if (!pending) recordStartupPlayRequest()
+    void audio.unlock().catch(() => {})
+    pending = enter
+    show()
+    return true
+  }
+  return {
+    shell, audio,
+    ready() {
+      stop(); shell.deferEntry = undefined
+      const enter = pending
+      pending = undefined; show()
+      enter?.()
+    },
+  }
+}
+
+/** Call after creating the player, before constructing ParamPanel. Adds the lobby built by createLobby to the game. */
+export function attachGameShell(game: Game, player: Vehicle, terrain: Terrain, shell: Shell, audio: GameAudio): { shell: Shell; audio: GameAudio; setPlayer: (player: Vehicle) => void; dispose: () => void } {
+  game.add(shell, 'Shell and lobby')
   shell.setVehicleKind(player.kind); shell.setTerrain(terrain); audio.setPlayer(player,terrain)
   let activePlayer = player
   activePlayer.name = shell.playerName
