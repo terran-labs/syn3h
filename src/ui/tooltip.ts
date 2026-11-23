@@ -8,6 +8,7 @@
  * as it shows, never per frame. Styled by .ui-tip (card-chrome.css).
  */
 const SHOW_DELAY_MS = 350
+const FOCUS_DELAY_MS = 450
 
 export function installTooltips(signal: AbortSignal): void {
   if (typeof matchMedia === 'undefined' || !matchMedia('(hover: hover)').matches) return
@@ -47,8 +48,12 @@ export function installTooltips(signal: AbortSignal): void {
     const to = (event as PointerEvent).relatedTarget
     if (!(to instanceof Node && el.contains(to))) hide(el)
   }, { signal, passive: true })
+  // Keyboard focus only: WebKit counts focus a sheet moves to its X after a click as visible, so the
+  // last input decides (cardClose.ts trackFocusModality). The short wait lets an opening sheet
+  // settle before the tip measures where its button is.
   document.addEventListener('focusin', event => {
-    const el = target(event); if (el?.matches(':focus-visible')) show(el, 0)
+    const el = target(event)
+    if (el?.matches(':focus-visible') && document.documentElement.dataset.focusBy !== 'pointer') show(el, FOCUS_DELAY_MS)
   }, { signal })
   document.addEventListener('focusout', event => { const el = target(event); if (el) hide(el) }, { signal })
   // A press acts on the button: the name has done its job.

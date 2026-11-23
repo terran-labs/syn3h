@@ -38,7 +38,7 @@ import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
 import { LobbySettings } from './LobbySettings'
-import { CARD_CLOSE } from './cardClose'
+import { CARD_CLOSE, trackFocusModality } from './cardClose'
 import { installTooltips } from './tooltip'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
@@ -506,6 +506,7 @@ export class Shell implements System {
     signal.addEventListener('abort', () => { unsubscribeInterface(); this.interfaceVeil.dispose() })
     this.glass(signal)
     installTooltips(signal)
+    trackFocusModality(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
     this.mountSavedWorlds()

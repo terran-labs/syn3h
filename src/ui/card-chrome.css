@@ -34,6 +34,9 @@ html .syn3h-shell.exploration-ui button.card-close path { fill: none; stroke: cu
 html .syn3h-shell.exploration-ui button.card-close:hover { outline: var(--control-hover-outline); outline-offset: -1px; background: transparent; }
 html .syn3h-shell.exploration-ui button.card-close:active { background: rgb(255 255 255 / .1); }
 html .syn3h-shell.exploration-ui button.card-close:focus-visible { outline: 2px solid white; outline-offset: 1px; }
+/* Focus moved to the X by a sheet opening after a click or tap is not keyboard focus: no ring
+   (cardClose.ts trackFocusModality). Opened from the keyboard, or after any key, the ring shows. */
+html[data-focus-by="pointer"] .syn3h-shell.exploration-ui button.card-close:focus-visible { outline-color: transparent; }
 /* The in-play guide's header: the X at the right of the title row. */
 html .syn3h-shell.exploration-ui .in-play-about > header .card-close { margin: -4px -12px -4px 0; }
 /* The lobby Settings card: the X sits in the header's right corner, level with the title. */

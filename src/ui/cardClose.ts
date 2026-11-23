@@ -5,3 +5,22 @@
  * .card-close (card-chrome.css), larger on touch screens.
  */
 export const CARD_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6L18 18M18 6L6 18"/></svg>'
+
+/**
+ * Which input moved focus last: `data-focus-by="pointer"` or `"keyboard"` on <html>.
+ *
+ * A sheet moves focus to its X as it opens, so keyboard and screen reader users start there. WebKit
+ * (and Chromium when nothing had focus) treats that scripted focus as :focus-visible and draws the
+ * keyboard ring, so a click or tap open showed a ringed X (the owner, 23 November 2026). The X
+ * hides its ring while the last input was a pointer or touch (card-chrome.css); a keyboard open, or
+ * any key after, shows it again.
+ */
+export function trackFocusModality(signal: AbortSignal): void {
+  const root = document.documentElement
+  const set = (by: 'pointer' | 'keyboard') => { if (root.dataset.focusBy !== by) root.dataset.focusBy = by }
+  addEventListener('pointerdown', () => set('pointer'), { capture: true, passive: true, signal })
+  addEventListener('keydown', event => {
+    if (event.key === 'Shift' || event.key === 'Control' || event.key === 'Alt' || event.key === 'Meta') return
+    set('keyboard')
+  }, { capture: true, signal })
+}
