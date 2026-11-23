@@ -4,7 +4,11 @@
  */
 import { defineParam } from '../../../shared/params'
 
-const group = 'Gear effects', scope = 'client' as const
+// How impacts and fireworks look is the world's, not one player's: everyone in the room sees the
+// same sparks and bursts (the owner, 22 November 2026: gear settings are "synchronized across all
+// machines in the world"). Each player's quality level still decides how much of it their own
+// screen draws (ImpactFx.ts, Fireworks.ts); the detail switch below stays personal.
+const group = 'Gear effects', scope = 'world' as const
 /** Sparks from one Plasma Tag impact at High; Low and Minimal draw a share, Thunder about twice as many. */
 export const impactSparks = defineParam({ id: 'fx.impact.sparks', label: 'Impact sparks', group, scope, default: 28, min: 0, max: 64, step: 1 })
 /** Spark speed off the surface, m/s. */
@@ -32,4 +36,4 @@ export const fireworkCrowd = defineParam({ id: 'fx.fireworks.crowd', label: 'Fir
  * Plasma Thunder's fireworks: how much of High's extra stars, glitter, crackle and smoke a burst
  * draws at High, from Low's counts (0) to High's (1). Below 1 it is cheaper without a reload.
  */
-export const fireworkHighDetail = defineParam({ id: 'fx.fireworks.highDetail', label: 'Firework detail at High', group, scope, default: 1, min: 0, max: 1, step: 0.05 })
+export const fireworkHighDetail = defineParam({ id: 'fx.fireworks.highDetail', label: 'Firework detail at High', group: 'Graphics', scope: 'client', default: 1, min: 0, max: 1, step: 0.05 })

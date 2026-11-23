@@ -87,10 +87,10 @@ export const bungeeVehicles = defineParam({
  * seconds (0 for none), and how long a hook that missed takes to sail away with its cord.
  */
 export const grappleReleaseTime = defineParam({
-  id: 'fx.grapple.release', label: 'Let-go cord fades over (s)', group, scope: 'client',
+  id: 'fx.grapple.release', label: 'Let-go cord fades over (s)', group, scope: 'world',
   default: 0.7, min: 0, max: 3, step: 0.05,
 })
 export const grappleSailTime = defineParam({
-  id: 'fx.grapple.sail', label: 'Missed hook sails for (s)', group, scope: 'client',
+  id: 'fx.grapple.sail', label: 'Missed hook sails for (s)', group, scope: 'world',
   default: 1.2, min: 0, max: 4, step: 0.05,
 })
