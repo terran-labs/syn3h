@@ -68,6 +68,12 @@ const RING_SHOTS: (RingShot & { id: string })[] = [
   { id: 'lava-night', title: 'Night on the volcano', caption: 'Night on the volcanic world: the sea is lava.' },
   { id: 'swamp-river', title: 'Through the Mire', caption: 'A river through the Mire.' },
 ]
+/**
+ * The shared accordion arrow, a copy of ACCORDION_ARROW from accordionArrow.ts on the cards
+ * builder's branch (ui/card-round-2), not yet on main. Once it lands, import it from there and
+ * delete this copy and the matching .accordion-arrow rules in welcome.css.
+ */
+const ACCORDION_ARROW = '<svg class="accordion-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5L10.5 8L6 12.5"/></svg>'
 const k = (key: string, label = key) => `<kbd aria-label="${escape(label)}">${escape(key)}</kbd>`
 
 /** The five pieces of gear, each with a mark drawn in SVG. Order as the gear rack shows them. */
@@ -192,6 +198,7 @@ export function mountWelcome(body: HTMLElement, options: WelcomeOptions = {}): W
   if (options.labelledBy) body.setAttribute('aria-labelledby', options.labelledBy)
   body.insertAdjacentHTML('beforeend', html())
   // The licence files are frozen resources: a pinned build links its own release's copies.
+  body.querySelector('.welcome-credits > summary')?.insertAdjacentHTML('beforeend', ACCORDION_ARROW)
   for (const anchor of body.querySelectorAll<HTMLAnchorElement>('a[href^="/brand/licenses/"]')) anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
   const ring = wireRing(body.querySelector<HTMLElement>('.welcome-ring')!, RING_SHOTS, options.signal)
   return { opened: () => { loadShots(body); ring.start() } }
