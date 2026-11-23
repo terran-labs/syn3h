@@ -165,10 +165,32 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   const g = () => page.evaluate(() => window.syn3h.shell.graphics)
   const world = () => page.evaluate(() => ({ planet: window.syn3h.planets.currentPlanet().id, seed: window.syn3h.params.get('world.seed').value }))
   const settle = id => page.waitForFunction(id => { const p = document.querySelector('.lobby-panels'); return p.dataset.activePanel === id && p.dataset.busy === 'false' }, id, { timeout: 30000 })
+  // Bugs caught: the page, a panel or a sheet can be pushed sideways by a finger (anything a
+  // player can scroll is wider than its box), or a control a player needs, or text they read, is
+  // cut off by the screen's edge. A picture that is neither a control nor text may run past the
+  // edge on purpose (Welcome's carousel: the pictures either side of the front one), as long as
+  // nothing then scrolls sideways; a figure's caption kept for screen readers is clipped to a
+  // pixel, so it is not text anyone reads.
   const fits = async name => {
     const overflow = await page.evaluate(() => {
-      const wide = [...document.querySelectorAll('.lobby-panels > section:not([hidden]) *, .join-view:not([hidden]) *, dialog.lobby-sheet[open] .lobby-sheet-body *')].filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && (r.left < -1 || r.right > innerWidth + 1) })
-      return wide.slice(0, 3).map(el => el.className || el.tagName)
+      const scope = '.lobby-panels > section:not([hidden]), .join-view:not([hidden]), dialog.lobby-sheet[open] .lobby-sheet-body'
+      const problems = []
+      const page = document.scrollingElement
+      if (page.scrollWidth > innerWidth + 1) problems.push(`the page scrolls sideways (${page.scrollWidth} px)`)
+      const roots = [...document.querySelectorAll(scope)], all = roots.flatMap(root => [root, ...root.querySelectorAll('*')])
+      for (const el of all) {
+        // Only auto and scroll can be moved by a finger; hidden and clip cannot.
+        if (['auto', 'scroll'].includes(getComputedStyle(el).overflowX) && el.scrollWidth > el.clientWidth + 1) problems.push(`${el.className || el.tagName} scrolls sideways`)
+      }
+      const reachable = el => el.matches('a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"]), [role=button], [contenteditable=true]') && !el.disabled && !el.closest('[inert]')
+      const readable = el => [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())
+      for (const el of all) {
+        const r = el.getBoundingClientRect(), style = getComputedStyle(el)
+        if (r.width <= 1 || r.height <= 1 || style.visibility === 'hidden' || !(r.left < -1 || r.right > innerWidth + 1)) continue
+        if (reachable(el)) problems.push(`a control is cut off: ${el.className || el.tagName}`)
+        else if (readable(el)) problems.push(`text is cut off: ${el.className || el.tagName}`)
+      }
+      return problems.slice(0, 3)
     })
     check(overflow.length === 0, `${view.name} ${name}: wider than the screen: ${overflow.join(', ')}`)
     await page.screenshot({ path: `${out}/${label}-guest-${view.name}-${name}.png` })

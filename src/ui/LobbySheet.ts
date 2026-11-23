@@ -36,6 +36,15 @@ export interface LobbySheetOptions {
   cue?(): void
   /** True while the wordmark is still moving to stand over an open panel: the sheet follows it. */
   following?(): boolean
+  /** The reading column's widest, in CSS px, on a computer or a tablet (680 unless set). */
+  width?: number
+  /**
+   * The body reaches out sideways past the column to both screen edges, so a row may draw there
+   * (Welcome's carousel puts its side pictures there). The column itself, the panel, its shade
+   * and its X stay where they are; a tap out there still closes. How far, in px past the
+   * column's text on each side, is --sheet-reach-left and --sheet-reach-right on the body.
+   */
+  bleed?: boolean
 }
 
 let sheets = 0
@@ -56,6 +65,10 @@ export class LobbySheet {
     this.element.setAttribute('aria-labelledby', `${id}-title`)
     this.panel.className = 'lobby-sheet-panel'
     const title = document.createElement('h2'); title.id = `${id}-title`; title.className = 'lobby-sheet-title'; title.textContent = options.title
+    // showModal() focuses the dialog's first control and scrolls it into view: in Welcome that
+    // was the carousel's arrow below the screen's edge, which scrolled the whole dialog up 21 px
+    // and lifted the panel into the name (lobby-sheet-name.mjs). The X takes that focus instead.
+    this.close_.autofocus = true
     this.close_.type = 'button'; this.close_.className = 'lobby-sheet-close lobby-close card-close'; this.close_.setAttribute('aria-label', 'Close'); this.close_.dataset.tip = 'Close'
     // The lobby's one close control, the same in Welcome, Updates and Settings (lobby-sheet.css).
     this.close_.innerHTML = CARD_CLOSE
@@ -68,6 +81,11 @@ export class LobbySheet {
     this.close_.addEventListener('click', () => this.close(), { signal })
     // A tap on the dialog itself is a tap outside the panel: close, and let it do nothing else.
     this.element.addEventListener('pointerdown', event => { if (event.target === this.element) { event.preventDefault(); this.close() } }, { signal })
+    // With bleed the body reaches past the column: a tap on it out there is a tap outside too.
+    this.body.addEventListener('pointerdown', event => {
+      const c = this.column
+      if (event.target === this.body && c && (event.clientX < c.left || event.clientX > c.right)) { event.preventDefault(); this.close() }
+    }, { signal })
     // The dialog's own Escape (cancel) closes through here, with the fade.
     this.element.addEventListener('cancel', event => { event.preventDefault(); this.close() }, { signal })
     // While open the sheet owns the keyboard. Escape and Tab are its own, taken first. Every
@@ -100,7 +118,7 @@ export class LobbySheet {
   private frame(): Box {
     const w = innerWidth, h = innerHeight, phone = w < 600 || h < 500
     // One reading column, centred: the contents stand where the panel's body stood.
-    const width = phone ? w - 16 : Math.min(680, w - 48)
+    const width = phone ? w - 16 : Math.min(this.options.width ?? 680, w - 48)
     // Under the name, which rises to stand over the panel (Galaxy.markLift), so the two read as
     // one object; on a phone as well, while that leaves the panel at least half the screen.
     const edges = this.options.edges?.(), under = edges ? Math.max(...edges.bottom.map(p => p[1])) + (phone ? 10 : 18) : 0
@@ -122,6 +140,24 @@ export class LobbySheet {
   private layout(): void {
     const frame = this.frame()
     Object.assign(this.panel.style, { left: `${frame.left}px`, top: `${frame.top}px`, width: `${frame.width}px`, height: `${frame.height}px` })
+    if (this.options.bleed) this.reach(frame)
+  }
+
+  /** The column's text, in viewport px, while the body reaches past it (bleed); else null. */
+  private column: { left: number; right: number } | null = null
+  /**
+   * bleed: each side of the body moves out to the screen's edge, with as much padding added, so
+   * its content box (the column) stays put and its overflow edge (where a scrolling box clips)
+   * moves out. The stylesheet's own padding is read with the inline cleared.
+   */
+  private reach(frame: Box): void {
+    const body = this.body.style
+    body.marginLeft = body.marginRight = body.paddingLeft = body.paddingRight = ''
+    const style = getComputedStyle(this.body), left = parseFloat(style.paddingLeft) || 0, right = parseFloat(style.paddingRight) || 0
+    const outLeft = Math.max(0, Math.floor(frame.left)), outRight = Math.max(0, Math.floor(innerWidth - frame.left - frame.width))
+    Object.assign(body, { marginLeft: `${-outLeft}px`, marginRight: `${-outRight}px`, paddingLeft: `${left + outLeft}px`, paddingRight: `${right + outRight}px` })
+    body.setProperty('--sheet-reach-left', `${outLeft + left}px`); body.setProperty('--sheet-reach-right', `${outRight + right}px`)
+    this.column = { left: frame.left + left, right: frame.left + frame.width - right }
   }
 
   /**

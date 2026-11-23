@@ -62,6 +62,7 @@ export function placeTip(box: { left: number; top: number; right: number; bottom
   if (box.left - off - w >= MARGIN) { const y = alongY(); return { x: box.left - off - w, y, side: 'right', at: cy - y } }
   const y = alongY(); return { x: Math.min(box.right + off, view.width - w - MARGIN), y, side: 'left', at: cy - y }
 }
+const FOCUS_DELAY_MS = 450
 
 export function installTooltips(signal: AbortSignal): void {
   if (typeof matchMedia === 'undefined' || !matchMedia('(hover: hover)').matches) return
@@ -100,8 +101,12 @@ export function installTooltips(signal: AbortSignal): void {
     const to = (event as PointerEvent).relatedTarget
     if (!(to instanceof Node && el.contains(to))) hide(el)
   }, { signal, passive: true })
+  // Keyboard focus only: WebKit counts focus a sheet moves to its X after a click as visible, so the
+  // last input decides, and with no input yet it is not a keyboard's (cardClose.ts trackFocusModality). The short wait lets an opening sheet
+  // settle before the tip measures where its button is.
   document.addEventListener('focusin', event => {
-    const el = target(event); if (el?.matches(':focus-visible')) show(el, 0)
+    const el = target(event)
+    if (el?.matches(':focus-visible') && document.documentElement.dataset.focusBy === 'keyboard') show(el, FOCUS_DELAY_MS)
   }, { signal })
   document.addEventListener('focusout', event => { const el = target(event); if (el) hide(el) }, { signal })
   // A press acts on the button: the name has done its job.

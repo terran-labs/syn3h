@@ -70,6 +70,29 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     assert.deepEqual(await panel.locator('.wi-card').evaluateAll((cards) => cards.filter((c) => c.getClientRects().length).map((c) => c.dataset.section)), ['performance', 'sound', 'glass', 'play'])
     assert.match(await panel.locator('.wi-card[data-section=sound] .wi-sum').textContent(), /Music \d+% · Master \d+%/)
 
+    // Glass: Style and Tint, and the Liquid style's tuning in one fold, closed at first, there only
+    // at Liquid. Bug caught: Liquid's sliders shown at Frost or Flat, where they do nothing, or
+    // missing at Liquid (the owner, 22 November 2026).
+    const glass = panel.locator('.wi-card[data-section=glass]'), style0 = await page.evaluate(() => window.syn3h.params.get('hud.glass').value)
+    await tap(glass.locator('.wi-head'))
+    await glass.locator('.wi-row[data-id="hud.glass"]').waitFor({ state: 'visible' })
+    await page.evaluate(() => window.syn3h.params.set('hud.glass', 0)); await page.waitForTimeout(400)
+    const fold = glass.locator('details.lobby-liquid')
+    assert.ok(await fold.isVisible(), `${mode}: Liquid glass is there at Liquid`)
+    assert.equal(await fold.evaluate((d) => d.open), false, `${mode}: Liquid glass starts closed`)
+    // Liquid's code (and most of its settings) loads once Liquid is chosen; then the fold opens.
+    await page.waitForFunction(() => window.syn3h.params.get('glass.thickness'), null, { timeout: 20000 })
+    await tap(fold.locator('summary'))
+    const liquidIds = await page.evaluate(() => window.syn3h.params.all().filter((p) => ['Glass', 'Clear lens'].includes(p.def.group)).map((p) => p.def.id).sort())
+    assert.ok(liquidIds.length > 0, `${mode}: the Glass and Clear lens settings are registered`)
+    assert.deepEqual(await fold.locator('.wi-row').evaluateAll((rows) => rows.map((r) => r.dataset.id).sort()), liquidIds, `${mode}: Liquid glass holds the Glass and Clear lens settings`)
+    await tap(fold.locator('summary'))
+    assert.equal(await glass.locator(':scope > .wi-body > .wi-row').count(), 2, `${mode}: Style and Tint stand above the fold`)
+    await page.evaluate(() => window.syn3h.params.set('hud.glass', 1)); await page.waitForTimeout(500)
+    assert.ok(await fold.evaluate((d) => d.closest('.lobby-liquid-wrap').hidden && d.closest('.lobby-liquid-wrap').inert), `${mode}: at Frost Liquid glass is gone`)
+    await page.evaluate((v) => window.syn3h.params.set('hud.glass', v), style0); await page.waitForTimeout(400)
+    await tap(glass.locator('.wi-head'))
+
     // Sound: music and master volume and mute; the world's own sounds are not here.
     await tap(panel.locator('.wi-card[data-section=sound] .wi-head'))
     const sound = panel.locator('.wi-card[data-section=sound]')
@@ -171,10 +194,14 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
         await page.waitForTimeout(700)
         const fit = await page.evaluate(() => {
           const card = document.querySelector('#lobby-settings').getBoundingClientRect(), dock = document.querySelector('.lobby-gear-dock').getBoundingClientRect()
+          const gear = document.querySelector('.lobby-gear-dock .lobby-gear').getBoundingClientRect(), welcome = document.querySelector('.lobby-gear-dock .lobby-about').getBoundingClientRect()
           const mark = window.syn3h.shell.galaxy?.wordmarkScreenBox?.() ?? null
-          return { card: card.toJSON(), dock: dock.toJSON(), mark }
+          return { card: card.toJSON(), dock: dock.toJSON(), gear: gear.toJSON(), welcome: welcome.toJSON(), mark }
         })
-        assert.ok(fit.card.bottom <= fit.dock.top, `${width}x${height}: card above the buttons ${JSON.stringify(fit)}`)
+        // It grows out of Settings (the owner, 23 November 2026): its lower edge is the button, and
+        // Welcome below stays clear.
+        assert.ok(Math.abs(fit.card.bottom - fit.gear.bottom) <= 1, `${width}x${height}: card's foot on Settings ${JSON.stringify(fit)}`)
+        assert.ok(fit.card.bottom <= fit.welcome.top, `${width}x${height}: card clear of Welcome ${JSON.stringify(fit)}`)
         assert.ok(Math.abs(fit.card.right - fit.dock.right) <= 1, `${width}x${height}: card's right edge on the buttons' ${JSON.stringify(fit)}`)
         // It may grow to the top safe area (the owner, 21 November 2026), never past it.
         assert.ok(fit.card.top >= 0, `${width}x${height}: card inside the screen ${JSON.stringify(fit)}`)

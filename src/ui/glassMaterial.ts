@@ -3,6 +3,15 @@ import { qualityLevel } from '../core/quality'
 import { glassStyle } from './inspector/params'
 
 export const glassLabels = ['Liquid', 'Frost', 'Flat'] as const
+/**
+ * The parameter registry's groups that tune the Liquid style: the Glass group (frost width, tint
+ * strength, face brightness, rim highlight, outer hairline, backdrop saturation, press growth,
+ * press brightness; fx/post/regularSettings.ts) and the Clear lens group (thickness, bevel, index,
+ * dispersion; fx/post/GlassPost.ts). Their rows show only while Liquid is the style, folded under
+ * Style and Tint (the owner, 22 November 2026). One list for the lobby's Settings card and the
+ * in-play panels, so the two cannot drift.
+ */
+export const LIQUID_TUNING_GROUPS: readonly string[] = ['Glass', 'Clear lens']
 export const liquidQualityHint = 'Liquid glass needs Medium quality or higher'
 export const liquidEligible = () => qualityLevel.value >= 2
 export const liquidSelected = () => glassStyle.value === 0 && liquidEligible()

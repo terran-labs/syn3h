@@ -1,11 +1,12 @@
 /**
- * Welcome's pictures turning in space, after the "Syn3h in Action" panel on terranlabs.com
- * (src/concepts/descent/rows/syn3h/ScreensPanel.tsx there; the owner, 21 November 2026: "Pull in
- * the carousel from our Terran Labs media previewer instead"). Plain DOM and CSS (welcome.css):
- * the front picture faces you, one either side stands back and turns away, the rest wait behind
- * them unseen; every few seconds they move round one place, and the front one's title and caption
- * show beneath it. (A true ring, as on terranlabs.com, reaches past a phone's column; drawn tighter
- * its cards cut through each other: the phone layout check, 22 November 2026.) The arrows, or a tap on a card, take over, and
+ * Welcome's pictures in a row, after the "Syn3h in Action" panel on terranlabs.com (the owner, 21
+ * November 2026: "Pull in the carousel from our Terran Labs media previewer instead"). Plain DOM
+ * and CSS (welcome.css): the front picture is the full width of the column, and one either side
+ * stands outside the column, smaller and dimmed, cut off by the sheet or the screen (the owner,
+ * 22 November 2026: "the image itself went the full width of the content region, and then the
+ * images left and right ... arranged outside of the primary content region width"); the rest
+ * wait unseen beyond them. Every few seconds they move round one place, and the front one's title
+ * and caption show beneath it. The arrows, or a tap on a card, take over, and
  * the ring stops turning by itself from then on. Under reduced motion it never turns by itself
  * and moves without a glide.
  *
@@ -15,8 +16,8 @@
 
 export interface RingShot { title: string; caption: string }
 
-/** How far either side of the front its neighbours stand, in card widths. */
-export const RING_SIDE_X = 0.45
+/** How large the pictures either side of the front one are drawn, as a share of it. */
+export const RING_SIDE_SCALE = 0.78
 /** Seconds between turns while nobody has touched the ring, as on terranlabs.com. */
 export const RING_TURN_MS = 5200
 
@@ -52,14 +53,13 @@ export function wireRing(root: HTMLElement, shots: readonly RingShot[], signal?:
       // behind them. Its place, depth and angle follow from this alone (welcome.css).
       const off = ((i - current) % count + count + Math.floor(count / 2)) % count - Math.floor(count / 2)
       const away = Math.abs(off), side = Math.sign(off)
-      card.style.setProperty('--x', String(side * RING_SIDE_X))
-      card.style.setProperty('--z', String(away === 0 ? 0 : away === 1 ? -0.5 : -0.9))
-      card.style.setProperty('--ry', `${-side * 40}deg`)
+      // The slot: 0 the front, 1 just outside the column, 2 beyond that (unseen).
+      card.style.setProperty('--x', String(side * Math.min(away, 2)))
+      card.style.setProperty('--s', String(away === 0 ? 1 : RING_SIDE_SCALE))
       card.style.setProperty('--away', String(away))
       // The unseen ones behind take no taps.
       card.style.pointerEvents = away >= 2 ? 'none' : ''
-      // Nearer cards paint over farther ones even where a browser does not sort the 3D scene
-      // (WebKit drew the side cards over the front one in document order).
+      // The front one paints over the rest as they pass behind it.
       card.style.zIndex = String(10 - away)
       card.toggleAttribute('data-front', i === current)
       card.setAttribute('aria-hidden', String(i !== current))

@@ -55,14 +55,16 @@
    inside it from pressing the whole card. Nothing inside it is glass: the in-game cards it reuses
    are plain sections here, parted by a hairline. */
 .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
-  /* It stands on the button stack in the lower right (Settings and Welcome, 2 x 44 px, an 8 px
-     gap, the edge), right edges aligned, and grows upward out of Settings as far as the top safe
-     area on any screen (the owner, 21 November 2026: "the full remaining height above the
-     button"); taller contents scroll inside. The wordmark may show through the glass. */
-  --card-foot: calc(max(16px, env(safe-area-inset-bottom)) + 108px);
-  display: flex; z-index: 60; top: auto; bottom: var(--card-foot); right: max(16px, env(safe-area-inset-right));
-  height: auto; max-height: calc(100dvh - var(--edge-top, 28px) - var(--card-foot)); transform-origin: 100% 100%;
-  padding: 10px 6px 12px;
+  /* It grows out of Settings (the owner, 23 November 2026): its lower edge is the button, its foot
+     standing exactly where the button stands (--gear-*, measured as it opens, LobbySettings.anchor),
+     right edges aligned, and it reaches up as far as the top safe area (the owner, 21 November
+     2026: "the full remaining height above the button"); taller contents scroll inside. It opens
+     and closes about the button's centre. Welcome below keeps its place. */
+  --card-foot: var(--gear-bottom, calc(max(16px, env(safe-area-inset-bottom)) + 52px));
+  display: flex; z-index: 60; top: auto; bottom: var(--card-foot); right: var(--gear-right, max(16px, env(safe-area-inset-right)));
+  height: auto; max-height: calc(100dvh - var(--edge-top, 28px) - var(--card-foot));
+  transform-origin: calc(100% - var(--gear-width, 148px) / 2) calc(100% - var(--gear-height, 44px) / 2);
+  padding: 10px 6px calc(var(--gear-height, 44px) + 6px);
   /* The whole filter, not only --glass-blur: --glass-frost is resolved where it is defined (:root),
      so a blur set here alone never reached it (the card frosted at 3 px and labels read through). */
   --glass-radius: var(--halo-r, 16px); --glass-body: rgb(12 12 14 / .72); --glass-body-hover: rgb(12 12 14 / .72);
@@ -103,12 +105,28 @@ html .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-card > .wi-
 .world-inspector.lobby-settings .host-controls { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
 .world-inspector.lobby-settings .host-controls legend { display: none; }
 
+/* The card's lower edge: Settings, drawn where the button stands, in the button's type. A press
+   closes the card back into the button. The button itself hides under the card once it is open. */
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot {
+  position: absolute; right: 0; bottom: 0; z-index: 1; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: flex-start; gap: 10px;
+  width: var(--gear-width, 148px); height: var(--gear-height, 44px); min-height: 0; margin: 0; padding: 0 16px 0 14px;
+  border: 0; border-radius: var(--glass-control-radius, 24px); background: transparent; box-shadow: none; text-shadow: none;
+  color: #fff; font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; text-align: left; cursor: pointer;
+}
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot:hover { background: transparent; box-shadow: none; }
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot:focus-visible { outline: 2px solid white; outline-offset: -3px; }
+.world-inspector.lobby-settings > .lobby-settings-foot .lobby-control-icon { width: 16px; height: 16px; flex: none; overflow: visible; }
+.world-inspector.lobby-settings > .lobby-settings-foot .lobby-control-icon path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.lobby-gear-dock .lobby-gear.is-under-card { visibility: hidden; }
+
 /* Phones: one full-width card with its own close control, as the in-game panels are; the buttons
-   step aside while it is open. It takes the height its rows need, up to the whole screen. */
+   step aside while it is open. It takes the height its rows need, up to the whole screen, and
+   grows up out of Settings as on a desktop. */
 @media (max-width: 700px), (max-height: 500px) and (pointer: coarse) {
   .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
     left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); width: auto;
-    top: max(10px, env(safe-area-inset-top)); bottom: auto; height: auto; max-height: calc(100dvh - max(10px, env(safe-area-inset-top)) - max(10px, env(safe-area-inset-bottom))); transform-origin: 50% 0;
+    top: auto; bottom: var(--card-foot); height: auto; max-height: calc(100dvh - max(10px, env(safe-area-inset-top)) - var(--card-foot));
   }
   .lobby-gear-dock.is-open:not(.is-beside-sheet) { visibility: hidden; }
   /* The panel covers the lobby here, so the lobby behind it dims: a full-screen backdrop with
@@ -121,13 +139,14 @@ html .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-card > .wi-
   .syn3h-shell.exploration-ui .lobby-version-dock .lobby-version { padding: 0 12px; font-size: 11px; letter-spacing: .06em; }
 }
 @media (max-height: 500px) and (pointer: coarse) and (orientation: landscape) {
-  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { left: auto; width: min(560px, calc(100vw - 20px)); top: 6px; max-height: calc(100dvh - 12px); padding: 6px; gap: 4px; }
+  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { left: auto; width: min(560px, calc(100vw - 20px)); top: auto; max-height: calc(100dvh - 6px - var(--card-foot)); padding: 6px 6px calc(var(--gear-height, 44px) + 4px); gap: 4px; }
   .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { padding-block: 0; }
   .lobby-gear-dock { gap: 5px; right: max(12px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
 }
 /* Touch: every control a full 44 px target. */
 @media (pointer: coarse) {
   .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-control { height: 44px; min-height: 44px; font-size: 11px; letter-spacing: .18em; gap: 8px; padding: 0 12px 0 12px; }
+  .syn3h-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot { font-size: 11px; letter-spacing: .18em; gap: 8px; padding: 0 12px; }
 }
 
 /* Beside an open sheet (Shell moves the dock into the sheet's dialog): the open one shows as
@@ -138,3 +157,17 @@ dialog.lobby-sheet .lobby-gear-dock { z-index: 2; }
   dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet { left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); width: auto; grid-auto-flow: column; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .syn3h-shell.exploration-ui dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet .lobby-control { justify-content: center; gap: 6px; padding: 0 8px; letter-spacing: .12em; font-size: 10.5px; }
 }
+
+/* The Liquid style's tuning in the Glass card: one fold under Style and Tint, closed at first, there
+   only at Liquid (LobbySettings.syncLiquid). Its frame opens from nothing to the fold's height, so
+   the rows below move rather than jump; the shared accordion arrow turns as the fold opens. */
+.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid-wrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .24s cubic-bezier(.2, .8, .2, 1), opacity .2s; }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid-wrap.is-present { grid-template-rows: 1fr; opacity: 1; }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid { min-height: 0; overflow: hidden; }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 6px; list-style: none; cursor: pointer;
+  font: 500 11.5px/1.2 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; color: var(--s3-dim);
+}
+.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid > summary::-webkit-details-marker { display: none; }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-liquid > summary:focus-visible { outline: 2px solid var(--s3-ink); outline-offset: 2px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .syn3h-shell.exploration-ui .lobby-settings .lobby-liquid-wrap { transition: none; } }

@@ -21,7 +21,8 @@
  * is open and returns to Settings. Closed, it is detached from the page, so the in-game rail stays
  * the only `.world-inspector` element there.
  */
-import { glassLabels } from './glassMaterial'
+import { glassLabels, LIQUID_TUNING_GROUPS } from './glassMaterial'
+import { ACCORDION_ARROW } from './accordionArrow'
 import { params } from '../../shared/params'
 import type { QualitySource } from '../core/quality'
 import { createFrozenResourceResolver } from '../core/frozenResources'
@@ -107,9 +108,13 @@ export interface LobbySettingsOptions {
 }
 
 
+/** The card's one motion, shown to hidden reversed: a fade and a scale about the Settings button. */
+const CARD_HIDDEN_TO_SHOWN: Keyframe[] = [{ opacity: 0, transform: 'scale(.9)' }, { opacity: 1, transform: 'none' }]
+
 export class LobbySettings {
   /** Settings, Welcome and Updates, for the lobby to place in its lower right. */
   readonly dock = document.createElement('div')
+  private readonly foot = document.createElement('button')
   readonly gear = document.createElement('button')
   /** The version's own corner, the lower left, for the lobby to place beside the dock. */
   readonly versionDock = document.createElement('div')
@@ -162,6 +167,16 @@ export class LobbySettings {
     panel.querySelector('.wi-top')?.remove()
     panel.querySelector('.wi-cards')!.before(head)
     head.querySelector('.lobby-settings-close')!.addEventListener('click', () => this.close(), { signal })
+    // The card grows out of Settings (the owner, 23 November 2026): its lower edge is the button,
+    // drawn where the button stands, so the pointer that opened it is inside that edge. The real
+    // button hides under it while it is open (the space it holds keeps Welcome still), and a
+    // press on the edge closes the card back into the button.
+    this.foot.type = 'button'; this.foot.className = 'lobby-settings-foot'
+    this.foot.setAttribute('aria-label', 'Close settings'); this.foot.setAttribute('aria-controls', 'lobby-settings'); this.foot.setAttribute('aria-expanded', 'true')
+    this.foot.innerHTML = this.gear.innerHTML
+    panel.append(this.foot)
+    this.foot.addEventListener('click', () => this.close(), { signal })
+    addEventListener('resize', () => { if (this.shown) this.anchor() }, { signal })
 
     // Graphics first: the in-game Performance card on the same quality controller.
     this.performance = new PerformancePanel(this.host, () => {}, options.quality, this.inspector)
@@ -182,12 +197,31 @@ export class LobbySettings {
     })
     // The browser holds sound until a first gesture; the summary says so quietly until it starts.
     window.addEventListener(SOUND_STARTED, () => this.inspector.update(), { signal })
+    // Glass: Style and Tint, and under them the Liquid style's own tuning in one fold, closed at
+    // first, there only while Liquid is the style (the owner, 22 November 2026: "move the
+    // top-level glass section ... into an expanding portion ... accessible only when the liquid
+    // style is applied"). The fold's rows are every parameter in LIQUID_TUNING_GROUPS.
     const material = params.get('hud.glass')!
     const body = document.createElement('div')
     this.inspector.addCard('glass', 'Glass', body, () => glassLabels[Number(material.value)], {
-      fill: () => body.replaceChildren(this.inspector.row(material.def as PropertyDef), this.inspector.row(params.get('hud.surfaceCoverage')!.def as PropertyDef),
-        ...params.all().filter(p => p.def.group === 'Glass').map(p => this.inspector.row(p.def as PropertyDef))),
+      fill: () => {
+        const fold = document.createElement('details'); fold.className = 'lobby-liquid'
+        const summary = document.createElement('summary'); summary.innerHTML = `<span>Liquid glass</span>${ACCORDION_ARROW}`
+        fold.append(summary)
+        // Its rows come from the registry as the fold opens: the Liquid style's code, which
+        // defines most of them (fx/post/GlassPost.ts), loads only once Liquid is chosen.
+        const rows = () => {
+          const defs = params.all().filter(p => LIQUID_TUNING_GROUPS.includes(p.def.group)).map(p => p.def as PropertyDef)
+          const shown = [...fold.querySelectorAll<HTMLElement>(':scope > .wi-row')].map(row => row.dataset.id).join()
+          if (shown !== defs.map(def => def.id).join()) fold.replaceChildren(summary, ...defs.map(def => this.inspector.row(def)))
+        }
+        rows(); fold.addEventListener('toggle', () => { if (fold.open) rows() }, { signal })
+        this.liquid.className = 'lobby-liquid-wrap'; this.liquid.replaceChildren(fold)
+        body.replaceChildren(this.inspector.row(material.def as PropertyDef), this.inspector.row(params.get('hud.surfaceCoverage')!.def as PropertyDef), this.liquid)
+        this.syncLiquid(false)
+      },
     })
+    signal.addEventListener('abort', params.onChange(id => { if (id === material.def.id) this.syncLiquid(true) }))
     // Play: whether the bots may play with you, set before you join a world.
     const play = document.createElement('div')
     this.inspector.addCard('play', 'Play', play, () => `Bots may play with me: ${params.get(playWithMe.def.id)?.value ? 'yes' : 'no'}`, {
@@ -221,12 +255,42 @@ export class LobbySettings {
 
   get isOpen(): boolean { return this.shown }
 
+  /** The Liquid glass fold's frame: it opens out under Style and Tint at Liquid (lobby-settings.css). */
+  private readonly liquid = document.createElement('div')
+  private liquidGone = 0
+  /**
+   * Liquid glass is there only at Liquid. Choosing Liquid opens its frame from nothing to the
+   * fold's height, so the rows below move down smoothly rather than jump; leaving Liquid closes
+   * it and then removes it (hidden), so it is out of the tab order, search and screen readers.
+   */
+  private syncLiquid(animate: boolean): void {
+    const on = Number(params.get('hud.glass')?.value) === 0, frame = this.liquid
+    clearTimeout(this.liquidGone)
+    frame.inert = !on
+    if (on) {
+      frame.hidden = false
+      if (animate && !matchMedia('(prefers-reduced-motion: reduce)').matches) { void frame.offsetHeight }
+      frame.classList.add('is-present')
+      return
+    }
+    frame.classList.remove('is-present')
+    if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches) frame.hidden = true
+    else this.liquidGone = window.setTimeout(() => { if (!frame.classList.contains('is-present')) frame.hidden = true }, 260)
+  }
+
   /** A quiet mark beside the version while a newer version is out. */
   markUpdate(version: string | null): void {
     const on = version !== null, label = this.version.textContent ?? ''
     this.version.classList.toggle('has-update', on)
     this.version.setAttribute('aria-label', on ? `Version ${label}, a newer version is out: open Updates` : `Version ${label}, open Updates`)
     this.version.title = on ? `Version ${label}: a newer version is out` : `Version ${label}: what is new`
+  }
+
+  /** Where Settings stands, for the card's foot to sit on it (lobby-settings.css). */
+  private anchor(): void {
+    const r = this.gear.getBoundingClientRect(), root = document.documentElement, s = this.inspector.element.style
+    s.setProperty('--gear-bottom', `${root.clientHeight - r.bottom}px`); s.setProperty('--gear-right', `${root.clientWidth - r.right}px`)
+    s.setProperty('--gear-width', `${r.width}px`); s.setProperty('--gear-height', `${r.height}px`)
   }
 
   private focusable(): HTMLElement[] {
@@ -244,16 +308,22 @@ export class LobbySettings {
       group.replaceWith(slot)
       this.gameGlass = { group, slot }
     }
+    this.anchor()
     this.parent.append(this.host)
     this.inspector.rebuild(); this.update()
     // Glass never nests: the card is the one glass surface, so the in-game cards' own glass
     // marks (the phone close x in each card head) are plain here.
     for (const el of this.inspector.element.querySelectorAll('.liquid-glass')) el.classList.remove('liquid-glass', 'glass-round')
     this.gear.setAttribute('aria-expanded', 'true'); this.gear.classList.add('is-current'); this.dock.classList.add('is-open')
-    // It rises out of Settings, below it (lobby-settings.css sets the origin at its foot).
+    // One eased fade and scale out of Settings (lobby-settings.css sets the origin at its foot), no
+    // slide. In Liquid the lobby glass shader drives this animation's clock (GlassMotionClock), so
+    // its panel and the card move in the same frame.
+    // The button hides once the card stands over it: until then the card's foot fades in on top of
+    // the button's own word, so nothing blinks.
+    const under = () => { if (this.shown) this.gear.classList.add('is-under-card') }
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      this.inspector.element.animate([{ opacity: 0, transform: 'translateY(10px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' })
-    }
+      this.inspector.element.animate(CARD_HIDDEN_TO_SHOWN, { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' }).finished.then(under, () => {})
+    } else under()
     this.inspector.element.querySelector<HTMLElement>('.lobby-settings-close')!.focus({ preventScroll: true })
   }
 
@@ -262,11 +332,15 @@ export class LobbySettings {
     if (!this.shown) return
     this.shown = false
     this.inspector.hideTooltip()
-    this.gear.setAttribute('aria-expanded', 'false'); this.gear.classList.remove('is-current'); this.dock.classList.remove('is-open')
+    // The button is back under the card at once; the card shrinks and fades into it.
+    this.gear.setAttribute('aria-expanded', 'false'); this.gear.classList.remove('is-current', 'is-under-card'); this.dock.classList.remove('is-open')
     if (returnFocus) this.gear.focus({ preventScroll: true })
     const detach = () => { if (!this.shown) this.detach() }
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { detach(); return }
-    this.closing = this.inspector.element.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px) scale(.98)' }], { duration: 160, easing: 'ease-in' })
+    // fill 'forwards': the shader's clock finishes the animation itself, and without a fill the
+    // card stood at full opacity again for the frame before it was detached (the owner, 23
+    // November 2026: "something of a double bounce effect ... almost like it's flickering").
+    this.closing = this.inspector.element.animate([...CARD_HIDDEN_TO_SHOWN].reverse(), { duration: 180, easing: 'cubic-bezier(.4,0,.8,.4)', fill: 'forwards' })
     this.closing.onfinish = detach
   }
 
