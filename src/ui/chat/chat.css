@@ -35,6 +35,10 @@
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .syn3h-shell.has-touch .chat-strip { left: var(--edge-left); top: 150px; bottom: auto; width: min(280px, 33vw); }
   .syn3h-shell.has-touch .chat-strip.is-left-hand { left: max(76px, calc(var(--safe-left) + 64px)); }
+  /* Left-handed, the Panels tab and the action buttons stand below the strip on this side
+     (from 52 px under its top at 390 px tall): only the newest line shows, so a second line
+     never covers the tab. */
+  .syn3h-shell.has-touch .chat-strip.is-left-hand .chat-line:not(:last-child) { display: none; }
 }
 /* While the sidebar is open the strip is not needed: the card is there. */
 .syn3h-shell:has(.world-inspector:not([hidden], .lobby-settings) .wi-card[data-section="chat"].is-open) .chat-strip { display: none; }
@@ -59,7 +63,7 @@
 /* Held at a height by the stack (cardFit.ts shareHeights; the owner: chat "should expand
    vertically to occupy the remaining open space in the sidebar"), the log takes the room and
    the field stays at the card's bottom edge. */
-.wi-card.is-sized > .chat-body > .chat-log { flex: 1 1 auto; height: auto; min-height: 72px; }
+.wi-card.is-sized > .chat-body > .chat-log { flex: 1 1 auto; height: auto; min-height: 72px; } /* 72: Inspector GROW_MIN_PX */
 .chat-line { position: relative; padding: 2px 0; overflow-wrap: anywhere; }
 .chat-line.is-new { animation: chat-in .35s ease-out 1; }
 @keyframes chat-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
