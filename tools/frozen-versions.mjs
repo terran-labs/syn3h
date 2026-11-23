@@ -153,10 +153,12 @@ export function apiStore(bucket = BUCKET, { token = process.env.CLOUDFLARE_API_T
   const base = async () => {
     account ??= (async () => {
       // The account that owns the site's zone, as tools/domain.sh finds it: the token may see more.
-      const res = await fetch(`${api}/zones?name=mira.cc`, { headers: auth })
+      // The old zone stays in that account for good (its redirect to mira.cc), and the token has
+      // always been able to read it.
+      const res = await fetch(`${api}/zones?name=syn3h.com`, { headers: auth }) // rename-keep
       const body = await res.json().catch(() => ({}))
       const id = body.result?.[0]?.account?.id
-      if (!res.ok || body.result?.length !== 1 || !id) throw new Error(`could not find the account that owns mira.cc (HTTP ${res.status})`)
+      if (!res.ok || body.result?.length !== 1 || !id) throw new Error(`could not find the account that owns the zones (HTTP ${res.status})`)
       return id
     })()
     return `${api}/accounts/${await account}/r2/buckets/${bucket}/objects/`

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { compareVersions, formatVersion, isVersion, kindLine, matchReleases, nextVersion, pacificDay, parseHistory, parseVersion, releasesFromTsv } from './release-version.mjs'
-import { draftNotes, parseManifest, referencedAssets, renderNotes, screenshotSection } from '../release-notes.mjs'
+import { draftNotes, parseManifest, playUrl, referencedAssets, renderNotes, screenshotSection } from '../release-notes.mjs'
 
 // 14 November 2026, 19:08 PST is 03:08 UTC on the 15th.
 const release1 = new Date('2026-11-15T03:08:00Z')
@@ -151,7 +151,7 @@ test('releases.tsv with a malformed row is rejected', () => {
 const MILESTONE = HISTORY[2]
 const PRODUCTION = HISTORY[12]
 const notesFor = (row, { play = row.channel === 'production', extra = '' } = {}) => [
-  `## Syn3h ${row.version}`, '', 'A deck', '', kindLine(row), '', '<!-- a comment -->', '',
+  `## Syn3h ${row.version}`, '', 'A deck', '', kindLine(row, playUrl(row.version)), '', '<!-- a comment -->', '',
   '### The story so far', '', 'It happened.', '', '### Features', '', '- a', '', '### Fixes', '', '- b', '',
   ...(play ? ['### Play', '', 'p', ''] : []), '### Known issues', '', '- k', '', extra,
 ].join('\n')

@@ -169,13 +169,13 @@ test('repeated same-log calls reserve distinct absent children and override inhe
   for (const kind of Object.keys(smokeSections)) {
     for (let i = 0; i < 2; i++) assert.equal(invoke(kind).status, 0)
   }
-  assert.equal(invoke('domain', 'success', 'mira.cc').status, 0)
+  assert.equal(invoke('domain', 'success', 'www.mira.cc').status, 0)
   const paths = calls()
   assert.equal(paths.length, 9)
   assert.equal(new Set(paths).size, 9)
   for (const prefix of ['release-normal', 'release-latency', 'domain-mira.cc', 'rollback'])
     assert.equal(paths.filter(p => p.includes(`/syn3h-shot-${prefix}.`)).length, 2)
-  assert.equal(paths.filter(p => p.includes('/syn3h-shot-domain-mira.cc.')).length, 1)
+  assert.equal(paths.filter(p => p.includes('/syn3h-shot-domain-www.mira.cc.')).length, 1)
 }))
 test('rollback rejects a nonzero exit even when output contains a success marker', () => callerFixture(invoke => {
   assert.equal(invoke('rollback', 'exit-with-marker').status, 1)

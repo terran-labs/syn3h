@@ -26,6 +26,14 @@ const PLAYER_DIR = join(NOTES_ROOT, 'player')
 const HISTORY = join(NOTES_ROOT, 'history.tsv')
 const GITHUB_REPO = process.env.SYN3H_GITHUB_REPO || 'terran-labs/syn3h'
 const PLAY_URL = 'https://mira.cc/'
+/**
+ * Versions up to this one were live at the old address, and their release line says so; later
+ * versions say mira.cc (docs/MIRA-CUTOVER.md). rename-keep
+ */
+export const LAST_OLD_ADDRESS_VERSION = 'v26.11.2204'
+const OLD_PLAY_URL = 'https://www.syn3h.com/' // rename-keep
+/** Where a version was live when it was released. */
+export const playUrl = (tag) => (compareVersions(tag, LAST_OLD_ADDRESS_VERSION) <= 0 ? OLD_PLAY_URL : PLAY_URL)
 /** The address that serves one frozen release for good (tools/frozen-versions.mjs). */
 export function frozenUrl(version) {
   return `${PLAY_URL}?v=${String(version).replace(/^v/, '')}`
@@ -94,7 +102,7 @@ export function draftNotes(row, from, to, commits) {
     '',
     'TODO: one line deck, the most meaningful outcomes, as "X, Y and Z"',
     '',
-    kindLine(row),
+    kindLine(row, playUrl(row.version)),
     '',
     `<!-- Draft from git log ${from}..${to}, ${commits.length} commits. Rewrite these as shipped`,
     'behaviour for players, merge related lines, and delete this comment. Wording rule: tag',
@@ -136,7 +144,8 @@ export function renderNotes(text, row, manifest = { images: [], gif: null }) {
   // Accept historical heading-first sources; all rendered external bodies carry attribution.
   if (lines[0] !== `## Syn3h ${tag}`) problems.push(`the first line must be the heading "## Syn3h ${tag}"`)
   if (lines[1] !== '' || !lines[2] || lines[2].startsWith('#')) problems.push('a one line deck must follow the heading after a blank line')
-  if (lines[4] !== kindLine(row)) problems.push(`the line under the deck must be "${kindLine(row)}"`)
+  const kind = kindLine(row, playUrl(tag))
+  if (lines[4] !== kind) problems.push(`the line under the deck must be "${kind}"`)
   const found = lines.filter((l) => l.startsWith('### ')).map((l) => l.slice(4))
   for (const name of found) if (!SECTIONS.includes(name)) problems.push(`unexpected section "### ${name}"${name === 'Screenshots' ? ' (it is built from the assets manifest)' : ''}`)
   for (const name of REQUIRED) if (!found.includes(name)) problems.push(`missing "### ${name}"`)

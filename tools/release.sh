@@ -352,6 +352,31 @@ tail -2 "$LOG-primary-frozen.log"
 # Accepted: from here on a failure does not roll back.
 DEPLOYED=""
 
+# The other addresses send players to mira.cc by Single Redirect rules outside the release
+# (docs/MIRA-CUTOVER.md). A failure is reported loudly but does not undo the release, which cannot
+# have caused it. On the old hosts only navigations are redirected: a page left open there still
+# loads its lazy chunks and /v/versions.json from its own origin, and keeps its room socket.
+OLD_HOSTS="www.syn3h.com syn3h.com" # rename-keep: the old addresses themselves
+address_check() { # <what went wrong>: a loud failure that does not fail the release
+  printf '\nADDRESS CHECK FAILED: %s The release stands; fix the redirect rule.\n' "$1" >&2
+}
+probe="/?room=redirect-check&v=26.11.1503"
+for host in www.mira.cc $OLD_HOSTS; do
+  got="$(curl -s -o /dev/null --max-time 20 -w '%{http_code} %{redirect_url}' -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Dest: document' \
+    -H 'Accept: text/html,application/xhtml+xml' "https://$host$probe" || true)"
+  case "$got" in 30[1278]" https://mira.cc$probe") echo "Redirect ok: a page opened at https://$host/ goes to mira.cc with its path and query" ;;
+    *) address_check "a page opened at https://$host$probe answered \"$got\", not a redirect to https://mira.cc$probe." ;; esac
+done
+for host in $OLD_HOSTS; do
+  got="$(curl -s -o /dev/null --max-time 20 -w '%{http_code}' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Dest: empty' -H 'Accept: application/json' "https://$host/v/versions.json" || true)"
+  [ "$got" = 200 ] && echo "No redirect for a page's own fetches: https://$host/v/versions.json answers 200" \
+    || address_check "https://$host/v/versions.json, fetched as an open page would, answered $got, not 200: pages left open there cannot load."
+done
+ws_code="$(curl -s -o /dev/null --http1.1 --max-time 5 -w '%{http_code}' -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "https://www.syn3h.com/ws?room=redirect-check" || true)" # rename-keep
+[ "$ws_code" = 101 ] && echo "Old socket ok: the old host's /ws still upgrades" \
+  || address_check "wss://www.syn3h.com/ws answered $ws_code, not 101: pages left open there lose their room." # rename-keep
+
 # --- Record ---------------------------------------------------------------------------------
 WHEN="$(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "release-$N" "$WHEN" "$URL" "$MILESTONE" "$COMMIT" "$VERSION" "$ID" >> ../Syn3h-stable/releases.tsv
