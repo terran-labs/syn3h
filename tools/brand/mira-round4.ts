@@ -1,5 +1,5 @@
 /**
- * Generates the round 4 Mira candidates into src/ui/brand/mira/round4.ts.
+ * Generates the round 4 and round 5 Mira candidates into src/ui/brand/mira/round4.ts and round5.ts.
  *   npx tsx tools/brand/mira-round4.ts
  *
  * Round 4 is drawn in the Syn3h wordmark's own grammar, read off its path: slabs about a
@@ -61,13 +61,14 @@ function bladeI(f: Field, x: number): number {
   letter(f, g => { add(g, rect(x, 0, x + S, CAP)); cutTL(g, x, 0, S) })
   return S
 }
-function bladeR(f: Field, x: number): number {
+function bladeR(f: Field, x: number, trimAt?: number): number {
   letter(f, g => {
     add(g, rect(x, 0, x + S, CAP), thick([[x + 92, 70], [x + 217, 195]], S))
     // The bowl is an arrowhead; its counter is a pointed slit.
     add(g, [[x + 20, 0], [x + 137.5, 0], [x + 190.5, 53], [x + 137.5, 106], [x + 20, 106]])
     cutP(g, [[x + S, 46], [x + 131, 46], [x + 138, 53], [x + 131, 60], [x + S, 60]])
     capClip(g); cutTL(g, x, 0, 34)
+    if (trimAt !== undefined) cutHalf(g, [trimAt, 0], [1, 0])
   })
   return 233
 }
@@ -160,4 +161,97 @@ writeFileSync(new URL('../../src/ui/brand/mira/round4.ts', import.meta.url), `/*
 import type { Round3Candidate } from './round3'
 
 export const ROUND4: Round3Candidate[] = ${JSON.stringify(data)}
+`)
+
+// ---- Round 5: the R and A nested ----------------------------------------------------------
+// The owner picked Blade and Monoplate from round 4 and asked for the R and A closer: the R's
+// 45 degree trailing edge and the A's upper left edge parallel, a slit apart, the slit as wide
+// as the gap between I and R (12, measured across the slit).
+const GAP = 12, DIAG = GAP * Math.SQRT2
+
+/** R whose trailing edge is one 45 degree line down to the A's eave, then upright: it fits the A's left side all the way down. */
+function wingR(f: Field, x: number, slit: boolean): void {
+  letter(f, g => {
+    add(g, slit ? [[x, 0], [x + 293, 0], [x + 203, 90], [x + 203, CAP], [x, CAP]] : [[x, 0], [x + 293, 0], [x + 203, 90], [x + 203, CAP], [x + 118, CAP], [x + S, 106], [x + S, CAP], [x, CAP]])
+    cutP(g, [[x + S, 46], [x + 190, 46], [x + 197, 53], [x + 190, 60], [x + S, 60]])
+    if (slit) cutP(g, thick([[x + 56, 104], [x + 142, 190]], GAP))
+    cutTL(g, x, 0, 34)
+  })
+}
+/** M and A with their counters closed to slits, as in Monoplate, but as separate bladed letters. */
+function slitM(f: Field, x: number, W = 250): number {
+  letter(f, g => {
+    add(g, rect(x, 0, x + W, CAP)); cutP(g, [[x + W / 2 - 46, -1], [x + W / 2, 45], [x + W / 2 + 46, -1]])
+    cutP(g, thick([[x + 68, 62], [x + W / 2 - 7, 192]], GAP)); cutP(g, thick([[x + W - 68, 62], [x + W / 2 + 7, 192]], GAP))
+    capClip(g); cutTL(g, x, 0, 34); cutTR(g, x + W, 0, 34)
+  })
+  return W
+}
+function slitA(f: Field, x: number): number {
+  letter(f, g => {
+    add(g, [[x, CAP], [x, 95], [x + 95, 0], [x + 111, 0], [x + 206, 95], [x + 206, CAP]])
+    cutP(g, thick([[x + 52, 192], [x + 52, 124], [x + 103, 73], [x + 154, 124], [x + 154, 192]], GAP)); capClip(g)
+  })
+  return 206
+}
+interface Nest { style: 'tucked' | 'winged' | 'slits'; plate?: boolean }
+function nested(f: Field, o: Nest): number {
+  let x = 0
+  x += (o.style === 'slits' ? slitM(f, x) : bladeM(f, x)) + GAP
+  x += bladeI(f, x) + GAP
+  let ax: number
+  if (o.style === 'tucked') {
+    // The A slides under the arrowhead until its roof is one slit from the bowl's lower edge; the R's leg runs into the A's left pillar.
+    ax = x + 190.5 + 53 + DIAG - 95
+    bladeR(f, x, ax + S)
+  } else { ax = x + 215; wingR(f, x, o.style === 'slits') }
+  x = ax + (o.style === 'slits' ? slitA(f, ax) : bladeA(f, ax))
+  add(f, spikeL(0), spikeR(x))
+  if (o.plate) add(f, plate(-44, x + 44))
+  return x
+}
+
+/** Monoplate with the R and A divided by a 45 degree slit, and the A a 45 degree chevron. */
+function monoplate45(f: Field, o: { blades?: boolean } = {}): void {
+  const t = GAP, rEdge = 585, aEdge = rEdge + DIAG, flat = 30, end = aEdge + flat + CAP
+  add(f, [[0, CAP], [40, 0], [aEdge + flat, 0], [end, CAP]])
+  cutP(f, [[78, -1], [115, 42], [152, -1]])
+  cutP(f, thick([[60, 62], [110, 192]], t)); cutP(f, thick([[170, 62], [120, 192]], t))
+  cutP(f, rect(190, -1, 190 + t, CAP + 1)); cutP(f, rect(248, -1, 248 + t, CAP + 1))
+  cutP(f, [[306, 46], [462, 46], [469, 52], [462, 58], [306, 58]])
+  cutP(f, thick([[308, 104], [394, 190]], t))
+  const mid = (rEdge + aEdge) / 2
+  cutP(f, thick([[mid + 14, -14], [mid - 192, 192]], t))
+  // The A's chevron slit, each arm one slab in from its edge.
+  const cx = aEdge + flat / 2, inset = (S + t / 2) * Math.SQRT2, apexY = aEdge + inset - cx
+  cutP(f, thick([[cx - (192 - apexY), 192], [cx, apexY], [cx + (192 - apexY), 192]], t))
+  capClip(f)
+  if (o.blades) add(f, [[-42, CAP], [20, CAP], [20, CAP - 62]], plate(-44, end + 10))
+}
+
+const r5: Built[] = []
+const slitMonoC = trace([-70, -20, 320, 200], f => { const W = slitM(f, 0); add(f, spikeL(0), spikeR(W)) })
+const plateMonoC = out[4].mono
+r5.push({ id: 1, name: 'Blade, tucked', note: 'What you asked for, read literally: the A slides under the R’s arrowhead until its roof sits one slit from the arrowhead’s lower edge, the same 12 units that separate I and R. The R’s leg now runs into the A’s left pillar, so R and A are one fused form, as Syn3h’s 3 and H are.',
+  word: trace([-70, -20, 800, 250], f => { nested(f, { style: 'tucked', plate: true }) }), mono: bladeMonoC })
+r5.push({ id: 2, name: 'Blade, tucked, no plate', note: 'The same without the plate, so the two blades carry the baseline alone.',
+  word: trace([-70, -20, 800, 250], f => { nested(f, { style: 'tucked' }) }), mono: bladeMonoC })
+r5.push({ id: 3, name: 'Blade, winged', note: 'Monoplate’s answer brought into Blade: the R’s whole trailing edge is one 45 degree line, so the slit runs the full length of the A’s roof and on down its pillar. The letters stay separate and the R gains a wing.',
+  word: trace([-70, -20, 860, 250], f => { nested(f, { style: 'winged', plate: true }) }), mono: bladeMonoC })
+r5.push({ id: 4, name: 'Blade, slit counters', note: 'Halfway between your two picks: Blade’s separate letters, blades and plate, with Monoplate’s mass. Every counter is closed to a slit, and the R and A fit along the 45 degree slit.',
+  word: trace([-70, -20, 860, 250], f => { nested(f, { style: 'slits', plate: true }) }), mono: slitMonoC })
+r5.push({ id: 5, name: 'Monoplate, nested', note: 'Monoplate with the slit between R and A at 45 degrees, 12 units across, and the A redrawn as a 45 degree chevron to match. The slab now ends in a blade point.',
+  word: trace([-20, -20, 860, 200], f => monoplate45(f)), mono: plateMonoC })
+r5.push({ id: 6, name: 'Monoplate, nested, on its plate', note: 'The same with a blade at the M’s foot and Syn3h’s plate underneath.',
+  word: trace([-70, -20, 880, 250], f => monoplate45(f, { blades: true })), mono: plateMonoC })
+
+const data5 = r5.map(c => ({ id: c.id, family: 'R and A nested', name: c.name, note: c.note, word: toPath(c.word), mono: toPath(c.mono) }))
+for (const c of data5) console.log('r5', c.id, c.name, c.word.width, c.word.height, c.word.d.length)
+writeFileSync(new URL('../../src/ui/brand/mira/round5.ts', import.meta.url), `/**
+ * Round 5 Mira candidates, generated by tools/brand/mira-round4.ts.
+ * Generated: edit the tool, not this file.
+ */
+import type { Round3Candidate } from './round3'
+
+export const ROUND5: Round3Candidate[] = ${JSON.stringify(data5)}
 `)
