@@ -1,5 +1,10 @@
 # Production release and syn3h.com cutover
 
+> 23 November 2026: `tools/domain.sh attach` no longer deploys and takes one hostname, not a
+> release number. Wrangler's deploy replaces the Worker's whole set of Custom Domains, so the
+> command below would now detach the live domain. Use `docs/DOMAIN-TOOL.md`; this page is the
+> record of 14 November.
+
 Two separate steps, each with its own command, so the first can never touch the domain.
 
 1. **Release** a tagged milestone to the Worker's workers.dev address: `tools/release.sh`.

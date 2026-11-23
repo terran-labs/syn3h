@@ -1,29 +1,55 @@
 #!/bin/sh
-# Move syn3h.com hostnames onto the released Worker, and back. Kept apart from release.sh so a
-# release can never touch the domain by accident. Runbook: docs/CUTOVER.md.
+# Attach hostnames to the game's Worker, redirect-only hostnames, and their rollbacks. Kept apart
+# from release.sh so a release can never touch a domain by accident. Runbooks: docs/CUTOVER.md
+# (syn3h.com, 14 November 2026) and docs/MIRA-CUTOVER.md (mira.cc).
 #
-#   tools/domain.sh export                         save the zone's DNS (and redirect rules)
-#   tools/domain.sh attach release-<n> <host>... --owner-approved
-#                                                  point the hosts at that release's Worker
-#   tools/domain.sh check <host>                   HTTPS, WSS upgrade, net-smoke
-#   tools/domain.sh rollback <export-dir> <host>...
-#                                                  detach the hosts and restore their records
+#   tools/domain.sh export [--zone <zone>]
+#       save the zone's DNS records, its redirect and page rules, and the Worker's attached
+#       Custom Domains, under ../Syn3h-stable/dns/<time>-<zone>/. Every changing step needs one
+#       from the last two hours.
+#   tools/domain.sh attach <host> --owner-approved [--dry-run]
+#       attach one hostname to the Worker through the Custom Domains API. No deploy: the code
+#       serving players does not change. Removes exactly the exported A, AAAA or CNAME records at
+#       that hostname first (a Custom Domain cannot share its name with them), and fails loudly if
+#       any hostname attached before is missing afterwards.
+#   tools/domain.sh check <host>
+#       certificate, HTTP 200 at /, WebSocket upgrade at /ws, every previously attached host still
+#       attached and serving, then net-smoke (or the short public check). For www.mira.cc: its
+#       redirect to mira.cc.
+#   tools/domain.sh rollback <export-dir> <host>... [--dry-run]
+#       detach hostnames that attach added (never one attached before the export) and restore
+#       their exported records.
+#   tools/domain.sh redirect-www --owner-approved [--dry-run]           (mira.cc only)
+#       a proxied placeholder record at www.mira.cc and one Single Redirect rule sending it to
+#       https://mira.cc with path and query kept, 302. Running it again changes nothing.
+#   tools/domain.sh redirect-www-rollback <export-dir> [--dry-run]     (mira.cc only)
+#   tools/domain.sh clean-parking --confirm-delete [--dry-run]          (mira.cc only)
+#       delete the registrar's imported parking records at *.mira.cc and www.mira.cc.
+#   tools/domain.sh restore <export-dir> <name>... [--dry-run]
+#       recreate the exported A, AAAA and CNAME records at those names (undoes clean-parking).
 #
-# Hosts must be syn3h.com or www.syn3h.com. Needs CLOUDFLARE_API_TOKEN (see docs/CUTOVER.md for
-# its permissions). Only A, AAAA and CNAME records at the named hosts are ever removed or
-# restored: MX, TXT and every other name are never touched.
+# Zones: syn3h.com (the default) and mira.cc, picked by --zone or SYN3H_DOMAIN_ZONE, or else the
+# zone of the host named. --dry-run prints each changing API call instead of making it; reads
+# still happen when a token is present, and come from the export when it is not. The token is
+# never printed. Only A, AAAA and CNAME records at the named hosts are ever removed or restored:
+# MX, TXT and every other record are never touched.
 set -eu
 cd "$(dirname "$0")/.."
 . tools/cloudflare-token.sh
 . tools/smoke-run.sh
 REPO="$(pwd)"
-ZONE_NAME=syn3h.com
-STORE="$(cd .. && pwd)/Syn3h-stable"
 API=https://api.cloudflare.com/client/v4
-WRANGLER="$REPO/node_modules/wrangler/bin/wrangler.js"
+WORKER=syn3h
+ZONES="syn3h.com mira.cc"
+# Never a Custom Domain: it would serve the game on a second origin (its own storage and invites).
+REDIRECT_ONLY=www.mira.cc
+CANONICAL=mira.cc
+# Cloudflare's documented address for a proxied hostname with no origin ("originless setups").
+PLACEHOLDER=100::
+RULE_DESC="www.mira.cc to mira.cc"
+STORE="${SYN3H_DOMAIN_STORE:-$(cd .. && pwd)/Syn3h-stable}"
 
 die() { printf '\nDOMAIN FAILED: %s\n' "$*" >&2; exit 1; }
-cf_has_token || die "no Cloudflare token: put it in $SYN3H_CLOUDFLARE_TOKEN_FILE or set CLOUDFLARE_API_TOKEN"
 command -v jq >/dev/null || die "jq is required"
 
 # cf METHOD PATH [JSON]: call the API, fail on success=false, print the JSON.
@@ -32,88 +58,172 @@ cf() {
   printf '%s' "$out" | jq -e '.success == true' >/dev/null 2>&1 || { printf '%s\n' "$out" >&2; return 1; }
   printf '%s' "$out"
 }
-zone_id() { cf GET "/zones?name=$ZONE_NAME" | jq -r '.result[0].id'; }
-account_id() { cf GET "/zones?name=$ZONE_NAME" | jq -r '.result[0].account.id'; }
-check_hosts() {
-  for h in "$@"; do
-    case "$h" in "$ZONE_NAME"|"www.$ZONE_NAME") ;; *) die "refusing host $h: only $ZONE_NAME and www.$ZONE_NAME" ;; esac
-  done
-  [ $# -gt 0 ] || die "name at least one host"
+# change METHOD PATH [JSON]: a call that changes something. A dry run prints it (to standard
+# error, so callers capturing the answer still see it) and answers with a stand-in.
+DRY=""
+change() {
+  if [ -n "$DRY" ]; then
+    printf 'DRY RUN: %s %s%s\n' "$1" "$API$2" "${3:+ $3}" >&2
+    printf '{"success":true,"result":{"id":"dry-run","rules":[{"id":"dry-run","description":"%s"}]}}' "$RULE_DESC"
+    return 0
+  fi
+  cf "$@"
 }
-# The web records at a host: the only records this script ever deletes or restores.
-# The release's Worker with its Custom Domains (wrangler.domain.toml in $DEST); the token goes to
-# wrangler alone. Not cf: that is the API helper above.
-deploy_with_domains() { (cd "$DEST" && with_cf_token node "$WRANGLER" deploy -c wrangler.domain.toml --message "$1" </dev/null); }
+# Reads need the token; a dry run without one reads the export instead.
+live() { [ -z "$DRY" ] || cf_has_token; }
 web_records() { jq -c --arg h "$1" '[.result[] | select(.name == $h and (.type == "A" or .type == "AAAA" or .type == "CNAME"))]' "$2"; }
+record_body() { jq -c '{type, name, content, proxied, ttl, comment}'; }
 
 # Tests source the functions above without running a command (tools/secret-env.test.mjs).
 [ -z "${SYN3H_DOMAIN_LIB:-}" ] || return 0
+
 cmd="${1:-}"; [ $# -gt 0 ] && shift
+ZONE_NAME="${SYN3H_DOMAIN_ZONE:-}"; APPROVED=""; CONFIRMED=""; REST=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --zone) [ $# -ge 2 ] || die "--zone needs a zone"; ZONE_NAME="$2"; shift 2 ;;
+    --dry-run) DRY=1; shift ;;
+    --owner-approved) APPROVED=1; shift ;;
+    --confirm-delete) CONFIRMED=1; shift ;;
+    --*) die "unknown option $1" ;;
+    *) REST="$REST $1"; shift ;;
+  esac
+done
+# No globbing: a record name such as *.mira.cc must reach the script as written.
+set -f
+# shellcheck disable=SC2086
+set -- $REST
+set +f
+if [ -z "$ZONE_NAME" ]; then
+  case "$cmd" in
+    attach|check) [ $# -ge 1 ] && ZONE_NAME="${1#www.}" ;;
+    rollback|restore|redirect-www-rollback) [ $# -ge 1 ] && ZONE_NAME="${1##*/}" && ZONE_NAME="${ZONE_NAME#*-*-}" ;;
+    redirect-www|clean-parking) ZONE_NAME=mira.cc ;;
+  esac
+fi
+ZONE_NAME="${ZONE_NAME:-syn3h.com}"
+case " $ZONES " in *" $ZONE_NAME "*) ;; *) die "refusing zone $ZONE_NAME: only $ZONES" ;; esac
+case "$cmd" in check|'') ;; *) [ -n "$DRY" ] || cf_has_token || die "no Cloudflare token: put it in $SYN3H_CLOUDFLARE_TOKEN_FILE or set CLOUDFLARE_API_TOKEN" ;; esac
+
+in_zone() { case "$1" in "$ZONE_NAME"|"www.$ZONE_NAME") return 0 ;; esac; return 1; }
+need_host_in_zone() { in_zone "$1" || die "refusing host $1: only $ZONE_NAME and www.$ZONE_NAME"; }
+mira_only() { [ "$ZONE_NAME" = mira.cc ] || die "$cmd is for the mira.cc zone only"; }
+# The newest export of this zone; changing steps need one from the last two hours.
+fresh_export() {
+  EXPORT="$(ls -d "$STORE"/dns/*-"$ZONE_NAME" 2>/dev/null | tail -1)"
+  [ -n "$EXPORT" ] && { [ -n "$DRY" ] || [ -n "$(find "$EXPORT" -maxdepth 0 -mmin -120)" ]; } \
+    || die "no export of $ZONE_NAME from the last two hours: run tools/domain.sh export --zone $ZONE_NAME first"
+}
+given_export() {
+  EXPORT="${1:-}"
+  [ -f "$EXPORT/records.json" ] || die "give the export directory (from tools/domain.sh export)"
+  z="$(jq -r '.result[0].zone_name // empty' "$EXPORT/records.json")"
+  [ -z "$z" ] || [ "$z" = "$ZONE_NAME" ] || die "$EXPORT holds $z, not $ZONE_NAME"
+}
+zone_id() {
+  if live; then cf GET "/zones?name=$ZONE_NAME" | jq -r '.result[0].id'
+  else jq -r '.result[0].zone_id // "{zone_id}"' "$EXPORT/records.json" 2>/dev/null || echo '{zone_id}'; fi
+}
+account_id() { if live; then cf GET "/zones?name=$ZONE_NAME" | jq -r '.result[0].account.id'; else echo '{account_id}'; fi; }
+# Hostnames attached to the Worker: live, or as exported.
+attached() {
+  if live; then cf GET "/accounts/$A/workers/domains?service=$WORKER" | jq -r '.result[].hostname' | sort
+  else jq -r --arg s "$WORKER" '.result[] | select(.service == $s) | .hostname' "$EXPORT/worker-domains.json" | sort; fi
+}
+exported_attached() { jq -r --arg s "$WORKER" '.result[] | select(.service == $s) | .hostname' "$1/worker-domains.json" | sort; }
+# The zone's records now (or as exported, in a dry run without a token).
+current_records() {
+  if live; then cf GET "/zones/$Z/dns_records?per_page=5000" > "$1"; else cp "$EXPORT/records.json" "$1"; fi
+}
+# Fail loudly if any host in $1 (a newline list) is no longer attached.
+still_attached() {
+  now="$(attached)"
+  for h in $1; do
+    printf '%s\n' "$now" | grep -qx "$h" || die "LOST: $h is no longer attached to $WORKER. Re-attach it now: tools/domain.sh attach $h --owner-approved"
+  done
+  echo "Still attached: $(printf '%s ' $1)"
+}
+restore_records() { # <export> <name>...
+  ex="$1"; shift
+  for n in "$@"; do
+    web_records "$n" "$ex/records.json" | jq -c '.[]' | while read -r rec; do
+      echo "Restoring $(printf '%s' "$rec" | jq -r '"\(.type) \(.name) -> \(.content)"')"
+      change POST "/zones/$Z/dns_records" "$(printf '%s' "$rec" | record_body)" >/dev/null \
+        || echo "  (could not restore; it may already exist: check the dashboard)"
+    done
+  done
+}
+
 case "$cmd" in
 export)
+  if [ -n "$DRY" ]; then echo "DRY RUN: export only reads; it would save $ZONE_NAME's records, rules and the Worker's domains under $STORE/dns/<time>-$ZONE_NAME"; exit 0; fi
   Z="$(zone_id)"; [ -n "$Z" ] && [ "$Z" != null ] || die "zone $ZONE_NAME not visible to this token"
-  DIR="$STORE/dns/$(date +%Y%m%d-%H%M%S)"
+  A="$(account_id)"
+  DIR="$STORE/dns/$(date +%Y%m%d-%H%M%S)-$ZONE_NAME"
   mkdir -p "$DIR"
   cf GET "/zones/$Z/dns_records?per_page=5000" > "$DIR/records.json"
   cf_curl -sS "$API/zones/$Z/dns_records/export" > "$DIR/zone.bind"
-  # Redirect rules and page rules explain today's apex to www redirect. Optional: the token may
-  # not be allowed to read them.
-  cf GET "/zones/$Z/rulesets/phases/http_request_dynamic_redirect/entrypoint" > "$DIR/redirect-rules.json" 2>/dev/null || echo "(redirect rules not readable with this token)"
+  cf GET "/accounts/$A/workers/domains" > "$DIR/worker-domains.json"
+  # Optional: the token may not be allowed to read them.
+  cf GET "/zones/$Z/rulesets/phases/http_request_dynamic_redirect/entrypoint" > "$DIR/redirect-rules.json" 2>/dev/null || echo "(no redirect rules, or not readable with this token)"
   cf GET "/zones/$Z/pagerules" > "$DIR/pagerules.json" 2>/dev/null || echo "(page rules not readable with this token)"
   echo "Saved $DIR"
-  echo "Records at the web hosts (the only ones attach may remove):"
-  for h in "$ZONE_NAME" "www.$ZONE_NAME"; do web_records "$h" "$DIR/records.json" | jq -r '.[] | "  \(.type) \(.name) -> \(.content) proxied=\(.proxied) ttl=\(.ttl)"'; done
+  echo "Attached to $WORKER now: $(exported_attached "$DIR" | tr '\n' ' ')"
+  echo "Web records (the only kind any step removes or restores):"
+  for h in "$ZONE_NAME" "www.$ZONE_NAME" "*.$ZONE_NAME"; do web_records "$h" "$DIR/records.json" | jq -r '.[] | "  \(.type) \(.name) -> \(.content) proxied=\(.proxied) ttl=\(.ttl)"'; done
   echo "Mail and other records (never touched): $(jq '[.result[] | select(.type == "MX" or .type == "TXT")] | length' "$DIR/records.json") MX/TXT"
   ;;
 
 attach)
-  REL="${1:-}"; [ $# -gt 0 ] && shift
-  APPROVED=""; HOSTS=""
-  for a in "$@"; do
-    if [ "$a" = "--owner-approved" ]; then APPROVED=1; else HOSTS="$HOSTS $a"; fi
+  [ $# -eq 1 ] || die "attach one hostname at a time"
+  H="$1"; need_host_in_zone "$H"
+  [ "$H" != "$REDIRECT_ONLY" ] || die "refusing $H: it must only redirect to $CANONICAL (tools/domain.sh redirect-www), never serve the game"
+  [ -n "$APPROVED" ] || die "attaching a domain needs the owner's explicit word; then pass --owner-approved"
+  fresh_export
+  Z="$(zone_id)"; A="$(account_id)"
+  echo "Zone $ZONE_NAME ($Z), export $EXPORT"
+  BEFORE="$(attached)"
+  echo "Attached before: $(printf '%s ' $BEFORE)"
+  if printf '%s\n' "$BEFORE" | grep -qx "$H"; then echo "$H is already attached; nothing to do."; exit 0; fi
+  # Only records that were exported may be removed, and only if they are still as exported.
+  NOW_FILE="$(mktemp)"; current_records "$NOW_FILE"
+  REMOVE="$(web_records "$H" "$EXPORT/records.json")"
+  [ "$(web_records "$H" "$NOW_FILE" | jq -c 'map(.id) | sort')" = "$(printf '%s' "$REMOVE" | jq -c 'map(.id) | sort')" ] \
+    || die "the records at $H changed since $EXPORT: export again"
+  rm -f "$NOW_FILE"
+  printf '%s' "$REMOVE" | jq -r '.[] | "\(.id) \(.type) \(.name) \(.content)"' | while read -r rid rtype rname rcontent; do
+    echo "Removing $rtype $rname -> $rcontent (saved in $EXPORT/records.json)"
+    change DELETE "/zones/$Z/dns_records/$rid" >/dev/null
   done
-  # shellcheck disable=SC2086
-  set -- $HOSTS
-  check_hosts "$@"
-  [ -n "$APPROVED" ] || die "the cutover needs the owner's explicit word in his thread; then pass --owner-approved"
-  LINE="$(awk -F'\t' -v r="$REL" '$1 == r' "$STORE/releases.tsv" 2>/dev/null | tail -1)"
-  [ -n "$LINE" ] || die "$REL is not in $STORE/releases.tsv: release it to workers.dev and check it first"
-  ID="$(printf '%s' "$LINE" | cut -f7)"
-  DEST="$STORE/$ID"
-  EXPORT="$(ls -d "$STORE"/dns/* 2>/dev/null | tail -1)"
-  [ -n "$EXPORT" ] && [ -n "$(find "$EXPORT" -maxdepth 0 -mmin -120)" ] || die "no DNS export from the last two hours: run tools/domain.sh export first"
-  echo "Release $REL (frozen copy $ID), DNS export $EXPORT"
-  Z="$(zone_id)"
-  # Remove the conflicting web records ourselves, visibly. Without this, a non interactive
-  # wrangler deploy silently overrides them (override_existing_dns_record).
-  for h in "$@"; do
-    web_records "$h" "$EXPORT/records.json" | jq -r '.[] | "\(.id) \(.type) \(.name) \(.content)"' | while read -r rid rtype rname rcontent; do
-      echo "Removing $rtype $rname -> $rcontent"
-      cf DELETE "/zones/$Z/dns_records/$rid" >/dev/null || echo "  (already gone)"
-    done
-  done
-  # Same Worker, same code and Durable Objects as the release; this only adds Custom Domains.
-  # workers_dev stays on so the workers.dev address keeps working.
-  { echo "workers_dev = true"; cat "$DEST/wrangler.toml"; for h in "$@"; do printf '\n[[routes]]\npattern = "%s"\ncustom_domain = true\n' "$h"; done; } > "$DEST/wrangler.domain.toml"
-  echo "Deploying $REL with Custom Domains:$HOSTS"
-  if ! deploy_with_domains "$REL on$HOSTS" > "/tmp/syn3h-domain-attach.log" 2>&1; then
-    cat /tmp/syn3h-domain-attach.log
-    echo "Deploy failed: restoring the records just removed."
-    "$REPO/tools/domain.sh" rollback "$EXPORT" "$@"
-    die "attach failed and was rolled back"
+  BODY="$(jq -cn --arg h "$H" --arg s "$WORKER" --arg z "$Z" '{hostname: $h, service: $s, zone_id: $z}')"
+  echo "Attaching $H to $WORKER"
+  if ! OUT="$(change PUT "/accounts/$A/workers/domains" "$BODY")"; then
+    echo "Attach failed: restoring the records just removed."
+    restore_records "$EXPORT" "$H"
+    die "attach of $H failed and its records were restored"
   fi
-  cat /tmp/syn3h-domain-attach.log
-  for h in "$@"; do "$REPO/tools/domain.sh" check "$h" || die "$h failed its checks: consider tools/domain.sh rollback $EXPORT$HOSTS"; done
-  echo "ATTACH OK:$HOSTS now serve $REL. Roll back with: tools/domain.sh rollback $EXPORT$HOSTS"
+  if [ -z "$DRY" ]; then printf '%s' "$OUT" > "$EXPORT/attached-$H.json"; fi
+  if [ -n "$DRY" ]; then echo "DRY RUN: then check that $(printf '%s ' $BEFORE)$H are all attached"; exit 0; fi
+  still_attached "$BEFORE $H"
+  echo "ATTACH OK: $H serves the Worker $WORKER. Next: tools/domain.sh check $H"
+  echo "Roll back with: tools/domain.sh rollback $EXPORT $H"
   ;;
 
 check)
-  H="${1:-}"; check_hosts "$H"
+  H="${1:-}"; need_host_in_zone "$H"
+  if [ "$H" = "$REDIRECT_ONLY" ]; then
+    PROBE="/?room=redirect-check&v=26.11.1503"
+    got="$(curl -sS -o /dev/null --max-time 20 -w '%{http_code} %{redirect_url}' "https://$H$PROBE")" || die "https://$H/ failed (certificate or connection)"
+    [ "$got" = "302 https://$CANONICAL$PROBE" ] || [ "$got" = "301 https://$CANONICAL$PROBE" ] || die "https://$H$PROBE answered \"$got\", not a redirect to https://$CANONICAL$PROBE"
+    echo "Redirect ok, certificate verified: https://$H$PROBE -> $got"
+    exit 0
+  fi
+  # curl verifies the certificate: a bad one fails the request rather than answering.
   i=0
   until code="$(curl -s -o /dev/null -w '%{http_code}' "https://$H/")" && [ "$code" = 200 ]; do
     i=$((i + 1)); [ "$i" -le 60 ] || die "https://$H/ answered $code"; sleep 5
   done
-  echo "HTTPS ok: https://$H/"
+  echo "HTTPS ok, certificate verified: https://$H/"
   node -e '
     const WebSocket = require(process.argv[2] + "/node_modules/ws")
     const ws = new WebSocket("wss://" + process.argv[1] + "/ws?room=cutover-check")
@@ -121,6 +231,19 @@ check)
     ws.on("open", () => { clearTimeout(t); console.log("WSS ok: upgrade to /ws"); ws.close(); process.exit(0) })
     ws.on("error", (e) => { console.error("WSS failed: " + e.message); process.exit(1) })
   ' "$H" "$REPO"
+  # Every host attached in the newest export of either zone must still be attached and serving.
+  PREV=""
+  for z in $ZONES; do e="$(ls -d "$STORE"/dns/*-"$z" 2>/dev/null | tail -1)"; [ -z "$e" ] || [ ! -f "$e/worker-domains.json" ] || PREV="$PREV $(exported_attached "$e" | tr '\n' ' ')"; done
+  PREV="$(printf '%s\n' $PREV | sort -u)"
+  if [ -n "$PREV" ]; then
+    if cf_has_token; then A="$(account_id)"; still_attached "$PREV"; else echo "(no token: attachment of $(printf '%s ' $PREV)not verified, only that they serve)"; fi
+    for p in $PREV; do
+      [ "$p" = "$H" ] && continue
+      c="$(curl -s -o /dev/null --max-time 20 -w '%{http_code}' "https://$p/")" || true
+      [ "$c" = 200 ] || die "https://$p/, attached before, answered $c"
+      echo "Still serving: https://$p/"
+    done
+  fi
   if [ -n "${SYN3H_SHORT_CHECK:-}" ]; then
     # After a release's production deploy: the short public check (tools/public-check.mjs).
     run_public_check "https://$H/" /tmp/syn3h-domain-check.log || die "public check failed on $H"
@@ -132,25 +255,116 @@ check)
   ;;
 
 rollback)
-  EXPORT="${1:-}"; [ $# -gt 0 ] && shift
-  [ -f "$EXPORT/records.json" ] || die "give the export directory (from tools/domain.sh export)"
-  check_hosts "$@"
+  given_export "${1:-}"; shift
+  [ $# -gt 0 ] || die "name at least one host"
+  for h in "$@"; do need_host_in_zone "$h"; done
+  KEEP="$(exported_attached "$EXPORT")"
+  for h in "$@"; do
+    printf '%s\n' "$KEEP" | grep -qx "$h" && die "refusing to detach $h: it was attached before $EXPORT; rollback only undoes attach"
+  done
   Z="$(zone_id)"; A="$(account_id)"
   for h in "$@"; do
-    # Detach the Custom Domain; Cloudflare removes the record it created.
-    for did in $(cf GET "/accounts/$A/workers/domains?hostname=$h" | jq -r '.result[].id'); do
-      echo "Detaching Custom Domain $h ($did)"
-      cf DELETE "/accounts/$A/workers/domains/$did" >/dev/null
+    if live; then IDS="$(cf GET "/accounts/$A/workers/domains?hostname=$h" | jq -r --arg s "$WORKER" '.result[] | select(.service == $s) | .id')"
+    else IDS="$(jq -r '.result.id // empty' "$EXPORT/attached-$h.json" 2>/dev/null || true)"; IDS="${IDS:-{domain_id}}"; fi
+    for did in $IDS; do
+      echo "Detaching $h ($did)"
+      change DELETE "/accounts/$A/workers/domains/$did" >/dev/null
     done
-    web_records "$h" "$EXPORT/records.json" | jq -c '.[] | {type, name, content, proxied, ttl, comment}' | while read -r rec; do
-      echo "Restoring $(printf '%s' "$rec" | jq -r '"\(.type) \(.name) -> \(.content)"')"
-      cf POST "/zones/$Z/dns_records" "$rec" >/dev/null || echo "  (could not restore; it may already exist: check the dashboard)"
-    done
+    restore_records "$EXPORT" "$h"
   done
-  echo "ROLLBACK DONE:$* are back on their exported records. Certificates made for the Custom"
-  echo "Domain stay under SSL/TLS > Edge Certificates; they are harmless and can be deleted later."
+  [ -n "$DRY" ] || { [ -z "$KEEP" ] || still_attached "$KEEP"; }
+  echo "ROLLBACK DONE:$(printf ' %s' "$@") detached and their exported records restored."
+  ;;
+
+redirect-www)
+  mira_only
+  [ -n "$APPROVED" ] || die "redirect-www changes the mira.cc zone; pass --owner-approved"
+  fresh_export
+  Z="$(zone_id)"
+  NOW_FILE="$(mktemp)"; current_records "$NOW_FILE"
+  WWW="$(web_records "$REDIRECT_ONLY" "$NOW_FILE")"; rm -f "$NOW_FILE"
+  STATE="$EXPORT/redirect-www.json"; [ -f "$STATE" ] || echo '{}' > "$STATE"
+  if [ "$(printf '%s' "$WWW" | jq --arg p "$PLACEHOLDER" '[.[] | select(.type == "AAAA" and .content == $p and .proxied == true)] | length')" -gt 0 ]; then
+    echo "Placeholder record at $REDIRECT_ONLY already there."
+  elif [ "$(printf '%s' "$WWW" | jq 'length')" -gt 0 ]; then
+    die "$REDIRECT_ONLY still has other records ($(printf '%s' "$WWW" | jq -r '[.[] | "\(.type) \(.content)"] | join(", ")')): run tools/domain.sh clean-parking first"
+  else
+    REC="$(jq -cn --arg n "$REDIRECT_ONLY" --arg c "$PLACEHOLDER" '{type: "AAAA", name: $n, content: $c, proxied: true, ttl: 1, comment: "No origin: redirects to mira.cc (tools/domain.sh redirect-www)"}')"
+    echo "Creating proxied AAAA $REDIRECT_ONLY -> $PLACEHOLDER (no origin; Cloudflare answers it)"
+    REC_OUT="$(change POST "/zones/$Z/dns_records" "$REC")"
+    if [ -z "$DRY" ]; then jq --arg id "$(printf '%s' "$REC_OUT" | jq -r '.result.id')" '.record_id = $id' "$STATE" > "$STATE.tmp"; mv "$STATE.tmp" "$STATE"; fi
+  fi
+  RULE="$(jq -cn --arg host "$REDIRECT_ONLY" --arg to "https://$CANONICAL" --arg d "$RULE_DESC" '{
+    description: $d,
+    expression: ("(http.host eq \"" + $host + "\")"),
+    action: "redirect",
+    action_parameters: { from_value: { status_code: 302, preserve_query_string: true,
+      target_url: { expression: ("concat(\"" + $to + "\", http.request.uri.path)") } } } }')"
+  if live; then ENTRY="$(cf GET "/zones/$Z/rulesets/phases/http_request_dynamic_redirect/entrypoint" 2>/dev/null || true)"
+  else ENTRY="$(cat "$EXPORT/redirect-rules.json" 2>/dev/null || true)"; fi
+  RID="$(printf '%s' "$ENTRY" | jq -r '.result.id // empty' 2>/dev/null || true)"
+  if [ -n "$RID" ] && printf '%s' "$ENTRY" | jq -e --arg d "$RULE_DESC" '.result.rules // [] | any(.description == $d)' >/dev/null; then
+    echo "Redirect rule \"$RULE_DESC\" already there."
+  elif [ -n "$RID" ]; then
+    echo "Adding the rule \"$RULE_DESC\" to the zone's redirect rules ($RID)"
+    RULE_OUT="$(change POST "/zones/$Z/rulesets/$RID/rules" "$RULE")"
+  else
+    echo "Creating the zone's redirect rules with \"$RULE_DESC\""
+    RULE_OUT="$(change POST "/zones/$Z/rulesets" "$(jq -cn --argjson r "$RULE" '{name: "redirects", kind: "zone", phase: "http_request_dynamic_redirect", rules: [$r]}')")"
+  fi
+  if [ -z "$DRY" ] && [ -n "${RULE_OUT:-}" ]; then
+    jq --argjson o "$RULE_OUT" --arg d "$RULE_DESC" '.ruleset_id = $o.result.id | .rule_id = ([$o.result.rules[] | select(.description == $d) | .id][0])' "$STATE" > "$STATE.tmp"
+    mv "$STATE.tmp" "$STATE"
+  fi
+  [ -z "$DRY" ] || { echo "DRY RUN: then expect https://$REDIRECT_ONLY/?room=x to answer 302 to https://$CANONICAL/?room=x"; exit 0; }
+  i=0
+  until got="$(curl -s -o /dev/null --max-time 20 -w '%{http_code} %{redirect_url}' "https://$REDIRECT_ONLY/?room=redirect-check")" && [ "$got" = "302 https://$CANONICAL/?room=redirect-check" ]; do
+    i=$((i + 1)); [ "$i" -le 24 ] || die "https://$REDIRECT_ONLY/ answered \"$got\" after two minutes; undo with tools/domain.sh redirect-www-rollback $EXPORT"
+    sleep 5
+  done
+  echo "REDIRECT OK: https://$REDIRECT_ONLY/ -> https://$CANONICAL/ (302, path and query kept). Undo with: tools/domain.sh redirect-www-rollback $EXPORT"
+  ;;
+
+redirect-www-rollback)
+  mira_only
+  given_export "${1:-}"
+  STATE="$EXPORT/redirect-www.json"
+  Z="$(zone_id)"
+  RID="$(jq -r '.ruleset_id // empty' "$STATE" 2>/dev/null || true)"; RULE_ID="$(jq -r '.rule_id // empty' "$STATE" 2>/dev/null || true)"
+  REC_ID="$(jq -r '.record_id // empty' "$STATE" 2>/dev/null || true)"
+  [ -n "$RID$REC_ID" ] || [ -n "$DRY" ] || die "$STATE records nothing that redirect-www created"
+  [ -z "$RULE_ID" ] || { echo "Deleting the redirect rule $RULE_ID"; change DELETE "/zones/$Z/rulesets/$RID/rules/$RULE_ID" >/dev/null; }
+  [ -z "$REC_ID" ] || { echo "Deleting the placeholder record $REC_ID"; change DELETE "/zones/$Z/dns_records/$REC_ID" >/dev/null; }
+  [ -z "$DRY" ] || [ -n "$RID$REC_ID" ] || echo "DRY RUN: nothing recorded in $STATE to undo"
+  echo "REDIRECT-WWW ROLLED BACK: $REDIRECT_ONLY no longer redirects (restore parking records with tools/domain.sh restore $EXPORT $REDIRECT_ONLY if wanted)."
+  ;;
+
+clean-parking)
+  mira_only
+  fresh_export
+  Z="$(zone_id)"
+  TARGETS="$(jq -c --arg p "$PLACEHOLDER" '[.result[] | select((.name == "*.mira.cc" or .name == "www.mira.cc") and (.type == "A" or .type == "AAAA" or .type == "CNAME") and .content != $p)]' "$EXPORT/records.json")"
+  [ "$(printf '%s' "$TARGETS" | jq 'length')" -gt 0 ] || { echo "No parking records at *.mira.cc or www.mira.cc in $EXPORT."; exit 0; }
+  echo "Parking records to delete (saved in $EXPORT/records.json):"
+  printf '%s' "$TARGETS" | jq -r '.[] | "  \(.type) \(.name) -> \(.content) proxied=\(.proxied) id=\(.id)"'
+  [ -n "$CONFIRMED" ] || die "read the list above, then run again with --confirm-delete"
+  if live; then
+    NOW_FILE="$(mktemp)"; current_records "$NOW_FILE"
+    for rid in $(printf '%s' "$TARGETS" | jq -r '.[].id'); do jq -e --arg id "$rid" 'any(.result[]; .id == $id)' "$NOW_FILE" >/dev/null || die "record $rid is gone since $EXPORT: export again"; done
+    rm -f "$NOW_FILE"
+  fi
+  for rid in $(printf '%s' "$TARGETS" | jq -r '.[].id'); do change DELETE "/zones/$Z/dns_records/$rid" >/dev/null; echo "Deleted $rid"; done
+  echo "CLEAN-PARKING DONE. Undo with: tools/domain.sh restore $EXPORT '*.mira.cc' www.mira.cc"
+  ;;
+
+restore)
+  given_export "${1:-}"; shift
+  [ $# -gt 0 ] || die "name at least one record name"
+  for n in "$@"; do case "$n" in "$ZONE_NAME"|*".$ZONE_NAME") ;; *) die "refusing $n: not in $ZONE_NAME" ;; esac; done
+  Z="$(zone_id)"
+  restore_records "$EXPORT" "$@"
   ;;
 
 *)
-  sed -n '2,15p' "$0"; exit 2 ;;
+  sed -n '2,35p' "$0"; exit 2 ;;
 esac
