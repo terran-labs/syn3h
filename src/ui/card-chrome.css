@@ -137,3 +137,18 @@ html .syn3h-shell.has-touch .world-inspector .wi-row.tint-row > .tint-default::a
 }
 .ui-tip.is-shown { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .ui-tip { transition: none; } }
+
+/* ---- The accordion arrow (accordionArrow.ts): one chevron that turns as its section opens ----
+   Right when closed, down when open, turned about its own centre so nothing slides sideways. */
+.accordion-arrow {
+  display: inline-block; flex: none; width: 14px; height: 14px; vertical-align: -1px; overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  transition: rotate .18s cubic-bezier(.2, .8, .2, 1);
+}
+details[open] > summary .accordion-arrow, [aria-expanded="true"] .accordion-arrow { rotate: 90deg; }
+/* The double chevron before a link that leads on (LEADS_ON). */
+.leads-on {
+  display: inline-block; flex: none; width: .9em; height: .9em; margin-right: .35em; vertical-align: -.08em; overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+}
+@media (prefers-reduced-motion: reduce) { .accordion-arrow { transition: none; } }

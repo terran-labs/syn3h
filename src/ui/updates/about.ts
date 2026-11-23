@@ -4,6 +4,7 @@
  * gives each its own sheet (LobbySheet.ts), without tabs.
  * Updates fetches the release feed the first time it is opened.
  */
+import { ACCORDION_ARROW, LEADS_ON } from '../accordionArrow'
 import { loadFeed, pinnedVersion, runningVersion, type Release } from './feed'
 import { renderMarkdown, safeHref } from './markdown'
 import { isNewer } from './version'
@@ -97,7 +98,9 @@ export async function fillUpdates(host: HTMLElement): Promise<void> {
     const item = document.createElement('li'), details = document.createElement('details'), summary = document.createElement('summary')
     details.className = 'update-release'; details.dataset.version = release.version
     const head = document.createElement('span'); head.className = 'update-head'
-    head.append(text('strong', `v${release.version}`, 'update-version'))
+    const version = text('strong', `v${release.version}`, 'update-version')
+    version.insertAdjacentHTML('beforeend', ACCORDION_ARROW)
+    head.append(version)
     if (running && release.version === running) head.append(text('span', 'You are playing this', 'update-badge is-running'))
     else if (running && isNewer(release.version, running)) head.append(text('span', 'New', 'update-badge is-new'))
     head.append(text('span', displayDate(release.date), 'update-date'))
@@ -113,10 +116,12 @@ export async function fillUpdates(host: HTMLElement): Promise<void> {
       const href = safeHref(release.url ?? '')
       if (href) {
         const link = document.createElement('a'); link.className = 'update-full'; link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer'
-        link.textContent = 'Full release notes'; link.setAttribute('aria-label', `Full release notes for v${release.version}, on GitHub`)
+        link.innerHTML = LEADS_ON; link.append('Full release notes'); link.setAttribute('aria-label', `Full release notes for v${release.version}, on GitHub`)
         body.append(link)
       }
     }
+    // Filled as the click lands, before the details opens, so the notes open at their full height.
+    summary.addEventListener('click', fill)
     details.addEventListener('toggle', () => { if (details.open) fill() })
     details.append(body)
     if (index === 0) { details.open = true; fill() }
