@@ -25,7 +25,7 @@ const NOTES_DIR = join(NOTES_ROOT, 'releases')
 const PLAYER_DIR = join(NOTES_ROOT, 'player')
 const HISTORY = join(NOTES_ROOT, 'history.tsv')
 const GITHUB_REPO = process.env.SYN3H_GITHUB_REPO || 'terran-labs/syn3h'
-const PLAY_URL = 'https://www.syn3h.com/'
+const PLAY_URL = 'https://mira.cc/'
 /** The address that serves one frozen release for good (tools/frozen-versions.mjs). */
 export function frozenUrl(version) {
   return `${PLAY_URL}?v=${String(version).replace(/^v/, '')}`

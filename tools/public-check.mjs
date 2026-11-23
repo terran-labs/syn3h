@@ -3,7 +3,7 @@
  * production deploy. The full gameplay smoke (tools/net-smoke.mjs) runs on the staging Worker
  * and in the dry run, against the same frozen build, before production is touched.
  *
- *   node tools/public-check.mjs https://www.syn3h.com/
+ *   node tools/public-check.mjs https://mira.cc/
  *
  * Steps, two clients in one fresh room:
  *  1. both join and see each other;

@@ -39,7 +39,7 @@ function gitState() {
   return { commits }
 }
 
-const SITE = 'https://www.syn3h.com/'
+const SITE = 'https://mira.cc/'
 const REPO = 'https://github.com/terran-labs/syn3h'
 /** Today's release train starts here: v26.11.1503 is the build frozen before the noon deadline. */
 const FIRST_LISTED = 'v26.11.1503'

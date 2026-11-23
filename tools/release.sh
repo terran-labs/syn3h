@@ -112,9 +112,9 @@ PREV="$(awk -F '\t' '$5 == "production" { previous = $2 } END { print previous }
 
 # The release live now, to return to if this one is not accepted, and the stable pointer's
 # target, to restore with it.
-# The release live now is the one www.syn3h.com serves, not necessarily the last row of
+# The release live now is the one mira.cc serves, not necessarily the last row of
 # releases.tsv: a hand rollback (tools/rollback.sh) leaves production on an older release.
-LIVE_ID="$(curl -sf --max-time 15 https://www.syn3h.com/build.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).id||"")}catch{}})' 2>/dev/null || true)"
+LIVE_ID="$(curl -sf --max-time 15 https://mira.cc/build.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).id||"")}catch{}})' 2>/dev/null || true)"
 PREV_LINE="$(awk -F '\t' -v id="$LIVE_ID" 'id != "" && $7 == id' ../Syn3h-stable/releases.tsv 2>/dev/null | tail -1)"
 if [ -z "$PREV_LINE" ]; then
   PREV_LINE="$(tail -1 ../Syn3h-stable/releases.tsv 2>/dev/null || true)"
@@ -130,7 +130,7 @@ echo "Freezing $MILESTONE ($COMMIT)..."
 ID="$(tools/promote-stable.sh "release-$N: $NOTE" | tail -1)"
 DEST="$(cd ../Syn3h-stable/"$ID" && pwd)"
 printf '*.map\n' > "$DEST/dist/.assetsignore"
-# Frozen versions (https://www.syn3h.com/?v=<version>): the Worker serves this release's own
+# Frozen versions (https://mira.cc/?v=<version>): the Worker serves this release's own
 # version from this build and every earlier one from R2 (bucket syn3h-versions, checked by the
 # preflight above). The build carries no old versions, only dist/v/versions.json listing them
 # all, and `prepare` refuses a build that changes a root file an earlier version also serves.
@@ -181,12 +181,12 @@ roll_back() {
     grep '^NET SMOKE SUMMARY' "$_rlog-smoke" >&2 || true
   fi
   # Verify both addresses, the owner-facing domain included: rollback.sh checks workers.dev only.
-  for url in https://syn3h.af-4e7.workers.dev/ https://www.syn3h.com/; do
+  for url in https://syn3h.af-4e7.workers.dev/ https://mira.cc/; do
     settle "$url" "../Syn3h-stable/$PREV_ID" "$_rlog" || { tail -5 "$_rlog" >&2; printf '\nROLLBACK FAILED: %s does not serve %s. Run tools/rollback.sh %s now.\n' "$url" "$PREV_REL" "$PREV_REL" >&2; return 1; }
     printf 'Verified %s (5 passes in a row): %s\n' "$url" "$(tail -1 "$_rlog")" >&2
   done
   [ -z "$PREV_CURRENT" ] || ln -sfn "$PREV_CURRENT" ../Syn3h-stable/current
-  printf '\nROLLED BACK: production serves %s again, verified on workers.dev and www.syn3h.com. release-%s was not recorded or tagged.\n' "$PREV_REL" "$N" >&2
+  printf '\nROLLED BACK: production serves %s again, verified on workers.dev and mira.cc. release-%s was not recorded or tagged.\n' "$PREV_REL" "$N" >&2
 }
 on_exit() {
   status=$?
@@ -336,10 +336,10 @@ fi
 
 # --- Primary public acceptance ---------------------------------------------------------------
 # A workers.dev pass does not establish that the owner-facing domain serves the same assets.
-PRIMARY_URL="https://www.syn3h.com/"
+PRIMARY_URL="https://mira.cc/"
 settle "$PRIMARY_URL" "$DEST" "$LOG-primary-assets.log" --feed || { tail -20 "$LOG-primary-assets.log"; fail "primary entry bundle did not settle on the frozen build within three minutes"; }
 tail -1 "$LOG-primary-assets.log"
-if ! SYN3H_SHORT_CHECK=1 tools/domain.sh check www.syn3h.com >"$LOG-primary.log" 2>&1; then
+if ! SYN3H_SHORT_CHECK=1 tools/domain.sh check mira.cc >"$LOG-primary.log" 2>&1; then
   cat "$LOG-primary.log"
   fail "primary domain acceptance failed; roll back the deployment"
 fi
@@ -390,7 +390,7 @@ vantage() {
   [ -z "${SYN3H_SKIP_VANTAGE:-}" ] || { echo "VANTAGE: skipped (SYN3H_SKIP_VANTAGE)"; return 0; }
   command -v gh >/dev/null 2>&1 || { echo "VANTAGE: skipped (gh is not installed)"; return 0; }
   _since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  gh workflow run public-check.yml -f version="$CALVER" -f url=https://www.syn3h.com/ >"$LOG-vantage.log" 2>&1 \
+  gh workflow run public-check.yml -f version="$CALVER" -f url=https://mira.cc/ >"$LOG-vantage.log" 2>&1 \
     || { echo "VANTAGE: skipped (could not start the GitHub check; see $LOG-vantage.log)"; return 0; }
   _run=""; _tries=0
   while [ -z "$_run" ] && [ "$_tries" -lt 12 ]; do

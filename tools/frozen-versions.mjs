@@ -1,5 +1,5 @@
 /**
- * Frozen versions: https://www.syn3h.com/?v=<version> keeps serving that exact build after later
+ * Frozen versions: https://mira.cc/?v=<version> keeps serving that exact build after later
  * releases. The owner's rule of 15 November 2026: judges must be able to load the build frozen
  * before noon (v26.11.1503) by a version in the address while newer builds keep shipping.
  *
@@ -95,7 +95,7 @@ export function prepare(copy, version, archive = archiveDir()) {
   versions.sort(compare)
   rmSync(join(dist, 'v'), { recursive: true, force: true })
   mkdirSync(join(dist, 'v'))
-  writeFileSync(join(dist, 'v', 'versions.json'), JSON.stringify({ versions, note: 'Open https://www.syn3h.com/?v=<version> to play a frozen build.' }) + '\n')
+  writeFileSync(join(dist, 'v', 'versions.json'), JSON.stringify({ versions, note: 'Open https://mira.cc/?v=<version> to play a frozen build.' }) + '\n')
   return versions
 }
 
@@ -153,10 +153,10 @@ export function apiStore(bucket = BUCKET, { token = process.env.CLOUDFLARE_API_T
   const base = async () => {
     account ??= (async () => {
       // The account that owns the site's zone, as tools/domain.sh finds it: the token may see more.
-      const res = await fetch(`${api}/zones?name=syn3h.com`, { headers: auth })
+      const res = await fetch(`${api}/zones?name=mira.cc`, { headers: auth })
       const body = await res.json().catch(() => ({}))
       const id = body.result?.[0]?.account?.id
-      if (!res.ok || body.result?.length !== 1 || !id) throw new Error(`could not find the account that owns syn3h.com (HTTP ${res.status})`)
+      if (!res.ok || body.result?.length !== 1 || !id) throw new Error(`could not find the account that owns mira.cc (HTTP ${res.status})`)
       return id
     })()
     return `${api}/accounts/${await account}/r2/buckets/${bucket}/objects/`
@@ -241,7 +241,7 @@ export async function r2WriteIndex(versions, { store }) {
   for (const v of [...versions].sort(compare)) if (await store.get(`v/${v}/index.html`)) listed.push(v)
   const dir = mkdtempSync(join(tmpdir(), 'syn3h-r2-index-'))
   const file = join(dir, 'versions.json')
-  writeFileSync(file, JSON.stringify({ versions: listed, note: 'Open https://www.syn3h.com/?v=<version> to play a frozen build.' }) + '\n')
+  writeFileSync(file, JSON.stringify({ versions: listed, note: 'Open https://mira.cc/?v=<version> to play a frozen build.' }) + '\n')
   await store.put(INDEX_KEY, file, CONTENT_TYPES.json)
   rmSync(dir, { recursive: true, force: true })
   return listed

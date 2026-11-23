@@ -213,7 +213,7 @@ class PhaseTests(unittest.TestCase):
         (root / 'history.tsv').write_text('')
         env = {**self.env, 'SYN3H_RELEASE_NOTES_DIR': str(root)}
         version = version or subprocess.run(['node', str(NOTES_TOOL), 'next'], env=env, capture_output=True, text=True, check=True).stdout.strip()
-        (root / 'releases' / f'{version}.md').write_text(f'## Syn3h {version}\n\nDeck.\n\nhttps://www.syn3h.com/?v={version[1:]}\n')
+        (root / 'releases' / f'{version}.md').write_text(f'## Syn3h {version}\n\nDeck.\n\nhttps://mira.cc/?v={version[1:]}\n')
         (root / 'player' / f'{version}.md').write_text('Deck\n')
         return root
 

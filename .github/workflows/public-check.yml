@@ -17,7 +17,7 @@ on:
       url:
         description: Public address to check
         required: false
-        default: https://www.syn3h.com/
+        default: https://mira.cc/
         type: string
 
 permissions:

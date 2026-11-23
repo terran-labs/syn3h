@@ -21,17 +21,17 @@ describe('release notes Markdown', () => {
       expect(links(inline)).toEqual([null])
       expect(flat(inline)).toBe('click')
     }
-    expect(safeHref('https://www.syn3h.com/?v=26.11.1602')).toBe('https://www.syn3h.com/?v=26.11.1602')
+    expect(safeHref('https://mira.cc/?v=26.11.1602')).toBe('https://mira.cc/?v=26.11.1602')
     expect(safeHref('/brand/licenses/')).toBe('/brand/licenses/')
   })
   it('reads the shapes the notes use', () => {
-    const blocks = parseMarkdown('### Fixes\n\n- One `?webgl=1`\n- **Two** and *three*\n\n1. First\n2. Second\n\n| A | B |\n|---|---|\n| [x](https://a.example) | y |\n\nLive at https://www.syn3h.com/.')
+    const blocks = parseMarkdown('### Fixes\n\n- One `?webgl=1`\n- **Two** and *three*\n\n1. First\n2. Second\n\n| A | B |\n|---|---|\n| [x](https://a.example) | y |\n\nLive at https://mira.cc/.')
     expect(blocks.map(b => b.t)).toEqual(['h', 'ul', 'ol', 'table', 'p'])
     const [, ul, , table, p] = blocks
     expect(ul.t === 'ul' && ul.items.map(flat)).toEqual(['One ?webgl=1', 'Two and three'])
     expect(table.t === 'table' && links(table.rows[0][0])).toEqual(['https://a.example'])
     // A bare address links without the sentence's full stop.
-    expect(p.t === 'p' && links(p.c)).toEqual(['https://www.syn3h.com/'])
+    expect(p.t === 'p' && links(p.c)).toEqual(['https://mira.cc/'])
   })
 })
 

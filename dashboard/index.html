@@ -230,7 +230,7 @@ async function refresh() {
     renderStats(s.stats)
     const rel = s.releases ?? []
     const live = rel.find((r) => r.channel === 'production')
-    $('headline').textContent = live ? `${live.version} is live at www.syn3h.com, released ${live.time}. ${rel.filter((r) => r.channel === 'production').length} public releases from ${rel.at(-1)?.version} on.` : ''
+    $('headline').textContent = live ? `${live.version} is live at mira.cc, released ${live.time}. ${rel.filter((r) => r.channel === 'production').length} public releases from ${rel.at(-1)?.version} on.` : ''
     $('releases').innerHTML = rel.map((r) => `<div class="row rel"><span class="tag ${r.channel === 'production' ? (r === live ? 'active' : 'done') : 'blocked'}">${esc(r === live ? 'live' : r.channel === 'production' ? 'shipped' : r.channel)}</span><div><div class="t">${esc(r.version)} <span class="muted">${esc(r.time.replace(/^\d{4}-\d\d-\d\d /, ''))}</span></div><div class="d">${esc(r.line)}</div><div class="rl"><a href="${esc(r.notes)}" target="_blank" rel="noopener">Notes</a>${r.frozen ? `<a href="${esc(r.frozen)}" target="_blank" rel="noopener">Play this build</a>` : ''}</div></div></div>`).join('') || '<div class="muted">No releases recorded.</div>'
     $('inprogress').innerHTML = (s.inProgress ?? []).map((w) => row(w.state, w.title, w.detail)).join('') || '<div class="muted">Nothing recorded.</div>'
     $('decisions').innerHTML = (s.decisions ?? []).map((d) => row(d.state ?? 'waiting', d.title, d.detail)).join('') || '<div class="muted">Nothing right now.</div>'

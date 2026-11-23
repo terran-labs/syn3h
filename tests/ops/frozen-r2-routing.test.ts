@@ -1,5 +1,5 @@
 /**
- * The address that serves a frozen release: https://www.syn3h.com/?v=<version>.
+ * The address that serves a frozen release: https://mira.cc/?v=<version>.
  *
  * The owner's rule of 15 November 2026: judges load the build frozen before noon by a version in
  * the address while newer builds keep shipping. Step two of the move to R2 (server/worker.ts):
@@ -63,8 +63,8 @@ const R2 = {
   'v/26.11.1600/build.json': { body: 'r2 1600 build', type: 'application/json' },
 }
 const call = (env: unknown, path: string, init: RequestInit = {}) =>
-  (worker as unknown as { fetch(req: Request, env: unknown): Promise<Response> }).fetch(new Request(`https://www.syn3h.com${path}`, init), env)
-const from = (v: string) => ({ Referer: `https://www.syn3h.com/?v=${v}&autoplay=1` })
+  (worker as unknown as { fetch(req: Request, env: unknown): Promise<Response> }).fetch(new Request(`https://mira.cc${path}`, init), env)
+const from = (v: string) => ({ Referer: `https://mira.cc/?v=${v}&autoplay=1` })
 
 describe('frozen versions', () => {
   let FROZEN: ReturnType<typeof bucket>
@@ -115,7 +115,7 @@ describe('frozen versions', () => {
     const empty = { ASSETS, FROZEN: bucket({}) }
     const page = await call(empty, '/?v=26.11.1503')
     expect(page.status).toBe(404)
-    expect(await page.text()).toContain('https://www.syn3h.com/?v=26.11.1503')
+    expect(await page.text()).toContain('https://mira.cc/?v=26.11.1503')
     expect((await call(empty, '/v/26.11.1503/welcome/view-640.webp')).status).toBe(404)
     // A root file the version never had is the latest build's, unmarked, as before.
     const model = await call(env, '/models/buggy.glb', { headers: from('26.11.1600') })
@@ -160,11 +160,11 @@ describe('frozen versions', () => {
     for (const address of ['/?v=1.2.3', '/?v=banana', '/?v=']) {
       const response = await call(env, address)
       expect(response.status).toBe(404)
-      expect(await response.text()).toContain('https://www.syn3h.com/?v=26.11.1600')
+      expect(await response.text()).toContain('https://mira.cc/?v=26.11.1600')
     }
     FROZEN.keys.length = 0
     expect(await (await call(env, '/')).text()).toBe('latest page')
-    expect(await (await call(env, '/build.json', { headers: { Referer: 'https://www.syn3h.com/' } })).text()).toContain('26.11.1700')
+    expect(await (await call(env, '/build.json', { headers: { Referer: 'https://mira.cc/' } })).text()).toContain('26.11.1700')
     expect(await (await call(env, '/assets/app-NEW-QqWw1234.js')).text()).toBe('latest script')
     // The Updates banner's list comes from the deployment, whatever page asks.
     expect(JSON.parse(await (await call(env, '/v/versions.json', { headers: from('26.11.1503') })).text()).versions).toContain('26.11.1700')

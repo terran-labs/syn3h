@@ -14,7 +14,7 @@
  *   PORT=8791 npm run server
  *   SYN3H_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
  *   node tools/wrap-check.mjs
- *   node tools/wrap-check.mjs https://www.syn3h.com/ --direct
+ *   node tools/wrap-check.mjs https://mira.cc/ --direct
  */
 import { spawn } from 'node:child_process'
 import { writeFileSync } from 'node:fs'

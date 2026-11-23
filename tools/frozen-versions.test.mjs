@@ -94,9 +94,9 @@ test('versions are written one way', () => {
 })
 
 test('production notes link the playable frozen version', () => {
-  assert.equal(frozenUrl('v26.11.1503'), 'https://www.syn3h.com/?v=26.11.1503')
+  assert.equal(frozenUrl('v26.11.1503'), 'https://mira.cc/?v=26.11.1503')
   const [row] = parseHistory('v26.11.1600\tm20\tabc1234\t2026-11-16 09:00 PST\tproduction\n')
-  assert.match(draftNotes(row, 'a', 'b', []), /https:\/\/www\.syn3h\.com\/\?v=26\.11\.1600/)
+  assert.match(draftNotes(row, 'a', 'b', []), /https:\/\/mira\.cc\/\?v=26\.11\.1600/)
 })
 
 test('a transport error, a 5xx or a 429 is retried, at most three attempts', async () => {

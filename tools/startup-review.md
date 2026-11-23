@@ -6,7 +6,7 @@ Bots, Performance and QA lane, branch `feat/fx-startup`, Saturday 14 November 20
 
 **The preview link makes the iPad download about 28 MB of uncompressed JavaScript in 151
 requests before a single line of the game runs.** Half of that is source maps the Vite dev
-server inlines as base64 into every module. Production (www.syn3h.com) sends about 2 MB
+server inlines as base64 into every module. Production (mira.cc) sends about 2 MB
 (brotli) in 11 to 13 requests and reaches its first draw in 1.4 to 2.9 seconds cold here.
 
 Shaping the local dev server to 100 ms round trip and 10 Mbit/s reproduces most of the wait:
@@ -36,12 +36,12 @@ it is the download. If `frame 1 render call` does, it is Safari compiling shader
 Without this branch, two loads in a row answer it too: the dev server marks its large
 dependency files immutable, so a second load skips 25 of the 28 MB. If the second load's
 `firstDrawSubmittedMs` falls from 32 seconds to a few, it was the download. Loading
-https://www.syn3h.com/?diag=1 on the same iPad gives the production number directly.
+https://mira.cc/?diag=1 on the same iPad gives the production number directly.
 
 ## The cheapest fix for the demo
 
 **Demo from a production build, not the dev server.** No code change: either
-https://www.syn3h.com/ (release 1) or a frozen trunk build served with
+https://mira.cc/ (release 1) or a frozen trunk build served with
 `tools/serve-stable.mjs` through the preview broker. That is the Orchestrator's call.
 Note that `tools/serve-stable.mjs` does not compress; the build is 5.8 MB of JavaScript
 uncompressed (2.1 MB gzip), still a fifth of the dev payload. Adding gzip there would make
@@ -73,12 +73,12 @@ milliseconds from navigation start to the first frame with draw calls
 | Dev, WebKit 2388 | 11.7 | 2963 (shaders uncached), 756 | 610 | 151 | 27.8 MB |
 | Prod build, WebKit | 12.1 | 811, 748 | 527 | 13 | 3.5 MB |
 | Dev, WebKit, `?webgl=1` | 12.8 | 3387 (shaders uncached) | | 151 | 27.8 MB |
-| www.syn3h.com, Chrome | 10.6 to 11.2 | 1567, 1395 | 2389 | 11 | 2.7 MB |
-| www.syn3h.com, Chrome, 100 ms, 10 Mbit/s | 10.2 | 2541 | 852 | 7 | 2.4 MB |
-| www.syn3h.com, WebKit | 10.4 | 2857 | 634 | 13 | 3.0 MB |
+| mira.cc, Chrome | 10.6 to 11.2 | 1567, 1395 | 2389 | 11 | 2.7 MB |
+| mira.cc, Chrome, 100 ms, 10 Mbit/s | 10.2 | 2541 | 852 | 7 | 2.4 MB |
+| mira.cc, WebKit | 10.4 | 2857 | 634 | 13 | 3.0 MB |
 
 The local production build is served by `tools/startup-serve.mjs` with gzip; its 3.5 MB
-includes audio and images that www.syn3h.com fetches later or caches differently. The www
+includes audio and images that mira.cc fetches later or caches differently. The www
 warm Chrome figure (2389) is one run under load and slower than its cold runs; treat it as
 noise.
 

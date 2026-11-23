@@ -4,7 +4,7 @@ import { createFrozenResourceResolver } from '../../src/core/frozenResources'
 import { creditsHtml } from '../../src/ui/data/credits'
 import { LobbyAddress } from '../../src/ui/LobbyAddress'
 
-const root = 'https://www.syn3h.com'
+const root = 'https://mira.cc'
 const frozen = createFrozenResourceResolver(`${root}/?v=26.11.1519`)
 
 describe('frozen production resources', () => {
@@ -39,7 +39,7 @@ describe('frozen production resources', () => {
   })
 
   it('leaves external and network URLs untouched', () => {
-    for (const url of ['https://cdn.example/models/a.glb', '//cdn.example/models/a.glb', 'data:model/gltf-binary;base64,AA', 'blob:https://syn3h.com/id', 'wss://syn3h.com/ws', '/ws?room=test', '/presence', '/status', '/api/room', 'models/dev.glb']) {
+    for (const url of ['https://cdn.example/models/a.glb', '//cdn.example/models/a.glb', 'data:model/gltf-binary;base64,AA', 'blob:https://mira.cc/id', 'wss://mira.cc/ws', '/ws?room=test', '/presence', '/status', '/api/room', 'models/dev.glb']) {
       expect(frozen.resolve(url)).toBe(url)
     }
     expect(createFrozenResourceResolver(root + '/').resolve('/models/buggy.glb')).toBe('/models/buggy.glb')

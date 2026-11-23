@@ -156,7 +156,7 @@ try {
   }
   if (mode === 'leak') {
     // The live public presence is read only. No public socket, hello or parameter mutation.
-    report.publicPresence=await (await fetch('https://www.syn3h.com/presence')).json()
+    report.publicPresence=await (await fetch('https://mira.cc/presence')).json()
     await a.evaluate(async()=>{const {applyPlanet}=await import('/src/world/planets.ts');applyPlanet('swamp',7)})
     await a.waitForTimeout(2000)
     report.cases.push(await scene(a,'submerged'))

@@ -56,7 +56,7 @@ describe('resume validation', () => {
   it('keeps the entry seed when periodic and lifecycle saves run in the clean lobby', () => {
     const windowEvents = new EventTarget(), documentEvents = new EventTarget()
     vi.stubGlobal('window', windowEvents); vi.stubGlobal('document', documentEvents)
-    const location = { href: 'https://syn3h.com/?room=lobby&seed=1', get search() { return new URL(this.href).search } }
+    const location = { href: 'https://mira.cc/?room=lobby&seed=1', get search() { return new URL(this.href).search } }
     vi.stubGlobal('location', location)
     const address = new LobbyAddress(location, { state: null, replaceState(_state, _title, url) { location.href = String(url) } })
     const s = saved(), writes: string[] = []
@@ -81,7 +81,7 @@ describe('resume validation', () => {
         // The original explicit link still resumes this edited world, not a reset.
         expect(prepareResume(new URLSearchParams('room=lobby&seed=1'), { getItem: () => raw })?.seed).toBe(42)
       }
-      expect(location.href).toBe('https://syn3h.com/')
+      expect(location.href).toBe('https://mira.cc/')
     } finally { session.dispose() }
   })
 

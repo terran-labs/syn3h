@@ -116,7 +116,7 @@ test('kind lines never call a milestone public', () => {
   const [plan, , first] = HISTORY
   assert.equal(kindLine(plan), 'Milestone build at 2:06pm Pacific on 14 November 2026. It was not released publicly.')
   assert.equal(kindLine(first), 'Milestone build at 2:50pm Pacific on 14 November 2026. It ran on a private preview and was not released publicly.')
-  assert.equal(kindLine(HISTORY[12]), 'Public release at 7:08pm Pacific on 14 November 2026, live at https://www.syn3h.com/.')
+  assert.equal(kindLine(HISTORY[12]), 'Public release at 7:08pm Pacific on 14 November 2026, live at https://mira.cc/.')
   assert.equal(kindLine({ ...first, time: '2026-11-15 09:05 PST' }), 'Milestone build at 9:05am Pacific on 15 November 2026. It ran on a private preview and was not released publicly.')
   assert.equal(kindLine({ ...first, time: '2026-11-15 00:10 PST' }).slice(0, 26), 'Milestone build at 12:10am')
   for (const row of HISTORY.filter((r) => r.channel === 'milestone')) assert.match(kindLine(row), /not released publicly\.$/)

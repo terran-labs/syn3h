@@ -1,6 +1,6 @@
 # Notice
 
-Required Notice: Copyright (c) 2026 Terran Labs (https://www.syn3h.com)
+Required Notice: Copyright (c) 2026 Terran Labs (https://mira.cc)
 
 Syn3h is under two licences, one for its code and one for its creative work. You may use,
 change and share either for any noncommercial purpose, provided this notice and the
@@ -11,7 +11,7 @@ relevant licence travel with every copy.
 | Source code and everything that is executed or compiled: TypeScript, JavaScript, shaders, HTML, CSS, scripts, configuration and the generators that draw the terrain, sky, logo and sound | [PolyForm Noncommercial License 1.0.0](LICENSE.md) |
 | Creative work: written documentation and design documents (the Markdown files, including `docs/`, `release-notes/` and the lab briefs); vehicle meshes (`public/models/`, `labs/buggy-bodies/`, `labs/buggy-wheels/`); logo and icon images (`public/brand/`, `dashboard/assets/` except its fonts); screenshots, captures and videos of the game | [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International](LICENSE-CC-BY-NC-SA.md) (CC BY-NC-SA 4.0) |
 
-Attribute the creative work as "Syn3h by Terran Labs, https://www.syn3h.com".
+Attribute the creative work as "Syn3h by Terran Labs, https://mira.cc".
 
 Where one file is both, the code licence applies to the file and CC BY-NC-SA 4.0 applies
 to what it produces when that is shared as text, an image or a video. A shader that draws

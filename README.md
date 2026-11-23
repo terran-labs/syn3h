@@ -11,7 +11,7 @@ The pleasure is in being there: finding a route, trying an absurd jump, making r
 someone else's curiosity. Competition is available when you want it. Explore is the
 default, with no score to chase.
 
-**Play it now at [www.syn3h.com](https://www.syn3h.com/).**
+**Play it now at [mira.cc](https://mira.cc/).**
 
 <!-- showcase:start (written by tools/showcase.mjs; edit the tool, not this block) -->
 
@@ -55,7 +55,7 @@ Open the **Game** panel to choose how the room plays.
 
 ## How to play
 
-Open [www.syn3h.com](https://www.syn3h.com/) in a recent browser on a computer, tablet or
+Open [mira.cc](https://mira.cc/) in a recent browser on a computer, tablet or
 phone. There is nothing to install and no account.
 
 1. **Pick a world.** The lobby is a small solar system. Drag to look around and tap a
@@ -201,7 +201,7 @@ has its own personality and picks its own route.
 
 **Can I play an older version?** Accepted releases are kept; withdrawn builds may be unavailable. Add `?v=` and the version to
 the address, for example
-[www.syn3h.com/?v=26.11.1503](https://www.syn3h.com/?v=26.11.1503). The
+[mira.cc/?v=26.11.1503](https://mira.cc/?v=26.11.1503). The
 [releases page](https://github.com/terran-labs/syn3h/releases) lists them, each with its
 playable link.
 
@@ -307,7 +307,7 @@ its connections. A phone joins by a QR code the game draws itself.
 
 **Return to an accepted build.** Accepted releases are frozen and kept; withdrawn builds
 may be unavailable:
-[www.syn3h.com/?v=26.11.1503](https://www.syn3h.com/?v=26.11.1503) will serve that build
+[mira.cc/?v=26.11.1503](https://mira.cc/?v=26.11.1503) will serve that build
 exactly, however many follow it.
 
 **Built in a weekend.** One person directed a team of AI agents, each with its own lane,
@@ -321,7 +321,7 @@ Syn3h is source-available. The code is under the
 [PolyForm Noncommercial License 1.0.0](LICENSE.md), and the creative work (writing, vehicle
 meshes, logo images, screenshots and videos) is under
 [Creative Commons Attribution-NonCommercial-ShareAlike 4.0](LICENSE-CC-BY-NC-SA.md),
-credited as "Syn3h by Terran Labs, https://www.syn3h.com".
+credited as "Syn3h by Terran Labs, https://mira.cc".
 
 In practice, you may fork the game, change it and share what you make, for any
 noncommercial purpose; share screenshots and videos with that credit; and remix the

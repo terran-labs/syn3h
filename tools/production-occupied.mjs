@@ -2,8 +2,8 @@
  * Is anyone playing? Run before a release: a deploy resets every occupied room about five
  * minutes later (docs/CUTOVER.md, "Releasing while people are playing").
  *
- *   node tools/production-occupied.mjs https://www.syn3h.com
- *   node tools/production-occupied.mjs https://www.syn3h.com --rooms lobby,demo-sunday
+ *   node tools/production-occupied.mjs https://mira.cc
+ *   node tools/production-occupied.mjs https://mira.cc --rooms lobby,demo-sunday
  *
  * Exit 0: nobody is connected. Exit 1: someone is. Exit 2: could not tell.
  *

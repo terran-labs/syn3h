@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { linkedVersions, renameNotes, unshippedNotes, versionProblems } from './release-notes.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const notesFor = (v, link = v) => `## Syn3h v${v}\n\nA deck line.\n\nReleased at 6:00am Pacific.\n\n### Play\n\nThis exact version stays playable at https://www.syn3h.com/?v=${link}, whatever ships after it.\nSee https://github.com/terran-labs/syn3h/releases/tag/v${link}.\n\n### Known issues\n\n- A player on a version before v26.11.2118 is treated as hidden.\n`
+const notesFor = (v, link = v) => `## Syn3h v${v}\n\nA deck line.\n\nReleased at 6:00am Pacific.\n\n### Play\n\nThis exact version stays playable at https://mira.cc/?v=${link}, whatever ships after it.\nSee https://github.com/terran-labs/syn3h/releases/tag/v${link}.\n\n### Known issues\n\n- A player on a version before v26.11.2118 is treated as hidden.\n`
 const digestFor = () => 'A deck\n\n- A point.\n'
 
 test('heading, every version-bearing link and the player digest must name the version', () => {
@@ -27,7 +27,7 @@ test('heading, every version-bearing link and the player digest must name the ve
   assert.deepEqual(versionProblems('26.11.2200', heading, digestFor()), ['the notes\' heading is "## Syn3h v26.11.2121", not "## Syn3h v26.11.2200"'])
   assert.deepEqual(versionProblems('v26.11.2200', notesFor('26.11.2200', '26.11.2121').replace('releases/tag/v26.11.2121', 'releases/tag/v26.11.2200'), digestFor()), ['the notes link version 26.11.2121, not 26.11.2200'])
   assert.deepEqual(versionProblems('v26.11.2200', notesFor('26.11.2200'), null), ['no player digest at release-notes/player/v26.11.2200.md'])
-  assert.deepEqual(versionProblems('v26.11.2200', null, 'See https://www.syn3h.com/?v=26.11.2121\n'), ['no release notes at release-notes/releases/v26.11.2200.md', 'the player digest links version 26.11.2121, not 26.11.2200'])
+  assert.deepEqual(versionProblems('v26.11.2200', null, 'See https://mira.cc/?v=26.11.2121\n'), ['no release notes at release-notes/releases/v26.11.2200.md', 'the player digest links version 26.11.2121, not 26.11.2200'])
   // An "(AI Generated)" line before the heading is allowed, as for publishing.
   assert.deepEqual(versionProblems('v26.11.2200', '(AI Generated)\n\n' + notesFor('26.11.2200'), digestFor()), [])
 })

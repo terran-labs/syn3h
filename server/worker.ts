@@ -253,7 +253,7 @@ async function searchHashed(req: Request, env: Env, url: URL, versions: string[]
   return null
 }
 function unknownVersion(asked: string, versions: string[]): Response {
-  const list = versions.map(v => `https://www.syn3h.com/?v=${v}`).join('\n')
+  const list = versions.map(v => `https://mira.cc/?v=${v}`).join('\n')
   return new Response(`Syn3h has no frozen version "${asked}".\n\nFrozen versions:\n${list}\n`, {
     status: 404,
     headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },

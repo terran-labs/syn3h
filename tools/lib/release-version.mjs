@@ -162,7 +162,7 @@ export function longDate(time) {
  * The line under the deck that says what kind of build a version was. A milestone never
  * reads as public.
  */
-export function kindLine(row, url = 'https://www.syn3h.com/') {
+export function kindLine(row, url = 'https://mira.cc/') {
   if (row.channel === 'withdrawn') return `Released at ${clockTime(row.time)} Pacific on ${longDate(row.time)}, then withdrawn after public acceptance failed.`
   return row.channel === 'production'
     ? `Public release at ${clockTime(row.time)} Pacific on ${longDate(row.time)}, live at ${url}.`

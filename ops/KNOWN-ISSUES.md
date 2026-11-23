@@ -124,7 +124,7 @@ fixed on trunk for release 2).
 
 | Issue | Where it shows | Owner |
 |---|---|---|
-| syn3h.com (the apex) still points at the old host, which is what redirects it to www. If that hosting account lapses the apex stops working. Fix after the demo: attach the apex to the Worker | Production | Orchestrator, owner's word |
+| mira.cc (the apex) still points at the old host, which is what redirects it to www. If that hosting account lapses the apex stops working. Fix after the demo: attach the apex to the Worker | Production | Orchestrator, owner's word |
 | The dev preview link takes about half a minute to first frame on an iPad (28 MB uncompressed from the dev server); production sends about 2 MB and starts in 1.4 to 2.9 s. Demo from production only. The loading veil is a dim ring with no words | Preview link; veil everywhere | UX for the veil |
 | One two-player check failed on www within a minute of the release 2 deploy (a clamped slider reached player A but not B); three reruns passed. Possibly a room straddling two Worker versions during a deploy | Production, during deploys | Multiplayer to assess |
 | The generated score is the default on trunk only; release 2 ships the recorded default. The owner wants it better before it is the default | Music | Soundscape thread, owner |

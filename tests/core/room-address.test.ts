@@ -4,10 +4,10 @@ import { inviteUrl } from '../../src/ui/InviteView'
 
 // Bug caught: the public room's internal name leaking into an address or a label.
 it('writes the public room as no parameter and any other room by name', () => {
-  for (const room of ['lobby', 'Lobby', ' lobby ', '']) expect(writeRoom(new URL('https://syn3h.com/?room=x&v=1'), room).href).toBe('https://syn3h.com/?v=1')
-  expect(writeRoom(new URL('https://syn3h.com/'), 'party').href).toBe('https://syn3h.com/?room=party')
-  expect(inviteUrl('https://syn3h.com', 'lobby', 'volcanic.1')).toBe('https://syn3h.com/?world=volcanic.1')
-  expect(inviteUrl('https://syn3h.com', 'party')).toBe('https://syn3h.com/?room=party')
+  for (const room of ['lobby', 'Lobby', ' lobby ', '']) expect(writeRoom(new URL('https://mira.cc/?room=x&v=1'), room).href).toBe('https://mira.cc/?v=1')
+  expect(writeRoom(new URL('https://mira.cc/'), 'party').href).toBe('https://mira.cc/?room=party')
+  expect(inviteUrl('https://mira.cc', 'lobby', 'volcanic.1')).toBe('https://mira.cc/?world=volcanic.1')
+  expect(inviteUrl('https://mira.cc', 'party')).toBe('https://mira.cc/?room=party')
 })
 
 it('reads a missing room, and an old ?room=lobby, as the same public room', () => {

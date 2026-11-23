@@ -5,7 +5,7 @@
 Example opt-in invocation, only under an allocated bounded runtime slot:
 
 ```sh
-SYN3H_SHOT_EVIDENCE_DIR=/tmp/syn3h-shot-run-001 node tools/net-smoke.mjs https://www.syn3h.com/
+SYN3H_SHOT_EVIDENCE_DIR=/tmp/syn3h-shot-run-001 node tools/net-smoke.mjs https://mira.cc/
 ```
 
 Use the existing reviewed supervisor for runtime and observed-process cleanup. This option does not launch a server, retry a failure or deploy anything.

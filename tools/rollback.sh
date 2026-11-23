@@ -34,7 +34,7 @@ VERSION="$(printf '%s' "$LINE" | cut -f6)"
 ID="$(printf '%s' "$LINE" | cut -f7)"
 echo "Rolling back to $REL (Worker version $VERSION, frozen copy $ID)..."
 # Record what was done, for the next release and for people: when, from which live build, to which release.
-FROM_ID="$(curl -sf --max-time 15 https://www.syn3h.com/build.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).id||"")}catch{}})' 2>/dev/null || true)"
+FROM_ID="$(curl -sf --max-time 15 https://mira.cc/build.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).id||"")}catch{}})' 2>/dev/null || true)"
 printf '%s\t%s\t%s\t%s\n' "$(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')" "${FROM_ID:-unknown}" "$REL" "$ID" >> ../Syn3h-stable/rollbacks.tsv 2>/dev/null || true
 (cd "../Syn3h-stable/$ID" && with_cf_token node "$(cd "$OLDPWD" && pwd)/node_modules/wrangler/bin/wrangler.js" rollback "$VERSION" --message "rollback to $REL" --yes </dev/null)
 # An HTTP 200 can still be the outgoing version at the edge for a few seconds. Wait for this

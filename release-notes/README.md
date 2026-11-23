@@ -25,7 +25,7 @@ The rules are pure functions in `tools/lib/release-version.mjs`, tested by
 - **milestone**: a tagged build that ran on a private preview, or for the first two, never
   ran anywhere (a plan, and the foundation before the first preview link). It was not
   released publicly, and its notes must never suggest it was.
-- **production**: a build deployed to https://www.syn3h.com/ by `tools/release.sh`. It also
+- **production**: a build deployed to https://mira.cc/ by `tools/release.sh`. It also
   has a `release-N` tag, and a row in `../Syn3h-stable/releases.tsv`.
 
 ## The history file
@@ -118,19 +118,19 @@ older source file. Other prefaces remain invalid; the heading, deck and section 
 
 A one line deck naming the most meaningful outcomes, as X, Y and Z
 
-Public release at 7:08pm Pacific on 14 November 2026, live at https://www.syn3h.com/.
+Public release at 7:08pm Pacific on 14 November 2026, live at https://mira.cc/.
 
 ### The story so far   required, always first
 ### Features           required
 ### Fixes              optional
 ### Handling           optional: the handling report's top table (npx tsx tools/handling-report.ts)
-### Play               production only: https://www.syn3h.com/ and the controls that matter
+### Play               production only: https://mira.cc/ and the controls that matter
 ### Known issues       optional: as they were true of that build when it was made
 ```
 
 The line under the deck is written by the tool from the history row and checked exactly:
 
-- production: `Public release at <time> Pacific on <date>, live at https://www.syn3h.com/.`
+- production: `Public release at <time> Pacific on <date>, live at https://mira.cc/.`
 - milestone: `Milestone build at <time> Pacific on <date>. It ran on a private preview and was not released publicly.`
 - milestone with preview `no`: `Milestone build at <time> Pacific on <date>. It was not released publicly.`
 
