@@ -161,7 +161,10 @@
   list-style: none; cursor: pointer; color: var(--w-ink); font: 500 12px/1.3 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; border-radius: 12px;
 }
 .welcome-body .welcome-credits > summary::-webkit-details-marker { display: none; }
-.welcome-body .welcome-credits > summary:focus-visible { outline: 2px solid var(--w-ink); outline-offset: 2px; }
+/* Keyboard focus on its row rings the whole card, open or closed, so the ring follows the card's
+   shape and never reads as a second border round the row alone. */
+.welcome-body .welcome-credits > summary:focus-visible { outline: none; }
+.welcome-body .welcome-credits:has(> summary:focus-visible) { outline: 2px solid var(--w-ink); outline-offset: 2px; }
 .welcome-body .welcome-credits > summary .accordion-arrow { color: var(--w-dim); }
 .welcome-body .welcome-credits-body { padding: 2px 16px 14px; }
 .welcome-body .welcome-credits-body p { margin: 0 0 10px; }
