@@ -65,3 +65,12 @@ Syn3h Unity source, and mentions of the original Syn3h game that this one was po
 
 `src/ui/brand/` and the dashboard's logo picture change when the owner picks the Mira wordmark
 (branch `brand/mira-logo`).
+
+## Rerunning the rename before the release
+
+Branch from main. Cherry-pick the rename tool's commits from `ops/rename-mira` (the tool and its
+bridges, the bytecode cleanup, the Worker-name keep rule), run `node tools/rename-to-mira.mjs`
+and commit its output on its own, then cherry-pick the hand fixes. Set `LAST_SYN3H_VERSION` in
+`tools/release-notes.mjs` to the last version released as Syn3h; `--check` fails until it is
+right. For the domain switch, follow with `ops/mira-domain`'s commits the same way, running
+`node tools/rename-to-mira.mjs --domain` in place of its output commit.
