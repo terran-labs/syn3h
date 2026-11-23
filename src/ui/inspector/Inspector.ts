@@ -335,6 +335,10 @@ export class Inspector {
   private build(): void {
     const all = params.all(); this.known = all.length
     const open = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section))
+    // A rebuild (a module registering its settings, a card taking or giving back rows) must
+    // not change what the player sees: every group stays open or closed, the stack and each
+    // card stay scrolled where they were, and focus stays on its control.
+    const view = this.captureView()
     const owned = new Set([...this.extras.values()].flatMap(extra => extra.owns?.() ?? []))
     const shown = this.options.sections
     this.tree = buildTree(all.map(p => p.def as PropertyDef).filter(def => !owned.has(def.id) && !def.hidden)).filter(section => !shown || shown.includes(section.id))
@@ -392,7 +396,36 @@ export class Inspector {
     // Cards that did not come back are no longer open.
     const present = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section!))
     for (let i = this.openOrder.length - 1; i >= 0; i--) if (!present.has(this.openOrder[i])) this.openOrder.splice(i, 1)
+    this.restoreView(view)
     this.editable = !canEditWorld(); this.update()
+  }
+  /** Which groups are open, where the stack and each card are scrolled, and what has focus. */
+  private captureView() {
+    const groupKey = (fold: Element) => `${fold.closest<HTMLElement>('.wi-card')?.dataset.section ?? ''}/${(fold as HTMLElement).dataset.group ?? ''}`
+    const folds = new Map([...this.element.querySelectorAll<HTMLDetailsElement>('.wi-cards .wi-group[data-group]')].map(fold => [groupKey(fold), fold.open]))
+    const stack = this.element.querySelector<HTMLElement>('.wi-cards')
+    const bodies = new Map([...this.element.querySelectorAll<HTMLElement>('.wi-cards > .wi-card')].map(card => [card.dataset.section ?? '', card.querySelector<HTMLElement>(':scope > .wi-body')?.scrollTop ?? 0]))
+    const active = document.activeElement instanceof HTMLElement && this.element.contains(document.activeElement) ? document.activeElement : null
+    const row = active?.closest<HTMLElement>('.wi-row[data-id]'), summary = active?.matches('.wi-group > summary') ? active.parentElement : null
+    const focus: { row: string; index: number } | { group: string } | null = row ? { row: row.dataset.id!, index: [...row.querySelectorAll('input, button, select')].indexOf(active!) } : summary ? { group: groupKey(summary) } : null
+    return { folds, groupKey, scroll: stack?.scrollTop ?? 0, bodies, focus }
+  }
+  private restoreView(view: ReturnType<Inspector['captureView']>): void {
+    for (const fold of this.element.querySelectorAll<HTMLDetailsElement>('.wi-cards .wi-group[data-group]')) {
+      const was = view.folds.get(view.groupKey(fold)); if (was !== undefined && fold.open !== was) fold.open = was
+    }
+    for (const card of this.element.querySelectorAll<HTMLElement>('.wi-cards > .wi-card.is-open')) {
+      const body = card.querySelector<HTMLElement>(':scope > .wi-body'), top = view.bodies.get(card.dataset.section ?? '')
+      if (body && top) body.scrollTop = top
+    }
+    const stack = this.element.querySelector<HTMLElement>('.wi-cards'); if (stack && view.scroll) stack.scrollTop = view.scroll
+    if (view.focus && !(document.activeElement instanceof HTMLElement && this.element.contains(document.activeElement) && document.activeElement !== document.body)) {
+      const focus = view.focus
+      const target = 'row' in focus
+        ? this.rows.get(focus.row)?.row.querySelectorAll<HTMLElement>('input, button, select')[focus.index]
+        : [...this.element.querySelectorAll<HTMLElement>('.wi-group[data-group] > summary')].find(s => view.groupKey(s.parentElement!) === focus.group)
+      target?.focus({ preventScroll: true })
+    }
   }
   /** A collapsible group: the shared accordion summary (name and count) over its rows. */
   private fold(name: string, count: number, open: boolean): HTMLDetailsElement {
