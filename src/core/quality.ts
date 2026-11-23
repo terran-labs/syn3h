@@ -1,5 +1,6 @@
 import { longFrames } from './longFrames'
 /** Local rendering quality. World parameters and physics resolution are never changed here. */
+import { flashPins, flashPostTier, flashSwitches } from './flashSwitches'
 import { type AdapterProbe, gpuDeadlineMs, graphicsOverride, probeAdapter } from './renderOptions'
 import { defineParam, params, sanitize, type ParamValue } from '../../shared/params'
 import { PerformanceHistory, RECOMMENDATION_IGNORE_KEY } from './performanceHistory'
@@ -144,6 +145,8 @@ const PRESET_TABLE: Readonly<Record<string, PresetRow>> = {
   'gfx.tyreMarks.life': [0.4, 0.6, D, D, D, D],
 }
 export const PRESET_IDS: readonly string[] = Object.freeze(Object.keys(PRESET_TABLE))
+/** A level's own value for a parameter in the table, or undefined where the level keeps the parameter's default. */
+export function presetCell(id: string, level: QualityLevel): ParamValue | undefined { const cell = PRESET_TABLE[id]?.[level]; return cell === D ? undefined : cell }
 /**
  * The values a level sets, for the parameters registered so far. A module that loads later
  * registers its parameters later; the controller applies those when they appear.
@@ -830,7 +833,7 @@ export class QualityController implements QualitySource {
     if (!this.state) {
       const g = this.governor
       this.state = Object.freeze({ level: g.level, name: LEVELS[g.level].name, auto: g.auto, pinned: g.levelPinned, rung: g.rung, rungs: g.ladder.length,
-        easing: g.rung > 0 ? g.settings.kind as RungKind : null, ceiling: Math.min(this.capability.ceiling, this.crashCap) as QualityLevel, postTier: LEVELS[g.level].postTier,
+        easing: g.rung > 0 ? g.settings.kind as RungKind : null, ceiling: Math.min(this.capability.ceiling, this.crashCap) as QualityLevel, postTier: flashPostTier(LEVELS[g.level].postTier),
         resolution: g.resolution, pixelRatio: g.settings.pixelRatio, devicePixelRatio: g.devicePixelRatio,
         presetIds: PRESET_IDS, preset: Object.freeze(presetFor(g.level)), overrides: Object.freeze({ ...this.overrides }) })
     }
@@ -951,7 +954,7 @@ export class QualityController implements QualitySource {
     this.apply('governor', true)
   }
   /** Which parts of the post chain the current level may build. */
-  get postTier(): PostTier { return LEVELS[this.governor.level].postTier }
+  get postTier(): PostTier { return flashPostTier(LEVELS[this.governor.level].postTier) }
 
   /** Resolve the render inputs without changing settings, including automatic overrides. */
   renderPreset(level: QualityLevel, automatic: boolean, shed = false): AdjacentRenderPreset {
@@ -962,7 +965,7 @@ export class QualityController implements QualitySource {
     }
     values[qualityLevel.def.id] = level
     values[graphicsLevel.def.id] = legacyTier(level)
-    return { level, tier: LEVELS[level].postTier, shed,
+    return { level, tier: flashPostTier(LEVELS[level].postTier), shed,
       pixelRatio: buildLadder(level, this.governor.devicePixelRatio, false, this.governor.resolution)[0].pixelRatio,
       value: id => values[id] }
   }
@@ -1020,7 +1023,8 @@ export class QualityController implements QualitySource {
     this.displayFrame = requestAnimationFrame(tick)
   }
   /** Parameter writes made by the controller, so the change listener does not treat them as the player's. */
-  private write(id: string, value: ParamValue) { this.writing++; try { params.set(id, value) } finally { this.writing-- } }
+  // A link switch (core/flashSwitches.ts) may hold a level-owned parameter at its Low value for this visit.
+  private write(id: string, value: ParamValue) { this.writing++; try { params.set(id, id in flashPins ? flashPins[id] : value) } finally { this.writing-- } }
   /** What the WebGPU adapter probe found; a stalled probe sends the renderer straight to WebGL 2. */
   adapterProbe: AdapterProbe = 'unsupported'
   async initialize() {
@@ -1169,7 +1173,8 @@ export class QualityController implements QualitySource {
     }
     // Parameters of modules that loaded after the last level change get their level value now.
     if (this.appliedIds.size < PRESET_IDS.length && this.writePreset()) this.publishQuality()
-    if (!this.loading) {
+    // ?freeze=1 (core/flashSwitches.ts): no governor step at all, and the render scale stays put.
+    if (!this.loading && !flashSwitches.freeze) {
       const moved = this.governor.setDevicePixelRatio(window.devicePixelRatio || 1)
       let change = this.governor.sample(metrics.frameMs, judge && !document.hidden) ?? moved
       const covered = !change && !judge

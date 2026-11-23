@@ -44,7 +44,8 @@ function fill(values: number[][], percent: number) {
   return `rgb(${channel} ${channel} ${channel} / ${opacity})`
 }
 const key = 'mira.glassMaterial.v2'
-export function restoreGlassMaterial(shortcut: boolean) {
+/** `flat`: Flat glass for this visit only (?ui=flat), set before the listener that saves a choice. */
+export function restoreGlassMaterial(shortcut: boolean, flat = false) {
   let saved: string | null = null, savedTint: number | undefined
   try {
     const coverage = localStorage.getItem('mira.surfaceCoverage')
@@ -61,6 +62,7 @@ export function restoreGlassMaterial(shortcut: boolean) {
   const index = glassLabels.findIndex(name => name === saved)
   if (shortcut) params.set(glassStyle.def.id, 0)
   else if (index >= 0) params.set(glassStyle.def.id, index)
+  if (flat) params.set(glassStyle.def.id, glassLabels.indexOf('Flat'))
   params.set(surfaceCoverage.def.id, savedTint !== undefined && (!shortcut || index === 0) ? savedTint : defaultTint())
   paintedTint = surfaceCoverage.value
   let frame = 0

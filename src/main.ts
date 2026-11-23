@@ -16,6 +16,9 @@ import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { botsKeepCount } from './bots/params'
 import { ChaseCamera } from './core/ChaseCamera'
+import { flashSwitches, flashSwitchLine } from './core/flashSwitches'
+import { recordBlankFrames } from './core/blankFrames'
+import { startFlashCounter } from './ui/flashCounter'
 import { diagnosticReport } from './core/diagnosticReport'
 import { refractionState } from './world/water/refraction'
 import { depthEffectsState } from './core/midPassCopy'
@@ -68,7 +71,7 @@ async function main(): Promise<void> {
   const environment = game.add(createEnvironment(game, terrain), 'Environment and sky')
   // Post effects follow the player's settings and the current rendering budget.
   const mode = query.get('glass')
-  const stopMaterial = restoreGlassMaterial(mode === 'inline' || mode === 'target')
+  const stopMaterial = restoreGlassMaterial(mode === 'inline' || mode === 'target', flashSwitches.uiFlat)
   game.add({ dispose: stopMaterial }, 'Interface material preference')
   let glass: import('./fx/post/GlassPost').GlassPost | undefined
   let loading: Promise<void> | undefined
@@ -80,7 +83,8 @@ async function main(): Promise<void> {
   if (liquidSelected()) {
     try { await loadGlass() } catch (error) { console.warn('Glass shader unavailable, using CSS', error) }
   }
-  game.setPostChain(post)
+  // ?post=off (core/flashSwitches.ts): the scene straight to the canvas, no post chain.
+  game.setPostChain(flashSwitches.post === 'off' ? null : post)
 
   const spawn = terrain.spawnPoint(0)
   // The vehicle comes from ?vehicle=..., else the choice saved by the lobby, else the Mira buggy.
@@ -197,7 +201,13 @@ async function main(): Promise<void> {
       '\nWater refraction: ' + refractionState(game.renderer) +
       // Copies taken in the middle of the scene pass (core/midPassCopy.ts), off where not yet proven.
       '\nForce field contact glow: ' + depthEffectsState() + '\nHeadlight beam soft edge: ' + depthEffectsState() +
-      (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '')
+      (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '') + '\n' + flashSwitchLine()
+  }
+  // ?blank=1 (core/flashSwitches.ts): the recorder on from the link, its counter on screen in play.
+  if (flashSwitches.blank) {
+    params.set(recordBlankFrames.def.id, true)
+    const stopCounter = startFlashCounter(() => game.blankFrames, () => shell.playing && !shell.transitioning)
+    game.add({ dispose: stopCounter }, 'Blank frame counter')
   }
   shell.configurePerformance({
     runPerformanceCheck: async signal => (await import('./diagnostics/inWorldCheck')).runInWorldCheck({

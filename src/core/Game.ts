@@ -1,6 +1,7 @@
 import { CoveredPipelines } from './coveredPipelines'
 import { CoveredClimbRun, SLICED_CLIMB_TOP, slicedClimbTo } from './coveredClimb'
 import { longFrames } from './longFrames'
+import { flashSwitches } from './flashSwitches'
 import { BlankFrameRecorder } from './blankFrames'
 import { refractionState } from '../world/water/refraction'
 import { installLongFrameRenderer } from './longFrameRenderer'
@@ -142,7 +143,8 @@ export class Game {
     if ((forceWebGL || !webgpuUsable(probe)) && !canCreateWebGL2()) throw new NoGraphicsError(`no WebGL 2 context; WebGPU ${forceWebGL ? 'not tried (?webgl=1)' : `adapter probe: ${probe}`}`)
     const started = await timeStartup('renderer.init (adapter, device, context)', () => startRenderer((webgl, freshCanvas) => {
       if (freshCanvas) this.replaceCanvas()
-      this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true, forceWebGL: webgl })
+      // ?samples=1 (core/flashSwitches.ts): one sample, no multisampling anywhere.
+      this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: !flashSwitches.samples1, forceWebGL: webgl })
       this.observeRenderer?.()
       return this.renderer
     }, { forceWebGL, deadlineMs: gpuDeadlineMs(location.search), probe, skipWebGPU: probe === 'timeout' ? 'the WebGPU adapter probe stalled; started WebGL 2' : undefined }))

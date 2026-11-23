@@ -156,6 +156,14 @@ export class BlankFrameRecorder {
   private usualCopies = 0
   private probe: CanvasRenderingContext2D | null = null
   private clearNext = false
+  private clearIsTest = false
+  /** Real blank and partly blank frames, and what the last one coincided with. */
+  blank = 0
+  partly = 0
+  lastWords = ''
+  /** Test flashes (the ?blank=1 counter's control): asked for, and seen by the probe. */
+  testsAsked = 0
+  testsSeen = 0
   private hooked = false
   private adapter: string | null = null
   /** Time spent reading the probe, for the report (milliseconds, running total). */
@@ -206,22 +214,27 @@ export class BlankFrameRecorder {
     device.lost?.then(() => { this.current.deviceLost = true })
   }
 
-  /** Test hook: clear the canvas after the next drawn frame, as a resize would. */
-  clearNextFrame(): void { this.clearNext = true }
+  /**
+   * Test hook: clear the canvas after the next drawn frame, as a resize would. `test`: a test
+   * flash asked for by the player (the ?blank=1 counter), counted apart from real ones. A test
+   * the probe does not see means it cannot see on this browser, and its zeros mean nothing.
+   */
+  clearNextFrame(test = false): void { this.clearNext = true; this.clearIsTest = test; if (test) this.testsAsked++ }
 
   /** Call once per drawn frame, after the draw, in the same task. */
   afterDraw(): void {
+    const testing = this.clearNext && this.clearIsTest
     if (this.clearNext) {
-      this.clearNext = false
+      this.clearNext = false; this.clearIsTest = false
       const canvas = this.renderer.domElement
       canvas.width = canvas.width // Resetting the size clears the canvas: the fault the recorder looks for.
     }
-    if (recordBlankFrames.value) this.read()
+    if (recordBlankFrames.value) this.read(testing)
     this.previous = this.current
     this.current = BlankFrameRecorder.empty()
   }
 
-  private read(): void {
+  private read(testing = false): void {
     const start = performance.now()
     const canvas = this.renderer.domElement
     if (!this.probe) {
@@ -239,9 +252,12 @@ export class BlankFrameRecorder {
     this.frames++
     const kind = classifyFrame(share, this.previousShare)
     this.previousShare = share
+    if (testing) { if (kind !== 'normal') this.testsSeen++; return }
     if (kind === 'normal') { if (share < PARTLY_SHARE) this.usualCopies = this.current.frameCopies; return }
     const now = performance.now()
     this.total++
+    if (kind === 'blank') this.blank++; else this.partly++
+    this.lastWords = coincidence({ frame: this.current, before: this.previous, usualCopies: this.usualCopies }).join(', ').replace('nothing', 'none')
     this.recent.push(now)
     if (this.events.length < EVENTS_KEPT) this.events.push({
       t: Math.round(now), kind, share: Math.round(share * 100) / 100, frame: this.current, before: this.previous,
@@ -259,7 +275,8 @@ export class BlankFrameRecorder {
     return this.recent.length
   }
 
-  private sampleCount(): number | string { return this.context.samples() ?? 'not built' }
+  /** Samples per pixel in the scene pass: three's 0 is one sample (no multisampling). */
+  private sampleCount(): number | string { const n = this.context.samples(); return n === null ? 'not built' : Math.max(1, n) }
 
   /** Lines for the copied Diagnostics report. The first block is there whatever the switch. */
   reportLines(): string[] {
@@ -267,6 +284,7 @@ export class BlankFrameRecorder {
       `Graphics: ${this.renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL 2'}, adapter ${this.adapter ?? 'not reported'}, scene samples ${this.sampleCount()}, refraction ${this.context.refraction()}`,
       `Uncaptured device errors this session: ${this.deviceErrorCount}${this.deviceErrors.length ? ': ' + this.deviceErrors.slice(0, 5).map(m => JSON.stringify(m)).join('; ') : ''}`,
     ]
+    if (this.testsAsked) lines.push(`Test flashes: ${this.testsSeen} seen of ${this.testsAsked} asked${this.testsSeen < this.testsAsked ? ' (the probe missed a cleared frame: its zeros cannot be trusted here)' : ''}`)
     if (!recordBlankFrames.value && !this.total) return [...lines, 'Blank frames: not recorded (Performance, Diagnostics, "Record blank frames")']
     const t = tally(this.events)
     lines.push(`Blank frames: ${this.total} in ${this.frames} frames recorded (${this.lastMinute()} in the last minute); probe ${this.frames ? (this.probeMs / this.frames).toFixed(2) : '0'} ms a frame`)
