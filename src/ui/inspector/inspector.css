@@ -163,3 +163,8 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 .syn3h-shell .world-inspector .wi-preset-pick { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; }
 .syn3h-shell .world-inspector .wi-preset select { width: 100%; height: 44px; min-height: 44px; font-size: 15px; }
 .syn3h-shell .world-inspector .wi-preset-about { margin: 0; font-size: 12px; line-height: 1.35; opacity: .85; }
+
+/* Liquid glass, the Liquid style's tuning, folded inside Interface under Style and Tint
+   (Inspector.liquidFold). Absent, not disabled, at Frost or Flat. */
+.syn3h-shell .world-inspector .wi-group.wi-liquid-group.is-absent { display: none; }
+.syn3h-shell .world-inspector .wi-group.wi-subgroup { margin: 0; }

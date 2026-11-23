@@ -31,6 +31,8 @@ const DICE_GLYPH = '<svg class="wi-dice" viewBox="0 0 16 16" aria-hidden="true" 
  * Small line glyphs for the World card's actions, 16 px, drawn in the text colour: copy (two
  * sheets), paste (a sheet with an arrow in), reset (an arrow turning back). One stroked path each.
  */
+/** Registry groups that tune the Liquid style; shown inside Interface only at Liquid (liquidFold). */
+const LIQUID_GROUPS = ['Glass', 'Clear lens']
 const GLYPH = (d: string) => `<svg class="wi-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`
 const WORLD_ACTIONS = `<div class="wi-world-actions" role="group" aria-label="World actions">`
   + `<button type="button" class="panel-action" data-wi="copy-world" aria-label="Copy world">${GLYPH('M5.5 5.5V3a1 1 0 0 1 1-1H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-2.5M3 5.5h6.5a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z')}<span>Copy</span></button>`
@@ -345,13 +347,17 @@ export class Inspector {
       // apart, and asked twice) reset.
       if (section.id === 'world') body.insertAdjacentHTML('beforeend', WORLD_ACTIONS)
 
-      section.tree.forEach((group, index) => {
-        const fold = document.createElement('details'); fold.className = 'wi-group'; fold.dataset.group = group.name; fold.open = index === 0 && !['Tag', 'Tag beams', 'Zorb', 'Sun', 'Sky', 'Weather'].includes(group.name)
-        const summary = document.createElement('summary'); summary.innerHTML = '<span></span><small></small>'
-        summary.querySelector('span')!.textContent = group.name; summary.querySelector('small')!.textContent = String(group.properties.length)
-        fold.append(summary)
+      // The Liquid style's own tuning (the Glass and Clear lens groups) is not a section of its
+      // own: it folds into Interface under Style and Tint, and only while Liquid is the style.
+      const liquid = section.tree.filter(group => LIQUID_GROUPS.includes(group.name)).flatMap(group => group.properties)
+      section.tree.filter(group => !LIQUID_GROUPS.includes(group.name)).forEach((group, index) => {
+        const fold = this.fold(group.name, group.properties.length, index === 0 && !['Tag', 'Tag beams', 'Zorb', 'Sun', 'Sky', 'Weather'].includes(group.name))
         const handling = this.presetRow(group.name); if (handling) fold.append(handling)
-        for (const def of group.properties) fold.append(this.row(def)); body.append(fold)
+        for (const def of group.properties) {
+          fold.append(this.row(def))
+          if (def.id === 'hud.surfaceCoverage' && liquid.length) fold.append(this.liquidFold(liquid))
+        }
+        body.append(fold)
       })
       const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot card-actions'
       // The World card copies and pastes the whole world from its action row above; a second,
@@ -379,6 +385,29 @@ export class Inspector {
     const present = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section!))
     for (let i = this.openOrder.length - 1; i >= 0; i--) if (!present.has(this.openOrder[i])) this.openOrder.splice(i, 1)
     this.editable = !canEditWorld(); this.update()
+  }
+  /** A collapsible group: the shared accordion summary (name and count) over its rows. */
+  private fold(name: string, count: number, open: boolean): HTMLDetailsElement {
+    const fold = document.createElement('details'); fold.className = 'wi-group'; fold.dataset.group = name; fold.open = open
+    const summary = document.createElement('summary'); summary.innerHTML = '<span></span><small></small>'
+    summary.querySelector('span')!.textContent = name; summary.querySelector('small')!.textContent = String(count)
+    fold.append(summary)
+    return fold
+  }
+  /**
+   * The Liquid style's tuning (frost width, tint strength, the lens and the rest), as one
+   * group inside Interface, closed at first (the owner, 22 November 2026: "move the top-level
+   * glass section underneath me into an expanding portion of the interface section accessible
+   * only when the liquid style is applied"). At Frost or Flat it is not there at all; choosing
+   * Liquid brings it back, closed or open as it was.
+   */
+  private liquidFold(defs: readonly PropertyDef[]): HTMLDetailsElement {
+    const fold = this.fold('Liquid glass', defs.length, false)
+    fold.classList.add('wi-subgroup', 'wi-liquid-group')
+    for (const def of defs) fold.append(this.row(def))
+    const sync = () => fold.classList.toggle('is-absent', Number(params.get('hud.glass')?.value) !== 0)
+    sync(); this.presetSyncs.push(sync)
+    return fold
   }
   private place(extra: ExtraCard): void {
     const cards = this.element.querySelector('.wi-cards')!, after = extra.after ? cards.querySelector(`:scope > [data-section="${extra.after}"]`) : null
@@ -1112,14 +1141,17 @@ export class Inspector {
         control.hidden = words.length > 0 && !hit
         if (hit) cardHits++
       }
-      for (const fold of card.querySelectorAll<HTMLDetailsElement>('.wi-group')) {
+      for (const fold of card.querySelectorAll<HTMLDetailsElement>('.wi-group:not(.is-absent)')) {
         let hits = 0
+        // A group inside a group (Liquid glass in Interface) counts towards both; its rows are
+        // not searched while the group is absent.
         for (const row of fold.querySelectorAll<HTMLElement>('.wi-row')) {
+          if (row.closest('.wi-group.is-absent')) continue
           const def = this.rows.get(row.dataset.id!)!.def, hay = `${def.label} ${def.group} ${def.id} ${describe(def)}`.toLowerCase()
           const hit = headingHit || words.every(word => hay.includes(word)); row.hidden = words.length > 0 && !hit; if (hit) hits++
         }
         fold.hidden = words.length > 0 && hits === 0; if (words.length) fold.open = hits > 0
-        cardHits += hits
+        if (!fold.parentElement?.closest('.wi-group')) cardHits += hits
       }
       card.hidden = words.length > 0 && cardHits === 0
       if (words.length) this.toggle(card, cardHits > 0)
