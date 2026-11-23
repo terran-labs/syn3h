@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-22 17:10 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-22 18:25 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,14 +11,16 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2204 (release-104, the HUD no longer queries the page every frame), source 5ea6432f,
-frozen copy 20261122-134053-5ea6432f, Worker version fa74673b, at https://www.syn3h.com/ since 22 November 13:45 PST.
-Domains (22 November): mira.cc is a Custom Domain on the Worker syn3h beside www.syn3h.com (attached through the
+Live: v26.11.2205 (release-105, the game's address is now mira.cc), source 835c929f,
+frozen copy 20261122-181028-835c929f, Worker version 53e2ee3f, at https://mira.cc/ since 22 November 18:15 PST.
+Primary address: https://mira.cc/ (release.sh PRIMARY_URL; record checks: feed on mira.cc and workers.dev).
+Domains (22 November): syn3h.com and www.syn3h.com send navigations to https://mira.cc (one Single Redirect
+rule, 302, path and query kept; an open page's fetches, /ws, /status and /presence are left alone; rollback:
+/tmp/orch-scripts/old-address-rule.sh disable). The bare syn3h.com is a proxied AAAA 100:: placeholder since
+17:29 (export 20261122-172834-syn3h.com). mira.cc is a Custom Domain on the Worker syn3h beside www.syn3h.com (attached through the
 API by tools/domain.sh, no deploy); www.mira.cc is a proxied AAAA 100:: with one Single Redirect rule to
 https://mira.cc (302, path and query kept). Parking records removed. Exports and rollback state under
-../Syn3h-stable/dns/20261122-1633*-mira.cc. The redirect from syn3h.com (docs/MIRA-CUTOVER.md step 7) waits for
-the owner's word and the rename release. syn3h.com's apex 301 to www comes from the old Weebly site behind its A
-record (199.34.228.77), not a Cloudflare rule. Runbook: docs/DOMAIN-TOOL.md.
+../Syn3h-stable/dns/20261122-1633*-mira.cc. Runbook: docs/DOMAIN-TOOL.md.
 Browser suites: tests/ui/about-updates.mjs needs its dev server started with SYN3H_RELEASE_VERSION set to the second-newest
 production release (its header says how; 313e9488).
 Version numbers follow the Pacific date (release.sh): a release planned on the 21st and shipped after midnight is 22NN.
@@ -162,6 +164,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2202 | 102 | m-polish-2202 | no black flashes on iPhone; vehicle parts behind the water; cards one style; touch buttons grow when pressed |
 | v26.11.2203 | 103 | m-water-2203 | the sea bed and vehicles under the water ripple with the waves (WebGPU, Medium and up) |
 | v26.11.2204 | 104 | m-hud-2204 | the HUD no longer searches the page every frame (about 2% of the main thread) |
+| v26.11.2205 | 105 | m-domain-2205 | the game's address is now https://mira.cc; old addresses redirect there |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
