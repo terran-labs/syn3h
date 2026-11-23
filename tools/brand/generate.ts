@@ -33,7 +33,7 @@ try {
         const face = new FontFace('Syn3h', `url(data:font/woff2;base64,${font})`)
         await face.load(); document.fonts.add(face)
         ctx.textAlign = 'center'; ctx.fillStyle = '#edf3ff'; ctx.font = '38px Syn3h'
-        ctx.fillText('Explore. Create. Connect.', width / 2, 492)
+        ctx.fillText('Your galaxy awaits', width / 2, 492)
         ctx.fillStyle = '#a9bed9'; ctx.font = '23px Syn3h'
         ctx.fillText('From the creator of Mars Explorer', width / 2, 550)
       }
