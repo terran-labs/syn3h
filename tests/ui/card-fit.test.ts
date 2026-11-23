@@ -3,7 +3,7 @@
  * card closing itself, a card the player is using snapping shut, and cards squeezed to slivers.
  */
 import { expect, it } from 'vitest'
-import { COMFORT_PX, cardsToClose, comfortable, neededHeight, type FitCard } from '../../src/ui/inspector/cardFit'
+import { OPEN_PX, NEAR_PX, cardsToClose, comfortable, neededHeight, type FitCard } from '../../src/ui/inspector/cardFit'
 
 const HEAD = 46, GAP = 8
 const card = (id: string, open: boolean, natural = 600, closable = true): FitCard => ({ id, open, closed: HEAD, natural: open ? natural : HEAD, closable })
@@ -15,7 +15,7 @@ function settle(cards: FitCard[], order: string[], available: number, keep: stri
 }
 /** Every open card at its comfortable height, unless nothing more was allowed to close. */
 function assertComfortable(r: ReturnType<typeof settle>, available: number, keep: string | null) {
-  const fits = neededHeight(r.after, GAP) <= available + 0.5
+  const fits = neededHeight(r.after, GAP) <= available + NEAR_PX + 0.5
   const stuck = r.after.every(c => !c.open || !c.closable || c.id === keep)
   expect(fits || stuck).toBe(true)
   if (keep) expect(r.after.find(c => c.id === keep)!.open).toBe(true)
@@ -66,6 +66,28 @@ it('leaves no open card below the comfortable height after any open, resize or c
     const r = settle(cards, order, available, keep)
     cards = r.after; order = r.order
     assertComfortable(r, available, keep)
-    for (const c of cards) if (c.open) expect(comfortable(c)).toBeGreaterThanOrEqual(Math.min(c.natural, COMFORT_PX))
+    for (const c of cards) if (c.open) expect(comfortable(c)).toBeGreaterThanOrEqual(Math.min(c.natural, OPEN_PX))
   }
+})
+
+// Measured in play (22 November 2026): seven cards with 46 px headers, 7 px gaps, and the stack
+// 130 px shorter than the window. Bug this catches: more than two cards staying open at a
+// normal laptop height (the owner: "I should really only be able to see two cards at a normal
+// laptop screen height"), or a lone card closing itself on a short screen.
+it('keeps two cards open at laptop height, opening each card in turn', () => {
+  const ids = ['you', 'game', 'players', 'vehicles', 'world', 'performance', 'chat']
+  const openAt = (windowHeight: number) => {
+    let cards = ids.map(id => ({ id, open: false, closed: 46, natural: 46, closable: true }))
+    let order: string[] = []
+    for (const id of ids) {
+      cards = cards.map(c => c.id === id ? { ...c, open: true, natural: 600 } : c); order.push(id)
+      const close = new Set(cardsToClose(cards, order, windowHeight - 130, 7, id))
+      cards = cards.map(c => close.has(c.id) ? { ...c, open: false, natural: 46 } : c); order = order.filter(o => !close.has(o))
+    }
+    return cards.filter(c => c.open).length
+  }
+  expect(openAt(720)).toBe(1)
+  expect(openAt(800)).toBe(2)
+  expect(openAt(900)).toBe(2)
+  expect(openAt(1080)).toBeGreaterThanOrEqual(2)
 })

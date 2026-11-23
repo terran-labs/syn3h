@@ -992,9 +992,16 @@ export class Inspector {
     this.fitQueued = true
     requestAnimationFrame(() => { this.fitQueued = false; if (this.moving.size) { this.queueFit(keep); return } this.reflow(() => this.fit(keep)) })
   }
-  /** A card the player is using: focus inside it, a pointer held in it, or a number being typed. */
+  /**
+   * A card the player is using, which is never the one closed: typing in it (a text field, the
+   * chat field, a number being edited) or holding the pointer down in it (dragging a slider).
+   * Focus merely left inside a card (a clicked fold, the chat log) does not count: it kept
+   * cards open for good, which let four stay open at laptop height (22 November 2026).
+   */
   private busy(card: HTMLElement): boolean {
-    return card === this.pressed || card.contains(document.activeElement) && document.activeElement !== card.querySelector('.wi-head') || !!this.editing && card.contains(this.editing.field)
+    const active = document.activeElement
+    const typing = active instanceof HTMLElement && card.contains(active) && (active.isContentEditable || active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement && !['checkbox', 'radio', 'range', 'button', 'color'].includes(active.type))
+    return card === this.pressed || typing || !!this.editing && card.contains(this.editing.field)
   }
   /**
    * Close the cards open longest until every open card has a comfortable height (cardFit.ts),
