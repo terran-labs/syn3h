@@ -56,6 +56,10 @@
 /* The log reaches 6 px past the body's text edge on both sides (and gives it back as padding)
    so a bot mark's shadow at the start of a line is not cut by the scroller's edge. */
 .chat-log { flex: none; list-style: none; margin: 0 -6px; padding: 6px 6px 4px; overflow-y: auto; height: clamp(120px, 34vh, 280px); overscroll-behavior: contain; scrollbar-width: thin; }
+/* Held at a height by the stack (cardFit.ts shareHeights; the owner: chat "should expand
+   vertically to occupy the remaining open space in the sidebar"), the log takes the room and
+   the field stays at the card's bottom edge. */
+.wi-card.is-sized > .chat-body > .chat-log { flex: 1 1 auto; height: auto; min-height: 72px; }
 .chat-line { position: relative; padding: 2px 0; overflow-wrap: anywhere; }
 .chat-line.is-new { animation: chat-in .35s ease-out 1; }
 @keyframes chat-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }

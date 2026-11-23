@@ -87,6 +87,8 @@ export class ChatCard {
   private readonly form: HTMLFormElement
   private readonly status: HTMLElement
   private unread = 0
+  /** The log was scrolled to its newest line when last looked at. */
+  private pinned = true
   private unreadPerson: ChatLine | null = null
   private readonly unsubscribe: (() => void)[] = []
   private readonly abort = new AbortController()
@@ -97,7 +99,7 @@ export class ChatCard {
   constructor(private readonly host: ChatHost, private readonly options: ChatCardOptions) {
     this.body.className = 'chat-body'
     this.body.innerHTML = `
-      <ol class="chat-log" tabindex="0" aria-label="Chat log"></ol>
+      <ol class="chat-log" tabindex="0" aria-label="Chat log" data-card-grow></ol>
       <p class="chat-status" hidden></p>
       <form class="chat-form" autocomplete="off">
         <input class="chat-field" type="text" enterkeyhint="send" autocomplete="off" autocorrect="on" spellcheck="true" aria-label="Chat" placeholder="Say something nice" maxlength="${MAX_CHAT_LENGTH}">
@@ -121,7 +123,13 @@ export class ChatCard {
       e.stopPropagation()
       if (e.key === 'Escape') { e.preventDefault(); this.leave() }
     }, { signal })
-    this.log.addEventListener('scroll', () => this.readIfSeen(), { signal, passive: true })
+    this.log.addEventListener('scroll', () => { this.pinned = this.atBottom(); this.readIfSeen() }, { signal, passive: true })
+    // The card grows and shrinks with the room the stack gives it (inspector/cardFit.ts): a log
+    // that was showing its newest line keeps showing it.
+    if (typeof ResizeObserver !== 'undefined') {
+      const keep = new ResizeObserver(() => { if (this.pinned) this.log.scrollTop = this.log.scrollHeight; this.readIfSeen() })
+      keep.observe(this.log); signal.addEventListener('abort', () => keep.disconnect())
+    }
     this.log.addEventListener('click', (e) => this.onLogClick(e), { signal })
     window.addEventListener('keydown', (e) => this.onKey(e), { signal, capture: true })
     // The speaker's vehicle label (src/ui/nameplates) lights up for a moment with a speech mark.

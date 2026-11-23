@@ -3,7 +3,7 @@
  * card closing itself, a card the player is using snapping shut, and cards squeezed to slivers.
  */
 import { expect, it } from 'vitest'
-import { OPEN_PX, NEAR_PX, cardsToClose, comfortable, neededHeight, type FitCard } from '../../src/ui/inspector/cardFit'
+import { OPEN_PX, NEAR_PX, cardsToClose, comfortable, neededHeight, shareHeights, type FitCard } from '../../src/ui/inspector/cardFit'
 
 const HEAD = 46, GAP = 8
 const card = (id: string, open: boolean, natural = 600, closable = true): FitCard => ({ id, open, closed: HEAD, natural: open ? natural : HEAD, closable })
@@ -90,4 +90,16 @@ it('keeps two cards open at laptop height, opening each card in turn', () => {
   expect(openAt(800)).toBe(2)
   expect(openAt(900)).toBe(2)
   expect(openAt(1080)).toBeGreaterThanOrEqual(2)
+})
+
+// Bugs: a lone chat card not filling the sidebar, a short card stretched to empty space, or
+// two cards that do not fit together.
+it('lets a lone card fill the stack, keeps a short card its own height, and shares between two', () => {
+  const closed = (id: string) => ({ id, open: false, closed: 46, natural: 46, closable: true })
+  const others = ['a', 'b', 'c', 'd', 'e', 'f'].map(closed), room = 770 - 6 * 7 - 6 * 46
+  expect(shareHeights([...others, { id: 'chat', open: true, closed: 46, natural: 2000, closable: true }], 770, 7).get('chat')).toBe(room)
+  expect(shareHeights([...others, { id: 'players', open: true, closed: 46, natural: 260, closable: true }], 770, 7).get('players')).toBe(260)
+  const two = shareHeights([...others.slice(1), { id: 'players', open: true, closed: 46, natural: 210, closable: true }, { id: 'chat', open: true, closed: 46, natural: 2000, closable: true }], 770, 7)
+  expect(two.get('players')).toBe(210)
+  expect(two.get('players')! + two.get('chat')!).toBe(770 - 6 * 7 - 5 * 46)
 })

@@ -10,6 +10,13 @@
  * next. Never closed: the card just opened, one the player is typing in or dragging a slider
  * in. No count per screen size: the count follows from the measured heights (cardFit.test.ts
  * works it out for 720 to 1440 px tall screens).
+ *
+ * How they share (shareHeights; "singular panels which have enough internal contents to
+ * warrant it expand as far as they can when that is the only panel open"). The height left
+ * after the closed headers is shared out smallest want first: a card that needs less than an
+ * equal share gets all it needs, and what is left is split between the rest. A card's want is
+ * all its content, including the scrollback of a growing region (the chat log), so a lone chat
+ * card fills the sidebar while a short card keeps its natural height and is never stretched.
  */
 
 /**
@@ -58,4 +65,22 @@ export function cardsToClose(cards: readonly FitCard[], order: readonly string[]
     closing.add(id)
   }
   return [...closing]
+}
+
+/**
+ * Each open card's height, by id: the stack's height less the closed cards and the gaps,
+ * shared smallest want first (see the file's comment). Never below a card's floor
+ * (comfortable), so with more open than fit the stack scrolls rather than squeezing one.
+ */
+export function shareHeights(cards: readonly FitCard[], available: number, gap: number, floor = OPEN_PX): Map<string, number> {
+  const open = cards.filter(card => card.open).sort((a, b) => a.natural - b.natural)
+  let space = available - Math.max(0, cards.length - 1) * gap
+  for (const card of cards) if (!card.open) space -= card.closed
+  const heights = new Map<string, number>()
+  open.forEach((card, i) => {
+    const share = space / (open.length - i)
+    const height = Math.max(comfortable(card, floor), Math.min(card.natural, Math.floor(share)))
+    heights.set(card.id, height); space -= height
+  })
+  return heights
 }

@@ -21,7 +21,7 @@ import { currentHour } from '../../world/sky/dayCycle'
 import './inspector.css'
 import './motion.css'
 import { bindSwitch } from './switch'
-import { cardsToClose, comfortable, type FitCard } from './cardFit'
+import { cardsToClose, shareHeights, type FitCard } from './cardFit'
 import './me-card.css'
 
 /** A die showing five, drawn as one path: the Randomize and roll-a-name buttons. */
@@ -183,6 +183,12 @@ export class Inspector {
   private fitQueued = false
   /** Card height animations in flight. A new toggle starts from wherever these have got to. */
   private readonly moving = new Map<HTMLElement, Animation>()
+  private readonly contentWatch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => this.queueFit(null)) : null
+  /** Refit when anything directly inside a card's body changes size. */
+  private watchContent(card: HTMLElement): void {
+    const body = card.querySelector(':scope > .wi-body')
+    if (this.contentWatch && body) for (const child of body.children) this.contentWatch.observe(child)
+  }
 
   constructor(parent: HTMLElement, private readonly options: InspectorOptions) {
     this.element.className = 'world-inspector'; this.element.setAttribute('aria-label', 'World inspector')
@@ -223,6 +229,12 @@ export class Inspector {
     window.addEventListener('resize', () => this.queueFit(null), { signal })
     this.element.addEventListener('toggle', event => { const card = (event.target as Element).closest<HTMLElement>('.wi-card'); this.queueFit(card) }, { capture: true, signal })
     if (typeof ResizeObserver !== 'undefined') { const watch = new ResizeObserver(() => this.queueFit(null)); watch.observe(this.element.querySelector('.wi-cards')!); signal.addEventListener('abort', () => watch.disconnect()) }
+    // A card's content changing size (diagnostics lines, a list growing), and a growing region
+    // gaining lines (the chat log, [data-card-grow]), change what the cards want: refit.
+    signal.addEventListener('abort', () => this.contentWatch?.disconnect())
+    const grown = new MutationObserver(records => { if (records.some(r => (r.target as Element).closest?.('[data-card-grow]'))) this.queueFit(null) })
+    grown.observe(this.element.querySelector('.wi-cards')!, { childList: true, subtree: true })
+    signal.addEventListener('abort', () => grown.disconnect())
     this.element.addEventListener('pointerdown', event => { this.pressed = (event.target as Element).closest<HTMLElement>('.wi-card') }, { signal })
     window.addEventListener('pointerup', () => { this.pressed = null }, { signal }); window.addEventListener('pointercancel', () => { this.pressed = null }, { signal })
     this.element.addEventListener('click', event => this.click(event))
@@ -353,7 +365,7 @@ export class Inspector {
         save.addEventListener('keydown', event => event.stopPropagation())
         foot.append(save)
       }
-      body.append(foot); card.append(head, this.panelClose(), body); cards.append(card)
+      body.append(foot); card.append(head, this.panelClose(), body); cards.append(card); this.watchContent(card)
       if (open.has(section.id)) this.toggle(card, true)
     }
     // Extra cards are the same elements across rebuilds, so they keep their open state.
@@ -371,6 +383,7 @@ export class Inspector {
   private place(extra: ExtraCard): void {
     const cards = this.element.querySelector('.wi-cards')!, after = extra.after ? cards.querySelector(`:scope > [data-section="${extra.after}"]`) : null
     if (after) after.after(extra.card); else cards.append(extra.card)
+    this.watchContent(extra.card)
   }
   /**
    * Add a card built elsewhere, with the same header, summary, easing and targets as the
@@ -774,7 +787,7 @@ export class Inspector {
     const id = card.dataset.section!, at = this.openOrder.indexOf(id)
     if (open && at < 0) this.openOrder.push(id)
     if (!open && at >= 0) this.openOrder.splice(at, 1)
-    if (!open) card.style.removeProperty('min-height')
+    if (!open) { card.style.removeProperty('min-height'); card.style.removeProperty('flex'); card.classList.remove('is-sized') }
     // A tooltip never outlives its row: closing the card that holds it (by hand or to make
     // room for another) takes the tooltip with it.
     if (!open && this.selected && card.querySelector(`.wi-row[data-id="${CSS.escape(this.selected)}"]`)) this.hideTooltip()
@@ -1004,11 +1017,12 @@ export class Inspector {
     return card === this.pressed || typing || !!this.editing && card.contains(this.editing.field)
   }
   /**
-   * Close the cards open longest until every open card has a comfortable height (cardFit.ts),
-   * and hold each open card at that height so the stack never squeezes one into a sliver.
-   * `keep` is the card just opened, or the one whose content grew; `reveal` scrolls it into
-   * view when the motion lands. Not while searching, which
-   * opens every card with a match, nor while hidden, when nothing can be measured.
+   * Close the cards open longest until the open ones fit (cardFit.ts cardsToClose), then share
+   * the stack's height between them (shareHeights): a lone card with more content than room
+   * fills the sidebar, a short one keeps its own height, two share. `keep` is the card just
+   * opened, or the one whose content grew; `reveal` scrolls it into view when the motion
+   * lands. Not while searching, which opens every card with a match, nor while hidden, when
+   * nothing can be measured.
    */
   private fit(keep: HTMLElement | null, reveal = false): void {
     const stack = this.element.querySelector<HTMLElement>('.wi-cards')!
@@ -1017,6 +1031,8 @@ export class Inspector {
     if (this.options.oneOpen?.()) return
     if (!this.shown || this.element.classList.contains('is-searching') || !stack.clientHeight) return
     const cards = [...stack.children].filter((el): el is HTMLElement => el instanceof HTMLElement && !el.hidden && el.getClientRects().length > 0)
+    // Measure every card at its own height: last fit's sizes come off first.
+    for (const card of cards) if (card.classList.contains('is-sized')) { card.style.removeProperty('flex'); card.classList.remove('is-sized') }
     const measured = new Map<HTMLElement, FitCard>()
     for (const card of cards) {
       const height = card.getBoundingClientRect().height
@@ -1024,16 +1040,23 @@ export class Inspector {
       const head = card.querySelector<HTMLElement>(':scope > .wi-head'), body = card.querySelector<HTMLElement>(':scope > .wi-body')!
       const frame = card.offsetHeight - card.clientHeight, closed = (head?.offsetHeight ?? 44) + frame
       const open = card.classList.contains('is-open')
-      const natural = open ? height - body.clientHeight + body.scrollHeight : closed
+      // All of the content, and the lines a growing region (the chat log) keeps scrolled away.
+      let natural = open ? height - body.clientHeight + body.scrollHeight : closed
+      if (open) for (const grow of body.querySelectorAll<HTMLElement>('[data-card-grow]')) natural += Math.max(0, grow.scrollHeight - grow.clientHeight)
       measured.set(card, { id: card.dataset.section!, open, closed, natural, closable: !this.busy(card) })
     }
     const gap = parseFloat(getComputedStyle(stack).rowGap) || 0
     const order = this.openOrder.filter(id => cards.some(card => card.dataset.section === id))
     const close = new Set(cardsToClose([...measured.values()], order, stack.clientHeight, gap, keep?.dataset.section ?? null))
+    for (const [card, fit] of measured) if (close.has(fit.id)) { this.toggle(card, false); fit.open = false }
+    const heights = shareHeights([...measured.values()], stack.clientHeight, gap)
     for (const [card, fit] of measured) {
-      if (!card.classList.contains('wi-card')) continue
-      if (close.has(fit.id)) this.toggle(card, false)
-      else if (fit.open) card.style.minHeight = `${Math.round(comfortable(fit))}px`
+      const height = fit.open ? heights.get(fit.id) : undefined
+      if (height === undefined) continue
+      card.style.removeProperty('min-height')
+      // Held at its share. A card that wants no more than its share keeps its own height,
+      // unless it has a growing region, which then shows all its lines.
+      if (height < fit.natural - 0.5 || card.querySelector('[data-card-grow]')) { card.style.flex = `0 0 ${height}px`; card.classList.add('is-sized') }
     }
     // Only a card the player has just opened is scrolled to; a fold opening inside a card
     // leaves the stack where the player put it.
