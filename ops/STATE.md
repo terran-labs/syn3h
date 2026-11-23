@@ -16,7 +16,8 @@ frozen copy 20261122-181028-835c929f, Worker version 53e2ee3f, at https://mira.c
 Primary address: https://mira.cc/ (release.sh PRIMARY_URL; record checks: feed on mira.cc and workers.dev).
 Domains (22 November): syn3h.com and www.syn3h.com send navigations to https://mira.cc (one Single Redirect
 rule, 302, path and query kept; an open page's fetches, /ws, /status and /presence are left alone; rollback:
-/tmp/orch-scripts/old-address-rule.sh disable). The bare syn3h.com is a proxied AAAA 100:: placeholder since
+../Syn3h-stable/dns/20261122-171815-syn3h.com/old-address-rule.sh disable; the apex placeholder's undo is
+../Syn3h-stable/dns/20261122-172834-syn3h.com/apex-placeholder.sh restore). The bare syn3h.com is a proxied AAAA 100:: placeholder since
 17:29 (export 20261122-172834-syn3h.com). mira.cc is a Custom Domain on the Worker syn3h beside www.syn3h.com (attached through the
 API by tools/domain.sh, no deploy); www.mira.cc is a proxied AAAA 100:: with one Single Redirect rule to
 https://mira.cc (302, path and query kept). Parking records removed. Exports and rollback state under
