@@ -66,3 +66,24 @@
   .syn3h-shell .world-inspector .wi-vehicle-option, .syn3h-shell .world-inspector .wi-dice { transition: none; }
   .syn3h-shell .world-inspector .wi-vehicle-option.is-pending { animation: none; }
 }
+
+/* The vehicle picker is the one segmented choice that is deliberately full width and tall (the
+   owner, 22 November 2026: "The Buggy, Jet, Hovercraft selector needs to be much more prominent
+   ... Together, the three of them should occupy the full width of the card ... the same height
+   as the Randomize button"). Equal widths, Randomize's 44 px, the glyph and name centred. The
+   chosen one keeps the shared outline-only mark (card-chrome.css). Every other segmented choice
+   stays content-width. Where a segment is too narrow for its glyph beside its name (four
+   vehicles on a phone), the glyph sits over the name. */
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-vehicle .wi-vehicle-picker {
+  display: flex; flex-wrap: nowrap; gap: 6px; width: 100%; container-type: inline-size;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-vehicle .wi-vehicle-picker > .wi-vehicle-option {
+  flex: 1 1 0; min-width: 44px; height: 44px; min-height: 44px; padding: 0 8px; gap: 8px;
+  display: flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1;
+}
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-vehicle .wi-vehicle-option svg { width: 26px; height: 15px; }
+html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-vehicle .wi-vehicle-option::after { inset: 0; }
+@container (max-width: 340px) {
+  html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-vehicle .wi-vehicle-picker > .wi-vehicle-option { flex-direction: column; gap: 3px; padding: 0 4px; font-size: 12.5px; }
+  html .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-vehicle .wi-vehicle-option svg { width: 22px; height: 12px; }
+}

@@ -462,6 +462,9 @@ export class Inspector {
       if (button.tabIndex !== tab) button.tabIndex = tab
       button.classList.toggle('is-pending', pending)
       if (pending) button.setAttribute('aria-busy', 'true'); else button.removeAttribute('aria-busy')
+      // The shared tooltip (tooltip.ts) on each vehicle that is not the current one.
+      const tip = checked ? undefined : 'Switch to this vehicle'
+      if (button.dataset.tip !== tip) { if (tip) button.dataset.tip = tip; else delete button.dataset.tip }
       const blocked = Boolean(vehicles.note) && !checked
       if (button.matches('[aria-disabled=true]') !== blocked) { if (blocked) button.setAttribute('aria-disabled', 'true'); else button.removeAttribute('aria-disabled') }
     }
