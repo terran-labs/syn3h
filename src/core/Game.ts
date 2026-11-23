@@ -620,11 +620,13 @@ export class Game {
       const holding = () => this.view() === 'lobby'
       if (!holding()) { this.quality.takePixelRatio(); this.viewFit?.fit() }
       const draws = (discover: boolean) => (draw: () => void) => runGuarded(this.renderer as unknown as GuardedRenderer, () => {
+        // Not marked covered: play draws through the glass graph at High and above, and a covered
+        // draw takes the plain one, whose scene pass has another sample count. The preparation must
+        // build the pipelines play will use.
         const target = this.renderer.getRenderTarget(), hold = holding() ? holdTarget : null
         if (hold) this.renderer.setRenderTarget(hold)
-        this.postChain?.setCovered?.(true)
         try { if (batch) batch.run(discover, draw); else draw() }
-        finally { this.postChain?.setCovered?.(false); if (hold) this.renderer.setRenderTarget(target) }
+        finally { if (hold) this.renderer.setRenderTarget(target) }
       })
       // One part per frame: the systems' own level changes, the bots' other shading sets (built
       // as stand-ins), then the draw that requests every pipeline.
