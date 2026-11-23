@@ -10,3 +10,6 @@ labs/live-status.json
 
 # Showcase captures (tools/showcase.mjs)
 captures/
+
+# Python bytecode (tools/heavy.py imports tools/legacy_env.py)
+__pycache__/
