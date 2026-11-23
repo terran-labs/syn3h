@@ -29,6 +29,7 @@ export const KEEP_FILES = [
   { pattern: /^wrangler(\.staging)?\.toml$/, reason: 'the Worker configuration; its comments describe the old hosts' },
   { pattern: /^paseo\.json$/, reason: 'Vorteo preview services' },
   { pattern: /^tools\/domain(\.sh|\.test\.mjs)$|^docs\/(DOMAIN-TOOL|MIRA-CUTOVER)\.md$/, reason: 'domain.sh and the runbooks manage both zones on purpose' },
+  { pattern: /^tools\/rename-to-mira(\.test)?\.mjs$|^docs\/NAMES\.md$/, reason: 'the rename tool and its keep-list document name the old address on purpose' },
   { pattern: /^tools\/switch-domain(\.test)?\.mjs$|^tools\/release-address-checks\.test\.mjs$/, reason: 'this tool, and the test of the old-address checks, name the old address on purpose' },
 ]
 const KEEP_TOKENS = [

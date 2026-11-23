@@ -25,7 +25,7 @@ version of this page. `node tools/rename-to-mira.mjs --check` lists every remain
 | `syn3h.af-4e7.workers.dev`, `syn3h-staging.af-4e7.workers.dev` | `tools/release.sh`, public check, STATE | The addresses of those Workers. | Follow the Worker names. |
 | Durable Object binding `ROOMS`, class `RoomDO` | `wrangler.toml` | Carry no product name. | Nothing to do. |
 | R2 bucket `syn3h-versions` | `wrangler*.toml`, `tools/frozen-versions.mjs` | Holds every frozen version that `?v=` serves. | Create a new bucket, copy every object, switch the binding, verify each version, delete the old bucket. No player benefit. |
-| `syn3h.com`, `www.syn3h.com` | release tooling, public check, invite links, `server/worker.ts` frozen links | The live domain. | The mira.cc switch. |
+| `syn3h.com`, `www.syn3h.com` | `tools/domain.sh`, the address checks in `tools/release.sh`, history | Since v26.11.2205 the game lives at mira.cc and these redirect there (`docs/MIRA-CUTOVER.md`; moved by `tools/switch-domain.mjs`). What remains names the old hosts on purpose. | Keep the zone and its redirect for years. |
 | `terran-labs/syn3h` | GitHub links, `tools/release-notes.mjs`, Actions | The repository's address. | The owner renames the repository; GitHub redirects the old address. Then update the links. |
 | `~/.config/syn3h/cloudflare-token` | `tools/cloudflare-token.sh` | The owner's token file, outside the repository. | Move the file and update the default path in one change. |
 | `/Users/vtn/dev/Syn3h`, `../Syn3h-stable`, `Syn3h-wt` | release tooling, `paseo.json`, docs | Folders on disk that other tools and agents depend on. | Move the folders and every reference together, on a quiet day. |
