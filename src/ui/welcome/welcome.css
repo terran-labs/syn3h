@@ -1,7 +1,7 @@
 /*
  * Welcome (welcome.ts). Content only: the host owns the panel, its padding and its scroll.
  * Colours come from the neutral HUD tokens so the host can retint the sheet; the pictures are
- * the only fixed colours. Layout follows the body's own width (300 to 880 px) through a
+ * the only fixed colours. Layout follows the body's own width (300 to 830 px) through a
  * container query, never the viewport. No row is transformed here: the host may bend
  * `.welcome-body > *` along its curve.
  */
@@ -11,6 +11,10 @@
   --w-line: var(--s3-line, rgb(225 225 225 / .28)); --w-quiet: var(--s3-line-quiet, rgb(225 225 225 / .15));
   color: var(--w-dim); font: 400 15.5px/1.6 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .005em;
   text-align: left; overflow-wrap: break-word;
+  /* The carousel's side pictures stand past the column (ring below): never a sideways scroll.
+     As the lobby sheet's scroller this computes to hidden, which still shows its padding, where
+     the pictures are; in the in-play guide it cuts at the body's own padding. */
+  overflow-x: clip;
 }
 .welcome-body > * { margin: 0 0 16px; max-width: 100%; }
 .welcome-body > :last-child { margin-bottom: 0; }
@@ -46,29 +50,30 @@
 .welcome-shot figcaption { margin-top: 8px; font-size: 13px; line-height: 1.4; color: var(--w-soft); }
 @media (prefers-reduced-motion: reduce) { .welcome-shot img { transition: none; } }
 
-/* The ring (ring.ts), after terranlabs.com's "Syn3h in Action": the front card faces you, one card
-   either side stands half a card back and 0.45 of a card out, turned 40 degrees away, and the rest
-   wait further back, unseen; a turn moves every card one place and each glides there. --w is a
-   card's width. The side cards' outer edges reach about 0.84 w from the centre, so --w is capped
-   at 58 % of the column and everything the ring draws stays inside it, on a phone too; nothing
-   intersects, so no card ever shows through another. The column still cuts at its edges as a
-   backstop; the perspective lives inside, on the stage, so that cut does not flatten it. */
+/* The ring (ring.ts): the front picture is the column's full width (--w); one either side, at
+   78 % and dimmed, stands outside the column with a gap, so only its inner part shows where the
+   host lets it: a lobby sheet's body reaches past the column to the screen's edges (LobbySheet
+   bleed) and says how far on each side in --sheet-reach-left and -right; the in-play guide has
+   its own padding. A turn moves every card one place and each glides there. */
 .welcome-body .welcome-ring {
-  --w: min(58cqi, 420px);
-  display: flex; flex-direction: column; align-items: center; margin: 4px 0 26px; overflow: clip;
+  --w: 100cqi; --gap: clamp(8px, 2.5cqi, 18px);
+  display: flex; flex-direction: column; align-items: center; margin: 4px 0 26px; overflow: visible;
+  clip-path: inset(-40px calc(-1 * var(--sheet-reach-right, 32px)) -40px calc(-1 * var(--sheet-reach-left, 32px)));
 }
-.welcome-ring-stage { width: 100%; padding: 22px 0 18px; perspective: 1500px; perspective-origin: 50% 40%; }
-.welcome-ring-track { position: relative; width: var(--w); aspect-ratio: 16 / 9; margin: 0 auto; padding: 0; list-style: none; transform-style: preserve-3d; }
+.welcome-ring-stage { width: 100%; padding: 6px 0 18px; }
+/* Isolated, so the cards' z-index orders them among themselves and never over the host's controls (a sheet's X and its tip). */
+.welcome-ring-track { position: relative; isolation: isolate; width: var(--w); aspect-ratio: 16 / 9; margin: 0 auto; padding: 0; list-style: none; }
 .welcome-ring-card {
   position: absolute; inset: 0; margin: 0;
-  transform: translateX(calc(var(--x, 0) * var(--w))) translateZ(calc(var(--z, 0) * var(--w))) rotateY(var(--ry, 0deg));
-  /* The side cards dim a little; the ones behind them are not seen at all. */
-  opacity: calc(1 - min(1, var(--away, 0) * .42) - max(0, var(--away, 0) - 1) * .16);
+  /* Slot n's centre is n times (half the front, the gap, half a side card) out from the middle. */
+  transform: translateX(calc(var(--x, 0) * (var(--w) * (.5 + .78 / 2) + var(--gap)))) scale(var(--s, 1));
+  /* The side cards dim; the ones beyond them are not seen at all. */
+  opacity: calc(1 - min(1, var(--away, 0) * .55) - max(0, var(--away, 0) - 1) * .45);
   transition: transform 1.2s cubic-bezier(.22, 1, .36, 1), opacity .8s;
 }
 .welcome-ring-track[data-still] .welcome-ring-card { transition: none; }
 .welcome-ring-card .welcome-shot { width: 100%; height: 100%; margin: 0; }
-.welcome-ring-card .welcome-shot img { height: 100%; border-radius: 10px; box-shadow: 0 18px 44px -14px rgb(0 0 0 / .75); cursor: pointer; }
+.welcome-ring-card .welcome-shot img { height: 100%; border-radius: 12px; box-shadow: 0 18px 44px -14px rgb(0 0 0 / .75); cursor: pointer; }
 .welcome-ring-card[data-front] .welcome-shot img { cursor: default; }
 /* The caption under the ring speaks for the front card; each figure keeps its own for screen readers. */
 .welcome-ring-card figcaption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -99,13 +104,6 @@
 
 /* Lists */
 .welcome-body ol, .welcome-body ul { padding: 0; list-style: none; }
-.welcome-steps { counter-reset: step; display: grid; gap: 12px; }
-.welcome-steps li { max-width: 68ch; counter-increment: step; position: relative; padding-left: 40px; min-height: 26px; }
-.welcome-steps li::before {
-  content: counter(step); position: absolute; left: 0; top: 0; width: 26px; height: 26px; box-sizing: border-box;
-  display: grid; place-items: center; border: 1px solid var(--w-line); border-radius: 50%;
-  font: 500 12px/1 'Barlow', sans-serif; color: var(--w-ink);
-}
 .welcome-cards { display: grid; gap: 10px; }
 @container welcome (min-width: 560px) { .welcome-cards { grid-template-columns: repeat(3, 1fr); } }
 .welcome-cards li, .welcome-modes > div { padding: 14px 16px; border: 1px solid var(--w-quiet); border-radius: 12px; }
@@ -155,7 +153,32 @@
 .welcome-body .about-links { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 36px; padding-top: 18px; border-top: 1px solid transparent; border-image: var(--rule) 1; }
 .welcome-body .about-links a { color: var(--w-ink); font-size: 14px; text-decoration: none; border-bottom: 1px solid var(--w-line); }
 .welcome-body .about-links a:hover, .welcome-body .about-links a:focus-visible { border-bottom-color: var(--w-ink); }
-.welcome-body .shell-credits { font-size: 13px; color: var(--w-soft); }
-.welcome-body .shell-credits summary { cursor: pointer; color: var(--w-dim); min-height: 44px; display: flex; align-items: center; }
-.welcome-body .shell-credits a { color: var(--w-dim); }
-.welcome-body .shell-credits ul { list-style: disc; padding-left: 18px; }
+/* Credits and licences: one card that opens in place, its contents inside its own border, the
+   shared accordion arrow at its right (the owner, 22 November 2026). Closed by default. */
+.welcome-body .welcome-credits { margin-top: 20px; border: 1px solid var(--w-quiet); border-radius: 12px; font-size: 13.5px; color: var(--w-soft); }
+.welcome-body .welcome-credits > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; box-sizing: border-box; padding: 0 16px;
+  list-style: none; cursor: pointer; color: var(--w-ink); font: 500 12px/1.3 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; border-radius: 12px;
+}
+.welcome-body .welcome-credits > summary::-webkit-details-marker { display: none; }
+/* Keyboard focus on its row rings the whole card, open or closed, so the ring follows the card's
+   shape and never reads as a second border round the row alone. */
+.welcome-body .welcome-credits > summary:focus-visible { outline: none; }
+.welcome-body .welcome-credits:has(> summary:focus-visible) { outline: 2px solid var(--w-ink); outline-offset: 2px; }
+.welcome-body .welcome-credits > summary .accordion-arrow { color: var(--w-dim); }
+.welcome-body .welcome-credits-body { padding: 2px 16px 14px; }
+.welcome-body .welcome-credits-body p { margin: 0 0 10px; }
+.welcome-body .welcome-credits-body p:last-child { margin-bottom: 0; }
+.welcome-body .welcome-credits a { color: var(--w-dim); }
+.welcome-body .welcome-credits ul { margin: 0 0 10px; list-style: disc; padding-left: 18px; }
+.welcome-body .welcome-credits li { margin: 4px 0; line-height: 1.5; }
+
+/* A copy of the shared accordion arrow (card-chrome.css on ui/card-round-2, not yet on main):
+   delete this block when it lands, along with the copy of ACCORDION_ARROW in welcome.ts. */
+.accordion-arrow {
+  display: inline-block; flex: none; width: 14px; height: 14px; vertical-align: -1px; overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  transition: rotate .18s cubic-bezier(.2, .8, .2, 1);
+}
+details[open] > summary .accordion-arrow, [aria-expanded="true"] .accordion-arrow { rotate: 90deg; }
+@media (prefers-reduced-motion: reduce) { .accordion-arrow { transition: none; } }

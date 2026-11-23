@@ -17,16 +17,16 @@ for(const mode of ['desktop','phone']){
   await page.keyboard.press('Shift');await page.waitForTimeout(700)
   // The lobby offers planets, not vehicles: no vehicle control, panel or preview anywhere in it.
   assert.equal(await page.locator('[data-goto=vehicle], [data-panel=vehicle], [name=vehicle], .shell-vehicle, .shell-vehicle-preview, canvas[aria-label="Selected vehicle preview"]').count(),0,'the lobby shows no vehicle control')
-  // No bottom buttons (Multiplayer was removed); Settings, About and Updates are icons in the corner (LobbySettings).
+  // No bottom buttons (Multiplayer was removed); Settings and Welcome are in the corner, and the version opens Updates (LobbySettings).
   assert.equal(await page.locator('.galaxy-links button').count(),0,'the lobby has no bottom buttons')
-  for(const name of ['Settings','Welcome',/^Updates/]) assert.equal(await page.getByRole('button',{name,exact:typeof name==='string'}).count(),1,`the ${name} icon is there`)
+  for(const name of ['Settings','Welcome',/open Updates$/]) assert.equal(await page.getByRole('button',{name,exact:typeof name==='string'}).count(),1,`the ${name} icon is there`)
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-lobby.png`})
   // The Welcome guide: its sections are there, and its pictures load only now.
   assert.deepEqual(images,[],'no image request in the lobby before Welcome is opened')
   await page.getByRole('button',{name:'Welcome',exact:true}).click()
   const welcome=page.locator('dialog.lobby-sheet .welcome-body')
   await welcome.waitFor({state:'visible'})
-  for(const heading of ['Start in three moves','Controls','Settings worth knowing'])assert.equal(await welcome.getByRole('heading',{name:heading}).count(),1,`Welcome has ${heading}`)
+  for(const heading of ['Controls','Settings worth knowing'])assert.equal(await welcome.getByRole('heading',{name:heading}).count(),1,`Welcome has ${heading}`)
   await page.waitForFunction(()=>[...document.querySelectorAll('dialog.lobby-sheet .welcome-shot')].some(f=>f.classList.contains('is-loaded')),null,{timeout:30000})
   assert.ok(images.length>0&&images.every(url=>/^\/welcome\/[\w-]+-(640|960|1280|1920)\.webp$/.test(url)),`only Welcome pictures load after opening ${JSON.stringify(images)}`)
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-welcome.png`})
