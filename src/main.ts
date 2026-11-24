@@ -216,7 +216,7 @@ async function main(): Promise<void> {
   const blankCounter = (blank: boolean) => {
     stopCounter?.(); stopCounter = null
     if (blank) params.set(recordBlankFrames.def.id, true)
-    if (blank || game.frameCanary || game.frameProbe) stopCounter = startFlashCounter(() => game.blankFrames, () => shell.playing && !shell.transitioning, () => game.frameCanary, blank, () => game.frameProbe)
+    if (blank || game.frameCanary || game.frameProbe) stopCounter = startFlashCounter(() => game.blankFrames, () => shell.playing && !shell.transitioning, () => game.frameCanary, blank, () => game.frameProbe, () => shell.panelsOpen ? document.querySelector('.world-inspector:not([inert])') : null)
   }
   blankCounter(flashSwitches.blank)
   // ?canvasBackdrop=1 (core/flashSwitches.ts): magenta behind the canvas in play. Every frame we
