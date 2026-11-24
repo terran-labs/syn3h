@@ -78,6 +78,19 @@ that fails because someone improved the game is a cost, and we stop paying it.
    remove it. Slow tests (over ten seconds) need a reason to be in the blocking suite.
 
 
+## Field diagnostics: link switches ship and stay
+
+Set by the owner on 23 November 2026 (ops/DECISIONS.md).
+
+Diagnostic link switches are part of the product: they ship in every production release and
+stay. Never strip one when the bug it served is closed.
+
+- Each is read once at start, changes nothing when absent, and is named in the copied
+  Diagnostics report.
+- A new device-specific gate (an effect off on some devices) gets a switch to turn it on and off.
+- The set on 23 November: `?webgl=1`, `?gfx=N`, `?diag=1`, `?blank=1`, `?shadows=0`,
+  `?shading=0`, `?post=base|off`, `?samples=1`, `?lowrest=1`, `?freeze=1`, `?ui=flat`.
+
 ## Game principle: nothing but physics moves a player for where they drove
 
 Set by the owner on 18 November 2026, after the game set his buggy upright in a lava pool

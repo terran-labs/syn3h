@@ -2,6 +2,24 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Monday 23 November: diagnostic link switches stay in every production release
+
+**Decided** by the owner, in his words: "I love all your URL params to test different
+parameters in the game. Please continue leaving these in for all future production releases
+so we have field diagnostic capabilities from this point forward."
+
+**Why.** The black flashes on his iPhone could not be reproduced on our machines. Link
+switches let him turn one thing off at a time on his own phone, and that is how the flashes
+were traced to sun shadows on Safari WebGPU (v26.11.2304). A bug seen only in the field
+needs field switches, and they must still be there the next time.
+
+**What it changes.** Diagnostic link switches ship in production and stay: none is stripped
+when the bug it served is closed. Each is read once at start, changes nothing when absent,
+and is named in the copied Diagnostics report. A new device-specific gate gets a switch to
+turn it on and off. The set on 23 November: ?webgl=1, ?gfx=N, ?diag=1, ?blank=1,
+?shadows=0, ?shading=0, ?post=base|off, ?samples=1, ?lowrest=1, ?freeze=1, ?ui=flat.
+The rule is in AGENTS.md.
+
 ## Monday 16 November: code under PolyForm, creative work under CC BY-NC-SA 4.0
 
 **Decided** by the owner. The code keeps the PolyForm Noncommercial License 1.0.0. The
