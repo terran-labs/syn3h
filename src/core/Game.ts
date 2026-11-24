@@ -29,6 +29,7 @@ import { drawFrame, gpuDeadlineMs, startRenderer, viewState, withDeadline, type 
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
 import { QualityController, reportLoading, vehicleShading, type AdjacentRenderPreset, type QualityLevel, type FrameMetrics } from './quality'
+import { freeRetired, type RetireRenderer } from './retire'
 import { climbShowroomStandIns, drawCoveredShowroomVariant } from '../vehicles/skins/showroom'
 import { PipelineCounter } from './performanceHistory'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
@@ -448,6 +449,8 @@ export class Game {
       const previousDraws = watchingDraw ? this.renderer.info.render.drawCalls : 0
       for (const system of this.systems) system.prepareWorldDraw?.()
       drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs)
+      // Meshes dropped by a rebuild leave the renderer once their replacements have drawn.
+      freeRetired(this.renderer as unknown as RetireRenderer)
       // In the same task as the draw, so the probe sees what is about to be presented.
       this.blankFrames?.afterDraw()
       if (view === 'playing') this.rememberVehicleLevel(this.quality.governor.level)

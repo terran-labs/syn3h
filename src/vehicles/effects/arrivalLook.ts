@@ -28,6 +28,7 @@ import type {Terrain} from '../../world/Terrain'
 import {abs,clamp,dot,exp,float,mix,mx_fractal_noise_float,normalView,positionLocal,positionViewDirection,positionWorld,renderGroup,smoothstep,time,uniform,uv,vec3} from 'three/tsl'
 import {hotExposureNode} from '../skins/hotExposure'
 import {vehicleNightAmount} from '../skins/nightReadability'
+import { retire } from '../../core/retire'
 
 // TSL nodes are dynamically typed; sprites.ts uses the same alias.
 type N = any // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -427,7 +428,9 @@ export class ArrivalLook {
   }
 
   private detachGhosts(): void {
-    for (const ghost of this.ghosts) ghost.removeFromParent()
+    // Each arrival makes new ghosts: free the old ones in the renderer once they are gone. The hidden
+    // warm-up meshes keep the ghost material's pipelines (addSilhouetteWarmMesh).
+    for (const ghost of this.ghosts) { ghost.removeFromParent(); retire(ghost) }
     this.ghosts.length = 0
   }
 

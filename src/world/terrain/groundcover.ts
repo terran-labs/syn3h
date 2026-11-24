@@ -42,6 +42,7 @@ import { paletteFor } from './palettes'
 import { terrainFloraHue, terrainFloraSeed, terrainFlowers, terrainGroundCover, terrainNightLife, terrainRoadStyle } from './settings'
 import { prevailingWindHeading, prevailingWindStrength } from '../weather/wind'
 import { SWISH_CELL, SWISH_N, SwishField, coverSwishBend, coverSwishRise, type Footprint } from './swish'
+import { retire } from '../../core/retire'
 export const groundCover = terrainGroundCover
 
 export const groundCoverShade = defineParam({
@@ -1064,7 +1065,7 @@ export class GroundCover implements System {
   }
 
   private disposeLayers(): void {
-    for (const l of this.layers) { this.group.remove(...l.meshes); l.dispose() }
+    for (const l of this.layers) { this.group.remove(...l.meshes); l.dispose(); retire(...l.meshes) }
     this.layers = []
   }
 

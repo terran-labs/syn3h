@@ -23,6 +23,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { float, fract, positionGeometry, smoothstep, uniform, vec2 } from 'three/tsl'
+import { retire } from '../../core/retire'
 
 /** Cells per side of every level. A multiple of 8 keeps the hole and the morph on even cells. */
 export interface ClipmapLayout { cells: number; base: number; levels: number }
@@ -192,5 +193,6 @@ export class Clipmap {
   dispose(): void {
     for (const variants of this.geometries) for (const g of variants) g.dispose()
     this.group.removeFromParent()
+    retire(this.group)
   }
 }

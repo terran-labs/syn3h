@@ -4,6 +4,7 @@ import type { System } from '../core/Game'
 import { qualityBudget } from '../core/quality'
 import { PARTICLE_SHARES, particleBudget, windX, windZ } from './params'
 import { windDrift } from '../world/weather'
+import { retire } from '../core/retire'
 export type VentKind = 'flame' | 'embers' | 'smoke'
 export interface VentOptions { kind: VentKind; radius: number; height: number; intensity: number }
 interface Vent extends VentOptions { x: number; y: number; z: number; birth: number }
@@ -27,7 +28,7 @@ export class Emitters implements System {
     this.vents.push({ ...options, ...position, birth: this.clock.value }); this.dirty = true
   }
   private release() {
-    for (const mesh of this.meshes) { this.scene.remove(mesh); mesh.geometry.dispose() }
+    for (const mesh of this.meshes) { this.scene.remove(mesh); mesh.geometry.dispose(); retire(mesh) }
     this.meshes.length = 0; this.particleCount = 0
   }
   clear() { this.vents.length = 0; this.release(); this.dirty = false }
