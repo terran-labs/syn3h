@@ -213,21 +213,19 @@ const APPROVED: Look = {
 const ICON = {
   /** The square the parts are drawn in, and the margin the icon shows round it. */
   size: 200, margin: 6,
-  /**
-   * Tilt of the orbits: 45 degrees, so each crosses all four of the star's rays at the same clean
-   * angle. At a shallower tilt an orbit ran along the left and right rays and was cut back into
-   * ragged stubs.
-   */
-  tilt: -Math.PI / 4,
+  /** Tilt of the orbits: nearly level, the system seen from a little above its own plane. */
+  tilt: -0.18,
   /** The star's radius, the rings' thickness, and the gap left where a ray of the star crosses a ring. */
   star: 52, line: 6, gap: 7,
   /**
    * Each orbit: half its length, half its breadth, where on it its world sits (radians), and the
    * world's radius. Both orbits and their worlds lie wholly inside the square, so no edge cuts
-   * them. The inner one crosses the rays about two thirds of the way out; the outer one passes
-   * clear of their tips.
+   * them. Both are long enough to pass outside the tips of the star's left and right rays with
+   * room to spare, so they are cut only where they pass behind its upright rays, which they
+   * cross nearly square on. (An orbit that reached only as far as the side tips ran along those
+   * rays and was cut back into ragged stubs.)
    */
-  orbits: [[84, 25, 2.9, 9], [114, 46, 0.8, 12]] as [number, number, number, number][],
+  orbits: [[80, 25, 2.95, 9], [100, 37, 0.62, 12]] as [number, number, number, number][],
 }
 function iconParts(): { rings: Contour[]; worlds: Contour[]; star: Contour[] } {
   const c = ICON.size / 2, blank = () => new Field(-30, -30, ICON.size + 30, ICON.size + 30, 0.25)
