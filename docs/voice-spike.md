@@ -43,7 +43,7 @@ Keep the second device in the same named room with its microphone on and its pla
 | --- | --- | --- |
 | Open mic, echo cancellation on | Live 24 kHz input, running 48 kHz context, play-and-record. Owner heard severe game-audio degradation. No selected pair was reported. | Describe muffling, clicks, lower volume or a route change. Was a second player in this room with voice on? |
 | Open mic, echo cancellation off (`voiceec=0`) | Actual setting verified in Chrome. | Compare game sound on the phone speaker and headphones, then ask the partner about echo. |
-| Listen only (`voicelisten=1`) | The listener requests incoming audio without opening a mic. | Can you hear the partner while driving? Does the engine still sound like it did with voice off? |
+| Listen only (`voicelisten=1`) | Desktop Chrome received a file-backed tone through the game’s spatial audio path in either negotiation role. Desktop WebKit also received the tone from Chrome and stayed in playback at 48 kHz. The listener made zero mic requests and sent no track. | Can you hear the partner while driving? Does the engine still sound like it did with voice off? |
 | After Leave voice | Mira releases capture and restores the game session. | Does the engine recover on its own? If it stays degraded, record the route and whether reloading restores it. |
 
 Each switch requires the original `voice=1` link. Start a fresh tab for each comparison and tap Leave voice before moving to the next one. After leaving, take the screenshot before reloading. The participant count, offer/answer roles, signalling and ICE states help distinguish an absent partner from a failed connection. A missing selected pair alone does not diagnose a network failure.
