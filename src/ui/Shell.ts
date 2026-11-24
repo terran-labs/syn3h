@@ -968,7 +968,7 @@ export class Shell implements System {
     progress.textContent = 'Preparing world'
     // The lobby controls are inert during entry. Keep the status accessible outside them, in the
     // bottom-centre stack (bottom-stack.css).
-    this.bottomStack.append(progress)
+    ;(this.bottomStack?.isConnected ? this.bottomStack : this.element).append(progress)
     try {
       await this.game.precompile(label => {
         if (progress.textContent !== label) progress.textContent = label
