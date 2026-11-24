@@ -201,7 +201,9 @@ async function main(): Promise<void> {
       '\nWater refraction: ' + refractionState(game.renderer) +
       // Copies taken in the middle of the scene pass (core/midPassCopy.ts), off where not yet proven.
       '\nForce field contact glow: ' + depthEffectsState() + '\nHeadlight beam soft edge: ' + depthEffectsState() +
-      (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '') + '\n' + sunShadowsLine() + '\n' + flashSwitchLine()
+      (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '') + '\n' + sunShadowsLine() + '\n' + flashSwitchLine() +
+      // Device loss: this page's and the last page's in this tab (core/lossRecord.ts).
+      (game.lossRecorder ? game.lossRecorder.reportLines().map(line => '\n' + line).join('') : '')
   }
   // ?blank=1 (core/flashSwitches.ts): the recorder on from the link, its counter on screen in play.
   if (flashSwitches.blank) {

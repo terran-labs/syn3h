@@ -114,6 +114,9 @@ export async function startRenderer<R extends StartableRenderer>(make: (forceWeb
 
 /** Something the player can act on when the GPU goes away. */
 export function deviceLostMessage(info: { api?: string; message?: string; reason?: string | null } | undefined): string {
+  // Safari reports a GPU process that crashed or was killed as reason 'destroyed' with no message
+  // (lossRecord.ts); we never destroy the device ourselves outside a dispose, so say what we know.
+  if (info?.api === 'WebGPU' && info.reason === 'destroyed' && !info.message) return "The browser's graphics process stopped. Reload to keep playing."
   const api = info?.api === 'WebGL' ? 'WebGL context' : 'graphics device'
   // three.js says 'Unknown reason' when the browser gives none; that tells the player nothing.
   const detail = info?.message && info.message !== 'Unknown reason' ? ` (${info.message})` : ''

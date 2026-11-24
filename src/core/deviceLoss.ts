@@ -44,6 +44,8 @@ export interface GuardedRenderer {
   onDeviceLost: (info: DeviceLossInfo) => void
   dispose?: () => void
   _isDeviceLost?: boolean
+  /** Set while the renderer is being disposed by us: a loss then is ours. */
+  __miraDisposing?: boolean
 }
 export interface DeviceLossInfo { api: string; message: string; reason: string | null; originalEvent?: unknown }
 
@@ -129,10 +131,13 @@ export function guardDevice(renderer: GuardedRenderer): boolean {
   // renderer is being disposed.
   if (renderer.dispose) {
     const dispose = renderer.dispose.bind(renderer)
-    renderer.dispose = () => { disposing = true; dispose() }
+    renderer.dispose = () => { disposing = true; renderer.__miraDisposing = true; dispose() }
   }
+  // Safari gives no message, and reports a GPU process that crashed or was killed with reason
+  // 'destroyed' (lossRecord.ts): the message is passed on as given, never invented, and the
+  // notice words that case itself (renderOptions.ts deviceLostMessage).
   device.lost.then(info => {
-    if (info?.reason === 'destroyed' && !disposing) lose('destroyed', info.message || 'The device was destroyed', info)
+    if (info?.reason === 'destroyed' && !disposing) lose('destroyed', info.message ?? '', info)
   }, () => { /* A lost promise never rejects; nothing to report if one does. */ })
   return true
 }
