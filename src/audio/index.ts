@@ -13,10 +13,15 @@ import { applySubmerge } from './score/ScoreSynth'
 import { WeatherWind } from './weatherWind'
 import { senseConvoy, senseRelief, type ConvoyVoice } from './scoreSenses'
 import { audioContext, declareAudioSession, hadGesture, markSoundStarted, onGesture } from './unlock'
-import { cuesVolume, worldVolume, remoteVolume, crossfade, effectsVolume, masterVolume, musicVolume, muted, playOnSilent } from './params'
+import { cuesVolume, worldVolume, remoteVolume, crossfade, effectsVolume, masterVolume, musicVolume, muted, playOnSilent, voiceVolume, voiceRange } from './params'
 
 export type Sound = 'laserShot' | 'laserHit' | 'materialize'
 export interface Position { x: number; y: number; z: number }
+export type SpeechChannel = 'spatial' | 'global'
+
+const SPEECH_NEAR_DISTANCE = 40
+const SPEECH_MAX_GAIN = 2
+const SPEECH_GAIN_TIME = 0.025
 // Owner's rule, 15 November 2026: no audio files ship. The generated score (src/audio/score)
 // is the only music, in the lobby and in play, and these three sounds are synthesised
 // (src/audio/Cues.ts). The names are the ones the networking and gear code already call.
@@ -343,35 +348,73 @@ export class GameAudio implements System {
   }
   get voiceContext(): AudioContext | undefined { return this.context }
 
-  /** Remote speech follows the same listener and master volume as the vehicles. */
+  /**
+   * Spatial speech uses the game listener. Global speech goes straight to the master.
+   * Pass muted=true to silence either channel. A missing position also silences spatial speech.
+   */
   attachSpeech(stream: MediaStream) {
-    if (!this.context || !this.master) return
-    const source = this.context.createMediaStreamSource(stream)
+    const context = this.context
+    const master = this.master
+    if (!context || !master) return
+    const listenerPosition = this.position
+    const source = context.createMediaStreamSource(stream)
     // Chromium can leave a received track silent in Web Audio until a media element
-    // consumes it (crbug.com/933677). Only the panner should reach the speakers.
+    // consumes it (crbug.com/933677). The element stays muted in both channels.
     const playback = new Audio()
     playback.muted = true
     playback.srcObject = stream
     void playback.play().catch(() => {})
-    const gain = this.context.createGain()
+    const gain = context.createGain()
     gain.gain.value = 0
-    const output = this.output({ x: 0, y: 0, z: 0 }, this.master)
-    const panner = output.node as PannerNode
-    source.connect(gain).connect(panner)
+    const panner = context.createPanner()
+    panner.panningModel = 'HRTF'
+    // Speech uses its own rolloff curve. The panner supplies direction only.
+    panner.rolloffFactor = 0
+    panner.connect(master)
+    source.connect(gain)
+    let routedChannel: SpeechChannel = 'spatial'
+    let targetGain: number | undefined
+    gain.connect(panner)
+
     return {
-      position(point?: Position) {
-        gain.gain.value = point ? 1 : 0
-        if (!point) return
-        panner.positionX.value = point.x
-        panner.positionY.value = point.y
-        panner.positionZ.value = point.z
+      position(point?: Position, channel: SpeechChannel = 'spatial', muted = false) {
+        const now = context.currentTime
+        if (muted || voiceVolume.value === 0 || (channel === 'spatial' && !point)) {
+          if (targetGain !== undefined) {
+            gain.gain.cancelScheduledValues(now)
+            gain.gain.setValueAtTime(0, now)
+            targetGain = undefined
+          }
+          return
+        }
+
+        if (channel !== routedChannel) {
+          gain.disconnect()
+          gain.connect(channel === 'global' ? master : panner)
+          routedChannel = channel
+        }
+
+        let level = voiceVolume.value * SPEECH_MAX_GAIN
+        if (channel === 'spatial' && point) {
+          panner.positionX.value = point.x
+          panner.positionY.value = point.y
+          panner.positionZ.value = point.z
+          const distance = Math.hypot(point.x - listenerPosition.x, point.y - listenerPosition.y, point.z - listenerPosition.z)
+          const tail = 1 - unit((distance - SPEECH_NEAR_DISTANCE) / (voiceRange.value - SPEECH_NEAR_DISTANCE))
+          // Smoothstep gives both the near plateau and the outer edge a gentle slope.
+          level *= tail * tail * (3 - 2 * tail)
+        }
+        if (level !== targetGain) {
+          gain.gain.setTargetAtTime(level, now, SPEECH_GAIN_TIME)
+          targetGain = level
+        }
       },
       dispose() {
         playback.pause()
         playback.srcObject = null
         source.disconnect()
         gain.disconnect()
-        output.dispose()
+        panner.disconnect()
       },
     }
   }

@@ -6,6 +6,11 @@ const mix = (id: string, label: string, value: number) => defineParam({
 /** First in the Me card's Audio group: the one sound switch a player reaches for (moved from Players & session, 22 November 2026). */
 export const muted = defineParam({ id: 'audio.muted', label: 'Mute audio', group: 'Audio', scope: 'client', default: false })
 export const masterVolume = mix('master', 'Master volume', 0.8)
+export const voiceVolume = mix('voice', 'Voice volume', 0.7)
+export const voiceRange = defineParam({
+  id: 'audio.voiceRange', label: 'Spatial voice range (m)', group: 'Audio', scope: 'client',
+  default: 360, min: 100, max: 1200, step: 10,
+})
 export const musicVolume = mix('music', 'Music volume', 0.22)
 export const effectsVolume = mix('effects', 'Effects volume', 0.7)
 export const engineVolume = mix('engine', 'Engine volume', 0.24)
