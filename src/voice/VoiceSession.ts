@@ -1,3 +1,4 @@
+import { beginMicrophoneSession } from '../audio/audioSession'
 import { failureName, type CaptureFailure } from './captureFailure'
 import type { VoiceSignal } from '../../shared/voice'
 
@@ -54,6 +55,7 @@ export class VoiceSession {
   private stream?: MediaStream
   private peerIds = new Set<number>()
   private peers = new Map<number, Peer>()
+  private releaseAudioSession?: () => void
   private stopMeter?: () => void
 
   constructor(private readonly options: VoiceSessionOptions) {}
@@ -176,6 +178,7 @@ export class VoiceSession {
     try {
       if (typeof navigator.mediaDevices?.getUserMedia !== 'function') return this.fail('Capture API unavailable')
       if (typeof RTCPeerConnection !== 'function') return this.fail('WebRTC unavailable')
+      this.releaseAudioSession = beginMicrophoneSession()
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       })
@@ -220,6 +223,8 @@ export class VoiceSession {
     this.stream = undefined
     this.peerIds.clear()
     for (const track of stream?.getTracks() ?? []) track.stop()
+    this.releaseAudioSession?.()
+    this.releaseAudioSession = undefined
     this.stopMeter?.()
     this.stopMeter = undefined
     for (const id of this.peers.keys()) this.closePeer(id)

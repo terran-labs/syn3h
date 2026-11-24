@@ -1,3 +1,4 @@
+import { declareAudioSession } from '../../src/audio/audioSession'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceSession, type VoiceSessionOptions } from '../../src/voice/VoiceSession'
 
@@ -141,6 +142,26 @@ describe('VoiceSession', () => {
     expect(Peer.instances).toHaveLength(0)
     expect(sendReadiness.mock.calls).toEqual([[{ type: 'voice-ready', enabled: false }]])
     expect(await session.enable()).toBe(true)
+  })
+
+  it('enters a capture-compatible Safari session before the mic request and restores the game setting', async () => {
+    const audioSession = { type: 'playback' }
+    Object.assign(navigator, { audioSession })
+    const { session } = setup()
+    getUserMedia.mockImplementation(async () => {
+      if (audioSession.type !== 'play-and-record') throw new DOMException('', 'InvalidStateError')
+      return new Stream([track])
+    })
+    expect(await session.enable()).toBe(true)
+    declareAudioSession(false)
+    expect(audioSession.type).toBe('play-and-record')
+    session.disable()
+    expect(audioSession.type).toBe('auto')
+
+    declareAudioSession(true)
+    getUserMedia.mockRejectedValueOnce(new DOMException('', 'NotAllowedError'))
+    expect(await session.enable()).toBe(false)
+    expect(audioSession.type).toBe('playback')
   })
 
   it('mutes the actual sender track, including mute chosen during permission', async () => {

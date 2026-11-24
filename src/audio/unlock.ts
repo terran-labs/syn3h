@@ -43,11 +43,7 @@ export function markSoundStarted(): void {
  * other apps' music while it plays. `playing` false returns to the browser's own choice, so a
  * muted game never takes over the phone's audio. A no-op where the API is missing.
  */
-export function declareAudioSession(playing: boolean): void {
-  const session = (typeof navigator !== 'undefined' ? navigator : undefined) as { audioSession?: { type: string } } | undefined
-  const type = playing ? 'playback' : 'auto'
-  if (session?.audioSession && session.audioSession.type !== type) try { session.audioSession.type = type } catch { /* not ours to insist */ }
-}
+export { declareAudioSession } from './audioSession'
 
 let shared: AudioContext | undefined
 /** performance.now() when the shared context was made: its state may change in its first moments. */
