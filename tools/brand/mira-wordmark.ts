@@ -205,30 +205,40 @@ const APPROVED: Look = {
 }
 
 // ---- the icon ------------------------------------------------------------------------------
-// The owner chose it on 23 November 2026 (the lab's icon 33, "Swept rings", in white and blue):
+// The owner chose it on 23 November 2026 (the lab's icon 33, "Swept rings", in white and blue),
+// and on 24 November asked that nothing be cropped by the edge and the inner ring meet the star cleanly:
 // Mira as a bold four-pointed star, with two orbits tilted steeply across the square and a world
 // on each. It is kept in three parts (rings, worlds, star) so each can take its own colour, and
 // so a platform that restyles icons can be given the parts as layers.
 const ICON = {
   /** The square the parts are drawn in, and the margin the icon shows round it. */
   size: 200, margin: 6,
-  /** Tilt of the orbits, and their height as a share of their width. */
-  tilt: -0.5, squash: 0.36,
+  /**
+   * Tilt of the orbits: 45 degrees, so each crosses all four of the star's rays at the same clean
+   * angle. At a shallower tilt an orbit ran along the left and right rays and was cut back into
+   * ragged stubs.
+   */
+  tilt: -Math.PI / 4,
   /** The star's radius, the rings' thickness, and the gap left where a ray of the star crosses a ring. */
   star: 52, line: 6, gap: 7,
-  /** Each orbit: its half-width, where on it its world sits (radians), and the world's radius. */
-  orbits: [[84, 2.9, 10], [112, 0.5, 13]] as [number, number, number][],
+  /**
+   * Each orbit: half its length, half its breadth, where on it its world sits (radians), and the
+   * world's radius. Both orbits and their worlds lie wholly inside the square, so no edge cuts
+   * them. The inner one crosses the rays about two thirds of the way out; the outer one passes
+   * clear of their tips.
+   */
+  orbits: [[84, 25, 2.9, 9], [114, 46, 0.8, 12]] as [number, number, number, number][],
 }
 function iconParts(): { rings: Contour[]; worlds: Contour[]; star: Contour[] } {
   const c = ICON.size / 2, blank = () => new Field(-30, -30, ICON.size + 30, ICON.size + 30, 0.25)
-  const on = (rx: number, a: number): P => { const x = rx * Math.cos(a), y = rx * ICON.squash * Math.sin(a); return [c + x * Math.cos(ICON.tilt) - y * Math.sin(ICON.tilt), c + x * Math.sin(ICON.tilt) + y * Math.cos(ICON.tilt)] }
+  const on = (rx: number, ry: number, a: number): P => { const x = rx * Math.cos(a), y = ry * Math.sin(a); return [c + x * Math.cos(ICON.tilt) - y * Math.sin(ICON.tilt), c + x * Math.sin(ICON.tilt) + y * Math.cos(ICON.tilt)] }
   const star = blank().polygon([sparkle(c, c, ICON.star, 0.14)]), worlds = blank(), rings = blank()
-  const at = ICON.orbits.map(([rx, a]) => on(rx, a))
-  at.forEach(([x, y], k) => worlds.circle(x, y, ICON.orbits[k][2]))
-  for (const [rx] of ICON.orbits) {
-    const g = blank().stroke({ points: Array.from({ length: 201 }, (_, i) => on(rx, 2 * PI * i / 200)), width: ICON.line })
+  const at = ICON.orbits.map(([rx, ry, a]) => on(rx, ry, a))
+  at.forEach(([x, y], k) => worlds.circle(x, y, ICON.orbits[k][3]))
+  for (const [rx, ry] of ICON.orbits) {
+    const g = blank().stroke({ points: Array.from({ length: 201 }, (_, i) => on(rx, ry, 2 * PI * i / 200)), width: ICON.line })
     g.subtract(star, ICON.gap)
-    at.forEach(([x, y], k) => g.cutCircle(x, y, ICON.orbits[k][2] + 5))
+    at.forEach(([x, y], k) => g.cutCircle(x, y, ICON.orbits[k][3] + 5))
     rings.merge(g)
   }
   return { rings: rings.trace(0.03), worlds: worlds.trace(0.03), star: star.trace(0.03) }
