@@ -36,6 +36,12 @@ export const wordmarkPlacement = defineParam({
 /** The in-space letters drawn at the screen's full resolution by their own pass (WordmarkCrisp). */
 export const wordmarkCrispPass = defineParam({ id: 'lobby.wordmarkCrisp', label: 'Lobby wordmark in space at full resolution', group: 'Graphics', scope: 'client', default: true })
 /**
+ * The in-space letters as a solid face lit by the sun, with the shafts as highlights (the owner's
+ * direction of 23 November 2026). Off, they are the earlier veil that takes the shafts' colour,
+ * which reads as an outline on a mark that is one large block.
+ */
+export const wordmarkSolid = defineParam({ id: 'lobby.wordmarkSolid', label: 'Lobby wordmark as a solid lit face', group: 'Graphics', scope: 'client', default: true })
+/**
  * Placements' names, for the preview chooser, by value. 5 (lying on the plane) and 8 (inscribed
  * round the rim) were tried and removed: at the lobby's tilt, text lying in the plane is too
  * foreshortened to read. 5 now means 7.
@@ -73,6 +79,13 @@ export const BAR_LINE: number = (() => {
   return (bar.high + feet) / 2
 })()
 
+/**
+ * Height of the name Along an orbit, in system radii. It was 0.72 for the Syn3h mark, which was
+ * 4.3 times as wide as tall. The Mira mark is about twice as wide as tall (its star adds height),
+ * so at 0.72 it drew at under half the width; 1 gives it about two thirds of the old width
+ * with letters the same height as before, and keeps the star on screen at 1280 by 800.
+ */
+export const ORBIT_SIZE = 1
 /** Where the wordmark stands for a placement, seen from `view` (the rig, not the live camera). */
 export function placeWordmark(mode: number, view: View, box: ScreenBox, system = 10): Placement {
   if (mode >= 4) return placeInSystem(mode, view, system)
@@ -116,7 +129,7 @@ function placeInSystem(mode: number, view: View, system: number): Placement {
     return panel(add(scale(far, system * 2.6), up, size * 0.5 * level), size)
   }
   // Along an orbit: upright on a circle beyond the outer orbit, following its curve.
-  const size = system * 0.72
+  const size = system * ORBIT_SIZE
   // Below the plane it hangs a little lower than it stands above, clear of the labels, which
   // sit under their worlds there. Both are zero at edge-on, so the glide is continuous.
   const shape: Shape = { kind: 1, radius: system * 2.6, bearing, size, offset: size * (level >= 0 ? 0.52 : 0.8) * level, flip }

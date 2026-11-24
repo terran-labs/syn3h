@@ -2,24 +2,28 @@
  * Generates the Mira wordmark and its icon into src/ui/brand/wordmarkPath.ts.
  *   npx tsx tools/brand/mira-wordmark.ts
  *
- * This is the design the owner approved on 22 November 2026 (round 8, variant 1 of the logo
- * lab; the rounds that led to it are in tools/brand/mira-round4.ts and mira.html). It is one
- * slab with the letters cut into it as slits, standing on a plate:
+ * The wordmark is the design the owner approved on 23 November 2026 (round 21 of the logo lab:
+ * variant 15's letters and curved underline with variant 16's star). It replaces the slab of
+ * 22 November (round 8, variant 1). It is one block with the letters cut into it:
  *
- *   - The slab's outer edges, the slit between R and A and the A's chevron all rise two up for
- *     one across (SLOPE).
- *   - Every gap is the same GAP: the slits, the cuts between letters, and slab to plate.
- *   - The M's V notch sets the slope of the three corner cuts (down the M's upper right, up
- *     the I's left, down the R's upper right), so with the slit between them the M's and I's
- *     cuts repeat the M's notch.
- *   - The icon is the M alone, the same slope on both sides, on a plate of its own width.
+ *   - Each outer side arches in from the top and flares out to a point at the foot. Between,
+ *     it is halfway between standing upright and leaning like a nose cone's side (`lean`).
+ *   - The M has a smooth dip in its top and two bowed cuts that widen toward the foot.
+ *   - The I and the A are Gothic: the I a lancet, the A an arch that is its own outside moved
+ *     in by the wall's thickness.
+ *   - The R is fitted to the A's leading side, one gap away.
+ *   - Mira, a four-pointed star, stands above the I.
+ *   - The underline is a crescent: level on top, one curve underneath, from tip to tip.
  *
- * Change a number here and run the tool; do not edit the generated file. Everything is
+ * The icon is still the M on its plate from the 22 November design; the owner has not chosen a
+ * new icon yet (candidates are in the lab's icon page).
+ *
+ * Change a number in APPROVED and run the tool; do not edit the generated file. Everything is
  * straight segments, because the logo renderer reads only M, L and Z (wordmarkMesh.ts).
  */
 import { writeFileSync } from 'node:fs'
-import { type Contour, meet, offsetLine, type P, signedDistanceTo, toPath } from '../../src/ui/brand/mira/geom'
-import { Field } from '../../src/ui/brand/mira/field'
+import { type Contour, meet, offsetLine, type P, signedDistanceTo, sparkle, toPath } from '../../src/ui/brand/mira/geom'
+import { type Cap, Field } from '../../src/ui/brand/mira/field'
 
 /** Path units. The cap height matches the Syn3h wordmark's, so the lobby's sizing carries over. */
 const CAP = 178
@@ -46,6 +50,8 @@ const ICON_CORE = 150
 /** Grid step of the distance field the shapes are cut in, and how closely the outline is simplified. */
 const CELL = 0.3, TOLERANCE = 0.04
 
+const { PI } = Math
+
 // ---- kit --------------------------------------------------------------------------------
 const rect = (x0: number, y0: number, x1: number, y1: number): Contour => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
 /** A band of width w along a path, with sharp mitred corners and square ends. */
@@ -68,48 +74,144 @@ function clip(f: Field): void {
   f.cut([-1e4, -1e4, 1e4, 0], (_x, y) => y); f.cut([-1e4, CAP, 1e4, 1e4], (_x, y) => CAP - y)
 }
 const plate = (x0: number, x1: number): Contour => [[x0, CAP + GAP], [x1, CAP + GAP], [x1 - PLATE, CAP + GAP + PLATE], [x0 + PLATE, CAP + GAP + PLATE]]
+
 function trace(extent: [number, number, number, number], build: (f: Field) => void): Contour[] {
   const f = new Field(...extent, CELL)
   build(f)
   return f.trace(TOLERANCE)
 }
 
+// ---- the wordmark ---------------------------------------------------------------------------
+const rise = (y0: number, y1: number, x: (y: number) => number, n = 100): P[] => Array.from({ length: n + 1 }, (_, i) => { const y = y0 + (y1 - y0) * i / n; return [x(y), y] as P })
+function bowed(a: P, b: P, bow: number, n = 48): P[] {
+  const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, c: P = [(a[0] + b[0]) / 2 - dy / l * 2 * bow, (a[1] + b[1]) / 2 + dx / l * 2 * bow]
+  return Array.from({ length: n + 1 }, (_, i) => { const t = i / n, u = 1 - t; return [u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]] as P })
+}
+
+interface Star {
+  /** Radius of the star, tip to centre. */
+  r: number
+  /** Height of its centre: negative is above the top edge of the block, 0 is on it. */
+  y: number
+  /**
+   * How it meets the block. `above`: it stands clear. `counter`: centred on the edge, its upper
+   * half is solid above the block and its lower half is cut out of it, so the star changes from
+   * light to dark as it crosses the edge. `moat`: the whole star is solid, and an even gap is cut
+   * round the part of it that lies inside the block.
+   */
+  mode: 'above' | 'counter' | 'moat'
+}
+interface Look {
+  /** How far in the side has arched by the top, and the height at which the arch begins. */
+  arch: number; archFrom: number
+  /** How far the flare runs out past the foot, and how far above the baseline it begins. */
+  reach: number; flareFrom: number
+  /** 0: the sides stand upright through their middle (round 20). 1: they lean all the way down, as a nose cone's side (round 19). 0.5 is halfway. */
+  lean: number
+  /** The underline. `crescent`: flat on top, one curve underneath. `keel`: a bar of one thickness with a point at each TOP outer corner and the underside curving down from it. */
+  under: 'crescent' | 'keel'
+  bar: number
+  /** The I's cut: a round-headed doorway or a pointed lancet. */
+  i: 'door' | 'lancet'
+  star?: Star
+  /** The A's cut: a round-headed doorway, or a Gothic arch that follows the A's outside at an even distance. */
+  a: 'door' | 'gothic'
+}
+
+function mark(f: Field, o: Look): void {
+  // One outer side, as a distance in from the foot. Upper part: a blend of round 20's arch-then-upright and round 19's nose cone.
+  const og = (o.arch * o.arch + CAP * CAP) / (2 * o.arch), flareTop = CAP - o.flareFrom
+  const upright = (y: number) => y < o.archFrom ? o.arch * Math.pow(1 - y / o.archFrom, 2) : 0
+  const cone = (y: number) => og - Math.sqrt(og * og - (CAP - y) ** 2)
+  /** The side without its flare: also the A's leading edge, which the R is fitted to. */
+  const lean = (y: number) => { const c = Math.min(CAP, Math.max(0, y)); return (1 - o.lean) * upright(c) + o.lean * cone(c) }
+  const side = (y: number) => lean(y) - (y > flareTop ? o.reach * Math.pow((y - flareTop) / (CAP - flareTop), 3) : 0)
+
+  const mc = o.arch + 40, mEnd = mc + 50 + 38, ix = mEnd + GAP, rx = ix + SLAB + GAP, ax = rx + 124, end = ax + 2 * o.arch, mid = ax + o.arch
+  const d1 = mEnd + GAP / 2, d2 = ix + SLAB + GAP / 2, aSide = (y: number) => ax + lean(y)
+
+  const body = f.blank()
+  body.polygon([[...rise(CAP, 0, side), ...rise(0, CAP, y => end - side(y))]])
+  const drop = (n: number) => Array.from({ length: n }, (_, i) => 5 + 11 * Math.pow(i / (n - 1), 0.8))
+  const line = (points: P[], start: Cap = 'round', finish: Cap = 'butt') => body.cutStroke({ points, width: drop(points.length), start, end: finish })
+  const crowned = (points: P[]) => body.cutStroke({ points, width: points.map((_, i) => 6 + 9 * Math.sin(PI * i / (points.length - 1))), start: 'butt', end: 'butt' })
+
+  // M.
+  const half = 44, depth = 36
+  body.cut([mc - half, -4, mc + half, depth], (x, y) => y < depth * Math.cos((x - mc) / half * PI / 2) ** 2 ? -1 : 1)
+  for (const s of [-1, 1]) line(bowed([mc + s * 50, 64], [mc + s * 6, CAP + 14], s * 8))
+
+  // I. A star that reaches into the block pushes the doorway's crown down to clear it.
+  const r = (d2 - d1) / 2, im = (d1 + d2) / 2, star = o.star
+  const crown = star && star.mode !== 'above' ? star.y + star.r + 18 : 34
+  if (o.i === 'door') crowned([[d1, CAP + 14], ...Array.from({ length: 41 }, (_, i): P => [im - r * Math.cos(PI * i / 40), crown + r - r * Math.sin(PI * i / 40)]), [d2, CAP + 14]])
+  else {
+    const shoulder = crown + 58, big = 2 * r, arcTo = (s: number) => Array.from({ length: 25 }, (_, k): P => { const a = Math.acos(1 - k / 24 * 0.5); return [im + s * (r - big * (1 - Math.cos(a))), shoulder - big * Math.sin(a)] })
+    crowned([[d1, CAP + 14], ...arcTo(-1), ...arcTo(1).reverse().slice(1), [d2, CAP + 14]])
+  }
+  const starShape: Contour | null = star ? sparkle(im, star.y, star.r, 0.16) : null
+  if (star && starShape && star.mode === 'counter') body.subtract(body.blank().polygon([starShape]))
+  if (star && starShape && star.mode === 'moat') body.subtract(body.blank().polygon([starShape]), 7)
+
+  // R.
+  line([[rx + SLAB + 6, 52], [aSide(52) - GAP - SLAB, 52]], 'round', 'round')
+  line(bowed([rx + 38, 102], [rx + 74, CAP + 14], 9))
+  body.cutStroke({ points: rise(-14, CAP + 14, y => aSide(y) - GAP / 2), width: GAP, start: 'butt', end: 'butt' })
+
+  // A.
+  const wall = 38
+  if (o.a === 'door') { const ar = o.arch - wall; crowned([[mid - ar, CAP + 14], ...Array.from({ length: 41 }, (_, i): P => [mid - ar * Math.cos(PI * i / 40), 78 + ar - ar * Math.sin(PI * i / 40)]), [mid + ar, CAP + 14]]) }
+  else {
+    // The A's own leading side, moved in by the wall's thickness along its normal at every point, until it reaches the middle.
+    const left: P[] = []
+    for (let k = 0; k <= 400; k++) {
+      const y = CAP + 14 - (CAP + 14) * k / 400, dx = aSide(y - 0.5) - aSide(y + 0.5), l = Math.hypot(dx, 1), p: P = [aSide(y) + wall / l, y + wall * dx / l]
+      if (p[0] >= mid) { const q = left[left.length - 1]; left.push([mid, q[1] + (p[1] - q[1]) * (mid - q[0]) / (p[0] - q[0])]); break }
+      left.push(p)
+    }
+    crowned([...left, ...left.slice(0, -1).reverse().map(([x, y]): P => [2 * mid - x, y])])
+  }
+
+  body.cut([-1e4, -1e4, 1e4, 0], (_x, y) => y); body.cut([-1e4, CAP, 1e4, 1e4], (_x, y) => CAP - y)
+  f.merge(body)
+  if (star && starShape) {
+    const s = f.blank().polygon([starShape])
+    // Counterchange: only the half above the edge is solid; the half below was cut out of the block.
+    if (star.mode === 'counter') s.cut([-1e4, 0, 1e4, 1e4], (_x, y) => -y)
+    f.merge(s)
+  }
+
+  const y0 = CAP + GAP, t = o.bar, x0 = -o.reach, x1 = end + o.reach
+  if (o.under === 'crescent') {
+    const cx = end / 2, hw = (x1 - x0) / 2
+    f.polygon([[[x0, y0], [x1, y0], ...Array.from({ length: 81 }, (_, i) => { const u = 1 - i / 40; return [cx + u * hw, y0 + (t + 2) * (1 - Math.pow(Math.abs(u), 2.4))] as P })]])
+    return
+  }
+  // Keel. The TOP edge is level and runs the full width, from a point at (x0, y0) to a point at
+  // (x1, y0): those points sit straight under the letters' points, one gap below them. The
+  // UNDERSIDE leaves each point and curves DOWN and inward until it is level at the bar's full
+  // thickness. This is the letters' flare mirrored top to bottom.
+  const run = t * 2.4, down = (d: number) => y0 + t * (1 - Math.pow(1 - d / run, 3))
+  const leftUnder = Array.from({ length: 61 }, (_, i): P => { const d = run * i / 60; return [x0 + d, down(d)] })
+  f.polygon([[[x0, y0], [x1, y0], ...leftUnder.map(([x, y]): P => [end - x, y]), ...leftUnder.slice().reverse()]])
+}
+
+
+/** The approved wordmark's numbers. */
+const APPROVED: Look = {
+  arch: 70, archFrom: 96, reach: 44, flareFrom: 54, lean: 0.5,
+  under: 'crescent', bar: 36, i: 'lancet', a: 'gothic',
+  // The star's tip stands 4 units above the block's top edge.
+  star: { r: 42, y: -46, mode: 'above' },
+}
+
+// ---- the icon: the M on its plate, unchanged from the 22 November design ------------------
 /** The M's cuts about its centre line: the notch from the top and the V of slits under it. */
 function cutM(f: Field, cx: number): void {
   cut(f, [[cx - NOTCH_HALF, -1], [cx, NOTCH_DEPTH], [cx + NOTCH_HALF, -1]])
   cut(f, band([[cx - 55, 62], [cx - 5, CAP + 14]], GAP)); cut(f, band([[cx + 55, 62], [cx + 5, CAP + 14]], GAP))
 }
 
-function wordmark(f: Field): void {
-  const run = SLOPE * CAP, across = GAP * Math.hypot(1, SLOPE), notch = NOTCH_HALF / (NOTCH_DEPTH + 1), b = CUT_DEPTH * notch
-  // Left to right along the baseline: M, I, R, the slit, A.
-  const mCentre = run + SHOULDER + NOTCH_HALF, mRight = mCentre + NOTCH_HALF + SHOULDER + b
-  const iLeft = mRight + GAP, iRight = iLeft + SLAB, rLeft = iRight + GAP, rFoot = rLeft + R_WIDTH
-  const aLeft = rFoot + across, aTop = aLeft + run, end = aTop + A_FLAT + run
-  add(f, [[0, CAP], [run, 0], [aTop + A_FLAT, 0], [end, CAP]])
-
-  cutM(f, mCentre)
-  cut(f, [[mRight - b - 2 * notch, -2], [mRight + 2, -2], [mRight + 2, CUT_DEPTH + 2 / notch]])
-  cut(f, rect(mRight, -1, iLeft, CAP + 1))
-  cut(f, [[iLeft + b + 2 * notch, -2], [iLeft - 2, -2], [iLeft - 2, CUT_DEPTH + 2 / notch]])
-  cut(f, rect(iRight, -1, rLeft, CAP + 1))
-
-  // R: its trailing edge leans over the A at the slab's slope.
-  const edge = (y: number) => rFoot + SLOPE * (CAP - y), at52 = edge(52)
-  cut(f, [[rLeft + SLAB, 46], [at52 - 52, 46], [at52 - 46, 52], [at52 - 52, 58], [rLeft + SLAB, 58]])
-  // The gap under the bowl runs at the slope of the M's slits, to reach the baseline in so narrow a letter.
-  cut(f, band([[rLeft + 40, 104], [rLeft + 40 + 86 * 50 / 130, CAP + 12]], GAP))
-  const mid = (y: number) => edge(y) + across / 2
-  cut(f, band([[mid(-14), -14], [mid(CAP + 14), CAP + 14]], GAP))
-  cut(f, [[edge(CUT_DEPTH) - (CUT_DEPTH + 2) * notch, -2], [edge(CUT_DEPTH), CUT_DEPTH], [edge(-2) + 1, -2]])
-
-  // A: a chevron slit, each arm one slab in from its edge.
-  const ax = aTop + A_FLAT / 2, inset = (SLAB + GAP / 2) * Math.hypot(1, SLOPE), foot = aLeft + inset - 14 * SLOPE
-  cut(f, band([[foot, CAP + 14], [ax, (inset - A_FLAT / 2) / SLOPE], [2 * ax - foot, CAP + 14]], GAP))
-
-  clip(f)
-  add(f, plate(0, end))
-}
 function icon(f: Field): void {
   const run = SLOPE * CAP, width = 2 * run + ICON_CORE
   add(f, [[0, CAP], [run, 0], [run + ICON_CORE, 0], [width, CAP]])
@@ -118,8 +220,9 @@ function icon(f: Field): void {
   add(f, plate(0, width))
 }
 
-const word = toPath(trace([-20, -20, 700, 250], wordmark)), mark = toPath(trace([-20, -20, 360, 250], icon))
-console.log(`wordmark ${word.width} by ${word.height}, ${word.d.length} characters; icon ${mark.width} by ${mark.height}, ${mark.d.length} characters`)
+
+const word = toPath(trace([-110, -170, 700, 260], f => mark(f, APPROVED))), icon_ = toPath(trace([-20, -20, 360, 250], icon))
+console.log(`wordmark ${word.width} by ${word.height}, ${word.d.length} characters; icon ${icon_.width} by ${icon_.height}, ${icon_.d.length} characters`)
 writeFileSync(new URL('../../src/ui/brand/wordmarkPath.ts', import.meta.url), `/**
  * The Mira wordmark and its icon, each as one vector path (fill-rule evenodd), generated by
  * tools/brand/mira-wordmark.ts. Generated: edit the tool, not this file.
@@ -128,7 +231,7 @@ export const WORDMARK_WIDTH = ${word.width}
 export const WORDMARK_HEIGHT = ${word.height}
 export const WORDMARK_PATH = '${word.d}'
 /** The M on its plate: app icons and the favicon. */
-export const ICON_WIDTH = ${mark.width}
-export const ICON_HEIGHT = ${mark.height}
-export const ICON_PATH = '${mark.d}'
+export const ICON_WIDTH = ${icon_.width}
+export const ICON_HEIGHT = ${icon_.height}
+export const ICON_PATH = '${icon_.d}'
 `)

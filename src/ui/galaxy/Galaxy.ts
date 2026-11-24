@@ -14,7 +14,7 @@ import { createGalaxyGlass, type GalaxyGlass } from './glassAdapter'
 import { PresenceFeed, type Populations } from './presence'
 import { FIELD_UNIT, LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
-import { liftPlacement, placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement } from '../brand/wordmarkScene'
+import { liftPlacement, placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement, wordmarkSolid } from '../brand/wordmarkScene'
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
 import { recordStartupLobbyFrame, startupTiming } from '../../core/diagnostics'
@@ -375,6 +375,7 @@ uniform float uRays;               // the sun's god rays: their strength in the 
 uniform vec2 uBurst;                // the Big Bang's soft burst ring: radius, strength (opening.ts)
 uniform float uSpread;              // the Big Bang: stars streaming out from the centre, 0 to 1
 uniform vec4 uTrail[${MAX}];        // the Big Bang: where each flung world was a moment ago, and how bright its trail is
+uniform float uMarkSolid;           // 1 draws the letters as a solid lit face; 0 as a veil that takes the colour of the shafts (lobby.wordmarkSolid)
 uniform float uMarkCrisp;           // 1 when the wordmark's letters are drawn by its own full-resolution pass
 uniform vec4 uReveal;               // the opening (opening.ts): sun, shafts' front, stars, the point's swell
 uniform float uOrbit[${MAX}];       // the opening: how much of each world's orbit line is drawn
@@ -661,7 +662,9 @@ void main() {
         }
         // A dark face with a warm sheen, so the pale edge line carries the name. Lit by the
         // rays (3), the letters are a veil that catches the shafts and haze passing in front.
-        if (uMarkMode >= 3) { mark += rimColour * 0.02 + sunShafts * 1.5 * (0.95 / max(uRays, 0.05)) + sunHaze * 0.9 + rimColour * 0.12 * lit * shadow; lineStrength = 0.75; }
+        // Solid: an opaque dark face with a warm sheen from the sun, and the shafts only glancing off it as highlights.
+        if (uMarkMode >= 3 && uMarkSolid > 0.5) { mark += rimColour * (0.035 + 0.5 * lit * shadow) + sunShafts * 0.3 * (0.95 / max(uRays, 0.05)) + sunHaze * 0.18; lineStrength = 0.7; }
+        else if (uMarkMode >= 3) { mark += rimColour * 0.02 + sunShafts * 1.5 * (0.95 / max(uRays, 0.05)) + sunHaze * 0.9 + rimColour * 0.12 * lit * shadow; lineStrength = 0.75; }
         else mark += rimColour * (0.025 + 0.22 * lit * shadow);
       } else {
         // In front of the sun: backlit, dark, with a rim of light on the edges facing it.
@@ -781,7 +784,7 @@ void main() {
   color = vec4(c / 12.0, 1.0);
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
-const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uWorlds', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uPulse', 'uPulseColour', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays', 'uBurst', 'uSpread', 'uTrail', 'uNight'] as const
+const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uWorlds', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uMarkSolid', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uPulse', 'uPulseColour', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays', 'uBurst', 'uSpread', 'uTrail', 'uNight'] as const
 /** The fresh-load heading. */
 export const FRESH_YAW = 0.6
 /**
@@ -1569,7 +1572,7 @@ export class Galaxy {
     // The frame's uniforms, for this pass and the wordmark's own full-resolution one.
     const setFrame = (gl: WebGL2RenderingContext, u: Record<string, WebGLUniformLocation | null>, width: number, height: number, bindField: () => void, crisp: number) => {
       gl.uniform1i(u.uCloseIndex, this.closeIndex); gl.uniform1f(u.uRays, sunRays.value); gl.uniform2f(u.uBurst, ...reveal.burst); gl.uniform4fv(u.uTrail, trails.length ? trails : [0, 0, 0, 0]); gl.uniform1f(u.uSpread, reveal === SETTLED ? 1 : reveal.spread)
-      gl.uniform1i(u.uMarkMode, mark.placement ? mark.mode : 0); gl.uniform1f(u.uMarkCrisp, crisp)
+      gl.uniform1i(u.uMarkMode, mark.placement ? mark.mode : 0); gl.uniform1f(u.uMarkCrisp, crisp); gl.uniform1f(u.uMarkSolid, wordmarkSolid.value ? 1 : 0)
       if (mark.placement) {
         const p = mark.placement
         gl.uniform3f(u.uMarkCentre, ...p.centre); gl.uniform3f(u.uMarkRight, ...p.right); gl.uniform3f(u.uMarkUp, ...p.up)
