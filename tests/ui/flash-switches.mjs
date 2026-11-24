@@ -27,7 +27,37 @@ async function open(query, phone = false) {
   await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
   await page.waitForFunction(() => document.querySelector('.mira-shell')?.classList.contains('is-playing') && !document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 120000 })
   await page.waitForTimeout(1500)
+  // An automatic start leaves the cursor free. A cursor taken here sends every mouse event to the
+  // canvas, and the Test flash control could not be clicked (twice on main, November 2026).
+  assert.equal(await page.evaluate(() => document.pointerLockElement?.id ?? null), null, 'an automatic start does not capture the cursor')
   return { page, context, errors }
+}
+// Test flash. If the click fails, say what is at the button's centre and why, before failing:
+// the stack under the point, each ancestor's stacking styles, the top layer and pointer lock.
+async function clickTestFlash(page) {
+  try { await page.locator('.flash-counter button').click({ timeout: 30000 }) } catch (error) {
+    const dump = await page.evaluate(() => {
+      const button = document.querySelector('.flash-counter button'), r = button?.getBoundingClientRect()
+      const x = r ? r.left + r.width / 2 : 0, y = r ? r.top + r.height / 2 : 0
+      const name = e => e ? e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\s+/).join('.') : '') : null
+      const chain = []
+      for (let e = button; e; e = e.parentElement) { const c = getComputedStyle(e); chain.push({ el: name(e), position: c.position, zIndex: c.zIndex, pointerEvents: c.pointerEvents, transform: c.transform, display: c.display, visibility: c.visibility, opacity: c.opacity, hidden: e.hidden }) }
+      const canvas = document.getElementById('game'), cc = canvas && getComputedStyle(canvas)
+      return {
+        point: { x, y }, rect: r && { left: r.left, top: r.top, width: r.width, height: r.height },
+        atPoint: document.elementsFromPoint(x, y).map(name),
+        chain,
+        canvas: cc && { position: cc.position, zIndex: cc.zIndex, pointerEvents: cc.pointerEvents, parent: name(canvas.parentElement) },
+        pointerLock: name(document.pointerLockElement), fullscreen: name(document.fullscreenElement),
+        modal: [...document.querySelectorAll('dialog[open]')].map(d => name(d) + (d.matches(':modal') ? ' (modal)' : '')),
+        popovers: [...document.querySelectorAll(':popover-open')].map(name),
+        counters: document.querySelectorAll('.flash-counter').length,
+        shell: document.querySelector('.mira-shell')?.className,
+      }
+    })
+    console.log('flash-switches: Test flash click failed; at the button:\n' + JSON.stringify(dump, null, 1))
+    throw error
+  }
 }
 // The copied Diagnostics report, read from the same function the Copy button calls.
 const report = page => page.evaluate(() => window.mira.shell.performancePanel?.source?.diagnosticReport?.() ?? '')
@@ -76,7 +106,7 @@ try {
     assert.equal(s.glass, 'flat', 'ui=flat')
     assert.equal(s.counter, true, 'the counter shows in play')
     // Test flash: one cleared frame, counted apart from real ones.
-    await page.locator('.flash-counter button').click()
+    await clickTestFlash(page)
     await page.waitForFunction(() => /Test seen 1 of 1/.test(document.querySelector('.flash-counter')?.textContent ?? ''), null, { timeout: 10000 })
     const counts = await page.evaluate(() => { const b = window.mira.game.blankFrames; return { total: b.total, blank: b.blank, seen: b.testsSeen } })
     assert.deepEqual(counts, { total: 0, blank: 0, seen: 1 }, 'a test flash is seen and is not a real blank frame')

@@ -274,6 +274,7 @@ effect at once or after a reload). This table is written from the switch list in
 | `?ui=flat` | `flat` | Flat interface glass for this visit. The saved choice is kept. | at once |
 | `?blank=1` | `1` | Turn the blank-frame recorder on, with its counter on screen in play and a Test flash button that shows whether the recorder can see frames in this browser. | at once |
 | `?frameCanary=1` | `1` | Count WebGPU command buffers the browser accepted but never ran, which shows on screen as a black frame and which Safari reports nowhere, in the same on-screen counter as ?blank=1 and in the report. It starts with the renderer. | after a reload |
+| `?frameProbe=1` | `1` | Read a grid of pixels back from the scene image and from the picture handed to the screen after every frame in play, and count frames where either is black, transparent or not a number, and frames where the sun shadow or exposure values are not finite, in the same on-screen counter as ?blank=1 and in the report. WebGPU only; it starts with the renderer. | after a reload |
 | `?diag=1` | `1` | Start diagnostic sampling at load, as opening the Diagnostics fold of the Performance card does. | after a reload |
 <!-- field-switches:end -->
 

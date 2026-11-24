@@ -204,17 +204,18 @@ async function main(): Promise<void> {
       '\nForce field contact glow: ' + depthEffectsState() + '\nHeadlight beam soft edge: ' + depthEffectsState() +
       (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '') + '\n' + sunShadowsLine() + '\n' + fieldSwitchLine() +
       (game.frameCanary ? '\n' + game.frameCanary.reportLines().join('\n') : '') +
+      (game.frameProbe ? '\n' + game.frameProbe.reportLines().join('\n') : '') +
       // Device loss: this page's and the last page's in this tab (core/lossRecord.ts).
       (game.lossRecorder ? game.lossRecorder.reportLines().map(line => '\n' + line).join('') : '')
   }
   // ?blank=1 (core/flashSwitches.ts): the recorder on from the link, its counter on screen in play.
-  // ?frameCanary=1 shares the counter box (ui/flashCounter.ts); the blank switch shows or hides its
+  // ?frameCanary=1 and ?frameProbe=1 share the counter box (ui/flashCounter.ts); the blank switch shows or hides its
   // blank-frame part, live from Field switches (core/fieldSwitches.ts).
   let stopCounter: (() => void) | null = null
   const blankCounter = (blank: boolean) => {
     stopCounter?.(); stopCounter = null
     if (blank) params.set(recordBlankFrames.def.id, true)
-    if (blank || game.frameCanary) stopCounter = startFlashCounter(() => game.blankFrames, () => shell.playing && !shell.transitioning, () => game.frameCanary, blank)
+    if (blank || game.frameCanary || game.frameProbe) stopCounter = startFlashCounter(() => game.blankFrames, () => shell.playing && !shell.transitioning, () => game.frameCanary, blank, () => game.frameProbe)
   }
   blankCounter(flashSwitches.blank)
   game.add({ dispose: () => { stopCounter?.(); stopCounter = null } }, 'Blank frame counter')
@@ -412,7 +413,8 @@ async function main(): Promise<void> {
   shell.onPlay = join
   // The in-play vehicle selector calls this; the shell takes it if it has the hook.
   ;(shell as unknown as { setVehicleSwap?: (swap: (kind: VehicleKind) => Vehicle | null) => void }).setVehicleSwap?.(swapVehicle)
-  if (query.has('autoplay')) shell.play()
+  // An automatic start: the cursor stays free and the panels open (Shell.requestEntryCursor).
+  if (query.has('autoplay')) shell.play(false, true)
 
   const panel = new ParamPanel()
   shell.setParamPanel(panel)

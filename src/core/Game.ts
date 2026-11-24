@@ -5,6 +5,7 @@ import { flashSwitches } from './flashSwitches'
 import { BlankFrameRecorder } from './blankFrames'
 import { LossRecorder } from './lossRecord'
 import { FrameCanary } from './frameCanary'
+import { FrameProbe } from './frameProbe'
 import { refractionState } from '../world/water/refraction'
 import { installLongFrameRenderer } from './longFrameRenderer'
 /**
@@ -106,6 +107,9 @@ export class Game {
   lossRecorder: LossRecorder | null = null
   /** Dropped command buffers, with ?frameCanary=1 on WebGPU (frameCanary.ts). */
   frameCanary: FrameCanary | null = null
+  /** What our passes drew, frame by frame, with ?frameProbe=1 on WebGPU (frameProbe.ts). */
+  frameProbe: FrameProbe | null = null
+  private probeSun: THREE.DirectionalLight | null = null
   private readonly pipelineCounter = new PipelineCounter()
   readonly performance: FrameMetrics = { fps: 0, frameMs: 0, physicsMs: 0, drawCalls: 0, triangles: 0, firstFrameMs: null }
 
@@ -189,6 +193,19 @@ export class Game {
     // ?frameCanary=1 (frameCanary.ts): count command buffers the browser accepted and never ran.
     const device = (this.renderer.backend as { device?: GPUDevice }).device
     if (device && flashSwitches.frameCanary) this.frameCanary = new FrameCanary(device, { frames: () => this.frames, pixelRatio: () => this.renderer.getPixelRatio() })
+    // ?frameProbe=1 (frameProbe.ts): what the scene pass and the canvas held, and the lighting's values.
+    const backend = this.renderer.backend as unknown as { context?: GPUCanvasContext; get(o: object): { texture?: GPUTexture } }
+    if (device && flashSwitches.frameProbe && backend.context) this.frameProbe = new FrameProbe(device, backend.context, {
+      frames: () => this.frames,
+      pixelRatio: () => this.renderer.getPixelRatio(),
+      sceneTexture: () => { const t = this.postChain?.drawnSceneTexture?.(); return t ? backend.get(t).texture ?? null : null },
+      sun: () => {
+        if (!this.probeSun?.parent) { this.probeSun = null; this.scene.traverse(o => { if (!this.probeSun && (o as THREE.DirectionalLight).isDirectionalLight && (o as THREE.DirectionalLight).castShadow) this.probeSun = o as THREE.DirectionalLight }) }
+        return this.probeSun
+      },
+      exposure: () => this.renderer.toneMappingExposure,
+      camera: () => this.camera,
+    })
     this.quality.attachRenderer(this.renderer)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.shadowMap.enabled = true
@@ -448,7 +465,10 @@ export class Game {
         (view === 'playing' && startupTiming.playRequestMs !== undefined && startupTiming.firstPlayableFrameMs === undefined)
       const previousDraws = watchingDraw ? this.renderer.info.render.drawCalls : 0
       for (const system of this.systems) system.prepareWorldDraw?.()
+      const probing = view === 'playing' ? this.frameProbe : null
+      probing?.beforeDraw()
       drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs)
+      probing?.afterDraw()
       // Meshes dropped by a rebuild leave the renderer once their replacements have drawn.
       freeRetired(this.renderer as unknown as RetireRenderer)
       // In the same task as the draw, so the probe sees what is about to be presented.

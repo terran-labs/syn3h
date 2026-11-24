@@ -270,6 +270,9 @@ export class PostChain {
   setCovered(covered: boolean): void { if (this.glass) this.glass.covered = covered }
   /** The drawn graph's scene pass sample count (0 under temporal AA), or null before one is built. */
   sceneSamples(): number | null { return this.built?.scenePass?.renderTarget?.samples ?? null }
+  /** The scene pass colour this frame's graph drew, or null when the frame did not go through a graph (?frameProbe=1, core/frameProbe.ts). */
+  drawnSceneTexture(): THREE.Texture | null { return this.drewGraph ? (this.built?.scenePass as { renderTarget?: { texture?: THREE.Texture } } | null)?.renderTarget?.texture ?? null : null }
+  private drewGraph = false
   private cleanFrame = false
   private cleanDraw = <T>(draw: () => T): T => {
     this.cleanFrame = true
@@ -331,6 +334,7 @@ export class PostChain {
   }
 
   render(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, _frameMs?: number): void {
+    this.drewGraph = false
     if (this.disposed) {
       renderer.render(scene, camera)
       return
@@ -442,6 +446,7 @@ export class PostChain {
     if (built.maskTex) built.maskTex.autoUpdate = sunLit
     if (built.raysTex) built.raysTex.autoUpdate = sunLit && shaftAmount > 0
     this.setVolumetricCloudsActive(built.clouds)
+    this.drewGraph = true
     try {
       if (this.cleanFrame || (built.glass && (!liquidSelected() || (level ?? 0) < 2))) built.pipeline.render()
       else {

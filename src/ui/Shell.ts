@@ -862,11 +862,17 @@ export class Shell implements System {
    * the wait is spent falling. Called from code (tests, autoplay, Return to Game) it is
    * shown without a flight, as it is for reduced motion. Entry still waits for graphics.
    */
-  play(descend = false): void {
+  /**
+   * `automatic`: a start nobody asked for in this page (?autoplay=1, the reload after a vehicle
+   * switch). It never asks for the cursor. Chrome can still report the page's user activation as
+   * active then, with no tap, click or key in it (seen in headless Chrome, 24 November 2026), and
+   * the cursor taken then left the Test flash control unclickable.
+   */
+  play(descend = false, automatic = false): void {
     if (!this.started) recordStartupPlayRequest()
     this.stopAttract()
     if (this.started) { this.closeMenu(); return }
-    this.requestEntryCursor()
+    if (!automatic) this.requestEntryCursor()
     this.unlockAudio(); this.begin()
     if (descend && this.galaxy?.live && this.menuVisible && !matchMedia('(prefers-reduced-motion: reduce)').matches) { this.onPlay?.(); void this.descent(currentPlanet().id); return }
     this.onPlay?.(); void this.enterWithoutFlight()

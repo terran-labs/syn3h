@@ -20,6 +20,8 @@
  * seconds before (quality steps, pixel ratio and size changes, the page hidden or shown).
  */
 
+import { RecentEvents, now } from './recentEvents'
+
 export const CANARY_SLOTS = 4096
 const READ_EVERY = 64
 const SENTINEL = 0xdeadbeef
@@ -40,7 +42,7 @@ export class FrameCanary {
   private checkedUpTo = -1
   private readonly frameOf = new Map<number, number>()
   private readonly submitted = new Set<number>()
-  private readonly events: { t: number; what: string }[] = []
+  private readonly events = new RecentEvents()
   private readonly ring: GPUBuffer
   private readonly ones: GPUBuffer
   private readonly zero = new Uint32Array(1)
@@ -59,14 +61,9 @@ export class FrameCanary {
     this.sentinel = new Uint32Array(CANARY_SLOTS).fill(SENTINEL)
     for (let i = 0; i < 3; i++) { this.staging.push(device.createBuffer({ label: `frame canary readback ${i}`, size: CANARY_SLOTS * 4, usage: U.MAP_READ | U.COPY_DST })); this.stagingBusy.push(false) }
     this.wrap()
-    if (typeof window !== 'undefined') {
-      window.addEventListener('mira:quality', event => { const d = (event as CustomEvent<{ level?: number; rung?: number }>).detail; this.note(`quality level ${d?.level} rung ${d?.rung}`) })
-      window.addEventListener('resize', () => this.note(`resize ${innerWidth}x${innerHeight}`))
-      document.addEventListener('visibilitychange', () => this.note(`page ${document.visibilityState}`))
-    }
   }
 
-  note(what: string): void { this.events.push({ t: now(), what }); if (this.events.length > 40) this.events.shift() }
+  note(what: string): void { this.events.note(what) }
 
   /** Command buffers dropped in the last minute. */
   lastMinute(): number { const t = now(); while (this.droppedTimes.length && t - this.droppedTimes[0] > 60) this.droppedTimes.shift(); return this.droppedTimes.length }
@@ -74,15 +71,13 @@ export class FrameCanary {
   /** Test hook for the browser check: withhold the next `n` submitted command buffers. */
   withholdNext(n = 1): void { this.withhold += n }
 
-  private lastPixelRatio = 0
   private wrap(): void {
     const device = this.device, create = device.createCommandEncoder.bind(device)
     device.createCommandEncoder = (descriptor?: GPUCommandEncoderDescriptor) => {
       const encoder = create(descriptor)
       const finish = encoder.finish.bind(encoder)
       encoder.finish = (d?: GPUCommandBufferDescriptor) => {
-        const pr = this.host.pixelRatio()
-        if (pr !== this.lastPixelRatio) { if (this.lastPixelRatio) this.note(`pixel ratio ${this.lastPixelRatio}→${pr}`); this.lastPixelRatio = pr }
+        this.events.pixelRatio(this.host.pixelRatio())
         const n = this.seq++, slot = n % CANARY_SLOTS
         // Clear this buffer's slot on the queue (ordered before its submit), then mark it from inside.
         device.queue.writeBuffer(this.ring, slot * 4, this.zero)
@@ -156,14 +151,15 @@ export class FrameCanary {
     this.dropped++
     const t = now()
     this.droppedTimes.push(t)
-    this.lastDropped.push({ seq: n, frame: this.frameOf.get(n) ?? -1, at: t, recent: this.events.filter(e => t - e.t <= RECENT_S).map(e => `-${(t - e.t).toFixed(1)} s ${e.what}`) })
+    this.lastDropped.push({ seq: n, frame: this.frameOf.get(n) ?? -1, at: t, recent: this.events.within(RECENT_S, t) })
     if (this.lastDropped.length > 5) this.lastDropped.shift()
   }
 
   /** For the on-screen counter: two short lines. */
   counterLines(): string {
     const last = this.lastDropped.slice(-3).map(d => `#${d.frame}${d.recent.length ? ` (${d.recent.at(-1)})` : ''}`).join(', ')
-    return `Dropped ${this.dropped} of ${this.checked} (${this.lastMinute()}/min)\nLast dropped: ${last || '-'}`
+    // Test drop (ui/flashCounter.ts) withholds one: "Dropped" must rise by as many as were withheld.
+    return `Dropped ${this.dropped} of ${this.checked} (${this.lastMinute()}/min)${this.withheld ? `  test drops ${this.withheld}` : ''}\nLast dropped: ${last || '-'}`
   }
 
   /** For the copied report. */
@@ -175,4 +171,3 @@ export class FrameCanary {
   }
 }
 
-const now = () => performance.now() / 1000
