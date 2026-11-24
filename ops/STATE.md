@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-23 21:25 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-23 23:45 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2307 (release-114, quality changes no longer leave graphics objects behind), source 99c51928,
-frozen copy 20261123-211346-99c51928, Worker version bb352228, at https://mira.cc/ since 23 November 21:18 PST.
+Live: v26.11.2308 (release-115, ?frameProbe=1 frame probe with Test black and Test drop; an automatic start leaves the cursor free), source 2dd84b1e,
+frozen copy 20261123-233155-2dd84b1e, Worker version 82a9bb7e, at https://mira.cc/ since 23 November 23:37 PST.
 The game is Mira from v26.11.2300 (LAST_SYN3H_VERSION v26.11.2206; notes heading "## Mira vX"). Kept named syn3h on
 purpose: the Worker, its workers.dev addresses, the Durable Object, the R2 bucket, x-syn3h-version, the token path,
 'buggy-syn3h', local paths and /tmp names (ship.sh outcomes are now /tmp/mira-ship-N*), the repository (docs/NAMES.md).
@@ -179,6 +179,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2305 | 112 | m-shadows-2305 | sun shadows off on iPhone, iPad and touch WebGPU (?shadows=1 forces them); the device-loss notice says what is known and keeps a record across the reload |
 | v26.11.2306 | 113 | m-icon-2306 | the approved Mira wordmark and app icon; diagnostic links as Field switches in Diagnostics; frame canary and shadow test links |
 | v26.11.2307 | 114 | m-leak-2307 | quality changes no longer leave graphics objects behind |
+| v26.11.2308 | 115 | m-probe-2308 | ?frameProbe=1 counts black or invalid frames, with Test black and Test drop; an automatic start leaves the cursor free |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
