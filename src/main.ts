@@ -10,15 +10,16 @@ import { createWorldEntry, freshVehicle, seatAfterRebuild } from './core/worldEn
 import { currentPlanet, currentWorldName, randomSeed } from './world/planets'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
-import { liquidEligible, liquidSelected, restoreGlassMaterial, liquidQualityHint } from './ui/glassMaterial'
+import { liquidEligible, liquidSelected, restoreGlassMaterial, liquidQualityHint, setGlassForVisit } from './ui/glassMaterial'
 import { glassStyle } from './ui/inspector/params'
 import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { botsKeepCount } from './bots/params'
 import { ChaseCamera } from './core/ChaseCamera'
-import { flashSwitches, flashSwitchLine, sunShadowsLine } from './core/flashSwitches'
+import { flashSwitches, sunShadowsLine } from './core/flashSwitches'
 import { recordBlankFrames } from './core/blankFrames'
 import { startFlashCounter } from './ui/flashCounter'
+import { fieldSwitchLine, setFieldSwitchHooks } from './core/fieldSwitches'
 import { diagnosticReport } from './core/diagnosticReport'
 import { refractionState } from './world/water/refraction'
 import { depthEffectsState } from './core/midPassCopy'
@@ -201,17 +202,29 @@ async function main(): Promise<void> {
       '\nWater refraction: ' + refractionState(game.renderer) +
       // Copies taken in the middle of the scene pass (core/midPassCopy.ts), off where not yet proven.
       '\nForce field contact glow: ' + depthEffectsState() + '\nHeadlight beam soft edge: ' + depthEffectsState() +
-      (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '') + '\n' + sunShadowsLine() + '\n' + flashSwitchLine() +
+      (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '') + '\n' + sunShadowsLine() + '\n' + fieldSwitchLine() +
       (game.frameCanary ? '\n' + game.frameCanary.reportLines().join('\n') : '') +
       // Device loss: this page's and the last page's in this tab (core/lossRecord.ts).
       (game.lossRecorder ? game.lossRecorder.reportLines().map(line => '\n' + line).join('') : '')
   }
   // ?blank=1 (core/flashSwitches.ts): the recorder on from the link, its counter on screen in play.
-  if (flashSwitches.blank || game.frameCanary) {
-    if (flashSwitches.blank) params.set(recordBlankFrames.def.id, true)
-    const stopCounter = startFlashCounter(() => game.blankFrames, () => shell.playing && !shell.transitioning, () => game.frameCanary, flashSwitches.blank)
-    game.add({ dispose: stopCounter }, 'Blank frame counter')
+  // ?frameCanary=1 shares the counter box (ui/flashCounter.ts); the blank switch shows or hides its
+  // blank-frame part, live from Field switches (core/fieldSwitches.ts).
+  let stopCounter: (() => void) | null = null
+  const blankCounter = (blank: boolean) => {
+    stopCounter?.(); stopCounter = null
+    if (blank) params.set(recordBlankFrames.def.id, true)
+    if (blank || game.frameCanary) stopCounter = startFlashCounter(() => game.blankFrames, () => shell.playing && !shell.transitioning, () => game.frameCanary, blank)
   }
+  blankCounter(flashSwitches.blank)
+  game.add({ dispose: () => { stopCounter?.(); stopCounter = null } }, 'Blank frame counter')
+  // The same switches, live from Performance, Diagnostics, Field switches (core/fieldSwitches.ts).
+  setFieldSwitchHooks({
+    refreshPins: ids => game.quality.refreshPins(ids),
+    setPost: on => game.setPostChain(on ? post : null),
+    setFlatGlass: on => setGlassForVisit(on),
+    setBlankCounter: blankCounter,
+  })
   shell.configurePerformance({
     runPerformanceCheck: async signal => (await import('./diagnostics/inWorldCheck')).runInWorldCheck({
       game, terrain, shell, bots, camera, slot, materialize, swapper, net: sessionNetwork,

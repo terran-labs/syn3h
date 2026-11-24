@@ -245,32 +245,44 @@ narrowed down by its owner, one link at a time. They work on the live game at
 
 ### Link switches
 
-Diagnostic and rendering switches:
+Diagnostic and rendering switches. Each one is also a row in the game, in Performance, Diagnostics,
+Field switches, where it can be turned on and off for the visit ("In play" says whether that takes
+effect at once or after a reload). This table is written from the switch list in
+`src/core/fieldSwitches.ts`; a test holds the two equal.
+
+<!-- field-switches:begin (from src/core/fieldSwitches.ts fieldSwitchTable; edit the list, not this table) -->
+| Switch | Values | What it does | In play |
+| --- | --- | --- | --- |
+| `?shadows=0` | `0` | No sun shadows, as at Low, at every level. | at once |
+| `?shadows=1` | `1` | Sun shadows on where they are held off as not yet proven: WebGPU on Safari, iPhone, iPad and other touch devices. In play it is the sun shadow row under the device gates. | at once |
+| `?shading=0` | `0` | Plain vehicle materials, as at Low, at every level. | at once |
+| `?post=base` | `base` | Only the base tier of the post chain (the look pass, as at Low): no sun shafts or other upper tier passes. | at once |
+| `?post=off` | `off` | No post chain: the scene is drawn straight to the canvas, with Flat interface glass. | at once |
+| `?lowrest=1` | `1` | Hold the remaining Medium differences at their Low values: water ripple size, fog bank samples, ground cover and tyre mark life. | at once |
+| `?gfx=N` | `0` to `5` | Pin the quality level for this visit, as choosing it by hand does: 0 Minimal, 1 Low, 2 Medium, 3 High, 4 Ultra, 5 Cinematic. Nothing is saved unless you change a setting. In play the card's level picker does the same. | after a reload |
+| `?shadowCascades=1` | `1` | One sun shadow cascade instead of the level's two or three. | after a reload |
+| `?shadowMap=512` | `512` | Shadow map size: Every sun shadow cascade 512 pixels square, whatever the level. | after a reload |
+| `?shadowMap=1024` | `1024` | Shadow map size: Every sun shadow cascade 1024 pixels square, whatever the level. | after a reload |
+| `?shadowMap=2048` | `2048` | Shadow map size: Every sun shadow cascade 2048 pixels square, whatever the level. | after a reload |
+| `?shadowColor=0` | `0` | Depth-only sun shadow maps: no colour target beside each cascade's depth. | after a reload |
+| `?shadowFilter=hard` | `hard` | Basic shadow maps: one depth comparison per pixel, no soft filtering. | after a reload |
+| `?shadowFade=0` | `0` | No blend between one sun shadow cascade and the next. | after a reload |
+| `?samples=1` | `1` | Draw the scene without multisampling. Antialias is fixed when the renderer is made. | after a reload |
+| `?webgl=1` | present, any value | Start on WebGL 2 instead of WebGPU. The backend is chosen when the renderer is made. | after a reload |
+| `?gpuTrace=1` | present, any value | Count live WebGPU texture and buffer bytes exactly, by wrapping every allocation, and add a "Live WebGPU memory (gpuTrace)" line to the report. The wrapping starts with the renderer. | after a reload |
+| `?freeze=1` | `1` | Freeze the quality governor: no level, rung or bot count changes, and the render scale stays fixed. | at once |
+| `?ui=flat` | `flat` | Flat interface glass for this visit. The saved choice is kept. | at once |
+| `?blank=1` | `1` | Turn the blank-frame recorder on, with its counter on screen in play and a Test flash button that shows whether the recorder can see frames in this browser. | at once |
+| `?frameCanary=1` | `1` | Count WebGPU command buffers the browser accepted but never ran, which shows on screen as a black frame and which Safari reports nowhere, in the same on-screen counter as ?blank=1 and in the report. It starts with the renderer. | after a reload |
+| `?diag=1` | `1` | Start diagnostic sampling at load, as opening the Diagnostics fold of the Performance card does. | after a reload |
+<!-- field-switches:end -->
+
+Other switches for this visit:
 
 | Switch | Values | What it does |
 | --- | --- | --- |
-| `?webgl=1` | present, any value | Start on WebGL 2 instead of WebGPU. |
-| `?gfx=N` | `0` to `5` | Pin the quality level for this visit, as choosing it by hand does: 0 Minimal, 1 Low, 2 Medium, 3 High, 4 Ultra, 5 Cinematic. Nothing is saved unless you change a setting. |
 | `?gpudeadline=MS` | milliseconds, `0` waits forever | How long WebGPU startup may take before the game starts WebGL 2 instead. The default is 8000. |
-| `?gpuTrace=1` | present, any value | Count live WebGPU texture and buffer bytes exactly, by wrapping every allocation, and add a "Live WebGPU memory (gpuTrace)" line to the report. |
-| `?diag=1` | `1` | Start diagnostic sampling at load, as opening the Diagnostics fold of the Performance card does. |
-| `?blank=1` | `1` | Turn the blank-frame recorder on, with its counter on screen in play and a Test flash button that shows whether the recorder can see frames in this browser. |
-| `?shadows=0` | `0` | No sun shadows, as at Low, at every level. |
-| `?shadows=1` | `1` | Sun shadows on where they are held off as not yet proven: WebGPU on Safari, iPhone, iPad and other touch devices. |
-| `?shading=0` | `0` | Plain vehicle materials, as at Low, at every level. |
-| `?post=base` | `base` | Only the base tier of the post chain (the look pass, as at Low): no sun shafts or other upper tier passes. |
-| `?post=off` | `off` | No post chain: the scene is drawn straight to the canvas, with Flat interface glass. |
 | `?post=1`, `?post=0` | any other value | Turn the post effects setting on (`0`, `false` and `off` turn it off) for this visit. |
-| `?samples=1` | `1` | Draw the scene without multisampling. |
-| `?lowrest=1` | `1` | Hold the remaining Medium differences at their Low values: water ripple size, fog bank samples, ground cover and tyre mark life. |
-| `?freeze=1` | `1` | Freeze the quality governor: no level, rung or bot count changes, and the render scale stays fixed. |
-| `?frameCanary=1` | `1` | Count WebGPU command buffers the browser accepted but never ran, which shows on screen as a black frame and which Safari reports nowhere. The count, the rate per minute and the last dropped frames, with the quality steps and size changes of the 15 seconds before, show in play and in the report. WebGPU only. |
-| `?shadowCascades=1` | `1` | One sun shadow cascade instead of the level's two or three. |
-| `?shadowMap=N` | `512`, `1024` or `2048` | Every sun shadow cascade at this size, whatever the level. |
-| `?shadowColor=0` | `0` | Depth-only sun shadow maps: no colour target beside each cascade's depth. |
-| `?shadowFilter=hard` | `hard` | Basic shadow maps: one depth comparison per pixel, no soft filtering. |
-| `?shadowFade=0` | `0` | No blend between one sun shadow cascade and the next. |
-| `?ui=flat` | `flat` | Flat interface glass for this visit. The saved choice is kept. |
 | `?cinematic=1` | present | The cinematic comparison preset: post effects, ground bounce light, aerial perspective and the terrain material extras. |
 | `?weather=X` | `0` to `1`, empty for 0.5 | Set the storminess. In a shared room the room takes it. |
 | `?water=1` | `1` | Turn on everything the Water Lab built: a water sea, fords, waves, sinking, the underwater camera, ripples and spray. |
