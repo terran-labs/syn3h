@@ -9,6 +9,7 @@ import { masterVolume, muted } from '../audio/params'
 
 interface Host {
   elementVoice: boolean
+  echoCancellation: boolean
   id: number
   audio: Pick<GameAudio, 'attachSpeech' | 'voiceContext' | 'unlock'>
   send(message: ClientMessage): void
@@ -71,6 +72,7 @@ export class VoiceControl {
       this.session?.dispose()
       const session = this.session = new VoiceSession({
         localId: this.host.id,
+        echoCancellation: this.host.echoCancellation,
         audioContext: this.host.audio.voiceContext,
         sendReadiness: message => this.host.send(message),
         sendSignal: (to, signal) => this.host.send({ type: 'voice-signal', to, signal }),

@@ -10,6 +10,7 @@ export interface VoiceState {
 }
 
 export interface VoiceSessionOptions {
+  echoCancellation?: boolean
   localId: number
   sendSignal(peerId: number, signal: VoiceSignal): void
   onRemoteAudio(peerId: number, stream: MediaStream | null): void
@@ -180,7 +181,7 @@ export class VoiceSession {
       if (typeof RTCPeerConnection !== 'function') return this.fail('WebRTC unavailable')
       this.releaseAudioSession = beginMicrophoneSession()
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: { echoCancellation: this.options.echoCancellation ?? true, noiseSuppression: true, autoGainControl: true },
       })
       if (generation !== this.generation) {
         for (const track of stream.getTracks()) track.stop()
