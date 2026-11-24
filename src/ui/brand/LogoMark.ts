@@ -16,7 +16,7 @@
 import { ASPECT } from './wordmarkMesh'
 import { DEFAULT_LOGO_LOOK, INTRO_SECONDS, type LogoLook, LogoRenderer, type PixelRect } from './logoRenderer'
 import { WORDMARK_HEIGHT, WORDMARK_PATH, WORDMARK_WIDTH } from './activeWordmark'
-import { ICON_HEIGHT, ICON_PATH, ICON_WIDTH } from './wordmarkPath'
+import { ICON_MARGIN, ICON_RINGS, ICON_SIZE, ICON_STAR, ICON_WORLDS } from './wordmarkPath'
 
 export { DEFAULT_LOGO_LOOK, INTRO_SECONDS, LogoRenderer, type LogoLook, type PixelRect } from './logoRenderer'
 
@@ -271,16 +271,29 @@ const hex = (c: readonly number[]) => '#' + c.map(v => Math.round(Math.max(0, Ma
  * The logo as one self-contained SVG document: the flat wordmark path, a soft glow made by
  * an SVG filter from the path itself and, with `space`, the sky and a few seeded stars. No
  * images, no fonts. Static: the plasma is the GPU version's; this is for places that take
- * only a file. The `icon` layout draws the icon mark (the M on its plate, wordmarkPath.ts)
- * in place of the whole word, which would be unreadable in a small square.
+ * only a file. The `icon` layout draws the icon (iconSvg) in place of the whole word, which
+ * would be unreadable in a small square.
  */
+/** The icon's colours: white and blue, as the owner chose on 23 November 2026. */
+export const ICON_COLOURS = { skyTop: '#0d2148', skyBottom: '#040814', rings: '#7fb0ff', worlds: '#ffffff', star: '#ffffff' } as const
+/**
+ * The app icon as one SVG document: Mira as a star with two swept orbits (wordmarkPath.ts), flat
+ * colours on a night-blue sky. No glow and no stars behind it: the platforms add their own
+ * finish, and a flat icon survives their dark, tinted and clear styles.
+ */
+export function iconSvg(width: number, height: number): string {
+  const side = ICON_SIZE + 2 * ICON_MARGIN, c = ICON_COLOURS
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${-ICON_MARGIN} ${-ICON_MARGIN} ${side} ${side}" role="img" aria-label="Mira">
+<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c.skyTop}"/><stop offset="1" stop-color="${c.skyBottom}"/></linearGradient></defs>
+<rect x="${-ICON_MARGIN}" y="${-ICON_MARGIN}" width="${side}" height="${side}" fill="url(#sky)"/>
+<path fill="${c.rings}" fill-rule="evenodd" d="${ICON_RINGS}"/><path fill="${c.worlds}" d="${ICON_WORLDS}"/><path fill="${c.star}" d="${ICON_STAR}"/>
+</svg>`
+}
 export function logoSvg(options: Partial<LogoLook> & { width?: number; height?: number; layout?: LogoLayout } = {}): string {
   const look = { ...DEFAULT_LOGO_LOOK, ...options }, width = options.width ?? 1200, height = options.height ?? 630
-  const icon = options.layout === 'icon'
-  const mark = icon ? { d: ICON_PATH, width: ICON_WIDTH, height: ICON_HEIGHT } : { d: WORDMARK_PATH, width: WORDMARK_WIDTH, height: WORDMARK_HEIGHT }
-  // The icon mark fills most of its square; the wordmark goes where its layout puts it.
-  const iconWidth = width * 0.74, iconHeight = iconWidth * mark.height / mark.width
-  const box = icon ? { x: (width - iconWidth) / 2, y: (height - iconHeight) / 2, width: iconWidth, height: iconHeight } : logoBox(width, height, options.layout ?? 'fit')
+  if (options.layout === 'icon') return iconSvg(width, height)
+  const mark = { d: WORDMARK_PATH, width: WORDMARK_WIDTH, height: WORDMARK_HEIGHT }
+  const box = logoBox(width, height, options.layout ?? 'fit')
   const unit = box.height / mark.height
   let stars = ''
   if (look.space) {
