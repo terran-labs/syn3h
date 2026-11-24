@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-24 00:45 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-24 01:40 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2400 (release-116, ?canvasBackdrop=1, ?presentHold=1 and ?canvasAlpha=opaque; the counter box hides under the open panels), source 6d4f5ff8,
-frozen copy 20261124-003126-6d4f5ff8, Worker version 397a42c3, at https://mira.cc/ since 24 November 00:36 PST.
+Live: v26.11.2401 (release-117, the redrawn app icon as set mira3 with its own manifest; the lobby name drawn as metal, ?solid=0, ?white=1, ?tune=1), source 0c7b14fb,
+frozen copy 20261124-012610-0c7b14fb, Worker version 0685268d, at https://mira.cc/ since 24 November 01:30 PST.
 The game is Mira from v26.11.2300 (LAST_SYN3H_VERSION v26.11.2206; notes heading "## Mira vX"). Kept named syn3h on
 purpose: the Worker, its workers.dev addresses, the Durable Object, the R2 bucket, x-syn3h-version, the token path,
 'buggy-syn3h', local paths and /tmp names (ship.sh outcomes are now /tmp/mira-ship-N*), the repository (docs/NAMES.md).
@@ -181,6 +181,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2307 | 114 | m-leak-2307 | quality changes no longer leave graphics objects behind |
 | v26.11.2308 | 115 | m-probe-2308 | ?frameProbe=1 counts black or invalid frames, with Test black and Test drop; an automatic start leaves the cursor free |
 | v26.11.2400 | 116 | m-backdrop-2400 | ?canvasBackdrop=1, ?presentHold=1 and ?canvasAlpha=opaque test links; the counter box no longer covers the panels on a phone |
+| v26.11.2401 | 117 | m-icon-2401 | the redrawn app icon (mira3, every ring and world inside the square); the lobby name drawn as metal |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
