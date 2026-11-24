@@ -15,14 +15,30 @@ class Stream {
   getAudioTracks = () => this.tracks
 }
 
+function audioTransceiver(direction: RTCRtpTransceiverDirection) {
+  return { direction, currentDirection: null as RTCRtpTransceiverDirection | null, receiver: { track: new Track() } }
+}
+
 class Peer {
   static instances: Peer[] = []
 
   signalingState = 'stable'
+  connectionState = 'new'
+  iceConnectionState = 'new'
+  iceGatheringState = 'new'
   remoteDescription?: RTCSessionDescriptionInit
   ontrack: ((event: { track: Track }) => void) | null = null
+  onicecandidate?: ((event: { candidate: RTCIceCandidateInit }) => void) | null
+  oniceconnectionstatechange?: (() => void) | null
+  private readonly transceivers: ReturnType<typeof audioTransceiver>[] = []
   constructor() { Peer.instances.push(this) }
   addTrack = vi.fn()
+  addTransceiver = vi.fn((_kind: string, options: RTCRtpTransceiverInit) => {
+    const transceiver = audioTransceiver(options.direction ?? 'sendrecv')
+    this.transceivers.push(transceiver)
+    return transceiver
+  })
+  getTransceivers = () => this.transceivers
   close = vi.fn()
   createOffer = vi.fn(async () => ({ type: 'offer', sdp: 'offer-sdp' }))
   createAnswer = vi.fn(async () => ({ type: 'answer', sdp: 'answer-sdp' }))
@@ -32,6 +48,7 @@ class Peer {
   setRemoteDescription = vi.fn(async (sdp: RTCSessionDescriptionInit) => {
     this.remoteDescription = sdp
     this.signalingState = sdp.type === 'offer' ? 'have-remote-offer' : 'stable'
+    if (sdp.type === 'offer') this.transceivers.push(audioTransceiver('inactive'))
   })
   addIceCandidate = vi.fn(async (_candidate: RTCIceCandidateInit) => {
     if (!this.remoteDescription) throw new Error('Missing description')
@@ -85,6 +102,102 @@ describe('VoiceSession', () => {
     expect(getUserMedia).not.toHaveBeenCalled()
     expect(Peer.instances).toHaveLength(0)
     expect(sendSignal).not.toHaveBeenCalled()
+  })
+
+  it('opts in as a listen-only offerer without opening the microphone or changing Safari audio session', async () => {
+    const setType = vi.fn()
+    const audioSession = {
+      get type(): string { return 'playback' },
+      set type(value: string) { setType(value) },
+    }
+    Object.assign(navigator, { audioSession })
+    const { session, sendSignal, onRemoteAudio } = setup(1, { listenOnly: true })
+    session.setPeers([2])
+    await session.receiveSignal(2, answer)
+    expect(Peer.instances).toHaveLength(0)
+    expect(await session.enable()).toBe(true)
+    expect(session.state).toMatchObject({ status: 'live', speaking: false })
+
+    const [peer] = Peer.instances
+    expect(peer.addTransceiver).toHaveBeenCalledExactlyOnceWith('audio', { direction: 'recvonly' })
+    expect(peer.addTrack).not.toHaveBeenCalled()
+    await session.receiveSignal(2, answer)
+    expect(sendSignal).toHaveBeenCalledWith(2, { type: 'offer', sdp: 'offer-sdp' })
+    peer.ontrack?.({ track: new Track() })
+    expect(onRemoteAudio).toHaveBeenCalledWith(2, expect.any(Stream))
+    expect(session.micSettings()).toBeUndefined()
+    session.dispose()
+    expect(session.state.status).toBe('off')
+    expect(peer.close).toHaveBeenCalledOnce()
+    expect(onRemoteAudio).toHaveBeenLastCalledWith(2, null)
+    expect(getUserMedia).not.toHaveBeenCalled()
+    expect(setType).not.toHaveBeenCalled()
+  })
+
+  it('answers a talker on the audio transceiver from the remote offer with no local track', async () => {
+    const { session, sendSignal } = setup(2, { listenOnly: true })
+    expect(await session.enable()).toBe(true)
+    session.setPeers([1])
+    await session.receiveSignal(1, ice)
+    const [peer] = Peer.instances
+    peer.createAnswer.mockImplementation(async () => {
+      expect(peer.getTransceivers().map(transceiver => transceiver.direction)).toEqual(['recvonly'])
+      return { type: 'answer', sdp: 'answer-sdp' }
+    })
+    await session.receiveSignal(1, offer)
+    expect(peer.addTrack).not.toHaveBeenCalled()
+    expect(peer.addTransceiver).not.toHaveBeenCalled()
+    expect(sendSignal).toHaveBeenCalledWith(1, { type: 'answer', sdp: 'answer-sdp' })
+    expect(session.connectionSummary()).toContain('Sent offers 0 · answers 1 · ICE 0')
+    expect(session.connectionSummary()).toContain('Received offers 1 · answers 0 · ICE 1')
+    expect(getUserMedia).not.toHaveBeenCalled()
+  })
+
+  it('summarizes signal flow and states without retaining private negotiation strings', async () => {
+    const { session } = setup(8021, { listenOnly: true })
+    await session.enable()
+    session.setPeers([8021, 9317, 7183])
+    const [peer] = Peer.instances
+    peer.onicecandidate?.({ candidate: { candidate: 'candidate with a private address', sdpMid: '0' } })
+    peer.iceConnectionState = 'checking'
+    peer.iceGatheringState = 'gathering'
+    peer.connectionState = 'private address disguised as a state'
+    await session.receiveSignal(9317, ice)
+    await session.receiveSignal(9317, answer)
+    const summary = session.connectionSummary()
+    expect(summary).toContain('Ready others 2 · offerer 1 · answerer 1')
+    expect(summary).toContain('Sent offers 1 · answers 0 · ICE 1')
+    expect(summary).toContain('Received offers 0 · answers 1 · ICE 1')
+    expect(summary).toContain('connection unavailable · ICE checking · signaling stable · gathering gathering · audio recvonly')
+    expect(summary).not.toMatch(/8021|9317|7183|offer-sdp|remote-answer|remote-ice|private address/)
+  })
+
+  it('retains creation and negotiation failures after the peer is gone', async () => {
+    const { session } = setup(2, { listenOnly: true })
+    await session.enable()
+    session.setPeers([1, 3])
+    const [peer] = Peer.instances
+    peer.createOffer.mockRejectedValueOnce(new Error('private SDP'))
+    await session.receiveSignal(3, answer)
+    expect(peer.close).toHaveBeenCalledOnce()
+    expect(session.connectionSummary()).toContain('Last failure · negotiation · offerer')
+    vi.stubGlobal('RTCPeerConnection', class { constructor() { throw new Error('private candidate') } })
+    await session.receiveSignal(1, offer)
+    expect(session.connectionSummary()).toContain('Failures · creation 1 · negotiation 1 · connection 0')
+    expect(session.connectionSummary()).toContain('Last failure · creation · answerer')
+    expect(session.connectionSummary()).not.toContain('private')
+  })
+
+  it('preserves the failed ICE state after closing the peer', async () => {
+    const { session } = setup(1, { listenOnly: true })
+    await session.enable()
+    session.setPeers([2])
+    await session.receiveSignal(2, answer)
+    const [peer] = Peer.instances
+    peer.iceConnectionState = 'failed'
+    peer.oniceconnectionstatechange?.()
+    expect(peer.close).toHaveBeenCalledOnce()
+    expect(session.connectionSummary()).toMatch(/Last failure · connection · offerer .* ICE failed/)
   })
 
   it('keeps device identifiers and network addresses out of the screenshot readout', async () => {
