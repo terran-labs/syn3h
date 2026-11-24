@@ -202,13 +202,14 @@ async function main(): Promise<void> {
       // Copies taken in the middle of the scene pass (core/midPassCopy.ts), off where not yet proven.
       '\nForce field contact glow: ' + depthEffectsState() + '\nHeadlight beam soft edge: ' + depthEffectsState() +
       (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '') + '\n' + sunShadowsLine() + '\n' + flashSwitchLine() +
+      (game.frameCanary ? '\n' + game.frameCanary.reportLines().join('\n') : '') +
       // Device loss: this page's and the last page's in this tab (core/lossRecord.ts).
       (game.lossRecorder ? game.lossRecorder.reportLines().map(line => '\n' + line).join('') : '')
   }
   // ?blank=1 (core/flashSwitches.ts): the recorder on from the link, its counter on screen in play.
-  if (flashSwitches.blank) {
-    params.set(recordBlankFrames.def.id, true)
-    const stopCounter = startFlashCounter(() => game.blankFrames, () => shell.playing && !shell.transitioning)
+  if (flashSwitches.blank || game.frameCanary) {
+    if (flashSwitches.blank) params.set(recordBlankFrames.def.id, true)
+    const stopCounter = startFlashCounter(() => game.blankFrames, () => shell.playing && !shell.transitioning, () => game.frameCanary, flashSwitches.blank)
     game.add({ dispose: stopCounter }, 'Blank frame counter')
   }
   shell.configurePerformance({

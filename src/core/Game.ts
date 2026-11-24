@@ -4,6 +4,7 @@ import { longFrames } from './longFrames'
 import { flashSwitches } from './flashSwitches'
 import { BlankFrameRecorder } from './blankFrames'
 import { LossRecorder } from './lossRecord'
+import { FrameCanary } from './frameCanary'
 import { refractionState } from '../world/water/refraction'
 import { installLongFrameRenderer } from './longFrameRenderer'
 /**
@@ -102,6 +103,8 @@ export class Game {
   blankFrames: BlankFrameRecorder | null = null
   /** What to keep if the GPU device is lost (lossRecord.ts). Set once the renderer starts. */
   lossRecorder: LossRecorder | null = null
+  /** Dropped command buffers, with ?frameCanary=1 on WebGPU (frameCanary.ts). */
+  frameCanary: FrameCanary | null = null
   private readonly pipelineCounter = new PipelineCounter()
   readonly performance: FrameMetrics = { fps: 0, frameMs: 0, physicsMs: 0, drawCalls: 0, triangles: 0, firstFrameMs: null }
 
@@ -182,6 +185,9 @@ export class Game {
       samples: () => this.postChain?.sceneSamples?.() ?? this.renderer.samples,
     })
     this.blankFrames.attach()
+    // ?frameCanary=1 (frameCanary.ts): count command buffers the browser accepted and never ran.
+    const device = (this.renderer.backend as { device?: GPUDevice }).device
+    if (device && new URLSearchParams(location.search).get('frameCanary') === '1') this.frameCanary = new FrameCanary(device, { frames: () => this.frames, pixelRatio: () => this.renderer.getPixelRatio() })
     this.quality.attachRenderer(this.renderer)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.shadowMap.enabled = true
