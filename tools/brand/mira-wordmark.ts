@@ -247,7 +247,11 @@ function iconParts(): { rings: Contour[]; worlds: Contour[]; star: Contour[] } {
   for (const [rx, ry] of ICON.orbits) {
     const g = blank().stroke({ points: Array.from({ length: 201 }, (_, i) => on(rx, ry, 2 * PI * i / 200)), width: ICON.line })
     g.subtract(clearing)
-    at.forEach(([x, y], k) => g.cutCircle(x, y, ICON.orbits[k][3] + 5))
+    // A world clears a ring only where the ring runs into it: its own ring, or a neighbour whose
+    // line passes under its disc. A ring that merely passes close by is left whole. (Clearing
+    // every ring within reach left a dent in the edge of a ring that only skirted the clearance.)
+    const line = Array.from({ length: 401 }, (_, i) => on(rx, ry, 2 * PI * i / 400))
+    at.forEach(([x, y], k) => { const r = ICON.orbits[k][3]; if (Math.min(...line.map(p => Math.hypot(p[0] - x, p[1] - y))) < r + ICON.line / 2 + 1) g.cutCircle(x, y, r + 5) })
     rings.merge(g)
   }
   return { rings: rings.trace(0.03), worlds: worlds.trace(0.03), star: star.trace(0.03) }
