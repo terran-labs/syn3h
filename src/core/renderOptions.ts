@@ -152,6 +152,8 @@ export interface PostChain<Renderer = unknown, Scene = unknown, Camera = unknown
   setCovered?(covered: boolean): void
   /** The scene pass's sample count, for diagnostics; null before a graph is built. */
   sceneSamples?(): number | null
+  /** The scene pass colour this frame drew, or null when it did not go through a graph (core/frameProbe.ts). */
+  drawnSceneTexture?(): { readonly isTexture: true } | null
   /** Draw this frame to the screen. `frameMs` is the time since the previous frame. */
   render(renderer: Renderer, scene: Scene, camera: Camera, frameMs: number): void
 }

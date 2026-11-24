@@ -34,7 +34,7 @@ import { flashPins, flashSwitches, pinnedParams, pins, regateSunShadows, type Fl
 import type { ParamValue } from '../../shared/params'
 
 export type SwitchKey = 'blank' | 'shadows0' | 'shadows1' | 'shading0' | 'postBase' | 'postOff' | 'samples1' | 'lowRest' | 'freeze' | 'uiFlat' | 'webgl' | 'gpuTrace' | 'gfx' | 'diag'
-  | 'frameCanary' | 'shadowCascades' | 'shadowMap512' | 'shadowMap1024' | 'shadowMap2048' | 'shadowColor0' | 'shadowHard' | 'shadowFade0'
+  | 'frameCanary' | 'frameProbe' | 'shadowCascades' | 'shadowMap512' | 'shadowMap1024' | 'shadowMap2048' | 'shadowColor0' | 'shadowHard' | 'shadowFade0'
 
 /** How the rows group the switches; a group is a sub-heading. */
 export type SwitchGroup = 'Graphics' | 'Sun shadows' | 'Renderer' | 'Interface' | 'Governor' | 'Recorder'
@@ -88,6 +88,7 @@ export const FIELD_SWITCHES: readonly FieldSwitch[] = [
   { key: 'uiFlat', name: 'ui', value: 'flat', values: '`flat`', label: 'Flat interface glass', note: 'Flat interface glass for this visit. The saved choice is kept.', live: true, group: 'Interface', row: true },
   { key: 'blank', name: 'blank', value: '1', values: '`1`', label: 'Blank frame counter on screen', note: 'Turn the blank-frame recorder on, with its counter on screen in play and a Test flash button that shows whether the recorder can see frames in this browser.', live: true, group: 'Recorder', row: true },
   { key: 'frameCanary', name: 'frameCanary', value: '1', values: '`1`', label: 'Dropped frame counter on screen', note: 'Count WebGPU command buffers the browser accepted but never ran, which shows on screen as a black frame and which Safari reports nowhere, in the same on-screen counter as ?blank=1 and in the report. It starts with the renderer.', live: false, group: 'Recorder', row: true },
+  { key: 'frameProbe', name: 'frameProbe', value: '1', values: '`1`', label: 'Black frame probe on screen', note: 'Read a grid of pixels back from the scene image and from the picture handed to the screen after every frame in play, and count frames where either is black, transparent or not a number, and frames where the sun shadow or exposure values are not finite, in the same on-screen counter as ?blank=1 and in the report. WebGPU only; it starts with the renderer.', live: false, group: 'Recorder', row: true },
   { key: 'diag', name: 'diag', value: '1', values: '`1`', label: 'Diagnostics open at load', note: 'Start diagnostic sampling at load, as opening the Diagnostics fold of the Performance card does.', live: false, group: 'Recorder', row: false },
 ]
 
