@@ -1,0 +1,15 @@
+.voice-channels button {
+  min-height: 36px;
+  padding: 3px 12px;
+  color: white;
+  background: #333943;
+  border: 1px solid #858d96;
+}
+.voice-channels button[aria-pressed="true"] {
+  color: #111820;
+  background: #fff;
+  font-weight: bold;
+}
+@media (pointer: coarse) {
+  .voice-channels button { min-height: 44px; }
+}

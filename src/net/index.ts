@@ -288,6 +288,7 @@ export class NetClient implements System {
     this.voice = new VoiceControl({
       elementVoice: this.ctx.elementVoice === true,
       listenOnly: this.ctx.listenOnly === true,
+      name: peer => this.players.get(peer)?.name ?? 'Player',
       otherHumans: () => [...this.players.values()].filter(p => !p.bot && p.id !== this.id).length,
       echoCancellation: this.ctx.voiceEchoCancellation !== false,
       id, audio: { get voiceContext() { return audio.voiceContext }, unlock: audio.unlock.bind(audio), attachSpeech: audio.attachSpeech.bind(audio) },
@@ -1887,6 +1888,7 @@ export class NetClient implements System {
     switch (msg.type) {
       case 'voice-full':
       case 'voice-ready':
+      case 'voice-channel':
       case 'voice-signal':
         this.voice?.receive(msg)
         break

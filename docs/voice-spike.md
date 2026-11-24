@@ -37,18 +37,24 @@ After at least ten seconds in each state, open Voice diagnostics and take a scre
 
 ### iPhone listening comparison
 
+The owner heard a nearby Mac player clearly on the iPhone and the engine sounded normal in listen-only. A later open-mic call worked in both directions without audible glitches on either device. An earlier open-mic run on the same phone sounded severely degraded. Both observations stand. Open mic remains available on phones. Hold-to-talk is a proposal pending a reproducible reason to change that default.
+
+A diff of the two tested builds shows the same open-mic capture order, audio session request, default echo cancellation, unrequested sample rates, muted media element and game audio graph. The later run had confirmed remote audio. The earlier screenshot did not establish whether a peer was connected. Mic-open and ten-second snapshots now include peer connectivity, session type, context rate, actual echo cancellation and the browser's reported output when available. No device labels or identifiers appear in the readout.
+
+**Channel comparison.** Spatial voice pans from the vehicle. The old inverse curve was full through 8 m, half at 16 m, and clamped to 1.3% from 600 m onward. The new default stays full through 40 m, halves at 420 m, reaches about 5% at 700 m, and fades out at 800 m. Global voice uses the same track directly in the mix at full level throughout the room. Close and global gain increased from 1.0 to 1.7 before the master (+4.6 dB). Voice volume and spatial range are personal settings.
+
 Keep the second device in the same named room with its microphone on and its player nearby. Have the partner speak a short phrase in each condition. On the phone, open Voice diagnostics. For the route, select what you actually hear (speaker, earpiece or headphones) before joining, while joined and after leaving. Safari's audio session type and context rate do not identify the physical speaker. The route entries stay on this screen only.
 
 | Condition | iPhone evidence so far | What still needs listening |
 | --- | --- | --- |
-| Open mic, echo cancellation on | Live 24 kHz input, running 48 kHz context, play-and-record. Owner heard severe game-audio degradation. No selected pair was reported. | Describe muffling, clicks, lower volume or a route change. Was a second player in this room with voice on? |
+| Open mic, echo cancellation on | Live 24 kHz input, running 48 kHz context, play-and-record. Owner heard severe degradation in one run and clean two-way audio in a later run. No selected pair was reported in the first run. | Compare output route and peer connectivity across the two mic snapshots if the problem returns. |
 | Open mic, echo cancellation off (`voiceec=0`) | Actual setting verified in Chrome. | Compare game sound on the phone speaker and headphones, then ask the partner about echo. |
-| Listen only (`voicelisten=1`) | Desktop Chrome received a file-backed tone through the game’s spatial audio path in either negotiation role. Desktop WebKit also received the tone from Chrome and stayed in playback at 48 kHz. The listener made zero mic requests and sent no track. | Can you hear the partner while driving? Does the engine still sound like it did with voice off? |
+| Listen only (`voicelisten=1`) | Desktop Chrome received a file-backed tone through the game’s spatial audio path in either negotiation role. Desktop WebKit also received the tone from Chrome and stayed in playback at 48 kHz. The listener made zero mic requests and sent no track. | Owner confirmed clear nearby Mac voice and normal engine sound on iPhone. |
 | After Leave voice | Mira releases capture and restores the game session. | Does the engine recover on its own? If it stays degraded, record the route and whether reloading restores it. |
 
 Each switch requires the original `voice=1` link. Start a fresh tab for each comparison and tap Leave voice before moving to the next one. After leaving, take the screenshot before reloading. The participant count, offer/answer roles, signalling and ICE states help distinguish an absent partner from a failed connection. A missing selected pair alone does not diagnose a network failure.
 
-If listen-only sounds clean while a real partner is audible, test hold-to-talk next. Measure press to first audible speech at the partner, sound at each transition, recovery between presses, and whether the driver can hold the control while steering. Until then, there is no phone latency or usability result to cite.
+If the owner later selects hold-to-talk for a trial, measure press to audible speech, sound at each transition, recovery between presses and thumb use while driving. Those measurements are pending.
 
 ### C. Phone cost and mesh size
 

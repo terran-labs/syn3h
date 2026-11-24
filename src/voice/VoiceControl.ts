@@ -1,6 +1,7 @@
+import './voice.css'
 import type { ClientMessage, ServerMessage } from '../../shared/protocol'
 import { params } from '../../shared/params'
-import { voiceOn } from '../../shared/voice'
+import { DEFAULT_VOICE_CHANNEL, voiceOn, type VoiceChannel } from '../../shared/voice'
 import type { GameAudio, Position } from '../audio'
 import { VoiceSession } from './VoiceSession'
 import { describeFailure, failureName } from './captureFailure'
@@ -10,6 +11,7 @@ import { masterVolume, muted } from '../audio/params'
 interface Host {
   elementVoice: boolean
   listenOnly: boolean
+  name(id: number): string
   otherHumans(): number
   echoCancellation: boolean
   id: number
@@ -27,6 +29,10 @@ export class VoiceControl {
   private readonly leave = document.createElement('button')
   private readonly room = document.createElement('button')
   private readonly disclosure = document.createElement('small')
+  private readonly channels = document.createElement('div')
+  private readonly roster = document.createElement('div')
+  private channel: VoiceChannel = DEFAULT_VOICE_CHANNEL
+  private readonly remoteChannels = new Map<number, VoiceChannel>()
   private session?: VoiceSession
   private readonly peers = new Set<number>()
   private readonly speakers = new Map<number, NonNullable<ReturnType<GameAudio['attachSpeech']>>>()
@@ -46,11 +52,22 @@ export class VoiceControl {
     this.panel.setAttribute('aria-label', 'Room voice')
     this.panel.style.cssText = 'position:fixed;top:max(env(safe-area-inset-top),8px);left:50%;transform:translateX(-50%);z-index:100;width:max-content;max-width:96vw;text-align:center'
     this.panel.hidden = true
-    this.panel.append(this.mic, this.leave, this.room)
+    this.panel.append(this.mic, this.leave, this.room, this.channels, this.roster)
+    for (const channel of ['spatial', 'global'] as const) {
+      const button = document.createElement('button')
+      button.textContent = channel === 'spatial' ? 'Spatial voice' : 'Global voice'
+      button.dataset.channel = channel
+      button.onclick = () => {
+        if (this.session?.state.status === 'live') host.send({ type: 'voice-channel', channel })
+      }
+      this.channels.append(button)
+    }
+    this.channels.className = 'voice-channels'
+    this.roster.style.cssText = 'background:#171c23;color:white;font:13px system-ui;overflow-wrap:anywhere'
     this.disclosure.textContent = 'Direct voice shares your network address with the other caller.'
     this.disclosure.style.cssText = 'display:block;white-space:normal;text-align:center;background:#171c23;color:white;padding:2px 5px'
     this.panel.append(this.disclosure)
-    this.readout.element.querySelector('summary')!.textContent = host.elementVoice ? 'Voice diagnostics · element' : 'Voice diagnostics · spatial'
+    this.readout.element.querySelector('summary')!.textContent = host.elementVoice ? 'Voice diagnostics · element' : 'Voice diagnostics · game mix'
     this.panel.append(this.readout.element)
     this.leave.textContent = 'Leave voice'
     this.leave.onclick = () => this.stop()
@@ -84,6 +101,7 @@ export class VoiceControl {
           this.speakers.delete(id)
           const speaker = stream && (this.host.elementVoice ? this.elementSpeaker(id, stream) : this.host.audio.attachSpeech(stream))
           if (speaker) this.speakers.set(id, speaker)
+          this.render()
         },
         onState: state => {
           if (state.status === 'error') {
@@ -132,8 +150,17 @@ export class VoiceControl {
       this.stop()
     } else if (msg.type === 'voice-ready') {
       if (msg.enabled) this.peers.add(msg.from)
-      else this.peers.delete(msg.from)
+      else {
+        this.peers.delete(msg.from)
+        this.remoteChannels.delete(msg.from)
+      }
       this.session.setPeers(this.peers)
+      this.render()
+    } else if (msg.type === 'voice-channel') {
+      if (msg.from === this.host.id) this.channel = msg.channel
+      else if (this.peers.has(msg.from)) this.remoteChannels.set(msg.from, msg.channel)
+      this.positionSpeakers()
+      this.render()
     } else if (msg.type === 'voice-signal') void this.session.receiveSignal(msg.from, msg.signal)
   }
 
@@ -148,7 +175,7 @@ export class VoiceControl {
 
   private positionSpeakers() {
     for (const [id, speaker] of this.speakers)
-      speaker.position(this.host.muted(id) ? undefined : this.host.position(id))
+      speaker.position(this.host.position(id), this.remoteChannels.get(id), this.host.muted(id))
   }
 
   /** The comparison route plays the original received stream at a fixed distance. */
@@ -192,6 +219,13 @@ export class VoiceControl {
     else if (this.starting) label = this.host.listenOnly ? 'Joining…' : 'Opening mic…'
     if (this.mic.textContent !== label) this.mic.textContent = label
     this.mic.disabled = !voiceOn.value || this.starting || (this.host.listenOnly && s?.status === 'live')
+    this.channels.hidden = s?.status !== 'live' || this.host.listenOnly
+    for (const button of this.channels.querySelectorAll('button')) {
+      button.setAttribute('aria-pressed', String(button.dataset.channel === this.channel))
+    }
+    this.roster.textContent = [...this.speakers.keys()].map(id =>
+      this.host.name(id) + ' · ' + (this.remoteChannels.get(id) === 'global' ? 'Global' : 'Spatial')
+    ).join(' / ')
     this.leave.hidden = !this.session && !this.starting
     this.room.hidden = !this.host.isHost()
     this.disclosure.style.display = voiceOn.value && !this.session ? 'block' : 'none'
@@ -209,6 +243,8 @@ export class VoiceControl {
     this.session = undefined
     this.leave.textContent = 'Leave voice'
     this.peers.clear()
+    this.remoteChannels.clear()
+    this.channel = DEFAULT_VOICE_CHANNEL
     for (const speaker of this.speakers.values()) speaker.dispose()
     this.speakers.clear()
     this.render()

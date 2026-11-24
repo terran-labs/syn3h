@@ -50,6 +50,7 @@ export class RoomVoice {
     if (!this.takeVoiceBudget(player)) return
     player.voiceChannel = channel
     peer.setVoiceState?.(true, channel)
+    this.sendChannel(peer, player)
     for (const [otherPeer, other] of this.players) {
       if (other !== player && other.voiceReady) this.sendChannel(otherPeer, player)
     }

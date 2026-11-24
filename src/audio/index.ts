@@ -13,11 +13,12 @@ import { applySubmerge } from './score/ScoreSynth'
 import { WeatherWind } from './weatherWind'
 import { senseConvoy, senseRelief, type ConvoyVoice } from './scoreSenses'
 import { audioContext, declareAudioSession, hadGesture, markSoundStarted, onGesture } from './unlock'
-import { cuesVolume, worldVolume, remoteVolume, crossfade, effectsVolume, masterVolume, musicVolume, muted, playOnSilent, voiceVolume, voiceRange } from './params'
+import { cuesVolume, worldVolume, remoteVolume, crossfade, effectsVolume, masterVolume, musicVolume, muted, playOnSilent } from './params'
+import { voiceVolume, voiceRange } from '../../shared/params'
+import type { VoiceChannel } from '../../shared/voice'
 
 export type Sound = 'laserShot' | 'laserHit' | 'materialize'
 export interface Position { x: number; y: number; z: number }
-export type SpeechChannel = 'spatial' | 'global'
 
 const SPEECH_NEAR_DISTANCE = 40
 const SPEECH_MAX_GAIN = 2
@@ -372,12 +373,12 @@ export class GameAudio implements System {
     panner.rolloffFactor = 0
     panner.connect(master)
     source.connect(gain)
-    let routedChannel: SpeechChannel = 'spatial'
+    let routedChannel: VoiceChannel = 'spatial'
     let targetGain: number | undefined
     gain.connect(panner)
 
     return {
-      position(point?: Position, channel: SpeechChannel = 'spatial', muted = false) {
+      position(point?: Position, channel: VoiceChannel = 'spatial', muted = false) {
         const now = context.currentTime
         if (muted || voiceVolume.value === 0 || (channel === 'spatial' && !point)) {
           if (targetGain !== undefined) {

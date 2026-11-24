@@ -148,7 +148,10 @@ describe('room voice', () => {
       { type: 'voice-ready', from: a.id, enabled: true },
       { type: 'voice-channel', from: a.id, channel: 'global' },
     ])
-    expect(a.all('voice-channel')).toEqual([{ type: 'voice-channel', from: b.id, channel: 'spatial' }])
+    expect(a.all('voice-channel')).toEqual([
+      { type: 'voice-channel', from: a.id, channel: 'global' },
+      { type: 'voice-channel', from: b.id, channel: 'spatial' },
+    ])
 
     f.channel(a, 'GLOBAL')
     f.channel(a, { channel: 'spatial' })

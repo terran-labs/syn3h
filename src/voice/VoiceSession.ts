@@ -97,6 +97,11 @@ export class VoiceSession {
 
   get state(): VoiceState { return this.current }
 
+  get hasConnectedPeer(): boolean {
+    return [...this.peers.values()].some(({ connection }) => connection.connectionState === 'connected' ||
+      connection.iceConnectionState === 'connected' || connection.iceConnectionState === 'completed')
+  }
+
   connectionSummary(): string {
     let offerers = 0
     for (const id of this.peerIds) if (this.role(id) === 'offerer') offerers++

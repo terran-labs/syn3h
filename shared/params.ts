@@ -75,6 +75,14 @@ export function defineParam<T extends ParamValue>(def: ParamDef<T>): Param<T> {
   return param
 }
 
+export const voiceVolume = defineParam<number>({
+  id: 'audio.voice', label: 'Voice volume', group: 'Audio', scope: 'client',
+  default: 0.85, min: 0, max: 1, step: 0.01,
+})
+export const voiceRange = defineParam<number>({
+  id: 'audio.voiceRange', label: 'Spatial voice range (m)', group: 'Audio', scope: 'client',
+  default: 800, min: 100, max: 1600, step: 10,
+})
 /** The voice spike exposes this room setting only through its gated controls. */
 export const voiceOn = defineParam({
   id: 'voice.on', label: 'Room voice (host only)', group: 'Game', scope: 'world', default: true, hidden: true,

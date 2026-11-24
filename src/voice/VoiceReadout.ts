@@ -6,6 +6,38 @@ interface AudioSnapshot {
   sampleRate?: number
 }
 
+interface CaptureSnapshot extends AudioSnapshot {
+  elapsed: number
+  route: string
+  connected: boolean
+  echoCancellation?: VoiceMicSettings['echoCancellation']
+}
+
+// Classify only the active sink. Never display or store a device ID or label.
+async function outputRoute(context?: AudioContext): Promise<string> {
+  if (!context || !('sinkId' in context)) return 'unavailable'
+  const sink = context.sinkId
+  if (typeof sink !== 'string') return 'silent output'
+  const fallback = sink ? 'selected output (route unavailable)' : 'system default (route unavailable)'
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const selected = devices.find(d => d.kind === 'audiooutput' && d.deviceId === (sink || 'default'))
+    const label = selected?.label ?? ''
+    if (/headphone|headset|airpods|earbud/i.test(label)) return 'headphones'
+    if (/earpiece|receiver/i.test(label)) return 'earpiece'
+    if (/speaker/i.test(label)) return 'speaker'
+    if (/bluetooth/i.test(label)) return 'Bluetooth output'
+  } catch { /* A browser may withhold output information. */ }
+  return fallback
+}
+
+function describeCapture(label: string, snapshot?: CaptureSnapshot): string {
+  if (!snapshot) return label + ' · no sample'
+  return [describeAudio(label, snapshot), 'Output route · ' + snapshot.route,
+    'Echo cancellation · ' + setting(snapshot.echoCancellation),
+    'Peer connected · ' + (snapshot.connected ? 'yes' : 'no')].join('\n')
+}
+
 interface FrameSample {
   time: number
   interval: number
@@ -82,7 +114,9 @@ export class VoiceReadout {
   private readonly heard = { before: '', during: '', left: '' }
   private phase: keyof typeof this.heard = 'before'
   private before?: AudioSnapshot
-  private after?: AudioSnapshot
+  private secondTimer?: ReturnType<typeof setTimeout>
+  private later?: CaptureSnapshot
+  private after?: CaptureSnapshot
   private mic?: VoiceMicSettings
   private pairs: VoiceCandidateTypes[] = []
   private capture?: { session: VoiceSession }
@@ -144,6 +178,7 @@ export class VoiceReadout {
     this.connection = ''
     this.before = audioSnapshot(this.context())
     this.after = undefined
+    this.later = undefined
     this.mic = undefined
     this.pairs = []
     this.render()
@@ -160,7 +195,24 @@ export class VoiceReadout {
   afterCapture(session: VoiceSession): void {
     if (this.disposed || session.state.status !== 'live') return
     this.stopPolling()
-    this.after = audioSnapshot(this.context())
+    const start = performance.now()
+    const snapshot = (): CaptureSnapshot => {
+      const context = this.context()
+      const result = { ...audioSnapshot(context), elapsed: (performance.now() - start) / 1000,
+        connected: session.hasConnectedPeer, echoCancellation: session.micSettings()?.echoCancellation,
+        route: 'unavailable' }
+      void outputRoute(context).then(route => {
+        result.route = route
+        if (!this.disposed && this.element.open) this.render()
+      })
+      return result
+    }
+    this.after = snapshot()
+    this.secondTimer = setTimeout(() => {
+      if (this.capture?.session !== session || session.state.status !== 'live') return
+      this.later = snapshot()
+      this.render()
+    }, 10_000)
     this.mic = session.micSettings()
     const capture = this.capture = { session }
     this.render()
@@ -222,6 +274,7 @@ export class VoiceReadout {
   }
 
   private stopPolling(): void {
+    clearTimeout(this.secondTimer)
     clearTimeout(this.timer)
     this.timer = undefined
     this.capture = undefined
@@ -249,7 +302,8 @@ Microphone permission · ${this.permission?.state ?? 'unavailable'}`,
       `Other humans on roster · ${this.otherHumans()}`,
       this.connection || 'No voice negotiation sampled',
       describeAudio('Before joining', this.before) + '\nHeard route · ' + (this.heard.before || 'unreported'),
-      describeAudio(this.listenOnly ? 'Listening' : 'Mic open', this.after) + '\nHeard route · ' + (this.heard.during || 'unreported'),
+      describeCapture(this.listenOnly ? 'Listening' : 'Mic open', this.after) + '\nHeard route · ' + (this.heard.during || 'unreported'),
+      this.after && describeCapture(this.later ? 'After ' + this.later.elapsed.toFixed(1) + ' s' : 'After 10 s', this.later),
       this.left && describeAudio('After leaving', this.left) + '\nHeard route · ' + (this.heard.left || 'unreported'),
       mic
         ? `Mic · ${sampleRate(mic.sampleRate)}\nEcho cancellation · ${setting(mic.echoCancellation)}\nNoise suppression · ${setting(mic.noiseSuppression)}\nAuto gain · ${setting(mic.autoGainControl)}`
