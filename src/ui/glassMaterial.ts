@@ -1,4 +1,6 @@
 import { params, surfaceCoverage } from '../../shared/params'
+import { flashSwitches } from '../core/flashSwitches'
+import { setFieldSwitch } from '../core/fieldSwitches'
 import { qualityLevel } from '../core/quality'
 import { glassStyle } from './inspector/params'
 
@@ -45,6 +47,22 @@ function fill(values: number[][], percent: number) {
 }
 const key = 'mira.glassMaterial.v2'
 /** `flat`: Flat glass for this visit only (?ui=flat), set before the listener that saves a choice. */
+let visitOnly = 0
+/** The player's style before a field switch made the glass Flat for the visit; null when none did. */
+let visitStyle: number | null = null
+/**
+ * Flat interface glass for this visit only (?ui=flat as a field switch, core/fieldSwitches.ts), or
+ * back to the style the player had. Neither is saved, and the tint is left alone; a style the
+ * player then picks themselves is theirs and is saved as usual.
+ */
+export function setGlassForVisit(flat: boolean): void {
+  const target = flat ? glassLabels.indexOf('Flat') : visitStyle
+  if (flat && visitStyle === null) visitStyle = glassStyle.value
+  if (!flat) visitStyle = null
+  if (target === null || target === glassStyle.value) return
+  visitOnly++
+  try { params.set(glassStyle.def.id, target) } finally { visitOnly-- }
+}
 export function restoreGlassMaterial(shortcut: boolean, flat = false) {
   let saved: string | null = null, savedTint: number | undefined
   try {
@@ -62,7 +80,7 @@ export function restoreGlassMaterial(shortcut: boolean, flat = false) {
   const index = glassLabels.findIndex(name => name === saved)
   if (shortcut) params.set(glassStyle.def.id, 0)
   else if (index >= 0) params.set(glassStyle.def.id, index)
-  if (flat) params.set(glassStyle.def.id, glassLabels.indexOf('Flat'))
+  if (flat) { visitStyle = glassStyle.value; params.set(glassStyle.def.id, glassLabels.indexOf('Flat')) }
   params.set(surfaceCoverage.def.id, savedTint !== undefined && (!shortcut || index === 0) ? savedTint : defaultTint())
   paintedTint = surfaceCoverage.value
   let frame = 0
@@ -100,7 +118,11 @@ export function restoreGlassMaterial(shortcut: boolean, flat = false) {
   }
   paintTint(); paintStyle()
   const unsubscribe = params.onChange(id => {
-    if (id === glassStyle.def.id) {
+    if (id === glassStyle.def.id && visitOnly) { /* A field switch's Flat (setGlassForVisit): not the player's choice, not saved. */ }
+    else if (id === glassStyle.def.id) {
+      // The player chose a style: the visit's Flat (?ui=flat) gives way to it.
+      visitStyle = null
+      if (flashSwitches.uiFlat && flashSwitches.post !== 'off') setFieldSwitch('uiFlat', false)
       params.set(surfaceCoverage.def.id, defaultTint())
       try { localStorage.setItem(key, glassLabels[glassStyle.value]) } catch { /* Session only. */ }
     } else if (id === surfaceCoverage.def.id) {

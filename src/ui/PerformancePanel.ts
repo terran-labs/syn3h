@@ -6,6 +6,8 @@ import type { Inspector } from './inspector/Inspector'
 import type { PropertyDef } from './inspector/model'
 import { createSwitch, type Switch } from './inspector/switch'
 import { recordBlankFrames } from '../core/blankFrames'
+import { FIELD_SWITCHES, isOn, linkWithSwitches, onFieldSwitches, pendingReload, reloadWithSwitches, setFieldSwitch } from '../core/fieldSwitches'
+import { deviceGates } from '../core/deviceGates'
 
 const number = (value: number | undefined, digits = 1) => value !== undefined && Number.isFinite(value) ? value.toFixed(digits) : 'Unavailable'
 
@@ -92,7 +94,7 @@ export class PerformancePanel {
       <details class="wi-group performance-diagnostics"><summary><span>Diagnostics</span><small></small></summary>
       <div class="performance-body">
       <svg class="performance-chart" viewBox="0 0 288 64" role="img" aria-label="Frame time history"><path d="M0 63H288"/><polyline fill="none"/></svg>
-      <p class="performance-history"></p><p class="performance-long-frames" style="user-select:text"></p><div class="performance-blank-frames"><small data-performance="blank-count"></small></div><div class="card-actions"><button type="button" class="panel-action" data-performance="copy-report">Copy diagnostics</button><button type="button" class="panel-action" data-performance="run-check">Run performance check</button></div>
+      <p class="performance-history"></p><p class="performance-long-frames" style="user-select:text"></p><div class="performance-blank-frames"><small data-performance="blank-count"></small></div><details class="wi-group wi-subgroup performance-field-switches"><summary><span>Field switches</span><small></small></summary><div class="field-switch-rows"></div><div class="card-actions"><button type="button" class="panel-action" data-performance="copy-switch-link">Copy link with these switches</button><button type="button" class="panel-action" data-performance="reload-switches" hidden>Reload with these switches</button></div></details><div class="card-actions"><button type="button" class="panel-action" data-performance="copy-report">Copy diagnostics</button><button type="button" class="panel-action" data-performance="run-check">Run performance check</button></div>
       <span data-performance="copy-status" role="status"></span>
       <textarea data-performance="copy-text" aria-label="Diagnostics report" rows="8" readonly hidden></textarea><dl></dl><p class="performance-recovery" role="status"></p>
       <button type="button" class="panel-action" data-performance="reload" hidden>Reload to recover</button></div></details>`
@@ -121,6 +123,7 @@ export class PerformancePanel {
     const offBlank = params.onChange(id => { if (id === recordBlankFrames.def.id) { this.blankSwitch.set(recordBlankFrames.value); this.renderBlankFrames() } })
     signal.addEventListener('abort', offBlank, { once: true })
     this.renderBlankFrames()
+    this.buildFieldSwitches(signal)
     this.element.querySelector('.wi-level-tools')!.prepend(this.auto.element)
     // Render resolution: dragging previews the number; the renderer resizes once, on release.
     const range = this.resolutionRange
@@ -324,6 +327,55 @@ export class PerformancePanel {
       button.hidden = this.captured || (kind === 'bots' && !(offer?.fewerBots && offer.bots)) || (kind === 'lower' && !!offer && offer.targetLevel === offer.level)
     }
     this.recommendation.querySelector<HTMLElement>('.performance-unlock')!.hidden = !this.captured
+  }
+
+  /**
+   * Field switches (core/fieldSwitches.ts): every link switch as a row, the link name beside it,
+   * live where it can be, "applies after reload" where the renderer fixes it, and each device
+   * gate that has turned something off here, with a way to force it on for the visit. A box and
+   * its link switch are one state; nothing here is saved.
+   */
+  private buildFieldSwitches(signal: AbortSignal): void {
+    const fold = this.element.querySelector<HTMLDetailsElement>('.performance-field-switches')!
+    const rows = fold.querySelector<HTMLElement>('.field-switch-rows')!
+    const boxes = FIELD_SWITCHES.map(f => {
+      const box = createSwitch(f.label, { className: `field-switch${f.live ? '' : ' is-reload'}`, signal, checked: isOn(f.key), onChange: on => setFieldSwitch(f.key, on) })
+      box.element.dataset.switch = f.link
+      const note = document.createElement('small'); note.className = 'field-switch-link'
+      note.textContent = f.live ? `?${f.link}` : `?${f.link} · applies after reload`
+      box.element.querySelector('.s3-switch-text')!.append(note)
+      rows.append(box.element)
+      return { f, box }
+    })
+    // Device gates: what a gate has turned off on this device, and its switch for the visit.
+    const gates = deviceGates().filter(g => g.gated())
+    for (const gate of gates) {
+      const box = createSwitch(gate.label, { className: 'field-switch is-gate', signal, checked: gate.forced(), onChange: on => gate.force(on) })
+      box.element.dataset.gate = gate.id
+      const note = document.createElement('small'); note.className = 'field-switch-link'
+      box.element.querySelector('.s3-switch-text')!.append(note)
+      rows.append(box.element)
+      const show = () => { box.set(gate.forced()); note.textContent = gate.forced() ? 'forced on for this visit' : 'off on this device by its gate' }
+      show(); signal.addEventListener('abort', gate.watch(show), { once: true })
+    }
+    const reload = fold.querySelector<HTMLButtonElement>('[data-performance=reload-switches]')!
+    const count = fold.querySelector('summary small')!
+    const sync = () => {
+      for (const { f, box } of boxes) box.set(isOn(f.key))
+      reload.hidden = !pendingReload()
+      const on = FIELD_SWITCHES.filter(f => isOn(f.key)).length
+      count.textContent = on ? `${on} on` : 'none on'
+    }
+    signal.addEventListener('abort', onFieldSwitches(sync), { once: true })
+    sync()
+    reload.addEventListener('click', () => reloadWithSwitches(), { signal })
+    fold.querySelector('[data-performance=copy-switch-link]')!.addEventListener('click', async () => {
+      const status = this.element.querySelector<HTMLElement>('[data-performance=copy-status]')!
+      const field = this.element.querySelector<HTMLTextAreaElement>('[data-performance=copy-text]')!
+      const link = linkWithSwitches()
+      try { await navigator.clipboard.writeText(link); field.hidden = true; status.textContent = 'Link copied.' }
+      catch { field.value = link; field.hidden = false; field.select(); status.textContent = 'Select and copy the link below.' }
+    }, { signal })
   }
 
   /** The running count beside "Record blank frames". */

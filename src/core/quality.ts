@@ -920,6 +920,16 @@ export class QualityController implements QualitySource {
     storageWrite(this.store, RESOLUTION_KEY, this.governor.resolution === null ? null : String(this.governor.resolution))
     if (change) { this.lastReason = change.reason; this.apply() }
   }
+  /**
+   * Write these level-owned parameters again, after a field switch pinned or released them
+   * (core/fieldSwitches.ts): the pin where there is one, else the player's override, else the
+   * level's value. Through write(), so it is never taken for the player's own override or saved.
+   */
+  refreshPins(ids: readonly string[]) {
+    const preset = presetFor(this.governor.level)
+    for (const id of ids) { const value = id in this.overrides ? this.overrides[id] : preset[id]; if (value !== undefined) this.write(id, value) }
+    this.publishQuality()
+  }
   /** Hand one parameter back to the level. */
   clearOverride(id: string) {
     if (!(id in this.overrides)) return

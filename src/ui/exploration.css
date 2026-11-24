@@ -341,3 +341,10 @@ body.has-game-shell:has(.mira-shell.has-touch.is-playing) :is(#mira-build-notice
 @media (min-height: 701px) and (min-width: 701px) {
   .mira-shell.exploration-ui .world-inspector:not(.lobby-settings) > .wi-cards { margin-top: calc(var(--edge-top) - 7px); }
 }
+
+/* Performance, Diagnostics, Field switches (core/fieldSwitches.ts): the card's own switch rows,
+   one per link switch, the link's name under its plain words in small type. */
+.performance-field-switches .field-switch-rows { display: grid; gap: 2px; margin: 2px 0 6px; }
+.performance-field-switches .s3-switch-field.field-switch { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; }
+.performance-field-switches .field-switch .s3-switch-text { flex: 1; min-width: 0; }
+.performance-field-switches .field-switch-link { display: block; margin-top: 1px; color: var(--s3-soft, #bfbfbf); font: 400 11px/1.3 ui-monospace, Menlo, monospace; letter-spacing: 0; text-transform: none; }
