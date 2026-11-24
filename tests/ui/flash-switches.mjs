@@ -7,6 +7,9 @@
 //   the interface glass is Flat for the visit without changing the saved choice; and the report
 //   names every switch.
 // - ?post=off: no post chain, and the game still draws.
+// - The v26.11.2305 sun shadow gate: on a touch device on WebGPU, shadows are held off at Medium
+//   and at High, and the report says why; WebGL 2 (?webgl=1) on the same device keeps them;
+//   ?shadows=1 turns them back on; desktop keeps them. Nothing is built in play while held.
 //   MIRA_URL=http://127.0.0.1:5213/ node tests/ui/flash-switches.mjs
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
@@ -15,8 +18,8 @@ import assert from 'node:assert/strict'
 const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5213/'
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 
-async function open(query) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+async function open(query, phone = false) {
+  const context = await browser.newContext(phone ? { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } : { viewport: { width: 1280, height: 800 } })
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   const page = await context.newPage()
   const errors = []; page.on('pageerror', error => errors.push(String(error.stack ?? error.message).slice(0, 400)))
@@ -40,7 +43,7 @@ const slowFrames = page => page.evaluate(async () => {
 const state = page => page.evaluate(() => {
   const { game, params } = window.mira
   return {
-    level: game.quality.governor.level, postTier: game.quality.postTier, samples: game.renderer.samples, chain: !!game.postChain,
+    level: game.quality.governor.level, backend: game.backend, coarse: matchMedia('(pointer: coarse)').matches, postTier: game.quality.postTier, samples: game.renderer.samples, chain: !!game.postChain,
     shadow: params.get('gfx.shadowQuality').value, shading: params.get('gfx.vehicleShading').value, bend: params.get('cover.bend').value, fog: params.get('gfx.fogBanks').value,
     glass: document.documentElement.dataset.glassMaterial, saved: localStorage.getItem('mira.glassMaterial.v2'), counter: !!document.querySelector('.flash-counter:not([hidden])'),
   }
@@ -52,7 +55,9 @@ try {
     const { page, context, errors } = await open('gfx=2')
     const s = await state(page)
     assert.deepEqual([s.level, s.postTier, s.samples, s.chain, s.shadow, s.shading, s.bend, s.counter], [2, 'lite', 4, true, 1, 1, true, false], `Medium unchanged without switches ${JSON.stringify(s)}`)
-    assert.match(await report(page), /^Flash switches: none$/m)
+    const text = await report(page)
+    assert.match(text, /^Flash switches: gfx=2$/m)
+    assert.match(text, /^Sun shadows: on$/m)
     // Auto quality on, the level pinned by ?gfx: slow frames still shed a rung.
     const moved = await slowFrames(page)
     assert.ok(moved.after.changes > moved.before.changes, `the governor steps under slow frames without freeze ${JSON.stringify(moved)}`)
@@ -86,7 +91,8 @@ try {
     assert.deepEqual([high.shadow, high.shading, high.bend, high.postTier], [0, 0, false, 'base'], `held at High ${JSON.stringify(high)}`)
     assert.equal(await page.evaluate(() => localStorage.getItem('mira.glassMaterial.v2')), savedBefore, 'the saved glass choice is untouched')
     const text = await report(page)
-    assert.match(text, /^Flash switches: blank=1, shadows=0, shading=0, post=base, samples=1, lowrest=1, freeze=1, ui=flat$/m)
+    assert.match(text, /^Flash switches: blank=1, shadows=0, shading=0, post=base, samples=1, lowrest=1, freeze=1, ui=flat, gfx=2$/m)
+    assert.match(text, /^Sun shadows: off: \?shadows=0$/m)
     assert.match(text, /scene samples 1,/, 'the report counts one sample')
     assert.match(text, /^Test flashes: 1 seen of 1 asked$/m)
     assert.deepEqual(errors, [])
@@ -102,7 +108,60 @@ try {
     // The draw calls of the last drawn frame, sampled over a second: the scene is drawn straight to the canvas.
     const drawn = await page.evaluate(async () => { const calls = []; for (let i = 0; i < 10; i++) { calls.push(window.mira.game.performance.drawCalls); await new Promise(res => setTimeout(res, 100)) } return calls })
     assert.ok(drawn.every(n => n > 20), `the game still draws the scene: ${drawn}`)
-    assert.match(await report(page), /^Flash switches: post=off, ui=flat$/m)
+    assert.match(await report(page), /^Flash switches: post=off, ui=flat, gfx=2$/m)
+    assert.deepEqual(errors, [])
+    await context.close()
+  }
+  // ---- The sun shadow gate on a touch device (v26.11.2305). ----
+  const pipelines = page => page.evaluate(() => window.mira.game.renderer._pipelines?.caches?.size ?? -1)
+  const toHigh = async page => {
+    await page.evaluate(() => window.mira.game.quality.setLevel(3))
+    await page.waitForFunction(() => window.mira.game.quality.governor.level === 3, null, { timeout: 60000 })
+    await page.waitForTimeout(1500)
+    return state(page)
+  }
+  {
+    const { page, context, errors } = await open('gfx=2&diag=1', true)
+    const s = await state(page)
+    assert.deepEqual([s.backend, s.coarse, s.level, s.shadow], ['webgpu', true, 2, 0], `phone WebGPU at Medium: shadows held off ${JSON.stringify(s)}`)
+    // Held: nothing new is built while playing at the held level.
+    const before = await pipelines(page)
+    await page.waitForTimeout(4000)
+    assert.equal(await pipelines(page), before, 'no pipeline is built in play')
+    const high = await toHigh(page)
+    assert.deepEqual([high.level, high.shadow], [3, 0], `phone WebGPU at High: shadows held off ${JSON.stringify(high)}`)
+    const text = await report(page)
+    assert.match(text, /^Sun shadows: off: not yet proven on this device$/m)
+    assert.match(text, /^Flash switches: gfx=2, diag=1$/m)
+    console.log('flash-switches: phone report\n' + text)
+    assert.deepEqual(errors, [])
+    console.log('flash-switches: phone WebGPU gate ok', JSON.stringify({ medium: s.shadow, high: high.shadow, pipelines: before }))
+    await context.close()
+  }
+  {
+    const { page, context, errors } = await open('gfx=2&webgl=1', true)
+    const s = await state(page)
+    assert.deepEqual([s.backend, s.coarse, s.level, s.shadow], ['webgl', true, 2, 1], `phone WebGL 2 keeps its shadows ${JSON.stringify(s)}`)
+    const text = await report(page)
+    assert.match(text, /^Sun shadows: on$/m)
+    assert.match(text, /^Flash switches: gfx=2, webgl=1$/m)
+    assert.deepEqual(errors, [])
+    await context.close()
+  }
+  {
+    const { page, context, errors } = await open('gfx=2&shadows=1', true)
+    const s = await state(page)
+    assert.deepEqual([s.backend, s.coarse, s.shadow], ['webgpu', true, 1], `?shadows=1 turns phone shadows on ${JSON.stringify(s)}`)
+    const high = await toHigh(page)
+    assert.equal(high.shadow, 1, `?shadows=1 at High takes High's shadows ${JSON.stringify(high)}`)
+    assert.match(await report(page), /^Sun shadows: on: \?shadows=1, though not yet proven on this device$/m)
+    assert.deepEqual(errors, [])
+    await context.close()
+  }
+  {
+    const { page, context, errors } = await open('gfx=2')
+    const high = await toHigh(page)
+    assert.deepEqual([high.backend, high.coarse, high.shadow], ['webgpu', false, 1], `desktop High keeps its shadows ${JSON.stringify(high)}`)
     assert.deepEqual(errors, [])
     await context.close()
   }
