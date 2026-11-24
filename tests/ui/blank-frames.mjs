@@ -27,7 +27,7 @@ try {
   const card = page.locator('.wi-card[data-section=performance]')
   if (!(await card.evaluate(el => el.classList.contains('is-open')))) await card.locator('.wi-head').click()
   const fold = card.locator('details.performance-diagnostics')
-  if (!(await fold.evaluate(el => el.open))) await fold.locator('summary').click()
+  if (!(await fold.evaluate(el => el.open))) await card.locator('details.performance-diagnostics > summary').click()
 
   const copyReport = async () => {
     await card.locator('[data-performance=copy-report]').click()

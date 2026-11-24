@@ -22,7 +22,7 @@ try {
   const card = page.locator('.wi-card[data-section=performance]')
   if (!(await card.evaluate(el => el.classList.contains('is-open')))) await card.locator('.wi-head').click()
   const fold = card.locator('details.performance-diagnostics')
-  await fold.locator('summary').waitFor({ state: 'visible' })
+  await card.locator('details.performance-diagnostics > summary').waitFor({ state: 'visible' })
   assert.equal(await fold.evaluate(el => el.open), false, 'Diagnostics starts closed')
 
   // The player clicks Diagnostics, and a snapshot is published before the fold's toggle event.
@@ -32,7 +32,7 @@ try {
     const watch = new MutationObserver(() => { watch.disconnect(); mira.game.quality.publishPerformance() })
     watch.observe(fold, { attributes: true, attributeFilter: ['open'] })
   })
-  await fold.locator('summary').click()
+  await card.locator('details.performance-diagnostics > summary').click()
   await page.waitForTimeout(1500)
   assert.equal(await fold.evaluate(el => el.open), true, 'Diagnostics stays open after the player opens it')
   assert.ok(await card.locator('[data-performance=copy-report]').isVisible(), 'its actions are there to use')
