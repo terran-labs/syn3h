@@ -150,3 +150,16 @@ describe('sky colours across a whole day on every sky preset', () => {
     }
   })
 })
+
+// Eye adaptation (world/Environment.ts) feeds the sky's colours straight into the tone mapping
+// exposure. Bug caught: one sky colour that is not a number (the side colour enters the average
+// unsanitised) making the exposure NaN, which draws the whole screen black, sky included.
+describe('autoExposure', () => {
+  it('stays finite whatever the sky luminance', async () => {
+    const { autoExposure } = await import('../../src/world/sky/skyMath')
+    for (const lum of [NaN, Infinity, -Infinity, -1, 0, 1e-30, 4, 1e30]) {
+      const k = autoExposure(lum, 1)
+      expect(Number.isFinite(k) && Number.isFinite(Math.log(k))).toBe(true)
+    }
+  })
+})

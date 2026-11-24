@@ -109,6 +109,9 @@ export class Game {
   frameCanary: FrameCanary | null = null
   /** What our passes drew, frame by frame, with ?frameProbe=1 on WebGPU (frameProbe.ts). */
   frameProbe: FrameProbe | null = null
+  /** ?presentHold=1: whether the last drawn frame's GPU work is still running, and frames skipped for it. */
+  private gpuBusy = false
+  presentHeldFrames = 0
   private probeSun: THREE.DirectionalLight | null = null
   private readonly pipelineCounter = new PipelineCounter()
   readonly performance: FrameMetrics = { fps: 0, frameMs: 0, physicsMs: 0, drawCalls: 0, triangles: 0, firstFrameMs: null }
@@ -155,7 +158,7 @@ export class Game {
     const started = await timeStartup('renderer.init (adapter, device, context)', () => startRenderer((webgl, freshCanvas) => {
       if (freshCanvas) this.replaceCanvas()
       // ?samples=1 (core/flashSwitches.ts): one sample, no multisampling anywhere.
-      this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: !flashSwitches.samples1, forceWebGL: webgl })
+      this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: !flashSwitches.samples1, forceWebGL: webgl, alpha: !flashSwitches.canvasOpaque })
       this.observeRenderer?.()
       return this.renderer
     }, { forceWebGL, deadlineMs: gpuDeadlineMs(location.search), probe, skipWebGPU: probe === 'timeout' ? 'the WebGPU adapter probe stalled; started WebGL 2' : undefined }))
@@ -455,7 +458,13 @@ export class Game {
     this.lossRecorder?.frame()
     longFrames.renderContext(view, this.scene.userData.playerVehicleCache?.current)
     // A lost device draws nothing: no render, no buffer, no pipeline (see frame()).
-    const draw = !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
+    // ?presentHold=1 (flashSwitches.ts): no new frame, and so no new canvas texture, while the
+    // previous frame's GPU work is unfinished. WebKit before 326465@main could hand back a canvas
+    // surface still on screen once frames queued up behind the GPU; one frame in flight keeps
+    // the surface drawn into two frames behind the one shown.
+    const held = flashSwitches.presentHold && this.gpuBusy && view === 'playing'
+    if (held) this.presentHeldFrames++
+    const draw = !held && !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
     if (draw) {
       // Before drawing: a size that changed without a usable resize event is applied here, and a
       // render scale the governor chose last frame (QualityController.deferPixelRatio).
@@ -469,6 +478,10 @@ export class Game {
       probing?.beforeDraw()
       drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs)
       probing?.afterDraw()
+      if (flashSwitches.presentHold) {
+        const queue = (this.renderer.backend as { device?: GPUDevice }).device?.queue
+        if (queue) { this.gpuBusy = true; void queue.onSubmittedWorkDone().then(() => { this.gpuBusy = false }, () => { this.gpuBusy = false }) }
+      }
       // Meshes dropped by a rebuild leave the renderer once their replacements have drawn.
       freeRetired(this.renderer as unknown as RetireRenderer)
       // In the same task as the draw, so the probe sees what is about to be presented.
