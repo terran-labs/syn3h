@@ -3,6 +3,7 @@ import { CoveredClimbRun, SLICED_CLIMB_TOP, slicedClimbTo } from './coveredClimb
 import { longFrames } from './longFrames'
 import { flashSwitches } from './flashSwitches'
 import { BlankFrameRecorder } from './blankFrames'
+import { LossRecorder } from './lossRecord'
 import { refractionState } from '../world/water/refraction'
 import { installLongFrameRenderer } from './longFrameRenderer'
 /**
@@ -99,6 +100,8 @@ export class Game {
   readLongFrames(after = 0) { return longFrames.read(after) }
   /** Blank and partly blank frames, with what coincided (blankFrames.ts). Set once the renderer starts. */
   blankFrames: BlankFrameRecorder | null = null
+  /** What to keep if the GPU device is lost (lossRecord.ts). Set once the renderer starts. */
+  lossRecorder: LossRecorder | null = null
   private readonly pipelineCounter = new PipelineCounter()
   readonly performance: FrameMetrics = { fps: 0, frameMs: 0, physicsMs: 0, drawCalls: 0, triangles: 0, firstFrameMs: null }
 
@@ -156,10 +159,20 @@ export class Game {
     // three's device.lost and the guard below can both report the same loss.
     const lost = this.renderer.onDeviceLost
     let reported = false
-    this.renderer.onDeviceLost = info => { if (reported) return; reported = true; lost.call(this.renderer, info); showRendererLost(info) }
+    this.renderer.onDeviceLost = info => {
+      if (reported) return
+      reported = true
+      // The record first: it is kept across the reload the notice asks for (lossRecord.ts).
+      this.lossRecorder?.record(info, (this.renderer as unknown as GuardedRenderer).__miraDisposing === true)
+      lost.call(this.renderer, info); showRendererLost(info)
+    }
     // A dropped WebGPU instance or a device destroyed underneath us counts as that loss too, and
     // three's error scopes stop rejecting into the page (deviceLoss.ts).
     guardDevice(this.renderer as unknown as GuardedRenderer)
+    this.lossRecorder = new LossRecorder(this.renderer as never, {
+      level: () => this.quality.governor.level, rung: () => this.quality.governor.rung,
+      view: () => this.view(), frames: () => this.frames,
+    }, undefined, new URLSearchParams(location.search).has('gpuTrace'))
     installLongFrameRenderer(this.renderer)
     this.blankFrames = new BlankFrameRecorder(this.renderer as never, {
       level: () => this.quality.governor.level,
@@ -413,6 +426,7 @@ export class Game {
     // The first frames always draw: loading ends, and shaders compile, on a real frame.
     longFrames.end('System updates', updateStart)
     const view = this.view()
+    this.lossRecorder?.frame()
     longFrames.renderContext(view, this.scene.userData.playerVehicleCache?.current)
     // A lost device draws nothing: no render, no buffer, no pipeline (see frame()).
     const draw = !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
