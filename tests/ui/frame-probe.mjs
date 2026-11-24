@@ -31,10 +31,10 @@ async function check(name, query, touch) {
   assert.equal(normal.bad, 0, `no bad frame in normal play: ${JSON.stringify(normal.counts)} ${JSON.stringify(normal.nonFinite)}`)
   // The counter box: the probe's lines and its test control.
   const box = await page.evaluate(() => document.querySelector('.flash-counter')?.textContent ?? '')
-  assert.match(box, /Black frames 0 of \d+: scene 0, output 0/, box)
-  assert.match(box, /Test black/); assert.match(box, /Test drop/)
+  assert.match(box, /Black 0 of \d+\nscene 0  output 0/, box)
+  assert.ok(await page.locator('.flash-counter button[aria-label="Test black"]').count(), 'Test black'); assert.ok(await page.locator('.flash-counter button[aria-label="Test drop"]').count(), 'Test drop')
   // A frame cleared to transparent black after it draws: a bad output, counted as a test.
-  await page.evaluate(() => [...document.querySelectorAll('.flash-counter button')].find(b => b.textContent === 'Test black').click())
+  await page.evaluate(() => [...document.querySelectorAll('.flash-counter button')].find(b => b.getAttribute('aria-label') === 'Test black').click())
   await waitForState(page, 'the black frame counted', () => window.mira.game.frameProbe.testBad === 1, undefined, 20)
   const black = await probe()
   assert.equal(black.counts['output clear'], 1, `the cleared frame (${JSON.stringify(black.counts)})`)

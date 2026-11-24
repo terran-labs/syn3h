@@ -33,26 +33,35 @@ export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inP
   const box = document.createElement('div')
   box.className = 'flash-counter'
   box.style.cssText = [
-    'position:fixed', 'z-index:9000', 'top:max(calc(env(safe-area-inset-top) + 8px), 36vh)', 'left:50%', 'transform:translateX(-50%)',
-    'padding:6px 8px', 'background:rgb(0 0 0 / .72)', 'color:#fff', 'border-radius:6px',
-    'font:600 13px/1.35 ui-monospace,Menlo,monospace', 'pointer-events:auto', 'max-width:60vw',
+    'position:fixed', 'z-index:9000', 'top:32vh', 'left:50%', 'transform:translateX(-50%)',
+    'padding:4px 8px', 'background:rgb(0 0 0 / .72)', 'color:#fff', 'border-radius:6px',
+    // Every line is at most 22 characters, so the box fits whole in the gap between the speed and
+    // altitude readouts on a 320 px phone; a line can still wrap at a space, never off the edge.
+    // 13 px from 390 px wide, 12 px (still bold, plain to read) on a 320 px phone.
+    'font:600 clamp(12px, 3.4vw, 13px)/1.2 ui-monospace,Menlo,monospace', 'pointer-events:auto', 'width:max-content', 'max-width:min(calc(100vw - 40px), 360px)',
+    'white-space:pre-wrap', 'overflow-wrap:anywhere',
   ].join(';')
   const text = document.createElement('div')
   text.setAttribute('role', 'status')
-  const button = (label: string, act: () => void) => {
+  // The test controls in one row, no wider than the 22-character text so the box fits between the
+  // readouts on a 320 px phone: Flash, Drop, Black, each named in full for assistive technology.
+  const button = (label: string, name: string, act: () => void) => {
     const b = document.createElement('button')
     b.type = 'button'
     b.textContent = label
-    b.style.cssText = 'margin:6px 6px 0 0;min-height:44px;min-width:96px;padding:0 10px;border:1px solid #fff;border-radius:6px;background:#000;color:#fff;font:inherit'
+    b.setAttribute('aria-label', name)
+    b.style.cssText = 'margin:4px 4px 0 0;min-height:44px;padding:0 5px;border:1px solid #fff;border-radius:6px;background:#000;color:#fff;font:inherit;white-space:nowrap'
     // A tap must not also steer or fire: the touch controls listen on the document.
     for (const type of ['pointerdown', 'touchstart'] as const) b.addEventListener(type, event => event.stopPropagation())
     b.addEventListener('click', event => { event.stopPropagation(); act(); update() })
     return b
   }
-  box.append(text)
-  if (withRecorder) box.append(button('Test flash', () => recorder()?.clearNextFrame(true)))
-  if (canary()) box.append(button('Test drop', () => canary()?.withholdNext(1)))
-  if (probe()) box.append(button('Test black', () => probe()?.blackNext()))
+  const tests = document.createElement('div')
+  tests.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap'
+  if (withRecorder) tests.append(button('Flash', 'Test flash', () => recorder()?.clearNextFrame(true)))
+  if (canary()) tests.append(button('Drop', 'Test drop', () => canary()?.withholdNext(1)))
+  if (probe()) tests.append(button('Black', 'Test black', () => probe()?.blackNext()))
+  box.append(text, tests)
   box.hidden = true
   document.body.append(box)
   let shown = ''
@@ -71,11 +80,27 @@ export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inP
     if ((!r && !c && !p) || !play) return
     const lines: string[] = []
     // Once a test flash has gone unseen, a zero would be a false all-clear.
-    if (r) lines.push(`${r.testsAsked > 0 && r.testsSeen === 0 ? 'This browser does not let\nthe recorder see frames' : `Blank ${r.blank}  Partly ${r.partly}  (${r.lastMinute()}/min)\nLast: ${r.lastWords || '-'}`}\nTest seen ${r.testsSeen} of ${r.testsAsked}`)
+    // At most 22 characters a line, as the canary's and the probe's (see place()).
+    if (r) lines.push(`${r.testsAsked > 0 && r.testsSeen === 0 ? 'Recorder blind here:\nit cannot see frames' : `Blank ${r.blank}  partly ${r.partly}`}\nTest seen ${r.testsSeen} of ${r.testsAsked}`)
     if (c) lines.push(c.counterLines())
     if (p) lines.push(p.counterLines())
     const line = lines.join('\n')
-    if (line !== shown) { text.textContent = shown = line; text.style.whiteSpace = 'pre' }
+    if (line !== shown) text.textContent = shown = line
+    place()
+  }
+  // Just below whatever stands above the box's own column: the gear list, or on a narrow phone the
+  // speed and altitude readouts only if the box is wider than the gap between them. Measured each
+  // tick, so it follows rotation and the readouts coming and going.
+  const place = () => {
+    const b = box.getBoundingClientRect()
+    let top = 8
+    for (const el of document.querySelectorAll('.gear-selector, .fh-read')) {
+      const r = el.getBoundingClientRect()
+      if (!r.width || !r.height || r.top > innerHeight / 2) continue
+      if (r.left < b.right && r.right > b.left) top = Math.max(top, r.bottom + 6)
+    }
+    const px = `${Math.round(top)}px`
+    if (box.style.top !== px) box.style.top = px
   }
   const timer = setInterval(update, 250)
   // The panels opening or closing flips `inert` on the rail at once: follow it now, not at the next tick.
