@@ -215,8 +215,8 @@ const ICON = {
   size: 200, margin: 6,
   /** Tilt of the orbits: the system seen from above its own plane, turned a little anticlockwise. */
   tilt: -0.32,
-  /** The star's radius, the rings' thickness, and the gap left where a ray of the star crosses a ring. */
-  star: 52, line: 4, gap: 6,
+  /** The star's radius and the rings' thickness. */
+  star: 52, line: 4,
   /**
    * Each orbit: half its length, half its breadth, where on it its world sits (radians), and the
    * world's radius. Both orbits and their worlds lie wholly inside the square, so no edge cuts
@@ -230,17 +230,23 @@ const ICON = {
    * A small shift for each world, by eye. The inner world sits a little inside its orbit, up and
    * to the right, so it reads as belonging to the inner ring and not to the one outside it.
    */
-  nudge: [[5, -4], [0, 0], [0, 0]] as [number, number][],
+  nudge: [[5, -1], [0, 0], [0, 0]] as [number, number][],
 }
 function iconParts(): { rings: Contour[]; worlds: Contour[]; star: Contour[] } {
   const c = ICON.size / 2, blank = () => new Field(-30, -30, ICON.size + 30, ICON.size + 30, 0.25)
   const on = (rx: number, ry: number, a: number): P => { const x = rx * Math.cos(a), y = ry * Math.sin(a); return [c + x * Math.cos(ICON.tilt) - y * Math.sin(ICON.tilt), c + x * Math.sin(ICON.tilt) + y * Math.cos(ICON.tilt)] }
   const star = blank().polygon([sparkle(c, c, ICON.star, 0.14)]), worlds = blank(), rings = blank()
+  // What is cleared out of the rings round the star. Not the star grown evenly: that reached past
+  // the tips of the left and right rays and bit square notches into rings that only pass beside
+  // them. This is a fatter star that is taller than the real one, so a ring crossing an upright
+  // ray is cut well clear of it, and narrower than the real one, so it stops short of the side
+  // tips and the rings beside them are left whole.
+  const clearing = blank().polygon([sparkle(c, c, ICON.star + 10, 0.3).map(([x, y]): P => [c + (x - c) * 0.7, y])])
   const at = ICON.orbits.map(([rx, ry, a], k): P => { const p = on(rx, ry, a), n = ICON.nudge[k] ?? [0, 0]; return [p[0] + n[0], p[1] + n[1]] })
   at.forEach(([x, y], k) => worlds.circle(x, y, ICON.orbits[k][3]))
   for (const [rx, ry] of ICON.orbits) {
     const g = blank().stroke({ points: Array.from({ length: 201 }, (_, i) => on(rx, ry, 2 * PI * i / 200)), width: ICON.line })
-    g.subtract(star, ICON.gap)
+    g.subtract(clearing)
     at.forEach(([x, y], k) => g.cutCircle(x, y, ICON.orbits[k][3] + 5))
     rings.merge(g)
   }
