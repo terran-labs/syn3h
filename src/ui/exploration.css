@@ -280,8 +280,8 @@ body { --map-top: calc(var(--edge-touch-bottom) + 160px * .885); }
 /* "New build available. Press to reload": a banner floating at the bottom centre, clear of
    the touch controls and the home indicator. The dev server creates the button on <body>. */
 #mira-build-notice, .build-banner { position: fixed; left: 50%; right: auto; top: auto; bottom: var(--edge-bottom); transform: translateX(-50%); z-index: 10000; max-width: calc(100vw - 32px); min-height: 44px; margin: 0; padding: 10px 22px; border: 1px solid rgb(211 211 211 / .45); border-radius: 999px; background: rgb(17 17 17 / .72); color: #efefef; font: 500 14px/1.2 'Barlow',system-ui,sans-serif; letter-spacing: .04em; white-space: nowrap; cursor: pointer; box-shadow: 0 0 26px rgb(176 176 176 / .22), inset 0 1px 0 rgb(255 255 255 / .18); -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4); }
-/* On touch the bottom corners hold the thumb controls: the banner floats just above them. */
-body.has-game-shell:has(.mira-shell.has-touch.is-playing) :is(#mira-build-notice, .build-banner) { bottom: calc(var(--edge-bottom) + 168px); }
+/* In the game the dev server's button lives in the bottom-centre stack (bottom-stack.css), which
+   places it above the thumb controls on touch; this rule is its look and its place elsewhere. */
 
 /* The gear drum and the accessory controls belong to play: hidden in the lobby, under the pause
    veil and while the exit question is up. Their place in the left column is hud-column.css. */

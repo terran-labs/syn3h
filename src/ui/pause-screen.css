@@ -7,7 +7,7 @@
    Buttons are the shared glass (.liquid-glass, shell.css); this file sets place and state. */
 
 /* ---- Everything else steps out. Opacity and visibility only: nothing is laid out again. ---- */
-.mira-shell.is-paused > :not(.shell-minimap, .pause-veil, .pause-actions, .exit-confirm, .in-play-about, .wi-tooltip),
+.mira-shell.is-paused > :not(.shell-minimap, .pause-veil, .bottom-stack, .exit-confirm, .in-play-about, .wi-tooltip),
 body:has(> .mira-shell.is-paused) > :is(.touch-controls, .mira-nametags, .daydream-pill),
 .mira-shell.is-paused .touch-controls {
   opacity: 0 !important; visibility: hidden; pointer-events: none;
@@ -28,7 +28,8 @@ html .mira-shell.exploration-ui .pause-veil, html .mira-shell.exploration-ui .pa
 /* "Leave this world?" is the only text while it asks: PAUSED steps out from behind it. */
 .mira-shell:has(.exit-confirm:not([hidden])) .pause-veil::before, .mira-shell:has(.exit-confirm:not([hidden])) .pause-veil > * { opacity: 0; }
 
-/* ---- Exit world, Welcome, Screenshot: one row at the bottom centre, above the veil. ---- */
+/* ---- Exit world, Welcome, Screenshot: one row at the bottom centre, above the veil. It lives in
+   the bottom-centre stack (bottom-stack.css), which places it; the rules here are its look. ---- */
 .mira-shell .pause-actions {
   position: fixed; z-index: 61; left: 50%; bottom: var(--edge-bottom, max(24px, env(safe-area-inset-bottom))); translate: -50% 0;
   display: flex; gap: 12px; max-width: calc(100vw - 2 * var(--edge, 16px)); animation: pause-actions-in .3s cubic-bezier(.2,.8,.2,1) both;
@@ -65,10 +66,10 @@ html .mira-shell .pause-actions button {
 /* "Leave this world?" asked from the pause screen stands above the veil and its buttons. */
 .mira-shell.is-paused .exit-confirm { z-index: 62; }
 
-/* Phones: one row in portrait, icons with short words, standing above the minimap, which holds
-   the lower left corner and stays on screen while paused (--map-top, exploration.css). */
+/* Phones: one row in portrait, icons with short words. (The stack that holds it stands above the
+   minimap: bottom-stack.css.) */
 @media (max-width: 520px) {
-  .mira-shell .pause-actions { gap: 8px; bottom: calc(var(--map-top, 160px) + 12px); }
+  .mira-shell .pause-actions { gap: 8px; }
   html .mira-shell .pause-actions button { height: 44px; min-height: 44px; padding: 0 14px; gap: 7px; font-size: 11px; letter-spacing: .1em; }
   .mira-shell .pause-actions .pause-long { display: none; }
   .mira-shell .pause-actions .pause-short { display: inline; }

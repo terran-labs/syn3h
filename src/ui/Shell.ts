@@ -90,6 +90,7 @@ import './glass.css'
 import './phone-panels.css'
 import './pause-screen.css'
 import './card-chrome.css'
+import './bottom-stack.css'
 import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shareShot, shotFileName } from './screenshot'
 
 /**
@@ -384,9 +385,18 @@ export class Shell implements System {
       this.queuedQuality = { level, apply }
       if (!this.qualityVeil) void this.applyQualityBehindVeil()
     }
-    const noticeStack = document.createElement('div')
-    noticeStack.className = 'drive-notices'
+    // The bottom-centre strip has one owner (bottom-stack.css): a column that lays out everything
+    // that wants that place, so two can never overlap. The pause bar, the driving notices (the
+    // slow-frames offer, race status), the entry's "Preparing world" line and the dev server's
+    // "New build available" button all live in it, in a fixed order.
+    const noticeStack = this.bottomStack
+    noticeStack.className = 'bottom-stack drive-notices'
     this.element.append(noticeStack)
+    noticeStack.append(this.element.querySelector('.pause-actions')!)
+    // tools/manual-reload.mjs appends its button to <body> on mira:new-build: adopt it here.
+    const adoptBuildNotice = () => { const notice = document.getElementById('mira-build-notice'); if (notice && notice.parentElement !== noticeStack) noticeStack.prepend(notice) }
+    adoptBuildNotice()
+    window.addEventListener('mira:new-build', () => setTimeout(adoptBuildNotice), { signal })
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector, noticeStack)
     // The lobby's settings: Settings above Welcome and Updates in the lower right of the galaxy,
     // the running version in the lower left, and a right-hand card of what acts in the lobby
@@ -956,8 +966,9 @@ export class Shell implements System {
     progress.className = 'entry-warm-progress'
     progress.setAttribute('role', 'status')
     progress.textContent = 'Preparing world'
-    // The lobby controls are inert during entry. Keep the status accessible outside them.
-    this.element.append(progress)
+    // The lobby controls are inert during entry. Keep the status accessible outside them, in the
+    // bottom-centre stack (bottom-stack.css).
+    this.bottomStack.append(progress)
     try {
       await this.game.precompile(label => {
         if (progress.textContent !== label) progress.textContent = label
@@ -1277,6 +1288,8 @@ export class Shell implements System {
   }
 
   private performancePanel!: PerformancePanel
+  /** The one owner of the bottom-centre strip (bottom-stack.css). */
+  private readonly bottomStack = document.createElement('div')
   configurePerformance(source: PerformanceSource): void { this.performancePanel.configure(source) }
   /** True from the click or key press that enters a world until play begins or the entry is abandoned. */
   private enteringByGesture = false

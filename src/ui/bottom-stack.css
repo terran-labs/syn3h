@@ -1,0 +1,65 @@
+/*
+ * The bottom-centre strip has one owner (the owner, 24 November 2026: "You should never stack
+ * buttons at the bottom like this. You need to composite them properly."). Everything that wants
+ * the middle of the bottom edge is a child of .bottom-stack (Shell.ts), laid out in one column
+ * with one gap, so no two can overlap and no notice can cover a control. Each keeps its own look.
+ *
+ * Who lives here, top to bottom (`order`, so arrival order never matters):
+ *   1  "New build available" (the dev server's button, tools/manual-reload.mjs): an action the
+ *      player chooses; above everything, nearest the eye.
+ *   2  race status (.race-hud)
+ *   3  the slow-frames offer (.performance-recommendation)
+ *   4  "Preparing world" while entering (.entry-warm-progress)
+ *   5  the pause bar: Exit world, Welcome, Screenshot. Lowest: the persistent controls keep the
+ *      edge, and a notice that arrives appears above them, so the buttons under the thumb and
+ *      the pointer never move when it comes or goes.
+ *
+ * Where: the bottom edge (--edge-bottom, safe area included); on a touch phone in play, above
+ * the thumb controls (--notice-bottom, glass.css); paused, the thumb controls are gone and the
+ * stack returns to the edge. Paused, only the pause bar and the build notice show (race status
+ * and the offer measure play and step aside, as before). The column grows upward; a new item
+ * never pushes the pause bar or anything below it.
+ *
+ * No slide: items appear by fading, and stay where they are.
+ */
+/* (Doubled classes: this rule owns the strip over the older .drive-notices rule in glass.css.) */
+html .mira-shell.mira-shell > .bottom-stack.bottom-stack {
+  position: fixed; left: 50%; bottom: var(--edge-bottom); transform: translateX(-50%); z-index: 14;
+  width: max-content; max-width: calc(100% - var(--edge-left, 16px) - var(--edge-right, 16px));
+  display: flex; flex-direction: column; align-items: center; gap: 12px; pointer-events: none;
+}
+html .mira-shell > .bottom-stack > * {
+  position: relative; inset: auto; transform: none; translate: none; margin: 0; max-width: 100%; box-sizing: border-box; pointer-events: auto;
+}
+/* Higher than the rules each item brought with it (the build notice's is an id rule). */
+html .mira-shell > .bottom-stack > #mira-build-notice { position: relative; inset: auto; transform: none; order: 1; z-index: auto; }
+html .mira-shell > .bottom-stack > .race-hud { order: 2; }
+html .mira-shell > .bottom-stack > .performance-recommendation { order: 3; }
+html .mira-shell > .bottom-stack > .entry-warm-progress { order: 4; }
+html .mira-shell > .bottom-stack > .pause-actions { position: relative; left: auto; bottom: auto; translate: none; order: 5; animation: bottom-stack-in .3s ease-out both; }
+@keyframes bottom-stack-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { html .mira-shell > .bottom-stack > .pause-actions { animation: none; } }
+
+/* A touch phone in play: above the thumb controls and the minimap (--notice-bottom, glass.css). */
+@media (max-width: 800px) {
+  html .mira-shell.mira-shell.has-touch > .bottom-stack.bottom-stack { bottom: var(--notice-bottom); z-index: 21; }
+}
+/* Paused: above the veil, at the edge (the thumb controls are hidden), with only what a paused
+   player can act on. (As strong as the touch rule above and after it, so paused wins.) */
+html .mira-shell.mira-shell.is-paused > .bottom-stack.bottom-stack { z-index: 61; bottom: var(--edge-bottom); }
+html .mira-shell.is-paused > .bottom-stack > :not(.pause-actions, #mira-build-notice) { display: none; }
+/* Phones upright: the minimap holds the lower left corner and stays while paused; the stack
+   stands above it (--map-top, exploration.css), as the pause bar did on its own. */
+@media (max-width: 520px) {
+  html .mira-shell.mira-shell.is-paused > .bottom-stack.bottom-stack { bottom: calc(var(--map-top, 160px) + 12px); }
+}
+/* In the lobby and while entering, above the galaxy and its controls, as the notice was. */
+html .mira-shell:not(.is-playing) > .bottom-stack { z-index: 1000; }
+
+/* On touch the driving notices let drags through and only their buttons take taps
+   (touch-stick.css); the build notice is a button itself, so it takes them whole. */
+html .mira-shell.exploration-ui.has-touch > .bottom-stack > #mira-build-notice { pointer-events: auto; touch-action: none; }
+
+/* The touch spawn help is centred too: it steps aside while the stack shows anything, as it
+   already does on a desktop (glass.css). */
+html .mira-shell.has-touch:has(> .bottom-stack > :not([hidden])) .spawn-help { visibility: hidden; }
