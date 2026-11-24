@@ -17,7 +17,7 @@ needs field switches, and they must still be there the next time.
 when the bug it served is closed. Each is read once at start, changes nothing when absent,
 and is named in the copied Diagnostics report. A new device-specific gate gets a switch to
 turn it on and off. The set on 23 November: ?webgl=1, ?gfx=N, ?diag=1, ?blank=1,
-?shadows=0, ?shading=0, ?post=base|off, ?samples=1, ?lowrest=1, ?freeze=1, ?ui=flat.
+?shadows=0, ?shadows=1, ?shading=0, ?post=base|off, ?samples=1, ?lowrest=1, ?freeze=1, ?ui=flat, ?gpuTrace=1.
 The rule is in AGENTS.md.
 
 ## Monday 16 November: code under PolyForm, creative work under CC BY-NC-SA 4.0

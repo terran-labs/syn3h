@@ -89,7 +89,8 @@ stay. Never strip one when the bug it served is closed.
   Diagnostics report.
 - A new device-specific gate (an effect off on some devices) gets a switch to turn it on and off.
 - The set on 23 November: `?webgl=1`, `?gfx=N`, `?diag=1`, `?blank=1`, `?shadows=0`,
-  `?shading=0`, `?post=base|off`, `?samples=1`, `?lowrest=1`, `?freeze=1`, `?ui=flat`.
+  `?shadows=1`, `?shading=0`, `?post=base|off`, `?samples=1`, `?lowrest=1`, `?freeze=1`,
+  `?ui=flat`, `?gpuTrace=1`.
 
 ## Game principle: nothing but physics moves a player for where they drove
 
