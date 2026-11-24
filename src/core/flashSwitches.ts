@@ -24,6 +24,8 @@
  *   ?ui=flat      Flat interface glass for this visit; the saved choice is kept
  *   ?frameCanary=1      count WebGPU command buffers the browser accepted and never ran
  *                       (core/frameCanary.ts), on screen in the ?blank=1 counter box
+ *   ?frameProbe=1       what our passes drew, frame by frame: the scene image and the canvas read
+ *                       back on the GPU and classified (core/frameProbe.ts), in the same counter box
  *   ?shadowCascades=1   one sun shadow cascade instead of the level's two or three
  *   ?shadowMap=512      a fixed sun shadow cascade size: 512, 1024 or 2048
  *   ?shadowColor=0      depth-only sun shadow maps: no colour target or attachment per cascade
@@ -51,6 +53,7 @@ export interface FlashSwitches {
   freeze: boolean
   uiFlat: boolean
   frameCanary: boolean
+  frameProbe: boolean
   /** Sun shadow cascades for every level, or null for the level's own. */
   shadowCascades: number | null
   /** Sun shadow cascade size for every level, or null for the level's own. */
@@ -94,6 +97,7 @@ export function readFlashSwitches(search: string): FlashSwitches {
     // The post chain draws the Liquid glass; without it the interface takes Flat glass.
     uiFlat: q.get('ui') === 'flat' || post === 'off',
     frameCanary: on(q, 'frameCanary'),
+    frameProbe: on(q, 'frameProbe'),
     shadowCascades: on(q, 'shadowCascades') ? 1 : null,
     shadowMap: q.get('shadowMap') === '512' ? 512 : q.get('shadowMap') === '1024' ? 1024 : q.get('shadowMap') === '2048' ? 2048 : null,
     shadowColor0: on(q, 'shadowColor', '0'),
@@ -120,7 +124,7 @@ export function flashSwitchNames(s: FlashSwitches): string[] {
   return [
     s.blank && 'blank=1', s.shadows0 && 'shadows=0', s.shadows1 && 'shadows=1', s.shading0 && 'shading=0', s.post && 'post=' + s.post,
     s.samples1 && 'samples=1', s.lowRest && 'lowrest=1', s.freeze && 'freeze=1', s.uiFlat && 'ui=flat',
-    s.frameCanary && 'frameCanary=1', s.shadowCascades && 'shadowCascades=' + s.shadowCascades, s.shadowMap && 'shadowMap=' + s.shadowMap,
+    s.frameCanary && 'frameCanary=1', s.frameProbe && 'frameProbe=1', s.shadowCascades && 'shadowCascades=' + s.shadowCascades, s.shadowMap && 'shadowMap=' + s.shadowMap,
     s.shadowColor0 && 'shadowColor=0', s.shadowHard && 'shadowFilter=hard', s.shadowFade0 && 'shadowFade=0',
     s.gfx !== undefined && 'gfx=' + s.gfx, s.diag && 'diag=1', s.webgl && 'webgl=1',
   ].filter((name): name is string => !!name)
