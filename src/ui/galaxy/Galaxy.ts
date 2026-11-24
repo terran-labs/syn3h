@@ -662,8 +662,9 @@ void main() {
         }
         // A dark face with a warm sheen, so the pale edge line carries the name. Lit by the
         // rays (3), the letters are a veil that catches the shafts and haze passing in front.
-        // Solid: an opaque dark face with a warm sheen from the sun, and the shafts only glancing off it as highlights.
-        if (uMarkMode >= 3 && uMarkSolid > 0.5) { mark += rimColour * (0.035 + 0.5 * lit * shadow) + sunShafts * 0.3 * (0.95 / max(uRays, 0.05)) + sunHaze * 0.18; lineStrength = 0.7; }
+        // Solid: an opaque face with a warm sheen from the sun, the shafts only glancing off it as highlights,
+        // and no pale line round its edges (the owner asked for the fill alone, 23 November 2026).
+        if (uMarkMode >= 3 && uMarkSolid > 0.5) { mark += rimColour * (0.035 + 0.5 * lit * shadow) + sunShafts * 0.3 * (0.95 / max(uRays, 0.05)) + sunHaze * 0.18; lineStrength = 0.0; }
         else if (uMarkMode >= 3) { mark += rimColour * 0.02 + sunShafts * 1.5 * (0.95 / max(uRays, 0.05)) + sunHaze * 0.9 + rimColour * 0.12 * lit * shadow; lineStrength = 0.75; }
         else mark += rimColour * (0.025 + 0.22 * lit * shadow);
       } else {
