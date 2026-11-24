@@ -187,10 +187,12 @@ export class Game {
     this.blankFrames.attach()
     // ?frameCanary=1 (frameCanary.ts): count command buffers the browser accepted and never ran.
     const device = (this.renderer.backend as { device?: GPUDevice }).device
-    if (device && new URLSearchParams(location.search).get('frameCanary') === '1') this.frameCanary = new FrameCanary(device, { frames: () => this.frames, pixelRatio: () => this.renderer.getPixelRatio() })
+    if (device && flashSwitches.frameCanary) this.frameCanary = new FrameCanary(device, { frames: () => this.frames, pixelRatio: () => this.renderer.getPixelRatio() })
     this.quality.attachRenderer(this.renderer)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.shadowMap.enabled = true
+    // ?shadowFilter=hard (flashSwitches.ts): one depth compare per cascade, no filtering.
+    if (flashSwitches.shadowHard) this.renderer.shadowMap.type = THREE.BasicShadowMap
 
     // The view follows the canvas's own laid-out size (viewFit.ts): measured on resize and by a
     // ResizeObserver, and checked before every drawn frame, so a stale size cannot stick.
