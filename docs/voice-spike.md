@@ -35,6 +35,21 @@ Set up first. Open the Foreman's verified HTTPS spike preview with `?voice=1` on
 
 After at least ten seconds in each state, open Voice diagnostics and take a screenshot before leaving voice. It shows the audio session type, context state and rate before and after capture, actual microphone settings, selected network path types, and median and worst frame intervals. Report the phone model, iOS version, second browser, network pairing, route and sound before/during/after, echo of words or engine, and whether mute worked. Repeat with Android Chrome for comparison. For a report about external audio ducking, repeat with a steady background source and check whether its level changes independently of the game mix.
 
+### iPhone listening comparison
+
+Keep the second device in the same named room with its microphone on and its player nearby. Have the partner speak a short phrase in each condition. On the phone, open Voice diagnostics. For the route, select what you actually hear (speaker, earpiece or headphones) before joining, while joined and after leaving. Safari's audio session type and context rate do not identify the physical speaker. The route entries stay on this screen only.
+
+| Condition | iPhone evidence so far | What still needs listening |
+| --- | --- | --- |
+| Open mic, echo cancellation on | Live 24 kHz input, running 48 kHz context, play-and-record. Owner heard severe game-audio degradation. No selected pair was reported. | Describe muffling, clicks, lower volume or a route change. Was a second player in this room with voice on? |
+| Open mic, echo cancellation off (`voiceec=0`) | Actual setting verified in Chrome. | Compare game sound on the phone speaker and headphones, then ask the partner about echo. |
+| Listen only (`voicelisten=1`) | The listener requests incoming audio without opening a mic. | Can you hear the partner while driving? Does the engine still sound like it did with voice off? |
+| After Leave voice | Mira releases capture and restores the game session. | Does the engine recover on its own? If it stays degraded, record the route and whether reloading restores it. |
+
+Each switch requires the original `voice=1` link. Start a fresh tab for each comparison and tap Leave voice before moving to the next one. After leaving, take the screenshot before reloading. The participant count, offer/answer roles, signalling and ICE states help distinguish an absent partner from a failed connection. A missing selected pair alone does not diagnose a network failure.
+
+If listen-only sounds clean while a real partner is audible, test hold-to-talk next. Measure press to first audible speech at the partner, sound at each transition, recovery between presses, and whether the driver can hold the control while steering. Until then, there is no phone latency or usability result to cite.
+
 ### C. Phone cost and mesh size
 
 Measure two players on the same phone, scene, route, vehicle, graphics tier, network and hardware volume. Run alternating voice-off and voice-on passes with the two players present throughout. After warmup, sample 60 seconds per pass. Include an idle mic pass and a short sustained conversation with both players audible. Capture median and p95 frame intervals, long frames and missed frame budget, and total browser CPU if device profiling exposes it. Report unavailable CPU counters as unavailable. Main-thread timings miss native audio, codec and network work. Sample WebRTC stats for send/receive bitrates, packet loss, RTT and jitter buffer delay where exposed. Distinguish RTP stats from link or billing bytes, and keep raw diagnostics local. Use the same workload for iPhone Safari and Android Chrome. [WebRTC Statistics specification](https://www.w3.org/TR/webrtc-stats/).

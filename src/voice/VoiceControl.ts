@@ -9,6 +9,8 @@ import { masterVolume, muted } from '../audio/params'
 
 interface Host {
   elementVoice: boolean
+  listenOnly: boolean
+  otherHumans(): number
   echoCancellation: boolean
   id: number
   audio: Pick<GameAudio, 'attachSpeech' | 'voiceContext' | 'unlock'>
@@ -39,7 +41,7 @@ export class VoiceControl {
   private readonly readout: VoiceReadout
 
   constructor(private readonly host: Host) {
-    this.readout = new VoiceReadout(() => host.audio.voiceContext)
+    this.readout = new VoiceReadout(() => host.audio.voiceContext, host.listenOnly, host.otherHumans)
     this.panel.setAttribute('role', 'group')
     this.panel.setAttribute('aria-label', 'Room voice')
     this.panel.style.cssText = 'position:fixed;top:max(env(safe-area-inset-top),8px);left:50%;transform:translateX(-50%);z-index:100;width:max-content;max-width:96vw;text-align:center'
@@ -72,6 +74,7 @@ export class VoiceControl {
       this.session?.dispose()
       const session = this.session = new VoiceSession({
         localId: this.host.id,
+        listenOnly: this.host.listenOnly,
         echoCancellation: this.host.echoCancellation,
         audioContext: this.host.audio.voiceContext,
         sendReadiness: message => this.host.send(message),
@@ -179,11 +182,16 @@ export class VoiceControl {
     this.lastHost = this.host.isHost()
     this.lastAllowed = voiceOn.value
     const s = this.session?.state
-    const label = !voiceOn.value ? 'Room voice off' : s?.status === 'live'
-      ? s.muted ? 'Mic muted · Unmute' : s.speaking ? 'Speaking · Mute' : 'Mic live · Mute'
-      : this.error || (s?.status === 'error' ? 'Mic unavailable · Retry' : this.starting ? 'Opening mic…' : 'Turn voice on')
+    let label = this.host.listenOnly ? 'Listen only' : 'Turn voice on'
+    if (!voiceOn.value) label = 'Room voice off'
+    else if (s?.status === 'live') {
+      if (this.host.listenOnly) label = 'Listening · Mic off'
+      else if (s.muted) label = 'Mic muted · Unmute'
+      else label = s.speaking ? 'Speaking · Mute' : 'Mic live · Mute'
+    } else if (this.error) label = this.error
+    else if (this.starting) label = this.host.listenOnly ? 'Joining…' : 'Opening mic…'
     if (this.mic.textContent !== label) this.mic.textContent = label
-    this.mic.disabled = !voiceOn.value || this.starting
+    this.mic.disabled = !voiceOn.value || this.starting || (this.host.listenOnly && s?.status === 'live')
     this.leave.hidden = !this.session && !this.starting
     this.room.hidden = !this.host.isHost()
     this.disclosure.style.display = voiceOn.value && !this.session ? 'block' : 'none'
@@ -197,6 +205,7 @@ export class VoiceControl {
     this.starting = false
     if (participating) this.host.send({ type: 'voice-ready', enabled: false })
     this.session?.dispose()
+    if (participating) this.readout.afterLeave()
     this.session = undefined
     this.leave.textContent = 'Leave voice'
     this.peers.clear()

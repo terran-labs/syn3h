@@ -46,8 +46,8 @@ function sampleRate(rate?: number): string {
 }
 
 function describeAudio(label: string, snapshot?: AudioSnapshot): string {
-  if (!snapshot) return `${label} mic · no sample`
-  return `${label} mic · session ${snapshot.sessionType}\nContext · ${snapshot.contextState} · ${sampleRate(snapshot.sampleRate)}`
+  if (!snapshot) return `${label} · no sample`
+  return `${label} · session ${snapshot.sessionType}\nContext · ${snapshot.contextState} · ${sampleRate(snapshot.sampleRate)}`
 }
 
 function setting(value?: boolean | string): string {
@@ -76,6 +76,11 @@ export class VoiceReadout {
   private permission?: PermissionStatus
   private failure = ''
   private readonly refreshPermission = () => this.render()
+  private left?: AudioSnapshot
+  private connection = ''
+  private readonly route = document.createElement('select')
+  private readonly heard = { before: '', during: '', left: '' }
+  private phase: keyof typeof this.heard = 'before'
   private before?: AudioSnapshot
   private after?: AudioSnapshot
   private mic?: VoiceMicSettings
@@ -89,13 +94,23 @@ export class VoiceReadout {
   private readonly onToggle = () => { if (this.element.open) this.render() }
   private readonly onVisibility = () => { if (document.hidden) this.finishWindow() }
 
-  constructor(private readonly context: () => AudioContext | undefined) {
+  constructor(private readonly context: () => AudioContext | undefined, private readonly listenOnly: boolean, private readonly otherHumans: () => number) {
     const summary = document.createElement('summary')
     summary.textContent = 'Voice diagnostics'
     this.element.style.cssText = 'box-sizing:border-box;width:max-content;max-width:100%;margin:4px auto 0;background:#171c23;color:white;padding:4px 8px;text-align:left;font:12px/1.4 system-ui,sans-serif;border-radius:4px'
     summary.style.cursor = 'pointer'
     this.report.style.cssText = 'max-height:65dvh;overflow:auto;white-space:pre-line;overflow-wrap:anywhere;font-variant-numeric:tabular-nums'
-    this.element.append(summary, this.report)
+    const label = document.createElement('label')
+    label.textContent = 'Output I hear · '
+    for (const name of ['', 'Phone speaker', 'Earpiece', 'Headphones', 'Other']) {
+      this.route.add(new Option(name || 'Choose route', name))
+    }
+    this.route.onchange = () => {
+      this.heard[this.phase] = this.route.value
+      this.render()
+    }
+    label.append(this.route)
+    this.element.append(summary, label, this.report)
     this.element.addEventListener('toggle', this.onToggle)
     document.addEventListener('visibilitychange', this.onVisibility)
     this.render()
@@ -121,10 +136,24 @@ export class VoiceReadout {
     if (this.disposed) return
     this.stopPolling()
     this.failure = ''
+    this.heard.before = this.route.value
+    this.phase = 'during'
+    this.route.value = ''
+    this.heard.during = this.heard.left = ''
+    this.left = undefined
+    this.connection = ''
     this.before = audioSnapshot(this.context())
     this.after = undefined
     this.mic = undefined
     this.pairs = []
+    this.render()
+  }
+
+  afterLeave(): void {
+    this.stopPolling()
+    this.phase = 'left'
+    this.route.value = ''
+    this.left = audioSnapshot(this.context())
     this.render()
   }
 
@@ -186,10 +215,9 @@ export class VoiceReadout {
     if (this.capture !== capture || session.state.status !== 'live') return
     const pairs = await session.selectedCandidateTypes()
     if (this.capture !== capture || session.state.status !== 'live') return
-    if (pairs.length) {
-      this.pairs = pairs
-      if (this.element.open) this.render()
-    }
+    this.pairs = pairs
+    this.connection = session.connectionSummary()
+    if (this.element.open) this.render()
     this.timer = setTimeout(() => void this.poll(capture), refreshMs)
   }
 
@@ -218,11 +246,14 @@ mediaDevices · ${yesNo(!!navigator.mediaDevices)}
 getUserMedia · ${yesNo(typeof navigator.mediaDevices?.getUserMedia === 'function')}
 WebRTC · ${yesNo(typeof RTCPeerConnection === 'function')}
 Microphone permission · ${this.permission?.state ?? 'unavailable'}`,
-      describeAudio('Before', this.before),
-      describeAudio('After', this.after),
+      `Other humans on roster · ${this.otherHumans()}`,
+      this.connection || 'No voice negotiation sampled',
+      describeAudio('Before joining', this.before) + '\nHeard route · ' + (this.heard.before || 'unreported'),
+      describeAudio(this.listenOnly ? 'Listening' : 'Mic open', this.after) + '\nHeard route · ' + (this.heard.during || 'unreported'),
+      this.left && describeAudio('After leaving', this.left) + '\nHeard route · ' + (this.heard.left || 'unreported'),
       mic
         ? `Mic · ${sampleRate(mic.sampleRate)}\nEcho cancellation · ${setting(mic.echoCancellation)}\nNoise suppression · ${setting(mic.noiseSuppression)}\nAuto gain · ${setting(mic.autoGainControl)}`
-        : 'Mic settings · unavailable',
+        : this.listenOnly ? 'Listen only · microphone off' : 'Mic settings · unavailable',
       ice ? `Last selected ICE pair types\n${ice}` : 'Selected ICE pair types · unavailable',
       ['Driving frame intervals · last 10 seconds', describeFrames(false, frames(false)), describeFrames(true, frames(true))].join('\n'),
     ].filter(Boolean).join('\n\n')

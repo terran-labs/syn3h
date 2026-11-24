@@ -147,6 +147,7 @@ export interface NetContext {
   /** Entry-link intent survives the lobby temporarily clearing the address bar. */
   voiceRequested?: boolean
   elementVoice?: boolean
+  listenOnly?: boolean
   voiceEchoCancellation?: boolean
   /** Visible notice when a full room falls back to local play. */
   onJoinStatus?(message: string): void
@@ -286,6 +287,8 @@ export class NetClient implements System {
     if (epoch !== this.voiceRoom || !this.connected) return
     this.voice = new VoiceControl({
       elementVoice: this.ctx.elementVoice === true,
+      listenOnly: this.ctx.listenOnly === true,
+      otherHumans: () => [...this.players.values()].filter(p => !p.bot && p.id !== this.id).length,
       echoCancellation: this.ctx.voiceEchoCancellation !== false,
       id, audio: { get voiceContext() { return audio.voiceContext }, unlock: audio.unlock.bind(audio), attachSpeech: audio.attachSpeech.bind(audio) },
       send: msg => this.send(msg), isHost: () => this.isHost,

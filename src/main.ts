@@ -336,6 +336,7 @@ async function main(): Promise<void> {
       room: shell.room || roomFromQuery(query),
       voiceRequested: query.get('voice') === '1',
       elementVoice: query.get('voiceout') === 'element',
+      listenOnly: query.get('voicelisten') === '1',
       voiceEchoCancellation: query.get('voiceec') !== '0',
       setStatus: (lines) => { netStatus = lines; shell.setStatus(lines) },
       setMapEntities: (e) => shell.setMapEntities(e),
