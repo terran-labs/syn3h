@@ -42,9 +42,16 @@ const ALLOWED = new Map<string, string>([
   ['public/brand/mira2-icon-512.png', 'UX'],
   ['public/brand/mira2-icon-maskable-512.png', 'UX'],
   ['public/brand/mira2-share.png', 'UX'],
+  // The mira3 set: the icon redrawn on 23 November 2026 with every ring and world inside the
+  // square (the mira2 icon was cut at the right edge). Its share card is the same picture as mira2's.
+  ['public/brand/mira3-apple-touch-icon.png', 'UX'],
+  ['public/brand/mira3-icon-192.png', 'UX'],
+  ['public/brand/mira3-icon-512.png', 'UX'],
+  ['public/brand/mira3-icon-maskable-512.png', 'UX'],
+  ['public/brand/mira3-share.png', 'UX'],
 ])
 /** The list may never be longer than it was on the day it was written. */
-const CEILING = 15
+const CEILING = 20
 
 /**
  * Not part of the shrinking list: the owner's one content exception (AGENTS.md, "Curated About

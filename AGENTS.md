@@ -94,6 +94,10 @@ stay. Never strip one when the bug it served is closed.
   `?shadowColor=0`, `?shadowFilter=hard`, `?shadowFade=0`. FIELD_SWITCHES in src/core/fieldSwitches.ts
   is the one list: it feeds Performance, Diagnostics, Field switches, the copied link, the report's
   switch line and the README table. A new switch goes there.
+- Lobby switches, kept in production the same way but not in FIELD_SWITCHES, whose rows act on the
+  game in play: `?wordmark=N`, `?intro=N`, `?solid=0`, `?white=1`, `?tune=1`
+  (src/ui/brand/wordmarkFlags.ts). They shape only the lobby's name and opening, read once at
+  start; the README's "Other switches for this visit" table lists them.
 
 ## Game principle: nothing but physics moves a player for where they drove
 

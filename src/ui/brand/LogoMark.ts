@@ -234,9 +234,9 @@ export class LogoMark {
  * The current set of exported stills, by name prefix. Every frozen version loads the set that was
  * current when it shipped, from the same address, so a redrawn mark gets a new prefix and the
  * earlier sets stay as they are (tools/frozen-versions.mjs prepare refuses a build that changes
- * them; tools/brand/README.md). The unprefixed set and the mira- set are earlier ones.
+ * them; tools/brand/README.md). The unprefixed, mira- and mira2- sets are earlier ones.
  */
-export const BRAND_SET = 'mira2'
+export const BRAND_SET = 'mira3'
 /**
  * The exported stills. The maskable icon is the icon's art scaled into the safe circle (a 40%
  * radius) on the same full-bleed sky, for launchers that mask an icon to a shape; the plain
@@ -289,9 +289,10 @@ export const ICON_COLOURS = { skyTop: '#0d2148', skyBottom: '#040814', rings: '#
  * colours on a night-blue sky. No glow and no stars behind it: the platforms add their own
  * finish, and a flat icon survives their dark, tinted and clear styles.
  */
-/** How much the maskable icon shrinks the art: its farthest point (115 units from the centre)
- * then sits inside the safe circle, 40% of the 212-unit side (84.8 units), with a little room. */
-export const MASKABLE_SCALE = 0.72
+/** How much the maskable icon shrinks the art: its farthest point (102 units from the centre
+ * since the redraw of 23 November 2026; 115 before) then sits inside the safe circle, 40% of the
+ * 212-unit side (84.8 units), with about 3.5 units to spare. 0.831 would just touch it. */
+export const MASKABLE_SCALE = 0.8
 export function iconSvg(width: number, height: number, maskable = false): string {
   const side = ICON_SIZE + 2 * ICON_MARGIN, c = ICON_COLOURS, mid = ICON_SIZE / 2
   const art = `<path fill="${c.rings}" fill-rule="evenodd" d="${ICON_RINGS}"/><path fill="${c.worlds}" d="${ICON_WORLDS}"/><path fill="${c.star}" d="${ICON_STAR}"/>`

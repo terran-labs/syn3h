@@ -19,10 +19,11 @@ export const AUDIO = /\.(mp3|wav|ogg|oga|opus|m4a|aac|flac|aiff?|wma|mid|midi|we
 export const IMAGE = /\.(png|jpe?g|webp|gif|bmp|ico|avif|tga|tiff?|ktx2?|hdr|exr|dds|basis)$/i
 /** Bitmaps a platform requires. Paths are relative to the checked folder. */
 // Every set stays for the frozen versions that load it: the Syn3h icons (no prefix), mira-, and
-// the current mira2- set (BRAND_SET in src/ui/brand/LogoMark.ts).
+// mira2-, and the current mira3- set (BRAND_SET in src/ui/brand/LogoMark.ts).
 export const REQUIRED_BITMAPS = ['brand/apple-touch-icon.png', 'brand/icon-192.png', 'brand/icon-512.png', 'brand/share.png',
   'brand/mira-apple-touch-icon.png', 'brand/mira-icon-192.png', 'brand/mira-icon-512.png', 'brand/mira-share.png',
-  'brand/mira2-apple-touch-icon.png', 'brand/mira2-icon-192.png', 'brand/mira2-icon-512.png', 'brand/mira2-icon-maskable-512.png', 'brand/mira2-share.png']
+  'brand/mira2-apple-touch-icon.png', 'brand/mira2-icon-192.png', 'brand/mira2-icon-512.png', 'brand/mira2-icon-maskable-512.png', 'brand/mira2-share.png',
+  'brand/mira3-apple-touch-icon.png', 'brand/mira3-icon-192.png', 'brand/mira3-icon-512.png', 'brand/mira3-icon-maskable-512.png', 'brand/mira3-share.png']
 /**
  * The owner's one content exception (AGENTS.md): curated About pictures, the Welcome guide's
  * screenshots, fetched only after the player deliberately opens it. Only web-sized WebP made by

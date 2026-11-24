@@ -14,6 +14,7 @@ import { createGalaxyGlass, type GalaxyGlass } from './glassAdapter'
 import { PresenceFeed, type Populations } from './presence'
 import { FIELD_UNIT, LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
+import { metalUniforms } from '../brand/wordmarkMetal'
 import { liftPlacement, placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement, wordmarkSolid } from '../brand/wordmarkScene'
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
@@ -375,6 +376,7 @@ uniform float uRays;               // the sun's god rays: their strength in the 
 uniform vec2 uBurst;                // the Big Bang's soft burst ring: radius, strength (opening.ts)
 uniform float uSpread;              // the Big Bang: stars streaming out from the centre, 0 to 1
 uniform vec4 uTrail[${MAX}];        // the Big Bang: where each flung world was a moment ago, and how bright its trail is
+uniform vec4 uMetalA, uMetalB, uMetalC, uMetalD; // the metal face's settings (src/ui/brand/wordmarkMetal.ts)
 uniform float uMarkSolid;           // 1 draws the letters as a solid lit face; 0 as a veil that takes the colour of the shafts (lobby.wordmarkSolid)
 uniform float uMarkCrisp;           // 1 when the wordmark's letters are drawn by its own full-resolution pass
 uniform vec4 uReveal;               // the opening (opening.ts): sun, shafts' front, stars, the point's swell
@@ -642,7 +644,7 @@ void main() {
     if (clear > 0.0 && d > 0.0 && d < 0.3 && resolved > 0.0) {
       float flow = 0.6 + 0.4 * noise(vec3(markAt.xy * vec2(2.2, 3.1), uTime * 0.12));
       float halo = exp(-d / 0.06) * (1.0 - smoothstep(0.16, 0.29, d)) * flow * uMarkOpacity * resolved * clear;
-      c += mix(mix(vec3(1.0, 0.86, 0.66), WARM, 0.3), vec3(0.56, 0.89, 1.0), 0.15) * halo * (uMarkMode == 2 ? 0.5 : 0.38);
+      c += mix(mix(vec3(1.0, 0.86, 0.66), WARM, 0.3), vec3(0.56, 0.89, 1.0), 0.15) * halo * (uMarkMode == 2 ? 0.5 : 0.38) * (uMarkSolid > 0.5 ? uMetalD.w : 1.0);
       if (uRevealMark < 50.0) { float k = uRevealMark - 0.1 - sunDistance; c += vec3(1.0, 0.86, 0.66) * halo * 1.6 * (k > 0.0 ? exp(-k / 0.25) : exp(-pow(k / 0.07, 2.0))); }
     }
     if (cover > 0.0) {
@@ -662,9 +664,30 @@ void main() {
         }
         // A dark face with a warm sheen, so the pale edge line carries the name. Lit by the
         // rays (3), the letters are a veil that catches the shafts and haze passing in front.
-        // Solid: an opaque face with a warm sheen from the sun, the shafts only glancing off it as highlights,
-        // and no pale line round its edges (the owner asked for the fill alone, 23 November 2026).
-        if (uMarkMode >= 3 && uMarkSolid > 0.5) { mark += rimColour * (0.035 + 0.5 * lit * shadow) + sunShafts * 0.3 * (0.95 / max(uRays, 0.05)) + sunHaze * 0.18; lineStrength = 0.0; }
+        if (uMarkMode >= 3 && uMarkSolid > 0.5) {
+          // Metal: polished gold or white, lit by the sun. The face gets a normal from two things:
+          // a bevel that rolls off toward every edge (from the distance field's slope), and slow
+          // ripples across it. That normal is lit from the sun's place, so highlights sit where the
+          // face turns toward the sun and move as the ripples move, and the shafts brighten what they cross.
+          float e = 0.004;
+          vec2 g = vec2(wordmarkDistance(markAt.xy + vec2(e, 0.0)) - d, wordmarkDistance(markAt.xy + vec2(0.0, e)) - d) / e;
+          float edge = 1.0 - smoothstep(0.0, max(uMetalA.z, 1e-4), -d);
+          vec3 rp = vec3(markAt.xy * uMetalB.y, uTime * uMetalB.z); float r0 = noise(rp);
+          vec2 slope = g * edge * uMetalA.w + vec2(noise(rp + vec3(0.35, 0.0, 0.0)) - r0, noise(rp + vec3(0.0, 0.35, 0.0)) - r0) * uMetalB.x * 3.0;
+          vec3 T = uMarkShape.x < 0.5 ? normalize(uMarkRight) : normalize(vec3(n.z, 0.0, -n.x)) * uMarkShape2.y * sign(dot(n, -normalize(vec3(at.x, 0.0, at.z))) + 1e-6);
+          vec3 N = normalize(n + (T * slope.x + vec3(0.0, 1.0, 0.0) * slope.y));
+          vec3 H = normalize(l - ray);
+          float ndl = max(dot(N, l), 0.0), ndh = max(dot(N, H), 0.0);
+          float shaft = dot(sunShafts, vec3(0.333)) / max(uRays, 0.05);
+          float light = uMetalA.y * (min(uMarkSun * uMarkSun / (far * far), 2.0) * mix(1.0, shadow, uMetalD.y) + uMetalC.x * shaft * 2.5);
+          vec3 tint = mix(vec3(1.0, 0.74, 0.28), vec3(0.93, 0.95, 1.0), uMetalA.x), deep = mix(tint * tint * 0.42, tint * 0.5, uMetalA.x);
+          tint = mix(vec3(dot(tint, vec3(0.3, 0.6, 0.1))), tint, uMetalD.z); deep = mix(vec3(dot(deep, vec3(0.3, 0.6, 0.1))), deep, uMetalD.z);
+          vec3 metal = mix(deep, tint, ndl) * (uMetalC.y + light * ndl) + mix(tint, vec3(1.0), 0.65) * uMetalB.w * pow(ndh, uMetalD.x) * light;
+          // A glint that crosses the name now and then.
+          float s = markAt.x * 0.35 + markAt.y * 0.5 - (fract(uTime * uMetalC.w) * 7.0 - 3.5);
+          metal += mix(tint, vec3(1.0), 0.75) * uMetalC.z * exp(-s * s * 46.0);
+          mark = metal; lineStrength = 0.0;
+        }
         else if (uMarkMode >= 3) { mark += rimColour * 0.02 + sunShafts * 1.5 * (0.95 / max(uRays, 0.05)) + sunHaze * 0.9 + rimColour * 0.12 * lit * shadow; lineStrength = 0.75; }
         else mark += rimColour * (0.025 + 0.22 * lit * shadow);
       } else {
@@ -785,7 +808,7 @@ void main() {
   color = vec4(c / 12.0, 1.0);
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
-const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uWorlds', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uMarkSolid', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uPulse', 'uPulseColour', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays', 'uBurst', 'uSpread', 'uTrail', 'uNight'] as const
+const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uWorlds', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uMarkSolid', 'uMetalA', 'uMetalB', 'uMetalC', 'uMetalD', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uPulse', 'uPulseColour', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode', 'uAir', 'uLook', 'uCloud', 'uPathN', 'uPathP', 'uRays', 'uBurst', 'uSpread', 'uTrail', 'uNight'] as const
 /** The fresh-load heading. */
 export const FRESH_YAW = 0.6
 /**
@@ -1573,7 +1596,7 @@ export class Galaxy {
     // The frame's uniforms, for this pass and the wordmark's own full-resolution one.
     const setFrame = (gl: WebGL2RenderingContext, u: Record<string, WebGLUniformLocation | null>, width: number, height: number, bindField: () => void, crisp: number) => {
       gl.uniform1i(u.uCloseIndex, this.closeIndex); gl.uniform1f(u.uRays, sunRays.value); gl.uniform2f(u.uBurst, ...reveal.burst); gl.uniform4fv(u.uTrail, trails.length ? trails : [0, 0, 0, 0]); gl.uniform1f(u.uSpread, reveal === SETTLED ? 1 : reveal.spread)
-      gl.uniform1i(u.uMarkMode, mark.placement ? mark.mode : 0); gl.uniform1f(u.uMarkCrisp, crisp); gl.uniform1f(u.uMarkSolid, wordmarkSolid.value ? 1 : 0)
+      gl.uniform1i(u.uMarkMode, mark.placement ? mark.mode : 0); gl.uniform1f(u.uMarkCrisp, crisp); gl.uniform1f(u.uMarkSolid, wordmarkSolid.value ? 1 : 0); { const m = metalUniforms(); gl.uniform4fv(u.uMetalA, m[0]); gl.uniform4fv(u.uMetalB, m[1]); gl.uniform4fv(u.uMetalC, m[2]); gl.uniform4fv(u.uMetalD, m[3]) }
       if (mark.placement) {
         const p = mark.placement
         gl.uniform3f(u.uMarkCentre, ...p.centre); gl.uniform3f(u.uMarkRight, ...p.right); gl.uniform3f(u.uMarkUp, ...p.up)

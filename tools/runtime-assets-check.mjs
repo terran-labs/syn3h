@@ -57,7 +57,7 @@ export const ALLOWLIST = [
   // Permanent. Code, not an asset: the Rapier physics engine, shipped as its own hashed file
   // so it is not parsed as text inside the main script (tools/rapier-wasm.mjs).
   { kind: 'wasm', pattern: /^\/assets\/rapier_wasm3d_bg-[\w-]+\.wasm$/, why: 'Rapier physics engine, code, loaded from its own file', term: 'permanent' },
-  { kind: 'image', type: 'other', pattern: /^\/brand\/mira2-(apple-touch-icon|icon-192|icon-512|icon-maskable-512)\.png$/, why: 'install icon fetched by the browser from the index.html link tag, not by the game', term: 'permanent' },
+  { kind: 'image', type: 'other', pattern: /^\/brand\/mira3-(apple-touch-icon|icon-192|icon-512|icon-maskable-512)\.png$/, why: 'install icon fetched by the browser from the index.html link tag, not by the game', term: 'permanent' },
 ]
 
 /** Kinds that fail the gate unless allowed. */

@@ -74,7 +74,7 @@ describe('player-visible wording', () => {
     expect(hits).toEqual([])
   })
   it('index.html and the manifest are clean', () => {
-    for (const path of ['index.html', 'public/brand/mira2-manifest.webmanifest']) {
+    for (const path of ['index.html', 'public/brand/mira3-manifest.webmanifest']) {
       const text = readFileSync(path, 'utf8')
       const strings = [...text.matchAll(/content="([^"]*)"|<title>([^<]*)<|"(?:name|short_name|description)"\s*:\s*"([^"]*)"/g)].map(m => m[1] ?? m[2] ?? m[3])
       expect(strings.map(s => ({ s, word: banned(s) })).filter(hit => hit.word), path).toEqual([])
