@@ -26,28 +26,46 @@ import type { ParamValue } from '../../shared/params'
 
 export type SwitchKey = 'blank' | 'shadows0' | 'shading0' | 'postBase' | 'postOff' | 'samples1' | 'lowRest' | 'freeze' | 'uiFlat' | 'webgl'
 
+/** How the rows group the switches; a group is a sub-heading. */
+export type SwitchGroup = 'Graphics' | 'Renderer' | 'Interface' | 'Governor' | 'Recorder'
+
+/**
+ * One link switch. The single list (FIELD_SWITCHES): the rows, the copied link, the report's
+ * names and the documentation table (fieldSwitchTable) are all read from it, so a new switch
+ * is one entry here (and the place in the game that acts on it).
+ */
 export interface FieldSwitch {
   key: SwitchKey
+  /** The name in the address, and the value that turns it on: ?name=value. */
+  name: string
+  value: string
   /** In plain words, as the row says it. */
   label: string
-  /** The link switch, as written in the address. */
-  link: string
-  /** False: it takes effect after a reload. */
+  /** True: it applies at once. False: it applies after a reload. */
   live: boolean
+  group: SwitchGroup
+  /** What it does, in a sentence, for the documentation table. */
+  note: string
 }
 
 export const FIELD_SWITCHES: readonly FieldSwitch[] = [
-  { key: 'shadows0', label: 'Sun shadows off', link: 'shadows=0', live: true },
-  { key: 'shading0', label: 'Plain vehicle shading', link: 'shading=0', live: true },
-  { key: 'postBase', label: 'Post effects at their base tier', link: 'post=base', live: true },
-  { key: 'postOff', label: 'No post effects at all', link: 'post=off', live: true },
-  { key: 'lowRest', label: 'Other Medium settings at Low', link: 'lowrest=1', live: true },
-  { key: 'freeze', label: 'Quality governor frozen', link: 'freeze=1', live: true },
-  { key: 'uiFlat', label: 'Flat interface glass', link: 'ui=flat', live: true },
-  { key: 'blank', label: 'Blank frame counter on screen', link: 'blank=1', live: true },
-  { key: 'samples1', label: 'No multisampling', link: 'samples=1', live: false },
-  { key: 'webgl', label: 'WebGL 2 instead of WebGPU', link: 'webgl=1', live: false },
+  { key: 'shadows0', name: 'shadows', value: '0', label: 'Sun shadows off', live: true, group: 'Graphics', note: 'No sun shadows (gfx.shadowQuality 0, as at Low).' },
+  { key: 'shading0', name: 'shading', value: '0', label: 'Plain vehicle shading', live: true, group: 'Graphics', note: 'Plain vehicle materials (gfx.vehicleShading 0, as at Low).' },
+  { key: 'postBase', name: 'post', value: 'base', label: 'Post effects at their base tier', live: true, group: 'Graphics', note: 'The post chain\'s base tier, the look pass only, as at Low: no sun shaft passes.' },
+  { key: 'postOff', name: 'post', value: 'off', label: 'No post effects at all', live: true, group: 'Graphics', note: 'No post chain, the scene straight to the canvas; implies Flat interface glass.' },
+  { key: 'lowRest', name: 'lowrest', value: '1', label: 'Other Medium settings at Low', live: true, group: 'Graphics', note: 'Water ripple size, fog bank samples, ground cover and tyre mark life at their Low values.' },
+  { key: 'samples1', name: 'samples', value: '1', label: 'No multisampling', live: false, group: 'Renderer', note: 'The scene drawn with one sample; antialias is fixed when the renderer is made.' },
+  { key: 'webgl', name: 'webgl', value: '1', label: 'WebGL 2 instead of WebGPU', live: false, group: 'Renderer', note: 'The WebGL 2 backend; the backend is chosen when the renderer is made.' },
+  { key: 'freeze', name: 'freeze', value: '1', label: 'Quality governor frozen', live: true, group: 'Governor', note: 'No rung, level or bot steps; the render scale stays put.' },
+  { key: 'uiFlat', name: 'ui', value: 'flat', label: 'Flat interface glass', live: true, group: 'Interface', note: 'Flat interface glass for this visit; the saved style is kept.' },
+  { key: 'blank', name: 'blank', value: '1', label: 'Blank frame counter on screen', live: true, group: 'Recorder', note: 'The blank-frame recorder on, its counter on screen with a Test flash control.' },
 ]
+
+/** ?name=value for a switch. */
+export const linkOf = (f: Pick<FieldSwitch, 'name' | 'value'>) => `${f.name}=${f.value}`
+
+/** Every address name a switch uses, once each. */
+export const SWITCH_NAMES: readonly string[] = [...new Set(FIELD_SWITCHES.map(f => f.name))]
 
 /** What a live switch needs the game to do now; set by main.ts. */
 export interface FieldSwitchHooks {
@@ -122,13 +140,12 @@ export function setFieldSwitch(key: SwitchKey, on: boolean): void {
 export function linkWithSwitches(href: string = location.href): string {
   const url = new URL(href)
   const q = url.searchParams
-  for (const name of ['blank', 'shadows', 'shading', 'post', 'samples', 'lowrest', 'freeze', 'ui', 'webgl']) q.delete(name)
+  for (const name of SWITCH_NAMES) q.delete(name)
   for (const f of FIELD_SWITCHES) {
     if (!isOn(f.key)) continue
     // ?post=off already means flat glass (flashSwitches.ts); ui=flat beside it would only repeat it.
     if (f.key === 'uiFlat' && flashSwitches.post === 'off') continue
-    const [name, value] = f.link.split('=')
-    q.set(name, value)
+    q.set(f.name, f.value)
   }
   return url.toString()
 }
@@ -141,3 +158,14 @@ function writeAddress(): void {
 
 /** Reload to the address with these switches in it (it already carries them). */
 export function reloadWithSwitches(): void { writeAddress(); location.reload() }
+
+/** For the copied report: every switch that is on, as ?name=value, in the list's order. */
+export function fieldSwitchNames(s: FlashSwitches = flashSwitches): string[] {
+  return FIELD_SWITCHES.filter(f => isOn(f.key, s)).map(linkOf)
+}
+
+/** The documentation table (README), from the list: link, what it does, live or after reload. */
+export function fieldSwitchTable(): string {
+  const rows = FIELD_SWITCHES.map(f => `| \`?${linkOf(f)}\` | ${f.label}. ${f.note} | ${f.live ? 'at once' : 'after a reload'} |`)
+  return ['| Link | What it does | Applies |', '| --- | --- | --- |', ...rows].join('\n')
+}

@@ -6,7 +6,7 @@ import type { Inspector } from './inspector/Inspector'
 import type { PropertyDef } from './inspector/model'
 import { createSwitch, type Switch } from './inspector/switch'
 import { recordBlankFrames } from '../core/blankFrames'
-import { FIELD_SWITCHES, isOn, linkWithSwitches, onFieldSwitches, pendingReload, reloadWithSwitches, setFieldSwitch } from '../core/fieldSwitches'
+import { FIELD_SWITCHES, isOn, linkOf, linkWithSwitches, onFieldSwitches, pendingReload, reloadWithSwitches, setFieldSwitch } from '../core/fieldSwitches'
 import { deviceGates } from '../core/deviceGates'
 
 const number = (value: number | undefined, digits = 1) => value !== undefined && Number.isFinite(value) ? value.toFixed(digits) : 'Unavailable'
@@ -338,11 +338,14 @@ export class PerformancePanel {
   private buildFieldSwitches(signal: AbortSignal): void {
     const fold = this.element.querySelector<HTMLDetailsElement>('.performance-field-switches')!
     const rows = fold.querySelector<HTMLElement>('.field-switch-rows')!
+    let group = ''
     const boxes = FIELD_SWITCHES.map(f => {
+      // A sub-heading where the list's group changes (core/fieldSwitches.ts, SwitchGroup).
+      if (f.group !== group) { group = f.group; const heading = document.createElement('p'); heading.className = 'field-switch-group'; heading.textContent = group; rows.append(heading) }
       const box = createSwitch(f.label, { className: `field-switch${f.live ? '' : ' is-reload'}`, signal, checked: isOn(f.key), onChange: on => setFieldSwitch(f.key, on) })
-      box.element.dataset.switch = f.link
+      box.element.dataset.switch = linkOf(f)
       const note = document.createElement('small'); note.className = 'field-switch-link'
-      note.textContent = f.live ? `?${f.link}` : `?${f.link} · applies after reload`
+      note.textContent = f.live ? `?${linkOf(f)}` : `?${linkOf(f)} · applies after reload`
       box.element.querySelector('.s3-switch-text')!.append(note)
       rows.append(box.element)
       return { f, box }
