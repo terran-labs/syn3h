@@ -142,8 +142,11 @@ function placeInSystem(mode: number, view: View, system: number): Placement {
  * to 1 (a panel open); the rise is in the name's own heights.
  */
 // Rise 0.45: the smaller name's top then sits below where the larger one's did, so a phone
-// held upright keeps all of it on screen (0.66 cut its top off).
-export const LIFT_SCALE = 0.55, LIFT_RISE = 0.45
+// held upright keeps all of it on screen (0.66 cut its top off). For the Mira mark, drawn larger
+// along its orbit (ORBIT_SIZE 1, was 0.72) and taller for its star, scale 0.45 and rise 0.3 put
+// the lifted top back about where the Syn3h mark's was: at 0.55 and 0.45 the star left the top of
+// a 1280 by 800 or 1440 by 900 screen with Welcome or Updates open.
+export const LIFT_SCALE = 0.45, LIFT_RISE = 0.3
 export function liftPlacement(p: Placement, lift: number): Placement {
   if (!(lift > 0)) return p
   const k = 1 - (1 - LIFT_SCALE) * lift, height = Math.hypot(...p.up), rise = height * LIFT_RISE * lift
