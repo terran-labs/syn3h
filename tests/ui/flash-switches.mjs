@@ -91,7 +91,7 @@ try {
     assert.deepEqual([high.shadow, high.shading, high.bend, high.postTier], [0, 0, false, 'base'], `held at High ${JSON.stringify(high)}`)
     assert.equal(await page.evaluate(() => localStorage.getItem('mira.glassMaterial.v2')), savedBefore, 'the saved glass choice is untouched')
     const text = await report(page)
-    assert.match(text, /^Flash switches: blank=1, shadows=0, shading=0, post=base, samples=1, lowrest=1, freeze=1, ui=flat, gfx=2$/m)
+    assert.match(text, /^Flash switches: shadows=0, shading=0, post=base, lowrest=1, gfx=2, samples=1, freeze=1, ui=flat, blank=1$/m)
     assert.match(text, /^Sun shadows: off: \?shadows=0$/m)
     assert.match(text, /scene samples 1,/, 'the report counts one sample')
     assert.match(text, /^Test flashes: 1 seen of 1 asked$/m)
@@ -108,7 +108,7 @@ try {
     // The draw calls of the last drawn frame, sampled over a second: the scene is drawn straight to the canvas.
     const drawn = await page.evaluate(async () => { const calls = []; for (let i = 0; i < 10; i++) { calls.push(window.mira.game.performance.drawCalls); await new Promise(res => setTimeout(res, 100)) } return calls })
     assert.ok(drawn.every(n => n > 20), `the game still draws the scene: ${drawn}`)
-    assert.match(await report(page), /^Flash switches: post=off, ui=flat, gfx=2$/m)
+    assert.match(await report(page), /^Flash switches: post=off, gfx=2, ui=flat$/m)
     assert.deepEqual(errors, [])
     await context.close()
   }
