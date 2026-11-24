@@ -226,12 +226,17 @@ const ICON = {
    * rays and was cut back into ragged stubs.)
    */
   orbits: [[78, 30, 2.6, 8], [89, 37, -0.7, 9], [100, 44, 0.62, 11]] as [number, number, number, number][],
+  /**
+   * A small shift for each world, by eye. The inner world sits a little inside its orbit, up and
+   * to the right, so it reads as belonging to the inner ring and not to the one outside it.
+   */
+  nudge: [[5, -4], [0, 0], [0, 0]] as [number, number][],
 }
 function iconParts(): { rings: Contour[]; worlds: Contour[]; star: Contour[] } {
   const c = ICON.size / 2, blank = () => new Field(-30, -30, ICON.size + 30, ICON.size + 30, 0.25)
   const on = (rx: number, ry: number, a: number): P => { const x = rx * Math.cos(a), y = ry * Math.sin(a); return [c + x * Math.cos(ICON.tilt) - y * Math.sin(ICON.tilt), c + x * Math.sin(ICON.tilt) + y * Math.cos(ICON.tilt)] }
   const star = blank().polygon([sparkle(c, c, ICON.star, 0.14)]), worlds = blank(), rings = blank()
-  const at = ICON.orbits.map(([rx, ry, a]) => on(rx, ry, a))
+  const at = ICON.orbits.map(([rx, ry, a], k): P => { const p = on(rx, ry, a), n = ICON.nudge[k] ?? [0, 0]; return [p[0] + n[0], p[1] + n[1]] })
   at.forEach(([x, y], k) => worlds.circle(x, y, ICON.orbits[k][3]))
   for (const [rx, ry] of ICON.orbits) {
     const g = blank().stroke({ points: Array.from({ length: 201 }, (_, i) => on(rx, ry, 2 * PI * i / 200)), width: ICON.line })
