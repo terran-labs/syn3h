@@ -45,9 +45,9 @@ describe('allowlist', () => {
     expect(allowed({ kind: 'model', path: '/models/textures/jet.bin' })).toBeNull()
   })
   it('lets the browser fetch an icon from the link tag, but not game code', () => {
-    expect(allowed({ kind: 'image', type: 'other', path: '/brand/mira2-apple-touch-icon.png' })).toBeTruthy()
-    expect(allowed({ kind: 'image', type: 'image', path: '/brand/mira2-apple-touch-icon.png' })).toBeNull()
-    expect(allowed({ kind: 'image', type: 'other', path: '/brand/mira2-share.png' })).toBeNull()
+    expect(allowed({ kind: 'image', type: 'other', path: '/brand/mira3-apple-touch-icon.png' })).toBeTruthy()
+    expect(allowed({ kind: 'image', type: 'image', path: '/brand/mira3-apple-touch-icon.png' })).toBeNull()
+    expect(allowed({ kind: 'image', type: 'other', path: '/brand/mira3-share.png' })).toBeNull()
   })
 })
 
