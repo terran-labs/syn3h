@@ -205,6 +205,7 @@ async function main(): Promise<void> {
       (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '') + '\n' + sunShadowsLine() + '\n' + fieldSwitchLine() +
       (game.frameCanary ? '\n' + game.frameCanary.reportLines().join('\n') : '') +
       (game.frameProbe ? '\n' + game.frameProbe.reportLines().join('\n') : '') +
+      (flashSwitches.presentHold ? `\nPresent hold: ${game.presentHeldFrames} frames not drawn while the previous frame's GPU work ran` : '') +
       // Device loss: this page's and the last page's in this tab (core/lossRecord.ts).
       (game.lossRecorder ? game.lossRecorder.reportLines().map(line => '\n' + line).join('') : '')
   }
@@ -215,9 +216,17 @@ async function main(): Promise<void> {
   const blankCounter = (blank: boolean) => {
     stopCounter?.(); stopCounter = null
     if (blank) params.set(recordBlankFrames.def.id, true)
-    if (blank || game.frameCanary || game.frameProbe) stopCounter = startFlashCounter(() => game.blankFrames, () => shell.playing && !shell.transitioning, () => game.frameCanary, blank, () => game.frameProbe)
+    if (blank || game.frameCanary || game.frameProbe) stopCounter = startFlashCounter(() => game.blankFrames, () => shell.playing && !shell.transitioning, () => game.frameCanary, blank, () => game.frameProbe, () => shell.panelsOpen ? document.querySelector('.world-inspector:not([inert])') : null)
   }
   blankCounter(flashSwitches.blank)
+  // ?canvasBackdrop=1 (core/flashSwitches.ts): magenta behind the canvas in play. Every frame we
+  // draw is opaque over it, so magenta on screen is a frame the browser showed with nothing drawn
+  // in it. Read four times a second, so the Field switches box applies it live.
+  const backdropStyle = document.createElement('style')
+  backdropStyle.textContent = 'html[data-flash-backdrop],html[data-flash-backdrop] body{background:#ff00ff!important}'
+  document.head.append(backdropStyle)
+  const backdrop = setInterval(() => document.documentElement.toggleAttribute('data-flash-backdrop', flashSwitches.canvasBackdrop && shell.playing && !shell.transitioning), 250)
+  game.add({ dispose: () => { clearInterval(backdrop); document.documentElement.removeAttribute('data-flash-backdrop') } }, 'Canvas backdrop')
   game.add({ dispose: () => { stopCounter?.(); stopCounter = null } }, 'Blank frame counter')
   // The same switches, live from Performance, Diagnostics, Field switches (core/fieldSwitches.ts).
   setFieldSwitchHooks({

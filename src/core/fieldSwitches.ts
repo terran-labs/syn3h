@@ -34,7 +34,7 @@ import { flashPins, flashSwitches, pinnedParams, pins, regateSunShadows, type Fl
 import type { ParamValue } from '../../shared/params'
 
 export type SwitchKey = 'blank' | 'shadows0' | 'shadows1' | 'shading0' | 'postBase' | 'postOff' | 'samples1' | 'lowRest' | 'freeze' | 'uiFlat' | 'webgl' | 'gpuTrace' | 'gfx' | 'diag'
-  | 'frameCanary' | 'frameProbe' | 'shadowCascades' | 'shadowMap512' | 'shadowMap1024' | 'shadowMap2048' | 'shadowColor0' | 'shadowHard' | 'shadowFade0'
+  | 'frameCanary' | 'frameProbe' | 'canvasOpaque' | 'presentHold' | 'canvasBackdrop' | 'shadowCascades' | 'shadowMap512' | 'shadowMap1024' | 'shadowMap2048' | 'shadowColor0' | 'shadowHard' | 'shadowFade0'
 
 /** How the rows group the switches; a group is a sub-heading. */
 export type SwitchGroup = 'Graphics' | 'Sun shadows' | 'Renderer' | 'Interface' | 'Governor' | 'Recorder'
@@ -83,12 +83,16 @@ export const FIELD_SWITCHES: readonly FieldSwitch[] = [
   { key: 'shadowFade0', name: 'shadowFade', value: '0', values: '`0`', label: 'No blending between cascades', note: 'No blend between one sun shadow cascade and the next.', live: false, group: 'Sun shadows', row: true },
   { key: 'samples1', name: 'samples', value: '1', values: '`1`', label: 'No multisampling', note: 'Draw the scene without multisampling. Antialias is fixed when the renderer is made.', live: false, group: 'Renderer', row: true },
   { key: 'webgl', name: 'webgl', value: '1', values: 'present, any value', label: 'WebGL 2 instead of WebGPU', note: 'Start on WebGL 2 instead of WebGPU. The backend is chosen when the renderer is made.', live: false, group: 'Renderer', row: true },
+  // How the frame reaches the screen (WebKit's canvas presentation, core/Game.ts).
+  { key: 'canvasOpaque', name: 'canvasAlpha', value: 'opaque', values: '`opaque`', label: 'Opaque canvas', note: 'Configure the canvas opaque instead of premultiplied, so the browser composites the frame without blending. The canvas is configured when the renderer is made.', live: false, group: 'Renderer', row: true },
+  { key: 'presentHold', name: 'presentHold', value: '1', values: '`1`', label: 'One frame in flight', note: 'Draw no new frame while the GPU is still working on the previous one, so the browser never hands back a picture that is still on screen to draw into. Frames skipped this way are counted in the report.', live: true, group: 'Renderer', row: true },
   { key: 'gpuTrace', name: 'gpuTrace', value: '1', values: 'present, any value', label: 'Count live GPU memory exactly', note: 'Count live WebGPU texture and buffer bytes exactly, by wrapping every allocation, and add a "Live WebGPU memory (gpuTrace)" line to the report. The wrapping starts with the renderer.', live: false, group: 'Renderer', row: true },
   { key: 'freeze', name: 'freeze', value: '1', values: '`1`', label: 'Quality governor frozen', note: 'Freeze the quality governor: no level, rung or bot count changes, and the render scale stays fixed.', live: true, group: 'Governor', row: true },
   { key: 'uiFlat', name: 'ui', value: 'flat', values: '`flat`', label: 'Flat interface glass', note: 'Flat interface glass for this visit. The saved choice is kept.', live: true, group: 'Interface', row: true },
   { key: 'blank', name: 'blank', value: '1', values: '`1`', label: 'Blank frame counter on screen', note: 'Turn the blank-frame recorder on, with its counter on screen in play and a Test flash button that shows whether the recorder can see frames in this browser.', live: true, group: 'Recorder', row: true },
   { key: 'frameCanary', name: 'frameCanary', value: '1', values: '`1`', label: 'Dropped frame counter on screen', note: 'Count WebGPU command buffers the browser accepted but never ran, which shows on screen as a black frame and which Safari reports nowhere, in the same on-screen counter as ?blank=1 and in the report. It starts with the renderer.', live: false, group: 'Recorder', row: true },
   { key: 'frameProbe', name: 'frameProbe', value: '1', values: '`1`', label: 'Black frame probe on screen', note: 'Read a grid of pixels back from the scene image and from the picture handed to the screen after every frame in play, and count frames where either is black, transparent or not a number, and frames where the sun shadow or exposure values are not finite, in the same on-screen counter as ?blank=1 and in the report. WebGPU only; it starts with the renderer.', live: false, group: 'Recorder', row: true },
+  { key: 'canvasBackdrop', name: 'canvasBackdrop', value: '1', values: '`1`', label: 'Magenta behind the picture', note: 'Put a magenta page behind the canvas in play. Every frame we draw covers it, so a flash of magenta is a frame shown with nothing drawn in it (the browser\'s doing), and a flash of black is a frame drawn black.', live: true, group: 'Recorder', row: true },
   { key: 'diag', name: 'diag', value: '1', values: '`1`', label: 'Diagnostics open at load', note: 'Start diagnostic sampling at load, as opening the Diagnostics fold of the Performance card does.', live: false, group: 'Recorder', row: false },
 ]
 

@@ -269,12 +269,15 @@ effect at once or after a reload). This table is written from the switch list in
 | `?shadowFade=0` | `0` | No blend between one sun shadow cascade and the next. | after a reload |
 | `?samples=1` | `1` | Draw the scene without multisampling. Antialias is fixed when the renderer is made. | after a reload |
 | `?webgl=1` | present, any value | Start on WebGL 2 instead of WebGPU. The backend is chosen when the renderer is made. | after a reload |
+| `?canvasAlpha=opaque` | `opaque` | Configure the canvas opaque instead of premultiplied, so the browser composites the frame without blending. The canvas is configured when the renderer is made. | after a reload |
+| `?presentHold=1` | `1` | Draw no new frame while the GPU is still working on the previous one, so the browser never hands back a picture that is still on screen to draw into. Frames skipped this way are counted in the report. | at once |
 | `?gpuTrace=1` | present, any value | Count live WebGPU texture and buffer bytes exactly, by wrapping every allocation, and add a "Live WebGPU memory (gpuTrace)" line to the report. The wrapping starts with the renderer. | after a reload |
 | `?freeze=1` | `1` | Freeze the quality governor: no level, rung or bot count changes, and the render scale stays fixed. | at once |
 | `?ui=flat` | `flat` | Flat interface glass for this visit. The saved choice is kept. | at once |
 | `?blank=1` | `1` | Turn the blank-frame recorder on, with its counter on screen in play and a Test flash button that shows whether the recorder can see frames in this browser. | at once |
 | `?frameCanary=1` | `1` | Count WebGPU command buffers the browser accepted but never ran, which shows on screen as a black frame and which Safari reports nowhere, in the same on-screen counter as ?blank=1 and in the report. It starts with the renderer. | after a reload |
 | `?frameProbe=1` | `1` | Read a grid of pixels back from the scene image and from the picture handed to the screen after every frame in play, and count frames where either is black, transparent or not a number, and frames where the sun shadow or exposure values are not finite, in the same on-screen counter as ?blank=1 and in the report. WebGPU only; it starts with the renderer. | after a reload |
+| `?canvasBackdrop=1` | `1` | Put a magenta page behind the canvas in play. Every frame we draw covers it, so a flash of magenta is a frame shown with nothing drawn in it (the browser's doing), and a flash of black is a frame drawn black. | at once |
 | `?diag=1` | `1` | Start diagnostic sampling at load, as opening the Diagnostics fold of the Performance card does. | after a reload |
 <!-- field-switches:end -->
 

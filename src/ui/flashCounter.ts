@@ -8,9 +8,14 @@
  * be trusted. Test flashes are counted apart from real ones.
  *
  * Plain DOM on purpose: no glass, no backdrop-filter, no transition (those are suspects). Shown
- * only in play, centred a third of the way down: clear of the gear list on the left, the speed and
- * altitude on either side and the thumb controls below (checked at 390 by 844 both ways up). Read four times a
- * second from the recorder's counters; nothing is read from the page per frame.
+ * only in play, and never over the open panels: on a phone the box (above them, taking taps) sat
+ * over the World, Performance and Chat headers, so Field switches and Copy diagnostics could not
+ * be reached (v26.11.2308). It hides the moment the panels open over it, as their `inert` flips,
+ * before the next tap can land, and returns when they close. On a wide screen the rail stands
+ * to the right, clear of the box, and the box stays. Otherwise it
+ * stands centred a third of the way down: clear of the gear list on the left, the speed and
+ * altitude on either side and the thumb controls below (checked at 390 by 844 both ways up).
+ * Read four times a second from the counters; nothing is read from the page per frame.
  */
 import type { BlankFrameRecorder } from '../core/blankFrames'
 import type { FrameCanary } from '../core/frameCanary'
@@ -24,7 +29,7 @@ import type { FrameProbe } from '../core/frameProbe'
  * withholds one command buffer (the canary must count 1), Test black clears one frame (the probe
  * must count it).
  */
-export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inPlay: () => boolean, canary: () => FrameCanary | null = () => null, withRecorder = true, probe: () => FrameProbe | null = () => null): () => void {
+export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inPlay: () => boolean, canary: () => FrameCanary | null = () => null, withRecorder = true, probe: () => FrameProbe | null = () => null, panels: () => Element | null = () => null): () => void {
   const box = document.createElement('div')
   box.className = 'flash-counter'
   box.style.cssText = [
@@ -51,8 +56,17 @@ export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inP
   box.hidden = true
   document.body.append(box)
   let shown = ''
+  // Where the box stood when last shown: hidden, it has no box of its own to measure.
+  let lastRect: DOMRect | null = null
+  const overPanels = () => {
+    const rail = panels()
+    if (!box.hidden) lastRect = box.getBoundingClientRect()
+    if (!rail || !lastRect) return false
+    const a = lastRect, b = rail.getBoundingClientRect()
+    return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  }
   const update = () => {
-    const r = withRecorder ? recorder() : null, c = canary(), p = probe(), play = inPlay()
+    const r = withRecorder ? recorder() : null, c = canary(), p = probe(), play = inPlay() && !overPanels()
     if (box.hidden === play) box.hidden = !play
     if ((!r && !c && !p) || !play) return
     const lines: string[] = []
@@ -64,6 +78,9 @@ export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inP
     if (line !== shown) { text.textContent = shown = line; text.style.whiteSpace = 'pre' }
   }
   const timer = setInterval(update, 250)
+  // The panels opening or closing flips `inert` on the rail at once: follow it now, not at the next tick.
+  const railWatch = new MutationObserver(update)
+  railWatch.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['inert'] })
   update()
-  return () => { clearInterval(timer); box.remove() }
+  return () => { clearInterval(timer); railWatch.disconnect(); box.remove() }
 }
