@@ -4,12 +4,15 @@ The game uses the vector wordmark. `favicon.svg` and the four platform PNGs come
 `logoSvg` in `src/ui/brand/LogoMark.ts`, with no bitmap input. PNG fallbacks remain committed
 for social crawlers and home-screen icons, so ordinary builds need no browser.
 
-The current exports are named `mira-*` (`mira-favicon.svg`, `mira-share.png` and the icons;
-`public/brand/mira-manifest.webmanifest` lists the icons). The files at the old names keep the
-Syn3h bytes, because every frozen version loads them from the same address and
-`tools/frozen-versions.mjs prepare` refuses a release that changes them. A redrawn mark needs
-new names again: change the names in `LOGO_STILLS` and in `generate.ts`, never the bytes at an
-address a released version uses.
+The exports are named by set: `BRAND_SET` in `src/ui/brand/LogoMark.ts` (now `mira2`) prefixes
+the share card, the icons (including a maskable icon whose art is scaled into the safe circle for
+launchers that mask to a shape), the favicon and the manifest, which `generate.ts` writes from the
+same constant so it always lists its own set. Every frozen version loads the set that was current
+when it shipped, from the same address: the oldest files without a prefix, then `mira-`, then
+`mira2-`. `tools/frozen-versions.mjs prepare` refuses a release that changes any of them, and
+`node tools/rename-to-mira.mjs --check` reports it before a build. A redrawn mark changes
+`BRAND_SET`, reruns the generator and points `index.html` at the new names; it never changes the
+bytes at an address a released version uses.
 
 Regenerate explicitly:
 

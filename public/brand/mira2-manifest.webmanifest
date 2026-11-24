@@ -1,0 +1,31 @@
+{
+  "id": "/",
+  "name": "Mira",
+  "short_name": "Mira",
+  "description": "Drive, fly and explore alien worlds together. From the creator of Mars Explorer.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#040814",
+  "theme_color": "#040814",
+  "icons": [
+    {
+      "src": "/brand/mira2-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/mira2-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/mira2-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -7,7 +7,7 @@ import '../lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { logoSvg, LOGO_STILLS } from '../../src/ui/brand/LogoMark'
+import { BRAND_SET, ICON_COLOURS, logoSvg, LOGO_STILLS } from '../../src/ui/brand/LogoMark'
 
 const directory = resolve(process.argv[2] ?? 'public/brand')
 const font = (await readFile(new URL('../../public/fonts/barlow-condensed-600-latin.woff2', import.meta.url))).toString('base64')
@@ -44,7 +44,20 @@ try {
     if (data.readUInt32BE(16) !== still.width || data.readUInt32BE(20) !== still.height) throw new Error(`Wrong size: ${still.name}`)
     files.set(still.name, data)
   }
-  files.set('mira-favicon.svg', Buffer.from(logoSvg({ width: 32, height: 32, layout: 'icon', space: true })))
+  files.set(`${BRAND_SET}-favicon.svg`, Buffer.from(logoSvg({ width: 32, height: 32, layout: 'icon', space: true })))
+  // The manifest lists this set's icons: a frozen page keeps loading its own set's manifest.
+  files.set(`${BRAND_SET}-manifest.webmanifest`, Buffer.from(JSON.stringify({
+    id: '/', name: 'Mira', short_name: 'Mira',
+    description: 'Drive, fly and explore alien worlds together. From the creator of Mars Explorer.',
+    start_url: '/', scope: '/', display: 'standalone',
+    // The icon's sky (ICON_COLOURS.skyBottom): the launch screen around the icon matches it.
+    background_color: ICON_COLOURS.skyBottom, theme_color: ICON_COLOURS.skyBottom,
+    icons: [
+      { src: `/brand/${BRAND_SET}-icon-192.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: `/brand/${BRAND_SET}-icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: `/brand/${BRAND_SET}-icon-maskable-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  }, null, 2) + '\n'))
 } finally { await browser.close() }
 // Rendering must finish before any existing fallback is replaced.
 await mkdir(directory, { recursive: true })

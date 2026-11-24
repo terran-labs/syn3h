@@ -52,7 +52,7 @@ export function logoBudget(level: number): Pick<LogoOptions, 'particles' | 'stil
   return { particles: 160, still: false, fps: 60, maxPixelRatio: 2 }
 }
 
-export type LogoLayout = 'fit' | 'icon' | 'card'
+export type LogoLayout = 'fit' | 'icon' | 'maskable' | 'card'
 /**
  * Where the 962 by 226 wordmark box goes in a picture of the given size. `fit` leaves room
  * for the plasma all round; `icon` is the square app icon (as public/brand/mira-icon-512.png);
@@ -231,15 +231,23 @@ export class LogoMark {
 
 /** Sizes the platforms ask for: the share card and the square icons. */
 /**
- * The exported stills. Named mira-* since the rename: the files at the old names keep the
- * Syn3h bytes that every frozen version loads from the same address (tools/frozen-versions.mjs prepare
- * refuses a build that changes them). A redrawn mark needs new names again, never the old ones.
+ * The current set of exported stills, by name prefix. Every frozen version loads the set that was
+ * current when it shipped, from the same address, so a redrawn mark gets a new prefix and the
+ * earlier sets stay as they are (tools/frozen-versions.mjs prepare refuses a build that changes
+ * them; tools/brand/README.md). The unprefixed set and the mira- set are earlier ones.
+ */
+export const BRAND_SET = 'mira2'
+/**
+ * The exported stills. The maskable icon is the icon's art scaled into the safe circle (a 40%
+ * radius) on the same full-bleed sky, for launchers that mask an icon to a shape; the plain
+ * icons keep the art at full size, its outer orbit running past the edge by design.
  */
 export const LOGO_STILLS = [
-  { name: 'mira-share.png', width: 1200, height: 630, layout: 'card' },
-  { name: 'mira-icon-512.png', width: 512, height: 512, layout: 'icon' },
-  { name: 'mira-icon-192.png', width: 192, height: 192, layout: 'icon' },
-  { name: 'mira-apple-touch-icon.png', width: 180, height: 180, layout: 'icon' },
+  { name: `${BRAND_SET}-share.png`, width: 1200, height: 630, layout: 'card' },
+  { name: `${BRAND_SET}-icon-512.png`, width: 512, height: 512, layout: 'icon' },
+  { name: `${BRAND_SET}-icon-192.png`, width: 192, height: 192, layout: 'icon' },
+  { name: `${BRAND_SET}-icon-maskable-512.png`, width: 512, height: 512, layout: 'maskable' },
+  { name: `${BRAND_SET}-apple-touch-icon.png`, width: 180, height: 180, layout: 'icon' },
   { name: 'favicon-32.png', width: 32, height: 32, layout: 'icon' },
 ] as const
 
@@ -281,17 +289,21 @@ export const ICON_COLOURS = { skyTop: '#0d2148', skyBottom: '#040814', rings: '#
  * colours on a night-blue sky. No glow and no stars behind it: the platforms add their own
  * finish, and a flat icon survives their dark, tinted and clear styles.
  */
-export function iconSvg(width: number, height: number): string {
-  const side = ICON_SIZE + 2 * ICON_MARGIN, c = ICON_COLOURS
+/** How much the maskable icon shrinks the art: its farthest point (115 units from the centre)
+ * then sits inside the safe circle, 40% of the 212-unit side (84.8 units), with a little room. */
+export const MASKABLE_SCALE = 0.72
+export function iconSvg(width: number, height: number, maskable = false): string {
+  const side = ICON_SIZE + 2 * ICON_MARGIN, c = ICON_COLOURS, mid = ICON_SIZE / 2
+  const art = `<path fill="${c.rings}" fill-rule="evenodd" d="${ICON_RINGS}"/><path fill="${c.worlds}" d="${ICON_WORLDS}"/><path fill="${c.star}" d="${ICON_STAR}"/>`
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${-ICON_MARGIN} ${-ICON_MARGIN} ${side} ${side}" role="img" aria-label="Mira">
 <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c.skyTop}"/><stop offset="1" stop-color="${c.skyBottom}"/></linearGradient></defs>
 <rect x="${-ICON_MARGIN}" y="${-ICON_MARGIN}" width="${side}" height="${side}" fill="url(#sky)"/>
-<path fill="${c.rings}" fill-rule="evenodd" d="${ICON_RINGS}"/><path fill="${c.worlds}" d="${ICON_WORLDS}"/><path fill="${c.star}" d="${ICON_STAR}"/>
+${maskable ? `<g transform="translate(${mid} ${mid}) scale(${MASKABLE_SCALE}) translate(${-mid} ${-mid})">${art}</g>` : art}
 </svg>`
 }
 export function logoSvg(options: Partial<LogoLook> & { width?: number; height?: number; layout?: LogoLayout } = {}): string {
   const look = { ...DEFAULT_LOGO_LOOK, ...options }, width = options.width ?? 1200, height = options.height ?? 630
-  if (options.layout === 'icon') return iconSvg(width, height)
+  if (options.layout === 'icon' || options.layout === 'maskable') return iconSvg(width, height, options.layout === 'maskable')
   const mark = { d: WORDMARK_PATH, width: WORDMARK_WIDTH, height: WORDMARK_HEIGHT }
   const box = logoBox(width, height, options.layout ?? 'fit')
   const unit = box.height / mark.height
