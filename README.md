@@ -236,6 +236,122 @@ npm run dev
 Open the address it prints. The room server starts alongside it, so a second tab is a
 second player.
 
+## Diagnostics
+
+Mira can be taken apart from its address bar. Each switch below is a query parameter that
+changes one thing for one visit, so a fault on a device we cannot hold in our hands can be
+narrowed down by its owner, one link at a time. They work on the live game at
+[mira.cc](https://mira.cc) as well as on a development server.
+
+### Link switches
+
+Diagnostic and rendering switches:
+
+| Switch | Values | What it does |
+| --- | --- | --- |
+| `?webgl=1` | present, any value | Start on WebGL 2 instead of WebGPU. |
+| `?gfx=N` | `0` to `5` | Pin the quality level for this visit, as choosing it by hand does: 0 Minimal, 1 Low, 2 Medium, 3 High, 4 Ultra, 5 Cinematic. Nothing is saved unless you change a setting. |
+| `?gpudeadline=MS` | milliseconds, `0` waits forever | How long WebGPU startup may take before the game starts WebGL 2 instead. The default is 8000. |
+| `?gpuTrace=1` | present, any value | Count live WebGPU texture and buffer bytes exactly, by wrapping every allocation, and add a "Live WebGPU memory (gpuTrace)" line to the report. |
+| `?diag=1` | `1` | Start diagnostic sampling at load, as opening the Diagnostics fold of the Performance card does. |
+| `?blank=1` | `1` | Turn the blank-frame recorder on, with its counter on screen in play and a Test flash button that shows whether the recorder can see frames in this browser. |
+| `?shadows=0` | `0` | No sun shadows, as at Low, at every level. |
+| `?shadows=1` | `1` | Sun shadows on where they are held off as not yet proven: WebGPU on Safari, iPhone, iPad and other touch devices. |
+| `?shading=0` | `0` | Plain vehicle materials, as at Low, at every level. |
+| `?post=base` | `base` | Only the base tier of the post chain (the look pass, as at Low): no sun shafts or other upper tier passes. |
+| `?post=off` | `off` | No post chain: the scene is drawn straight to the canvas, with Flat interface glass. |
+| `?post=1`, `?post=0` | any other value | Turn the post effects setting on (`0`, `false` and `off` turn it off) for this visit. |
+| `?samples=1` | `1` | Draw the scene without multisampling. |
+| `?lowrest=1` | `1` | Hold the remaining Medium differences at their Low values: water ripple size, fog bank samples, ground cover and tyre mark life. |
+| `?freeze=1` | `1` | Freeze the quality governor: no level, rung or bot count changes, and the render scale stays fixed. |
+| `?ui=flat` | `flat` | Flat interface glass for this visit. The saved choice is kept. |
+| `?cinematic=1` | present | The cinematic comparison preset: post effects, ground bounce light, aerial perspective and the terrain material extras. |
+| `?weather=X` | `0` to `1`, empty for 0.5 | Set the storminess. In a shared room the room takes it. |
+| `?water=1` | `1` | Turn on everything the Water Lab built: a water sea, fords, waves, sinking, the underwater camera, ripples and spray. |
+| `?daydream=S` | seconds, `0` for never | Seconds without input before Daydream drives for you. |
+| `?v=VERSION` | a frozen release, such as `26.11.1503` | Serve that accepted release exactly, with its own models and pictures. Invite links keep it. |
+
+Where to start and what to drive, used by invite links and automated checks:
+
+| Switch | Values | What it does |
+| --- | --- | --- |
+| `?world=CODE` | a world code, such as `mire.7` | Open that exact world. The lobby treats it as an invitation. |
+| `?planet=ID` and `?seed=N` | a planet recipe and a number | Build a world from that recipe and seed. |
+| `?room=NAME` | up to 64 characters | Join that multiplayer room instead of the public one. |
+| `?vehicle=KIND` | `buggy`, `jet`, `hovercraft`, `tank` and the other kinds | Start in that vehicle. |
+| `?name=NAME` | up to 24 characters | Your name in the room. |
+| `?autoplay=1` | present | Skip the lobby and land at once. |
+| `?tap=0`, `?tap=1` | `0` or `1` | Skip, or require, the wait for a tap that lets sound start. |
+
+Developer only. These tune or compare work in progress and are not for diagnosing a player's
+device:
+
+| Switch | Values | What it does |
+| --- | --- | --- |
+| `?glass=inline`, `?glass=target` | `inline` or `target` | Force Liquid interface glass; `target` draws it through a separate render target and drops the press expansion. |
+| `?glassPress=off` | `off` | No press expansion on glass buttons. |
+| `?glassMaterial=clear` | `clear` | Clear glass material, without press expansion. |
+| `?glassMerge=zorb-brake` | `zorb-brake`, `zorb-brake-pressed` | The smooth merge trial between the Zorb and Brake buttons. |
+| `?glassBlur=direct`, `?glassBlur=mip` | `direct` or `mip` | Glass frost without mip blur, or without the Gaussian blur. |
+| `?glassSet=one` | `one` | A single glass slot. |
+| `?wordmark=N`, `?intro=N` | `0` to `7`; `0` to `2` | Lobby wordmark placement and opening (0 off, 1 pull back, 2 push in). |
+| `?mark=ID`, `?worlds=N` | a candidate mark; a count | Development builds only: a candidate wordmark, and a galaxy crowded with N repeats of each planet. |
+
+The lab and demo pages (`fx.html`, `planets.html`, `water-lab.html`, `terrainlab.html`,
+`logo.html`, `mira.html`, `jetlab.html`, `vehicle-lab.html`) read switches of their own,
+listed at the top of each page's script. Most take `?webgl` too.
+
+### Combining switches
+
+Switches combine freely: join them with `&`. Each one is read once when the page loads, so
+change the address and reload to change them. Two worked examples:
+
+- **Is it the shadows?** `https://mira.cc/?gfx=2&shadows=0&blank=1` holds Medium, turns
+  sun shadows off and puts the blank-frame counter on screen. If the flashes stop, open
+  `https://mira.cc/?gfx=2&blank=1` next to confirm they come back with shadows on.
+- **Is it WebGPU?** `https://mira.cc/?webgl=1&gfx=2&freeze=1&diag=1` starts WebGL 2 at
+  Medium, stops the governor from changing anything mid test and opens Diagnostics at
+  start. If WebGL 2 is clean and WebGPU is not, the fault is in the WebGPU path.
+
+### The Diagnostics report
+
+In the game, press Esc (or open the side panel on a touch screen), open **Performance**,
+unfold **Diagnostics** and press **Copy diagnostics**. The report is plain text, ready to
+paste into a message. Its lines, in order:
+
+- **Version, Freeze build ID, Source commit:** which build is running.
+- **Browser, OS, Device class, Input, Screen, Logical cores, Memory estimate:** what the
+  browser says about the device, its pointer, its screen and its pixel ratio.
+- **Renderer, Adapter:** WebGPU or WebGL 2 and why, and the graphics adapter.
+- **Graphics quality, Quality easing, Quality reason, Automatic transitions:** the level, what
+  Auto is cutting, why the level is what it is, and the governor's recent level changes.
+- **Startup and entry timings, Startup phases:** how long loading and landing took, step by step.
+- **Shader work:** time spent building shaders and pipelines, before and after landing, with
+  the slowest calls.
+- **World, Play:** the planet, your vehicle and the bots around you.
+- **Last 60 s, In play, Lobby or entry overlay:** frame times and the longest frames, each
+  with what it was doing.
+- **Room connection, Music:** the multiplayer link and the score's audio health.
+- **Glass, Screen edges:** the interface glass in use and the screen's safe area insets.
+- **Water refraction, Force field contact glow, Headlight beam soft edge:** effects that copy
+  the frame mid draw, and whether they are on or held off as not yet proven on this device.
+- **Graphics, Uncaptured device errors:** backend, adapter, scene samples, and every device
+  error of the session.
+- **Test flashes, Blank frames:** what the blank-frame recorder saw. Where the browser does not
+  let it read frames, it says so instead of reporting a zero.
+- **Live WebGPU memory (gpuTrace):** with `?gpuTrace=1`, the texture and buffer bytes alive on the GPU.
+- **Sun shadows:** on, off by `?shadows=0`, held off as not yet proven on this device, or on
+  by `?shadows=1` where they would be held off.
+- **Flash switches:** every link switch that is on, by name.
+
+### The rule for switches
+
+A switch added to isolate a fault ships to production and stays there, as a field
+diagnostic for the next device that misbehaves. Every switch is read once at start,
+changes nothing when it is absent, and is named in the copied report. A new gate that
+turns a feature off on some devices gets a switch that turns it back on, and the existing
+one that turns it off, so the gate itself can be tested on the device it protects.
+
 ## Under the surface
 
 The following sections describe the machinery. The screenshots are versioned captures;

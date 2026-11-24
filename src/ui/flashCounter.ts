@@ -39,7 +39,9 @@ export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inP
     const r = recorder(), play = inPlay()
     if (box.hidden === play) box.hidden = !play
     if (!r || !play) return
-    const line = `Blank ${r.blank}  Partly ${r.partly}  (${r.lastMinute()}/min)\nLast: ${r.lastWords || '-'}\nTest seen ${r.testsSeen} of ${r.testsAsked}`
+    // Once a test flash has gone unseen, a zero would be a false all-clear.
+    const counts = r.testsAsked > 0 && r.testsSeen === 0 ? 'This browser does not let\nthe recorder see frames' : `Blank ${r.blank}  Partly ${r.partly}  (${r.lastMinute()}/min)\nLast: ${r.lastWords || '-'}`
+    const line = `${counts}\nTest seen ${r.testsSeen} of ${r.testsAsked}`
     if (line !== shown) { text.textContent = shown = line; text.style.whiteSpace = 'pre' }
   }
   const timer = setInterval(update, 250)

@@ -1,6 +1,7 @@
 import { longFrames } from './longFrames'
 /** Local rendering quality. World parameters and physics resolution are never changed here. */
-import { flashPins, flashPostTier, flashSwitches } from './flashSwitches'
+import { flashPostTier, flashSwitches, gateSunShadows, pinnedValue } from './flashSwitches'
+import { midPassCopyProven } from './midPassCopy'
 import { type AdapterProbe, gpuDeadlineMs, graphicsOverride, probeAdapter } from './renderOptions'
 import { defineParam, params, sanitize, type ParamValue } from '../../shared/params'
 import { PerformanceHistory, RECOMMENDATION_IGNORE_KEY } from './performanceHistory'
@@ -961,7 +962,7 @@ export class QualityController implements QualitySource {
     const values = params.snapshot('all')
     for (const [id, value] of Object.entries(presetFor(level))) {
       const param = params.get(id)
-      if (param) values[id] = sanitize(param.def, automatic ? this.overrides[id] ?? value : value)
+      if (param) values[id] = sanitize(param.def, pinnedValue(id) ?? (automatic ? this.overrides[id] ?? value : value))
     }
     values[qualityLevel.def.id] = level
     values[graphicsLevel.def.id] = legacyTier(level)
@@ -1024,7 +1025,7 @@ export class QualityController implements QualitySource {
   }
   /** Parameter writes made by the controller, so the change listener does not treat them as the player's. */
   // A link switch (core/flashSwitches.ts) may hold a level-owned parameter at its Low value for this visit.
-  private write(id: string, value: ParamValue) { this.writing++; try { params.set(id, id in flashPins ? flashPins[id] : value) } finally { this.writing-- } }
+  private write(id: string, value: ParamValue) { this.writing++; try { params.set(id, pinnedValue(id) ?? value) } finally { this.writing-- } }
   /** What the WebGPU adapter probe found; a stalled probe sends the renderer straight to WebGL 2. */
   adapterProbe: AdapterProbe = 'unsupported'
   async initialize() {
@@ -1057,6 +1058,11 @@ export class QualityController implements QualitySource {
   }
   attachRenderer(renderer: WebGPURenderer) {
     this.renderer = renderer
+    // Sun shadows held off on WebKit and touch devices running WebGPU (flashSwitches.ts), written as
+    // the level's own value so nothing is saved as the player's choice.
+    gateSunShadows((renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend === true, !midPassCopyProven())
+    const held = pinnedValue('gfx.shadowQuality')
+    if (held !== undefined && params.get('gfx.shadowQuality')) this.write('gfx.shadowQuality', held)
     // The renderer may fall back after a successful adapter probe, or be forced to WebGL.
     if (!(renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend) {
       this.capability = { start: Math.min(this.capability.start, 2) as QualityLevel, ceiling: Math.min(this.capability.ceiling, 2) as QualityLevel }

@@ -20,6 +20,7 @@
  * whether refraction is on and every uncaptured device error of the session: a rejected copy or a
  * validation error shows itself there and nowhere else.
  */
+import { copyDevice } from './midPassCopy'
 import { defineParam } from '../../shared/params'
 
 export const recordBlankFrames = defineParam<boolean>({
@@ -266,6 +267,9 @@ export class BlankFrameRecorder {
     })
   }
 
+  /** True where the probe cannot see: any WebKit browser, or wherever a test flash went unseen. */
+  blind(): boolean { return copyDevice().webkit || (this.testsAsked > 0 && this.testsSeen === 0) }
+
   /** The counts shown beside the switch. */
   counts(): { lastMinute: number; total: number } { return { lastMinute: this.lastMinute(), total: this.total } }
 
@@ -285,6 +289,9 @@ export class BlankFrameRecorder {
       `Uncaptured device errors this session: ${this.deviceErrorCount}${this.deviceErrors.length ? ': ' + this.deviceErrors.slice(0, 5).map(m => JSON.stringify(m)).join('; ') : ''}`,
     ]
     if (this.testsAsked) lines.push(`Test flashes: ${this.testsSeen} seen of ${this.testsAsked} asked${this.testsSeen < this.testsAsked ? ' (the probe missed a cleared frame: its zeros cannot be trusted here)' : ''}`)
+    // On the owner's iPhone (Safari WebGPU, v26.11.2304) the probe saw 0 of 37 test flashes while the
+    // screen flashed: there it reads no frame the game draws, so no count of its may stand as a zero.
+    if (this.blind()) return [...lines, 'Blank frames: this browser does not let the recorder see frames']
     if (!recordBlankFrames.value && !this.total) return [...lines, 'Blank frames: not recorded (Performance, Diagnostics, "Record blank frames")']
     const t = tally(this.events)
     lines.push(`Blank frames: ${this.total} in ${this.frames} frames recorded (${this.lastMinute()} in the last minute); probe ${this.frames ? (this.probeMs / this.frames).toFixed(2) : '0'} ms a frame`)

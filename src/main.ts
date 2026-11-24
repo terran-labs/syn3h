@@ -16,7 +16,7 @@ import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { botsKeepCount } from './bots/params'
 import { ChaseCamera } from './core/ChaseCamera'
-import { flashSwitches, flashSwitchLine } from './core/flashSwitches'
+import { flashSwitches, flashSwitchLine, sunShadowsLine } from './core/flashSwitches'
 import { recordBlankFrames } from './core/blankFrames'
 import { startFlashCounter } from './ui/flashCounter'
 import { diagnosticReport } from './core/diagnosticReport'
@@ -201,7 +201,7 @@ async function main(): Promise<void> {
       '\nWater refraction: ' + refractionState(game.renderer) +
       // Copies taken in the middle of the scene pass (core/midPassCopy.ts), off where not yet proven.
       '\nForce field contact glow: ' + depthEffectsState() + '\nHeadlight beam soft edge: ' + depthEffectsState() +
-      (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '') + '\n' + flashSwitchLine() +
+      (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '') + '\n' + sunShadowsLine() + '\n' + flashSwitchLine() +
       // Device loss: this page's and the last page's in this tab (core/lossRecord.ts).
       (game.lossRecorder ? game.lossRecorder.reportLines().map(line => '\n' + line).join('') : '')
   }
