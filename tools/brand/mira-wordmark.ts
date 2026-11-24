@@ -207,7 +207,7 @@ const APPROVED: Look = {
 // ---- the icon ------------------------------------------------------------------------------
 // The owner chose it on 23 November 2026 (the lab's icon 33, "Swept rings", in white and blue),
 // and on 24 November asked that nothing be cropped by the edge and the inner ring meet the star cleanly:
-// Mira as a bold four-pointed star, with two orbits tilted steeply across the square and a world
+// Mira as a bold four-pointed star, with three orbits tilted steeply across the square and a world
 // on each. It is kept in three parts (rings, worlds, star) so each can take its own colour, and
 // so a platform that restyles icons can be given the parts as layers.
 const ICON = {
@@ -216,7 +216,7 @@ const ICON = {
   /** Tilt of the orbits: the system seen from above its own plane, turned a little anticlockwise. */
   tilt: -0.32,
   /** The star's radius, the rings' thickness, and the gap left where a ray of the star crosses a ring. */
-  star: 52, line: 6, gap: 7,
+  star: 52, line: 4, gap: 6,
   /**
    * Each orbit: half its length, half its breadth, where on it its world sits (radians), and the
    * world's radius. Both orbits and their worlds lie wholly inside the square, so no edge cuts
@@ -225,7 +225,7 @@ const ICON = {
    * cross nearly square on. (An orbit that reached only as far as the side tips ran along those
    * rays and was cut back into ragged stubs.)
    */
-  orbits: [[80, 31, 2.6, 9], [100, 44, 0.62, 12]] as [number, number, number, number][],
+  orbits: [[78, 30, 2.6, 8], [89, 37, -0.7, 9], [100, 44, 0.62, 11]] as [number, number, number, number][],
 }
 function iconParts(): { rings: Contour[]; worlds: Contour[]; star: Contour[] } {
   const c = ICON.size / 2, blank = () => new Field(-30, -30, ICON.size + 30, ICON.size + 30, 0.25)
