@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { Room, type Peer } from '../../server/room'
 import { roomName } from '../../server/util'
 import { BOT_ID_BASE, PROTOCOL_VERSION, type ServerMessage } from '../../shared/protocol'
-import { MAX_VOICE_SDP_BYTES, voiceOn } from '../../shared/voice'
+import { DEFAULT_VOICE_CHANNEL, MAX_VOICE_SDP_BYTES, type VoiceChannel, voiceOn } from '../../shared/voice'
 
 class TestPeer implements Peer {
   messages: ServerMessage[] = []
   voiceReady = false
+  voiceChannel: VoiceChannel = DEFAULT_VOICE_CHANNEL
 
   send(data: string | Uint8Array): void {
     if (typeof data === 'string') this.messages.push(JSON.parse(data))
@@ -14,8 +15,9 @@ class TestPeer implements Peer {
 
   close(): void {}
 
-  setVoiceReady(ready: boolean): void {
+  setVoiceState(ready: boolean, channel: VoiceChannel): void {
     this.voiceReady = ready
+    this.voiceChannel = channel
   }
 
   all<T extends ServerMessage['type']>(type: T): Extract<ServerMessage, { type: T }>[] {
@@ -38,6 +40,7 @@ function fixture(name = 'voice-test') {
     return peer
   }
   const ready = (peer: TestPeer, enabled = true) => send(peer, { type: 'voice-ready', enabled })
+  const channel = (peer: TestPeer, channel: unknown) => send(peer, { type: 'voice-channel', channel })
   const ping = (peer: TestPeer) => send(peer, { type: 'ping', t: 0 })
   const signal = { type: 'offer', sdp: 'v=0\r\n' }
   const offer = (from: TestPeer, to: number) => send(from, { type: 'voice-signal', to, signal })
@@ -46,9 +49,9 @@ function fixture(name = 'voice-test') {
     const previous = room
     room = new Room(name, { now: () => now })
     room.restore(previous.snapshot())
-    for (const peer of peers) room.adopt(peer, previous.info(peer)!, previous.token(peer), peer.voiceReady)
+    for (const peer of peers) room.adopt(peer, previous.info(peer)!, previous.token(peer), peer.voiceReady, peer.voiceChannel)
   }
-  return { join, send, ready, offer, ping, signal, switchVoice, wake, advance: (ms: number) => { now += ms }, disconnect: (peer: TestPeer) => room.disconnect(peer) }
+  return { join, send, ready, channel, offer, ping, signal, switchVoice, wake, advance: (ms: number) => { now += ms }, disconnect: (peer: TestPeer) => room.disconnect(peer) }
 }
 
 describe('room voice', () => {
@@ -59,6 +62,9 @@ describe('room voice', () => {
     f.ready(a)
     f.ready(b)
     f.offer(a, b.id)
+    f.channel(a, 'global')
+    expect(a.voiceChannel).toBe('spatial')
+    expect(b.all('voice-channel')).toHaveLength(0)
     expect(b.all('voice-ready')).toHaveLength(0)
     expect(b.all('voice-signal')).toHaveLength(0)
   })
@@ -124,6 +130,60 @@ describe('room voice', () => {
     expect(a.all('voice-signal')).toHaveLength(0)
   })
 
+  it('syncs each speaker channel only to opted-in peers and attributes changes to the real sender', () => {
+    const f = fixture()
+    const a = f.join(), b = f.join(), spectator = f.join()
+    const otherRoom = fixture('other-voice-room')
+    const c = otherRoom.join(), d = otherRoom.join()
+    otherRoom.ready(c)
+    otherRoom.ready(d)
+
+    f.channel(b, 'global')
+    f.ready(a)
+    f.channel(a, 'global')
+    expect(b.all('voice-channel')).toHaveLength(0)
+    f.ready(b)
+
+    expect(b.messages.filter(msg => msg.type === 'voice-ready' || msg.type === 'voice-channel')).toEqual([
+      { type: 'voice-ready', from: a.id, enabled: true },
+      { type: 'voice-channel', from: a.id, channel: 'global' },
+    ])
+    expect(a.all('voice-channel')).toEqual([{ type: 'voice-channel', from: b.id, channel: 'spatial' }])
+
+    f.channel(a, 'GLOBAL')
+    f.channel(a, { channel: 'spatial' })
+    f.channel(a, 'global')
+    f.channel(spectator, 'global')
+    expect(b.all('voice-channel')).toHaveLength(1)
+    f.send(a, { type: 'voice-channel', channel: 'spatial', from: spectator.id })
+    expect(b.all('voice-channel').at(-1)).toEqual({ type: 'voice-channel', from: a.id, channel: 'spatial' })
+    expect(spectator.all('voice-channel')).toHaveLength(0)
+    expect(c.all('voice-channel')).toEqual([{ type: 'voice-channel', from: d.id, channel: 'spatial' }])
+    expect(d.all('voice-channel')).toEqual([{ type: 'voice-channel', from: c.id, channel: 'spatial' }])
+  })
+
+  it('bounds repeated speaker channel changes and resets on opt-out or host disable', () => {
+    const f = fixture()
+    const a = f.join(), b = f.join()
+    f.ready(a)
+    f.ready(b)
+    for (let i = 0; i < 100; i++) f.channel(a, i % 2 ? 'spatial' : 'global')
+    expect(b.all('voice-channel').length).toBeGreaterThan(1)
+    expect(b.all('voice-channel').length).toBeLessThan(101)
+    f.ready(a, false)
+    expect(a.voiceChannel).toBe('spatial')
+
+    f.advance(2_000)
+    f.ready(a)
+    expect(b.all('voice-channel').at(-1)).toEqual({ type: 'voice-channel', from: a.id, channel: 'spatial' })
+    f.channel(a, 'global')
+    f.channel(b, 'global')
+    f.switchVoice(a, false)
+    f.channel(b, 'global')
+    expect(a.voiceChannel).toBe('spatial')
+    expect(b.voiceChannel).toBe('spatial')
+  })
+
   it('drops malformed and oversized signals while accepting browser ICE fields', () => {
     const f = fixture()
     const a = f.join(), b = f.join()
@@ -183,12 +243,16 @@ describe('room voice', () => {
     expect(b.all('voice-signal')).toHaveLength(1)
   })
 
-  it('keeps consent through hibernation for a surviving socket and drops it on reconnect', () => {
+  it('keeps consent and channel through hibernation and resets them on reconnect', () => {
     const f = fixture()
     const a = f.join('test-resume-token-for-a'), b = f.join()
     f.ready(a)
     f.ready(b)
+    f.channel(a, 'global')
     f.wake([a, b])
+    f.ready(b, false)
+    f.ready(b)
+    expect(b.all('voice-channel').at(-1)).toEqual({ type: 'voice-channel', from: a.id, channel: 'global' })
     f.offer(b, a.id)
     expect(a.all('voice-signal')).toHaveLength(1)
     f.disconnect(a)
@@ -198,6 +262,7 @@ describe('room voice', () => {
     f.offer(b, resumed.id)
     expect(resumed.all('voice-signal')).toHaveLength(0)
     f.ready(resumed)
+    expect(b.all('voice-channel').at(-1)).toEqual({ type: 'voice-channel', from: resumed.id, channel: 'spatial' })
     f.offer(b, resumed.id)
     expect(resumed.all('voice-signal')).toHaveLength(1)
   })

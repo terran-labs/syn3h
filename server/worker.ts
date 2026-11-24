@@ -11,6 +11,7 @@ import { RoomRegistry, type RegistryEntry } from './registry'
 import { PresenceReporter } from './presenceReporter'
 import { CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
+import type { VoiceChannel } from '../shared/voice'
 import { roomName } from './util'
 import { logError, logEvent } from './log'
 
@@ -76,8 +77,9 @@ interface Attachment {
   info?: PlayerInfo
   /** The player's rejoin secret (game.rejoin), so it survives hibernation with the socket. */
   token?: string | null
-  /** Opt-in belongs to this socket and survives hibernation. */
+  /** Voice consent and channel belong to this socket and survive hibernation. */
   voiceReady?: boolean
+  voiceChannel?: VoiceChannel
   /** Epoch ms the socket was accepted, for the close line's openMs. */
   at?: number
   // The hello's page marker is not kept here: after a hibernation wake, a same-page reconnect
@@ -497,7 +499,7 @@ export class RoomDO {
     if (this.snapshot) room.restore(this.snapshot)
     for (const ws of this.state.getWebSockets()) {
       const att = ws.deserializeAttachment() as Attachment | null
-      if (att?.info) room.adopt(this.peer(ws), att.info, att.token, att.voiceReady)
+      if (att?.info) room.adopt(this.peer(ws), att.info, att.token, att.voiceReady, att.voiceChannel)
       else room.connect(this.peer(ws))
     }
     this.room = room
@@ -515,9 +517,9 @@ export class RoomDO {
             // The socket closed under us; its close event cleans up.
           }
         },
-        setVoiceReady(ready) {
+        setVoiceState(ready, channel) {
           const att = ws.deserializeAttachment() as Attachment | null
-          if (att?.info) ws.serializeAttachment({ ...att, voiceReady: ready } satisfies Attachment)
+          if (att?.info) ws.serializeAttachment({ ...att, voiceReady: ready, voiceChannel: channel } satisfies Attachment)
         },
         close(code, reason) {
           // A socket the room closes (replaced by its own player's new connection, silent,

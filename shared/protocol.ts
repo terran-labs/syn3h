@@ -11,7 +11,7 @@
  * No browser or Node dependencies: the client, the Node server and the Worker share it.
  */
 import { params } from './params'
-import type { VoiceSignal } from './voice'
+import type { VoiceChannel, VoiceSignal } from './voice'
 import { wrapDistance } from './wrap'
 
 export const PROTOCOL_VERSION = 2
@@ -376,6 +376,7 @@ export const RACE_COOLDOWN_MS = 90000
 
 export type ClientMessage =
   | { type: 'voice-ready'; enabled: boolean }
+  | { type: 'voice-channel'; channel: VoiceChannel }
   | { type: 'voice-signal'; to: number; signal: VoiceSignal }
   /**
    * `resume` is a random secret this tab keeps for this room. In a room with `game.rejoin`
@@ -480,6 +481,7 @@ export type TagEvent =
 export type ServerMessage =
   | { type: 'voice-full' }
   | { type: 'voice-ready'; from: number; enabled: boolean }
+  | { type: 'voice-channel'; from: number; channel: VoiceChannel }
   | { type: 'voice-signal'; from: number; signal: VoiceSignal }
   | {
       type: 'welcome'

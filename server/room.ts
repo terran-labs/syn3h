@@ -71,15 +71,15 @@ import {
 import {
   BOT_CHAT_BURST, BOT_CHAT_REFILL_S, CHAT_BURST, CHAT_REFILL_S, ChatBucket, HOST_ONLY_PARAMS, botChatter, chatOn, cleanChatText, filterChat,
 } from '../shared/chat'
-import { voiceEligible, voiceOn } from '../shared/voice'
+import { DEFAULT_VOICE_CHANNEL, type VoiceChannel, voiceEligible, voiceOn } from '../shared/voice'
 import { RoomVoice } from './voice'
 
 /** One connection, as the room sees it. */
 export interface Peer {
   send(data: string | Uint8Array): void
   close(code?: number, reason?: string): void
-  /** Keep opt-in with a hibernating socket. No signal data travels through this hook. */
-  setVoiceReady?(ready: boolean): void
+  /** Keep opt-in and speaker channel with a hibernating socket. */
+  setVoiceState?(ready: boolean, channel: VoiceChannel): void
 }
 
 export interface RoomOptions {
@@ -184,6 +184,7 @@ interface Player {
   /** This player's chat allowance, made on its first line. */
   chat: ChatBucket | null
   voiceReady: boolean
+  voiceChannel: VoiceChannel
   voiceBudget: ChatBucket | null
 }
 
@@ -528,6 +529,9 @@ export class Room {
       case 'voice-ready':
         if (msg.enabled === true) this.voice.enable(peer, player)
         break
+      case 'voice-channel':
+        this.voice.setChannel(peer, player, msg.channel)
+        break
       case 'voice-signal':
         this.voice.relay(player, msg.to, msg.signal)
         break
@@ -782,7 +786,7 @@ export class Room {
   }
 
   /** Re-attach a peer that was already joined before the process hibernated. No broadcast. */
-  adopt(peer: Peer, info: PlayerInfo, token?: string | null, voiceReady = false): void {
+  adopt(peer: Peer, info: PlayerInfo, token?: string | null, voiceReady = false, voiceChannel?: VoiceChannel): void {
     // After hibernation the room is restored from storage first, which holds a place for
     // everyone on its roster, and then the sockets that are still connected are adopted. A
     // connected player is not absent: it takes its held place, it is not added beside it.
@@ -791,7 +795,7 @@ export class Room {
       this.rekey(key, peer, held)
       held.heldUntil = 0
       held.lastHeardAt = this.now()
-      this.voice.restoreReady(held, voiceReady)
+      this.voice.restoreState(held, voiceReady, voiceChannel)
       if (isToken(token)) held.token = token
       return
     }
@@ -802,7 +806,7 @@ export class Room {
     const player = this.newPlayer(full)
     // Not a new arrival: waking from hibernation must not make a parked room look active.
     player.joinedAt = 0
-    this.voice.restoreReady(player, voiceReady)
+    this.voice.restoreState(player, voiceReady, voiceChannel)
     player.token = isToken(token) ? token : null
     this.players.set(peer, player)
     this.nextId = Math.max(this.nextId, info.id + 1)
@@ -1749,7 +1753,7 @@ export class Room {
     const now = this.now()
     return {
       info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, cordTo: null, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, page: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), reds: new Set(), lastTag: now,
-      windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now, raceDriving: false, chat: null, voiceReady: false, voiceBudget: null,
+      windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now, raceDriving: false, chat: null, voiceReady: false, voiceChannel: DEFAULT_VOICE_CHANNEL, voiceBudget: null,
     }
   }
 

@@ -1,6 +1,6 @@
 import { ChatBucket } from '../shared/chat'
 import { MAX_JSON_BYTES, type ServerMessage } from '../shared/protocol'
-import { cleanVoiceSignal } from '../shared/voice'
+import { cleanVoiceSignal, DEFAULT_VOICE_CHANNEL, isVoiceChannel, type VoiceChannel } from '../shared/voice'
 import type { Peer } from './room'
 
 const VOICE_PARTICIPANTS = 2
@@ -12,6 +12,7 @@ interface VoicePlayer {
   info: { id: number }
   heldUntil: number
   voiceReady: boolean
+  voiceChannel: VoiceChannel
   voiceBudget: ChatBucket | null
 }
 
@@ -38,9 +39,24 @@ export class RoomVoice {
     this.setReady(peer, player, false)
   }
 
-  /** Restore consent for the same live socket after hibernation. */
-  restoreReady(player: VoicePlayer, ready: boolean): void {
+  /** Restore consent and channel for the same live socket after hibernation. */
+  restoreState(player: VoicePlayer, ready: boolean, channel: unknown): void {
     player.voiceReady = ready && this.allowed()
+    player.voiceChannel = player.voiceReady && isVoiceChannel(channel) ? channel : DEFAULT_VOICE_CHANNEL
+  }
+
+  setChannel(peer: Peer, player: VoicePlayer, channel: unknown): void {
+    if (!player.voiceReady || !this.allowed() || !isVoiceChannel(channel) || player.voiceChannel === channel) return
+    if (!this.takeVoiceBudget(player)) return
+    player.voiceChannel = channel
+    peer.setVoiceState?.(true, channel)
+    for (const [otherPeer, other] of this.players) {
+      if (other !== player && other.voiceReady) this.sendChannel(otherPeer, player)
+    }
+  }
+
+  private sendChannel(peer: Peer, speaker: VoicePlayer): void {
+    sendTo(peer, { type: 'voice-channel', from: speaker.info.id, channel: speaker.voiceChannel })
   }
 
   disableAll(): void {
@@ -56,11 +72,16 @@ export class RoomVoice {
   private setReady(peer: Peer, player: VoicePlayer, enabled: boolean): void {
     if (player.voiceReady === enabled) return
     player.voiceReady = enabled
-    peer.setVoiceReady?.(enabled)
+    if (!enabled) player.voiceChannel = DEFAULT_VOICE_CHANNEL
+    peer.setVoiceState?.(enabled, player.voiceChannel)
     for (const [otherPeer, other] of this.players) {
       if (other === player || !other.voiceReady) continue
       sendTo(otherPeer, { type: 'voice-ready', from: player.info.id, enabled })
-      if (enabled) sendTo(peer, { type: 'voice-ready', from: other.info.id, enabled: true })
+      if (enabled) {
+        sendTo(peer, { type: 'voice-ready', from: other.info.id, enabled: true })
+        this.sendChannel(otherPeer, player)
+        this.sendChannel(peer, other)
+      }
     }
   }
 

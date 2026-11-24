@@ -5,6 +5,14 @@ export function voiceEligible(room: string): boolean {
   return /^[a-z0-9_-]{1,32}$/.test(room) && room !== 'lobby'
 }
 
+export type VoiceChannel = 'spatial' | 'global'
+
+export const DEFAULT_VOICE_CHANNEL: VoiceChannel = 'spatial'
+
+export function isVoiceChannel(value: unknown): value is VoiceChannel {
+  return value === 'spatial' || value === 'global'
+}
+
 export type VoiceSignal =
   | { type: 'offer' | 'answer'; sdp: string }
   | {
