@@ -22,8 +22,10 @@
  *   both fine, a flash seen  presentation, after our work.
  *
  * And every frame, on the CPU: whether any of the values the frame's lighting rests on is not a
- * finite number, the sun shadow cascades' matrices and split distances, the sun light, and the
- * tone mapping exposure (Environment.ts eye adaptation). One NaN there blanks every lit pixel at
+ * finite number: the sun shadow cascades' matrices and split distances, the shadow's settings,
+ * the sun light, the world camera (a canvas of zero height makes its aspect NaN, and
+ * Environment.ts then rebuilds the cascades from it every frame) and the tone mapping exposure
+ * (Environment.ts eye adaptation, where the sky's side colour enters unsanitised). One NaN there blanks every lit pixel at
  * once, which fits a whole-screen flash better than a fault in one pixel.
  *
  * Test controls, so a zero can be trusted on the phone itself: blackNext() clears the canvas to
@@ -53,6 +55,8 @@ export interface ProbeHost {
   /** The sun: its shadow node, matrices and intensity are checked each frame. */
   sun(): THREE.DirectionalLight | null
   exposure(): number
+  /** The world camera: a zero-size canvas makes its aspect, and every cascade built from it, NaN. */
+  camera(): THREE.PerspectiveCamera
 }
 
 export interface BadFrame { frame: number; at: number; what: string; recent: string[] }
@@ -182,6 +186,8 @@ export class FrameProbe {
   private checkValues(frame: number, test: boolean): void {
     const where: string[] = []
     if (!Number.isFinite(this.host.exposure())) where.push('exposure')
+    const camera = this.host.camera()
+    if (!Number.isFinite(camera.aspect) || !finite(camera.projectionMatrix.elements) || !finite(camera.matrixWorld.elements)) where.push('camera')
     const sun = this.host.sun()
     if (sun) {
       if (!Number.isFinite(sun.intensity) || !finite(sun.color.toArray()) || !finite(sun.position.toArray()) || !finite(sun.target.position.toArray())) where.push('sun light')
@@ -194,6 +200,8 @@ export class FrameProbe {
           if (!finite(shadow.camera.projectionMatrix.elements) || !finite(shadow.camera.matrixWorldInverse.elements) || !finite(shadow.matrix.elements)) { where.push('cascade matrices'); break }
         }
         if (!finite(sun.shadow.matrix.elements)) where.push('shadow matrix')
+        const s = sun.shadow
+        if (!finite([s.bias, s.normalBias, s.radius, s.intensity])) where.push('shadow settings')
       }
     }
     if (!where.length) return

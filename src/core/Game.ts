@@ -204,6 +204,7 @@ export class Game {
         return this.probeSun
       },
       exposure: () => this.renderer.toneMappingExposure,
+      camera: () => this.camera,
     })
     this.quality.attachRenderer(this.renderer)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
