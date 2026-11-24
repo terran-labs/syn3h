@@ -192,7 +192,7 @@ export class BlankFrameRecorder {
     }
     this.watchDevice()
     if (typeof window !== 'undefined') {
-      for (const type of ['mira:quality', 'syn3h:quality']) {
+      for (const type of ['mira:quality', 'syn3h:quality']) { // rename-keep: the old event too
         window.addEventListener(type, event => {
           const d = (event as CustomEvent<{ level?: number; rung?: number; pixelRatio?: number; reason?: string }>).detail ?? {}
           this.current.step = `${d.reason ?? 'change'} to level ${d.level} rung ${d.rung} ratio ${d.pixelRatio}`

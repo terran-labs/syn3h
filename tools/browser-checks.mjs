@@ -105,14 +105,14 @@ for (const name of files) {
   const [devPort, roomPort] = [String(await freePort()), String(await freePort())]
   const url = `http://127.0.0.1:${devPort}/`
   const vars = { MIRA_ROOM_PORT: roomPort, VITE_SERVER_URL: `ws://127.0.0.1:${roomPort}` }
-  if (/MIRA_RELEASE_VERSION|SYN3H_RELEASE_VERSION/.test(head)) vars.MIRA_RELEASE_VERSION = releaseVersion()
+  if (/MIRA_RELEASE_VERSION|SYN3H_RELEASE_VERSION/.test(head)) vars.MIRA_RELEASE_VERSION = releaseVersion() // rename-keep: the older names too
   const t0 = Date.now()
   let server = null, result
   if (!ownServers) {
     server = startServer({ port: devPort, vars }, join(logs, `${name}.server.log`))
     if (!(await ready(url, 60000))) result = { code: 'no server', out: [Buffer.from('the dev server did not answer within a minute')] }
   }
-  result ??= await run(process.execPath, [`tests/ui/${name}.mjs`, ...(urlArgument ? [url] : [])], { MIRA_URL: url, SYN3H_URL: url, ...vars }, join(logs, `${name}.log`), timeout)
+  result ??= await run(process.execPath, [`tests/ui/${name}.mjs`, ...(urlArgument ? [url] : [])], { MIRA_URL: url, SYN3H_URL: url, ...vars }, join(logs, `${name}.log`), timeout) // rename-keep: the older names too
   server?.stop()
   if (stopping) { console.log(`STOPPED  ${name} (signal; not counted)`); break }
   const seconds = Math.round((Date.now() - t0) / 1000), ok = result.code === 0

@@ -35,9 +35,16 @@ const ALLOWED = new Map<string, string>([
   ['public/brand/mira-icon-192.png', 'UX'],
   ['public/brand/mira-icon-512.png', 'UX'],
   ['public/brand/mira-share.png', 'UX'],
+  // The mira2 set (the wordmark and icon approved on 23 November 2026). The sets above stay for
+  // the frozen versions that load them; tools/brand/README.md proposes how they could leave.
+  ['public/brand/mira2-apple-touch-icon.png', 'UX'],
+  ['public/brand/mira2-icon-192.png', 'UX'],
+  ['public/brand/mira2-icon-512.png', 'UX'],
+  ['public/brand/mira2-icon-maskable-512.png', 'UX'],
+  ['public/brand/mira2-share.png', 'UX'],
 ])
 /** The list may never be longer than it was on the day it was written. */
-const CEILING = 10
+const CEILING = 15
 
 /**
  * Not part of the shrinking list: the owner's one content exception (AGENTS.md, "Curated About

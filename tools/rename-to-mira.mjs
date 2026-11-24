@@ -71,6 +71,7 @@ export const KEEP_TOKENS = [
   { pattern: /rows\/syn3h\//g, reason: 'C: a path in the terranlabs.com repository' },
   { pattern: /LAST_SYN3H_VERSION|"## Syn3h vX"/g, reason: 'C: the release-notes cutoff between the two names (tools/release-notes.mjs)' },
   { pattern: /Syn3h (bytes|icons)/g, reason: 'C: names the old brand files frozen versions keep loading' },
+  { pattern: /(and )?the older SYN3H_[A-Z_]+|SYN3H_URL still sets|the Syn3h mark/g, reason: 'C: names an old variable or the old mark on purpose (legacy fallbacks, history)' },
   { pattern: /(called|named|formerly|was|released as) Syn3h/g, reason: 'C: says what the game used to be called' },
 ]
 
