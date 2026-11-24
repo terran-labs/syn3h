@@ -17,7 +17,7 @@ shell.setParamPanel(panel)
 For automated startup, replace `if (query.has('autoplay')) join()` with:
 
 ```ts
-if (query.has('autoplay')) shell.play()
+if (query.has('autoplay')) shell.play(false, true)
 ```
 
 The browser will still require a real user gesture for audible playback. Calling

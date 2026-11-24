@@ -412,7 +412,8 @@ async function main(): Promise<void> {
   shell.onPlay = join
   // The in-play vehicle selector calls this; the shell takes it if it has the hook.
   ;(shell as unknown as { setVehicleSwap?: (swap: (kind: VehicleKind) => Vehicle | null) => void }).setVehicleSwap?.(swapVehicle)
-  if (query.has('autoplay')) shell.play()
+  // An automatic start: the cursor stays free and the panels open (Shell.requestEntryCursor).
+  if (query.has('autoplay')) shell.play(false, true)
 
   const panel = new ParamPanel()
   shell.setParamPanel(panel)
