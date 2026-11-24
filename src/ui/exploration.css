@@ -349,3 +349,8 @@ body.has-game-shell:has(.mira-shell.has-touch.is-playing) :is(#mira-build-notice
 .performance-field-switches .field-switch .s3-switch-text { flex: 1; min-width: 0; }
 .performance-field-switches .field-switch-link { display: block; margin-top: 1px; color: var(--s3-soft, #bfbfbf); font: 400 11px/1.3 ui-monospace, Menlo, monospace; letter-spacing: 0; text-transform: none; }
 .performance-field-switches .field-switch-group { margin: 8px 0 0; color: var(--s3-soft, #bfbfbf); font: 500 10.5px/1.3 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+/* A choice among values (?shadowMap): its words and link above, the choices on their own line. */
+.performance-field-switches .field-switch-choice { display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px 0; }
+.performance-field-switches .field-switch-choice-label { min-width: 0; }
+.performance-field-switches .field-switch-choice .field-switch-link { overflow-wrap: anywhere; }
+.performance-field-switches .field-switch-choice .wi-seg { justify-content: flex-end; }

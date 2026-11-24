@@ -357,8 +357,9 @@ export class PerformancePanel {
         if (choices.has(f.choice)) continue
         choices.add(f.choice)
         const options = FIELD_SWITCHES.filter(g => g.choice === f.choice)
-        const row = document.createElement('div'); row.className = 'wi-row is-choice field-switch-choice'; row.dataset.switch = f.name
-        const label = document.createElement('span'); label.className = 'wi-label'; label.textContent = f.choice
+        // Not a .wi-row: those are settings rows the inspector's search looks up by id.
+        const row = document.createElement('div'); row.className = 'field-switch-choice'; row.dataset.switch = f.name
+        const label = document.createElement('span'); label.className = 'field-switch-choice-label'; label.textContent = f.choice
         const note = document.createElement('small'); note.className = 'field-switch-link'
         note.textContent = `?${f.name}=${options.map(o => o.value).join('|')}${f.live ? '' : ' · applies after reload'}`
         label.append(note)
