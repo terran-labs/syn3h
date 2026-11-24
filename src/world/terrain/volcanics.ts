@@ -39,6 +39,7 @@ import { buildBedTexture, buildRiverSurface, buildStillSurface, createWaterSurfa
 import { WaterfallMist, fallsFromRivers } from '../water/mist'
 import { createFallMaterial, drapedRivers, receivingWater, riverPieces } from '../water/falls'
 import { paletteFor } from './palettes'
+import { retire } from '../../core/retire'
 
 interface Liquid {
   material: THREE.Material
@@ -492,6 +493,7 @@ export class Volcanics implements System {
     for (const s of this.sea) {
       this.group.remove(s.mesh)
       s.mesh.geometry.dispose()
+      retire(s.mesh)
     }
     this.sea = []
     this.clip?.dispose()
@@ -499,11 +501,13 @@ export class Volcanics implements System {
     if (this.apron) {
       this.group.remove(this.apron)
       this.apron.geometry.dispose()
+      retire(this.apron)
       this.apron = null
     }
     for (const { mesh } of this.meshes) {
       this.group.remove(mesh)
       mesh.geometry.dispose()
+      retire(mesh)
     }
     this.meshes.length = 0
     this.emitters.clear()
