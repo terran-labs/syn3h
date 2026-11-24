@@ -22,6 +22,17 @@
  *                 bank samples, ground cover, tyre mark life
  *   ?freeze=1     the quality governor frozen: no rung, level or bot steps, render scale fixed
  *   ?ui=flat      Flat interface glass for this visit; the saved choice is kept
+ *   ?frameCanary=1      count WebGPU command buffers the browser accepted and never ran
+ *                       (core/frameCanary.ts), on screen in the ?blank=1 counter box
+ *   ?shadowCascades=1   one sun shadow cascade instead of the level's two or three
+ *   ?shadowMap=512      a fixed sun shadow cascade size: 512, 1024 or 2048
+ *   ?shadowColor=0      depth-only sun shadow maps: no colour target or attachment per cascade
+ *   ?shadowFilter=hard  basic shadow maps: one depth compare, no filtering
+ *   ?shadowFade=0       no blend between sun shadow cascades
+ * The five shadow switches shape how shadows are drawn, not whether: with shadows off (Low, ?shadows=0,
+ * or the device gate below) they change nothing. They are build choices of the shadow node, not
+ * level-owned parameters, so they are read here and applied where the shadow is built
+ * (world/Environment.ts, Game.ts), not held through pins(). All take effect after a reload.
  *
  * The value of a pinned parameter is applied after every level change too (QualityController
  * write), and never saved.
@@ -39,6 +50,14 @@ export interface FlashSwitches {
   lowRest: boolean
   freeze: boolean
   uiFlat: boolean
+  frameCanary: boolean
+  /** Sun shadow cascades for every level, or null for the level's own. */
+  shadowCascades: number | null
+  /** Sun shadow cascade size for every level, or null for the level's own. */
+  shadowMap: 512 | 1024 | 2048 | null
+  shadowColor0: boolean
+  shadowHard: boolean
+  shadowFade0: boolean
   /** Not flash switches, but named in the same report line so every switch that is on is named. */
   gfx: number | undefined
   diag: boolean
@@ -74,6 +93,12 @@ export function readFlashSwitches(search: string): FlashSwitches {
     freeze: on(q, 'freeze'),
     // The post chain draws the Liquid glass; without it the interface takes Flat glass.
     uiFlat: q.get('ui') === 'flat' || post === 'off',
+    frameCanary: on(q, 'frameCanary'),
+    shadowCascades: on(q, 'shadowCascades') ? 1 : null,
+    shadowMap: q.get('shadowMap') === '512' ? 512 : q.get('shadowMap') === '1024' ? 1024 : q.get('shadowMap') === '2048' ? 2048 : null,
+    shadowColor0: on(q, 'shadowColor', '0'),
+    shadowHard: q.get('shadowFilter') === 'hard',
+    shadowFade0: on(q, 'shadowFade', '0'),
     gfx: graphicsOverride(search),
     diag: on(q, 'diag'),
     // Game.ts starts WebGL 2 on any ?webgl, whatever its value.
@@ -95,6 +120,8 @@ export function flashSwitchNames(s: FlashSwitches): string[] {
   return [
     s.blank && 'blank=1', s.shadows0 && 'shadows=0', s.shadows1 && 'shadows=1', s.shading0 && 'shading=0', s.post && 'post=' + s.post,
     s.samples1 && 'samples=1', s.lowRest && 'lowrest=1', s.freeze && 'freeze=1', s.uiFlat && 'ui=flat',
+    s.frameCanary && 'frameCanary=1', s.shadowCascades && 'shadowCascades=' + s.shadowCascades, s.shadowMap && 'shadowMap=' + s.shadowMap,
+    s.shadowColor0 && 'shadowColor=0', s.shadowHard && 'shadowFilter=hard', s.shadowFade0 && 'shadowFade=0',
     s.gfx !== undefined && 'gfx=' + s.gfx, s.diag && 'diag=1', s.webgl && 'webgl=1',
   ].filter((name): name is string => !!name)
 }

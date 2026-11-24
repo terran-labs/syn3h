@@ -10,6 +10,7 @@
 import * as THREE from 'three/webgpu'
 import { Fn, If, vec4, cameraPosition, dot, float, max, mix, normalWorld, normalize, positionWorld, pow, renderGroup, smoothstep as smoothNode, uniform, vec2, vec3 } from 'three/tsl'
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js'
+import { flashSwitches } from '../core/flashSwitches'
 import { params } from '../../shared/params'
 import type { Game, System } from '../core/Game'
 import type { Terrain } from './Terrain'
@@ -61,6 +62,27 @@ export interface Environment extends System {
 }
 
 type N = any // TSL node
+
+/**
+ * ?shadowColor=0 (core/flashSwitches.ts): depth-only shadow maps for this visit. three's shadow
+ * node always gives each cascade an rgba8 colour target beside its depth (8 MB and a colour
+ * attachment per cascade pass at Medium); only transmitted shadows read it, and we draw none. A
+ * depth-only render target (count 0) is what WebGPURenderer offers for this. Set before any
+ * shadow node is built, so every cascade takes it; the shadow pipelines are then built for it
+ * once, at world entry, like any other.
+ */
+if (flashSwitches.shadowColor0) {
+  type ShadowSetup = { setupRenderTarget(shadow: THREE.LightShadow, builder: THREE.NodeBuilder): { shadowMap: THREE.RenderTarget; depthTexture: THREE.DepthTexture } }
+  const proto = (THREE as unknown as { ShadowNode: { prototype: ShadowSetup } }).ShadowNode.prototype
+  proto.setupRenderTarget = function (shadow, builder) {
+    const depthTexture = new THREE.DepthTexture(shadow.mapSize.width, shadow.mapSize.height)
+    depthTexture.name = 'ShadowDepthTexture'
+    depthTexture.compareFunction = (builder.renderer as unknown as { reversedDepthBuffer?: boolean }).reversedDepthBuffer ? THREE.GreaterEqualCompare : THREE.LessEqualCompare
+    const shadowMap = new THREE.RenderTarget(shadow.mapSize.width, shadow.mapSize.height, { count: 0 })
+    shadowMap.depthTexture = depthTexture
+    return { shadowMap, depthTexture }
+  }
+}
 
 /** Shadow settings per quality level: [cascades, map size]. Level 0 has no shadows. */
 const QUALITY: Record<number, [number, number]> = { 1: [2, 1024], 2: [3, 2048], 3: [4, 2048] }
@@ -131,7 +153,9 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   let cascadeCount = 0
   const buildLight = (quality: number) => {
     const enabled = quality > 0
-    const [cascades, size] = QUALITY[Math.max(1, Math.round(quality))]
+    const [levelCascades, levelSize] = QUALITY[Math.max(1, Math.round(quality))]
+    // ?shadowCascades=1 and ?shadowMap= (core/flashSwitches.ts) override the level for the visit.
+    const cascades = flashSwitches.shadowCascades ?? levelCascades, size = flashSwitches.shadowMap ?? levelSize
     const setMap = (shadow: THREE.DirectionalLightShadow) => {
       shadow.autoUpdate = enabled
       shadow.needsUpdate = enabled
@@ -170,7 +194,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
       },
     })
     csm.enabled.value = enabled
-    csm.fade = true
+    csm.fade = !flashSwitches.shadowFade0
     ;(light.shadow as unknown as { shadowNode: unknown }).shadowNode = csm
   }
   buildLight(P.shadowQuality.value)

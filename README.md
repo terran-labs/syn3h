@@ -264,6 +264,12 @@ Diagnostic and rendering switches:
 | `?samples=1` | `1` | Draw the scene without multisampling. |
 | `?lowrest=1` | `1` | Hold the remaining Medium differences at their Low values: water ripple size, fog bank samples, ground cover and tyre mark life. |
 | `?freeze=1` | `1` | Freeze the quality governor: no level, rung or bot count changes, and the render scale stays fixed. |
+| `?frameCanary=1` | `1` | Count WebGPU command buffers the browser accepted but never ran, which shows on screen as a black frame and which Safari reports nowhere. The count, the rate per minute and the last dropped frames, with the quality steps and size changes of the 15 seconds before, show in play and in the report. WebGPU only. |
+| `?shadowCascades=1` | `1` | One sun shadow cascade instead of the level's two or three. |
+| `?shadowMap=N` | `512`, `1024` or `2048` | Every sun shadow cascade at this size, whatever the level. |
+| `?shadowColor=0` | `0` | Depth-only sun shadow maps: no colour target beside each cascade's depth. |
+| `?shadowFilter=hard` | `hard` | Basic shadow maps: one depth comparison per pixel, no soft filtering. |
+| `?shadowFade=0` | `0` | No blend between one sun shadow cascade and the next. |
 | `?ui=flat` | `flat` | Flat interface glass for this visit. The saved choice is kept. |
 | `?cinematic=1` | present | The cinematic comparison preset: post effects, ground bounce light, aerial perspective and the terrain material extras. |
 | `?weather=X` | `0` to `1`, empty for 0.5 | Set the storminess. In a shared room the room takes it. |

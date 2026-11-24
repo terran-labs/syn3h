@@ -13,8 +13,13 @@
  * second from the recorder's counters; nothing is read from the page per frame.
  */
 import type { BlankFrameRecorder } from '../core/blankFrames'
+import type { FrameCanary } from '../core/frameCanary'
 
-export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inPlay: () => boolean): () => void {
+/**
+ * `canary`, with ?frameCanary=1: command buffers the browser dropped, which the blank-frame probe
+ * cannot see on Safari, in the same box. The Test flash control shows only with the recorder.
+ */
+export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inPlay: () => boolean, canary: () => FrameCanary | null = () => null, withRecorder = true): () => void {
   const box = document.createElement('div')
   box.className = 'flash-counter'
   box.style.cssText = [
@@ -31,17 +36,20 @@ export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inP
   // A tap must not also steer or fire: the touch controls listen on the document.
   for (const type of ['pointerdown', 'touchstart'] as const) test.addEventListener(type, event => event.stopPropagation())
   test.addEventListener('click', event => { event.stopPropagation(); recorder()?.clearNextFrame(true); update() })
-  box.append(text, test)
+  box.append(text)
+  if (withRecorder) box.append(test)
   box.hidden = true
   document.body.append(box)
   let shown = ''
   const update = () => {
-    const r = recorder(), play = inPlay()
+    const r = withRecorder ? recorder() : null, c = canary(), play = inPlay()
     if (box.hidden === play) box.hidden = !play
-    if (!r || !play) return
+    if ((!r && !c) || !play) return
+    const lines: string[] = []
     // Once a test flash has gone unseen, a zero would be a false all-clear.
-    const counts = r.testsAsked > 0 && r.testsSeen === 0 ? 'This browser does not let\nthe recorder see frames' : `Blank ${r.blank}  Partly ${r.partly}  (${r.lastMinute()}/min)\nLast: ${r.lastWords || '-'}`
-    const line = `${counts}\nTest seen ${r.testsSeen} of ${r.testsAsked}`
+    if (r) lines.push(`${r.testsAsked > 0 && r.testsSeen === 0 ? 'This browser does not let\nthe recorder see frames' : `Blank ${r.blank}  Partly ${r.partly}  (${r.lastMinute()}/min)\nLast: ${r.lastWords || '-'}`}\nTest seen ${r.testsSeen} of ${r.testsAsked}`)
+    if (c) lines.push(c.counterLines())
+    const line = lines.join('\n')
     if (line !== shown) { text.textContent = shown = line; text.style.whiteSpace = 'pre' }
   }
   const timer = setInterval(update, 250)
