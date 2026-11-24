@@ -213,8 +213,8 @@ const APPROVED: Look = {
 const ICON = {
   /** The square the parts are drawn in, and the margin the icon shows round it. */
   size: 200, margin: 6,
-  /** Tilt of the orbits: nearly level, the system seen from a little above its own plane. */
-  tilt: -0.18,
+  /** Tilt of the orbits: the system seen from above its own plane, turned a little anticlockwise. */
+  tilt: -0.32,
   /** The star's radius, the rings' thickness, and the gap left where a ray of the star crosses a ring. */
   star: 52, line: 6, gap: 7,
   /**
@@ -225,7 +225,7 @@ const ICON = {
    * cross nearly square on. (An orbit that reached only as far as the side tips ran along those
    * rays and was cut back into ragged stubs.)
    */
-  orbits: [[80, 25, 2.95, 9], [100, 37, 0.62, 12]] as [number, number, number, number][],
+  orbits: [[80, 31, 2.6, 9], [100, 44, 0.62, 12]] as [number, number, number, number][],
 }
 function iconParts(): { rings: Contour[]; worlds: Contour[]; star: Contour[] } {
   const c = ICON.size / 2, blank = () => new Field(-30, -30, ICON.size + 30, ICON.size + 30, 0.25)
