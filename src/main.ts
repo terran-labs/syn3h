@@ -16,10 +16,10 @@ import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { botsKeepCount } from './bots/params'
 import { ChaseCamera } from './core/ChaseCamera'
-import { flashSwitches, flashSwitchLine, sunShadowsLine } from './core/flashSwitches'
+import { flashSwitches, sunShadowsLine } from './core/flashSwitches'
 import { recordBlankFrames } from './core/blankFrames'
 import { startFlashCounter } from './ui/flashCounter'
-import { setFieldSwitchHooks } from './core/fieldSwitches'
+import { fieldSwitchLine, setFieldSwitchHooks } from './core/fieldSwitches'
 import { diagnosticReport } from './core/diagnosticReport'
 import { refractionState } from './world/water/refraction'
 import { depthEffectsState } from './core/midPassCopy'
@@ -202,7 +202,7 @@ async function main(): Promise<void> {
       '\nWater refraction: ' + refractionState(game.renderer) +
       // Copies taken in the middle of the scene pass (core/midPassCopy.ts), off where not yet proven.
       '\nForce field contact glow: ' + depthEffectsState() + '\nHeadlight beam soft edge: ' + depthEffectsState() +
-      (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '') + '\n' + sunShadowsLine() + '\n' + flashSwitchLine() +
+      (game.blankFrames ? '\n' + game.blankFrames.reportLines().join('\n') : '') + '\n' + sunShadowsLine() + '\n' + fieldSwitchLine() +
       (game.frameCanary ? '\n' + game.frameCanary.reportLines().join('\n') : '') +
       // Device loss: this page's and the last page's in this tab (core/lossRecord.ts).
       (game.lossRecorder ? game.lossRecorder.reportLines().map(line => '\n' + line).join('') : '')

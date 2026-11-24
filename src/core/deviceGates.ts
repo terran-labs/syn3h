@@ -8,6 +8,8 @@
  */
 import { params } from '../../shared/params'
 import { depthEffectsUnproven, midPassCopyProven } from './midPassCopy'
+import { flashSwitches, sunShadowsUnproven } from './flashSwitches'
+import { onFieldSwitches, setFieldSwitch } from './fieldSwitches'
 
 export interface DeviceGate {
   id: string
@@ -26,6 +28,13 @@ const watchParam = (id: string) => (fn: () => void) => params.onChange(changed =
 
 export function deviceGates(): DeviceGate[] {
   return [
+    {
+      // core/flashSwitches.ts gateSunShadows: WebGPU on WebKit or touch. Forced on is ?shadows=1,
+      // live: the gate is worked out again and the shadow pin written again at once.
+      id: 'sun-shadows', label: 'Sun shadows',
+      gated: () => sunShadowsUnproven(), forced: () => flashSwitches.shadows1,
+      force: on => setFieldSwitch('shadows1', on), watch: onFieldSwitches,
+    },
     {
       // core/midPassCopy.ts: copies taken in the middle of the scene pass, off on WebKit and touch.
       id: 'depth-effects', label: 'Water refraction, force field contact glow, headlight soft edge',

@@ -339,7 +339,7 @@ export class PerformancePanel {
     const fold = this.element.querySelector<HTMLDetailsElement>('.performance-field-switches')!
     const rows = fold.querySelector<HTMLElement>('.field-switch-rows')!
     let group = ''
-    const boxes = FIELD_SWITCHES.map(f => {
+    const boxes = FIELD_SWITCHES.filter(f => f.row).map(f => {
       // A sub-heading where the list's group changes (core/fieldSwitches.ts, SwitchGroup).
       if (f.group !== group) { group = f.group; const heading = document.createElement('p'); heading.className = 'field-switch-group'; heading.textContent = group; rows.append(heading) }
       const box = createSwitch(f.label, { className: `field-switch${f.live ? '' : ' is-reload'}`, signal, checked: isOn(f.key), onChange: on => setFieldSwitch(f.key, on) })

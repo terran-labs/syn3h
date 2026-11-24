@@ -56,7 +56,7 @@ try {
   assert.equal(await page.evaluate(() => mira.game.postChain !== null), true, 'unticked, the post chain is back')
 
   // Every switch on and off again: nothing saved, and the report names what is on.
-  for (const link of ['shading=0', 'post=base', 'freeze=1', 'ui=flat', 'blank=1', 'samples=1', 'webgl=1']) await row(link).click()
+  for (const link of ['shading=0', 'post=base', 'freeze=1', 'ui=flat', 'blank=1', 'samples=1', 'webgl=1', 'gpuTrace=1']) await row(link).click()
   assert.ok(await fold.locator('[data-performance=reload-switches]').isVisible(), 'a reload-only switch offers the reload')
   await card.locator('[data-performance=copy-report]').click()
   await page.waitForFunction(() => /copied|Select and copy/.test(document.querySelector('[data-performance=copy-status]')?.textContent ?? ''))
@@ -65,10 +65,32 @@ try {
   for (const name of ['lowrest=1', 'shading=0', 'post=base', 'freeze=1', 'ui=flat', 'blank=1', 'samples=1']) assert.ok(line.includes(name), `the report names ${name}: ${line}`)
   await fold.locator('[data-performance=copy-switch-link]').click()
   const link = await page.evaluate(() => navigator.clipboard.readText())
-  for (const name of ['lowrest=1', 'shading=0', 'post=base', 'freeze=1', 'ui=flat', 'blank=1', 'samples=1', 'webgl=1']) assert.ok(link.includes(name), `the copied link carries ${name}: ${link}`)
-  for (const link of ['lowrest=1', 'shading=0', 'post=base', 'freeze=1', 'ui=flat', 'blank=1', 'samples=1', 'webgl=1']) await row(link).click()
+  for (const name of ['lowrest=1', 'shading=0', 'post=base', 'freeze=1', 'ui=flat', 'blank=1', 'samples=1', 'webgl=1', 'gpuTrace=1']) assert.ok(link.includes(name), `the copied link carries ${name}: ${link}`)
+  for (const link of ['lowrest=1', 'shading=0', 'post=base', 'freeze=1', 'ui=flat', 'blank=1', 'samples=1', 'webgl=1', 'gpuTrace=1']) await row(link).click()
   const now = await storage()
   if (now !== saved) { const [a, b] = [JSON.parse(saved), JSON.parse(now)]; const diff = [0, 1].flatMap(i => { const x = new Map(a[i]), y = new Map(b[i]); return [...new Set([...x.keys(), ...y.keys()])].filter(k => x.get(k) !== y.get(k)).map(k => `${i ? 'session' : 'local'} ${k}: ${x.get(k)} -> ${y.get(k)}`) }); assert.fail(`a switch wrote to saved preferences: ${diff.join('; ')}`) }
   assert.deepEqual(errors, [])
+
+  // A touch device under WebGPU: the sun shadow gate holds shadows off, its row says so, and
+  // forcing it on is ?shadows=1, live.
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 })
+  const tap = await phone.newPage()
+  await tap.goto(`${base}?autoplay=1&room=field-switches-phone-${Date.now()}`)
+  await tap.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
+  await tap.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
+  if (await tap.evaluate(() => mira.game.backend === 'webgpu')) {
+    if (!(await tap.locator('.world-inspector').isVisible())) await tap.locator('.inspector-toggle').tap()
+    const pcard = tap.locator('.wi-card[data-section=performance]')
+    await pcard.locator('.wi-head').tap()
+    await pcard.locator('details.performance-diagnostics > summary').tap()
+    await pcard.locator('details.performance-field-switches > summary').tap()
+    const gate = pcard.locator('.field-switch[data-gate=sun-shadows]')
+    assert.ok(await gate.isVisible(), 'phone: the sun shadow gate has its row')
+    assert.equal(await tap.evaluate(() => mira.params.get('gfx.shadowQuality').value), 0, 'phone: the gate holds sun shadows off')
+    await gate.tap()
+    assert.notEqual(await tap.evaluate(() => mira.params.get('gfx.shadowQuality').value), 0, 'phone: forced on, sun shadows return at once')
+    assert.ok((await tap.evaluate(() => location.search)).includes('shadows=1'), 'phone: forced on is ?shadows=1')
+  } else console.log('phone: WebGL 2 here, no sun shadow gate to check')
+  await phone.close()
   console.log('field switches ok')
 } finally { await browser.close() }

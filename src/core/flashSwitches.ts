@@ -145,6 +145,14 @@ export function gateSunShadows(webgpu: boolean, unproven: boolean, s: FlashSwitc
   shadowsGated = shadowsUnproven && !s.shadows1
 }
 
+/**
+ * The gate again after ?shadows=1 changes in play (Performance, Diagnostics, Field switches:
+ * core/fieldSwitches.ts). The device was found when the renderer was attached; only the switch
+ * changed, so this needs nothing from the renderer.
+ */
+export function regateSunShadows(s: FlashSwitches = flashSwitches): void { shadowsGated = shadowsUnproven && !s.shadows1 }
+/** True on a device where sun shadows are not yet proven (whether or not ?shadows=1 lifts the gate). */
+export function sunShadowsUnproven(): boolean { return shadowsUnproven }
 /** Why a parameter is held: the link switch that holds it, or a device gate. */
 export interface Pin { value: ParamValue; by: string }
 
