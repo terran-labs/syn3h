@@ -313,6 +313,9 @@ device:
 | `?glassBlur=direct`, `?glassBlur=mip` | `direct` or `mip` | Glass frost without mip blur, or without the Gaussian blur. |
 | `?glassSet=one` | `one` | A single glass slot. |
 | `?wordmark=N`, `?intro=N` | `0` to `7`; `0` to `2` | Lobby wordmark placement and opening (0 off, 1 pull back, 2 push in). |
+| `?solid=0` | `0` (or `1`) | The lobby name as the earlier veil that takes the shafts' colour, instead of the lit metal face; also the lobby without the metal shading's cost. |
+| `?white=1` | `1` | The lobby name's metal starts white instead of pale gold. |
+| `?tune=1` | `1` | A panel of sliders for every "Lobby logo" setting (src/ui/brand/mira/logoTuner.ts, loaded only with this switch). |
 | `?mark=ID`, `?worlds=N` | a candidate mark; a count | Development builds only: a candidate wordmark, and a galaxy crowded with N repeats of each planet. |
 
 The lab and demo pages (`fx.html`, `planets.html`, `water-lab.html`, `terrainlab.html`,
