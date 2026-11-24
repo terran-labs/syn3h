@@ -25,14 +25,20 @@
 import { spawn } from 'node:child_process'
 import { copyFileSync, existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
+import { createHash } from 'node:crypto'
 
 const root = resolve(new URL('..', import.meta.url).pathname)
 const folder = join(root, 'tests/ui')
 const args = process.argv.slice(2)
 const timeout = Number(args.find(a => a.startsWith('--timeout='))?.split('=')[1] ?? 600) * 1000
 const wanted = args.filter(a => !a.startsWith('--')).map(a => a.replace(/^tests\/ui\//, '').replace(/\.mjs$/, ''))
-const logs = '/tmp/mira-browser-checks'
+// One log folder per checkout, so lanes running this at the same time never mix or overwrite each
+// other's evidence (23 November 2026: another lane's failures landed beside the Orchestrator's run).
+// The folder is named for the checkout and a short hash of its path; MIRA_BROWSER_CHECKS_LOGS
+// overrides it.
+const checkout = `${basename(root)}-${createHash('sha256').update(root).digest('hex').slice(0, 8)}`
+const logs = process.env.MIRA_BROWSER_CHECKS_LOGS || join('/tmp/mira-browser-checks', checkout)
 mkdirSync(logs, { recursive: true })
 
 /** A browser check: an .mjs in tests/ui that drives Playwright. Helpers (stateWait, thumbGrid, lib/) are not. */
