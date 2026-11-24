@@ -82,10 +82,11 @@ export const BAR_LINE: number = (() => {
 /**
  * Height of the name Along an orbit, in system radii. It was 0.72 for the Syn3h mark, which was
  * 4.3 times as wide as tall. The Mira mark is about twice as wide as tall (its star adds height),
- * so at 0.72 it drew at under half the width; 1 gives it about two thirds of the old width
- * with letters the same height as before, and keeps the star on screen at 1280 by 800.
+ * so at 0.72 it drew at under half the width.
  */
-export const ORBIT_SIZE = 1
+export const wordmarkSize = defineParam({ id: 'lobby.logo.size', label: 'Size of the name', group: 'Lobby logo', scope: 'client', default: 1, min: 0.5, max: 1.8, step: 0.01 })
+/** How high the name's middle stands above the plane, in its own heights. */
+export const wordmarkRise = defineParam({ id: 'lobby.logo.rise', label: 'Height of the name above the plane', group: 'Lobby logo', scope: 'client', default: 0.6, min: 0.2, max: 0.9, step: 0.01 })
 /** Where the wordmark stands for a placement, seen from `view` (the rig, not the live camera). */
 export function placeWordmark(mode: number, view: View, box: ScreenBox, system = 10): Placement {
   if (mode >= 4) return placeInSystem(mode, view, system)
@@ -129,10 +130,10 @@ function placeInSystem(mode: number, view: View, system: number): Placement {
     return panel(add(scale(far, system * 2.6), up, size * 0.5 * level), size)
   }
   // Along an orbit: upright on a circle beyond the outer orbit, following its curve.
-  const size = system * ORBIT_SIZE
+  const size = system * wordmarkSize.value
   // Below the plane it hangs a little lower than it stands above, clear of the labels, which
   // sit under their worlds there. Both are zero at edge-on, so the glide is continuous.
-  const shape: Shape = { kind: 1, radius: system * 2.6, bearing, size, offset: size * (level >= 0 ? 0.52 : 0.8) * level, flip }
+  const shape: Shape = { kind: 1, radius: system * 2.6, bearing, size, offset: size * (level >= 0 ? wordmarkRise.value : wordmarkRise.value + 0.28) * level, flip }
   return { centre: add(scale(far, shape.radius), up, shape.offset), right: scale(sideways, size), up: scale(up, size), sunDistance: Math.hypot(...add(scale(far, shape.radius), up, shape.offset)), shape }
 }
 
@@ -143,7 +144,7 @@ function placeInSystem(mode: number, view: View, system: number): Placement {
  */
 // Rise 0.45: the smaller name's top then sits below where the larger one's did, so a phone
 // held upright keeps all of it on screen (0.66 cut its top off). For the Mira mark, drawn larger
-// along its orbit (ORBIT_SIZE 1, was 0.72) and taller for its star, scale 0.45 and rise 0.3 put
+// along its orbit (lobby.logo.size 1, was 0.72) and taller for its star, scale 0.45 and rise 0.3 put
 // the lifted top back about where the Syn3h mark's was: at 0.55 and 0.45 the star left the top of
 // a 1280 by 800 or 1440 by 900 screen with Welcome or Updates open.
 export const LIFT_SCALE = 0.45, LIFT_RISE = 0.3
