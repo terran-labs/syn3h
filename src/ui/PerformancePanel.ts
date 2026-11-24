@@ -338,20 +338,58 @@ export class PerformancePanel {
   private buildFieldSwitches(signal: AbortSignal): void {
     const fold = this.element.querySelector<HTMLDetailsElement>('.performance-field-switches')!
     const rows = fold.querySelector<HTMLElement>('.field-switch-rows')!
-    let group = ''
-    const boxes = FIELD_SWITCHES.filter(f => f.row).map(f => {
-      // A sub-heading where the list's group changes (core/fieldSwitches.ts, SwitchGroup).
-      if (f.group !== group) { group = f.group; const heading = document.createElement('p'); heading.className = 'field-switch-group'; heading.textContent = group; rows.append(heading) }
+    // Each group is a sub-heading and a block of rows (core/fieldSwitches.ts, SwitchGroup).
+    const blocks = new Map<string, HTMLElement>()
+    const blockOf = (group: string) => {
+      let block = blocks.get(group)
+      if (block) return block
+      block = document.createElement('div'); block.className = 'field-switch-block'; block.dataset.group = group
+      const heading = document.createElement('p'); heading.className = 'field-switch-group'; heading.textContent = group
+      block.append(heading); rows.append(block); blocks.set(group, block)
+      return block
+    }
+    const syncs: (() => void)[] = []
+    const choices = new Set<string>()
+    for (const f of FIELD_SWITCHES.filter(f => f.row)) {
+      const block = blockOf(f.group)
+      if (f.choice) {
+        // Entries that share a choice are one row: the level's own value, or one of theirs.
+        if (choices.has(f.choice)) continue
+        choices.add(f.choice)
+        const options = FIELD_SWITCHES.filter(g => g.choice === f.choice)
+        const row = document.createElement('div'); row.className = 'wi-row is-choice field-switch-choice'; row.dataset.switch = f.name
+        const label = document.createElement('span'); label.className = 'wi-label'; label.textContent = f.choice
+        const note = document.createElement('small'); note.className = 'field-switch-link'
+        note.textContent = `?${f.name}=${options.map(o => o.value).join('|')}${f.live ? '' : ' · applies after reload'}`
+        label.append(note)
+        const seg = document.createElement('div'); seg.className = 'wi-seg'; seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', f.choice)
+        const buttons = [{ key: null, text: 'Level' }, ...options.map(o => ({ key: o.key, text: o.label }))].map(({ key, text }) => {
+          const button = document.createElement('button'); button.type = 'button'; button.textContent = text
+          button.addEventListener('click', () => { if (key) setFieldSwitch(key, true); else for (const o of options) setFieldSwitch(o.key, false) }, { signal })
+          seg.append(button)
+          return { key, button }
+        })
+        row.append(label, seg); block.append(row)
+        syncs.push(() => { for (const { key, button } of buttons) { const on = key ? isOn(key) : options.every(o => !isOn(o.key)); button.classList.toggle('is-on', on); button.setAttribute('aria-pressed', String(on)) } })
+        continue
+      }
       const box = createSwitch(f.label, { className: `field-switch${f.live ? '' : ' is-reload'}`, signal, checked: isOn(f.key), onChange: on => setFieldSwitch(f.key, on) })
       box.element.dataset.switch = linkOf(f)
       const note = document.createElement('small'); note.className = 'field-switch-link'
       note.textContent = f.live ? `?${linkOf(f)}` : `?${linkOf(f)} · applies after reload`
       box.element.querySelector('.s3-switch-text')!.append(note)
-      rows.append(box.element)
-      return { f, box }
-    })
+      block.append(box.element)
+      syncs.push(() => box.set(isOn(f.key)))
+    }
+    // How shadows are drawn means nothing while they are off: that block shows only while sun
+    // shadows are on (the level, ?shadows=0 and the device gate decide; gfx.shadowQuality says).
+    const shadowBlock = blocks.get('Sun shadows')
+    const syncShadows = () => { if (shadowBlock) shadowBlock.hidden = !(Number(params.get('gfx.shadowQuality')?.value) > 0) }
+    signal.addEventListener('abort', params.onChange(id => { if (id === 'gfx.shadowQuality') syncShadows() }), { once: true })
+    syncShadows()
     // Device gates: what a gate has turned off on this device, and its switch for the visit.
     const gates = deviceGates().filter(g => g.gated())
+    if (gates.length) { const heading = document.createElement('p'); heading.className = 'field-switch-group'; heading.textContent = 'Device gates'; rows.append(heading) }
     for (const gate of gates) {
       const box = createSwitch(gate.label, { className: 'field-switch is-gate', signal, checked: gate.forced(), onChange: on => gate.force(on) })
       box.element.dataset.gate = gate.id
@@ -364,7 +402,7 @@ export class PerformancePanel {
     const reload = fold.querySelector<HTMLButtonElement>('[data-performance=reload-switches]')!
     const count = fold.querySelector('summary small')!
     const sync = () => {
-      for (const { f, box } of boxes) box.set(isOn(f.key))
+      for (const sync of syncs) sync()
       reload.hidden = !pendingReload()
       const on = FIELD_SWITCHES.filter(f => isOn(f.key)).length
       count.textContent = on ? `${on} on` : 'none on'

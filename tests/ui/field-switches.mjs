@@ -34,7 +34,8 @@ try {
   // point (position and room, rewritten every few seconds by play itself).
   const storage = () => page.evaluate(() => JSON.stringify([Object.entries(localStorage).sort(), Object.entries(sessionStorage).filter(([k]) => !k.startsWith('mira.resume')).sort()]))
 
-  // From the link to the box.
+  // From the link to the box. Sun shadows are off, so how they are drawn is not offered.
+  assert.equal(await fold.locator('.field-switch-block[data-group="Sun shadows"]').isVisible(), false, 'with sun shadows off, their switches are hidden')
   assert.equal(await ticked('shadows=0'), true, 'opened with ?shadows=0, its box is ticked')
   assert.equal(await param('gfx.shadowQuality'), 0, '?shadows=0 holds sun shadows off')
   const saved = await storage()
@@ -44,6 +45,14 @@ try {
   assert.equal(await ticked('shadows=0'), false)
   assert.ok(!(await page.evaluate(() => location.search)).includes('shadows=0'), 'unticked, the switch leaves the address')
   assert.notEqual(await param('gfx.shadowQuality'), 0, 'unticked, sun shadows return to the level')
+  // How shadows are drawn shows only while they are drawn; the map size is one choice.
+  const shadowBlock = fold.locator('.field-switch-block[data-group="Sun shadows"]')
+  assert.ok(await shadowBlock.isVisible(), 'with sun shadows on, their switches show')
+  await shadowBlock.locator('.field-switch-choice[data-switch=shadowMap] button', { hasText: '1024' }).click()
+  assert.ok((await page.evaluate(() => location.search)).includes('shadowMap=1024'), 'the shadow map choice is in the address')
+  assert.ok(await fold.locator('[data-performance=reload-switches]').isVisible(), 'a shadow switch offers the reload')
+  await shadowBlock.locator('.field-switch-choice[data-switch=shadowMap] button', { hasText: 'Level' }).click()
+  assert.ok(!(await page.evaluate(() => location.search)).includes('shadowMap'), 'Level clears the shadow map choice')
   await row('lowrest=1').click()
   assert.equal(await param('water.rippleSize'), 64, 'ticked, ?lowrest=1 holds the water ripples at Low')
   assert.ok((await page.evaluate(() => location.search)).includes('lowrest=1'), 'ticked, the switch is in the address')

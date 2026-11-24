@@ -34,9 +34,10 @@ import { flashPins, flashSwitches, pinnedParams, pins, regateSunShadows, type Fl
 import type { ParamValue } from '../../shared/params'
 
 export type SwitchKey = 'blank' | 'shadows0' | 'shadows1' | 'shading0' | 'postBase' | 'postOff' | 'samples1' | 'lowRest' | 'freeze' | 'uiFlat' | 'webgl' | 'gpuTrace' | 'gfx' | 'diag'
+  | 'frameCanary' | 'shadowCascades' | 'shadowMap512' | 'shadowMap1024' | 'shadowMap2048' | 'shadowColor0' | 'shadowHard' | 'shadowFade0'
 
 /** How the rows group the switches; a group is a sub-heading. */
-export type SwitchGroup = 'Graphics' | 'Renderer' | 'Interface' | 'Governor' | 'Recorder'
+export type SwitchGroup = 'Graphics' | 'Sun shadows' | 'Renderer' | 'Interface' | 'Governor' | 'Recorder'
 
 /**
  * One link switch. The single list (FIELD_SWITCHES): the rows, the copied link, the report's
@@ -58,6 +59,8 @@ export interface FieldSwitch {
   group: SwitchGroup
   /** False: not a row of its own (a device gate's row forces it, or the card already does it). */
   row: boolean
+  /** Entries that share a name and a choice are one row: a choice among their values, or none. */
+  choice?: string
 }
 
 export const FIELD_SWITCHES: readonly FieldSwitch[] = [
@@ -68,12 +71,23 @@ export const FIELD_SWITCHES: readonly FieldSwitch[] = [
   { key: 'postOff', name: 'post', value: 'off', values: '`off`', label: 'No post effects at all', note: 'No post chain: the scene is drawn straight to the canvas, with Flat interface glass.', live: true, group: 'Graphics', row: true },
   { key: 'lowRest', name: 'lowrest', value: '1', values: '`1`', label: 'Other Medium settings at Low', note: 'Hold the remaining Medium differences at their Low values: water ripple size, fog bank samples, ground cover and tyre mark life.', live: true, group: 'Graphics', row: true },
   { key: 'gfx', name: 'gfx', value: 'N', values: '`0` to `5`', label: 'Quality level for this visit', note: 'Pin the quality level for this visit, as choosing it by hand does: 0 Minimal, 1 Low, 2 Medium, 3 High, 4 Ultra, 5 Cinematic. Nothing is saved unless you change a setting. In play the card\'s level picker does the same.', live: false, group: 'Graphics', row: false },
+  // How sun shadows are drawn, not whether: with shadows off they change nothing, so their rows show
+  // only while shadows are on. Build choices of the shadow node (world/Environment.ts, Game.ts),
+  // read once at start: all after a reload.
+  { key: 'shadowCascades', name: 'shadowCascades', value: '1', values: '`1`', label: 'One shadow cascade', note: 'One sun shadow cascade instead of the level\'s two or three.', live: false, group: 'Sun shadows', row: true },
+  { key: 'shadowMap512', name: 'shadowMap', value: '512', values: '`512`', label: '512', note: 'Every sun shadow cascade 512 pixels square, whatever the level.', live: false, group: 'Sun shadows', row: true, choice: 'Shadow map size' },
+  { key: 'shadowMap1024', name: 'shadowMap', value: '1024', values: '`1024`', label: '1024', note: 'Every sun shadow cascade 1024 pixels square, whatever the level.', live: false, group: 'Sun shadows', row: true, choice: 'Shadow map size' },
+  { key: 'shadowMap2048', name: 'shadowMap', value: '2048', values: '`2048`', label: '2048', note: 'Every sun shadow cascade 2048 pixels square, whatever the level.', live: false, group: 'Sun shadows', row: true, choice: 'Shadow map size' },
+  { key: 'shadowColor0', name: 'shadowColor', value: '0', values: '`0`', label: 'Depth-only shadow maps', note: 'Depth-only sun shadow maps: no colour target beside each cascade\'s depth.', live: false, group: 'Sun shadows', row: true },
+  { key: 'shadowHard', name: 'shadowFilter', value: 'hard', values: '`hard`', label: 'Hard-edged shadows', note: 'Basic shadow maps: one depth comparison per pixel, no soft filtering.', live: false, group: 'Sun shadows', row: true },
+  { key: 'shadowFade0', name: 'shadowFade', value: '0', values: '`0`', label: 'No blending between cascades', note: 'No blend between one sun shadow cascade and the next.', live: false, group: 'Sun shadows', row: true },
   { key: 'samples1', name: 'samples', value: '1', values: '`1`', label: 'No multisampling', note: 'Draw the scene without multisampling. Antialias is fixed when the renderer is made.', live: false, group: 'Renderer', row: true },
   { key: 'webgl', name: 'webgl', value: '1', values: 'present, any value', label: 'WebGL 2 instead of WebGPU', note: 'Start on WebGL 2 instead of WebGPU. The backend is chosen when the renderer is made.', live: false, group: 'Renderer', row: true },
   { key: 'gpuTrace', name: 'gpuTrace', value: '1', values: 'present, any value', label: 'Count live GPU memory exactly', note: 'Count live WebGPU texture and buffer bytes exactly, by wrapping every allocation, and add a "Live WebGPU memory (gpuTrace)" line to the report. The wrapping starts with the renderer.', live: false, group: 'Renderer', row: true },
   { key: 'freeze', name: 'freeze', value: '1', values: '`1`', label: 'Quality governor frozen', note: 'Freeze the quality governor: no level, rung or bot count changes, and the render scale stays fixed.', live: true, group: 'Governor', row: true },
   { key: 'uiFlat', name: 'ui', value: 'flat', values: '`flat`', label: 'Flat interface glass', note: 'Flat interface glass for this visit. The saved choice is kept.', live: true, group: 'Interface', row: true },
   { key: 'blank', name: 'blank', value: '1', values: '`1`', label: 'Blank frame counter on screen', note: 'Turn the blank-frame recorder on, with its counter on screen in play and a Test flash button that shows whether the recorder can see frames in this browser.', live: true, group: 'Recorder', row: true },
+  { key: 'frameCanary', name: 'frameCanary', value: '1', values: '`1`', label: 'Dropped frame counter on screen', note: 'Count WebGPU command buffers the browser accepted but never ran, which shows on screen as a black frame and which Safari reports nowhere, in the same on-screen counter as ?blank=1 and in the report. It starts with the renderer.', live: false, group: 'Recorder', row: true },
   { key: 'diag', name: 'diag', value: '1', values: '`1`', label: 'Diagnostics open at load', note: 'Start diagnostic sampling at load, as opening the Diagnostics fold of the Performance card does.', live: false, group: 'Recorder', row: false },
 ]
 
@@ -110,6 +124,10 @@ export function isOn(key: SwitchKey, s: FlashSwitches = flashSwitches): boolean 
     case 'postOff': return s.post === 'off'
     case 'gfx': return s.gfx !== undefined
     case 'gpuTrace': return gpuTrace
+    case 'shadowCascades': return s.shadowCascades !== null
+    case 'shadowMap512': return s.shadowMap === 512
+    case 'shadowMap1024': return s.shadowMap === 1024
+    case 'shadowMap2048': return s.shadowMap === 2048
     default: return s[key]
   }
 }
@@ -145,6 +163,12 @@ export function setFieldSwitch(key: SwitchKey, on: boolean): void {
     case 'shadows0': s.shadows0 = on; if (on) s.shadows1 = false; break
     case 'shadows1': s.shadows1 = on; if (on) s.shadows0 = false; break
     case 'gpuTrace': gpuTrace = on; break
+    case 'shadowCascades': s.shadowCascades = on ? 1 : null; break
+    case 'shadowMap512': case 'shadowMap1024': case 'shadowMap2048': {
+      const size = Number(key.slice('shadowMap'.length)) as 512 | 1024 | 2048
+      s.shadowMap = on ? size : s.shadowMap === size ? null : s.shadowMap
+      break
+    }
     default: s[key] = on
   }
   if (key === 'uiFlat') { flatForPostOff = false; hooks.setFlatGlass?.(on) }
@@ -206,6 +230,6 @@ export function fieldSwitchLine(s: FlashSwitches = flashSwitches): string {
 
 /** The documentation table (README, between its field-switches markers), from the list. */
 export function fieldSwitchTable(): string {
-  const rows = FIELD_SWITCHES.map(f => `| \`?${f.key === 'gfx' ? 'gfx=N' : linkOf(f)}\` | ${f.values} | ${f.note} | ${f.live ? 'at once' : 'after a reload'} |`)
+  const rows = FIELD_SWITCHES.map(f => `| \`?${f.key === 'gfx' ? 'gfx=N' : linkOf(f)}\` | ${f.values} | ${f.choice ? `${f.choice}: ` : ''}${f.note} | ${f.live ? 'at once' : 'after a reload'} |`)
   return ['| Switch | Values | What it does | In play |', '| --- | --- | --- | --- |', ...rows].join('\n')
 }
