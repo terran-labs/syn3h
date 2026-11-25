@@ -151,6 +151,12 @@ export function splashShape(impact: number): SplashShape {
   }
 }
 
+/**
+ * What entry and exit detection needs of a vehicle that has lost its slot to others (more vehicles
+ * on the water than the tier has slots): kept by id, so it neither splashes again on getting a
+ * slot back nor misses coming out.
+ */
+type Crossing = Pick<VehicleState, 'seen' | 'submerged' | 'x' | 'z' | 'depth' | 'deepest' | 'under'>
 interface VehicleState {
   slot: number; seen: number; submerged: number
   x: number; z: number; dirX: number; dirZ: number
@@ -205,6 +211,7 @@ export class SpraySim {
   /** A broad low swell beside a hull (water.bowSwell); off by default. */
   bowSwell = false
   private vehicles = new Map<string, VehicleState>()
+  private crossings = new Map<string, Crossing>()
   /**
    * Share of requested droplets actually emitted. When the pool would overflow, every source is
    * thinned by the same factor instead of overwriting live drops, so density degrades evenly.
@@ -248,7 +255,7 @@ export class SpraySim {
   clear() {
     this.dropletCount = this.ringCount = this.rippletCount = this.rippletNext = 0
     this.armStart.fill(0); this.armCount.fill(0); this.armHeadActive.fill(0); this.armKind.fill(0); this.slotUsed.fill(0)
-    this.vehicles.clear(); this.version++
+    this.vehicles.clear(); this.crossings.clear(); this.version++
   }
 
   /** Advance everything already emitted. Call once per frame before `vehicle`. */
@@ -315,6 +322,7 @@ export class SpraySim {
       if (this.time - s.seen > 8) { this.slotUsed[s.slot] = 0; for (let a = 0; a < ARMS; a++) this.armHeadActive[s.slot * ARMS + a] = 0; this.vehicles.delete(id) }
       else if (this.time - s.seen > .25) for (let a = 0; a < ARMS; a++) this.armHeadActive[s.slot * ARMS + a] = 0
     }
+    for (const [id, c] of this.crossings) if (this.time - c.seen > 8) this.crossings.delete(id)
     this.version++
   }
 
@@ -326,12 +334,17 @@ export class SpraySim {
       // Full: take the slot of the vehicle seen longest ago.
       let oldest: string | null = null, seen = Infinity
       for (const [k, v] of this.vehicles) if (v.seen < seen) { seen = v.seen; oldest = k }
-      slot = this.vehicles.get(oldest!)!.slot; this.vehicles.delete(oldest!)
+      const evicted = this.vehicles.get(oldest!)!
+      slot = evicted.slot; this.vehicles.delete(oldest!)
+      const { seen: was, submerged, x: ex, z: ez, depth, deepest, under } = evicted
+      this.crossings.set(oldest!, { seen: was, submerged, x: ex, z: ez, depth, deepest, under })
       for (let a = 0; a < ARMS; a++) { this.armCount[slot * ARMS + a] = 0; this.armHeadActive[slot * ARMS + a] = 0 }
     }
     this.slotUsed[slot] = 1
     this.armKind.fill(0, slot * ARMS, slot * ARMS + ARMS)
     s = { slot, seen: this.time, submerged: 0, x, z, dirX: 0, dirZ: 1, bow: 0, tail: 0, mist: 0, touching: false, speed: 0, ball: 0, dry: 0, depth: 0, deepest: 0, under: false }
+    const kept = this.crossings.get(id)
+    if (kept) { Object.assign(s, kept, { seen: this.time }); this.crossings.delete(id) }
     this.vehicles.set(id, s)
     return s
   }
@@ -688,6 +701,7 @@ export class SpraySim {
     for (let i = 0; i < this.ringCount; i++) { this.rings[i * R + RX] += dx; this.rings[i * R + RZ] += dz }
     for (let i = 0; i < this.rippletCount; i++) { this.ripplets[i * R + RX] += dx; this.ripplets[i * R + RZ] += dz }
     for (const s of this.vehicles.values()) { s.x += dx; s.z += dz }
+    for (const c of this.crossings.values()) { c.x += dx; c.z += dz }
     this.version++
   }
 
