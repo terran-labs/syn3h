@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-24 21:15 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-24 22:10 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2404 (release-120, link switches ?presentLate=1, ?frameCap=30 and ?shadowUpdate=once|2 for the iPhone empty frames), source fe1e79bb,
-frozen copy 20261124-210344-fe1e79bb, Worker version 18eb9e2e, at https://mira.cc/ since 24 November 21:08 PST.
+Live: v26.11.2405 (release-121, other vehicles' headlights light the ground at night (light.groundPools); /webgpu-present-test.html served by the Worker; the counter box yields to the bottom stack), source f8af6a8f,
+frozen copy 20261124-215701-f8af6a8f, Worker version 17188b69, at https://mira.cc/ since 24 November 22:01 PST.
 The game is Mira from v26.11.2300 (LAST_SYN3H_VERSION v26.11.2206; notes heading "## Mira vX"). Kept named syn3h on
 purpose: the Worker, its workers.dev addresses, the Durable Object, the R2 bucket, x-syn3h-version, the token path,
 'buggy-syn3h', local paths and /tmp names (ship.sh outcomes are now /tmp/mira-ship-N*), the repository (docs/NAMES.md).
@@ -185,6 +185,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2402 | 118 | m-stack-2402 | notices and buttons at the bottom of the screen no longer overlap |
 | v26.11.2403 | 119 | m-retry-2403 | a failed physics engine download retries by itself; the counter box fits a phone |
 | v26.11.2404 | 120 | m-present-2404 | ?presentLate=1, ?frameCap=30 and ?shadowUpdate=once or 2 test links (the WebGPU test page held for a Worker route) |
+| v26.11.2405 | 121 | m-pools-2405 | other vehicles' headlights light the ground at night; the WebGPU present test page; the counter box gives way to bottom notices |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
