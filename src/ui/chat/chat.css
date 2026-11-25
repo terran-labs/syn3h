@@ -6,7 +6,7 @@
    desktop  the upper right while driving (below); nothing with the cursor free.
    phone    upright: below the readouts; on its side: top right (below). Never takes a touch. */
 .chat-strip {
-  position: fixed; z-index: 22; left: 242px; bottom: var(--edge-bottom); width: clamp(260px, calc(50vw - 352px), 360px);
+  position: fixed; z-index: 22; left: 242px; bottom: var(--edge-bottom); width: clamp(260px, calc(50vw - var(--rail-width, 352px)), 360px);
   display: flex; flex-direction: column; gap: 3px; pointer-events: none; transition: opacity .4s ease;
   color: var(--s3-ink, #f4f4f4); font: 400 13.5px/1.35 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif;
 }

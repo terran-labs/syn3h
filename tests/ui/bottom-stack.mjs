@@ -5,7 +5,7 @@
 // - paused, with the build notice: every shown item of the strip is clear of every other;
 // - paused: every pause button lies wholly inside the viewport (four of them on a phone);
 // - in play, with the build notice and the slow-frames offer: likewise, and none
-//   covers a thumb control;
+//   covers a thumb control or, on a desktop, the sidebar at its widest;
 // - Help and incoming Chat can both be read before and after a vehicle change. On a desktop that
 //   is the driving view: with the cursor free the sidebar holds Chat and no toasts show.
 // Every state measured is made the way the game makes it (its new-build event, a recommendation in
@@ -20,7 +20,7 @@ import { mkdirSync } from 'node:fs'
 const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5213/'
 const out = process.argv[2]
 if (out) mkdirSync(out, { recursive: true })
-const SIZES = [[390, 844, true], [844, 390, true], [1280, 800, false], [1700, 1100, false]]
+const SIZES = [[390, 844, true], [844, 390, true], [1280, 800, false], [1440, 900, false], [1700, 1100, false]]
 
 /** The strip's shown items and the controls they must not cover, as boxes. */
 const layout = () => {
@@ -55,6 +55,9 @@ try {
     const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, hasTouch: touch, isMobile: touch })
     // The overlay is opt-in on touch-first devices.
     await context.addInitScript(() => localStorage.setItem('mira.chat.overlay', '1'))
+    // Desktops run with the sidebar at its widest (a saved width larger than any allowed), which
+    // must still leave the strip clear (the Foreman, 25 November 2026).
+    if (!touch) await context.addInitScript(() => { try { localStorage.setItem('mira.sidebar.width', '10000') } catch { /* storage optional */ } })
     const page = await context.newPage()
     const errors = []; page.on('pageerror', error => errors.push(String(error.message).slice(0, 300)))
     await page.goto(`${base}?autoplay=1&vehicle=buggy&room=bottom-stack-${tag}-${Date.now()}`)
@@ -105,6 +108,8 @@ try {
       history.sample = (...args) => { const changed = sample(...args); history.recommendation = offer; return changed }
       history.recommendation = offer
       quality.publishPerformance()
+      // And a chat line arriving: on a desktop it once sat over the offer at the lower left.
+      window.miraChat.net.chat.receive({ type: 'chat', from: 42, text: 'race you to the volcano, then back round the long way', t: 0 })
     })
     await steady(page, () => {
       const opaque = el => !!el && !el.hidden && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none' && Number(getComputedStyle(el).opacity) === 1
@@ -113,9 +118,14 @@ try {
         && [...document.querySelectorAll('.touch-controls button:not([hidden])')].every(b => getComputedStyle(b).visibility !== 'hidden' && Number(getComputedStyle(b.closest('.touch-controls')).opacity) === 1)
     }, `${tag} in play`)
     const play = await page.evaluate(layout)
+    for (const a of play.items) for (const c of play.chat) assert.ok(!clash(a, c), `${tag} in play: a chat line covers ${a.name} ${JSON.stringify([a, c])}`)
     if (out) await page.screenshot({ path: `${out}/${tag}-play-build-slow.png` })
     for (const [i, a] of play.items.entries()) for (const b of play.items.slice(i + 1)) assert.ok(!clash(a, b), `${tag} in play: ${a.name} and ${b.name} overlap ${JSON.stringify([a, b])}`)
     for (const a of play.items) for (const c of play.controls) assert.ok(!clash(a, c), `${tag} in play: ${a.name} covers ${c.name} ${JSON.stringify([a, c])}`)
+    if (!touch) {
+      const rail = await page.evaluate(() => { const el = document.querySelector('.world-inspector'); if (!el || !el.getClientRects().length) return null; const r = el.getBoundingClientRect(); return { name: 'sidebar', left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width } })
+      if (rail) for (const a of play.items) assert.ok(!clash(a, rail), `${tag} in play: the sidebar at its widest (${Math.round(rail.width)}px) covers ${a.name} ${JSON.stringify([a, rail])}`)
+    }
     // Each item sits where the stack puts it: one gap apart, none flung off by a rule of its own.
     const column = [...play.items].sort((x, y) => x.top - y.top)
     for (const [i, a] of column.slice(1).entries()) assert.ok(a.top - column[i].bottom < 40, `${tag} in play: ${column[i].name} and ${a.name} are ${Math.round(a.top - column[i].bottom)}px apart, not one gap`)

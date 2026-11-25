@@ -33,6 +33,7 @@ import '../audio/params'
 import { applySkyPreset, SKY_PRESET_NAMES, type SkyPresetName } from '../world/sky/presets'
 import { TouchControls } from './TouchControls'
 import { heightFullScale, speedFullScale } from './inspector/instrumentScales'
+import { mountSidebarResize } from './sidebarWidth'
 import { readVehicleChoice, saveVehicleChoice, PLAY_VEHICLES, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
 import { activePlayersLabel, populationLabel } from './galaxy/presence'
@@ -582,6 +583,9 @@ export class Shell implements System {
     railTop.remove()
     const cards = this.inspector.element.querySelector('.wi-cards')!
     cards.before(command); cards.after(foot)
+    // The column's width and its grab handle (sidebarWidth.ts). Mounted before the shell's own
+    // keydown listener, so the handle's arrow keys resize instead of driving.
+    mountSidebarResize({ shell: this.element, rail: this.inspector.element, signal })
     // Phones: Close panels, at the foot of the panels under the thumb, back to driving. A tap in
     // the empty space below the last card does the same, but only 12 px or more below it, so a
     // near miss on a header never throws the player back into the drive.
