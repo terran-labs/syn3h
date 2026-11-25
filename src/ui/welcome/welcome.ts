@@ -103,7 +103,7 @@ const touchDiagram = `<svg class="welcome-touch" viewBox="0 0 844 390" role="img
 function html(): string {
   return `
 <p class="welcome-lede">Mira is a sci-fi wonderland of tiny worlds to explore with your friends.</p>
-${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)))}
+${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)), RING_SHOTS)}
 <h3>Three machines</h3>
 <ul class="welcome-cards">
   <li><strong>Buggy</strong><span>Grips rough ground and climbs anything sensible. At a crest, ${k('Space')} unfolds force-field wings and the drop becomes a glide.</span></li>
@@ -196,7 +196,7 @@ export function mountWelcome(body: HTMLElement, options: WelcomeOptions = {}): W
   body.querySelector('.welcome-credits > summary')?.insertAdjacentHTML('beforeend', ACCORDION_ARROW)
   for (const anchor of body.querySelectorAll<HTMLAnchorElement>('a[href^="/brand/licenses/"]')) anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
   const ring = wireRing(body.querySelector<HTMLElement>('.welcome-ring')!, RING_SHOTS, options.signal)
-  return { opened: () => { loadShots(body); ring.start() } }
+  return { opened: () => { loadShots(body); ring.measure() } }
 }
 
 /** For a host that fills its body on the first deliberate open: mount and load at once. */
