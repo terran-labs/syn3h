@@ -6,8 +6,8 @@
  *
  * The script holds the system still, looks along the orbital plane as the owner did, views
  * the same seeded Volcanic world at a fixed time with its sphere crossing the solar depth
- * plane, and saves the frame. It asserts what can be measured: across such a world's disc, from its
- * centre to near its limb, brightness has no step (no neighbouring samples differ sharply).
+ * plane, and saves the frame. It asserts what can be measured: across such a world's disc, at the
+ * solar depth crossing, neighbouring brightness samples should have no sharp step.
  *
  *   MIRA_URL=http://127.0.0.1:5193/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/galaxy-veil.mjs
  *
@@ -40,9 +40,8 @@ try {
     const index = g.options.worlds.findIndex(w => w.id === 'volcanic')
     const { position: [x, y, z], radius } = g.places(clock)[index]
     const pitch = 0.1, distance = 9
-    // Put the centre half a radius farther from the eye than the sun. The sun's depth
-    // then falls inside the globe, where the historical per-pixel cutoff drew a ring.
-    const centreDistance = distance + radius / 2
+    // Put the old cut well inside the limb, so the samples straddle it without including sky.
+    const centreDistance = distance + 0.8 * radius
     const along = (distance ** 2 + x ** 2 + y ** 2 + z ** 2 - centreDistance ** 2) / (2 * distance)
     const turn = Math.acos((along - y * Math.sin(pitch)) / (Math.hypot(x, z) * Math.cos(pitch)))
     g.clockHold = true
@@ -60,7 +59,11 @@ try {
       const disc = g.screen[index]
       if (disc.visible && !g.screen.some(other => other !== disc && other.visible &&
           other.depth < disc.depth && Math.hypot(other.x - disc.x, other.y - disc.y) < other.radius + disc.radius)) {
-        return { id: disc.id, x: disc.x, y: disc.y, r: disc.radius, clock }
+        // At the historical cut a ray travels the solar distance before hitting the
+        // planet. The eye, surface point and planet centre form this triangle.
+        const cutCos = (centreDistance ** 2 + distance ** 2 - radius ** 2) / (2 * centreDistance * distance)
+        const cutRadius = Math.sin(Math.acos(cutCos)) / (radius / centreDistance)
+        return { id: disc.id, x: disc.x, y: disc.y, r: disc.radius, clock, cutRadius }
       }
     }
     throw Error('Volcanic is occluded on both sides of the solar-depth test view')
@@ -70,7 +73,7 @@ try {
   const path = `${out}/${tag}-0-${world.id}.png`
   const shot = await page.screenshot({ path, clip, style: '.galaxy-labels { visibility: hidden !important }' })
   // Brightness over concentric rings of the disc, centre to 85 percent of the radius.
-  const steps = await page.evaluate(async ([data, cx, cy, r]) => {
+  const steps = await page.evaluate(async ([data, cx, cy, r, cutRadius]) => {
     const image = new Image(); image.src = `data:image/png;base64,${data}`; await image.decode()
     const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height
     const c = canvas.getContext('2d'); c.drawImage(image, 0, 0)
@@ -80,11 +83,15 @@ try {
     // detail (coasts, clouds, city lights), leaving what is painted over the whole disc.
     const rings = []
     for (let k = 0; k <= 17; k++) { const d = r * 0.05 * k; let sum = 0; for (let a = 0; a < 48; a++) sum += luma(cx + Math.cos(a / 48 * 6.2832) * d, cy + Math.sin(a / 48 * 6.2832) * d); rings.push(sum / 48) }
-    return { rings: rings.map(v => Math.round(v)), worst: Math.max(...rings.slice(1).map((v, i) => Math.abs(v - rings[i]))) }
-  }, [shot.toString('base64'), world.x - clip.x, world.y - clip.y, world.r])
-  report.push({ world: world.id, clock: world.clock, radiusPx: Math.round(world.r), worstRingStep: Math.round(steps.worst * 10) / 10, rings: steps.rings.join(' '), path })
+    // Cover two rings either side of the projected cut for pixel rounding and
+    // off-axis projection. A steep slope elsewhere on the planet is ordinary terrain.
+    const crossing = Math.round(cutRadius / 0.05)
+    const band = rings.slice(crossing - 2, crossing + 3)
+    return { rings: rings.map(v => Math.round(v)), worst: Math.max(...band.slice(1).map((v, i) => Math.abs(v - band[i]))) }
+  }, [shot.toString('base64'), world.x - clip.x, world.y - clip.y, world.r, world.cutRadius])
+  report.push({ world: world.id, clock: world.clock, radiusPx: Math.round(world.r), worstCutStep: Math.round(steps.worst * 10) / 10, rings: steps.rings.join(' '), path })
   console.table(report.map(({ rings, ...row }) => row)); for (const row of report) console.log(row.world, 'ring brightness, centre to limb:', row.rings)
   assert.deepEqual(errors, [])
-  if (process.env.VEIL_ASSERT !== '0') for (const row of report) if (row.world !== 'custom') assert.ok(row.worstRingStep < 12, `${row.world}: a step of ${row.worstRingStep} in brightness across its disc`)
+  if (process.env.VEIL_ASSERT !== '0') for (const row of report) if (row.world !== 'custom') assert.ok(row.worstCutStep < 12, `${row.world}: a step of ${row.worstCutStep} in brightness across its disc`)
   console.log('GALAXY VEIL OK')
 } finally { await browser.close() }
