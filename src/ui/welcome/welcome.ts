@@ -170,6 +170,7 @@ ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)))}
 <p class="welcome-close">Land somewhere unfamiliar, learn what your machine can do, and find your own reasons to stay.</p>
 ${aboutLinksHtml}
 ${licencesHtml}
+<p class="welcome-privacy">Mira keeps anonymous counts of things like which worlds and vehicles get played, and crash reports, so we can make it better. No accounts, no ads, nothing sold.</p>
 `
 }
 
