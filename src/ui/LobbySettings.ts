@@ -33,6 +33,7 @@ import { playWithMe } from '../bots/play/PlayDirector'
 import { SOUND_STARTED, soundWaiting } from '../audio/unlock'
 import './lobby-settings.css'
 import { CARD_CLOSE } from './cardClose'
+import { channel, type Channel } from '../core/channel'
 
 /** Sound settings shown before the Advanced fold, in this order. */
 export const SOUND_MAIN = ['audio.music', 'audio.master', 'audio.muted'] as const
@@ -53,6 +54,9 @@ export function versionLabel(build: string | undefined, href: string): string {
   if (!build) return 'browser edition'
   return /^\d+\.\d+\.\d+$/.test(build) ? `v${build}` : build
 }
+
+/** The version as shown: on the beta channel (core/channel.ts) a quiet " · beta" after it, else unchanged. */
+export function versionText(label: string, ch: Channel): string { return ch === 'beta' ? `${label} · beta` : label }
 
 /** Where Tab (or Shift+Tab) goes next among the panel's controls, wrapping at either end. */
 export function cycleFocus<T>(focusable: readonly T[], current: T | null, back: boolean): T | null {
@@ -139,7 +143,7 @@ export class LobbySettings {
 
   constructor(private readonly parent: HTMLElement, private readonly options: LobbySettingsOptions = {}) {
     const signal = this.abort.signal
-    const label = versionLabel(options.build, location.href)
+    const label = versionText(versionLabel(options.build, location.href), channel())
     this.dock.className = 'lobby-gear-dock'
     // Settings above Welcome, each a labelled glass button. Updates opens from the version in the
     // lower left (the owner, 21 November 2026: a button for it only duplicated the version).

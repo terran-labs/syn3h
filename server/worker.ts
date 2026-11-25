@@ -12,6 +12,7 @@ import { PresenceReporter } from './presenceReporter'
 import { CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
 import { roomName } from './util'
+import { channelOf } from '../shared/channel'
 import { logError, logEvent } from './log'
 
 interface DurableObjectId {}
@@ -85,28 +86,55 @@ interface Attachment {
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url)
-    if (url.pathname === '/ws') {
-      if (req.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
-        return new Response('expected a websocket', { status: 426 })
-      }
-      const name = roomName(url.searchParams.get('room'))
-      return env.ROOMS.get(env.ROOMS.idFromName(name)).fetch(req)
-    }
-    // How many people are playing, in total: counts only. Read before a release.
-    if (url.pathname === '/status' || url.pathname === '/presence') {
-      if (req.method !== 'GET') return new Response('GET only', { status: 405, headers: { allow: 'GET' } })
-      return env.ROOMS.get(env.ROOMS.idFromName(REGISTRY_ID)).fetch(new Request(`https://registry/${url.pathname === '/presence' ? 'presence' : 'totals'}`))
-    }
-    // The standalone WebGPU present test (public/webgpu-present-test.html) keeps its .html address:
-    // Workers Assets' default html_handling answers /name.html with a 307 to /name, and the
-    // release guard (tools/frozen-versions.mjs check) wants that release's file at the address
-    // asked. So this one path runs the Worker first (wrangler.toml) and is served exactly as any
-    // other root file, by version, except that its own static asset is read at the extensionless
-    // address the assets answer with a 200. A frozen version's copy comes from R2 under its .html
-    // key, as archived.
-    if (url.pathname === PRESENT_TEST) return serveVersioned(req, url, { ...env, ASSETS: htmlAsset(env.ASSETS) })
-    return serveVersioned(req, url, env)
+    // Production hosts get exactly what route() answers. Beta hosts (shared/channel.ts) are never
+    // indexed and share themselves, not production (forBeta).
+    if (channelOf(url.hostname) !== 'beta') return route(req, env, url)
+    if (url.pathname === '/robots.txt') return new Response('User-agent: *\nDisallow: /\n', { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' } })
+    return forBeta(await route(req, env, url), url.origin)
   },
+}
+
+/**
+ * A beta host's response (beta.mira.cc, a workers.dev address): HTML says noindex, and the page's
+ * absolute production addresses (the share card's og:url and og:image in index.html, the
+ * unknown-version page's list) name this host instead, so nothing a beta tester shares points at
+ * mira.cc. A WebSocket upgrade passes through untouched.
+ */
+export async function forBeta(res: Response, origin: string): Promise<Response> {
+  if (res.status === 101 || (res as { webSocket?: unknown }).webSocket) return res
+  const type = res.headers.get('content-type') ?? ''
+  const html = /^text\/html\b/i.test(type)
+  if (!html && !/^text\/plain\b/i.test(type)) return res
+  const headers = new Headers(res.headers)
+  if (html) headers.set('x-robots-tag', 'noindex')
+  if (!res.body) return new Response(null, { status: res.status, statusText: res.statusText, headers })
+  const text = (await res.text()).replaceAll('https://mira.cc/', origin + '/')
+  headers.delete('content-length')
+  return new Response(text, { status: res.status, statusText: res.statusText, headers })
+}
+
+async function route(req: Request, env: Env, url: URL): Promise<Response> {
+  if (url.pathname === '/ws') {
+    if (req.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+      return new Response('expected a websocket', { status: 426 })
+    }
+    const name = roomName(url.searchParams.get('room'))
+    return env.ROOMS.get(env.ROOMS.idFromName(name)).fetch(req)
+  }
+  // How many people are playing, in total: counts only. Read before a release.
+  if (url.pathname === '/status' || url.pathname === '/presence') {
+    if (req.method !== 'GET') return new Response('GET only', { status: 405, headers: { allow: 'GET' } })
+    return env.ROOMS.get(env.ROOMS.idFromName(REGISTRY_ID)).fetch(new Request(`https://registry/${url.pathname === '/presence' ? 'presence' : 'totals'}`))
+  }
+  // The standalone WebGPU present test (public/webgpu-present-test.html) keeps its .html address:
+  // Workers Assets' default html_handling answers /name.html with a 307 to /name, and the
+  // release guard (tools/frozen-versions.mjs check) wants that release's file at the address
+  // asked. So this one path runs the Worker first (wrangler.toml) and is served exactly as any
+  // other root file, by version, except that its own static asset is read at the extensionless
+  // address the assets answer with a 200. A frozen version's copy comes from R2 under its .html
+  // key, as archived.
+  if (url.pathname === PRESENT_TEST) return serveVersioned(req, url, { ...env, ASSETS: htmlAsset(env.ASSETS) })
+  return serveVersioned(req, url, env)
 }
 
 const PRESENT_TEST = '/webgpu-present-test.html'

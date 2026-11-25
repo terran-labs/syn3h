@@ -1,5 +1,6 @@
 import type { PerformanceSnapshot } from './performance'
 import { LEVELS, type GovernorReason } from './quality'
+import { channel } from './channel'
 
 declare const __MIRA_BUILD__: string | undefined
 declare const __MIRA_FREEZE_ID__: string | null | undefined
@@ -134,7 +135,7 @@ export function systemReportLines(snapshot: PerformanceSnapshot | null): string[
   const backend = mapped({ webgpu: 'WebGPU', webgl: 'WebGL 2', initializing: 'Initializing' }, environment?.backend) ?? unavailable
   const memory = amount(environment?.memoryGB ?? nav?.deviceMemory, 0.1, 1024, 2)
   const lines = [
-    `Version: ${version}`, `Freeze build ID: ${freezeId}`, `Source commit: ${commit}`,
+    `Version: ${version}${channel() === 'beta' ? ' (beta)' : ''}`, `Freeze build ID: ${freezeId}`, `Source commit: ${commit}`,
     `Browser: ${browserLabel(ua)}`, `OS: ${os} (as reported by the browser)`, `Device class: ${device}`,
     `Input: primary pointer ${pointer}; touch points ${amount(nav?.maxTouchPoints, 0, 128)}; motion ${motion}`,
     `Screen: ${dimensions}; DPR ${dpr}`,
