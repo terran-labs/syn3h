@@ -99,34 +99,77 @@ async function controls(page, recipe, onScreen = true, actions = ['public', 'pri
   }
 }
 
+
+async function checkPhonePopulation(page, activeRecipe) {
+  assert.equal(await page.evaluate(() => innerWidth), 360, 'population check uses a narrow phone viewport')
+  const check = async (detail, display, recipe) => {
+    const handle = await waitForState(page, `narrow phone caption with ${detail}`, ({ detail, display, recipe, activeRecipe }) => {
+      for (const chip of document.querySelectorAll('button.galaxy-label[data-world]')) {
+        const id = chip.dataset.world
+        if (recipe ? id !== recipe : id === activeRecipe) continue
+        if (chip.closest('[hidden], [inert], .is-suppressed') || chip.tabIndex < 0) continue
+        const box = chip.getBoundingClientRect()
+        if (box.width <= 0 || box.height <= 0 || box.left < 0 || box.right > innerWidth ||
+            box.top < 0 || box.bottom > innerHeight) continue
+        const count = chip.querySelector('.galaxy-population')
+        if (!count || count.textContent.trim() !== display || chip.title !== detail) continue
+        if (display && (getComputedStyle(count).visibility !== 'visible' || !count.getClientRects().length)) continue
+        const name = document.getElementById(`twin-world-${id}`).textContent.trim()
+        return `${name} · Public and shared ${detail}`
+      }
+      return null
+    }, { detail, display, recipe, activeRecipe }, 65)
+    const name = await handle.jsonValue()
+    const caption = page.getByRole('button', { name, exact: true })
+    assert.equal(await caption.count(), 1, 'phone screen readers get the population in the accessible name')
+    assert.equal(await caption.getAttribute('title'), detail, 'phone caption tooltip matches the spoken count')
+  }
+  await check('No active players', '', null)
+  await check('1 active player across 1 room', '1 active player', activeRecipe)
+  return { active: '1 active player', zeroVisibleText: '', tooltipAndAccessibleName: true }
+}
+
 async function assertIdle(page, level, reduced, label) {
-  const state = () => page.evaluate(() => ({
-    frames: window.mira.shell.galaxy?.frames ?? 0,
-    live: window.mira.shell.galaxy?.live === true,
-    quality: window.mira.params.get('gfx.quality').value,
-    reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-    visible: !document.hidden,
-  }))
+  const state = () => page.evaluate(() => {
+    const shell = window.mira.shell
+    const galaxy = shell.galaxy
+    const presence = galaxy?.live ? galaxy.presence : shell.flatTwinPresence
+    return {
+      frames: galaxy?.frames ?? 0, live: galaxy?.live === true,
+      quality: window.mira.params.get('gfx.quality').value,
+      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      visible: !document.hidden,
+      painted: galaxy?.painted, uploaded: galaxy?.layers.filter(Boolean).length,
+      painting: galaxy?.painting, paintQueue: galaxy?.queue.length,
+      held: galaxy?.holding, settled: galaxy?.settled, facingSettled: galaxy?.facingSettled,
+      swingResting: galaxy?.swingResting, wake: galaxy?.wake, idleChecks: galaxy?.idle,
+      presenceUpdating: Boolean(presence?.request), presenceAt: presence?.snapshot?.generatedAt,
+    }
+  })
   const start = await state()
   assert.equal(start.quality, level, `${label}: expected graphics quality`)
   assert.equal(start.reduced, reduced, `${label}: expected motion preference`)
   if (reduced) assert.ok(start.live && start.frames > 0, `${label}: rendered galaxy exists before it rests`)
   // Presence refreshes and each painter result can legitimately wake the held galaxy.
   // Start the observation after the maps are uploaded and a presence poll has completed.
-  await waitForState(page, `${label}: planet maps uploaded and presence settled`, () => {
-    const shell = window.mira.shell
-    const galaxy = shell.galaxy
-    const presence = galaxy?.live ? galaxy.presence : shell.flatTwinPresence
-    const snapshot = presence?.snapshot
-    if (document.hidden || !presence?.active || presence.request || !snapshot ||
-        Date.now() - snapshot.generatedAt >= 25_000) return false
-    if (!galaxy?.live) return true
-    const worlds = galaxy.options.worlds
-    return galaxy.holding && galaxy.settled && galaxy.swingResting && galaxy.facingSettled &&
-      !galaxy.painting && galaxy.queue.length === 0 && galaxy.wake === 0 &&
-      galaxy.painted === worlds.filter(world => !world.forming).length &&
-      worlds.every((world, index) => world.forming || Boolean(galaxy.layers[index]))
-  }, undefined, 120)
+  try {
+    await waitForState(page, `${label}: camera, planet maps, and presence settled`, () => {
+      const shell = window.mira.shell
+      const galaxy = shell.galaxy
+      const presence = galaxy?.live ? galaxy.presence : shell.flatTwinPresence
+      const snapshot = presence?.snapshot
+      if (document.hidden || !presence?.active || presence.request || !snapshot ||
+          Date.now() - snapshot.generatedAt >= 25_000) return false
+      if (!galaxy?.live) return true
+      const worlds = galaxy.options.worlds
+      return galaxy.holding && galaxy.settled && galaxy.swingResting && galaxy.facingSettled &&
+        !galaxy.painting && galaxy.queue.length === 0 && galaxy.wake === 0 &&
+        galaxy.painted === worlds.filter(world => !world.forming).length &&
+        worlds.every((world, index) => world.forming || Boolean(galaxy.layers[index]))
+    }, undefined, 120)
+  } catch (error) {
+    throw new Error(`${label}: lobby did not settle (${JSON.stringify(await state())})`, { cause: error })
+  }
 
   const before = await state()
   assert.ok(before.visible, `${label}: foreground lobby during idle sampling`)
@@ -134,7 +177,8 @@ async function assertIdle(page, level, reduced, label) {
   await page.waitForTimeout(sampleMilliseconds)
   const after = await state()
   assert.ok(after.visible, `${label}: lobby stayed foreground during idle sampling`)
-  assert.equal(after.frames, before.frames, `${label}: zero new galaxy draws over the settled interval`)
+  assert.equal(after.frames, before.frames,
+    `${label}: zero new galaxy draws over the settled interval (${JSON.stringify({ before, after })})`)
   return { draws: 0, sampleMilliseconds, rendered: after.live }
 }
 
@@ -232,16 +276,32 @@ try {
 
   step = 'phone rendered Twin frame'
   const phone = await browser.newContext({
-    viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    viewport: { width: 360, height: 780 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
   })
   const guest = await phone.newPage()
   guest.setDefaultTimeout(timeout)
   const guestWelcomes = observeWelcomes(guest)
-  await openLobby(guest, lobbyURL(3))
+  await openLobby(guest, lobbyURL(3, invite))
   await waitForState(guest, 'the phone galaxy to render',
     () => window.mira.shell.galaxy?.live && window.mira.shell.galaxy.frames > 0, undefined, 60)
   await controls(guest, undefined, true, ['public'])
   await controls(guest, undefined, true, ['private'])
+  let phonePopulation
+  let phonePopulationFailure
+  try {
+    phonePopulation = await checkPhonePopulation(guest, privateTarget.recipe)
+  } catch (error) {
+    const caption = await guest.evaluate(recipe => {
+      const chip = document.getElementById(`twin-world-${recipe}`)?.closest('button')
+      const galaxy = window.mira.shell.galaxy
+      const count = galaxy?.population?.get(recipe)
+      return {
+        count, title: chip?.title, suppressed: chip?.classList.contains('is-suppressed'),
+        visibleText: chip?.querySelector('.galaxy-population')?.textContent,
+      }
+    }, privateTarget.recipe)
+    phonePopulationFailure = new Error(`narrow phone population check failed (${JSON.stringify(caption)})`, { cause: error })
+  }
   await capture(guest, 'phone-twins')
   assert.equal(guestWelcomes.length, 0, 'phone lobby did not join before opening the invite')
 
@@ -286,9 +346,10 @@ try {
     publicWelcome: true, privateWelcome: true, sameBrowserReuse: true,
     guestWelcomeAndRoster: true, independentPrivateWelcome: true,
     lobbyFetches, reducedMotion, minimal: minimal ?? { error: minimalFailure.message },
+    phonePopulation: phonePopulation ?? { error: phonePopulationFailure.message },
   }, null, 2) + '\n')
   step = 'the independent lobby assertions'
-  const failures = minimalFailure ? [minimalFailure] : []
+  const failures = [minimalFailure, phonePopulationFailure].filter(Boolean)
   if (lobbyFetches.leaks.length) failures.push(new Error('Lobby fetches exposed the private room'))
   if (failures.length) throw new AggregateError(failures, 'The lobby assertions failed')
   console.log('Twin routing, lobby privacy, and idle draw checks passed')
