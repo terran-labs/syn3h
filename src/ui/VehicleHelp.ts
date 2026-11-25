@@ -41,7 +41,7 @@ const MOUSE_LOOK = 'Click, then move the mouse to look round · Esc: release'
 const KEYS_LINE = (gear: boolean) => gear ? 'Number keys: choose gear · Y: Chat' : 'Y: Chat'
 export function quickHelp(kind: VehicleKind, touch = false, gear = false): string[] {
   if (touch) return [kind === 'jet' ? 'Hold THR + to lift off' : kind === 'hovercraft' ? 'Left thumb: thrust and turn' : 'Left thumb: drive and steer']
-  if (kind === 'jet') return ['Hold E to lift off · Q: come down', 'W / S: pitch · A / D: bank · Space: flight mode', MOUSE_LOOK, KEYS_LINE(gear)]
+  if (kind === 'jet') return ['Hold E to lift off · Q: come down', 'W / S: pitch · A / D: bank · Space: hover or cruise', MOUSE_LOOK, KEYS_LINE(gear)]
   if (kind === 'hovercraft') return ['W: thrust · A / D: turn · Shift: brake', MOUSE_LOOK, KEYS_LINE(gear)]
   return ['WASD or arrows: drive · Shift: brake', 'Space: wings · L or click: Plasma Tag', MOUSE_LOOK, KEYS_LINE(gear)]
 }
