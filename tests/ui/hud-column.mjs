@@ -125,7 +125,10 @@ try {
       // key column still with an unread count of 1 and 9+.
       const gears = await page.locator('.gear-selector .gs-drum button.gs-item').count()
       for (let g = 0; g < gears; g++) {
-        await page.keyboard.press(String(g + 1)); await page.waitForTimeout(350)
+        await page.keyboard.press(String(g + 1))
+        // Measured once the drum has stopped turning (its transitions run slower on a loaded machine).
+        await page.waitForTimeout(50)
+        await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running'), null, { timeout: 10000 })
         onLines(await lines(page), `${w}x${h} gear ${g + 1}`)
       }
       const keyX = () => page.evaluate(() => [...document.querySelectorAll(':is(.hud-accessories, .hud-chat) .acc-row:not([hidden]) kbd')].map((k) => k.getBoundingClientRect().left))
