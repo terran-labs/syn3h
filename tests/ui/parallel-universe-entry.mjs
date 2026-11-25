@@ -35,13 +35,13 @@ const THROTTLE = Number(process.env.THROTTLE ?? 1)
 const ONLY = process.env.PATHS ? new Set(process.env.PATHS.split(',')) : null
 const run = name => !ONLY || ONLY.has(name)
 
-/** Scripted players: a hello and nothing else (a room counts connections, not traffic). */
-function fill(n) {
+/** Scripted players in `room` (the default room when omitted): a hello and nothing else (a room counts connections, not traffic). */
+function fill(n, room) {
   const sockets = []
   return new Promise((resolve, reject) => {
     let welcomed = 0
     for (let i = 0; i < n; i++) {
-      const s = new WebSocket(ws); sockets.push(s)
+      const s = new WebSocket(room ? `${ws}?room=${room}` : ws); sockets.push(s)
       s.on('open', () => s.send(JSON.stringify({ type: 'hello', v: 2, name: `crowd ${i + 1}`, params: {} })))
       s.on('message', (d, binary) => { if (!binary && String(d).startsWith('{"type":"welcome"') && ++welcomed === n) resolve(sockets) })
       s.on('error', reject)
@@ -114,9 +114,12 @@ try {
     }
 
     // A refused newcomer after a long wait in the lobby.
-    const crowd = await fill(CAP)
     ;({ context, page, seen } = await phone(motion))
     await page.goto(base); await page.waitForSelector('.galaxy-label', { state: 'visible', timeout: 120000 })
+    // Each planet has its own public world (src/core/publicWorlds.ts, publicRoomFor): fill the one
+    // the newcomer is about to ask for, so it is refused there.
+    const target = await page.evaluate(() => { const w = window.mira.shell.galaxyWorlds; return (w[1] ?? w[0]).id })
+    const crowd = await fill(CAP, 'public-' + String(target).toLowerCase().replace(/[^a-z0-9]+/g, ''))
     await page.waitForTimeout(lobbyWait)
     await arm(page)
     await page.evaluate(() => { const worlds = window.mira.shell.galaxyWorlds; window.mira.shell.galaxy.choose((worlds[1] ?? worlds[0]).id) })
