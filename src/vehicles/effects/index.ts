@@ -71,7 +71,18 @@ class EffectWorld implements System {
     // Headlight cones in mist (cones.ts): every vehicle's front lamps, lit by the haze round them.
     this.coneHaze=createConeHaze()
     this.cones=createConeBatch(this.coneHaze)
-    this.cones.onBeforeRender=(_r,_s,camera)=>{
+    // The part of each beam beyond the sea surface, drawn before the water so it is refracted and
+    // tinted like the sea bed it lights (cones.ts ConeHalf). Same instances; both halves write
+    // them before they draw, so the halves of a moving beam are always from the same frame.
+    this.conesBeyond=createConeBatch(this.coneHaze,'far',this.cones)
+    this.conesBeyond.onBeforeRender=(_r,_s,camera)=>this.writeConeBatch(camera)
+    this.cones.onBeforeRender=(_r,_s,camera)=>this.writeConeBatch(camera)
+    game.scene.add(this.cones,this.conesBeyond)
+    game.scene.add(this.pools.mesh,this.pools.beyond)
+  }
+  readonly cones:T.InstancedMesh
+  readonly conesBeyond:T.InstancedMesh
+  private writeConeBatch(camera:T.Camera){
       const eye=this.coneEye.setFromMatrixPosition(camera.matrixWorld)
       const h=hazeNow(this.coneHazeState),c=this.coneHaze
       c.hazeD.value=h.density;c.hazeH.value=h.height;c.sea.value=h.sea
@@ -85,11 +96,9 @@ class EffectWorld implements System {
       for(const e of this.vehicles.values())index=e.writeCones(this.cones,index,night,eye)
       hideUnusedCones(this.cones,index)
       this.cones.instanceMatrix.needsUpdate=true;if(this.cones.instanceColor)this.cones.instanceColor.needsUpdate=true
-    }
-    game.scene.add(this.cones)
-    game.scene.add(this.pools.mesh)
   }
-  readonly cones:T.InstancedMesh
+  /** Both cone halves draw the same number of instances. */
+  setConeCount(n:number){this.cones.count=this.conesBeyond.count=n}
   /** Other vehicles' headlights on the ground (pools.ts): one mesh, laid each frame in update. */
   readonly pools=new GroundPools()
   /** The ground, for laying the pools; set when a vehicle attaches. */
@@ -98,9 +107,11 @@ class EffectWorld implements System {
   /** The surface a pool lies on: the ground, or the water over it. */
   private readonly poolHeight=(x:number,z:number)=>{const t=this.terrain!;return Math.max(t.heightAt(x,z),t.liquidHeightAt?.(x,z)??-Infinity)}
   /** The colour a pool's light takes: the ground's own (groundTone.ts), or a dim grey on water. */
-  private readonly poolTint=(x:number,z:number,out:{r:number;g:number;b:number})=>{
+  /** The ground alone: a submerged lamp's pool lies on the bed. */
+  private readonly poolGround=(x:number,z:number)=>this.terrain!.heightAt(x,z)
+  private readonly poolTint=(x:number,z:number,out:{r:number;g:number;b:number},beneath=false)=>{
     const t=this.terrain!
-    if((t.liquidHeightAt?.(x,z)??-Infinity)>t.heightAt(x,z)){out.r=out.g=out.b=.12;return}
+    if(!beneath&&(t.liquidHeightAt?.(x,z)??-Infinity)>t.heightAt(x,z)){out.r=out.g=out.b=.12;return}
     const c=groundColour(t.lookIndex?.()??0,(t.surfaceAt?.(x,z)??'dust') as SurfaceKind);out.r=c[0];out.g=c[1];out.b=c[2]
   }
   private readonly coneHaze:ConeHaze
@@ -164,13 +175,13 @@ class EffectWorld implements System {
     const night=clamp((.08-this.sunY())/.18,0,1)*Number(groundPools.value)
     if(night>0)for(const e of this.vehicles.values()){const pool=e.poolSource(night);if(pool)sources.push(pool)}
     const terrain=this.terrain
-    if(terrain)this.pools.update(sources,this.game.camera.position,this.poolHeight,this.poolTint)
+    if(terrain)this.pools.update(sources,this.game.camera.position,this.poolHeight,this.poolTint,this.poolGround)
     this.stats.pools=this.pools.drawn
     this.stats.vehicles=this.vehicles.size;this.stats.marks=this.marks.used
     this.stats.emitted=this.dust.emitted+this.energy.emitted+this.sparks.emitted+this.redSparks.emitted
     this.stats.updateMs=performance.now()-start;this.stats.peakUpdateMs=Math.max(this.stats.peakUpdateMs,this.stats.updateMs)
   }
-  dispose(){this.unwarm?.();this.pools.dispose();this.lamps.removeFromParent();this.lamps.geometry.dispose();this.lamps.material.dispose();this.cones.removeFromParent();this.cones.geometry.dispose();(this.cones.material as T.Material).dispose();for(const e of this.vehicles.values())e.dispose();this.vehicles.clear();for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.dispose();delete this.game.scene.userData.vehicleEffects}
+  dispose(){this.unwarm?.();this.pools.dispose();this.lamps.removeFromParent();this.lamps.geometry.dispose();this.lamps.material.dispose();this.cones.removeFromParent();this.conesBeyond.removeFromParent();this.cones.geometry.dispose();(this.cones.material as T.Material).dispose();(this.conesBeyond.material as T.Material).dispose();for(const e of this.vehicles.values())e.dispose();this.vehicles.clear();for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.dispose();delete this.game.scene.userData.vehicleEffects}
 }
 function worldFor(game:Game){let w=worlds.get(game);if(!w){w=new EffectWorld(game);worlds.set(game,w);game.add(w, 'Vehicle effects');w.registerWarm()}return w}
 
@@ -514,9 +525,9 @@ export function attachVehicleEffects(game:Game,terrain:Terrain,vehicle:Vehicle,o
   const world=worldFor(game)
   if(world.vehicles.has(vehicle))throw new Error('Vehicle effects already attached')
   world.terrain=terrain
-  const effects=new VehicleEffects(world,terrain,vehicle,options.local,options.spots);world.vehicles.set(vehicle,effects);world.lamps.count=Math.min(512,world.vehicles.size*4);world.cones.count=Math.min(MAX_CONES,world.vehicles.size*2);world.retain()
+  const effects=new VehicleEffects(world,terrain,vehicle,options.local,options.spots);world.vehicles.set(vehicle,effects);world.lamps.count=Math.min(512,world.vehicles.size*4);world.setConeCount(Math.min(MAX_CONES,world.vehicles.size*2));world.retain()
   let disposed=false
-  return()=>{if(disposed)return;disposed=true;effects.dispose();world.vehicles.delete(vehicle);world.lamps.count=Math.min(512,world.vehicles.size*4);world.cones.count=Math.min(MAX_CONES,world.vehicles.size*2);world.release()}
+  return()=>{if(disposed)return;disposed=true;effects.dispose();world.vehicles.delete(vehicle);world.lamps.count=Math.min(512,world.vehicles.size*4);world.setConeCount(Math.min(MAX_CONES,world.vehicles.size*2));world.release()}
 }
 
 /** Visual hooks only. Networking retains projectile authority and audio ownership. */

@@ -35,6 +35,7 @@ import * as T from 'three/webgpu'
 import { abs, attribute, exp, float, pow, smoothstep, vec3 } from 'three/tsl'
 import { defineParam } from '../../../shared/params'
 import { applyCurve } from '../../world/curve'
+import { cameraInWaterNode } from '../../world/water/daylight'
 
 type N = any // TSL node
 
@@ -55,6 +56,8 @@ const ACROSS = 7, ALONG = 12
 const VERTS = ACROSS * ALONG, INDICES = (ACROSS - 1) * (ALONG - 1) * 6
 /** Metres above the ground the patch is laid, against flicker with the terrain's own surface. */
 const LIFT = 0.06
+/** Render order of the pools, and of those beyond the water (acrossSurface.ts orderFor). */
+export const POOL_ORDER = 1, POOL_ORDER_BEYOND_WATER = POOL_ORDER - 32
 /** The pool fades out as the lamps rise from FADE_LOW to FADE_HIGH metres above the ground. */
 const FADE_LOW = 3, FADE_HIGH = 12
 /** Pools beyond this distance from the camera are not drawn; they fade over the last FADE_FAR m. */
@@ -82,15 +85,19 @@ export interface PoolSource {
 }
 
 /** Linear colour of the ground (or water) at a point, written into `out`. */
-export type TintAt = (x: number, z: number, out: { r: number; g: number; b: number }) => void
+/** The colour of the surface a pool lies on; `beneath` when it lies on the bed under water. */
+export type TintAt = (x: number, z: number, out: { r: number; g: number; b: number }, beneath?: boolean) => void
 
 const local = new T.Vector3(), world = new T.Vector3(), lamp = new T.Vector3()
 
 export class GroundPools {
   readonly mesh: T.Mesh
+  /** The pools beyond the water from the camera, drawn before it (see the constructor). */
+  readonly beyond: T.Mesh
   readonly capacity: number
   private readonly positions: Float32Array
   private readonly strengths: Float32Array
+  private readonly beneath: Float32Array
   private readonly tints: Float32Array
   private readonly tint = { r: 0, g: 0, b: 0 }
   /** Pools drawn last frame, for checks. */
@@ -101,6 +108,7 @@ export class GroundPools {
     const geometry = new T.BufferGeometry()
     this.positions = new Float32Array(capacity * VERTS * 3)
     this.strengths = new Float32Array(capacity * VERTS)
+    this.beneath = new Float32Array(capacity * VERTS)
     this.tints = new Float32Array(capacity * VERTS * 3)
     // Each vertex's place in its patch, fixed: x across (-1 to 1), y along (0 near, 1 far).
     const place = new Float32Array(capacity * VERTS * 2)
@@ -121,13 +129,22 @@ export class GroundPools {
     geometry.setAttribute('poolPlace', new T.BufferAttribute(place, 2))
     geometry.setAttribute('poolStrength', new T.BufferAttribute(this.strengths, 1).setUsage(T.DynamicDrawUsage))
     geometry.setAttribute('poolTint', new T.BufferAttribute(this.tints, 3).setUsage(T.DynamicDrawUsage))
+    geometry.setAttribute('poolBeneath', new T.BufferAttribute(this.beneath, 1).setUsage(T.DynamicDrawUsage))
     geometry.setIndex(new T.BufferAttribute(index, 1))
     // Never culled by bounds: the positions move every frame.
     geometry.boundingSphere = new T.Sphere(new T.Vector3(), Infinity)
-    this.mesh = new T.Mesh(geometry, poolMaterial())
+    this.mesh = new T.Mesh(geometry, poolMaterial('near'))
     this.mesh.name = "Other vehicles' headlight pools"
     this.mesh.frustumCulled = false
-    this.mesh.renderOrder = 1
+    this.mesh.renderOrder = POOL_ORDER
+    // Pools on the far side of the water from the camera (a submerged lamp's pool on the bed seen
+    // from above, or a pool on land seen from under the water): drawn before the water, so the
+    // water refracts and tints them as it does the bed itself. Same geometry, drawn twice, each
+    // pool in exactly one of the two.
+    this.beyond = new T.Mesh(geometry, poolMaterial('far'))
+    this.beyond.name = "Other vehicles' headlight pools beyond the water"
+    this.beyond.frustumCulled = false
+    this.beyond.renderOrder = POOL_ORDER_BEYOND_WATER
     // One patch always submitted (at strength 0 it changes nothing), so the pipeline is built by
     // the covered preparation draw and never during play.
     geometry.setDrawRange(0, INDICES)
@@ -137,7 +154,7 @@ export class GroundPools {
    * Lay this frame's pools. `heightAt` is the surface under a world point (the ground, or water
    * over it); `tintAt` its colour; `camera` is where the view is. Allocates nothing.
    */
-  update(sources: readonly PoolSource[], camera: T.Vector3, heightAt: (x: number, z: number) => number, tintAt: TintAt): void {
+  update(sources: readonly PoolSource[], camera: T.Vector3, heightAt: (x: number, z: number) => number, tintAt: TintAt, groundAt?: (x: number, z: number) => number): void {
     let n = 0
     for (const s of sources) {
       if (n >= this.capacity) break
@@ -147,23 +164,27 @@ export class GroundPools {
       if (distance > POOL_RANGE) continue
       // The lamps' height above the ground: a pool needs its beam to reach the ground.
       lamp.set(0, s.lampY, s.lampZ).applyQuaternion(o.quaternion).add(o.position)
-      const above = lamp.y - heightAt(lamp.x, lamp.z)
+      // A lamp under the water lights the bed, not the surface over it.
+      const beneath = groundAt !== undefined && lamp.y < heightAt(lamp.x, lamp.z)
+      const surfaceAt = beneath ? groundAt : heightAt
+      const above = lamp.y - surfaceAt(lamp.x, lamp.z)
       const strength = s.strength * (1 - T.MathUtils.smoothstep(above, FADE_LOW, FADE_HIGH))
         * Math.min(1, (POOL_RANGE - distance) / FADE_FAR)
       if (!(strength > 0.002)) continue
       // One colour for the pool, from the ground 8 m ahead of the lamps.
       world.set(0, 0, s.lampZ - 8).applyQuaternion(o.quaternion)
-      tintAt(o.position.x + world.x, o.position.z + world.z, this.tint)
+      tintAt(o.position.x + world.x, o.position.z + world.z, this.tint, beneath)
       for (let j = 0; j < ALONG; j++) {
         const t = j / (ALONG - 1), z = s.lampZ - (POOL_NEAR + (POOL_FAR - POOL_NEAR) * t)
         const half = POOL_NEAR_W + (POOL_FAR_W - POOL_NEAR_W) * t
         for (let i = 0; i < ACROSS; i++) {
           world.copy(local.set(((i / (ACROSS - 1)) * 2 - 1) * half, 0, z)).applyQuaternion(o.quaternion)
           world.x += o.position.x; world.z += o.position.z
-          world.y = heightAt(world.x, world.z) + LIFT
+          world.y = surfaceAt(world.x, world.z) + LIFT
           const v = n * VERTS + j * ACROSS + i
           this.positions[v * 3] = world.x; this.positions[v * 3 + 1] = world.y; this.positions[v * 3 + 2] = world.z
           this.strengths[v] = strength
+          this.beneath[v] = beneath ? 1 : 0
           this.tints[v * 3] = this.tint.r; this.tints[v * 3 + 1] = this.tint.g; this.tints[v * 3 + 2] = this.tint.b
         }
       }
@@ -177,10 +198,11 @@ export class GroundPools {
     geometry.attributes.position.needsUpdate = true
     geometry.attributes.poolStrength.needsUpdate = true
     geometry.attributes.poolTint.needsUpdate = true
+    geometry.attributes.poolBeneath.needsUpdate = true
   }
 
   dispose(): void {
-    this.mesh.removeFromParent(); this.mesh.geometry.dispose(); (this.mesh.material as T.Material).dispose()
+    this.mesh.removeFromParent(); this.beyond.removeFromParent(); this.mesh.geometry.dispose(); (this.mesh.material as T.Material).dispose(); (this.beyond.material as T.Material).dispose()
   }
 }
 
@@ -188,9 +210,13 @@ export class GroundPools {
  * The pool's light: brightest just ahead of the lamps, falling off down the road, soft at the
  * sides, tinted by the ground's colour and added to what is there.
  */
-function poolMaterial(): T.MeshBasicNodeMaterial {
+function poolMaterial(half: 'near' | 'far'): T.MeshBasicNodeMaterial {
   const material = new T.MeshBasicNodeMaterial()
-  const place = attribute('poolPlace', 'vec2') as N, strength = attribute('poolStrength', 'float') as N, tint = attribute('poolTint', 'vec3') as N
+  const place = attribute('poolPlace', 'vec2') as N, tint = attribute('poolTint', 'vec3') as N
+  // Beyond the water from the camera: on the bed seen from above, or out of the water seen from below.
+  const under = attribute('poolBeneath', 'float') as N
+  const beyond = under.add(float(1).sub(under.mul(2)).mul(cameraInWaterNode)) as N
+  const strength = (attribute('poolStrength', 'float') as N).mul(half === 'far' ? beyond : float(1).sub(beyond)) as N
   // Across: a soft bell, no edge. Along: up over the first three metres, then falling away down
   // the road roughly as a beam spreads, to nothing at the far end.
   const u = abs(place.x) as N

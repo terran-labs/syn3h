@@ -24,6 +24,7 @@ import {
 import { GatedViewportDepthTexture, midPassCopyNode } from '../../core/midPassCopy'
 import { applyCurve } from '../../world/curve'
 import { defineParam } from '../../../shared/params'
+import { beyondSurfaceNode } from '../../world/water/sideOfSurface'
 
 type N = any // TSL node
 
@@ -114,8 +115,23 @@ function coneGeometry(): T.BufferGeometry {
   return g
 }
 
+/**
+ * Which half of each beam a batch draws (sideOfSurface.ts): 'near' the part on the camera's side
+ * of the sea surface, drawn after the water as before; 'far' the part beyond it, drawn before the
+ * water so the water refracts and tints it exactly as it does the sea bed the beam lights. The two
+ * halves' weights add to one, so a beam in clear air is drawn once, as before.
+ */
+export type ConeHalf = 'near' | 'far'
+/** Render order of the cones on the camera's side of the water. */
+export const CONE_ORDER = 5
+/**
+ * Render order of the half beyond the water: acrossSurface.ts orderFor(CONE_ORDER, true), below
+ * the water's. Written out so the cones need not import the sea's module; a test keeps them equal.
+ */
+export const CONE_ORDER_BEYOND_WATER = CONE_ORDER - 32
+
 /** The cone batch: one instanced mesh for every vehicle's front lamps. */
-export function createConeBatch(haze: ConeHaze): T.InstancedMesh {
+export function createConeBatch(haze: ConeHaze, half: ConeHalf = 'near', share?: T.InstancedMesh): T.InstancedMesh {
   const material = new T.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: T.DoubleSide, blending: T.AdditiveBlending, fog: false })
   // How far along the cone (0 at the lamp, 1 at its end).
   // The geometry's own position: positionLocal already carries the instance matrix.
@@ -142,15 +158,21 @@ export function createConeBatch(haze: ConeHaze): T.InstancedMesh {
   const bank = m.r.mul(haze.bankWeights.x).add(m.g.mul(haze.bankWeights.y))
   const density = height.add(bank)
   const glow = float(1).sub(exp(density.mul(-CONE_DENSITY_SCALE)))
-  const light = vec3(instanceColor).mul(glow).mul(CONE_GAIN).mul(rim).mul(fall).mul(soft)
+  const beyond = beyondSurfaceNode(positionWorld, haze.sea)
+  const light = vec3(instanceColor).mul(glow).mul(CONE_GAIN).mul(rim).mul(fall).mul(soft).mul(half === 'far' ? beyond : float(1).sub(beyond))
   material.colorNode = max(light, vec3(0))
   applyCurve(material)
-  const mesh = new T.InstancedMesh(coneGeometry(), material, MAX_CONES)
-  mesh.name = 'headlight-cones'
+  const mesh = new T.InstancedMesh(share?.geometry ?? coneGeometry(), material, MAX_CONES)
+  mesh.name = half === 'far' ? 'headlight-cones-beyond-water' : 'headlight-cones'
   mesh.frustumCulled = false
   mesh.count = 0
-  mesh.renderOrder = 5
-  mesh.setColorAt(0, new T.Color(0, 0, 0))
+  // The far half sorts below the water (acrossSurface.ts), so the water is blended over it.
+  mesh.renderOrder = half === 'far' ? CONE_ORDER_BEYOND_WATER : CONE_ORDER
+  if (share) {
+    // One set of instances for both halves: written once, drawn twice.
+    mesh.instanceMatrix = share.instanceMatrix
+    mesh.instanceColor = share.instanceColor
+  } else mesh.setColorAt(0, new T.Color(0, 0, 0))
   return mesh
 }
 
