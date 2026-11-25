@@ -106,6 +106,9 @@ const off4: PresetRow = [0, 0, 0, 0, D, D]
 const PRESET_TABLE: Readonly<Record<string, PresetRow>> = {
   'gfx.shadowQuality': [0, 0, 1, 1, 2, 3],
   'gfx.vehicleShading': [0, 0, 1, 2, 3, 3],
+  // Other vehicles in full detail within this many metres (src/vehicles/skins/mergeStatic.ts):
+  // weak levels keep 30, capable ones see full detail further out. Higher levels set by measurement.
+  'vehicle.detailNear': [30, 30, 45, 70, 90, 110],
   'lava.particleBudget': [240, 960, 960, 1600, 2400, 4800],
   'water.ripples': [false, true, true, true, true, true],
   'water.rippleSize': [64, 64, 96, 128, 128, 256],

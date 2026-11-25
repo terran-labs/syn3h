@@ -3,6 +3,7 @@
  * in a headless physics world stepped the way Game.frame steps it.
  */
 import {beforeAll,describe,expect,it,vi} from 'vitest'
+import {DETAIL_HYSTERESIS,detailDistances} from '../../src/vehicles/skins/mergeStatic'
 import * as T from 'three/webgpu'
 import {FIXED_DT,RAPIER,initPhysics} from '../../src/core/physics'
 import {VEHICLE_KINDS,createVehicle} from '../../src/vehicles'
@@ -244,7 +245,7 @@ describe('departure interrupted',()=>{
 })
 
 describe('preparing every look ahead',()=>{
-  it('shows hidden parts and both detail levels to the compiler, then restores them',async()=>{
+  it('shows hidden parts and every detail look to the compiler, then restores them',async()=>{
     const {h,v}=bed('buggy')
     const hidden=new T.Mesh(new T.BoxGeometry(),new T.MeshBasicMaterial());hidden.visible=false
     v.object.add(hidden)
@@ -252,8 +253,12 @@ describe('preparing every look ahead',()=>{
     ;(v.object.userData.registerVehicleDetail as (fn:(d:number)=>void)=>void)(d=>distances.push(d))
     const seen:boolean[]=[]
     await v.prepareLooks(async object=>{seen.push(hidden.visible&&object===v.object)})
-    expect(seen).toEqual([true,true])
-    expect(distances.slice(0,2)).toEqual([0,1e4])
+    // Near, full shape in plain paint, the middle level, far (Vehicle.prepareLooks), in that order.
+    expect(seen.length).toBeGreaterThanOrEqual(3);expect(seen.every(Boolean)).toBe(true)
+    const looks=distances.slice(0,seen.length)
+    expect(looks[0]).toBe(0);expect(looks[looks.length-1]).toBe(1e4)
+    const d=detailDistances()
+    expect(looks.some(x=>x>d.near*(1+DETAIL_HYSTERESIS)&&x<d.far)).toBe(true)
     expect(hidden.visible).toBe(false)
     v.dispose();h.world.free()
   })

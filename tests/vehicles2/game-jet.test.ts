@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DETAIL_HYSTERESIS, detailDistances } from '../../src/vehicles/skins/mergeStatic'
 import * as THREE from 'three/webgpu'
 import { GameJet } from '../../src/vehicles/jetgen/GameJet'
 import { Builder, GROUND_Y } from '../../src/vehicles/jetgen/shapes'
@@ -120,11 +121,16 @@ it('switches remote models with hysteresis and unregisters on disposal', () => {
   }
   const jet = new GameJet(); owner.add(jet.object); jet.attach()
   const move = (distance: number, remote = true) => callbacks.forEach(f => f(distance, remote, 3))
-  move(150); expect(jet.far.visible).toBe(true)
-  move(118); expect(jet.far.visible).toBe(true)
-  move(110); expect(jet.medium(0).object.visible).toBe(true)
-  move(28); expect(jet.medium(0).object.visible).toBe(true)
-  move(24); expect(jet.near.object.visible).toBe(true)
+  // Distances from the registry (mergeStatic.ts): inside each distance, that detail; out, only past the slack.
+  const d = detailDistances(), k = 1 + DETAIL_HYSTERESIS
+  move(d.far * k * 1.2); expect(jet.far.visible).toBe(true)
+  move(d.far * 1.01); expect(jet.far.visible).toBe(true)
+  move(d.far * 0.99); expect(jet.medium(0).object.visible).toBe(true)
+  move(d.near * 1.01); expect(jet.medium(0).object.visible).toBe(true)
+  move(d.near * 0.99); expect(jet.near.object.visible).toBe(true)
+  move(d.near * (k - 0.01)); expect(jet.near.object.visible).toBe(true)
+  move(d.near * (k + 0.01)); expect(jet.medium(0).object.visible).toBe(true)
+  move(d.near * 0.5); expect(jet.near.object.visible).toBe(true)
   move(500, false); expect(jet.near.object.visible).toBe(true)
   jet.dispose(); expect(callbacks.size).toBe(0)
 })

@@ -5,7 +5,8 @@ import {params} from '../../shared/params'
 import {addLavaGlow} from '../../src/vehicles/skins/lavaGlow'
 import {createLiquidState} from '../../src/vehicles/lava'
 import {graphicsLevel,vehicleShading} from '../../src/core/quality'
-import {LOD_FAR,LOD_NEAR,detailLevel,mergeStatic,mergedSurfaces} from '../../src/vehicles/skins/mergeStatic'
+import {DETAIL_HYSTERESIS,detailDistances,detailLevel,mergeStatic,mergedSurfaces,paintFar,vehicleDetailNear} from '../../src/vehicles/skins/mergeStatic'
+import {presetCell,type QualityLevel} from '../../src/core/quality'
 import {TRACK_LUGS,showroomShare,showroomWarm,applyShowroom,drawCoveredShowroom,drawCoveredShowroomVariant,markReducedShowroomDetail,paintCanopy,paintFlakes,paintGloss,paintScaleDepth,paintScaleSize,paintSeams,roleOf,setRole,wrapTrackScroll} from '../../src/vehicles/skins/showroom'
 
 const box=()=>new T.BoxGeometry(1,1,1)
@@ -88,9 +89,11 @@ describe('showroom vehicle shading',()=>{
   const local=body.material
   detail(10,true,2);const near=body.material
   expect(near).not.toBe(local);expect(near).toBeInstanceOf(T.MeshPhysicalNodeMaterial)
-  detail(31,true,2);expect(body.material).toBe(paint)
-  detail(27,true,2);expect(body.material).toBe(paint)
-  detail(24,true,2);expect(body.material).toBe(near)
+  // Distances from the registry: plain past the paint distance and its slack, back inside it.
+  const {paint:at}=detailDistances(),out=at*(1+DETAIL_HYSTERESIS)
+  detail(out*1.01,true,2);expect(body.material).toBe(paint)
+  detail(at*1.01,true,2);expect(body.material).toBe(paint)
+  detail(at*.99,true,2);expect(body.material).toBe(near)
   detail(200,false,2);expect(body.material).toBe(local)
   dispose()
  })
@@ -298,12 +301,28 @@ describe('showroom vehicle shading',()=>{
   expect((fin.material as T.Material as T.MeshStandardMaterial).flatShading).toBe(true)
   dispose()
  })
- it('picks detail levels at the shared distances, with slack on the way back in',()=>{
-  expect(detailLevel(500,false)).toBe(0)
-  expect([detailLevel(29,true),detailLevel(31,true),detailLevel(119,true),detailLevel(121,true)]).toEqual([0,1,1,2])
-  expect(detailLevel(27,true,1)).toBe(1);expect(detailLevel(24,true,1)).toBe(0)
-  expect(detailLevel(117,true,2)).toBe(2);expect(detailLevel(114,true,2)).toBe(1)
-  expect([LOD_NEAR,LOD_FAR]).toEqual([30,120])
+ it('picks detail levels at the current level\'s distances, with slack on the way back in',()=>{
+  // Distances from the registry (mergeStatic.ts detailDistances), never pinned: the owner tunes them.
+  const d=detailDistances(),k=1+DETAIL_HYSTERESIS
+  expect(detailLevel(d.far*10,false)).toBe(0)
+  // Arriving from far away: inside each distance it is at that detail.
+  expect([detailLevel(d.near*.99,true,2),detailLevel(d.near*1.01,true,2),detailLevel(d.far*.99,true,2),detailLevel(d.far*1.01,true,2)]).toEqual([0,1,1,2])
+  // Going out: not before the slack, and once past it.
+  expect(detailLevel(d.near*(k-.01),true,0)).toBe(0);expect(detailLevel(d.near*(k+.01),true,0)).toBe(1)
+  expect(detailLevel(d.far*(k-.01),true,1)).toBe(1);expect(detailLevel(d.far*(k+.01),true,1)).toBe(2)
+  // Paint steps down before the shape, slack included: never both in the same frame.
+  expect(d.paint*k).toBeLessThan(d.near)
+  expect(paintFar(d.near*.99,true,false)).toBe(true)
+  expect(paintFar(d.paint*(k-.01),true,false)).toBe(false);expect(paintFar(d.paint*(k+.01),true,false)).toBe(true)
+  expect(paintFar(d.paint*1.01,true,true)).toBe(true);expect(paintFar(d.paint*.99,true,true)).toBe(false)
+  expect(paintFar(1e6,false,true)).toBe(false)
+ })
+ it('never brings other vehicles\' full detail nearer as the quality level rises',()=>{
+  let last=0
+  for(let level=0;level<=5;level++){
+   const near=Number(presetCell(vehicleDetailNear.def.id,level as QualityLevel)??vehicleDetailNear.def.default)
+   expect(near).toBeGreaterThanOrEqual(last);last=near
+  }
  })
  it('uses the force field by default, retains the glass toggle and respects the plain tier',()=>{
   params.set(vehicleShading.def.id,2)

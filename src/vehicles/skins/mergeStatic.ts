@@ -2,6 +2,7 @@ import * as T from 'three/webgpu'
 import type Node from 'three/src/nodes/core/Node.js'
 import {attribute,float,uniform,vec3} from 'three/tsl'
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js'
+import {defineParam} from '../../../shared/params'
 
 /** Source materials packed into one merged draw, in `surfaceId` order. Read by the showroom shading. */
 export const mergedSurfaces=new WeakMap<T.Material,T.MeshStandardMaterial[]>()
@@ -56,14 +57,46 @@ export function mergeStatic(root:T.Object3D,flatten=false):void {
 }
 
 export type VehicleDetail=(distance:number,remote:boolean,level:number)=>void
-/** Distances at which another player's vehicle steps down a level of detail, in metres (PATTERN.md rule 4). */
-export const LOD_NEAR=30,LOD_FAR=120
+/**
+ * How far from the camera another player's vehicle (or a bot) stays in full detail, in metres
+ * (PATTERN.md rule 4). Each quality level sets it (src/core/quality.ts PRESET_TABLE): the owner,
+ * 25 November 2026, "I have to get really clear to other cars before I see them in their full
+ * detail": the same 30 m at every level kept a car you could see well in its reduced model.
+ * Weak levels keep 30 m; capable ones see full detail further out.
+ */
+export const vehicleDetailNear=defineParam({id:'vehicle.detailNear',label:'Other vehicles: full detail within (m)',group:'Graphics',scope:'client',default:30,min:10,max:250,step:5})
+/** The reduced model gives way to the silhouette at this multiple of the full-detail distance (30 and 120 m before). */
+export const DETAIL_FAR_RATIO=4
+/**
+ * Showroom paint (clear coat, flakes) steps down to plain at this multiple of the full-detail
+ * distance: before the shape does, so the two never change in the same frame. Before rather
+ * than after: a full model in plain paint is a look every vehicle already has (the plain
+ * shading tier), its materials shared and prepared; a reduced model in showroom paint would be a
+ * new look, with materials of its own to build.
+ */
+export const DETAIL_PAINT_RATIO=.75
+/**
+ * On the way out, a threshold is this share further, so a vehicle pacing the boundary does not
+ * flicker. Outward rather than inward: inside its distance a vehicle is always at that detail.
+ */
+export const DETAIL_HYSTERESIS=.15
+/** The current level's distances, in metres: full detail within `near`, reduced to `far`, plain paint beyond `paint`. */
+export function detailDistances():{near:number;far:number;paint:number} {
+  const near=Math.max(1,vehicleDetailNear.value)
+  return {near,far:near*DETAIL_FAR_RATIO,paint:near*DETAIL_PAINT_RATIO}
+}
 /** 0 full, 1 reduced, 2 silhouette. The player's own vehicle is always 0. Hysteresis is the caller's, keyed on its last level. */
 export function detailLevel(distance:number,remote:boolean,last:0|1|2=0):0|1|2 {
   if(!remote)return 0
-  // Five metres of slack on the way back in, so a vehicle pacing the boundary does not flicker.
-  const near=LOD_NEAR-(last>0?5:0),far=LOD_FAR-(last>1?5:0)
+  const d=detailDistances(),k=1+DETAIL_HYSTERESIS
+  const near=d.near*(last<1?k:1),far=d.far*(last<2?k:1)
   return distance>far?2:distance>near?1:0
+}
+/** Whether another vehicle at `distance` wears plain paint, given whether it did last frame (with the same hysteresis). */
+export function paintFar(distance:number,remote:boolean,wasFar:boolean):boolean {
+  if(!remote)return false
+  const out=detailDistances().paint
+  return distance>(wasFar?out:out*(1+DETAIL_HYSTERESIS))
 }
 /** Models register after loading, when their parent vehicle already exists. Viewers retain full detail. */
 export function registerVehicleDetail(root:T.Object3D,callback:VehicleDetail):()=>void {

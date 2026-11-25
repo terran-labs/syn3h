@@ -3,7 +3,7 @@ import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import { vehicleShading } from '../../src/core/quality'
 import { createLiquidState } from '../../src/vehicles/lava'
-import { LOD_FAR, LOD_NEAR, type VehicleDetail } from '../../src/vehicles/skins/mergeStatic'
+import { detailDistances, type VehicleDetail } from '../../src/vehicles/skins/mergeStatic'
 import { MotorSparks } from '../../src/vehicles/skins/motorSparks'
 import { MiraBuggySkin } from '../../src/vehicles/skins/MiraBuggySkin'
 
@@ -94,8 +94,8 @@ it('shares distance graphs without mixing buggy paint, wing geometry or wheel ma
     expect(colorsFor(piece(a.skin, 'Merged static surfaces'))).toContain(0x123456)
     expect(colorsFor(piece(b.skin, 'Merged static surfaces'))).toContain(0x654321)
     params.set(vehicleShading.def.id, 2)
-    a.distance(LOD_NEAR + 10)
-    b.distance(LOD_NEAR + 10)
+    a.distance(detailDistances().near + 10)
+    b.distance(detailDistances().near + 10)
     for (const name of ['Box arm mid body', 'Mid suspension', 'Mid tyres']) {
       const left = piece(a.skin, name), right = piece(b.skin, name)
       expect(left.material).not.toBe(right.material)
@@ -119,8 +119,8 @@ it('shares distance graphs without mixing buggy paint, wing geometry or wheel ma
     wheelB.getMatrixAt(0, next)
     expect(next.equals(before)).toBe(true)
 
-    a.distance(LOD_FAR + 10)
-    b.distance(LOD_FAR + 10)
+    a.distance(detailDistances().far + 10)
+    b.distance(detailDistances().far + 10)
     const farA = piece(a.skin, 'Box arm silhouette'), farB = piece(b.skin, 'Box arm silhouette')
     expect(farA.material.customProgramCacheKey()).toBe(farB.material.customProgramCacheKey())
     expect(farA.material.colorNode).toBe(farB.material.colorNode)

@@ -7,19 +7,22 @@ import { canonicalVehicleKind, createVehicle, VEHICLE_KINDS, type VehicleKind } 
 import { Jet } from '../vehicles/Jet'
 import { MiraBuggy } from '../vehicles/MiraBuggy'
 import { Vehicle, vehicleDetail } from '../vehicles/Vehicle'
-import { LOD_FAR, LOD_NEAR } from '../vehicles/skins/mergeStatic'
+import { detailDistances } from '../vehicles/skins/mergeStatic'
 import { drawCoveredShowroom } from '../vehicles/skins/showroom'
 
 type Look = { name: string; distance: number; gearDown?: boolean }
 const near: Look = { name: 'near', distance: 8 }
-const medium: Look = { name: 'medium', distance: (LOD_NEAR + LOD_FAR) / 2 }
-const far: Look = { name: 'silhouette', distance: LOD_FAR + 10 }
+// Distances read at warm time from the current level's (mergeStatic.ts `detailDistances`): a
+// climb moves them, and a look warmed at the old distance would leave the new one to build in play.
+const medium: Look = { name: 'medium', get distance() { const d = detailDistances(); return (d.near + d.far) / 2 } }
+const far: Look = { name: 'silhouette', get distance() { return detailDistances().far * 1.1 + 10 } }
 const looks = [near, medium, far]
+// Not spread from `medium`: a spread copies its distance once, at load, before any level is set.
 const jetLooks: Look[] = [
   near,
   { ...near, name: 'near gear down', gearDown: true },
-  { ...medium, name: 'medium gear down', gearDown: true },
-  { ...medium, name: 'medium gear up' },
+  { name: 'medium gear down', gearDown: true, get distance() { return medium.distance } },
+  { name: 'medium gear up', get distance() { return medium.distance } },
   far,
 ]
 

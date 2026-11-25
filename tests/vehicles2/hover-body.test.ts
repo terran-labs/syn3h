@@ -3,7 +3,8 @@ import * as T from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
 import { params } from '../../shared/params'
 import { vehicleShading } from '../../src/core/quality'
-import { LOD_NEAR } from '../../src/vehicles/skins/mergeStatic'
+import { DETAIL_HYSTERESIS, detailDistances, vehicleDetailNear } from '../../src/vehicles/skins/mergeStatic'
+import { presetCell, type QualityLevel } from '../../src/core/quality'
 import { Hovercraft, HOVER_DESIGN } from '../../src/vehicles/Hovercraft'
 import { GameHover } from '../../src/vehicles/hover/GameHover'
 import { R3_EYE } from '../../src/vehicles/hovergen/round3'
@@ -76,16 +77,37 @@ describe('the generated hovercraft body', () => {
     const v = new Hovercraft(h.game, h.terrain, position)
     v.isLocal = false
     try {
-      camera.position.x = LOD_NEAR * 2
+      // Inside the full-detail distance, then out into its slack: still full detail.
+      camera.position.x = detailDistances().near * 0.5
       v.update(0, 1)
-      camera.position.x = LOD_NEAR - 1
+      camera.position.x = detailDistances().near * (1 + DETAIL_HYSTERESIS / 2)
       v.update(0, 1)
       const level = study(v).detail
-      expect(level).toBe(1)
+      expect(level).toBe(0)
       v.resetForWorld()
       v.update(0, 1)
       expect(study(v).detail).toBe(level)
     } finally { v.dispose(); h.world.free() }
+  })
+
+  it('at every quality level, another vehicle inside that level\'s full-detail distance is in full detail', () => {
+    const h = harness(), position = new T.Vector3(0, 3, 0)
+    const camera = { position: position.clone() }
+    Object.assign(h.game, { camera })
+    const v = new Hovercraft(h.game, h.terrain, position)
+    v.isLocal = false
+    try {
+      for (let level = 0; level <= 5; level++) {
+        const near = Number(presetCell(vehicleDetailNear.def.id, level as QualityLevel) ?? vehicleDetailNear.def.default)
+        params.set(vehicleDetailNear.def.id, near)
+        // Arriving from far away, so no slack from a nearer last level helps it.
+        camera.position.x = detailDistances().far * 2; v.update(0, 1)
+        camera.position.x = near * 0.99; v.update(0, 1)
+        expect(study(v).detail).toBe(0)
+        camera.position.x = near * (1 + DETAIL_HYSTERESIS) * 1.01; v.update(0, 1)
+        expect(study(v).detail).toBe(1)
+      }
+    } finally { params.set(vehicleDetailNear.def.id, vehicleDetailNear.def.default); v.dispose(); h.world.free() }
   })
 
   it('rests its vanes and extinguishes drive glow in a zorb, then resumes on exit', () => {

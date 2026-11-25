@@ -18,7 +18,7 @@ import * as THREE from 'three/webgpu'
 import type { Game } from '../../../core/Game'
 import { emptyInput } from '../../../core/Input'
 import { FIXED_DT, GROUP_ALL, GROUP_TERRAIN, RAPIER, createWorld, groups, initPhysics } from '../../../core/physics'
-import { graphicsLevel } from '../../../core/quality'
+import { detailDistances } from '../../../vehicles/skins/mergeStatic'
 import { VEHICLE_KINDS, createVehicle, type VehicleKind } from '../../../vehicles'
 import type { Vehicle } from '../../../vehicles/Vehicle'
 import type { Terrain } from '../../../world/Terrain'
@@ -146,7 +146,8 @@ function exhibitFor(entry: { kind: VehicleKind; name: string }, index: number): 
         object,
         groundY: box.min.y,
         lods: kind === 'buggy' ? ['Near', 'Mid', 'Far'] : ['Near', 'Far'],
-        lodDistances: kind === 'buggy' ? [30, 120] : [graphicsLevel.value >= 2 ? 60 : 30],
+        // The game's own distances at the current quality level (mergeStatic.ts detailDistances).
+        lodDistances: kind === 'buggy' ? [detailDistances().near, detailDistances().far] : [detailDistances().near],
         setLod(i) { forced = i },
         setColors: (body, accent) => vehicle.setColors(body, accent),
         resetColors: () => vehicle.setColors(colors.body, colors.accent),

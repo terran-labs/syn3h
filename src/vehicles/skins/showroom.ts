@@ -25,7 +25,7 @@ import {
 import { defineParam, params } from '../../../shared/params'
 import { effectiveQuality, graphicsLevel, vehicleShading } from '../../core/quality'
 import { hotExposureNode } from './hotExposure'
-import { LOD_NEAR, mergedSurfaces, registerVehicleDetail, standardEmission } from './mergeStatic'
+import { mergedSurfaces, paintFar, registerVehicleDetail, standardEmission } from './mergeStatic'
 import { heatOwner } from './lavaGlow'
 
 /**
@@ -62,16 +62,14 @@ export function setRole<M extends T.Material>(material: M, role: SurfaceRole): M
   return material
 }
 
-/** Remote vehicles beyond this drop to plain materials; the lower bound is the way back in. */
-const FAR_OUT = LOD_NEAR, FAR_IN = LOD_NEAR - 5
 
 // ---------------------------------------------------------------------------------------
 // Warming a far vehicle's close-up materials
 // ---------------------------------------------------------------------------------------
 //
-// A remote vehicle (another player, or a bot) wears plain materials beyond FAR_OUT and the
-// procedural ones inside FAR_IN. The renderer builds a material's shader and pipeline the
-// first time something wearing it is drawn, so the frame a bot first came within 25 m, or was
+// A remote vehicle (another player, or a bot) wears plain materials beyond its paint distance
+// (mergeStatic.ts `paintFar`, a little before its shape steps down) and the procedural ones inside it. The renderer builds a material's shader and pipeline the
+// first time something wearing it is drawn, so the frame a bot first came within paint range, or was
 // reeled in by a Yoink, used to stall while a dozen pipelines compiled.
 //
 // A far vehicle builds any close-up variants still missing and draws them for a few frames on
@@ -1037,7 +1035,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate, sharePlainPa
     // The frame governor caps this by graphics level (safe 0, mobile 0, desktop 3) and sheds it
     // under load. A value the player set by hand is honoured as it is.
     let tier = Math.max(0, Math.min(3, Math.round(vehicleShading.value))) as ShadingTier
-    far = remote && distance > (far ? FAR_IN : FAR_OUT)
+    far = paintFar(distance, remote, far)
     if (remote) tier = far ? 0 : Math.min(tier, 2) as ShadingTier
     use(tier)
     bindLook(tier, sceneOf())

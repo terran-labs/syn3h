@@ -18,7 +18,7 @@ import { type InputState, emptyInput } from '../core/Input'
 import { FIXED_DT, GROUP_ALL, GROUP_TERRAIN, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import { graphicsLevel, levelNumber } from '../core/quality'
-import type { VehicleDetail } from './skins/mergeStatic'
+import { detailDistances, type VehicleDetail } from './skins/mergeStatic'
 import type { VehicleKind } from './index'
 import { ZORB_CHEAP_DISTANCE, ZORB_DEFAULT_CAM_OFFSET, ZorbBall, ZorbShield, zorbSpeed } from './zorb'
 
@@ -528,8 +528,11 @@ export abstract class Vehicle implements System {
    */
   async prepareLooks(compile: (object: THREE.Object3D) => Promise<void>, level: number = graphicsLevel.value): Promise<void> {
     const hidden: THREE.Object3D[] = []
-    // Near first, then far: each detail level may swap meshes and materials.
-    for (const distance of [0, 1e4]) {
+    // Each look at the current level's distances: near, full shape in plain paint (between the
+    // paint and full-detail distances), the middle level, then far. Each may swap meshes and
+    // materials; the middle one was missing here, left to the bots' warm or to build in play.
+    const d = detailDistances()
+    for (const distance of [0, (d.paint + d.near) / 2, (d.near + d.far) / 2, 1e4]) {
       for (const detail of this.visualDetails) detail(distance, !this.isLocal, level)
       this.object.traverse(o => { if (!o.visible && o !== this.object) { hidden.push(o); o.visible = true } })
       try { await compile(this.object) } finally { for (const o of hidden) o.visible = false; hidden.length = 0 }
