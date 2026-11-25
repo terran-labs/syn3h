@@ -12,7 +12,7 @@ describe('public recipe populations', () => {
     expect(populations(readPresence(payload()), ['volcanic'], now).get('volcanic')).toEqual({ players: 0, rooms: 0, active: 0 })
     const values = populations(readPresence(payload([row(null, 20), row('alpine')])), ['volcanic', 'alpine'], now)
     expect(values.get('volcanic')).toEqual({ players: 0, rooms: 0, active: 0 })
-    expect(populationLabel(values.get('alpine')!)).toBe('3 active players across 2 rooms')
+    expect(populationLabel(values.get('alpine')!)).toBe('3 active players')
     expect(populationLabel(null)).toBe('Population unknown')
   })
   it('uses the oldest report time, rejects expired payloads and does not renew on receipt', () => {

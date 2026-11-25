@@ -78,6 +78,8 @@ interface Attachment {
   token?: string | null
   /** Epoch ms the socket was accepted, for the close line's openMs. */
   at?: number
+  /** The player was paused as last seen (Room.pausedOf), so a wake counts them right (adopt). */
+  paused?: boolean
   // The hello's page marker is not kept here: after a hibernation wake, a same-page reconnect
   // within 1.5 s of the place's last message falls back to the quiet rule (Room.quietFor).
 }
@@ -378,7 +380,11 @@ export class RoomDO {
       const att = ws.deserializeAttachment() as Attachment
       if (!att.info) {
         const info = room.info(peer)
-        if (info) ws.serializeAttachment({ ...att, info, token: room.token(peer) } satisfies Attachment)
+        if (info) ws.serializeAttachment({ ...att, info, token: room.token(peer), ...(room.pausedOf(peer) ? { paused: true } : {}) } satisfies Attachment)
+      } else if (room.pausedOf(peer) !== Boolean(att.paused)) {
+        // Pausing or resuming: kept with the socket for a hibernation wake. One write per change.
+        const { paused: _was, ...rest } = att
+        ws.serializeAttachment({ ...rest, ...(room.pausedOf(peer) ? { paused: true } : {}) } satisfies Attachment)
       }
     } catch (error) {
       // Logged, then thrown on as before: the runtime's handling of a failed event is unchanged.
@@ -521,7 +527,7 @@ export class RoomDO {
     if (this.snapshot) room.restore(this.snapshot)
     for (const ws of this.state.getWebSockets()) {
       const att = ws.deserializeAttachment() as Attachment | null
-      if (att?.info) room.adopt(this.peer(ws), att.info, att.token)
+      if (att?.info) room.adopt(this.peer(ws), att.info, att.token, att.paused === true)
       else room.connect(this.peer(ws))
     }
     this.room = room

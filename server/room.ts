@@ -121,7 +121,7 @@ export interface RoomSnapshot {
    * rebuilt from storage (a release reset it, everyone dropped at once) can hold their
    * places. `at` is server ms when the entry was written.
    */
-  roster?: { token: string; info: PlayerInfo; at: number }[]
+  roster?: { token: string; info: PlayerInfo; at: number; paused?: boolean }[]
   race?: { state: RaceState | null; deadline: number; cooldownUntil: number; lastId: string }
 }
 
@@ -130,6 +130,11 @@ interface Player {
   raceDriving: boolean
   info: PlayerInfo
   lastState: WireState | null
+  /**
+   * Paused as last known before this room was rebuilt (a hibernation wake, a restore after a
+   * release), until this player's next state says otherwise: see pausedOf.
+   */
+  pausedBefore?: boolean
   /** Server ms when lastState arrived. */
   lastStateAt: number
   /** Server ms when anything at all last arrived from this player. */
@@ -390,7 +395,7 @@ export class Room {
   presence() {
     const value = (id: string) => this.values.get(id) ?? registry.get(id)?.def.default
     let active = 0
-    for (const p of this.players.values()) if (!p.heldUntil && !p.lastState?.paused) active++
+    for (const p of this.players.values()) if (!p.heldUntil && !this.isPaused(p)) active++
     return { players: this.playerCount - this.heldCount, active,
       recipeId: recipeIdForLook(value('terrain.look')), seed: value('world.seed') ?? null }
   }
@@ -719,7 +724,18 @@ export class Room {
 
   private roster(): NonNullable<RoomSnapshot['roster']> {
     const at = this.now()
-    return [...this.players.values()].filter((p) => p.token).map((p) => ({ token: p.token!, info: { ...p.info }, at }))
+    return [...this.players.values()].filter((p) => p.token).map((p) => ({ token: p.token!, info: { ...p.info }, at, ...(this.isPaused(p) ? { paused: true } : {}) }))
+  }
+
+  /** Paused: the latest state says so, or before any state since a rebuild, it last did. */
+  private isPaused(p: Player): boolean {
+    return p.lastState ? Boolean(p.lastState.paused) : Boolean(p.pausedBefore)
+  }
+
+  /** Whether this peer's player is paused, for a transport to keep with the socket (adopt). */
+  pausedOf(peer: Peer): boolean {
+    const p = this.players.get(peer)
+    return p ? this.isPaused(p) : false
   }
 
   restore(s: RoomSnapshot): void {
@@ -755,6 +771,7 @@ export class Room {
         })
         player.token = entry.token
         player.joinedAt = 0
+        if (entry.paused === true) player.pausedBefore = true
         this.nextId = Math.max(this.nextId, entry.info.id + 1)
         this.hold({ send() {}, close() {} }, player, now + REJOIN_GRACE * 1000)
       }
@@ -771,7 +788,7 @@ export class Room {
   }
 
   /** Re-attach a peer that was already joined before the process hibernated. No broadcast. */
-  adopt(peer: Peer, info: PlayerInfo, token?: string | null): void {
+  adopt(peer: Peer, info: PlayerInfo, token?: string | null, paused?: boolean): void {
     // After hibernation the room is restored from storage first, which holds a place for
     // everyone on its roster, and then the sockets that are still connected are adopted. A
     // connected player is not absent: it takes its held place, it is not added beside it.
@@ -781,6 +798,7 @@ export class Room {
       held.heldUntil = 0
       held.lastHeardAt = this.now()
       if (isToken(token)) held.token = token
+      if (paused !== undefined) held.pausedBefore = paused
       return
     }
     const full: PlayerInfo = {
@@ -791,6 +809,7 @@ export class Room {
     // Not a new arrival: waking from hibernation must not make a parked room look active.
     player.joinedAt = 0
     player.token = isToken(token) ? token : null
+    player.pausedBefore = paused === true
     this.players.set(peer, player)
     this.nextId = Math.max(this.nextId, info.id + 1)
   }
@@ -956,8 +975,12 @@ export class Room {
     }
     if (!this.budget(player, 'state')) return true
     state.id = player.info.id
+    const wasPaused = this.isPaused(player)
     player.lastState = state
     player.lastStateAt = this.now()
+    // Pausing or resuming is kept with the room (its roster), so a rebuilt room counts this
+    // player correctly before their next state (see pausedOf). Rare: one write per change.
+    if (state.paused !== wasPaused && player.token && this.rejoinOn()) this.persist()
     const speed = leewaySpeed(state.v)
     if (speed >= player.fast || player.lastStateAt - player.fastAt > SHOVE_SPEED_MEMORY_MS) {
       player.fast = speed

@@ -44,11 +44,14 @@ export function activePlayersLabel(active: number): string {
   return active === 1 ? '1 active player' : `${active} active players`
 }
 
-/** The planet's tooltip and spoken label: its active players and how many rooms they span. */
+/**
+ * The planet's tooltip and spoken label: its active players. No room count: rooms are
+ * counted with paused players in them, so "1 active player across 2 rooms" misleads, and
+ * with per-planet public rooms and private universes a room means little to a player.
+ */
 export function populationLabel(value: Population | null): string {
   if (!value) return 'Population unknown'
-  if (value.active === 0) return 'No active players'
-  return `${activePlayersLabel(value.active)} across ${value.rooms} ${value.rooms === 1 ? 'room' : 'rooms'}`
+  return value.active === 0 ? 'No active players' : activePlayersLabel(value.active)
 }
 
 /** The caller supplies actual lobby/tab visibility. No background polling or overlapping fetches. */
