@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { params } from '../../shared/params'
 import { lobbyZoom, lobbyZoomPortrait } from '../../src/ui/galaxy/cameraRest'
-import { bodyOf, fitDistance, GALAXY_MAX, openingDistance, orbitLayout, orbitShape, worldRadius, type OrbitBody } from '../../src/ui/galaxy/Galaxy'
+import { orbitGapTaper, orbitInnerRadius, orbitMinGap } from '../../src/ui/galaxy/orbitSpacing'
+import { arrivalPose, bodyOf, fitDistance, GALAXY_MAX, openingDistance, orbitLayout, orbitShape, worldRadius, type OrbitBody } from '../../src/ui/galaxy/Galaxy'
 import { ORDINARY_BODY, PLANETS } from '../../src/world/planets'
 
 const recipeBodies: OrbitBody[] = PLANETS.map(recipe => ({ ...(recipe.body ?? ORDINARY_BODY), id: recipe.id }))
@@ -17,23 +19,77 @@ function systems(): PlanetBody[][] {
   }
   return all
 }
-/** The narrowest clear space between any two worlds' surfaces, over many moments. */
-function smallestGap(bodies: PlanetBody[]): number {
-  let smallest = Infinity
-  // Hours of orbit in uneven steps, so no alignment of the orbits is skipped over.
-  for (let step = 0; step < 3000; step++) {
-    const places = orbitLayout(bodies, step * 7.31)
-    for (let a = 0; a < places.length; a++) for (let b = a + 1; b < places.length; b++) {
-      const [ax, ay, az] = places[a].position, [bx, by, bz] = places[b].position
-      smallest = Math.min(smallest, Math.hypot(ax - bx, ay - by, az - bz) - places[a].radius - places[b].radius)
-    }
-  }
-  return smallest
+/** Perihelion and apoapsis bound the center at every phase, independently of plane tilt. */
+function laneGaps(bodies: PlanetBody[]): number[] {
+  const places = orbitLayout(bodies, 0)
+  const shells = places.flatMap((planet, i) => {
+    if (planet.parent !== undefined) return []
+    const span = Math.max(planet.radius, ...places.filter(moon => moon.parent === i).map(moon =>
+      Math.hypot(...moon.position.map((v, k) => v - planet.position[k])) + moon.radius))
+    const e = planet.path!.eccentricity
+    return [{ inner: planet.orbit * (1 - e) - span, outer: planet.orbit * (1 + e) + span }]
+  }).sort((a, b) => a.inner - b.inner)
+  return shells.slice(1).map((shell, i) => shell.inner - shells[i].outer)
 }
 
 describe('galaxy layout', () => {
-  it('never lets two worlds touch, with clear space between them, for every count and mix of sizes', () => {
-    for (const bodies of systems()) if (bodies.length > 1) expect(smallestGap(bodies)).toBeGreaterThanOrEqual(0.079)
+  it('keeps a physical gap between all lane envelopes, including moons, at every phase and tuning extreme', () => {
+    const originalRadius = orbitInnerRadius.value, originalTaper = orbitGapTaper.value
+    try {
+      for (const requestedRadius of [-100, 100, originalRadius]) {
+        params.set(orbitInnerRadius.def.id, requestedRadius)
+        expect(orbitInnerRadius.value).toBeGreaterThanOrEqual(orbitInnerRadius.def.min!)
+        expect(orbitInnerRadius.value).toBeLessThanOrEqual(orbitInnerRadius.def.max!)
+        for (const requestedTaper of [-1, 100, originalTaper]) {
+          params.set(orbitGapTaper.def.id, requestedTaper)
+          expect(orbitGapTaper.value).toBeGreaterThanOrEqual(orbitGapTaper.def.min!)
+          expect(orbitGapTaper.value).toBeLessThanOrEqual(orbitGapTaper.def.max!)
+          for (const bodies of systems()) {
+            const gaps = laneGaps(bodies)
+            for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(orbitMinGap - 1e-10)
+            for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeLessThan(gaps[i - 1])
+          }
+        }
+      }
+    } finally {
+      params.set(orbitInnerRadius.def.id, originalRadius)
+      params.set(orbitGapTaper.def.id, originalTaper)
+    }
+  })
+  it('opens the inner radius while preserving the exact outer Ice orbit and camera reach', () => {
+    const places = orbitLayout(recipeBodies, 0)
+    const volcanic = places[recipeBodies.findIndex(body => body.id === 'volcanic')]
+    const ice = places[recipeBodies.findIndex(body => body.id === 'ice')]
+    expect(volcanic.orbit).toBeCloseTo(orbitInnerRadius.value, 12)
+    expect(volcanic.path?.eccentricity).toBe(0)
+    expect(ice.path?.eccentricity).toBe(orbitShape(7).eccentricity)
+    // The original semimajor axis and outer edge are compatibility constraints for Ice and framing.
+    expect(ice.orbit).toBeCloseTo((13.907832740566956 - ice.radius) / (1 + orbitShape(7).eccentricity), 12)
+    expect(ice.reach).toBeCloseTo(13.907832740566956, 12)
+    expect(fitDistance(recipeBodies)).toBeCloseTo(13.907832740566956 * 1.08 / 0.62, 12)
+  })
+  it('contains the previously visible public discs on the portrait resting view within the approved crop', () => {
+    const width = 390, height = 844
+    const { yaw, pitch, distance } = arrivalPose(recipeBodies, width, height)
+    const places = orbitLayout(recipeBodies, 0)
+    const allowed = new Map([['volcanic', 0], ['obsidian', 0], ['desert', 0], ['badlands', 0], ['swamp', 0], ['archipelago', 26]])
+    for (const [i, body] of recipeBodies.entries()) {
+      const limit = allowed.get(body.id!)
+      if (limit === undefined) continue
+      const period = 2 * Math.PI / (0.07 * Math.pow(1.4 / places[i].orbit, 1.5))
+      let crop = 0
+      for (let phase = 0; phase < 720; phase++) {
+        const { position: [x, y, z], radius } = orbitLayout(recipeBodies, period * phase / 720)[i]
+        const along = x * Math.sin(yaw) + z * Math.cos(yaw)
+        const depth = distance - along * Math.cos(pitch) - y * Math.sin(pitch)
+        const scale = width / (2 * 0.62 * depth)
+        const cx = width / 2 + (x * Math.cos(yaw) - z * Math.sin(yaw)) * scale
+        const cy = height * 0.53 - (y * Math.cos(pitch) - along * Math.sin(pitch)) * scale
+        const limb = radius * scale
+        crop = Math.max(crop, limb - cx, cx + limb - width, limb - cy, cy + limb - height)
+      }
+      expect(crop, body.id).toBeLessThanOrEqual(limit)
+    }
   })
   it('gives every planet a lane of its own, and keeps each moon by its planet', () => {
     for (const bodies of systems()) {
@@ -52,7 +108,7 @@ describe('galaxy layout', () => {
     expect(lanes).toEqual(['volcanic', 'obsidian', 'desert', 'badlands', 'swamp', 'archipelago', 'alpine', 'ice'])
     expect(places[PLANETS.findIndex(r => r.id === 'moon')].parent).toBe(PLANETS.findIndex(r => r.id === 'alpine'))
   })
-  it('tilts and stretches each orbit a little, differently and the same every time', () => {
+  it('keeps deterministic lane tilts and reference ellipse shapes', () => {
     const shapes = Array.from({ length: GALAXY_MAX }, (_, lane) => orbitShape(lane))
     for (const shape of shapes) {
       expect(shape.inclination * 180 / Math.PI).toBeGreaterThanOrEqual(1.5); expect(shape.inclination * 180 / Math.PI).toBeLessThanOrEqual(4)

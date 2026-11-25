@@ -25,6 +25,7 @@ import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hover
 import { insideDisc, type LabelPlace, type ScreenDisc } from './labels'
 import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
 import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime } from './cameraRest'
+import { orbitGapTaper, orbitInnerRadius, orbitMinGap } from './orbitSpacing'
 import { introMode, LEAVING_SECONDS, openingCue, SPIRAL_TURN, leavingMark, openingState, RETURN_MARK_FROM, RETURN_SECONDS, RETURN_VIEW_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
@@ -144,8 +145,8 @@ export type OrbitBody = PlanetBody & { id?: string }
 /**
  * Each lane's tilt and shape, the same every time: inclinations of 1.5 to 4 degrees with the
  * line where the orbit crosses the system's plane turned a golden angle on per lane, and
- * eccentricities of 0.02 to 0.05. Small, so the system still reads as one disc from the
- * resting view, the labels and the camera behave, and nothing hides below the plane.
+ * reference eccentricities of 0.02 to 0.05. The layout spends less of the radial budget on
+ * eccentricity for the inner lanes so their spacing can change within the original frame.
  */
 export function orbitShape(lane: number): { inclination: number; node: number; eccentricity: number; perihelion: number } {
   const frac = (v: number) => v - Math.floor(v)
@@ -163,6 +164,47 @@ function turnAbout(v: Vec, k: Vec, a: number): Vec {
 }
 /** How far a moon circles from its planet's centre: both radii and a gap that reads at a glance. */
 const moonDistance = (planet: number, moon: number) => planet + moon + Math.max(0.16, planet * 0.4)
+type OrbitLane = ReturnType<typeof orbitShape> & { span: number }
+
+/** Keep the original outer orbit so fitDistance and Ice's silhouette use exactly the old reach. */
+function spaceOrbits(lanes: readonly OrbitLane[], eccentricities: readonly number[]): number[] {
+  let far = 0, lastSpan = 0
+  const baseline = lanes.map(({ span, eccentricity }, i) => {
+    const orbit = (i === 0 ? INNER : far + lastSpan + span + CLEAR) / (1 - eccentricity)
+    far = orbit * (1 + eccentricity); lastSpan = span
+    return orbit
+  })
+  const outer = lanes.length - 1
+  if (outer <= 0) return baseline
+
+  const taper = orbitGapTaper.value
+  const gapWeight = (lane: number) => 1 - taper * (lane - 1) / Math.max(1, outer - 1)
+  const outerOrbit = baseline[outer]
+  const outerNear = outerOrbit * (1 - lanes[outer].eccentricity)
+
+  // The outer perihelion is an affine function of the inner radius and a single gap scale.
+  // Carry both coefficients through the same apoapsis recurrence used to place the lanes.
+  let shells = 0, innerScale = 1, gapScale = 0
+  for (let i = 1; i <= outer; i++) {
+    const e = eccentricities[i - 1]
+    const ratio = (1 + e) / (1 - e)
+    shells = shells * ratio + lanes[i - 1].span + lanes[i].span
+    innerScale *= ratio
+    gapScale = gapScale * ratio + gapWeight(i)
+  }
+  const budget = outerNear - shells
+  const minGapScale = orbitMinGap / gapWeight(outer)
+  let near = Math.min(orbitInnerRadius.value, (budget - minGapScale * gapScale) / innerScale)
+  const gap = (budget - near * innerScale) / gapScale
+  return lanes.map(({ span }, i) => {
+    if (i === outer) return outerOrbit
+    const e = eccentricities[i]
+    const orbit = near / (1 - e)
+    near = orbit * (1 + e) + span + lanes[i + 1].span + gap * gapWeight(i + 1)
+    return orbit
+  })
+}
+
 /**
  * Where the worlds are at a time. Every planet has an orbit of its own round the sun, ordered
  * by heat, the hottest world nearest the sun and the frozen ones farthest out. A moon (a body
@@ -195,12 +237,17 @@ export function orbitLayout(bodies: readonly OrbitBody[], time: number): OrbitPl
     const radius = worldRadius(bodies[i].size)
     return Math.max(radius, ...(moons.get(i) ?? []).map((m, k) => moonDistance(radius, worldRadius(bodies[m].size)) + k * 0.6 + worldRadius(bodies[m].size)))
   }
-  let far = 0, lastSpan = 0
+  const lanes = order.map((index, lane) => ({ ...orbitShape(lane), span: span(index) }))
+  const outer = lanes.length - 1
+  // Restore the full outer ellipse and a little of the next one. The inner circles leave
+  // more room for the gap around the sun without pushing the outer body out of frame.
+  const eccentricities = lanes.map(({ eccentricity }, i) => (
+    i === outer ? eccentricity : i === outer - 1 ? eccentricity * 0.15 : 0
+  ))
+  const orbits = spaceOrbits(lanes, eccentricities)
   order.forEach((index, lane) => {
-    const radius = worldRadius(bodies[index].size), reach = span(index), shape = orbitShape(lane), e = shape.eccentricity
-    // The innermost lane's nearest point is INNER; each next one starts beyond the last one's farthest.
-    const orbit = lane === 0 ? INNER / (1 - e) : (far + lastSpan + reach + CLEAR) / (1 - e)
-    far = orbit * (1 + e); lastSpan = reach
+    const radius = worldRadius(bodies[index].size), shape = lanes[lane], e = eccentricities[lane]
+    const orbit = orbits[lane], reach = orbit * (1 + e) + shape.span
     // The orbit's plane: the flat plane turned about the line of nodes by the inclination.
     const node: Vec = [Math.cos(shape.node), 0, Math.sin(shape.node)]
     const mean = 0.9 + lane * 2.399963 + time * RATE * Math.pow(INNER / orbit, 1.5)
@@ -209,13 +256,13 @@ export function orbitLayout(bodies: readonly OrbitBody[], time: number): OrbitPl
     const flat: Vec = [Math.cos(mean) * r, 0, Math.sin(mean) * r]
     const position = turnAbout(flat, node, shape.inclination)
     const nearest = turnAbout([Math.cos(shape.perihelion), 0, Math.sin(shape.perihelion)], node, shape.inclination)
-    places[index] = { position, radius, orbit, reach: far + reach, path: { normal: turnAbout([0, 1, 0], node, shape.inclination), nearest, eccentricity: e } }
+    places[index] = { position, radius, orbit, reach, path: { normal: turnAbout([0, 1, 0], node, shape.inclination), nearest, eccentricity: e } }
     for (const [k, moon] of (moons.get(index) ?? []).entries()) {
       const mr = worldRadius(bodies[moon].size), d = moonDistance(radius, mr) + k * 0.6
       // A moon's month: quick enough to watch it go round, slow enough to stay calm.
       const turn = 0.6 + k * 1.9 + time * RATE * 4.5, tilt = (8 + k * 5) * Math.PI / 180
       const offset = turnAbout([Math.cos(turn) * d, 0, Math.sin(turn) * d], [Math.cos(shape.node + 1), 0, Math.sin(shape.node + 1)], tilt)
-      places[moon] = { position: [position[0] + offset[0], position[1] + offset[1], position[2] + offset[2]], radius: mr, orbit, reach: far + reach, parent: index }
+      places[moon] = { position: [position[0] + offset[0], position[1] + offset[1], position[2] + offset[2]], radius: mr, orbit, reach, parent: index }
     }
   })
   return places
