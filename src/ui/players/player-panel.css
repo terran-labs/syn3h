@@ -63,10 +63,9 @@
 .mira-shell .player-panel .pp-toggle[aria-pressed="true"] { background: rgb(255 255 255 / .88); color: #111; border-color: transparent; }
 .mira-shell .player-panel button:disabled { opacity: .45; cursor: default; }
 .mira-shell .player-panel .pp-eject-go { min-width: 96px; }
-.mira-shell .player-panel .pp-trait { display: grid; grid-template-columns: minmax(0, 1fr) auto 28px; align-items: center; column-gap: 8px; margin-top: 14px; }
+.mira-shell .player-panel .pp-trait { display: grid; grid-template-columns: minmax(0, 1fr) auto var(--reset-slot, 24px); align-items: center; column-gap: 8px; margin-top: 14px; }
 .mira-shell .player-panel .pp-trait label { font-weight: 500; }
 .mira-shell .player-panel .pp-trait output { color: var(--s3-dim, #a9b0bd); font-variant-numeric: tabular-nums; font-size: 12px; }
-.mira-shell .player-panel .pp-reset { width: 28px; height: 28px; min-height: 0; padding: 0; border: 0; background: none; color: #fff; font-size: 15px; }
 .mira-shell .player-panel .pp-trait input { grid-column: 1 / -1; width: 100%; margin: 2px 0 0; height: 24px; accent-color: #fff; touch-action: pan-y; }
 .mira-shell .player-panel .pp-trait .pp-why { grid-column: 1 / -1; margin-top: 4px; }
 /* Phone: the panel stands where the sidebar is, as its one open card; controls at thumb size. */

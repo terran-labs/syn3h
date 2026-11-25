@@ -2497,6 +2497,18 @@ export class Shell implements System {
       ? `You are now the host of this world.${moderates ? ' You can mute and eject players.' : ''}`
       : `${name} is now the host.`, [])
   }
+  /**
+   * This player was ejected (the server closed the socket): back to the lobby, with one clear
+   * line saying who did it and when they may return.
+   */
+  ejected(by: string, banish: string, seconds: number | null): void {
+    const when = banish === 'none' ? 'You can go back in any time.'
+      : seconds === null ? 'You cannot return to it.'
+      : `You can return in ${seconds >= 3600 ? `${Math.round(seconds / 3600)} hours` : `${Math.max(1, Math.round(seconds / 60))} minutes`}.`
+    this.playerPanel?.close(false)
+    this.showRoomNotice(`You were ejected from this world by ${by}. ${when}`, [])
+    if (this.started) void this.ascent()
+  }
   /** Who is in the room, as names are shown (main.ts). */
   setPlayerRoster(roster: PlayerRoster): void {
     this.roster = roster

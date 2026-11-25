@@ -20,6 +20,7 @@
  */
 import './player-panel.css'
 import { CARD_CLOSE } from '../cardClose'
+import { resetButton, type ResetButton } from '../resetControl'
 import { vehicleIcon, vehicleGlyph, mutedIcon, slottedName } from './icons'
 import { deviceName, placeName } from './rowLabel'
 import { EjectDialog, type BanishStop } from './EjectDialog'
@@ -68,8 +69,11 @@ export interface PlayerPanelActions {
   moderation(id: number): Moderation
   /** Eject a player (with a banish) or remove a bot. */
   eject(id: number, stop: BanishStop): void
-  /** A bot's effective traits and which of them are overridden, or null when unknown. */
-  botTraits(id: number): { values: BotTraits; overridden: readonly BotTrait[] } | null
+  /**
+   * A bot's effective traits, which are overridden, and its own nature (the values before any
+   * override) when the room knows them, or null when unknown.
+   */
+  botTraits(id: number): { values: BotTraits; overridden: readonly BotTrait[]; nature?: Partial<BotTraits> } | null
   /** Set a trait (0..1), or reset it to the bot's own nature with null. */
   setBotTrait(id: number, trait: BotTrait, value: number | null): void
   /** Whether I share my place (the "Show my location" switch, Me), for my own panel's note. */
@@ -103,6 +107,7 @@ export class PlayerPanel {
   private players: () => readonly SessionPlayer[] | undefined = () => undefined
   private readonly body = document.createElement('div')
   private readonly arrow = document.createElement('span')
+  private resets = new Map<BotTrait, ResetButton>()
 
   constructor(private readonly host: HTMLElement, private readonly sidebar: () => HTMLElement | null, private readonly actions: PlayerPanelActions) {
     const el = this.element
@@ -250,7 +255,7 @@ export class PlayerPanel {
 
   private build(p: SessionPlayer, mod: Moderation, hasTraits: boolean): void {
     const el = this.body
-    el.replaceChildren()
+    el.replaceChildren(); this.resets.clear()
     this.element.setAttribute('aria-label', p.self ? 'What others see about you' : `About ${p.name}`)
 
     const head = document.createElement('header'); head.className = 'pp-head'
@@ -343,9 +348,9 @@ export class PlayerPanel {
       const id = `pp-trait-${trait.key}`
       const label = Object.assign(document.createElement('label'), { htmlFor: id, textContent: trait.label })
       const out = document.createElement('output'); out.htmlFor.add(id)
-      const reset = Object.assign(document.createElement('button'), { type: 'button', className: 'pp-reset', textContent: '↺' })
-      reset.setAttribute('aria-label', `Reset ${trait.label.toLowerCase()} to this bot's own nature`)
-      reset.title = 'Reset'
+      // The shared reset (resetControl.ts): its place held, live only while overridden.
+      const reset = resetButton(() => this.actions.setBotTrait(p.id, trait.key, null), 'pp-reset')
+      this.resets.set(trait.key, reset)
       const input = Object.assign(document.createElement('input'), { type: 'range', id, min: '0', max: '100', step: '1' })
       input.disabled = !mod.ok
       input.setAttribute('aria-describedby', `${id}-says`)
@@ -356,9 +361,8 @@ export class PlayerPanel {
         out.value = input.value
         this.actions.setBotTrait(p.id, trait.key, Number(input.value) / 100)
       })
-      reset.addEventListener('click', () => { if (!reset.disabled) this.actions.setBotTrait(p.id, trait.key, null) })
       const says = Object.assign(document.createElement('p'), { className: 'pp-why', id: `${id}-says`, textContent: trait.says })
-      row.append(label, out, reset, input, says)
+      row.append(label, out, reset.element, input, says)
       section.append(row)
     }
     return section
@@ -388,11 +392,13 @@ export class PlayerPanel {
     if (traits) for (const trait of BOT_TRAITS) {
       const row = el.querySelector<HTMLElement>(`.pp-trait[data-trait="${trait.key}"]`)
       if (!row) continue
-      const input = row.querySelector('input')!, out = row.querySelector('output')!, reset = row.querySelector<HTMLButtonElement>('.pp-reset')!
+      const input = row.querySelector('input')!, out = row.querySelector('output')!, reset = this.resets.get(trait.key)
       const value = String(Math.round(traits.values[trait.key] * 100))
       if (!(this.dragging && document.activeElement === input) && input.value !== value) { input.value = value; out.value = value }
       if (!out.value) out.value = value
-      reset.disabled = !mod.ok || !traits.overridden.includes(trait.key)
+      const nature = traits.nature?.[trait.key]
+      reset?.set({ changed: traits.overridden.includes(trait.key), defaultText: nature === undefined ? 'its nature' : String(Math.round(nature * 100)), name: trait.label })
+      if (reset) reset.element.disabled = !mod.ok
     }
   }
 }

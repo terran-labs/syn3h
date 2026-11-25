@@ -23,6 +23,7 @@ import { PauseState, type PauseControl } from './core/pause'
 import { liquidEligible, liquidSelected, restoreGlassMaterial, liquidQualityHint, setGlassForVisit } from './ui/glassMaterial'
 import { glassStyle } from './ui/inspector/params'
 import { params, worldNameSeed, worldSeed } from '../shared/params'
+import { shareLocation } from './ui/players/shareLocation'
 import { BotManager } from './bots/BotManager'
 import { botsKeepCount } from './bots/params'
 import { ChaseCamera } from './core/ChaseCamera'
@@ -370,6 +371,8 @@ async function main(): Promise<void> {
     }
   }
   let perfFrom: { at: number; level: number } | null = null
+  /** Where the location switch's changes go: the room joined now (set in join). */
+  let shareTo: ((on: boolean) => void) | null = null
   const join = () => {
     // Launch analytics: how this page ran, measured from the first entry into a world.
     if (!perfFrom) { perfFrom = { at: performance.now(), level: levelNumber(qualityLevel.value) }; installPerfReporting(() => perfFacts(game, perfFrom!.level, (performance.now() - perfFrom!.at) / 1000), () => (performance.now() - perfFrom!.at) / 1000) }
@@ -426,6 +429,12 @@ async function main(): Promise<void> {
       // A player or bot who leaves goes in the arrival cloud played in reverse.
       onRemoteVehicleLeaving: vehicle => materialize.depart(vehicle),
       cancelRemoteDeparture: vehicle => materialize.cancel(vehicle),
+      // The Players card's host line, ejection, and the moderators' banish list (src/ui/players).
+      onHostChange: id => shell.announceHost(connection.displayName(id), id === connection.id,
+        connection.roomKind !== 'public' || connection.players.get(id)?.role === 'creator'),
+      onEjected: notice => shell.ejected(notice.by, notice.banish, notice.seconds),
+      onBanishes: list => shell.setBanishes(list.map(b => ({ id: b.ref, name: b.name, until: b.seconds === null ? null : Date.now() + b.seconds * 1000 })), ref => connection.unbanish(ref)),
+      onBanishRefused: () => shell.showRoomNotice('The banish list is full. Lift a permanent banish to add another.', []),
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name,
@@ -482,17 +491,33 @@ async function main(): Promise<void> {
     // Who is in the room as names are shown: the Players & session rows, the match board and
     // toasts mark each bot with the bot icon in its colour (src/ui/playerMarks.ts).
     // The Players card also shows each vehicle, device and place, and the room's mute.
-    shell.setPlayerRoster(() => [...connection.players.values()].map((p) => {
-      const info = p as typeof p & { country?: string; region?: string; deviceLabel?: string; deviceModel?: string; muted?: boolean }
-      return {
-        id: p.id, name: connection.displayName(p.id), bot: Boolean(p.bot),
-        color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0],
-        kind: p.kind, country: info.country, region: info.region, deviceLabel: info.deviceLabel,
-        deviceModel: info.deviceModel, mutedForAll: Boolean(info.muted),
-        // The creator mark comes from the room's role alone (server/creator.ts); bots have none.
-        ...(!p.bot && p.role === 'creator' ? { role: 'creator' as const } : {}),
-      }
-    }))
+    shell.setPlayerRoster(() => [...connection.players.values()].map((p) => ({
+      id: p.id, name: connection.displayName(p.id), bot: Boolean(p.bot),
+      color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0],
+      kind: p.kind, country: p.country, region: p.region, deviceLabel: p.deviceLabel,
+      deviceModel: p.deviceModel, mutedForAll: Boolean(p.muted),
+      // The creator mark comes from the room's role alone (server/creator.ts); bots have none.
+      ...(!p.bot && p.role === 'creator' ? { role: 'creator' as const } : {}),
+    })))
+    // The player panel's room side (src/ui/players): who may moderate whom (the server's own
+    // rule), mute for everyone, eject with a banish, bot traits, and the moderators' banish list.
+    shell.setPlayerHooks({
+      moderation: id => connection.roomKind ? connection.moderation(id) : { ok: false, reason: 'unknown' },
+      muteForAll: (id, muted) => connection.muteForEveryone(id, muted),
+      eject: (id, stop) => { connection.eject(id, stop.id); window.setTimeout(() => connection.requestBanishes(), 500) },
+      botTraits: id => {
+        const traits = connection.players.get(id)?.traits
+        if (!traits) return null
+        const values = { boldness: 0.5, curiosity: 0.5, sociability: 0.5, mischief: 0.5, patience: 0.5, ...traits }
+        return { values, overridden: Object.keys(connection.botTraits.get(id) ?? {}) as (keyof typeof values)[] }
+      },
+      setBotTrait: (id, trait, value) => { if (value !== null) connection.setBotTraits(id, { [trait]: value }) },
+    })
+    connection.requestBanishes()
+    // One store for "Show my location": the net client's, which the room hears.
+    shareTo = null
+    params.set(shareLocation.def.id, connection.shareLocation)
+    shareTo = on => connection.setShareLocation(on)
     // Bot banter (src/bots/banter): the host's bots talk, and answer people's requests.
     const banter = game.add(new HostBanter(game, terrain, connection, bots, environment), 'Host banter')
     // For automated checks (tools/chat-check.mjs). Join can run before window.mira exists.
@@ -502,6 +527,8 @@ async function main(): Promise<void> {
     game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: target.room, saved, network: connection, entrySearch: lobbyAddress.playURL().search }), 'Session resume')
   }
   shell.onPlay = join
+  // The Me settings' "Show my location" switch goes to the room joined now (join sets shareTo).
+  params.onChange((id, value) => { if (id === shareLocation.def.id) shareTo?.(value !== false) })
   // The in-play vehicle selector calls this; the shell takes it if it has the hook.
   ;(shell as unknown as { setVehicleSwap?: (swap: (kind: VehicleKind) => Vehicle | null) => void }).setVehicleSwap?.(swapVehicle)
   // An automatic start: the cursor stays free and the panels open (Shell.requestEntryCursor).
