@@ -128,6 +128,9 @@ export interface PlayerColors {
   accent: string
 }
 
+/** The join status a full room leaves (onJoinStatus): the room refused us, nothing is wrong. */
+export const ROOM_FULL_STATUS = 'No room available. Playing locally with bots.'
+
 export interface NetContext {
   /** Client-only view state, supplied by main; no roster protocol changes. */
   nameplates?: { shell: HTMLElement; visible(): boolean; presentation(): boolean }
@@ -141,6 +144,8 @@ export interface NetContext {
   room: string
   /** Visible notice when a full room falls back to local play. */
   onJoinStatus?(message: string): void
+  /** Each welcome into the room (first entry and every rejoin). */
+  onWelcome?(): void
   /** Vehicle kind chosen on the start screen. Falls back to `player.kind`, then 'buggy'. */
   kind?: VehicleKind
   /** Colours chosen on the start screen, as '#rrggbb'. */
@@ -1868,6 +1873,7 @@ export class NetClient implements System {
         // The room's world replaces ours entirely, gaps included; see applyRoomWorld.
         applyRoomWorld(msg.params)
         if (this.everWelcomed && !this.welcomed) this.sessionRejoins++
+        try { this.ctx.onWelcome?.() } catch (error) { console.error('Mira: the welcome hook failed', error) }
         this.welcomed = true
         this.raceBridge.receive(msg.race ?? null)
         this.raceBridge.update()
@@ -2118,7 +2124,7 @@ export class NetClient implements System {
   /** A full room is a refusal, not a transient transport failure. */
   private onRoomFull(): void {
     this.conn.close()
-    try { this.onDisconnect(false) } finally { this.stoppedHere('No room available. Playing locally with bots.') }
+    try { this.onDisconnect(false) } finally { this.stoppedHere(ROOM_FULL_STATUS) }
   }
 
   private nameOf(id: number): string {

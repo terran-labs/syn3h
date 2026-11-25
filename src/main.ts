@@ -7,7 +7,8 @@ import { initializeFrozenResources } from './core/frozenResources'
 import { ResumeSession, RESUME_KEY } from './core/resume'
 import { applyStartWorld } from './core/startWorld'
 import { createWorldEntry, freshVehicle, seatAfterRebuild } from './core/worldEntry'
-import { currentPlanet, currentWorldName, randomSeed } from './world/planets'
+import { currentPlanet, currentWorldName, encodeWorld, randomSeed } from './world/planets'
+import { ParallelUniverses } from './ui/parallelUniverse'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
 import { liquidEligible, liquidSelected, restoreGlassMaterial, liquidQualityHint, setGlassForVisit } from './ui/glassMaterial'
@@ -63,6 +64,26 @@ async function main(): Promise<void> {
   const { saved } = applyStartWorld(query, sessionStorage, navigator.webdriver ? () => 1 : randomSeed)
   // Keep the original entry/resume URL until all startup consumers have read it.
   const lobbyAddress = new LobbyAddress(location, history)
+  // A full room sends the player to a parallel universe of the world they were entering, and the
+  // Players & session card offers one (ui/parallelUniverse.ts). Read at start: why this page is here.
+  const universes = new ParallelUniverses({
+    room: () => shell.room || roomFromQuery(query),
+    entryURL: () => lobbyAddress.playURL(),
+    world: () => encodeWorld(),
+    // The loading veil (index.html) comes up at once, so the descent hands straight over to the
+    // same veil the next page opens with: one continuous entry, never a frozen frame meanwhile.
+    // Its 60-second failsafe animation has long finished for anyone who waited in the lobby and
+    // would keep it hidden (forwards fill), so it is cancelled first.
+    navigate: url => {
+      const veil = document.querySelector<HTMLElement>('.boot-veil')
+      if (veil) veil.style.animation = 'none'
+      document.documentElement.dataset.boot = 'loading'
+      location.replace(url)
+    },
+    notice: (text, actions) => shell.showRoomNotice(text, actions),
+    setUniverse: state => shell.setUniverse(state),
+    copyLink: () => shell.copyRoomLink(),
+  })
   const game = new Game(canvas)
   await game.init()
 
@@ -360,6 +381,10 @@ async function main(): Promise<void> {
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name,
       room: shell.room || roomFromQuery(query),
+      // A full room: on to a parallel universe (or, failing every room, the local play
+      // networking has already started). Any other status is shown as it is.
+      onJoinStatus: message => { if (!universes.onJoinStatus(message)) shell.showRoomNotice(message, []) },
+      onWelcome: () => universes.onWelcome(),
       setStatus: (lines) => { netStatus = lines; shell.setStatus(lines) },
       setMapEntities: (e) => shell.setMapEntities(e),
       setMatchState: (m) => shell.setMatchState(m),
