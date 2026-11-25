@@ -80,6 +80,7 @@ export class ChatCard {
   readonly card: HTMLElement
   private readonly body = document.createElement('div')
   private readonly strip = document.createElement('div')
+  private readonly overlayColumn = document.createElement('div')
   private readonly menu = document.createElement('div')
   private readonly live = document.createElement('div')
   private readonly log: HTMLOListElement
@@ -111,7 +112,15 @@ export class ChatCard {
     this.strip.className = 'chat-strip'; this.strip.setAttribute('aria-hidden', 'true')
     this.menu.className = 'chat-menu'; this.menu.setAttribute('role', 'menu'); this.menu.hidden = true
     this.live.className = 'chat-live'; this.live.setAttribute('aria-live', 'polite'); this.live.setAttribute('aria-atomic', 'false')
-    host.element.append(this.strip, this.menu, this.live)
+    const help = host.element.querySelector<HTMLElement>(':scope > .spawn-help')
+    if (help && !host.element.classList.contains('has-touch')) {
+      this.overlayColumn.className = 'help-chat-column'
+      help.before(this.overlayColumn)
+      this.overlayColumn.append(help, this.strip)
+    } else {
+      host.element.append(this.strip)
+    }
+    host.element.append(this.menu, this.live)
     this.card = host.addCard(CHAT_CARD, 'Chat', this.body, () => this.summary())
 
     const signal = this.abort.signal
@@ -200,6 +209,7 @@ export class ChatCard {
     clearInterval(this.stripTimer)
     this.options.input.typing = false
     this.strip.remove(); this.menu.remove(); this.live.remove()
+    this.overlayColumn.replaceWith(...this.overlayColumn.childNodes)
   }
 
   /** The closed card's summary, kept current here; the stack also refreshes it while open. */
