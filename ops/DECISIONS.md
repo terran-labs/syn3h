@@ -2,6 +2,18 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Wednesday 25 November: beta first, production on the owner's approval
+
+**Decided** by the owner, in their words: "We should also now introduce beta versus production
+releases for Mira. The next release after this one should be a beta and should not go prod until
+I physically approve it for production release. You should add beta.mira.cc for testing beta
+builds."
+
+**What it changes.** Every release after v26.11.2500 ships first to https://beta.mira.cc/ (the
+staging Worker, with its own rooms) and is promoted to production, byte for byte with no
+rebuild, only when the owner approves that version in their own words. The protocol, the
+commands and the hotfix path are in ops/RELEASE.md.
+
 ## Tuesday 24 November: failed physics downloads retry automatically
 
 **Decided** by the owner, in his words: "failed physics downloads should retry automatically".

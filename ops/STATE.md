@@ -5,7 +5,9 @@ Last verified: 2026-11-25 13:40 PST, by the Orchestrator. A replacement resumes 
 ## Authority
 
 Only the Orchestrator integrates and deploys, on the Foreman's word (Foreman agent
-c5dc3811-9bca-4a79-9c81-bcdfdf66908d). Overnight releases are authorized; the owner is asleep.
+c5dc3811-9bca-4a79-9c81-bcdfdf66908d). From the release after v26.11.2500, every release is a
+beta first and reaches production only on the owner's approval in their own words, relayed by
+the Foreman (ops/RELEASE.md).
 Every release goes through staging, the dry run and the load gate (one-minute load under 12
 for two minutes). A failed live check rolls back by itself; then stop and report, do not retry.
 
@@ -191,15 +193,19 @@ Releases since the evening of 16 November, all accepted unless marked:
 
 ## Staging Worker
 
-`syn3h-staging` at https://syn3h-staging.af-4e7.workers.dev/: its own Worker name, so its own
-RoomDO namespace and rooms; workers_dev only, no routes or custom domain, so it cannot serve
-www.syn3h.com. Config: wrangler.staging.toml (copied from production's wrangler.toml with the
+`syn3h-staging` at https://syn3h-staging.af-4e7.workers.dev/ and, since 25 November 2026,
+https://beta.mira.cc/ (its Custom Domain, ops/RELEASE.md): its own Worker name, so its own
+RoomDO namespace and rooms; it serves only beta.mira.cc and workers.dev, never a production host. Config: wrangler.staging.toml (copied from production's wrangler.toml with the
 name changed, workers_dev = true, preview_urls = false). Staging copies get a robots
 `Disallow: /`. Tonight's staging copies are under /Users/vtn/dev/Syn3h-staging/ (outside the
 repo). The Cloudflare token is used only as an environment variable on the command that needs
 it, read from ~/.config/syn3h/cloudflare-token; never printed or copied.
 
 ## Release path as it works now
+
+Since 25 November 2026 the release itself is two steps, beta then promote on the owner's
+approval: ops/RELEASE.md. The train steps below are unchanged; step 5's release command becomes
+`tools/ship.sh <n> "note" --beta`, and production is `--promote` with the approval.
 
 On a train worktree (/Users/vtn/dev/Syn3h-wt/train-*), merge accepted tips, then:
 1. typecheck, the full suite as two commands through tools/heavy.sh: `npx vitest run` and
