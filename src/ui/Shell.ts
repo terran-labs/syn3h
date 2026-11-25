@@ -31,7 +31,7 @@ import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, PLAY_VEHICLES, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
 import { populationLabel, PresenceFeed, type Populations } from './galaxy/presence'
-import { nextTwinControl, twinPopulationLabel, twinWorldCode, type TwinAction } from './galaxy/twinActions'
+import { nextTwinControl, twinWorldCode, type TwinAction } from './galaxy/twinActions'
 import { lobbyTwinsEnabled } from '../core/twinPreview'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyOptions, type GalaxyWorld } from './galaxy/Galaxy'
@@ -1881,8 +1881,7 @@ export class Shell implements System {
   private updateTwinPresence(values: Populations): void {
     for (const world of this.galaxyWorlds) {
       const count = this.galaxyChips.get(world.id)?.querySelector('.galaxy-population')
-      const biome = planetById(world.recipe ?? world.id)?.label ?? world.label
-      const label = twinPopulationLabel(biome, values.get(world.recipe ?? world.id) ?? null)
+      const label = populationLabel(values.get(world.recipe ?? world.id) ?? null)
       if (count && count.textContent !== label) count.textContent = label
     }
   }
@@ -2048,7 +2047,7 @@ export class Shell implements System {
         action.textContent = '· Public and shared'
         action.id = `twin-public-${world.id}`
         count.id = `twin-count-${world.id}`
-        count.textContent = twinPopulationLabel(world.label, null)
+        count.textContent = populationLabel(null)
         chip.setAttribute('aria-labelledby', `${name.id} ${action.id}`)
         chip.setAttribute('aria-describedby', count.id)
       }
